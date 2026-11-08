@@ -16,8 +16,9 @@
 //// 'L' n    leave the group of the character named "n"
 //// 'V' n    tell the process watch n found, through the watch (no answer)
 //// 'H' n    tell the zone channel of top zone n in run 1 of map 1 (no answer)
-//// 'Z' n ms start timer n, which would fire after ms, and cancel it in the
-////          same step, so no machine's speed decides whether it fired first
+//// 'Z' n ms start timer n for no time, then timer n + 1 (the witness) for ms,
+////          then cancel timer n, all in one step, so no machine's speed
+////          decides whether timer n fired first
 //// 'A' n ms ask the directory with ask n, which has ms before its deadline;
 ////          the commands before it in the read run first, and the bytes after
 ////          it wait for the ask's outcome
@@ -76,7 +77,11 @@ pub const tell_command = 0x59
 
 pub const tell_connection_command = 0x43
 
-pub const start_then_cancel_command = 0x5A
+/// Starts timer `n` for no time, then the witness timer, number `n` + 1, for the
+/// milliseconds given, then cancels timer `n`, all in one step: the witness is
+/// started after timer `n`, so it is never due before it, and no input comes
+/// between the effects, so it is never taken before the cancel is carried out.
+pub const start_witness_then_cancel_command = 0x5A
 
 pub const ask_command = 0x41
 
@@ -220,8 +225,9 @@ fn commands(
   milliseconds milliseconds: Int,
 ) -> List(Effect(ConnectionEffect(Nil))) {
   case letter {
-    _ if letter == start_then_cancel_command -> [
-      command(letter: timer_command, n:, milliseconds:),
+    _ if letter == start_witness_then_cancel_command -> [
+      command(letter: timer_command, n:, milliseconds: 0),
+      command(letter: timer_command, n: n + 1, milliseconds:),
       command(letter: cancel_command, n:, milliseconds: 0),
     ]
     _ -> [command(letter:, n:, milliseconds:)]

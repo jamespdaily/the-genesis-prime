@@ -34,6 +34,7 @@ import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
 import gleam/erlang/process.{type Name, type Pid}
 import gleam/list
 import gleam/otp/static_supervisor as supervisor
+import mailbox_support
 import map_support
 import owned_test
 import place_support
@@ -422,19 +423,52 @@ fn join_message(id: Int) -> map.Message {
   join_of(id:, character: character_support.character(number: 100 + id))
 }
 
+/// How long a stand-in Maps that never answers is given to be asked.
+const unanswered_ms = 100
+
+/// How many finds Maps has been sent: the messages waiting in the stand-in's
+/// mailbox, which is the test's own, and which nothing else writes to.
+fn finds_sent_to_stand_in() -> Int {
+  mailbox_support.queued(process.self())
+}
+
+/// How many times a find is tried for Maps to be asked before the test fails.
+const asking_tries = 50
+
+/// What `find` makes of a deadline `unanswered_ms` ahead, taken again until Maps
+/// was asked: a find whose deadline passed before it asked sends nothing and
+/// gives the same answer as one Maps left unanswered, so only a run that asked
+/// shows the unanswered path. Each of `asking_tries` tries takes a fresh
+/// deadline; a machine that stalls longer than the deadline on every try fails.
+fn find_left_unanswered(find find: fn(Int) -> answer) -> answer {
+  find_left_unanswered_in(find:, tries_left: asking_tries)
+}
+
+fn find_left_unanswered_in(
+  find find: fn(Int) -> answer,
+  tries_left tries_left: Int,
+) -> answer {
+  let asked_before = finds_sent_to_stand_in()
+  let answer = find(ask_support.monotonic_ms() + unanswered_ms)
+  case finds_sent_to_stand_in() > asked_before, tries_left > 1 {
+    True, _ -> answer
+    False, True -> find_left_unanswered_in(find:, tries_left: tries_left - 1)
+    False, False ->
+      panic as "Maps was never asked: every try's deadline passed before the find asked, so none showed the unanswered path"
+  }
+}
+
 pub fn a_find_that_maps_does_not_answer_by_its_deadline_is_no_reply_and_not_not_found_test() -> Nil {
   use <- owned_test.run(30_000)
   let stand_in = process.new_name("stand_in_maps")
   let assert Ok(Nil) = process.register(process.self(), stand_in)
     as "the test process holds the name Maps would and never answers"
-  assert world_map_registry.find(
-      stand_in,
-      ship,
-      incarnation: 1,
-      deadline_ms: ask_support.monotonic_ms() + 50,
-    )
+  assert find_left_unanswered(find: fn(deadline_ms) {
+      world_map_registry.find(stand_in, ship, incarnation: 1, deadline_ms:)
+    })
     == Error(world_map_registry.NoReply)
     as "Maps was asked and gave no answer: a live map may still hold the player, so the find does not say the map is not running"
+  let asked = finds_sent_to_stand_in()
   assert world_map_registry.find(
       stand_in,
       ship,
@@ -443,6 +477,8 @@ pub fn a_find_that_maps_does_not_answer_by_its_deadline_is_no_reply_and_not_not_
     )
     == Error(world_map_registry.NoReply)
     as "a deadline that has passed leaves no time to ask, and says nothing about the map"
+  assert finds_sent_to_stand_in() == asked
+    as "the find whose deadline had passed asked Maps nothing"
 }
 
 pub fn an_ask_of_a_run_that_is_not_the_running_one_or_of_a_map_not_running_is_not_running_and_starts_no_map_test() -> Nil {
@@ -518,14 +554,16 @@ pub fn an_ask_of_a_run_when_maps_does_not_answer_in_time_is_sent_nowhere_and_lef
   let stand_in = process.new_name("stand_in_maps")
   let assert Ok(Nil) = process.register(process.self(), stand_in)
     as "the test process holds the name Maps would and never answers"
-  assert world_map_registry.ask_run(
-      stand_in,
-      ship,
-      incarnation: 1,
-      message: join_message(7),
-      deadline_ms: ask_support.monotonic_ms() + 50,
-      reply: fn(_) { Nil },
-    )
+  assert find_left_unanswered(find: fn(deadline_ms) {
+      world_map_registry.ask_run(
+        stand_in,
+        ship,
+        incarnation: 1,
+        message: join_message(7),
+        deadline_ms:,
+        reply: fn(_) { Nil },
+      )
+    })
     == Ok(service.NoReplyInTime)
     as "Maps gave no answer, so the ask is not NotRunning, which would let a live map keep a stale unit: the directory says so, and the shell gives its rule NoAnswerInTime"
 }
