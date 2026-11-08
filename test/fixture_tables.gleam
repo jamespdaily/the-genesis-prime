@@ -210,6 +210,12 @@ pub fn file(schema: tbl_file.Schema) -> #(String, BitArray) {
   planted_table.file(schema, committed_rows(schema))
 }
 
+/// The `file` of every table the server loads, for a folder the server's load
+/// reads.
+pub fn server_files() -> List(#(String, BitArray)) {
+  list.map(server_schemas(), file)
+}
+
 /// Every table's rows, each read once by `table`. The dict is built on the
 /// caller's heap at each call and holds the stored rows themselves; storing it
 /// as a persistent term would copy every table's rows into the literal area a

@@ -1,14 +1,13 @@
-//// The rating formulas of the hit rule as the client's own rows hold them, for the tests
-//// that have no client tables (`genesis_prime/game/rating`): GameFormula 1230, 1231,
-//// 1232, 1234, 1235, 1236, 1245 and 1271 as the fact file records them (`0x140462ef0`,
-//// `0x140463700`, `0x140463e80`, `0x140464240`, `0x140463340`, `0x140463ac0`,
-//// `0x140461a30`, `0x1404615f0`).
+//// The rating formulas of the hit rule (`genesis_prime/game/rating`), read from the
+//// client's GameFormula rows 1230, 1231, 1232, 1234, 1235, 1236, 1245 and 1271 in the
+//// committed fixture.
 
+import fixture_tables
 import genesis_prime/game/rating.{type Formula, type Formulas, Formula, Formulas}
-import gleam/list
-import novice_tables
+import genesis_prime/table/game_formula
+import genesis_prime/table/id.{GameFormulaId}
 
-/// The formulas, built from the planted GameFormula rows (`novice_tables.formulas`).
+/// The formulas the hit rule reads.
 pub fn formulas() -> Formulas {
   Formulas(
     strikethrough: row(id: 1230),
@@ -23,15 +22,15 @@ pub fn formulas() -> Formulas {
 }
 
 fn row(id id: Int) -> Formula {
-  let assert Ok(planted) =
-    list.find(novice_tables.formulas(), fn(planted) { planted.id == id })
-    as "the planted GameFormula rows hold the hit rule's formula"
+  let assert Ok(row) =
+    game_formula.get(tables: fixture_tables.shared(), id: GameFormulaId(id))
+    as "the committed GameFormula rows hold the hit rule's formula"
   Formula(
-    f0: planted.float0,
-    f01: planted.float01,
-    f02: planted.float02,
-    f03: planted.float03,
-    int0: planted.dataint0,
-    int01: planted.dataint01,
+    f0: row.datafloat0,
+    f01: row.datafloat01,
+    f02: row.datafloat02,
+    f03: row.datafloat03,
+    int0: row.dataint0,
+    int01: row.dataint01,
   )
 }

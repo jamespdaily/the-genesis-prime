@@ -281,11 +281,11 @@ pub fn a_derivation_refused_on_an_edited_value_gives_the_text_a_load_gives_test(
     as "Telekinetic Strike's Proxy 62204 starts the Spell4 row 30900 (Spell4Effects.targetFlags 4); without the row the plan fails with the sentence spell_plan.describe gives"
 }
 
-/// Writes the planted server files and the content files into one folder, for
+/// Writes the fixture's server files and content files into one folder, for
 /// the body, and gives the folder.
 fn with_server_files(body: fn(String) -> a) -> a {
   planted_table.in_folder(
-    list.append(character_tables.files(), character_tables.content_files()),
+    list.append(fixture_tables.server_files(), character_tables.content_files()),
     body,
   )
 }
@@ -305,13 +305,13 @@ fn class_row(tables: store.Tables, row_id: Int) -> Result(Nil, Nil) {
 pub fn the_content_tables_are_read_beside_the_stored_tables() -> Nil {
   use folder <- with_server_files
   let assert Ok(stored) = server_table.load(folder)
-    as "the planted files load as the server's tables"
+    as "the fixture files load as the server's tables"
   let before = terms_held()
   let assert Ok(with_content) =
     server_table.load_content_tables(over: stored, from: folder)
-    as "the planted content files load beside the server's tables"
+    as "the fixture content files load beside the server's tables"
   assert world.all(with_content) != []
-    as "the content tables are read: the planted Worlds are there"
+    as "the content tables are read: the fixture's Worlds are there"
   assert terms_held() == before
     as "reading the content tables puts no persistent term and erases none"
   Nil
@@ -328,7 +328,7 @@ pub fn the_servers_start_reads_the_content_tables_without_a_put_or_an_erase_test
 pub fn an_edit_is_built_beside_the_stored_tables() -> Nil {
   use folder <- with_server_files
   let assert Ok(stored) = server_table.load(folder)
-    as "the planted files load as the server's tables"
+    as "the fixture files load as the server's tables"
   let before = terms_held()
   let planted_class =
     planted_table.file(schema: class.schema, rows: [
@@ -367,7 +367,7 @@ pub fn a_test_edit_leaves_the_literal_area_unchanged_test() -> Nil {
 pub fn an_edit_read_back_from_ets_keeps_its_edit_and_the_stored_rows() -> Nil {
   use folder <- with_server_files
   let assert Ok(stored) = server_table.load(folder)
-    as "the planted files load as the server's tables"
+    as "the fixture files load as the server's tables"
   let planted_class =
     planted_table.file(schema: class.schema, rows: [
       planted_table.row(class.schema, [#("ID", Integer(9))]),
@@ -406,7 +406,7 @@ pub fn an_edit_copied_into_ets_still_reads_its_edit_and_the_stored_rows_test() -
 pub fn a_stored_value_is_refused_its_unload() -> Nil {
   use folder <- with_server_files
   let assert Ok(stored) = server_table.load(folder)
-    as "the planted files load as the server's tables"
+    as "the fixture files load as the server's tables"
   let assert Ok(read) = server_table.read(folder) as "a read of the same files"
   let before = terms_held()
   assert store.unload(stored) == Error(store.ValueIsHeld)
@@ -422,7 +422,7 @@ pub fn the_unload_of_a_stored_value_is_refused_test() -> Nil {
   fresh_node.must_return_function(a_stored_value_is_refused_its_unload)
 }
 
-/// The server's load of the planted files, and a read of the same files.
+/// The server's load of the fixture files, and a read of the same files.
 pub fn the_stored_value_equals_a_read_of_the_same_files() -> Nil {
   use folder <- with_server_files
   let assert Ok(stored) = server_table.load(folder) as "the server's load"

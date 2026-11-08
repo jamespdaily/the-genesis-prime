@@ -13,19 +13,18 @@
 //// - `opcode.0x93a`: an entry is the id, then the base and the value as 32-bit floats.
 
 import cast_support
-import client_tables
+import fixture_tables
 import genesis_prime/game/unit_properties.{type Properties, Change, Changed}
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/table/id.{UnitProperty2Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/unit_property2
+import gleam/int
 import gleam/list
 import owned_test
 import planted_table
 import properties_support
-import spell_tables
-import unitest
 
 const move_speed = UnitProperty2Id(100)
 
@@ -286,19 +285,6 @@ pub fn the_overlay_puts_the_current_value_of_a_modified_property_in_a_0x262_list
     as "no modifier live: nothing is added"
 }
 
-pub fn the_test_support_defaults_are_the_clients_unitproperty2_rows_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
-  // UnitProperty2 8, 102, 104, 127 and 177 are the defaults the hit rule and the
-  // regeneration read (0x140463e80, `UnitProperty2.176`); each planted default is the
-  // client's row.
-  let real = unit_properties.defaults(tables: client_tables.shared())
-  list.each(properties_support.defaults(), fn(planted) {
-    assert list.key_find(real, planted.0) == Ok(planted.1)
-      as "a planted default is the client's"
-  })
-}
-
 pub fn gates_row_sets_falling_damage_to_0_and_the_property_is_held_and_sent_test() -> Nil {
   use <- owned_test.run(5000)
   // 67777: multiplier 0.0 and flat 0.0 on FallingDamageMultiplier (134), whose default
@@ -347,21 +333,54 @@ fn loaded_with(
   }
 }
 
-pub fn the_defaults_are_built_once_at_load_from_every_row_test() -> Nil {
+/// The defaultValue of the UnitProperty2 rows the server's rules name, as the client's
+/// table holds them (`table_rows -- UnitProperty2 7 8 35 36 41 42 44 47 60 100 102 104
+/// 127 134 175 177`).
+const client_defaults = [
+  #(7, 1.0),
+  #(8, 1.0),
+  #(35, 0.0),
+  #(36, 0.0),
+  #(41, 0.0),
+  #(42, 0.0),
+  #(44, 0.0),
+  #(47, 0.0),
+  #(60, 0.0),
+  #(100, 1.0),
+  #(102, 0.0),
+  #(104, 0.0),
+  #(127, 1.5),
+  #(134, 1.0),
+  #(175, 0.0),
+  #(177, 500.0),
+]
+
+pub fn defaults_come_from_the_clients_unit_property_rows_test() -> Nil {
   use <- owned_test.run(10_000)
-  let assert Ok(defaults) = loaded_with(rows: spell_tables.unit_property_rows())
-    as "the planted rows hold every property the rules read"
-  assert defaults == properties_support.defaults()
-    as "each row's defaultValue, in id order"
+  let assert Ok(defaults) =
+    loaded_with(rows: fixture_tables.committed_rows(unit_property2.schema))
+    as "the client's UnitProperty2 rows hold every property the rules read"
+  assert list.length(defaults) == 200
+    as "one default for each of the client's 200 UnitProperty2 rows"
+  assert list.map(defaults, fn(default) { { default.0 }.value })
+    |> list.sort(int.compare)
+    == list.map(defaults, fn(default) { { default.0 }.value })
+    as "in id order"
+  list.each(client_defaults, fn(property) {
+    assert list.key_find(defaults, UnitProperty2Id(property.0))
+      == Ok(property.1)
+      as "the row's defaultValue is the default"
+  })
 }
 
 pub fn a_table_missing_a_row_the_rules_read_fails_the_load_by_name_test() -> Nil {
   use <- owned_test.run(10_000)
   // Row 8, HealthRegenMultiplier, is read by the regeneration.
   assert loaded_with(
-      rows: planted_table.without(rows: spell_tables.unit_property_rows(), ids: [
-        8,
-      ]),
+      rows: planted_table.without(
+        rows: fixture_tables.committed_rows(unit_property2.schema),
+        ids: [8],
+      ),
     )
     == Error(store.DerivationFailed(
       name: "UnitPropertyDefaults",
