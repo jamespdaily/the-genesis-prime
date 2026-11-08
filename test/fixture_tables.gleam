@@ -1,10 +1,11 @@
 //// The client's own rows, as the server's tables.
 ////
 //// - **`shared()`** is the server's tables read from the rows with the
-////   server's own requirements and derivations, stored for the run. The rows
-////   also hold the tables only the content load reads, which `shared()` and
-////   `load` leave out and `file` hands to that load
-////   (`character_tables.content_over`); an edit reaches only the server's tables.
+////   server's own requirements and derivations, stored for the run.
+//// - **Content tables** are the tables only the content load reads. The rows
+////   hold them whole or by their roots, `shared()` and `load` leave them out,
+////   and `file` makes their file from the committed rows. Only the server's
+////   tables can be edited: an edit of a content table is refused.
 //// - **`changed` and `added`** run a body on the shared tables with a row's
 ////   cells changed, or one row added that starts as a copy of a real row. The
 ////   edit is built on the body's heap and gone with it.

@@ -178,11 +178,9 @@ pub fn summon_checks() -> spawn.SummonChecks {
   )
 }
 
-/// What a summon is checked with over these tables, as the running server
-/// leaves it: the checks are built from the content-only tables read beside them
-/// (`character_tables.content_over`, `genesis_prime.load_content`) and hold none
-/// of the server's. The tables are a test's own edit of the shared load
-/// (`fixture_tables.changed`).
+/// The summon checks over these tables, built as the running server builds them:
+/// from the given tables with the committed rows of the tables only the content
+/// load reads added beside them, and the test's formulas and kinds.
 pub fn summon_checks_over(
   tables tables: table_store.Tables,
 ) -> spawn.SummonChecks {
