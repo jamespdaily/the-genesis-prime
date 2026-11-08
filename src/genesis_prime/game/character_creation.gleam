@@ -163,18 +163,21 @@ pub fn check_row(
         Error(Nil) ->
           Error(NoLevelForExperience(creation_id:, experience: row.xp))
         Ok(level) ->
-          Ok(NewCharacter(
-            name: request.name,
-            gender: row.sex,
-            race_id:,
-            class_id: character_creation.class_id(row),
-            faction_id: row.faction_id,
-            level:,
-            path: request.path,
-            place:,
-            look:,
-            bones: request.bone_values,
-          ))
+          Ok(
+            NewCharacter(
+              name: request.name,
+              gender: row.sex,
+              race_id:,
+              class_id: character_creation.class_id(row),
+              faction_id: row.faction_id,
+              level:,
+              path: request.path,
+              place:,
+              look:,
+              bones: request.bone_values,
+              starting_items: [],
+            ),
+          )
       }
   }
 }

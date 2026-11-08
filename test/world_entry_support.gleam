@@ -42,6 +42,7 @@ pub fn loaded(
         character:,
         session_epoch: character_support.epoch(1),
         saved_health: None,
+        items: [],
       ),
       connection: ConnectionId(1),
       stay: map_support.stay(count: 1),

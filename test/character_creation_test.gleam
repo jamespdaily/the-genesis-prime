@@ -76,21 +76,24 @@ pub fn a_valid_request_gives_the_new_character_from_its_creation_row_test() -> N
       customisation_values: [1, 1],
     )
   assert character_creation.check(tables, asked)
-    == Ok(NewCharacter(
-      name: "Ab Cd",
-      gender: 1,
-      race_id: RaceId(1),
-      class_id: ClassId(1),
-      faction_id: 167,
-      level: 1,
-      path: 2,
-      place: character_tables.novice_start_place(),
-      look: [
-        LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-        LookEntry(label: CharacterCustomizationLabelId(22), value: 1),
-      ],
-      bones: character_support.bones(46),
-    ))
+    == Ok(
+      NewCharacter(
+        name: "Ab Cd",
+        gender: 1,
+        race_id: RaceId(1),
+        class_id: ClassId(1),
+        faction_id: 167,
+        level: 1,
+        path: 2,
+        place: character_tables.novice_start_place(),
+        look: [
+          LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
+          LookEntry(label: CharacterCustomizationLabelId(22), value: 1),
+        ],
+        bones: character_support.bones(46),
+        starting_items: [],
+      ),
+    )
     as "CharacterCreation row 466: class 1, race 1, sex 1, faction 167; the path, the labels with their values and the bone values as the request carries them (opcode.0x25b); xp 0, so level 1 (0x140029820); a PreTutorial start, so the place of WorldLocation2 row 51596: World 3460, zone 6009 and its position"
 }
 

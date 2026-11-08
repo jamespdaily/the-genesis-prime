@@ -445,11 +445,14 @@ pub fn joining_saved(
     taken:,
     outcome: step.Answer(
       FromStore(
-        ForWorld(CharacterLoaded(
-          character,
-          character_support.epoch(1),
-          saved_health,
-        )),
+        ForWorld(
+          CharacterLoaded(
+            character,
+            character_support.epoch(1),
+            saved_health,
+            [],
+          ),
+        ),
       ),
     ),
   )

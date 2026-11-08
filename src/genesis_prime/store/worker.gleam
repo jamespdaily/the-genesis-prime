@@ -78,14 +78,14 @@ import genesis_prime/migration.{
 import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/store.{
   type AccountId, type Answer, type Character, type CharacterId,
-  type CreateAnswer, type DeleteAnswer, type FindAccountAnswer, type MoveAnswer,
-  type MoveRequest, type Naming, type NewCharacter, type RenameAnswer,
-  type Request, type SelectAnswer, type SelectRequest, type WorldAnswer,
-  type WorldRequest, Account, AccountFound, AccountId, Character,
-  CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
-  CharacterRenamed, CreateCharacter, CreateForNoSuchAccount, Created,
-  DeleteCharacter, Deleted, FindAccount, ForLogin, ForMove, ForSelect, ForWorld,
-  HealthRefused, ListCharacters, Listed, LoadCharacter, Login, Move,
+  type CreateAnswer, type DeleteAnswer, type FindAccountAnswer, type HeldItem,
+  type MoveAnswer, type MoveRequest, type Naming, type NewCharacter,
+  type NewItem, type RenameAnswer, type Request, type SelectAnswer,
+  type SelectRequest, type WorldAnswer, type WorldRequest, Account, AccountFound,
+  AccountId, Character, CharacterCreated, CharacterDeleted, CharacterId,
+  CharacterLoaded, CharacterRenamed, CreateCharacter, CreateForNoSuchAccount,
+  Created, DeleteCharacter, Deleted, FindAccount, ForLogin, ForMove, ForSelect,
+  ForWorld, HealthRefused, ListCharacters, Listed, LoadCharacter, Login, Move,
   NameBreaksRule, NameStands, NameTaken, NeedsRename, NewNameBreaksRule,
   NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts,
   NothingSaved, PlaceRefused, PlaceSaved, RenameCharacter, Renamed, SavePlace,
@@ -414,9 +414,13 @@ fn load_character(
 ) -> Result(WorldAnswer, Nil) {
   let AccountId(account_id) = account_id
   let CharacterId(character_id) = character_id
-  use rows <- result.map(
+  use rows <- result.try(
     query(fn() { sql.load_character(pool, character_id, account_id) }),
   )
+  use item_rows <- result.map(case rows {
+    [_] -> query(fn() { sql.load_character_items(pool, character_id) })
+    _ -> Ok([])
+  })
   case rows {
     [row] -> {
       let assert Ok(epoch) = store.session_epoch(row.session_epoch)
@@ -447,11 +451,39 @@ fn load_character(
         ),
         session_epoch: epoch,
         saved_health: row.health,
+        items: held_items(item_rows),
       )
     }
     [] -> NotTheAccounts
     _ -> panic as "a character id is unique, so a read returns at most one"
   }
+}
+
+/// The rows of a character's items as the items they hold, in the order the
+/// query gave them.
+fn held_items(rows: List(sql.LoadCharacterItemsRow)) -> List(HeldItem) {
+  case rows {
+    [] -> []
+    [_, ..] ->
+      panic as "not built: a character_item row becomes a HeldItem, its item2_id an Item2Id"
+  }
+}
+
+/// Stores the new character's items on the transaction's connection.
+fn store_items(
+  connection connection: pog.Connection,
+  character_id character_id: Int,
+  items items: List(NewItem),
+) -> Result(Nil, pog.QueryError) {
+  sql.create_character_items(
+    connection,
+    character_id,
+    list.map(items, fn(item) { item.item2_id.value }),
+    list.map(items, fn(item) { item.location }),
+    list.map(items, fn(item) { item.bag_index }),
+    list.map(items, fn(item) { item.stack_count }),
+  )
+  |> result.replace(Nil)
 }
 
 /// One row as the character it holds.
@@ -532,7 +564,7 @@ fn create_character(
         locked.rows == [],
         Ok(pog.Returned(count: 1, rows: [NoAccountRow])),
       )
-      use made <- result.map(sql.create_character(
+      use made <- result.try(sql.create_character(
         connection,
         account_id,
         character.name,
@@ -555,6 +587,15 @@ fn create_character(
         start_place.facing(character.place).pitch,
         start_place.facing(character.place).roll,
       ))
+      use Nil <- result.map(case made.rows {
+        [row] ->
+          store_items(
+            connection:,
+            character_id: row.character_id,
+            items: character.starting_items,
+          )
+        _ -> Ok(Nil)
+      })
       pog.Returned(
         ..made,
         rows: list.map(made.rows, fn(row) { MadeRow(row.character_id) }),

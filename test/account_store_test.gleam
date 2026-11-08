@@ -823,6 +823,7 @@ fn a_new_character(name: String) -> store.NewCharacter {
     ],
     // 0xBF800000 is -1.0 and has its top bit set; 0x3F800000 is 1.0.
     bones: [0xBF800000, 0x3F800000, 0],
+    starting_items: [],
   )
 }
 
@@ -919,7 +920,9 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
     == ForSelect(Listed([character]))
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
   assert ask(store, World(LoadCharacter(account, CharacterId(character_id))))
-    == ForWorld(CharacterLoaded(character, character_support.epoch(1), None))
+    == ForWorld(
+      CharacterLoaded(character, character_support.epoch(1), None, []),
+    )
     as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
   stop(store)
 }
@@ -984,30 +987,33 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
       path: 2,
     )
   assert ask(store, World(LoadCharacter(account, CharacterId(mine))))
-    == ForWorld(CharacterLoaded(
-      Character(
-        character_id: CharacterId(mine),
-        name: "Zed Qu",
-        gender: 1,
-        race_id: RaceId(3),
-        class_id: ClassId(4),
-        faction_id: 166,
-        level: 9,
-        path: 2,
-        place: Some(place_support.at(
-          world_id: 1387,
-          world_zone_id: 1100,
-          x: 1.5,
-          y: 2.5,
-          z: 3.5,
-        )),
-        look: [],
-        bones: [],
-        naming: NameStands,
+    == ForWorld(
+      CharacterLoaded(
+        Character(
+          character_id: CharacterId(mine),
+          name: "Zed Qu",
+          gender: 1,
+          race_id: RaceId(3),
+          class_id: ClassId(4),
+          faction_id: 166,
+          level: 9,
+          path: 2,
+          place: Some(place_support.at(
+            world_id: 1387,
+            world_zone_id: 1100,
+            x: 1.5,
+            y: 2.5,
+            z: 3.5,
+          )),
+          look: [],
+          bones: [],
+          naming: NameStands,
+        ),
+        character_support.epoch(1),
+        None,
+        [],
       ),
-      character_support.epoch(1),
-      None,
-    ))
+    )
     as "the row as character_support inserted it: the saved world, zone and position come with it, the epoch the load raised from 0 to 1, and no saved health: a character never saved enters at full health"
   assert ask(store, World(LoadCharacter(account, CharacterId(theirs))))
     == ForWorld(NotTheAccounts)

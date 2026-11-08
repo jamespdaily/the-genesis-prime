@@ -77,11 +77,14 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
       taken:,
       outcome: step.Answer(
         FromStore(
-          ForWorld(CharacterLoaded(
-            game_connection_support.world_character(),
-            character_support.epoch(1),
-            None,
-          )),
+          ForWorld(
+            CharacterLoaded(
+              game_connection_support.world_character(),
+              character_support.epoch(1),
+              None,
+              [],
+            ),
+          ),
         ),
       ),
     )
@@ -376,11 +379,14 @@ pub fn an_answer_that_is_none_world_entry_asked_for_is_a_bug_with_reason_8_and_a
         game_connection_support.joining(),
         step.Answer(
           FromStore(
-            ForWorld(CharacterLoaded(
-              game_connection_support.world_character(),
-              character_support.epoch(1),
-              None,
-            )),
+            ForWorld(
+              CharacterLoaded(
+                game_connection_support.world_character(),
+                character_support.epoch(1),
+                None,
+                [],
+              ),
+            ),
           ),
         ),
       ),

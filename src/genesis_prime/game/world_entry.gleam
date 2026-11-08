@@ -207,12 +207,14 @@ pub opaque type State {
   /// go on numbered after the earlier ones (`movement.placed`). `saved_health`
   /// is the health the character's last save kept, which a play enters at
   /// (`player_life.entering`) and the Holocrypt's join does not have: it enters
-  /// at full health.
+  /// at full health. `items` are the items the character holds, which the
+  /// Holocrypt's join keeps from the stay it leaves.
   Joining(
     character: Character,
     place: Place,
     movement: movement.State,
     saved_health: Option(Int),
+    items: List(store.HeldItem),
     map: MapId,
     stay: Stay,
     entry: Entry,
@@ -279,6 +281,9 @@ pub type Entered {
     unit_id: Int,
     unit: UnitCreatePlayer,
     loadout: Loadout,
+    /// The items the character holds, as the store saved them: each with its
+    /// own guid, its item2 id, where it is held and how many it stacks.
+    items: List(store.HeldItem),
     max_health: Int,
     clock_origin_ms: Int,
     viewers: Dict(ConnectionId, Stay),
@@ -424,7 +429,7 @@ pub fn loaded(
               <> int.to_string(character_id)
               <> ", which the account does not have",
           )
-        store.CharacterLoaded(character:, session_epoch:, saved_health:) ->
+        store.CharacterLoaded(character:, session_epoch:, saved_health:, items:) ->
           case character.place {
             None ->
               Refused(
@@ -439,6 +444,7 @@ pub fn loaded(
                 place:,
                 movement: movement.entered(place:, session_epoch:),
                 saved_health:,
+                items:,
                 connection:,
                 stay:,
                 tables:,
@@ -456,6 +462,7 @@ fn joining_a_play(
   place place: Place,
   movement movement: movement.State,
   saved_health saved_health: Option(Int),
+  items items: List(store.HeldItem),
   connection connection: ConnectionId,
   stay stay: Stay,
   tables tables: table_store.Tables,
@@ -479,6 +486,7 @@ fn joining_a_play(
           place:,
           movement:,
           saved_health:,
+          items:,
           connection:,
           stay:,
           entry: PlayEntry(character_state: frame),
@@ -502,7 +510,16 @@ pub fn joined(
   defaults defaults: List(#(UnitProperty2Id, Float)),
 ) -> Result(Joined, Nil) {
   case state {
-    Joining(character:, place:, movement:, saved_health:, map:, stay:, entry:) -> {
+    Joining(
+      character:,
+      place:,
+      movement:,
+      saved_health:,
+      items:,
+      map:,
+      stay:,
+      entry:,
+    ) -> {
       case answer {
         map.Joined(unit:, loadout:, max_health:, incarnation:, clock_origin_ms:) -> {
           let sent = start_place.within_the_worlds_box(place)
@@ -549,6 +566,7 @@ pub fn joined(
               unit_id:,
               unit:,
               loadout:,
+              items:,
               max_health:,
               clock_origin_ms:,
               viewers: dict.new(),
@@ -656,6 +674,7 @@ pub fn rejoining(
     place:,
     movement: movement.placed(state: entered.movement, place:),
     saved_health: None,
+    items: entered.items,
     connection:,
     stay:,
     entry: HolocryptEntry,
@@ -671,24 +690,37 @@ fn joining(
   place place: Place,
   movement movement: movement.State,
   saved_health saved_health: Option(Int),
+  items items: List(store.HeldItem),
   connection connection: ConnectionId,
   stay stay: Stay,
   entry entry: Entry,
 ) -> #(State, List(Effect)) {
   let map =
     MapId(world_id: start_place.world_id(place), instance: open_world_instance)
-  #(Joining(character:, place:, movement:, saved_health:, map:, stay:, entry:), [
-    AskMap(
+  #(
+    Joining(
+      character:,
+      place:,
+      movement:,
+      saved_health:,
+      items:,
       map:,
-      message: map.Join(
-        connection:,
-        character:,
-        place: start_place.within_the_worlds_box(place),
-        stay:,
-        alive: bool.negate(player_life.saved_dead(saved: saved_health)),
-      ),
+      stay:,
+      entry:,
     ),
-  ])
+    [
+      AskMap(
+        map:,
+        message: map.Join(
+          connection:,
+          character:,
+          place: start_place.within_the_worlds_box(place),
+          stay:,
+          alive: bool.negate(player_life.saved_dead(saved: saved_health)),
+        ),
+      ),
+    ],
+  )
 }
 
 /// 0xAD with the saved world and position, and 0.0 in the last two floats.
