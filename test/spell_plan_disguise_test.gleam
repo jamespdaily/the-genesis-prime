@@ -33,7 +33,6 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import gleam/list
 import gleam/option.{None}
-import owned_key
 import owned_test
 import planted_table.{Integer}
 import spell_tables
@@ -102,17 +101,14 @@ fn with_items(body body: fn(table_store.Tables) -> a) -> a {
     planted_table.file(item_slot.schema, [slot(20), slot(64)]),
   ])
   let assert Ok(tables) =
-    table_store.load(
-      under: owned_key.new(),
+    table_store.read(
       from: folder,
       entries: [item_display.entry(), item2_type.entry(), item_slot.entry()],
       requirements: [],
       derivations: [],
     )
     as "the planted item tables load"
-  let result = body(tables)
-  table_store.unload(tables)
-  result
+  body(tables)
 }
 
 fn modifier_of(

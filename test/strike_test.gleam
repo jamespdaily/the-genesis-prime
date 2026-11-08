@@ -852,8 +852,7 @@ fn picture() -> shown.Picture {
 
 pub fn the_caster_selects_the_foes_inside_kicks_cone_nearest_first_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(areas) = area_tables.built(kick: area_tables.kick())
-    as "the planted Kick builds"
+  let areas = spell_tables.fixture_areas()
   let chosen =
     strike.select(
       asked: asked(cast_id: 5, phase: 0),
@@ -895,8 +894,7 @@ pub fn a_damage_aimed_at_the_cast_target_strikes_the_primary_target_alone_test()
 
 pub fn a_spell_the_areas_do_not_hold_strikes_nobody_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(areas) = area_tables.built(kick: area_tables.kick())
-    as "the planted Kick builds"
+  let areas = spell_tables.fixture_areas()
   let chosen =
     strike.select(
       asked: GoAsked(
@@ -1054,21 +1052,10 @@ pub fn each_pulse_of_electrocutes_channel_selects_the_foes_its_area_row_names_te
 
 // ---- a spell with an innate cost EMM id strikes with the effects its n chooses ----
 
-/// The areas of the planted rows with Mind Burst's spend as the client's rows hold it
-/// (`spell_tables.rows_with_mind_burst_spend`).
+/// The areas of the client's rows, where Mind Burst spends every Psi Point held
+/// (`Spell4.32809`).
 fn mind_burst_areas() -> spell_area.Areas {
-  let assert Ok(areas) =
-    spell_tables.with_loaded_deriving(
-      rows: spell_tables.rows_with_mind_burst_spend(
-        emm_id: 4,
-        cost: #(6, 1),
-        damage: spell_tables.mind_burst_damage,
-      ),
-      derivations: [spell_plan.derivation()],
-      body: fn(tables) { spell_area.build(tables:) },
-    )
-    as "the planted Mind Burst builds its areas"
-  areas
+  spell_tables.fixture_areas()
 }
 
 /// The go the cast rule asks for when an Esper holding `points` Psi Points presses
@@ -1076,7 +1063,7 @@ fn mind_burst_areas() -> spell_area.Areas {
 fn mind_burst_go(points points: Int) -> GoAsked {
   let assert Ok(mind_burst) =
     spell_plan.in_plans(
-      plans: spell_tables.plans_with_mind_burst_spend(),
+      plans: spell_tables.fixture_plans(),
       base: id.Spell4BaseId(19_019),
     )
     as "the planted Esper holds Mind Burst"

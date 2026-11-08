@@ -124,7 +124,7 @@ pub fn telekinetic_strike_striking_2_foes_gives_1_psi_point_once_test() -> Nil {
 
 pub fn energize_gives_4_actuators_and_logs_its_ticking_gain_test() -> Nil {
   use <- owned_test.run(5000)
-  let plans = spell_tables.plans_with_energize()
+  let plans = spell_tables.fixture_plans()
   let effects =
     pressed_through(
       plans:,

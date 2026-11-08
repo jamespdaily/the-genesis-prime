@@ -9,10 +9,11 @@
 ////   the application's root, stops through OTP, and the VM halts with status
 ////   0. A node whose program crashes while it runs ends with status 1
 ////   (`genesis_prime@@main`, which `gleam run` starts the server with).
-//// - The tree's restart limit, 3 restarts in 10 seconds
-////   (`genesis_prime/server`): a fourth restart in that time ends the tree
-////   with the reason `shutdown`, the reason of a stop too, so only the node's
-////   own state tells the two ends apart.
+//// - The tree's restart limit (`genesis_prime/server`, the settings'
+////   `tree_restarts`; the server's is 3 restarts in 10 seconds, the test's
+////   node has an hour as its period): a fourth restart in the period ends the
+////   tree with the reason `shutdown`, the reason of a stop too, so only the
+////   node's own state tells the two ends apart.
 //// - The ready line is printed only when the server can serve: the database
 ////   answered and no stop has begun.
 //// Each test starts a node of its own (`serving_node`), sends it SIGTERM or

@@ -62,6 +62,10 @@ pub const watch_command = 0x57
 
 pub const timer_command = 0x54
 
+/// Starts the timer whose id is the number's negative, which no rule's timer
+/// may have.
+pub const negative_timer_command = 0x4E
+
 pub const cancel_command = 0x58
 
 pub const pong_command = 0x50
@@ -256,6 +260,8 @@ fn command(
       ))
     _ if letter == timer_command ->
       OwnEffect(StartTimer(TimerId(n), milliseconds))
+    _ if letter == negative_timer_command ->
+      OwnEffect(StartTimer(TimerId(-n), milliseconds))
     _ if letter == cancel_command -> OwnEffect(CancelTimer(TimerId(n)))
     _ if letter == pong_command ->
       connection_rule_support.record(letter: pong, number: n)

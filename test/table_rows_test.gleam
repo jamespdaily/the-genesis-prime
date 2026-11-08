@@ -39,7 +39,6 @@ import gleam/dynamic/decode
 import gleam/int
 import gleam/list
 import gleam/string
-import owned_key
 import owned_test
 import planted_table.{Boolean, Float, Integer, Text}
 import unitest
@@ -443,8 +442,7 @@ fn read_both_ways(
     as "the command reads the planted table"
   use folder <- planted_table.in_folder([#(schema.file, bytes)])
   let assert Ok(tables) =
-    store.load(
-      under: owned_key.new(),
+    store.read(
       from: folder,
       entries: [entry],
       requirements: [],
@@ -452,7 +450,6 @@ fn read_both_ways(
     )
     as "the generated module loads the planted table"
   let fields = list.map(generated(tables), record_fields)
-  store.unload(tables)
   list.zip(fields, list.map(read.rows, table_rows.cells))
 }
 

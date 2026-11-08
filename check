@@ -57,7 +57,8 @@
 #   gleam-test     the tests, started on the built code, with GENESIS_TEST_WORKERS module groups at
 #                  once (default 2; each group also runs its tests at once),
 #                  then the tests tagged serial, one at a time; the test tagged
-#                  world_data is left to the world-data part, and the tests tagged
+#                  world_data is left to the world-data part, the test tagged
+#                  client_rows to the client-suite part, and the tests tagged
 #                  dev_tool (the developer tools' own, run by hand with
 #                  `gleam test -- --tag dev_tool`) are skipped
 #                                                       (after gleam-build)
@@ -90,7 +91,9 @@
 #                  GENESIS_INTEGRATION=0, whatever the caller exported), then, except
 #                  where GENESIS_NO_CLIENT=1, `client_files.py tokens --check`: the
 #                  committed test/fixture/tooltip_tokens/tokens.tsv against the client's
-#                  en-US.bin and Spell4.tbl
+#                  en-US.bin and Spell4.tbl, and the test tagged client_rows, started
+#                  on the built code: the committed test/fixture/client_tables against
+#                  the client's tables                  (after gleam-build)
 #   fact-checker   check_facts.py over the fact file
 #
 # The database is on the Postgres named by PGHOST, PGPORT and PGUSER (defaults
@@ -158,31 +161,17 @@ test_workers=${GENESIS_TEST_WORKERS:-2}
 # The literal region of the test VM, in bytes: literal_alloc's super carrier, 1024
 # MiB unless +MIscs says otherwise (the check refuses that). A new carrier needs
 # one free stretch of it, and a fill test in a fresh VM stopped at 97% of it, so
-# a run that nears the region dies partway with `literal_alloc: Cannot allocate`:
-# main did, at 99.3% (1,066,336,256 bytes), holding 1.0 GiB of live terms (the
-# client's 384 tables 587 MiB, the server's 36 of them again 306 MiB, leaked
-# planted loads 70 MiB and growing). With each table held once and no test
-# leaving terms, what comes and goes above the live terms is the erased terms
-# waiting for the VM to release them (one round over all processes per erased
-# term, taking seconds when a dozen tests end together) and the loads in flight.
-# A test's load starts only when the allocator holds at most 32 MB beyond the
-# live terms, and a test holds one of two places among the loads from its first
-# key to its end (test/owned_key.gleam). That bounds the erased terms waiting for
-# release and the planted loads in flight. It does not bound the loads that take
-# no place (the server's own key's content loads and the shared loads made once
-# per run), nor the carriers' fragmentation, so the peak stays above the live
-# terms by more than the gate's own allowance. The highest carriers of eleven runs
-# with one test worker (the default; more workers run more tests at once), on
-# eight seeds of the test order, were 74.1% to 78.7% of the region,
-# where the same seeds without the gate gave 79.2% to 83.1%, and four workers
-# without it fill the region and end the VM. The limit is 85%: it fails at 870
-# MiB, 6.3 points above the worst run measured, so a good run does not fail, and
-# it leaves 154 MiB free, 1.4
-# times the largest table the suite puts (Spline2Node, 115.7 MB), and 123 MiB
-# before the 97% where the VM dies. A run over it fails the check, so the margin
-# cannot vanish unnoticed again. The limit is not set from outside: +MIscs is
-# refused, and a higher limit is a change to this line with the measurement that
-# justifies it.
+# a run that nears the region dies partway with `literal_alloc: Cannot allocate`.
+# The client's tables are persistent terms held once for the run, and a `Tables`
+# is only a handle of their keys and its own edits, so a copy of it (an ETS
+# insert, a spawn, Ranch's protocol options) copies no table. The test VM's
+# first run peaked at 717 MiB (70.0%) and the world-data VM's at 655 MiB
+# (64.0%), under the 85% limit below. The limit is 85%: it fails at 870 MiB and
+# leaves 154 MiB free, 1.4 times the largest table the suite puts (Spline2Node,
+# 115.7 MB), and 123 MiB before the 97% where the VM dies. A run over it fails
+# the check, so the margin cannot vanish unnoticed again. The limit is not set
+# from outside: +MIscs is refused, and a higher limit is a change to this line
+# with the measurement that justifies it.
 literal_region_bytes=1073741824
 literal_limit_percent=85
 
@@ -548,7 +537,9 @@ wait_for_status() {
 # ports), so they run one at a time, in a second run; the first run skips them
 # (GENESIS_TEST_SKIP_SERIAL, read by test/genesis_prime_test.gleam). The test tagged
 # world_data, which takes about a minute alone, is the world-data part's: the first
-# run skips it too (GENESIS_TEST_SKIP_WORLD_DATA).
+# run skips it too (GENESIS_TEST_SKIP_WORLD_DATA), and the test tagged client_rows,
+# which reads the client's whole tables, is the client-suite part's
+# (GENESIS_TEST_SKIP_CLIENT_ROWS).
 #
 # The first run also keeps the literal allocator's highest carriers size in
 # $work/literal-peak (GENESIS_LITERAL_PEAK_FILE, read by test/genesis_prime_test.gleam),
@@ -557,10 +548,10 @@ wait_for_status() {
 gleam_test() {
   local status=0
   if [ -n "$test_workers" ]; then
-    GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
+    GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
       run_built genesis_prime_test --workers "$test_workers" || status=1
   else
-    GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
+    GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
       run_built genesis_prime_test || status=1
   fi
   run_built genesis_prime_test --tag serial || status=1
@@ -614,12 +605,19 @@ literal_area_check() {
 }
 
 # The client scripts' tests that need no Ghidra, then, where the client's files are (not
-# GENESIS_NO_CLIENT=1), the committed list of the tooltip tokens against a fresh read of them.
+# GENESIS_NO_CLIENT=1), the committed list of the tooltip tokens and the committed client
+# rows against a fresh read of them. The rows' test starts on the code gleam-build built.
 client_suite() {
   local status=0
   env GENESIS_INTEGRATION=0 python3.13 -I -m unittest discover -s "$client_scripts" -p 'test_*.py' || status=1
   if [ "${GENESIS_NO_CLIENT:-}" != 1 ]; then
     python3.13 -I "$client_scripts/client_files.py" tokens --check || status=1
+    if wait_for_status gleam-build; then
+      run_built genesis_prime_test --tag client_rows || status=1
+    else
+      echo "the committed client rows were not checked: gleam-build failed"
+      status=1
+    fi
   fi
   return $status
 }

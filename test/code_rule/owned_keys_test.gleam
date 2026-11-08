@@ -75,6 +75,49 @@ pub fn a_store_key_made_for_the_spawn_terms_is_a_breach_test() -> Nil {
     as "the spawn terms are written under the key made on line 5"
 }
 
+pub fn a_stored_load_of_a_planted_read_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    test_module("test/some_test.gleam", [
+      "import genesis_prime/table/loader/store",
+      "fn load(folder, entry) {",
+      "  let assert Ok(tables) = store.read(from: folder, entries: [entry], requirements: [], derivations: [])",
+      "  store.store_under(tables:)",
+      "}",
+    ])
+  assert planted.lines(owned_keys.breaches([file])) == [5]
+    as "the stored load is made on line 5, with no key a test owns"
+}
+
+pub fn a_stored_load_is_a_breach_in_every_module_but_the_three_shared_ones_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let lines = [
+    "import genesis_prime/table/loader/store as table_store",
+    "fn keep(tables) { table_store.store_under(tables:) }",
+  ]
+  assert list.map(
+      [
+        "test/owned_key.gleam",
+        "test/owned_key_test.gleam",
+        "test/table_load_test.gleam",
+      ],
+      fn(path) {
+        planted.lines(owned_keys.breaches([test_module(path, lines)]))
+      },
+    )
+    == [[3], [3], [3]]
+    as "the modules exempt from the key rules are not exempt from this one"
+  assert owned_keys.breaches([
+      test_module("test/client_tables.gleam", lines),
+      test_module("test/character_tables.gleam", lines),
+      test_module("test/fixture_tables.gleam", lines),
+    ])
+    == []
+    as "the shared modules store the values every test shares for the run"
+}
+
 pub fn a_key_made_with_owned_key_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
@@ -82,8 +125,8 @@ pub fn a_key_made_with_owned_key_is_not_a_breach_test() -> Nil {
     test_module("test/some_test.gleam", [
       "import genesis_prime/table/loader/store",
       "import owned_key",
-      "fn load(folder, entry) {",
-      "  store.load(under: owned_key.new(), from: folder, entries: [entry])",
+      "fn put() {",
+      "  store.put_content(key: owned_key.new_key(), table: \"T\", id: 1, value: 1)",
       "}",
     ])
   assert owned_keys.breaches([file]) == []
@@ -113,6 +156,7 @@ pub fn the_modules_that_make_the_shared_loads_are_not_read_test() -> Nil {
   assert owned_keys.breaches([
       test_module("test/client_tables.gleam", lines),
       test_module("test/character_tables.gleam", lines),
+      test_module("test/fixture_tables.gleam", lines),
     ])
     == []
 }

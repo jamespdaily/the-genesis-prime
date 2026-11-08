@@ -12,7 +12,8 @@
 //// One service, from start to end:
 ////
 //// ```
-//// supervisor starts it ─▶ the actor registers its name, traps exits
+//// supervisor starts it ─▶ the actor registers its name (a named one), joins
+////                          its address (one found at an address), traps exits
 ////   OwnEvent(Started)                               ─▶ step ─▶ effects
 ////   after each step's effects, before the mailbox is read:
 ////     a creature that did not start ─▶ OwnEvent(CreatureNotStarted(id, reason)) ─▶ step ─▶ effects
@@ -121,7 +122,7 @@ import genesis_prime/connection/script.{type Elapsed}
 import genesis_prime/group_registry.{type Scope}
 import genesis_prime/service.{type Call, type Reach, Call, TellCall}
 import genesis_prime/step.{
-  type CreatureStart, type Effect, type Event, type ServiceEffect,
+  type Address, type CreatureStart, type Effect, type Event, type ServiceEffect,
   type ServiceEvent, type ServiceRule, type TimerId, type WatchId, Asked,
   CallerId, CancelServiceTimer, CreatureNotStarted, Effects, EffectsThenAsk,
   Input, LogError, OwnEffect, OwnEvent, Reply, Send, ServiceTimerFired,
@@ -151,11 +152,17 @@ pub type Settings(settings, state, message, outgoing) {
     /// How long it has to stop once the supervisor stops it; the child's
     /// shutdown timeout.
     shutdown_ms: Int,
-    /// The scope a process that finds it by an address tells it through
-    /// (genesis_prime/group_registry), or `None` for a service told only by its
-    /// subject.
-    told_through: Option(Scope(Call(message, outgoing))),
+    /// The address it is found at and the scope it is told through there, or
+    /// `None` for a service told only by its subject.
+    found_at: Option(FoundAt(message, outgoing)),
   )
+}
+
+/// Where a service is found by an address (genesis_prime/group_registry). The
+/// shell joins the address before its rule's first step, so any process that
+/// has what the service sends can find it.
+pub type FoundAt(message, outgoing) {
+  FoundAt(scope: Scope(Call(message, outgoing)), address: Address)
 }
 
 /// What reaches the actor: a call, an exit signal it traps, a timer's firing,
@@ -247,7 +254,8 @@ fn select_told(
 }
 
 /// Registers the name (a named service) or makes the subject its callers send
-/// to (an unnamed one), traps exits and takes `Started`.
+/// to (an unnamed one), joins its address when it is found at one, traps exits
+/// and takes `Started`.
 fn initialise(
   settings settings: Settings(settings, state, message, outgoing),
   parent parent: Pid,
@@ -267,6 +275,11 @@ fn initialise(
       |> result.replace_error(NameTaken)
     None -> Ok(process.new_subject())
   })
+  case settings.found_at {
+    Some(FoundAt(scope:, address:)) ->
+      group_registry.join(scope:, group: address, pid: process.self())
+    None -> Nil
+  }
   process.trap_exits(True)
   let elapsed = process.new_subject()
   let rule = settings.rule
@@ -290,7 +303,9 @@ fn initialise(
     process.new_selector()
     |> process.select_other(Stray)
     |> process.select_map(calls, Called)
-    |> select_told(scope: settings.told_through)
+    |> select_told(
+      scope: option.map(settings.found_at, fn(found_at) { found_at.scope }),
+    )
     |> process.select_map(elapsed, fn(fired) {
       TimerElapsed(timer: fired.timer, reference: fired.reference)
     })

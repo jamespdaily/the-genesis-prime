@@ -8,8 +8,8 @@
 //// A function of a test module is a breach when it gets the client's table
 //// folder (`client_tables.folder()`, or `genesis_prime.load_tables()`, which
 //// reads the same folder) and reaches a table load (`load` of
-//// `genesis_prime/table` or of the loader's store, `load_under`, `load_for_server`
-//// or `load_more`, `load_content_tables`, or `genesis_prime.load_tables()` or
+//// `genesis_prime/table` or of the loader's store, `read`, `load_for_server`
+//// or `read_more`, `load_content_tables`, or `genesis_prime.load_tables()` or
 //// `genesis_prime.load_content()`, which loads the content-only tables from the
 //// same folder). Both may be one call
 //// away: a function of the same module that returns the folder, or that loads
@@ -17,7 +17,9 @@
 //// function is reported, not the functions that call it. Modules are read one
 //// at a time, so a helper in another test module that loads from the folder
 //// it is given is not followed. `test/client_tables.gleam` itself is the one
-//// place allowed to load.
+//// place allowed to load the client's folder, and `test/fixture_tables.gleam`
+//// the one place allowed to load the client's rows kept as files
+//// (`fixture_tables.folder`): a test reads either from the module's `shared()`.
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
@@ -30,7 +32,10 @@ import gleam/set.{type Set}
 /// The path of the one module that loads the client's real tables.
 pub const loader_path = "test/client_tables.gleam"
 
-const folder_module = "client_tables"
+/// The path of the one module that loads the client's rows kept as files.
+pub const fixture_loader_path = "test/fixture_tables.gleam"
+
+const folder_modules = ["client_tables", "fixture_tables"]
 
 const folder_function = "folder"
 
@@ -41,19 +46,23 @@ pub const loading_modules = [
 ]
 
 pub const loading_functions = [
-  "load", "load_under", "load_for_server", "load_more", "load_content_tables",
+  "load", "read", "load_for_server", "read_more", "load_content_tables",
+  "store_under",
 ]
 
 const real_load_module = "genesis_prime"
 
 const real_load_functions = ["load_tables", "load_content"]
 
-/// Each function in the files, outside `test/client_tables.gleam`, that gets
-/// the client's table folder and calls a table load, reported at the first
-/// load or call to a function that loads, in order of line.
+/// Each function in the files, outside `test/client_tables.gleam` and
+/// `test/fixture_tables.gleam`, that gets the client's or the fixture's table
+/// folder and calls a table load, reported at the first load or call to a
+/// function that loads, in order of line.
 pub fn breaches(files: List(SourceFile)) -> List(Breach) {
   files
-  |> list.filter(fn(file) { file.path != loader_path })
+  |> list.filter(fn(file) {
+    file.path != loader_path && file.path != fixture_loader_path
+  })
   |> list.flat_map(fn(file) {
     list.sort(file_breaches(file), fn(first, second) {
       int.compare(first.line, second.line)
@@ -115,7 +124,7 @@ fn file_breaches(file: SourceFile) -> List(Breach) {
             Ok(Breach(
               path: file.path,
               line: syntax.line_of(file.text, span.start),
-              rule: "a function gets the client's table folder and loads tables from it; read the tables from `client_tables.shared()` or `client_tables.every_table()`",
+              rule: "a function gets the client's or the fixture's table folder and loads tables from it; read the tables from `client_tables.shared()`, `client_tables.every_table()` or `fixture_tables.shared()`",
             ))
           Error(Nil) -> Error(Nil)
         }
@@ -155,7 +164,7 @@ fn describe(
       named: real_load_functions,
     )
   let folder =
-    syntax.references_to(alone, from: [folder_module], named: [folder_function])
+    syntax.references_to(alone, from: folder_modules, named: [folder_function])
   let loads =
     syntax.references_to(alone, from: loading_modules, named: loading_functions)
   let callees =

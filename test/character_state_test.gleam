@@ -23,7 +23,6 @@ import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
 import novice_tables
-import owned_key
 import owned_test
 import planted_table
 import unitest
@@ -47,8 +46,7 @@ fn load(
       }),
     ),
   ])
-  table_store.load(
-    under: owned_key.new(),
+  table_store.read(
     from: folder,
     entries: [class.entry()],
     requirements: character_state.requirements(),
@@ -58,9 +56,8 @@ fn load(
 
 pub fn the_table_load_fails_when_a_playable_class_has_no_class_row_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(tables) = load(classes: playable)
+  let assert Ok(_) = load(classes: playable)
     as "the six playable classes' rows load"
-  table_store.unload(tables)
   list.each(playable, fn(missing) {
     assert load(classes: list.filter(playable, fn(class) { class != missing }))
       == Error(table_store.RowMissing(

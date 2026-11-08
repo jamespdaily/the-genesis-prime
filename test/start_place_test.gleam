@@ -37,7 +37,6 @@ import genesis_prime/table/world_location2
 import gleam/float
 import gleam/int
 import gleam/list
-import owned_key
 import owned_test
 import place_support
 import planted_table.{Float, Integer}
@@ -352,8 +351,7 @@ fn load_with_rows(
   ids: List(Int),
 ) -> Result(table_store.Tables, table_store.LoadError) {
   use folder <- planted_table.in_folder([world_location2_file(ids)])
-  table_store.load(
-    under: owned_key.new(),
+  table_store.read(
     from: folder,
     entries: [world_location2.entry()],
     requirements: [start_place.requirement()],
@@ -364,9 +362,8 @@ fn load_with_rows(
 pub fn the_table_load_fails_when_a_start_places_row_is_missing_test() -> Nil {
   use <- owned_test.run(60_000)
   let all = list.map(character_tables.start_rows(), fn(row) { row.id })
-  let assert Ok(tables) = load_with_rows(all)
+  let assert Ok(_) = load_with_rows(all)
     as "every row of the start places loads"
-  table_store.unload(tables)
   list.each(all, fn(missing) {
     assert load_with_rows(list.filter(all, fn(id) { id != missing }))
       == Error(table_store.RowMissing(

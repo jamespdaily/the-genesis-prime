@@ -189,7 +189,8 @@ pub fn the_holocrypts_join_starts_the_passive_again_test() -> Nil {
       state:,
       taken:,
       outcome: step.Answer(
-        FromMap(connection_support.with_the_clients_loadout(
+        FromMap(connection_support.with_the_tables_loadout(
+          tables: client_tables.shared(),
           joined:,
           class_id: 1,
         )),

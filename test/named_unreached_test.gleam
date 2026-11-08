@@ -52,9 +52,9 @@ fn list_of(rows: List(String)) -> tooltip_token.Tokens {
 const volatility =
   server_proxy.Row(spell4_base_id: 26_468, phase: 1, spell4_id: 42_148)
 
-/// The planted Volatility rows with Pulse Blast's text columns set.
+/// The client's rows with Pulse Blast's text columns set.
 fn rows_with_blast_texts(columns: List(#(String, Int))) -> spell_tables.Rows {
-  let rows = spell_tables.rows_with_volatility()
+  let rows = spell_tables.fixture_rows()
   spell_tables.Rows(
     ..rows,
     spell4: list.map(rows.spell4, fn(row) {
@@ -83,6 +83,7 @@ fn named_in(
 ) -> #(named_unreached.Named, List(Int)) {
   spell_tables.with_loaded_deriving(
     rows:,
+    reaching: [#("SpellLevel", 1111), #("Spell4", 42_148)],
     derivations: [spell_plan.derivation()],
     body: fn(tables) {
       let reached = reached_ids(tables:, proxies:)

@@ -28,6 +28,7 @@ import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started.{type SpellStarted}
 import genesis_prime/step.{ConnectionId, LogDebug}
 import gleam/bool
+import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/result
@@ -525,12 +526,14 @@ pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_3879
       struck: foe,
       at: 1000,
     )
-  let assert [multiphase_frame] =
+  let assert [multiphase_frame, fluff_frame] =
     list.filter(support.writes(effects:), fn(frame) {
       frame.message_id == 0x07FF
     })
-    as "Stagger's go is followed by one start, of its Proxy 38780"
+    as "Stagger's go is followed by two starts: Spell4Effects 83853 and 114677 are the two Proxies of Spell4 38791, to 38780 and 48585"
   let multiphase = started_of(multiphase_frame)
+  assert started_of(fluff_frame).spell4_id == 48_585
+    as "Spell4Effects 114677: the second Proxy of 38791 starts 48585"
   assert multiphase.spell4_id == 38_780
     && multiphase.root_spell4_id == 38_791
     && multiphase.parent_spell4_id == 38_791
@@ -576,11 +579,11 @@ pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_3879
       list.map(children, fn(child) { child.cast_id }),
     )
   assert list.length(list.unique([support.pressed_id(effects:), ..every_start]))
-    == 6
-    as "Stagger, 38780 and the four 38781 are six casts of one caster, each with an id of its own (0x140561c30: one table for every unit)"
+    == 7
+    as "Stagger, 38780, 48585 and the four 38781 are seven casts of one caster, each with an id of its own (0x140561c30: one table for every unit)"
 }
 
-pub fn gate_casts_starts_its_cooldown_and_sends_no_target_in_any_go_test() -> Nil {
+pub fn gate_casts_starts_its_cooldown_and_names_only_the_caster_in_its_go_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, effects) =
     support.pressed(state: cast.new(), bag_index: 5, target: 0, at: 1000)
@@ -594,11 +597,25 @@ pub fn gate_casts_starts_its_cooldown_and_sends_no_target_in_any_go_test() -> Ni
         False -> Error(Nil)
       }
     })
-  assert gos != [] && list.all(gos, fn(targets) { targets == [] })
-    as "Spell4.34355: Gate deals no damage and this step strikes nothing: every go names no target"
-  assert list.map(support.started_timers(effects:), fn(started) { started.1 })
-    == [200, 140]
-    as "Spell4Effects 67778 and 67779: the Proxies to 25190 and 30436 start 200 and 140 ms after the go"
+  assert list.map(gos, fn(targets) {
+      list.map(targets, fn(target) {
+        #(
+          target.unit_id,
+          list.sort(
+            list.map(target.effects, fn(effect) { effect.spell4_effects_id }),
+            int.compare,
+          ),
+        )
+      })
+    })
+    == [[#(7, [67_776, 67_777])]]
+    as "Spell4.34355: Gate deals no damage and this step strikes nothing: its rows 67776 and 67777 (targetFlags 1) are the caster's own, so the go names the caster alone, with those two effects"
+  assert list.sort(
+      list.map(support.started_timers(effects:), fn(started) { started.1 }),
+      int.compare,
+    )
+    == [140, 180, 200, 580, 580]
+    as "Spell4Effects 67778 and 67779: the Proxies to 25190 and 30436 start 200 and 140 ms after the go; 67777 is the caster's property modifier (type 11, delay 180, durationTime 400), which starts at 180 and ends at 580, and its node ends at 580"
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
   let children =
     list.flat_map(fired, fn(step) {

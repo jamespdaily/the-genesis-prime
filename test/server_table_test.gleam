@@ -116,7 +116,6 @@ pub fn planted_load() -> Nil {
   assert visuals
     == [ItemVisual(slot: 25, display_id: 135, item_color_set_id: 0, dye: 0)]
     as "CharacterCustomization row 2: an Exile human male with labels 22 = 1 and 2 = 1 shows display 135 in slot 25, from the index the load built"
-  table_store.unload(tables)
 }
 
 pub fn the_servers_load_reads_the_files_of_its_list_and_builds_the_appearance_index_test() -> Nil {

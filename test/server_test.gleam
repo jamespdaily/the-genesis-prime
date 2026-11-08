@@ -40,6 +40,13 @@ import place_support
 import supervisor_children.{ChildSettings}
 import supervisor_flags.{Flags}
 
+pub fn the_servers_own_settings_let_the_tree_restart_3_times_in_10_seconds_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert login_support.servers_settings().tree_restarts
+    == server.Restarts(intensity: 3, period_s: 10)
+    as "the limit the tree's doc comment states, which the settings the server starts with carry into its supervisor"
+}
+
 pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_two_subtrees_and_the_closer_last_in_that_order_each_with_its_settings_stated_test() -> Nil {
   use <- owned_test.run(60_000)
   let started = login_support.start()

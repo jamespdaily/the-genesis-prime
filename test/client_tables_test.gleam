@@ -1,6 +1,6 @@
 //// The shared loads of the client's tables: every test in a run that needs the
-//// real tables gets the one load, so parallel tests never hold several copies
-//// of them in persistent terms at once. `shared` is the server's own tables,
+//// real tables gets the one stored value, so parallel tests never hold several
+//// copies of them in the literal area at once. `shared` is the server's own tables,
 //// as its start loads them, and `every_table` all 384 of the client's.
 
 import client_tables
@@ -59,12 +59,13 @@ pub fn the_shared_load_holds_rows_of_every_table_the_servers_list_names_test() -
   })
 }
 
-pub fn no_table_of_the_client_is_held_by_two_loads_test() -> Nil {
+pub fn every_table_holds_the_servers_tables_and_not_a_copy_of_them_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
-  // Both loads are made before the count, so a second copy would be there.
-  let _server = client_tables.shared()
-  let _every = client_tables.every_table()
-  assert literal_area.tables_held_twice() == []
-    as "each real table is held by one persistent term: the literal area holds the client's 384 tables once, and a second copy of the server's 36 filled it"
+  let server = client_tables.shared()
+  let every = client_tables.every_table()
+  // A copy of the server's 36 tables is 306 MiB more in the literal area, which
+  // filled it; a value that holds the same tables holds the same words of them.
+  assert literal_area.tables_not_shared(server, every) == 0
+    as "every_table holds the tables of shared() themselves: its tables are the same words, not a second copy"
 }

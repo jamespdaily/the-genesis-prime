@@ -750,21 +750,11 @@ pub fn creature_level_rows() -> List(List(Cell)) {
 
 /// The files with the creature auto-attack's Spell4 and Spell4Effects rows added
 /// (`creature_attack_spell4_rows`, `creature_attack_effect_rows`), for a load that
-/// selects spawns, whose attack is their kind's spell. The attack's effect ids make
-/// a Spell4Effects table of over a megabyte (a slot for each id up to 184777): the
-/// shared planted load holds it, and a test's own load that selects spawns passes
-/// `padding` True for one more empty row, so its table is never the same size as the
-/// shared one, which the literal-area check would take for one table loaded twice
-/// (`literal_area.tables_held_twice`).
+/// selects spawns, whose attack is their kind's spell.
 pub fn with_creature_attack(
   files files: List(#(String, BitArray)),
-  padding padding: Bool,
 ) -> List(#(String, BitArray)) {
-  with_creature_attack_multiplier(
-    files:,
-    padding:,
-    multiplier_bits: 1_065_353_216,
-  )
+  with_creature_attack_multiplier(files:, multiplier_bits: 1_065_353_216)
 }
 
 /// `with_creature_attack`, with the attack effects' dataBits00 set to
@@ -772,19 +762,12 @@ pub fn with_creature_attack(
 /// multiplier the load refuses.
 pub fn with_creature_attack_multiplier(
   files files: List(#(String, BitArray)),
-  padding padding: Bool,
   multiplier_bits multiplier_bits: Int,
 ) -> List(#(String, BitArray)) {
   let effects =
     list.flatten([
       spell4_effects_rows(),
       creature_attack_effect_rows_of(multiplier_bits:),
-      case padding {
-        True -> [
-          planted_table.row(spell4_effects.schema, [#("ID", Integer(184_778))]),
-        ]
-        False -> []
-      },
     ])
   list.map(files, fn(file) {
     case file.0 {
@@ -1000,19 +983,18 @@ fn by_id(first: List(Cell), second: List(Cell)) -> order.Order {
   int.compare(first_id, second_id)
 }
 
-/// The planted files of the spell tables with the trees of `spell_tables` (each
-/// the client's own rows) in place of the plain Normal casts; Paralytic Surge,
-/// 42352, stays one instant Normal cast. A table keeps a slot for each id up to
-/// its highest, so the Spell4Effects file, whose rows have ids up to 196522, is
-/// about 1.5 MB: only the tests that cast an ability of another method load these
-/// (`character_tables.shared_with_spell_trees`), and the plain `files` stay small.
+/// The planted files of the spell tables with the trees of `spell_tables.planted_rows`
+/// (each the client's own row, trimmed to what the plan reads) in place of the plain
+/// Normal casts. Paralytic Surge, 42352, stays one instant Normal cast. A table
+/// keeps a slot for each id up to its highest, so the Spell4Effects file, whose rows
+/// have ids up to 196522, is about 1.5 MB.
+/// Gap: these rows are planted, not the client's (issue 326).
 pub fn spell_tree_files() -> List(#(String, BitArray)) {
-  spell_tree_files_of(rows: spell_tables.rows(), creature_attack: False)
+  spell_tree_files_of(rows: spell_tables.planted_rows(), creature_attack: False)
 }
 
-/// The same from these planted rows (`spell_tables.rows_with_volatility`), with the
-/// creature auto-attack's rows too when `creature_attack` (`with_creature_attack`), for the
-/// tables the content load reads the creature kinds from.
+/// The same from these planted rows, with the creature auto-attack's rows too when
+/// `creature_attack`, for the tables the content load reads the creature kinds from.
 pub fn spell_tree_files_of(
   rows rows: spell_tables.Rows,
   creature_attack creature_attack: Bool,

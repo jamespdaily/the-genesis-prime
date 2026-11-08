@@ -28,6 +28,7 @@ import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
+import genesis_prime/message/spell_targets_removed
 import genesis_prime/message/spell_threshold_closed
 import genesis_prime/message/spell_threshold_index
 import genesis_prime/message/spell_threshold_opened
@@ -69,7 +70,7 @@ fn cast_id_of(frame: Frame) -> Result(Int, Nil) {
 
 /// The frames the caster is written, each as the time and a line: `7fd k1`,
 /// `7ff k2 <spell> root <root> parent <parent>`, `7f4 k1 p<phase>`, `7fe k1`,
-/// `816 <spell> <resolving> <cooldown> k1`, `817 <spell> <index>`,
+/// `811 k1` (a cast taken off its targets), `816 <spell> <resolving> <cooldown> k1`, `817 <spell> <index>`,
 /// `814 <spell> <bit>` and `7fc <spell> <result>`.
 fn trace(steps steps: List(Step)) -> List(#(Int, String)) {
   let ids = cast_ids(steps:)
@@ -115,6 +116,10 @@ fn line(frame frame: Frame, label label: fn(Int) -> String) -> String {
       "7f4 " <> label(go.cast_id) <> " p" <> int.to_string(go.phase)
     }
     0x07FE -> "7fe " <> label(support.finished_cast_id(frame))
+    0x0811 -> {
+      let assert Ok(removed) = spell_targets_removed.decode(frame.body)
+      "811 " <> label(removed.cast_id)
+    }
     0x0816 -> {
       let assert Ok(opened) = spell_threshold_opened.decode(frame.body)
       string.join(
@@ -262,11 +267,11 @@ pub fn quick_draw_goes_in_5_phases_and_starts_the_proxies_whose_caster_gate_pass
       #(1766, "7fe k4"),
       #(1766, "7ff k5 43500 root 43468 parent 43468"),
       #(1766, "7f4 k5 p0"),
-      #(1766, "7fe k5"),
       #(2000, "7f4 k1 p4"),
       #(2000, "7fe k1"),
+      #(2756, "7fe k5"),
     ]
-    as "SpellPhase 5882 to 5886: delays 0, 366, 200, 200 and 234, so gos at 0, 366, 566, 766 and 1000 ms with the phase index as the byte (opcode.0x7f4.phase). Spell4Effects 196513 to 196522 have type 26 effects aimed at the caster behind caster apply 17301 (type 15, comparison 2 on 43500: the caster is not under cast 43500) or 17302 (comparison 1: it is); no cast of 43500 is live at a go, so 17301's start and 17302's do not: phase 1 (phaseFlags 2) starts 43498 by 196513, phase 2 (4) 43499 by 196514 and phase 3 (8) 43498 by 196515 and 43500 by 196516; phases 0 and 4 hold only 196522 (17302) and effect 196521 (type 80), which start nothing"
+    as "SpellPhase 5882 to 5886: delays 0, 366, 200, 200 and 234, so gos at 0, 366, 566, 766 and 1000 ms with the phase index as the byte (opcode.0x7f4.phase). Spell4Effects 196513 to 196522 have type 26 effects aimed at the caster behind caster apply 17301 (type 15, comparison 2 on 43500: the caster is not under cast 43500) or 17302 (comparison 1: it is); no cast of 43500 is live at a go, so 17301's start and 17302's do not: phase 1 (phaseFlags 2) starts 43498 by 196513, phase 2 (4) 43499 by 196514 and phase 3 (8) 43498 by 196515 and 43500 by 196516; phases 0 and 4 hold only 196522 (17302) and effect 196521 (type 80), which start nothing; 43500 is a Fluff (Spell4Effects 99472, type 17) with durationTime 990, so its cast k5 finishes 990 ms after its start, at 2756, while the others have no duration and finish at their go"
   assert list.flat_map(steps, fn(step) { started_by_viewer(effects: step.1) })
     == [
       #(43_468, 43_468, 0),
@@ -345,18 +350,30 @@ pub fn discharge_pulses_3_times_each_starting_80382_and_finishes_at_1250_ms_test
       #(1410, "7f4 k1 p0"),
       #(1410, "7ff k2 80382 root 58832 parent 58832"),
       #(1410, "7f4 k2 p0"),
+      #(1410, "7ff k3 42569 root 58832 parent 80382"),
+      #(1410, "7f4 k3 p0"),
       #(1410, "7fe k2"),
       #(1820, "7f4 k1 p1"),
-      #(1820, "7ff k3 80382 root 58832 parent 58832"),
-      #(1820, "7f4 k3 p0"),
-      #(1820, "7fe k3"),
+      #(1820, "7ff k4 80382 root 58832 parent 58832"),
+      #(1820, "7f4 k4 p0"),
+      #(1820, "7ff k5 42569 root 58832 parent 80382"),
+      #(1820, "7f4 k5 p0"),
+      #(1820, "7fe k4"),
       #(2230, "7f4 k1 p2"),
-      #(2230, "7ff k4 80382 root 58832 parent 58832"),
-      #(2230, "7f4 k4 p0"),
-      #(2230, "7fe k4"),
+      #(2230, "7ff k6 80382 root 58832 parent 58832"),
+      #(2230, "7f4 k6 p0"),
+      #(2230, "7ff k7 80383 root 58832 parent 80382"),
+      #(2230, "7f4 k7 p0"),
+      #(2230, "811 k3"),
+      #(2230, "811 k5"),
+      #(2230, "7ff k8 42568 root 58832 parent 80383"),
+      #(2230, "7f4 k8 p0"),
+      #(2230, "7fe k8"),
+      #(2230, "7fe k7"),
+      #(2230, "7fe k6"),
       #(2250, "7fe k1"),
     ]
-    as "opcode.0x7f4.phase: the pulse index is the go's phase byte; Spell4Effects 173926 (phaseFlags -1) proxies 80382 in every phase; the cast ends at channelMaxTime. Gap: the effect 141368 (damage, phaseFlags 1: pulse 0 only) is not in any go, since no go of this step names an effect; it lands with the damage step"
+    as "opcode.0x7f4.phase: the pulse index is the go's phase byte; Spell4Effects 173926 (phaseFlags -1) proxies 80382 in every phase; the cast ends at channelMaxTime. 80382's Proxy 212835 starts Power Charge 42569 behind 33154 (type 59: fewer than 2 stacks of 42569) on pulses 1 and 2 and its Proxy 212838 starts 80383 behind 32921 (exactly 2 stacks) on pulse 3; 80383's row 212836 (type 80) takes both 42569 casts off the caster, oldest first, one 0x811 each (opcode.0x811), and its Proxy 212837 starts 42568, as cast_discharge_test shows. Gap: the effect 141368 (damage, phaseFlags 1: pulse 0 only) is not in any go, since no go of this step names an effect; it lands with the damage step"
   let #(state, _) =
     press(state: cast.new(), bag_index: support.discharge, at: 1000)
   let #(_, quick_draw) = press(state:, bag_index: support.quick_draw, at: 1100)
@@ -760,17 +777,26 @@ pub fn charged_shot_casts_34722_after_level_1_and_36691_after_level_2_and_after_
 
 pub fn charged_shots_cooldown_runs_10_s_from_the_stages_go_test() -> Nil {
   use <- owned_test.run(20_000)
-  let #(state, _) =
+  let #(state, pressed) =
     press(state: cast.new(), bag_index: support.charged_shot, at: 1000)
-  let #(state, _) = press(state:, bag_index: support.charged_shot, at: 1500)
-  let #(_, soon) = press(state:, bag_index: support.charged_shot, at: 5000)
+  let assert [#(level_1, 1000)] = support.started_timers(effects: pressed)
+  let #(state, level_1_effects) =
+    support.fired(state:, timer: level_1, at: 2000)
+  let assert [#(level_2, 1400)] =
+    support.started_timers(effects: level_1_effects)
+  let #(state, _) = support.fired(state:, timer: level_2, at: 3400)
+  let #(state, release) =
+    press(state:, bag_index: support.charged_shot, at: 4000)
+  assert started_by_viewer(effects: release) == [#(36_691, 34_718, 34_718)]
+    as "Spell4Thresholds 124: a release after 2400 ms casts 36691, which holds no type 73 row (Spell4Effects 77123 is its only row), so nothing changes the cooldown its go starts"
+  let #(_, soon) = press(state:, bag_index: support.charged_shot, at: 12_000)
   assert refusal_line(effects: soon) == "7fc 34718 15"
-    as "Spell4.34718: spellCoolDown 10000, started by the release's first go (0x14053e5a0, opcode.0x814)"
+    as "Spell4.34718: spellCoolDown 10000, started by the release's go at 4000 (0x14053e5a0, opcode.0x814) and over at 14000; from the base press at 1000 it would be over at 11000"
   let #(_, near_the_end) =
-    press(state:, bag_index: support.charged_shot, at: 11_200)
+    press(state:, bag_index: support.charged_shot, at: 13_700)
   assert is_held(effects: near_the_end)
-    as "10000 ms from the stage's go at 1500 end at 11500: 300 ms left is within the queue window; from the base press at 1000 it would be over"
-  let #(_, over) = press(state:, bag_index: support.charged_shot, at: 11_600)
+    as "300 ms left is within the queue window"
+  let #(_, over) = press(state:, bag_index: support.charged_shot, at: 14_100)
   assert is_accepted(effects: over)
 }
 
@@ -1000,13 +1026,16 @@ pub fn a_held_press_does_not_refuse_the_charged_shot_release_test() -> Nil {
   let #(state, held) = press(state:, bag_index: support.shred, at: 1600)
   assert is_held(effects: held) && support.delays_of(effects: held) == [400]
     as "Charged Shot's gcd (SpellCoolDown 82, 1000 ms) has 400 ms left: Shred is held"
+  let assert [#(waiting, 400)] = support.started_timers(effects: held)
   let #(state, release) =
     press(state:, bag_index: support.charged_shot, at: 1700)
   assert list.first(lines(trace: trace(steps: [#(1700, release)])))
     == Ok("7fd k1")
     as "0x1403bfd60: the release is resolved through the open threshold whatever the caster holds, so it is accepted"
   assert started_by_viewer(effects: release) == [#(34_720, 34_718, 34_718)]
-  let assert [#(held_timer, 400)] = support.started_timers(effects: held)
+  assert list.contains(support.cancelled_timers(effects: release), waiting)
+    as "Spell4Effects 80977 of the stage 34720 changes the running cooldowns, so the held press waits again for its end (cast.hold_repeat)"
+  let assert [#(held_timer, 300)] = support.started_timers(effects: release)
   let #(_, shred) = support.fired(state:, timer: held_timer, at: 2000)
   assert is_accepted(effects: shred)
     as "the held press is left alone and starts when its cooldown ends"
