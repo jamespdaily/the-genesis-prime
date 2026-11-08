@@ -214,7 +214,8 @@
 ////   as is any message whose reference is not the current timer's of that id,
 ////   so a cancelled timer's message never fires a restarted timer of the same
 ////   id. An id with no running timer is cancelled to nothing. An id already
-////   running ends the connection with an error log.
+////   running, or a negative one, which the shell keeps for its own timers
+////   (`script.held_read_timer`), ends the connection with an error log.
 //// - **The registry's scope ending.** The connection stays joined only as long
 ////   as the scope lives; the tree restarts the game listener with the scope, so
 ////   no connection outlives it (genesis_prime/connection/registry).
@@ -1291,20 +1292,34 @@ fn tell(
 }
 
 /// Starts the timer the rule named, with a reference of its own that its
-/// timeout carries; an id already running ends the connection.
+/// timeout carries; an id already running, or a negative one, which the shell
+/// keeps for its own timers (`script.held_read_timer`), ends the connection.
 fn start_timer(
   connection connection: Connection(settings, state, message, answer, request),
   running running: Running(state, request),
   timer timer: TimerId,
   after_ms after_ms: Int,
 ) -> Running(state, request) {
-  let started =
-    timer_book.start(timers: running.timers, timer:, schedule: fn(reference) {
-      running.script.schedule(connection.timers, timer, reference, after_ms)
-    })
+  let started = case timer {
+    step.TimerId(id) if id < 0 -> Error(NegativeTimerId)
+    step.TimerId(_) ->
+      timer_book.start(timers: running.timers, timer:, schedule: fn(reference) {
+        running.script.schedule(connection.timers, timer, reference, after_ms)
+      })
+      |> result.replace_error(TimerIdRunning)
+  }
   case started {
     Ok(timers) -> Running(..running, timers:)
-    Error(Nil) -> {
+    Error(NegativeTimerId) -> {
+      runtime.log(
+        LogError,
+        "a rule started a timer whose id is negative, which the connection shell does not carry out",
+        step.no_one,
+      )
+      close(running.socket)
+      panic as "a rule started a timer whose id is negative"
+    }
+    Error(TimerIdRunning) -> {
       runtime.log(
         LogError,
         "a rule started a timer whose id is already running, which the connection shell does not carry out",
@@ -1314,6 +1329,12 @@ fn start_timer(
       panic as "a rule started a timer whose id is already running"
     }
   }
+}
+
+/// Why the shell does not start a rule's timer.
+type TimerRefused {
+  NegativeTimerId
+  TimerIdRunning
 }
 
 /// Cancels the timer the rule named and forgets it. A timeout already sent is

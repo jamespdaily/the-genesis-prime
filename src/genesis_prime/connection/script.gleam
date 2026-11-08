@@ -60,8 +60,8 @@ pub type Clock =
   fn(Input) -> Now
 
 /// The id of the timer that bounds how long the shell waits for the rest of a
-/// read it holds part of. The rules number their timers from 0 up, so it names
-/// no rule's timer. A replay's scheduler gives it the operating system's timer
+/// read it holds part of. It is negative, and the shell refuses a rule's timer
+/// with a negative id, so it names no rule's timer. A replay's scheduler gives it the operating system's timer
 /// (`operating_system_timer`), since no recording holds a line for it.
 pub const held_read_timer = TimerId(-1)
 

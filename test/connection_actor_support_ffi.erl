@@ -6,7 +6,7 @@
 
 -export([exports/1, message_queue_data/1, hang_up/2, hand_over_to_failing_transport/2,
          hand_over_closed_socket/2, kept_asks/1, socket_buffer/1,
-         socket_armed/1]).
+         socket_armed/1, bytes_received/1]).
 
 %% The functions a module exports, as {Name, Arity}, without the module's own
 %% module_info.
@@ -53,6 +53,15 @@ socket_armed(Pid) ->
         = running(Pid),
     {ok, [{active, Active}]} = inet:getopts(Socket, [active]),
     Active =:= once.
+
+%% How many bytes the connection's socket has received from its client since
+%% it was opened: the socket's own count, read from the one port the process
+%% is linked to.
+bytes_received(Pid) ->
+    {links, Links} = process_info(Pid, links),
+    [Socket] = [Port || Port <- Links, is_port(Port)],
+    {ok, [{recv_oct, Received}]} = inet:getstat(Socket, [recv_oct]),
+    Received.
 
 %% Connects to the port and closes at once: with a FIN (plain) or, with a
 %% linger of 0, a reset. Gives the port the client connected from.

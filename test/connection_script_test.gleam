@@ -35,11 +35,12 @@ import genesis_prime/wire_recording.{
 }
 import gleam/bit_array
 import gleam/erlang/atom
-import gleam/erlang/process.{type Subject}
+import gleam/erlang/process.{type Pid, type Subject}
 import gleam/erlang/reference.{type Reference}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/static_supervisor as supervisor
+import mailbox_support
 import mug
 import owned_test
 import recording_support
@@ -316,6 +317,13 @@ fn reporting(bounds: Subject(BoundEvent)) -> script.Scheduler {
   }
 }
 
+/// The bytes of one command of the signalling rule: its letter, its number
+/// and its 16-bit wait (`ask_support.command`).
+const command_bytes = 4
+
+@external(erlang, "connection_actor_support_ffi", "bytes_received")
+fn bytes_received(pid: Pid) -> Int
+
 type Record {
   Record(letter: Int, number: Int)
 }
@@ -490,6 +498,7 @@ pub fn a_shell_that_waits_for_the_rest_of_a_read_gives_up_when_the_bound_its_fir
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [shell] = ask_support.connections(server) as "one connection"
+  let received_before = bytes_received(shell)
   ask_support.command(
     client:,
     letter: signalling_rule.pong_command,
@@ -516,6 +525,21 @@ pub fn a_shell_that_waits_for_the_rest_of_a_read_gives_up_when_the_bound_its_fir
       wait_ms: 0,
     )
   })
+  // The wait is shown still going before the bound fires: the socket has
+  // received all four parts, none waits in the mailbox and every exit has been
+  // passed over, while the message queued before the exits still waits, which
+  // holds only while the shell is in its selective receive. The mailbox read
+  // is a signal that follows the test's own exits, so each exit is in the
+  // mailbox or taken by then.
+  event_wait.until(
+    "the shell took every part and every exit and still waits",
+    fn() {
+      bytes_received(shell) == received_before + 4 * command_bytes
+      && mailbox_support.tagged(shell, atom.create("tcp")) == 0
+      && mailbox_support.tagged(shell, atom.create("EXIT")) == 0
+      && mailbox_support.tagged(shell, atom.create("woken")) == 1
+    },
+  )
   process.send(subject, Elapsed(timer:, reference:))
   assert read_record(client) == Record(signalling_rule.woken, 9)
     as "after the bound the message is taken, and the held parts are not a read"
