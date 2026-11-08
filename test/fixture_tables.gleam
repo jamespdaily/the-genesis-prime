@@ -463,6 +463,12 @@ fn id_of(row row: List(Cell)) -> Int {
   }
 }
 
+/// The ids of the committed rows of the table `schema` describes, in file
+/// order.
+pub fn committed_ids(schema: tbl_file.Schema) -> List(Int) {
+  list.map(committed_rows(schema), fn(row) { id_of(row:) })
+}
+
 /// The row with the cells of the named columns replaced.
 pub fn with_cells(
   schema schema: tbl_file.Schema,

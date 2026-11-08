@@ -261,11 +261,6 @@ pub fn beast_row(number number: Int) -> Row {
   )
 }
 
-/// The worlds the tests' maps may run in: the World rows of the client's rows.
-fn worlds() -> List(Int) {
-  character_tables.content_worlds()
-}
-
 /// A key whose terms hold these spawns for World 3460 and no spawn for every
 /// other world a test's map may run in, as the content load leaves them. It is
 /// the test's own, erased when the body ends: a test with no spawns takes
@@ -320,7 +315,7 @@ fn put_worlds(
       by_creature: dict.new(),
     ),
   )
-  list.each(worlds(), fn(world_id) {
+  list.each(character_tables.content_worlds(), fn(world_id) {
     content_spawn.put_world(
       key:,
       world_id:,

@@ -165,15 +165,6 @@ pub fn every_reference_of_a_committed_row_reaches_a_committed_row_or_one_the_cli
     == []
 }
 
-/// The ids of a table's committed rows, in file order.
-fn committed_ids(schema: tbl_file.Schema) -> List(Int) {
-  list.map(fixture_tables.committed_rows(schema), fn(row) {
-    let assert [planted_table.Integer(id), ..] = row
-      as "a committed row holds its ID first"
-    id
-  })
-}
-
 // T3c-1 test 1
 pub fn the_content_tables_are_committed_and_each_root_reaches_a_committed_row_test() -> Nil {
   use <- owned_test.run(20_000)
@@ -181,13 +172,16 @@ pub fn the_content_tables_are_committed_and_each_root_reaches_a_committed_row_te
   // the client's Faction2 holds 1189 rows and Faction2Relationship 1964, kept
   // whole (`the_whole_content_tables_hold_every_row_the_client_holds_test`), and
   // World is 7 of the client's rows.
-  assert list.length(committed_ids(faction2.schema)) == 1189
+  assert list.length(fixture_tables.committed_ids(faction2.schema)) == 1189
     as "Faction2 is whole"
-  assert list.length(committed_ids(faction2_relationship.schema)) == 1964
+  assert list.length(fixture_tables.committed_ids(faction2_relationship.schema))
+    == 1964
     as "Faction2Relationship is whole"
-  assert committed_ids(world.schema) == [22, 51, 426, 870, 990, 1387, 3460]
+  assert fixture_tables.committed_ids(world.schema)
+    == [22, 51, 426, 870, 990, 1387, 3460]
     as "the Worlds the tests' maps run in"
-  assert committed_ids(creature2_outfit_info.schema) == [7475, 8979, 9350, 9351]
+  assert fixture_tables.committed_ids(creature2_outfit_info.schema)
+    == [7475, 8979, 9350, 9351]
     as "Creature2OutfitInfo holds the rows the outfit group roots 8170, 10355 and 10359 point to and the one Creature2 11467's group 9675 points to, and none for 8181's 7486, which the client lacks"
   list.each(
     [
@@ -200,7 +194,7 @@ pub fn the_content_tables_are_committed_and_each_root_reaches_a_committed_row_te
       let #(schema, id) = root
       assert fixture_tables.root(table: schema.table, id:) == id
         as "the row is a root"
-      assert list.contains(committed_ids(schema), id)
+      assert list.contains(fixture_tables.committed_ids(schema), id)
         as { schema.table <> " " <> int.to_string(id) <> " is committed" }
     },
   )
@@ -228,12 +222,12 @@ pub fn the_whole_content_tables_hold_every_row_the_client_holds_test() -> Nil {
         "World" ->
           // The client's World holds 2729 rows and the tests' maps run in 7 of
           // them, so the fixture keeps those 7 and no more.
-          list.each(committed_ids(schema), fn(id) {
+          list.each(fixture_tables.committed_ids(schema), fn(id) {
             assert list.contains(client_ids, id)
               as { "the client's World holds row " <> int.to_string(id) }
           })
         _ -> {
-          assert committed_ids(schema) == client_ids
+          assert fixture_tables.committed_ids(schema) == client_ids
             as {
               schema.table <> " holds every row of the client's, in id order"
             }

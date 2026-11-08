@@ -177,10 +177,7 @@ pub fn content_files() -> List(#(String, BitArray)) {
 /// The ids of the Worlds the client's rows hold, the worlds a test's map may run
 /// in.
 pub fn content_worlds() -> List(Int) {
-  list.map(fixture_tables.committed_rows(world.schema), fn(row) {
-    let assert [Integer(id), ..] = row as "a committed row holds its ID first"
-    id
-  })
+  fixture_tables.committed_ids(world.schema)
 }
 
 /// The content load over the shared tables: the tables only the content load
