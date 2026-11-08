@@ -648,8 +648,19 @@ fn modifier_ended(
   source source: Source,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
+  let #(state, effects) = source_removed(state:, source:, now_ms:)
+  #(state, Effects(effects))
+}
+
+/// The effects of removing the modifier of `source`, as `modifier_ended` carries them
+/// out.
+fn source_removed(
+  state state: State,
+  source source: Source,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
   case list.key_pop(state.held_by, source) {
-    Error(Nil) -> #(state, Effects([]))
+    Error(Nil) -> #(state, [])
     Ok(#(by, held_by)) -> {
       let state = State(..state, held_by:)
       let #(properties, changed) =
@@ -657,15 +668,15 @@ fn modifier_ended(
       let news = changed_news(state:, changed:)
       let #(state, revalued) = revalued(state:, properties:, now_ms:)
       let #(state, unwatched) = unwatching_last(state:, by:)
-      #(state, Effects(list.flatten([news, revalued, unwatched])))
+      #(state, list.flatten([news, revalued, unwatched]))
     }
   }
 }
 
 /// The watch `watch` on a caster's connection ended: every source of that caster is
-/// removed in the order they started, each with its own 0x93a as `modifier_ended`
-/// sends it. The watch that fired needs no `Unwatch`. A watch that is no caster's
-/// changes nothing.
+/// removed in the order they started, each as `modifier_ended` removes it. The watch
+/// that fired is forgotten first, so no `Unwatch` follows its last source. A watch that
+/// is no caster's changes nothing.
 fn caster_gone(
   state state: State,
   watch watch: WatchId,
@@ -676,19 +687,21 @@ fn caster_gone(
   {
     Error(Nil) -> #(state, Effects([]))
     Ok(#(by, _)) -> {
-      let #(gone, kept) =
-        list.partition(state.held_by, fn(held) { held.1 == by })
-      let state =
-        State(..state, held_by: kept, casters: dict.delete(state.casters, by))
-      let #(properties, news) =
-        list.fold(gone, #(state.properties, []), fn(so_far, held) {
-          let #(properties, news) = so_far
-          let #(properties, changed) =
-            unit_properties.remove(properties:, source: held.0)
-          #(properties, list.append(news, changed_news(state:, changed:)))
+      let sources =
+        list.filter_map(state.held_by, fn(held) {
+          case held.1 == by {
+            True -> Ok(held.0)
+            False -> Error(Nil)
+          }
         })
-      let #(state, revalued) = revalued(state:, properties:, now_ms:)
-      #(state, Effects(list.append(news, revalued)))
+      let state = State(..state, casters: dict.delete(state.casters, by))
+      let #(state, effects) =
+        list.fold(sources, #(state, []), fn(so_far, source) {
+          let #(state, done) = so_far
+          let #(state, more) = source_removed(state:, source:, now_ms:)
+          #(state, list.append(done, more))
+        })
+      #(state, Effects(effects))
     }
   }
 }
