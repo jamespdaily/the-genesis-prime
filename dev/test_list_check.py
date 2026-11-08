@@ -3,9 +3,11 @@
 
     python3 -I dev/test_list_check.py ISSUE BASE HEAD
 
-The test list is the newest comment on ISSUE that holds "test list" (any case),
-else the issue's body when it does. A listed test is a backticked name that ends
-in `_test` (Gleam, optionally `module.` first) or starts with `test_` (Python).
+The test list is the newest comment on ISSUE headed "test list" (any case),
+else the issue's body when it is headed so. Headed means the first non-blank line,
+after its leading `#`, `*` and spaces, starts with "test list". A listed test is a
+backticked name that ends in `_test` (Gleam, optionally `module.` first) or starts
+with `test_` (Python).
 A test is defined by an added line `pub fn NAME(` or `def NAME(` in
 `git diff BASE HEAD`. A name that is a test module's file name is skipped.
 A name not defined in the diff is looked up in HEAD's tree, so a listed test
@@ -30,12 +32,20 @@ def run(*args: str) -> str:
     return subprocess.run(args, check=True, capture_output=True, text=True).stdout
 
 
+def is_headed_test_list(text: str) -> bool:
+    """True when the first non-blank line is a heading or bold line naming the test list."""
+    for line in text.splitlines():
+        if line.strip():
+            return line.lstrip("#* ").lower().startswith("test list")
+    return False
+
+
 def test_list_text(issue: str) -> str | None:
     found = json.loads(run("gh", "issue", "view", issue, "--json", "body,comments"))
     for comment in reversed(found["comments"]):
-        if "test list" in comment["body"].lower():
+        if is_headed_test_list(comment["body"]):
             return comment["body"]
-    if "test list" in found["body"].lower():
+    if is_headed_test_list(found["body"]):
         return found["body"]
     return None
 
