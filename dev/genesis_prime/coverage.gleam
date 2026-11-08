@@ -55,7 +55,6 @@ import genesis_prime/table_folder
 import genesis_prime/tooltip_token
 import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/spawn
-import gleam/erlang/reference
 import gleam/int
 import gleam/io
 import gleam/list
@@ -67,7 +66,7 @@ import simplifile
 /// Runs the measure.
 pub fn main() -> Nil {
   let folder = table_folder.path()
-  case table.load(under: reference.new(), from: folder) {
+  case table.read(from: folder) {
     Error(error) -> {
       io.println(
         "the client's tables did not load from "
@@ -86,7 +85,6 @@ pub fn main() -> Nil {
       let left_out = left_out_report(tables:)
       let named = named_by_tooltips(tables:)
       let spawns = spawn_coverage(tables:)
-      store.unload(tables)
       io.println(checklist.totals(measurements))
       io.println("")
       io.println(case named {

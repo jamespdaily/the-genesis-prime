@@ -71,7 +71,6 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import novice_tables
-import owned_key
 import owned_test
 import planted_table
 import unitest
@@ -329,11 +328,10 @@ fn loaded(
   files files: List(#(String, BitArray)),
 ) -> Result(table_store.Tables, table_store.LoadError) {
   use folder <- planted_table.in_folder(files)
-  server_table.load_under(under: owned_key.new(), from: folder)
+  server_table.read(from: folder)
 }
 
-/// The Warrior of faction 166's loadout in tables loaded from the files, which
-/// are unloaded after.
+/// The Warrior of faction 166's loadout in tables read from the files.
 fn warrior_in(files files: List(#(String, BitArray))) -> #(Loadout, Int) {
   let assert Ok(tables) = loaded(files:)
     as "the planted tables with a changed GameFormula row load"
@@ -342,7 +340,6 @@ fn warrior_in(files files: List(#(String, BitArray))) -> #(Loadout, Int) {
     as "class 1 faction 166 has a set"
   let assert Ok(health) = loadout.max_health(tables:, loadout:, level: 1)
     as "CreatureLevel row 1 is planted"
-  table_store.unload(tables)
   #(loadout, health)
 }
 
@@ -702,7 +699,6 @@ pub fn a_changed_item_slot_row_changes_the_bag_index_of_the_pieces_of_its_slot_t
   let assert Ok(loadout) =
     loadout.of(tables:, class_id: ClassId(1), faction_id: 166)
     as "class 1 faction 166 has a set"
-  table_store.unload(tables)
   assert loadout.armor
     == [
       Equipped(Item2Id(81_366), 1),
@@ -774,7 +770,6 @@ fn warrior_167_in(changes changes: Changes) -> Loadout {
   let assert Ok(loadout) =
     loadout.of(tables:, class_id: ClassId(1), faction_id: 167)
     as "class 1 faction 167 has a set"
-  table_store.unload(tables)
   loadout
 }
 
@@ -897,9 +892,7 @@ fn visual_of_a_chest_with(
       rows: item2_rows_and_a_chest_with(flags:),
     ))
     as "the planted tables with an item no set holds load"
-  let visual = worn_visual.of_item(tables:, item2_id: 99_001)
-  table_store.unload(tables)
-  visual
+  worn_visual.of_item(tables:, item2_id: 99_001)
 }
 
 pub fn an_item_whose_flags_hold_0x4000_is_never_dressed_test() -> Nil {

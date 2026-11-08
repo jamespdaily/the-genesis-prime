@@ -34,12 +34,10 @@ import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/table/game_formula
 import genesis_prime/table/loader/server_table
-import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/player_unit
 import gleam/list
 import gleam/option.{None, Some}
 import novice_tables
-import owned_key
 import owned_test
 import place_support
 import planted_table
@@ -275,8 +273,7 @@ pub fn the_sheets_power_factors_are_game_formula_1266s_two_values_test() -> Nil 
       }
     })
   use folder <- planted_table.in_folder(files)
-  let assert Ok(tables) =
-    server_table.load_under(under: owned_key.new(), from: folder)
+  let assert Ok(tables) = server_table.read(from: folder)
     as "the planted tables with a changed GameFormula 1266 load"
   assert game_client.sheet(
       unit: unit_with(properties: [#(35, 100.0), #(36, 41.0)]),
@@ -284,5 +281,4 @@ pub fn the_sheets_power_factors_are_game_formula_1266s_two_values_test() -> Nil 
     )
     == Sheet(assault_power: 50, support_power: 4, max_health: 0, max_shield: 0)
     as "0x14064c960: Assault Power is 100 x the row's first value 0.5; 0x14064ca50: Support Power is 41 x its second value 0.1, 4.1 shown as 4"
-  table_store.unload(tables)
 }

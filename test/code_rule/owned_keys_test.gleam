@@ -82,8 +82,8 @@ pub fn a_key_made_with_owned_key_is_not_a_breach_test() -> Nil {
     test_module("test/some_test.gleam", [
       "import genesis_prime/table/loader/store",
       "import owned_key",
-      "fn load(folder, entry) {",
-      "  store.load(under: owned_key.new(), from: folder, entries: [entry])",
+      "fn put() {",
+      "  store.put_content(key: owned_key.new_key(), table: \"T\", id: 1, value: 1)",
       "}",
     ])
   assert owned_keys.breaches([file]) == []

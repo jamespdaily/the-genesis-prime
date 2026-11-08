@@ -182,20 +182,18 @@ pub fn summon_checks() -> spawn.SummonChecks {
 }
 
 /// What a summon is checked with over these planted files, as the running
-/// server leaves it: the content-only tables are unloaded once the checks are
-/// built (`genesis_prime.load_content`), so a check that reads one finds no
-/// term. The server's tables are unloaded when `then` returns: the checks are
-/// good only inside it.
+/// server leaves it: the checks are built from the content-only tables
+/// (`genesis_prime.load_content`) and hold none of them. The tables are read on
+/// the body's heap, so nothing is left behind when `then` returns.
 pub fn with_summon_checks_of(
   files files: List(#(String, BitArray)),
   then then: fn(spawn.SummonChecks) -> a,
 ) -> a {
   use folder <- planted_table.in_folder(list.append(
     character_tables.content_files(),
-    novice_tables.with_creature_attack(files:, padding: True),
+    novice_tables.with_creature_attack(files:),
   ))
-  let assert Ok(server) =
-    server_table.load_under(under: owned_key.new(), from: folder)
+  let assert Ok(server) = server_table.read(from: folder)
     as "the planted files load as the server's tables"
   let assert Ok(more) =
     server_table.load_content_tables(over: server, from: folder)
@@ -206,16 +204,13 @@ pub fn with_summon_checks_of(
       formulas: rating_support.formulas(),
       kinds: kinds(),
     )
-  table_store.unload(more)
-  let found = then(checks)
-  table_store.unload(server)
-  found
+  then(checks)
 }
 
 /// The server's tables and the content-only tables loaded from these planted
 /// files and the content files (`character_tables.content_files`), which no
-/// server table shares a file with; `then` gets the content-only tables and both
-/// are unloaded when it returns.
+/// server table shares a file with; `then` gets the content-only tables, read on
+/// the body's heap.
 pub fn with_content_tables_of(
   files files: List(#(String, BitArray)),
   then then: fn(table_store.Tables) -> a,
@@ -224,16 +219,12 @@ pub fn with_content_tables_of(
     character_tables.content_files(),
     files,
   ))
-  let assert Ok(server) =
-    server_table.load_under(under: owned_key.new(), from: folder)
+  let assert Ok(server) = server_table.read(from: folder)
     as "the planted files load as the server's tables"
   let assert Ok(more) =
     server_table.load_content_tables(over: server, from: folder)
     as "the planted files load as the content-only tables"
-  let found = then(more)
-  table_store.unload(more)
-  table_store.unload(server)
-  found
+  then(more)
 }
 
 /// The kinds migration 0010 leaves: row 0 alone, a respawn of 60 000 ms and an

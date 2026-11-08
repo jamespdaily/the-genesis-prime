@@ -1,5 +1,5 @@
 -module(genesis_prime_tbl_file_ffi).
--export([utf16_text/1, gap/0, table_of/1, row/2, rows/1]).
+-export([utf16_text/1, gap/0, table_of/1, row/2, rows/1, patch/3, from_puts/1]).
 
 %% The UTF-8 form of the UTF-16 little-endian text at the start of Bytes, up
 %% to its first zero character. An error when no zero character ends the text
@@ -45,3 +45,21 @@ row(_Table, _Id) ->
 -spec rows(tuple()) -> [tuple()].
 rows(Table) ->
     [Row || Row <- tuple_to_list(Table), Row =/= nil].
+
+%% The table with the rows put by id and the ids in Removes emptied, as a new
+%% tuple: ids past the end grow it with gaps, and a removed id is a gap, as in a
+%% table read from a file. The table it was made from is not changed.
+-spec patch(tuple(), [{integer(), tuple()}], [integer()]) -> tuple().
+patch(Table, Puts, Removes) ->
+    Updates = maps:merge(maps:from_list(Puts), maps:from_keys(Removes, nil)),
+    Size = lists:max([tuple_size(Table) | [Id + 1 || Id <- maps:keys(Updates)]]),
+    list_to_tuple([case maps:find(Id, Updates) of
+                       {ok, Row} -> Row;
+                       error when Id < tuple_size(Table) -> element(Id + 1, Table);
+                       error -> nil
+                   end || Id <- lists:seq(0, Size - 1)]).
+
+%% A table of these rows and no others, each at its id, with gaps between.
+-spec from_puts([{integer(), tuple()}]) -> tuple().
+from_puts(Puts) ->
+    patch({}, Puts, []).

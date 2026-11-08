@@ -44,7 +44,6 @@ import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/string
-import owned_key
 import owned_test
 import planted_table.{Integer}
 import unitest
@@ -66,17 +65,14 @@ fn measured_over_planted_objectives(
     planted_table.bytes(planted_table.table(quest_objective.schema, rows))
   use folder <- planted_table.in_folder([#("QuestObjective", file)])
   let assert Ok(tables) =
-    store.load(
-      under: owned_key.new(),
+    store.read(
       from: folder,
       entries: [quest_objective.entry()],
       requirements: [],
       derivations: [],
     )
     as "a planted QuestObjective table loads"
-  let measured = measurement.measure(engine, tables)
-  store.unload(tables)
-  measured
+  measurement.measure(engine, tables)
 }
 
 fn lines(measured: Measurement) -> List(#(Int, Int, Float)) {
@@ -125,8 +121,7 @@ pub fn a_prerequisite_counts_the_values_of_its_three_type_columns_test() -> Nil 
   let file = planted_table.bytes(planted_table.table(prerequisite.schema, rows))
   use folder <- planted_table.in_folder([#("Prerequisite", file)])
   let assert Ok(tables) =
-    store.load(
-      under: owned_key.new(),
+    store.read(
       from: folder,
       entries: [prerequisite.entry()],
       requirements: [],
@@ -141,7 +136,6 @@ pub fn a_prerequisite_counts_the_values_of_its_three_type_columns_test() -> Nil 
       ),
       tables,
     )
-  store.unload(tables)
   assert lines(measured)
     == [#(4, 4, 0.5), #(5, 2, 0.25), #(6, 1, 0.125), #(7, 1, 0.125)]
     as "4 is in the first column of three rows and the second of one; 5 twice; 6 and 7 once; eight conditions in all"

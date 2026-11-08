@@ -70,7 +70,7 @@ fn selected_with(
   rows rows: List(Row),
 ) -> Selection {
   use more <- spawn_support.with_content_tables_of(
-    novice_tables.with_creature_attack(files:, padding: True),
+    novice_tables.with_creature_attack(files:),
   )
   spawn.select(
     rows:,
@@ -940,10 +940,7 @@ pub fn a_soldier_mission_an_instance_portal_and_an_outfit_group_with_rows_are_lo
 /// The Beast of spawn 1 as the planted files select it.
 fn attack_beast_of(files files: List(#(String, BitArray))) -> spawn.Spawn {
   let selection =
-    beast_selection(files: novice_tables.with_creature_attack(
-      files:,
-      padding: True,
-    ))
+    beast_selection(files: novice_tables.with_creature_attack(files:))
   let assert [] = selection.refusals as "the Beast's row is taken"
   let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
   let assert Ok(beast) = dict.get(world.by_id, SpawnId(1)) as "spawn 1 starts"
@@ -968,7 +965,6 @@ pub fn an_attack_effect_whose_multiplier_is_not_a_finite_float_refuses_the_spawn
   let selection =
     beast_selection(files: novice_tables.with_creature_attack_multiplier(
       files: character_tables.files(),
-      padding: True,
       multiplier_bits: 0x7F800000,
     ))
   assert selection.refusals

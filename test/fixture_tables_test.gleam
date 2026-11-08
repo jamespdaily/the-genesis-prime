@@ -5,20 +5,15 @@ import client_tables
 import fixture_tables
 import genesis_prime/fixture_rows
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
-import genesis_prime/table/loader/derivation
-import genesis_prime/table/loader/server_table
-import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
 import genesis_prime/table_rows
 import gleam/dict
-import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/result
 import gleam/string
-import owned_key
 import owned_test
 import planted_table
 import simplifile
@@ -34,8 +29,8 @@ fn the_spell(id: Int) -> spell4.Spell4 {
 // 1
 pub fn the_committed_rows_load_with_the_servers_requirements_and_derivations_test() -> Nil {
   use <- owned_test.run(20_000)
-  // `load_under` adds `requirement.all()` and `derivation.all()`; a table that
-  // fails one makes `shared()` crash with the load's own error.
+  // `server_table.read` adds `requirement.all()` and `derivation.all()`; a table
+  // that fails one makes `shared()` crash with the load's own error.
   let tables = fixture_tables.shared()
   assert spell4.all(tables) != []
     as "the fixture holds Spell4 rows once it loads"
@@ -211,7 +206,7 @@ pub fn a_float_cells_bits_are_written_back_unchanged_test() -> Nil {
 }
 
 // 7
-pub fn changed_and_added_load_under_their_own_key_and_leave_the_shared_load_alone_test() -> Nil {
+pub fn changed_and_added_edit_on_their_own_heap_and_leave_the_shared_tables_alone_test() -> Nil {
   use <- owned_test.run(30_000)
   let id = fixture_tables.root("Spell4", 41_276)
   let before = the_spell(id).cast_time
@@ -334,65 +329,14 @@ pub fn a_row_changed_to_an_id_the_table_holds_is_refused_test() -> Nil {
     as "the changed row holds the new id"
 }
 
-pub fn a_body_that_crashes_leaves_its_tables_unloaded_test() -> Nil {
-  use <- owned_test.run(30_000)
-  let key = owned_key.new()
-  let rows = fixture_tables.rows()
-  let sent = process.new_subject()
-  let worker =
-    process.spawn_unlinked(fn() {
-      fixture_tables.on_rows_under(rows:, reaching: [], key:, body: fn(tables) {
-        process.send(sent, tables)
-        panic as "the body crashes on purpose, to see its tables unloaded"
-      })
-    })
-  let _down =
-    process.new_selector()
-    |> process.select_specific_monitor(process.monitor(worker), fn(down) {
-      down
-    })
-    |> process.selector_receive_forever
-  let assert Ok(tables) = process.receive(sent, 0)
-    as "the body sent its tables before it crashed"
-  let held = planted_table.persistent_terms_under(key)
-  store.unload(tables)
-  assert held == 0 as "a body that crashes leaves its load's terms stored"
-}
-
-/// A load of its own beside the shared one leaves the shared load's check passing.
-pub fn an_edit_load_beside_the_shared_load_does_not_fail_the_shared_loads_check_test() -> Nil {
-  use <- owned_test.run(30_000)
-  let id = fixture_tables.root("Spell4", 41_276)
-  let _shared = fixture_tables.shared()
-  // The edit is only a second load of the same tables: the point of the test.
-  fixture_tables.changed(
-    table: "Spell4",
-    id:,
-    with: [#("castTime", planted_table.Integer(1))],
-    body: fn(_tables) { assert_the_shared_load_holds_each_table_once() },
-  )
-}
-
-/// Over the shared key's terms only: a table of another load beside it, as an
-/// edit's own load of the same rows, is not this load's to judge.
-fn assert_the_shared_load_holds_each_table_once() -> Nil {
-  assert planted_table.persistent_terms_under(fixture_tables.shared_key())
-    == list.length(server_table.entries()) + list.length(derivation.all())
-    as "the shared load stores one term for each table the server loads and one for each derivation"
-}
-
 // 11
-pub fn the_fixture_is_loaded_once_and_stores_one_term_per_table_test() -> Nil {
+pub fn the_fixture_is_read_once_and_every_call_gives_the_same_tables_test() -> Nil {
   use <- owned_test.run(20_000)
-  let key = fixture_tables.shared_key()
   let first = fixture_tables.shared()
-  let held = planted_table.persistent_terms_under(key)
-  assert held > 0 as "the shared load stores its tables under its key"
   assert fixture_tables.shared() == first
     as "a second call to shared() returns the same tables"
-  assert planted_table.persistent_terms_under(key) == held
-    as "a second call to shared() stores nothing more"
-  assert_the_shared_load_holds_each_table_once()
+  assert spell4.all(first) != []
+    as "the shared tables hold the fixture's Spell4 rows"
 }
 
 /// A Prerequisite row of id 1 with every cell zero, empty or false except the

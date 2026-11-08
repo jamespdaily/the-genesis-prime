@@ -7,13 +7,16 @@
 ////   key: it may write content terms through `store.put_content`, through the
 ////   content load (`content.load(key:)`) or through `content_spawn.put_world`.
 //// - **`reference.new()` is a breach in a module that loads tables or writes
-////   content with the store**, where the reference is a load's key; a module
-////   that makes a reference for anything else may.
-//// - Five modules are not read. `test/client_tables.gleam`, `test/fixture_tables.gleam`
-////   and `test/character_tables.gleam` make the loads every test shares for the run
-////   (`database_support.once`), which are never erased (`fixture_tables` makes its
-////   edit loads with `owned_key`). `test/owned_key.gleam`
-////   makes the keys, and `test/owned_key_test.gleam` tests a key made without it.
+////   content with the store**, where the reference is a load's key: a test's
+////   tables are a value on its own heap (`store.read`, `store.edit`), and a stored
+////   load is made only by the shared modules. A module that makes a reference
+////   for anything else may.
+//// - Six modules are not read. `test/client_tables.gleam`, `test/fixture_tables.gleam`
+////   and `test/character_tables.gleam` make the values every test shares for the
+////   run (`database_support.once`), which are stored once and never erased.
+////   `test/owned_key.gleam` makes the keys, and `test/owned_key_test.gleam` tests
+////   a key made without it. `test/table_load_test.gleam` tests the load itself:
+////   its failing loads run under a reference of their own and store nothing.
 //// - Modules are read one at a time, so a key a helper in another module makes
 ////   and returns is not followed.
 
@@ -28,7 +31,7 @@ import gleam/string
 const exempt_paths = [
   "test/client_tables.gleam", "test/fixture_tables.gleam",
   "test/character_tables.gleam", "test/owned_key.gleam",
-  "test/owned_key_test.gleam",
+  "test/owned_key_test.gleam", "test/table_load_test.gleam",
 ]
 
 const store_module = "genesis_prime/table/loader/store"
@@ -64,7 +67,7 @@ pub fn breaches(files: List(SourceFile)) -> List(Breach) {
       Breach(
         path: file.path,
         line: syntax.line_of(file.text, syntax.location_of(reference).start),
-        rule: "a test makes its keys with `owned_key.new()`, `owned_key.new_key()` or `owned_key.new_fixture_key()`, so a body that ends with terms under them fails",
+        rule: "a test makes its content keys with `owned_key.new_key()` or `owned_key.new_fixture_key()`, so a body that ends with terms under them fails, and stores no load of its own: `store.read` and `store.edit` build its tables on its heap",
       )
     })
   })

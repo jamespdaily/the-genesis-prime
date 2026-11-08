@@ -632,6 +632,34 @@ pub fn boolean(
   }
 }
 
+/// Checks the file against the schema, then decodes its rows as `read` does,
+/// giving each row with its id in id order, for an edit of a table.
+pub fn read_rows(
+  bytes bytes: BitArray,
+  schema schema: Schema,
+  decode decode: fn(BitArray, Strings) -> Result(row, RecordError),
+  id id: fn(row) -> Int,
+) -> Result(List(#(Int, row)), FileError) {
+  read(bytes:, schema:, decode:, id:)
+  |> result.map(fn(table) {
+    rows(table) |> list.map(fn(row) { #(id(row), row) })
+  })
+}
+
+/// A new table: the table's rows with the given rows put by id, replacing a row
+/// the table has or adding one, and the ids in `removes` left without a row.
+/// The table it was made from is not changed.
+@external(erlang, "genesis_prime_tbl_file_ffi", "patch")
+pub fn patch(
+  table: Table(row),
+  puts: List(#(Int, row)),
+  removes: List(Int),
+) -> Table(row)
+
+/// A table of exactly these rows, each at its id.
+@external(erlang, "genesis_prime_tbl_file_ffi", "from_puts")
+pub fn from_rows(rows: List(#(Int, row))) -> Table(row)
+
 /// The row of an id, or an error when the id has no row.
 @external(erlang, "genesis_prime_tbl_file_ffi", "row")
 pub fn row(table: Table(row), id: Int) -> Result(row, Nil)

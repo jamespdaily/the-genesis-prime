@@ -42,10 +42,10 @@ pub fn each_way_to_name_the_load_and_the_folder_is_found_test() -> Nil {
     test_module([
       "import client_tables as real",
       "import genesis_prime/table",
-      "import genesis_prime/table/loader/server_table.{load_under}",
+      "import genesis_prime/table/loader/server_table.{read}",
       "import genesis_prime/table/loader/store as table_store",
       "fn through_the_registry() { table.load(from: real.folder()) }",
-      "fn through_an_unqualified_load() { load_under(from: real.folder()) }",
+      "fn through_an_unqualified_load() { read(from: real.folder()) }",
       "fn through_an_alias() { table_store.load_for_server(from: real.folder()) }",
     ])
   assert planted.lines(shared_tables.breaches([file])) == [6, 7, 8]

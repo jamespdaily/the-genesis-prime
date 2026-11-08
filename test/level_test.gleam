@@ -20,7 +20,6 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
 import gleam/int
 import gleam/list
-import owned_key
 import owned_test
 import planted_table
 import unitest
@@ -99,8 +98,7 @@ fn load(
       character_tables.xp_per_level_rows(minimums),
     ),
   ])
-  table_store.load(
-    under: owned_key.new(),
+  table_store.read(
     from: folder,
     entries: [game_formula.entry(), xp_per_level.entry()],
     requirements: level.requirements(),
@@ -119,15 +117,13 @@ pub fn the_highest_level_is_game_formula_row_145s_first_number_test() -> Nil {
     as "0x140029875 jg: above the record at the highest level's minXpForLevel is -3"
   assert level.for_experience(tables:, experience: 1710) == Ok(3)
     as "1710 is ID 3 when the highest level is 3"
-  table_store.unload(tables)
 }
 
 pub fn the_table_load_fails_when_game_formula_row_145_or_a_record_to_the_highest_level_is_missing_test() -> Nil {
   use <- owned_test.run(60_000)
   let all = character_tables.min_xp_for_level()
-  let assert Ok(tables) = load(formula_ids: [145], highest: 50, minimums: all)
+  let assert Ok(_) = load(formula_ids: [145], highest: 50, minimums: all)
     as "row 145 and the 51 records load"
-  table_store.unload(tables)
   assert load(formula_ids: [1, 144], highest: 50, minimums: all)
     == Error(table_store.RowMissing(
       from_table: "the server's starting level",

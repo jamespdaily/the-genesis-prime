@@ -19,7 +19,8 @@ import genesis_prime/table/loader/store
 /// - The spell plans: the tree of casts each class's level-1 ability starts, whose
 ///   missing rows, unread costs and cycles fail the load (genesis_prime/game/spell_plan).
 /// - The spell areas: what each spell of those trees strikes (genesis_prime/game/spell_area),
-///   built after the trees.
+///   built after the trees, which it reads from the built value: the list is in
+///   build order, and an edit rebuilds the derivations it is given in that order.
 /// - The rating formulas: the hit rule's GameFormula rows (genesis_prime/game/rating).
 /// - The top zones: each WorldZone's top zone, which a cycle in the parent chain
 ///   fails (genesis_prime/game/top_zone).
