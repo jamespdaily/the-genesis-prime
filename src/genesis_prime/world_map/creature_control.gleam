@@ -282,10 +282,10 @@ pub fn maximum_changed(
   after after: InterruptArmor,
 ) -> #(State, List(Effect)) {
   let shown_before = shown(state:, armor: before)
-  let state = case state.armor, after {
-    Some(worn), creature_life.Armor(points: maximum) ->
-      State(..state, armor: Some(int.min(worn, maximum)))
-    _, _ -> state
+  let state = case after {
+    creature_life.Armor(points: maximum) ->
+      State(..state, armor: option.map(state.armor, int.min(_, maximum)))
+    creature_life.NoArmor | creature_life.InfiniteArmor -> state
   }
   let shown_after = shown(state:, armor: after)
   case shown_after == shown_before {
