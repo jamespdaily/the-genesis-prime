@@ -13,8 +13,8 @@
 ////   and lands the rest (`pressed_and_threatened`).
 
 import cast_support
-import character_tables
 import connection_rule_support as support
+import fixture_tables
 import game_client
 import game_connection_support
 import genesis_prime/client_connection.{type Request}
@@ -29,6 +29,8 @@ import genesis_prime/step.{
   type ConnectionStep, type TimerId, CancelTimer, OwnEffect, OwnEvent,
   StartTimer, TimerFired,
 }
+import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/spell4
 import gleam/int
 import gleam/list
 import owned_test
@@ -107,15 +109,15 @@ fn engineer() -> #(game_connection.State, Int, Int, Int) {
     game_connection_support.entered_with_server_proxies(
       class_id: 2,
       ability: pulse_blast_base,
-      proxies: spell_tables.server_proxies_with_volatility(),
-      tables: character_tables.shared_with_volatility(),
+      proxies: spell_tables.server_proxies(),
+      tables: fixture_tables.shared(),
     )
   let #(_, _, electrocute) =
     game_connection_support.entered_with_server_proxies(
       class_id: 2,
       ability: electrocute_base,
-      proxies: spell_tables.server_proxies_with_volatility(),
-      tables: character_tables.shared_with_volatility(),
+      proxies: spell_tables.server_proxies(),
+      tables: fixture_tables.shared(),
     )
   let #(state, _) =
     game_connection_support.at(
@@ -326,6 +328,11 @@ pub fn electrocute_is_refused_51_at_0_volatility_and_costs_8_of_the_15_a_pulse_b
 
 pub fn seven_in_combat_pulse_blasts_give_15_30_to_90_then_100_test() -> Nil {
   use <- owned_test.run(60_000)
+  let assert Ok(row) =
+    spell4.get(tables: fixture_tables.shared(), id: Spell4Id(42_276))
+    as "the client's Spell4 holds Pulse Blast's row 42276"
+  assert row.prerequisite_id_caster_persistence == 0
+    as "the client's Spell4 row 42276 holds no CasterPersistence prerequisite"
   let #(state, unit_id, pulse_blast, _) = engineer()
   let #(state, _) =
     game_connection_support.at(

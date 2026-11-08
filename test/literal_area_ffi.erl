@@ -1,6 +1,7 @@
 -module(literal_area_ffi).
 -export([record_peak/1, carriers_peak/0, persistent_term_memory/0, tables_held_twice/0,
-         names_held_twice/1, table_names/0, pending_bytes/0, pending_limit_bytes/0,
+         names_held_twice/1, tables_held_twice_with/1, names_held_twice_with/2,
+         table_names/0, pending_bytes/0, pending_limit_bytes/0,
          wait_until_released/0, admissions/0, wait_until/2, wait_bound_ms/0,
          with_the_collector_suspended/1]).
 
@@ -58,6 +59,25 @@ persistent_term_memory() ->
 %% shared_with_spell_trees' Spell4Effects), but its size is not the client's.
 tables_held_twice() ->
     names_held_twice(persistent_term:get()).
+
+%% The names of the tables of a megabyte or more that Load holds a term of and
+%% another load holds a term of the same name and size: the table of Load
+%% loaded a second time. Another load of a table of that name with other rows,
+%% as a planted load or the fixture's, has another size and is not a copy, and
+%% two other loads of one table are not Load's to count, so a load of a test
+%% running beside does not change the answer.
+tables_held_twice_with(Load) ->
+    names_held_twice_with(Load, persistent_term:get()).
+
+names_held_twice_with(Load, Terms) ->
+    Megabyte = 1024 * 1024,
+    Large = [{Held, Name, Size} || {{Held, {table_term, Name}}, Term} <- Terms,
+                                   Size <- [erts_debug:flat_size(Term) * erlang:system_info(wordsize)],
+                                   Size >= Megabyte],
+    lists:usort([Name || {Held, Name, Size} <- Large, Held =:= Load,
+                         lists:any(fun({Other, OtherName, OtherSize}) ->
+                                           Other =/= Load andalso OtherName =:= Name andalso OtherSize =:= Size
+                                   end, Large)]).
 
 %% The names of every table term the VM holds, of any size, in order: what the
 %% pattern of names_held_twice finds among the keys the store really writes.

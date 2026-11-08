@@ -36,7 +36,7 @@ fn rows_with_texts(
   strike strike: List(#(String, Int)),
   blast blast: List(#(String, Int)),
 ) -> spell_tables.Rows {
-  let rows = spell_tables.rows()
+  let rows = spell_tables.fixture_rows()
   let set_all = fn(row, columns: List(#(String, Int))) {
     list.fold(columns, row, fn(row, column) {
       spell_tables.with_column(row:, name: column.0, cell: Integer(column.1))
@@ -59,9 +59,11 @@ fn found_in(
   tokens tokens: tooltip_token.Tokens,
   spell spell: Int,
 ) -> List(tooltip_token.Found) {
-  spell_tables.with_loaded(rows:, body: fn(tables) {
-    tooltip_token.of_spell(tables:, tokens:, spell:)
-  })
+  spell_tables.with_loaded(
+    reaching: [#("SpellLevel", 647), #("SpellLevel", 1111)],
+    rows:,
+    body: fn(tables) { tooltip_token.of_spell(tables:, tokens:, spell:) },
+  )
 }
 
 pub fn a_spells_tokens_are_read_through_its_seven_text_columns_test() -> Nil {

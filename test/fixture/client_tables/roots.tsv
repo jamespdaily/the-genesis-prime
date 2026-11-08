@@ -1,0 +1,12 @@
+table	id	name	used_by
+Spell4	41276	Electrocute	spell_plan
+Spell4	58586	Spectral Form	fixture_tables_test
+Spell4	42148	Volatility proxy spell	game_connection_volatility
+Spell4	42276	Pulse Blast	game_connection_volatility
+Spell4	41714	Esper Moxie's proc	spell_plan_absorption_test
+Spell4	30724	absorb of 100 with no multiplier	spell_plan_absorption_test
+WorldLocation2	51596	start place	start_place.requirement
+WorldLocation2	42074	start place	start_place.requirement
+WorldLocation2	41641	start place	start_place.requirement
+WorldLocation2	42148	start place	start_place.requirement
+WorldLocation2	8223	start place	start_place.requirement

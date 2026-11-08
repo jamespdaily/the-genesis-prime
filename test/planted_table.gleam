@@ -8,6 +8,7 @@ import envoy
 import genesis_prime/table/loader/tbl_file.{type Column, type Schema}
 import gleam/bit_array
 import gleam/bool
+import gleam/dict
 import gleam/erlang/reference.{type Reference}
 import gleam/int
 import gleam/list
@@ -261,10 +262,12 @@ fn lookup_entries(planted: Planted) -> List(Int) {
             as "the first cell of a planted record is its id"
           #(id, row)
         })
+        |> list.reverse
+        |> dict.from_list
       let highest =
-        list.fold(ids, -1, fn(highest, pair) { int.max(highest, pair.0) })
+        list.fold(dict.keys(ids), -1, fn(highest, id) { int.max(highest, id) })
       int.range(from: highest, to: -1, with: [], run: fn(entries, id) {
-        let entry = case list.key_find(ids, id) {
+        let entry = case dict.get(ids, id) {
           Ok(row) -> row
           Error(Nil) -> 0xFFFFFFFF
         }

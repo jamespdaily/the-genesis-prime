@@ -1,18 +1,17 @@
-//// The planted tables of the spell plan's tests: the rows `genesis_prime/game/spell_plan`
-//// reads for a few abilities, each with the values the client's own row holds
-//// (the fact file's `Spell4.*` records, read with `table_rows`), and a load of
-//// just those tables, so a test can take a row away or add one and meet the
-//// plan's build with it.
+//// The spell tables a plan test builds from: the client's own rows, which a test
+//// may change or add to (`fixture_rows`), and `with_loaded`, which loads the tables
+//// the plan reads from them so that a test can take a row away or add one.
 ////
-//// The abilities and what the real rows hold, which the plan's tests assert:
+//// Gap: `planted_rows` plants a few abilities instead of holding the client's rows
+//// (issue 326). The abilities, with what the client's rows hold:
 //// - Telekinetic Strike, Spell4 32893 (class 3, base 19102): castTime 1250,
 ////   castBarType 1, no cooldown of its own, global cooldown kind 0 with SpellCoolDown
 ////   row 213 (1000 ms), a Magic damage effect and a Proxy to 30900 on the caster
 ////   (`Spell4.32893`).
 //// - Mind Burst, 32809 (class 3, base 19019): an innate cost of type 6 (Resource1,
 ////   the Esper's Psi Points) of 1, kind 0, row 104 (1250 ms) (`Spell4CastResult.vital_cost`).
-////   `rows` holds it without its EMM id and effects; `rows_with_mind_burst_spend`
-////   holds them as the client's rows do (`Spell4.32809`).
+////   The planted row has no EMM id and no effects; the client's row holds them
+////   (`Spell4.32809`).
 //// - Crush, 32812 (class 3, base 19022): cooldown 35000, kind 3, and one Proxy,
 ////   100 ms after the go, to 42297, with the stray emmComparison 0 and emmValue 4
 ////   (`Spell4.32812`).
@@ -58,6 +57,7 @@
 //// naming a row the table lacks.
 
 import database_support
+import fixture_tables
 import genesis_prime/coverage/effect_row
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_area
@@ -66,7 +66,9 @@ import genesis_prime/table/class
 import genesis_prime/table/eldan_augmentation
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/level_up_unlock
+import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite
 import genesis_prime/table/spell4
@@ -84,10 +86,12 @@ import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
 import genesis_prime/table/telegraph_damage
 import genesis_prime/table/unit_property2
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/order
+import gleam/result
 import owned_key
 import planted_table.{type Cell, Float, Integer}
 
@@ -113,6 +117,7 @@ pub type Rows {
     unit_properties: List(List(Cell)),
     eldan_augmentations: List(List(Cell)),
     level_up_unlocks: List(List(Cell)),
+    positional_requirements: List(List(Cell)),
   )
 }
 
@@ -737,7 +742,8 @@ fn proficiency(class_id class_id: Int) -> #(String, Int) {
 }
 
 /// The planted rows of the abilities above and their children.
-pub fn rows() -> Rows {
+/// Gap: these rows are planted, not the client's (issue 326).
+pub fn planted_rows() -> Rows {
   Rows(
     spell4_conditions: spell4_conditions_rows(),
     spell_levels: list.map(
@@ -959,7 +965,7 @@ pub fn rows() -> Rows {
         kind: 0,
         global: 125,
         cost: #(0, 0),
-        more: [#("prerequisiteIdCasterPersistence", 390)],
+        more: [],
       ),
       method_spell_row(
         id: 43_468,
@@ -1936,6 +1942,7 @@ pub fn rows() -> Rows {
     unit_properties: unit_property_rows(),
     eldan_augmentations: [],
     level_up_unlocks: [level_up_unlock_row(id: 26, level: 10)],
+    positional_requirements: [],
   )
 }
 
@@ -1989,15 +1996,9 @@ pub fn unit_property_rows() -> List(List(Cell)) {
   unit_property_rows_with(replacing: [])
 }
 
-/// The Prerequisite rows the planted spells' cast and persistence columns name, each the
-/// client's (`table_rows -- Prerequisite 19750 390`): Rampage's cast prerequisite 19750
-/// (type 15, comparison 1, value 42908) and 390 (type 28, comparison 2: not in combat),
-/// which the planted Pulse Blast 42276 holds as its CasterPersistence. The client's Pulse
-/// Blast holds none: that column is test data, so a connection test has a cast that
-/// ends when the player enters combat.
+/// The Prerequisite rows the planted spells' cast columns name, each the client's.
 pub fn waiver_prerequisite_rows() -> List(List(Cell)) {
   [
-    prerequisite_row(id: 390, flags: 0, conditions: [#(28, 2, 0, 0)]),
     prerequisite_row(id: 19_750, flags: 0, conditions: [#(15, 1, 0, 42_908)]),
   ]
 }
@@ -2011,18 +2012,19 @@ fn by_id(first: List(Cell), second: List(Cell)) -> order.Order {
   int.compare(first_id, second_id)
 }
 
-/// The load of the planted tables with the plan's derivation, which fails when
-/// the plan cannot be built: the load's error, or `Ok(Nil)`.
+/// The load of these rows and the rows these roots reach with the plan's
+/// derivation, which fails when the plan cannot be built: the load's error, or
+/// `Ok(Nil)`.
 pub fn derivation_result(
   rows rows: Rows,
+  reaching roots: List(#(String, Int)),
 ) -> Result(Nil, table_store.LoadError) {
-  let files = files_of(rows:)
-  use folder <- planted_table.in_folder(files)
+  use folder <- planted_table.in_folder(reached_files(rows:, roots:))
   case
     table_store.load(
       under: owned_key.new(),
       from: folder,
-      entries: entries(),
+      entries: server_entries(),
       requirements: [],
       derivations: [spell_plan.derivation()],
     )
@@ -2033,6 +2035,53 @@ pub fn derivation_result(
     }
     Error(error) -> Error(error)
   }
+}
+
+/// The spell tables, then the server's other tables, which the spell rows name.
+fn server_entries() -> List(table_store.Entry) {
+  let spell_tables =
+    list.map(entries(), fn(entry) { table_store.schema(entry).table })
+  list.append(
+    entries(),
+    list.filter(server_table.entries(), fn(entry) {
+      !list.contains(spell_tables, table_store.schema(entry).table)
+    }),
+  )
+}
+
+/// The files of the rows a load of these rows holds: the rows the roots reach,
+/// each row the client's rows do not hold as it is, the rows those reach, and
+/// the tables that go in whole.
+fn reached_files(
+  rows rows: Rows,
+  roots roots: List(#(String, Int)),
+) -> List(#(String, BitArray)) {
+  let given =
+    list.fold(tables_of(rows:), fixture_tables.rows(), fn(held, table) {
+      dict.insert(held, { table.0 }.table, table.1)
+    })
+  // The plan's build reads the innate of every class.
+  let classes =
+    result.unwrap(dict.get(fixture_tables.rows(), class.schema.table), [])
+    |> list.map(fn(row) {
+      let assert [Integer(id), ..] = row as "a client row holds its ID first"
+      #(class.schema.table, id)
+    })
+  let kept =
+    fixture_tables.reached(rows: given, roots: list.append(roots, classes))
+  list.map(
+    list.append(
+      list.map(server_entries(), table_store.schema),
+      list.map(tables_of(rows:), fn(table) { table.0 }),
+    )
+      |> list.unique,
+    fn(schema) {
+      planted_table.file(
+        schema,
+        result.unwrap(dict.get(kept, schema.table), []),
+      )
+    },
+  )
 }
 
 fn entries() -> List(table_store.Entry) {
@@ -2060,60 +2109,60 @@ fn entries() -> List(table_store.Entry) {
   ]
 }
 
-fn files_of(rows rows: Rows) -> List(#(String, BitArray)) {
+fn tables_of(rows rows: Rows) -> List(#(tbl_file.Schema, List(List(Cell)))) {
   [
-    planted_table.file(spell_level.schema, rows.spell_levels),
-    planted_table.file(spell4.schema, rows.spell4),
-    planted_table.file(spell4_base.schema, rows.spell4_base),
-    planted_table.file(spell4_conditions.schema, rows.spell4_conditions),
-    planted_table.file(spell4_effects.schema, rows.spell4_effects),
-    planted_table.file(spell4_group_list.schema, rows.spell4_group_lists),
-    planted_table.file(spell4_stack_group.schema, rows.spell4_stack_groups),
-    planted_table.file(spell4_thresholds.schema, rows.spell4_thresholds),
-    planted_table.file(
-      spell4_aoe_target_constraints.schema,
-      rows.spell4_aoe_target_constraints,
-    ),
-    planted_table.file(spell4_valid_targets.schema, rows.spell4_valid_targets),
-    planted_table.file(spell4_telegraph.schema, rows.spell4_telegraph),
-    planted_table.file(telegraph_damage.schema, rows.telegraph_damage),
-    planted_table.file(spell_phase.schema, rows.spell_phases),
-    planted_table.file(spell_cool_down.schema, rows.spell_cool_downs),
-    planted_table.file(class.schema, rows.classes),
-    planted_table.file(prerequisite.schema, rows.prerequisites),
-    planted_table.file(positional_requirement.schema, []),
-    planted_table.file(unit_property2.schema, rows.unit_properties),
-    planted_table.file(eldan_augmentation.schema, rows.eldan_augmentations),
-    planted_table.file(level_up_unlock.schema, rows.level_up_unlocks),
+    #(spell_level.schema, rows.spell_levels),
+    #(spell4.schema, rows.spell4),
+    #(spell4_base.schema, rows.spell4_base),
+    #(spell4_conditions.schema, rows.spell4_conditions),
+    #(spell4_effects.schema, rows.spell4_effects),
+    #(spell4_group_list.schema, rows.spell4_group_lists),
+    #(spell4_stack_group.schema, rows.spell4_stack_groups),
+    #(spell4_thresholds.schema, rows.spell4_thresholds),
+    #(spell4_aoe_target_constraints.schema, rows.spell4_aoe_target_constraints),
+    #(spell4_valid_targets.schema, rows.spell4_valid_targets),
+    #(spell4_telegraph.schema, rows.spell4_telegraph),
+    #(telegraph_damage.schema, rows.telegraph_damage),
+    #(spell_phase.schema, rows.spell_phases),
+    #(spell_cool_down.schema, rows.spell_cool_downs),
+    #(class.schema, rows.classes),
+    #(prerequisite.schema, rows.prerequisites),
+    #(positional_requirement.schema, rows.positional_requirements),
+    #(unit_property2.schema, rows.unit_properties),
+    #(eldan_augmentation.schema, rows.eldan_augmentations),
+    #(level_up_unlock.schema, rows.level_up_unlocks),
   ]
 }
 
-/// The planted tables the plan reads, loaded from these rows under a key of
-/// their own, for the body to run on; unloaded afterwards.
+/// The tables the plan reads, loaded under a key of their own for the body to
+/// run on, then unloaded. The load holds the rows these roots reach, each row
+/// the client's rows do not hold as it is, and the rows those reach.
 pub fn with_loaded(
   rows rows: Rows,
+  reaching roots: List(#(String, Int)),
   body body: fn(table_store.Tables) -> a,
 ) -> a {
-  with_loaded_deriving(rows:, derivations: [], body:)
+  with_loaded_deriving(rows:, reaching: roots, derivations: [], body:)
 }
 
-/// The same with these derivations run on the load, which fails when one does.
+/// The same, with the rows these roots reach also loaded and these derivations
+/// run on the load, which fails when one does.
 pub fn with_loaded_deriving(
   rows rows: Rows,
+  reaching roots: List(#(String, Int)),
   derivations derivations: List(table_store.Derivation),
   body body: fn(table_store.Tables) -> a,
 ) -> a {
-  let files = files_of(rows:)
-  use folder <- planted_table.in_folder(files)
+  use folder <- planted_table.in_folder(reached_files(rows:, roots:))
   let assert Ok(tables) =
     table_store.load(
       under: owned_key.new(),
       from: folder,
-      entries: entries(),
+      entries: server_entries(),
       requirements: [],
       derivations:,
     )
-    as "the planted spell tables load"
+    as "the spell tables load"
   let result = body(tables)
   table_store.unload(tables)
   result
@@ -2154,22 +2203,21 @@ pub fn started_on_each_struck(
   )
 }
 
-/// What the plan makes of each of these effect rows in a place (`spell_plan.read_row`), over
-/// the planted tables, in the order given.
+/// What the plan makes of each of these effect rows in a place (`spell_plan.read_row`),
+/// over the client's rows, in the order given.
 pub fn read_rows(
   effects effects: List(spell4_effects.Spell4Effects),
   place place: spell_plan.RowPlace,
 ) -> List(Result(spell_plan.RowReading, spell_plan.PlanError)) {
-  with_loaded(rows: rows(), body: fn(tables) {
-    let spell_groups = spell_plan.spell_groups(tables:)
-    list.map(effects, fn(effect) {
-      spell_plan.read_row(tables:, spell_groups:, place:, effect:)
-    })
+  let tables = fixture_tables.shared()
+  let spell_groups = spell_plan.spell_groups(tables:)
+  list.map(effects, fn(effect) {
+    spell_plan.read_row(tables:, spell_groups:, place:, effect:)
   })
 }
 
 /// What the plan makes of one effect row in a place (`spell_plan.read_row`), over the
-/// planted tables.
+/// client's rows.
 pub fn read_row(
   effect effect: spell4_effects.Spell4Effects,
   place place: spell_plan.RowPlace,
@@ -2178,7 +2226,7 @@ pub fn read_row(
   reading
 }
 
-/// Whether the coverage measure counts the row read in a place, over the planted tables.
+/// Whether the coverage measure counts the row read in a place, over the client's rows.
 pub fn measure_reads(
   effect effect: spell4_effects.Spell4Effects,
   place place: spell_plan.RowPlace,
@@ -2187,361 +2235,23 @@ pub fn measure_reads(
   reads(effect, place)
 }
 
-/// The body gets the measure's per-row answer over the planted tables, loaded once:
-/// each load takes about 0.15 s, and a test that loaded once per row ran past its 5 s
-/// deadline on CI.
+/// The body gets the measure's per-row answer over the client's rows.
 pub fn with_measure(
   body body: fn(fn(spell4_effects.Spell4Effects, spell_plan.RowPlace) -> Bool) ->
     a,
 ) -> a {
-  use tables <- with_loaded(rows: rows())
+  let tables = fixture_tables.shared()
   let spell_groups = spell_plan.spell_groups(tables:)
   body(fn(effect, place) {
     effect_row.is_read(tables:, spell_groups:, place:, effect:)
   })
 }
 
-/// The planted rows with Energize, 69450, as the Medic's innate: Class row 4 names it in
-/// spell4IdInnateAbilityActive00, as the client's row does (`table_rows -- Class 4`), and
-/// the client holds no SpellLevel row for 69450 (`table_rows -- SpellLevel
-/// spell4Id=69450`), which only 78462 reaches, by an effect of type 137. Its Spell4,
-/// Spell4Base and VitalModifier rows are the client's (`table_rows -- Spell4 69450`, `--
-/// Spell4Base 46615`, `-- Spell4Effects spellId=69450`); its effects of types 11 and 118
-/// and its Proxies 228915 and 228917, behind prerequisites, are not planted.
-pub fn rows_with_energize() -> Rows {
-  let rows = rows()
-  Rows(
-    ..rows,
-    classes: list.map(rows.classes, fn(row) {
-      case row {
-        [Integer(4), ..] ->
-          class_row(id: 4, slots: [5, 18, 18, 18, 18, 18, 0, 16], more: [
-            proficiency(class_id: 4),
-            #("spell4IdInnateAbilityActive00", 69_450),
-          ])
-        other -> other
-      }
-    }),
-    spell4: sorted_by_id([
-      method_spell_row(
-        id: 69_450,
-        base: 46_615,
-        cast_time: 0,
-        cooldown: 30_000,
-        kind: 3,
-        global: 0,
-        cost: #(0, 0),
-        more: [],
-      ),
-      ..rows.spell4
-    ]),
-    spell4_base: sorted_by_id([
-      planted_table.row(spell4_base.schema, [
-        #("ID", Integer(46_615)),
-        #("classIdPlayer", Integer(4)),
-        #("spell4ValidTargetId", Integer(1)),
-      ]),
-      ..rows.spell4_base
-    ]),
-    spell4_effects: sorted_by_id([
-      vital_modifier_row(
-        id: 228_910,
-        spell: 69_450,
-        vital: 6,
-        amount: 4,
-        delay: 0,
-        phases: -1,
-        prerequisite: 43_811,
-        order: 0,
-      ),
-      vital_modifier_row_with(
-        id: 228_918,
-        spell: 69_450,
-        vital: 6,
-        amount: 1,
-        delay: 0,
-        phases: -1,
-        prerequisite: 43_812,
-        order: 7,
-        more: [#("tickTime", 2000), #("durationTime", 8000)],
-      ),
-      ..rows.spell4_effects
-    ]),
-  )
-}
-
-/// The Mind Burst damage effects of the client's rows (`table_rows -- Spell4Effects
-/// spellId=32809`): 61993 to 61997, each of emmComparison 0 and emmValue 0 to 4, aimed
-/// at the area (targetFlags 4).
-pub const mind_burst_damage = [
-  #(0, 0, 4),
-  #(0, 1, 4),
-  #(0, 2, 4),
-  #(0, 3, 4),
-  #(0, 4, 4),
-]
-
-/// The planted rows with Mind Burst as the client's rows hold its spend (Spell4 32809:
-/// innateCostEMMId0 4 on a cost of type 6 and 1, `Spell4.32809`), with `emm_id` and
-/// `cost` as a test changes them: its damage effects 61993 onwards, one for each of
-/// `damage` as (emmComparison, emmValue, targetFlags), the Fluff 95008 of type 17,
-/// the Proxy 135961 to 57030 (emmComparison 0, emmValue 4, dataBits06 23344) and the
-/// Proxy 230116 to 87353 (emmComparison 1, emmValue 2, caster apply prerequisite
-/// 44174). The two children's Spell4 and Spell4Base rows and the two prerequisites
-/// are the client's too (`table_rows -- Spell4 57030 87353`, `-- Prerequisite 23344
-/// 44174`); their own effects are not planted.
-pub fn rows_with_mind_burst_spend(
-  emm_id emm_id: Int,
-  cost cost: #(Int, Int),
-  damage damage: List(#(Int, Int, Int)),
-) -> Rows {
-  let rows = rows()
-  Rows(
-    ..rows,
-    spell4: sorted_by_id([
-      method_spell_row(
-        id: 32_809,
-        base: 19_019,
-        cast_time: 0,
-        cooldown: 0,
-        kind: 0,
-        global: 104,
-        cost:,
-        more: [
-          #("innateCostEMMId0", emm_id),
-          #("spell4AoeTargetConstraintsId", area_id(32_809)),
-        ],
-      ),
-      method_spell_row(
-        id: 57_030,
-        base: 36_649,
-        cast_time: 0,
-        cooldown: 0,
-        kind: 3,
-        global: 0,
-        cost: #(0, 0),
-        more: [],
-      ),
-      method_spell_row(
-        id: 87_353,
-        base: 62_440,
-        cast_time: 0,
-        cooldown: 0,
-        kind: 3,
-        global: 100,
-        cost: #(0, 0),
-        more: [],
-      ),
-      ..planted_table.without(rows: rows.spell4, ids: [32_809])
-    ]),
-    spell4_base: sorted_by_id([
-      base_row(id: 36_649, method: 0, weapon: 0, bar: 0, class: 3),
-      base_row(id: 62_440, method: 0, weapon: 0, bar: 0, class: 3),
-      ..rows.spell4_base
-    ]),
-    spell4_effects: sorted_by_id(
-      list.flatten([
-        list.index_map(damage, fn(tag, index) {
-          mind_burst_damage_row(
-            id: 61_993 + index,
-            comparison: tag.0,
-            value: tag.1,
-            target_flags: tag.2,
-            order: index,
-          )
-        }),
-        [
-          planted_table.row(spell4_effects.schema, [
-            #("ID", Integer(95_008)),
-            #("spellId", Integer(32_809)),
-            #("targetFlags", Integer(1)),
-            #("effectType", Integer(17)),
-            #("phaseFlags", Integer(-1)),
-            #("orderIndex", Integer(5)),
-          ]),
-          planted_table.row(spell4_effects.schema, [
-            #("ID", Integer(135_961)),
-            #("spellId", Integer(32_809)),
-            #("targetFlags", Integer(1)),
-            #("effectType", Integer(26)),
-            #("phaseFlags", Integer(-1)),
-            #("dataBits00", Integer(57_030)),
-            #("dataBits06", Integer(23_344)),
-            #("emmComparison", Integer(0)),
-            #("emmValue", Integer(4)),
-            #("orderIndex", Integer(6)),
-          ]),
-          planted_table.row(spell4_effects.schema, [
-            #("ID", Integer(230_116)),
-            #("spellId", Integer(32_809)),
-            #("targetFlags", Integer(1)),
-            #("effectType", Integer(26)),
-            #("phaseFlags", Integer(-1)),
-            #("dataBits00", Integer(87_353)),
-            #("prerequisiteIdCasterApply", Integer(44_174)),
-            #("emmComparison", Integer(1)),
-            #("emmValue", Integer(2)),
-            #("orderIndex", Integer(8)),
-          ]),
-        ],
-        rows.spell4_effects,
-      ]),
-    ),
-    prerequisites: sorted_by_id([
-      prerequisite_row(id: 23_344, flags: 0, conditions: [#(50, 1, 0, 57_027)]),
-      prerequisite_row(id: 44_174, flags: 1, conditions: [
-        #(15, 1, 0, 87_333),
-        #(15, 1, 0, 87_334),
-      ]),
-      ..rows.prerequisites
-    ]),
-  )
-}
-
-/// One Mind Burst damage effect: Magic damage (damageType 3) of phase 1 with the
-/// multiplier 1.0 and the formula the row of its emmValue holds (`table_rows --
-/// Spell4Effects spellId=32809`), with the emm columns given.
-fn mind_burst_damage_row(
-  id id: Int,
-  comparison comparison: Int,
-  value value: Int,
-  target_flags target_flags: Int,
-  order order: Int,
-) -> List(Cell) {
-  let parameters = case value {
-    0 -> #(0.25949999690055847, 13.850000381469727)
-    1 -> #(0.5195000171661377, 27.690000534057617)
-    2 -> #(0.7788000106811523, 41.540000915527344)
-    3 -> #(1.0379999876022339, 55.38999938964844)
-    _ -> #(1.2979999780654907, 69.2300033569336)
-  }
-  planted_table.row(spell4_effects.schema, [
-    #("ID", Integer(id)),
-    #("spellId", Integer(32_809)),
-    #("targetFlags", Integer(target_flags)),
-    #("effectType", Integer(8)),
-    #("damageType", Integer(3)),
-    #("flags", Integer(1)),
-    #("dataBits00", Integer(1_065_353_216)),
-    #("emmComparison", Integer(comparison)),
-    #("emmValue", Integer(value)),
-    #("parameterType00", Integer(12)),
-    #("parameterType01", Integer(10)),
-    #("parameterValue00", Float(parameters.0)),
-    #("parameterValue01", Float(parameters.1)),
-    #("phaseFlags", Integer(1)),
-    #("orderIndex", Integer(order)),
-  ])
-}
-
-/// The plans of the rows with Mind Burst's spend as the client's rows hold it,
-/// built once per run like `default_plans`.
-pub fn plans_with_mind_burst_spend() -> spell_plan.Plans {
-  database_support.once("spell_tables_plans_with_mind_burst_spend", fn() {
-    let assert Ok(plans) =
-      with_loaded(
-        rows: rows_with_mind_burst_spend(
-          emm_id: 4,
-          cost: #(6, 1),
-          damage: mind_burst_damage,
-        ),
-        body: fn(tables) { spell_plan.build(tables:) },
-      )
-      as "the planted rows with Mind Burst's spend build"
-    plans
-  })
-}
-
-/// The area of Mind Burst in the planted rows with its spend, its damage effects as
-/// (emmComparison, emmValue, targetFlags).
-pub fn mind_burst_area(
-  damage damage: List(#(Int, Int, Int)),
-) -> spell_area.SpellArea {
-  let assert Ok(areas) =
-    with_loaded_deriving(
-      rows: rows_with_mind_burst_spend(emm_id: 4, cost: #(6, 1), damage:),
-      derivations: [spell_plan.derivation()],
-      body: fn(tables) { spell_area.build(tables:) },
-    )
-    as "the planted Mind Burst builds its areas"
+/// Mind Burst's area among these areas.
+pub fn mind_burst_in(areas areas: spell_area.Areas) -> spell_area.SpellArea {
   let assert Ok(area) = spell_area.of_spell(areas:, spell4_id: Spell4Id(32_809))
     as "Mind Burst is in the areas"
   area
-}
-
-/// A type 73 row (ModifySpellCooldown) of a spell as the client holds the kit's rows:
-/// aimed at the caster (targetFlags 1), in every phase, with no delay and no duration,
-/// selector 0 on the Spell4Base `base`, operation 0 and the 32-bit float whose bits
-/// are `factor_bits` (`Spell4Effects.effectType.73`).
-fn cooldown_effect_row(
-  id id: Int,
-  spell spell: Int,
-  base base: Int,
-  factor_bits factor_bits: Int,
-  order order: Int,
-) -> List(Cell) {
-  planted_table.row(spell4_effects.schema, [
-    #("ID", Integer(id)),
-    #("spellId", Integer(spell)),
-    #("targetFlags", Integer(1)),
-    #("effectType", Integer(73)),
-    #("phaseFlags", Integer(-1)),
-    #("dataBits00", Integer(0)),
-    #("dataBits01", Integer(base)),
-    #("dataBits02", Integer(0)),
-    #("dataBits03", Integer(factor_bits)),
-    #("orderIndex", Integer(order)),
-  ])
-}
-
-/// The planted rows with Charged Shot's two type 73 rows as the client holds them
-/// (`table_rows -- Spell4Effects 80977 80979`): 80977 of the index-0 stage 34720 and
-/// 80979 of the index-1 stage 34722 multiply the cooldowns of Spell4Base 20684 by 0.0
-/// (bits 0) and by 0.4 (bits 0x3ECCCCCD), once, aimed at the caster.
-pub fn rows_with_cooldown_effects() -> Rows {
-  let rows = rows()
-  Rows(
-    ..rows,
-    spell4_effects: sorted_by_id([
-      cooldown_effect_row(
-        id: 80_977,
-        spell: 34_720,
-        base: 20_684,
-        factor_bits: 0,
-        order: 0,
-      ),
-      cooldown_effect_row(
-        id: 80_979,
-        spell: 34_722,
-        base: 20_684,
-        factor_bits: 1_053_609_165,
-        order: 1,
-      ),
-      ..rows.spell4_effects
-    ]),
-  )
-}
-
-/// The plans of `rows_with_cooldown_effects`, built once per run.
-pub fn plans_with_cooldown_effects() -> spell_plan.Plans {
-  database_support.once("spell_tables_plans_with_cooldown_effects", fn() {
-    let assert Ok(plans) =
-      with_loaded(rows: rows_with_cooldown_effects(), body: fn(tables) {
-        spell_plan.build(tables:)
-      })
-      as "the planted rows with Charged Shot's cooldown effects build"
-    plans
-  })
-}
-
-/// The plans of `rows_with_energize`.
-pub fn plans_with_energize() -> spell_plan.Plans {
-  let assert Ok(plans) =
-    with_loaded(rows: rows_with_energize(), body: fn(tables) {
-      spell_plan.build(tables:)
-    })
-    as "the planted rows with Energize build"
-  plans
 }
 
 /// Telekinetic Strike's Spell4Base, whose tree the planted rows hold, which the plan
@@ -2553,23 +2263,69 @@ const strike_base = 19_102
 pub fn planned_strike(
   rows rows: Rows,
 ) -> Result(spell_plan.Spell, spell_plan.PlanError) {
-  with_loaded(rows:, body: fn(tables) {
-    case spell_plan.build(tables:) {
-      Ok(plans) -> {
-        let assert Ok(spell) =
-          spell_plan.in_plans(plans:, base: id.Spell4BaseId(strike_base))
-          as "the plans hold Telekinetic Strike"
-        Ok(spell)
-      }
-      Error(error) -> Error(error)
+  // SpellLevel 647 is Telekinetic Strike's level-one row, which the plan
+  // builds from.
+  use tables <- with_loaded_deriving(
+    rows:,
+    reaching: [#("SpellLevel", 647)],
+    derivations: [],
+  )
+  case spell_plan.build(tables:) {
+    Ok(plans) -> {
+      let assert Ok(spell) =
+        spell_plan.in_plans(plans:, base: id.Spell4BaseId(strike_base))
+        as "the plans hold Telekinetic Strike"
+      Ok(spell)
     }
-  })
+    Error(error) -> Error(error)
+  }
 }
 
-/// The planted rows with this Spell4Effects row added; its spell is Telekinetic Strike
-/// when the row says so.
+/// The client's rows of the tables the plan reads, which a test may change or add
+/// to before `with_loaded` loads them. The fixture holds only the server's tables,
+/// so the coverage walk's two are not in it: EldanAugmentation is empty, and
+/// LevelUpUnlock holds one planted row, 26, the level the walk's gates read.
+/// Gap: LevelUpUnlock 26 is planted, not the client's row (issue 326).
+pub fn fixture_rows() -> Rows {
+  // The planted row 26 holds the client's levelUpUnlockSystemEnum 0 and level 10
+  // (`table_rows -- LevelUpUnlock 26`); its other columns read 0, where the client's
+  // row holds levelUpUnlockTypeId 21 and its text and icon.
+  let held = fixture_tables.rows()
+  let of = fn(schema: tbl_file.Schema) {
+    result.unwrap(dict.get(held, schema.table), [])
+  }
+  Rows(
+    spell_levels: of(spell_level.schema),
+    spell4: of(spell4.schema),
+    spell4_conditions: of(spell4_conditions.schema),
+    spell4_base: of(spell4_base.schema),
+    spell4_effects: of(spell4_effects.schema),
+    spell4_thresholds: of(spell4_thresholds.schema),
+    spell4_aoe_target_constraints: of(spell4_aoe_target_constraints.schema),
+    spell4_valid_targets: of(spell4_valid_targets.schema),
+    spell4_telegraph: of(spell4_telegraph.schema),
+    telegraph_damage: of(telegraph_damage.schema),
+    spell_phases: of(spell_phase.schema),
+    spell_cool_downs: of(spell_cool_down.schema),
+    classes: of(class.schema),
+    prerequisites: of(prerequisite.schema),
+    spell4_group_lists: of(spell4_group_list.schema),
+    spell4_stack_groups: of(spell4_stack_group.schema),
+    unit_properties: of(unit_property2.schema),
+    eldan_augmentations: of(eldan_augmentation.schema),
+    level_up_unlocks: [level_up_unlock_row(id: 26, level: 10)],
+    positional_requirements: of(positional_requirement.schema),
+  )
+}
+
+/// The client's rows with this Spell4Effects row added; its spell is Telekinetic
+/// Strike when the row says so.
 pub fn rows_with_effect(effect effect: List(Cell)) -> Rows {
-  let rows = rows()
+  let rows = fixture_rows()
+  assert !list.any(rows.spell4_effects, fn(row) {
+    by_id(row, effect) == order.Eq
+  })
+    as "a planted effect row of an id the client's table holds would replace the client's row"
   Rows(..rows, spell4_effects: sorted_by_id([effect, ..rows.spell4_effects]))
 }
 
@@ -2616,277 +2372,92 @@ pub fn with_column(
   })
 }
 
-/// The planted rows with Telekinetic Strike's Spell4 row changed in one column.
+/// The client's rows with Telekinetic Strike's Spell4 row changed in one column.
 pub fn rows_with_strike(name name: String, cell cell: Cell) -> Rows {
-  let rows = rows()
+  rows_with_strike_columns(columns: [#(name, cell)])
+}
+
+/// The client's rows with Telekinetic Strike's Spell4 row changed in these columns.
+pub fn rows_with_strike_columns(
+  columns columns: List(#(String, Cell)),
+) -> Rows {
+  rows_with_spell_columns(spell4_id: 32_893, columns:)
+}
+
+/// The client's rows with the Spell4 row `spell4_id` changed in these columns; the
+/// row must be held.
+pub fn rows_with_spell_columns(
+  spell4_id spell4_id: Int,
+  columns columns: List(#(String, Cell)),
+) -> Rows {
+  let rows = fixture_rows()
+  assert list.any(rows.spell4, fn(row) {
+    case row {
+      [Integer(id), ..] -> id == spell4_id
+      _ -> False
+    }
+  })
+    as "the client's rows hold the Spell4 row a test changes"
   Rows(
     ..rows,
     spell4: list.map(rows.spell4, fn(row) {
       case row {
-        [Integer(32_893), ..] -> with_column(row:, name:, cell:)
+        [Integer(id), ..] if id == spell4_id ->
+          list.fold(columns, row, fn(row, column) {
+            with_column(row:, name: column.0, cell: column.1)
+          })
         other -> other
       }
     }),
   )
 }
 
-/// The plans the planted rows build, built once per run from one load of the
-/// planted tables that is erased after the build; every test that reads the
-/// plans of the unchanged rows takes them from here, so it puts no terms of its
-/// own. A test that changes a row loads its own (`with_loaded`).
-pub fn default_plans() -> spell_plan.Plans {
-  database_support.once("spell_tables_default_plans", fn() {
-    let assert Ok(plans) =
-      with_loaded(rows: rows(), body: fn(tables) { spell_plan.build(tables:) })
-      as "the planted spell rows build"
+/// The plans the client's rows build, built once.
+pub fn fixture_plans() -> spell_plan.Plans {
+  database_support.once("spell_tables_fixture_plans", fn() {
+    let assert Ok(plans) = spell_plan.build(tables: fixture_tables.shared())
+      as "the fixture's spell rows build"
     plans
   })
 }
 
-/// A Spell4Effects row of the Stalker's Stealth tree as the client holds it: aimed at
-/// the caster (targetFlags 1), in phase 1, of this type and order, behind this caster
-/// apply prerequisite, with the data columns and flags the row sets
-/// (`table_rows -- Spell4Effects spellId=46073`, `spellId=38784`, `spellId=38783`).
-fn stealth_tree_row(
-  id id: Int,
-  spell spell: Int,
-  type_ type_: Int,
-  order order: Int,
-  gate gate: Int,
-  columns columns: List(#(String, Int)),
-) -> List(Cell) {
-  planted_table.row(spell4_effects.schema, [
-    #("ID", Integer(id)),
-    #("spellId", Integer(spell)),
-    #("targetFlags", Integer(1)),
-    #("effectType", Integer(type_)),
-    #("phaseFlags", Integer(1)),
-    #("orderIndex", Integer(order)),
-    #("prerequisiteIdCasterApply", Integer(gate)),
-    ..list.map(columns, fn(column) { #(column.0, Integer(column.1)) })
-  ])
-}
-
-/// The row of a Proxy to a spell, as 46073's two hold them: dataBits03 1.0 as 32 float
-/// bits, dataBits04 1 and dataBits05 60.
-fn stealth_proxy_row(
-  id id: Int,
-  spell spell: Int,
-  child child: Int,
-  order order: Int,
-  gate gate: Int,
-) -> List(Cell) {
-  stealth_tree_row(id:, spell:, type_: 26, order:, gate:, columns: [
-    #("dataBits00", child),
-    #("dataBits03", 1_065_353_216),
-    #("dataBits04", 1),
-    #("dataBits05", 60),
-  ])
-}
-
-/// A type 80 row that force-removes one stack of the Spell4 `removed`
-/// (dataBits00 2, dataBits02 1, dataBits03 and dataBits04 1, dataBits06 3).
-fn stealth_remove_row(
-  id id: Int,
-  spell spell: Int,
-  removed removed: Int,
-  order order: Int,
-) -> List(Cell) {
-  stealth_tree_row(id:, spell:, type_: 80, order:, gate: 0, columns: [
-    #("dataBits00", 2),
-    #("dataBits01", removed),
-    #("dataBits02", 1),
-    #("dataBits03", 1),
-    #("dataBits04", 1),
-    #("dataBits06", 3),
-  ])
-}
-
-/// A type 73 row that changes the cooldown group 182 (dataBits00 3) by operation 3 and
-/// the float 1000.0 (bits 1148846080).
-fn stealth_cooldown_row(
-  id id: Int,
-  spell spell: Int,
-  order order: Int,
-  gate gate: Int,
-) -> List(Cell) {
-  stealth_tree_row(id:, spell:, type_: 73, order:, gate:, columns: [
-    #("dataBits00", 3),
-    #("dataBits01", 182),
-    #("dataBits02", 3),
-    #("dataBits03", 1_148_846_080),
-  ])
-}
-
-/// The planted rows with the Stalker's Stealth toggle as a level-1 ability of the
-/// Stalker. The SpellLevel row 99421 is test data, not the client's: the client holds no
-/// SpellLevel row for 46073, which Class 5 names as its first innate active ability
-/// (`table_rows -- Class 5`). Its Spell4, Spell4Base and Spell4Effects rows are the
-/// client's:
-/// - 46073 (base 30075, cooldown 25000 and groups 182 and 248, global cooldown kind 3 on
-///   115) with Proxies 107792 to 38784 behind 7050 (type 116, comparison 2) and 107793
-///   to 38783 behind 8127 (comparison 1), and 107795, which force-removes 38913;
-/// - 38784 (base 23166, stack group 173 of cap 1) with its Stealth effect 83834 behind
-///   16152 (dataBits02 0), its twin 95774 behind 16153 (dataBits02 1) and 159128, a cooldown
-///   effect on group 182 behind 390;
-/// - 38783 (base 23165, value 0) with 83832, which force-removes 38784, 83833, which
-///   force-removes 38914, and 159130;
-/// - 38913 and 38914, Tactical Retreat, as rows only: no tree of theirs is planted.
-/// What is left out: the columns that name a prerequisite of the cast, a spell group or
-/// a runner, and 38784's effects that need an AMP (the proc 178239, the Proxy 208380 and
-/// the type 81 row 91018). Prerequisite 7050, 8127, 16152, 16153 and 390 are the client's
-/// (`table_rows -- Prerequisite 7050 8127 16152 16153 390`).
-pub fn rows_with_stealth() -> Rows {
-  let rows = rows()
-  let toggle = fn(id, base, cooldown, global, more) {
-    method_spell_row(
-      id:,
-      base:,
-      cast_time: 0,
-      cooldown:,
-      kind: 3,
-      global:,
-      cost: #(0, 0),
-      more: [#("spell4ConditionsIdTarget", 15), ..more],
+/// Telekinetic Strike's plan from the client's rows, built once.
+pub fn fixture_strike() -> spell_plan.Spell {
+  let assert Ok(spell) =
+    spell_plan.in_plans(
+      plans: fixture_plans(),
+      base: id.Spell4BaseId(strike_base),
     )
-  }
-  Rows(
-    ..rows,
-    spell_levels: sorted_by_id([
-      planted_table.row(spell_level.schema, [
-        #("ID", Integer(99_421)),
-        #("classId", Integer(5)),
-        #("characterLevel", Integer(1)),
-        #("prerequisiteId", Integer(0)),
-        #("spell4Id", Integer(46_073)),
-      ]),
-      ..rows.spell_levels
-    ]),
-    spell4: sorted_by_id(
-      list.append(rows.spell4, [
-        toggle(46_073, 30_075, 25_000, 115, [
-          #("spellCoolDownId00", 182),
-          #("spellCoolDownId02", 248),
-          #("spell4StackGroupId", 2),
-        ]),
-        toggle(38_784, 23_166, 0, 100, [#("spell4StackGroupId", 173)]),
-        toggle(38_783, 23_165, 0, 100, [#("spell4StackGroupId", 2)]),
-        toggle(38_913, 23_282, 0, 100, [#("spell4StackGroupId", 173)]),
-        toggle(38_914, 23_283, 0, 100, []),
-      ]),
-    ),
-    spell4_base: sorted_by_id(list.append(
-      rows.spell4_base,
-      list.map([30_075, 23_166, 23_165, 23_282, 23_283], fn(id) {
-        base_row(id:, method: 0, weapon: 0, bar: 0, class: 5)
-      }),
-    )),
-    spell4_effects: sorted_by_id(
-      list.append(rows.spell4_effects, [
-        stealth_proxy_row(
-          id: 107_792,
-          spell: 46_073,
-          child: 38_784,
-          order: 0,
-          gate: 7050,
-        ),
-        stealth_proxy_row(
-          id: 107_793,
-          spell: 46_073,
-          child: 38_783,
-          order: 1,
-          gate: 8127,
-        ),
-        stealth_remove_row(
-          id: 107_795,
-          spell: 46_073,
-          removed: 38_913,
-          order: 3,
-        ),
-        stealth_tree_row(
-          id: 83_834,
-          spell: 38_784,
-          type_: 83,
-          order: 0,
-          gate: 16_152,
-          columns: [#("flags", 2)],
-        ),
-        stealth_tree_row(
-          id: 95_774,
-          spell: 38_784,
-          type_: 83,
-          order: 2,
-          gate: 16_153,
-          columns: [#("flags", 2), #("dataBits02", 1)],
-        ),
-        stealth_cooldown_row(id: 159_128, spell: 38_784, order: 3, gate: 390),
-        stealth_remove_row(id: 83_832, spell: 38_783, removed: 38_784, order: 0),
-        stealth_remove_row(id: 83_833, spell: 38_783, removed: 38_914, order: 1),
-        stealth_cooldown_row(id: 159_130, spell: 38_783, order: 2, gate: 0),
-      ]),
-    ),
-    spell_cool_downs: sorted_by_id(
-      list.append(rows.spell_cool_downs, [
-        planted_table.row(spell_cool_down.schema, [
-          #("ID", Integer(100)),
-          #("cooldownTime", Integer(1500)),
-        ]),
-        planted_table.row(spell_cool_down.schema, [
-          #("ID", Integer(182)),
-          #("cooldownTime", Integer(25_000)),
-        ]),
-        planted_table.row(spell_cool_down.schema, [
-          #("ID", Integer(248)),
-          #("cooldownTime", Integer(350)),
-        ]),
-      ]),
-    ),
-    prerequisites: sorted_by_id(
-      list.append(rows.prerequisites, [
-        prerequisite_row(id: 7050, flags: 0, conditions: [#(116, 2, 0, 28_455)]),
-        prerequisite_row(id: 8127, flags: 0, conditions: [#(116, 1, 0, 28_455)]),
-        prerequisite_row(id: 16_152, flags: 0, conditions: [#(50, 2, 0, 59_389)]),
-        prerequisite_row(id: 16_153, flags: 0, conditions: [#(50, 1, 0, 59_389)]),
-      ]),
-    ),
-    spell4_stack_groups: [
-      planted_table.row(spell4_stack_group.schema, [
-        #("ID", Integer(2)),
-        #("stackTypeEnum", Integer(4)),
-      ]),
-      planted_table.row(spell4_stack_group.schema, [
-        #("ID", Integer(173)),
-        #("stackCap", Integer(1)),
-      ]),
-    ],
-  )
+    as "the plans hold Telekinetic Strike"
+  spell
 }
 
-/// The plans of `rows_with_stealth`, built once per run.
-pub fn plans_with_stealth() -> spell_plan.Plans {
-  database_support.once("spell_tables_plans_with_stealth", fn() {
-    let assert Ok(plans) =
-      with_loaded(rows: rows_with_stealth(), body: fn(tables) {
-        spell_plan.build(tables:)
-      })
-      as "the planted rows with the Stalker's Stealth toggle build"
-    plans
+/// The areas the client's rows build, built once.
+pub fn fixture_areas() -> spell_area.Areas {
+  database_support.once("spell_tables_fixture_areas", fn() {
+    let assert Ok(areas) = spell_area.build(tables: fixture_tables.shared())
+      as "the fixture's spell rows build their areas"
+    areas
   })
 }
 
-/// The planted rows with the Engineer's Volatility gain as the client holds it
-/// (`Spell4.42148`): the hidden spell 42148 (base 26342, cast time 0, caster condition
-/// row 4), its one effect 95337 (a VitalModifier of vital 6, +15, phaseFlags 1, behind
-/// prerequisite 903) and Prerequisite 903 (type 28, comparison 1: the caster is in
-/// combat, `Prerequisite.prerequisiteTypeId.28`). Nothing in the client's tables casts
-/// 42148, so no Proxy of the planted rows names it. Pulse Blast's damage spell 37302
-/// holds its damage as the client's rows do (`table_rows -- Spell4Effects spellId=37302`,
-/// `-- Spell4Telegraph spell4Id=37302`, `-- TelegraphDamage 213 217 218`): three Physical
-/// effects aimed at the area in its goes 1, 2 and 3 (phaseFlags 2, 4 and 8), each with a
-/// cone of its own. Pulse Blast 42276 holds no CasterPersistence, as the client's row has
-/// none (`rows` plants 390 as test data).
-pub fn rows_with_volatility() -> Rows {
-  let rows = rows()
+// The Engineer's Volatility gain as the client holds it (`Spell4.42148`): the hidden
+// spell 42148 (base 26342, cast time 0, caster condition row 4), its one effect 95337
+// (a VitalModifier of vital 6, +15, phaseFlags 1, behind prerequisite 903) and
+// Prerequisite 903 (type 28, comparison 1: the caster is in combat,
+// `Prerequisite.prerequisiteTypeId.28`). Nothing in the client's tables casts 42148,
+// so no Proxy of the planted rows names it. Pulse Blast's damage spell 37302 holds its
+// damage as the client's rows do (`table_rows -- Spell4Effects spellId=37302`,
+// `-- Spell4Telegraph spell4Id=37302`, `-- TelegraphDamage 213 217 218`): three
+// Physical effects aimed at the area in its goes 1, 2 and 3 (phaseFlags 2, 4 and 8),
+// each with a cone of its own. Pulse Blast 42276 holds no CasterPersistence, as the
+// client's row has none.
+
+/// The planted rows with the Engineer's Volatility gain and Pulse Blast's damage
+/// spell.
+/// Gap: these rows are planted, not the client's (issue 326).
+pub fn planted_rows_with_volatility() -> Rows {
+  let rows = planted_rows()
   Rows(
     ..rows,
     spell4: sorted_by_id([
@@ -2907,12 +2478,6 @@ pub fn rows_with_volatility() -> Rows {
               row:,
               name: "spell4AoeTargetConstraintsId",
               cell: Integer(area_id(37_302)),
-            )
-          [Integer(42_276), ..] ->
-            with_column(
-              row:,
-              name: "prerequisiteIdCasterPersistence",
-              cell: Integer(0),
             )
           other -> other
         }
@@ -3026,31 +2591,27 @@ pub fn volatility_row() -> server_proxy.Row {
   server_proxy.Row(spell4_base_id: 26_468, phase: 1, spell4_id: 42_148)
 }
 
-/// The server's Proxies of the seed row, selected over `rows_with_volatility`
-/// (genesis_prime/game/server_proxy), built once per run. The value holds the planned
-/// spell and no table, so a connection made with other planted tables can plant it.
-pub fn server_proxies_with_volatility() -> server_proxy.ServerProxies {
-  database_support.once("spell_tables_server_proxies_with_volatility", fn() {
-    with_loaded(rows: rows_with_volatility(), body: fn(tables) {
-      let assert Ok(plans) = spell_plan.build(tables:)
-        as "the planted rows with Volatility build"
-      let assert Ok(proxies) =
-        server_proxy.select(rows: [volatility_row()], tables:, plans:)
-        as "the seed row selects"
-      proxies
-    })
+/// The server's Proxies of the seed row, selected over the client's rows
+/// (genesis_prime/game/server_proxy), built once. The value holds the planned spell
+/// and no table, so a connection made with other tables can plant it.
+pub fn server_proxies() -> server_proxy.ServerProxies {
+  database_support.once("spell_tables_server_proxies", fn() {
+    let tables = fixture_tables.shared()
+    let assert Ok(plans) = spell_plan.build(tables:)
+      as "the fixture's rows build the spell plans"
+    let assert Ok(proxies) =
+      server_proxy.select(rows: [volatility_row()], tables:, plans:)
+      as "the seed row selects"
+    proxies
   })
 }
 
-/// The plans of `rows_with_volatility` with the server's Proxy planted, built once per
-/// run.
-pub fn plans_with_volatility() -> spell_plan.Plans {
-  let proxies = server_proxies_with_volatility()
-  database_support.once("spell_tables_plans_with_volatility", fn() {
-    with_loaded(rows: rows_with_volatility(), body: fn(tables) {
-      let assert Ok(plans) = spell_plan.build(tables:)
-        as "the planted rows with Volatility build"
-      server_proxy.planted_into(plans:, proxies:)
-    })
+/// The plans of the client's rows with the server's Proxy planted, built once.
+pub fn plans_with_server_proxies() -> spell_plan.Plans {
+  let proxies = server_proxies()
+  database_support.once("spell_tables_plans_with_server_proxies", fn() {
+    let assert Ok(plans) = spell_plan.build(tables: fixture_tables.shared())
+      as "the fixture's rows build the spell plans"
+    server_proxy.planted_into(plans:, proxies:)
   })
 }

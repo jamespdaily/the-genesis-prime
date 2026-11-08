@@ -379,7 +379,7 @@ pub fn an_instant_spell_pays_at_its_accept_before_it_writes_anything_test() -> N
 fn slow_mind_burst() -> Spell {
   let assert Ok(spell) =
     spell_plan.in_plans(
-      plans: spell_tables.plans_with_mind_burst_spend(),
+      plans: spell_tables.fixture_plans(),
       base: id.Spell4BaseId(19_019),
     )
     as "the planted Esper holds Mind Burst with its spend"
@@ -436,8 +436,7 @@ pub fn a_mind_burst_fixes_n_at_its_accept_and_its_go_pays_the_points_n_was_fixed
     as "Spell4.innateCostEMMId0 4: the go pays the 3 points n was fixed on"
   assert asked.spent == Some(2)
     as "Spell4Effects.emmComparison: n is the 3 points held at the accept less the base cost of 1; the 5 held at the go do not move it"
-  let area =
-    spell_tables.mind_burst_area(damage: spell_tables.mind_burst_damage)
+  let area = spell_tables.mind_burst_in(areas: spell_tables.fixture_areas())
   let assert Ok(phase) =
     spell_area.phase(spell: area, phase: asked.phase, spent: asked.spent)
     as "Mind Burst has one phase"

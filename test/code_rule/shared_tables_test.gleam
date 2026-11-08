@@ -78,6 +78,35 @@ pub fn the_module_that_makes_the_shared_load_is_not_a_breach_test() -> Nil {
     as "the one module allowed to load the client's real tables"
 }
 
+pub fn a_function_that_loads_a_table_from_the_fixtures_folder_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    test_module([
+      "import fixture_tables",
+      "import genesis_prime/table/loader/store",
+      "fn load(entry) {",
+      "  store.load(under: key, from: fixture_tables.folder, entries: [entry])",
+      "}",
+    ])
+  assert planted.lines(shared_tables.breaches([file])) == [5]
+    as "the fixture's folder is loaded only by test/fixture_tables.gleam"
+}
+
+pub fn the_module_that_loads_the_fixture_is_not_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    planted.file(path: shared_tables.fixture_loader_path, lines: [
+      "//// The planted fixture load.",
+      "import fixture_tables",
+      "import genesis_prime/table",
+      "fn shared() { table.load(from: fixture_tables.folder) }",
+    ])
+  assert shared_tables.breaches([file]) == []
+    as "the one module allowed to load the committed fixture"
+}
+
 pub fn a_function_that_reads_the_folder_without_loading_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")

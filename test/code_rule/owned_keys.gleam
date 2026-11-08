@@ -9,9 +9,10 @@
 //// - **`reference.new()` is a breach in a module that loads tables or writes
 ////   content with the store**, where the reference is a load's key; a module
 ////   that makes a reference for anything else may.
-//// - Four modules are not read. `test/client_tables.gleam` and
-////   `test/character_tables.gleam` make the loads every test shares for the run
-////   (`database_support.once`), which are never erased. `test/owned_key.gleam`
+//// - Five modules are not read. `test/client_tables.gleam`, `test/fixture_tables.gleam`
+////   and `test/character_tables.gleam` make the loads every test shares for the run
+////   (`database_support.once`), which are never erased (`fixture_tables` makes its
+////   edit loads with `owned_key`). `test/owned_key.gleam`
 ////   makes the keys, and `test/owned_key_test.gleam` tests a key made without it.
 //// - Modules are read one at a time, so a key a helper in another module makes
 ////   and returns is not followed.
@@ -25,8 +26,9 @@ import gleam/order
 import gleam/string
 
 const exempt_paths = [
-  "test/client_tables.gleam", "test/character_tables.gleam",
-  "test/owned_key.gleam", "test/owned_key_test.gleam",
+  "test/client_tables.gleam", "test/fixture_tables.gleam",
+  "test/character_tables.gleam", "test/owned_key.gleam",
+  "test/owned_key_test.gleam",
 ]
 
 const store_module = "genesis_prime/table/loader/store"

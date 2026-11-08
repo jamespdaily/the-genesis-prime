@@ -98,7 +98,8 @@ fn engineer_of(faction_id faction_id: Int) -> World {
       state:,
       taken:,
       outcome: step.Answer(
-        FromMap(support.with_the_clients_loadout(
+        FromMap(support.with_the_tables_loadout(
+          tables: client_tables.shared(),
           joined: support.map_answer(taken),
           class_id: 2,
         )),
