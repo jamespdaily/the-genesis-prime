@@ -44,6 +44,9 @@ const beast =
     tech_mitigation: 0.0,
     magic_mitigation: 0.0,
     shield_mitigation_max: 0.0,
+    physical_taken: hit.as_dealt,
+    tech_taken: hit.as_dealt,
+    magic_taken: hit.as_dealt,
   )
 
 const no_luck = Rolls(crit: 0.9, deflect: 0.9, glance: 0.9)
@@ -265,6 +268,9 @@ const shielded =
     tech_mitigation: 0.0,
     magic_mitigation: 0.0,
     shield_mitigation_max: 0.625,
+    physical_taken: hit.as_dealt,
+    tech_taken: hit.as_dealt,
+    magic_taken: hit.as_dealt,
   )
 
 /// A strike of Magic blows of these damages, with no crit chance.
@@ -650,6 +656,9 @@ fn agree(drawn drawn: Drawn, share share: fn(Float) -> Int) -> Bool {
       tech_mitigation: drawn.mitigation,
       magic_mitigation: drawn.mitigation,
       shield_mitigation_max: drawn.shield_max,
+      physical_taken: hit.as_dealt,
+      tech_taken: hit.as_dealt,
+      magic_taken: hit.as_dealt,
     )
   old_apply(
     health: drawn.health,

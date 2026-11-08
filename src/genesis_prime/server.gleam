@@ -102,10 +102,11 @@
 import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Message, type PeerNews, type Request, AskHandOff, AskMap,
-  AskMapRun, AskSessions, AskStore, ForStay, FromHandOff, FromMap, FromSessions,
-  FromStore, SentByChat, SentByFoe, SentByMap, SentByPeer, SentBySessions,
-  SentByTarget, TellChat, TellLifeChanged, TellMoved, TellPeer, TellReady,
-  TellStealthChanged, TellStrike, TellStrikeAnswered, TellTargetMoved,
+  AskMapRun, AskSessions, AskStore, ChangeEnds, ChangeStarts, ForStay,
+  FromHandOff, FromMap, FromSessions, FromStore, SentByChat, SentByFoe,
+  SentByMap, SentByPeer, SentBySessions, SentByTarget, TellChat, TellLifeChanged,
+  TellMoved, TellPeer, TellReady, TellStealthChanged, TellStrike,
+  TellStrikeAnswered, TellTargetChange, TellTargetMoved,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -356,7 +357,8 @@ fn directory(settings: Settings) -> Directory {
       | TellChat(..)
       | TellStrike(..)
       | TellTargetMoved(..)
-      | TellStrikeAnswered(..) -> Error(Nil)
+      | TellStrikeAnswered(..)
+      | TellTargetChange(..) -> Error(Nil)
     }
   }
 }
@@ -462,6 +464,7 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     | TellStrike(..)
     | TellTargetMoved(..)
     | TellStrikeAnswered(..)
+    | TellTargetChange(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -510,6 +513,7 @@ pub fn tell_the_run(
     | TellStrike(..)
     | TellTargetMoved(..)
     | TellStrikeAnswered(..)
+    | TellTargetChange(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -529,10 +533,11 @@ pub fn tell_the_run(
 /// registry as `SentByPeer` for the viewer's stay (`ForStay`), and a chat tell
 /// (`TellChat`) as `SentByChat`, by the
 /// same reach the services' sends take (`connection_reach`). A strike
-/// (`TellStrike`), a fighter's move (`TellTargetMoved`) and the answer to a
-/// creature's strike (`TellStrikeAnswered`) told to a `Creature` go through the
-/// creature registry with no watch, as the creature's `Strike`, `TargetMoved` and
-/// `StrikeAnswered` messages. Any other request is no tell to a
+/// (`TellStrike`), a fighter's move (`TellTargetMoved`), the answer to a
+/// creature's strike (`TellStrikeAnswered`) and a modifier's start or end
+/// (`TellTargetChange`) told to a `Creature` go through the creature registry with
+/// no watch, as the creature's `Strike`, `TargetMoved`, `StrikeAnswered`,
+/// `ModifierStarts` and `ModifierEnds` messages. Any other request is no tell to a
 /// connection or a creature: a rule that sends one has a bug, logged as an error,
 /// and nothing is sent.
 fn connection_deliver(
@@ -578,9 +583,25 @@ fn connection_deliver(
           life:,
           message: creature.StrikeAnswered(answered:),
         )
+      TellTargetChange(connection:, change:),
+        step.Creature(map:, incarnation:, unit_id:, life:)
+      ->
+        creature_registry.tell(
+          settings.world.creatures,
+          map:,
+          incarnation:,
+          unit_id:,
+          life:,
+          message: case change {
+            ChangeStarts(source:, modifier:) ->
+              creature.ModifierStarts(by: connection, source:, modifier:)
+            ChangeEnds(source:) -> creature.ModifierEnds(source:)
+          },
+        )
       TellStrike(..), _
       | TellTargetMoved(..), _
       | TellStrikeAnswered(..), _
+      | TellTargetChange(..), _
       | TellMoved(..), _
       | TellReady(..), _
       | TellStealthChanged(..), _

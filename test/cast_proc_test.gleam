@@ -208,7 +208,9 @@ fn trace(
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..) -> []
+      | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..) -> []
     }
   })
 }
@@ -264,6 +266,8 @@ fn is_strike(effect effect: Effect) -> Bool {
     | cast.Gain(..)
     | cast.CasterChangeStarts(..)
     | cast.CasterChangeEnds(..)
+    | cast.TargetChangeStarts(..)
+    | cast.TargetChangeEnds(..)
     | cast.StealthChanged(..) -> False
   }
 }

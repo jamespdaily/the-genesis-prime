@@ -32,7 +32,7 @@
 ////                                    Send(c, Removed) ──────────────▶ writes 0x355 if shown
 //// Retire ───────────────▶ Stop                                        (no one sees it: the map sent every
 ////                                                                      viewer Unwatched, 60 s ago or more)
-//// the run's end (WatchEnded) ─▶ Stop                                  (the map is gone: so are its players)
+//// the run's end (WatchEnded(run)) ─▶ Stop                             (the map is gone: so are its players)
 ////
 //// caster's connection c0
 //// Strike(key, c0, striker, offence) ─▶ the hit rule on its health (genesis_prime/world_map/creature_life)
@@ -44,8 +44,18 @@
 //// Approached(c, unit, place, seq), Withdrew(c), PlayerDied(c) from the map,
 //// TargetMoved(c, place, seq), StrikeAnswered(answered) from a connection,
 //// the attack tick, the strike deadline, the home timer ─▶ the fight (genesis_prime/world_map/creature_fight)
-//// the corpse timer ─────▶ alive again at full health      Send(each viewer, Removed), then CreatureAppeared
+//// the corpse timer ─────▶ alive again at full health, properties from the bases
+////                                                         Send(each viewer, Removed), then CreatureAppeared
 ////                         told Retire while dead: Stop (no viewer: the spawn's next creature starts full)
+////
+//// caster's connection c0, a property modifier of its spell, for the life the go struck
+//// ModifierStarts(c0, source, m) ─▶ apply(source, m) to its properties (genesis_prime/game/unit_properties)
+////                                    Send(each viewer, PropertiesChanged(changed entries)) ─▶ writes 0x93a if shown
+////                                    the rules take the new values: run speed, defence, offence,
+////                                    maximum health, Interrupt Armor's maximum
+////                                    c0's first modifier: Watch(c0's watch, Connection(c0))
+//// ModifierEnds(source) ─────────▶ remove(source)          Send(each viewer, PropertiesChanged(changed entries))
+//// c0's watch ends (WatchEnded) ─▶ remove every source of c0, each as ModifierEnds does
 //// ```
 ////
 //// - **The unit** is `creature_unit.create(spawn, unit_id, time)`, stamped with
@@ -86,6 +96,15 @@
 ////   player's strike) and tells it for that stay; a player's strike or move of a
 ////   stay other than the one its `Watched` named starts and moves nothing
 ////   (genesis_prime/world_map/creature_fight).
+//// - **A property modifier** of a player's spell is told by the caster's connection
+////   through the creature registry with no watch, as a strike is; the caster's cast owns
+////   its time and the creature owns the values and every rule that reads them. The
+////   messages carry no life: the registry's address names the life the go struck, and a
+////   tell for another life finds no process. A modifier on another player, and
+////   stacking across casters, are not handled here.
+//// - **Only the run's watch stops the creature.** Each caster's connection whose
+////   modifier the creature holds is watched under its own id, from 2 on, and its end
+////   takes that caster's modifiers off.
 //// - **The map run's end** ends the creature: it watches the run by the pid the
 ////   run gave when it started the creature, not through Maps, which is waiting
 ////   on the run's start while the run starts its creatures.
@@ -106,6 +125,15 @@
 //// | the creature supervisor restarts | every creature ends and so does every map (genesis_prime/server): the world subtree is `rest_for_one` |
 //// | a viewer's connection ends | a send to it is dropped; the map sends `Unwatched`, and the creature forgets it |
 //// | a `Watched` or `Unwatched` reaches a creature that has ended | dropped: the registry finds no process |
+//// | the creature crashes while it holds a modifier | the map starts the spawn again as a new unit with no modifier; the caster's later `ModifierEnds` is dropped by the registry |
+//// | the same source starts twice | it is held once |
+//// | a `ModifierStarts` or `ModifierEnds` reaches a creature that has respawned or ended | dropped: the registry finds no process for the old life |
+//// | the caster's connection ends before a modifier's end | the creature's watch on it ends, and it removes every source of that caster |
+//// | a `ModifierEnds` comes twice, or for a source not held | it changes nothing |
+//// | the caster dies | its casts finish, and each modifier they hold on a creature ends |
+//// | the creature dies while it holds a modifier | the modifier stays held and no rule reads it; its end still removes it |
+//// | the creature respawns | its properties start again from the bases |
+//// | a viewer arrives while a modifier lasts | its 0x262 carries the current value (`unit_properties.overlay`) |
 
 import genesis_prime/client_connection.{
   type PeerNews, CreatureAppeared, PeerNews, Removed,
@@ -115,11 +143,15 @@ import genesis_prime/game/strike_tell.{
   type Answered, type Fight, type Tell as StrikeTell, Answered, CreatureStriker,
   PlayerStriker, Refused,
 }
+import genesis_prime/game/unit_properties.{
+  type Modifier, type Properties, type Source,
+}
 import genesis_prime/step.{
   type ConnectionId, type CreatureStart, type Effect, type ServiceEffect,
-  type ServiceInput, type ServiceRule, type ServiceStep, Asked, Connection,
-  CreatureNotStarted, Effects, OwnEffect, OwnEvent, Send, ServiceTimerFired,
-  Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded, WatchId,
+  type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Asked,
+  Connection, CreatureNotStarted, Effects, OwnEffect, OwnEvent, Send,
+  ServiceTimerFired, Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded,
+  WatchId,
 }
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight.{
@@ -144,8 +176,12 @@ import gleam/set.{type Set}
 /// The rule's name: its module path.
 const rule_name = "genesis_prime/world_map/creature"
 
-/// The watch on the map run that started the creature.
+/// The watch on the map run that started the creature: the only watch whose end stops
+/// it.
 const run_watch = WatchId(1)
+
+/// The id of the first watch on a caster's connection; each later one takes the next.
+const first_caster_watch = 2
 
 /// The corpse timer. The fight's timers are numbered from it by kind and
 /// generation (`timer_id`), so none is 1.
@@ -191,6 +227,12 @@ pub type Message {
   TargetMoved(by: ConnectionId, place: Place, seq: Int, stay: Stay)
   /// The connection of a player the creature struck answers the strike.
   StrikeAnswered(answered: Answered)
+  /// The connection `by` of a caster: a property modifier of its spell starts on the
+  /// creature. It needs no life: the registry's address names the life the go struck,
+  /// and a tell for another life finds no process.
+  ModifierStarts(by: ConnectionId, source: Source, modifier: Modifier)
+  /// A caster's connection: the property modifier of `source` ends on the creature.
+  ModifierEnds(source: Source)
 }
 
 /// What a creature sends a connection without waiting.
@@ -208,8 +250,11 @@ pub type Outgoing {
 }
 
 /// A creature's players in sight, each by its connection with the stay the map
-/// named it for, its health, its fight, the crowd-control states it holds and whether
-/// it was told to retire while it lay dead.
+/// named it for, its health, its fight, the crowd-control states it holds, whether
+/// it was told to retire while it lay dead, its properties with the modifiers of
+/// players' spells on them, the watch on each caster's connection whose modifiers it
+/// holds, the caster's connection of each modifier's source, and the id its next
+/// watch on a caster's connection takes.
 pub opaque type State {
   State(
     settings: Settings,
@@ -219,6 +264,10 @@ pub opaque type State {
     control: creature_control.State,
     retiring: Bool,
     viewers: Dict(ConnectionId, Stay),
+    properties: Properties,
+    casters: Dict(ConnectionId, WatchId),
+    held_by: Dict(Source, ConnectionId),
+    next_watch: Int,
   )
 }
 
@@ -254,6 +303,13 @@ pub fn new(settings: Settings) -> State {
     control: creature_control.new(),
     retiring: False,
     viewers: dict.from_list(settings.creature.viewers),
+    properties: unit_properties.of_creature(
+      bases: settings.spawn.bases,
+      level: settings.spawn.level,
+    ),
+    casters: dict.new(),
+    held_by: dict.new(),
+    next_watch: first_caster_watch,
   )
 }
 
@@ -409,10 +465,48 @@ pub fn step(
         Error(Nil), Error(Nil) ->
           panic as "a creature starts no timer but its corpse's, its armor refill's, its fight's and its controls'"
       }
-    WatchEnded(..) -> #(state, Effects([Stop]))
+    OwnEvent(Told(message: ModifierStarts(by:, source:, modifier:))) ->
+      modifier_started(state:, by:, source:, modifier:)
+    OwnEvent(Told(message: ModifierEnds(source:))) ->
+      modifier_ended(state:, source:)
+    WatchEnded(watch:) if watch == run_watch -> #(state, Effects([Stop]))
+    WatchEnded(watch:) -> caster_gone(state:, watch:)
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
       panic as "a creature is told, and starts no creature"
   }
+}
+
+/// A property modifier of the caster of connection `by` starts on the creature: it is
+/// applied to the creature's properties, the entries that changed go to every viewer as
+/// `PropertiesChanged`, the rules that read a changed property take its new value,
+/// and the caster's connection is watched from its first modifier on. The same source
+/// twice is held once.
+fn modifier_started(
+  state _state: State,
+  by _by: ConnectionId,
+  source _source: Source,
+  modifier _modifier: Modifier,
+) -> #(State, ServiceStep(Outgoing)) {
+  panic as "shape: creature side applies a modifier on a creature"
+}
+
+/// The property modifier of `source` ends on the creature: it is removed, the entries
+/// that changed go to every viewer, and the rules take the values back. A source the
+/// creature does not hold changes nothing.
+fn modifier_ended(
+  state _state: State,
+  source _source: Source,
+) -> #(State, ServiceStep(Outgoing)) {
+  panic as "shape: creature side removes a modifier from a creature"
+}
+
+/// The watch `watch` on a caster's connection ended: every source of that caster is
+/// removed, as `modifier_ended` removes one.
+fn caster_gone(
+  state _state: State,
+  watch _watch: WatchId,
+) -> #(State, ServiceStep(Outgoing)) {
+  panic as "shape: creature side removes a gone caster's modifiers"
 }
 
 /// A strike on the creature: refused while it walks home; else the hit rule on its

@@ -339,6 +339,8 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
       | cast.Log(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> []
     }
   })
@@ -358,6 +360,8 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
       | cast.Log(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -379,6 +383,8 @@ pub fn caster_change_ends(
       | cast.Gain(..)
       | cast.Log(..)
       | cast.CasterChangeStarts(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -400,6 +406,8 @@ pub fn caster_change_starts(
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.Log(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -728,6 +736,8 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -804,6 +814,8 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -823,6 +835,8 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -842,6 +856,8 @@ pub fn goes_asked(effects effects: List(Effect)) -> List(cast.GoAsked) {
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -861,6 +877,8 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -880,6 +898,8 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -1048,6 +1068,8 @@ pub fn answered_each(
       | cast.Gain(..)
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> #(state, list.append(done, [effect]))
     }
   })

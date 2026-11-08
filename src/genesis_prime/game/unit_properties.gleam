@@ -1,10 +1,13 @@
-//// A player's own properties: each UnitProperty2 id's base and value, and the
-//// property modifiers of its own spells that change the value for their time. The
-//// connection keeps one `Properties` for its player (genesis_prime/game/world_entry
-//// `Entered`), applies and removes a modifier when the cast rule says so
+//// A unit's properties: each UnitProperty2 id's base and value, and the property
+//// modifiers of spells that change the value for their time. The connection keeps one
+//// `Properties` for its player (genesis_prime/game/world_entry `Entered`), applies and
+//// removes a modifier of the player's own spell when the cast rule says so
 //// (genesis_prime/game/cast `CasterChangeStarts`, `CasterChangeEnds`), tells the player's
 //// client and its viewers the entries that changed (0x93a), and hands each rule the
-//// value it reads. The module is pure.
+//// value it reads. A creature's process keeps one for its unit from its bases
+//// (`of_creature`), and applies and removes a modifier of a player's spell on it
+//// (genesis_prime/world_map/creature `ModifierStarts`, `ModifierEnds`). The module is
+//// pure.
 ////
 //// ```
 //// cast rule                connection                         clients
@@ -173,7 +176,7 @@ pub type Changed {
   Changed(property: UnitProperty2Id, base: Float, value: Float)
 }
 
-/// The player's properties: the base and the value of every UnitProperty2 id and the
+/// A unit's properties: the base and the value of every UnitProperty2 id and the
 /// modifiers that are live, in the order they started.
 pub opaque type Properties {
   Properties(
@@ -278,6 +281,16 @@ pub fn new(
       )
     })
   Properties(base:, value:, live: [], level:)
+}
+
+/// The properties of a creature at `level`: each of `bases` as base and value, every
+/// UnitProperty2 row's number for the creature (genesis_prime/world_map/spawn), no
+/// modifier live.
+pub fn of_creature(
+  bases bases: List(#(UnitProperty2Id, Float)),
+  level level: Int,
+) -> Properties {
+  new(defaults: bases, listed: [], level:)
 }
 
 fn float_of(bits bits: Int) -> Float {

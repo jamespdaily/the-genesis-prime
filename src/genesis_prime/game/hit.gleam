@@ -14,6 +14,7 @@
 ////                                                      each blow: crit roll < crit chance - crit deflect ─▶ x severity
 ////                                                                 glance roll < glance chance ─▶ less the glance amount
 ////                                                                 x (1 - mitigation of its damage type)
+////                                                                 x damage taken multiplier + damage taken offset, never below 0
 ////                                                                 the absorbs whose mask holds its type take from it, oldest first
 ////                                                                 the shield takes up to its share of the rest, limited by what it holds
 ////                                                      health' = max(0, health - damage); killed at 0
@@ -42,6 +43,10 @@
 ////   `Creature2.73464.mitigation`). That it multiplies the damage is the server's
 ////   choice (`Creature2.73464.mitigation`). The damage absorbed is the amount taken, and the
 ////   absorbs' part is added to it.
+//// - **Damage taken** changes a blow of damage type 1 to 3 after mitigation and before
+////   the absorbs: times the target's DamageTakenMultiplier of the type (159 + type - 1)
+////   plus its DamageTakenOffset (150 + type - 1), never below 0; any other type is
+////   untouched. The order and the floor are the server's choice.
 //// - **The absorbs** (genesis_prime/game/player_life keeps them in start order) take a
 ////   blow's damage after mitigation and before the shield: each pool whose damage-type
 ////   mask holds the blow's type (type t is held when bit 2^(t-1) of the mask is set,
@@ -103,8 +108,8 @@ pub type Offence {
 }
 
 /// What the target brings, as fractions: its chances to deflect, to deflect a
-/// critical hit and to glance, the share a glance takes off, and its mitigation of
-/// each damage type.
+/// critical hit and to glance, the share a glance takes off, its mitigation of
+/// each damage type, and what its damage taken of each damage type becomes.
 pub type Defence {
   Defence(
     deflect_chance: Float,
@@ -117,8 +122,26 @@ pub type Defence {
     /// The most of each blow the shield takes, as a fraction (ShieldMitigationMax,
     /// property 175): 0 for a unit with no shield.
     shield_mitigation_max: Float,
+    /// Physical damage taken: DamageTakenMultiplier_Physical (159) and
+    /// DamageTakenOffset_Physical (150).
+    physical_taken: DamageTaken,
+    /// Tech damage taken: DamageTakenMultiplier_Tech (160) and DamageTakenOffset_Tech
+    /// (151).
+    tech_taken: DamageTaken,
+    /// Magic damage taken: DamageTakenMultiplier_Magic (161) and
+    /// DamageTakenOffset_Magic (152).
+    magic_taken: DamageTaken,
   )
 }
+
+/// What a blow's damage after mitigation becomes for one damage type: times
+/// `multiplier`, plus `offset`.
+pub type DamageTaken {
+  DamageTaken(multiplier: Float, offset: Float)
+}
+
+/// Damage taken as it is dealt: a multiplier of 1 and an offset of 0.
+pub const as_dealt = DamageTaken(multiplier: 1.0, offset: 0.0)
 
 /// A defence that stops nothing: every chance and mitigation 0, and no shield.
 pub const unprotected =
@@ -131,6 +154,9 @@ pub const unprotected =
     tech_mitigation: 0.0,
     magic_mitigation: 0.0,
     shield_mitigation_max: 0.0,
+    physical_taken: as_dealt,
+    tech_taken: as_dealt,
+    magic_taken: as_dealt,
   )
 
 /// The caster's rolls for a strike, each in [0, 1): the critical hit roll, the
@@ -238,6 +264,7 @@ pub fn apply(
                 int.to_float(after_glance)
                 *. { 1.0 -. mitigation_of(defence:, blow:) },
               )
+            let taken = taken_by(defence:, blow:, amount: taken)
             let mitigated = after_glance - taken
             let #(soaked, absorbs_left) =
               soak(
@@ -332,6 +359,29 @@ fn holds(absorb absorb: Absorb, damage_type damage_type: Int) -> Bool {
     | damage_type.Other(..) -> 0
   }
   int.bitwise_and(absorb.mask, bit) != 0
+}
+
+/// A blow's `amount` after mitigation, as the target's damage taken of its damage
+/// type makes it.
+fn taken_by(
+  defence defence: Defence,
+  blow blow: Blow,
+  amount amount: Int,
+) -> Int {
+  let taken = case damage_type.from_value(blow.damage_type) {
+    damage_type.Physical -> defence.physical_taken
+    damage_type.Tech -> defence.tech_taken
+    damage_type.Magic -> defence.magic_taken
+    damage_type.Heal
+    | damage_type.HealShields
+    | damage_type.Fall
+    | damage_type.Suffocate
+    | damage_type.Other(..) -> as_dealt
+  }
+  case taken == as_dealt {
+    True -> amount
+    False -> panic as "shape: creature side fills damage taken in hit.apply"
+  }
 }
 
 fn mitigation_of(defence defence: Defence, blow blow: Blow) -> Float {

@@ -646,6 +646,9 @@ pub fn defence(
       properties:,
       property: unit_properties.shield_mitigation_max,
     ),
+    physical_taken: hit.as_dealt,
+    tech_taken: hit.as_dealt,
+    magic_taken: hit.as_dealt,
   )
 }
 

@@ -38,6 +38,11 @@
 ////   (genesis_prime/game/connection/look). A death, a type 80 removal, a persistence end
 ////   and the node's end by time end the disguise as they end a modifier; a camp sends no
 ////   0x933.
+//// - **Modifiers on a creature** are the cast rule's: a `TargetChangeStarts` or
+////   `TargetChangeEnds` is told to the creature of the life the go struck, through the
+////   creature registry with no watch, as `TellTargetChange`; the creature applies or
+////   removes it and tells its viewers (genesis_prime/world_map/creature). With no player
+////   in the world it is dropped.
 //// - **Stealth** is the cast rule's (genesis_prime/game/cast): its `StealthChanged` is
 ////   carried out as the owner's 0x8f5, the viewers' news, and last a tell to the run of
 ////   the player's map, so the map keeps the player out of every creature's ring
@@ -397,9 +402,58 @@ pub fn cast_effects(
         ]),
       )
       cast.StealthChanged(..), None -> #(session, [])
+      cast.TargetChangeStarts(unit_id:, life:, source:, modifier:),
+        Some(entered)
+      -> #(session, [
+        tells_the_creature(
+          session:,
+          entered:,
+          unit_id:,
+          life:,
+          change: client_connection.ChangeStarts(source:, modifier:),
+        ),
+      ])
+      cast.TargetChangeStarts(..), None -> #(session, [])
+      cast.TargetChangeEnds(unit_id:, life:, source:), Some(entered) -> #(
+        session,
+        [
+          tells_the_creature(
+            session:,
+            entered:,
+            unit_id:,
+            life:,
+            change: client_connection.ChangeEnds(source:),
+          ),
+        ],
+      )
+      cast.TargetChangeEnds(..), None -> #(session, [])
     }
     #(session, list.append(done, more))
   })
+}
+
+/// The tell of a property modifier's start or end to the creature `unit_id` of
+/// `life`, in the run of the player's map, through the creature registry with no
+/// watch, as a strike's tell goes.
+fn tells_the_creature(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  life life: Int,
+  change change: client_connection.TargetChange,
+) -> Effect(ConnectionEffect(Request)) {
+  OwnEffect(step.Tell(
+    to: step.Creature(
+      map: entered.map,
+      incarnation: entered.incarnation,
+      unit_id:,
+      life:,
+    ),
+    request: client_connection.TellTargetChange(
+      connection: client_connection.connection(session.link),
+      change:,
+    ),
+  ))
 }
 
 /// A go asked: its targets are selected from the units the client shows, the

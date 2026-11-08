@@ -81,9 +81,9 @@ import genesis_prime/table/faction2
 import genesis_prime/table/faction2_relationship
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
-  type Creature2Id, Creature2ArcheTypeId, Creature2DifficultyId,
-  Creature2DisplayInfoId, Creature2Id, Creature2ResistId, Creature2TierId,
-  CreatureLevelId, InstancePortalId, PathMissionId,
+  type Creature2Id, type UnitProperty2Id, Creature2ArcheTypeId,
+  Creature2DifficultyId, Creature2DisplayInfoId, Creature2Id, Creature2ResistId,
+  Creature2TierId, CreatureLevelId, InstancePortalId, PathMissionId,
 }
 import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/store as table_store
@@ -168,6 +168,10 @@ pub type Spawn {
     outfit_info_id: Int,
     /// What the creature brings to a fight.
     combat: Combat,
+    /// The base of each UnitProperty2 id for the creature at `level`, which its
+    /// properties start from at each life (genesis_prime/game/unit_properties
+    /// `of_creature`).
+    bases: List(#(UnitProperty2Id, Float)),
   )
 }
 
@@ -865,6 +869,9 @@ fn combat_of(
       tech_mitigation: mitigation(tech_offset, tech_resist),
       magic_mitigation: mitigation(magic_offset, magic_resist),
       shield_mitigation_max: 0.0,
+      physical_taken: hit.as_dealt,
+      tech_taken: hit.as_dealt,
+      magic_taken: hit.as_dealt,
     ),
     attack:,
     interrupt_armor: creature_life.interrupt_armor_of(maximum: armor_maximum),
@@ -1698,6 +1705,9 @@ fn load_checks(
         display_info_id: row.display_info_id,
         outfit_info_id: row.outfit_info_id,
         combat:,
+        // Gap: no base is built yet, so a creature's properties hold none; #464
+        // builds every UnitProperty2 row by `creature_property`.
+        bases: [],
       ),
     ),
     shared,

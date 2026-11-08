@@ -72,6 +72,7 @@ pub fn battle_beast(number number: Int, x x: Float) -> Spawn {
     display_info_id: 26_565,
     outfit_info_id: 0,
     combat: beast_combat(),
+    bases: [],
   )
 }
 
@@ -162,6 +163,9 @@ pub fn beast_combat() -> creature_life.Combat {
       tech_mitigation: 0.0,
       magic_mitigation: 0.0,
       shield_mitigation_max: 0.0,
+      physical_taken: hit.as_dealt,
+      tech_taken: hit.as_dealt,
+      magic_taken: hit.as_dealt,
     ),
     attack: beast_attack(),
     interrupt_armor: creature_life.NoArmor,

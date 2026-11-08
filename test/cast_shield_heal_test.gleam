@@ -121,6 +121,8 @@ fn heals(effects effects: List(Effect)) -> List(#(Source, Int)) {
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -228,6 +230,8 @@ pub fn a_shield_heal_with_no_delay_lands_in_the_steps_of_the_go_after_its_0x7f4_
         | cast.Pay(..)
         | cast.Gain(..)
         | cast.CasterChangeEnds(..)
+        | cast.TargetChangeStarts(..)
+        | cast.TargetChangeEnds(..)
         | cast.StealthChanged(..) -> False
       }
     })
@@ -318,6 +322,8 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
       | cast.Pay(..)
       | cast.Gain(..)
       | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
       | cast.StealthChanged(..) -> False
     }
   })

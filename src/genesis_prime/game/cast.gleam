@@ -705,6 +705,21 @@ pub type Effect {
   /// (`player_life.absorb_ended`), and an owner that holds nothing for the source changes
   /// nothing. A source names one cast and one Spell4Effects row, so at most one owner holds it.
   CasterChangeEnds(source: unit_properties.Source)
+  /// A property modifier of the caster's spell starts on the creature `unit_id` whose
+  /// life the go struck: the connection tells the creature
+  /// (genesis_prime/client_connection `TellTargetChange`), which applies it to its own
+  /// properties and tells its viewers the entries that changed. A creature of another
+  /// life drops it.
+  TargetChangeStarts(
+    unit_id: Int,
+    life: Int,
+    source: unit_properties.Source,
+    modifier: unit_properties.Modifier,
+  )
+  /// A property modifier the caster's spell started on the creature `unit_id` ends: the
+  /// node's end, a removal of the cast, its push off or the caster's death. A creature
+  /// that holds nothing for the source changes nothing.
+  TargetChangeEnds(unit_id: Int, life: Int, source: unit_properties.Source)
   /// The caster entered or left stealth, the last effect of the input that moved it:
   /// the connection writes 0x8f5 to the caster's client and tells each viewer
   /// (`opcode.0x8f5`, genesis_prime/client_connection `Stealth`).
@@ -2230,6 +2245,8 @@ pub fn after_payments(
         | Strike(..)
         | CasterChangeStarts(..)
         | CasterChangeEnds(..)
+        | TargetChangeStarts(..)
+        | TargetChangeEnds(..)
         | StealthChanged(..) -> resources
       }
     }),

@@ -98,6 +98,9 @@ fn kill_loop(
             tech_mitigation: 0.0,
             magic_mitigation: 0.0,
             shield_mitigation_max: 0.0,
+            physical_taken: hit.as_dealt,
+            tech_taken: hit.as_dealt,
+            magic_taken: hit.as_dealt,
           ),
           rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
         )
