@@ -32,7 +32,6 @@ import genesis_prime/table/item2_type
 import genesis_prime/table/item_display
 import genesis_prime/table/item_display_source_entry
 import genesis_prime/table/item_slot
-import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
@@ -771,7 +770,7 @@ pub fn with_creature_attack_multiplier(
         planted_table.file(
           spell4.schema,
           list.append(
-            fixture_rows(spell4.schema),
+            fixture_tables.committed_rows(spell4.schema),
             creature_attack_spell4_rows(),
           )
             |> list.sort(by_id),
@@ -780,7 +779,7 @@ pub fn with_creature_attack_multiplier(
         planted_table.file(
           spell4_effects.schema,
           list.append(
-            fixture_rows(spell4_effects.schema),
+            fixture_tables.committed_rows(spell4_effects.schema),
             creature_attack_effect_rows_of(multiplier_bits:),
           )
             |> list.sort(by_id),
@@ -788,19 +787,6 @@ pub fn with_creature_attack_multiplier(
       _ -> file
     }
   })
-}
-
-/// The committed fixture's rows of a spell table: the client's own rows of the
-/// starting abilities and what they reach.
-fn fixture_rows(schema: tbl_file.Schema) -> List(List(Cell)) {
-  let assert Ok(rows) = fixture_tables.table(schema.table)
-    as "the fixture holds the spell table"
-  rows
-}
-
-/// The planted file of a spell table made of the fixture's rows.
-fn fixture_file(schema: tbl_file.Schema) -> #(String, BitArray) {
-  planted_table.file(schema, fixture_rows(schema))
 }
 
 /// The creature auto-attack the creature kinds name, Spell4 5649 (`Spell4.5649`):
@@ -948,21 +934,21 @@ pub fn files() -> List(#(String, BitArray)) {
     planted_table.file(item_display_source_entry.schema, source_entry_rows()),
     planted_table.file(item_display.schema, item_display_rows()),
     planted_table.file(creature_level.schema, creature_level_rows()),
-    fixture_file(spell4.schema),
-    fixture_file(spell4_base.schema),
-    fixture_file(spell4_conditions.schema),
-    fixture_file(spell4_effects.schema),
-    fixture_file(spell4_group_list.schema),
-    fixture_file(spell4_stack_group.schema),
-    fixture_file(spell4_aoe_target_constraints.schema),
-    fixture_file(spell4_telegraph.schema),
-    fixture_file(telegraph_damage.schema),
-    fixture_file(spell4_valid_targets.schema),
-    fixture_file(spell4_thresholds.schema),
-    fixture_file(spell_phase.schema),
-    fixture_file(spell_cool_down.schema),
+    fixture_tables.file(spell4.schema),
+    fixture_tables.file(spell4_base.schema),
+    fixture_tables.file(spell4_conditions.schema),
+    fixture_tables.file(spell4_effects.schema),
+    fixture_tables.file(spell4_group_list.schema),
+    fixture_tables.file(spell4_stack_group.schema),
+    fixture_tables.file(spell4_aoe_target_constraints.schema),
+    fixture_tables.file(spell4_telegraph.schema),
+    fixture_tables.file(telegraph_damage.schema),
+    fixture_tables.file(spell4_valid_targets.schema),
+    fixture_tables.file(spell4_thresholds.schema),
+    fixture_tables.file(spell_phase.schema),
+    fixture_tables.file(spell_cool_down.schema),
     planted_table.file(class.schema, class_proficiency_rows()),
-    fixture_file(spell_level.schema),
+    fixture_tables.file(spell_level.schema),
   ]
 }
 

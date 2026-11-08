@@ -168,6 +168,18 @@ pub fn table(table: String) -> Result(List(List(Cell)), Refusal) {
   })
 }
 
+/// The committed rows of the table `schema` describes, read once by `table`.
+pub fn committed_rows(schema: tbl_file.Schema) -> List(List(Cell)) {
+  let assert Ok(rows) = table(schema.table) as "the fixture holds the table"
+  rows
+}
+
+/// The planted-folder file of the table `schema` describes, made of the
+/// committed rows: for a folder that takes the table from the client whole.
+pub fn file(schema: tbl_file.Schema) -> #(String, BitArray) {
+  planted_table.file(schema, committed_rows(schema))
+}
+
 /// Every table's rows, each read once by `table`. The dict is built on the
 /// caller's heap at each call and holds the stored rows themselves; storing it
 /// as a persistent term would copy every table's rows into the literal area a

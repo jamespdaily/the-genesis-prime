@@ -7,7 +7,7 @@
 ////   (`start_rows`, `row_10_look`, `exile_circle_centre`).
 //// - `files()` is the planted folder the content load reads: the client's rows of
 ////   WorldLocation2, WorldZone, ChatChannel, GameFormula and XpPerLevel
-////   (`clients_file`), the creature, CharacterCreation, customization, label,
+////   (`fixture_tables.file`), the creature, CharacterCreation, customization, label,
 ////   parameter and map rows planted here, and the Novice gear of `novice_tables`.
 ////   It holds no spell rows of the Novice loadout: a test that casts reads
 ////   `shared()`.
@@ -315,35 +315,22 @@ pub fn files() -> List(#(String, BitArray)) {
     planted_table.file(character_customization_label.schema, label_rows()),
     planted_table.file(customization_parameter.schema, parameter_rows()),
     planted_table.file(customization_parameter_map.schema, map_rows()),
-    clients_file(world_location2.schema),
-    clients_file(world_zone.schema),
-    clients_file(chat_channel.schema),
-    clients_file(game_formula.schema),
-    clients_file(xp_per_level.schema),
+    fixture_tables.file(world_location2.schema),
+    fixture_tables.file(world_zone.schema),
+    fixture_tables.file(chat_channel.schema),
+    fixture_tables.file(game_formula.schema),
+    fixture_tables.file(xp_per_level.schema),
     planted_table.file(unit_property2.schema, spell_tables.unit_property_rows()),
     planted_table.file(
       prerequisite.schema,
       spell_tables.sorted_by_id(list.append(
-        clients_rows(prerequisite.schema),
+        fixture_tables.committed_rows(prerequisite.schema),
         prerequisite_rows(),
       )),
     ),
-    clients_file(positional_requirement.schema),
+    fixture_tables.file(positional_requirement.schema),
     ..novice_tables.files()
   ])
-}
-
-/// The file of this table with the client's committed rows (the fixture's), for
-/// the tables the planted folder takes from the client whole.
-fn clients_file(schema: tbl_file.Schema) -> #(String, BitArray) {
-  planted_table.file(schema, clients_rows(schema))
-}
-
-/// The committed fixture's rows of this table.
-fn clients_rows(schema: tbl_file.Schema) -> List(List(Cell)) {
-  let assert Ok(rows) = fixture_tables.table(schema.table)
-    as "the fixture holds the table"
-  rows
 }
 
 /// The planted files with the file of `schema` holding these rows in place of the
