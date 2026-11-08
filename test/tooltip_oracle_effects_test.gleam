@@ -39,6 +39,7 @@
 //// test that names the open issue whose planned work closes it; a listed gap that the rule
 //// now matches fails the test.
 
+import attacker_support
 import cast_support as support
 import fixture_tables
 import genesis_prime/game/area
@@ -46,11 +47,14 @@ import genesis_prime/game/cast
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
 import genesis_prime/game/lasting
+import genesis_prime/game/shown
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/game/strike
 import genesis_prime/game/unit_properties
 import genesis_prime/message/float32
 import genesis_prime/message/spell_go
+import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{
   Spell4AoeTargetConstraintsId, Spell4BaseId, Spell4EffectsId, Spell4Id,
   Spell4StackGroupId,
@@ -62,6 +66,7 @@ import genesis_prime/table/spell4_stack_group
 import genesis_prime/tooltip_token
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_life
+import genesis_prime/world_map/creature_path
 import gleam/bool
 import gleam/dict
 import gleam/float
@@ -70,15 +75,18 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
+import map_support
 import owned_test
+import place_support
 import planted_table
+import properties_support
 import spell_tables
 import tooltip_oracle_support.{
   type Asked, type Drive, type Outcome, type Rows, type Unread, Asked, Compared,
   Differs, Gap, HeldAs, HeldControl, HeldElsewhere, HeldModifier, LeftOut,
-  ModifierChanges, NeverApplied, NoAreaRow, NoPayment, NoRow, NoRuleValue,
-  NotInPlan, OutsideTheTypes, Refused, Rows, SlotGainsDiffer, Unobserved,
-  Verdict,
+  ModifierChanges, NeverApplied, NeverStruck, NoAreaRow, NoPayment, NoRow,
+  NoRuleValue, NotInPlan, OutsideTheTypes, Refused, Rows, SlotGainsDiffer,
+  Unobserved, Verdict,
 } as oracle
 
 // ------------------------------------------------------------------- the rows read
@@ -337,36 +345,103 @@ fn gains_in(drive driven: Drive) -> List(class_resource.Gain) {
   })
 }
 
-/// What a type 1 token prints against the amount the drive's gains of the row's slot make.
+/// What a type 1 token prints against what the drive's gains of the row's slot make. A slot
+/// is gained the amounts of all the rows that gain into it, so when the texts of the ability
+/// name several of those rows by the same column, the printed amounts are summed.
 fn gain_outcome(
   rows rows: Rows,
   entry entry: Asked,
-  row row: Spell4Effects,
+  asked asked: List(Asked),
 ) -> Outcome {
   let root = oracle.plan_of(rows:, base: entry.base)
-  let expected =
-    data_index(field: entry.token.field)
-    |> result.replace_error(NoRuleValue(column: -1))
-    |> result.try(fn(index) { column(row:, index:) })
   case gain_of(root:, effect_id: entry.token.id) {
     Error(Nil) -> Unobserved(asked: entry, why: NotInPlan)
     Ok(spell_plan.TickingGain(..)) ->
       Unobserved(asked: entry, why: HeldAs(list: "ticking gain"))
     Ok(spell_plan.Gain(slot:, ..)) ->
-      outcome(entry:, expected:, got: {
-        use drives <- result.try(whole_drives(rows:, entry:))
-        let amounts =
-          list.flat_map(drives, fn(driven) { gains_in(drive: driven) })
-          |> list.filter(fn(gain) { gain.slot == slot })
-          |> list.map(fn(gain) { gain.amount })
-          |> list.unique
-        case amounts {
-          [] -> Error(NeverApplied)
-          [amount] -> Ok(amount)
-          _ -> Error(SlotGainsDiffer(slot:))
-        }
-      })
+      outcome(
+        entry:,
+        expected: printed_total(rows:, entry:, asked:, root:, slot:),
+        got: {
+          use drives <- result.try(whole_drives(rows:, entry:))
+          let totals =
+            list.filter_map(drives, fn(driven) {
+              case
+                list.filter(gains_in(drive: driven), fn(gain) {
+                  gain.slot == slot
+                })
+              {
+                [] -> Error(Nil)
+                made -> Ok(int.sum(list.map(made, fn(gain) { gain.amount })))
+              }
+            })
+            |> list.unique
+          case totals {
+            [] -> Error(NeverApplied)
+            [total] -> Ok(total)
+            _ -> Error(SlotGainsDiffer(slot:))
+          }
+        },
+      )
   }
+}
+
+/// The sum of the printed column over the distinct rows the ability's texts name by the
+/// token's field and that gain into the slot.
+fn printed_total(
+  rows rows: Rows,
+  entry entry: Asked,
+  asked asked: List(Asked),
+  root root: Spell,
+  slot slot: Int,
+) -> Result(Int, Unread) {
+  use index <- result.try(
+    data_index(field: entry.token.field)
+    |> result.replace_error(NoRuleValue(column: -1)),
+  )
+  let gaining = gaining_rows(root:, slot:)
+  list.filter_map(asked, fn(other) {
+    case
+      other.base == entry.base
+      && other.token.kind == tooltip_token.Eff
+      && other.token.field == entry.token.field
+      && list.contains(gaining, other.token.id)
+    {
+      True -> Ok(other.token.id)
+      False -> Error(Nil)
+    }
+  })
+  |> list.unique
+  |> list.try_map(fn(id) {
+    use row <- result.try(
+      spell4_effects.get(tables: rows.tables, id: Spell4EffectsId(id))
+      |> result.replace_error(NoRow),
+    )
+    column(row:, index:)
+  })
+  |> result.map(int.sum)
+}
+
+/// The distinct rows of the ability's plan that gain into the slot, in the spells of its tree
+/// and the Proxies of those.
+fn gaining_rows(root root: Spell, slot slot: Int) -> List(Int) {
+  let into = fn(gains: List(spell_plan.Gain)) {
+    list.filter_map(gains, fn(gain) {
+      case gain {
+        spell_plan.Gain(slot: gained, effect_id:, ..) if gained == slot ->
+          Ok(effect_id.value)
+        spell_plan.Gain(..) | spell_plan.TickingGain(..) -> Error(Nil)
+      }
+    })
+  }
+  spell_plan.tree(spell: root, started: fn(_) { True })
+  |> list.flat_map(fn(spell) {
+    list.append(
+      into(spell.gains),
+      list.flat_map(spell.proxies, fn(proxy) { into(proxy.gains) }),
+    )
+  })
+  |> list.unique
 }
 
 /// The plan's gain of the row: held by a spell of the tree, or by a Proxy of one when it is
@@ -772,7 +847,7 @@ fn effect_outcomes(rows rows: Rows, asked asked: List(Asked)) -> List(Outcome) {
       Error(why) -> Unobserved(asked: entry, why:)
       Ok(row) ->
         case row.effect_type {
-          1 -> gain_outcome(rows:, entry:, row:)
+          1 -> gain_outcome(rows:, entry:, asked:)
           4 -> control_outcome(rows:, entry:, row:)
           11 | 145 -> property_outcome(rows:, entry:, row:)
           73 -> cooldown_outcome(rows:, entry:, row:)
@@ -791,7 +866,8 @@ fn input_outcomes(rows rows: Rows, asked asked: List(Asked)) -> List(Outcome) {
 // -------------------------------------------------------------------- target caps
 
 /// What an `aoeTc` token prints against the units a go of the spell strikes when one more
-/// unit than the cap stands in its range, straight ahead of the caster.
+/// unit than the cap stands in its range, as `strike.select` chooses them: for a cast on the
+/// caster itself and for a cast on a foe of the crowd, the larger count.
 fn target_cap_outcome(rows rows: Rows, entry entry: Asked) -> Outcome {
   let spell4_id = Spell4Id(entry.token.id)
   let printed = {
@@ -811,27 +887,115 @@ fn target_cap_outcome(rows rows: Rows, entry entry: Asked) -> Outcome {
   {
     Error(Nil) -> Error(NotInPlan)
     Ok(spell_area.SpellArea(row: None, ..)) -> Error(NoAreaRow)
-    Ok(spell_area.SpellArea(row: Some(row), ..) as spell) -> {
-      let distance = { row.min_range +. row.max_range } /. 2.0
-      let in_range =
-        list.map(numbers(count: row.target_count + 1), fn(unit_id) {
-          area.Candidate(
-            unit_id:,
-            at: area.Point(x: 0.0, z: float.negate(distance)),
-            hit_radius: 100.0,
-          )
-        })
-      Ok(
-        list.length(area.select(
-          candidates: in_range,
-          centre: area.Pose(at: area.Point(x: 0.0, z: 0.0), yaw: 0.0),
-          row:,
-          inside: spell_area.inside(spell),
-        )),
-      )
-    }
+    Ok(spell_area.SpellArea(row: Some(row), ..) as spell) ->
+      case area_phase(spell:) {
+        Error(Nil) -> Error(NeverStruck)
+        Ok(phase) ->
+          Ok(int.max(
+            selected(spell:, row:, phase:, on_a_foe: False),
+            selected(spell:, row:, phase:, on_a_foe: True),
+          ))
+      }
   }
   outcome(entry:, expected: printed, got: struck)
+}
+
+/// The first go of the spell that selects units from its area.
+fn area_phase(spell spell: spell_area.SpellArea) -> Result(Int, Nil) {
+  numbers(count: spell_area.phase_count(spell:))
+  |> list.map(fn(number) { number - 1 })
+  |> list.find(fn(phase) {
+    case spell_area.phase(spell:, phase:, spent: None) {
+      Ok(strike) -> strike.selects_area
+      Error(Nil) -> False
+    }
+  })
+}
+
+/// The units `strike.select` takes for a go of the phase with one more foe than the area's
+/// cap in its range, straight ahead at the middle of its range: the foes stand around the
+/// caster for a cast on the caster, and around the foe the cast is on, which stands in the
+/// range itself, for a cast on a foe.
+fn selected(
+  spell spell: spell_area.SpellArea,
+  row row: area.Row,
+  phase phase: Int,
+  on_a_foe on_a_foe: Bool,
+) -> Int {
+  let caster = 7
+  let foe = 21
+  let middle = { row.min_range +. row.max_range } /. 2.0
+  let foes =
+    list.map(numbers(count: row.target_count + 1), fn(n) { n + foe - 1 })
+  let primary = case on_a_foe {
+    True -> foe
+    False -> caster
+  }
+  let picture =
+    list.map(foes, fn(unit_id) {
+      let ahead = case unit_id == foe && on_a_foe {
+        True -> 1.0
+        False -> middle
+      }
+      let behind = case on_a_foe && unit_id != foe {
+        True -> 1.0 +. middle
+        False -> 0.0
+      }
+      #(unit_id, foe_at(z: float.negate(ahead +. behind)))
+    })
+    |> dict.from_list
+  strike.select(
+    asked: cast.GoAsked(
+      cast_id: 5,
+      phase:,
+      spell4_id: spell.spell4_id,
+      primary_target: primary,
+      spent: None,
+    ),
+    attacker: caster_of_the_go(unit_id: caster),
+    picture:,
+    areas: spell_tables.fixture_areas(),
+    now_ms: 0,
+  ).units
+  |> list.length
+}
+
+/// A foe a player of either faction may attack, standing still at the depth.
+fn foe_at(z z: Float) -> shown.Shown {
+  shown.ShownCreature(
+    path: creature_path.Standing(at: place_support.at(
+      world_id: 3460,
+      world_zone_id: 5967,
+      x: 0.0,
+      y: 0.0,
+      z:,
+    )),
+    life: 4,
+    alive: True,
+    hit_radius: 100.0,
+    attackable: creature_life.Attackable(exile: True, dominion: True),
+  )
+}
+
+/// The player that casts: an Exile at the origin facing the way the foes stand.
+fn caster_of_the_go(unit_id unit_id: Int) -> strike.Attacker {
+  strike.Attacker(
+    unit_id:,
+    connection: ConnectionId(2),
+    pose: area.Pose(at: area.Point(x: 0.0, z: 0.0), yaw: 0.0),
+    place: place_support.at(
+      world_id: 3460,
+      world_zone_id: 5967,
+      x: 0.0,
+      y: 0.0,
+      z: 0.0,
+    ),
+    move_seq: 1,
+    stay: map_support.stay(count: 1),
+    faction: shown.Exile,
+    stats: attacker_support.novice(),
+    properties: properties_support.fresh(level: 1),
+  )
 }
 
 /// The numbers 1 to count.
@@ -1219,4 +1383,42 @@ pub fn a_listed_effect_gap_that_now_passes_fails_the_test_naming_the_gap_test() 
     == Verdict(unlisted: [], stale: [passing])
   assert oracle.verdict(differences: oracle.differences(outcomes:), gaps: []).unlisted
     == oracle.differences(outcomes:)
+}
+
+pub fn a_slot_gained_by_two_rows_is_compared_with_the_sum_of_the_amounts_the_texts_print_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let rows = effect_rows()
+  // Ability 18309's plan holds two rows that gain into slot 1; its text 240824 names one of
+  // them. Naming the other as well, in the same column, adds its amount to what is printed.
+  let named =
+    Asked(
+      base: 18_309,
+      text_id: 240_824,
+      token: tooltip_token.Token(
+        kind: tooltip_token.Eff,
+        id: 127_603,
+        field: "data02rawint",
+      ),
+    )
+  let root = oracle.plan_of(rows:, base: 18_309)
+  let assert [other_id] =
+    gaining_rows(root:, slot: 1)
+    |> list.filter(fn(id) { id != 127_603 })
+    as "the plan holds exactly one other row that gains into slot 1"
+  let other =
+    Asked(..named, token: tooltip_token.Token(..named.token, id: other_id))
+  let assert Ok(named_row) = effect_of(rows:, entry: named)
+  let assert Ok(other_row) = effect_of(rows:, entry: other)
+  assert named_row.effect_type == 1 && other_row.effect_type == 1
+    as "both are gains of a class resource"
+  let assert Compared(expected: printed_alone, got: made, ..) =
+    gain_outcome(rows:, entry: named, asked: [named])
+  let assert Compared(expected: printed_together, got: made_together, ..) =
+    gain_outcome(rows:, entry: named, asked: [named, other])
+  assert printed_alone == named_row.data_bits02
+    as "with one row named, the printed amount is that row's"
+  assert printed_together == named_row.data_bits02 + other_row.data_bits02
+    as "with both named, the printed amounts are summed"
+  assert made_together == made
+    as "what the drive gains does not depend on what the text names"
 }
