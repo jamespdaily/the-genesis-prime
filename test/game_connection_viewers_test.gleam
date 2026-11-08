@@ -33,6 +33,7 @@ import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
@@ -375,7 +376,11 @@ pub fn a_player_that_enters_again_shows_no_unit_and_has_none_gone_test() -> Nil 
 /// What an owner standing at `place` sends a viewer: the record it was entered
 /// with (the client's own 0x262 of it, `player_in`) at that place, stamped
 /// `time_ms` on the map's clock, without its class resource: the test player is an
-/// Engineer, whose resource is stat 3 and ResourceMax property 10.
+/// Engineer, whose resource is stat 3 and ResourceMax property 10. The entry then
+/// starts the Engineer's passive (Class.spell4IdInnateAbilityPassive00, Spell4 45000),
+/// whose effects 104980, 177521, 177522 and 229304 write properties 141 to 143
+/// (DamageDealtMultiplier, default 1.0) and 60 (RatingMultiHitAmount, converted from
+/// property 47), each still at its UnitProperty2 default; the owner's record lists them.
 fn appearance_at(place: Place, time_ms: Int) -> UnitCreatePlayer {
   let #(position, rotation) = player_unit.standing(place)
   let player =
@@ -385,9 +390,20 @@ fn appearance_at(place: Place, time_ms: Int) -> UnitCreatePlayer {
     tail: UnitCreateTail(
       ..player.tail,
       stats: list.filter(player.tail.stats, fn(stat) { stat.stat_id != 3 }),
-      properties: list.filter(player.tail.properties, fn(property) {
-        property.property_id != 10
-      }),
+      properties: list.sort(
+        list.append(
+          list.filter(player.tail.properties, fn(property) {
+            property.property_id != 10
+          }),
+          [
+            UnitProperty(property_id: 60, base: 0, value: 0),
+            UnitProperty(property_id: 141, base: 0x3F800000, value: 0x3F800000),
+            UnitProperty(property_id: 142, base: 0x3F800000, value: 0x3F800000),
+            UnitProperty(property_id: 143, base: 0x3F800000, value: 0x3F800000),
+          ],
+        ),
+        fn(left, right) { int.compare(left.property_id, right.property_id) },
+      ),
       movement_commands: [
         start_movement.Position(position),
         start_movement.Rotation(rotation),

@@ -284,9 +284,9 @@ pub fn a_players_health_is_the_creature_level_rows_base_health_of_its_level_plus
     loadout.of(tables:, class_id: ClassId(4), faction_id: 166)
     as "class 4 faction 166 has a set"
   assert loadout.max_health(tables:, loadout:, level: 9) == Ok(2895)
-    as "the planted CreatureLevel row 9's 2295.49 and 600, 2895"
-  assert loadout.max_health(tables:, loadout:, level: 51) == Error(Nil)
-    as "no CreatureLevel row 51 is planted, nor does the client's table hold a level above 50 a character can have"
+    as "the client's CreatureLevel row 9's 2295.49 and 600, 2895"
+  assert loadout.max_health(tables:, loadout:, level: 102) == Error(Nil)
+    as "the client's CreatureLevel holds the rows 1 to 101 and none for level 102"
 }
 
 /// The planted files with one GameFormula row changed.
