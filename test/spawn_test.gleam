@@ -980,12 +980,15 @@ pub fn a_creature_of_difficulty_7_strikes_with_effect_184777_for_17_test() -> Ni
   use <- owned_test.run(60_000)
   // Creature2Difficulty 7 is the client's row (whole in the fixture): 0.7 for
   // Strength and AssaultRating, 2.5 for Base Health.
-  let attack = {
+  let beast = {
     use tables <- fixture_tables.changed(table: "Creature2", id: 73_464, with: [
       #("creature2DifficultyId", Integer(7)),
     ])
-    { attack_beast_over(tables:) }.combat.attack
+    attack_beast_over(tables:)
   }
+  let attack = beast.combat.attack
+  assert beast.health == 339
+    as "CreatureLevel 1's base health 135.97028 x difficulty 7's 2.5 (x archetype 1's 1.0 x tier 1's 1.0), truncated"
   assert attack.offence.blows
     == [
       Blow(
