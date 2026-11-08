@@ -1020,7 +1020,7 @@ pub fn a_level_the_map_refused_is_a_system_line_naming_it_and_the_player_goes_on
   let #(state, taken) =
     game_connection_support.read(
       game_connection_support.in_world_with_dev_commands(),
-      chat_line_message(4, "!summon 73465 51"),
+      chat_line_message(4, "!summon 73465 102"),
     )
   let assert client_connection.AskMapRun(map: _, message:, ..) =
     game_connection_support.ask_request(taken)
@@ -1034,15 +1034,16 @@ pub fn a_level_the_map_refused_is_a_system_line_naming_it_and_the_player_goes_on
     )
   let assert [#(_, answer)] = support.replies(refused)
   assert answer
-    == NotSummoned(reason: CreatureRefused(NoCreatureLevelRow(level: 51)))
-    as "the map's answer for a level the planted tables hold no CreatureLevel row for (they hold rows 1 to 50 and 101)"
+    == NotSummoned(reason: CreatureRefused(NoCreatureLevelRow(level: 102)))
+    as "the map's answer for a level the client's CreatureLevel holds no row for (it holds rows 1 to 101)"
   let #(state, answered) =
     game_connection_support.answer(
       state:,
       taken:,
       outcome: step.Answer(FromMap(answer)),
     )
-  assert system_lines(answered) == ["not summoned: CreatureLevel 51 has no row"]
+  assert system_lines(answered)
+    == ["not summoned: CreatureLevel 102 has no row"]
     as "the design: one system line, naming the level, and never said aloud"
   assert game_connection_support.written_ids(answered) == [0x01C8]
   assert chat_tells(answered) == []

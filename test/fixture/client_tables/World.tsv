@@ -1,0 +1,8 @@
+ID	assetPath	flags	type	screenPath	screenModelPath	chunkBounds00	chunkBounds01	chunkBounds02	chunkBounds03	plugAverageHeight	localizedTextIdName	minItemLevel	maxItemLevel	primeLevelOffset	primeLevelMax	veteranTierScalingType	heroismMenaceLevel	rewardRotationContentId
+22	Map\\Western	0	0	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Olyssia_000.m3	736	794	1200	1200	0	0	0	0	0	0	0	0	0
+51	Map\\Eastern	0	0	UI\\Screens\\UI_CRB_WorldID51_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Alizar_000.m3	986	800	1260	1236	0	0	0	0	0	0	0	0	0
+426	Map\\Eastern	0	0	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_StarterPack_000.m3	1135	833	1188	871	0	0	0	0	0	0	0	0	0
+870	Map\\Western	0	0	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_StarterPack_000.m3	756	970	813	1034	0	0	0	0	0	0	0	0	0
+990	Map\\Eastern	0	0	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_StarterPack_000.m3	950	850	1065	975	0	0	0	0	0	0	0	0	0
+1387	Map\\Western	0	0	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_StarterPack_000.m3	890	815	977	883	0	0	0	0	0	0	0	0	0
+3460	Map\\NewPlayerExperience	1	0		Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_NPE_000.m3	0	0	2048	2048	0	0	0	0	0	0	0	0	0

@@ -4,8 +4,7 @@
 //// - The Virtual Battle Beast's numbers are the client's, from the creature
 ////   trace (`Creature2.73464`): level 1, faction 1441 for both the faction and
 ////   the base faction (`opcode.0x262.creature`), display 26565, outfit 0,
-////   Base Health 52. `character_tables_test` holds the planted tables to the
-////   client's rows.
+////   Base Health 52, all read from the client's committed rows.
 //// - Commander Durek (Creature2 75048), read from the client's table with
 ////   `gleam run -m genesis_prime/table_rows -- Creature2 75048`: factionId 171,
 ////   minLevel 50, display group 25412 whose one entry (22838) is display 22825,
@@ -22,13 +21,11 @@
 
 import character_tables
 import client_tables
+import fixture_tables
 import genesis_prime/game/rating
 import genesis_prime/game/start_place.{Facing}
-import genesis_prime/table/creature2_display_group_entry
-import genesis_prime/table/creature2_display_info
-import genesis_prime/table/creature2_outfit_group_entry
-import genesis_prime/table/creature2_outfit_info
 import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -37,6 +34,7 @@ import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import map_spawn_support
 import owned_test
 import planted_table.{Float, Integer}
@@ -57,15 +55,15 @@ fn summoned_place() -> start_place.Place {
 }
 
 /// The summon of Creature2 `creature_id` at `summoned_place` as run-only spawn
-/// -1, checked with the planted tables.
-fn summoned_planted(
+/// -1, checked over the client's committed rows.
+fn summoned_from_client(
   creature_id creature_id: Int,
 ) -> Result(Spawn, spawn.SummonRefusal) {
-  summoned_planted_at(creature_id:, level: None)
+  summoned_at_level(creature_id:, level: None)
 }
 
-/// The summon of Creature2 `creature_id` at `level` as `summoned_planted` is.
-fn summoned_planted_at(
+/// The summon of Creature2 `creature_id` at `level` as `summoned_from_client` is.
+fn summoned_at_level(
   creature_id creature_id: Int,
   level level: Option(Int),
 ) -> Result(Spawn, spawn.SummonRefusal) {
@@ -80,14 +78,14 @@ fn summoned_planted_at(
   )
 }
 
-/// The summon of Creature2 `creature_id` over these planted files.
+/// The summon of Creature2 `creature_id` over these tables, a test's edit of
+/// the client's rows.
 fn summoned_over(
-  files files: List(#(String, BitArray)),
+  tables tables: store.Tables,
   creature_id creature_id: Int,
 ) -> Result(Spawn, spawn.SummonRefusal) {
-  use checks <- spawn_support.with_summon_checks_of(files)
   spawn.summoned(
-    checks:,
+    checks: spawn_support.summon_checks_over(tables:),
     summoned: Summoned(
       id: SpawnId(-1),
       creature_id: Creature2Id(creature_id),
@@ -97,9 +95,22 @@ fn summoned_over(
   )
 }
 
+/// The summon of the Beast when its Creature2 row holds these cells in place of
+/// the client's.
+fn summoned_beast_changed(
+  changes changes: List(#(String, planted_table.Cell)),
+) -> Result(Spawn, spawn.SummonRefusal) {
+  use tables <- fixture_tables.changed(
+    table: "Creature2",
+    id: beast,
+    with: changes,
+  )
+  summoned_over(tables:, creature_id: beast)
+}
+
 pub fn a_summon_of_the_battle_beast_has_the_client_rows_values_at_the_summoned_place_and_facing_test() -> Nil {
   use <- owned_test.run(5000)
-  let assert Ok(spawn) = summoned_planted(creature_id: beast)
+  let assert Ok(spawn) = summoned_from_client(creature_id: beast)
     as "the Beast passes the checks of a spawn"
   assert spawn.id == SpawnId(-1) && spawn.creature_id == Creature2Id(beast)
   assert spawn.place == summoned_place()
@@ -136,14 +147,14 @@ pub fn a_summon_has_what_a_stored_spawn_of_the_same_creature_and_place_has_test(
     as "the row starts in world 3460"
   let assert Ok(stored) = dict.get(world.by_id, SpawnId(1))
     as "the stored row starts"
-  let assert Ok(summoned) = summoned_planted(creature_id: beast)
+  let assert Ok(summoned) = summoned_from_client(creature_id: beast)
   assert summoned == Spawn(..stored, id: SpawnId(-1))
     as "the load's spawn of that row, but for its id: the same combat, level and health"
 }
 
 pub fn a_summon_of_the_dagun_fights_on_sight_as_its_stored_spawn_does_test() -> Nil {
   use <- owned_test.run(5000)
-  let assert Ok(summoned) = summoned_planted(creature_id: 73_465)
+  let assert Ok(summoned) = summoned_from_client(creature_id: 73_465)
   assert summoned.combat.hostile_to.dominion
     && !summoned.combat.hostile_to.exile
     as "faction 1442 is level 0 to Dominion 166 and 10 to Exile 167 (Creature2.73465)"
@@ -152,85 +163,63 @@ pub fn a_summon_of_the_dagun_fights_on_sight_as_its_stored_spawn_does_test() -> 
 
 pub fn the_display_and_the_outfit_of_a_summon_are_the_first_entries_of_the_creatures_groups_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Each group has two entries; the first by id is not the one of the lowest
-  // display or outfit id, and not the heavier one.
-  let files =
-    character_tables.files_with_beast_changed(changes: [
-      #("creature2OutfitGroupId", Integer(7)),
-    ])
-    |> planted_table.replacing(schema: creature2_display_info.schema, rows: [
-      display_row(id: 26_565),
-      display_row(id: 26_580),
-    ])
-    |> planted_table.replacing(
-      schema: creature2_display_group_entry.schema,
-      rows: [
-        character_tables.group_entry_row(
-          id: 27_192,
-          group: 28_793,
-          display: 26_580,
-        ),
-        planted_table.row(creature2_display_group_entry.schema, [
-          #("id", Integer(27_250)),
-          #("creature2DisplayGroupId", Integer(28_793)),
-          #("creature2DisplayInfoId", Integer(26_565)),
-          #("weight", Integer(9)),
-        ]),
-      ],
+  // The client's display group 29198 holds entries 27751 (display 27010) and
+  // 27762 (display 27006), and its outfit group 10115 entries 10355 (outfit
+  // 9351) and 10359 (outfit 9350): the first by id is not the one of the lowest
+  // display or outfit id. Synthetic: the client gives every entry weight 1, so
+  // the second entry of each group is given weight 9 to be the heavier.
+  let assert Ok(rows) = {
+    use rows <- result.try(
+      fixture_tables.change(
+        rows: fixture_tables.rows(),
+        table: "Creature2",
+        id: beast,
+        with: [
+          #("creature2DisplayGroupId", Integer(29_198)),
+          #("creature2OutfitGroupId", Integer(10_115)),
+        ],
+      ),
     )
-    |> planted_table.replacing(
-      schema: creature2_outfit_group_entry.schema,
-      rows: [outfit_entry(id: 1, outfit: 71), outfit_entry(id: 2, outfit: 70)],
+    use rows <- result.try(
+      fixture_tables.change(
+        rows:,
+        table: "Creature2DisplayGroupEntry",
+        id: 27_762,
+        with: [#("weight", Integer(9))],
+      ),
     )
-    |> planted_table.replacing(schema: creature2_outfit_info.schema, rows: [
-      planted_table.row(creature2_outfit_info.schema, [#("ID", Integer(70))]),
-      planted_table.row(creature2_outfit_info.schema, [#("ID", Integer(71))]),
-    ])
-  let assert Ok(spawn) = summoned_over(files:, creature_id: beast)
+    fixture_tables.change(
+      rows:,
+      table: "Creature2OutfitGroupEntry",
+      id: 10_359,
+      with: [#("weight", Integer(9))],
+    )
+  }
+  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  let assert Ok(spawn) = summoned_over(tables:, creature_id: beast)
     as "the Beast with two displays and two outfits passes the checks"
-  assert spawn.display_info_id == 26_580
-    as "the first entry of the display group, by id"
-  assert spawn.outfit_info_id == 71
-    as "the first entry of the outfit group, by id"
+  assert spawn.display_info_id == 27_010
+    as "the first entry of the display group, by id: not display 27006, the lower, and not entry 27762, the heavier"
+  assert spawn.outfit_info_id == 9351
+    as "the first entry of the outfit group, by id: not outfit 9350, the lower, and not entry 10359, the heavier"
 }
 
 pub fn a_summon_whose_first_outfit_has_no_creature2_outfit_info_row_is_refused_not_crashed_test() -> Nil {
   use <- owned_test.run(60_000)
   // 0x140485790: the client's checks of a spawn need a Creature2OutfitInfo row
-  // for the row's outfit. The outfit group's entry names outfit 71, which has
-  // no row.
-  let files =
-    character_tables.files_with_beast_changed(changes: [
-      #("creature2OutfitGroupId", Integer(7)),
-    ])
-    |> planted_table.replacing(
-      schema: creature2_outfit_group_entry.schema,
-      rows: [outfit_entry(id: 1, outfit: 71)],
-    )
-  assert summoned_over(files:, creature_id: beast)
-    == Error(spawn.FailsTheChecks(spawn.NoOutfitRow(outfit_info_id: 71)))
-}
-
-fn display_row(id id: Int) -> List(planted_table.Cell) {
-  planted_table.row(creature2_display_info.schema, [
-    #("ID", Integer(id)),
-    #("hitRadius", Float(3.0)),
-    #("runLand", Float(10.0)),
+  // for the row's outfit. The client's outfit group 8181 has one entry (8181),
+  // which names outfit 7486, and the client's Creature2OutfitInfo holds no row
+  // 7486 (it skips from 7485 to 7487).
+  use tables <- fixture_tables.changed(table: "Creature2", id: beast, with: [
+    #("creature2OutfitGroupId", Integer(8181)),
   ])
-}
-
-fn outfit_entry(id id: Int, outfit outfit: Int) -> List(planted_table.Cell) {
-  planted_table.row(creature2_outfit_group_entry.schema, [
-    #("ID", Integer(id)),
-    #("creature2OutfitGroupId", Integer(7)),
-    #("creature2OutfitInfoId", Integer(outfit)),
-    #("weight", Integer(1)),
-  ])
+  assert summoned_over(tables:, creature_id: beast)
+    == Error(spawn.FailsTheChecks(spawn.NoOutfitRow(outfit_info_id: 7486)))
 }
 
 pub fn a_creature2_id_with_no_row_is_refused_naming_it_test() -> Nil {
   use <- owned_test.run(5000)
-  assert summoned_planted(creature_id: 200_002)
+  assert summoned_from_client(creature_id: 200_002)
     == Error(spawn.FailsTheChecks(spawn.NoCreatureRow(Creature2Id(200_002))))
   assert spawn.describe_refusal(
       spawn.FailsTheChecks(spawn.NoCreatureRow(Creature2Id(200_002))),
@@ -241,11 +230,7 @@ pub fn a_creature2_id_with_no_row_is_refused_naming_it_test() -> Nil {
 pub fn a_creature_the_client_would_not_load_is_refused_naming_the_rule_test() -> Nil {
   use <- owned_test.run(60_000)
   // 0x140485790: the client loads no creature whose modelScale is not above 0.
-  let files =
-    character_tables.files_with_beast_changed(changes: [
-      #("modelScale", Float(0.0)),
-    ])
-  assert summoned_over(files:, creature_id: beast)
+  assert summoned_beast_changed(changes: [#("modelScale", Float(0.0))])
     == Error(
       spawn.FailsTheChecks(spawn.NotLoadedByTheClient(
         creature_id: Creature2Id(beast),
@@ -258,20 +243,12 @@ pub fn a_creature_with_no_faction_or_an_npc_link_would_not_start_as_a_spawn_and_
   use <- owned_test.run(60_000)
   // opcode.0x262.creature: a unit with no faction is Neutral and a stored row of
   // it is left out; a creature that gives a quest waits for its own system.
-  let no_faction =
-    character_tables.files_with_beast_changed(changes: [
-      #("factionId", Integer(0)),
-    ])
-  assert summoned_over(files: no_faction, creature_id: beast)
+  assert summoned_beast_changed(changes: [#("factionId", Integer(0))])
     == Error(spawn.WouldNotStart(
       creature_id: Creature2Id(beast),
       reason: spawn.NoFaction,
     ))
-  let quest_giver =
-    character_tables.files_with_beast_changed(changes: [
-      #("questIdGiven00", Integer(5)),
-    ])
-  assert summoned_over(files: quest_giver, creature_id: beast)
+  assert summoned_beast_changed(changes: [#("questIdGiven00", Integer(5))])
     == Error(spawn.WouldNotStart(
       creature_id: Creature2Id(beast),
       reason: spawn.NpcLink,
@@ -355,12 +332,10 @@ pub fn commander_durek_summoned_at_level_3_has_that_levels_health_and_keeps_his_
 pub fn a_summon_with_a_level_the_creature_level_table_has_no_row_for_is_refused_naming_it_test() -> Nil {
   use <- owned_test.run(5000)
   // CreatureLevel has rows 1 to 101, the last of which holds the values of the
-  // properties 100 and above (CreatureLevel.101); the planted table holds rows 1
-  // to 50 and 101.
+  // properties 100 and above (CreatureLevel.101).
   list.each(
     [
       #(0, "below the first row"),
-      #(51, "a row the planted table does not hold"),
       #(102, "above the last row"),
       #(
         10_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000_000,
@@ -368,7 +343,7 @@ pub fn a_summon_with_a_level_the_creature_level_table_has_no_row_for_is_refused_
       ),
     ],
     fn(row) {
-      assert summoned_planted_at(creature_id: beast, level: Some(row.0))
+      assert summoned_at_level(creature_id: beast, level: Some(row.0))
         == Error(spawn.NoCreatureLevelRow(level: row.0))
         as row.1
     },
@@ -380,7 +355,7 @@ pub fn a_summon_with_a_level_the_creature_level_table_has_no_row_for_is_refused_
 
 pub fn a_summon_of_the_battle_beast_at_level_3_has_that_levels_health_and_no_armor_test() -> Nil {
   use <- owned_test.run(5000)
-  let assert Ok(spawn) = summoned_planted_at(creature_id: beast, level: Some(3))
+  let assert Ok(spawn) = summoned_at_level(creature_id: beast, level: Some(3))
     as "the Beast at level 3 passes the checks of a spawn"
   assert spawn.level == 3 as "stat 10 is the level the summon named"
   // CreatureLevel 3 unitPropertyValue07 342.0863342285156 times Creature2ArcheType
@@ -398,7 +373,7 @@ pub fn a_summon_at_level_101_the_row_of_the_properties_from_100_up_is_refused_na
   // CreatureLevel 101 holds the values of the properties 100 and above for every
   // level and none of the properties below (CreatureLevel.101), so it is no
   // level of a creature.
-  assert summoned_planted_at(creature_id: beast, level: Some(101))
+  assert summoned_at_level(creature_id: beast, level: Some(101))
     == Error(spawn.NotACreatureLevel(level: 101))
   assert spawn.describe_refusal(spawn.NotACreatureLevel(level: 101))
     == "CreatureLevel 101 holds the values of the properties from 100 up, and is no level"
@@ -417,7 +392,7 @@ pub fn a_creature_with_a_base_health_override_is_refused_at_level_101_too_test()
 
 pub fn a_summon_at_the_level_of_the_creatures_own_row_is_the_summon_with_no_level_test() -> Nil {
   use <- owned_test.run(5000)
-  assert summoned_planted_at(creature_id: beast, level: Some(1))
-    == summoned_planted(creature_id: beast)
+  assert summoned_at_level(creature_id: beast, level: Some(1))
+    == summoned_from_client(creature_id: beast)
     as "the Beast's minLevel is 1 (Creature2.73464), so naming level 1 changes nothing"
 }

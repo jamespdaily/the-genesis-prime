@@ -1,18 +1,20 @@
-//// The shared character tables, and the planted tables of the creature and
-//// content tests, which run where the client's files are absent.
+//// The shared character tables, the content load over them, and the planted
+//// tables of the character tests, which run where the client's files are absent.
 ////
 //// - `shared()` is the client's committed rows (`fixture_tables`): a character's
 ////   look, start place, zones, chat channels, levels and Novice loadout all come
 ////   from them, and the tests read their expected values from the same rows
 ////   (`start_rows`, `row_10_look`, `exile_circle_centre`).
-//// - `files()` is the planted folder the content load reads: the client's rows of
-////   WorldLocation2, WorldZone, ChatChannel, GameFormula and XpPerLevel
-////   (`fixture_tables.file`), the creature, CharacterCreation, customization, label,
-////   parameter and map rows planted here, and the Novice gear of `novice_tables`.
+//// - `content_tables()` is the content load over `shared()`: the client's rows of
+////   Creature2's tables, Faction2, Faction2Relationship, World and the spell
+////   trees, with `content_over` for the same load over a test's edited tables.
+//// - `files()` is the planted folder the server's tables read: the client's rows
+////   of the creature tables, WorldLocation2, WorldZone, ChatChannel, GameFormula,
+////   XpPerLevel and Prerequisite (`fixture_tables.file`), the CharacterCreation,
+////   customization, label, parameter and map rows planted here, and the Novice
+////   gear of `novice_tables`.
 ////   It holds no spell rows of the Novice loadout: a test that casts reads
 ////   `shared()`.
-//// - Gap: the spell trees and creature rows of `content_tables` are planted, not
-////   the client's (the creature-spawn step of issue 326, T3c).
 //// - Bone counts: opcode.0x25b.counts gives 46 bone values for race 1, sex 1
 ////   and 48 for race 1, sex 0. The planted maps are that many rows of one
 ////   parameter that sets one part; the client's rows hold the real parameters.
@@ -46,11 +48,8 @@ import genesis_prime/table/id.{
   CharacterCustomizationId, CharacterCustomizationLabelId, WorldLocation2Id,
 }
 import genesis_prime/table/instance_portal
-import genesis_prime/table/loader/derivation
-import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
-import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/path_mission
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite
@@ -63,7 +62,7 @@ import gleam/int
 import gleam/list
 import novice_tables
 import place_support
-import planted_table.{type Cell, Boolean, Float, Integer}
+import planted_table.{type Cell, Boolean, Integer}
 import spell_tables
 
 /// The look of the client's CharacterCustomization row 10 (race 1, sex 0): the
@@ -100,209 +99,24 @@ pub fn shared() -> store.Tables {
   fixture_tables.shared()
 }
 
-/// The planted tables with the Engineer's Volatility rows: the hidden spell and the
-/// damage of Pulse Blast's damage spell, the base of `content_tables`.
-fn planted_with_volatility() -> store.Tables {
-  let trees =
-    novice_tables.spell_tree_files_of(
-      rows: spell_tables.planted_rows_with_volatility(),
-      creature_attack: True,
-    )
-  let names = list.map(trees, fn(file) { file.0 })
-  let prerequisites =
-    spell_tables.sorted_by_id(list.append(
-      spell_tables.planted_rows_with_volatility().prerequisites,
-      prerequisite_rows(),
-    ))
-  load_files(list.append(
-    list.map(
-      list.filter(files(), fn(file) { !list.contains(names, file.0) }),
-      fn(file) {
-        case file.0 == prerequisite.schema.file {
-          True -> planted_table.file(prerequisite.schema, prerequisites)
-          False -> file
-        }
-      },
-    ),
-    trees,
-  ))
-}
-
-/// The WorldLocation2 rows of the two objective circles the training creatures
-/// stand in: 51739 (Exile) and 52898 (Dominion), radius 55, in World 3460,
-/// WorldZone 5967, at the client's own centres (`Quest2.10518`, `Quest2.10524`).
-pub const circle_ids = [51_739, 52_898]
-
-/// The planted files of the creatures the spawns stand: each row is the client's
-/// own in the columns the spawns read (`the_planted_creature_rows_...` compares
-/// the spawns built from them with the real ones).
+/// The committed files of the creature tables.
 fn creature_files() -> List(#(String, BitArray)) {
-  [
-    planted_table.file(creature2.schema, [
-      creature_row(
-        id: 73_464,
-        arche_type: 1,
-        group: 28_793,
-        faction: 1441,
-        changes: [],
-      ),
-      creature_row(
-        id: 73_465,
-        arche_type: 10,
-        group: 28_431,
-        faction: 1442,
-        changes: [],
-      ),
-    ]),
-    planted_table.file(creature2_arche_type.schema, [
-      multiplier_row(
-        schema: creature2_arche_type.schema,
-        id: 1,
-        value: 1.0,
-        deflect: 1.0,
-        attack: Attack(stats: 1.0, crit: 1.0, severity: 1.0),
-      ),
-      multiplier_row(
-        schema: creature2_arche_type.schema,
-        id: 10,
-        value: 0.9599999785423279,
-        deflect: 1.0,
-        attack: Attack(stats: 1.059999942779541, crit: 1.0, severity: 1.0),
-      ),
-    ]),
-    planted_table.file(creature2_difficulty.schema, [
-      multiplier_row(
-        schema: creature2_difficulty.schema,
-        id: 1,
-        value: 0.3869999945163727,
-        deflect: 0.3199999928474426,
-        attack: Attack(
-          stats: 0.6800000071525574,
-          crit: 0.3199999928474426,
-          severity: 1.0,
-        ),
-      ),
-    ]),
-    planted_table.file(creature2_tier.schema, [
-      multiplier_row(
-        schema: creature2_tier.schema,
-        id: 1,
-        value: 1.0,
-        deflect: 1.0,
-        attack: Attack(stats: 1.0, crit: 1.0, severity: 0.8500000238418579),
-      ),
-    ]),
-    planted_table.file(creature2_resist.schema, [
-      planted_table.row(creature2_resist.schema, [#("ID", Integer(1))]),
-    ]),
-    planted_table.file(creature2_display_info.schema, [
-      planted_table.row(creature2_display_info.schema, [
-        #("ID", Integer(26_565)),
-        #("hitRadius", Float(3.0)),
-        #("runLand", Float(10.0)),
-      ]),
-      planted_table.row(creature2_display_info.schema, [
-        #("ID", Integer(26_578)),
-        #("hitRadius", Float(2.0)),
-        #("runLand", Float(10.0)),
-      ]),
-    ]),
-    planted_table.file(creature2_display_group_entry.schema, [
-      group_entry_row(id: 27_192, group: 28_793, display: 26_565),
-      group_entry_row(id: 27_216, group: 28_431, display: 26_578),
-    ]),
-    planted_table.file(creature2_override_properties.schema, [
-      override_row(id: 25_965, creature: 73_464, property: 40, value: 1.0),
-      override_row(id: 26_167, creature: 73_464, property: 42, value: 0.0),
-      override_row(id: 25_967, creature: 73_465, property: 40, value: 1.0),
-      override_row(id: 26_168, creature: 73_465, property: 42, value: 0.0),
-    ]),
-    planted_table.file(creature2_outfit_group_entry.schema, []),
-    planted_table.file(instance_portal.schema, []),
-    planted_table.file(path_mission.schema, []),
-  ]
-}
-
-pub fn creature_row(
-  id id: Int,
-  arche_type arche_type: Int,
-  group group: Int,
-  faction faction: Int,
-  changes changes: List(#(String, Cell)),
-) -> List(Cell) {
-  let base = [
-    #("ID", Integer(id)),
-    #("CreationTypeEnum", Integer(0)),
-    #("creature2DifficultyId", Integer(1)),
-    #("creature2ArcheTypeId", Integer(arche_type)),
-    #("creature2TierId", Integer(1)),
-    #("creature2DisplayGroupId", Integer(group)),
-    #("creature2ResistId", Integer(1)),
-    #("modelScale", Float(1.0)),
-    #("factionId", Integer(faction)),
-    #("minLevel", Integer(1)),
-    #("maxLevel", Integer(1)),
-  ]
-  planted_table.row(creature2.schema, list.append(changes, base))
-}
-
-/// The multipliers of the properties a creature's attack reads, each the client's
-/// row's: Strength and AssaultRating (0 and 35, `stats`), BaseCritChance and
-/// BaseAvoidReduceChance (102 and 104, `crit`) and CriticalHitSeverityMultiplier
-/// (127, `severity`); MoveSpeedMultiplier (100) is 1.0 in every row they read.
-type Attack {
-  Attack(stats: Float, crit: Float, severity: Float)
-}
-
-/// A multiplier row: the one for Base Health, the one for BaseAvoidChance (101), the
-/// only other property the Virtual Battle Beast's defence has (the client's rows give
-/// the others 0 products, `Creature2.73464.crit_deflect_glance`), and the ones its
-/// attack reads.
-fn multiplier_row(
-  schema schema: tbl_file.Schema,
-  id id: Int,
-  value value: Float,
-  deflect deflect: Float,
-  attack attack: Attack,
-) -> List(Cell) {
-  planted_table.row(schema, [
-    #("ID", Integer(id)),
-    #("unitPropertyMultiplier000", Float(attack.stats)),
-    #("unitPropertyMultiplier007", Float(value)),
-    #("unitPropertyMultiplier035", Float(attack.stats)),
-    #("unitPropertyMultiplier100", Float(1.0)),
-    #("unitPropertyMultiplier101", Float(deflect)),
-    #("unitPropertyMultiplier102", Float(attack.crit)),
-    #("unitPropertyMultiplier104", Float(attack.crit)),
-    #("unitPropertyMultiplier127", Float(attack.severity)),
-  ])
-}
-
-pub fn group_entry_row(
-  id id: Int,
-  group group: Int,
-  display display: Int,
-) -> List(Cell) {
-  planted_table.row(creature2_display_group_entry.schema, [
-    #("id", Integer(id)),
-    #("creature2DisplayGroupId", Integer(group)),
-    #("creature2DisplayInfoId", Integer(display)),
-    #("weight", Integer(1)),
-  ])
-}
-
-pub fn override_row(
-  id id: Int,
-  creature creature: Int,
-  property property: Int,
-  value value: Float,
-) -> List(Cell) {
-  planted_table.row(creature2_override_properties.schema, [
-    #("ID", Integer(id)),
-    #("creature2Id", Integer(creature)),
-    #("unitPropertyIndex", Integer(property)),
-    #("unitPropertyValue", Float(value)),
-  ])
+  list.map(
+    [
+      creature2.schema,
+      creature2_arche_type.schema,
+      creature2_difficulty.schema,
+      creature2_tier.schema,
+      creature2_resist.schema,
+      creature2_display_info.schema,
+      creature2_display_group_entry.schema,
+      creature2_override_properties.schema,
+      creature2_outfit_group_entry.schema,
+      instance_portal.schema,
+      path_mission.schema,
+    ],
+    fixture_tables.file,
+  )
 }
 
 /// The planted files of the server's tables, each by its file name: one file
@@ -321,60 +135,10 @@ pub fn files() -> List(#(String, BitArray)) {
     fixture_tables.file(game_formula.schema),
     fixture_tables.file(xp_per_level.schema),
     planted_table.file(unit_property2.schema, spell_tables.unit_property_rows()),
-    planted_table.file(
-      prerequisite.schema,
-      spell_tables.sorted_by_id(list.append(
-        fixture_tables.committed_rows(prerequisite.schema),
-        prerequisite_rows(),
-      )),
-    ),
+    fixture_tables.file(prerequisite.schema),
     fixture_tables.file(positional_requirement.schema),
     ..novice_tables.files()
   ])
-}
-
-/// The planted files with the file of `schema` holding these rows in place of the
-/// planted ones, for a test of a rule that reads that table.
-pub fn files_replacing(
-  schema schema: tbl_file.Schema,
-  rows rows: List(List(Cell)),
-) -> List(#(String, BitArray)) {
-  list.map(files(), fn(file) {
-    case file.0 == schema.file {
-      True -> planted_table.file(schema, rows)
-      False -> file
-    }
-  })
-}
-
-/// The planted files with the Virtual Battle Beast's Creature2 row (73464)
-/// changed in the columns `changes` name, each a column of the client's table and
-/// the cell it holds instead.
-pub fn files_with_beast_changed(
-  changes changes: List(#(String, Cell)),
-) -> List(#(String, BitArray)) {
-  list.map(files(), fn(file) {
-    case file.0 == creature2.schema.file {
-      True ->
-        planted_table.file(creature2.schema, [
-          creature_row(
-            id: 73_464,
-            arche_type: 1,
-            group: 28_793,
-            faction: 1441,
-            changes:,
-          ),
-          creature_row(
-            id: 73_465,
-            arche_type: 10,
-            group: 28_431,
-            faction: 1442,
-            changes: [],
-          ),
-        ])
-      False -> file
-    }
-  })
 }
 
 /// The planted file of CustomizationParameterMap with one map, of race 1 and
@@ -385,105 +149,43 @@ pub fn map_file_naming(parameter_id parameter_id: Int) -> #(String, BitArray) {
   ])
 }
 
-/// The Faction2 rows the planted factions walk: id and parent, as the client's.
-const faction_parents = [
-  #(164, 0),
-  #(165, 0),
-  #(166, 165),
-  #(167, 165),
-  #(168, 164),
-  #(174, 168),
-  #(177, 168),
-  #(189, 177),
-  #(219, 0),
-  #(1441, 164),
-  #(1442, 164),
-]
+/// The tables only the content load reads, read beside `tables` from the
+/// committed rows of the client's content tables (`server_table.content_entries`),
+/// on the caller's heap: the content load over a load the caller edited.
+pub fn content_over(tables tables: store.Tables) -> store.Tables {
+  use folder <- planted_table.in_folder(content_files())
+  let assert Ok(more) =
+    server_table.load_content_tables(over: tables, from: folder)
+    as "the committed rows load as the content load's tables"
+  more
+}
 
-/// The Faction2Relationship rows among them, as id, factionId0, factionId1 and
-/// factionLevel, the client's: Dominion 166 and Exile 167 are level 0 (Hostile)
-/// to each other, 189 is level 0 to 165, 219 is level 10 to 165 and 164, 1441 is
-/// level 0 to Exile and 10 to Dominion, 1442 level 0 to Dominion and 10 to Exile.
-const faction_relationships = [
-  #(684, 166, 167, 0),
-  #(691, 189, 165, 0),
-  #(726, 219, 165, 10),
-  #(944, 219, 164, 10),
-  #(2943, 1441, 167, 0),
-  #(2944, 1441, 166, 10),
-  #(2945, 1441, 174, 0),
-  #(2946, 1442, 166, 0),
-  #(2947, 1442, 167, 10),
-  #(2948, 1442, 174, 0),
-]
-
-/// The Worlds the tests' maps run in, each with the id column only.
-const content_worlds = [22, 51, 426, 870, 990, 1061, 1387, 3460, 3461, 6009]
-
-/// The planted files of the tables only the content load reads
-/// (`server_table.content_entries`), each by its file name.
+/// The committed files of the tables only the content load reads
+/// (`server_table.content_entries`).
 pub fn content_files() -> List(#(String, BitArray)) {
-  [
-    planted_table.file(
+  list.map(
+    [
+      creature2_outfit_info.schema,
       faction2.schema,
-      list.map(faction_parents, fn(faction) {
-        planted_table.row(faction2.schema, [
-          #("ID", Integer(faction.0)),
-          #("faction2IdParent", Integer(faction.1)),
-        ])
-      }),
-    ),
-    planted_table.file(
       faction2_relationship.schema,
-      list.map(faction_relationships, fn(relationship) {
-        planted_table.row(faction2_relationship.schema, [
-          #("ID", Integer(relationship.0)),
-          #("factionId0", Integer(relationship.1)),
-          #("factionId1", Integer(relationship.2)),
-          #("factionLevel", Integer(relationship.3)),
-        ])
-      }),
-    ),
-    planted_table.file(creature2_outfit_info.schema, []),
-    planted_table.file(
       world.schema,
-      list.map(content_worlds, fn(id) {
-        planted_table.row(world.schema, [#("ID", Integer(id))])
-      }),
-    ),
-  ]
+    ],
+    fixture_tables.file,
+  )
 }
 
-/// The client's Prerequisite rows of the creature attack's effects
-/// (`Spell4Effects.184741`): 30526, the caster's difficulty (type 179) at most 6
-/// (comparison 6), and 30527, at least 7 (comparison 4).
-pub fn prerequisite_rows() -> List(List(Cell)) {
-  list.map([#(30_526, 6, 6), #(30_527, 4, 7)], fn(condition) {
-    planted_table.row(prerequisite.schema, [
-      #("ID", Integer(condition.0)),
-      #("prerequisiteTypeId0", Integer(179)),
-      #("prerequisiteComparisonId0", Integer(condition.1)),
-      #("objectId0", Integer(condition.2)),
-    ])
-  })
+/// The ids of the Worlds the client's rows hold, the worlds a test's map may run
+/// in.
+pub fn content_worlds() -> List(Int) {
+  fixture_tables.committed_ids(world.schema)
 }
 
-/// The tables only the content load reads, loaded once from the planted files
-/// beside the planted tables with the Engineer's Volatility rows
-/// (`planted_with_volatility`): the content load reads the creature tables
-/// where they are, and the spell trees the server's Proxy of migration 0018 is selected
-/// from (Pulse Blast's two goes and the hidden 42148). Stored once and never erased,
-/// as `shared` is, and the only planted load that is.
+/// The content load over the shared tables: the tables only the content load
+/// reads, loaded once from the committed rows beside the stored tables. Stored
+/// once and never erased, as `shared` is.
 pub fn content_tables() -> store.Tables {
   database_support.once("character_content_tables", fn() {
-    use folder <- planted_table.in_folder(content_files())
-    let assert Ok(tables) =
-      server_table.load_content_tables(
-        over: planted_with_volatility(),
-        from: folder,
-      )
-      as "the planted files load as the content load's tables"
-    store.store_under(tables:)
+    store.store_under(tables: content_over(tables: shared()))
   })
 }
 
@@ -501,36 +203,6 @@ fn read_files(files: List(#(String, BitArray))) -> store.Tables {
 /// variants edit.
 pub fn plain() -> store.Tables {
   read_files(files())
-}
-
-/// The plain tables edited into the tables of these planted files, on the
-/// caller's heap: each file that differs from the plain files replaces its table,
-/// and the server's requirements and derivations run on the result. A file no
-/// entry of the server reads is a mistake of the caller.
-fn load_files(wanted: List(#(String, BitArray))) -> store.Tables {
-  let plain_files = files()
-  let entries = server_table.entries()
-  let edits =
-    list.filter_map(wanted, fn(file) {
-      case list.key_find(plain_files, file.0) == Ok(file.1) {
-        True -> Error(Nil)
-        False -> {
-          let assert Ok(entry) =
-            list.find(entries, fn(entry) { store.file(entry) == file.0 })
-            as "a planted file is a file of one of the server's tables"
-          Ok(store.replace_rows(entry, bytes: file.1))
-        }
-      }
-    })
-  let assert Ok(tables) =
-    store.edit(
-      tables: plain(),
-      with: edits,
-      requirements: requirement.all(),
-      derivations: derivation.all(),
-    )
-    as "the planted character tables load as the server's tables do"
-  tables
 }
 
 /// A CharacterCreation row with the columns the server reads.

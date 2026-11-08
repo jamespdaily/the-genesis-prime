@@ -48,7 +48,7 @@ fn asking() -> readiness.Settings {
   readiness.Settings(within_ms: 1000, attempt_ms: 500, pause_ms: 50)
 }
 
-/// The load of the planted tables and the repository's migrations from the
+/// The load of the committed content tables and the repository's migrations from the
 /// database, under a key of its own.
 fn load(
   database database: String,
@@ -377,7 +377,7 @@ pub fn the_load_puts_the_servers_proxies_in_a_term_test() -> Nil {
     plans: spell_plan.plans(character_tables.content_tables()),
     base: 26_468,
   )
-    as "migration 0018's seed row, Pulse Blast's go 1 casting 42148, is selected over the planted trees and kept"
+    as "migration 0018's seed row, Pulse Blast's go 1 casting 42148, is selected over the committed spell trees and kept"
 }
 
 pub fn a_server_proxy_row_that_cannot_be_planned_stops_the_load_naming_each_test() -> Nil {

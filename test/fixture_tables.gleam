@@ -2,6 +2,10 @@
 ////
 //// - **`shared()`** is the server's tables read from the rows with the
 ////   server's own requirements and derivations, stored for the run.
+//// - **Content tables** are the tables only the content load reads. The rows
+////   hold them whole or by their roots, `shared()` and `load` leave them out,
+////   and `file` makes their file from the committed rows. Only the server's
+////   tables can be edited: an edit of a content table is refused.
 //// - **`changed` and `added`** run a body on the shared tables with a row's
 ////   cells changed, or one row added that starts as a copy of a real row. The
 ////   edit is built on the body's heap and gone with it.
@@ -50,6 +54,9 @@ pub type Refusal {
   RowHeld(table: String, id: Int)
   /// An id that is not a root.
   NotARoot(table: String, id: Int)
+  /// An edit names a table only the content load reads, so the edit would
+  /// reach no load.
+  ContentTable(table: String)
 }
 
 /// What a refusal says, with the fix where there is one.
@@ -76,6 +83,10 @@ pub fn describe(refusal: Refusal) -> String {
       <> " is not a root of the fixture: add a line for it to "
       <> folder
       <> "/roots.tsv and run `gleam run -m genesis_prime/fixture_rows`"
+    ContentTable(table:) ->
+      "the table "
+      <> table
+      <> " is read by the content load from the committed rows, so an edit of it would reach no load"
   }
 }
 
@@ -103,13 +114,32 @@ pub fn parse_table(
 }
 
 /// The schema of each table the server loads, in the order of its entries.
-pub fn schemas() -> List(tbl_file.Schema) {
+pub fn server_schemas() -> List(tbl_file.Schema) {
   list.map(server_table.entries(), store.schema)
+}
+
+/// The schema of each table the fixture holds: the server's, then the tables
+/// only the content load reads (`server_table.content_entries`).
+pub fn schemas() -> List(tbl_file.Schema) {
+  list.append(
+    server_schemas(),
+    list.map(server_table.content_entries(), store.schema),
+  )
 }
 
 fn schema_of(table: String) -> Result(tbl_file.Schema, Refusal) {
   list.find(schemas(), fn(schema) { schema.table == table })
   |> result.replace_error(NoTable(table:))
+}
+
+/// The schema of a table an edit reaches: one the server loads. A table only
+/// the content load reads is refused, since the edit would reach no load.
+fn editable_schema_of(table: String) -> Result(tbl_file.Schema, Refusal) {
+  use schema <- result.try(schema_of(table))
+  case list.any(server_schemas(), fn(held) { held.table == table }) {
+    True -> Ok(schema)
+    False -> Error(ContentTable(table:))
+  }
 }
 
 // ---------------------------------------------------------------- roots
@@ -320,7 +350,7 @@ fn client_cells(
 /// server's own requirements and derivations. Nothing is stored.
 pub fn read(rows rows: Rows) -> Result(store.Tables, store.LoadError) {
   let files =
-    list.map(schemas(), fn(schema) {
+    list.map(server_schemas(), fn(schema) {
       planted_table.file(schema:, rows: rows_of(rows:, schema:))
     })
   use folder <- planted_table.in_folder(files)
@@ -351,7 +381,7 @@ pub fn edits_to(
   entries entries: List(store.Entry),
 ) -> List(store.Edit) {
   let held = rows()
-  let shared_tables = list.map(schemas(), fn(schema) { schema.table })
+  let shared_tables = list.map(server_schemas(), fn(schema) { schema.table })
   list.flat_map(entries, fn(entry) {
     let schema = store.schema(entry)
     let wanted_rows = rows_of(rows: wanted, schema:)
@@ -419,11 +449,25 @@ fn column_index(
   |> result.replace_error(NoColumn(table: schema.table, column:))
 }
 
+/// The name of the table's id column, its first.
+fn id_column(schema schema: tbl_file.Schema) -> String {
+  case schema.columns {
+    [first, ..] -> first.name
+    [] -> panic as "a table holds its id column"
+  }
+}
+
 fn id_of(row row: List(Cell)) -> Int {
   case row {
     [planted_table.Integer(id), ..] -> id
     _ -> panic as "a fixture row holds its id first"
   }
+}
+
+/// The ids of the committed rows of the table `schema` describes, in file
+/// order.
+pub fn committed_ids(schema: tbl_file.Schema) -> List(Int) {
+  list.map(committed_rows(schema), fn(row) { id_of(row:) })
 }
 
 /// The row with the cells of the named columns replaced.
@@ -470,7 +514,7 @@ pub fn change(
   id id: Int,
   with changes: List(#(String, Cell)),
 ) -> Result(Rows, Refusal) {
-  use schema <- result.try(schema_of(table))
+  use schema <- result.try(editable_schema_of(table))
   use row <- result.try(row_of(rows:, schema:, id:))
   use changed_row <- result.try(with_cells(schema:, row:, with: changes))
   let new_id = id_of(row: changed_row)
@@ -499,7 +543,7 @@ pub fn add(
   id id: Int,
   with changes: List(#(String, Cell)),
 ) -> Result(Rows, Refusal) {
-  use schema <- result.try(schema_of(table))
+  use schema <- result.try(editable_schema_of(table))
   use row <- result.try(row_of(rows:, schema:, id: copy_of))
   use <- bool.guard(
     when: result.is_ok(row_of(rows:, schema:, id:)),
@@ -507,7 +551,7 @@ pub fn add(
   )
   use new_row <- result.map(
     with_cells(schema:, row:, with: [
-      #("ID", planted_table.Integer(id)),
+      #(id_column(schema:), planted_table.Integer(id)),
       ..changes
     ]),
   )
@@ -521,7 +565,7 @@ pub fn remove(
   table table: String,
   id id: Int,
 ) -> Result(Rows, Refusal) {
-  use schema <- result.try(schema_of(table))
+  use schema <- result.try(editable_schema_of(table))
   use _ <- result.map(row_of(rows:, schema:, id:))
   dict.insert(
     rows,

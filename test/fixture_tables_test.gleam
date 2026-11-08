@@ -4,10 +4,15 @@
 import client_tables
 import fixture_tables
 import genesis_prime/fixture_rows
+import genesis_prime/table/creature2
+import genesis_prime/table/creature2_outfit_info
+import genesis_prime/table/faction2
+import genesis_prime/table/faction2_relationship
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/world
 import genesis_prime/table_rows
 import gleam/dict
 import gleam/int
@@ -160,6 +165,92 @@ pub fn every_reference_of_a_committed_row_reaches_a_committed_row_or_one_the_cli
     == []
 }
 
+// T3c-1 test 1
+pub fn the_content_tables_are_committed_and_each_root_reaches_a_committed_row_test() -> Nil {
+  use <- owned_test.run(20_000)
+  // `server_table.content_entries` are the tables only the content load reads:
+  // the client's Faction2 holds 1189 rows and Faction2Relationship 1964, kept
+  // whole (`the_whole_content_tables_hold_every_row_the_client_holds_test`), and
+  // World is 7 of the client's rows.
+  assert list.length(fixture_tables.committed_ids(faction2.schema)) == 1189
+    as "Faction2 is whole"
+  assert list.length(fixture_tables.committed_ids(faction2_relationship.schema))
+    == 1964
+    as "Faction2Relationship is whole"
+  assert fixture_tables.committed_ids(world.schema)
+    == [22, 51, 426, 870, 990, 1387, 3460]
+    as "the Worlds the tests' maps run in"
+  assert fixture_tables.committed_ids(creature2_outfit_info.schema)
+    == [7475, 8979, 9350, 9351]
+    as "Creature2OutfitInfo holds the rows the outfit group roots 8170, 10355 and 10359 point to and the one Creature2 11467's group 9675 points to, and none for 8181's 7486, which the client lacks"
+  list.each(
+    [
+      #(creature2.schema, 73_464),
+      #(creature2.schema, 73_465),
+      #(spell4.schema, 5649),
+      #(world.schema, 22),
+    ],
+    fn(root) {
+      let #(schema, id) = root
+      assert fixture_tables.root(table: schema.table, id:) == id
+        as "the row is a root"
+      assert list.contains(fixture_tables.committed_ids(schema), id)
+        as { schema.table <> " " <> int.to_string(id) <> " is committed" }
+    },
+  )
+}
+
+// T3c-1 test 1
+// Reads the client's own tables, so the test runs alone in the client-suite part
+// of `./check` (tag `client_rows`).
+pub fn the_whole_content_tables_hold_every_row_the_client_holds_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.tag("client_rows")
+  use <- unitest.guard(client_tables.present())
+  list.each(
+    [
+      #(faction2.schema, 1189),
+      #(faction2_relationship.schema, 1964),
+      #(world.schema, 2729),
+    ],
+    fn(entry) {
+      let #(schema, expected) = entry
+      let client_ids = client_ids(schema)
+      assert list.length(client_ids) == expected
+        as { "the client's " <> schema.table <> " row count" }
+      case schema.table {
+        "World" ->
+          // The client's World holds 2729 rows and the tests' maps run in 7 of
+          // them, so the fixture keeps those 7 and no more.
+          list.each(fixture_tables.committed_ids(schema), fn(id) {
+            assert list.contains(client_ids, id)
+              as { "the client's World holds row " <> int.to_string(id) }
+          })
+        _ -> {
+          assert fixture_tables.committed_ids(schema) == client_ids
+            as {
+              schema.table <> " holds every row of the client's, in id order"
+            }
+          Nil
+        }
+      }
+    },
+  )
+}
+
+/// The ids of the client's own rows of a table, in the client's order.
+fn client_ids(schema: tbl_file.Schema) -> List(Int) {
+  let assert Ok(client) =
+    table_rows.read(bytes: client_tables.read(schema.file), table: schema.table)
+    as { "the client's " <> schema.table <> " reads" }
+  list.map(client.rows, fn(row) {
+    let assert [table_rows.Cell(_, table_rows.Integer32(id)), ..] =
+      table_rows.cells(row)
+      as "a client row holds its id first"
+    id
+  })
+}
+
 /// The rows read from the kept files.
 fn fixture_rows_of_folder() -> Result(
   dict.Dict(String, List(List(table_rows.Cell))),
@@ -292,6 +383,30 @@ pub fn an_edit_of_an_unknown_table_row_or_column_is_refused_test() -> Nil {
       with: [#("noSuchColumn", cell)],
     )
     == Error(fixture_tables.NoColumn(table: "Spell4", column: "noSuchColumn"))
+}
+
+pub fn an_edit_of_a_content_table_is_refused_naming_the_table_test() -> Nil {
+  use <- owned_test.run(20_000)
+  let rows = fixture_tables.rows()
+  let world = fixture_tables.ContentTable(table: "World")
+  assert fixture_tables.change(rows:, table: "World", id: 22, with: [
+      #("flags", planted_table.Integer(1)),
+    ])
+    == Error(world)
+    as "a change of a content row is refused, not dropped"
+  assert fixture_tables.add(
+      rows:,
+      table: "World",
+      copy_of: 22,
+      id: 2_000_000_004,
+      with: [],
+    )
+    == Error(world)
+    as "an added content row is refused, not dropped"
+  assert fixture_tables.remove(rows:, table: "World", id: 22) == Error(world)
+    as "a removed content row is refused, not dropped"
+  assert string.contains(fixture_tables.describe(world), "World")
+    as "the refusal names the table"
 }
 
 pub fn a_removed_row_is_gone_and_an_unknown_table_or_row_is_refused_test() -> Nil {

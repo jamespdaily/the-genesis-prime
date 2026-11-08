@@ -158,7 +158,7 @@ pub fn entries() -> List(store.Entry) {
 ///   (genesis_prime/world_map/spawn).
 /// - World: the worlds a map can run in, each of which gets a term of its spawns
 ///   (genesis_prime/world_map/spawn).
-fn content_entries() -> List(store.Entry) {
+pub fn content_entries() -> List(store.Entry) {
   [
     creature2_outfit_info.entry(),
     faction2.entry(),

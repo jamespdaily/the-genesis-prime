@@ -16,7 +16,6 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/hit.{Blow, Defence, Offence}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
-import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/creature_life.{
@@ -30,10 +29,8 @@ import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/list
 import gleam/option
-import novice_tables
 import owned_key
 import place_support
-import planted_table
 import rating_support
 import server_proxy_support
 
@@ -181,50 +178,17 @@ pub fn summon_checks() -> spawn.SummonChecks {
   )
 }
 
-/// What a summon is checked with over these planted files, as the running
-/// server leaves it: the checks are built from the content-only tables
-/// (`genesis_prime.load_content`) and hold none of them. The tables are read on
-/// the body's heap, so nothing is left behind when `then` returns.
-pub fn with_summon_checks_of(
-  files files: List(#(String, BitArray)),
-  then then: fn(spawn.SummonChecks) -> a,
-) -> a {
-  use folder <- planted_table.in_folder(list.append(
-    character_tables.content_files(),
-    novice_tables.with_creature_attack(files:),
-  ))
-  let assert Ok(server) = server_table.read(from: folder)
-    as "the planted files load as the server's tables"
-  let assert Ok(more) =
-    server_table.load_content_tables(over: server, from: folder)
-    as "the planted files load as the content-only tables"
-  let checks =
-    spawn.summon_checks(
-      tables: more,
-      formulas: rating_support.formulas(),
-      kinds: kinds(),
-    )
-  then(checks)
-}
-
-/// The server's tables and the content-only tables loaded from these planted
-/// files and the content files (`character_tables.content_files`), which no
-/// server table shares a file with; `then` gets the content-only tables, read on
-/// the body's heap.
-pub fn with_content_tables_of(
-  files files: List(#(String, BitArray)),
-  then then: fn(table_store.Tables) -> a,
-) -> a {
-  use folder <- planted_table.in_folder(list.append(
-    character_tables.content_files(),
-    files,
-  ))
-  let assert Ok(server) = server_table.read(from: folder)
-    as "the planted files load as the server's tables"
-  let assert Ok(more) =
-    server_table.load_content_tables(over: server, from: folder)
-    as "the planted files load as the content-only tables"
-  then(more)
+/// The summon checks over these tables, built as the running server builds them:
+/// from the given tables with the committed rows of the tables only the content
+/// load reads added beside them, and the test's formulas and kinds.
+pub fn summon_checks_over(
+  tables tables: table_store.Tables,
+) -> spawn.SummonChecks {
+  spawn.summon_checks(
+    tables: character_tables.content_over(tables:),
+    formulas: rating_support.formulas(),
+    kinds: kinds(),
+  )
 }
 
 /// The kinds migration 0010 leaves: row 0 alone, a respawn of 60 000 ms and an
@@ -295,9 +259,6 @@ pub fn beast_row(number number: Int) -> Row {
   )
 }
 
-/// The worlds the tests' maps may run in: every World row a test uses.
-const worlds = [22, 51, 426, 870, 990, 1061, 1387, 3460, 3461, 6009]
-
 /// A key whose terms hold these spawns for World 3460 and no spawn for every
 /// other world a test's map may run in, as the content load leaves them. It is
 /// the test's own, erased when the body ends: a test with no spawns takes
@@ -352,7 +313,7 @@ fn put_worlds(
       by_creature: dict.new(),
     ),
   )
-  list.each(worlds, fn(world_id) {
+  list.each(character_tables.content_worlds(), fn(world_id) {
     content_spawn.put_world(
       key:,
       world_id:,

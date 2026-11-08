@@ -255,12 +255,6 @@ pub fn put_rows(entry entry: Entry, bytes bytes: BitArray) -> Edit {
   Edit(table: entry.table, apply: entry.put_rows(bytes, _))
 }
 
-/// A change that replaces the table of the entry with the rows of a table file,
-/// as a load reads it; the old table is not changed.
-pub fn replace_rows(entry entry: Entry, bytes bytes: BitArray) -> Edit {
-  Edit(table: entry.table, apply: entry.put(bytes, _))
-}
-
 /// A change that leaves the ids without a row in the table of the entry.
 pub fn remove_rows(entry entry: Entry, ids ids: List(Int)) -> Edit {
   Edit(table: entry.table, apply: fn(tables) {

@@ -19,3 +19,15 @@ WorldLocation2	51739	Exile objective circle	game_wire_test
 WorldLocation2	52898	Dominion objective circle	game_wire_test
 WorldZone	1755	deepest zone chain	top_zone_test
 WorldZone	147	zone whose parent row is missing	top_zone_test
+Creature2	73464	Virtual Battle Beast	spawn_test
+Creature2	73465	Virtual Defense Dagun	spawn_test
+Spell4	5649	creature auto-attack	creature_kind_test
+World	22	a world with no spawn	content_load_test
+PathMission	33	a soldier mission with a row	spawn_test
+Creature2OutfitGroupEntry	8170	an outfit group with an entry	spawn_test
+Creature2OutfitGroupEntry	8181	an outfit entry whose Creature2OutfitInfo row the client lacks (7486)	spawn_summon_test
+Creature2OutfitGroupEntry	10355	first entry by id of a group of two, the higher outfit	spawn_summon_test
+Creature2OutfitGroupEntry	10359	second entry by id of that group, the lower outfit	spawn_summon_test
+Creature2DisplayGroupEntry	27751	first entry by id of a group of two, the higher display	spawn_summon_test
+Creature2DisplayGroupEntry	27762	second entry by id of that group, the lower display	spawn_summon_test
+Creature2	11467	a Granok Mercenary whose property 7 has an override row (Creature2OverrideProperties 2866)	spawn_test

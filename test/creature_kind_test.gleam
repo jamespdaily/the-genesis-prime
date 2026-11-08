@@ -1,5 +1,5 @@
 //// The creature_kind table's checks (`genesis_prime/world_map/creature_kind`), on
-//// planted Creature2 rows. Expected values come from these places.
+//// the client's committed rows. Expected values come from these places.
 //// - Migration 0009 and the shared pattern of the content tables
 ////   (`genesis_prime/content`): row 0 is the default every creature without a row
 ////   takes, a table without it stops the start, a row for a Creature2 id the
@@ -17,81 +17,27 @@
 ////   interval below the strike deadline would open a second strike round while
 ////   the first waits.
 
-import character_tables
 import content_support
 import database_support
+import fixture_tables
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal, RowId}
 import genesis_prime/game/strike_tell
-import genesis_prime/table/creature2
 import genesis_prime/table/id.{Spell4Id}
-import genesis_prime/table/loader/store as table_store
-import genesis_prime/table/prerequisite
-import genesis_prime/table/spell4
-import genesis_prime/table/spell4_effects
 import genesis_prime/world_map/creature_kind.{Kind, Kinds, Row}
 import gleam/dict
 import gleam/list
 import gleam/string
-import novice_tables
 import owned_key
 import owned_test
 import planted_table.{Integer}
 
-/// The planted Creature2 table with the Virtual Battle Beast and the client's rows
-/// of its attack spell 5649 (Spell4, its two damage effects and their
-/// prerequisites), with `prerequisites` in place of the client's, loaded for the body.
-fn with_beast(
-  prerequisites prerequisites: List(List(planted_table.Cell)),
-  body body: fn(table_store.Tables) -> a,
-) -> a {
-  with_beast_spell4(
-    spell4_rows: novice_tables.creature_attack_spell4_rows(),
-    prerequisites:,
-    body:,
-  )
-}
-
-/// The same with these Spell4 rows in place of the client's row of 5649.
-fn with_beast_spell4(
-  spell4_rows spell4_rows: List(List(planted_table.Cell)),
-  prerequisites prerequisites: List(List(planted_table.Cell)),
-  body body: fn(table_store.Tables) -> a,
-) -> a {
-  use folder <- planted_table.in_folder([
-    planted_table.file(creature2.schema, [
-      planted_table.row(creature2.schema, [#("ID", Integer(73_464))]),
-    ]),
-    planted_table.file(spell4.schema, spell4_rows),
-    planted_table.file(
-      spell4_effects.schema,
-      novice_tables.creature_attack_effect_rows(),
-    ),
-    planted_table.file(prerequisite.schema, prerequisites),
-  ])
-  let assert Ok(tables) =
-    table_store.read(
-      from: folder,
-      entries: [
-        creature2.entry(),
-        spell4.entry(),
-        spell4_effects.entry(),
-        prerequisite.entry(),
-      ],
-      requirements: [],
-      derivations: [],
-    )
-    as "the planted tables load"
-  body(tables)
-}
-
+/// The selection of the rows against the client's rows (the shared load): the
+/// Virtual Battle Beast's Creature2 row and the rows of its attack spell 5649.
 fn selected(
   rows rows: List(creature_kind.Row),
 ) -> Result(creature_kind.Kinds, List(refusal.Refusal)) {
-  with_beast(
-    prerequisites: character_tables.prerequisite_rows(),
-    body: fn(tables) { creature_kind.select(rows:, tables:) },
-  )
+  creature_kind.select(rows:, tables: fixture_tables.shared())
 }
 
 /// The default row, as migration 0010 leaves it.
@@ -129,29 +75,26 @@ pub fn an_attack_spell_the_client_does_not_hold_is_refused_by_name_test() -> Nil
       default_row,
       Row(..default_row, creature_id: 73_464, attack_spell4_id: 5650),
     ])
-    as "the planted Spell4 holds 5649 alone"
+    as "the client's Spell4 holds no row 5650"
   assert string.contains(rule, "5650") as "the refusal names the spell"
 }
 
 pub fn an_attack_effect_whose_caster_prerequisite_the_server_does_not_evaluate_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  let other_type =
-    list.map(character_tables.prerequisite_rows(), fn(row) {
-      case row {
-        [Integer(30_527), ..] ->
-          planted_table.row(prerequisite.schema, [
-            #("ID", Integer(30_527)),
-            #("prerequisiteTypeId0", Integer(180)),
-            #("prerequisiteComparisonId0", Integer(4)),
-            #("objectId0", Integer(7)),
-          ])
-        _ -> row
-      }
-    })
-  let assert Error([Refusal(table: "creature_kind", row: RowId(0), rule:)]) =
-    with_beast(prerequisites: other_type, body: fn(tables) {
-      creature_kind.select(rows: [default_row], tables:)
-    })
+  // Synthetic: the client's Prerequisite 30527 is of type 179; type 180 is one
+  // the server does not evaluate.
+  let assert Error([Refusal(table: "creature_kind", row: RowId(0), rule:)]) = {
+    use tables <- fixture_tables.changed(
+      table: "Prerequisite",
+      id: 30_527,
+      with: [
+        #("prerequisiteTypeId0", Integer(180)),
+        #("prerequisiteComparisonId0", Integer(4)),
+        #("objectId0", Integer(7)),
+      ],
+    )
+    creature_kind.select(rows: [default_row], tables:)
+  }
     as "effect 184777's prerequisite 30527 is of type 180: the server would apply it to every creature or none (0x14049eeb0 evaluates type 179 only), so the start stops"
   assert string.contains(rule, "184777") && string.contains(rule, "180")
     as "the refusal names the effect and the type"
@@ -159,25 +102,21 @@ pub fn an_attack_effect_whose_caster_prerequisite_the_server_does_not_evaluate_f
 
 pub fn an_attack_spell_with_an_innate_cost_emm_id_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  let spending = [
-    planted_table.row(spell4.schema, [
-      #("ID", Integer(5649)),
+  // Synthetic: the client's Spell4 5649 has innateCostEMMId0 0.
+  let assert Error([Refusal(table: "creature_kind", row: RowId(0), rule:)]) = {
+    use tables <- fixture_tables.changed(table: "Spell4", id: 5649, with: [
       #("innateCostEMMId0", Integer(4)),
-    ]),
-  ]
-  let assert Error([Refusal(table: "creature_kind", row: RowId(0), rule:)]) =
-    with_beast_spell4(
-      spell4_rows: spending,
-      prerequisites: character_tables.prerequisite_rows(),
-      body: fn(tables) { creature_kind.select(rows: [default_row], tables:) },
-    )
+    ])
+    creature_kind.select(rows: [default_row], tables:)
+  }
     as "Spell4.innateCostEMMId0: a spell with an EMM id chooses its effects by the points spent, which a creature's attack does not spend, so applying all its tagged damage effects would be a guess and the start stops"
   assert string.contains(rule, "Spell4 5649")
     && string.contains(rule, "EMM id 4")
     as "the refusal names the spell and the id"
 }
 
-pub fn planted_rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
+// T3c-1 test 3
+pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Ok(kinds) =
     selected(rows: [
@@ -445,7 +384,7 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
   )
 }
 
-pub fn planted_kinds_put_under_a_key_are_read_back_test() -> Nil {
+pub fn kinds_put_under_a_key_are_read_back_test() -> Nil {
   use <- owned_test.run(60_000)
   let key = owned_key.new_key()
   let kinds =
