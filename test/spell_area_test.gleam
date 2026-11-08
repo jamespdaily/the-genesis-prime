@@ -1,21 +1,25 @@
 //// What the client's tables say a spell strikes (`genesis_prime/game/spell_area`),
-//// on planted rows that hold the values of the client's own (`area_tables`). Expected
-//// values come from these places.
+//// on the client's own rows (`spell_tables.fixture_areas`). Expected values come from
+//// these places.
 //// - Kick's rows: `Spell4.58591.area` (area row 640: 5 units, 0 to 8 m, 180 degrees;
 ////   telegraph 168: a cone 1 to 7 m over 100 degrees on the caster, flag 0x200).
+//// - The spells that hold each case of the hit shapes and the damage rows, named in the
+////   test that reads them (`table_rows`, read on the client's tables).
 //// - The threshold stages: Spell4Thresholds 238, 9, 10, 1073 to 1075 and 125, 123, 124
 ////   name the stage spells of Shred, Relentless Strikes, Rampage and Charged Shot,
 ////   and the Proxy rows 83782, 177158, 177171, 177498, 182203 and 182204 name the
 ////   spells their stages start (`table_rows`, read on the client's tables).
 //// - The load's refusals: the module's doc comment, which states each gap where it is
 ////   enforced (`Spell4AoeTargetConstraints.targetSelection`,
-////   `Spell4ValidTargets.targetBitmask`, `0x14054d170`).
+////   `Spell4ValidTargets.targetBitmask`, `0x14054d170`). Each refusal edits one value
+////   of Kick, because no spell of a level-1 tree holds the case: the whole tables hold
+////   such rows, but only for spells outside the trees, which the load never reads.
 
 import area_tables
 import client_tables
 import fixture_tables
 import genesis_prime/game/area.{
-  Box, Cone, InsideRow, InsideShapes, Placement, Rectangle, Row,
+  Box, Circle, Cone, InsideRow, InsideShapes, Placement, Rectangle, Row,
 }
 import genesis_prime/game/crowd_control
 import genesis_prime/game/spell_area.{
@@ -26,6 +30,7 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/spend.{EqualTo}
 import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
+import genesis_prime/table/spell4_effects
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -36,24 +41,34 @@ import planted_table.{Integer}
 import spell_tables
 import unitest
 
-fn kick_area(plant plant: area_tables.Kick) -> spell_area.SpellArea {
-  let assert Ok(areas) = area_tables.built(kick: plant)
-    as "the planted Kick builds"
+/// The area of a spell of the fixture's rows.
+fn fixture_area(spell4_id spell4_id: Int) -> spell_area.SpellArea {
   let assert Ok(found) =
-    spell_area.of_spell(areas:, spell4_id: Spell4Id(58_591))
-    as "Kick is in the areas"
+    spell_area.of_spell(
+      areas: spell_tables.fixture_areas(),
+      spell4_id: Spell4Id(spell4_id),
+    )
+    as "the spell is in the fixture's areas"
   found
 }
 
 /// Kick's area as the client's rows build it.
 fn client_kick() -> spell_area.SpellArea {
-  let assert Ok(found) =
-    spell_area.of_spell(
-      areas: spell_tables.fixture_areas(),
-      spell4_id: Spell4Id(58_591),
-    )
+  fixture_area(spell4_id: 58_591)
+}
+
+pub fn kick_read_from_the_clients_rows_builds_the_fixtures_area_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert area_tables.kick_rows(kick: area_tables.kick())
+    == spell_tables.fixture_rows()
+    as "Kick read from Spell4 58591's rows (area row 640, valid targets 1, telegraph 168, effect 140383) and written back leaves every row as the client holds it"
+  let assert Ok(areas) = area_tables.built(kick: area_tables.kick())
+    as "the client's Kick rows build"
+  let assert Ok(built) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(58_591))
     as "Kick is in the areas"
-  found
+  assert built == client_kick()
+    as "Spell4.58591.area: the area built from the rows Kick reads is the area the fixture's own load builds"
 }
 
 pub fn kick_has_its_area_row_its_cone_and_its_damage_aimed_at_the_area_test() -> Nil {
@@ -190,42 +205,6 @@ pub fn a_channel_of_the_level_1_abilities_has_a_phase_for_each_pulse_and_none_af
     as "Electrocute and Discharge are the only Channeled spells among the level-1 abilities' trees"
 }
 
-/// The offsets aside of the planted Kick's hit shapes, whose telegraph rows have
-/// `telegraph_flags`: the planted row at index i has the x offset i
-/// (`area_tables.Kick`).
-fn planted_asides(telegraph_flags telegraph_flags: List(Int)) -> List(Float) {
-  let assert Ok(areas) =
-    area_tables.built(
-      kick: area_tables.Kick(..area_tables.kick(), telegraph_flags:),
-    )
-    as "the planted Kick builds"
-  let assert Ok(found) =
-    spell_area.of_spell(areas:, spell4_id: Spell4Id(58_591))
-    as "Kick is in the areas"
-  list.map(found.shapes, fn(placement) { placement.aside })
-}
-
-pub fn a_drawn_row_with_bit_0x20_is_left_out_while_the_spell_has_another_drawn_row_test() -> Nil {
-  use <- owned_test.run(60_000)
-  assert planted_asides(telegraph_flags: [0x220, 0x200, 0x220]) == [1.0]
-    as "TelegraphDamage.telegraphDamageFlags.0x20.rows: a drawn row with 0x20 is the picture of another spell's beam; the spell strikes through the drawn row without it"
-}
-
-pub fn a_spell_whose_drawn_rows_all_have_bit_0x20_keeps_them_all_test() -> Nil {
-  use <- owned_test.run(60_000)
-  assert planted_asides(telegraph_flags: [0x220, 0x20, 0x220])
-    == [0.0, 1.0, 2.0]
-    as "TelegraphDamage.telegraphDamageFlags.0x20.rows: a spell with no child telegraph has every drawn row marked 0x20 (368 area spells); leaving them all out would leave it with no shape, so it keeps them all"
-}
-
-pub fn a_spell_with_a_never_drawn_row_strikes_through_it_whatever_its_drawn_rows_hold_test() -> Nil {
-  use <- owned_test.run(60_000)
-  assert planted_asides(telegraph_flags: [0x200, 0x240, 0x220]) == [1.0]
-    as "Spell4.38791.area: the never-drawn row (flag 0x40) is the hit shape, as before"
-  assert planted_asides(telegraph_flags: [0x200, 0x260]) == [1.0]
-    as "a never-drawn row that also has bit 0x20 is still the hit shape"
-}
-
 pub fn a_spell_with_a_telegraph_is_struck_by_its_hit_shapes_test() -> Nil {
   use <- owned_test.run(60_000)
   let kicked = client_kick()
@@ -233,18 +212,100 @@ pub fn a_spell_with_a_telegraph_is_struck_by_its_hit_shapes_test() -> Nil {
     as "Jim's choice: inside the telegraph, Kick is 7 m and 100 degrees (Spell4.58591.area), capped by the row's range"
 }
 
-pub fn a_spell_with_no_telegraph_row_is_read_by_its_area_row_test() -> Nil {
+pub fn a_client_spell_with_no_telegraph_row_is_read_by_its_area_row_test() -> Nil {
   use <- owned_test.run(60_000)
-  let kicked =
-    kick_area(
-      plant: area_tables.Kick(..area_tables.kick(), telegraph_flags: []),
+  let found = fixture_area(spell4_id: 42_297)
+  assert found.row
+    == Some(Row(min_range: 0.0, max_range: 4.0, degrees: 360.0, target_count: 4))
+    as "Spell4.42297.area: Spell4AoeTargetConstraints 704 (angle 360, 4 units, 0 to 4 m)"
+  assert found.shapes == []
+    as "Spell4Telegraph holds no row of spell 42297, so it has no hit shape"
+  assert spell_area.inside(spell: found) == InsideRow
+    as "Spell4.42297.area: a spell with an area row and no telegraph row is read by the row"
+}
+
+pub fn a_client_spell_leaves_out_a_drawn_row_with_bit_0x20_while_another_is_drawn_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert fixture_area(spell4_id: 29_874).shapes
+    == [
+      Placement(
+        shape: Rectangle(width: 0.8999999761581421, length: 19.0),
+        ahead: 1.0,
+        aside: 0.0,
+        turn_degrees: 0.0,
+      ),
+    ]
+    as "TelegraphDamage.telegraphDamageFlags.0x20.rows: spell 29874's TelegraphDamage 310 (flags 0x200) is drawn without 0x20, so it is the hit shape; 311 and 312 (flags 0x220, offsets aside of 1.2 and -1.2) are the pictures of the side beams and are left out"
+}
+
+pub fn a_client_spell_whose_drawn_rows_all_have_bit_0x20_keeps_them_all_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert fixture_area(spell4_id: 58_586).shapes
+    == [
+      Placement(
+        shape: Circle(radius: 1.25),
+        ahead: 0.0,
+        aside: 0.0,
+        turn_degrees: 0.0,
+      ),
+      Placement(
+        shape: Circle(radius: 0.8999999761581421),
+        ahead: 0.0,
+        aside: 0.0,
+        turn_degrees: 0.0,
+      ),
+      Placement(
+        shape: Circle(radius: 0.75),
+        ahead: 0.0,
+        aside: 0.0,
+        turn_degrees: 0.0,
+      ),
+    ]
+    as "TelegraphDamage.telegraphDamageFlags.0x20.rows: spell 58586's TelegraphDamage 9457, 10882 and 10883 (radii 1.25, 0.9 and 0.75, flags 0x3008220) each hold 0x20 and no row is drawn without it, so all three are kept, in the order of Spell4Telegraph 25023, 27783 and 27784"
+}
+
+pub fn a_client_spell_with_a_never_drawn_row_strikes_through_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  assert spell_area.hit_shapes_of(
+      tables:,
+      links: spell_area.telegraph_links_by_spell(tables:),
+      id: 36_373,
     )
-  assert spell_area.inside(spell: kicked) == InsideRow
-    as "Crush's 42297 has no telegraph row (Spell4.32812.area)"
+    == Ok([
+      Placement(
+        shape: Box(width: 8.0, length: 8.0),
+        ahead: 0.0,
+        aside: 0.0,
+        turn_degrees: 0.0,
+      ),
+    ])
+    as "the never-drawn twin row (flag 0x40) is the hit shape: spell 36373's TelegraphDamage 2481 (flags 0x40, a 8 by 8 m box on the caster) alone; its other row 1721 (flags 0x200, targetTypeFlags 8) is drawn and would be chosen, and refused as not on the caster, if the twin rule did not hold"
+}
+
+pub fn a_client_damage_row_with_target_flags_2_and_readable_parameters_is_read_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let found = fixture_area(spell4_id: 38_781)
+  let assert Ok(damage) =
+    list.find(found.damage, fn(effect) {
+      effect.effect_id == Spell4EffectsId(83_829)
+    })
+    as "spell 38781 holds Spell4Effects 83829 among its damage effects"
+  assert damage.aim == spell_plan.AimsAtPrimaryTarget
+    as "Spell4Effects 83829 has targetFlags 2, which aims at the cast's target"
+  let assert Ok(row) =
+    spell4_effects.get(
+      tables: fixture_tables.shared(),
+      id: Spell4EffectsId(83_829),
+    )
+    as "the fixture holds Spell4Effects 83829"
+  assert spell_tables.measure_reads(effect: row, place: spell_tables.pressed)
+    as "a finite multiplier, targetFlags 2 and the parameter types 12, 13 and 10 are read by the area load, and so by the measure"
 }
 
 pub fn an_area_row_that_selects_in_another_order_than_closest_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
+  // No level-1 tree spell holds an area row with targetSelection 3 (132 rows outside the trees do).
   let assert Error(SelectionNotClosest(spell4_id:, target_selection: 3)) =
     area_tables.built(
       kick: area_tables.Kick(..area_tables.kick(), target_selection: 3),
@@ -256,16 +317,18 @@ pub fn an_area_row_that_selects_in_another_order_than_closest_fails_the_load_tes
 
 pub fn a_spell_whose_valid_targets_hold_a_bit_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
+  // No level-1 tree spell names a Spell4ValidTargets row with a bit.
   let assert Error(ValidTargetsNotAlive(target_bitmask: 0x8, ..)) =
     area_tables.built(
       kick: area_tables.Kick(..area_tables.kick(), target_bitmask: 0x8),
     )
-    as "Spell4ValidTargets.targetBitmask: 0x8 would strike the dead; only 0 is built, and every planted base names row 1, so the first spell with an area row to be read is the one refused"
+    as "Spell4ValidTargets.targetBitmask: 0x8 would strike the dead; only 0 is built, and Kick's row 1 is the row the edit changes"
   Nil
 }
 
 pub fn a_hit_row_placed_on_another_unit_than_the_caster_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
+  // No level-1 tree spell has a TelegraphDamage row with targetTypeFlags 2 (3561 rows outside the trees do).
   assert area_tables.built(
       kick: area_tables.Kick(
         ..area_tables.kick(),
@@ -282,6 +345,7 @@ pub fn a_hit_row_placed_on_another_unit_than_the_caster_fails_the_load_test() ->
 
 pub fn a_shape_the_rule_does_not_build_fails_the_load_naming_it_test() -> Nil {
   use <- owned_test.run(60_000)
+  // No level-1 tree spell has a hit row of shape 1, 3, 5 or 6.
   list.each([1, 3, 5, 6], fn(shape) {
     assert area_tables.built(
         kick: area_tables.Kick(..area_tables.kick(), shape:),
@@ -293,6 +357,7 @@ pub fn a_shape_the_rule_does_not_build_fails_the_load_naming_it_test() -> Nil {
 
 pub fn a_damage_multiplier_that_is_not_a_finite_float_fails_the_load_naming_the_effect_test() -> Nil {
   use <- owned_test.run(60_000)
+  // No level-1 tree spell holds a damage multiplier that is a NaN or an infinity.
   list.each(
     [
       #(0x7FC00000, 0x7FC00000),
@@ -327,6 +392,7 @@ pub fn a_damage_multiplier_that_is_not_a_finite_float_fails_the_load_naming_the_
 
 pub fn a_damage_effect_aimed_by_a_flag_value_not_read_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
+  // No level-1 tree spell has a damage effect with targetFlags 3.
   assert area_tables.built(
       kick: area_tables.Kick(..area_tables.kick(), effect_target_flags: 3),
     )
@@ -336,7 +402,8 @@ pub fn a_damage_effect_aimed_by_a_flag_value_not_read_fails_the_load_test() -> N
 
 pub fn a_damage_row_the_area_load_refuses_is_not_read_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Each planted Kick holds one damage row the area load refuses, and the measure asks the
+  // No level-1 tree spell holds a damage row with an infinite multiplier, targetFlags 3 or a
+  // parameter of type 7. Each edited Kick holds one damage row the area load refuses, and the measure asks the
   // same function (`spell_area.damage_row_of`) whether it reads the row.
   list.each(
     [
@@ -367,13 +434,6 @@ pub fn a_damage_row_the_area_load_refuses_is_not_read_test() -> Nil {
         as "a row the area load refuses is not read"
     },
   )
-  let readable =
-    area_tables.Kick(..area_tables.kick(), effect_target_flags: 2, parameters: [
-      #(10, 0.5),
-    ])
-  assert result.is_ok(area_tables.built(kick: readable))
-    as "a finite multiplier, flags 2 and a level parameter (type 10) are read by the area load"
-  assert area_tables.read_by_the_measure(kick: readable) as "and by the measure"
 }
 
 pub fn the_clients_tables_build_every_areas_kick_has_5_units_8_m_180_degrees_and_a_cone_test() -> Nil {
