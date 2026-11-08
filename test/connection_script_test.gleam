@@ -13,17 +13,21 @@
 ////   record of what the shell took from the script.
 //// - The operating system's own script: 32 bytes from the strong random
 ////   source, the node's monotonic clock and `process.send_after`.
+//// - The bound of a held read: a timer the shell starts once, at the first part,
+////   through the script's scheduler, for 5 s. The tests give a scheduler that
+////   reports it and fire it themselves.
 //// Every wait is for bytes the server writes, with a deadline a passing test
-//// never reaches; the one test of the 5 s bound waits that long, as the bound
-//// is what it proves.
+//// never reaches.
 
 import ask_support
 import event_wait
 import genesis_prime/connection/registry
-import genesis_prime/connection/script.{type Scripts, Issued, Script}
+import genesis_prime/connection/script.{
+  type Elapsed, type Scripts, Elapsed, Issued, Script,
+}
 import genesis_prime/seed
 import genesis_prime/step.{
-  type Address, type Now, ConnectionId, Now, Sessions, TimerId,
+  type Address, type Now, type TimerId, ConnectionId, Now, Sessions, TimerId,
 }
 import genesis_prime/step/runtime
 import genesis_prime/wire_recording.{
@@ -32,7 +36,7 @@ import genesis_prime/wire_recording.{
 import gleam/bit_array
 import gleam/erlang/atom
 import gleam/erlang/process.{type Subject}
-import gleam/erlang/reference
+import gleam/erlang/reference.{type Reference}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/static_supervisor as supervisor
@@ -270,6 +274,48 @@ fn reading(wanted: Int, looked: Subject(Nil)) -> Scripts {
   }
 }
 
+/// What the bound of a held read does through the scheduler of `reading_bounded`.
+type BoundEvent {
+  BoundStarted(
+    subject: Subject(Elapsed),
+    timer: TimerId,
+    reference: Reference,
+    after_ms: Int,
+  )
+  BoundCancelled(reference: Reference)
+}
+
+/// Like `reading`, with a scheduler that reports the held read's bound to
+/// `bounds` and never fires it: the test fires it, so no clock decides when the
+/// shell gives up. Any other timer is the operating system's.
+fn reading_bounded(
+  wanted wanted: Int,
+  looked looked: Subject(Nil),
+  bounds bounds: Subject(BoundEvent),
+) -> Scripts {
+  fn() {
+    let assert Ok(Issued(ordinal:, script: held)) = reading(wanted, looked)()
+    Ok(Issued(ordinal:, script: Script(..held, schedule: reporting(bounds))))
+  }
+}
+
+/// The scheduler of `reading_bounded`.
+fn reporting(bounds: Subject(BoundEvent)) -> script.Scheduler {
+  fn(subject, timer, reference, after_ms) {
+    case timer == script.held_read_timer {
+      True -> {
+        process.send(
+          bounds,
+          BoundStarted(subject:, timer:, reference:, after_ms:),
+        )
+        fn() { process.send(bounds, BoundCancelled(reference:)) }
+      }
+      False ->
+        script.operating_system_timer(subject:, timer:, reference:, after_ms:)
+    }
+  }
+}
+
 type Record {
   Record(letter: Int, number: Int)
 }
@@ -434,15 +480,16 @@ pub fn a_stop_while_the_shell_holds_part_of_a_read_reaches_the_rule_as_stopping_
   assert closing.by == Server
 }
 
-pub fn a_shell_that_waits_for_the_rest_of_a_read_gives_up_5_s_after_its_first_part_however_many_parts_come_test() -> Nil {
+pub fn a_shell_that_waits_for_the_rest_of_a_read_gives_up_when_the_bound_its_first_part_started_fires_however_many_parts_come_test() -> Nil {
   use <- owned_test.run(30_000)
   let scope = registry.new()
   let looked = process.new_subject()
-  let server = start_signalling(scope, reading(100, looked))
+  let bounds = process.new_subject()
+  let server =
+    start_signalling(scope, reading_bounded(wanted: 100, looked:, bounds:))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [shell] = ask_support.connections(server) as "one connection"
-  let started = ask_support.monotonic_ms()
   ask_support.command(
     client:,
     letter: signalling_rule.pong_command,
@@ -451,13 +498,16 @@ pub fn a_shell_that_waits_for_the_rest_of_a_read_gives_up_5_s_after_its_first_pa
   )
   let assert Ok(Nil) = process.receive(looked, ask_support.event_wait_ms)
     as "the shell took the first part and holds it"
+  let assert Ok(BoundStarted(subject:, timer:, reference:, after_ms:)) =
+    process.receive(bounds, ask_support.event_wait_ms)
+    as "the first part started the bound through the script's scheduler"
+  assert timer == script.held_read_timer
+  assert after_ms == 5000
+    as "the shell gives a held read 5 s from its first part"
   assert registry.deliver(scope, ConnectionId(id), 9) == Ok(Nil)
-  // The rest of the read never comes whole: three more parts arrive 1.2 s
-  // apart, each well inside the bound, and between them an exit of another
-  // process that the wait must pass over. The pace is the scenario: a part
-  // that came every second renews a bound that counts from the last part.
+  // The rest of the read never comes whole: three more parts arrive, and
+  // between them an exit of another process that the wait must pass over.
   list.each([2, 3, 4], fn(n) {
-    process.sleep(1200)
     process.send_abnormal_exit(shell, atom.create("irrelevant"))
     ask_support.command(
       client:,
@@ -466,15 +516,70 @@ pub fn a_shell_that_waits_for_the_rest_of_a_read_gives_up_5_s_after_its_first_pa
       wait_ms: 0,
     )
   })
-  assert read_record_within(client, 15_000) == Record(signalling_rule.woken, 9)
+  process.send(subject, Elapsed(timer:, reference:))
+  assert read_record(client) == Record(signalling_rule.woken, 9)
     as "after the bound the message is taken, and the held parts are not a read"
-  let elapsed = ask_support.monotonic_ms() - started
-  assert elapsed >= 5000
-    as "the shell waited the whole bound for the rest of the read"
-  assert elapsed < 7000
-    as "and the bound counted from the first part: the last part, at 3.6 s, did not renew it"
+  assert process.receive(bounds, 0) == Error(Nil)
+    as "no part started another bound: the one the first part started is the only one"
   event_wait.until("the connection is still open", fn() {
     ask_support.connections(server) != []
   })
+  ask_support.stop(server)
+}
+
+pub fn a_read_that_comes_whole_in_parts_starts_one_bound_and_cancels_it_when_the_read_is_complete_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let scope = registry.new()
+  let looked = process.new_subject()
+  let bounds = process.new_subject()
+  let server =
+    start_signalling(scope, reading_bounded(wanted: 8, looked:, bounds:))
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: 1,
+    wait_ms: 0,
+  )
+  let assert Ok(Nil) = process.receive(looked, ask_support.event_wait_ms)
+    as "the shell took the first part and holds it"
+  let assert Ok(BoundStarted(subject:, timer:, reference: first, ..)) =
+    process.receive(bounds, ask_support.event_wait_ms)
+    as "the first part started the bound"
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: 2,
+    wait_ms: 0,
+  )
+  assert read_record(client) == Record(signalling_rule.pong, 1)
+  assert read_record(client) == Record(signalling_rule.pong, 2)
+  assert process.receive(bounds, 0) == Ok(BoundCancelled(reference: first))
+    as "the complete read cancelled its bound, and the second part started none"
+  assert process.receive(bounds, 0) == Error(Nil)
+  // A firing of the cancelled bound that was already sent is dropped, also
+  // while the shell holds the next read: it does not end that read's bound.
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: 3,
+    wait_ms: 0,
+  )
+  let assert Ok(BoundStarted(reference: second, ..)) =
+    process.receive(bounds, ask_support.event_wait_ms)
+    as "the next read's first part started a bound of its own"
+  assert second != first
+  process.send(subject, Elapsed(timer:, reference: first))
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: 4,
+    wait_ms: 0,
+  )
+  assert read_record(client) == Record(signalling_rule.pong, 3)
+  assert read_record(client) == Record(signalling_rule.pong, 4)
+  assert process.receive(bounds, 0) == Ok(BoundCancelled(reference: second))
+    as "the bound the stale firing did not end was still running, and the complete read cancelled it"
   ask_support.stop(server)
 }

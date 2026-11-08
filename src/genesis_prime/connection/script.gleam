@@ -10,6 +10,8 @@
 ////                                   script.node_monotonic_ms(Now) ─▶ the node's time
 //// StartTimer(id, ms):               script.schedule(its subject, id, reference, ms)
 ////                                     ─▶ Cancel
+//// first part of a read held for its rest:
+////                                   script.schedule(held_read_timer, ms) ─▶ Cancel
 //// ```
 ////
 //// - **The server's script** (`operating_system`): the seed is drawn from
@@ -42,7 +44,7 @@
 ////   client reads to know where each connection's shell is.
 
 import genesis_prime/seed.{type Seed}
-import genesis_prime/step.{type Now, type TimerId}
+import genesis_prime/step.{type Now, type TimerId, TimerId}
 import genesis_prime/step/runtime
 import genesis_prime/step/timer
 import genesis_prime/wire_recording.{type Input}
@@ -56,6 +58,12 @@ import gleam/option.{type Option, None}
 /// input: the shell makes it as it takes the input and at no other time.
 pub type Clock =
   fn(Input) -> Now
+
+/// The id of the timer that bounds how long the shell waits for the rest of a
+/// read it holds part of. The rules number their timers from 0 up, so it names
+/// no rule's timer. A replay's scheduler gives it the operating system's timer
+/// (`operating_system_timer`), since no recording holds a line for it.
+pub const held_read_timer = TimerId(-1)
 
 /// A timer's firing, as the shell's own subject receives it: which timer, and
 /// the reference of the start it came from, which tells it from a stale firing

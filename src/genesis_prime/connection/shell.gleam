@@ -43,7 +43,10 @@
 ////   (`genesis_prime/client_connection.hold`). In a replay the script gives
 ////   the byte count of the next recorded read, and the shell holds what arrives
 ////   and arms the socket again until it holds that many, so the recorded read
-////   is one input (`read_arrived`).
+////   is one input (`read_arrived`). The wait for the rest is bounded to 5 s
+////   from the first part by one timer of the script's scheduler
+////   (`script.held_read_timer`), started once; when it fires the shell goes
+////   on with its mailbox and holds what arrives, still not a read.
 //// - **A message the selector does not take.** The shell drops it and logs a
 ////   warning that names the message's kind (its tag or its shape) and never its
 ////   contents, which could hold a secret; the line carries the connection's
@@ -334,6 +337,9 @@ type Mail(message, answer) {
   /// A timer fired: its message names the timer's id and the reference of the
   /// start it came from (`script.Elapsed`).
   TimerElapsed(timer: TimerId, reference: Reference)
+  /// The bound of a held read fired, with the reference of the start it came
+  /// from.
+  HeldReadElapsed(reference: Reference)
   /// A monitored process ended: a watch's target or a kept ask's.
   Ended(down: process.Down)
   /// An ask's answer, tagged with the ask's reference, whether the shell
@@ -395,11 +401,20 @@ type Reading {
   TakeWhatArrives
   /// The script gave the byte count `wanted` of the next recorded read, which
   /// is more than has arrived: the connection holds `held` and takes no input
-  /// until the rest has come, and then takes the one `Read`. `deadline_ms` is
-  /// the time on the node's monotonic clock by which the rest must have come,
-  /// counted once from the first part, so parts that keep arriving do not put it
-  /// off.
-  Reassembling(held: BitArray, wanted: Int, deadline_ms: Int)
+  /// until the rest has come, and then takes the one `Read`. `bound` is the
+  /// time by which the rest must have come, started once at the first part, so
+  /// parts that keep arriving do not put it off.
+  Reassembling(held: BitArray, wanted: Int, bound: Bound)
+}
+
+/// The time a held read has to be completed, as the script's timer
+/// (`script.held_read_timer`) counts it.
+type Bound {
+  /// The timer runs: its firing carries `reference`, and `cancel` ends it.
+  BoundRunning(reference: Reference, cancel: timer_book.Cancel)
+  /// The timer has fired: the shell no longer waits for the rest ahead of the
+  /// mailbox, and holds what arrives.
+  BoundPassed
 }
 
 /// Where the connection is: waiting to take its socket from Ranch, or open.
@@ -410,13 +425,14 @@ type Status(state, request) {
 }
 
 /// The actor's state: what it is started with and keeps for its life (the
-/// settings, the parent, the subject its timers fire on, the subject its asks
-/// are answered on) and its status.
+/// settings, the parent, the subject its timers fire on, the subject its held
+/// reads' bounds fire on, the subject its asks are answered on) and its status.
 type Connection(settings, state, message, answer, request) {
   Connection(
     settings: Settings(settings, state, message, answer, request),
     parent: Pid,
     timers: Subject(Elapsed),
+    held_reads: Subject(Elapsed),
     answers: Subject(#(Reference, answer)),
     status: Status(state, request),
   )
@@ -460,17 +476,20 @@ fn initialise(
   let _previous = process_flag(MessageQueueData, OffHeap)
   let answers = process.new_subject()
   let timers = process.new_subject()
+  let held_reads = process.new_subject()
   process.send(subject, Begin)
   actor.initialised(Connection(
     settings:,
     parent:,
     timers:,
+    held_reads:,
     answers:,
     status: AwaitingHandshake(ranch_ref:),
   ))
   |> actor.selecting(selector(
     subject:,
     timers:,
+    held_reads:,
     answers:,
     parent:,
     registry: settings.registry,
@@ -485,6 +504,7 @@ fn initialise(
 fn selector(
   subject subject: Subject(Mail(message, answer)),
   timers timers: Subject(Elapsed),
+  held_reads held_reads: Subject(Elapsed),
   answers answers: Subject(#(Reference, answer)),
   parent parent: Pid,
   registry registry: Option(Registry(message)),
@@ -494,6 +514,9 @@ fn selector(
   |> process.select(subject)
   |> process.select_map(timers, fn(elapsed) {
     TimerElapsed(timer: elapsed.timer, reference: elapsed.reference)
+  })
+  |> process.select_map(held_reads, fn(elapsed) {
+    HeldReadElapsed(reference: elapsed.reference)
   })
   |> process.select_map(answers, fn(reply) {
     AnswerArrived(tag: reply.0, answer: reply.1)
@@ -549,6 +572,7 @@ fn handle(
         | OtherExited
         | Delivered(..)
         | TimerElapsed(..)
+        | HeldReadElapsed(..)
         | Ended(..)
         | AnswerArrived(..)
         | Stray(..) ->
@@ -584,6 +608,8 @@ fn handle(
           )
         TimerElapsed(timer:, reference:) ->
           timer_elapsed(connection:, running:, timer:, reference:)
+        HeldReadElapsed(reference:) ->
+          held_read_elapsed(connection:, running:, reference:)
         Ended(down:) -> ended(connection:, running:, down:)
         AnswerArrived(tag:, ..) -> late_answer(connection:, running:, tag:)
         Stray(message:) -> {
@@ -808,89 +834,152 @@ fn read_arrived(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
 ) {
-  let #(held, wanted) = case running.reading {
-    Reassembling(held:, wanted:, ..) -> #(
-      <<held:bits, bytes:bits>>,
+  let #(held, wanted, bound) = case running.reading {
+    Reassembling(held: before, wanted:, bound:) -> #(
+      <<before:bits, bytes:bits>>,
       Some(wanted),
+      Some(bound),
     )
-    TakeWhatArrives -> #(bytes, running.script.next_read())
+    TakeWhatArrives -> #(bytes, running.script.next_read(), None)
   }
   let held_count = bit_array.byte_size(held)
   case wanted {
     Some(wanted) if held_count < wanted ->
       case read_once(running.socket) {
         Ok(Nil) -> {
-          let deadline_ms = case running.reading {
-            Reassembling(deadline_ms:, ..) -> deadline_ms
-            TakeWhatArrives -> runtime.monotonic_ms() + held_read_wait_ms
+          let bound = case bound {
+            Some(bound) -> bound
+            None -> start_bound(connection:, running:)
           }
-          wait_for_rest(
-            connection:,
-            running: Running(
-              ..running,
-              reading: Reassembling(held:, wanted:, deadline_ms:),
-            ),
-            deadline_ms:,
-          )
+          let running =
+            Running(..running, reading: Reassembling(held:, wanted:, bound:))
+          case bound {
+            BoundRunning(reference:, ..) ->
+              wait_for_rest(connection:, running:, reference:)
+            BoundPassed -> keep_open(connection:, running:)
+          }
         }
         Error(failure) ->
           take_next(
             connection:,
-            running: Running(..running, reading: TakeWhatArrives),
+            running: finish_reading(running),
             event: OwnEvent(ReadFailed(failure:)),
           )
       }
     Some(_) | None ->
       take_next(
         connection:,
-        running: Running(..running, reading: TakeWhatArrives),
+        running: finish_reading(running),
         event: OwnEvent(step.Read(bytes: held)),
       )
   }
 }
 
-/// How long the shell waits, in real milliseconds, for the rest of a read it
-/// holds part of: the bound that ends the wait when the rest never comes.
-const held_read_wait_ms = 5000
+/// The running without a read in progress: its bound's timer, if one runs, is
+/// cancelled, so a firing already sent is dropped when it arrives.
+fn finish_reading(running: Running(state, request)) -> Running(state, request) {
+  case running.reading {
+    Reassembling(bound: BoundRunning(cancel:, ..), ..) -> cancel()
+    Reassembling(bound: BoundPassed, ..) | TakeWhatArrives -> Nil
+  }
+  Running(..running, reading: TakeWhatArrives)
+}
 
-/// Waits for the rest of a read the shell holds part of, with a selective
-/// receive that takes only the socket's messages and the exits (the parent's is
-/// the server's stop, another process's is dropped), until `deadline_ms`, an
-/// absolute time on the monotonic clock fixed by the first part. Everything
-/// else, a delivered message, a timer, a watch's end, a late answer, stays in
-/// the mailbox, so the read is taken before any of it and the rule gets the
-/// inputs in the order the recording holds. A message the wait takes is handled
-/// as the actor would handle it. When the bound passes, the shell stops waiting
-/// and the actor takes the next message of the mailbox, the bytes still held.
-fn wait_for_rest(
+/// Starts the bound of a held read at its first part, through the script's
+/// scheduler.
+fn start_bound(
   connection connection: Connection(settings, state, message, answer, request),
   running running: Running(state, request),
-  deadline_ms deadline_ms: Int,
+) -> Bound {
+  let reference = reference.new()
+  let cancel =
+    running.script.schedule(
+      connection.held_reads,
+      script.held_read_timer,
+      reference,
+      held_read_wait_ms,
+    )
+  BoundRunning(reference:, cancel:)
+}
+
+/// Marks the bound of the held read passed when `reference` is the running
+/// bound's; any other firing is dropped.
+fn held_read_elapsed(
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state, request),
+  reference reference: Reference,
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
 ) {
-  case
-    receive_until(
-      selector: socket_and_exits(connection.parent),
-      deadline_ms:,
-      skip: fn(mail) {
-        case mail {
-          OtherExited -> True
-          Begin
-          | FromSocket(..)
-          | ParentExited
-          | Delivered(..)
-          | TimerElapsed(..)
-          | Ended(..)
-          | AnswerArrived(..)
-          | Stray(..) -> False
-        }
-      },
-    )
-  {
-    Ok(mail) -> handle(Connection(..connection, status: Open(running:)), mail)
-    Error(Nil) -> keep_open(connection:, running:)
+  case running.reading {
+    Reassembling(held:, wanted:, bound: BoundRunning(reference: current, ..))
+      if current == reference
+    ->
+      keep_open(
+        connection:,
+        running: Running(
+          ..running,
+          reading: Reassembling(held:, wanted:, bound: BoundPassed),
+        ),
+      )
+    Reassembling(..) | TakeWhatArrives -> keep_open(connection:, running:)
+  }
+}
+
+/// How long the shell waits for the rest of a read it holds part of, counted
+/// from the first part on the script's scheduler: the bound that ends the wait
+/// when the rest never comes.
+const held_read_wait_ms = 5000
+
+/// Waits for the rest of a read the shell holds part of, with a selective
+/// receive that takes only the socket's messages, the exits (the parent's is
+/// the server's stop, another process's is dropped) and the firing of the
+/// bound with `reference`, which the first part started. Everything else, a
+/// delivered message, a timer, a watch's end, a late answer, stays in the
+/// mailbox, so the read is taken before any of it and the rule gets the inputs
+/// in the order the recording holds. A message the wait takes is handled as the
+/// actor would handle it. When the bound fires, the shell stops waiting and the
+/// actor takes the next message of the mailbox, the bytes still held.
+fn wait_for_rest(
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state, request),
+  reference reference: Reference,
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  let selector =
+    socket_and_exits(connection.parent)
+    |> process.select_map(connection.held_reads, fn(elapsed) {
+      HeldReadElapsed(reference: elapsed.reference)
+    })
+  handle(
+    Connection(..connection, status: Open(running:)),
+    receive_for_rest(selector:, reference:),
+  )
+}
+
+/// The next message of `selector` other than another process's exit and the
+/// firing of a bound other than `reference`'s, which are dropped.
+fn receive_for_rest(
+  selector selector: Selector(Mail(message, answer)),
+  reference reference: Reference,
+) -> Mail(message, answer) {
+  let mail = process.selector_receive_forever(selector)
+  case mail {
+    OtherExited -> receive_for_rest(selector:, reference:)
+    HeldReadElapsed(reference: fired) if fired != reference ->
+      receive_for_rest(selector:, reference:)
+    Begin
+    | FromSocket(..)
+    | ParentExited
+    | Delivered(..)
+    | TimerElapsed(..)
+    | HeldReadElapsed(..)
+    | Ended(..)
+    | AnswerArrived(..)
+    | Stray(..) -> mail
   }
 }
 
