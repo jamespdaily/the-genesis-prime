@@ -24,7 +24,7 @@ A server for WildStar that the original client connects to and plays on. Gleam o
 - Game tables load once at start into named records; a missing row fails the load.
 - Every packet layout lives in one schema with its evidence. The generated codec states each field's size and byte order and is never edited by hand; the bit stream's field kinds and the generator are property-tested, and each message with a client vector is checked against it.
 - A bug fix starts with a test that fails because of the bug.
-- The full check passes on the commit handed back for review and before a pull request opens; pushes before that only keep the work safe. Files are staged by name.
+- CI's full check passes on the commit handed back for review: a builder runs single tests and `./check fast` locally, and pushes to a draft pull request so CI runs. The coordinator runs `./check` locally once, on the commit it merges, for the parts that need the client. Files are staged by name.
 - No shortcut makes a check pass: no stub or hard-coded value in place of the client's behaviour, no test skipped or loosened without its reason in the test, no swallowed error. A gap is stated where it is enforced, names the open issue that will close it, and is reported as missing or a question.
 - A requirement or fact lives in the code, test, config or check that enforces it. No design documents or decision records: the issue keeps the reasoning, and a choice becomes one line in its place. Tools that gate a merge (the check script, the setup check, the table extractor) have tests that CI runs; other tools and guidance are checked by real use.
 - A branch is `jimd/<issue>-<topic>`; each commit names its issue and says why.
