@@ -588,7 +588,14 @@ pub fn crush_keeps_every_effect_at_any_points_held_test() -> Nil {
         now: support.at(ms: 1000),
         cast_id: asked.cast_id,
         phase: 0,
-        struck: [cast.Hit(unit_id: 10, descriptions: [], controls: [])],
+        struck: [
+          cast.Hit(
+            unit_id: 10,
+            unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+            descriptions: [],
+            controls: [],
+          ),
+        ],
       )
     assert list.any(support.started_timers(effects:), fn(timer) {
       timer.1 == 100

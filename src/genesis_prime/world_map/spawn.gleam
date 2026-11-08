@@ -65,6 +65,7 @@ import genesis_prime/game/hit
 import genesis_prime/game/hit_radius
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/float32
 import genesis_prime/table/creature2.{type Creature2}
 import genesis_prime/table/creature2_arche_type
@@ -172,7 +173,47 @@ pub type Spawn {
     /// properties start from at each life (genesis_prime/game/unit_properties
     /// `of_creature`).
     bases: List(#(UnitProperty2Id, Float)),
+    /// What working `combat` out again from changed properties needs besides them
+    /// (`values_of`).
+    context: CombatContext,
   )
+}
+
+/// The loaded formulas and scaling inputs a creature's combat values are worked out
+/// with from its properties, so a change of a property needs no table at run time:
+/// the rating formulas, the creature damage scaling (GameFormula 712, `0x140565600`),
+/// each damage effect of its attack with its formula, and its display's
+/// Creature2DisplayInfo.runLand.
+pub type CombatContext {
+  CombatContext(
+    formulas: Formulas,
+    scaling: damage.CreatureScaling,
+    attack: List(AttackEffect),
+    run_land: Float,
+  )
+}
+
+/// One damage effect of a creature's attack: its blow as the load worked it out, and
+/// the formula its damage comes from.
+pub type AttackEffect {
+  AttackEffect(blow: hit.Blow, formula: damage.Formula)
+}
+
+/// A creature's values that its properties set: what it brings to a fight, and its
+/// maximum health.
+pub type CreatureValues {
+  CreatureValues(combat: Combat, max_health: Int)
+}
+
+/// The creature's combat values and maximum health from its current `properties`, by
+/// the formulas `combat_of` and `attack_of` use at the load: defence, offence, run
+/// speed, Interrupt Armor's maximum and maximum health. The values no property sets
+/// (hit radius, whom it fights, its attack's spell and reach) are the spawn's own.
+pub fn values_of(
+  spawn _spawn: Spawn,
+  properties _properties: Properties,
+) -> CreatureValues {
+  panic as "shape: creature side works a creature's combat values out from its properties"
 }
 
 /// The spawns that start in one world, as the persistent term of the world holds
@@ -756,10 +797,11 @@ pub fn faction_levels(
   )
 }
 
-/// The combat values already worked out in a load, by creature, level, display and
-/// faction: the spawns that share them hold one term, so the load's term is small.
+/// The combat values and their context already worked out in a load, by creature,
+/// level, display and faction: the spawns that share them hold one term, so the
+/// load's term is small (a persistent term keeps the sharing).
 type SharedCombats =
-  Dict(#(Int, Int, Int, Int), Combat)
+  Dict(#(Int, Int, Int, Int), #(Combat, CombatContext))
 
 /// The CreatureLevel row of properties 100 and above, one for every level
 /// (`CreatureLevel.101`).
@@ -771,7 +813,8 @@ const last_creature_level = 101
 /// `0x140463ac0` critical deflect, `0x140461a30` glance chance, `0x1404615f0` glance
 /// amount); a mitigation is the formula of GameFormula 1234 from Armor plus the
 /// resist of its damage type and the two offsets (`0x140464240`). Its Interrupt Armor
-/// is its property 44 (`UnitProperty2.InterruptArmor_Threshold`).
+/// is its property 44 (`UnitProperty2.InterruptArmor_Threshold`). With it, the context
+/// that works it out again from changed properties.
 fn combat_of(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
@@ -780,7 +823,7 @@ fn combat_of(
   level level: Int,
   display_info_id display_info_id: Int,
   faction_id faction_id: Int,
-) -> Result(Combat, SpawnError) {
+) -> Result(#(Combat, CombatContext), SpawnError) {
   let creature_id = Creature2Id(creature.id)
   let missing = fn(table, id) { NoPropertyRow(creature_id:, table:, id:) }
   use display <- result.try(
@@ -810,7 +853,7 @@ fn combat_of(
   use tech_resist <- result.try(property(27))
   use magic_resist <- result.try(property(28))
   use armor_maximum <- result.try(property(44))
-  use attack <- result.try(attack_of(
+  use #(attack, scaling, attack_effects) <- result.try(attack_of(
     catalog:,
     formulas:,
     kind:,
@@ -826,56 +869,69 @@ fn combat_of(
       rating: armor +. resist,
     )
   }
-  Ok(Combat(
-    hit_radius: hit_radius.of_creature(display:),
-    attackable: Attackable(
-      exile: attackable_by(catalog:, player: exile_faction, unit: faction_id),
-      dominion: attackable_by(
-        catalog:,
-        player: dominion_faction,
-        unit: faction_id,
+  let context =
+    CombatContext(
+      formulas:,
+      scaling:,
+      attack: attack_effects,
+      run_land: display.run_land,
+    )
+  let combat =
+    Combat(
+      hit_radius: hit_radius.of_creature(display:),
+      attackable: Attackable(
+        exile: attackable_by(catalog:, player: exile_faction, unit: faction_id),
+        dominion: attackable_by(
+          catalog:,
+          player: dominion_faction,
+          unit: faction_id,
+        ),
       ),
-    ),
-    hostile_to: Hostile(
-      exile: hostile_to(catalog:, player: exile_faction, unit: faction_id),
-      dominion: hostile_to(catalog:, player: dominion_faction, unit: faction_id),
-    ),
-    defence: hit.Defence(
-      deflect_chance: rating.to_fraction(
-        formula: formulas.deflect_chance,
-        level:,
-        base: deflect_base,
-        rating: deflect_rating,
+      hostile_to: Hostile(
+        exile: hostile_to(catalog:, player: exile_faction, unit: faction_id),
+        dominion: hostile_to(
+          catalog:,
+          player: dominion_faction,
+          unit: faction_id,
+        ),
       ),
-      crit_deflect_chance: rating.to_fraction(
-        formula: formulas.crit_deflect,
-        level:,
-        base: crit_deflect_base,
-        rating: crit_deflect_rating,
+      defence: hit.Defence(
+        deflect_chance: rating.to_fraction(
+          formula: formulas.deflect_chance,
+          level:,
+          base: deflect_base,
+          rating: deflect_rating,
+        ),
+        crit_deflect_chance: rating.to_fraction(
+          formula: formulas.crit_deflect,
+          level:,
+          base: crit_deflect_base,
+          rating: crit_deflect_rating,
+        ),
+        glance_chance: rating.to_fraction(
+          formula: formulas.glance_chance,
+          level:,
+          base: glance_base,
+          rating: glance_rating,
+        ),
+        glance_amount: rating.to_fraction(
+          formula: formulas.glance_amount,
+          level:,
+          base: glance_amount_base,
+          rating: glance_amount_rating,
+        ),
+        physical_mitigation: mitigation(physical_offset, physical_resist),
+        tech_mitigation: mitigation(tech_offset, tech_resist),
+        magic_mitigation: mitigation(magic_offset, magic_resist),
+        shield_mitigation_max: 0.0,
+        physical_taken: hit.as_dealt,
+        tech_taken: hit.as_dealt,
+        magic_taken: hit.as_dealt,
       ),
-      glance_chance: rating.to_fraction(
-        formula: formulas.glance_chance,
-        level:,
-        base: glance_base,
-        rating: glance_rating,
-      ),
-      glance_amount: rating.to_fraction(
-        formula: formulas.glance_amount,
-        level:,
-        base: glance_amount_base,
-        rating: glance_amount_rating,
-      ),
-      physical_mitigation: mitigation(physical_offset, physical_resist),
-      tech_mitigation: mitigation(tech_offset, tech_resist),
-      magic_mitigation: mitigation(magic_offset, magic_resist),
-      shield_mitigation_max: 0.0,
-      physical_taken: hit.as_dealt,
-      tech_taken: hit.as_dealt,
-      magic_taken: hit.as_dealt,
-    ),
-    attack:,
-    interrupt_armor: creature_life.interrupt_armor_of(maximum: armor_maximum),
-  ))
+      attack:,
+      interrupt_armor: creature_life.interrupt_armor_of(maximum: armor_maximum),
+    )
+  Ok(#(combat, context))
 }
 
 /// The creature's own attack (genesis_prime/world_map/creature_life `Attack`): its
@@ -884,7 +940,8 @@ fn combat_of(
 /// (`0x140565600`, GameFormula 712), its critical hit chance, severity and
 /// strikethrough from its properties, its run speed (Creature2DisplayInfo.runLand
 /// times property 100, `0x1405b45e0`) and its reach (the spell's `targetMaxRange`
-/// plus `hit_radius`).
+/// plus `hit_radius`). With it, the creature scaling and each damage effect with its
+/// formula, which work the blows out again from changed properties.
 fn attack_of(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
@@ -892,7 +949,7 @@ fn attack_of(
   creature creature: Creature2,
   level level: Int,
   display display: creature2_display_info.Creature2DisplayInfo,
-) -> Result(Attack, SpawnError) {
+) -> Result(#(Attack, damage.CreatureScaling, List(AttackEffect)), SpawnError) {
   let creature_id = Creature2Id(creature.id)
   let property = fn(number) {
     creature_property(catalog:, row: creature, level:, property: number)
@@ -935,7 +992,14 @@ fn attack_of(
       strength:,
       assault_power: damage.power_of(rating: assault_rating),
     )
-  use blows <- result.try(
+  let creature_scaling =
+    damage.CreatureScaling(
+      per_level: scaling.datafloat0,
+      base: scaling.datafloat01,
+      overflow: scaling.datafloat02,
+      divisor: scaling.datafloat03,
+    )
+  use attack_effects <- result.try(
     list.try_map(effects, fn(effect) {
       use formula <- result.try(
         damage.formula_of(effect:)
@@ -953,51 +1017,52 @@ fn attack_of(
             parameter_kind:,
           ))
         None ->
-          Ok(hit.Blow(
-            spell4_effects_id: effect.id,
-            damage_type: effect.damage_type,
-            damage: float.round(damage.creature_value(
-              formula:,
-              creature: caster,
-              scaling: damage.CreatureScaling(
-                per_level: scaling.datafloat0,
-                base: scaling.datafloat01,
-                overflow: scaling.datafloat02,
-                divisor: scaling.datafloat03,
-              ),
-            )),
-            delay_ms: effect.delay_time,
-            threat_multiplier: effect.threat_multiplier,
+          Ok(AttackEffect(
+            blow: hit.Blow(
+              spell4_effects_id: effect.id,
+              damage_type: effect.damage_type,
+              damage: float.round(damage.creature_value(
+                formula:,
+                creature: caster,
+                scaling: creature_scaling,
+              )),
+              delay_ms: effect.delay_time,
+              threat_multiplier: effect.threat_multiplier,
+            ),
+            formula:,
           ))
       }
     }),
   )
-  Ok(creature_life.Attack(
-    spell4_id: kind.attack_spell4_id,
-    offence: hit.Offence(
-      blows:,
-      crit_chance: rating.to_fraction(
-        formula: formulas.crit_chance,
-        level:,
-        base: crit_chance_base,
-        rating: 0.0,
+  let blows = list.map(attack_effects, fn(effect) { effect.blow })
+  let attack =
+    creature_life.Attack(
+      spell4_id: kind.attack_spell4_id,
+      offence: hit.Offence(
+        blows:,
+        crit_chance: rating.to_fraction(
+          formula: formulas.crit_chance,
+          level:,
+          base: crit_chance_base,
+          rating: 0.0,
+        ),
+        crit_severity: rating.to_fraction(
+          formula: formulas.crit_severity,
+          level:,
+          base: crit_severity_base,
+          rating: 0.0,
+        ),
+        strikethrough: rating.to_fraction(
+          formula: formulas.strikethrough,
+          level:,
+          base: strikethrough_base,
+          rating: 0.0,
+        ),
       ),
-      crit_severity: rating.to_fraction(
-        formula: formulas.crit_severity,
-        level:,
-        base: crit_severity_base,
-        rating: 0.0,
-      ),
-      strikethrough: rating.to_fraction(
-        formula: formulas.strikethrough,
-        level:,
-        base: strikethrough_base,
-        rating: 0.0,
-      ),
-    ),
-    run_speed: display.run_land *. move_speed,
-    reach: spell.target_max_range +. hit_radius.of_creature(display:),
-  ))
+      run_speed: display.run_land *. move_speed,
+      reach: spell.target_max_range +. hit_radius.of_creature(display:),
+    )
+  Ok(#(attack, creature_scaling, attack_effects))
 }
 
 /// The GameFormula row whose values scale a creature caster's damage
@@ -1675,8 +1740,8 @@ fn load_checks(
     row:,
   ))
   let key = #(row.creature_id, level, row.display_info_id, row.faction_id)
-  use #(combat, shared) <- result.try(case dict.get(shared, key) {
-    Ok(combat) -> Ok(#(combat, shared))
+  use #(#(combat, context), shared) <- result.try(case dict.get(shared, key) {
+    Ok(worked) -> Ok(#(worked, shared))
     Error(Nil) ->
       combat_of(
         catalog:,
@@ -1687,7 +1752,7 @@ fn load_checks(
         display_info_id: row.display_info_id,
         faction_id: row.faction_id,
       )
-      |> result.map(fn(combat) { #(combat, dict.insert(shared, key, combat)) })
+      |> result.map(fn(worked) { #(worked, dict.insert(shared, key, worked)) })
   })
   Ok(#(
     Checked(
@@ -1708,6 +1773,7 @@ fn load_checks(
         // Gap: no base is built yet, so a creature's properties hold none; #464
         // builds every UnitProperty2 row by `creature_property`.
         bases: [],
+        context:,
       ),
     ),
     shared,

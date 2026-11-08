@@ -163,7 +163,12 @@ fn caster_at(x x: Float, z z: Float) -> Caster {
 }
 
 fn hit(unit_id unit_id: Int) -> cast.Struck {
-  cast.Hit(unit_id:, descriptions: [], controls: [])
+  cast.Hit(
+    unit_id:,
+    unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+    descriptions: [],
+    controls: [],
+  )
 }
 
 /// The child casts a step started, each as (Spell4 id, primary target unit id).

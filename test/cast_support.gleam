@@ -632,12 +632,16 @@ pub fn caster_in_combat(in_combat in_combat: Bool) -> Caster {
   cast.Caster(..caster(), in_combat:)
 }
 
-/// Each struck unit as a hit with no descriptions and no controls.
+/// Each struck unit as a hit on a creature's first life, struck at time 0, with no
+/// descriptions and no controls.
 pub fn hits(units: List(Int)) -> List(cast.Struck) {
   list.map(units, fn(unit_id) {
-    cast.Hit(unit_id:, descriptions: [], controls: [])
+    cast.Hit(unit_id:, unit: first_life, descriptions: [], controls: [])
   })
 }
+
+/// A creature in its first life, struck by a go at time 0.
+pub const first_life = cast.HitCreature(life: 1, struck_at_ms: 0)
 
 /// A press whose go, and each go it leads to at once, strikes these units.
 pub fn pressed_striking(

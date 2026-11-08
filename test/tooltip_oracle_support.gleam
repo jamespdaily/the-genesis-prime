@@ -448,7 +448,14 @@ pub fn striking_with_states(root root: Spell) -> Strikes {
       Ok(spell) -> landed_of(rows: spell.controls, at_ms:)
       Error(Nil) -> []
     }
-    [cast.Hit(unit_id: struck_unit, descriptions: [], controls:)]
+    [
+      cast.Hit(
+        unit_id: struck_unit,
+        unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+        descriptions: [],
+        controls:,
+      ),
+    ]
   }
 }
 

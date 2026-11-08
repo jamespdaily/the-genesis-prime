@@ -175,7 +175,14 @@ pub fn a_struck_unit_keeps_its_damage_info_and_an_aimed_unit_that_was_not_struck
       plans:,
       state: cast.new(),
       bag: bag_of_base_3,
-      struck: [cast.Hit(unit_id: 20, descriptions: [], controls: [])],
+      struck: [
+        cast.Hit(
+          unit_id: 20,
+          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          descriptions: [],
+          controls: [],
+        ),
+      ],
       at: 1000,
     )
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
@@ -286,7 +293,14 @@ pub fn nodes_ending_at_two_times_end_with_a_0x811_and_then_the_finish_test() -> 
       plans:,
       state: cast.new(),
       bag: bag_of_base_3,
-      struck: [cast.Hit(unit_id: 20, descriptions: [], controls: [])],
+      struck: [
+        cast.Hit(
+          unit_id: 20,
+          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          descriptions: [],
+          controls: [],
+        ),
+      ],
       at: 1000,
     )
   let id = support.pressed_id(effects:)
@@ -334,8 +348,18 @@ pub fn two_nodes_ending_at_the_same_time_are_one_0x811_naming_both_test() -> Nil
       state: cast.new(),
       bag: bag_of_base_3,
       struck: [
-        cast.Hit(unit_id: 20, descriptions: [], controls: []),
-        cast.Hit(unit_id: 21, descriptions: [], controls: []),
+        cast.Hit(
+          unit_id: 20,
+          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          descriptions: [],
+          controls: [],
+        ),
+        cast.Hit(
+          unit_id: 21,
+          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          descriptions: [],
+          controls: [],
+        ),
       ],
       at: 1000,
     )
@@ -636,7 +660,14 @@ pub fn a_nodes_unit_leaving_sight_ends_a_lingering_cast_left_with_no_node_test()
       plans:,
       state: cast.new(),
       bag: bag_of_base_3,
-      struck: [cast.Hit(unit_id: 20, descriptions: [], controls: [])],
+      struck: [
+        cast.Hit(
+          unit_id: 20,
+          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          descriptions: [],
+          controls: [],
+        ),
+      ],
       at: 1000,
     )
   let id = support.pressed_id(effects:)
@@ -680,7 +711,14 @@ pub fn a_node_removed_with_its_unit_leaves_the_casts_other_nodes_test() -> Nil {
       plans:,
       state: cast.new(),
       bag: bag_of_base_3,
-      struck: [cast.Hit(unit_id: 20, descriptions: [], controls: [])],
+      struck: [
+        cast.Hit(
+          unit_id: 20,
+          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          descriptions: [],
+          controls: [],
+        ),
+      ],
       at: 1000,
     )
   let assert [#(timer, 8000)] = support.started_timers(effects:)

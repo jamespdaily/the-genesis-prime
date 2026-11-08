@@ -402,7 +402,13 @@ pub fn cast_effects(
         ]),
       )
       cast.StealthChanged(..), None -> #(session, [])
-      cast.TargetChangeStarts(unit_id:, life:, source:, modifier:),
+      cast.TargetChangeStarts(
+        unit_id:,
+        life:,
+        struck_at_ms:,
+        source:,
+        modifier:,
+      ),
         Some(entered)
       -> #(session, [
         tells_the_creature(
@@ -410,7 +416,11 @@ pub fn cast_effects(
           entered:,
           unit_id:,
           life:,
-          change: client_connection.ChangeStarts(source:, modifier:),
+          change: client_connection.ChangeStarts(
+            source:,
+            modifier:,
+            struck_at_ms:,
+          ),
         ),
       ])
       cast.TargetChangeStarts(..), None -> #(session, [])

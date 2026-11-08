@@ -852,7 +852,14 @@ pub fn a_live_cast_whose_primary_target_is_another_unit_does_not_stop_stealth_te
       state:,
       effects: started,
       at: 1000,
-      struck: [cast.Hit(unit_id: 99, descriptions: [], controls: [])],
+      struck: [
+        cast.Hit(
+          unit_id: 99,
+          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          descriptions: [],
+          controls: [],
+        ),
+      ],
       rolls: [],
     )
   let #(_, effects) =

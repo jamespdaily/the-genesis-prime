@@ -63,9 +63,14 @@ fn kicked(
       at: 1000,
     )
   support.answered_by(state:, effects:, at: go_ms, struck: [
-    cast.Hit(unit_id: 20, descriptions: [], controls: [
-      crowd_control_support.kick_landed(ends_at_ms:),
-    ]),
+    cast.Hit(
+      unit_id: 20,
+      unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+      descriptions: [],
+      controls: [
+        crowd_control_support.kick_landed(ends_at_ms:),
+      ],
+    ),
   ])
 }
 
@@ -129,7 +134,12 @@ pub fn a_creature_that_took_no_state_has_no_effect_listed_for_it_test() -> Nil {
     )
   let #(_, effects) =
     support.answered_by(state:, effects:, at: 1000, struck: [
-      cast.Hit(unit_id: 20, descriptions: [], controls: []),
+      cast.Hit(
+        unit_id: 20,
+        unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+        descriptions: [],
+        controls: [],
+      ),
     ])
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
   let assert Ok(decoded) = spell_go.decode(go.body)
@@ -246,9 +256,14 @@ pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> 
     )
   let #(state, first) =
     support.answered_by(state:, effects: pressed, at: 1000, struck: [
-      cast.Hit(unit_id: 20, descriptions: [], controls: [
-        crowd_control_support.kick_landed(ends_at_ms: 4000),
-      ]),
+      cast.Hit(
+        unit_id: 20,
+        unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+        descriptions: [],
+        controls: [
+          crowd_control_support.kick_landed(ends_at_ms: 4000),
+        ],
+      ),
     ])
   let assert [#(go, 1000)] =
     list.filter(support.started_timers(effects: first), fn(started) {
@@ -258,7 +273,12 @@ pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> 
   let #(state, going) = support.fired_raw(state:, timer: go, at: 2000)
   let #(_, second) =
     support.answered_by(state:, effects: going, at: 2000, struck: [
-      cast.Hit(unit_id: 20, descriptions: [], controls: []),
+      cast.Hit(
+        unit_id: 20,
+        unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+        descriptions: [],
+        controls: [],
+      ),
     ])
   let afters =
     list.map(support.started_timers(effects: second), fn(started) { started.1 })

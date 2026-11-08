@@ -706,13 +706,16 @@ pub type Effect {
   /// nothing. A source names one cast and one Spell4Effects row, so at most one owner holds it.
   CasterChangeEnds(source: unit_properties.Source)
   /// A property modifier of the caster's spell starts on the creature `unit_id` whose
-  /// life the go struck: the connection tells the creature
+  /// life the go struck, at the monotonic time `struck_at_ms` the go struck it
+  /// (`HitCreature`): the connection tells the creature
   /// (genesis_prime/client_connection `TellTargetChange`), which applies it to its own
   /// properties and tells its viewers the entries that changed. A creature of another
-  /// life drops it.
+  /// life drops it, and so does one that lies dead or has stood again from its corpse
+  /// since the go struck.
   TargetChangeStarts(
     unit_id: Int,
     life: Int,
+    struck_at_ms: Int,
     source: unit_properties.Source,
     modifier: unit_properties.Modifier,
   )
@@ -749,12 +752,31 @@ pub type Struck {
   /// instance id its tell gave (genesis_prime/game/strike_tell `Landed`).
   Hit(
     unit_id: Int,
+    unit: HitUnit,
     descriptions: List(hit.Description),
     controls: List(strike_tell.ControlLanded),
   )
   /// The unit deflected the strike: an entry of the 0x7fb, no description and no
   /// child (`opcode.0x7fb`).
   Deflected(unit_id: Int)
+}
+
+/// What kind of unit a `Hit` names.
+pub type HitUnit {
+  /// A creature a player's go struck, in the life the go aimed at
+  /// (genesis_prime/game/strike `Aimed`), at the monotonic time `struck_at_ms` the go
+  /// struck it: a property modifier the go starts on it is told for that life and
+  /// that time (`TargetChangeStarts`).
+  HitCreature(life: Int, struck_at_ms: Int)
+  /// A player a creature's attack struck (genesis_prime/world_map/creature_fight).
+  HitPlayer
+}
+
+/// A property modifier a cast started on a creature: the creature's unit, the life
+/// the go struck, and the modifier's source. Each end of the cast's node on that unit
+/// tells it ended (`TargetChangeEnds`).
+pub type OnCreature {
+  OnCreature(unit_id: Int, life: Int, source: unit_properties.Source)
 }
 
 /// Why the client's message is refused: it ends the connection, because the
@@ -793,6 +815,13 @@ pub type Due {
   StateEnd(spell4_id: Spell4Id, unit_id: Int, state: CrowdControlState)
   /// The change of the caster `source` names starts, after its delay.
   ModifierStart(source: unit_properties.Source, change: CasterChange)
+  /// The property modifier `on` names starts on its creature, after its delay, for
+  /// the go that struck at `struck_at_ms`.
+  TargetModifierStart(
+    on: OnCreature,
+    modifier: unit_properties.Modifier,
+    struck_at_ms: Int,
+  )
   /// The property modifier `source` ends, after its duration.
   ModifierEnd(source: unit_properties.Source)
   /// The cooldown effect `source` takes effect, after its delay: it changes the
@@ -969,6 +998,12 @@ pub opaque type State {
     /// The persistence columns already logged as not read or not checked on this
     /// connection, by Spell4 id and result (282 or 283): one debug line for each.
     persistence_logged: Set(#(Int, Int)),
+    /// The property modifiers the caster's casts started on creatures and have not
+    /// ended, by cast id, in the order they started: the node's end by time
+    /// (`NodesEnd`), a type 80 removal, a push off by the stack rule, the caster's
+    /// death and its leaving each tell `TargetChangeEnds` for those of the cast and
+    /// unit they end.
+    on_creatures: Dict(Int, List(OnCreature)),
   )
 }
 
@@ -1004,6 +1039,7 @@ pub fn new() -> State {
     procs: dict.new(),
     passive: None,
     persistence_logged: set.new(),
+    on_creatures: dict.new(),
   )
 }
 
@@ -2471,6 +2507,7 @@ fn stop_pending(
       | NodesEnd(..)
       | StateEnd(..)
       | ModifierStart(..)
+      | TargetModifierStart(..)
       | ModifierEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
@@ -2568,6 +2605,8 @@ fn fire(
           CasterChangeStarts(source:, change:),
         ])
         ModifierEnd(source:) -> #(cast, [CasterChangeEnds(source:)])
+        TargetModifierStart(on:, modifier:, struck_at_ms:) ->
+          target_modifier_started(cast:, on:, modifier:, struck_at_ms:)
         CooldownModifierStarts(source:, modifier:, kept:) ->
           cooldown_applied(cast:, source:, modifier:, kept:, now_ms:)
         CooldownModifierEnds(source:) -> #(
@@ -2593,6 +2632,18 @@ fn fire(
       }
     }
   }
+}
+
+/// The delay of a property modifier on a creature ran out: it starts on the creature
+/// (`TargetChangeStarts`) and the cast keeps it in `on_creatures` until an end of its
+/// node; a cast that has ended since starts nothing.
+fn target_modifier_started(
+  cast _cast: State,
+  on _on: OnCreature,
+  modifier _modifier: unit_properties.Modifier,
+  struck_at_ms _struck_at_ms: Int,
+) -> #(State, List(Effect)) {
+  panic as "shape: cast side starts a modifier on a creature after its delay"
 }
 
 /// How many rolls the go of `phase` of the live cast `cast_id` may take once its
@@ -3082,6 +3133,7 @@ fn cancel_nodes_end(
       | StartChild(..)
       | StateEnd(..)
       | ModifierStart(..)
+      | TargetModifierStart(..)
       | ModifierEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
@@ -3114,6 +3166,7 @@ pub fn unit_removed(
         | StartChild(..)
         | NodesEnd(..)
         | ModifierStart(..)
+        | TargetModifierStart(..)
         | ModifierEnd(..)
         | CooldownModifierStarts(..)
         | CooldownModifierEnds(..)
@@ -3635,6 +3688,7 @@ fn belongs_to_passive(
     | ModifierEnd(source:)
     | CooldownModifierStarts(source:, ..)
     | CooldownModifierEnds(source:) -> source.cast_id == id
+    TargetModifierStart(on:, ..) -> on.source.cast_id == id
     StartChild(root:, ..) -> Some(root) == spell4_id
     StateEnd(..) | StartHeld | RepeatHeld | WindowEnd(..) | ChargeLevel(..) ->
       False
@@ -3706,6 +3760,7 @@ fn modifiers_pending(cast cast: State) -> List(Effect) {
       case entry.1 {
         ModifierEnd(source:) -> Ok(source)
         ModifierStart(..)
+        | TargetModifierStart(..)
         | CooldownModifierStarts(..)
         | CooldownModifierEnds(..)
         | Go(..)
@@ -4061,6 +4116,7 @@ fn close_threshold(
             | NodesEnd(..)
             | StateEnd(..)
             | ModifierStart(..)
+            | TargetModifierStart(..)
             | ModifierEnd(..)
             | CooldownModifierStarts(..)
             | CooldownModifierEnds(..)
@@ -5234,6 +5290,7 @@ fn source_of(due due: Due) -> Option(unit_properties.Source) {
     | ModifierEnd(source:)
     | CooldownModifierStarts(source:, ..)
     | CooldownModifierEnds(source:) -> Some(source)
+    TargetModifierStart(on:, ..) -> Some(on.source)
     Go(..)
     | Finish(..)
     | StartChild(..)
@@ -5341,6 +5398,7 @@ fn pending_heals(
         if source.cast_id == cast_id
       -> Ok(#(entry.0, source, amount))
       ModifierStart(..)
+      | TargetModifierStart(..)
       | ModifierEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
@@ -5371,6 +5429,7 @@ fn pending_heals_cancelled(
       ModifierStart(change: Property(..), ..)
       | ModifierStart(change: Absorb(..), ..)
       | ModifierStart(change: Look(..), ..)
+      | TargetModifierStart(..)
       | ModifierEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)

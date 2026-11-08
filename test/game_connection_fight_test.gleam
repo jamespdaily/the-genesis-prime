@@ -943,8 +943,18 @@ fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
             Ok(creature.StrikeAnswered(answered:))
           client_connection.TellTargetChange(
             connection:,
-            change: client_connection.ChangeStarts(source:, modifier:),
-          ) -> Ok(creature.ModifierStarts(by: connection, source:, modifier:))
+            change: client_connection.ChangeStarts(
+              source:,
+              modifier:,
+              struck_at_ms:,
+            ),
+          ) ->
+            Ok(creature.ModifierStarts(
+              by: connection,
+              source:,
+              modifier:,
+              struck_at_ms:,
+            ))
           client_connection.TellTargetChange(
             change: client_connection.ChangeEnds(source:),
             ..,

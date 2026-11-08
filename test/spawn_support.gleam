@@ -24,6 +24,7 @@ import genesis_prime/world_map/creature_life.{
 import genesis_prime/world_map/game_number.{type GameNumbers, GameNumbers}
 import genesis_prime/world_map/spawn.{type Row, type Spawn, Row, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_source.{Summoned}
 import genesis_prime/world_map/static_object.{type StaticObject, StaticObject}
 import genesis_prime/world_map/unit_fields
 import gleam/dict
@@ -73,7 +74,34 @@ pub fn battle_beast(number number: Int, x x: Float) -> Spawn {
     outfit_info_id: 0,
     combat: beast_combat(),
     bases: [],
+    context: beast_context(),
   )
+}
+
+/// What the Virtual Battle Beast's combat values are worked out again with, as the
+/// load builds it from the client's committed rows: the summon of Creature2 73464 at
+/// its own level.
+pub fn beast_context() -> spawn.CombatContext {
+  database_support.once("spawn_support_beast_context", fn() {
+    let assert Ok(beast) =
+      spawn.summoned(
+        checks: summon_checks(),
+        summoned: Summoned(
+          id: SpawnId(-1),
+          creature_id: Creature2Id(73_464),
+          level: option.None,
+          place: place_support.at(
+            world_id: 3460,
+            world_zone_id: warfare_woods,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+          ),
+        ),
+      )
+      as "the Virtual Battle Beast passes the summon checks over the client's committed rows"
+    beast.context
+  })
 }
 
 /// The spawn numbered `number` of a Virtual Defense Dagun, the Dominion Novice's

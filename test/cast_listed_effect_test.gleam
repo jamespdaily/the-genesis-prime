@@ -201,8 +201,18 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
     )
   let #(_, effects) =
     support.answered_by(state:, effects:, at: 1000, struck: [
-      cast.Hit(unit_id: 20, descriptions: [], controls: []),
-      cast.Hit(unit_id: 21, descriptions: [], controls: []),
+      cast.Hit(
+        unit_id: 20,
+        unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+        descriptions: [],
+        controls: [],
+      ),
+      cast.Hit(
+        unit_id: 21,
+        unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+        descriptions: [],
+        controls: [],
+      ),
     ])
   assert list.map(targets_of(effects:), fn(info) {
       #(

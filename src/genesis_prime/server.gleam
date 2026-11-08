@@ -593,8 +593,13 @@ fn connection_deliver(
           unit_id:,
           life:,
           message: case change {
-            ChangeStarts(source:, modifier:) ->
-              creature.ModifierStarts(by: connection, source:, modifier:)
+            ChangeStarts(source:, modifier:, struck_at_ms:) ->
+              creature.ModifierStarts(
+                by: connection,
+                source:,
+                modifier:,
+                struck_at_ms:,
+              )
             ChangeEnds(source:) -> creature.ModifierEnds(source:)
           },
         )

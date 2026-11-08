@@ -136,8 +136,9 @@ pub type Request {
 
 /// A property modifier of a cast on a creature, as `TellTargetChange` carries it.
 pub type TargetChange {
-  /// The modifier starts: the creature applies it to its properties.
-  ChangeStarts(source: Source, modifier: Modifier)
+  /// The modifier starts: the creature applies it to its properties, unless it has
+  /// stood again since `struck_at_ms`, the monotonic time of the go that struck it.
+  ChangeStarts(source: Source, modifier: Modifier, struck_at_ms: Int)
   /// The modifier of `source` ends: the creature removes it.
   ChangeEnds(source: Source)
 }

@@ -376,8 +376,18 @@ pub fn answers_out_of_order_are_listed_in_selection_order_when_the_round_closes_
     == [
       #(5, 0, [
         cast.Deflected(unit_id: 10),
-        cast.Hit(unit_id: 11, descriptions: [], controls: []),
-        cast.Hit(unit_id: 12, descriptions: [], controls: []),
+        cast.Hit(
+          unit_id: 11,
+          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          descriptions: [],
+          controls: [],
+        ),
+        cast.Hit(
+          unit_id: 12,
+          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          descriptions: [],
+          controls: [],
+        ),
       ]),
     ]
     as "the go lists the units in selection order whatever order the answers came in; a deflect is its own entry"
@@ -402,8 +412,18 @@ pub fn a_creature_that_died_in_flight_is_left_out_and_the_count_is_not_refilled_
   assert went(effects: closing)
     == [
       #(5, 0, [
-        cast.Hit(unit_id: 11, descriptions: [], controls: []),
-        cast.Hit(unit_id: 12, descriptions: [], controls: []),
+        cast.Hit(
+          unit_id: 11,
+          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          descriptions: [],
+          controls: [],
+        ),
+        cast.Hit(
+          unit_id: 12,
+          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          descriptions: [],
+          controls: [],
+        ),
       ]),
     ]
     as "Spell4ValidTargets.targetBitmask: a dead unit is never struck; the 0x7f4 names the two that were, and no other unit takes the dead one's place"
@@ -430,7 +450,16 @@ pub fn a_silent_creature_is_left_out_at_the_deadline_on_a_driven_timer_test() ->
     as "the deadline is 1 s after the go: nothing closes at 1999 ms"
   let #(_, due) = strike.timer_fired(strike: state, now: at(ms: 2000))
   assert went(effects: due)
-    == [#(5, 0, [cast.Hit(unit_id: 10, descriptions: [], controls: [])])]
+    == [
+      #(5, 0, [
+        cast.Hit(
+          unit_id: 10,
+          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          descriptions: [],
+          controls: [],
+        ),
+      ]),
+    ]
     as "the creature that never answered is left out at its round's deadline"
   assert timers(effects: due) == []
     as "the timer that fired is no longer running and no round is open, so none is set or cancelled"
@@ -619,7 +648,16 @@ pub fn a_spell_that_only_selects_names_each_unit_at_once_without_a_tell_test() -
       now_ms: 1000,
     )
   assert went(effects:)
-    == [#(5, 0, [cast.Hit(unit_id: 10, descriptions: [], controls: [])])]
+    == [
+      #(5, 0, [
+        cast.Hit(
+          unit_id: 10,
+          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          descriptions: [],
+          controls: [],
+        ),
+      ]),
+    ]
     as "Crush's first spell has only a Proxy on its area: the go names its foe with no effect info (Spell4.32812.area)"
   assert tells(effects:) == []
 }
@@ -1291,8 +1329,18 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
   assert went(effects: closed)
     == [
       #(5, 0, [
-        cast.Hit(unit_id: 10, descriptions: [], controls: []),
-        cast.Hit(unit_id: 11, descriptions: [], controls: [landed]),
+        cast.Hit(
+          unit_id: 10,
+          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          descriptions: [],
+          controls: [],
+        ),
+        cast.Hit(
+          unit_id: 11,
+          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          descriptions: [],
+          controls: [landed],
+        ),
       ]),
     ]
     as "the go names the states that landed, as the creature answered them"

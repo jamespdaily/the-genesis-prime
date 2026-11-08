@@ -982,7 +982,11 @@ fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
         list.any(descriptions, fn(description) {
           description.damage.killed == 1
         })
-      #([cast.Hit(unit_id:, descriptions:, controls: [])], killed, killed)
+      #(
+        [cast.Hit(unit_id:, unit: cast.HitPlayer, descriptions:, controls: [])],
+        killed,
+        killed,
+      )
     }
     strike_tell.Deflected -> #([cast.Deflected(unit_id:)], False, False)
     strike_tell.Refused(why: strike_tell.Dead) -> #([], True, True)

@@ -44,6 +44,7 @@ pub fn a_creature_is_created_as_the_clients_vector_of_a_battle_beast_is_test() -
       outfit_info_id: 0,
       combat: spawn_support.beast_combat(),
       bases: [],
+      context: spawn_support.beast_context(),
     )
   assert unit_create_creature.encode(creature_unit.create(
       spawn: beast,
