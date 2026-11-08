@@ -12,7 +12,6 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/world_zone
 import gleam/list
 import gleam/result
-import owned_key
 import owned_test
 import planted_table
 import unitest
@@ -77,12 +76,10 @@ pub fn a_load_with_a_cycle_in_the_parent_chain_fails_test() -> Nil {
   use folder <- planted_table.in_folder(
     character_tables.files_with_zones(zones: [#(1, 2), #(2, 1)]),
   )
-  let key = owned_key.new()
   let assert Error(store.DerivationFailed(name: "TopZones", ..)) =
-    server_table.load_under(under: key, from: folder)
+    server_table.read(from: folder)
     as "CLAUDE.md: a table the server cannot read fails the load; a cycle has no top zone"
-  assert planted_table.persistent_terms_under(key) == 0
-    as "the failed load erased what it wrote"
+  Nil
 }
 
 pub fn the_planted_load_builds_the_top_zones_once_test() -> Nil {

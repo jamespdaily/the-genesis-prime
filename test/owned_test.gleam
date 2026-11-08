@@ -22,18 +22,6 @@ pub type Outcome(a) {
 /// pay for them. A body that crashes or runs past its deadline fails for that,
 /// and its terms are erased too.
 pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
-  run_counting_waits(timeout_ms, owned_key.waited_ms, body)
-}
-
-/// `run`, with `waited_ms` the way the deadline learns how long the body's
-/// process has waited for room among the loads: `run` gives the real count
-/// (`owned_key.waited_ms`), and a test of the deadline's extension gives its own,
-/// so the deadline's rule is checked with no wait and no clock.
-pub fn run_counting_waits(
-  timeout_ms: Int,
-  waited_ms: fn(process.Pid) -> Int,
-  body: fn() -> a,
-) -> a {
   let reply = process.new_subject()
   let worker =
     process.spawn_unlinked(fn() {
@@ -48,7 +36,7 @@ pub fn run_counting_waits(
     process.new_selector()
     |> process.select(reply)
     |> process.select_specific_monitor(monitor, fn(_down) { Crashed })
-    |> receive_within(timeout_ms:, waited_ms:, worker:, extended_ms: 0)
+    |> process.selector_receive(within: timeout_ms)
   // The body is ended first, so it puts nothing more, and then its terms are
   // counted and erased, whatever ended it: its return, a crash or the deadline.
   process.kill(worker)
@@ -70,34 +58,6 @@ pub fn run_counting_waits(
       unitest.guard(False, fn() { panic as "a skipped body does not run" })
     Ok(Crashed) -> panic as "the test body crashed"
     Error(Nil) -> panic as "the test ran past its deadline"
-  }
-}
-
-/// Waits for the body's outcome for `timeout_ms` of its own time: the time it
-/// spent waiting for room among the loads (`waited_ms`) is added to the
-/// deadline, so a test is not failed for the gate's wait. `extended_ms` is what
-/// has been added so far.
-fn receive_within(
-  selector selector: process.Selector(Outcome(a)),
-  timeout_ms timeout_ms: Int,
-  waited_ms waited_ms: fn(process.Pid) -> Int,
-  worker worker: process.Pid,
-  extended_ms extended_ms: Int,
-) -> Result(Outcome(a), Nil) {
-  case process.selector_receive(selector, within: timeout_ms) {
-    Ok(outcome) -> Ok(outcome)
-    Error(Nil) ->
-      case waited_ms(worker) - extended_ms {
-        more if more > 0 ->
-          receive_within(
-            selector:,
-            timeout_ms: more,
-            waited_ms:,
-            worker:,
-            extended_ms: extended_ms + more,
-          )
-        _ -> Error(Nil)
-      }
   }
 }
 

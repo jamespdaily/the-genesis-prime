@@ -92,7 +92,6 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/order
 import gleam/result
-import owned_key
 import planted_table.{type Cell, Float, Integer}
 
 /// The planted rows of each table the plan reads.
@@ -2012,27 +2011,15 @@ fn by_id(first: List(Cell), second: List(Cell)) -> order.Order {
   int.compare(first_id, second_id)
 }
 
-/// The load of these rows and the rows these roots reach with the plan's
-/// derivation, which fails when the plan cannot be built: the load's error, or
+/// The tables of these rows and the rows these roots reach with the plan's
+/// derivation, which fails when the plan cannot be built: the error, or
 /// `Ok(Nil)`.
 pub fn derivation_result(
   rows rows: Rows,
   reaching roots: List(#(String, Int)),
 ) -> Result(Nil, table_store.LoadError) {
-  use folder <- planted_table.in_folder(reached_files(rows:, roots:))
-  case
-    table_store.load(
-      under: owned_key.new(),
-      from: folder,
-      entries: server_entries(),
-      requirements: [],
-      derivations: [spell_plan.derivation()],
-    )
-  {
-    Ok(tables) -> {
-      table_store.unload(tables)
-      Ok(Nil)
-    }
+  case edited(rows:, roots:, derivations: [spell_plan.derivation()]) {
+    Ok(_) -> Ok(Nil)
     Error(error) -> Error(error)
   }
 }
@@ -2049,13 +2036,15 @@ fn server_entries() -> List(table_store.Entry) {
   )
 }
 
-/// The files of the rows a load of these rows holds: the rows the roots reach,
-/// each row the client's rows do not hold as it is, the rows those reach, and
-/// the tables that go in whole.
-fn reached_files(
+/// The shared tables edited into the tables of these rows and the rows these
+/// roots reach: the rows the roots reach, each row the client's rows do not hold
+/// as it is, and the rows those reach. The edit is built on the caller's heap,
+/// and the derivations run on it.
+fn edited(
   rows rows: Rows,
   roots roots: List(#(String, Int)),
-) -> List(#(String, BitArray)) {
+  derivations derivations: List(table_store.Derivation),
+) -> Result(table_store.Tables, table_store.LoadError) {
   let given =
     list.fold(tables_of(rows:), fixture_tables.rows(), fn(held, table) {
       dict.insert(held, { table.0 }.table, table.1)
@@ -2069,18 +2058,11 @@ fn reached_files(
     })
   let kept =
     fixture_tables.reached(rows: given, roots: list.append(roots, classes))
-  list.map(
-    list.append(
-      list.map(server_entries(), table_store.schema),
-      list.map(tables_of(rows:), fn(table) { table.0 }),
-    )
-      |> list.unique,
-    fn(schema) {
-      planted_table.file(
-        schema,
-        result.unwrap(dict.get(kept, schema.table), []),
-      )
-    },
+  fixture_tables.edited(
+    rows: kept,
+    entries: server_entries(),
+    requirements: [],
+    derivations:,
   )
 }
 
@@ -2134,9 +2116,10 @@ fn tables_of(rows rows: Rows) -> List(#(tbl_file.Schema, List(List(Cell)))) {
   ]
 }
 
-/// The tables the plan reads, loaded under a key of their own for the body to
-/// run on, then unloaded. The load holds the rows these roots reach, each row
-/// the client's rows do not hold as it is, and the rows those reach.
+/// The tables the plan reads, for the body to run on: the shared tables edited
+/// on the body's heap, so nothing is stored and nothing is left to unload. The
+/// edit holds the rows these roots reach, each row the client's rows do not hold
+/// as it is, and the rows those reach.
 pub fn with_loaded(
   rows rows: Rows,
   reaching roots: List(#(String, Int)),
@@ -2145,27 +2128,16 @@ pub fn with_loaded(
   with_loaded_deriving(rows:, reaching: roots, derivations: [], body:)
 }
 
-/// The same, with the rows these roots reach also loaded and these derivations
-/// run on the load, which fails when one does.
+/// The same, with these derivations run on the edit, which fails when one does.
 pub fn with_loaded_deriving(
   rows rows: Rows,
   reaching roots: List(#(String, Int)),
   derivations derivations: List(table_store.Derivation),
   body body: fn(table_store.Tables) -> a,
 ) -> a {
-  use folder <- planted_table.in_folder(reached_files(rows:, roots:))
-  let assert Ok(tables) =
-    table_store.load(
-      under: owned_key.new(),
-      from: folder,
-      entries: server_entries(),
-      requirements: [],
-      derivations:,
-    )
+  let assert Ok(tables) = edited(rows:, roots:, derivations:)
     as "the spell tables load"
-  let result = body(tables)
-  table_store.unload(tables)
-  result
+  body(tables)
 }
 
 /// The effect ids of the rows a spell's own lists hold, in no order: its gains, lasting

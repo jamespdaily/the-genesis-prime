@@ -1,27 +1,27 @@
 //// The client's own rows, as the server's tables.
 ////
-//// - **`shared()`** is the server's tables loaded from the rows with the
-////   server's own requirements and derivations. Never unload it.
-//// - **`changed` and `added`** run a body on a copy of the rows with a row's
+//// - **`shared()`** is the server's tables read from the rows with the
+////   server's own requirements and derivations, stored for the run.
+//// - **`changed` and `added`** run a body on the shared tables with a row's
 ////   cells changed, or one row added that starts as a copy of a real row. The
-////   copy is unloaded afterwards.
+////   edit is built on the body's heap and gone with it.
 //// - **`root(table, id)`** names a row the rows are guaranteed to hold.
 
 import database_support
 import genesis_prime/fixture_rows
 import genesis_prime/message/float32
+import genesis_prime/table/loader/derivation
+import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table_rows
 import gleam/bool
 import gleam/dict.{type Dict}
-import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import gleam/result
 import gleam/set.{type Set}
-import owned_key
 import planted_table.{type Cell}
 import simplifile
 
@@ -299,37 +299,95 @@ fn client_cells(
   })
 }
 
-/// Loads the rows as the server's tables under this key, with the server's own
-/// requirements and derivations.
-pub fn load(
-  rows rows: Rows,
-  under key: reference.Reference,
-) -> Result(store.Tables, store.LoadError) {
+/// The server's tables read from the rows on the caller's heap, with the
+/// server's own requirements and derivations. Nothing is stored.
+pub fn read(rows rows: Rows) -> Result(store.Tables, store.LoadError) {
   let files =
     list.map(schemas(), fn(schema) {
       planted_table.file(schema:, rows: rows_of(rows:, schema:))
     })
   use folder <- planted_table.in_folder(files)
-  server_table.load_under(under: key, from: folder)
+  server_table.read(from: folder)
 }
 
-fn loaded(rows: Rows, key: reference.Reference) -> store.Tables {
-  case load(rows:, under: key) {
-    Ok(tables) -> tables
-    Error(error) ->
-      panic as { "the fixture's tables did not load: " <> store.describe(error) }
-  }
-}
-
-/// The key the shared load is stored under.
-pub fn shared_key() -> reference.Reference {
-  database_support.once("fixture_tables_key", reference.new)
-}
-
-/// The server's tables from the rows, loaded once, with the server's own
-/// requirements and derivations. Never unload them.
+/// The server's tables from the rows, read once and stored for the run, with the
+/// server's own requirements and derivations. A test that needs other rows edits
+/// them (`on_rows`, `changed`, `added`) on its own heap.
 pub fn shared() -> store.Tables {
-  database_support.once("fixture_tables", fn() { loaded(rows(), shared_key()) })
+  database_support.once("fixture_tables", fn() {
+    case read(rows: rows()) {
+      Ok(tables) -> store.store_under(tables:)
+      Error(error) ->
+        panic as {
+          "the fixture's tables did not load: " <> store.describe(error)
+        }
+    }
+  })
+}
+
+/// The edits that turn the shared tables into the tables of `wanted`, for each
+/// of these entries: the rows of `wanted` that differ from the fixture's are
+/// put, the fixture's rows `wanted` lacks are removed, and a table the shared
+/// tables lack is put whole, empty or not.
+pub fn edits_to(
+  rows wanted: Rows,
+  entries entries: List(store.Entry),
+) -> List(store.Edit) {
+  let held = rows()
+  let shared_tables = list.map(schemas(), fn(schema) { schema.table })
+  list.flat_map(entries, fn(entry) {
+    let schema = store.schema(entry)
+    let wanted_rows = rows_of(rows: wanted, schema:)
+    let kept_rows = rows_of(rows: held, schema:)
+    let kept_by_id = by_id(kept_rows)
+    let wanted_by_id = by_id(wanted_rows)
+    let puts =
+      list.filter(wanted_rows, fn(row) {
+        dict.get(kept_by_id, id_of(row:)) != Ok(row)
+      })
+    let removes =
+      list.filter_map(kept_rows, fn(row) {
+        let id = id_of(row:)
+        case dict.has_key(wanted_by_id, id) {
+          True -> Error(Nil)
+          False -> Ok(id)
+        }
+      })
+    let lacks = !list.contains(shared_tables, schema.table)
+    list.flatten([
+      case puts, lacks {
+        [], False -> []
+        _, _ -> [
+          store.put_rows(entry, { planted_table.file(schema:, rows: puts) }.1),
+        ]
+      },
+      case removes {
+        [] -> []
+        _ -> [store.remove_rows(entry, ids: removes)]
+      },
+    ])
+  })
+}
+
+fn by_id(rows: List(List(Cell))) -> Dict(Int, List(Cell)) {
+  dict.from_list(list.map(rows, fn(row) { #(id_of(row:), row) }))
+}
+
+/// The shared tables edited into the tables of `wanted` (`edits_to`) for these
+/// entries, then checked and derived from as given. The edit is built on the
+/// caller's heap; the shared tables are not touched.
+pub fn edited(
+  rows wanted: Rows,
+  entries entries: List(store.Entry),
+  requirements requirements: List(store.Requirement),
+  derivations derivations: List(store.Derivation),
+) -> Result(store.Tables, store.LoadError) {
+  store.edit(
+    tables: shared(),
+    with: edits_to(rows: wanted, entries:),
+    requirements:,
+    derivations:,
+  )
 }
 
 // ---------------------------------------------------------------- edits
@@ -439,35 +497,30 @@ pub fn add(
   dict.insert(rows, table, list.append(rows_of(rows:, schema:), [new_row]))
 }
 
-/// Runs the body on the `closure` of these rows and roots, loaded under a key
-/// of their own and unloaded afterwards, for a case that needs more than one
-/// edit (`change` and `add` make them); the shared load is not touched.
+/// Runs the body on the `closure` of these rows and roots, as an edit of the
+/// shared tables on the body's heap, for a case that needs more than one edit
+/// (`change` and `add` make them); the shared tables are not touched.
 pub fn on_rows(
   rows rows: Rows,
   reaching roots: List(#(String, Int)),
   body body: fn(store.Tables) -> a,
 ) -> a {
-  on_rows_under(rows:, reaching: roots, key: owned_key.new(), body:)
+  case
+    edited(
+      rows: closure(rows:, roots:),
+      entries: server_table.entries(),
+      requirements: requirement.all(),
+      derivations: derivation.all(),
+    )
+  {
+    Ok(tables) -> body(tables)
+    Error(error) ->
+      panic as { "the fixture's tables did not load: " <> store.describe(error) }
+  }
 }
 
-/// `on_rows` under a key the caller made. The tables are unloaded also when the
-/// body crashes, so the failure that shows is the body's.
-pub fn on_rows_under(
-  rows rows: Rows,
-  reaching roots: List(#(String, Int)),
-  key key: reference.Reference,
-  body body: fn(store.Tables) -> a,
-) -> a {
-  let tables = loaded(closure(rows:, roots:), key)
-  after_body(fn() { body(tables) }, fn() { store.unload(tables) })
-}
-
-/// Runs the body, then the cleanup, also when the body crashes.
-@external(erlang, "fixture_tables_ffi", "after_body")
-fn after_body(body: fn() -> a, cleanup: fn() -> Nil) -> a
-
-/// Runs the body on the tables with the cells of one row changed. Loaded under
-/// a key of its own and unloaded afterwards; the shared load is not touched.
+/// Runs the body on the tables with the cells of one row changed, built on the
+/// body's heap; the shared tables are not touched.
 /// Stops the test when the table, id or column is not one, or when an edit of
 /// the ID column gives the row an id the table holds.
 pub fn changed(
@@ -483,7 +536,7 @@ pub fn changed(
 }
 
 /// Runs the body on the tables with one row added, a copy of a row with the
-/// cells named replaced. Loaded under a key of its own and unloaded afterwards.
+/// cells named replaced, built on the body's heap.
 /// Stops the test when the table, row or column is not one, or the id is held.
 pub fn added(
   table table: String,

@@ -750,21 +750,11 @@ pub fn creature_level_rows() -> List(List(Cell)) {
 
 /// The files with the creature auto-attack's Spell4 and Spell4Effects rows added
 /// (`creature_attack_spell4_rows`, `creature_attack_effect_rows`), for a load that
-/// selects spawns, whose attack is their kind's spell. The attack's effect ids make
-/// a Spell4Effects table of over a megabyte (a slot for each id up to 184777): the
-/// shared planted load holds it, and a test's own load that selects spawns passes
-/// `padding` True for one more empty row, so its table is never the same size as the
-/// shared one, which the literal-area check would take for one table loaded twice
-/// (`literal_area.tables_held_twice`).
+/// selects spawns, whose attack is their kind's spell.
 pub fn with_creature_attack(
   files files: List(#(String, BitArray)),
-  padding padding: Bool,
 ) -> List(#(String, BitArray)) {
-  with_creature_attack_multiplier(
-    files:,
-    padding:,
-    multiplier_bits: 1_065_353_216,
-  )
+  with_creature_attack_multiplier(files:, multiplier_bits: 1_065_353_216)
 }
 
 /// `with_creature_attack`, with the attack effects' dataBits00 set to
@@ -772,19 +762,12 @@ pub fn with_creature_attack(
 /// multiplier the load refuses.
 pub fn with_creature_attack_multiplier(
   files files: List(#(String, BitArray)),
-  padding padding: Bool,
   multiplier_bits multiplier_bits: Int,
 ) -> List(#(String, BitArray)) {
   let effects =
     list.flatten([
       spell4_effects_rows(),
       creature_attack_effect_rows_of(multiplier_bits:),
-      case padding {
-        True -> [
-          planted_table.row(spell4_effects.schema, [#("ID", Integer(184_778))]),
-        ]
-        False -> []
-      },
     ])
   list.map(files, fn(file) {
     case file.0 {

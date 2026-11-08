@@ -32,7 +32,6 @@ import genesis_prime/table/id.{
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
-import owned_key
 import owned_test
 import planted_table.{Integer}
 import unitest
@@ -489,9 +488,9 @@ pub fn the_load_fails_when_a_map_names_a_customization_parameter_row_that_is_mis
       id: 7,
     ))
     as "a create request's bone count reads the CustomizationParameter row each map of the race and sex names (opcode.0x25b.counts), so a load without that row fails, naming it"
-  let assert Ok(tables) = load_a_map_naming_parameter_7(parameters: [1, 7, 8])
+  let assert Ok(_) = load_a_map_naming_parameter_7(parameters: [1, 7, 8])
     as "the row the map names is there, so the load holds"
-  table_store.unload(tables)
+  Nil
 }
 
 /// Loads a CharacterCustomization table with one row of these flags and
@@ -539,8 +538,7 @@ fn load_appearance_tables(
       fn(files, file) { list.key_set(files, file.0, file.1) },
     )
   use folder <- planted_table.in_folder(files)
-  table_store.load(
-    under: owned_key.new(),
+  table_store.read(
     from: folder,
     entries: [
       character_customization.entry(),
@@ -571,23 +569,22 @@ pub fn the_load_fails_when_an_indexed_rows_label_has_no_label_row_test() -> Nil 
       id: 78,
     ))
     as "the row's second label is followed too"
-  let assert Ok(tables) =
+  let assert Ok(_) =
     load_a_row_naming_labels(flags: 2, labels: #(2, 0), label_rows: [2])
     as "label 0 is none, and label 2 has its row"
-  table_store.unload(tables)
+  Nil
 }
 
 pub fn a_row_the_index_does_not_hold_may_name_a_label_with_no_row_test() -> Nil {
   use <- owned_test.run(60_000)
   list.each([1, 3, 4, 6], fn(flags) {
-    let assert Ok(tables) =
+    let assert Ok(_) =
       load_a_row_naming_labels(flags:, labels: #(77, 0), label_rows: [2])
       as {
         "BuildCustomizationIndex 0x14001d450 files a row only with flags bit 2 set and bits 1 and 4 clear, so a row of flags "
         <> int.to_string(flags)
         <> " is never read through its label"
       }
-    table_store.unload(tables)
   })
 }
 

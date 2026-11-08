@@ -1,5 +1,5 @@
 //// The text of the generated `genesis_prime/table` module: one entry per
-//// generated table module, in file-name order, and the load of all of them
+//// generated table module, in file-name order, and the read of all of them
 //// (the coverage tool's and the tests'; the server loads its own list).
 
 import genesis_prime/table_generator/difference
@@ -16,7 +16,6 @@ pub fn render(modules modules: List(String)) -> String {
       "import genesis_prime/table/loader/derivation",
       "import genesis_prime/table/loader/requirement",
       "import genesis_prime/table/loader/store",
-      "import gleam/erlang/reference.{type Reference}",
     ])
     |> list.sort(string.compare)
   let entries =
@@ -36,17 +35,15 @@ pub fn render(modules modules: List(String)) -> String {
       "  ]",
       "}",
       "",
-      "/// Loads every table from the folder that holds the client's extracted `.tbl`",
-      "/// files under `key`, checking each against its generated schema and the rows",
-      "/// the server requires, and builds the values the server derives from them.",
-      "/// The server itself loads only the tables its rules read",
+      "/// Reads every table from the folder that holds the client's extracted `.tbl`",
+      "/// files on the caller's heap, checking each against its generated schema and",
+      "/// the rows the server requires, and builds the values the server derives from",
+      "/// them. The server itself loads only the tables its rules read",
       "/// (`genesis_prime/table/loader/server_table`).",
-      "pub fn load(",
-      "  under key: Reference,",
+      "pub fn read(",
       "  from folder: String,",
       ") -> Result(store.Tables, store.LoadError) {",
-      "  store.load(",
-      "    under: key,",
+      "  store.read(",
       "    from: folder,",
       "    entries: entries(),",
       "    requirements: requirement.all(),",

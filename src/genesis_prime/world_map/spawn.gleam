@@ -317,8 +317,8 @@ type Checked {
 /// group, the ids of the outfits that have a Creature2OutfitInfo row, each
 /// faction's parent, and the level of each pair of factions that has a
 /// relationship, filed under both orders as the client files it. Creature2OutfitInfo
-/// is a table only the content load holds, unloaded once the load is done, so the
-/// checks of a summon read the ids and not the table.
+/// is a table only the content load reads, so the checks of a summon read the ids
+/// and not the table.
 type Catalog {
   Catalog(
     tables: table_store.Tables,

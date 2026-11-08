@@ -61,18 +61,17 @@ pub fn files() -> List(String) {
   |> list.sort(string.compare)
 }
 
-/// The server's own tables (`server_table.entries`), loaded once per test run
-/// under the server's own key exactly as the server's start loads them: the
-/// first caller loads them, every later caller in any test process gets the
-/// same `Tables`, and the game rule's settings hold the tables under that key.
-/// A failed load stops the caller,
-/// naming the table. Never unload them, and never load the tables again for a
-/// test that reads the real files; a test of the load itself loads its own
-/// under a key of its own and unloads it.
+/// The server's own tables (`server_table.entries`), read once per test run
+/// with the server's requirements and derivations, exactly as the server's start
+/// reads them, and stored once for the run: the first caller reads them, every
+/// later caller in any test process gets the same `Tables`, which a read or a
+/// message does not copy. A failed load stops the caller, naming the table.
+/// Never load the tables again for a test that reads the real files; a test of
+/// the load itself reads its own on its heap.
 pub fn shared() -> store.Tables {
   database_support.once("client_tables", fn() {
-    case server_table.load(from: folder()) {
-      Ok(tables) -> tables
+    case server_table.read(from: folder()) {
+      Ok(tables) -> store.store_under(tables:)
       Error(error) ->
         panic as {
           "the server's tables did not load from the client's files: "
@@ -84,26 +83,32 @@ pub fn shared() -> store.Tables {
 
 /// Every one of the client's 384 tables, for the tests that read a table no rule
 /// of the server reads, such as the measure of the client's tables: the server's
-/// own (`shared`) and the other tables loaded beside them under the same key, so
-/// no table is held twice in the literal area (the server's 36 take 306 MiB, and
-/// a second copy of them filled the area). The first caller loads, every later
-/// caller in any test process gets the same `Tables`. Never unload them.
-///
-/// The value is the load of the other 348 tables only: its `terms` and its
-/// `digest` (`store.digest`) cover those files, not the server's 36, whose are
-/// `shared`'s. Reads by table key work for all 384, because both hold the
-/// server's key (`store.server_key`), the key the server loads its content
-/// tables under (`genesis_prime.load_content`): a load of those over either
-/// value writes under the key both read.
+/// own (`shared`) and the other 348 tables beside them. The other tables are
+/// stored once, apart from `shared`'s, and each caller joins the two handles
+/// (`store.merge`, a list of keys, no table copied), so no table is held twice
+/// in the literal area (the server's 36 take 306 MiB, and a second copy of them filled the area).
+/// The first caller reads, every later caller in any test process gets the same
+/// tables. The digest (`store.digest`) is `shared`'s.
 pub fn every_table() -> store.Tables {
-  database_support.once("client_every_table", fn() {
+  store.merge(tables: shared(), more: the_other_tables())
+}
+
+fn the_other_tables() -> store.Tables {
+  database_support.once("client_other_tables", fn() {
     let server_files = list.map(server_table.entries(), store.file)
     let others =
       list.filter(table.entries(), fn(entry) {
         !list.contains(server_files, store.file(entry))
       })
-    case store.load_more(over: shared(), from: folder(), entries: others) {
-      Ok(tables) -> tables
+    case
+      store.read(
+        from: folder(),
+        entries: others,
+        requirements: [],
+        derivations: [],
+      )
+    {
+      Ok(tables) -> store.store_under(tables:)
       Error(error) ->
         panic as {
           "the client's 384 tables did not all load: " <> store.describe(error)

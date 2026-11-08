@@ -3,10 +3,13 @@
 
 %% Runs Create once in this VM, whichever test asks first, and gives every
 %% later caller the same value. The value lives in a persistent term, written
-%% once per key; a lock on the key makes a second caller wait for the first and
-%% wakes it when the first ends (local_lock_ffi). The atom made from each key is
-%% bounded by the repository's files and literals: the keys are literals, and
-%% some are made per source file or per label count.
+%% once per key, and every caller, the first too, gets the stored value itself:
+%% a term in the literal area is not copied to a process that reads or sends it,
+%% so the creator holds no copy of a large value on its heap. A lock on the key
+%% makes a second caller wait for the first and wakes it when the first ends
+%% (local_lock_ffi). The atom made from each key is bounded by the repository's
+%% files and literals: the keys are literals, and some are made per source file
+%% or per label count.
 once(Key, Create) ->
     Slot = {?MODULE, Key},
     case persistent_term:get(Slot, none) of
@@ -20,9 +23,9 @@ once(Key, Create) ->
                         {value, Value} ->
                             Value;
                         none ->
-                            Value = unlimited_loads(Create),
-                            persistent_term:put(Slot, {value, Value}),
-                            Value
+                            persistent_term:put(Slot, {value, Create()}),
+                            {value, Stored} = persistent_term:get(Slot),
+                            Stored
                     end
                 end
             )
@@ -44,14 +47,6 @@ lock_waiters(Key) ->
                 undefined -> []
             end
     end.
-
-%% Runs Create while the process holds the lock that every other caller of the
-%% same key waits on, so a key it makes for a load is made without waiting for
-%% room among the loads held (owned_key_ffi): the processes that hold those
-%% loads may be waiting on this lock.
-unlimited_loads(Create) ->
-    Before = erlang:put(owned_key_unlimited, true),
-    try Create() after erlang:put(owned_key_unlimited, Before =:= true) end.
 
 %% The operating system process id and start time of this VM, as one word that
 %% is safe in a database name.

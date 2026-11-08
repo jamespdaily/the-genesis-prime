@@ -8,8 +8,8 @@
 //// A function of a test module is a breach when it gets the client's table
 //// folder (`client_tables.folder()`, or `genesis_prime.load_tables()`, which
 //// reads the same folder) and reaches a table load (`load` of
-//// `genesis_prime/table` or of the loader's store, `load_under`, `load_for_server`
-//// or `load_more`, `load_content_tables`, or `genesis_prime.load_tables()` or
+//// `genesis_prime/table` or of the loader's store, `read`, `load_for_server`
+//// or `read_more`, `load_content_tables`, or `genesis_prime.load_tables()` or
 //// `genesis_prime.load_content()`, which loads the content-only tables from the
 //// same folder). Both may be one call
 //// away: a function of the same module that returns the folder, or that loads
@@ -46,7 +46,8 @@ pub const loading_modules = [
 ]
 
 pub const loading_functions = [
-  "load", "load_under", "load_for_server", "load_more", "load_content_tables",
+  "load", "read", "load_for_server", "read_more", "load_content_tables",
+  "store_under",
 ]
 
 const real_load_module = "genesis_prime"

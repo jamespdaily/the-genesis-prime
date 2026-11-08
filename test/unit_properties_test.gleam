@@ -21,7 +21,6 @@ import genesis_prime/table/id.{UnitProperty2Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/unit_property2
 import gleam/list
-import owned_key
 import owned_test
 import planted_table
 import properties_support
@@ -333,8 +332,7 @@ fn loaded_with(
     planted_table.file(unit_property2.schema, rows),
   ])
   let loaded =
-    store.load(
-      under: owned_key.new(),
+    store.read(
       from: folder,
       entries: [unit_property2.entry()],
       requirements: [],
@@ -343,7 +341,6 @@ fn loaded_with(
   case loaded {
     Ok(tables) -> {
       let defaults = unit_properties.defaults(tables:)
-      store.unload(tables)
       Ok(defaults)
     }
     Error(error) -> Error(error)

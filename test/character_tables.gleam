@@ -73,6 +73,8 @@ import genesis_prime/table/instance_portal
 import genesis_prime/table/item2_type
 import genesis_prime/table/item_display
 import genesis_prime/table/item_slot
+import genesis_prime/table/loader/derivation
+import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
@@ -86,8 +88,6 @@ import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
-import gleam/erlang/reference
-import gleam/int
 import gleam/list
 import novice_tables
 import place_support
@@ -104,164 +104,150 @@ pub fn row_10_look() -> List(LookEntry) {
   ]
 }
 
-/// The planted tables, loaded once per test run under a key of their own and
-/// never unloaded, as `client_tables.shared` does for the real ones.
+/// The planted tables, stored once per test run under a key of their own and
+/// never erased, as `client_tables.shared` does for the real ones.
 pub fn shared() -> store.Tables {
-  database_support.once("character_tables", load)
+  shared_stored()
 }
 
 /// The planted tables with the trees of the starting abilities of every cast
 /// method in place of the plain Normal casts (`novice_tables.spell_tree_files`).
-/// Loaded once under a key of its own.
+/// An edit of the plain tables on the caller's heap.
 pub fn shared_with_spell_trees() -> store.Tables {
-  database_support.once("character_tables_spell_trees", fn() {
-    let trees = novice_tables.spell_tree_files()
-    let names = list.map(trees, fn(file) { file.0 })
-    load_files(list.append(
-      list.filter(files(), fn(file) { !list.contains(names, file.0) }),
-      trees,
-    ))
-  })
+  let trees = novice_tables.spell_tree_files()
+  let names = list.map(trees, fn(file) { file.0 })
+  load_files(list.append(
+    list.filter(files(), fn(file) { !list.contains(names, file.0) }),
+    trees,
+  ))
 }
 
 /// The same with the Engineer's Volatility rows: the hidden spell and the damage of
-/// Pulse Blast's damage spell. Loaded once under a key of its own.
+/// Pulse Blast's damage spell. An edit of the plain tables on the caller's heap.
 pub fn shared_with_volatility() -> store.Tables {
-  database_support.once("character_tables_volatility", fn() {
-    let trees =
-      novice_tables.spell_tree_files_of(
-        rows: spell_tables.planted_rows_with_volatility(),
-        creature_attack: True,
-      )
-    let names = list.map(trees, fn(file) { file.0 })
-    let prerequisites =
-      spell_tables.sorted_by_id(list.append(
-        spell_tables.planted_rows_with_volatility().prerequisites,
-        prerequisite_rows(),
-      ))
-    load_files(list.append(
-      list.map(
-        list.filter(files(), fn(file) { !list.contains(names, file.0) }),
-        fn(file) {
-          case file.0 == prerequisite.schema.file {
-            True -> planted_table.file(prerequisite.schema, prerequisites)
-            False -> file
-          }
-        },
-      ),
-      trees,
+  let trees =
+    novice_tables.spell_tree_files_of(
+      rows: spell_tables.planted_rows_with_volatility(),
+      creature_attack: True,
+    )
+  let names = list.map(trees, fn(file) { file.0 })
+  let prerequisites =
+    spell_tables.sorted_by_id(list.append(
+      spell_tables.planted_rows_with_volatility().prerequisites,
+      prerequisite_rows(),
     ))
-  })
+  load_files(list.append(
+    list.map(
+      list.filter(files(), fn(file) { !list.contains(names, file.0) }),
+      fn(file) {
+        case file.0 == prerequisite.schema.file {
+          True -> planted_table.file(prerequisite.schema, prerequisites)
+          False -> file
+        }
+      },
+    ),
+    trees,
+  ))
 }
 
 /// The planted tables with Spell4Conditions row 43, the caster row of every
 /// ability a planted class presses, holding no dead bit (mask 1248, the client's
 /// 1249 less bit 0, `cast.dead_player`): test data, since no pressable planted
 /// ability names a caster row without it, so a dead caster's client sends a
-/// press only with this one. Loaded once under a key of its own.
+/// press only with this one. An edit of the plain tables on the caller's heap.
 pub fn shared_with_row_43_for_the_dead() -> store.Tables {
-  database_support.once("character_tables_row_43_for_the_dead", fn() {
-    // No creature attack rows: their Spell4Effects table of over a megabyte is the
-    // shared load's alone (`novice_tables.with_creature_attack`).
-    load_files(files_replacing(
-      schema: spell4_conditions.schema,
-      rows: spell_tables.spell4_conditions_rows_of(masks: [
-        #(1, 225),
-        #(4, 0),
-        #(43, 1248),
-      ]),
-    ))
-  })
+  // No creature attack rows: only the tests that select spawns need them
+  // (`novice_tables.with_creature_attack`).
+  load_files(files_replacing(
+    schema: spell4_conditions.schema,
+    rows: spell_tables.spell4_conditions_rows_of(masks: [
+      #(1, 225),
+      #(4, 0),
+      #(43, 1248),
+    ]),
+  ))
 }
 
 /// The planted tables with a Fluff effect (type 17, aimed at the units the area
 /// strikes, flags bit 2: until removed) added to Paralytic Surge 42352: test data, since
-/// no starting ability's planted effect puts a lasting effect on a creature. Loaded once
-/// under a key of its own.
+/// no starting ability's planted effect puts a lasting effect on a creature. An edit of the plain tables on the caller's heap.
 pub fn shared_with_a_lasting_effect() -> store.Tables {
-  database_support.once("character_tables_lasting_effect", fn() {
-    load_files(files_replacing(
-      schema: spell4_effects.schema,
-      rows: spell_tables.sorted_by_id([
-        planted_table.row(spell4_effects.schema, [
-          #("ID", Integer(96_126)),
-          #("spellId", Integer(42_352)),
-          #("targetFlags", Integer(4)),
-          #("effectType", Integer(17)),
-          #("phaseFlags", Integer(-1)),
-          #("flags", Integer(2)),
-          #("orderIndex", Integer(1)),
-        ]),
-        ..novice_tables.spell4_effects_rows()
+  load_files(files_replacing(
+    schema: spell4_effects.schema,
+    rows: spell_tables.sorted_by_id([
+      planted_table.row(spell4_effects.schema, [
+        #("ID", Integer(96_126)),
+        #("spellId", Integer(42_352)),
+        #("targetFlags", Integer(4)),
+        #("effectType", Integer(17)),
+        #("phaseFlags", Integer(-1)),
+        #("flags", Integer(2)),
+        #("orderIndex", Integer(1)),
       ]),
-    ))
-  })
+      ..novice_tables.spell4_effects_rows()
+    ]),
+  ))
 }
 
 /// The planted tables with Spectral Form's Absorption row, 178144 as the client holds it
 /// (targetFlags 1, Magic, 5000 ms, dataBits00 1.0, dataBits04 7, Assault Power x 2.531 and
 /// Support Power x 2.531, phaseFlags 1; `table_rows -- Spell4Effects spellId=58586`),
 /// added to Paralytic Surge 42352: test data, since no planted ability holds an Absorption
-/// row. Loaded once under a key of its own.
+/// row. An edit of the plain tables on the caller's heap.
 pub fn shared_with_absorption() -> store.Tables {
-  database_support.once("character_tables_absorption", fn() {
-    load_files(files_replacing(
-      schema: spell4_effects.schema,
-      rows: spell_tables.sorted_by_id([
-        planted_table.row(spell4_effects.schema, [
-          #("ID", Integer(178_144)),
-          #("spellId", Integer(42_352)),
-          #("targetFlags", Integer(1)),
-          #("effectType", Integer(29)),
-          #("damageType", Integer(3)),
-          #("durationTime", Integer(5000)),
-          #("dataBits00", Integer(1_065_353_216)),
-          #("dataBits04", Integer(7)),
-          #("parameterType00", Integer(12)),
-          #("parameterType01", Integer(13)),
-          #("parameterValue00", planted_table.Float(2.531)),
-          #("parameterValue01", planted_table.Float(2.531)),
-          #("phaseFlags", Integer(1)),
-          #("orderIndex", Integer(5)),
-        ]),
-        ..novice_tables.spell4_effects_rows()
+  load_files(files_replacing(
+    schema: spell4_effects.schema,
+    rows: spell_tables.sorted_by_id([
+      planted_table.row(spell4_effects.schema, [
+        #("ID", Integer(178_144)),
+        #("spellId", Integer(42_352)),
+        #("targetFlags", Integer(1)),
+        #("effectType", Integer(29)),
+        #("damageType", Integer(3)),
+        #("durationTime", Integer(5000)),
+        #("dataBits00", Integer(1_065_353_216)),
+        #("dataBits04", Integer(7)),
+        #("parameterType00", Integer(12)),
+        #("parameterType01", Integer(13)),
+        #("parameterValue00", planted_table.Float(2.531)),
+        #("parameterValue01", planted_table.Float(2.531)),
+        #("phaseFlags", Integer(1)),
+        #("orderIndex", Integer(5)),
       ]),
-    ))
-  })
+      ..novice_tables.spell4_effects_rows()
+    ]),
+  ))
 }
 
 /// The planted tables with two type 11 effects aimed at the caster added to Paralytic
 /// Surge 42352, which holds none: row 135954 as the client holds it on Mind Burst's
 /// child 57030 (BaseCritChance, mode 3, multiplier 1.0, flat 0.08, 8000 ms), and a row
 /// that raises BaseHealth (property 7, mode 3, multiplier 1.0, flat 100.0) for 2000
-/// ms, which is test data, since no kit row changes a maximum. Loaded once under a key of
-/// its own.
+/// ms, which is test data, since no kit row changes a maximum. An edit of the plain tables on the caller's heap.
 pub fn shared_with_property_modifiers() -> store.Tables {
-  database_support.once("character_tables_property_modifiers", fn() {
-    let modifier = fn(id, property, flat_bits, duration) {
-      planted_table.row(spell4_effects.schema, [
-        #("ID", Integer(id)),
-        #("spellId", Integer(42_352)),
-        #("targetFlags", Integer(1)),
-        #("effectType", Integer(11)),
-        #("phaseFlags", Integer(-1)),
-        #("durationTime", Integer(duration)),
-        #("dataBits00", Integer(property)),
-        #("dataBits01", Integer(3)),
-        #("dataBits02", Integer(1_065_353_216)),
-        #("dataBits03", Integer(flat_bits)),
-        #("orderIndex", Integer(2)),
-      ])
-    }
-    load_files(files_replacing(
-      schema: spell4_effects.schema,
-      rows: spell_tables.sorted_by_id([
-        modifier(135_954, 102, 1_034_147_594, 8000),
-        modifier(99_901, 7, 1_120_403_456, 2000),
-        ..novice_tables.spell4_effects_rows()
-      ]),
-    ))
-  })
+  let modifier = fn(id, property, flat_bits, duration) {
+    planted_table.row(spell4_effects.schema, [
+      #("ID", Integer(id)),
+      #("spellId", Integer(42_352)),
+      #("targetFlags", Integer(1)),
+      #("effectType", Integer(11)),
+      #("phaseFlags", Integer(-1)),
+      #("durationTime", Integer(duration)),
+      #("dataBits00", Integer(property)),
+      #("dataBits01", Integer(3)),
+      #("dataBits02", Integer(1_065_353_216)),
+      #("dataBits03", Integer(flat_bits)),
+      #("orderIndex", Integer(2)),
+    ])
+  }
+  load_files(files_replacing(
+    schema: spell4_effects.schema,
+    rows: spell_tables.sorted_by_id([
+      modifier(135_954, 102, 1_034_147_594, 8000),
+      modifier(99_901, 7, 1_120_403_456, 2000),
+      ..novice_tables.spell4_effects_rows()
+    ]),
+  ))
 }
 
 /// The planted tables with a Stealth effect (type 83) aimed at the caster, as the
@@ -269,19 +255,14 @@ pub fn shared_with_property_modifiers() -> store.Tables {
 /// it) and behind the caster prerequisite 7050 (type 116 comparison 2: not stealthed, the
 /// client's row), added to Paralytic Surge 42352, which holds none: test data, since no
 /// pressable planted ability holds one, so the Medic's first press enters stealth and a
-/// second, which the gate stops from adding a source, ends it. Loaded once under a key of
-/// its own.
+/// second, which the gate stops from adding a source, ends it. An edit of the plain tables on the caller's heap.
 pub fn shared_with_stealth() -> store.Tables {
-  database_support.once("character_tables_stealth", fn() {
-    load_stealth(broken_by_damage: True)
-  })
+  load_stealth(broken_by_damage: True)
 }
 
 /// The same with the Stealth effect kept on damage (dataBits02 1, as 95774 holds it).
 pub fn shared_with_kept_stealth() -> store.Tables {
-  database_support.once("character_tables_kept_stealth", fn() {
-    load_stealth(broken_by_damage: False)
-  })
+  load_stealth(broken_by_damage: False)
 }
 
 fn load_stealth(broken_by_damage broken_by_damage: Bool) -> store.Tables {
@@ -341,161 +322,151 @@ fn load_stealth(broken_by_damage broken_by_damage: Bool) -> store.Tables {
 /// with the rows they read, as the client holds them (`-- ItemDisplay 4807 7221`: item
 /// type 346; `-- Item2Type 346`: ItemSlot 64; `-- ItemSlot 64`; `-- Prerequisite 30100
 /// 30101`). The planted Medic is of faction 166, so 178142's suit, 7221, is shown.
-/// Loaded once under a key of its own.
+/// An edit of the plain tables on the caller's heap.
 pub fn shared_with_disguise() -> store.Tables {
-  database_support.once("character_tables_disguise", fn() {
-    let suit = fn(id, display, gate, order) {
-      planted_table.row(spell4_effects.schema, [
-        #("ID", Integer(id)),
-        #("spellId", Integer(42_352)),
-        #("targetFlags", Integer(1)),
-        #("effectType", Integer(112)),
-        #("durationTime", Integer(10_250)),
-        #("dataBits02", Integer(display)),
-        #("dataBits03", Integer(1)),
-        #("phaseFlags", Integer(-1)),
-        #("orderIndex", Integer(order)),
-        #("prerequisiteIdCasterApply", Integer(gate)),
-      ])
-    }
-    let gate = fn(id, faction) {
-      planted_table.row(prerequisite.schema, [
-        #("ID", Integer(id)),
-        #("flags", Integer(1)),
-        #("prerequisiteTypeId0", Integer(243)),
-        #("prerequisiteTypeId1", Integer(250)),
-        #("prerequisiteComparisonId0", Integer(1)),
-        #("prerequisiteComparisonId1", Integer(1)),
-        #("value0", Integer(faction)),
-        #("value1", Integer(faction)),
-      ])
-    }
-    let display = fn(id) {
-      planted_table.row(item_display.schema, [
-        #("ID", Integer(id)),
-        #("item2TypeId", Integer(346)),
-      ])
-    }
-    let files =
-      files_replacing(
-        schema: spell4_effects.schema,
-        rows: spell_tables.sorted_by_id([
-          suit(112_543, 4807, 30_100, 3),
-          suit(178_142, 7221, 30_101, 4),
-          ..novice_tables.spell4_effects_rows()
+  let suit = fn(id, display, gate, order) {
+    planted_table.row(spell4_effects.schema, [
+      #("ID", Integer(id)),
+      #("spellId", Integer(42_352)),
+      #("targetFlags", Integer(1)),
+      #("effectType", Integer(112)),
+      #("durationTime", Integer(10_250)),
+      #("dataBits02", Integer(display)),
+      #("dataBits03", Integer(1)),
+      #("phaseFlags", Integer(-1)),
+      #("orderIndex", Integer(order)),
+      #("prerequisiteIdCasterApply", Integer(gate)),
+    ])
+  }
+  let gate = fn(id, faction) {
+    planted_table.row(prerequisite.schema, [
+      #("ID", Integer(id)),
+      #("flags", Integer(1)),
+      #("prerequisiteTypeId0", Integer(243)),
+      #("prerequisiteTypeId1", Integer(250)),
+      #("prerequisiteComparisonId0", Integer(1)),
+      #("prerequisiteComparisonId1", Integer(1)),
+      #("value0", Integer(faction)),
+      #("value1", Integer(faction)),
+    ])
+  }
+  let display = fn(id) {
+    planted_table.row(item_display.schema, [
+      #("ID", Integer(id)),
+      #("item2TypeId", Integer(346)),
+    ])
+  }
+  let files =
+    files_replacing(
+      schema: spell4_effects.schema,
+      rows: spell_tables.sorted_by_id([
+        suit(112_543, 4807, 30_100, 3),
+        suit(178_142, 7221, 30_101, 4),
+        ..novice_tables.spell4_effects_rows()
+      ]),
+    )
+    |> planted_table.replacing(
+      schema: prerequisite.schema,
+      rows: spell_tables.sorted_by_id([
+        gate(30_100, 167),
+        gate(30_101, 166),
+        ..prerequisite_rows()
+      ]),
+    )
+    |> planted_table.replacing(
+      schema: item_display.schema,
+      rows: spell_tables.sorted_by_id([
+        display(4807),
+        display(7221),
+        ..novice_tables.item_display_rows()
+      ]),
+    )
+    |> planted_table.replacing(
+      schema: item2_type.schema,
+      rows: spell_tables.sorted_by_id([
+        planted_table.row(item2_type.schema, [
+          #("ID", Integer(346)),
+          #("itemSlotId", Integer(64)),
         ]),
-      )
-      |> planted_table.replacing(
-        schema: prerequisite.schema,
-        rows: spell_tables.sorted_by_id([
-          gate(30_100, 167),
-          gate(30_101, 166),
-          ..prerequisite_rows()
-        ]),
-      )
-      |> planted_table.replacing(
-        schema: item_display.schema,
-        rows: spell_tables.sorted_by_id([
-          display(4807),
-          display(7221),
-          ..novice_tables.item_display_rows()
-        ]),
-      )
-      |> planted_table.replacing(
-        schema: item2_type.schema,
-        rows: spell_tables.sorted_by_id([
-          planted_table.row(item2_type.schema, [
-            #("ID", Integer(346)),
-            #("itemSlotId", Integer(64)),
-          ]),
-          ..novice_tables.item2_type_rows()
-        ]),
-      )
-      |> planted_table.replacing(
-        schema: item_slot.schema,
-        rows: spell_tables.sorted_by_id([
-          novice_tables.item_slot_row(#(64, 0, 1.0)),
-          ..novice_tables.item_slot_rows()
-        ]),
-      )
-    load_files(files)
-  })
+        ..novice_tables.item2_type_rows()
+      ]),
+    )
+    |> planted_table.replacing(
+      schema: item_slot.schema,
+      rows: spell_tables.sorted_by_id([
+        novice_tables.item_slot_row(#(64, 0, 1.0)),
+        ..novice_tables.item_slot_rows()
+      ]),
+    )
+  load_files(files)
 }
 
 /// The planted tables with Gate's forced move, row 67776 as the client holds it (delay
 /// 200, phaseFlags 1, orderIndex 0, aimed at the caster, `table_rows --
 /// Spell4Effects 67776`), added to Paralytic Surge 42352, which holds none, so the
-/// Medic's press lists it in its go. Loaded once under a key of its own.
+/// Medic's press lists it in its go. An edit of the plain tables on the caller's heap.
 pub fn shared_with_forced_move() -> store.Tables {
-  database_support.once("character_tables_forced_move", fn() {
-    let blink =
-      planted_table.row(spell4_effects.schema, [
-        #("ID", Integer(67_776)),
-        #("spellId", Integer(42_352)),
-        #("targetFlags", Integer(1)),
-        #("effectType", Integer(3)),
-        #("delayTime", Integer(200)),
-        #("phaseFlags", Integer(1)),
-        #("dataBits00", Integer(0)),
-        #("dataBits01", Integer(1_101_004_800)),
-        #("dataBits02", Integer(1_101_004_800)),
-        #("orderIndex", Integer(0)),
-      ])
-    load_files(files_replacing(
-      schema: spell4_effects.schema,
-      rows: spell_tables.sorted_by_id([
-        blink,
-        ..novice_tables.spell4_effects_rows()
-      ]),
-    ))
-  })
+  let blink =
+    planted_table.row(spell4_effects.schema, [
+      #("ID", Integer(67_776)),
+      #("spellId", Integer(42_352)),
+      #("targetFlags", Integer(1)),
+      #("effectType", Integer(3)),
+      #("delayTime", Integer(200)),
+      #("phaseFlags", Integer(1)),
+      #("dataBits00", Integer(0)),
+      #("dataBits01", Integer(1_101_004_800)),
+      #("dataBits02", Integer(1_101_004_800)),
+      #("orderIndex", Integer(0)),
+    ])
+  load_files(files_replacing(
+    schema: spell4_effects.schema,
+    rows: spell_tables.sorted_by_id([
+      blink,
+      ..novice_tables.spell4_effects_rows()
+    ]),
+  ))
 }
 
 /// The planted tables with UnitProperty2 rows 8 (HealthRegenMultiplier) at 2.0 and
 /// 177 (ShieldTickTime) at 750.0 in place of their defaults 1.0 and 500.0: test
-/// data, so a test can tell the regeneration reads them from the table. Loaded once
-/// under a key of its own.
+/// data, so a test can tell the regeneration reads them from the table. An edit of the plain tables on the caller's heap.
 pub fn shared_with_other_regeneration_defaults() -> store.Tables {
-  database_support.once("character_tables_regeneration_defaults", fn() {
-    load_files(files_replacing(
-      schema: unit_property2.schema,
-      rows: spell_tables.unit_property_rows_with(replacing: [
-        #(8, 2.0),
-        #(177, 750.0),
-      ]),
-    ))
-  })
+  load_files(files_replacing(
+    schema: unit_property2.schema,
+    rows: spell_tables.unit_property_rows_with(replacing: [
+      #(8, 2.0),
+      #(177, 750.0),
+    ]),
+  ))
 }
 
 /// The planted tables with the Novice start's WorldLocation2 row (51596) in
-/// World 0, which is no World row, in place of World 3460. Loaded once under a
-/// key of its own.
+/// World 0, which is no World row, in place of World 3460. An edit of the plain tables on the caller's heap.
 pub fn shared_with_novice_start_in_world_0() -> store.Tables {
-  database_support.once("character_tables_novice_world_0", fn() {
-    let rows =
-      list.map(start_rows(), fn(row) {
-        case row.id {
-          51_596 ->
-            location(
-              id: 51_596,
-              world: 0,
-              zone: 0,
-              position: #(0.0, 0.0, 0.0),
-              quaternion: row.quaternion,
-            )
-          _ -> planted_start_row(row)
-        }
-      })
-      |> list.append(circle_rows())
-    load_files(
-      list.map(files(), fn(file) {
-        case file.0 == world_location2.schema.file {
-          True -> planted_table.file(world_location2.schema, rows)
-          False -> file
-        }
-      }),
-    )
-  })
+  let rows =
+    list.map(start_rows(), fn(row) {
+      case row.id {
+        51_596 ->
+          location(
+            id: 51_596,
+            world: 0,
+            zone: 0,
+            position: #(0.0, 0.0, 0.0),
+            quaternion: row.quaternion,
+          )
+        _ -> planted_start_row(row)
+      }
+    })
+    |> list.append(circle_rows())
+  load_files(
+    list.map(files(), fn(file) {
+      case file.0 == world_location2.schema.file {
+        True -> planted_table.file(world_location2.schema, rows)
+        False -> file
+      }
+    }),
+  )
 }
 
 /// The WorldLocation2 rows of the two objective circles the training creatures
@@ -851,27 +822,22 @@ fn world_zone_file(zones: List(#(Int, Int))) -> #(String, BitArray) {
 
 /// The planted tables with a look that has `count` labels: labels 1 to
 /// `count`, each for every faction and each held at the value 1 by one row of
-/// race 1, sex 1, in place of the planted look rows. Loaded once per count
-/// under a key of its own.
+/// race 1, sex 1, in place of the planted look rows. An edit of the
+/// plain tables on the caller's heap.
 pub fn shared_with_labels(count count: Int) -> store.Tables {
-  database_support.once(
-    "character_tables_labels_" <> int.to_string(count),
-    fn() {
-      let ids = character_support.numbers(count)
-      load_files(files_with_looks(
-        customization: list.map(ids, fn(id) {
-          customization(
-            id: 1000 + id,
-            sex: 1,
-            display: 2000 + id,
-            first: #(id, 1),
-            second: #(0, 0),
-          )
-        }),
-        labels: list.map(ids, fn(id) { label(id:, faction: 0) }),
-      ))
-    },
-  )
+  let ids = character_support.numbers(count)
+  load_files(files_with_looks(
+    customization: list.map(ids, fn(id) {
+      customization(
+        id: 1000 + id,
+        sex: 1,
+        display: 2000 + id,
+        first: #(id, 1),
+        second: #(0, 0),
+      )
+    }),
+    labels: list.map(ids, fn(id) { label(id:, faction: 0) }),
+  ))
 }
 
 fn files_with_looks(
@@ -924,10 +890,6 @@ pub fn map_file_naming(parameter_id parameter_id: Int) -> #(String, BitArray) {
   planted_table.file(customization_parameter_map.schema, [
     map(id: 1, sex: 0, parameter_id:),
   ])
-}
-
-fn load() -> store.Tables {
-  load_files(novice_tables.with_creature_attack(files: files(), padding: False))
 }
 
 /// The Faction2 rows the planted factions walk: id and parent, as the client's.
@@ -1015,9 +977,11 @@ pub fn prerequisite_rows() -> List(List(Cell)) {
 
 /// The tables only the content load reads, loaded once from the planted files
 /// beside the planted tables with the Engineer's Volatility rows
-/// (`shared_with_volatility`), under their key: the content load reads the creature tables
+/// (`shared_with_volatility`): the content load reads the creature tables
 /// where they are, and the spell trees the server's Proxy of migration 0018 is selected
-/// from (Pulse Blast's two goes and the hidden 42148). Never unloaded, as `shared` is not.
+/// from (Pulse Blast's two goes and the hidden 42148). Stored once and never erased, as `shared` is.
+/// The stored value holds the content tables and the tables `shared_with_volatility`
+/// edits; the other planted tables are read from the value `plain` stores.
 pub fn content_tables() -> store.Tables {
   database_support.once("character_content_tables", fn() {
     use folder <- planted_table.in_folder(content_files())
@@ -1027,14 +991,63 @@ pub fn content_tables() -> store.Tables {
         from: folder,
       )
       as "the planted files load as the content load's tables"
-    tables
+    store.store_under(tables:)
   })
 }
 
-fn load_files(files: List(#(String, BitArray))) -> store.Tables {
+/// The server's tables read from these planted files on the caller's heap, with
+/// the server's requirements and derivations. Nothing is stored.
+fn read_files(files: List(#(String, BitArray))) -> store.Tables {
   use folder <- planted_table.in_folder(files)
+  let assert Ok(tables) = server_table.read(from: folder)
+    as "the planted character tables load as the server's tables do"
+  tables
+}
+
+/// The plain planted tables (`files`), read once and stored for the run: the
+/// tables every variant is an edit of.
+fn plain() -> store.Tables {
+  database_support.once("character_tables_plain", fn() {
+    store.store_under(tables: read_files(files()))
+  })
+}
+
+/// The planted tables with the creature attack rows (`shared`), read once and
+/// stored for the run.
+fn shared_stored() -> store.Tables {
+  database_support.once("character_tables", fn() {
+    store.store_under(
+      tables: read_files(novice_tables.with_creature_attack(files: files())),
+    )
+  })
+}
+
+/// The plain tables edited into the tables of these planted files, on the
+/// caller's heap: each file that differs from the plain files replaces its table,
+/// and the server's requirements and derivations run on the result. A file no
+/// entry of the server reads is a mistake of the caller.
+fn load_files(wanted: List(#(String, BitArray))) -> store.Tables {
+  let plain_files = files()
+  let entries = server_table.entries()
+  let edits =
+    list.filter_map(wanted, fn(file) {
+      case list.key_find(plain_files, file.0) == Ok(file.1) {
+        True -> Error(Nil)
+        False -> {
+          let assert Ok(entry) =
+            list.find(entries, fn(entry) { store.file(entry) == file.0 })
+            as "a planted file is a file of one of the server's tables"
+          Ok(store.replace_rows(entry, bytes: file.1))
+        }
+      }
+    })
   let assert Ok(tables) =
-    server_table.load_under(under: reference.new(), from: folder)
+    store.edit(
+      tables: plain(),
+      with: edits,
+      requirements: requirement.all(),
+      derivations: derivation.all(),
+    )
     as "the planted character tables load as the server's tables do"
   tables
 }

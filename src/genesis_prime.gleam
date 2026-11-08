@@ -114,7 +114,7 @@ pub fn with_sitting(
 /// as the readiness ask does, and stops the program with the reasons when the
 /// migrations differ or any row is refused. `tables` are the server's own, which
 /// the selection reads the creature tables from; the tables only it reads are
-/// loaded beside them and unloaded after. Gives the key the terms are under.
+/// read beside them on this heap. Gives the key the terms are under.
 pub fn load_content(tables tables: store.Tables) -> store.Key {
   let key = store.server_key()
   let more = case
@@ -132,7 +132,6 @@ pub fn load_content(tables tables: store.Tables) -> store.Key {
       probe: content.pool_probe,
       key:,
     )
-  store.unload(more)
   case loaded {
     Ok(Nil) -> key
     Error(error) -> panic as content.describe(error)

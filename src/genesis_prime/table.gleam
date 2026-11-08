@@ -389,7 +389,6 @@ import genesis_prime/table/world_water_wake
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
 import genesis_prime/table/zone_completion
-import gleam/erlang/reference.{type Reference}
 
 /// The entry of every table in the client, in file-name order.
 pub fn entries() -> List(store.Entry) {
@@ -781,17 +780,13 @@ pub fn entries() -> List(store.Entry) {
   ]
 }
 
-/// Loads every table from the folder that holds the client's extracted `.tbl`
-/// files under `key`, checking each against its generated schema and the rows
-/// the server requires, and builds the values the server derives from them.
-/// The server itself loads only the tables its rules read
+/// Reads every table from the folder that holds the client's extracted `.tbl`
+/// files on the caller's heap, checking each against its generated schema and
+/// the rows the server requires, and builds the values the server derives from
+/// them. The server itself loads only the tables its rules read
 /// (`genesis_prime/table/loader/server_table`).
-pub fn load(
-  under key: Reference,
-  from folder: String,
-) -> Result(store.Tables, store.LoadError) {
-  store.load(
-    under: key,
+pub fn read(from folder: String) -> Result(store.Tables, store.LoadError) {
+  store.read(
     from: folder,
     entries: entries(),
     requirements: requirement.all(),

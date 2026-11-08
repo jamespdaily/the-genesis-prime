@@ -58,7 +58,6 @@ import gleam/list
 import gleam/option.{None}
 import gleam/result
 import gleam/string
-import owned_key
 import owned_test
 import planted_table
 import simplifile
@@ -130,24 +129,20 @@ fn measure_planted(rows rows: List(List(planted_table.Cell))) -> Measurement {
 fn measure_planted_over(files files: List(#(String, BitArray))) -> Measurement {
   use folder <- planted_table.in_folder(files)
   let assert Ok(tables) =
-    store.load(
-      under: owned_key.new(),
+    store.read(
       from: folder,
       entries: planted_entries(),
       requirements: [],
       derivations: [],
     )
     as "the planted tables load"
-  let measured =
-    measurement.measure(
-      EngineDeclaration(
-        ..coverage_support.engine_named("Spell effects"),
-        starting_abilities: None,
-      ),
-      tables,
-    )
-  store.unload(tables)
-  measured
+  measurement.measure(
+    EngineDeclaration(
+      ..coverage_support.engine_named("Spell effects"),
+      starting_abilities: None,
+    ),
+    tables,
+  )
 }
 
 /// The numbers from `from` to `to`, both included.

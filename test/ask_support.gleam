@@ -19,6 +19,8 @@ import genesis_prime/step.{
 import genesis_prime/step/watch
 import genesis_prime/store/worker.{type Job}
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
+import gleam/dynamic.{type Dynamic}
+import gleam/dynamic/decode
 import gleam/erlang/atom
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/option.{type Option, None, Some}
@@ -274,6 +276,46 @@ pub fn ended(watched: process.Monitor) -> process.ExitReason {
     process.ProcessDown(reason:, ..) -> reason
     process.PortDown(reason:, ..) -> reason
   }
+}
+
+/// Runs `work` in a process of its own that starts only once this process is
+/// watching it, and says how it ended: a process that ended before the watch
+/// began would end with `noproc`, whatever `work` does.
+pub fn ended_running(work: fn() -> Nil) -> process.ExitReason {
+  let ready = process.new_subject()
+  let worker =
+    process.spawn_unlinked(fn() {
+      let go = process.new_subject()
+      process.send(ready, go)
+      let assert Ok(Nil) = process.receive(go, event_wait_ms)
+        as "the test released the process"
+      work()
+    })
+  let assert Ok(go) = process.receive(ready, event_wait_ms)
+    as "the process waits to be released"
+  let watched = process.monitor(worker)
+  process.send(go, Nil)
+  ended(watched)
+}
+
+/// What a process raised when it crashed: the error of the `{Error, Stacktrace}`
+/// its exit carries. A panic's is the map of its `message`, `module`, `function`
+/// and `line`; an Erlang `error(Term)`'s is the term.
+pub fn raised(reason: process.ExitReason) -> Dynamic {
+  let assert process.Abnormal(exit) = reason as "the process crashed"
+  let assert Ok(error) =
+    decode.run(exit, decode.field(0, decode.dynamic, decode.success))
+    as "the exit of a crash holds its error first"
+  error
+}
+
+/// The text a panic gave.
+pub fn panic_message(raised: Dynamic) -> String {
+  let message = atom.to_dynamic(atom.create("message"))
+  let assert Ok(text) =
+    decode.run(raised, decode.field(message, decode.string, decode.success))
+    as "a panic's error holds its message"
+  text
 }
 
 pub fn connect(server: Server) -> mug.Socket {

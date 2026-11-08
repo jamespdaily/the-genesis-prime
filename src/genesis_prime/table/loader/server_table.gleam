@@ -59,7 +59,6 @@ import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
-import gleam/erlang/reference.{type Reference}
 
 /// The entry of each table the server loads, in file-name order.
 /// - CharacterCreation: the row a create request names
@@ -168,15 +167,14 @@ fn content_entries() -> List(store.Entry) {
   ]
 }
 
-/// The content-only tables, loaded beside the server's own `tables` under the
-/// key they were loaded under, so the content load reads the creature tables
-/// already loaded and loads nothing twice. Gives only the content-only ones: the
-/// caller unloads them once the content is loaded, and the server's own stay.
+/// The content-only tables, read beside the server's own `tables` on the
+/// caller's heap, so the content load reads the creature tables already loaded
+/// and loads nothing twice. Nothing is stored, so there is nothing to unload.
 pub fn load_content_tables(
   over tables: store.Tables,
   from folder: String,
 ) -> Result(store.Tables, store.LoadError) {
-  store.load_more(over: tables, from: folder, entries: content_entries())
+  store.read_more(over: tables, from: folder, entries: content_entries())
 }
 
 /// Loads the server's tables under the server's own key, the same in every
@@ -193,15 +191,10 @@ pub fn load(from folder: String) -> Result(store.Tables, store.LoadError) {
   )
 }
 
-/// `load` under a key made for the load, for a test that loads the server's
-/// tables from planted files without taking the server's key from the others
-/// that hold it.
-pub fn load_under(
-  under key: Reference,
-  from folder: String,
-) -> Result(store.Tables, store.LoadError) {
-  store.load(
-    under: key,
+/// The server's tables read from `folder` on the caller's heap, stored under
+/// no key, for a test that reads the server's tables from planted files.
+pub fn read(from folder: String) -> Result(store.Tables, store.LoadError) {
+  store.read(
     from: folder,
     entries: entries(),
     requirements: requirement.all(),

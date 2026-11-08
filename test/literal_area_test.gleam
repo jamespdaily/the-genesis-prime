@@ -1,17 +1,13 @@
 //// The file the check reads the literal area's peak from.
 
-import character_tables
 import event_wait
 import gleam/int
-import gleam/list
 import gleam/result
 import gleam/string
 import literal_area
-import owned_key
 import owned_test
 import planted_table
 import simplifile
-import unitest
 
 /// The peak the file holds, or 0 while the sampler has not written it yet.
 fn peak_in(file: String) -> Int {
@@ -45,146 +41,4 @@ pub fn the_peak_in_the_file_never_falls_below_a_peak_it_has_shown_test() -> Nil 
   let shown = peak_in(file)
   assert literal_area.carriers_peak() >= shown
     as "the allocator's own record is never lower than what the file showed"
-}
-
-/// What a load's table term is stored under in the persistent terms, as
-/// genesis_prime/table/loader/store writes it: `{Load, {table_term, Name}}`.
-type TermName {
-  TableTerm(name: String)
-}
-
-/// A term of more than a megabyte: a list cell takes two words.
-fn megabyte_term(cells: Int) -> List(Int) {
-  list.repeat(0, cells)
-}
-
-pub fn a_planted_table_named_as_a_real_one_is_not_a_second_copy_of_it_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let real = #(#(1, TableTerm("Spell4Effects")), megabyte_term(80_000))
-  let planted = #(#(2, TableTerm("Spell4Effects")), megabyte_term(70_000))
-  assert literal_area.names_held_twice(in: [real, planted]) == []
-    as "a planted Spell4Effects over a megabyte (character_tables.shared_with_spell_trees) differs in size from the client's, so it is not the client's table loaded twice"
-}
-
-pub fn the_same_table_under_two_loads_is_held_twice_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let first = #(#(1, TableTerm("Creature2")), megabyte_term(70_000))
-  let second = #(#(2, TableTerm("Creature2")), megabyte_term(70_000))
-  assert literal_area.names_held_twice(in: [first, second]) == ["Creature2"]
-    as "two loads of one file hold terms of the same name and size"
-}
-
-pub fn a_table_of_the_load_that_another_load_holds_at_its_size_is_held_twice_test() -> Nil {
-  use <- owned_test.run(20_000)
-  let client = #(#(1, TableTerm("Creature2")), megabyte_term(70_000))
-  let second = #(#(2, TableTerm("Creature2")), megabyte_term(70_000))
-  assert literal_area.names_held_twice_with(load: 1, in: [client, second])
-    == ["Creature2"]
-    as "a second load of the load's table holds the same name and size"
-}
-
-pub fn loads_of_other_rows_of_a_table_are_not_a_second_copy_of_the_loads_table_test() -> Nil {
-  use <- owned_test.run(20_000)
-  let client = #(#(1, TableTerm("Spell4Effects")), megabyte_term(80_000))
-  let shared = #(#(2, TableTerm("Spell4Effects")), megabyte_term(70_000))
-  let edit = #(#(3, TableTerm("Spell4Effects")), megabyte_term(70_000))
-  assert literal_area.names_held_twice_with(load: 1, in: [client, shared, edit])
-    == []
-    as "the fixture's shared load and an edit's load of it hold the same size as each other, not the client's table: a test loading beside must not fail the check"
-}
-
-pub fn the_held_twice_pattern_matches_the_keys_the_store_writes_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // The shared planted load is held for the whole run (database_support.once).
-  let _tables = character_tables.shared()
-  assert list.contains(literal_area.table_names(), "WorldLocation2")
-    as "the store writes a table's term under {Load, {table_term, Name}}, the pattern tables_held_twice reads: a change to the store's key would make the held-twice count match nothing and pass"
-}
-
-/// Thirty-two megabytes in one term: a list cell takes two words.
-fn big_term() -> List(Int) {
-  list.repeat(0, 2_000_000)
-}
-
-/// What the probe terms are stored under.
-type ProbeKey {
-  ProbeKey(number: Int)
-}
-
-@external(erlang, "persistent_term", "put")
-fn put_term(key: ProbeKey, term: List(Int)) -> a
-
-@external(erlang, "persistent_term", "erase")
-fn erase_term(key: ProbeKey) -> Bool
-
-const two_megabytes = 2_097_152
-
-const thirty_megabytes = 30_000_000
-
-pub fn a_live_term_is_not_pending_and_an_erased_one_is_until_the_wait_releases_it_test() -> Nil {
-  // The terms of every other test sit in the same VM's allocator, so only the
-  // serial run, which has the VM to itself, can read the allocator's whole
-  // account. The collector is suspended while the term is erased, so nothing can
-  // release it before it is read.
-  use <- owned_test.run(60_000)
-  use <- unitest.tag("serial")
-  literal_area.wait_until_released()
-  literal_area.while_the_collector_is_suspended(fn() {
-    let before = literal_area.pending_bytes()
-    assert before > 0
-      as "the VM's own literals, the code of its modules, are allocated and in no persistent term"
-    let _stored = put_term(ProbeKey(1), big_term())
-    assert literal_area.pending_bytes() < before + two_megabytes
-      as "a term that is live is in the persistent terms' memory, so it is not pending"
-    assert erase_term(ProbeKey(1)) as "the probe term was stored"
-    assert literal_area.pending_bytes() >= before + thirty_megabytes
-      as "an erased term stays allocated until the collector releases it, so the reading rises by its size"
-  })
-  literal_area.wait_until_released()
-  assert literal_area.pending_bytes() <= literal_area.pending_limit_bytes()
-    as "the wait returns only once what the allocator holds beyond the live terms is within the limit"
-}
-
-pub fn the_wait_outlasts_erased_terms_that_hold_more_than_the_limit_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use <- unitest.tag("serial")
-  literal_area.wait_until_released()
-  literal_area.while_the_collector_is_suspended(fn() {
-    let _first = put_term(ProbeKey(1), big_term())
-    let _second = put_term(ProbeKey(2), big_term())
-    let _third = put_term(ProbeKey(3), big_term())
-    assert erase_term(ProbeKey(1))
-      && erase_term(ProbeKey(2))
-      && erase_term(ProbeKey(3))
-      as "the probe terms were stored"
-    assert literal_area.pending_bytes() > literal_area.pending_limit_bytes()
-      as "96 MB erased at once are over the limit until the collector releases them"
-  })
-  literal_area.wait_until_released()
-  assert literal_area.pending_bytes() <= literal_area.pending_limit_bytes()
-    as "96 MB erased at once are released before the wait returns"
-}
-
-pub fn a_key_made_for_a_test_load_waits_for_the_collector_first_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let before = literal_area.admissions()
-  let _key = owned_key.new()
-  assert literal_area.admissions() > before
-    as "owned_key.new calls wait_until_released before it hands the key out"
-}
-
-pub fn a_store_key_made_for_a_test_waits_for_the_collector_first_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let before = literal_area.admissions()
-  let _key = owned_key.new_key()
-  assert literal_area.admissions() > before
-    as "owned_key.new_key calls wait_until_released before it hands the key out"
-}
-
-pub fn a_fixture_key_made_for_a_test_waits_for_the_collector_first_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let before = literal_area.admissions()
-  let _key = owned_key.new_fixture_key()
-  assert literal_area.admissions() > before
-    as "owned_key.new_fixture_key calls wait_until_released before it hands the key out"
 }

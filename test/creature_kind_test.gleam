@@ -70,8 +70,7 @@ fn with_beast_spell4(
     planted_table.file(prerequisite.schema, prerequisites),
   ])
   let assert Ok(tables) =
-    table_store.load(
-      under: owned_key.new(),
+    table_store.read(
       from: folder,
       entries: [
         creature2.entry(),
@@ -83,9 +82,7 @@ fn with_beast_spell4(
       derivations: [],
     )
     as "the planted tables load"
-  let result = body(tables)
-  table_store.unload(tables)
-  result
+  body(tables)
 }
 
 fn selected(

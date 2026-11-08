@@ -17,7 +17,6 @@ import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import genesis_prime/table/loader/store
 import gleam/list
 import gleam/string
-import owned_key
 import owned_test
 import planted_table.{Integer}
 import spell_tables
@@ -115,7 +114,7 @@ pub fn a_comparison_other_than_0_or_1_on_a_spend_spell_fails_the_load_test() -> 
       id: 61_993,
       with: [#("emmComparison", Integer(2))],
     )
-  let assert Error(error) = fixture_tables.load(rows:, under: owned_key.new())
+  let assert Error(error) = fixture_tables.read(rows:)
     as "the server's load refuses the row"
   assert string.contains(
     store.describe(error),
