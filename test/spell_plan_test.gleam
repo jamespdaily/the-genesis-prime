@@ -14,6 +14,7 @@
 //// where the client is present. A missing row and a cycle are planted.
 
 import client_tables
+import fixture_tables
 import genesis_prime/game/loadout
 import genesis_prime/game/spell_plan.{
   type Spell, Always, AtFirstGo, AtLastGo, Channel, Channeled, ChargeRelease,
@@ -36,7 +37,7 @@ import unitest
 fn planted(base base: Int) -> Spell {
   let assert Ok(spell) =
     spell_plan.in_plans(
-      plans: spell_tables.default_plans(),
+      plans: spell_tables.fixture_plans(),
       base: Spell4BaseId(base),
     )
     as "the planted class holds the ability"
@@ -94,7 +95,10 @@ pub fn stagger_needs_no_target_and_proxies_a_multiphase_spell_whose_four_phases_
   assert spell.global_cooldown
     == GlobalCooldown(refused_while_running: False, starts_for_ms: Some(750))
     as "kind 1 starts the global cooldown and is not refused by it; row 180 is 750 ms"
-  let assert [staggering] = spell.proxies
+  let assert [staggering, fluff] = spell.proxies
+    as "Spell4Effects 83853 and 114677 are the two Proxies of Spell4 38791"
+  assert fluff.spell.spell4_id == Spell4Id(48_585) && fluff.phase_flags == -1
+    as "Spell4Effects 114677: a Proxy to 48585 (the Stalker's Assault Consumer Fluff) in every phase"
   assert staggering.spell.spell4_id == Spell4Id(38_780)
   assert staggering.spell.cast_bar == spell_plan.HidesCastBar
     as "Spell4Base 23162: castBarType 0, so the client never makes 38780 the current cast (Spell4Base.castBarType)"
@@ -105,23 +109,30 @@ pub fn stagger_needs_no_target_and_proxies_a_multiphase_spell_whose_four_phases_
   assert spell_plan.go_times_ms(spell: staggering.spell) == [166, 366, 533, 700]
     as "each delay is the gap after the phase before (SpellPhase.phaseDelay)"
   list.each([0, 1, 2, 3], fn(phase) {
-    let assert [hit] =
+    let assert [hit, ..others] =
       spell_plan.proxies_in_phase(spell: staggering.spell, phase:, spent: None)
       as {
         "phase "
         <> int.to_string(phase)
-        <> " has one Proxy (phaseFlags 1, 2, 4, 8)"
+        <> " has a Proxy (phaseFlags 1, 2, 4, 8)"
       }
     assert hit.spell.spell4_id == Spell4Id(38_781)
       as "Spell4.38791: each phase proxies 38781"
+    // The last phase (flag 8) holds two Proxies more, 208128 to 79220 and 208198 to
+    // 79229, each behind Prerequisite 37037 (Spell4Effects, spellId 38780).
+    assert list.map(others, fn(other) { other.spell.spell4_id })
+      == case phase {
+        3 -> [Spell4Id(79_220), Spell4Id(79_229)]
+        _ -> []
+      }
   })
 }
 
 pub fn a_cost_reads_its_resource_slot_and_the_result_of_that_slot_test() -> Nil {
   use <- owned_test.run(60_000)
   assert planted(base: 19_019).costs
-    == [spell_plan.SlotCost(slot: 1, amount: 1, result: 51)]
-    as "Spell4CastResult.vital_cost: Mind Burst, type 6 (Resource1) of 1, slot 1, gives 51 (0x1403b3320)"
+    == [spell_plan.SpendAllCost(slot: 1, amount: 1, result: 51)]
+    as "Spell4CastResult.vital_cost: Mind Burst, type 6 (Resource1) of 1, slot 1, gives 51 (0x1403b3320); Spell4 32809 has innateCostEMMId0 4, which takes every point"
   let gamma_rays = planted(base: 16_322)
   assert gamma_rays.costs
     == [
@@ -135,9 +146,10 @@ pub fn a_cost_reads_its_resource_slot_and_the_result_of_that_slot_test() -> Nil 
 
 pub fn a_spell_row_a_tree_names_that_the_tables_lack_fails_the_build_naming_the_table_and_row_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = spell_tables.rows()
+  let rows = spell_tables.fixture_rows()
   let result =
     spell_tables.with_loaded(
+      reaching: [#("SpellLevel", 647)],
       rows: spell_spell4_without(rows:, ids: [30_900]),
       body: fn(tables) { spell_plan.build(tables:) },
     )
@@ -147,7 +159,7 @@ pub fn a_spell_row_a_tree_names_that_the_tables_lack_fails_the_build_naming_the_
 
 /// The planted rows with one more effect row.
 fn with_effect(effect effect: List(planted_table.Cell)) -> spell_tables.Rows {
-  let rows = spell_tables.rows()
+  let rows = spell_tables.fixture_rows()
   spell_tables.Rows(..rows, spell4_effects: [effect, ..rows.spell4_effects])
 }
 
@@ -155,6 +167,7 @@ pub fn a_cycle_of_proxies_fails_the_load_naming_the_spells_on_the_way_test() -> 
   use <- owned_test.run(60_000)
   let assert Error(error) =
     spell_tables.derivation_result(
+      reaching: [#("SpellLevel", 647)],
       rows: with_effect(effect: spell_tables.effect_row(
         id: 99_001,
         spell: 30_900,
@@ -175,6 +188,7 @@ pub fn a_proxy_aimed_by_flags_that_are_not_read_fails_the_load_naming_the_effect
   use <- owned_test.run(60_000)
   let assert Error(error) =
     spell_tables.derivation_result(
+      reaching: [#("SpellLevel", 647)],
       rows: with_effect(effect: spell_tables.effect_row(
         id: 99_003,
         spell: 32_893,
@@ -196,9 +210,10 @@ pub fn a_proxy_aimed_by_flags_that_are_not_read_fails_the_load_naming_the_effect
 
 pub fn a_multiphase_spell_with_no_kept_phase_row_fails_the_load_naming_the_table_and_owner_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = spell_tables.rows()
+  let rows = spell_tables.fixture_rows()
   let assert Error(error) =
     spell_tables.derivation_result(
+      reaching: [#("SpellLevel", 808)],
       rows: spell_tables.Rows(
         ..rows,
         spell_phases: planted_table.without(rows: rows.spell_phases, ids: [
@@ -218,9 +233,10 @@ pub fn a_multiphase_spell_with_no_kept_phase_row_fails_the_load_naming_the_table
 
 pub fn the_load_fails_with_the_builds_reason_naming_the_table_and_row_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = spell_tables.rows()
+  let rows = spell_tables.fixture_rows()
   let assert Error(error) =
     spell_tables.derivation_result(
+      reaching: [#("SpellLevel", 647)],
       rows: spell_spell4_without(rows:, ids: [30_900]),
     )
     as "a tree that names a missing row fails the tables' load, so the server does not start"
@@ -232,8 +248,8 @@ pub fn the_load_fails_with_the_builds_reason_naming_the_table_and_row_test() -> 
     "30900",
   )
     as "the plan's own sentence names the id"
-  assert spell_tables.derivation_result(rows:) == Ok(Nil)
-    as "the planted rows load"
+  assert result.is_ok(spell_plan.build(tables: fixture_tables.shared()))
+    as "the client's rows build"
 }
 
 fn spell_spell4_without(
@@ -355,7 +371,10 @@ pub fn a_stage_spell4_row_the_tables_lack_fails_the_build_naming_the_row_test() 
   use <- owned_test.run(60_000)
   let result =
     spell_tables.with_loaded(
-      rows: spell_spell4_without(rows: spell_tables.rows(), ids: [38_766]),
+      reaching: [#("SpellLevel", 780)],
+      rows: spell_spell4_without(rows: spell_tables.fixture_rows(), ids: [
+        38_766,
+      ]),
       body: fn(tables) { spell_plan.build(tables:) },
     )
   assert result == Error(spell_plan.NoRow(table: "Spell4", id: 38_766))
@@ -381,7 +400,7 @@ pub fn the_stage_resolver_gives_the_row_at_the_index_the_ability_at_minus_1_and_
 
 pub fn a_cost_in_a_stage_row_gives_the_result_of_its_vital_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = spell_tables.rows()
+  let rows = spell_tables.fixture_rows()
   let costly =
     list.map(rows.spell4_thresholds, fn(row) {
       case row {
@@ -399,6 +418,7 @@ pub fn a_cost_in_a_stage_row_gives_the_result_of_its_vital_test() -> Nil {
     })
   let result =
     spell_tables.with_loaded(
+      reaching: [#("SpellLevel", 1036)],
       rows: spell_tables.Rows(..rows, spell4_thresholds: costly),
       body: fn(tables) { spell_plan.build(tables:) },
     )
@@ -505,7 +525,7 @@ pub fn a_channels_gos_number_the_formula_of_the_client_and_stay_within_its_max_t
 
 pub fn a_channeled_spell_with_no_pulse_time_fails_the_load_naming_the_spell_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = spell_tables.rows()
+  let rows = spell_tables.fixture_rows()
   let no_pulse =
     list.map(rows.spell4, fn(row) {
       case row {
@@ -529,6 +549,7 @@ pub fn a_channeled_spell_with_no_pulse_time_fails_the_load_naming_the_spell_test
     })
   let assert Error(error) =
     spell_tables.derivation_result(
+      reaching: [#("SpellLevel", 631)],
       rows: spell_tables.Rows(..rows, spell4: no_pulse),
     )
     as "a pulse time of 0 gives no count of gos (0x14053d1f0), so the load fails"
@@ -566,43 +587,25 @@ pub fn rampage_requires_at_least_250_of_slot_1_its_stages_require_nothing_and_it
     as "Telekinetic Strike's propertyFlags 0x4000002 lack bit 2 and it names no prerequisiteIdCasterCast"
 }
 
-/// The planted rows with Rampage's requirement of this type and eval, value 250.
+/// The client's rows with Rampage 58524's requirement of this type and eval; the
+/// client's row holds type 6, value 250 and eval 2.
 fn rampage_rows(requirement_type: Int, eval: Int) -> spell_tables.Rows {
   rampage_rows_costing(requirement_type:, eval:, cost: #(0, 0))
 }
 
-/// The planted rows with Rampage's requirement as `rampage_rows` has it and its
-/// innate cost of this type and amount.
+/// The client's rows with Rampage's requirement as `rampage_rows` has it and its
+/// innate cost of this type and amount; the client's row holds no innate cost.
 fn rampage_rows_costing(
   requirement_type requirement_type: Int,
   eval eval: Int,
   cost cost: #(Int, Int),
 ) -> spell_tables.Rows {
-  let rows = spell_tables.rows()
-  spell_tables.Rows(
-    ..rows,
-    spell4: list.map(rows.spell4, fn(row) {
-      case row {
-        [planted_table.Integer(58_524), ..] ->
-          spell_tables.method_spell_row(
-            id: 58_524,
-            base: 37_968,
-            cast_time: 0,
-            cooldown: 8000,
-            kind: 0,
-            global: 103,
-            cost:,
-            more: [
-              #("thresholdTime", 4000),
-              #("casterInnateRequirement0", requirement_type),
-              #("casterInnateRequirementValue0", 250),
-              #("casterInnateRequirementEval0", eval),
-            ],
-          )
-        _ -> row
-      }
-    }),
-  )
+  spell_tables.rows_with_spell_columns(spell4_id: 58_524, columns: [
+    #("casterInnateRequirement0", planted_table.Integer(requirement_type)),
+    #("casterInnateRequirementEval0", planted_table.Integer(eval)),
+    #("innateCostType0", planted_table.Integer(cost.0)),
+    #("innateCost0", planted_table.Integer(cost.1)),
+  ])
 }
 
 pub fn each_eval_code_reads_as_compare_by_eval_does_and_above_4_on_the_percentage_test() -> Nil {
@@ -625,9 +628,11 @@ pub fn each_eval_code_reads_as_compare_by_eval_does_and_above_4_on_the_percentag
   list.each(expected, fn(case_) {
     let #(eval, measure, comparison) = case_
     let assert Ok(plans) =
-      spell_tables.with_loaded(rows: rampage_rows(6, eval), body: fn(tables) {
-        spell_plan.build(tables:)
-      })
+      spell_tables.with_loaded(
+        reaching: [#("SpellLevel", 920)],
+        rows: rampage_rows(6, eval),
+        body: fn(tables) { spell_plan.build(tables:) },
+      )
       as "the planted rows build"
     let assert Ok(rampage) =
       spell_plan.in_plans(plans:, base: Spell4BaseId(37_968))
@@ -640,9 +645,11 @@ pub fn each_eval_code_reads_as_compare_by_eval_does_and_above_4_on_the_percentag
 
 pub fn a_requirement_of_a_vital_the_server_does_not_read_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert spell_tables.with_loaded(rows: rampage_rows(1, 2), body: fn(tables) {
-      spell_plan.build(tables:)
-    })
+  assert spell_tables.with_loaded(
+      reaching: [#("SpellLevel", 920)],
+      rows: rampage_rows(1, 2),
+      body: fn(tables) { spell_plan.build(tables:) },
+    )
     == Error(spell_plan.UnreadRequirement(
       spell4_id: 58_524,
       requirement_type: 1,
@@ -656,6 +663,7 @@ pub fn a_requirement_of_a_slot_the_step_does_not_hold_fails_the_load_each_named_
   // the resource of slots 0 to 6 only, so a requirement of another slot is not read.
   list.each([16, 27, 28, 29], fn(requirement_type) {
     assert spell_tables.with_loaded(
+        reaching: [#("SpellLevel", 920)],
         rows: rampage_rows(requirement_type, 2),
         body: fn(tables) { spell_plan.build(tables:) },
       )
@@ -673,6 +681,7 @@ pub fn a_cost_of_a_slot_the_step_does_not_hold_fails_the_load_each_named_test() 
   // the server's class resources do not use: the load refuses them.
   list.each([27, 28, 29], fn(cost_type) {
     assert spell_tables.with_loaded(
+        reaching: [#("SpellLevel", 920)],
         rows: rampage_rows_costing(requirement_type: 0, eval: 0, cost: #(
           cost_type,
           5,
@@ -688,6 +697,7 @@ pub fn a_cost_of_type_16_is_refused_177_as_a_vital_no_rule_of_the_server_holds_t
   use <- owned_test.run(60_000)
   let assert Ok(plans) =
     spell_tables.with_loaded(
+      reaching: [#("SpellLevel", 920)],
       rows: rampage_rows_costing(requirement_type: 0, eval: 0, cost: #(16, 5)),
       body: fn(tables) { spell_plan.build(tables:) },
     )
@@ -812,7 +822,7 @@ pub fn every_ability_of_the_clients_tables_builds_and_each_spell_shows_the_cast_
 
 pub fn a_tap_or_charge_ability_with_no_threshold_time_fails_the_load_naming_the_spell_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = spell_tables.rows()
+  let rows = spell_tables.fixture_rows()
   let without_time =
     list.map(rows.spell4, fn(row) {
       case row {
@@ -832,6 +842,7 @@ pub fn a_tap_or_charge_ability_with_no_threshold_time_fails_the_load_naming_the_
     })
   let assert Error(error) =
     spell_tables.derivation_result(
+      reaching: [#("SpellLevel", 780)],
       rows: spell_tables.Rows(..rows, spell4: without_time),
     )
     as "0x1403bfd60: a press of a RapidTap or ChargeRelease spell with a thresholdTime of 0 is refused 285 by the client, so the load fails"

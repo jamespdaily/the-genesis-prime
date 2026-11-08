@@ -21,6 +21,7 @@ import cast_support
 import class_resource_support
 import client_tables
 import connection_rule_support as support
+import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/cast
@@ -34,6 +35,7 @@ import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired}
 import gleam/list
 import gleam/option.{None}
 import owned_test
+import planted_table.{Integer}
 import server_proxy_support
 import unitest
 
@@ -176,22 +178,35 @@ pub fn a_connection_with_no_player_in_the_world_checks_nothing_test() -> Nil {
     as "in character select a resource timer is nothing, and so is the check that would follow it"
 }
 
-// ---- a planted cast that ends when its player enters combat ----
+// ---- a cast that ends when its player enters combat ----
 //
-// The planted Pulse Blast 42276 (the Engineer's, a cast time of 1250 ms and a global
-// cooldown of 1250 ms) holds the planted CasterPersistence 390, type 28 comparison 2: not
-// in combat (`spell_tables.waiver_prerequisite_rows`). Each test gives a different kind
-// of input the end of one such cast, and checks the input's own writes come first.
+// The client gives Prerequisite 390 (type 28, comparison 2: not in combat) as
+// CasterPersistence only to spells no class's Novice set reaches, such as Summon
+// Mammodin 31607 (a 5000 ms cast), so these tests name it in the client's Pulse Blast
+// 42276 (the Engineer's, a cast time and a global cooldown of 1250 ms), which holds no
+// CasterPersistence (`fixture_tables.changed`). Each test gives a different kind of
+// input the end of one such cast, and checks the input's own writes come first.
 
 const pulse_blast_base = 26_468
 
-fn engineer() -> #(game_connection.State, Int) {
-  let #(state, _, bag_index) =
-    connection_support.entered_with_spell_trees(
-      class_id: 2,
-      ability: pulse_blast_base,
-    )
-  #(state, bag_index)
+/// The Engineer on the client's rows with Pulse Blast's Spell4 row naming
+/// Prerequisite 390 as its CasterPersistence, and Pulse Blast's bag index.
+fn engineer(body body: fn(game_connection.State, Int) -> a) -> a {
+  fixture_tables.changed(
+    table: "Spell4",
+    id: 42_276,
+    with: [#("prerequisiteIdCasterPersistence", Integer(390))],
+    body: fn(tables) {
+      let #(state, _, bag_index) =
+        connection_support.entered_with_server_proxies(
+          class_id: 2,
+          ability: pulse_blast_base,
+          proxies: server_proxy_support.none(),
+          tables:,
+        )
+      body(state, bag_index)
+    },
+  )
 }
 
 fn at(
@@ -248,7 +263,7 @@ const failed_then_finished = [0x07F9, 0x07FE]
 
 pub fn a_press_in_combat_of_a_cast_that_needs_the_player_out_of_it_is_confirmed_then_ended_test() -> Nil {
   use <- owned_test.run(120_000)
-  let #(state, bag_index) = engineer()
+  use state, bag_index <- engineer()
   let #(state, _) = threatened_at(state:, ms: 900)
   let #(_, taken) = pressed_at(state:, bag_index:, client_cast_id: 9, ms: 1000)
   assert ids(taken:) == list.append(press_written, failed_then_finished)
@@ -257,7 +272,7 @@ pub fn a_press_in_combat_of_a_cast_that_needs_the_player_out_of_it_is_confirmed_
 
 pub fn the_combat_flag_setting_ends_a_cast_that_needs_the_player_out_of_combat_after_its_own_0x89a_test() -> Nil {
   use <- owned_test.run(120_000)
-  let #(state, bag_index) = engineer()
+  use state, bag_index <- engineer()
   let #(state, pressed) =
     pressed_at(state:, bag_index:, client_cast_id: 9, ms: 1000)
   assert ids(taken: pressed) == press_written as "out of combat the cast holds"
@@ -268,7 +283,7 @@ pub fn the_combat_flag_setting_ends_a_cast_that_needs_the_player_out_of_combat_a
 
 pub fn a_cast_timer_that_starts_a_held_press_in_combat_ends_its_cast_after_the_timers_own_writes_test() -> Nil {
   use <- owned_test.run(120_000)
-  let #(state, bag_index) = engineer()
+  use state, bag_index <- engineer()
   let #(state, _) = threatened_at(state:, ms: 900)
   // The first press passes the cast checks, starts the global cooldown of 1250 ms (to
   // 2250) and is ended by the check that follows it.

@@ -1,6 +1,6 @@
 //// The cast rule's stealth (`genesis_prime/game/cast` `State.stealth`, `stealthed`,
-//// `damage_taken`, `StealthChanged`). The Stalker's toggle is the planted rows of
-//// 46073, 38784 and 38783 with the client's values (`spell_tables.rows_with_stealth`);
+//// `damage_taken`, `StealthChanged`). The Stalker's toggle is the client's rows of
+//// 46073, 38784 and 38783 (`spell_tables.fixture_plans`);
 //// every other spell is planted by hand (`cast_support.child` with a Stealth row), on a
 //// clock the test drives. Expected values come from these places:
 //// - `Spell4.46073`: a press of the toggle proxies 38784 'Stealth - On' when the caster
@@ -68,7 +68,7 @@ fn caster() -> Caster {
 /// The plans of the planted Stalker toggle with these spells in place of the planted
 /// bases they name.
 fn plans_of(spells: List(Spell)) -> Plans {
-  support.with_spells(plans: spell_tables.plans_with_stealth(), spells:)
+  support.with_spells(plans: spell_tables.fixture_plans(), spells:)
 }
 
 /// A spell with no stealth row whose go does what its value says to the stealth.

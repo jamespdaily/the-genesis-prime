@@ -953,30 +953,37 @@ pub fn the_checklist_marks_handled_missing_and_undecoded_types_with_the_starting
 
 // ---- rows a starting ability's tree names that the tables lack ----
 
-/// The planted rows with Energize's Spell4 row (69450, a level-1 ability of the
-/// Medic) naming this Prerequisite id in this column, which the plan's load does
-/// not read (the plan reads the cast and persistence columns, not the area ones).
+/// The client's rows with Energize's Spell4 row naming these Prerequisite ids in
+/// these columns. No client row names a prerequisite the table lacks, so the edit
+/// is the fault.
+fn rows_with_energize_naming(
+  columns columns: List(#(String, Int)),
+) -> spell_tables.Rows {
+  let rows = spell_tables.fixture_rows()
+  spell_tables.Rows(
+    ..rows,
+    spell4: list.map(rows.spell4, fn(row) {
+      case row {
+        [planted_table.Integer(69_450), ..] ->
+          list.fold(columns, row, fn(row, column) {
+            spell_tables.with_column(
+              row:,
+              name: column.0,
+              cell: planted_table.Integer(column.1),
+            )
+          })
+        other -> other
+      }
+    }),
+  )
+}
+
+/// The same naming one Prerequisite id in one column.
 fn rows_naming(
   column column: String,
   prerequisite_id prerequisite_id: Int,
 ) -> spell_tables.Rows {
-  let rows = spell_tables.rows_with_energize()
-  spell_tables.Rows(
-    ..rows,
-    spell4: spell_tables.sorted_by_id([
-      spell_tables.method_spell_row(
-        id: 69_450,
-        base: 46_615,
-        cast_time: 0,
-        cooldown: 30_000,
-        kind: 3,
-        global: 0,
-        cost: #(0, 0),
-        more: [#(column, prerequisite_id)],
-      ),
-      ..planted_table.without(rows.spell4, ids: [69_450])
-    ]),
-  )
+  rows_with_energize_naming(columns: [#(column, prerequisite_id)])
 }
 
 fn with_trees_loaded(
@@ -985,6 +992,7 @@ fn with_trees_loaded(
 ) -> a {
   spell_tables.with_loaded_deriving(
     rows:,
+    reaching: [#("SpellLevel", 1086)],
     derivations: [spell_plan.derivation()],
     body:,
   )
@@ -1016,7 +1024,7 @@ pub fn a_prerequisite_a_spell_column_names_that_the_table_lacks_is_a_missing_row
       body: starting_ability.prerequisite_types,
     )
     == with_trees_loaded(
-      rows: spell_tables.rows_with_energize(),
+      rows: spell_tables.fixture_rows(),
       body: starting_ability.prerequisite_types,
     )
     as "a row the table holds, 43811, which Energize's effect 228910 already names, counts once however many columns name it"
@@ -1025,7 +1033,7 @@ pub fn a_prerequisite_a_spell_column_names_that_the_table_lacks_is_a_missing_row
 pub fn a_spell_of_the_tree_the_spell4_table_lacks_is_a_missing_row_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
-  assert with_trees_loaded(rows: spell_tables.rows(), body: fn(tables) {
+  assert with_trees_loaded(rows: spell_tables.fixture_rows(), body: fn(tables) {
       let assert Ok([spell, ..]) = starting_ability.spells(tables:)
         as "the planted abilities hold spells"
       starting_ability.prerequisite_types_of(tables:, spells: [
@@ -1306,7 +1314,7 @@ fn tree_effect(
 /// EldanAugmentation 863 names the AMP spell and LevelUpUnlock 26 is offered at
 /// level 10, as the client's rows hold them.
 fn rows_with_three_proxies() -> spell_tables.Rows {
-  let rows = spell_tables.rows_with_energize()
+  let rows = spell_tables.fixture_rows()
   spell_tables.Rows(
     ..rows,
     spell4: spell_tables.sorted_by_id([
@@ -1419,6 +1427,16 @@ pub fn each_proxy_left_out_is_listed_with_its_gate_and_what_is_below_it_test() -
       starting_ability.left_out(tables:)
     })
     as "the planted rows hold what the walk names"
+  let left =
+    list.filter(left, fn(part) {
+      case part {
+        starting_ability.ProxyGateClosed(proxy_effect_id: id, ..) ->
+          id >= 990_000
+        starting_ability.RunnerColumnsOnly(..)
+        | starting_ability.ProcKindNotRead(..)
+        | starting_ability.InnateSlotClosed(..) -> False
+      }
+    })
   assert left
     == [
       starting_ability.ProxyGateClosed(
@@ -1483,14 +1501,19 @@ pub fn a_missing_amp_unlock_row_is_a_missing_row_test() -> Nil {
     as "the measure cannot tell when an AMP spell is held without the AMP unlock's row, and says so"
 }
 
-/// Quest objectives the interrupts' Prerequisite 41834 reads, as the client holds
-/// the row (`table_rows -- Prerequisite 41834`): Quest2 10518 or 10524, objective 4.
-fn rows_naming_41834(column column: String) -> spell_tables.Rows {
-  let rows = rows_naming(column:, prerequisite_id: 41_834)
+// The shape of Prerequisite 41834 (`table_rows -- Prerequisite 41834`: flags 1, two
+// type 43 conditions on Quest2 10518 and 10524, objective 4). The client's own
+// spells name 41834 in runner columns (Spell4 32812, 34355, 38791, 41438, 42352 and
+// 58591, column prerequisiteIdRunner01).
+
+/// The id of a planted copy of that shape, an id no client row holds.
+const quest_copy = 990_410
+
+fn with_quest_copy(rows rows: spell_tables.Rows) -> spell_tables.Rows {
   spell_tables.Rows(
     ..rows,
     prerequisites: spell_tables.sorted_by_id([
-      spell_tables.prerequisite_row(id: 41_834, flags: 1, conditions: [
+      spell_tables.prerequisite_row(id: quest_copy, flags: 1, conditions: [
         #(43, 1, 10_518, 4),
         #(43, 1, 10_524, 4),
       ]),
@@ -1499,12 +1522,29 @@ fn rows_naming_41834(column column: String) -> spell_tables.Rows {
   )
 }
 
+fn rows_naming_quest_copy(column column: String) -> spell_tables.Rows {
+  with_quest_copy(rows: rows_naming(column:, prerequisite_id: quest_copy))
+}
+
+/// How many conditions of this type the walk counts over these rows.
+fn type_count(rows rows: spell_tables.Rows, number number: Int) -> Int {
+  let assert Ok(types) =
+    with_trees_loaded(rows:, body: starting_ability.prerequisite_types)
+    as "the rows hold what the walk names"
+  list.count(types, fn(type_number) { type_number == number })
+}
+
+/// What the walk counts over the client's rows alone.
+fn client_type_count(number number: Int) -> Int {
+  type_count(rows: spell_tables.fixture_rows(), number:)
+}
+
 pub fn a_prerequisite_only_the_runner_columns_name_is_not_counted_and_is_listed_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let assert #(types, Ok(left), report) =
     with_trees_loaded(
-      rows: rows_naming_41834(column: "prerequisiteIdRunner01"),
+      rows: rows_naming_quest_copy(column: "prerequisiteIdRunner01"),
       body: fn(tables) {
         #(
           starting_ability.prerequisite_types(tables),
@@ -1515,24 +1555,38 @@ pub fn a_prerequisite_only_the_runner_columns_name_is_not_counted_and_is_listed_
     )
     as "the planted rows hold what the walk names"
   let assert Ok(types) = types as "the rows the planted tree names are held"
-  assert !list.contains(types, 43)
+  assert list.count(types, fn(type_number) { type_number == 43 })
+    == client_type_count(number: 43)
     as "the runner column's two type 43 conditions are not counted (the client reads a runner column only to show a prompt on the ability button, Spell4.prerequisiteIdRunner00)"
-  assert left
+  let mine =
+    list.filter(left, fn(part) {
+      case part {
+        starting_ability.RunnerColumnsOnly(prerequisite_id: id, ..) ->
+          id == quest_copy
+        starting_ability.ProxyGateClosed(..)
+        | starting_ability.ProcKindNotRead(..)
+        | starting_ability.InnateSlotClosed(..) -> False
+      }
+    })
+  assert mine
     == [
       starting_ability.RunnerColumnsOnly(
-        prerequisite_id: 41_834,
+        prerequisite_id: quest_copy,
         conditions: 2,
         named_by: ["Spell4 69450 column prerequisiteIdRunner01"],
       ),
     ]
-    as "the runner column alone names 41834: it is listed with the column and its two conditions"
-  let assert [part] = left as "one part is left out"
+    as "the runner column alone names the copy: it is listed with the column and its two conditions"
+  let assert [part] = mine as "one part is left out"
   let sentence =
-    "Prerequisite 41834 (2 conditions) is named only by Spell4 69450 column prerequisiteIdRunner01: the client reads a runner column only to show a prompt on the ability button (Spell4.prerequisiteIdRunner00)"
+    "Prerequisite 990410 (2 conditions) is named only by Spell4 69450 column prerequisiteIdRunner01: the client reads a runner column only to show a prompt on the ability button (Spell4.prerequisiteIdRunner00)"
   assert starting_ability.describe_left_out(left_out: part) == sentence
     as "the sentence names the prerequisite, its conditions, the column and why a runner column is not counted"
-  assert report
-    == "Starting abilities, left out of the counts above:\n- " <> sentence
+  assert string.contains(
+      report,
+      "Starting abilities, left out of the counts above:\n- ",
+    )
+    && string.contains(report, "\n- " <> sentence)
     as "the measure prints the heading and one line for each part left out"
 }
 
@@ -1543,25 +1597,13 @@ fn rows_nesting(
   named named: List(Int),
   prerequisites prerequisites: List(#(Int, Int, List(#(Int, Int, Int, Int)))),
 ) -> spell_tables.Rows {
-  let rows = spell_tables.rows_with_energize()
+  let rows =
+    rows_with_energize_naming(columns: list.zip(
+      ["prerequisiteIdAoeTarget", "prerequisiteIdAoePreferredTarget"],
+      named,
+    ))
   spell_tables.Rows(
     ..rows,
-    spell4: spell_tables.sorted_by_id([
-      spell_tables.method_spell_row(
-        id: 69_450,
-        base: 46_615,
-        cast_time: 0,
-        cooldown: 30_000,
-        kind: 3,
-        global: 0,
-        cost: #(0, 0),
-        more: list.zip(
-          ["prerequisiteIdAoeTarget", "prerequisiteIdAoePreferredTarget"],
-          named,
-        ),
-      ),
-      ..planted_table.without(rows.spell4, ids: [69_450])
-    ]),
     prerequisites: spell_tables.sorted_by_id(list.append(
       list.map(prerequisites, fn(row) {
         spell_tables.prerequisite_row(
@@ -1578,39 +1620,45 @@ fn rows_nesting(
 pub fn a_nested_prerequisite_is_followed_and_each_row_counts_once_however_many_nest_it_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
-  // 900 nests 901 and 902, which nests 901 again; a second column names 901
-  // directly. 901 holds a type 243 and a type 129 (Prerequisite 12939's type); no planted
-  // row holds either.
+  // 990900 nests 990901 and 990902, which nests 990901 again; a second column names
+  // 990901 directly. 990901 holds a type 243 and a type 129 (Prerequisite 12939's
+  // type). The client's rows hold conditions of these types too, so each count is
+  // what the planted rows add to the client's own.
   let rows =
-    rows_nesting(named: [900, 901], prerequisites: [
-      #(900, 0, [#(11, 1, 901, 0), #(11, 2, 902, 0)]),
-      #(901, 0, [#(243, 1, 0, 100), #(129, 2, 313, 0)]),
-      #(902, 0, [#(11, 1, 901, 0)]),
+    rows_nesting(named: [990_900, 990_901], prerequisites: [
+      #(990_900, 0, [#(11, 1, 990_901, 0), #(11, 2, 990_902, 0)]),
+      #(990_901, 0, [#(243, 1, 0, 100), #(129, 2, 313, 0)]),
+      #(990_902, 0, [#(11, 1, 990_901, 0)]),
     ])
   let assert Ok(types) =
     with_trees_loaded(rows:, body: starting_ability.prerequisite_types)
     as "the planted rows hold what the walk names"
-  assert list.count(types, fn(type_number) { type_number == 11 }) == 3
-    as "the type 11 conditions of 900 (two) and 902 (one) are each counted"
-  assert list.count(types, fn(type_number) { type_number == 243 }) == 1
-    && list.count(types, fn(type_number) { type_number == 129 }) == 1
-    as "901's two conditions are counted once: three rows nest it and a column names it, and a prerequisite counts once (Prerequisite.prerequisiteTypeId.11: the client evaluates each nested row whole)"
+  let added = fn(number) {
+    list.count(types, fn(type_number) { type_number == number })
+    - client_type_count(number:)
+  }
+  assert added(11) == 3
+    as "the type 11 conditions of 990900 (two) and 990902 (one) are each counted"
+  assert added(243) == 1 && added(129) == 1
+    as "990901's two conditions are counted once: three rows nest it and a column names it, and a prerequisite counts once (Prerequisite.prerequisiteTypeId.11: the client evaluates each nested row whole)"
 }
 
 pub fn a_nested_id_with_no_row_is_not_a_missing_row_and_a_cycle_ends_the_walk_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let rows =
-    rows_nesting(named: [903, 910], prerequisites: [
-      #(903, 0, [#(11, 1, 77_777, 0)]),
-      #(910, 0, [#(11, 1, 911, 0)]),
-      #(911, 0, [#(11, 1, 910, 0)]),
+    rows_nesting(named: [990_903, 990_910], prerequisites: [
+      #(990_903, 0, [#(11, 1, 77_777, 0)]),
+      #(990_910, 0, [#(11, 1, 990_911, 0)]),
+      #(990_911, 0, [#(11, 1, 990_910, 0)]),
     ])
   let assert Ok(types) =
     with_trees_loaded(rows:, body: starting_ability.prerequisite_types)
     as "a nested id the table lacks is no error: the client's evaluator fails it (0x1404a1ca0), so there is nothing to count"
-  assert list.count(types, fn(type_number) { type_number == 11 }) == 3
-    as "903's one condition and the two rows of the cycle count once each"
+  assert list.count(types, fn(type_number) { type_number == 11 })
+    - client_type_count(number: 11)
+    == 3
+    as "990903's one condition and the two rows of the cycle count once each"
 }
 
 pub fn a_runner_column_naming_a_row_the_table_lacks_is_not_a_missing_row_test() -> Nil {
@@ -1631,32 +1679,21 @@ pub fn a_runner_column_naming_a_row_the_table_lacks_is_not_a_missing_row_test() 
     )
   assert result.is_ok(types)
     as "nothing reads a runner column, so a row it names that the table lacks is not an error"
-  assert left == Ok([])
+  let assert Ok(left) = left
+  assert !list.any(left, fn(part) {
+    string.contains(starting_ability.describe_left_out(left_out: part), "77777")
+  })
     as "and the row is not listed: there is nothing to count"
 }
 
 pub fn a_prerequisite_a_runner_column_and_another_column_name_is_counted_and_not_left_out_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
-  let rows = rows_naming_41834(column: "prerequisiteIdRunner00")
   let both =
-    spell_tables.Rows(
-      ..rows,
-      spell4: spell_tables.sorted_by_id([
-        spell_tables.method_spell_row(
-          id: 69_450,
-          base: 46_615,
-          cast_time: 0,
-          cooldown: 30_000,
-          kind: 3,
-          global: 0,
-          cost: #(0, 0),
-          more: [
-            #("prerequisiteIdRunner00", 41_834),
-            #("prerequisiteIdCasterCast", 41_834),
-          ],
-        ),
-        ..planted_table.without(rows.spell4, ids: [69_450])
+    with_quest_copy(
+      rows: rows_with_energize_naming(columns: [
+        #("prerequisiteIdRunner00", quest_copy),
+        #("prerequisiteIdCasterCast", quest_copy),
       ]),
     )
   let assert #(Ok(types), left) =
@@ -1667,9 +1704,18 @@ pub fn a_prerequisite_a_runner_column_and_another_column_name_is_counted_and_not
       )
     })
     as "the planted rows hold what the walk names"
-  assert list.count(types, fn(type_number) { type_number == 43 }) == 2
-    as "a column the measure reads names 41834 too, so its two type 43 conditions are counted"
-  assert left == Ok([]) as "and nothing is left out"
+  assert list.count(types, fn(type_number) { type_number == 43 })
+    - client_type_count(number: 43)
+    == 2
+    as "a column the measure reads names the copy too, so its two type 43 conditions are counted"
+  let assert Ok(left) = left
+  assert !list.any(left, fn(part) {
+    string.contains(
+      starting_ability.describe_left_out(left_out: part),
+      "Prerequisite 990410",
+    )
+  })
+    as "and the copy is not left out"
 }
 
 pub fn the_clients_starting_abilities_leave_out_the_runner_prerequisites_and_the_proxies_behind_amp_gates_test() -> Nil {

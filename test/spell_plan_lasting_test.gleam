@@ -27,7 +27,6 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_group_list
-import genesis_prime/table/spell4_stack_group
 import gleam/list
 import owned_test
 import planted_table.{type Cell, Integer}
@@ -69,11 +68,11 @@ fn plan_error(rows rows: spell_tables.Rows) -> spell_plan.PlanError {
 
 pub fn a_fluff_row_aimed_at_the_caster_that_lasts_until_removed_is_read_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Power Charge's 96819: targetFlags 1, flags 2.
+  // A row shaped as Power Charge's 96819 (targetFlags 1, flags 2), on an id of its own.
   let assert Ok(spell) =
     spell_tables.planned_strike(
       rows: spell_tables.rows_with_effect(
-        effect: effect(id: 96_819, type_: 17, target_flags: 1, columns: [
+        effect: effect(id: 99_050, type_: 17, target_flags: 1, columns: [
           #("flags", Integer(2)),
         ]),
       ),
@@ -81,7 +80,7 @@ pub fn a_fluff_row_aimed_at_the_caster_that_lasts_until_removed_is_read_test() -
   assert spell.lasting
     == [
       spell_plan.Lasting(
-        effect_id: Spell4EffectsId(96_819),
+        effect_id: Spell4EffectsId(99_050),
         phase_flags: -1,
         aim: spell_plan.AimsAtCaster,
         row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
@@ -94,11 +93,11 @@ pub fn a_fluff_row_aimed_at_the_caster_that_lasts_until_removed_is_read_test() -
 
 pub fn a_fluff_row_reads_its_delay_and_duration_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Mental Overflow's 200468: 8 s, aimed at the caster.
+  // A fluff row of Mental Overflow's kind (200468: type 17, 8 s, aimed at the caster) with a delay added, on an id of its own.
   let assert Ok(spell) =
     spell_tables.planned_strike(
       rows: spell_tables.rows_with_effect(
-        effect: effect(id: 200_468, type_: 17, target_flags: 1, columns: [
+        effect: effect(id: 99_030, type_: 17, target_flags: 1, columns: [
           #("durationTime", Integer(8000)),
           #("delayTime", Integer(100)),
         ]),
@@ -111,9 +110,8 @@ pub fn a_fluff_row_reads_its_delay_and_duration_test() -> Nil {
 
 pub fn a_spell_with_propertyflags_bit_0x2000_takes_the_larger_of_delay_and_duration_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = spell_tables.rows()
-  let assert Ok(without) = spell_tables.planned_strike(rows:)
-  assert without.longer_of_delay_and_duration == False
+  let rows = spell_tables.fixture_rows()
+  assert spell_tables.fixture_strike().longer_of_delay_and_duration == False
   let with_flag =
     spell_tables.Rows(
       ..rows,
@@ -150,7 +148,7 @@ pub fn a_fluff_row_aimed_by_flags_that_are_not_read_fails_the_load_test() -> Nil
 
 pub fn a_fluff_row_behind_a_caster_prerequisite_is_gated_on_the_caster_and_behind_a_target_one_is_not_applied_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = spell_tables.rows()
+  let rows = spell_tables.fixture_rows()
   let with_gate = fn(columns) {
     spell_tables.Rows(
       ..rows,
@@ -226,7 +224,10 @@ pub fn a_removal_of_a_spell4_base_and_of_a_group_are_read_test() -> Nil {
         ..spell_tables.rows_with_effect(
           effect: removal(selector: 1, named: 51, counts: #(1, 1)),
         ),
-        spell4_group_lists: [group_row],
+        spell4_group_lists: spell_tables.sorted_by_id([
+          group_row,
+          ..spell_tables.fixture_rows().spell4_group_lists
+        ]),
       ),
     )
   let assert [remove] = by_group.removes
@@ -308,58 +309,30 @@ pub fn a_removal_whose_two_counts_differ_fails_the_load_test() -> Nil {
 
 pub fn a_spell_reads_its_spell_groups_and_its_stack_group_and_cap_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = spell_tables.rows()
-  let with_groups =
-    spell_tables.Rows(
-      ..rows,
-      spell4: list.map(rows.spell4, fn(row) {
-        case row {
-          [planted_table.Integer(32_893), ..] ->
-            spell_tables.method_spell_row(
-              id: 32_893,
-              base: strike_base,
-              cast_time: 1250,
-              cooldown: 0,
-              kind: 0,
-              global: 213,
-              cost: #(0, 0),
-              more: [
-                #("spell4GroupListId", 8),
-                #("spell4StackGroupId", 1450),
-              ],
-            )
-          other -> other
-        }
-      }),
-      spell4_group_lists: [
-        planted_table.row(spell4_group_list.schema, [
-          #("ID", Integer(8)),
-          #("spellGroupId00", Integer(51)),
-          #("spellGroupId01", Integer(52)),
-        ]),
-      ],
-      spell4_stack_groups: [
-        planted_table.row(spell4_stack_group.schema, [
-          #("ID", Integer(1450)),
-          #("stackCap", Integer(2)),
-        ]),
-      ],
-    )
-  let assert Ok(spell) = spell_tables.planned_strike(rows: with_groups)
-  assert spell.groups == [51, 52]
-  assert spell.stack == Stack(group_id: 1450, cap: 2)
+  let spell = spell_tables.fixture_strike()
+  assert spell.groups
+    == [6, 8, 19, 21, 23, 26, 94, 47, 235, 179, 237, 246, 333, 337, 609]
+    as "Spell4 32893 names Spell4GroupList 321, whose non-zero groups these are in column order"
+  assert spell.stack == Stack(group_id: 2, cap: 0)
+    as "Spell4 32893 names Spell4StackGroup 2, whose stackCap is 0"
 }
 
 pub fn a_spell_with_no_group_or_stack_row_ids_holds_none_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(spell) = spell_tables.planned_strike(rows: spell_tables.rows())
+  let assert Ok(spell) =
+    spell_tables.planned_strike(
+      rows: spell_tables.rows_with_strike_columns(columns: [
+        #("spell4GroupListId", Integer(0)),
+        #("spell4StackGroupId", Integer(0)),
+      ]),
+    )
   assert spell.groups == []
   assert spell.stack == Stack(group_id: 0, cap: 0)
 }
 
 pub fn a_stack_group_the_tables_lack_fails_the_load_naming_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = spell_tables.rows()
+  let rows = spell_tables.fixture_rows()
   let missing =
     spell_tables.Rows(
       ..rows,
@@ -374,14 +347,14 @@ pub fn a_stack_group_the_tables_lack_fails_the_load_naming_it_test() -> Nil {
               kind: 0,
               global: 213,
               cost: #(0, 0),
-              more: [#("spell4StackGroupId", 1450)],
+              more: [#("spell4StackGroupId", 99_999)],
             )
           other -> other
         }
       }),
     )
   assert plan_error(rows: missing)
-    == spell_plan.NoRow(table: "Spell4StackGroup", id: 1450)
+    == spell_plan.NoRow(table: "Spell4StackGroup", id: 99_999)
 }
 
 // ---- the client's rows ----
@@ -463,7 +436,7 @@ fn knockdown_row(
   target_flags target_flags: Int,
   columns columns: List(#(String, Cell)),
 ) -> List(Cell) {
-  effect(id: 140_382, type_: 4, target_flags:, columns: [
+  effect(id: 99_040, type_: 4, target_flags:, columns: [
     #("delayTime", Integer(166)),
     #("durationTime", Integer(3000)),
     #("dataBits00", Integer(state)),
@@ -483,7 +456,7 @@ pub fn a_crowd_control_row_is_read_with_its_state_time_armor_and_aim_test() -> N
   assert spell.controls
     == [
       spell_plan.CrowdControl(
-        effect_id: Spell4EffectsId(140_382),
+        effect_id: Spell4EffectsId(99_040),
         phase_flags: -1,
         aim: spell_plan.AimsAtArea,
         row: crowd_control.Row(
@@ -507,7 +480,7 @@ pub fn a_crowd_control_row_of_a_state_other_than_a_stun_or_a_knockdown_fails_the
     )
     == spell_plan.ControlStateNotRead(
       spell4_id: strike,
-      effect_id: 140_382,
+      effect_id: 99_040,
       state: 21,
     )
     as "Snare (21) has no rule on a creature"
@@ -523,7 +496,7 @@ pub fn a_crowd_control_row_aimed_at_the_caster_or_by_other_flags_fails_the_load_
       )
       == spell_plan.ControlAimNotRead(
         spell4_id: strike,
-        effect_id: 140_382,
+        effect_id: 99_040,
         target_flags: flags,
       )
       as "a state on the caster is a player's, which no creature casts"
@@ -544,7 +517,7 @@ pub fn a_crowd_control_row_behind_an_apply_prerequisite_fails_the_load_test() ->
         )
         == spell_plan.ControlPrerequisiteNotRead(
           spell4_id: strike,
-          effect_id: 140_382,
+          effect_id: 99_040,
         )
     },
   )
