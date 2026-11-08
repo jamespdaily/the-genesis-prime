@@ -609,6 +609,12 @@ const column_references = [
     "Item2",
     "loadout.items_of (CharacterCreation.itemId0 to itemId015)",
   ),
+  ColumnReference(
+    "WorldZone",
+    ["parentZoneId"],
+    "WorldZone",
+    "top_zone.derivation (WorldZone.parentZoneId, walked up to the zone with no parent)",
+  ),
 ]
 
 /// The rows of a table the server's load reads by what their columns hold, kept
