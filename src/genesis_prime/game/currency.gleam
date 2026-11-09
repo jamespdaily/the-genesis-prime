@@ -28,7 +28,7 @@ pub type Currencies {
 }
 
 /// The currency type of credits.
-pub const credits_type = 1
+const credits_type = 1
 
 /// The number of currency types 0x025E holds amounts for (`opcode.0x25e`).
 const currency_types = 15

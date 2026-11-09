@@ -488,7 +488,7 @@ fn grown(
 }
 
 /// What a buy that was not saved did not do, for the log.
-fn not_bought(purchase purchase: Purchase) -> String {
+pub fn not_bought(purchase purchase: Purchase) -> String {
   "the purchase of "
   <> int.to_string(purchase.items_bought)
   <> " of Item2 "
