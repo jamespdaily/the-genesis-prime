@@ -25,6 +25,8 @@ import genesis_prime/connection/script
 import genesis_prime/seed.{type Seed}
 import genesis_prime/service
 import genesis_prime/step.{type Now}
+import genesis_prime/table/class
+import genesis_prime/table/localized_text
 import genesis_prime/wire_recording.{
   Accepted, Answered, Client, NoAnswerInTime, PeerClosed, Read, Server,
   TimerFired, WatchEnded, Woken,
@@ -46,6 +48,7 @@ import gleam/result
 import gleam/string
 import lingering_rule
 import owned_test
+import planted_table.{Integer}
 import recording_support
 import replay_rule
 import replay_rule_planted
@@ -733,23 +736,7 @@ pub fn a_recording_whose_client_build_or_tables_differ_is_refused_with_its_reaso
     ))
   assert wire_replay.refuse_stale(session, 16_042, Some("C3D4")) == Ok(Nil)
     as "a header with no digest is of a rule that reads no table, so the tables do not matter to it"
-  let reading_tables =
-    wire_replay.Session(
-      ..session,
-      connections: list.map(session.connections, fn(connection) {
-        let recording = connection.recording
-        wire_replay.Connection(
-          ..connection,
-          recording: wire_recording.Recording(
-            ..recording,
-            header: wire_recording.Header(
-              ..recording.header,
-              tables_digest: Some("A1B2"),
-            ),
-          ),
-        )
-      }),
-    )
+  let reading_tables = recorded_with_tables_digest(session, "A1B2")
   assert wire_replay.refuse_stale(reading_tables, 16_042, Some("A1B2"))
     == Ok(Nil)
     as "the tables the recording was made on"
@@ -759,6 +746,64 @@ pub fn a_recording_whose_client_build_or_tables_differ_is_refused_with_its_reaso
       recorded: Some("A1B2"),
       current: Some("C3D4"),
     ))
+}
+
+/// The session with the digest of the game table files in each connection's
+/// header.
+fn recorded_with_tables_digest(
+  session: wire_replay.Session,
+  digest: String,
+) -> wire_replay.Session {
+  wire_replay.Session(
+    ..session,
+    connections: list.map(session.connections, fn(connection) {
+      let recording = connection.recording
+      wire_replay.Connection(
+        ..connection,
+        recording: wire_recording.Recording(
+          ..recording,
+          header: wire_recording.Header(
+            ..recording.header,
+            tables_digest: Some(digest),
+          ),
+        ),
+      )
+    }),
+  )
+}
+
+/// The digest of a read of the localized text table alone from a folder that
+/// holds it and a Class table with this id.
+fn digest_with_a_class_table_of(class_id: Int) -> String {
+  planted_table.digest_of_read(
+    [
+      planted_table.file(schema: localized_text.schema, rows: [
+        planted_table.row(localized_text.schema, [#("ID", Integer(1))]),
+      ]),
+      planted_table.file(schema: class.schema, rows: [
+        planted_table.row(class.schema, [#("ID", Integer(class_id))]),
+      ]),
+    ],
+    [localized_text.entry()],
+  )
+}
+
+pub fn a_changed_byte_in_a_table_file_the_server_does_not_load_refuses_the_replay_as_tables_differ_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  support.write(folder:, connections: one(), steps: echo_session())
+  let recorded_on = digest_with_a_class_table_of(9)
+  let session = recorded_with_tables_digest(support.load(folder), recorded_on)
+  assert wire_replay.refuse_stale(session, 16_042, Some(recorded_on)) == Ok(Nil)
+    as "the same client files"
+  let now = digest_with_a_class_table_of(10)
+  assert wire_replay.refuse_stale(session, 16_042, Some(now))
+    == Error(wire_replay.TablesDiffer(
+      connection: support.rule_recording_file(),
+      recorded: Some(recorded_on),
+      current: Some(now),
+    ))
+    as "the read names only LocalizedText, and the Class file beside it differs in one byte: the replay is of other client files, so it is told to record again"
 }
 
 pub fn a_recording_without_its_closing_line_is_reported_as_cut_test() -> Nil {

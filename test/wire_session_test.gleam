@@ -30,6 +30,7 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/step.{Now}
+import genesis_prime/table/world
 import genesis_prime/wire_recording.{
   type Line, Answered, Read, Recording, Took, Wrote,
 }
@@ -146,6 +147,18 @@ pub fn the_committed_session_replays_to_its_recorded_bytes_with_the_recorded_see
     support.replay_tree(folder: support.committed_session)
   assert result == Ok(Nil)
     as "every connection wrote the bytes the live session did, the character list's FILETIME included"
+}
+
+pub fn the_committed_session_replays_against_tables_read_with_one_more_table_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let #(result, _logged) =
+    support.replay_tree_on(
+      folder: support.committed_session,
+      tables_digest: client_tables.digest_of_a_read_of([world.entry()]),
+    )
+  assert result == Ok(Nil)
+    as "the session was recorded on these client files, so a read of any of their tables, one the server's tables hold or not, is of the same files and the replay goes on"
 }
 
 pub fn every_recorded_session_replays_to_its_recorded_bytes_test() -> Nil {

@@ -13,7 +13,7 @@
 ////   holds them when the sitting starts (genesis_prime/wire_recording/fixture),
 ////   which a replay starts from. A sitting with no account to keep is refused.
 //// - A header holds only what its rule reads or writes: the game rule reads the
-////   game tables, so its header holds their digest, and the auth rule writes the
+////   game tables, so its header holds the digest of the client's table files, and the auth rule writes the
 ////   realm it hands the client to, so its header holds the realm; the STS rule
 ////   reads and writes neither.
 
