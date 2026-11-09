@@ -10,7 +10,7 @@
 //// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place, stay, alive)
 ////                                                 (or Refused, for a level with no XpPerLevel row too: the rule hands back to select)
 //// Joined(unit record, loadout, health, run)
-////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x25E (a play only), 0x111 x 10 (x 11 with an
+////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x92C, 0x25E (a play only), 0x111 x 10 (x 11 with an
 ////                                                 innate), 0x1A0, 0x19D, 0x19F (with an innate), 0x6BC, 0x636, 0xF1, 0x61,
 ////                                                 WatchMap(map, run), StartPassive (with an innate passive)
 ////                                                 (a player saved dead: the ghost's 0x262 and
@@ -42,6 +42,11 @@
 ////   before the loadout, 0x6BC, 0x636 and 0x61 (0x1403b5ad0, 0x14057a630, 0x1403c74d0,
 ////   and 0x6BC's case 0x1403ecc9b, which does nothing until 0x19B has set the
 ////   player). 0xF1 sets the flag loading's last stage waits on (0x1403b67e0).
+//// - **0x92C** is the player's reward properties, BagSlots and BankSlots at the premium
+////   tier the client was sent (genesis_prime/game/reward_property), sent right after
+////   0x19B at every play and join. Without it the client holds 0 bag slots and
+////   refuses every bag in a bag slot (`opcode.0x92c`). Its place in the burst is the
+////   server's own choice; the client does not prove it.
 //// - **0x25E** is the player character's own state (genesis_prime/game/character_state),
 ////   sent once per play right after 0x19B, which sets the player its handler needs
 ////   (`opcode.0x25e.entry_order`). Its handler raises `CharacterCreated`, which the class
@@ -141,6 +146,7 @@ import genesis_prime/game/look
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/game/reward_property
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
@@ -157,6 +163,7 @@ import genesis_prime/message/movement_send_interval.{MovementSendInterval}
 import genesis_prime/message/play_character.{type PlayCharacter}
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
 import genesis_prime/message/player_path.{PlayerPath}
+import genesis_prime/message/reward_properties
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/step.{type ConnectionId, type Now}
@@ -671,6 +678,12 @@ pub fn joined(
                 enter_world(place: sent),
                 player_created(unit:),
                 unit_is_player(unit_id:),
+                // Gap: that 0x92C belongs right after 0x19B is not proven by the
+                // client (it reads the properties when a bag is worn and keeps
+                // them in a map); the place is the server's, and the frame is sent
+                // once per play and join. The open issue "Worn bags open more
+                // inventory slots" (#587) settles it on the live client.
+                reward_properties_sent(tables:),
               ],
               character_state_sent(entry:),
               quest_effects,
@@ -855,6 +868,23 @@ fn unit_is_player(unit_id unit_id: Int) -> Effect {
     unit_is_player.encode(UnitIsPlayer(unit_id:, field_2: 0))
     as "a unit id of 32 bits fits the message"
   Send(Frame(message_id: unit_is_player.message_id, body:))
+}
+
+/// 0x92C with the reward properties the server holds for the player: BagSlots
+/// and BankSlots at the premium tier the client was sent (`reward_property`),
+/// which unlock the four bag slots and the two bank bag slots of the character
+/// window (`opcode.0x92c`).
+fn reward_properties_sent(tables tables: table_store.Tables) -> Effect {
+  let values =
+    reward_property.premium_values(
+      tables:,
+      system: reward_property.hybrid_system,
+      tier: reward_property.signature_tier,
+    )
+  let assert Ok(body) =
+    reward_properties.encode(reward_property.message(values:))
+    as "two integer entries fit the message"
+  Send(Frame(message_id: reward_properties.message_id, body:))
 }
 
 /// 0x6BC with the character's stored path as its only unlocked path, and the

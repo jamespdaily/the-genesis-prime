@@ -100,6 +100,7 @@ import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/game/appearance
 import genesis_prime/game/character_creation
+import genesis_prime/game/reward_property
 import genesis_prime/game/start_place
 import genesis_prime/game_settings
 import genesis_prime/message/account_entitlements.{AccountEntitlements}
@@ -140,11 +141,6 @@ import gleam/result
 /// further back (lua.CharacterSelection.OnLoadFromCharacter.preselect,
 /// 0x1401e83a0: negative for a past time).
 const just_now_days = -0.000001
-
-/// The premium tier sent to the client: 1, which the client shows as Signature
-/// under the Hybrid system, as it shows its start-up tier 255
-/// (lua.AccountItemLib.GetPremiumTier.users).
-const signature_tier = 1
 
 /// The Entitlement row of BaseCharacterSlots, whose count character select
 /// adds to its slots (Entitlement.tbl row 12;
@@ -562,7 +558,8 @@ fn rename_result(
 /// the client still holds from an earlier list is overwritten
 /// (SetAccountEntitlement 0x1400062c0).
 fn slot_effects(character_slots character_slots: Int) -> List(Effect) {
-  let assert Ok(tier) = premium_tier.encode(PremiumTier(tier: signature_tier))
+  let assert Ok(tier) =
+    premium_tier.encode(PremiumTier(tier: reward_property.signature_tier))
     as "a tier of 1 fits its 5 bits"
   let assert Ok(entitlements) =
     account_entitlements.encode(

@@ -251,6 +251,7 @@ pub fn the_loadout_comes_after_0x19b_and_before_0x61_with_the_equipped_items_fir
       0x00AD,
       0x0262,
       0x019B,
+      0x092C,
       0x025E,
       0x035F,
       0x0111,

@@ -43,9 +43,9 @@ pub fn a_second_entry_from_character_select_sends_0x25e_again_once_test() -> Nil
   assert list.take_while(second, fn(id) { id != 0x019B }) == [0x00AD, 0x0262]
     as "and it comes after 0xAD, 0x262 and 0x19B as in the first entry"
   assert list.drop_while(second, fn(id) { id != 0x019B })
-    |> list.take(2)
-    == [0x019B, 0x025E]
-    as "right after 0x19B"
+    |> list.take(3)
+    == [0x019B, 0x092C, 0x025E]
+    as "right after 0x19B, with only the reward properties (0x92C) between"
   let assert [state] =
     game_connection_support.decoded(
       game_connection_support.heard(

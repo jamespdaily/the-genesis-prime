@@ -46,6 +46,7 @@ import genesis_prime/table/prerequisite
 import genesis_prime/table/quest2
 import genesis_prime/table/quest_objective
 import genesis_prime/table/race
+import genesis_prime/table/reward_property_premium_modifier
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
@@ -113,6 +114,8 @@ import genesis_prime/table/xp_per_level
 /// - PathSoldierActivate: whether a type 28 objective is a checklist, which a
 ///   prerequisite's progress condition reads (genesis_prime/game/prerequisite).
 /// - Race: a player's hit radius (genesis_prime/game/hit_radius).
+/// - RewardPropertyPremiumModifier: the bag and bank slots a premium tier gives
+///   (genesis_prime/game/reward_property).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
 /// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
@@ -152,6 +155,7 @@ pub fn entries() -> List(store.Entry) {
     quest2.entry(),
     quest_objective.entry(),
     race.entry(),
+    reward_property_premium_modifier.entry(),
     spell4.entry(),
     spell4_aoe_target_constraints.entry(),
     spell4_base.entry(),

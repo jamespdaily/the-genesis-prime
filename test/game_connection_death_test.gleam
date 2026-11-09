@@ -1073,13 +1073,14 @@ fn camp_finished(state: game_connection.State) -> ConnectionStep(Request) {
 }
 
 /// The ids of the burst of an entry that enters the player dead: 0xAD, the
-/// player's 0x262, 0x19B, the loadout with the innate and its 0x19F, 0x6BC, the ghost's 0x262, 0x1B3, 0x636
+/// player's 0x262, 0x19B, the reward properties 0x92C, the loadout with the innate and its 0x19F, 0x6BC, the ghost's 0x262, 0x1B3, 0x636
 /// for the ghost, 0xF1 and 0x61, then the zone channel (`death.enter_dead`,
 /// `opcode.0x1b3.before_player`: 0x1B3 after 0x19B).
 const dead_entry_ids = [
   0x00AD,
   0x0262,
   0x019B,
+  0x092C,
   0x025E,
   0x035F,
   0x0111,

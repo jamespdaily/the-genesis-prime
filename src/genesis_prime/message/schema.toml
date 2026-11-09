@@ -2849,3 +2849,43 @@ fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x357", named_by = "opcode.0x357" },
   { name = "field_2", kind = "unsigned", bits = 1, evidence = "opcode.0x357", safe_by = "0x140554510" },
 ]
+
+[[message]]
+id = 0x092C
+name = "reward_properties"
+direction = "server_to_client"
+evidence = "opcode.0x92c"
+summary = "the player's reward properties, each with its data and value: the client keeps them in a map by property and data, and equipping a bag reads BagSlots (26) and BankSlots (13) from it"
+fields = [
+  { name = "properties", kind = "array", count_bits = 8, element = "reward_property_entry", evidence = "opcode.0x92c", named_by = "opcode.0x92c" },
+]
+
+[[record]]
+name = "reward_property_entry"
+evidence = "opcode.0x92c"
+summary = "one reward property: its id (a RewardProperty id), its data, its value and the modifiers of the value; the server sends none"
+fields = [
+  { name = "property_id", kind = "unsigned", bits = 6, evidence = "opcode.0x92c", named_by = "opcode.0x92c" },
+  { name = "data", kind = "unsigned", bits = 32, evidence = "opcode.0x92c", named_by = "opcode.0x92c.bag_slots" },
+  { name = "value", kind = "record", record = "reward_property_integer", evidence = "0x140c1f178", named_by = "0x140c1f178" },
+  { name = "modifiers", kind = "array", count_bits = 8, element = "reward_property_modifier", evidence = "opcode.0x92c", named_by = "opcode.0x92c" },
+]
+
+[[record]]
+name = "reward_property_modifier"
+evidence = "opcode.0x92c"
+summary = "one modifier of a reward property's value: its kind, its data and its value; the server sends none"
+fields = [
+  { name = "kind", kind = "unsigned", bits = 4, evidence = "opcode.0x92c", safe_by = "opcode.0x92c" },
+  { name = "data", kind = "unsigned", bits = 32, evidence = "opcode.0x92c", safe_by = "opcode.0x92c" },
+  { name = "value", kind = "record", record = "reward_property_integer", evidence = "0x140c1f178", named_by = "0x140c1f178" },
+]
+
+[[record]]
+name = "reward_property_integer"
+evidence = "0x140c1f178"
+summary = "a reward property's value in the integer form (type 1), the only form the server writes: the client also reads types 0 and 2 as a 32-bit float, which are a gap until a property the server sends needs one, and type 3 refuses the message"
+fields = [
+  { name = "type", kind = "constant", bits = 2, value = 1, evidence = "0x140c1f178", named_by = "0x140c1f178" },
+  { name = "value", kind = "unsigned", bits = 32, evidence = "0x140c1f178", named_by = "0x140c1f178" },
+]
