@@ -388,10 +388,29 @@ fn control_at_entry(
 }
 
 /// The shield a player enters the world with: the stat 20 its client was told in
-/// its 0x262 (`player_unit.create`), or 0 when the unit holds none.
+/// its 0x262 (`player_unit.with_gear`), or 0 when no shield is worn and the unit holds
+/// none.
 fn full_shield(unit unit: UnitCreatePlayer) -> Int {
   unit_fields.stat(tail: unit.tail, stat_id: unit_fields.shield_stat)
   |> result.unwrap(0)
+}
+
+/// The unit with the shield it enters with as stat 20, when a shield is worn: a unit
+/// with none holds no stat 20, as `player_unit.with_gear` leaves it.
+fn with_shield_stat(
+  unit unit: UnitCreatePlayer,
+  worn worn: Gear,
+  shield shield: Int,
+) -> UnitCreatePlayer {
+  case gear.shield_capacity(gear: worn) {
+    Some(_) ->
+      player_unit.with_integer_stat(
+        unit,
+        stat_id: unit_fields.shield_stat,
+        value: shield,
+      )
+    None -> unit
+  }
 }
 
 /// The process whose answer world entry waits for, for the log line of an ask
@@ -649,10 +668,7 @@ pub fn joined(
               stat_id: unit_fields.health_stat,
               value: player_life.health(life:),
             )
-            |> player_unit.with_integer_stat(
-              stat_id: unit_fields.shield_stat,
-              value: player_life.shield(life:),
-            )
+            |> with_shield_stat(worn:, shield: player_life.shield(life:))
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id
           let #(quests, quest_effects) =
@@ -754,10 +770,10 @@ pub fn joined(
   }
 }
 
-/// One warning for each worn item the gear lists as unread, at entry, where none
-/// is known yet.
+/// One warning for each worn item the gear lists as unread or undrawn, at entry, where
+/// none is known yet.
 fn unread_warned(gear gear: gear.Gear) -> List(Effect) {
-  list.map(gear.unread_warnings(gear:, known: []), fn(text) { Warn(text:) })
+  list.map(gear.warnings(gear:, known: None), fn(text) { Warn(text:) })
 }
 
 /// The bases of the gear's properties at `level`, handed to `next`, or the fault that
@@ -770,12 +786,7 @@ fn with_bases(
 ) -> Result(Joined, Nil) {
   case gear.bases(tables:, gear: worn, level:) {
     Ok(bases) -> next(bases)
-    Error(Nil) ->
-      Ok(GearFault(
-        text: "CreatureLevel has no row for level "
-        <> int.to_string(level)
-        <> ", so the player's maximum health is unknown",
-      ))
+    Error(error) -> Ok(GearFault(text: gear.describe(error:)))
   }
 }
 

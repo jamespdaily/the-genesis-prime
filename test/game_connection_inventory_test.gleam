@@ -52,7 +52,7 @@ import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield
 import genesis_prime/step.{
   type ConnectionStep, EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning,
-  OwnEvent,
+  OwnEffect, OwnEvent, StartTimer, TimerId, Unwatch, Watch,
 }
 import genesis_prime/store.{
   type HeldItem, AccountId, CharacterId, ForItems, HeldItem, ItemMade, ItemMove,
@@ -583,6 +583,31 @@ fn shield_unequipped() -> BitArray {
       to: item_place.ItemPlace(location: 1, bag_index: 0),
     ))
   game_connection_support.world_message(message_id: 0x0182, body:)
+}
+
+/// A 0x182 of inventory slot 0 to the worn shield slot 15, inside 0x038C.
+fn shield_equipped() -> BitArray {
+  let assert Ok(body) =
+    item_move.encode(item_move.ItemMove(
+      from: item_place.ItemPlace(location: 1, bag_index: 0),
+      to: item_place.ItemPlace(location: 0, bag_index: 15),
+    ))
+  game_connection_support.world_message(message_id: 0x0182, body:)
+}
+
+pub fn a_shield_put_back_below_its_maximum_starts_the_reboot_timer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = saved_after(state: watched(), message: shield_unequipped())
+  let #(_, answered) = saved_after(state:, message: shield_equipped())
+  assert list.filter_map(support.effects_of(answered), fn(effect) {
+      case effect {
+        OwnEffect(StartTimer(timer:, after_ms:)) -> Ok(#(timer, after_ms))
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          Error(Nil)
+      }
+    })
+    == [#(TimerId(9), 5125)]
+    as "player_life's rule for a shield below its maximum (shield_rebooted): the shield worn again is at 0 of 450, so ShieldRebootTime 5125 of the shield item starts its clock"
 }
 
 pub fn removing_the_shield_sets_stat_20_to_0_and_its_properties_to_the_defaults_test() -> Nil {

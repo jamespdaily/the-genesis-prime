@@ -38,7 +38,6 @@ import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 import genesis_prime/store
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/unit_fields
-import gleam/int
 import gleam/list
 
 /// A creature's credit for the kill of the player's blow: the experience rule takes it, and
@@ -61,14 +60,8 @@ pub fn credited(
     )
   let tables = session.settings.tables
   case gear.bases(tables:, gear: entered.gear, level: progress.level) {
-    Error(Nil) ->
-      connection_state.end_for(
-        session:,
-        now:,
-        text: "CreatureLevel has no row for level "
-          <> int.to_string(progress.level)
-          <> ", so the player's maximum health is unknown",
-      )
+    Error(error) ->
+      connection_state.end_for(session:, now:, text: gear.describe(error:))
     Ok(bases) -> {
       let session =
         connection_state.with_entered(session:, change: fn(entered) {

@@ -156,7 +156,7 @@ pub fn the_unit_carries_the_visuals_and_bones_it_is_given_and_the_path_never_rea
   assert unit.unit_id == 9 && unit.realm_id == 4
 }
 
-pub fn the_unit_holds_the_maximum_health_it_was_made_with_as_stat_0_and_base_health_test() -> Nil {
+pub fn create_writes_no_gear_and_the_connection_puts_in_health_as_stat_0_and_base_health_as_property_7_test() -> Nil {
   use <- owned_test.run(10_000)
   let unit =
     player_unit.create(

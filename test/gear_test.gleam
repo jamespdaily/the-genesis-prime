@@ -374,12 +374,68 @@ pub fn max_health_at_a_level_uses_that_levels_creature_level_row_test() -> Nil {
     gear.of_items(tables:, items: held_at(set: warrior_167(), location: 0))
   assert gear.max_health(tables:, gear: worn, level: 9) == Ok(2895)
     as "the client's CreatureLevel row 9's 2295.49 and the armor's 600, 2895"
-  assert gear.max_health(tables:, gear: worn, level: 102) == Error(Nil)
+  assert gear.max_health(tables:, gear: worn, level: 102)
+    == Error(gear.NoCreatureLevel(level: 102))
     as "the client's CreatureLevel holds the rows 1 to 101 and none for level 102"
   let assert Ok(bases) = gear.bases(tables:, gear: worn, level: 9)
     as "CreatureLevel has row 9"
   assert list.key_find(bases, UnitProperty2Id(7)) == Ok(2895.0)
     as "property 7 at level 9 is the maximum health there"
-  assert gear.bases(tables:, gear: worn, level: 102) == Error(Nil)
+  assert gear.bases(tables:, gear: worn, level: 102)
+    == Error(gear.NoCreatureLevel(level: 102))
     as "no row, no bases"
+}
+
+pub fn an_item_whose_display_row_is_missing_is_not_drawn_and_gives_one_warning_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A copy of the Warrior's chest naming a display no ItemDisplay row holds. The
+  // client draws a worn item from its ItemDisplay row, so there is nothing to draw,
+  // and the server says so once, naming the item and the table.
+  fixture_tables.added(
+    table: "Item2",
+    copy_of: 81_359,
+    id: 99_001,
+    with: [#("itemDisplayId", Integer(99_999_999))],
+    body: fn(tables) {
+      let worn =
+        gear.of_items(tables:, items: [
+          HeldItem(
+            item_guid: 1,
+            item2_id: Item2Id(99_001),
+            location: 0,
+            bag_index: 0,
+            stack_count: 1,
+          ),
+        ])
+      assert worn.visuals == []
+        as "an item whose display the tables lack is not drawn"
+      assert gear.warnings(gear: worn, known: None)
+        == [
+          "the worn item 99001 is not drawn: the table ItemDisplay has no row 99999999",
+        ]
+        as "one warning names the item, the table and the id"
+    },
+  )
+  // A worn item with no display of its own and no source is invisible, not a fault.
+  fixture_tables.added(
+    table: "Item2",
+    copy_of: 81_359,
+    id: 99_001,
+    with: [#("itemDisplayId", Integer(0)), #("itemSourceId", Integer(0))],
+    body: fn(tables) {
+      let worn =
+        gear.of_items(tables:, items: [
+          HeldItem(
+            item_guid: 1,
+            item2_id: Item2Id(99_001),
+            location: 0,
+            bag_index: 0,
+            stack_count: 1,
+          ),
+        ])
+      assert worn.visuals == [] as "an item with no display is not drawn"
+      assert gear.warnings(gear: worn, known: None) == []
+        as "and that is not a fault, so there is no warning"
+    },
+  )
 }

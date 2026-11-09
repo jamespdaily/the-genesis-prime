@@ -59,11 +59,12 @@ pub fn started(
   source source: unit_properties.Source,
   modifier modifier: unit_properties.Modifier,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  changed(session:, now:, change: unit_properties.apply(
-    properties: _,
-    source:,
-    modifier:,
-  ))
+  changed(
+    session:,
+    now:,
+    change: unit_properties.apply(properties: _, source:, modifier:),
+    follow: player_life.properties_changed,
+  )
 }
 
 /// A modifier of the player's own spell ends (genesis_prime/game/cast
@@ -110,46 +111,33 @@ pub fn rebased(
   bases bases: List(#(UnitProperty2Id, Float)),
   shield shield: Option(item_property.Shield),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  case connection_state.held_in_the_world(session.status) {
-    None -> #(session, [])
-    Some(#(_, entered)) -> {
-      let #(properties, entries) =
-        unit_properties.rebased(properties: entered.properties, bases:)
-      changed_to(
-        session:,
-        now:,
-        entered:,
-        properties:,
-        entries:,
-        follow: fn(life, properties) {
-          player_life.gear_changed(life:, properties:, shield:)
-        },
-      )
-    }
-  }
+  changed(
+    session:,
+    now:,
+    change: unit_properties.rebased(properties: _, bases:),
+    follow: fn(life, properties) {
+      player_life.gear_changed(life:, properties:, shield:)
+    },
+  )
 }
 
 /// The session with the properties changed by `change`, and for the entries it
-/// reports: the life taken to the new values, 0x93a to the player's client and the news
-/// to each viewer, then what the life writes. The player's `Entered` is updated once.
+/// reports: the life taken to the new values by `follow`, 0x93a to the player's client
+/// and the news to each viewer, then what the life writes. The player's `Entered` is
+/// updated once.
 fn changed(
   session session: Session,
   now now: Now,
   change change: fn(unit_properties.Properties) ->
     #(unit_properties.Properties, List(unit_properties.Changed)),
+  follow follow: fn(player_life.Life, unit_properties.Properties) ->
+    #(player_life.Life, List(player_life.Effect)),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   case connection_state.held_in_the_world(session.status) {
     None -> #(session, [])
     Some(#(_, entered)) -> {
       let #(properties, entries) = change(entered.properties)
-      changed_to(
-        session:,
-        now:,
-        entered:,
-        properties:,
-        entries:,
-        follow: player_life.properties_changed,
-      )
+      changed_to(session:, now:, entered:, properties:, entries:, follow:)
     }
   }
 }

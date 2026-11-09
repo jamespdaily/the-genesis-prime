@@ -46,8 +46,8 @@ import genesis_prime/store.{ForItems}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/player_unit
 import gleam/bool
-import gleam/int
 import gleam/list
+import gleam/option.{Some}
 
 /// The client's 0x182, 0x17D or 0x149, taken from inside 0x038C with the player
 /// in the world: a refusal is written and the player stays in the world; an
@@ -211,16 +211,8 @@ fn regeared(
   )
   let level = connection_state.level_of(entered:)
   case gear.bases(tables:, gear: worn, level:) {
-    Error(Nil) ->
-      lost(
-        session:,
-        now:,
-        holder:,
-        entered:,
-        text: "CreatureLevel has no row for level "
-          <> int.to_string(level)
-          <> ", so the player's maximum health is unknown",
-      )
+    Error(error) ->
+      lost(session:, now:, holder:, entered:, text: gear.describe(error:))
     Ok(bases) -> {
       let unit =
         player_unit.with_gear(
@@ -231,12 +223,9 @@ fn regeared(
           shield: gear.shield_capacity(gear: worn),
         )
       let warnings =
-        list.map(
-          gear.unread_warnings(gear: worn, known: entered.gear.unread),
-          fn(text) {
-            connection_state.log(session:, level: step.LogWarning, text:)
-          },
-        )
+        list.map(gear.warnings(gear: worn, known: Some(entered.gear)), fn(text) {
+          connection_state.log(session:, level: step.LogWarning, text:)
+        })
       let session =
         connection_state.with_entered(session:, change: fn(entered) {
           world_entry.Entered(..entered, gear: worn, unit:)

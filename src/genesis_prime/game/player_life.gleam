@@ -508,9 +508,10 @@ pub fn properties_changed(
 
 /// The life after the player's worn items changed its properties: as
 /// `properties_changed`, with the regeneration of the shield now worn (`None` for
-/// none, which stops a running shield clock). A shield worn for the first time starts
-/// empty, since the shield is kept and capped, and its clock starts at the next blow (the
-/// server's choice, as for a raised maximum).
+/// none, which stops a running shield clock). The shield kept is capped, so a shield worn
+/// for the first time or put back starts below its maximum; a living player whose shield
+/// clock is idle then starts the reboot as a blow would (`shield_rebooted`), and the shield
+/// charges from its current value.
 pub fn gear_changed(
   life life: Life,
   properties properties: Properties,
@@ -523,6 +524,10 @@ pub fn gear_changed(
       Life(..changed, shield_clock: Idle),
       list.append(effects, [CancelTimer(timer: shield_timer)]),
     )
+    Some(_), Idle if changed.state != Dead -> {
+      let #(rebooting, timers) = shield_rebooted(life: changed)
+      #(rebooting, list.append(effects, timers))
+    }
     None, Idle | Some(_), Running | Some(_), Idle -> #(changed, effects)
   }
 }

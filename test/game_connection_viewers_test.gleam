@@ -1315,40 +1315,58 @@ pub fn a_viewer_that_leaves_between_the_save_and_the_news_is_dropped_like_other_
         to: item_place.ItemPlace(location: 1, bag_index: 0),
       ),
     )
-  let #(_, answered) =
+  let #(state, answered) =
     game_connection_support.answer(
       state:,
       taken:,
       outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
     )
-  // The map's UnseenBy of viewer 2 is a send the shell takes only after this answer
-  // (genesis_prime/game/connection/viewers.map_sent), so both viewers are told.
+  // The map's UnseenBy of viewer 2 comes while the ask is out, and the shell takes it
+  // only after the answer's step (genesis_prime/game/connection/viewers.map_sent), so
+  // the news goes to both viewers held when the answer comes, and viewer 2's removal
+  // follows it.
+  let #(_, unseen) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_the_map(UnseenBy(by: ConnectionId(2))),
+    )
   list.each([2, 3], fn(viewer) {
     let assert [LookChanged(..), PropertiesChanged(..), ..] =
       game_connection_support.news_told(taken: answered, viewer:)
       as "each viewer held when the answer comes is told the look and then the properties"
     Nil
   })
-  // A viewer connection whose client no longer shows the unit drops both, as it drops any news.
-  let #(gone, _) =
+  assert game_connection_support.news_told(taken: unseen, viewer: 2)
+    == [Removed]
+    as "then the viewer that left is told the unit is removed"
+  assert game_connection_support.news_told(taken: unseen, viewer: 3) == []
+    as "and the viewer that stayed is told nothing more"
+  // The viewer's own connection: its client showed the unit, then the map said the unit
+  // is gone, so the look and the properties the player told it find no unit shown and
+  // are dropped, as any news of a unit not shown is. A viewer that still shows the unit
+  // writes them, so the empty writes are the drop and not news the viewer never writes.
+  let told =
+    list.take(game_connection_support.news_told(taken: answered, viewer: 2), 2)
+  let #(shown, _) =
     game_connection_support.feed(
       game_connection_support.in_world(),
       game_connection_support.event_of(Appears),
     )
-  let news_of = fn(news) {
-    game_connection_support.for_stay(
-      game_connection_support.own_stay(),
-      SentByPeer(PeerNews(unit_id: 77, news:)),
+  let #(gone, _) =
+    game_connection_support.feed(
+      shown,
+      game_connection_support.event_of(MapSaysGone),
+    )
+  let written = fn(state, news) {
+    game_connection_support.written_ids(
+      game_connection_support.feed(
+        state,
+        game_connection_support.news_sent_by_a_peer(unit_id: 9, news:),
+      ).1,
     )
   }
-  let #(_, dropped_look) =
-    game_connection_support.feed(gone, news_of(LookChanged(item_visuals: [])))
-  let #(_, dropped_properties) =
-    game_connection_support.feed(
-      gone,
-      news_of(PropertiesChanged(properties: [])),
-    )
-  assert support.writes(dropped_look) == []
-    && support.writes(dropped_properties) == []
-    as "a unit the viewer's client does not show is written nothing"
+  assert list.map(told, written(shown, _)) == [[0x0933], [0x093A]]
+    as "a viewer whose client shows the unit writes 0x933 for the look and 0x93a for the properties"
+  assert list.map(told, written(gone, _)) == [[], []]
+    as "a viewer whose client no longer shows the unit writes nothing"
 }

@@ -426,7 +426,7 @@ pub fn a_level_9_players_health_adds_the_armors_600_to_the_creature_level_rows_b
     as "player.level1_base_health: the CreatureLevel row of the level, here the planted row 9's 2295.49, and the armor's 600"
 }
 
-pub fn the_player_the_connection_keeps_holds_its_loadout_and_its_max_health_test() -> Nil {
+pub fn the_player_the_connection_keeps_holds_its_loadout_and_the_gear_of_its_held_items_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, entered) =
     entering(character: world_entry_support.character(
@@ -607,6 +607,27 @@ pub fn a_character_saved_without_its_weapon_enters_without_it_test() -> Nil {
     as "the weapon gives no Base Health, Armor or shield: 135.97 and 600 round to 736, the armor is 250 and the shield 450"
   assert entered.gear.weapon == None
     as "the player wields none: a spell that needs the weapon is refused"
+}
+
+pub fn a_character_saved_without_its_shield_enters_with_no_stat_20_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  let unshielded =
+    list.filter(world_entry_support.novice_items(character:), fn(item) {
+      item.bag_index != 15
+    })
+  let #(effects, entered) =
+    world_entry_support.entry_holding(
+      tables: character_tables.shared(),
+      character:,
+      items: unshielded,
+    )
+  let player = player_of(frames: world_entry_support.frames_of(effects:))
+  assert unit_fields.stat(tail: player.tail, stat_id: unit_fields.shield_stat)
+    == Error(Nil)
+    as "stat 20 is the shield (`opcode.0x938`) and is written only for a worn shield, so a unit with none holds no stat 20 and enters the same whatever it wore before"
+  assert gear.shield_capacity(gear: entered.gear) == None as "no shield is worn"
 }
 
 pub fn a_join_whose_gear_has_no_base_health_row_at_the_level_ends_the_connection_naming_the_level_test() -> Nil {
