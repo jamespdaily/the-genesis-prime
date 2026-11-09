@@ -33,15 +33,19 @@ import genesis_prime/table/item2_family
 import genesis_prime/table/item2_type
 import genesis_prime/table/item_display
 import genesis_prime/table/item_display_source_entry
+import genesis_prime/table/item_proficiency
 import genesis_prime/table/item_slot
+import genesis_prime/table/item_special
 import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
 import genesis_prime/table/path_mission
+import genesis_prime/table/path_soldier_activate
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite
 import genesis_prime/table/quest2
 import genesis_prime/table/quest_objective
+import genesis_prime/table/race
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
@@ -79,6 +83,9 @@ import genesis_prime/table/xp_per_level
 /// - CreatureLevel: a player's Base Health by level (genesis_prime/game/loadout).
 /// - Item2, Item2Category, Item2Family, Item2Type and ItemSlot, with GameFormula:
 ///   the Novice gear's properties (genesis_prime/game/item_property).
+/// - ItemProficiency and ItemSpecial, with Item2 and Item2Category: whether a
+///   character may wear an item (genesis_prime/game/item_property and
+///   genesis_prime/game/equip_requirement).
 /// - ItemDisplay and ItemDisplaySourceEntry: what a worn item is drawn with
 ///   (genesis_prime/game/worn_visual).
 /// - Spell4 and SpellLevel: a class's level-1 abilities (genesis_prime/game/loadout).
@@ -101,7 +108,11 @@ import genesis_prime/table/xp_per_level
 /// - PositionalRequirement: the arc a type 108 prerequisite condition names
 ///   (genesis_prime/game/prerequisite).
 /// - Quest2 and QuestObjective: the quests a saved quest log may name, each with its
-///   objectives and period (genesis_prime/game/quest_log).
+///   objectives and period (genesis_prime/game/quest_log), and the quests a
+///   prerequisite's quest conditions name (genesis_prime/game/prerequisite).
+/// - PathSoldierActivate: whether a type 28 objective is a checklist, which a
+///   prerequisite's progress condition reads (genesis_prime/game/prerequisite).
+/// - Race: a player's hit radius (genesis_prime/game/hit_radius).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
 /// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
@@ -131,12 +142,16 @@ pub fn entries() -> List(store.Entry) {
     item2_type.entry(),
     item_display.entry(),
     item_display_source_entry.entry(),
+    item_proficiency.entry(),
     item_slot.entry(),
+    item_special.entry(),
     path_mission.entry(),
+    path_soldier_activate.entry(),
     positional_requirement.entry(),
     prerequisite.entry(),
     quest2.entry(),
     quest_objective.entry(),
+    race.entry(),
     spell4.entry(),
     spell4_aoe_target_constraints.entry(),
     spell4_base.entry(),

@@ -40,7 +40,7 @@ import genesis_prime/message/player_character_state.{PlayerCharacterState}
 import genesis_prime/message/reputation_list.{ReputationList}
 import genesis_prime/store.{type Character}
 import genesis_prime/table/class
-import genesis_prime/table/id.{ClassId}
+import genesis_prime/table/id.{type ClassId, ClassId}
 import genesis_prime/table/loader/store as table_store
 import gleam/list
 import gleam/result
@@ -62,6 +62,17 @@ pub fn requirements() -> List(table_store.Requirement) {
   ]
 }
 
+/// The mask of item proficiencies the class starts with, which 0x025E tells the
+/// client and the equip check reads (`Class.startingItemProficiencies`).
+pub fn item_proficiencies(
+  tables tables: table_store.Tables,
+  class_id class_id: ClassId,
+) -> Int {
+  let assert Ok(class_row) = class.get(tables:, id: class_id)
+    as "character creation makes only playable classes, and the load requires a Class row for each"
+  class_row.starting_item_proficiencies
+}
+
 /// 0x025E for the character at its class with its `experience`, the class's item
 /// proficiencies, the client's start values, and every other field 0 or empty.
 pub fn frame(
@@ -69,8 +80,6 @@ pub fn frame(
   character character: Character,
   experience experience: Int,
 ) -> Frame {
-  let assert Ok(class_row) = class.get(tables:, id: character.class_id)
-    as "character creation makes only playable classes, and the load requires a Class row for each"
   let assert Ok(body) =
     player_character_state.encode(
       PlayerCharacterState(
@@ -79,7 +88,10 @@ pub fn frame(
         money_trade_limit: 0,
         experience:,
         rest_experience: 0,
-        item_proficiencies: class_row.starting_item_proficiencies,
+        item_proficiencies: item_proficiencies(
+          tables:,
+          class_id: character.class_id,
+        ),
         elder_points: 0,
         periodic_elder_points: 0,
         active_action_set: 0,

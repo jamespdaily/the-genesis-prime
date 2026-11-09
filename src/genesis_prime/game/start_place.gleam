@@ -243,6 +243,11 @@ const exile_races = [RaceId(1), RaceId(3), RaceId(4), RaceId(16)]
 /// The Dominion races: Cassian 1, Draken 5, Mechari 12 and Chua 13.
 const dominion_races = [RaceId(1), RaceId(5), RaceId(12), RaceId(13)]
 
+/// The races a player can create: those with a start place, each once.
+pub fn playable_races() -> List(RaceId) {
+  list.flat_map(starts, fn(group) { group.race_ids }) |> list.unique
+}
+
 /// The places of the starts: for a start and faction, each group of races and
 /// the WorldLocation2 row they begin at.
 type StartGroup {

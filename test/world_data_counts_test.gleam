@@ -2,11 +2,15 @@
 //// through the content load with the client's real tables. Expected values come
 //// from these places.
 //// - The decode of issue 375 (its facts `world_data.creature_disposition` and
-////   `world_data.spawn_checks`), re-run by a scratch Python reimplementation that
-////   gave the same 39,096: world 22 starts 10,920 spawns, 51 12,788, 426 362, 870
-////   677, 990 725, 1061 12,726, 1387 836 and 3460 62, and the other worlds none.
+////   `world_data.spawn_checks`), re-run by a scratch Python reimplementation of
+////   the selection (a quest creature starts whatever else it links to, and
+////   whether or not a player faction may attack it) that gave 40,043: world 22
+////   starts 11,248 spawns, 51 13,173, 426 376, 870 693, 990 739, 1061 12,897,
+////   1387 851 and 3460 66, and the other worlds none. The rows left out in all
+////   are no faction 452, Friendly to both 7,400, a service link 33 and health 0
+////   215.
 //// - Migration 0008: World 3460 also holds the 27 Virtual Defense Daguns, server
-////   choices, which start (Hostile to Dominion), so 3460 has 62 + 27.
+////   choices, which start (Hostile to Dominion), so 3460 has 66 + 27.
 //// The test needs the client's tables and the world database (`GENESIS_WORLD_DATA`),
 //// neither of which CI has (`GENESIS_NO_CLIENT=1`), so it is skipped there; it
 //// imports the whole file into a database of its own, which takes a few seconds.
@@ -18,6 +22,7 @@ import envoy
 import genesis_prime
 import genesis_prime/content
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/game/rating
 import genesis_prime/import_world_data
 import genesis_prime/readiness
 import genesis_prime/step/runtime
@@ -31,6 +36,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import owned_key
 import owned_test
+import spawn_support
 import unitest
 
 /// How the load asks: the database is up, so one attempt answers.
@@ -77,12 +83,35 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       [22, 51, 426, 870, 990, 1061, 1387, 3460, 1535, 3022],
       fn(world_id) { dict.size(content_spawn.world(key:, world_id:).by_id) },
     )
-    == [10_920, 12_788, 362, 677, 725, 12_726, 836, 89, 0, 0]
+    == [11_248, 13_173, 376, 693, 739, 12_897, 851, 93, 0, 0]
     as {
       "the spawns that start in each world; the load took "
       <> int.to_string(took)
       <> " ms"
     }
+  // The rows left out in all worlds are the selection's own count over the same
+  // rows and tables: the load keeps the selection's spawns and logs these.
+  let assert Ok(rows) =
+    content_spawn.rows(db: content_support.connect(database:))
+    as "the spawn rows read back"
+  let selection =
+    spawn.select(
+      rows:,
+      tables:,
+      formulas: rating.formulas(tables:),
+      kinds: spawn_support.kinds(),
+    )
+  let left_out_in_all = fn(reason) {
+    list.flat_map(selection.coverage, fn(world) { world.left_out })
+    |> list.filter(fn(entry) { entry.0 == reason })
+    |> list.fold(0, fn(total, entry) { total + entry.1 })
+  }
+  assert list.map(
+      [spawn.NoFaction, spawn.FriendlyToBoth, spawn.ServiceLink, spawn.Dead],
+      left_out_in_all,
+    )
+    == [452, 7400, 33, 215]
+    as "the rows left out in all worlds: no faction, Friendly to both, a service link, health 0"
   // The world database's spawn rows (`spawn.tsv`, counted by entity type): 171
   // type 4, 4,380 type 8, 17,904 type 10, 491 type 11, 101 type 12, 241 type 13,
   // 79 type 14 and 1,178 type 32 spawns, every one passing the client's checks,

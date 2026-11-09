@@ -6,8 +6,9 @@
 ////   `world_data.creature_disposition`, `world_data.spawn_checks`, `0x140649e20`,
 ////   `0x140787760`, `0x140717560`, `0x1403ad540`): only NonPlayer rows start; a
 ////   faction 0 row, a row Friendly to both player factions, a row whose creature
-////   has an NPC link and a row whose health stat is 0 do not; a row with no stats
-////   starts, with the creature's own level and health.
+////   has only a service link and a row whose health stat is 0 do not; a creature
+////   that gives or receives a quest starts, Friendly to both included; a row with
+////   no stats starts, with the creature's own level and health.
 //// - The client's faction levels: faction 219 is level 10 to 165 through the
 ////   parent walk (Friendly to both), faction 1441 is level 0 to 167 and 10 to 166
 ////   (Hostile to Exile, Friendly to Dominion), faction 189 relates only to 165
@@ -30,9 +31,9 @@ import genesis_prime/game/hit.{Blow}
 import genesis_prime/game/start_place
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store
-import genesis_prime/world_map/creature_life.{Hostile}
+import genesis_prime/world_map/creature_life.{Attackable, Hostile}
 import genesis_prime/world_map/spawn.{
-  type Row, type Selection, Dead, FriendlyToBoth, NoFaction, NpcLink,
+  type Row, type Selection, Dead, FriendlyToBoth, NoFaction,
 }
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/static_object.{type StaticObject, StaticObject}
@@ -489,7 +490,7 @@ pub fn other_unit_types_stay_out_and_the_coverage_counts_static_objects_by_type_
     == list.zip(spawn.object_types, [0, 0, 0, 0, 0, 0, 0, 1])
     as "world 22's"
   assert spawn.describe_coverage(coverage: world_22)
-    == "world 22: 0 spawns start; left out: no faction 0, friendly to both 0, an NPC link 0, health 0 0; static objects sent: type 4 0, type 8 0, type 10 0, type 11 0, type 12 0, type 13 0, type 14 0, type 32 1, left out dead 0; other entity types: none"
+    == "world 22: 0 spawns start; left out: no faction 0, friendly to both 0, a service link 0, health 0 0; static objects sent: type 4 0, type 8 0, type 10 0, type 11 0, type 12 0, type 13 0, type 14 0, type 32 1, left out dead 0; other entity types: none"
     as "the coverage line counts the static objects by type"
 }
 
@@ -568,7 +569,7 @@ pub fn unsent_types_are_sent_and_counted_test() -> Nil {
   assert coverage.other_types == []
     as "none of these types is an other type any more"
   assert spawn.describe_coverage(coverage:)
-    == "world 426: 0 spawns start; left out: no faction 0, friendly to both 0, an NPC link 0, health 0 0; static objects sent: type 4 1, type 8 1, type 10 0, type 11 0, type 12 1, type 13 1, type 14 1, type 32 0, left out dead 0; other entity types: none"
+    == "world 426: 0 spawns start; left out: no faction 0, friendly to both 0, a service link 0, health 0 0; static objects sent: type 4 1, type 8 1, type 10 0, type 11 0, type 12 1, type 13 1, type 14 1, type 32 0, left out dead 0; other entity types: none"
     as "the coverage line counts them by type"
 }
 
@@ -794,16 +795,173 @@ pub fn a_row_whose_faction_has_no_relationship_is_neutral_and_starts_test() -> N
   assert started(selection) == [556]
 }
 
-pub fn a_row_whose_creature_has_an_npc_link_is_left_out_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // Creature2's columns questIdGiven00, trainerClassIdMask and the like: a
-  // creature that gives a quest or trains waits for its own system.
-  let selection =
+pub fn a_quest_creature_starts_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // `0x1405a8d40`, called by the chooser at `0x14047993c`, offers quest kinds from
+  // the creature's own Creature2 quest lists, and a click on one sends 0x7ea
+  // {unit, 37} (`0x14039d5d0`): a creature that gives or receives a quest stands.
+  let gives =
     selected_beast_changed(changes: [#("questIdGiven00", Integer(5))], rows: [
       spawn_support.beast_row(number: 1),
     ])
-  assert started(selection) == [] as "a quest giver does not start"
-  assert left_out(selection:, reason: NpcLink) == 1
+  assert started(gives) == [1] as "a creature that gives a quest starts"
+  let receives =
+    selected_beast_changed(changes: [#("questIdReceive00", Integer(5))], rows: [
+      spawn_support.beast_row(number: 1),
+    ])
+  assert started(receives) == [1] as "a creature that receives a quest starts"
+  assert left_out(selection: gives, reason: spawn.ServiceLink) == 0
+  assert left_out(selection: receives, reason: spawn.ServiceLink) == 0
+  // A quest does not bring back a creature the client would create dead (health
+  // 0, `opcode.0x262.creature`) or one with no faction, which no faction level
+  // names: they stay out whatever the creature's quest list holds.
+  let refused =
+    selected_beast_changed(changes: [#("questIdGiven00", Integer(5))], rows: [
+      spawn.Row(..spawn_support.beast_row(number: 1), health: Some(0.0)),
+      spawn.Row(
+        ..spawn_support.beast_row(number: 2),
+        faction_id: 0,
+        base_faction_id: 0,
+      ),
+      spawn.Row(
+        ..spawn_support.beast_row(number: 3),
+        faction_id: 255,
+        base_faction_id: 255,
+        health: Some(0.0),
+      ),
+    ])
+  assert started(refused) == []
+    as "a quest does not start a dead or factionless row"
+  assert left_out(selection: refused, reason: Dead) == 2
+    as "the dead rows, the second of them Friendly to both"
+  assert left_out(selection: refused, reason: NoFaction) == 1
+}
+
+pub fn a_quest_creature_friendly_to_both_starts_and_no_player_may_attack_it_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // Faction2Relationship 803 (255, 165): faction 255 is level 10 to the parent of
+  // both player factions, Friendly to Exile and Dominion, as Phineas T. Rotostar
+  // (Creature2 73421, world 3460 row 29213) is. The Dagun's row, with no quest,
+  // is left out as a Friendly creature is; the Beast's, with a quest, stands.
+  let selection =
+    selected_beast_changed(changes: [#("questIdGiven00", Integer(5))], rows: [
+      spawn.Row(
+        ..spawn_support.beast_row(number: 1),
+        faction_id: 255,
+        base_faction_id: 255,
+      ),
+      spawn.Row(
+        ..spawn_support.beast_row(number: 2),
+        creature_id: 73_465,
+        display_info_id: 26_578,
+        faction_id: 255,
+        base_faction_id: 255,
+      ),
+    ])
+  assert spawn.faction_levels(
+      tables: character_tables.content_tables(),
+      faction: 255,
+    )
+    == #(10, 10)
+    as "Faction2Relationship 803 (255, 165): level 10 to the parent of both, Friendly"
+  assert started(selection) == [1]
+    as "the quest creature starts and the other does not"
+  assert left_out(selection:, reason: FriendlyToBoth) == 1
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(giver) = dict.get(world.by_id, SpawnId(1)) as "the giver starts"
+  assert giver.combat.attackable == Attackable(exile: False, dominion: False)
+    as "Friendly (8 to 10) to both player factions is no target (0x1403ad540)"
+  assert giver.combat.hostile_to == Hostile(exile: False, dominion: False)
+    as "a Friendly creature fights no one on sight"
+}
+
+pub fn a_quest_creature_with_a_tradeskill_trainer_link_starts_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // Crafting Trainer Thorpe (Creature2 36404, world 426) gives quests and trains a
+  // tradeskill. The trainer kind, 43, only sends 0x7ea (kind table `0x140c48150`),
+  // and the quest kinds work as for any giver.
+  let selection =
+    selected_beast_changed(
+      changes: [
+        #("questIdGiven00", Integer(5)),
+        #("tradeSkillIdTrainer", Integer(1)),
+      ],
+      rows: [spawn_support.beast_row(number: 1)],
+    )
+  assert started(selection) == [1] as "a quest wins over a trainer link"
+  assert left_out(selection:, reason: spawn.ServiceLink) == 0
+}
+
+pub fn a_creature_with_only_a_service_link_is_left_out_test() -> Nil {
+  use <- owned_test.run(300_000)
+  // The station and bind clicks act on the client with no answer from the server
+  // (`0x14039d880` opens the crafting window, `0x14039d840` calls `0x14039c1e0`),
+  // and the trainer and taxi kinds send 0x7ea (`0x140c48150`): each waits for its
+  // own system.
+  let columns = [
+    "trainerClassIdMask",
+    "tradeSkillIdTrainer",
+    "tradeSkillIdStation",
+    "taxiNodeId",
+    "bindPointId",
+    "instancePortalId",
+  ]
+  let selections =
+    list.map(columns, fn(column) {
+      #(
+        column,
+        selected_beast_changed(changes: [#(column, Integer(1))], rows: [
+          spawn_support.beast_row(number: 1),
+        ]),
+      )
+    })
+  list.each(selections, fn(entry) {
+    assert started(entry.1) == [] as { entry.0 <> " alone does not start" }
+    assert left_out(selection: entry.1, reason: spawn.ServiceLink) == 1
+      as { entry.0 <> " alone is a service link" }
+  })
+  assert list.length(selections) == 6
+}
+
+pub fn dorian_walker_s_row_starts_with_the_values_the_world_tests_give_him_test() -> Nil {
+  use <- owned_test.run(5000)
+  // World 3460's row of Creature2 74812 (world database row 29395): faction 171,
+  // display 25510, outfit 8952. Faction2Relationship 771 (167, 171) is level 10
+  // and 685 (166, 171) is level 0, so the Dominion may attack him and fights him
+  // on sight, and Exiles do neither.
+  let selection =
+    selected(rows: [
+      spawn.Row(
+        ..spawn_support.beast_row(number: 29_395),
+        creature_id: 74_812,
+        display_info_id: 25_510,
+        outfit_info_id: 8952,
+        faction_id: 171,
+        base_faction_id: 171,
+      ),
+    ])
+  assert spawn.faction_levels(
+      tables: character_tables.content_tables(),
+      faction: 171,
+    )
+    == #(10, 0)
+    as "Faction2Relationship 771 (167, 171) is level 10 and 685 (166, 171) is level 0"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(standing) = dict.get(world.by_id, SpawnId(29_395))
+    as "Dorian Walker starts"
+  let walker =
+    spawn_support.dorian_walker(number: 29_395, place: standing.place)
+  assert standing.creature_id == walker.creature_id
+  assert standing.faction_id == walker.faction_id
+    && standing.base_faction_id == walker.base_faction_id
+  assert standing.display_info_id == walker.display_info_id
+    && standing.outfit_info_id == walker.outfit_info_id
+  assert standing.combat.attackable == Attackable(exile: False, dominion: True)
+  assert standing.combat.hostile_to == Hostile(exile: False, dominion: True)
+  assert walker.combat.attackable == standing.combat.attackable
+    as "the hand-made giver of the world tests is attackable as the selection makes him"
+  assert walker.combat.hostile_to == standing.combat.hostile_to
+    as "and as hostile"
 }
 
 pub fn a_row_with_health_0_is_left_out_and_a_row_with_no_stats_starts_with_the_creatures_own_values_test() -> Nil {

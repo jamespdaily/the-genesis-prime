@@ -23,12 +23,14 @@
 
 import character_support
 import connection_rule_support as support
+import experience_support
 import fixture_tables
 import game_connection_support
-import genesis_prime/client_connection.{AskStore, FromStore}
+import genesis_prime/client_connection.{AskStore, FromMap, FromStore}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/message/bit_stream
 import genesis_prime/message/disconnect_reason.{LostUserServer}
+import genesis_prime/message/item_action_failed.{ItemActionFailed}
 import genesis_prime/message/item_move
 import genesis_prime/message/item_moved.{ItemMoved}
 import genesis_prime/message/item_place
@@ -43,7 +45,7 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/id.{Item2Id}
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import owned_test
 import world_entry_support
 
@@ -271,4 +273,114 @@ pub fn a_split_answer_comes_before_the_frames_after_it_test() -> Nil {
       ),
     )
     as "opcode.0x111.guid: the held 0x182 finds the new stack at its slot, and asks for it by the guid the store made"
+}
+
+/// Item2 50770, a chest piece whose required level is 3
+/// (`equip_requirement_test`).
+const level_3_chest = 50_770
+
+/// The Engineer at level 2 with 1709 experience, the most of level 2
+/// (XpPerLevel.minXpForLevel: 655 for level 2, 1710 for level 3), wearing the
+/// Novice set but no chest piece, and holding the level 3 chest piece in
+/// inventory slot 0 (guid 9).
+fn holding_a_level_3_chest() -> game_connection.State {
+  let character = game_connection_support.world_character()
+  let worn =
+    list.filter(world_entry_support.novice_items(character:), fn(item) {
+      item.bag_index != 0
+    })
+  let #(state, taken) =
+    game_connection_support.joining_holding_items(
+      in_character_select: game_connection_support.in_select(),
+      character: store.Character(..character, level: 2),
+      saved_health: None,
+      saved_experience: Some(1709),
+      quests: [],
+      items: list.append(worn, [
+        HeldItem(
+          item_guid: 9,
+          item2_id: Item2Id(fixture_tables.root(
+            table: "Item2",
+            id: level_3_chest,
+          )),
+          location: 1,
+          bag_index: 0,
+          stack_count: 1,
+        ),
+      ]),
+    )
+  game_connection_support.answer(
+    state:,
+    taken:,
+    outcome: step.Answer(FromMap(game_connection_support.map_answer(taken))),
+  ).0
+}
+
+/// A 0x182 of inventory slot 0 to the worn chest slot, inside 0x038C.
+fn chest_equipped() -> BitArray {
+  let assert Ok(body) =
+    item_move.encode(item_move.ItemMove(
+      from: item_place.ItemPlace(location: 1, bag_index: 0),
+      to: item_place.ItemPlace(location: 0, bag_index: 0),
+    ))
+  game_connection_support.world_message(message_id: 0x0182, body:)
+}
+
+pub fn an_equip_is_checked_against_the_entered_character_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The level the check reads is the entered character's own, which a kill's
+  // level-up changes (0x1403b4710: the unit's level). A kill of 5 takes 1709
+  // experience to 1714, which is level 3 (XpPerLevel.minXpForLevel 1710). The
+  // level 3 chest piece, Item2 50770 (requiredLevel 3), is refused with 42
+  // (Item_LevelToLow) at level 2 and equipped at level 3. The brief starts at
+  // level 1, which no single kill takes to level 3, so the character starts at
+  // level 2.
+  let #(state, refused) =
+    game_connection_support.read(holding_a_level_3_chest(), chest_equipped())
+  assert support.asked(refused) == None
+    as "a refused equip asks the store for nothing"
+  let assert [failed] = game_connection_support.written(refused)
+    as "the refusal is the one frame written"
+  assert failed.message_id == 0x056A
+    as "opcode.0x56a: a refused move is answered 0x56A"
+  assert item_action_failed.decode(failed.body)
+    == Ok(ItemActionFailed(item_guid: 9, code: 42))
+    as "Item_LevelToLow, with the guid of the item at the source"
+  let #(state, credit) =
+    experience_support.credited(state:, creature_id: 73_464, level: 1)
+  assert list.map(experience_support.level_writes(taken: credit), fn(write) {
+      write.1
+    })
+    == [3]
+    as "the kill takes the character to level 3"
+  let #(state, taken) = game_connection_support.read(state, chest_equipped())
+  assert game_connection_support.ask_request(taken)
+    == AskStore(
+      Items(
+        MoveItems(
+          account_id: AccountId(7),
+          character_id: CharacterId(42),
+          session_epoch: character_support.epoch(1),
+          moves: [
+            ItemMove(
+              item_guid: 9,
+              from: ItemPlace(location: 1, bag_index: 0),
+              to: ItemPlace(location: 0, bag_index: 0),
+            ),
+          ],
+        ),
+      ),
+    )
+    as "at level 3 the same move is the store's ask"
+  let #(_, answered) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
+    )
+  let assert [moved] = game_connection_support.written(answered)
+    as "the saved move is answered with one frame"
+  assert moved.message_id == 0x0569
+  assert item_moved.decode(moved.body) == Ok(ItemMoved(item_guid: 9, place: 0))
+    as "opcode.0x569: guid 9 at location 0, bag index 0, which is 0"
 }

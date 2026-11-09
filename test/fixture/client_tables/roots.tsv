@@ -35,6 +35,7 @@ Spell4	41886	Medic Fissure debuff child	spell_area_test
 Spell4	41844	Medic Fissure proxy: starts the debuff child on each unit its area hits	world_creature_test
 Spell4	54475	Warrior Defense Grid aura	spell_area_test
 Spell4	76618	Esper Phantasmal Armor absorb and armor aimed at the target	spell_area_test
+Creature2	74812	Dorian Walker, a quest giver whose row gives 10528 and receives 10520	interaction_test, world_creature_test
 Quest2	2347	one-time quest with three objectives	quest_log_test
 Quest2	1857	daily quest with one objective	quest_log_test
 Quest2	3204	daily quest with two objectives	quest_log_test
@@ -137,7 +138,49 @@ WorldZone	4843	a zone with a Welcome Tutorial row	zone_welcome_test
 WorldZone	4872	a zone with a Welcome Tutorial row	zone_welcome_test
 WorldZone	4896	a zone with a Welcome Tutorial row	zone_welcome_test
 Creature2	12909	a Hycrest Farmer Male whose Creature2Difficulty is 0, which has no row	experience_test
+Quest2	1949	kill quest, objective 1 kill type 2 count 12	prerequisite_quest_test
+Quest2	3668	quest whose objective 1 has flag 2 and objective 2 flag 1	prerequisite_quest_test
+Quest2	3297	quest whose objective 0 has flag 0x20 and objective 1 flag 2	prerequisite_quest_test
+Quest2	4705	quest whose objective 0 is a kill with flag 0x200	prerequisite_quest_test
+Quest2	1823	quest whose objective 0 is a checklist type 14	prerequisite_quest_test
+Quest2	5261	quest whose objective 0 is type 28 with a soldier row	prerequisite_quest_test
+Quest2	8256	quest whose objective 0 is type 28 with no soldier row	prerequisite_quest_test
+Quest2	5857	quest whose objective 0 is type 12, count 1	prerequisite_quest_test
+QuestObjective	2072	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	2073	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	4744	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	4745	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	4791	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	7943	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	4299	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	6486	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	1915	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	7647	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	14973	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	14987	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	9045	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	8784	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+PathSoldierActivate	37	soldier activate row with mode 1, the objective of quest 5261	prerequisite_quest_test
+Prerequisite	9207	type 22 on quest 5857 or type 6 on quest 5857, start content	prerequisite_quest_test
+Quest2	4361	six objectives, whose last is the one type 36 reads	prerequisite_quest_test
+QuestObjective	5871	objective 0 of quest 4361	prerequisite_quest_test
+QuestObjective	5907	objective 1 of quest 4361	prerequisite_quest_test
+QuestObjective	5908	objective 2 of quest 4361	prerequisite_quest_test
+QuestObjective	5909	objective 3 of quest 4361	prerequisite_quest_test
+QuestObjective	5910	objective 4 of quest 4361	prerequisite_quest_test
+QuestObjective	5911	objective 5 of quest 4361	prerequisite_quest_test
 Item2	1039	(stackable, maximum 20)	inventory_test
 Item2	12049	(bag, not stackable, maximum 6)	inventory_test
 Item2	85531	(bag, not stackable, maximum 14)	inventory_test
 Item2	80875	(flags hold 0x10000, cannot be deleted)	inventory_test
+Item2	12769	(chest for Human Spellslinger, Medic-class bit 64)	equip_requirement_test
+Item2	1133	(Medic chest, class 4, flags bit 0)	inventory_test
+Item2	1229	(chest needing a proficiency the Engineer lacks)	equip_requirement_test
+Item2	73672	(requires world 2979 and level 50 by prerequisite 37283)	equip_requirement_test
+Item2	50770	(chest, level 3)	equip_requirement_test
+Item2	12918	(chest, flags bit 0, required level 36 counts as 1)	equip_requirement_test
+Item2	90054	(prerequisite 18276, gender Equal 1)	equip_requirement_test
+Item2	77689	(prerequisite 39240, loyalty)	equip_requirement_test
+Item2	12631	(ItemSpecial 4463 with a tradeskill tier prerequisite)	equip_requirement_test
+Item2	80982	(slot flags 0x1, joined flags without 0x400)	inventory_test
+Item2	17814	(unique bag, bindFlags bit 1)	inventory_test

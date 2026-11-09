@@ -15,7 +15,7 @@
 ////   the lowest id, the order of the table.
 //// - A summon is refused for what the client's checks of a spawn refuse
 ////   (`0x140485790`) and for what the load leaves out of a stored spawn: no
-////   faction, friendly to both player factions, an NPC link, health 0
+////   faction, friendly to both player factions, only a service link, health 0
 ////   (`opcode.0x262.creature`); a server choice, so a summon starts only what a
 ////   spawn starts.
 
@@ -239,20 +239,25 @@ pub fn a_creature_the_client_would_not_load_is_refused_naming_the_rule_test() ->
     )
 }
 
-pub fn a_creature_with_no_faction_or_an_npc_link_would_not_start_as_a_spawn_and_is_refused_test() -> Nil {
-  use <- owned_test.run(60_000)
+pub fn a_creature_with_no_faction_or_a_service_link_would_not_start_as_a_spawn_and_is_refused_test() -> Nil {
+  use <- owned_test.run(120_000)
   // opcode.0x262.creature: a unit with no faction is Neutral and a stored row of
-  // it is left out; a creature that gives a quest waits for its own system.
+  // it is left out; a creature with only a taxi link waits for its own system,
+  // and one that gives a quest stands as a stored spawn of it does.
   assert summoned_beast_changed(changes: [#("factionId", Integer(0))])
     == Error(spawn.WouldNotStart(
       creature_id: Creature2Id(beast),
       reason: spawn.NoFaction,
     ))
-  assert summoned_beast_changed(changes: [#("questIdGiven00", Integer(5))])
+  assert summoned_beast_changed(changes: [#("taxiNodeId", Integer(1))])
     == Error(spawn.WouldNotStart(
       creature_id: Creature2Id(beast),
-      reason: spawn.NpcLink,
+      reason: spawn.ServiceLink,
     ))
+  let assert Ok(giver) =
+    summoned_beast_changed(changes: [#("questIdGiven00", Integer(5))])
+    as "a quest creature starts as a spawn, so it summons"
+  assert giver.creature_id == Creature2Id(beast)
   assert spawn.describe_refusal(spawn.WouldNotStart(
       creature_id: Creature2Id(beast),
       reason: spawn.NoFaction,

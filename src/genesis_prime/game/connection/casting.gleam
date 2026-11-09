@@ -279,6 +279,7 @@ pub fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
       shield: player_life.shield(life:),
       max_shield: player_life.max_shield(life:),
     ),
+    quests: entered.quests,
   )
 }
 

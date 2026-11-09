@@ -43,14 +43,17 @@
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
   GameFormulaId, Item2CategoryId, Item2FamilyId, Item2Id, Item2TypeId,
-  ItemSlotId,
+  ItemProficiencyId, ItemSlotId, ItemSpecialId, PrerequisiteId,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/item2_category
 import genesis_prime/table/item2_family
 import genesis_prime/table/item2_type
+import genesis_prime/table/item_proficiency
 import genesis_prime/table/item_slot
+import genesis_prime/table/item_special
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/bool
 import gleam/float
 import gleam/int
@@ -158,6 +161,14 @@ const stackable_flag = 0x4
 
 /// Item2.flags 0x10000: the item cannot be destroyed (0x1403c1360).
 const undeletable_flag = 0x10000
+
+/// Item2.bindFlags bit 1: only one of the item may be equipped (0x1403ad100,
+/// `Item2.bindFlags`).
+const unique_equipped_flag = 2
+
+/// Item2.flags bit 0: the item needs level 1 whatever its required level says
+/// (0x1403b4710).
+const no_level_flag = 1
 
 /// The equipped slot flags of the shield slot, ArmorShields.
 const shield_slot_flags = 0x8000
@@ -357,6 +368,159 @@ pub fn equipped_slot_flags(
 ) -> Result(Int, ItemPropertyError) {
   slotting(tables:, item2_id:)
   |> result.map(fn(slotting) { slotting.equipped_slot_flags })
+}
+
+/// Whether the item may take an equipped slot at all: the flags of its type,
+/// category and family, joined, hold 0x400. The client refuses an item that
+/// lacks it at every equipped slot of location 0, whatever equipped slot flags
+/// its own row holds (CheckItemEquipSlot 0x1403b11b0). Only a missing row is an
+/// error.
+pub fn is_slotted(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Bool, ItemPropertyError) {
+  use rows <- result.map(rows(tables:, item2_id:))
+  int.bitwise_and(rows.joined_flags, slotted_flag) != 0
+}
+
+/// Whether only one of the item may be equipped: Item2.bindFlags holds bit 1
+/// (CheckItemMove 0x1403ad100, `Item2.bindFlags`). Only a missing row is an
+/// error.
+pub fn is_unique_equipped(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Bool, ItemPropertyError) {
+  use item <- result.map(item_row(tables:, item2_id:))
+  int.bitwise_and(item.bind_flags, unique_equipped_flag) != 0
+}
+
+/// What the client's equip check reads of an item (CheckEquipRequirements
+/// 0x1403b4710): masks of the races and classes that may wear it, the faction
+/// it needs, the prerequisites its own row and its ItemSpecial give, the mask
+/// of its proficiency and the level it needs.
+pub type EquipRequirements {
+  EquipRequirements(
+    /// Item2.raceRequired: bit race - 1 for each race; 0 for any.
+    race_mask: Int,
+    /// Item2.classRequired: bit class - 1 for each class; 0 for any.
+    class_mask: Int,
+    /// Item2.faction2IdRequired; 0 for any.
+    faction_id: Int,
+    /// The Prerequisite ids that must all pass, those that are 0 left out: the
+    /// item's own, then its ItemSpecial's when that special has a spell to
+    /// activate.
+    prerequisite_ids: List(Int),
+    /// ItemProficiency.bitMask of the item's category; 0 for none.
+    proficiency_mask: Int,
+    /// Item2.requiredLevel, or 1 when it is 0 or the item's flags hold bit 0.
+    required_level: Int,
+  )
+}
+
+/// The item's equip requirements. Only a missing Item2, category or ItemSpecial
+/// row is an error; a category with no ItemProficiency row needs no proficiency
+/// (HasItemProficiency 0x1403ca2b0).
+pub fn equip_requirements(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(EquipRequirements, ItemPropertyError) {
+  use rows <- result.try(rows(tables:, item2_id:))
+  let item = rows.item
+  use special_prerequisite <- result.map(case item.item_special_id00 {
+    0 -> Ok(0)
+    special_id ->
+      item_special.get(tables:, id: ItemSpecialId(special_id))
+      |> result.replace_error(NoRow(table: "ItemSpecial", id: special_id))
+      |> result.map(fn(special) {
+        case special.spell4_id_on_activate {
+          0 -> 0
+          _ -> special.prerequisite_id_generic00
+        }
+      })
+  })
+  let proficiency_mask = case
+    item_proficiency.get(
+      tables:,
+      id: ItemProficiencyId(rows.category.item_proficiency_id),
+    )
+  {
+    Ok(proficiency) -> proficiency.bit_mask
+    Error(Nil) -> 0
+  }
+  EquipRequirements(
+    race_mask: item.race_required,
+    class_mask: item.class_required,
+    faction_id: item.faction2_id_required,
+    prerequisite_ids: list.filter(
+      [item.prerequisite_id, special_prerequisite],
+      fn(id) { id != 0 },
+    ),
+    proficiency_mask:,
+    required_level: case
+      item.required_level == 0
+      || int.bitwise_and(item.flags, no_level_flag) != 0
+    {
+      True -> 1
+      False -> item.required_level
+    },
+  )
+}
+
+/// The load's checks that the rows an item's equip check reads exist, so a
+/// table without them fails the server's start and not a player's equip: the
+/// Prerequisite row of each Item2 and ItemSpecial that names one, and the
+/// ItemSpecial row of each Item2 that names one (CheckEquipRequirements
+/// 0x1403b4710 reads all three; an id of 0 names none).
+pub fn requirements() -> List(table_store.Requirement) {
+  [
+    table_store.Requirement(
+      from_table: "Item2",
+      column: "prerequisiteId",
+      to_table: "Prerequisite",
+      missing: fn(tables) {
+        item2.all(tables)
+        |> list.map(fn(item) { item.prerequisite_id })
+        |> missing_prerequisites(tables:)
+      },
+    ),
+    table_store.Requirement(
+      from_table: "Item2",
+      column: "itemSpecialId00",
+      to_table: "ItemSpecial",
+      missing: fn(tables) {
+        item2.all(tables)
+        |> list.map(fn(item) { item.item_special_id00 })
+        |> list.filter(fn(special_id) {
+          special_id != 0
+          && result.is_error(item_special.get(
+            tables:,
+            id: ItemSpecialId(special_id),
+          ))
+        })
+      },
+    ),
+    table_store.Requirement(
+      from_table: "ItemSpecial",
+      column: "prerequisiteIdGeneric00",
+      to_table: "Prerequisite",
+      missing: fn(tables) {
+        item_special.all(tables)
+        |> list.map(fn(special) { special.prerequisite_id_generic00 })
+        |> missing_prerequisites(tables:)
+      },
+    ),
+  ]
+}
+
+/// The ids of these that name a Prerequisite row the tables lack; 0 names none.
+fn missing_prerequisites(
+  ids ids: List(Int),
+  tables tables: table_store.Tables,
+) -> List(Int) {
+  list.filter(ids, fn(id) {
+    id != 0
+    && result.is_error(prerequisite_table.get(tables:, id: PrerequisiteId(id)))
+  })
 }
 
 /// The most the item's stack holds, for an item that stacks: Item2.maxStackCount

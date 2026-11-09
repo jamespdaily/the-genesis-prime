@@ -27,8 +27,8 @@ import genesis_prime/game/spell_area
 import genesis_prime/game/strike.{type Attacker, Attacker}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/creature2_display_info
-import genesis_prime/table/id.{Creature2DisplayInfoId, Spell4Id}
-import genesis_prime/world_map/creature_life.{Attackable}
+import genesis_prime/table/id.{Creature2DisplayInfoId, Creature2Id, Spell4Id}
+import genesis_prime/world_map/creature_life.{Attackable, Hostile}
 import genesis_prime/world_map/creature_path
 import gleam/dict
 import gleam/list
@@ -73,6 +73,7 @@ fn striker_hit_radius() -> Float {
 
 fn striker_at(x x: Float, z z: Float) -> shown.Shown {
   ShownCreature(
+    creature_id: Creature2Id(73_464),
     path: creature_path.Standing(at: place_support.at(
       world_id: 3460,
       world_zone_id: 5967,
@@ -84,6 +85,7 @@ fn striker_at(x x: Float, z z: Float) -> shown.Shown {
     alive: True,
     hit_radius: striker_hit_radius(),
     attackable: Attackable(exile: True, dominion: True),
+    hostile_to: Hostile(exile: False, dominion: False),
   )
 }
 

@@ -157,6 +157,18 @@ fn distance(from from: Point, to to: Point) -> Float {
   root
 }
 
+/// The ground distance between two bodies' edges: the distance between their points
+/// less both hit radii, never below 0. The client's own reach test measures in three
+/// dimensions (`0x1403ad690`), so the ground distance is never larger than its.
+pub fn edge_gap(
+  from from: Point,
+  from_radius from_radius: Float,
+  to to: Point,
+  to_radius to_radius: Float,
+) -> Float {
+  float.max(distance(from:, to:) -. from_radius -. to_radius, 0.0)
+}
+
 /// Whether the candidate is inside the area of the row at the centre.
 fn is_inside(
   candidate candidate: Candidate,

@@ -5,7 +5,7 @@
 //// the world.
 ////
 //// ```
-//// 0x182 {from, to}    ─▶ take(items, life, tables, message, body)
+//// 0x182 {from, to}    ─▶ take(items, life, tables, wearer, message, body)
 //// 0x17D {guid, place, count}
 //// 0x149 {place}
 ////                      ├─ refused ─▶ Refused([Send(0x56A guid, code)])       no ask, items unchanged
@@ -45,12 +45,24 @@
 ////      Params (0x1403ad100 tests it after 5 and 6)
 ////   8. an inventory destination index of 16 or more, the usable size with no
 ////      bags worn: 37 Item_BagToSmall
-////   9. an item entering location 0 at a slot whose bit is not in its equipped
-////      slot flags (`item_property.equipped_slot_flags`), or at bag slot 17 to 20:
-////      31 Item_NotValidforSlot; for both items of a swap when the source is
-////      equipped. An item with no row in the tables is the server's own broken
-////      state, not a code: the connection ends (`NoItemRow`).
-////   10. any other location the server keeps no items at (3 to 99 except 10): 1
+////   9. an item entering an equipping location (0, 8 or 9) from another one, whose
+////      Item2.bindFlags holds bit 1, while an item of its Item2 is worn, unless
+////      the item at the destination is of that Item2: 30 Item_Unique
+////   10. an item entering location 0 whose type, category and family flags lack
+////      0x400, at a slot whose bit is not in its equipped slot flags
+////      (`item_property.equipped_slot_flags`), or at bag slot 17 to 20: 31
+////      Item_NotValidforSlot
+////   11. an item entering location 0 that the character may not wear
+////      (`equip_requirement`): race 39, class 40, faction 132, prerequisites 144,
+////      proficiency 41, level 42. A prerequisite on a condition type the server
+////      does not read is refused with 144 and a Warning that names the type.
+////   For a swap checks 9 to 11 are made again for the item at the destination
+////   going to the source, after the moved item's. An item with no row in the
+////   tables is the server's own broken state, not a code: the connection ends
+////   (`NoItemRow`). The client's rune-unique loop is not built; it waits for the
+////   issue "Items, equipment, vendors, levels and currency work on the real
+////   client".
+////   12. any other location the server keeps no items at (3 to 99 except 10): 1
 ////       Params, a server choice
 //// - **What the client never sends.** The client refuses locally, before its dead
 ////   check and without sending 0x182, a destination location above 299, an
@@ -96,6 +108,7 @@
 
 import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/equip_requirement.{type Wearer}
 import genesis_prime/game/item_property
 import genesis_prime/game/player_life.{type Life}
 import genesis_prime/message/float32
@@ -184,12 +197,19 @@ pub type Refusal {
   /// A held item whose slot the tables cannot give: the server holds an item the
   /// client's tables have no row for, which is the server's own state broken.
   NoItemRow(item2_id: Item2Id)
+  /// A held item whose equip check cannot read a row of the tables, the row's
+  /// table and id in the error: the load requires these rows, so the server's own
+  /// state is broken.
+  EquipCheckBroken(item2_id: Item2Id, error: equip_requirement.CheckError)
 }
 
 /// Why a move does not pass the checks: the code of the check it breaks, which
 /// the client is answered with, or a refusal that ends the connection.
 type Stop {
   Code(code: Int)
+  /// A prerequisite of the item rests on a condition type the server does not
+  /// read: the client would decide it, so the move is refused with 144 and logged.
+  Unread(item2_id: Item2Id, prerequisite_type: Int)
   Broken(refusal: Refusal)
 }
 
@@ -198,6 +218,10 @@ const equipped = 0
 
 /// The location of the inventory.
 const in_bags = 1
+
+/// The locations the client's move check treats as equipping: the worn slots,
+/// 8 and 9 (0x1403ad100).
+const equip_like_locations = [0, 8, 9]
 
 /// The location of the bank.
 const bank = 2
@@ -221,6 +245,9 @@ const player_busy = 2
 
 /// 5 DbFailure.
 const db_failure = 5
+
+/// 30 Item_Unique.
+const item_unique = 30
 
 /// 31 Item_NotValidforSlot.
 const not_valid_for_slot = 31
@@ -260,11 +287,12 @@ pub fn take(
   items items: List(HeldItem),
   life life: Life,
   tables tables: table_store.Tables,
+  wearer wearer: Wearer,
   message message: Message,
   body body: BitArray,
 ) -> Result(Taken, Refusal) {
   case message {
-    MoveAsked -> take_move(items:, life:, tables:, body:)
+    MoveAsked -> take_move(items:, life:, tables:, wearer:, body:)
     SplitAsked -> take_split(items:, body:)
     DeleteAsked -> take_delete(items:, tables:, body:)
   }
@@ -275,14 +303,21 @@ fn refused_with(
   item item: Result(HeldItem, Nil),
   code code: Int,
 ) -> Result(Taken, Refusal) {
-  Ok(
-    Refused([
-      Send(failed(
-        guid: result.map(item, fn(item) { item.item_guid }) |> result.unwrap(0),
-        code:,
-      )),
-    ]),
-  )
+  Ok(Refused(refusal_effects(item:, code:)))
+}
+
+/// The effects of a refusal: the 0x56A with the code, naming the item the player
+/// named.
+fn refusal_effects(
+  item item: Result(HeldItem, Nil),
+  code code: Int,
+) -> List(Effect) {
+  [
+    Send(failed(
+      guid: result.map(item, fn(item) { item.item_guid }) |> result.unwrap(0),
+      code:,
+    )),
+  ]
 }
 
 /// What a 0x017D is answered with: the first of the split's checks it breaks
@@ -420,6 +455,7 @@ fn take_move(
   items items: List(HeldItem),
   life life: Life,
   tables tables: table_store.Tables,
+  wearer wearer: Wearer,
   body body: BitArray,
 ) -> Result(Taken, Refusal) {
   use move <- result.try(
@@ -429,9 +465,26 @@ fn take_move(
   )
   let source = held_at(items:, place: move.from)
   let destination = held_at(items:, place: move.to)
-  case checked(life:, tables:, move:, source:, destination:) {
+  case checked(life:, items:, tables:, wearer:, move:, source:, destination:) {
     Error(Broken(refusal:)) -> Error(refusal)
     Error(Code(code:)) -> refused_with(item: source, code:)
+    Error(Unread(item2_id:, prerequisite_type:)) ->
+      Ok(
+        Refused([
+          Log(
+            level: LogWarning,
+            text: "the item is not worn: Item2 "
+              <> int.to_string(item2_id.value)
+              <> " needs a prerequisite on PrerequisiteType "
+              <> int.to_string(prerequisite_type)
+              <> ", which the server does not read, so it is refused with the client's code 144",
+          ),
+          ..refusal_effects(
+            item: source,
+            code: equip_requirement.prerequisite_failed,
+          )
+        ]),
+      )
     Ok(item) ->
       case merge(items:, tables:, item:, destination:) {
         Error(refusal) -> Error(refusal)
@@ -509,7 +562,9 @@ fn held_at(
 /// order (this module's doc).
 fn checked(
   life life: Life,
+  items items: List(HeldItem),
   tables tables: table_store.Tables,
+  wearer wearer: Wearer,
   move move: item_move.ItemMove,
   source source: Result(HeldItem, Nil),
   destination destination: Result(HeldItem, Nil),
@@ -549,15 +604,28 @@ fn checked(
     when: to.location == in_bags && to.bag_index >= usable_inventory_size,
     return: Error(Code(bag_too_small)),
   )
-  use fits_to <- result.try(fits(tables:, item:, place: to))
-  use fits_from <- result.try(case destination {
-    Ok(other) -> fits(tables:, item: other, place: from)
-    Error(Nil) -> Ok(True)
+  use Nil <- result.try(wearable_at(
+    items:,
+    tables:,
+    wearer:,
+    item:,
+    from:,
+    to:,
+    other: destination,
+  ))
+  use Nil <- result.try(case destination {
+    Ok(other) ->
+      wearable_at(
+        items:,
+        tables:,
+        wearer:,
+        item: other,
+        from: to,
+        to: from,
+        other: Ok(item),
+      )
+    Error(Nil) -> Ok(Nil)
   })
-  use <- bool.guard(
-    when: !fits_to || !fits_from,
-    return: Error(Code(not_valid_for_slot)),
-  )
   use <- bool.guard(
     when: to.location >= 3 && to.location <= 99,
     return: Error(Code(params)),
@@ -581,23 +649,72 @@ fn closed(place: ItemPlace) -> Bool {
   }
 }
 
-/// Whether the item may be at the place: any place but an equipped one takes it;
-/// an equipped one takes it when the bit of the place is in the item's equipped
-/// slot flags and it is no bag slot (17 to 20). An item with no row for its slot
-/// is no answer at all.
-fn fits(
+/// The checks of one item going from a place to another, in the client's order
+/// (0x1403ad100): the unique check, then, for an equipped destination, the slot
+/// fit and the requirements. `other` is the item held at the destination, which
+/// the move gives the place the item leaves.
+///
+/// Not built: the client's loop that refuses an item whose runes are of a kind
+/// another worn item holds (rune-unique); it waits for the issue "Items,
+/// equipment, vendors, levels and currency work on the real client".
+fn wearable_at(
+  items items: List(HeldItem),
   tables tables: table_store.Tables,
+  wearer wearer: Wearer,
   item item: HeldItem,
-  place place: ItemPlace,
-) -> Result(Bool, Stop) {
-  use <- bool.guard(when: place.location != equipped, return: Ok(True))
-  use flags <- result.map(
-    item_property.equipped_slot_flags(tables:, item2_id: item.item2_id.value)
-    |> result.replace_error(Broken(NoItemRow(item2_id: item.item2_id))),
+  from from: ItemPlace,
+  to to: ItemPlace,
+  other other: Result(HeldItem, Nil),
+) -> Result(Nil, Stop) {
+  let broken = Broken(NoItemRow(item2_id: item.item2_id))
+  let item2_id = item.item2_id.value
+  let entering = equip_like(to) && !equip_like(from)
+  let same_as_other = case other {
+    Ok(held) -> held.item2_id == item.item2_id
+    Error(Nil) -> False
+  }
+  use unique_equipped <- result.try(case entering && !same_as_other {
+    True ->
+      item_property.is_unique_equipped(tables:, item2_id:)
+      |> result.replace_error(broken)
+    False -> Ok(False)
+  })
+  let worn_already =
+    list.any(items, fn(held) {
+      held.location == equipped && held.item2_id == item.item2_id
+    })
+  use <- bool.guard(
+    when: unique_equipped && worn_already,
+    return: Error(Code(item_unique)),
   )
-  let bit = int.bitwise_shift_left(1, place.bag_index)
-  !{ place.bag_index >= 17 && place.bag_index <= 20 }
-  && int.bitwise_and(flags, bit) != 0
+  use <- bool.guard(when: to.location != equipped, return: Ok(Nil))
+  use slotted <- result.try(
+    item_property.is_slotted(tables:, item2_id:) |> result.replace_error(broken),
+  )
+  use flags <- result.try(
+    item_property.equipped_slot_flags(tables:, item2_id:)
+    |> result.replace_error(broken),
+  )
+  let bit = int.bitwise_shift_left(1, to.bag_index)
+  use <- bool.guard(
+    when: !slotted
+      || { to.bag_index >= 17 && to.bag_index <= 20 }
+      || int.bitwise_and(flags, bit) == 0,
+    return: Error(Code(not_valid_for_slot)),
+  )
+  case equip_requirement.check(tables:, item2_id: item.item2_id, wearer:) {
+    Error(error) ->
+      Error(Broken(EquipCheckBroken(item2_id: item.item2_id, error:)))
+    Ok(equip_requirement.Wearable) -> Ok(Nil)
+    Ok(equip_requirement.Refused(code:)) -> Error(Code(code))
+    Ok(equip_requirement.PrerequisiteNotRead(prerequisite_type:)) ->
+      Error(Unread(item2_id: item.item2_id, prerequisite_type:))
+  }
+}
+
+/// Whether the place is one the client's move check treats as equipping.
+fn equip_like(place: ItemPlace) -> Bool {
+  list.contains(equip_like_locations, place.location)
 }
 
 /// The ask and the answer of an accepted move: one move to an empty place, two
@@ -900,5 +1017,10 @@ pub fn describe(refusal refusal: Refusal) -> String {
     NoItemRow(item2_id:) ->
       "a held item has no row in the client's tables for its slot: Item2 "
       <> int.to_string(item2_id.value)
+    EquipCheckBroken(item2_id:, error:) ->
+      "the equip check of Item2 "
+      <> int.to_string(item2_id.value)
+      <> " cannot read the tables: "
+      <> equip_requirement.describe(error:)
   }
 }
