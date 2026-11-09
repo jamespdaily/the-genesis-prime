@@ -178,7 +178,8 @@ pub fn entries() -> List(store.Entry) {
 }
 
 /// The entries only the content load reads (genesis_prime/content), listed apart
-/// from `entries` so the tables digest of a recording does not change with them:
+/// from `entries` so that they are read beside the server's tables on the caller's
+/// heap and the server's tables hold only what its rules read:
 /// - Creature2OutfitInfo: the outfit of a spawn (genesis_prime/world_map/spawn).
 /// - Faction2 and Faction2Relationship: which creatures a player can attack
 ///   (genesis_prime/world_map/spawn).

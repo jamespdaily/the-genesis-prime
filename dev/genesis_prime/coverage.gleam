@@ -332,6 +332,8 @@ fn describe(error: store.LoadError) -> String {
   case error {
     store.TableFileUnreadable(file:, reason:) ->
       file <> ".tbl cannot be read: " <> simplifile.describe_error(reason)
+    store.TableFolderUnreadable(folder:, reason:) ->
+      folder <> " cannot be listed: " <> simplifile.describe_error(reason)
     store.TableFileInvalid(table:, ..) ->
       table <> ".tbl is not accepted as the " <> table <> " table"
     store.RowMissing(from_table:, column:, to_table:, id:) ->

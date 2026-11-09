@@ -23,8 +23,11 @@
 ////   (`game_table.schema`, `MatchGameTableSchema` 0x1407c19f0).
 //// - a missing row fails the load: CLAUDE.md, "Game tables load once at start
 ////   into named records; a missing row fails the load".
-//// - a load's digest is SHA-256 over each file's name, a zero byte and the
-////   file's bytes, in the order of the entries, as upper-case hex
+//// - a load's digest is SHA-256 over each `.tbl` file of the folder, in name
+////   order, each as its name, a zero byte and its bytes, as upper-case hex,
+////   whatever entries the load reads: the folder holds exactly the client's
+////   index files (`setup_check/extract_tables.py` `verify_staged`), so the
+////   digest changes only when a client table file does
 ////   (genesis_prime/table/loader/store).
 //// - a derived value is built once when the tables load, after the
 ////   requirements hold, and kept with the tables, so a reader takes it
@@ -38,6 +41,7 @@ import client_tables
 import fixture_tables
 import fresh_node
 import genesis_prime/table
+import genesis_prime/table/class
 import genesis_prime/table/creature2
 import genesis_prime/table/id
 import genesis_prime/table/loader/store
@@ -177,30 +181,96 @@ pub fn a_planted_table_loads_and_gives_each_row_by_id_and_nothing_for_a_gap_test
     as "the rows in id order"
 }
 
-pub fn a_loads_digest_covers_each_files_name_and_bytes_and_changes_with_either_test() -> Nil {
+/// A planted Class table, a table the tests below read or leave unread.
+fn class_file(id: Int) -> BitArray {
+  planted_table.bytes(
+    planted_table.table(class.schema, [
+      planted_table.row(class.schema, [#("ID", Integer(id))]),
+    ]),
+  )
+}
+
+/// The digest of a read of the localized text table alone from a folder that
+/// holds these files.
+fn digest_of_localized_text_read_from(
+  files: List(#(String, BitArray)),
+) -> String {
+  planted_table.digest_of_read(files:, entries: [localized_text.entry()])
+}
+
+pub fn the_tables_digest_is_of_every_table_file_in_the_folder_by_name_test() -> Nil {
   use <- owned_test.run(5000)
-  let file = localized_text_file([localized_text_row(1, 7)])
-  let load_of = fn(file) {
-    use folder <- planted_table.in_folder([#("LocalizedText", file)])
-    let assert Ok(tables) =
-      store.read(
-        from: folder,
-        entries: [localized_text.entry()],
-        requirements: [],
-        derivations: [],
-      )
-      as "a planted table loads"
-    store.digest(tables)
-  }
-  assert load_of(file)
+  let text = localized_text_file([localized_text_row(1, 7)])
+  let class_bytes = class_file(9)
+  let files = [#("LocalizedText", text), #("Class", class_bytes)]
+  assert digest_of_localized_text_read_from(files)
     == bit_array.base16_encode(
-      crypto.hash(crypto.Sha256, <<"LocalizedText":utf8, 0, file:bits>>),
+      crypto.hash(crypto.Sha256, <<
+        "Class":utf8,
+        0,
+        class_bytes:bits,
+        "LocalizedText":utf8,
+        0,
+        text:bits,
+      >>),
     )
-    as "the digest is SHA-256 of the file's name, a zero byte and its bytes"
-  assert load_of(file) == load_of(file) as "the same files give the same digest"
-  assert load_of(file)
-    != load_of(localized_text_file([localized_text_row(1, 8)]))
-    as "another byte in the file gives another digest"
+    as "the digest is SHA-256 of each file's name, a zero byte and its bytes, in name order, the Class file included though the read names only LocalizedText"
+  assert digest_of_localized_text_read_from(files)
+    == digest_of_localized_text_read_from(list.reverse(files))
+    as "the same files give the same digest, whatever order they were written in"
+  assert digest_of_localized_text_read_from(files)
+    != digest_of_localized_text_read_from([
+      #("LocalizedText", localized_text_file([localized_text_row(1, 8)])),
+      #("Class", class_bytes),
+    ])
+    as "another byte in a file the read names gives another digest"
+  assert digest_of_localized_text_read_from(files)
+    != digest_of_localized_text_read_from([
+      #("LocalizedText", text),
+      #("Class", class_file(10)),
+    ])
+    as "another byte in a file the read does not name gives another digest"
+}
+
+pub fn reading_one_more_table_from_the_same_folder_keeps_the_tables_digest_test() -> Nil {
+  use <- owned_test.run(5000)
+  let files = [
+    #("LocalizedText", localized_text_file([localized_text_row(1, 7)])),
+    #("Class", class_file(9)),
+  ]
+  let digest_of = fn(entries) { planted_table.digest_of_read(files:, entries:) }
+  assert digest_of([localized_text.entry()])
+    == digest_of([localized_text.entry(), class.entry()])
+    as "a recording made on these files replays when the server reads one more table of them"
+}
+
+pub fn the_content_tables_read_beside_the_servers_keep_its_digest_test() -> Nil {
+  use <- owned_test.run(5000)
+  let class_bytes = class_file(9)
+  use servers_folder <- planted_table.in_folder([
+    #("LocalizedText", localized_text_file([localized_text_row(1, 7)])),
+  ])
+  use content_folder <- planted_table.in_folder([#("Class", class_bytes)])
+  let assert Ok(Nil) =
+    simplifile.create_directory(content_folder <> "/Unread.tbl")
+    as "a directory named like a table file, which a hash of the folder cannot read"
+  let assert Ok(servers) =
+    store.read(
+      from: servers_folder,
+      entries: [localized_text.entry()],
+      requirements: [],
+      derivations: [],
+    )
+    as "the server's table loads from its folder"
+  let assert Ok(with_content) =
+    store.read_more(over: servers, from: content_folder, entries: [
+      class.entry(),
+    ])
+    as "the table beside it loads, though a hash of its folder would fail on Unread.tbl"
+  assert class.all(with_content) != []
+    as "the table read beside the server's is there"
+  assert store.digest(with_content) == store.digest(servers)
+    as "the digest is the server's tables', the first read's"
 }
 
 /// What the test below runs in a fresh node, where no other test holds the
