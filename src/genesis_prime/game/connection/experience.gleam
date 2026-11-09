@@ -13,6 +13,9 @@
 ////                            ─▶ 0x938 {self, 10, level} to the player's client
 ////                            ─▶ a Level news to each viewer, which writes 0x938 stat 10 for a
 ////                               unit it shows
+////                            ─▶ the Base Health at the new level (genesis_prime/game/gear.bases):
+////                               0x93a {7} to the player and the news to each viewer, and the life's
+////                               maximum health follows (genesis_prime/game/connection/properties)
 //// ```
 ////
 //// - **A credit for another stay, or for a player not in the world,** never gets here:
@@ -23,23 +26,26 @@
 
 import genesis_prime/client_connection
 import genesis_prime/game/connection/frames as connection_frames
+import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/experience.{
   type Credit, Credited, GainSent, LevelRose, Progress,
 }
+import genesis_prime/game/gear
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 import genesis_prime/store
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/unit_fields
+import gleam/int
 import gleam/list
 
 /// A creature's credit for the kill of the player's blow: the experience rule takes it, and
 /// its effects are written to the player's client and told to its viewers.
 pub fn credited(
   session session: Session,
-  now _now: Now,
+  now now: Now,
   entered entered: world_entry.Entered,
   credit credit: Credit,
 ) -> client_connection.Handled(Session) {
@@ -53,27 +59,56 @@ pub fn credited(
       tables: session.settings.tables,
       numbers: session.settings.numbers,
     )
-  let session =
-    connection_state.with_entered(session:, change: fn(entered) {
-      world_entry.Entered(
-        ..entered,
-        experience: progress.experience,
-        character: store.Character(..entered.character, level: progress.level),
-        unit: player_unit.with_integer_stat(
-          record: entered.unit,
-          stat_id: unit_fields.level_stat,
-          value: progress.level,
-        ),
-        properties: unit_properties.at_level(
-          properties: entered.properties,
-          level: progress.level,
-        ),
+  let tables = session.settings.tables
+  case gear.bases(tables:, gear: entered.gear, level: progress.level) {
+    Error(Nil) ->
+      connection_state.end_for(
+        session:,
+        now:,
+        text: "CreatureLevel has no row for level "
+          <> int.to_string(progress.level)
+          <> ", so the player's maximum health is unknown",
       )
-    })
-  client_connection.Continue(
-    session,
-    list.flat_map(effects, carried_out(session:, entered:, effect: _)),
-  )
+    Ok(bases) -> {
+      let session =
+        connection_state.with_entered(session:, change: fn(entered) {
+          world_entry.Entered(
+            ..entered,
+            experience: progress.experience,
+            character: store.Character(
+              ..entered.character,
+              level: progress.level,
+            ),
+            unit: player_unit.with_gear(
+              record: player_unit.with_integer_stat(
+                record: entered.unit,
+                stat_id: unit_fields.level_stat,
+                value: progress.level,
+              ),
+              replacing: entered.gear.visuals,
+              item_visuals: entered.gear.visuals,
+              bases:,
+              shield: gear.shield_capacity(gear: entered.gear),
+            ),
+            properties: unit_properties.at_level(
+              properties: entered.properties,
+              level: progress.level,
+            ),
+          )
+        })
+      let told =
+        list.flat_map(effects, carried_out(session:, entered:, effect: _))
+      // The level's Base Health is the only gear property a level moves.
+      let #(session, followed) =
+        connection_properties.rebased(
+          session:,
+          now:,
+          bases:,
+          shield: entered.gear.properties.shield,
+        )
+      client_connection.Continue(session, list.append(told, followed))
+    }
+  }
 }
 
 /// What one effect of the rule is, as the connection's effects.

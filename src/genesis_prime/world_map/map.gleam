@@ -24,16 +24,15 @@
 ////
 //// ```
 //// connection c1                      map                                      shell
-////   Join(c1, character, place, stay, alive) ─▶ Asked ─▶ loadout of its class and faction, maximum health at its level
+////   Join(c1, character, place, stay, alive) ─▶ Asked ─▶ loadout of its class and faction
 ////                                          unit id u = next unit id; next + 1
 ////                                          unit = the character at place as unit u,
-////                                                 with the body visuals of its look, its loadout
-////                                                 (the worn set's visuals, the gear's values) and its health
+////                                                 with the body visuals of its look and its loadout
 ////                                          player = (c1, stay, unit, watch w1, sees)
 ////                                          Watch(w1, Connection(c1))           ─▶ monitors c1
 ////   ◀─ Joined(0x262's record of unit, loadout, run, the map's clock origin)
 ////                                ◀─ OwnEffect(Reply(caller, Joined(..)))
-////   ◀─ NotJoined(reason)         when the class and faction have no Novice set or the level no Base Health row:
+////   ◀─ NotJoined(reason)         when the class and faction have no Novice set:
 ////                                    no unit id is given, no player kept, no watch opened
 ////                                          for each player c2 in sight, in the same step:
 ////   ◀─ Noticed(c1's stay, SeenBy(c2, c2's stay))                              ─▶ send to c1
@@ -455,7 +454,7 @@
 //// | two summons are asked at once | each takes the next run-only id and unit id, and each caller is held under its own id, so the answers are told apart |
 //// | a creature crashes as soon as it is told of a player | the same, once for each respawn time: no creature is started or told anything before the timer fires |
 //// | the respawn timer fires after the map ended | not possible: the timer lives in the process |
-//// | a joining character's class and faction have no Novice set, or its level has no Base Health row | the join is answered `NotJoined`, with an error line, no unit id given and no player kept: the player's connection tells its client the server failed, and the map does not crash on one character's data |
+//// | a joining character's class and faction have no Novice set | the join is answered `NotJoined`, with an error line, no unit id given and no player kept: the player's connection tells its client the server failed, and the map does not crash on one character's data |
 //// | the map has given every unit id | the map crashes, which ends its run and its players' connections; the next run starts from 1 |
 //// | the map run ends | each creature's watch on the run ends and it stops; the players' connections end with the run |
 //// | the creature supervisor or the creature registry restarts | every creature and every map ends (genesis_prime/server) |
@@ -614,9 +613,6 @@ pub type NotJoined {
   /// No Novice set holds the character's class and faction
   /// (genesis_prime/game/loadout).
   NoLoadout(class_id: Int, faction_id: Int)
-  /// CreatureLevel has no row for the character's level, so its health is
-  /// unknown (`loadout.max_health`).
-  NoBaseHealth(level: Int)
 }
 
 /// Why a summon is refused: the data of the one request, since the command's
@@ -2308,10 +2304,10 @@ fn joined_new(
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   let tables = state.settings.tables
-  case gear_of(tables:, character:) {
+  case loadout_of(tables:, character:) {
     Error(reason) ->
       not_joined(state:, caller:, connection:, character:, reason:)
-    Ok(#(loadout, max_health)) -> {
+    Ok(loadout) -> {
       let #(state, unit_id) = take_unit_id(state)
       let watch = WatchId(state.next_watch)
       let state = State(..state, next_watch: state.next_watch + 1)
@@ -2325,7 +2321,6 @@ fn joined_new(
             character:,
           ),
           loadout:,
-          max_health:,
         )
       joined_with(
         state:,
@@ -2351,26 +2346,21 @@ fn joined_new(
   }
 }
 
-/// The loadout of the character's class and faction and its maximum health at
-/// its level, or why the character cannot be in the map.
-fn gear_of(
+/// The loadout of the character's class and faction, or why the character cannot
+/// be in the map.
+fn loadout_of(
   tables tables: table_store.Tables,
   character character: Character,
-) -> Result(#(Loadout, Int), NotJoined) {
-  use loadout <- result.try(
-    loadout.of(
-      tables:,
-      class_id: character.class_id,
-      faction_id: character.faction_id,
-    )
-    |> result.replace_error(NoLoadout(
-      class_id: character.class_id.value,
-      faction_id: character.faction_id,
-    )),
+) -> Result(Loadout, NotJoined) {
+  loadout.of(
+    tables:,
+    class_id: character.class_id,
+    faction_id: character.faction_id,
   )
-  loadout.max_health(tables:, loadout:, level: character.level)
-  |> result.replace_error(NoBaseHealth(level: character.level))
-  |> result.map(fn(max_health) { #(loadout, max_health) })
+  |> result.replace_error(NoLoadout(
+    class_id: character.class_id.value,
+    faction_id: character.faction_id,
+  ))
 }
 
 /// A join the map refuses: an error line naming the character and why, and the
@@ -2403,15 +2393,11 @@ fn not_joined(
 
 /// A sentence that says why a join is refused, for the log.
 pub fn describe_not_joined(reason reason: NotJoined) -> String {
-  case reason {
-    NoLoadout(class_id:, faction_id:) ->
-      "no Novice set holds class "
-      <> int.to_string(class_id)
-      <> " and faction "
-      <> int.to_string(faction_id)
-    NoBaseHealth(level:) ->
-      "CreatureLevel has no row for level " <> int.to_string(level)
-  }
+  let NoLoadout(class_id:, faction_id:) = reason
+  "no Novice set holds class "
+  <> int.to_string(class_id)
+  <> " and faction "
+  <> int.to_string(faction_id)
 }
 
 /// The rest of the first join, once the player is built with its unit and its

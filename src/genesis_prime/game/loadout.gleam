@@ -36,10 +36,9 @@
 ////   (`lua.ActionBarFrame.ActionBarInnate`, `0x14077dfa0`), and it is in no action set
 ////   (`opcode.0x19d`). A class whose innate has the base of one of its abilities fails
 ////   the load.
-//// - **Health** is CreatureLevel's Base Health at the character's level, rounded,
-////   plus the armor's: Jim's decision on goal 274, that gear gives health at any
-////   level (the client holds no health rule for a player,
-////   `player.level1_base_health` for level 1).
+//// - **The set's properties and visuals** are what a new character's Novice items give; the
+////   connection reads a player's gear from the items it holds (genesis_prime/game/gear),
+////   and the set is what character creation saves there.
 
 import genesis_prime/game/innate.{type Innate}
 import genesis_prime/game/item_property.{
@@ -47,7 +46,6 @@ import genesis_prime/game/item_property.{
 }
 import genesis_prime/game/level
 import genesis_prime/game/worn_visual.{type WornVisual, type WornVisualError}
-import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/table/character_creation.{type CharacterCreation}
 import genesis_prime/table/creature_level
 import genesis_prime/table/id.{
@@ -59,7 +57,6 @@ import genesis_prime/table/spell4
 import genesis_prime/table/spell_level.{type SpellLevel}
 import gleam/bool
 import gleam/dict.{type Dict}
-import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -249,7 +246,7 @@ fn build(tables: table_store.Tables) -> Result(Loadouts, LoadoutError) {
 }
 
 /// Every level a character can have, 1 to the highest level, has a CreatureLevel
-/// row, which `max_health` reads.
+/// row, which `gear.max_health` reads.
 fn health_rows(tables tables: table_store.Tables) -> Result(Nil, LoadoutError) {
   use highest <- result.try(
     level.highest_level(tables)
@@ -395,27 +392,6 @@ pub fn of(
   let Loadouts(by_set:) = table_store.derived(tables:, key: loadouts_key)
   let ClassId(class_id) = class_id
   dict.get(by_set, #(class_id, faction_id))
-}
-
-/// The item visuals of what the loadout's character wears, as 0x262 carries
-/// them after its body's: one for each armor piece and the weapon.
-pub fn item_visuals(loadout loadout: Loadout) -> List(ItemVisual) {
-  list.map(loadout.visuals, worn_visual.item_visual)
-}
-
-/// A player's maximum health: the Base Health of CreatureLevel's row of its
-/// level plus the gear's, rounded (Jim's decision on goal 274: gear gives health
-/// at any level). `Error(Nil)`
-/// when the table has no row for the level.
-pub fn max_health(
-  tables tables: table_store.Tables,
-  loadout loadout: Loadout,
-  level level: Int,
-) -> Result(Int, Nil) {
-  creature_level.get(tables:, id: CreatureLevelId(level))
-  |> result.map(fn(row) {
-    float.round(row.unit_property_value07 +. loadout.properties.base_health)
-  })
 }
 
 /// The guid of the ability item a character holds at a bag index of the ability

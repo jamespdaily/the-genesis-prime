@@ -247,7 +247,7 @@ pub fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
     unit_id: entered.unit_id,
     place: movement.place(entered.movement),
     abilities: loadout.bag(loadout: entered.loadout),
-    weapon: Some(entered.loadout.weapon),
+    weapon: entered.gear.weapon,
     audience: connection_state.viewer_connections(entered:),
     dead: player_life.state(life:) == player_life.Dead,
     resources: entered.resources,

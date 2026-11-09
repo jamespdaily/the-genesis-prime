@@ -7,23 +7,19 @@
 ////
 //// - **Alive:** stat 0 (health) above 0, or the client creates the player
 ////   dead (0x140457bc5). No client table or retail record gives a player's
-////   health by class and level (0x1404585c0), so the unit holds the maximum
-////   health the loadout gives (`genesis_prime/game/loadout.max_health`: the
-////   level's Base Health plus the gear's, Jim's decision on goal 274), which the
-////   map works out at the join.
-//// - **Gear:** `create` sets stat 0 to the maximum health and stat 20 (the
-////   current shield) to the shield's capacity, a full shield on entry (a server
-////   choice: the client holds no shield rule, `regen.client`), and the
-////   properties 7 (Base Health), 35 and 36 (Assault Rating and Support Rating),
-////   41 (ShieldCapacityMax), 42 (Armor), 175 (ShieldMitigationMax), 176
+////   health by class and level (0x1404585c0), so the player's own record carries
+////   the health it enters with as stat 0 (`with_integer_stat`, `opcode.0x262`),
+////   which the connection works out from the level's Base Health plus the worn
+////   items' (genesis_prime/game/gear `max_health`, Jim's decision on goal 274).
+//// - **Gear:** the unit holds none. `create` writes the body and the level only;
+////   the worn items' gear comes through `with_gear` (genesis_prime/game/gear): the
+////   properties 7 (Base Health), 35 and 36 (Assault Rating and Support Rating), 41
+////   (ShieldCapacityMax), 42 (Armor), 175 (ShieldMitigationMax), 176
 ////   (ShieldRegenPct) and 178 (ShieldRebootTime), each as base and value alike
-////   (0x1404584b0, 0x140458140). The shield's regeneration and reboot values
-////   replace the unit property defaults (0.25, 2500) rather than add to them (a
-////   server choice: the client sums nothing, `player.level1_gear_properties`). A
-////   unit whose gear holds no shield has no stat 20 and no shield properties.
-//// - **Health now:** the player's own record carries the health it enters with
-////   as stat 0, which can be below the maximum (`with_integer_stat`,
-////   `opcode.0x262`); property 7 stays the maximum.
+////   (0x1404584b0, 0x140458140), the item visuals of the worn items after the
+////   body's, and, with a shield, stat 20, its current shield. A record with no
+////   shield has no stat 20. `with_gear` again replaces them when a worn item changes,
+////   so a viewer created later is sent the current gear.
 //// - **Level:** stat 10 is the character's level (0x140458140).
 //// - **Class resource:** the player's own record gains its class's resource
 ////   slot at its start, as stat slot + 2 in the float form, and the slot's
@@ -40,18 +36,15 @@
 ////   character for its other values, and its place only as the unit's own.
 //// - **Body:** the item visuals the character list sends
 ////   (genesis_prime/game/appearance), and the stored bone values
-////   (opcode.0x262.player_fields).
-//// - **Worn:** the item visuals of the Novice set the loadout holds, after the
-////   body's (genesis_prime/game/worn_visual): the client draws armor and a
-////   weapon only from them, on the player's own client and every other's, which
-////   are sent the same 0x262 (`opcode.0x262.worn_visuals`).
+////   (opcode.0x262.player_fields). The client draws armor and a weapon only from item
+////   visuals, on the player's own client and every other's, which are sent the same
+////   0x262 (`opcode.0x262.worn_visuals`).
 //// - **PvP flags** 0: the 3 bits are the unit's PvP flags, not the path
 ////   (0x1403b48b0).
 //// - Every other field 0 or empty, each by its record
 ////   (opcode.0x262.player_fields, opcode.0x262.unit_fields).
 
 import genesis_prime/game/class_resource.{type Resource}
-import genesis_prime/game/item_property.{Shield}
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
@@ -67,18 +60,17 @@ import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
-import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
+import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/store.{type Character, CharacterId}
+import genesis_prime/table/id.{type UnitProperty2Id}
 import genesis_prime/world_map/unit_fields
-import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 
 /// A player's unit in a map: the character as the unit `unit_id`, placed at
-/// `place` with the item visuals of its `body`, holding its `loadout` and the
-/// `max_health` the loadout gives at its level. Only `new` builds one, so a unit
-/// always holds all of them.
+/// `place` with the item visuals of its `body`, holding its `loadout` (the abilities
+/// and the innate). Only `new` builds one, so a unit always holds all of them.
 pub opaque type PlayerUnit {
   PlayerUnit(
     character: Character,
@@ -86,31 +78,24 @@ pub opaque type PlayerUnit {
     unit_id: Int,
     body: List(ItemVisual),
     loadout: Loadout,
-    max_health: Int,
   )
 }
 
 /// The unit of the character as the unit `unit_id`, at `place`, with the item
-/// visuals of its `body` (the worn set's come from the loadout).
+/// visuals of its `body`.
 pub fn new(
   character character: Character,
   place place: Place,
   unit_id unit_id: Int,
   body body: List(ItemVisual),
   loadout loadout: Loadout,
-  max_health max_health: Int,
 ) -> PlayerUnit {
-  PlayerUnit(character:, place:, unit_id:, body:, loadout:, max_health:)
+  PlayerUnit(character:, place:, unit_id:, body:, loadout:)
 }
 
-/// What the unit holds: the weapon, the abilities and the gear.
+/// What the unit holds: the abilities and the innate.
 pub fn loadout(unit unit: PlayerUnit) -> Loadout {
   unit.loadout
-}
-
-/// The unit's maximum health.
-pub fn max_health(unit unit: PlayerUnit) -> Int {
-  unit.max_health
 }
 
 /// The unit's id in its map.
@@ -165,60 +150,13 @@ pub fn character_id(unit unit: PlayerUnit) -> Int {
   character_id
 }
 
-/// The properties a player's 0x262 lists from its loadout, in id order, each with its
-/// base and value alike: its maximum health as BaseHealth (7), the gear's Assault Rating
-/// (35), Support Rating (36) and Armor (42), and its shield's ShieldCapacityMax (41),
-/// ShieldMitigationMax (175), ShieldRegenPct (176) and ShieldRebootTime (178), when it
-/// holds a shield (`opcode.0x262`, `player.level1_gear_properties`).
-pub fn gear_properties(
-  loadout loadout: Loadout,
-  max_health max_health: Int,
-) -> List(UnitProperty) {
-  let gear = loadout.properties
-  let shield_properties = case gear.shield {
-    Some(Shield(capacity_max:, mitigation_max:, regen_percent:, reboot_time_ms:)) -> [
-      #(41, capacity_max),
-      #(175, mitigation_max),
-      #(176, regen_percent),
-      #(178, int.to_float(reboot_time_ms)),
-    ]
-    None -> []
-  }
-  list.flatten([
-    [
-      #(unit_fields.base_health_property, int.to_float(max_health)),
-      #(35, gear.assault_rating),
-      #(36, gear.support_rating),
-      #(42, gear.armor),
-    ],
-    shield_properties,
-  ])
-  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
-  |> list.map(fn(pair) {
-    let bits = float32.to_bits(pair.1)
-    UnitProperty(property_id: pair.0, base: bits, value: bits)
-  })
-}
-
 /// Message 0x262 for the unit, in the realm.
 pub fn create(
   unit unit: PlayerUnit,
   realm_id realm_id: Int,
 ) -> UnitCreatePlayer {
-  let PlayerUnit(character:, place:, unit_id:, body:, loadout:, max_health:) =
-    unit
+  let PlayerUnit(character:, place:, unit_id:, body:, loadout: _) = unit
   let CharacterId(character_id) = character.character_id
-  let gear = loadout.properties
-  let shield_stats = case gear.shield {
-    Some(Shield(capacity_max:, ..)) -> [
-      unit_fields.integer_stat(
-        stat_id: unit_fields.shield_stat,
-        value: float.round(capacity_max),
-      ),
-    ]
-    None -> []
-  }
-  let properties = gear_properties(loadout:, max_health:)
   UnitCreatePlayer(
     unit_id:,
     character_id:,
@@ -237,25 +175,18 @@ pub fn create(
     premium_tier: 0,
     title_id: 0,
     tail: unit_fields.tail(
-      stats: list.flatten([
-        [
-          unit_fields.integer_stat(
-            stat_id: unit_fields.health_stat,
-            value: max_health,
-          ),
-          unit_fields.integer_stat(
-            stat_id: unit_fields.level_stat,
-            value: character.level,
-          ),
-        ],
-        shield_stats,
-      ]),
+      stats: [
+        unit_fields.integer_stat(
+          stat_id: unit_fields.level_stat,
+          value: character.level,
+        ),
+      ],
       movement_commands: {
         let #(position, rotation) = standing(place:)
         [start_movement.Position(position), start_movement.Rotation(rotation)]
       },
-      properties:,
-      item_visuals: list.append(body, loadout.item_visuals(loadout:)),
+      properties: [],
+      item_visuals: body,
       faction_id: character.faction_id,
       base_faction_id: character.faction_id,
       world_object_id: 0,
@@ -267,41 +198,89 @@ pub fn create(
   )
 }
 
-/// The player's 0x262 record with the integer stat `stat_id` set to `value`, in place
-/// of the one `create` wrote: the health the client shows as stat 0 (`opcode.0x262`;
-/// `create` writes the maximum, and a player who enters with less is created with
-/// what it has), the shield as stat 20 and the level as stat 10 (`opcode.0x938`),
-/// which a viewer created later is sent. A record with no such stat is unchanged.
+/// The player's 0x262 record with the integer stat `stat_id` set to `value`: the health
+/// the client shows as stat 0 (`opcode.0x262`; `create` writes none, and a player who
+/// enters with less than the maximum is created with what it has), the shield as stat 20
+/// and the level as stat 10 (`opcode.0x938`), which a viewer created later is sent. A
+/// record with no such stat gains it, in stat id order.
 pub fn with_integer_stat(
   record record: UnitCreatePlayer,
   stat_id stat_id: Int,
   value value: Int,
 ) -> UnitCreatePlayer {
-  UnitCreatePlayer(
-    ..record,
-    tail: UnitCreateTail(
-      ..record.tail,
-      stats: list.map(record.tail.stats, fn(stat) {
-        case stat.stat_id == stat_id {
-          True -> unit_fields.integer_stat(stat_id:, value:)
-          False -> stat
+  let stat = unit_fields.integer_stat(stat_id:, value:)
+  let stats = case
+    list.any(record.tail.stats, fn(held) { held.stat_id == stat_id })
+  {
+    True ->
+      list.map(record.tail.stats, fn(held) {
+        case held.stat_id == stat_id {
+          True -> stat
+          False -> held
         }
-      }),
-    ),
-  )
+      })
+    False -> {
+      let #(before, after) =
+        list.split_while(record.tail.stats, fn(held) { held.stat_id < stat_id })
+      list.flatten([before, [stat], after])
+    }
+  }
+  UnitCreatePlayer(..record, tail: UnitCreateTail(..record.tail, stats:))
 }
 
-/// The player's 0x262 record with the gear of its worn items: the item visuals the record
-/// lists, the gear properties in place of those it holds and, with a shield, its capacity
-/// as stat 20, which a viewer created later is sent; with no shield the record holds no
-/// stat 20.
+/// The player's 0x262 record with the gear of its worn items: `item_visuals`, the worn
+/// items' visuals, in place of `replacing`, the ones the record lists after its body's
+/// (none for a record that has no gear yet), the `bases` as the gear properties it holds,
+/// base and value alike, and, with a shield, `shield` as stat 20, which a viewer created
+/// later is sent; with `None` the record holds no stat 20.
 pub fn with_gear(
-  record _record: UnitCreatePlayer,
-  item_visuals _item_visuals: List(ItemVisual),
-  properties _properties: List(UnitProperty),
-  shield _shield: Option(Int),
+  record record: UnitCreatePlayer,
+  replacing replacing: List(ItemVisual),
+  item_visuals item_visuals: List(ItemVisual),
+  bases bases: List(#(UnitProperty2Id, Float)),
+  shield shield: Option(Int),
 ) -> UnitCreatePlayer {
-  panic as "shape: #586 player_unit.with_gear is not built"
+  let ids = list.map(bases, fn(base) { { base.0 }.value })
+  let properties =
+    list.filter(record.tail.properties, fn(held) {
+      !list.contains(ids, held.property_id)
+    })
+    |> list.append(
+      list.map(bases, fn(base) {
+        let bits = float32.to_bits(base.1)
+        UnitProperty(property_id: { base.0 }.value, base: bits, value: bits)
+      }),
+    )
+    |> list.sort(fn(first, second) {
+      int.compare(first.property_id, second.property_id)
+    })
+  let body =
+    list.filter(record.tail.item_visuals, fn(held) {
+      !list.contains(replacing, held)
+    })
+  let record =
+    UnitCreatePlayer(
+      ..record,
+      tail: UnitCreateTail(
+        ..record.tail,
+        properties:,
+        item_visuals: list.append(body, item_visuals),
+      ),
+    )
+  case shield {
+    Some(value) ->
+      with_integer_stat(record:, stat_id: unit_fields.shield_stat, value:)
+    None ->
+      UnitCreatePlayer(
+        ..record,
+        tail: UnitCreateTail(
+          ..record.tail,
+          stats: list.filter(record.tail.stats, fn(held) {
+            held.stat_id != unit_fields.shield_stat
+          }),
+        ),
+      )
+  }
 }
 
 /// The player's 0x262 record with its class's resource, as its own client is

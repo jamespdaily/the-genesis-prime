@@ -14,6 +14,10 @@
 ////   (`opcode.0x262.worn_visuals`).
 //// - **An item the reader refuses is worn and shown and gives no properties**; it is
 ////   listed in `unread` with its reason, which the connection logs once.
+//// - **A second shield gives nothing**: its properties would share the first's, so it is
+////   listed in `unread` as `TwoShields`; the client's move check lets one shield be worn.
+//// - **An item with no display is not drawn**, and neither is one whose display source
+////   the tables lack a row for (`worn_visual`).
 //// - **Max health** is CreatureLevel's Base Health at the level plus the worn items'
 ////   (`player.level1_base_health`).
 //// - **The gear properties** are 7, 35, 36 and 42, and 41, 175, 176 and 178 from a
@@ -21,13 +25,31 @@
 ////   defaults (`player.level1_gear_properties`, `UnitProperty2.client_value`).
 
 import genesis_prime/game/item_property.{
-  type ItemProperties, type ItemPropertyError,
+  type ItemProperties, type ItemPropertyError, Shield,
 }
+import genesis_prime/game/unit_properties
+import genesis_prime/game/worn_visual
 import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/store.{type HeldItem}
-import genesis_prime/table/id.{type Item2Id, type UnitProperty2Id}
+import genesis_prime/table/creature_level
+import genesis_prime/table/id.{
+  type Item2Id, type UnitProperty2Id, CreatureLevelId, UnitProperty2Id,
+}
 import genesis_prime/table/loader/store as table_store
-import gleam/option.{type Option}
+import gleam/float
+import gleam/int
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/result
+
+/// The location of the items a player wears.
+const worn_location = 0
+
+/// The bag index of the primary weapon slot, WeaponPrimary, bit 16: an item is moved
+/// there only when its equipped slot flags hold the weapon bit
+/// (`item_property.is_weapon`, `genesis_prime/game/equip_requirement`), so the item
+/// held there is the weapon.
+const weapon_bag_index = 16
 
 /// What the worn items give: their summed properties, the item visuals of those that
 /// are drawn, in slot order, the item held in the primary weapon slot, if any, and each
@@ -43,30 +65,163 @@ pub type Gear {
 
 /// The gear of the items held at location 0 among `items`.
 pub fn of_items(
-  tables _tables: table_store.Tables,
-  items _items: List(HeldItem),
+  tables tables: table_store.Tables,
+  items items: List(HeldItem),
 ) -> Gear {
-  panic as "shape: #586 gear.of_items is not built"
+  let worn =
+    list.filter(items, fn(item) { item.location == worn_location })
+    |> list.sort(fn(first, second) {
+      int.compare(first.bag_index, second.bag_index)
+    })
+  let read =
+    list.map(worn, fn(item) {
+      #(item, item_property.of_item(tables:, item2_id: item.item2_id.value))
+    })
+  let #(given, unread) = keep_one_shield(read:)
+  let assert Ok(properties) = item_property.sum(items: given)
+    as "at most one shield is kept, so the items sum"
+  let visuals =
+    list.filter_map(worn, fn(item) {
+      case worn_visual.of_item(tables:, item2_id: item.item2_id.value) {
+        Ok(Some(visual)) -> Ok(visual)
+        Ok(None) | Error(_) -> Error(Nil)
+      }
+    })
+    |> list.sort(fn(first, second) {
+      int.compare(first.slot.value, second.slot.value)
+    })
+    |> list.map(worn_visual.item_visual)
+  let weapon =
+    list.find(worn, fn(item) { item.bag_index == weapon_bag_index })
+    |> result.map(fn(item) { item.item2_id })
+    |> option.from_result
+  Gear(properties:, visuals:, weapon:, unread:)
+}
+
+/// What each worn item gives, and each that gives nothing with its reason: an item the
+/// reader refuses, and a second shield, whose properties would share the first's.
+fn keep_one_shield(
+  read read: List(#(HeldItem, Result(ItemProperties, ItemPropertyError))),
+) -> #(List(ItemProperties), List(#(Item2Id, ItemPropertyError))) {
+  let #(given, unread, _) =
+    list.fold(read, #([], [], False), fn(so_far, pair) {
+      let #(given, unread, has_shield) = so_far
+      let #(item, result) = pair
+      case result {
+        Error(error) -> #(
+          given,
+          [#(item.item2_id, error), ..unread],
+          has_shield,
+        )
+        Ok(properties) ->
+          case properties.shield, has_shield {
+            Some(_), True -> #(
+              given,
+              [#(item.item2_id, item_property.TwoShields), ..unread],
+              has_shield,
+            )
+            Some(_), False -> #([properties, ..given], unread, True)
+            None, _ -> #([properties, ..given], unread, has_shield)
+          }
+      }
+    })
+  #(list.reverse(given), list.reverse(unread))
 }
 
 /// A player's maximum health at `level` with this gear: the Base Health of
 /// CreatureLevel's row of the level plus the gear's, rounded. `Error(Nil)` when the
 /// table has no row for the level.
 pub fn max_health(
-  tables _tables: table_store.Tables,
-  gear _gear: Gear,
-  level _level: Int,
+  tables tables: table_store.Tables,
+  gear gear: Gear,
+  level level: Int,
 ) -> Result(Int, Nil) {
-  panic as "shape: #586 gear.max_health is not built"
+  creature_level.get(tables:, id: CreatureLevelId(level))
+  |> result.map(fn(row) {
+    float.round(row.unit_property_value07 +. gear.properties.base_health)
+  })
 }
 
 /// The base of each property the gear sets at `level`: 7, 35, 36 and 42, and the four
 /// shield properties, which are their UnitProperty2 defaults when no shield is worn.
 /// `Error(Nil)` when the table has no Base Health row for the level.
 pub fn bases(
-  tables _tables: table_store.Tables,
-  gear _gear: Gear,
-  level _level: Int,
+  tables tables: table_store.Tables,
+  gear gear: Gear,
+  level level: Int,
 ) -> Result(List(#(UnitProperty2Id, Float)), Nil) {
-  panic as "shape: #586 gear.bases is not built"
+  use health <- result.map(max_health(tables:, gear:, level:))
+  let defaults = unit_properties.defaults(tables:)
+  let properties = gear.properties
+  let #(capacity, mitigation, regen, reboot) = case properties.shield {
+    Some(Shield(capacity_max:, mitigation_max:, regen_percent:, reboot_time_ms:)) -> #(
+      capacity_max,
+      mitigation_max,
+      regen_percent,
+      int.to_float(reboot_time_ms),
+    )
+    None -> #(
+      default_of(defaults:, id: unit_properties.shield_capacity_max),
+      default_of(defaults:, id: unit_properties.shield_mitigation_max),
+      default_of(defaults:, id: unit_properties.shield_regen_percent),
+      default_of(defaults:, id: unit_properties.shield_reboot_time),
+    )
+  }
+  [
+    #(7, int.to_float(health)),
+    #(35, properties.assault_rating),
+    #(36, properties.support_rating),
+    #(41, capacity),
+    #(42, properties.armor),
+    #(175, mitigation),
+    #(176, regen),
+    #(178, reboot),
+  ]
+  |> list.map(fn(pair) { #(UnitProperty2Id(pair.0), pair.1) })
+}
+
+/// The worn shield's capacity, which is stat 20 of the player's unit when it is created:
+/// none with no shield worn (`player.level1_gear_properties`).
+pub fn shield_capacity(gear gear: Gear) -> Option(Int) {
+  option.map(gear.properties.shield, fn(shield) {
+    float.round(shield.capacity_max)
+  })
+}
+
+/// One warning for each worn item `gear` lists unread that `known`, the unread items
+/// already warned of, does not list: the item and why it gives no properties. Gear with a
+/// budget or a stat is the open issue "Gear with a budget or a stat gives its properties"
+/// (#626).
+pub fn unread_warnings(
+  gear gear: Gear,
+  known known: List(#(Item2Id, ItemPropertyError)),
+) -> List(String) {
+  let known_ids = list.map(known, fn(unread) { { unread.0 }.value })
+  gear.unread
+  |> list.filter(fn(unread) { !list.contains(known_ids, { unread.0 }.value) })
+  |> list.map(fn(unread) {
+    let #(item2_id, error) = unread
+    "the worn item "
+    <> int.to_string(item2_id.value)
+    <> " gives no properties: "
+    <> item_property.describe(error:)
+    <> case error {
+      item_property.TwoShields -> ""
+      item_property.NoRow(..)
+      | item_property.Unread(..)
+      | item_property.NoCurveValue(..) ->
+        " (open issue 626, gear with a budget or a stat gives its properties)"
+    }
+  })
+}
+
+/// The UnitProperty2 defaultValue of a property the player's rules read; the load
+/// refuses tables without its row (genesis_prime/game/unit_properties).
+fn default_of(
+  defaults defaults: List(#(UnitProperty2Id, Float)),
+  id id: UnitProperty2Id,
+) -> Float {
+  let assert Ok(default) = list.key_find(defaults, id)
+    as "the load checks that UnitProperty2 has the shield properties' rows"
+  default
 }

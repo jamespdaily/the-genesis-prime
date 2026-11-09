@@ -49,7 +49,7 @@ pub const absorption_stat = 22
 
 /// The UnitProperty2 id of Base Health, the property Unit:GetMaxHealth reads
 /// (0x1404584b0).
-pub const base_health_property = 7
+const base_health_property = 7
 
 /// Where the health of a unit stood at a spawn comes from. `Recorded` is the world
 /// database's stat 0, which the 0x262 sends as property 7 too, since the client's

@@ -83,6 +83,7 @@ pub fn from_entry(effect: world_entry.Effect) -> Decided {
     world_entry.WatchMap(map:, incarnation:) -> WatchesMap(map:, incarnation:)
     world_entry.Life(effects:) -> Lives(effects:)
     world_entry.StartPassive(base:) -> StartsPassive(base:)
+    world_entry.Warn(text:) -> Warning(text:)
   }
 }
 
