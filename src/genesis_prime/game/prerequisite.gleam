@@ -1133,7 +1133,7 @@ fn condition_decided(
     )
     // The gap: the server holds no counted-targets mask yet, so no target is counted,
     // which passes comparison 2 only. The mask and what sets it belong to the issue
-    // "Checklist objectives progress (objective types 14, 18, 10, 27 and 28)".
+    // "Checklist objectives progress (objective types 14, 18, 10, 27 and 28)" (#599).
     TargetCounted(comparison:) -> #(rolls, case comparison {
       Found -> Fails
       NotFound -> Passes

@@ -46,6 +46,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
+import planted_table.{Integer}
 import prerequisite_support
 import quest_support
 import world_entry_support
@@ -488,6 +489,63 @@ pub fn an_objective_progress_condition_compares_the_client_progress_test() -> Ni
     as "it fails for an accepted quest whose objective 0 is at 0: not at 1, and not state 3"
   assert row_9207_for(log_of(rows: [])) == Fails
     as "it fails when the quest is not in the log"
+}
+
+pub fn a_percent_objective_of_count_one_or_less_still_scales_its_raw_progress_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let quest = quest_support.daily
+  let in_log = fn(raw) {
+    log_of(rows: [accepted(quest:, done_mask: 0, progress: [raw])])
+  }
+  assert progress_of(index: 0, quest:, log: in_log(1000)) == [1]
+    as "objective 1961 is a kill (type 2, count 1, flag 0x200 clear): the client scales raw 1000 by 0.001 and its needed count 1 (0x1406113b0 scales above raw 1 with no count test; 0x140551840 gives the count when it is 1 or less)"
+  assert progress_of(index: 0, quest:, log: in_log(999)) == [0]
+    as "raw 999 reads trunc(1 x 0.999) = 0"
+  // No client row holds a percent kind objective of count 0, so one is made by
+  // editing objective 1961.
+  use tables <- fixture_tables.changed(
+    table: "QuestObjective",
+    id: quest_support.ordinary_objective,
+    with: [#("count", Integer(0))],
+  )
+  let assert Ok(counting_nothing) = quest_log.quest_of(tables:, id: quest)
+    as "the edited tables hold the quest"
+  let assert Ok(log) =
+    quest_log.from_rows(
+      rows: [accepted(quest:, done_mask: 0, progress: [1000])],
+      tables:,
+    )
+    as "the log is one the client takes"
+  assert quest_log.objective_progress(log:, quest: counting_nothing, index: 0)
+    == 0
+    as "a count of 0 needs 0: raw 1000 scales to trunc(0 x 1) = 0"
+}
+
+pub fn an_entry_placeholder_replaces_the_quests_type_31_slot_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let quest = quest_support.daily_with_a_placeholder
+  let named = fn(placeholder, raw) {
+    log_of(rows: [
+      quest_support.active(
+        quest_id: quest,
+        state: 1,
+        placeholder:,
+        tracked: False,
+        done_mask: 0,
+        progress: [raw],
+      ),
+    ])
+  }
+  assert progress_of(index: 0, quest:, log: named(0, 100)) == [100]
+    as "with no placeholder the slot is the table's objective 9461 (type 31): raw 100 is read as it is"
+  assert progress_of(index: 0, quest:, log: named(2073, 100)) == [10]
+    as "an entry naming objective 2073 (a kill, type 2, count 12, flag 0x200 clear) puts that row in the slot (0x1405fbdc0: the QuestObjective row replaces the placeholder), so raw 100 scales to 100 x 0.1 = 10"
+  assert progress_of(index: 0, quest:, log: named(6486, 2)) == [2]
+    as "an entry naming objective 6486 (flag 0x200) keeps a count"
+  assert state_of(quest:, log: named(0, 0)) == [1]
+    as "the table's slot has no flag 0x20 and is not done"
+  assert state_of(quest:, log: named(2072, 0)) == [2]
+    as "an entry naming objective 2072 (flags 0x20, which the client's state skips) puts it in the slot, so every objective that counts is done and the state reads 2 (0x1405fbc40)"
 }
 
 // ---- 5: type 94 ----

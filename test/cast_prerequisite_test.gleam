@@ -58,9 +58,14 @@ fn in_combat() -> Prerequisite {
   prerequisites.single(id: 903, condition: #(28, 1, 0, 0))
 }
 
-/// A row with a condition of a type the server does not read (type 7, an achievement; Prerequisite.prerequisiteTypeId.7).
+/// A row with a condition of a type the server does not read.
 fn unread() -> Prerequisite {
-  prerequisites.single(id: 41_834, condition: #(7, 1, 10_518, 1))
+  prerequisites.single(id: 41_834, condition: #(
+    prerequisites.unread_type(),
+    1,
+    10_518,
+    1,
+  ))
 }
 
 /// A spell of base 1 with these cast conditions.

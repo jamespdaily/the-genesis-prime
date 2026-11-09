@@ -72,7 +72,7 @@ import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/time/calendar.{Date, January, TimeOfDay}
 import gleam/time/duration
@@ -89,12 +89,15 @@ pub opaque type QuestLog {
 /// What the character has of one quest.
 type Entry {
   /// In the client's active list (opcode.0x35f): accepted or achieved, with the
-  /// placeholder objective's id (0 for none), whether it is tracked, the done mask
-  /// (a bit for each of the six objectives), the progress of each objective and
-  /// the time left of the quest and of each objective, in milliseconds.
+  /// placeholder objective's id (0 for none) and, for a quest with a type 31 slot,
+  /// that objective's row, which stands in the slot (0x1405fbdc0), whether it is
+  /// tracked, the done mask (a bit for each of the six objectives), the progress of
+  /// each objective and the time left of the quest and of each objective, in
+  /// milliseconds.
   Active(
     state: ActiveState,
     placeholder_objective_id: Int,
+    placeholder: Option(Objective),
     tracked: Bool,
     done_mask: Int,
     progress: List(Int),
@@ -183,10 +186,16 @@ fn entry_of(
         1 -> Accepted
         _ -> Achieved
       }
-      use Nil <- result.map(active_taken(quest:, active:, tables:, refuse:))
+      use placeholder <- result.map(active_taken(
+        quest:,
+        active:,
+        tables:,
+        refuse:,
+      ))
       Active(
         state:,
         placeholder_objective_id: active.placeholder_objective_id,
+        placeholder:,
         tracked: active.tracked,
         done_mask: active.done_mask,
         progress: active.progress,
@@ -231,17 +240,17 @@ fn is_placeholder(
   }
 }
 
-/// Whether the client's state setter takes the active columns for the quest: one
-/// progress value for each of its objectives, and, for a quest with a type 31
-/// slot, a placeholder that is 0 or a QuestObjective row, which it puts in the
-/// slot. For a quest with no such slot it does not look at the placeholder
-/// (0x1405fbdc0).
+/// The row the client's state setter puts in the quest's type 31 slot, when it takes
+/// the active columns for the quest: one progress value for each of its objectives,
+/// and, for a quest with a type 31 slot, a placeholder that is 0 (no row) or a
+/// QuestObjective row. For a quest with no such slot it does not look at the
+/// placeholder (0x1405fbdc0).
 fn active_taken(
   quest quest: Quest2,
   active active: store.ActiveQuest,
   tables tables: table_store.Tables,
   refuse refuse: fn(Reason) -> Refused,
-) -> Result(Nil, Refused) {
+) -> Result(Option(Objective), Refused) {
   let slots = objectives(quest:)
   use <- bool.guard(
     list.length(active.progress) != list.length(slots),
@@ -253,7 +262,7 @@ fn active_taken(
     ),
   )
   case active.placeholder_objective_id {
-    0 -> Ok(Nil)
+    0 -> Ok(None)
     placeholder -> {
       let has_slot =
         list.any(slots, fn(slot) { is_placeholder(objective: slot, tables:) })
@@ -263,7 +272,8 @@ fn active_taken(
       {
         True, Error(Nil) ->
           Error(refuse(NoPlaceholderRow(objective_id: placeholder)))
-        True, Ok(_) | False, _ -> Ok(Nil)
+        True, Ok(row) -> Ok(Some(objective_of(tables:, row:)))
+        False, _ -> Ok(None)
       }
     }
   }
@@ -317,6 +327,7 @@ pub fn rows(log log: QuestLog) -> List(QuestRow) {
         progress:,
         quest_ms_left:,
         objective_ms_left:,
+        ..,
       ) ->
         QuestRow(
           quest_id:,
@@ -451,6 +462,7 @@ fn active_entry(quest_id quest_id: Int, entry entry: Entry) -> QuestActive {
     progress:,
     quest_ms_left:,
     objective_ms_left:,
+    ..,
   ) = entry
     as "only active entries are listed"
   let tracked_bit = case tracked {
@@ -619,19 +631,49 @@ pub fn quest_of(
   )
   use objectives <- result.map(
     list.try_map(objectives(quest: row), fn(objective_id) {
-      use objective <- result.map(
+      use row <- result.map(
         quest_objective.get(tables:, id: QuestObjectiveId(objective_id))
         |> result.replace_error(NoObjectiveRow(objective_id:)),
       )
-      Objective(
-        type_: objective.type_,
-        flags: objective.flags,
-        count: objective.count,
-        checklist: is_checklist(tables:, objective:),
-      )
+      objective_of(tables:, row:)
     }),
   )
   Quest(id:, objectives:)
+}
+
+/// One QuestObjective row as the client keeps it.
+fn objective_of(
+  tables tables: table_store.Tables,
+  row row: quest_objective.QuestObjective,
+) -> Objective {
+  Objective(
+    type_: row.type_,
+    flags: row.flags,
+    count: row.count,
+    checklist: is_checklist(tables:, objective: row),
+  )
+}
+
+/// The quest as the log's entry holds it: an active entry's placeholder row stands in
+/// the quest's type 31 slot (0x1405fbdc0), whatever its type, flags and count.
+fn as_logged(log log: QuestLog, quest quest: Quest) -> Quest {
+  case dict.get(log.entries, quest.id) {
+    Ok(Active(placeholder: Some(placeholder), ..)) -> {
+      let #(before, from_the_slot) =
+        list.split_while(quest.objectives, fn(objective) {
+          objective.type_ != placeholder_type
+        })
+      case from_the_slot {
+        [_, ..after] ->
+          Quest(
+            ..quest,
+            objectives: list.flatten([before, [placeholder], after]),
+          )
+        [] -> quest
+      }
+    }
+    Ok(Active(..)) | Ok(Completed(..)) | Ok(Known(..)) | Error(Nil) -> quest
+  }
 }
 
 /// Whether an objective counts its progress as bits (`0x1405517a0`): types 10, 13, 14
@@ -665,6 +707,7 @@ fn is_checklist(
 /// when every objective without flag 0x20 is done, and a quest with no objectives is
 /// then achieved at once.
 pub fn state(log log: QuestLog, quest quest: Quest) -> Int {
+  let quest = as_logged(log:, quest:)
   case dict.get(log.entries, quest.id) {
     Error(Nil) -> 0
     Ok(Completed(..)) -> 3
@@ -702,6 +745,7 @@ pub fn objective_done(
   quest quest: Quest,
   index index: Int,
 ) -> Bool {
+  let quest = as_logged(log:, quest:)
   use <- bool.guard(when: index >= list.length(quest.objectives), return: False)
   case dict.get(log.entries, quest.id) {
     Ok(Completed(..)) -> True
@@ -717,6 +761,7 @@ pub fn objective_open(
   quest quest: Quest,
   index index: Int,
 ) -> Bool {
+  let quest = as_logged(log:, quest:)
   let in_the_active_list = case dict.get(log.entries, quest.id) {
     Ok(Active(..)) -> True
     Ok(Completed(..)) | Ok(Known(..)) | Error(Nil) -> False
@@ -760,21 +805,23 @@ fn reachable(log log: QuestLog, quest quest: Quest, index index: Int) -> Bool {
   }
 }
 
-/// The objective types the client shows and judges as a percent when their count is
-/// above 1 and flag 0x200 is clear (`0x140551840`): 2, 8, 15, 16 and 46.
-fn is_percent(objective objective: Objective) -> Bool {
+/// The objective types whose raw progress is thousandths of completion when flag 0x200
+/// is clear (`0x1406113b0`): 2, 8, 15, 16 and 46.
+fn is_percent_kind(objective objective: Objective) -> Bool {
   case objective.type_ {
     2 | 8 | 15 | 16 | 46 ->
-      objective.count > 1
-      && !has_flag(flags: objective.flags, flag: counted_flag)
+      !has_flag(flags: objective.flags, flag: counted_flag)
     _ -> False
   }
 }
 
-/// How much progress completes the objective (`0x140551840`): its count, or 100 for a
-/// percent objective.
+/// How much progress completes the objective (`0x140551840`): 100 for a percent kind
+/// objective of a count above 1, else its count.
 fn needed(objective objective: Objective) -> Int {
-  use <- bool.guard(when: is_percent(objective:), return: 100)
+  use <- bool.guard(
+    when: is_percent_kind(objective:) && objective.count > 1,
+    return: 100,
+  )
   objective.count
 }
 
@@ -786,31 +833,29 @@ pub fn objective_progress(
   quest quest: Quest,
   index index: Int,
 ) -> Int {
+  let quest = as_logged(log:, quest:)
   case list.drop(quest.objectives, index), dict.get(log.entries, quest.id) {
     [], _ -> 0
     [objective, ..], Ok(Completed(..)) -> needed(objective:)
     [objective, ..], Ok(Active(progress:, ..)) ->
-      in_log_progress(objective:, stored: nth(of: progress, index:))
+      in_log_progress(
+        objective:,
+        stored: list.drop(progress, index) |> list.first |> result.unwrap(0),
+      )
     _, Ok(Known(..)) | _, Error(Nil) -> 0
   }
 }
 
-fn nth(of values: List(Int), index index: Int) -> Int {
-  case list.drop(values, index) {
-    [value, ..] -> value
-    [] -> 0
-  }
-}
-
 /// An objective's progress in a log entry (`0x1406113b0`): the stored value, its set
-/// bits for a checklist, and for a percent objective above 1 the thousandths of
-/// completion as a share of the needed count, worked in 32-bit floats.
+/// bits for a checklist, and above 1 for a percent kind objective, whatever its count,
+/// the thousandths of completion as a share of the needed count, worked in 32-bit
+/// floats.
 fn in_log_progress(objective objective: Objective, stored stored: Int) -> Int {
   let raw = case objective.checklist {
     True -> set_bits(of: stored)
     False -> stored
   }
-  case raw > 1 && is_percent(objective:) {
+  case raw > 1 && is_percent_kind(objective:) {
     False -> raw
     True -> {
       let share =

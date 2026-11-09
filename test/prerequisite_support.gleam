@@ -9,6 +9,7 @@ import genesis_prime/table/id.{PrerequisiteId, Spell4Id}
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None}
 
@@ -45,6 +46,20 @@ pub fn row(
     value2:,
     localized_text_id_failure: 0,
   )
+}
+
+/// A condition type the server does not read: the lowest of 1 to 300 that
+/// `prerequisite.is_read` refuses.
+pub fn unread_type() -> Int {
+  let lowest =
+    int.range(from: 300, to: 0, with: 0, run: fn(lowest, type_id) {
+      case prerequisite.is_read(type_id:) {
+        True -> lowest
+        False -> type_id
+      }
+    })
+  assert lowest > 0 as "some condition type below 301 is not read"
+  lowest
 }
 
 /// The prerequisite of a row with one condition, as (type, comparison, objectId,

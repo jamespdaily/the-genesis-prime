@@ -30,6 +30,7 @@ import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import gleam/string
@@ -181,24 +182,25 @@ pub fn both_gates_of_a_proxy_must_pass_test() -> Nil {
 
 pub fn a_gate_of_a_type_the_server_does_not_read_starts_nothing_and_leaves_one_debug_line_test() -> Nil {
   use <- owned_test.run(5000)
+  let unread = prerequisite_support.unread_type()
   let spell =
     spell_with(
       proxies: [
         gated_on([
-          prerequisite_support.single(id: 4301, condition: #(7, 1, 0, 1)),
+          prerequisite_support.single(id: 4301, condition: #(unread, 1, 0, 1)),
         ]),
       ],
       gains: [],
     )
   let effects = pressed(spell:, caster: in_combat(), rolls: [])
   assert children_started(effects) == 0
-    as "Prerequisite 4301 is type 7, an achievement, which the server does not read: the client would decide it, the server cannot, so the Proxy does not start (Prerequisite.prerequisiteTypeId.7)"
+    as "Prerequisite 4301 holds a type the server does not read: the client would decide it, the server cannot, so the Proxy does not start"
   let lines = debug_lines(effects)
   assert list.length(lines) == 1
   assert list.all(lines, fn(line) {
     string.contains(line, "Spell4 99")
     && string.contains(line, "prerequisite 4301")
-    && string.contains(line, "of type 7")
+    && string.contains(line, "of type " <> int.to_string(unread))
   })
     as "one line names the child, the prerequisite and its type"
 }
