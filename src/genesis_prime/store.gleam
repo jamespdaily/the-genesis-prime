@@ -178,8 +178,9 @@ pub type NewItem {
 
 /// A character to make, from a create request and the CharacterCreation row it
 /// names: the row gives the gender (its sex), race, class and faction, its
-/// start the place (genesis_prime/game/start_place) and its experience the
-/// level (genesis_prime/game/level). `starting_items` are the items the
+/// start the place (genesis_prime/game/start_place) and its experience, which
+/// the character is stored with and which makes its level
+/// (genesis_prime/game/level). `starting_items` are the items the
 /// character holds from its first entry, stored with the character.
 pub type NewCharacter {
   NewCharacter(
@@ -189,6 +190,7 @@ pub type NewCharacter {
     class_id: ClassId,
     faction_id: Int,
     level: Int,
+    experience: Int,
     path: Int,
     place: Place,
     look: List(LookEntry),
@@ -229,7 +231,10 @@ pub type MoveRequest {
   /// the player has, 0 while it is dead, and `None` when there is none to keep,
   /// which leaves nothing saved, so the next entry is alive at full health. A
   /// health the table refuses, below 0, is `HealthRefused`. The character's
-  /// quest log, `quests`, is the whole log: the same statement writes the rows
+  /// `experience` and the `level` it makes are written by the same statement, so
+  /// the two stand together after a camp and a new login; an experience the
+  /// table refuses, below 0, is `ExperienceRefused`. The character's quest log,
+  /// `quests`, is the whole log: the same statement writes the rows
   /// that changed and deletes the rows it no longer holds, both under the same
   /// fence, so a refused save changes no quest row. A row a check of the
   /// character_quest table refuses is `QuestLogRefused`, which no log the rule
@@ -241,6 +246,8 @@ pub type MoveRequest {
     save_sequence: Int,
     place: Place,
     health: Option(Int),
+    experience: Int,
+    level: Int,
     quests: List(QuestRow),
   )
 }
@@ -332,7 +339,9 @@ pub type Answer {
 pub type WorldAnswer {
   /// The account's character, taken by this login, whose `session_epoch` is
   /// `session_epoch` after the raise, the health its last save kept
-  /// (`saved_health`: `None` when none was saved) and the items it holds, by
+  /// (`saved_health`: `None` when none was saved), the experience its last save
+  /// or its creation kept (`saved_experience`: `None` when none was saved, which
+  /// enters at the least experience of its level) and the items it holds, by
   /// location then bag index (none for a character with no stored items) and
   /// the rows of its quest log, in quest id order (none for a character with no
   /// quest). The rows are read in the transaction that raised the epoch, so no
@@ -342,6 +351,7 @@ pub type WorldAnswer {
     character: Character,
     session_epoch: SessionEpoch,
     saved_health: Option(Int),
+    saved_experience: Option(Int),
     items: List(HeldItem),
     quests: List(QuestRow),
   )
@@ -370,6 +380,10 @@ pub type MoveAnswer {
   /// which the rule never asks to keep below 0: a bug of the server's, so
   /// nothing was saved, neither the health nor the place beside it.
   HealthRefused
+  /// The database refused the experience (`character_experience_is_not_negative`),
+  /// which the rule never asks to keep below 0: a bug of the server's, so
+  /// nothing was saved, neither the experience nor the place beside it.
+  ExperienceRefused
 }
 
 /// What the store answers the player's items.

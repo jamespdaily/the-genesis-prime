@@ -3809,6 +3809,7 @@ fn is_targeted_by(event event: game_client.FightEvent, unit unit: Int) -> Bool {
     game_client.Targeted(unit_id:, ..) -> unit_id == unit
     game_client.Threatens(..)
     | game_client.InCombat(..)
+    | game_client.LevelIs(..)
     | game_client.ShieldIs(..)
     | game_client.InterruptArmorIs(..)
     | game_client.AbsorptionIs(..)
@@ -4268,6 +4269,7 @@ pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_
       game_client.Moves(unit_id:, ..) -> unit_id != dagun
       game_client.Threatens(..)
       | game_client.InCombat(..)
+      | game_client.LevelIs(..)
       | game_client.ShieldIs(..)
       | game_client.InterruptArmorIs(..)
       | game_client.AbsorptionIs(..)

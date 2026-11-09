@@ -19,7 +19,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/player_unit
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import map_support
 import novice_tables
 import place_support
@@ -41,15 +41,22 @@ pub fn loaded(
   character character: Character,
   items items: List(HeldItem),
 ) -> #(world_entry.State, world_entry.Loaded) {
-  loaded_with_quests(tables:, character:, items:, quests: [])
+  loaded_holding(
+    tables:,
+    character:,
+    items:,
+    saved_experience: None,
+    quests: [],
+  )
 }
 
 /// What the store's answer to a play of the character leads to on these tables,
-/// when it holds these items and quest rows.
-pub fn loaded_with_quests(
+/// when it holds these items, saved experience (`None` for none) and quest rows.
+pub fn loaded_holding(
   tables tables: table_store.Tables,
   character character: Character,
   items items: List(HeldItem),
+  saved_experience saved_experience: Option(Int),
   quests quests: List(QuestRow),
 ) -> #(world_entry.State, world_entry.Loaded) {
   let assert Ok(body) = play_character.encode(PlayCharacter(character_id: 42))
@@ -64,6 +71,7 @@ pub fn loaded_with_quests(
         character:,
         session_epoch: character_support.epoch(1),
         saved_health: None,
+        saved_experience:,
         items:,
         quests:,
       ),
@@ -138,7 +146,7 @@ pub fn entry_at(
       z: -560.0,
     )
   let assert #(_, world_entry.Join(state:, ..)) =
-    loaded_with_quests(tables:, character:, items:, quests:)
+    loaded_holding(tables:, character:, items:, saved_experience: None, quests:)
     as "the store holds the character, its place and its level's row"
   let unit =
     unit_support.novice_unit(tables:, character:, place:, unit_id: 1, body: [])

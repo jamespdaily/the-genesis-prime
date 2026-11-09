@@ -148,6 +148,7 @@ import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/chat as connection_chat
 import genesis_prime/game/connection/dropped as connection_dropped
+import genesis_prime/game/connection/experience as connection_experience
 import genesis_prime/game/connection/inventory as connection_inventory
 import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/login as connection_login
@@ -918,6 +919,8 @@ fn stay_sent(
           connection_life.foe_taken(session:, now:, holder:, entered:, fight:)
         client_connection.SentByTarget(answered:) ->
           connection_casting.target_taken(session:, now:, entered:, answered:)
+        client_connection.SentByKill(credit:) ->
+          connection_experience.credited(session:, now:, entered:, credit:)
       }
     Some(_) | None -> Continue(session, [])
   }

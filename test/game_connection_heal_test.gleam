@@ -65,7 +65,8 @@ fn shields(taken taken: ConnectionStep(Request)) -> List(Int) {
           case changed.change {
             unit_stat_change.Shield(UnitStatShield(value:)) -> Ok(value)
             unit_stat_change.InterruptArmor(..)
-            | unit_stat_change.Absorption(..) -> Error(Nil)
+            | unit_stat_change.Absorption(..)
+            | unit_stat_change.Level(..) -> Error(Nil)
           }
         }
         False -> Error(Nil)

@@ -136,3 +136,4 @@ WorldZone	4839	a zone with a Welcome Tutorial row	zone_welcome_test
 WorldZone	4843	a zone with a Welcome Tutorial row	zone_welcome_test
 WorldZone	4872	a zone with a Welcome Tutorial row	zone_welcome_test
 WorldZone	4896	a zone with a Welcome Tutorial row	zone_welcome_test
+Creature2	12909	a Hycrest Farmer Male whose Creature2Difficulty is 0, which has no row	experience_test

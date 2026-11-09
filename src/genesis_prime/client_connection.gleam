@@ -25,6 +25,7 @@ import genesis_prime/connection/encrypted_frame.{type Wrapper, ClientWrapper}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
 import genesis_prime/game/chat_tell.{type Tell as ChatTell}
+import genesis_prime/game/experience.{type Credit}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   type Answered, type Fight, type Tell as StrikeTell,
@@ -240,6 +241,10 @@ pub type News {
   /// The unit's absorption, the sum of its absorb pools: 0x938 of stat 22
   /// (opcode.0x938), written when the viewer's client shows the unit.
   Absorption(absorption: Int)
+  /// The unit's level rose: 0x938 of stat 10 (opcode.0x938), written when the viewer's
+  /// client shows the unit. A player's connection sends it for its own unit when a
+  /// kill's experience crosses a level (genesis_prime/game/experience).
+  Level(level: Int)
   /// The unit holds a crowd-control state: 0x87f with the instance id of the effect the
   /// caster's go listed (opcode.0x87f), written when the viewer's client shows the unit.
   CrowdControlApplied(state: CrowdControlState, instance_id: Int)
@@ -324,6 +329,10 @@ pub type StaySent {
   /// strike its caster told in this stay, which the strike rule takes into the
   /// round it belongs to (genesis_prime/game/strike).
   SentByTarget(answered: Answered)
+  /// What a creature that this connection's player killed with its blow sends it:
+  /// the credit for the kill, told in the stay of the strike that killed it, which
+  /// the experience rule turns into experience (genesis_prime/game/experience).
+  SentByKill(credit: Credit)
 }
 
 /// What an accepted connection keeps beside its rule's own state: who

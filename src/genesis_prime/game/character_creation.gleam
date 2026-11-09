@@ -173,6 +173,7 @@ pub fn check_row(
             class_id: character_creation.class_id(row),
             faction_id: row.faction_id,
             level:,
+            experience: row.xp,
             path: request.path,
             place:,
             look:,
