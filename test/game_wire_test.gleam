@@ -2116,12 +2116,9 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
       message_id: 0x0092,
     )
   game_client.send_world(game: second, message_id: 0x00C0, body: <<>>)
-  let #(_left, second_have) =
-    game_client.read_message(
-      game: second,
-      have: second_have,
-      message_id: 0x0594,
-    )
+  let #(left, second_have) = game_client.next(game: second, have: second_have)
+  assert left.message_id == 0x0594
+    as "the camp returns the client to character select"
   let #(gone, first_have) = game_client.next(game: first, have: first_have)
   assert gone.message_id == 0x0355 as "opcode.0x355: the unit is removed"
   let assert Ok(destroyed) = unit_destroyed.decode(gone.body)
@@ -2202,16 +2199,9 @@ fn four_players() -> #(login_support.Started, List(Seat)) {
 /// burst, so no ping to this connection settles them: a pong comes after only
 /// what this connection took before the ping.
 fn told_of_the_others(seat: Seat) -> Seat {
-  let #(_, have) =
-    game_client.read_until(
-      game: seat.game,
-      have: seat.have,
-      within_ms: 5000,
-      found: fn(frames) {
-        list.count(frames, fn(frame) { frame.message_id == 0x0262 }) >= 3
-      },
-    )
-  Seat(..seat, have:)
+  let seat = wait_for_frame(seat:, message_id: 0x0262).1
+  let seat = wait_for_frame(seat:, message_id: 0x0262).1
+  wait_for_frame(seat:, message_id: 0x0262).1
 }
 
 /// Sends the zone the client's terrain gives (0xF2) and settles the seat: every
@@ -2481,7 +2471,10 @@ pub fn a_target_that_camped_is_not_found_and_is_found_again_after_it_enters_agai
   game_client.send_world(game: target.game, message_id: 0x00BF, body: <<1>>)
   let target = wait_for_frame(seat: target, message_id: 0x0092).1
   game_client.send_world(game: target.game, message_id: 0x00C0, body: <<>>)
-  let target = wait_for_frame(seat: target, message_id: 0x0594).1
+  let #(frame, have) = game_client.next(game: target.game, have: target.have)
+  assert frame.message_id == 0x0594
+    as "the camp returns the client to character select"
+  let target = Seat(..target, have:)
   game_client.whisper(
     game: speaker.game,
     target: "Ann Qu",
@@ -2515,9 +2508,19 @@ pub fn a_target_that_camped_is_not_found_and_is_found_again_after_it_enters_agai
   assert accept.name == "Ann Qu" as "a new entry joins the name group again"
   // The speaker's accept is written before the line is told to the target, so
   // the target's line is waited for, not a pong after the accept.
-  let #(heard, _) = wait_for_frame(seat: target, message_id: 0x01C8)
-  let assert Ok(line) = game_client.heard_line(frame: heard)
+  let #(line, have) =
+    game_client.read_chat(game: target.game, have: target.have)
   assert line.text == "again"
+  // One sender writes to this seat, so a second "again" would arrive before the
+  // next line: the line after it is the next one sent.
+  game_client.whisper(
+    game: speaker.game,
+    target: "Ann Qu",
+    text: "once",
+    chat_message_id: 3,
+  )
+  let #(next_line, _) = game_client.read_chat(game: target.game, have:)
+  assert next_line.text == "once" as "the first whisper was told to it once"
   list.each(seats, fn(seat) { game_client.close(game: seat.game) })
   login_support.stop(started)
 }

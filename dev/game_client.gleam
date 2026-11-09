@@ -723,9 +723,8 @@ pub fn read_kept(
 }
 
 /// Reads until the server writes a message with this id, and gives it with the
-/// bytes kept beyond it. The messages before it are dropped: they are the ones
-/// another connection or a timer may write at any moment, which a test that
-/// reads "the next message" or a count of them would take for the answer.
+/// bytes kept beyond it. Every message before it is dropped, the connection's
+/// own included, so a test that needs those checks them with `next` instead.
 pub fn read_message(
   game game: Game,
   have have: BitArray,
@@ -1244,11 +1243,10 @@ pub fn read_chat(
   game game: Game,
   have have: BitArray,
 ) -> #(HeardLine, BitArray) {
-  let #(frame, rest) = next(game:, have:)
-  case heard_line(frame:) {
-    Ok(line) -> #(line, rest)
-    Error(Nil) -> read_chat(game:, have: rest)
-  }
+  let #(frame, rest) =
+    read_message(game:, have:, message_id: chat_line.message_id)
+  let assert Ok(line) = heard_line(frame:) as "a 0x01C8 shows a line"
+  #(line, rest)
 }
 
 /// Reads until the server answers the line sent with `chat_message_id`: the 0x1c2
