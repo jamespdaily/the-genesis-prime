@@ -68,7 +68,6 @@ import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
 import gleam/set
 import gleam/string
 import owned_test
@@ -103,31 +102,10 @@ fn bank_item() -> HeldItem {
   HeldItem(..chest, item_guid: 9, location: 2, bag_index: 0)
 }
 
-fn alive() -> Life {
-  player_life.new(
-    health: 736,
-    shield: 0,
-    regeneration: player_life_support.regeneration,
-  )
-}
-
-fn dead() -> Life {
-  let #(life, _) =
-    player_life.entering(
-      saved: Some(0),
-      max_health: 736,
-      shield: 0,
-      regeneration: player_life_support.regeneration,
-      place: player_life_support.place(),
-    )
-  assert player_life.state(life:) == player_life.Dead
-  life
-}
-
 fn fighting() -> Life {
   let #(life, _) =
     player_life.threatened(
-      life: alive(),
+      life: player_life_support.alive(),
       unit_id: 7,
       creature_life: 3,
       gone: set.new(),
@@ -199,7 +177,8 @@ fn accepted(
   from from: #(Int, Int),
   to to: #(Int, Int),
 ) -> Moving {
-  let assert Ok(Asks(moving:)) = taken(items:, life: alive(), from:, to:)
+  let assert Ok(Asks(moving:)) =
+    taken(items:, life: player_life_support.alive(), from:, to:)
     as "the move passes every check, so the store is asked"
   moving
 }
@@ -338,49 +317,140 @@ pub fn a_move_the_client_would_refuse_is_refused_with_its_code_test() -> Nil {
   // the item at the source (0 for none).
   let rows = [
     // 0x1403ad100's caller: a dead player or a ghost, Player_CantDoWhileDead.
-    #("dead", dead(), #(1, 0), #(1, 5), 8, 57),
-    #("dead before a locked destination", dead(), #(1, 0), #(100, 0), 8, 57),
+    #("dead", player_life_support.dead(), #(1, 0), #(1, 5), 8, 57),
+    #(
+      "dead before a locked destination",
+      player_life_support.dead(),
+      #(1, 0),
+      #(100, 0),
+      8,
+      57,
+    ),
     // The destination locations 100 to 299 are locked: Item_Locked, checked
     // before the source is looked for.
-    #("destination 100", alive(), #(1, 0), #(100, 0), 8, 32),
-    #("destination 299", alive(), #(1, 0), #(299, 0), 8, 32),
-    #("a locked destination of no item", alive(), #(1, 40), #(150, 0), 0, 32),
+    #("destination 100", player_life_support.alive(), #(1, 0), #(100, 0), 8, 32),
+    #("destination 299", player_life_support.alive(), #(1, 0), #(299, 0), 8, 32),
+    #(
+      "a locked destination of no item",
+      player_life_support.alive(),
+      #(1, 40),
+      #(150, 0),
+      0,
+      32,
+    ),
     // No held item at the source: Params.
-    #("no item at the source", alive(), #(1, 7), #(1, 8), 0, 1),
+    #(
+      "no item at the source",
+      player_life_support.alive(),
+      #(1, 7),
+      #(1, 8),
+      0,
+      1,
+    ),
     // 0x1403ad100: the same slot, a destination location of 300 or more, an
     // equipped bag index above 30 and an inventory index of 96 or more are
     // Params.
-    #("the same slot", alive(), #(1, 0), #(1, 0), 8, 1),
-    #("destination location 300", alive(), #(1, 0), #(300, 0), 8, 1),
-    #("equipped index 31", alive(), #(1, 0), #(0, 31), 8, 1),
-    #("inventory index 96", alive(), #(1, 0), #(1, 96), 8, 1),
+    #("the same slot", player_life_support.alive(), #(1, 0), #(1, 0), 8, 1),
+    #(
+      "destination location 300",
+      player_life_support.alive(),
+      #(1, 0),
+      #(300, 0),
+      8,
+      1,
+    ),
+    #("equipped index 31", player_life_support.alive(), #(1, 0), #(0, 31), 8, 1),
+    #(
+      "inventory index 96",
+      player_life_support.alive(),
+      #(1, 0),
+      #(1, 96),
+      8,
+      1,
+    ),
     // 0x1403ad100 tests the inventory index after the combat and the closed
     // checks, so an index of 96 or more in combat or from the bank is 63 or 2.
     #("in combat, an unequip to index 96", fighting(), #(0, 0), #(1, 96), 1, 63),
-    #("the bank to index 96", alive(), #(2, 0), #(1, 96), 9, 2),
+    #(
+      "the bank to index 96",
+      player_life_support.alive(),
+      #(2, 0),
+      #(1, 96),
+      9,
+      2,
+    ),
     // 0x1403aecd0: in combat a move with an equipped side is refused,
     // Player_CannotWhileInCombat.
     #("in combat, an unequip", fighting(), #(0, 0), #(1, 5), 1, 63),
     #("in combat, an equip", fighting(), #(1, 0), #(0, 0), 8, 63),
     // The bank, a bank bag slot (equipped 21 to 30) and location 10 are not
     // opened by the server: PlayerBusy.
-    #("bank", alive(), #(1, 0), #(2, 0), 8, 2),
-    #("equipped bank bag slot 21", alive(), #(1, 0), #(0, 21), 8, 2),
-    #("equipped bank bag slot 30", alive(), #(1, 0), #(0, 30), 8, 2),
-    #("location 10", alive(), #(1, 0), #(10, 0), 8, 2),
+    #("bank", player_life_support.alive(), #(1, 0), #(2, 0), 8, 2),
+    #(
+      "equipped bank bag slot 21",
+      player_life_support.alive(),
+      #(1, 0),
+      #(0, 21),
+      8,
+      2,
+    ),
+    #(
+      "equipped bank bag slot 30",
+      player_life_support.alive(),
+      #(1, 0),
+      #(0, 30),
+      8,
+      2,
+    ),
+    #("location 10", player_life_support.alive(), #(1, 0), #(10, 0), 8, 2),
     // 0x1403b11b0: the inventory holds 16 slots with no bags worn:
     // Item_BagToSmall.
-    #("inventory index 16", alive(), #(1, 0), #(1, 16), 8, 37),
+    #(
+      "inventory index 16",
+      player_life_support.alive(),
+      #(1, 0),
+      #(1, 16),
+      8,
+      37,
+    ),
     // An item entering location 0 at a slot whose bit its equipped slot flags
     // lack, or at bag slot 17 to 20, is Item_NotValidforSlot; the other item of
     // a swap is checked too when the source is equipped.
-    #("a chest piece at the legs slot", alive(), #(1, 0), #(0, 1), 8, 31),
-    #("a chest piece at bag slot 17", alive(), #(1, 0), #(0, 17), 8, 31),
-    #("a chest piece at bag slot 20", alive(), #(1, 0), #(0, 20), 8, 31),
-    #("the legs swapped with a chest piece", alive(), #(0, 1), #(1, 0), 2, 31),
+    #(
+      "a chest piece at the legs slot",
+      player_life_support.alive(),
+      #(1, 0),
+      #(0, 1),
+      8,
+      31,
+    ),
+    #(
+      "a chest piece at bag slot 17",
+      player_life_support.alive(),
+      #(1, 0),
+      #(0, 17),
+      8,
+      31,
+    ),
+    #(
+      "a chest piece at bag slot 20",
+      player_life_support.alive(),
+      #(1, 0),
+      #(0, 20),
+      8,
+      31,
+    ),
+    #(
+      "the legs swapped with a chest piece",
+      player_life_support.alive(),
+      #(0, 1),
+      #(1, 0),
+      2,
+      31,
+    ),
     // A location the server keeps no items at: Params (server choice).
-    #("location 5", alive(), #(1, 0), #(5, 0), 8, 1),
-    #("location 99", alive(), #(1, 0), #(99, 0), 8, 1),
+    #("location 5", player_life_support.alive(), #(1, 0), #(5, 0), 8, 1),
+    #("location 99", player_life_support.alive(), #(1, 0), #(99, 0), 8, 1),
   ]
   list.each(rows, fn(row) {
     let #(what, life, from, to, guid, code) = row
@@ -398,8 +468,14 @@ pub fn a_move_the_client_would_refuse_is_refused_with_its_code_test() -> Nil {
   assert list.all(
     [
       taken(items:, life: fighting(), from: #(1, 0), to: #(1, 5)),
-      taken(items:, life: alive(), from: #(1, 0), to: #(0, 0)),
-      taken(items:, life: alive(), from: #(1, 0), to: #(1, 15)),
+      taken(items:, life: player_life_support.alive(), from: #(1, 0), to: #(
+        0,
+        0,
+      )),
+      taken(items:, life: player_life_support.alive(), from: #(1, 0), to: #(
+        1,
+        15,
+      )),
     ],
     is_ask,
   )
@@ -408,7 +484,7 @@ pub fn a_move_the_client_would_refuse_is_refused_with_its_code_test() -> Nil {
   let assert Error(NotDecoded(undecoded:)) =
     inventory.take(
       items:,
-      life: alive(),
+      life: player_life_support.alive(),
       tables: fixture_tables.shared(),
       wearer: equip_requirement_support.engineer(),
       bag_slots: 0,
@@ -451,7 +527,13 @@ pub fn gear_with_stats_is_equipped_into_its_slot_test() -> Nil {
       item_proficiencies: 4,
     )
   let assert Ok(Asks(moving:)) =
-    taken_by(wearer:, items:, life: alive(), from: #(1, 1), to: #(0, 0))
+    taken_by(
+      wearer:,
+      items:,
+      life: player_life_support.alive(),
+      from: #(1, 1),
+      to: #(0, 0),
+    )
     as "the move passes every check, so the store is asked"
   assert moves_of(moving)
     == [
@@ -460,7 +542,13 @@ pub fn gear_with_stats_is_equipped_into_its_slot_test() -> Nil {
     ]
     as "the statted chest piece is worn in place of the novice one, which goes to the bag slot it left"
   let assert Ok(Refused(effects:)) =
-    taken_by(wearer:, items:, life: alive(), from: #(1, 1), to: #(0, 1))
+    taken_by(
+      wearer:,
+      items:,
+      life: player_life_support.alive(),
+      from: #(1, 1),
+      to: #(0, 1),
+    )
     as "the chest piece is still refused at the legs slot, bag index 1"
   assert failed_with(effects) == [#(9, 31)]
 }
@@ -472,12 +560,17 @@ pub fn a_held_item_with_no_item_row_ends_the_move_as_a_bug_test() -> Nil {
   // gives Item_BadId 6 only for an id the client could not look up).
   let items = with_spare(99_999_999)
   let assert Error(NoItemRow(item2_id:)) =
-    taken(items:, life: alive(), from: #(1, 1), to: #(0, 0))
+    taken(items:, life: player_life_support.alive(), from: #(1, 1), to: #(0, 0))
     as "an item with no row ends the move, it is not refused as a wrong slot"
   assert item2_id == Item2Id(99_999_999)
     as "the refusal names the item that has no row"
   assert list.all(
-    [taken(items:, life: alive(), from: #(1, 1), to: #(1, 2))],
+    [
+      taken(items:, life: player_life_support.alive(), from: #(1, 1), to: #(
+        1,
+        2,
+      )),
+    ],
     is_ask,
   )
     as "no row matters only for a slot that needs the item's equipped slot flags"
@@ -607,7 +700,7 @@ fn delete_taken(
 ) -> Result(Taken, inventory.Refusal) {
   inventory.take(
     items:,
-    life: alive(),
+    life: player_life_support.alive(),
     tables: fixture_tables.shared(),
     wearer: equip_requirement_support.engineer(),
     bag_slots: 0,
@@ -652,7 +745,13 @@ pub fn a_split_onto_an_empty_slot_is_saved_then_answered_with_the_new_stack_test
   let stack = in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10)
   let items = list.append(held(), [stack])
   let moving =
-    asked(split_taken(items:, life: alive(), guid: 20, to: #(1, 2), count: 3))
+    asked(split_taken(
+      items:,
+      life: player_life_support.alive(),
+      guid: 20,
+      to: #(1, 2),
+      count: 3,
+    ))
   assert moving.guid == 20 as "a refusal would name the stack the player split"
   assert moving.change
     == inventory.Split(source: stack, count: 3, to: ItemPlace(1, 2))
@@ -735,7 +834,7 @@ pub fn a_split_the_client_would_not_send_is_refused_with_its_code_test() -> Nil 
   list.each(rows, fn(row) {
     let #(what, guid, to, count, shown, code) = row
     let assert Ok(Refused(effects:)) =
-      split_taken(items:, life: alive(), guid:, to:, count:)
+      split_taken(items:, life: player_life_support.alive(), guid:, to:, count:)
       as { what <> ": refused, so no ask is made" }
     assert failed_with(effects) == [#(shown, code)]
       as { what <> ": one 0x56A with the code of the check" }
@@ -744,14 +843,14 @@ pub fn a_split_the_client_would_not_send_is_refused_with_its_code_test() -> Nil 
   })
   // The client's split path has no dead or combat check (opcode.0x17d), so a
   // player in either is asked for.
-  list.each([dead(), fighting()], fn(life) {
+  list.each([player_life_support.dead(), fighting()], fn(life) {
     assert is_ask(split_taken(items:, life:, guid: 20, to: #(1, 2), count: 3))
       as "a split in combat or dead is asked for"
   })
   let assert Error(NotDecoded(undecoded:)) =
     inventory.take(
       items:,
-      life: alive(),
+      life: player_life_support.alive(),
       tables: fixture_tables.shared(),
       wearer: equip_requirement_support.engineer(),
       bag_slots: 0,
@@ -943,7 +1042,7 @@ pub fn a_delete_the_client_would_not_send_is_refused_with_its_code_test() -> Nil
   let assert Error(NotDecoded(undecoded:)) =
     inventory.take(
       items:,
-      life: alive(),
+      life: player_life_support.alive(),
       tables: fixture_tables.shared(),
       wearer: equip_requirement_support.engineer(),
       bag_slots: 0,
@@ -964,7 +1063,13 @@ pub fn a_split_merge_or_delete_the_store_did_not_save_is_refused_db_failure_test
     #(
       "split",
       "split",
-      asked(split_taken(items:, life: alive(), guid: 20, to: #(1, 3), count: 2)),
+      asked(split_taken(
+        items:,
+        life: player_life_support.alive(),
+        guid: 20,
+        to: #(1, 3),
+        count: 2,
+      )),
     ),
     #("merge", "merged", accepted(items:, from: #(1, 1), to: #(1, 2))),
     #("delete", "deleted", asked(delete_taken(items:, at: #(1, 1)))),
@@ -1033,7 +1138,7 @@ pub fn an_item_that_is_not_slotted_is_refused_not_valid_for_slot_test() -> Nil {
   // 31. The server took the item's own flags alone and accepted the move.
   let items = worn_with_slot_zero(80_982)
   let assert Ok(Refused(effects:)) =
-    taken(items:, life: alive(), from: #(1, 0), to: #(0, 0))
+    taken(items:, life: player_life_support.alive(), from: #(1, 0), to: #(0, 0))
     as "the item is refused, so the store is not asked"
   assert failed_with(effects) == [#(9, 31)]
     as "one 0x56A with the guid of the item at the source and code 31"
@@ -1049,7 +1154,7 @@ pub fn an_item_whose_type_has_no_slot_row_is_refused_not_valid_for_slot_test() -
   // the missing ItemSlot row first and ended the connection.
   let items = worn_with_slot_zero(84_594)
   let assert Ok(Refused(effects:)) =
-    taken(items:, life: alive(), from: #(1, 0), to: #(0, 0))
+    taken(items:, life: player_life_support.alive(), from: #(1, 0), to: #(0, 0))
     as "the item is refused, not a broken state, and the store is not asked"
   assert failed_with(effects) == [#(9, 31)]
     as "one 0x56A with the guid of the item at the source and code 31"
@@ -1085,10 +1190,12 @@ pub fn gear_the_character_cannot_wear_is_refused_with_its_code_test() -> Nil {
   list.each(rows, fn(row) {
     let #(what, item2_id, bag_index, code) = row
     let result =
-      taken(items: with_spare(item2_id), life: alive(), from: #(1, 1), to: #(
-        0,
-        bag_index,
-      ))
+      taken(
+        items: with_spare(item2_id),
+        life: player_life_support.alive(),
+        from: #(1, 1),
+        to: #(0, bag_index),
+      )
     let assert Ok(Refused(effects:)) = result
       as { what <> ": refused, so the store is not asked and the items stay" }
     assert failed_with(effects) == [#(9, code)]
@@ -1141,7 +1248,7 @@ pub fn a_prerequisite_row_the_tables_lack_ends_the_move_and_the_log_names_it_tes
   let assert Error(refusal) =
     inventory.take(
       items: with_spare(77_689),
-      life: alive(),
+      life: player_life_support.alive(),
       tables: tables_without(table: "Prerequisite", id: 39_240),
       wearer: equip_requirement_support.engineer(),
       bag_slots: 0,
@@ -1168,7 +1275,7 @@ pub fn a_swap_checks_the_other_item_against_the_source_slot_test() -> Nil {
     let result =
       taken(
         items: worn_with_slot_zero(item2_id),
-        life: alive(),
+        life: player_life_support.alive(),
         from: #(0, 0),
         to: #(1, 0),
       )
@@ -1217,12 +1324,12 @@ pub fn a_second_unique_equipped_item_is_refused_unique_test() -> Nil {
   // same Item2 skips the unique test.
   let items = with_two_bags()
   let assert Ok(Refused(effects:)) =
-    taken(items:, life: alive(), from: #(1, 0), to: #(0, 18))
+    taken(items:, life: player_life_support.alive(), from: #(1, 0), to: #(0, 18))
     as "a second bag is refused"
   assert failed_with(effects) == [#(21, 30)]
   assert list.length(effects) == 1 as "nothing else is written or logged"
   let assert Ok(Refused(effects:)) =
-    taken(items:, life: alive(), from: #(1, 0), to: #(0, 17))
+    taken(items:, life: player_life_support.alive(), from: #(1, 0), to: #(0, 17))
     as "a bag onto its own copy is refused as a closed bag slot"
   assert failed_with(effects) == [#(21, 31)]
     as "the unique test is skipped for a destination of the same Item2, the slot fit follows"
@@ -1247,7 +1354,7 @@ pub fn gear_the_character_can_wear_is_equipped_test() -> Nil {
       taken_by(
         wearer:,
         items: worn_with_slot_zero(item2_id),
-        life: alive(),
+        life: player_life_support.alive(),
         from: #(1, 0),
         to: #(0, 0),
       )
@@ -1276,7 +1383,14 @@ fn bagged(
   from from: #(Int, Int),
   to to: #(Int, Int),
 ) -> Result(Taken, inventory.Refusal) {
-  taken_with(wearer: bagger(), bag_slots: 4, items:, life: alive(), from:, to:)
+  taken_with(
+    wearer: bagger(),
+    bag_slots: 4,
+    items:,
+    life: player_life_support.alive(),
+    from:,
+    to:,
+  )
 }
 
 /// The Engineer's seven worn items.
@@ -1423,7 +1537,7 @@ pub fn a_bag_slot_past_the_unlocked_count_is_refused_31_test() -> Nil {
       wearer: bagger(),
       bag_slots: slots,
       items:,
-      life: alive(),
+      life: player_life_support.alive(),
       from: #(1, 1),
       to: #(0, slot),
     )
@@ -1590,7 +1704,7 @@ pub fn a_worn_bag_cannot_be_deleted_test() -> Nil {
   let moving =
     asked(split_taken(
       items: stacked,
-      life: alive(),
+      life: player_life_support.alive(),
       guid: 22,
       to: #(1, 23),
       count: 3,
@@ -1611,7 +1725,7 @@ pub fn a_worn_bag_cannot_be_deleted_test() -> Nil {
     as "opcode.0x111: the new stack is at inventory index 23"
   assert refusal(split_taken(
       items: stacked,
-      life: alive(),
+      life: player_life_support.alive(),
       guid: 22,
       to: #(1, 24),
       count: 3,

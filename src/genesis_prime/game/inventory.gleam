@@ -1220,16 +1220,18 @@ pub fn answered(
       case moving.change {
         Moved(moved:, ..) -> #(moving.items, list.map(moved, Send))
         Merged(source:, target:, count:) -> #(moving.items, [
-          Send(count_changed(
+          Send(count_changed_frame(
             guid: target.item_guid,
             count: target.stack_count + count,
+            reason: stack_split,
           )),
           Send(case count == source.stack_count {
             True -> removed(guid: source.item_guid, reason: stack_split)
             False ->
-              count_changed(
+              count_changed_frame(
                 guid: source.item_guid,
                 count: source.stack_count - count,
+                reason: stack_split,
               )
           }),
         ])
@@ -1251,9 +1253,10 @@ pub fn answered(
             ),
           ]),
           [
-            Send(count_changed(
+            Send(count_changed_frame(
               guid: source.item_guid,
               count: source.stack_count - count,
+              reason: stack_split,
             )),
             Send(item_added_frame(
               item_guid:,
@@ -1299,14 +1302,15 @@ pub fn not_done(change: Change) -> String {
   }
 }
 
-/// The 0x17F that gives a held item's stack its new count, with the reason 0.
-fn count_changed(guid guid: Int, count count: Int) -> Frame {
+/// The 0x17F that gives a held item's stack its new count, with the reason the client
+/// shows the change for.
+pub fn count_changed_frame(
+  guid guid: Int,
+  count count: Int,
+  reason reason: Int,
+) -> Frame {
   let assert Ok(body) =
-    item_count_changed.encode(ItemCountChanged(
-      item_guid: guid,
-      count:,
-      reason: stack_split,
-    ))
+    item_count_changed.encode(ItemCountChanged(item_guid: guid, count:, reason:))
     as "a guid, a count and a reason of 6 bits fit 0x17F"
   Frame(message_id: item_count_changed.message_id, body:)
 }

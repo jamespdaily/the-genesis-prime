@@ -48,9 +48,7 @@ import genesis_prime/step.{type ConnectionEvent, type Event, LogWarning}
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{type Hostile, Hostile}
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
-import gleam/dict
 import gleam/list
 import gleam/option.{None}
 import gleam/set
@@ -65,11 +63,11 @@ const reach = 9.0
 
 /// The player's hit radius (Race.hitRadius, 0x3f99999a) and Dorian Walker's
 /// (Creature2DisplayInfo 25510's hitRadius, 0x3f8ccccd).
-const player_radius = 1.2
+const player_radius = vendor_support.player_radius
 
-const walker_radius = 1.1
+const walker_radius = vendor_support.walker_radius
 
-const walker_unit = 40
+const walker_unit = vendor_support.walker_unit
 
 /// A creature that is Hostile to neither player faction.
 const friendly = Hostile(exile: False, dominion: False)
@@ -486,35 +484,6 @@ pub fn a_vendor_open_the_client_would_refuse_is_refused_with_its_code_test() -> 
     as { what <> " is a debug line the second time" }
 }
 
-/// Dorian Walker as unit 40 in a picture, `gap` from the player's edge, with another
-/// player's unit 9: what the rule reads of the connection.
-fn picture_with_walker(gap gap: Float) -> shown.Picture {
-  let entry = connection_support.entry_place()
-  let place =
-    start_place.moved(
-      place: entry,
-      x: start_place.x(entry),
-      y: start_place.y(entry),
-      z: start_place.z(entry) -. { gap +. player_radius +. walker_radius },
-    )
-  let walker = spawn_support.dorian_walker(number: 1, place:)
-  dict.from_list([
-    #(
-      walker_unit,
-      shown.ShownCreature(
-        creature_id: id.Creature2Id(74_812),
-        path: creature_path.Standing(at: place),
-        life: 4,
-        alive: True,
-        hit_radius: walker.combat.hit_radius,
-        attackable: walker.combat.attackable,
-        hostile_to: friendly,
-      ),
-    ),
-    #(9, shown.ShownPlayer),
-  ])
-}
-
 /// What the rule says of the vendor window for a message and its body, over a picture
 /// with Dorian Walker in reach who is a vendor and a quest giver.
 fn window_after(
@@ -530,7 +499,7 @@ fn window_after(
         faction: shown.Dominion,
         place: connection_support.entry_place(),
       ),
-      picture: picture_with_walker(gap: 1.0),
+      picture: vendor_support.picture_with_walker(gap: 1.0),
       tables: character_tables.shared(),
       vendors: vendor_support.stocking(creature_ids: [74_812]),
       now_ms: 0,

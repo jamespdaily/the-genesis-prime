@@ -438,11 +438,21 @@ fn log_once(
   text text: String,
   logged logged: Set(String),
 ) -> #(Effect, Set(String)) {
+  let #(level, logged) = log_level(key:, logged:)
+  #(Log(level:, text:), logged)
+}
+
+/// The level a reason is logged at: a warning the first time its key is met on the
+/// connection and a debug line after, with the keys met so far.
+pub fn log_level(
+  key key: String,
+  logged logged: Set(String),
+) -> #(LogLevel, Set(String)) {
   let level = case set.contains(logged, key) {
     True -> LogDebug
     False -> LogWarning
   }
-  #(Log(level:, text:), set.insert(logged, key))
+  #(level, set.insert(logged, key))
 }
 
 /// The log line of a declined request: a warning the first time its reason is met,
