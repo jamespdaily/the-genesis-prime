@@ -11158,14 +11158,14 @@ name = "GetUnitActivateSpell"
 statement = "Activates (interacts with) a unit: when the unit's byte 0x34ec is set it first shows tutorial 0x15f. With no activate spell (GetUnitActivateSpell gives 0) it sends message 0xb3 with the unit id. Otherwise it calls 0x14055b0e0 and CastActivateSpell 0x14039c430 (message 0x97), and reports a cast failure unless the result is 0 or 0x13d."
 proof = "Saved C 0x14039d4a0.c (hash 6ba38d868f75acff): 0x140437a10(…, 0x15f, …) under byte 0x34ec; 0x14046c580; SendWorldMessage 0xb3 with unit word 8; else 0x14055b0e0, CastActivateSpell, FindSpell, ReportCastFailure."
 grade = "fairly sure"
-gap = "Who calls it (the click or key path) was not traced."
+gap = "Who calls it: its only direct call is in the MTX chest handler 0x14039d9d0; the other kinds reach it through the handler pointers of the interaction kind table at 0x140c48150."
 name = "ActivateUnit"
 
 ["opcode.0xb3"]
-statement = "Message 0xb3 (179), client to world server: activate a unit that has no activate spell. Body: the unit id, 32 bits. Doors, mailboxes and turrets of the start worlds have no activate spell (Creature2 spell4IdActivate00 0), so activating them sends this."
+statement = "Message 0xb3 (179), client to world server: activate a unit that has no activate spell. Body: the unit id, 32 bits. Mailboxes and turrets of the start worlds have no activate spell (Creature2 spell4IdActivate00 0), so activating them sends this. A unit of creation type 4 (a door) is activated when its current interaction kind is 3 (Door) or 2 (ExplorerDoor). A door whose uiFlags has bit 0x80 (every door of the start worlds) gets neither kind, unless the player is an Explorer and the creature is in the Explorer door map; then a click sends nothing."
 proof = "Registered in 0x14006c290 line 320: 0xb3, a 4-byte record, writer WriteUint32Body. Sender 0x14039d4a0 line 20. Creature2 rows 18671, 11276, 13867, 16799 (doors), 10956 (mailbox) and 17075 (turret): spell4IdActivate00 = 0 (table_rows)."
 grade = "fairly sure"
-gap = "The server's expected answer (an interaction message, which depends on the creature) was not traced."
+gap = "The server's expected answer (an interaction message, which depends on the creature) was not traced. What fills the Explorer door map (the table at offset 0x70 of the object at 0x140c65978) and whether the start worlds' doors are in it was not read. A door click was not run live."
 
 ["opcode.0x97"]
 statement = "Message 0x97 (151), client to world server: the player started casting a creature's activate spell. Body: the cast's client id (cast 0x60), 32 bits, then the cast's primary target unit id (cast 0x158), 32 bits. The client does not wait for a reply. The cast was started locally as an activate cast (info 0x54 = 1), so the server's spell start for it should set 0x7ff's activate bit. The collectible of world 426 (Creature2 12919) has activate spell 1817, cast time 2000 ms and range 5; the portal 70172 has spell 44214."
@@ -11686,3 +11686,72 @@ statement = "An ability item (message 0x111 at location 4) keeps only the low 32
 proof = "Disassembly of WildStar64.exe (llvm-objdump): FindHeldItemByGuid 0x1403acbb0 keeps the 64-bit guid in rbp (0x1403acbc6 mov rbp, rdx), calls each list entry's vtable slot 0x30 (0x1403acbe4 call [rax+0x30]) and compares with 0x1403acbe7 cmp rax, rbp; the six map searches 0x1403ae860 do the same (0x1403ae894 call [rax+0x30], 0x1403ae897 cmp rax, rbp). Its object is game + 0xa0 at every caller (saved C 0x1403b7300, hash e9b6b6af37d00314: FindHeldItemByGuid(param_1 + 0xa0, *param_2), a 64-bit guid), and it reads only +0x4, +0x10 and the maps at +0x18..+0x90 (each count +4, array +0x10), i.e. game + 0xa0 to game + 0x140. The vtable slot 0x30 of both item classes (ordinary 0x140b6c7b0, set by 0x140569a60; ability 0x140b6cf50, set by AddHeldItem 0x1403b77d0) is 0x1401c5650, bytes 48 8b 41 18 c3 (mov rax, [rcx+0x18]; ret). Ordinary item: 0x140569ecb mov rax, [rsi] / 0x140569ece mov [rdi+0x18], rax (the record's full 64-bit guid; saved C 0x140569d30, hash 90c9bd90a6f6a3c3, line 75). Ability item, AddHeldItem location-4 branch: 0x1403b78fc mov ecx, [r14] (32-bit load, zero-extends rcx) / 0x1403b7914 mov [rbx+0x18], rcx; the item goes only into the vector at game + 0xa90 (saved C 0x1403b77d0, e9b6b6af37d00314). The vtable 0x140b6cf50 is named only in 0x1403b77d0.c among the saved C. FileHeldItem 0x1403d2e10 (e9b6b6af37d00314) touches only its store (+0x10..+0x90 and FUN_1403d6640 on +0x18..+0x90), with no 0xa90/0x9f0 offset. Its callers by the reference index (client_trace.py 0x1403d2e10) are 0x1403b7300, 0x1403b74e0 and 0x1403b7d40, which file an item that FindHeldItemByGuid returned (or 0), and AddHeldItem, whose call 0x1403b7a3e is in the branch for locations other than 4. The functions whose saved C reads game + 0xa90 (a grep for '+ 0xa90)', 44 files) index it by bag slot; the only ones that call the vtable slot 0x30 call it on an item found in the store by place (FUN_1403ac780(param_1 + 0xa0, ...)): 0x14039ee60 (5c0332ef738ce6d5) line 19, and RunDeferredPlayerAction 0x14039eaf0 (6ba38d868f75acff) line 44."
 grade = "fairly sure"
 gap = "That no other client lookup by guid reaches the ability bag rests on a grep of the saved C for '+ 0xa90)', which would miss a pointer to the vector passed under another base. Not emulated. Settled by emulating 0x1403acbb0 after AddHeldItem has added an ability item with guid low 32 bits 1 and an ordinary item with guid 2^32 + 1, looking up 1 (expect null) and 2^32 + 1 (expect the ordinary item), or by a live run that sends a 0x569 for an ordinary item with guid 1 while an ability item's guid is 1."
+
+["0x14039d2c0"]
+statement = "Clicks a unit by id: it finds the unit, reads the unit's current interaction entry (the pointer at its word 0x1908) and does nothing, and sends nothing, when that entry is not active or has no handler. Otherwise, when the player is in range of the unit it calls the entry's handler; when out of range it walks to the unit if the entry's walk-to byte is set, and fails if it is not."
+proof = "Saved C 0x14039d2c0.c (hash 8eb22adb6de47956) lines 47 to 50: the entry is the pointer at unit word 0x1908; byte 4 of the entry (active) == 0 or the handler at offset 0x40 == 0 returns 0 at 0x14039d318 with nothing sent. Lines 75 to 99: 0x1403ebe80 (the range test) nonzero calls the handler at offset 0x40; zero returns an error unless byte 9 (walk-to) is set, then 0x1405592f0 walks. Callers: 0x1404d9450 (jmp at 0x1404d9527) and 0x14077e2c0 (call at 0x14077e38f); 0x14077e2c0 passes the current target's id (word 0x108 of the object at 0x6490)."
+grade = "fairly sure"
+gap = "That 0x1403ebe80's nonzero result means in range was read from its use here, not from its body. Not run live."
+name = "ClickInteraction"
+
+["0x140c48150"]
+statement = "The interaction kind table: 102 entries (kinds 0 to 101), 0x48 bytes each. An entry holds the kind, whether it is active, whether it is allowed on a dead unit, whether it is allowed on a hostile unit, whether the player walks to the unit first, a flag, the range, an overhead model, two cursors, a text id, a UTF-16 name and the handler. Each unit keeps its own copy of the entries from its word 0x1910 and a pointer to its current entry at 0x1908; the unit's chooser sets an entry active by setting the byte at word 0x1914 + 0x48 x kind. The handlers: ActivateUnit for kinds 2, 3, 10, 12, 24, 25, 28, 31, 32, 34, 35, 36, 38, 39, 50 and 74; the MTX chest handler for kind 1; message 0x7ea for kinds 8, 29, 30, 33, 40 to 43, 45 to 49, 65 to 73, 75, 76, 79 to 82 and 84 to 88; the talk-to-unit sender for kinds 11, 13 to 23, 37 and 51 to 63; none for kind 0 and kinds 89 to 101."
+proof = "Entry layout from ClickInteraction 0x14039d2c0 (saved C, hash 8eb22adb6de47956): offset 0 kind (0x65 is None), 4 active, 9 walk-to, 0xd flag, 0x10 range, 0x40 handler; the other offsets (5 dead, 6 hostile, 0x18 overhead model, 0x20 and 0x28 cursors, 0x30 text id, 0x38 name) are from the table's initial data. The chooser 0x140479560 sets byte 0x1914 + 0x48 x kind to 1 (lines 212, 216, 331 of its saved C). Handlers: ActivateUnit 0x14039d4a0, the MTX chest handler 0x14039d9d0 (referenced by the pointer at 0x140c481d8), the message 0x7ea sender 0x14039d5a0 and the talk-to-unit sender 0x14039d5d0; the table is rebuilt by 0x14046c300."
+grade = "fairly sure"
+gap = "The kind to handler assignments and the offsets other than those read in ClickInteraction come from a read of the table's bytes that was not repeated; the table's initial active bytes were not listed. Not run live."
+
+["0x14039d9d0"]
+statement = "The handler of interaction kind 1 (MTX chest). For each of the creature's two key words (item2IdMTXKey00 and 01) it asks whether the player has that key; when one is found it calls ActivateUnit. Otherwise it looks up the key's store offer and opens it, and logs when there is none."
+proof = "Saved C 0x14039d9d0.c (hash e9b6b6af37d00314): the loop over creature words 0x88 and 0x8c (Creature2 rows 360 and 364) calls 0x1403ac590 with 0x406 and the key; nonzero calls ActivateUnit 0x14039d4a0 (call at 0x14039dad3); else 0x14044fc40 looks up an offer, 0x1403fa580 opens it, and LogMessage 0x1401a3130 (category 0x6d) runs when none is found. No function calls it; the pointer at 0x140c481d8 refers to it."
+grade = "guess"
+gap = "What 0x1403ac590 with 0x406 tests (the player holding the key) and what 0x14044fc40 and 0x1403fa580 do are read from their use here, not from their bodies."
+name = "ActivateMTXChest"
+
+["0x14046c6a0"]
+statement = "Tells whether a unit's clicks are locked to the path interaction kinds (1 locked, 0 not). A unit whose word 0x1900 is 2 is never locked. For a unit whose creature uiFlags has bit 0x80 it is locked unless one of eleven kinds in the list at 0x140c593f0 is active on the unit. For any other unit it is locked only when the unit is of type 0x1e and its word 0x1b8 is not 3."
+proof = "Saved C 0x14046c6a0.c (hash 8eb22adb6de47956): unit word 0x1900 != 2, then byte 0x28 bit 0x80 (the unit's word 0x28 is the creature's word 0x25, uiFlags: SetUnitCreature 0x140458a40 saved C line 90), then the loop over 11 entries of the list at 0x140c593f0 testing byte 0x1914 + 0x48 x kind, returning 1 when none is set. The chooser 0x140479560 calls it at 0x14047992c and leaves when it returns nonzero, before its Door 3, Spell 50 and Interact 39 kinds."
+grade = "fairly sure"
+gap = "The eleven kinds of the list at 0x140c593f0 were not listed (the decoder's reading names 2, 28 to 35, 89 and 90); the meaning of word 0x1b8 was not read."
+name = "InteractionLockedToPath"
+
+["0x14046c4d0"]
+statement = "Sets the unit's word 0x1900 from its creature's animation state fields: 0 when the creature has neither; when the creature's questAnimStateId (row 324) is not 0 it is 1 if the quest check 0x1405a8b30 answers 0x65 and 2 otherwise; when the creature's prerequisiteIdAnimState (row 328) is not 0 it is 2 if that prerequisite passes and 1 if it does not. A value of 2 lifts the path lock of InteractionLockedToPath."
+proof = "Saved C 0x14046c4d0.c (hash 8eb22adb6de47956): word 0x1900 = 0; creature word 0xa0 != 0 then FUN_1405a8b30 == 0x65 stores 1 and returns, else 2; creature word 0x9c != 0 calls a slot of the object at 0x140c659a0 and stores (result != 0) + 1. Called only from the chooser 0x140479560 (call at 0x14047956d). Reading by Creature2 offsets 324 and 328: FillCreatureInfoBase 0x1404852b0."
+grade = "fairly sure"
+gap = "What 0x1405a8b30 and the prerequisite slot test, and which of the two outcomes pass, were read from their use here only. Not run live."
+name = "SetAnimStatePrerequisiteState"
+
+["0x140722930"]
+statement = "Gives a unit's door interaction kind for the chooser: 3 (Door) when its creature is not in the Explorer door map and its creation type (word 1) is 4; None (0x65) when the creature is not in the map and the type is not 4; for a creature in the map, 3 or None by the map entry's fields and the unit's word 0x1b8."
+proof = "Saved C 0x140722930.c (hash 8eb22adb6de47956): a search of the tree at word 0x70 of the object at 0x140c65978 by the creature id; not found: 3 when word 1 == 4, else 0x65; found: the entry's fields at offsets 4, 8 and 0x10 of its second pointer decide. The chooser calls it at 0x140479b95, after its exit for a locked unit."
+grade = "fairly sure"
+gap = "What each field of the map entry means, and what fills the map, were not read."
+name = "GetDoorInteractionKind"
+
+["0x140722830"]
+statement = "Gives 2 (ExplorerDoor) for a creature in the Explorer door map when the map entry's field 0x10 is 0, or when the player's path object (the object at 0x140c65970) has word 8 equal to 3 and the entry's field 4 is 1, or is 2 with the unit's word 0x1b8 equal to 3 or 0; otherwise None (0x65). For a creature not in the map it returns 3 when its creation type is 4, which the chooser ignores, since it acts only on the result 2."
+proof = "Saved C 0x140722830.c (hash 8eb22adb6de47956): the same map search as GetDoorInteractionKind; found: return 2 when the second pointer's field 0x10 == 0, or when the object at 0x140c65970 is non-null with word 8 == 3 and (field 4 == 1, or field 4 == 2 and unit word 0x1b8 is 3 or 0), else 0x65; not found: 3 when word 1 == 4. The chooser 0x140479560 calls it at 0x140479882 only when that object's word 8 == 3 and the unit's word 0x2c lacks bit 0x20, and sets the kind-2 byte (word 0x19a4) only when the result is 2 (saved C lines 208 to 213)."
+grade = "fairly sure"
+gap = "The map's entries and what fills it were not read, so whether the doors of the start worlds are in it is open. What the unit's word 0x1b8 and the object's word 8 mean (word 8 == 3 is taken as the Explorer path) were not read."
+name = "GetExplorerDoorInteractionKind"
+
+["0x14077e2c0"]
+statement = "A command shortcut handler: with its argument 0 it clicks the current target (ClickInteraction), unless the target is a friendly player and the player's own class has a spell to cast on them (then it starts that instead, 0x140397ce0)."
+proof = "Saved C 0x14077e2c0.c (hash 6ba38d868f75acff) lines 22 to 44: the target id is word 0x108 of the object at 0x6490; FindUnit; unit type (word 0x80) 0x14, GetUnitDispositionTo == 2 (friendly), a spell found by FindSpell: then 0x140397ce0; otherwise 0x14039d2c0 with the target id. Referenced by the pointer at 0x140b6d550; no function calls it."
+grade = "fairly sure"
+gap = "Which command the pointer at 0x140b6d550 belongs to (ActivateTarget by the command list's order is a guess) and what 0x140397ce0 does were not read."
+name = "ActivateTargetCommand"
+
+["0x1404d9450"]
+statement = "Handles a pending action of the player's input: a switch on the pending action's mode (word 0x7f20 of the object, 0 to 9) that, among its modes, clicks a unit by calling ClickInteraction. It does nothing while the player's own unit is dead or a cast, move or other block is on, and raises the UI event CSIKeyPressed when a UI window takes the key."
+proof = "Saved C 0x1404d9450.c (hash e9b6b6af37d00314): the guard on words 0x78, 0x6748, 0x78d8 and 0x78ec; RaiseUiEvent 'CSIKeyPressed'; the switch on word 0x7f20 with the jmp to 0x14039d2c0 at 0x1404d9527. Callers: 0x1404d7a10, 0x1404d8db0, 0x1404d9690, 0x1404d9740 and a jmp at 0x14077f820 (the shortcut at 0x14077f810)."
+grade = "guess"
+gap = "Which mode calls ClickInteraction, which of the callers is the mouse click and which the interact key, and what the other modes do were not read."
+name = "InteractWithUnit"
+
+["0x140479560"]
+statement = "Chooses which interaction kinds a unit offers, by setting the active byte of each (not one single kind). In order: loot kinds (64, 95, 96, 100); the early leaves for a unit tagged by another player, one whose creature uiFlags has bit 0x4000, or one whose word 0x1900 is 1; the path kinds, among them ExplorerDoor 2 for the Explorer path; kind 1 for a unit of type 0x24; then it leaves when InteractionLockedToPath answers 1. A unit that is not locked goes on to Door 3 (creation type 4), the quest and activation kinds, Spell 50, Interact 39, Collect 26 (creation type 8) and Mail 68 (creation type 12). A creature whose uiFlags has bit 0x80 and which is on no path therefore offers none of them."
+proof = "Saved C 0x140479560.c (hash 8eb22adb6de47956): the ExplorerDoor test at lines 208 to 213 (0x140479882), the lock exit at lines 235 to 238 (the call at 0x14047992c, leaving before the Door 3 call at 0x140479b95, Spell 50 at 0x140479d47 and Interact 39 at 0x140479dcd). Creature2 rows 18671, 11276, 13867 and 16799 (doors): CreationTypeEnum 4, uiFlags 175, questAnimStateId 0, prerequisiteIdAnimState 0, activationFlags 0, datacubeId 0, datacubeVolumeId 0, factionId 219 (table_rows); so unit word 0x1900 is 0 and the lock applies. Creature record words: 0x9c prerequisiteIdAnimState (row 328), 0x7c datacubeId (392), 0x80 datacubeVolumeId (396), 0xa0 questAnimStateId (324), word 1 CreationTypeEnum, word 0x25 uiFlags (340): FillCreatureInfoBase 0x1404852b0."
+grade = "fairly sure"
+gap = "The order of the quest and activation kinds after the lock exit, and the early leaves, were read by their labels; the conditions of the helper 0x140571850 (which sets a kind byte on the Explorer path) were not read. A unit's current entry (word 0x1908) is chosen from these bytes elsewhere, and no other writer was searched. Not run live."
+name = "UpdateUnitActivationStates"
