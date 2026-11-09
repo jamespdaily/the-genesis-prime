@@ -28,6 +28,7 @@ import genesis_prime/game/loadout
 import genesis_prime/game/server_proxy
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
+import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, NoHolder, Taken}
 import genesis_prime/login/guid
@@ -106,6 +107,7 @@ pub fn settings() -> game_connection.Settings {
     class_resources: class_resource_support.classes(),
     server_proxies: server_proxy_support.none(),
     zone_welcomes: zone_welcome_support.none(),
+    vendors: vendor.none(),
     numbers: spawn_support.numbers,
   )
 }
@@ -708,6 +710,17 @@ pub fn in_world_with_dev_commands() -> game_connection.State {
       accepted(settings_with_dev_commands()).0,
     ),
     character: world_character(),
+  ).0
+}
+
+/// The connection in the world of an Exile, with its burst taken, made with these
+/// vendors.
+pub fn in_world_stocking(vendors vendors: Vendors) -> game_connection.State {
+  entered_from(
+    in_character_select: in_select_from(
+      accepted(Settings(..settings(), vendors:)).0,
+    ),
+    character: Character(..world_character(), faction_id: spawn.exile_faction),
   ).0
 }
 

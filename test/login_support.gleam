@@ -19,6 +19,7 @@ import genesis_prime/connection/registry
 import genesis_prime/connection/script
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/vendor
 import genesis_prime/game_settings
 import genesis_prime/login/auth_connection
 import genesis_prime/login/guid
@@ -132,6 +133,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
       class_resources: class_resource_support.classes(),
       server_proxies: server_proxy_support.none(),
       zone_welcomes: zone_welcome_support.none(),
+      vendors: vendor.none(),
       numbers: spawn_support.numbers,
     ),
     wire_recorder: None,

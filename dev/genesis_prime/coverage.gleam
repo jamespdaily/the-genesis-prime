@@ -48,6 +48,7 @@ import genesis_prime/dev_exit
 import genesis_prime/game/rating
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_plan
+import genesis_prime/game/vendor
 import genesis_prime/store/worker
 import genesis_prime/table
 import genesis_prime/table/loader/store
@@ -249,7 +250,13 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
                 [
                   "Spawns that start, by world:",
                   ..list.map(
-                    spawn.select(rows:, tables:, formulas:, kinds:).coverage,
+                    spawn.select(
+                      rows:,
+                      tables:,
+                      formulas:,
+                      kinds:,
+                      vendors: vendor.none(),
+                    ).coverage,
                     fn(coverage) { "- " <> spawn.describe_coverage(coverage:) },
                   )
                 ],

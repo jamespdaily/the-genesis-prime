@@ -90,26 +90,9 @@ fn half(value: Int) -> Bits {
   #(16, value)
 }
 
-/// The bytes of the values laid end to end, the first value in the lowest bits
-/// and the last byte padded with zero bits, as the client's bit stream does.
-fn packed(values: List(Bits)) -> BitArray {
-  let #(number, total) =
-    list.fold(values, #(0, 0), fn(state, value) {
-      let #(number, used) = state
-      let #(width, bits) = value
-      #(number + bits * pow2(used), used + width)
-    })
-  let bytes = { total + 7 } / 8
-  <<number:size({ bytes * 8 })-little>>
-}
-
-fn pow2(exponent: Int) -> Int {
-  int.bitwise_shift_left(1, exponent)
-}
-
 /// The body of a 0x637 holding `commands`, each its kind (5 bits) and data.
 fn movement_body(commands: List(#(Int, List(Bits)))) -> BitArray {
-  packed([
+  message_support.packed([
     u32(0x1234),
     u32(list.length(commands)),
     ..list.flat_map(commands, fn(command) { [#(5, command.0), ..command.1] })
@@ -602,7 +585,7 @@ pub fn world_zone_changed_is_two_values_of_15_bits_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_codec(
     name: "opcode.0x63a: the old value and the new value, 15 bits each",
-    body: packed([#(15, 0x1234), #(15, 0x7FFF)]),
+    body: message_support.packed([#(15, 0x1234), #(15, 0x7FFF)]),
     value: WorldZoneChanged(
       old_world_zone_id: 0x1234,
       new_world_zone_id: 0x7FFF,
@@ -616,7 +599,7 @@ pub fn the_answer_to_0xf1_is_values_of_4_1_and_14_bits_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_codec(
     name: "opcode.0xd5: 4, 1 and 14 bits",
-    body: packed([#(4, 0xA), #(1, 1), #(14, 0x2ABC)]),
+    body: message_support.packed([#(4, 0xA), #(1, 1), #(14, 0x2ABC)]),
     value: MovementSendIntervalAnswer(field_1: 0xA, field_2: 1, field_3: 0x2ABC),
     encode: movement_send_interval_answer.encode,
     decode: movement_send_interval_answer.decode,
@@ -627,7 +610,7 @@ pub fn the_move_speed_setting_is_one_32_bit_value_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_codec(
     name: "opcode.0x63b: one 32-bit value",
-    body: packed([u32(2)]),
+    body: message_support.packed([u32(2)]),
     value: MoveSpeedSetting(move_speed: 2),
     encode: move_speed_setting.encode,
     decode: move_speed_setting.decode,
@@ -638,7 +621,7 @@ pub fn the_fall_value_is_one_32_bit_float_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_codec(
     name: "opcode.0xfb: one float of 32 bits, here 2.0",
-    body: packed([u32(0x40000000)]),
+    body: message_support.packed([u32(0x40000000)]),
     value: FallValue(field_1: 0x40000000),
     encode: fall_value.encode,
     decode: fall_value.decode,
@@ -649,7 +632,12 @@ pub fn falling_below_the_floor_is_a_bit_and_the_camera_position_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_codec(
     name: "opcode.0xfc: the no-ground bit, then three floats of 32 bits: 1.0, 2.0 and -3.0",
-    body: packed([bit(1), u32(0x3F800000), u32(0x40000000), u32(0xC0400000)]),
+    body: message_support.packed([
+      bit(1),
+      u32(0x3F800000),
+      u32(0x40000000),
+      u32(0xC0400000),
+    ]),
     value: FellBelowFloor(
       no_ground: 1,
       camera_x: 0x3F800000,
@@ -666,11 +654,11 @@ pub fn the_client_message_module_reads_each_by_its_number_test() -> Nil {
   list.each(
     [
       #(0x0637, movement_body([#(0, [u32(1)])])),
-      #(0x063A, packed([#(15, 1), #(15, 2)])),
-      #(0x00D5, packed([#(4, 1), #(1, 0), #(14, 3)])),
-      #(0x063B, packed([u32(1)])),
-      #(0x00FB, packed([u32(0)])),
-      #(0x00FC, packed([bit(0), u32(0), u32(0), u32(0)])),
+      #(0x063A, message_support.packed([#(15, 1), #(15, 2)])),
+      #(0x00D5, message_support.packed([#(4, 1), #(1, 0), #(14, 3)])),
+      #(0x063B, message_support.packed([u32(1)])),
+      #(0x00FB, message_support.packed([u32(0)])),
+      #(0x00FC, message_support.packed([bit(0), u32(0), u32(0), u32(0)])),
     ],
     fn(entry) {
       let #(id, body) = entry

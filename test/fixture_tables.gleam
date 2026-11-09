@@ -229,9 +229,10 @@ pub fn rows() -> Rows {
   |> dict.from_list
 }
 
-/// What the rows reach, worked out once and only by the tests that select rows
-/// (`closure`, `reached`): the rows of a load alone do not need it.
-fn reach() -> fixture_rows.Reach {
+/// What the rows reach, worked out once: by the first test that selects rows
+/// (`closure`, `reached`), or before the first test when the run's start-up asks
+/// for it. The rows of a load alone do not need it.
+pub fn reach() -> fixture_rows.Reach {
   database_support.once("fixture_tables_reach", fn() {
     let whole_path = folder <> "/" <> fixture_rows.whole_file <> ".tsv"
     let whole =

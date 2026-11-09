@@ -9,7 +9,9 @@ import genesis_prime/game/look
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/unit_properties
+import genesis_prime/game/vendor.{type Vendor}
 import genesis_prime/game/world_entry
+import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_death.{CombatLogDeath}
 import genesis_prime/message/combat_log_entry
@@ -18,6 +20,7 @@ import genesis_prime/message/combat_log_stealth.{CombatLogStealth}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/float32
+import genesis_prime/message/generic_error.{GenericError}
 import genesis_prime/message/half_float
 import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/message/leave_world.{LeaveWorld}
@@ -56,7 +59,11 @@ import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
 import genesis_prime/message/unit_stat_level.{UnitStatLevel}
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_stealth.{UnitStealth}
+import genesis_prime/message/vendor_item.{VendorItem}
+import genesis_prime/message/vendor_items.{type VendorItems, VendorItems}
+import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
 import genesis_prime/step.{type Now}
+import genesis_prime/table/id.{Item2Id}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map
 import genesis_prime/world_map/player_unit
@@ -66,6 +73,7 @@ import genesis_prime/world_map/static_object.{
 import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/int
+import gleam/list
 import gleam/option.{type Option, None, Some}
 
 /// A yes or no as the 1-bit value a message holds it in: 1 for yes.
@@ -528,6 +536,81 @@ pub fn dialog_open_frame(unit_id unit_id: Int) -> Frame {
     unit_dialog_open.encode(UnitDialogOpen(unit_id:, field_2: 0))
     as "a unit id the player's picture holds fits the message's 32 bits"
   Frame(message_id: unit_dialog_open.message_id, body:)
+}
+
+/// 0x90b that opens a vendor's window with its stock (`opcode.0x90b`): one item for each
+/// row in position order, named by its position, with price slots of kind 0 so the client
+/// computes each price from its own tables, and no tabs, which the client shows as General.
+pub fn vendor_items_frame(
+  unit_id unit_id: Int,
+  vendor vendor: Vendor,
+) -> Frame {
+  let items =
+    list.map(vendor.items, fn(stocked) {
+      let Item2Id(entry_id) = stocked.item_id
+      VendorItem(
+        unique_id: stocked.position,
+        kind: 0,
+        entry_id:,
+        currency_type_id: 0,
+        stock_count: 0,
+        prerequisite_id: 0,
+        amount: 0,
+        tab_id: 0,
+        flags: 0,
+        field_10: 0,
+        field_11: 0,
+        price_slot_1: VendorPriceSlot(kind: 0, amount: 0, currency_id: 0),
+        price_slot_2: VendorPriceSlot(kind: 0, amount: 0, currency_id: 0),
+      )
+    })
+  vendor_items_message(VendorItems(
+    unit_id:,
+    tabs: [],
+    items:,
+    buy_multiplier: float32.to_bits(vendor.buy_multiplier),
+    sell_multiplier: float32.to_bits(vendor.sell_multiplier),
+    open: 1,
+    full_list: 1,
+    refuse: 0,
+  ))
+}
+
+/// 0x90b that refuses a vendor request: the client ends the interaction and returns
+/// before it stores the two multipliers (`opcode.0x90b`), so any value is read by no
+/// one; 1.0 is the neutral one. There is no stock.
+pub fn vendor_refused_frame(unit_id unit_id: Int) -> Frame {
+  vendor_items_message(VendorItems(
+    unit_id:,
+    tabs: [],
+    items: [],
+    buy_multiplier: float32.to_bits(1.0),
+    sell_multiplier: float32.to_bits(1.0),
+    open: 1,
+    full_list: 0,
+    refuse: 1,
+  ))
+}
+
+fn vendor_items_message(message: VendorItems) -> Frame {
+  let assert Ok(body) = vendor_items.encode(message)
+    as "a unit id the player's picture holds and a stock of the content load fit the message's fields"
+  Frame(message_id: vendor_items.message_id, body:)
+}
+
+/// 0xbc with no entries, which the client's vendor window reads after the stock
+/// (`opcode.0xbc`): nothing has been sold to a vendor.
+pub fn buyback_list_empty_frame() -> Frame {
+  let assert Ok(body) = buyback_list.encode(BuybackList(entries: []))
+    as "an empty list fits its 32-bit count"
+  Frame(message_id: buyback_list.message_id, body:)
+}
+
+/// 0x106 with the client's code for why an action is refused (`opcode.0x106`).
+pub fn generic_error_frame(code code: Int) -> Frame {
+  let assert Ok(body) = generic_error.encode(GenericError(code:))
+    as "a refusal code of the interaction rule fits the message's 8 bits"
+  Frame(message_id: generic_error.message_id, body:)
 }
 
 /// 0x262 for a creature, as its process built it.

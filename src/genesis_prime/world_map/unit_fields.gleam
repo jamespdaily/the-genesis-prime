@@ -151,12 +151,13 @@ pub fn tail(
 }
 
 /// The tail of a unit the server stands at a spawn, a creature's or a static
-/// object's: stat 0 at `health`, stat 10 at `level` and stat 21 at `interrupt_armor`,
+/// object's: the create flags as given, stat 0 at `health`, stat 10 at `level` and stat 21 at `interrupt_armor`,
 /// each when given, the kind
 /// 2 and kind 14 commands of `standing` (`player_unit.standing`), which place it
 /// at once, Base Health (property 7) at `base_health` when given, no item
 /// visuals, and the rest as given.
 pub fn spawned_tail(
+  create_flags create_flags: Int,
   health health: Option(Int),
   level level: Option(Int),
   interrupt_armor interrupt_armor: Option(Int),
@@ -171,41 +172,46 @@ pub fn spawned_tail(
   server_time_estimate_start server_time_estimate_start: Int,
 ) -> UnitCreateTail {
   let #(position, rotation) = standing
-  tail(
-    stats: option.values([
-      option.map(health, fn(value) {
-        integer_stat(stat_id: health_stat, value:)
-      }),
-      option.map(level, fn(value) { integer_stat(stat_id: level_stat, value:) }),
-      option.map(interrupt_armor, fn(value) {
-        integer_stat(stat_id: interrupt_armor_stat, value:)
-      }),
-    ]),
-    movement_commands: [
-      start_movement.Position(position),
-      start_movement.Rotation(rotation),
-    ],
-    properties: case base_health {
-      Some(value) -> {
-        let bits = float32.to_bits(int.to_float(value))
-        [
-          UnitProperty(
-            property_id: base_health_property,
-            base: bits,
-            value: bits,
-          ),
-        ]
-      }
-      None -> []
-    },
-    item_visuals: [],
-    faction_id:,
-    base_faction_id:,
-    world_object_id:,
-    world_socket_id:,
-    display_info_id:,
-    outfit_info_id:,
-    server_time_estimate_start:,
+  UnitCreateTail(
+    ..tail(
+      stats: option.values([
+        option.map(health, fn(value) {
+          integer_stat(stat_id: health_stat, value:)
+        }),
+        option.map(level, fn(value) {
+          integer_stat(stat_id: level_stat, value:)
+        }),
+        option.map(interrupt_armor, fn(value) {
+          integer_stat(stat_id: interrupt_armor_stat, value:)
+        }),
+      ]),
+      movement_commands: [
+        start_movement.Position(position),
+        start_movement.Rotation(rotation),
+      ],
+      properties: case base_health {
+        Some(value) -> {
+          let bits = float32.to_bits(int.to_float(value))
+          [
+            UnitProperty(
+              property_id: base_health_property,
+              base: bits,
+              value: bits,
+            ),
+          ]
+        }
+        None -> []
+      },
+      item_visuals: [],
+      faction_id:,
+      base_faction_id:,
+      world_object_id:,
+      world_socket_id:,
+      display_info_id:,
+      outfit_info_id:,
+      server_time_estimate_start:,
+    ),
+    create_flags:,
   )
 }
 

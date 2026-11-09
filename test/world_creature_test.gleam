@@ -22,6 +22,7 @@
 
 import ask_support
 import cast_support
+import character_tables
 import event_wait
 import fixture_tables
 import game_connection_support
@@ -34,12 +35,14 @@ import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Strike}
+import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/float32
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
 import genesis_prime/message/unit_position_command
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
+import genesis_prime/message/vendor_items
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
@@ -51,7 +54,9 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
 import genesis_prime/world_map/spawn
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/unit_fields
+import gleam/dict
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/float
 import gleam/int
@@ -61,7 +66,9 @@ import gleam/result
 import map_support
 import owned_test
 import place_support
+import rating_support
 import spawn_support
+import vendor_support
 import world_support.{type World}
 
 const ship = MapId(world_id: 3460, instance: 0)
@@ -984,4 +991,115 @@ pub fn right_click_on_giver_opens_dialog_test() -> Nil {
   assert unit_dialog_open.decode(body)
     == Ok(UnitDialogOpen(unit_id: shown.unit_id, field_2: 0))
     as "opcode.0x357: it names the unit the client clicked"
+}
+
+pub fn right_click_on_a_vendor_opens_its_window_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // Supplier Ingavak (Creature2 28739, spawn 10706) is selected from the spawn table's
+  // row over the vendor content, so his spawn is a vendor's from that selection and his
+  // 0x262 carries create flag 4 (opcode.0x262.vendor_flag). His faction 171, the display
+  // 29772 of his display group 32495 and the outfit 9029 of his outfit group 9725 are
+  // Creature2 28739's own row, and faction 171 is friendly to an Exile. He stands 3.0
+  // from the player's edge, within the 9.0 a vendor request is answered up to
+  // (opcode.0x7ea). The connection answers the client's right-click, 0x7EA with kind
+  // 0x31 and his unit id, with his stock, 0x90b, then 0xbc (opcode.0x90b, opcode.0xbc).
+  let entry = game_connection_support.entry_place()
+  let selection =
+    spawn.select(
+      rows: [
+        spawn.Row(
+          ..spawn_support.beast_row(number: 10_706),
+          creature_id: 28_739,
+          display_info_id: 29_772,
+          outfit_info_id: 9029,
+          faction_id: 171,
+          base_faction_id: 171,
+        ),
+      ],
+      tables: character_tables.content_tables(),
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.kinds(),
+      vendors: vendor_support.stocking_items(
+        creature_ids: [28_739],
+        items: vendor_support.ingavaks_items,
+      ),
+    )
+  assert selection.refusals == [] as "the row passes the spawn checks"
+  let assert Ok(spawns) = dict.get(selection.worlds, 3460)
+    as "the row starts in world 3460"
+  let assert Ok(selected) = dict.get(spawns.by_id, SpawnId(10_706))
+    as "the selection starts Supplier Ingavak's row"
+  assert selected.vendor
+    as "the selection marks the creature that has stock a vendor"
+  let place =
+    start_place.moved(
+      place: entry,
+      x: start_place.x(entry),
+      y: start_place.y(entry),
+      z: start_place.z(entry) -. { 3.0 +. 1.2 +. selected.combat.hit_radius },
+    )
+  let ingavak = spawn.Spawn(..selected, place:)
+  let world =
+    world_support.start(
+      spawns: [ingavak],
+      respawn_ms: 60_000,
+      idle_stop_ms:,
+      sweep_ms:,
+    )
+  let run = started(world)
+  let received = world_support.connection(world:, id: 1)
+  let exile =
+    Character(
+      ..map_support.character(number: 101),
+      faction_id: spawn.exile_faction,
+    )
+  let player = join_at(run:, connection: 1, character: exile, place: entry)
+  let #(news, shown) =
+    next(received:, what: "Supplier Ingavak's 0x262", wanted: fn(message) {
+      result.map(appearance(message), fn(unit) { #(message, unit) })
+    })
+  assert shown.unit_id != player
+    as "the unit the map showed is the creature, not the joined player"
+  assert shown.creature_id == 28_739
+    as "the creature the map showed is Supplier Ingavak's row"
+  assert shown.tail.create_flags == 4
+    as "opcode.0x262.vendor_flag: the vendor mark of a creature that sells"
+  let assert ForStay(stay:, sent:) = news
+    as "the map's creature news is a message for a stay"
+  let #(state, _) =
+    game_connection_support.feed(
+      state: game_connection_support.in_world_stocking(
+        vendors: vendor_support.stocking_items(
+          creature_ids: [28_739],
+          items: vendor_support.ingavaks_items,
+        ),
+      ),
+      event: game_connection_support.for_stay(stay:, sent:),
+    )
+  let #(_, taken) =
+    game_connection_support.interaction_requested(
+      state:,
+      unit_id: shown.unit_id,
+      kind: 0x31,
+    )
+  let assert [
+    Frame(message_id: 0x090B, body: items),
+    Frame(message_id: 0x00BC, body: buyback),
+  ] = game_connection_support.written(taken:)
+    as "the right-click on the vendor is answered with 0x90b, then 0xbc"
+  let assert Ok(window) = vendor_items.decode(items)
+    as "the stock is a 0x90b the client's reader reads"
+  assert window.unit_id == shown.unit_id
+    as "opcode.0x90b: it names the unit the client clicked"
+  assert list.length(window.items) == 22 as "Supplier Ingavak sells 22 items"
+  assert list.first(window.items) |> result.map(fn(item) { item.entry_id })
+    == Ok(12_078)
+    as "the first of his page is Small Stimpack"
+  assert list.last(window.items) |> result.map(fn(item) { item.entry_id })
+    == Ok(13_160)
+    as "the last of his page"
+  assert window.open == 1 && window.full_list == 1 && window.refuse == 0
+    as "opcode.0x90b: the window opens with the full list"
+  assert buyback_list.decode(buyback) == Ok(BuybackList(entries: []))
+    as "opcode.0xbc: nothing has been sold to the vendor"
 }

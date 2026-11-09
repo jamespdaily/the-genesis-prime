@@ -23,6 +23,7 @@ import genesis_prime
 import genesis_prime/content
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/rating
+import genesis_prime/game/vendor
 import genesis_prime/import_world_data
 import genesis_prime/readiness
 import genesis_prime/step/runtime
@@ -104,6 +105,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       tables:,
       formulas: rating.formulas(tables:),
       kinds: spawn_support.kinds(),
+      vendors: vendor.none(),
     )
   let left_out_in_all = fn(reason) {
     list.flat_map(selection.coverage, fn(world) { world.left_out })

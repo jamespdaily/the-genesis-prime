@@ -10791,8 +10791,8 @@ gap = "The 64-bit value (entry 0x30) and the 32-bit value at 0x30 (entry 0x38) a
 name = "ReadVendorItem"
 
 ["0x14047aba0"]
-statement = "Adds one vendor item to the vendor unit's list. Kind 0 needs the Item2 row (else it is dropped); its stack size is the row's vendor stack count and, for a price slot of kind 0, the row's own buy price is used. Kind 4 needs the Spell4 row. Kind 5 needs the CurrencyType row, takes its icon and name, and is priced by the item's amount in its currency type. A price slot of kind 2 costs the amount in the currency type it names; kinds 1 and 3 cost the amount in currency type 15 with the id as the alternative or account currency. A credit price (currency type 1) is the price times the vendor's buy multiplier, cut to a whole number; the sell price (from the Item2 row) is scaled by the sell multiplier."
-proof = "Saved C: kind 0: 0x1400b5df0(Item2, p[2]) else return 0x80004005; local_118 (entry 0x20, nStackSize) = row+0x1ac; local_120 = row+0x1e0; name pointer row+0x1e8; slot loop over p+0xd, 2 slots, stride 3: slot kind 0 copies the row's three u64 at row+0x30.. ; else amount = slot[1], currency = (kind == 2 ? slot[2] : 0xf), alt = CONCAT44(kind == 3 ? slot[2] : 0, kind == 1 ? slot[2] : 0). Kind 4: FindSpell(p[2]), stack 1. Kind 5: 0x1401fa4a0(p[2]); local_b0 = p[6], local_a8 = p[3]. Then if local_a8 == 1: local_b0 = (i64)(local_b0 * unit+0x36dc); same for the second slot; the sell amount (row+0x60..) times unit+0x36e0. FUN_1403d3040(unit+14000, &local_138)."
+statement = "Adds one vendor item to the vendor unit's list. Kind 0 needs the Item2 row (else it is dropped); its stack size is the row's vendor stack count and, for a price slot of kind 0, the item record's price is used (BuildItemPrices 0x14040d160 sets it: the row's currency columns when they are set, else a computed credit price). Kind 4 needs the Spell4 row. Kind 5 needs the CurrencyType row, takes its icon and name, and is priced by the item's amount in its currency type. A price slot of kind 2 costs the amount in the currency type it names; kinds 1 and 3 cost the amount in currency type 15 with the id as the alternative or account currency. A credit price (currency type 1) is the price times the vendor's buy multiplier, cut to a whole number; the sell price (from the Item2 row) is scaled by the sell multiplier."
+proof = "Saved C: kind 0: 0x1400b5df0(Item2, p[2]) else return 0x80004005; local_118 (entry 0x20, nStackSize) = row+0x1ac; local_120 = row+0x1e0; name pointer row+0x1e8; slot loop over p+0xd, 2 slots, stride 3: slot kind 0 copies the item record's three u64 at +0x30 (the record FillItemInfo 0x1404445d0 fills; the Item2 row's own words there are not what is copied); else amount = slot[1], currency = (kind == 2 ? slot[2] : 0xf), alt = CONCAT44(kind == 3 ? slot[2] : 0, kind == 1 ? slot[2] : 0). Kind 4: FindSpell(p[2]), stack 1. Kind 5: 0x1401fa4a0(p[2]); local_b0 = p[6], local_a8 = p[3]. Then if local_a8 == 1: local_b0 = (i64)(local_b0 * unit+0x36dc); same for the second slot; the sell amount (row+0x60..) times unit+0x36e0. FUN_1403d3040(unit+14000, &local_138)."
 grade = "fairly sure"
 gap = "Which of eAltType and eAccountCurrencyType the two halves of the alternative word are (slot kinds 1 and 3) is not read from GetVendorItems; the sell-side fields from row+0x60 are not mapped to Lua keys."
 name = "AddVendorItem"
@@ -10879,7 +10879,7 @@ grade = "fairly sure"
 gap = "Row 8 is absent from the table; whether the server may ever send type 8 is untested: SetCurrency stores it but the cap lookup finds no row."
 
 ["opcode.0x106"]
-statement = "Message 0x106 (262), game server to client: generic error. Body: an 8-bit code (GameLib.CodeEnumGenericError). The client looks up the code's text and raises GenericError(code, text); the Vendor addon shows it in the vendor window's alert box while the window is open. The client raises the same event itself for refusals it finds before sending."
+statement = "Message 0x106 (262), game server to client: generic error. Body: an 8-bit code (GameLib.CodeEnumGenericError). The client looks up the code's text and raises GenericError(code, text); the Vendor addon shows it in the vendor window's alert box while the window is open, and FloatText shows nothing for a Vendor_* code (record lua.FloatText.OnGenericError), so a refusal sent before the window opens shows nothing. The client raises the same event itself for refusals it finds before sending."
 proof = "Registered in 0x14006c290 (saved C) line 511: (0x106, 4, 0, 0, LAB_14008d560); the reader reads 8 bits. HandleWorldMessage case at 0x1403ef16f calls ShowGenericError 0x1403cc530(game, code), which maps code to text and calls RaiseUiEvent GenericError at 0x1403cd2ad. Vendor.lua OnGenericError line 749."
 grade = "fairly sure"
 gap = "Read from the saved C and the case's call."
@@ -10904,10 +10904,10 @@ gap = "That the server's rest bonus per kill is f times the kill experience is i
 name = "LuaGetRestXpKillCreaturePool"
 
 ["0x14041bf80"]
-statement = "Lua Item GetBuyPrice: the item's Item2 buy price; a credit price is multiplied by the open vendor's buy multiplier, or, for an item tied to a faction, by a price factor from the player's standing with it."
-proof = "Saved C: vendor = FindUnit(game+0x6640) when game+0x6644 == 0x31; f = DAT_140b79ed0 (1.0) or vendor+0x36dc; when 0x140243a00(item rec+0x1c0) finds a row, f = 0x1405e6230(game+0x1698, 0xe, row+0xc, row+4); amount = item price +0x28 times f when the currency (+0x30) is 1, cut to an integer."
+statement = "Lua Item GetBuyPrice: the price BuildItemPrices 0x14040d160 sets on the item; a credit price is multiplied by the open vendor's buy multiplier, or, for an additive (Item2.tradeskillAdditiveId names a TradeskillAdditive row), by the player's tradeskill bonus factor of kind 14 (additive cost) for that additive's tradeskill and vector, in place of the vendor's multiplier."
+proof = "Saved C: vendor = FindUnit(game+0x6640) when game+0x6644 == 0x31; f = DAT_140b79ed0 (1.0) or vendor+0x36dc; when GetTradeskillAdditiveRow 0x140243a00(item rec+0x1c0, Item2.tradeskillAdditiveId) finds a row, f = GetTradeskillBonusFactor 0x1405e6230(game+0x1698, 0xe, &{row+0xc vectorX, row+0x10 vectorY}, row+4 tradeSkillId); amount = item price +0x28 times f when the currency (+0x30) is 1, cut to an integer."
 grade = "fairly sure"
-gap = "The faction price row (0x140243a00) and 0x1405e6230 are not named."
+gap = "What kind 14 holds rests on the TradeskillBonus rows and texts (record 0x1405e6230), not on a read of the code that fills game+0x1698."
 name = "LuaItemGetBuyPrice"
 
 ["0x14041bcc0"]
@@ -11071,10 +11071,9 @@ gap = "Rows whose flags lack bit 1 are fired by the client itself from its own c
 name = "CommunicatorQueueQuest"
 
 ["opcode.0x360"]
-statement = "Message 0x360, client to world server: a quest was mentioned to the player, or the mention is withdrawn. Body: quest id, 15 bits, then a bit (1 mentioned, 0 withdrawn). The client sends it only when the wish differs from what it holds and the quest exists, and in both cases sets the quest's local state to Mentioned (5). That entry lets the client accept a quest whose Quest2.flags has 0x400 and answer a communicator call for it. The client withdraws mentions (bit 0) on refresh for mentioned quests it can no longer accept."
-proof = "query.py disassemble 0x1405fca00: 0x1405fca62 CMP [node+0x24],7 / SETNZ CL; 0x1405fca69 CMP R8D,ECX / JZ out; 0x1405fca70 FindQuestById; 0x1405fca83 LEA R8D,[R9+0x5]; 0x1405fca87 CALL 0x1405fbdc0 (state 5 whatever the wish); 0x1405fca9f MOV EDX,0x360; 0x1405fcaac CALL SendWorldMessage. Registered in 0x14006c290 as id 864, writer 0x140084bb0. Called from 0x14043c1a0 and the refresh 0x1405fccb0 (mask 0xfffffdff)."
-grade = "fairly sure"
-gap = "Whether the server must answer 0x360 is not shown; the client waits for nothing. After a withdrawal the entry is still state 5, so a later refresh would send the withdrawal again; read, not seen in a recording."
+statement = "Message 0x360, client to world server: a quest was mentioned to the player, or the mention is withdrawn. Body: quest id, 15 bits, then a bit (1 mentioned, 0 withdrawn). The client sends it only when the wish differs from what it holds (it holds a mention when the quest has a side-list entry whose state is not Ignored, 7) and the quest exists, and in both cases first sets the quest's local state to Mentioned (5) with no objective. A withdrawal therefore leaves the quest Mentioned in the side list, so the client still holds it, and each later mention refresh that finds the quest no longer acceptable sends the withdrawal again. The client waits for no answer. The Mentioned entry lets the client accept a quest whose Quest2.flags has 0x400 and answer a communicator call for it."
+proof = "query.py disassemble 0x1405fca00: 0x1405fca62 cmp dword [rax+0x24], 7; setnz cl; 0x1405fca69 cmp r8d, ecx; jz out (held = side-list node found and its state not 7); 0x1405fca70 call FindQuestById; 0x1405fca7a xor r9d, r9d; 0x1405fca7d mov rdx, rax; 0x1405fca80 mov rcx, rdi; 0x1405fca83 lea r8d, [r9+0x5]; 0x1405fca87 call 0x1405fbdc0 (SetQuestState(log, quest, 5, objective 0), the same for both wishes); 0x1405fca9f mov edx, 0x360; 0x1405fcaac call SendWorldMessage; then return, no wait. SetQuestState 5 stores the state in the side list (record 0x1405fbdc0). Registered in 0x14006c290 as id 864, writer 0x140084bb0. Called from 0x14043c1a0 and the refresh 0x1405fccb0 (mask 0xfffffdff)."
+grade = "sure"
 
 ["0x14043c700"]
 statement = "Answers an incoming communicator quest call: opens the quest dialog for the delivered quest (dialog state 2, the accept view) and raises Communicator_EndIncoming. For a quest that is not Achieved it opens nothing unless the client holds the quest in its side list (in practice Mentioned), the call's creature is in the quest's giver list, Quest2.flags has 4, and CanAcceptQuest passes with mask 0xfffffdff. An Achieved quest needs flags 8 or 0x10000 and opens the turn-in. Called by a key-bound action next to the quest log toggle, and by two Lua functions, one taking a Game.Quest."
@@ -11084,29 +11083,27 @@ gap = "The key's letter is from the live note; the two Lua functions' names are 
 name = "AnswerCommunicatorQuest"
 
 ["opcode.0x35b"]
-statement = "Message 0x35b, client to world server: accept a quest. Body: item location, 9 bits, and bag index, 32 bits (300 and -1 when no item starts the quest), then quest id, 15 bits. Sent by the dialog's accept response and by using an item or ability whose record names a quest (an Item2 quest2IdActivation). When the quest is Botched the accept path sends message 0x365 (quest id, 32 bits on the item path) instead. When the quest cannot be started the client raises a GenericFloater or a cast error text and sends nothing. The client waits for message 0x35c."
-proof = "Writer 0x14008b200: 0x14008b210 call 0x1400a8c80 (item location writer); 0x14008b2bf mov r8d, 0xf; 0x14008b2c8 call 0x140336470 (write bits). Senders: DialogAcceptQuest 0x140556b20 (response type 11 in dialog state 2), 0x14039c8a0 from UseItem 0x1403998e0. Dialog item defaults 300 and -1 at 0x140c7dc6c and 0x140c7dc70. Item path (0x14039c8a0, called from 0x1403998e0 when the used record's given quest is set): the quest state from 0x1405fbc40; state 4 sends 0x365 with a 32-bit quest id, otherwise 0x35b; the writer is registered in 0x14006c290 as id 859, record 12, with the item identity written by 0x1400a8c80 (9 bits, 32 bits) then 15 bits."
+statement = "Message 0x35b, client to world server: accept a quest. Body: item location, 9 bits, and bag index, 32 bits (300 and -1 when no item starts the quest), then quest id, 15 bits. Sent by the dialog's accept response and by using an item or ability whose record names a quest (an Item2 quest2IdActivation). When the quest is Botched the accept path sends message 0x365 (quest id, 15 bits, on both paths) instead. When the quest cannot be started the client raises a GenericFloater or a cast error text and sends nothing. The client waits for message 0x35c."
+proof = "Writer 0x14008b200: 0x14008b210 call 0x1400a8c80 (item location writer); 0x14008b2bf mov r8d, 0xf; 0x14008b2c8 call 0x140336470 (write bits). Senders: DialogAcceptQuest 0x140556b20 (response type 11 in dialog state 2), 0x14039c8a0 from UseItem 0x1403998e0. Dialog item defaults 300 and -1 at 0x140c7dc6c and 0x140c7dc70. Item path (0x14039c8a0, called from 0x1403998e0 when the used record's given quest is set): the quest state from 0x1405fbc40; state 4 sends 0x365 (the quest id in a 32-bit word, of which 0x365's writer sends 15 bits: record opcode.0x365), otherwise 0x35b; the writer is registered in 0x14006c290 as id 859, record 12, with the item identity written by 0x1400a8c80 (9 bits, 32 bits) then 15 bits."
 grade = "fairly sure"
 gap = "The floater or cast error text the item path raises when the quest cannot be started is read from the sender's saved C only; a recorded item use that cannot start its quest would show which text it is."
 
 ["opcode.0x365"]
-statement = "Message 0x365, client to world server: retry a botched quest. Body: quest id, 15 bits. The accept path sends it instead of 0x35b when the quest's state is Botched."
-proof = "Saved C 0x140556b20.c: GetState == 4 sends 0x365 with the quest id; otherwise 0x35b."
-grade = "fairly sure"
-gap = "The server's answer (a 0x35c back to Accepted) is assumed, not seen."
+statement = "Message 0x365, client to world server: retry a botched quest. Body: quest id, 15 bits, nothing else. Both accept paths send it instead of 0x35b when CanAcceptQuest allows the quest and its state is Botched (4): the dialog's accept response and using an item whose quest is a Botched one. Both write the same body; each hands the writer a 32-bit word holding the quest id, of which the writer sends the low 15 bits. The client changes no quest state when it sends it; which state the server's 0x35c answer sets is not in the client."
+proof = "Writer: 0x14006c290 at 0x140071425 lea rcx, [WriteMessage00F2Body]; 0x140071434 lea r9, [SizeMessage00F2Body]; 0x140071449 mov edx, 0x365; 0x14007144e mov r8d, 4 (saved C 0x14006c290.c, hash e9b6b6af37d00314): 0x365 with record size 4 and WriteMessage00F2Body 0x14007eea0 (the same as 0x35a), which writes the low 15 bits of word 0 (record 0x14007eea0, sure). Dialog path 0x140556b20: 0x140556d17 cmp eax, 4; 0x140556d1c mov [rbp+0x50], edi (the quest id argument); 0x140556d1f lea r8, [rbp+0x50]; 0x140556d23 mov edx, 0x365 (saved C 0x140556b20.c, hash e9b6b6af37d00314): GetQuestState == 4 sets local_res8's low word to the quest id and sends 0x365 with it. Item path 0x14039c8a0: 0x14039c928 cmp eax, 4; 0x14039c92f lea r8, [rbp+0x38]; 0x14039c933 mov edx, 0x365 (saved C 0x14039c8a0.c, hash e9b6b6af37d00314): GetQuestState == 4 stores the Quest2 id (row word 0) in local_res10[0] and sends 0x365."
+grade = "sure"
 
 ["0x140552550"]
-statement = "Whether the player may accept a quest, by a mask of checks; returns 0 when allowed or the first failing check's code: 1 no player, 2 already known, 3 level too low, 4 and 5 class and race, 6 to 9 prerequisite quests and exclusions, 10 faction, 11 not yet mentioned, 12 to 17 item, prerequisite, path, contract and repeat checks. Code 11 (mask bit 9, tested first): the quest's Quest2.flags has 0x400, the client holds no Botched, Mentioned, Abandoned or Ignored state for it, and it is not a completed repeatable quest (Completed with flags 0x20 or a non-zero questRepeatPeriodEnum). A refusal shows a floating text: 0x1860c for level, 0x54007 for code 15, 0x1860d otherwise. Bit 9 is set by every sender of 0x35b (DialogAcceptQuest 0x140556b20 and 0x1406a3760 with 0xffffffff, the item path 0x14039c8a0) and by AddHeldItem 0x1403b77d0, 0x1405a8d40, 0x140663eb0, 0x1406d1da0 and 0x1405561f0 (0xffffdfff); it is cleared by 0x14043bf30, 0x14043d650 and the mention refresh 0x1405fccb0 (0xfffffdff) and by 0x140764640, 0x140764ee0 and 0x140636d10 (0xffffddfc); 0x140555350 and 0x140553030 pass either, by path."
-proof = "Saved C 0x140552550.c (e9b6b6af37d00314): mask bit tests in order bit9 0xb, bit0 2, bit12 0xe, bit2 4, bit3 5, bit8 10, bit1 3, bit6 8, bit7 9, bit4 6, bit5 7, bit10 0xc, bit11 0xd, bit13 0xf, bit14 0x10, bit15 0x11. Bit 9, query.py decode 0x140552560-0x1405525b6: 0x140552568 MOV RDI,RCX; 0x140552587 BT EDX,0x9; 0x140552591 TEST dword ptr [R9+0xc],0x400 (R9 = quest+8, the Quest2 row; offset 12 is flags by table_rows -- Quest2 --columns); 0x14055259b CALL 0x140552fd0 with RCX still the quest; then GetQuestState != 3, or row byte 0xc & 0x20 clear and row+0x1b4 (offset 436, questRepeatPeriodEnum) zero, returns 0xb. Masks: grep of the saved C for CanAcceptQuest( calls; 0x140555350 by decode 0x140555d70-0x140555da7 (0xfffffdff when row flags & 0x20 or 0x1b4 non-zero and flags & 4, else 0xffffdfff); 0x140553030 by decode 0x1405530a0-0x1405530e6 (0xfffffdff at 0x1405530ae; 0xffffdfff at 0x1405530d9 when flags & 1); 0x1405a8d40 by decode (0xffffdfff at 0x1405a8e26); 0x140636d10 by decode (0xffffddfc at 0x140636f7f)."
+statement = "Whether the player may accept a quest, by a mask of checks; returns 0 when allowed or the first failing check's code. Checks run in the order 11, 2, 14, 4, 5, 10, 3 and 8, 9, 6, 7, 12, 13, 15, 16, 17. Codes and mask bits: 1 no player. 2 (bit 0) already known: CheckQuestNotKnown. 3 (bit 1) level: player level below preq_level fails; when preq_flags has 2 the level and the prerequisite quests are one check, failing as code 3 only when both fail and bits 1 and 6 are both asked. 4 (bit 2) race: preq_race is 0 or equals the player's race. 5 (bit 3) class: preq_class is 0 or equals the player's class. 6 (bit 4) reputation: CheckQuestReputation over factionIdPreq0..02. 7 (bit 5) item: when preq_item is not 0, the player holds at least one, equipped, in the bags, in locations 8 or 9, or in the per-item inventory counter. 8 (bit 6) prerequisite quests: CheckQuestPrerequisites over preq_quest0..02. 9 (bit 7) exclusions: CheckQuestExclusions over questIdExclusionPreq0..2. 10 (bit 8) episode: CheckQuestEpisode. 11 (bit 9) not yet mentioned: Quest2.flags has 0x400, the client holds no Botched, Mentioned, Abandoned or Ignored state for it, and it is not a completed repeatable quest. 12 (bit 10) prerequisiteId: when not 0, the Prerequisite evaluator must pass for the player. 13 (bit 11) path: subMissionPathType of 4 or more (-1 on 5071 rows) passes; 0 to 3 needs the player's path (0 Soldier, 1 Settler, 2 Scientist, 3 Explorer) to equal it. 14 (bit 12) player faction: CheckQuestPlayerFaction over questPlayerFactionEnum. 15 (bit 13) quest log full: unless Quest2.flags has 0x80000, it fails when CountActiveQuests is at least GameFormula 655 dataint0 (40; 40 also when the row is missing). 16 (bit 14) periodic: record 0x140552e30. 17 (bit 15) contract: Quest2.flags has 0x80000 and the contracts manager does not hold the quest. No check reads pushed_itemId or pushed_itemCount, and none checks bag room. A refusal shows a floating text: 99852 (not high enough level) for code 3, 344071 (Your quest log is full.) for code 15, 99853 (has not met the prerequisites) otherwise. Bit 9 is set by every sender of 0x35b (DialogAcceptQuest 0x140556b20 and 0x1406a3760 with 0xffffffff, the item path 0x14039c8a0) and by AddHeldItem 0x1403b77d0, 0x1405a8d40, 0x140663eb0, 0x1406d1da0 and 0x1405561f0 (0xffffdfff, which also leaves out the log-full check); it is cleared by 0x14043bf30, 0x14043d650 and the mention refresh 0x1405fccb0 (0xfffffdff) and by 0x140764640, 0x140764ee0 and 0x140636d10 (0xffffddfc); 0x140555350 and 0x140553030 pass either, by path."
+proof = "query.py disassemble 0x140552550, 0x1405525c0..0x14055292e. Bit 9: 0x140552587 bt edx, 0x9; 0x140552591 test dword [r9+0xc], 0x400; 0x14055259b call 0x140552fd0. Bit 0: call 0x140552490. Bit 12: call 0x1405529c0. Race: 0x140552639..0x140552642 compares row offset 0x2c (preq_race) with the unit word 0xd8 (0x11 with no unit). Class: 0x14055266d..0x140552694 compares row offset 0xa8 (preq_class) with the unit word 0xdc (0x17 with no unit). Bit 8: call 0x140552d80. Level: 0x1405526d8 tests preq_flags (offset 0x1c) bit 2; 0x140552719 cmp [rsi+0x38], eax; jc fail (unit level against offset 0x18, preq_level). Bit 6: call 0x140552a70; bit 7: call 0x140552c80; bit 4: call 0x140552eb0. Item: 0x1405527ab..0x1405527b7 call 0x1403ac840 with the held-item store at game offset 0xa0, mask 0x303 and row offset 0x30 (preq_item); a count of 0 fails. Bit 10: 0x1405527e0..0x140552811 calls the evaluator at 0x140c659a0, slot 0x18, with the unit and row offset 0x124 (prerequisiteId). Bit 11: 0x14055283d cmp ecx, 4; jnc pass (row offset 0x12c, subMissionPathType); then the path record at 0x140c65970, its word 8 below 4 and equal. Bit 13: 0x140552882 mov ecx, 0x28f; 0x140552887 call 0x140200220; 0x140552891 mov esi, [rax+0x4]; 0x140552896 mov esi, 0x28; 0x1405528a5 call 0x1405fc680; 0x1405528aa cmp eax, esi; 0x1405528ac jl pass; 0x1405528ae mov eax, 0xf. Bit 14: call 0x140552e30. Bit 15: row flags 0x80000 and call 0x14048a2b0 returning 0. Column offsets by gleam run -m genesis_prime/table_rows -- Quest2 --columns; GameFormula 655 dataint0 = 40 at offset 4 by table_rows -- GameFormula 655 and --columns. Texts by client_files.py text 99852, 99853, 344071 (0x1860c, 0x1860d, 0x54007 in the body). No load of row offsets 0x48..0x74 (pushed_itemId0..pushed_itemCount05) in the listing or in the saved C of its eight helpers. Masks: grep of the saved C for CanAcceptQuest( calls; 0x140555350 by decode 0x140555d93 mov edx, 0xfffffdff and 0x140555d9a mov edx, 0xffffdfff; 0x140553030 by decode 0x1405530ae and 0x1405530d9; 0x1405a8d40 at 0x1405a8e26; 0x140636d10 at 0x140636f7f."
 grade = "fairly sure"
-gap = "Code 11 and the masks are read from the instructions; codes 4 to 17 other than 11 are still named from the record field each reads, and codes 12 to 17 are not matched to their Quest2 column one by one."
+gap = "What the reputation slot returns (a standing level or raw reputation) and what the Prerequisite evaluator tests are not read (records 0x140552eb0 and the evaluator at 0x140c659a0). CheckQuestEpisode is read from the saved C. Which location kinds 5, 8, 9 and 10 are is not read. preq_flags 8 and 16 (66 and 52 rows) have no reader in this check; their reader is not found."
 name = "CanAcceptQuest"
 
 ["opcode.0x35a"]
-statement = "Message 0x35a, client to world server: abandon a quest. Body: quest id, 15 bits. Sent by the Lua Quest:Abandon and by abandoning every PvP quest."
-proof = "Saved C 0x140665210.c and 0x1405fd320.c: SendWorldMessage 0x35a through the 15-bit quest writer."
-grade = "fairly sure"
-gap = "The client's refusal flags (cannot abandon, cannot abandon when achieved) are read from eldan's constants, not from Quest:Abandon line by line."
+statement = "Message 0x35a, client to world server: abandon a quest. Body: quest id, 15 bits. Sent by the Lua Quest:Abandon only when CanAbandonQuest allows it (state Accepted, Achieved, Botched or Mentioned; not when Quest2.flags has 0x4000 unless Botched; not when Achieved with flags 0x8000), and by abandoning every PvP quest. The client changes no state when it sends it; the server's 0x35c sets the new state."
+proof = "Listing 0x140665210 (saved C 8eb22adb6de47956 and calls by client_trace.py): 0x140665220 call 0x140056ab0 (the Game.Quest argument); 0x140665235 call 0x140552930; zero skips the send; 0x14066525f call SendWorldMessage with 0x35a and the row's id. Refusal rules: record 0x140552930. Second sender 0x1405fd320 by saved C."
+grade = "sure"
 
 # Quests: turn in
 
@@ -11116,16 +11113,33 @@ proof = "Writer 0x14008b2f0: 0x14008b39d mov r8d, 0xf; 0x14008b3a6 call 0x140336
 grade = "sure"
 
 ["opcode.0x35e"]
-statement = "Message 0x35e, client to world server: ignore or stop ignoring a quest. Body: quest id, 15 bits, then a bit."
-proof = "Saved C 0x1405fcad0.c: SendWorldMessage 0x35e with 15 and 1 bits."
-grade = "fairly sure"
-gap = "No server answer is seen in the client."
+statement = "Message 0x35e, client to world server: ignore (bit 1) or stop ignoring (bit 0) a quest. Body: quest id, 15 bits, then the bit. Its only sender is the Lua Quest:ToggleIgnored, which asks for the opposite of IsQuestIgnored (the quest's side-list state is 7, Ignored). The sender sends only when the bit differs from that and the quest is found; it checks no other state, so the C would send bit 1 for an Accepted quest too. The UI offers it only for an Abandoned or Mentioned quest (QuestLog's hide button) and for the Datachron's queued calls. The client changes no quest state before or after sending: no SetQuestState call, no side-list write. It waits for the server's 0x35c to set the state; the client does not say which state the server sets on stop-ignoring (it reads only 7 as ignored, and CanAcceptQuest bit 9 treats Mentioned, Abandoned and Ignored alike)."
+proof = "Writer: 0x14006c290.c (hash e9b6b6af37d00314) registers 0x35e with size 8 and FUN_140084bb0, which writes word 0 by 15 bits then (word 1 != 0) as one bit (0x140084bb0.c, hash 8eb22adb6de47956). Sender 0x1405fcad0: 0x1405fcb2b cmp dword [rax+0x24], 7; 0x1405fcb2f setz cl; 0x1405fcb32 cmp r8d, ecx; 0x1405fcb56 mov edx, 0x35e. Saved C 0x1405fcad0.c (hash e9b6b6af37d00314): finds the quest in the side-list tree at manager+0x28, current = (node state +0x24 == 7); if param_3 != current and FindQuestById returns a record, SendWorldMessage(0x35e, {id, param_3}); nothing else is written. Its one caller 0x140664ea0 is Quest:ToggleIgnored (registration pair at 0x140c5ba80: name 0x140b2dee0 'ToggleIgnored', function 0x140664ea0, read by query.py bytes); it passes IsQuestIgnored 0x14054f410 == 0. SetQuestState 0x1405fbdc0's only callers are 0x35c, 0x35f and the mention sender (record 0x1405fbdc0). UI: QuestLog.lua 983 (QuestInfoControlsHideBtn shown for Abandoned or Mentioned) and 1198 (OnQuestHideBtn calls ToggleIgnored); Datachron.lua 489 (OnQueuedCallsIgnoreBtn)."
+grade = "sure"
 
 ["opcode.0x364"]
 statement = "Message 0x364, client to world server: track or untrack a quest in the tracker. Body: quest id, 15 bits, then a bit. The client flips its own tracked flag and raises QuestTrackedChanged without waiting."
 proof = "Saved C 0x1405fcb80.c."
 grade = "fairly sure"
 gap = "Whether the server stores the tracked flag across logins (the login log carries it in a word not yet named) is open."
+
+["0x1405fcad0"]
+statement = "Sends message 0x35e for a quest id and a wanted ignored flag, only when the flag differs from whether the quest's side-list state is Ignored (7) and the quest record is found. It changes no client state."
+proof = "Saved C 0x1405fcad0.c (hash e9b6b6af37d00314): tree lookup at manager+0x28, node key +0x20, state +0x24 == 7; FindQuestById 0x1405a8a40; SendWorldMessage 0x1403f4900 with {id, flag}."
+grade = "sure"
+name = "SendQuestIgnored"
+
+["0x140664ea0"]
+statement = "Lua Quest:ToggleIgnored(): sends 0x35e asking for the quest to be ignored when it is not Ignored, and not ignored when it is."
+proof = "Saved C 0x140664ea0.c (hash 8eb22adb6de47956): Game.Quest argument; SendQuestIgnored 0x1405fcad0 with IsQuestIgnored 0x14054f410 == 0. Registration pair at 0x140c5ba80: name pointer 0x140b2dee0 ('ToggleIgnored'), function 0x140664ea0 (query.py bytes 0x140c5ba78, 32; bytes 0x140b2dee0, 24)."
+grade = "sure"
+name = "LuaQuestToggleIgnored"
+
+["0x14054f410"]
+statement = "Whether a quest is Ignored: its side-list state is 7."
+proof = "0x14054f46a cmp dword [rax+0x24], 7. Saved C 0x14054f410.c (hash 8eb22adb6de47956): tree at manager+0x28 keyed by the Quest2 id, node state +0x24 == 7."
+grade = "sure"
+name = "IsQuestIgnored"
 
 # Quests: share
 
@@ -11149,8 +11163,8 @@ gap = "The second field's width is read from the saved C, not the instruction; w
 # Quests: the quest state the client holds
 
 ["opcode.0x35c"]
-statement = "Message 0x35c, world server to client: set a quest's state. Body: quest id, 15 bits, state, 32 bits (QuestState: 1 Accepted, 2 Achieved, 3 Completed, 4 Botched, 5 Mentioned, 6 Abandoned, 7 Ignored), then a 32-bit word whose meaning is not read. A quest the client does not know is refused. On Accepted the client may locate the first objective; it raises QuestStateChanged, or ContractStateChanged for a contract quest."
-proof = "Reader 0x14008f100: 0x14008f125 mov r8d, 0xf; 0x14008f12e call 0x14006c090; 0x14008f13b mov r8d, 0x20; 0x14008f144 call 0x14006c090; 0x14008f151 mov r8d, 0x20; 0x14008f15a call 0x14006c090. Handler 0x1405fb670 (saved C): unknown quest returns 0xa00b0001; state 1 with a setting calls 0x140553890."
+statement = "Message 0x35c, world server to client: set a quest's state. Body: quest id, 15 bits, state, 32 bits (QuestState: 1 Accepted, 2 Achieved, 3 Completed, 4 Botched, 5 Mentioned, 6 Abandoned, 7 Ignored), then a QuestObjective id, 32 bits: when it is not 0 and the quest has a placeholder objective (type 31), that row replaces the placeholder (SetQuestState's fourth argument, record 0x1405fbdc0); 0 leaves the objectives as they are. A quest the client does not know is refused. On Accepted the client may locate the first objective; it raises QuestStateChanged, or ContractStateChanged for a contract quest. This message is the only way a timed quest is botched: the client never sets state 4 itself (record Quest2.maxTimeAllowedMS)."
+proof = "Reader 0x14008f100: 0x14008f125 mov r8d, 0xf; 0x14008f12e call 0x14006c090; 0x14008f13b mov r8d, 0x20; 0x14008f144 call 0x14006c090; 0x14008f151 mov r8d, 0x20; 0x14008f15a call 0x14006c090. Handler 0x1405fb670 (saved C): unknown quest returns 0xa00b0001; state 1 with a setting calls 0x140553890. Third word: 0x1405fb6d4 mov r9d, [rdi+8]; 0x1405fb6d8 mov r8d, [rdi+4]; 0x1405fb6e2 call SetQuestState 0x1405fbdc0 (r8d state, r9d the fourth argument)."
 grade = "sure"
 
 ["opcode.0x361"]
@@ -12073,17 +12087,17 @@ grade = "fairly sure"
 gap = "1 = daily is by elimination: the first three period-1 titles (46159, 68977, 89035) have no en-US text. 4 is named from two test titles and holiday quests only."
 
 ["0x1404895e0"]
-statement = "Re-rolls the periodic quest offers: empties every group's offered, accepted and done sets, then for each PeriodicQuestSetCategory picks its sets (0x14048a580), for each set picks its groups (0x14048a9e0), for each group picks its quests (0x14048ae40), and puts the picked quest ids in that group's offered set."
-proof = "Saved C 0x1404895e0.c (hash 8eb22adb6de47956): FUN_140008410 on group +8, +0x28, +0x48; nested calls 0x14048a580 -> 0x14048a9e0 -> 0x14048ae40; FUN_1400293c0(group+8, quest id)."
+statement = "Re-rolls the periodic quest offers: empties every group's offered, accepted and done sets, then for each PeriodicQuestSetCategory picks its sets (0x14048a580), for each set picks its groups (0x14048a9e0), for each group picks its quests (0x14048ae40), and puts the picked quest ids in that group's offered set. Each draw depends only on its node's id, its children and their weights, its offered count and the low 32 bits of the reset time held in DAT_140c65938, so the order of the walk does not change the result: the offered set is a function of the tables and the reset time the server sent in 0x35f or 0x362. No message carries the set."
+proof = "Saved C 0x1404895e0.c (hash 8eb22adb6de47956): FUN_140008410 on group +8, +0x28, +0x48; nested calls 0x14048a580 -> 0x14048a9e0 -> 0x14048ae40; FUN_1400293c0(group+8, quest id). The manager's map +0x28 holds the category nodes (record 0x140488fa0). Seeds: record 0x14048a580. Its only caller is 0x140489aa0, run by the 0x35f handler after it stores the reset time (0x1405fb350.c line 22 then line 23) and by the 0x362 handler after it stores the new one (record 0x140611e30)."
 grade = "fairly sure"
-gap = "That manager map +0x30 holds PeriodicQuestSetCategory nodes is inferred from 0x14048a580's children being PeriodicQuestSet rows; the map's build in 0x140488fa0 is not read."
+gap = "Not run end to end (record 0x14048a580)."
 name = "RollPeriodicQuestOffers"
 
 ["0x14048a580"]
-statement = "Picks a category's periodic quest sets by weight (0x14048a9e0 picks a set's groups by PeriodicQuestGroup.weight, 0x14048ae40 a group's quests by Quest2.periodicQuestWeight). When the children number no more than the count to offer, all are taken. Otherwise, for each pick with n picks left (n counting down to 1): seed the client's MT19937 with (u32)(owner id + n + low 32 bits of the reset time); r = (int)(next_double * total weight), or 0 when the total weight is under 2; take the first remaining child whose cumulative weight key exceeds r, remove it and lower the total by its weight. Missing rows weigh 0."
-proof = "Saved C 0x14048a580.c, 0x14048a9e0.c, 0x14048ae40.c (hash 8eb22adb6de47956; they differ only in the row reader and offset): DAT_140c65940 vtable +0x10 (seed 0x1401ae490) with *param_1 + local_res20 + (int)DAT_140c65938; vtable +0x30 (0x1401ae210) times total weight param_1+8 (u64, fixup 0x140b7a150 = 2^64); lower bound of r+1 in the copied map (FUN_14048b2a0); keys after the pick reduced by its weight; uVar9 from 0x1401fb5a0 (PeriodicQuestSet) +0xc = weight, 0x1401fb9e0 (PeriodicQuestGroup) +0x10 = weight, 0x14022aa80 (Quest2) +0x1b0 = periodicQuestWeight (offset 432, Quest2 --columns). Count min(param_1[4], param_1[10]); else-branch copies all children."
+statement = "Picks a category's periodic quest sets by weight (0x14048a9e0 picks a set's groups by PeriodicQuestGroup.weight, 0x14048ae40 a group's quests by Quest2.periodicQuestWeight). The number to offer is the node's own column: PeriodicQuestSetCategory.periodicSetsOffered, PeriodicQuestSet.periodicGroupsOffered or PeriodicQuestGroup.periodicQuestsOffered (unsigned; 0xffffffff means all), capped at the number of children. When the children number no more than that, all are taken. Otherwise, for each pick with n picks left (n counting down to 1): seed the client's MT19937 with (u32)(owner id + n + low 32 bits of the reset time); r = (int)(next_double * total weight), or 0 when the total weight is under 2; take the first remaining child whose cumulative weight key exceeds r, remove it and lower the keys after it and the total by its weight. The keys are built by 0x140488fa0 (sets, groups) and LoadQuests (quests, record 0x1405a7c90.periodic_quests): running totals in row order, so the first child's key is its own weight. Missing rows weigh 0."
+proof = "Saved C 0x14048a580.c, 0x14048a9e0.c, 0x14048ae40.c (hash 8eb22adb6de47956; they differ only in the row reader and offset): DAT_140c65940 vtable +0x10 (seed 0x1401ae490) with *param_1 + local_res20 + (int)DAT_140c65938; vtable +0x30 (0x1401ae210) times total weight param_1+8 (u64, fixup 0x140b7a150 = 2^64); lower bound of r+1 in the copied map (FUN_14048b2a0); keys after the pick reduced by its weight; uVar9 from 0x1401fb5a0 (PeriodicQuestSet) +0xc = weight, 0x1401fb9e0 (PeriodicQuestGroup) +0x10 = weight, 0x14022aa80 (Quest2) +0x1b0 = periodicQuestWeight (offset 432, Quest2 --columns). Listing of 0x14048ae40: 0x14048ae6c mov eax, [rcx+0x10] (count to offer); 0x14048ae72 cmp rax, [rcx+0x28] (children); 0x14048af04 cmp [rdi+0x28], ecx; 0x14048af0b cmovc; 0x14048af4a add edx, [0x140c65938]; 0x14048af50 call [r8+0x10] (seed); 0x14048af5e call [rax+0x30] (next double); 0x14048af64 cvtsi2sd; 0x14048af76 mulsd; 0x14048af7a cvttsd2si; 0x14048afdf mov r13d, [rax+0x1b0]. The node's +0x10 is filled from the offered column by 0x140488fa0 (record 0x140488fa0)."
 grade = "fairly sure"
-gap = "How 0x140488fa0 builds the cumulative keys (child order, starting value), and which column fills the count to offer (param_1[4]; likely periodicSetsOffered / periodicGroupsOffered / periodicQuestsOffered), are not read. Emulating 0x1404895e0 on known rows would settle both."
+gap = "The roll has not been run: emulating 0x1404895e0 on the shipped rows with a chosen reset time, or a retail recording of a day's offers with its 0x362 time, would settle the whole draw end to end."
 name = "PickPeriodicQuestSets"
 
 ["0x1401ae3c0"]
@@ -12093,11 +12107,81 @@ grade = "sure"
 name = "NewMersenneTwister"
 
 ["0x140552490"]
-statement = "CanAcceptQuest check 2 (already known): passes when the quest is unknown (state 0), or is in state 3 (Completed), outside the client's side list, and has quest flag 0x20 or a questRepeatPeriodEnum other than 0. So a completed periodic quest is never refused for being known; whether it is on offer is check 16."
-proof = "Saved C 0x140552490.c: GetQuestState; puVar1[3] & 0x20; puVar1[0x6d] (byte 0x1b4)."
-grade = "fairly sure"
-gap = "Read from the saved C only; the instructions are not cited."
+statement = "CanAcceptQuest check 2 (already known). It passes when the quest is unknown (state 0); when the client holds it in the side list in any state (Botched, Mentioned, Abandoned or Ignored); or when it is Completed and Quest2.flags has 0x20 or questRepeatPeriodEnum is not 0. It fails for Accepted, Achieved and a completed quest that does not repeat. So an abandoned quest passes it, and whether a completed periodic quest is on offer is check 16."
+proof = "query.py disassemble 0x140552490: 0x1405524ad call GetQuestState; 0x1405524b4 test eax, eax; jz pass; 0x1405524cd mov rcx, [r8+0x28] (side list); 0x1405524e0 cmp [rdx+0x20], r9d (walk by quest id); 0x140552512 cmp [rax], rcx; jnz pass (found in the side list); 0x140552517 cmp edi, 0x3; jnz fail; 0x14055251c test byte [r10+0xc], 0x20; jnz pass; 0x140552523 cmp dword [r10+0x1b4], 0x0; jz fail. Offsets 12 and 436 are flags and questRepeatPeriodEnum by table_rows -- Quest2 --columns."
+grade = "sure"
 name = "CheckQuestNotKnown"
+
+["0x140552930"]
+statement = "Whether the player may abandon a quest (used by the Lua Quest:Abandon before it sends 0x35a). A Botched (4) quest may always be abandoned. Otherwise Quest2.flags 0x4000 forbids it, and an Achieved (2) quest with flags 0x8000 may not be abandoned. Past those, only Accepted (1), Achieved (2), Botched (4) and Mentioned (5) may be abandoned; Unknown, Completed, Abandoned and Ignored may not. 78 Quest2 rows have 0x4000 and 124 have 0x8000."
+proof = "query.py disassemble 0x140552930: 0x140552949 call GetQuestState; 0x14055294e cmp eax, 0x4; jz state test; 0x140552957 test dword [rcx+0xc], 0x4000; jnz refuse; 0x14055296c call GetQuestState; 0x140552971 cmp eax, 0x2; jnz state test; 0x14055297a test dword [rax+0xc], 0x8000; jnz refuse; 0x140552993 call GetQuestState; 0x140552998 lea ecx, [rax-0x1]; 0x14055299b test ecx, 0xfffffffc; jnz refuse (state 1 to 4 only); 0x1405529a3 cmp eax, 0x3; jz refuse; 0x1405529a8 mov eax, 0x1. Rows counted from table_rows -- Quest2."
+grade = "sure"
+name = "CanAbandonQuest"
+
+["0x140552a70"]
+statement = "CanAcceptQuest check 8 (prerequisite quests, preq_quest0..02). A named prerequisite counts only when it is Completed: in the completed set, or a side-list or quest-log entry whose state is Completed. Accepted or Achieved never counts. With preq_flags bit 1 clear every named prerequisite must count; with it set any one is enough. A quest with no prerequisites passes."
+proof = "query.py disassemble 0x140552a70: 0x140552a99 mov edx, [rax+0x1c] (preq_flags); 0x140552a9c bit 1 test picks any or all; ids from row offsets 0x20, 0x24, 0x28; 0x140552b44..0x140552b54 hash lookup in the completed set, 0x140552b50 cmp [rcx+0x8], r8d; 0x140552b5e mov rdx, [rdi+0x28] (side list), 0x140552bb1 mov ecx, [rax+0x24]; 0x140552bb4 cmp ecx, 0x3; the log entry with state 1 runs the objective loop whose exits both reach 0x140552c2e (not counted); 0x140552c41 cmp esi, 0x3. Offsets by table_rows -- Quest2 --columns."
+grade = "sure"
+name = "CheckQuestPrerequisites"
+
+["0x140552c80"]
+statement = "CanAcceptQuest check 9 (exclusions, questIdExclusionPreq0..2). An excluding quest is taken when its state is not Unknown and the client does not hold it in the side list, so when it is Accepted, Achieved or Completed. With preq_flags 0x20 clear any taken exclusion refuses; with it set the check refuses only when every named exclusion is taken."
+proof = "query.py disassemble 0x140552c80: 0x140552c9e mov ebx, 0xd4 (first exclusion column); 0x140552caa mov r13d, [rax+0x1c] (preq_flags), 0x140552cae its bit 0x20; 0x140552cd4 call GetQuestState; 0x140552cd9 test eax, eax; 0x140552ce5 mov rax, [r14+0x28] (side list), 0x140552cf5 cmp [rcx+0x20], r8d; 0x140552d2e cmp [rcx], rax (found means not taken); 0x140552d47 cmp edi, 0x3 (three columns). Offsets 212 to 220 are questIdExclusionPreq0..2 by table_rows -- Quest2 --columns."
+grade = "sure"
+name = "CheckQuestExclusions"
+
+["0x140552eb0"]
+statement = "CanAcceptQuest check 6 (reputation, factionIdPreq0..02). For each non-zero faction it asks the player's reputation object for that faction. When factionLevelCompPreq is 0 it refuses a value below factionLevelPreq; otherwise it refuses a value above it. With no reputation object any named faction refuses."
+proof = "query.py disassemble 0x140552eb0: 0x140552ec4 test rdi, rdi (the unit's reputation object, unit word 0x110); 0x140552edf mov ebx, 0xb0 (factionIdPreq0); 0x140552ee7 test edx, edx (skip 0); 0x140552ef1 call [rax+0x28] with the faction id; 0x140552efa cmp dword [rbx+rax+0x18], 0x0 (factionLevelCompPreq, offset 0xc8); 0x140552f01 and 0x140552f19 cmp ecx, [rbx+rax+0xc] (factionLevelPreq, offset 0xbc) with jc and jbe; 0x140552f23 cmp rbx, 0xbc (three columns). Offsets by table_rows -- Quest2 --columns."
+grade = "fairly sure"
+gap = "Whether the reputation object's slot returns a standing level or a raw reputation amount is not read; reading the reputation object's class and its slot 0x28 would settle it."
+name = "CheckQuestReputation"
+
+["0x1405529c0"]
+statement = "CanAcceptQuest check 14 (player faction, questPlayerFactionEnum): 0 allows only the Exiles (faction 167), 1 only the Dominion (166), 2 both; 3 or more always refuses. Rows: 1968 are 0, 1971 are 1, 1255 are 2."
+proof = "query.py disassemble 0x1405529c0: 0x1405529ca mov ecx, [rdx+0x34] (offset 52, questPlayerFactionEnum); 0x1405529cd test ecx, ecx; 0x140552a04 call [rax+0x18] (the player's faction); 0x140552a07 cmp eax, 0xa6; 0x140552a19 cmp eax, 0xa6; 0x140552a41 call [rax+0x18]; 0x140552a44 cmp eax, 0xa7; 0x140552a56 cmp eax, 0xa7. 166 is Dominion (text 15765), 167 Exiles (text 15767). Rows counted from table_rows -- Quest2."
+grade = "sure"
+name = "CheckQuestPlayerFaction"
+
+["0x140552d80"]
+statement = "CanAcceptQuest check 10 (episode). Only the quest's first episode (lowest episode id among its EpisodeQuest rows) is asked whether it allows the quest (EpisodeAllowsQuest); a quest in no episode passes."
+proof = "Listing 0x140552d8a..0x140552e18 by query.py disassemble 0x140552d80: the first node of the quest's episode map is taken and every path after the episode call exits; saved C 0x140552d80.c (8eb22adb6de47956): no node returns true (quest map size 0). The map is filled by the episode registry builder 0x140723ce0 from Episode and EpisodeQuest through 0x1405532d0."
+grade = "fairly sure"
+gap = "Read from the saved C under an older hash plus a short listing; the episode call's slot (0xb8, 0x140788aa0) is taken from the saved C."
+name = "CheckQuestEpisode"
+
+["0x140788aa0"]
+statement = "Whether an episode allows a quest to be accepted. Yes when Episode.flags has 0x10. Otherwise it walks the episode's quests in orderIdx order and answers yes at the first one whose EpisodeQuest.flags lacks bit 1 and that is this quest or is not Completed. So it refuses only a quest whose EpisodeQuest.flags has bit 1 once every unflagged quest of the episode is Completed."
+proof = "Saved C 0x140788aa0.c: the flags slot 0x140787910 tests Episode.flags & 0x10; the quest list is ordered by 0x140787bd0 on orderIdx; a GetQuestState call compares with 3. Columns by table_rows -- EpisodeQuest --columns (flags at 16) and Episode --columns (flags at 16)."
+grade = "fairly sure"
+gap = "Read from the saved C only, and the quest id given to GetQuestState was lost in the decompile; a listing of 0x140788aa0 would settle which quest is asked."
+name = "EpisodeAllowsQuest"
+
+["0x1405fc680"]
+statement = "Counts the quests in the player's quest log that count toward its limit: every active entry whose Quest2.flags lacks 0x80000 (contracts do not count). Used by CanAcceptQuest check 15 and the Lua QuestLog GetCount."
+proof = "Saved C 0x1405fc680.c (e9b6b6af37d00314): walks the tree at the log's word 8, FindQuestById for each, counts when row flags & 0x80000 is 0. Callers by grep of the saved C: CanAcceptQuest (0x1405528a5 call 0x1405fc680) and 0x14074a670, named GetCount by the Lua pairs at 0x140b75320."
+grade = "fairly sure"
+gap = "Read from the saved C; its own instructions are not cited."
+name = "CountActiveQuests"
+
+["GameFormula.655"]
+statement = "GameFormula 655: dataint0 (40) is the quest log's size, the number of non-contract quests the player may hold. CanAcceptQuest check 15 refuses at that count and uses 40 when the row is missing; the Lua QuestLog GetMaxCount also reads it."
+proof = "0x140552882 mov ecx, 0x28f; 0x140552887 call 0x140200220; 0x140552891 mov esi, [rax+0x4]; 0x140552896 mov esi, 0x28. table_rows -- GameFormula 655: dataint0 = 40; --columns: dataint0 at offset 4. A grep of the saved C for 0x28f) finds CanAcceptQuest and 0x14074a700 only."
+grade = "sure"
+
+["0x140553030"]
+statement = "Whether a quest on a creature's receive list gives the creature a turn-in or accept response. In the unit dialog it is yes for an Achieved quest, or for a quest whose Quest2.flags has 1 when CanAcceptQuest with every check but the log-full one passes. In the other dialog it uses the mask that leaves out the mention check."
+proof = "query.py decode 0x1405530a0..0x1405530e6: 0x1405530ae mov edx, 0xfffffdff; 0x1405530d9 mov edx, 0xffffdfff after the flags & 1 test; GetQuestState compared with 2. Called by 0x140555350 for the receive list (creature info word 0x60)."
+grade = "fairly sure"
+gap = "The path when the dialog's word 8 is set is read only to its mask."
+name = "QuestGivesReceiverResponse"
+
+["0x140555350"]
+statement = "Builds a creature's quest responses for the giver dialog. First the receive list: each quest QuestGivesReceiverResponse allows gets responses of kind 7, 10 and 9. Then the give list: a quest that already has a response of kind 6, 7, 8, 10, 11 or 13 is skipped; in the unit dialog (opened by 0x357) a quest is offered when CanAcceptQuest with every check but the log-full one passes, so a full quest log does not hide an offer, and an offered quest gets responses 6, 11, 13 (five more-info lines) and 14 and triggers tutorial 0x161. In the other dialog a quest is offered only when the client holds it in the side list or it is a completed repeatable, Quest2.flags has 4, and CanAcceptQuest with every check but the mention check passes. So the unit dialog offers Unknown quests and those held as Botched, Mentioned, Abandoned or Ignored, and repeatable Completed quests; never Accepted, Achieved or a completed quest that does not repeat. Last, the give list again for quests in progress: Accepted is listed, Achieved only when this creature is not among the quest's receivers."
+proof = "query.py disassemble 0x140555350: 0x140555ccc mov r11d, 0x2dc0; 0x140555cd2 bt r11d, ecx (response kinds 6, 7, 8, 10, 11, 13); 0x140555cd8 cmp [rdx+0x3c], edi (same quest); 0x140555cf6 cmp dword [r12+0x8], esi; jz 0x140555d9a; 0x140555d62 call GetQuestState; 0x140555d67 cmp eax, 0x3; 0x140555d74 test byte [r9+0xc], 0x20; 0x140555d7b cmp dword [r9+0x1b4], esi; 0x140555d88 test byte [r9+0xc], 0x4; 0x140555d93 mov edx, 0xfffffdff; 0x140555d9a mov edx, 0xffffdfff; 0x140555da2 call CanAcceptQuest; 0x140555da9 jnz skip; the receivers at the quest's words 0x88 and 0x90 read at 0x140555ea0 and 0x140555eb2. The unit dialog from 0x357 (0x140554510) sets the dialog's word 8 to 0. Lists: creature info word 0x58 give, 0x60 receive (record 0x1405a8d40). Called by 0x140555040."
+grade = "fairly sure"
+gap = "The response kind added for quests in progress in the last loop is not read, nor what each response kind number shows."
+name = "BuildQuestGiverResponses"
 
 ["0x140552e30"]
 statement = "CanAcceptQuest check 16 (mask bit 14): a quest with questRepeatPeriodEnum 0 passes. Otherwise it passes only when the quest is in its periodic group's offered set and the group's accepted plus done counts are under PeriodicQuestGroup.maxPeriodicQuestsAllowed."
@@ -12149,10 +12233,9 @@ gap = "Read from the records' proofs; the function body was not re-read for this
 name = "RefreshMentionedQuests"
 
 ["0x1405fca00"]
-statement = "Sets whether a quest is mentioned to the player: when the wish differs from the held state (not 7), it finds the quest, sets its local state to 5 (Mentioned) through SetQuestState whatever the wish, and sends 0x360 (quest id, wish)."
-proof = "Record opcode.0x360: 0x1405fca62 cmp [node+0x24],7; 0x1405fca83 lea r8d,[r9+5]; 0x1405fca87 call 0x1405fbdc0; 0x1405fca9f mov edx,0x360; 0x1405fcaac call SendWorldMessage."
-grade = "fairly sure"
-gap = "Read from the records' proofs; the function body was not re-read for this record."
+statement = "Sets whether a quest is mentioned to the player. It holds a mention when the quest has a side-list entry whose state is not Ignored (7). When the wish differs from that, it finds the quest, sets its local state to Mentioned (5) with no objective through SetQuestState for either wish, and sends 0x360 (quest id, wish). A withdrawn quest stays Mentioned in the side list, so it still counts as held and a later call to withdraw it sends again."
+proof = "query.py disassemble 0x1405fca00: 0x1405fca62 cmp dword [rax+0x24], 7; setnz cl; 0x1405fca69 cmp r8d, ecx; jz skip; 0x1405fca7a xor r9d, r9d; 0x1405fca83 lea r8d, [r9+0x5]; 0x1405fca87 call 0x1405fbdc0; 0x1405fca9f mov edx, 0x360; 0x1405fcaac call SendWorldMessage. r9 is 0 and r8 is 5 on both paths."
+grade = "sure"
 name = "SetQuestMentioned"
 
 ["0x14048b8f0"]
@@ -12177,17 +12260,17 @@ gap = "The table the getter belongs to, and what it returns, are not read; readi
 name = "IsInitialized"
 
 ["0x14048a9e0"]
-statement = "Picks a periodic quest set's groups by PeriodicQuestGroup.weight with the same seeded MT19937 draw as 0x14048a580."
+statement = "Picks a periodic quest set's groups by PeriodicQuestGroup.weight with the same seeded MT19937 draw as 0x14048a580; the number to offer is PeriodicQuestSet.periodicGroupsOffered (0xffffffff means all)."
 proof = "Record 0x14048a580: 0x14048a580, 0x14048a9e0 and 0x14048ae40 differ only in the row reader and offset (saved C 8eb22adb6de47956)."
 grade = "fairly sure"
-gap = "How 0x140488fa0 builds the cumulative weight keys is not read (record 0x14048a580)."
+gap = "The draw has not been run (record 0x14048a580)."
 name = "PickPeriodicQuestGroups"
 
 ["0x14048ae40"]
-statement = "Picks a periodic group's quests by Quest2.periodicQuestWeight with the same seeded MT19937 draw as 0x14048a580."
-proof = "Record 0x14048a580: 0x14048a580, 0x14048a9e0 and 0x14048ae40 differ only in the row reader and offset (saved C 8eb22adb6de47956)."
+statement = "Picks a periodic group's quests by Quest2.periodicQuestWeight with the same seeded MT19937 draw as 0x14048a580; the number to offer is PeriodicQuestGroup.periodicQuestsOffered (0xffffffff means all)."
+proof = "Record 0x14048a580 (its listing is this function's): 0x14048ae6c count to offer, 0x14048af4a reset time in the seed, 0x14048afdf Quest2 +0x1b0 periodicQuestWeight."
 grade = "fairly sure"
-gap = "How 0x140488fa0 builds the cumulative weight keys is not read (record 0x14048a580)."
+gap = "The draw has not been run (record 0x14048a580)."
 name = "PickPeriodicGroupQuests"
 
 ["0x1401ae490"]
@@ -12246,6 +12329,60 @@ grade = "fairly sure"
 gap = "Read from the call structure only; the instructions are not cited."
 name = "OnPeriodicQuestCompleted"
 
+["0x14040d160"]
+name = "BuildItemPrices"
+statement = "Sets an item record's prices. When the Item2 row's currencyTypeId0 and currencyTypeId1 are both 0: buy = ItemVendorBuyPrice(Item2Category.vendorMultiplier * Item2Family.vendorMultiplier * Item2Type.vendorMultiplier, powerLevel, itemQualityId) in currency 1 (credits); sell = ItemVendorSellPrice of the same, in credits. Otherwise buy = currencyAmount0 in currencyTypeId0 and second = currencyAmount1 in currencyTypeId1 (with Item2 flags bit 0x200, currency 15 with currencyTypeId0 as the alternate); sell from the *SellToVendor columns. This is the price AddVendorItem uses for slot kind 0 and Item GetBuyPrice shows."
+proof = "Saved C 0x14040d160 (8eb22adb6de47956): mult = cat+0x18 * fam+0x10 * type+0x18 (rows from PrepareItemPropertyBuilder 0x14040c610 at builder+0xf8/0xf0/0xe8, ids record+0x148/0x140/0x144); test Item2 row +0x88/+0x8c; FUN_14040bee0(mult, p[1], p[0]) -> p+0x28, p[0xc]=1; else +0x90/+0x88/+0x94/+0x8c, flag row+0x7c&0x200. p = item record+8 (FillItemInfo 0x1404445d0 passes puVar12+2); p[0] = record+0x158 = itemQualityId, p[1] = record+0x160 = powerLevel (FillItemInfo puVar12[0x56]=row[4], [0x58]=row[0xf]); offsets match `table_rows -- Item2 --columns`, Item2Type/Item2Family/Item2Category --columns."
+grade = "sure"
+
+["0x14040bee0"]
+name = "ItemVendorBuyPrice"
+statement = "An item's computed buy price in credits: max(1, trunc(ItemPriceLevelCurve(powerLevel) * q * multiplier)), q = itemQualityId as a float, 1.0 when 0."
+proof = "Saved C 0x14040bee0 (8eb22adb6de47956): curve = vtable PTR_FUN_140b66a98[1] = 0x14041d200 (Bytes at 0x140b66a98+8 are a011424001000000, read by query.py bytes); fVar4 = param_4 or DAT_140b79ed0 (0000803f = 1.0); (u64)(curve*q*mult), 0 -> 1."
+grade = "sure"
+
+["0x14041d200"]
+name = "ItemPriceLevelCurve"
+statement = "The price curve of a level L: GameFormula 1078 datafloat0 * e^((L - dataint0) * datafloat01) + datafloat02 * (L - dataint0)^datafloat03. With the data (0, 0, 0, 7.5, 2.0) it is 7.5 * L^2."
+proof = "Saved C 0x14041d200 (8eb22adb6de47956): FUN_140200220(0x436) row +4/+0x18/+0x1c/+0x20/+0x24; FUN_1408fbfc0 is powf, base DAT_140b79f98: Bytes at 0x140b79f98 are 54f82d40 (2.7182817). `table_rows -- GameFormula 1078`."
+grade = "sure"
+
+["0x14040bfb0"]
+name = "ItemVendorSellPrice"
+statement = "An item's computed sell price: max(1, trunc(ItemVendorBuyPrice * GameFormula 1026 datafloat0)), 0.15 in the data."
+proof = "Saved C 0x14040bfb0 (8eb22adb6de47956): FUN_140200220(0x402)+0x18; `table_rows -- GameFormula 1026`."
+grade = "fairly sure"
+gap = "The decompiler drops the call's arguments in BuildItemPrices; assumed to be the buy price's (mult, powerLevel, quality) passed through in registers."
+
+["vendor.start_zone_prices"]
+statement = "With price slot kind 0 and buy multiplier 1.0, the client shows these credit prices (buy/sell): 12078 20/3, 14838 67/10, 20791 13/1, 12044 30/4; 13176 13185 13194 13188 13191 13179 525/78; 13151 13163 27875 328/49; 13154 13166 27876 281/42; 27874 13157 13169 421/63; 27873 13148 13160 468/70."
+proof = "BuildItemPrices with rows from `table_rows -- Item2 <the 22 ids> 74201`, `Item2Type <types>`, `Item2Family 16 2 5 1`, `Item2Category <cats>`, GameFormula 1078 1026 1214, computed in f32. 12078 has Item2 flag 0x4000: quality from Item2 74201 (GameFormula 1214 dataint0), q=2, its own powerLevel 3."
+grade = "fairly sure"
+gap = "Not run in the emulator or live; a live open of the vendor (Unit GetVendorItems tPriceInfo) settles it. If FUN_140444550 refuses 12078's stand-in row, the item is dropped. Retail Jabbithole gives 104 for 14838, not 67."
+
+["interaction.kind_49_vendor"]
+statement = "Entry 49 of the interaction kind table (the vendor): active 0, allowed on a dead unit 0, allowed toward a hostile unit 0, walks to the unit first 1, range 6.0, text id 166841, name Vendor, handler 0x14039d5a0 (the shared sender of the unit's own kind). So a dead unit or a unit Hostile to the player never offers the vendor click."
+proof = "Bytes at 0x140c48f18 (entry 49 = 0x140c48150 + 0x48 * 49), 72 bytes read with query.py ask bytes: 31000000 | 00000000 | 00010101 | 00010000 | 0000c040 (6.0) | 7059b040 01000000 | 4859b040 01000000 | 2859b040 01000000 | b98b0200 (0x28bb9 = 166841) 00000000 | 805db040 01000000 (the name) | a0d53940 01000000 (0x14039d5a0, the handler at entry offset 0x40). Offsets 4, 5 and 6 are the active, dead and hostile flags of PickInteractionKind 0x14047a060's loop (record there)."
+grade = "fairly sure"
+gap = "Not run live. The meaning of offsets 9 and 0xd (walk to the unit, a flag) is from ClickInteraction's reading, not repeated here."
+
+["0x1403e85d0.interaction_check"]
+statement = "UpdateGame, on every frame while the game's interaction gate is set and the current interaction kind is below 0x66, finds the interaction's unit and runs CheckInteractionTarget on it; when that returns a code it calls SetInteraction with unit 0, kind 0x65 and send 1, which ends the interaction. A player who walks out of range of the vendor (6.0 plus 3.0, edge to edge), a vendor that turns Hostile and a unit that is gone each end it with no server message first; the server sees only the client's 0x7ea {0, 0x65}."
+proof = "Saved C 0x1403e85d0.c (hash 8eb22adb6de47956) lines 614-620: `if (((int)param_1[0xcc8] != 0) && (*(uint *)((longlong)param_1 + 0x6644) < 0x66)) { uVar34 = FindUnit(param_1); iVar28 = FUN_1403add00(param_1[0xf],uVar34); if (iVar28 != 0) { uVar45 = FUN_1403a71f0(param_1,0,0x65,1); } }`. FUN_1403add00 is CheckInteractionTarget and FUN_1403a71f0 SetInteraction (records there); the word at 0x6644 is the current kind."
+grade = "fairly sure"
+gap = "What the word at 0xcc8 (the gate) holds is not read. The decompile shows CheckInteractionTarget with two arguments, so that the range is the current kind's table range is assumed from SetInteraction's call. Not run live."
+
+["lua.Vendor.ArrangeGroups"]
+statement = "Vendor.lua ArrangeGroups sorts a vendor's items into tabs: an item whose group id names no tab with a non-empty name goes under the tab named by the text ChallengeTypeGeneral, so a 0x90b with no tabs shows every item under that one tab. A tab with no item is left out."
+proof = "UI/Vendor/Vendor.lua lines 1298-1328 (archive extracted by client_files.py): tNewList.tOther = {strName = Apollo.GetString(\"ChallengeTypeGeneral\"), tItems = {}}; each tab of the vendor's groups with a non-empty strName gets tNewList[idGroup]; each item goes to tNewList[item.idGroup] or tNewList.tOther; empty tabs are removed. UpdateVendorItems line 915 calls it with Unit GetVendorGroups and GetVendorItems. `client_files.py text --search General` lists text 235 as `General`."
+grade = "fairly sure"
+gap = "That the name ChallengeTypeGeneral is text 235 (General) is by the text's wording, not by a read of the name to id link; the live window settles it."
+
+["Item2.currencyTypeId0"]
+statement = "All 22 items in the start-zone vendors' stock (12078, 14838, 20791, 13176, 13185, 13194, 13188, 12044, 13191, 13179, 13151, 13154, 13166, 27874, 27873, 27876, 13157, 13163, 27875, 13169, 13148, 13160) have currencyTypeId0, currencyTypeId1, currencyAmount0, currencyAmount1 and the four SellToVendor columns at 0, so the client computes each one's price (BuildItemPrices 0x14040d160) and no table holds a price."
+proof = "`gleam run -m genesis_prime/table_rows -- Item2 12078 14838 20791 13176 13185 13194 13188 12044 13191 13179 13151 13154 13166 27874 27873 27876 13157 13163 27875 13169 13148 13160`: each of the eight currency columns prints 0 on all 22 rows (counted with grep and uniq: 22 rows each)."
+grade = "fairly sure"
+gap = "Table data, not read from client code: no instruction shows the price path ignoring these columns, which BuildItemPrices' record gives."
 ["0x1403aecd0.index"]
 statement = "CheckItemFitsLocation refuses an inventory destination with Item_BagToSmall (37) only when its bag index is greater than the usable count; an index equal to the usable count passes, so the client sends a move to the first slot past the usable ones."
 proof = "0x1403aef23 mov eax, dword ptr [rsi + 0xc4]; cmp dword ptr [rbx + 4], eax; jbe to the pass path, else mov eax, 0x25 (llvm-objdump of WildStar64.exe). Saved C of 0x1403aecd0 line 130: if (*(uint *)(param_1 + 0xc4) < param_4[1]) return 0x25."
@@ -12312,3 +12449,71 @@ statement = "The Character window's PlayerEquippedItemChanged handler only re-ma
 proof = "UI/Character/Character.lua: the PlayerEquippedItemChanged event is registered to a handler that calls MapEquipment; DrawAttributes is called from the PersonaUpdateCharacterStats and Death handlers and from the window's open path. Who raises PersonaUpdateCharacterStats was not found."
 grade = "fairly sure"
 gap = "Who raises PersonaUpdateCharacterStats was not found, so a 0x93a that redraws the window was not seen. Reading the raisers of that event settles it."
+
+["0x140488fa0"]
+statement = "Builds the periodic quest manager once at client start: makes its MT19937 (DAT_140c65940, 0x1401ae3c0), then walks PeriodicQuestGroup in row order. For each group it makes the group's state (0x140488590), keyed by group id, and finds its set's node by periodicQuestSetId. A set seen for the first time is read from PeriodicQuestSet and gets a node (id, periodicGroupsOffered); its category is found or made (id, periodicSetsOffered) and the set joins the category's weight tree with key = the category's running total of PeriodicQuestSet.weight after adding it. Then the group gets a pick node (id, periodicQuestsOffered) that joins its set's weight tree with key = the set's running total of PeriodicQuestGroup.weight. So a set's children are its groups in row order, a category's children are its sets in the order their first group appears, and the first child's key is its own weight. Each group's pick node is also filed under contractTypeEnum * 5 + contractQualityEnum (groups 49 to 54 fill types 1 and 2, qualities 1 to 3). A group whose set row is missing is skipped. The quests join their groups in LoadQuests (record 0x1405a7c90.periodic_quests)."
+proof = "Saved C 0x140488fa0.c (8eb22adb6de47956): AllocMemory(0x9e0) and FUN_1401ae3c0 -> DAT_140c65940; loop over PeriodicQuestGroup rows by index (DAT_140c63848 with &PTR_u_PeriodicQuestGroup_140a6a050); FUN_140488590 -> map +8 keyed by row[0]; lookup of row[1] in map +0x48; missing: PeriodicQuestSet row (DAT_140c63840 with &PTR_u_PeriodicQuestSet_140a6a018), lookup of set[1] in map +0x28, missing: category row FUN_1401fb160 -> node {cat[0], count cat[1]} by FUN_140055f80(+0x28); set node {set[0], count set[2]} into +0x48; category +8 += set[3]; FUN_1400eedd0(category +0x18, running total); group node {row[0], count row[2]} into +0x68; set +8 += row[4]; FUN_1400eedd0(set +0x18, running total); param_1 + 0x88 + (row[5]*5 + row[6])*8 = group node. Columns by `gleam run -m genesis_prime/table_rows -- PeriodicQuestGroup --columns` (4 periodicQuestSetId, 8 periodicQuestsOffered, 16 weight, 20 contractTypeEnum, 24 contractQualityEnum), PeriodicQuestSet (4 periodicQuestSetCategoryId, 8 periodicGroupsOffered, 12 weight), PeriodicQuestSetCategory (4 periodicSetsOffered). Shipped rows (85 groups, 67 sets, 47 categories): no weight 0, no missing set or category, ids in row order."
+grade = "fairly sure"
+gap = "Read from the saved C; the instructions are not cited. A repeated key (a child of weight 0) would not be inserted by 0x1400eedd0; the shipped rows have none, so this was not followed further."
+name = "BuildPeriodicQuestTree"
+
+
+["0x140488590"]
+statement = "Makes a periodic group's state: the group's row and three empty sets (offered, accepted, done), each with its count."
+proof = "Saved C 0x140488590.c (8eb22adb6de47956): param_1[0] = row; offered +8, accepted +0x28, done +0x48; trees at param_1[2], [6], [10] with counts [3], [7], [0xb] set to 0. Roles from 0x1404895e0 (offered set +8), 0x140488520 ([7] + [0xb] against maxPeriodicQuestsAllowed) and records 0x140488640, 0x1404886f0."
+grade = "fairly sure"
+gap = "Which of +0x28 and +0x48 is accepted and which done rests on the records 0x140489aa0 and 0x1404895e0, not on reading 0x140488640 and 0x1404886f0 to the field."
+name = "NewPeriodicGroupState"
+
+
+["0x1405a7c90.periodic_quests"]
+statement = "While loading quests (Quest2 in row order), each row with questRepeatPeriodEnum not 0 and periodicQuestWeight not 0 joins a periodic group's weight tree, with key = the group's running total of periodicQuestWeight after adding it. The group is the one named by periodicQuestGroupId, or, when no group has that id, the group with the lowest id at or above 1 (group 1). In the shipped tables 1214 rows are periodic and none weighs 0; 230 name a known group, and 984 have periodicQuestGroupId 0 and so join group 1, whose periodicQuestsOffered and maxPeriodicQuestsAllowed are 0xffffffff: all of them are on offer every period, and only the 230 are drawn."
+proof = "Listing of 0x1405a7c90: 0x1405a7fe9 cmp dword [rax+0x1b4], 0 (questRepeatPeriodEnum, offset 436); 0x1405a7ff6 mov r14d, [rsi+0x1b0] (periodicQuestWeight, 432); 0x1405a8000 jz 0x1405a8197 (weight 0: not added); 0x1405a8006 mov r9, [0x140c65930] (the periodic manager); 0x1405a800d mov edx, [rsi+0x1ac] (periodicQuestGroupId, 428); 0x1405a8013 mov r8, [r9+0x70] (head of the group-node map +0x68); 0x1405a8023..0x1405a8065 lookup by id; 0x1405a8076 cmp dword [rax+0x20], 1 .. 0x1405a80b3 lower bound of 1 as the fallback; 0x1405a80da add [rbx+8], r14; 0x1405a80f6 call 0x1400eedd0 (tree at rbx+0x18). Offsets by `gleam run -m genesis_prime/table_rows -- Quest2 --columns`; counts from `table_rows -- Quest2` and `-- PeriodicQuestGroup`."
+grade = "sure"
+
+
+["0x1406111a0"]
+statement = "Makes a quest log entry for a quest: one objective record per objective, then sets the entry's state. When the state becomes 1 (Accepted) the entry's timers start: the quest timer start is the frame clock, a second deadline is clock + 10000 ms, and each objective IsQuestObjectiveReachable allows gets its timer start at the clock. Called by SetQuestState for a quest that becomes Accepted or Achieved with no entry."
+proof = "Saved C 0x1406111a0.c (6ba38d868f75acff): entry +0x4c quest timer start, +0x48 second deadline, +0x50 + 4i objective starts; AllocMemory(0x40) per objective row into param_1[2+i]; if param_1[1] != state: store it, and when state == 1: +0x4c = DAT_140c636a8, param_1[9] = DAT_140c636a8 + 10000, +0x50 + 4i = DAT_140c636a8 when IsQuestObjectiveReachable; FUN_140611710. Call from 0x1405fbdc0 at 0x1405fc133 (record 0x1405fbdc0)."
+grade = "fairly sure"
+gap = "Read from the saved C; the instructions are not cited. The reader of +0x48 is not traced."
+name = "InitQuestLogEntry"
+
+
+["0x140611310"]
+statement = "Sets a quest log entry's state; when it changes to 1 (Accepted), restarts the entry's timers as InitQuestLogEntry does (quest timer start = clock, second deadline = clock + 10000 ms, each reachable objective's start = clock). An entry already Accepted keeps its timers."
+proof = "Listing: 0x140611321 cmp edx, 1; 0x140611333 lea eax, [rdx+0x2710]; 0x140611339 mov [rcx+0x4c], edx. Saved C 0x140611310.c (6ba38d868f75acff) for the objective loop."
+grade = "sure"
+name = "SetQuestLogEntryState"
+
+
+["Quest2.maxTimeAllowedMS"]
+statement = "A quest's time limit in milliseconds (0: none). 14 rows have one: 2910 (30000), 2923 (120000), 3127, 3235, 3317, 3318, 3514, 3516 (300000), 3515 (360000), 4051 (180000), 3314, 9419, 9421 (600000), 3315 (1800000). The client only shows it: GetQuestTimeRemaining counts down from the moment the log entry turns Accepted (or from the time left sent in the login log) and stops at 0. The client never ends the quest when it runs out and sends nothing: only the server's 0x35c (or a login 0x35f entry) with state 4 botches it."
+proof = "Readers: 0x140553630 GetQuestTimeRemaining (0x14055369e mov eax, [r10+0x120]) and 0x1406118a0 RestoreQuestLogTimers (0x1406118c7 mov r10d, [rcx+0x120]); offset 288 by `gleam run -m genesis_prime/table_rows -- Quest2 --columns`. Timer start: records 0x1406111a0 and 0x140611310. Only state setter: SetQuestState 0x1405fbdc0, whose callers (query callers) are 0x1405fb350 (0x35f, sites 0x1405fb40a, 0x1405fb472, 0x1405fb548), 0x1405fb670 (0x35c, 0x1405fb6e2) and 0x1405fca00 (0x1405fca87, always state 5). Rows: `table_rows -- Quest2`."
+grade = "fairly sure"
+gap = "That the two functions above are the column's only readers rests on a text scan of the saved C, not a scan of every instruction. What the server should do at expiry beyond sending state 4 is not in the client."
+
+
+["QuestObjective.maxTimeAllowedMS"]
+statement = "An objective's time limit in milliseconds (0: none; 39 of 10031 rows have one). Display only, as for Quest2.maxTimeAllowedMS: GetObjectiveTimeRemaining counts down from the objective's timer start, which is set when the entry turns Accepted (for objectives IsQuestObjectiveReachable allows) or, in the 0x361 handler, when an earlier objective is marked done and a later reachable objective has no start yet; RestoreQuestLogTimers sets it from the login log's time left. The client never fails the objective or the quest at expiry and sends nothing; it only shows 0 left."
+proof = "Readers: 0x1405536c0 GetObjectiveTimeRemaining (saved C: objective row +0x28) and 0x1406118a0 (0x140611906 mov r9d, [rax+0x28]); offset 40 by `gleam run -m genesis_prime/table_rows -- QuestObjective --columns`. 0x361 start: saved C 0x1405fb830.c (e9b6b6af37d00314) lines 43-57, done bit 1 << (index + 2) in node +0x6c, then node +0x78 + 4i (entry +0x50 + 4i) = DAT_140c636a8 when 0; listing 0x1405fb91f mov eax, [0x140c636a8]. State setter callers: record Quest2.maxTimeAllowedMS."
+grade = "fairly sure"
+gap = "The only-readers claim rests on a text scan of the saved C. The client does not say what the server does when an objective's time is up (botch the quest with 0x35c state 4, or reset the objective's progress with 0x361); a retail recording of a timed objective running out would settle it."
+
+["0x140243a00"]
+statement = "Finds a TradeskillAdditive row by id; none when no row has it (so none for id 0)."
+proof = "Saved C 0x140243a00.c (hash 8eb22adb6de47956): the generic table getter shape, as Item2's 0x1402096e0: (*DAT_140c63840)(&PTR_u_TradeskillAdditive_140a6db98, id, DAT_140c63858) when the hook is set, else the table object DAT_140c64cb0's slot 0x18 with the id after the load check 0x1402437a0, else 0. The descriptor at 0x140a6db98 points to the name 'TradeskillAdditive', and its slot 0x140a6dbb0 holds this function. TradeskillAdditive (`gleam run -m genesis_prime/table_rows -- TradeskillAdditive --columns`): ID 0, tradeSkillId 4, tier 8, vectorX 12, vectorY 16, radius 20; 129 rows."
+grade = "sure"
+name = "GetTradeskillAdditiveRow"
+
+["Item2.tradeskillAdditiveId"]
+statement = "The item's TradeskillAdditive id: the item is a crafting additive. FillItemInfo keeps it in the item record, and a buy price read (GetBuyPrice) uses the player's additive-cost tradeskill bonus in place of the vendor's buy multiplier when it names a row. 127 of the 72106 Item2 rows have it nonzero, each a different id; all 22 start-zone vendor items (12078, 14838, 20791, 12044, 13176, 13185, 13194, 13188, 13191, 13179, 13151, 13154, 13166, 27874, 27873, 27876, 13157, 13163, 27875, 13169, 13148, 13160) have 0."
+proof = "Saved C 0x1404445d0.c (hash 5c0332ef738ce6d5): puVar12[0x70] = puVar4[0x1a], record word 0x70 = byte 0x1c0, row word 0x1a = offset 104 = tradeskillAdditiveId by `gleam run -m genesis_prime/table_rows -- Item2 --columns`; puVar4 is the item's own row (puVar3) unless its flags hold 0x4000 (the proxy). 0x14041bf80 reads record +0x1c0 into GetTradeskillAdditiveRow 0x140243a00. Rows: `gleam run -m genesis_prime/table_rows -- Item2 12078 14838 20791 12044 13176 13185 13194 13188 13191 13179 13151 13154 13166 27874 27873 27876 13157 13163 27875 13169 13148 13160` prints tradeskillAdditiveId = 0 on all 22; `gleam run -m genesis_prime/table_rows -- Item2` counted with awk: 72106 rows, 127 nonzero, 127 distinct values."
+grade = "sure"
+
+["0x1405e6230"]
+statement = "The player's tradeskill bonus factor of one bonus kind (TradeskillBonus.tradeskillBonusEnum), for one tradeskill and an additive's vector (vectorX, vectorY): from the kind's base (1.0 when its entries multiply, 0 when they add) it folds in the value of each bonus entry whose tradeskill is 0 or the one given and whose direction holds for the vector (none; 1 vectorX > 0; 2 vectorY > 0; 3 vectorX < 0; 4 vectorY < 0), then, when a second set is active, every entry of that set's same kind. Kind 14 is the cost of applying an additive: TradeskillBonus rows with tradeskillBonusEnum00 = 14 (ids 52, 53, 57, 58, 146, 150, 156, 160, 163, 164, 166, 167) hold value00 0.85 or 0.9, with objectIdTertiary00 1 to 4, and row 52's texts say 'Elemental Water Affinity: The cost to apply elemental water additives is reduced by 15%.' Not a reputation factor."
+proof = "Saved C 0x1405e6230.c and 0x14079e630.c (hash 8eb22adb6de47956): list = *(set + 0x10 + kind*8); f = 0x14079e630(list, vector, tradeskill); 0x14079e630: op = list[0] (2 adds from 0.0, 3 multiplies from 1.0 DAT_140b79ed0, else returns 1.0), the list's own value list[1] is folded only when the tradeskill is 0, then each 20-byte entry (array list+0x10, count list+0x18) is folded when entry[0] is 0 or the tradeskill and entry[2] is 0 or its direction test on vector[0], vector[1] holds, value entry[3]. When set+0x220 != 0, the list at set+0x228 + kind*8 is folded whole by its own op, and the two are combined by the first list's op. Callers pass set = game+0x1698, kinds 0xe (0x14041bf80, 0x14059b7c0, 0x140675320), 0xf and 0x10 (0x14041a270, 0x1406744d0). Rows: `gleam run -m genesis_prime/table_rows -- TradeskillBonus tradeskillBonusEnum00=14`; texts: `scripts/client_files.py text 498923 498924`."
+grade = "fairly sure"
+gap = "The code that fills game+0x1698 from TradeskillBonus (0x1405bcf90 reads that table) is not read, so the match of entry[0], entry[2] and entry[3] to objectIdPrimary, objectIdTertiary and value, and kind 14's op, rest on the rows' shape and texts. Kinds 0xf and 0x10 are not decoded."
+name = "GetTradeskillBonusFactor"

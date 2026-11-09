@@ -29,6 +29,7 @@ import fixture_tables
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/game/hit.{Blow}
 import genesis_prime/game/start_place
+import genesis_prime/game/vendor
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_life.{Attackable, Hostile}
@@ -49,14 +50,24 @@ import place_support
 import planted_table.{Float, Integer}
 import rating_support
 import spawn_support
+import vendor_support
 
 /// The selection of the rows against the client's rows.
 fn selected(rows rows: List(Row)) -> Selection {
+  selected_selling(rows:, vendors: vendor.none())
+}
+
+/// The selection of the rows against the client's rows with these vendors.
+fn selected_selling(
+  rows rows: List(Row),
+  vendors vendors: vendor.Vendors,
+) -> Selection {
   spawn.select(
     rows:,
     tables: character_tables.content_tables(),
     formulas: rating_support.formulas(),
     kinds: spawn_support.kinds(),
+    vendors:,
   )
 }
 
@@ -71,6 +82,7 @@ fn selected_over(
     tables: character_tables.content_over(tables:),
     formulas: rating_support.formulas(),
     kinds: spawn_support.kinds(),
+    vendors: vendor.none(),
   )
 }
 
@@ -1244,4 +1256,38 @@ pub fn a_creature_of_difficulty_7_strikes_with_effect_184777_for_17_test() -> Ni
       ),
     ]
     as "difficulty 7 (Creature2Difficulty 7, multipliers 0.7) fails 30526 and passes 30527: effect 184777 alone, 17"
+}
+
+pub fn a_spawn_is_a_vendor_when_its_creature_has_stock_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The client has no vendor column (`vendor.stock_gap`), so the server marks the
+  // vendors: every spawn of a creature that has stock is one, both of a creature
+  // with two spawns included, and no spawn of any other creature is.
+  let walker =
+    spawn.Row(
+      ..spawn_support.beast_row(number: 3),
+      creature_id: 74_812,
+      display_info_id: 25_510,
+      outfit_info_id: 8952,
+      faction_id: 171,
+      base_faction_id: 171,
+    )
+  let selection =
+    selected_selling(
+      rows: [
+        spawn_support.beast_row(number: 1),
+        spawn_support.beast_row(number: 2),
+        walker,
+      ],
+      vendors: vendor_support.stocking(creature_ids: [73_464]),
+    )
+  assert started(selection) == [1, 2, 3] as "all three rows start"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let vendor_of = fn(number) {
+    let assert Ok(spawn) = dict.get(world.by_id, SpawnId(number))
+    spawn.vendor
+  }
+  assert vendor_of(1) && vendor_of(2)
+    as "both spawns of the creature with stock are vendors"
+  assert !vendor_of(3) as "a spawn of a creature with no stock is not"
 }
