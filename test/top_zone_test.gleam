@@ -71,6 +71,22 @@ pub fn a_zone_with_no_row_has_no_top_zone_test() -> Nil {
     as "zone 0 is no zone and has no row"
 }
 
+pub fn a_zones_chain_runs_from_the_zone_up_to_its_top_test() -> Nil {
+  use <- owned_test.run(5000)
+  let tables = fixture_tables.shared()
+  assert top_zone.chain(tables, 648) == [648, 35]
+    as "WorldZone 648's parentZoneId is 35, which has parent 0"
+  assert top_zone.chain(tables, 1411) == [1411, 1305, 1304]
+    as "WorldZone 1411 -> 1305 -> 1304"
+  assert top_zone.chain(tables, 6009) == [6009, 4962, 4961]
+    as "WorldZone 6009 -> 4962 -> 4961, whose parent is 0"
+  assert top_zone.chain(tables, 248) == [248]
+    as "a row whose parent is 0 is its own chain"
+  assert top_zone.chain(tables, 147) == [147]
+    as "WorldZone 147's parent 1132 has no row, so the chain stops at 147"
+  assert top_zone.chain(tables, 1132) == [] as "a zone with no row has no chain"
+}
+
 pub fn a_cycle_in_the_parent_chain_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   assert top_zone.from_parents([#(1, 2), #(2, 1)])

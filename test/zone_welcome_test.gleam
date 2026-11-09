@@ -11,7 +11,6 @@ import character_tables
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/content/refusal.{RowId}
 import genesis_prime/game/zone_welcome.{Row}
-import gleam/dict
 import gleam/list
 import gleam/string
 import owned_test
@@ -126,15 +125,4 @@ pub fn a_row_the_tables_refuse_fails_the_load_test() -> Nil {
     as "the table holds no Tutorial row 99999"
   assert string.contains(wrong_category.rule, "category 29")
     as "Tutorial.tutorialCategoryEnum.29: Tutorial row 1 has category 0, and only 29 rows are welcomes"
-
-  let assert Error(cycle) =
-    zone_welcome.select_over(
-      rows: [Row(world_zone_id: 5, tutorial_id: 332)],
-      parents: [#(5, 0), #(1, 2), #(2, 1)],
-      categories: dict.from_list([#(332, 29)]),
-    )
-    as "a walk that meets zone 1 twice would never end"
-  assert list.map(cycle, fn(refusal) { #(refusal.table, refusal.row) })
-    == [#("WorldZone", RowId(1)), #("WorldZone", RowId(2))]
-    as "the zones whose parent chain is the cycle are named, and no welcome is found by walking it"
 }
