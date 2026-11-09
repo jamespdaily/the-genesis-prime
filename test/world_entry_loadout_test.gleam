@@ -39,9 +39,10 @@ import genesis_prime/message/ability_tiers
 import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/float32
+import genesis_prime/message/item_added
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_property.{type UnitProperty}
-import genesis_prime/store.{type Character}
+import genesis_prime/store.{type Character, HeldItem}
 import genesis_prime/table/id.{Item2Id, Spell4BaseId}
 import genesis_prime/world_map/unit_fields
 import gleam/float
@@ -494,4 +495,98 @@ pub fn every_item_the_entry_holds_has_its_own_guid_that_is_not_0_test() -> Nil {
     assert !list.contains(guids, 0)
       as "opcode.0x111.equipped_set: each piece has a non-zero guid"
   })
+}
+
+pub fn the_entry_sends_an_item_added_for_each_saved_item_with_its_saved_guid_and_place_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  let saved = [
+    HeldItem(
+      item_guid: 12,
+      item2_id: Item2Id(81_366),
+      location: 1,
+      bag_index: 3,
+      stack_count: 5,
+    ),
+    HeldItem(
+      item_guid: 5_000_000_001,
+      item2_id: Item2Id(81_353),
+      location: 0,
+      bag_index: 16,
+      stack_count: 1,
+    ),
+    HeldItem(
+      item_guid: 7,
+      item2_id: Item2Id(8535),
+      location: 0,
+      bag_index: 15,
+      stack_count: 1,
+    ),
+  ]
+  let #(effects, entered) =
+    world_entry_support.entry_holding(
+      tables: character_tables.shared(),
+      character:,
+      items: saved,
+    )
+  let frames = world_entry_support.frames_of(effects:)
+  let added = world_entry_support.items_added(frames:)
+  let held = fn(added: item_added.ItemAdded) {
+    let item = added.held_item.item
+    #(
+      item.location,
+      item.bag_index,
+      item.item_guid,
+      item.item_id,
+      item.stack_count,
+    )
+  }
+  assert list.take(list.map(added, held), 3)
+    == [
+      #(0, 15, 7, 8535, 1),
+      #(0, 16, 5_000_000_001, 81_353, 1),
+      #(1, 3, 12, 81_366, 5),
+    ]
+    as "opcode.0x111.guid: the message carries the item's whole 64-bit guid, so a guid above 2^32 and one at inventory 1/3 go out as saved; the items go in the order of their places, by location then bag index (the order the store reads them in, whatever the order of the list)"
+  assert list.map(added, fn(added) { added.held_item.item.location })
+    == [0, 0, 1, 4, 4, 4, 4]
+    as "one item added for each saved item and none more for the loadout's gear; the three abilities and the innate (location 4, opcode.0x111.ability_bag) follow as before"
+  assert list.all(added, fn(added) { added.held_item.item.item_guid != 0 })
+    as "opcode.0x111.equipped_set: a guid is never 0"
+  assert entered.items == saved
+    as "the player the connection keeps holds the items as they were saved"
+  let ids = cast_support.ids(frames:)
+  let #(before_tiers, from_tiers) =
+    list.split_while(ids, fn(id) { id != 0x01A0 })
+  assert list.count(before_tiers, fn(id) { id == 0x0111 }) == 7
+    && !list.contains(from_tiers, 0x0111)
+    as "every item added, the three saved and the four abilities, comes before the tiers (0x1a0) and the action set"
+  assert entered.loadout.weapon == Item2Id(81_353)
+    && entered.loadout.weapon_slot == 16
+    as "casting still reads the weapon from the loadout (0x1403afb10: location 0, index 16)"
+
+  let #(effects, entered) =
+    world_entry_support.entry_holding(
+      tables: character_tables.shared(),
+      character: world_entry_support.character(class: 2, faction: 166, level: 1),
+      items: [],
+    )
+  let frames = world_entry_support.frames_of(effects:)
+  let added = world_entry_support.items_added(frames:)
+  assert list.map(added, fn(added) { added.held_item.item.location })
+    == [4, 4, 4, 4]
+    as "a character saved before items were stored holds no gear; its three abilities and the innate go out at location 4 (opcode.0x111.ability_bag)"
+  assert list.map(added, fn(added) { added.held_item.item.item_id })
+    == [26_468, 25_473, 25_635, 31_779]
+    as "SpellLevel level 1 of the Engineer and its innate's Spell4Base id, as with gear"
+  assert list.length(
+      list.filter(cast_support.ids(frames:), fn(id) {
+        id == 0x01A0 || id == 0x019D
+      }),
+    )
+    == 2
+    as "the tiers (0x1a0) and the action set (0x19d) go out as before"
+  assert entered.loadout.weapon == Item2Id(81_353)
+    as "casting reads the weapon from the loadout"
 }

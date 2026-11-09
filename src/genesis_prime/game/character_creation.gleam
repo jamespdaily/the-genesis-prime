@@ -20,12 +20,15 @@
 
 import genesis_prime/game/appearance
 import genesis_prime/game/level
+import genesis_prime/game/loadout
 import genesis_prime/game/start_place
 import genesis_prime/message/create_character.{type CreateCharacter}
 import genesis_prime/message/create_result.{type CreateResult}
-import genesis_prime/store.{type LookEntry, type NewCharacter, NewCharacter}
+import genesis_prime/store.{
+  type LookEntry, type NewCharacter, type NewItem, NewCharacter, NewItem,
+}
 import genesis_prime/table/character_creation.{type CharacterCreation}
-import genesis_prime/table/id.{CharacterCreationId}
+import genesis_prime/table/id.{type ClassId, CharacterCreationId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/int
@@ -163,24 +166,59 @@ pub fn check_row(
         Error(Nil) ->
           Error(NoLevelForExperience(creation_id:, experience: row.xp))
         Ok(level) ->
-          Ok(
-            NewCharacter(
-              name: request.name,
-              gender: row.sex,
-              race_id:,
+          Ok(NewCharacter(
+            name: request.name,
+            gender: row.sex,
+            race_id:,
+            class_id: character_creation.class_id(row),
+            faction_id: row.faction_id,
+            level:,
+            path: request.path,
+            place:,
+            look:,
+            bones: request.bone_values,
+            starting_items: novice_items(
+              tables:,
               class_id: character_creation.class_id(row),
               faction_id: row.faction_id,
-              level:,
-              path: request.path,
-              place:,
-              look:,
-              bones: request.bone_values,
-              starting_items: [],
             ),
-          )
+          ))
       }
   }
 }
+
+/// The items a new character of the class and faction holds: its Novice set's
+/// armor pieces and shield, each at the bag index of its slot, and its weapon in
+/// slot 16, all equipped (location 0), a stack of 1 each
+/// (`opcode.0x111.equipped_set`, `Item2.novice_set`).
+fn novice_items(
+  tables tables: table_store.Tables,
+  class_id class_id: ClassId,
+  faction_id faction_id: Int,
+) -> List(NewItem) {
+  let assert Ok(loadout) = loadout.of(tables:, class_id:, faction_id:)
+    as "the content load refuses a table with no Novice set for a class and faction a row can create"
+  let armor =
+    list.map(loadout.armor, fn(piece) {
+      NewItem(
+        item2_id: piece.item,
+        location: equipped_location,
+        bag_index: piece.bag_index,
+        stack_count: 1,
+      )
+    })
+  list.append(armor, [
+    NewItem(
+      item2_id: loadout.weapon,
+      location: equipped_location,
+      bag_index: loadout.weapon_slot,
+      stack_count: 1,
+    ),
+  ])
+}
+
+/// The location of the items a character wears and wields (`opcode.0x111.equipped_set`).
+const equipped_location = 0
 
 /// Checks the request's look: its labels strictly increase (each label at most
 /// once, in label-id order), each label is allowed for the row's faction and

@@ -294,7 +294,7 @@ pub fn a_valid_request_asks_the_store_to_make_the_character_with_the_slot_count_
             LookEntry(label: CharacterCustomizationLabelId(22), value: 1),
           ],
           bones: character_support.bones(46),
-          starting_items: [],
+          starting_items: character_support.row_466_items(),
         ),
         character_slots: 2,
       )),

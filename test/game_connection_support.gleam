@@ -80,6 +80,7 @@ import place_support
 import planted_table
 import server_proxy_support
 import spawn_support
+import world_entry_support
 
 /// What the tests' game connections are made with: a realm id and a
 /// character limit the hello and the list must carry, the number of character
@@ -445,14 +446,12 @@ pub fn joining_saved(
     taken:,
     outcome: step.Answer(
       FromStore(
-        ForWorld(
-          CharacterLoaded(
-            character,
-            character_support.epoch(1),
-            saved_health,
-            [],
-          ),
-        ),
+        ForWorld(CharacterLoaded(
+          character,
+          character_support.epoch(1),
+          saved_health,
+          world_entry_support.novice_items(character:),
+        )),
       ),
     ),
   )

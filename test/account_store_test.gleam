@@ -35,15 +35,17 @@ import genesis_prime/store.{
   type AccountId, Account, AccountFound, AccountId, Character, CharacterCreated,
   CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
   CreateCharacter, CreateForNoSuchAccount, Created, DeleteCharacter, Deleted,
-  FindAccount, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused,
+  FindAccount, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem,
   ListCharacters, Listed, LoadCharacter, Login, LookEntry, Move, NameBreaksRule,
-  NameStands, NameTaken, NeedsRename, NewCharacter, NewNameBreaksRule,
+  NameStands, NameTaken, NeedsRename, NewCharacter, NewItem, NewNameBreaksRule,
   NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable,
   NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, RenameCharacter,
   Renamed, SavePlace, Select, Unavailable, World,
 }
 import genesis_prime/store/worker
-import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
+import genesis_prime/table/id.{
+  CharacterCustomizationLabelId, ClassId, Item2Id, RaceId,
+}
 import gleam/bool
 import gleam/dynamic/decode
 import gleam/erlang/process
@@ -833,12 +835,23 @@ fn create(
   name name: String,
   slots slots: Int,
 ) -> store.CreateAnswer {
+  create_holding(store:, account:, name:, slots:, items: [])
+}
+
+/// A create of the character that starts with these items.
+fn create_holding(
+  store store: Store,
+  account account: AccountId,
+  name name: String,
+  slots slots: Int,
+  items items: List(store.NewItem),
+) -> store.CreateAnswer {
   let assert ForSelect(Created(answer)) =
     ask(
       store,
       Select(CreateCharacter(
         account_id: account,
-        character: a_new_character(name),
+        character: NewCharacter(..a_new_character(name), starting_items: items),
         character_slots: slots,
       )),
     )
@@ -2058,4 +2071,300 @@ fn release_lock(lock: Lock) -> Nil {
     process.receive(lock.committed, within: ask_support.event_wait_ms)
     as "the locking transaction committed"
   Nil
+}
+
+// ---- held items ----
+
+/// The seven items of CharacterCreation row 466's Novice set, each at the bag
+/// index of its slot (`ItemSlot.equippedSlotFlags`): chest 0, legs 1, shoulder
+/// 3, feet 4, hands 5, shield 15 and weapon 16, a stack of 1 each
+/// (`opcode.0x111.equipped_set`).
+fn novice_set() -> List(store.NewItem) {
+  [
+    NewItem(Item2Id(81_359), 0, 0, 1),
+    NewItem(Item2Id(81_344), 0, 1, 1),
+    NewItem(Item2Id(81_381), 0, 3, 1),
+    NewItem(Item2Id(81_345), 0, 4, 1),
+    NewItem(Item2Id(81_380), 0, 5, 1),
+    NewItem(Item2Id(8534), 0, 15, 1),
+    NewItem(Item2Id(81_346), 0, 16, 1),
+  ]
+}
+
+/// The items the store loads for the character, in the order it sends them.
+fn held_by(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+) -> List(store.HeldItem) {
+  let assert ForWorld(CharacterLoaded(items:, ..)) =
+    ask(store, World(LoadCharacter(account, character_id)))
+    as "the account's character loads"
+  items
+}
+
+/// An item as the create gave it: what a row holds besides its guid.
+fn without_guid(item: store.HeldItem) -> store.NewItem {
+  NewItem(
+    item2_id: item.item2_id,
+    location: item.location,
+    bag_index: item.bag_index,
+    stack_count: item.stack_count,
+  )
+}
+
+/// How many item rows the table holds, for every character.
+fn item_rows(store store: Store) -> Int {
+  let assert Ok(pog.Returned(rows: [count], ..)) =
+    pog.query("select count(*)::int from character_item")
+    |> pog.returning(decode.at([0], decode.int))
+    |> pog.execute(store.pool)
+    as "the item table was counted"
+  count
+}
+
+/// The table refused an item row, by the name of the check that did.
+type ItemRefused {
+  ItemRefused(constraint: String)
+}
+
+/// Inserts one item row straight into the table, answering the guid it was given
+/// or the name of the check that refused it.
+fn put_item(
+  store store: Store,
+  character_id character_id: store.CharacterId,
+  item2_id item2_id: Int,
+  location location: Int,
+  bag_index bag_index: Int,
+  stack_count stack_count: Int,
+) -> Result(Int, ItemRefused) {
+  let CharacterId(number) = character_id
+  pog.query(
+    "insert into character_item (character_id, item2_id, location, bag_index, stack_count) values ($1, $2, $3::int, $4, $5) returning item_guid",
+  )
+  |> pog.parameter(pog.int(number))
+  |> pog.parameter(pog.int(item2_id))
+  |> pog.parameter(pog.int(location))
+  |> pog.parameter(pog.int(bag_index))
+  |> pog.parameter(pog.int(stack_count))
+  |> pog.returning(decode.at([0], decode.int))
+  |> pog.execute(store.pool)
+  |> result.map(fn(returned) {
+    let assert [guid] = returned.rows as "one row was inserted"
+    guid
+  })
+  |> result.map_error(fn(error) {
+    let assert pog.ConstraintViolated(constraint:, ..) = error
+      as "the table refused with a constraint"
+    ItemRefused(constraint:)
+  })
+}
+
+pub fn a_create_stores_the_novice_set_with_new_guids_and_the_load_returns_them_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let assert CharacterCreated(character_id: first) =
+    create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 2,
+      items: novice_set(),
+    )
+    as "a create with the Novice set is stored"
+  let assert CharacterCreated(character_id: second) =
+    create_holding(
+      store:,
+      account:,
+      name: "Ef Gh",
+      slots: 2,
+      items: novice_set(),
+    )
+    as "a second character gets the same set"
+  let first_items = held_by(store:, account:, character_id: first)
+  let second_items = held_by(store:, account:, character_id: second)
+  assert list.map(first_items, without_guid) == novice_set()
+    as "opcode.0x111.equipped_set: seven items at location 0 in the bag indexes 0, 1, 3, 4, 5, 15 and 16, as the create gave them, in the order of their places"
+  assert list.map(second_items, without_guid) == novice_set()
+  let guids =
+    list.map(list.append(first_items, second_items), fn(item) { item.item_guid })
+  assert list.all(guids, fn(guid) { guid != 0 })
+    as "opcode.0x111.equipped_set: a held item's guid is never 0"
+  assert list.length(list.unique(guids)) == 14
+    as "opcode.0x111.guid: every item has a guid of its own, and the second character's differ from the first's"
+  stop(store)
+}
+
+pub fn a_refused_create_stores_no_items_and_a_delete_removes_the_characters_items_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let other = insert_account(store, "login-2")
+  let assert CharacterCreated(character_id: kept) =
+    create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: novice_set(),
+    )
+    as "the first create is stored"
+  assert item_rows(store:) == 7
+  assert create_holding(
+      store:,
+      account:,
+      name: "Ef Gh",
+      slots: 1,
+      items: novice_set(),
+    )
+    == NoFreeSlot
+    as "lua.CharacterSelection.OnLoadFromCharacter: an account holds its slots only, so a create past them is refused"
+  assert create_holding(
+      store:,
+      account: other,
+      name: "ab cd",
+      slots: 1,
+      items: novice_set(),
+    )
+    == NameTaken
+    as "a name is unique ignoring case"
+  assert item_rows(store:) == 7
+    as "a refused create stores its character's items with the character or not at all: the table holds only the first character's seven"
+  let assert CharacterCreated(character_id: theirs) =
+    create_holding(
+      store:,
+      account: other,
+      name: "Ij Kl",
+      slots: 1,
+      items: novice_set(),
+    )
+    as "another account's create is stored"
+  assert item_rows(store:) == 14
+  let CharacterId(kept_number) = kept
+  assert deleted(store:, account:, character_id: kept_number)
+    == CharacterDeleted
+  assert item_rows(store:) == 7
+    as "a delete removes the character's seven rows with it (character_item_character_exists, on delete cascade)"
+  assert list.length(held_by(store:, account: other, character_id: theirs)) == 7
+    as "and the other character's rows stay"
+  stop(store)
+}
+
+pub fn the_table_refuses_a_second_item_in_one_place_a_place_the_client_has_not_and_a_stack_of_0_by_their_names_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let assert CharacterCreated(character_id:) =
+    create(store:, account:, name: "Ab Cd", slots: 1)
+    as "a character that holds nothing yet"
+  let put = fn(item2_id, location, bag_index, stack_count) {
+    result.replace(
+      put_item(
+        store:,
+        character_id:,
+        item2_id:,
+        location:,
+        bag_index:,
+        stack_count:,
+      ),
+      Nil,
+    )
+  }
+  assert put(81_359, 0, 3, 1) == Ok(Nil)
+    as "an item in a free place of the equipped slots is stored"
+  assert put(81_344, 0, 3, 1)
+    == Error(ItemRefused("character_item_one_per_slot"))
+    as "a place holds one item"
+  assert put(81_344, 1, 3, 1) == Ok(Nil)
+    as "the same index of another location is another place"
+  assert put(81_344, 3, 0, 1)
+    == Error(ItemRefused("character_item_location_is_held_by_the_client"))
+    as "the client holds items at locations 0 (equipped), 1 (inventory) and 2 (bank)"
+  assert put(81_344, 0, 30, 1) == Ok(Nil)
+    as "the client's move check refuses only equipped indexes above 30"
+  assert put(81_344, 0, 31, 1)
+    == Error(ItemRefused("character_item_bag_index_is_a_slot_of_its_location"))
+    as "the equipped slots end at index 30 (opcode.0x111.shared_item_unnamed)"
+  assert put(81_344, 1, 95, 1) == Ok(Nil)
+  assert put(81_344, 1, 96, 1)
+    == Error(ItemRefused("character_item_bag_index_is_a_slot_of_its_location"))
+    as "the inventory's 96 slots end at index 95"
+  assert put(81_344, 2, 231, 1) == Ok(Nil)
+  assert put(81_344, 2, 232, 1)
+    == Error(ItemRefused("character_item_bag_index_is_a_slot_of_its_location"))
+    as "the bank's 232 slots end at index 231"
+  assert put(81_344, 1, 4, 0)
+    == Error(ItemRefused("character_item_stack_count_is_positive"))
+    as "the client reads a stack of 0 as 1, so only 1 or more is stored (opcode.0x111.shared_item_unnamed)"
+  assert item_rows(store:) == 5 as "only the five accepted rows are stored"
+  stop(store)
+}
+
+pub fn an_item_keeps_its_guid_when_its_place_changes_and_two_items_swap_places_in_one_update_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let assert CharacterCreated(character_id:) =
+    create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: novice_set(),
+    )
+    as "a character holding the Novice set"
+  let CharacterId(number) = character_id
+  let update = fn(sql) {
+    let assert Ok(_) =
+      pog.query(sql)
+      |> pog.parameter(pog.int(number))
+      |> pog.execute(store.pool)
+      as "the update was accepted"
+    Nil
+  }
+  let before = held_by(store:, account:, character_id:)
+  let assert [chest, legs, shoulder, feet, hands, shield, weapon] = before
+    as "the Novice set is seven items"
+  update(
+    "update character_item set location = 1, bag_index = 2 where character_id = $1 and location = 0 and bag_index = 5",
+  )
+  assert held_by(store:, account:, character_id:)
+    == [
+      chest,
+      legs,
+      shoulder,
+      feet,
+      shield,
+      weapon,
+      HeldItem(..hands, location: 1, bag_index: 2),
+    ]
+    as "opcode.0x111.guid: an item moved to another place keeps its guid, its item and its stack"
+  update(
+    "update character_item set bag_index = case bag_index when 0 then 1 else 0 end where character_id = $1 and location = 0 and bag_index in (0, 1)",
+  )
+  assert held_by(store:, account:, character_id:)
+    == [
+      HeldItem(..legs, bag_index: 0),
+      HeldItem(..chest, bag_index: 1),
+      shoulder,
+      feet,
+      shield,
+      weapon,
+      HeldItem(..hands, location: 1, bag_index: 2),
+    ]
+    as "one update swaps two items' places, each keeping its guid (a plain unique key would refuse it row by row)"
+  let assert Ok(made) =
+    put_item(
+      store:,
+      character_id:,
+      item2_id: 81_380,
+      location: 0,
+      bag_index: 5,
+      stack_count: 1,
+    )
+    as "the place the hands left is free"
+  assert !list.contains(list.map(before, fn(item) { item.item_guid }), made)
+    as "opcode.0x111.guid: a guid is never made again, so an item that takes a freed place does not take the guid of the item that left it"
+  stop(store)
 }

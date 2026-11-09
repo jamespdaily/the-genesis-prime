@@ -34,16 +34,17 @@ import genesis_prime/message/create_character.{
   type CreateCharacter, CreateCharacter,
 }
 import genesis_prime/message/create_result
-import genesis_prime/store.{LookEntry, NewCharacter}
+import genesis_prime/store.{LookEntry, NewCharacter, NewItem}
 import genesis_prime/table/character_creation as creation_table
 import genesis_prime/table/id.{
-  CharacterCreationId, CharacterCustomizationLabelId, ClassId, RaceId,
+  CharacterCreationId, CharacterCustomizationLabelId, ClassId, Item2Id, RaceId,
 }
 import gleam/int
 import gleam/list
 import gleam/pair
 import gleam/result
 import gleam/string
+import novice_tables
 import owned_test
 import planted_table.{Integer}
 import unitest
@@ -76,25 +77,23 @@ pub fn a_valid_request_gives_the_new_character_from_its_creation_row_test() -> N
       customisation_values: [1, 1],
     )
   assert character_creation.check(tables, asked)
-    == Ok(
-      NewCharacter(
-        name: "Ab Cd",
-        gender: 1,
-        race_id: RaceId(1),
-        class_id: ClassId(1),
-        faction_id: 167,
-        level: 1,
-        path: 2,
-        place: character_tables.novice_start_place(),
-        look: [
-          LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-          LookEntry(label: CharacterCustomizationLabelId(22), value: 1),
-        ],
-        bones: character_support.bones(46),
-        starting_items: [],
-      ),
-    )
-    as "CharacterCreation row 466: class 1, race 1, sex 1, faction 167; the path, the labels with their values and the bone values as the request carries them (opcode.0x25b); xp 0, so level 1 (0x140029820); a PreTutorial start, so the place of WorldLocation2 row 51596: World 3460, zone 6009 and its position"
+    == Ok(NewCharacter(
+      name: "Ab Cd",
+      gender: 1,
+      race_id: RaceId(1),
+      class_id: ClassId(1),
+      faction_id: 167,
+      level: 1,
+      path: 2,
+      place: character_tables.novice_start_place(),
+      look: [
+        LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
+        LookEntry(label: CharacterCustomizationLabelId(22), value: 1),
+      ],
+      bones: character_support.bones(46),
+      starting_items: character_support.row_466_items(),
+    ))
+    as "CharacterCreation row 466: class 1, race 1, sex 1, faction 167; the path, the labels with their values and the bone values as the request carries them (opcode.0x25b); xp 0, so level 1 (0x140029820); a PreTutorial start, so the place of WorldLocation2 row 51596: World 3460, zone 6009 and its position; its seven items itemId0 to itemId06 at location 0, each at the bag index of its slot: chest 81359 at 0, legs 81344 at 1, shoulder 81381 at 3, feet 81345 at 4, hands 81380 at 5, shield 8534 at 15, weapon 81346 at 16 (ItemSlot.equippedSlotFlags, opcode.0x111.equipped_set)"
 }
 
 pub fn a_nexus_row_gives_the_character_the_place_of_its_veteran_start_test() -> Nil {
@@ -568,5 +567,57 @@ pub fn every_arkship_row_of_the_clients_table_is_disabled_so_the_enabled_check_r
     assert character_creation.check_row(tables, row, request(row.id, "Ab Cd"))
       == Error(RowDisabled(creation_id: row.id))
       as "a disabled Arkship row is refused for its enabled column"
+  })
+}
+
+pub fn the_new_character_carries_the_novice_set_of_its_class_and_faction_at_location_0_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  list.each(novice_tables.sets(), fn(set) {
+    let assert Ok(row) =
+      creation_table.get(tables:, id: CharacterCreationId(set.creation_id))
+      as "the client's CharacterCreation holds the row of each Novice set"
+    let assert Ok(character) =
+      character_creation.check_row(
+        tables,
+        row,
+        CreateCharacter(
+          ..request(set.creation_id, "Ab Cd"),
+          bone_values: list.repeat(
+            0,
+            appearance.bone_count(
+              tables:,
+              race_id: creation_table.race_id(row),
+              sex: row.sex,
+            ),
+          ),
+        ),
+      )
+      as "the PreTutorial rows of the Novice sets are enabled, free and open to every account"
+    assert character.starting_items
+      == list.map(novice_tables.equipped_of(set:), fn(pair) {
+        NewItem(
+          item2_id: Item2Id(pair.0),
+          location: 0,
+          bag_index: pair.1,
+          stack_count: 1,
+        )
+      })
+      as {
+        "CharacterCreation row "
+        <> int.to_string(set.creation_id)
+        <> ": its seven items are held at location 0, each at the bag index of its slot (ItemSlot.equippedSlotFlags), as a stack of 1 (opcode.0x111.equipped_set)"
+      }
+    assert list.map(character.starting_items, fn(item) { item.bag_index })
+      == [0, 1, 3, 4, 5, 15, 16]
+      as "every class and faction holds one item in each of chest 0, legs 1, shoulder 3, feet 4, hands 5, shield 15 and weapon 16"
+    assert list.last(character.starting_items)
+      == Ok(NewItem(
+        item2_id: Item2Id(set.weapon),
+        location: 0,
+        bag_index: 16,
+        stack_count: 1,
+      ))
+      as "the weapon of the row (itemId04) is the item in slot 16"
   })
 }

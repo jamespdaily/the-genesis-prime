@@ -41,12 +41,16 @@
 ////   unless the account already has its slots, in one statement; the name's
 ////   uniqueness is the index on the ICU-folded `lower(name collate "und-x-icu")`,
 ////   and its form is the table's rule-0 check. An account that has no row is
-////   `CreateForNoSuchAccount`.
-//// - **A load is one statement.** World entry's load of a character names the
+////   `CreateForNoSuchAccount`. The insert is followed in the same transaction by
+////   one insert of the character's starting items, so a create that is refused
+////   stores no item.
+//// - **A load is one transaction.** World entry's load of a character names the
 ////   account's id as well as the character's, so another account's character
-////   is never taken; it raises the character's `session_epoch` by one and
-////   returns the new value with the row, so the login that loaded the
-////   character holds that epoch. No row is `NotTheAccounts`.
+////   is never taken; its update raises the character's `session_epoch` by one
+////   and returns the new value with the row, so the login that loaded the
+////   character holds that epoch, and it locks the row, so the read of the
+////   character's items that follows on the same connection finds the items the
+////   character had when the row was taken. No row is `NotTheAccounts`.
 //// - **A save is one statement.** It names the account's id, the character's,
 ////   the epoch the saving login was told and the save's own sequence number, so
 ////   a save from an older login, or one that reaches the database after a newer
@@ -85,14 +89,14 @@ import genesis_prime/store.{
   AccountId, Character, CharacterCreated, CharacterDeleted, CharacterId,
   CharacterLoaded, CharacterRenamed, CreateCharacter, CreateForNoSuchAccount,
   Created, DeleteCharacter, Deleted, FindAccount, ForLogin, ForMove, ForSelect,
-  ForWorld, HealthRefused, ListCharacters, Listed, LoadCharacter, Login, Move,
-  NameBreaksRule, NameStands, NameTaken, NeedsRename, NewNameBreaksRule,
-  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts,
-  NothingSaved, PlaceRefused, PlaceSaved, RenameCharacter, Renamed, SavePlace,
-  Select, Unavailable, World,
+  ForWorld, HealthRefused, HeldItem, ListCharacters, Listed, LoadCharacter,
+  Login, Move, NameBreaksRule, NameStands, NameTaken, NeedsRename,
+  NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter,
+  NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, RenameCharacter,
+  Renamed, SavePlace, Select, Unavailable, World,
 }
 import genesis_prime/store/sql
-import genesis_prime/table/id.{ClassId, RaceId}
+import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
 import gleam/bool
 import gleam/erlang/process.{type Name}
 import gleam/list
@@ -403,10 +407,13 @@ fn list_characters(
   |> result.map(list.map(_, character))
 }
 
-/// The account's character with the id, taken in one statement that names the
-/// account too, so another account's character is never taken, and that raises
-/// its session epoch; `NotTheAccounts` when it has none, and `Error(Nil)` when
-/// the database is away.
+/// The account's character with the id, taken in one transaction: one statement
+/// names the account too, so another account's character is never taken, and
+/// raises the session epoch, which locks the character's row; the read of the
+/// character's items then runs on the same connection before the commit, so a
+/// delete of the character waits for the lock and an answer never holds a
+/// character without the items it had. `NotTheAccounts` when the account has no
+/// such character, and `Error(Nil)` when the database is away.
 fn load_character(
   pool pool: pog.Connection,
   account_id account_id: AccountId,
@@ -414,15 +421,28 @@ fn load_character(
 ) -> Result(WorldAnswer, Nil) {
   let AccountId(account_id) = account_id
   let CharacterId(character_id) = character_id
-  use rows <- result.try(
-    query(fn() { sql.load_character(pool, character_id, account_id) }),
-  )
-  use item_rows <- result.map(case rows {
-    [_] -> query(fn() { sql.load_character_items(pool, character_id) })
-    _ -> Ok([])
-  })
+  let transaction = fn() {
+    in_transaction(pool, fn(connection) {
+      use loaded <- result.try(sql.load_character(
+        connection,
+        character_id,
+        account_id,
+      ))
+      use item_rows <- result.map(case loaded.rows {
+        [_] -> sql.load_character_items(connection, character_id)
+        _ -> Ok(pog.Returned(count: 0, rows: []))
+      })
+      pog.Returned(
+        ..loaded,
+        rows: list.map(loaded.rows, fn(row) {
+          LoadedRow(row:, items: item_rows.rows)
+        }),
+      )
+    })
+  }
+  use rows <- result.map(query(transaction))
   case rows {
-    [row] -> {
+    [LoadedRow(row:, items: item_rows)] -> {
       let assert Ok(epoch) = store.session_epoch(row.session_epoch)
         as "a load raises the epoch by one, so it is 1 or more"
       CharacterLoaded(
@@ -459,14 +479,24 @@ fn load_character(
   }
 }
 
+/// The one row a load's transaction gives: the character whose epoch the
+/// update raised, with its items.
+type LoadRow {
+  LoadedRow(row: sql.LoadCharacterRow, items: List(sql.LoadCharacterItemsRow))
+}
+
 /// The rows of a character's items as the items they hold, in the order the
 /// query gave them.
 fn held_items(rows: List(sql.LoadCharacterItemsRow)) -> List(HeldItem) {
-  case rows {
-    [] -> []
-    [_, ..] ->
-      panic as "not built: a character_item row becomes a HeldItem, its item2_id an Item2Id"
-  }
+  list.map(rows, fn(row) {
+    HeldItem(
+      item_guid: row.item_guid,
+      item2_id: Item2Id(row.item2_id),
+      location: row.location,
+      bag_index: row.bag_index,
+      stack_count: row.stack_count,
+    )
+  })
 }
 
 /// Stores the new character's items on the transaction's connection.
@@ -558,7 +588,7 @@ fn create_character(
 ) -> Result(CreateAnswer, Nil) {
   let AccountId(account_id) = account_id
   let transaction = fn() {
-    pog.transaction(pool, fn(connection) {
+    in_transaction(pool, fn(connection) {
       use locked <- result.try(sql.lock_account(connection, account_id))
       use <- bool.guard(
         locked.rows == [],
@@ -601,12 +631,6 @@ fn create_character(
         rows: list.map(made.rows, fn(row) { MadeRow(row.character_id) }),
       )
     })
-    |> result.map_error(fn(error) {
-      case error {
-        pog.TransactionQueryError(error) | pog.TransactionRolledBack(error) ->
-          error
-      }
-    })
   }
   case attempt(transaction) {
     Ok([MadeRow(character_id:)]) ->
@@ -622,6 +646,22 @@ fn create_character(
     -> Ok(NameBreaksRule)
     Error(Refused(error:, ..)) | Error(Unexpected(error:)) -> exit_with(error)
   }
+}
+
+/// Runs the work on one connection of the pool in a transaction: it commits when
+/// the work gives rows and rolls back when it gives an error, which is the
+/// error given.
+fn in_transaction(
+  pool: pog.Connection,
+  work: fn(pog.Connection) -> Result(pog.Returned(row), pog.QueryError),
+) -> Result(pog.Returned(row), pog.QueryError) {
+  pog.transaction(pool, work)
+  |> result.map_error(fn(error) {
+    case error {
+      pog.TransactionQueryError(error) | pog.TransactionRolledBack(error) ->
+        error
+    }
+  })
 }
 
 /// The one row a create's transaction gives: the character it made, or the
