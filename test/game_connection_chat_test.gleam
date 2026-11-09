@@ -25,7 +25,6 @@ import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_position_command
 import genesis_prime/message/whisper_failed
-import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import genesis_prime/server
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, ConnectionId,
@@ -306,15 +305,6 @@ fn group_effects(
   })
 }
 
-fn zone_changed_message(old old: Int, new new: Int) -> BitArray {
-  let assert Ok(body) =
-    world_zone_changed.encode(WorldZoneChanged(
-      old_world_zone_id: old,
-      new_world_zone_id: new,
-    ))
-  game_connection_support.world_message(world_zone_changed.message_id, body)
-}
-
 pub fn the_entry_burst_ends_with_0x1da_and_0x1bc_and_joins_the_name_and_the_zone_channel_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) = game_connection_support.entered()
@@ -335,7 +325,7 @@ pub fn a_report_under_the_same_top_zone_writes_and_joins_nothing_for_0x63a_and_o
   use <- owned_test.run(10_000)
   list.each(
     [
-      #(zone_changed_message(old: 6009, new: 4962), []),
+      #(game_connection_support.zone_changed_message(old: 6009, new: 4962), []),
       #(game_connection_support.terrain_loaded_message(4962), [0x01BC]),
     ],
     fn(sent) {
@@ -354,7 +344,9 @@ pub fn a_report_under_another_top_zone_renames_the_channel_and_changes_the_group
   use <- owned_test.run(10_000)
   list.each(
     [
-      #(zone_changed_message(old: 6009, new: 648), [0x01DA]),
+      #(game_connection_support.zone_changed_message(old: 6009, new: 648), [
+        0x01DA,
+      ]),
       #(game_connection_support.terrain_loaded_message(648), [0x01DA, 0x01BC]),
     ],
     fn(sent) {
@@ -377,7 +369,7 @@ pub fn a_0x63a_whose_old_value_is_not_the_one_the_server_holds_is_taken_all_the_
   let #(_, taken) =
     game_connection_support.read(
       game_connection_support.in_world(),
-      zone_changed_message(old: 1, new: 648),
+      game_connection_support.zone_changed_message(old: 1, new: 648),
     )
   assert game_connection_support.written_ids(taken) == [0x01DA]
     as "server choice: whether the client's kept value outlives a camp is not read (opcode.0x63a), so the old value is not checked and a sound client is not dropped"
@@ -465,7 +457,7 @@ pub fn a_0x63a_before_the_first_0xf2_does_not_write_0x1bc_test() -> Nil {
   let #(state, changed) =
     game_connection_support.read(
       game_connection_support.in_world(),
-      zone_changed_message(old: 6009, new: 4962),
+      game_connection_support.zone_changed_message(old: 6009, new: 4962),
     )
   assert game_connection_support.written_ids(changed) == []
     as "only 0xf2 is the trigger: 0x63a is sent on a change, which a player standing still never makes (chat.zone_join_trigger)"
@@ -545,7 +537,10 @@ pub fn messages_0xf2_and_0x63a_outside_the_world_are_unhandled_test() -> Nil {
   list.each(
     [
       #(0x00F2, game_connection_support.terrain_loaded_message(4962)),
-      #(0x063A, zone_changed_message(old: 6009, new: 4962)),
+      #(
+        0x063A,
+        game_connection_support.zone_changed_message(old: 6009, new: 4962),
+      ),
     ],
     fn(sent) {
       let #(_, taken) =

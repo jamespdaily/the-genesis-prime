@@ -17,6 +17,7 @@ import genesis_prime/game/server_proxy.{type ServerProxies}
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/world_entry
+import genesis_prime/game/zone_welcome.{type ZoneWelcomes}
 import genesis_prime/game_settings.{type GameSettings}
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
@@ -70,6 +71,10 @@ pub type Settings {
     /// tables link none, from the content load (genesis_prime/content/server_proxy),
     /// which the ability trees the cast rule reads hold (`plans_of`).
     server_proxies: ServerProxies,
+    /// The Tutorial row each WorldZone shows when a player lands in it or walks into
+    /// it, from the content load (genesis_prime/content/zone_welcome), which the
+    /// client's zone reports send as 0x179 (genesis_prime/game/zone_welcome).
+    zone_welcomes: ZoneWelcomes,
     /// The numbers the server chose, from the content load
     /// (genesis_prime/content/game_number), of which a player entering the world
     /// reads its health regeneration (genesis_prime/game/player_life).

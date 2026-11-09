@@ -28,6 +28,7 @@ import genesis_prime/content
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/server_proxy as content_server_proxy
+import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/digest
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
@@ -610,6 +611,7 @@ fn game(
       rate: game_rate(),
       class_resources: content_class_resource.classes(key: spawns),
       server_proxies: content_server_proxy.proxies(key: spawns),
+      zone_welcomes: content_zone_welcome.zone_welcomes(key: spawns),
       numbers: content_game_number.numbers(key: spawns),
     ),
     wire_recorder: None,

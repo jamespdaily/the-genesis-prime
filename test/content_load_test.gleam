@@ -15,14 +15,17 @@
 import character_tables
 import database_support
 import genesis_prime
+import genesis_prime/connection/frame.{Frame}
 import genesis_prime/content
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/class_resource
 import genesis_prime/game/spell_plan
+import genesis_prime/game/zone_welcome
 import genesis_prime/migration
 import genesis_prime/readiness
 import genesis_prime/table/id.{ClassId}
@@ -378,6 +381,17 @@ pub fn the_load_puts_the_servers_proxies_in_a_term_test() -> Nil {
     base: 26_468,
   )
     as "migration 0018's seed row, Pulse Blast's go 1 casting 42148, is selected over the committed spell trees and kept"
+}
+
+pub fn the_load_puts_the_zones_welcomes_from_the_seed_in_a_term_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = load(database:)
+  assert loaded == Ok(Nil)
+  let welcomes = content_zone_welcome.zone_welcomes(key:)
+  assert zone_welcome.on_terrain_loaded(welcomes:, world_zone_id: 648)
+    == [Frame(message_id: 0x0179, body: <<0x4c, 0x01, 0x00, 0x00>>)]
+    as "migration 0020 seeds WorldZone 35 with Tutorial 332 (the Northern Wilds welcome), and 648 Landing Site's parent is 35; 0x179 carries 332 in 32 bits, least significant byte first"
 }
 
 pub fn a_server_proxy_row_that_cannot_be_planned_stops_the_load_naming_each_test() -> Nil {
