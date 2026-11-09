@@ -10558,6 +10558,7 @@ statement = "Counts the player's items of one Item2 id at one location (the equi
 proof = "Saved C 0x1403ac840.c: walks the location's list at store+0xa0 and sums the matching entries' counts. CheckItemMove calls it with (store+0xa0, 1, Item2 id)."
 grade = "fairly sure"
 gap = "Read from the saved C only; no live move of a unique item has been run."
+name = "CountItemsOfItem2AtLocation"
 
 ["Item2.bindFlags"]
 statement = "Item2 column 32, bindFlags. Bit 0 (1) marks a unique item (the tooltip's tUnique.bUnique, with nCount); bit 1 (2) marks a unique-equipped item (tUnique.bEquipped, text Tooltips_UniqueEquipped), which CheckItemMove refuses with Item_Unique (30) while another of that Item2 is equipped. 4014 equippable rows hold bit 1; only the 24 bags among them (slot flags 0x7FFE0000) have a second slot."
