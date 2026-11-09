@@ -438,7 +438,7 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
       ),
       Missing(
         type_number: 11,
-        reason: "rows, or parts of rows, aimed at another unit: the next step; rows behind a target apply prerequisite, which no go applies",
+        reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite, which no go applies",
         fact_key: "Spell4Effects.effectType.11",
       ),
       Missing(
@@ -605,32 +605,34 @@ pub fn the_type_3_rows_aimed_only_at_other_units_are_counted_as_not_handled_test
   assert string.contains(text, "3 rows of the handled types not read")
 }
 
-pub fn the_type_11_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
+pub fn the_type_11_rows_behind_a_target_prerequisite_are_counted_as_not_handled_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
-  // Spell4Effects.targetFlags: bit 1 is the caster; the plan reads a type 11 row that
-  // includes it (flags 1, 3, 5 and 7) and leaves out one aimed only at others (2, 4 and 6).
+  // Spell4Effects.targetFlags: bit 1 is the caster, 2 the cast's target, 4 the units the
+  // area struck and 6 both. The plan reads a type 11 row aimed at the caster or at those
+  // units and holds one behind a target apply prerequisite, which no go applies.
   // Planted: five type 11 rows of property 1, which UnitProperty2 holds a row for, with a
-  // durationTime (a row with no life is held), flags
-  // 1, 3, 2, 4 and 6, and one type 8 row.
-  let row = fn(id, type_, flags) {
+  // durationTime (a row with no life is held), flags 1, 2, 4, 6 and 2, the last behind
+  // target apply prerequisite 11311, and one type 8 row.
+  let row = fn(id, type_, flags, prerequisite) {
     planted_table.row(spell4_effects.schema, [
       #("ID", planted_table.Integer(id)),
       #("effectType", planted_table.Integer(type_)),
       #("targetFlags", planted_table.Integer(flags)),
       #("dataBits00", planted_table.Integer(1)),
       #("durationTime", planted_table.Integer(5000)),
+      #("prerequisiteIdTargetApply", planted_table.Integer(prerequisite)),
     ])
   }
   let measured =
     measure_planted_over(
       files: planted_files_naming(rows: [
-        row(1, 11, 1),
-        row(2, 11, 3),
-        row(3, 11, 2),
-        row(4, 11, 4),
-        row(5, 11, 6),
-        row(6, 8, 4),
+        row(1, 11, 1, 0),
+        row(2, 11, 2, 0),
+        row(3, 11, 4, 0),
+        row(4, 11, 6, 0),
+        row(5, 11, 2, 11_311),
+        row(6, 8, 4, 0),
       ]),
     )
   let assert Measured(types:, ..) = measured as "the planted table is measured"
@@ -638,20 +640,20 @@ pub fn the_type_11_rows_aimed_only_at_other_units_are_counted_as_not_handled_tes
   assert eleven.rows == 5
   assert eleven.status
     == HandledWithGap(
-      reason: "rows, or parts of rows, aimed at another unit: the next step; rows behind a target apply prerequisite, which no go applies",
+      reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite, which no go applies",
       fact_key: "Spell4Effects.effectType.11",
-      unread_rows: 3,
+      unread_rows: 1,
     )
-    as "three of the five rows aim only at others and are not read"
+    as "only the row behind the target prerequisite is not read; the rows aimed at the caster, the target and the area are"
   let text = checklist.render([measured])
   assert string.contains(
     text,
-    "- [x] type 11: 5 rows (83.33%); handled with a gap, 3 of its 5 rows not read: rows, or parts of rows, aimed at another unit: the next step; rows behind a target apply prerequisite, which no go applies (Spell4Effects.effectType.11)",
+    "- [x] type 11: 5 rows (83.33%); handled with a gap, 1 of its 5 rows not read: rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite, which no go applies (Spell4Effects.effectType.11)",
   )
     as "the line lists the rows left out with the gap's reason"
-  assert string.contains(text, "2 of 2 types handled (50.0% of rows)")
-    as "the handled rows are the type 8 row and the two type 11 rows the plan reads: 3 of 6"
-  assert string.contains(text, "3 rows of the handled types not read")
+  assert string.contains(text, "2 of 2 types handled (83.33% of rows)")
+    as "the handled rows are the type 8 row and the four type 11 rows the plan reads: 5 of 6"
+  assert string.contains(text, "1 row of the handled types not read")
 }
 
 pub fn the_type_73_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
