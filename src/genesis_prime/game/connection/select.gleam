@@ -151,7 +151,8 @@ pub fn select_answered(
       })
     step.Answer(FromStore(store.ForLogin(..)))
     | step.Answer(FromStore(store.ForWorld(..)))
-    | step.Answer(FromStore(store.ForMove(..))) ->
+    | step.Answer(FromStore(store.ForMove(..)))
+    | step.Answer(FromStore(store.ForItems(..))) ->
       select_taken(session:, now:, holder:, taken: Error(Nil))
     step.Answer(FromHandOff(..)) ->
       connection_state.told(

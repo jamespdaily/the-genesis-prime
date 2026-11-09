@@ -36,12 +36,14 @@ import genesis_prime/store.{
   AccountId, ActiveQuest, Character, CharacterCreated, CharacterDeleted,
   CharacterId, CharacterLoaded, CharacterRenamed, CreateCharacter,
   CreateForNoSuchAccount, Created, DeleteCharacter, Deleted, ExperienceRefused,
-  FindAccount, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem,
-  ListCharacters, Listed, LoadCharacter, Login, LookEntry, Move, NameBreaksRule,
+  FindAccount, ForItems, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused,
+  HeldItem, ItemMove, ItemPlace, Items, ItemsMoved, ListCharacters, Listed,
+  LoadCharacter, Login, LookEntry, Move, MoveItems, MoveRefused, NameBreaksRule,
   NameStands, NameTaken, NeedsRename, NewCharacter, NewItem, NewNameBreaksRule,
   NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable,
-  NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused,
-  QuestRow, RenameCharacter, Renamed, SavePlace, Select, Unavailable, World,
+  NotTheAccounts, NothingMoved, NothingSaved, PlaceRefused, PlaceSaved,
+  QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace, Select,
+  Unavailable, World,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
@@ -2472,6 +2474,155 @@ pub fn an_item_keeps_its_guid_when_its_place_changes_and_two_items_swap_places_i
     as "the place the hands left is free"
   assert !list.contains(list.map(before, fn(item) { item.item_guid }), made)
     as "opcode.0x111.guid: a guid is never made again, so an item that takes a freed place does not take the guid of the item that left it"
+  stop(store)
+}
+
+// ---- moving held items ----
+
+/// The store's answer to the moves of a character's items under a login's epoch.
+fn moved(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+  epoch epoch: Int,
+  moves moves: List(store.ItemMove),
+) -> store.Answer {
+  ask(
+    store,
+    Items(MoveItems(
+      account_id: account,
+      character_id:,
+      session_epoch: character_support.epoch(epoch),
+      moves:,
+    )),
+  )
+}
+
+pub fn a_moved_and_a_swapped_item_are_where_the_next_login_finds_them_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let assert CharacterCreated(character_id:) =
+    create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: character_support.row_466_items(),
+    )
+    as "a character holding the Novice set"
+  let CharacterId(number) = character_id
+  let assert [chest, legs, shoulder, feet, hands, shield, weapon] =
+    held_by(store:, account:, character_id:)
+    as "the Novice set is seven items"
+  let epoch = epoch_of_load(store:, account:, character_id: number)
+  assert moved(store:, account:, character_id:, epoch:, moves: [
+      ItemMove(
+        item_guid: hands.item_guid,
+        from: ItemPlace(location: 0, bag_index: 5),
+        to: ItemPlace(location: 1, bag_index: 2),
+      ),
+    ])
+    == ForItems(ItemsMoved)
+    as "an unequip to a free inventory slot is stored"
+  assert moved(store:, account:, character_id:, epoch:, moves: [
+      ItemMove(
+        item_guid: chest.item_guid,
+        from: ItemPlace(location: 0, bag_index: 0),
+        to: ItemPlace(location: 1, bag_index: 2),
+      ),
+      ItemMove(
+        item_guid: hands.item_guid,
+        from: ItemPlace(location: 1, bag_index: 2),
+        to: ItemPlace(location: 0, bag_index: 0),
+      ),
+    ])
+    == ForItems(ItemsMoved)
+    as "migration 0019's unique key is deferrable and checked at the end of the statement, so the equipped chest piece and the inventory item trade places in one update"
+  assert held_by(store:, account:, character_id:)
+    == [
+      HeldItem(..hands, location: 0, bag_index: 0),
+      legs,
+      shoulder,
+      feet,
+      shield,
+      weapon,
+      HeldItem(..chest, location: 1, bag_index: 2),
+    ]
+    as "opcode.0x111.guid: each item is at its new place with the guid, item and stack it had"
+  stop(store)
+}
+
+pub fn a_move_moves_every_item_or_none_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let other = insert_account(store, "login-2")
+  let assert CharacterCreated(character_id:) =
+    create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: character_support.row_466_items(),
+    )
+    as "a character holding the Novice set"
+  let CharacterId(number) = character_id
+  let before = held_by(store:, account:, character_id:)
+  let assert [chest, _, _, _, hands, ..] = before
+    as "the Novice set is seven items"
+  let chest_to_inventory =
+    ItemMove(
+      item_guid: chest.item_guid,
+      from: ItemPlace(location: 0, bag_index: 0),
+      to: ItemPlace(location: 1, bag_index: 2),
+    )
+  let stale = epoch_of_load(store:, account:, character_id: number)
+  let current = epoch_of_load(store:, account:, character_id: number)
+  assert current > stale as "a later login raised the epoch"
+  assert moved(store:, account:, character_id:, epoch: stale, moves: [
+      chest_to_inventory,
+    ])
+    == ForItems(NothingMoved)
+    as "a later login holds the character, so the earlier login's move is dropped (the storing-data fencing rule)"
+  assert moved(store:, account:, character_id:, epoch: current, moves: [
+      chest_to_inventory,
+      ItemMove(
+        item_guid: hands.item_guid,
+        from: ItemPlace(location: 1, bag_index: 9),
+        to: ItemPlace(location: 0, bag_index: 0),
+      ),
+    ])
+    == ForItems(NothingMoved)
+    as "a swap with one item not at its old place moves neither item"
+  assert moved(store:, account: other, character_id:, epoch: current, moves: [
+      chest_to_inventory,
+    ])
+    == ForItems(NothingMoved)
+    as "another account moves nothing of this character's"
+  assert moved(store:, account:, character_id:, epoch: current, moves: [
+      ItemMove(
+        item_guid: chest.item_guid,
+        from: ItemPlace(location: 0, bag_index: 0),
+        to: ItemPlace(location: 0, bag_index: 31),
+      ),
+    ])
+    == ForItems(MoveRefused(
+      constraint: "character_item_bag_index_is_a_slot_of_its_location",
+    ))
+    as "the equipped slots end at index 30"
+  assert moved(store:, account:, character_id:, epoch: current, moves: [
+      chest_to_inventory,
+      ItemMove(
+        item_guid: hands.item_guid,
+        from: ItemPlace(location: 0, bag_index: 5),
+        to: ItemPlace(location: 1, bag_index: 2),
+      ),
+    ])
+    == ForItems(MoveRefused(constraint: "character_item_one_per_slot"))
+    as "a place holds one item"
+  assert held_by(store:, account:, character_id:) == before
+    as "every move that did not happen left every item where it was"
   stop(store)
 }
 

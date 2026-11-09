@@ -149,6 +149,7 @@ import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/chat as connection_chat
 import genesis_prime/game/connection/dropped as connection_dropped
 import genesis_prime/game/connection/experience as connection_experience
+import genesis_prime/game/connection/inventory as connection_inventory
 import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/login as connection_login
 import genesis_prime/game/connection/movement as connection_movement
@@ -157,7 +158,7 @@ import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
   type Ending, type Session, type Status, AwaitingHelloReply, Busy,
   ClaimingSession, Ending, EnteringWorld, Greeting, InCharacterSelect, InWorld,
-  LeavingMap, Present, SavingPlace, Selecting, Session, Summoning,
+  LeavingMap, MovingItem, Present, SavingPlace, Selecting, Session, Summoning,
   TakingSessionKey, WaitingToClaim,
 } as connection_state
 import genesis_prime/game/connection/viewers as connection_viewers
@@ -427,6 +428,7 @@ fn asking(status: Status) -> Bool {
     | WaitingToClaim(..)
     | EnteringWorld(..)
     | Summoning(..)
+    | MovingItem(..)
     | SavingPlace(..)
     | LeavingMap(..) -> True
     InCharacterSelect(select:, ..) -> character_select.waiting(select)
@@ -555,7 +557,8 @@ fn routed(
     | Ok(routing.Chat(..))
     | Ok(routing.Cast(..))
     | Ok(routing.Life(..))
-    | Ok(routing.Innate(..)) ->
+    | Ok(routing.Innate(..))
+    | Ok(routing.Inventory(..)) ->
       connection_state.misrouted(session:, now:, inner:)
     Error(Nil) ->
       case stage {
@@ -705,6 +708,15 @@ fn world_carried(
                     inner: whole,
                     message:,
                   )
+                Ok(routing.Inventory(message:)) ->
+                  connection_inventory.item_message(
+                    session:,
+                    now:,
+                    holder:,
+                    entered:,
+                    inner: whole,
+                    message:,
+                  )
                 Ok(routing.Dropped(message:)) ->
                   connection_dropped.dropped_message(
                     session:,
@@ -845,6 +857,15 @@ fn answered(
         now:,
         holder:,
         entered:,
+        outcome:,
+      )
+    MovingItem(holder:, entered:, moving:) ->
+      connection_inventory.move_answered(
+        session:,
+        now:,
+        holder:,
+        entered:,
+        moving:,
         outcome:,
       )
     SavingPlace(holder:, entered:, then:) ->
