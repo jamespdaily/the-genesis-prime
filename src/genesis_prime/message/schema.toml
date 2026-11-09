@@ -2589,3 +2589,33 @@ summary = "the client asks for an input key set, the player's key bindings: the 
 fields = [
   { name = "key_set_id", kind = "unsigned", bits = 64, evidence = "opcode.0x570", named_by = "opcode.0x570" },
 ]
+
+[[message]]
+id = 0x07EA
+name = "interaction_request"
+direction = "client_to_server"
+evidence = "opcode.0x7ea"
+summary = "the client sets the player's interaction: the unit and the interaction kind, where kind 37 is talking to the unit (a quest giver) and unit 0 with kind 0x65 ends the interaction"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ea", named_by = "opcode.0x7ea" },
+  { name = "kind", kind = "unsigned", bits = 7, evidence = "opcode.0x7ea", named_by = "opcode.0x7ea" },
+]
+
+[[message]]
+id = 0x0356
+name = "dialog_responses_shown"
+direction = "client_to_server"
+evidence = "opcode.0x356"
+summary = "the client has built more than one response for the dialog the server opened and shows it, with an empty body and no answer awaited"
+fields = []
+
+[[message]]
+id = 0x0357
+name = "unit_dialog_open"
+direction = "server_to_client"
+evidence = "opcode.0x357"
+summary = "opens a unit's dialog, the answer to the client's request to talk to the unit"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x357", named_by = "opcode.0x357" },
+  { name = "field_2", kind = "unsigned", bits = 1, evidence = "opcode.0x357", safe_by = "0x140554510" },
+]

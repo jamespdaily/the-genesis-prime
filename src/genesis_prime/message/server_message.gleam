@@ -69,6 +69,7 @@ import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
 import genesis_prime/message/unit_death_state.{type UnitDeathState}
 import genesis_prime/message/unit_destroyed.{type UnitDestroyed}
+import genesis_prime/message/unit_dialog_open.{type UnitDialogOpen}
 import genesis_prime/message/unit_float_stat_changed.{type UnitFloatStatChanged}
 import genesis_prime/message/unit_health.{type UnitHealth}
 import genesis_prime/message/unit_is_player.{type UnitIsPlayer}
@@ -155,6 +156,7 @@ pub type ServerMessage {
   UnitItemVisualsChanged(message: UnitItemVisualsChanged)
   ResurrectionWindow(message: ResurrectionWindow)
   CombatLog(message: CombatLog)
+  UnitDialogOpen(message: UnitDialogOpen)
 }
 
 /// Why a body is not a message the server sends.
@@ -368,6 +370,7 @@ pub fn decode(
     0x01B3 ->
       decoded(body, message_id, resurrection_window.decode, ResurrectionWindow)
     0x0247 -> decoded(body, message_id, combat_log.decode, CombatLog)
+    0x0357 -> decoded(body, message_id, unit_dialog_open.decode, UnitDialogOpen)
     _ -> Error(UnknownMessage(message_id:))
   }
 }
@@ -444,6 +447,7 @@ pub fn name(message: ServerMessage) -> String {
     UnitItemVisualsChanged(..) -> "unit_item_visuals_changed"
     ResurrectionWindow(..) -> "resurrection_window"
     CombatLog(..) -> "combat_log"
+    UnitDialogOpen(..) -> "unit_dialog_open"
   }
 }
 
