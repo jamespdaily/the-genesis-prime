@@ -32,7 +32,7 @@ import genesis_prime/step.{
   EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning, OwnEvent,
 }
 import genesis_prime/store.{
-  AccountId, CharacterId, ForItems, ItemMove, ItemPlace, Items, ItemsMoved,
+  AccountId, CharacterId, ForItems, ItemMove, ItemPlace, Items, ItemsSaved,
   MoveItems,
 }
 import gleam/list
@@ -102,7 +102,7 @@ pub fn a_move_answer_comes_before_the_frames_after_it_test() -> Nil {
     game_connection_support.answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(ForItems(ItemsMoved))),
+      outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
     )
   assert game_connection_support.written_ids(answered) == [0x0569, 0x01C2]
     as "opcode.0x569 then opcode.0x1c2: the move's answer goes out first, then the held line is taken and answered"

@@ -37,13 +37,13 @@ import genesis_prime/store.{
   CharacterId, CharacterLoaded, CharacterRenamed, CreateCharacter,
   CreateForNoSuchAccount, Created, DeleteCharacter, Deleted, ExperienceRefused,
   FindAccount, ForItems, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused,
-  HeldItem, ItemMove, ItemPlace, Items, ItemsMoved, ListCharacters, Listed,
-  LoadCharacter, Login, LookEntry, Move, MoveItems, MoveRefused, NameBreaksRule,
-  NameStands, NameTaken, NeedsRename, NewCharacter, NewItem, NewNameBreaksRule,
-  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable,
-  NotTheAccounts, NothingMoved, NothingSaved, PlaceRefused, PlaceSaved,
-  QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace, Select,
-  Unavailable, World,
+  HeldItem, ItemMove, ItemPlace, Items, ItemsNotSaved, ItemsSaved,
+  ListCharacters, Listed, LoadCharacter, Login, LookEntry, Move, MoveItems,
+  NameBreaksRule, NameStands, NameTaken, NeedsRename, NewCharacter, NewItem,
+  NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter,
+  NotRenamable, NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved,
+  QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace, SaveRefused,
+  Select, Unavailable, World,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
@@ -2523,7 +2523,7 @@ pub fn a_moved_and_a_swapped_item_are_where_the_next_login_finds_them_test() -> 
         to: ItemPlace(location: 1, bag_index: 2),
       ),
     ])
-    == ForItems(ItemsMoved)
+    == ForItems(ItemsSaved)
     as "an unequip to a free inventory slot is stored"
   assert moved(store:, account:, character_id:, epoch:, moves: [
       ItemMove(
@@ -2537,7 +2537,7 @@ pub fn a_moved_and_a_swapped_item_are_where_the_next_login_finds_them_test() -> 
         to: ItemPlace(location: 0, bag_index: 0),
       ),
     ])
-    == ForItems(ItemsMoved)
+    == ForItems(ItemsSaved)
     as "migration 0019's unique key is deferrable and checked at the end of the statement, so the equipped chest piece and the inventory item trade places in one update"
   assert held_by(store:, account:, character_id:)
     == [
@@ -2583,7 +2583,7 @@ pub fn a_move_moves_every_item_or_none_test() -> Nil {
   assert moved(store:, account:, character_id:, epoch: stale, moves: [
       chest_to_inventory,
     ])
-    == ForItems(NothingMoved)
+    == ForItems(ItemsNotSaved)
     as "a later login holds the character, so the earlier login's move is dropped (the storing-data fencing rule)"
   assert moved(store:, account:, character_id:, epoch: current, moves: [
       chest_to_inventory,
@@ -2593,12 +2593,12 @@ pub fn a_move_moves_every_item_or_none_test() -> Nil {
         to: ItemPlace(location: 0, bag_index: 0),
       ),
     ])
-    == ForItems(NothingMoved)
+    == ForItems(ItemsNotSaved)
     as "a swap with one item not at its old place moves neither item"
   assert moved(store:, account: other, character_id:, epoch: current, moves: [
       chest_to_inventory,
     ])
-    == ForItems(NothingMoved)
+    == ForItems(ItemsNotSaved)
     as "another account moves nothing of this character's"
   assert moved(store:, account:, character_id:, epoch: current, moves: [
       ItemMove(
@@ -2607,7 +2607,7 @@ pub fn a_move_moves_every_item_or_none_test() -> Nil {
         to: ItemPlace(location: 0, bag_index: 31),
       ),
     ])
-    == ForItems(MoveRefused(
+    == ForItems(SaveRefused(
       constraint: "character_item_bag_index_is_a_slot_of_its_location",
     ))
     as "the equipped slots end at index 30"
@@ -2619,7 +2619,7 @@ pub fn a_move_moves_every_item_or_none_test() -> Nil {
         to: ItemPlace(location: 1, bag_index: 2),
       ),
     ])
-    == ForItems(MoveRefused(constraint: "character_item_one_per_slot"))
+    == ForItems(SaveRefused(constraint: "character_item_one_per_slot"))
     as "a place holds one item"
   assert held_by(store:, account:, character_id:) == before
     as "every move that did not happen left every item where it was"

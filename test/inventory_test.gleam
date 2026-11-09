@@ -43,7 +43,7 @@ import genesis_prime/message/items_swapped.{ItemsSwapped}
 import genesis_prime/step
 import genesis_prime/store.{
   type HeldItem, AccountId, CharacterId, HeldItem, ItemMove, ItemPlace,
-  ItemsMoved, MoveItems, MoveRefused, NothingMoved,
+  ItemsNotSaved, ItemsSaved, MoveItems, SaveRefused,
 }
 import genesis_prime/table/id.{Item2Id}
 import gleam/list
@@ -152,6 +152,13 @@ fn accepted(
   moving
 }
 
+/// The moves of an accepted move or swap.
+fn moves_of(moving: Moving) -> List(store.ItemMove) {
+  let assert inventory.Moved(moves:, ..) = moving.change
+    as "a 0x182 onto an empty slot or a different item is saved as moves"
+  moves
+}
+
 /// The 0x56A the effects write, decoded: its guid and code.
 fn failed_with(effects: List(Effect)) -> List(#(Int, Int)) {
   list.filter_map(effects, fn(effect) {
@@ -191,7 +198,7 @@ pub fn a_move_to_an_empty_slot_is_saved_then_answered_with_its_new_place_test() 
   let items = held()
   let moving = accepted(items:, from: #(1, 0), to: #(1, 5))
   assert moving.guid == 8
-  assert moving.moves
+  assert moves_of(moving)
     == [ItemMove(item_guid: 8, from: ItemPlace(1, 0), to: ItemPlace(1, 5))]
     as "one move, the item from where it is held to where the client asked"
   assert inventory.request(
@@ -204,12 +211,12 @@ pub fn a_move_to_an_empty_slot_is_saved_then_answered_with_its_new_place_test() 
       account_id: AccountId(7),
       character_id: CharacterId(42),
       session_epoch: character_support.epoch(1),
-      moves: moving.moves,
+      moves: moves_of(moving),
     ))
     as "the store is asked for the moves, fenced by the login's epoch"
   assert items == held() as "nothing is moved before the store has answered"
   let #(moved, effects) =
-    inventory.answered(items:, moving:, answer: ItemsMoved)
+    inventory.answered(items:, moving:, answer: ItemsSaved)
   assert at(items: moved, guid: 8) == #(1, 5)
     as "opcode.0x111.guid: the item is at its new place with the guid it had"
   assert list.length(moved) == list.length(items)
@@ -224,7 +231,7 @@ pub fn a_move_to_an_empty_slot_is_saved_then_answered_with_its_new_place_test() 
     as "opcode.0x569: the guid and the place, location 1 in bits 8 to 15 and slot 5 in bits 0 to 7"
   let unequipped = accepted(items:, from: #(0, 0), to: #(1, 3))
   let #(moved, effects) =
-    inventory.answered(items:, moving: unequipped, answer: ItemsMoved)
+    inventory.answered(items:, moving: unequipped, answer: ItemsSaved)
   assert at(items: moved, guid: 1) == #(1, 3)
     as "an unequip is the same message: the chest piece is in inventory slot 3"
   assert list.map(sent(effects), fn(frame) {
@@ -241,14 +248,14 @@ pub fn a_move_onto_an_item_swaps_the_two_test() -> Nil {
   // chest piece (guid 8): the spare is equipped and the worn one unequipped.
   let items = held()
   let moving = accepted(items:, from: #(0, 0), to: #(1, 0))
-  assert moving.moves
+  assert moves_of(moving)
     == [
       ItemMove(item_guid: 1, from: ItemPlace(0, 0), to: ItemPlace(1, 0)),
       ItemMove(item_guid: 8, from: ItemPlace(1, 0), to: ItemPlace(0, 0)),
     ]
     as "two moves, each item to the other's place, which the store applies together"
   let #(moved, effects) =
-    inventory.answered(items:, moving:, answer: ItemsMoved)
+    inventory.answered(items:, moving:, answer: ItemsSaved)
   assert at(items: moved, guid: 1) == #(1, 0)
   assert at(items: moved, guid: 8) == #(0, 0)
     as "each item keeps its guid and takes the other's place"
@@ -380,7 +387,7 @@ pub fn gear_with_stats_is_equipped_into_its_slot_test() -> Nil {
   // budget or stat as a reason to refuse the slot.
   let items = with_spare(8527)
   let moving = accepted(items:, from: #(1, 1), to: #(0, 0))
-  assert moving.moves
+  assert moves_of(moving)
     == [
       ItemMove(item_guid: 9, from: ItemPlace(1, 1), to: ItemPlace(0, 0)),
       ItemMove(item_guid: 1, from: ItemPlace(0, 0), to: ItemPlace(1, 1)),
@@ -426,7 +433,7 @@ pub fn a_move_the_store_did_not_make_is_refused_db_failure_test() -> Nil {
   let items = held()
   let moving = accepted(items:, from: #(1, 0), to: #(1, 5))
   let #(unmoved, effects) =
-    inventory.answered(items:, moving:, answer: NothingMoved)
+    inventory.answered(items:, moving:, answer: ItemsNotSaved)
   assert unmoved == items as "nothing was moved, so the items are as they were"
   assert failed_with(effects) == [#(8, 5)]
     as "GenericError 5 DbFailure, naming the item"
@@ -439,7 +446,7 @@ pub fn a_move_the_store_did_not_make_is_refused_db_failure_test() -> Nil {
     inventory.answered(
       items:,
       moving:,
-      answer: MoveRefused(constraint: "character_item_one_per_slot"),
+      answer: SaveRefused(constraint: "character_item_one_per_slot"),
     )
   assert unmoved == items as "a refused place leaves the items as they were"
   assert failed_with(effects) == [#(8, 5)]

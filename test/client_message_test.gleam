@@ -32,8 +32,10 @@ import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/graphics_report.{GraphicsReport}
 import genesis_prime/message/innate_index_chosen.{InnateIndexChosen}
 import genesis_prime/message/input_key_set_request.{InputKeySetRequest}
+import genesis_prime/message/item_delete.{ItemDelete}
 import genesis_prime/message/item_move.{ItemMove}
 import genesis_prime/message/item_place.{ItemPlace}
+import genesis_prime/message/item_split.{ItemSplit}
 import genesis_prime/message/login_request.{LoginRequest}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
 import genesis_prime/message/movement_command
@@ -328,6 +330,20 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
         from: ItemPlace(location: 1, bag_index: 3),
         to: ItemPlace(location: 0, bag_index: 7),
       )),
+    ),
+    #(
+      0x017D,
+      client_message.ItemSplit(message: ItemSplit(
+        item_guid: 0x1_0000_0002,
+        to: ItemPlace(location: 1, bag_index: 5),
+        count: 3,
+      )),
+    ),
+    #(
+      0x0149,
+      client_message.ItemDelete(
+        message: ItemDelete(place: ItemPlace(location: 1, bag_index: 4)),
+      ),
     ),
     #(
       0x0801,

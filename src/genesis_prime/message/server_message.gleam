@@ -32,7 +32,9 @@ import genesis_prime/message/game_server_handoff.{type GameServerHandoff}
 import genesis_prime/message/innate_index_set.{type InnateIndexSet}
 import genesis_prime/message/item_action_failed.{type ItemActionFailed}
 import genesis_prime/message/item_added.{type ItemAdded}
+import genesis_prime/message/item_count_changed.{type ItemCountChanged}
 import genesis_prime/message/item_moved.{type ItemMoved}
+import genesis_prime/message/item_removed.{type ItemRemoved}
 import genesis_prime/message/items_swapped.{type ItemsSwapped}
 import genesis_prime/message/leave_world.{type LeaveWorld}
 import genesis_prime/message/login_accepted.{type LoginAccepted}
@@ -134,6 +136,8 @@ pub type ServerMessage {
   ChatChannelJoined(message: ChatChannelJoined)
   ChatZoneNamed(message: ChatZoneNamed)
   ItemAdded(message: ItemAdded)
+  ItemCountChanged(message: ItemCountChanged)
+  ItemRemoved(message: ItemRemoved)
   ItemMoved(message: ItemMoved)
   ItemsSwapped(message: ItemsSwapped)
   ItemActionFailed(message: ItemActionFailed)
@@ -309,6 +313,9 @@ pub fn decode(
       decoded(body, message_id, chat_channel_joined.decode, ChatChannelJoined)
     0x01DA -> decoded(body, message_id, chat_zone_named.decode, ChatZoneNamed)
     0x0111 -> decoded(body, message_id, item_added.decode, ItemAdded)
+    0x017F ->
+      decoded(body, message_id, item_count_changed.decode, ItemCountChanged)
+    0x0148 -> decoded(body, message_id, item_removed.decode, ItemRemoved)
     0x0569 -> decoded(body, message_id, item_moved.decode, ItemMoved)
     0x0568 -> decoded(body, message_id, items_swapped.decode, ItemsSwapped)
     0x056A ->
@@ -452,6 +459,8 @@ pub fn name(message: ServerMessage) -> String {
     ChatChannelJoined(..) -> "chat_channel_joined"
     ChatZoneNamed(..) -> "chat_zone_named"
     ItemAdded(..) -> "item_added"
+    ItemCountChanged(..) -> "item_count_changed"
+    ItemRemoved(..) -> "item_removed"
     ItemMoved(..) -> "item_moved"
     ItemsSwapped(..) -> "items_swapped"
     ItemActionFailed(..) -> "item_action_failed"

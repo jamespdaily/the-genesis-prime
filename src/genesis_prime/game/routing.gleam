@@ -57,7 +57,9 @@ import genesis_prime/message/game_hello_reply
 import genesis_prime/message/graphics_report
 import genesis_prime/message/innate_index_chosen
 import genesis_prime/message/input_key_set_request
+import genesis_prime/message/item_delete
 import genesis_prime/message/item_move
+import genesis_prime/message/item_split
 import genesis_prime/message/move_speed_setting
 import genesis_prime/message/movement_send_interval_answer
 import genesis_prime/message/network_report
@@ -102,7 +104,7 @@ pub type Feature {
   Life(message: player_life.Message)
   /// The player's choice of an innate (genesis_prime/game/innate_choice).
   Innate(message: innate_choice.Message)
-  /// The player's move of a held item (genesis_prime/game/inventory).
+  /// The player's move, split or delete of a held item (genesis_prime/game/inventory).
   Inventory(message: inventory.Message)
   /// A report or request taken and dropped (genesis_prime/game/dropped).
   Dropped(message: dropped.Message)
@@ -265,6 +267,18 @@ const table = [
     item_move.message_id,
     InsideWorldMessage,
     Inventory(inventory.MoveAsked),
+    [AtWorld],
+  ),
+  Row(
+    item_split.message_id,
+    InsideWorldMessage,
+    Inventory(inventory.SplitAsked),
+    [AtWorld],
+  ),
+  Row(
+    item_delete.message_id,
+    InsideWorldMessage,
+    Inventory(inventory.DeleteAsked),
     [AtWorld],
   ),
   Row(

@@ -94,13 +94,14 @@ import genesis_prime/store.{
   type WorldRequest, Account, AccountFound, AccountId, ActiveQuest, Character,
   CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
   CharacterRenamed, CreateCharacter, CreateForNoSuchAccount, Created,
-  DeleteCharacter, Deleted, ExperienceRefused, FindAccount, ForItems, ForLogin,
-  ForMove, ForSelect, ForWorld, HealthRefused, HeldItem, Items, ItemsMoved,
-  ListCharacters, Listed, LoadCharacter, Login, Move, MoveItems, MoveRefused,
-  NameBreaksRule, NameStands, NameTaken, NeedsRename, NewNameBreaksRule,
-  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts,
-  NothingMoved, NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused,
-  QuestRow, RenameCharacter, Renamed, SavePlace, Select, Unavailable, World,
+  DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FindAccount, ForItems,
+  ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem, Items,
+  ItemsNotSaved, ItemsSaved, ListCharacters, Listed, LoadCharacter, Login,
+  MergeItems, Move, MoveItems, NameBreaksRule, NameStands, NameTaken,
+  NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount,
+  NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved,
+  QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace, SaveRefused,
+  Select, SplitItem, Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
@@ -325,20 +326,32 @@ fn run_request(request: Request, pool: pog.Connection) -> Answer {
 /// Runs one of the player's items' requests: a move is one transaction, the
 /// character's row lock (lock_character_for_save.sql) and then one statement
 /// that names the account, the character, the epoch and every item's old and new
-/// place (move_character_items.sql), answering `ItemsMoved` when it moved as many
-/// items as the request has moves, `NothingMoved` when it moved none and
-/// `MoveRefused` when a check or the unique key of the character_item table
+/// place (move_character_items.sql), answering `ItemsSaved` when it moved as many
+/// items as the request has moves, `ItemsNotSaved` when it moved none and
+/// `SaveRefused` when a check or the unique key of the character_item table
 /// refused a place; `Error(Nil)` when the database is away.
 fn items(
   pool: pog.Connection,
   request: ItemsRequest,
 ) -> Result(ItemsAnswer, Nil) {
-  let MoveItems(
-    account_id: AccountId(account_id),
-    character_id: CharacterId(character_id),
-    session_epoch:,
-    moves:,
-  ) = request
+  case request {
+    MoveItems(account_id:, character_id:, session_epoch:, moves:) ->
+      move_items(pool:, account_id:, character_id:, session_epoch:, moves:)
+    SplitItem(..) -> panic as "shape: the split statement is not written yet"
+    MergeItems(..) -> panic as "shape: the merge statement is not written yet"
+    DeleteItem(..) -> panic as "shape: the delete statement is not written yet"
+  }
+}
+
+fn move_items(
+  pool pool: pog.Connection,
+  account_id account_id: store.AccountId,
+  character_id character_id: store.CharacterId,
+  session_epoch session_epoch: store.SessionEpoch,
+  moves moves: List(store.ItemMove),
+) -> Result(ItemsAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
   case
     attempt(fn() {
       in_transaction(pool, fn(connection) {
@@ -361,14 +374,14 @@ fn items(
       })
     })
   {
-    Ok([]) -> Ok(NothingMoved)
+    Ok([]) -> Ok(ItemsNotSaved)
     Ok(rows) ->
       case list.length(rows) == list.length(moves) {
-        True -> Ok(ItemsMoved)
+        True -> Ok(ItemsSaved)
         False -> panic as "the statement moves every item of the request or none"
       }
     Error(Unreachable) -> Error(Nil)
-    Error(Refused(constraint:, ..)) -> Ok(MoveRefused(constraint:))
+    Error(Refused(constraint:, ..)) -> Ok(SaveRefused(constraint:))
     Error(Unexpected(error:)) -> exit_with(error)
   }
 }

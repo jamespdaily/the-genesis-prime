@@ -1,16 +1,20 @@
-//// The player's moves of held items: the client's 0x182, which a drag in the bags
-//// or the character window sends, a feature of the game connection's rule
+//// The player's changes of held items: the client's 0x182, which a drag in the
+//// bags or the character window sends, 0x17D, which splits a stack, and 0x149,
+//// which destroys one, a feature of the game connection's rule
 //// (genesis_prime/game/connection) taken from inside 0x038C with the player in
 //// the world.
 ////
 //// ```
-//// 0x182 {from, to} ─▶ take(items, life, tables, message, body)
+//// 0x182 {from, to}    ─▶ take(items, life, tables, message, body)
+//// 0x17D {guid, place, count}
+//// 0x149 {place}
 ////                      ├─ refused ─▶ Refused([Send(0x56A guid, code)])       no ask, items unchanged
 ////                      └─ accepted ─▶ Asks(moving) ─▶ the connection asks the store (request(moving, ..))
 ////                                                     and waits in MovingItem, frames held
-//// the store's answer ─▶ answered(items, moving, answer) ─▶ ItemsMoved:    0x569 or 0x568, items updated
-////                                                         NothingMoved:   Warning, 0x56A code 5, items unchanged
-////                                                         MoveRefused(c): Fault naming c, 0x56A code 5
+//// the store's answer ─▶ answered(items, moving, answer) ─▶ ItemsSaved:    the change's replies, items updated
+////                                                         ItemMade(guid): a split's replies, the new stack held
+////                                                         ItemsNotSaved:  Warning, 0x56A code 5, items unchanged
+////                                                         SaveRefused(c): Fault naming c, 0x56A code 5
 //// ```
 ////
 //// - **A move is one message.** A move, a swap, an equip and an unequip are all
@@ -54,10 +58,39 @@
 ////   above 30 with Item_InventoryFull 27 (`opcode.0x182`, sender 0x1403c17d0, the
 ////   only one of 0x182), so no input here is answered 27.
 //// - **The store's answer** decides the reply, so storage and the client agree
-////   after it: `NothingMoved` and `MoveRefused` leave `items` as they were and
+////   after it: `ItemsNotSaved` and `SaveRefused` leave `items` as they were and
 ////   answer 0x56A code 5 DbFailure, and the connection stays. A store that is
 ////   unavailable, not running or past its deadline ends the connection with
 ////   reason 8, which the connection decides.
+//// - **Stacks.** A split is 0x17D {guid 64, location 9, bag index 32, count 32}
+////   and a delete 0x149 {location 9, bag index 32}; a merge is a 0x182 onto a
+////   stack of the same stackable Item2 with room under its maxStackCount, and
+////   onto any other occupied slot a 0x182 is the swap (`0x1406d50f0`, which does
+////   not test the target stack's room). Every reply to a split or a merge has
+////   the reason 0 (StackSplit), which raises no further notice (`0x1403b8060`), and
+////   a delete is answered 0x148 with the reason 21 (PlayerRequested). Replies, in
+////   order: a split 0x17F of the source then 0x111 of the new stack; a full merge
+////   0x17F of the target then 0x148 of the source; a partial merge 0x17F of the
+////   target at maxStackCount then 0x17F of the source; the order is the server's
+////   choice.
+//// - **The split's checks** (a 0x56A {the held item's guid, or 0 for none; code},
+////   no ask, items unchanged), in this order; the client's split path has no dead
+////   or combat check, so none is made here:
+////   1. no held item has the guid: 1 Params
+////   2. the count is 0, or the held count or more: 1 Params
+////   3. the destination is the bank, a bank bag slot or location 10: 2 PlayerBusy
+////   4. the destination is not the inventory, or its index is 96 or more: 1 Params
+////   5. an inventory index of 16 or more: 37 Item_BagToSmall
+////   6. an item is held at the destination: 1 Params
+//// - **The delete's checks** (0x56A guid 0 for the first two), in this order:
+////   1. location 300 or more, bag index 0xffffffff or an equipped index of 31 or
+////      more: 1 Params
+////   2. no held item at the place: 1 Params
+////   3. no Item2 row for the held item: the connection ends (`NoItemRow`)
+////   4. Item2.flags holds 0x10000: 156 Item_CannotBeDeleted
+////   The client's sender (`opcode.0x149`, `0x1403c1360`) also sends nothing for
+////   a worn bag and for an item in a trade; no worn bag is held until #587 and
+////   there is no trade.
 //// - **Left to other steps:** gear properties, max health, worn visuals and the
 ////   cast's weapon, which still read the fixed loadout, not the held items.
 
@@ -65,15 +98,20 @@ import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/item_property
 import genesis_prime/game/player_life.{type Life}
+import genesis_prime/message/float32
+import genesis_prime/message/held_item
 import genesis_prime/message/item_action_failed.{ItemActionFailed}
+import genesis_prime/message/item_added.{ItemAdded}
 import genesis_prime/message/item_move
 import genesis_prime/message/item_moved.{ItemMoved}
 import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/items_swapped.{ItemsSwapped}
+import genesis_prime/message/shared_item.{SharedItem}
 import genesis_prime/step.{type LogLevel, LogError, LogWarning}
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemMove,
-  type ItemsAnswer, type SessionEpoch, ItemsMoved, MoveRefused, NothingMoved,
+  type ItemsAnswer, type SessionEpoch, ItemMade, ItemsNotSaved, ItemsSaved,
+  SaveRefused,
 }
 import genesis_prime/table/id.{type Item2Id}
 import genesis_prime/table/loader/store as table_store
@@ -87,6 +125,10 @@ import gleam/result
 pub type Message {
   /// 0x0182, the player moves an item to a place.
   MoveAsked
+  /// 0x017D, the player splits a stack onto an empty place.
+  SplitAsked
+  /// 0x0149, the player destroys the item at a place.
+  DeleteAsked
 }
 
 /// What the rule asks the connection to do.
@@ -97,12 +139,27 @@ pub type Effect {
   Log(level: LogLevel, text: String)
 }
 
-/// A move the rule accepted and the store is asked for: `moves` is one move, or
-/// two for a swap, `items` the held items as they stand once the store has
-/// moved them, and `moved` the frame (0x569 or 0x568) the client is answered
-/// with then. `guid` is the moved item's, which a refusal's 0x56A names.
+/// A change the rule accepted and the store is asked for: `change` is what is
+/// saved, `items` the held items as they stand once the store has saved it (a
+/// split's new stack is added with the guid the store makes), and `guid` the
+/// item the player named, which a refusal's 0x56A names.
 pub type Moving {
-  Moving(guid: Int, moves: List(ItemMove), items: List(HeldItem), moved: Frame)
+  Moving(guid: Int, change: Change, items: List(HeldItem))
+}
+
+/// What an accepted change saves, with the rows as they are held, which fence
+/// the store's statement.
+pub type Change {
+  /// One move, or two for a swap, answered with `moved`, the frame (0x569 or
+  /// 0x568) the client gets once they are saved.
+  Moved(moves: List(ItemMove), moved: Frame)
+  /// `count` of the stack `source` put onto the stack `target`, of the same
+  /// Item2: the source goes when none of it is left.
+  Merged(source: HeldItem, target: HeldItem, count: Int)
+  /// `count` of the stack `source` made into a new stack at the empty place `to`.
+  Split(source: HeldItem, count: Int, to: store.ItemPlace)
+  /// The whole stack `item` destroyed.
+  Deleted(item: HeldItem)
 }
 
 /// What the rule makes of a move the client sent.
@@ -175,7 +232,7 @@ const cant_do_while_dead = 57
 /// 63 Player_CannotWhileInCombat.
 const cannot_while_in_combat = 63
 
-/// What the client's 0x0182 is answered with: a refusal with the code of the
+/// What the client's message is answered with: a refusal with the code of the
 /// first check it breaks, or the store's ask, or the refusal for a body the
 /// client's reader refuses.
 pub fn take(
@@ -185,7 +242,20 @@ pub fn take(
   message message: Message,
   body body: BitArray,
 ) -> Result(Taken, Refusal) {
-  let MoveAsked = message
+  case message {
+    MoveAsked -> take_move(items:, life:, tables:, body:)
+    SplitAsked -> panic as "shape: the split's checks are not written yet"
+    DeleteAsked -> panic as "shape: the delete's checks are not written yet"
+  }
+}
+
+/// What a 0x0182 is answered with.
+fn take_move(
+  items items: List(HeldItem),
+  life life: Life,
+  tables tables: table_store.Tables,
+  body body: BitArray,
+) -> Result(Taken, Refusal) {
   use move <- result.try(
     item_move.decode(body)
     |> client_connection.decoded(message_id: item_move.message_id)
@@ -332,28 +402,32 @@ fn moving(
     Error(Nil) ->
       Moving(
         guid: item.item_guid,
-        moves: [first],
+        change: Moved(
+          moves: [first],
+          moved: frame_of_move(guid: item.item_guid, place: to),
+        ),
         items: relocated(items:, guid: item.item_guid, to: to_place),
-        moved: frame_of_move(guid: item.item_guid, place: to),
       )
     Ok(other) ->
       Moving(
         guid: item.item_guid,
-        moves: [
-          first,
-          store.ItemMove(
-            item_guid: other.item_guid,
-            from: to_place,
-            to: from_place,
-          ),
-        ],
+        change: Moved(
+          moves: [
+            first,
+            store.ItemMove(
+              item_guid: other.item_guid,
+              from: to_place,
+              to: from_place,
+            ),
+          ],
+          moved: frame_of_swap(first: #(item.item_guid, to), second: #(
+            other.item_guid,
+            from,
+          )),
+        ),
         items: items
           |> relocated(guid: item.item_guid, to: to_place)
           |> relocated(guid: other.item_guid, to: from_place),
-        moved: frame_of_swap(first: #(item.item_guid, to), second: #(
-          other.item_guid,
-          from,
-        )),
       )
   }
 }
@@ -416,39 +490,115 @@ fn failed(guid guid: Int, code code: Int) -> Frame {
   Frame(message_id: item_action_failed.message_id, body:)
 }
 
-/// The store's request for an accepted move, fenced by the login's epoch.
+/// 0x111 for an item the character holds, with no charges and full durability,
+/// added for `reason`. Every value the client's code does not name is 0
+/// (`opcode.0x111.shared_item_unnamed`), the lists empty.
+pub fn item_added_frame(
+  item_guid item_guid: Int,
+  item_id item_id: Int,
+  location location: Int,
+  bag_index bag_index: Int,
+  stack_count stack_count: Int,
+  reason reason: Int,
+) -> Frame {
+  let assert Ok(body) =
+    item_added.encode(
+      ItemAdded(held_item: held_item.HeldItem(
+        item: SharedItem(
+          item_guid:,
+          field_2: 0,
+          item_id:,
+          location:,
+          bag_index:,
+          stack_count:,
+          charges: 0,
+          field_8: 0,
+          field_9: 0,
+          field_10: 0,
+          durability: float32.to_bits(1.0),
+          field_12: 0,
+          field_13: 0,
+          field_14: 0,
+          field_15: 0,
+          field_16: 0,
+          field_17: 0,
+          field_18: 0,
+          field_19: 0,
+          field_20: 0,
+          field_21: 0,
+          field_22: 0,
+          field_23: 0,
+          list_a: [],
+          list_b: [],
+          field_27: 0,
+        ),
+        reason:,
+      )),
+    )
+    as "an item of 18 bits, a location of 9 and a guid of 64 bits, a character number below 2^23, fit the message"
+  Frame(message_id: item_added.message_id, body:)
+}
+
+/// The store's request for an accepted change, fenced by the login's epoch.
 pub fn request(
   moving moving: Moving,
   account_id account_id: AccountId,
   character_id character_id: CharacterId,
   session_epoch session_epoch: SessionEpoch,
 ) -> store.Request {
-  store.Items(store.MoveItems(
-    account_id:,
-    character_id:,
-    session_epoch:,
-    moves: moving.moves,
-  ))
+  store.Items(case moving.change {
+    Moved(moves:, ..) ->
+      store.MoveItems(account_id:, character_id:, session_epoch:, moves:)
+    Merged(source:, target:, count:) ->
+      store.MergeItems(
+        account_id:,
+        character_id:,
+        session_epoch:,
+        source:,
+        target:,
+        count:,
+      )
+    Split(source:, count:, to:) ->
+      store.SplitItem(
+        account_id:,
+        character_id:,
+        session_epoch:,
+        source:,
+        count:,
+        to:,
+      )
+    Deleted(item:) ->
+      store.DeleteItem(account_id:, character_id:, session_epoch:, item:)
+  })
 }
 
-/// The held items and the effects the store's answer to the move leaves: the
-/// items of `moving` and its 0x569 or 0x568 for `ItemsMoved`, and the items as
-/// they were with a log line and 0x56A code 5 for any other answer.
+/// The held items and the effects the store's answer to the change leaves: the
+/// items of `moving` and its replies for `ItemsSaved`, or for `ItemMade` the
+/// split's, and the items as they were with a log line and 0x56A code 5 for any
+/// other answer.
 pub fn answered(
   items items: List(HeldItem),
   moving moving: Moving,
   answer answer: ItemsAnswer,
 ) -> #(List(HeldItem), List(Effect)) {
   case answer {
-    ItemsMoved -> #(moving.items, [Send(moving.moved)])
-    NothingMoved -> #(items, [
+    ItemsSaved ->
+      case moving.change {
+        Moved(moved:, ..) -> #(moving.items, [Send(moved)])
+        Merged(..) | Deleted(..) ->
+          panic as "shape: the merge's and the delete's replies are not written yet"
+        Split(..) -> panic as "the store answers a split with ItemMade"
+      }
+    ItemMade(item_guid: _) ->
+      panic as "shape: the split's replies are not written yet"
+    ItemsNotSaved -> #(items, [
       Log(
         level: LogWarning,
         text: "the item was not moved: a later login holds the character, or the items are not where the client has them",
       ),
       Send(failed(guid: moving.guid, code: db_failure)),
     ])
-    MoveRefused(constraint:) -> #(items, [
+    SaveRefused(constraint:) -> #(items, [
       Log(
         level: LogError,
         text: "the item was not moved: the store refused the places by the constraint "

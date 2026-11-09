@@ -33,7 +33,9 @@ import genesis_prime/message/game_hello_reply.{type GameHelloReply}
 import genesis_prime/message/graphics_report.{type GraphicsReport}
 import genesis_prime/message/innate_index_chosen.{type InnateIndexChosen}
 import genesis_prime/message/input_key_set_request.{type InputKeySetRequest}
+import genesis_prime/message/item_delete.{type ItemDelete}
 import genesis_prime/message/item_move.{type ItemMove}
+import genesis_prime/message/item_split.{type ItemSplit}
 import genesis_prime/message/login_request.{type LoginRequest}
 import genesis_prime/message/move_speed_setting.{type MoveSpeedSetting}
 import genesis_prime/message/movement_send_interval_answer.{
@@ -93,6 +95,8 @@ pub type ClientMessage {
   CastAbility(message: CastAbility)
   AbilityHold(message: AbilityHold)
   ItemMove(message: ItemMove)
+  ItemSplit(message: ItemSplit)
+  ItemDelete(message: ItemDelete)
   InnateIndexChosen(message: InnateIndexChosen)
   CancelCast(message: CancelCast)
   ChooseResurrection(message: ChooseResurrection)
@@ -186,6 +190,8 @@ pub fn decode(
     0x009A -> decoded(body, message_id, cast_ability.decode, CastAbility)
     0x04DB -> decoded(body, message_id, ability_hold.decode, AbilityHold)
     0x0182 -> decoded(body, message_id, item_move.decode, ItemMove)
+    0x017D -> decoded(body, message_id, item_split.decode, ItemSplit)
+    0x0149 -> decoded(body, message_id, item_delete.decode, ItemDelete)
     0x016F ->
       decoded(body, message_id, innate_index_chosen.decode, InnateIndexChosen)
     0x0801 -> decoded(body, message_id, cancel_cast.decode, CancelCast)
@@ -263,6 +269,8 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     CastAbility(message:) -> cast_ability.encode(message)
     AbilityHold(message:) -> ability_hold.encode(message)
     ItemMove(message:) -> item_move.encode(message)
+    ItemSplit(message:) -> item_split.encode(message)
+    ItemDelete(message:) -> item_delete.encode(message)
     InnateIndexChosen(message:) -> innate_index_chosen.encode(message)
     CancelCast(message:) -> cancel_cast.encode(message)
     ChooseResurrection(message:) -> choose_resurrection.encode(message)
@@ -316,6 +324,8 @@ pub fn message_id(message: ClientMessage) -> Int {
     CastAbility(..) -> cast_ability.message_id
     AbilityHold(..) -> ability_hold.message_id
     ItemMove(..) -> item_move.message_id
+    ItemSplit(..) -> item_split.message_id
+    ItemDelete(..) -> item_delete.message_id
     InnateIndexChosen(..) -> innate_index_chosen.message_id
     CancelCast(..) -> cancel_cast.message_id
     ChooseResurrection(..) -> choose_resurrection.message_id
@@ -368,6 +378,8 @@ pub fn name(message: ClientMessage) -> String {
     CastAbility(..) -> "cast_ability"
     AbilityHold(..) -> "ability_hold"
     ItemMove(..) -> "item_move"
+    ItemSplit(..) -> "item_split"
+    ItemDelete(..) -> "item_delete"
     InnateIndexChosen(..) -> "innate_index_chosen"
     CancelCast(..) -> "cancel_cast"
     ChooseResurrection(..) -> "choose_resurrection"
