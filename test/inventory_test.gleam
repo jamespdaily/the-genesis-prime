@@ -66,6 +66,7 @@ import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
+import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import gleam/set
@@ -1307,10 +1308,7 @@ fn fillers(indexes indexes: List(Int)) -> List(HeldItem) {
 
 /// The inventory indexes from `first` to `last`.
 fn indexes(first first: Int, to last: Int) -> List(Int) {
-  case first > last {
-    True -> []
-    False -> [first, ..indexes(first: first + 1, to: last)]
-  }
+  int.range(from: last, to: first - 1, with: [], run: list.prepend)
 }
 
 fn size_of(items: List(HeldItem)) -> Int {
@@ -1403,33 +1401,13 @@ pub fn a_bag_worn_in_a_bag_slot_opens_its_slots_test() -> Nil {
     as "an index at the size is past the last slot"
   // A second bag adds its slots to the first's.
   let moving = asked(bagged(items: worn, from: #(1, 2), to: #(0, 18)))
-  let #(both, _) = inventory.answered(items: worn, moving:, answer: ItemsSaved)
+  let #(both, effects) =
+    inventory.answered(items: worn, moving:, answer: ItemsSaved)
+  assert moved_places(effects) == [#(21, 18)]
+    as "opcode.0x569: the second bag at location 0, index 18"
   assert size_of(both) == 28 as "16, 8 and the 4 slots of Item2 4753"
   assert is_ask(bagged(items: both, from: #(1, 0), to: #(1, 27)))
   assert refusal(bagged(items: both, from: #(1, 0), to: #(1, 28))) == [#(8, 37)]
-  // A split onto the new room.
-  let stacked =
-    list.append(worn, [
-      in_bag(guid: 22, item2_id: stackable(), index: 3, count: 10),
-    ])
-  let moving =
-    asked(split_taken(
-      items: stacked,
-      life: alive(),
-      guid: 22,
-      to: #(1, 23),
-      count: 3,
-    ))
-  assert moving.guid == 22
-  assert refusal(split_taken(
-      items: stacked,
-      life: alive(),
-      guid: 22,
-      to: #(1, 24),
-      count: 3,
-    ))
-    == [#(22, 37)]
-    as "a split onto an index at the size is refused"
 }
 
 pub fn a_bag_slot_past_the_unlocked_count_is_refused_31_test() -> Nil {
@@ -1603,4 +1581,41 @@ pub fn a_worn_bag_cannot_be_deleted_test() -> Nil {
     as "a worn bag is refused"
   assert failed_with(effects) == [#(0, 1)]
     as "0x1403c1360: the client sends no delete of a worn bag, so it is Params with no guid, as for any place the client does not send"
+  // A split onto the room the worn bag opened: slots 16 to 23 exist, 24 does
+  // not.
+  let stacked =
+    list.append(items, [
+      in_bag(guid: 22, item2_id: stackable(), index: 3, count: 10),
+    ])
+  let moving =
+    asked(split_taken(
+      items: stacked,
+      life: alive(),
+      guid: 22,
+      to: #(1, 23),
+      count: 3,
+    ))
+  assert moving.guid == 22
+  let #(_, effects) =
+    inventory.answered(items: stacked, moving:, answer: ItemMade(item_guid: 77))
+  let assert [_, added] = sent(effects)
+    as "opcode.0x17f of the source then opcode.0x111 of the new stack"
+  let assert Ok(item_added.ItemAdded(held_item:)) =
+    item_added.decode(added.body)
+  assert #(
+      held_item.item.item_guid,
+      held_item.item.location,
+      held_item.item.bag_index,
+    )
+    == #(77, 1, 23)
+    as "opcode.0x111: the new stack is at inventory index 23"
+  assert refusal(split_taken(
+      items: stacked,
+      life: alive(),
+      guid: 22,
+      to: #(1, 24),
+      count: 3,
+    ))
+    == [#(22, 37)]
+    as "a split onto an index at the size is refused"
 }

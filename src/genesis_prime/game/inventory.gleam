@@ -700,6 +700,14 @@ fn checked(
     when: to.location == in_bags && to.bag_index >= inventory_slots,
     return: Error(Code(params)),
   )
+  use Nil <- result.try(unique_at(
+    items:,
+    tables:,
+    item:,
+    from:,
+    to:,
+    other: destination,
+  ))
   use current <- result.try(size(items:, tables:) |> result.map_error(Broken))
   use Nil <- result.try(bag_fits(
     items:,
@@ -714,18 +722,17 @@ fn checked(
     when: to.location == in_bags && to.bag_index >= current,
     return: Error(Code(bag_too_small)),
   )
-  use Nil <- result.try(wearable_at(
-    items:,
-    tables:,
-    wearer:,
-    bag_slots:,
-    item:,
-    from:,
-    to:,
-    other: destination,
-  ))
+  use Nil <- result.try(wearable_at(tables:, wearer:, bag_slots:, item:, to:))
   use Nil <- result.try(case destination {
     Ok(other) -> {
+      use Nil <- result.try(unique_at(
+        items:,
+        tables:,
+        item: other,
+        from: to,
+        to: from,
+        other: Ok(item),
+      ))
       use Nil <- result.try(bag_fits(
         items:,
         tables:,
@@ -735,16 +742,7 @@ fn checked(
         to: from,
         other: Ok(item),
       ))
-      wearable_at(
-        items:,
-        tables:,
-        wearer:,
-        bag_slots:,
-        item: other,
-        from: to,
-        to: from,
-        other: Ok(item),
-      )
+      wearable_at(tables:, wearer:, bag_slots:, item: other, to: from)
     }
     Error(Nil) -> Ok(Nil)
   })
@@ -779,26 +777,23 @@ fn closed(place: ItemPlace) -> Bool {
   }
 }
 
-/// The checks of one item going from a place to another, in the client's order
-/// (0x1403ad100): the unique check, then, for an equipped destination, the slot
-/// fit and the requirements. `other` is the item held at the destination, which
-/// the move gives the place the item leaves.
+/// The unique check of one item going from a place to another, the client's
+/// first check of an item (0x1403ad100): Item_Unique when the item enters an
+/// equip-like place, is unique-equipped and an item of its Item2 is worn, unless
+/// the item at the destination is of the same Item2. `other` is the item held
+/// at the destination.
 ///
 /// Not built: the client's loop that refuses an item whose runes are of a kind
 /// another worn item holds (rune-unique); it waits for the issue "Items,
 /// equipment, vendors, levels and currency work on the real client".
-fn wearable_at(
+fn unique_at(
   items items: List(HeldItem),
   tables tables: table_store.Tables,
-  wearer wearer: Wearer,
-  bag_slots bag_slots: Int,
   item item: HeldItem,
   from from: ItemPlace,
   to to: ItemPlace,
   other other: Result(HeldItem, Nil),
 ) -> Result(Nil, Stop) {
-  let broken = Broken(NoItemRow(item2_id: item.item2_id))
-  let item2_id = item.item2_id.value
   let entering = equip_like(to) && !equip_like(from)
   let same_as_other = case other {
     Ok(held) -> held.item2_id == item.item2_id
@@ -806,18 +801,32 @@ fn wearable_at(
   }
   use unique_equipped <- result.try(case entering && !same_as_other {
     True ->
-      item_property.is_unique_equipped(tables:, item2_id:)
-      |> result.replace_error(broken)
+      item_property.is_unique_equipped(tables:, item2_id: item.item2_id.value)
+      |> result.replace_error(Broken(NoItemRow(item2_id: item.item2_id)))
     False -> Ok(False)
   })
   let worn_already =
     list.any(items, fn(held) {
       held.location == equipped && held.item2_id == item.item2_id
     })
-  use <- bool.guard(
-    when: unique_equipped && worn_already,
-    return: Error(Code(item_unique)),
-  )
+  case unique_equipped && worn_already {
+    True -> Error(Code(item_unique))
+    False -> Ok(Nil)
+  }
+}
+
+/// The slot fit and the requirements of one item going to an equipped place, in
+/// the client's order (the equip slot check 0x1403b11b0, then the requirements);
+/// any other place passes.
+fn wearable_at(
+  tables tables: table_store.Tables,
+  wearer wearer: Wearer,
+  bag_slots bag_slots: Int,
+  item item: HeldItem,
+  to to: ItemPlace,
+) -> Result(Nil, Stop) {
+  let broken = Broken(NoItemRow(item2_id: item.item2_id))
+  let item2_id = item.item2_id.value
   use <- bool.guard(when: to.location != equipped, return: Ok(Nil))
   use slotted <- result.try(
     item_property.is_slotted(tables:, item2_id:) |> result.replace_error(broken),
@@ -974,8 +983,7 @@ fn displaced(
     list.filter(in_inventory, fn(item) { item.bag_index >= remaining })
     |> list.sort(fn(a, b) { int.compare(a.bag_index, b.bag_index) })
   let free =
-    list.repeat(Nil, remaining)
-    |> list.index_map(fn(_, index) { index })
+    int.range(from: remaining - 1, to: -1, with: [], run: list.prepend)
     |> list.filter(fn(index) {
       !list.any(in_inventory, fn(item) { item.bag_index == index })
     })
