@@ -275,10 +275,11 @@ fn single(number: Int) -> Bits {
   bits
 }
 
-/// The message a `Reported` zone came in: 0xF2 or 0x63A.
+/// The message a `Reported` zone came in: 0xF2 or 0x63A, which also carries the zone
+/// the player left.
 pub type ReportedBy {
   ReportedByTerrainReady
-  ReportedByZoneChanged
+  ReportedByZoneChanged(old_world_zone_id: Int)
 }
 
 /// What a movement message made of the player's movement.
@@ -290,7 +291,9 @@ pub type Taken {
   /// and the WorldZone id the client reports the player stands in (0xF2's, or
   /// 0x63A's new id; opcode.0xf2, opcode.0x63a), which zone chat takes
   /// (genesis_prime/game/chat `world_zone_reported`, `terrain_ready`). `by` says
-  /// which message it was. The 0x63A's old id is not read.
+  /// which message it was, and for a 0x63A holds the old id the client reports, which
+  /// the zone's welcome compares with the new (genesis_prime/game/zone_welcome) and
+  /// zone chat does not read.
   Reported(state: State, world_zone_id: Int, by: ReportedBy)
   /// An accepted 0x0637: the state it leaves, the place the player now stands
   /// at in the world's frame (`place`), the commands it sent that are relayed,
@@ -412,7 +415,9 @@ pub fn take(
         Reported(
           state:,
           world_zone_id: decoded.new_world_zone_id,
-          by: ReportedByZoneChanged,
+          by: ReportedByZoneChanged(
+            old_world_zone_id: decoded.old_world_zone_id,
+          ),
         )
       })
     IntervalAnswered ->

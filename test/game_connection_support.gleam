@@ -48,6 +48,7 @@ import genesis_prime/message/unit_create_player.{
 }
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stealth
+import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
   type TimerId, CallerId, CancelTimer, ConnectionId, EndedBeforeAnswer, Map,
@@ -81,6 +82,7 @@ import planted_table
 import server_proxy_support
 import spawn_support
 import world_entry_support
+import zone_welcome_support
 
 /// What the tests' game connections are made with: a realm id and a
 /// character limit the hello and the list must carry, the number of character
@@ -100,6 +102,7 @@ pub fn settings() -> game_connection.Settings {
     rate: support.roomy(),
     class_resources: class_resource_support.classes(),
     server_proxies: server_proxy_support.none(),
+    zone_welcomes: zone_welcome_support.none(),
     numbers: spawn_support.numbers,
   )
 }
@@ -1192,6 +1195,16 @@ pub fn zone_group(top_zone_id: Int) -> step.Address {
 pub fn terrain_loaded_message(world_zone_id: Int) -> BitArray {
   let assert Ok(body) = terrain_loaded.encode(TerrainLoaded(world_zone_id:))
   world_message(message_id: terrain_loaded.message_id, body:)
+}
+
+/// The client's 0x63a: the zone the player left and the zone it entered.
+pub fn zone_changed_message(old old: Int, new new: Int) -> BitArray {
+  let assert Ok(body) =
+    world_zone_changed.encode(WorldZoneChanged(
+      old_world_zone_id: old,
+      new_world_zone_id: new,
+    ))
+  world_message(message_id: world_zone_changed.message_id, body:)
 }
 
 /// The Medic of level 1 in the world, who presses Paralytic Surge at bag index 2.

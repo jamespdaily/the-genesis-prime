@@ -1,4 +1,10 @@
 ID	flags	prerequisiteTypeId0	prerequisiteTypeId1	prerequisiteTypeId2	prerequisiteComparisonId0	prerequisiteComparisonId1	prerequisiteComparisonId2	objectId0	objectId1	objectId2	value0	value1	value2	localizedTextIdFailure
+3	0	3	0	0	1	0	0	0	0	0	1	0	0	499513
+4	0	3	0	0	1	0	0	0	0	0	2	0	0	499514
+5	0	3	0	0	1	0	0	0	0	0	3	0	0	499515
+6	0	3	0	0	1	0	0	0	0	0	4	0	0	499516
+7	0	3	0	0	1	0	0	0	0	0	5	0	0	499517
+9	0	3	0	0	1	0	0	0	0	0	7	0	0	499518
 21	0	12	0	0	1	0	0	0	0	0	1	0	0	0
 390	0	28	0	0	2	0	0	0	0	0	0	0	0	0
 903	0	28	0	0	1	0	0	0	0	0	0	0	0	558197
@@ -187,6 +193,7 @@ ID	flags	prerequisiteTypeId0	prerequisiteTypeId1	prerequisiteTypeId2	prerequisit
 39778	0	1	0	0	4	0	0	0	0	0	6	0	0	0
 39779	0	1	0	0	4	0	0	0	0	0	10	0	0	0
 41834	1	43	43	0	1	1	0	10518	10524	0	4	4	0	0
+43307	0	109	0	0	2	0	0	3460	0	0	0	0	0	0
 43574	0	59	0	0	4	0	0	87353	0	0	2	0	0	0
 43575	0	59	15	0	5	1	0	87353	0	0	2	87334	0	0
 43678	1	15	0	0	2	2	0	0	0	0	87336	87352	0	0

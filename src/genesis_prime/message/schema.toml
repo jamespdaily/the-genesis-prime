@@ -393,6 +393,16 @@ fields = [
 ]
 
 [[message]]
+id = 0x0179
+name = "server_tutorial"
+direction = "server_to_client"
+evidence = "opcode.0x179"
+summary = "the Tutorial row the client queues to show, which it drops when it has shown or queued that row already"
+fields = [
+  { name = "tutorial_id", kind = "unsigned", bits = 32, evidence = "0x14007ab50", named_by = "opcode.0x179" },
+]
+
+[[message]]
 id = 0x036A
 name = "disconnect_notice"
 direction = "server_to_client"

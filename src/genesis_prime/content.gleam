@@ -61,6 +61,10 @@
 //// - **The server's Proxies** are planned over the ability trees the tables' load derived
 ////   (genesis_prime/game/server_proxy), so a row naming a base, a go or a spell those trees
 ////   lack is refused with the plan's reason.
+//// - **The zones' welcomes** are checked against the client's WorldZone and Tutorial rows
+////   (genesis_prime/game/zone_welcome): a row naming a zone or a Tutorial row the tables
+////   lack, a Tutorial row that is not of category 29, or a parent chain that is a cycle
+////   is refused.
 //// - **Content-only tables.** The faction, outfit and world tables the selection
 ////   reads are read beside the server's own tables on the caller's heap
 ////   (`server_table.load_content_tables`: the creature tables are read where they
@@ -83,10 +87,12 @@ import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/class_resource
 import genesis_prime/game/rating
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_plan
+import genesis_prime/game/zone_welcome
 import genesis_prime/migration.{type Migration}
 import genesis_prime/readiness
 import genesis_prime/step
@@ -205,6 +211,15 @@ fn read(
       )
     }),
   )
+  use welcome_rows <- result.try(
+    content_zone_welcome.rows(db)
+    |> result.map_error(fn(error) {
+      QueryFailed(
+        table: content_zone_welcome.table,
+        reason: worker.describe_query_error(error),
+      )
+    }),
+  )
   let classes = class_resource.select(rows: class_rows)
   let class_refusals = case classes {
     Ok(..) -> []
@@ -217,6 +232,11 @@ fn read(
       plans: spell_plan.plans(tables:),
     )
   let proxy_refusals = case proxies {
+    Ok(..) -> []
+    Error(refusals) -> refusals
+  }
+  let welcomes = zone_welcome.select(rows: welcome_rows, tables:)
+  let welcome_refusals = case welcomes {
     Ok(..) -> []
     Error(refusals) -> refusals
   }
@@ -255,6 +275,7 @@ fn read(
       number_refusals,
       class_refusals,
       proxy_refusals,
+      welcome_refusals,
     ])
   {
     [] -> {
@@ -291,6 +312,10 @@ fn read(
       }
       case proxies {
         Ok(proxies) -> content_server_proxy.put(key:, proxies:)
+        Error(..) -> Nil
+      }
+      case welcomes {
+        Ok(welcomes) -> content_zone_welcome.put(key:, welcomes:)
         Error(..) -> Nil
       }
       Ok(Nil)
