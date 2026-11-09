@@ -1904,12 +1904,52 @@ id = 0x0262
 name = "unit_create_static"
 direction = "server_to_client"
 evidence = "opcode.0x262.simple"
-summary = "creates a static object in the world: a unit of type 10 (Simple), 11 (Platform) or 32 (SimpleCollidable), with a creature's type data, the Creature2 id, which the client takes the object's name, model scale and level from, and the quest checklist index, then the values of a player's create: the stats (a type 32 object created with health 0 is dead; types 10 and 11 never are), the movement commands (kind 2, the position, and kind 14, the rotation), the properties, both factions, the world object the unit claims (0 for none, when the unit builds its own) and the display info, which must be sent since with 0 no model is described"
+summary = "creates a static object in the world: a unit of type 8 (Collectible), 10 (Simple), 11 (Platform), 13 (Turret) or 32 (SimpleCollidable), with a creature's type data, the Creature2 id, which the client takes the object's name, model scale and level from, and the quest checklist index, then the values of a player's create: the stats (a type 13 or 32 object created with health 0 is dead; the other types never are), the movement commands (kind 2, the position, and kind 14, the rotation), the properties, both factions, the world object the unit claims (0 for none, when the unit builds its own) and the display info, which must be sent since with 0 no model is described"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "unit_type", kind = "unsigned", bits = 6, evidence = "0x140096fa0", named_by = "opcode.0x262.simple", values_type = "StaticUnitType", values = [ { value = 10, name = "simple", evidence = "world_data.entity_type" }, { value = 11, name = "platform", evidence = "world_data.entity_type" }, { value = 32, name = "simple_collidable", evidence = "world_data.entity_type" } ] },
+  { name = "unit_type", kind = "unsigned", bits = 6, evidence = "0x140096fa0", named_by = "opcode.0x262.simple", values_type = "StaticUnitType", values = [ { value = 8, name = "collectible", evidence = "world_data.entity_type" }, { value = 10, name = "simple", evidence = "world_data.entity_type" }, { value = 11, name = "platform", evidence = "world_data.entity_type" }, { value = 13, name = "turret", evidence = "world_data.entity_type" }, { value = 32, name = "simple_collidable", evidence = "world_data.entity_type" } ] },
   { name = "creature_id", kind = "unsigned", bits = 18, evidence = "0x140095fb0", named_by = "0x140095fb0" },
   { name = "checklist_index", kind = "unsigned", bits = 8, evidence = "0x140095fb0", named_by = "0x140095fb0" },
+  { name = "tail", kind = "record", record = "unit_create_tail", evidence = "0x140096fa0", named_by = "opcode.0x262" },
+]
+
+[[message]]
+id = 0x0262
+name = "unit_create_door"
+direction = "server_to_client"
+evidence = "0x140080d30"
+summary = "creates a unit of type 4, a door: only the Creature2 id as type data, with no quest checklist index, then the values of a player's create as a static object's (the stats the row records, which the client never creates a door dead for; the movement commands; both factions; the world object the unit claims; the display info)"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "unit_type", kind = "constant", bits = 6, value = 4, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "creature_id", kind = "unsigned", bits = 18, evidence = "0x140080d30", named_by = "0x140080d30" },
+  { name = "tail", kind = "record", record = "unit_create_tail", evidence = "0x140096fa0", named_by = "opcode.0x262" },
+]
+
+[[message]]
+id = 0x0262
+name = "unit_create_mailbox"
+direction = "server_to_client"
+evidence = "0x140080d30"
+summary = "creates a unit of type 12, a mailbox: only the Creature2 id as type data, with no quest checklist index, then the values of a player's create as a static object's (the stats the row records, which the client never creates a mailbox dead for; the movement commands; both factions; the world object the unit claims; the display info)"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "unit_type", kind = "constant", bits = 6, value = 12, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "creature_id", kind = "unsigned", bits = 18, evidence = "0x140080d30", named_by = "0x140080d30" },
+  { name = "tail", kind = "record", record = "unit_create_tail", evidence = "0x140096fa0", named_by = "opcode.0x262" },
+]
+
+[[message]]
+id = 0x0262
+name = "unit_create_portal"
+direction = "server_to_client"
+evidence = "0x140095ed0"
+summary = "creates a unit of type 14, an instance portal: the Creature2 id and a 32-bit time left in milliseconds as type data, 0 for none, then the values of a player's create as a static object's (the stats the row records, which the client never creates a portal dead for; the movement commands; both factions; the world object the unit claims; the display info)"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "unit_type", kind = "constant", bits = 6, value = 14, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "creature_id", kind = "unsigned", bits = 18, evidence = "0x140095ed0", named_by = "0x140095ed0" },
+  { name = "time_left", kind = "unsigned", bits = 32, evidence = "0x140095ed0", named_by = "opcode.0x262.portal_time" },
   { name = "tail", kind = "record", record = "unit_create_tail", evidence = "0x140096fa0", named_by = "opcode.0x262" },
 ]
 

@@ -70,8 +70,11 @@ import genesis_prime/message/unit_cc_state_applied.{type UnitCcStateApplied}
 import genesis_prime/message/unit_cc_state_ended.{type UnitCcStateEnded}
 import genesis_prime/message/unit_combat_state.{type UnitCombatState}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
+import genesis_prime/message/unit_create_door.{type UnitCreateDoor}
 import genesis_prime/message/unit_create_ghost.{type UnitCreateGhost}
+import genesis_prime/message/unit_create_mailbox.{type UnitCreateMailbox}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
+import genesis_prime/message/unit_create_portal.{type UnitCreatePortal}
 import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
 import genesis_prime/message/unit_death_state.{type UnitDeathState}
 import genesis_prime/message/unit_destroyed.{type UnitDestroyed}
@@ -138,6 +141,9 @@ pub type ServerMessage {
   InnateIndexSet(message: InnateIndexSet)
   UnitCreateCreature(message: UnitCreateCreature)
   UnitCreateStatic(message: UnitCreateStatic)
+  UnitCreateDoor(message: UnitCreateDoor)
+  UnitCreateMailbox(message: UnitCreateMailbox)
+  UnitCreatePortal(message: UnitCreatePortal)
   UnitCreateGhost(message: UnitCreateGhost)
   SpellCastRefused(message: SpellCastRefused)
   SpellCastConfirmed(message: SpellCastConfirmed)
@@ -251,6 +257,15 @@ pub fn decode(
           unit_create_creature.decode,
           UnitCreateCreature,
         )
+      })
+      |> result.lazy_or(fn() {
+        decoded(body, message_id, unit_create_door.decode, UnitCreateDoor)
+      })
+      |> result.lazy_or(fn() {
+        decoded(body, message_id, unit_create_mailbox.decode, UnitCreateMailbox)
+      })
+      |> result.lazy_or(fn() {
+        decoded(body, message_id, unit_create_portal.decode, UnitCreatePortal)
       })
       |> result.lazy_or(fn() {
         decoded(body, message_id, unit_create_ghost.decode, UnitCreateGhost)
@@ -441,6 +456,9 @@ pub fn name(message: ServerMessage) -> String {
     InnateIndexSet(..) -> "innate_index_set"
     UnitCreateCreature(..) -> "unit_create_creature"
     UnitCreateStatic(..) -> "unit_create_static"
+    UnitCreateDoor(..) -> "unit_create_door"
+    UnitCreateMailbox(..) -> "unit_create_mailbox"
+    UnitCreatePortal(..) -> "unit_create_portal"
     UnitCreateGhost(..) -> "unit_create_ghost"
     SpellCastRefused(..) -> "spell_cast_refused"
     SpellCastConfirmed(..) -> "spell_cast_confirmed"

@@ -83,11 +83,13 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       <> int.to_string(took)
       <> " ms"
     }
-  // `world_data.static_spawns`: 17,904 type 10, 491 type 11 and 1,178 type 32
-  // spawns, every one passing the client's checks, the 107 of types 10 and 11
-  // whose creatures have minLevel 0 and no stats among them; world 3460 holds 302
-  // type 10 and 15 type 32. Every type 32 spawn outside 3460 records a health
-  // above 0 and 3460's record none, so none is left out as dead.
+  // The world database's spawn rows (`spawn.tsv`, counted by entity type): 171
+  // type 4, 4,380 type 8, 17,904 type 10, 491 type 11, 101 type 12, 241 type 13,
+  // 79 type 14 and 1,178 type 32 spawns, every one passing the client's checks,
+  // the 107 of types 10 and 11 whose creatures have minLevel 0 and no stats among
+  // them; world 3460 holds 302 type 10, 2 type 13 and 15 type 32. Every type 13
+  // and 32 spawn outside 3460 records a health above 0 and 3460's record none,
+  // so none is left out as dead.
   let objects =
     list.flat_map(world.all(tables), fn(row) {
       dict.values(content_spawn.world(key:, world_id: row.id).objects)
@@ -96,21 +98,27 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
     list.count(objects, fn(object) { object.unit_type == unit_type })
   }
   assert list.map(spawn.object_types, of_type(objects, _))
-    == [17_904, 491, 1178]
+    == [171, 4380, 17_904, 491, 101, 241, 79, 1178]
     as "every static spawn of the world database loads, by type"
   let ship = dict.values(content_spawn.world(key:, world_id: 3460).objects)
-  assert list.map(spawn.object_types, of_type(ship, _)) == [302, 0, 15]
+  assert list.map(spawn.object_types, of_type(ship, _))
+    == [0, 0, 302, 0, 0, 2, 0, 15]
     as "world 3460's static objects, by type"
   assert list.all(objects, fn(object) {
     case object.unit_type {
-      static_object.SimpleCollidable ->
+      static_object.Turret | static_object.SimpleCollidable ->
         case object.health {
           Some(static_object.Health(value:, ..)) -> value > 0
           None -> False
         }
-      static_object.Simple | static_object.Platform -> True
+      static_object.Door
+      | static_object.Collectible
+      | static_object.Simple
+      | static_object.Platform
+      | static_object.Mailbox
+      | static_object.InstancePortal -> True
     }
   })
-    as "every type 32 object is sent a health above 0, so the client does not create it dead"
+    as "every type 13 and 32 object is sent a health above 0, so the client does not create it dead"
   Nil
 }

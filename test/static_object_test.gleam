@@ -16,7 +16,17 @@
 ////   recorded health only, as for a creature (`opcode.0x262.creature`).
 //// - `opcode.0x262.unit_fields`: a player's and a creature's tagged value is 0
 ////   and 0, the unit's own world unit.
+//// - The vectors of types 4, 12, 14, 8 and 13: the type 10 vector above with the
+////   type data its reader reads (`opcode.0x262.type_data`): types 4 and 12 the
+////   18-bit Creature2 id alone (`0x140080d30`), type 14 that id and a 32-bit time
+////   (`0x140095ed0`, 0 by `opcode.0x262.portal_time`), types 8 and 13 the id and
+////   the 8-bit checklist index (`0x140095fb0`). Every reader ends where the shared
+////   tail begins, and the type 10 vector's tail starts on a byte (32 + 6 + 18 + 8
+////   bits), so each vector is the type 10 vector with its type bits and type data
+////   swapped and the same tail bytes after them (a script of bit shifts, not the
+////   encoder).
 
+import genesis_prime/game/connection/frames
 import genesis_prime/game/start_place.{Facing}
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_create_static
@@ -55,16 +65,17 @@ fn vectors_object() -> StaticObject {
   )
 }
 
-/// The object's 0x262 as unit `unit_id`, encoded.
+/// The object's 0x262 as unit `unit_id`, encoded as the connection writes it.
 fn encoded(object: StaticObject, unit_id: Int) -> BitArray {
-  let assert Ok(bytes) =
-    unit_create_static.encode(static_object.create(
+  let frame =
+    frames.object_created_frame(unit: static_object.create(
       object:,
       unit_id:,
       server_time_estimate_start: 0,
     ))
-    as "the object's 0x262 encodes"
-  bytes
+  assert frame.message_id == unit_create_static.message_id
+    as "opcode.0x262: one message creates every unit"
+  frame.body
 }
 
 pub fn a_static_object_is_created_as_the_vector_of_its_type_test() -> Nil {
@@ -124,6 +135,76 @@ pub fn a_static_object_is_created_as_the_vector_of_its_type_test() -> Nil {
       "04 20 00 00 20 c7 47 00 00 02 40 03 00 00 a0 08 00 00 00 00 00 00 00 10 02 00 70 60 18 00 5a 8b 18 00 d8 74 88 03 00 00 fe 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 10 5a 84 16 00 00 00 00 00 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 a0 f8 0c 00 00",
     )
     as "type 32 with the client's Base Health: stat 0 = 52 and stat 10 = 1, no property, the client computes its own"
+}
+
+pub fn door_and_mailbox_create_has_creature_id_only_test() -> Nil {
+  use <- owned_test.run(5000)
+  let door =
+    StaticObject(
+      ..vectors_object(),
+      unit_type: static_object.Door,
+      creature_id: Creature2Id(73_707),
+    )
+  assert encoded(door, 0x2005)
+    == message_support.hex(
+      "05 20 00 00 c4 fa 47 00 00 00 00 00 40 08 00 c0 81 61 00 68 2d 62 00 60 d3 21 0e 00 00 f8 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 80 e2 33 00 00",
+    )
+    as "type 4: the unit type, the 18-bit Creature2 id, then the tail, with no checklist index (0x140080d30)"
+  let mailbox =
+    StaticObject(
+      ..vectors_object(),
+      unit_type: static_object.Mailbox,
+      creature_id: Creature2Id(73_707),
+      checklist_index: 9,
+    )
+  assert encoded(mailbox, 0x2006)
+    == message_support.hex(
+      "06 20 00 00 cc fa 47 00 00 00 00 00 40 08 00 c0 81 61 00 68 2d 62 00 60 d3 21 0e 00 00 f8 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 80 e2 33 00 00",
+    )
+    as "type 12 likewise, and a checklist index the row holds is not sent"
+}
+
+pub fn portal_create_has_time_left_zero_test() -> Nil {
+  use <- owned_test.run(5000)
+  let portal =
+    StaticObject(
+      ..vectors_object(),
+      unit_type: static_object.InstancePortal,
+      creature_id: Creature2Id(73_707),
+    )
+  assert encoded(portal, 0x2007)
+    == message_support.hex(
+      "07 20 00 00 ce fa 47 00 00 00 00 00 00 00 00 00 40 08 00 c0 81 61 00 68 2d 62 00 60 d3 21 0e 00 00 f8 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 80 e2 33 00 00",
+    )
+    as "type 14: the 18-bit Creature2 id, then a 32-bit time of 0, then the tail (0x140095ed0, opcode.0x262.portal_time)"
+}
+
+pub fn collectible_and_turret_create_has_checklist_index_test() -> Nil {
+  use <- owned_test.run(5000)
+  let collectible =
+    StaticObject(
+      ..vectors_object(),
+      unit_type: static_object.Collectible,
+      creature_id: Creature2Id(73_707),
+      checklist_index: 5,
+    )
+  assert encoded(collectible, 0x2008)
+    == message_support.hex(
+      "08 20 00 00 c8 fa 47 05 00 00 00 00 00 40 08 00 c0 81 61 00 68 2d 62 00 60 d3 21 0e 00 00 f8 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 80 e2 33 00 00",
+    )
+    as "type 8: the Creature2 id, then the 8-bit checklist index 5 (0x140095fb0)"
+  let turret =
+    StaticObject(
+      ..vectors_object(),
+      unit_type: static_object.Turret,
+      creature_id: Creature2Id(73_707),
+      checklist_index: 255,
+    )
+  assert encoded(turret, 0x2009)
+    == message_support.hex(
+      "09 20 00 00 cd fa 47 ff 00 00 00 00 00 40 08 00 c0 81 61 00 68 2d 62 00 60 d3 21 0e 00 00 f8 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00 80 e2 33 00 00",
+    )
+    as "type 13: the Creature2 id, then the 8-bit checklist index 255"
 }
 
 pub fn a_players_and_a_creatures_0x262_claim_no_world_object_test() -> Nil {
