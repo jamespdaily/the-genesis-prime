@@ -7,10 +7,12 @@ then exits non-zero. It installs nothing.
 Settings come from the environment; on a development machine
 $GENESIS_HOME/env.sh (default ~/.genesis-prime/env.sh) sets them, and
 ./setup-check and the full check read it (setup_check/environment.sh).
-GENESIS_NO_CLIENT=1 marks a machine without the client, such as CI: the
+GENESIS_NO_CLIENT=1 marks a machine without the client, such as a fork's CI: the
 client and the client query process are not checked there. The patched OTP is
 checked there only when GENESIS_OTP_DIR is set, as CI does for the build it
-caches.
+caches. GENESIS_NO_QUERY_PROCESS=1 marks a machine that has the client's files
+and no Ghidra, such as CI with the client's data (dev/client_data.sh): the
+client query process is not checked there, the client's files still are.
 
 Usage: ./setup-check
 """
@@ -465,11 +467,14 @@ def check_distribution(machine: Machine) -> list[Missing]:
 
 def check_all(machine: Machine) -> list[Missing]:
     """Every part's check, in order, skipping the client's parts where
-    GENESIS_NO_CLIENT=1. The world data's runs only where GENESIS_WORLD_DATA is set."""
+    GENESIS_NO_CLIENT=1 and the query process's where GENESIS_NO_QUERY_PROCESS=1.
+    The world data's runs only where GENESIS_WORLD_DATA is set."""
     checks = [check_gleam, check_erlang, check_rebar, check_manifest, check_postgres, check_distribution,
               check_world_data]
     if not _no_client(machine):
-        checks += [check_client, check_table_folder, check_query_process]
+        checks += [check_client, check_table_folder]
+        if machine.env.get("GENESIS_NO_QUERY_PROCESS") != "1":
+            checks.append(check_query_process)
     return [missing for check in checks for missing in check(machine)]
 
 
