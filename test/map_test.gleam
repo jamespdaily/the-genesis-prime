@@ -58,26 +58,10 @@ fn row_10_body() -> List(ItemVisual) {
   [ItemVisual(slot: 25, display_id: 137, item_color_set_id: 0, dye: 0)]
 }
 
-/// The visuals of a class's Novice set of a faction, with colour set 0 and dye
-/// 0 (`opcode.0x262.worn_visuals`).
-fn novice_worn(
-  class_id class_id: Int,
-  faction_id faction_id: Int,
-) -> List(ItemVisual) {
-  list.map(novice_tables.worn_visuals(class_id:, faction_id:), fn(visual) {
-    ItemVisual(
-      slot: visual.0,
-      display_id: visual.1,
-      item_color_set_id: 0,
-      dye: 0,
-    )
-  })
-}
-
 /// What the map answers a join of `character` as unit `unit_id`: the record of
 /// the unit at the Join's place, in the map's realm, with the `body` of its look,
-/// the loadout of its class and faction and the health that loadout gives at its
-/// level, which the answer carries beside the record.
+/// and the loadout of its class and faction, which the answer carries beside the
+/// record.
 fn answer_of(
   character character: Character,
   unit_id unit_id: Int,
@@ -350,17 +334,6 @@ pub fn a_character_whose_class_and_faction_have_no_novice_set_is_refused_and_tak
     as "the refused join took no unit id, so the next player is unit 1"
 }
 
-pub fn a_character_whose_level_has_no_base_health_row_is_refused_test() -> Nil {
-  use <- owned_test.run(5000)
-  let tall = Character(..map_support.character(107), level: 102)
-  let #(_, taken) =
-    join_as(state: started(), connection: 7, caller: 1, character: tall)
-  assert support.replies(taken)
-    == [#(CallerId(1), map.NotJoined(reason: map.NoBaseHealth(level: 102)))]
-    as "CreatureLevel holds the client's rows 1 to 101, none for level 102, so the character's health is unknown (loadout.max_health)"
-  assert support.watches(taken) == []
-}
-
 pub fn a_watch_that_names_no_player_is_an_error_and_changes_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, first) = join(state: started(), connection: 7, caller: 1)
@@ -447,7 +420,7 @@ pub fn a_leave_from_a_connection_not_in_the_map_logs_an_error_changes_nothing_an
     as "the stray leave spent no unit id"
 }
 
-pub fn a_joined_unit_wears_the_novice_set_of_its_class_and_faction_after_its_body_for_every_set_test() -> Nil {
+pub fn a_joined_unit_carries_the_body_of_its_look_and_no_worn_item_for_every_set_test() -> Nil {
   use <- owned_test.run(60_000)
   list.each(novice_tables.sets(), fn(set) {
     let character =
@@ -460,18 +433,12 @@ pub fn a_joined_unit_wears_the_novice_set_of_its_class_and_faction_after_its_bod
       join_as(state: started(), connection: 7, caller: 1, character:)
     let assert [#(_, Joined(unit:, ..))] = support.replies(taken)
       as "one reply answers the join"
-    let #(body, worn) =
-      list.partition(unit.tail.item_visuals, fn(visual) { visual.slot >= 24 })
-    assert body != [] && unit.tail.item_visuals == list.append(body, worn)
-      as "the body of the look comes first (body slots are 24 to 39), then the worn set"
-    assert worn
-      == novice_worn(class_id: set.class_id, faction_id: set.faction_id)
+    assert unit.tail.item_visuals != []
+      && list.all(unit.tail.item_visuals, fn(visual) { visual.slot >= 24 })
       as {
-        "opcode.0x262.worn_visuals: one visual for each of the five pieces and the weapon of CharacterCreation row "
+        "the map's unit of CharacterCreation row "
         <> int.to_string(set.creation_id)
-        <> "'s set, none for the shield"
+        <> " holds the body of its look (slots 24 to 39) and no worn item: the held items are the only source of gear, put in by the connection's entry (genesis_prime/game/gear)"
       }
-    assert !list.any(unit.tail.item_visuals, fn(visual) { visual.slot == 43 })
-      as "opcode.0x262.worn_visuals: the shield (slot 43) has display 0, which is no visual"
   })
 }

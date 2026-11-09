@@ -137,6 +137,23 @@ pub fn entry_at(
   quests quests: List(QuestRow),
   now now: Now,
 ) -> #(List(world_entry.Effect), world_entry.Entered) {
+  let assert world_entry.InTheWorld(entered:, effects:) =
+    answered_at(tables:, character:, items:, quests:, now:)
+    as "the map's answer to the join puts the player in the world"
+  #(effects, entered)
+}
+
+/// What the rule makes of the map's answer to a join of the character on these tables
+/// when the store holds these items and quest rows for it, made at `now`: the answer
+/// the map gives a character of a created class and faction, which holds no health or
+/// gear of its own.
+pub fn answered_at(
+  tables tables: table_store.Tables,
+  character character: Character,
+  items items: List(HeldItem),
+  quests quests: List(QuestRow),
+  now now: Now,
+) -> world_entry.Joined {
   let place =
     place_support.at(
       world_id: 3460,
@@ -150,7 +167,7 @@ pub fn entry_at(
     as "the store holds the character, its place and its level's row"
   let unit =
     unit_support.novice_unit(tables:, character:, place:, unit_id: 1, body: [])
-  let assert Ok(world_entry.InTheWorld(entered:, effects:)) =
+  let assert Ok(joined) =
     world_entry.joined(
       state:,
       answer: map.Joined(
@@ -168,7 +185,7 @@ pub fn entry_at(
       now:,
     )
     as "the map's answer to the join is the one world entry asked for"
-  #(effects, entered)
+  joined
 }
 
 /// The frames among an entry's effects, in order.
@@ -180,7 +197,8 @@ pub fn frames_of(effects effects: List(world_entry.Effect)) -> List(Frame) {
       | world_entry.AskMap(..)
       | world_entry.WatchMap(..)
       | world_entry.Life(..)
-      | world_entry.StartPassive(..) -> Error(Nil)
+      | world_entry.StartPassive(..)
+      | world_entry.Warn(..) -> Error(Nil)
     }
   })
 }

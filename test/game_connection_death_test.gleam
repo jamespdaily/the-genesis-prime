@@ -968,7 +968,9 @@ pub fn a_refused_holocrypt_join_returns_to_character_select_test() -> Nil {
       state:,
       taken:,
       outcome: step.Answer(
-        FromMap(map.NotJoined(reason: map.NoBaseHealth(level: 1))),
+        FromMap(
+          map.NotJoined(reason: map.NoLoadout(class_id: 1, faction_id: 166)),
+        ),
       ),
     )
   assert game_connection_support.written_ids(refused) == [0x0594]

@@ -30,9 +30,12 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/loadout
+import genesis_prime/message/float32
+import genesis_prime/message/item_place
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
+import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/step.{type ConnectionStep, ConnectionId}
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId, Spell4BaseId}
@@ -111,6 +114,20 @@ fn suited_until(
     client_cast_id: 1,
     ms: 1000,
     until_ms:,
+  )
+}
+
+/// The suit's ability pressed at 1000 ms, and no timer fired: the connection and the
+/// press's steps.
+fn suited_pressed(
+  world world: World,
+) -> #(game_connection.State, List(ConnectionStep(Request))) {
+  support.pressed_until(
+    state: world.state,
+    bag_index: world.bag_index,
+    client_cast_id: 1,
+    ms: 1000,
+    until_ms: 0,
   )
 }
 
@@ -418,7 +435,103 @@ pub fn an_engineers_camp_mid_suit_tells_each_viewer_removed_with_no_look_test() 
   ))
 }
 
+// ---- a worn item taken off ----
+
+/// A 0x182 of the chest piece from the worn slot 0 to inventory slot 0, inside 0x038C.
+fn chest_unequipped() -> BitArray {
+  support.item_moved_message(
+    from: item_place.ItemPlace(location: 0, bag_index: 0),
+    to: item_place.ItemPlace(location: 1, bag_index: 0),
+  )
+}
+
+/// The 0x93a-style entry of a property whose base and value are one number.
+fn entry(property property: Int, number number: Float) -> UnitProperty {
+  UnitProperty(
+    property_id: property,
+    base: float32.to_bits(number),
+    value: float32.to_bits(number),
+  )
+}
+
+/// The entry a created unit lists for a property.
+fn property_of(
+  unit unit: UnitCreatePlayer,
+  id id: Int,
+) -> Result(UnitProperty, Nil) {
+  list.find(unit.tail.properties, fn(property) { property.property_id == id })
+}
+
+/// The chest's ItemSlot, where the Engineer of faction 166 shows display 3842
+/// (`Item2.novice_visuals`).
+fn chest_slot_of(unit unit: UnitCreatePlayer) -> List(ItemVisual) {
+  list.filter(unit.tail.item_visuals, fn(visual) { visual.slot == 1 })
+}
+
+pub fn a_viewer_that_arrives_after_an_unequip_is_created_without_the_chest_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let before = created_for(state: support.in_world(), viewer: 4)
+  assert chest_slot_of(unit: before)
+    == [ItemVisual(slot: 1, display_id: 3842, item_color_set_id: 0, dye: 0)]
+    as "the Engineer of faction 166 wears chest 3842 in slot 1 (Item2.novice_visuals)"
+  let #(state, _) =
+    support.item_change_saved(
+      state: support.in_world(),
+      ms: 1000,
+      message: chest_unequipped(),
+    )
+  let after = created_for(state:, viewer: 5)
+  assert chest_slot_of(unit: after) == []
+    as "opcode.0x262.worn_visuals: the chest is not worn, so the 0x262 lists nothing in slot 1"
+  assert after.tail.item_visuals
+    == list.filter(before.tail.item_visuals, fn(visual) { visual.slot != 1 })
+    as "and the rest of the list is the same"
+  assert property_of(unit: after, id: 7)
+    == Ok(entry(property: 7, number: 586.0))
+    as "Base Health 586: CreatureLevel row 1's 135.97 and the worn 450, rounded"
+  assert property_of(unit: after, id: 42)
+    == Ok(entry(property: 42, number: 187.5))
+    as "Armor 187.5: the set's 250 less the chest's quarter"
+}
+
 pub fn an_unequip_while_a_suit_holds_the_look_sends_no_0x933_and_the_suit_end_shows_the_new_base_test() -> Nil {
   use <- owned_test.run(10_000)
-  panic as "shape: #586 failure table: unequip while a suit or disguise holds the look"
+  // The chest's slot 1 is not the suit's slot 64, and no Item2 row shows a display of
+  // slot 64 (`Item2.itemDisplayId` 4807 and 7221 name none), so a held slot cannot be
+  // taken off here; `look_test` has the rule for a slot a disguise holds. This test has
+  // the unequip under a suit: the suit is not touched, and its end shows the base.
+  let world = engineer_of(faction_id: 166)
+  let #(pressed, press_steps) = suited_pressed(world:)
+  let pending = support.cast_timers(steps: press_steps, ms: 1000)
+  let #(suited, pending, early) =
+    support.casts_left(
+      state: pressed,
+      pending:,
+      until_ms: 5000,
+      steps: press_steps,
+    )
+  assert written(steps: early) == [[suit(display: world.suit)]]
+    as "the suit is on at 5000 ms"
+  let #(unequipped, answered) =
+    support.item_change_saved(
+      state: suited,
+      ms: 5000,
+      message: chest_unequipped(),
+    )
+  assert written(steps: [answered])
+    == [[ItemVisual(slot: 1, display_id: 0, item_color_set_id: 0, dye: 0)]]
+    as "the chest's slot 1 is emptied and the suit's slot 64 is left alone: no 0x933 names slot 64"
+  assert list.contains(support.written_ids(answered), 0x093A)
+    as "0x93a is sent while the suit shows"
+  assert told(steps: [answered], viewer: 2)
+    == [[ItemVisual(slot: 1, display_id: 0, item_color_set_id: 0, dye: 0)]]
+    as "each viewer is told the same"
+  let #(ended, _, rest) =
+    support.casts_left(state: unequipped, pending:, until_ms: 20_000, steps: [])
+  assert written(steps: rest) == [[suit(display: 0)]]
+    as "the suit's end empties slot 64 and nothing else"
+  let late = created_for(state: ended, viewer: 5)
+  assert chest_slot_of(unit: late) == []
+    as "a viewer after the end is created with the new base: no chest, no suit"
+  assert suits_of(unit: late) == []
 }

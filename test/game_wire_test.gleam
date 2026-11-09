@@ -67,6 +67,8 @@ import genesis_prime/message/disconnect_reason.{
 }
 import genesis_prime/message/enter_world
 import genesis_prime/message/float32
+import genesis_prime/message/item_move
+import genesis_prime/message/item_place
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -85,6 +87,8 @@ import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_properties_changed
+import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
@@ -2149,6 +2153,103 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
   assert destroyed.unit_id == 3
     as "the connection that drops is removed for the first player by the map's Gone"
   game_client.close(game: first)
+  login_support.stop(started)
+}
+
+/// A created Warrior of CharacterCreation row 466 for the account, played into
+/// the map: its client, in the world, with the bytes read beyond its entry.
+fn created_warrior_enters(
+  game game: game_client.Game,
+  name name: String,
+) -> #(game_client.Game, BitArray) {
+  game_client.send_create(game:, body: create_request(name))
+  let created = created_result(game)
+  let _list = listed_entries(game)
+  send_play(game:, character_id: created.character_id)
+  let #(_burst, have) = game_client.read_entry_kept(game:, have: <<>>)
+  #(game, have)
+}
+
+pub fn a_second_player_sees_the_first_take_off_its_chest_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let first = in_select(started:, port:, account:)
+  let second_guid = support.guid_of(0x22)
+  let second_account =
+    AccountId(login_support.insert_other(
+      started:,
+      login_name: "player2",
+      game_account_id: second_guid,
+    ))
+  let second =
+    connected_as(
+      started:,
+      port:,
+      account: second_account,
+      login_name: "player2",
+      game_account_id: second_guid,
+      key: support.guid_of(2),
+    )
+  let #(first, first_have) = created_warrior_enters(game: first, name: "Zed Qu")
+  let #(second, second_have) =
+    created_warrior_enters(game: second, name: "Ann Qu")
+  // The second's entry is followed by the 0x262 of the first, which names its unit.
+  let #(seen_first, second_have) =
+    game_client.next(game: second, have: second_have)
+  let first_unit = unit_of(seen_first)
+  let #(_seen_second, _first_have) =
+    game_client.next(game: first, have: first_have)
+  // The first takes its chest, held at worn slot 0, into its first bag slot.
+  let assert Ok(move) =
+    item_move.encode(item_move.ItemMove(
+      from: item_place.ItemPlace(location: 0, bag_index: 0),
+      to: item_place.ItemPlace(location: 1, bag_index: 0),
+    ))
+    as "0x182 encodes"
+  game_client.send_world(game: first, message_id: 0x0182, body: move)
+  let is_properties = fn(frame: Frame) { frame.message_id == 0x093A }
+  let #(seen, _second_have) =
+    game_client.read_until(
+      game: second,
+      have: second_have,
+      within_ms: 5000,
+      found: fn(frames) { list.any(frames, is_properties) },
+    )
+  let assert [look] =
+    list.filter(seen, fn(frame) { frame.message_id == 0x0933 })
+    as "the second client is written one 0x933 when the first's chest comes off"
+  assert unit_item_visuals_changed.decode(look.body)
+    == Ok(
+      UnitItemVisualsChanged(unit_id: first_unit, item_visuals: [
+        ItemVisual(slot: 1, display_id: 0, item_color_set_id: 0, dye: 0),
+      ]),
+    )
+    as "opcode.0x933.empty_display: the first's chest slot 1 is emptied on the second's screen"
+  let assert [properties] = list.filter(seen, is_properties) as "and one 0x93a"
+  let assert Ok(changed) = unit_properties_changed.decode(properties.body)
+  assert changed.unit_id == first_unit
+  assert list.filter(changed.properties, fn(entry) {
+      entry.property_id == 7 || entry.property_id == 42
+    })
+    == [
+      UnitProperty(
+        property_id: 7,
+        base: float32.to_bits(586.0),
+        value: float32.to_bits(586.0),
+      ),
+      UnitProperty(
+        property_id: 42,
+        base: float32.to_bits(187.5),
+        value: float32.to_bits(187.5),
+      ),
+    ]
+    as "player.level1_gear_properties: without the chest's quarter of the 600 Base Health and its 62.5 Armor, 736 falls to 586 and 250 to 187.5"
+  assert list.map(seen, fn(frame) { frame.message_id })
+    |> list.filter(fn(id) { id == 0x0933 || id == 0x093A })
+    == [0x0933, 0x093A]
+    as "the look comes before the properties"
+  game_client.close(game: first)
+  game_client.close(game: second)
   login_support.stop(started)
 }
 

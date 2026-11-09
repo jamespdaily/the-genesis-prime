@@ -14,9 +14,11 @@
 //// Multiphase spell at the running sums of its phase delays.
 
 import cast_support as support
+import character_tables
 import genesis_prime/client_connection.{CastFinished, CastStarted, CastWent}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
+import genesis_prime/game/connection/casting
 import genesis_prime/game/spell_plan
 import genesis_prime/message/cast_result.{
   CasterCannotBeDead, IllegalSpellCast, Other, SpellAlreadyCasting,
@@ -27,6 +29,7 @@ import genesis_prime/message/spell_cast_refused.{SpellCastRefused}
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started.{type SpellStarted}
 import genesis_prime/step.{ConnectionId, LogDebug}
+import genesis_prime/store.{HeldItem}
 import gleam/bool
 import gleam/int
 import gleam/list
@@ -34,6 +37,7 @@ import gleam/option.{None}
 import gleam/result
 import owned_test
 import qcheck
+import world_entry_support
 
 const first_server_id = 2_147_483_648
 
@@ -238,6 +242,55 @@ pub fn a_spell_that_needs_the_weapon_is_refused_169_when_slot_16_holds_none_test
     )
   assert accepted(effects:)
     as "Kick needs no weapon (Spell4Base 38017: weaponSlot 0)"
+}
+
+pub fn a_spell_that_needs_the_weapon_is_refused_with_169_after_the_weapon_is_unequipped_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  let worn = world_entry_support.novice_items(character:)
+  // The items the store holds once the weapon's move to the first slot of the bag
+  // has been saved.
+  let unequipped =
+    list.map(worn, fn(item) {
+      case item.location == 0 && item.bag_index == 16 {
+        True -> HeldItem(..item, location: 1, bag_index: 0)
+        False -> item
+      }
+    })
+  let caster_holding = fn(items) {
+    let #(_, entered) =
+      world_entry_support.entry_holding(
+        tables: character_tables.shared(),
+        character:,
+        items:,
+      )
+    casting.caster_of(entered:)
+  }
+  // The Engineer's third ability, bag index 2, is Zap: weapon slot 1, a spell that
+  // needs an item in slot 16 (`0x1403afb10`).
+  let #(_, effects) =
+    support.pressed_by(
+      state: cast.new(),
+      caster: caster_holding(worn),
+      bag_index: 2,
+      target: 0,
+      at: 1000,
+    )
+  assert !list.contains(support.refusals(effects:), WeaponSlot)
+    as "0x1403afb10: with the weapon held at location 0, index 16, Zap is not refused for the weapon slot"
+  let #(_, effects) =
+    support.pressed_by(
+      state: cast.new(),
+      caster: caster_holding(unequipped),
+      bag_index: 2,
+      target: 0,
+      at: 1000,
+    )
+  assert list.map(support.writes(effects:), refusal_result) == [WeaponSlot]
+    as "0x1403afb10: weapon slot 1 needs an item in slot 16, and the weapon is in a bag now: refused with 169, as the cast rule does"
+  assert cast_result.to_value(WeaponSlot) == 169
+    as "Spell.CodeEnumCastResult: the weapon slot refusal is 169"
 }
 
 pub fn a_press_that_lacks_the_weapon_and_meets_a_live_cast_is_refused_13_not_169_test() -> Nil {

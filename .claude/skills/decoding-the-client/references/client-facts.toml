@@ -12294,3 +12294,21 @@ name = "HandleMessage092C"
 statement = "Equipping into the inventory bag slots checks the BagSlots count: equipped index 17 + n (Bag0 to Bag3, n 0 to 3) is refused with Item_NotValidforSlot (31) when n is not below BagSlots, compared unsigned. So BagSlots 4 opens all four bag slots, 2 opens Bag0 and Bag1, and 0 (or no BagSlots sent) opens none; a value above 4 opens no more, since only 17 to 20 are inventory bag slots. Bank bag index 21 + n (n 0 to 9) is checked the same way against BankSlots. The check runs for any item moved to location 0 at those indices."
 proof = "Instructions of CheckItemEquipSlot 0x1403b11b0: 0x1403b1220 test edi, edi (location 0); 0x1403b1224 mov ebp, [r8+4] (bag index); 0x1403b1228 lea eax, [rbp-0x11]; 0x1403b122b cmp eax, 3; ja (not a bag slot); 0x1403b1230 call 0x1403b4dd0 (GetUnlockedBagSlots, BagSlots 26 data 0 type 1, else 0); 0x1403b1235 lea ecx, [rbp-0x11]; 0x1403b1238 cmp eax, ecx; 0x1403b123a jbe 0x1403b12e8 (mov eax, 0x1f). Bank: 0x1403b1240 lea eax, [rbp-0x15]; 0x1403b1243 cmp eax, 9; 0x1403b124b call 0x1403b4d60 (BankSlots 13); 0x1403b1253 cmp eax, ecx; 0x1403b1255 jbe 0x1403b12e8."
 grade = "sure"
+
+["opcode.0x569.model_unchanged"]
+statement = "Messages 0x569 (item moved) and 0x568 (items swapped) do not change any unit's model, even when an equipped slot is the old or new place: the wearer's worn look changes only when a 0x933 (or 0x905 or 0x262) is sent."
+proof = "call_paths depth 6 from the 0x569 handler 0x1403b7300 and the 0x568 handler 0x1403b74e0 to SetUnitItemVisual 0x140466d20, HandleMessage0933 0x1403da490 and HandleMessage0905 0x1403dbb70: no path, 146 functions walked. Six indirect calls were not followed: 0x1401c4bb0 through the tables at 0x140c78580 and 0x140c78588; 0x140191340 through 0x140c636c8; 0x140191f50 through 0x140c636e8 and 0x140c636d0."
+grade = "fairly sure"
+gap = "Six indirect calls were not followed, so a path through one of them is not ruled out. Reading what those tables hold, or a live recording of a move with a worn look watched, settles it."
+
+["opcode.0x148.model_unchanged"]
+statement = "Message 0x148 (item removed) does not change any unit's model; deleting a worn item needs a 0x933 to empty its slot."
+proof = "call_paths depth 6 from the 0x148 handler 0x1403b7d40 to 0x140466d20, 0x1403da490 and 0x1403dbb70: no path, 125 functions walked. One indirect call was not followed: RaiseItemRemoved through 0x140b6f378."
+grade = "fairly sure"
+gap = "The one indirect call, RaiseItemRemoved through 0x140b6f378, was not followed. Reading what that table holds, or a live recording of a delete with the look watched, settles it."
+
+["lua.Character.MapEquipment"]
+statement = "The Character window's PlayerEquippedItemChanged handler only re-maps the equipped items (MapEquipment). Its attribute numbers redraw (DrawAttributes) only on PersonaUpdateCharacterStats, on death and when the window opens; so whether 0x569 comes before or after a 0x93a does not change what the window shows."
+proof = "UI/Character/Character.lua: the PlayerEquippedItemChanged event is registered to a handler that calls MapEquipment; DrawAttributes is called from the PersonaUpdateCharacterStats and Death handlers and from the window's open path. Who raises PersonaUpdateCharacterStats was not found."
+grade = "fairly sure"
+gap = "Who raises PersonaUpdateCharacterStats was not found, so a 0x93a that redraws the window was not seen. Reading the raisers of that event settles it."

@@ -235,3 +235,88 @@ pub fn a_row_with_two_displays_reports_both_in_slot_order_test() -> Nil {
       visual(slot: suit_slot, display: exile_suit),
     ]
 }
+
+pub fn a_rebase_reports_each_changed_slot_and_display_0_for_an_emptied_one_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The Engineer of faction 166's Novice set: chest 3842 (slot 1), legs 3844 (slot 2),
+  // shoulder 4179 (slot 4) and weapon 3409 (slot 20) (`Item2.novice_visuals`); faction
+  // 167's chest is 3838.
+  let before =
+    look.new(base: [
+      chest,
+      visual(slot: 2, display: 3844),
+      visual(slot: 4, display: 4179),
+      novice_weapon,
+    ])
+  let #(look, changed) =
+    look.rebased(look: before, base: [
+      visual(slot: 1, display: 3838),
+      visual(slot: 4, display: 4179),
+    ])
+  assert changed
+    == [
+      visual(slot: 1, display: 3838),
+      visual(slot: 2, display: 0),
+      visual(slot: weapon_slot, display: 0),
+    ]
+    as "slot 1 shows the new chest, the emptied slots 2 and 20 show display 0 (opcode.0x933.empty_display), slot 4 is unchanged and reports nothing, in slot order"
+  assert look.visuals(look:)
+    == [visual(slot: 1, display: 3838), visual(slot: 4, display: 4179)]
+    as "the 0x262's list is the new base"
+  let #(_, again) =
+    look.rebased(look:, base: [
+      visual(slot: 1, display: 3838),
+      visual(slot: 4, display: 4179),
+    ])
+  assert again == [] as "the same base reports nothing"
+  let #(_, added) =
+    look.rebased(look:, base: [
+      visual(slot: 1, display: 3838),
+      visual(slot: 4, display: 4179),
+      visual(slot: weapon_slot, display: 119),
+    ])
+  assert added == [visual(slot: weapon_slot, display: 119)]
+    as "a slot the base gains reports its visual"
+  let dyed =
+    ItemVisual(slot: 1, display_id: 3838, item_color_set_id: 5, dye: 0x12345)
+  let #(_, dye_changed) =
+    look.rebased(look:, base: [dyed, visual(slot: 4, display: 4179)])
+  assert dye_changed == [dyed]
+    as "a colour set or dye that changes is a change, carried whole"
+}
+
+pub fn a_rebase_under_a_held_look_reports_nothing_and_its_end_shows_the_new_base_test() -> Nil {
+  use <- owned_test.run(5000)
+  let held = cast_support.source_of(cast_id: 2, effect_id: 90_001)
+  let #(look, _) =
+    look.start(
+      look: engineer(),
+      source: held,
+      disguise: disguise(slot: weapon_slot, display: 119),
+    )
+  // The weapon is taken off and the chest changed while the disguise holds the weapon
+  // slot.
+  let #(look, changed) =
+    look.rebased(look:, base: [visual(slot: 1, display: 3838)])
+  assert changed == [visual(slot: 1, display: 3838)]
+    as "the chest's change shows, and slot 20, which the disguise holds, reports nothing"
+  assert look.visuals(look:)
+    == [visual(slot: 1, display: 3838), visual(slot: weapon_slot, display: 119)]
+    as "the 0x262's list keeps the disguise on slot 20"
+  let #(_, ended) = look.end(look:, source: held)
+  assert ended == [visual(slot: weapon_slot, display: 0)]
+    as "the end shows the new base, which holds no weapon: display 0"
+  // A weapon the base holds in place of the one it had shows when the hold ends.
+  let #(look, _) =
+    look.start(
+      look: engineer(),
+      source: held,
+      disguise: disguise(slot: weapon_slot, display: 119),
+    )
+  let #(look, changed) =
+    look.rebased(look:, base: [chest, visual(slot: weapon_slot, display: 1354)])
+  assert changed == [] as "a new weapon under the disguise reports nothing"
+  let #(_, ended) = look.end(look:, source: held)
+  assert ended == [visual(slot: weapon_slot, display: 1354)]
+    as "the end shows the new weapon, the Esper's display 1354"
+}

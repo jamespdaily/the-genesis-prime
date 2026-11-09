@@ -489,3 +489,50 @@ pub fn two_casters_sources_both_count_test() -> Nil {
     )
   assert unit_properties.value(properties: left, property: move_speed) == 0.5
 }
+
+pub fn a_rebase_keeps_a_live_modifier_and_reports_only_changes_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Evidence: `Spell4Effects.effectType.11.change` gives x * dataBits02 + dataBits03, so
+  // a doubling on BaseHealth (7) over a rebased base of 300 is 600, and Sprint 1921's
+  // (1.0, 0.5) on MoveSpeedMultiplier (100) stays 1.5 when the gear moves other
+  // properties. The report holds only the properties whose base or value moved, in
+  // property order (the module's doc), and a base set to what it already is moves none.
+  let #(sprint, _) =
+    unit_properties.apply(
+      properties: fresh(),
+      source: cast_support.source_of(cast_id: 1, effect_id: 1),
+      modifier: modifier(property: move_speed, multiplier: 1.0, flat: 0.5),
+    )
+  let #(doubled, _) =
+    unit_properties.apply(
+      properties: sprint,
+      source: cast_support.source_of(cast_id: 2, effect_id: 2),
+      modifier: modifier(property: base_health, multiplier: 2.0, flat: 0.0),
+    )
+  let unchanged_base =
+    unit_properties.base(properties: doubled, property: UnitProperty2Id(36))
+  let #(rebased, changed) =
+    unit_properties.rebased(properties: doubled, bases: [
+      #(base_health, 300.0),
+      #(move_speed, 1.0),
+      #(UnitProperty2Id(35), 50.0),
+      #(UnitProperty2Id(36), unchanged_base),
+    ])
+  assert changed
+    == [
+      Changed(property: base_health, base: 300.0, value: 600.0),
+      Changed(property: UnitProperty2Id(35), base: 50.0, value: 50.0),
+    ]
+  assert unit_properties.value(properties: rebased, property: base_health)
+    == 600.0
+  assert unit_properties.base(properties: rebased, property: base_health)
+    == 300.0
+  assert unit_properties.value(properties: rebased, property: move_speed) == 1.5
+    as "the live sprint is applied again to its unchanged base"
+  let #(_, again) =
+    unit_properties.rebased(properties: rebased, bases: [
+      #(base_health, 300.0),
+      #(UnitProperty2Id(35), 50.0),
+    ])
+  assert again == []
+}

@@ -222,7 +222,8 @@ pub fn the_entry_starts_the_passive_of_a_class_that_has_one_test() -> Nil {
           | world_entry.AskStore(..)
           | world_entry.AskMap(..)
           | world_entry.WatchMap(..)
-          | world_entry.Life(..) -> Error(Nil)
+          | world_entry.Life(..)
+          | world_entry.Warn(..) -> Error(Nil)
         }
       })
     assert started
@@ -280,7 +281,8 @@ pub fn a_class_with_no_innate_is_sent_neither_the_innates_item_nor_0x19f_and_sta
           | world_entry.AskStore(..)
           | world_entry.AskMap(..)
           | world_entry.WatchMap(..)
-          | world_entry.Life(..) -> True
+          | world_entry.Life(..)
+          | world_entry.Warn(..) -> True
         }
       })
     },
