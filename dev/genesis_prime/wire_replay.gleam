@@ -114,8 +114,9 @@ pub type Refusal {
   /// The recording was made on another client build than the one the replay is
   /// for, so the session must be recorded again.
   ClientBuildDiffers(connection: String, recorded: Int, current: Int)
-  /// The recording was made on other game table files than the ones loaded
-  /// now, so the session must be recorded again.
+  /// The recording was made on other client table files than the ones in the
+  /// tables folder now, whichever of them the server reads, so the session must
+  /// be recorded again.
   TablesDiffer(
     connection: String,
     recorded: Option(String),
@@ -339,9 +340,9 @@ fn read_connection(
 }
 
 /// Refuses a session whose recordings were made on another client build than
-/// `client_build`, or whose header holds a digest of the game table files other
-/// than `tables_digest`. A header with no digest is of a rule that reads no
-/// table, and is not checked against the tables.
+/// `client_build`, or whose header holds a digest of the client's table files
+/// other than `tables_digest`. A header with no digest is of a rule that reads
+/// no table, and is not checked against the tables.
 pub fn refuse_stale(
   session session: Session,
   client_build client_build: Int,

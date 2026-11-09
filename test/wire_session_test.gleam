@@ -30,6 +30,8 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/step.{Now}
+import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/world
 import genesis_prime/wire_recording.{
   type Line, Answered, Read, Recording, Took, Wrote,
 }
@@ -146,6 +148,14 @@ pub fn the_committed_session_replays_to_its_recorded_bytes_with_the_recorded_see
     support.replay_tree(folder: support.committed_session)
   assert result == Ok(Nil)
     as "every connection wrote the bytes the live session did, the character list's FILETIME included"
+}
+
+pub fn a_read_of_a_table_the_server_does_not_load_has_the_digest_the_committed_session_was_recorded_on_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  assert client_tables.digest_of_a_read_of([world.entry()])
+    == table_store.digest(client_tables.shared())
+    as "the digest is of the client's files, so a read of any one table, one the server's tables hold or not, has the digest the server's tables have, which the committed session's header holds"
 }
 
 pub fn every_recorded_session_replays_to_its_recorded_bytes_test() -> Nil {

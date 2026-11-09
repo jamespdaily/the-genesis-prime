@@ -8,7 +8,6 @@ import genesis_prime/table
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import gleam/list
-import gleam/string
 import simplifile
 
 /// Whether the client's files are on this machine: false only where
@@ -49,16 +48,13 @@ pub fn read(file: String) -> BitArray {
 
 /// The names of every extracted table file, without `.tbl`, in order.
 pub fn files() -> List(String) {
-  let assert Ok(names) = simplifile.read_directory(folder())
+  let assert Ok(names) = store.table_files(folder())
     as {
       "the tables folder is missing: "
       <> folder()
       <> "; run python3.13 -I setup_check/extract_tables.py"
     }
   names
-  |> list.filter(string.ends_with(_, ".tbl"))
-  |> list.map(string.remove_suffix(_, ".tbl"))
-  |> list.sort(string.compare)
 }
 
 /// The server's own tables (`server_table.entries`), read once per test run
@@ -88,9 +84,21 @@ pub fn shared() -> store.Tables {
 /// (`store.merge`, a list of keys, no table copied), so no table is held twice
 /// in the literal area (the server's 36 take 306 MiB, and a second copy of them filled the area).
 /// The first caller reads, every later caller in any test process gets the same
-/// tables. The digest (`store.digest`) is `shared`'s.
+/// tables. The digest (`store.digest`) is `shared`'s, which is
+/// of every table file of the folder, so it is the same for any read of it.
 pub fn every_table() -> store.Tables {
   store.merge(tables: shared(), more: the_other_tables())
+}
+
+/// The digest (`store.digest`) of a read of `entries` alone from the client's
+/// folder, taken from a read of its own that is dropped at once: the digest is of
+/// the folder's files, so it is `shared`'s whatever entries are read.
+pub fn digest_of_a_read_of(entries entries: List(store.Entry)) -> String {
+  case store.read(from: folder(), entries:, requirements: [], derivations: []) {
+    Ok(tables) -> store.digest(tables)
+    Error(error) ->
+      panic as { "the client's tables did not read: " <> store.describe(error) }
+  }
 }
 
 fn the_other_tables() -> store.Tables {
