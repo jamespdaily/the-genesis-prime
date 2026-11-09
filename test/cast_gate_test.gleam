@@ -185,20 +185,20 @@ pub fn a_gate_of_a_type_the_server_does_not_read_starts_nothing_and_leaves_one_d
     spell_with(
       proxies: [
         gated_on([
-          prerequisite_support.single(id: 4301, condition: #(43, 1, 0, 1)),
+          prerequisite_support.single(id: 4301, condition: #(7, 1, 0, 1)),
         ]),
       ],
       gains: [],
     )
   let effects = pressed(spell:, caster: in_combat(), rolls: [])
   assert children_started(effects) == 0
-    as "Prerequisite 4301 is type 43, the quest log, which the server does not read: the client would decide it, the server cannot, so the Proxy does not start (Prerequisite.prerequisiteTypeId.43)"
+    as "Prerequisite 4301 is type 7, an achievement, which the server does not read: the client would decide it, the server cannot, so the Proxy does not start (Prerequisite.prerequisiteTypeId.7)"
   let lines = debug_lines(effects)
   assert list.length(lines) == 1
   assert list.all(lines, fn(line) {
     string.contains(line, "Spell4 99")
     && string.contains(line, "prerequisite 4301")
-    && string.contains(line, "of type 43")
+    && string.contains(line, "of type 7")
   })
     as "one line names the child, the prerequisite and its type"
 }

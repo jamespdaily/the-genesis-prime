@@ -167,7 +167,7 @@ pub fn a_quest_state_condition_reads_the_state_the_client_derives_test() -> Nil 
       log: log_of(rows: [accepted(quest:, done_mask: 0, progress: [0, 0])]),
     )
     == [1]
-    as "Accepted with objective 1 not done is 1: objective 0 has flag 0x20 and is skipped, objective 1 has not (0x1405fbd74)"
+    as "Accepted with objective 1 not done is 1: objective 0 has flag 0x20 and is skipped, objective 1 has not (Saved C 0x1405fbc40)"
   assert state_of(
       quest:,
       log: log_of(rows: [accepted(quest:, done_mask: 0b10, progress: [0, 12])]),
@@ -207,7 +207,7 @@ pub fn a_quest_state_condition_reads_the_state_the_client_derives_test() -> Nil 
       ]),
     )
     == [2]
-    as "a quest with no objective is 2 once it is accepted (0x1405fbd5c)"
+    as "a quest with no objective is 2 once it is accepted (Saved C 0x1405fbc40)"
   assert state_of(quest: 999_999, log: log_of(rows: [])) == [0]
     as "a quest with no Quest2 row is the client's unknown quest, state 0 (0x1405a8a40 gives none)"
   let in_log =

@@ -50,7 +50,7 @@ fn in_combat() -> Prerequisite {
 }
 
 fn unread() -> Prerequisite {
-  prerequisites.single(id: 41_834, condition: #(43, 1, 10_518, 4))
+  prerequisites.single(id: 41_834, condition: #(7, 1, 10_518, 1))
 }
 
 fn persisted(
@@ -305,7 +305,7 @@ pub fn a_persistence_of_a_type_not_read_keeps_the_cast_with_one_debug_line_for_t
   assert list.map(support.logs(effects: first), fn(line) { line.0 })
     == [LogDebug]
     && failed(effects: first) == []
-    as "the type 43 condition is not read: the cast goes on, with one debug line"
+    as "the type 7 condition (an achievement, Prerequisite.prerequisiteTypeId.7) is not read: the cast goes on, with one debug line"
   let #(state, second) = persisted(state:, caster: fighting, at: 1200)
   assert second == [] as "one line for the spell, not one for each input"
   let #(_, went) = support.fired(state:, timer: go, at: 2000)
