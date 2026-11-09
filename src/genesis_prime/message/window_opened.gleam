@@ -2,9 +2,10 @@
 //// never edited by hand.
 ////
 //// Message 0x023D (window_opened), client to server: the client says a UI
-//// window was opened (telemetry): the window id, the character id, the time it
-//// was open, three more 64-bit values and the window name; nothing the player
-//// sees depends on it. Its fields are listed in `schema.toml` with the
+//// window was opened (telemetry): the window id, six 64-bit values (the first
+//// is the sender's character id, the third is probably the time the window was
+//// open, the others are 0 in the recordings) and the window name; nothing the
+//// player sees depends on it. Its fields are listed in `schema.toml` with the
 //// client's evidence, and the fact file's `opcode.0x23d` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}

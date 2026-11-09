@@ -13,19 +13,24 @@
 //// - `opcode.0x12b`: the four senders write type 0 with the input flags (1
 ////   always, 2, 4, 8, so 1 to 15 with bit 1 set) or type 1 with the bool of
 ////   `GameLib.SetSharedChallengePreference`; no other type has a sender.
+//// - `opcode.0x23d`: the window's first 64-bit value is the character id of
+////   the connection that sent it, in each of the 52 recorded sends of 10
+////   sittings.
 //// - The recorded bodies of `dropped_support`.
 
 import dropped_support.{Recorded}
 import fixture_tables
 import genesis_prime/game/dropped.{
   InputFlagsNotSent, OptionTypeNotSent, SharedChallengeNotABool,
-  WindowNameTooLong,
+  WindowNameTooLong, WindowNamesAnotherCharacter,
 }
+import genesis_prime/message/window_opened.{WindowOpened}
 import genesis_prime/table/game_formula
 import genesis_prime/table/loader/store as table_store
 import gleam/bit_array
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import owned_test
 import planted_table
 
@@ -75,11 +80,68 @@ fn empty_name_window() -> BitArray {
   body
 }
 
+/// The character the recorded bodies were sent by: the 0x07DD of that
+/// connection names 13 (2026-11-05-main).
+const recorded_character_id = 13
+
 fn take(
   message message: dropped.Message,
   body body: BitArray,
 ) -> Result(Nil, dropped.Refusal) {
-  dropped.take(message:, body:, tables: fixture_tables.shared())
+  dropped.take(
+    message:,
+    body:,
+    tables: fixture_tables.shared(),
+    character_id: Some(recorded_character_id),
+  )
+}
+
+/// The recorded window with an empty name, with the character id it names
+/// changed.
+fn window_opened_by(character_id character_id: Int) -> BitArray {
+  let assert Ok(recorded) = window_opened.decode(empty_name_window())
+  let assert Ok(body) =
+    window_opened.encode(WindowOpened(..recorded, character_id:))
+    as "the message the client's recorded body decodes to encodes again"
+  body
+}
+
+pub fn a_window_report_naming_another_character_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert window_opened.decode(empty_name_window())
+    == Ok(
+      WindowOpened(
+        field_1: 35,
+        window_id: 513,
+        character_id: recorded_character_id,
+        field_4: 0,
+        open_time: 0,
+        field_6: 0,
+        field_7: 0,
+        field_8: 0,
+        window_name: [],
+      ),
+    )
+    as "opcode.0x23d: in 2026-11-05-main the window names the character its connection played"
+  assert take(
+      message: dropped.WindowOpened,
+      body: window_opened_by(character_id: 13),
+    )
+    == Ok(Nil)
+  assert take(
+      message: dropped.WindowOpened,
+      body: window_opened_by(character_id: 14),
+    )
+    == Error(WindowNamesAnotherCharacter(named: 14, own: Some(13)))
+    as "opcode.0x23d: the client names its own character, so another one is refused"
+  assert dropped.take(
+      message: dropped.WindowOpened,
+      body: window_opened_by(character_id: 13),
+      tables: fixture_tables.shared(),
+      character_id: None,
+    )
+    == Error(WindowNamesAnotherCharacter(named: 13, own: None))
+    as "a connection with no character in the world has none to name"
 }
 
 pub fn values_the_client_would_not_send_are_refused_test() -> Nil {
@@ -115,12 +177,14 @@ pub fn values_the_client_would_not_send_are_refused_test() -> Nil {
           message: dropped.WindowOpened,
           body: window_opened(units: 5),
           tables:,
+          character_id: Some(recorded_character_id),
         )
         == Ok(Nil)
       assert dropped.take(
           message: dropped.WindowOpened,
           body: window_opened(units: 6),
           tables:,
+          character_id: Some(recorded_character_id),
         )
         == Error(WindowNameTooLong(units: 6, limit: 5))
         as "the row's dataint02 is the limit, read from the table"

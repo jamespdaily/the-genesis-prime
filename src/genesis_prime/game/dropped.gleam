@@ -21,8 +21,16 @@
 ////   gap of the coverage measure, with the issue that closes it.
 //// - **0x23D's name** is refused when it has more UTF-16 units than GameFormula
 ////   row 2375's dataint02, which the client's sender reads as the limit and
-////   does not send past (`opcode.0x23d`). The 6 bits before the window id are
-////   read and not checked.
+////   does not send past (`opcode.0x23d`). Its character id is refused when it
+////   is not the id of the character the connection plays: every recorded send
+////   names it (`opcode.0x23d`). The 6 bits before the window id are read and
+////   not checked.
+//// - **0x0180's profile** is read and not checked: what a value means is not
+////   read, and no scanbot is made to compare it with (`opcode.0x180`); the
+////   step that makes the scanbot checks it (#55).
+//// - **0x0570's key set id** is read and not checked: the player's key sets
+////   are not kept, so no id can be compared with one (`opcode.0x570`); the
+////   step that sends the saved key bindings checks it (#60).
 //// - **0x12B's type** is 0 (the input flags) or 1 (the shared-challenge
 ////   preference): the senders write no other (`opcode.0x12b`).
 //// - **A signed 32-bit field of 0x23C** is read as unsigned 32 bits: the bits
@@ -46,8 +54,10 @@ import genesis_prime/message/window_opened
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId}
 import genesis_prime/table/loader/store as table_store
+import gleam/bool
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// The GameFormula row whose dataint02 is the longest window name the client
@@ -92,6 +102,9 @@ pub type Refusal {
   NotDecoded(undecoded: Undecoded)
   /// A window name longer than the limit the client's sender holds.
   WindowNameTooLong(units: Int, limit: Int)
+  /// A window report that names a character other than the one the connection
+  /// plays (`own` is `None` when it has none in the world).
+  WindowNamesAnotherCharacter(named: Int, own: Option(Int))
   /// An option type no sender writes.
   OptionTypeNotSent(option_type: Int)
   /// A shared-challenge preference that is not 0 or 1.
@@ -102,10 +115,13 @@ pub type Refusal {
 
 /// The message taken: `Ok(Nil)` when the body is one the client sends, and the
 /// refusal for a body its reader refuses or a value its senders never write.
+/// `character_id` is the id of the character the connection plays, `None`
+/// while it has none in the world.
 pub fn take(
   message message: Message,
   body body: BitArray,
   tables tables: table_store.Tables,
+  character_id character_id: Option(Int),
 ) -> Result(Nil, Refusal) {
   case message {
     WatchdogReport ->
@@ -125,6 +141,10 @@ pub fn take(
       |> client_connection.decoded(message_id: window_opened.message_id)
       |> result.map_error(NotDecoded)
       |> result.try(fn(opened) {
+        use Nil <- result.try(window_names_own_character(
+          named: opened.character_id,
+          own: character_id,
+        ))
         window_name_within_limit(
           units: list.length(opened.window_name),
           tables:,
@@ -170,6 +190,17 @@ fn decoded(
   |> result.replace(Nil)
 }
 
+/// The report names the character the connection plays: the client's first
+/// 64-bit value is its own character id in every recorded send
+/// (`opcode.0x23d`).
+fn window_names_own_character(
+  named named: Int,
+  own own: Option(Int),
+) -> Result(Nil, Refusal) {
+  use <- bool.guard(own == Some(named), Ok(Nil))
+  Error(WindowNamesAnotherCharacter(named:, own:))
+}
+
 /// The name of at most the limit's units.
 fn window_name_within_limit(
   units units: Int,
@@ -209,6 +240,14 @@ pub fn describe(refusal refusal: Refusal) -> String {
       <> " units, but the client refuses to send a name of more than "
       <> int.to_string(limit)
       <> " (GameFormula row 2375)"
+    WindowNamesAnotherCharacter(named:, own:) ->
+      "0x023D names character "
+      <> int.to_string(named)
+      <> ", but "
+      <> case own {
+        Some(own) -> "the connection plays character " <> int.to_string(own)
+        None -> "the connection has no character in the world"
+      }
     OptionTypeNotSent(option_type:) ->
       "0x012B has option type "
       <> int.to_string(option_type)

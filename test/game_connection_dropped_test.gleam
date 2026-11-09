@@ -13,13 +13,17 @@
 ////   (`opcode.0x23c.body`, `opcode.0x240.body`, `opcode.0x23f.body`, `opcode.0x23d`,
 ////   `opcode.0x12b`, `opcode.0x180`, `opcode.0x570` and the empty ones).
 
+import character_support
 import connection_rule_support as support
 import dropped_support.{type Recorded, Recorded}
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{FromHandOff, FromStore}
+import genesis_prime/client_connection.{FromHandOff, FromMap, FromStore}
+import genesis_prime/game/connection as game_connection
 import genesis_prime/hand_off.{Taken}
 import genesis_prime/step.{LogError}
-import genesis_prime/store.{ForSelect, Listed}
+import genesis_prime/store.{
+  Character, CharacterId, CharacterLoaded, ForSelect, ForWorld, Listed,
+}
 import gleam/bit_array
 import gleam/int
 import gleam/list
@@ -35,6 +39,18 @@ fn sent(message_id message_id: Int, body body: BitArray) -> BitArray {
   }
 }
 
+/// The connection in the world as the character the recorded bodies were sent
+/// by: the 0x07DD of that connection names 13 (2026-11-05-main), and the
+/// window report names the connection's own character (`opcode.0x23d`).
+fn in_world_of_the_recorded_sender() -> game_connection.State {
+  connection_support.entered_as(
+    Character(
+      ..connection_support.world_character(),
+      character_id: CharacterId(13),
+    ),
+  ).0
+}
+
 /// The id as the log names it, four hex digits.
 fn named(message_id message_id: Int) -> String {
   "0x" <> string.pad_start(int.to_base16(message_id), 4, "0")
@@ -47,7 +63,7 @@ pub fn each_dropped_message_is_taken_with_nothing_logged_or_sent_test() -> Nil {
     let label = named(message_id:) <> ", " <> what
     let #(state, taken) =
       connection_support.read(
-        state: connection_support.in_world(),
+        state: in_world_of_the_recorded_sender(),
         bytes: sent(message_id:, body:),
       )
     assert support.logs(taken) == []
@@ -153,5 +169,38 @@ pub fn pre_game_activity_before_world_entry_is_dropped_test() -> Nil {
     )
   assert support.unhandled_ids(taken) == []
     as "then the frame that waited is taken, and logs nothing as unhandled"
+  assert !support.stops(taken)
+  // Read in the same bytes as the request to play, so it waits for the store
+  // and the map and is taken in the world, where 0x0241 is also sent.
+  let #(state, taken) =
+    connection_support.read(connection_support.in_select(), <<
+      connection_support.play_message(42):bits,
+      sent(message_id: 0x0241, body: <<>>):bits,
+    >>)
+  assert support.unhandled_ids(taken) == []
+    as "0x0241 follows 0x07DD in the bytes and waits for the world-entry asks"
+  let #(state, taken) =
+    connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(
+          ForWorld(CharacterLoaded(
+            connection_support.world_character(),
+            character_support.epoch(1),
+            None,
+          )),
+        ),
+      ),
+    )
+  assert support.unhandled_ids(taken) == []
+  let #(_, taken) =
+    connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromMap(connection_support.map_answer(taken))),
+    )
+  assert support.unhandled_ids(taken) == []
+    as "then the frame that waited is taken in the world, and logs nothing as unhandled"
   assert !support.stops(taken)
 }

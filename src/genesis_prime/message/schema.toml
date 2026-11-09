@@ -2505,7 +2505,7 @@ id = 0x023D
 name = "window_opened"
 direction = "client_to_server"
 evidence = "opcode.0x23d"
-summary = "the client says a UI window was opened (telemetry): the window id, the character id, the time it was open, three more 64-bit values and the window name; nothing the player sees depends on it"
+summary = "the client says a UI window was opened (telemetry): the window id, six 64-bit values (the first is the sender's character id, the third is probably the time the window was open, the others are 0 in the recordings) and the window name; nothing the player sees depends on it"
 fields = [
   { name = "field_1", kind = "unsigned", bits = 6, evidence = "opcode.0x23d" },
   { name = "window_id", kind = "unsigned", bits = 10, evidence = "opcode.0x23d", named_by = "opcode.0x23d" },
@@ -2542,7 +2542,7 @@ id = 0x0180
 name = "scanbot_request"
 direction = "client_to_server"
 evidence = "opcode.0x180"
-summary = "the Scientist path asks for a scanbot: the scanbot profile (a spell id) and whether the request comes from the game command rather than the path's button"
+summary = "the Scientist path asks for a scanbot: the scanbot profile (what a value means is not read; 1 in every recording) and whether the request comes from the game command rather than the path's button"
 fields = [
   { name = "profile", kind = "unsigned", bits = 32, evidence = "opcode.0x180", named_by = "opcode.0x180" },
   { name = "from_command", kind = "unsigned", bits = 1, evidence = "opcode.0x180", named_by = "opcode.0x180" },

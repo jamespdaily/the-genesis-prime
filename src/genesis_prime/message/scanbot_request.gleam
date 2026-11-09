@@ -2,10 +2,10 @@
 //// never edited by hand.
 ////
 //// Message 0x0180 (scanbot_request), client to server: the Scientist path asks
-//// for a scanbot: the scanbot profile (a spell id) and whether the request
-//// comes from the game command rather than the path's button. Its fields are
-//// listed in `schema.toml` with the client's evidence, and the fact file's
-//// `opcode.0x180` names the message.
+//// for a scanbot: the scanbot profile (what a value means is not read; 1 in
+//// every recording) and whether the request comes from the game command rather
+//// than the path's button. Its fields are listed in `schema.toml` with the
+//// client's evidence, and the fact file's `opcode.0x180` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import gleam/result
