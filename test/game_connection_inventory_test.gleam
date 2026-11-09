@@ -14,21 +14,28 @@
 ////   the client sent meanwhile are held and taken after the answer.
 //// - The same rule as the summon's: the player is in the world while the store
 ////   moves the item, so a close then saves the place as in the world.
+//// - Failure table, `inventory.answered`'s row for a store that is unavailable or
+////   past its deadline: the move's outcome is unknown, so the connection ends and
+////   the client is told 0x036A reason 8 (LostUserServer), as for any server fault.
 
 import character_support
 import connection_rule_support as support
 import game_connection_support
 import genesis_prime/client_connection.{AskStore, FromStore}
 import genesis_prime/message/bit_stream
+import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/item_move
 import genesis_prime/message/item_moved.{ItemMoved}
 import genesis_prime/message/item_place
 import genesis_prime/message/send_chat_line.{SendChatLine}
-import genesis_prime/step.{OwnEvent}
+import genesis_prime/step.{
+  EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning, OwnEvent,
+}
 import genesis_prime/store.{
   AccountId, CharacterId, ForItems, ItemMove, ItemPlace, Items, ItemsMoved,
   MoveItems,
 }
+import gleam/list
 import gleam/option.{None}
 import owned_test
 
@@ -120,4 +127,41 @@ pub fn a_connection_that_ends_while_a_move_waits_saves_its_place_test() -> Nil {
       game_connection_support.entry_place(),
     )
     as "the player is in the world while the store moves the item, so its place is saved as in InWorld"
+}
+
+pub fn a_move_the_store_cannot_answer_ends_the_connection_with_reason_8_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [
+      step.Answer(FromStore(store.Unavailable)),
+      NotRunning,
+      NoAnswerInTime,
+      EndedBeforeAnswer,
+    ],
+    fn(outcome) {
+      let #(state, taken) =
+        game_connection_support.read(
+          game_connection_support.in_world(),
+          chest_unequipped(),
+        )
+      let #(state, answered) =
+        game_connection_support.answer(state:, taken:, outcome:)
+      assert list.length(support.logs_of(step: answered, level: LogError)) == 1
+        as "a move whose outcome is unknown is an error line"
+      assert game_connection_support.written_ids(answered) == []
+        as "no 0x569, 0x568 or 0x56A: nothing says whether the item moved"
+      let #(_, saved) =
+        game_connection_support.answer(
+          state:,
+          taken: answered,
+          outcome: game_connection_support.place_saved(),
+        )
+      assert game_connection_support.disconnect(
+          saved,
+          game_connection_support.keyed(),
+        )
+        == LostUserServer
+        as "the player's place is saved, then 0x036A reason 8"
+    },
+  )
 }

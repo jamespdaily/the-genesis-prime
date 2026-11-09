@@ -31,8 +31,8 @@ import game_connection_support
 import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/inventory.{
-  type Effect, type Moving, type Taken, Asks, Log, MoveAsked, NotDecoded,
-  Refused, Send,
+  type Effect, type Moving, type Taken, Asks, Log, MoveAsked, NoItemRow,
+  NotDecoded, Refused, Send,
 }
 import genesis_prime/game/player_life.{type Life}
 import genesis_prime/message/item_action_failed.{ItemActionFailed}
@@ -45,6 +45,7 @@ import genesis_prime/store.{
   type HeldItem, AccountId, CharacterId, HeldItem, ItemMove, ItemPlace,
   ItemsMoved, MoveItems, MoveRefused, NothingMoved,
 }
+import genesis_prime/table/id.{Item2Id}
 import gleam/list
 import gleam/option.{Some}
 import gleam/set
@@ -73,6 +74,12 @@ fn held() -> List(HeldItem) {
       stack_count: 1,
     ),
   ])
+}
+
+/// A copy of the worn chest piece in the bank, which the server never opens.
+fn bank_item() -> HeldItem {
+  let assert [chest, ..] = held()
+  HeldItem(..chest, item_guid: 9, location: 2, bag_index: 0)
 }
 
 fn alive() -> Life {
@@ -265,7 +272,9 @@ pub fn a_move_onto_an_item_swaps_the_two_test() -> Nil {
 
 pub fn a_move_the_client_would_refuse_is_refused_with_its_code_test() -> Nil {
   use <- owned_test.run(10_000)
-  let items = held()
+  // The held items and a copy of the chest piece in the bank (guid 9), the one
+  // place besides the bags and worn gear a move can start from.
+  let items = list.append(held(), [bank_item()])
   // Each row: what it breaks, the life, the move and the code with the guid of
   // the item at the source (0 for none).
   let rows = [
@@ -286,6 +295,10 @@ pub fn a_move_the_client_would_refuse_is_refused_with_its_code_test() -> Nil {
     #("destination location 300", alive(), #(1, 0), #(300, 0), 8, 1),
     #("equipped index 31", alive(), #(1, 0), #(0, 31), 8, 1),
     #("inventory index 96", alive(), #(1, 0), #(1, 96), 8, 1),
+    // 0x1403ad100 tests the inventory index after the combat and the closed
+    // checks, so an index of 96 or more in combat or from the bank is 63 or 2.
+    #("in combat, an unequip to index 96", fighting(), #(0, 0), #(1, 96), 1, 63),
+    #("the bank to index 96", alive(), #(2, 0), #(1, 96), 9, 2),
     // 0x1403aecd0: in combat a move with an equipped side is refused,
     // Player_CannotWhileInCombat.
     #("in combat, an unequip", fighting(), #(0, 0), #(1, 5), 1, 63),
@@ -329,12 +342,7 @@ pub fn a_move_the_client_would_refuse_is_refused_with_its_code_test() -> Nil {
       taken(items:, life: alive(), from: #(1, 0), to: #(0, 0)),
       taken(items:, life: alive(), from: #(1, 0), to: #(1, 15)),
     ],
-    fn(result) {
-      case result {
-        Ok(Asks(..)) -> True
-        Ok(Refused(..)) | Error(NotDecoded(..)) -> False
-      }
-    },
+    is_ask,
   )
     as "a move that breaks no check asks the store"
   // A body the client's own reader refuses is no move at all.
@@ -348,6 +356,65 @@ pub fn a_move_the_client_would_refuse_is_refused_with_its_code_test() -> Nil {
     )
     as "a body too short for two places is refused"
   assert undecoded_message(undecoded) == 0x0182
+}
+
+/// The held items with one more in inventory slot 1: this Item2 row, guid 9.
+fn with_spare(item2_id: Int) -> List(HeldItem) {
+  list.append(held(), [
+    HeldItem(
+      item_guid: 9,
+      item2_id: Item2Id(item2_id),
+      location: 1,
+      bag_index: 1,
+      stack_count: 1,
+    ),
+  ])
+}
+
+pub fn gear_with_stats_is_equipped_into_its_slot_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The client's Item2 row 8527 is a chest piece with a budget (itemBudgetId 3)
+  // and a stat (itemStatId 6), of the same Item2Type (8) as the novice chest
+  // piece (row 1229), so its slot is the chest, bag index 0; the gear of the
+  // quests and the vendors is all of this kind. The rule must not read the
+  // budget or stat as a reason to refuse the slot.
+  let items = with_spare(8527)
+  let moving = accepted(items:, from: #(1, 1), to: #(0, 0))
+  assert moving.moves
+    == [
+      ItemMove(item_guid: 9, from: ItemPlace(1, 1), to: ItemPlace(0, 0)),
+      ItemMove(item_guid: 1, from: ItemPlace(0, 0), to: ItemPlace(1, 1)),
+    ]
+    as "the statted chest piece is worn in place of the novice one, which goes to the bag slot it left"
+  let assert Ok(Refused(effects:)) =
+    taken(items:, life: alive(), from: #(1, 1), to: #(0, 1))
+    as "the chest piece is still refused at the legs slot, bag index 1"
+  assert failed_with(effects) == [#(9, 31)]
+}
+
+pub fn a_held_item_with_no_item_row_ends_the_move_as_a_bug_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // No row of Item2 has this id, so the client could not hold the item: the
+  // server's state is broken, which no GenericError code describes (0x1403b11b0
+  // gives Item_BadId 6 only for an id the client could not look up).
+  let items = with_spare(99_999_999)
+  let assert Error(NoItemRow(item2_id:)) =
+    taken(items:, life: alive(), from: #(1, 1), to: #(0, 0))
+    as "an item with no row ends the move, it is not refused as a wrong slot"
+  assert item2_id == Item2Id(99_999_999)
+    as "the refusal names the item that has no row"
+  assert list.all(
+    [taken(items:, life: alive(), from: #(1, 1), to: #(1, 2))],
+    is_ask,
+  )
+    as "no row matters only for a slot that needs the item's equipped slot flags"
+}
+
+fn is_ask(result: Result(Taken, inventory.Refusal)) -> Bool {
+  case result {
+    Ok(Asks(..)) -> True
+    Ok(Refused(..)) | Error(NotDecoded(..)) | Error(NoItemRow(..)) -> False
+  }
 }
 
 fn undecoded_message(undecoded: Undecoded) -> Int {
@@ -365,8 +432,8 @@ pub fn a_move_the_store_did_not_make_is_refused_db_failure_test() -> Nil {
     as "GenericError 5 DbFailure, naming the item"
   let assert [Log(level: level, text: text), Send(..)] = effects
     as "a log line, then the refusal"
-  assert level == step.LogInfo
-    as "a later login, a stale place or no such character is an outside failure of the store, noted"
+  assert level == step.LogWarning
+    as "a later login, a stale place or no such character is an outside failure of the store, a warning"
   assert string.contains(text, "moved")
   let #(unmoved, effects) =
     inventory.answered(

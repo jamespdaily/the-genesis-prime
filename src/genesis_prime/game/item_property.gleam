@@ -198,10 +198,24 @@ type Builder {
   )
 }
 
-fn builder(
+/// The rows an item's slot comes from: its own, the category's and the slot's
+/// modifiers, whether it may take a slot and its equipped slot flags. Only a
+/// missing row is an error: the slot does not depend on the item's budget, stat
+/// or flags (FillItemInfo 0x1404445d0, PrepareItemPropertyBuilder 0x14040c610).
+type Slotting {
+  Slotting(
+    item: item2.Item2,
+    category_armor_modifier: Float,
+    slot_modifier: Float,
+    slotted: Bool,
+    equipped_slot_flags: Int,
+  )
+}
+
+fn slotting(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
-) -> Result(Builder, ItemPropertyError) {
+) -> Result(Slotting, ItemPropertyError) {
   use item <- result.try(
     item2.get(tables:, id: Item2Id(item2_id))
     |> result.replace_error(NoRow(table: "Item2", id: item2_id)),
@@ -224,6 +238,44 @@ fn builder(
       id: item.item2_category_id,
     )),
   )
+  let joined_flags =
+    int.bitwise_or(int.bitwise_or(type_row.flags, category.flags), family.flags)
+  let slotted = int.bitwise_and(joined_flags, slotted_flag) != 0
+  let has_slot =
+    item.item2_family_id != family_without_slot
+    && item.item2_category_id != category_without_slot
+  use slot <- result.try(case has_slot {
+    True ->
+      item_slot.get(tables:, id: ItemSlotId(type_row.item_slot_id))
+      |> result.replace_error(NoRow(
+        table: "ItemSlot",
+        id: type_row.item_slot_id,
+      ))
+      |> result.map(Some)
+    False -> Ok(None)
+  })
+  let slot_flags = case slot, slotted {
+    Some(slot), True -> slot.equipped_slot_flags
+    Some(_), False | None, _ -> 0
+  }
+  Ok(Slotting(
+    item:,
+    category_armor_modifier: category.armor_modifier,
+    slot_modifier: case slot {
+      Some(slot) -> slot.armor_modifier
+      None -> 1.0
+    },
+    slotted:,
+    equipped_slot_flags: int.bitwise_or(slot_flags, item.equipped_slot_flags),
+  ))
+}
+
+fn builder(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Builder, ItemPropertyError) {
+  use slotting <- result.try(slotting(tables:, item2_id:))
+  let item = slotting.item
   use <- bool.guard(
     item.item_budget_id != 0 || item.item_stat_id != 0,
     Error(Unread(item2_id:, why: "it has a budget or a stat")),
@@ -243,51 +295,27 @@ fn builder(
       why: "its flags hold 0x4000, so the client takes its fields from a proxy item",
     )),
   )
-  let joined_flags =
-    int.bitwise_or(int.bitwise_or(type_row.flags, category.flags), family.flags)
-  let slotted = int.bitwise_and(joined_flags, slotted_flag) != 0
-  let has_slot =
-    item.item2_family_id != family_without_slot
-    && item.item2_category_id != category_without_slot
-  use slot <- result.try(case has_slot {
-    True ->
-      item_slot.get(tables:, id: ItemSlotId(type_row.item_slot_id))
-      |> result.replace_error(NoRow(
-        table: "ItemSlot",
-        id: type_row.item_slot_id,
-      ))
-      |> result.map(Some)
-    False -> Ok(None)
-  })
-  let slot_modifier = case slot {
-    Some(slot) -> slot.armor_modifier
-    None -> 1.0
-  }
-  let slot_flags = case slot, slotted {
-    Some(slot), True -> slot.equipped_slot_flags
-    Some(_), False | None, _ -> 0
-  }
-  let equipped_slot_flags = int.bitwise_or(slot_flags, item.equipped_slot_flags)
   Ok(Builder(
     item:,
     power_level: item.power_level,
-    slot_modifier:,
-    armor_modifier: category.armor_modifier *. slot_modifier,
-    equipped_slot_flags:,
-    is_shield: slotted
-      && int.bitwise_and(equipped_slot_flags, shield_slot_flags) != 0,
+    slot_modifier: slotting.slot_modifier,
+    armor_modifier: slotting.category_armor_modifier *. slotting.slot_modifier,
+    equipped_slot_flags: slotting.equipped_slot_flags,
+    is_shield: slotting.slotted
+      && int.bitwise_and(slotting.equipped_slot_flags, shield_slot_flags) != 0,
   ))
 }
 
 /// The equipped slot flags of the item: its slot's and its own, joined
 /// (FillItemInfo 0x1404445d0). A weapon's hold 0x10000, bit 16, WeaponPrimary,
-/// the slot a weapon is equipped in.
+/// the slot a weapon is equipped in. Only a missing row is an error: an item
+/// with a budget, a stat or scaled flags has its slot all the same.
 pub fn equipped_slot_flags(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
 ) -> Result(Int, ItemPropertyError) {
-  builder(tables:, item2_id:)
-  |> result.map(fn(builder) { builder.equipped_slot_flags })
+  slotting(tables:, item2_id:)
+  |> result.map(fn(slotting) { slotting.equipped_slot_flags })
 }
 
 /// The bag index an item is equipped at: the index of the lowest bit set in its

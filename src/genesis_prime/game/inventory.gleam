@@ -9,7 +9,7 @@
 ////                      └─ accepted ─▶ Asks(moving) ─▶ the connection asks the store (request(moving, ..))
 ////                                                     and waits in MovingItem, frames held
 //// the store's answer ─▶ answered(items, moving, answer) ─▶ ItemsMoved:    0x569 or 0x568, items updated
-////                                                         NothingMoved:   Note, 0x56A code 5, items unchanged
+////                                                         NothingMoved:   Warning, 0x56A code 5, items unchanged
 ////                                                         MoveRefused(c): Fault naming c, 0x56A code 5
 //// ```
 ////
@@ -32,19 +32,27 @@
 ////   1. the player is dead: 57 Player_CantDoWhileDead
 ////   2. the destination location is 100 to 299: 32 Item_Locked
 ////   3. no held item at the source: 1 Params
-////   4. the same slot, a destination location of 300 or more, an equipped index
-////      above 30 or an inventory index of 96 or more: 1 Params
+////   4. the same slot, a destination location of 300 or more or an equipped
+////      index above 30: 1 Params
 ////   5. in combat with either side equipped: 63 Player_CannotWhileInCombat
 ////   6. either side the bank, a bank bag slot (equipped 21 to 30) or location 10,
 ////      which the server never opens: 2 PlayerBusy
-////   7. an inventory destination index of 16 or more, the usable size with no
+////   7. an inventory destination index of 96 or more, past the slot array: 1
+////      Params (0x1403ad100 tests it after 5 and 6)
+////   8. an inventory destination index of 16 or more, the usable size with no
 ////      bags worn: 37 Item_BagToSmall
-////   8. an item entering location 0 at a slot whose bit is not in its equipped
+////   9. an item entering location 0 at a slot whose bit is not in its equipped
 ////      slot flags (`item_property.equipped_slot_flags`), or at bag slot 17 to 20:
 ////      31 Item_NotValidforSlot; for both items of a swap when the source is
-////      equipped
-////   9. any other location the server keeps no items at (3 to 99 except 10): 1
-////      Params, a server choice
+////      equipped. An item with no row in the tables is the server's own broken
+////      state, not a code: the connection ends (`NoItemRow`).
+////   10. any other location the server keeps no items at (3 to 99 except 10): 1
+////       Params, a server choice
+//// - **What the client never sends.** The client refuses locally, before its dead
+////   check and without sending 0x182, a destination location above 299, an
+////   unset (0xffffffff) destination index and an equipped destination index
+////   above 30 with Item_InventoryFull 27 (`opcode.0x182`, sender 0x1403c17d0, the
+////   only one of 0x182), so no input here is answered 27.
 //// - **The store's answer** decides the reply, so storage and the client agree
 ////   after it: `NothingMoved` and `MoveRefused` leave `items` as they were and
 ////   answer 0x56A code 5 DbFailure, and the connection stays. A store that is
@@ -62,11 +70,12 @@ import genesis_prime/message/item_move
 import genesis_prime/message/item_moved.{ItemMoved}
 import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/items_swapped.{ItemsSwapped}
-import genesis_prime/step.{type LogLevel, LogError, LogInfo}
+import genesis_prime/step.{type LogLevel, LogError, LogWarning}
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemMove,
   type ItemsAnswer, type SessionEpoch, ItemsMoved, MoveRefused, NothingMoved,
 }
+import genesis_prime/table/id.{type Item2Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/int
@@ -105,11 +114,21 @@ pub type Taken {
   Asks(moving: Moving)
 }
 
-/// Why the move is refused without an answer: the client's own code never sends
-/// it. The connection ends.
+/// Why the move ends the connection with no answer: the client's own code never
+/// sends it, or the server's own state is broken.
 pub type Refusal {
   /// A body the client's own reader would refuse.
   NotDecoded(undecoded: Undecoded)
+  /// A held item whose slot the tables cannot give: the server holds an item the
+  /// client's tables have no row for, which is the server's own state broken.
+  NoItemRow(item2_id: Item2Id)
+}
+
+/// Why a move does not pass the checks: the code of the check it breaks, which
+/// the client is answered with, or a refusal that ends the connection.
+type Stop {
+  Code(code: Int)
+  Broken(refusal: Refusal)
 }
 
 /// The location the worn items are held at (`opcode.0x182`).
@@ -126,6 +145,10 @@ const never_opened = 10
 
 /// The inventory size with no bags worn: slots 0 to 15 (`opcode.0x182`).
 const usable_inventory_size = 16
+
+/// The size of the inventory's slot array: 0x1403ad100 refuses an inventory
+/// destination index at or past it with Params.
+const inventory_slots = 96
 
 /// The client's GenericError codes of a refused move (`opcode.0x56a`,
 /// `GameLib.CodeEnumGenericError`): 1 Params.
@@ -171,7 +194,8 @@ pub fn take(
   let source = held_at(items:, place: move.from)
   let destination = held_at(items:, place: move.to)
   case checked(life:, tables:, move:, source:, destination:) {
-    Error(code) ->
+    Error(Broken(refusal:)) -> Error(refusal)
+    Error(Code(code:)) ->
       Ok(
         Refused([
           Send(failed(
@@ -195,69 +219,69 @@ fn held_at(
   })
 }
 
-/// The item the move moves, or the code of the first check the move breaks, in
-/// the client's order (this module's doc).
+/// The item the move moves, or the first check the move breaks, in the client's
+/// order (this module's doc).
 fn checked(
   life life: Life,
   tables tables: table_store.Tables,
   move move: item_move.ItemMove,
   source source: Result(HeldItem, Nil),
   destination destination: Result(HeldItem, Nil),
-) -> Result(HeldItem, Int) {
+) -> Result(HeldItem, Stop) {
   let from = move.from
   let to = move.to
-  use <- refuse(
+  use <- bool.guard(
     when: player_life.state(life:) == player_life.Dead,
-    code: cant_do_while_dead,
+    return: Error(Code(cant_do_while_dead)),
   )
-  use <- refuse(
+  use <- bool.guard(
     when: to.location >= 100 && to.location <= 299,
-    code: item_locked,
+    return: Error(Code(item_locked)),
   )
-  use item <- result.try(result.replace_error(source, params))
-  use <- refuse(
+  use item <- result.try(result.replace_error(source, Code(params)))
+  use <- bool.guard(
     when: from == to
       || to.location >= 300
-      || out_of_range(from)
-      || out_of_range(to),
-    code: params,
+      || out_of_equipped_range(from)
+      || out_of_equipped_range(to),
+    return: Error(Code(params)),
   )
-  use <- refuse(
+  use <- bool.guard(
     when: player_life.in_combat(life:)
       && { from.location == equipped || to.location == equipped },
-    code: cannot_while_in_combat,
+    return: Error(Code(cannot_while_in_combat)),
   )
-  use <- refuse(when: closed(from) || closed(to), code: player_busy)
-  use <- refuse(
+  use <- bool.guard(
+    when: closed(from) || closed(to),
+    return: Error(Code(player_busy)),
+  )
+  use <- bool.guard(
+    when: to.location == in_bags && to.bag_index >= inventory_slots,
+    return: Error(Code(params)),
+  )
+  use <- bool.guard(
     when: to.location == in_bags && to.bag_index >= usable_inventory_size,
-    code: bag_too_small,
+    return: Error(Code(bag_too_small)),
   )
-  use <- refuse(
-    when: !fits(tables:, item:, place: to)
-      || case destination {
-      Ok(other) -> !fits(tables:, item: other, place: from)
-      Error(Nil) -> False
-    },
-    code: not_valid_for_slot,
+  use fits_to <- result.try(fits(tables:, item:, place: to))
+  use fits_from <- result.try(case destination {
+    Ok(other) -> fits(tables:, item: other, place: from)
+    Error(Nil) -> Ok(True)
+  })
+  use <- bool.guard(
+    when: !fits_to || !fits_from,
+    return: Error(Code(not_valid_for_slot)),
   )
-  use <- refuse(when: to.location >= 3 && to.location <= 99, code: params)
+  use <- bool.guard(
+    when: to.location >= 3 && to.location <= 99,
+    return: Error(Code(params)),
+  )
   Ok(item)
 }
 
-/// Stops with the code when the check fails.
-fn refuse(
-  when refused: Bool,
-  code code: Int,
-  then next: fn() -> Result(a, Int),
-) -> Result(a, Int) {
-  use <- bool.guard(when: refused, return: Error(code))
-  next()
-}
-
-/// The equipped slots end at index 30 and the inventory at 95.
-fn out_of_range(place: ItemPlace) -> Bool {
-  { place.location == equipped && place.bag_index > 30 }
-  || { place.location == in_bags && place.bag_index >= 96 }
+/// The equipped slots end at index 30.
+fn out_of_equipped_range(place: ItemPlace) -> Bool {
+  place.location == equipped && place.bag_index > 30
 }
 
 /// A place the server never opens: the bank, a bank bag's slot (equipped 21 to
@@ -272,17 +296,18 @@ fn closed(place: ItemPlace) -> Bool {
 
 /// Whether the item may be at the place: any place but an equipped one takes it;
 /// an equipped one takes it when the bit of the place is in the item's equipped
-/// slot flags and it is no bag slot (17 to 20). Flags that cannot be read are no
-/// flags.
+/// slot flags and it is no bag slot (17 to 20). An item with no row for its slot
+/// is no answer at all.
 fn fits(
   tables tables: table_store.Tables,
   item item: HeldItem,
   place place: ItemPlace,
-) -> Bool {
-  use <- bool.guard(when: place.location != equipped, return: True)
-  let flags =
+) -> Result(Bool, Stop) {
+  use <- bool.guard(when: place.location != equipped, return: Ok(True))
+  use flags <- result.map(
     item_property.equipped_slot_flags(tables:, item2_id: item.item2_id.value)
-    |> result.unwrap(0)
+    |> result.replace_error(Broken(NoItemRow(item2_id: item.item2_id))),
+  )
   let bit = int.bitwise_shift_left(1, place.bag_index)
   !{ place.bag_index >= 17 && place.bag_index <= 20 }
   && int.bitwise_and(flags, bit) != 0
@@ -418,7 +443,7 @@ pub fn answered(
     ItemsMoved -> #(moving.items, [Send(moving.moved)])
     NothingMoved -> #(items, [
       Log(
-        level: LogInfo,
+        level: LogWarning,
         text: "the item was not moved: a later login holds the character, or the items are not where the client has them",
       ),
       Send(failed(guid: moving.guid, code: db_failure)),
@@ -436,6 +461,10 @@ pub fn answered(
 
 /// A sentence that says what the client sent that is refused, for the log.
 pub fn describe(refusal refusal: Refusal) -> String {
-  let NotDecoded(undecoded:) = refusal
-  client_connection.describe_undecoded(undecoded:)
+  case refusal {
+    NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
+    NoItemRow(item2_id:) ->
+      "a held item has no row in the client's tables for its slot: Item2 "
+      <> int.to_string(item2_id.value)
+  }
 }
