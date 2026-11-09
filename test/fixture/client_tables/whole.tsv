@@ -21,6 +21,7 @@ ItemSlot
 PathSoldierActivate
 PositionalRequirement
 Race
+RewardPropertyPremiumModifier
 Spell4AoeTargetConstraints
 Spell4Conditions
 Spell4StackGroup

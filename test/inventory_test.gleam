@@ -169,12 +169,24 @@ fn taken_by(
   from from: #(Int, Int),
   to to: #(Int, Int),
 ) -> Result(Taken, inventory.Refusal) {
+  taken_with(wearer:, bag_slots: 0, items:, life:, from:, to:)
+}
+
+/// A move with the BagSlots value the client was sent.
+fn taken_with(
+  wearer wearer: Wearer,
+  bag_slots bag_slots: Int,
+  items items: List(HeldItem),
+  life life: Life,
+  from from: #(Int, Int),
+  to to: #(Int, Int),
+) -> Result(Taken, inventory.Refusal) {
   inventory.take(
     items:,
     life:,
     tables: fixture_tables.shared(),
     wearer:,
-    bag_slots: 0,
+    bag_slots:,
     message: MoveAsked,
     body: move_body(from:, to:),
   )
@@ -1248,4 +1260,347 @@ pub fn gear_the_character_can_wear_is_equipped_test() -> Nil {
         what <> ": worn in place of the chest piece, which takes the bag slot"
       }
   })
+}
+
+// ---- worn bags ----
+
+/// A wearer of level 18, which Item2 5423 needs.
+fn bagger() -> Wearer {
+  Wearer(..equip_requirement_support.engineer(), level: 18)
+}
+
+/// A move with BagSlots 4, the value Hybrid tier 1 gives (`reward_property`).
+fn bagged(
+  items items: List(HeldItem),
+  from from: #(Int, Int),
+  to to: #(Int, Int),
+) -> Result(Taken, inventory.Refusal) {
+  taken_with(wearer: bagger(), bag_slots: 4, items:, life: alive(), from:, to:)
+}
+
+/// The Engineer's seven worn items.
+fn worn_set() -> List(HeldItem) {
+  list.filter(held(), fn(item) { item.location == 0 })
+}
+
+/// A bag of the Item2 worn at an equipped slot.
+fn worn_bag(
+  guid guid: Int,
+  item2_id item2_id: Int,
+  slot slot: Int,
+) -> HeldItem {
+  HeldItem(
+    item_guid: guid,
+    item2_id: Item2Id(item2_id),
+    location: 0,
+    bag_index: slot,
+    stack_count: 1,
+  )
+}
+
+/// One item of Item2 1039 in each inventory index, guid 200 plus the index.
+fn fillers(indexes indexes: List(Int)) -> List(HeldItem) {
+  list.map(indexes, fn(index) {
+    in_bag(guid: 200 + index, item2_id: stackable(), index:, count: 1)
+  })
+}
+
+/// The inventory indexes from `first` to `last`.
+fn indexes(first first: Int, to last: Int) -> List(Int) {
+  case first > last {
+    True -> []
+    False -> [first, ..indexes(first: first + 1, to: last)]
+  }
+}
+
+fn size_of(items: List(HeldItem)) -> Int {
+  let assert Ok(size) = inventory.size(items:, tables: fixture_tables.shared())
+    as "every held item has its rows"
+  size
+}
+
+/// The guid and code of the one 0x56A a refused move writes.
+fn refusal(result: Result(Taken, inventory.Refusal)) -> List(#(Int, Int)) {
+  let assert Ok(Refused(effects:)) = result
+    as "the move is refused and answered with a 0x56A"
+  assert list.length(effects) == 1 as "nothing else is written or logged"
+  failed_with(effects)
+}
+
+/// The guid and place of each 0x569 the effects write.
+fn moved_places(effects: List(Effect)) -> List(#(Int, Int)) {
+  list.map(sent(effects), fn(frame) {
+    assert frame.message_id == item_moved.message_id
+      as "opcode.0x569: an item moved to an empty place"
+    let assert Ok(ItemMoved(item_guid:, place:)) = item_moved.decode(frame.body)
+    #(item_guid, place)
+  })
+}
+
+/// The bag tests' expected values come from these places.
+/// - `player.inventory_capacity` and 0x1403d2e10: the inventory holds 16 slots
+///   and the size of each bag worn at equipped 17 to 20, a bag's size being the
+///   Item2's maxStackCount (`Item2.bags`): 4753 holds 4, 5423 holds 8 and needs
+///   level 18, 4763 is a proxy and so no bag (`0x1404445d0.proxy`).
+/// - 0x1403aecd0: a bag worn at 17 to 20 that goes anywhere else is refused
+///   with 35 Item_BagMustBeEmpty when its size less the size of the bag that
+///   takes its place (0 for none) is above 0 and the empty slots among the usable
+///   ones are no more than that, counted before the move.
+/// - 0x1403ad100.reverse: a swap runs the same check for the item at the
+///   destination going to the source place.
+/// - 0x1403b11b0: location 0 at 17 + n is refused with 31 when n is at or past
+///   BagSlots (the value 0x92C gave), and for an item whose slot flags lack the
+///   slot's bit, so a non-bag and a proxy are refused at every bag slot.
+/// - 0x1403aecd0.index and the server's rule: an inventory index at or past the
+///   usable size is refused with 37.
+/// - The server's choices, where the client's rule gives none: the items past a
+///   shrunk inventory go to the lowest free slots in index order (a 0x569 each,
+///   before the bag's answer), a bag dropped at or past the new size is refused
+///   with 38 (CantPutBagInItself) and a worn bag cannot be deleted (1 Params),
+///   as the client never sends it (0x1403c1360).
+pub fn a_bag_worn_in_a_bag_slot_opens_its_slots_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let big = fixture_tables.root("Item2", 5423)
+  let small = fixture_tables.root("Item2", 4753)
+  let items =
+    list.append(held(), [
+      in_bag(guid: 20, item2_id: big, index: 1, count: 1),
+      in_bag(guid: 21, item2_id: small, index: 2, count: 1),
+    ])
+  assert size_of(items) == 16 as "no bag is worn"
+  list.each([17, 18, 19, 20], fn(slot) {
+    let moving = asked(bagged(items:, from: #(1, 2), to: #(0, slot)))
+    assert moves_of(moving)
+      == [
+        ItemMove(item_guid: 21, from: ItemPlace(1, 2), to: ItemPlace(0, slot)),
+      ]
+      as "a bag goes into each of the four bag slots"
+  })
+  let moving = asked(bagged(items:, from: #(1, 1), to: #(0, 17)))
+  assert moves_of(moving)
+    == [ItemMove(item_guid: 20, from: ItemPlace(1, 1), to: ItemPlace(0, 17))]
+  assert inventory.request(
+      moving:,
+      account_id: AccountId(7),
+      character_id: CharacterId(42),
+      session_epoch: character_support.epoch(1),
+    )
+    == store.Items(MoveItems(
+      account_id: AccountId(7),
+      character_id: CharacterId(42),
+      session_epoch: character_support.epoch(1),
+      moves: moves_of(moving),
+    ))
+    as "the store is asked for the bag's move"
+  let #(worn, effects) = inventory.answered(items:, moving:, answer: ItemsSaved)
+  assert at(items: worn, guid: 20) == #(0, 17)
+  assert moved_places(effects) == [#(20, 17)]
+    as "opcode.0x569: the bag at location 0, index 17"
+  assert size_of(worn) == 24 as "16 and the 8 slots of Item2 5423"
+  // The room the bag opened takes a move: slots 16 to 23 exist, 24 does not.
+  assert is_ask(bagged(items: worn, from: #(1, 0), to: #(1, 23)))
+  assert refusal(bagged(items: worn, from: #(1, 0), to: #(1, 24))) == [#(8, 37)]
+    as "an index at the size is past the last slot"
+  // A second bag adds its slots to the first's.
+  let moving = asked(bagged(items: worn, from: #(1, 2), to: #(0, 18)))
+  let #(both, _) = inventory.answered(items: worn, moving:, answer: ItemsSaved)
+  assert size_of(both) == 28 as "16, 8 and the 4 slots of Item2 4753"
+  assert is_ask(bagged(items: both, from: #(1, 0), to: #(1, 27)))
+  assert refusal(bagged(items: both, from: #(1, 0), to: #(1, 28))) == [#(8, 37)]
+  // A split onto the new room.
+  let stacked =
+    list.append(worn, [
+      in_bag(guid: 22, item2_id: stackable(), index: 3, count: 10),
+    ])
+  let moving =
+    asked(split_taken(
+      items: stacked,
+      life: alive(),
+      guid: 22,
+      to: #(1, 23),
+      count: 3,
+    ))
+  assert moving.guid == 22
+  assert refusal(split_taken(
+      items: stacked,
+      life: alive(),
+      guid: 22,
+      to: #(1, 24),
+      count: 3,
+    ))
+    == [#(22, 37)]
+    as "a split onto an index at the size is refused"
+}
+
+pub fn a_bag_slot_past_the_unlocked_count_is_refused_31_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 0x1403b11b0: equipped 17 + n with n at or past BagSlots is refused. The
+  // client has 4 bag slots, so the count the rule is given is lowered to reach
+  // the check.
+  let small = fixture_tables.root("Item2", 4753)
+  let items =
+    list.append(held(), [in_bag(guid: 20, item2_id: small, index: 1, count: 1)])
+  let with_slots = fn(slots, slot) {
+    taken_with(
+      wearer: bagger(),
+      bag_slots: slots,
+      items:,
+      life: alive(),
+      from: #(1, 1),
+      to: #(0, slot),
+    )
+  }
+  assert is_ask(with_slots(2, 18)) as "n = 1 is below BagSlots 2"
+  assert refusal(with_slots(2, 19)) == [#(20, 31)] as "n = 2 is at BagSlots 2"
+  assert refusal(with_slots(0, 17)) == [#(20, 31)]
+    as "no 0x92C: BagSlots is 0, so no bag can be worn"
+  assert is_ask(with_slots(4, 20)) as "n = 3 is below BagSlots 4"
+}
+
+pub fn only_a_bag_goes_in_a_bag_slot_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let small = fixture_tables.root("Item2", 4753)
+  let proxy = fixture_tables.root("Item2", 4763)
+  let items =
+    list.append(held(), [
+      in_bag(guid: 20, item2_id: small, index: 1, count: 1),
+      in_bag(guid: 21, item2_id: proxy, index: 2, count: 1),
+      worn_bag(guid: 22, item2_id: small, slot: 17),
+    ])
+  assert is_ask(bagged(items:, from: #(1, 1), to: #(0, 18)))
+    as "a bag goes into a free bag slot"
+  assert refusal(bagged(items:, from: #(1, 0), to: #(0, 18))) == [#(8, 31)]
+    as "a chest piece has no bag slot bit"
+  assert refusal(bagged(items:, from: #(1, 2), to: #(0, 18))) == [#(21, 31)]
+    as "0x1404445d0.proxy: a proxy has no slot flags, whatever its row says"
+  assert refusal(bagged(items:, from: #(0, 17), to: #(0, 3))) == [#(22, 31)]
+    as "a bag does not go into a gear slot"
+  assert refusal(bagged(items:, from: #(1, 1), to: #(0, 21))) == [#(20, 2)]
+    as "equipped 21 is a bank bag slot, and the bank is closed"
+}
+
+pub fn a_bag_whose_items_would_not_fit_is_refused_35_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let big = fixture_tables.root("Item2", 5423)
+  let small = fixture_tables.root("Item2", 4753)
+  let bag_8 = worn_bag(guid: 20, item2_id: big, slot: 17)
+  // Size 24 with the bag worn. Taking it off needs more than its 8 slots empty
+  // among the 24: 16 held leave 8, 15 held leave 9.
+  let off = fn(held_slots) {
+    bagged(
+      items: list.flatten([worn_set(), [bag_8], fillers(indexes: held_slots)]),
+      from: #(0, 17),
+      to: #(1, 15),
+    )
+  }
+  assert refusal(off(list.append(indexes(first: 0, to: 14), [17])))
+    == [#(20, 35)]
+    as "8 empty slots are not more than the bag's 8"
+  assert is_ask(off(indexes(first: 0, to: 14)))
+    as "9 empty slots are more than 8"
+  // A swap with a smaller bag: 8 less 4 is 4, counted for the bag that goes.
+  let swapped = fn(held_slots) {
+    bagged(
+      items: list.flatten([
+        worn_set(),
+        [bag_8, in_bag(guid: 21, item2_id: small, index: 0, count: 1)],
+        fillers(indexes: held_slots),
+      ]),
+      from: #(1, 0),
+      to: #(0, 17),
+    )
+  }
+  assert refusal(swapped(indexes(first: 1, to: 19))) == [#(21, 35)]
+    as "0x1403ad100.reverse: 4 empty slots are not more than 4"
+  assert is_ask(swapped(indexes(first: 1, to: 18)))
+    as "5 empty slots are more than 4"
+  // Between two bag slots nothing leaves the bags, so a full inventory does not
+  // matter.
+  assert is_ask(
+    bagged(
+      items: list.flatten([
+        worn_set(),
+        [bag_8],
+        fillers(indexes: indexes(first: 0, to: 23)),
+      ]),
+      from: #(0, 17),
+      to: #(0, 18),
+    ),
+  )
+    as "a bag moved to another bag slot keeps its slots"
+  // In combat the bag slots are as locked as every equipped slot.
+  assert refusal(
+      taken_with(
+        wearer: bagger(),
+        bag_slots: 4,
+        items: list.append(worn_set(), [bag_8]),
+        life: fighting(),
+        from: #(0, 17),
+        to: #(1, 15),
+      ),
+    )
+    == [#(20, 63)]
+}
+
+pub fn items_past_a_shrunk_inventory_move_to_free_slots_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let big = fixture_tables.root("Item2", 5423)
+  // Size 24: items at 20, 21 and 23 are past the 16 slots left once the bag is
+  // off. Slots 0, 1, 2, 4, 6 and 8 are held; 3 is where the bag goes.
+  let items =
+    list.flatten([
+      worn_set(),
+      [worn_bag(guid: 20, item2_id: big, slot: 17)],
+      fillers(indexes: [0, 1, 2, 4, 6, 8, 20, 21, 23]),
+    ])
+  let moving = asked(bagged(items:, from: #(0, 17), to: #(1, 3)))
+  assert moves_of(moving)
+    == [
+      ItemMove(item_guid: 20, from: ItemPlace(0, 17), to: ItemPlace(1, 3)),
+      ItemMove(item_guid: 220, from: ItemPlace(1, 20), to: ItemPlace(1, 5)),
+      ItemMove(item_guid: 221, from: ItemPlace(1, 21), to: ItemPlace(1, 7)),
+      ItemMove(item_guid: 223, from: ItemPlace(1, 23), to: ItemPlace(1, 9)),
+    ]
+    as "the bag, then each item past the new end, in index order, to the lowest free slot but the bag's own"
+  let #(moved, effects) =
+    inventory.answered(items:, moving:, answer: ItemsSaved)
+  assert moved_places(effects)
+    == [#(220, 261), #(221, 263), #(223, 265), #(20, 259)]
+    as "opcode.0x569: each displaced item's new place, then the bag's, 1 * 256 + the index"
+  assert at(items: moved, guid: 220) == #(1, 5)
+  assert at(items: moved, guid: 221) == #(1, 7)
+  assert at(items: moved, guid: 223) == #(1, 9)
+  assert at(items: moved, guid: 20) == #(1, 3)
+  assert size_of(moved) == 16
+  assert list.length(moved) == list.length(items) as "no item is lost"
+  let #(unchanged, effects) =
+    inventory.answered(items:, moving:, answer: ItemsNotSaved)
+  assert unchanged == items as "a save the store did not make leaves every item"
+  assert failed_with(effects) == [#(20, 5)]
+}
+
+pub fn a_bag_dropped_into_its_own_slots_is_refused_38_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let big = fixture_tables.root("Item2", 5423)
+  let items =
+    list.flatten([
+      worn_set(),
+      [worn_bag(guid: 20, item2_id: big, slot: 17)],
+      fillers(indexes: indexes(first: 0, to: 14)),
+    ])
+  assert refusal(bagged(items:, from: #(0, 17), to: #(1, 20))) == [#(20, 38)]
+    as "slot 20 is one of the slots the bag opens, and is gone once it is off"
+  assert is_ask(bagged(items:, from: #(0, 17), to: #(1, 15)))
+    as "slot 15 stays when the bag is off"
+}
+
+pub fn a_worn_bag_cannot_be_deleted_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let big = fixture_tables.root("Item2", 5423)
+  let items =
+    list.append(worn_set(), [worn_bag(guid: 20, item2_id: big, slot: 17)])
+  let assert Ok(Refused(effects:)) = delete_taken(items:, at: #(0, 17))
+    as "a worn bag is refused"
+  assert failed_with(effects) == [#(0, 1)]
+    as "0x1403c1360: the client sends no delete of a worn bag, so it is Params with no guid, as for any place the client does not send"
 }
