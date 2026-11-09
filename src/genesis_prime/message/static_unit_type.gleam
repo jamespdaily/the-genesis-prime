@@ -6,10 +6,14 @@
 
 /// The values of a field, as the client's code names them.
 pub type StaticUnitType {
+  /// The value 8, the fact file's `world_data.entity_type`.
+  Collectible
   /// The value 10, the fact file's `world_data.entity_type`.
   Simple
   /// The value 11, the fact file's `world_data.entity_type`.
   Platform
+  /// The value 13, the fact file's `world_data.entity_type`.
+  Turret
   /// The value 32, the fact file's `world_data.entity_type`.
   SimpleCollidable
   /// A value the schema does not name.
@@ -19,8 +23,10 @@ pub type StaticUnitType {
 /// The number the encoder writes for a value.
 pub fn to_value(value: StaticUnitType) -> Int {
   case value {
+    Collectible -> 8
     Simple -> 10
     Platform -> 11
+    Turret -> 13
     SimpleCollidable -> 32
     Other(number) -> number
   }
@@ -29,8 +35,10 @@ pub fn to_value(value: StaticUnitType) -> Int {
 /// The value for a number the decoder read.
 pub fn from_value(number: Int) -> StaticUnitType {
   case number {
+    8 -> Collectible
     10 -> Simple
     11 -> Platform
+    13 -> Turret
     32 -> SimpleCollidable
     other -> Other(other)
   }

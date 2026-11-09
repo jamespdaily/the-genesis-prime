@@ -16,6 +16,7 @@ import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/map.{type State, Join, Leave, Moved, Watched}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn}
+import genesis_prime/world_map/static_object
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -310,7 +311,9 @@ pub fn said(message: map.Outgoing) -> String {
     map.Noticed(notice: map.ObjectsSeen(units:), ..) ->
       "Objects seen "
       <> string.join(
-        list.map(units, fn(unit) { int.to_string(unit.unit_id) }),
+        list.map(units, fn(unit) {
+          int.to_string(static_object.unit_id(created: unit))
+        }),
         " ",
       )
     map.Noticed(notice: map.ObjectsUnseen(unit_ids:), ..) ->

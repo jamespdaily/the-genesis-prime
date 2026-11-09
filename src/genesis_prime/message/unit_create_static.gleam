@@ -2,17 +2,17 @@
 //// never edited by hand.
 ////
 //// Message 0x0262 (unit_create_static), server to client: creates a static
-//// object in the world: a unit of type 10 (Simple), 11 (Platform) or 32
-//// (SimpleCollidable), with a creature's type data, the Creature2 id, which
-//// the client takes the object's name, model scale and level from, and the
-//// quest checklist index, then the values of a player's create: the stats (a
-//// type 32 object created with health 0 is dead; types 10 and 11 never are),
-//// the movement commands (kind 2, the position, and kind 14, the rotation),
-//// the properties, both factions, the world object the unit claims (0 for
-//// none, when the unit builds its own) and the display info, which must be
-//// sent since with 0 no model is described. Its fields are listed in
-//// `schema.toml` with the client's evidence, and the fact file's
-//// `opcode.0x262.simple` names the message.
+//// object in the world: a unit of type 8 (Collectible), 10 (Simple), 11
+//// (Platform), 13 (Turret) or 32 (SimpleCollidable), with a creature's type
+//// data, the Creature2 id, which the client takes the object's name, model
+//// scale and level from, and the quest checklist index, then the values of a
+//// player's create: the stats (a type 13 or 32 object created with health 0 is
+//// dead; the other types never are), the movement commands (kind 2, the
+//// position, and kind 14, the rotation), the properties, both factions, the
+//// world object the unit claims (0 for none, when the unit builds its own) and
+//// the display info, which must be sent since with 0 no model is described.
+//// Its fields are listed in `schema.toml` with the client's evidence, and the
+//// fact file's `opcode.0x262.simple` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/static_unit_type.{type StaticUnitType}

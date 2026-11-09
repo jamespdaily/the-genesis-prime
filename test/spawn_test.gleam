@@ -114,11 +114,11 @@ fn left_out(
 
 pub fn only_nonplayer_rows_start_and_every_other_type_is_counted_for_the_coverage_test() -> Nil {
   use <- owned_test.run(5000)
-  // 0x140649e20: type 0 is NonPlayer, 4 Door, 5 Harvest (`world_data.entity_type`).
+  // 0x140649e20: type 0 is NonPlayer, 2 Destructible, 5 Harvest (`world_data.entity_type`).
   let selection =
     selected(rows: [
       spawn_support.beast_row(number: 1),
-      spawn.Row(..spawn_support.beast_row(number: 2), entity_type: 4),
+      spawn.Row(..spawn_support.beast_row(number: 2), entity_type: 2),
       spawn.Row(..spawn_support.beast_row(number: 3), entity_type: 5),
       spawn.Row(..spawn_support.beast_row(number: 4), entity_type: 5),
     ])
@@ -128,14 +128,15 @@ pub fn only_nonplayer_rows_start_and_every_other_type_is_counted_for_the_coverag
   assert list.sort(coverage.other_types, fn(first, second) {
       int.compare(first.0, second.0)
     })
-    == [#(4, 1), #(5, 2)]
-    as "each other type counted: one Door and two Harvest"
+    == [#(2, 1), #(5, 2)]
+    as "each other type counted: one Destructible and two Harvest"
 }
 
 // ------------------------------------------- static objects
 //
-// The rows of unit types 10 (Simple), 11 (Platform) and 32 (SimpleCollidable),
-// which load as static objects (`genesis_prime/world_map/static_object`).
+// The rows of unit types 4 (Door), 8 (Collectible), 10 (Simple), 11 (Platform),
+// 12 (Mailbox), 13 (Turret), 14 (InstancePortal) and 32 (SimpleCollidable), which
+// load as static objects (`genesis_prime/world_map/static_object`).
 // Expected values come from these places.
 // - The trace's field table (the issue's "Client trace" of the static objects,
 //   `opcode.0x262.simple`): an object carries its row's entity type, Creature2 id,
@@ -151,8 +152,12 @@ pub fn only_nonplayer_rows_start_and_every_other_type_is_counted_for_the_coverag
 // - `0x140457a53` (check 4, opcode.0x262.simple (2)): type 32 is created dead
 //   with health 0, so such a row is left out and counted; types 10 and 11 never
 //   are, so a recorded 0 is sent as it stands.
-// - Check 11 and `world_data.entity_type`: types 2, 4, 5, 8, 9, 12, 13, 14 and 19
-//   are other units, counted by type.
+// - `0x140457bc5`: types 4, 8, 12 and 14 are never created dead, as 10 and 11 are,
+//   so they carry only the stats their row records; type 13 is not in that set, so
+//   a turret follows type 32's rule: the creature's level and Base Health, and one
+//   with health 0 is left out and counted.
+// - Check 11 and `world_data.entity_type`: types 2, 5, 9 and 19 are other units,
+//   counted by type.
 
 /// The static objects of the selection, in id order.
 fn objects_in(selection: Selection) -> List(StaticObject) {
@@ -447,7 +452,7 @@ pub fn a_type_10_or_11_object_carries_only_the_stats_its_row_records_test() -> N
 
 pub fn other_unit_types_stay_out_and_the_coverage_counts_static_objects_by_type_and_world_test() -> Nil {
   use <- owned_test.run(5000)
-  let others = [2, 4, 5, 8, 9, 12, 13, 14, 19]
+  let others = [2, 5, 9, 19]
   let selection =
     selected(
       rows: list.flatten([
@@ -472,18 +477,99 @@ pub fn other_unit_types_stay_out_and_the_coverage_counts_static_objects_by_type_
     )
   assert list.map(objects_in(selection), fn(object) { object.id })
     == list.map([100, 101, 102, 103, 104], SpawnId)
-    as "only types 10, 11 and 32 load as objects"
+    as "only the static types load as objects"
   let assert [world_22, world_3460] = selection.coverage
     as "two worlds, in world order"
   assert world_3460.other_types == list.map(others, fn(type_) { #(type_, 1) })
     as "each other type counted, by type"
-  assert world_3460.objects_sent == list.zip(spawn.object_types, [2, 1, 1])
+  assert world_3460.objects_sent
+    == list.zip(spawn.object_types, [0, 0, 2, 1, 0, 0, 0, 1])
     as "world 3460's objects sent, by type"
-  assert world_22.objects_sent == list.zip(spawn.object_types, [0, 0, 1])
+  assert world_22.objects_sent
+    == list.zip(spawn.object_types, [0, 0, 0, 0, 0, 0, 0, 1])
     as "world 22's"
   assert spawn.describe_coverage(coverage: world_22)
-    == "world 22: 0 spawns start; left out: no faction 0, friendly to both 0, an NPC link 0, health 0 0; static objects sent: type 10 0, type 11 0, type 32 1, left out dead 0; other entity types: none"
+    == "world 22: 0 spawns start; left out: no faction 0, friendly to both 0, an NPC link 0, health 0 0; static objects sent: type 4 0, type 8 0, type 10 0, type 11 0, type 12 0, type 13 0, type 14 0, type 32 1, left out dead 0; other entity types: none"
     as "the coverage line counts the static objects by type"
+}
+
+pub fn turret_health_follows_creature_rule_test() -> Nil {
+  use <- owned_test.run(5000)
+  let row = fn(number, entity_type, health, level) {
+    spawn.Row(..spawn_support.beast_row(number:), entity_type:, health:, level:)
+  }
+  let selection =
+    selected(rows: [
+      row(1, 13, option.None, option.None),
+      row(2, 13, Some(50.0), option.None),
+      row(3, 13, Some(0.0), option.None),
+      row(4, 4, option.None, option.None),
+      row(5, 8, Some(0.0), Some(3.0)),
+      row(6, 12, Some(442.9), option.None),
+      row(7, 14, option.None, Some(2.0)),
+    ])
+  assert selection.refusals == [] as "every row passes the client's checks"
+  assert list.map(objects_in(selection), fn(object) {
+      let SpawnId(number) = object.id
+      #(number, object.level, object.health)
+    })
+    == [
+      #(
+        1,
+        Some(1),
+        Some(static_object.Health(value: 52, source: unit_fields.ClientDefault)),
+      ),
+      #(
+        2,
+        Some(1),
+        Some(static_object.Health(value: 50, source: unit_fields.Recorded)),
+      ),
+      #(4, option.None, option.None),
+      #(
+        5,
+        Some(3),
+        Some(static_object.Health(value: 0, source: unit_fields.Recorded)),
+      ),
+      #(
+        6,
+        option.None,
+        Some(static_object.Health(value: 442, source: unit_fields.Recorded)),
+      ),
+      #(7, Some(2), option.None),
+    ]
+    as "a turret with no stats: minLevel 1 and the client's Base Health 52 above 0; recorded: as recorded; health 0 left out (0x140457bc5: type 13 is created dead); a door, collectible, mailbox or portal only what its row records, a recorded 0 included"
+  let assert [coverage] = selection.coverage as "one world"
+  assert coverage.objects_dead == 1
+    as "the one turret the client would create dead is counted, and no other type is"
+}
+
+pub fn unsent_types_are_sent_and_counted_test() -> Nil {
+  use <- owned_test.run(5000)
+  let types = [4, 8, 12, 13, 14]
+  let selection =
+    selected(
+      rows: list.map(types, fn(entity_type) {
+        spawn.Row(
+          ..spawn_support.beast_row(number: entity_type),
+          entity_type:,
+          world_id: 426,
+        )
+      }),
+    )
+  assert selection.refusals == [] as "every row passes the client's checks"
+  assert list.map(objects_in(selection), fn(object) { object.id })
+    == list.map(types, SpawnId)
+    as "each row of types 4, 8, 12, 13 and 14 is sent as an object"
+  let assert [coverage] = selection.coverage as "one world"
+  assert coverage.world_id == 426
+  assert coverage.objects_sent
+    == list.zip(spawn.object_types, [1, 1, 0, 0, 1, 1, 1, 0])
+    as "each counted by its type, in the coverage's order of the unit types' numbers"
+  assert coverage.other_types == []
+    as "none of these types is an other type any more"
+  assert spawn.describe_coverage(coverage:)
+    == "world 426: 0 spawns start; left out: no faction 0, friendly to both 0, an NPC link 0, health 0 0; static objects sent: type 4 1, type 8 1, type 10 0, type 11 0, type 12 1, type 13 1, type 14 1, type 32 0, left out dead 0; other entity types: none"
+    as "the coverage line counts them by type"
 }
 
 pub fn a_row_whose_creature_has_no_row_or_whose_display_is_not_its_creatures_is_refused_naming_the_rule_test() -> Nil {

@@ -16,12 +16,12 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/message/float32
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/relayed_movement
-import genesis_prime/message/static_unit_type
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/static_object
 import gleam/dict
 import gleam/list
 import message_support
@@ -136,16 +136,16 @@ pub fn the_bot_takes_a_static_objects_0x262_as_an_object_and_not_a_creature_test
     as "no static object is taken as a creature"
   assert list.map(frames, fn(frame) {
       case game_client.created_unit(body: frame.body) {
-        Ok(game_client.ObjectCreated(unit:)) -> Ok(unit.unit_type)
+        Ok(game_client.ObjectCreated(unit_type:, ..)) -> Ok(unit_type)
         Ok(game_client.PlayerCreated(..))
         | Ok(game_client.CreatureCreated(..))
         | Error(Nil) -> Error(Nil)
       }
     })
     == [
-      Ok(static_unit_type.Simple),
-      Ok(static_unit_type.Platform),
-      Ok(static_unit_type.SimpleCollidable),
+      Ok(static_object.Simple),
+      Ok(static_object.Platform),
+      Ok(static_object.SimpleCollidable),
     ]
     as "each is an object of its type"
   let others =

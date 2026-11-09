@@ -28,7 +28,7 @@ import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
-import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
+import genesis_prime/message/unit_create_static
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
@@ -46,7 +46,7 @@ import genesis_prime/world_map/map.{
   Left, ObjectsSeen, ObjectsUnseen, SeenBy, UnseenBy,
 }
 import genesis_prime/world_map/player_unit
-import genesis_prime/world_map/static_object
+import genesis_prime/world_map/static_object.{type Created}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
 import gleam/list
@@ -1076,7 +1076,7 @@ pub fn messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the
 
 /// The 0x262 of a Holoring (Creature2 73416, a type 10 object of world 3460's
 /// start) as unit `unit_id`.
-fn object_unit(unit_id: Int) -> UnitCreateStatic {
+fn object_unit(unit_id: Int) -> Created {
   static_object.create(
     object: spawn_support.holoring(
       number: unit_id,
