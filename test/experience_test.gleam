@@ -23,6 +23,8 @@ import experience_support as experience
 import game_connection_support as support
 import genesis_prime/client_connection
 import genesis_prime/message/experience_gained.{ExperienceGained}
+import genesis_prime/message/float32
+import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/world_map/unit_fields
 import gleam/int
 import gleam/list
@@ -147,11 +149,20 @@ pub fn crossing_a_level_sends_stat_10_to_the_player_and_its_viewers_test() -> Ni
   assert experience.gains(taken:) == [gain_of(experience: 5)]
   assert experience.level_writes(taken:) == [#(support.own_unit_id, 2)]
     as "0x938 {the player's unit, stat 10, 2}: the level the client raises (opcode.0x938)"
-  assert support.written_ids(taken) == [0x01AC, 0x0938]
-    as "the experience first, then the level it made"
+  assert support.written_ids(taken) == [0x01AC, 0x0938, 0x093A]
+    as "the experience first, then the level it made, then the properties the level moves (a_level_up_sends_property_7_at_the_new_level_test)"
   assert support.news_told(taken:, viewer: 2)
-    == [client_connection.Level(level: 2)]
-    as "a viewer is told the level, to write the same 0x938 under the unit it shows"
+    == [
+      client_connection.Level(level: 2),
+      client_connection.PropertiesChanged(properties: [
+        UnitProperty(
+          property_id: 7,
+          base: float32.to_bits(817.0),
+          value: float32.to_bits(817.0),
+        ),
+      ]),
+    ]
+    as "a viewer is told the level, to write the same 0x938 under the unit it shows, then the Base Health the level gives (a_level_up_sends_property_7_at_the_new_level_test)"
   assert unit_fields.stat(
       tail: support.created_for(state:, viewer: 4).tail,
       stat_id: 10,

@@ -31,6 +31,7 @@ import genesis_prime/client_connection.{
   type Request, AskStore, FromMap, FromStore, LookChanged, PropertiesChanged,
 }
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/gear
 import genesis_prime/message/bit_stream
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/float32
@@ -128,8 +129,9 @@ pub fn a_move_answer_comes_before_the_frames_after_it_test() -> Nil {
       taken:,
       outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
     )
-  assert game_connection_support.written_ids(answered) == [0x0569, 0x01C2]
-    as "opcode.0x569 then opcode.0x1c2: the move's answer goes out first, then the held line is taken and answered"
+  assert game_connection_support.written_ids(answered)
+    == [0x0569, 0x0933, 0x093A, 0x092F, 0x01C2]
+    as "opcode.0x569, then the chest's look, properties and capped health (health_above_the_new_maximum_is_capped_and_told_test), then opcode.0x1c2: the move's answer goes out first, then the held line is taken and answered"
   let assert [first, ..] = game_connection_support.written(answered)
   assert item_moved.decode(first.body)
     == Ok(ItemMoved(item_guid: 1, place: 256))
@@ -392,9 +394,21 @@ pub fn an_equip_is_checked_against_the_entered_character_test() -> Nil {
       taken:,
       outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
     )
-  let assert [moved] = game_connection_support.written(answered)
-    as "the saved move is answered with one frame"
-  assert moved.message_id == 0x0569
+  let worn_chest =
+    gear.of_items(tables: fixture_tables.shared(), items: [
+      HeldItem(
+        item_guid: 9,
+        item2_id: Item2Id(level_3_chest),
+        location: 0,
+        bag_index: 0,
+        stack_count: 1,
+      ),
+    ])
+  assert list.length(worn_chest.unread) == 1
+    as "0x1404445d0: the level 3 chest has a budget or a stat, which the properties reader refuses (issue 626): it is worn and shown and gives no properties"
+  assert game_connection_support.written_ids(answered) == [0x0569, 0x0933]
+    as "the move's frame, then the look with the chest shown; no 0x93a, since the chest gives no properties and leaves the gear's as they were"
+  let assert [moved, ..] = game_connection_support.written(answered)
   assert item_moved.decode(moved.body) == Ok(ItemMoved(item_guid: 9, place: 0))
     as "opcode.0x569: guid 9 at location 0, bag index 0, which is 0"
 }
@@ -677,8 +691,8 @@ pub fn two_moves_of_worn_items_in_a_row_wait_behind_each_other_and_rebuild_the_g
       outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
     )
   assert game_connection_support.written_ids(first_saved)
-    == [0x0569, 0x0933, 0x093A]
-    as "the first save's answer goes out with the look and the properties of the gear without the chest only"
+    == [0x0569, 0x0933, 0x093A, 0x092F]
+    as "the first save's answer goes out with the look, the properties and the capped health (736 to 586) of the gear without the chest only"
   assert properties_written(taken: first_saved) == [without_the_chest()]
     as "the chest's three entries: the boots are still worn when the first is saved"
   assert support.asked(first_saved) != None
@@ -690,8 +704,8 @@ pub fn two_moves_of_worn_items_in_a_row_wait_behind_each_other_and_rebuild_the_g
       outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
     )
   assert game_connection_support.written_ids(second_saved)
-    == [0x0569, 0x0933, 0x093A]
-    as "the second save's answer goes out with its own look and properties"
+    == [0x0569, 0x0933, 0x093A, 0x092F]
+    as "the second save's answer goes out with its own look, properties and capped health (586 to 496)"
   assert looks_written(taken: second_saved) == [[slot(slot: 5, display: 0)]]
     as "opcode.0x933.empty_display: the boots' slot 5 is emptied"
   let assert [entries] = properties_written(taken: second_saved)
