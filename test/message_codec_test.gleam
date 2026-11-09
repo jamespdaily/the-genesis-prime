@@ -192,6 +192,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/send_whisper.gleam",
       "src/genesis_prime/message/server_hello.gleam",
       "src/genesis_prime/message/server_message.gleam",
+      "src/genesis_prime/message/server_tutorial.gleam",
       "src/genesis_prime/message/shared_item.gleam",
       "src/genesis_prime/message/spell_cast_confirmed.gleam",
       "src/genesis_prime/message/spell_cast_refused.gleam",

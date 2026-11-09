@@ -54,6 +54,7 @@ import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
 import genesis_prime/table/telegraph_damage
+import genesis_prime/table/tutorial
 import genesis_prime/table/unit_property2
 import genesis_prime/table/world
 import genesis_prime/table/world_location2
@@ -158,11 +159,14 @@ pub fn entries() -> List(store.Entry) {
 ///   (genesis_prime/world_map/spawn).
 /// - World: the worlds a map can run in, each of which gets a term of its spawns
 ///   (genesis_prime/world_map/spawn).
+/// - Tutorial: the category of each row a zone's welcome names
+///   (genesis_prime/game/zone_welcome).
 pub fn content_entries() -> List(store.Entry) {
   [
     creature2_outfit_info.entry(),
     faction2.entry(),
     faction2_relationship.entry(),
+    tutorial.entry(),
     world.entry(),
   ]
 }
