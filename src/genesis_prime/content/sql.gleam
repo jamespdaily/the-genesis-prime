@@ -314,6 +314,98 @@ order by spawn.world_id, spawn.id;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `load_vendor_items` query
+/// defined in `./src/genesis_prime/content/sql/load_vendor_items.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadVendorItemsRow {
+  LoadVendorItemsRow(creature_id: Int, position: Int, item_id: Int)
+}
+
+/// Every row of the vendor_item table in creature and position order: the other query the
+/// load makes of the vendor tables at start (genesis_prime/content/vendor). The checks run
+/// on these rows, not in SQL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_vendor_items(
+  db: pog.Connection,
+) -> Result(pog.Returned(LoadVendorItemsRow), pog.QueryError) {
+  let decoder = {
+    use creature_id <- decode.field(0, decode.int)
+    use position <- decode.field(1, decode.int)
+    use item_id <- decode.field(2, decode.int)
+    decode.success(LoadVendorItemsRow(creature_id:, position:, item_id:))
+  }
+
+  "-- Every row of the vendor_item table in creature and position order: the other query the
+-- load makes of the vendor tables at start (genesis_prime/content/vendor). The checks run
+-- on these rows, not in SQL.
+select
+  creature_id,
+  position,
+  item_id
+from vendor_item
+order by creature_id, position;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `load_vendors` query
+/// defined in `./src/genesis_prime/content/sql/load_vendors.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadVendorsRow {
+  LoadVendorsRow(
+    creature_id: Int,
+    buy_multiplier: Float,
+    sell_multiplier: Float,
+  )
+}
+
+/// Every row of the vendor table in creature order: one of the two queries the load makes
+/// of the vendor tables at start (genesis_prime/content/vendor). The checks run on these
+/// rows, not in SQL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_vendors(
+  db: pog.Connection,
+) -> Result(pog.Returned(LoadVendorsRow), pog.QueryError) {
+  let decoder = {
+    use creature_id <- decode.field(0, decode.int)
+    use buy_multiplier <- decode.field(1, decode.float)
+    use sell_multiplier <- decode.field(2, decode.float)
+    decode.success(LoadVendorsRow(
+      creature_id:,
+      buy_multiplier:,
+      sell_multiplier:,
+    ))
+  }
+
+  "-- Every row of the vendor table in creature order: one of the two queries the load makes
+-- of the vendor tables at start (genesis_prime/content/vendor). The checks run on these
+-- rows, not in SQL.
+select
+  creature_id,
+  buy_multiplier,
+  sell_multiplier
+from vendor
+order by creature_id;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_zone_welcomes` query
 /// defined in `./src/genesis_prime/content/sql/load_zone_welcomes.sql`.
 ///

@@ -27,6 +27,8 @@
 ////   recorded value, so the client's maximum is the spawn's, not its own formula's
 ////   (`opcode.0x262.creature`); otherwise none, and the client computes each from
 ////   its tables (`0x1404585c0`).
+//// - **Create flags:** bit 4 (the vendor mark) when the spawn is a vendor's, else 0; the
+////   vendor's prerequisite tag stays unsent, which the client reads as met.
 //// - Every other field 0 or empty, each by its record
 ////   (opcode.0x262.unit_fields), the tail as every spawned unit's
 ////   (`unit_fields.spawned_tail`).
@@ -42,6 +44,10 @@ import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/unit_fields
 import gleam/option.{type Option, Some}
 import gleam/result
+
+/// The create flag of a vendor (bit 4 of the 0x262's flags byte), which shows the
+/// client the creature's bag icon (`opcode.0x262.vendor_flag`).
+const vendor_flag = 4
 
 /// Message 0x262 for the creature at `spawn` as unit `unit_id` with `health` and its
 /// current Interrupt Armor when it has any above 0, stamped with `server_time_estimate_start`, the map's server time
@@ -59,6 +65,10 @@ pub fn create(
     creature_id:,
     checklist_index: 0,
     tail: unit_fields.spawned_tail(
+      create_flags: case spawn.vendor {
+        True -> vendor_flag
+        False -> 0
+      },
       health: Some(health),
       level: Some(spawn.level),
       interrupt_armor:,

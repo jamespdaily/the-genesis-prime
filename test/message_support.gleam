@@ -7,12 +7,28 @@ import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/choose_resurrection.{ChooseResurrection}
 import gleam/bit_array
 import gleam/int
+import gleam/list
 import gleam/string
 
 /// The bytes of a vector written as hexadecimal groups, spaces ignored, as the
 /// fact file's `vector.*` records write them.
 pub fn hex(text: String) -> BitArray {
   connection_vectors.hex(string.replace(text, " ", ""))
+}
+
+/// The bytes of values laid end to end, each a width in bits and its value, the
+/// first value in the lowest bits and the last byte padded with zero bits, as
+/// the client's bit stream does. A test writes the widths of a client reader in
+/// the reader's order, so the bytes owe nothing to the codec under test.
+pub fn packed(values: List(#(Int, Int))) -> BitArray {
+  let #(number, total) =
+    list.fold(values, #(0, 0), fn(state, value) {
+      let #(number, used) = state
+      let #(width, bits) = value
+      #(number + int.bitwise_shift_left(bits, used), used + width)
+    })
+  let bytes = { total + 7 } / 8
+  <<number:size({ bytes * 8 })-little>>
 }
 
 /// The bytes 01 02 .. 10, the session key of the fact file's vectors.

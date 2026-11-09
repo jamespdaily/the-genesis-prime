@@ -16,6 +16,7 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/hit.{Blow, Defence, Offence}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/vendor
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
@@ -78,6 +79,7 @@ pub fn battle_beast(number number: Int, x x: Float) -> Spawn {
     base_faction_id: 1441,
     display_info_id: 26_565,
     outfit_info_id: 0,
+    vendor: False,
     combat: beast_combat(),
     bases: loaded_beast().bases,
     context: loaded_beast().context,
@@ -240,6 +242,7 @@ pub fn summon_checks() -> spawn.SummonChecks {
     tables: character_tables.content_tables(),
     formulas: rating_support.formulas(),
     kinds: kinds(),
+    vendors: vendor.none(),
   )
 }
 
@@ -253,6 +256,7 @@ pub fn summon_checks_over(
     tables: character_tables.content_over(tables:),
     formulas: rating_support.formulas(),
     kinds: kinds(),
+    vendors: vendor.none(),
   )
 }
 

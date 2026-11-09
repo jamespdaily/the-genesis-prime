@@ -6,6 +6,7 @@
 
 import character_tables
 import client_tables
+import genesis_prime/game/vendor
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
 import genesis_prime/table/creature2
@@ -102,9 +103,16 @@ pub fn the_committed_creature_and_faction_rows_select_the_spawns_the_clients_row
       tables: character_tables.content_tables(),
       formulas:,
       kinds:,
+      vendors: vendor.none(),
     )
   let real =
-    spawn.select(rows:, tables: client_tables.every_table(), formulas:, kinds:)
+    spawn.select(
+      rows:,
+      tables: client_tables.every_table(),
+      formulas:,
+      kinds:,
+      vendors: vendor.none(),
+    )
   assert planted.refusals == [] && real.refusals == []
     as "no row is refused by either"
   assert planted.coverage == real.coverage
