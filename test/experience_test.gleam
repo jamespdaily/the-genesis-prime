@@ -201,3 +201,22 @@ pub fn the_top_level_gains_nothing_test() -> Nil {
   assert #(saved, level) == #(26_360_090, 50)
     as "the crossing stopped at row 50's minXpForLevel, below the 2147483647 of the rows above"
 }
+
+pub fn a_creature_with_no_difficulty_row_gives_no_experience_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Creature2 12909 (Hycrest Farmer Male) names Creature2Difficulty 0, which has no
+  // row (the table's ids are 1 to 24): the kill gives 0 and sends
+  // nothing, as the credit of a gap that gives 0 does.
+  let #(state, taken) =
+    experience.credited(
+      state: experience.entered_at(level: 1, saved_experience: Some(100)),
+      creature_id: 12_909,
+      level: 1,
+    )
+  assert experience.gains(taken:) == []
+    as "a creature with no Creature2Difficulty row gives no experience"
+  assert support.written_ids(taken) == []
+  let #(_, saved, level) = experience.camped(state:)
+  assert #(saved, level) == #(100, 1)
+    as "the experience and level it keeps are unchanged"
+}

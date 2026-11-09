@@ -35,3 +35,4 @@ Spell4	41886	Medic Fissure debuff child	spell_area_test
 Spell4	41844	Medic Fissure proxy: starts the debuff child on each unit its area hits	world_creature_test
 Spell4	54475	Warrior Defense Grid aura	spell_area_test
 Spell4	76618	Esper Phantasmal Armor absorb and armor aimed at the target	spell_area_test
+Creature2	12909	a Hycrest Farmer Male whose Creature2Difficulty is 0, which has no row	experience_test

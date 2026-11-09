@@ -93,10 +93,11 @@ pub fn entering(
 }
 
 /// The experience a kill of the creature gives a player of `player_level`: the formula
-/// in the module's head, rounded, 0 for a gap that gives nothing. The creature was
-/// spawned from its Creature2 row and that row's Creature2Difficulty row, which the
-/// spawn refuses to go without, and the level-gap multipliers are nine numbers
-/// (`game_number`).
+/// in the module's head, rounded, 0 for a gap that gives nothing and 0 for a creature
+/// whose Creature2Difficulty row does not exist (Creature2Difficulty 0, which 17,990
+/// Creature2 rows name, has none: kill experience works as the-eldan-experiment's
+/// does, which gives 0 there). The creature was spawned from its Creature2 row, and
+/// the level-gap multipliers are nine numbers (`game_number`).
 fn gain(
   credit credit: Credit,
   player_level player_level: Int,
@@ -112,12 +113,13 @@ fn gain(
     as "the load requires an XpPerLevel row for every level from 1 to the highest"
   let assert Ok(creature) = creature2.get(tables:, id: credit.creature_id)
     as "a creature is spawned from a Creature2 row"
-  let assert Ok(difficulty) =
+  let difficulty =
     creature2_difficulty.get(
       tables:,
       id: creature2.creature2_difficulty_id(creature),
     )
-    as "the spawn is refused without the creature's Creature2Difficulty row"
+    |> result.map(fn(row) { row.cluster_contribution_value_difficulty })
+    |> result.unwrap(or: 0.0)
   let gap = int.clamp(credit.level - player_level, min: -4, max: 4)
   let assert Ok(multiplier) =
     numbers.kill_experience_multipliers |> list.drop(gap + 4) |> list.first
@@ -125,7 +127,7 @@ fn gain(
   float.round(
     int.to_float(row.base_quest_xp_per_level)
     *. numbers.kill_experience_fraction
-    *. difficulty.cluster_contribution_value_difficulty
+    *. difficulty
     *. multiplier,
   )
 }
