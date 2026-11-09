@@ -32,6 +32,7 @@ import genesis_prime/coverage/measurement.{
 }
 import genesis_prime/coverage/sent_message
 import genesis_prime/table/creature2
+import genesis_prime/table/item2
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file.{type Schema}
 import genesis_prime/table/prerequisite
@@ -119,15 +120,21 @@ pub fn a_prerequisite_counts_the_values_of_its_three_type_columns_test() -> Nil 
       ])
     })
   let file = planted_table.bytes(planted_table.table(prerequisite.schema, rows))
-  use folder <- planted_table.in_folder([#("Prerequisite", file)])
+  // The engine also reads the Item2 rows to find the rows an equip check loads;
+  // the planted Item2 table holds none, so every condition is in a row no item names.
+  let no_items = planted_table.bytes(planted_table.table(item2.schema, []))
+  use folder <- planted_table.in_folder([
+    #("Prerequisite", file),
+    #("Item2", no_items),
+  ])
   let assert Ok(tables) =
     store.read(
       from: folder,
-      entries: [prerequisite.entry()],
+      entries: [prerequisite.entry(), item2.entry()],
       requirements: [],
       derivations: [],
     )
-    as "a planted Prerequisite table loads"
+    as "a planted Prerequisite table and an empty Item2 table load"
   let measured =
     measurement.measure(
       EngineDeclaration(
@@ -525,8 +532,8 @@ pub fn the_routing_engine_handles_the_ids_the_rules_and_the_shared_connection_co
     as "the routing engine is measured over the ids the client sends"
   assert breaches == [] as "every handled id is one the client sends"
   assert list.length(list.filter(types, fn(line) { line.status == Handled }))
-    == 38
-    as "the 45 ids above are handled among the 352, and 7 of them (0x3ED, 0x3EC, 0x269, 0x18F, 0x180, 0x570, 0x12B) are handled with a stated gap, so 38 are marked handled without one"
+    == 40
+    as "the 47 ids above are handled among the 352, and 7 of them (0x3ED, 0x3EC, 0x269, 0x18F, 0x180, 0x570, 0x12B) are handled with a stated gap, so 40 are marked handled without one"
 }
 
 pub fn a_handled_type_with_unread_rows_and_no_stated_gap_stops_the_measure_test() -> Nil {
