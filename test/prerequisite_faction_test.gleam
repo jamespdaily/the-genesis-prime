@@ -39,6 +39,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import owned_test
 import prerequisite_support
+import quest_support
 import unitest
 import world_entry_support
 
@@ -84,7 +85,11 @@ pub fn type_243_fails_for_every_subject_comparison_and_value_test() -> Nil {
     with_factions(current: dominion, base: dominion),
     with_factions(current: 0, base: 0),
     without_factions(),
-    prerequisite.of_struck(first: None, second: origin),
+    prerequisite.of_struck(
+      first: None,
+      second: origin,
+      quests: quest_support.log_of(rows: []),
+    ),
     prerequisite.of_difficulty(difficulty: 1),
   ]
   list.each(subjects, fn(subject) {
@@ -201,7 +206,12 @@ pub fn a_unit_with_no_faction_reads_faction_0_in_types_4_and_250_test() -> Nil {
 pub fn a_subject_that_holds_no_factions_leaves_types_4_and_250_not_read_test() -> Nil {
   use <- owned_test.run(5000)
   let origin = Pose(at: Point(x: 0.0, z: 0.0), yaw: 0.0)
-  let struck = prerequisite.of_struck(first: Some(origin), second: origin)
+  let struck =
+    prerequisite.of_struck(
+      first: Some(origin),
+      second: origin,
+      quests: quest_support.log_of(rows: []),
+    )
   list.each(
     [
       without_factions(),
@@ -227,6 +237,7 @@ fn client_row(id id: Int) -> Prerequisite {
       id: PrerequisiteId(id),
       rows: prerequisite.table_rows(tables:),
       arcs: prerequisite.table_arcs(tables:),
+      quests: prerequisite.table_quests(tables:),
     )
     as "the client's table holds the row"
   loaded

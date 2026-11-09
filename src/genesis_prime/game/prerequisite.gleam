@@ -7,10 +7,10 @@
 //// ```
 //// Prerequisite row ─▶ load: the conditions kept up to the first type 0, AND or OR,
 ////                          each nested row (type 11) loaded in place, each type 108
-////                          condition finding its PositionalRequirement row; a cycle
-////                          fails
+////                          condition finding its PositionalRequirement row, each quest
+////                          condition its quest; a cycle fails
 //// a Subject: the casts it is under, in combat, its vitals, its resource slots,
-////            its difficulty, its rolls, where its two units stand
+////            its difficulty, its rolls, where its two units stand, its quest log
 ////                  ─▶ check ─▶ Passes | Fails | NotRead(type)
 //// ```
 ////
@@ -76,6 +76,25 @@
 //// - **Type 179** compares the unit's difficulty with the condition's objectId, not
 ////   its value, by comparisons 1 to 6; only a creature's side holds a difficulty,
 ////   so a subject with none gives `NotRead` (`0x14049eeb0`, `of_difficulty`).
+//// - **Type 6** compares the state of the quest the objectId names, in the quest log of
+////   the player whose client runs the check, with the value: the state the client
+////   derives (`quest_log.state`, `0x1405fbc40`), states 4 to 7 counted as 0, comparison
+////   1 equal and 2 not equal, any other fails. **Type 68** passes, by comparison 1, when
+////   objective `value` of that quest is done and by comparison 2 when it is not
+////   (`quest_log.objective_done`, `0x1405510d0`). **Type 43** passes, by comparison 1,
+////   when that objective is open: the quest is in the active list, the objective is not
+////   done and it is reachable, and by comparison 2 when it is not
+////   (`quest_log.objective_open`, `0x14049f3d0`). **Types 22, 23, 33, 34, 35 and 36**
+////   compare the progress of objective 0, 1, 2, 3, 4 and 5 of that quest with the value
+////   by comparisons 1 to 6, progress on the left (`quest_log.objective_progress`,
+////   `0x14049f4d0`). A quest with no Quest2 row is the client's unknown quest: state 0,
+////   not done, not open, progress 0. Each condition holds its quest, read once at the
+////   load, so a check needs no table; a QuestObjective row a quest names and the table
+////   lacks fails the load. A subject with no quest log gives `NotRead`
+////   (`Prerequisite.prerequisiteTypeId.6`, `.68`, `.43`, `.22`).
+//// - **Type 94** (the target is counted by a checklist objective) passes by comparison
+////   2 and fails every other: the server holds no counted-targets mask yet, so no target
+////   is counted (`Prerequisite.prerequisiteTypeId.94`).
 //// - **A vital the server does not hold** is `NotRead`, as is a type the client
 ////   decides and the server does not read.
 //// - **Type 108** passes, by comparison 1, when the check's second unit stands in the arc
@@ -102,6 +121,9 @@
 
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/lasting
+import genesis_prime/game/quest_log.{
+  type Quest, type QuestLog, type QuestRowError,
+}
 import genesis_prime/message/float32
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4Id, PrerequisiteId, Spell4Id,
@@ -240,6 +262,29 @@ type Condition {
   /// Type 250: whether the unit's base faction equals the value
   /// (`Prerequisite.prerequisiteTypeId.250`, `0x14049c6a0`).
   BaseFaction(comparison: Comparison, value: Int)
+  /// Type 6: the state of the quest against the value
+  /// (`Prerequisite.prerequisiteTypeId.6`, `0x14049f690`). `quest` is none for a quest
+  /// with no Quest2 row, which the client reads as state 0, and for a condition
+  /// decoded without a table (`is_read`).
+  QuestState(comparison: Comparison, value: Int, quest: Option(Quest))
+  /// Type 68: whether the quest's objective `index` is done
+  /// (`Prerequisite.prerequisiteTypeId.68`).
+  ObjectiveDone(comparison: Comparison, index: Int, quest: Option(Quest))
+  /// Type 43: whether the quest's objective `index` is open
+  /// (`Prerequisite.prerequisiteTypeId.43`).
+  ObjectiveOpen(comparison: Comparison, index: Int, quest: Option(Quest))
+  /// Type 94: whether the target is counted by a checklist objective
+  /// (`Prerequisite.prerequisiteTypeId.94`).
+  TargetCounted(comparison: Comparison)
+  /// Types 22, 23, 33, 34, 35 and 36: the progress of the quest's objective `index`
+  /// (0 to 5) against the value (`Prerequisite.prerequisiteTypeId.22`).
+  ObjectiveProgress(
+    prerequisite_type: Int,
+    relation: Relation,
+    index: Int,
+    value: Int,
+    quest: Option(Quest),
+  )
   /// Type 243: never met (`Prerequisite.prerequisiteTypeId.243`, `0x140001ba0`).
   NeverMet
   /// Type 108: whether the second unit stands in the arc around the first unit's
@@ -333,6 +378,10 @@ pub type Subject {
     /// creature's side, so types 4 and 250 are not read for it
     /// (`Prerequisite.prerequisiteTypeId.4`, `.250`).
     factions: Option(Factions),
+    /// The quest log of the player whose client runs the check, which only a player's
+    /// cast rule holds: `None` for a creature's side, so types 6, 68, 43 and 22 to 36
+    /// are not read for it (`Prerequisite.prerequisiteTypeId.6`, `.68`, `.43`, `.22`).
+    quests: Option(QuestLog),
     /// What the check knows of the subject.
     seen: Seen,
   )
@@ -358,12 +407,17 @@ pub type Seen {
 
 /// The subject of a unit the caster struck, for a target-side check (a Proxy's target apply
 /// prerequisite): the struck unit first with the pose its place and facing give in the
-/// caster's picture, `None` when the picture no longer shows it, and the caster second.
+/// caster's picture, `None` when the picture no longer shows it, and the caster second;
+/// the quest log is the caster's, whose client runs the check.
 /// The connection holds none of a creature's casts, combat state or vitals, so the subject
 /// holds none of them either: a condition that reads what else it holds is `NotRead`
 /// (`PlaceOnly`), where an empty `under` would read as "under no cast" and pass a
 /// condition that asks for the absence of one.
-pub fn of_struck(first first: Option(Pose), second second: Pose) -> Subject {
+pub fn of_struck(
+  first first: Option(Pose),
+  second second: Pose,
+  quests quests: QuestLog,
+) -> Subject {
   Subject(
     under: [],
     second_unit: None,
@@ -378,6 +432,7 @@ pub fn of_struck(first first: Option(Pose), second second: Pose) -> Subject {
       None -> NotPlaced
     },
     factions: None,
+    quests: Some(quests),
     seen: PlaceOnly,
   )
 }
@@ -397,6 +452,7 @@ pub fn of_difficulty(difficulty difficulty: Int) -> Subject {
     rolls: [],
     positions: NotPlaced,
     factions: None,
+    quests: None,
     seen: WholeUnit,
   )
 }
@@ -422,6 +478,9 @@ pub type LoadError {
   /// reads an objectId with no row as no arc; no row of the game names one, so the load
   /// refuses it.
   NoPositionalRequirementRow(id: Int)
+  /// A quest a condition names has an objective slot whose QuestObjective row the table
+  /// lacks. No slot of the game's quests does, so the load refuses it.
+  NoQuestObjectiveRow(objective_id: Int)
 }
 
 /// The Prerequisite rows of the loaded tables by id, for `load`.
@@ -440,19 +499,28 @@ pub fn table_arcs(
   }
 }
 
+/// The quests of the loaded tables by Quest2 id, for `load`.
+pub fn table_quests(
+  tables tables: table_store.Tables,
+) -> fn(Int) -> Result(Quest, QuestRowError) {
+  fn(quest_id) { quest_log.quest_of(tables:, id: quest_id) }
+}
+
 /// The prerequisite with this id as the client keeps it (`0x1404a5190`), from the
-/// tables `rows` and `arcs` read, each nested row loaded in place and each type 108
-/// condition holding the arc of its PositionalRequirement row.
+/// tables `rows`, `arcs` and `quests` read, each nested row loaded in place, each type
+/// 108 condition holding the arc of its PositionalRequirement row and each quest
+/// condition its quest.
 pub fn load(
   id id: PrerequisiteId,
   rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
   arcs arcs: fn(Int) ->
     Result(positional_requirement.PositionalRequirement, Nil),
+  quests quests: fn(Int) -> Result(Quest, QuestRowError),
 ) -> Result(Prerequisite, LoadError) {
   use row <- result.try(
     rows(id) |> result.replace_error(NoPrerequisiteRow(id:)),
   )
-  loaded(row:, rows:, arcs:, above: [id])
+  loaded(row:, rows:, arcs:, quests:, above: [id])
 }
 
 /// The PrerequisiteType of a nested prerequisite (`Prerequisite.prerequisiteTypeId.11`),
@@ -466,6 +534,7 @@ fn loaded(
   rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
   arcs arcs: fn(Int) ->
     Result(positional_requirement.PositionalRequirement, Nil),
+  quests quests: fn(Int) -> Result(Quest, QuestRowError),
   above above: List(PrerequisiteId),
 ) -> Result(Prerequisite, LoadError) {
   use conditions <- result.map(
@@ -476,6 +545,7 @@ fn loaded(
           id: PrerequisiteId(condition.2),
           rows:,
           arcs:,
+          quests:,
           above:,
         )
       })
@@ -485,6 +555,7 @@ fn loaded(
         object_id: condition.2,
         value: condition.3,
         arcs:,
+        quests:,
       )
     }),
   )
@@ -499,6 +570,7 @@ fn nested_loaded(
   rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
   arcs arcs: fn(Int) ->
     Result(positional_requirement.PositionalRequirement, Nil),
+  quests quests: fn(Int) -> Result(Quest, QuestRowError),
   above above: List(PrerequisiteId),
 ) -> Result(Condition, LoadError) {
   use <- bool.guard(
@@ -508,7 +580,7 @@ fn nested_loaded(
   case rows(id) {
     Error(Nil) -> Ok(Nested(comparison:, id: id.value, row: None))
     Ok(row) ->
-      loaded(row:, rows:, arcs:, above: [id, ..above])
+      loaded(row:, rows:, arcs:, quests:, above: [id, ..above])
       |> result.map(fn(nested) {
         Nested(comparison:, id: id.value, row: Some(nested))
       })
@@ -554,8 +626,8 @@ pub fn kept_conditions(
   |> list.take_while(fn(condition) { condition.0 != 0 })
 }
 
-/// A condition decoded: type 108 reads its arc through `arcs`, every other type is
-/// `condition_of`.
+/// A condition decoded: type 108 reads its arc through `arcs`, the quest types read
+/// their quest through `quests`, every other type is `condition_of`.
 fn condition_read(
   type_id type_id: Int,
   comparison comparison: Int,
@@ -563,6 +635,7 @@ fn condition_read(
   value value: Int,
   arcs arcs: fn(Int) ->
     Result(positional_requirement.PositionalRequirement, Nil),
+  quests quests: fn(Int) -> Result(Quest, QuestRowError),
 ) -> Result(Condition, LoadError) {
   case type_id {
     108 ->
@@ -570,7 +643,71 @@ fn condition_read(
       |> result.map(fn(arc) {
         InArc(comparison: comparison_of(comparison), arc:)
       })
+    6 | 68 | 43 | 22 | 23 | 33 | 34 | 35 | 36 ->
+      quest_named(object_id:, quests:)
+      |> result.map(fn(quest) {
+        quest_condition(type_id:, comparison:, value:, quest:)
+      })
     _ -> Ok(condition_of(type_id:, comparison:, object_id:, value:))
+  }
+}
+
+/// The quest a condition's objectId names: none when the table has no Quest2 row for
+/// it, which the client reads as an unknown quest (`0x1405a8a40`).
+fn quest_named(
+  object_id object_id: Int,
+  quests quests: fn(Int) -> Result(Quest, QuestRowError),
+) -> Result(Option(Quest), LoadError) {
+  case quests(object_id) {
+    Ok(quest) -> Ok(Some(quest))
+    Error(quest_log.NoQuestRow) -> Ok(None)
+    Error(quest_log.NoObjectiveRow(objective_id:)) ->
+      Error(NoQuestObjectiveRow(objective_id:))
+  }
+}
+
+/// A quest condition (types 6, 68, 43, 22, 23, 33, 34, 35 and 36) of this quest.
+fn quest_condition(
+  type_id type_id: Int,
+  comparison comparison: Int,
+  value value: Int,
+  quest quest: Option(Quest),
+) -> Condition {
+  case type_id {
+    6 -> QuestState(comparison: comparison_of(comparison), value:, quest:)
+    68 ->
+      ObjectiveDone(
+        comparison: comparison_of(comparison),
+        index: unsigned(value),
+        quest:,
+      )
+    43 ->
+      ObjectiveOpen(
+        comparison: comparison_of(comparison),
+        index: unsigned(value),
+        quest:,
+      )
+    _ ->
+      ObjectiveProgress(
+        prerequisite_type: type_id,
+        relation: relation_of(code: comparison),
+        index: progress_index(type_id:),
+        value:,
+        quest:,
+      )
+  }
+}
+
+/// The objective that type 22, 23, 33, 34, 35 or 36 reads (the client's cases 0x16,
+/// 0x17 and 0x21 to 0x24 of `0x1404a2100` pass the index 0 to 5 to `0x14049f4d0`).
+fn progress_index(type_id type_id: Int) -> Int {
+  case type_id {
+    22 -> 0
+    23 -> 1
+    33 -> 2
+    34 -> 3
+    35 -> 4
+    _ -> 5
   }
 }
 
@@ -652,6 +789,9 @@ fn condition_of(
     4 -> CurrentFaction(comparison: comparison_of(comparison), value:)
     250 -> BaseFaction(comparison: comparison_of(comparison), value:)
     243 -> NeverMet
+    94 -> TargetCounted(comparison: comparison_of(comparison))
+    6 | 68 | 43 | 22 | 23 | 33 | 34 | 35 | 36 ->
+      quest_condition(type_id:, comparison:, value:, quest: None)
     _ ->
       case
         type_id < 1
@@ -686,6 +826,11 @@ pub fn is_read(type_id type_id: Int) -> Bool {
     | Difficulty(..)
     | CurrentFaction(..)
     | BaseFaction(..)
+    | QuestState(..)
+    | ObjectiveDone(..)
+    | ObjectiveOpen(..)
+    | TargetCounted(..)
+    | ObjectiveProgress(..)
     | NeverMet
     | InArc(..)
     | NoCase -> True
@@ -717,6 +862,11 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
       | Difficulty(..)
       | CurrentFaction(..)
       | BaseFaction(..)
+      | QuestState(..)
+      | ObjectiveDone(..)
+      | ObjectiveOpen(..)
+      | TargetCounted(..)
+      | ObjectiveProgress(..)
       | NeverMet
       | InArc(..)
       | NoCase
@@ -814,6 +964,11 @@ fn reads_held_state(condition condition: Condition) -> Option(Int) {
     | Difficulty(..)
     | CurrentFaction(..)
     | BaseFaction(..)
+    | QuestState(..)
+    | ObjectiveDone(..)
+    | ObjectiveOpen(..)
+    | TargetCounted(..)
+    | ObjectiveProgress(..)
     | NeverMet
     | InArc(..)
     | NoCase
@@ -937,6 +1092,63 @@ fn condition_decided(
         read: fn(factions) { factions.base },
       ),
     )
+    QuestState(comparison:, value:, quest:) -> #(
+      rolls,
+      with_quest_log(subject:, prerequisite_type: 6, decide: fn(log) {
+        let state = case quest {
+          Some(quest) -> quest_log.state(log:, quest:)
+          None -> 0
+        }
+        // The client counts the states 4 to 7 as 0 (Unknown).
+        let counted = case state > 3 {
+          True -> 0
+          False -> state
+        }
+        case comparison {
+          Found -> verdict_of(counted == unsigned(value))
+          NotFound -> verdict_of(counted != unsigned(value))
+          OtherComparison(..) -> Fails
+        }
+      }),
+    )
+    ObjectiveDone(comparison:, index:, quest:) -> #(
+      rolls,
+      with_quest_log(subject:, prerequisite_type: 68, decide: fn(log) {
+        let done = case quest {
+          Some(quest) -> quest_log.objective_done(log:, quest:, index:)
+          None -> False
+        }
+        asked(comparison:, holds: done)
+      }),
+    )
+    ObjectiveOpen(comparison:, index:, quest:) -> #(
+      rolls,
+      with_quest_log(subject:, prerequisite_type: 43, decide: fn(log) {
+        let open = case quest {
+          Some(quest) -> quest_log.objective_open(log:, quest:, index:)
+          None -> False
+        }
+        asked(comparison:, holds: open)
+      }),
+    )
+    // The gap: the server holds no counted-targets mask yet, so no target is counted,
+    // which passes comparison 2 only. The mask and what sets it belong to the issue
+    // "Checklist objectives progress (objective types 14, 18, 10, 27 and 28)".
+    TargetCounted(comparison:) -> #(rolls, case comparison {
+      Found -> Fails
+      NotFound -> Passes
+      OtherComparison(..) -> Fails
+    })
+    ObjectiveProgress(prerequisite_type:, relation:, index:, value:, quest:) -> #(
+      rolls,
+      with_quest_log(subject:, prerequisite_type:, decide: fn(log) {
+        let progress = case quest {
+          Some(quest) -> quest_log.objective_progress(log:, quest:, index:)
+          None -> 0
+        }
+        verdict_of(compare(relation:, measured: progress, value:))
+      }),
+    )
     NeverMet -> #(rolls, Fails)
     InArc(comparison:, arc:) -> #(
       rolls,
@@ -944,6 +1156,29 @@ fn condition_decided(
     )
     NoCase -> #(rolls, Fails)
     Unread(prerequisite_type:) -> #(rolls, NotRead(prerequisite_type:))
+  }
+}
+
+/// What a quest condition gives from the subject's quest log: `NotRead` of its type when
+/// the subject holds none (a creature's side).
+fn with_quest_log(
+  subject subject: Subject,
+  prerequisite_type prerequisite_type: Int,
+  decide decide: fn(QuestLog) -> Verdict,
+) -> Verdict {
+  case subject.quests {
+    Some(log) -> decide(log)
+    None -> NotRead(prerequisite_type:)
+  }
+}
+
+/// A condition that asks whether something holds: comparison 1 passes when it does, 2
+/// when it does not, any other fails.
+fn asked(comparison comparison: Comparison, holds holds: Bool) -> Verdict {
+  case comparison {
+    Found -> verdict_of(holds)
+    NotFound -> verdict_of(!holds)
+    OtherComparison(..) -> Fails
   }
 }
 

@@ -4,6 +4,7 @@
 import genesis_prime/game/area.{type Pose, Point, Pose}
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite.{type Prerequisite, type Subject, Subject}
+import genesis_prime/game/quest_log.{type Quest, type QuestRowError}
 import genesis_prime/table/id.{PrerequisiteId, Spell4Id}
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite as prerequisite_table
@@ -70,6 +71,12 @@ pub fn load_from(
   load_with_arcs(id:, rows:, arcs: [])
 }
 
+/// The Quest2 lookup of a planted table that holds no quest: every quest is unknown to
+/// the client.
+pub fn no_quests() -> fn(Int) -> Result(Quest, QuestRowError) {
+  fn(_) { Error(quest_log.NoQuestRow) }
+}
+
 /// The same, whose type 108 conditions find their PositionalRequirement rows among
 /// `arcs`, as the client's table holds them (`table_rows -- PositionalRequirement 53`).
 pub fn load_with_arcs(
@@ -77,10 +84,21 @@ pub fn load_with_arcs(
   rows rows: List(prerequisite_table.Prerequisite),
   arcs arcs: List(positional_requirement.PositionalRequirement),
 ) -> Result(Prerequisite, prerequisite.LoadError) {
+  load_with(id:, rows:, arcs:, quests: no_quests())
+}
+
+/// The same, whose quest conditions find their quests through `quests`.
+pub fn load_with(
+  id id: Int,
+  rows rows: List(prerequisite_table.Prerequisite),
+  arcs arcs: List(positional_requirement.PositionalRequirement),
+  quests quests: fn(Int) -> Result(Quest, QuestRowError),
+) -> Result(Prerequisite, prerequisite.LoadError) {
   prerequisite.load(
     id: PrerequisiteId(id),
     rows: fn(wanted) { list.find(rows, fn(row) { row.id == wanted.value }) },
     arcs: fn(wanted) { list.find(arcs, fn(arc) { arc.id == wanted }) },
+    quests:,
   )
 }
 
@@ -165,6 +183,7 @@ pub fn holding(
     resource_slots: None,
     positions: prerequisite.NotPlaced,
     factions: None,
+    quests: None,
     seen: prerequisite.WholeUnit,
   )
 }
