@@ -60,7 +60,10 @@
 #                  world_data is left to the world-data part, the test tagged
 #                  client_rows to the client-suite part, and the tests tagged
 #                  dev_tool (the developer tools' own, run by hand with
-#                  `gleam test -- --tag dev_tool`) are skipped
+#                  `gleam test -- --tag dev_tool`) are skipped. A test that returns
+#                  after more than half its deadline prints a `check WARNING: test`
+#                  line (test/owned_test.gleam), which the summary repeats from this
+#                  part's log and the world-data part's; it never fails the part
 #                                                       (after gleam-build)
 #   world-data     the tests tagged world_data, the whole world database's
 #                  spawn counts, in a VM of its own beside gleam-test (about a
@@ -777,6 +780,13 @@ echo
 if [ -f "$work/literal-area.log" ]; then
   grep -h '^check WARNING: ' "$work/literal-area.log"
 fi
+# A test's warning follows the dots the reporter printed on its line, so it is
+# cut out of the line rather than matched at its start.
+for part in gleam-test world-data; do
+  if [ -f "$work/$part.log" ]; then
+    grep -ho 'check WARNING: test .*' "$work/$part.log"
+  fi
+done
 if [ "$hung" = no ] && [ "$elapsed" -gt "$budget" ]; then
   echo "check WARNING: over its budget, wall time ${elapsed}s, budget ${budget}s"
 fi
