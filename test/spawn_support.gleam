@@ -104,6 +104,37 @@ pub fn loaded_beast() -> Spawn {
   })
 }
 
+/// The spawn numbered `number` of Dorian Walker, standing at `place`: Creature2
+/// 74812, a quest giver and receiver (`questIdGiven00` 10528, `questIdReceive00`
+/// 10520), as the load builds it from the client's committed rows, though the load
+/// leaves it out for its NPC link (`spawn.summoned_unstarted`).
+pub fn dorian_walker(number number: Int, place place: Place) -> Spawn {
+  Spawn(..loaded_dorian(), id: SpawnId(number), place:)
+}
+
+fn loaded_dorian() -> Spawn {
+  database_support.once("spawn_support_loaded_dorian", fn() {
+    let assert Ok(walker) =
+      spawn.summoned_unstarted(
+        checks: summon_checks(),
+        summoned: Summoned(
+          id: SpawnId(-1),
+          creature_id: Creature2Id(74_812),
+          level: option.None,
+          place: place_support.at(
+            world_id: 3460,
+            world_zone_id: warfare_woods,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+          ),
+        ),
+      )
+      as "Dorian Walker passes the summon checks over the client's committed rows"
+    walker
+  })
+}
+
 /// The spawn numbered `number` of a Virtual Defense Dagun, the Dominion Novice's
 /// first enemy, `x` units along the world's x axis: Creature2 73465, faction 1442,
 /// display 26578 of hit radius 2.0, hostile to the Dominion (1442-166 level 0) and

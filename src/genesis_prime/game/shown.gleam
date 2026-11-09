@@ -3,7 +3,7 @@
 //// each unit and nothing the unit's owner decides.
 ////
 //// ```
-//// the creature's 0x262 news ─▶ shown(unit, ShownCreature(Standing(place), life, alive, hit radius, attackable))
+//// the creature's 0x262 news ─▶ shown(unit, ShownCreature(creature id, Standing(place), life, alive, hit radius, attackable))
 //// its CreatureMoved news   ─▶ path changed
 //// its Health and Died news ─▶ alive changed        its 0x355 ─▶ the unit is no longer shown
 //// candidates(picture, faction, caster, now) ─▶ the alive foes at place_at(path, now), as geometry's
@@ -53,6 +53,8 @@ pub type Shown {
   ShownObject
   /// A creature, as its 0x262 news gave it and its 0x638 news moved it.
   ShownCreature(
+    /// The Creature2 row it was created from.
+    creature_id: Int,
     /// Where it stands or runs: standing at the place of its 0x262 until a
     /// CreatureMoved news.
     path: Path,

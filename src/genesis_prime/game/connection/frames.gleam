@@ -39,6 +39,7 @@ import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
+import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
 import genesis_prime/message/unit_float_stat_changed.{UnitFloatStatChanged}
 import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
 import genesis_prime/message/unit_movement.{UnitMovement}
@@ -485,6 +486,15 @@ fn vector_of(place: Place) -> movement_float_vector.MovementFloatVector {
     y: float32.to_bits(start_place.y(place)),
     z: float32.to_bits(start_place.z(place)),
   )
+}
+
+/// 0x357, which opens the dialog of a unit (`opcode.0x357`): the unit's id and the
+/// bit the client's reader needs after it, clear.
+pub fn dialog_open_frame(unit_id unit_id: Int) -> Frame {
+  let assert Ok(body) =
+    unit_dialog_open.encode(UnitDialogOpen(unit_id:, field_2: 0))
+    as "a unit id the player's picture holds fits the message's 32 bits"
+  Frame(message_id: unit_dialog_open.message_id, body:)
 }
 
 /// 0x262 for a creature, as its process built it.

@@ -31,6 +31,7 @@ fn creature(
   alive alive: Bool,
 ) -> shown.Shown {
   ShownCreature(
+    creature_id: 73_464,
     path: creature_path.Standing(at: place_support.at(
       world_id: 3460,
       world_zone_id: 5967,
@@ -136,6 +137,7 @@ fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
       facing: start_place.Facing(yaw: 0.7, pitch: 0.0, roll: 0.0),
     )
   ShownCreature(
+    creature_id: 73_464,
     path: creature_path.Standing(at: place),
     life: 4,
     alive: True,

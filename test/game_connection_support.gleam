@@ -34,6 +34,7 @@ import genesis_prime/login/guid
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason
+import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -597,6 +598,18 @@ pub fn in_world_with_dev_commands() -> game_connection.State {
   ).0
 }
 
+/// The connection in the world, with its burst taken, on these tables.
+pub fn in_world_on(
+  tables tables: store_tables.Tables,
+) -> game_connection.State {
+  entered_from(
+    in_character_select: in_select_from(
+      accepted(Settings(..settings(), tables:)).0,
+    ),
+    character: world_character(),
+  ).0
+}
+
 /// The ask of a `!summon` line of the tests' player: the run of the map that
 /// took the player, 77 (`incarnation`), with the connection's id, the
 /// Creature2 id and the level the line named, if any.
@@ -630,6 +643,19 @@ pub fn world_message(
     message_id: 0x038C,
     body: game_client.world_body(kind: 3, message_id:, body:),
   )
+}
+
+/// The client's 0x07EA of the unit and kind (`interaction_request`), read by the
+/// connection in the world.
+pub fn interaction_requested(
+  state state: game_connection.State,
+  unit_id unit_id: Int,
+  kind kind: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let assert Ok(body) =
+    interaction_request.encode(InteractionRequest(unit_id:, kind:))
+    as "a unit id and a 7-bit kind fit the message"
+  read(state:, bytes: world_message(message_id: 0x07EA, body:))
 }
 
 pub fn move_message(message_id: Int) -> BitArray {

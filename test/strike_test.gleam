@@ -850,6 +850,7 @@ fn creature_at(
   attackable attackable: Attackable,
 ) -> shown.Shown {
   ShownCreature(
+    creature_id: 73_464,
     path: creature_path.Standing(at: place_support.at(
       world_id: 3460,
       world_zone_id: 5967,

@@ -584,6 +584,34 @@ pub fn summoned(
   checks checks: SummonChecks,
   summoned summoned: Summoned,
 ) -> Result(Spawn, SummonRefusal) {
+  use checked <- result.try(checked_summon(checks:, summoned:))
+  let SummonChecks(catalog:, ..) = checks
+  case left_out_of(catalog:, checked:) {
+    Ok(reason) ->
+      Error(WouldNotStart(
+        creature_id: Creature2Id(checked.row.creature_id),
+        reason:,
+      ))
+    Error(Nil) -> Ok(checked.spawn)
+  }
+}
+
+/// The spawn of a summon that passes the client's and the load's checks, whether
+/// or not a stored spawn of it would start (`left_out_of`): for a test that needs
+/// a creature the server does not start, such as a quest giver (an NPC link
+/// leaves it out).
+pub fn summoned_unstarted(
+  checks checks: SummonChecks,
+  summoned summoned: Summoned,
+) -> Result(Spawn, SummonRefusal) {
+  checked_summon(checks:, summoned:)
+  |> result.map(fn(checked) { checked.spawn })
+}
+
+fn checked_summon(
+  checks checks: SummonChecks,
+  summoned summoned: Summoned,
+) -> Result(Checked, SummonRefusal) {
   let SummonChecks(catalog:, formulas:, kinds:) = checks
   let Summoned(id:, creature_id:, level:, place:) = summoned
   use creature <- result.try(
@@ -636,10 +664,7 @@ pub fn summoned(
     load_checks(catalog:, formulas:, kinds:, shared: dict.new(), row:)
     |> result.map_error(FailsTheChecks),
   )
-  case left_out_of(catalog:, checked:) {
-    Ok(reason) -> Error(WouldNotStart(creature_id:, reason:))
-    Error(Nil) -> Ok(checked.spawn)
-  }
+  Ok(checked)
 }
 
 /// A sentence that says why a summon makes no spawn, which the player's system
@@ -1324,6 +1349,64 @@ fn left_out_of(
   }
 }
 
+/// The quests the creature gives and receives, by quest id, in the order of its
+/// Creature2 columns questIdGiven00 to 24 and questIdReceive00 to 24; 0 is an empty
+/// column.
+pub fn quest_ids(row: Creature2) -> List(Int) {
+  [
+    row.quest_id_given00,
+    row.quest_id_given01,
+    row.quest_id_given02,
+    row.quest_id_given03,
+    row.quest_id_given04,
+    row.quest_id_given05,
+    row.quest_id_given06,
+    row.quest_id_given07,
+    row.quest_id_given08,
+    row.quest_id_given09,
+    row.quest_id_given10,
+    row.quest_id_given11,
+    row.quest_id_given12,
+    row.quest_id_given13,
+    row.quest_id_given14,
+    row.quest_id_given15,
+    row.quest_id_given16,
+    row.quest_id_given17,
+    row.quest_id_given18,
+    row.quest_id_given19,
+    row.quest_id_given20,
+    row.quest_id_given21,
+    row.quest_id_given22,
+    row.quest_id_given23,
+    row.quest_id_given24,
+    row.quest_id_receive00,
+    row.quest_id_receive01,
+    row.quest_id_receive02,
+    row.quest_id_receive03,
+    row.quest_id_receive04,
+    row.quest_id_receive05,
+    row.quest_id_receive06,
+    row.quest_id_receive07,
+    row.quest_id_receive08,
+    row.quest_id_receive09,
+    row.quest_id_receive10,
+    row.quest_id_receive11,
+    row.quest_id_receive12,
+    row.quest_id_receive13,
+    row.quest_id_receive14,
+    row.quest_id_receive15,
+    row.quest_id_receive16,
+    row.quest_id_receive17,
+    row.quest_id_receive18,
+    row.quest_id_receive19,
+    row.quest_id_receive20,
+    row.quest_id_receive21,
+    row.quest_id_receive22,
+    row.quest_id_receive23,
+    row.quest_id_receive24,
+  ]
+}
+
 /// Whether the creature gives or receives a quest, trains a class or a
 /// tradeskill, is a tradeskill station, or links to a taxi, a bind point or an
 /// instance portal: the columns the client reads for a unit's services, which wait
@@ -1337,56 +1420,7 @@ fn has_npc_link(row: Creature2) -> Bool {
       row.taxi_node_id,
       row.bind_point_id,
       row.instance_portal_id,
-      row.quest_id_given00,
-      row.quest_id_given01,
-      row.quest_id_given02,
-      row.quest_id_given03,
-      row.quest_id_given04,
-      row.quest_id_given05,
-      row.quest_id_given06,
-      row.quest_id_given07,
-      row.quest_id_given08,
-      row.quest_id_given09,
-      row.quest_id_given10,
-      row.quest_id_given11,
-      row.quest_id_given12,
-      row.quest_id_given13,
-      row.quest_id_given14,
-      row.quest_id_given15,
-      row.quest_id_given16,
-      row.quest_id_given17,
-      row.quest_id_given18,
-      row.quest_id_given19,
-      row.quest_id_given20,
-      row.quest_id_given21,
-      row.quest_id_given22,
-      row.quest_id_given23,
-      row.quest_id_given24,
-      row.quest_id_receive00,
-      row.quest_id_receive01,
-      row.quest_id_receive02,
-      row.quest_id_receive03,
-      row.quest_id_receive04,
-      row.quest_id_receive05,
-      row.quest_id_receive06,
-      row.quest_id_receive07,
-      row.quest_id_receive08,
-      row.quest_id_receive09,
-      row.quest_id_receive10,
-      row.quest_id_receive11,
-      row.quest_id_receive12,
-      row.quest_id_receive13,
-      row.quest_id_receive14,
-      row.quest_id_receive15,
-      row.quest_id_receive16,
-      row.quest_id_receive17,
-      row.quest_id_receive18,
-      row.quest_id_receive19,
-      row.quest_id_receive20,
-      row.quest_id_receive21,
-      row.quest_id_receive22,
-      row.quest_id_receive23,
-      row.quest_id_receive24,
+      ..quest_ids(row)
     ],
     fn(column) { column != 0 },
   )

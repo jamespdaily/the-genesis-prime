@@ -40,6 +40,7 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/path_mission
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite
+import genesis_prime/table/race
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
@@ -97,6 +98,7 @@ import genesis_prime/table/xp_per_level
 ///   damage effects, which the content load reads (genesis_prime/world_map/creature_attack).
 /// - PositionalRequirement: the arc a type 108 prerequisite condition names
 ///   (genesis_prime/game/prerequisite).
+/// - Race: a player's hit radius (genesis_prime/game/hit_radius).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
 /// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
@@ -130,6 +132,7 @@ pub fn entries() -> List(store.Entry) {
     path_mission.entry(),
     positional_requirement.entry(),
     prerequisite.entry(),
+    race.entry(),
     spell4.entry(),
     spell4_aoe_target_constraints.entry(),
     spell4_base.entry(),

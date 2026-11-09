@@ -8,7 +8,7 @@
 ////                                                 ─▶ Hello, CharacterSelect(message), WorldEntry or WorldMessage
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
 ////                                                 ─▶ Movement(message), Camp(message), Chat(message), Cast(message),
-////                                                    Life(message), Innate(message) or Dropped(message)
+////                                                    Life(message), Innate(message), Interaction(message) or Dropped(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
 ////
@@ -36,6 +36,7 @@ import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/dropped
 import genesis_prime/game/innate_choice
+import genesis_prime/game/interaction
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/message/ability_hold
@@ -49,6 +50,7 @@ import genesis_prime/message/client_option
 import genesis_prime/message/create_character_carrier
 import genesis_prime/message/credd_exchange_request
 import genesis_prime/message/delete_character
+import genesis_prime/message/dialog_responses_shown
 import genesis_prime/message/fall_value
 import genesis_prime/message/fell_below_floor
 import genesis_prime/message/frame_time_report
@@ -56,6 +58,7 @@ import genesis_prime/message/game_hello_reply
 import genesis_prime/message/graphics_report
 import genesis_prime/message/innate_index_chosen
 import genesis_prime/message/input_key_set_request
+import genesis_prime/message/interaction_request
 import genesis_prime/message/move_speed_setting
 import genesis_prime/message/movement_send_interval_answer
 import genesis_prime/message/network_report
@@ -100,6 +103,9 @@ pub type Feature {
   Life(message: player_life.Message)
   /// The player's choice of an innate (genesis_prime/game/innate_choice).
   Innate(message: innate_choice.Message)
+  /// The player's request to talk to a unit, and the client's note that a dialog
+  /// it opened has responses (genesis_prime/game/interaction).
+  Interaction(message: interaction.Message)
   /// A report or request taken and dropped (genesis_prime/game/dropped).
   Dropped(message: dropped.Message)
 }
@@ -255,6 +261,18 @@ const table = [
     innate_index_chosen.message_id,
     InsideWorldMessage,
     Innate(innate_choice.IndexChosen),
+    [AtWorld],
+  ),
+  Row(
+    interaction_request.message_id,
+    InsideWorldMessage,
+    Interaction(interaction.Requested),
+    [AtWorld],
+  ),
+  Row(
+    dialog_responses_shown.message_id,
+    InsideWorldMessage,
+    Interaction(interaction.ResponsesShown),
     [AtWorld],
   ),
   Row(

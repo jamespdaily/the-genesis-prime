@@ -36,7 +36,7 @@ import owned_test
 import planted_table
 import simplifile
 
-pub fn the_servers_tables_are_the_forty_seven_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_the_forty_eight_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
@@ -72,6 +72,7 @@ pub fn the_servers_tables_are_the_forty_seven_its_rules_read_test() -> Nil {
       "PathMission",
       "PositionalRequirement",
       "Prerequisite",
+      "Race",
       "Spell4",
       "Spell4AoeTargetConstraints",
       "Spell4Base",
@@ -91,7 +92,7 @@ pub fn the_servers_tables_are_the_forty_seven_its_rules_read_test() -> Nil {
       "WorldZone",
       "XpPerLevel",
     ]
-    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, what it is drawn with, abilities and health, the stages of an ability's taps and charge levels, the spell groups and stack groups of the spells that last on a unit, whether an ability's caster may be dead (Spell4.spell4ConditionsIdCaster), the training creatures' rows, what each spell strikes, the hit rule's formulas and bases, the prerequisites that gate a spell's resource gains, a Proxy's child and a creature attack's effects, and the arcs a position condition names"
+    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, what it is drawn with, abilities and health, the stages of an ability's taps and charge levels, the spell groups and stack groups of the spells that last on a unit, whether an ability's caster may be dead (Spell4.spell4ConditionsIdCaster), the training creatures' rows, what each spell strikes, the hit rule's formulas and bases, the prerequisites that gate a spell's resource gains, a Proxy's child and a creature attack's effects, the arcs a position condition names, and the hit radius of each playable race (Race.hitRadius)"
 }
 
 /// Runs a function of this module in a fresh node, which must return.

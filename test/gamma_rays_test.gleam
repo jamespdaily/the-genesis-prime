@@ -73,6 +73,7 @@ fn striker_hit_radius() -> Float {
 
 fn striker_at(x x: Float, z z: Float) -> shown.Shown {
   ShownCreature(
+    creature_id: 73_464,
     path: creature_path.Standing(at: place_support.at(
       world_id: 3460,
       world_zone_id: 5967,

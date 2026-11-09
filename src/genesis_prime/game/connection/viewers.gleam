@@ -370,6 +370,7 @@ pub fn viewer_takes(
           _,
           unit_id,
           ShownCreature(
+            creature_id: unit.creature_id,
             path: creature_path.Standing(at: place),
             life:,
             alive: creature_unit.health_of(unit:) > 0,

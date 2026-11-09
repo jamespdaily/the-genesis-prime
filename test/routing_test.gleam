@@ -22,6 +22,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/character_select
 import genesis_prime/game/dropped
 import genesis_prime/game/innate_choice
+import genesis_prime/game/interaction
 import genesis_prime/game/movement
 import genesis_prime/game/routing.{
   AtCharacterSelect, AtWorld, BeforeHelloReply, InsideWorldMessage, OnItsOwn,
@@ -135,6 +136,7 @@ pub fn the_connection_imports_no_message_only_a_feature_decodes_test() -> Nil {
     "src/genesis_prime/game/connection/dropped.gleam",
     "src/genesis_prime/game/connection/effects.gleam",
     "src/genesis_prime/game/connection/frames.gleam",
+    "src/genesis_prime/game/connection/interaction.gleam",
     "src/genesis_prime/game/connection/life.gleam",
     "src/genesis_prime/game/connection/login.gleam",
     "src/genesis_prime/game/connection/movement.gleam",
@@ -151,7 +153,8 @@ pub fn the_connection_imports_no_message_only_a_feature_decodes_test() -> Nil {
       "move_speed_setting", "terrain_loaded", "fall_value", "fell_below_floor",
       "camp_request", "camp_finished", "camp_countdown",
       "character_select_start", "create_character_carrier", "delete_character",
-      "rename_character", "play_character",
+      "rename_character", "play_character", "interaction_request",
+      "dialog_responses_shown",
     ],
     fn(name) {
       assert !list.contains(imported, "genesis_prime/message/" <> name)
@@ -195,6 +198,34 @@ pub fn the_innate_choice_is_a_row_taken_inside_0x038c_with_the_player_in_the_wor
     as "it is not taken in character select"
   assert routing.route(AtWorld, OnItsOwn, 0x016F) == Error(Nil)
     as "it is not taken outside 0x038C"
+}
+
+const interaction_rows = [
+  #(0x07EA, interaction.Requested),
+  #(0x0356, interaction.ResponsesShown),
+]
+
+pub fn interaction_messages_route_to_interaction_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(interaction_rows, fn(row) {
+    let #(id, message) = row
+    let label = "0x" <> int.to_base16(id)
+    assert routing.route(AtWorld, InsideWorldMessage, id)
+      == Ok(routing.Interaction(message:))
+      as {
+        label
+        <> " is an interaction row inside 0x038C in the world (opcode.0x7ea, opcode.0x356: the client sends both through SendWorldMessage)"
+      }
+    assert routing.route(AtCharacterSelect, InsideWorldMessage, id)
+      == Error(Nil)
+      as { label <> " is not taken in character select" }
+    assert routing.route(BeforeHelloReply, InsideWorldMessage, id) == Error(Nil)
+      as { label <> " is not taken before the hello reply" }
+    list.each(stages, fn(stage) {
+      assert routing.route(stage, OnItsOwn, id) == Error(Nil)
+        as { label <> " is not taken outside 0x038C" }
+    })
+  })
 }
 
 const dropped_world_rows = [

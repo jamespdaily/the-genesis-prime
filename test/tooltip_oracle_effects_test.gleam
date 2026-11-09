@@ -970,6 +970,7 @@ fn selected(
 /// A foe a player of either faction may attack, standing still at the depth.
 fn foe_at(z z: Float) -> shown.Shown {
   shown.ShownCreature(
+    creature_id: 73_464,
     path: creature_path.Standing(at: place_support.at(
       world_id: 3460,
       world_zone_id: 5967,

@@ -25,6 +25,7 @@ import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_carrier.{CreateCharacterCarrier}
 import genesis_prime/message/credd_exchange_request.{CreddExchangeRequest}
 import genesis_prime/message/delete_character.{DeleteCharacter}
+import genesis_prime/message/dialog_responses_shown.{DialogResponsesShown}
 import genesis_prime/message/fall_value.{FallValue}
 import genesis_prime/message/fell_below_floor.{FellBelowFloor}
 import genesis_prime/message/frame_time_report.{FrameTimeReport}
@@ -32,6 +33,7 @@ import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/graphics_report.{GraphicsReport}
 import genesis_prime/message/innate_index_chosen.{InnateIndexChosen}
 import genesis_prime/message/input_key_set_request.{InputKeySetRequest}
+import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/login_request.{LoginRequest}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
 import genesis_prime/message/movement_command
@@ -433,6 +435,17 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       client_message.InputKeySetRequest(message: InputKeySetRequest(
         key_set_id: 0x0123_4567_89AB,
       )),
+    ),
+    #(
+      0x07EA,
+      client_message.InteractionRequest(message: InteractionRequest(
+        unit_id: 0x0001_2345,
+        kind: 37,
+      )),
+    ),
+    #(
+      0x0356,
+      client_message.DialogResponsesShown(message: DialogResponsesShown),
     ),
   ]
 }
