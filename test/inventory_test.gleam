@@ -43,8 +43,8 @@ import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/equip_requirement.{type Wearer, Wearer}
 import genesis_prime/game/inventory.{
-  type Effect, type Moving, type Taken, Asks, DeleteAsked, Log, MoveAsked,
-  NoItemRow, NotDecoded, Refused, Send, SplitAsked,
+  type Effect, type Moving, type Taken, Asks, DeleteAsked, EquipCheckBroken, Log,
+  MoveAsked, NoItemRow, NotDecoded, Refused, Send, SplitAsked,
 }
 import genesis_prime/game/player_life.{type Life}
 import genesis_prime/message/item_action_failed.{ItemActionFailed}
@@ -63,6 +63,9 @@ import genesis_prime/store.{
   ItemsNotSaved, ItemsSaved, MergeItems, MoveItems, SaveRefused, SplitItem,
 }
 import genesis_prime/table/id.{Item2Id}
+import genesis_prime/table/loader/derivation
+import genesis_prime/table/loader/server_table
+import genesis_prime/table/loader/store as table_store
 import gleam/list
 import gleam/option.{Some}
 import gleam/set
@@ -468,7 +471,10 @@ pub fn a_held_item_with_no_item_row_ends_the_move_as_a_bug_test() -> Nil {
 fn is_ask(result: Result(Taken, inventory.Refusal)) -> Bool {
   case result {
     Ok(Asks(..)) -> True
-    Ok(Refused(..)) | Error(NotDecoded(..)) | Error(NoItemRow(..)) -> False
+    Ok(Refused(..))
+    | Error(NotDecoded(..))
+    | Error(NoItemRow(..))
+    | Error(EquipCheckBroken(..)) -> False
   }
 }
 
@@ -1071,6 +1077,47 @@ pub fn gear_the_character_cannot_wear_is_refused_with_its_code_test() -> Nil {
       }
     }
   })
+}
+
+/// The fixture's tables with one row of a table gone and no requirement checked,
+/// which the server's own load would refuse: the tables an equip check meets only
+/// when the load is wrong.
+fn tables_without(table table: String, id id: Int) -> table_store.Tables {
+  let assert Ok(rows) =
+    fixture_tables.remove(rows: fixture_tables.rows(), table:, id:)
+    as "the fixture holds the row"
+  let assert Ok(tables) =
+    fixture_tables.edited(
+      rows:,
+      entries: server_table.entries(),
+      requirements: [],
+      derivations: derivation.all(),
+    )
+    as "the tables load with no requirement checked"
+  tables
+}
+
+pub fn a_prerequisite_row_the_tables_lack_ends_the_move_and_the_log_names_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 77689 is worn at the head slot (bag index 2) and names prerequisite 39240; the
+  // tables here lack that row, which the load refuses, so the move ends as the
+  // server's own state broken. The description names the row that is missing, not
+  // the item's own row, which the tables hold.
+  let assert Error(refusal) =
+    inventory.take(
+      items: with_spare(77_689),
+      life: alive(),
+      tables: tables_without(table: "Prerequisite", id: 39_240),
+      wearer: equip_requirement_support.engineer(),
+      message: MoveAsked,
+      body: move_body(from: #(1, 1), to: #(0, 2)),
+    )
+    as "a prerequisite the tables lack ends the move, it is not refused with a code"
+  let description = inventory.describe(refusal:)
+  assert string.contains(description, "Item2 77689")
+    as "the description names the item"
+  assert string.contains(description, "the table Prerequisite has no row 39240")
+    as "and the table and the row the check could not read"
 }
 
 pub fn a_swap_checks_the_other_item_against_the_source_slot_test() -> Nil {

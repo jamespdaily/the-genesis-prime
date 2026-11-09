@@ -43,7 +43,7 @@
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
   GameFormulaId, Item2CategoryId, Item2FamilyId, Item2Id, Item2TypeId,
-  ItemProficiencyId, ItemSlotId, ItemSpecialId,
+  ItemProficiencyId, ItemSlotId, ItemSpecialId, PrerequisiteId,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/item2_category
@@ -53,6 +53,7 @@ import genesis_prime/table/item_proficiency
 import genesis_prime/table/item_slot
 import genesis_prime/table/item_special
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/bool
 import gleam/float
 import gleam/int
@@ -463,6 +464,63 @@ pub fn equip_requirements(
       False -> item.required_level
     },
   )
+}
+
+/// The load's checks that the rows an item's equip check reads exist, so a
+/// table without them fails the server's start and not a player's equip: the
+/// Prerequisite row of each Item2 and ItemSpecial that names one, and the
+/// ItemSpecial row of each Item2 that names one (CheckEquipRequirements
+/// 0x1403b4710 reads all three; an id of 0 names none).
+pub fn requirements() -> List(table_store.Requirement) {
+  [
+    table_store.Requirement(
+      from_table: "Item2",
+      column: "prerequisiteId",
+      to_table: "Prerequisite",
+      missing: fn(tables) {
+        item2.all(tables)
+        |> list.map(fn(item) { item.prerequisite_id })
+        |> missing_prerequisites(tables:)
+      },
+    ),
+    table_store.Requirement(
+      from_table: "Item2",
+      column: "itemSpecialId00",
+      to_table: "ItemSpecial",
+      missing: fn(tables) {
+        item2.all(tables)
+        |> list.map(fn(item) { item.item_special_id00 })
+        |> list.filter(fn(special_id) {
+          special_id != 0
+          && result.is_error(item_special.get(
+            tables:,
+            id: ItemSpecialId(special_id),
+          ))
+        })
+      },
+    ),
+    table_store.Requirement(
+      from_table: "ItemSpecial",
+      column: "prerequisiteIdGeneric00",
+      to_table: "Prerequisite",
+      missing: fn(tables) {
+        item_special.all(tables)
+        |> list.map(fn(special) { special.prerequisite_id_generic00 })
+        |> missing_prerequisites(tables:)
+      },
+    ),
+  ]
+}
+
+/// The ids of these that name a Prerequisite row the tables lack; 0 names none.
+fn missing_prerequisites(
+  ids ids: List(Int),
+  tables tables: table_store.Tables,
+) -> List(Int) {
+  list.filter(ids, fn(id) {
+    id != 0
+    && result.is_error(prerequisite_table.get(tables:, id: PrerequisiteId(id)))
+  })
 }
 
 /// The most the item's stack holds, for an item that stacks: Item2.maxStackCount

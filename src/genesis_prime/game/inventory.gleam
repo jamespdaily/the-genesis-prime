@@ -197,6 +197,10 @@ pub type Refusal {
   /// A held item whose slot the tables cannot give: the server holds an item the
   /// client's tables have no row for, which is the server's own state broken.
   NoItemRow(item2_id: Item2Id)
+  /// A held item whose equip check cannot read a row of the tables, the row's
+  /// table and id in the error: the load requires these rows, so the server's own
+  /// state is broken.
+  EquipCheckBroken(item2_id: Item2Id, error: equip_requirement.CheckError)
 }
 
 /// Why a move does not pass the checks: the code of the check it breaks, which
@@ -299,14 +303,21 @@ fn refused_with(
   item item: Result(HeldItem, Nil),
   code code: Int,
 ) -> Result(Taken, Refusal) {
-  Ok(
-    Refused([
-      Send(failed(
-        guid: result.map(item, fn(item) { item.item_guid }) |> result.unwrap(0),
-        code:,
-      )),
-    ]),
-  )
+  Ok(Refused(refusal_effects(item:, code:)))
+}
+
+/// The effects of a refusal: the 0x56A with the code, naming the item the player
+/// named.
+fn refusal_effects(
+  item item: Result(HeldItem, Nil),
+  code code: Int,
+) -> List(Effect) {
+  [
+    Send(failed(
+      guid: result.map(item, fn(item) { item.item_guid }) |> result.unwrap(0),
+      code:,
+    )),
+  ]
 }
 
 /// What a 0x017D is answered with: the first of the split's checks it breaks
@@ -468,11 +479,10 @@ fn take_move(
               <> int.to_string(prerequisite_type)
               <> ", which the server does not read, so it is refused with the client's code 144",
           ),
-          Send(failed(
-            guid: result.map(source, fn(item) { item.item_guid })
-              |> result.unwrap(0),
+          ..refusal_effects(
+            item: source,
             code: equip_requirement.prerequisite_failed,
-          )),
+          )
         ]),
       )
     Ok(item) ->
@@ -693,7 +703,8 @@ fn wearable_at(
     return: Error(Code(not_valid_for_slot)),
   )
   case equip_requirement.check(tables:, item2_id: item.item2_id, wearer:) {
-    Error(_) -> Error(broken)
+    Error(error) ->
+      Error(Broken(EquipCheckBroken(item2_id: item.item2_id, error:)))
     Ok(equip_requirement.Wearable) -> Ok(Nil)
     Ok(equip_requirement.Refused(code:)) -> Error(Code(code))
     Ok(equip_requirement.PrerequisiteNotRead(prerequisite_type:)) ->
@@ -1006,5 +1017,10 @@ pub fn describe(refusal refusal: Refusal) -> String {
     NoItemRow(item2_id:) ->
       "a held item has no row in the client's tables for its slot: Item2 "
       <> int.to_string(item2_id.value)
+    EquipCheckBroken(item2_id:, error:) ->
+      "the equip check of Item2 "
+      <> int.to_string(item2_id.value)
+      <> " cannot read the tables: "
+      <> equip_requirement.describe(error:)
   }
 }

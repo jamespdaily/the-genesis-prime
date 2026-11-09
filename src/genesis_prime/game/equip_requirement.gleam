@@ -33,6 +33,7 @@ import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/result
+import gleam/string
 
 /// Item_WrongRace.
 const wrong_race = 39
@@ -86,6 +87,26 @@ pub type CheckError {
   NoItemProperties(error: item_property.ItemPropertyError)
   /// A prerequisite the item names does not load.
   PrerequisiteNotLoaded(id: Int, error: prerequisite.LoadError)
+}
+
+/// A sentence that says which row the check could not read, for the log.
+pub fn describe(error error: CheckError) -> String {
+  case error {
+    NoItemProperties(error:) -> item_property.describe(error:)
+    PrerequisiteNotLoaded(error:, ..) ->
+      case error {
+        prerequisite.NoPrerequisiteRow(id:) ->
+          "the table Prerequisite has no row " <> int.to_string(id.value)
+        prerequisite.PrerequisiteCycle(path:) ->
+          "Prerequisite rows nest each other: "
+          <> string.join(
+            list.map(path, fn(id) { int.to_string(id.value) }),
+            with: " > ",
+          )
+        prerequisite.NoPositionalRequirementRow(id:) ->
+          "the table PositionalRequirement has no row " <> int.to_string(id)
+      }
+  }
 }
 
 /// Whether the wearer may wear the item. Only a table with no row for the item

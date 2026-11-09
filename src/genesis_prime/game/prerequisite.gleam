@@ -719,6 +719,11 @@ fn condition_of(
   }
 }
 
+/// The types of the conditions on the wearer's own gender and world, which only
+/// the equip check gives its subject: a cast has neither, so such a condition in
+/// a cast's prerequisite is not decided.
+pub const wearer_only_types = [10, 109]
+
 /// Whether the server decides a condition of this PrerequisiteType: the types it
 /// reads and the types the client's check has no case for, which fail
 /// (`0x1404a2100`). The coverage measure's "handled".
