@@ -8,7 +8,7 @@
 ////                                                 ─▶ Hello, CharacterSelect(message), WorldEntry or WorldMessage
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
 ////                                                 ─▶ Movement(message), Camp(message), Chat(message), Cast(message),
-////                                                    Life(message) or Innate(message)
+////                                                    Life(message), Innate(message) or Dropped(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
 ////
@@ -25,11 +25,16 @@
 ////   in the world (opcode.0x38c); the player's movement and camp messages are
 ////   taken from inside it with the player in the world, and any other is
 ////   unhandled.
+//// - **The dropped messages** (genesis_prime/game/dropped) are taken and
+////   answered with nothing: the reports and requests inside 0x038C with the
+////   player in the world, and 0x241 on its own in character select and in the
+////   world.
 
 import genesis_prime/game/camp
 import genesis_prime/game/cast
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
+import genesis_prime/game/dropped
 import genesis_prime/game/innate_choice
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
@@ -40,20 +45,33 @@ import genesis_prime/message/cancel_cast
 import genesis_prime/message/cast_ability
 import genesis_prime/message/character_select_start
 import genesis_prime/message/choose_resurrection
+import genesis_prime/message/client_option
 import genesis_prime/message/create_character_carrier
+import genesis_prime/message/credd_exchange_request
 import genesis_prime/message/delete_character
 import genesis_prime/message/fall_value
 import genesis_prime/message/fell_below_floor
+import genesis_prime/message/frame_time_report
 import genesis_prime/message/game_hello_reply
+import genesis_prime/message/graphics_report
 import genesis_prime/message/innate_index_chosen
+import genesis_prime/message/input_key_set_request
 import genesis_prime/message/move_speed_setting
 import genesis_prime/message/movement_send_interval_answer
+import genesis_prime/message/network_report
+import genesis_prime/message/own_auctions_request
+import genesis_prime/message/own_commodity_orders_request
 import genesis_prime/message/play_character
 import genesis_prime/message/player_movement
+import genesis_prime/message/pre_game_activity
 import genesis_prime/message/rename_character
+import genesis_prime/message/scanbot_request
 import genesis_prime/message/send_chat_line
 import genesis_prime/message/send_whisper
 import genesis_prime/message/terrain_loaded
+import genesis_prime/message/trade_cancel
+import genesis_prime/message/watchdog_report
+import genesis_prime/message/window_opened
 import genesis_prime/message/world_message
 import genesis_prime/message/world_zone_changed
 import gleam/list
@@ -82,6 +100,8 @@ pub type Feature {
   Life(message: player_life.Message)
   /// The player's choice of an innate (genesis_prime/game/innate_choice).
   Innate(message: innate_choice.Message)
+  /// A report or request taken and dropped (genesis_prime/game/dropped).
+  Dropped(message: dropped.Message)
 }
 
 /// Where the connection is when it takes a message.
@@ -248,6 +268,84 @@ const table = [
     InsideWorldMessage,
     Camp(camp.CampOver),
     [AtWorld],
+  ),
+  Row(
+    watchdog_report.message_id,
+    InsideWorldMessage,
+    Dropped(dropped.WatchdogReport),
+    [AtWorld],
+  ),
+  Row(
+    frame_time_report.message_id,
+    InsideWorldMessage,
+    Dropped(dropped.FrameTimeReport),
+    [AtWorld],
+  ),
+  Row(
+    network_report.message_id,
+    InsideWorldMessage,
+    Dropped(dropped.NetworkReport),
+    [AtWorld],
+  ),
+  Row(
+    graphics_report.message_id,
+    InsideWorldMessage,
+    Dropped(dropped.GraphicsReport),
+    [AtWorld],
+  ),
+  Row(
+    window_opened.message_id,
+    InsideWorldMessage,
+    Dropped(dropped.WindowOpened),
+    [AtWorld],
+  ),
+  Row(
+    client_option.message_id,
+    InsideWorldMessage,
+    Dropped(dropped.ClientOption),
+    [AtWorld],
+  ),
+  Row(
+    scanbot_request.message_id,
+    InsideWorldMessage,
+    Dropped(dropped.ScanbotRequest),
+    [AtWorld],
+  ),
+  Row(
+    own_auctions_request.message_id,
+    InsideWorldMessage,
+    Dropped(dropped.OwnAuctionsRequest),
+    [AtWorld],
+  ),
+  Row(
+    own_commodity_orders_request.message_id,
+    InsideWorldMessage,
+    Dropped(dropped.OwnCommodityOrdersRequest),
+    [AtWorld],
+  ),
+  Row(
+    credd_exchange_request.message_id,
+    InsideWorldMessage,
+    Dropped(dropped.CreddExchangeRequest),
+    [AtWorld],
+  ),
+  Row(
+    trade_cancel.message_id,
+    InsideWorldMessage,
+    Dropped(dropped.TradeCancel),
+    [AtWorld],
+  ),
+  Row(
+    input_key_set_request.message_id,
+    InsideWorldMessage,
+    Dropped(dropped.InputKeySetRequest),
+    [AtWorld],
+  ),
+  Row(
+    pre_game_activity.message_id,
+    OnItsOwn,
+    Dropped(dropped.PreGameActivity),
+    [AtCharacterSelect, AtWorld],
   ),
 ]
 
