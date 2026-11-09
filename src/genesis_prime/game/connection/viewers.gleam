@@ -147,6 +147,7 @@ import genesis_prime/step.{
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
+import genesis_prime/world_map/static_object
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/bool
@@ -227,22 +228,32 @@ pub fn map_sent(
     map.ObjectsSeen(units:) -> {
       let #(refused, named) =
         list.partition(units, fn(unit) {
-          names_own_unit(entered:, unit_id: unit.unit_id)
+          names_own_unit(
+            entered:,
+            unit_id: static_object.unit_id(created: unit),
+          )
         })
       let fresh =
         list.filter(named, fn(unit) {
-          !dict.has_key(entered.shown, unit.unit_id)
-          && !set.contains(entered.gone, unit.unit_id)
+          !dict.has_key(entered.shown, static_object.unit_id(created: unit))
+          && !set.contains(entered.gone, static_object.unit_id(created: unit))
         })
       Continue(
         shown_changed(session:, change: fn(picture) {
           list.fold(fresh, picture, fn(picture, unit) {
-            dict.insert(picture, unit.unit_id, ShownObject)
+            dict.insert(
+              picture,
+              static_object.unit_id(created: unit),
+              ShownObject,
+            )
           })
         }),
         list.append(
           list.map(refused, fn(unit) {
-            refusal_logged(session:, unit_id: unit.unit_id)
+            refusal_logged(
+              session:,
+              unit_id: static_object.unit_id(created: unit),
+            )
           }),
           list.map(fresh, fn(unit) {
             connection_state.to_client(

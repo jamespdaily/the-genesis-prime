@@ -1,7 +1,8 @@
-//// A static object: a world database spawn of unit type 10 (Simple), 11
-//// (Platform) or 32 (SimpleCollidable), which the client draws from a Creature2
-//// row and a display and places where its 0x262 says, and nothing more: it has
-//// no process, no fight and no use. The map owns these units
+//// A static object: a world database spawn of unit type 4 (Door), 8
+//// (Collectible), 10 (Simple), 11 (Platform), 12 (Mailbox), 13 (Turret), 14
+//// (InstancePortal) or 32 (SimpleCollidable), which the client draws from a
+//// Creature2 row and a display and places where its 0x262 says, and nothing
+//// more: it has no process, no fight and no use. The map owns these units
 //// (genesis_prime/world_map/map): it decides who sees each and tells the
 //// player's connection, which writes the 0x262 this module builds and the 0x355.
 ////
@@ -10,14 +11,18 @@
 //// map: a player comes into sight ─▶ create(object, unit id, server time) ─▶ ObjectsSeen
 //// ```
 ////
-//// - **Type data** as a creature's: the Creature2 id and the spawn's quest
-////   checklist index (`0x140095fb0`, opcode.0x262.simple).
-//// - **Health and level:** types 10 and 11 send stat 0 and stat 10 only as the
-////   spawn records them, since the client never creates them dead (the trace's
-////   field table, `0x140457a53`); type 32 sends both always, as a creature's
+//// - **Type data**, by the unit type's reader (`opcode.0x262.type_data`): types 8,
+////   10, 11, 13 and 32 the Creature2 id and the spawn's quest checklist index, as
+////   a creature's (`0x140095fb0`, opcode.0x262.simple); types 4 and 12 the
+////   Creature2 id alone (`0x140080d30`); type 14 the id and a time left of 0
+////   (`0x140095ed0`, `opcode.0x262.portal_time`).
+//// - **Health and level:** types 4, 8, 10, 11, 12 and 14 send stat 0 and stat 10
+////   only as the spawn records them, since the client never creates them dead
+////   (`0x140457bc5`); types 13 and 32 send both always, as a creature's
 ////   (genesis_prime/world_map/spawn): the recorded stats, else the creature's
-////   `minLevel` and its Base Health at the level. A type 32 object with health 0
-////   is created dead, so the load leaves one out (opcode.0x262.simple).
+////   `minLevel` and its Base Health at the level. A type 13 or 32 object with
+////   health 0 is created dead, so the load leaves one out (`0x140457bc5`,
+////   opcode.0x262.simple).
 //// - **Place:** a kind 2 and a kind 14 command at the spawn's position and facing
 ////   (`player_unit.standing`, opcode.0x262.creature).
 //// - **Factions** as the spawn records them, 0 included: drawing an object reads
@@ -29,6 +34,15 @@
 
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/static_unit_type
+import genesis_prime/message/unit_create_door.{
+  type UnitCreateDoor, UnitCreateDoor,
+}
+import genesis_prime/message/unit_create_mailbox.{
+  type UnitCreateMailbox, UnitCreateMailbox,
+}
+import genesis_prime/message/unit_create_portal.{
+  type UnitCreatePortal, UnitCreatePortal,
+}
 import genesis_prime/message/unit_create_static.{
   type UnitCreateStatic, UnitCreateStatic,
 }
@@ -36,16 +50,27 @@ import genesis_prime/table/id.{type Creature2Id, Creature2Id}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/unit_fields.{type HealthSource}
+import gleam/list
 import gleam/option.{type Option}
 
 /// The unit type of a static object, as message 0x262 numbers it
-/// (`0x140649e20`, `world_data.entity_type`): only these three are static
+/// (`0x140649e20`, `world_data.entity_type`): only these eight are static
 /// objects, so no other type can be one.
 pub type UnitType {
+  /// Type 4: a door, drawn from its Creature2 row alone.
+  Door
+  /// Type 8: something a player collects.
+  Collectible
   /// Type 10: drawn, and walked through (`0x14038d520` is not set for it).
   Simple
   /// Type 11: drawn and stood on.
   Platform
+  /// Type 12: a mailbox, drawn from its Creature2 row alone.
+  Mailbox
+  /// Type 13: a turret, created dead with health 0.
+  Turret
+  /// Type 14: an instance portal, drawn with a time left.
+  InstancePortal
   /// Type 32: drawn and solid, and created dead with health 0.
   SimpleCollidable
 }
@@ -96,23 +121,54 @@ pub type Health {
 /// `Error(Nil)` for a type that is not one.
 pub fn unit_type_of(entity_type entity_type: Int) -> Result(UnitType, Nil) {
   case static_unit_type.from_value(entity_type) {
+    static_unit_type.Collectible -> Ok(Collectible)
     static_unit_type.Simple -> Ok(Simple)
     static_unit_type.Platform -> Ok(Platform)
+    static_unit_type.Turret -> Ok(Turret)
     static_unit_type.SimpleCollidable -> Ok(SimpleCollidable)
-    static_unit_type.Other(_) -> Error(Nil)
+    static_unit_type.Other(number) ->
+      list.find([Door, Mailbox, InstancePortal], fn(unit_type) {
+        type_number(unit_type:) == number
+      })
   }
 }
 
-/// The 0x262's number of the type: 10, 11 or 32.
+/// The 0x262's number of the type: 4, 8, 10, 11, 12, 13, 14 or 32.
 pub fn type_number(unit_type unit_type: UnitType) -> Int {
-  static_unit_type.to_value(wire_type(unit_type))
+  case unit_type {
+    Door -> 4
+    Collectible -> static_unit_type.to_value(static_unit_type.Collectible)
+    Simple -> static_unit_type.to_value(static_unit_type.Simple)
+    Platform -> static_unit_type.to_value(static_unit_type.Platform)
+    Mailbox -> 12
+    Turret -> static_unit_type.to_value(static_unit_type.Turret)
+    InstancePortal -> 14
+    SimpleCollidable ->
+      static_unit_type.to_value(static_unit_type.SimpleCollidable)
+  }
 }
 
-fn wire_type(unit_type: UnitType) -> static_unit_type.StaticUnitType {
-  case unit_type {
-    Simple -> static_unit_type.Simple
-    Platform -> static_unit_type.Platform
-    SimpleCollidable -> static_unit_type.SimpleCollidable
+/// Message 0x262 for an object, in the form of its unit type's reader: types 4,
+/// 12 and 14 each have a message of their own, and the types that read a quest
+/// checklist index share one.
+pub type Created {
+  /// Types 8, 10, 11, 13 and 32 (`0x140095fb0`).
+  CreatedWithChecklist(UnitCreateStatic)
+  /// Type 4 (`0x140080d30`).
+  CreatedDoor(UnitCreateDoor)
+  /// Type 12 (`0x140080d30`).
+  CreatedMailbox(UnitCreateMailbox)
+  /// Type 14 (`0x140095ed0`).
+  CreatedPortal(UnitCreatePortal)
+}
+
+/// The id of the unit a 0x262 creates.
+pub fn unit_id(created created: Created) -> Int {
+  case created {
+    CreatedWithChecklist(message) -> message.unit_id
+    CreatedDoor(message) -> message.unit_id
+    CreatedMailbox(message) -> message.unit_id
+    CreatedPortal(message) -> message.unit_id
   }
 }
 
@@ -122,14 +178,10 @@ pub fn create(
   object object: StaticObject,
   unit_id unit_id: Int,
   server_time_estimate_start server_time_estimate_start: Int,
-) -> UnitCreateStatic {
+) -> Created {
   let Creature2Id(creature_id) = object.creature_id
-  UnitCreateStatic(
-    unit_id:,
-    unit_type: wire_type(object.unit_type),
-    creature_id:,
-    checklist_index: object.checklist_index,
-    tail: unit_fields.spawned_tail(
+  let tail =
+    unit_fields.spawned_tail(
       interrupt_armor: option.None,
       health: option.map(object.health, fn(health) { health.value }),
       level: object.level,
@@ -147,6 +199,30 @@ pub fn create(
       display_info_id: object.display_info_id,
       outfit_info_id: object.outfit_info_id,
       server_time_estimate_start:,
-    ),
-  )
+    )
+  let with_checklist = fn(wire_type) {
+    CreatedWithChecklist(UnitCreateStatic(
+      unit_id:,
+      unit_type: wire_type,
+      creature_id:,
+      checklist_index: object.checklist_index,
+      tail:,
+    ))
+  }
+  case object.unit_type {
+    Door -> CreatedDoor(UnitCreateDoor(unit_id:, creature_id:, tail:))
+    Mailbox -> CreatedMailbox(UnitCreateMailbox(unit_id:, creature_id:, tail:))
+    InstancePortal ->
+      CreatedPortal(UnitCreatePortal(
+        unit_id:,
+        creature_id:,
+        time_left: 0,
+        tail:,
+      ))
+    Collectible -> with_checklist(static_unit_type.Collectible)
+    Simple -> with_checklist(static_unit_type.Simple)
+    Platform -> with_checklist(static_unit_type.Platform)
+    Turret -> with_checklist(static_unit_type.Turret)
+    SimpleCollidable -> with_checklist(static_unit_type.SimpleCollidable)
+  }
 }

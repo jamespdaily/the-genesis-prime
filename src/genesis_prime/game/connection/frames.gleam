@@ -31,11 +31,14 @@ import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
 import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
+import genesis_prime/message/unit_create_door
 import genesis_prime/message/unit_create_ghost.{UnitCreateGhost}
+import genesis_prime/message/unit_create_mailbox
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
-import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
+import genesis_prime/message/unit_create_portal
+import genesis_prime/message/unit_create_static
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
@@ -54,6 +57,9 @@ import genesis_prime/step.{type Now}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map
 import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/static_object.{
+  type Created, CreatedDoor, CreatedMailbox, CreatedPortal, CreatedWithChecklist,
+}
 import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/int
@@ -495,10 +501,28 @@ pub fn creature_created_frame(unit unit: UnitCreateCreature) -> Frame {
 }
 
 /// 0x262 for a static object, as the map built it.
-pub fn object_created_frame(unit unit: UnitCreateStatic) -> Frame {
-  let assert Ok(body) = unit_create_static.encode(unit)
+pub fn object_created_frame(unit unit: Created) -> Frame {
+  let #(message_id, encoded) = case unit {
+    CreatedWithChecklist(message) -> #(
+      unit_create_static.message_id,
+      unit_create_static.encode(message),
+    )
+    CreatedDoor(message) -> #(
+      unit_create_door.message_id,
+      unit_create_door.encode(message),
+    )
+    CreatedMailbox(message) -> #(
+      unit_create_mailbox.message_id,
+      unit_create_mailbox.encode(message),
+    )
+    CreatedPortal(message) -> #(
+      unit_create_portal.message_id,
+      unit_create_portal.encode(message),
+    )
+  }
+  let assert Ok(body) = encoded
     as "an object's values fit the message's fields: the spawn's checks and the table's constraints hold each"
-  Frame(message_id: unit_create_static.message_id, body:)
+  Frame(message_id:, body:)
 }
 
 /// 0x355 for another player's unit or a creature, with its one bit 0

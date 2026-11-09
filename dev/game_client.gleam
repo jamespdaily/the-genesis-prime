@@ -55,8 +55,11 @@ import genesis_prime/message/start_movement
 import genesis_prime/message/static_unit_type
 import genesis_prime/message/unit_combat_state
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
+import genesis_prime/message/unit_create_door
+import genesis_prime/message/unit_create_mailbox
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
-import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
+import genesis_prime/message/unit_create_portal
+import genesis_prime/message/unit_create_static
 import genesis_prime/message/unit_create_tail.{type UnitCreateTail}
 import genesis_prime/message/unit_death_state
 import genesis_prime/message/unit_destroyed
@@ -75,6 +78,7 @@ import genesis_prime/message/world_message.{WorldMessage}
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/static_object
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
@@ -819,12 +823,16 @@ pub fn observe(others others: Others, frame frame: Frame) -> Others {
 pub type Created {
   PlayerCreated(unit: UnitCreatePlayer)
   CreatureCreated(unit: UnitCreateCreature)
-  ObjectCreated(unit: UnitCreateStatic)
+  ObjectCreated(
+    unit_id: Int,
+    unit_type: static_object.UnitType,
+    tail: UnitCreateTail,
+  )
 }
 
 /// The unit the body of a 0x262 creates: a player's when the body reads as one,
-/// else a creature's, else a static object's of type 10, 11 or 32 (the type is in
-/// the body, `opcode.0x262`, `opcode.0x262.simple`), or `Error(Nil)` for a body
+/// else a creature's, else a static object's of type 4, 8, 10, 11, 12, 13, 14 or 32
+/// (the type is in the body, `opcode.0x262`, `opcode.0x262.simple`), or `Error(Nil)` for a body
 /// that is none of them.
 pub fn created_unit(body body: BitArray) -> Result(Created, Nil) {
   unit_create_player.decode(body)
@@ -839,15 +847,40 @@ pub fn created_unit(body body: BitArray) -> Result(Created, Nil) {
 /// The static object the body creates, or `Error(Nil)` for one whose type is not
 /// a static object's.
 fn object_created(body body: BitArray) -> Result(Created, Nil) {
+  unit_create_door.decode(body)
+  |> result.map(fn(unit) {
+    ObjectCreated(unit.unit_id, static_object.Door, unit.tail)
+  })
+  |> result.replace_error(Nil)
+  |> result.lazy_or(fn() {
+    unit_create_mailbox.decode(body)
+    |> result.map(fn(unit) {
+      ObjectCreated(unit.unit_id, static_object.Mailbox, unit.tail)
+    })
+    |> result.replace_error(Nil)
+  })
+  |> result.lazy_or(fn() {
+    unit_create_portal.decode(body)
+    |> result.map(fn(unit) {
+      ObjectCreated(unit.unit_id, static_object.InstancePortal, unit.tail)
+    })
+    |> result.replace_error(Nil)
+  })
+  |> result.lazy_or(fn() { checklist_object_created(body:) })
+}
+
+/// The static object of a type whose reader takes a checklist index (types 8, 10,
+/// 11, 13 and 32), or `Error(Nil)` for any other type.
+fn checklist_object_created(body body: BitArray) -> Result(Created, Nil) {
   use unit <- result.try(
     unit_create_static.decode(body) |> result.replace_error(Nil),
   )
-  case unit.unit_type {
-    static_unit_type.Simple
-    | static_unit_type.Platform
-    | static_unit_type.SimpleCollidable -> Ok(ObjectCreated(unit:))
-    static_unit_type.Other(_) -> Error(Nil)
-  }
+  use unit_type <- result.map(
+    static_object.unit_type_of(entity_type: static_unit_type.to_value(
+      unit.unit_type,
+    )),
+  )
+  ObjectCreated(unit.unit_id, unit_type, unit.tail)
 }
 
 fn created(others others: Others, body body: BitArray) -> Others {
@@ -857,8 +890,8 @@ fn created(others others: Others, body body: BitArray) -> Others {
     PlayerCreated(unit:) -> dict.insert(others, unit.unit_id, placed_at(unit:))
     CreatureCreated(unit:) ->
       dict.insert(others, unit.unit_id, first_position(unit.tail))
-    ObjectCreated(unit:) ->
-      dict.insert(others, unit.unit_id, first_position(unit.tail))
+    ObjectCreated(unit_id:, tail:, ..) ->
+      dict.insert(others, unit_id, first_position(tail))
   }
 }
 
