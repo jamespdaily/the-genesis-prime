@@ -19,6 +19,7 @@ import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/top_zone
 import genesis_prime/game/world_entry
+import genesis_prime/game/zone_welcome
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/step.{
@@ -78,13 +79,13 @@ fn body_moving(
         | movement.ReportedByTerrainReady, world_entry.GhostLoading
         -> tells_the_map_ready(session:, entered:)
         movement.ReportedByTerrainReady, world_entry.ClientReady
-        | movement.ReportedByZoneChanged, _
+        | movement.ReportedByZoneChanged(..), _
         -> #(session, [])
       }
       let #(updated, effects) = case by {
         movement.ReportedByTerrainReady ->
           chat.terrain_ready(chat: entered.chat, world_zone_id:, top_zones:)
-        movement.ReportedByZoneChanged ->
+        movement.ReportedByZoneChanged(..) ->
           chat.world_zone_reported(
             chat: entered.chat,
             world_zone_id:,
@@ -96,7 +97,27 @@ fn body_moving(
           session: connection_chat.with_chat(session:, chat: updated),
           effects:,
         )
-      Continue(session, list.append(ready, written))
+      let welcomes = session.settings.zone_welcomes
+      let welcome = case by {
+        movement.ReportedByTerrainReady ->
+          zone_welcome.on_terrain_loaded(welcomes:, world_zone_id:)
+        movement.ReportedByZoneChanged(old_world_zone_id:) ->
+          zone_welcome.on_zone_changed(
+            welcomes:,
+            old_world_zone_id:,
+            new_world_zone_id: world_zone_id,
+          )
+      }
+      Continue(
+        session,
+        list.flatten([
+          ready,
+          written,
+          list.map(welcome, fn(inner) {
+            connection_state.to_client(session:, inner:)
+          }),
+        ]),
+      )
     }
     Ok(movement.Relayed(state:, place:, commands:, unrelayed:)) -> {
       let new_kinds =

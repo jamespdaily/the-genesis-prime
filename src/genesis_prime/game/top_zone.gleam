@@ -14,11 +14,14 @@
 ////   0. A parent id with no row stops the walk at the last row that exists (122
 ////   rows end so, such as the ones that name zone 1132): the client never walks
 ////   the chain, so where it stops is the server's choice.
+//// - **The chain** of a zone is the zone and its parents up to the top zone, the walk's
+////   steps (`chain`).
 //// - **A cycle** in the parent chain fails the load, since a walk would never
 ////   end.
 //// - **Built once**, when the tables load (genesis_prime/table/loader/derivation),
 ////   as one record from zone id to top zone id.
 
+import genesis_prime/table/id.{WorldZoneId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/world_zone
 import gleam/bool
@@ -47,33 +50,73 @@ pub fn from_parents(
 ) -> Result(TopZones, TopZoneError) {
   let parent_of = dict.from_list(parents)
   list.try_map(parents, fn(pair) {
-    walk(parent_of:, start: pair.0, zone: pair.0, seen: set.new())
-    |> result.map(fn(top) { #(pair.0, top) })
+    chain_over(
+      parent_of: dict.get(parent_of, _),
+      start: pair.0,
+      zone: pair.0,
+      seen: set.new(),
+    )
+    |> result.map(fn(zones) {
+      let assert Ok(top) = list.last(zones) as "a chain holds its own zone"
+      #(pair.0, top)
+    })
   })
   |> result.map(fn(tops) { TopZones(top_of: dict.from_list(tops)) })
 }
 
-/// The top zone of the walk from `start`, which is at `zone`: the zone itself
-/// when its parent is 0 or has no row, else the top of its parent. A zone met
-/// twice is the cycle.
-fn walk(
-  parent_of parent_of: Dict(Int, Int),
+/// The chain of the walk from `start`, which is at `zone`: the zone, then the chain of
+/// its parent when the parent is not 0 and has a row. A zone met twice is the cycle.
+fn chain_over(
+  parent_of parent_of: fn(Int) -> Result(Int, Nil),
   start start: Int,
   zone zone: Int,
   seen seen: Set(Int),
-) -> Result(Int, TopZoneError) {
+) -> Result(List(Int), TopZoneError) {
   use <- bool.guard(
     when: set.contains(seen, zone),
     return: Error(ParentCycle(zone_id: start)),
   )
-  case dict.get(parent_of, zone) {
+  case parent_of(zone) {
     Ok(parent) if parent != 0 ->
-      case dict.has_key(parent_of, parent) {
-        True ->
-          walk(parent_of:, start:, zone: parent, seen: set.insert(seen, zone))
-        False -> Ok(zone)
+      case parent_of(parent) {
+        Ok(_) ->
+          chain_over(
+            parent_of:,
+            start:,
+            zone: parent,
+            seen: set.insert(seen, zone),
+          )
+          |> result.map(list.prepend(_, zone))
+        Error(Nil) -> Ok([zone])
       }
-    Ok(_) | Error(Nil) -> Ok(zone)
+    Ok(_) | Error(Nil) -> Ok([zone])
+  }
+}
+
+/// The zone, then its parents up to its top zone, or none when the table holds no
+/// row for the zone. The tables' load refuses a cycle before any caller holds the
+/// tables (`derivation`).
+pub fn chain(
+  tables tables: table_store.Tables,
+  world_zone_id world_zone_id: Int,
+) -> List(Int) {
+  let parent_of = fn(id) {
+    world_zone.get(tables:, id: WorldZoneId(id))
+    |> result.map(fn(row) { row.parent_zone_id })
+  }
+  case parent_of(world_zone_id) {
+    Error(Nil) -> []
+    Ok(_) -> {
+      let assert Ok(zones) =
+        chain_over(
+          parent_of:,
+          start: world_zone_id,
+          zone: world_zone_id,
+          seen: set.new(),
+        )
+        as "the tables' load refused every parentZoneId cycle"
+      zones
+    }
   }
 }
 

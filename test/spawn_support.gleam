@@ -13,6 +13,7 @@ import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/hit.{Blow, Defence, Offence}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
@@ -34,6 +35,7 @@ import owned_key
 import place_support
 import rating_support
 import server_proxy_support
+import zone_welcome_support
 
 /// Warfare Woods, WorldZone 5967 (Quest2.10518).
 pub const warfare_woods = 5967
@@ -334,6 +336,7 @@ fn put_worlds(
   content_spawn.put_summon_checks(key:, checks: summon_checks())
   content_class_resource.put(key:, classes: class_resource_support.classes())
   content_server_proxy.put(key:, proxies: server_proxy_support.none())
+  content_zone_welcome.put(key:, welcomes: zone_welcome_support.none())
   content_creature_kind.put(
     key:,
     kinds: Kinds(
