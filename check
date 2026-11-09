@@ -102,9 +102,10 @@
 # and is dropped on exit, also on failure. squirrel connects over TCP only:
 # when PGHOST is a socket directory, it uses PGTCPHOST (default ::1).
 #
-# GENESIS_NO_CLIENT=1, which only CI sets, marks a machine without the client;
-# everywhere else a missing client fails the part that reads it. It does not
-# turn off the patched OTP: CI sets GENESIS_OTP_DIR to the build it caches.
+# GENESIS_NO_CLIENT=1 marks a machine without the client, which is only a CI run
+# without the client's data secret (a fork's pull request); everywhere else a missing
+# client fails the part that reads it. It does not turn off the patched OTP: CI sets
+# GENESIS_OTP_DIR to the build it caches.
 #
 # gleam-build is the only part that compiles. Every `gleam build`, `gleam run` and
 # `gleam test` rewrites each package's .app file, even with nothing changed (gleam
@@ -279,8 +280,8 @@ changed_files() {
 # decide_scope: sets scope to light or full, and scope_why to the reason, from the
 # files the branch changes since its merge base with main: light only when there
 # is at least one and every one is in the light set. It is full on CI's machine,
-# whose checkout is shallow anyway (GENESIS_NO_CLIENT=1, which only CI sets, or
-# GITHUB_ACTIONS), and wherever the changed files are not known: no merge base, a
+# whose checkout is shallow anyway (GENESIS_NO_CLIENT=1, which a CI run without the
+# client's data secret sets, or GITHUB_ACTIONS), and wherever the changed files are not known: no merge base, a
 # shallow history, or a git command that failed.
 decide_scope() {
   local base path count=0 first=""
