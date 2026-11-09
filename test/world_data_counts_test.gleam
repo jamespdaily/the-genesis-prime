@@ -22,6 +22,7 @@ import envoy
 import genesis_prime
 import genesis_prime/content
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/game/rating
 import genesis_prime/import_world_data
 import genesis_prime/readiness
 import genesis_prime/step/runtime
@@ -35,6 +36,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import owned_key
 import owned_test
+import spawn_support
 import unitest
 
 /// How the load asks: the database is up, so one attempt answers.
@@ -87,6 +89,29 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       <> int.to_string(took)
       <> " ms"
     }
+  // The rows left out in all worlds are the selection's own count over the same
+  // rows and tables: the load keeps the selection's spawns and logs these.
+  let assert Ok(rows) =
+    content_spawn.rows(db: content_support.connect(database:))
+    as "the spawn rows read back"
+  let selection =
+    spawn.select(
+      rows:,
+      tables:,
+      formulas: rating.formulas(tables:),
+      kinds: spawn_support.kinds(),
+    )
+  let left_out_in_all = fn(reason) {
+    list.flat_map(selection.coverage, fn(world) { world.left_out })
+    |> list.filter(fn(entry) { entry.0 == reason })
+    |> list.fold(0, fn(total, entry) { total + entry.1 })
+  }
+  assert list.map(
+      [spawn.NoFaction, spawn.FriendlyToBoth, spawn.ServiceLink, spawn.Dead],
+      left_out_in_all,
+    )
+    == [452, 7400, 33, 215]
+    as "the rows left out in all worlds: no faction, Friendly to both, a service link, health 0"
   // The world database's spawn rows (`spawn.tsv`, counted by entity type): 171
   // type 4, 4,380 type 8, 17,904 type 10, 491 type 11, 101 type 12, 241 type 13,
   // 79 type 14 and 1,178 type 32 spawns, every one passing the client's checks,

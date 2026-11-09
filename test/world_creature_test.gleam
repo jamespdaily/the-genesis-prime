@@ -43,12 +43,14 @@ import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
+import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/id.{Creature2Id, Spell4BaseId}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
+import genesis_prime/world_map/spawn
 import genesis_prime/world_map/unit_fields
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/float
@@ -105,6 +107,7 @@ fn join(run run: MapProcess, connection connection: Int) -> Int {
   join_at(
     run:,
     connection:,
+    character: map_support.character(number: 100 + connection),
     place: place_support.at(
       world_id: 3460,
       world_zone_id: spawn_support.warfare_woods,
@@ -119,6 +122,7 @@ fn join(run run: MapProcess, connection connection: Int) -> Int {
 fn join_at(
   run run: MapProcess,
   connection connection: Int,
+  character character: Character,
   place place: Place,
 ) -> Int {
   let #(_, answer) =
@@ -127,7 +131,7 @@ fn join_at(
         run.subject,
         map.Join(
           connection: ConnectionId(connection),
-          character: map_support.character(number: 100 + connection),
+          character:,
           place:,
           stay: map_support.stay(count: 1),
           alive: True,
@@ -948,7 +952,12 @@ pub fn right_click_on_giver_opens_dialog_test() -> Nil {
     )
   let run = started(world)
   let received = world_support.connection(world:, id: 1)
-  let player = join_at(run:, connection: 1, place: entry)
+  let exile =
+    Character(
+      ..map_support.character(number: 101),
+      faction_id: spawn.exile_faction,
+    )
+  let player = join_at(run:, connection: 1, character: exile, place: entry)
   let #(news, shown) =
     next(received:, what: "Dorian Walker's 0x262", wanted: fn(message) {
       result.map(appearance(message), fn(unit) { #(message, unit) })

@@ -812,6 +812,29 @@ pub fn a_quest_creature_starts_test() -> Nil {
   assert started(receives) == [1] as "a creature that receives a quest starts"
   assert left_out(selection: gives, reason: spawn.ServiceLink) == 0
   assert left_out(selection: receives, reason: spawn.ServiceLink) == 0
+  // A quest does not bring back a creature the client would create dead (health
+  // 0, `opcode.0x262.creature`) or one with no faction, which no faction level
+  // names: they stay out whatever the creature's quest list holds.
+  let refused =
+    selected_beast_changed(changes: [#("questIdGiven00", Integer(5))], rows: [
+      spawn.Row(..spawn_support.beast_row(number: 1), health: Some(0.0)),
+      spawn.Row(
+        ..spawn_support.beast_row(number: 2),
+        faction_id: 0,
+        base_faction_id: 0,
+      ),
+      spawn.Row(
+        ..spawn_support.beast_row(number: 3),
+        faction_id: 255,
+        base_faction_id: 255,
+        health: Some(0.0),
+      ),
+    ])
+  assert started(refused) == []
+    as "a quest does not start a dead or factionless row"
+  assert left_out(selection: refused, reason: Dead) == 2
+    as "the dead rows, the second of them Friendly to both"
+  assert left_out(selection: refused, reason: NoFaction) == 1
 }
 
 pub fn a_quest_creature_friendly_to_both_starts_and_no_player_may_attack_it_test() -> Nil {
