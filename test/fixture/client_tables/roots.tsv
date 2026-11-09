@@ -35,6 +35,14 @@ Spell4	41886	Medic Fissure debuff child	spell_area_test
 Spell4	41844	Medic Fissure proxy: starts the debuff child on each unit its area hits	world_creature_test
 Spell4	54475	Warrior Defense Grid aura	spell_area_test
 Spell4	76618	Esper Phantasmal Armor absorb and armor aimed at the target	spell_area_test
+Quest2	2347	one-time quest with three objectives	quest_log_test
+Quest2	1857	daily quest with one objective	quest_log_test
+Quest2	3204	daily quest with two objectives	quest_log_test
+Quest2	6216	daily quest whose first objective is a type 31 placeholder	quest_log_test
+Quest2	9713	weekly quest	quest_log_test
+Quest2	9714	monthly quest	quest_log_test
+Quest2	9715	yearly quest	quest_log_test
+
 WorldZone	13	a zone with a Welcome Tutorial row	zone_welcome_test
 WorldZone	21	a zone with a Welcome Tutorial row	zone_welcome_test
 WorldZone	28	a zone with a Welcome Tutorial row	zone_welcome_test

@@ -41,6 +41,9 @@ pub type Decided {
   WatchesMap(map: MapId, incarnation: Int)
   /// Start the timer that saves the player's place (`save_timer`).
   StartsSaveTimer
+  /// Start the timer that fires at the next quest reset (`quest_reset_timer`), in
+  /// this many milliseconds.
+  StartsQuestResetTimer(after_ms: Int)
   /// What the life of the player the connection holds decided
   /// (genesis_prime/game/player_life), carried out as a fight's are
   /// (genesis_prime/game/connection/life_effect).
@@ -168,6 +171,14 @@ pub fn carry_out(
         start_save_timer(),
         ..written
       ])
+    [StartsQuestResetTimer(after_ms:), ..rest] ->
+      carry_out(session:, now:, effects: rest, written: [
+        OwnEffect(StartTimer(
+          timer: connection_state.quest_reset_timer,
+          after_ms:,
+        )),
+        ..written
+      ])
     [LeavesWorld, ..] ->
       case connection_state.holds_a_player(session.status) {
         Some(#(holder, entered)) -> {
@@ -226,7 +237,10 @@ pub fn world_left(
       list.map(player_life.left(life: entered.life), fn(timer) {
         OwnEffect(CancelTimer(timer:))
       }),
-      [OwnEffect(CancelTimer(timer: connection_state.save_timer))],
+      [
+        OwnEffect(CancelTimer(timer: connection_state.save_timer)),
+        OwnEffect(CancelTimer(timer: connection_state.quest_reset_timer)),
+      ],
     ]),
   )
 }

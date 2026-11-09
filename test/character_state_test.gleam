@@ -92,7 +92,7 @@ pub fn a_level_with_no_xp_per_level_row_is_refused_before_the_map_is_asked_test(
     // asked first, so a saved experience does not let such a play in.
     list.each([None, Some(5000)], fn(saved_experience) {
       let #(_, loaded) =
-        world_entry_support.loaded_with_experience(
+        world_entry_support.loaded_holding(
           tables: character_tables.shared(),
           character: world_entry_support.character(
             class: 2,
@@ -101,6 +101,7 @@ pub fn a_level_with_no_xp_per_level_row_is_refused_before_the_map_is_asked_test(
           ),
           items: [],
           saved_experience:,
+          quests: [],
         )
       assert loaded
         == world_entry.Refused(

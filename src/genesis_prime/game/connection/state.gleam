@@ -13,6 +13,7 @@ import genesis_prime/game/character_select
 import genesis_prime/game/class_resource
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
+import genesis_prime/game/quest_log
 import genesis_prime/game/server_proxy.{type ServerProxies}
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
@@ -222,6 +223,10 @@ pub const map_watch = WatchId(2)
 /// The timer that saves the player's place every `movement.save_period_ms`
 /// while the player is in the world.
 pub const save_timer = TimerId(2)
+
+/// The timer that fires at the next daily quest reset while the player is in the
+/// world (genesis_prime/game/quest_log `reset_due`).
+pub const quest_reset_timer = TimerId(10)
 
 /// A message in the game wrapper under the cipher the connection holds.
 pub fn to_client(
@@ -477,6 +482,7 @@ pub fn saving(
       health: Some(player_life.saved_health(life: entered.life)),
       experience: entered.experience,
       level: entered.character.level,
+      quests: quest_log.rows(log: entered.quests),
     )
   ask_within(
     session: Session(

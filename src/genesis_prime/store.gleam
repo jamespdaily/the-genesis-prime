@@ -137,6 +137,38 @@ pub type HeldItem {
   )
 }
 
+/// One quest of a character's log as the character_quest table keeps it, read
+/// and written whole: the quest's id (15 bits), its lua QuestState `state` (1 to
+/// 7), the Unix seconds it was completed at (`Some` for state 3 and for no other,
+/// `character_quest_completed_has_a_time`) and the active entry (`Some` for states
+/// 1 and 2 and for no other, `character_quest_active_has_its_entry`). The table's
+/// checks hold the ranges; the quest log (genesis_prime/game/quest_log) decodes
+/// each row against the client's tables and builds the rows it saves.
+pub type QuestRow {
+  QuestRow(
+    quest_id: Int,
+    state: Int,
+    completed_at: Option(Int),
+    active: Option(ActiveQuest),
+  )
+}
+
+/// The entry the client's active list carries for a quest (opcode.0x35f): the
+/// placeholder objective's id (0 for none), whether the quest is tracked, the done
+/// mask (a bit for each of the six objectives), the progress of each objective, the
+/// quest's time left and each objective's time left, in milliseconds. There is one
+/// timer for each progress value (`character_quest_timers_match_progress`).
+pub type ActiveQuest {
+  ActiveQuest(
+    placeholder_objective_id: Int,
+    tracked: Bool,
+    done_mask: Int,
+    progress: List(Int),
+    quest_ms_left: Int,
+    objective_ms_left: List(Int),
+  )
+}
+
 /// A held item before its row gives it a guid: the same place and stack as a
 /// `HeldItem`, which the store writes in the same transaction as the character
 /// that holds it.
@@ -200,7 +232,12 @@ pub type MoveRequest {
   /// health the table refuses, below 0, is `HealthRefused`. The character's
   /// `experience` and the `level` it makes are written by the same statement, so
   /// the two stand together after a camp and a new login; an experience the
-  /// table refuses, below 0, is `ExperienceRefused`.
+  /// table refuses, below 0, is `ExperienceRefused`. The character's quest log,
+  /// `quests`, is the whole log: the same statement writes the rows
+  /// that changed and deletes the rows it no longer holds, both under the same
+  /// fence, so a refused save changes no quest row. A row a check of the
+  /// character_quest table refuses is `QuestLogRefused`, which no log the rule
+  /// keeps breaks.
   SavePlace(
     account_id: AccountId,
     character_id: CharacterId,
@@ -210,6 +247,7 @@ pub type MoveRequest {
     health: Option(Int),
     experience: Int,
     level: Int,
+    quests: List(QuestRow),
   )
 }
 
@@ -274,14 +312,18 @@ pub type WorldAnswer {
   /// (`saved_health`: `None` when none was saved), the experience its last save
   /// or its creation kept (`saved_experience`: `None` when none was saved, which
   /// enters at the least experience of its level) and the items it holds, by
-  /// location then bag index (none for a character with no stored items).
-  /// Asking again takes the character again and raises it again.
+  /// location then bag index (none for a character with no stored items) and
+  /// the rows of its quest log, in quest id order (none for a character with no
+  /// quest). The rows are read in the transaction that raised the epoch, so no
+  /// delete lands between them. Asking again takes the character again and raises
+  /// it again.
   CharacterLoaded(
     character: Character,
     session_epoch: SessionEpoch,
     saved_health: Option(Int),
     saved_experience: Option(Int),
     items: List(HeldItem),
+    quests: List(QuestRow),
   )
   /// The account has no character with the id.
   NotTheAccounts
@@ -300,6 +342,10 @@ pub type MoveAnswer {
   /// which no place the rule keeps breaks: a bug of the server's, so nothing
   /// was saved.
   PlaceRefused(constraint: String)
+  /// The database refused a quest row of the log for the check constraint of this
+  /// name, which no log the rule keeps breaks: a bug of the server's, so nothing
+  /// was saved, neither the quest rows nor the place beside them.
+  QuestLogRefused(constraint: String)
   /// The database refused the health (`character_health_is_not_negative`),
   /// which the rule never asks to keep below 0: a bug of the server's, so
   /// nothing was saved, neither the health nor the place beside it.

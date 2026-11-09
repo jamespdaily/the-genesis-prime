@@ -166,6 +166,36 @@ pub fn all() -> List(ColumnSign) {
       evidence: "genesis_prime/game/prerequisite reads a value only for type 15, compared for equality with a Spell4 id as 0x1404a4ec0 does (cmp eax, ebp), which the sign does not change; 63 rows hold -1",
     ),
     ColumnSign(
+      table: "Quest2",
+      column: "subMissionPathType",
+      sign: Unread,
+      evidence: "the server reads only objective0 to objective05 and questRepeatPeriodEnum of Quest2 (genesis_prime/game/quest_log); no rule reads subMissionPathType, which holds -1 in 5071 rows",
+    ),
+    ColumnSign(
+      table: "Quest2",
+      column: "virtualItemPushedObjectiveFlagsEnum00",
+      sign: Unread,
+      evidence: "the server reads only objective0 to objective05 and questRepeatPeriodEnum of Quest2 (genesis_prime/game/quest_log); no rule reads virtualItemPushedObjectiveFlagsEnum00, which holds -1 in most rows and a mask with the top bit set in some others",
+    ),
+    ColumnSign(
+      table: "Quest2",
+      column: "virtualItemPushedObjectiveFlagsEnum01",
+      sign: Unread,
+      evidence: "the server reads only objective0 to objective05 and questRepeatPeriodEnum of Quest2 (genesis_prime/game/quest_log); no rule reads virtualItemPushedObjectiveFlagsEnum01, which holds -1 in most rows and a mask with the top bit set in some others",
+    ),
+    ColumnSign(
+      table: "Quest2",
+      column: "virtualItemPushedObjectiveFlagsEnum02",
+      sign: Unread,
+      evidence: "the server reads only objective0 to objective05 and questRepeatPeriodEnum of Quest2 (genesis_prime/game/quest_log); no rule reads virtualItemPushedObjectiveFlagsEnum02, which holds -1 in most rows and a mask with the top bit set in some others",
+    ),
+    ColumnSign(
+      table: "Quest2",
+      column: "virtualItemPushedObjectiveFlagsEnum03",
+      sign: Unread,
+      evidence: "the server reads only objective0 to objective05 and questRepeatPeriodEnum of Quest2 (genesis_prime/game/quest_log); no rule reads virtualItemPushedObjectiveFlagsEnum03, which holds -1 in most rows and a mask with the top bit set in some others",
+    ),
+    ColumnSign(
       table: "Spell4",
       column: "spellDuration",
       sign: Unread,

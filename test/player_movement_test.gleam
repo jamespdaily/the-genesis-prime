@@ -463,6 +463,7 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       health: Some(512),
       experience: 1234,
       level: 3,
+      quests: [],
     )
   assert first
     == SavePlace(
@@ -474,6 +475,7 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       health: Some(512),
       experience: 1234,
       level: 3,
+      quests: [],
     )
     as "the save names the epoch the login was told (3 here) and is the login's first"
   let state = kept(state:, commands: [position(x: 5.0, y: 6.0, z: 7.0)])
@@ -485,6 +487,7 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       health: None,
       experience: 1300,
       level: 3,
+      quests: [],
     )
   assert second
     == SavePlace(
@@ -496,6 +499,7 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       health: None,
       experience: 1300,
       level: 3,
+      quests: [],
     )
     as "the next save carries the place the moves since put the player at, numbered 2: the store keeps only a newer save of a login"
   assert at(state) == #(5.0, 6.0, 7.0)
@@ -507,6 +511,7 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       health: Some(1),
       experience: 1,
       level: 1,
+      quests: [],
     )
   let assert SavePlace(save_sequence: 3, ..) = third
     as "a save asked and never answered still took its number, so an answer that comes late is never taken for a newer save"

@@ -52,6 +52,13 @@
 ////   answers, before the map is asked: a character whose level has no XpPerLevel row is
 ////   refused then, so no unit of it reaches the map. The load requires a Class row for
 ////   each playable class (`character_state.requirements`).
+//// - **0x35F** is the player's quest log (genesis_prime/game/quest_log), sent right
+////   after the 0x25E at every play, an empty log included, because the 0x25E empties
+////   what the client holds of it (`opcode.0x35f.entry_order`). The log belongs to the
+////   client's process, not to a game object, so the Holocrypt's join sends none
+////   (`quest_log.process_wide`). The log the connection keeps remembers the reset time
+////   the message carried. A saved log the client would refuse fails the load, before
+////   the map is asked.
 //// - **The held items** are the character's saved rows (`store.HeldItem`): each is
 ////   sent as a 0x111 with its own guid, item id, location, bag index and stack
 ////   count, in location then bag index order, after 0x19B, which sets the player,
@@ -132,6 +139,7 @@ import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/look
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
+import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
@@ -153,7 +161,7 @@ import genesis_prime/message/player_path.{PlayerPath}
 import genesis_prime/message/shared_item.{SharedItem}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
-import genesis_prime/step.{type ConnectionId}
+import genesis_prime/step.{type ConnectionId, type Now}
 import genesis_prime/store.{
   type AccountId, type Character, type CharacterId, CharacterId,
 }
@@ -217,7 +225,9 @@ pub opaque type State {
   /// at full health. `experience` is what the character enters with
   /// (`experience.entering`; the Holocrypt's join keeps the stay's own). `items`
   /// are the items the character holds, which the Holocrypt's join keeps from the
-  /// stay it leaves.
+  /// stay it leaves. `quests` is the quest log the character holds
+  /// (genesis_prime/game/quest_log), which the Holocrypt's join keeps from the
+  /// stay it leaves as well.
   Joining(
     character: Character,
     place: Place,
@@ -225,6 +235,7 @@ pub opaque type State {
     saved_health: Option(Int),
     experience: Int,
     items: List(store.HeldItem),
+    quests: QuestLog,
     map: MapId,
     stay: Stay,
     entry: Entry,
@@ -246,6 +257,10 @@ pub type Loaded {
   Join(state: State, effects: List(Effect))
   /// The character is not entered; character select refuses the play.
   Refused(character_id: Int, warning: String)
+  /// The character's saved quest log holds an entry the client would refuse. Only
+  /// the server writes the log, so it is a bug of the server's, and nothing
+  /// repairs the row: the connection is ended and the text is logged as an error.
+  Fault(text: String)
 }
 
 /// What the map's answer to the join leads to.
@@ -299,6 +314,9 @@ pub type Entered {
     /// credit to it (genesis_prime/game/connection/experience) and saves it with
     /// the place.
     experience: Int,
+    /// The quest log the character holds (genesis_prime/game/quest_log): the
+    /// connection saves it with the place and, at a play, sends it after 0x25E.
+    quests: QuestLog,
     max_health: Int,
     clock_origin_ms: Int,
     viewers: Dict(ConnectionId, Stay),
@@ -450,6 +468,7 @@ pub fn loaded(
           saved_health:,
           saved_experience:,
           items:,
+          quests:,
         ) ->
           case character.place {
             None ->
@@ -460,17 +479,28 @@ pub fn loaded(
                   <> ", which has no saved place",
               )
             Some(place) ->
-              joining_a_play(
-                character:,
-                place:,
-                movement: movement.entered(place:, session_epoch:),
-                saved_health:,
-                saved_experience:,
-                items:,
-                connection:,
-                stay:,
-                tables:,
-              )
+              case quest_log.from_rows(rows: quests, tables:) {
+                Error(refused) ->
+                  Fault(
+                    text: "a play of character "
+                    <> int.to_string(character_id)
+                    <> ", whose saved quest log the client would refuse: "
+                    <> quest_log.describe(refused:),
+                  )
+                Ok(log) ->
+                  joining_a_play(
+                    character:,
+                    place:,
+                    movement: movement.entered(place:, session_epoch:),
+                    saved_health:,
+                    saved_experience:,
+                    items:,
+                    quests: log,
+                    connection:,
+                    stay:,
+                    tables:,
+                  )
+              }
           }
       })
     Joining(..) -> Error(Nil)
@@ -486,6 +516,7 @@ fn joining_a_play(
   saved_health saved_health: Option(Int),
   saved_experience saved_experience: Option(Int),
   items items: List(store.HeldItem),
+  quests quests: QuestLog,
   connection connection: ConnectionId,
   stay stay: Stay,
   tables tables: table_store.Tables,
@@ -518,6 +549,7 @@ fn joining_a_play(
           saved_health:,
           experience:,
           items:,
+          quests:,
           connection:,
           stay:,
           entry: PlayEntry(character_state: frame),
@@ -539,6 +571,8 @@ pub fn joined(
   classes classes: class_resource.Classes,
   numbers numbers: GameNumbers,
   defaults defaults: List(#(UnitProperty2Id, Float)),
+  tables tables: table_store.Tables,
+  now now: Now,
 ) -> Result(Joined, Nil) {
   case state {
     Joining(
@@ -548,6 +582,7 @@ pub fn joined(
       saved_health:,
       experience:,
       items:,
+      quests:,
       map:,
       stay:,
       entry:,
@@ -589,6 +624,8 @@ pub fn joined(
             )
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id
+          let #(quests, quest_effects) =
+            quest_log_sent(entry:, quests:, numbers:, tables:, now:)
           Ok(InTheWorld(
             entered: Entered(
               character:,
@@ -602,6 +639,7 @@ pub fn joined(
               loadout:,
               items:,
               experience:,
+              quests:,
               max_health:,
               clock_origin_ms:,
               viewers: dict.new(),
@@ -637,6 +675,7 @@ pub fn joined(
                 unit_is_player(unit_id:),
               ],
               character_state_sent(entry:),
+              quest_effects,
               items_sent(items:),
               loadout_sent(character_number: character_id_number, loadout:),
               [player_path(character:)],
@@ -687,6 +726,24 @@ fn readiness_of(entry entry: Entry) -> Readiness {
   }
 }
 
+/// 0x35F for a play, with the log that remembers the reset time it carried, and
+/// nothing for the Holocrypt's join.
+fn quest_log_sent(
+  entry entry: Entry,
+  quests quests: QuestLog,
+  numbers numbers: GameNumbers,
+  tables tables: table_store.Tables,
+  now now: Now,
+) -> #(QuestLog, List(Effect)) {
+  case entry {
+    PlayEntry(..) -> {
+      let #(told, frame) = quest_log.login(log: quests, numbers:, tables:, now:)
+      #(told, [Send(frame:)])
+    }
+    HolocryptEntry -> #(quests, [])
+  }
+}
+
 /// 0x25E for a play, and nothing for the Holocrypt's join.
 fn character_state_sent(entry entry: Entry) -> List(Effect) {
   case entry {
@@ -712,6 +769,7 @@ pub fn rejoining(
     saved_health: None,
     experience: entered.experience,
     items: entered.items,
+    quests: entered.quests,
     connection:,
     stay:,
     entry: HolocryptEntry,
@@ -729,6 +787,7 @@ fn joining(
   saved_health saved_health: Option(Int),
   experience experience: Int,
   items items: List(store.HeldItem),
+  quests quests: QuestLog,
   connection connection: ConnectionId,
   stay stay: Stay,
   entry entry: Entry,
@@ -743,6 +802,7 @@ fn joining(
       saved_health:,
       experience:,
       items:,
+      quests:,
       map:,
       stay:,
       entry:,

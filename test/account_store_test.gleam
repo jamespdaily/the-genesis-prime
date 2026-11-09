@@ -32,16 +32,16 @@ import genesis_prime/game/start_place.{Facing}
 import genesis_prime/login/guid
 import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
-  type AccountId, Account, AccountFound, AccountId, Character, CharacterCreated,
-  CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
-  CreateCharacter, CreateForNoSuchAccount, Created, DeleteCharacter, Deleted,
-  ExperienceRefused, FindAccount, ForLogin, ForMove, ForSelect, ForWorld,
-  HealthRefused, HeldItem, ListCharacters, Listed, LoadCharacter, Login,
-  LookEntry, Move, NameBreaksRule, NameStands, NameTaken, NeedsRename,
-  NewCharacter, NewItem, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
-  NoSuchAccount, NoSuchCharacter, NotRenamable, NotTheAccounts, NothingSaved,
-  PlaceRefused, PlaceSaved, RenameCharacter, Renamed, SavePlace, Select,
-  Unavailable, World,
+  type AccountId, type ActiveQuest, type QuestRow, Account, AccountFound,
+  AccountId, ActiveQuest, Character, CharacterCreated, CharacterDeleted,
+  CharacterId, CharacterLoaded, CharacterRenamed, CreateCharacter,
+  CreateForNoSuchAccount, Created, DeleteCharacter, Deleted, ExperienceRefused,
+  FindAccount, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem,
+  ListCharacters, Listed, LoadCharacter, Login, LookEntry, Move, NameBreaksRule,
+  NameStands, NameTaken, NeedsRename, NewCharacter, NewItem, NewNameBreaksRule,
+  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable,
+  NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused,
+  QuestRow, RenameCharacter, Renamed, SavePlace, Select, Unavailable, World,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
@@ -934,7 +934,7 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
   assert ask(store, World(LoadCharacter(account, CharacterId(character_id))))
     == ForWorld(
-      CharacterLoaded(character, character_support.epoch(1), None, None, []),
+      CharacterLoaded(character, character_support.epoch(1), None, None, [], []),
     )
     as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
   stop(store)
@@ -1027,6 +1027,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
         character_support.epoch(1),
         None,
         None,
+        [],
         [],
       ),
     )
@@ -1283,16 +1284,19 @@ fn save_progress(
 ) -> store.Answer {
   ask(
     store,
-    Move(SavePlace(
-      account_id: account,
-      character_id: CharacterId(character_id),
-      session_epoch: character_support.epoch(epoch),
-      save_sequence: sequence,
-      place:,
-      health:,
-      experience:,
-      level:,
-    )),
+    Move(
+      SavePlace(
+        account_id: account,
+        character_id: CharacterId(character_id),
+        session_epoch: character_support.epoch(epoch),
+        save_sequence: sequence,
+        place:,
+        health:,
+        experience:,
+        level:,
+        quests: [],
+      ),
+    ),
   )
 }
 
@@ -1904,15 +1908,25 @@ pub fn a_create_for_an_account_that_does_not_exist_is_create_for_no_such_account
 pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
-  assert worker.mapped_constraints
+  assert worker.mapped_constraints()
     == [
       "character_name_unique",
       "character_name_follows_rule_0",
       "character_health_is_not_negative",
       "character_experience_is_not_negative",
+      "character_quest_id_fits_15_bits",
+      "character_quest_state_is_known",
+      "character_quest_completed_has_a_time",
+      "character_quest_active_has_its_entry",
+      "character_quest_done_mask_fits_six_objectives",
+      "character_quest_progress_fits_six_objectives",
+      "character_quest_progress_is_not_negative",
+      "character_quest_timers_match_progress",
+      "character_quest_times_are_not_negative",
+      "character_quest_placeholder_is_not_negative",
     ]
-    as "the four refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0 and an experience below 0"
-  list.each(worker.mapped_constraints, fn(name) {
+    as "the refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0, an experience below 0 and each check of a quest row"
+  list.each(worker.mapped_constraints(), fn(name) {
     let assert Ok(returned) =
       pog.query(
         "select count(*)::int from (select conname::text as name from pg_constraint union all select c.relname::text from pg_class c where c.relkind = 'i') as names where name = $1",
@@ -2458,5 +2472,441 @@ pub fn an_item_keeps_its_guid_when_its_place_changes_and_two_items_swap_places_i
     as "the place the hands left is free"
   assert !list.contains(list.map(before, fn(item) { item.item_guid }), made)
     as "opcode.0x111.guid: a guid is never made again, so an item that takes a freed place does not take the guid of the item that left it"
+  stop(store)
+}
+
+// ---- the quest log ----
+
+/// A quest the character completed, at Unix seconds 1_700_000_000.
+fn completed_quest(quest_id: Int) -> QuestRow {
+  QuestRow(quest_id:, state: 3, completed_at: Some(1_700_000_000), active: None)
+}
+
+/// A quest the character botched: a state of the client's second list, with no
+/// active entry.
+fn botched_quest(quest_id: Int) -> QuestRow {
+  QuestRow(quest_id:, state: 4, completed_at: None, active: None)
+}
+
+/// A quest the character has accepted, with the entry the client's active list
+/// carries: a placeholder objective, tracked, objectives 1 and 3 done, three
+/// progress values and a timer for each.
+fn accepted_quest(quest_id: Int) -> QuestRow {
+  QuestRow(
+    quest_id:,
+    state: 1,
+    completed_at: None,
+    active: Some(accepted_entry()),
+  )
+}
+
+fn accepted_entry() -> ActiveQuest {
+  ActiveQuest(
+    placeholder_objective_id: 4321,
+    tracked: True,
+    done_mask: 5,
+    progress: [3, 0, 1],
+    quest_ms_left: 90_000,
+    objective_ms_left: [0, 60_000, 0],
+  )
+}
+
+/// Saves the place under the epoch and sequence of a login with the whole quest
+/// log, and the health left unsaved.
+fn save_log(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: Int,
+  epoch epoch: Int,
+  sequence sequence: Int,
+  quests quests: List(QuestRow),
+) -> store.Answer {
+  ask(
+    store,
+    Move(SavePlace(
+      account_id: account,
+      character_id: CharacterId(character_id),
+      session_epoch: character_support.epoch(epoch),
+      save_sequence: sequence,
+      place: place_facing(
+        x: 10.0,
+        y: 20.0,
+        z: 30.0,
+        yaw: 0.0,
+        pitch: 0.0,
+        roll: 0.0,
+      ),
+      health: None,
+      experience: 0,
+      level: 1,
+      quests:,
+    )),
+  )
+}
+
+/// The quest log a load answers with, which raises the epoch.
+fn quests_of_load(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: Int,
+) -> List(QuestRow) {
+  let assert ForWorld(CharacterLoaded(quests:, ..)) =
+    ask(store, World(LoadCharacter(account, CharacterId(character_id))))
+    as "the account has the character"
+  quests
+}
+
+/// The quest ids and states the table holds for the character, read straight
+/// from the database, in quest id order.
+fn quest_states(
+  store store: Store,
+  character_id character_id: Int,
+) -> List(#(Int, Int)) {
+  let assert Ok(returned) =
+    pog.query(
+      "select quest_id, state::int from character_quest where character_id = $1 order by quest_id",
+    )
+    |> pog.parameter(pog.int(character_id))
+    |> pog.returning({
+      use quest_id <- decode.field(0, decode.int)
+      use state <- decode.field(1, decode.int)
+      decode.success(#(quest_id, state))
+    })
+    |> pog.execute(store.pool)
+    as "the quest rows read"
+  returned.rows
+}
+
+pub fn a_save_writes_the_quest_log_with_the_place_and_the_next_load_reads_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  assert quests_of_load(store:, account:, character_id: id) == []
+    as "a character never saved has an empty quest log"
+  let log = [completed_quest(1001), botched_quest(1002), accepted_quest(1003)]
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      quests: log,
+    )
+    == ForMove(PlaceSaved)
+  assert quests_of_load(store:, account:, character_id: id) == log
+    as "opcode.0x35f: a completed quest keeps its time and an active one its placeholder, tracked flag, done mask, progress and the time left of the quest and of each objective, in quest id order"
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 2,
+      sequence: 1,
+      quests: [completed_quest(1001), accepted_quest(1003)],
+    )
+    == ForMove(PlaceSaved)
+  assert quests_of_load(store:, account:, character_id: id)
+    == [completed_quest(1001), accepted_quest(1003)]
+    as "the log is the whole log: a save without the botched quest removes its row"
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 3,
+      sequence: 1,
+      quests: [completed_quest(1001), completed_quest(1003)],
+    )
+    == ForMove(PlaceSaved)
+  assert quests_of_load(store:, account:, character_id: id)
+    == [completed_quest(1001), completed_quest(1003)]
+    as "an active quest that was completed is rewritten, its active columns cleared (a completed quest is in the completed list only, opcode.0x35f.adds_not_replaces)"
+  stop(store)
+}
+
+pub fn a_quest_log_save_naming_an_older_epoch_or_sequence_changes_no_quest_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 4)
+  let #(account, id) = one_character(store:)
+  let _first_login = epoch_of_load(store:, account:, character_id: id)
+  let _second_login = epoch_of_load(store:, account:, character_id: id)
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 2,
+      sequence: 1,
+      quests: [completed_quest(1001), botched_quest(1002)],
+    )
+    == ForMove(PlaceSaved)
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 5,
+      quests: [accepted_quest(1003)],
+    )
+    == ForMove(NothingSaved)
+    as "the first login's epoch is 1 and the character is at 2: its save changes nothing, neither the place nor any quest row"
+  assert quest_states(store:, character_id: id) == [#(1001, 3), #(1002, 4)]
+    as "every quest row is as the newer login wrote it: none added, none deleted"
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 2,
+      sequence: 3,
+      quests: [
+        completed_quest(1001),
+        botched_quest(1002),
+        accepted_quest(1003),
+      ],
+    )
+    == ForMove(PlaceSaved)
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 2,
+      sequence: 2,
+      quests: [],
+    )
+    == ForMove(NothingSaved)
+    as "a save of this login older than the last stored one changes nothing, for the quest rows too"
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 2,
+      sequence: 3,
+      quests: [],
+    )
+    == ForMove(NothingSaved)
+    as "the same sequence twice is no newer"
+  assert quest_states(store:, character_id: id)
+    == [#(1001, 3), #(1002, 4), #(1003, 1)]
+    as "an older or repeated save deleted no quest row"
+  // The save of the sequence 4 is still open on another connection, which holds
+  // the character's row, when the save of the sequence 5 starts: the later save,
+  // which drops the accepted quest, must not leave the quest the earlier one wrote
+  // (a statement takes its snapshot before it waits for a row lock).
+  let earlier = hold_an_earlier_save(store:, character_id: id)
+  let later = process.new_subject()
+  let _later_save =
+    process.spawn(fn() {
+      process.send(
+        later,
+        save_log(
+          store:,
+          account:,
+          character_id: id,
+          epoch: 2,
+          sequence: 5,
+          quests: [completed_quest(1001), botched_quest(1002)],
+        ),
+      )
+    })
+  await_a_statement_waiting_for_a_lock(store:)
+  release_earlier_save(earlier)
+  let assert Ok(answered) = process.receive(later, within: 30_000)
+    as "the later save is answered once the earlier one commits"
+  assert answered == ForMove(PlaceSaved)
+  assert quest_states(store:, character_id: id) == [#(1001, 3), #(1002, 4)]
+    as "two saves of one character run one after another: the later log, which dropped the quest, is the whole log"
+  stop(store)
+}
+
+/// A save of the character that is still open: another connection's transaction
+/// that has written the character's row and a quest row of the sequence 4, and
+/// holds the row's lock until `release_earlier_save`.
+type EarlierSave {
+  EarlierSave(release: process.Subject(Nil), committed: process.Subject(Nil))
+}
+
+/// Opens the earlier save and returns once it holds the character's row.
+fn hold_an_earlier_save(
+  store store: Store,
+  character_id character_id: Int,
+) -> EarlierSave {
+  let locked = process.new_subject()
+  let committed = process.new_subject()
+  let _holder =
+    process.spawn(fn() {
+      let release = process.new_subject()
+      let assert Ok(Nil) =
+        pog.transaction(store.pool, fn(connection) {
+          let assert Ok(_) =
+            pog.query(
+              "update character set save_sequence = 4 where character_id = $1",
+            )
+            |> pog.parameter(pog.int(character_id))
+            |> pog.execute(connection)
+            as "the earlier save wrote the character's row"
+          let assert Ok(_) =
+            pog.query(
+              "insert into character_quest (character_id, quest_id, state, completed_at) values ($1, 1004, 3, to_timestamp(1700000000))",
+            )
+            |> pog.parameter(pog.int(character_id))
+            |> pog.execute(connection)
+            as "and a quest row the later log does not have"
+          process.send(locked, release)
+          let assert Ok(Nil) = process.receive(release, within: 30_000)
+            as "the test released the row"
+          Ok(Nil)
+        })
+        as "the earlier save's transaction ran"
+      process.send(committed, Nil)
+    })
+  let assert Ok(release) =
+    process.receive(locked, within: ask_support.event_wait_ms)
+    as "the earlier save holds the row"
+  EarlierSave(release:, committed:)
+}
+
+/// Commits the earlier save and returns once it has.
+fn release_earlier_save(earlier: EarlierSave) -> Nil {
+  process.send(earlier.release, Nil)
+  let assert Ok(Nil) =
+    process.receive(earlier.committed, within: ask_support.event_wait_ms)
+    as "the earlier save committed"
+  Nil
+}
+
+/// Returns once a statement of this database waits for a lock, which is the
+/// later save waiting for the row the earlier one holds. It reads the database's
+/// own wait state, polling every 20 ms for at most `event_wait_ms`.
+fn await_a_statement_waiting_for_a_lock(store store: Store) -> Nil {
+  let waiting = fn() {
+    let assert Ok(returned) =
+      pog.query(
+        "select count(*)::int from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'",
+      )
+      |> pog.returning(decode.at([0], decode.int))
+      |> pog.execute(store.pool)
+      as "the waiting statements were counted"
+    returned.rows != [0]
+  }
+  await_until(waiting, polls: ask_support.event_wait_ms / 20)
+}
+
+fn await_until(done: fn() -> Bool, polls polls: Int) -> Nil {
+  case done(), polls {
+    True, _ -> Nil
+    False, 0 -> panic as "the event did not happen within the deadline"
+    False, _ -> {
+      process.sleep(20)
+      await_until(done, polls: polls - 1)
+    }
+  }
+}
+
+pub fn a_constraint_of_the_quest_table_the_worker_does_not_map_is_refused_as_a_place_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  // The primary key and the foreign key of the table share its `character_quest_`
+  // start with its checks, and neither is a limit of the client's. A save's upsert
+  // cannot break either, so a constraint of the table the worker does not map is
+  // put in to stand for them.
+  execute(
+    store.pool,
+    "alter table character_quest add constraint character_quest_test_refuses_1100 check (quest_id <> 1100)",
+  )
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      quests: [completed_quest(1001), completed_quest(1100)],
+    )
+    == ForMove(PlaceRefused(constraint: "character_quest_test_refuses_1100"))
+    as "only the ten checks the client's limits name are a refused quest log: any other constraint of the table is a refused place"
+  stop(store)
+}
+
+pub fn a_quest_row_the_client_would_refuse_is_refused_by_its_named_constraint_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  let refused = fn(quest: QuestRow, constraint: String, why: String) {
+    assert save_log(
+        store:,
+        account:,
+        character_id: id,
+        epoch: 1,
+        sequence: 1,
+        quests: [completed_quest(1001), quest],
+      )
+      == ForMove(QuestLogRefused(constraint:))
+      as why
+  }
+  refused(
+    QuestRow(..accepted_quest(1003), state: 4),
+    "character_quest_active_has_its_entry",
+    "opcode.0x35f.active_state_crash: only states 1 and 2 are in the client's active list, so an entry of any other state is refused (the client crashes on it)",
+  )
+  refused(
+    QuestRow(
+      ..accepted_quest(1003),
+      active: Some(
+        ActiveQuest(
+          ..accepted_entry(),
+          progress: [1, 1, 1, 1, 1, 1, 1],
+          objective_ms_left: [0, 0, 0, 0, 0, 0, 0],
+        ),
+      ),
+    ),
+    "character_quest_progress_fits_six_objectives",
+    "0x1405510d0: a quest has at most 6 objectives (kQuestMaxObjective), so 7 progress values are refused",
+  )
+  refused(
+    QuestRow(
+      ..accepted_quest(1003),
+      active: Some(ActiveQuest(..accepted_entry(), objective_ms_left: [0, 0])),
+    ),
+    "character_quest_timers_match_progress",
+    "opcode.0x35f: an objective's time left is sent for each progress value, so 3 progress values with 2 timers are refused",
+  )
+  refused(
+    accepted_quest(32_768),
+    "character_quest_id_fits_15_bits",
+    "opcode.0x35f: a quest id is 15 bits on the wire, so 32768 is refused",
+  )
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      quests: [completed_quest(1001), accepted_quest(1003)],
+    )
+    == ForMove(PlaceSaved)
+    as "each refusal was one statement that stored nothing and took no sequence, and the store goes on: the next save is written"
+  // A row of a state outside the active list that holds only some of the active
+  // columns cannot come from a `QuestRow`, so it is put into the table directly.
+  let put = fn(column: String, value: String) {
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, "
+      <> column
+      <> ") values ($1, 1009, 4, "
+      <> value
+      <> ")",
+    )
+    |> pog.parameter(pog.int(id))
+    |> pog.execute(store.pool)
+  }
+  let assert Error(pog.ConstraintViolated(constraint:, ..)) =
+    put("tracked", "true")
+    as "the table refused a botched row that holds a tracked flag"
+  assert constraint == "character_quest_active_has_its_entry"
+    as "opcode.0x35f.active_state_crash: a quest outside the active list has none of the active entry's columns, not some of them"
+  let assert Error(pog.ConstraintViolated(constraint:, ..)) =
+    put("quest_ms_left", "0")
+    as "the table refused a botched row that holds a time left"
+  assert constraint == "character_quest_active_has_its_entry"
+  assert result.is_ok(put("tracked", "null"))
+    as "a botched row with none of them is accepted"
   stop(store)
 }

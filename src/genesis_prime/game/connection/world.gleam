@@ -64,7 +64,9 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/camp
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
-import genesis_prime/game/connection/effects.{Chats, StartsSaveTimer} as connection_effects
+import genesis_prime/game/connection/effects.{
+  type Decided, Chats, StartsQuestResetTimer, StartsSaveTimer, ToClient,
+} as connection_effects
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
@@ -76,6 +78,7 @@ import genesis_prime/game/connection/state.{
 } as connection_state
 import genesis_prime/game/innate_choice
 import genesis_prime/game/movement
+import genesis_prime/game/quest_log
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/top_zone
 import genesis_prime/game/unit_properties
@@ -181,6 +184,65 @@ pub fn save_due(
         before: [connection_effects.start_save_timer()],
         within_ms: session.settings.ask_deadline_ms,
       )
+    WaitingToClaim(..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | Summoning(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey ->
+      connection_state.end_for(
+        session:,
+        now:,
+        text: "a timer the rule did not start fired",
+      )
+  }
+}
+
+/// What the quest log says about the reset time at `now`: the entered player
+/// that remembers the time a reset sent, and the effects, which are the 0x362 when
+/// a reset passed since the client was last told and the reset timer started for
+/// the next one.
+fn reset_effects(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  now now: Now,
+) -> #(world_entry.Entered, List(Decided)) {
+  case
+    quest_log.reset_due(
+      log: entered.quests,
+      numbers: session.settings.numbers,
+      now:,
+    )
+  {
+    quest_log.NotYet(after_ms:) -> #(entered, [StartsQuestResetTimer(after_ms:)])
+    quest_log.Reset(log:, frame:, after_ms:) -> #(
+      world_entry.Entered(..entered, quests: log),
+      [ToClient(frame:), StartsQuestResetTimer(after_ms:)],
+    )
+  }
+}
+
+/// The quest reset timer fired: the quest log says whether a reset passed
+/// (genesis_prime/game/quest_log `reset_due`); a reset sends 0x362, and the timer
+/// starts again for the next one. The timer runs only while the player is in the
+/// world, so a firing in any other status is a bug.
+pub fn quest_reset_due(
+  session session: Session,
+  now now: Now,
+) -> client_connection.Handled(Session) {
+  case session.status {
+    InWorld(holder:, entered:) -> {
+      let #(entered, decided) = reset_effects(session:, entered:, now:)
+      connection_effects.carry_out(
+        session: Session(..session, status: InWorld(holder:, entered:)),
+        now:,
+        effects: decided,
+        written: [],
+      )
+    }
     WaitingToClaim(..)
     | ClaimingSession(..)
     | InCharacterSelect(..)
@@ -480,6 +542,14 @@ pub fn entry_answered(
             holder:,
             step: refused_play(holder:, character_id:, warning:),
           )
+        Ok(world_entry.Fault(text:)) ->
+          connection_state.told(
+            session:,
+            now:,
+            reason: LostUserServer,
+            level: step.LogError,
+            text:,
+          )
         Error(Nil) -> entry_unasked(session, now)
       }
     }
@@ -493,6 +563,8 @@ pub fn entry_answered(
           classes: session.settings.class_resources,
           numbers: session.settings.numbers,
           defaults: unit_properties.defaults(tables: session.settings.tables),
+          tables: session.settings.tables,
+          now:,
         )
       {
         Ok(world_entry.InTheWorld(entered:, effects:)) ->
@@ -597,18 +669,22 @@ fn in_the_world(
       world_zone_id: start_place.world_zone_id(movement.place(entered.movement)),
       top_zones: top_zone.top_zones(session.settings.tables),
     )
+  // A play entry has just told the client the latest reset, so nothing is due; a
+  // rejoin after the Holocrypt holds the log it left with, and a reset that passed
+  // during the transfer is sent now (the reset timer was cancelled on the way out).
+  let #(entered, reset) =
+    reset_effects(
+      session:,
+      entered: world_entry.Entered(..entered, chat: updated),
+      now:,
+    )
   connection_effects.carry_out(
-    session: Session(
-      ..session,
-      status: InWorld(
-        holder:,
-        entered: world_entry.Entered(..entered, chat: updated),
-      ),
-    ),
+    session: Session(..session, status: InWorld(holder:, entered:)),
     now:,
     effects: list.flatten([
       list.map(effects, connection_effects.from_entry),
       [Chats(effects: burst), StartsSaveTimer],
+      reset,
     ]),
     written: [],
   )
