@@ -2110,10 +2110,15 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
   // The second player camps out: the first sees its unit go, after its moves.
   game_client.send_world(game: second, message_id: 0x00BF, body: <<1>>)
   let #(_countdown, second_have) =
-    game_client.next(game: second, have: second_have)
+    game_client.read_message(
+      game: second,
+      have: second_have,
+      message_id: 0x0092,
+    )
   game_client.send_world(game: second, message_id: 0x00C0, body: <<>>)
   let #(left, second_have) = game_client.next(game: second, have: second_have)
   assert left.message_id == 0x0594
+    as "the camp returns the client to character select"
   let #(gone, first_have) = game_client.next(game: first, have: first_have)
   assert gone.message_id == 0x0355 as "opcode.0x355: the unit is removed"
   let assert Ok(destroyed) = unit_destroyed.decode(gone.body)
@@ -2121,10 +2126,14 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
   // It plays again as a new unit, which the first sees appear.
   game_client.send(game: second, message_id: 0x07E0, body: <<>>)
   let #(_list, second_have) =
-    game_client.read_kept(game: second, have: second_have, count: 4)
+    game_client.read_message(
+      game: second,
+      have: second_have,
+      message_id: 0x0117,
+    )
   send_play(game: second, character_id: second_character)
   let #(_again, _second_have) =
-    game_client.read_kept(game: second, have: second_have, count: 8)
+    game_client.read_entry_kept(game: second, have: second_have)
   let #(back, first_have) = game_client.next(game: first, have: first_have)
   assert unit_of(back) == 3 as "a new unit, never an id given before"
   // The first's 0x262 of it shows the second's connection knows the first sees
@@ -2163,7 +2172,9 @@ type Seat {
 /// Four players of four accounts enter one map, each reports the zone the
 /// client's own terrain gives (0xF2 once, as the client does while the world
 /// loads): the first three stand in zone 6009, the fourth in zone 648. The
-/// zones are the planted WorldZone rows, whose top zones are 4961 and 35.
+/// zones are the planted WorldZone rows, whose top zones are 4961 and 35. Every
+/// seat has read the other three players' units, so no player's entry is still
+/// on its way to another seat.
 fn four_players() -> #(login_support.Started, List(Seat)) {
   let started = login_support.start()
   let seats =
@@ -2180,7 +2191,17 @@ fn four_players() -> #(login_support.Started, List(Seat)) {
         Seat(game:, have:, zone_channel:)
       },
     )
-  #(started, seats)
+  #(started, list.map(seats, told_of_the_others))
+}
+
+/// Reads until the seat has been told of the three other players' units (0x262).
+/// Each of their connections writes its own unit to this one after its own
+/// burst, so no ping to this connection settles them: a pong comes after only
+/// what this connection took before the ping.
+fn told_of_the_others(seat: Seat) -> Seat {
+  let seat = wait_for_frame(seat:, message_id: 0x0262).1
+  let seat = wait_for_frame(seat:, message_id: 0x0262).1
+  wait_for_frame(seat:, message_id: 0x0262).1
 }
 
 /// Sends the zone the client's terrain gives (0xF2) and settles the seat: every
@@ -2448,12 +2469,12 @@ pub fn a_target_that_camped_is_not_found_and_is_found_again_after_it_enters_agai
   let speaker = written_to(seat: seat_at(seats, 0), number: 1).1
   let target = written_to(seat: seat_at(seats, 1), number: 1).1
   game_client.send_world(game: target.game, message_id: 0x00BF, body: <<1>>)
-  let #(_, have) =
-    game_client.read_kept(game: target.game, have: target.have, count: 1)
+  let target = wait_for_frame(seat: target, message_id: 0x0092).1
   game_client.send_world(game: target.game, message_id: 0x00C0, body: <<>>)
-  let #(frame, have) = game_client.next(game: target.game, have:)
+  let #(frame, have) = game_client.next(game: target.game, have: target.have)
   assert frame.message_id == 0x0594
     as "the camp returns the client to character select"
+  let target = Seat(..target, have:)
   game_client.whisper(
     game: speaker.game,
     target: "Ann Qu",
@@ -2464,13 +2485,12 @@ pub fn a_target_that_camped_is_not_found_and_is_found_again_after_it_enters_agai
   assert failed.message_id == 0x01D9
     as "the design's failure table: after the camp's leave the name group is left, so the whisper gets 0x1d9"
   game_client.send(game: target.game, message_id: 0x07E0, body: <<>>)
-  let #(listed, have) =
-    game_client.read_kept(game: target.game, have:, count: 4)
-  let assert [_, _, _, Frame(body: list_body, ..)] = listed
-  let assert Ok(listing) = character_list.decode(list_body)
+  let #(listed, target) = wait_for_frame(seat: target, message_id: 0x0117)
+  let assert Ok(listing) = character_list.decode(listed.body)
   let assert [entry] = listing.characters
   send_play(game: target.game, character_id: entry.character_id)
-  let #(_, have) = game_client.read_entry_kept(game: target.game, have:)
+  let #(_, have) =
+    game_client.read_entry_kept(game: target.game, have: target.have)
   let target = Seat(..target, have:)
   let target = written_to(seat: target, number: 3).1
   game_client.whisper(
@@ -2486,9 +2506,21 @@ pub fn a_target_that_camped_is_not_found_and_is_found_again_after_it_enters_agai
       chat_message_id: 2,
     )
   assert accept.name == "Ann Qu" as "a new entry joins the name group again"
-  let #(target_frames, _) = written_to(seat: target, number: 4)
-  assert list.map(chat_lines(target_frames), fn(line) { line.text })
-    == ["again"]
+  // The speaker's accept is written before the line is told to the target, so
+  // the target's line is waited for, not a pong after the accept.
+  let #(line, have) =
+    game_client.read_chat(game: target.game, have: target.have)
+  assert line.text == "again"
+  // One sender writes to this seat, so a second "again" would arrive before the
+  // next line: the line after it is the next one sent.
+  game_client.whisper(
+    game: speaker.game,
+    target: "Ann Qu",
+    text: "once",
+    chat_message_id: 3,
+  )
+  let #(next_line, _) = game_client.read_chat(game: target.game, have:)
+  assert next_line.text == "once" as "the first whisper was told to it once"
   list.each(seats, fn(seat) { game_client.close(game: seat.game) })
   login_support.stop(started)
 }
@@ -2578,11 +2610,9 @@ fn wait_for_frame(
   seat seat: Seat,
   message_id message_id: Int,
 ) -> #(Frame, Seat) {
-  let #(frame, have) = game_client.next(game: seat.game, have: seat.have)
-  case frame.message_id == message_id {
-    True -> #(frame, Seat(..seat, have:))
-    False -> wait_for_frame(seat: Seat(..seat, have:), message_id:)
-  }
+  let #(frame, have) =
+    game_client.read_message(game: seat.game, have: seat.have, message_id:)
+  #(frame, Seat(..seat, have:))
 }
 
 /// Reads until the server has written a message of each id, and gives every
