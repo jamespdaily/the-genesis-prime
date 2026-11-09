@@ -23,6 +23,7 @@
 //// - Creature2 74812 (Dorian Walker) gives quest 10528 and receives quest 10520;
 ////   Creature2 73464, the Virtual Battle Beast, gives and receives none.
 
+import character_tables
 import connection_rule_support as support
 import fixture_tables
 import game_connection_support as connection_support
@@ -31,19 +32,28 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/interaction
+import genesis_prime/game/shown
 import genesis_prime/game/start_place
+import genesis_prime/game/vendor
 import genesis_prime/message/buyback_list.{BuybackList}
+import genesis_prime/message/dialog_responses_shown.{DialogResponsesShown}
 import genesis_prime/message/generic_error.{GenericError}
+import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
 import genesis_prime/message/vendor_item.{type VendorItem, VendorItem}
 import genesis_prime/message/vendor_items.{VendorItems}
 import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
 import genesis_prime/step.{type ConnectionEvent, type Event, LogWarning}
+import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{type Hostile, Hostile}
+import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
+import gleam/dict
 import gleam/list
 import gleam/option.{None}
+import gleam/set
 import owned_test
 import planted_table.{Integer}
 import spawn_support
@@ -474,4 +484,114 @@ pub fn a_vendor_open_the_client_would_refuse_is_refused_with_its_code_test() -> 
     as { what <> " is refused again" }
   assert support.logs_of(step: second, level: LogWarning) == []
     as { what <> " is a debug line the second time" }
+}
+
+/// Dorian Walker as unit 40 in a picture, `gap` from the player's edge, with another
+/// player's unit 9: what the rule reads of the connection.
+fn picture_with_walker(gap gap: Float) -> shown.Picture {
+  let entry = connection_support.entry_place()
+  let place =
+    start_place.moved(
+      place: entry,
+      x: start_place.x(entry),
+      y: start_place.y(entry),
+      z: start_place.z(entry) -. { gap +. player_radius +. walker_radius },
+    )
+  let walker = spawn_support.dorian_walker(number: 1, place:)
+  dict.from_list([
+    #(
+      walker_unit,
+      shown.ShownCreature(
+        creature_id: id.Creature2Id(74_812),
+        path: creature_path.Standing(at: place),
+        life: 4,
+        alive: True,
+        hit_radius: walker.combat.hit_radius,
+        attackable: walker.combat.attackable,
+        hostile_to: friendly,
+      ),
+    ),
+    #(9, shown.ShownPlayer),
+  ])
+}
+
+/// What the rule says of the vendor window for a message and its body, over a picture
+/// with Dorian Walker in reach who is a vendor and a quest giver.
+fn window_after(
+  message message: interaction.Message,
+  body body: BitArray,
+) -> interaction.Window {
+  let assert Ok(taken) =
+    interaction.take(
+      message:,
+      body:,
+      player: interaction.Player(
+        race_id: id.RaceId(1),
+        faction: shown.Dominion,
+        place: connection_support.entry_place(),
+      ),
+      picture: picture_with_walker(gap: 1.0),
+      tables: character_tables.shared(),
+      vendors: vendor_support.stocking(creature_ids: [74_812]),
+      now_ms: 0,
+      logged: set.new(),
+    )
+    as "the body is one the client's reader accepts"
+  taken.window
+}
+
+fn request_body(unit_id unit_id: Int, kind kind: Int) -> BitArray {
+  let assert Ok(body) =
+    interaction_request.encode(InteractionRequest(unit_id:, kind:))
+    as "a unit id and a 7-bit kind fit the message"
+  body
+}
+
+pub fn an_opened_vendor_is_held_and_any_other_interaction_answer_clears_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert Ok(walkers) =
+    vendor.get(
+      vendors: vendor_support.stocking(creature_ids: [74_812]),
+      creature_id: id.Creature2Id(74_812),
+    )
+    as "the vendors of the test hold Dorian Walker"
+  assert window_after(
+      message: interaction.Requested,
+      body: request_body(unit_id: walker_unit, kind: 0x31),
+    )
+    == interaction.Opens(opened: vendor.Opened(
+      unit_id: walker_unit,
+      vendor: walkers,
+    ))
+    as "opcode.0x7ea: a vendor request the client's check accepts opens the window the 0xBE needs"
+  let closes = [
+    #(
+      "a vendor request the client would refuse",
+      request_body(unit_id: 99, kind: 0x31),
+    ),
+    #(
+      "a request to talk to a quest giver",
+      request_body(unit_id: walker_unit, kind: 37),
+    ),
+    #("the client's own end", request_body(unit_id: 0, kind: 0x65)),
+    #(
+      "a kind the server does not take",
+      request_body(unit_id: walker_unit, kind: 5),
+    ),
+  ]
+  list.each(closes, fn(closing) {
+    assert window_after(message: interaction.Requested, body: closing.1)
+      == interaction.Closes
+      as {
+        "opcode.0x7ea: the client closes the vendor window before each request it sends, so "
+        <> closing.0
+        <> " ends it"
+      }
+  })
+  let assert Ok(shown_body) =
+    dialog_responses_shown.encode(DialogResponsesShown)
+    as "the message has no fields"
+  assert window_after(message: interaction.ResponsesShown, body: shown_body)
+    == interaction.Keeps
+    as "opcode.0x7ea: 0x356 is not an interaction request, so the client's window stays"
 }

@@ -2,8 +2,9 @@
 //// (genesis_prime/game/interaction): the rule decides, and this carries out its
 //// effects in order, a log line, the 0x0357 that opens the unit's dialog, the 0x090B
 //// and 0x00BC that open a vendor's window, or the 0x0106 and refusing 0x090B of a
-//// vendor request the client would refuse. A
-//// refusal ends the connection with the sentence the rule gives.
+//// vendor request the client would refuse. The rule's result for the vendor window is
+//// held on the player, which a purchase reads. A refusal ends the connection with the
+//// sentence the rule gives.
 
 import genesis_prime/client_connection.{Continue}
 import genesis_prime/connection/frame.{type Frame}
@@ -15,6 +16,7 @@ import genesis_prime/game/shown
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type Now}
 import gleam/list
+import gleam/option.{None, Some}
 
 /// What a message of the interaction feature does, taken from inside 0x038C with
 /// the player in the world.
@@ -45,7 +47,17 @@ pub fn interaction_message(
   {
     Ok(taken) ->
       Continue(
-        Session(..session, interaction_logged: taken.logged),
+        Session(
+          ..connection_state.with_entered(session:, change: fn(entered) {
+            case taken.window {
+              interaction.Opens(opened:) ->
+                world_entry.Entered(..entered, vendor: Some(opened))
+              interaction.Closes -> world_entry.Entered(..entered, vendor: None)
+              interaction.Keeps -> entered
+            }
+          }),
+          interaction_logged: taken.logged,
+        ),
         list.flat_map(taken.effects, fn(effect) {
           case effect {
             interaction.Log(level:, text:) -> [

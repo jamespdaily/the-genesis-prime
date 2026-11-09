@@ -3,9 +3,9 @@
 -- order, credits first: opcode.0x25e) and changes one with message 0x919; a purchase takes
 -- credits in the same transaction that adds the items (genesis_prime/store).
 --
--- A character holds a currency only while its amount is above 0: no row is the client's
--- start value 0 (opcode.0x25e.safe_body), so the load fills the slots a character has no
--- row for with 0. The type is one of the 14 the client keeps (SetCurrency 0x1403b5730);
+-- A currency with no row reads as 0, the client's start value (opcode.0x25e.safe_body), so
+-- the load fills the slots a character has no row for with 0; a row may hold 0 too, as a
+-- purchase that spends every credit leaves one. The type is one of the 14 the client keeps (SetCurrency 0x1403b5730);
 -- 0x919 drops the kinds 14 to 21. The amount is 64 bits like both messages' totals and is
 -- never negative. The credit cap (GameFormula 1115) depends on an account flag
 -- (0x1403b59f0) and a purchase only lowers the total, so the table holds no upper bound:
@@ -25,8 +25,8 @@ create table character_currency (
 
 -- The credits a new character starts with, a server choice: the client holds no starting
 -- amount, so a character would start with 0 and could buy nothing until something pays
--- credits. The same amount goes to each character that exists. A whole number of credits,
--- not negative.
+-- credits. The game_number row below is the one place the amount is written, and each
+-- character that exists is given it. A whole number of credits, not negative.
 
 insert into game_number_name (name, unit) values
   ('starting_credits', 'units');
@@ -40,4 +40,6 @@ insert into game_number (name, value, unit, source, reason) values
    'the client holds no starting amount of credits (opcode.0x25e, the start value is 0): so that a purchase can be played before any step pays credits, a character starts with 1,000, a server choice');
 
 insert into character_currency (character_id, currency_type_id, amount)
-select character_id, 1, 1000 from character;
+select character_id, 1, value::bigint
+from character, game_number
+where game_number.name = 'starting_credits';

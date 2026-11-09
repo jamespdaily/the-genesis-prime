@@ -335,7 +335,7 @@ fn slotting(
 /// Whether the item is a proxy: the client gives it the joined flags 0x10004 and
 /// no equipped slot flags, whatever its type, category and family hold
 /// (FillItemInfo 0x1404445d0, `0x1404445d0.proxy`).
-fn is_proxy(item: item2.Item2) -> Bool {
+pub fn is_proxy(item: item2.Item2) -> Bool {
   int.bitwise_and(item.flags, proxy_flag) != 0
 }
 
@@ -717,7 +717,7 @@ fn formula(
 
 /// A GameFormula row's curve at a power level: `f0 x e^(f01 x m) + f02 x
 /// m^f03` with `m = level - dataint0` (0x14041da70).
-fn curve(
+pub fn curve(
   row row: game_formula.GameFormula,
   level level: Int,
 ) -> Result(Float, ItemPropertyError) {

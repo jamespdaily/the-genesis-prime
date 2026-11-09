@@ -14,10 +14,13 @@
 //// - **The credit cap** (GameFormula 1115, 500000) is applied by the step that adds credits;
 ////   a purchase only lowers the total.
 
-import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/store
+import gleam/bit_array
 import gleam/dict.{type Dict}
 import gleam/list
+import gleam/result
 
 /// The amounts held, by currency type (1 to 15); a type with no row is 0.
 pub type Currencies {
@@ -26,6 +29,12 @@ pub type Currencies {
 
 /// The currency type of credits.
 pub const credits_type = 1
+
+/// The number of currency types 0x025E holds amounts for (`opcode.0x25e`).
+const currency_types = 15
+
+/// The kind of a 0x0919 that sets credits (`opcode.0x919`).
+const credits_kind = 0
 
 /// The currencies the saved rows give.
 pub fn from_held(held held: List(store.HeldCurrency)) -> Currencies {
@@ -37,24 +46,44 @@ pub fn from_held(held held: List(store.HeldCurrency)) -> Currencies {
 }
 
 /// The credits held.
-pub fn credits(currencies _currencies: Currencies) -> Int {
-  panic as "shape: #583 the credits"
+pub fn credits(currencies currencies: Currencies) -> Int {
+  amount(currencies:, currency_type_id: credits_type)
 }
 
 /// The currencies with the credits `credits`.
 pub fn with_credits(
-  currencies _currencies: Currencies,
-  credits _credits: Int,
+  currencies currencies: Currencies,
+  credits credits: Int,
 ) -> Currencies {
-  panic as "shape: #583 the credits set"
+  Currencies(amounts: dict.insert(currencies.amounts, credits_type, credits))
+}
+
+/// What is held of a currency type, 0 when there is no row.
+fn amount(
+  currencies currencies: Currencies,
+  currency_type_id currency_type_id: Int,
+) -> Int {
+  result.unwrap(dict.get(currencies.amounts, currency_type_id), 0)
 }
 
 /// The 15 amounts of 0x025E, 8 bytes each, little-endian, type 1 first.
-pub fn bytes(currencies _currencies: Currencies) -> BitArray {
-  panic as "shape: #583 the 0x025E bytes"
+pub fn bytes(currencies currencies: Currencies) -> BitArray {
+  list.repeat(Nil, currency_types)
+  |> list.index_map(fn(_, index) {
+    <<amount(currencies:, currency_type_id: index + 1):little-size(64)>>
+  })
+  |> bit_array.concat
 }
 
 /// The 0x0919 that sets the client's credits to `total`.
-pub fn changed_frame(total _total: Int) -> Frame {
-  panic as "shape: #583 the 0x0919 frame"
+pub fn changed_frame(total total: Int) -> Frame {
+  let assert Ok(body) =
+    currency_changed.encode(CurrencyChanged(
+      kind: credits_kind,
+      total:,
+      field_3: 0,
+      field_4: 0,
+    ))
+    as "a total below 2^64 fits the message"
+  Frame(message_id: currency_changed.message_id, body:)
 }

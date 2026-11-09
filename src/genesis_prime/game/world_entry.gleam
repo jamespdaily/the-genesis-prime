@@ -321,9 +321,9 @@ pub type Entered {
     /// purchase lowers (genesis_prime/game/vendor_purchase) and the store saves with it.
     currencies: Currencies,
     /// The vendor window the player has open, which a purchase is made from
-    /// (genesis_prime/game/vendor_purchase): set when the vendor's window opens
-    /// (genesis_prime/game/interaction), and cleared by any other answer to a request
-    /// to interact and by a join of a world.
+    /// (genesis_prime/game/vendor_purchase): the result of each interaction message
+    /// sets it, clears it or keeps it (genesis_prime/game/interaction.Window), and a
+    /// join of a world has none.
     vendor: Option(vendor.Opened),
     /// The character's experience: the saved one, or the least of its level when
     /// none was saved (`experience.entering`). The connection adds each kill's
@@ -559,7 +559,8 @@ fn joining_a_play(
       )
     }
     Ok(experience) -> {
-      let frame = character_state.frame(tables:, character:, experience:)
+      let frame =
+        character_state.frame(tables:, character:, experience:, currencies:)
       let #(state, effects) =
         joining(
           character:,
