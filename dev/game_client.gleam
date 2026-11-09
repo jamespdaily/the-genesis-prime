@@ -722,6 +722,22 @@ pub fn read_kept(
   #(list.map(outers, in_the_game_wrapper(_, game.cipher)), rest)
 }
 
+/// Reads until the server writes a message with this id, and gives it with the
+/// bytes kept beyond it. The messages before it are dropped: they are the ones
+/// another connection or a timer may write at any moment, which a test that
+/// reads "the next message" or a count of them would take for the answer.
+pub fn read_message(
+  game game: Game,
+  have have: BitArray,
+  message_id message_id: Int,
+) -> #(Frame, BitArray) {
+  let #(frame, rest) = next(game:, have:)
+  case frame.message_id == message_id {
+    True -> #(frame, rest)
+    False -> read_message(game:, have: rest, message_id:)
+  }
+}
+
 /// Takes what the server has already written, without waiting for more, and
 /// drops the whole messages in it: the bytes of a message not yet whole are
 /// kept, so the next read starts where the stream is. For a client that walks
