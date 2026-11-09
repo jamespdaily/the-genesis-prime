@@ -22,6 +22,7 @@ import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
 import genesis_prime/world_map/game_number.{type Row, GameNumbers, Row}
 import gleam/list
+import gleam/result
 import gleam/string
 import owned_key
 import owned_test
@@ -101,6 +102,53 @@ pub fn a_leash_range_not_above_the_aggro_range_is_refused_test() -> Nil {
     as "a creature at home with a player in its ring would leash at once"
 }
 
+/// The seeded rows with these two reset times, in milliseconds.
+fn with_resets(daily daily: Float, weekly weekly: Float) -> List(Row) {
+  list.map(seeded(), fn(row) {
+    case row.name {
+      "daily_quest_reset_ms" -> Row(..row, value: daily)
+      "weekly_quest_reset_ms" -> Row(..row, value: weekly)
+      _ -> row
+    }
+  })
+}
+
+pub fn a_quest_reset_time_that_is_not_a_whole_second_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Both are 500 ms past a whole second, and the weekly one is a day and the
+  // daily one's time of day after Monday 00:00, so only the second is wrong. The
+  // reset time the quest log sends is whole Unix seconds (opcode.0x362: the
+  // client compares it for change), so an instant inside a second is one the
+  // message cannot carry.
+  let rows = with_resets(daily: 36_000_500.0, weekly: 122_400_500.0)
+  let assert Error(refusals) = game_number.select(rows:, sight_range:)
+  assert names_of(refusals) == ["daily_quest_reset_ms", "weekly_quest_reset_ms"]
+    as "each time that is not a whole number of seconds is named"
+  assert list.all(refusals, fn(refused) {
+    string.contains(refused.rule, "whole second")
+  })
+    as "the rule says why"
+  assert game_number.select(
+      rows: with_resets(daily: 36_001_000.0, weekly: 122_401_000.0),
+      sight_range:,
+    )
+    |> result.is_ok
+    as "times of whole seconds are taken"
+}
+
+pub fn a_weekly_reset_at_another_time_of_day_than_the_daily_one_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The weekly reset on Tuesday at 11:00 UTC against a daily reset at 10:00: the
+  // monthly and yearly resets run on the daily reset's time of day, and the
+  // quest log's design holds the weekly one to the same time of day.
+  let rows = with_resets(daily: 36_000_000.0, weekly: 126_000_000.0)
+  let assert Error([refused]) = game_number.select(rows:, sight_range:)
+  assert names_of([refused]) == ["weekly_quest_reset_ms"]
+    as "the weekly time is the one that does not match"
+  assert string.contains(refused.rule, "time of day")
+    as "the rule says what does not match"
+}
+
 pub fn a_missing_health_regeneration_number_is_refused_by_name_test() -> Nil {
   use <- owned_test.run(5000)
   let without = fn(name) { list.filter(seeded(), fn(row) { row.name != name }) }
@@ -142,7 +190,7 @@ pub fn a_migrated_database_holds_the_nine_seeded_numbers_test() -> Nil {
     content_game_number.rows(db: content_support.connect(database:))
     as "the query ran"
   assert rows == seeded()
-    as "migration 0010's four rows, migration 0015's two, migration 0016's refill time and migration 0020's two quest reset times, in name order"
+    as "migration 0010's four rows, migration 0015's two, migration 0016's refill time and migration 0021's two quest reset times, in name order"
   assert content_support.count(
       database:,
       sql: "select count(*) from game_number where source = 'server_choice' and reason is not null",

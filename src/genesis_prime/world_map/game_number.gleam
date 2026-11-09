@@ -41,7 +41,10 @@
 ////   number of milliseconds inside its day or week, held by the table
 ////   (`game_number_daily_quest_reset_ms_is_a_whole_ms_inside_the_day`,
 ////   `game_number_weekly_quest_reset_ms_is_a_whole_ms_inside_the_week`, migration
-////   0020), and read by the quest log (genesis_prime/game/quest_log).
+////   0021). The load also refuses a time that is not a whole second, since the
+////   reset time the client is sent is whole Unix seconds (opcode.0x362), and a
+////   weekly time whose time of day is not the daily one's. The quest log reads them
+////   (genesis_prime/game/quest_log).
 //// - **The unit of each name** is the table's: `game_number_name_has_its_unit`, a
 ////   foreign key to `game_number_name`, refuses a row whose unit is not its name's
 ////   and a name nobody listed (migration 0014).
@@ -51,6 +54,7 @@
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
 import gleam/dict
 import gleam/float
+import gleam/int
 import gleam/list
 import gleam/result
 
@@ -82,10 +86,10 @@ pub type GameNumbers {
     /// last point destroyed, in whole milliseconds (migration 0016).
     interrupt_armor_refill_ms: Int,
     /// The time of day the daily quests reset at, in whole milliseconds after
-    /// 00:00 UTC (migration 0020).
+    /// 00:00 UTC (migration 0021).
     daily_quest_reset_ms: Int,
     /// The time the weekly quests reset at, in whole milliseconds after Monday
-    /// 00:00 UTC (migration 0020).
+    /// 00:00 UTC (migration 0021).
     weekly_quest_reset_ms: Int,
   )
 }
@@ -171,6 +175,29 @@ fn ranges_checked(
         <> " is not below the sight range of "
         <> float.to_string(sight_range),
     ),
+    #(
+      !whole_seconds(milliseconds: value("daily_quest_reset_ms")),
+      "daily_quest_reset_ms",
+      "a daily quest reset of "
+        <> float.to_string(value("daily_quest_reset_ms"))
+        <> " ms is not a whole second, and the reset time the client is sent is whole Unix seconds",
+    ),
+    #(
+      !whole_seconds(milliseconds: value("weekly_quest_reset_ms")),
+      "weekly_quest_reset_ms",
+      "a weekly quest reset of "
+        <> float.to_string(value("weekly_quest_reset_ms"))
+        <> " ms is not a whole second, and the reset time the client is sent is whole Unix seconds",
+    ),
+    #(
+      numbers.weekly_quest_reset_ms % day_ms != numbers.daily_quest_reset_ms,
+      "weekly_quest_reset_ms",
+      "a weekly quest reset at "
+        <> int.to_string(numbers.weekly_quest_reset_ms % day_ms)
+        <> " ms into its day is not at the time of day of the daily reset, "
+        <> int.to_string(numbers.daily_quest_reset_ms)
+        <> " ms",
+    ),
   ]
   case
     list.filter_map(checks, fn(check) {
@@ -183,6 +210,15 @@ fn ranges_checked(
     [] -> Ok(numbers)
     refusals -> Error(refusals)
   }
+}
+
+/// The milliseconds of a day.
+const day_ms = 86_400_000
+
+/// Whether a time in milliseconds is a whole number of seconds.
+fn whole_seconds(milliseconds milliseconds: Float) -> Bool {
+  let seconds = milliseconds /. 1000.0
+  seconds == int.to_float(float.round(seconds))
 }
 
 fn refused(name name: String, rule rule: String) -> Refusal {
