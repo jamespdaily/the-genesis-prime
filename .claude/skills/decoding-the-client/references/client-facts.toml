@@ -10582,16 +10582,23 @@ grade = "fairly sure"
 gap = "Sender order read from the saved C; not run against the live client."
 
 ["opcode.0x17d"]
-statement = "Message 0x17d, client to world server: split a stack (ClientItemSplit). Body: the source item's guid (64 bits), the destination location (9 bits) and bag index (32 bits), and the count to move (32 bits). The UI sends it when a partial stack is dropped on an empty slot, or any count on an occupied slot holding an item of the same Item2Type; dropping a whole stack on an empty slot sends a move (0x182) instead."
-proof = "Writer 0x140087d50 (record 0x18). Sender in the drag-drop handler 0x1406d50f0, branch 'DDItemSplitStack': 0x1406d531f mov edx, 0x17d; the drag value holds bag index in bits 0 to 7, location in bits 8 to 15 and count in bits 16 to 31."
+statement = "Message 0x17d, client to world server: split a stack (ClientItemSplit). Body: the source item's guid (64 bits), the destination location (9 bits) and bag index (32 bits), and the count to move (32 bits). The client sends it only for a drag of part of a stack onto an empty slot: the drop query accepts a split only on an empty slot, and a drag whose count equals the stack's count (1 when the stack's count is 0) is sent as a move, 0x182, instead. It sets no wait for this message, so no ten-second move wait follows it; the server's 0x17f of the source clears the wait a move set."
+proof = "Writer 0x140087d50 (record 0x18). Drop handler 0x1406d50f0, branch 'DDItemSplitStack': for a target of kind 1 (an empty slot) it reads the item at the drag's source and compares the drag's count (bits 16 to 31 of the drag value) with the item's count: equal calls the move sender 0x1403c17d0 (0x182), else 0x1406d531f mov edx, 0x17d with the item's guid, the target's place and the drag's count. The branch for a target of kind 2 (an occupied slot of the same Item2Type) is dead: the drop query 0x1406d48c0 returns 2 (accept) for 'DDItemSplitStack' only when the target's kind is 1, else 3 (refuse), and the handler's first act is to leave on a 3. The 0x17d send has no call of FUN_14046a3d0, the routine that 0x1403c1b62 uses to set the 0x309 wait for 0x182."
 grade = "fairly sure"
-gap = "What the server must answer is not read from the client; by the handlers it is 0x17f (source count, reason StackSplit 0) and a 0x111 for the new stack, or 0x56a on refusal (a guess)."
+gap = "That the handler's first virtual call is the query 0x1406d48c0 is read from the query's returns (2 and 3) matching the handler's test for 3, not from the table of slots. The count the UI offers (the Lua count dialog's range, and the wheel handler 0x1406d4370, which starts a drag of one) was not read, so the server refuses a count of 0, and a count of the held count or more, by its own rule."
 
 ["opcode.0x149"]
-statement = "Message 0x149, client to world server: destroy a held item (ClientItemDelete). Body: its location (9 bits) and bag index (32 bits). The client refuses before sending: no Item2 row (Item_BadId 6), an Item2 whose flags hold 0x10000 (Item_CannotBeDeleted 156), a bag that is not empty (nothing sent), and an item offered in a trade (nothing sent)."
-proof = "Writer 0x140088d70 (record 8). Sender 0x1403c1360: 0x1403c13db test dword ptr [rax + 0x14c], 0x10000; 0x1403c13e7 mov edx, 0x9c; 0x1403c142e mov edx, 0x149; gate 0x1403a68e0."
+statement = "Message 0x149, client to world server: destroy a held item (ClientItemDelete). Body: its location (9 bits) and bag index (32 bits). The client sends nothing for a location of 300 or more, an unset (0xffffffff) index, an equipped index of 31 or more, no held item at the place, a worn bag, or an item offered in a trade; it refuses with a code, without sending, when the item has no Item2 row (Item_BadId 6) or Item2.flags holds 0x10000 (Item_CannotBeDeleted 156). It sets no wait for this message."
+proof = "Writer 0x140088d70 (record 8). Sender 0x1403c1360 in order: the place tests above; the held item at the place (0x1403ac780); no Item2 row gives 0x1403cc530 with 6; 0x1403c13db test dword ptr [rax + 0x14c], 0x10000 gives 0x1403cc530 with 0x9c; then a send only when the joined type, category and family flags lack 0x100 (not a bag) or the item's word at offset 0x20 is not 0; then the trade test 0x1403a68e0; then 0x1403c142e mov edx, 0x149 and a store of 1 to the item-level-stale state. It has no call of FUN_14046a3d0, the routine that sets a 0x309 wait."
 grade = "fairly sure"
-gap = "The server's answer is by the handlers 0x148 with reason PlayerRequested (21); that the retail server used 21 is a guess from the enum."
+gap = "The item's word at offset 0x20 is read as its location (0 being worn), because 0x1406d48c0's use test reads the same word as 'equipped'; no reader of the held item's layout was followed. The server's answer is by the handler 0x148 with reason PlayerRequested (21); that the retail server used 21 is a guess from the enum."
+
+["0x1403c1360"]
+statement = "Sends a held item's destruction, 0x149: it sends nothing for an out-of-range place, no held item, a worn bag or an item in a trade, and refuses with Item_BadId (6) for no Item2 row or Item_CannotBeDeleted (156) for Item2.flags holding 0x10000. It sets no move wait."
+proof = "Saved C of 0x1403c1360: the place guard (location below 300, index not 0xffffffff, location not 0 or index below 0x1f), FUN_1403ac780 for the item, 0x1403cc530 with 6 and with 0x9c, the 0x100 and offset 0x20 test, IsItemInTrade 0x1403a68e0, SendWorldMessage with 0x149, then the store to the stale state; see opcode.0x149."
+grade = "fairly sure"
+gap = "The word at offset 0x20 is read as the item's location; the function's name is not yet saved in the Ghidra project."
+name = "SendItemDelete"
 
 ["0x140399de0"]
 statement = "Right-click equip and unequip pick the slot themselves and send a move (0x182), not a use: an equipped item goes to the first empty usable inventory slot; a bag goes to a bag slot chosen by 0x1403acc80; any other item goes to the first empty slot whose bit is in its equipped slot flags, else to the first matching slot (a swap). No free slot gives code 20."
@@ -10601,11 +10608,25 @@ gap = "Code 20 is not named in CodeEnumGenericError's printed rows."
 name = "AutoEquipItem"
 
 ["0x1406d50f0"]
-statement = "The inventory window's drop handler: DDUseItemWithInventory uses or equips, DDItemSplitStack splits (0x17d) or moves (0x182), DDSupplySatchelItem sends 0x184, and DDBagItem moves bags."
-proof = "Saved C of 0x1406d50f0: the four string compares and the calls to 0x1403998e0, 0x1403c17d0 and the 0x17d write."
+statement = "The inventory window's drop handler: DDUseItemWithInventory uses or equips, DDItemSplitStack splits (0x17d) or moves (0x182), DDSupplySatchelItem sends 0x184, and DDBagItem sends a move (0x182) onto any slot, except that while a window flag is on and the source and target are the same kind of place it sends 0x182 only when the target holds a stackable item (joined flags hold 0x4) of the same Item2 id as the dragged item, and nothing otherwise. A merge is therefore a 0x182 onto a stack of the same Item2, and the client does not test the target stack's room first."
+proof = "Saved C of 0x1406d50f0: the four string compares and the calls to 0x1403998e0, 0x1403c17d0 and the 0x17d write. Branch 'DDBagItem': the source is the drag value's location (bits 8 to 15) and index (bits 0 to 7); a drop on the same place or at location 8 sends nothing; with the window's word at offset 0x824 zero, or the source and target kinds different (5 counted as 1), 0x1403c17d0 is called at once; otherwise 0x1403ac780 finds the dragged item, and 0x1403c17d0 is called only when the target's item record has flag 0x4 in its joined flags (word 0x55) and its first word, the Item2 id, equals the dragged item's."
 grade = "fairly sure"
-gap = "The DDBagItem branch and 0x184 were not followed."
+gap = "What the window's word at offset 0x824 is, and what sets it, was not read, so when the client sends a merge's 0x182 is known only for the branch above; the 0x184 branch was not followed."
 name = "HandleItemDragDrop"
+
+["0x1406d48c0"]
+statement = "The inventory window's drop query: whether a drop of a drag type on a target is accepted (2) or refused (3), asked by the drop handler before it acts. A 'DDItemSplitStack' drop is accepted only on an empty slot (target kind 1) and refused on an occupied slot or no target."
+proof = "Saved C of 0x1406d48c0: the compare with 'DDItemSplitStack' (s_DDItemSplitStack_140b3c258) is followed by 'if the target is absent return 3; accept when the target's kind word equals 1', and the exit 'if accepted return 2, else 3'. Referenced by a pointer at 0x140b711e0 and called by nothing directly."
+grade = "fairly sure"
+gap = "The rules for the other drag types (DDUseItemWithInventory, DDBagItem, the bank and supply types) were not read; the function's name is not yet saved in the Ghidra project."
+name = "HandleItemDragDropQuery"
+
+["0x1406d4370"]
+statement = "The inventory slot's step handler: for a negative step while one of three modifier tests of the window holds, over a slot whose target kind is 2, 5 or 6 and which holds an item, it starts a drag of type 'DDItemSplitStack' from that slot with a count of 1 (the drag value holds the location and index in bits 0 to 15 and the count 1 in bits 16 to 31)."
+proof = "Saved C of 0x1406d4370, its last branch: param_3 below 0, three virtual calls at slots 0x238, 0x240 and 0x248, the target's kind word 2 or 5 or 6, 0x1403ac780 for the item, then 0x1406d4d50 with 'DDItemSplitStack', the item's icon word and the value (location and index) | 0x10000."
+grade = "guess"
+gap = "That the step is the mouse wheel, what the three modifier tests are, and what the function's earlier branches do (they compare the drag type with 'DDItemSplitStack' and change a count) were not read; the Lua count dialog that gives a split its count was not read either; the function's name is not yet saved in the Ghidra project."
+name = "HandleItemSlotStep"
 
 # Inventory and equipment: messages the client reads
 
@@ -10628,23 +10649,37 @@ grade = "fairly sure"
 gap = "Read from the saved C only."
 
 ["opcode.0x148"]
-statement = "Message 0x148, world server to client: a held item is gone. Body: its guid (64 bits) and a reason (6 bits, CodeEnumItemUpdateReason). The client raises ItemRemoved (ItemSentToCrate for HousingCrate) and empties the slot."
-proof = "Reader 0x14008d9c0; handler 0x1403b7d40 (saved C): FindHeldItemByGuid, 0x1403b8250 with the stack count (1 when 0) and the reason, FileHeldItem with 0."
+statement = "Message 0x148, world server to client: a held item is gone. Body: its guid (64 bits) and a reason (6 bits, CodeEnumItemUpdateReason). The client raises ItemRemoved (ItemSentToCrate for HousingCrate) with the item's held count (1 when 0) and the reason, with a further notice for PlayerRequested (21), and empties the slot. It does not clear the move wait: a move or split that is still waiting stays so until a 0x569, 0x568, 0x56a or 0x17f arrives."
+proof = "Reader 0x14008d9c0; handler 0x1403b7d40 (saved C): FindHeldItemByGuid, 0x1403b8250 with the stack count (1 when 0) and the reason, FileHeldItem with 0, and a store of 1 to the stale state; unlike 0x1403b7300, 0x1403b74e0, 0x1403b7770 and 0x1403c0b20 it has no walk of the 0x309 timer list."
 grade = "fairly sure"
-gap = "Read from the saved C only."
+gap = "Read from the saved C only; an unknown guid does nothing."
 
 ["opcode.0x17f"]
-statement = "Message 0x17f, world server to client: a held item's stack count changed. Body: its guid (64 bits), the new count (32 bits) and a reason (6 bits, CodeEnumItemUpdateReason). The client sets the count, clears the move wait, and raises ItemRemoved for a drop (with the amount lost) or its gain notice for a rise. An unknown guid is reported as a client error."
-proof = "Reader 0x14007fd50; handler 0x1403c0b20 (saved C): FindHeldItemByGuid, the count store, the 0x309 timer walk, 0x1403b8250 when the change is below 1, else 0x1403b8060."
+statement = "Message 0x17f, world server to client: a held item's stack count changed. Body: its guid (64 bits), the new count (32 bits) and a reason (6 bits, CodeEnumItemUpdateReason). The client sets the count and clears the move wait. A new count at or below the old one (the old count is 1 when stored as 0) raises ItemRemoved with the amount lost and the reason; a rise raises the gain events of 0x1403b8060 with the amount gained and the reason. An unknown guid is reported as a client error."
+proof = "Reader 0x14007fd50; handler 0x1403c0b20 (saved C): FindHeldItemByGuid, the count store, the 0x309 timer walk, then 0x1403b8250 when the new count less the old is below 1, else 0x1403b8060; 0x1403c0cb3 mov r9d, dword ptr [r15 + 0xc] and the call 0x1403c0cc7 pass the message's reason to 0x1403b8060."
 grade = "fairly sure"
-gap = "0x1403b8060 (the gain notice) not read."
+gap = "What the UI events and notices raised for each reason show was not read (the Lua side)."
 
 ["0x1403b8250"]
 statement = "Raises the item removal UI event: ItemSentToCrate for reason HousingCrate (24), otherwise ItemRemoved with the item, the amount and the reason; PlayerRequested (21) also queues a further notice."
-proof = "Saved C of 0x1403b8250: 'ItemSentToCrate' when the reason is 0x18, else 'ItemRemoved', and extra work when it is 0x15."
+proof = "Saved C of 0x1403b8250: 'ItemSentToCrate' when the reason is 0x18, else 'ItemRemoved', and for 0x15 a record of kind 0x1e with the player's unit and the item id, a call through a function pointer, and when that returns non-zero and the unit is found, 0x14060afe0."
 grade = "fairly sure"
-gap = "The PlayerRequested notice was not followed."
+gap = "What the further notice for PlayerRequested shows (0x14060afe0) was not read."
 name = "RaiseItemRemoved"
+
+["0x1403b8060"]
+statement = "Raises the events for a held item that was added or whose count rose, given the item, the amount and the reason: the UI event ItemAdded when the item's own fields are set; then for reasons 4, 5, 10, 11, 15, 19, 25, 36, 38, 39, 40, 43 and 44 one further UI notice with the item and the amount, for reason 17 another, and for every other reason (0, StackSplit, among them) nothing more."
+proof = "Saved C of 0x1403b8060: RaiseUiEvent 'ItemAdded' under the test of three item fields, then a switch on the fourth argument: the listed cases call 0x14040fc60 and 0x140427fa0, case 0x11 calls 0x140428260, the default returns. Called by 0x1403b8380 (call at 0x1403b84bc) and by the 0x17f handler 0x1403c0b20 (call at 0x1403c0cc7)."
+grade = "fairly sure"
+gap = "What the three item fields tested for ItemAdded are, and what the two notices show (the loot-gain popups are assumed), were not read; the function's name is not yet saved in the Ghidra project."
+name = "RaiseItemGained"
+
+["0x1403b8380"]
+statement = "Handles message 0x111 (a held item added). For an ability (location 4) it clears the held ability at that bag index, if any, and adds the new one. For any other item it first removes the held item with the message's own guid, with the reason 49, when an item is held at the message's place; then adds the item (AddHeldItem), raises the gain events with the message's count and reason (0x1403b8060) and the throttled inventory refresh events."
+proof = "Saved C of 0x1403b8380: location word at 0x14 equal to 4 selects the ability path (0x1403b7e80 then AddHeldItem); else 0x1403ac780 on the place, 0x1403b7d40 with the message's first word and 0x31 when it finds an item, AddHeldItem, 0x1403b8060 (call at 0x1403b84bc), and two RaiseThrottledUiEvent calls. Called by HandleWorldMessage 0x1403ec6a0 (call at 0x1403eeef8)."
+grade = "fairly sure"
+gap = "What AddHeldItem and FileHeldItem do to a different item already at the place was not read; the server sends 0x111 only to an empty place. The function's name is not yet saved in the Ghidra project."
+name = "HandleItemAdd"
 
 ["opcode.0x111.guid"]
 statement = "A held item's guid is its identity for every later server message: 0x569, 0x568, 0x148 and 0x17f all find the item by guid, never by place. So the guid must stay with the item when it moves, and no two held items of a player may share one; a guid made from the item's first place collides once an item moves and a new item is made at the freed place."

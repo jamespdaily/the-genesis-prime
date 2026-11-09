@@ -137,3 +137,7 @@ WorldZone	4843	a zone with a Welcome Tutorial row	zone_welcome_test
 WorldZone	4872	a zone with a Welcome Tutorial row	zone_welcome_test
 WorldZone	4896	a zone with a Welcome Tutorial row	zone_welcome_test
 Creature2	12909	a Hycrest Farmer Male whose Creature2Difficulty is 0, which has no row	experience_test
+Item2	1039	(stackable, maximum 20)	inventory_test
+Item2	12049	(bag, not stackable, maximum 6)	inventory_test
+Item2	85531	(bag, not stackable, maximum 14)	inventory_test
+Item2	80875	(flags hold 0x10000, cannot be deleted)	inventory_test

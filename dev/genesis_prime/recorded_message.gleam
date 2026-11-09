@@ -661,6 +661,8 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.CastAbility(..)
     | client_message.AbilityHold(..)
     | client_message.ItemMove(..)
+    | client_message.ItemSplit(..)
+    | client_message.ItemDelete(..)
     | client_message.CancelCast(..)
     | client_message.InnateIndexChosen(..)
     | client_message.ChooseResurrection(..)
