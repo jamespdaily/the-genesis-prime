@@ -230,14 +230,20 @@ type Rows {
   )
 }
 
+/// The item's own Item2 row; a missing one is `NoRow`.
+fn item_row(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(item2.Item2, ItemPropertyError) {
+  item2.get(tables:, id: Item2Id(item2_id))
+  |> result.replace_error(NoRow(table: "Item2", id: item2_id))
+}
+
 fn rows(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
 ) -> Result(Rows, ItemPropertyError) {
-  use item <- result.try(
-    item2.get(tables:, id: Item2Id(item2_id))
-    |> result.replace_error(NoRow(table: "Item2", id: item2_id)),
-  )
+  use item <- result.try(item_row(tables:, item2_id:))
   use type_row <- result.try(
     item2_type.get(tables:, id: Item2TypeId(item.item2_type_id))
     |> result.replace_error(NoRow(table: "Item2Type", id: item.item2_type_id)),
@@ -353,43 +359,33 @@ pub fn equipped_slot_flags(
   |> result.map(fn(slotting) { slotting.equipped_slot_flags })
 }
 
-/// Whether the item stacks: the flags of its type, category and family, joined,
-/// hold 0x4 (the drop handler 0x1406d50f0 merges a drop only onto such an item).
-/// Only a missing row is an error. The client takes the fields of an item whose
-/// Item2.flags hold 0x4000 from GameFormula 1214's item (FillItemInfo
-/// 0x1404445d0), which this does not read: such an item is judged by its own
-/// row, a gap open in #333.
-pub fn stackable(
+/// The most the item's stack holds, for an item that stacks: Item2.maxStackCount
+/// when the flags of its type, category and family, joined, hold 0x4 (the drop
+/// handler 0x1406d50f0 merges a drop only onto such an item), `None` for an item
+/// that does not stack. Only a missing row is an error. The client takes the
+/// fields of an item whose Item2.flags hold 0x4000 from GameFormula 1214's item
+/// (FillItemInfo 0x1404445d0), which this does not read: such an item is judged
+/// by its own row, a gap open in #333.
+pub fn stack_limit(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
-) -> Result(Bool, ItemPropertyError) {
-  rows(tables:, item2_id:)
-  |> result.map(fn(rows) {
-    int.bitwise_and(rows.joined_flags, stackable_flag) != 0
-  })
-}
-
-/// The most the item's stack holds: Item2.maxStackCount. The proxy gap of
-/// `stackable` applies (#333).
-pub fn max_stack_count(
-  tables tables: table_store.Tables,
-  item2_id item2_id: Int,
-) -> Result(Int, ItemPropertyError) {
-  item2.get(tables:, id: Item2Id(item2_id))
-  |> result.map(fn(item) { item.max_stack_count })
-  |> result.replace_error(NoRow(table: "Item2", id: item2_id))
+) -> Result(Option(Int), ItemPropertyError) {
+  use rows <- result.map(rows(tables:, item2_id:))
+  case int.bitwise_and(rows.joined_flags, stackable_flag) {
+    0 -> None
+    _ -> Some(rows.item.max_stack_count)
+  }
 }
 
 /// Whether the player may destroy the item: Item2.flags lacks 0x10000
 /// (SendItemDelete 0x1403c1360 refuses with Item_CannotBeDeleted when it holds
-/// it). The proxy gap of `stackable` applies (#333).
+/// it). The proxy gap of `stack_limit` applies (#333).
 pub fn deletable(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
 ) -> Result(Bool, ItemPropertyError) {
-  item2.get(tables:, id: Item2Id(item2_id))
-  |> result.map(fn(item) { int.bitwise_and(item.flags, undeletable_flag) == 0 })
-  |> result.replace_error(NoRow(table: "Item2", id: item2_id))
+  use item <- result.map(item_row(tables:, item2_id:))
+  int.bitwise_and(item.flags, undeletable_flag) == 0
 }
 
 /// The bag index an item is equipped at: the index of the lowest bit set in its

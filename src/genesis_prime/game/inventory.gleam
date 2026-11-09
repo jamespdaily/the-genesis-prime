@@ -250,10 +250,6 @@ const player_requested = 21
 /// A bag index the client's delete never sends (0x1403c1360).
 const unset_bag_index = 0xffffffff
 
-/// The last equipped index of a place the client's delete sends: it sends
-/// nothing for an equipped index of 31 or more.
-const last_deletable_equipped_index = 30
-
 /// The location from which the client's delete sends nothing (0x1403c1360).
 const first_location_never_deleted = 300
 
@@ -331,6 +327,8 @@ fn take_split(
 }
 
 /// The code of the first of a split's checks on the destination that it breaks.
+/// The order is the split's own (closed before the location test), so it does
+/// not call `checked`'s place checks.
 fn split_code(
   items items: List(HeldItem),
   to to: ItemPlace,
@@ -366,10 +364,7 @@ fn take_delete(
   use <- bool.lazy_guard(
     when: place.location >= first_location_never_deleted
       || place.bag_index == unset_bag_index
-      || {
-      place.location == equipped
-      && place.bag_index > last_deletable_equipped_index
-    },
+      || out_of_equipped_range(place),
     return: fn() { refused_with(item: Error(Nil), code: params) },
   )
   case held_at(items:, place:) {
@@ -396,9 +391,20 @@ fn restacked(
   guid guid: Int,
   count count: Int,
 ) -> List(HeldItem) {
+  changed(items:, guid:, with: fn(item) {
+    store.HeldItem(..item, stack_count: count)
+  })
+}
+
+/// The items with `change` made to the item of the guid.
+fn changed(
+  items items: List(HeldItem),
+  guid guid: Int,
+  with change: fn(HeldItem) -> HeldItem,
+) -> List(HeldItem) {
   list.map(items, fn(item) {
     case item.item_guid == guid {
-      True -> store.HeldItem(..item, stack_count: count)
+      True -> change(item)
       False -> item
     }
   })
@@ -425,16 +431,7 @@ fn take_move(
   let destination = held_at(items:, place: move.to)
   case checked(life:, tables:, move:, source:, destination:) {
     Error(Broken(refusal:)) -> Error(refusal)
-    Error(Code(code:)) ->
-      Ok(
-        Refused([
-          Send(failed(
-            guid: result.map(source, fn(item) { item.item_guid })
-              |> result.unwrap(0),
-            code:,
-          )),
-        ]),
-      )
+    Error(Code(code:)) -> refused_with(item: source, code:)
     Ok(item) ->
       case merge(items:, tables:, item:, destination:) {
         Error(refusal) -> Error(refusal)
@@ -458,24 +455,19 @@ fn merge(
 ) -> Result(Option(Moving), Refusal) {
   case destination {
     Ok(target) if target.item2_id == item.item2_id -> {
-      let broken = fn(_) { NoItemRow(item2_id: item.item2_id) }
-      let item2_id = item.item2_id.value
-      use stackable <- result.try(
-        item_property.stackable(tables:, item2_id:) |> result.map_error(broken),
+      use limit <- result.map(
+        item_property.stack_limit(tables:, item2_id: item.item2_id.value)
+        |> result.replace_error(NoItemRow(item2_id: item.item2_id)),
       )
-      use maximum <- result.map(
-        item_property.max_stack_count(tables:, item2_id:)
-        |> result.map_error(broken),
-      )
-      case stackable && target.stack_count < maximum {
-        False -> None
-        True ->
+      case limit {
+        Some(maximum) if target.stack_count < maximum ->
           Some(merged(
             items:,
             source: item,
             target:,
             count: int.min(item.stack_count, maximum - target.stack_count),
           ))
+        Some(_) | None -> None
       }
     }
     Ok(_) | Error(Nil) -> Ok(None)
@@ -573,7 +565,8 @@ fn checked(
   Ok(item)
 }
 
-/// The equipped slots end at index 30.
+/// The equipped slots end at index 30; the client's delete sends nothing for a
+/// place past it either (0x1403c1360).
 fn out_of_equipped_range(place: ItemPlace) -> Bool {
   place.location == equipped && place.bag_index > 30
 }
@@ -662,16 +655,8 @@ fn relocated(
   guid guid: Int,
   to place: store.ItemPlace,
 ) -> List(HeldItem) {
-  list.map(items, fn(item) {
-    case item.item_guid == guid {
-      True ->
-        store.HeldItem(
-          ..item,
-          location: place.location,
-          bag_index: place.bag_index,
-        )
-      False -> item
-    }
+  changed(items:, guid:, with: fn(item) {
+    store.HeldItem(..item, location: place.location, bag_index: place.bag_index)
   })
 }
 
@@ -861,8 +846,7 @@ pub fn answered(
     ItemsNotSaved -> #(items, [
       Log(
         level: LogWarning,
-        text: "the "
-          <> not_done(moving.change)
+        text: not_done(moving.change)
           <> ": a later login holds the character, or the items are not where the client has them",
       ),
       Send(failed(guid: moving.guid, code: db_failure)),
@@ -870,8 +854,7 @@ pub fn answered(
     SaveRefused(constraint:) -> #(items, [
       Log(
         level: LogError,
-        text: "the "
-          <> not_done(moving.change)
+        text: not_done(moving.change)
           <> ": the store refused the places by the constraint "
           <> constraint,
       ),
@@ -881,12 +864,12 @@ pub fn answered(
 }
 
 /// What a change that was not saved did not do, for the log.
-fn not_done(change: Change) -> String {
+pub fn not_done(change: Change) -> String {
   case change {
-    Moved(..) -> "item was not moved"
-    Split(..) -> "stack was not split"
-    Merged(..) -> "stacks were not merged"
-    Deleted(..) -> "item was not deleted"
+    Moved(..) -> "the item was not moved"
+    Split(..) -> "the stack was not split"
+    Merged(..) -> "the stacks were not merged"
+    Deleted(..) -> "the item was not deleted"
   }
 }
 
