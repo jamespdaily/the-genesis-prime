@@ -542,6 +542,7 @@ import genesis_prime/game/hit
 import genesis_prime/game/lasting
 import genesis_prime/game/look
 import genesis_prime/game/prerequisite
+import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
@@ -659,6 +660,9 @@ pub type Caster {
     /// The player's health and shield with their maxima, which a heal's formula reads
     /// (genesis_prime/game/damage `value_on_caster`).
     vitals: damage.Vitals,
+    /// The player's quest log, which the quest conditions of a prerequisite (types 6,
+    /// 68, 43 and 22 to 36) read: the client reads the checking player's own log.
+    quests: QuestLog,
   )
 }
 
@@ -6248,6 +6252,7 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
     rolls: [],
     positions: prerequisite.Placed(first: pose, second: pose),
     factions: Some(caster.factions),
+    quests: Some(caster.quests),
     seen: prerequisite.WholeUnit,
   )
 }
@@ -6648,6 +6653,7 @@ fn target_gate(
           prerequisite.of_struck(
             first: option.from_result(dict.get(poses, primary_target)),
             second: area.pose_of(place: caster.place),
+            quests: caster.quests,
           )
       }
       case prerequisite.check(prerequisite: target, subject: gate_subject) {

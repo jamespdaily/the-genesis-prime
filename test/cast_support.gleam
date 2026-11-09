@@ -46,6 +46,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/set
 import place_support
+import quest_support
 import spell_tables
 
 /// A child spell the client's row gives these ids: no cast time, no cooldown, no
@@ -263,6 +264,7 @@ pub fn caster() -> Caster {
     factions: prerequisite.Factions(current: 167, base: 167),
     stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
     vitals: damage.Vitals(health: 0, max_health: 0, shield: 0, max_shield: 0),
+    quests: quest_support.log_of(rows: []),
   )
 }
 

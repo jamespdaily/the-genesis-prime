@@ -145,6 +145,7 @@ pub fn bit_2_with_no_requirement_block_makes_the_cast_condition_a_gate_test() ->
       requirement_block: #(0, 0, 0),
       rows: rows(),
       arcs: support.no_arcs(),
+      quests: support.no_quests(),
     )
     == Ok(CastGate(prerequisite: expected(id: 903)))
     as "0x1403ace00 skips the gate only for a spell with the block as well as bit 2"
@@ -159,6 +160,7 @@ pub fn bit_2_with_any_one_of_the_three_block_columns_makes_it_a_waiver_test() ->
         requirement_block: block,
         rows: rows(),
         arcs: support.no_arcs(),
+        quests: support.no_quests(),
       )
       == Ok(RequirementWaiver(prerequisite: expected(id: 19_750)))
       as "casterInnateRequirement0, casterInnateRequirement1 or targetBeginInnateRequirement alone makes the block"
@@ -173,6 +175,7 @@ pub fn a_block_without_bit_2_leaves_the_cast_condition_a_gate_test() -> Nil {
       requirement_block: #(6, 0, 0),
       rows: rows(),
       arcs: support.no_arcs(),
+      quests: support.no_quests(),
     )
     == Ok(CastGate(prerequisite: expected(id: 903)))
     as "propertyFlags 0x4100002 lacks bit 2 (0x4)"
@@ -186,16 +189,27 @@ pub fn no_prerequisite_id_is_no_cast_condition_test() -> Nil {
       requirement_block: #(6, 0, 0),
       rows: rows(),
       arcs: support.no_arcs(),
+      quests: support.no_quests(),
     )
     == Ok(NoCasterCast)
-  assert spell_plan.column_of(id: 0, rows: rows(), arcs: support.no_arcs())
+  assert spell_plan.column_of(
+      id: 0,
+      rows: rows(),
+      arcs: support.no_arcs(),
+      quests: support.no_quests(),
+    )
     == Ok(None)
     as "a column holding 0 names no row"
 }
 
 pub fn a_column_naming_no_row_fails_the_load_test() -> Nil {
   use <- owned_test.run(5000)
-  assert spell_plan.column_of(id: 77_777, rows: rows(), arcs: support.no_arcs())
+  assert spell_plan.column_of(
+      id: 77_777,
+      rows: rows(),
+      arcs: support.no_arcs(),
+      quests: support.no_quests(),
+    )
     == Error(NoRow(table: "Prerequisite", id: 77_777))
   assert spell_plan.caster_cast_of(
       prerequisite_id: 77_777,
@@ -203,6 +217,7 @@ pub fn a_column_naming_no_row_fails_the_load_test() -> Nil {
       requirement_block: #(0, 0, 0),
       rows: rows(),
       arcs: support.no_arcs(),
+      quests: support.no_quests(),
     )
     == Error(NoRow(table: "Prerequisite", id: 77_777))
     as "the same for the cast condition, waiver or gate"
@@ -220,6 +235,7 @@ pub fn a_column_whose_rows_nest_each_other_fails_the_load_naming_the_ids_test() 
         list.find(looping, fn(row) { row.id == wanted.value })
       },
       arcs: support.no_arcs(),
+      quests: support.no_quests(),
     )
     == Error(spell_plan.PrerequisiteCycle(path: [10, 20, 10]))
     as "a cycle fails the load, as the module's doc says"

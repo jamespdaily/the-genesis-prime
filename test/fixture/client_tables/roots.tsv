@@ -138,3 +138,34 @@ WorldZone	4843	a zone with a Welcome Tutorial row	zone_welcome_test
 WorldZone	4872	a zone with a Welcome Tutorial row	zone_welcome_test
 WorldZone	4896	a zone with a Welcome Tutorial row	zone_welcome_test
 Creature2	12909	a Hycrest Farmer Male whose Creature2Difficulty is 0, which has no row	experience_test
+Quest2	1949	kill quest, objective 1 kill type 2 count 12	prerequisite_quest_test
+Quest2	3668	quest whose objective 1 has flag 2 and objective 2 flag 1	prerequisite_quest_test
+Quest2	3297	quest whose objective 0 has flag 0x20 and objective 1 flag 2	prerequisite_quest_test
+Quest2	4705	quest whose objective 0 is a kill with flag 0x200	prerequisite_quest_test
+Quest2	1823	quest whose objective 0 is a checklist type 14	prerequisite_quest_test
+Quest2	5261	quest whose objective 0 is type 28 with a soldier row	prerequisite_quest_test
+Quest2	8256	quest whose objective 0 is type 28 with no soldier row	prerequisite_quest_test
+Quest2	5857	quest whose objective 0 is type 12, count 1	prerequisite_quest_test
+QuestObjective	2072	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	2073	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	4744	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	4745	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	4791	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	7943	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	4299	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	6486	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	1915	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	7647	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	14973	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	14987	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	9045	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+QuestObjective	8784	objective of a quest the prerequisite conditions read	prerequisite_quest_test
+PathSoldierActivate	37	soldier activate row with mode 1, the objective of quest 5261	prerequisite_quest_test
+Prerequisite	9207	type 22 on quest 5857 or type 6 on quest 5857, start content	prerequisite_quest_test
+Quest2	4361	six objectives, whose last is the one type 36 reads	prerequisite_quest_test
+QuestObjective	5871	objective 0 of quest 4361	prerequisite_quest_test
+QuestObjective	5907	objective 1 of quest 4361	prerequisite_quest_test
+QuestObjective	5908	objective 2 of quest 4361	prerequisite_quest_test
+QuestObjective	5909	objective 3 of quest 4361	prerequisite_quest_test
+QuestObjective	5910	objective 4 of quest 4361	prerequisite_quest_test
+QuestObjective	5911	objective 5 of quest 4361	prerequisite_quest_test
