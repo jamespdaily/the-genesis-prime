@@ -691,15 +691,17 @@ fn wearable_at(
   use slotted <- result.try(
     item_property.is_slotted(tables:, item2_id:) |> result.replace_error(broken),
   )
+  use <- bool.guard(
+    when: !slotted || { to.bag_index >= 17 && to.bag_index <= 20 },
+    return: Error(Code(not_valid_for_slot)),
+  )
   use flags <- result.try(
     item_property.equipped_slot_flags(tables:, item2_id:)
     |> result.replace_error(broken),
   )
   let bit = int.bitwise_shift_left(1, to.bag_index)
   use <- bool.guard(
-    when: !slotted
-      || { to.bag_index >= 17 && to.bag_index <= 20 }
-      || int.bitwise_and(flags, bit) == 0,
+    when: int.bitwise_and(flags, bit) == 0,
     return: Error(Code(not_valid_for_slot)),
   )
   case equip_requirement.check(tables:, item2_id: item.item2_id, wearer:) {
