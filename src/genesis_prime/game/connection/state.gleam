@@ -11,6 +11,7 @@ import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/character_select
 import genesis_prime/game/class_resource
+import genesis_prime/game/inventory
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/quest_log
@@ -167,6 +168,17 @@ pub type Status {
   /// `InWorld` does; the shell takes no other input during the ask, so the
   /// creature's news of its unit waits until the status is `InWorld` again.
   Summoning(holder: Holder, entered: world_entry.Entered)
+  /// The player is in the world and the store is asked to move the items of the
+  /// player's 0x182 (`moving`, genesis_prime/game/inventory), whose answer is
+  /// awaited with the client's frames held. The player's place is not saved yet,
+  /// so a connection that ends in this status saves it as one in `InWorld` does;
+  /// the held items in `entered` are the ones before the move, which the answer
+  /// replaces.
+  MovingItem(
+    holder: Holder,
+    entered: world_entry.Entered,
+    moving: inventory.Moving,
+  )
   /// The store is asked to save where the player stands, and its answer is
   /// awaited; `then` says what follows it. A connection in this status ends
   /// without a second save: the save out is the one its end waits for.
@@ -272,6 +284,7 @@ pub fn standing(status: Status) -> Standing {
     | ClaimingSession(..)
     | EnteringWorld(..)
     | Summoning(..)
+    | MovingItem(..)
     | SavingPlace(..)
     | LeavingMap(..) -> Busy(text: "a frame was taken while an ask was out")
     WaitingToClaim(..) ->
@@ -363,6 +376,7 @@ pub fn held_in_the_world(
     | InCharacterSelect(..)
     | EnteringWorld(..)
     | Summoning(..)
+    | MovingItem(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -454,6 +468,7 @@ pub fn with_entered(
     | InCharacterSelect(..)
     | EnteringWorld(..)
     | Summoning(..)
+    | MovingItem(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -585,6 +600,7 @@ pub fn holds_a_player(
   case status {
     InWorld(holder:, entered:)
     | Summoning(holder:, entered:)
+    | MovingItem(holder:, entered:, ..)
     | ClaimingSession(holder:, resume: ResumeWorld(entered:), ..)
     | WaitingToClaim(holder:, resume: ResumeWorld(entered:), ..) ->
       Some(#(holder, entered))
@@ -676,6 +692,7 @@ pub fn entered_of(status: Status) -> Option(world_entry.Entered) {
   case status {
     InWorld(entered:, ..)
     | Summoning(entered:, ..)
+    | MovingItem(entered:, ..)
     | SavingPlace(entered:, ..)
     | LeavingMap(entered:, ..)
     | ClaimingSession(resume: ResumeWorld(entered:), ..)
@@ -703,6 +720,10 @@ fn account_id_of(status: Status) -> Option(Int) {
       )
     | InWorld(holder: hand_off.Holder(account_id: store.AccountId(id), ..), ..)
     | Summoning(
+        holder: hand_off.Holder(account_id: store.AccountId(id), ..),
+        ..,
+      )
+    | MovingItem(
         holder: hand_off.Holder(account_id: store.AccountId(id), ..),
         ..,
       )
