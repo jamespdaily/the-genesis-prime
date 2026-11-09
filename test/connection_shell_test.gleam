@@ -381,10 +381,29 @@ pub fn a_close_between_the_shells_write_for_a_timer_and_its_next_read_reaches_th
   })
   process.send(release, Nil)
   let assert Ok(OwnEvent(Accepted(..))) = process.receive(inputs, 5000)
-  let assert Ok(OwnEvent(Read(..))) = process.receive(inputs, 5000)
-  let assert Ok(OwnEvent(TimerFired(timer: TimerId(1)))) =
-    process.receive(inputs, 5000)
-  assert process.receive(inputs, 5000) == Ok(OwnEvent(PeerClosed))
+  assert after_reads(inputs) == OwnEvent(TimerFired(timer: TimerId(1)))
+    as "the command's reads, however the socket split its bytes, then timer 1"
+  assert after_reads(inputs) == OwnEvent(PeerClosed)
     as "the client closed its socket: the rule takes a close, as the shell's contract says"
   ask_support.stop(server)
+}
+
+/// The next input the rule took that is not a read of the command's bytes.
+fn after_reads(
+  inputs: Subject(step.Event(ConnectionEvent(Nil, Nil))),
+) -> step.Event(ConnectionEvent(Nil, Nil)) {
+  let assert Ok(event) = process.receive(inputs, 5000)
+    as "the rule took another input"
+  case event {
+    OwnEvent(Read(..)) -> after_reads(inputs)
+    OwnEvent(Accepted(..))
+    | OwnEvent(PeerClosed)
+    | OwnEvent(ReadFailed(..))
+    | OwnEvent(WriteFailed(..))
+    | OwnEvent(step.Woken(..))
+    | OwnEvent(TimerFired(..))
+    | OwnEvent(step.Answered(..))
+    | step.WatchEnded(..)
+    | Stopping(..) -> event
+  }
 }
