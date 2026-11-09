@@ -722,6 +722,21 @@ pub fn read_kept(
   #(list.map(outers, in_the_game_wrapper(_, game.cipher)), rest)
 }
 
+/// Reads until the server writes a message with this id, and gives it with the
+/// bytes kept beyond it. Every message before it is dropped, the connection's
+/// own included, so a test that needs those checks them with `next` instead.
+pub fn read_message(
+  game game: Game,
+  have have: BitArray,
+  message_id message_id: Int,
+) -> #(Frame, BitArray) {
+  let #(frame, rest) = next(game:, have:)
+  case frame.message_id == message_id {
+    True -> #(frame, rest)
+    False -> read_message(game:, have: rest, message_id:)
+  }
+}
+
 /// Takes what the server has already written, without waiting for more, and
 /// drops the whole messages in it: the bytes of a message not yet whole are
 /// kept, so the next read starts where the stream is. For a client that walks
@@ -1228,11 +1243,10 @@ pub fn read_chat(
   game game: Game,
   have have: BitArray,
 ) -> #(HeardLine, BitArray) {
-  let #(frame, rest) = next(game:, have:)
-  case heard_line(frame:) {
-    Ok(line) -> #(line, rest)
-    Error(Nil) -> read_chat(game:, have: rest)
-  }
+  let #(frame, rest) =
+    read_message(game:, have:, message_id: chat_line.message_id)
+  let assert Ok(line) = heard_line(frame:) as "a 0x01C8 shows a line"
+  #(line, rest)
 }
 
 /// Reads until the server answers the line sent with `chat_message_id`: the 0x1c2
