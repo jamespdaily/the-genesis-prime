@@ -113,6 +113,44 @@ order by account_id;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `character_item_sequence` query
+/// defined in `./src/genesis_prime/wire_recording/fixture/sql/character_item_sequence.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type CharacterItemSequenceRow {
+  CharacterItemSequenceRow(last_value: Int, is_called: Bool)
+}
+
+/// Where the item guid sequence stands: the last value it gave (or the value it
+/// gives first, when it has given none) and whether it has given one, which the
+/// fixture of a recorded session (genesis_prime/wire_recording/fixture) restores
+/// with `setval`, so an item a replay makes gets the guid it got live.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn character_item_sequence(
+  db: pog.Connection,
+) -> Result(pog.Returned(CharacterItemSequenceRow), pog.QueryError) {
+  let decoder = {
+    use last_value <- decode.field(0, decode.int)
+    use is_called <- decode.field(1, decode.bool)
+    decode.success(CharacterItemSequenceRow(last_value:, is_called:))
+  }
+
+  "-- Where the item guid sequence stands: the last value it gave (or the value it
+-- gives first, when it has given none) and whether it has given one, which the
+-- fixture of a recorded session (genesis_prime/wire_recording/fixture) restores
+-- with `setval`, so an item a replay makes gets the guid it got live.
+select last_value, is_called from character_item_item_guid_seq;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `character_sequence` query
 /// defined in `./src/genesis_prime/wire_recording/fixture/sql/character_sequence.sql`.
 ///
@@ -293,6 +331,79 @@ where account_id in (
   select account_id from account where login_name = any($1)
 )
 order by character_id;
+"
+  |> pog.query
+  |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_1))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `items_of_characters_of_accounts_named` query
+/// defined in `./src/genesis_prime/wire_recording/fixture/sql/items_of_characters_of_accounts_named.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type ItemsOfCharactersOfAccountsNamedRow {
+  ItemsOfCharactersOfAccountsNamedRow(
+    item_guid: Int,
+    character_id: Int,
+    item2_id: Int,
+    location: Int,
+    bag_index: Int,
+    stack_count: Int,
+  )
+}
+
+/// The items held by the characters of the accounts with these login names, in
+/// the order of their guids, with every column the fixture of a recorded session
+/// keeps (genesis_prime/wire_recording/fixture): the guid, the character that
+/// holds it, the item's id, its place and its stack count.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn items_of_characters_of_accounts_named(
+  db: pog.Connection,
+  arg_1: List(String),
+) -> Result(pog.Returned(ItemsOfCharactersOfAccountsNamedRow), pog.QueryError) {
+  let decoder = {
+    use item_guid <- decode.field(0, decode.int)
+    use character_id <- decode.field(1, decode.int)
+    use item2_id <- decode.field(2, decode.int)
+    use location <- decode.field(3, decode.int)
+    use bag_index <- decode.field(4, decode.int)
+    use stack_count <- decode.field(5, decode.int)
+    decode.success(ItemsOfCharactersOfAccountsNamedRow(
+      item_guid:,
+      character_id:,
+      item2_id:,
+      location:,
+      bag_index:,
+      stack_count:,
+    ))
+  }
+
+  "-- The items held by the characters of the accounts with these login names, in
+-- the order of their guids, with every column the fixture of a recorded session
+-- keeps (genesis_prime/wire_recording/fixture): the guid, the character that
+-- holds it, the item's id, its place and its stack count.
+select
+  item_guid,
+  character_id,
+  item2_id,
+  location::int as location,
+  bag_index,
+  stack_count
+from character_item
+where character_id in (
+  select character_id
+  from character
+  where account_id in (
+    select account_id from account where login_name = any($1)
+  )
+)
+order by item_guid;
 "
   |> pog.query
   |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_1))

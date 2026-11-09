@@ -48,7 +48,6 @@ import genesis_prime/world_map/unit_fields
 import gleam/float
 import gleam/int
 import gleam/list
-import novice_tables
 import owned_test
 import world_entry_support
 
@@ -85,16 +84,6 @@ fn entering(
   let #(effects, entered) =
     world_entry_support.entry(tables: character_tables.shared(), character:)
   #(world_entry_support.frames_of(effects:), entered)
-}
-
-/// The 0x111 of the entry at location 0, as the bag index and the item id, in
-/// the order sent.
-fn equipped(frames frames: List(Frame)) -> List(#(Int, Int)) {
-  world_entry_support.items_added(frames:)
-  |> list.filter(fn(added) { added.held_item.item.location == 0 })
-  |> list.map(fn(added) {
-    #(added.held_item.item.bag_index, added.held_item.item.item_id)
-  })
 }
 
 fn player_of(frames frames: List(Frame)) -> UnitCreatePlayer {
@@ -451,31 +440,7 @@ pub fn the_player_the_connection_keeps_holds_its_loadout_and_its_max_health_test
     as "the typed gear: the Engineer's heavy armor, 250"
 }
 
-pub fn the_whole_novice_set_is_held_at_location_0_in_the_bag_index_of_each_slot_for_every_class_and_faction_test() -> Nil {
-  use <- owned_test.run(10_000)
-  list.each(novice_tables.sets(), fn(set) {
-    let #(frames, _) =
-      entering(character: world_entry_support.character(
-        class: set.class_id,
-        faction: set.faction_id,
-        level: 1,
-      ))
-    assert equipped(frames:)
-      == list.map(novice_tables.equipped_of(set:), fn(pair) {
-        #(pair.1, pair.0)
-      })
-      as {
-        "ItemSlot.equippedSlotFlags, CharacterCreation row "
-        <> int.to_string(set.creation_id)
-        <> ": the row's seven items are held at location 0, chest 0, legs 1, shoulder 3, feet 4, hands 5, shield 15 and weapon 16"
-      }
-    assert list.map(equipped(frames:), fn(pair) { pair.0 })
-      == [0, 1, 3, 4, 5, 15, 16]
-      as "every class and faction holds one item in each of these slots"
-  })
-}
-
-pub fn every_item_the_entry_holds_has_its_own_guid_that_is_not_0_test() -> Nil {
+pub fn the_abilities_items_have_guids_of_their_own_that_are_not_0_and_not_a_held_items_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(classes(), fn(class) {
     let #(frames, _) =
@@ -484,16 +449,21 @@ pub fn every_item_the_entry_holds_has_its_own_guid_that_is_not_0_test() -> Nil {
         faction: 167,
         level: 1,
       ))
-    let guids =
-      list.map(world_entry_support.items_added(frames:), fn(added) {
-        added.held_item.item.item_guid
-      })
-    assert list.length(guids) == 11
-      as "seven equipped items, three abilities and the innate"
-    assert list.length(list.unique(guids)) == 11
-      as "opcode.0x111.equipped_set: each piece has a unique guid (0x140569d30 keeps it, and a later message finds the item by it)"
-    assert !list.contains(guids, 0)
-      as "opcode.0x111.equipped_set: each piece has a non-zero guid"
+    let added = world_entry_support.items_added(frames:)
+    let #(abilities, held) =
+      list.partition(added, fn(added) { added.held_item.item.location == 4 })
+    let ability_guids =
+      list.map(abilities, fn(added) { added.held_item.item.item_guid })
+    let held_guids =
+      list.map(held, fn(added) { added.held_item.item.item_guid })
+    assert list.length(ability_guids) == 4
+      as "opcode.0x111.ability_bag: the three abilities and the innate"
+    assert list.length(list.unique(ability_guids)) == 4
+      as "opcode.0x111.guid: each ability item has a guid of its own"
+    assert !list.contains(ability_guids, 0)
+      as "opcode.0x111.guid: a guid is never 0"
+    assert !list.any(ability_guids, fn(guid) { list.contains(held_guids, guid) })
+      as "opcode.0x111.guid: the client finds an item by its guid, so an ability item never takes the guid of a held item"
   })
 }
 

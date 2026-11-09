@@ -1,23 +1,25 @@
 //// The rows a recorded session starts from, saved beside its recordings as a
-//// file of data-only SQL (`INSERT` statements for the account and character
-//// tables, no schema), so a replay applies every migration and then the
-//// fixture, and the session finds the same account and characters it found
-//// live.
+//// file of data-only SQL (`INSERT` statements for the account, character and
+//// character item tables, no schema), so a replay applies every migration and
+//// then the fixture, and the session finds the same account, characters and held
+//// items it found live.
 ////
-//// - **What is kept.** The accounts the session names by login name and their
-////   characters, never the rest of the database, and every column of both tables
-////   but `created_at`, which no flow reads. The ids are identity columns, so each
-////   insert overrides its id. A statement after the rows of each table sets its
-////   id sequence to where the live database's stood (its last value and whether
-////   it had given one), so a row a replay makes gets the id it got live, whatever
-////   rows the live database lost since: a deleted character, a rolled-back
-////   insert, a row of another account.
-//// - **The order.** Accounts first, then the characters that reference them.
+//// - **What is kept.** The accounts the session names by login name, their
+////   characters and the items those characters hold, never the rest of the
+////   database, and every column of the three tables but `created_at`, which no
+////   flow reads. The ids and an item's guid are identity columns, so each insert
+////   overrides its own. A statement after the rows of each table sets its
+////   sequence to where the live database's stood (its last value and whether it
+////   had given one), so a row a replay makes gets the id or guid it got live,
+////   whatever rows the live database lost since: a deleted character or item, a
+////   rolled-back insert, a row of another account.
+//// - **The order.** Accounts first, then the characters that reference them,
+////   then the items that reference the characters.
 //// - **The file.** One statement for each row, each ending in a semicolon and a
 ////   line feed. A text is quoted by doubling its quotes and a byte string is
 ////   written in hexadecimal, so no value is read as SQL; the tables' columns
 ////   hold no line feed followed by a semicolon (a login name or a character
-////   name is letters and a space).
+////   name is letters and a space; an item row holds numbers only).
 //// - **Applying.** The statements run in one transaction, so a statement the
 ////   database refuses leaves no row of the file behind.
 
@@ -47,9 +49,9 @@ pub type FixtureError {
   DatabaseFailed(reason: String)
 }
 
-/// Saves the accounts of `login_names` and their characters from the database
-/// `database` reaches, and where its two id sequences stand, as data-only SQL in
-/// the file at `path`, in an order that satisfies each table's references. A
+/// Saves the accounts of `login_names`, their characters and the items those
+/// characters hold from the database `database` reaches, and where its three
+/// sequences stand, as data-only SQL in the file at `path`, in an order that satisfies each table's references. A
 /// login name the database has no account for is `NoSuchAccount`, and a file
 /// already there is never overwritten. A sitting writes it before it accepts
 /// the first connection (genesis_prime/sitting).
@@ -74,16 +76,24 @@ pub fn write(
     sql.characters_of_accounts_named(database, login_names)
     |> result.map_error(database_failed),
   )
+  use items <- result.try(
+    sql.items_of_characters_of_accounts_named(database, login_names)
+    |> result.map_error(database_failed),
+  )
   use account_sequence <- result.try(
     sql.account_sequence(database) |> result.map_error(database_failed),
   )
   use character_sequence <- result.try(
     sql.character_sequence(database) |> result.map_error(database_failed),
   )
+  use item_sequence <- result.try(
+    sql.character_item_sequence(database) |> result.map_error(database_failed),
+  )
   let assert [account_sequence] = account_sequence.rows
     as "a sequence holds one row"
   let assert [character_sequence] = character_sequence.rows
     as "a sequence holds one row"
+  let assert [item_sequence] = item_sequence.rows as "a sequence holds one row"
   use Nil <- result.try(
     simplifile.create_file(path) |> result.map_error(file_failed(path)),
   )
@@ -100,6 +110,11 @@ pub fn write(
         last_value: character_sequence.last_value,
         is_called: character_sequence.is_called,
       ),
+      items: items.rows,
+      item_sequence: Sequence(
+        last_value: item_sequence.last_value,
+        is_called: item_sequence.is_called,
+      ),
     ),
   )
   |> result.map_error(file_failed(path))
@@ -112,13 +127,16 @@ type Sequence {
 }
 
 /// The text of a fixture file for these rows: an insert for each account, the
-/// statement that sets the account id sequence, an insert for each character and
-/// the statement that sets the character id sequence.
+/// statement that sets the account id sequence, an insert for each character, the
+/// statement that sets the character id sequence, an insert for each item and the
+/// statement that sets the item guid sequence.
 fn render(
   accounts accounts: List(sql.AccountsNamedRow),
   account_sequence account_sequence: Sequence,
   characters characters: List(sql.CharactersOfAccountsNamedRow),
   character_sequence character_sequence: Sequence,
+  items items: List(sql.ItemsOfCharactersOfAccountsNamedRow),
+  item_sequence item_sequence: Sequence,
 ) -> String {
   string.concat(
     list.flatten([
@@ -136,6 +154,14 @@ fn render(
           table: "character",
           column: "character_id",
           state: character_sequence,
+        ),
+      ],
+      list.map(items, item_statement),
+      [
+        sequence_statement(
+          table: "character_item",
+          column: "item_guid",
+          state: item_sequence,
         ),
       ],
     ]),
@@ -218,6 +244,22 @@ fn character_statement(row: sql.CharactersOfAccountsNamedRow) -> String {
       integers(row.bones),
       bool(row.needs_rename),
       optional_integer(row.health),
+    ],
+    ", ",
+  )
+  <> ");\n"
+}
+
+fn item_statement(row: sql.ItemsOfCharactersOfAccountsNamedRow) -> String {
+  "insert into character_item (item_guid, character_id, item2_id, location, bag_index, stack_count) overriding system value values ("
+  <> string.join(
+    [
+      int.to_string(row.item_guid),
+      int.to_string(row.character_id),
+      int.to_string(row.item2_id),
+      int.to_string(row.location),
+      int.to_string(row.bag_index),
+      int.to_string(row.stack_count),
     ],
     ", ",
   )
