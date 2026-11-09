@@ -12,20 +12,25 @@
 //// Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
+import event_wait
+import genesis_prime/connection/script.{Elapsed, Issued, Script}
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionInput, type ConnectionRule,
   type ConnectionStep, Accepted, ConnectionId, Effects, Input, Log, Now,
-  OwnEffect, OwnEvent, Peer, PeerClosed, Read, ReadFailed, Rule, Stop, Stopping,
-  Write, WriteFailed,
+  OwnEffect, OwnEvent, Peer, PeerClosed, Read, ReadFailed, Rule, StartTimer,
+  Stop, Stopping, TimerFired, TimerId, Write, WriteFailed,
 }
 import gleam/bit_array
-import gleam/erlang/process
+import gleam/erlang/atom
+import gleam/erlang/process.{type Pid, type Subject}
 import gleam/list
+import gleam/option.{None}
 import hello_rule
 import mailbox_support
 import mug
 import owned_test
+import replay_rule
 
 // ---- the hello rule, pure ----
 
@@ -293,4 +298,112 @@ fn serving(
   let result = body(server)
   ask_support.stop(server)
   result
+}
+
+// ---- a close that arrives between the shell's write and its next read ----
+
+/// What the stalled scheduler tells the test when timer 2 starts: the shell's
+/// process, and the subject that lets the shell go on.
+type Stalled {
+  Stalled(shell: Pid, release: Subject(Nil))
+}
+
+pub fn a_close_between_the_shells_write_for_a_timer_and_its_next_read_reaches_the_rule_as_a_close_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // The replay rule answers timer 1 with a record; this rule also starts timer
+  // 2 after that write, and the scheduler holds the shell there, between the
+  // write and the next read. The socket is armed from the read before, so the
+  // client's close reaches it while the shell is held.
+  let inputs = process.new_subject()
+  let stalled = process.new_subject()
+  let answering = replay_rule.rule()
+  let rule =
+    Rule(..answering, step: fn(state, input: ConnectionInput(Nil, Nil)) {
+      process.send(inputs, input.event)
+      let assert #(state, Effects(effects)) = answering.step(state, input)
+      let effects = case
+        input.event == OwnEvent(TimerFired(timer: TimerId(1)))
+      {
+        True -> list.append(effects, [OwnEffect(StartTimer(TimerId(2), 1))])
+        False -> effects
+      }
+      #(state, Effects(effects))
+    })
+  let scripts = fn() {
+    let assert Ok(issued) = script.operating_system()
+    Ok(
+      Issued(
+        ..issued,
+        script: Script(
+          ..issued.script,
+          schedule: fn(subject, timer, reference, _after_ms) {
+            case timer == TimerId(1) {
+              True -> process.send(subject, Elapsed(timer:, reference:))
+              False -> {
+                let release = process.new_subject()
+                process.send(stalled, Stalled(shell: process.self(), release:))
+                let assert Ok(Nil) = process.receive(release, 5000)
+                  as "the test let the shell go on"
+                Nil
+              }
+            }
+            fn() { Nil }
+          },
+        ),
+      ),
+    )
+  }
+  let server =
+    ask_support.start_scripted(
+      rule:,
+      directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+      shutdown_ms: 1000,
+      wire_recorder: None,
+      scripts:,
+      registry: None,
+      locate: fn(_address) { Error(Nil) },
+      with: fn(builder) { builder },
+    )
+  let client = ask_support.connect(server)
+  ask_support.command(
+    client:,
+    letter: replay_rule.timer_command,
+    n: 1,
+    wait_ms: 0,
+  )
+  let assert Ok(Stalled(shell:, release:)) = process.receive(stalled, 5000)
+    as "the shell wrote for timer 1 and started timer 2"
+  assert ask_support.read_bytes(client, 9) == <<replay_rule.timer_fired, 1:64>>
+    as "the record the rule wrote for timer 1"
+  assert mug.shutdown(client) == Ok(Nil) as "the client closed"
+  event_wait.until("the close reached the shell's mailbox", fn() {
+    mailbox_support.tagged(shell, atom.create("tcp_closed")) == 1
+  })
+  process.send(release, Nil)
+  let assert Ok(OwnEvent(Accepted(..))) = process.receive(inputs, 5000)
+  assert after_reads(inputs) == OwnEvent(TimerFired(timer: TimerId(1)))
+    as "the command's reads, however the socket split its bytes, then timer 1"
+  assert after_reads(inputs) == OwnEvent(PeerClosed)
+    as "the client closed its socket: the rule takes a close, as the shell's contract says"
+  ask_support.stop(server)
+}
+
+/// The next input the rule took that is not a read of the command's bytes.
+fn after_reads(
+  inputs: Subject(step.Event(ConnectionEvent(Nil, Nil))),
+) -> step.Event(ConnectionEvent(Nil, Nil)) {
+  let assert Ok(event) = process.receive(inputs, 5000)
+    as "the rule took another input"
+  case event {
+    OwnEvent(Read(..)) -> after_reads(inputs)
+    OwnEvent(Accepted(..))
+    | OwnEvent(PeerClosed)
+    | OwnEvent(ReadFailed(..))
+    | OwnEvent(WriteFailed(..))
+    | OwnEvent(step.Woken(..))
+    | OwnEvent(TimerFired(..))
+    | OwnEvent(step.Answered(..))
+    | step.WatchEnded(..)
+    | Stopping(..) -> event
+  }
 }
