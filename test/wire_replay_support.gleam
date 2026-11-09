@@ -166,13 +166,14 @@ pub fn run_logged(
 }
 
 /// The welcomes the live server read from its zone_welcome table, as the table's seed
-/// states them, selected over the whole client table the replay's connection holds: the
-/// committed fixture lacks the WorldZone rows a recording lands in.
+/// states them, selected over the client's whole table set: the connection's own tables
+/// hold no Tutorial table (it is a content table), and the committed fixture lacks the
+/// WorldZone rows a recording lands in.
 fn recorded_welcomes() -> zone_welcome.ZoneWelcomes {
   let assert Ok(welcomes) =
     zone_welcome.select(
       rows: zone_welcome_support.rows(),
-      tables: client_tables.shared(),
+      tables: client_tables.every_table(),
     )
     as "each seed row names a WorldZone and a Tutorial row of category 29 in the client's tables"
   welcomes
