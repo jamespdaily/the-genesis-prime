@@ -96,13 +96,16 @@ fn directory_entries(directory: String) -> List(String) {
   |> list.sort(string.compare)
 }
 
-/// Every key of the client's fact file.
+/// Every key of the client's fact file, read once for the run: the first caller
+/// parses the file and the others take the stored keys.
 pub fn fact_keys() -> List(String) {
-  let assert Ok(text) =
-    simplifile.read(
-      ".claude/skills/decoding-the-client/references/client-facts.toml",
-    )
-    as "the fact file could not be read"
-  let assert Ok(facts) = tom.parse(text) as "the fact file is TOML"
-  dict.keys(facts)
+  database_support.once("fact_keys", fn() {
+    let assert Ok(text) =
+      simplifile.read(
+        ".claude/skills/decoding-the-client/references/client-facts.toml",
+      )
+      as "the fact file could not be read"
+    let assert Ok(facts) = tom.parse(text) as "the fact file is TOML"
+    dict.keys(facts)
+  })
 }
