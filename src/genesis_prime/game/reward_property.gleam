@@ -33,10 +33,10 @@ import gleam/list
 /// The RewardProperty id of BagSlots (`AccountItemLib.CodeEnumRewardProperty.
 /// BagSlots`): how many of the four bag slots of the character window are
 /// unlocked.
-pub const bag_slots_property = 26
+const bag_slots_property = 26
 
 /// The RewardProperty id of BankSlots: how many bank bag slots are unlocked.
-pub const bank_slots_property = 13
+const bank_slots_property = 13
 
 /// The premium system whose rows the server reads: 1, Hybrid, the one the
 /// client's start-up tier belongs to (`opcode.0x92c.bag_slots`).
