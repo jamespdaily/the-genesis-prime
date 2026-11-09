@@ -34,6 +34,7 @@ import gleam/option.{None, Some}
 import gleam/set
 import owned_test
 import prerequisite_support
+import quest_support
 import unitest
 
 /// The 32-bit float nearest pi / 2, pi, 3 pi / 4 and -pi / 4: the yaws a client holds.
@@ -351,6 +352,7 @@ pub fn a_unit_the_picture_no_longer_shows_leaves_type_108_not_read_test() -> Nil
         subject: prerequisite.of_struck(
           first: None,
           second: prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0),
+          quests: quest_support.log_of(rows: []),
         ),
       )
       == NotRead(prerequisite_type: 108)
@@ -363,7 +365,11 @@ pub fn a_struck_creature_is_placed_and_checked_with_the_caster_as_the_second_uni
   let arc = prerequisite_support.behind_arc()
   let creature = first_at_origin(yaw: 0.0)
   let subject_with = fn(caster) {
-    prerequisite.of_struck(first: Some(creature), second: caster)
+    prerequisite.of_struck(
+      first: Some(creature),
+      second: caster,
+      quests: quest_support.log_of(rows: []),
+    )
   }
   assert prerequisite.check(
       prerequisite: gate_of(comparison: 1, arc:, value: 0),
@@ -386,6 +392,7 @@ pub fn a_struck_creature_gives_not_read_for_every_type_that_reads_what_it_holds_
       ..prerequisite.of_struck(
         first: Some(first_at_origin(yaw: 0.0)),
         second: prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0),
+        quests: quest_support.log_of(rows: []),
       ),
       rolls: [50],
     )
@@ -434,6 +441,7 @@ pub fn the_clients_72_rows_with_a_type_108_condition_all_decode_test() -> Nil {
         id: PrerequisiteId(row.id),
         rows: prerequisite.table_rows(tables:),
         arcs: prerequisite.table_arcs(tables:),
+        quests: prerequisite.table_quests(tables:),
       )
       as "every objectId of a type 108 condition names a PositionalRequirement row"
   })
@@ -497,6 +505,7 @@ pub fn a_row_naming_a_positional_requirement_the_clients_table_lacks_fails_the_l
       id: PrerequisiteId(1),
       rows: fn(_) { Ok(row) },
       arcs: prerequisite.table_arcs(tables:),
+      quests: prerequisite.table_quests(tables:),
     )
     == Error(prerequisite.NoPositionalRequirementRow(id: 999))
     as "the client's table holds 52 rows and none is 999"

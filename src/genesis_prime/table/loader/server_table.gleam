@@ -40,10 +40,12 @@ import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
 import genesis_prime/table/path_mission
+import genesis_prime/table/path_soldier_activate
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite
 import genesis_prime/table/quest2
 import genesis_prime/table/quest_objective
+import genesis_prime/table/race
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
@@ -106,7 +108,11 @@ import genesis_prime/table/xp_per_level
 /// - PositionalRequirement: the arc a type 108 prerequisite condition names
 ///   (genesis_prime/game/prerequisite).
 /// - Quest2 and QuestObjective: the quests a saved quest log may name, each with its
-///   objectives and period (genesis_prime/game/quest_log).
+///   objectives and period (genesis_prime/game/quest_log), and the quests a
+///   prerequisite's quest conditions name (genesis_prime/game/prerequisite).
+/// - PathSoldierActivate: whether a type 28 objective is a checklist, which a
+///   prerequisite's progress condition reads (genesis_prime/game/prerequisite).
+/// - Race: a player's hit radius (genesis_prime/game/hit_radius).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
 /// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
@@ -140,10 +146,12 @@ pub fn entries() -> List(store.Entry) {
     item_slot.entry(),
     item_special.entry(),
     path_mission.entry(),
+    path_soldier_activate.entry(),
     positional_requirement.entry(),
     prerequisite.entry(),
     quest2.entry(),
     quest_objective.entry(),
+    race.entry(),
     spell4.entry(),
     spell4_aoe_target_constraints.entry(),
     spell4_base.entry(),

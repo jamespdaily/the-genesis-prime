@@ -110,6 +110,33 @@ pub fn loaded_beast() -> Spawn {
   })
 }
 
+/// The spawn numbered `number` of Dorian Walker, standing at `place`: Creature2
+/// 74812, a quest giver and receiver (`questIdGiven00` 10528, `questIdReceive00`
+/// 10520), faction 171, display 25510 (the one entry of display group 28097, hit
+/// radius 1.1) and outfit 8952 (the first of outfit group 9759). Faction 171 is
+/// level 10 to Exile 167 and level 0 to Dominion 166 (Faction2Relationship 771
+/// and 685), so only the Dominion may attack him and he fights only the
+/// Dominion on sight. The Beast's numbers fill the rest, which no test of a
+/// quest giver reads.
+pub fn dorian_walker(number number: Int, place place: Place) -> Spawn {
+  let beast = battle_beast(number:, x: 0.0)
+  Spawn(
+    ..beast,
+    creature_id: Creature2Id(74_812),
+    place:,
+    faction_id: 171,
+    base_faction_id: 171,
+    display_info_id: 25_510,
+    outfit_info_id: 8952,
+    combat: Combat(
+      ..beast.combat,
+      hit_radius: 1.1,
+      attackable: Attackable(exile: False, dominion: True),
+      hostile_to: Hostile(exile: False, dominion: True),
+    ),
+  )
+}
+
 /// The spawn numbered `number` of a Virtual Defense Dagun, the Dominion Novice's
 /// first enemy, `x` units along the world's x axis: Creature2 73465, faction 1442,
 /// display 26578 of hit radius 2.0, hostile to the Dominion (1442-166 level 0) and

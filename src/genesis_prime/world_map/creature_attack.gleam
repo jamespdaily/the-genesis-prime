@@ -56,6 +56,10 @@ pub type Unevaluated {
     spell4_effects_id: Int,
     positional_requirement_id: Int,
   )
+  /// The prerequisite nests a row with a quest condition (types 6, 68, 43 and 22 to 36)
+  /// whose quest has an objective slot naming a QuestObjective row the client's table
+  /// lacks.
+  NoQuestObjectiveRow(spell4_effects_id: Int, objective_id: Int)
   /// The spell's Spell4 row holds an innate cost EMM id, which would choose its
   /// damage effects by points a creature's attack does not spend.
   SpendsByEmmId(spell4_id: Int, emm_id: Int)
@@ -195,6 +199,7 @@ fn loaded(
     id: PrerequisiteId(id),
     rows: game_prerequisite.table_rows(tables:),
     arcs: game_prerequisite.table_arcs(tables:),
+    quests: game_prerequisite.table_quests(tables:),
   )
   |> result.map(fn(loaded) { Gated(prerequisite: loaded) })
   |> result.map_error(fn(error) {
@@ -211,6 +216,8 @@ fn loaded(
           spell4_effects_id: effect.id,
           positional_requirement_id: arc_id,
         )
+      game_prerequisite.NoQuestObjectiveRow(objective_id:) ->
+        NoQuestObjectiveRow(spell4_effects_id: effect.id, objective_id:)
     }
   })
 }
@@ -242,6 +249,12 @@ pub fn describe(unevaluated unevaluated: Unevaluated) -> String {
       <> int.to_string(spell4_effects_id)
       <> " has a caster prerequisite with a type 108 condition naming PositionalRequirement "
       <> int.to_string(positional_requirement_id)
+      <> ", which the client's table does not hold"
+    NoQuestObjectiveRow(spell4_effects_id:, objective_id:) ->
+      "Spell4Effects "
+      <> int.to_string(spell4_effects_id)
+      <> " has a caster prerequisite with a quest condition whose quest names QuestObjective "
+      <> int.to_string(objective_id)
       <> ", which the client's table does not hold"
     SpendsByEmmId(spell4_id:, emm_id:) ->
       "Spell4 "

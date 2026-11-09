@@ -18,7 +18,9 @@ Item2Family
 Item2Type
 ItemProficiency
 ItemSlot
+PathSoldierActivate
 PositionalRequirement
+Race
 Spell4AoeTargetConstraints
 Spell4Conditions
 Spell4StackGroup

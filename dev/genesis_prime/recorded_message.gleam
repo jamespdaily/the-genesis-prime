@@ -678,7 +678,9 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.OwnCommodityOrdersRequest(..)
     | client_message.CreddExchangeRequest(..)
     | client_message.TradeCancel(..)
-    | client_message.InputKeySetRequest(..) -> Plain
+    | client_message.InputKeySetRequest(..)
+    | client_message.InteractionRequest(..)
+    | client_message.DialogResponsesShown(..) -> Plain
   }
 }
 

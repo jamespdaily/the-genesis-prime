@@ -34,6 +34,7 @@ import genesis_prime/login/guid
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason
+import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -691,6 +692,12 @@ pub fn in_world() -> game_connection.State {
   entered().0
 }
 
+/// The connection in the world of an Exile, with its burst taken: the character
+/// of `in_world` (a Dominion one) with the Exile faction.
+pub fn in_world_as_exile() -> game_connection.State {
+  entered_as(Character(..world_character(), faction_id: spawn.exile_faction)).0
+}
+
 /// The connection in the world, with its burst taken, made with the
 /// development chat commands on.
 pub fn in_world_with_dev_commands() -> game_connection.State {
@@ -735,6 +742,19 @@ pub fn world_message(
     message_id: 0x038C,
     body: game_client.world_body(kind: 3, message_id:, body:),
   )
+}
+
+/// The client's 0x07EA of the unit and kind (`interaction_request`), read by the
+/// connection in the world.
+pub fn interaction_requested(
+  state state: game_connection.State,
+  unit_id unit_id: Int,
+  kind kind: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let assert Ok(body) =
+    interaction_request.encode(InteractionRequest(unit_id:, kind:))
+    as "a unit id and a 7-bit kind fit the message"
+  read(state:, bytes: world_message(message_id: 0x07EA, body:))
 }
 
 pub fn move_message(message_id: Int) -> BitArray {
@@ -1564,6 +1584,7 @@ pub fn beast_appears_facing(
       place:,
       hit_radius: beast.combat.hit_radius,
       attackable: beast.combat.attackable,
+      hostile_to: beast.combat.hostile_to,
     ),
   ))
 }

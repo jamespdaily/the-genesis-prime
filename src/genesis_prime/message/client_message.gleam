@@ -26,6 +26,7 @@ import genesis_prime/message/create_character_carrier.{
 }
 import genesis_prime/message/credd_exchange_request.{type CreddExchangeRequest}
 import genesis_prime/message/delete_character.{type DeleteCharacter}
+import genesis_prime/message/dialog_responses_shown.{type DialogResponsesShown}
 import genesis_prime/message/fall_value.{type FallValue}
 import genesis_prime/message/fell_below_floor.{type FellBelowFloor}
 import genesis_prime/message/frame_time_report.{type FrameTimeReport}
@@ -33,6 +34,7 @@ import genesis_prime/message/game_hello_reply.{type GameHelloReply}
 import genesis_prime/message/graphics_report.{type GraphicsReport}
 import genesis_prime/message/innate_index_chosen.{type InnateIndexChosen}
 import genesis_prime/message/input_key_set_request.{type InputKeySetRequest}
+import genesis_prime/message/interaction_request.{type InteractionRequest}
 import genesis_prime/message/item_delete.{type ItemDelete}
 import genesis_prime/message/item_move.{type ItemMove}
 import genesis_prime/message/item_split.{type ItemSplit}
@@ -113,6 +115,8 @@ pub type ClientMessage {
   CreddExchangeRequest(message: CreddExchangeRequest)
   TradeCancel(message: TradeCancel)
   InputKeySetRequest(message: InputKeySetRequest)
+  InteractionRequest(message: InteractionRequest)
+  DialogResponsesShown(message: DialogResponsesShown)
 }
 
 /// Why a body is not a message the client sends.
@@ -231,6 +235,15 @@ pub fn decode(
         input_key_set_request.decode,
         InputKeySetRequest,
       )
+    0x07EA ->
+      decoded(body, message_id, interaction_request.decode, InteractionRequest)
+    0x0356 ->
+      decoded(
+        body,
+        message_id,
+        dialog_responses_shown.decode,
+        DialogResponsesShown,
+      )
     _ -> Error(UnknownMessage(message_id:))
   }
 }
@@ -288,6 +301,8 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     CreddExchangeRequest(message:) -> credd_exchange_request.encode(message)
     TradeCancel(message:) -> trade_cancel.encode(message)
     InputKeySetRequest(message:) -> input_key_set_request.encode(message)
+    InteractionRequest(message:) -> interaction_request.encode(message)
+    DialogResponsesShown(message:) -> dialog_responses_shown.encode(message)
   }
 }
 
@@ -342,6 +357,8 @@ pub fn message_id(message: ClientMessage) -> Int {
     CreddExchangeRequest(..) -> credd_exchange_request.message_id
     TradeCancel(..) -> trade_cancel.message_id
     InputKeySetRequest(..) -> input_key_set_request.message_id
+    InteractionRequest(..) -> interaction_request.message_id
+    DialogResponsesShown(..) -> dialog_responses_shown.message_id
   }
 }
 
@@ -396,6 +413,8 @@ pub fn name(message: ClientMessage) -> String {
     CreddExchangeRequest(..) -> "credd_exchange_request"
     TradeCancel(..) -> "trade_cancel"
     InputKeySetRequest(..) -> "input_key_set_request"
+    InteractionRequest(..) -> "interaction_request"
+    DialogResponsesShown(..) -> "dialog_responses_shown"
   }
 }
 

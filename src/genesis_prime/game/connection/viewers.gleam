@@ -144,6 +144,7 @@ import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionId, type Effect, type Now,
 }
+import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
@@ -362,6 +363,7 @@ pub fn viewer_takes(
       place:,
       hit_radius:,
       attackable:,
+      hostile_to:,
     ) -> {
       use <- bool.guard(
         when: shown || set.contains(entered.gone, unit_id),
@@ -372,11 +374,13 @@ pub fn viewer_takes(
           _,
           unit_id,
           ShownCreature(
+            creature_id: Creature2Id(unit.creature_id),
             path: creature_path.Standing(at: place),
             life:,
             alive: creature_unit.health_of(unit:) > 0,
             hit_radius:,
             attackable:,
+            hostile_to:,
           ),
         )),
         [

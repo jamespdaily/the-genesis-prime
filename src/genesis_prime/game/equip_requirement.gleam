@@ -105,6 +105,8 @@ pub fn describe(error error: CheckError) -> String {
           )
         prerequisite.NoPositionalRequirementRow(id:) ->
           "the table PositionalRequirement has no row " <> int.to_string(id)
+        prerequisite.NoQuestObjectiveRow(objective_id:) ->
+          "the table QuestObjective has no row " <> int.to_string(objective_id)
       }
   }
 }
@@ -138,6 +140,7 @@ pub fn check(
         id: PrerequisiteId(prerequisite_id),
         rows: prerequisite.table_rows(tables:),
         arcs: prerequisite.table_arcs(tables:),
+        quests: prerequisite.table_quests(tables:),
       )
       |> result.map_error(PrerequisiteNotLoaded(id: prerequisite_id, error: _))
     }),

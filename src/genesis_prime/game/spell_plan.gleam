@@ -265,6 +265,7 @@ import genesis_prime/game/lasting
 import genesis_prime/game/loadout
 import genesis_prime/game/look
 import genesis_prime/game/prerequisite.{type Prerequisite}
+import genesis_prime/game/quest_log.{type Quest, type QuestRowError}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties
 import genesis_prime/game/worn_visual
@@ -1792,6 +1793,7 @@ fn spell_of(
   use global_cooldown <- result.try(global_cooldown_of(tables:, row:))
   let rows = prerequisite.table_rows(tables:)
   let arcs = prerequisite.table_arcs(tables:)
+  let quests = prerequisite.table_quests(tables:)
   use caster_cast <- result.try(caster_cast_of(
     prerequisite_id: row.prerequisite_id_caster_cast,
     property_flags: row.property_flags,
@@ -1802,21 +1804,25 @@ fn spell_of(
     ),
     rows:,
     arcs:,
+    quests:,
   ))
   use target_cast <- result.try(column_of(
     id: row.prerequisite_id_target_cast,
     rows:,
     arcs:,
+    quests:,
   ))
   use caster_persistence <- result.try(column_of(
     id: row.prerequisite_id_caster_persistence,
     rows:,
     arcs:,
+    quests:,
   ))
   use target_persistence <- result.try(column_of(
     id: row.prerequisite_id_target_persistence,
     rows:,
     arcs:,
+    quests:,
   ))
   use caster_conditions <- result.try(conditions_row_of(
     tables:,
@@ -3922,6 +3928,7 @@ fn prerequisite_of(
   prerequisite_in(
     rows: prerequisite.table_rows(tables:),
     arcs: prerequisite.table_arcs(tables:),
+    quests: prerequisite.table_quests(tables:),
     id:,
   )
 }
@@ -3932,9 +3939,10 @@ fn prerequisite_in(
   rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
   arcs arcs: fn(Int) ->
     Result(positional_requirement.PositionalRequirement, Nil),
+  quests quests: fn(Int) -> Result(Quest, QuestRowError),
   id id: Int,
 ) -> Result(Prerequisite, PlanError) {
-  prerequisite.load(id: PrerequisiteId(id), rows:, arcs:)
+  prerequisite.load(id: PrerequisiteId(id), rows:, arcs:, quests:)
   |> result.map_error(fn(error) {
     case error {
       prerequisite.NoPrerequisiteRow(id: missing) ->
@@ -3945,6 +3953,8 @@ fn prerequisite_in(
         )
       prerequisite.NoPositionalRequirementRow(id: missing) ->
         NoRow(table: "PositionalRequirement", id: missing)
+      prerequisite.NoQuestObjectiveRow(objective_id: missing) ->
+        NoRow(table: "QuestObjective", id: missing)
     }
   })
 }
@@ -3956,10 +3966,11 @@ pub fn column_of(
   rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
   arcs arcs: fn(Int) ->
     Result(positional_requirement.PositionalRequirement, Nil),
+  quests quests: fn(Int) -> Result(Quest, QuestRowError),
 ) -> Result(Option(Prerequisite), PlanError) {
   case id {
     0 -> Ok(None)
-    _ -> prerequisite_in(rows:, arcs:, id:) |> result.map(Some)
+    _ -> prerequisite_in(rows:, arcs:, quests:, id:) |> result.map(Some)
   }
 }
 
@@ -3974,8 +3985,9 @@ pub fn caster_cast_of(
   rows rows: fn(PrerequisiteId) -> Result(prerequisite_table.Prerequisite, Nil),
   arcs arcs: fn(Int) ->
     Result(positional_requirement.PositionalRequirement, Nil),
+  quests quests: fn(Int) -> Result(Quest, QuestRowError),
 ) -> Result(CasterCast, PlanError) {
-  use column <- result.map(column_of(id: prerequisite_id, rows:, arcs:))
+  use column <- result.map(column_of(id: prerequisite_id, rows:, arcs:, quests:))
   let has_block = block.0 != 0 || block.1 != 0 || block.2 != 0
   case column {
     None -> NoCasterCast

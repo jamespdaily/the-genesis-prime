@@ -9,6 +9,8 @@
 ////   and 4 (`Quest2.questRepeatPeriodEnum`).
 //// - **No row:** 32000, which fits the 15 bits of the message and names no Quest2 row.
 
+import character_tables
+import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/store.{type QuestRow, ActiveQuest, QuestRow}
 import gleam/list
 import gleam/option.{None, Some}
@@ -29,11 +31,53 @@ pub const yearly = 9715
 
 pub const no_row = 32_000
 
+/// Quest 1949: objective 0 is QuestObjective 2072 (type 9, flags 0x20, which the
+/// client's state and reachability skip) and objective 1 is 2073 (a kill, type 2, count
+/// 12, no flag 0x200).
+pub const skipped_first = 1949
+
+/// Quest 3668: objective 0 is 4744 (type 3, no flags), objective 1 is 4745 (flags 7,
+/// whose bit 2 waits for every earlier objective) and objective 2 is 4791 (flags 5, whose
+/// bit 1 follows the earlier ones).
+pub const gated_chain = 3668
+
+/// Quest 3297: objective 0 is 7943 (flags 0x28, skipped as an earlier objective) and
+/// objective 1 is 4299 (flags 18, bit 2 set).
+pub const skipped_then_gated = 3297
+
+/// Quest 4705: one kill objective (6486, type 8, flags 0x204, count 3), whose flag 0x200
+/// keeps its progress a count.
+pub const counted_kill = 4705
+
+/// Quest 1823: one checklist objective (1915, type 14, count 3).
+pub const checklist = 1823
+
+/// Quest 5261: one type 28 objective (7647) whose data names PathSoldierActivate row 37,
+/// of mode 1, which makes it a checklist.
+pub const soldier_checklist = 5261
+
+/// Quest 8256: objective 0 is 14973 (type 28), whose data names PathSoldierActivate row
+/// 159, which the client's table lacks, so it is not a checklist; objective 1 is 14987
+/// (type 32).
+pub const soldier_row_missing = 8256
+
+/// Quest 5857: objective 0 is 9045 (type 12, count 1), objective 1 is 8784.
+pub const visit_pair = 5857
+
 /// QuestObjective 9461, of type 31, the placeholder of quest 6216.
 pub const placeholder_objective = 9461
 
 /// QuestObjective 1961, of type 2, the objective of quest 1857.
 pub const ordinary_objective = 1961
+
+/// The log of these rows, each held to what the client would take
+/// (`quest_log.from_rows`).
+pub fn log_of(rows rows: List(QuestRow)) -> QuestLog {
+  let assert Ok(log) =
+    quest_log.from_rows(rows:, tables: character_tables.shared())
+    as "the rows are ones the client takes"
+  log
+}
 
 /// A quest completed at this many Unix seconds.
 pub fn completed(quest_id quest_id: Int, at at: Int) -> QuestRow {
@@ -83,3 +127,7 @@ pub fn accepted(
     progress:,
   )
 }
+
+/// Quest 4361: six objectives (QuestObjective 5871, 5907 to 5911, each of type 5 and
+/// count 1), the only quest here whose objective index 5 is a real objective.
+pub const six_objectives = 4361

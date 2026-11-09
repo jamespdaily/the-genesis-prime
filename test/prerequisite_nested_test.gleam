@@ -237,6 +237,7 @@ pub fn the_clients_rows_39321_and_29484_load_with_their_nested_rows_test() -> Ni
         id: PrerequisiteId(row_id),
         rows:,
         arcs: prerequisite.table_arcs(tables:),
+        quests: prerequisite.table_quests(tables:),
       )
       |> result.is_ok
       as {
@@ -250,6 +251,7 @@ pub fn the_clients_rows_39321_and_29484_load_with_their_nested_rows_test() -> Ni
       id: PrerequisiteId(39_321),
       rows:,
       arcs: prerequisite.table_arcs(tables:),
+      quests: prerequisite.table_quests(tables:),
     )
   assert prerequisite.check(
       prerequisite: stealth,

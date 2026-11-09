@@ -62,8 +62,8 @@ import genesis_prime/message/spell_go
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/class
 import genesis_prime/table/id.{
-  ClassId, Spell4AoeTargetConstraintsId, Spell4BaseId, Spell4EffectsId, Spell4Id,
-  Spell4StackGroupId,
+  ClassId, Creature2Id, Spell4AoeTargetConstraintsId, Spell4BaseId,
+  Spell4EffectsId, Spell4Id, Spell4StackGroupId,
 }
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
@@ -970,6 +970,7 @@ fn selected(
 /// A foe a player of either faction may attack, standing still at the depth.
 fn foe_at(z z: Float) -> shown.Shown {
   shown.ShownCreature(
+    creature_id: Creature2Id(73_464),
     path: creature_path.Standing(at: place_support.at(
       world_id: 3460,
       world_zone_id: 5967,
@@ -981,6 +982,7 @@ fn foe_at(z z: Float) -> shown.Shown {
     alive: True,
     hit_radius: 100.0,
     attackable: creature_life.Attackable(exile: True, dominion: True),
+    hostile_to: creature_life.Hostile(exile: False, dominion: False),
   )
 }
 
