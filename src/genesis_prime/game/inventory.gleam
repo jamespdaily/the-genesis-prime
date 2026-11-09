@@ -43,20 +43,28 @@
 ////      which the server never opens: 2 PlayerBusy
 ////   7. an inventory destination index of 96 or more, past the slot array: 1
 ////      Params (0x1403ad100 tests it after 5 and 6)
-////   8. an inventory destination index of 16 or more, the usable size with no
-////      bags worn: 37 Item_BagToSmall
+////   8. a bag worn at equipped 17 to 20 that leaves them, when it opens more
+////      slots than the item taking its place and the empty slots among the usable
+////      ones, counted before the move, are no more than the slots it closes:
+////      35 Item_BagMustBeEmpty (`0x1403aecd0`)
+////   8b. an inventory destination index at or past the usable size, 16 plus the
+////      size of each bag worn at 17 to 20 (`item_property.bag_size`): 37
+////      Item_BagToSmall, a server choice
 ////   9. an item entering an equipping location (0, 8 or 9) from another one, whose
 ////      Item2.bindFlags holds bit 1, while an item of its Item2 is worn, unless
 ////      the item at the destination is of that Item2: 30 Item_Unique
 ////   10. an item entering location 0 whose type, category and family flags lack
 ////      0x400, at a slot whose bit is not in its equipped slot flags
-////      (`item_property.equipped_slot_flags`), or at bag slot 17 to 20: 31
+////      (`item_property.equipped_slot_flags`), or at a bag slot (17 to 20) whose
+////      number from 17 is not below the BagSlots sent in 0x92C: 31
 ////      Item_NotValidforSlot
 ////   11. an item entering location 0 that the character may not wear
 ////      (`equip_requirement`): race 39, class 40, faction 132, prerequisites 144,
 ////      proficiency 41, level 42. A prerequisite on a condition type the server
 ////      does not read is refused with 144 and a Warning that names the type.
-////   For a swap checks 9 to 11 are made again for the item at the destination
+////   11b. a bag leaving the bag slots for an inventory slot the smaller inventory
+////      no longer has: 38 Item_CantPutBagInItself, a server choice
+////   For a swap checks 8 to 11 are made again for the item at the destination
 ////   going to the source, after the moved item's. An item with no row in the
 ////   tables is the server's own broken state, not a code: the connection ends
 ////   (`NoItemRow`). The client's rune-unique loop is not built; it waits for the
@@ -92,7 +100,7 @@
 ////   2. the count is 0, or the held count or more: 1 Params
 ////   3. the destination is the bank, a bank bag slot or location 10: 2 PlayerBusy
 ////   4. the destination is not the inventory, or its index is 96 or more: 1 Params
-////   5. an inventory index of 16 or more: 37 Item_BagToSmall
+////   5. an inventory index at or past the usable size: 37 Item_BagToSmall
 ////   6. an item is held at the destination: 1 Params
 //// - **The delete's checks** (0x56A guid 0 for the first two), in this order:
 ////   1. location 300 or more, bag index 0xffffffff or an equipped index of 31 or
@@ -101,8 +109,12 @@
 ////   3. no Item2 row for the held item: the connection ends (`NoItemRow`)
 ////   4. Item2.flags holds 0x10000: 156 Item_CannotBeDeleted
 ////   The client's sender (`opcode.0x149`, `0x1403c1360`) also sends nothing for
-////   a worn bag and for an item in a trade; no worn bag is held until #587 and
-////   there is no trade.
+////   a worn bag and for an item in a trade; a delete of a worn bag (equipped 17
+////   to 20) is answered 1 Params with guid 0, and there is no trade.
+//// - **A bag taken off** shrinks the inventory: the items held past the new end
+////   go, in index order, to the lowest free slots below it, each told with a
+////   0x569 before the answer to the move (a server choice: the client moves
+////   none, and check 8 leaves slots enough for them).
 //// - **Left to other steps:** gear properties, max health, worn visuals and the
 ////   cast's weapon, which still read the fixed loadout, not the held items.
 
@@ -119,7 +131,7 @@ import genesis_prime/message/item_count_changed.{ItemCountChanged}
 import genesis_prime/message/item_delete
 import genesis_prime/message/item_move
 import genesis_prime/message/item_moved.{ItemMoved}
-import genesis_prime/message/item_place.{type ItemPlace}
+import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/message/item_removed.{ItemRemoved}
 import genesis_prime/message/item_split
 import genesis_prime/message/items_swapped.{ItemsSwapped}
@@ -234,6 +246,11 @@ const never_opened = 10
 /// The inventory size with no bags worn: slots 0 to 15 (`opcode.0x182`).
 const usable_inventory_size = 16
 
+/// The equipped slots of the four bags, Bag0 to Bag3 (`0x1403d2e10`).
+const first_bag_slot = 17
+
+const last_bag_slot = 20
+
 /// The size of the inventory's slot array: 0x1403ad100 refuses an inventory
 /// destination index at or past it with Params.
 const inventory_slots = 96
@@ -254,11 +271,17 @@ const item_unique = 30
 /// 31 Item_NotValidforSlot.
 const not_valid_for_slot = 31
 
+/// 35 Item_BagMustBeEmpty.
+const bag_must_be_empty = 35
+
 /// 32 Item_Locked.
 const item_locked = 32
 
 /// 37 Item_BagToSmall.
 const bag_too_small = 37
+
+/// 38 CantPutBagInItself.
+const cant_put_bag_in_itself = 38
 
 /// 156 Item_CannotBeDeleted.
 const cannot_be_deleted = 156
@@ -292,13 +315,13 @@ pub fn take(
   life life: Life,
   tables tables: table_store.Tables,
   wearer wearer: Wearer,
-  bag_slots _bag_slots: Int,
+  bag_slots bag_slots: Int,
   message message: Message,
   body body: BitArray,
 ) -> Result(Taken, Refusal) {
   case message {
-    MoveAsked -> take_move(items:, life:, tables:, wearer:, body:)
-    SplitAsked -> take_split(items:, body:)
+    MoveAsked -> take_move(items:, life:, tables:, wearer:, bag_slots:, body:)
+    SplitAsked -> take_split(items:, tables:, body:)
     DeleteAsked -> take_delete(items:, tables:, body:)
   }
 }
@@ -308,10 +331,35 @@ pub fn take(
 /// (`0x1403d2e10`, `player.inventory_capacity`). The error is a held item with
 /// no row in the tables.
 pub fn size(
-  items _items: List(HeldItem),
-  tables _tables: table_store.Tables,
-) -> Result(Int, item_property.ItemPropertyError) {
-  panic as "shape: #587 the inventory's size"
+  items items: List(HeldItem),
+  tables tables: table_store.Tables,
+) -> Result(Int, Refusal) {
+  list.filter(items, worn_in_a_bag_slot)
+  |> list.try_fold(usable_inventory_size, fn(total, item) {
+    use bag_size <- result.map(bag_size(tables:, item:))
+    total + bag_size
+  })
+}
+
+/// The slots the held item opens when worn as a bag: 0 for an item that is no
+/// bag.
+fn bag_size(
+  tables tables: table_store.Tables,
+  item item: HeldItem,
+) -> Result(Int, Refusal) {
+  item_property.bag_size(tables:, item2_id: item.item2_id.value)
+  |> result.map(option.unwrap(_, 0))
+  |> result.replace_error(NoItemRow(item2_id: item.item2_id))
+}
+
+/// Whether the item is worn at one of the four bag slots.
+fn worn_in_a_bag_slot(item: HeldItem) -> Bool {
+  item.location == equipped && in_bag_slots(item.bag_index)
+}
+
+/// Whether the equipped index is one of the four bag slots.
+fn in_bag_slots(bag_index: Int) -> Bool {
+  bag_index >= first_bag_slot && bag_index <= last_bag_slot
 }
 
 /// A 0x56A that refuses with the code, naming the item the player named.
@@ -340,6 +388,7 @@ fn refusal_effects(
 /// (this module's doc), else the ask.
 fn take_split(
   items items: List(HeldItem),
+  tables tables: table_store.Tables,
   body body: BitArray,
 ) -> Result(Taken, Refusal) {
   use split <- result.try(
@@ -355,8 +404,8 @@ fn take_split(
       case split.count < 1 || split.count >= item.stack_count {
         True -> refused_with(item: source, code: params)
         False ->
-          case split_code(items:, to:) {
-            Error(code) -> refused_with(item: source, code:)
+          case split_code(items:, tables:, to:) {
+            Error(stop) -> stopped(stop:, source:)
             Ok(Nil) -> {
               let place =
                 store.ItemPlace(location: to.location, bag_index: to.bag_index)
@@ -377,24 +426,26 @@ fn take_split(
   }
 }
 
-/// The code of the first of a split's checks on the destination that it breaks.
+/// The first of a split's checks on the destination that it breaks.
 /// The order is the split's own (closed before the location test), so it does
 /// not call `checked`'s place checks.
 fn split_code(
   items items: List(HeldItem),
+  tables tables: table_store.Tables,
   to to: ItemPlace,
-) -> Result(Nil, Int) {
-  use <- bool.guard(when: closed(to), return: Error(player_busy))
+) -> Result(Nil, Stop) {
+  use <- bool.guard(when: closed(to), return: Error(Code(player_busy)))
   use <- bool.guard(
     when: to.location != in_bags || to.bag_index >= inventory_slots,
-    return: Error(params),
+    return: Error(Code(params)),
   )
+  use current <- result.try(size(items:, tables:) |> result.map_error(Broken))
   use <- bool.guard(
-    when: to.bag_index >= usable_inventory_size,
-    return: Error(bag_too_small),
+    when: to.bag_index >= current,
+    return: Error(Code(bag_too_small)),
   )
   case held_at(items:, place: to) {
-    Ok(_) -> Error(params)
+    Ok(_) -> Error(Code(params))
     Error(Nil) -> Ok(Nil)
   }
 }
@@ -421,17 +472,21 @@ fn take_delete(
   case held_at(items:, place:) {
     Error(Nil) -> refused_with(item: Error(Nil), code: params)
     Ok(item) ->
-      case item_property.deletable(tables:, item2_id: item.item2_id.value) {
-        Error(_) -> Error(NoItemRow(item2_id: item.item2_id))
-        Ok(False) -> refused_with(item: Ok(item), code: cannot_be_deleted)
-        Ok(True) ->
-          Ok(
-            Asks(Moving(
-              guid: item.item_guid,
-              change: Deleted(item:),
-              items: without(items:, guid: item.item_guid),
-            )),
-          )
+      case worn_in_a_bag_slot(item) {
+        True -> refused_with(item: Error(Nil), code: params)
+        False ->
+          case item_property.deletable(tables:, item2_id: item.item2_id.value) {
+            Error(_) -> Error(NoItemRow(item2_id: item.item2_id))
+            Ok(False) -> refused_with(item: Ok(item), code: cannot_be_deleted)
+            Ok(True) ->
+              Ok(
+                Asks(Moving(
+                  guid: item.item_guid,
+                  change: Deleted(item:),
+                  items: without(items:, guid: item.item_guid),
+                )),
+              )
+          }
       }
   }
 }
@@ -472,6 +527,7 @@ fn take_move(
   life life: Life,
   tables tables: table_store.Tables,
   wearer wearer: Wearer,
+  bag_slots bag_slots: Int,
   body body: BitArray,
 ) -> Result(Taken, Refusal) {
   use move <- result.try(
@@ -481,10 +537,43 @@ fn take_move(
   )
   let source = held_at(items:, place: move.from)
   let destination = held_at(items:, place: move.to)
-  case checked(life:, items:, tables:, wearer:, move:, source:, destination:) {
-    Error(Broken(refusal:)) -> Error(refusal)
-    Error(Code(code:)) -> refused_with(item: source, code:)
-    Error(Unread(item2_id:, prerequisite_type:)) ->
+  case
+    checked(
+      life:,
+      items:,
+      tables:,
+      wearer:,
+      bag_slots:,
+      move:,
+      source:,
+      destination:,
+    )
+  {
+    Error(stop) -> stopped(stop:, source:)
+    Ok(item) ->
+      case merge(items:, tables:, item:, destination:) {
+        Error(refusal) -> Error(refusal)
+        Ok(Some(merging)) -> Ok(Asks(merging))
+        Ok(None) ->
+          case moving(items:, tables:, move:, item:, destination:) {
+            Ok(moving) -> Ok(Asks(moving))
+            Error(stop) -> stopped(stop:, source:)
+          }
+      }
+  }
+}
+
+/// What a refused check is answered with: the 0x56A of its code, the refusal
+/// that ends the connection, or the 0x56A of an item the server does not read
+/// the requirements of, with the log that says so.
+fn stopped(
+  stop stop: Stop,
+  source source: Result(HeldItem, Nil),
+) -> Result(Taken, Refusal) {
+  case stop {
+    Broken(refusal:) -> Error(refusal)
+    Code(code:) -> refused_with(item: source, code:)
+    Unread(item2_id:, prerequisite_type:) ->
       Ok(
         Refused([
           Log(
@@ -501,12 +590,6 @@ fn take_move(
           )
         ]),
       )
-    Ok(item) ->
-      case merge(items:, tables:, item:, destination:) {
-        Error(refusal) -> Error(refusal)
-        Ok(Some(merging)) -> Ok(Asks(merging))
-        Ok(None) -> Ok(Asks(moving(items:, move:, item:, destination:)))
-      }
   }
 }
 
@@ -581,6 +664,7 @@ fn checked(
   items items: List(HeldItem),
   tables tables: table_store.Tables,
   wearer wearer: Wearer,
+  bag_slots bag_slots: Int,
   move move: item_move.ItemMove,
   source source: Result(HeldItem, Nil),
   destination destination: Result(HeldItem, Nil),
@@ -616,32 +700,62 @@ fn checked(
     when: to.location == in_bags && to.bag_index >= inventory_slots,
     return: Error(Code(params)),
   )
+  use current <- result.try(size(items:, tables:) |> result.map_error(Broken))
+  use Nil <- result.try(bag_fits(
+    items:,
+    tables:,
+    current:,
+    item:,
+    from:,
+    to:,
+    other: destination,
+  ))
   use <- bool.guard(
-    when: to.location == in_bags && to.bag_index >= usable_inventory_size,
+    when: to.location == in_bags && to.bag_index >= current,
     return: Error(Code(bag_too_small)),
   )
   use Nil <- result.try(wearable_at(
     items:,
     tables:,
     wearer:,
+    bag_slots:,
     item:,
     from:,
     to:,
     other: destination,
   ))
   use Nil <- result.try(case destination {
-    Ok(other) ->
+    Ok(other) -> {
+      use Nil <- result.try(bag_fits(
+        items:,
+        tables:,
+        current:,
+        item: other,
+        from: to,
+        to: from,
+        other: Ok(item),
+      ))
       wearable_at(
         items:,
         tables:,
         wearer:,
+        bag_slots:,
         item: other,
         from: to,
         to: from,
         other: Ok(item),
       )
+    }
     Error(Nil) -> Ok(Nil)
   })
+  use Nil <- result.try(bag_lands_inside(
+    items:,
+    tables:,
+    item:,
+    from:,
+    to:,
+    destination:,
+  ))
   use <- bool.guard(
     when: to.location >= 3 && to.location <= 99,
     return: Error(Code(params)),
@@ -677,6 +791,7 @@ fn wearable_at(
   items items: List(HeldItem),
   tables tables: table_store.Tables,
   wearer wearer: Wearer,
+  bag_slots bag_slots: Int,
   item item: HeldItem,
   from from: ItemPlace,
   to to: ItemPlace,
@@ -708,7 +823,10 @@ fn wearable_at(
     item_property.is_slotted(tables:, item2_id:) |> result.replace_error(broken),
   )
   use <- bool.guard(
-    when: !slotted || { to.bag_index >= 17 && to.bag_index <= 20 },
+    when: !slotted
+      || {
+      in_bag_slots(to.bag_index) && to.bag_index - first_bag_slot >= bag_slots
+    },
     return: Error(Code(not_valid_for_slot)),
   )
   use flags <- result.try(
@@ -735,54 +853,217 @@ fn equip_like(place: ItemPlace) -> Bool {
   list.contains(equip_like_locations, place.location)
 }
 
+/// The items once the item has moved from the place to the other, and the item
+/// held there, if any, has taken the place it left.
+fn after(
+  items items: List(HeldItem),
+  item item: HeldItem,
+  from from: ItemPlace,
+  to to: ItemPlace,
+  destination destination: Result(HeldItem, Nil),
+) -> List(HeldItem) {
+  let moved = relocated(items:, guid: item.item_guid, to: stored(to))
+  case destination {
+    Error(Nil) -> moved
+    Ok(other) ->
+      relocated(items: moved, guid: other.item_guid, to: stored(from))
+  }
+}
+
+/// A place as the store keeps it.
+fn stored(place: ItemPlace) -> store.ItemPlace {
+  store.ItemPlace(location: place.location, bag_index: place.bag_index)
+}
+
 /// The ask and the answer of an accepted move: one move to an empty place, two
-/// for an item that takes the place of another.
+/// for an item that takes the place of another, and a move for each item the
+/// move leaves past the end of a smaller inventory, which goes to the lowest free
+/// slot below the new end (a server choice: the client moves none). The frames
+/// are those items' 0x569s, in index order, then the answer to the move itself.
+/// The client's own check, 35, leaves free slots enough for them
+/// (`0x1403aecd0`); a move it would leave short is refused with 35.
 fn moving(
   items items: List(HeldItem),
+  tables tables: table_store.Tables,
   move move: item_move.ItemMove,
   item item: HeldItem,
   destination destination: Result(HeldItem, Nil),
-) -> Moving {
+) -> Result(Moving, Stop) {
   let from = move.from
   let to = move.to
-  let to_place = store.ItemPlace(location: to.location, bag_index: to.bag_index)
-  let from_place =
-    store.ItemPlace(location: from.location, bag_index: from.bag_index)
   let first =
-    store.ItemMove(item_guid: item.item_guid, from: from_place, to: to_place)
-  case destination {
-    Error(Nil) ->
-      Moving(
-        guid: item.item_guid,
-        change: Moved(moves: [first], moved: [
-          frame_of_move(guid: item.item_guid, place: to),
-        ]),
-        items: relocated(items:, guid: item.item_guid, to: to_place),
-      )
-    Ok(other) ->
-      Moving(
-        guid: item.item_guid,
-        change: Moved(
-          moves: [
-            first,
-            store.ItemMove(
-              item_guid: other.item_guid,
-              from: to_place,
-              to: from_place,
-            ),
-          ],
-          moved: [
-            frame_of_swap(first: #(item.item_guid, to), second: #(
-              other.item_guid,
-              from,
-            )),
-          ],
+    store.ItemMove(
+      item_guid: item.item_guid,
+      from: stored(from),
+      to: stored(to),
+    )
+  let #(moves, answer) = case destination {
+    Error(Nil) -> #([first], frame_of_move(guid: item.item_guid, place: to))
+    Ok(other) -> #(
+      [
+        first,
+        store.ItemMove(
+          item_guid: other.item_guid,
+          from: stored(to),
+          to: stored(from),
         ),
-        items: items
-          |> relocated(guid: item.item_guid, to: to_place)
-          |> relocated(guid: other.item_guid, to: from_place),
-      )
+      ],
+      frame_of_swap(first: #(item.item_guid, to), second: #(
+        other.item_guid,
+        from,
+      )),
+    )
   }
+  let moved = after(items:, item:, from:, to:, destination:)
+  use current <- result.try(size(items:, tables:) |> result.map_error(Broken))
+  use remaining <- result.try(
+    size(items: moved, tables:) |> result.map_error(Broken),
+  )
+  use displaced <- result.try(
+    displaced(items: moved, current:, remaining:)
+    |> result.replace_error(Code(bag_must_be_empty)),
+  )
+  Ok(Moving(
+    guid: item.item_guid,
+    change: Moved(
+      moves: list.append(
+        moves,
+        list.map(displaced, fn(displacement) {
+          let #(held, index) = displacement
+          store.ItemMove(
+            item_guid: held.item_guid,
+            from: store.ItemPlace(location: in_bags, bag_index: held.bag_index),
+            to: store.ItemPlace(location: in_bags, bag_index: index),
+          )
+        }),
+      ),
+      moved: list.append(
+        list.map(displaced, fn(displacement) {
+          let #(held, index) = displacement
+          frame_of_move(
+            guid: held.item_guid,
+            place: ItemPlace(location: in_bags, bag_index: index),
+          )
+        }),
+        [answer],
+      ),
+    ),
+    items: list.fold(displaced, moved, fn(held_items, displacement) {
+      let #(held, index) = displacement
+      relocated(
+        items: held_items,
+        guid: held.item_guid,
+        to: store.ItemPlace(location: in_bags, bag_index: index),
+      )
+    }),
+  ))
+}
+
+/// The items a smaller inventory leaves past its end, in index order, each with
+/// the lowest free slot below the end that it goes to; `Error` when the free
+/// slots are fewer. `items` are the items once the move is made. An inventory
+/// that does not shrink displaces none.
+fn displaced(
+  items items: List(HeldItem),
+  current current: Int,
+  remaining remaining: Int,
+) -> Result(List(#(HeldItem, Int)), Nil) {
+  use <- bool.guard(when: remaining >= current, return: Ok([]))
+  let in_inventory = list.filter(items, fn(item) { item.location == in_bags })
+  let past =
+    list.filter(in_inventory, fn(item) { item.bag_index >= remaining })
+    |> list.sort(fn(a, b) { int.compare(a.bag_index, b.bag_index) })
+  let free =
+    list.repeat(Nil, remaining)
+    |> list.index_map(fn(_, index) { index })
+    |> list.filter(fn(index) {
+      !list.any(in_inventory, fn(item) { item.bag_index == index })
+    })
+  case list.length(free) < list.length(past) {
+    True -> Error(Nil)
+    False -> Ok(list.zip(past, free))
+  }
+}
+
+/// A worn bag that leaves the bag slots (to an inventory slot, or the bank, or
+/// in a swap the place of the item that takes its slot) while the items in the
+/// slots it opens would have nowhere to go: 35 Item_BagMustBeEmpty, by the
+/// client's count (0x1403aecd0). `other` is the item at the place the item goes
+/// to, whose own bag size (0 for none or no bag) the slots it opens make up for.
+/// The empty slots are counted among the usable ones before the move, the item's
+/// own included.
+fn bag_fits(
+  items items: List(HeldItem),
+  tables tables: table_store.Tables,
+  current current: Int,
+  item item: HeldItem,
+  from from: ItemPlace,
+  to to: ItemPlace,
+  other other: Result(HeldItem, Nil),
+) -> Result(Nil, Stop) {
+  use <- bool.guard(
+    when: !{ worn_in_a_bag_place(from) && !worn_in_a_bag_place(to) },
+    return: Ok(Nil),
+  )
+  use leaving <- result.try(
+    bag_size(tables:, item:) |> result.map_error(Broken),
+  )
+  use replacing <- result.try(
+    case other {
+      Ok(held) -> bag_size(tables:, item: held)
+      Error(Nil) -> Ok(0)
+    }
+    |> result.map_error(Broken),
+  )
+  let shrinking = leaving - replacing
+  let held_slots =
+    list.count(items, fn(held) {
+      held.location == in_bags && held.bag_index < current
+    })
+  case shrinking > 0 && current - held_slots <= shrinking {
+    True -> Error(Code(bag_must_be_empty))
+    False -> Ok(Nil)
+  }
+}
+
+/// A worn bag that leaves the bag slots for an inventory index the smaller
+/// inventory no longer has: 38 CantPutBagInItself, a server choice, as the
+/// client allows it and would leave the bag at a slot that is gone.
+fn bag_lands_inside(
+  items items: List(HeldItem),
+  tables tables: table_store.Tables,
+  item item: HeldItem,
+  from from: ItemPlace,
+  to to: ItemPlace,
+  destination destination: Result(HeldItem, Nil),
+) -> Result(Nil, Stop) {
+  let landing = case worn_in_a_bag_place(from), worn_in_a_bag_place(to) {
+    True, False -> Ok(to)
+    False, True ->
+      case destination {
+        Ok(_) -> Ok(from)
+        Error(Nil) -> Error(Nil)
+      }
+    _, _ -> Error(Nil)
+  }
+  case landing {
+    Error(Nil) -> Ok(Nil)
+    Ok(place) -> {
+      use remaining <- result.try(
+        size(items: after(items:, item:, from:, to:, destination:), tables:)
+        |> result.map_error(Broken),
+      )
+      case place.location == in_bags && place.bag_index >= remaining {
+        True -> Error(Code(cant_put_bag_in_itself))
+        False -> Ok(Nil)
+      }
+    }
+  }
+}
+
+/// Whether the place is one of the four bag slots.
+fn worn_in_a_bag_place(place: ItemPlace) -> Bool {
+  place.location == equipped && in_bag_slots(place.bag_index)
 }
 
 /// The items with the item of the guid held at the place.

@@ -67,15 +67,6 @@ avoid_panic = "off"
 "dev/genesis_prime/add_character/sql.gleam" = ["label_possible"]
 "dev/genesis_prime/mark_rename/sql.gleam" = ["label_possible"]
 "dev/genesis_prime/sitting_bot/sql.gleam" = ["label_possible"]
-# Issue 587's shape commit holds the worn bags' signatures and the 0x92C message
-# before any caller: the play entry sends the message, and the inventory rule and
-# the connection read the bag size and the unlocked slots, in the build commits of
-# that issue, which remove these five lines.
-"src/genesis_prime/game/reward_property.gleam" = ["unused_exports"]
-"src/genesis_prime/game/inventory.gleam" = ["unused_exports"]
-"src/genesis_prime/game/item_property.gleam" = ["unused_exports"]
-"src/genesis_prime/game/world_entry.gleam" = ["unused_exports"]
-"src/genesis_prime/message/reward_properties.gleam" = ["unused_exports"]
 # The test runner finds public `_test` functions by name, and test-support
 # modules are shared across test modules, so no other module calls them.
 "test/**/*.gleam" = ["unused_exports"]

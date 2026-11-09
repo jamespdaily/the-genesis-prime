@@ -997,7 +997,9 @@ fn standing(
 /// The ids of the messages that put a player in the world from character select,
 /// in the order the client needs (opcode.0xad, opcode.0x262, opcode.0x19b,
 /// opcode.0x25e, opcode.0x6bc, opcode.0x636, opcode.0xf1, opcode.0x61): 0xAD
-/// first; 0x262 before 0x19B; 0x19B before the character's own state (0x25E,
+/// first; 0x262 before 0x19B; the reward properties (0x92C) right after 0x19B,
+/// where the server sends them (the client does not prove the place,
+/// `world_entry`); 0x19B before the character's own state (0x25E,
 /// opcode.0x25e.entry_order), the quest log (0x35F, opcode.0x35f.entry_order),
 /// the six armor items, the weapon, the three
 /// abilities and the innate (0x111, opcode.0x111.ability_bag,
@@ -1011,6 +1013,7 @@ pub const world_entry_ids = [
   0x00AD,
   0x0262,
   0x019B,
+  0x092C,
   0x025E,
   0x035F,
   0x0111,

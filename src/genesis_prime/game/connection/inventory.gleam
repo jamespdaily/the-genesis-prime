@@ -22,6 +22,7 @@ import genesis_prime/game/connection/state.{
 import genesis_prime/game/equip_requirement
 import genesis_prime/game/inventory
 import genesis_prime/game/movement
+import genesis_prime/game/reward_property
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
@@ -50,8 +51,12 @@ pub fn item_message(
       life: entered.life,
       tables: session.settings.tables,
       wearer: wearer_of(tables: session.settings.tables, entered:),
-      // No 0x92C is sent yet, so no bag slot is unlocked.
-      bag_slots: 0,
+      // The value world entry sent in 0x92C.
+      bag_slots: reward_property.bag_slots(
+        tables: session.settings.tables,
+        system: reward_property.hybrid_system,
+        tier: reward_property.signature_tier,
+      ),
       message:,
       body: inner.body,
     )

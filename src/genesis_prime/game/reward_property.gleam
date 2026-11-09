@@ -20,8 +20,15 @@
 ////   features the server does not serve; each joins the message in the step
 ////   that serves its feature.
 
-import genesis_prime/message/reward_properties.{type RewardProperties}
+import genesis_prime/message/reward_properties.{
+  type RewardProperties, RewardProperties,
+}
+import genesis_prime/message/reward_property_entry.{RewardPropertyEntry}
+import genesis_prime/message/reward_property_integer.{RewardPropertyInteger}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/reward_property_premium_modifier
+import gleam/int
+import gleam/list
 
 /// The RewardProperty id of BagSlots (`AccountItemLib.CodeEnumRewardProperty.
 /// BagSlots`): how many of the four bag slots of the character window are
@@ -35,6 +42,15 @@ pub const bank_slots_property = 13
 /// client's start-up tier belongs to (`opcode.0x92c.bag_slots`).
 pub const hybrid_system = 1
 
+/// The premium tier sent to the client: 1, which the client shows as Signature
+/// under the Hybrid system, as it shows its start-up tier 255
+/// (lua.AccountItemLib.GetPremiumTier.users). The values below are those of this
+/// tier.
+pub const signature_tier = 1
+
+/// The flag of a premium modifier row that carries it up to every higher tier.
+const carries_up_flag = 1
+
 /// One reward property's current integer value; its data is 0.
 pub type Value {
   Value(property_id: Int, value: Int)
@@ -43,24 +59,55 @@ pub type Value {
 /// BagSlots then BankSlots as the premium system gives them at the tier, 0 for
 /// a property no row gives.
 pub fn premium_values(
-  tables _tables: table_store.Tables,
-  system _system: Int,
-  tier _tier: Int,
+  tables tables: table_store.Tables,
+  system system: Int,
+  tier tier: Int,
 ) -> List(Value) {
-  panic as "shape: #587 the reward property values of a premium tier"
+  let rows = reward_property_premium_modifier.all(tables)
+  list.map([bag_slots_property, bank_slots_property], fn(property_id) {
+    Value(
+      property_id:,
+      value: list.fold(rows, 0, fn(sum, row) {
+        let counts =
+          row.premium_system_enum == system
+          && row.reward_property_id == property_id
+          && row.reward_property_data == 0
+          && row.entitlement_id_modifier_count == 0
+          && row.tier <= tier
+          && {
+            row.tier == tier || int.bitwise_and(row.flags, carries_up_flag) != 0
+          }
+        case counts {
+          True -> sum + row.modifier_value_int
+          False -> sum
+        }
+      }),
+    )
+  })
 }
 
 /// The BagSlots value at the tier: how many bag slots (equipped 17 to 20) may
 /// hold a bag, 0 when no row gives one (`0x1403b4dd0`).
 pub fn bag_slots(
-  tables _tables: table_store.Tables,
-  system _system: Int,
-  tier _tier: Int,
+  tables tables: table_store.Tables,
+  system system: Int,
+  tier tier: Int,
 ) -> Int {
-  panic as "shape: #587 the BagSlots value of a premium tier"
+  premium_values(tables:, system:, tier:)
+  |> list.filter(fn(value) { value.property_id == bag_slots_property })
+  |> list.fold(0, fn(sum, value) { sum + value.value })
 }
 
 /// The 0x92C body for the values: one entry for each, data 0, no modifiers.
-pub fn message(values _values: List(Value)) -> RewardProperties {
-  panic as "shape: #587 the reward properties message"
+pub fn message(values values: List(Value)) -> RewardProperties {
+  RewardProperties(
+    properties: list.map(values, fn(value) {
+      RewardPropertyEntry(
+        property_id: value.property_id,
+        data: 0,
+        value: RewardPropertyInteger(value: value.value),
+        modifiers: [],
+      )
+    }),
+  )
 }

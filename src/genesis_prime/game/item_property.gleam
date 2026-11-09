@@ -159,6 +159,10 @@ const slotted_flag = 0x400
 /// that stacks (0x1406d50f0).
 const stackable_flag = 0x4
 
+/// The flags of an item's type, category and family, joined, that mark a bag
+/// (`Item2.bags`).
+const bag_flag = 0x100
+
 /// Item2.flags 0x10000: the item cannot be destroyed (0x1403c1360).
 const undeletable_flag = 0x10000
 
@@ -292,7 +296,8 @@ fn slotting(
     tables:,
     item2_id:,
   ))
-  let slotted = int.bitwise_and(joined_flags, slotted_flag) != 0
+  let proxy = is_proxy(item)
+  let slotted = !proxy && int.bitwise_and(joined_flags, slotted_flag) != 0
   let has_slot =
     item.item2_family_id != family_without_slot
     && item.item2_category_id != category_without_slot
@@ -310,16 +315,28 @@ fn slotting(
     Some(slot), True -> slot.equipped_slot_flags
     Some(_), False | None, _ -> 0
   }
-  Ok(Slotting(
-    item:,
-    category_armor_modifier: category.armor_modifier,
-    slot_modifier: case slot {
-      Some(slot) -> slot.armor_modifier
-      None -> 1.0
-    },
-    slotted:,
-    equipped_slot_flags: int.bitwise_or(slot_flags, item.equipped_slot_flags),
-  ))
+  Ok(
+    Slotting(
+      item:,
+      category_armor_modifier: category.armor_modifier,
+      slot_modifier: case slot {
+        Some(slot) -> slot.armor_modifier
+        None -> 1.0
+      },
+      slotted:,
+      equipped_slot_flags: case proxy {
+        True -> 0
+        False -> int.bitwise_or(slot_flags, item.equipped_slot_flags)
+      },
+    ),
+  )
+}
+
+/// Whether the item is a proxy: the client gives it the joined flags 0x10004 and
+/// no equipped slot flags, whatever its type, category and family hold
+/// (FillItemInfo 0x1404445d0, `0x1404445d0.proxy`).
+fn is_proxy(item: item2.Item2) -> Bool {
+  int.bitwise_and(item.flags, proxy_flag) != 0
 }
 
 fn builder(
@@ -380,7 +397,7 @@ pub fn is_slotted(
   item2_id item2_id: Int,
 ) -> Result(Bool, ItemPropertyError) {
   use rows <- result.map(rows(tables:, item2_id:))
-  int.bitwise_and(rows.joined_flags, slotted_flag) != 0
+  !is_proxy(rows.item) && int.bitwise_and(rows.joined_flags, slotted_flag) != 0
 }
 
 /// Whether only one of the item may be equipped: Item2.bindFlags holds bit 1
@@ -547,10 +564,16 @@ pub fn stack_limit(
 /// client gives a proxy the joined flags 0x10004 (FillItemInfo 0x1404445d0,
 /// `0x1404445d0.proxy`, `Item2.bags`). Only a missing row is an error.
 pub fn bag_size(
-  tables _tables: table_store.Tables,
-  item2_id _item2_id: Int,
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
 ) -> Result(Option(Int), ItemPropertyError) {
-  panic as "shape: #587 the bag size of an item"
+  use rows <- result.map(rows(tables:, item2_id:))
+  case
+    !is_proxy(rows.item) && int.bitwise_and(rows.joined_flags, bag_flag) != 0
+  {
+    True -> Some(rows.item.max_stack_count)
+    False -> None
+  }
 }
 
 /// Whether the player may destroy the item: Item2.flags lacks 0x10000
