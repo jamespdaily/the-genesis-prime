@@ -96,13 +96,16 @@ fn directory_entries(directory: String) -> List(String) {
   |> list.sort(string.compare)
 }
 
-/// Every key of the client's fact file.
+/// Every key of the client's fact file, parsed once per run and shared by
+/// every rule that reads it.
 pub fn fact_keys() -> List(String) {
-  let assert Ok(text) =
-    simplifile.read(
-      ".claude/skills/decoding-the-client/references/client-facts.toml",
-    )
-    as "the fact file could not be read"
-  let assert Ok(facts) = tom.parse(text) as "the fact file is TOML"
-  dict.keys(facts)
+  database_support.once("fact_keys", fn() {
+    let assert Ok(text) =
+      simplifile.read(
+        ".claude/skills/decoding-the-client/references/client-facts.toml",
+      )
+      as "the fact file could not be read"
+    let assert Ok(facts) = tom.parse(text) as "the fact file is TOML"
+    dict.keys(facts)
+  })
 }
