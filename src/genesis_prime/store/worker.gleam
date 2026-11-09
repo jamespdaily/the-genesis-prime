@@ -87,18 +87,18 @@ import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/store.{
   type AccountId, type Answer, type Character, type CharacterId,
   type CreateAnswer, type DeleteAnswer, type FindAccountAnswer, type HeldItem,
-  type MoveAnswer, type MoveRequest, type Naming, type NewCharacter,
-  type NewItem, type QuestRow, type RenameAnswer, type Request,
-  type SelectAnswer, type SelectRequest, type WorldAnswer, type WorldRequest,
-  Account, AccountFound, AccountId, ActiveQuest, Character, CharacterCreated,
-  CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
-  CreateCharacter, CreateForNoSuchAccount, Created, DeleteCharacter, Deleted,
-  FindAccount, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem,
-  ListCharacters, Listed, LoadCharacter, Login, Move, NameBreaksRule, NameStands,
-  NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
-  NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
-  PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
-  Select, Unavailable, World,
+  type ItemsAnswer, type ItemsRequest, type MoveAnswer, type MoveRequest,
+  type Naming, type NewCharacter, type NewItem, type QuestRow, type RenameAnswer,
+  type Request, type SelectAnswer, type SelectRequest, type WorldAnswer,
+  type WorldRequest, Account, AccountFound, AccountId, ActiveQuest, Character,
+  CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
+  CharacterRenamed, CreateCharacter, CreateForNoSuchAccount, Created,
+  DeleteCharacter, Deleted, FindAccount, ForItems, ForLogin, ForMove, ForSelect,
+  ForWorld, HealthRefused, HeldItem, Items, ListCharacters, Listed,
+  LoadCharacter, Login, Move, NameBreaksRule, NameStands, NameTaken, NeedsRename,
+  NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter,
+  NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused,
+  QuestRow, RenameCharacter, Renamed, SavePlace, Select, Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
@@ -308,8 +308,22 @@ fn run_request(request: Request, pool: pog.Connection) -> Answer {
     Move(request:) ->
       move(pool, request)
       |> result.map(ForMove)
+    Items(request:) ->
+      items(pool, request)
+      |> result.map(ForItems)
   }
   result.unwrap(answer, Unavailable)
+}
+
+/// Runs one of the player's items' requests. A move of items is not built yet:
+/// issue #579 fills this with one transaction and the statement of
+/// move_character_items.sql, so a worker asked for one crashes, and the asker
+/// gets `EndedBeforeAnswer`.
+fn items(
+  _pool: pog.Connection,
+  _request: ItemsRequest,
+) -> Result(ItemsAnswer, Nil) {
+  panic as "the move of items is not built yet: #579 fills it with the transaction of move_character_items.sql"
 }
 
 /// Runs one of character select's requests.

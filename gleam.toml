@@ -67,6 +67,14 @@ avoid_panic = "off"
 "dev/genesis_prime/add_character/sql.gleam" = ["label_possible"]
 "dev/genesis_prime/mark_rename/sql.gleam" = ["label_possible"]
 "dev/genesis_prime/sitting_bot/sql.gleam" = ["label_possible"]
+# Issue 579's shape commit holds the item move's signatures and its three replies
+# before any caller: the build commits of that issue fill the rule and the
+# connection's module that calls it and write the replies, and remove these four
+# lines.
+"src/genesis_prime/game/inventory.gleam" = ["unused_exports"]
+"src/genesis_prime/message/item_moved.gleam" = ["unused_exports"]
+"src/genesis_prime/message/items_swapped.gleam" = ["unused_exports"]
+"src/genesis_prime/message/item_action_failed.gleam" = ["unused_exports"]
 # The test runner finds public `_test` functions by name, and test-support
 # modules are shared across test modules, so no other module calls them.
 "test/**/*.gleam" = ["unused_exports"]

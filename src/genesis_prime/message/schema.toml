@@ -1767,6 +1767,61 @@ fields = [
 ]
 
 [[message]]
+id = 0x0182
+name = "item_move"
+direction = "client_to_server"
+evidence = "opcode.0x182"
+summary = "the client moves a held item: the place it leaves and the place it goes to; moves, swaps, equips and unequips are all this message, and a swap is a move onto an occupied slot. The client sends one at a time and refuses the others for 10 seconds, until 0x569, 0x568, 0x56A or 0x17F clears the wait"
+fields = [
+  { name = "from", kind = "record", record = "item_place", evidence = "opcode.0x182", named_by = "opcode.0x182" },
+  { name = "to", kind = "record", record = "item_place", evidence = "opcode.0x182", named_by = "opcode.0x182" },
+]
+
+[[record]]
+name = "item_place"
+evidence = "opcode.0x182"
+summary = "a place in the held items as message 0x182 writes it: the location (9 bits) and the bag index (32 bits)"
+fields = [
+  { name = "location", kind = "unsigned", bits = 9, evidence = "opcode.0x182", named_by = "opcode.0x182" },
+  { name = "bag_index", kind = "unsigned", bits = 32, evidence = "opcode.0x182", named_by = "opcode.0x182" },
+]
+
+[[message]]
+id = 0x0569
+name = "item_moved"
+direction = "server_to_client"
+evidence = "opcode.0x569"
+summary = "a held item moved to an empty place: the item's guid and its new place as one 64-bit value, bag index in bits 0 to 7 and location in bits 8 to 15; the client files the item at the place, empties its old slot and clears its move wait, and moves no item already at the place, so a swap is message 0x568"
+fields = [
+  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x569", named_by = "opcode.0x569" },
+  { name = "place", kind = "unsigned", bits = 64, evidence = "opcode.0x569", named_by = "opcode.0x569" },
+]
+
+[[message]]
+id = 0x0568
+name = "items_swapped"
+direction = "server_to_client"
+evidence = "opcode.0x568"
+summary = "two held items swapped: each item's guid and its new place as one 64-bit value, as message 0x569 carries them (the moved item at the destination, then the other item at the source); the client empties both old slots, files each item at its place and clears its move wait"
+fields = [
+  { name = "first_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x568", named_by = "opcode.0x568" },
+  { name = "first_place", kind = "unsigned", bits = 64, evidence = "opcode.0x568", named_by = "opcode.0x568" },
+  { name = "second_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x568", named_by = "opcode.0x568" },
+  { name = "second_place", kind = "unsigned", bits = 64, evidence = "opcode.0x568", named_by = "opcode.0x568" },
+]
+
+[[message]]
+id = 0x056A
+name = "item_action_failed"
+direction = "server_to_client"
+evidence = "opcode.0x56a"
+summary = "an item action failed: a guid the client does not read and a GenericError code, which the client raises to its UI when it is not 0; the client always clears its move wait"
+fields = [
+  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x56a", safe_by = "opcode.0x56a" },
+  { name = "code", kind = "unsigned", bits = 32, evidence = "opcode.0x56a", named_by = "opcode.0x56a" },
+]
+
+[[message]]
 id = 0x01A0
 name = "ability_tiers"
 direction = "server_to_client"

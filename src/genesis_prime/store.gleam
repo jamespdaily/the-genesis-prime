@@ -198,13 +198,14 @@ pub type NewCharacter {
 }
 
 /// What a rule asks the store, grouped by who asks: the STS login's request,
-/// character select's, world entry's and the player's movement's, so a rule
-/// names only the groups it does not ask as a mismatch.
+/// character select's, world entry's, the player's movement's and the player's
+/// items', so a rule names only the groups it does not ask as a mismatch.
 pub type Request {
   Login(request: LoginRequest)
   Select(request: SelectRequest)
   World(request: WorldRequest)
   Move(request: MoveRequest)
+  Items(request: ItemsRequest)
 }
 
 /// What world entry asks the store.
@@ -241,6 +242,34 @@ pub type MoveRequest {
     place: Place,
     health: Option(Int),
     quests: List(QuestRow),
+  )
+}
+
+/// A place in the character's held items: the client's location (0 equipped, 1
+/// inventory, 2 bank) and the slot in it, as `HeldItem` keeps them.
+pub type ItemPlace {
+  ItemPlace(location: Int, bag_index: Int)
+}
+
+/// One item's move: the item `item_guid`, held at `from`, goes to `to`. A swap is
+/// two moves, each item to the other's place.
+pub type ItemMove {
+  ItemMove(item_guid: Int, from: ItemPlace, to: ItemPlace)
+}
+
+/// What the player's items ask the store.
+pub type ItemsRequest {
+  /// Moves the character's items, all or none, only while the character's
+  /// `session_epoch` is still `session_epoch`, the one the login that moves was
+  /// told when it loaded the character, and only when each item is at the place
+  /// its move leaves. The statement is one UPDATE under the character_item
+  /// table's deferrable unique key, so the moves of a swap pass it together. The
+  /// account's id is in the statement, as for a load.
+  MoveItems(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    moves: List(ItemMove),
   )
 }
 
@@ -296,6 +325,7 @@ pub type Answer {
   ForSelect(answer: SelectAnswer)
   ForWorld(answer: WorldAnswer)
   ForMove(answer: MoveAnswer)
+  ForItems(answer: ItemsAnswer)
 }
 
 /// What the store answers world entry.
@@ -340,6 +370,22 @@ pub type MoveAnswer {
   /// which the rule never asks to keep below 0: a bug of the server's, so
   /// nothing was saved, neither the health nor the place beside it.
   HealthRefused
+}
+
+/// What the store answers the player's items.
+pub type ItemsAnswer {
+  /// Every item is at its new place: the character's `session_epoch` was the
+  /// request's and each item was at the place its move leaves.
+  ItemsMoved
+  /// Nothing was moved, for one of three causes the statement cannot tell apart:
+  /// a later login raised the character's `session_epoch` past the request's,
+  /// an item was not at the place its move leaves, or the account has no such
+  /// character.
+  NothingMoved
+  /// The database refused a place for the check constraint of this name, which
+  /// no place the rule asks for breaks: a bug of the server's, so nothing was
+  /// moved.
+  MoveRefused(constraint: String)
 }
 
 /// What the store answers character select, one variant for each of its
