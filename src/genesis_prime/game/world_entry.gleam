@@ -578,12 +578,14 @@ pub fn joined(
               place: sent,
             )
           let unit =
-            player_unit.with_shield(
-              record: player_unit.with_health(
-                record: unit,
-                health: player_life.health(life:),
-              ),
-              shield: player_life.shield(life:),
+            unit
+            |> player_unit.with_integer_stat(
+              stat_id: unit_fields.health_stat,
+              value: player_life.health(life:),
+            )
+            |> player_unit.with_integer_stat(
+              stat_id: unit_fields.shield_stat,
+              value: player_life.shield(life:),
             )
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id

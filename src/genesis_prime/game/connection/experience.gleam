@@ -32,6 +32,7 @@ import genesis_prime/game/world_entry
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 import genesis_prime/store
 import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/unit_fields
 import gleam/list
 
 /// A creature's credit for the kill of the player's blow: the experience rule takes it, and
@@ -58,9 +59,10 @@ pub fn credited(
         ..entered,
         experience: progress.experience,
         character: store.Character(..entered.character, level: progress.level),
-        unit: player_unit.with_level(
+        unit: player_unit.with_integer_stat(
           record: entered.unit,
-          level: progress.level,
+          stat_id: unit_fields.level_stat,
+          value: progress.level,
         ),
         properties: unit_properties.at_level(
           properties: entered.properties,

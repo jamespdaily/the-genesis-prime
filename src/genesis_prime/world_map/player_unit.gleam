@@ -22,7 +22,7 @@
 ////   server choice: the client sums nothing, `player.level1_gear_properties`). A
 ////   unit whose gear holds no shield has no stat 20 and no shield properties.
 //// - **Health now:** the player's own record carries the health it enters with
-////   as stat 0, which can be below the maximum (`with_health`,
+////   as stat 0, which can be below the maximum (`with_integer_stat`,
 ////   `opcode.0x262`); property 7 stays the maximum.
 //// - **Level:** stat 10 is the character's level (0x140458140).
 //// - **Class resource:** the player's own record gains its class's resource
@@ -267,75 +267,23 @@ pub fn create(
   )
 }
 
-/// The player's 0x262 record with `health` as its stat 0, the health the client
-/// shows (`opcode.0x262`: stat 0 is the unit's health), and property 7 (Base
-/// Health, the maximum Unit:GetMaxHealth reads) as `create` wrote it
-/// (`vector.opcode.0x262.health`). `create` writes the maximum health; a player
-/// who enters with less is created with what it has.
-pub fn with_health(
+/// The player's 0x262 record with the integer stat `stat_id` set to `value`, in place
+/// of the one `create` wrote: the health the client shows as stat 0 (`opcode.0x262`;
+/// `create` writes the maximum, and a player who enters with less is created with
+/// what it has), the shield as stat 20 and the level as stat 10 (`opcode.0x938`),
+/// which a viewer created later is sent. A record with no such stat is unchanged.
+pub fn with_integer_stat(
   record record: UnitCreatePlayer,
-  health health: Int,
+  stat_id stat_id: Int,
+  value value: Int,
 ) -> UnitCreatePlayer {
   UnitCreatePlayer(
     ..record,
     tail: UnitCreateTail(
       ..record.tail,
       stats: list.map(record.tail.stats, fn(stat) {
-        case stat.stat_id == unit_fields.health_stat {
-          True ->
-            unit_fields.integer_stat(
-              stat_id: unit_fields.health_stat,
-              value: health,
-            )
-          False -> stat
-        }
-      }),
-    ),
-  )
-}
-
-/// The player's 0x262 record with `shield` as its stat 20, the shield the client
-/// shows (`opcode.0x938`), in place of the full one `create` wrote; a unit with no
-/// shield stat keeps none.
-pub fn with_shield(
-  record record: UnitCreatePlayer,
-  shield shield: Int,
-) -> UnitCreatePlayer {
-  UnitCreatePlayer(
-    ..record,
-    tail: UnitCreateTail(
-      ..record.tail,
-      stats: list.map(record.tail.stats, fn(stat) {
-        case stat.stat_id == unit_fields.shield_stat {
-          True ->
-            unit_fields.integer_stat(
-              stat_id: unit_fields.shield_stat,
-              value: shield,
-            )
-          False -> stat
-        }
-      }),
-    ),
-  )
-}
-
-/// The player's 0x262 record with `level` as its stat 10, the level the client shows
-/// (`opcode.0x938`) and a viewer created later is sent.
-pub fn with_level(
-  record record: UnitCreatePlayer,
-  level level: Int,
-) -> UnitCreatePlayer {
-  UnitCreatePlayer(
-    ..record,
-    tail: UnitCreateTail(
-      ..record.tail,
-      stats: list.map(record.tail.stats, fn(stat) {
-        case stat.stat_id == unit_fields.level_stat {
-          True ->
-            unit_fields.integer_stat(
-              stat_id: unit_fields.level_stat,
-              value: level,
-            )
+        case stat.stat_id == stat_id {
+          True -> unit_fields.integer_stat(stat_id:, value:)
           False -> stat
         }
       }),

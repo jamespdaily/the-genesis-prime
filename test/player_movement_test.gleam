@@ -38,8 +38,8 @@ import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/store.{
-  AccountId, CharacterId, HealthRefused, NothingSaved, PlaceRefused, PlaceSaved,
-  SavePlace,
+  AccountId, CharacterId, ExperienceRefused, HealthRefused, NothingSaved,
+  PlaceRefused, PlaceSaved, SavePlace,
 }
 import gleam/list
 import gleam/option.{None, Some}
@@ -538,4 +538,10 @@ pub fn the_stores_answer_to_a_save_is_logged_by_what_it_says_test() -> Nil {
   let assert [Fault(text:)] = movement.saved(HealthRefused)
     as "no living player has a health of 0 or below, which the table refuses: a bug"
   assert string.contains(text, "refused") && string.contains(text, "health")
+  let assert [Fault(text:)] = movement.saved(ExperienceRefused)
+    as "no player keeps an experience below 0, which the table refuses: a bug"
+  assert string.contains(text, "refused")
+    && string.contains(text, "experience")
+    && !string.contains(text, "health")
+    as "and it names the experience, not the health"
 }
