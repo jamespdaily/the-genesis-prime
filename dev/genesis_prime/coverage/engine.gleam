@@ -243,7 +243,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 3,
-        reason: "rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite, which no go applies",
+        reason: "rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite, which no go applies (#336)",
         fact_key: "Spell4Effects.effectType.3",
       ),
       Missing(
@@ -258,7 +258,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 11,
-        reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite, which no go applies",
+        reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite, which no go applies (#336)",
         fact_key: "Spell4Effects.effectType.11",
       ),
       Missing(

@@ -423,7 +423,7 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
       ),
       Missing(
         type_number: 3,
-        reason: "rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite, which no go applies",
+        reason: "rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite, which no go applies (#336)",
         fact_key: "Spell4Effects.effectType.3",
       ),
       Missing(
@@ -438,7 +438,7 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
       ),
       Missing(
         type_number: 11,
-        reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite, which no go applies",
+        reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite, which no go applies (#336)",
         fact_key: "Spell4Effects.effectType.11",
       ),
       Missing(
@@ -589,7 +589,7 @@ pub fn the_type_3_rows_aimed_only_at_other_units_are_counted_as_not_handled_test
   assert three.rows == 5
   assert three.status
     == HandledWithGap(
-      reason: "rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite, which no go applies",
+      reason: "rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite, which no go applies (#336)",
       fact_key: "Spell4Effects.effectType.3",
       unread_rows: 3,
     )
@@ -597,7 +597,7 @@ pub fn the_type_3_rows_aimed_only_at_other_units_are_counted_as_not_handled_test
   let text = checklist.render([measured])
   assert string.contains(
     text,
-    "- [x] type 3: 5 rows (83.33%); handled with a gap, 3 of its 5 rows not read: rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite, which no go applies (Spell4Effects.effectType.3)",
+    "- [x] type 3: 5 rows (83.33%); handled with a gap, 3 of its 5 rows not read: rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite, which no go applies (#336) (Spell4Effects.effectType.3)",
   )
     as "the line lists the rows left out with the gap's reason"
   assert string.contains(text, "2 of 2 types handled (50.0% of rows)")
@@ -640,7 +640,7 @@ pub fn the_type_11_rows_behind_a_target_prerequisite_are_counted_as_not_handled_
   assert eleven.rows == 5
   assert eleven.status
     == HandledWithGap(
-      reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite, which no go applies",
+      reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite, which no go applies (#336)",
       fact_key: "Spell4Effects.effectType.11",
       unread_rows: 1,
     )
@@ -648,7 +648,7 @@ pub fn the_type_11_rows_behind_a_target_prerequisite_are_counted_as_not_handled_
   let text = checklist.render([measured])
   assert string.contains(
     text,
-    "- [x] type 11: 5 rows (83.33%); handled with a gap, 1 of its 5 rows not read: rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite, which no go applies (Spell4Effects.effectType.11)",
+    "- [x] type 11: 5 rows (83.33%); handled with a gap, 1 of its 5 rows not read: rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite, which no go applies (#336) (Spell4Effects.effectType.11)",
   )
     as "the line lists the rows left out with the gap's reason"
   assert string.contains(text, "2 of 2 types handled (83.33% of rows)")

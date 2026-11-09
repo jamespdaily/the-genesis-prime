@@ -112,7 +112,7 @@ pub fn the_measure_counts_rows_behind_a_target_prerequisite_as_not_read_for_ever
   assert counted(type_number: 3).1 == 2562
     as "scratch count: 2,543 rows aim only at other units, 14 more, the first 48817, aim at the caster behind a target apply prerequisite (the cast applies no `GatedOnTarget` row, `cast.condition_gate`) and 5 more hold a phaseFlags of 0, which no phase selects (`in_phase`): 2,562 of 4,645"
   assert counted(type_number: 11).1 == 685
-    as "scratch count over `table_rows -- Spell4Effects effectType=11` and `-- UnitProperty2`: every row aimed at the caster, the target or the area is read (targetFlags 1 12,603, 2 6,025, 4 951, 6 526), except 679 behind a target apply prerequisite (136 aimed at the caster, 466 at the target, 73 at the area and 4 at both, the first 42729) and 6 aimed at the area with a phaseFlags of 0, which no phase selects (`in_phase`): 685 of 20,105"
+    as "scratch count over `table_rows -- Spell4Effects effectType=11` and `-- UnitProperty2`: every row aimed at the caster, the target or the area is read (targetFlags with bit 1 set 12,603: 1 12,154, 3 92, 5 339, 7 18; 2 6,025, 4 951, 6 526), except 679 behind a target apply prerequisite (136 aimed at the caster, 466 at the target, 73 at the area and 4 at both, the first 38480, aimed at the area, the first aimed at the caster 42729) and 6 aimed at the area with a phaseFlags of 0, which no phase selects (`in_phase`): 685 of 20,105"
   assert counted(type_number: 73).1 == 35
     as "scratch count: 34 aimed at other units and 1 more, 73611, behind a target apply prerequisite: 35 of 522"
   assert counted(type_number: 118).1 == 110
