@@ -121,6 +121,7 @@ pure_erlang = [
   "genesis_prime_sts_wire_ffi:find",
   "erlang:term_to_binary",
   "math:fmod",
+  "genesis_prime_step_runtime_ffi:unix_milliseconds",
 ]
 # Modules that may make an atom from a string or read a term from bytes.
 atom_or_term = []
