@@ -91,11 +91,22 @@ handshake(Ref, SendDeadlineMs, ReadLimit) ->
         exit:{shutdown, Reason} -> {error, {client_gone, failure(Reason)}}
     end.
 
-%% Asks the socket for its next read.
+%% Asks the socket for its next read. A socket whose peer closed while it was
+%% still armed has already sent its {tcp_closed, Socket} (or {tcp_error, Socket,
+%% Reason}) and closed its port, which it does after queuing the message, so
+%% arming it fails and the message waits in the mailbox: the failure is what
+%% that message says. A failure with no message queued is the arm's own.
+%% Result(Nil, ArmFailure).
 read_once(Socket) ->
     case inet:setopts(Socket, [{active, once}]) of
         ok -> {ok, nil};
-        {error, Reason} -> {error, failure(Reason)}
+        {error, Reason} ->
+            receive
+                {tcp_closed, Socket} -> {error, closed_while_arming};
+                {tcp_error, Socket, Error} ->
+                    {error, {failed_while_arming, failure(Error)}}
+            after 0 -> {error, {failed_while_arming, failure(Reason)}}
+            end
     end.
 
 %% A message the socket sent, as the shell's selector takes it: {tcp, Socket,
