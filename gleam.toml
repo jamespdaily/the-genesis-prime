@@ -107,6 +107,7 @@ effectful_modules = [
   { module = "genesis_prime/content/game_number", reason = "runs the game_number table's one query on the load's pool and puts the numbers in a persistent term" },
   { module = "genesis_prime/content/class_resource", reason = "runs the class_resource table's one query on the load's pool and puts the classes' resources in a persistent term" },
   { module = "genesis_prime/content/server_proxy", reason = "runs the server_proxy table's one query on the load's pool and puts the server's Proxies in a persistent term" },
+  { module = "genesis_prime/content/zone_welcome", reason = "runs the zone_welcome table's one query on the load's pool and puts the zones' welcomes in a persistent term" },
   { module = "genesis_prime/content/sql", reason = "the queries squirrel generates, run on pog's pool" },
 ]
 # Erlang functions a rule module's externals may call.
