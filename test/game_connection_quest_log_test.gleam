@@ -17,7 +17,13 @@
 ////   daily one at 10:00 that day, so the next one is Friday 2025-04-25 10:00, which is
 ////   48,800,000 ms (13 h 33 min 20 s) later.
 //// - 2025-04-29 and 2025-04-30 are not the first of a month or of a year, so the
-////   monthly and yearly bits stay clear.
+////   monthly and yearly bits stay clear. Thursday 2025-05-01 10:00 is the first daily
+////   reset of May, so the monthly bit joins it (4 + 1, and no weekly one: the
+////   weekly reset was Tuesday 2025-04-29), and Thursday 2026-01-01 10:00 is the
+////   first of the year, so the yearly bit joins the monthly and the daily (8 + 4 +
+////   1; the weekly reset was Tuesday 2025-12-30). The times were read off a
+////   calendar, not computed by the rule: 2025-05-01 10:00 UTC is 1746093600 Unix
+////   seconds, 2025-12-31 10:00 is 1767175200 and 2026-01-01 10:00 is 1767261600.
 
 import connection_rule_support as support
 import game_connection_support
@@ -34,6 +40,7 @@ import genesis_prime/step.{
 import gleam/list
 import gleam/option.{None}
 import owned_test
+import quest_support
 
 /// A FILETIME of 2025-04-25 09:00:00 UTC, an hour before the daily reset.
 const friday_9 = 133_900_452_000_000_000
@@ -46,6 +53,21 @@ const tuesday_10 = 133_903_944_000_000_000
 
 /// A FILETIME of 2025-04-30 11:00:00 UTC, the Wednesday an hour after a daily reset.
 const wednesday_11 = 133_904_844_000_000_000
+
+/// A FILETIME of 2025-04-25 11:00:00 UTC, the Friday an hour after the daily reset.
+const friday_11 = 133_900_524_000_000_000
+
+/// A FILETIME of 2025-04-30 10:00:00 UTC, a Wednesday: a daily reset.
+const wednesday_10 = 133_904_808_000_000_000
+
+/// A FILETIME of 2025-05-01 10:00:00 UTC, a Thursday: the first daily reset of May.
+const thursday_may_1_10 = 133_905_672_000_000_000
+
+/// A FILETIME of 2025-12-31 10:00:00 UTC, a Wednesday: a daily reset.
+const wednesday_dec_31_10 = 134_116_488_000_000_000
+
+/// A FILETIME of 2026-01-01 10:00:00 UTC, a Thursday: the first daily reset of 2026.
+const thursday_jan_1_10 = 134_117_352_000_000_000
 
 /// The reset timer's id.
 const timer = TimerId(10)
@@ -130,4 +152,58 @@ pub fn a_reset_passing_during_play_sends_the_periodic_reset_once_with_every_peri
     as "after missed resets one message goes out with the latest reset, Wednesday 2025-04-30 10:00 UTC, and the bit of each period that reset since the time the client was told"
   assert started(taken:) == [#(timer, 82_800_000)]
     as "the next reset is 23 hours after the late firing"
+  // The first daily reset of a month is also the monthly reset: bits 4 and 1, the
+  // weekly one having been told on the Tuesday before.
+  let #(state, taken) = fired(state: entered, at: wednesday_10)
+  assert resets_sent(taken:)
+    == [QuestPeriodicReset(reset_time: 1_746_007_200, periods: 3)]
+    as "Wednesday 2025-04-30 10:00 UTC: the daily reset and the weekly one since the entry"
+  let #(state, taken) = fired(state:, at: thursday_may_1_10)
+  assert resets_sent(taken:)
+    == [QuestPeriodicReset(reset_time: 1_746_093_600, periods: 5)]
+    as "Thursday 2025-05-01 10:00 UTC is the first daily reset of May: the daily bit 1 and the monthly bit 4, no weekly one"
+  // The first daily reset of a year is also the monthly and the yearly reset.
+  let #(state, taken) = fired(state:, at: wednesday_dec_31_10)
+  assert resets_sent(taken:)
+    == [QuestPeriodicReset(reset_time: 1_767_175_200, periods: 7)]
+    as "Wednesday 2025-12-31 10:00 UTC: a daily, a weekly (Tuesday 2025-12-30) and a monthly (2025-12-01) reset since 2025-05-01, and no yearly one"
+  let #(_, taken) = fired(state:, at: thursday_jan_1_10)
+  assert resets_sent(taken:)
+    == [QuestPeriodicReset(reset_time: 1_767_261_600, periods: 13)]
+    as "Thursday 2026-01-01 10:00 UTC is the first daily reset of 2026: the daily bit 1, the monthly bit 4 and the yearly bit 8, no weekly one"
+}
+
+/// The reset timer's starts among a step's, with their waits.
+fn reset_timers(
+  taken taken: ConnectionStep(Request),
+) -> List(#(step.TimerId, Int)) {
+  list.filter(started(taken:), fn(start) { start.0 == timer })
+}
+
+pub fn a_reset_that_passed_while_the_player_crossed_the_holocrypt_is_sent_when_it_rejoins_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(entered, _) =
+    game_connection_support.entered_with_quests(quests: [
+      quest_support.accepted(quest_id: quest_support.daily, progress: [1]),
+    ])
+  let dead =
+    game_connection_support.killed(
+      game_connection_support.watched_by(state: entered, viewers: [2]),
+    ).0
+  // The leave cancelled the reset timer. A rejoin at the time the player entered
+  // has no reset to tell: the timer starts for the next one.
+  let #(_, same_day) = game_connection_support.at_the_holocrypt_from(dead:)
+  assert resets_sent(taken: same_day) == []
+    as "no reset passed since the client was told the time"
+  assert reset_timers(taken: same_day) == [#(timer, 48_800_000)]
+    as "the rejoin starts the timer for Friday 2025-04-25 10:00 UTC"
+  // A rejoin after Friday 10:00: the daily reset passed while the timer was
+  // cancelled, so it is sent now, once, and the timer waits for the next one.
+  let #(_, next_day) =
+    game_connection_support.at_the_holocrypt_from_at(dead:, filetime: friday_11)
+  assert resets_sent(taken: next_day)
+    == [QuestPeriodicReset(reset_time: 1_745_575_200, periods: 1)]
+    as "opcode.0x362: the client is told the daily reset of Friday 2025-04-25 10:00 UTC that passed during the transfer, with the daily bit"
+  assert reset_timers(taken: next_day) == [#(timer, 82_800_000)]
+    as "the next reset is Saturday 2025-04-26 10:00 UTC, 23 hours after the rejoin"
 }

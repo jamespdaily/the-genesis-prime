@@ -141,6 +141,15 @@ pub fn feed(
   state state: game_connection.State,
   event event: Event(ConnectionEvent(Message, Answer)),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
+  feed_at(state:, filetime:, event:)
+}
+
+/// An event that reaches the connection at this system time, as a FILETIME.
+pub fn feed_at(
+  state state: game_connection.State,
+  filetime filetime: Int,
+  event event: Event(ConnectionEvent(Message, Answer)),
+) -> #(game_connection.State, ConnectionStep(Request)) {
   game_connection.step(state, support.input_at(filetime:, event:))
 }
 
@@ -1757,11 +1766,32 @@ pub fn at_the_holocrypt() -> #(game_connection.State, ConnectionStep(Request)) {
 pub fn at_the_holocrypt_from(
   dead dead: game_connection.State,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  let #(state, taken) = read(state: dead, bytes: holocrypt())
+  at_the_holocrypt_from_at(dead:, filetime:)
+}
+
+/// The same, with the choice and both answers reaching the connection at this
+/// system time, as a FILETIME.
+pub fn at_the_holocrypt_from_at(
+  dead dead: game_connection.State,
+  filetime filetime: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let answered = fn(state, taken: ConnectionStep(Request), outcome) {
+    let assert Some(ask) = support.asked(taken) as "the step ends in an ask"
+    feed_at(
+      state:,
+      filetime:,
+      event: step.OwnEvent(step.Answered(ask: ask.ask, outcome:)),
+    )
+  }
   let #(state, taken) =
-    answer(state:, taken:, outcome: step.Answer(FromMap(Left)))
+    feed_at(
+      state: dead,
+      filetime:,
+      event: step.OwnEvent(step.Read(holocrypt())),
+    )
+  let #(state, taken) = answered(state, taken, step.Answer(FromMap(Left)))
   let #(_, joined) = mapped(map_state: map_after_a_stay(), taken:)
-  answer(state:, taken:, outcome: step.Answer(FromMap(joined)))
+  answered(state, taken, step.Answer(FromMap(joined)))
 }
 
 /// The Holocrypt's join answered by the map `map_state`.
