@@ -8,7 +8,6 @@ import genesis_prime/table
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import gleam/list
-import gleam/string
 import simplifile
 
 /// Whether the client's files are on this machine: false only where
@@ -49,16 +48,13 @@ pub fn read(file: String) -> BitArray {
 
 /// The names of every extracted table file, without `.tbl`, in order.
 pub fn files() -> List(String) {
-  let assert Ok(names) = simplifile.read_directory(folder())
+  let assert Ok(names) = store.table_files(folder())
     as {
       "the tables folder is missing: "
       <> folder()
       <> "; run python3.13 -I setup_check/extract_tables.py"
     }
   names
-  |> list.filter(string.ends_with(_, ".tbl"))
-  |> list.map(string.remove_suffix(_, ".tbl"))
-  |> list.sort(string.compare)
 }
 
 /// The server's own tables (`server_table.entries`), read once per test run

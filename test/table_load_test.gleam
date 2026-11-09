@@ -246,25 +246,31 @@ pub fn reading_one_more_table_from_the_same_folder_keeps_the_tables_digest_test(
 
 pub fn the_content_tables_read_beside_the_servers_keep_its_digest_test() -> Nil {
   use <- owned_test.run(5000)
-  use folder <- planted_table.in_folder([
+  let class_bytes = class_file(9)
+  use servers_folder <- planted_table.in_folder([
     #("LocalizedText", localized_text_file([localized_text_row(1, 7)])),
-    #("Class", class_file(9)),
   ])
+  use content_folder <- planted_table.in_folder([#("Class", class_bytes)])
+  let assert Ok(Nil) =
+    simplifile.create_directory(content_folder <> "/Unread.tbl")
+    as "a directory named like a table file, which a hash of the folder cannot read"
   let assert Ok(servers) =
     store.read(
-      from: folder,
+      from: servers_folder,
       entries: [localized_text.entry()],
       requirements: [],
       derivations: [],
     )
-    as "the server's table loads"
-  let assert Ok(with_more) =
-    store.read_more(over: servers, from: folder, entries: [class.entry()])
-    as "the table beside it loads"
-  assert class.all(with_more) != []
+    as "the server's table loads from its folder"
+  let assert Ok(with_content) =
+    store.read_more(over: servers, from: content_folder, entries: [
+      class.entry(),
+    ])
+    as "the table beside it loads, though a hash of its folder would fail on Unread.tbl"
+  assert class.all(with_content) != []
     as "the table read beside the server's is there"
-  assert store.digest(with_more) == store.digest(servers)
-    as "the digest of the server's tables is the digest of the files, which the tables read beside them do not change"
+  assert store.digest(with_content) == store.digest(servers)
+    as "the digest is the server's tables', the first read's"
 }
 
 /// What the test below runs in a fresh node, where no other test holds the

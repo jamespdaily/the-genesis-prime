@@ -360,20 +360,8 @@ fn session_settings(
 pub fn replay_tree(
   folder folder: String,
 ) -> #(Result(Nil, Failure), List(wire_replay.Logged)) {
-  replay_tree_on(
-    folder:,
-    tables_digest: table_store.digest(client_tables.shared()),
-  )
-}
-
-/// `replay_tree` for the client's files as `tables_digest` names them: the
-/// digest of the tables folder from whatever read it was taken.
-pub fn replay_tree_on(
-  folder folder: String,
-  tables_digest tables_digest: String,
-) -> #(Result(Nil, Failure), List(wire_replay.Logged)) {
   let session = load(folder)
-  let digest = Some(tables_digest)
+  let digest = Some(table_store.digest(client_tables.shared()))
   let refused = case
     wire_replay.refuse_stale(session, client_archive.target_build, digest)
   {

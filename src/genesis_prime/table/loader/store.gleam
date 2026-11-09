@@ -339,8 +339,8 @@ pub fn ids(entry entry: Entry, tables tables: Tables) -> List(Int) {
 
 /// Reads every entry's file from the folder into one value on the caller's
 /// heap, checks each requirement, then builds each derivation from the
-/// tables, and digests the folder's table files. Stops at the first failure. Nothing is stored, so there is nothing
-/// to unload.
+/// tables, and digests the folder's table files. Stops at the first failure.
+/// Nothing is stored, so there is nothing to unload.
 pub fn read(
   from folder: String,
   entries entries: List(Entry),
@@ -512,18 +512,22 @@ fn read_one(
   |> result.map_error(TableFileInvalid(entry.table, _))
 }
 
-/// SHA-256, as upper-case hex, over each `.tbl` file of the folder in name
-/// order: its name without `.tbl`, a zero byte and its bytes.
-fn digest_folder(folder: String) -> Result(String, LoadError) {
-  use names <- result.try(
+/// The names of the `.tbl` files in the folder, without `.tbl`, in name order.
+pub fn table_files(folder: String) -> Result(List(String), LoadError) {
+  use names <- result.map(
     simplifile.read_directory(folder)
     |> result.map_error(TableFolderUnreadable(folder, _)),
   )
-  let files =
-    names
-    |> list.filter(string.ends_with(_, ".tbl"))
-    |> list.map(string.remove_suffix(_, ".tbl"))
-    |> list.sort(string.compare)
+  names
+  |> list.filter(string.ends_with(_, ".tbl"))
+  |> list.map(string.remove_suffix(_, ".tbl"))
+  |> list.sort(string.compare)
+}
+
+/// SHA-256, as upper-case hex, over each `.tbl` file of the folder in name
+/// order: its name without `.tbl`, a zero byte and its bytes.
+fn digest_folder(folder: String) -> Result(String, LoadError) {
+  use files <- result.try(table_files(folder))
   use hasher <- result.map(
     list.try_fold(files, crypto.new_hasher(crypto.Sha256), fn(hasher, file) {
       use bytes <- result.map(

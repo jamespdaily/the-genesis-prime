@@ -180,11 +180,9 @@ fn read_tables(
   folder: String,
 ) -> Result(List(#(String, BitArray)), GenerateError) {
   use names <- result.try(
-    simplifile.read_directory(folder) |> result.replace_error(NoTables(folder)),
+    store.table_files(folder) |> result.replace_error(NoTables(folder)),
   )
   names
-  |> list.filter(string.ends_with(_, ".tbl"))
-  |> list.map(string.remove_suffix(_, ".tbl"))
   |> list.try_map(fn(file) {
     simplifile.read_bits(folder <> "/" <> file <> ".tbl")
     |> result.map(fn(bytes) { #(file, bytes) })
