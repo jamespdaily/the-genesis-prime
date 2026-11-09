@@ -95,6 +95,7 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
             LookEntry(label: CharacterCustomizationLabelId(22), value: 2),
           ],
           bones: character_support.bones(46),
+          starting_items: character_support.row_466_items(),
         ),
         character_slots: 3,
       )),
@@ -282,7 +283,9 @@ pub fn a_play_of_a_character_with_no_saved_place_is_refused_the_same_way_and_the
       taken:,
       outcome: step.Answer(
         FromStore(
-          ForWorld(CharacterLoaded(no_place, character_support.epoch(1), None)),
+          ForWorld(
+            CharacterLoaded(no_place, character_support.epoch(1), None, []),
+          ),
         ),
       ),
     )
@@ -352,6 +355,7 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
             LookEntry(label: CharacterCustomizationLabelId(22), value: 2),
           ],
           bones: character_support.bones(46),
+          starting_items: character_support.row_466_items(),
         ),
         character_slots: 3,
       )),

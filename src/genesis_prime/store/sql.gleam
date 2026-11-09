@@ -101,6 +101,45 @@ returning character_id;
   |> pog.execute(db)
 }
 
+/// Stores the items a new character starts with, one row each, in the places
+/// the lists give at the same position. The database gives each row its guid.
+/// A place the character already holds an item in breaks
+/// `character_item_one_per_slot`, and any other value its checks refuse breaks
+/// that check; no ask of the create can, so the worker ends on either.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn create_character_items(
+  db: pog.Connection,
+  arg_1: Int,
+  arg_2: List(Int),
+  arg_3: List(Int),
+  arg_4: List(Int),
+  arg_5: List(Int),
+) -> Result(pog.Returned(Nil), pog.QueryError) {
+  let decoder = decode.map(decode.dynamic, fn(_) { Nil })
+
+  "-- Stores the items a new character starts with, one row each, in the places
+-- the lists give at the same position. The database gives each row its guid.
+-- A place the character already holds an item in breaks
+-- `character_item_one_per_slot`, and any other value its checks refuse breaks
+-- that check; no ask of the create can, so the worker ends on either.
+insert into character_item (character_id, item2_id, location, bag_index, stack_count)
+select $1::bigint, item2_id, location::smallint, bag_index, stack_count
+from unnest($2::int[], $3::int[], $4::int[], $5::int[])
+  as new_item (item2_id, location, bag_index, stack_count);
+"
+  |> pog.query
+  |> pog.parameter(pog.int(arg_1))
+  |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_2))
+  |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_3))
+  |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_4))
+  |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_5))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `delete_character` query
 /// defined in `./src/genesis_prime/store/sql/delete_character.sql`.
 ///
@@ -504,6 +543,65 @@ returning
   |> pog.query
   |> pog.parameter(pog.int(character_id))
   |> pog.parameter(pog.int(account_id))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `load_character_items` query
+/// defined in `./src/genesis_prime/store/sql/load_character_items.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadCharacterItemsRow {
+  LoadCharacterItemsRow(
+    item_guid: Int,
+    item2_id: Int,
+    location: Int,
+    bag_index: Int,
+    stack_count: Int,
+  )
+}
+
+/// The items a character holds in its equipped slots, inventory and bank, in
+/// the order world entry sends them: by location, then bag index.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_character_items(
+  db: pog.Connection,
+  character_id: Int,
+) -> Result(pog.Returned(LoadCharacterItemsRow), pog.QueryError) {
+  let decoder = {
+    use item_guid <- decode.field(0, decode.int)
+    use item2_id <- decode.field(1, decode.int)
+    use location <- decode.field(2, decode.int)
+    use bag_index <- decode.field(3, decode.int)
+    use stack_count <- decode.field(4, decode.int)
+    decode.success(LoadCharacterItemsRow(
+      item_guid:,
+      item2_id:,
+      location:,
+      bag_index:,
+      stack_count:,
+    ))
+  }
+
+  "-- The items a character holds in its equipped slots, inventory and bank, in
+-- the order world entry sends them: by location, then bag index.
+select
+  item_guid,
+  item2_id,
+  location::int as location,
+  bag_index,
+  stack_count
+from character_item
+where character_id = $1
+order by location, bag_index;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(character_id))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

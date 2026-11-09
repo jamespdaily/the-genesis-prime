@@ -185,11 +185,14 @@ pub fn pre_game_activity_before_world_entry_is_dropped_test() -> Nil {
       taken:,
       outcome: step.Answer(
         FromStore(
-          ForWorld(CharacterLoaded(
-            connection_support.world_character(),
-            character_support.epoch(1),
-            None,
-          )),
+          ForWorld(
+            CharacterLoaded(
+              connection_support.world_character(),
+              character_support.epoch(1),
+              None,
+              items: [],
+            ),
+          ),
         ),
       ),
     )

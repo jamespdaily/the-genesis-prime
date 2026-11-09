@@ -5,7 +5,7 @@
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/table/id.{
-  type CharacterCustomizationLabelId, type ClassId, type RaceId,
+  type CharacterCustomizationLabelId, type ClassId, type Item2Id, type RaceId,
   CharacterCustomizationLabelId,
 }
 import gleam/bool
@@ -119,10 +119,36 @@ pub type Character {
   )
 }
 
+/// An item a character holds in its equipped slots, inventory or bank, as the
+/// character_item table keeps it. `item_guid` is the item's identity for every
+/// later message about it: the database made it with the row, never makes it
+/// again, and it stays with the item when the item changes place
+/// (opcode.0x111.guid). `location` is 0 (equipped), 1 (inventory) or 2 (bank)
+/// and `bag_index` the slot in it (the client's own numbers; the table's checks
+/// hold the ranges); ability items (location 4) are not stored. `stack_count` is
+/// 1 or more.
+pub type HeldItem {
+  HeldItem(
+    item_guid: Int,
+    item2_id: Item2Id,
+    location: Int,
+    bag_index: Int,
+    stack_count: Int,
+  )
+}
+
+/// A held item before its row gives it a guid: the same place and stack as a
+/// `HeldItem`, which the store writes in the same transaction as the character
+/// that holds it.
+pub type NewItem {
+  NewItem(item2_id: Item2Id, location: Int, bag_index: Int, stack_count: Int)
+}
+
 /// A character to make, from a create request and the CharacterCreation row it
 /// names: the row gives the gender (its sex), race, class and faction, its
 /// start the place (genesis_prime/game/start_place) and its experience the
-/// level (genesis_prime/game/level).
+/// level (genesis_prime/game/level). `starting_items` are the items the
+/// character holds from its first entry, stored with the character.
 pub type NewCharacter {
   NewCharacter(
     name: String,
@@ -135,6 +161,7 @@ pub type NewCharacter {
     place: Place,
     look: List(LookEntry),
     bones: List(Int),
+    starting_items: List(NewItem),
   )
 }
 
@@ -190,9 +217,10 @@ pub type SelectRequest {
   /// The account's characters, in the order they were created.
   ListCharacters(account_id: AccountId)
   /// Makes the character for the account unless it already has
-  /// `character_slots` characters. The name must be a full name by the client's
-  /// text rule 0 and unique ignoring case, and the account's creates run one at
-  /// a time, all held by the database.
+  /// `character_slots` characters, and stores its `starting_items` in the same
+  /// transaction, so a refused create leaves no item. The name must be a full
+  /// name by the client's text rule 0 and unique ignoring case, and the
+  /// account's creates run one at a time, all held by the database.
   CreateCharacter(
     account_id: AccountId,
     character: NewCharacter,
@@ -235,13 +263,15 @@ pub type Answer {
 /// What the store answers world entry.
 pub type WorldAnswer {
   /// The account's character, taken by this login, whose `session_epoch` is
-  /// `session_epoch` after the raise, and the health its last save kept
-  /// (`saved_health`: `None` when none was saved). Asking again takes the
-  /// character again and raises it again.
+  /// `session_epoch` after the raise, the health its last save kept
+  /// (`saved_health`: `None` when none was saved) and the items it holds, by
+  /// location then bag index (none for a character with no stored items).
+  /// Asking again takes the character again and raises it again.
   CharacterLoaded(
     character: Character,
     session_epoch: SessionEpoch,
     saved_health: Option(Int),
+    items: List(HeldItem),
   )
   /// The account has no character with the id.
   NotTheAccounts

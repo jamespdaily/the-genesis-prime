@@ -52,12 +52,17 @@
 ////   answers, before the map is asked: a character whose level has no XpPerLevel row is
 ////   refused then, so no unit of it reaches the map. The load requires a Class row for
 ////   each playable class (`character_state.requirements`).
-//// - **The loadout** (genesis_prime/game/loadout) is sent after 0x19B, which sets
-////   the player, and before 0x61: the Novice armor pieces and shield, each held
-////   at the bag index of its slot, then the weapon in slot 16 (0x111 at location
-////   0, in bag order), then one ability item per level-1 spell and the class's
-////   innate (0x111 at location 4, bag index from 0: the abilities, then the innate's
-////   Spell4Base at index 3), then the tier 1 of each of them in action
+//// - **The held items** are the character's saved rows (`store.HeldItem`): each is
+////   sent as a 0x111 with its own guid, item id, location, bag index and stack
+////   count, in location then bag index order, after 0x19B, which sets the player,
+////   and before 0x61. A Novice character holds its armor pieces and shield, each
+////   at the bag index of its slot, and the weapon in slot 16 (location 0), as
+////   its creation saved them.
+//// - **The loadout** (genesis_prime/game/loadout) is sent after the held items:
+////   one ability item per level-1 spell and the class's innate (0x111 at
+////   location 4, bag index from 0: the abilities, then the innate's Spell4Base
+////   at index 3; abilities are not saved, so their guid is `loadout.item_guid`,
+////   `opcode.0x111.ability_guid`), then the tier 1 of each of them in action
 ////   sets 0 to 3 (0x1A0) and action set 0 with the abilities in bar slots 0 to 2
 ////   (0x19D; the innate is in no action set), then, with an innate, 0x19F {0}, which
 ////   points the innate button at slot 0 (`opcode.0x111.ability_bag`, `opcode.0x1a0`,
@@ -164,6 +169,7 @@ import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import gleam/result
 import gleam/set.{type Set}
 
@@ -207,12 +213,14 @@ pub opaque type State {
   /// go on numbered after the earlier ones (`movement.placed`). `saved_health`
   /// is the health the character's last save kept, which a play enters at
   /// (`player_life.entering`) and the Holocrypt's join does not have: it enters
-  /// at full health.
+  /// at full health. `items` are the items the character holds, which the
+  /// Holocrypt's join keeps from the stay it leaves.
   Joining(
     character: Character,
     place: Place,
     movement: movement.State,
     saved_health: Option(Int),
+    items: List(store.HeldItem),
     map: MapId,
     stay: Stay,
     entry: Entry,
@@ -279,6 +287,9 @@ pub type Entered {
     unit_id: Int,
     unit: UnitCreatePlayer,
     loadout: Loadout,
+    /// The items the character holds, as the store saved them: each with its
+    /// own guid, its item2 id, where it is held and how many it stacks.
+    items: List(store.HeldItem),
     max_health: Int,
     clock_origin_ms: Int,
     viewers: Dict(ConnectionId, Stay),
@@ -424,7 +435,7 @@ pub fn loaded(
               <> int.to_string(character_id)
               <> ", which the account does not have",
           )
-        store.CharacterLoaded(character:, session_epoch:, saved_health:) ->
+        store.CharacterLoaded(character:, session_epoch:, saved_health:, items:) ->
           case character.place {
             None ->
               Refused(
@@ -439,6 +450,7 @@ pub fn loaded(
                 place:,
                 movement: movement.entered(place:, session_epoch:),
                 saved_health:,
+                items:,
                 connection:,
                 stay:,
                 tables:,
@@ -456,6 +468,7 @@ fn joining_a_play(
   place place: Place,
   movement movement: movement.State,
   saved_health saved_health: Option(Int),
+  items items: List(store.HeldItem),
   connection connection: ConnectionId,
   stay stay: Stay,
   tables tables: table_store.Tables,
@@ -479,6 +492,7 @@ fn joining_a_play(
           place:,
           movement:,
           saved_health:,
+          items:,
           connection:,
           stay:,
           entry: PlayEntry(character_state: frame),
@@ -502,7 +516,16 @@ pub fn joined(
   defaults defaults: List(#(UnitProperty2Id, Float)),
 ) -> Result(Joined, Nil) {
   case state {
-    Joining(character:, place:, movement:, saved_health:, map:, stay:, entry:) -> {
+    Joining(
+      character:,
+      place:,
+      movement:,
+      saved_health:,
+      items:,
+      map:,
+      stay:,
+      entry:,
+    ) -> {
       case answer {
         map.Joined(unit:, loadout:, max_health:, incarnation:, clock_origin_ms:) -> {
           let sent = start_place.within_the_worlds_box(place)
@@ -549,6 +572,7 @@ pub fn joined(
               unit_id:,
               unit:,
               loadout:,
+              items:,
               max_health:,
               clock_origin_ms:,
               viewers: dict.new(),
@@ -584,6 +608,7 @@ pub fn joined(
                 unit_is_player(unit_id:),
               ],
               character_state_sent(entry:),
+              items_sent(items:),
               loadout_sent(character_number: character_id_number, loadout:),
               [player_path(character:)],
               control_at_entry(life:, unit_id:),
@@ -656,6 +681,7 @@ pub fn rejoining(
     place:,
     movement: movement.placed(state: entered.movement, place:),
     saved_health: None,
+    items: entered.items,
     connection:,
     stay:,
     entry: HolocryptEntry,
@@ -671,24 +697,37 @@ fn joining(
   place place: Place,
   movement movement: movement.State,
   saved_health saved_health: Option(Int),
+  items items: List(store.HeldItem),
   connection connection: ConnectionId,
   stay stay: Stay,
   entry entry: Entry,
 ) -> #(State, List(Effect)) {
   let map =
     MapId(world_id: start_place.world_id(place), instance: open_world_instance)
-  #(Joining(character:, place:, movement:, saved_health:, map:, stay:, entry:), [
-    AskMap(
+  #(
+    Joining(
+      character:,
+      place:,
+      movement:,
+      saved_health:,
+      items:,
       map:,
-      message: map.Join(
-        connection:,
-        character:,
-        place: start_place.within_the_worlds_box(place),
-        stay:,
-        alive: bool.negate(player_life.saved_dead(saved: saved_health)),
-      ),
+      stay:,
+      entry:,
     ),
-  ])
+    [
+      AskMap(
+        map:,
+        message: map.Join(
+          connection:,
+          character:,
+          place: start_place.within_the_worlds_box(place),
+          stay:,
+          alive: bool.negate(player_life.saved_dead(saved: saved_health)),
+        ),
+      ),
+    ],
+  )
 }
 
 /// 0xAD with the saved world and position, and 0.0 in the last two floats.
@@ -786,11 +825,6 @@ fn entered_world() -> Effect {
   Send(Frame(message_id: player_entered_world.message_id, body:))
 }
 
-/// The location of the held items that are equipped: the armor pieces and the
-/// shield, each at the bag index of its slot, and the weapon, in the slot the
-/// loadout names (`0x1403afb10`, `ItemSlot.equippedSlotFlags`).
-const equipped_location = 0
-
 /// The location of the held items that are abilities (`opcode.0x111.ability_bag`).
 const ability_location = 4
 
@@ -825,36 +859,42 @@ const first_innate_slot = 0
 /// unlocked.
 const set_unlocked = 1
 
-/// The loadout's messages, in order: each armor piece and the shield, the
-/// weapon, each ability and the innate, the tiers, action set 0 and the innate's
-/// index.
+/// The 0x111 of each saved item, in location then bag index order.
+fn items_sent(items items: List(store.HeldItem)) -> List(Effect) {
+  items
+  |> list.sort(fn(first, second) {
+    int.compare(first.location, second.location)
+    |> order.break_tie(int.compare(first.bag_index, second.bag_index))
+  })
+  |> list.map(fn(item) {
+    held_item(
+      item_guid: item.item_guid,
+      item_id: item.item2_id.value,
+      location: item.location,
+      bag_index: item.bag_index,
+      stack_count: item.stack_count,
+    )
+  })
+}
+
+/// The loadout's messages, in order: each ability and the innate, the tiers,
+/// action set 0 and the innate's index.
 fn loadout_sent(
   character_number character_number: Int,
   loadout loadout: Loadout,
 ) -> List(Effect) {
-  let armor =
-    list.map(loadout.armor, fn(piece) {
-      held_item(
-        character_number:,
-        item_id: piece.item.value,
-        location: equipped_location,
-        bag_index: piece.bag_index,
-      )
-    })
-  let weapon =
-    held_item(
-      character_number:,
-      item_id: { loadout.weapon }.value,
-      location: equipped_location,
-      bag_index: loadout.weapon_slot,
-    )
   let abilities =
     list.index_map(loadout.bag(loadout:), fn(ability, bag_index) {
       held_item(
-        character_number:,
+        item_guid: loadout.item_guid(
+          character_number:,
+          location: ability_location,
+          bag_index:,
+        ),
         item_id: ability.value,
         location: ability_location,
         bag_index:,
+        stack_count: 1,
       )
     })
   let innate = case loadout.innate {
@@ -862,8 +902,6 @@ fn loadout_sent(
     None -> []
   }
   list.flatten([
-    armor,
-    [weapon],
     abilities,
     [
       ability_tiers_frame(abilities: loadout.bag(loadout:)),
@@ -891,25 +929,26 @@ fn innate_index_frame() -> Effect {
   Send(Frame(message_id: innate_index_set.message_id, body:))
 }
 
-/// 0x111 for an item the character holds, a stack of 1 with no charges and full
-/// durability. The guid is `loadout.item_guid`. Every value the client's code does not name is 0
+/// 0x111 for an item the character holds, with no charges and full
+/// durability. Every value the client's code does not name is 0
 /// (`opcode.0x111.shared_item_unnamed`), the lists empty.
 fn held_item(
-  character_number character_number: Int,
+  item_guid item_guid: Int,
   item_id item_id: Int,
   location location: Int,
   bag_index bag_index: Int,
+  stack_count stack_count: Int,
 ) -> Effect {
   let assert Ok(body) =
     item_added.encode(
       ItemAdded(held_item: HeldItem(
         item: SharedItem(
-          item_guid: loadout.item_guid(character_number:, location:, bag_index:),
+          item_guid:,
           field_2: 0,
           item_id:,
           location:,
           bag_index:,
-          stack_count: 1,
+          stack_count:,
           charges: 0,
           field_8: 0,
           field_9: 0,
