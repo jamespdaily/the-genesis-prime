@@ -95,12 +95,12 @@ import genesis_prime/store.{
   CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
   CharacterRenamed, CreateCharacter, CreateForNoSuchAccount, Created,
   DeleteCharacter, Deleted, ExperienceRefused, FindAccount, ForItems, ForLogin,
-  ForMove, ForSelect, ForWorld, HealthRefused, HeldItem, Items, ListCharacters,
-  Listed, LoadCharacter, Login, Move, NameBreaksRule, NameStands, NameTaken,
-  NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount,
-  NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved,
-  QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace, Select,
-  Unavailable, World,
+  ForMove, ForSelect, ForWorld, HealthRefused, HeldItem, Items, ItemsMoved,
+  ListCharacters, Listed, LoadCharacter, Login, Move, MoveItems, MoveRefused,
+  NameBreaksRule, NameStands, NameTaken, NeedsRename, NewNameBreaksRule,
+  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts,
+  NothingMoved, NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused,
+  QuestRow, RenameCharacter, Renamed, SavePlace, Select, Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
@@ -322,15 +322,55 @@ fn run_request(request: Request, pool: pog.Connection) -> Answer {
   result.unwrap(answer, Unavailable)
 }
 
-/// Runs one of the player's items' requests. A move of items is not built yet:
-/// issue #579 fills this with one transaction and the statement of
-/// move_character_items.sql, so a worker asked for one crashes, and the asker
-/// gets `EndedBeforeAnswer`.
+/// Runs one of the player's items' requests: a move is one transaction, the
+/// character's row lock (lock_character_for_save.sql) and then one statement
+/// that names the account, the character, the epoch and every item's old and new
+/// place (move_character_items.sql), answering `ItemsMoved` when it moved as many
+/// items as the request has moves, `NothingMoved` when it moved none and
+/// `MoveRefused` when a check or the unique key of the character_item table
+/// refused a place; `Error(Nil)` when the database is away.
 fn items(
-  _pool: pog.Connection,
-  _request: ItemsRequest,
+  pool: pog.Connection,
+  request: ItemsRequest,
 ) -> Result(ItemsAnswer, Nil) {
-  panic as "the move of items is not built yet: #579 fills it with the transaction of move_character_items.sql"
+  let MoveItems(
+    account_id: AccountId(account_id),
+    character_id: CharacterId(character_id),
+    session_epoch:,
+    moves:,
+  ) = request
+  case
+    attempt(fn() {
+      in_transaction(pool, fn(connection) {
+        use _ <- result.try(sql.lock_character_for_save(
+          connection,
+          character_id,
+          account_id,
+        ))
+        sql.move_character_items(
+          connection,
+          character_id,
+          account_id,
+          store.session_epoch_number(session_epoch),
+          list.map(moves, fn(move) { move.item_guid }),
+          list.map(moves, fn(move) { move.from.location }),
+          list.map(moves, fn(move) { move.from.bag_index }),
+          list.map(moves, fn(move) { move.to.location }),
+          list.map(moves, fn(move) { move.to.bag_index }),
+        )
+      })
+    })
+  {
+    Ok([]) -> Ok(NothingMoved)
+    Ok(rows) ->
+      case list.length(rows) == list.length(moves) {
+        True -> Ok(ItemsMoved)
+        False -> panic as "the statement moves every item of the request or none"
+      }
+    Error(Unreachable) -> Error(Nil)
+    Error(Refused(constraint:, ..)) -> Ok(MoveRefused(constraint:))
+    Error(Unexpected(error:)) -> exit_with(error)
+  }
 }
 
 /// Runs one of character select's requests.

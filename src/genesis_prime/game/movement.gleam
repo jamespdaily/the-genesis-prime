@@ -209,6 +209,12 @@ pub fn place(state state: State) -> Place {
   state.place
 }
 
+/// The epoch the player's login was told, which every store request of this
+/// login that writes the character is fenced by.
+pub fn session_epoch(state state: State) -> SessionEpoch {
+  state.session_epoch
+}
+
 /// The way the player last faced in the world's own frame.
 pub fn facing(state state: State) -> Facing {
   start_place.facing(state.place)
