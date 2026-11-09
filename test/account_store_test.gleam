@@ -809,6 +809,7 @@ fn a_new_character(name: String) -> store.NewCharacter {
     class_id: ClassId(1),
     faction_id: 167,
     level: 3,
+    experience: 1710,
     path: 2,
     place: place_support.at(
       world_id: 3460,
@@ -932,7 +933,7 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
   assert ask(store, World(LoadCharacter(account, CharacterId(character_id))))
     == ForWorld(
-      CharacterLoaded(character, character_support.epoch(1), None, []),
+      CharacterLoaded(character, character_support.epoch(1), None, None, []),
     )
     as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
   stop(store)
@@ -1023,6 +1024,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
           naming: NameStands,
         ),
         character_support.epoch(1),
+        None,
         None,
         [],
       ),
@@ -1240,7 +1242,9 @@ fn save(
   )
 }
 
-/// Saves the place under the epoch and sequence of a login, with the health.
+/// Saves the place under the epoch and sequence of a login, with the health. The
+/// experience and level it saves with are the stored characters' own level 9 and
+/// no experience beyond it: these tests are about the place and the health.
 fn save_keeping(
   store store: Store,
   account account: AccountId,
@@ -1259,6 +1263,8 @@ fn save_keeping(
       save_sequence: sequence,
       place:,
       health:,
+      experience: 0,
+      level: 9,
     )),
   )
 }
@@ -1804,8 +1810,9 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
       "character_name_unique",
       "character_name_follows_rule_0",
       "character_health_is_not_negative",
+      "character_experience_is_not_negative",
     ]
-    as "the three refusals the worker answers for: a name taken, a name that breaks rule 0, and a health below 0"
+    as "the four refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0 and an experience below 0"
   list.each(worker.mapped_constraints, fn(name) {
     let assert Ok(returned) =
       pog.query(

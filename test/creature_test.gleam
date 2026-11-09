@@ -348,7 +348,8 @@ fn kinds_of(sent: List(#(Int, creature.Outgoing))) -> List(String) {
         "removal to " <> int.to_string(one.0)
       creature.News(stay: _, news: PeerNews(news: CreatureAppeared(..), ..)) ->
         "creation to " <> int.to_string(one.0)
-      creature.News(..) | creature.FightTold(..) -> "other"
+      creature.News(..) | creature.FightTold(..) | creature.KillCredit(..) ->
+        "other"
     }
   })
 }
@@ -1210,7 +1211,10 @@ pub fn interrupt_armor_modifier_changes_maximum_test() -> Nil {
           answered: Answered(outcome: Landed(controls:, ..), ..),
           ..,
         ) -> controls
-        creature.Struck(..) | creature.News(..) | creature.FightTold(..) -> []
+        creature.Struck(..)
+        | creature.News(..)
+        | creature.FightTold(..)
+        | creature.KillCredit(..) -> []
       }
     })
   assert landed == [] as "the creature has armor now: the stun lands no state"

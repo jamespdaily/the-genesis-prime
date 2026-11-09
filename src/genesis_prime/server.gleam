@@ -104,9 +104,9 @@ import genesis_prime/client_connection.{
   type Answer, type Message, type PeerNews, type Request, AskHandOff, AskMap,
   AskMapRun, AskSessions, AskStore, ChangeEnds, ChangeStarts, ForStay,
   FromHandOff, FromMap, FromSessions, FromStore, SentByChat, SentByFoe,
-  SentByMap, SentByPeer, SentBySessions, SentByTarget, TellChat, TellLifeChanged,
-  TellMoved, TellPeer, TellReady, TellStealthChanged, TellStrike,
-  TellStrikeAnswered, TellTargetChange, TellTargetMoved,
+  SentByKill, SentByMap, SentByPeer, SentBySessions, SentByTarget, TellChat,
+  TellLifeChanged, TellMoved, TellPeer, TellReady, TellStealthChanged,
+  TellStrike, TellStrikeAnswered, TellTargetChange, TellTargetMoved,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -117,6 +117,7 @@ import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/experience
 import genesis_prime/hand_off
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
@@ -976,14 +977,19 @@ fn creature_reach(
 
 /// The message a connection takes what a creature sends it as: the news of a unit
 /// as `SentByPeer`, the creature's threat, release or strike as `SentByFoe`, each
-/// for the viewer's stay, and the answer to its strike as `SentByTarget`, for the
-/// stay the strike was told for.
+/// for the viewer's stay, the answer to its strike as `SentByTarget`, and the credit
+/// for its death as `SentByKill`, each for the stay the strike was told for.
 pub fn creature_message(outgoing outgoing: creature.Outgoing) -> Message {
   case outgoing {
     creature.News(stay:, news:) -> ForStay(stay:, sent: SentByPeer(news:))
     creature.Struck(stay:, answered:) ->
       ForStay(stay:, sent: SentByTarget(answered))
     creature.FightTold(stay:, told:) -> ForStay(stay:, sent: SentByFoe(told))
+    creature.KillCredit(stay:, unit_id:, creature_id:, level:) ->
+      ForStay(
+        stay:,
+        sent: SentByKill(experience.Credit(unit_id:, creature_id:, level:)),
+      )
   }
 }
 

@@ -294,6 +294,7 @@ fn started_told(
       | client_connection.CrowdControlEnded(..)
       | client_connection.InterruptArmor(..)
       | client_connection.Absorption(..)
+      | client_connection.Level(..)
       | client_connection.PropertiesChanged(..)
       | client_connection.Stealth(..)
       | client_connection.LookChanged(..) -> Error(Nil)

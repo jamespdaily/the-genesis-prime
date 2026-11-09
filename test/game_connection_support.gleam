@@ -461,6 +461,7 @@ pub fn joining_saved(
           character,
           character_support.epoch(1),
           saved_health,
+          None,
           world_entry_support.novice_items(character:),
         )),
       ),
@@ -660,7 +661,9 @@ pub fn entry_place() -> Place {
 
 /// The ask of a save of the tests' player at full health: the account and
 /// character of the tests' connection, the epoch its load gave, the save's
-/// number and the place, and the full health (`full_health`).
+/// number and the place, the full health (`full_health`) and the level 1 the
+/// character has with the 0 experience that is the least of level 1 (XpPerLevel
+/// ID 1's minXpForLevel, `opcode.0x25e.safe_body`).
 pub fn save_asked(sequence sequence: Int, place place: Place) -> Request {
   save_asked_keeping(sequence:, place:, health: Some(full_health))
 }
@@ -679,6 +682,8 @@ pub fn save_asked_keeping(
       save_sequence: sequence,
       place:,
       health:,
+      experience: 0,
+      level: 1,
     )),
   )
 }
@@ -1352,6 +1357,7 @@ pub fn cast_starts(news: List(News)) -> List(spell_started.SpellStarted) {
       | client_connection.Shield(..)
       | client_connection.InterruptArmor(..)
       | client_connection.Absorption(..)
+      | client_connection.Level(..)
       | client_connection.CrowdControlApplied(..)
       | client_connection.CrowdControlEnded(..)
       | client_connection.PropertiesChanged(..)
@@ -1387,6 +1393,7 @@ pub fn is_cast_removal(news: News) -> Bool {
     | client_connection.Shield(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
+    | client_connection.Level(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
     | client_connection.PropertiesChanged(..)

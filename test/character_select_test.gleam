@@ -287,6 +287,7 @@ pub fn a_valid_request_asks_the_store_to_make_the_character_with_the_slot_count_
           class_id: ClassId(1),
           faction_id: 167,
           level: 1,
+          experience: 0,
           path: 1,
           place: character_tables.novice_start_place(),
           look: [

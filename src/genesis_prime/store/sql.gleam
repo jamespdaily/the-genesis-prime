@@ -20,7 +20,7 @@ pub type CreateCharacterRow {
 
 /// Makes a character of an account: at the level the create gave, standing at
 /// the start place the create gave (a world, a zone, a position and a facing),
-/// and the values the create request gave. It makes none, and gives no row, when the
+/// with the experience the create gave, and the values the create request gave. It makes none, and gives no row, when the
 /// account already has as many characters as its slots. A name that another
 /// character holds in any case breaks the unique index on
 /// lower(name collate "und-x-icu"), which the caller reports as its own error.
@@ -50,6 +50,7 @@ pub fn create_character(
   arg_18: Float,
   arg_19: Float,
   arg_20: Float,
+  arg_21: Int,
 ) -> Result(pog.Returned(CreateCharacterRow), pog.QueryError) {
   let decoder = {
     use character_id <- decode.field(0, decode.int)
@@ -58,7 +59,7 @@ pub fn create_character(
 
   "-- Makes a character of an account: at the level the create gave, standing at
 -- the start place the create gave (a world, a zone, a position and a facing),
--- and the values the create request gave. It makes none, and gives no row, when the
+-- with the experience the create gave, and the values the create request gave. It makes none, and gives no row, when the
 -- account already has as many characters as its slots. A name that another
 -- character holds in any case breaks the unique index on
 -- lower(name collate \"und-x-icu\"), which the caller reports as its own error.
@@ -66,13 +67,13 @@ insert into character (
   account_id, name, gender, race_id, class_id, faction_id, level, path,
   world_id, world_zone_id, position_x, position_y, position_z,
   rotation_yaw, rotation_pitch, rotation_roll,
-  look_labels, look_values, bones
+  look_labels, look_values, bones, experience
 )
 select
   $1::bigint, $2::text, $3::int, $4::int, $5::int, $6::int, $17::int, $7::int,
   $12::int, $13::int, $14::real, $15::real, $16::real,
   $18::real, $19::real, $20::real,
-  $8::bigint[], $9::bigint[], $10::bigint[]
+  $8::bigint[], $9::bigint[], $10::bigint[], $21::int
 where (select count(*) from character where account_id = $1::bigint) < $11::bigint
 returning character_id;
 "
@@ -97,6 +98,7 @@ returning character_id;
   |> pog.parameter(pog.float(arg_18))
   |> pog.parameter(pog.float(arg_19))
   |> pog.parameter(pog.float(arg_20))
+  |> pog.parameter(pog.int(arg_21))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
@@ -432,12 +434,13 @@ pub type LoadCharacterRow {
     bones: List(Int),
     needs_rename: Bool,
     health: Option(Int),
+    experience: Option(Int),
   )
 }
 
 /// The account's character with this id, as the world's entry needs it: the
-/// same columns as the list, with the saved place and the saved health (NULL
-/// when none was saved), and the character taken by
+/// same columns as the list, with the saved place and the saved health and
+/// experience (NULL when none was saved), and the character taken by
 /// this login: `session_epoch` is raised by one in the same statement, with
 /// `save_sequence` back to 0 for the new login, and the new epoch returned, so
 /// the login that read the character is the one that holds that epoch, and a
@@ -477,6 +480,7 @@ pub fn load_character(
     use bones <- decode.field(19, decode.list(decode.int))
     use needs_rename <- decode.field(20, decode.bool)
     use health <- decode.field(21, decode.optional(decode.int))
+    use experience <- decode.field(22, decode.optional(decode.int))
     decode.success(LoadCharacterRow(
       character_id:,
       session_epoch:,
@@ -500,12 +504,13 @@ pub fn load_character(
       bones:,
       needs_rename:,
       health:,
+      experience:,
     ))
   }
 
   "-- The account's character with this id, as the world's entry needs it: the
--- same columns as the list, with the saved place and the saved health (NULL
--- when none was saved), and the character taken by
+-- same columns as the list, with the saved place and the saved health and
+-- experience (NULL when none was saved), and the character taken by
 -- this login: `session_epoch` is raised by one in the same statement, with
 -- `save_sequence` back to 0 for the new login, and the new epoch returned, so
 -- the login that read the character is the one that holds that epoch, and a
@@ -538,7 +543,8 @@ returning
   look_values,
   bones,
   needs_rename,
-  health;
+  health,
+  experience;
 "
   |> pog.query
   |> pog.parameter(pog.int(character_id))
@@ -705,9 +711,10 @@ pub type SavePlaceRow {
 }
 
 /// Saves where a character stands: its world, zone, position and facing, and the
-/// health it has, in one statement, so the place and the health are saved
-/// together or not at all. The health is $13 when $14 is true, and NULL (nothing
-/// saved: the next entry is alive at full health) when it is false, since
+/// health, experience and level it has, in one statement, so they are saved
+/// together or not at all; the experience is $15 and the level it makes $16.
+/// The health is $13 when $14 is true, and NULL (nothing saved: the next entry
+/// is alive at full health) when it is false, since
 /// squirrel cannot type a parameter that may be NULL. A dead player saves 0,
 /// which its next entry is dead at. It writes only
 /// while the character is still held by the login that made the save, that is
@@ -739,6 +746,8 @@ pub fn save_place(
   arg_12: Int,
   arg_13: Int,
   arg_14: Bool,
+  arg_15: Int,
+  arg_16: Int,
 ) -> Result(pog.Returned(SavePlaceRow), pog.QueryError) {
   let decoder = {
     use character_id <- decode.field(0, decode.int)
@@ -746,9 +755,10 @@ pub fn save_place(
   }
 
   "-- Saves where a character stands: its world, zone, position and facing, and the
--- health it has, in one statement, so the place and the health are saved
--- together or not at all. The health is $13 when $14 is true, and NULL (nothing
--- saved: the next entry is alive at full health) when it is false, since
+-- health, experience and level it has, in one statement, so they are saved
+-- together or not at all; the experience is $15 and the level it makes $16.
+-- The health is $13 when $14 is true, and NULL (nothing saved: the next entry
+-- is alive at full health) when it is false, since
 -- squirrel cannot type a parameter that may be NULL. A dead player saves 0,
 -- which its next entry is dead at. It writes only
 -- while the character is still held by the login that made the save, that is
@@ -771,7 +781,9 @@ set
   rotation_pitch = $10,
   rotation_roll = $11,
   save_sequence = $12,
-  health = case when $14 then $13::int end
+  health = case when $14 then $13::int end,
+  experience = $15::int,
+  level = $16::int
 where character_id = $1 and account_id = $2 and session_epoch = $3
   and save_sequence < $12
 returning character_id;
@@ -791,6 +803,8 @@ returning character_id;
   |> pog.parameter(pog.int(arg_12))
   |> pog.parameter(pog.int(arg_13))
   |> pog.parameter(pog.bool(arg_14))
+  |> pog.parameter(pog.int(arg_15))
+  |> pog.parameter(pog.int(arg_16))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

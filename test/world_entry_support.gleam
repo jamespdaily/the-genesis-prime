@@ -45,6 +45,7 @@ pub fn loaded(
         character:,
         session_epoch: character_support.epoch(1),
         saved_health: None,
+        saved_experience: None,
         items:,
       ),
       connection: ConnectionId(1),

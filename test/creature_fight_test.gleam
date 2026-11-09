@@ -247,7 +247,8 @@ fn fights_told_for(
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
       creature.FightTold(stay:, told:) -> Ok(#(sent.0, stay, told))
-      creature.News(..) | creature.Struck(..) -> Error(Nil)
+      creature.News(..) | creature.Struck(..) | creature.KillCredit(..) ->
+        Error(Nil)
     }
   })
 }
@@ -277,6 +278,7 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
           strike_tell.Returning -> "Refused(Returning)" <> to
         }
       creature.Struck(..) -> "Deflected" <> to
+      creature.KillCredit(..) -> "KillCredit" <> to
     }
   })
 }
@@ -324,6 +326,8 @@ fn name_of(news: News) -> String {
       "0x938(21, " <> int.to_string(armor) <> ")"
     client_connection.Absorption(absorption:) ->
       "0x938(22, " <> int.to_string(absorption) <> ")"
+    client_connection.Level(level:) ->
+      "0x938(10, " <> int.to_string(level) <> ")"
   }
 }
 
@@ -1950,7 +1954,10 @@ fn landed_in(
         answered: Answered(outcome: Landed(controls:, ..), ..),
         ..,
       ) -> controls
-      creature.Struck(..) | creature.News(..) | creature.FightTold(..) -> []
+      creature.Struck(..)
+      | creature.News(..)
+      | creature.FightTold(..)
+      | creature.KillCredit(..) -> []
     }
   })
 }

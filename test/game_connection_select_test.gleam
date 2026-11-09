@@ -88,6 +88,7 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
           class_id: ClassId(1),
           faction_id: 167,
           level: 1,
+          experience: 0,
           path: 2,
           place: character_tables.novice_start_place(),
           look: [
@@ -284,7 +285,13 @@ pub fn a_play_of_a_character_with_no_saved_place_is_refused_the_same_way_and_the
       outcome: step.Answer(
         FromStore(
           ForWorld(
-            CharacterLoaded(no_place, character_support.epoch(1), None, []),
+            CharacterLoaded(
+              no_place,
+              character_support.epoch(1),
+              None,
+              None,
+              [],
+            ),
           ),
         ),
       ),
@@ -348,6 +355,7 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
           class_id: ClassId(1),
           faction_id: 167,
           level: 1,
+          experience: 0,
           path: 2,
           place: character_tables.novice_start_place(),
           look: [

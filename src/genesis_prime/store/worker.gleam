@@ -55,8 +55,9 @@
 ////   the epoch the saving login was told and the save's own sequence number, so
 ////   a save from an older login, or one that reaches the database after a newer
 ////   save of its own login, matches no row and changes nothing. It writes the
-////   health with the place. A save that `character_health_is_not_negative` refuses
-////   is `HealthRefused`; one that any other check constraint of the table
+////   health, the experience and the level with the place. A save that
+////   `character_health_is_not_negative` refuses is `HealthRefused`, one that
+////   `character_experience_is_not_negative` refuses is `ExperienceRefused`; one that any other check constraint of the table
 ////   refuses is `PlaceRefused` with that constraint's name; the worker does not
 ////   crash for either.
 //// - **A delete and a rename are one statement each.** Both name the account's
@@ -88,9 +89,9 @@ import genesis_prime/store.{
   type SelectRequest, type WorldAnswer, type WorldRequest, Account, AccountFound,
   AccountId, Character, CharacterCreated, CharacterDeleted, CharacterId,
   CharacterLoaded, CharacterRenamed, CreateCharacter, CreateForNoSuchAccount,
-  Created, DeleteCharacter, Deleted, FindAccount, ForLogin, ForMove, ForSelect,
-  ForWorld, HealthRefused, HeldItem, ListCharacters, Listed, LoadCharacter,
-  Login, Move, NameBreaksRule, NameStands, NameTaken, NeedsRename,
+  Created, DeleteCharacter, Deleted, ExperienceRefused, FindAccount, ForLogin,
+  ForMove, ForSelect, ForWorld, HealthRefused, HeldItem, ListCharacters, Listed,
+  LoadCharacter, Login, Move, NameBreaksRule, NameStands, NameTaken, NeedsRename,
   NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter,
   NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, RenameCharacter,
   Renamed, SavePlace, Select, Unavailable, World,
@@ -118,12 +119,17 @@ const character_name_follows_rule_0 = "character_name_follows_rule_0"
 /// The table's check that a saved health is not below 0 (migration 0017).
 const character_health_is_not_negative = "character_health_is_not_negative"
 
+/// The table's check that a saved experience is not below 0 (migration 0021).
+const character_experience_is_not_negative =
+  "character_experience_is_not_negative"
+
 /// Every constraint or unique index the worker answers for by name. The schema
 /// holds each by this name, which a test reads from the catalogue.
 pub const mapped_constraints = [
   character_name_unique,
   character_name_follows_rule_0,
   character_health_is_not_negative,
+  character_experience_is_not_negative,
 ]
 
 /// What one worker is started with: a rule's ask and how to answer it, or the
@@ -344,7 +350,8 @@ fn world(
 /// names the account, the character, the epoch and the save's sequence
 /// (save_place.sql), answering `PlaceSaved` when it changed a row and
 /// `NothingSaved` when it matched none, `HealthRefused` when the table's
-/// `character_health_is_not_negative` refused the health and `PlaceRefused` when
+/// `character_health_is_not_negative` refused the health, `ExperienceRefused` when
+/// `character_experience_is_not_negative` refused the experience and `PlaceRefused` when
 /// another check of the table refused the place; `Error(Nil)` when the database
 /// is away.
 fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
@@ -355,6 +362,8 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
     save_sequence:,
     place:,
     health:,
+    experience:,
+    level:,
   ) = request
   let facing = start_place.facing(place)
   // squirrel cannot type a parameter that may be NULL (save_place.sql): the
@@ -381,6 +390,8 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
         save_sequence,
         health,
         keeps_health,
+        experience,
+        level,
       )
     })
   {
@@ -391,6 +402,9 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
     Error(Refused(constraint:, ..))
       if constraint == character_health_is_not_negative
     -> Ok(HealthRefused)
+    Error(Refused(constraint:, ..))
+      if constraint == character_experience_is_not_negative
+    -> Ok(ExperienceRefused)
     Error(Refused(constraint:, ..)) -> Ok(PlaceRefused(constraint:))
     Error(Unexpected(error:)) -> exit_with(error)
   }
@@ -471,6 +485,7 @@ fn load_character(
         ),
         session_epoch: epoch,
         saved_health: row.health,
+        saved_experience: row.experience,
         items: held_items(item_rows),
       )
     }
@@ -616,6 +631,7 @@ fn create_character(
         start_place.facing(character.place).yaw,
         start_place.facing(character.place).pitch,
         start_place.facing(character.place).roll,
+        character.experience,
       ))
       use Nil <- result.map(case made.rows {
         [row] ->

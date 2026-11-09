@@ -126,6 +126,7 @@ import genesis_prime/game/character_state
 import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
 import genesis_prime/game/class_resource
+import genesis_prime/game/experience
 import genesis_prime/game/innate
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/look
@@ -213,13 +214,16 @@ pub opaque type State {
   /// go on numbered after the earlier ones (`movement.placed`). `saved_health`
   /// is the health the character's last save kept, which a play enters at
   /// (`player_life.entering`) and the Holocrypt's join does not have: it enters
-  /// at full health. `items` are the items the character holds, which the
-  /// Holocrypt's join keeps from the stay it leaves.
+  /// at full health. `experience` is what the character enters with
+  /// (`experience.entering`; the Holocrypt's join keeps the stay's own). `items`
+  /// are the items the character holds, which the Holocrypt's join keeps from the
+  /// stay it leaves.
   Joining(
     character: Character,
     place: Place,
     movement: movement.State,
     saved_health: Option(Int),
+    experience: Int,
     items: List(store.HeldItem),
     map: MapId,
     stay: Stay,
@@ -290,6 +294,11 @@ pub type Entered {
     /// The items the character holds, as the store saved them: each with its
     /// own guid, its item2 id, where it is held and how many it stacks.
     items: List(store.HeldItem),
+    /// The character's experience: the saved one, or the least of its level when
+    /// none was saved (`experience.entering`). The connection adds each kill's
+    /// credit to it (genesis_prime/game/connection/experience) and saves it with
+    /// the place.
+    experience: Int,
     max_health: Int,
     clock_origin_ms: Int,
     viewers: Dict(ConnectionId, Stay),
@@ -435,7 +444,13 @@ pub fn loaded(
               <> int.to_string(character_id)
               <> ", which the account does not have",
           )
-        store.CharacterLoaded(character:, session_epoch:, saved_health:, items:) ->
+        store.CharacterLoaded(
+          character:,
+          session_epoch:,
+          saved_health:,
+          saved_experience:,
+          items:,
+        ) ->
           case character.place {
             None ->
               Refused(
@@ -450,6 +465,7 @@ pub fn loaded(
                 place:,
                 movement: movement.entered(place:, session_epoch:),
                 saved_health:,
+                saved_experience:,
                 items:,
                 connection:,
                 stay:,
@@ -468,12 +484,19 @@ fn joining_a_play(
   place place: Place,
   movement movement: movement.State,
   saved_health saved_health: Option(Int),
+  saved_experience saved_experience: Option(Int),
   items items: List(store.HeldItem),
   connection connection: ConnectionId,
   stay stay: Stay,
   tables tables: table_store.Tables,
 ) -> Loaded {
-  case character_state.frame(tables:, character:) {
+  case
+    experience.entering(
+      tables:,
+      level: character.level,
+      saved: saved_experience,
+    )
+  {
     Error(Nil) -> {
       let CharacterId(character_id) = character.character_id
       Refused(
@@ -485,13 +508,15 @@ fn joining_a_play(
           <> " has no XpPerLevel row",
       )
     }
-    Ok(frame) -> {
+    Ok(experience) -> {
+      let frame = character_state.frame(tables:, character:, experience:)
       let #(state, effects) =
         joining(
           character:,
           place:,
           movement:,
           saved_health:,
+          experience:,
           items:,
           connection:,
           stay:,
@@ -521,6 +546,7 @@ pub fn joined(
       place:,
       movement:,
       saved_health:,
+      experience:,
       items:,
       map:,
       stay:,
@@ -573,6 +599,7 @@ pub fn joined(
               unit:,
               loadout:,
               items:,
+              experience:,
               max_health:,
               clock_origin_ms:,
               viewers: dict.new(),
@@ -681,6 +708,7 @@ pub fn rejoining(
     place:,
     movement: movement.placed(state: entered.movement, place:),
     saved_health: None,
+    experience: entered.experience,
     items: entered.items,
     connection:,
     stay:,
@@ -697,6 +725,7 @@ fn joining(
   place place: Place,
   movement movement: movement.State,
   saved_health saved_health: Option(Int),
+  experience experience: Int,
   items items: List(store.HeldItem),
   connection connection: ConnectionId,
   stay stay: Stay,
@@ -710,6 +739,7 @@ fn joining(
       place:,
       movement:,
       saved_health:,
+      experience:,
       items:,
       map:,
       stay:,
