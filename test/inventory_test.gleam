@@ -1021,6 +1021,22 @@ pub fn an_item_that_is_not_slotted_is_refused_not_valid_for_slot_test() -> Nil {
   assert list.length(effects) == 1 as "nothing else is written or logged"
 }
 
+pub fn an_item_whose_type_has_no_slot_row_is_refused_not_valid_for_slot_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The client's Item2 row 84594 is of Item2Type 537, whose itemSlotId is 0, and
+  // ItemSlot has no row 0; its type, category and family flags hold no 0x400, so
+  // CheckItemEquipSlot (0x1403b11b0) refuses it at every equipped location 0 slot
+  // with Item_NotValidforSlot, 31, before it reads any slot flags. The server read
+  // the missing ItemSlot row first and ended the connection.
+  let items = worn_with_slot_zero(84_594)
+  let assert Ok(Refused(effects:)) =
+    taken(items:, life: alive(), from: #(1, 0), to: #(0, 0))
+    as "the item is refused, not a broken state, and the store is not asked"
+  assert failed_with(effects) == [#(9, 31)]
+    as "one 0x56A with the guid of the item at the source and code 31"
+  assert list.length(effects) == 1 as "nothing else is written or logged"
+}
+
 /// The log lines of the effects, each with its level.
 fn logged(effects: List(Effect)) -> List(#(step.LogLevel, String)) {
   list.filter_map(effects, fn(effect) {
