@@ -47,6 +47,7 @@ import genesis_prime/message/realm_list.{type RealmList}
 import genesis_prime/message/rename_character_result.{type RenameCharacterResult}
 import genesis_prime/message/resurrection_window.{type ResurrectionWindow}
 import genesis_prime/message/server_hello.{type ServerHello}
+import genesis_prime/message/server_tutorial.{type ServerTutorial}
 import genesis_prime/message/spell_cast_confirmed.{type SpellCastConfirmed}
 import genesis_prime/message/spell_cast_refused.{type SpellCastRefused}
 import genesis_prime/message/spell_failed.{type SpellFailed}
@@ -103,6 +104,7 @@ pub type ServerMessage {
   DeleteCharacterResult(message: DeleteCharacterResult)
   RenameCharacterResult(message: RenameCharacterResult)
   MaxCharacterLevel(message: MaxCharacterLevel)
+  ServerTutorial(message: ServerTutorial)
   DisconnectNotice(message: DisconnectNotice)
   UnitCreatePlayer(message: UnitCreatePlayer)
   UnitIsPlayer(message: UnitIsPlayer)
@@ -227,6 +229,7 @@ pub fn decode(
       )
     0x0036 ->
       decoded(body, message_id, max_character_level.decode, MaxCharacterLevel)
+    0x0179 -> decoded(body, message_id, server_tutorial.decode, ServerTutorial)
     0x036A ->
       decoded(body, message_id, disconnect_notice.decode, DisconnectNotice)
     0x0262 ->
@@ -392,6 +395,7 @@ pub fn name(message: ServerMessage) -> String {
     DeleteCharacterResult(..) -> "delete_character_result"
     RenameCharacterResult(..) -> "rename_character_result"
     MaxCharacterLevel(..) -> "max_character_level"
+    ServerTutorial(..) -> "server_tutorial"
     DisconnectNotice(..) -> "disconnect_notice"
     UnitCreatePlayer(..) -> "unit_create_player"
     UnitIsPlayer(..) -> "unit_is_player"
