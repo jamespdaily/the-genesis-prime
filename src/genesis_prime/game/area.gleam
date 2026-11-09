@@ -159,7 +159,7 @@ fn distance(from from: Point, to to: Point) -> Float {
 
 /// The ground distance between two bodies' edges: the distance between their points
 /// less both hit radii, never below 0. The client's own reach test measures in three
-/// dimensions, so this is never larger than the client's (`0x1403ad690`).
+/// dimensions (`0x1403ad690`), so the ground distance is never larger than its.
 pub fn edge_gap(
   from from: Point,
   from_radius from_radius: Float,

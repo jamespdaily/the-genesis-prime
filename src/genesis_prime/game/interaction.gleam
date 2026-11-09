@@ -15,15 +15,15 @@
 ////   and nothing opens until the server answers. The client builds the responses
 ////   from its own quest state, and sends 0x0356 when there is more than one
 ////   (`opcode.0x356`), which needs no answer.
-//// - **The client sends the request** only for a creature that is alive, not hostile
-////   and a quest giver (`0x14047a060`), so a unit that is not shown, not a creature,
-////   dead or with no quest in its row is one the client would not have sent: it is
-////   logged and answered with nothing. The connection goes on, since the picture is
+//// - **The client sends the request** only for a creature that is alive, not Hostile
+////   to the player and a quest giver (`0x14047a060`), so a unit that is not shown,
+////   not a creature, dead, Hostile or with no quest in its row is one the client
+////   would not have sent: it is logged and answered with nothing. The connection goes on, since the picture is
 ////   one news message stale at worst (genesis_prime/game/shown).
 //// - **The reach** is 6.0 for a quest kind, measured between the two bodies' edges
-////   (`0x1403ad690`), plus the 3.0 a request may add (`opcode.0x7ea`). The ground
-////   distance used here is never larger than the client's, so a request the client
-////   allows is never refused.
+////   (`0x1403ad690`), plus the 3.0 a request may add (`opcode.0x7ea`). The gap here
+////   is on the ground, with the hit radii at scale 1.0, from the player's place at
+////   its last movement message; the 3.0 covers both for any gap the client opens at.
 //// - **The kind is not checked against the player's quest log**: the client opens the
 ////   dialog only for responses it builds from its own quest state, so the server's
 ////   0x0357 for a giver with nothing to offer shows no dialog. The log is the quest
@@ -37,14 +37,14 @@ import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/game/area
 import genesis_prime/game/hit_radius
 import genesis_prime/game/shown.{
-  type Picture, ShownCreature, ShownObject, ShownPlayer,
+  type Picture, type PlayerFaction, ShownCreature, ShownObject, ShownPlayer,
 }
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/dialog_responses_shown
 import genesis_prime/message/interaction_request
 import genesis_prime/step.{type LogLevel, LogDebug, LogWarning}
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{type RaceId, Creature2Id}
+import genesis_prime/table/id.{type Creature2Id, type RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/spawn
@@ -81,7 +81,7 @@ pub type Refusal {
 
 /// The player a request is made by.
 pub type Player {
-  Player(race_id: RaceId, place: Place)
+  Player(race_id: RaceId, faction: PlayerFaction, place: Place)
 }
 
 /// The effects of a message and the reasons now logged on the connection.
@@ -94,9 +94,9 @@ type Declined {
   NotShown(unit_id: Int)
   NotACreature(unit_id: Int)
   Dead(unit_id: Int)
-  NoQuest(unit_id: Int, creature_id: Int)
+  HostileToPlayer(unit_id: Int)
+  NoQuest(unit_id: Int, creature_id: Creature2Id)
   TooFar(unit_id: Int)
-  NoRaceRow(race_id: Int)
   KindNotTaken(kind: Int)
 }
 
@@ -158,7 +158,9 @@ pub fn take(
 }
 
 /// Whether the player may open the unit's dialog: the unit is a shown creature that is
-/// alive, whose row gives or receives a quest, within reach.
+/// alive, not Hostile to the player, whose row gives or receives a quest, within
+/// reach. A creature's Creature2 row and the player's Race row are in the tables
+/// (the load fails otherwise), so a missing one crashes.
 fn talked_to(
   unit_id unit_id: Int,
   player player: Player,
@@ -171,22 +173,29 @@ fn talked_to(
   )
   case shown {
     ShownPlayer | ShownObject -> Error(NotACreature(unit_id:))
-    ShownCreature(creature_id:, path:, alive:, hit_radius: creature_radius, ..) -> {
+    ShownCreature(
+      creature_id:,
+      path:,
+      alive:,
+      hit_radius: creature_radius,
+      hostile_to:,
+      ..,
+    ) -> {
       use <- bool.guard(when: !alive, return: Error(Dead(unit_id:)))
-      let gives_or_receives =
-        creature2.get(tables, Creature2Id(creature_id))
-        |> result.map(fn(row) {
-          list.any(spawn.quest_ids(row), fn(id) { id != 0 })
-        })
-        |> result.unwrap(False)
+      let hostile = case player.faction {
+        shown.Exile -> hostile_to.exile
+        shown.Dominion -> hostile_to.dominion
+      }
+      use <- bool.guard(when: hostile, return: Error(HostileToPlayer(unit_id:)))
+      let assert Ok(row) = creature2.get(tables, creature_id)
+        as "a shown creature's Creature2 row is in the tables its spawn was loaded from"
       use <- bool.guard(
-        when: !gives_or_receives,
+        when: !list.any(spawn.quest_ids(row), fn(id) { id != 0 }),
         return: Error(NoQuest(unit_id:, creature_id:)),
       )
-      use player_radius <- result.try(
+      let assert Ok(player_radius) =
         hit_radius.of_player(tables:, race_id: player.race_id)
-        |> result.replace_error(NoRaceRow(race_id: { player.race_id }.value)),
-      )
+        as "hit_radius.requirements fails the load when a playable race has no Race row"
       let gap =
         area.edge_gap(
           from: area.point_of(place: player.place),
@@ -225,9 +234,9 @@ fn reason_of(declined declined: Declined) -> String {
     NotShown(..) -> "not shown"
     NotACreature(..) -> "not a creature"
     Dead(..) -> "dead"
+    HostileToPlayer(..) -> "hostile"
     NoQuest(..) -> "no quest"
     TooFar(..) -> "too far"
-    NoRaceRow(..) -> "no race row"
     KindNotTaken(kind:) -> "kind " <> int.to_string(kind)
   }
 }
@@ -247,11 +256,15 @@ fn describe(declined declined: Declined) -> String {
       "0x07EA names unit "
       <> int.to_string(unit_id)
       <> ", a dead creature: the client sends no request for one"
+    HostileToPlayer(unit_id:) ->
+      "0x07EA names unit "
+      <> int.to_string(unit_id)
+      <> ", a creature Hostile to the player: the client sends no request for one"
     NoQuest(unit_id:, creature_id:) ->
       "0x07EA names unit "
       <> int.to_string(unit_id)
       <> ", whose Creature2 row "
-      <> int.to_string(creature_id)
+      <> int.to_string(creature_id.value)
       <> " has no quest to give or receive: the client sends no request for it"
     TooFar(unit_id:) ->
       "0x07EA names unit "
@@ -259,10 +272,6 @@ fn describe(declined declined: Declined) -> String {
       <> ", too far from the player: the client's reach is "
       <> float.to_string(reach)
       <> " between the two edges"
-    NoRaceRow(race_id:) ->
-      "0x07EA cannot be judged for race "
-      <> int.to_string(race_id)
-      <> ", which has no Race row for its hit radius"
     KindNotTaken(kind: 0x31) ->
       "0x07EA kind 0x31 is a vendor, which waits for the vendor step (#582): nothing is answered"
     KindNotTaken(kind:) ->

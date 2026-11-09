@@ -3,7 +3,7 @@
 //// each unit and nothing the unit's owner decides.
 ////
 //// ```
-//// the creature's 0x262 news ─▶ shown(unit, ShownCreature(creature id, Standing(place), life, alive, hit radius, attackable))
+//// the creature's 0x262 news ─▶ shown(unit, ShownCreature(creature id, Standing(place), life, alive, hit radius, attackable, hostile to))
 //// its CreatureMoved news   ─▶ path changed
 //// its Health and Died news ─▶ alive changed        its 0x355 ─▶ the unit is no longer shown
 //// candidates(picture, faction, caster, now) ─▶ the alive foes at place_at(path, now), as geometry's
@@ -29,7 +29,8 @@
 
 import genesis_prime/game/area.{type Candidate, type Pose, Candidate}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/world_map/creature_life.{type Attackable}
+import genesis_prime/table/id.{type Creature2Id}
+import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
 import genesis_prime/world_map/creature_path.{type Path}
 import genesis_prime/world_map/spawn
 import gleam/dict.{type Dict}
@@ -54,7 +55,7 @@ pub type Shown {
   /// A creature, as its 0x262 news gave it and its 0x638 news moved it.
   ShownCreature(
     /// The Creature2 row it was created from.
-    creature_id: Int,
+    creature_id: Creature2Id,
     /// Where it stands or runs: standing at the place of its 0x262 until a
     /// CreatureMoved news.
     path: Path,
@@ -66,6 +67,9 @@ pub type Shown {
     hit_radius: Float,
     /// Whom the creature may be attacked by.
     attackable: Attackable,
+    /// Which player factions the creature is Hostile to (the client's own
+    /// disposition of the creature toward the player, `0x14045a950`).
+    hostile_to: Hostile,
   )
 }
 

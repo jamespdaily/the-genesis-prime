@@ -600,18 +600,6 @@ pub fn in_world_with_dev_commands() -> game_connection.State {
   ).0
 }
 
-/// The connection in the world, with its burst taken, on these tables.
-pub fn in_world_on(
-  tables tables: store_tables.Tables,
-) -> game_connection.State {
-  entered_from(
-    in_character_select: in_select_from(
-      accepted(Settings(..settings(), tables:)).0,
-    ),
-    character: world_character(),
-  ).0
-}
-
 /// The ask of a `!summon` line of the tests' player: the run of the map that
 /// took the player, 77 (`incarnation`), with the connection's id, the
 /// Creature2 id and the level the line named, if any.
@@ -1468,6 +1456,7 @@ pub fn beast_appears_facing(
       place:,
       hit_radius: beast.combat.hit_radius,
       attackable: beast.combat.attackable,
+      hostile_to: beast.combat.hostile_to,
     ),
   ))
 }

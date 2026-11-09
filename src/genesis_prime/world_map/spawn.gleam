@@ -584,34 +584,6 @@ pub fn summoned(
   checks checks: SummonChecks,
   summoned summoned: Summoned,
 ) -> Result(Spawn, SummonRefusal) {
-  use checked <- result.try(checked_summon(checks:, summoned:))
-  let SummonChecks(catalog:, ..) = checks
-  case left_out_of(catalog:, checked:) {
-    Ok(reason) ->
-      Error(WouldNotStart(
-        creature_id: Creature2Id(checked.row.creature_id),
-        reason:,
-      ))
-    Error(Nil) -> Ok(checked.spawn)
-  }
-}
-
-/// The spawn of a summon that passes the client's and the load's checks, whether
-/// or not a stored spawn of it would start (`left_out_of`): for a test that needs
-/// a creature the server does not start, such as a quest giver (an NPC link
-/// leaves it out).
-pub fn summoned_unstarted(
-  checks checks: SummonChecks,
-  summoned summoned: Summoned,
-) -> Result(Spawn, SummonRefusal) {
-  checked_summon(checks:, summoned:)
-  |> result.map(fn(checked) { checked.spawn })
-}
-
-fn checked_summon(
-  checks checks: SummonChecks,
-  summoned summoned: Summoned,
-) -> Result(Checked, SummonRefusal) {
   let SummonChecks(catalog:, formulas:, kinds:) = checks
   let Summoned(id:, creature_id:, level:, place:) = summoned
   use creature <- result.try(
@@ -664,7 +636,10 @@ fn checked_summon(
     load_checks(catalog:, formulas:, kinds:, shared: dict.new(), row:)
     |> result.map_error(FailsTheChecks),
   )
-  Ok(checked)
+  case left_out_of(catalog:, checked:) {
+    Ok(reason) -> Error(WouldNotStart(creature_id:, reason:))
+    Error(Nil) -> Ok(checked.spawn)
+  }
 }
 
 /// A sentence that says why a summon makes no spawn, which the player's system

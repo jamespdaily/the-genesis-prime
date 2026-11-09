@@ -106,33 +106,25 @@ pub fn loaded_beast() -> Spawn {
 
 /// The spawn numbered `number` of Dorian Walker, standing at `place`: Creature2
 /// 74812, a quest giver and receiver (`questIdGiven00` 10528, `questIdReceive00`
-/// 10520), as the load builds it from the client's committed rows, though the load
-/// leaves it out for its NPC link (`spawn.summoned_unstarted`).
+/// 10520), faction 171, display 25510 (the one entry of display group 28097, hit
+/// radius 1.1) and outfit 8952 (the first of outfit group 9759). The Beast's
+/// numbers fill the rest, which no test of a quest giver reads.
 pub fn dorian_walker(number number: Int, place place: Place) -> Spawn {
-  Spawn(..loaded_dorian(), id: SpawnId(number), place:)
-}
-
-fn loaded_dorian() -> Spawn {
-  database_support.once("spawn_support_loaded_dorian", fn() {
-    let assert Ok(walker) =
-      spawn.summoned_unstarted(
-        checks: summon_checks(),
-        summoned: Summoned(
-          id: SpawnId(-1),
-          creature_id: Creature2Id(74_812),
-          level: option.None,
-          place: place_support.at(
-            world_id: 3460,
-            world_zone_id: warfare_woods,
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-          ),
-        ),
-      )
-      as "Dorian Walker passes the summon checks over the client's committed rows"
-    walker
-  })
+  let beast = battle_beast(number:, x: 0.0)
+  Spawn(
+    ..beast,
+    creature_id: Creature2Id(74_812),
+    place:,
+    faction_id: 171,
+    base_faction_id: 171,
+    display_info_id: 25_510,
+    outfit_info_id: 8952,
+    combat: Combat(
+      ..beast.combat,
+      hit_radius: 1.1,
+      hostile_to: Hostile(exile: False, dominion: False),
+    ),
+  )
 }
 
 /// The spawn numbered `number` of a Virtual Defense Dagun, the Dominion Novice's

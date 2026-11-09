@@ -52,7 +52,7 @@ import genesis_prime/step.{
   Stop, Stopping, TimerFired, Woken, Write, WriteFailed,
 }
 import genesis_prime/store
-import genesis_prime/world_map/creature_life.{type Attackable}
+import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
 import genesis_prime/world_map/creature_path.{type Path}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
@@ -161,14 +161,16 @@ pub type News {
   /// map's clock: 0x262 of type 0 (opcode.0x262.creature), at its current health
   /// (0 for a corpse). Sent by the creature's own process
   /// (genesis_prime/world_map/creature), which owns the unit, with what the viewer's
-  /// strikes need of it: its life, which its address needs, the hit radius of its
-  /// display and whom it may be attacked by.
+  /// strikes and requests need of it: its life, which its address needs, the hit
+  /// radius of its display, whom it may be attacked by and which player factions it
+  /// is Hostile to.
   CreatureAppeared(
     unit: UnitCreateCreature,
     life: Int,
     place: Place,
     hit_radius: Float,
     attackable: Attackable,
+    hostile_to: Hostile,
   )
   /// The unit moved: the map's server time at the move (the map's clock,
   /// `world_map/map.server_time`) and at most 31 of its relayed commands in the

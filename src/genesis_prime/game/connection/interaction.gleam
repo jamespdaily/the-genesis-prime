@@ -9,6 +9,7 @@ import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/interaction
 import genesis_prime/game/movement
+import genesis_prime/game/shown
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type Now}
 import gleam/list
@@ -22,12 +23,15 @@ pub fn interaction_message(
   inner inner: Frame,
   message message: interaction.Message,
 ) -> client_connection.Handled(Session) {
+  let assert Ok(faction) = shown.faction_of(entered.unit.tail.faction_id)
+    as "a character's faction is Exile or Dominion (start_place)"
   case
     interaction.take(
       message:,
       body: inner.body,
       player: interaction.Player(
         race_id: entered.character.race_id,
+        faction: faction,
         place: movement.place(state: entered.movement),
       ),
       picture: entered.shown,

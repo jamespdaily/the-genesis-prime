@@ -377,9 +377,9 @@ pub fn unit_dialog_open_matches_client_layout_test() -> Nil {
     encode: unit_dialog_open.encode,
     decode: unit_dialog_open.decode,
   )
-  assert unit_dialog_open.decode(message_support.hex("01100000"))
-    != Ok(UnitDialogOpen(unit_id: 0x1001, field_2: 0))
+  let assert Error(_) = unit_dialog_open.decode(message_support.hex("01100000"))
     as "opcode.0x357: a body of 32 bits is refused as too short"
+  Nil
 }
 
 pub fn pong_is_the_clients_8_bits_test() -> Nil {

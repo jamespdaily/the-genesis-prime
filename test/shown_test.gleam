@@ -14,7 +14,10 @@ import genesis_prime/game/shown.{
   Dominion, Exile, ShownCreature, ShownObject, ShownPlayer,
 }
 import genesis_prime/game/start_place
-import genesis_prime/world_map/creature_life.{type Attackable, Attackable}
+import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/world_map/creature_life.{
+  type Attackable, Attackable, Hostile,
+}
 import genesis_prime/world_map/creature_path
 import gleam/dict
 import gleam/list
@@ -31,7 +34,7 @@ fn creature(
   alive alive: Bool,
 ) -> shown.Shown {
   ShownCreature(
-    creature_id: 73_464,
+    creature_id: Creature2Id(73_464),
     path: creature_path.Standing(at: place_support.at(
       world_id: 3460,
       world_zone_id: 5967,
@@ -43,6 +46,7 @@ fn creature(
     alive:,
     hit_radius: 3.0,
     attackable:,
+    hostile_to: Hostile(exile: False, dominion: False),
   )
 }
 
@@ -137,12 +141,13 @@ fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
       facing: start_place.Facing(yaw: 0.7, pitch: 0.0, roll: 0.0),
     )
   ShownCreature(
-    creature_id: 73_464,
+    creature_id: Creature2Id(73_464),
     path: creature_path.Standing(at: place),
     life: 4,
     alive: True,
     hit_radius: 3.0,
     attackable: both,
+    hostile_to: Hostile(exile: False, dominion: False),
   )
 }
 

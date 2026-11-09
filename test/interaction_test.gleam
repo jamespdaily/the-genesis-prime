@@ -7,7 +7,7 @@
 ////   with kind 0x65 is the client's own end of an interaction, and kind 0x31 is a
 ////   vendor.
 //// - `0x14039d5d0`, `0x140554470`, `0x14047a060`: the client sends the request only
-////   for a creature that is alive, not hostile and a quest giver, and opens the
+////   for a creature that is alive, not Hostile to the player and a quest giver, and opens the
 ////   dialog only within 6.0 of the creature edge to edge. `opcode.0x7ea` adds 3.0 to a
 ////   request's range.
 //// - `0x1403ad690`: the gap is the distance less both hit radii. The player's is the
@@ -16,7 +16,6 @@
 ////   28097 of Creature2 74812.
 //// - Creature2 74812 (Dorian Walker) gives quest 10528 and receives quest 10520;
 ////   Creature2 73464, the Virtual Battle Beast, gives and receives none.
-//// Skipped where the client's tables are not on the machine.
 
 import connection_rule_support as support
 import fixture_tables
@@ -29,6 +28,8 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
 import genesis_prime/step.{type ConnectionEvent, type Event, LogWarning}
+import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_life.{type Hostile, Hostile}
 import genesis_prime/world_map/creature_unit
 import gleam/list
 import gleam/option.{None}
@@ -48,12 +49,20 @@ const walker_radius = 1.1
 
 const walker_unit = 40
 
+/// A creature that is Hostile to neither player faction.
+const friendly = Hostile(exile: False, dominion: False)
+
+/// A creature that is Hostile to both player factions (the client's disposition of
+/// the creature toward the player is 0, `0x14045a950`).
+const hostile = Hostile(exile: True, dominion: True)
+
 /// The 0x262 news of Dorian Walker, standing `gap` from the player's edge straight
-/// ahead of the player, with `health`.
+/// ahead of the player, with `health` and `hostile_to`.
 fn walker_appears(
   unit_id unit_id: Int,
   gap gap: Float,
   health health: Int,
+  hostile_to hostile_to: Hostile,
 ) -> Event(ConnectionEvent(Message, Answer)) {
   let entry = connection_support.entry_place()
   let place =
@@ -78,6 +87,7 @@ fn walker_appears(
       place:,
       hit_radius: walker.combat.hit_radius,
       attackable: walker.combat.attackable,
+      hostile_to:,
     ),
   ))
 }
@@ -86,7 +96,12 @@ fn walker_appears(
 fn with_walker(gap gap: Float) -> game_connection.State {
   connection_support.feed(
     state: connection_support.in_world(),
-    event: walker_appears(unit_id: walker_unit, gap:, health: 52),
+    event: walker_appears(
+      unit_id: walker_unit,
+      gap:,
+      health: 52,
+      hostile_to: friendly,
+    ),
   ).0
 }
 
@@ -114,35 +129,42 @@ pub fn talk_to_giver_in_range_opens_dialog_test() -> Nil {
     )
   assert connection_support.written_ids(again) == [0x0357]
     as "a repeated request is answered again: the connection keeps no interaction"
-  // The row gives or receives: Dorian Walker does both, and a row that does only one
-  // of them is a quest giver as well.
-  use giving_only <- fixture_tables.changed(
-    table: "Creature2",
-    id: 74_812,
-    with: [#("questIdReceive00", Integer(0))],
-  )
-  use receiving_only <- fixture_tables.changed(
-    table: "Creature2",
-    id: 74_812,
-    with: [#("questIdGiven00", Integer(0))],
-  )
-  list.each(
-    [#("gives only", giving_only), #("receives only", receiving_only)],
-    fn(variant) {
-      let #(what, tables) = variant
-      let #(_, taken) =
-        connection_support.interaction_requested(
-          state: connection_support.feed(
-            state: connection_support.in_world_on(tables:),
-            event: walker_appears(unit_id: walker_unit, gap: 1.0, health: 52),
-          ).0,
+}
+
+/// A giver that does only one of giving and receiving (a row that gives or receives
+/// is a quest giver as well), asked for its dialog from 1.0 away.
+fn only_one_is_a_giver(tables tables: table_store.Tables) -> Nil {
+  let #(_, taken) =
+    connection_support.interaction_requested(
+      state: connection_support.feed(
+        state: connection_support.medic_in(tables:),
+        event: walker_appears(
           unit_id: walker_unit,
-          kind: 37,
-        )
-      assert connection_support.written_ids(taken) == [0x0357]
-        as { "a creature that " <> what <> " is a giver" }
-    },
-  )
+          gap: 1.0,
+          health: 52,
+          hostile_to: friendly,
+        ),
+      ).0,
+      unit_id: walker_unit,
+      kind: 37,
+    )
+  assert connection_support.written_ids(taken) == [0x0357]
+}
+
+pub fn a_creature_that_only_gives_a_quest_is_a_giver_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- fixture_tables.changed(table: "Creature2", id: 74_812, with: [
+    #("questIdReceive00", Integer(0)),
+  ])
+  only_one_is_a_giver(tables:)
+}
+
+pub fn a_creature_that_only_receives_a_quest_is_a_giver_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- fixture_tables.changed(table: "Creature2", id: 74_812, with: [
+    #("questIdGiven00", Integer(0)),
+  ])
+  only_one_is_a_giver(tables:)
 }
 
 pub fn talk_to_refused_sends_nothing_test() -> Nil {
@@ -155,7 +177,12 @@ pub fn talk_to_refused_sends_nothing_test() -> Nil {
       "a dead creature",
       connection_support.feed(
         state: connection_support.in_world(),
-        event: walker_appears(unit_id: walker_unit, gap: 1.0, health: 0),
+        event: walker_appears(
+          unit_id: walker_unit,
+          gap: 1.0,
+          health: 0,
+          hostile_to: friendly,
+        ),
       ).0,
       walker_unit,
       "dead",
@@ -168,6 +195,20 @@ pub fn talk_to_refused_sends_nothing_test() -> Nil {
       ).0,
       41,
       "no quest",
+    ),
+    #(
+      "a creature that is Hostile to the player",
+      connection_support.feed(
+        state: connection_support.in_world(),
+        event: walker_appears(
+          unit_id: walker_unit,
+          gap: 1.0,
+          health: 52,
+          hostile_to: hostile,
+        ),
+      ).0,
+      walker_unit,
+      "Hostile",
     ),
     #(
       "a giver beyond the reach",
