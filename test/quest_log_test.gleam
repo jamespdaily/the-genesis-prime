@@ -27,7 +27,7 @@ import genesis_prime/game/world_entry
 import genesis_prime/message/quest_completed.{type QuestCompleted}
 import genesis_prime/message/quest_log as quest_message
 import genesis_prime/step.{LogError, Now}
-import genesis_prime/store.{type QuestRow}
+import genesis_prime/store.{type QuestRow, QuestRow}
 import gleam/int
 import gleam/list
 import gleam/option.{None}
@@ -55,66 +55,119 @@ fn fault_of(quests quests: List(QuestRow)) -> String {
   text
 }
 
+/// What the load of these rows refuses, from the log's own function.
+fn refused_by_the_load(quests quests: List(QuestRow)) -> quest_log.Refused {
+  let assert Error(refused) =
+    quest_log.from_rows(rows: quests, tables: character_tables.shared())
+    as "the rows are ones the client would refuse"
+  refused
+}
+
 pub fn a_saved_entry_the_client_would_refuse_fails_the_load_test() -> Nil {
   use <- owned_test.run(10_000)
-  // The same rows, each with one fault of the kind the client's code refuses.
+  // The same rows, each with one fault of the kind the client's code refuses, and
+  // the quest and the kind of fault the load names.
   let refused = [
     #(
       "an id with no Quest2 row (opcode.0x35f.unknown_quest)",
-      quest_support.no_row,
       quest_support.accepted(quest_id: quest_support.no_row, progress: []),
+      quest_log.Refused(
+        quest_id: quest_support.no_row,
+        reason: quest_log.NoQuest2Row,
+      ),
     ),
     #(
       "a quest the client has no row for in the second list too",
-      quest_support.no_row,
       quest_support.known(quest_id: quest_support.no_row, state: 6),
+      quest_log.Refused(
+        quest_id: quest_support.no_row,
+        reason: quest_log.NoQuest2Row,
+      ),
     ),
     #(
       "two progress values for a quest of one objective (0x1405fbdc0)",
-      quest_support.daily,
       quest_support.accepted(quest_id: quest_support.daily, progress: [1, 2]),
-    ),
-    #(
-      "a placeholder on a quest with no type 31 objective slot (0x1405fbdc0)",
-      quest_support.daily,
-      quest_support.active(
+      quest_log.Refused(
         quest_id: quest_support.daily,
-        state: 1,
-        placeholder: quest_support.placeholder_objective,
-        tracked: False,
-        done_mask: 0,
-        progress: [0],
+        reason: quest_log.ProgressCountIsNotObjectiveCount(
+          progress: 2,
+          objectives: 1,
+        ),
       ),
     ),
     #(
-      "a placeholder that is a QuestObjective row of another type (0x1405fbdc0)",
-      quest_support.daily_with_a_placeholder,
-      quest_support.active(
-        quest_id: quest_support.daily_with_a_placeholder,
-        state: 1,
-        placeholder: quest_support.ordinary_objective,
-        tracked: False,
-        done_mask: 0,
-        progress: [],
+      "no progress value for a quest of one objective (0x1405fbdc0 counts the objectives the entry holds the progress of)",
+      quest_support.accepted(quest_id: quest_support.daily, progress: []),
+      quest_log.Refused(
+        quest_id: quest_support.daily,
+        reason: quest_log.ProgressCountIsNotObjectiveCount(
+          progress: 0,
+          objectives: 1,
+        ),
       ),
     ),
     #(
-      "a placeholder that is no QuestObjective row (0x1405fbdc0)",
-      quest_support.daily_with_a_placeholder,
+      "one progress value for a quest of three objectives",
+      quest_support.accepted(quest_id: quest_support.one_time, progress: [1]),
+      quest_log.Refused(
+        quest_id: quest_support.one_time,
+        reason: quest_log.ProgressCountIsNotObjectiveCount(
+          progress: 1,
+          objectives: 3,
+        ),
+      ),
+    ),
+    #(
+      "one progress value for a quest of two objectives",
+      quest_support.accepted(
+        quest_id: quest_support.daily_two_objectives,
+        progress: [1],
+      ),
+      quest_log.Refused(
+        quest_id: quest_support.daily_two_objectives,
+        reason: quest_log.ProgressCountIsNotObjectiveCount(
+          progress: 1,
+          objectives: 2,
+        ),
+      ),
+    ),
+    #(
+      "a placeholder that is no QuestObjective row, on a quest with a type 31 slot (0x1405fbdc0)",
       quest_support.active(
         quest_id: quest_support.daily_with_a_placeholder,
         state: 2,
         placeholder: 999_999,
         tracked: False,
         done_mask: 0,
-        progress: [],
+        progress: [0],
+      ),
+      quest_log.Refused(
+        quest_id: quest_support.daily_with_a_placeholder,
+        reason: quest_log.NoPlaceholderRow(objective_id: 999_999),
+      ),
+    ),
+    #(
+      "a completed state with no completed time",
+      QuestRow(
+        quest_id: quest_support.daily,
+        state: 3,
+        completed_at: None,
+        active: None,
+      ),
+      quest_log.Refused(
+        quest_id: quest_support.daily,
+        reason: quest_log.StateDoesNotGoWithColumns(state: 3),
       ),
     ),
   ]
   list.each(refused, fn(case_) {
-    let #(what, quest_id, row) = case_
+    let #(what, row, expected) = case_
+    assert refused_by_the_load(quests: [row]) == expected as what
     let text = fault_of(quests: [row])
-    assert string.contains(text, "quest " <> int.to_string(quest_id) <> ":")
+    assert string.contains(
+      text,
+      "quest " <> int.to_string(expected.quest_id) <> ":",
+    )
       as { what <> ": the fault names the quest, got: " <> text }
   })
   // The quests are also refused after the first, in the order the rows came.
@@ -145,6 +198,30 @@ pub fn a_saved_entry_the_client_would_refuse_fails_the_load_test() -> Nil {
   ]
   let assert world_entry.Join(..) = loaded_holding(quests: accepted)
     as "rows within the client's quest rows load, so the faults above are the rows', not the test's"
+  // The state setter looks a placeholder id up only for a quest that has a type 31
+  // slot and puts the row it finds there, whatever its type (0x1405fbdc0), so it
+  // refuses neither a placeholder id on a quest with no such slot, which it does
+  // not look at, nor a row of another type, which it puts in the slot.
+  let placeholder_rows = [
+    quest_support.active(
+      quest_id: quest_support.daily,
+      state: 1,
+      placeholder: quest_support.placeholder_objective,
+      tracked: False,
+      done_mask: 0,
+      progress: [0],
+    ),
+    quest_support.active(
+      quest_id: quest_support.daily_with_a_placeholder,
+      state: 1,
+      placeholder: quest_support.ordinary_objective,
+      tracked: False,
+      done_mask: 0,
+      progress: [0],
+    ),
+  ]
+  let assert world_entry.Join(..) = loaded_holding(quests: placeholder_rows)
+    as "a placeholder id the state setter does not refuse loads"
   // And the connection ends for a refused log, writing no 0x35F and no entry.
   let #(_, taken) =
     game_connection_support.joining_with_quests(
@@ -229,7 +306,7 @@ pub fn the_login_log_marks_a_periodic_quest_done_only_when_completed_in_its_curr
     as "0x1405fb350.completed_bit: a daily quest done at or after 2025-04-24 10:00 and a weekly one done after 2025-04-22 10:00 carry the bit, one done a second before the daily reset does not, and a one-time quest (Quest2 2347, period 0) never does; a monthly quest done 2025-04-02 and a yearly one done 2025-02-01 are in their periods; all are in the completed list in quest id order"
   assert reset_time == 1_745_488_800
     as "the reset time sent is the latest reset instant, 2025-04-24 10:00:00 UTC, in Unix seconds"
-  assert told.told_reset == 1_745_488_800
+  assert quest_log.told_reset(told) == 1_745_488_800
     as "the log remembers the time the client was told"
   // Completed before the reset of its current period: the flag is clear.
   let #(flags, _, _) =

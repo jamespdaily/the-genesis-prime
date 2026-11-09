@@ -69,13 +69,15 @@ import gleam/time/duration
 import gleam/time/timestamp
 
 /// The quests a character has a record of, by Quest2 id, and the reset time the
-/// client was last told (the Unix seconds, 0 before the log is sent).
-pub type QuestLog {
+/// client was last told (the Unix seconds, 0 before the log is sent). It is built
+/// only by `from_rows`, which holds every entry to what the client would take, so a
+/// log is never one it would refuse.
+pub opaque type QuestLog {
   QuestLog(entries: Dict(Int, Entry), told_reset: Int)
 }
 
 /// What the character has of one quest.
-pub type Entry {
+type Entry {
   /// In the client's active list (opcode.0x35f): accepted or achieved, with the
   /// placeholder objective's id (0 for none), whether it is tracked, the done mask
   /// (a bit for each of the six objectives), the progress of each objective and
@@ -97,13 +99,13 @@ pub type Entry {
 
 /// The two states the client's active list holds (lua QuestState 1 and 2; any other
 /// crashes it, opcode.0x35f.active_state_crash).
-pub type ActiveState {
+type ActiveState {
   Accepted
   Achieved
 }
 
 /// The states of the client's second list (lua QuestState 4 to 7).
-pub type KnownState {
+type KnownState {
   Botched
   Mentioned
   Abandoned
@@ -112,7 +114,23 @@ pub type KnownState {
 
 /// Why the client would refuse a saved entry: the quest and what is wrong with it.
 pub type Refused {
-  Refused(quest_id: Int, reason: String)
+  Refused(quest_id: Int, reason: Reason)
+}
+
+/// What is wrong with a saved entry.
+pub type Reason {
+  /// The client has no Quest2 row for the id and answers with the Client/Server
+  /// Data Mismatch disconnect (opcode.0x35f.unknown_quest).
+  NoQuest2Row
+  /// The saved state does not go with the saved columns of a quest the client's
+  /// lists hold.
+  StateDoesNotGoWithColumns(state: Int)
+  /// The entry holds this many progress values for a quest with this many
+  /// objectives: the client takes one for each (0x1405fbdc0).
+  ProgressCountIsNotObjectiveCount(progress: Int, objectives: Int)
+  /// The placeholder objective is no QuestObjective row, which the client looks up
+  /// for a quest with a type 31 objective slot and would refuse (0x1405fbdc0).
+  NoPlaceholderRow(objective_id: Int)
 }
 
 /// What the connection's reset timer firing leads to.
@@ -147,9 +165,7 @@ fn entry_of(
   let refuse = fn(reason) { Refused(quest_id: row.quest_id, reason:) }
   use quest <- result.try(
     quest2.get(tables:, id: Quest2Id(row.quest_id))
-    |> result.replace_error(refuse(
-      "the client has no Quest2 row for it and answers with the Client/Server Data Mismatch disconnect (opcode.0x35f.unknown_quest)",
-    )),
+    |> result.replace_error(refuse(NoQuest2Row)),
   )
   case row.state, row.completed_at, row.active {
     1, None, Some(active) | 2, None, Some(active) -> {
@@ -173,12 +189,7 @@ fn entry_of(
     5, None, None -> Ok(Known(state: Mentioned))
     6, None, None -> Ok(Known(state: Abandoned))
     7, None, None -> Ok(Known(state: Ignored))
-    state, _, _ ->
-      Error(refuse(
-        "the saved state "
-        <> int.to_string(state)
-        <> " does not go with the saved columns of a quest the client's lists hold",
-      ))
+    state, _, _ -> Error(refuse(StateDoesNotGoWithColumns(state:)))
   }
 }
 
@@ -210,38 +221,39 @@ fn is_placeholder(
   }
 }
 
-/// Whether the client's state setter takes the active columns for the quest:
-/// progress for no more than its objectives, and a placeholder only for a quest
-/// with a type 31 slot, naming a type 31 row (0x1405fbdc0).
+/// Whether the client's state setter takes the active columns for the quest: one
+/// progress value for each of its objectives, and, for a quest with a type 31
+/// slot, a placeholder that is 0 or a QuestObjective row, which it puts in the
+/// slot. For a quest with no such slot it does not look at the placeholder
+/// (0x1405fbdc0).
 fn active_taken(
   quest quest: Quest2,
   active active: store.ActiveQuest,
   tables tables: table_store.Tables,
-  refuse refuse: fn(String) -> Refused,
+  refuse refuse: fn(Reason) -> Refused,
 ) -> Result(Nil, Refused) {
   let slots = objectives(quest:)
   use <- bool.guard(
-    list.length(active.progress) > list.length(slots),
-    Error(refuse(
-      int.to_string(list.length(active.progress))
-      <> " progress values for a quest of "
-      <> int.to_string(list.length(slots))
-      <> " objectives, which the client would refuse (0x1405fbdc0)",
-    )),
+    list.length(active.progress) != list.length(slots),
+    Error(
+      refuse(ProgressCountIsNotObjectiveCount(
+        progress: list.length(active.progress),
+        objectives: list.length(slots),
+      )),
+    ),
   )
   case active.placeholder_objective_id {
     0 -> Ok(Nil)
     placeholder -> {
       let has_slot =
         list.any(slots, fn(slot) { is_placeholder(objective: slot, tables:) })
-      case has_slot && is_placeholder(objective: placeholder, tables:) {
-        True -> Ok(Nil)
-        False ->
-          Error(refuse(
-            "the placeholder objective "
-            <> int.to_string(placeholder)
-            <> " is no type 31 QuestObjective row of a quest with a type 31 objective slot, which the client would refuse (0x1405fbdc0)",
-          ))
+      case
+        has_slot,
+        quest_objective.get(tables:, id: QuestObjectiveId(placeholder))
+      {
+        True, Error(Nil) ->
+          Error(refuse(NoPlaceholderRow(objective_id: placeholder)))
+        True, Ok(_) | False, _ -> Ok(Nil)
       }
     }
   }
@@ -249,7 +261,36 @@ fn active_taken(
 
 /// What a refusal says, for the fault the connection logs.
 pub fn describe(refused refused: Refused) -> String {
-  "quest " <> int.to_string(refused.quest_id) <> ": " <> refused.reason
+  "quest "
+  <> int.to_string(refused.quest_id)
+  <> ": "
+  <> reason_text(reason: refused.reason)
+}
+
+fn reason_text(reason reason: Reason) -> String {
+  case reason {
+    NoQuest2Row ->
+      "the client has no Quest2 row for it and answers with the Client/Server Data Mismatch disconnect (opcode.0x35f.unknown_quest)"
+    StateDoesNotGoWithColumns(state:) ->
+      "the saved state "
+      <> int.to_string(state)
+      <> " does not go with the saved columns of a quest the client's lists hold"
+    ProgressCountIsNotObjectiveCount(progress:, objectives:) ->
+      int.to_string(progress)
+      <> " progress values for a quest of "
+      <> int.to_string(objectives)
+      <> " objectives, which the client would refuse (0x1405fbdc0)"
+    NoPlaceholderRow(objective_id:) ->
+      "the placeholder objective "
+      <> int.to_string(objective_id)
+      <> " is no QuestObjective row, which the client looks up for a quest with a type 31 objective slot and would refuse (0x1405fbdc0)"
+  }
+}
+
+/// The reset time the client was last told, in Unix seconds: 0 before the log is
+/// sent.
+pub fn told_reset(log log: QuestLog) -> Int {
+  log.told_reset
 }
 
 /// The rows the log is saved as, in quest id order.
@@ -325,8 +366,8 @@ pub fn login(
   tables tables: table_store.Tables,
   now now: Now,
 ) -> #(QuestLog, Frame) {
-  let latest = latest_resets(numbers:, at_ms: unix_ms(now:))
-  let reset_time = seconds_of(ms: latest_of(latest:))
+  let latest = latest_resets(numbers:, at_ms: step.unix_milliseconds(now:))
+  let reset_time = latest_of(latest:) / 1000
   let entries = in_quest_order(log:)
   let completed =
     list.filter_map(entries, fn(pair) {
@@ -430,22 +471,9 @@ const week_ms = 604_800_000
 /// week.
 const first_monday_ms = 345_600_000
 
-/// The FILETIME (100 ns since 1601) of the Unix epoch.
-const epoch_filetime = 116_444_736_000_000_000
-
 /// The latest reset instant of each period at some time, in Unix milliseconds.
 type Resets {
   Resets(daily: Int, weekly: Int, monthly: Int, yearly: Int)
-}
-
-/// The Unix milliseconds of the clock.
-fn unix_ms(now now: Now) -> Int {
-  { now.filetime - epoch_filetime } / 10_000
-}
-
-/// The whole Unix seconds of Unix milliseconds.
-fn seconds_of(ms ms: Int) -> Int {
-  ms / 1000
 }
 
 /// The remainder of a division that is never negative.
@@ -470,7 +498,7 @@ fn latest_resets(numbers numbers: GameNumbers, at_ms at_ms: Int) -> Resets {
   // day of the reset earlier.
   let #(date, _) =
     timestamp.to_calendar(
-      timestamp.from_unix_seconds(seconds_of(ms: at_ms - daily_ms)),
+      timestamp.from_unix_seconds({ at_ms - daily_ms } / 1000),
       calendar.utc_offset,
     )
   Resets(
@@ -508,21 +536,15 @@ fn until_next(numbers numbers: GameNumbers, at_ms at_ms: Int) -> Int {
   int.min(latest.daily + day_ms, latest.weekly + week_ms) - at_ms
 }
 
-/// The milliseconds from `now` to the next daily or weekly reset, which the timer the
-/// play entry starts waits for.
-pub fn next_reset_in(numbers numbers: GameNumbers, now now: Now) -> Int {
-  until_next(numbers:, at_ms: unix_ms(now:))
-}
-
 /// What the reset timer firing at `now` leads to.
 pub fn reset_due(
   log log: QuestLog,
   numbers numbers: GameNumbers,
   now now: Now,
 ) -> ResetDue {
-  let at_ms = unix_ms(now:)
+  let at_ms = step.unix_milliseconds(now:)
   let latest = latest_resets(numbers:, at_ms:)
-  let reset_time = seconds_of(ms: latest_of(latest:))
+  let reset_time = latest_of(latest:) / 1000
   let after_ms = until_next(numbers:, at_ms:)
   case reset_time <= log.told_reset {
     True -> NotYet(after_ms:)
@@ -534,7 +556,7 @@ pub fn reset_due(
           #(latest.monthly, 4),
           #(latest.yearly, 8),
         ]
-        |> list.filter(fn(period) { seconds_of(ms: period.0) > log.told_reset })
+        |> list.filter(fn(period) { period.0 / 1000 > log.told_reset })
         |> list.fold(0, fn(bits, period) { int.bitwise_or(bits, period.1) })
       let assert Ok(body) =
         quest_periodic_reset.encode(QuestPeriodicReset(reset_time:, periods:))

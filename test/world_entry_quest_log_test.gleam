@@ -17,6 +17,7 @@ import cast_support
 import character_tables
 import game_connection_support
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/quest_log
 import genesis_prime/message/quest_active.{QuestActive}
 import genesis_prime/message/quest_completed.{QuestCompleted}
 import genesis_prime/message/quest_known.{QuestKnown}
@@ -62,7 +63,7 @@ pub fn the_play_entry_sends_the_quest_log_after_the_character_state_and_a_holocr
   assert quest_log_of(frames:)
     == quest_message.QuestLog(completed: [], known: [], active: [], reset_time:)
     as "the empty log is three empty lists and the latest reset time"
-  assert entered.quests.told_reset == reset_time
+  assert quest_log.told_reset(entered.quests) == reset_time
     as "the log the connection keeps remembers the time the client was told"
   // A character with quests is sent each in its list, in quest id order.
   let #(effects, _) =
