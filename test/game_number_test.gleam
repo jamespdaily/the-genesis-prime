@@ -34,10 +34,12 @@ fn seeded() -> List(Row) {
     Row(name: "aggro_range", value: 10.0, unit: "units"),
     Row(name: "aggro_threat", value: 1.0, unit: "threat"),
     Row(name: "chase_stop_fraction", value: 0.5, unit: "fraction"),
+    Row(name: "daily_quest_reset_ms", value: 36_000_000.0, unit: "ms"),
     Row(name: "health_regen_fraction", value: 0.025, unit: "fraction"),
     Row(name: "health_regen_tick_ms", value: 500.0, unit: "ms"),
     Row(name: "interrupt_armor_refill_ms", value: 10_000.0, unit: "ms"),
     Row(name: "leash_range", value: 55.0, unit: "units"),
+    Row(name: "weekly_quest_reset_ms", value: 122_400_000.0, unit: "ms"),
   ]
 }
 
@@ -60,6 +62,8 @@ pub fn the_seeded_rows_select_into_the_numbers_a_fight_reads_test() -> Nil {
       health_regen_fraction: 0.025,
       health_regen_tick_ms: 500,
       interrupt_armor_refill_ms: 10_000,
+      daily_quest_reset_ms: 36_000_000,
+      weekly_quest_reset_ms: 122_400_000,
     ))
 }
 
@@ -131,19 +135,19 @@ pub fn an_aggro_range_not_below_sight_is_refused_test() -> Nil {
   assert string.contains(refused.rule, "1024")
 }
 
-pub fn a_migrated_database_holds_the_seven_seeded_numbers_test() -> Nil {
+pub fn a_migrated_database_holds_the_nine_seeded_numbers_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
   let assert Ok(rows) =
     content_game_number.rows(db: content_support.connect(database:))
     as "the query ran"
   assert rows == seeded()
-    as "migration 0010's four rows, migration 0015's two and migration 0016's refill time, in name order"
+    as "migration 0010's four rows, migration 0015's two, migration 0016's refill time and migration 0020's two quest reset times, in name order"
   assert content_support.count(
       database:,
       sql: "select count(*) from game_number where source = 'server_choice' and reason is not null",
     )
-    == 7
+    == 9
     as "each is a server choice that states its reason"
 }
 
@@ -291,6 +295,8 @@ pub fn the_numbers_put_under_a_key_are_read_back_test() -> Nil {
       health_regen_fraction: 0.025,
       health_regen_tick_ms: 500,
       interrupt_armor_refill_ms: 10_000,
+      daily_quest_reset_ms: 36_000_000,
+      weekly_quest_reset_ms: 122_400_000,
     )
   content_game_number.put(key:, numbers:)
   assert content_game_number.numbers(key:) == numbers

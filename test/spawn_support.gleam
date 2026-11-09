@@ -50,6 +50,8 @@ pub const numbers: GameNumbers =
     health_regen_fraction: 0.025,
     health_regen_tick_ms: 500,
     interrupt_armor_refill_ms: 10_000,
+    daily_quest_reset_ms: 36_000_000,
+    weekly_quest_reset_ms: 122_400_000,
   )
 
 /// The spawn numbered `number` of a Virtual Battle Beast, `x` units along the

@@ -446,12 +446,15 @@ pub fn joining_saved(
     taken:,
     outcome: step.Answer(
       FromStore(
-        ForWorld(CharacterLoaded(
-          character,
-          character_support.epoch(1),
-          saved_health,
-          world_entry_support.novice_items(character:),
-        )),
+        ForWorld(
+          CharacterLoaded(
+            character,
+            character_support.epoch(1),
+            saved_health,
+            world_entry_support.novice_items(character:),
+            [],
+          ),
+        ),
       ),
     ),
   )
@@ -661,14 +664,17 @@ pub fn save_asked_keeping(
   health health: Option(Int),
 ) -> Request {
   AskStore(
-    Move(SavePlace(
-      account_id: AccountId(7),
-      character_id: CharacterId(42),
-      session_epoch: character_support.epoch(1),
-      save_sequence: sequence,
-      place:,
-      health:,
-    )),
+    Move(
+      SavePlace(
+        account_id: AccountId(7),
+        character_id: CharacterId(42),
+        session_epoch: character_support.epoch(1),
+        save_sequence: sequence,
+        place:,
+        health:,
+        quests: [],
+      ),
+    ),
   )
 }
 

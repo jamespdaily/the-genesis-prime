@@ -934,7 +934,7 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
   assert ask(store, World(LoadCharacter(account, CharacterId(character_id))))
     == ForWorld(
-      CharacterLoaded(character, character_support.epoch(1), None, []),
+      CharacterLoaded(character, character_support.epoch(1), None, [], []),
     )
     as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
   stop(store)
@@ -1026,6 +1026,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
         ),
         character_support.epoch(1),
         None,
+        [],
         [],
       ),
     )
@@ -1254,14 +1255,17 @@ fn save_keeping(
 ) -> store.Answer {
   ask(
     store,
-    Move(SavePlace(
-      account_id: account,
-      character_id: CharacterId(character_id),
-      session_epoch: character_support.epoch(epoch),
-      save_sequence: sequence,
-      place:,
-      health:,
-    )),
+    Move(
+      SavePlace(
+        account_id: account,
+        character_id: CharacterId(character_id),
+        session_epoch: character_support.epoch(epoch),
+        save_sequence: sequence,
+        place:,
+        health:,
+        quests: [],
+      ),
+    ),
   )
 }
 
@@ -1806,8 +1810,18 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
       "character_name_unique",
       "character_name_follows_rule_0",
       "character_health_is_not_negative",
+      "character_quest_id_fits_15_bits",
+      "character_quest_state_is_known",
+      "character_quest_completed_has_a_time",
+      "character_quest_active_has_its_entry",
+      "character_quest_done_mask_fits_six_objectives",
+      "character_quest_progress_fits_six_objectives",
+      "character_quest_progress_is_not_negative",
+      "character_quest_timers_match_progress",
+      "character_quest_times_are_not_negative",
+      "character_quest_placeholder_is_not_negative",
     ]
-    as "the three refusals the worker answers for: a name taken, a name that breaks rule 0, and a health below 0"
+    as "the refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0 and each check of a quest row"
   list.each(worker.mapped_constraints, fn(name) {
     let assert Ok(returned) =
       pog.query(

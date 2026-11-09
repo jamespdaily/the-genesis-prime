@@ -46,6 +46,7 @@ pub fn loaded(
         session_epoch: character_support.epoch(1),
         saved_health: None,
         items:,
+        quests: [],
       ),
       connection: ConnectionId(1),
       stay: map_support.stay(count: 1),

@@ -198,6 +198,17 @@ pub fn save_due(
   }
 }
 
+/// The quest reset timer fired: the quest log says whether a reset passed
+/// (genesis_prime/game/quest_log `reset_due`); a reset sends 0x362, and the timer
+/// starts again for the next one. The timer runs only while the player is in the
+/// world, so a firing in any other status is a bug.
+pub fn quest_reset_due(
+  session _session: Session,
+  now _now: Now,
+) -> client_connection.Handled(Session) {
+  panic as "not built: quest_log.reset_due decides, 0x362 is sent for a reset that passed and the timer starts again for the next reset"
+}
+
 /// The store's answer to the save of the player's place: what it says is
 /// logged, and then the player goes on playing or the connection ends, as
 /// `then` says. A save that gets no answer is a warning, as for any store ask.

@@ -522,6 +522,62 @@ fields = [
 ]
 
 [[message]]
+id = 0x035F
+name = "quest_log"
+direction = "server_to_client"
+evidence = "opcode.0x35f"
+summary = "the quest log at login, sent after message 0x25E, which empties the log it fills (opcode.0x35f.entry_order): the completed quests, the quests of the second list (states 4 to 7 and 0), the active quests (states 1 and 2) and the periodic reset time the client seeds its offer picks with; the handler adds to the log and never empties it, and answers an id with no Quest2 row with the Client/Server Data Mismatch disconnect (opcode.0x35f.unknown_quest). Gap: the width of the first list's count and of the quest ids come from the saved C, not an instruction"
+fields = [
+  { name = "completed", kind = "array", count_bits = 32, element = "quest_completed", evidence = "opcode.0x35f", named_by = "opcode.0x35f" },
+  { name = "known", kind = "array", count_bits = 32, element = "quest_known", evidence = "opcode.0x35f", named_by = "opcode.0x35f" },
+  { name = "active", kind = "array", count_bits = 32, element = "quest_active", evidence = "opcode.0x35f", named_by = "opcode.0x35f" },
+  { name = "reset_time", kind = "unsigned", bits = 64, evidence = "opcode.0x35f", named_by = "opcode.0x35f" },
+]
+
+[[record]]
+name = "quest_completed"
+evidence = "opcode.0x35f"
+summary = "one completed quest of message 0x35F: the Quest2 id and whether it was completed in its current period (a quest with a period and the bit clear goes straight into the completed set, so its group may offer it again)"
+fields = [
+  { name = "quest_id", kind = "unsigned", bits = 15, evidence = "opcode.0x35f", named_by = "opcode.0x35f" },
+  { name = "in_current_period", kind = "unsigned", bits = 1, evidence = "opcode.0x35f", named_by = "0x1405fb350.completed_bit" },
+]
+
+[[record]]
+name = "quest_known"
+evidence = "opcode.0x35f"
+summary = "one quest of message 0x35F's second list: the Quest2 id and its state (4 to 7, or 0 to remove the quest)"
+fields = [
+  { name = "quest_id", kind = "unsigned", bits = 15, evidence = "opcode.0x35f", named_by = "opcode.0x35f" },
+  { name = "state", kind = "unsigned", bits = 4, evidence = "opcode.0x35f", named_by = "0x1405fbdc0" },
+]
+
+[[record]]
+name = "quest_active"
+evidence = "opcode.0x35f"
+summary = "one active quest of message 0x35F: the Quest2 id, its state (1 or 2: any other crashes the client), the QuestObjective id that fills the quest's placeholder objective (0 for none), the flag word (bit 1 tracked, bit i+2 objective i done), the progress of each objective (no more than the quest has), the quest's time left in milliseconds and each objective's time left (0 changes nothing, which shows a full timer)"
+fields = [
+  { name = "quest_id", kind = "unsigned", bits = 15, evidence = "opcode.0x35f", named_by = "opcode.0x35f" },
+  { name = "state", kind = "unsigned", bits = 4, evidence = "opcode.0x35f", named_by = "opcode.0x35f.active_state_crash" },
+  { name = "placeholder_objective_id", kind = "unsigned", bits = 32, evidence = "opcode.0x35f", named_by = "0x1405fbdc0" },
+  { name = "flags", kind = "unsigned", bits = 32, evidence = "opcode.0x35f", named_by = "quest_log.entry.flags" },
+  { name = "progress", kind = "array", count_bits = 32, element = "unsigned", element_bits = 32, evidence = "opcode.0x35f", named_by = "opcode.0x35f.active_state_crash" },
+  { name = "quest_ms_left", kind = "unsigned", bits = 32, evidence = "opcode.0x35f", named_by = "0x1406118a0" },
+  { name = "objective_ms_left", kind = "array", counted_by = "progress", element = "unsigned", element_bits = 32, evidence = "opcode.0x35f", named_by = "0x1406118a0" },
+]
+
+[[message]]
+id = 0x0362
+name = "quest_periodic_reset"
+direction = "server_to_client"
+evidence = "opcode.0x362"
+summary = "periodic quests reset: the reset time and the periods that reset (bit 1 daily, 2 weekly, 4 monthly, 8 yearly, the questRepeatPeriodEnum 1 to 4); a time equal to the one held does nothing, a different one re-rolls the periodic quest offers seeded by it and frees the done quests of the flagged periods"
+fields = [
+  { name = "reset_time", kind = "unsigned", bits = 64, evidence = "opcode.0x362", named_by = "0x140611e30" },
+  { name = "periods", kind = "unsigned", bits = 4, evidence = "opcode.0x362", named_by = "0x140489aa0" },
+]
+
+[[message]]
 id = 0x06BC
 name = "player_path"
 direction = "server_to_client"

@@ -48,9 +48,11 @@
 ////   account's id as well as the character's, so another account's character
 ////   is never taken; its update raises the character's `session_epoch` by one
 ////   and returns the new value with the row, so the login that loaded the
-////   character holds that epoch, and it locks the row, so the read of the
-////   character's items that follows on the same connection finds the items the
-////   character had when the row was taken. No row is `NotTheAccounts`.
+////   character holds that epoch, and it locks the row, so the reads of the
+////   character's items and of its quest log that follow on the same connection
+////   find the items and quests the character had when the row was taken, and a
+////   delete of the character cannot land between them. No row is
+////   `NotTheAccounts`.
 //// - **A save is one statement.** It names the account's id, the character's,
 ////   the epoch the saving login was told and the save's own sequence number, so
 ////   a save from an older login, or one that reaches the database after a newer
@@ -58,7 +60,9 @@
 ////   health with the place. A save that `character_health_is_not_negative` refuses
 ////   is `HealthRefused`; one that any other check constraint of the table
 ////   refuses is `PlaceRefused` with that constraint's name; the worker does not
-////   crash for either.
+////   crash for either. The statement also writes the character's quest log under
+////   the same fence (save_place.sql); a check of the character_quest table that
+////   refuses a quest row is `QuestLogRefused` with that check's name.
 //// - **A delete and a rename are one statement each.** Both name the account's
 ////   id, so another account's character is never touched; a rename also
 ////   clears the character's mark in the same update, and its name's
@@ -84,27 +88,30 @@ import genesis_prime/store.{
   type AccountId, type Answer, type Character, type CharacterId,
   type CreateAnswer, type DeleteAnswer, type FindAccountAnswer, type HeldItem,
   type MoveAnswer, type MoveRequest, type Naming, type NewCharacter,
-  type NewItem, type RenameAnswer, type Request, type SelectAnswer,
-  type SelectRequest, type WorldAnswer, type WorldRequest, Account, AccountFound,
-  AccountId, Character, CharacterCreated, CharacterDeleted, CharacterId,
-  CharacterLoaded, CharacterRenamed, CreateCharacter, CreateForNoSuchAccount,
-  Created, DeleteCharacter, Deleted, FindAccount, ForLogin, ForMove, ForSelect,
-  ForWorld, HealthRefused, HeldItem, ListCharacters, Listed, LoadCharacter,
-  Login, Move, NameBreaksRule, NameStands, NameTaken, NeedsRename,
-  NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter,
-  NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, RenameCharacter,
-  Renamed, SavePlace, Select, Unavailable, World,
+  type NewItem, type QuestRow, type RenameAnswer, type Request,
+  type SelectAnswer, type SelectRequest, type WorldAnswer, type WorldRequest,
+  Account, AccountFound, AccountId, Character, CharacterCreated,
+  CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
+  CreateCharacter, CreateForNoSuchAccount, Created, DeleteCharacter, Deleted,
+  FindAccount, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem,
+  ListCharacters, Listed, LoadCharacter, Login, Move, NameBreaksRule, NameStands,
+  NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
+  NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
+  PlaceSaved, QuestLogRefused, RenameCharacter, Renamed, SavePlace, Select,
+  Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
 import gleam/bool
 import gleam/erlang/process.{type Name}
+import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
+import gleam/string
 import pog
 
 /// The unique index on the ICU-folded lower-cased name (migration 0005), which a
@@ -118,12 +125,29 @@ const character_name_follows_rule_0 = "character_name_follows_rule_0"
 /// The table's check that a saved health is not below 0 (migration 0017).
 const character_health_is_not_negative = "character_health_is_not_negative"
 
+/// The start of the name of every check of the character_quest table (migration
+/// 0020), which a save that one refuses answers `QuestLogRefused` for, with the
+/// check's own name: a quest row the client's limits do not allow.
+const quest_constraint_prefix = "character_quest_"
+
 /// Every constraint or unique index the worker answers for by name. The schema
-/// holds each by this name, which a test reads from the catalogue.
+/// holds each by this name, which a test reads from the catalogue. A save's
+/// quest rows are refused by the character_quest checks, which begin with
+/// `quest_constraint_prefix`.
 pub const mapped_constraints = [
   character_name_unique,
   character_name_follows_rule_0,
   character_health_is_not_negative,
+  "character_quest_id_fits_15_bits",
+  "character_quest_state_is_known",
+  "character_quest_completed_has_a_time",
+  "character_quest_active_has_its_entry",
+  "character_quest_done_mask_fits_six_objectives",
+  "character_quest_progress_fits_six_objectives",
+  "character_quest_progress_is_not_negative",
+  "character_quest_timers_match_progress",
+  "character_quest_times_are_not_negative",
+  "character_quest_placeholder_is_not_negative",
 ]
 
 /// What one worker is started with: a rule's ask and how to answer it, or the
@@ -344,7 +368,8 @@ fn world(
 /// names the account, the character, the epoch and the save's sequence
 /// (save_place.sql), answering `PlaceSaved` when it changed a row and
 /// `NothingSaved` when it matched none, `HealthRefused` when the table's
-/// `character_health_is_not_negative` refused the health and `PlaceRefused` when
+/// `character_health_is_not_negative` refused the health, `QuestLogRefused` when a
+/// check of the character_quest table refused a quest row and `PlaceRefused` when
 /// another check of the table refused the place; `Error(Nil)` when the database
 /// is away.
 fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
@@ -355,6 +380,7 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
     save_sequence:,
     place:,
     health:,
+    quests:,
   ) = request
   let facing = start_place.facing(place)
   // squirrel cannot type a parameter that may be NULL (save_place.sql): the
@@ -381,6 +407,7 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
         save_sequence,
         health,
         keeps_health,
+        quests_json(quests),
       )
     })
   {
@@ -391,7 +418,11 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
     Error(Refused(constraint:, ..))
       if constraint == character_health_is_not_negative
     -> Ok(HealthRefused)
-    Error(Refused(constraint:, ..)) -> Ok(PlaceRefused(constraint:))
+    Error(Refused(constraint:, ..)) ->
+      case string.starts_with(constraint, quest_constraint_prefix) {
+        True -> Ok(QuestLogRefused(constraint:))
+        False -> Ok(PlaceRefused(constraint:))
+      }
     Error(Unexpected(error:)) -> exit_with(error)
   }
 }
@@ -428,21 +459,25 @@ fn load_character(
         character_id,
         account_id,
       ))
-      use item_rows <- result.map(case loaded.rows {
+      use item_rows <- result.try(case loaded.rows {
         [_] -> sql.load_character_items(connection, character_id)
+        _ -> Ok(pog.Returned(count: 0, rows: []))
+      })
+      use quest_rows <- result.map(case loaded.rows {
+        [_] -> sql.load_quest_log(connection, character_id)
         _ -> Ok(pog.Returned(count: 0, rows: []))
       })
       pog.Returned(
         ..loaded,
         rows: list.map(loaded.rows, fn(row) {
-          LoadedRow(row:, items: item_rows.rows)
+          LoadedRow(row:, items: item_rows.rows, quests: quest_rows.rows)
         }),
       )
     })
   }
   use rows <- result.map(query(transaction))
   case rows {
-    [LoadedRow(row:, items: item_rows)] -> {
+    [LoadedRow(row:, items: item_rows, quests: quest_rows)] -> {
       let assert Ok(epoch) = store.session_epoch(row.session_epoch)
         as "a load raises the epoch by one, so it is 1 or more"
       CharacterLoaded(
@@ -472,6 +507,7 @@ fn load_character(
         session_epoch: epoch,
         saved_health: row.health,
         items: held_items(item_rows),
+        quests: quest_rows_of(quest_rows),
       )
     }
     [] -> NotTheAccounts
@@ -482,7 +518,31 @@ fn load_character(
 /// The one row a load's transaction gives: the character whose epoch the
 /// update raised, with its items.
 type LoadRow {
-  LoadedRow(row: sql.LoadCharacterRow, items: List(sql.LoadCharacterItemsRow))
+  LoadedRow(
+    row: sql.LoadCharacterRow,
+    items: List(sql.LoadCharacterItemsRow),
+    quests: List(sql.LoadQuestLogRow),
+  )
+}
+
+/// The rows of a character's quest log as the rows the store hands the quest log's
+/// decode, in the order the query gave them (quest id).
+fn quest_rows_of(rows: List(sql.LoadQuestLogRow)) -> List(QuestRow) {
+  case rows {
+    [] -> []
+    [_, ..] ->
+      panic as "not built: a character_quest row becomes a QuestRow, its completed time read only for state 3 and its active columns only for states 1 and 2"
+  }
+}
+
+/// The quest log's rows as the JSON array save_place.sql unpacks, one object for
+/// each row whose keys are the character_quest columns.
+fn quests_json(quests: List(QuestRow)) -> Json {
+  case quests {
+    [] -> json.preprocessed_array([])
+    [_, ..] ->
+      panic as "not built: a QuestRow becomes an object of the character_quest columns, a completed time in whole Unix seconds"
+  }
 }
 
 /// The rows of a character's items as the items they hold, in the order the

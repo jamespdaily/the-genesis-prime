@@ -35,6 +35,13 @@
 ////   by the table (`game_number_interrupt_armor_refill_ms_is_a_whole_positive_ms`,
 ////   migration 0016): the creature starts a timer of that many, and the client holds no
 ////   value for it, so it is a server choice that states its reason.
+//// - **The quest reset times** are the server's choice, since the client holds no
+////   schedule: a daily quest resets at `daily_quest_reset_ms` after 00:00 UTC and a
+////   weekly one at `weekly_quest_reset_ms` after Monday 00:00 UTC, each a whole
+////   number of milliseconds inside its day or week, held by the table
+////   (`game_number_daily_quest_reset_ms_is_a_whole_ms_inside_the_day`,
+////   `game_number_weekly_quest_reset_ms_is_a_whole_ms_inside_the_week`, migration
+////   0020), and read by the quest log (genesis_prime/game/quest_log).
 //// - **The unit of each name** is the table's: `game_number_name_has_its_unit`, a
 ////   foreign key to `game_number_name`, refuses a row whose unit is not its name's
 ////   and a name nobody listed (migration 0014).
@@ -74,6 +81,12 @@ pub type GameNumbers {
     /// How long a creature's Interrupt Armor takes to return to its maximum after the
     /// last point destroyed, in whole milliseconds (migration 0016).
     interrupt_armor_refill_ms: Int,
+    /// The time of day the daily quests reset at, in whole milliseconds after
+    /// 00:00 UTC (migration 0020).
+    daily_quest_reset_ms: Int,
+    /// The time the weekly quests reset at, in whole milliseconds after Monday
+    /// 00:00 UTC (migration 0020).
+    weekly_quest_reset_ms: Int,
   )
 }
 
@@ -86,6 +99,8 @@ const expected = [
   "health_regen_fraction",
   "health_regen_tick_ms",
   "interrupt_armor_refill_ms",
+  "daily_quest_reset_ms",
+  "weekly_quest_reset_ms",
 ]
 
 /// The numbers of the rows, or every refusal: a name missing or not known, a
@@ -136,6 +151,8 @@ fn ranges_checked(
       health_regen_fraction: value("health_regen_fraction"),
       health_regen_tick_ms: float.round(value("health_regen_tick_ms")),
       interrupt_armor_refill_ms: float.round(value("interrupt_armor_refill_ms")),
+      daily_quest_reset_ms: float.round(value("daily_quest_reset_ms")),
+      weekly_quest_reset_ms: float.round(value("weekly_quest_reset_ms")),
     )
   let checks = [
     #(
