@@ -87,9 +87,12 @@ jobs:
           --health-timeout 5s
           --health-retries 15
     env:
-      # No client on this machine; the patched OTP is still required, from
-      # GENESIS_OTP_DIR (set by the toolchain action), and first on PATH for ./check.
-      GENESIS_NO_CLIENT: "1"
+      # The client's data is in the private repository dev/client_data.sh publishes to,
+      # read with the secret CLIENT_DATA_KEY. A run without the secret (a fork's pull
+      # request) has no client, and its check skips the client's parts. The patched OTP is
+      # required either way, from GENESIS_OTP_DIR (set by the toolchain action), and first
+      # on PATH for ./check.
+      GENESIS_NO_CLIENT: ${{ secrets.CLIENT_DATA_KEY == '' && '1' || '' }}
       PGHOST: localhost
       PGPORT: "5432"
       PGUSER: postgres
@@ -102,6 +105,35 @@ jobs:
           python-version: "3.13"
       - id: toolchain
         uses: ./.github/actions/toolchain
+      # The client's data is never cached: a fork's pull request can restore caches.
+      - name: Fetch the client's data
+        if: ${{ env.GENESIS_NO_CLIENT != '1' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository_owner }}/genesis-client-data
+          ssh-key: ${{ secrets.CLIENT_DATA_KEY }}
+          path: client-data
+          persist-credentials: false
+      # Fails, naming the publishing command, when the data was packed from other versions
+      # of the files it is made with. Variables name the client's exe and the world data, as
+      # env.sh does on a development machine; there is no Ghidra here.
+      - name: Unpack the client's data
+        if: ${{ env.GENESIS_NO_CLIENT != '1' }}
+        run: |
+          dev/client_data.sh unpack client-data
+          rm -rf client-data
+          {
+            echo "WILDSTAR_CLIENT_EXE=$HOME/.genesis-prime/client/Client64/WildStar64.exe"
+            echo "GENESIS_WORLD_DATA=$HOME/.genesis-prime/world-data"
+            echo "GENESIS_NO_QUERY_PROCESS=1"
+          } >> "$GITHUB_ENV"
+      # The client scripts' tests and the fact checker's name rule disassemble WildStar64.exe.
+      - name: Install llvm-objdump
+        if: ${{ env.GENESIS_NO_CLIENT != '1' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends llvm
+          echo "GENESIS_LLVM_OBJDUMP=$(ls /usr/lib/llvm-*/bin/llvm-objdump | sort -V | tail -1)" >> "$GITHUB_ENV"
       - name: Record the tree tested
         run: echo "::notice title=tested tree::tested tree $(git rev-parse 'HEAD^{tree}')"
       - run: ./check
