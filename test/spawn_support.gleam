@@ -113,8 +113,11 @@ pub fn loaded_beast() -> Spawn {
 /// The spawn numbered `number` of Dorian Walker, standing at `place`: Creature2
 /// 74812, a quest giver and receiver (`questIdGiven00` 10528, `questIdReceive00`
 /// 10520), faction 171, display 25510 (the one entry of display group 28097, hit
-/// radius 1.1) and outfit 8952 (the first of outfit group 9759). The Beast's
-/// numbers fill the rest, which no test of a quest giver reads.
+/// radius 1.1) and outfit 8952 (the first of outfit group 9759). Faction 171 is
+/// level 10 to Exile 167 and level 0 to Dominion 166 (Faction2Relationship 771
+/// and 685), so only the Dominion may attack him and he fights only the
+/// Dominion on sight. The Beast's numbers fill the rest, which no test of a
+/// quest giver reads.
 pub fn dorian_walker(number number: Int, place place: Place) -> Spawn {
   let beast = battle_beast(number:, x: 0.0)
   Spawn(
@@ -128,7 +131,8 @@ pub fn dorian_walker(number number: Int, place place: Place) -> Spawn {
     combat: Combat(
       ..beast.combat,
       hit_radius: 1.1,
-      hostile_to: Hostile(exile: False, dominion: False),
+      attackable: Attackable(exile: False, dominion: True),
+      hostile_to: Hostile(exile: False, dominion: True),
     ),
   )
 }

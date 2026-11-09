@@ -928,7 +928,9 @@ pub fn right_click_on_giver_opens_dialog_test() -> Nil {
   // 1.1, Creature2DisplayInfo 25510). The creature's process sends the news the
   // connection shows him by; the connection answers the client's right-click, 0x7EA
   // with kind 37 (TalkTo) and his unit id, with 0x357 naming that unit
-  // (opcode.0x357).
+  // (opcode.0x357). The player is an Exile: his faction 171 is level 0 to the
+  // Dominion, whom the interaction rule refuses him to (Faction2Relationship 685),
+  // and level 10 to the Exile (771).
   let entry = game_connection_support.entry_place()
   let walker_place =
     start_place.moved(
@@ -958,7 +960,7 @@ pub fn right_click_on_giver_opens_dialog_test() -> Nil {
     as "the map's creature news is a message for a stay"
   let #(state, _) =
     game_connection_support.feed(
-      state: game_connection_support.in_world(),
+      state: game_connection_support.in_world_as_exile(),
       event: game_connection_support.for_stay(stay:, sent:),
     )
   let #(_, taken) =

@@ -656,6 +656,13 @@ pub fn in_world() -> game_connection.State {
   entered().0
 }
 
+/// The connection in the world of an Exile (faction 167, the Dominion's 166
+/// being the other), with its burst taken: the character of `in_world` with the
+/// other faction.
+pub fn in_world_as_exile() -> game_connection.State {
+  entered_as(Character(..world_character(), faction_id: 167)).0
+}
+
 /// The connection in the world, with its burst taken, made with the
 /// development chat commands on.
 pub fn in_world_with_dev_commands() -> game_connection.State {
