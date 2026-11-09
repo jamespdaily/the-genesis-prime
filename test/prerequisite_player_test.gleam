@@ -21,7 +21,7 @@
 
 import client_tables
 import genesis_prime/game/prerequisite.{
-  type Player, type Subject, Fails, NotRead, Passes, Player, Subject,
+  type Subject, Fails, NotRead, Passes, Player, Subject,
 }
 import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/int
@@ -32,25 +32,11 @@ import prerequisite_support
 import quest_support
 import unitest
 
-/// A player of race 3, class 5, level 20, path 1 (Settler), gender 1, in World
-/// 870 and in zone 1411 under 1305 under 1304.
-fn player() -> Player {
-  Player(
-    race_id: 3,
-    class_id: 5,
-    level: 20,
-    path: 1,
-    gender: 1,
-    world_id: 870,
-    zones: [1411, 1305, 1304],
-  )
-}
-
 /// A subject that is this player, under no cast.
 fn subject() -> Subject {
   Subject(
     ..prerequisite_support.holding(held: [], second_unit: None),
-    player: Some(player()),
+    player: Some(prerequisite_support.player()),
   )
 }
 
@@ -182,40 +168,26 @@ pub fn a_subject_with_no_player_does_not_decide_these_types_test() -> Nil {
     #(52, 1, 0, 1),
     #(109, 1, 870, 0),
   ]
-  let no_player = [
-    #("a creature's difficulty", prerequisite.of_difficulty(difficulty: 3)),
-    #(
-      "a quest turn-in's struck pose",
-      prerequisite.of_struck(
-        first: None,
-        second: prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0),
-        quests: quest_support.log_of(rows: []),
-      ),
-    ),
-  ]
-  list.each(no_player, fn(subject) {
-    let #(what, subject) = subject
-    list.each(conditions, fn(condition) {
-      assert prerequisite_support.verdict(condition:, subject:)
-        == NotRead(prerequisite_type: condition.0)
-        as {
-          what
-          <> " holds no player: type "
-          <> int.to_string(condition.0)
-          <> " is not decided (0x1404a2100)"
-        }
-    })
+  list.each(conditions, fn(condition) {
+    assert prerequisite_support.verdict(
+        condition:,
+        subject: prerequisite.of_difficulty(difficulty: 3),
+      )
+      == NotRead(prerequisite_type: condition.0)
+      as {
+        "a creature's difficulty holds no player: type "
+        <> int.to_string(condition.0)
+        <> " is not decided (0x1404a2100)"
+      }
   })
   // A subject known by its place alone holds the player's facts but not the
   // first unit's, so only the types that read the unit are left undecided.
   let place_only =
-    Subject(
-      ..prerequisite.of_struck(
-        first: None,
-        second: prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0),
-        quests: quest_support.log_of(rows: []),
-      ),
-      player: Some(player()),
+    prerequisite.of_struck(
+      first: None,
+      second: prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0),
+      player: prerequisite_support.player(),
+      quests: quest_support.log_of(rows: []),
     )
   list.each(conditions, fn(condition) {
     let verdict = prerequisite_support.verdict(condition:, subject: place_only)
@@ -231,6 +203,33 @@ pub fn a_subject_with_no_player_does_not_decide_these_types_test() -> Nil {
         }
       }
   })
+}
+
+pub fn a_struck_units_condition_reads_the_casters_player_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x1404a2100: the client reads types 2, 10, 26, 52 and 109 from its own
+  // player, whoever the unit is that the check is about.
+  let caster = prerequisite_support.player()
+  let struck_by = fn(player) {
+    prerequisite.of_struck(
+      first: None,
+      second: prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0),
+      player:,
+      quests: quest_support.log_of(rows: []),
+    )
+  }
+  assert prerequisite_support.verdict(
+      condition: #(52, 1, 0, 1),
+      subject: struck_by(caster),
+    )
+    == Passes
+    as "a caster on path 1 passes a type 52 condition for path 1"
+  assert prerequisite_support.verdict(
+      condition: #(52, 1, 0, 1),
+      subject: struck_by(Player(..caster, path: 2)),
+    )
+    == Fails
+    as "a caster on path 2 fails it: the struck unit's condition reads the caster's path"
 }
 
 pub fn every_condition_of_these_types_is_decided_for_a_player_test() -> Nil {

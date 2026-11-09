@@ -10,6 +10,7 @@
 ////   (0x1403c92e0, `Prerequisite.prerequisiteTypeId.26`). A zone with no row has
 ////   no parent to walk to, so it is the one zone the player is in.
 
+import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/movement
 import genesis_prime/game/prerequisite.{type Player, Player}
 import genesis_prime/game/start_place
@@ -17,7 +18,6 @@ import genesis_prime/game/top_zone
 import genesis_prime/game/world_entry
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/unit_fields
-import gleam/result
 
 /// The player the entered character is.
 pub fn of(
@@ -42,11 +42,13 @@ pub fn of(
 
 /// The level the client's formulas read for the unit.
 fn formula_level(entered entered: world_entry.Entered) -> Int {
-  let stat = fn(stat_id) { unit_fields.stat(tail: entered.unit.tail, stat_id:) }
-  case stat(unit_fields.level_override_stat) {
+  case
+    unit_fields.stat(
+      tail: entered.unit.tail,
+      stat_id: unit_fields.level_override_stat,
+    )
+  {
     Ok(level) if level != 0 -> level
-    Ok(_) | Error(Nil) ->
-      stat(unit_fields.level_stat)
-      |> result.unwrap(1)
+    Ok(_) | Error(Nil) -> connection_state.level_of(entered:)
   }
 }

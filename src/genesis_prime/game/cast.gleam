@@ -6657,6 +6657,7 @@ fn target_gate(
           prerequisite.of_struck(
             first: option.from_result(dict.get(poses, primary_target)),
             second: area.pose_of(place: caster.place),
+            player: caster.player,
             quests: caster.quests,
           )
       }

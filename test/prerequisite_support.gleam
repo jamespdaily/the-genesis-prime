@@ -3,7 +3,9 @@
 
 import genesis_prime/game/area.{type Pose, Point, Pose}
 import genesis_prime/game/lasting
-import genesis_prime/game/prerequisite.{type Prerequisite, type Subject, Subject}
+import genesis_prime/game/prerequisite.{
+  type Player, type Prerequisite, type Subject, Player, Subject,
+}
 import genesis_prime/game/quest_log.{type Quest, type QuestRowError}
 import genesis_prime/table/id.{PrerequisiteId, Spell4Id}
 import genesis_prime/table/positional_requirement
@@ -218,6 +220,20 @@ pub fn verdict(
   subject subject: Subject,
 ) -> prerequisite.Verdict {
   prerequisite.check(prerequisite: single(id: 1, condition:), subject:)
+}
+
+/// A player of race 3, class 5, level 20, path 1 (Settler), gender 1, in World
+/// 870 and in zone 1411 under 1305 under 1304.
+pub fn player() -> Player {
+  Player(
+    race_id: 3,
+    class_id: 5,
+    level: 20,
+    path: 1,
+    gender: 1,
+    world_id: 870,
+    zones: [1411, 1305, 1304],
+  )
 }
 
 /// A standing place: the point (`x`, `z`) facing `yaw`.

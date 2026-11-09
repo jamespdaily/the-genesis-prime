@@ -59,7 +59,10 @@ pub fn the_checks_run_in_the_clients_order_test() -> Nil {
     #(
       "race before class",
       12_769,
-      Wearer(..equip_requirement_support.engineer(), race_id: 3),
+      equip_requirement_support.of_race(
+        equip_requirement_support.engineer(),
+        race_id: 3,
+      ),
       Refused(code: 39),
     ),
     #("class", 12_769, equip_requirement_support.engineer(), Refused(code: 40)),

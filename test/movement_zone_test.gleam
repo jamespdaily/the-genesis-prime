@@ -93,7 +93,7 @@ pub fn a_reported_zone_becomes_the_players_zone_test() -> Nil {
     as "only the zone differs: the world, the position and the facing stay"
 }
 
-pub fn a_reported_zone_the_client_cannot_stand_in_is_refused_test() -> Nil {
+pub fn a_reported_zone_with_no_world_zone_row_is_kept_as_reported_test() -> Nil {
   use <- owned_test.run(5000)
   // 0x14036d040 and 0x140388a30: the client reports the zone of the terrain
   // under its unit and does not check it against its WorldZone table, so zone 0

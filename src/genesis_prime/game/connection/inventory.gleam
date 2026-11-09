@@ -88,18 +88,16 @@ pub fn item_message(
   }
 }
 
-/// What the equip checks read of the entered character: its race, class and
-/// faction, its level now (the unit's, which a kill's level-up raises), the
-/// player facts the prerequisites read (`prerequisite_player`) and the class's
-/// item proficiencies.
+/// What the equip checks read of the entered character: its faction, its level
+/// now (the unit's, which a kill's level-up raises), the player facts the
+/// prerequisites read, race and class among them (`prerequisite_player`), and the
+/// class's item proficiencies.
 fn wearer_of(
   tables tables: table_store.Tables,
   entered entered: world_entry.Entered,
 ) -> equip_requirement.Wearer {
   let character = entered.character
   equip_requirement.Wearer(
-    race_id: character.race_id.value,
-    class_id: character.class_id.value,
     faction_id: character.faction_id,
     level: connection_state.level_of(entered:),
     player: prerequisite_player.of(tables:, entered:),

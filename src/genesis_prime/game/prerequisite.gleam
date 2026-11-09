@@ -490,7 +490,7 @@ pub type Seen {
 /// The subject of a unit the caster struck, for a target-side check (a Proxy's target apply
 /// prerequisite): the struck unit first with the pose its place and facing give in the
 /// caster's picture, `None` when the picture no longer shows it, and the caster second;
-/// the quest log is the caster's, whose client runs the check.
+/// the quest log and the player's facts are the caster's, whose client runs the check.
 /// The connection holds none of a creature's casts, combat state or vitals, so the subject
 /// holds none of them either: a condition that reads what else it holds is `NotRead`
 /// (`PlaceOnly`), where an empty `under` would read as "under no cast" and pass a
@@ -498,6 +498,7 @@ pub type Seen {
 pub fn of_struck(
   first first: Option(Pose),
   second second: Pose,
+  player player: Player,
   quests quests: QuestLog,
 ) -> Subject {
   Subject(
@@ -514,7 +515,7 @@ pub fn of_struck(
       None -> NotPlaced
     },
     factions: None,
-    player: None,
+    player: Some(player),
     quests: Some(quests),
     seen: PlaceOnly,
   )

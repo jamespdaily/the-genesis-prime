@@ -558,10 +558,16 @@ pub fn a_target_counted_condition_passes_only_not_counted_test() -> Nil {
   let subjects = [
     player_with(log: in_log),
     player_with(log: log_of(rows: [])),
-    prerequisite.of_struck(first: Some(origin), second: origin, quests: in_log),
+    prerequisite.of_struck(
+      first: Some(origin),
+      second: origin,
+      player: prerequisite_support.player(),
+      quests: in_log,
+    ),
     prerequisite.of_struck(
       first: None,
       second: origin,
+      player: prerequisite_support.player(),
       quests: log_of(rows: []),
     ),
   ]
