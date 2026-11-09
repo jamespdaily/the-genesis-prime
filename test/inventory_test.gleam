@@ -24,6 +24,16 @@
 ////   refused with code 1: the server's choice (the coordinator's decision on the
 ////   issue's test list), as the client sends such a move only for locations the
 ////   server never fills.
+//// - Stacks: `opcode.0x17d` (a split is 0x17D {guid, place, count}, which the
+////   client sends only onto an empty slot, 0x1406d48c0), `opcode.0x149` (a
+////   delete is 0x149 {place}; its sender 0x1403c1360 refuses an Item2 with flags
+////   0x10000 with 156), `opcode.0x17f` and `opcode.0x148` (the replies),
+////   `opcode.0x111` (the new stack) and 0x1403b8060 (the reason 0, StackSplit,
+////   raises no notice). A merge is a 0x182 onto a stack of the same stackable
+////   Item2 (0x1406d50f0). The Item2 rows are the client's own, roots of the
+////   fixture: 1039 stacks to 20 (its category's flags hold 0x4), 12049 is a bag
+////   that holds 6 with no stackable flag, and 80875 has flags 0x10000 and
+////   stacks to 1.
 
 import character_support
 import fixture_tables
@@ -31,19 +41,24 @@ import game_connection_support
 import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/inventory.{
-  type Effect, type Moving, type Taken, Asks, Log, MoveAsked, NoItemRow,
-  NotDecoded, Refused, Send,
+  type Effect, type Moving, type Taken, Asks, DeleteAsked, Log, MoveAsked,
+  NoItemRow, NotDecoded, Refused, Send, SplitAsked,
 }
 import genesis_prime/game/player_life.{type Life}
 import genesis_prime/message/item_action_failed.{ItemActionFailed}
+import genesis_prime/message/item_added
+import genesis_prime/message/item_count_changed.{ItemCountChanged}
+import genesis_prime/message/item_delete.{ItemDelete}
 import genesis_prime/message/item_move
 import genesis_prime/message/item_moved.{ItemMoved}
 import genesis_prime/message/item_place
+import genesis_prime/message/item_removed.{ItemRemoved}
+import genesis_prime/message/item_split.{ItemSplit}
 import genesis_prime/message/items_swapped.{ItemsSwapped}
 import genesis_prime/step
 import genesis_prime/store.{
-  type HeldItem, AccountId, CharacterId, HeldItem, ItemMove, ItemPlace,
-  ItemsNotSaved, ItemsSaved, MoveItems, SaveRefused,
+  type HeldItem, AccountId, CharacterId, HeldItem, ItemMade, ItemMove, ItemPlace,
+  ItemsNotSaved, ItemsSaved, MergeItems, MoveItems, SaveRefused, SplitItem,
 }
 import genesis_prime/table/id.{Item2Id}
 import gleam/list
@@ -456,4 +471,477 @@ pub fn a_move_the_store_did_not_make_is_refused_db_failure_test() -> Nil {
     as "no place the rule asks for breaks a constraint, so it is a bug of the server's"
   assert string.contains(text, "character_item_one_per_slot")
     as "the failed write names the constraint"
+}
+
+/// Item2 1039, a stackable item of the client's tables that holds 20.
+fn stackable() -> Int {
+  fixture_tables.root("Item2", 1039)
+}
+
+/// Item2 12049: a bag the client lets hold 6 with no stackable flag.
+fn bag() -> Int {
+  fixture_tables.root("Item2", 12_049)
+}
+
+/// Item2 80875: its flags hold 0x10000, so it cannot be deleted, and it stacks
+/// to 1.
+fn undeletable() -> Int {
+  fixture_tables.root("Item2", 80_875)
+}
+
+/// An item of the inventory.
+fn in_bag(
+  guid guid: Int,
+  item2_id item2_id: Int,
+  index index: Int,
+  count count: Int,
+) -> HeldItem {
+  HeldItem(
+    item_guid: guid,
+    item2_id: Item2Id(item2_id),
+    location: 1,
+    bag_index: index,
+    stack_count: count,
+  )
+}
+
+fn body_of_split(
+  guid guid: Int,
+  to to: #(Int, Int),
+  count count: Int,
+) -> BitArray {
+  let assert Ok(body) =
+    item_split.encode(ItemSplit(
+      item_guid: guid,
+      to: item_place.ItemPlace(location: to.0, bag_index: to.1),
+      count:,
+    ))
+    as "a guid, a place and a count fit 0x17D"
+  body
+}
+
+fn body_of_delete(at at: #(Int, Int)) -> BitArray {
+  let assert Ok(body) =
+    item_delete.encode(
+      ItemDelete(place: item_place.ItemPlace(location: at.0, bag_index: at.1)),
+    )
+    as "a place of 9 and 32 bits fits 0x149"
+  body
+}
+
+fn split_taken(
+  items items: List(HeldItem),
+  life life: Life,
+  guid guid: Int,
+  to to: #(Int, Int),
+  count count: Int,
+) -> Result(Taken, inventory.Refusal) {
+  inventory.take(
+    items:,
+    life:,
+    tables: fixture_tables.shared(),
+    message: SplitAsked,
+    body: body_of_split(guid:, to:, count:),
+  )
+}
+
+fn delete_taken(
+  items items: List(HeldItem),
+  at at: #(Int, Int),
+) -> Result(Taken, inventory.Refusal) {
+  inventory.take(
+    items:,
+    life: alive(),
+    tables: fixture_tables.shared(),
+    message: DeleteAsked,
+    body: body_of_delete(at:),
+  )
+}
+
+fn asked(result: Result(Taken, inventory.Refusal)) -> Moving {
+  let assert Ok(Asks(moving:)) = result
+    as "the change passes every check, so the store is asked"
+  moving
+}
+
+/// The guid, count and reason of each 0x17F the effects write, in order.
+fn counts_in(effects: List(Effect)) -> List(#(Int, Int, Int)) {
+  list.map(sent(effects), fn(frame) {
+    assert frame.message_id == item_count_changed.message_id
+      as "opcode.0x17f: only count changes are written"
+    let assert Ok(ItemCountChanged(item_guid:, count:, reason:)) =
+      item_count_changed.decode(frame.body)
+    #(item_guid, count, reason)
+  })
+}
+
+fn count_of(items items: List(HeldItem), guid guid: Int) -> Int {
+  let assert Ok(item) = list.find(items, fn(item) { item.item_guid == guid })
+    as "the item is held"
+  item.stack_count
+}
+
+fn without(
+  items items: List(HeldItem),
+  guids guids: List(Int),
+) -> List(HeldItem) {
+  list.filter(items, fn(item) { !list.contains(guids, item.item_guid) })
+}
+
+pub fn a_split_onto_an_empty_slot_is_saved_then_answered_with_the_new_stack_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A stack of 10 of Item2 1039 in inventory slot 1; 3 of it go to slot 2.
+  let stack = in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10)
+  let items = list.append(held(), [stack])
+  let moving =
+    asked(split_taken(items:, life: alive(), guid: 20, to: #(1, 2), count: 3))
+  assert moving.guid == 20 as "a refusal would name the stack the player split"
+  assert moving.change
+    == inventory.Split(source: stack, count: 3, to: ItemPlace(1, 2))
+    as "3 of the stack to the empty slot"
+  assert inventory.request(
+      moving:,
+      account_id: AccountId(7),
+      character_id: CharacterId(42),
+      session_epoch: character_support.epoch(1),
+    )
+    == store.Items(SplitItem(
+      account_id: AccountId(7),
+      character_id: CharacterId(42),
+      session_epoch: character_support.epoch(1),
+      source: stack,
+      count: 3,
+      to: ItemPlace(1, 2),
+    ))
+    as "the store is asked for the split, fenced by the login's epoch and the stack as held"
+  let #(made, effects) =
+    inventory.answered(items:, moving:, answer: ItemMade(item_guid: 77))
+  assert count_of(items: made, guid: 20) == 7
+    as "the source keeps what is left of it"
+  assert list.find(made, fn(item) { item.item_guid == 77 })
+    == Ok(in_bag(guid: 77, item2_id: stackable(), index: 2, count: 3))
+    as "opcode.0x111.guid: the new stack is held with the guid the store made, the same Item2, the empty slot and the count"
+  assert without(items: made, guids: [20, 77]) == without(items:, guids: [20])
+    as "no other item changed"
+  let frames = sent(effects)
+  assert list.map(frames, fn(frame) { frame.message_id }) == [0x017F, 0x0111]
+    as "opcode.0x17f of the source then opcode.0x111 of the new stack"
+  let assert [counted, added] = frames
+  assert item_count_changed.decode(counted.body)
+    == Ok(ItemCountChanged(item_guid: 20, count: 7, reason: 0))
+    as "opcode.0x17f: the source's new count, reason 0 (StackSplit, which raises no loot notice, 0x1403b8060)"
+  let assert Ok(item_added.ItemAdded(held_item:)) =
+    item_added.decode(added.body)
+  let shared = held_item.item
+  assert #(
+      shared.item_guid,
+      shared.item_id,
+      shared.location,
+      shared.bag_index,
+      shared.stack_count,
+      held_item.reason,
+    )
+    == #(77, 1039, 1, 2, 3, 0)
+    as "opcode.0x111: the new stack's guid, item, place and count, reason 0"
+}
+
+pub fn a_split_the_client_would_not_send_is_refused_with_its_code_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let stack = in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10)
+  let items = list.append(held(), [stack])
+  // Each row: what it breaks, the guid, the destination, the count, and the
+  // guid and code of the 0x56A.
+  let rows = [
+    // Check 1: no held item has the guid, so the guid is 0.
+    #("no held item has the guid", 999, #(1, 2), 3, 0, 1),
+    // Check 2: the count is 0, or the held count or more (10).
+    #("count 0", 20, #(1, 2), 0, 20, 1),
+    #("count equal to the stack", 20, #(1, 2), 10, 20, 1),
+    #("count past the stack", 20, #(1, 2), 11, 20, 1),
+    #("count 0 to the bank", 20, #(2, 0), 0, 20, 1),
+    // Check 3: the bank, an equipped bank bag slot and location 10 are not
+    // opened by the server.
+    #("bank destination", 20, #(2, 0), 3, 20, 2),
+    #("equipped bank bag slot 21", 20, #(0, 21), 3, 20, 2),
+    #("location 10", 20, #(10, 0), 3, 20, 2),
+    // Check 4: any other place that is not the inventory, or an index of 96 or
+    // more.
+    #("equipped destination", 20, #(0, 5), 3, 20, 1),
+    #("location 300", 20, #(300, 0), 3, 20, 1),
+    #("inventory index 96", 20, #(1, 96), 3, 20, 1),
+    // Check 5: the inventory holds 16 slots with no bags worn.
+    #("inventory index 16", 20, #(1, 16), 3, 20, 37),
+    // Check 6: an item is held at the destination (the spare chest piece).
+    #("an occupied slot", 20, #(1, 0), 3, 20, 1),
+  ]
+  list.each(rows, fn(row) {
+    let #(what, guid, to, count, shown, code) = row
+    let assert Ok(Refused(effects:)) =
+      split_taken(items:, life: alive(), guid:, to:, count:)
+      as { what <> ": refused, so no ask is made" }
+    assert failed_with(effects) == [#(shown, code)]
+      as { what <> ": one 0x56A with the code of the check" }
+    assert list.length(effects) == 1
+      as { what <> ": nothing else is written or logged" }
+  })
+  // The client's split path has no dead or combat check (opcode.0x17d), so a
+  // player in either is asked for.
+  list.each([dead(), fighting()], fn(life) {
+    assert is_ask(split_taken(items:, life:, guid: 20, to: #(1, 2), count: 3))
+      as "a split in combat or dead is asked for"
+  })
+  let assert Error(NotDecoded(undecoded:)) =
+    inventory.take(
+      items:,
+      life: alive(),
+      tables: fixture_tables.shared(),
+      message: SplitAsked,
+      body: <<1, 2, 3>>,
+    )
+    as "a body too short for a split is refused"
+  assert undecoded_message(undecoded) == 0x017D
+}
+
+pub fn a_move_onto_a_stack_of_the_same_item_merges_it_whole_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 3 of Item2 1039 in slot 1 dropped on 4 of it in slot 2: the limit is 20, so
+  // all 3 fit.
+  let source = in_bag(guid: 20, item2_id: stackable(), index: 1, count: 3)
+  let target = in_bag(guid: 21, item2_id: stackable(), index: 2, count: 4)
+  let items = list.append(held(), [source, target])
+  let moving = accepted(items:, from: #(1, 1), to: #(1, 2))
+  assert moving.guid == 20 as "the item the player dragged"
+  assert moving.change == inventory.Merged(source:, target:, count: 3)
+    as "all 3 of the source go onto the target"
+  assert inventory.request(
+      moving:,
+      account_id: AccountId(7),
+      character_id: CharacterId(42),
+      session_epoch: character_support.epoch(1),
+    )
+    == store.Items(MergeItems(
+      account_id: AccountId(7),
+      character_id: CharacterId(42),
+      session_epoch: character_support.epoch(1),
+      source:,
+      target:,
+      count: 3,
+    ))
+    as "the store is asked for the merge, fenced by the login's epoch and both stacks as held"
+  let #(merged, effects) =
+    inventory.answered(items:, moving:, answer: ItemsSaved)
+  assert count_of(items: merged, guid: 21) == 7 as "the target holds the sum"
+  assert list.find(merged, fn(item) { item.item_guid == 20 }) == Error(Nil)
+    as "the source is gone"
+  assert without(items: merged, guids: [21]) == without(items:, guids: [20, 21])
+    as "no other item changed"
+  let frames = sent(effects)
+  assert list.map(frames, fn(frame) { frame.message_id }) == [0x017F, 0x0148]
+    as "opcode.0x17f of the target then opcode.0x148 of the source"
+  let assert [counted, removed] = frames
+  assert item_count_changed.decode(counted.body)
+    == Ok(ItemCountChanged(item_guid: 21, count: 7, reason: 0))
+    as "opcode.0x17f: the target's new count, reason 0, which also clears the move wait"
+  assert item_removed.decode(removed.body)
+    == Ok(ItemRemoved(item_guid: 20, reason: 0))
+    as "opcode.0x148: the source is gone, reason 0"
+}
+
+pub fn a_merge_past_the_stack_limit_fills_the_target_and_keeps_the_rest_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Item2 1039 holds 20 (maxStackCount): the target at 18 has room for 2 of the
+  // source's 5.
+  let source = in_bag(guid: 20, item2_id: stackable(), index: 1, count: 5)
+  let target = in_bag(guid: 21, item2_id: stackable(), index: 2, count: 18)
+  let items = list.append(held(), [source, target])
+  let moving = accepted(items:, from: #(1, 1), to: #(1, 2))
+  assert moving.change == inventory.Merged(source:, target:, count: 2)
+    as "only the 2 that fit move"
+  let #(merged, effects) =
+    inventory.answered(items:, moving:, answer: ItemsSaved)
+  assert count_of(items: merged, guid: 21) == 20
+    as "the target is full, at the Item2's maxStackCount"
+  assert count_of(items: merged, guid: 20) == 3
+    as "the source keeps the 3 that did not fit"
+  assert list.length(merged) == list.length(items)
+  assert counts_in(effects) == [#(21, 20, 0), #(20, 3, 0)]
+    as "opcode.0x17f of the target at the limit then of the source at what is left, reason 0"
+}
+
+pub fn a_move_onto_a_full_stack_or_an_item_that_does_not_stack_swaps_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Each row: what it is, the item in slot 1, the item in slot 2. A 0x182 of
+  // slot 1 onto slot 2 is #579's swap for each.
+  let rows = [
+    #(
+      "a full target",
+      in_bag(guid: 20, item2_id: stackable(), index: 1, count: 5),
+      in_bag(guid: 21, item2_id: stackable(), index: 2, count: 20),
+    ),
+    #(
+      "a stack that holds only 1",
+      in_bag(guid: 20, item2_id: undeletable(), index: 1, count: 1),
+      in_bag(guid: 21, item2_id: undeletable(), index: 2, count: 1),
+    ),
+    #(
+      "a bag of the same Item2 id",
+      in_bag(guid: 20, item2_id: bag(), index: 1, count: 1),
+      in_bag(guid: 21, item2_id: bag(), index: 2, count: 1),
+    ),
+    #(
+      "a different Item2 id",
+      in_bag(guid: 20, item2_id: stackable(), index: 1, count: 5),
+      in_bag(guid: 21, item2_id: bag(), index: 2, count: 1),
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(what, first, second) = row
+    let items = list.append(held(), [first, second])
+    let moving = accepted(items:, from: #(1, 1), to: #(1, 2))
+    assert moves_of(moving)
+      == [
+        ItemMove(item_guid: 20, from: ItemPlace(1, 1), to: ItemPlace(1, 2)),
+        ItemMove(item_guid: 21, from: ItemPlace(1, 2), to: ItemPlace(1, 1)),
+      ]
+      as { what <> ": the two items trade places" }
+    let #(swapped, effects) =
+      inventory.answered(items:, moving:, answer: ItemsSaved)
+    assert at(items: swapped, guid: 20) == #(1, 2)
+    assert at(items: swapped, guid: 21) == #(1, 1)
+    assert count_of(items: swapped, guid: 20) == first.stack_count
+      as { what <> ": no count changed" }
+    assert list.map(sent(effects), fn(frame) { frame.message_id }) == [0x0568]
+      as { what <> ": opcode.0x568, the swap's answer" }
+  })
+}
+
+pub fn a_delete_is_saved_then_answered_with_the_destroy_reason_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let stack = in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10)
+  let items = list.append(held(), [stack])
+  let moving = asked(delete_taken(items:, at: #(1, 1)))
+  assert moving.guid == 20
+  assert moving.change == inventory.Deleted(item: stack)
+    as "the whole stack at the place"
+  assert inventory.request(
+      moving:,
+      account_id: AccountId(7),
+      character_id: CharacterId(42),
+      session_epoch: character_support.epoch(1),
+    )
+    == store.Items(store.DeleteItem(
+      account_id: AccountId(7),
+      character_id: CharacterId(42),
+      session_epoch: character_support.epoch(1),
+      item: stack,
+    ))
+    as "the store is asked for the delete, fenced by the login's epoch and the item as held"
+  let #(left, effects) = inventory.answered(items:, moving:, answer: ItemsSaved)
+  assert left == held() as "the stack is gone and no other item changed"
+  let assert [frame] = sent(effects)
+  assert frame.message_id == 0x0148
+  assert item_removed.decode(frame.body)
+    == Ok(ItemRemoved(item_guid: 20, reason: 21))
+    as "opcode.0x148 with the reason 21, PlayerRequested"
+  assert list.length(effects) == 1
+}
+
+pub fn a_delete_the_client_would_not_send_is_refused_with_its_code_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let stack = in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10)
+  let locked = in_bag(guid: 21, item2_id: undeletable(), index: 3, count: 1)
+  let items = list.append(held(), [stack, locked])
+  // Each row: what it breaks, the place, and the guid and code of the 0x56A.
+  // The first four are places the client's sender (0x1403c1360) sends nothing
+  // for, so the guid is 0.
+  let rows = [
+    #("location 300", #(300, 0), 0, 1),
+    #("bag index 0xffffffff", #(1, 0xffffffff), 0, 1),
+    #("equipped index 31", #(0, 31), 0, 1),
+    #("an empty place", #(1, 50), 0, 1),
+    // Item2 80875's flags hold 0x10000: Item_CannotBeDeleted.
+    #("an Item2 whose flags hold 0x10000", #(1, 3), 21, 156),
+  ]
+  list.each(rows, fn(row) {
+    let #(what, at, guid, code) = row
+    let assert Ok(Refused(effects:)) = delete_taken(items:, at:)
+      as { what <> ": refused, so no ask is made" }
+    assert failed_with(effects) == [#(guid, code)]
+      as { what <> ": one 0x56A with the code" }
+    assert list.length(effects) == 1
+      as { what <> ": nothing else is written or logged" }
+  })
+  // An item with no Item2 row is the server's broken state: the connection ends.
+  let broken =
+    list.append(held(), [
+      in_bag(guid: 22, item2_id: 99_999_999, index: 4, count: 1),
+    ])
+  let assert Error(NoItemRow(item2_id:)) =
+    delete_taken(items: broken, at: #(1, 4))
+    as "no row for the item ends the connection, as the client's sender gives Item_BadId"
+  assert item2_id == Item2Id(99_999_999)
+  let assert Error(NotDecoded(undecoded:)) =
+    inventory.take(
+      items:,
+      life: alive(),
+      tables: fixture_tables.shared(),
+      message: DeleteAsked,
+      body: <<1>>,
+    )
+    as "a body too short for a place is refused"
+  assert undecoded_message(undecoded) == 0x0149
+}
+
+pub fn a_split_merge_or_delete_the_store_did_not_save_is_refused_db_failure_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let source = in_bag(guid: 20, item2_id: stackable(), index: 1, count: 5)
+  let target = in_bag(guid: 21, item2_id: stackable(), index: 2, count: 4)
+  let items = list.append(held(), [source, target])
+  // Each row: what the change does, the word its log line holds, the change.
+  let changes = [
+    #(
+      "split",
+      "split",
+      asked(split_taken(items:, life: alive(), guid: 20, to: #(1, 3), count: 2)),
+    ),
+    #("merge", "merged", accepted(items:, from: #(1, 1), to: #(1, 2))),
+    #("delete", "deleted", asked(delete_taken(items:, at: #(1, 1)))),
+  ]
+  list.each(changes, fn(change) {
+    let #(what, word, moving) = change
+    let #(unchanged, effects) =
+      inventory.answered(items:, moving:, answer: ItemsNotSaved)
+    assert unchanged == items
+      as { what <> ": nothing was saved, so the items are as they were" }
+    assert failed_with(effects) == [#(20, 5)]
+      as {
+        what <> ": GenericError 5 DbFailure, naming the stack the player named"
+      }
+    let assert [Log(level:, text:), Send(..)] = effects
+      as { what <> ": a log line, then the refusal" }
+    assert level == step.LogWarning
+      as {
+        what
+        <> ": a later login or a stale row is an outside failure, a warning"
+      }
+    assert string.contains(text, word)
+    let #(unchanged, effects) =
+      inventory.answered(
+        items:,
+        moving:,
+        answer: SaveRefused(constraint: "character_item_one_per_slot"),
+      )
+    assert unchanged == items
+      as { what <> ": a refused change leaves the items as they were" }
+    assert failed_with(effects) == [#(20, 5)]
+    let assert [Log(level:, text:), Send(..)] = effects
+      as { what <> ": a log line, then the refusal" }
+    assert level == step.LogError
+      as {
+        what
+        <> ": no change the rule asks for breaks a constraint, so it is a bug of the server's"
+      }
+    assert string.contains(text, "character_item_one_per_slot")
+      as { what <> ": the failed write names the constraint" }
+  })
 }

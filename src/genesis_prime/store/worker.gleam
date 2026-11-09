@@ -95,8 +95,8 @@ import genesis_prime/store.{
   CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
   CharacterRenamed, CreateCharacter, CreateForNoSuchAccount, Created,
   DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FindAccount, ForItems,
-  ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem, Items,
-  ItemsNotSaved, ItemsSaved, ListCharacters, Listed, LoadCharacter, Login,
+  ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem, ItemMade,
+  Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed, LoadCharacter, Login,
   MergeItems, Move, MoveItems, NameBreaksRule, NameStands, NameTaken,
   NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount,
   NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved,
@@ -323,13 +323,16 @@ fn run_request(request: Request, pool: pog.Connection) -> Answer {
   result.unwrap(answer, Unavailable)
 }
 
-/// Runs one of the player's items' requests: a move is one transaction, the
+/// Runs one of the player's items' requests: each is one transaction, the
 /// character's row lock (lock_character_for_save.sql) and then one statement
-/// that names the account, the character, the epoch and every item's old and new
-/// place (move_character_items.sql), answering `ItemsSaved` when it moved as many
-/// items as the request has moves, `ItemsNotSaved` when it moved none and
-/// `SaveRefused` when a check or the unique key of the character_item table
-/// refused a place; `Error(Nil)` when the database is away.
+/// that names the account, the character, the epoch and each item as the request
+/// holds it (move_character_items.sql, split_character_item.sql,
+/// merge_character_items.sql, delete_character_item.sql). A move answers
+/// `ItemsSaved` when it moved as many items as the request has moves, a split
+/// `ItemMade` with the new stack's guid, a merge and a delete `ItemsSaved`;
+/// each answers `ItemsNotSaved` when it changed nothing and `SaveRefused` when a
+/// check or the unique key of the character_item table refused a place;
+/// `Error(Nil)` when the database is away.
 fn items(
   pool: pog.Connection,
   request: ItemsRequest,
@@ -337,9 +340,174 @@ fn items(
   case request {
     MoveItems(account_id:, character_id:, session_epoch:, moves:) ->
       move_items(pool:, account_id:, character_id:, session_epoch:, moves:)
-    SplitItem(..) -> panic as "shape: the split statement is not written yet"
-    MergeItems(..) -> panic as "shape: the merge statement is not written yet"
-    DeleteItem(..) -> panic as "shape: the delete statement is not written yet"
+    SplitItem(account_id:, character_id:, session_epoch:, source:, count:, to:) ->
+      split_item(
+        pool:,
+        account_id:,
+        character_id:,
+        session_epoch:,
+        source:,
+        count:,
+        to:,
+      )
+    MergeItems(
+      account_id:,
+      character_id:,
+      session_epoch:,
+      source:,
+      target:,
+      count:,
+    ) ->
+      merge_items(
+        pool:,
+        account_id:,
+        character_id:,
+        session_epoch:,
+        source:,
+        target:,
+        count:,
+      )
+    DeleteItem(account_id:, character_id:, session_epoch:, item:) ->
+      delete_item(pool:, account_id:, character_id:, session_epoch:, item:)
+  }
+}
+
+/// A split: the character's row lock and then split_character_item.sql, answered
+/// with `ItemMade` and the new stack's guid, `ItemsNotSaved` when the statement
+/// changed nothing and `SaveRefused` when a taken place broke the table's unique
+/// key.
+fn split_item(
+  pool pool: pog.Connection,
+  account_id account_id: store.AccountId,
+  character_id character_id: store.CharacterId,
+  session_epoch session_epoch: store.SessionEpoch,
+  source source: store.HeldItem,
+  count count: Int,
+  to to: store.ItemPlace,
+) -> Result(ItemsAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  case
+    attempt(fn() {
+      in_transaction(pool, fn(connection) {
+        use _ <- result.try(sql.lock_character_for_save(
+          connection,
+          character_id,
+          account_id,
+        ))
+        sql.split_character_item(
+          connection,
+          character_id,
+          account_id,
+          store.session_epoch_number(session_epoch),
+          source.item_guid,
+          source.location,
+          source.bag_index,
+          source.stack_count,
+          count,
+          to.location,
+          to.bag_index,
+        )
+      })
+    })
+  {
+    Ok([]) -> Ok(ItemsNotSaved)
+    Ok([row]) -> Ok(ItemMade(item_guid: row.item_guid))
+    Ok(_) -> panic as "the statement makes one stack or none"
+    Error(Unreachable) -> Error(Nil)
+    Error(Refused(constraint:, ..)) -> Ok(SaveRefused(constraint:))
+    Error(Unexpected(error:)) -> exit_with(error)
+  }
+}
+
+/// A merge: the character's row lock and then merge_character_items.sql,
+/// answered with `ItemsSaved` when it changed both stacks and `ItemsNotSaved`
+/// when it changed none.
+fn merge_items(
+  pool pool: pog.Connection,
+  account_id account_id: store.AccountId,
+  character_id character_id: store.CharacterId,
+  session_epoch session_epoch: store.SessionEpoch,
+  source source: store.HeldItem,
+  target target: store.HeldItem,
+  count count: Int,
+) -> Result(ItemsAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  case
+    attempt(fn() {
+      in_transaction(pool, fn(connection) {
+        use _ <- result.try(sql.lock_character_for_save(
+          connection,
+          character_id,
+          account_id,
+        ))
+        sql.merge_character_items(
+          connection,
+          character_id,
+          account_id,
+          store.session_epoch_number(session_epoch),
+          source.item_guid,
+          source.location,
+          source.bag_index,
+          source.stack_count,
+          target.item_guid,
+          target.location,
+          target.bag_index,
+          target.stack_count,
+          count,
+        )
+      })
+    })
+  {
+    Ok([]) -> Ok(ItemsNotSaved)
+    Ok([_, _]) -> Ok(ItemsSaved)
+    Ok(_) -> panic as "the statement changes both stacks or none"
+    Error(Unreachable) -> Error(Nil)
+    Error(Refused(constraint:, ..)) -> Ok(SaveRefused(constraint:))
+    Error(Unexpected(error:)) -> exit_with(error)
+  }
+}
+
+/// A delete: the character's row lock and then delete_character_item.sql,
+/// answered with `ItemsSaved` when it deleted the stack and `ItemsNotSaved` when
+/// it deleted none.
+fn delete_item(
+  pool pool: pog.Connection,
+  account_id account_id: store.AccountId,
+  character_id character_id: store.CharacterId,
+  session_epoch session_epoch: store.SessionEpoch,
+  item item: store.HeldItem,
+) -> Result(ItemsAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  case
+    attempt(fn() {
+      in_transaction(pool, fn(connection) {
+        use _ <- result.try(sql.lock_character_for_save(
+          connection,
+          character_id,
+          account_id,
+        ))
+        sql.delete_character_item(
+          connection,
+          character_id,
+          account_id,
+          store.session_epoch_number(session_epoch),
+          item.item_guid,
+          item.location,
+          item.bag_index,
+          item.stack_count,
+        )
+      })
+    })
+  {
+    Ok([]) -> Ok(ItemsNotSaved)
+    Ok([_]) -> Ok(ItemsSaved)
+    Ok(_) -> panic as "the statement deletes one stack or none"
+    Error(Unreachable) -> Error(Nil)
+    Error(Refused(constraint:, ..)) -> Ok(SaveRefused(constraint:))
+    Error(Unexpected(error:)) -> exit_with(error)
   }
 }
 

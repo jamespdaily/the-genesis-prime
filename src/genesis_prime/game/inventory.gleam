@@ -102,9 +102,13 @@ import genesis_prime/message/float32
 import genesis_prime/message/held_item
 import genesis_prime/message/item_action_failed.{ItemActionFailed}
 import genesis_prime/message/item_added.{ItemAdded}
+import genesis_prime/message/item_count_changed.{ItemCountChanged}
+import genesis_prime/message/item_delete
 import genesis_prime/message/item_move
 import genesis_prime/message/item_moved.{ItemMoved}
 import genesis_prime/message/item_place.{type ItemPlace}
+import genesis_prime/message/item_removed.{ItemRemoved}
+import genesis_prime/message/item_split
 import genesis_prime/message/items_swapped.{ItemsSwapped}
 import genesis_prime/message/shared_item.{SharedItem}
 import genesis_prime/step.{type LogLevel, LogError, LogWarning}
@@ -118,6 +122,7 @@ import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// The inventory message of the player in the world, which the client sends
@@ -226,11 +231,31 @@ const item_locked = 32
 /// 37 Item_BagToSmall.
 const bag_too_small = 37
 
+/// 156 Item_CannotBeDeleted.
+const cannot_be_deleted = 156
+
 /// 57 Player_CantDoWhileDead.
 const cant_do_while_dead = 57
 
 /// 63 Player_CannotWhileInCombat.
 const cannot_while_in_combat = 63
+
+/// The reason of the replies to a split and a merge: 0 StackSplit, which raises
+/// no notice (0x1403b8060).
+const stack_split = 0
+
+/// The reason of the reply to a delete: 21 PlayerRequested (0x1403b8250).
+const player_requested = 21
+
+/// A bag index the client's delete never sends (0x1403c1360).
+const unset_bag_index = 0xffffffff
+
+/// The last equipped index of a place the client's delete sends: it sends
+/// nothing for an equipped index of 31 or more.
+const last_deletable_equipped_index = 30
+
+/// The location from which the client's delete sends nothing (0x1403c1360).
+const first_location_never_deleted = 300
 
 /// What the client's message is answered with: a refusal with the code of the
 /// first check it breaks, or the store's ask, or the refusal for a body the
@@ -244,9 +269,144 @@ pub fn take(
 ) -> Result(Taken, Refusal) {
   case message {
     MoveAsked -> take_move(items:, life:, tables:, body:)
-    SplitAsked -> panic as "shape: the split's checks are not written yet"
-    DeleteAsked -> panic as "shape: the delete's checks are not written yet"
+    SplitAsked -> take_split(items:, body:)
+    DeleteAsked -> take_delete(items:, tables:, body:)
   }
+}
+
+/// A 0x56A that refuses with the code, naming the item the player named.
+fn refused_with(
+  item item: Result(HeldItem, Nil),
+  code code: Int,
+) -> Result(Taken, Refusal) {
+  Ok(
+    Refused([
+      Send(failed(
+        guid: result.map(item, fn(item) { item.item_guid }) |> result.unwrap(0),
+        code:,
+      )),
+    ]),
+  )
+}
+
+/// What a 0x017D is answered with: the first of the split's checks it breaks
+/// (this module's doc), else the ask.
+fn take_split(
+  items items: List(HeldItem),
+  body body: BitArray,
+) -> Result(Taken, Refusal) {
+  use split <- result.try(
+    item_split.decode(body)
+    |> client_connection.decoded(message_id: item_split.message_id)
+    |> result.map_error(NotDecoded),
+  )
+  let to = split.to
+  let source = list.find(items, fn(item) { item.item_guid == split.item_guid })
+  case source {
+    Error(Nil) -> refused_with(item: source, code: params)
+    Ok(item) ->
+      case split.count < 1 || split.count >= item.stack_count {
+        True -> refused_with(item: source, code: params)
+        False ->
+          case split_code(items:, to:) {
+            Error(code) -> refused_with(item: source, code:)
+            Ok(Nil) -> {
+              let place =
+                store.ItemPlace(location: to.location, bag_index: to.bag_index)
+              Ok(
+                Asks(Moving(
+                  guid: item.item_guid,
+                  change: Split(source: item, count: split.count, to: place),
+                  items: restacked(
+                    items:,
+                    guid: item.item_guid,
+                    count: item.stack_count - split.count,
+                  ),
+                )),
+              )
+            }
+          }
+      }
+  }
+}
+
+/// The code of the first of a split's checks on the destination that it breaks.
+fn split_code(
+  items items: List(HeldItem),
+  to to: ItemPlace,
+) -> Result(Nil, Int) {
+  use <- bool.guard(when: closed(to), return: Error(player_busy))
+  use <- bool.guard(
+    when: to.location != in_bags || to.bag_index >= inventory_slots,
+    return: Error(params),
+  )
+  use <- bool.guard(
+    when: to.bag_index >= usable_inventory_size,
+    return: Error(bag_too_small),
+  )
+  case held_at(items:, place: to) {
+    Ok(_) -> Error(params)
+    Error(Nil) -> Ok(Nil)
+  }
+}
+
+/// What a 0x0149 is answered with: the first of the delete's checks it breaks
+/// (this module's doc), else the ask.
+fn take_delete(
+  items items: List(HeldItem),
+  tables tables: table_store.Tables,
+  body body: BitArray,
+) -> Result(Taken, Refusal) {
+  use delete <- result.try(
+    item_delete.decode(body)
+    |> client_connection.decoded(message_id: item_delete.message_id)
+    |> result.map_error(NotDecoded),
+  )
+  let place = delete.place
+  use <- bool.lazy_guard(
+    when: place.location >= first_location_never_deleted
+      || place.bag_index == unset_bag_index
+      || {
+      place.location == equipped
+      && place.bag_index > last_deletable_equipped_index
+    },
+    return: fn() { refused_with(item: Error(Nil), code: params) },
+  )
+  case held_at(items:, place:) {
+    Error(Nil) -> refused_with(item: Error(Nil), code: params)
+    Ok(item) ->
+      case item_property.deletable(tables:, item2_id: item.item2_id.value) {
+        Error(_) -> Error(NoItemRow(item2_id: item.item2_id))
+        Ok(False) -> refused_with(item: Ok(item), code: cannot_be_deleted)
+        Ok(True) ->
+          Ok(
+            Asks(Moving(
+              guid: item.item_guid,
+              change: Deleted(item:),
+              items: without(items:, guid: item.item_guid),
+            )),
+          )
+      }
+  }
+}
+
+/// The items with the stack of the guid holding `count`.
+fn restacked(
+  items items: List(HeldItem),
+  guid guid: Int,
+  count count: Int,
+) -> List(HeldItem) {
+  list.map(items, fn(item) {
+    case item.item_guid == guid {
+      True -> store.HeldItem(..item, stack_count: count)
+      False -> item
+    }
+  })
+}
+
+/// The items but the one of the guid.
+fn without(items items: List(HeldItem), guid guid: Int) -> List(HeldItem) {
+  list.filter(items, fn(item) { item.item_guid != guid })
 }
 
 /// What a 0x0182 is answered with.
@@ -275,8 +435,72 @@ fn take_move(
           )),
         ]),
       )
-    Ok(item) -> Ok(Asks(moving(items:, move:, item:, destination:)))
+    Ok(item) ->
+      case merge(items:, tables:, item:, destination:) {
+        Error(refusal) -> Error(refusal)
+        Ok(Some(merging)) -> Ok(Asks(merging))
+        Ok(None) -> Ok(Asks(moving(items:, move:, item:, destination:)))
+      }
   }
+}
+
+/// The merge a move makes when it lands on a stack of the same Item2 that
+/// stacks and has room under the Item2's maxStackCount: as much of the moved
+/// stack as fits goes onto it (the drop handler 0x1406d50f0 sends such a drop
+/// as a 0x182, and a drop on any other occupied slot as the same message, which
+/// swaps). `None` for a move that swaps. An item with no row in the tables is
+/// no answer at all.
+fn merge(
+  items items: List(HeldItem),
+  tables tables: table_store.Tables,
+  item item: HeldItem,
+  destination destination: Result(HeldItem, Nil),
+) -> Result(Option(Moving), Refusal) {
+  case destination {
+    Ok(target) if target.item2_id == item.item2_id -> {
+      let broken = fn(_) { NoItemRow(item2_id: item.item2_id) }
+      let item2_id = item.item2_id.value
+      use stackable <- result.try(
+        item_property.stackable(tables:, item2_id:) |> result.map_error(broken),
+      )
+      use maximum <- result.map(
+        item_property.max_stack_count(tables:, item2_id:)
+        |> result.map_error(broken),
+      )
+      case stackable && target.stack_count < maximum {
+        False -> None
+        True ->
+          Some(merged(
+            items:,
+            source: item,
+            target:,
+            count: int.min(item.stack_count, maximum - target.stack_count),
+          ))
+      }
+    }
+    Ok(_) | Error(Nil) -> Ok(None)
+  }
+}
+
+/// The ask and the answer of `count` of the stack `source` put onto the stack
+/// `target`: the target is raised and the source goes when none of it is left.
+fn merged(
+  items items: List(HeldItem),
+  source source: HeldItem,
+  target target: HeldItem,
+  count count: Int,
+) -> Moving {
+  let raised =
+    restacked(items:, guid: target.item_guid, count: target.stack_count + count)
+  let left = source.stack_count - count
+  Moving(
+    guid: source.item_guid,
+    change: Merged(source:, target:, count:),
+    items: case left {
+      0 -> without(items: raised, guid: source.item_guid)
+      _ -> restacked(items: raised, guid: source.item_guid, count: left)
+    },
+  )
 }
 
 /// The item held at the place, if any.
@@ -585,28 +809,105 @@ pub fn answered(
     ItemsSaved ->
       case moving.change {
         Moved(moved:, ..) -> #(moving.items, [Send(moved)])
-        Merged(..) | Deleted(..) ->
-          panic as "shape: the merge's and the delete's replies are not written yet"
+        Merged(source:, target:, count:) -> #(moving.items, [
+          Send(count_changed(
+            guid: target.item_guid,
+            count: target.stack_count + count,
+          )),
+          Send(case count == source.stack_count {
+            True -> removed(guid: source.item_guid, reason: stack_split)
+            False ->
+              count_changed(
+                guid: source.item_guid,
+                count: source.stack_count - count,
+              )
+          }),
+        ])
+        Deleted(item:) -> #(moving.items, [
+          Send(removed(guid: item.item_guid, reason: player_requested)),
+        ])
         Split(..) -> panic as "the store answers a split with ItemMade"
       }
-    ItemMade(item_guid: _) ->
-      panic as "shape: the split's replies are not written yet"
+    ItemMade(item_guid:) ->
+      case moving.change {
+        Split(source:, count:, to:) -> #(
+          list.append(moving.items, [
+            store.HeldItem(
+              item_guid:,
+              item2_id: source.item2_id,
+              location: to.location,
+              bag_index: to.bag_index,
+              stack_count: count,
+            ),
+          ]),
+          [
+            Send(count_changed(
+              guid: source.item_guid,
+              count: source.stack_count - count,
+            )),
+            Send(item_added_frame(
+              item_guid:,
+              item_id: source.item2_id.value,
+              location: to.location,
+              bag_index: to.bag_index,
+              stack_count: count,
+              reason: stack_split,
+            )),
+          ],
+        )
+        Moved(..) | Merged(..) | Deleted(..) ->
+          panic as "the store answers only a split with ItemMade"
+      }
     ItemsNotSaved -> #(items, [
       Log(
         level: LogWarning,
-        text: "the item was not moved: a later login holds the character, or the items are not where the client has them",
+        text: "the "
+          <> not_done(moving.change)
+          <> ": a later login holds the character, or the items are not where the client has them",
       ),
       Send(failed(guid: moving.guid, code: db_failure)),
     ])
     SaveRefused(constraint:) -> #(items, [
       Log(
         level: LogError,
-        text: "the item was not moved: the store refused the places by the constraint "
+        text: "the "
+          <> not_done(moving.change)
+          <> ": the store refused the places by the constraint "
           <> constraint,
       ),
       Send(failed(guid: moving.guid, code: db_failure)),
     ])
   }
+}
+
+/// What a change that was not saved did not do, for the log.
+fn not_done(change: Change) -> String {
+  case change {
+    Moved(..) -> "item was not moved"
+    Split(..) -> "stack was not split"
+    Merged(..) -> "stacks were not merged"
+    Deleted(..) -> "item was not deleted"
+  }
+}
+
+/// The 0x17F that gives a held item's stack its new count, with the reason 0.
+fn count_changed(guid guid: Int, count count: Int) -> Frame {
+  let assert Ok(body) =
+    item_count_changed.encode(ItemCountChanged(
+      item_guid: guid,
+      count:,
+      reason: stack_split,
+    ))
+    as "a guid, a count and a reason of 6 bits fit 0x17F"
+  Frame(message_id: item_count_changed.message_id, body:)
+}
+
+/// The 0x148 that takes a held item away.
+fn removed(guid guid: Int, reason reason: Int) -> Frame {
+  let assert Ok(body) =
+    item_removed.encode(ItemRemoved(item_guid: guid, reason:))
+    as "a guid and a reason of 6 bits fit 0x148"
+  Frame(message_id: item_removed.message_id, body:)
 }
 
 /// A sentence that says what the client sent that is refused, for the log.

@@ -9,6 +9,9 @@
 ////   the Engineer's Novice set, `novice_tables`) unequipped to inventory slot 0 is
 ////   guid 1 at place 256.
 //// - `opcode.0x1c2`: a chat line is answered with the speaker's own line.
+//// - `opcode.0x111.guid`: a split makes a stack whose guid only the store knows, so
+////   the client's next 0x182 of that stack, sent while the split's ask is out, is
+////   taken after the answer and finds the stack by its place with that guid.
 //// - `step.EffectsThenAsk`: the effects before an ask are written before the ask is
 ////   made, and the shell takes no other input while an ask is out, so the frames
 ////   the client sent meanwhile are held and taken after the answer.
@@ -20,24 +23,29 @@
 
 import character_support
 import connection_rule_support as support
+import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{AskStore, FromStore}
+import genesis_prime/game/connection as game_connection
 import genesis_prime/message/bit_stream
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/item_move
 import genesis_prime/message/item_moved.{ItemMoved}
 import genesis_prime/message/item_place
+import genesis_prime/message/item_split.{ItemSplit}
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/step.{
   EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning, OwnEvent,
 }
 import genesis_prime/store.{
-  AccountId, CharacterId, ForItems, ItemMove, ItemPlace, Items, ItemsSaved,
-  MoveItems,
+  type HeldItem, AccountId, CharacterId, ForItems, HeldItem, ItemMade, ItemMove,
+  ItemPlace, Items, ItemsSaved, MoveItems, SplitItem,
 }
+import genesis_prime/table/id.{Item2Id}
 import gleam/list
 import gleam/option.{None}
 import owned_test
+import world_entry_support
 
 /// A 0x182 of the chest piece from the worn slot 0 to inventory slot 0, as the
 /// client sends it, inside 0x038C.
@@ -164,4 +172,103 @@ pub fn a_move_the_store_cannot_answer_ends_the_connection_with_reason_8_test() -
         as "the player's place is saved, then 0x036A reason 8"
     },
   )
+}
+
+/// Item2 1039, a stackable item of the client's tables that holds 20.
+const stackable_item2 = 1039
+
+/// The Engineer's seven worn items and a stack of 10 of Item2 1039 in inventory
+/// slot 1, guid 20.
+fn stack() -> HeldItem {
+  HeldItem(
+    item_guid: 20,
+    item2_id: Item2Id(fixture_tables.root("Item2", stackable_item2)),
+    location: 1,
+    bag_index: 1,
+    stack_count: 10,
+  )
+}
+
+fn holding_a_stack() -> game_connection.State {
+  game_connection_support.in_world_holding(
+    items: list.append(
+      world_entry_support.novice_items(
+        character: game_connection_support.world_character(),
+      ),
+      [stack()],
+    ),
+  )
+}
+
+/// A 0x17d of 3 of the stack to the empty inventory slot 2, inside 0x038C.
+fn three_split_off() -> BitArray {
+  let assert Ok(body) =
+    item_split.encode(ItemSplit(
+      item_guid: 20,
+      to: item_place.ItemPlace(location: 1, bag_index: 2),
+      count: 3,
+    ))
+  game_connection_support.world_message(
+    message_id: item_split.message_id,
+    body:,
+  )
+}
+
+/// A 0x182 of whatever is in inventory slot 2 to the empty inventory slot 3.
+fn slot_2_to_slot_3() -> BitArray {
+  let assert Ok(body) =
+    item_move.encode(item_move.ItemMove(
+      from: item_place.ItemPlace(location: 1, bag_index: 2),
+      to: item_place.ItemPlace(location: 1, bag_index: 3),
+    ))
+  game_connection_support.world_message(message_id: 0x0182, body:)
+}
+
+pub fn a_split_answer_comes_before_the_frames_after_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) =
+    game_connection_support.read(holding_a_stack(), three_split_off())
+  assert game_connection_support.ask_request(taken)
+    == AskStore(
+      Items(SplitItem(
+        account_id: AccountId(7),
+        character_id: CharacterId(42),
+        session_epoch: character_support.epoch(1),
+        source: stack(),
+        count: 3,
+        to: ItemPlace(location: 1, bag_index: 2),
+      )),
+    )
+    as "opcode.0x17d: the accepted split is the store's ask, fenced by the login's epoch and the stack as held"
+  assert support.writes(taken) == []
+    as "nothing is written before the store has made the stack"
+  let #(state, held) = game_connection_support.read(state, slot_2_to_slot_3())
+  assert support.writes(held) == [] && support.asked(held) == None
+    as "step.EffectsThenAsk: the 0x182 of the new stack is held while the split's ask is out"
+  let #(_, answered) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForItems(ItemMade(item_guid: 77)))),
+    )
+  assert game_connection_support.written_ids(answered) == [0x017F, 0x0111]
+    as "opcode.0x17f then opcode.0x111: the source's count and the new stack, with the store's guid, go out before the held 0x182 is handled"
+  assert game_connection_support.ask_request(answered)
+    == AskStore(
+      Items(
+        MoveItems(
+          account_id: AccountId(7),
+          character_id: CharacterId(42),
+          session_epoch: character_support.epoch(1),
+          moves: [
+            ItemMove(
+              item_guid: 77,
+              from: ItemPlace(location: 1, bag_index: 2),
+              to: ItemPlace(location: 1, bag_index: 3),
+            ),
+          ],
+        ),
+      ),
+    )
+    as "opcode.0x111.guid: the held 0x182 finds the new stack at its slot, and asks for it by the guid the store made"
 }
