@@ -1,13 +1,14 @@
-//// The player's item moves on the game connection (genesis_prime/game/connection):
-//// the client's 0x182 and the store's answer to the move it asked for. The
-//// rule's decisions are genesis_prime/game/inventory's, which holds the sequence
-//// and the failure table; this module carries them out.
+//// The player's changes of held items on the game connection
+//// (genesis_prime/game/connection): the client's 0x182 (a move, swap or merge),
+//// 0x17D (a split) and 0x149 (a delete), and the store's answer to the change it
+//// asked for. The rule's decisions are genesis_prime/game/inventory's, which
+//// holds the sequence and the failure table; this module carries them out.
 ////
 //// ```
-//// InWorld ─ 0x182 ─▶ refused: the 0x56A written, the status stays
-////                    accepted: ask the store (MoveItems), MovingItem, frames held
+//// InWorld ─ 0x182, 0x17D or 0x149 ─▶ refused: the 0x56A written, the status stays
+////                    accepted: ask the store (the change's request), MovingItem, frames held
 //// MovingItem ─ the store's answer ─▶ InWorld with the items the answer leaves
-////                                    and the 0x569, 0x568 or 0x56A written
+////                                    and the change's replies or the 0x56A written
 ////             the store unavailable, not running, ended or past its deadline
 ////                                 ─▶ the connection ends with reason 8
 //// ```
@@ -28,10 +29,10 @@ import genesis_prime/step.{
 import genesis_prime/store.{ForItems}
 import gleam/list
 
-/// The client's 0x182, taken from inside 0x038C with the player in the world: a
-/// refusal is written and the player stays in the world; an accepted move asks
-/// the store and the connection waits in `MovingItem`; a body the client's
-/// reader would refuse ends the connection.
+/// The client's 0x182, 0x17D or 0x149, taken from inside 0x038C with the player
+/// in the world: a refusal is written and the player stays in the world; an
+/// accepted change asks the store and the connection waits in `MovingItem`; a
+/// body the client's reader would refuse ends the connection.
 pub fn item_message(
   session session: Session,
   now now: Now,
@@ -75,9 +76,9 @@ pub fn item_message(
   }
 }
 
-/// The store's answer to the move: the player is in the world again with the
-/// items the answer leaves and its 0x569, 0x568 or 0x56A written; a store that
-/// failed ends the connection with reason 8.
+/// The store's answer to the change: the player is in the world again with the
+/// items the answer leaves and the change's replies or a 0x56A written; a store
+/// that failed ends the connection with reason 8.
 pub fn move_answered(
   session session: Session,
   now now: Now,
@@ -111,7 +112,7 @@ pub fn move_answered(
         now:,
         holder:,
         entered:,
-        text: "the item was not moved: the store is unavailable",
+        text: inventory.not_done(moving.change) <> ": the store is unavailable",
       )
     step.NotRunning | step.NoAnswerInTime | step.EndedBeforeAnswer ->
       lost(
@@ -119,7 +120,8 @@ pub fn move_answered(
         now:,
         holder:,
         entered:,
-        text: "the item was not moved: "
+        text: inventory.not_done(moving.change)
+          <> ": "
           <> client_connection.without_answer(who: "the store", outcome:),
       )
     step.Answer(FromStore(store.ForLogin(..)))
@@ -134,7 +136,8 @@ pub fn move_answered(
         now:,
         holder:,
         entered:,
-        text: "the answer is none an item move asked for",
+        text: inventory.not_done(moving.change)
+          <> ": the answer is none an item change asked for",
       )
   }
 }

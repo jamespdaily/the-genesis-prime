@@ -264,19 +264,49 @@ pub type ItemMove {
   ItemMove(item_guid: Int, from: ItemPlace, to: ItemPlace)
 }
 
-/// What the player's items ask the store.
+/// What the player's items ask the store. Each request changes the character's
+/// item rows in one statement, only while the character's `session_epoch` is
+/// still `session_epoch`, the one the login that asks was told when it loaded the
+/// character, and only when each row it names is as the request holds it (its
+/// guid, place and count). The account's id is in the statement, as for a load.
 pub type ItemsRequest {
-  /// Moves the character's items, all or none, only while the character's
-  /// `session_epoch` is still `session_epoch`, the one the login that moves was
-  /// told when it loaded the character, and only when each item is at the place
-  /// its move leaves. The statement is one UPDATE under the character_item
-  /// table's deferrable unique key, so the moves of a swap pass it together. The
-  /// account's id is in the statement, as for a load.
+  /// Moves the character's items, all or none, only when each item is at the
+  /// place its move leaves. The statement is one UPDATE under the character_item
+  /// table's deferrable unique key, so the moves of a swap pass it together.
   MoveItems(
     account_id: AccountId,
     character_id: CharacterId,
     session_epoch: SessionEpoch,
     moves: List(ItemMove),
+  )
+  /// Takes `count` off the stack `source` and makes a new stack of them at `to`,
+  /// which holds no item: one statement that lowers the source's count and
+  /// inserts the new row, answered by `ItemMade` with the new row's guid.
+  SplitItem(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    source: HeldItem,
+    count: Int,
+    to: ItemPlace,
+  )
+  /// Puts `count` of the stack `source` onto the stack `target`, of the same
+  /// Item2: one statement that adds them to the target and takes them off the
+  /// source, deleting the source when none are left.
+  MergeItems(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    source: HeldItem,
+    target: HeldItem,
+    count: Int,
+  )
+  /// Destroys the whole stack `item`: one statement that deletes its row.
+  DeleteItem(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    item: HeldItem,
   )
 }
 
@@ -388,18 +418,20 @@ pub type MoveAnswer {
 
 /// What the store answers the player's items.
 pub type ItemsAnswer {
-  /// Every item is at its new place: the character's `session_epoch` was the
-  /// request's and each item was at the place its move leaves.
-  ItemsMoved
-  /// Nothing was moved, for one of three causes the statement cannot tell apart:
-  /// a later login raised the character's `session_epoch` past the request's,
-  /// an item was not at the place its move leaves, or the account has no such
-  /// character.
-  NothingMoved
-  /// The database refused a place for the check constraint of this name, which
-  /// no place the rule asks for breaks: a bug of the server's, so nothing was
-  /// moved.
-  MoveRefused(constraint: String)
+  /// Every row the request changes is changed: the character's `session_epoch`
+  /// was the request's and each row was as the request held it.
+  ItemsSaved
+  /// A split's rows are saved, the new stack's row having this guid, the
+  /// database's identity for it.
+  ItemMade(item_guid: Int)
+  /// Nothing was saved, for one of three causes the statement cannot tell apart:
+  /// a later login raised the character's `session_epoch` past the request's, a
+  /// row was not as the request held it, or the account has no such character.
+  ItemsNotSaved
+  /// The database refused the change for the check constraint or unique key of
+  /// this name, which no change the rule asks for breaks: a bug of the server's,
+  /// so nothing was saved.
+  SaveRefused(constraint: String)
 }
 
 /// What the store answers character select, one variant for each of its

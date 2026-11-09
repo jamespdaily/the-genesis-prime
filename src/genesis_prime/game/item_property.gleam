@@ -152,6 +152,13 @@ pub fn sum(
 /// (FillItemInfo 0x1404445d0, PrepareItemPropertyBuilder 0x14040c610).
 const slotted_flag = 0x400
 
+/// The flags of an item's type, category and family, joined, that mark an item
+/// that stacks (0x1406d50f0).
+const stackable_flag = 0x4
+
+/// Item2.flags 0x10000: the item cannot be destroyed (0x1403c1360).
+const undeletable_flag = 0x10000
+
 /// The equipped slot flags of the shield slot, ArmorShields.
 const shield_slot_flags = 0x8000
 
@@ -212,14 +219,31 @@ type Slotting {
   )
 }
 
-fn slotting(
+/// An Item2 row with the rows of its type, category and family, and the flags of
+/// those three joined (0x1403c1360 and 0x1406d50f0 join them the same way).
+type Rows {
+  Rows(
+    item: item2.Item2,
+    type_row: item2_type.Item2Type,
+    category: item2_category.Item2Category,
+    joined_flags: Int,
+  )
+}
+
+/// The item's own Item2 row; a missing one is `NoRow`.
+fn item_row(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
-) -> Result(Slotting, ItemPropertyError) {
-  use item <- result.try(
-    item2.get(tables:, id: Item2Id(item2_id))
-    |> result.replace_error(NoRow(table: "Item2", id: item2_id)),
-  )
+) -> Result(item2.Item2, ItemPropertyError) {
+  item2.get(tables:, id: Item2Id(item2_id))
+  |> result.replace_error(NoRow(table: "Item2", id: item2_id))
+}
+
+fn rows(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Rows, ItemPropertyError) {
+  use item <- result.try(item_row(tables:, item2_id:))
   use type_row <- result.try(
     item2_type.get(tables:, id: Item2TypeId(item.item2_type_id))
     |> result.replace_error(NoRow(table: "Item2Type", id: item.item2_type_id)),
@@ -238,8 +262,25 @@ fn slotting(
       id: item.item2_category_id,
     )),
   )
-  let joined_flags =
-    int.bitwise_or(int.bitwise_or(type_row.flags, category.flags), family.flags)
+  Ok(Rows(
+    item:,
+    type_row:,
+    category:,
+    joined_flags: int.bitwise_or(
+      int.bitwise_or(type_row.flags, category.flags),
+      family.flags,
+    ),
+  ))
+}
+
+fn slotting(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Slotting, ItemPropertyError) {
+  use Rows(item:, type_row:, category:, joined_flags:) <- result.try(rows(
+    tables:,
+    item2_id:,
+  ))
   let slotted = int.bitwise_and(joined_flags, slotted_flag) != 0
   let has_slot =
     item.item2_family_id != family_without_slot
@@ -316,6 +357,35 @@ pub fn equipped_slot_flags(
 ) -> Result(Int, ItemPropertyError) {
   slotting(tables:, item2_id:)
   |> result.map(fn(slotting) { slotting.equipped_slot_flags })
+}
+
+/// The most the item's stack holds, for an item that stacks: Item2.maxStackCount
+/// when the flags of its type, category and family, joined, hold 0x4 (the drop
+/// handler 0x1406d50f0 merges a drop only onto such an item), `None` for an item
+/// that does not stack. Only a missing row is an error. The client takes the
+/// fields of an item whose Item2.flags hold 0x4000 from GameFormula 1214's item
+/// (FillItemInfo 0x1404445d0), which this does not read: such an item is judged
+/// by its own row, a gap open in #333.
+pub fn stack_limit(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Option(Int), ItemPropertyError) {
+  use rows <- result.map(rows(tables:, item2_id:))
+  case int.bitwise_and(rows.joined_flags, stackable_flag) {
+    0 -> None
+    _ -> Some(rows.item.max_stack_count)
+  }
+}
+
+/// Whether the player may destroy the item: Item2.flags lacks 0x10000
+/// (SendItemDelete 0x1403c1360 refuses with Item_CannotBeDeleted when it holds
+/// it). The proxy gap of `stack_limit` applies (#333).
+pub fn deletable(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Bool, ItemPropertyError) {
+  use item <- result.map(item_row(tables:, item2_id:))
+  int.bitwise_and(item.flags, undeletable_flag) == 0
 }
 
 /// The bag index an item is equipped at: the index of the lowest bit set in its

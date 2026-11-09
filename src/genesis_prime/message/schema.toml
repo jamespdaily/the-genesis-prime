@@ -1777,13 +1777,58 @@ fields = [
   { name = "to", kind = "record", record = "item_place", evidence = "opcode.0x182", named_by = "opcode.0x182" },
 ]
 
+[[message]]
+id = 0x017D
+name = "item_split"
+direction = "client_to_server"
+evidence = "opcode.0x17d"
+summary = "the client splits a stack: the guid of the stack, the empty place the new stack goes to and the count to take off, which the client sends as a move instead when it is the stack's whole count; the client sets no wait for it"
+fields = [
+  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x17d", named_by = "opcode.0x17d" },
+  { name = "to", kind = "record", record = "item_place", evidence = "opcode.0x17d", named_by = "opcode.0x17d" },
+  { name = "count", kind = "unsigned", bits = 32, evidence = "opcode.0x17d", named_by = "opcode.0x17d" },
+]
+
+[[message]]
+id = 0x0149
+name = "item_delete"
+direction = "client_to_server"
+evidence = "opcode.0x149"
+summary = "the client destroys the held item at a place; the client refuses before sending when there is no Item2 row or the item cannot be deleted, sends nothing for a worn bag or an item in a trade, and sets no wait for it"
+fields = [
+  { name = "place", kind = "record", record = "item_place", evidence = "opcode.0x149", named_by = "opcode.0x149" },
+]
+
 [[record]]
 name = "item_place"
 evidence = "opcode.0x182"
-summary = "a place in the held items as message 0x182 writes it: the location (9 bits) and the bag index (32 bits)"
+summary = "a place in the held items as messages 0x182, 0x17d and 0x149 write it: the location (9 bits) and the bag index (32 bits)"
 fields = [
   { name = "location", kind = "unsigned", bits = 9, evidence = "opcode.0x182", named_by = "opcode.0x182" },
   { name = "bag_index", kind = "unsigned", bits = 32, evidence = "opcode.0x182", named_by = "opcode.0x182" },
+]
+
+[[message]]
+id = 0x017F
+name = "item_count_changed"
+direction = "server_to_client"
+evidence = "opcode.0x17f"
+summary = "a held item's stack count changed: the item's guid, the new count and the reason; the client sets the count, clears its move wait, and raises ItemRemoved for a drop or its gain events for a rise (reason 0, StackSplit, raises no further notice)"
+fields = [
+  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x17f", named_by = "opcode.0x17f" },
+  { name = "count", kind = "unsigned", bits = 32, evidence = "opcode.0x17f", named_by = "opcode.0x17f" },
+  { name = "reason", kind = "unsigned", bits = 6, evidence = "opcode.0x17f", named_by = "opcode.0x17f" },
+]
+
+[[message]]
+id = 0x0148
+name = "item_removed"
+direction = "server_to_client"
+evidence = "opcode.0x148"
+summary = "a held item is gone: the item's guid and the reason; the client empties the slot and raises ItemRemoved, with a further notice for the reason 21, PlayerRequested, and it does not clear the move wait"
+fields = [
+  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x148", named_by = "opcode.0x148" },
+  { name = "reason", kind = "unsigned", bits = 6, evidence = "opcode.0x148", named_by = "opcode.0x148" },
 ]
 
 [[message]]

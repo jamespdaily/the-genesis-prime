@@ -94,13 +94,14 @@ import genesis_prime/store.{
   type WorldRequest, Account, AccountFound, AccountId, ActiveQuest, Character,
   CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
   CharacterRenamed, CreateCharacter, CreateForNoSuchAccount, Created,
-  DeleteCharacter, Deleted, ExperienceRefused, FindAccount, ForItems, ForLogin,
-  ForMove, ForSelect, ForWorld, HealthRefused, HeldItem, Items, ItemsMoved,
-  ListCharacters, Listed, LoadCharacter, Login, Move, MoveItems, MoveRefused,
-  NameBreaksRule, NameStands, NameTaken, NeedsRename, NewNameBreaksRule,
-  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts,
-  NothingMoved, NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused,
-  QuestRow, RenameCharacter, Renamed, SavePlace, Select, Unavailable, World,
+  DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FindAccount, ForItems,
+  ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem, ItemMade,
+  Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed, LoadCharacter, Login,
+  MergeItems, Move, MoveItems, NameBreaksRule, NameStands, NameTaken,
+  NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount,
+  NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved,
+  QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace, SaveRefused,
+  Select, SplitItem, Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
@@ -322,55 +323,230 @@ fn run_request(request: Request, pool: pog.Connection) -> Answer {
   result.unwrap(answer, Unavailable)
 }
 
-/// Runs one of the player's items' requests: a move is one transaction, the
+/// Runs one of the player's items' requests: each is one transaction, the
 /// character's row lock (lock_character_for_save.sql) and then one statement
-/// that names the account, the character, the epoch and every item's old and new
-/// place (move_character_items.sql), answering `ItemsMoved` when it moved as many
-/// items as the request has moves, `NothingMoved` when it moved none and
-/// `MoveRefused` when a check or the unique key of the character_item table
-/// refused a place; `Error(Nil)` when the database is away.
+/// that names the account, the character, the epoch and each item as the request
+/// holds it (move_character_items.sql, split_character_item.sql,
+/// merge_character_items.sql, delete_character_item.sql). A move answers
+/// `ItemsSaved` when it moved as many items as the request has moves, a split
+/// `ItemMade` with the new stack's guid, a merge and a delete `ItemsSaved`;
+/// each answers `ItemsNotSaved` when it changed nothing and `SaveRefused` when a
+/// check or the unique key of the character_item table refused a place;
+/// `Error(Nil)` when the database is away.
 fn items(
   pool: pog.Connection,
   request: ItemsRequest,
 ) -> Result(ItemsAnswer, Nil) {
-  let MoveItems(
-    account_id: AccountId(account_id),
-    character_id: CharacterId(character_id),
-    session_epoch:,
-    moves:,
-  ) = request
-  case
-    attempt(fn() {
-      in_transaction(pool, fn(connection) {
-        use _ <- result.try(sql.lock_character_for_save(
-          connection,
-          character_id,
-          account_id,
-        ))
-        sql.move_character_items(
-          connection,
-          character_id,
-          account_id,
-          store.session_epoch_number(session_epoch),
-          list.map(moves, fn(move) { move.item_guid }),
-          list.map(moves, fn(move) { move.from.location }),
-          list.map(moves, fn(move) { move.from.bag_index }),
-          list.map(moves, fn(move) { move.to.location }),
-          list.map(moves, fn(move) { move.to.bag_index }),
-        )
-      })
-    })
-  {
-    Ok([]) -> Ok(NothingMoved)
-    Ok(rows) ->
-      case list.length(rows) == list.length(moves) {
-        True -> Ok(ItemsMoved)
-        False -> panic as "the statement moves every item of the request or none"
-      }
+  case request {
+    MoveItems(account_id:, character_id:, session_epoch:, moves:) ->
+      move_items(pool:, account_id:, character_id:, session_epoch:, moves:)
+    SplitItem(account_id:, character_id:, session_epoch:, source:, count:, to:) ->
+      split_item(
+        pool:,
+        account_id:,
+        character_id:,
+        session_epoch:,
+        source:,
+        count:,
+        to:,
+      )
+    MergeItems(
+      account_id:,
+      character_id:,
+      session_epoch:,
+      source:,
+      target:,
+      count:,
+    ) ->
+      merge_items(
+        pool:,
+        account_id:,
+        character_id:,
+        session_epoch:,
+        source:,
+        target:,
+        count:,
+      )
+    DeleteItem(account_id:, character_id:, session_epoch:, item:) ->
+      delete_item(pool:, account_id:, character_id:, session_epoch:, item:)
+  }
+}
+
+/// A split: split_character_item.sql, answered with `ItemMade` and the new
+/// stack's guid; a taken place that broke the table's unique key is
+/// `SaveRefused`.
+fn split_item(
+  pool pool: pog.Connection,
+  account_id account_id: store.AccountId,
+  character_id character_id: store.CharacterId,
+  session_epoch session_epoch: store.SessionEpoch,
+  source source: store.HeldItem,
+  count count: Int,
+  to to: store.ItemPlace,
+) -> Result(ItemsAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  locked(pool:, account_id:, character_id:, statement: fn(connection) {
+    sql.split_character_item(
+      connection,
+      character_id,
+      account_id,
+      store.session_epoch_number(session_epoch),
+      source.item_guid,
+      source.location,
+      source.bag_index,
+      source.stack_count,
+      count,
+      to.location,
+      to.bag_index,
+    )
+  })
+  |> items_answer(saved: fn(rows) {
+    case rows {
+      [row] -> ItemMade(item_guid: row.item_guid)
+      _ -> panic as "the statement makes one stack or none"
+    }
+  })
+}
+
+/// A merge: merge_character_items.sql, answered with `ItemsSaved` when it
+/// changed both stacks.
+fn merge_items(
+  pool pool: pog.Connection,
+  account_id account_id: store.AccountId,
+  character_id character_id: store.CharacterId,
+  session_epoch session_epoch: store.SessionEpoch,
+  source source: store.HeldItem,
+  target target: store.HeldItem,
+  count count: Int,
+) -> Result(ItemsAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  locked(pool:, account_id:, character_id:, statement: fn(connection) {
+    sql.merge_character_items(
+      connection,
+      character_id,
+      account_id,
+      store.session_epoch_number(session_epoch),
+      source.item_guid,
+      source.location,
+      source.bag_index,
+      source.stack_count,
+      target.item_guid,
+      target.location,
+      target.bag_index,
+      target.stack_count,
+      count,
+    )
+  })
+  |> items_answer(saved: fn(rows) {
+    case rows {
+      [_, _] -> ItemsSaved
+      _ -> panic as "the statement changes both stacks or none"
+    }
+  })
+}
+
+/// A delete: delete_character_item.sql, answered with `ItemsSaved` when it
+/// deleted the stack.
+fn delete_item(
+  pool pool: pog.Connection,
+  account_id account_id: store.AccountId,
+  character_id character_id: store.CharacterId,
+  session_epoch session_epoch: store.SessionEpoch,
+  item item: store.HeldItem,
+) -> Result(ItemsAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  locked(pool:, account_id:, character_id:, statement: fn(connection) {
+    sql.delete_character_item(
+      connection,
+      character_id,
+      account_id,
+      store.session_epoch_number(session_epoch),
+      item.item_guid,
+      item.location,
+      item.bag_index,
+      item.stack_count,
+    )
+  })
+  |> items_answer(saved: fn(rows) {
+    case rows {
+      [_] -> ItemsSaved
+      _ -> panic as "the statement deletes one stack or none"
+    }
+  })
+}
+
+/// A move or swap: move_character_items.sql, answered with `ItemsSaved` when it
+/// moved as many items as the request has moves.
+fn move_items(
+  pool pool: pog.Connection,
+  account_id account_id: store.AccountId,
+  character_id character_id: store.CharacterId,
+  session_epoch session_epoch: store.SessionEpoch,
+  moves moves: List(store.ItemMove),
+) -> Result(ItemsAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  locked(pool:, account_id:, character_id:, statement: fn(connection) {
+    sql.move_character_items(
+      connection,
+      character_id,
+      account_id,
+      store.session_epoch_number(session_epoch),
+      list.map(moves, fn(move) { move.item_guid }),
+      list.map(moves, fn(move) { move.from.location }),
+      list.map(moves, fn(move) { move.from.bag_index }),
+      list.map(moves, fn(move) { move.to.location }),
+      list.map(moves, fn(move) { move.to.bag_index }),
+    )
+  })
+  |> items_answer(saved: fn(rows) {
+    case list.length(rows) == list.length(moves) {
+      True -> ItemsSaved
+      False -> panic as "the statement moves every item of the request or none"
+    }
+  })
+}
+
+/// The answer to an items request from what its statement gave: `ItemsNotSaved`
+/// for no row, `saved` of the rows otherwise, `SaveRefused` for a check or the
+/// unique key of the character_item table, and `Error(Nil)` for the database
+/// being away.
+fn items_answer(
+  attempted: Result(List(row), Failure),
+  saved saved: fn(List(row)) -> ItemsAnswer,
+) -> Result(ItemsAnswer, Nil) {
+  case attempted {
+    Ok([]) -> Ok(ItemsNotSaved)
+    Ok(rows) -> Ok(saved(rows))
     Error(Unreachable) -> Error(Nil)
-    Error(Refused(constraint:, ..)) -> Ok(MoveRefused(constraint:))
+    Error(Refused(constraint:, ..)) -> Ok(SaveRefused(constraint:))
     Error(Unexpected(error:)) -> exit_with(error)
   }
+}
+
+/// Runs one statement in a transaction that first takes the character's row lock
+/// (lock_character_for_save.sql), so two statements on a character never
+/// overlap, and gives the statement's rows or why it gave none.
+fn locked(
+  pool pool: pog.Connection,
+  account_id account_id: Int,
+  character_id character_id: Int,
+  statement statement: fn(pog.Connection) ->
+    Result(pog.Returned(row), pog.QueryError),
+) -> Result(List(row), Failure) {
+  attempt(fn() {
+    in_transaction(pool, fn(connection) {
+      use _ <- result.try(sql.lock_character_for_save(
+        connection,
+        character_id,
+        account_id,
+      ))
+      statement(connection)
+    })
+  })
 }
 
 /// Runs one of character select's requests.
@@ -459,34 +635,27 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
     None -> #(0, False)
   }
   case
-    attempt(fn() {
-      in_transaction(pool, fn(connection) {
-        use _ <- result.try(sql.lock_character_for_save(
-          connection,
-          character_id,
-          account_id,
-        ))
-        sql.save_place(
-          connection,
-          character_id,
-          account_id,
-          store.session_epoch_number(session_epoch),
-          start_place.world_id(place),
-          start_place.world_zone_id(place),
-          start_place.x(place),
-          start_place.y(place),
-          start_place.z(place),
-          facing.yaw,
-          facing.pitch,
-          facing.roll,
-          save_sequence,
-          health,
-          keeps_health,
-          experience,
-          level,
-          quests_json(quests),
-        )
-      })
+    locked(pool:, account_id:, character_id:, statement: fn(connection) {
+      sql.save_place(
+        connection,
+        character_id,
+        account_id,
+        store.session_epoch_number(session_epoch),
+        start_place.world_id(place),
+        start_place.world_zone_id(place),
+        start_place.x(place),
+        start_place.y(place),
+        start_place.z(place),
+        facing.yaw,
+        facing.pitch,
+        facing.roll,
+        save_sequence,
+        health,
+        keeps_health,
+        experience,
+        level,
+        quests_json(quests),
+      )
     })
   {
     Ok([_]) -> Ok(PlaceSaved)

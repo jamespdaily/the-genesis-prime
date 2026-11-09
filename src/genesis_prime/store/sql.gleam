@@ -184,6 +184,81 @@ returning character_id;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `delete_character_item` query
+/// defined in `./src/genesis_prime/store/sql/delete_character_item.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type DeleteCharacterItemRow {
+  DeleteCharacterItemRow(item_guid: Int)
+}
+
+/// Deletes the whole stack of the item `$4` of the character `$1` of the account
+/// `$2`, in one statement. It deletes only while the character is still held by
+/// the login that asks, that is while its `session_epoch` ($3) is still the one
+/// that login was told (load_character.sql), and only when the item is as the
+/// request holds it, at the place `$5` and `$6` with the count `$7`; otherwise it
+/// changes nothing and returns no row. The account's id is in the statement, as
+/// for a load. The row it returns is the item it deleted.
+///
+/// The statement runs after lock_character_for_save.sql in one transaction, so it
+/// waits for a login that is raising the epoch and then reads the epoch that login
+/// stored.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn delete_character_item(
+  db: pog.Connection,
+  item_character_id: Int,
+  character_account_id: Int,
+  character_session_epoch: Int,
+  item_guid: Int,
+  item_location: Int,
+  item_bag_index: Int,
+  item_stack_count: Int,
+) -> Result(pog.Returned(DeleteCharacterItemRow), pog.QueryError) {
+  let decoder = {
+    use item_guid <- decode.field(0, decode.int)
+    decode.success(DeleteCharacterItemRow(item_guid:))
+  }
+
+  "-- Deletes the whole stack of the item `$4` of the character `$1` of the account
+-- `$2`, in one statement. It deletes only while the character is still held by
+-- the login that asks, that is while its `session_epoch` ($3) is still the one
+-- that login was told (load_character.sql), and only when the item is as the
+-- request holds it, at the place `$5` and `$6` with the count `$7`; otherwise it
+-- changes nothing and returns no row. The account's id is in the statement, as
+-- for a load. The row it returns is the item it deleted.
+--
+-- The statement runs after lock_character_for_save.sql in one transaction, so it
+-- waits for a login that is raising the epoch and then reads the epoch that login
+-- stored.
+delete from character_item as item
+using character
+where character.character_id = item.character_id
+  and item.item_guid = $4
+  and item.character_id = $1
+  and character.account_id = $2
+  and character.session_epoch = $3
+  and item.location = $5
+  and item.bag_index = $6
+  and item.stack_count = $7
+returning item.item_guid;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(item_character_id))
+  |> pog.parameter(pog.int(character_account_id))
+  |> pog.parameter(pog.int(character_session_epoch))
+  |> pog.parameter(pog.int(item_guid))
+  |> pog.parameter(pog.int(item_location))
+  |> pog.parameter(pog.int(item_bag_index))
+  |> pog.parameter(pog.int(item_stack_count))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `find_account` query
 /// defined in `./src/genesis_prime/store/sql/find_account.sql`.
 ///
@@ -787,6 +862,140 @@ for update;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `merge_character_items` query
+/// defined in `./src/genesis_prime/store/sql/merge_character_items.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type MergeCharacterItemsRow {
+  MergeCharacterItemsRow(item_guid: Int)
+}
+
+/// Puts `$12` of the stack of the item `$4` onto the stack of the item `$8`, in
+/// one statement: the target's count is raised by `$12`, and the source's is
+/// lowered by it, or the source is deleted when `$12` is all of it. The source is
+/// the item held at `$5` and `$6` with the count `$7`, the target the item held at
+/// `$9` and `$10` with the count `$11`, both of the character `$1` of the account
+/// `$2`. It changes only while the character is still held by the login that asks,
+/// that is while its `session_epoch` ($3) is still the one that login was told
+/// (load_character.sql), only when both items are as the request holds them, and
+/// only when `$12` is at least 1 and at most `$7`; otherwise it changes nothing and
+/// returns no row. The account's id is in the statement, as for a load. The rows it
+/// returns are the two items it changed: two, or none. Whether the target may hold
+/// the sum is the Item2's maxStackCount, which the rule checks.
+///
+/// The statement runs after lock_character_for_save.sql in one transaction, so it
+/// waits for a login that is raising the epoch and then reads the epoch that login
+/// stored.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn merge_character_items(
+  db: pog.Connection,
+  held_character_id: Int,
+  character_account_id: Int,
+  character_session_epoch: Int,
+  held_item_guid: Int,
+  held_location: Int,
+  held_bag_index: Int,
+  held_stack_count: Int,
+  held_item_guid_1: Int,
+  held_location_1: Int,
+  held_bag_index_1: Int,
+  held_stack_count_1: Int,
+  source_stack_count: Int,
+) -> Result(pog.Returned(MergeCharacterItemsRow), pog.QueryError) {
+  let decoder = {
+    use item_guid <- decode.field(0, decode.int)
+    decode.success(MergeCharacterItemsRow(item_guid:))
+  }
+
+  "-- Puts `$12` of the stack of the item `$4` onto the stack of the item `$8`, in
+-- one statement: the target's count is raised by `$12`, and the source's is
+-- lowered by it, or the source is deleted when `$12` is all of it. The source is
+-- the item held at `$5` and `$6` with the count `$7`, the target the item held at
+-- `$9` and `$10` with the count `$11`, both of the character `$1` of the account
+-- `$2`. It changes only while the character is still held by the login that asks,
+-- that is while its `session_epoch` ($3) is still the one that login was told
+-- (load_character.sql), only when both items are as the request holds them, and
+-- only when `$12` is at least 1 and at most `$7`; otherwise it changes nothing and
+-- returns no row. The account's id is in the statement, as for a load. The rows it
+-- returns are the two items it changed: two, or none. Whether the target may hold
+-- the sum is the Item2's maxStackCount, which the rule checks.
+--
+-- The statement runs after lock_character_for_save.sql in one transaction, so it
+-- waits for a login that is raising the epoch and then reads the epoch that login
+-- stored.
+with matched as (
+  select held.item_guid
+  from character_item as held
+  join character on character.character_id = held.character_id
+  where held.character_id = $1
+    and character.account_id = $2
+    and character.session_epoch = $3
+    and $12 >= 1
+    and $12 <= $7
+    and (
+      (
+        held.item_guid = $4
+        and held.location = $5
+        and held.bag_index = $6
+        and held.stack_count = $7
+      ) or (
+        held.item_guid = $8
+        and held.location = $9
+        and held.bag_index = $10
+        and held.stack_count = $11
+      )
+    )
+),
+raised as (
+  update character_item as target
+  set stack_count = target.stack_count + $12
+  where target.item_guid = $8
+    and (select count(*) from matched) = 2
+  returning target.item_guid
+),
+lowered as (
+  update character_item as source
+  set stack_count = source.stack_count - $12
+  where source.item_guid = $4
+    and source.stack_count > $12
+    and (select count(*) from matched) = 2
+  returning source.item_guid
+),
+removed as (
+  delete from character_item as source
+  where source.item_guid = $4
+    and source.stack_count = $12
+    and (select count(*) from matched) = 2
+  returning source.item_guid
+)
+select item_guid from raised
+union all
+select item_guid from lowered
+union all
+select item_guid from removed;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(held_character_id))
+  |> pog.parameter(pog.int(character_account_id))
+  |> pog.parameter(pog.int(character_session_epoch))
+  |> pog.parameter(pog.int(held_item_guid))
+  |> pog.parameter(pog.int(held_location))
+  |> pog.parameter(pog.int(held_bag_index))
+  |> pog.parameter(pog.int(held_stack_count))
+  |> pog.parameter(pog.int(held_item_guid_1))
+  |> pog.parameter(pog.int(held_location_1))
+  |> pog.parameter(pog.int(held_bag_index_1))
+  |> pog.parameter(pog.int(held_stack_count_1))
+  |> pog.parameter(pog.int(source_stack_count))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `move_character_items` query
 /// defined in `./src/genesis_prime/store/sql/move_character_items.sql`.
 ///
@@ -1176,6 +1385,106 @@ pub fn select_one(
 select 1 as one;
 "
   |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `split_character_item` query
+/// defined in `./src/genesis_prime/store/sql/split_character_item.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type SplitCharacterItemRow {
+  SplitCharacterItemRow(item_guid: Int)
+}
+
+/// Takes `$8` off the stack of the item `$4` and makes a new stack of them at the
+/// place `$9` and `$10`, in one statement. The source is the item the login holds
+/// at `$5` and `$6` with the count `$7`; it is lowered only while the character is
+/// still held by the login that asks, that is while its `session_epoch` ($3) is
+/// still the one that login was told (load_character.sql), and only when that item
+/// is as the request holds it, of the character `$1` of the account `$2`, and
+/// `$8` is at least 1 and less than `$7`, which leaves the source at 1 or more.
+/// Otherwise it changes nothing and returns no row. The account's id is in the
+/// statement, as for a load. The row it returns is the new stack's, whose guid
+/// the database makes (opcode.0x111.guid).
+///
+/// A place that holds an item breaks the table's `character_item_one_per_slot` at
+/// the statement's end and the statement changes nothing, the source included. The
+/// statement runs after lock_character_for_save.sql in one transaction, so it waits
+/// for a login that is raising the epoch and then reads the epoch that login
+/// stored.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn split_character_item(
+  db: pog.Connection,
+  source_character_id: Int,
+  character_account_id: Int,
+  character_session_epoch: Int,
+  source_item_guid: Int,
+  source_location: Int,
+  source_bag_index: Int,
+  source_stack_count: Int,
+  arg_8: Int,
+  arg_9: Int,
+  arg_10: Int,
+) -> Result(pog.Returned(SplitCharacterItemRow), pog.QueryError) {
+  let decoder = {
+    use item_guid <- decode.field(0, decode.int)
+    decode.success(SplitCharacterItemRow(item_guid:))
+  }
+
+  "-- Takes `$8` off the stack of the item `$4` and makes a new stack of them at the
+-- place `$9` and `$10`, in one statement. The source is the item the login holds
+-- at `$5` and `$6` with the count `$7`; it is lowered only while the character is
+-- still held by the login that asks, that is while its `session_epoch` ($3) is
+-- still the one that login was told (load_character.sql), and only when that item
+-- is as the request holds it, of the character `$1` of the account `$2`, and
+-- `$8` is at least 1 and less than `$7`, which leaves the source at 1 or more.
+-- Otherwise it changes nothing and returns no row. The account's id is in the
+-- statement, as for a load. The row it returns is the new stack's, whose guid
+-- the database makes (opcode.0x111.guid).
+--
+-- A place that holds an item breaks the table's `character_item_one_per_slot` at
+-- the statement's end and the statement changes nothing, the source included. The
+-- statement runs after lock_character_for_save.sql in one transaction, so it waits
+-- for a login that is raising the epoch and then reads the epoch that login
+-- stored.
+with lowered as (
+  update character_item as source
+  set stack_count = source.stack_count - $8
+  from character
+  where character.character_id = source.character_id
+    and source.item_guid = $4
+    and source.character_id = $1
+    and character.account_id = $2
+    and character.session_epoch = $3
+    and source.location = $5
+    and source.bag_index = $6
+    and source.stack_count = $7
+    and $8 >= 1
+    and $8 < $7
+  returning source.item2_id
+)
+insert into character_item (character_id, item2_id, location, bag_index, stack_count)
+select $1, lowered.item2_id, $9, $10, $8
+from lowered
+returning item_guid;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(source_character_id))
+  |> pog.parameter(pog.int(character_account_id))
+  |> pog.parameter(pog.int(character_session_epoch))
+  |> pog.parameter(pog.int(source_item_guid))
+  |> pog.parameter(pog.int(source_location))
+  |> pog.parameter(pog.int(source_bag_index))
+  |> pog.parameter(pog.int(source_stack_count))
+  |> pog.parameter(pog.int(arg_8))
+  |> pog.parameter(pog.int(arg_9))
+  |> pog.parameter(pog.int(arg_10))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

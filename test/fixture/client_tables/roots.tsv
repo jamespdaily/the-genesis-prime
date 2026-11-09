@@ -169,3 +169,7 @@ QuestObjective	5908	objective 2 of quest 4361	prerequisite_quest_test
 QuestObjective	5909	objective 3 of quest 4361	prerequisite_quest_test
 QuestObjective	5910	objective 4 of quest 4361	prerequisite_quest_test
 QuestObjective	5911	objective 5 of quest 4361	prerequisite_quest_test
+Item2	1039	(stackable, maximum 20)	inventory_test
+Item2	12049	(bag, not stackable, maximum 6)	inventory_test
+Item2	85531	(bag, not stackable, maximum 14)	inventory_test
+Item2	80875	(flags hold 0x10000, cannot be deleted)	inventory_test

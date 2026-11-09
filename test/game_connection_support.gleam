@@ -483,6 +483,25 @@ pub fn joining_holding(
   saved_experience saved_experience: Option(Int),
   quests quests: List(store.QuestRow),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
+  joining_holding_items(
+    in_character_select:,
+    character:,
+    saved_health:,
+    saved_experience:,
+    quests:,
+    items: world_entry_support.novice_items(character:),
+  )
+}
+
+/// `joining_holding` for a character whose store holds these items.
+pub fn joining_holding_items(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+  saved_health saved_health: Option(Int),
+  saved_experience saved_experience: Option(Int),
+  quests quests: List(store.QuestRow),
+  items items: List(store.HeldItem),
+) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) = playing_from(in_character_select:, character_id: 42)
   answer(
     state:,
@@ -494,7 +513,7 @@ pub fn joining_holding(
           character_support.epoch(1),
           saved_health,
           saved_experience,
-          world_entry_support.novice_items(character:),
+          items,
           quests,
         )),
       ),
@@ -639,6 +658,23 @@ pub fn entered_with_quests(
       quests:,
     )
   answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
+}
+
+/// The connection in the world, with its burst taken, for a character whose
+/// store holds these items.
+pub fn in_world_holding(
+  items items: List(store.HeldItem),
+) -> game_connection.State {
+  let #(state, taken) =
+    joining_holding_items(
+      in_character_select: in_select(),
+      character: world_character(),
+      saved_health: None,
+      saved_experience: None,
+      quests: [],
+      items:,
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken)))).0
 }
 
 /// The tests' player's health at full: 736, the Engineer's level 1 maximum

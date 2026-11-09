@@ -1,10 +1,10 @@
 //// Generated from `schema.toml` by `genesis_prime/generate_messages`;
 //// never edited by hand.
 ////
-//// A record inside a message body: a place in the held items as message 0x182
-//// writes it: the location (9 bits) and the bag index (32 bits). Its fields
-//// are listed in `schema.toml` with the client's evidence, and the fact file's
-//// `opcode.0x182` names the record.
+//// A record inside a message body: a place in the held items as messages
+//// 0x182, 0x17d and 0x149 write it: the location (9 bits) and the bag index
+//// (32 bits). Its fields are listed in `schema.toml` with the client's
+//// evidence, and the fact file's `opcode.0x182` names the record.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,

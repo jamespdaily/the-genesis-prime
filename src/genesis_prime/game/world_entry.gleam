@@ -135,6 +135,7 @@ import genesis_prime/game/chat_tell
 import genesis_prime/game/class_resource
 import genesis_prime/game/experience
 import genesis_prime/game/innate
+import genesis_prime/game/inventory
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/look
 import genesis_prime/game/movement
@@ -151,14 +152,11 @@ import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/float32
-import genesis_prime/message/held_item.{HeldItem}
 import genesis_prime/message/innate_index_set.{InnateIndexSet}
-import genesis_prime/message/item_added.{ItemAdded}
 import genesis_prime/message/movement_send_interval.{MovementSendInterval}
 import genesis_prime/message/play_character.{type PlayCharacter}
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
 import genesis_prime/message/player_path.{PlayerPath}
-import genesis_prime/message/shared_item.{SharedItem}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/step.{type ConnectionId, type Now}
@@ -1021,9 +1019,7 @@ fn innate_index_frame() -> Effect {
   Send(Frame(message_id: innate_index_set.message_id, body:))
 }
 
-/// 0x111 for an item the character holds, with no charges and full
-/// durability. Every value the client's code does not name is 0
-/// (`opcode.0x111.shared_item_unnamed`), the lists empty.
+/// 0x111 for an item the character holds from the start, with the reason 49.
 fn held_item(
   item_guid item_guid: Int,
   item_id item_id: Int,
@@ -1031,42 +1027,14 @@ fn held_item(
   bag_index bag_index: Int,
   stack_count stack_count: Int,
 ) -> Effect {
-  let assert Ok(body) =
-    item_added.encode(
-      ItemAdded(held_item: HeldItem(
-        item: SharedItem(
-          item_guid:,
-          field_2: 0,
-          item_id:,
-          location:,
-          bag_index:,
-          stack_count:,
-          charges: 0,
-          field_8: 0,
-          field_9: 0,
-          field_10: 0,
-          durability: float32.to_bits(1.0),
-          field_12: 0,
-          field_13: 0,
-          field_14: 0,
-          field_15: 0,
-          field_16: 0,
-          field_17: 0,
-          field_18: 0,
-          field_19: 0,
-          field_20: 0,
-          field_21: 0,
-          field_22: 0,
-          field_23: 0,
-          list_a: [],
-          list_b: [],
-          field_27: 0,
-        ),
-        reason: held_from_the_start,
-      )),
-    )
-    as "an item of 18 bits, a location of 9 and a guid of 64 bits, a character number below 2^23, fit the message"
-  Send(Frame(message_id: item_added.message_id, body:))
+  Send(inventory.item_added_frame(
+    item_guid:,
+    item_id:,
+    location:,
+    bag_index:,
+    stack_count:,
+    reason: held_from_the_start,
+  ))
 }
 
 /// 0x1A0 with tier 1 of each ability in each action set.
