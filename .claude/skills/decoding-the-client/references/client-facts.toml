@@ -2588,6 +2588,12 @@ proof = "Registered at 0x140074b21 mov edx, 0x355; 0x140074b1a lea r8d, [r9+0x8]
 grade = "fairly sure"
 gap = "Read from Ghidra's decompile; what the bit does for type 1 units is not read."
 
+["opcode.0x356"]
+statement = "Message 0x356 (854), client to game server: the client has built more than one response for the dialog the server's message 0x357 opened and shows it. Body: empty (writer WriteEmptyBody, record 1 byte). It is sent once for each 0x357 whose responses number more than one, from the dialog-response builder; the client waits for no answer."
+proof = "Registered in 0x14006c290 (saved C) line 414: record 1 byte, sizer SizeEmptyBody, writer WriteEmptyBody, no reader. The only send of the number is 0x1405546b0 line 56, SendWorldMessage(game, 0x356, a zero byte), in the branch for a response count above one (record 0x1405546b0). client_trace.py 0x356 finds no handler: the client does not receive it."
+grade = "fairly sure"
+gap = "What the server should do with it is not settled by the client: no recording shows it, and the client reads no reply to it. Which responses make the count above one is not read line by line (record 0x1405546b0)."
+
 ["0x14007c340"]
 statement = "Reads a body of a 32-bit value and one bit. Thirteen messages use it, among them 0x355."
 proof = "Ghidra decompile: ReadBits32 0x20 (offset 0), ReadBits32 1 (offset 4). Emulator: vector.opcode.0x355.body. 0x14007c365 mov r8d, 0x20 / 0x14007c36e call 0x14006c090; 0x14007c37b mov r8d, 0x1 / 0x14007c384 call 0x14006c090."
