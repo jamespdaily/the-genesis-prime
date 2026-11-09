@@ -42,6 +42,8 @@ import genesis_prime/message/player_health.{type PlayerHealth}
 import genesis_prime/message/player_path.{type PlayerPath}
 import genesis_prime/message/pong.{type Pong}
 import genesis_prime/message/premium_tier.{type PremiumTier}
+import genesis_prime/message/quest_log.{type QuestLog}
+import genesis_prime/message/quest_periodic_reset.{type QuestPeriodicReset}
 import genesis_prime/message/realm_handoff.{type RealmHandoff}
 import genesis_prime/message/realm_list.{type RealmList}
 import genesis_prime/message/rename_character_result.{type RenameCharacterResult}
@@ -112,6 +114,8 @@ pub type ServerMessage {
   UnitCreatePlayer(message: UnitCreatePlayer)
   UnitIsPlayer(message: UnitIsPlayer)
   PlayerCharacterState(message: PlayerCharacterState)
+  QuestLog(message: QuestLog)
+  QuestPeriodicReset(message: QuestPeriodicReset)
   PlayerPath(message: PlayerPath)
   ClientControlGranted(message: ClientControlGranted)
   UnitMovement(message: UnitMovement)
@@ -271,6 +275,9 @@ pub fn decode(
         player_character_state.decode,
         PlayerCharacterState,
       )
+    0x035F -> decoded(body, message_id, quest_log.decode, QuestLog)
+    0x0362 ->
+      decoded(body, message_id, quest_periodic_reset.decode, QuestPeriodicReset)
     0x06BC -> decoded(body, message_id, player_path.decode, PlayerPath)
     0x0636 ->
       decoded(
@@ -415,6 +422,8 @@ pub fn name(message: ServerMessage) -> String {
     UnitCreatePlayer(..) -> "unit_create_player"
     UnitIsPlayer(..) -> "unit_is_player"
     PlayerCharacterState(..) -> "player_character_state"
+    QuestLog(..) -> "quest_log"
+    QuestPeriodicReset(..) -> "quest_periodic_reset"
     PlayerPath(..) -> "player_path"
     ClientControlGranted(..) -> "client_control_granted"
     UnitMovement(..) -> "unit_movement"

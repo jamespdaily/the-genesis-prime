@@ -997,7 +997,8 @@ fn standing(
 /// in the order the client needs (opcode.0xad, opcode.0x262, opcode.0x19b,
 /// opcode.0x25e, opcode.0x6bc, opcode.0x636, opcode.0xf1, opcode.0x61): 0xAD
 /// first; 0x262 before 0x19B; 0x19B before the character's own state (0x25E,
-/// opcode.0x25e.entry_order), the six armor items, the weapon, the three
+/// opcode.0x25e.entry_order), the quest log (0x35F, opcode.0x35f.entry_order),
+/// the six armor items, the weapon, the three
 /// abilities and the innate (0x111, opcode.0x111.ability_bag,
 /// opcode.0x111.equipped_set), their tiers (0x1A0, opcode.0x1a0), the action
 /// set (0x19D, opcode.0x19d), 0x19F, which points the innate button
@@ -1010,6 +1011,7 @@ pub const world_entry_ids = [
   0x0262,
   0x019B,
   0x025E,
+  0x035F,
   0x0111,
   0x0111,
   0x0111,
@@ -1057,9 +1059,10 @@ fn after_entered(items: List(a), id_of: fn(a) -> Int) -> List(a) {
 /// The ids of the messages of the Holocrypt's join: the entry's, but with no
 /// 0x25E, since the join is a 0xAD in the world on the client's same game object
 /// (0x1403b6de0), where a second copy would add its items and pets again
-/// (opcode.0x25e.entry_order).
+/// (opcode.0x25e.entry_order), and no 0x35F, since the client's quest log
+/// belongs to that same object and the quests are unchanged by the join.
 pub fn holocrypt_entry_ids() -> List(Int) {
-  list.filter(world_entry_ids, fn(id) { id != 0x025E })
+  list.filter(world_entry_ids, fn(id) { id != 0x025E && id != 0x035F })
 }
 
 /// The frames without those of the innate passive's cast (`without_passive_cast`).

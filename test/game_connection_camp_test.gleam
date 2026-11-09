@@ -267,8 +267,9 @@ pub fn message_0xc0_cancels_the_save_timer_saves_the_place_asks_the_map_run_to_l
       OwnEffect(step.LeaveGroup(step.CharacterNamed("ab cd"))),
       OwnEffect(step.LeaveGroup(game_connection_support.zone_group(4961))),
       OwnEffect(CancelTimer(TimerId(2))),
+      OwnEffect(CancelTimer(TimerId(10))),
     ]
-    as "the player leaves its chat groups, and the 60 s save timer is cancelled before the save, so none fires while the player leaves"
+    as "the player leaves its chat groups, and the 60 s save timer and the quest reset timer are cancelled before the save, so none fires while the player leaves"
   assert game_connection_support.ask_request(taken)
     == game_connection_support.save_asked(
       1,
@@ -396,14 +397,17 @@ pub fn after_a_camp_a_play_request_enters_the_world_again_as_a_new_unit_with_the
       taken:,
       outcome: step.Answer(
         FromStore(
-          ForWorld(CharacterLoaded(
-            game_connection_support.world_character(),
-            character_support.epoch(1),
-            None,
-            world_entry_support.novice_items(
-              character: game_connection_support.world_character(),
+          ForWorld(
+            CharacterLoaded(
+              game_connection_support.world_character(),
+              character_support.epoch(1),
+              None,
+              world_entry_support.novice_items(
+                character: game_connection_support.world_character(),
+              ),
+              [],
             ),
-          )),
+          ),
         ),
       ),
     )

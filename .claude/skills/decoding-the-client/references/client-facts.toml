@@ -1483,7 +1483,7 @@ gap = "That no other handler on the list takes a world id HandleWorldMessage ref
 statement = "HandleServerMessage's answer to a handler that failed: it shows the error screen with 'Failure handling network message '<name>'' (text 143520, naming the message by id), or 'Disconnected. Client/Server Data Mismatch.' (text 418527) when the failure is 0xA00B0001, writes nothing to the log there, and returns the failure, so ReadMessageFrame logs 'Invalid Message' with the id."
 proof = "0x1400155f7 mov edx, 0x230a0; 0x1400155fc call 0x14034bdd0; 0x14001560c call 0x14018d540 (format with the name); 0x140015622 call 0x140015ec0; 0x14001564d mov eax, edi (the handler's result). 0x140015952 cmp eax, 0xa00b0001 -> 0x1400159f3 mov edx, 0x662df; 0x140015a1d call 0x140015ec0; else 0x14001598a mov edx, 0x230a0. Texts from ClientDataEN en-US.bin: 143520 'Failure handling network message '%hs'', 418527 'Disconnected. Client/Server Data Mismatch.'"
 grade = "fairly sure"
-gap = "Which handlers return 0xA00B0001 is not read."
+gap = "Which handlers return 0xA00B0001 is not read; 0x1405fb350 returns it for a quest id with no Quest2 row (record opcode.0x35f.unknown_quest)."
 
 ["0x140331990"]
 statement = "Reads one received frame: its 32-bit length, then its 16-bit message id, and looks the message up. A frame longer than the message's size limit (MessageSizeLimit), or with an unknown id, or with no reader, is logged and skipped to its end. Otherwise the message's reader reads the body into a record and the record goes to the connection's owner, except the network layer's own ids, which never reach it: a ping (id 0) is answered at once with a pong (id 1) carrying the same byte, a pong goes to HandleNetworkPong, and a close notice (id 2) is dropped. Each failure is logged under Network at level Error, naming the connection and the message id, and the frame is skipped to its end: an unknown id ('(->conn)[conn id] Malformed Packet: Unknown Message: '<id>' (bytes: n) (last msg: id:name)', result 8); a frame longer than the message's size limit ('Malformed Packet: bad Message size: [length>limit] ...', result 8); no room for the record ('Msg <id, name> failed to GetMsgBuffer().alloc(size)', result 4); no reader ('Msg <id, name> failed to find unPackFromStreamFn function', result 11); the reader failing ('(->conn) unpacked data too big, ID = <name> consumed n bytes rather than length', result 8); the game's handler failing ('(->conn) Invalid Message '<name>'', result 14). A frame over 90% of its limit gets a Warn line ('Packet: Message size approaching failure size'). A length or id that cannot be read returns 12 with no line."
@@ -10874,20 +10874,16 @@ gap = "Rows whose flags lack bit 1 are fired by the client itself from its own c
 name = "CommunicatorQueueQuest"
 
 ["opcode.0x360"]
-statement = "Message 0x360, client to world server: a quest was mentioned to the player, or the mention is withdrawn. Body: quest id, 15 bits, then a bit (1 mentioned, 0 withdrawn). The client sends it only when the wish differs from what it holds and the quest exists, and sets the quest's local state to Mentioned. The client withdraws mentions (bit 0) on refresh for mentioned quests it can no longer accept."
-proof = "Saved C 0x1405fca00.c: compares against the mentioned map entry (state other than Ignored), SendWorldMessage 0x360 with 15 and 1 bits, SetState 0x1405fbdc0 to 5. Refresh 0x1405fccb0 sends 0x360 with 0 when the quest record lacks flag 4 or CanAcceptQuest 0x140552550 with mask 0xfffffdff refuses. 0x1405fca00 sends only when the quest's record is found (0x1405a8a40 non-null); the current value is the mentioned map entry's state not equal to 7, or 0 with no entry. Registered in 0x14006c290 as id 864, record 8, writer 0x140084bb0 (15 bits then 1 bit; 0x364 shares the sizer and the writer). Called from CommunicatorQueueQuest 0x14043c1a0 and from the refresh 0x1405fccb0, which walks every quest in the map at 0x48 and calls 0x1405fca00 with 0 only for a quest whose record lacks flag 4 or which CanAcceptQuest refuses."
+statement = "Message 0x360, client to world server: a quest was mentioned to the player, or the mention is withdrawn. Body: quest id, 15 bits, then a bit (1 mentioned, 0 withdrawn). The client sends it only when the wish differs from what it holds and the quest exists, and in both cases sets the quest's local state to Mentioned (5). That entry lets the client accept a quest whose Quest2.flags has 0x400 and answer a communicator call for it. The client withdraws mentions (bit 0) on refresh for mentioned quests it can no longer accept."
+proof = "query.py disassemble 0x1405fca00: 0x1405fca62 CMP [node+0x24],7 / SETNZ CL; 0x1405fca69 CMP R8D,ECX / JZ out; 0x1405fca70 FindQuestById; 0x1405fca83 LEA R8D,[R9+0x5]; 0x1405fca87 CALL 0x1405fbdc0 (state 5 whatever the wish); 0x1405fca9f MOV EDX,0x360; 0x1405fcaac CALL SendWorldMessage. Registered in 0x14006c290 as id 864, writer 0x140084bb0. Called from 0x14043c1a0 and the refresh 0x1405fccb0 (mask 0xfffffdff)."
 grade = "fairly sure"
-gap = "Whether the server must answer 0x360 is not shown by the client; it waits for nothing."
-
+gap = "Whether the server must answer 0x360 is not shown; the client waits for nothing. After a withdrawal the entry is still state 5, so a later refresh would send the withdrawal again; read, not seen in a recording."
 ["0x14043c700"]
-statement = "Answers an incoming communicator quest call: opens the quest dialog for the delivered quest (dialog state 2, the accept view) and raises Communicator_EndIncoming. Called by a key-bound action next to the quest log toggle, and by two Lua functions, one taking a Game.Quest."
-proof = "Saved C 0x14043c700.c: calls 0x140554580 then raises Communicator_EndIncoming. Callers: case 6 of 0x1404d7a10 (case 5 is ToggleQuestLog), 0x140757950, 0x140757980."
+statement = "Answers an incoming communicator quest call: opens the quest dialog for the delivered quest (dialog state 2, the accept view) and raises Communicator_EndIncoming. For a quest that is not Achieved it opens nothing unless the client holds the quest in its side list (in practice Mentioned), the call's creature is in the quest's giver list, Quest2.flags has 4, and CanAcceptQuest passes with mask 0xfffffdff. An Achieved quest needs flags 8 or 0x10000 and opens the turn-in. Called by a key-bound action next to the quest log toggle, and by two Lua functions, one taking a Game.Quest."
+proof = "Saved C 0x14043c700.c (e9b6b6af37d00314): GetQuestState != 2 -> 0x140552fd0(quest) == 0 returns; then 0x14043d650(..., 1), which with 1 skips its own side-list test and returns 0 only when the creature is in quest+0x78, row byte 0xc & 4, and CanAcceptQuest(quest, 0xfffffdff) == 0; then 0x140554580 and Communicator_EndIncoming. Callers: case 6 of 0x1404d7a10, 0x140757950, 0x140757980."
 grade = "fairly sure"
-gap = "The key's letter (C) is from the live note, not from the key binding table; the two Lua functions' names are not read."
+gap = "The key's letter is from the live note; the two Lua functions' names are not read; quest+0x78 is named the giver list from its use."
 name = "AnswerCommunicatorQuest"
-
-# Quests: accept and abandon
-
 ["opcode.0x35b"]
 statement = "Message 0x35b, client to world server: accept a quest. Body: item location, 9 bits, and bag index, 32 bits (300 and -1 when no item starts the quest), then quest id, 15 bits. Sent by the dialog's accept response and by using an item or ability whose record names a quest (an Item2 quest2IdActivation). When the quest is Botched the accept path sends message 0x365 (quest id, 32 bits on the item path) instead. When the quest cannot be started the client raises a GenericFloater or a cast error text and sends nothing. The client waits for message 0x35c."
 proof = "Writer 0x14008b200: 0x14008b210 call 0x1400a8c80 (item location writer); 0x14008b2bf mov r8d, 0xf; 0x14008b2c8 call 0x140336470 (write bits). Senders: DialogAcceptQuest 0x140556b20 (response type 11 in dialog state 2), 0x14039c8a0 from UseItem 0x1403998e0. Dialog item defaults 300 and -1 at 0x140c7dc6c and 0x140c7dc70. Item path (0x14039c8a0, called from 0x1403998e0 when the used record's given quest is set): the quest state from 0x1405fbc40; state 4 sends 0x365 with a 32-bit quest id, otherwise 0x35b; the writer is registered in 0x14006c290 as id 859, record 12, with the item identity written by 0x1400a8c80 (9 bits, 32 bits) then 15 bits."
@@ -10901,12 +10897,11 @@ grade = "fairly sure"
 gap = "The server's answer (a 0x35c back to Accepted) is assumed, not seen."
 
 ["0x140552550"]
-statement = "Whether the player may accept a quest, by a mask of checks; returns 0 when allowed or the first failing check's code: 1 no player, 2 already known, 3 level too low, 4 and 5 class and race, 6 to 9 prerequisite quests and exclusions, 10 faction, 11 the mentioned check, 12 to 17 item, prerequisite, path, contract and repeat checks. A refusal shows a floating text: 0x1860c for level, 0x54007 for code 15, 0x1860d otherwise."
-proof = "Saved C 0x140552550.c: mask bit tests in order bit9 0xb, bit0 2, bit12 0xe, bit2 4, bit3 5, bit8 10, bit1 3 (record level against player level), bit6 8, bit7 9, bit4 6, bit5 7, bit10 0xc, bit11 0xd, bit13 0xf, bit14 0x10, bit15 0x11."
+statement = "Whether the player may accept a quest, by a mask of checks; returns 0 when allowed or the first failing check's code: 1 no player, 2 already known, 3 level too low, 4 and 5 class and race, 6 to 9 prerequisite quests and exclusions, 10 faction, 11 not yet mentioned, 12 to 17 item, prerequisite, path, contract and repeat checks. Code 11 (mask bit 9, tested first): the quest's Quest2.flags has 0x400, the client holds no Botched, Mentioned, Abandoned or Ignored state for it, and it is not a completed repeatable quest (Completed with flags 0x20 or a non-zero questRepeatPeriodEnum). A refusal shows a floating text: 0x1860c for level, 0x54007 for code 15, 0x1860d otherwise. Bit 9 is set by every sender of 0x35b (DialogAcceptQuest 0x140556b20 and 0x1406a3760 with 0xffffffff, the item path 0x14039c8a0) and by AddHeldItem 0x1403b77d0, 0x1405a8d40, 0x140663eb0, 0x1406d1da0 and 0x1405561f0 (0xffffdfff); it is cleared by 0x14043bf30, 0x14043d650 and the mention refresh 0x1405fccb0 (0xfffffdff) and by 0x140764640, 0x140764ee0 and 0x140636d10 (0xffffddfc); 0x140555350 and 0x140553030 pass either, by path."
+proof = "Saved C 0x140552550.c (e9b6b6af37d00314): mask bit tests in order bit9 0xb, bit0 2, bit12 0xe, bit2 4, bit3 5, bit8 10, bit1 3, bit6 8, bit7 9, bit4 6, bit5 7, bit10 0xc, bit11 0xd, bit13 0xf, bit14 0x10, bit15 0x11. Bit 9, query.py decode 0x140552560-0x1405525b6: 0x140552568 MOV RDI,RCX; 0x140552587 BT EDX,0x9; 0x140552591 TEST dword ptr [R9+0xc],0x400 (R9 = quest+8, the Quest2 row; offset 12 is flags by table_rows -- Quest2 --columns); 0x14055259b CALL 0x140552fd0 with RCX still the quest; then GetQuestState != 3, or row byte 0xc & 0x20 clear and row+0x1b4 (offset 436, questRepeatPeriodEnum) zero, returns 0xb. Masks: grep of the saved C for CanAcceptQuest( calls; 0x140555350 by decode 0x140555d70-0x140555da7 (0xfffffdff when row flags & 0x20 or 0x1b4 non-zero and flags & 4, else 0xffffdfff); 0x140553030 by decode 0x1405530a0-0x1405530e6 (0xfffffdff at 0x1405530ae; 0xffffdfff at 0x1405530d9 when flags & 1); 0x1405a8d40 by decode (0xffffdfff at 0x1405a8e26); 0x140636d10 by decode (0xffffddfc at 0x140636f7f)."
 grade = "fairly sure"
-gap = "Codes 4 to 17 are named from the record field each reads; codes 12 to 17 are not matched to their Quest2 column one by one."
+gap = "Code 11 and the masks are read from the instructions; codes 4 to 17 other than 11 are still named from the record field each reads, and codes 12 to 17 are not matched to their Quest2 column one by one."
 name = "CanAcceptQuest"
-
 ["opcode.0x35a"]
 statement = "Message 0x35a, client to world server: abandon a quest. Body: quest id, 15 bits. Sent by the Lua Quest:Abandon and by abandoning every PvP quest."
 proof = "Saved C 0x140665210.c and 0x1405fd320.c: SendWorldMessage 0x35a through the 15-bit quest writer."
@@ -10985,17 +10980,14 @@ gap = "The PathSoldierActivate column name at that position is not read from the
 name = "IsChecklistObjective"
 
 ["opcode.0x35f"]
-statement = "Message 0x35f, world server to client: the quest log at login. Body: a 32-bit count of completed quests, each a 15-bit id and a bit (a repeatable quest goes to the repeatable list unless the bit is set); a 32-bit count of quests with a 15-bit id and a 4-bit state; a 32-bit count of active quests, each 15-bit id, 4-bit state, a 32-bit word, a 32-bit done mask, a 32-bit objective count with that many 32-bit progress values, a 32-bit word, then that many 32-bit timer values; and a 64-bit periodic reset time. The client then withdraws stale mentions, raises QuestInit and marks the log loaded."
-proof = "Reader 0x14008f2d0: 0x14008f380 mov r8d, 0x1 (completed bit); 0x14008f410 mov r8d, 0x4 (state); active entries by 0x14008f170: 0x14008f1c1 mov r8d, 0x4; 0x14008f1db, 0x14008f1f5, 0x14008f20f mov r8d, 0x20; array reads 0x14008f233 call 0x1403374e0. Handler 0x1405fb350 (saved C) stores the reset time in DAT_140c65938, calls 0x1405fccb0, raises QuestInit."
+statement = "Message 0x35f, world server to client: the quest log at login. Body: a 32-bit count of completed quests, each a 15-bit id and a bit (set: completed in the current period; a quest with a period and the bit clear goes straight into the completed set, so its group may offer it again); a 32-bit count of quests with a 15-bit id and a 4-bit state; a 32-bit count of active quests, each: 15-bit quest id; 4-bit state; a 32-bit QuestObjective id that fills the quest's placeholder objective (0 = none); a 32-bit flag word (bit 1 tracked, bit i+2 objective i done); a 32-bit objective count n with n 32-bit progress values; the quest's time left in ms; then n per-objective times left in ms; and a 64-bit periodic reset time. The client then withdraws stale mentions, raises QuestInit and marks the log loaded."
+proof = "Reader 0x14008f170 (saved C): record +0 quest (0xf), +4 state (4), +8 word (0x20), +0xc mask (0x20), +0x10 n (0x20), +0x18 n*4 bytes, +0x20 word (0x20), +0x28 n*4 bytes. Handler 0x1405fb350 listing: 0x1405fb53a mov r9d, [rdi+0x8] / 0x1405fb548 call 0x1405fbdc0 (4th argument); 0x1405fb5b2 mov eax, [rdi+0xc] / 0x1405fb5b8 mov [rsi+0x44], eax; 0x1405fb5ea mov [rsi+0x48], r13d (0); 0x1405fb5fb mov edx, [rdi+0x20] / 0x1405fb601 call 0x1406118a0 with the timer array and n. See the records 0x1405fbdc0, 0x1406118a0 and 0x1405fcb80."
 grade = "fairly sure"
-gap = "The two 32-bit words in an active entry are not named; the first count's width and the quest-id widths are read from the saved C, not from an instruction."
-
+gap = "The first count's width and the quest-id widths come from the saved C, not an instruction. The handler does not bound n: progress values go to entry+0x10+i*8 for every i < n, and the entry holds only 6 objective pointers, so a server must send n no greater than the quest's objective count. This comes from the saved C and was not run."
 ["opcode.0x362"]
-statement = "Message 0x362, world server to client: periodic quests reset. Body: a 64-bit reset time and 4 bits (daily, weekly and two more groups). When the time differs from the one held, the client stores it and raises QuestPeriodicReset with the four bits."
-proof = "Reader 0x140084570: 0x140084598 call 0x14006c120 (64-bit read); 0x1400845a5 mov r8d, 0x4; 0x1400845ae call 0x14006c090. Handler 0x140611e30 (saved C)."
-grade = "fairly sure"
-gap = "Which bit is daily and which weekly is not matched to questRepeatPeriodEnum."
-
+statement = "Message 0x362, world server to client: periodic quests reset. Body: a 64-bit reset time and 4 bits; bit 1 resets questRepeatPeriodEnum 1, bit 2 period 2, bit 4 period 3, bit 8 period 4. When the time differs from the one held, the client stores it, re-rolls the periodic quest offers seeded by it, frees the done quests of the flagged periods to be taken again, and raises QuestPeriodicReset with the four bits."
+proof = "Reader 0x140084570 as before; handler 0x140611e30 and 0x140489aa0 (records)."
+grade = "sure"
 ["opcode.0x176"]
 statement = "Message 0x176, world server to client: add or remove a spell shortcut tied to a path, quest or objective. Body: spell id, 18 bits, kind, 3 bits (0 path, 1 quest, 2 objective), id, 32 bits, then a bit (1 add)."
 proof = "Reader 0x14008dd40: 0x14008dd65 mov r8d, 0x12; 0x14008dd7b mov r8d, 0x3; 0x14008dd91 mov r8d, 0x20; 0x14008dda7 mov r8d, 0x1, each before call 0x14006c090. Handler 0x1403b9fb0 raises AddSpellShortcut or RemoveSpellShortcut."
@@ -11761,3 +11753,288 @@ proof = "Saved C 0x140479560.c (hash 8eb22adb6de47956): the ExplorerDoor test at
 grade = "fairly sure"
 gap = "The order of the quest and activation kinds after the lock exit, and the early leaves, were read by their labels; the conditions of the helper 0x140571850 (which sets a kind byte on the Explorer path) were not read. A unit's current entry (word 0x1908) is chosen from these bytes elsewhere, and no other writer was searched. Not run live."
 name = "UpdateUnitActivationStates"
+["opcode.0x35f.entry_order"]
+statement = "The server sends 0x35f after 0x25e in every world entry, and never before 0x19b. 0x25e's handler empties the quest log after its player check, so anything 0x35f filled before it is lost. Sent before 0x19b, it also withdraws quests (see opcode.0x35f.before_player)."
+proof = "HandleMessage025E 0x1403b5f80 clears the log at 0x1403b6393 to 0x1403b63c7 and on, after the player check. That 0x25e needs 0x19b is the existing record opcode.0x25e.entry_order. 0x1405fb350 has no player read and fills the log as it stands."
+grade = "fairly sure"
+gap = "No recording shows retail order. A live run that sends 0x35f, then 0x25e, then checks the quest tracker would confirm the wipe."
+
+["opcode.0x35f.adds_not_replaces"]
+statement = "0x35f never empties the held log. Each entry is applied in place, and quests not named stay held. The three lists run in order (completed, then list 2, then active), so for a quest in more than one list the last one wins. A second 0x35f moves each named quest to its new state, overwrites its progress and done mask, raises QuestInit again and reruns the mentioned-quest refresh. A list-2 entry with state 0 removes the quest."
+proof = "0x1405fb350 has no call to the clear function 0x1405a9660. Its only callers are 0x1403b5f80, 0x14048b980 and 0x1405a7870.\n- Completed list: inserts into the completed set log+0x60 via 0x14043f640 and 0x1405a96f0 (0x1405fb3e5, 0x1405fb3f6), or calls SetQuestState(3) at 0x1405fb40a.\n- List 2: SetQuestState(state, 0) at 0x1405fb472.\n- Active list: SetQuestState(state, word) at 0x1405fb548.\n- After the lists: refresh at 0x1405fb616, QuestInit at 0x1405fb637, log+0x94 = 1 at 0x1405fb63c.\n- SetQuestState 0x1405fbdc0 moves a quest between the active tree (log+8), the second tree (log+0x20, states 4 to 7) and the completed set by state.\n- Side effects that run again on each send: tutorials, 0x14048a0f0/a170/a1f0 for periodic quests, 0x1404cf010 for completed non-periodic quests."
+grade = "fairly sure"
+gap = "What 0x140489aa0(1) does at the handler's start, on the periodic manager DAT_140c65930, is not read. It may reset periodic state on each send."
+
+["opcode.0x35f.repeatable_list_correction"]
+statement = "The existing opcode.0x35f record is wrong about a separate repeatable list; there is none. A completed-list entry goes straight into the completed set when Quest2.questRepeatPeriodEnum is nonzero and the entry's bit is 0. Otherwise it goes through SetQuestState(3)."
+proof = "0x1405fb3a1 to 0x1405fb40a. The completed set is at log+0x60; Quest2 column offset 436 = 0x1b4 is questRepeatPeriodEnum."
+grade = "fairly sure"
+gap = "Read from the listing, not run."
+
+["opcode.0x35f.unknown_quest"]
+statement = "A quest id with no quest object in any of the three lists makes the handler return 0xA00B0001, the \"Client/Server Data Mismatch\" disconnect. Entries applied before it stay in the log, QuestInit is not raised and the loaded flag stays 0. The server must send only ids the client's Quest2 table holds."
+proof = "- Completed list: FindQuestById 0x1405a8a40 misses at 0x1405fb3a1/0x1405fb3ac, then jumps to 0x1405fb50b.\n- List 2: FindQuestById at 0x1405fb441 misses.\n- Active list: an inline lookup in the manager map (0x1405fb4a0 to 0x1405fb52a) misses, returning at 0x1405fb501.\n- The loaded flag is log+0x94.\n- The error string is record 0x1400155f7. Add 0x1405fb350 to that record's gap: it is a handler that returns 0xA00B0001."
+grade = "fairly sure"
+gap = "Whether LoadQuests 0x1405a7c90 / 0x14054f290 can leave a Quest2 row out of the map is not read. Until it is, the test is \"has a Quest2 row\", not \"has a map entry\"."
+
+["opcode.0x35f.active_state_crash"]
+statement = "An active-list state other than 1 or 2 crashes the client. Objective progress has no bound against the quest's objective count, so an objective index past the quest's filled slots crashes it too. The server must send active states 1 or 2 only, and progress only for the quest's real objectives."
+proof = "- State: after SetQuestState, a state other than 1 or 2 leaves RSI 0 (0x1405fb5a6), and 0x1405fb5b8 writes through it.\n- Progress: 0x14079d700 sets each message objective's value with no check against quest+0x10. The reader 0x14008f170 has no cap, and an empty slot is dereferenced.\n- Timers: they go through 0x1406118a0, which is bounded."
+grade = "fairly sure"
+gap = "A live run with state 3 in the active list would confirm."
+
+["opcode.0x35f.before_player"]
+statement = "0x35f before 0x19b does not crash. But the refresh then withdraws every mentioned quest (in states 4 to 7, and Quest2.flags has 4) whose state is not 7: the client sets it to 5 and sends 0x360(id, 0) to the server. Tutorials triggered from the handler do nothing without a player."
+proof = "- RefreshMentionedQuests 0x1405fccb0 calls CanAcceptQuest(quest, 0xfffffdff), which returns 1 with no player.\n- SetQuestMentioned 0x1405fca00(log, id, 0) compares against (second-tree state != 7). On a difference it calls FindQuestById and SetQuestState 5 (0x1405fca83/0x1405fca87), then sends 0x360 (0x1405fcaac).\n- TriggerTutorial 0x140437a10 returns 0 without the player."
+grade = "fairly sure"
+gap = "none for the order rule. 0x25e's wipe makes it moot when 0x35f follows 0x25e."
+
+["0x14048b980"]
+statement = "ClearQuestLog. It empties the quest log at game object teardown and is called only from 0x1403e3350, at 0x1403e3590."
+proof = "call search for 0x14048b980 and 0x1405a9660 in the saved C."
+grade = "fairly sure"
+gap = "Calls through registers (72 register jumps) are not covered by the saved-C search."
+name = "ClearQuestLog"
+
+["quest_log.process_wide"]
+statement = "The quest log lives for the whole process. It is made once at client start and destroyed only at shutdown. It is emptied by 0x25e's handler and by teardown, and by nothing else read. 0xAD does not empty it, so a Holocrypt rejoin (an 0xAD with no 0x25e) keeps the log. A character switch clears it through teardown and the new entry's 0x25e. The server must still send a full 0x35f after each 0x25e."
+proof = "- The log is DAT_140c65b80 word 0.\n- Made: 0x14000e013 → 0x14048b8f0 → 0x1405a7910 and 0x1405a7c90, with constructor 0x1405a77a0.\n- Destroyed: 0x140012c10 → 0x1405a7a30 → 0x1405a7870.\n- Clear-function callers: as in record 0x14048b980."
+grade = "fairly sure"
+gap = "The 0xAD handler itself was not read; the conclusion rests on the caller search. When teardown runs on a switch is the open gap of opcode.0x594.world_teardown."
+
+["0x1405fbdc0"]
+statement = "Sets a quest's state for the player. States 0 to 3 remove the quest from the side list (and the flag-4 side list); 1 and 2 put it in the quest log, 3 in the completed set. States 4 to 7 remove it from the quest log and store the state in the side list, and also in a second side list when Quest2.flags has 4. Its only callers are the 0x35c handler, the 0x35f login quest log and the mention sender 0x1405fca00. Its 4th argument is a QuestObjective id. When the quest has a placeholder objective (type 31) and the id is not 0, that QuestObjective row replaces the placeholder in the quest's objective list. A quest that becomes Accepted or Achieved with no log entry gets a new entry whose flag word starts at 2, so it is tracked from the start."
+proof = "Saved C 0x1405fbdc0.c (e9b6b6af37d00314): cases 0 to 3 erase from the trees at manager+0x28 and +0x48 by 0x1405fda00; the default (and case 4) erases from the log tree at +8 and inserts (key, state) into +0x28 by 0x140032f50, and into +0x48 when row byte 0xc & 4. Callers by grep: 0x1405fb670 (0x35c), 0x1405fb350 (0x35f: 3 for completed, the 4-bit state of each id-and-state entry, the active entries' state), 0x1405fca00 (5). Fourth argument and new entry: Listing: 0x1405fbe01 cmp dword [rdx+0x98], -1; 0x1405fbe1f call 0x14022d0c0 (looks up QuestObjective by id, &PTR_u_QuestObjective_140a6c900); 0x1405fbe24 movsxd rcx, [r13+0x98]; 0x1405fbe2b mov [r13+rcx*8+0x18], rax. New entry: 0x1405fc07b mov qword [rbp-0x5c], 2 (offset 0x44 of the block at rsp+0x60, stored into the entry by 0x1405fc0bf..0x1405fc0e7 after 0x1405fc0b0 call 0x1405fd500), then 0x1405fc133 call 0x1406111a0. Quest object +0x98: 0x14054f290 sets it to -1, then to the index of the objective whose QuestObjective.type is 0x1f, while it loads objective0..objective05 (Quest2 offsets 0x78..0x8c) into +0x18.. and counts them at +0x10. 0x1405fb670 (0x35c) passes its record word 2 as the same argument."
+grade = "fairly sure"
+gap = "Read from the saved C; the switch's cases are not checked against the jump table. What the server picks for a placeholder (260 QuestObjective rows of type 31: `gleam run -m genesis_prime/table_rows -- QuestObjective type=31`) is not in the client. This also names 0x35c's unnamed third word, so opcode.0x35c can be updated to match."
+name = "SetQuestState"
+
+["0x1406118a0"]
+statement = "Restores a log entry's timers from the login log. When the quest-time value is not 0 and Quest2.maxTimeAllowedMS is not 0, it sets the quest's timer start to now - maxTimeAllowedMS + value. For each objective i < n that exists, has QuestObjective.maxTimeAllowedMS not 0 and has a timer value not 0, it sets objective i's timer start to now - limit + value. So each value is time left in milliseconds. A 0 changes nothing: the start stays where the new entry put it, which is now for an Accepted quest and for each objective IsQuestObjectiveReachable allows, so 0 means a full timer. A value above the limit puts the start in the future, and the client then shows 0 left."
+proof = "Listing: 0x1406118bd mov edi, [0x140c636a8] (the frame clock, ms; record 0x14018cd50); 0x1406118c7 mov r10d, [rcx+0x120] (Quest2 offset 288 = maxTimeAllowedMS: `gleam run -m genesis_prime/table_rows -- Quest2 --columns`); 0x1406118d5 sub eax, r10d; 0x1406118d8 add eax, edx; 0x1406118da mov [r11+0x4c], eax. 0x140611906 mov r9d, [rax+0x28] (QuestObjective offset 40 = maxTimeAllowedMS: `-- QuestObjective --columns`); 0x140611916 sub / 0x140611919 add edi; 0x14061191b mov [r10+r8+0x50], eax. Defaults: 0x1406111a0 and 0x140611310 set entry+0x4c = clock, entry+0x48 = clock+10000, and entry+0x50+4i = clock for objectives IsQuestObjectiveReachable allows, when the state becomes 1."
+grade = "sure"
+name = "RestoreQuestLogTimers"
+
+["0x140553630"]
+statement = "Quest:GetQuestTimeRemaining(): Quest2.maxTimeAllowedMS minus (now - the entry's timer start), in milliseconds. It returns 0 when the quest has no entry, no limit, a start in the future, or the time is used up. QuestTracker and ContractTracker divide it by 1000 to show seconds."
+proof = "Lua name at 0x140c5bc80 ('GetQuestTimeRemaining', 0x140b2e148) next to the pointer 0x140667f00, which calls 0x140553630 at 0x140667f3d. Listing: 0x14055368b add rax, 0x28; 0x140553691 mov edx, [rax+0x4c]; 0x14055369e mov eax, [r10+0x120]; 0x1405536a9 sub ecx, edx; 0x1405536af sub eax, ecx. UI/QuestTracker/QuestTracker.lua:1783 and UI/ContractTracker/ContractTracker.lua:851: math.floor(queQuest:GetQuestTimeRemaining() / 1000)."
+grade = "sure"
+name = "GetQuestTimeRemaining"
+
+["0x1405536c0"]
+statement = "Quest:GetObjectiveTimeRemaining(i): QuestObjective.maxTimeAllowedMS minus (now - objective i's timer start in the entry's per-objective timer array), in milliseconds. It returns 0 for no limit, a start in the future, or the time used up. 39 of 10031 QuestObjective rows have a limit."
+proof = "Lua name at 0x140c5bca0 ('GetObjectiveTimeRemaining', 0x140b2e118) next to the pointer 0x140668040 (call 0x1405536c0 at 0x1406680aa). Saved C 0x1405536c0 (8eb22adb6de47956): objective row +0x28; entry via 0x1405fc7b0, +0x50 + i*4; DAT_140c636a8. QuestTracker.lua:1113 divides by 1000. `gleam run -m genesis_prime/table_rows -- QuestObjective maxTimeAllowedMS=0 | grep -c '^ID = '` gives 9992 of 10031."
+grade = "fairly sure"
+gap = "Read from the saved C; the instruction-level proof was not taken for this one."
+name = "GetObjectiveTimeRemaining"
+
+["0x1405fcb80"]
+statement = "Quest:ToggleTracked's worker. The tracked flag is bit 1 (value 2) of the log entry's flag word 0x44, the same word that holds the done mask (done bit 1 << (i + 2)). When the flag changes, the client stores it and clears the entry's tracker blink deadline. It then sends 0x364 (quest id, flag) and raises QuestTrackedChanged. The 0x35f handler overwrites the whole word with the done-mask field, so that field carries the tracked flag at login: a quest is tracked after login only if bit 1 is set."
+proof = "Listing: 0x1405fcbdc lea rcx, [rax+0x28] (the entry); 0x1405fcbe9 mov eax, [rcx+0x44]; 0x1405fcbee and edx, 2; 0x1405fcc0f or eax, 2 / 0x1405fcc18 and eax, -3; 0x1405fcc1b mov [rcx+0x44], eax; 0x1405fcc1e mov [rcx+0x48], edi (0); 0x1405fcc2a mov edx, 0x364. The pointer at 0x140c5ba78 (name 'ToggleTracked') is 0x140664d80, which tests node+0x6c & 2. Other readers of & 2: 0x14054f480 (Quest:IsTracked at 0x140c5b9e8, Quest:IsActiveQuest at 0x140c5b9f8, GetTrackedQuests), 0x1406630c0 and 0x14074a270."
+grade = "sure"
+name = "SetQuestTracked"
+
+["quest_log.entry.flags"]
+statement = "The log entry's flag word (the word at offset 0x44 of the entry, sent as 0x35f's done-mask field): bit 1 tracked; bits 2 to 7 objectives 0 to 5 done. No client code reads bit 0 or bits 8 to 31. A new Accepted or Achieved entry starts at 2. The client's own state for an Accepted quest shows Achieved (2) once every objective without QuestObjective flag 0x20 has its done bit, so a server that sends the done bits must keep them consistent with the state it sends."
+proof = "Every read of node+0x6c or entry+0x44 in the saved C of the functions that reach the log (DAT_140c65b80, 0x1405fc7b0) or of the 0x1405f*/0x14061* entry methods masks with 2 (0x14054f480, 0x1405fcb80, 0x1406630c0, 0x140664d80, 0x14074a270) or with 1 << (i + 2) for i < 6 (0x140611390, 0x1405510d0 IsQuestObjectiveDone, 0x140552a70, 0x1405fb830, 0x1405fbc40 GetQuestState, 0x1405fcd70, 0x1406115a0). Writers: 0x1405fb350 (whole word), 0x1405fcb80 (bit 1), 0x1406115a0 (bit i+2), 0x1405fc07b (initial 2). GetQuestState 0x1405fbc40 saved C lines 61 to 90: state 1 becomes 2 when no required objective lacks its bit."
+grade = "fairly sure"
+gap = "That bit 0 is never read rests on a text scan of the saved C for '+ 0x6c)' and '+ 0x44)'. A read through another base pointer, or a copy of the whole word into Lua, would not show up. A reference scan of each function that loads entry+0x44 would settle it."
+
+["0x14054f560"]
+statement = "Quest:PulseTrackBlinkTime(ms): sets the entry's tracker blink deadline to now + ms and also sets the entry's quest timer start to now, so pulsing restarts a timed quest's shown time at the full maxTimeAllowedMS (a client quirk). Quest:GetTrackBlinkTime (0x14054f4f0) returns the blink deadline. A new Accepted entry blinks for 10000 ms. The 0x35f handler sets the deadline to 0, so the login log carries no blink."
+proof = "Lua names at 0x140c5baa0 ('PulseTrackBlinkTime') and 0x140c5ba90 ('GetTrackBlinkTime') next to the pointers 0x140664fb0 and 0x140664f30. Listing 0x14054f5c7 mov ecx, [0x140c636a8]; 0x14054f5cd mov [rdx+0x4c], ecx; 0x14054f5d0 lea eax, [rcx+r11]; 0x14054f5d4 mov [rdx+0x48], eax. 0x1406111a0: entry+0x48 = clock + 10000."
+grade = "fairly sure"
+gap = "That the shared start makes a pulsed timed quest show a reset timer comes from the offsets; it was not seen in the client."
+name = "PulseTrackBlinkTime"
+
+["0x140611e30"]
+statement = "Handles message 0x362 (periodic quests reset): when the 64-bit reset time differs from the one held, stores it, re-rolls and applies the periodic quest offers with the four period bits (0x140489aa0), then raises QuestPeriodicReset with four booleans (bits 1, 2, 4, 8). An equal time does nothing."
+proof = "Saved C 0x140611e30.c (hash 2580df99bb1ce2aa): compare *param_2 with DAT_140c65938, store, FUN_140489aa0(param_1, (int)param_2[1]), RaiseUiEvent(GameMgr+0x7340, 'QuestPeriodicReset', 0x140b00884, bits&1, &2, &4, &8). Bytes at 0x140b00884 (query bytes): 'bbbb'."
+grade = "sure"
+name = "HandleQuestPeriodicReset"
+
+["0x140489aa0"]
+statement = "Applies a periodic reset, given the four period bits: sets the game's refresh flag, remembers which offered quests their groups held as done, re-rolls every group's offers from the reset time (0x1404895e0), then for each newly offered quest: if it was done and its Quest2.questRepeatPeriodEnum is 1, 2, 3 or 4 with bit 1, 2, 4 or 8 clear, it stays done in its group; if that bit is set, it stays offered (reset); any other period is logged and kept done. A quest not done whose quest-log state is 1 or 2 (Accepted, Achieved) is counted as accepted in its group. The quest log itself is not changed."
+proof = "Saved C 0x140489aa0.c (hash e9b6b6af37d00314): game (DAT_140c65898)+0x6f98 = 1; first loop over the manager (DAT_140c65930) map +0x108 (quest -> group) collects quests in the group set +0x48 (done); FUN_140008410(+0x100), FUN_1404895e0; per group, per quest in set +8: insert into +0x108; done before: quest record dword 0x6d (byte 0x1b4 = Quest2.questRepeatPeriodEnum by `gleam run -m genesis_prime/table_rows -- Quest2 --columns`, offset 436) 1->bit&1, 2->&2, 3->&4, 4->&8; clear -> FUN_1404886f0 (to done); else LogMessage(0x1a) and FUN_1404886f0. Not done: GetQuestState 1 or 2 -> FUN_140488640 (to accepted). Caller 0x140611e30 passes the 0x362 bits; 0x1405fb350 passes EDX = 1 (listing 0x1405fb372 lea edx,[r13+1], 0x1405fb37d call)."
+grade = "sure"
+name = "ApplyPeriodicQuestReset"
+
+["Quest2.questRepeatPeriodEnum"]
+statement = "How often a quest may be repeated: 0 never (3980 rows), 1 daily (1185), 2 weekly (12), 3 monthly (3), 4 yearly or event (14). A periodic reset frees the done quests of period n when 0x362's bit 1 << (n-1) is set. A completed quest with a period other than 0 may be accepted again (0x140552490)."
+proof = "Titles: `gleam run -m genesis_prime/table_rows -- Quest2 questRepeatPeriodEnum=2` (and =3, =4), then `client_files.py text`: 622521 'Weekly Quest 1 [DNT]', 637481 'Weekly Elder Gem Group PvE Bonus', 687653 '[WEEKLY] Tundra Tyrants'; 622522 'Monthly Quest 1 [DNT]'; 622523 'Yearly Quest 1 [DNT]', 742733 'Cause for Celebration'. Bit mapping: 0x140489aa0."
+grade = "fairly sure"
+gap = "1 = daily is by elimination: the first three period-1 titles (46159, 68977, 89035) have no en-US text. 4 is named from two test titles and holiday quests only."
+
+["0x1404895e0"]
+statement = "Re-rolls the periodic quest offers: empties every group's offered, accepted and done sets, then for each PeriodicQuestSetCategory picks its sets (0x14048a580), for each set picks its groups (0x14048a9e0), for each group picks its quests (0x14048ae40), and puts the picked quest ids in that group's offered set."
+proof = "Saved C 0x1404895e0.c (hash 8eb22adb6de47956): FUN_140008410 on group +8, +0x28, +0x48; nested calls 0x14048a580 -> 0x14048a9e0 -> 0x14048ae40; FUN_1400293c0(group+8, quest id)."
+grade = "fairly sure"
+gap = "That manager map +0x30 holds PeriodicQuestSetCategory nodes is inferred from 0x14048a580's children being PeriodicQuestSet rows; the map's build in 0x140488fa0 is not read."
+name = "RollPeriodicQuestOffers"
+
+["0x14048a580"]
+statement = "Picks a category's periodic quest sets by weight (0x14048a9e0 picks a set's groups by PeriodicQuestGroup.weight, 0x14048ae40 a group's quests by Quest2.periodicQuestWeight). When the children number no more than the count to offer, all are taken. Otherwise, for each pick with n picks left (n counting down to 1): seed the client's MT19937 with (u32)(owner id + n + low 32 bits of the reset time); r = (int)(next_double * total weight), or 0 when the total weight is under 2; take the first remaining child whose cumulative weight key exceeds r, remove it and lower the total by its weight. Missing rows weigh 0."
+proof = "Saved C 0x14048a580.c, 0x14048a9e0.c, 0x14048ae40.c (hash 8eb22adb6de47956; they differ only in the row reader and offset): DAT_140c65940 vtable +0x10 (seed 0x1401ae490) with *param_1 + local_res20 + (int)DAT_140c65938; vtable +0x30 (0x1401ae210) times total weight param_1+8 (u64, fixup 0x140b7a150 = 2^64); lower bound of r+1 in the copied map (FUN_14048b2a0); keys after the pick reduced by its weight; uVar9 from 0x1401fb5a0 (PeriodicQuestSet) +0xc = weight, 0x1401fb9e0 (PeriodicQuestGroup) +0x10 = weight, 0x14022aa80 (Quest2) +0x1b0 = periodicQuestWeight (offset 432, Quest2 --columns). Count min(param_1[4], param_1[10]); else-branch copies all children."
+grade = "fairly sure"
+gap = "How 0x140488fa0 builds the cumulative keys (child order, starting value), and which column fills the count to offer (param_1[4]; likely periodicSetsOffered / periodicGroupsOffered / periodicQuestsOffered), are not read. Emulating 0x1404895e0 on known rows would settle both."
+name = "PickPeriodicQuestSets"
+
+["0x1401ae3c0"]
+statement = "Builds the client's random generator: standard MT19937 (624 words, multiplier 0x6c078965, matrix 0x9908b0df, standard tempering), seeded from the local time of day in milliseconds. Its seed function (0x1401ae490) is init_genrand(seed); its next-32-bit function (0x1401ae4e0) is genrand_int32; its next-fraction function (0x1401ae210) is genrand_int32 / 2^32. The periodic quest manager owns one (DAT_140c65940, made in 0x140488fa0)."
+proof = "Saved C 0x1401ae3c0.c, 0x1401ae490.c, 0x1401ae210.c, 0x1401ae4e0.c (hash 8eb22adb6de47956): constants above, 0x270 loop, tempering >>11, &0xff3a58ad <<7, &0xffffdf8c <<15, >>18. Vtable 0x140b5ef00 read by query bytes. DAT_140b79db0 = 0x3df0000000000000 (2^-32)."
+grade = "sure"
+name = "NewMersenneTwister"
+
+["0x140552490"]
+statement = "CanAcceptQuest check 2 (already known): passes when the quest is unknown (state 0), or is in state 3 (Completed), outside the client's side list, and has quest flag 0x20 or a questRepeatPeriodEnum other than 0. So a completed periodic quest is never refused for being known; whether it is on offer is check 16."
+proof = "Saved C 0x140552490.c: GetQuestState; puVar1[3] & 0x20; puVar1[0x6d] (byte 0x1b4)."
+grade = "fairly sure"
+gap = "Read from the saved C only; the instructions are not cited."
+name = "CheckQuestNotKnown"
+
+["0x140552e30"]
+statement = "CanAcceptQuest check 16 (mask bit 14): a quest with questRepeatPeriodEnum 0 passes. Otherwise it passes only when the quest is in its periodic group's offered set and the group's accepted plus done counts are under PeriodicQuestGroup.maxPeriodicQuestsAllowed."
+proof = "Saved C 0x140552e30.c: [0x6d] == 0 -> 1; manager +0x108 lookup; plVar4[0xb] + plVar4[7] < *(group row + 0xc) (maxPeriodicQuestsAllowed, offset 12 by `table_rows -- PeriodicQuestGroup --columns`); lookup in set plVar4[2]. Called from 0x140552550 at the >> 0xe test."
+grade = "sure"
+name = "CheckPeriodicQuestOffered"
+
+["0x1405fb350.completed_bit"]
+statement = "A completed entry of 0x35f with questRepeatPeriodEnum 0, or with its bit set, goes through SetState 3. For a periodic quest that also marks it done in its group (after the login re-roll), so it cannot be taken again this period. With a period and the bit clear, the id goes straight into the quest log's completed set: GetQuestState still returns 3, but its group does not count it done, so it can be taken again if offered. The bit therefore reads as 'completed in the current period'."
+proof = "Saved C 0x1405fb350.c (hash e9b6b6af37d00314) lines 21-42: 0x140489aa0 runs first (EDX = 1); then per entry FUN_1405fbdc0(log, quest, 3), or FUN_14043f640(log+0x60) and FUN_1405a96f0(log+0x60, entry). GetQuestState 0x1405fbc40 returns 3 from the hash set at log +0x70/+0x78 (buckets of the set at +0x60). Saved C 0x1405fbdc0.c (hash e9b6b6af37d00314) case 3 inserts into +0x60 and, when byte 0x1b4 != 0, calls 0x14048a1f0 -> 0x1404886f0 (group done); cases 1 and 2 call 0x14048a0f0 -> 0x140488640 (group accepted)."
+grade = "fairly sure"
+gap = "This corrects the 'repeatable list' wording of opcode.0x35f. The other side effects of SetState 3 (UI events, rewards) on the bit-set path are not read."
+
+["DAT_140c65938.readers"]
+statement = "The periodic reset time is read only by the 0x35f and 0x362 handlers (stored, compared for change) and by the three weighted pickers (low 32 bits in the seed). No Lua function, UI event argument or timer reads it, so the client gives it no unit or epoch and never compares it, or any quest's completion, with a clock."
+proof = "client_trace.py 0x140611e30: DAT_140c65938 shared with 0x14048a580, 0x14048a9e0, 0x14048ae40, 0x1405fb350 only. Grep of the UI folder: QuestPeriodicReset only in LuaDocData/data.xml (Id 14738, Incomplete, no params); ContractsLib calls (GetPeriodicContracts, GetActiveContracts, GetMaxActiveContracts) show no time."
+grade = "sure"
+
+["reset_schedule"]
+statement = "The client holds no fact for when resets happen: no table column, constant, Lua or text gives a reset hour or weekday."
+proof = "client_files.py text --search 'daily reset' (0 texts), 'weekly reset' (only /resetinstances help 673338, 745128); UI Lua grep for ResetHour/ResetTime/DailyReset/WeeklyReset: nothing; PeriodicQuestSet, PeriodicQuestGroup, PeriodicQuestSetCategory --columns have no time column."
+grade = "fairly sure"
+gap = "A search that finds nothing proves no absence; the schedule is a retail-record question (marked with its source) or a server choice."
+
+["0x140552fd0"]
+statement = "Whether the client holds a quest in its side list: true when the quest has an entry of state Botched, Mentioned, Abandoned or Ignored (an Ignored entry counts)."
+proof = "Saved C 0x140552fd0.c (8eb22adb6de47956): a lookup of the quest's id in the tree at quest manager (*0x140c65b80) +0x28, node key at 0x20. SetQuestState 0x1405fbdc0 fills that tree only for states 4 to 7. Callers: 0x140552550 (bit 9), 0x14043c700, 0x14043bf30, 0x14043d650, 0x140557e50, 0x140664560, 0x140764640."
+grade = "fairly sure"
+gap = "Read from the saved C; the call from CanAcceptQuest is confirmed by instructions, the others are not."
+name = "HasQuestSideState"
+
+["Quest2.flags.0x400"]
+statement = "Quest2 flag 0x400: the quest can be accepted only while the client holds it in its side list (for a new quest, Mentioned), unless it is a completed repeatable quest. 524 of 5194 rows have it; 437 are delivered by a CommunicatorMessages row; the other 87 (2418, 2473, 2474, 2775, 2801, 2932, 2933, 3023, 3148 and more) can enter the side list only by the server's 0x35c or 0x35f. Of the 1073 quests a communicator row delivers, 636 lack the flag (10 of those ids have no Quest2 row)."
+proof = "CanAcceptQuest 0x140552550 bit 9 (0x140552591). Counts: gleam run -m genesis_prime/table_rows -- Quest2 and -- CommunicatorMessages, read by the scratch script /private/tmp/claude-502/-Users-jimd-Projects-the-genesis-prime/21d9dc78-1f16-46a8-a706-b1d7891f151c/scratchpad/flags400.py; 7 of the 524 have flags 0x20 or a non-zero questRepeatPeriodEnum."
+grade = "sure"
+
+["0x1405fb350"]
+statement = "Handles message 0x35f (the quest log at login): applies the periodic reset with bit 1 first (0x140489aa0), then the completed list, list 2 and the active list in order, stores the periodic reset time in DAT_140c65938, refreshes the mentioned quests (0x1405fccb0), raises QuestInit and marks the log loaded. It never empties the log. A quest id with no Quest2 row makes it return 0xA00B0001."
+proof = "Records opcode.0x35f, opcode.0x35f.adds_not_replaces, opcode.0x35f.unknown_quest and 0x1405fb350.completed_bit; listing 0x1405fb372 lea edx,[r13+1] and 0x1405fb37d call 0x140489aa0; 0x1405fb548 call 0x1405fbdc0 for an active entry; 0x1405fb616 refresh; 0x1405fb637 QuestInit; 0x1405fb63c loaded flag."
+grade = "fairly sure"
+gap = "The side effects of SetQuestState 3 on the bit-set path (UI events, rewards) are not read."
+name = "HandleQuestLogInit"
+
+["0x1405fccb0"]
+statement = "Walks every quest in the client's side map (the manager's quest map) and withdraws the mention (0x1405fca00 with 0) of each whose record lacks Quest2.flags 4 or which CanAcceptQuest refuses with mask 0xfffffdff. Run after the 0x35f lists and before QuestInit."
+proof = "Records opcode.0x360 (its proof: the refresh calls 0x1405fca00 with 0) and opcode.0x35f.before_player (0x1405fccb0 calls CanAcceptQuest(quest, 0xfffffdff), which returns 1 with no player); 0x1405fb616 is its call in 0x1405fb350."
+grade = "fairly sure"
+gap = "Read from the records' proofs; the function body was not re-read for this record."
+name = "RefreshMentionedQuests"
+
+["0x1405fca00"]
+statement = "Sets whether a quest is mentioned to the player: when the wish differs from the held state (not 7), it finds the quest, sets its local state to 5 (Mentioned) through SetQuestState whatever the wish, and sends 0x360 (quest id, wish)."
+proof = "Record opcode.0x360: 0x1405fca62 cmp [node+0x24],7; 0x1405fca83 lea r8d,[r9+5]; 0x1405fca87 call 0x1405fbdc0; 0x1405fca9f mov edx,0x360; 0x1405fcaac call SendWorldMessage."
+grade = "fairly sure"
+gap = "Read from the records' proofs; the function body was not re-read for this record."
+name = "SetQuestMentioned"
+
+["0x14048b8f0"]
+statement = "Makes the quest log (DAT_140c65b80 word 0) once at client start, through 0x1405a7910 and 0x1405a7c90 (LoadQuests), with constructor 0x1405a77a0."
+proof = "Record quest_log.process_wide: 0x14000e013 calls 0x14048b8f0, which calls 0x1405a7910 and 0x1405a7c90."
+grade = "fairly sure"
+gap = "The constructor 0x1405a77a0 and the other callees are not read."
+name = "CreateQuestManager"
+
+["0x1405a7c90"]
+statement = "Fills the quest log's map with a quest object per Quest2 row when the log is made (0x14054f290 builds each object: its objectives and its placeholder index)."
+proof = "Record quest_log.process_wide (the call from 0x14048b8f0) and the proof of record 0x1405fbdc0 (0x14054f290 sets the quest object's objective list and +0x98)."
+grade = "fairly sure"
+gap = "Whether it can leave a Quest2 row out of the map is not read (record opcode.0x35f.unknown_quest)."
+name = "LoadQuests"
+
+["0x140749de0"]
+statement = "A Lua getter registered as 'IsInitialized'. The table that holds it is not read."
+proof = "The pair (name pointer 0x140b4a208, function 0x140749de0) is at 0x140b75380."
+grade = "fairly sure"
+gap = "The table the getter belongs to, and what it returns, are not read; reading the function's body would settle both."
+name = "IsInitialized"
+
+["0x14048a9e0"]
+statement = "Picks a periodic quest set's groups by PeriodicQuestGroup.weight with the same seeded MT19937 draw as 0x14048a580."
+proof = "Record 0x14048a580: 0x14048a580, 0x14048a9e0 and 0x14048ae40 differ only in the row reader and offset (saved C 8eb22adb6de47956)."
+grade = "fairly sure"
+gap = "How 0x140488fa0 builds the cumulative weight keys is not read (record 0x14048a580)."
+name = "PickPeriodicQuestGroups"
+
+["0x14048ae40"]
+statement = "Picks a periodic group's quests by Quest2.periodicQuestWeight with the same seeded MT19937 draw as 0x14048a580."
+proof = "Record 0x14048a580: 0x14048a580, 0x14048a9e0 and 0x14048ae40 differ only in the row reader and offset (saved C 8eb22adb6de47956)."
+grade = "fairly sure"
+gap = "How 0x140488fa0 builds the cumulative weight keys is not read (record 0x14048a580)."
+name = "PickPeriodicGroupQuests"
+
+["0x1401ae490"]
+statement = "The random generator's seed function (the generator's second function): init_genrand(seed)."
+proof = "Record 0x1401ae3c0 (saved C 0x1401ae490.c, 8eb22adb6de47956)."
+grade = "fairly sure"
+gap = "Read from the saved C only; the instructions are not cited."
+name = "MersenneSeed"
+
+["0x1401ae4e0"]
+statement = "The random generator's next 32-bit value: genrand_int32."
+proof = "Record 0x1401ae3c0 (saved C 0x1401ae4e0.c, 8eb22adb6de47956)."
+grade = "fairly sure"
+gap = "Read from the saved C only; the instructions are not cited."
+name = "MersenneNextUint32"
+
+["0x1401ae210"]
+statement = "The random generator's next fraction: genrand_int32 / 2^32."
+proof = "Record 0x1401ae3c0 (saved C 0x1401ae210.c; DAT_140b79db0 = 0x3df0000000000000 = 2^-32)."
+grade = "fairly sure"
+gap = "Read from the saved C only; the instructions are not cited."
+name = "MersenneNextDouble"
+
+["0x140488520"]
+statement = "Whether a periodic group can offer a quest: its accepted plus done counts are under PeriodicQuestGroup.maxPeriodicQuestsAllowed and the quest is in its offered set. Called by 0x140488640 and 0x14048a2b0; the same test as CanAcceptQuest check 16 (0x140552e30)."
+proof = "Saved C 0x140488520.c (8eb22adb6de47956): param_1[0xb] + param_1[7] < *(uint*)(*param_1 + 0xc), then a lookup of the quest id in the set param_1[2]."
+grade = "fairly sure"
+gap = "Read from the saved C only; the instructions are not cited."
+name = "PeriodicGroupHasRoomFor"
+
+["0x140488640"]
+statement = "Counts a quest as accepted in its periodic group, when the group has room for it (0x140488520)."
+proof = "Saved C 0x140488640.c: calls 0x140488520 at 0x140488653; callers 0x140489aa0 (a quest not done whose log state is 1 or 2) and 0x14048a0f0."
+grade = "fairly sure"
+gap = "Read from the call structure and the record 0x140489aa0; the set it inserts into is not matched to a field."
+name = "PeriodicGroupMarkAccepted"
+
+["0x1404886f0"]
+statement = "Marks a quest done in its periodic group for the current period, so the group no longer offers it."
+proof = "Callers: 0x140489aa0 (a quest held as done that stays done) and 0x14048a1f0 (SetQuestState 3 of a periodic quest); records 0x140489aa0 and 0x1405fb350.completed_bit."
+grade = "fairly sure"
+gap = "Read from the call structure and the two records; the set it inserts into is not matched to a field."
+name = "PeriodicGroupMarkDone"
+
+["0x14048a0f0"]
+statement = "The periodic manager's hook when a periodic quest enters state 1 or 2: it counts the quest as accepted in its group (0x140488640)."
+proof = "Called by 0x1405fbdc0 at 0x1405fc5c0; jumps to 0x140488640 at 0x14048a158. Record 0x1405fb350.completed_bit (cases 1 and 2 call 0x14048a0f0)."
+grade = "fairly sure"
+gap = "Read from the call structure only; the instructions are not cited."
+name = "OnPeriodicQuestAccepted"
+
+["0x14048a1f0"]
+statement = "The periodic manager's hook when a periodic quest is completed (SetQuestState 3 with Quest2.questRepeatPeriodEnum not 0): it marks the quest done in its group (0x1404886f0)."
+proof = "Called by 0x1405fbdc0 at 0x1405fbf93; calls 0x1404886f0 at 0x14048a261. Record 0x1405fb350.completed_bit (case 3)."
+grade = "fairly sure"
+gap = "Read from the call structure only; the instructions are not cited."
+name = "OnPeriodicQuestCompleted"

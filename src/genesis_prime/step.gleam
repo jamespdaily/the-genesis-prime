@@ -104,6 +104,11 @@ pub type Now {
   )
 }
 
+/// The clock in whole Unix milliseconds, the unit the quest resets are counted
+/// in (`FILETIME` is counted from 1601, the Unix epoch from 1970).
+@external(erlang, "genesis_prime_step_runtime_ffi", "unix_milliseconds")
+pub fn unix_milliseconds(now now: Now) -> Int
+
 /// One input to a rule: what happened, and when. `own` is the kind's own
 /// input type, `ConnectionEvent` or `ServiceEvent`.
 pub type Input(own) {
