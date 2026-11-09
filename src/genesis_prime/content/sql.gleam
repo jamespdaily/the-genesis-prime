@@ -313,3 +313,43 @@ order by spawn.world_id, spawn.id;
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
+
+/// A row you get from running the `load_zone_welcomes` query
+/// defined in `./src/genesis_prime/content/sql/load_zone_welcomes.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadZoneWelcomesRow {
+  LoadZoneWelcomesRow(world_zone_id: Int, tutorial_id: Int)
+}
+
+/// Every row of the zone_welcome table in key order: the one query the load makes of
+/// the table at start (genesis_prime/content/zone_welcome). The checks run on these
+/// rows, not in SQL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_zone_welcomes(
+  db: pog.Connection,
+) -> Result(pog.Returned(LoadZoneWelcomesRow), pog.QueryError) {
+  let decoder = {
+    use world_zone_id <- decode.field(0, decode.int)
+    use tutorial_id <- decode.field(1, decode.int)
+    decode.success(LoadZoneWelcomesRow(world_zone_id:, tutorial_id:))
+  }
+
+  "-- Every row of the zone_welcome table in key order: the one query the load makes of
+-- the table at start (genesis_prime/content/zone_welcome). The checks run on these
+-- rows, not in SQL.
+select
+  world_zone_id,
+  tutorial_id
+from zone_welcome
+order by world_zone_id;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}

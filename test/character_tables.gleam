@@ -23,6 +23,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
+import genesis_prime/table/tutorial
 import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import gleam/int
@@ -88,6 +89,7 @@ pub fn content_files() -> List(#(String, BitArray)) {
       creature2_outfit_info.schema,
       faction2.schema,
       faction2_relationship.schema,
+      tutorial.schema,
       world.schema,
     ],
     fixture_tables.file,
