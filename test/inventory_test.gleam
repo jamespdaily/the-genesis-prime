@@ -174,6 +174,7 @@ fn taken_by(
     life:,
     tables: fixture_tables.shared(),
     wearer:,
+    bag_slots: 0,
     message: MoveAsked,
     body: move_body(from:, to:),
   )
@@ -397,6 +398,7 @@ pub fn a_move_the_client_would_refuse_is_refused_with_its_code_test() -> Nil {
       life: alive(),
       tables: fixture_tables.shared(),
       wearer: equip_requirement_support.engineer(),
+      bag_slots: 0,
       message: MoveAsked,
       body: <<1, 2, 3>>,
     )
@@ -580,6 +582,7 @@ fn split_taken(
     life:,
     tables: fixture_tables.shared(),
     wearer: equip_requirement_support.engineer(),
+    bag_slots: 0,
     message: SplitAsked,
     body: body_of_split(guid:, to:, count:),
   )
@@ -594,6 +597,7 @@ fn delete_taken(
     life: alive(),
     tables: fixture_tables.shared(),
     wearer: equip_requirement_support.engineer(),
+    bag_slots: 0,
     message: DeleteAsked,
     body: body_of_delete(at:),
   )
@@ -737,6 +741,7 @@ pub fn a_split_the_client_would_not_send_is_refused_with_its_code_test() -> Nil 
       life: alive(),
       tables: fixture_tables.shared(),
       wearer: equip_requirement_support.engineer(),
+      bag_slots: 0,
       message: SplitAsked,
       body: <<1, 2, 3>>,
     )
@@ -928,6 +933,7 @@ pub fn a_delete_the_client_would_not_send_is_refused_with_its_code_test() -> Nil
       life: alive(),
       tables: fixture_tables.shared(),
       wearer: equip_requirement_support.engineer(),
+      bag_slots: 0,
       message: DeleteAsked,
       body: <<1>>,
     )
@@ -1125,6 +1131,7 @@ pub fn a_prerequisite_row_the_tables_lack_ends_the_move_and_the_log_names_it_tes
       life: alive(),
       tables: tables_without(table: "Prerequisite", id: 39_240),
       wearer: equip_requirement_support.engineer(),
+      bag_slots: 0,
       message: MoveAsked,
       body: move_body(from: #(1, 1), to: #(0, 2)),
     )

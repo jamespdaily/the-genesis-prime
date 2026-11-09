@@ -541,6 +541,18 @@ pub fn stack_limit(
   }
 }
 
+/// The number of inventory slots the item opens when it is worn in a bag slot:
+/// Item2.maxStackCount for a bag, `None` for any other item. A bag is an item
+/// whose joined flags hold 0x100 and whose Item2.flags lack 0x4000, because the
+/// client gives a proxy the joined flags 0x10004 (FillItemInfo 0x1404445d0,
+/// `0x1404445d0.proxy`, `Item2.bags`). Only a missing row is an error.
+pub fn bag_size(
+  tables _tables: table_store.Tables,
+  item2_id _item2_id: Int,
+) -> Result(Option(Int), ItemPropertyError) {
+  panic as "shape: #587 the bag size of an item"
+}
+
 /// Whether the player may destroy the item: Item2.flags lacks 0x10000
 /// (SendItemDelete 0x1403c1360 refuses with Item_CannotBeDeleted when it holds
 /// it). The proxy gap of `stack_limit` applies (#333).

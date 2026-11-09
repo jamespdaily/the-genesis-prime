@@ -50,6 +50,8 @@ pub fn item_message(
       life: entered.life,
       tables: session.settings.tables,
       wearer: wearer_of(tables: session.settings.tables, entered:),
+      // No 0x92C is sent yet, so no bag slot is unlocked.
+      bag_slots: 0,
       message:,
       body: inner.body,
     )

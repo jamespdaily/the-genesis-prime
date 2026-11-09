@@ -857,6 +857,14 @@ fn unit_is_player(unit_id unit_id: Int) -> Effect {
   Send(Frame(message_id: unit_is_player.message_id, body:))
 }
 
+/// 0x92C with the reward properties the server holds for the player: BagSlots
+/// and BankSlots at the premium tier the client was sent (`reward_property`),
+/// which unlock the four bag slots and the two bank bag slots of the character
+/// window (`opcode.0x92c`).
+pub fn reward_properties_sent(tables _tables: table_store.Tables) -> Effect {
+  panic as "shape: #587 the reward properties frame"
+}
+
 /// 0x6BC with the character's stored path as its only unlocked path, and the
 /// starting experience and change days (opcode.0x6bc).
 fn player_path(character character: Character) -> Effect {

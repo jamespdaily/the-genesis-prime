@@ -168,9 +168,11 @@ pub type Moving {
 /// What an accepted change saves, with the rows as they are held, which fence
 /// the store's statement.
 pub type Change {
-  /// One move, or two for a swap, answered with `moved`, the frame (0x569 or
-  /// 0x568) the client gets once they are saved.
-  Moved(moves: List(ItemMove), moved: Frame)
+  /// The moves of one change, saved together: one move, two for a swap, and a
+  /// move for each item a worn bag's leaving puts at a free slot. `moved` are
+  /// the frames (0x569 or 0x568) the client gets once they are saved, in the
+  /// order they are sent.
+  Moved(moves: List(ItemMove), moved: List(Frame))
   /// `count` of the stack `source` put onto the stack `target`, of the same
   /// Item2: the source goes when none of it is left.
   Merged(source: HeldItem, target: HeldItem, count: Int)
@@ -282,12 +284,15 @@ const first_location_never_deleted = 300
 
 /// What the client's message is answered with: a refusal with the code of the
 /// first check it breaks, or the store's ask, or the refusal for a body the
-/// client's reader refuses.
+/// client's reader refuses. `bag_slots` is the BagSlots value the client was
+/// sent in 0x92C (`reward_property.bag_slots`): how many of the worn bag slots,
+/// equipped 17 to 20, a bag may be moved into.
 pub fn take(
   items items: List(HeldItem),
   life life: Life,
   tables tables: table_store.Tables,
   wearer wearer: Wearer,
+  bag_slots _bag_slots: Int,
   message message: Message,
   body body: BitArray,
 ) -> Result(Taken, Refusal) {
@@ -296,6 +301,17 @@ pub fn take(
     SplitAsked -> take_split(items:, body:)
     DeleteAsked -> take_delete(items:, tables:, body:)
   }
+}
+
+/// The inventory's usable slots: 16 and the size of each bag worn at equipped 17
+/// to 20, which the client recomputes whenever it files an item in those slots
+/// (`0x1403d2e10`, `player.inventory_capacity`). The error is a held item with
+/// no row in the tables.
+pub fn size(
+  items _items: List(HeldItem),
+  tables _tables: table_store.Tables,
+) -> Result(Int, item_property.ItemPropertyError) {
+  panic as "shape: #587 the inventory's size"
 }
 
 /// A 0x56A that refuses with the code, naming the item the player named.
@@ -738,10 +754,9 @@ fn moving(
     Error(Nil) ->
       Moving(
         guid: item.item_guid,
-        change: Moved(
-          moves: [first],
-          moved: frame_of_move(guid: item.item_guid, place: to),
-        ),
+        change: Moved(moves: [first], moved: [
+          frame_of_move(guid: item.item_guid, place: to),
+        ]),
         items: relocated(items:, guid: item.item_guid, to: to_place),
       )
     Ok(other) ->
@@ -756,10 +771,12 @@ fn moving(
               to: from_place,
             ),
           ],
-          moved: frame_of_swap(first: #(item.item_guid, to), second: #(
-            other.item_guid,
-            from,
-          )),
+          moved: [
+            frame_of_swap(first: #(item.item_guid, to), second: #(
+              other.item_guid,
+              from,
+            )),
+          ],
         ),
         items: items
           |> relocated(guid: item.item_guid, to: to_place)
@@ -912,7 +929,7 @@ pub fn answered(
   case answer {
     ItemsSaved ->
       case moving.change {
-        Moved(moved:, ..) -> #(moving.items, [Send(moved)])
+        Moved(moved:, ..) -> #(moving.items, list.map(moved, Send))
         Merged(source:, target:, count:) -> #(moving.items, [
           Send(count_changed(
             guid: target.item_guid,

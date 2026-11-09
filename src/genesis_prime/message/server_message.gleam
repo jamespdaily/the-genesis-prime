@@ -54,6 +54,7 @@ import genesis_prime/message/realm_handoff.{type RealmHandoff}
 import genesis_prime/message/realm_list.{type RealmList}
 import genesis_prime/message/rename_character_result.{type RenameCharacterResult}
 import genesis_prime/message/resurrection_window.{type ResurrectionWindow}
+import genesis_prime/message/reward_properties.{type RewardProperties}
 import genesis_prime/message/server_hello.{type ServerHello}
 import genesis_prime/message/server_tutorial.{type ServerTutorial}
 import genesis_prime/message/spell_cast_confirmed.{type SpellCastConfirmed}
@@ -181,6 +182,7 @@ pub type ServerMessage {
   ResurrectionWindow(message: ResurrectionWindow)
   CombatLog(message: CombatLog)
   UnitDialogOpen(message: UnitDialogOpen)
+  RewardProperties(message: RewardProperties)
 }
 
 /// Why a body is not a message the server sends.
@@ -417,6 +419,8 @@ pub fn decode(
       decoded(body, message_id, resurrection_window.decode, ResurrectionWindow)
     0x0247 -> decoded(body, message_id, combat_log.decode, CombatLog)
     0x0357 -> decoded(body, message_id, unit_dialog_open.decode, UnitDialogOpen)
+    0x092C ->
+      decoded(body, message_id, reward_properties.decode, RewardProperties)
     _ -> Error(UnknownMessage(message_id:))
   }
 }
@@ -506,6 +510,7 @@ pub fn name(message: ServerMessage) -> String {
     ResurrectionWindow(..) -> "resurrection_window"
     CombatLog(..) -> "combat_log"
     UnitDialogOpen(..) -> "unit_dialog_open"
+    RewardProperties(..) -> "reward_properties"
   }
 }
 
