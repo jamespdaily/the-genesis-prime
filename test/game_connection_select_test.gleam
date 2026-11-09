@@ -284,7 +284,7 @@ pub fn a_play_of_a_character_with_no_saved_place_is_refused_the_same_way_and_the
       outcome: step.Answer(
         FromStore(
           ForWorld(
-            CharacterLoaded(no_place, character_support.epoch(1), None, []),
+            CharacterLoaded(no_place, character_support.epoch(1), None, [], []),
           ),
         ),
       ),

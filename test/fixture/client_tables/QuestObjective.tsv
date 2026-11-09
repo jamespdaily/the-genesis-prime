@@ -1,0 +1,8 @@
+ID	type	flags	data	count	localizedTextIdFull	worldLocationsIdIndicator00	worldLocationsIdIndicator01	worldLocationsIdIndicator02	worldLocationsIdIndicator03	maxTimeAllowedMS	localizedTextIdShort	targetGroupIdRewardPane	questDirectionId
+1961	2	0	5006	1	0	15370	0	0	0	0	0	0	0
+2709	4	0	4857	1	61036	0	0	0	0	0	0	0	0
+2710	4	0	4858	1	61037	0	0	0	0	0	0	0	0
+2711	4	0	4859	1	61038	0	0	0	0	0	0	0	0
+4182	5	0	9601	1	91272	7004	7005	0	0	0	0	0	0
+4183	8	3	847	35	95226	7004	7005	0	0	600000	0	0	0
+9461	31	0	282	0	0	21045	0	0	0	0	0	0	0

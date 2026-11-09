@@ -9,6 +9,7 @@ import genesis_prime/client_archive
 import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/zone_welcome
 import genesis_prime/login/auth_connection
 import genesis_prime/login/recorded_realm
 import genesis_prime/login/sts_connection
@@ -33,6 +34,7 @@ import gleam/string
 import login_support
 import pog
 import simplifile
+import zone_welcome_support
 
 /// One connection of a session written by hand: the rule it ran, its seed and
 /// its place in the order the server accepted connections.
@@ -163,6 +165,20 @@ pub fn run_logged(
   )
 }
 
+/// The welcomes the live server read from its zone_welcome table, as the table's seed
+/// states them, selected over the client's whole table set: the connection's own tables
+/// hold no Tutorial table (it is a content table), and the committed fixture lacks the
+/// WorldZone rows a recording lands in.
+fn recorded_welcomes() -> zone_welcome.ZoneWelcomes {
+  let assert Ok(welcomes) =
+    zone_welcome.select(
+      rows: zone_welcome_support.rows(),
+      tables: client_tables.every_table(),
+    )
+    as "each seed row names a WorldZone and a Tutorial row of category 29 in the client's tables"
+  welcomes
+}
+
 /// Replays the session in `folder` against a listener whose connections run
 /// `rule`, with no ask to answer.
 pub fn run(
@@ -263,7 +279,7 @@ pub fn run_scripted(
 /// login through the STS, auth and game servers, played into the world with a
 /// level-3 Veteran character (`session.sh` of the playing-live skill), with the
 /// server taking the client's movement messages and saving the player's place.
-pub const committed_session = "test/wire_recording/2026-11-05-loadout-session"
+pub const committed_session = "test/wire_recording/2026-11-09-loadout-session"
 
 /// The folder every recorded session is kept in.
 const recordings_folder = "test/wire_recording"
@@ -293,8 +309,10 @@ fn recorded_auth_realm(session: Session) -> auth_connection.Realm {
 }
 
 /// What the committed session was recorded under, which the replay's tree is
-/// made with: the auth server's realm is the one the auth header records, and
-/// every other setting is the server's own.
+/// made with: the auth server's realm is the one the auth header records, the
+/// game server holds the welcomes of the zones the session lands in (the live
+/// server read them from the zone_welcome table), and every other setting is
+/// the server's own.
 fn session_settings(
   settings settings: server.Settings,
   replay replay: wire_replay.Replay,
@@ -328,6 +346,7 @@ fn session_settings(
         settings: connection_state.Settings(
           ..servers.game.settings,
           tables: client_tables.shared(),
+          zone_welcomes: recorded_welcomes(),
         ),
       ),
       replay,

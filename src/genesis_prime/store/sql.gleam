@@ -5,6 +5,7 @@
 ////
 
 import gleam/dynamic/decode
+import gleam/json.{type Json}
 import gleam/option.{type Option}
 import pog
 
@@ -606,6 +607,94 @@ order by location, bag_index;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `load_quest_log` query
+/// defined in `./src/genesis_prime/store/sql/load_quest_log.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadQuestLogRow {
+  LoadQuestLogRow(
+    quest_id: Int,
+    state: Int,
+    completed_at: Int,
+    placeholder_objective_id: Option(Int),
+    tracked: Option(Bool),
+    done_mask: Option(Int),
+    progress: Option(List(Int)),
+    quest_ms_left: Option(Int),
+    objective_ms_left: Option(List(Int)),
+  )
+}
+
+/// The quests a character has a record of, in quest id order, as the load hands
+/// them to the quest log's decode (genesis_prime/game/quest_log). A row of any state
+/// but 1 and 2 has no active entry, so its active columns are NULL (the table's
+/// `character_quest_active_has_its_entry`). Only a completed row has a time
+/// (`character_quest_completed_has_a_time`): `completed_at` is its whole Unix seconds,
+/// and 0 for a row of another state, which the decode does not read, since squirrel
+/// cannot type a timestamptz or a computed column that may be NULL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_quest_log(
+  db: pog.Connection,
+  character_id: Int,
+) -> Result(pog.Returned(LoadQuestLogRow), pog.QueryError) {
+  let decoder = {
+    use quest_id <- decode.field(0, decode.int)
+    use state <- decode.field(1, decode.int)
+    use completed_at <- decode.field(2, decode.int)
+    use placeholder_objective_id <- decode.field(3, decode.optional(decode.int))
+    use tracked <- decode.field(4, decode.optional(decode.bool))
+    use done_mask <- decode.field(5, decode.optional(decode.int))
+    use progress <- decode.field(6, decode.optional(decode.list(decode.int)))
+    use quest_ms_left <- decode.field(7, decode.optional(decode.int))
+    use objective_ms_left <- decode.field(
+      8,
+      decode.optional(decode.list(decode.int)),
+    )
+    decode.success(LoadQuestLogRow(
+      quest_id:,
+      state:,
+      completed_at:,
+      placeholder_objective_id:,
+      tracked:,
+      done_mask:,
+      progress:,
+      quest_ms_left:,
+      objective_ms_left:,
+    ))
+  }
+
+  "-- The quests a character has a record of, in quest id order, as the load hands
+-- them to the quest log's decode (genesis_prime/game/quest_log). A row of any state
+-- but 1 and 2 has no active entry, so its active columns are NULL (the table's
+-- `character_quest_active_has_its_entry`). Only a completed row has a time
+-- (`character_quest_completed_has_a_time`): `completed_at` is its whole Unix seconds,
+-- and 0 for a row of another state, which the decode does not read, since squirrel
+-- cannot type a timestamptz or a computed column that may be NULL.
+select
+  quest_id,
+  state::int as state,
+  coalesce(extract(epoch from completed_at), 0)::bigint as completed_at,
+  placeholder_objective_id,
+  tracked,
+  done_mask,
+  progress,
+  quest_ms_left,
+  objective_ms_left
+from character_quest
+where character_id = $1
+order by quest_id;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(character_id))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `lock_account` query
 /// defined in `./src/genesis_prime/store/sql/lock_account.sql`.
 ///
@@ -641,6 +730,52 @@ where account_id = $1
 for update;
 "
   |> pog.query
+  |> pog.parameter(pog.int(account_id))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `lock_character_for_save` query
+/// defined in `./src/genesis_prime/store/sql/lock_character_for_save.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LockCharacterForSaveRow {
+  LockCharacterForSaveRow(character_id: Int)
+}
+
+/// Takes the character's row lock until the transaction ends, so the saves of
+/// one character run one after another and the save that follows reads the quest
+/// rows the one before it committed (save_place.sql). The statement after it in
+/// the transaction takes its snapshot once the lock is held. No row means no such
+/// character for the account.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn lock_character_for_save(
+  db: pog.Connection,
+  character_id: Int,
+  account_id: Int,
+) -> Result(pog.Returned(LockCharacterForSaveRow), pog.QueryError) {
+  let decoder = {
+    use character_id <- decode.field(0, decode.int)
+    decode.success(LockCharacterForSaveRow(character_id:))
+  }
+
+  "-- Takes the character's row lock until the transaction ends, so the saves of
+-- one character run one after another and the save that follows reads the quest
+-- rows the one before it committed (save_place.sql). The statement after it in
+-- the transaction takes its snapshot once the lock is held. No row means no such
+-- character for the account.
+select character_id
+from character
+where character_id = $1 and account_id = $2
+for update;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(character_id))
   |> pog.parameter(pog.int(account_id))
   |> pog.returning(decoder)
   |> pog.execute(db)
@@ -704,11 +839,11 @@ pub type SavePlaceRow {
   SavePlaceRow(character_id: Int)
 }
 
-/// Saves where a character stands: its world, zone, position and facing, and the
-/// health it has, in one statement, so the place and the health are saved
-/// together or not at all. The health is $13 when $14 is true, and NULL (nothing
-/// saved: the next entry is alive at full health) when it is false, since
-/// squirrel cannot type a parameter that may be NULL. A dead player saves 0,
+/// Saves where a character stands: its world, zone, position and facing, the
+/// health it has and its quest log, in one statement, so the place, the health and
+/// the log are saved together or not at all. The health is $13 when $14 is true, and
+/// NULL (nothing saved: the next entry is alive at full health) when it is false,
+/// since squirrel cannot type a parameter that may be NULL. A dead player saves 0,
 /// which its next entry is dead at. It writes only
 /// while the character is still held by the login that made the save, that is
 /// while its `session_epoch` is still the one that login raised it to
@@ -719,6 +854,18 @@ pub type SavePlaceRow {
 /// matches none either. The account's id is in the statement, as for a load. No
 /// row means the epoch moved on, a newer save was stored first, or the account
 /// has no such character.
+///
+/// The quest log is $15, a JSON array with one object for each quest the character
+/// has a record of, whose keys are the columns of `character_quest` (a completed
+/// time in whole Unix seconds): it is unpacked here so that squirrel needs no array
+/// of arrays. The log is the whole log, so a row the character no longer has is
+/// deleted and a row that changed is written, both only through the row the fence
+/// above matched, so a save the fence refuses writes no quest row either. A row
+/// that did not change is not written. The statement runs after
+/// lock_character_for_save.sql in one transaction: a statement takes its snapshot
+/// before it waits for a row another save holds, so without the lock a save that
+/// waited would delete or keep quest rows by the log the earlier save had not yet
+/// written, and leave a quest the later log dropped.
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
@@ -739,17 +886,18 @@ pub fn save_place(
   arg_12: Int,
   arg_13: Int,
   arg_14: Bool,
+  arg_15: Json,
 ) -> Result(pog.Returned(SavePlaceRow), pog.QueryError) {
   let decoder = {
     use character_id <- decode.field(0, decode.int)
     decode.success(SavePlaceRow(character_id:))
   }
 
-  "-- Saves where a character stands: its world, zone, position and facing, and the
--- health it has, in one statement, so the place and the health are saved
--- together or not at all. The health is $13 when $14 is true, and NULL (nothing
--- saved: the next entry is alive at full health) when it is false, since
--- squirrel cannot type a parameter that may be NULL. A dead player saves 0,
+  "-- Saves where a character stands: its world, zone, position and facing, the
+-- health it has and its quest log, in one statement, so the place, the health and
+-- the log are saved together or not at all. The health is $13 when $14 is true, and
+-- NULL (nothing saved: the next entry is alive at full health) when it is false,
+-- since squirrel cannot type a parameter that may be NULL. A dead player saves 0,
 -- which its next entry is dead at. It writes only
 -- while the character is still held by the login that made the save, that is
 -- while its `session_epoch` is still the one that login raised it to
@@ -760,21 +908,114 @@ pub fn save_place(
 -- matches none either. The account's id is in the statement, as for a load. No
 -- row means the epoch moved on, a newer save was stored first, or the account
 -- has no such character.
-update character
-set
-  world_id = $4,
-  world_zone_id = $5,
-  position_x = $6,
-  position_y = $7,
-  position_z = $8,
-  rotation_yaw = $9,
-  rotation_pitch = $10,
-  rotation_roll = $11,
-  save_sequence = $12,
-  health = case when $14 then $13::int end
-where character_id = $1 and account_id = $2 and session_epoch = $3
-  and save_sequence < $12
-returning character_id;
+--
+-- The quest log is $15, a JSON array with one object for each quest the character
+-- has a record of, whose keys are the columns of `character_quest` (a completed
+-- time in whole Unix seconds): it is unpacked here so that squirrel needs no array
+-- of arrays. The log is the whole log, so a row the character no longer has is
+-- deleted and a row that changed is written, both only through the row the fence
+-- above matched, so a save the fence refuses writes no quest row either. A row
+-- that did not change is not written. The statement runs after
+-- lock_character_for_save.sql in one transaction: a statement takes its snapshot
+-- before it waits for a row another save holds, so without the lock a save that
+-- waited would delete or keep quest rows by the log the earlier save had not yet
+-- written, and leave a quest the later log dropped.
+with saved as (
+  update character
+  set
+    world_id = $4,
+    world_zone_id = $5,
+    position_x = $6,
+    position_y = $7,
+    position_z = $8,
+    rotation_yaw = $9,
+    rotation_pitch = $10,
+    rotation_roll = $11,
+    save_sequence = $12,
+    health = case when $14 then $13::int end
+  where character_id = $1 and account_id = $2 and session_epoch = $3
+    and save_sequence < $12
+  returning character_id
+),
+incoming as (
+  select *
+  from jsonb_to_recordset($15::jsonb) as quest(
+    quest_id integer,
+    state smallint,
+    completed_at bigint,
+    placeholder_objective_id integer,
+    tracked boolean,
+    done_mask smallint,
+    progress integer[],
+    quest_ms_left integer,
+    objective_ms_left integer[]
+  )
+),
+gone as (
+  delete from character_quest as held
+  using saved
+  where held.character_id = saved.character_id
+    and not exists (
+      select 1 from incoming where incoming.quest_id = held.quest_id
+    )
+),
+put as (
+  insert into character_quest (
+    character_id,
+    quest_id,
+    state,
+    completed_at,
+    placeholder_objective_id,
+    tracked,
+    done_mask,
+    progress,
+    quest_ms_left,
+    objective_ms_left
+  )
+  select
+    saved.character_id,
+    incoming.quest_id,
+    incoming.state,
+    to_timestamp(incoming.completed_at),
+    incoming.placeholder_objective_id,
+    incoming.tracked,
+    incoming.done_mask,
+    incoming.progress,
+    incoming.quest_ms_left,
+    incoming.objective_ms_left
+  from saved
+  cross join incoming
+  on conflict (character_id, quest_id) do update
+  set
+    state = excluded.state,
+    completed_at = excluded.completed_at,
+    placeholder_objective_id = excluded.placeholder_objective_id,
+    tracked = excluded.tracked,
+    done_mask = excluded.done_mask,
+    progress = excluded.progress,
+    quest_ms_left = excluded.quest_ms_left,
+    objective_ms_left = excluded.objective_ms_left
+  where (
+    character_quest.state,
+    character_quest.completed_at,
+    character_quest.placeholder_objective_id,
+    character_quest.tracked,
+    character_quest.done_mask,
+    character_quest.progress,
+    character_quest.quest_ms_left,
+    character_quest.objective_ms_left
+  ) is distinct from (
+    excluded.state,
+    excluded.completed_at,
+    excluded.placeholder_objective_id,
+    excluded.tracked,
+    excluded.done_mask,
+    excluded.progress,
+    excluded.quest_ms_left,
+    excluded.objective_ms_left
+  )
+)
+select character_id from saved;
 "
   |> pog.query
   |> pog.parameter(pog.int(character_id))
@@ -791,6 +1032,7 @@ returning character_id;
   |> pog.parameter(pog.int(arg_12))
   |> pog.parameter(pog.int(arg_13))
   |> pog.parameter(pog.bool(arg_14))
+  |> pog.parameter(pog.text(json.to_string(arg_15)))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
