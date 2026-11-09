@@ -243,7 +243,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 3,
-        reason: "rows, or parts of rows, aimed at another unit: the next step; rows behind a target apply prerequisite, which no go applies",
+        reason: "rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite, which no go applies",
         fact_key: "Spell4Effects.effectType.3",
       ),
       Missing(
