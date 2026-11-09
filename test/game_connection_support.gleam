@@ -207,8 +207,19 @@ pub fn store_request() -> BitArray {
   )
 }
 
-pub fn activity() -> BitArray {
-  keyed_message(message_id: 0x0241, body: <<>>)
+/// 0x038C carrying 0x07CC, the reward rotation request no feature takes: the
+/// wrapper value 0x0B, then the 32-bit content type (opcode.0x7cc, fact
+/// 0x1403f4740).
+pub fn unhandled_request() -> BitArray {
+  keyed_message(
+    message_id: 0x038C,
+    body: game_client.world_body(kind: 0x0B, message_id: 0x07CC, body: <<
+      0,
+      0,
+      0,
+      0,
+    >>),
+  )
 }
 
 /// The connection after the hand-off held the key: Sessions asked to claim

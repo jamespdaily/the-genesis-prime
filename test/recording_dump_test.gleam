@@ -2,8 +2,8 @@
 //// come from these places.
 //// - The session's own verdict (`verdict.txt` beside the recordings): the
 ////   client reported the played character as 'Tess Renamed'.
-//// - The client's code: it sends 0x023C through SendWorldMessage (0x1403f4900,
-////   which lists 0x23c among the ids it sends), inside 0x038C inside the
+//// - The client's code: it sends 0x07CC through SendWorldMessageKind0B (0x1403f4740,
+////   which lists 0x7cc among the ids it sends), inside 0x038C inside the
 ////   client's wrapper; the schema has no message of that number.
 //// - The fact file's body vectors: 0x0036 is one 32-bit value
 ////   (vector.opcode.0x36.body), 0x019B two (vector.opcode.0x19b.body), and the
@@ -62,13 +62,13 @@ pub fn the_dump_names_the_players_unit_and_lists_a_message_with_no_decoder_by_it
   let assert Ok(unhandled) =
     list.find(entries, fn(entry) {
       entry.direction == Some(ClientToServer)
-      && entry.message_id == Some(0x023C)
+      && entry.message_id == Some(0x07CC)
     })
-    as "the client sent 0x023C (0x1403f4900)"
+    as "the client sent 0x07CC (0x1403f4740)"
   assert unhandled.name == "unhandled"
-    as "no message of the schema the client sends has the number 0x023C"
+    as "no message of the schema the client sends has the number 0x07CC"
   assert unhandled.depth == 2
-    as "it came inside 0x038C inside the client's wrapper (0x1403f4900)"
+    as "it came inside 0x038C inside the client's wrapper (0x1403f4740)"
 }
 
 // ---- the server's direction and the failure paths, from planted recordings ----

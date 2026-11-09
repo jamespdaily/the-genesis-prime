@@ -18,7 +18,7 @@
 //// - 0x036A and its reasons: 19 "This account has been disconnected" and 8
 ////   "Lost connection with user server." (0x1400168a0, opcode.0x36a).
 //// - The ping and its pong, bare (opcode.0x0, opcode.0x1); 0x038C carrying
-////   0x082D, and 0x0241 (opcode.0x82d, opcode.0x241).
+////   0x082D, and 0x07CC (opcode.0x82d, opcode.0x7cc).
 //// - The rule's doc comment, as approved on the card, and the shape's change
 ////   that the game connection never stops without telling the client after
 ////   the hello.
@@ -539,17 +539,17 @@ pub fn a_bare_ping_is_answered_with_a_bare_pong_with_the_same_number_test() -> N
     as "opcode.0x0: in character select too, the ping travels bare and is never ciphered"
 }
 
-pub fn message_0x038c_carrying_0x082d_and_0x0241_are_logged_as_unhandled_and_the_connection_goes_on_test() -> Nil {
+pub fn message_0x038c_carrying_0x082d_and_0x07cc_are_logged_as_unhandled_and_the_connection_goes_on_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, _) = game_connection_support.listed(characters: [])
   let #(state, taken) =
     game_connection_support.read(state, <<
       game_connection_support.store_request():bits,
-      game_connection_support.activity():bits,
+      game_connection_support.unhandled_request():bits,
     >>)
   assert support.unhandled_ids(taken)
-    == [Some(#("unhandled", 0x082D)), Some(#("unhandled", 0x0241))]
-    as "opcode.0x38c and opcode.0x82d: 0x038C carries the whole frame of 0x082D, which is logged under its own id; opcode.0x241: the client sends it and waits for no answer, and no feature takes it; each is logged in order"
+    == [Some(#("unhandled", 0x082D)), Some(#("unhandled", 0x07CC))]
+    as "opcode.0x38c, opcode.0x82d and opcode.0x7cc: 0x038C carries the whole frame of 0x082D and of 0x07CC, no feature takes either, and each is logged under its own id in order"
   assert support.writes(taken) == []
   assert !support.stops(taken)
   let #(_, taken) = game_connection_support.read(state, support.ping(1))
@@ -1404,17 +1404,21 @@ pub fn the_game_rule_names_the_client_messages_it_takes_test() -> Nil {
   let named = list.sort(game_connection.taken_message_ids(), int.compare)
   assert named
     == [
-      0x009A, 0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x015A, 0x016F,
-      0x01C3, 0x01D4, 0x025B, 0x025C, 0x0352, 0x038C, 0x04DB, 0x058F, 0x0637,
-      0x063A, 0x063B, 0x0786, 0x07DD, 0x07E0, 0x0801,
+      0x009A, 0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x012B, 0x015A,
+      0x016F, 0x0180, 0x018F, 0x01C3, 0x01D4, 0x023C, 0x023D, 0x023E, 0x023F,
+      0x0240, 0x0241, 0x025B, 0x025C, 0x0269, 0x0352, 0x038C, 0x03EC, 0x03ED,
+      0x04DB, 0x0570, 0x058F, 0x0637, 0x063A, 0x063B, 0x0786, 0x07DD, 0x07E0,
+      0x0801,
     ]
-    as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4, the cast messages 0x009A, 0x04DB and 0x0801 (opcode.0x9a, opcode.0x4db, opcode.0x801), the choice of how to come back, 0x015A (opcode.0x15a), and the choice of an innate, 0x016F (opcode.0x16f)"
+    as "the ids the rule's doc comment lists, with the dropped reports and requests of genesis_prime/game/dropped (0x023C, 0x0240, 0x023F, 0x023E, 0x023D, 0x012B, 0x0180, 0x03ED, 0x03EC, 0x0269, 0x018F and 0x0570 inside the world carrier, and 0x0241 on its own): 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4, the cast messages 0x009A, 0x04DB and 0x0801 (opcode.0x9a, opcode.0x4db, opcode.0x801), the choice of how to come back, 0x015A (opcode.0x15a), and the choice of an innate, 0x016F (opcode.0x16f)"
   assert list.sort(game_connection.carried_message_ids(), int.compare)
     == [
-      0x009A, 0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x015A, 0x016F,
-      0x01C3, 0x01D4, 0x04DB, 0x0637, 0x063A, 0x063B, 0x0801,
+      0x009A, 0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x012B, 0x015A,
+      0x016F, 0x0180, 0x018F, 0x01C3, 0x01D4, 0x023C, 0x023D, 0x023E, 0x023F,
+      0x0240, 0x0269, 0x03EC, 0x03ED, 0x04DB, 0x0570, 0x0637, 0x063A, 0x063B,
+      0x0801,
     ]
-    as "the movement, camp, chat, cast, death and innate messages are taken only with the player in the world"
+    as "the movement, camp, chat, cast, death, innate and dropped report and request messages are taken only with the player in the world"
 }
 
 pub fn character_select_takes_exactly_the_ids_the_rule_names_and_logs_every_other_client_id_as_unhandled_test() -> Nil {
