@@ -40,7 +40,9 @@
 ////   more bytes than that, and the socket is active once: the shell arms it
 ////   again after each step's effects, including while an ask waits. What
 ////   arrives meanwhile is the rule's to hold or refuse
-////   (`genesis_prime/client_connection.hold`). In a replay the script gives
+////   (`genesis_prime/client_connection.hold`). A client that closes while the
+////   socket is armed makes the arm fail, and the close it queued is the input
+////   (`PeerClosed`, or `ReadFailed` for a socket error), not a failed arm. In a replay the script gives
 ////   the byte count of the next recorded read, and the shell holds what arrives
 ////   and arms the socket again until it holds that many, so the recorded read
 ////   is one input (`read_arrived`). The wait for the rest is bounded to 5 s
@@ -319,6 +321,15 @@ type SocketMessage {
   Read(bytes: BitArray)
   ClosedByPeer
   FailedToRead(failure: SocketFailure)
+}
+
+/// Why asking the socket for its next read failed, decoded by
+/// `genesis_prime_connection_shell_ffi:read_once`: the peer had closed the
+/// socket while it was armed, and its close was waiting in the mailbox, or the
+/// socket failed.
+type ArmFailure {
+  ClosedWhileArming
+  FailedWhileArming(failure: SocketFailure)
 }
 
 /// Everything that reaches the actor, each as a typed value by its selector
@@ -864,7 +875,7 @@ fn read_arrived(
           take_next(
             connection:,
             running: finish_reading(running),
-            event: OwnEvent(ReadFailed(failure:)),
+            event: arm_failed(failure),
           )
       }
     Some(_) | None ->
@@ -1398,11 +1409,7 @@ fn wait_for_input(
       case read_once(running.socket) {
         Ok(Nil) -> keep_open(connection:, running:)
         Error(failure) ->
-          take_next(
-            connection:,
-            running:,
-            event: OwnEvent(ReadFailed(failure:)),
-          )
+          take_next(connection:, running:, event: arm_failed(failure))
       }
   }
 }
@@ -1786,7 +1793,16 @@ fn handshake(
 fn peer(socket: ClientSocket) -> step.Peer
 
 @external(erlang, "genesis_prime_connection_shell_ffi", "read_once")
-fn read_once(socket: ClientSocket) -> Result(Nil, SocketFailure)
+fn read_once(socket: ClientSocket) -> Result(Nil, ArmFailure)
+
+/// The input the rule takes for a failed arm: a close the peer made while the
+/// socket was armed is a `PeerClosed`, as if the shell had taken its message.
+fn arm_failed(failure: ArmFailure) -> Event(ConnectionEvent(message, answer)) {
+  case failure {
+    ClosedWhileArming -> OwnEvent(step.PeerClosed)
+    FailedWhileArming(failure:) -> OwnEvent(ReadFailed(failure:))
+  }
+}
 
 @external(erlang, "genesis_prime_connection_shell_ffi", "send")
 fn send(socket: ClientSocket, bytes: BitArray) -> Result(Nil, SocketFailure)
