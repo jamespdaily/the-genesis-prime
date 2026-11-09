@@ -10520,8 +10520,8 @@ name = "FileHeldItem"
 # Inventory and equipment: what the client refuses before it sends
 
 ["0x1403ad100"]
-statement = "The client's move check, run before it sends a move (0x182) and by right-click equip. In order it refuses: Params (1) when source and destination are the same, the destination location is 300 or more, the bag index is unset, an equipped bag index is above 30, or the destination item is not at the destination; Player_CannotWhileInCombat (63) in combat when either side is equipped; PlayerBusy (2) when either side is the bank or a bank bag slot and the bank is not open, likewise for location 10 and its own window; Params when an inventory destination index is past the inventory's slot array; PlayerBusy while a move is still waiting for its answer; Item_Unique (30) when equipping a unique-equipped item already worn, or a rune-unique one. It then runs the slot-fit check for the item at the destination and, for a swap, for the other item at the source. Locations 0, 8 and 9 are the equip-like ones."
-proof = "Saved C of 0x1403ad100; the equip-like test is 0x1403ad2d0 test eax, 0xfffffff6 and 0x1403ad2f4 test ecx, 0xfffffff6 (location 0, 8 or 9 when also not 1). The waiting-move test walks the player's timers for type 3 id 0x309. Unique-equipped is Item flag 2 in the type/category/family flags (FUN_1403ac840); rune-unique is FUN_14056a260 and FUN_1403af9e0."
+statement = "The client's move check, run before it sends a move (0x182) and by right-click equip. In order it refuses: Params (1) when source and destination are the same, the destination location is 300 or more, the bag index is unset, an equipped bag index is above 30, or the destination item is not at the destination; Player_CannotWhileInCombat (63) in combat when either side is equipped; PlayerBusy (2) when either side is the bank or a bank bag slot and the bank is not open, likewise for location 10 and its own window; Params when an inventory destination index is past the inventory's slot array; PlayerBusy while a move is still waiting for its answer; Item_Unique (30) when the destination is equip-like and the source is not, the item's Item2.bindFlags hold 2 (unique-equipped), the destination item is not the same Item2, and an item of that Item2 is equipped (0x1403ac840), or when one of the item's runes is unique. It then runs the slot-fit check for the item at the destination; for a swap whose destination is not equip-like and whose source is, the other item gets the same unique tests going the other way, then the slot-fit check for the other item at the source. Locations 0, 8 and 9 are the equip-like ones."
+proof = "Saved C of 0x1403ad100; the equip-like test is 0x1403ad2d0 test eax, 0xfffffff6 and 0x1403ad2f4 test ecx, 0xfffffff6 (location 0, 8 or 9 when also not 1). The waiting-move test walks the player's timers for type 3 id 0x309. Unique-equipped is Item2.bindFlags bit 1, not the type, category or family flags: the item's record word 0x54 (FillItemInfo 0x1404445d0) is tested & 2, the check is skipped when the other item has the same Item2 id, and 0x1403ac840 counts the equipped items of that Item2 id; the swap's other item goes through the same test with the two items exchanged. Rune-unique is FUN_14056a260 and FUN_1403af9e0."
 grade = "fairly sure"
 gap = "The in-combat flag, the bank-open and location-10 window flags and the rune uniqueness loop are named from their use, not traced to their setters."
 name = "CheckItemMove"
@@ -10534,18 +10534,66 @@ gap = "That the list is the trade window is a guess from its use in delete and m
 name = "CheckItemFitsLocation"
 
 ["0x1403b11b0"]
-statement = "The equip slot check. Item_BadId (6) for no item; Item_NotValidforSlot (31) when the destination is not equip-like, when a bag goes anywhere but slots 17 to 30 or a non-bag into them, when bag slot 17+n has n at or past the BagSlots reward property (21+n against BankSlots), or when the slot's bit is not in the item's equipped slot flags (bag index modulo 17 for locations 8 and 9); Player_CannotWhileInCombat (63) in combat except for equipped slots 16 to 30; then for locations 0 and 9 the requirement check."
-proof = "Instructions 0x1403b1214 sub eax, 0x11; 0x1403b1275 imul edx, edx, 0x11; 0x1403b12e8 mov eax, 0x1f; 0x1403b1390 mov r8d, 0x1f; calls 0x1403b4dd0 and 0x1403b4d60 for the bag counts and 0x1403b4710 for the requirements (saved C)."
+statement = "The equip slot check (CheckItemEquipSlot). Item_BadId (6) for no item; Item_NotValidforSlot (31) when the destination is not equip-like, when a bag (joined flags 0x100) goes anywhere but slots 17 to 30 or a non-bag into them, when bag slot 17+n has n at or past the BagSlots reward property (21+n against BankSlots), or when the slot's bit is not in the item's equipped slot flags (bag index modulo 17 for locations 8 and 9); Player_CannotWhileInCombat (63) in combat except for equipped slots 16 to 30. For location 0 the item's joined type, category and family flags must hold 0x400 and its slot flags be non-zero, else 31, then the requirement check (0x1403b4710) gives the code. Location 9 runs the requirement check too, and turns its 41 into 41 only when the bag index modulo 17 is 16, else 0. Location 8 has the 0x400 and slot tests only."
+proof = "Saved C 0x1403b11b0.c (location 0: info+0x154 & 0x400 and info+0x180 != 0, else 0x1f; then CheckEquipRequirements); instructions 0x1403b1214 sub eax, 0x11; 0x1403b1275 imul edx, edx, 0x11; 0x1403b12e8 mov eax, 0x1f; 0x1403b1390 mov r8d, 0x1f; calls 0x1403b4dd0 and 0x1403b4d60 for the bag counts."
 grade = "fairly sure"
-gap = "Location 8's extra equippable test and the modulo-17 slot mapping for 8 and 9 are read, but the names of locations 8 and 9 are not known."
+gap = "The names of locations 8 and 9 are not known."
 name = "CheckItemEquipSlot"
 
 ["0x1403b4710"]
-statement = "The equip requirement check: Item_WrongRace (39) when the item's race mask lacks the player's race, Item_WrongClass (40) for the class mask, Item_WrongFaction (132) for the faction, then the item's prerequisites (Item_EquipPrereqFailed 144) and required level (Item_LevelToLow 42); for location 9 a bag index whose remainder by 17 is 16 gives Item_FailedProficiency (41)."
-proof = "Saved C of 0x1403b4710: the return codes 0x27, 0x28, 0x84, 0x90 and 0x2a after tests of the item info's race, class, faction, prerequisite and level words filled by FillItemInfo 0x1404445d0."
+statement = "The equip requirement check (CheckEquipRequirements), in order: Item_BadId (6) with no item; Item_WrongRace (39) when the item's race mask (Item2.raceRequired) is non-zero and lacks 1 << (race - 1); Item_WrongClass (40) likewise for Item2.classRequired and 1 << (class - 1); Item_WrongFaction (132) when Item2.faction2IdRequired is non-zero and not the player's faction; Item_EquipPrereqFailed (144) when Item2.prerequisiteId or the item's ItemSpecial prerequisite (prerequisiteIdGeneric00) is set and fails; Item_FailedProficiency (41) when the item's proficiency fails (0x1403ca2b0); Item_LevelToLow (42) when the player's level is below the required level."
+proof = "Saved C 0x1403b4710.c (e9b6b6af37d00314): race unit+0xd8 (0x11 with no unit) against info+0x190 (record word 0x64, Item2 column 13); class unit+0xdc (0x17) against info+0x18c (0x63, column 12); faction from game+0x1bf0 slot 0x18 against info+0x194 (0x65, column 14); evaluator DAT_140c659a0 slot 0x18 on info+0x198 (0x66, column 18) and props+0x110; FUN_1403ca2b0(game, info+0x19c) (0x67, Item2Category.itemProficiencyId); unit+0x38 < props+8 (0x57, requiredLevel or 1). Words from FillItemInfo 0x1404445d0."
 grade = "fairly sure"
-gap = "The order of the prerequisite and level tests and the proficiency test for location 0 were read from return-code lines only; reading the whole function settles them."
+gap = "The faction source at game+0x1bf0 is named from its use only; no Item2 row requires a faction."
 name = "CheckEquipRequirements"
+
+["0x1403ac840"]
+statement = "Counts the player's items of one Item2 id at one location (the equipped list for 1): a stack counts its count, any other item counts 1."
+proof = "Saved C 0x1403ac840.c: walks the location's list at store+0xa0 and sums the matching entries' counts. CheckItemMove calls it with (store+0xa0, 1, Item2 id)."
+grade = "fairly sure"
+gap = "Read from the saved C only; no live move of a unique item has been run."
+
+["Item2.bindFlags"]
+statement = "Item2 column 32, bindFlags. Bit 0 (1) marks a unique item (the tooltip's tUnique.bUnique, with nCount); bit 1 (2) marks a unique-equipped item (tUnique.bEquipped, text Tooltips_UniqueEquipped), which CheckItemMove refuses with Item_Unique (30) while another of that Item2 is equipped. 4014 equippable rows hold bit 1; only the 24 bags among them (slot flags 0x7FFE0000) have a second slot."
+proof = "FillItemInfo 0x1404445d0 record word 0x54 <- column 0x20; the tooltip builder 0x140672150 (saved C) reads word 0x54 bits 0 and 1 for tUnique; CheckItemMove 0x1403ad100 tests & 2. Counts: `gleam run -m genesis_prime/table_rows -- Item2`, Item2Type, Item2Category, Item2Family, ItemSlot."
+grade = "fairly sure"
+gap = "The name of bit 0 and the text of bit 1 come from the tooltip builder's field names; no live tooltip has been compared."
+
+["0x1403ca2b0"]
+statement = "Whether the player may use an item proficiency: true when the ItemProficiency row is missing or its bitMask is 0, else whether the player's item proficiencies hold the mask."
+proof = "Saved C 0x1403ca2b0.c; the proficiencies (game+0x1b40) are set by message 0x25e record 0x98 (0x1403b5f80) and 0x919 kind 22 (0x1403c70e0)."
+grade = "fairly sure"
+gap = "Read from the saved C only; the server sends the proficiencies in 0x25e and never 0x919 kind 22."
+name = "HasItemProficiency"
+
+["Prerequisite.prerequisiteTypeId.10"]
+statement = "Prerequisite type 10 ('Gender requirement not met', text 78859): the player unit's gender (0 male, 1 female; 3 with no player unit), the gender its message 0x262 type 20 data (or a later 0x905) carried. Comparison 1 passes when equal, 2 when different, any other fails. Equip rows: 18276 (Equal 1), on Item2 90054 to 90059."
+proof = "Saved C 0x14049c5e0.c (8eb22adb6de47956): DAT_140c65898+0x78 (the player unit, set by 0x19b) word 0x34. Writer: InitUnitFromCreate 0x140456960.c (2580df99bb1ce2aa) case 0x14, param_2[10] (type data +0x20, ReadUnitCreatePlayerData 0x1400962d0 ReadBits32 width 2) -> unit 0xec and 0x34 after the 'gender > 3' refusal. Coding: see 0x14045a8f0 and lua.CodeEnumGender."
+grade = "sure"
+
+["0x14045a8f0"]
+statement = "Sets a unit's gender from message 0x905's 2-bit field. It also sets the unit's base gender when 0x905's last bit is clear. A change marks the unit's model for a rebuild, and, when the unit is the player, a game-wide flag."
+proof = "Saved C 0x14045a8f0.c (8eb22adb6de47956): param_3 != 0 -> 0xec; 0x34 != param_2 -> 0x34 = param_2, 0x18a8 = 1, game 0x6f98 = 1 when unit id 8 equals game 0x78's, then 0x14045aec0. Sole caller HandleMessage0905 0x1403dbb70 line 28 with param_2[2] (ReadMessage0905Body 0x1400982d0: +8 ReadBits32 width 2) and param_2[7] == 0 (+0x1c, 1 bit). Line 27 0x14045a840 sets 0xe8/0xd8 (race) from the 5-bit field."
+grade = "sure"
+name = "SetUnitGender"
+
+["lua.CodeEnumGender"]
+statement = "The Lua enum CodeEnumGender: Male 0, Female 1. A unit's gender of 0 takes a race's male values, any other its female values."
+proof = "Saved C 0x1406481d0.c (8eb22adb6de47956) lines 494-517: 'CodeEnumGender', a 4-character name at 0x140b2ba60 = 0.0, 'Female' = 1.0 (0x3ff0000000000000). 0x14047a940.c line 45: unit 0x34 == 0 -> Race 0x70 (mountScaleMale), else 0x74 (mountScaleFemale)."
+grade = "fairly sure"
+gap = "The name at 0x140b2ba60 is not read; reading its 4 bytes (expected 'Male') settles it."
+
+["Prerequisite.prerequisiteTypeId.270"]
+statement = "Prerequisite type 270 ('Loyalty requirement not met', text 718850): only for a player unit (unit type 0x14 or 0x17; any other fails); the account's loyalty value (-1 when unset) compared with value by the comparison (ComparePrerequisiteValue). Equip rows 39240, 39257, 39259, 39260 need AtLeast 800, 68800, 94000 and 108000."
+proof = "Saved C 0x1404a16c0.c (6ba38d868f75acff): param_2+0x80 is 0x14 or 0x17; DAT_140c635f0+0x15d0, then +0x110; ComparePrerequisiteValue."
+grade = "fairly sure"
+gap = "The message that sets the loyalty value is not traced."
+
+["lua.FloatText.OnGenericError"]
+statement = "FloatText shows every GenericError as a floating player error over the controlled unit (OnSpellCastFailed with GenericPlayerInvokedError), except DbFailure, Item_BadId and the Vendor_* codes, which show nothing."
+proof = "UI/FloatText/FloatText.lua lines 206 to 240: the excise list arExciseListItem, then self:OnSpellCastFailed(LuaEnumMessageType.GenericPlayerInvokedError, nil, GameLib.GetControlledUnit(), GameLib.GetControlledUnit(), strMessage)."
+grade = "fairly sure"
+gap = "The Lua is read from the archive with a scratch extractor; no live refusal has been seen on screen."
 
 ["0x1403b4dd0"]
 statement = "How many inventory bag slots (Bag0 to Bag3) the player may use: the integer value of reward property BagSlots (26), data 0, from the reward properties message 0x92c; 0 when that message has not set it, so no bag can be equipped."
@@ -11318,7 +11366,7 @@ name = "PrerequisiteAchievementDone"
 statement = "Prerequisite type 19 ('You must have the correct tradeskill tier', text 78866): the player's tier in a tradeskill, compared with a tier taken from row objectId of a tier table (the row names the tradeskill and the tier) by the comparison (1 to 6 as ComparePrerequisiteValue). The player's tier is the tradeskill entry's tier when the tradeskill is learned, else 0. The value and the units are not read. Start content: 23 condition(s) in 23 row(s); (comparison, value): (4, 0) 16, (1, 0) 7; objectIds: 1, 2, 8, 9, 10, 15, 16, 28, 34, 35 ...."
 proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 19 dispatches to 0x14049f0f0, slot 0x3d8 of the prerequisite class 0x140b67740 (bytes at 0x140b67b18). Saved C 0x14049f0f0.c (hash 8eb22adb6de47956): 0x140246480(objectId) gives the row (none: false); the player's tradeskill list (game words 0x1698 / count 0x16a0) searched for the entry whose word 8 equals row word 1; measured: entry word 0x54 when entry word 0xc is nonzero, else 0; ComparePrerequisiteValue (0x1404a2090) with row word 2. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 19`."
 grade = "guess"
-gap = "Which table 0x140246480 reads (likely TradeSkillTier) and the entry's fields are not read; the decompile shows the function as void though it returns the compare's result."
+gap = "The tier row is TradeskillTier (word 1 tradeSkillId, word 2 tier): rows 8, 21, 23, 24, 25, 28 to 32 and 46 to 50 hold tradeskills 13, 15 and 18 at tiers 1 to 5. The function 0x140246480 that fetches it is not read."
 
 ["0x14049f0f0"]
 statement = "Prerequisite type 19's test. See Prerequisite.prerequisiteTypeId.19."
