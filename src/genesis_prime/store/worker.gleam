@@ -111,7 +111,6 @@ import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
-import gleam/string
 import pog
 
 /// The unique index on the ICU-folded lower-cased name (migration 0005), which a
@@ -125,19 +124,12 @@ const character_name_follows_rule_0 = "character_name_follows_rule_0"
 /// The table's check that a saved health is not below 0 (migration 0017).
 const character_health_is_not_negative = "character_health_is_not_negative"
 
-/// The start of the name of every check of the character_quest table (migration
-/// 0020), which a save that one refuses answers `QuestLogRefused` for, with the
-/// check's own name: a quest row the client's limits do not allow.
-const quest_constraint_prefix = "character_quest_"
-
-/// Every constraint or unique index the worker answers for by name. The schema
-/// holds each by this name, which a test reads from the catalogue. A save's
-/// quest rows are refused by the character_quest checks, which begin with
-/// `quest_constraint_prefix`.
-pub const mapped_constraints = [
-  character_name_unique,
-  character_name_follows_rule_0,
-  character_health_is_not_negative,
+/// The checks of the character_quest table (migration 0021), one for each limit of
+/// the client's a quest row can break. A save one of them refuses answers
+/// `QuestLogRefused` with the check's own name. The table's primary key and its
+/// foreign key to the character are not among them: neither is a limit of the
+/// client's, and a refused one is a refused place.
+const quest_checks = [
   "character_quest_id_fits_15_bits",
   "character_quest_state_is_known",
   "character_quest_completed_has_a_time",
@@ -149,6 +141,17 @@ pub const mapped_constraints = [
   "character_quest_times_are_not_negative",
   "character_quest_placeholder_is_not_negative",
 ]
+
+/// Every constraint or unique index the worker answers for by name. The schema
+/// holds each by this name, which a test reads from the catalogue.
+pub fn mapped_constraints() -> List(String) {
+  [
+    character_name_unique,
+    character_name_follows_rule_0,
+    character_health_is_not_negative,
+    ..quest_checks
+  ]
+}
 
 /// What one worker is started with: a rule's ask and how to answer it, or the
 /// probe `main` makes to know the database answers.
@@ -428,7 +431,7 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
       if constraint == character_health_is_not_negative
     -> Ok(HealthRefused)
     Error(Refused(constraint:, ..)) ->
-      case string.starts_with(constraint, quest_constraint_prefix) {
+      case list.contains(quest_checks, constraint) {
         True -> Ok(QuestLogRefused(constraint:))
         False -> Ok(PlaceRefused(constraint:))
       }

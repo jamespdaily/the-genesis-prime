@@ -1804,7 +1804,7 @@ pub fn a_create_for_an_account_that_does_not_exist_is_create_for_no_such_account
 pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
-  assert worker.mapped_constraints
+  assert worker.mapped_constraints()
     == [
       "character_name_unique",
       "character_name_follows_rule_0",
@@ -1821,7 +1821,7 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
       "character_quest_placeholder_is_not_negative",
     ]
     as "the refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0 and each check of a quest row"
-  list.each(worker.mapped_constraints, fn(name) {
+  list.each(worker.mapped_constraints(), fn(name) {
     let assert Ok(returned) =
       pog.query(
         "select count(*)::int from (select conname::text as name from pg_constraint union all select c.relname::text from pg_class c where c.relkind = 'i') as names where name = $1",
@@ -2690,6 +2690,32 @@ fn await_until(done: fn() -> Bool, polls polls: Int) -> Nil {
       await_until(done, polls: polls - 1)
     }
   }
+}
+
+pub fn a_constraint_of_the_quest_table_the_worker_does_not_map_is_refused_as_a_place_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  // The primary key and the foreign key of the table share its `character_quest_`
+  // start with its checks, and neither is a limit of the client's. A save's upsert
+  // cannot break either, so a constraint of the table the worker does not map is
+  // put in to stand for them.
+  execute(
+    store.pool,
+    "alter table character_quest add constraint character_quest_test_refuses_1100 check (quest_id <> 1100)",
+  )
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      quests: [completed_quest(1001), completed_quest(1100)],
+    )
+    == ForMove(PlaceRefused(constraint: "character_quest_test_refuses_1100"))
+    as "only the ten checks the client's limits name are a refused quest log: any other constraint of the table is a refused place"
+  stop(store)
 }
 
 pub fn a_quest_row_the_client_would_refuse_is_refused_by_its_named_constraint_test() -> Nil {
