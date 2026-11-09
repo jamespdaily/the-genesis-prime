@@ -576,8 +576,9 @@ pub fn vendor_items_frame(
   ))
 }
 
-/// 0x90b that refuses a vendor request: the client closes the window it just opened and
-/// ends the interaction (`opcode.0x90b`), with no stock.
+/// 0x90b that refuses a vendor request: the client ends the interaction and returns
+/// before it stores the two multipliers (`opcode.0x90b`), so any value is read by no
+/// one; 1.0 is the neutral one. There is no stock.
 pub fn vendor_refused_frame(unit_id unit_id: Int) -> Frame {
   vendor_items_message(VendorItems(
     unit_id:,

@@ -22,6 +22,7 @@
 
 import ask_support
 import cast_support
+import character_tables
 import event_wait
 import fixture_tables
 import game_connection_support
@@ -53,7 +54,9 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
 import genesis_prime/world_map/spawn
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/unit_fields
+import gleam/dict
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/float
 import gleam/int
@@ -63,6 +66,7 @@ import gleam/result
 import map_support
 import owned_test
 import place_support
+import rating_support
 import spawn_support
 import vendor_support
 import world_support.{type World}
@@ -991,27 +995,50 @@ pub fn right_click_on_giver_opens_dialog_test() -> Nil {
 
 pub fn right_click_on_a_vendor_opens_its_window_test() -> Nil {
   use <- owned_test.run(30_000)
-  // Supplier Ingavak (Creature2 28739, spawn 10706, world 990) is a vendor of the
-  // content tables, so his spawn is a vendor's and his 0x262 carries create flag 4
-  // (opcode.0x262.vendor_flag). He stands 3.0 from the player's edge, within the 9.0 a
-  // vendor request is answered up to (opcode.0x7ea); his faction, display and outfit are
-  // Dorian Walker's, who is friendly to an Exile. The connection answers the client's
-  // right-click, 0x7EA with kind 0x31 and his unit id, with his stock, 0x90b, then 0xbc
-  // (opcode.0x90b, opcode.0xbc).
+  // Supplier Ingavak (Creature2 28739, spawn 10706) is selected from the spawn table's
+  // row over the vendor content, so his spawn is a vendor's from that selection and his
+  // 0x262 carries create flag 4 (opcode.0x262.vendor_flag). His faction 171, the display
+  // 29772 of his display group 32495 and the outfit 9029 of his outfit group 9725 are
+  // Creature2 28739's own row, and faction 171 is friendly to an Exile. He stands 3.0
+  // from the player's edge, within the 9.0 a vendor request is answered up to
+  // (opcode.0x7ea). The connection answers the client's right-click, 0x7EA with kind
+  // 0x31 and his unit id, with his stock, 0x90b, then 0xbc (opcode.0x90b, opcode.0xbc).
   let entry = game_connection_support.entry_place()
+  let selection =
+    spawn.select(
+      rows: [
+        spawn.Row(
+          ..spawn_support.beast_row(number: 10_706),
+          creature_id: 28_739,
+          display_info_id: 29_772,
+          outfit_info_id: 9029,
+          faction_id: 171,
+          base_faction_id: 171,
+        ),
+      ],
+      tables: character_tables.content_tables(),
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.kinds(),
+      vendors: vendor_support.stocking_items(
+        creature_ids: [28_739],
+        items: vendor_support.ingavaks_items,
+      ),
+    )
+  assert selection.refusals == [] as "the row passes the spawn checks"
+  let assert Ok(spawns) = dict.get(selection.worlds, 3460)
+    as "the row starts in world 3460"
+  let assert Ok(selected) = dict.get(spawns.by_id, SpawnId(10_706))
+    as "the selection starts Supplier Ingavak's row"
+  assert selected.vendor
+    as "the selection marks the creature that has stock a vendor"
   let place =
     start_place.moved(
       place: entry,
       x: start_place.x(entry),
       y: start_place.y(entry),
-      z: start_place.z(entry) -. { 3.0 +. 1.2 +. 1.1 },
+      z: start_place.z(entry) -. { 3.0 +. 1.2 +. selected.combat.hit_radius },
     )
-  let ingavak =
-    spawn.Spawn(
-      ..spawn_support.dorian_walker(number: 10_706, place:),
-      creature_id: Creature2Id(28_739),
-      vendor: True,
-    )
+  let ingavak = spawn.Spawn(..selected, place:)
   let world =
     world_support.start(
       spawns: [ingavak],

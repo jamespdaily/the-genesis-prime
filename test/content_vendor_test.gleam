@@ -18,13 +18,7 @@ import genesis_prime/game/vendor
 import genesis_prime/table/id.{Item2Id}
 import gleam/list
 import owned_test
-
-/// Supplier Ingavak's (Creature2 28739) 22 items in the order of Jabbithole's page.
-const ingavaks_items = [
-  12_078, 14_838, 20_791, 13_176, 13_185, 13_194, 13_188, 12_044, 13_191, 13_179,
-  13_151, 13_154, 13_166, 27_874, 27_873, 27_876, 13_157, 13_163, 27_875, 13_169,
-  13_148, 13_160,
-]
+import vendor_support
 
 pub fn the_load_puts_each_vendors_stock_in_its_term_test() -> Nil {
   use <- owned_test.run(60_000)
@@ -42,7 +36,9 @@ pub fn the_load_puts_each_vendors_stock_in_its_term_test() -> Nil {
       let Item2Id(item) = stocked.item_id
       #(stocked.position, item)
     })
-    == list.index_map(ingavaks_items, fn(item, index) { #(index + 1, item) })
+    == list.index_map(vendor_support.ingavaks_items, fn(item, index) {
+      #(index + 1, item)
+    })
     as "list A, each item at its place on the page"
   let stocked =
     list.fold(creatures, 0, fn(total, creature_id) {
