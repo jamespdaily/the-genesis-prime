@@ -198,16 +198,16 @@ fn unread_effect_rows(tables: store.Tables) -> Dict(Int, Int) {
 /// What a type 17 or 18 row the plan does not read leaves out: its go lists no row aimed
 /// by flags the plan refuses, and applies none behind a target apply prerequisite.
 const lasting_gap =
-  "rows aimed by flags the plan refuses or behind a target prerequisite, which no go applies"
+  "rows aimed by flags the plan refuses or behind a target prerequisite (#336), which no go applies"
 
 /// The same for type 80, whose rows the plan also refuses where the two columns that hold
 /// the count of stacks differ or a selector names no row.
 const force_remove_gap =
-  "rows aimed by flags the plan refuses, behind a target prerequisite, with differing stack counts (dataBits03 and dataBits04) or a selector that names no spell group, Spell4 or Spell4Base, which no go applies or the plan refuses"
+  "rows aimed by flags the plan refuses, behind a target prerequisite (#336), with differing stack counts (dataBits03 and dataBits04) or a selector that names no spell group, Spell4 or Spell4Base, which no go applies or the plan refuses"
 
 /// The same for type 81, whose script the client does not hold either.
 const signal_gap =
-  "rows aimed by flags the plan refuses or behind a target prerequisite, which no go applies; the script a signal stands for is not in the client"
+  "rows aimed by flags the plan refuses or behind a target prerequisite (#336), which no go applies; the script a signal stands for is not in the client"
 
 /// What type 145 reads of a row, whose computation is the server's choice.
 const conversion_gap =
@@ -298,7 +298,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 73,
-        reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies",
+        reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies (#336)",
         fact_key: "Spell4Effects.effectType.73",
       ),
       Missing(

@@ -394,13 +394,13 @@ pub fn a_partial_type_no_rule_reads_is_a_conflict_and_an_unused_one_a_breach_tes
 }
 
 const lasting_gap =
-  "rows aimed by flags the plan refuses or behind a target prerequisite, which no go applies"
+  "rows aimed by flags the plan refuses or behind a target prerequisite (#336), which no go applies"
 
 const force_remove_gap =
-  "rows aimed by flags the plan refuses, behind a target prerequisite, with differing stack counts (dataBits03 and dataBits04) or a selector that names no spell group, Spell4 or Spell4Base, which no go applies or the plan refuses"
+  "rows aimed by flags the plan refuses, behind a target prerequisite (#336), with differing stack counts (dataBits03 and dataBits04) or a selector that names no spell group, Spell4 or Spell4Base, which no go applies or the plan refuses"
 
 const signal_gap =
-  "rows aimed by flags the plan refuses or behind a target prerequisite, which no go applies; the script a signal stands for is not in the client"
+  "rows aimed by flags the plan refuses or behind a target prerequisite (#336), which no go applies; the script a signal stands for is not in the client"
 
 const conversion_gap =
   "the share is added to the source's value after the type 11 changes, in start order; whether the source is its base or its total and when the share is recomputed are not read"
@@ -478,7 +478,7 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
       ),
       Missing(
         type_number: 73,
-        reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies",
+        reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies (#336)",
         fact_key: "Spell4Effects.effectType.73",
       ),
       Missing(
@@ -684,7 +684,7 @@ pub fn the_type_73_rows_aimed_only_at_other_units_are_counted_as_not_handled_tes
   assert line.rows == 5
   assert line.status
     == HandledWithGap(
-      reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies",
+      reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies (#336)",
       fact_key: "Spell4Effects.effectType.73",
       unread_rows: 3,
     )
@@ -692,7 +692,7 @@ pub fn the_type_73_rows_aimed_only_at_other_units_are_counted_as_not_handled_tes
   let text = checklist.render([measured])
   assert string.contains(
     text,
-    "- [x] type 73: 5 rows (83.33%); handled with a gap, 3 of its 5 rows not read: rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies (Spell4Effects.effectType.73)",
+    "- [x] type 73: 5 rows (83.33%); handled with a gap, 3 of its 5 rows not read: rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies (#336) (Spell4Effects.effectType.73)",
   )
     as "the line lists the rows left out with the gap's reason"
 }
@@ -713,7 +713,7 @@ pub fn the_clients_522_type_73_rows_count_487_handled_and_35_not_test() -> Nil {
   assert measurement.is_handled(line.status)
   assert line.status
     == HandledWithGap(
-      reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies",
+      reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies (#336)",
       fact_key: "Spell4Effects.effectType.73",
       unread_rows: 35,
     )
