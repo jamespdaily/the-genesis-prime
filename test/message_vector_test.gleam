@@ -13,11 +13,13 @@
 
 import fact_file
 import genesis_prime/message/bit_stream.{Endpoint}
+import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/character_select_start.{CharacterSelectStart}
 import genesis_prime/message/client_wrapper.{ClientWrapper}
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/game_server_handoff.{GameServerHandoff}
+import genesis_prime/message/generic_error.{GenericError}
 import genesis_prime/message/login_accepted.{LoginAccepted}
 import genesis_prime/message/login_refused.{LoginRefused}
 import genesis_prime/message/login_request.{LoginRequest}
@@ -30,6 +32,10 @@ import genesis_prime/message/realm_select_start.{RealmSelectStart}
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/message/text_group.{TextGroup}
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
+import genesis_prime/message/vendor_item.{VendorItem}
+import genesis_prime/message/vendor_items.{VendorItems}
+import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
+import genesis_prime/message/vendor_tab.{VendorTab}
 import genesis_prime/message/world_message.{WorldMessage}
 import gleam/list
 import message_support
@@ -380,6 +386,138 @@ pub fn unit_dialog_open_matches_client_layout_test() -> Nil {
   let assert Error(_) = unit_dialog_open.decode(message_support.hex("01100000"))
     as "opcode.0x357: a body of 32 bits is refused as too short"
   Nil
+}
+
+pub fn vendor_items_match_client_layout_test() -> Nil {
+  use <- owned_test.run(5000)
+  // opcode.0x90b: the reader 0x140097ca0 reads the vendor's unit id (32 bits),
+  // the tab count (32) and per tab two 32-bit values, the item count (32), the
+  // items (0x140097ae0), the two multipliers as 32-bit floats and three bits.
+  // 0x140097ae0 reads, in order, 32, 4, 32, 32, 32, 17, 32, 32, 32, 64 and 32
+  // bits, then two slots of 3, 32 and 32 bits. The bytes are those widths laid
+  // end to end, least significant bit first.
+  let body =
+    message_support.packed([
+      #(32, 0x1001),
+      #(32, 1),
+      #(32, 3),
+      #(32, 0x4000),
+      #(32, 2),
+      // item 1: a kind 0 item whose price the client computes
+      #(32, 1),
+      #(4, 0),
+      #(32, 14_838),
+      #(32, 0),
+      #(32, 0),
+      #(17, 0),
+      #(32, 0),
+      #(32, 0),
+      #(32, 0),
+      #(64, 0),
+      #(32, 0),
+      #(3, 0),
+      #(32, 0),
+      #(32, 0),
+      #(3, 0),
+      #(32, 0),
+      #(32, 0),
+      // item 2: every field distinct, both price slots of kind 2
+      #(32, 2),
+      #(4, 5),
+      #(32, 0x1234),
+      #(32, 6),
+      #(32, 9),
+      #(17, 0x1ABCD),
+      #(32, 7),
+      #(32, 3),
+      #(32, 5),
+      #(64, 0x0102030405060708),
+      #(32, 0x99),
+      #(3, 2),
+      #(32, 104),
+      #(32, 1),
+      #(3, 2),
+      #(32, 104),
+      #(32, 1),
+      #(32, 0x3F800000),
+      #(32, 0x40000000),
+      #(1, 1),
+      #(1, 0),
+      #(1, 1),
+    ])
+  let empty_slot = VendorPriceSlot(kind: 0, amount: 0, currency_id: 0)
+  let priced_slot = VendorPriceSlot(kind: 2, amount: 104, currency_id: 1)
+  message_support.assert_codec(
+    name: "opcode.0x90b and 0x140097ae0: the reader's widths in order",
+    body:,
+    value: VendorItems(
+      unit_id: 0x1001,
+      tabs: [VendorTab(field_1: 3, field_2: 0x4000)],
+      items: [
+        VendorItem(
+          unique_id: 1,
+          kind: 0,
+          entry_id: 14_838,
+          currency_type_id: 0,
+          stock_count: 0,
+          prerequisite_id: 0,
+          amount: 0,
+          tab_id: 0,
+          flags: 0,
+          field_10: 0,
+          field_11: 0,
+          price_slot_1: empty_slot,
+          price_slot_2: empty_slot,
+        ),
+        VendorItem(
+          unique_id: 2,
+          kind: 5,
+          entry_id: 0x1234,
+          currency_type_id: 6,
+          stock_count: 9,
+          prerequisite_id: 0x1ABCD,
+          amount: 7,
+          tab_id: 3,
+          flags: 5,
+          field_10: 0x0102030405060708,
+          field_11: 0x99,
+          price_slot_1: priced_slot,
+          price_slot_2: priced_slot,
+        ),
+      ],
+      buy_multiplier: 0x3F800000,
+      sell_multiplier: 0x40000000,
+      open: 1,
+      full_list: 0,
+      refuse: 1,
+    ),
+    encode: vendor_items.encode,
+    decode: vendor_items.decode,
+  )
+}
+
+pub fn buyback_list_and_generic_error_match_client_layout_test() -> Nil {
+  use <- owned_test.run(5000)
+  // opcode.0xbc: the reader 0x14008e560 reads a 32-bit count, then that many
+  // entries, so an empty list is one 32-bit zero.
+  message_support.assert_codec(
+    name: "opcode.0xbc: a 32-bit count of 0",
+    body: message_support.packed([#(32, 0)]),
+    value: BuybackList(entries: []),
+    encode: buyback_list.encode,
+    decode: buyback_list.decode,
+  )
+  // opcode.0x106: the reader reads one 8-bit code.
+  // 59 is the code of a unit the client does not show; 255 fills the eighth bit.
+  list.each([59, 255], fn(code) {
+    message_support.assert_codec(
+      name: "opcode.0x106: an 8-bit code",
+      body: message_support.packed([#(8, code)]),
+      value: GenericError(code:),
+      encode: generic_error.encode,
+      decode: generic_error.decode,
+    )
+  })
 }
 
 pub fn pong_is_the_clients_8_bits_test() -> Nil {

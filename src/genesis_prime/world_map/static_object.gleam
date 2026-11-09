@@ -186,6 +186,7 @@ pub fn create(
   let Creature2Id(creature_id) = object.creature_id
   let tail =
     unit_fields.spawned_tail(
+      create_flags: 0,
       interrupt_armor: option.None,
       health: option.map(object.health, fn(health) { health.value }),
       level: object.level,

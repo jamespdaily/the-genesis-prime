@@ -2851,6 +2851,115 @@ fields = [
 ]
 
 [[message]]
+id = 0x090B
+name = "vendor_items"
+direction = "server_to_client"
+evidence = "opcode.0x90b"
+summary = "a vendor's stock: the vendor's unit id, its tabs (none puts every item under one tab), its items, the buy and sell multipliers the client keeps on the unit, and three bits: open (the client opens the vendor window), full list (the items replace the list the client holds, not one item of it) and refuse (with open, the client ends the interaction itself and shows nothing). Gap: the 64-bit and 32-bit values after each item's amounts have no reader found and are sent as 0"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x90b", named_by = "opcode.0x90b" },
+  { name = "tabs", kind = "array", count_bits = 32, element = "vendor_tab", evidence = "opcode.0x90b", named_by = "opcode.0x90b" },
+  { name = "items", kind = "array", count_bits = 32, element = "vendor_item", evidence = "opcode.0x90b", named_by = "opcode.0x90b" },
+  { name = "buy_multiplier", kind = "float32", evidence = "opcode.0x90b", named_by = "opcode.0x90b" },
+  { name = "sell_multiplier", kind = "float32", evidence = "opcode.0x90b", named_by = "opcode.0x90b" },
+  { name = "open", kind = "unsigned", bits = 1, evidence = "opcode.0x90b", named_by = "opcode.0x90b" },
+  { name = "full_list", kind = "unsigned", bits = 1, evidence = "opcode.0x90b", named_by = "opcode.0x90b" },
+  { name = "refuse", kind = "unsigned", bits = 1, evidence = "opcode.0x90b", named_by = "opcode.0x90b" },
+]
+
+[[record]]
+name = "vendor_tab"
+evidence = "opcode.0x90b"
+summary = "one tab of a vendor's window: two 32-bit values (the tab's id and its text id, as GetVendorGroups reads them; not read in the client's code)"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 32, evidence = "opcode.0x90b", safe_by = "opcode.0x90b" },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "opcode.0x90b", safe_by = "opcode.0x90b" },
+]
+
+[[record]]
+name = "vendor_item"
+evidence = "0x140097ae0"
+summary = "one item of a vendor's stock (ReadVendorItem): the unique id the client buys by, the kind (0 item, 4 spell, 5 currency), the Item2, Spell4 or CurrencyType id, the currency type (kind 5), the stock count (0 unlimited), the prerequisite, the amount (kind 5), the tab, the flags (1 hide when the prerequisite fails, 2 special, 4 future stock), two values with no reader found, and two price slots"
+fields = [
+  { name = "unique_id", kind = "unsigned", bits = 32, evidence = "0x140097ae0", named_by = "0x140097ae0" },
+  { name = "kind", kind = "unsigned", bits = 4, evidence = "0x140097ae0", named_by = "0x140097ae0" },
+  { name = "entry_id", kind = "unsigned", bits = 32, evidence = "0x140097ae0", named_by = "0x140097ae0" },
+  { name = "currency_type_id", kind = "unsigned", bits = 32, evidence = "0x140097ae0", named_by = "0x140097ae0" },
+  { name = "stock_count", kind = "unsigned", bits = 32, evidence = "0x140097ae0", named_by = "0x140097ae0" },
+  { name = "prerequisite_id", kind = "unsigned", bits = 17, evidence = "0x140097ae0", named_by = "0x140097ae0" },
+  { name = "amount", kind = "unsigned", bits = 32, evidence = "0x140097ae0", named_by = "0x140097ae0" },
+  { name = "tab_id", kind = "unsigned", bits = 32, evidence = "0x140097ae0", named_by = "0x140097ae0" },
+  { name = "flags", kind = "unsigned", bits = 32, evidence = "0x140097ae0", named_by = "0x140097ae0" },
+  { name = "field_10", kind = "unsigned", bits = 64, evidence = "0x140097ae0", safe_by = "0x140097ae0" },
+  { name = "field_11", kind = "unsigned", bits = 32, evidence = "0x140097ae0", safe_by = "0x140097ae0" },
+  { name = "price_slot_1", kind = "record", record = "vendor_price_slot", evidence = "0x140097ae0", named_by = "0x140097ae0" },
+  { name = "price_slot_2", kind = "record", record = "vendor_price_slot", evidence = "0x140097ae0", named_by = "0x140097ae0" },
+]
+
+[[record]]
+name = "vendor_price_slot"
+evidence = "0x140097ae0"
+summary = "one price slot of a vendor item: a 3-bit slot kind (0 uses the item record's own price, which the client computes), the amount and the currency or account currency id"
+fields = [
+  { name = "kind", kind = "unsigned", bits = 3, evidence = "0x140097ae0", named_by = "0x14047aba0" },
+  { name = "amount", kind = "unsigned", bits = 32, evidence = "0x140097ae0", named_by = "0x140097ae0" },
+  { name = "currency_id", kind = "unsigned", bits = 32, evidence = "0x140097ae0", named_by = "0x140097ae0" },
+]
+
+[[message]]
+id = 0x00BC
+name = "buyback_list"
+direction = "server_to_client"
+evidence = "opcode.0xbc"
+summary = "the player's whole buyback list: the entries replace the list the client holds. Gap: the entry's layout is widths in order with three names, and no step sends an entry yet (buying and selling is #583)"
+fields = [
+  { name = "entries", kind = "array", count_bits = 32, element = "buyback_entry", evidence = "opcode.0xbc", named_by = "opcode.0xbc" },
+]
+
+[[record]]
+name = "buyback_entry"
+evidence = "opcode.0xba"
+summary = "one buyback entry (message 0xBA's layout): the buyback id, the Item2 id and the quantity are named; the other widths are in the client's order and have no reader found"
+fields = [
+  { name = "buyback_id", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba" },
+  { name = "item_id", kind = "unsigned", bits = 18, evidence = "opcode.0xba", named_by = "opcode.0xba" },
+  { name = "quantity", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba" },
+  { name = "field_4", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_5", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_6", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_7", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_8", kind = "unsigned", bits = 18, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_9", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_10", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_11", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_12", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_13", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_14", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_15", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_16", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_17", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_18", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_19", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_20", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_21", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_22", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_23", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_24", kind = "unsigned", bits = 4, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_25", kind = "unsigned", bits = 4, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_26", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+]
+
+[[message]]
+id = 0x0106
+name = "generic_error"
+direction = "server_to_client"
+evidence = "opcode.0x106"
+summary = "a generic error: the code of GameLib.CodeEnumGenericError, whose text the client looks up and raises as an event (a Vendor code shows in the open vendor window only)"
+fields = [
+  { name = "code", kind = "unsigned", bits = 8, evidence = "opcode.0x106", named_by = "opcode.0x106" },
+]
+
+[[message]]
 id = 0x092C
 name = "reward_properties"
 direction = "server_to_client"

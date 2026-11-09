@@ -18,6 +18,7 @@ import genesis_prime/game/quest_log
 import genesis_prime/game/server_proxy.{type ServerProxies}
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game/world_entry
 import genesis_prime/game/zone_welcome.{type ZoneWelcomes}
 import genesis_prime/game_settings.{type GameSettings}
@@ -77,6 +78,10 @@ pub type Settings {
     /// it, from the content load (genesis_prime/content/zone_welcome), which the
     /// client's zone reports send as 0x179 (genesis_prime/game/zone_welcome).
     zone_welcomes: ZoneWelcomes,
+    /// The creatures that sell and what each sells, from the content load
+    /// (genesis_prime/content/vendor), which a request to open a vendor's window is
+    /// answered from (genesis_prime/game/interaction).
+    vendors: Vendors,
     /// The numbers the server chose, from the content load
     /// (genesis_prime/content/game_number), of which a player entering the world
     /// reads its health regeneration (genesis_prime/game/player_life).

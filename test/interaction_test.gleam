@@ -6,6 +6,12 @@
 ////   (TalkTo) for any quest giver, and the answer is 0x357 with the unit id; unit 0
 ////   with kind 0x65 is the client's own end of an interaction, and kind 0x31 is a
 ////   vendor.
+//// - `opcode.0x90b`, `opcode.0xbc`, `opcode.0x106`, `0x1403add00` (CheckInteractionTarget):
+////   a vendor's kind 0x31 is answered with 0x90b (the stock, in position order, price
+////   slots of kind 0 so the client prices each item itself, multipliers 1.0, open 1) and
+////   0xbc with no entries; a request the client would refuse is answered with 0x106 and
+////   a 0x90b that refuses: unit not shown 59; not a creature, no stock or dead 16; gap
+////   over 9.0 17; Hostile 62, in that order.
 //// - `0x14039d5d0`, `0x140554470`, `0x14047a060`: the client sends the request only
 ////   for a creature that is alive, not Hostile to the player and a quest giver, and opens the
 ////   dialog only within 6.0 of the creature edge to edge. `opcode.0x7ea` adds 3.0 to a
@@ -26,7 +32,12 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place
+import genesis_prime/message/buyback_list.{BuybackList}
+import genesis_prime/message/generic_error.{GenericError}
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
+import genesis_prime/message/vendor_item.{type VendorItem, VendorItem}
+import genesis_prime/message/vendor_items.{VendorItems}
+import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
 import genesis_prime/step.{type ConnectionEvent, type Event, LogWarning}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{type Hostile, Hostile}
@@ -36,6 +47,7 @@ import gleam/option.{None}
 import owned_test
 import planted_table.{Integer}
 import spawn_support
+import vendor_support
 
 /// The edge gap a request is answered up to: 6.0 for a quest kind, plus the 3.0 a
 /// request may add (`opcode.0x7ea`).
@@ -247,30 +259,219 @@ pub fn end_and_dialog_reply_are_accepted_test() -> Nil {
     connection_support.interaction_requested(state:, unit_id: 0, kind: 0x65)
   assert connection_support.written_ids(ended) == []
   assert support.logs_of(step: ended, level: LogWarning) == []
-  let #(state, replied) =
+  let #(_, replied) =
     connection_support.read(
       state:,
       bytes: connection_support.world_message(message_id: 0x0356, body: <<>>),
     )
   assert connection_support.written_ids(replied) == []
   assert support.logs_of(step: replied, level: LogWarning) == []
-  // A vendor's kind (0x31) is not taken here: logged once, no reply, the gap named.
-  let #(state, vendor) =
+}
+
+/// 1.0 as the client's reader holds a float (0x3f800000).
+const one = 0x3F800000
+
+/// The item the client's reader gets for a stocked row (`0x140097ae0`): named by its
+/// position, kind 0, the Item2 row, and every other column 0 with price slots of kind 0.
+fn stocked_item(unique_id unique_id: Int, item_id item_id: Int) -> VendorItem {
+  let no_price = VendorPriceSlot(kind: 0, amount: 0, currency_id: 0)
+  VendorItem(
+    unique_id:,
+    kind: 0,
+    entry_id: item_id,
+    currency_type_id: 0,
+    stock_count: 0,
+    prerequisite_id: 0,
+    amount: 0,
+    tab_id: 0,
+    flags: 0,
+    field_10: 0,
+    field_11: 0,
+    price_slot_1: no_price,
+    price_slot_2: no_price,
+  )
+}
+
+/// A connection whose picture holds Dorian Walker as unit 40, `gap` away with `health`
+/// and `hostile_to`, and whose server's vendors are those of `creature_ids`.
+fn walker_among_vendors(
+  creature_ids creature_ids: List(Int),
+  gap gap: Float,
+  health health: Int,
+  hostile_to hostile_to: Hostile,
+) -> game_connection.State {
+  connection_support.feed(
+    state: connection_support.in_world_stocking(
+      vendors: vendor_support.stocking(creature_ids:),
+    ),
+    event: walker_appears(unit_id: walker_unit, gap:, health:, hostile_to:),
+  ).0
+}
+
+pub fn vendor_in_range_opens_its_window_with_its_stock_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state =
+    walker_among_vendors(
+      creature_ids: [74_812],
+      gap: reach -. 0.1,
+      health: 52,
+      hostile_to: friendly,
+    )
+  let #(state, taken) =
     connection_support.interaction_requested(
       state:,
       unit_id: walker_unit,
       kind: 0x31,
     )
-  assert connection_support.written_ids(vendor) == []
-  let assert [line] = support.logs_of(step: vendor, level: LogWarning)
-    as "an interaction kind no step takes is logged once"
-  assert support.says(line:, words: "#582")
-    as "the gap names the issue that will close it"
+  let assert [
+    Frame(message_id: 0x090B, body: items),
+    Frame(message_id: 0x00BC, body: buyback),
+  ] = connection_support.written(taken:)
+    as "a vendor within 6.0 + 3.0 is answered with 0x90b, then 0xbc, and nothing else"
+  assert vendor_items.decode(items)
+    == Ok(VendorItems(
+      unit_id: walker_unit,
+      tabs: [],
+      items: [
+        stocked_item(unique_id: 1, item_id: 12_078),
+        stocked_item(unique_id: 2, item_id: 14_838),
+        stocked_item(unique_id: 3, item_id: 20_791),
+      ],
+      buy_multiplier: one,
+      sell_multiplier: one,
+      open: 1,
+      full_list: 1,
+      refuse: 0,
+    ))
+    as "opcode.0x90b: the stock in position order, no tabs, multipliers 1.0, open and full list, no refusal"
+  assert buyback_list.decode(buyback) == Ok(BuybackList(entries: []))
+    as "opcode.0xbc: nothing has been sold to the vendor"
+  assert support.logs_of(step: taken, level: LogWarning) == []
   let #(_, again) =
     connection_support.interaction_requested(
       state:,
       unit_id: walker_unit,
       kind: 0x31,
     )
-  assert support.logs_of(step: again, level: LogWarning) == []
+  assert connection_support.written_ids(again) == [0x090B, 0x00BC]
+    as "a repeated request is answered again: the connection keeps no interaction"
+}
+
+pub fn a_vendor_open_the_client_would_refuse_is_refused_with_its_code_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Each case: what it is, the connection, the request's unit, the client's code
+  // (opcode.0x7ea, CheckInteractionTarget 0x1403add00) and the words of its one warning.
+  let cases = [
+    #(
+      "an unseen unit",
+      walker_among_vendors(
+        creature_ids: [74_812],
+        gap: 1.0,
+        health: 52,
+        hostile_to: friendly,
+      ),
+      99,
+      59,
+      "not shown",
+    ),
+    #(
+      "another player's unit",
+      connection_support.viewer_showing_unit_9(),
+      9,
+      16,
+      "not a creature",
+    ),
+    #(
+      "a creature with no stock",
+      walker_among_vendors(
+        creature_ids: [73_464],
+        gap: 1.0,
+        health: 52,
+        hostile_to: friendly,
+      ),
+      walker_unit,
+      16,
+      "no stock",
+    ),
+    #(
+      "a dead vendor",
+      walker_among_vendors(
+        creature_ids: [74_812],
+        gap: 1.0,
+        health: 0,
+        hostile_to: friendly,
+      ),
+      walker_unit,
+      16,
+      "dead",
+    ),
+    #(
+      "a vendor beyond the reach",
+      walker_among_vendors(
+        creature_ids: [74_812],
+        gap: reach +. 0.1,
+        health: 52,
+        hostile_to: friendly,
+      ),
+      walker_unit,
+      17,
+      "too far",
+    ),
+    #(
+      "a vendor that is Hostile to the player",
+      walker_among_vendors(
+        creature_ids: [74_812],
+        gap: 1.0,
+        health: 52,
+        hostile_to: hostile,
+      ),
+      walker_unit,
+      62,
+      "Hostile",
+    ),
+    #(
+      "a vendor that is both beyond the reach and Hostile: the range is checked first",
+      walker_among_vendors(
+        creature_ids: [74_812],
+        gap: reach +. 0.1,
+        health: 52,
+        hostile_to: hostile,
+      ),
+      walker_unit,
+      17,
+      "too far",
+    ),
+  ]
+  use #(what, state, unit_id, code, words) <- list.each(cases)
+  let #(state, first) =
+    connection_support.interaction_requested(state:, unit_id:, kind: 0x31)
+  let assert [
+    Frame(message_id: 0x0106, body: error),
+    Frame(message_id: 0x090B, body: refusal),
+  ] = connection_support.written(taken: first)
+    as { what <> " is answered with 0x106, then the refusing 0x90b" }
+  assert generic_error.decode(error) == Ok(GenericError(code:))
+    as { what <> " is refused with the client's code" }
+  assert vendor_items.decode(refusal)
+    == Ok(VendorItems(
+      unit_id:,
+      tabs: [],
+      items: [],
+      buy_multiplier: one,
+      sell_multiplier: one,
+      open: 1,
+      full_list: 0,
+      refuse: 1,
+    ))
+    as { what <> " closes the window with no stock (opcode.0x90b)" }
+  let assert [line] = support.logs_of(step: first, level: LogWarning)
+    as { what <> " is logged once as a warning" }
+  assert support.says(line:, words:) as { what <> " says why: " <> words }
+  assert !support.stops(first) as { what <> " leaves the connection up" }
+  let #(_, second) =
+    connection_support.interaction_requested(state:, unit_id:, kind: 0x31)
+  assert connection_support.written_ids(second) == [0x0106, 0x090B]
+    as { what <> " is refused again" }
+  assert support.logs_of(step: second, level: LogWarning) == []
+    as { what <> " is a debug line the second time" }
 }

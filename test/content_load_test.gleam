@@ -13,8 +13,8 @@
 //// The waits are the load's own settings, shortened here, so no test waits 30 s.
 
 import character_tables
+import content_support
 import database_support
-import genesis_prime
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/content
 import genesis_prime/content/class_resource as content_class_resource
@@ -29,7 +29,6 @@ import genesis_prime/game/zone_welcome
 import genesis_prime/migration
 import genesis_prime/readiness
 import genesis_prime/table/id.{ClassId}
-import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind
 import gleam/dict
 import gleam/erlang/process
@@ -39,64 +38,9 @@ import gleam/option
 import gleam/string
 import log_capture
 import mailbox_support
-import owned_key
 import owned_test
-import pog
 import server_proxy_support
 import unitest
-
-/// How the load asks in these tests: attempts of 500 ms, 50 ms between them, and
-/// the warning after a second.
-fn asking() -> readiness.Settings {
-  readiness.Settings(within_ms: 1000, attempt_ms: 500, pause_ms: 50)
-}
-
-/// The load of the committed content tables and the repository's migrations from the
-/// database, under a key of its own.
-fn load(
-  database database: String,
-) -> #(Result(Nil, content.LoadError), table_store.Key) {
-  load_asking(database:, ask: asking(), probe: content.pool_probe)
-}
-
-/// The load with the way it asks the pool chosen by the test.
-fn load_asking(
-  database database: String,
-  ask ask: readiness.Settings,
-  probe probe: fn(pog.Connection) -> readiness.Probe,
-) -> #(Result(Nil, content.LoadError), table_store.Key) {
-  let key = owned_key.new_fixture_key()
-  let pool =
-    database_support.config(
-      database_support.settings(),
-      database:,
-      pool_name: process.new_name("content_load_pool"),
-      pool_size: 1,
-    )
-  #(
-    content.load(
-      tables: character_tables.content_tables(),
-      migrations: genesis_prime.load_migrations(),
-      pool:,
-      ask:,
-      probe:,
-      key:,
-    ),
-    key,
-  )
-}
-
-/// Runs `sql` on the database as the test's administrator.
-fn change(database: String, sql: String) -> Nil {
-  let assert Ok(_) =
-    database_support.psql(
-      with: database_support.settings(),
-      database:,
-      arguments: ["-c", sql],
-    )
-    as "the change to the database ran"
-  Nil
-}
 
 /// A spawn row of a creature the client has no row for, as the world database's
 /// row `row`.
@@ -111,7 +55,7 @@ fn bad_row(row row: Int, creature creature: Int) -> String {
 pub fn the_load_puts_the_migrated_databases_spawns_in_the_worlds_term_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  let #(loaded, key) = load(database:)
+  let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil) as "a migrated database loads"
   let world = content_spawn.world(key:, world_id: 3460)
   assert dict.size(world.by_id) == 27
@@ -123,11 +67,11 @@ pub fn the_load_puts_the_migrated_databases_spawns_in_the_worlds_term_test() -> 
 pub fn the_load_puts_the_kinds_in_a_term_the_default_row_is_the_60_second_choice_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  change(
-    database,
-    "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (73464, 5000, 5649, 1500, 'server_choice', 'a short respawn for the training Beast')",
+  content_support.change(
+    database:,
+    sql: "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (73464, 5000, 5649, 1500, 'server_choice', 'a short respawn for the training Beast')",
   )
-  let #(loaded, key) = load(database:)
+  let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil)
   let kinds = content_creature_kind.kinds(key:)
   assert creature_kind.kind_of(kinds:, creature2_id: 73_464).respawn_ms == 5000
@@ -140,8 +84,11 @@ pub fn the_load_puts_the_kinds_in_a_term_the_default_row_is_the_60_second_choice
 pub fn a_database_with_no_default_kind_stops_the_load_naming_the_table_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  change(database, "delete from creature_kind where creature_id = 0")
-  let #(loaded, _key) = load(database:)
+  content_support.change(
+    database:,
+    sql: "delete from creature_kind where creature_id = 0",
+  )
+  let #(loaded, _key) = content_support.load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
     as "no default row stops the start"
   assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
@@ -151,11 +98,11 @@ pub fn a_database_with_no_default_kind_stops_the_load_naming_the_table_test() ->
 pub fn a_kind_row_for_a_creature_the_client_does_not_hold_stops_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  change(
-    database,
-    "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (200001, 5000, 5649, 1500, 'server_choice', 'a creature the client does not hold')",
+  content_support.change(
+    database:,
+    sql: "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (200001, 5000, 5649, 1500, 'server_choice', 'a creature the client does not hold')",
   )
-  let #(loaded, _key) = load(database:)
+  let #(loaded, _key) = content_support.load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
     as "a refused kind row stops the start"
   assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
@@ -165,12 +112,12 @@ pub fn a_kind_row_for_a_creature_the_client_does_not_hold_stops_the_load_test() 
 pub fn a_refused_kind_row_does_not_hide_a_refused_spawn_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  change(
-    database,
-    "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (200001, 5000, 5649, 1500, 'server_choice', 'a creature the client does not hold')",
+  content_support.change(
+    database:,
+    sql: "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (200001, 5000, 5649, 1500, 'server_choice', 'a creature the client does not hold')",
   )
-  change(database, bad_row(row: 1, creature: 200_002))
-  let #(loaded, _key) = load(database:)
+  content_support.change(database:, sql: bad_row(row: 1, creature: 200_002))
+  let #(loaded, _key) = content_support.load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
     as "the refused rows stop the start"
   assert list.map(refusals, fn(refused) { #(refused.table, refused.rule) })
@@ -191,7 +138,7 @@ pub fn a_database_that_answers_late_is_waited_for_and_loaded_from_test() -> Nil 
   let away = process.new_subject()
   list.each(list.repeat(Nil, 5), fn(_) { process.send(away, Nil) })
   let #(loaded, key) =
-    load_asking(
+    content_support.load_asking(
       database:,
       ask: readiness.Settings(within_ms: 100, attempt_ms: 500, pause_ms: 50),
       probe: fn(db) {
@@ -213,8 +160,11 @@ pub fn a_database_that_answers_late_is_waited_for_and_loaded_from_test() -> Nil 
 pub fn a_database_whose_migrations_differ_stops_the_load_with_the_difference_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  change(database, "delete from schema_migration where name = '0008_spawn'")
-  let #(loaded, _key) = load(database:)
+  content_support.change(
+    database:,
+    sql: "delete from schema_migration where name = '0008_spawn'",
+  )
+  let #(loaded, _key) = content_support.load(database:)
   assert loaded
     == Error(content.MigrationsDiffer(migration.NotApplied(name: "0008_spawn")))
     as "the database has not run the migration 0008_spawn"
@@ -224,11 +174,11 @@ pub fn two_refused_rows_are_both_logged_with_table_id_and_rule_and_stop_the_load
   use <- owned_test.run(60_000)
   use <- unitest.tag("serial")
   let database = database_support.new_database(on: database_support.shared())
-  change(database, bad_row(row: 1, creature: 200_001))
-  change(database, bad_row(row: 2, creature: 200_002))
+  content_support.change(database:, sql: bad_row(row: 1, creature: 200_001))
+  content_support.change(database:, sql: bad_row(row: 2, creature: 200_002))
   let lines = process.new_subject()
   let capture = log_capture.start_all(into: lines)
-  let #(loaded, _key) = load(database:)
+  let #(loaded, _key) = content_support.load(database:)
   log_capture.stop(capture)
   let assert Error(content.Refused(refusals:)) = loaded
     as "bad rows stop the load"
@@ -264,8 +214,11 @@ pub fn two_refused_rows_are_both_logged_with_table_id_and_rule_and_stop_the_load
 pub fn a_query_that_fails_stops_the_load_with_the_databases_reason_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  change(database, "alter table spawn rename column x to east")
-  let #(loaded, _key) = load(database:)
+  content_support.change(
+    database:,
+    sql: "alter table spawn rename column x to east",
+  )
+  let #(loaded, _key) = content_support.load(database:)
   let assert Error(content.QueryFailed(table: "spawn", reason:)) = loaded
     as "a failed query stops the load"
   assert string.contains(reason, "undefined_column")
@@ -275,18 +228,21 @@ pub fn a_query_that_fails_stops_the_load_with_the_databases_reason_test() -> Nil
 pub fn a_missing_and_an_unknown_game_number_stop_the_load_each_named_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  change(database, "delete from game_number where name = 'leash_range'")
+  content_support.change(
+    database:,
+    sql: "delete from game_number where name = 'leash_range'",
+  )
   // The table refuses a name nobody listed, so the name is listed first (a new
   // name is one insert, migration 0014); the server still has no use for it.
-  change(
-    database,
-    "insert into game_number_name (name, unit) values ('evade_range', 'units')",
+  content_support.change(
+    database:,
+    sql: "insert into game_number_name (name, unit) values ('evade_range', 'units')",
   )
-  change(
-    database,
-    "insert into game_number (name, value, unit, source, reason) values ('evade_range', 30, 'units', 'server_choice', 'a number the server has no use for')",
+  content_support.change(
+    database:,
+    sql: "insert into game_number (name, value, unit, source, reason) values ('evade_range', 30, 'units', 'server_choice', 'a number the server has no use for')",
   )
-  let #(loaded, _key) = load(database:)
+  let #(loaded, _key) = content_support.load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
     as "a game number the server does not know, or one it reads and does not find, stops the start (the design of step F, section 2)"
   assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
@@ -300,11 +256,11 @@ pub fn a_missing_and_an_unknown_game_number_stop_the_load_each_named_test() -> N
 pub fn a_missing_armor_refill_time_stops_the_load_named_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  change(
-    database,
-    "delete from game_number where name = 'interrupt_armor_refill_ms'",
+  content_support.change(
+    database:,
+    sql: "delete from game_number where name = 'interrupt_armor_refill_ms'",
   )
-  let #(loaded, _key) = load(database:)
+  let #(loaded, _key) = content_support.load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
     as "a creature that cannot refill its armor stops the start (migration 0016)"
   assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
@@ -314,7 +270,7 @@ pub fn a_missing_armor_refill_time_stops_the_load_named_test() -> Nil {
 pub fn the_load_puts_each_playable_classs_resource_in_a_term_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  let #(loaded, key) = load(database:)
+  let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil)
   let assert Ok(stalker) =
     class_resource.of_class(
@@ -338,11 +294,11 @@ pub fn the_load_puts_each_playable_classs_resource_in_a_term_test() -> Nil {
 pub fn a_playable_class_with_no_max_row_stops_the_load_naming_it_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  change(
-    database,
-    "delete from class_resource where class_id = 3 and name = 'max'",
+  content_support.change(
+    database:,
+    sql: "delete from class_resource where class_id = 3 and name = 'max'",
   )
-  let #(loaded, _key) = load(database:)
+  let #(loaded, _key) = content_support.load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
     as "a playable class with no maximum stops the start (the design, test 14)"
   assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
@@ -352,11 +308,11 @@ pub fn a_playable_class_with_no_max_row_stops_the_load_naming_it_test() -> Nil {
 pub fn a_class_missing_the_rows_of_its_refill_stops_the_load_naming_each_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  change(
-    database,
-    "delete from class_resource where (class_id = 4 and name = 'refill_after_combat_ms') or (class_id = 5 and name like 'regen%') or (class_id = 7 and name = 'regen_amount')",
+  content_support.change(
+    database:,
+    sql: "delete from class_resource where (class_id = 4 and name = 'refill_after_combat_ms') or (class_id = 5 and name like 'regen%') or (class_id = 7 and name = 'regen_amount')",
   )
-  let #(loaded, _key) = load(database:)
+  let #(loaded, _key) = content_support.load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
     as "the Medic's refill, the Stalker's and the Spellslinger's regeneration each need their rows (the design's values table): a class that would never refill stops the start"
   assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
@@ -373,7 +329,7 @@ pub fn a_class_missing_the_rows_of_its_refill_stops_the_load_naming_each_test() 
 pub fn the_load_puts_the_servers_proxies_in_a_term_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  let #(loaded, key) = load(database:)
+  let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil)
   assert server_proxy_support.changes(
     proxies: content_server_proxy.proxies(key:),
@@ -386,7 +342,7 @@ pub fn the_load_puts_the_servers_proxies_in_a_term_test() -> Nil {
 pub fn the_load_puts_the_zones_welcomes_from_the_seed_in_a_term_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  let #(loaded, key) = load(database:)
+  let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil)
   let welcomes = content_zone_welcome.zone_welcomes(key:)
   assert zone_welcome.on_terrain_loaded(welcomes:, world_zone_id: 648)
@@ -397,11 +353,11 @@ pub fn the_load_puts_the_zones_welcomes_from_the_seed_in_a_term_test() -> Nil {
 pub fn a_server_proxy_row_that_cannot_be_planned_stops_the_load_naming_each_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
-  change(
-    database,
-    "insert into server_proxy (spell4_base_id, phase, spell4_id, source, reason) values (99999, 0, 42148, 'server_choice', 'a base with no plan'), (26468, 2, 42148, 'server_choice', 'a go Pulse Blast does not have'), (26468, 0, 99999, 'server_choice', 'a spell the tables lack')",
+  content_support.change(
+    database:,
+    sql: "insert into server_proxy (spell4_base_id, phase, spell4_id, source, reason) values (99999, 0, 42148, 'server_choice', 'a base with no plan'), (26468, 2, 42148, 'server_choice', 'a go Pulse Blast does not have'), (26468, 0, 99999, 'server_choice', 'a spell the tables lack')",
   )
-  let #(loaded, _key) = load(database:)
+  let #(loaded, _key) = content_support.load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
     as "a row that names no plan, no go or no spell stops the start (the design, tests 10 to 12)"
   assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })

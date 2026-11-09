@@ -6,6 +6,7 @@
 
 import character_tables
 import client_tables
+import genesis_prime/game/vendor
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
 import genesis_prime/table/creature2
@@ -60,8 +61,8 @@ pub fn the_content_tables_are_the_content_load_of_the_committed_files_over_the_s
   assert list.map(creature2_outfit_info.all(content), fn(row) {
       creature2_outfit_info.id(row).value
     })
-    == [7475, 7912, 8952, 8979, 9350, 9351]
-    as "Creature2OutfitInfo holds the rows the committed outfit groups point to, 8952 being the one Dorian Walker's group points to"
+    == [7475, 7912, 8952, 8979, 9029, 9350, 9351, 9777]
+    as "Creature2OutfitInfo holds the rows the committed outfit groups point to, 8952 being the one Dorian Walker's group points to, 9029 the one Supplier Ingavak's group 9725 points to, and 9777 the one group 10505 points to, which Mazzu, Razzu and Darru share"
   let shared = character_tables.shared()
   assert creature2.get(tables: content, id: Creature2Id(73_464))
     == creature2.get(tables: shared, id: Creature2Id(73_464))
@@ -102,9 +103,16 @@ pub fn the_committed_creature_and_faction_rows_select_the_spawns_the_clients_row
       tables: character_tables.content_tables(),
       formulas:,
       kinds:,
+      vendors: vendor.none(),
     )
   let real =
-    spawn.select(rows:, tables: client_tables.every_table(), formulas:, kinds:)
+    spawn.select(
+      rows:,
+      tables: client_tables.every_table(),
+      formulas:,
+      kinds:,
+      vendors: vendor.none(),
+    )
   assert planted.refusals == [] && real.refusals == []
     as "no row is refused by either"
   assert planted.coverage == real.coverage

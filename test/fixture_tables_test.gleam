@@ -181,8 +181,8 @@ pub fn the_content_tables_are_committed_and_each_root_reaches_a_committed_row_te
     == [22, 51, 426, 870, 990, 1387, 3460]
     as "the Worlds the tests' maps run in"
   assert fixture_tables.committed_ids(creature2_outfit_info.schema)
-    == [7475, 7912, 8952, 8979, 9350, 9351]
-    as "Creature2OutfitInfo holds the rows the outfit group roots 8170, 10355 and 10359 point to, the one Creature2 11467's group 9675 points to, the one Creature2 12909's group 8607 points to, the one Creature2 74812's group points to, and none for 8181's 7486, which the client lacks"
+    == [7475, 7912, 8952, 8979, 9029, 9350, 9351, 9777]
+    as "Creature2OutfitInfo holds the rows the outfit group roots 8170, 10355 and 10359 point to, the one Creature2 11467's group 9675 points to, the one Creature2 12909's group 8607 points to, the one Creature2 74812's group points to, the one Creature2 28739's group 9725 points to, the one the vendors 24491, 27039, 27230 and 50889's group 10505 points to, and none for 8181's 7486, which the client lacks"
   list.each(
     [
       #(creature2.schema, 73_464),

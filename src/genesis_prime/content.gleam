@@ -65,6 +65,9 @@
 ////   (genesis_prime/game/zone_welcome): a row naming a zone or a Tutorial row the tables
 ////   lack, a Tutorial row that is not of category 29, or a parent chain that is a cycle
 ////   is refused.
+//// - **The vendors** are checked against the client's Creature2 and Item2 rows
+////   (genesis_prime/game/vendor): a vendor naming a creature, an item naming an Item2 row
+////   the tables lack, or an item of a creature with no vendor row is refused.
 //// - **Content-only tables.** The faction, outfit and world tables the selection
 ////   reads are read beside the server's own tables on the caller's heap
 ////   (`server_table.load_content_tables`: the creature tables are read where they
@@ -87,11 +90,13 @@ import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/class_resource
 import genesis_prime/game/rating
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_plan
+import genesis_prime/game/vendor
 import genesis_prime/game/zone_welcome
 import genesis_prime/migration.{type Migration}
 import genesis_prime/readiness
@@ -220,6 +225,24 @@ fn read(
       )
     }),
   )
+  use vendor_rows <- result.try(
+    content_vendor.vendor_rows(db)
+    |> result.map_error(fn(error) {
+      QueryFailed(
+        table: content_vendor.table,
+        reason: worker.describe_query_error(error),
+      )
+    }),
+  )
+  use vendor_item_rows <- result.try(
+    content_vendor.item_rows(db)
+    |> result.map_error(fn(error) {
+      QueryFailed(
+        table: content_vendor.table <> "_item",
+        reason: worker.describe_query_error(error),
+      )
+    }),
+  )
   let classes = class_resource.select(rows: class_rows)
   let class_refusals = case classes {
     Ok(..) -> []
@@ -240,6 +263,18 @@ fn read(
     Ok(..) -> []
     Error(refusals) -> refusals
   }
+  let vendors =
+    vendor.select(vendors: vendor_rows, items: vendor_item_rows, tables:)
+  let vendor_refusals = case vendors {
+    Ok(..) -> []
+    Error(refusals) -> refusals
+  }
+  // With a vendor row refused, the spawns are checked as if no creature sold, so the
+  // start names a bad spawn too and the vendor refusals stop it.
+  let vendors_for_spawns = case vendors {
+    Ok(vendors) -> vendors
+    Error(..) -> vendor.none()
+  }
   let numbers = game_number.select(rows: number_rows, sight_range: sight.range)
   let number_refusals = case numbers {
     Ok(..) -> []
@@ -259,7 +294,13 @@ fn read(
   }
   let selection = case kinds_for_spawns {
     Ok(kinds) ->
-      spawn.select(rows:, tables:, formulas: rating.formulas(tables:), kinds:)
+      spawn.select(
+        rows:,
+        tables:,
+        formulas: rating.formulas(tables:),
+        kinds:,
+        vendors: vendors_for_spawns,
+      )
     Error(Nil) ->
       spawn.Selection(
         worlds: dict.new(),
@@ -276,6 +317,7 @@ fn read(
       class_refusals,
       proxy_refusals,
       welcome_refusals,
+      vendor_refusals,
     ])
   {
     [] -> {
@@ -296,6 +338,7 @@ fn read(
           tables:,
           formulas: rating.formulas(tables:),
           kinds: kinds_of_summons,
+          vendors: vendors_for_spawns,
         ),
       )
       case kinds {
@@ -316,6 +359,10 @@ fn read(
       }
       case welcomes {
         Ok(welcomes) -> content_zone_welcome.put(key:, welcomes:)
+        Error(..) -> Nil
+      }
+      case vendors {
+        Ok(vendors) -> content_vendor.put(key:, vendors:)
         Error(..) -> Nil
       }
       Ok(Nil)

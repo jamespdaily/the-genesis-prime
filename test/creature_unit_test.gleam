@@ -6,7 +6,8 @@
 //// both factions 1441, display 26565.
 
 import genesis_prime/game/start_place.{Facing}
-import genesis_prime/message/unit_create_creature
+import genesis_prime/message/unit_create_creature.{UnitCreateCreature}
+import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_unit
@@ -42,6 +43,7 @@ pub fn a_creature_is_created_as_the_clients_vector_of_a_battle_beast_is_test() -
       base_faction_id: 1441,
       display_info_id: 26_565,
       outfit_info_id: 0,
+      vendor: False,
       combat: spawn_support.beast_combat(),
       bases: spawn_support.loaded_beast().bases,
       context: spawn_support.loaded_beast().context,
@@ -116,4 +118,34 @@ pub fn a_creatures_current_armor_is_stat_21_of_its_0x262_and_no_armor_adds_no_st
   assert unit_fields.stat(tail: create(option.None).tail, stat_id: 21)
     == Error(Nil)
     as "a creature with no armor or infinite armor sends no stat 21"
+}
+
+pub fn a_vendor_is_created_with_create_flag_4_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `opcode.0x262.vendor_flag`: bit 4 of the flags byte marks a vendor, and the
+  // vendor's prerequisite is the first tagged value, which the codec writes as
+  // none (`first_tag`, a constant 0), so the client reads it as met. A creature
+  // with no stock carries 0.
+  let beast = spawn_support.battle_beast(number: 1, x: 0.0)
+  let created = fn(spawn) {
+    creature_unit.create(
+      spawn:,
+      unit_id: 0x1001,
+      health: 52,
+      interrupt_armor: option.None,
+      server_time_estimate_start: 0,
+    )
+  }
+  let plain = created(beast)
+  let selling = created(Spawn(..beast, vendor: True))
+  assert plain.tail.create_flags == 0
+    as "a spawn whose creature has no stock carries no flag"
+  assert selling.tail.create_flags == 4
+    as "opcode.0x262.vendor_flag: a vendor carries bit 4"
+  assert selling
+    == UnitCreateCreature(
+      ..plain,
+      tail: UnitCreateTail(..plain.tail, create_flags: 4),
+    )
+    as "the flag is the only difference, and first_tag stays the constant 0"
 }

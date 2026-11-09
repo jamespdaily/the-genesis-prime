@@ -14,6 +14,7 @@ import genesis_prime/message/ability_tiers.{type AbilityTiers}
 import genesis_prime/message/account_entitlements.{type AccountEntitlements}
 import genesis_prime/message/action_set.{type ActionSet}
 import genesis_prime/message/bit_stream.{type DecodeError}
+import genesis_prime/message/buyback_list.{type BuybackList}
 import genesis_prime/message/camp_countdown.{type CampCountdown}
 import genesis_prime/message/character_list.{type CharacterList}
 import genesis_prime/message/chat_channel_joined.{type ChatChannelJoined}
@@ -29,6 +30,7 @@ import genesis_prime/message/disconnect_notice.{type DisconnectNotice}
 import genesis_prime/message/enter_world.{type EnterWorld}
 import genesis_prime/message/experience_gained.{type ExperienceGained}
 import genesis_prime/message/game_server_handoff.{type GameServerHandoff}
+import genesis_prime/message/generic_error.{type GenericError}
 import genesis_prime/message/innate_index_set.{type InnateIndexSet}
 import genesis_prime/message/item_action_failed.{type ItemActionFailed}
 import genesis_prime/message/item_added.{type ItemAdded}
@@ -95,6 +97,7 @@ import genesis_prime/message/unit_stat_changed.{type UnitStatChanged}
 import genesis_prime/message/unit_stealth.{type UnitStealth}
 import genesis_prime/message/unit_target.{type UnitTarget}
 import genesis_prime/message/unit_threat.{type UnitThreat}
+import genesis_prime/message/vendor_items.{type VendorItems}
 import genesis_prime/message/whisper_failed.{type WhisperFailed}
 import gleam/result
 
@@ -182,6 +185,9 @@ pub type ServerMessage {
   ResurrectionWindow(message: ResurrectionWindow)
   CombatLog(message: CombatLog)
   UnitDialogOpen(message: UnitDialogOpen)
+  VendorItems(message: VendorItems)
+  BuybackList(message: BuybackList)
+  GenericError(message: GenericError)
   RewardProperties(message: RewardProperties)
 }
 
@@ -419,6 +425,9 @@ pub fn decode(
       decoded(body, message_id, resurrection_window.decode, ResurrectionWindow)
     0x0247 -> decoded(body, message_id, combat_log.decode, CombatLog)
     0x0357 -> decoded(body, message_id, unit_dialog_open.decode, UnitDialogOpen)
+    0x090B -> decoded(body, message_id, vendor_items.decode, VendorItems)
+    0x00BC -> decoded(body, message_id, buyback_list.decode, BuybackList)
+    0x0106 -> decoded(body, message_id, generic_error.decode, GenericError)
     0x092C ->
       decoded(body, message_id, reward_properties.decode, RewardProperties)
     _ -> Error(UnknownMessage(message_id:))
@@ -510,6 +519,9 @@ pub fn name(message: ServerMessage) -> String {
     ResurrectionWindow(..) -> "resurrection_window"
     CombatLog(..) -> "combat_log"
     UnitDialogOpen(..) -> "unit_dialog_open"
+    VendorItems(..) -> "vendor_items"
+    BuybackList(..) -> "buyback_list"
+    GenericError(..) -> "generic_error"
     RewardProperties(..) -> "reward_properties"
   }
 }

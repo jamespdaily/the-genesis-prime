@@ -69,6 +69,7 @@ import genesis_prime/game/hit_radius
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/unit_properties.{type Properties}
+import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
 import genesis_prime/table/creature2.{type Creature2}
@@ -183,6 +184,9 @@ pub type Spawn {
     /// What working `combat` out again from changed properties needs besides them
     /// (`values_of`).
     context: CombatContext,
+    /// Whether the creature sells (`vendor` content table): its 0x262 carries the vendor
+    /// create flag, which shows the client its bag icon.
+    vendor: Bool,
   )
 }
 
@@ -448,6 +452,7 @@ pub fn select(
   tables tables: table_store.Tables,
   formulas formulas: Formulas,
   kinds kinds: Kinds,
+  vendors vendors: Vendors,
 ) -> Selection {
   let catalog = catalog(tables:)
   let refused = fn(row: Row, error) {
@@ -465,7 +470,9 @@ pub fn select(
         static_object.unit_type_of(entity_type: row.entity_type)
       {
         True, _ ->
-          case load_checks(catalog:, formulas:, kinds:, shared:, row:) {
+          case
+            load_checks(catalog:, formulas:, kinds:, vendors:, shared:, row:)
+          {
             Error(error) -> #(shared, refused(row, error))
             Ok(#(checked, shared)) -> #(
               shared,
@@ -542,7 +549,12 @@ const non_player = 0
 /// the map reads it to answer a summon and the creature's start to build the
 /// spawn again.
 pub opaque type SummonChecks {
-  SummonChecks(catalog: Catalog, formulas: Formulas, kinds: Kinds)
+  SummonChecks(
+    catalog: Catalog,
+    formulas: Formulas,
+    kinds: Kinds,
+    vendors: Vendors,
+  )
 }
 
 /// The checks a summon is made with.
@@ -550,8 +562,9 @@ pub fn summon_checks(
   tables tables: table_store.Tables,
   formulas formulas: Formulas,
   kinds kinds: Kinds,
+  vendors vendors: Vendors,
 ) -> SummonChecks {
-  SummonChecks(catalog: catalog(tables:), formulas:, kinds:)
+  SummonChecks(catalog: catalog(tables:), formulas:, kinds:, vendors:)
 }
 
 /// Why a summon makes no spawn.
@@ -590,7 +603,7 @@ pub fn summoned(
   checks checks: SummonChecks,
   summoned summoned: Summoned,
 ) -> Result(Spawn, SummonRefusal) {
-  let SummonChecks(catalog:, formulas:, kinds:) = checks
+  let SummonChecks(catalog:, formulas:, kinds:, vendors:) = checks
   let Summoned(id:, creature_id:, level:, place:) = summoned
   use creature <- result.try(
     valid_creature(catalog:, creature_id:)
@@ -639,7 +652,7 @@ pub fn summoned(
       level: row_level,
     )
   use #(checked, _shared) <- result.try(
-    load_checks(catalog:, formulas:, kinds:, shared: dict.new(), row:)
+    load_checks(catalog:, formulas:, kinds:, vendors:, shared: dict.new(), row:)
     |> result.map_error(FailsTheChecks),
   )
   case left_out_of(catalog:, checked:) {
@@ -1676,6 +1689,7 @@ fn load_checks(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
   kinds kinds: Kinds,
+  vendors vendors: Vendors,
   shared shared: SharedCombats,
   row row: Row,
 ) -> Result(#(Checked, SharedCombats), SpawnError) {
@@ -1727,6 +1741,7 @@ fn load_checks(
         combat:,
         bases:,
         context:,
+        vendor: vendor.is_vendor(vendors:, creature_id:),
       ),
     ),
     shared,

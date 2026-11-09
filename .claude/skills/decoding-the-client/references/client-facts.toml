@@ -10791,8 +10791,8 @@ gap = "The 64-bit value (entry 0x30) and the 32-bit value at 0x30 (entry 0x38) a
 name = "ReadVendorItem"
 
 ["0x14047aba0"]
-statement = "Adds one vendor item to the vendor unit's list. Kind 0 needs the Item2 row (else it is dropped); its stack size is the row's vendor stack count and, for a price slot of kind 0, the row's own buy price is used. Kind 4 needs the Spell4 row. Kind 5 needs the CurrencyType row, takes its icon and name, and is priced by the item's amount in its currency type. A price slot of kind 2 costs the amount in the currency type it names; kinds 1 and 3 cost the amount in currency type 15 with the id as the alternative or account currency. A credit price (currency type 1) is the price times the vendor's buy multiplier, cut to a whole number; the sell price (from the Item2 row) is scaled by the sell multiplier."
-proof = "Saved C: kind 0: 0x1400b5df0(Item2, p[2]) else return 0x80004005; local_118 (entry 0x20, nStackSize) = row+0x1ac; local_120 = row+0x1e0; name pointer row+0x1e8; slot loop over p+0xd, 2 slots, stride 3: slot kind 0 copies the row's three u64 at row+0x30.. ; else amount = slot[1], currency = (kind == 2 ? slot[2] : 0xf), alt = CONCAT44(kind == 3 ? slot[2] : 0, kind == 1 ? slot[2] : 0). Kind 4: FindSpell(p[2]), stack 1. Kind 5: 0x1401fa4a0(p[2]); local_b0 = p[6], local_a8 = p[3]. Then if local_a8 == 1: local_b0 = (i64)(local_b0 * unit+0x36dc); same for the second slot; the sell amount (row+0x60..) times unit+0x36e0. FUN_1403d3040(unit+14000, &local_138)."
+statement = "Adds one vendor item to the vendor unit's list. Kind 0 needs the Item2 row (else it is dropped); its stack size is the row's vendor stack count and, for a price slot of kind 0, the item record's price is used (BuildItemPrices 0x14040d160 sets it: the row's currency columns when they are set, else a computed credit price). Kind 4 needs the Spell4 row. Kind 5 needs the CurrencyType row, takes its icon and name, and is priced by the item's amount in its currency type. A price slot of kind 2 costs the amount in the currency type it names; kinds 1 and 3 cost the amount in currency type 15 with the id as the alternative or account currency. A credit price (currency type 1) is the price times the vendor's buy multiplier, cut to a whole number; the sell price (from the Item2 row) is scaled by the sell multiplier."
+proof = "Saved C: kind 0: 0x1400b5df0(Item2, p[2]) else return 0x80004005; local_118 (entry 0x20, nStackSize) = row+0x1ac; local_120 = row+0x1e0; name pointer row+0x1e8; slot loop over p+0xd, 2 slots, stride 3: slot kind 0 copies the item record's three u64 at +0x30 (the record FillItemInfo 0x1404445d0 fills; the Item2 row's own words there are not what is copied); else amount = slot[1], currency = (kind == 2 ? slot[2] : 0xf), alt = CONCAT44(kind == 3 ? slot[2] : 0, kind == 1 ? slot[2] : 0). Kind 4: FindSpell(p[2]), stack 1. Kind 5: 0x1401fa4a0(p[2]); local_b0 = p[6], local_a8 = p[3]. Then if local_a8 == 1: local_b0 = (i64)(local_b0 * unit+0x36dc); same for the second slot; the sell amount (row+0x60..) times unit+0x36e0. FUN_1403d3040(unit+14000, &local_138)."
 grade = "fairly sure"
 gap = "Which of eAltType and eAccountCurrencyType the two halves of the alternative word are (slot kinds 1 and 3) is not read from GetVendorItems; the sell-side fields from row+0x60 are not mapped to Lua keys."
 name = "AddVendorItem"
@@ -10879,7 +10879,7 @@ grade = "fairly sure"
 gap = "Row 8 is absent from the table; whether the server may ever send type 8 is untested: SetCurrency stores it but the cap lookup finds no row."
 
 ["opcode.0x106"]
-statement = "Message 0x106 (262), game server to client: generic error. Body: an 8-bit code (GameLib.CodeEnumGenericError). The client looks up the code's text and raises GenericError(code, text); the Vendor addon shows it in the vendor window's alert box while the window is open. The client raises the same event itself for refusals it finds before sending."
+statement = "Message 0x106 (262), game server to client: generic error. Body: an 8-bit code (GameLib.CodeEnumGenericError). The client looks up the code's text and raises GenericError(code, text); the Vendor addon shows it in the vendor window's alert box while the window is open, and FloatText shows nothing for a Vendor_* code (record lua.FloatText.OnGenericError), so a refusal sent before the window opens shows nothing. The client raises the same event itself for refusals it finds before sending."
 proof = "Registered in 0x14006c290 (saved C) line 511: (0x106, 4, 0, 0, LAB_14008d560); the reader reads 8 bits. HandleWorldMessage case at 0x1403ef16f calls ShowGenericError 0x1403cc530(game, code), which maps code to text and calls RaiseUiEvent GenericError at 0x1403cd2ad. Vendor.lua OnGenericError line 749."
 grade = "fairly sure"
 gap = "Read from the saved C and the case's call."
@@ -10904,7 +10904,7 @@ gap = "That the server's rest bonus per kill is f times the kill experience is i
 name = "LuaGetRestXpKillCreaturePool"
 
 ["0x14041bf80"]
-statement = "Lua Item GetBuyPrice: the item's Item2 buy price; a credit price is multiplied by the open vendor's buy multiplier, or, for an item tied to a faction, by a price factor from the player's standing with it."
+statement = "Lua Item GetBuyPrice: the price BuildItemPrices 0x14040d160 sets on the item; a credit price is multiplied by the open vendor's buy multiplier, or, for an item tied to a faction, by a price factor from the player's standing with it."
 proof = "Saved C: vendor = FindUnit(game+0x6640) when game+0x6644 == 0x31; f = DAT_140b79ed0 (1.0) or vendor+0x36dc; when 0x140243a00(item rec+0x1c0) finds a row, f = 0x1405e6230(game+0x1698, 0xe, row+0xc, row+4); amount = item price +0x28 times f when the currency (+0x30) is 1, cut to an integer."
 grade = "fairly sure"
 gap = "The faction price row (0x140243a00) and 0x1405e6230 are not named."
@@ -12246,6 +12246,60 @@ grade = "fairly sure"
 gap = "Read from the call structure only; the instructions are not cited."
 name = "OnPeriodicQuestCompleted"
 
+["0x14040d160"]
+name = "BuildItemPrices"
+statement = "Sets an item record's prices. When the Item2 row's currencyTypeId0 and currencyTypeId1 are both 0: buy = ItemVendorBuyPrice(Item2Category.vendorMultiplier * Item2Family.vendorMultiplier * Item2Type.vendorMultiplier, powerLevel, itemQualityId) in currency 1 (credits); sell = ItemVendorSellPrice of the same, in credits. Otherwise buy = currencyAmount0 in currencyTypeId0 and second = currencyAmount1 in currencyTypeId1 (with Item2 flags bit 0x200, currency 15 with currencyTypeId0 as the alternate); sell from the *SellToVendor columns. This is the price AddVendorItem uses for slot kind 0 and Item GetBuyPrice shows."
+proof = "Saved C 0x14040d160 (8eb22adb6de47956): mult = cat+0x18 * fam+0x10 * type+0x18 (rows from PrepareItemPropertyBuilder 0x14040c610 at builder+0xf8/0xf0/0xe8, ids record+0x148/0x140/0x144); test Item2 row +0x88/+0x8c; FUN_14040bee0(mult, p[1], p[0]) -> p+0x28, p[0xc]=1; else +0x90/+0x88/+0x94/+0x8c, flag row+0x7c&0x200. p = item record+8 (FillItemInfo 0x1404445d0 passes puVar12+2); p[0] = record+0x158 = itemQualityId, p[1] = record+0x160 = powerLevel (FillItemInfo puVar12[0x56]=row[4], [0x58]=row[0xf]); offsets match `table_rows -- Item2 --columns`, Item2Type/Item2Family/Item2Category --columns."
+grade = "sure"
+
+["0x14040bee0"]
+name = "ItemVendorBuyPrice"
+statement = "An item's computed buy price in credits: max(1, trunc(ItemPriceLevelCurve(powerLevel) * q * multiplier)), q = itemQualityId as a float, 1.0 when 0."
+proof = "Saved C 0x14040bee0 (8eb22adb6de47956): curve = vtable PTR_FUN_140b66a98[1] = 0x14041d200 (Bytes at 0x140b66a98+8 are a011424001000000, read by query.py bytes); fVar4 = param_4 or DAT_140b79ed0 (0000803f = 1.0); (u64)(curve*q*mult), 0 -> 1."
+grade = "sure"
+
+["0x14041d200"]
+name = "ItemPriceLevelCurve"
+statement = "The price curve of a level L: GameFormula 1078 datafloat0 * e^((L - dataint0) * datafloat01) + datafloat02 * (L - dataint0)^datafloat03. With the data (0, 0, 0, 7.5, 2.0) it is 7.5 * L^2."
+proof = "Saved C 0x14041d200 (8eb22adb6de47956): FUN_140200220(0x436) row +4/+0x18/+0x1c/+0x20/+0x24; FUN_1408fbfc0 is powf, base DAT_140b79f98: Bytes at 0x140b79f98 are 54f82d40 (2.7182817). `table_rows -- GameFormula 1078`."
+grade = "sure"
+
+["0x14040bfb0"]
+name = "ItemVendorSellPrice"
+statement = "An item's computed sell price: max(1, trunc(ItemVendorBuyPrice * GameFormula 1026 datafloat0)), 0.15 in the data."
+proof = "Saved C 0x14040bfb0 (8eb22adb6de47956): FUN_140200220(0x402)+0x18; `table_rows -- GameFormula 1026`."
+grade = "fairly sure"
+gap = "The decompiler drops the call's arguments in BuildItemPrices; assumed to be the buy price's (mult, powerLevel, quality) passed through in registers."
+
+["vendor.start_zone_prices"]
+statement = "With price slot kind 0 and buy multiplier 1.0, the client shows these credit prices (buy/sell): 12078 20/3, 14838 67/10, 20791 13/1, 12044 30/4; 13176 13185 13194 13188 13191 13179 525/78; 13151 13163 27875 328/49; 13154 13166 27876 281/42; 27874 13157 13169 421/63; 27873 13148 13160 468/70."
+proof = "BuildItemPrices with rows from `table_rows -- Item2 <the 22 ids> 74201`, `Item2Type <types>`, `Item2Family 16 2 5 1`, `Item2Category <cats>`, GameFormula 1078 1026 1214, computed in f32. 12078 has Item2 flag 0x4000: quality from Item2 74201 (GameFormula 1214 dataint0), q=2, its own powerLevel 3."
+grade = "fairly sure"
+gap = "Not run in the emulator or live; a live open of the vendor (Unit GetVendorItems tPriceInfo) settles it. If FUN_140444550 refuses 12078's stand-in row, the item is dropped. Retail Jabbithole gives 104 for 14838, not 67."
+
+["interaction.kind_49_vendor"]
+statement = "Entry 49 of the interaction kind table (the vendor): active 0, allowed on a dead unit 0, allowed toward a hostile unit 0, walks to the unit first 1, range 6.0, text id 166841, name Vendor, handler 0x14039d5a0 (the shared sender of the unit's own kind). So a dead unit or a unit Hostile to the player never offers the vendor click."
+proof = "Bytes at 0x140c48f18 (entry 49 = 0x140c48150 + 0x48 * 49), 72 bytes read with query.py ask bytes: 31000000 | 00000000 | 00010101 | 00010000 | 0000c040 (6.0) | 7059b040 01000000 | 4859b040 01000000 | 2859b040 01000000 | b98b0200 (0x28bb9 = 166841) 00000000 | 805db040 01000000 (the name) | a0d53940 01000000 (0x14039d5a0, the handler at entry offset 0x40). Offsets 4, 5 and 6 are the active, dead and hostile flags of PickInteractionKind 0x14047a060's loop (record there)."
+grade = "fairly sure"
+gap = "Not run live. The meaning of offsets 9 and 0xd (walk to the unit, a flag) is from ClickInteraction's reading, not repeated here."
+
+["0x1403e85d0.interaction_check"]
+statement = "UpdateGame, on every frame while the game's interaction gate is set and the current interaction kind is below 0x66, finds the interaction's unit and runs CheckInteractionTarget on it; when that returns a code it calls SetInteraction with unit 0, kind 0x65 and send 1, which ends the interaction. A player who walks out of range of the vendor (6.0 plus 3.0, edge to edge), a vendor that turns Hostile and a unit that is gone each end it with no server message first; the server sees only the client's 0x7ea {0, 0x65}."
+proof = "Saved C 0x1403e85d0.c (hash 8eb22adb6de47956) lines 614-620: `if (((int)param_1[0xcc8] != 0) && (*(uint *)((longlong)param_1 + 0x6644) < 0x66)) { uVar34 = FindUnit(param_1); iVar28 = FUN_1403add00(param_1[0xf],uVar34); if (iVar28 != 0) { uVar45 = FUN_1403a71f0(param_1,0,0x65,1); } }`. FUN_1403add00 is CheckInteractionTarget and FUN_1403a71f0 SetInteraction (records there); the word at 0x6644 is the current kind."
+grade = "fairly sure"
+gap = "What the word at 0xcc8 (the gate) holds is not read. The decompile shows CheckInteractionTarget with two arguments, so that the range is the current kind's table range is assumed from SetInteraction's call. Not run live."
+
+["lua.Vendor.ArrangeGroups"]
+statement = "Vendor.lua ArrangeGroups sorts a vendor's items into tabs: an item whose group id names no tab with a non-empty name goes under the tab named by the text ChallengeTypeGeneral, so a 0x90b with no tabs shows every item under that one tab. A tab with no item is left out."
+proof = "UI/Vendor/Vendor.lua lines 1298-1328 (archive extracted by client_files.py): tNewList.tOther = {strName = Apollo.GetString(\"ChallengeTypeGeneral\"), tItems = {}}; each tab of the vendor's groups with a non-empty strName gets tNewList[idGroup]; each item goes to tNewList[item.idGroup] or tNewList.tOther; empty tabs are removed. UpdateVendorItems line 915 calls it with Unit GetVendorGroups and GetVendorItems. `client_files.py text --search General` lists text 235 as `General`."
+grade = "fairly sure"
+gap = "That the name ChallengeTypeGeneral is text 235 (General) is by the text's wording, not by a read of the name to id link; the live window settles it."
+
+["Item2.currencyTypeId0"]
+statement = "All 22 items in the start-zone vendors' stock (12078, 14838, 20791, 13176, 13185, 13194, 13188, 12044, 13191, 13179, 13151, 13154, 13166, 27874, 27873, 27876, 13157, 13163, 27875, 13169, 13148, 13160) have currencyTypeId0, currencyTypeId1, currencyAmount0, currencyAmount1 and the four SellToVendor columns at 0, so the client computes each one's price (BuildItemPrices 0x14040d160) and no table holds a price."
+proof = "`gleam run -m genesis_prime/table_rows -- Item2 12078 14838 20791 13176 13185 13194 13188 12044 13191 13179 13151 13154 13166 27874 27873 27876 13157 13163 27875 13169 13148 13160`: each of the eight currency columns prints 0 on all 22 rows (counted with grep and uniq: 22 rows each)."
+grade = "fairly sure"
+gap = "Table data, not read from client code: no instruction shows the price path ignoring these columns, which BuildItemPrices' record gives."
 ["0x1403aecd0.index"]
 statement = "CheckItemFitsLocation refuses an inventory destination with Item_BagToSmall (37) only when its bag index is greater than the usable count; an index equal to the usable count passes, so the client sends a move to the first slot past the usable ones."
 proof = "0x1403aef23 mov eax, dword ptr [rsi + 0xc4]; cmp dword ptr [rbx + 4], eax; jbe to the pass path, else mov eax, 0x25 (llvm-objdump of WildStar64.exe). Saved C of 0x1403aecd0 line 130: if (*(uint *)(param_1 + 0xc4) < param_4[1]) return 0x25."
