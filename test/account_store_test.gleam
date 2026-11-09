@@ -3532,3 +3532,308 @@ pub fn a_quest_row_the_client_would_refuse_is_refused_by_its_named_constraint_te
     as "a botched row with none of them is accepted"
   stop(store)
 }
+
+// ---- buying from a vendor ----
+
+/// The credits and the items a login finds: a purchase's whole effect.
+fn bought_state(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+) -> #(Int, List(store.HeldItem)) {
+  let assert ForWorld(CharacterLoaded(currencies:, items:, ..)) =
+    ask(store, World(LoadCharacter(account, character_id)))
+    as "the account's character loads"
+  let assert [store.HeldCurrency(currency_type_id: 1, amount:)] = currencies
+    as "the character holds credits only"
+  #(amount, items)
+}
+
+/// A purchase of the stackable Item2 under a login's epoch.
+fn buy(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+  epoch epoch: Int,
+  credits_held credits_held: Int,
+  cost cost: Int,
+  grow grow: List(store.StackGrowth),
+  make make: List(store.NewStack),
+) -> store.Answer {
+  ask(
+    store,
+    Items(store.BuyFromVendor(
+      account_id: account,
+      character_id:,
+      session_epoch: character_support.epoch(epoch),
+      credits_held:,
+      cost:,
+      grow:,
+      make:,
+      item2_id: Item2Id(stackable_item2),
+    )),
+  )
+}
+
+pub fn a_buy_takes_the_credits_and_adds_the_items_in_one_statement_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
+  let assert [first, second] = stacks
+  let #(epoch, _) = login(store:, account:, character_id:)
+  let assert ForItems(store.Bought(credits:, made:)) =
+    buy(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      credits_held: 1000,
+      cost: 300,
+      grow: [
+        store.StackGrowth(
+          item_guid: first.item_guid,
+          held_count: 10,
+          new_count: 15,
+        ),
+        store.StackGrowth(
+          item_guid: second.item_guid,
+          held_count: 4,
+          new_count: 20,
+        ),
+      ],
+      make: [
+        store.NewStack(location: 1, bag_index: 5, stack_count: 7),
+        store.NewStack(location: 1, bag_index: 6, stack_count: 1),
+      ],
+    )
+    as "a purchase the character can pay and place is saved"
+  assert credits == 700
+    as "the cost came off the 1,000 credits the character held"
+  let #(saved_credits, items) = bought_state(store:, account:, character_id:)
+  assert saved_credits == 700 as "the next login finds the lower credits"
+  assert item_in_bag(items:, index: 1) == HeldItem(..first, stack_count: 15)
+    as "a grown stack keeps its guid and holds its new count"
+  assert item_in_bag(items:, index: 2) == HeldItem(..second, stack_count: 20)
+  assert list.map(made, fn(item) { #(item.bag_index, item.stack_count) })
+    == [#(5, 7), #(6, 1)]
+    as "a stack is made at each place, in the order of the request"
+  assert list.all(made, fn(item) {
+    item.item2_id == Item2Id(stackable_item2) && item.location == 1
+  })
+    as "each made stack is of the purchased Item2, in the inventory"
+  let assert [made_first, made_second] = made as "two stacks were made"
+  assert item_in_bag(items:, index: 5) == made_first
+    as "the next login finds the made stack with the guid the answer gave"
+  assert item_in_bag(items:, index: 6) == made_second
+  assert list.length(items) == 11
+    as "the Novice set's seven, the two stacks and the two made"
+  stop(store)
+}
+
+pub fn a_buy_with_only_grown_stacks_answers_the_credits_left_and_no_made_stack_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 10)])
+  let assert [first] = stacks
+  let #(epoch, _) = login(store:, account:, character_id:)
+  assert buy(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      credits_held: 1000,
+      cost: 1000,
+      grow: [
+        store.StackGrowth(
+          item_guid: first.item_guid,
+          held_count: 10,
+          new_count: 11,
+        ),
+      ],
+      make: [],
+    )
+    == ForItems(store.Bought(credits: 0, made: []))
+    as "a purchase that spends every credit leaves a row of 0 and makes no stack"
+  let #(saved_credits, items) = bought_state(store:, account:, character_id:)
+  assert saved_credits == 0
+  assert item_in_bag(items:, index: 1) == HeldItem(..first, stack_count: 11)
+  stop(store)
+}
+
+pub fn a_buy_under_a_stale_epoch_changes_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 10)])
+  let assert [first] = stacks
+  let #(stale, _) = login(store:, account:, character_id:)
+  let #(current, before) = login(store:, account:, character_id:)
+  assert current > stale as "a later login raised the epoch"
+  assert buy(
+      store:,
+      account:,
+      character_id:,
+      epoch: stale,
+      credits_held: 1000,
+      cost: 300,
+      grow: [
+        store.StackGrowth(
+          item_guid: first.item_guid,
+          held_count: 10,
+          new_count: 15,
+        ),
+      ],
+      make: [store.NewStack(location: 1, bag_index: 5, stack_count: 7)],
+    )
+    == ForItems(ItemsNotSaved)
+    as "an older login's purchase is not saved"
+  assert bought_state(store:, account:, character_id:) == #(1000, before)
+    as "neither the credits nor an item changed"
+  stop(store)
+}
+
+pub fn a_buy_with_too_few_credits_saved_changes_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 10)])
+  let assert [first] = stacks
+  let #(epoch, before) = login(store:, account:, character_id:)
+  let assert Ok(novice_item) =
+    list.find(before, fn(item) { item.location == 0 })
+    as "the character holds the Novice set, of other Item2s"
+  let grow = [
+    store.StackGrowth(item_guid: first.item_guid, held_count: 10, new_count: 15),
+  ]
+  let make = [store.NewStack(location: 1, bag_index: 5, stack_count: 7)]
+  let refused = [
+    #(
+      "a cost over the credits saved",
+      buy(
+        store:,
+        account:,
+        character_id:,
+        epoch:,
+        credits_held: 1000,
+        cost: 1001,
+        grow:,
+        make:,
+      ),
+    ),
+    #(
+      "credits held that are not the credits saved",
+      buy(
+        store:,
+        account:,
+        character_id:,
+        epoch:,
+        credits_held: 1200,
+        cost: 300,
+        grow:,
+        make:,
+      ),
+    ),
+    #(
+      "a grown stack whose count is not the count saved",
+      buy(
+        store:,
+        account:,
+        character_id:,
+        epoch:,
+        credits_held: 1000,
+        cost: 300,
+        grow: [
+          store.StackGrowth(
+            item_guid: first.item_guid,
+            held_count: 9,
+            new_count: 15,
+          ),
+        ],
+        make:,
+      ),
+    ),
+    #(
+      "a grown stack that is not of the purchased Item2",
+      buy(
+        store:,
+        account:,
+        character_id:,
+        epoch:,
+        credits_held: 1000,
+        cost: 300,
+        grow: [
+          store.StackGrowth(
+            item_guid: novice_item.item_guid,
+            held_count: 1,
+            new_count: 2,
+          ),
+        ],
+        make:,
+      ),
+    ),
+  ]
+  list.each(refused, fn(row) {
+    assert row.1 == ForItems(ItemsNotSaved) as { row.0 <> " is not saved" }
+  })
+  assert bought_state(store:, account:, character_id:) == #(1000, before)
+    as "each refusal changed nothing, the credits and the stack included"
+  stop(store)
+}
+
+pub fn a_buy_into_a_taken_place_changes_nothing_and_names_the_constraint_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
+  let assert [first, _] = stacks
+  let #(epoch, before) = login(store:, account:, character_id:)
+  assert buy(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      credits_held: 1000,
+      cost: 300,
+      grow: [
+        store.StackGrowth(
+          item_guid: first.item_guid,
+          held_count: 10,
+          new_count: 15,
+        ),
+      ],
+      make: [store.NewStack(location: 1, bag_index: 2, stack_count: 7)],
+    )
+    == ForItems(SaveRefused(constraint: "character_item_one_per_slot"))
+    as "a made stack at a place that holds an item breaks the table's unique key"
+  assert bought_state(store:, account:, character_id:) == #(1000, before)
+    as "the credits were not taken and the stack not grown: the statement changed nothing"
+  stop(store)
+}
+
+pub fn a_new_character_starts_with_the_starting_credits_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let assert CharacterCreated(character_id: first) =
+    create(store:, account:, name: "Ab Cd", slots: 2)
+    as "a create with the starting credits of the tests"
+  let assert ForSelect(Created(CharacterCreated(character_id: second))) =
+    ask(
+      store,
+      Select(CreateCharacter(
+        account_id: account,
+        character: NewCharacter(
+          ..a_new_character("Ef Gh"),
+          starting_credits: 250,
+        ),
+        character_slots: 2,
+      )),
+    )
+    as "a create with other starting credits"
+  assert bought_state(store:, account:, character_id: first).0 == 1000
+    as "a character holds the credits it was created with"
+  assert bought_state(store:, account:, character_id: second).0 == 250
+  stop(store)
+}
