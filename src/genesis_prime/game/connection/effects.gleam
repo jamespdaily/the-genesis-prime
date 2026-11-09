@@ -237,7 +237,10 @@ pub fn world_left(
       list.map(player_life.left(life: entered.life), fn(timer) {
         OwnEffect(CancelTimer(timer:))
       }),
-      [OwnEffect(CancelTimer(timer: connection_state.save_timer))],
+      [
+        OwnEffect(CancelTimer(timer: connection_state.save_timer)),
+        OwnEffect(CancelTimer(timer: connection_state.quest_reset_timer)),
+      ],
     ]),
   )
 }

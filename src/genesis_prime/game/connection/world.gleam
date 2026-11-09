@@ -64,7 +64,9 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/camp
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
-import genesis_prime/game/connection/effects.{Chats, StartsSaveTimer} as connection_effects
+import genesis_prime/game/connection/effects.{
+  Chats, StartsQuestResetTimer, StartsSaveTimer, ToClient,
+} as connection_effects
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
@@ -76,6 +78,7 @@ import genesis_prime/game/connection/state.{
 } as connection_state
 import genesis_prime/game/innate_choice
 import genesis_prime/game/movement
+import genesis_prime/game/quest_log
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/top_zone
 import genesis_prime/game/unit_properties
@@ -203,10 +206,54 @@ pub fn save_due(
 /// starts again for the next one. The timer runs only while the player is in the
 /// world, so a firing in any other status is a bug.
 pub fn quest_reset_due(
-  session _session: Session,
-  now _now: Now,
+  session session: Session,
+  now now: Now,
 ) -> client_connection.Handled(Session) {
-  panic as "not built: quest_log.reset_due decides, 0x362 is sent for a reset that passed and the timer starts again for the next reset"
+  case session.status {
+    InWorld(holder:, entered:) -> {
+      let #(log, decided) = case
+        quest_log.reset_due(
+          log: entered.quests,
+          numbers: session.settings.numbers,
+          now:,
+        )
+      {
+        quest_log.NotYet(after_ms:) -> #(entered.quests, [
+          StartsQuestResetTimer(after_ms:),
+        ])
+        quest_log.Reset(log:, frame:, after_ms:) -> #(log, [
+          ToClient(frame:),
+          StartsQuestResetTimer(after_ms:),
+        ])
+      }
+      connection_effects.carry_out(
+        session: Session(
+          ..session,
+          status: InWorld(
+            holder:,
+            entered: world_entry.Entered(..entered, quests: log),
+          ),
+        ),
+        now:,
+        effects: decided,
+        written: [],
+      )
+    }
+    WaitingToClaim(..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | Summoning(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey ->
+      connection_state.end_for(
+        session:,
+        now:,
+        text: "a timer the rule did not start fired",
+      )
+  }
 }
 
 /// The store's answer to the save of the player's place: what it says is
@@ -512,6 +559,8 @@ pub fn entry_answered(
           classes: session.settings.class_resources,
           numbers: session.settings.numbers,
           defaults: unit_properties.defaults(tables: session.settings.tables),
+          tables: session.settings.tables,
+          now:,
         )
       {
         Ok(world_entry.InTheWorld(entered:, effects:)) ->
@@ -627,7 +676,14 @@ fn in_the_world(
     now:,
     effects: list.flatten([
       list.map(effects, connection_effects.from_entry),
-      [Chats(effects: burst), StartsSaveTimer],
+      [
+        Chats(effects: burst),
+        StartsSaveTimer,
+        StartsQuestResetTimer(after_ms: quest_log.next_reset_in(
+          numbers: session.settings.numbers,
+          now:,
+        )),
+      ],
     ]),
     written: [],
   )

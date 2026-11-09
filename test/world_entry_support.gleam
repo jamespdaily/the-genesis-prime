@@ -9,10 +9,10 @@ import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/item_added
 import genesis_prime/message/play_character.{PlayCharacter}
-import genesis_prime/step.{ConnectionId}
+import genesis_prime/step.{type Now, ConnectionId, Now}
 import genesis_prime/store.{
-  type Character, type HeldItem, AccountId, Character, CharacterId, HeldItem,
-  NameStands,
+  type Character, type HeldItem, type QuestRow, AccountId, Character,
+  CharacterId, HeldItem, NameStands,
 }
 import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
@@ -26,12 +26,31 @@ import place_support
 import spawn_support
 import unit_support
 
+/// The system time every entry of the tests is made at, as a FILETIME.
+pub const filetime = 133_900_000_000_000_000
+
+/// The time every entry of the tests is made at.
+pub fn now() -> Now {
+  Now(monotonic_ms: 0, filetime:)
+}
+
 /// What the store's answer to a play of the character leads to on these tables,
 /// when it holds these items: the map is asked, or the play is refused.
 pub fn loaded(
   tables tables: table_store.Tables,
   character character: Character,
   items items: List(HeldItem),
+) -> #(world_entry.State, world_entry.Loaded) {
+  loaded_with_quests(tables:, character:, items:, quests: [])
+}
+
+/// What the store's answer to a play of the character leads to on these tables,
+/// when it holds these items and quest rows.
+pub fn loaded_with_quests(
+  tables tables: table_store.Tables,
+  character character: Character,
+  items items: List(HeldItem),
+  quests quests: List(QuestRow),
 ) -> #(world_entry.State, world_entry.Loaded) {
   let assert Ok(body) = play_character.encode(PlayCharacter(character_id: 42))
     as "a character id fits the message"
@@ -46,7 +65,7 @@ pub fn loaded(
         session_epoch: character_support.epoch(1),
         saved_health: None,
         items:,
-        quests: [],
+        quests:,
       ),
       connection: ConnectionId(1),
       stay: map_support.stay(count: 1),
@@ -97,6 +116,19 @@ pub fn entry_holding(
   character character: Character,
   items items: List(HeldItem),
 ) -> #(List(world_entry.Effect), world_entry.Entered) {
+  entry_at(tables:, character:, items:, quests: [], now: now())
+}
+
+/// What a character's entry decides on these tables when the store holds these
+/// items and quest rows for it and the entry is made at `now`: its effects, in
+/// order, and the player the connection keeps.
+pub fn entry_at(
+  tables tables: table_store.Tables,
+  character character: Character,
+  items items: List(HeldItem),
+  quests quests: List(QuestRow),
+  now now: Now,
+) -> #(List(world_entry.Effect), world_entry.Entered) {
   let place =
     place_support.at(
       world_id: 3460,
@@ -106,7 +138,7 @@ pub fn entry_holding(
       z: -560.0,
     )
   let assert #(_, world_entry.Join(state:, ..)) =
-    loaded(tables:, character:, items:)
+    loaded_with_quests(tables:, character:, items:, quests:)
     as "the store holds the character, its place and its level's row"
   let unit =
     unit_support.novice_unit(tables:, character:, place:, unit_id: 1, body: [])
@@ -125,6 +157,8 @@ pub fn entry_holding(
       classes: class_resource_support.classes(),
       numbers: spawn_support.numbers,
       defaults: unit_properties.defaults(tables:),
+      tables:,
+      now:,
     )
     as "the map's answer to the join is the one world entry asked for"
   #(effects, entered)

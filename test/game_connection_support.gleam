@@ -135,7 +135,7 @@ pub fn keyed() -> Cipher {
 }
 
 /// The system time every answer of the tests carries, as a FILETIME.
-pub const filetime = 133_900_000_000_000_000
+pub const filetime = world_entry_support.filetime
 
 pub fn feed(
   state state: game_connection.State,
@@ -451,21 +451,35 @@ pub fn joining_saved(
   character character: store.Character,
   saved_health saved_health: Option(Int),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
+  joining_with_quests(
+    in_character_select:,
+    character:,
+    saved_health:,
+    quests: [],
+  )
+}
+
+/// `in_character_select` after the store gave `character` with these quest rows:
+/// the map is asked.
+pub fn joining_with_quests(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+  saved_health saved_health: Option(Int),
+  quests quests: List(store.QuestRow),
+) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) = playing_from(in_character_select:, character_id: 42)
   answer(
     state:,
     taken:,
     outcome: step.Answer(
       FromStore(
-        ForWorld(
-          CharacterLoaded(
-            character,
-            character_support.epoch(1),
-            saved_health,
-            world_entry_support.novice_items(character:),
-            [],
-          ),
-        ),
+        ForWorld(CharacterLoaded(
+          character,
+          character_support.epoch(1),
+          saved_health,
+          world_entry_support.novice_items(character:),
+          quests,
+        )),
       ),
     ),
   )
@@ -573,6 +587,21 @@ pub fn entered_saved(
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) =
     joining_saved(in_character_select:, character:, saved_health:)
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
+}
+
+/// The connection after the store gave the tests' character these quest rows and
+/// the map took it: the burst is written.
+pub fn entered_with_quests(
+  quests quests: List(store.QuestRow),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) =
+    joining_with_quests(
+      in_character_select: in_select(),
+      character: world_character(),
+      saved_health: None,
+      quests:,
+    )
   answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
 }
 

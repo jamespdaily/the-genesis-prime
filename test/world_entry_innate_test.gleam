@@ -68,6 +68,7 @@ pub fn the_entry_sends_the_innate_after_the_abilities_and_0x19f_after_0x19d_for_
         0x0262,
         0x019B,
         0x025E,
+        0x035F,
         0x0111,
         0x0111,
         0x0111,

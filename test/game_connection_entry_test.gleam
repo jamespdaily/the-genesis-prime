@@ -137,8 +137,9 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
       OwnEffect(step.JoinGroup(step.CharacterNamed("ab cd"))),
       OwnEffect(step.JoinGroup(game_connection_support.zone_group(4961))),
       OwnEffect(StartTimer(TimerId(2), 60_000)),
+      OwnEffect(StartTimer(TimerId(10), 48_800_000)),
     ]
-    as "the connection watches the run of the map that holds its player, after the burst, joins its groups and the save timer starts"
+    as "the connection watches the run of the map that holds its player, after the burst, joins its groups, the save timer starts and the quest reset timer starts for Friday 2025-04-25 10:00 UTC, 48,800,000 ms after the entry"
   assert support.asked(taken) == None
   assert !support.stops(taken)
 }
@@ -257,6 +258,7 @@ pub fn message_0x19b_names_the_unit_0x6bc_gives_the_path_0x636_gives_control_of_
     _,
     Frame(message_id: 0x019B, body: is_player),
     Frame(message_id: 0x025E, ..),
+    Frame(message_id: 0x035F, ..),
     Frame(message_id: 0x0111, ..),
     Frame(message_id: 0x0111, ..),
     Frame(message_id: 0x0111, ..),

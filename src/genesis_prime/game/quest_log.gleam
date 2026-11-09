@@ -43,13 +43,30 @@
 ////   one 0x362 with the latest time and the bit of every period that reset since the
 ////   time the client was last told (0x140489aa0).
 
-import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/message/quest_active.{type QuestActive, QuestActive}
+import genesis_prime/message/quest_completed.{
+  type QuestCompleted, QuestCompleted,
+}
+import genesis_prime/message/quest_known.{QuestKnown}
+import genesis_prime/message/quest_log as quest_message
+import genesis_prime/message/quest_periodic_reset.{QuestPeriodicReset}
 import genesis_prime/step.{type Now}
-import genesis_prime/store.{type QuestRow}
+import genesis_prime/store.{type QuestRow, ActiveQuest, QuestRow}
+import genesis_prime/table/id.{Quest2Id, QuestObjectiveId}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/quest2.{type Quest2}
+import genesis_prime/table/quest_objective
 import genesis_prime/world_map/game_number.{type GameNumbers}
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
+import gleam/list
+import gleam/option.{None, Some}
+import gleam/result
+import gleam/time/calendar.{Date, January, TimeOfDay}
+import gleam/time/duration
+import gleam/time/timestamp
 
 /// The quests a character has a record of, by Quest2 id, and the reset time the
 /// client was last told (the Unix seconds, 0 before the log is sent).
@@ -108,20 +125,125 @@ pub type ResetDue {
   Reset(log: QuestLog, frame: Frame, after_ms: Int)
 }
 
-/// A character with no record of any quest.
-pub fn empty() -> QuestLog {
-  QuestLog(entries: dict.new(), told_reset: 0)
-}
-
 /// The log of the saved rows, or the first quest the client would refuse.
 pub fn from_rows(
   rows rows: List(QuestRow),
-  tables _tables: table_store.Tables,
+  tables tables: table_store.Tables,
 ) -> Result(QuestLog, Refused) {
-  case rows {
-    [] -> Ok(empty())
-    [_, ..] ->
-      panic as "not built: each row is checked against the Quest2 and QuestObjective rows (opcode.0x35f.unknown_quest, opcode.0x35f.active_state_crash, 0x1405fbdc0) and becomes an entry"
+  use entries <- result.map(
+    list.try_fold(rows, dict.new(), fn(entries, row) {
+      use entry <- result.map(entry_of(row:, tables:))
+      dict.insert(entries, row.quest_id, entry)
+    }),
+  )
+  QuestLog(entries:, told_reset: 0)
+}
+
+/// The entry one saved row is, when the client would take it.
+fn entry_of(
+  row row: QuestRow,
+  tables tables: table_store.Tables,
+) -> Result(Entry, Refused) {
+  let refuse = fn(reason) { Refused(quest_id: row.quest_id, reason:) }
+  use quest <- result.try(
+    quest2.get(tables:, id: Quest2Id(row.quest_id))
+    |> result.replace_error(refuse(
+      "the client has no Quest2 row for it and answers with the Client/Server Data Mismatch disconnect (opcode.0x35f.unknown_quest)",
+    )),
+  )
+  case row.state, row.completed_at, row.active {
+    1, None, Some(active) | 2, None, Some(active) -> {
+      let state = case row.state {
+        1 -> Accepted
+        _ -> Achieved
+      }
+      use Nil <- result.map(active_taken(quest:, active:, tables:, refuse:))
+      Active(
+        state:,
+        placeholder_objective_id: active.placeholder_objective_id,
+        tracked: active.tracked,
+        done_mask: active.done_mask,
+        progress: active.progress,
+        quest_ms_left: active.quest_ms_left,
+        objective_ms_left: active.objective_ms_left,
+      )
+    }
+    3, Some(at), None -> Ok(Completed(at:))
+    4, None, None -> Ok(Known(state: Botched))
+    5, None, None -> Ok(Known(state: Mentioned))
+    6, None, None -> Ok(Known(state: Abandoned))
+    7, None, None -> Ok(Known(state: Ignored))
+    state, _, _ ->
+      Error(refuse(
+        "the saved state "
+        <> int.to_string(state)
+        <> " does not go with the saved columns of a quest the client's lists hold",
+      ))
+  }
+}
+
+/// The objectives of the quest, in the order of its six slots, left out where a
+/// slot is empty (0).
+fn objectives(quest quest: Quest2) -> List(Int) {
+  [
+    quest.objective0,
+    quest.objective01,
+    quest.objective02,
+    quest.objective03,
+    quest.objective04,
+    quest.objective05,
+  ]
+  |> list.filter(fn(objective) { objective != 0 })
+}
+
+/// The QuestObjective type of the placeholder slot (0x1405fbdc0).
+const placeholder_type = 31
+
+/// Whether a QuestObjective row is of the placeholder type.
+fn is_placeholder(
+  objective objective: Int,
+  tables tables: table_store.Tables,
+) -> Bool {
+  case quest_objective.get(tables:, id: QuestObjectiveId(objective)) {
+    Ok(row) -> row.type_ == placeholder_type
+    Error(Nil) -> False
+  }
+}
+
+/// Whether the client's state setter takes the active columns for the quest:
+/// progress for no more than its objectives, and a placeholder only for a quest
+/// with a type 31 slot, naming a type 31 row (0x1405fbdc0).
+fn active_taken(
+  quest quest: Quest2,
+  active active: store.ActiveQuest,
+  tables tables: table_store.Tables,
+  refuse refuse: fn(String) -> Refused,
+) -> Result(Nil, Refused) {
+  let slots = objectives(quest:)
+  use <- bool.guard(
+    list.length(active.progress) > list.length(slots),
+    Error(refuse(
+      int.to_string(list.length(active.progress))
+      <> " progress values for a quest of "
+      <> int.to_string(list.length(slots))
+      <> " objectives, which the client would refuse (0x1405fbdc0)",
+    )),
+  )
+  case active.placeholder_objective_id {
+    0 -> Ok(Nil)
+    placeholder -> {
+      let has_slot =
+        list.any(slots, fn(slot) { is_placeholder(objective: slot, tables:) })
+      case has_slot && is_placeholder(objective: placeholder, tables:) {
+        True -> Ok(Nil)
+        False ->
+          Error(refuse(
+            "the placeholder objective "
+            <> int.to_string(placeholder)
+            <> " is no type 31 QuestObjective row of a quest with a type 31 objective slot, which the client would refuse (0x1405fbdc0)",
+          ))
+      }
+    }
   }
 }
 
@@ -132,35 +254,296 @@ pub fn describe(refused refused: Refused) -> String {
 
 /// The rows the log is saved as, in quest id order.
 pub fn rows(log log: QuestLog) -> List(QuestRow) {
-  case dict.is_empty(log.entries) {
-    True -> []
-    False ->
-      panic as "not built: each entry becomes a QuestRow, a completed one with its time and an active one with its columns"
+  in_quest_order(log:)
+  |> list.map(fn(pair) {
+    let #(quest_id, entry) = pair
+    case entry {
+      Active(
+        state:,
+        placeholder_objective_id:,
+        tracked:,
+        done_mask:,
+        progress:,
+        quest_ms_left:,
+        objective_ms_left:,
+      ) ->
+        QuestRow(
+          quest_id:,
+          state: active_state_number(state:),
+          completed_at: None,
+          active: Some(ActiveQuest(
+            placeholder_objective_id:,
+            tracked:,
+            done_mask:,
+            progress:,
+            quest_ms_left:,
+            objective_ms_left:,
+          )),
+        )
+      Completed(at:) ->
+        QuestRow(quest_id:, state: 3, completed_at: Some(at), active: None)
+      Known(state:) ->
+        QuestRow(
+          quest_id:,
+          state: known_state_number(state:),
+          completed_at: None,
+          active: None,
+        )
+    }
+  })
+}
+
+/// The entries with their quest ids, in quest id order.
+fn in_quest_order(log log: QuestLog) -> List(#(Int, Entry)) {
+  dict.to_list(log.entries)
+  |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+}
+
+/// The lua QuestState of an active quest.
+fn active_state_number(state state: ActiveState) -> Int {
+  case state {
+    Accepted -> 1
+    Achieved -> 2
+  }
+}
+
+/// The lua QuestState of a quest of the second list.
+fn known_state_number(state state: KnownState) -> Int {
+  case state {
+    Botched -> 4
+    Mentioned -> 5
+    Abandoned -> 6
+    Ignored -> 7
   }
 }
 
 /// The log as the client is sent it at a play entry, and the log that remembers the
 /// reset time the message carried.
 pub fn login(
-  log _log: QuestLog,
-  numbers _numbers: GameNumbers,
-  tables _tables: table_store.Tables,
-  now _now: Now,
+  log log: QuestLog,
+  numbers numbers: GameNumbers,
+  tables tables: table_store.Tables,
+  now now: Now,
 ) -> #(QuestLog, Frame) {
-  panic as "not built: 0x35F with the completed, known and active lists in quest id order, the period bit of each periodic completed quest and the latest reset in Unix seconds"
+  let latest = latest_resets(numbers:, at_ms: unix_ms(now:))
+  let reset_time = seconds_of(ms: latest_of(latest:))
+  let entries = in_quest_order(log:)
+  let completed =
+    list.filter_map(entries, fn(pair) {
+      case pair.1 {
+        Completed(at:) ->
+          Ok(completed_entry(quest_id: pair.0, at:, tables:, latest:))
+        Active(..) | Known(..) -> Error(Nil)
+      }
+    })
+  let known =
+    list.filter_map(entries, fn(pair) {
+      case pair.1 {
+        Known(state:) ->
+          Ok(QuestKnown(quest_id: pair.0, state: known_state_number(state:)))
+        Active(..) | Completed(..) -> Error(Nil)
+      }
+    })
+  let active =
+    list.filter_map(entries, fn(pair) {
+      case pair.1 {
+        Active(..) as entry -> Ok(active_entry(quest_id: pair.0, entry:))
+        Completed(..) | Known(..) -> Error(Nil)
+      }
+    })
+  let assert Ok(body) =
+    quest_message.encode(quest_message.QuestLog(
+      completed:,
+      known:,
+      active:,
+      reset_time:,
+    ))
+    as "the saved quest ids fit 15 bits, the lists and the Unix seconds fit the message"
+  #(
+    QuestLog(..log, told_reset: reset_time),
+    Frame(message_id: quest_message.message_id, body:),
+  )
 }
 
-/// The milliseconds from `now` to the next daily reset, which the timer the play
-/// entry starts waits for.
-pub fn next_reset_in(numbers _numbers: GameNumbers, now _now: Now) -> Int {
-  panic as "not built: the time to the next daily reset after now, from daily_quest_reset_ms"
+/// One entry of the completed list: flagged when the quest has a period and was
+/// completed at or after the start of its current period (0x1405fb350.completed_bit).
+fn completed_entry(
+  quest_id quest_id: Int,
+  at at: Int,
+  tables tables: table_store.Tables,
+  latest latest: Resets,
+) -> QuestCompleted {
+  let assert Ok(quest) = quest2.get(tables:, id: Quest2Id(quest_id))
+    as "from_rows refused a quest the table has no row for"
+  let period_start_ms = case quest.quest_repeat_period_enum {
+    1 -> Ok(latest.daily)
+    2 -> Ok(latest.weekly)
+    3 -> Ok(latest.monthly)
+    4 -> Ok(latest.yearly)
+    _ -> Error(Nil)
+  }
+  let in_current_period = case period_start_ms {
+    Ok(start_ms) if at * 1000 >= start_ms -> 1
+    Ok(_) | Error(Nil) -> 0
+  }
+  QuestCompleted(quest_id:, in_current_period:)
+}
+
+/// One entry of the active list. The flags word is the tracked bit shifted by 1 and
+/// the done mask shifted by 2 (opcode.0x35f).
+fn active_entry(quest_id quest_id: Int, entry entry: Entry) -> QuestActive {
+  let assert Active(
+    state:,
+    placeholder_objective_id:,
+    tracked:,
+    done_mask:,
+    progress:,
+    quest_ms_left:,
+    objective_ms_left:,
+  ) = entry
+    as "only active entries are listed"
+  let tracked_bit = case tracked {
+    True -> 1
+    False -> 0
+  }
+  QuestActive(
+    quest_id:,
+    state: active_state_number(state:),
+    placeholder_objective_id:,
+    flags: int.bitwise_or(
+      int.bitwise_shift_left(tracked_bit, 1),
+      int.bitwise_shift_left(done_mask, 2),
+    ),
+    progress:,
+    quest_ms_left:,
+    objective_ms_left:,
+  )
+}
+
+/// The milliseconds a day and a week last.
+const day_ms = 86_400_000
+
+const week_ms = 604_800_000
+
+/// The first Monday after the Unix epoch, Thursday 1970-01-01, in milliseconds: the
+/// weekly reset is this far from the epoch plus whole weeks plus its offset in the
+/// week.
+const first_monday_ms = 345_600_000
+
+/// The FILETIME (100 ns since 1601) of the Unix epoch.
+const epoch_filetime = 116_444_736_000_000_000
+
+/// The latest reset instant of each period at some time, in Unix milliseconds.
+type Resets {
+  Resets(daily: Int, weekly: Int, monthly: Int, yearly: Int)
+}
+
+/// The Unix milliseconds of the clock.
+fn unix_ms(now now: Now) -> Int {
+  { now.filetime - epoch_filetime } / 10_000
+}
+
+/// The whole Unix seconds of Unix milliseconds.
+fn seconds_of(ms ms: Int) -> Int {
+  ms / 1000
+}
+
+/// The remainder of a division that is never negative.
+fn modulo(value value: Int, by by: Int) -> Int {
+  let assert Ok(remainder) = int.modulo(value, by)
+    as "the divisor is a constant above zero"
+  remainder
+}
+
+/// The latest instant of each period's reset at or before `at_ms`.
+fn latest_resets(numbers numbers: GameNumbers, at_ms at_ms: Int) -> Resets {
+  let daily_ms = numbers.daily_quest_reset_ms
+  let latest_daily = at_ms - modulo(value: at_ms - daily_ms, by: day_ms)
+  let latest_weekly =
+    at_ms
+    - modulo(
+      value: at_ms - first_monday_ms - numbers.weekly_quest_reset_ms,
+      by: week_ms,
+    )
+  // The month and the year start at the first daily reset: before it the previous
+  // month's period still runs, so the month and the year are those of the time of
+  // day of the reset earlier.
+  let #(date, _) =
+    timestamp.to_calendar(
+      timestamp.from_unix_seconds(seconds_of(ms: at_ms - daily_ms)),
+      calendar.utc_offset,
+    )
+  Resets(
+    daily: latest_daily,
+    weekly: latest_weekly,
+    monthly: daily_reset_on(date: Date(..date, day: 1), daily_ms:),
+    yearly: daily_reset_on(date: Date(date.year, January, 1), daily_ms:),
+  )
+}
+
+/// The Unix milliseconds of the daily reset on a date.
+fn daily_reset_on(date date: calendar.Date, daily_ms daily_ms: Int) -> Int {
+  let midnight =
+    timestamp.from_calendar(
+      date:,
+      time: TimeOfDay(hours: 0, minutes: 0, seconds: 0, nanoseconds: 0),
+      offset: duration.empty,
+    )
+  let #(seconds, _) = timestamp.to_unix_seconds_and_nanoseconds(midnight)
+  seconds * 1000 + daily_ms
+}
+
+/// The latest of the four instants.
+fn latest_of(latest latest: Resets) -> Int {
+  int.max(
+    int.max(latest.daily, latest.weekly),
+    int.max(latest.monthly, latest.yearly),
+  )
+}
+
+/// The milliseconds from `at_ms` to the next daily or weekly reset: an instant at
+/// `at_ms` has passed.
+fn until_next(numbers numbers: GameNumbers, at_ms at_ms: Int) -> Int {
+  let latest = latest_resets(numbers:, at_ms:)
+  int.min(latest.daily + day_ms, latest.weekly + week_ms) - at_ms
+}
+
+/// The milliseconds from `now` to the next daily or weekly reset, which the timer the
+/// play entry starts waits for.
+pub fn next_reset_in(numbers numbers: GameNumbers, now now: Now) -> Int {
+  until_next(numbers:, at_ms: unix_ms(now:))
 }
 
 /// What the reset timer firing at `now` leads to.
 pub fn reset_due(
-  log _log: QuestLog,
-  numbers _numbers: GameNumbers,
-  now _now: Now,
+  log log: QuestLog,
+  numbers numbers: GameNumbers,
+  now now: Now,
 ) -> ResetDue {
-  panic as "not built: NotYet when no reset instant lies between the time told and now, else 0x362 with the latest reset and the bit of every period that reset since"
+  let at_ms = unix_ms(now:)
+  let latest = latest_resets(numbers:, at_ms:)
+  let reset_time = seconds_of(ms: latest_of(latest:))
+  let after_ms = until_next(numbers:, at_ms:)
+  case reset_time <= log.told_reset {
+    True -> NotYet(after_ms:)
+    False -> {
+      let periods =
+        [
+          #(latest.daily, 1),
+          #(latest.weekly, 2),
+          #(latest.monthly, 4),
+          #(latest.yearly, 8),
+        ]
+        |> list.filter(fn(period) { seconds_of(ms: period.0) > log.told_reset })
+        |> list.fold(0, fn(bits, period) { int.bitwise_or(bits, period.1) })
+      let assert Ok(body) =
+        quest_periodic_reset.encode(QuestPeriodicReset(reset_time:, periods:))
+        as "the Unix seconds fit 64 bits and the period bits fit 4"
+      Reset(
+        log: QuestLog(..log, told_reset: reset_time),
+        frame: Frame(message_id: quest_periodic_reset.message_id, body:),
+        after_ms:,
+      )
+    }
+  }
 }
