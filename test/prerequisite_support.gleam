@@ -198,8 +198,7 @@ pub fn holding(
     resource_slots: None,
     positions: prerequisite.NotPlaced,
     factions: None,
-    gender: None,
-    world: None,
+    player: None,
     quests: None,
     seen: prerequisite.WholeUnit,
   )

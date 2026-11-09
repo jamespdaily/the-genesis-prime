@@ -138,7 +138,10 @@ pub fn carry_out(
       let #(started, decided) =
         cast.passive_started(
           cast: entered.cast,
-          caster: connection_casting.caster_of(entered:),
+          caster: connection_casting.caster_of(
+            tables: session.settings.tables,
+            entered:,
+          ),
           plans: connection_state.plans_of(session:),
           base:,
           now:,

@@ -54,17 +54,16 @@ const wrong_faction = 132
 pub const prerequisite_failed = 144
 
 /// What the checks read of the character: its race, class and faction ids, its
-/// level, gender (0 male, 1 female), the World it is in and the mask of its item
-/// proficiencies (`Class.startingItemProficiencies`, what player_character_state
-/// sends).
+/// level, the player facts the prerequisites read (gender, World, zones and the
+/// rest) and the mask of its item proficiencies (`Class.startingItemProficiencies`,
+/// what player_character_state sends).
 pub type Wearer {
   Wearer(
     race_id: Int,
     class_id: Int,
     faction_id: Int,
     level: Int,
-    gender: Int,
-    world_id: Int,
+    player: prerequisite.Player,
     item_proficiencies: Int,
   )
 }
@@ -151,8 +150,7 @@ pub fn check(
         current: wearer.faction_id,
         base: wearer.faction_id,
       ),
-      gender: wearer.gender,
-      world: wearer.world_id,
+      player: wearer.player,
     )
   let verdicts =
     list.map(prerequisites, fn(prerequisite) {
