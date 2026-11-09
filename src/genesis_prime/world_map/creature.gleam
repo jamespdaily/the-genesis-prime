@@ -39,6 +39,7 @@
 ////                                    alive: Send(c0, Struck(Landed | Deflected))   Send(each viewer, Health(h', dead))
 ////                                    landed: the fight takes StruckBy (genesis_prime/world_map/creature_fight)
 ////                                    killed: Send(each viewer, Died); StartServiceTimer(corpse, respawn_ms); the fight takes Killed
+////                                            Send(c0, KillCredit(unit, creature row, level)), once, for the blow that killed it
 ////                                    dead:  Send(c0, Struck(Refused(Dead)))
 ////                                    walking home: Send(c0, Struck(Refused(Returning)))
 //// Approached(c, unit, place, seq), Withdrew(c), PlayerDied(c) from the map,
@@ -124,6 +125,8 @@
 //// | the creature is struck while dead | the strike is answered `Refused(Dead)`; no health changes and no news is sent |
 //// | two strikes reach it one after the other | each is answered in turn on the health the one before left; the second finds a corpse if the first killed |
 //// | the caster's connection has ended when the creature answers | the send is dropped by the registry; the hit and its news stand |
+//// | the killing blow's caster has left the world, or its stay has changed, when the credit arrives | the connection drops the credit (`stay_sent`): no experience is given, the death and its news stand |
+//// | a second strike reaches the creature after the killing one | it finds a corpse and is answered `Refused(Dead)`; it sends no credit, so a kill is credited once |
 //// | a viewer arrives while the creature is dead | its 0x262 carries health 0, which the client creates dead |
 //// | the creature crashes while retiring | the same watch end: the map takes it as a clean stop, since no client shows the unit |
 //// | the map run ends | the creature's watch on the run ends and it stops |
@@ -163,6 +166,7 @@ import genesis_prime/step.{
   ServiceTimerFired, Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded,
   WatchId,
 }
+import genesis_prime/table/id.{type Creature2Id}
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight.{
   type Fighter, AttackTick, Fighter, HomeArrival, StrikeDeadline,
@@ -267,6 +271,11 @@ pub type Outgoing {
   /// A tell to the connection of a player in the creature's fight, in the
   /// player's stay `stay`: it threatens or releases the player, or strikes it.
   FightTold(stay: Stay, told: Fight)
+  /// The credit for a kill, for the connection of the player whose blow killed the
+  /// creature, in the stay the killing strike was told for: the creature's unit, its
+  /// Creature2 row and its level. Sent once per death, after the strike's answer
+  /// (genesis_prime/game/experience).
+  KillCredit(stay: Stay, unit_id: Int, creature_id: Creature2Id, level: Int)
 }
 
 /// A creature's players in sight, each by its connection with the stay the map
@@ -794,6 +803,7 @@ fn struck(
         ]
         None -> []
       }
+      let credit = credit_for(state:, tell:, reaction:)
       let state = State(..state, life: reaction.life)
       let input = case
         reaction.answer.outcome,
@@ -826,9 +836,36 @@ fn struck(
       }
       #(
         state,
-        Effects(list.flatten([answer, news, corpse, fought, controlled])),
+        Effects(
+          list.flatten([answer, credit, news, corpse, fought, controlled]),
+        ),
       )
     }
+  }
+}
+
+/// The kill credit for the blow that killed the creature: a player's strike that left
+/// a corpse sends its connection the creature's row and level, once. A creature
+/// dies once per stay, so no other strike reaches a corpse.
+fn credit_for(
+  state state: State,
+  tell tell: StrikeTell,
+  reaction reaction: creature_life.Reaction,
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  case reaction.corpse_for_ms, tell.striker {
+    Some(..), PlayerStriker(stay:, ..) -> [
+      OwnEffect(Send(
+        to: tell.from,
+        message: KillCredit(
+          stay:,
+          unit_id: state.settings.creature.unit_id,
+          creature_id: state.settings.spawn.creature_id,
+          level: state.settings.spawn.level,
+        ),
+      )),
+    ]
+    Some(..), CreatureStriker -> []
+    None, PlayerStriker(..) | None, CreatureStriker -> []
   }
 }
 

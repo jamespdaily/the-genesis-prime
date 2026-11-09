@@ -452,11 +452,12 @@ pub fn a_static_object_is_created_as_type_10_11_or_32_with_a_creatures_type_data
   )
 }
 
-pub fn only_types_10_11_and_32_are_static_objects_test() -> Nil {
+pub fn only_eight_unit_types_are_static_objects_test() -> Nil {
   use <- owned_test.run(5000)
-  // 0x140649e20 and world_data.entity_type: the 6-bit unit type's 10 Simple, 11
-  // Platform and 32 SimpleCollidable are the types drawn from a Creature2 row and a
-  // display; every other value is another kind of unit.
+  // 0x140095fb0, 0x140080d30, 0x140095ed0 and world_data.entity_type: the 6-bit
+  // unit types 4 Door, 8 Collectible, 10 Simple, 11 Platform, 12 Mailbox, 13
+  // Turret, 14 InstancePortal and 32 SimpleCollidable are the types drawn from a
+  // Creature2 row and a display; every other value is another kind of unit.
   let found =
     int.range(from: 0, to: 64, with: [], run: fn(found, number) {
       case static_object.unit_type_of(entity_type: number) {
@@ -466,20 +467,27 @@ pub fn only_types_10_11_and_32_are_static_objects_test() -> Nil {
     })
   assert list.reverse(found)
     == [
+      #(4, static_object.Door),
+      #(8, static_object.Collectible),
       #(10, static_object.Simple),
       #(11, static_object.Platform),
+      #(12, static_object.Mailbox),
+      #(13, static_object.Turret),
+      #(14, static_object.InstancePortal),
       #(32, static_object.SimpleCollidable),
     ]
-    as "the three unit types of a static object, and no other of the 64"
-  assert list.map([10, 11, 32, 0, 23], static_unit_type.from_value)
+    as "the eight unit types of a static object, and no other of the 64"
+  assert list.map([8, 10, 11, 13, 32, 0, 23], static_unit_type.from_value)
     == [
+      static_unit_type.Collectible,
       static_unit_type.Simple,
       static_unit_type.Platform,
+      static_unit_type.Turret,
       static_unit_type.SimpleCollidable,
       static_unit_type.Other(0),
       static_unit_type.Other(23),
     ]
-    as "the codec names the three; any other is Other"
+    as "the codec names the five that share a reader; any other is Other"
 }
 
 pub fn a_ghost_is_created_as_type_23_with_a_players_data_less_three_values_test() -> Nil {

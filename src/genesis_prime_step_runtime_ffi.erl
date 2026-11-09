@@ -3,7 +3,7 @@
 %% caller declares.
 -module(genesis_prime_step_runtime_ffi).
 
--export([unique_id/0, monotonic_ms/0, filetime/0, log/3, set_about/1, term_text/1,
+-export([unique_id/0, monotonic_ms/0, filetime/0, unix_milliseconds/1, log/3, set_about/1, term_text/1,
          log_stray/2, show_info_lines/0, keep_mailboxes_out_of_crash_reports/0]).
 
 %% FILETIME counts 100-nanosecond intervals from 1601-01-01; the Unix epoch is
@@ -60,6 +60,11 @@ monotonic_ms() ->
 %% The BEAM's system time, which follows its time correction, as a FILETIME.
 filetime() ->
     erlang:system_time(nanosecond) div 100 + ?FILETIME_AT_UNIX_EPOCH.
+
+%% The clock of a step (a `Now`) in whole Unix milliseconds: a millisecond is
+%% 10,000 intervals and the part of one left over is dropped.
+unix_milliseconds({now, _MonotonicMs, Filetime}) ->
+    (Filetime - ?FILETIME_AT_UNIX_EPOCH) div 10000.
 
 %% Writes a log line through the logger, each known field of its who and where
 %% as a metadata key of its own.

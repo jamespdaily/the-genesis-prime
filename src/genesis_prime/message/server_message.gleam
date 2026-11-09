@@ -27,6 +27,7 @@ import genesis_prime/message/create_character_result.{type CreateCharacterResult
 import genesis_prime/message/delete_character_result.{type DeleteCharacterResult}
 import genesis_prime/message/disconnect_notice.{type DisconnectNotice}
 import genesis_prime/message/enter_world.{type EnterWorld}
+import genesis_prime/message/experience_gained.{type ExperienceGained}
 import genesis_prime/message/game_server_handoff.{type GameServerHandoff}
 import genesis_prime/message/innate_index_set.{type InnateIndexSet}
 import genesis_prime/message/item_added.{type ItemAdded}
@@ -42,6 +43,8 @@ import genesis_prime/message/player_health.{type PlayerHealth}
 import genesis_prime/message/player_path.{type PlayerPath}
 import genesis_prime/message/pong.{type Pong}
 import genesis_prime/message/premium_tier.{type PremiumTier}
+import genesis_prime/message/quest_log.{type QuestLog}
+import genesis_prime/message/quest_periodic_reset.{type QuestPeriodicReset}
 import genesis_prime/message/realm_handoff.{type RealmHandoff}
 import genesis_prime/message/realm_list.{type RealmList}
 import genesis_prime/message/rename_character_result.{type RenameCharacterResult}
@@ -65,8 +68,11 @@ import genesis_prime/message/unit_cc_state_applied.{type UnitCcStateApplied}
 import genesis_prime/message/unit_cc_state_ended.{type UnitCcStateEnded}
 import genesis_prime/message/unit_combat_state.{type UnitCombatState}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
+import genesis_prime/message/unit_create_door.{type UnitCreateDoor}
 import genesis_prime/message/unit_create_ghost.{type UnitCreateGhost}
+import genesis_prime/message/unit_create_mailbox.{type UnitCreateMailbox}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
+import genesis_prime/message/unit_create_portal.{type UnitCreatePortal}
 import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
 import genesis_prime/message/unit_death_state.{type UnitDeathState}
 import genesis_prime/message/unit_destroyed.{type UnitDestroyed}
@@ -110,6 +116,8 @@ pub type ServerMessage {
   UnitCreatePlayer(message: UnitCreatePlayer)
   UnitIsPlayer(message: UnitIsPlayer)
   PlayerCharacterState(message: PlayerCharacterState)
+  QuestLog(message: QuestLog)
+  QuestPeriodicReset(message: QuestPeriodicReset)
   PlayerPath(message: PlayerPath)
   ClientControlGranted(message: ClientControlGranted)
   UnitMovement(message: UnitMovement)
@@ -129,6 +137,9 @@ pub type ServerMessage {
   InnateIndexSet(message: InnateIndexSet)
   UnitCreateCreature(message: UnitCreateCreature)
   UnitCreateStatic(message: UnitCreateStatic)
+  UnitCreateDoor(message: UnitCreateDoor)
+  UnitCreateMailbox(message: UnitCreateMailbox)
+  UnitCreatePortal(message: UnitCreatePortal)
   UnitCreateGhost(message: UnitCreateGhost)
   SpellCastRefused(message: SpellCastRefused)
   SpellCastConfirmed(message: SpellCastConfirmed)
@@ -148,6 +159,7 @@ pub type ServerMessage {
   UnitHealth(message: UnitHealth)
   PlayerHealth(message: PlayerHealth)
   UnitStatChanged(message: UnitStatChanged)
+  ExperienceGained(message: ExperienceGained)
   UnitFloatStatChanged(message: UnitFloatStatChanged)
   UnitPropertiesChanged(message: UnitPropertiesChanged)
   UnitDeathState(message: UnitDeathState)
@@ -245,6 +257,15 @@ pub fn decode(
         )
       })
       |> result.lazy_or(fn() {
+        decoded(body, message_id, unit_create_door.decode, UnitCreateDoor)
+      })
+      |> result.lazy_or(fn() {
+        decoded(body, message_id, unit_create_mailbox.decode, UnitCreateMailbox)
+      })
+      |> result.lazy_or(fn() {
+        decoded(body, message_id, unit_create_portal.decode, UnitCreatePortal)
+      })
+      |> result.lazy_or(fn() {
         decoded(body, message_id, unit_create_ghost.decode, UnitCreateGhost)
       })
       |> result.lazy_or(fn() {
@@ -258,6 +279,9 @@ pub fn decode(
         player_character_state.decode,
         PlayerCharacterState,
       )
+    0x035F -> decoded(body, message_id, quest_log.decode, QuestLog)
+    0x0362 ->
+      decoded(body, message_id, quest_periodic_reset.decode, QuestPeriodicReset)
     0x06BC -> decoded(body, message_id, player_path.decode, PlayerPath)
     0x0636 ->
       decoded(
@@ -343,6 +367,8 @@ pub fn decode(
     0x092F -> decoded(body, message_id, player_health.decode, PlayerHealth)
     0x0938 ->
       decoded(body, message_id, unit_stat_changed.decode, UnitStatChanged)
+    0x01AC ->
+      decoded(body, message_id, experience_gained.decode, ExperienceGained)
     0x0935 ->
       decoded(
         body,
@@ -403,6 +429,8 @@ pub fn name(message: ServerMessage) -> String {
     UnitCreatePlayer(..) -> "unit_create_player"
     UnitIsPlayer(..) -> "unit_is_player"
     PlayerCharacterState(..) -> "player_character_state"
+    QuestLog(..) -> "quest_log"
+    QuestPeriodicReset(..) -> "quest_periodic_reset"
     PlayerPath(..) -> "player_path"
     ClientControlGranted(..) -> "client_control_granted"
     UnitMovement(..) -> "unit_movement"
@@ -422,6 +450,9 @@ pub fn name(message: ServerMessage) -> String {
     InnateIndexSet(..) -> "innate_index_set"
     UnitCreateCreature(..) -> "unit_create_creature"
     UnitCreateStatic(..) -> "unit_create_static"
+    UnitCreateDoor(..) -> "unit_create_door"
+    UnitCreateMailbox(..) -> "unit_create_mailbox"
+    UnitCreatePortal(..) -> "unit_create_portal"
     UnitCreateGhost(..) -> "unit_create_ghost"
     SpellCastRefused(..) -> "spell_cast_refused"
     SpellCastConfirmed(..) -> "spell_cast_confirmed"
@@ -441,6 +472,7 @@ pub fn name(message: ServerMessage) -> String {
     UnitHealth(..) -> "unit_health"
     PlayerHealth(..) -> "player_health"
     UnitStatChanged(..) -> "unit_stat_changed"
+    ExperienceGained(..) -> "experience_gained"
     UnitFloatStatChanged(..) -> "unit_float_stat_changed"
     UnitPropertiesChanged(..) -> "unit_properties_changed"
     UnitDeathState(..) -> "unit_death_state"

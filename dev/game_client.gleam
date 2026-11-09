@@ -55,8 +55,11 @@ import genesis_prime/message/start_movement
 import genesis_prime/message/static_unit_type
 import genesis_prime/message/unit_combat_state
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
+import genesis_prime/message/unit_create_door
+import genesis_prime/message/unit_create_mailbox
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
-import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
+import genesis_prime/message/unit_create_portal
+import genesis_prime/message/unit_create_static
 import genesis_prime/message/unit_create_tail.{type UnitCreateTail}
 import genesis_prime/message/unit_death_state
 import genesis_prime/message/unit_destroyed
@@ -68,6 +71,7 @@ import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
+import genesis_prime/message/unit_stat_level.{UnitStatLevel}
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_target
 import genesis_prime/message/unit_threat
@@ -75,6 +79,7 @@ import genesis_prime/message/world_message.{WorldMessage}
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/static_object
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
@@ -819,12 +824,16 @@ pub fn observe(others others: Others, frame frame: Frame) -> Others {
 pub type Created {
   PlayerCreated(unit: UnitCreatePlayer)
   CreatureCreated(unit: UnitCreateCreature)
-  ObjectCreated(unit: UnitCreateStatic)
+  ObjectCreated(
+    unit_id: Int,
+    unit_type: static_object.UnitType,
+    tail: UnitCreateTail,
+  )
 }
 
 /// The unit the body of a 0x262 creates: a player's when the body reads as one,
-/// else a creature's, else a static object's of type 10, 11 or 32 (the type is in
-/// the body, `opcode.0x262`, `opcode.0x262.simple`), or `Error(Nil)` for a body
+/// else a creature's, else a static object's of type 4, 8, 10, 11, 12, 13, 14 or 32
+/// (the type is in the body, `opcode.0x262`, `opcode.0x262.simple`), or `Error(Nil)` for a body
 /// that is none of them.
 pub fn created_unit(body body: BitArray) -> Result(Created, Nil) {
   unit_create_player.decode(body)
@@ -839,14 +848,49 @@ pub fn created_unit(body body: BitArray) -> Result(Created, Nil) {
 /// The static object the body creates, or `Error(Nil)` for one whose type is not
 /// a static object's.
 fn object_created(body body: BitArray) -> Result(Created, Nil) {
+  unit_create_door.decode(body)
+  |> result.map(fn(unit) {
+    ObjectCreated(unit.unit_id, static_object.Door, unit.tail)
+  })
+  |> result.replace_error(Nil)
+  |> result.lazy_or(fn() {
+    unit_create_mailbox.decode(body)
+    |> result.map(fn(unit) {
+      ObjectCreated(unit.unit_id, static_object.Mailbox, unit.tail)
+    })
+    |> result.replace_error(Nil)
+  })
+  |> result.lazy_or(fn() {
+    unit_create_portal.decode(body)
+    |> result.map(fn(unit) {
+      ObjectCreated(unit.unit_id, static_object.InstancePortal, unit.tail)
+    })
+    |> result.replace_error(Nil)
+  })
+  |> result.lazy_or(fn() { checklist_object_created(body:) })
+}
+
+/// The static object of a type whose reader takes a checklist index (types 8, 10,
+/// 11, 13 and 32), or `Error(Nil)` for any other type, types 4, 12 and 14 among
+/// them: their readers take no checklist index.
+fn checklist_object_created(body body: BitArray) -> Result(Created, Nil) {
   use unit <- result.try(
     unit_create_static.decode(body) |> result.replace_error(Nil),
   )
-  case unit.unit_type {
-    static_unit_type.Simple
-    | static_unit_type.Platform
-    | static_unit_type.SimpleCollidable -> Ok(ObjectCreated(unit:))
-    static_unit_type.Other(_) -> Error(Nil)
+  use unit_type <- result.try(
+    static_object.unit_type_of(entity_type: static_unit_type.to_value(
+      unit.unit_type,
+    )),
+  )
+  case unit_type {
+    static_object.Door | static_object.Mailbox | static_object.InstancePortal ->
+      Error(Nil)
+    static_object.Collectible
+    | static_object.Simple
+    | static_object.Platform
+    | static_object.Turret
+    | static_object.SimpleCollidable ->
+      Ok(ObjectCreated(unit.unit_id, unit_type, unit.tail))
   }
 }
 
@@ -857,8 +901,8 @@ fn created(others others: Others, body body: BitArray) -> Others {
     PlayerCreated(unit:) -> dict.insert(others, unit.unit_id, placed_at(unit:))
     CreatureCreated(unit:) ->
       dict.insert(others, unit.unit_id, first_position(unit.tail))
-    ObjectCreated(unit:) ->
-      dict.insert(others, unit.unit_id, first_position(unit.tail))
+    ObjectCreated(unit_id:, tail:, ..) ->
+      dict.insert(others, unit_id, first_position(tail))
   }
 }
 
@@ -954,7 +998,8 @@ fn standing(
 /// in the order the client needs (opcode.0xad, opcode.0x262, opcode.0x19b,
 /// opcode.0x25e, opcode.0x6bc, opcode.0x636, opcode.0xf1, opcode.0x61): 0xAD
 /// first; 0x262 before 0x19B; 0x19B before the character's own state (0x25E,
-/// opcode.0x25e.entry_order), the six armor items, the weapon, the three
+/// opcode.0x25e.entry_order), the quest log (0x35F, opcode.0x35f.entry_order),
+/// the six armor items, the weapon, the three
 /// abilities and the innate (0x111, opcode.0x111.ability_bag,
 /// opcode.0x111.equipped_set), their tiers (0x1A0, opcode.0x1a0), the action
 /// set (0x19D, opcode.0x19d), 0x19F, which points the innate button
@@ -967,6 +1012,7 @@ pub const world_entry_ids = [
   0x0262,
   0x019B,
   0x025E,
+  0x035F,
   0x0111,
   0x0111,
   0x0111,
@@ -1014,9 +1060,10 @@ fn after_entered(items: List(a), id_of: fn(a) -> Int) -> List(a) {
 /// The ids of the messages of the Holocrypt's join: the entry's, but with no
 /// 0x25E, since the join is a 0xAD in the world on the client's same game object
 /// (0x1403b6de0), where a second copy would add its items and pets again
-/// (opcode.0x25e.entry_order).
+/// (opcode.0x25e.entry_order), and no 0x35F, since the client's quest log
+/// belongs to that same object and the quests are unchanged by the join.
 pub fn holocrypt_entry_ids() -> List(Int) {
-  list.filter(world_entry_ids, fn(id) { id != 0x025E })
+  list.filter(world_entry_ids, fn(id) { id != 0x025E && id != 0x035F })
 }
 
 /// The frames without those of the innate passive's cast (`without_passive_cast`).
@@ -1473,6 +1520,8 @@ pub type FightEvent {
   Threatens(unit_id: Int, other_unit_id: Int, threat: Int)
   /// 0x89a: the unit is in a fight or out of one (opcode.0x89a).
   InCombat(unit_id: Int, in_combat: Bool)
+  /// 0x938 of stat 10: the unit's level (opcode.0x938).
+  LevelIs(unit_id: Int, level: Int)
   /// 0x938 of stat 20: the unit's shield (opcode.0x938).
   ShieldIs(unit_id: Int, shield: Int)
   /// 0x938 of stat 21: the unit's current Interrupt Armor (opcode.0x938.interrupt_armor).
@@ -1524,8 +1573,10 @@ pub fn fight_in(frames frames: List(Frame)) -> List(FightEvent) {
       }
       0x0938 -> {
         let assert Ok(changed) = unit_stat_changed.decode(frame.body)
-          as "0x938 decodes: the server sends it only for stats 20, 21 and 22"
+          as "0x938 decodes: the server sends it only for stats 10, 20, 21 and 22"
         Ok(case changed.change {
+          unit_stat_change.Level(UnitStatLevel(value:)) ->
+            LevelIs(unit_id: changed.unit_id, level: value)
           unit_stat_change.Shield(UnitStatShield(value:)) ->
             ShieldIs(unit_id: changed.unit_id, shield: value)
           unit_stat_change.InterruptArmor(UnitStatInterruptArmor(value:)) ->

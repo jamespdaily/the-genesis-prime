@@ -478,7 +478,6 @@ import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
-import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Asked,
@@ -705,7 +704,7 @@ pub type Notice {
   /// The player sees these static objects now, each as its 0x262 under the unit
   /// id the map gave its spawn for the run, in spawn order: the connection writes
   /// each one its client does not show (genesis_prime/world_map/static_object).
-  ObjectsSeen(units: List(UnitCreateStatic))
+  ObjectsSeen(units: List(static_object.Created))
   /// The player no longer sees the static objects of these unit ids: the
   /// connection writes a 0x355 for each one its client shows.
   ObjectsUnseen(unit_ids: List(Int))

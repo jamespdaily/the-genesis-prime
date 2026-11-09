@@ -23,6 +23,7 @@ import genesis_prime/step.{
   Send, Started,
 }
 import genesis_prime/world_map/map.{type State}
+import genesis_prime/world_map/static_object.{CreatedWithChecklist}
 import gleam/list
 import map_spawn_support as spawns
 import map_support
@@ -68,11 +69,19 @@ type ObjectNotice {
   Unseen(connection: Int, unit_ids: List(Int))
 }
 
+/// The 0x262 of a Holoring, a type 10 object, whose reader takes a quest
+/// checklist index (`0x140095fb0`).
+fn holoring_message(created: static_object.Created) -> UnitCreateStatic {
+  let assert CreatedWithChecklist(message) = created
+    as "a Holoring is type 10: its 0x262 is the checklist kind"
+  message
+}
+
 fn object_notices(taken: ServiceStep(map.Outgoing)) -> List(ObjectNotice) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
       map.Noticed(notice: map.ObjectsSeen(units:), ..) ->
-        Ok(Seen(sent.0, units))
+        Ok(Seen(sent.0, list.map(units, holoring_message)))
       map.Noticed(notice: map.ObjectsUnseen(unit_ids:), ..) ->
         Ok(Unseen(sent.0, unit_ids))
       map.Noticed(notice: map.SeenBy(..), ..)

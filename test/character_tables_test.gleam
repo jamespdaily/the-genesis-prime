@@ -60,7 +60,7 @@ pub fn the_content_tables_are_the_content_load_of_the_committed_files_over_the_s
   assert list.map(creature2_outfit_info.all(content), fn(row) {
       creature2_outfit_info.id(row).value
     })
-    == [7475, 8952, 8979, 9350, 9351]
+    == [7475, 7912, 8952, 8979, 9350, 9351]
     as "Creature2OutfitInfo holds the rows the committed outfit groups point to, 8952 being the one Dorian Walker's group points to"
   let shared = character_tables.shared()
   assert creature2.get(tables: content, id: Creature2Id(73_464))

@@ -21,13 +21,13 @@
 ////   unit and not a Friendly one (`0x1403ad540`), and a faction's level to a
 ////   player faction walks the faction's parents (`0x140787760`, `0x140717560`,
 ////   Faction2Relationship). Every other row is counted for the coverage measure.
-//// - **Static objects.** A row of entity type 10, 11 or 32 is a static object
-////   (genesis_prime/world_map/static_object), checked as a NonPlayer row is and
-////   kept whatever its faction. Types 10 and 11 carry the stats the row records
-////   and no other, since the client never creates them dead (the trace's field
-////   table); type 32 takes a creature's level and health by the rule below, and
-////   one with health 0 is left out and counted, since the client would create it
-////   dead (`0x140457a53`, opcode.0x262.simple).
+//// - **Static objects.** A row of entity type 4, 8, 10, 11, 12, 13, 14 or 32 is a
+////   static object (genesis_prime/world_map/static_object), checked as a
+////   NonPlayer row is and kept whatever its faction. Types 4, 8, 10, 11, 12 and
+////   14 carry the stats the row records and no other, since the client never
+////   creates them dead (`0x140457bc5`); types 13 and 32 take a creature's level
+////   and health by the rule below, and one with health 0 is left out and counted,
+////   since the client would create it dead (`0x140457bc5`, opcode.0x262.simple).
 //// - **What fails the load.** A NonPlayer or static object row whose creature has no Creature2 row,
 ////   or fails the client's validity rules (`0x140485790`, `0x140483d20`), or whose
 ////   display is not in its creature's display group or has no Creature2DisplayInfo
@@ -677,16 +677,21 @@ type Judged {
   ObjectDead(row: Row)
 }
 
-/// Whether the client would create the object dead: a type 32 object with health
-/// 0 (`0x140457a53`: types 10 and 11 are in the set never created dead, 32 is
-/// not, opcode.0x262.simple).
+/// Whether the client would create the object dead: a type 13 or 32 object with
+/// health 0 (`0x140457bc5`: types 4, 8, 10, 11, 12 and 14 are in the set never
+/// created dead, 13 and 32 are not, opcode.0x262.simple).
 fn created_dead(object: StaticObject) -> Bool {
   case object.unit_type {
-    static_object.SimpleCollidable ->
+    static_object.Turret | static_object.SimpleCollidable ->
       option.map(object.health, fn(health) { health.value })
       |> option.unwrap(0)
       == 0
-    static_object.Simple | static_object.Platform -> False
+    static_object.Door
+    | static_object.Collectible
+    | static_object.Simple
+    | static_object.Platform
+    | static_object.Mailbox
+    | static_object.InstancePortal -> False
   }
 }
 
@@ -1438,10 +1443,15 @@ fn worlds_of(
   )
 }
 
-/// The static object types in the coverage's order.
+/// The static object types in the coverage's order, by the type's number.
 pub const object_types = [
+  static_object.Door,
+  static_object.Collectible,
   static_object.Simple,
   static_object.Platform,
+  static_object.Mailbox,
+  static_object.Turret,
+  static_object.InstancePortal,
   static_object.SimpleCollidable,
 ]
 
@@ -1603,8 +1613,8 @@ fn creature_vitals(
 }
 
 /// A static object row through the client's checks (`client_checks`): the
-/// object its 0x262 shows. Types 10 and 11 carry the stats the row records; type
-/// 32 the creature's level and health (`creature_vitals`).
+/// object its 0x262 shows. Types 4, 8, 10, 11, 12 and 14 carry the stats the row
+/// records; types 13 and 32 the creature's level and health (`creature_vitals`).
 fn object_checks(
   catalog catalog: Catalog,
   row row: Row,
@@ -1612,14 +1622,19 @@ fn object_checks(
 ) -> Result(StaticObject, SpawnError) {
   use Drawn(creature:, place:) <- result.try(client_checks(catalog:, row:))
   use #(level, health) <- result.try(case unit_type {
-    static_object.Simple | static_object.Platform ->
+    static_object.Door
+    | static_object.Collectible
+    | static_object.Simple
+    | static_object.Platform
+    | static_object.Mailbox
+    | static_object.InstancePortal ->
       Ok(#(
         option.map(row.level, float.truncate),
         option.map(row.health, fn(stat) {
           static_object.Health(value: float.truncate(stat), source: Recorded)
         }),
       ))
-    static_object.SimpleCollidable ->
+    static_object.Turret | static_object.SimpleCollidable ->
       creature_vitals(catalog:, creature:, row:)
       |> result.map(fn(vitals) {
         let #(level, value, source) = vitals

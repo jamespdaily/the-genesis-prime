@@ -385,8 +385,16 @@ fn spend_scaled_costs() -> EngineDeclaration {
 }
 
 /// The unit type engine: the `CreationTypeEnum` column of Creature2, the
-/// client's own column name (`game_table.schema`). That the column holds the
-/// unit type is a guess: only its name says it.
+/// client's own column name (`game_table.schema`). The client keys a unit's
+/// interaction kind on it (Door for 4, Collect for 8, Mail for 12,
+/// `0x140479560`), with the numbers message 0x262 gives the unit types
+/// (`opcode.0x262.type_data`). The two enums are not one: the bind points' rows
+/// hold 18 where the unit type is 19, and the rows spawned as type 32
+/// (SimpleCollidable) hold 20 (`Creature2.CreationTypeEnum`, from the world
+/// database). So only the types whose two numbers agree are handled, those the
+/// server creates and sends (genesis_prime/world_map/static_object): 4, 8, 10,
+/// 11, 12, 13 and 14. Type 32's rows are counted under 20, which no rule
+/// names, so 20 stays unhandled until the client's own code pairs the two.
 fn unit_types() -> EngineDeclaration {
   EngineDeclaration(
     name: "Unit types",
@@ -394,12 +402,12 @@ fn unit_types() -> EngineDeclaration {
     source: TableColumns(
       table: "Creature2",
       columns: ["CreationTypeEnum"],
-      evidence: "a guess: the client's column name in Creature2.tbl (game_table.schema) is the only evidence",
+      evidence: "the client's column name in Creature2.tbl (game_table.schema); that its values are the unit types is shown for 4, 8 and 12 by the chooser 0x140479560, which keys Door (creature word 1 == 4), Collect (8) and Mail (12) on it, and is a guess for the others (Creature2.CreationTypeEnum)",
       values: fn(tables) {
         list.map(creature2.all(tables), fn(row) { row.creation_type_enum })
       },
     ),
-    handled: Listed(ids: []),
+    handled: Listed(ids: [4, 8, 10, 11, 12, 13, 14]),
     partial: [],
     unread_rows: no_unread_rows,
     unread_starting_rows: no_unread_starting_rows,

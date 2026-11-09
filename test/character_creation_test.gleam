@@ -84,6 +84,7 @@ pub fn a_valid_request_gives_the_new_character_from_its_creation_row_test() -> N
       class_id: ClassId(1),
       faction_id: 167,
       level: 1,
+      experience: 0,
       path: 2,
       place: character_tables.novice_start_place(),
       look: [

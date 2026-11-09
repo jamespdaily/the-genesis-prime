@@ -66,6 +66,7 @@ pub fn the_entry_writes_0x25e_once_right_after_0x19b_before_the_loadout_for_ever
         0x0262,
         0x019B,
         0x025E,
+        0x035F,
         0x0111,
         0x0111,
         0x0111,

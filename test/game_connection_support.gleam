@@ -139,10 +139,19 @@ pub fn keyed() -> Cipher {
 }
 
 /// The system time every answer of the tests carries, as a FILETIME.
-pub const filetime = 133_900_000_000_000_000
+pub const filetime = world_entry_support.filetime
 
 pub fn feed(
   state state: game_connection.State,
+  event event: Event(ConnectionEvent(Message, Answer)),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  feed_at(state:, filetime:, event:)
+}
+
+/// An event that reaches the connection at this system time, as a FILETIME.
+pub fn feed_at(
+  state state: game_connection.State,
+  filetime filetime: Int,
   event event: Event(ConnectionEvent(Message, Answer)),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   game_connection.step(state, support.input_at(filetime:, event:))
@@ -455,6 +464,25 @@ pub fn joining_saved(
   character character: store.Character,
   saved_health saved_health: Option(Int),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
+  joining_holding(
+    in_character_select:,
+    character:,
+    saved_health:,
+    saved_experience: None,
+    quests: [],
+  )
+}
+
+/// `in_character_select` after the store gave `character` with the health, the
+/// experience (`None` for none) and the quest rows its last save kept: the map
+/// is asked.
+pub fn joining_holding(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+  saved_health saved_health: Option(Int),
+  saved_experience saved_experience: Option(Int),
+  quests quests: List(store.QuestRow),
+) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) = playing_from(in_character_select:, character_id: 42)
   answer(
     state:,
@@ -465,7 +493,9 @@ pub fn joining_saved(
           character,
           character_support.epoch(1),
           saved_health,
+          saved_experience,
           world_entry_support.novice_items(character:),
+          quests,
         )),
       ),
     ),
@@ -577,6 +607,40 @@ pub fn entered_saved(
   answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
 }
 
+/// `in_character_select` after the store gave `character` with the experience its
+/// last save kept and the map took it: the burst is written.
+pub fn entered_holding(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+  saved_experience saved_experience: Option(Int),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) =
+    joining_holding(
+      in_character_select:,
+      character:,
+      saved_health: None,
+      saved_experience:,
+      quests: [],
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
+}
+
+/// The connection after the store gave the tests' character these quest rows and
+/// the map took it: the burst is written.
+pub fn entered_with_quests(
+  quests quests: List(store.QuestRow),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) =
+    joining_holding(
+      in_character_select: in_select(),
+      character: world_character(),
+      saved_health: None,
+      saved_experience: None,
+      quests:,
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
+}
+
 /// The tests' player's health at full: 736, the Engineer's level 1 maximum
 /// (`player.level1_base_health`: CreatureLevel row 1's 135.97 and the Novice
 /// armor's 600).
@@ -677,7 +741,9 @@ pub fn entry_place() -> Place {
 
 /// The ask of a save of the tests' player at full health: the account and
 /// character of the tests' connection, the epoch its load gave, the save's
-/// number and the place, and the full health (`full_health`).
+/// number and the place, the full health (`full_health`) and the level 1 the
+/// character has with the 0 experience that is the least of level 1 (XpPerLevel
+/// ID 1's minXpForLevel, `opcode.0x25e.safe_body`).
 pub fn save_asked(sequence sequence: Int, place place: Place) -> Request {
   save_asked_keeping(sequence:, place:, health: Some(full_health))
 }
@@ -689,14 +755,19 @@ pub fn save_asked_keeping(
   health health: Option(Int),
 ) -> Request {
   AskStore(
-    Move(SavePlace(
-      account_id: AccountId(7),
-      character_id: CharacterId(42),
-      session_epoch: character_support.epoch(1),
-      save_sequence: sequence,
-      place:,
-      health:,
-    )),
+    Move(
+      SavePlace(
+        account_id: AccountId(7),
+        character_id: CharacterId(42),
+        session_epoch: character_support.epoch(1),
+        save_sequence: sequence,
+        place:,
+        health:,
+        experience: 0,
+        level: 1,
+        quests: [],
+      ),
+    ),
   )
 }
 
@@ -1379,6 +1450,7 @@ pub fn cast_starts(news: List(News)) -> List(spell_started.SpellStarted) {
       | client_connection.Shield(..)
       | client_connection.InterruptArmor(..)
       | client_connection.Absorption(..)
+      | client_connection.Level(..)
       | client_connection.CrowdControlApplied(..)
       | client_connection.CrowdControlEnded(..)
       | client_connection.PropertiesChanged(..)
@@ -1414,6 +1486,7 @@ pub fn is_cast_removal(news: News) -> Bool {
     | client_connection.Shield(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
+    | client_connection.Level(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
     | client_connection.PropertiesChanged(..)
@@ -1750,11 +1823,32 @@ pub fn at_the_holocrypt() -> #(game_connection.State, ConnectionStep(Request)) {
 pub fn at_the_holocrypt_from(
   dead dead: game_connection.State,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  let #(state, taken) = read(state: dead, bytes: holocrypt())
+  at_the_holocrypt_from_at(dead:, filetime:)
+}
+
+/// The same, with the choice and both answers reaching the connection at this
+/// system time, as a FILETIME.
+pub fn at_the_holocrypt_from_at(
+  dead dead: game_connection.State,
+  filetime filetime: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let answered = fn(state, taken: ConnectionStep(Request), outcome) {
+    let assert Some(ask) = support.asked(taken) as "the step ends in an ask"
+    feed_at(
+      state:,
+      filetime:,
+      event: step.OwnEvent(step.Answered(ask: ask.ask, outcome:)),
+    )
+  }
   let #(state, taken) =
-    answer(state:, taken:, outcome: step.Answer(FromMap(Left)))
+    feed_at(
+      state: dead,
+      filetime:,
+      event: step.OwnEvent(step.Read(holocrypt())),
+    )
+  let #(state, taken) = answered(state, taken, step.Answer(FromMap(Left)))
   let #(_, joined) = mapped(map_state: map_after_a_stay(), taken:)
-  answer(state:, taken:, outcome: step.Answer(FromMap(joined)))
+  answered(state, taken, step.Answer(FromMap(joined)))
 }
 
 /// The Holocrypt's join answered by the map `map_state`.

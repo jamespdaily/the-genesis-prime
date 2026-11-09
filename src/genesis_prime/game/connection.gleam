@@ -148,6 +148,7 @@ import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/chat as connection_chat
 import genesis_prime/game/connection/dropped as connection_dropped
+import genesis_prime/game/connection/experience as connection_experience
 import genesis_prime/game/connection/interaction as connection_interaction
 import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/login as connection_login
@@ -293,6 +294,9 @@ fn connected(
       settled(handled: watch_ended(session:, now:, watch:), now:)
     OwnEvent(TimerFired(timer:)) if timer == connection_state.save_timer ->
       settled(handled: connection_world.save_due(session:, now:), now:)
+    OwnEvent(TimerFired(timer:))
+      if timer == connection_state.quest_reset_timer
+    -> settled(handled: connection_world.quest_reset_due(session:, now:), now:)
     OwnEvent(TimerFired(timer:)) ->
       settled(handled: other_timer_fired(session:, now:, timer:), now:)
     OwnEvent(step.PeerClosed)
@@ -905,6 +909,8 @@ fn stay_sent(
           connection_life.foe_taken(session:, now:, holder:, entered:, fight:)
         client_connection.SentByTarget(answered:) ->
           connection_casting.target_taken(session:, now:, entered:, answered:)
+        client_connection.SentByKill(credit:) ->
+          connection_experience.credited(session:, now:, entered:, credit:)
       }
     Some(_) | None -> Continue(session, [])
   }

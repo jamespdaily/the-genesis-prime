@@ -91,8 +91,9 @@ fn written(steps steps: List(ConnectionStep(Request))) -> List(Int) {
       as "the message names the player's own unit (opcode.0x938)"
     case message.change {
       unit_stat_change.Absorption(UnitStatAbsorption(value:)) -> Ok(value)
-      unit_stat_change.Shield(..) | unit_stat_change.InterruptArmor(..) ->
-        Error(Nil)
+      unit_stat_change.Shield(..)
+      | unit_stat_change.InterruptArmor(..)
+      | unit_stat_change.Level(..) -> Error(Nil)
     }
   })
 }

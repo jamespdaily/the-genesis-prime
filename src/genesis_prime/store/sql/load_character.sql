@@ -1,6 +1,6 @@
 -- The account's character with this id, as the world's entry needs it: the
--- same columns as the list, with the saved place and the saved health (NULL
--- when none was saved), and the character taken by
+-- same columns as the list, with the saved place and the saved health and
+-- experience (NULL when none was saved), and the character taken by
 -- this login: `session_epoch` is raised by one in the same statement, with
 -- `save_sequence` back to 0 for the new login, and the new epoch returned, so
 -- the login that read the character is the one that holds that epoch, and a
@@ -33,4 +33,5 @@ returning
   look_values,
   bones,
   needs_rename,
-  health;
+  health,
+  experience;

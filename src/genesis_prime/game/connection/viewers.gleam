@@ -148,6 +148,7 @@ import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
+import genesis_prime/world_map/static_object
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/bool
@@ -227,28 +228,28 @@ pub fn map_sent(
     }
     map.ObjectsSeen(units:) -> {
       let #(refused, named) =
-        list.partition(units, fn(unit) {
-          names_own_unit(entered:, unit_id: unit.unit_id)
-        })
+        units
+        |> list.map(fn(unit) { #(static_object.unit_id(created: unit), unit) })
+        |> list.partition(fn(unit) { names_own_unit(entered:, unit_id: unit.0) })
       let fresh =
         list.filter(named, fn(unit) {
-          !dict.has_key(entered.shown, unit.unit_id)
-          && !set.contains(entered.gone, unit.unit_id)
+          !dict.has_key(entered.shown, unit.0)
+          && !set.contains(entered.gone, unit.0)
         })
       Continue(
         shown_changed(session:, change: fn(picture) {
           list.fold(fresh, picture, fn(picture, unit) {
-            dict.insert(picture, unit.unit_id, ShownObject)
+            dict.insert(picture, unit.0, ShownObject)
           })
         }),
         list.append(
           list.map(refused, fn(unit) {
-            refusal_logged(session:, unit_id: unit.unit_id)
+            refusal_logged(session:, unit_id: unit.0)
           }),
           list.map(fresh, fn(unit) {
             connection_state.to_client(
               session,
-              connection_frames.object_created_frame(unit:),
+              connection_frames.object_created_frame(unit: unit.1),
             )
           }),
         ),
@@ -331,6 +332,7 @@ pub fn viewer_takes(
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
+    | client_connection.Level(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..) -> False
@@ -584,6 +586,15 @@ pub fn viewer_takes(
         ),
       ])
     }
+    client_connection.Level(level:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(session, [
+        connection_state.to_client(
+          session,
+          connection_frames.level_frame(unit_id:, level:),
+        ),
+      ])
+    }
     client_connection.PropertiesChanged(properties:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(session, [
@@ -715,6 +726,7 @@ fn creature_news(
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
+    | client_connection.Level(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..) -> session
@@ -804,6 +816,7 @@ fn life_news(
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
+    | client_connection.Level(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..) -> Continue(session, [])
