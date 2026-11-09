@@ -831,6 +831,7 @@ fn a_new_character(name: String) -> store.NewCharacter {
     // 0xBF800000 is -1.0 and has its top bit set; 0x3F800000 is 1.0.
     bones: [0xBF800000, 0x3F800000, 0],
     starting_items: [],
+    starting_credits: 1000,
   )
 }
 
@@ -939,7 +940,15 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
   assert ask(store, World(LoadCharacter(account, CharacterId(character_id))))
     == ForWorld(
-      CharacterLoaded(character, character_support.epoch(1), None, None, [], []),
+      CharacterLoaded(
+        character,
+        character_support.epoch(1),
+        None,
+        None,
+        [],
+        [],
+        [],
+      ),
     )
     as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
   stop(store)
@@ -1032,6 +1041,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
         character_support.epoch(1),
         None,
         None,
+        [],
         [],
         [],
       ),

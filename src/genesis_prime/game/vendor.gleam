@@ -51,6 +51,11 @@ pub type Vendor {
   Vendor(buy_multiplier: Float, sell_multiplier: Float, items: List(Stocked))
 }
 
+/// The vendor window a player has open: the unit it was opened on and what that unit sells.
+pub type Opened {
+  Opened(unit_id: Int, vendor: Vendor)
+}
+
 /// The vendors by their creature.
 pub opaque type Vendors {
   Vendors(by_creature: Dict(Creature2Id, Vendor))

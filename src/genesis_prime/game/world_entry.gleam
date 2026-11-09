@@ -138,6 +138,7 @@ import genesis_prime/game/character_state
 import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
 import genesis_prime/game/class_resource
+import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/experience
 import genesis_prime/game/innate
 import genesis_prime/game/inventory
@@ -151,6 +152,7 @@ import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
 import genesis_prime/game/unit_properties
+import genesis_prime/game/vendor
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers.{AbilityTiers}
 import genesis_prime/message/action_set.{ActionSet}
@@ -240,6 +242,7 @@ pub opaque type State {
     saved_health: Option(Int),
     experience: Int,
     items: List(store.HeldItem),
+    currencies: Currencies,
     quests: QuestLog,
     map: MapId,
     stay: Stay,
@@ -314,6 +317,14 @@ pub type Entered {
     /// The items the character holds, as the store saved them: each with its
     /// own guid, its item2 id, where it is held and how many it stacks.
     items: List(store.HeldItem),
+    /// What the character holds of each currency: the saved amounts, which a
+    /// purchase lowers (genesis_prime/game/vendor_purchase) and the store saves with it.
+    currencies: Currencies,
+    /// The vendor window the player has open, which a purchase is made from
+    /// (genesis_prime/game/vendor_purchase): set when the vendor's window opens
+    /// (genesis_prime/game/interaction), and cleared by any other answer to a request
+    /// to interact and by a join of a world.
+    vendor: Option(vendor.Opened),
     /// The character's experience: the saved one, or the least of its level when
     /// none was saved (`experience.entering`). The connection adds each kill's
     /// credit to it (genesis_prime/game/connection/experience) and saves it with
@@ -473,6 +484,7 @@ pub fn loaded(
           saved_health:,
           saved_experience:,
           items:,
+          currencies:,
           quests:,
         ) ->
           case character.place {
@@ -500,6 +512,7 @@ pub fn loaded(
                     saved_health:,
                     saved_experience:,
                     items:,
+                    currencies: currency.from_held(held: currencies),
                     quests: log,
                     connection:,
                     stay:,
@@ -521,6 +534,7 @@ fn joining_a_play(
   saved_health saved_health: Option(Int),
   saved_experience saved_experience: Option(Int),
   items items: List(store.HeldItem),
+  currencies currencies: Currencies,
   quests quests: QuestLog,
   connection connection: ConnectionId,
   stay stay: Stay,
@@ -554,6 +568,7 @@ fn joining_a_play(
           saved_health:,
           experience:,
           items:,
+          currencies:,
           quests:,
           connection:,
           stay:,
@@ -587,6 +602,7 @@ pub fn joined(
       saved_health:,
       experience:,
       items:,
+      currencies:,
       quests:,
       map:,
       stay:,
@@ -643,6 +659,8 @@ pub fn joined(
               unit:,
               loadout:,
               items:,
+              currencies:,
+              vendor: None,
               experience:,
               quests:,
               max_health:,
@@ -780,6 +798,7 @@ pub fn rejoining(
     saved_health: None,
     experience: entered.experience,
     items: entered.items,
+    currencies: entered.currencies,
     quests: entered.quests,
     connection:,
     stay:,
@@ -798,6 +817,7 @@ fn joining(
   saved_health saved_health: Option(Int),
   experience experience: Int,
   items items: List(store.HeldItem),
+  currencies currencies: Currencies,
   quests quests: QuestLog,
   connection connection: ConnectionId,
   stay stay: Stay,
@@ -813,6 +833,7 @@ fn joining(
       saved_health:,
       experience:,
       items:,
+      currencies:,
       quests:,
       map:,
       stay:,

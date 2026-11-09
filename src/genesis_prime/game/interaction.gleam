@@ -122,7 +122,7 @@ type Declined {
 
 /// Why a vendor request is refused with the client's code: the unit, the code
 /// (`opcode.0x7ea`), the reason that is logged once, and what to say of the unit.
-type VendorRefusal {
+pub type VendorRefusal {
   VendorRefusal(unit_id: Int, code: Int, reason: String, why: String)
 }
 
@@ -303,7 +303,7 @@ fn within_reach(
 /// alive and has stock, within reach and not Hostile to the player, checked in the order
 /// of the client's CheckInteractionTarget (`opcode.0x7ea`), or the refusal the client's
 /// check would have given.
-fn vendor_opened(
+pub fn vendor_opened(
   unit_id unit_id: Int,
   player player: Player,
   picture picture: Picture,

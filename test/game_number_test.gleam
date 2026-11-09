@@ -82,6 +82,7 @@ fn seeded() -> List(Row) {
     ),
     Row(name: "kill_experience_multiplier_same", value: 1.0, unit: "multiplier"),
     Row(name: "leash_range", value: 55.0, unit: "units"),
+    Row(name: "starting_credits", value: 1000.0, unit: "units"),
     Row(name: "weekly_quest_reset_ms", value: 122_400_000.0, unit: "ms"),
   ]
 }
@@ -119,6 +120,7 @@ pub fn the_seeded_rows_select_into_the_numbers_a_fight_reads_test() -> Nil {
       ],
       daily_quest_reset_ms: 36_000_000,
       weekly_quest_reset_ms: 122_400_000,
+      starting_credits: 1000,
     ))
 }
 
@@ -423,6 +425,7 @@ pub fn the_numbers_put_under_a_key_are_read_back_test() -> Nil {
       ],
       daily_quest_reset_ms: 36_000_000,
       weekly_quest_reset_ms: 122_400_000,
+      starting_credits: 1000,
     )
   content_game_number.put(key:, numbers:)
   assert content_game_number.numbers(key:) == numbers

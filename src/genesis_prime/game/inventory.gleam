@@ -139,8 +139,8 @@ import genesis_prime/message/shared_item.{SharedItem}
 import genesis_prime/step.{type LogLevel, LogError, LogWarning}
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemMove,
-  type ItemsAnswer, type SessionEpoch, ItemMade, ItemsNotSaved, ItemsSaved,
-  SaveRefused,
+  type ItemsAnswer, type SessionEpoch, Bought, ItemMade, ItemsNotSaved,
+  ItemsSaved, SaveRefused,
 }
 import genesis_prime/table/id.{type Item2Id}
 import genesis_prime/table/loader/store as table_store
@@ -1268,6 +1268,7 @@ pub fn answered(
         Moved(..) | Merged(..) | Deleted(..) ->
           panic as "the store answers only a split with ItemMade"
       }
+    Bought(..) -> panic as "the store answers a purchase only to a vendor buy"
     ItemsNotSaved -> #(items, [
       Log(
         level: LogWarning,

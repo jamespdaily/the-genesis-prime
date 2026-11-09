@@ -21,7 +21,9 @@ pub type CreateCharacterRow {
 
 /// Makes a character of an account: at the level the create gave, standing at
 /// the start place the create gave (a world, a zone, a position and a facing),
-/// with the experience the create gave, and the values the create request gave. It makes none, and gives no row, when the
+/// with the experience the create gave, the credits the create gave (no row when
+/// they are 0, the client's start value) and the values the create request gave.
+/// It makes none, and gives no row, when the
 /// account already has as many characters as its slots. A name that another
 /// character holds in any case breaks the unique index on
 /// lower(name collate "und-x-icu"), which the caller reports as its own error.
@@ -52,6 +54,7 @@ pub fn create_character(
   arg_19: Float,
   arg_20: Float,
   arg_21: Int,
+  arg_22: Int,
 ) -> Result(pog.Returned(CreateCharacterRow), pog.QueryError) {
   let decoder = {
     use character_id <- decode.field(0, decode.int)
@@ -60,23 +63,32 @@ pub fn create_character(
 
   "-- Makes a character of an account: at the level the create gave, standing at
 -- the start place the create gave (a world, a zone, a position and a facing),
--- with the experience the create gave, and the values the create request gave. It makes none, and gives no row, when the
+-- with the experience the create gave, the credits the create gave (no row when
+-- they are 0, the client's start value) and the values the create request gave.
+-- It makes none, and gives no row, when the
 -- account already has as many characters as its slots. A name that another
 -- character holds in any case breaks the unique index on
 -- lower(name collate \"und-x-icu\"), which the caller reports as its own error.
-insert into character (
-  account_id, name, gender, race_id, class_id, faction_id, level, path,
-  world_id, world_zone_id, position_x, position_y, position_z,
-  rotation_yaw, rotation_pitch, rotation_roll,
-  look_labels, look_values, bones, experience
+with made as (
+  insert into character (
+    account_id, name, gender, race_id, class_id, faction_id, level, path,
+    world_id, world_zone_id, position_x, position_y, position_z,
+    rotation_yaw, rotation_pitch, rotation_roll,
+    look_labels, look_values, bones, experience
+  )
+  select
+    $1::bigint, $2::text, $3::int, $4::int, $5::int, $6::int, $17::int, $7::int,
+    $12::int, $13::int, $14::real, $15::real, $16::real,
+    $18::real, $19::real, $20::real,
+    $8::bigint[], $9::bigint[], $10::bigint[], $21::int
+  where (select count(*) from character where account_id = $1::bigint) < $11::bigint
+  returning character_id
+),
+credited as (
+  insert into character_currency (character_id, currency_type_id, amount)
+  select character_id, 1, $22::bigint from made where $22::bigint > 0
 )
-select
-  $1::bigint, $2::text, $3::int, $4::int, $5::int, $6::int, $17::int, $7::int,
-  $12::int, $13::int, $14::real, $15::real, $16::real,
-  $18::real, $19::real, $20::real,
-  $8::bigint[], $9::bigint[], $10::bigint[], $21::int
-where (select count(*) from character where account_id = $1::bigint) < $11::bigint
-returning character_id;
+select character_id from made;
 "
   |> pog.query
   |> pog.parameter(pog.int(arg_1))
@@ -100,6 +112,7 @@ returning character_id;
   |> pog.parameter(pog.float(arg_19))
   |> pog.parameter(pog.float(arg_20))
   |> pog.parameter(pog.int(arg_21))
+  |> pog.parameter(pog.int(arg_22))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
@@ -625,6 +638,45 @@ returning
   |> pog.query
   |> pog.parameter(pog.int(character_id))
   |> pog.parameter(pog.int(account_id))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `load_character_currencies` query
+/// defined in `./src/genesis_prime/store/sql/load_character_currencies.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadCharacterCurrenciesRow {
+  LoadCharacterCurrenciesRow(currency_type_id: Int, amount: Int)
+}
+
+/// The currencies a character holds, one row each, by type. A currency with no row is 0.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_character_currencies(
+  db: pog.Connection,
+  character_id: Int,
+) -> Result(pog.Returned(LoadCharacterCurrenciesRow), pog.QueryError) {
+  let decoder = {
+    use currency_type_id <- decode.field(0, decode.int)
+    use amount <- decode.field(1, decode.int)
+    decode.success(LoadCharacterCurrenciesRow(currency_type_id:, amount:))
+  }
+
+  "-- The currencies a character holds, one row each, by type. A currency with no row is 0.
+select
+  currency_type_id::int as currency_type_id,
+  amount
+from character_currency
+where character_id = $1
+order by currency_type_id;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(character_id))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

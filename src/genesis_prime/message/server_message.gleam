@@ -25,6 +25,7 @@ import genesis_prime/message/chat_zone_named.{type ChatZoneNamed}
 import genesis_prime/message/client_control_granted.{type ClientControlGranted}
 import genesis_prime/message/combat_log.{type CombatLog}
 import genesis_prime/message/create_character_result.{type CreateCharacterResult}
+import genesis_prime/message/currency_changed.{type CurrencyChanged}
 import genesis_prime/message/delete_character_result.{type DeleteCharacterResult}
 import genesis_prime/message/disconnect_notice.{type DisconnectNotice}
 import genesis_prime/message/enter_world.{type EnterWorld}
@@ -189,6 +190,7 @@ pub type ServerMessage {
   BuybackList(message: BuybackList)
   GenericError(message: GenericError)
   RewardProperties(message: RewardProperties)
+  CurrencyChanged(message: CurrencyChanged)
 }
 
 /// Why a body is not a message the server sends.
@@ -430,6 +432,8 @@ pub fn decode(
     0x0106 -> decoded(body, message_id, generic_error.decode, GenericError)
     0x092C ->
       decoded(body, message_id, reward_properties.decode, RewardProperties)
+    0x0919 ->
+      decoded(body, message_id, currency_changed.decode, CurrencyChanged)
     _ -> Error(UnknownMessage(message_id:))
   }
 }
@@ -523,6 +527,7 @@ pub fn name(message: ServerMessage) -> String {
     BuybackList(..) -> "buyback_list"
     GenericError(..) -> "generic_error"
     RewardProperties(..) -> "reward_properties"
+    CurrencyChanged(..) -> "currency_changed"
   }
 }
 

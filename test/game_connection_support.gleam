@@ -510,14 +510,17 @@ pub fn joining_holding_items(
     taken:,
     outcome: step.Answer(
       FromStore(
-        ForWorld(CharacterLoaded(
-          character,
-          character_support.epoch(1),
-          saved_health,
-          saved_experience,
-          items,
-          quests,
-        )),
+        ForWorld(
+          CharacterLoaded(
+            character,
+            character_support.epoch(1),
+            saved_health,
+            saved_experience,
+            items,
+            quests,
+            [],
+          ),
+        ),
       ),
     ),
   )

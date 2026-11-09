@@ -74,6 +74,7 @@ pub fn loaded_holding(
         saved_experience:,
         items:,
         quests:,
+        currencies: [],
       ),
       connection: ConnectionId(1),
       stay: map_support.stay(count: 1),

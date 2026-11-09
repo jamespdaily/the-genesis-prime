@@ -91,17 +91,17 @@ import genesis_prime/store.{
   type ItemsAnswer, type ItemsRequest, type MoveAnswer, type MoveRequest,
   type Naming, type NewCharacter, type NewItem, type QuestRow, type RenameAnswer,
   type Request, type SelectAnswer, type SelectRequest, type WorldAnswer,
-  type WorldRequest, Account, AccountFound, AccountId, ActiveQuest, Character,
-  CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
-  CharacterRenamed, CreateCharacter, CreateForNoSuchAccount, Created,
-  DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FindAccount, ForItems,
-  ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem, ItemMade,
-  Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed, LoadCharacter, Login,
-  MergeItems, Move, MoveItems, NameBreaksRule, NameStands, NameTaken,
-  NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount,
-  NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved,
-  QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace, SaveRefused,
-  Select, SplitItem, Unavailable, World,
+  type WorldRequest, Account, AccountFound, AccountId, ActiveQuest,
+  BuyFromVendor, Character, CharacterCreated, CharacterDeleted, CharacterId,
+  CharacterLoaded, CharacterRenamed, CreateCharacter, CreateForNoSuchAccount,
+  Created, DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FindAccount,
+  ForItems, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldCurrency,
+  HeldItem, ItemMade, Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed,
+  LoadCharacter, Login, MergeItems, Move, MoveItems, NameBreaksRule, NameStands,
+  NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
+  NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
+  PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
+  SaveRefused, Select, SplitItem, Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
@@ -369,6 +369,7 @@ fn items(
       )
     DeleteItem(account_id:, character_id:, session_epoch:, item:) ->
       delete_item(pool:, account_id:, character_id:, session_epoch:, item:)
+    BuyFromVendor(..) -> panic as "shape: #583 the store's purchase"
   }
 }
 
@@ -713,21 +714,37 @@ fn load_character(
         [_] -> sql.load_character_items(connection, character_id)
         _ -> Ok(pog.Returned(count: 0, rows: []))
       })
-      use quest_rows <- result.map(case loaded.rows {
+      use quest_rows <- result.try(case loaded.rows {
         [_] -> sql.load_quest_log(connection, character_id)
+        _ -> Ok(pog.Returned(count: 0, rows: []))
+      })
+      use currency_rows <- result.map(case loaded.rows {
+        [_] -> sql.load_character_currencies(connection, character_id)
         _ -> Ok(pog.Returned(count: 0, rows: []))
       })
       pog.Returned(
         ..loaded,
         rows: list.map(loaded.rows, fn(row) {
-          LoadedRow(row:, items: item_rows.rows, quests: quest_rows.rows)
+          LoadedRow(
+            row:,
+            items: item_rows.rows,
+            quests: quest_rows.rows,
+            currencies: currency_rows.rows,
+          )
         }),
       )
     })
   }
   use rows <- result.map(query(transaction))
   case rows {
-    [LoadedRow(row:, items: item_rows, quests: quest_rows)] -> {
+    [
+      LoadedRow(
+        row:,
+        items: item_rows,
+        quests: quest_rows,
+        currencies: currency_rows,
+      ),
+    ] -> {
       let assert Ok(epoch) = store.session_epoch(row.session_epoch)
         as "a load raises the epoch by one, so it is 1 or more"
       CharacterLoaded(
@@ -759,6 +776,12 @@ fn load_character(
         saved_experience: row.experience,
         items: held_items(item_rows),
         quests: quest_rows_of(quest_rows),
+        currencies: list.map(currency_rows, fn(row) {
+          HeldCurrency(
+            currency_type_id: row.currency_type_id,
+            amount: row.amount,
+          )
+        }),
       )
     }
     [] -> NotTheAccounts
@@ -767,12 +790,13 @@ fn load_character(
 }
 
 /// The one row a load's transaction gives: the character whose epoch the
-/// update raised, with its items.
+/// update raised, with its items, quest log and currencies.
 type LoadRow {
   LoadedRow(
     row: sql.LoadCharacterRow,
     items: List(sql.LoadCharacterItemsRow),
     quests: List(sql.LoadQuestLogRow),
+    currencies: List(sql.LoadCharacterCurrenciesRow),
   )
 }
 
@@ -1000,6 +1024,7 @@ fn create_character(
         start_place.facing(character.place).pitch,
         start_place.facing(character.place).roll,
         character.experience,
+        character.starting_credits,
       ))
       use Nil <- result.map(case made.rows {
         [row] ->

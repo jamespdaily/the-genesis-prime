@@ -52,6 +52,10 @@
 ////   reset time the client is sent is whole Unix seconds (opcode.0x362), and a
 ////   weekly time whose time of day is not the daily one's. The quest log reads them
 ////   (genesis_prime/game/quest_log).
+//// - **The starting credits** of a new character are the server's choice, since the
+////   client holds no starting amount: a whole number of credits, 0 or more, held by
+////   the table (`game_number_starting_credits_is_a_whole_number_of_credits`, migration
+////   0024).
 //// - **The unit of each name** is the table's: `game_number_name_has_its_unit`, a
 ////   foreign key to `game_number_name`, refuses a row whose unit is not its name's
 ////   and a name nobody listed (migration 0014).
@@ -106,6 +110,9 @@ pub type GameNumbers {
     /// The time the weekly quests reset at, in whole milliseconds after Monday
     /// 00:00 UTC (migration 0021).
     weekly_quest_reset_ms: Int,
+    /// The credits a new character starts with, a whole number of credits
+    /// (migration 0024).
+    starting_credits: Int,
   )
 }
 
@@ -137,6 +144,7 @@ fn expected() -> List(String) {
       "kill_experience_fraction",
       "daily_quest_reset_ms",
       "weekly_quest_reset_ms",
+      "starting_credits",
     ],
     kill_experience_multiplier_names,
   )
@@ -197,6 +205,7 @@ fn ranges_checked(
       ),
       daily_quest_reset_ms: float.round(value("daily_quest_reset_ms")),
       weekly_quest_reset_ms: float.round(value("weekly_quest_reset_ms")),
+      starting_credits: float.round(value("starting_credits")),
     )
   let checks = [
     #(

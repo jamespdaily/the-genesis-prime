@@ -407,6 +407,7 @@ pub fn after_a_camp_a_play_request_enters_the_world_again_as_a_new_unit_with_the
                 character: game_connection_support.world_character(),
               ),
               [],
+              [],
             ),
           ),
         ),
