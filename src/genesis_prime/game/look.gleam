@@ -116,6 +116,17 @@ pub fn end(
   }
 }
 
+/// The look with its base now `base`, and the visuals whose shown visual changed, in slot
+/// order: the visual of a slot the new base holds an item in, and display 0 for a slot it
+/// empties (`opcode.0x933.empty_display`). A slot a disguise holds reports nothing, and
+/// shows the new base when the disguise ends.
+pub fn rebased(
+  look _look: Look,
+  base _base: List(ItemVisual),
+) -> #(Look, List(ItemVisual)) {
+  panic as "shape: #586 look.rebased is not built"
+}
+
 /// The item visuals a 0x262 of the player lists: the base with each disguised slot's
 /// entry replaced by what shows there, or added.
 pub fn visuals(look look: Look) -> List(ItemVisual) {

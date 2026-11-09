@@ -402,6 +402,17 @@ pub fn remove(
   }
 }
 
+/// The properties with each base in `bases` set, the live modifiers applied to it again,
+/// and the entries whose base or value changed, in property order: the gear's change
+/// after a worn item moves or the level rises. A base that is already as given reports
+/// nothing.
+pub fn rebased(
+  properties _properties: Properties,
+  bases _bases: List(#(UnitProperty2Id, Float)),
+) -> #(Properties, List(Changed)) {
+  panic as "shape: #586 unit_properties.rebased is not built"
+}
+
 /// The property a modifier changes: the one a Change is on and the one a Conversion
 /// adds to.
 pub fn changed_property(modifier modifier: Modifier) -> UnitProperty2Id {

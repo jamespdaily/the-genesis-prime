@@ -94,7 +94,6 @@ fn answer_of(
   Joined(
     unit: player_unit.create(unit:, realm_id:),
     loadout: player_unit.loadout(unit:),
-    max_health: player_unit.max_health(unit:),
     incarnation:,
     clock_origin_ms: 0,
   )

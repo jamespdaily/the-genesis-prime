@@ -73,7 +73,7 @@ import genesis_prime/world_map/unit_fields
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 
 /// A player's unit in a map: the character as the unit `unit_id`, placed at
 /// `place` with the item visuals of its `body`, holding its `loadout` and the
@@ -289,6 +289,19 @@ pub fn with_integer_stat(
       }),
     ),
   )
+}
+
+/// The player's 0x262 record with the gear of its worn items: the item visuals the record
+/// lists, the gear properties in place of those it holds and, with a shield, its capacity
+/// as stat 20, which a viewer created later is sent; with no shield the record holds no
+/// stat 20.
+pub fn with_gear(
+  record _record: UnitCreatePlayer,
+  item_visuals _item_visuals: List(ItemVisual),
+  properties _properties: List(UnitProperty),
+  shield _shield: Option(Int),
+) -> UnitCreatePlayer {
+  panic as "shape: #586 player_unit.with_gear is not built"
 }
 
 /// The player's 0x262 record with its class's resource, as its own client is

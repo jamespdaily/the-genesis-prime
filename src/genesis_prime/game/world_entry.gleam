@@ -9,7 +9,7 @@
 //// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id)
 //// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place, stay, alive)
 ////                                                 (or Refused, for a level with no XpPerLevel row too: the rule hands back to select)
-//// Joined(unit record, loadout, health, run)
+//// Joined(unit record, loadout, run)
 ////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x92C, 0x25E (a play only), 0x111 x 10 (x 11 with an
 ////                                                 innate), 0x1A0, 0x19D, 0x19F (with an innate), 0x6BC, 0x636, 0xF1, 0x61,
 ////                                                 WatchMap(map, run), StartPassive (with an innate passive)
@@ -23,8 +23,8 @@
 //// - **The unit** is the map's: it builds the player's unit when it takes the
 ////   player (genesis_prime/world_map/map), with the loadout and the maximum
 ////   health, and answers 0x262's record, which `joined` sends with the health
-////   the player enters at as stat 0, and the typed loadout and maximum health,
-////   which `Entered` keeps. A play enters at the health its last save kept,
+////   the player enters at as stat 0, and the typed loadout, which `Entered` keeps
+////   with the maximum health `joined` works out from it. A play enters at the health its last save kept,
 ////   capped at the maximum, and at full health when none was kept; the
 ////   Holocrypt's join enters at full health (`player_life.entering`; the
 ////   server's choice). A play that enters below its maximum health starts the
@@ -593,7 +593,10 @@ pub fn joined(
       entry:,
     ) -> {
       case answer {
-        map.Joined(unit:, loadout:, max_health:, incarnation:, clock_origin_ms:) -> {
+        map.Joined(unit:, loadout:, incarnation:, clock_origin_ms:) -> {
+          let assert Ok(max_health) =
+            loadout.max_health(tables:, loadout:, level: character.level)
+            as "the map refuses a join whose level has no Base Health row"
           let sent = start_place.within_the_worlds_box(place)
           let assert Ok(resource) =
             class_resource.of_class(classes:, class_id: character.class_id)

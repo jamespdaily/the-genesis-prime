@@ -1933,13 +1933,12 @@ pub fn with_the_tables_loadout(
   tables tables: store_tables.Tables,
   class_id class_id: Int,
 ) -> map.Outgoing {
-  let assert map.Joined(unit:, max_health:, incarnation:, clock_origin_ms:, ..) =
-    joined
+  let assert map.Joined(unit:, incarnation:, clock_origin_ms:, ..) = joined
     as "the map took the player"
   let assert Ok(held) =
     loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
     as "the tables hold a Novice set for the class"
-  map.Joined(unit:, loadout: held, max_health:, incarnation:, clock_origin_ms:)
+  map.Joined(unit:, loadout: held, incarnation:, clock_origin_ms:)
 }
 
 /// The connection after the map took a character of the class, with its entry burst,

@@ -562,3 +562,13 @@ pub fn the_entry_sends_an_item_added_for_each_saved_item_with_its_saved_guid_and
   assert entered.loadout.weapon == Item2Id(81_353)
     as "casting reads the weapon from the loadout"
 }
+
+pub fn a_join_whose_gear_has_no_base_health_row_at_the_level_ends_the_connection_naming_the_level_test() -> Nil {
+  use <- owned_test.run(10_000)
+  panic as "shape: #586 failure table: join answered, the gear has no base health row at the level"
+}
+
+pub fn a_connection_that_ends_after_the_save_enters_again_with_the_gear_of_the_saved_items_test() -> Nil {
+  use <- owned_test.run(10_000)
+  panic as "shape: #586 failure table: connection crashes after the save, before 0x933"
+}

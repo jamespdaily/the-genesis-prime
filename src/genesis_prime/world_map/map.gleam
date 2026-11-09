@@ -31,7 +31,7 @@
 ////                                                 (the worn set's visuals, the gear's values) and its health
 ////                                          player = (c1, stay, unit, watch w1, sees)
 ////                                          Watch(w1, Connection(c1))           ─▶ monitors c1
-////   ◀─ Joined(0x262's record of unit, loadout, maximum health, run, the map's clock origin)
+////   ◀─ Joined(0x262's record of unit, loadout, run, the map's clock origin)
 ////                                ◀─ OwnEffect(Reply(caller, Joined(..)))
 ////   ◀─ NotJoined(reason)         when the class and faction have no Novice set or the level no Base Health row:
 ////                                    no unit id is given, no player kept, no watch opened
@@ -644,7 +644,6 @@ pub type Outgoing {
   Joined(
     unit: UnitCreatePlayer,
     loadout: Loadout,
-    max_health: Int,
     incarnation: Int,
     clock_origin_ms: Int,
   )
@@ -2529,7 +2528,6 @@ fn answer(state state: State, unit unit: PlayerUnit) -> Outgoing {
   Joined(
     unit: player_unit.create(unit:, realm_id: state.settings.realm_id),
     loadout: player_unit.loadout(unit:),
-    max_health: player_unit.max_health(unit:),
     incarnation: state.settings.incarnation,
     clock_origin_ms: state.started_ms,
   )

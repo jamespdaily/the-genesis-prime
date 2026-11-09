@@ -384,3 +384,13 @@ pub fn an_equip_is_checked_against_the_entered_character_test() -> Nil {
   assert item_moved.decode(moved.body) == Ok(ItemMoved(item_guid: 9, place: 0))
     as "opcode.0x569: guid 9 at location 0, bag index 0, which is 0"
 }
+
+pub fn a_worn_item_move_the_store_has_not_answered_ends_the_connection_and_the_next_entry_builds_from_the_saved_items_test() -> Nil {
+  use <- owned_test.run(10_000)
+  panic as "shape: #586 failure table: move of a worn item asked, store has not answered"
+}
+
+pub fn two_moves_of_worn_items_in_a_row_wait_behind_each_other_and_rebuild_the_gear_after_each_save_test() -> Nil {
+  use <- owned_test.run(10_000)
+  panic as "shape: #586 failure table: two moves of worn items in a row"
+}

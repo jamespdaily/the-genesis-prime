@@ -156,7 +156,6 @@ pub fn entry_at(
       answer: map.Joined(
         unit: player_unit.create(unit:, realm_id: 1),
         loadout: player_unit.loadout(unit:),
-        max_health: player_unit.max_health(unit:),
         incarnation: 1,
         clock_origin_ms: 0,
       ),

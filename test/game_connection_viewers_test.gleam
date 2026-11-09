@@ -694,20 +694,14 @@ pub fn a_move_of_40_commands_is_sent_to_each_viewer_as_31_and_9_in_order_and_the
 pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x638_and_its_0x262_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = game_connection_support.joining()
-  let assert map.Joined(unit:, loadout:, max_health:, incarnation:, ..) =
+  let assert map.Joined(unit:, loadout:, incarnation:, clock_origin_ms: _) =
     game_connection_support.map_answer(taken)
   let #(state, _) =
     game_connection_support.answer(
       state:,
       taken:,
       outcome: step.Answer(
-        FromMap(map.Joined(
-          unit:,
-          loadout:,
-          max_health:,
-          incarnation:,
-          clock_origin_ms: 600,
-        )),
+        FromMap(map.Joined(unit:, loadout:, incarnation:, clock_origin_ms: 600)),
       ),
     )
   let moves =
@@ -1302,4 +1296,9 @@ pub fn a_shown_units_interrupt_armor_news_is_written_as_0x938_of_stat_21_and_non
   let #(_, taken) = game_connection_support.feed(shown, news_of(77))
   assert support.writes(taken) == []
     as "a unit the viewer's client does not show is written nothing"
+}
+
+pub fn a_viewer_that_leaves_between_the_save_and_the_news_is_dropped_like_other_news_test() -> Nil {
+  use <- owned_test.run(10_000)
+  panic as "shape: #586 failure table: a viewer leaves between the save and the news"
 }

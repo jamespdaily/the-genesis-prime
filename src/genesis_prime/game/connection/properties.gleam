@@ -42,6 +42,7 @@ import genesis_prime/game/player_life
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
+import genesis_prime/table/id.{type UnitProperty2Id}
 import gleam/list
 import gleam/option.{None, Some}
 
@@ -86,6 +87,17 @@ pub fn ended(
       #(session, list.append(armor, lowered))
     }
   }
+}
+
+/// The gear of the player's worn items changes the bases of its properties (an equip, an
+/// unequip, a swap, a delete or a level-up): the same told entries and life changes as a
+/// modifier's.
+pub fn rebased(
+  session _session: Session,
+  now _now: Now,
+  bases _bases: List(#(UnitProperty2Id, Float)),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  panic as "shape: #586 properties.rebased is not built"
 }
 
 /// The session with the properties changed by `change`, and for the entries it

@@ -417,3 +417,8 @@ pub fn an_engineers_camp_mid_suit_tells_each_viewer_removed_with_no_look_test() 
     faction_id: 166,
   ))
 }
+
+pub fn an_unequip_while_a_suit_holds_the_look_sends_no_0x933_and_the_suit_end_shows_the_new_base_test() -> Nil {
+  use <- owned_test.run(10_000)
+  panic as "shape: #586 failure table: unequip while a suit or disguise holds the look"
+}
