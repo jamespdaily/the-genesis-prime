@@ -13,6 +13,7 @@ import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/hit.{Blow, Defence, Offence}
 import genesis_prime/game/start_place.{type Place}
@@ -372,6 +373,7 @@ fn put_worlds(
   content_class_resource.put(key:, classes: class_resource_support.classes())
   content_server_proxy.put(key:, proxies: server_proxy_support.none())
   content_zone_welcome.put(key:, welcomes: zone_welcome_support.none())
+  content_vendor.put(key:, vendors: vendor.none())
   content_creature_kind.put(
     key:,
     kinds: Kinds(
