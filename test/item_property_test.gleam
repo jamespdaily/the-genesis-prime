@@ -15,6 +15,7 @@ import game_connection_support
 import genesis_prime/game/item_property
 import gleam/option.{None, Some}
 import owned_test
+import planted_table.{Integer}
 import world_entry_support
 
 pub fn a_bag_is_a_non_proxy_item_whose_joined_flags_hold_0x100_test() -> Nil {
@@ -46,4 +47,25 @@ pub fn a_bag_is_a_non_proxy_item_whose_joined_flags_hold_0x100_test() -> Nil {
       item2_id: fixture_tables.root("Item2", 4753),
     )
   assert bag_slots == 0x7FFE0000
+}
+
+/// 5423 holds 8 and has no charges. FillItemInfo (0x140444a27 to 0x140444a45)
+/// cuts a bag's size to 1 only when maxStackCount and maxCharges are both above
+/// 1; no client row reaches it, so the rows are changed.
+pub fn a_bag_that_stacks_and_has_charges_opens_one_slot_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let bag = fixture_tables.root("Item2", 5423)
+  let size = fn(tables) {
+    let assert Ok(size) = item_property.bag_size(tables:, item2_id: bag)
+      as "the item's rows are in the tables"
+    size
+  }
+  use tables <- fixture_tables.changed(table: "Item2", id: bag, with: [
+    #("maxCharges", Integer(2)),
+  ])
+  assert size(tables) == Some(1)
+  use tables <- fixture_tables.changed(table: "Item2", id: bag, with: [
+    #("maxCharges", Integer(1)),
+  ])
+  assert size(tables) == Some(8)
 }

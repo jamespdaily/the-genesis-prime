@@ -559,10 +559,12 @@ pub fn stack_limit(
 }
 
 /// The number of inventory slots the item opens when it is worn in a bag slot:
-/// Item2.maxStackCount for a bag, `None` for any other item. A bag is an item
-/// whose joined flags hold 0x100 and whose Item2.flags lack 0x4000, because the
-/// client gives a proxy the joined flags 0x10004 (FillItemInfo 0x1404445d0,
-/// `0x1404445d0.proxy`, `Item2.bags`). Only a missing row is an error.
+/// Item2.maxStackCount for a bag, `None` for any other item; the size is 1
+/// when maxStackCount and maxCharges are both above 1 (FillItemInfo
+/// 0x140444a27 to 0x140444a45). A bag is an item whose joined flags hold 0x100
+/// and whose Item2.flags lack 0x4000, because the client gives a proxy the
+/// joined flags 0x10004 (FillItemInfo 0x1404445d0, `0x1404445d0.proxy`,
+/// `Item2.bags`). Only a missing row is an error.
 pub fn bag_size(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
@@ -571,7 +573,11 @@ pub fn bag_size(
   case
     !is_proxy(rows.item) && int.bitwise_and(rows.joined_flags, bag_flag) != 0
   {
-    True -> Some(rows.item.max_stack_count)
+    True ->
+      case rows.item.max_stack_count > 1 && rows.item.max_charges > 1 {
+        True -> Some(1)
+        False -> Some(rows.item.max_stack_count)
+      }
     False -> None
   }
 }
