@@ -21,7 +21,24 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+    # Gleam and rebar3 come from github.com release downloads, which have answered
+    # 504 for a whole run of setup-beam's own three attempts (about 40 seconds), and
+    # setup-beam has no input for a mirror of them or for more attempts. So a failed
+    # first run is followed by a pause and a second run with the same inputs; it
+    # reuses what the first one installed.
+    - id: beam
+      continue-on-error: true
+      uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+      with:
+        version-file: .tool-versions
+        version-type: strict
+    - name: Wait before installing the toolchain again
+      if: steps.beam.outcome == 'failure'
+      shell: bash
+      run: sleep 60
+    - name: Install the toolchain again
+      if: steps.beam.outcome == 'failure'
+      uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
       with:
         version-file: .tool-versions
         version-type: strict
