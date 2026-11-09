@@ -28,7 +28,7 @@ import genesis_prime/step.{
   ConnectionId, CreatureStart, OwnEffect, OwnEvent, Reply, Send, StartCreature,
   StartServiceTimer, Started, Stop, TimerId, Told, WatchEnded, WatchId,
 }
-import genesis_prime/table/id.{Spell4Id, UnitProperty2Id}
+import genesis_prime/table/id.{Creature2Id, Spell4Id, UnitProperty2Id}
 import genesis_prime/world_map/creature.{
   type State, Retire, Settings, Unwatched, Watched,
 }
@@ -348,8 +348,8 @@ fn kinds_of(sent: List(#(Int, creature.Outgoing))) -> List(String) {
         "removal to " <> int.to_string(one.0)
       creature.News(stay: _, news: PeerNews(news: CreatureAppeared(..), ..)) ->
         "creation to " <> int.to_string(one.0)
-      creature.News(..) | creature.FightTold(..) | creature.KillCredit(..) ->
-        "other"
+      creature.KillCredit(..) -> "credit to " <> int.to_string(one.0)
+      creature.News(..) | creature.FightTold(..) -> "other"
     }
   })
 }
@@ -365,18 +365,72 @@ pub fn a_creature_answers_the_caster_before_it_tells_any_viewer_its_health_and_d
   assert kinds_of(outgoing(taken))
     == [
       "answer to 2",
+      "credit to 2",
       "health to 2",
       "health to 5",
       "death to 2",
       "death to 5",
     ]
-    as "the answer goes first, one sender in one order: the caster's connection knows the strike before it is told the health it left, so it can hold the news for the go (genesis_prime/game/strike)"
+    as "the answer goes first, one sender in one order: the caster's connection knows the strike before it is told the health it left, so it can hold the news for the go (genesis_prime/game/strike); the killer's credit follows its answer"
   assert support.effects_of(taken)
     |> list.any(fn(effect) {
       effect
       == OwnEffect(StartServiceTimer(timer: TimerId(1), after_ms: 60_000))
     })
     as "the kill starts the corpse timer for the kind's respawn time"
+}
+
+/// The credits among what the step sends: the connection and the credit.
+fn credits(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(#(Int, creature.Outgoing)) {
+  list.filter(outgoing(taken), fn(one) {
+    case one.1 {
+      creature.KillCredit(..) -> True
+      creature.Struck(..) | creature.News(..) | creature.FightTold(..) -> False
+    }
+  })
+}
+
+pub fn a_killing_strike_sends_the_killer_one_credit_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The Beast has 52 health (spawn_support.battle_beast): a strike of 10 leaves it
+  // standing, one of 60 kills it.
+  let #(wounded, taken) =
+    feed(
+      state: watched_by_two(),
+      at_ms: 6000,
+      event: OwnEvent(Told(strike_of(damage: 10, cast_id: 1))),
+    )
+  assert credits(taken) == []
+    as "hit.Landed killed bit: a strike that leaves the creature standing is no kill"
+  let #(dead, taken) =
+    feed(
+      state: wounded,
+      at_ms: 6100,
+      event: OwnEvent(Told(strike_of(damage: 60, cast_id: 2))),
+    )
+  assert credits(taken)
+    == [
+      #(
+        2,
+        creature.KillCredit(
+          stay: map_support.stay(count: 2),
+          unit_id: 7,
+          creature_id: Creature2Id(73_464),
+          level: 1,
+        ),
+      ),
+    ]
+    as "the killing blow sends the connection of the player who struck it, for the stay the strike came from, one credit naming the unit, the Creature2 row of the spawn (73464) and its level 1 (opcode.0x262.creature_level)"
+  let #(_, taken) =
+    feed(
+      state: dead,
+      at_ms: 6200,
+      event: OwnEvent(Told(strike_of(damage: 60, cast_id: 3))),
+    )
+  assert credits(taken) == []
+    as "a strike on the corpse is refused as dead (Refused(Dead)) and credits nothing"
 }
 
 pub fn a_creature_struck_while_it_lies_dead_refuses_without_news_test() -> Nil {

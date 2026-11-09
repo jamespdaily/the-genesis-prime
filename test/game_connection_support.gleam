@@ -451,6 +451,22 @@ pub fn joining_saved(
   character character: store.Character,
   saved_health saved_health: Option(Int),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
+  joining_holding(
+    in_character_select:,
+    character:,
+    saved_health:,
+    saved_experience: None,
+  )
+}
+
+/// The same when the character also has the experience its last save kept
+/// (`None` for none).
+pub fn joining_holding(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+  saved_health saved_health: Option(Int),
+  saved_experience saved_experience: Option(Int),
+) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) = playing_from(in_character_select:, character_id: 42)
   answer(
     state:,
@@ -461,7 +477,7 @@ pub fn joining_saved(
           character,
           character_support.epoch(1),
           saved_health,
-          None,
+          saved_experience,
           world_entry_support.novice_items(character:),
         )),
       ),
@@ -571,6 +587,23 @@ pub fn entered_saved(
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) =
     joining_saved(in_character_select:, character:, saved_health:)
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
+}
+
+/// `in_character_select` after the store gave `character` with the experience its
+/// last save kept and the map took it: the burst is written.
+pub fn entered_holding(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+  saved_experience saved_experience: Option(Int),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) =
+    joining_holding(
+      in_character_select:,
+      character:,
+      saved_health: None,
+      saved_experience:,
+    )
   answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
 }
 

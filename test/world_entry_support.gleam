@@ -19,7 +19,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/player_unit
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import map_support
 import novice_tables
 import place_support
@@ -33,6 +33,16 @@ pub fn loaded(
   character character: Character,
   items items: List(HeldItem),
 ) -> #(world_entry.State, world_entry.Loaded) {
+  loaded_with_experience(tables:, character:, items:, saved_experience: None)
+}
+
+/// The same, when the store also holds the character's saved experience.
+pub fn loaded_with_experience(
+  tables tables: table_store.Tables,
+  character character: Character,
+  items items: List(HeldItem),
+  saved_experience saved_experience: Option(Int),
+) -> #(world_entry.State, world_entry.Loaded) {
   let assert Ok(body) = play_character.encode(PlayCharacter(character_id: 42))
     as "a character id fits the message"
   let assert Ok(#(state, _asks)) =
@@ -45,7 +55,7 @@ pub fn loaded(
         character:,
         session_epoch: character_support.epoch(1),
         saved_health: None,
-        saved_experience: None,
+        saved_experience:,
         items:,
       ),
       connection: ConnectionId(1),

@@ -581,8 +581,15 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.Level(..) ->
-      panic as "the build writes 0x938 stat 10 for a unit the viewer shows, once the schema holds tag 10"
+    client_connection.Level(level:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(session, [
+        connection_state.to_client(
+          session,
+          connection_frames.level_frame(unit_id:, level:),
+        ),
+      ])
+    }
     client_connection.PropertiesChanged(properties:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(session, [

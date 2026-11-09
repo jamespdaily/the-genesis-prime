@@ -27,6 +27,7 @@ import genesis_prime/message/create_character_result.{type CreateCharacterResult
 import genesis_prime/message/delete_character_result.{type DeleteCharacterResult}
 import genesis_prime/message/disconnect_notice.{type DisconnectNotice}
 import genesis_prime/message/enter_world.{type EnterWorld}
+import genesis_prime/message/experience_gained.{type ExperienceGained}
 import genesis_prime/message/game_server_handoff.{type GameServerHandoff}
 import genesis_prime/message/innate_index_set.{type InnateIndexSet}
 import genesis_prime/message/item_added.{type ItemAdded}
@@ -145,6 +146,7 @@ pub type ServerMessage {
   UnitHealth(message: UnitHealth)
   PlayerHealth(message: PlayerHealth)
   UnitStatChanged(message: UnitStatChanged)
+  ExperienceGained(message: ExperienceGained)
   UnitFloatStatChanged(message: UnitFloatStatChanged)
   UnitPropertiesChanged(message: UnitPropertiesChanged)
   UnitDeathState(message: UnitDeathState)
@@ -338,6 +340,8 @@ pub fn decode(
     0x092F -> decoded(body, message_id, player_health.decode, PlayerHealth)
     0x0938 ->
       decoded(body, message_id, unit_stat_changed.decode, UnitStatChanged)
+    0x01AC ->
+      decoded(body, message_id, experience_gained.decode, ExperienceGained)
     0x0935 ->
       decoded(
         body,
@@ -434,6 +438,7 @@ pub fn name(message: ServerMessage) -> String {
     UnitHealth(..) -> "unit_health"
     PlayerHealth(..) -> "player_health"
     UnitStatChanged(..) -> "unit_stat_changed"
+    ExperienceGained(..) -> "experience_gained"
     UnitFloatStatChanged(..) -> "unit_float_stat_changed"
     UnitPropertiesChanged(..) -> "unit_properties_changed"
     UnitDeathState(..) -> "unit_death_state"

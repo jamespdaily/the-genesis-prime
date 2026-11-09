@@ -13,7 +13,8 @@
 ////   gain 0, or the player at the highest level ─▶ nothing changes, nothing is sent
 ////   else experience' = experience + gain, at most the highest level's minXpForLevel
 ////        level'      = level.for_experience(experience')
-////        ─▶ GainSent(gain, unit)             0x1ac {gain, 0, 0, 2, unit}
+////        ─▶ GainSent(experience' − experience, unit)   0x1ac {added, 0, 0, 2, unit}: the
+////           amount added, so the client's experience stays the server's at the stop
 ////        ─▶ LevelRose(level')                0x938 {self, 10, level'}, and a Level news to each viewer
 ////           (only when level' is above level, once for a crossing of several levels)
 //// ```
@@ -36,10 +37,16 @@
 //// - **Not here:** kill objectives, quest experience (0x1ac kind 3), group sharing and
 ////   tagging, rest experience, and the stats and points a level gives.
 
+import genesis_prime/game/level
+import genesis_prime/table/creature2
+import genesis_prime/table/creature2_difficulty
 import genesis_prime/table/id.{type Creature2Id, XpPerLevelId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
 import genesis_prime/world_map/game_number.{type GameNumbers}
+import gleam/float
+import gleam/int
+import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 
@@ -78,33 +85,97 @@ pub fn entering(
   level level: Int,
   saved saved: Option(Int),
 ) -> Result(Int, Nil) {
+  use row <- result.map(xp_per_level.get(tables:, id: XpPerLevelId(level)))
   case saved {
-    Some(experience) -> Ok(experience)
-    None ->
-      xp_per_level.get(tables:, id: XpPerLevelId(level))
-      |> result.map(fn(row) { row.min_xp_for_level })
+    Some(experience) -> experience
+    None -> row.min_xp_for_level
   }
 }
 
 /// The experience a kill of the creature gives a player of `player_level`: the formula
-/// in the module's head, rounded, 0 for a gap that gives nothing and for a player at the
-/// highest level.
+/// in the module's head, rounded, 0 for a gap that gives nothing. The creature was
+/// spawned from its Creature2 row and that row's Creature2Difficulty row, which the
+/// spawn refuses to go without, and the level-gap multipliers are nine numbers
+/// (`game_number`).
 fn gain(
-  credit _credit: Credit,
-  player_level _player_level: Int,
-  tables _tables: table_store.Tables,
-  numbers _numbers: GameNumbers,
+  credit credit: Credit,
+  player_level player_level: Int,
+  highest highest: Int,
+  tables tables: table_store.Tables,
+  numbers numbers: GameNumbers,
 ) -> Int {
-  panic as "the build works out the gain: round(baseQuestXpPerLevel x fraction x difficulty weight x gap multiplier)"
+  let assert Ok(row) =
+    xp_per_level.get(
+      tables:,
+      id: XpPerLevelId(int.clamp(credit.level, min: 1, max: highest)),
+    )
+    as "the load requires an XpPerLevel row for every level from 1 to the highest"
+  let assert Ok(creature) = creature2.get(tables:, id: credit.creature_id)
+    as "a creature is spawned from a Creature2 row"
+  let assert Ok(difficulty) =
+    creature2_difficulty.get(
+      tables:,
+      id: creature2.creature2_difficulty_id(creature),
+    )
+    as "the spawn is refused without the creature's Creature2Difficulty row"
+  let gap = int.clamp(credit.level - player_level, min: -4, max: 4)
+  let assert Ok(multiplier) =
+    numbers.kill_experience_multipliers |> list.drop(gap + 4) |> list.first
+    as "the nine level-gap multipliers are loaded"
+  float.round(
+    int.to_float(row.base_quest_xp_per_level)
+    *. numbers.kill_experience_fraction
+    *. difficulty.cluster_contribution_value_difficulty
+    *. multiplier,
+  )
 }
 
-/// The progress after a credit, and what the connection sends for it.
+/// The progress after a credit, and what the connection sends for it: a gain that
+/// adds nothing (a gap that gives 0, or the highest level) changes and sends nothing,
+/// the gain sent is what was added after the stop at the highest level's
+/// minXpForLevel, and a level never falls.
 pub fn credited(
   progress progress: Progress,
   credit credit: Credit,
   tables tables: table_store.Tables,
   numbers numbers: GameNumbers,
 ) -> Credited {
-  let _gain = gain(credit:, player_level: progress.level, tables:, numbers:)
-  panic as "the build adds the gain to the experience, finds the level, and asks for 0x1ac and the level rise"
+  let unchanged = Credited(progress:, effects: [])
+  let assert Ok(highest) = level.highest_level(tables)
+    as "the load requires GameFormula row 145"
+  case progress.level >= highest {
+    True -> unchanged
+    False -> {
+      let assert Ok(top) = xp_per_level.get(tables:, id: XpPerLevelId(highest))
+        as "the load requires the XpPerLevel row of the highest level"
+      let gain =
+        gain(credit:, player_level: progress.level, highest:, tables:, numbers:)
+      let experience = int.min(progress.experience + gain, top.min_xp_for_level)
+      case experience > progress.experience {
+        False -> unchanged
+        True -> added_to(progress:, experience:, credit:, tables:)
+      }
+    }
+  }
+}
+
+/// The progress once `experience` is more than it was: the gain sent is the
+/// difference, and the level rises when the experience reaches a higher one.
+fn added_to(
+  progress progress: Progress,
+  experience experience: Int,
+  credit credit: Credit,
+  tables tables: table_store.Tables,
+) -> Credited {
+  let assert Ok(made) = level.for_experience(tables:, experience:)
+    as "an experience up to the highest level's minimum has a level"
+  let reached = int.max(made, progress.level)
+  let rise = case reached > progress.level {
+    True -> [LevelRose(level: reached)]
+    False -> []
+  }
+  Credited(progress: Progress(experience:, level: reached), effects: [
+    GainSent(gain: experience - progress.experience, unit_id: credit.unit_id),
+    ..rise
+  ])
 }

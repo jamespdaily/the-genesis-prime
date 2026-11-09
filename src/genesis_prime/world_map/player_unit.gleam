@@ -319,6 +319,30 @@ pub fn with_shield(
   )
 }
 
+/// The player's 0x262 record with `level` as its stat 10, the level the client shows
+/// (`opcode.0x938`) and a viewer created later is sent.
+pub fn with_level(
+  record record: UnitCreatePlayer,
+  level level: Int,
+) -> UnitCreatePlayer {
+  UnitCreatePlayer(
+    ..record,
+    tail: UnitCreateTail(
+      ..record.tail,
+      stats: list.map(record.tail.stats, fn(stat) {
+        case stat.stat_id == unit_fields.level_stat {
+          True ->
+            unit_fields.integer_stat(
+              stat_id: unit_fields.level_stat,
+              value: level,
+            )
+          False -> stat
+        }
+      }),
+    ),
+  )
+}
+
 /// The player's 0x262 record with its class's resource, as its own client is
 /// created with it: the stat of the resource's slot at its start, in the float form
 /// (`opcode.0x262.resource_stats`), and the slot's ResourceMax property at its

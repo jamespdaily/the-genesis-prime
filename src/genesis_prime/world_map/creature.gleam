@@ -803,6 +803,7 @@ fn struck(
         ]
         None -> []
       }
+      let credit = credit_for(state:, tell:, reaction:)
       let state = State(..state, life: reaction.life)
       let input = case
         reaction.answer.outcome,
@@ -835,9 +836,36 @@ fn struck(
       }
       #(
         state,
-        Effects(list.flatten([answer, news, corpse, fought, controlled])),
+        Effects(
+          list.flatten([answer, credit, news, corpse, fought, controlled]),
+        ),
       )
     }
+  }
+}
+
+/// The kill credit for the blow that killed the creature: a player's strike that left
+/// a corpse sends its connection the creature's row and level, once. A creature
+/// dies once per stay, so no other strike reaches a corpse.
+fn credit_for(
+  state state: State,
+  tell tell: StrikeTell,
+  reaction reaction: creature_life.Reaction,
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  case reaction.corpse_for_ms, tell.striker {
+    Some(..), PlayerStriker(stay:, ..) -> [
+      OwnEffect(Send(
+        to: tell.from,
+        message: KillCredit(
+          stay:,
+          unit_id: state.settings.creature.unit_id,
+          creature_id: state.settings.spawn.creature_id,
+          level: state.settings.spawn.level,
+        ),
+      )),
+    ]
+    Some(..), CreatureStriker -> []
+    None, PlayerStriker(..) | None, CreatureStriker -> []
   }
 }
 
