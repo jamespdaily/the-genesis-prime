@@ -11,24 +11,27 @@ import genesis_prime/message/item_added
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{
-  type Character, AccountId, Character, CharacterId, NameStands,
+  type Character, type HeldItem, AccountId, Character, CharacterId, HeldItem,
+  NameStands,
 }
-import genesis_prime/table/id.{ClassId, RaceId}
+import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/player_unit
 import gleam/list
 import gleam/option.{None, Some}
 import map_support
+import novice_tables
 import place_support
 import spawn_support
 import unit_support
 
-/// What the store's answer to a play of the character leads to on these tables:
-/// the map is asked, or the play is refused.
+/// What the store's answer to a play of the character leads to on these tables,
+/// when it holds these items: the map is asked, or the play is refused.
 pub fn loaded(
   tables tables: table_store.Tables,
   character character: Character,
+  items items: List(HeldItem),
 ) -> #(world_entry.State, world_entry.Loaded) {
   let assert Ok(body) = play_character.encode(PlayCharacter(character_id: 42))
     as "a character id fits the message"
@@ -42,6 +45,7 @@ pub fn loaded(
         character:,
         session_epoch: character_support.epoch(1),
         saved_health: None,
+        items:,
       ),
       connection: ConnectionId(1),
       stay: map_support.stay(count: 1),
@@ -51,11 +55,46 @@ pub fn loaded(
   #(state, loaded)
 }
 
-/// What a character's entry decides on these tables: its effects, in order, and
-/// the player the connection keeps.
+/// The items a character of a created class and faction holds after its create:
+/// the Novice set of its CharacterCreation row at location 0, each in the bag
+/// index of its slot, with the guids 1 to 7 in bag order. A character of any
+/// other class or faction holds none.
+pub fn novice_items(character character: Character) -> List(HeldItem) {
+  case
+    list.find(novice_tables.sets(), fn(set) {
+      set.class_id == character.class_id.value
+      && set.faction_id == character.faction_id
+    })
+  {
+    Ok(set) ->
+      list.index_map(novice_tables.equipped_of(set:), fn(pair, index) {
+        HeldItem(
+          item_guid: index + 1,
+          item2_id: Item2Id(pair.0),
+          location: 0,
+          bag_index: pair.1,
+          stack_count: 1,
+        )
+      })
+    Error(Nil) -> []
+  }
+}
+
+/// What a character's entry decides on these tables, with the Novice set its
+/// create stored: its effects, in order, and the player the connection keeps.
 pub fn entry(
   tables tables: table_store.Tables,
   character character: Character,
+) -> #(List(world_entry.Effect), world_entry.Entered) {
+  entry_holding(tables:, character:, items: novice_items(character:))
+}
+
+/// What a character's entry decides on these tables when the store holds these
+/// items for it: its effects, in order, and the player the connection keeps.
+pub fn entry_holding(
+  tables tables: table_store.Tables,
+  character character: Character,
+  items items: List(HeldItem),
 ) -> #(List(world_entry.Effect), world_entry.Entered) {
   let place =
     place_support.at(
@@ -65,7 +104,8 @@ pub fn entry(
       y: -853.0,
       z: -560.0,
     )
-  let assert #(_, world_entry.Join(state:, ..)) = loaded(tables:, character:)
+  let assert #(_, world_entry.Join(state:, ..)) =
+    loaded(tables:, character:, items:)
     as "the store holds the character, its place and its level's row"
   let unit =
     unit_support.novice_unit(tables:, character:, place:, unit_id: 1, body: [])

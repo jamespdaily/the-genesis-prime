@@ -39,15 +39,15 @@ import genesis_prime/message/ability_tiers
 import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/float32
+import genesis_prime/message/item_added
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_property.{type UnitProperty}
-import genesis_prime/store.{type Character}
+import genesis_prime/store.{type Character, HeldItem}
 import genesis_prime/table/id.{Item2Id, Spell4BaseId}
 import genesis_prime/world_map/unit_fields
 import gleam/float
 import gleam/int
 import gleam/list
-import novice_tables
 import owned_test
 import world_entry_support
 
@@ -84,16 +84,6 @@ fn entering(
   let #(effects, entered) =
     world_entry_support.entry(tables: character_tables.shared(), character:)
   #(world_entry_support.frames_of(effects:), entered)
-}
-
-/// The 0x111 of the entry at location 0, as the bag index and the item id, in
-/// the order sent.
-fn equipped(frames frames: List(Frame)) -> List(#(Int, Int)) {
-  world_entry_support.items_added(frames:)
-  |> list.filter(fn(added) { added.held_item.item.location == 0 })
-  |> list.map(fn(added) {
-    #(added.held_item.item.bag_index, added.held_item.item.item_id)
-  })
 }
 
 fn player_of(frames frames: List(Frame)) -> UnitCreatePlayer {
@@ -450,31 +440,7 @@ pub fn the_player_the_connection_keeps_holds_its_loadout_and_its_max_health_test
     as "the typed gear: the Engineer's heavy armor, 250"
 }
 
-pub fn the_whole_novice_set_is_held_at_location_0_in_the_bag_index_of_each_slot_for_every_class_and_faction_test() -> Nil {
-  use <- owned_test.run(10_000)
-  list.each(novice_tables.sets(), fn(set) {
-    let #(frames, _) =
-      entering(character: world_entry_support.character(
-        class: set.class_id,
-        faction: set.faction_id,
-        level: 1,
-      ))
-    assert equipped(frames:)
-      == list.map(novice_tables.equipped_of(set:), fn(pair) {
-        #(pair.1, pair.0)
-      })
-      as {
-        "ItemSlot.equippedSlotFlags, CharacterCreation row "
-        <> int.to_string(set.creation_id)
-        <> ": the row's seven items are held at location 0, chest 0, legs 1, shoulder 3, feet 4, hands 5, shield 15 and weapon 16"
-      }
-    assert list.map(equipped(frames:), fn(pair) { pair.0 })
-      == [0, 1, 3, 4, 5, 15, 16]
-      as "every class and faction holds one item in each of these slots"
-  })
-}
-
-pub fn every_item_the_entry_holds_has_its_own_guid_that_is_not_0_test() -> Nil {
+pub fn the_abilities_items_have_guids_of_their_own_that_are_not_0_and_not_a_held_items_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(classes(), fn(class) {
     let #(frames, _) =
@@ -483,15 +449,114 @@ pub fn every_item_the_entry_holds_has_its_own_guid_that_is_not_0_test() -> Nil {
         faction: 167,
         level: 1,
       ))
-    let guids =
-      list.map(world_entry_support.items_added(frames:), fn(added) {
-        added.held_item.item.item_guid
-      })
-    assert list.length(guids) == 11
-      as "seven equipped items, three abilities and the innate"
-    assert list.length(list.unique(guids)) == 11
-      as "opcode.0x111.equipped_set: each piece has a unique guid (0x140569d30 keeps it, and a later message finds the item by it)"
-    assert !list.contains(guids, 0)
-      as "opcode.0x111.equipped_set: each piece has a non-zero guid"
+    let added = world_entry_support.items_added(frames:)
+    let #(abilities, held) =
+      list.partition(added, fn(added) { added.held_item.item.location == 4 })
+    let ability_guids =
+      list.map(abilities, fn(added) { added.held_item.item.item_guid })
+    let held_guids =
+      list.map(held, fn(added) { added.held_item.item.item_guid })
+    assert list.length(ability_guids) == 4
+      as "opcode.0x111.ability_bag: the three abilities and the innate"
+    assert list.length(list.unique(ability_guids)) == 4
+      as "opcode.0x111.guid: each ability item has a guid of its own"
+    assert !list.contains(ability_guids, 0)
+      as "opcode.0x111.guid: a guid is never 0"
+    assert !list.any(ability_guids, fn(guid) { list.contains(held_guids, guid) })
+      as "opcode.0x111.guid: the client finds an item by its guid, so an ability item never takes the guid of a held item"
   })
+}
+
+pub fn the_entry_sends_an_item_added_for_each_saved_item_with_its_saved_guid_and_place_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  let saved = [
+    HeldItem(
+      item_guid: 12,
+      item2_id: Item2Id(81_366),
+      location: 1,
+      bag_index: 3,
+      stack_count: 5,
+    ),
+    HeldItem(
+      item_guid: 5_000_000_001,
+      item2_id: Item2Id(81_353),
+      location: 0,
+      bag_index: 16,
+      stack_count: 1,
+    ),
+    HeldItem(
+      item_guid: 7,
+      item2_id: Item2Id(8535),
+      location: 0,
+      bag_index: 15,
+      stack_count: 1,
+    ),
+  ]
+  let #(effects, entered) =
+    world_entry_support.entry_holding(
+      tables: character_tables.shared(),
+      character:,
+      items: saved,
+    )
+  let frames = world_entry_support.frames_of(effects:)
+  let added = world_entry_support.items_added(frames:)
+  let held = fn(added: item_added.ItemAdded) {
+    let item = added.held_item.item
+    #(
+      item.location,
+      item.bag_index,
+      item.item_guid,
+      item.item_id,
+      item.stack_count,
+    )
+  }
+  assert list.take(list.map(added, held), 3)
+    == [
+      #(0, 15, 7, 8535, 1),
+      #(0, 16, 5_000_000_001, 81_353, 1),
+      #(1, 3, 12, 81_366, 5),
+    ]
+    as "opcode.0x111.guid: the message carries the item's whole 64-bit guid, so a guid above 2^32 and one at inventory 1/3 go out as saved; the items go in the order of their places, by location then bag index (the order the store reads them in, whatever the order of the list)"
+  assert list.map(added, fn(added) { added.held_item.item.location })
+    == [0, 0, 1, 4, 4, 4, 4]
+    as "one item added for each saved item and none more for the loadout's gear; the three abilities and the innate (location 4, opcode.0x111.ability_bag) follow as before"
+  assert list.all(added, fn(added) { added.held_item.item.item_guid != 0 })
+    as "opcode.0x111.equipped_set: a guid is never 0"
+  assert entered.items == saved
+    as "the player the connection keeps holds the items as they were saved"
+  let ids = cast_support.ids(frames:)
+  let #(before_tiers, from_tiers) =
+    list.split_while(ids, fn(id) { id != 0x01A0 })
+  assert list.count(before_tiers, fn(id) { id == 0x0111 }) == 7
+    && !list.contains(from_tiers, 0x0111)
+    as "every item added, the three saved and the four abilities, comes before the tiers (0x1a0) and the action set"
+  assert entered.loadout.weapon == Item2Id(81_353)
+    && entered.loadout.weapon_slot == 16
+    as "casting still reads the weapon from the loadout (0x1403afb10: location 0, index 16)"
+
+  let #(effects, entered) =
+    world_entry_support.entry_holding(
+      tables: character_tables.shared(),
+      character: world_entry_support.character(class: 2, faction: 166, level: 1),
+      items: [],
+    )
+  let frames = world_entry_support.frames_of(effects:)
+  let added = world_entry_support.items_added(frames:)
+  assert list.map(added, fn(added) { added.held_item.item.location })
+    == [4, 4, 4, 4]
+    as "a character saved before items were stored holds no gear; its three abilities and the innate go out at location 4 (opcode.0x111.ability_bag)"
+  assert list.map(added, fn(added) { added.held_item.item.item_id })
+    == [26_468, 25_473, 25_635, 31_779]
+    as "SpellLevel level 1 of the Engineer and its innate's Spell4Base id, as with gear"
+  assert list.length(
+      list.filter(cast_support.ids(frames:), fn(id) {
+        id == 0x01A0 || id == 0x019D
+      }),
+    )
+    == 2
+    as "the tiers (0x1a0) and the action set (0x19d) go out as before"
+  assert entered.loadout.weapon == Item2Id(81_353)
+    as "casting reads the weapon from the loadout"
 }

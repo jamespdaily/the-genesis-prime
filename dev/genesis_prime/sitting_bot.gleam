@@ -282,7 +282,8 @@ fn place_of(
 
 /// The id of the bot's character. One transaction makes the bot's account unless
 /// it is there (`on conflict do nothing`), takes the account's row lock, makes the
-/// character unless the account has it, and reads it, so a run that begins beside
+/// character unless the account has it, gives a character that holds nothing
+/// its Novice set, and reads it, so a run that begins beside
 /// another waits at the lock and finds the character the other made. A
 /// "Sitting Bot" that another account holds breaks the name's unique index, the
 /// transaction is undone and nothing is made.
@@ -301,6 +302,11 @@ fn bot_character(pool pool: pog.Connection) -> Result(Int, SeatFailure) {
       ))
       use _ <- result.try(sql.lock_bot_account(connection, bot.login_name))
       use _ <- result.try(sql.insert_bot_character(
+        connection,
+        bot.login_name,
+        character_name,
+      ))
+      use _ <- result.try(sql.insert_bot_items(
         connection,
         bot.login_name,
         character_name,

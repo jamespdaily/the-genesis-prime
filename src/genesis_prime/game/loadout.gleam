@@ -418,11 +418,13 @@ pub fn max_health(
   })
 }
 
-/// The guid of the item a character holds at a location and bag index: the
-/// character above bit 41, the location (9 bits) in bits 32 to 40 and the bag
-/// index (32 bits) below, so no two held slots of a character, and no two
-/// characters, share one. A server choice: the client keys held items by
-/// location and index and only keeps the guid (0x140569d30).
+/// The guid of the ability item a character holds at a bag index of the ability
+/// location (4): the character above bit 41, the location (9 bits) in bits 32
+/// to 40 and the bag index (32 bits) below, so no two ability slots of a
+/// character, and no two characters, share one. Ability items are not saved:
+/// the client keeps only the low 32 bits of an ability's guid and reads it by
+/// slot (`opcode.0x111.ability_guid`). Every other held item has the guid its
+/// saved row was given.
 pub fn item_guid(
   character_number character_number: Int,
   location location: Int,

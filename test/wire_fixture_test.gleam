@@ -1,6 +1,7 @@
 //// The fixture beside a wire recording (genesis_prime/wire_recording/fixture):
-//// the rows of the session's account and its characters, and where the id
-//// sequences stood, as data-only SQL a replay applies after the migrations.
+//// the rows of the session's account, its characters and their held items, and
+//// where the id sequences stood, as data-only SQL a replay applies after the
+//// migrations.
 //// Expected values come from these places.
 //// - The rows the tests insert, and the tables' columns in
 ////   `priv/migrations/0001_account_and_character.sql` through
@@ -21,6 +22,7 @@ import genesis_prime/wire_recording/fixture.{
 }
 import gleam/dynamic/decode
 import gleam/erlang/process
+import gleam/int
 import gleam/list
 import gleam/string
 import owned_test
@@ -73,6 +75,10 @@ fn insert_rows(pool: pog.Connection) -> Nil {
     pool,
     "insert into character (character_id, account_id, session_epoch, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z, look_labels, look_values, bones, needs_rename) overriding system value values (6, 4, 0, 'Oneil Entry', 0, 1, 1, 167, 1, 0, 3460, 6009, 29.1285991668701, -853.87158203125, -560.18798828125, '{2,4,7}', '{1,2,10}', '{0,1065353216}', true)",
   )
+  run(
+    pool,
+    "insert into character_item (item_guid, character_id, item2_id, location, bag_index, stack_count) overriding system value values (7, 1, 81359, 0, 0, 1), (11, 1, 8534, 0, 15, 2), (12, 2, 81344, 0, 1, 1), (20, 6, 81346, 0, 16, 1)",
+  )
 }
 
 /// Every column the fixture keeps, as one text for each row, so two databases
@@ -88,7 +94,12 @@ fn rows(pool: pog.Connection) -> List(String) {
       pool,
       "select concat_ws('|', character_id, account_id, session_epoch, save_sequence, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x::text, position_y::text, position_z::text, rotation_yaw::text, rotation_pitch::text, rotation_roll::text, look_labels::text, look_values::text, bones::text, needs_rename::text, coalesce(health::text, 'null')) from character order by character_id",
     )
-  list.append(accounts, characters)
+  let items =
+    query_texts(
+      pool,
+      "select concat_ws('|', item_guid, character_id, item2_id, location, bag_index, stack_count) from character_item order by item_guid",
+    )
+  list.flatten([accounts, characters, items])
 }
 
 fn query_texts(pool: pog.Connection, sql: String) -> List(String) {
@@ -121,8 +132,12 @@ pub fn the_rows_of_the_named_accounts_written_and_applied_to_a_new_database_are_
       "1|1|3|4|Tess Renamed|1|1|1|167|3|0|426|648|4110.71|-658.6249|-5145.48|1.5|-0.25|0.5|{}|{}|{}|false|512",
       "2|1|0|0|Nova Entry|0|1|1|167|1|0|3460|6009|29.1286|-853.8716|-560.188|0|0|0|{2,4,7}|{1,2,10}|{0,1065353216}|true|null",
       "6|4|0|0|Oneil Entry|0|1|1|167|1|0|3460|6009|29.1286|-853.8716|-560.188|0|0|0|{2,4,7}|{1,2,10}|{0,1065353216}|true|null",
+      "7|1|81359|0|0|1",
+      "11|1|8534|0|15|2",
+      "12|2|81344|0|1|1",
+      "20|6|81346|0|16|1",
     ]
-    as "every account and character with its id, its bytes, the numbers that fence a save, the way it faces, its look, its rename mark and its saved health (none stays NULL), as inserted"
+    as "every account and character with its id, its bytes, the numbers that fence a save, the way it faces, its look, its rename mark and its saved health (none stays NULL), and every held item with its own guid, character, item, place and stack, as inserted"
   assert rows(source) == rows(target)
     as "and the same as the database the fixture was written from"
 }
@@ -135,7 +150,7 @@ pub fn the_fixtures_columns_are_the_tables_columns_but_created_at_test() -> Nil 
   let path = path_in(folder)
   assert fixture.write(source, path, ["genesis"]) == Ok(Nil)
   let assert Ok(text) = simplifile.read(path) as "the fixture reads"
-  list.each(["account", "character"], fn(table) {
+  list.each(["account", "character", "character_item"], fn(table) {
     let assert Ok(statement) =
       string.split(text, ";\n")
       |> list.find(fn(statement) {
@@ -180,8 +195,11 @@ pub fn the_fixture_holds_only_the_named_accounts_and_their_characters_test() -> 
       "1|genesis|00005c27ff|0a0d5c|01234567-89ab-cdef-0123-456789abcdef",
       "1|1|3|4|Tess Renamed|1|1|1|167|3|0|426|648|4110.71|-658.6249|-5145.48|1.5|-0.25|0.5|{}|{}|{}|false|512",
       "2|1|0|0|Nova Entry|0|1|1|167|1|0|3460|6009|29.1286|-853.8716|-560.188|0|0|0|{2,4,7}|{1,2,10}|{0,1065353216}|true|null",
+      "7|1|81359|0|0|1",
+      "11|1|8534|0|15|2",
+      "12|2|81344|0|1|1",
     ]
-    as "the named account and both its characters, and no other"
+    as "the named account, both its characters and their items, and no other account's character or item"
 }
 
 pub fn a_login_name_the_database_has_no_account_for_is_refused_and_no_file_is_made_test() -> Nil {
@@ -226,6 +244,21 @@ pub fn the_fixture_is_data_only_sql_with_the_accounts_before_the_characters_test
   let assert Ok(#(account_at, _)) = last_account as "an account"
   assert account_at < character_at
     as "a character's account is inserted before it, whatever the foreign key"
+  let first_item =
+    list.index_map(statements, fn(statement, index) { #(index, statement) })
+    |> list.find(fn(entry) {
+      string.starts_with(entry.1, "insert into character_item ")
+    })
+  let last_character =
+    list.index_map(statements, fn(statement, index) { #(index, statement) })
+    |> list.filter(fn(entry) {
+      string.starts_with(entry.1, "insert into character ")
+    })
+    |> list.last
+  let assert Ok(#(item_at, _)) = first_item as "an item"
+  let assert Ok(#(last_character_at, _)) = last_character as "a character"
+  assert last_character_at < item_at
+    as "an item's character is inserted before it, whatever the foreign key"
 }
 
 /// Inserts an account by sequence, with the one name the sequence tests use.
@@ -302,6 +335,66 @@ pub fn a_sequence_that_was_never_used_gives_1_after_the_fixture_test() -> Nil {
   assert fixture.apply(target, path) == Ok(Nil)
   assert next_character_id(target) == "1"
     as "no character id was ever given: the next is 1"
+}
+
+/// An item of character 1 at this bag index of the equipped slots, inserted as
+/// the server inserts one: its guid comes from the sequence.
+fn insert_item(pool: pog.Connection, bag_index: Int) -> Nil {
+  run(
+    pool,
+    "insert into character_item (character_id, item2_id, location, bag_index, stack_count) values (1, 81359, 0, "
+      <> int.to_string(bag_index)
+      <> ", 1)",
+  )
+}
+
+/// The guid the next item of the database gets.
+fn next_item_guid(pool: pog.Connection) -> String {
+  let assert [guid] =
+    query_texts(
+      pool,
+      "insert into character_item (character_id, item2_id, location, bag_index, stack_count) values (1, 81359, 1, 0, 1) returning item_guid::text",
+    )
+    as "the insert gives its guid"
+  guid
+}
+
+pub fn an_item_guid_sequence_that_is_ahead_of_the_largest_kept_guid_is_restored_as_it_was_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use folder <- recording_support.in_folder
+  let source = pool()
+  insert_account_by_sequence(source)
+  insert_character(source, "One Ab")
+  insert_item(source, 0)
+  insert_item(source, 1)
+  insert_item(source, 2)
+  run(source, "delete from character_item where bag_index = 2")
+  let path = path_in(folder)
+  assert fixture.write(source, path, ["genesis"]) == Ok(Nil)
+  let target = pool()
+  assert fixture.apply(target, path) == Ok(Nil)
+  assert query_texts(
+      target,
+      "select item_guid::text from character_item order by item_guid",
+    )
+    == ["1", "2"]
+    as "the two items left keep the guids they had"
+  assert next_item_guid(target) == "4"
+    as "the live sequence had given 1, 2 and 3, so a session that makes an item gets 4, though the largest guid left is 2"
+}
+
+pub fn an_item_guid_sequence_that_was_never_used_gives_1_after_the_fixture_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use folder <- recording_support.in_folder
+  let source = pool()
+  insert_account_by_sequence(source)
+  insert_character(source, "One Ab")
+  let path = path_in(folder)
+  assert fixture.write(source, path, ["genesis"]) == Ok(Nil)
+  let target = pool()
+  assert fixture.apply(target, path) == Ok(Nil)
+  assert next_item_guid(target) == "1"
+    as "no guid was ever given: the next is 1"
 }
 
 pub fn the_sequences_of_other_accounts_rows_still_count_after_the_fixture_test() -> Nil {

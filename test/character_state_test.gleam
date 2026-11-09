@@ -91,6 +91,7 @@ pub fn a_level_with_no_xp_per_level_row_is_refused_before_the_map_is_asked_test(
       world_entry_support.loaded(
         tables: character_tables.shared(),
         character: world_entry_support.character(class: 2, faction: 166, level:),
+        items: [],
       )
     assert loaded
       == world_entry.Refused(

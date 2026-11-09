@@ -16,15 +16,18 @@ import genesis_prime/message/create_character.{
 import genesis_prime/message/create_character_result.{type CreateCharacterResult}
 import genesis_prime/message/delete_character_result.{type DeleteCharacterResult}
 import genesis_prime/message/rename_character_result.{type RenameCharacterResult}
-import genesis_prime/store.{type AccountId, type NewCharacter, AccountId}
+import genesis_prime/store.{
+  type AccountId, type NewCharacter, type NewItem, AccountId, NewItem,
+}
 import genesis_prime/table/character_creation as creation_table
-import genesis_prime/table/id.{ClassId, RaceId}
+import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import gleam/dynamic/decode
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, Some}
 import gleam/result
+import novice_tables
 import place_support
 import pog
 
@@ -88,8 +91,39 @@ pub fn try_insert_at_level(
   })
   |> result.map(fn(returned) {
     let assert [id] = returned.rows as "one row inserted"
+    hold_novice_set(pool:, character_id: id, class_id:)
     id
   })
+}
+
+/// Stores the Novice set of the Dominion character's class (the faction the
+/// inserted row has) at location 0, as a create does, so the character enters
+/// the world holding its gear. A class the client has no Dominion Novice set
+/// for (the table tests store rows of any class from 1 to 20) holds nothing.
+fn hold_novice_set(
+  pool pool: pog.Connection,
+  character_id character_id: Int,
+  class_id class_id: Int,
+) -> Nil {
+  case
+    list.find(novice_tables.sets(), fn(set) {
+      set.class_id == class_id && set.faction_id == 166
+    })
+  {
+    Error(Nil) -> Nil
+    Ok(set) ->
+      list.each(novice_tables.equipped_of(set:), fn(pair) {
+        let assert Ok(_) =
+          pog.query(
+            "insert into character_item (character_id, item2_id, location, bag_index, stack_count) values ($1, $2, 0, $3, 1)",
+          )
+          |> pog.parameter(pog.int(character_id))
+          |> pog.parameter(pog.int(pair.0))
+          |> pog.parameter(pog.int(pair.1))
+          |> pog.execute(pool)
+          as "the Novice set's item was stored"
+      })
+  }
 }
 
 /// The place and the health a character's row holds, with the numbers that fence
@@ -221,6 +255,22 @@ pub fn character(number number: Int) -> store.Character {
 /// keeps as it is), so each differs from its neighbours.
 pub fn bones(count: Int) -> List(Int) {
   numbers(count) |> list.map(fn(index) { 0x3F800000 + index })
+}
+
+/// The items CharacterCreation row 466 gives a new character: its Novice set's
+/// five armor pieces at bag indexes 0, 1, 3, 4 and 5, its shield at 15 and its
+/// weapon at 16, all at location 0, a stack of 1 each (`Item2.novice_set`,
+/// `CharacterCreation.itemId0` to `itemId06`, `opcode.0x111.equipped_set`).
+pub fn row_466_items() -> List(NewItem) {
+  [
+    NewItem(Item2Id(81_359), 0, 0, 1),
+    NewItem(Item2Id(81_344), 0, 1, 1),
+    NewItem(Item2Id(81_381), 0, 3, 1),
+    NewItem(Item2Id(81_345), 0, 4, 1),
+    NewItem(Item2Id(81_380), 0, 5, 1),
+    NewItem(Item2Id(8534), 0, 15, 1),
+    NewItem(Item2Id(81_346), 0, 16, 1),
+  ]
 }
 
 /// A create request for CharacterCreation row 466 (class 1, race 1, sex 1,
