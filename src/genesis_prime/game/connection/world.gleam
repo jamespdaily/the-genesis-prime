@@ -491,6 +491,14 @@ pub fn entry_answered(
             holder:,
             step: refused_play(holder:, character_id:, warning:),
           )
+        Ok(world_entry.Fault(text:)) ->
+          connection_state.told(
+            session:,
+            now:,
+            reason: LostUserServer,
+            level: step.LogError,
+            text:,
+          )
         Error(Nil) -> entry_unasked(session, now)
       }
     }

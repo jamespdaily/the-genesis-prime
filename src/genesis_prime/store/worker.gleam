@@ -90,15 +90,15 @@ import genesis_prime/store.{
   type MoveAnswer, type MoveRequest, type Naming, type NewCharacter,
   type NewItem, type QuestRow, type RenameAnswer, type Request,
   type SelectAnswer, type SelectRequest, type WorldAnswer, type WorldRequest,
-  Account, AccountFound, AccountId, Character, CharacterCreated,
+  Account, AccountFound, AccountId, ActiveQuest, Character, CharacterCreated,
   CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
   CreateCharacter, CreateForNoSuchAccount, Created, DeleteCharacter, Deleted,
   FindAccount, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem,
   ListCharacters, Listed, LoadCharacter, Login, Move, NameBreaksRule, NameStands,
   NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
   NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
-  PlaceSaved, QuestLogRefused, RenameCharacter, Renamed, SavePlace, Select,
-  Unavailable, World,
+  PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
+  Select, Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
@@ -364,9 +364,11 @@ fn world(
   load_character(pool:, account_id:, character_id:)
 }
 
-/// Runs one of the player's movement's requests: a save is one statement that
+/// Runs one of the player's movement's requests: a save is one transaction, the
+/// character's row lock (lock_character_for_save.sql) and then one statement that
 /// names the account, the character, the epoch and the save's sequence
-/// (save_place.sql), answering `PlaceSaved` when it changed a row and
+/// (save_place.sql), so two saves of a character never overlap and the later one
+/// reads the quest rows the earlier one committed, answering `PlaceSaved` when it changed a row and
 /// `NothingSaved` when it matched none, `HealthRefused` when the table's
 /// `character_health_is_not_negative` refused the health, `QuestLogRefused` when a
 /// check of the character_quest table refused a quest row and `PlaceRefused` when
@@ -391,24 +393,31 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
   }
   case
     attempt(fn() {
-      sql.save_place(
-        pool,
-        character_id,
-        account_id,
-        store.session_epoch_number(session_epoch),
-        start_place.world_id(place),
-        start_place.world_zone_id(place),
-        start_place.x(place),
-        start_place.y(place),
-        start_place.z(place),
-        facing.yaw,
-        facing.pitch,
-        facing.roll,
-        save_sequence,
-        health,
-        keeps_health,
-        quests_json(quests),
-      )
+      in_transaction(pool, fn(connection) {
+        use _ <- result.try(sql.lock_character_for_save(
+          connection,
+          character_id,
+          account_id,
+        ))
+        sql.save_place(
+          connection,
+          character_id,
+          account_id,
+          store.session_epoch_number(session_epoch),
+          start_place.world_id(place),
+          start_place.world_zone_id(place),
+          start_place.x(place),
+          start_place.y(place),
+          start_place.z(place),
+          facing.yaw,
+          facing.pitch,
+          facing.roll,
+          save_sequence,
+          health,
+          keeps_health,
+          quests_json(quests),
+        )
+      })
     })
   {
     Ok([_]) -> Ok(PlaceSaved)
@@ -526,23 +535,95 @@ type LoadRow {
 }
 
 /// The rows of a character's quest log as the rows the store hands the quest log's
-/// decode, in the order the query gave them (quest id).
+/// decode, in the order the query gave them (quest id). A row's completed time is
+/// read only for state 3, and its active columns only for states 1 and 2, where
+/// the table's checks hold them all (`character_quest_completed_has_a_time`,
+/// `character_quest_active_has_its_entry`).
 fn quest_rows_of(rows: List(sql.LoadQuestLogRow)) -> List(QuestRow) {
-  case rows {
-    [] -> []
-    [_, ..] ->
-      panic as "not built: a character_quest row becomes a QuestRow, its completed time read only for state 3 and its active columns only for states 1 and 2"
-  }
+  list.map(rows, fn(row) {
+    QuestRow(
+      quest_id: row.quest_id,
+      state: row.state,
+      completed_at: case row.state {
+        3 -> Some(row.completed_at)
+        _ -> None
+      },
+      active: case
+        row.placeholder_objective_id,
+        row.tracked,
+        row.done_mask,
+        row.progress,
+        row.quest_ms_left,
+        row.objective_ms_left
+      {
+        Some(placeholder_objective_id),
+          Some(tracked),
+          Some(done_mask),
+          Some(progress),
+          Some(quest_ms_left),
+          Some(objective_ms_left)
+        ->
+          Some(ActiveQuest(
+            placeholder_objective_id:,
+            tracked:,
+            done_mask:,
+            progress:,
+            quest_ms_left:,
+            objective_ms_left:,
+          ))
+        None, None, None, None, None, None -> None
+        _, _, _, _, _, _ ->
+          panic as "character_quest_active_has_its_entry holds all the active columns or none"
+      },
+    )
+  })
 }
 
 /// The quest log's rows as the JSON array save_place.sql unpacks, one object for
-/// each row whose keys are the character_quest columns.
+/// each row whose keys are the character_quest columns, a completed time in whole
+/// Unix seconds and the active columns null for a row without an active entry.
 fn quests_json(quests: List(QuestRow)) -> Json {
-  case quests {
-    [] -> json.preprocessed_array([])
-    [_, ..] ->
-      panic as "not built: a QuestRow becomes an object of the character_quest columns, a completed time in whole Unix seconds"
-  }
+  json.preprocessed_array(
+    list.map(quests, fn(quest) {
+      json.object([
+        #("quest_id", json.int(quest.quest_id)),
+        #("state", json.int(quest.state)),
+        #("completed_at", json.nullable(quest.completed_at, json.int)),
+        #(
+          "placeholder_objective_id",
+          json.nullable(quest.active, fn(active) {
+            json.int(active.placeholder_objective_id)
+          }),
+        ),
+        #(
+          "tracked",
+          json.nullable(quest.active, fn(active) { json.bool(active.tracked) }),
+        ),
+        #(
+          "done_mask",
+          json.nullable(quest.active, fn(active) { json.int(active.done_mask) }),
+        ),
+        #(
+          "progress",
+          json.nullable(quest.active, fn(active) {
+            json.array(active.progress, json.int)
+          }),
+        ),
+        #(
+          "quest_ms_left",
+          json.nullable(quest.active, fn(active) {
+            json.int(active.quest_ms_left)
+          }),
+        ),
+        #(
+          "objective_ms_left",
+          json.nullable(quest.active, fn(active) {
+            json.array(active.objective_ms_left, json.int)
+          }),
+        ),
+      ])
+    }),
+  )
 }
 
 /// The rows of a character's items as the items they hold, in the order the

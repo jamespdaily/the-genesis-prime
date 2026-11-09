@@ -20,7 +20,11 @@
 -- of arrays. The log is the whole log, so a row the character no longer has is
 -- deleted and a row that changed is written, both only through the row the fence
 -- above matched, so a save the fence refuses writes no quest row either. A row
--- that did not change is not written.
+-- that did not change is not written. The statement runs after
+-- lock_character_for_save.sql in one transaction: a statement takes its snapshot
+-- before it waits for a row another save holds, so without the lock a save that
+-- waited would delete or keep quest rows by the log the earlier save had not yet
+-- written, and leave a quest the later log dropped.
 with saved as (
   update character
   set

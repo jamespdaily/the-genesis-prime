@@ -735,6 +735,52 @@ for update;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `lock_character_for_save` query
+/// defined in `./src/genesis_prime/store/sql/lock_character_for_save.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LockCharacterForSaveRow {
+  LockCharacterForSaveRow(character_id: Int)
+}
+
+/// Takes the character's row lock until the transaction ends, so the saves of
+/// one character run one after another and the save that follows reads the quest
+/// rows the one before it committed (save_place.sql). The statement after it in
+/// the transaction takes its snapshot once the lock is held. No row means no such
+/// character for the account.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn lock_character_for_save(
+  db: pog.Connection,
+  character_id: Int,
+  account_id: Int,
+) -> Result(pog.Returned(LockCharacterForSaveRow), pog.QueryError) {
+  let decoder = {
+    use character_id <- decode.field(0, decode.int)
+    decode.success(LockCharacterForSaveRow(character_id:))
+  }
+
+  "-- Takes the character's row lock until the transaction ends, so the saves of
+-- one character run one after another and the save that follows reads the quest
+-- rows the one before it committed (save_place.sql). The statement after it in
+-- the transaction takes its snapshot once the lock is held. No row means no such
+-- character for the account.
+select character_id
+from character
+where character_id = $1 and account_id = $2
+for update;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(character_id))
+  |> pog.parameter(pog.int(account_id))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `rename_character` query
 /// defined in `./src/genesis_prime/store/sql/rename_character.sql`.
 ///
@@ -815,7 +861,11 @@ pub type SavePlaceRow {
 /// of arrays. The log is the whole log, so a row the character no longer has is
 /// deleted and a row that changed is written, both only through the row the fence
 /// above matched, so a save the fence refuses writes no quest row either. A row
-/// that did not change is not written.
+/// that did not change is not written. The statement runs after
+/// lock_character_for_save.sql in one transaction: a statement takes its snapshot
+/// before it waits for a row another save holds, so without the lock a save that
+/// waited would delete or keep quest rows by the log the earlier save had not yet
+/// written, and leave a quest the later log dropped.
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
@@ -865,7 +915,11 @@ pub fn save_place(
 -- of arrays. The log is the whole log, so a row the character no longer has is
 -- deleted and a row that changed is written, both only through the row the fence
 -- above matched, so a save the fence refuses writes no quest row either. A row
--- that did not change is not written.
+-- that did not change is not written. The statement runs after
+-- lock_character_for_save.sql in one transaction: a statement takes its snapshot
+-- before it waits for a row another save holds, so without the lock a save that
+-- waited would delete or keep quest rows by the log the earlier save had not yet
+-- written, and leave a quest the later log dropped.
 with saved as (
   update character
   set

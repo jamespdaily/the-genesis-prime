@@ -246,6 +246,10 @@ pub type Loaded {
   Join(state: State, effects: List(Effect))
   /// The character is not entered; character select refuses the play.
   Refused(character_id: Int, warning: String)
+  /// The character's saved quest log holds an entry the client would refuse. Only
+  /// the server writes the log, so it is a bug of the server's, and nothing
+  /// repairs the row: the connection is ended and the text is logged as an error.
+  Fault(text: String)
 }
 
 /// What the map's answer to the join leads to.
@@ -460,12 +464,11 @@ pub fn loaded(
             Some(place) ->
               case quest_log.from_rows(rows: quests, tables:) {
                 Error(refused) ->
-                  Refused(
-                    character_id:,
-                    warning: "a play of character "
-                      <> int.to_string(character_id)
-                      <> ", whose saved quest log the client would refuse: "
-                      <> quest_log.describe(refused:),
+                  Fault(
+                    text: "a play of character "
+                    <> int.to_string(character_id)
+                    <> ", whose saved quest log the client would refuse: "
+                    <> quest_log.describe(refused:),
                   )
                 Ok(log) ->
                   joining_a_play(

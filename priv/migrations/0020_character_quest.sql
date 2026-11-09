@@ -38,10 +38,15 @@ create table character_quest (
   constraint character_quest_state_is_known check (state between 1 and 7),
   constraint character_quest_completed_has_a_time
     check ((state = 3) = (completed_at is not null)),
-  constraint character_quest_active_has_its_entry check ((state in (1, 2)) = (
-    placeholder_objective_id is not null and tracked is not null
-    and done_mask is not null and progress is not null
-    and quest_ms_left is not null and objective_ms_left is not null)),
+  constraint character_quest_active_has_its_entry check (
+    (state in (1, 2)
+      and placeholder_objective_id is not null and tracked is not null
+      and done_mask is not null and progress is not null
+      and quest_ms_left is not null and objective_ms_left is not null)
+    or (state not in (1, 2)
+      and placeholder_objective_id is null and tracked is null
+      and done_mask is null and progress is null
+      and quest_ms_left is null and objective_ms_left is null)),
   constraint character_quest_done_mask_fits_six_objectives
     check (done_mask between 0 and 63),
   constraint character_quest_progress_fits_six_objectives
