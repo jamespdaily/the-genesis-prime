@@ -71,6 +71,7 @@ import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
+import genesis_prime/message/unit_stat_level.{UnitStatLevel}
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_target
 import genesis_prime/message/unit_threat
@@ -1519,6 +1520,8 @@ pub type FightEvent {
   Threatens(unit_id: Int, other_unit_id: Int, threat: Int)
   /// 0x89a: the unit is in a fight or out of one (opcode.0x89a).
   InCombat(unit_id: Int, in_combat: Bool)
+  /// 0x938 of stat 10: the unit's level (opcode.0x938).
+  LevelIs(unit_id: Int, level: Int)
   /// 0x938 of stat 20: the unit's shield (opcode.0x938).
   ShieldIs(unit_id: Int, shield: Int)
   /// 0x938 of stat 21: the unit's current Interrupt Armor (opcode.0x938.interrupt_armor).
@@ -1570,8 +1573,10 @@ pub fn fight_in(frames frames: List(Frame)) -> List(FightEvent) {
       }
       0x0938 -> {
         let assert Ok(changed) = unit_stat_changed.decode(frame.body)
-          as "0x938 decodes: the server sends it only for stats 20, 21 and 22"
+          as "0x938 decodes: the server sends it only for stats 10, 20, 21 and 22"
         Ok(case changed.change {
+          unit_stat_change.Level(UnitStatLevel(value:)) ->
+            LevelIs(unit_id: changed.unit_id, level: value)
           unit_stat_change.Shield(UnitStatShield(value:)) ->
             ShieldIs(unit_id: changed.unit_id, shield: value)
           unit_stat_change.InterruptArmor(UnitStatInterruptArmor(value:)) ->

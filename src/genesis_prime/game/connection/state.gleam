@@ -480,6 +480,8 @@ pub fn saving(
       account_id: holder.account_id,
       character_id: entered.character_id,
       health: Some(player_life.saved_health(life: entered.life)),
+      experience: entered.experience,
+      level: entered.character.level,
       quests: quest_log.rows(log: entered.quests),
     )
   ask_within(

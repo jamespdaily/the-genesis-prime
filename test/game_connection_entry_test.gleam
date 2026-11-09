@@ -83,6 +83,7 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
               game_connection_support.world_character(),
               character_support.epoch(1),
               None,
+              None,
               world_entry_support.novice_items(
                 character: game_connection_support.world_character(),
               ),
@@ -389,6 +390,7 @@ pub fn an_answer_that_is_none_world_entry_asked_for_is_a_bug_with_reason_8_and_a
               CharacterLoaded(
                 game_connection_support.world_character(),
                 character_support.epoch(1),
+                None,
                 None,
                 world_entry_support.novice_items(
                   character: game_connection_support.world_character(),

@@ -765,6 +765,7 @@ pub fn the_whisper_numbers_count_for_the_connections_life_across_a_camp_and_a_ne
               game_connection_support.world_character(),
               character_support.epoch(1),
               None,
+              None,
               [],
               [],
             ),

@@ -40,10 +40,11 @@ import world_entry_support
 /// The store's answer holding these quest rows, for a play of the tests'
 /// character: what the load leads to.
 fn loaded_holding(quests quests: List(QuestRow)) -> world_entry.Loaded {
-  world_entry_support.loaded_with_quests(
+  world_entry_support.loaded_holding(
     tables: character_tables.shared(),
     character: game_connection_support.world_character(),
     items: [],
+    saved_experience: None,
     quests:,
   ).1
 }
@@ -224,10 +225,11 @@ pub fn a_saved_entry_the_client_would_refuse_fails_the_load_test() -> Nil {
     as "a placeholder id the state setter does not refuse loads"
   // And the connection ends for a refused log, writing no 0x35F and no entry.
   let #(_, taken) =
-    game_connection_support.joining_with_quests(
+    game_connection_support.joining_holding(
       in_character_select: game_connection_support.in_select(),
       character: game_connection_support.world_character(),
       saved_health: None,
+      saved_experience: None,
       quests: [
         quest_support.accepted(quest_id: quest_support.daily, progress: [1, 2]),
       ],

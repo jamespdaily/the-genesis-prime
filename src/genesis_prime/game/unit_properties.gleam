@@ -318,6 +318,16 @@ pub fn new(
   Properties(base:, value:, live: [], level:)
 }
 
+/// The same properties for a player who now stands at `level`: the level a modifier
+/// that starts from now on weighs its per-level amount by (a modifier already live keeps
+/// the value it was worked out with).
+pub fn at_level(
+  properties properties: Properties,
+  level level: Int,
+) -> Properties {
+  Properties(..properties, level:)
+}
+
 /// The properties of a creature at `level`: each of `bases` as base and value, every
 /// UnitProperty2 row's number for the creature (genesis_prime/world_map/spawn), no
 /// modifier live.

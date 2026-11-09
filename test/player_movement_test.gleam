@@ -38,8 +38,8 @@ import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/store.{
-  AccountId, CharacterId, HealthRefused, NothingSaved, PlaceRefused, PlaceSaved,
-  SavePlace,
+  AccountId, CharacterId, ExperienceRefused, HealthRefused, NothingSaved,
+  PlaceRefused, PlaceSaved, SavePlace,
 }
 import gleam/list
 import gleam/option.{None, Some}
@@ -461,6 +461,8 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       account_id: AccountId(7),
       character_id: CharacterId(42),
       health: Some(512),
+      experience: 1234,
+      level: 3,
       quests: [],
     )
   assert first
@@ -471,6 +473,8 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       save_sequence: 1,
       place: movement.place(entered()),
       health: Some(512),
+      experience: 1234,
+      level: 3,
       quests: [],
     )
     as "the save names the epoch the login was told (3 here) and is the login's first"
@@ -481,6 +485,8 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       account_id: AccountId(7),
       character_id: CharacterId(42),
       health: None,
+      experience: 1300,
+      level: 3,
       quests: [],
     )
   assert second
@@ -491,6 +497,8 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       save_sequence: 2,
       place: movement.place(state),
       health: None,
+      experience: 1300,
+      level: 3,
       quests: [],
     )
     as "the next save carries the place the moves since put the player at, numbered 2: the store keeps only a newer save of a login"
@@ -501,6 +509,8 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       account_id: AccountId(7),
       character_id: CharacterId(42),
       health: Some(1),
+      experience: 1,
+      level: 1,
       quests: [],
     )
   let assert SavePlace(save_sequence: 3, ..) = third
@@ -533,4 +543,10 @@ pub fn the_stores_answer_to_a_save_is_logged_by_what_it_says_test() -> Nil {
   let assert [Fault(text:)] = movement.saved(HealthRefused)
     as "no living player has a health of 0 or below, which the table refuses: a bug"
   assert string.contains(text, "refused") && string.contains(text, "health")
+  let assert [Fault(text:)] = movement.saved(ExperienceRefused)
+    as "no player keeps an experience below 0, which the table refuses: a bug"
+  assert string.contains(text, "refused")
+    && string.contains(text, "experience")
+    && !string.contains(text, "health")
+    as "and it names the experience, not the health"
 }

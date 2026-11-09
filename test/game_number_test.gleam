@@ -39,6 +39,48 @@ fn seeded() -> List(Row) {
     Row(name: "health_regen_fraction", value: 0.025, unit: "fraction"),
     Row(name: "health_regen_tick_ms", value: 500.0, unit: "ms"),
     Row(name: "interrupt_armor_refill_ms", value: 10_000.0, unit: "ms"),
+    Row(name: "kill_experience_fraction", value: 0.25, unit: "fraction"),
+    Row(
+      name: "kill_experience_multiplier_above_1",
+      value: 1.1,
+      unit: "multiplier",
+    ),
+    Row(
+      name: "kill_experience_multiplier_above_2",
+      value: 1.2,
+      unit: "multiplier",
+    ),
+    Row(
+      name: "kill_experience_multiplier_above_3",
+      value: 1.3,
+      unit: "multiplier",
+    ),
+    Row(
+      name: "kill_experience_multiplier_above_4",
+      value: 1.4,
+      unit: "multiplier",
+    ),
+    Row(
+      name: "kill_experience_multiplier_below_1",
+      value: 0.75,
+      unit: "multiplier",
+    ),
+    Row(
+      name: "kill_experience_multiplier_below_2",
+      value: 0.5,
+      unit: "multiplier",
+    ),
+    Row(
+      name: "kill_experience_multiplier_below_3",
+      value: 0.25,
+      unit: "multiplier",
+    ),
+    Row(
+      name: "kill_experience_multiplier_below_4",
+      value: 0.0,
+      unit: "multiplier",
+    ),
+    Row(name: "kill_experience_multiplier_same", value: 1.0, unit: "multiplier"),
     Row(name: "leash_range", value: 55.0, unit: "units"),
     Row(name: "weekly_quest_reset_ms", value: 122_400_000.0, unit: "ms"),
   ]
@@ -63,6 +105,18 @@ pub fn the_seeded_rows_select_into_the_numbers_a_fight_reads_test() -> Nil {
       health_regen_fraction: 0.025,
       health_regen_tick_ms: 500,
       interrupt_armor_refill_ms: 10_000,
+      kill_experience_fraction: 0.25,
+      kill_experience_multipliers: [
+        0.0,
+        0.25,
+        0.5,
+        0.75,
+        1.0,
+        1.1,
+        1.2,
+        1.3,
+        1.4,
+      ],
       daily_quest_reset_ms: 36_000_000,
       weekly_quest_reset_ms: 122_400_000,
     ))
@@ -183,19 +237,19 @@ pub fn an_aggro_range_not_below_sight_is_refused_test() -> Nil {
   assert string.contains(refused.rule, "1024")
 }
 
-pub fn a_migrated_database_holds_the_nine_seeded_numbers_test() -> Nil {
+pub fn a_migrated_database_holds_the_seeded_numbers_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
   let assert Ok(rows) =
     content_game_number.rows(db: content_support.connect(database:))
     as "the query ran"
   assert rows == seeded()
-    as "migration 0010's four rows, migration 0015's two, migration 0016's refill time and migration 0021's two quest reset times, in name order"
+    as "migration 0010's four rows, migration 0015's two, migration 0016's refill time, migration 0021's two quest reset times and migration 0022's kill experience fraction and nine multipliers, in name order"
   assert content_support.count(
       database:,
       sql: "select count(*) from game_number where source = 'server_choice' and reason is not null",
     )
-    == 9
+    == 19
     as "each is a server choice that states its reason"
 }
 
@@ -316,6 +370,18 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
         "update game_number set unit = 'units' where name = 'interrupt_armor_refill_ms'",
         "game_number_name_has_its_unit",
       ),
+      #(
+        "update game_number set value = 0 where name = 'kill_experience_fraction'",
+        "game_number_kill_experience_fraction_is_above_0_up_to_1",
+      ),
+      #(
+        "update game_number set value = 1.5 where name = 'kill_experience_fraction'",
+        "game_number_kill_experience_fraction_is_above_0_up_to_1",
+      ),
+      #(
+        "update game_number set value = -0.5 where name = 'kill_experience_multiplier_same'",
+        "game_number_kill_experience_multiplier_is_not_negative",
+      ),
     ],
     fn(bad) {
       let assert Error(failed) =
@@ -343,6 +409,18 @@ pub fn the_numbers_put_under_a_key_are_read_back_test() -> Nil {
       health_regen_fraction: 0.025,
       health_regen_tick_ms: 500,
       interrupt_armor_refill_ms: 10_000,
+      kill_experience_fraction: 0.25,
+      kill_experience_multipliers: [
+        0.0,
+        0.25,
+        0.5,
+        0.75,
+        1.0,
+        1.1,
+        1.2,
+        1.3,
+        1.4,
+      ],
       daily_quest_reset_ms: 36_000_000,
       weekly_quest_reset_ms: 122_400_000,
     )

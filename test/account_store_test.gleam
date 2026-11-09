@@ -35,8 +35,8 @@ import genesis_prime/store.{
   type AccountId, type ActiveQuest, type QuestRow, Account, AccountFound,
   AccountId, ActiveQuest, Character, CharacterCreated, CharacterDeleted,
   CharacterId, CharacterLoaded, CharacterRenamed, CreateCharacter,
-  CreateForNoSuchAccount, Created, DeleteCharacter, Deleted, FindAccount,
-  ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem,
+  CreateForNoSuchAccount, Created, DeleteCharacter, Deleted, ExperienceRefused,
+  FindAccount, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem,
   ListCharacters, Listed, LoadCharacter, Login, LookEntry, Move, NameBreaksRule,
   NameStands, NameTaken, NeedsRename, NewCharacter, NewItem, NewNameBreaksRule,
   NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable,
@@ -810,6 +810,7 @@ fn a_new_character(name: String) -> store.NewCharacter {
     class_id: ClassId(1),
     faction_id: 167,
     level: 3,
+    experience: 1710,
     path: 2,
     place: place_support.at(
       world_id: 3460,
@@ -933,7 +934,7 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
   assert ask(store, World(LoadCharacter(account, CharacterId(character_id))))
     == ForWorld(
-      CharacterLoaded(character, character_support.epoch(1), None, [], []),
+      CharacterLoaded(character, character_support.epoch(1), None, None, [], []),
     )
     as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
   stop(store)
@@ -1024,6 +1025,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
           naming: NameStands,
         ),
         character_support.epoch(1),
+        None,
         None,
         [],
         [],
@@ -1242,7 +1244,9 @@ fn save(
   )
 }
 
-/// Saves the place under the epoch and sequence of a login, with the health.
+/// Saves the place under the epoch and sequence of a login, with the health. The
+/// experience and level it saves with are the stored characters' own level 9 and
+/// no experience beyond it: these tests are about the place and the health.
 fn save_keeping(
   store store: Store,
   account account: AccountId,
@@ -1251,6 +1255,32 @@ fn save_keeping(
   sequence sequence: Int,
   place place: start_place.Place,
   health health: Option(Int),
+) -> store.Answer {
+  save_progress(
+    store:,
+    account:,
+    character_id:,
+    epoch:,
+    sequence:,
+    place:,
+    health:,
+    experience: 0,
+    level: 9,
+  )
+}
+
+/// Saves the place under the epoch and sequence of a login, with the experience
+/// and level the player has made.
+fn save_progress(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: Int,
+  epoch epoch: Int,
+  sequence sequence: Int,
+  place place: start_place.Place,
+  health health: Option(Int),
+  experience experience: Int,
+  level level: Int,
 ) -> store.Answer {
   ask(
     store,
@@ -1262,10 +1292,25 @@ fn save_keeping(
         save_sequence: sequence,
         place:,
         health:,
+        experience:,
+        level:,
         quests: [],
       ),
     ),
   )
+}
+
+/// The experience and level the character's next load answers with (which raises
+/// the epoch), as a pair.
+fn experience_and_level_loaded(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: Int,
+) -> #(Option(Int), Int) {
+  let assert ForWorld(CharacterLoaded(character:, saved_experience:, ..)) =
+    ask(store, World(LoadCharacter(account, CharacterId(character_id))))
+    as "the account has the character"
+  #(saved_experience, character.level)
 }
 
 /// The health the character's row holds and the saved health its next load
@@ -1690,6 +1735,65 @@ pub fn a_save_with_a_health_the_table_refuses_is_answered_health_refused_and_sav
   stop(store)
 }
 
+pub fn a_save_keeps_the_experience_and_level_for_the_next_load_and_a_create_writes_its_xp_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let assert CharacterCreated(CharacterId(created)) =
+    create(store:, account:, name: "Ab Cd", slots: 2)
+    as "the account has a free slot"
+  assert experience_and_level_loaded(store:, account:, character_id: created)
+    == #(Some(1710), 3)
+    as "a create writes the experience of its level 3 row (xp 1710) and its level, which the first load answers"
+  let there =
+    place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  assert save_progress(
+      store:,
+      account:,
+      character_id: created,
+      epoch: 1,
+      sequence: 1,
+      place: there,
+      health: None,
+      experience: 1840,
+      level: 4,
+    )
+    == ForMove(PlaceSaved)
+  assert experience_and_level_loaded(store:, account:, character_id: created)
+    == #(Some(1840), 4)
+    as "the save's experience and level, which the next login enters with"
+  stop(store)
+}
+
+pub fn a_save_with_an_experience_the_table_refuses_is_answered_experience_refused_and_saves_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  let there =
+    place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  assert save_progress(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      place: there,
+      health: None,
+      experience: -1,
+      level: 4,
+    )
+    == ForMove(ExperienceRefused)
+    as "character_experience_is_not_negative refused a -1 planted straight into the query: its own answer, and the worker does not crash"
+  let row = character_support.place_row(pool: store.pool, character_id: id)
+  assert row.position == #(1.5, 2.5, 3.5) && row.save_sequence == 0
+    as "the statement is one: neither the place nor the sequence beside the refused experience was written"
+  assert experience_and_level_loaded(store:, account:, character_id: id)
+    == #(None, 9)
+    as "and the level beside it was not written either"
+  stop(store)
+}
+
 pub fn a_save_the_database_refuses_for_a_check_is_answered_place_refused_with_the_constraints_name_and_the_store_goes_on_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
@@ -1809,6 +1913,7 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
       "character_name_unique",
       "character_name_follows_rule_0",
       "character_health_is_not_negative",
+      "character_experience_is_not_negative",
       "character_quest_id_fits_15_bits",
       "character_quest_state_is_known",
       "character_quest_completed_has_a_time",
@@ -1820,7 +1925,7 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
       "character_quest_times_are_not_negative",
       "character_quest_placeholder_is_not_negative",
     ]
-    as "the refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0 and each check of a quest row"
+    as "the refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0, an experience below 0 and each check of a quest row"
   list.each(worker.mapped_constraints(), fn(name) {
     let assert Ok(returned) =
       pog.query(
@@ -2432,6 +2537,8 @@ fn save_log(
         roll: 0.0,
       ),
       health: None,
+      experience: 0,
+      level: 1,
       quests:,
     )),
   )

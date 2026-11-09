@@ -16,6 +16,7 @@ import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_log_resurrect.{CombatLogResurrect}
 import genesis_prime/message/combat_log_stealth.{CombatLogStealth}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/float32
 import genesis_prime/message/half_float
 import genesis_prime/message/item_visual.{type ItemVisual}
@@ -51,6 +52,7 @@ import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
+import genesis_prime/message/unit_stat_level.{UnitStatLevel}
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_stealth.{UnitStealth}
 import genesis_prime/step.{type Now}
@@ -213,6 +215,31 @@ pub fn shield_frame(unit_id unit_id: Int, shield shield: Int) -> Frame {
   stat_frame(
     unit_id:,
     change: unit_stat_change.Shield(UnitStatShield(value: shield)),
+  )
+}
+
+/// 0x1ac of kind 2, a kill: the client adds `gain` to its experience, with no rest
+/// experience used and nothing of the third amount, and names the creature's unit
+/// (`opcode.0x1ac`, `opcode.0x1ac.fields`, `CombatFloater.CodeEnumExpReason`).
+pub fn experience_gained_frame(gain gain: Int, unit_id unit_id: Int) -> Frame {
+  let assert Ok(body) =
+    experience_gained.encode(ExperienceGained(
+      experience: gain,
+      rest_experience_used: 0,
+      bonus_experience: 0,
+      source_kind: 2,
+      source_unit_id: unit_id,
+    ))
+    as "an amount and a unit id of 32 bits and a kind of 32 bits fit the message"
+  Frame(message_id: experience_gained.message_id, body:)
+}
+
+/// 0x938 of stat 10: the unit's level, which the client raises to the value
+/// (`opcode.0x938`, `0x140029820`).
+pub fn level_frame(unit_id unit_id: Int, level level: Int) -> Frame {
+  stat_frame(
+    unit_id:,
+    change: unit_stat_change.Level(UnitStatLevel(value: level)),
   )
 }
 

@@ -57,8 +57,9 @@
 ////   the epoch the saving login was told and the save's own sequence number, so
 ////   a save from an older login, or one that reaches the database after a newer
 ////   save of its own login, matches no row and changes nothing. It writes the
-////   health with the place. A save that `character_health_is_not_negative` refuses
-////   is `HealthRefused`; one that any other check constraint of the table
+////   health, the experience and the level with the place. A save that
+////   `character_health_is_not_negative` refuses is `HealthRefused`, one that
+////   `character_experience_is_not_negative` refuses is `ExperienceRefused`; one that any other check constraint of the table
 ////   refuses is `PlaceRefused` with that constraint's name; the worker does not
 ////   crash for either. The statement also writes the character's quest log under
 ////   the same fence (save_place.sql); a check of the character_quest table that
@@ -93,12 +94,12 @@ import genesis_prime/store.{
   Account, AccountFound, AccountId, ActiveQuest, Character, CharacterCreated,
   CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
   CreateCharacter, CreateForNoSuchAccount, Created, DeleteCharacter, Deleted,
-  FindAccount, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem,
-  ListCharacters, Listed, LoadCharacter, Login, Move, NameBreaksRule, NameStands,
-  NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
-  NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
-  PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
-  Select, Unavailable, World,
+  ExperienceRefused, FindAccount, ForLogin, ForMove, ForSelect, ForWorld,
+  HealthRefused, HeldItem, ListCharacters, Listed, LoadCharacter, Login, Move,
+  NameBreaksRule, NameStands, NameTaken, NeedsRename, NewNameBreaksRule,
+  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts,
+  NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused, QuestRow,
+  RenameCharacter, Renamed, SavePlace, Select, Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
@@ -123,6 +124,10 @@ const character_name_follows_rule_0 = "character_name_follows_rule_0"
 
 /// The table's check that a saved health is not below 0 (migration 0017).
 const character_health_is_not_negative = "character_health_is_not_negative"
+
+/// The table's check that a saved experience is not below 0 (migration 0022).
+const character_experience_is_not_negative =
+  "character_experience_is_not_negative"
 
 /// The checks of the character_quest table (migration 0021), one for each limit of
 /// the client's a quest row can break. A save one of them refuses answers
@@ -149,6 +154,7 @@ pub fn mapped_constraints() -> List(String) {
     character_name_unique,
     character_name_follows_rule_0,
     character_health_is_not_negative,
+    character_experience_is_not_negative,
     ..quest_checks
   ]
 }
@@ -373,8 +379,9 @@ fn world(
 /// (save_place.sql), so two saves of a character never overlap and the later one
 /// reads the quest rows the earlier one committed, answering `PlaceSaved` when it changed a row and
 /// `NothingSaved` when it matched none, `HealthRefused` when the table's
-/// `character_health_is_not_negative` refused the health, `QuestLogRefused` when a
-/// check of the character_quest table refused a quest row and `PlaceRefused` when
+/// `character_health_is_not_negative` refused the health, `ExperienceRefused` when
+/// `character_experience_is_not_negative` refused the experience, `QuestLogRefused`
+/// when a check of the character_quest table refused a quest row and `PlaceRefused` when
 /// another check of the table refused the place; `Error(Nil)` when the database
 /// is away.
 fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
@@ -385,6 +392,8 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
     save_sequence:,
     place:,
     health:,
+    experience:,
+    level:,
     quests:,
   ) = request
   let facing = start_place.facing(place)
@@ -418,6 +427,8 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
           save_sequence,
           health,
           keeps_health,
+          experience,
+          level,
           quests_json(quests),
         )
       })
@@ -430,6 +441,9 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
     Error(Refused(constraint:, ..))
       if constraint == character_health_is_not_negative
     -> Ok(HealthRefused)
+    Error(Refused(constraint:, ..))
+      if constraint == character_experience_is_not_negative
+    -> Ok(ExperienceRefused)
     Error(Refused(constraint:, ..)) ->
       case list.contains(quest_checks, constraint) {
         True -> Ok(QuestLogRefused(constraint:))
@@ -518,6 +532,7 @@ fn load_character(
         ),
         session_epoch: epoch,
         saved_health: row.health,
+        saved_experience: row.experience,
         items: held_items(item_rows),
         quests: quest_rows_of(quest_rows),
       )
@@ -760,6 +775,7 @@ fn create_character(
         start_place.facing(character.place).yaw,
         start_place.facing(character.place).pitch,
         start_place.facing(character.place).roll,
+        character.experience,
       ))
       use Nil <- result.map(case made.rows {
         [row] ->
