@@ -96,8 +96,8 @@ fn directory_entries(directory: String) -> List(String) {
   |> list.sort(string.compare)
 }
 
-/// Every key of the client's fact file, parsed once per run and shared by
-/// every rule that reads it.
+/// Every key of the client's fact file, read once for the run: the first caller
+/// parses the file and the others take the stored keys.
 pub fn fact_keys() -> List(String) {
   database_support.once("fact_keys", fn() {
     let assert Ok(text) =

@@ -1,5 +1,5 @@
 -module(owned_test_ffi).
--export([is_skip/1, run_unless_skipped/1]).
+-export([is_skip/1, run_unless_skipped/1, monotonic_milliseconds/0, body_name/1]).
 
 %% unitest marks a skipped test by throwing {gleam_unitest, skip}
 %% (unitest_ffi:skip/0); a process that does not catch it exits with
@@ -12,3 +12,18 @@ run_unless_skipped(Body) ->
     try {ok, Body()}
     catch throw:{gleam_unitest, skip} -> {error, nil}
     end.
+
+monotonic_milliseconds() ->
+    erlang:monotonic_time(millisecond).
+
+%% A closure made in a function is named '-function/arity-fun-N-' by the
+%% compiler: the test function the body was written in.
+body_name(Body) ->
+    {module, Module} = erlang:fun_info(Body, module),
+    {name, Name} = erlang:fun_info(Body, name),
+    Function =
+        case atom_to_list(Name) of
+            [$- | Rest] -> lists:takewhile(fun(Char) -> Char =/= $/ end, Rest);
+            Plain -> Plain
+        end,
+    unicode:characters_to_binary([atom_to_list(Module), ":", Function]).
