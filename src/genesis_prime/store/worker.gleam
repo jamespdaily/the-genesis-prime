@@ -119,7 +119,7 @@ const character_name_follows_rule_0 = "character_name_follows_rule_0"
 /// The table's check that a saved health is not below 0 (migration 0017).
 const character_health_is_not_negative = "character_health_is_not_negative"
 
-/// The table's check that a saved experience is not below 0 (migration 0021).
+/// The table's check that a saved experience is not below 0 (migration 0022).
 const character_experience_is_not_negative =
   "character_experience_is_not_negative"
 

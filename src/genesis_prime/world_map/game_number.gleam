@@ -38,7 +38,7 @@
 //// - **A kill's experience** is the fraction of the creature's level's base quest
 ////   experience, above 0 and at most 1, times a level-gap multiplier of 0 or more
 ////   (`game_number_kill_experience_fraction_is_above_0_up_to_1`,
-////   `game_number_kill_experience_multiplier_is_not_negative`, migration 0021). The
+////   `game_number_kill_experience_multiplier_is_not_negative`, migration 0022). The
 ////   client holds no kill formula, so each is a server choice that states its reason,
 ////   and the creature's Creature2Difficulty `clusterContributionValueDifficulty` that
 ////   weighs it is a client value no client code shows feeding experience.
@@ -83,11 +83,11 @@ pub type GameNumbers {
     interrupt_armor_refill_ms: Int,
     /// The share of the base quest experience of a creature's level that a kill
     /// gives before the creature's difficulty weight and the level gap's multiplier
-    /// (migration 0021).
+    /// (migration 0022).
     kill_experience_fraction: Float,
     /// The multiplier of a kill's experience for the creature's level minus the
     /// player's, from 4 or more below to 4 or more above: nine numbers, the gap -4
-    /// first and the gap 4 last (migration 0021).
+    /// first and the gap 4 last (migration 0022).
     kill_experience_multipliers: List(Float),
   )
 }
