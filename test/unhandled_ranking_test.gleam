@@ -3,8 +3,9 @@
 //// places.
 //// - The routing: the network layer's ping (0x0000) and the client's wrapper
 ////   (0x0244) are taken by every connection, and 0x038C is taken by the game
-////   rule (`coverage/engine.handled_client_message_ids`); no rule names 0x023C
-////   (the client sends it through SendWorldMessage 0x1403f4900) or 0x0FFF.
+////   rule (`coverage/engine.handled_client_message_ids`); no rule names 0x07CC
+////   (the client sends it through SendWorldMessageKind0B 0x1403f4740,
+////   opcode.0x7cc) or 0x0FFF.
 //// - 0x082D is the store-catalog request (opcode.0x82d), which no roadmap
 ////   system holds.
 //// - The folder is a planted session of two game connections and one cut
@@ -51,7 +52,7 @@ fn carried(id id: Int) -> BitArray {
 }
 
 /// The ranked lines and the stopped sentences of a planted folder: the first
-/// connection sends 0x023C twice, once inside a carrier, 0x082D once, 0x0FFF
+/// connection sends 0x07CC twice, once inside a carrier, 0x082D once, 0x0FFF
 /// once and the network layer's ping three times; the second sends 0x0FFF
 /// twice and 0x0FFE once and the server writes a message; the third ends inside
 /// a frame after one 0x0FFE.
@@ -77,8 +78,8 @@ fn planted_ranking(folder: String) -> #(List(String), List(String)) {
       support.In(0, support.now_at(1), Accepted),
       support.In(1, support.now_at(2), Accepted),
       support.In(2, support.now_at(3), Accepted),
-      support.In(0, support.now_at(4), Read(sent(id: 0x023C, body: <<>>))),
-      support.In(0, support.now_at(5), Read(carried(id: 0x023C))),
+      support.In(0, support.now_at(4), Read(sent(id: 0x07CC, body: <<>>))),
+      support.In(0, support.now_at(5), Read(carried(id: 0x07CC))),
       support.In(0, support.now_at(6), Read(sent(id: 0x082D, body: <<>>))),
       support.In(0, support.now_at(7), Read(sent(id: 0x0FFF, body: <<>>))),
       support.In(0, support.now_at(8), Read(ping)),
@@ -112,11 +113,11 @@ pub fn the_ranking_counts_each_unhandled_message_across_the_connections_most_fre
   assert list.map(lines, columns)
     == [
       ["3", "0x0FFF", "no group", "no decoder"],
-      ["2", "0x023C", "no group", "no decoder"],
+      ["2", "0x07CC", "no group", "no decoder"],
       ["2", "0x0FFE", "no group", "no decoder"],
       ["1", "0x082D", "the store: no roadmap system", "no decoder"],
     ]
-    as "0x0FFF 3 times, 0x023C twice (once inside the carrier 0x038C), and 0x0FFE twice, listed by opcode among equals; the ping, the wrapper and the carrier are handled, and the server's write is no message of the client"
+    as "0x0FFF 3 times, 0x07CC twice (once inside the carrier 0x038C), and 0x0FFE twice, listed by opcode among equals; the ping, the wrapper and the carrier are handled, and the server's write is no message of the client"
 }
 
 pub fn a_connection_whose_bytes_stop_is_named_and_the_messages_before_it_are_counted_test() -> Nil {

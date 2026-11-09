@@ -471,7 +471,10 @@ pub fn an_unhandled_message_id_is_a_warning_the_first_time_on_a_connection_and_a
     as "a repeat of an id already logged is a debug line, since the client sends some messages again and again"
   assert again.about.message == Some(#("unhandled", 0x0635))
   let #(_, taken) =
-    game_connection_support.read(state, game_connection_support.activity())
+    game_connection_support.read(
+      state,
+      game_connection_support.unhandled_request(),
+    )
   let assert [other] = support.logs(taken)
   assert other.level == LogWarning as "another id is its first: a warning"
 }

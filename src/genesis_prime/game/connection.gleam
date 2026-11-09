@@ -41,8 +41,9 @@
 //// every 60 s (save timer)      ─▶ store: SavePlace(account, character, epoch, sequence, place, health)
 //// the map ends (watch 2)       ─▶ store: SavePlace   ◀─ 0x3DC{0x036A reason 8}; the connection ends
 //// 0x244{0x038C{kind, inner}}  ─▶ the inner message logged as unhandled under its own id,
-////                                 but the player's movement and camp messages in the world
-//// 0x244{0x0241}                ─▶ logged as unhandled
+////                                 but the messages the routing table takes in the world
+//// 0x244{0x0241}                ─▶ taken and dropped (genesis_prime/game/dropped): nothing logged, nothing sent
+//// 0x244{0x038C{0x023C and the other reports and requests}} ─▶ taken and dropped, the same way
 //// ping 0x0, bare               ◀─ pong 0x1, bare
 //// Sessions: TakenOver          ─▶ in the world, store: SavePlace  ◀─ 0x3DC{0x036A reason 19}, session key; the connection ends
 //// ```
@@ -127,8 +128,10 @@
 //// - **Out of order.** A frame the client's reader would refuse ends the
 ////   connection, as does a 0x025C that holds no 0x025B or a 0x025B or 0x07DD
 ////   whose body is cut; a whole frame of a message the rule does not take,
-////   0x038C with 0x082D inside it, 0x0241 and any other, is logged as
-////   unhandled and the connection goes on (opcode.0x241).
+////   0x038C with 0x082D inside it and any other with no row, is logged as
+////   unhandled and the connection goes on; 0x0241 and the reports and requests
+////   of genesis_prime/game/dropped have rows, and are taken with nothing logged
+////   (opcode.0x241).
 
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, Broken, Bytes, Connect,
@@ -144,6 +147,7 @@ import genesis_prime/game/chat
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/chat as connection_chat
+import genesis_prime/game/connection/dropped as connection_dropped
 import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/login as connection_login
 import genesis_prime/game/connection/movement as connection_movement
@@ -543,6 +547,8 @@ fn routed(
     Ok(routing.WorldEntry) ->
       connection_select.play_requested(session:, now:, inner:)
     Ok(routing.WorldMessage) -> world_carried(session:, now:, inner:)
+    Ok(routing.Dropped(message:)) ->
+      connection_dropped.dropped_message(session:, now:, inner:, message:)
     Ok(routing.Movement(..))
     | Ok(routing.Camp(..))
     | Ok(routing.Chat(..))
@@ -695,6 +701,13 @@ fn world_carried(
                     session:,
                     now:,
                     entered:,
+                    inner: whole,
+                    message:,
+                  )
+                Ok(routing.Dropped(message:)) ->
+                  connection_dropped.dropped_message(
+                    session:,
+                    now:,
                     inner: whole,
                     message:,
                   )

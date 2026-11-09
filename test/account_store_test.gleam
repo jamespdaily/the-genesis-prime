@@ -44,9 +44,7 @@ import genesis_prime/store.{
   QuestRow, RenameCharacter, Renamed, SavePlace, Select, Unavailable, World,
 }
 import genesis_prime/store/worker
-import genesis_prime/table/id.{
-  CharacterCustomizationLabelId, ClassId, Item2Id, RaceId,
-}
+import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import gleam/bool
 import gleam/dynamic/decode
 import gleam/erlang/process
@@ -2092,22 +2090,6 @@ fn release_lock(lock: Lock) -> Nil {
 
 // ---- held items ----
 
-/// The seven items of CharacterCreation row 466's Novice set, each at the bag
-/// index of its slot (`ItemSlot.equippedSlotFlags`): chest 0, legs 1, shoulder
-/// 3, feet 4, hands 5, shield 15 and weapon 16, a stack of 1 each
-/// (`opcode.0x111.equipped_set`).
-fn novice_set() -> List(store.NewItem) {
-  [
-    NewItem(Item2Id(81_359), 0, 0, 1),
-    NewItem(Item2Id(81_344), 0, 1, 1),
-    NewItem(Item2Id(81_381), 0, 3, 1),
-    NewItem(Item2Id(81_345), 0, 4, 1),
-    NewItem(Item2Id(81_380), 0, 5, 1),
-    NewItem(Item2Id(8534), 0, 15, 1),
-    NewItem(Item2Id(81_346), 0, 16, 1),
-  ]
-}
-
 /// The items the store loads for the character, in the order it sends them.
 fn held_by(
   store store: Store,
@@ -2187,7 +2169,7 @@ pub fn a_create_stores_the_novice_set_with_new_guids_and_the_load_returns_them_t
       account:,
       name: "Ab Cd",
       slots: 2,
-      items: novice_set(),
+      items: character_support.row_466_items(),
     )
     as "a create with the Novice set is stored"
   let assert CharacterCreated(character_id: second) =
@@ -2196,14 +2178,16 @@ pub fn a_create_stores_the_novice_set_with_new_guids_and_the_load_returns_them_t
       account:,
       name: "Ef Gh",
       slots: 2,
-      items: novice_set(),
+      items: character_support.row_466_items(),
     )
     as "a second character gets the same set"
   let first_items = held_by(store:, account:, character_id: first)
   let second_items = held_by(store:, account:, character_id: second)
-  assert list.map(first_items, without_guid) == novice_set()
+  assert list.map(first_items, without_guid)
+    == character_support.row_466_items()
     as "opcode.0x111.equipped_set: seven items at location 0 in the bag indexes 0, 1, 3, 4, 5, 15 and 16, as the create gave them, in the order of their places"
-  assert list.map(second_items, without_guid) == novice_set()
+  assert list.map(second_items, without_guid)
+    == character_support.row_466_items()
   let guids =
     list.map(list.append(first_items, second_items), fn(item) { item.item_guid })
   assert list.all(guids, fn(guid) { guid != 0 })
@@ -2224,7 +2208,7 @@ pub fn a_refused_create_stores_no_items_and_a_delete_removes_the_characters_item
       account:,
       name: "Ab Cd",
       slots: 1,
-      items: novice_set(),
+      items: character_support.row_466_items(),
     )
     as "the first create is stored"
   assert item_rows(store:) == 7
@@ -2233,7 +2217,7 @@ pub fn a_refused_create_stores_no_items_and_a_delete_removes_the_characters_item
       account:,
       name: "Ef Gh",
       slots: 1,
-      items: novice_set(),
+      items: character_support.row_466_items(),
     )
     == NoFreeSlot
     as "lua.CharacterSelection.OnLoadFromCharacter: an account holds its slots only, so a create past them is refused"
@@ -2242,7 +2226,7 @@ pub fn a_refused_create_stores_no_items_and_a_delete_removes_the_characters_item
       account: other,
       name: "ab cd",
       slots: 1,
-      items: novice_set(),
+      items: character_support.row_466_items(),
     )
     == NameTaken
     as "a name is unique ignoring case"
@@ -2254,7 +2238,7 @@ pub fn a_refused_create_stores_no_items_and_a_delete_removes_the_characters_item
       account: other,
       name: "Ij Kl",
       slots: 1,
-      items: novice_set(),
+      items: character_support.row_466_items(),
     )
     as "another account's create is stored"
   assert item_rows(store:) == 14
@@ -2328,7 +2312,7 @@ pub fn an_item_keeps_its_guid_when_its_place_changes_and_two_items_swap_places_i
       account:,
       name: "Ab Cd",
       slots: 1,
-      items: novice_set(),
+      items: character_support.row_466_items(),
     )
     as "a character holding the Novice set"
   let CharacterId(number) = character_id

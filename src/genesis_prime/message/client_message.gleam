@@ -17,31 +17,46 @@ import genesis_prime/message/character_select_start.{type CharacterSelectStart}
 import genesis_prime/message/choose_realm.{type ChooseRealm}
 import genesis_prime/message/choose_resurrection.{type ChooseResurrection}
 import genesis_prime/message/client_control_echoed.{type ClientControlEchoed}
+import genesis_prime/message/client_option.{type ClientOption}
 import genesis_prime/message/client_wrapper.{type ClientWrapper}
 import genesis_prime/message/close_notice.{type CloseNotice}
 import genesis_prime/message/create_character.{type CreateCharacter}
 import genesis_prime/message/create_character_carrier.{
   type CreateCharacterCarrier,
 }
+import genesis_prime/message/credd_exchange_request.{type CreddExchangeRequest}
 import genesis_prime/message/delete_character.{type DeleteCharacter}
 import genesis_prime/message/fall_value.{type FallValue}
 import genesis_prime/message/fell_below_floor.{type FellBelowFloor}
+import genesis_prime/message/frame_time_report.{type FrameTimeReport}
 import genesis_prime/message/game_hello_reply.{type GameHelloReply}
+import genesis_prime/message/graphics_report.{type GraphicsReport}
 import genesis_prime/message/innate_index_chosen.{type InnateIndexChosen}
+import genesis_prime/message/input_key_set_request.{type InputKeySetRequest}
 import genesis_prime/message/login_request.{type LoginRequest}
 import genesis_prime/message/move_speed_setting.{type MoveSpeedSetting}
 import genesis_prime/message/movement_send_interval_answer.{
   type MovementSendIntervalAnswer,
 }
+import genesis_prime/message/network_report.{type NetworkReport}
+import genesis_prime/message/own_auctions_request.{type OwnAuctionsRequest}
+import genesis_prime/message/own_commodity_orders_request.{
+  type OwnCommodityOrdersRequest,
+}
 import genesis_prime/message/ping.{type Ping}
 import genesis_prime/message/play_character.{type PlayCharacter}
 import genesis_prime/message/player_movement.{type PlayerMovement}
 import genesis_prime/message/pong.{type Pong}
+import genesis_prime/message/pre_game_activity.{type PreGameActivity}
 import genesis_prime/message/realm_select_start.{type RealmSelectStart}
 import genesis_prime/message/rename_character.{type RenameCharacter}
+import genesis_prime/message/scanbot_request.{type ScanbotRequest}
 import genesis_prime/message/send_chat_line.{type SendChatLine}
 import genesis_prime/message/send_whisper.{type SendWhisper}
 import genesis_prime/message/terrain_loaded.{type TerrainLoaded}
+import genesis_prime/message/trade_cancel.{type TradeCancel}
+import genesis_prime/message/watchdog_report.{type WatchdogReport}
+import genesis_prime/message/window_opened.{type WindowOpened}
 import genesis_prime/message/world_message.{type WorldMessage}
 import genesis_prime/message/world_zone_changed.{type WorldZoneChanged}
 
@@ -79,6 +94,19 @@ pub type ClientMessage {
   InnateIndexChosen(message: InnateIndexChosen)
   CancelCast(message: CancelCast)
   ChooseResurrection(message: ChooseResurrection)
+  WatchdogReport(message: WatchdogReport)
+  FrameTimeReport(message: FrameTimeReport)
+  NetworkReport(message: NetworkReport)
+  GraphicsReport(message: GraphicsReport)
+  WindowOpened(message: WindowOpened)
+  PreGameActivity(message: PreGameActivity)
+  ClientOption(message: ClientOption)
+  ScanbotRequest(message: ScanbotRequest)
+  OwnAuctionsRequest(message: OwnAuctionsRequest)
+  OwnCommodityOrdersRequest(message: OwnCommodityOrdersRequest)
+  CreddExchangeRequest(message: CreddExchangeRequest)
+  TradeCancel(message: TradeCancel)
+  InputKeySetRequest(message: InputKeySetRequest)
 }
 
 /// Why a body is not a message the client sends.
@@ -160,6 +188,40 @@ pub fn decode(
     0x0801 -> decoded(body, message_id, cancel_cast.decode, CancelCast)
     0x015A ->
       decoded(body, message_id, choose_resurrection.decode, ChooseResurrection)
+    0x023C -> decoded(body, message_id, watchdog_report.decode, WatchdogReport)
+    0x0240 ->
+      decoded(body, message_id, frame_time_report.decode, FrameTimeReport)
+    0x023F -> decoded(body, message_id, network_report.decode, NetworkReport)
+    0x023E -> decoded(body, message_id, graphics_report.decode, GraphicsReport)
+    0x023D -> decoded(body, message_id, window_opened.decode, WindowOpened)
+    0x0241 ->
+      decoded(body, message_id, pre_game_activity.decode, PreGameActivity)
+    0x012B -> decoded(body, message_id, client_option.decode, ClientOption)
+    0x0180 -> decoded(body, message_id, scanbot_request.decode, ScanbotRequest)
+    0x03ED ->
+      decoded(body, message_id, own_auctions_request.decode, OwnAuctionsRequest)
+    0x03EC ->
+      decoded(
+        body,
+        message_id,
+        own_commodity_orders_request.decode,
+        OwnCommodityOrdersRequest,
+      )
+    0x0269 ->
+      decoded(
+        body,
+        message_id,
+        credd_exchange_request.decode,
+        CreddExchangeRequest,
+      )
+    0x018F -> decoded(body, message_id, trade_cancel.decode, TradeCancel)
+    0x0570 ->
+      decoded(
+        body,
+        message_id,
+        input_key_set_request.decode,
+        InputKeySetRequest,
+      )
     _ -> Error(UnknownMessage(message_id:))
   }
 }
@@ -200,6 +262,20 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     InnateIndexChosen(message:) -> innate_index_chosen.encode(message)
     CancelCast(message:) -> cancel_cast.encode(message)
     ChooseResurrection(message:) -> choose_resurrection.encode(message)
+    WatchdogReport(message:) -> watchdog_report.encode(message)
+    FrameTimeReport(message:) -> frame_time_report.encode(message)
+    NetworkReport(message:) -> network_report.encode(message)
+    GraphicsReport(message:) -> graphics_report.encode(message)
+    WindowOpened(message:) -> window_opened.encode(message)
+    PreGameActivity(message:) -> pre_game_activity.encode(message)
+    ClientOption(message:) -> client_option.encode(message)
+    ScanbotRequest(message:) -> scanbot_request.encode(message)
+    OwnAuctionsRequest(message:) -> own_auctions_request.encode(message)
+    OwnCommodityOrdersRequest(message:) ->
+      own_commodity_orders_request.encode(message)
+    CreddExchangeRequest(message:) -> credd_exchange_request.encode(message)
+    TradeCancel(message:) -> trade_cancel.encode(message)
+    InputKeySetRequest(message:) -> input_key_set_request.encode(message)
   }
 }
 
@@ -238,6 +314,19 @@ pub fn message_id(message: ClientMessage) -> Int {
     InnateIndexChosen(..) -> innate_index_chosen.message_id
     CancelCast(..) -> cancel_cast.message_id
     ChooseResurrection(..) -> choose_resurrection.message_id
+    WatchdogReport(..) -> watchdog_report.message_id
+    FrameTimeReport(..) -> frame_time_report.message_id
+    NetworkReport(..) -> network_report.message_id
+    GraphicsReport(..) -> graphics_report.message_id
+    WindowOpened(..) -> window_opened.message_id
+    PreGameActivity(..) -> pre_game_activity.message_id
+    ClientOption(..) -> client_option.message_id
+    ScanbotRequest(..) -> scanbot_request.message_id
+    OwnAuctionsRequest(..) -> own_auctions_request.message_id
+    OwnCommodityOrdersRequest(..) -> own_commodity_orders_request.message_id
+    CreddExchangeRequest(..) -> credd_exchange_request.message_id
+    TradeCancel(..) -> trade_cancel.message_id
+    InputKeySetRequest(..) -> input_key_set_request.message_id
   }
 }
 
@@ -276,6 +365,19 @@ pub fn name(message: ClientMessage) -> String {
     InnateIndexChosen(..) -> "innate_index_chosen"
     CancelCast(..) -> "cancel_cast"
     ChooseResurrection(..) -> "choose_resurrection"
+    WatchdogReport(..) -> "watchdog_report"
+    FrameTimeReport(..) -> "frame_time_report"
+    NetworkReport(..) -> "network_report"
+    GraphicsReport(..) -> "graphics_report"
+    WindowOpened(..) -> "window_opened"
+    PreGameActivity(..) -> "pre_game_activity"
+    ClientOption(..) -> "client_option"
+    ScanbotRequest(..) -> "scanbot_request"
+    OwnAuctionsRequest(..) -> "own_auctions_request"
+    OwnCommodityOrdersRequest(..) -> "own_commodity_orders_request"
+    CreddExchangeRequest(..) -> "credd_exchange_request"
+    TradeCancel(..) -> "trade_cancel"
+    InputKeySetRequest(..) -> "input_key_set_request"
   }
 }
 

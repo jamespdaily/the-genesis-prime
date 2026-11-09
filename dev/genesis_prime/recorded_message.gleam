@@ -662,7 +662,20 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.AbilityHold(..)
     | client_message.CancelCast(..)
     | client_message.InnateIndexChosen(..)
-    | client_message.ChooseResurrection(..) -> Plain
+    | client_message.ChooseResurrection(..)
+    | client_message.WatchdogReport(..)
+    | client_message.FrameTimeReport(..)
+    | client_message.NetworkReport(..)
+    | client_message.GraphicsReport(..)
+    | client_message.WindowOpened(..)
+    | client_message.PreGameActivity(..)
+    | client_message.ClientOption(..)
+    | client_message.ScanbotRequest(..)
+    | client_message.OwnAuctionsRequest(..)
+    | client_message.OwnCommodityOrdersRequest(..)
+    | client_message.CreddExchangeRequest(..)
+    | client_message.TradeCancel(..)
+    | client_message.InputKeySetRequest(..) -> Plain
   }
 }
 
