@@ -14,14 +14,18 @@
 #   client        Client64/WildStar64.exe and Patch/*.index of the client $WILDSTAR_CLIENT_EXE names
 #   world-data    every file of $GENESIS_WORLD_DATA
 # Each is a gzip tar split into files of 45 MiB (GitHub warns at 50 MB), named
-# <part>.tgz.aa, .ab and so on. STAMP holds the SHA-256 of each input whose change makes
-# the packed data stale: the table extractor and client_files.py. pack refuses a client-files
-# folder that client_files.py check does not call current.
+# <part>.tgz.aa, .ab and so on. STAMP holds the SHA-256 of each Patch/*.index packed: the
+# tables and en-US.bin are the client's own bytes, each checked against the SHA-1 its index
+# holds, so the indexes decide the data and the extractors' code does not. pack refuses a
+# client-files folder that client_files.py check does not call current.
 #
 # unpack puts the parts at $HOME/.genesis-prime/{tables,client-files,client,world-data}, where
 # ./check finds the tables and the client files by default; CI names the client's exe
 # ($HOME/.genesis-prime/client/Client64/WildStar64.exe) and the world data. It refuses, naming
-# `dev/client_data.sh publish`, when STAMP differs from this commit's inputs.
+# `dev/client_data.sh publish`, when the unpacked Patch/*.index files are not the ones STAMP
+# lists, or one is of another build than setup_check/extract_tables.py's TARGET_BUILD, the
+# build the server is written for (the setup check holds the same pin, and CI's check also
+# compares the exe with its pinned SHA-256).
 #
 # publish packs, creates the private repository when it is missing, pushes the pack as the
 # repository's only commit (history is replaced, so old copies do not pile up), adds a new
@@ -35,10 +39,6 @@ cd "$(dirname "$0")/.."
 
 part_size=47185920
 key_title="CI read-only"
-inputs=(
-  setup_check/extract_tables.py
-  .claude/skills/decoding-the-client/scripts/client_files.py
-)
 
 fail() {
   echo "client_data: $*" >&2
@@ -75,34 +75,44 @@ pack() {
   archive "$out" client-files "$files" en-US.bin
   archive "$out" client "$root" Client64/WildStar64.exe "${indexes[@]}"
   archive "$out" world-data "$GENESIS_WORLD_DATA" .
-  local input
-  for input in "${inputs[@]}"; do
-    echo "$(sha256 "$input")  $input"
+  local path
+  for path in "${indexes[@]}"; do
+    echo "$(sha256 "$root/$path")  $path"
   done >"$out/STAMP"
   echo "packed into $out:"
   ls -l "$out"
 }
 
-# check_stamp DIR: fails, naming the publishing command, when DIR's STAMP differs from this
-# commit's inputs.
+# check_stamp DIR CLIENT: fails, naming the publishing command, unless the Patch/*.index files
+# unpacked into CLIENT are exactly the ones DIR's STAMP lists, with those SHA-256 hashes, and
+# each is of the build the server is written for.
 check_stamp() {
-  local hash input stale=()
+  local hash path stale=() listed=() other
   [ -f "$1/STAMP" ] || fail "$1 holds no STAMP"
-  while read -r hash input; do
-    [ "$(sha256 "$input")" = "$hash" ] || stale+=("$input")
+  while read -r hash path; do
+    listed+=("$path")
+    [ -f "$2/$path" ] && [ "$(sha256 "$2/$path")" = "$hash" ] || stale+=("$path")
+    python3.13 -I -c 'import sys
+sys.path.insert(0, "setup_check")
+import extract_tables
+build = extract_tables.build_of_index(open(sys.argv[1], "rb").read())[0]
+sys.exit(0 if build == extract_tables.TARGET_BUILD else 1)' "$2/$path" 2>/dev/null || stale+=("$path")
   done <"$1/STAMP"
-  [ "${#stale[@]}" -eq 0 ] ||
-    fail "the client data was packed from other versions of ${stale[*]}: Jim runs 'dev/client_data.sh publish' at his terminal to pack it again"
+  for other in "$2"/Patch/*.index; do
+    case " ${listed[*]} " in *" Patch/$(basename "$other") "*) ;; *) stale+=("Patch/$(basename "$other")") ;; esac
+  done
+  [ "${#listed[@]}" -gt 0 ] && [ "${#stale[@]}" -eq 0 ] ||
+    fail "the client data holds other client indexes than this commit expects (${stale[*]:-none listed}): Jim runs 'dev/client_data.sh publish' at his terminal to pack it again"
 }
 
 unpack() {
   local from=${1:-} dest=${2:-$HOME}/.genesis-prime part
   [ -n "$from" ] || fail "unpack needs the packed folder: dev/client_data.sh unpack DIR [HOME]"
-  check_stamp "$from"
-  for part in tables client-files client world-data; do
+  for part in client tables client-files world-data; do
     rm -rf "${dest:?}/$part"
     mkdir -p "$dest/$part"
     cat "$from/$part".tgz.* | tar -xzf - -C "$dest/$part"
+    [ "$part" != client ] || check_stamp "$from" "$dest/client"
   done
   echo "unpacked into $dest"
 }
@@ -121,7 +131,7 @@ publish() {
   git -C "$work/pack" init -q -b main
   git -C "$work/pack" add .
   git -C "$work/pack" commit -q -m "The client's data"
-  git -C "$work/pack" -c "credential.helper=!gh auth git-credential" push --force \
+  git -C "$work/pack" -c credential.helper= -c "credential.helper=!gh auth git-credential" push --force \
     "https://github.com/$data_repo.git" main
   old_keys=$(gh api "repos/$data_repo/keys" --jq ".[] | select(.title == \"$key_title\") | .id")
   ssh-keygen -q -t ed25519 -N "" -C "$key_title" -f "$work/key"

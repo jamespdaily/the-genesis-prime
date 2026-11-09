@@ -132,8 +132,8 @@ jobs:
         if: ${{ env.GENESIS_NO_CLIENT != '1' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends llvm
-          echo "GENESIS_LLVM_OBJDUMP=$(ls /usr/lib/llvm-*/bin/llvm-objdump | sort -V | tail -1)" >> "$GITHUB_ENV"
+          sudo apt-get install -y --no-install-recommends llvm-18
+          echo "GENESIS_LLVM_OBJDUMP=/usr/lib/llvm-18/bin/llvm-objdump" >> "$GITHUB_ENV"
       - name: Record the tree tested
         run: echo "::notice title=tested tree::tested tree $(git rev-parse 'HEAD^{tree}')"
       - run: ./check
