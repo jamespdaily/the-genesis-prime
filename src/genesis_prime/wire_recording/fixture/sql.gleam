@@ -221,6 +221,7 @@ pub type CharactersOfAccountsNamedRow {
     bones: List(Int),
     needs_rename: Bool,
     health: Option(Int),
+    experience: Option(Int),
   )
 }
 
@@ -229,8 +230,8 @@ pub type CharactersOfAccountsNamedRow {
 /// (genesis_prime/wire_recording/fixture): the id, the account it belongs to, the
 /// session epoch that fences a stale save and the number of the last save of that
 /// login, what the character list shows, where it stands and which way it faces,
-/// its look and bones, its rename mark and the health it was saved with (NULL
-/// when none was). `created_at` is left out:
+/// its look and bones, its rename mark and the health and the experience it was
+/// saved with (NULL when none was). `created_at` is left out:
 /// it is the time a row was made, which no flow reads.
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
@@ -265,6 +266,7 @@ pub fn characters_of_accounts_named(
     use bones <- decode.field(21, decode.list(decode.int))
     use needs_rename <- decode.field(22, decode.bool)
     use health <- decode.field(23, decode.optional(decode.int))
+    use experience <- decode.field(24, decode.optional(decode.int))
     decode.success(CharactersOfAccountsNamedRow(
       character_id:,
       account_id:,
@@ -290,6 +292,7 @@ pub fn characters_of_accounts_named(
       bones:,
       needs_rename:,
       health:,
+      experience:,
     ))
   }
 
@@ -298,8 +301,8 @@ pub fn characters_of_accounts_named(
 -- (genesis_prime/wire_recording/fixture): the id, the account it belongs to, the
 -- session epoch that fences a stale save and the number of the last save of that
 -- login, what the character list shows, where it stands and which way it faces,
--- its look and bones, its rename mark and the health it was saved with (NULL
--- when none was). `created_at` is left out:
+-- its look and bones, its rename mark and the health and the experience it was
+-- saved with (NULL when none was). `created_at` is left out:
 -- it is the time a row was made, which no flow reads.
 select
   character_id,
@@ -325,7 +328,8 @@ select
   look_values,
   bones,
   needs_rename,
-  health
+  health,
+  experience
 from character
 where account_id in (
   select account_id from account where login_name = any($1)
