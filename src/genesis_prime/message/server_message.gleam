@@ -30,7 +30,10 @@ import genesis_prime/message/enter_world.{type EnterWorld}
 import genesis_prime/message/experience_gained.{type ExperienceGained}
 import genesis_prime/message/game_server_handoff.{type GameServerHandoff}
 import genesis_prime/message/innate_index_set.{type InnateIndexSet}
+import genesis_prime/message/item_action_failed.{type ItemActionFailed}
 import genesis_prime/message/item_added.{type ItemAdded}
+import genesis_prime/message/item_moved.{type ItemMoved}
+import genesis_prime/message/items_swapped.{type ItemsSwapped}
 import genesis_prime/message/leave_world.{type LeaveWorld}
 import genesis_prime/message/login_accepted.{type LoginAccepted}
 import genesis_prime/message/login_refused.{type LoginRefused}
@@ -132,6 +135,9 @@ pub type ServerMessage {
   ChatChannelJoined(message: ChatChannelJoined)
   ChatZoneNamed(message: ChatZoneNamed)
   ItemAdded(message: ItemAdded)
+  ItemMoved(message: ItemMoved)
+  ItemsSwapped(message: ItemsSwapped)
+  ItemActionFailed(message: ItemActionFailed)
   AbilityTiers(message: AbilityTiers)
   ActionSet(message: ActionSet)
   InnateIndexSet(message: InnateIndexSet)
@@ -305,6 +311,10 @@ pub fn decode(
       decoded(body, message_id, chat_channel_joined.decode, ChatChannelJoined)
     0x01DA -> decoded(body, message_id, chat_zone_named.decode, ChatZoneNamed)
     0x0111 -> decoded(body, message_id, item_added.decode, ItemAdded)
+    0x0569 -> decoded(body, message_id, item_moved.decode, ItemMoved)
+    0x0568 -> decoded(body, message_id, items_swapped.decode, ItemsSwapped)
+    0x056A ->
+      decoded(body, message_id, item_action_failed.decode, ItemActionFailed)
     0x01A0 -> decoded(body, message_id, ability_tiers.decode, AbilityTiers)
     0x019D -> decoded(body, message_id, action_set.decode, ActionSet)
     0x019F -> decoded(body, message_id, innate_index_set.decode, InnateIndexSet)
@@ -445,6 +455,9 @@ pub fn name(message: ServerMessage) -> String {
     ChatChannelJoined(..) -> "chat_channel_joined"
     ChatZoneNamed(..) -> "chat_zone_named"
     ItemAdded(..) -> "item_added"
+    ItemMoved(..) -> "item_moved"
+    ItemsSwapped(..) -> "items_swapped"
+    ItemActionFailed(..) -> "item_action_failed"
     AbilityTiers(..) -> "ability_tiers"
     ActionSet(..) -> "action_set"
     InnateIndexSet(..) -> "innate_index_set"

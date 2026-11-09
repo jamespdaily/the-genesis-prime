@@ -34,6 +34,8 @@ import genesis_prime/message/graphics_report.{GraphicsReport}
 import genesis_prime/message/innate_index_chosen.{InnateIndexChosen}
 import genesis_prime/message/input_key_set_request.{InputKeySetRequest}
 import genesis_prime/message/interaction_request.{InteractionRequest}
+import genesis_prime/message/item_move.{ItemMove}
+import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/login_request.{LoginRequest}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
 import genesis_prime/message/movement_command
@@ -320,6 +322,13 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       0x016F,
       client_message.InnateIndexChosen(message: InnateIndexChosen(
         innate_index: 2,
+      )),
+    ),
+    #(
+      0x0182,
+      client_message.ItemMove(message: ItemMove(
+        from: ItemPlace(location: 1, bag_index: 3),
+        to: ItemPlace(location: 0, bag_index: 7),
       )),
     ),
     #(
