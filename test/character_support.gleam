@@ -98,28 +98,32 @@ pub fn try_insert_at_level(
 
 /// Stores the Novice set of the Dominion character's class (the faction the
 /// inserted row has) at location 0, as a create does, so the character enters
-/// the world holding its gear.
+/// the world holding its gear. A class the client has no Dominion Novice set
+/// for (the table tests store rows of any class from 1 to 20) holds nothing.
 fn hold_novice_set(
   pool pool: pog.Connection,
   character_id character_id: Int,
   class_id class_id: Int,
 ) -> Nil {
-  let assert Ok(set) =
+  case
     list.find(novice_tables.sets(), fn(set) {
       set.class_id == class_id && set.faction_id == 166
     })
-    as "a Novice set exists for the class, Dominion"
-  list.each(novice_tables.equipped_of(set:), fn(pair) {
-    let assert Ok(_) =
-      pog.query(
-        "insert into character_item (character_id, item2_id, location, bag_index, stack_count) values ($1, $2, 0, $3, 1)",
-      )
-      |> pog.parameter(pog.int(character_id))
-      |> pog.parameter(pog.int(pair.0))
-      |> pog.parameter(pog.int(pair.1))
-      |> pog.execute(pool)
-      as "the Novice set's item was stored"
-  })
+  {
+    Error(Nil) -> Nil
+    Ok(set) ->
+      list.each(novice_tables.equipped_of(set:), fn(pair) {
+        let assert Ok(_) =
+          pog.query(
+            "insert into character_item (character_id, item2_id, location, bag_index, stack_count) values ($1, $2, 0, $3, 1)",
+          )
+          |> pog.parameter(pog.int(character_id))
+          |> pog.parameter(pog.int(pair.0))
+          |> pog.parameter(pog.int(pair.1))
+          |> pog.execute(pool)
+          as "the Novice set's item was stored"
+      })
+  }
 }
 
 /// The place and the health a character's row holds, with the numbers that fence

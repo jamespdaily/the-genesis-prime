@@ -983,12 +983,14 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
   let store = start_store(pool_size: 2)
   let account = insert_account(store, "login-1")
   let other = insert_account(store, "login-2")
+  // Class 12 has no Dominion Novice set, so the characters hold no item and
+  // this test checks the place, the epoch and the health alone.
   let mine =
     character_support.insert(
       pool: store.pool,
       account:,
       name: "Zed Qu",
-      class_id: 4,
+      class_id: 12,
       path: 2,
     )
   let theirs =
@@ -996,7 +998,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
       pool: store.pool,
       account: other,
       name: "Abe Qu",
-      class_id: 4,
+      class_id: 12,
       path: 2,
     )
   assert ask(store, World(LoadCharacter(account, CharacterId(mine))))
@@ -1007,7 +1009,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
           name: "Zed Qu",
           gender: 1,
           race_id: RaceId(3),
-          class_id: ClassId(4),
+          class_id: ClassId(12),
           faction_id: 166,
           level: 9,
           path: 2,
