@@ -870,17 +870,27 @@ fn object_created(body body: BitArray) -> Result(Created, Nil) {
 }
 
 /// The static object of a type whose reader takes a checklist index (types 8, 10,
-/// 11, 13 and 32), or `Error(Nil)` for any other type.
+/// 11, 13 and 32), or `Error(Nil)` for any other type, types 4, 12 and 14 among
+/// them: their readers take no checklist index.
 fn checklist_object_created(body body: BitArray) -> Result(Created, Nil) {
   use unit <- result.try(
     unit_create_static.decode(body) |> result.replace_error(Nil),
   )
-  use unit_type <- result.map(
+  use unit_type <- result.try(
     static_object.unit_type_of(entity_type: static_unit_type.to_value(
       unit.unit_type,
     )),
   )
-  ObjectCreated(unit.unit_id, unit_type, unit.tail)
+  case unit_type {
+    static_object.Door | static_object.Mailbox | static_object.InstancePortal ->
+      Error(Nil)
+    static_object.Collectible
+    | static_object.Simple
+    | static_object.Platform
+    | static_object.Turret
+    | static_object.SimpleCollidable ->
+      Ok(ObjectCreated(unit.unit_id, unit_type, unit.tail))
+  }
 }
 
 fn created(others others: Others, body body: BitArray) -> Others {

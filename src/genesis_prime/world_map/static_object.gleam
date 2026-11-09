@@ -50,7 +50,6 @@ import genesis_prime/table/id.{type Creature2Id, Creature2Id}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/unit_fields.{type HealthSource}
-import gleam/list
 import gleam/option.{type Option}
 
 /// The unit type of a static object, as message 0x262 numbers it
@@ -118,7 +117,11 @@ pub type Health {
 }
 
 /// The static object type of a row's entity type, the 0x262's unit type, or
-/// `Error(Nil)` for a type that is not one.
+/// `Error(Nil)` for a type that is not one. Types 8, 10, 11, 13 and 32 are the
+/// generated `static_unit_type`'s; types 4 (Door), 12 (Mailbox) and 14
+/// (InstancePortal) are numbered by `opcode.0x262.type_data`, the reader table
+/// of message 0x262 (`0x140096fa0`), and are the constants the schema's
+/// `unit_create_door`, `unit_create_mailbox` and `unit_create_portal` write.
 pub fn unit_type_of(entity_type entity_type: Int) -> Result(UnitType, Nil) {
   case static_unit_type.from_value(entity_type) {
     static_unit_type.Collectible -> Ok(Collectible)
@@ -126,14 +129,15 @@ pub fn unit_type_of(entity_type entity_type: Int) -> Result(UnitType, Nil) {
     static_unit_type.Platform -> Ok(Platform)
     static_unit_type.Turret -> Ok(Turret)
     static_unit_type.SimpleCollidable -> Ok(SimpleCollidable)
-    static_unit_type.Other(number) ->
-      list.find([Door, Mailbox, InstancePortal], fn(unit_type) {
-        type_number(unit_type:) == number
-      })
+    static_unit_type.Other(4) -> Ok(Door)
+    static_unit_type.Other(12) -> Ok(Mailbox)
+    static_unit_type.Other(14) -> Ok(InstancePortal)
+    static_unit_type.Other(_) -> Error(Nil)
   }
 }
 
-/// The 0x262's number of the type: 4, 8, 10, 11, 12, 13, 14 or 32.
+/// The 0x262's number of the type: 4, 8, 10, 11, 12, 13, 14 or 32. The numbers 4,
+/// 12 and 14 are those of `unit_type_of`, from `opcode.0x262.type_data`.
 pub fn type_number(unit_type unit_type: UnitType) -> Int {
   case unit_type {
     Door -> 4

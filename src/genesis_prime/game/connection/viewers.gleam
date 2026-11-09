@@ -227,38 +227,28 @@ pub fn map_sent(
     }
     map.ObjectsSeen(units:) -> {
       let #(refused, named) =
-        list.partition(units, fn(unit) {
-          names_own_unit(
-            entered:,
-            unit_id: static_object.unit_id(created: unit),
-          )
-        })
+        units
+        |> list.map(fn(unit) { #(static_object.unit_id(created: unit), unit) })
+        |> list.partition(fn(unit) { names_own_unit(entered:, unit_id: unit.0) })
       let fresh =
         list.filter(named, fn(unit) {
-          !dict.has_key(entered.shown, static_object.unit_id(created: unit))
-          && !set.contains(entered.gone, static_object.unit_id(created: unit))
+          !dict.has_key(entered.shown, unit.0)
+          && !set.contains(entered.gone, unit.0)
         })
       Continue(
         shown_changed(session:, change: fn(picture) {
           list.fold(fresh, picture, fn(picture, unit) {
-            dict.insert(
-              picture,
-              static_object.unit_id(created: unit),
-              ShownObject,
-            )
+            dict.insert(picture, unit.0, ShownObject)
           })
         }),
         list.append(
           list.map(refused, fn(unit) {
-            refusal_logged(
-              session:,
-              unit_id: static_object.unit_id(created: unit),
-            )
+            refusal_logged(session:, unit_id: unit.0)
           }),
           list.map(fresh, fn(unit) {
             connection_state.to_client(
               session,
-              connection_frames.object_created_frame(unit:),
+              connection_frames.object_created_frame(unit: unit.1),
             )
           }),
         ),
