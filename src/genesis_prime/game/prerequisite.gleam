@@ -71,6 +71,15 @@
 ////   is the same on the unit's base faction (`Prerequisite.prerequisiteTypeId.4`,
 ////   `.250`, `0x14049c620`, `0x14049c6a0`). Only a player's side holds its factions,
 ////   so a subject with none gives `NotRead`.
+//// - **Type 10** passes, by comparison 1, when the player's gender equals the value
+////   and by comparison 2 when it does not; any other comparison fails, and its
+////   objectId is not read. The gender is the one the unit-create message 0x262
+////   carries (0 male, 1 female). Only a player's side holds one, so a subject with
+////   none gives `NotRead` (`Prerequisite.prerequisiteTypeId.10`, `0x14049c5e0`).
+//// - **Type 109** passes, by comparison 1, when the player's world is the World the
+////   objectId names and by comparison 2 when it is another; any other comparison
+////   fails, and its value is not read. A subject with no world gives `NotRead`
+////   (`Prerequisite.prerequisiteTypeId.109`, `0x14049e780`).
 //// - **Type 243** always fails: the client's check reads nothing from the unit
 ////   (`Prerequisite.prerequisiteTypeId.243`, `0x140001ba0`).
 //// - **Type 179** compares the unit's difficulty with the condition's objectId, not
@@ -240,6 +249,12 @@ type Condition {
   /// Type 250: whether the unit's base faction equals the value
   /// (`Prerequisite.prerequisiteTypeId.250`, `0x14049c6a0`).
   BaseFaction(comparison: Comparison, value: Int)
+  /// Type 10: whether the player's gender equals the value
+  /// (`Prerequisite.prerequisiteTypeId.10`, `0x14049c5e0`).
+  Gender(comparison: Comparison, value: Int)
+  /// Type 109: whether the player's world is the World the objectId names
+  /// (`Prerequisite.prerequisiteTypeId.109`, `0x14049e780`).
+  InWorld(comparison: Comparison, world_id: Int)
   /// Type 243: never met (`Prerequisite.prerequisiteTypeId.243`, `0x140001ba0`).
   NeverMet
   /// Type 108: whether the second unit stands in the arc around the first unit's
@@ -333,6 +348,14 @@ pub type Subject {
     /// creature's side, so types 4 and 250 are not read for it
     /// (`Prerequisite.prerequisiteTypeId.4`, `.250`).
     factions: Option(Factions),
+    /// The subject's gender (0 male, 1 female), which only a player's side holds:
+    /// `None` for a creature's side, so type 10 is not read for it
+    /// (`Prerequisite.prerequisiteTypeId.10`).
+    gender: Option(Int),
+    /// The World id the subject is in, which only a player's side holds: `None`
+    /// for a creature's side, so type 109 is not read for it
+    /// (`Prerequisite.prerequisiteTypeId.109`).
+    world: Option(Int),
     /// What the check knows of the subject.
     seen: Seen,
   )
@@ -378,6 +401,8 @@ pub fn of_struck(first first: Option(Pose), second second: Pose) -> Subject {
       None -> NotPlaced
     },
     factions: None,
+    gender: None,
+    world: None,
     seen: PlaceOnly,
   )
 }
@@ -397,6 +422,34 @@ pub fn of_difficulty(difficulty difficulty: Int) -> Subject {
     rolls: [],
     positions: NotPlaced,
     factions: None,
+    gender: None,
+    world: None,
+    seen: WholeUnit,
+  )
+}
+
+/// A subject that is a player about to wear an item: its factions, gender and
+/// world, under no cast, out of combat, with no vital and no roll. The equip
+/// check's prerequisites (genesis_prime/game/equip_requirement) are checked
+/// against it.
+pub fn of_wearer(
+  factions factions: Factions,
+  gender gender: Int,
+  world world: Int,
+) -> Subject {
+  Subject(
+    under: [],
+    second_unit: None,
+    in_combat: False,
+    vitals: dict.new(),
+    difficulty: None,
+    stealthed: None,
+    resource_slots: None,
+    rolls: [],
+    positions: NotPlaced,
+    factions: Some(factions),
+    gender: Some(gender),
+    world: Some(world),
     seen: WholeUnit,
   )
 }
@@ -651,6 +704,8 @@ fn condition_of(
     179 -> Difficulty(relation: relation_of(code: comparison), object_id:)
     4 -> CurrentFaction(comparison: comparison_of(comparison), value:)
     250 -> BaseFaction(comparison: comparison_of(comparison), value:)
+    10 -> Gender(comparison: comparison_of(comparison), value:)
+    109 -> InWorld(comparison: comparison_of(comparison), world_id: object_id)
     243 -> NeverMet
     _ ->
       case
@@ -686,6 +741,8 @@ pub fn is_read(type_id type_id: Int) -> Bool {
     | Difficulty(..)
     | CurrentFaction(..)
     | BaseFaction(..)
+    | Gender(..)
+    | InWorld(..)
     | NeverMet
     | InArc(..)
     | NoCase -> True
@@ -717,6 +774,8 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
       | Difficulty(..)
       | CurrentFaction(..)
       | BaseFaction(..)
+      | Gender(..)
+      | InWorld(..)
       | NeverMet
       | InArc(..)
       | NoCase
@@ -814,6 +873,8 @@ fn reads_held_state(condition condition: Condition) -> Option(Int) {
     | Difficulty(..)
     | CurrentFaction(..)
     | BaseFaction(..)
+    | Gender(..)
+    | InWorld(..)
     | NeverMet
     | InArc(..)
     | NoCase
@@ -937,6 +998,22 @@ fn condition_decided(
         read: fn(factions) { factions.base },
       ),
     )
+    Gender(comparison:, value:) -> #(rolls, case subject.gender {
+      Some(gender) ->
+        equality_verdict(
+          comparison:,
+          equal: compare(relation: Equal, measured: gender, value:),
+        )
+      None -> NotRead(prerequisite_type: 10)
+    })
+    InWorld(comparison:, world_id:) -> #(rolls, case subject.world {
+      Some(world) ->
+        equality_verdict(
+          comparison:,
+          equal: compare(relation: Equal, measured: world, value: world_id),
+        )
+      None -> NotRead(prerequisite_type: 109)
+    })
     NeverMet -> #(rolls, Fails)
     InArc(comparison:, arc:) -> #(
       rolls,
@@ -1118,13 +1195,24 @@ fn faction_verdict(
   case subject.factions {
     None -> NotRead(prerequisite_type:)
     Some(factions) -> {
-      let equal = compare(relation: Equal, measured: read(factions), value:)
-      case comparison {
-        Found -> verdict_of(equal)
-        NotFound -> verdict_of(!equal)
-        OtherComparison(..) -> Fails
-      }
+      equality_verdict(
+        comparison:,
+        equal: compare(relation: Equal, measured: read(factions), value:),
+      )
     }
+  }
+}
+
+/// The verdict of a condition that asks whether two numbers are equal: comparison 1
+/// passes when they are, 2 when they are not, any other fails.
+fn equality_verdict(
+  comparison comparison: Comparison,
+  equal equal: Bool,
+) -> Verdict {
+  case comparison {
+    Found -> verdict_of(equal)
+    NotFound -> verdict_of(!equal)
+    OtherComparison(..) -> Fails
   }
 }
 

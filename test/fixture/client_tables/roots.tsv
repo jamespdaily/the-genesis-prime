@@ -141,3 +141,14 @@ Item2	1039	(stackable, maximum 20)	inventory_test
 Item2	12049	(bag, not stackable, maximum 6)	inventory_test
 Item2	85531	(bag, not stackable, maximum 14)	inventory_test
 Item2	80875	(flags hold 0x10000, cannot be deleted)	inventory_test
+Item2	12769	(chest for Human Spellslinger, Medic-class bit 64)	equip_requirement_test
+Item2	1133	(Medic chest, class 4, flags bit 0)	inventory_test
+Item2	1229	(chest needing a proficiency the Engineer lacks)	equip_requirement_test
+Item2	73672	(requires world 2979 and level 50 by prerequisite 37283)	equip_requirement_test
+Item2	50770	(chest, level 3)	equip_requirement_test
+Item2	12918	(chest, flags bit 0, required level 36 counts as 1)	equip_requirement_test
+Item2	90054	(prerequisite 18276, gender Equal 1)	equip_requirement_test
+Item2	77689	(prerequisite 39240, loyalty)	equip_requirement_test
+Item2	12631	(ItemSpecial 4463 with a tradeskill tier prerequisite)	equip_requirement_test
+Item2	80982	(slot flags 0x1, joined flags without 0x400)	inventory_test
+Item2	17814	(unique bag, bindFlags bit 1)	inventory_test

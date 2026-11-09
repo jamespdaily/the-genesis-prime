@@ -36,10 +36,12 @@
 ////   stacks to 1.
 
 import character_support
+import equip_requirement_support
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/equip_requirement.{type Wearer, Wearer}
 import genesis_prime/game/inventory.{
   type Effect, type Moving, type Taken, Asks, DeleteAsked, Log, MoveAsked,
   NoItemRow, NotDecoded, Refused, Send, SplitAsked,
@@ -141,7 +143,24 @@ fn move_body(from from: #(Int, Int), to to: #(Int, Int)) -> BitArray {
   body
 }
 
+/// The move of the Engineer of the tests (`equip_requirement_support.engineer`).
 fn taken(
+  items items: List(HeldItem),
+  life life: Life,
+  from from: #(Int, Int),
+  to to: #(Int, Int),
+) -> Result(Taken, inventory.Refusal) {
+  taken_by(
+    wearer: equip_requirement_support.engineer(),
+    items:,
+    life:,
+    from:,
+    to:,
+  )
+}
+
+fn taken_by(
+  wearer wearer: Wearer,
   items items: List(HeldItem),
   life life: Life,
   from from: #(Int, Int),
@@ -151,6 +170,7 @@ fn taken(
     items:,
     life:,
     tables: fixture_tables.shared(),
+    wearer:,
     message: MoveAsked,
     body: move_body(from:, to:),
   )
@@ -373,6 +393,7 @@ pub fn a_move_the_client_would_refuse_is_refused_with_its_code_test() -> Nil {
       items:,
       life: alive(),
       tables: fixture_tables.shared(),
+      wearer: equip_requirement_support.engineer(),
       message: MoveAsked,
       body: <<1, 2, 3>>,
     )
@@ -400,8 +421,20 @@ pub fn gear_with_stats_is_equipped_into_its_slot_test() -> Nil {
   // piece (row 1229), so its slot is the chest, bag index 0; the gear of the
   // quests and the vendors is all of this kind. The rule must not read the
   // budget or stat as a reason to refuse the slot.
+  //
+  // The row requires class 24 (classes 4 and 5, masks of bit `class - 1`) and its
+  // category 2's ItemProficiency is mask 4, which the Engineer's 66 lacks
+  // (0x1403b4710): the wearer is a Medic (class 4) with that one proficiency.
   let items = with_spare(8527)
-  let moving = accepted(items:, from: #(1, 1), to: #(0, 0))
+  let wearer =
+    Wearer(
+      ..equip_requirement_support.engineer(),
+      class_id: 4,
+      item_proficiencies: 4,
+    )
+  let assert Ok(Asks(moving:)) =
+    taken_by(wearer:, items:, life: alive(), from: #(1, 1), to: #(0, 0))
+    as "the move passes every check, so the store is asked"
   assert moves_of(moving)
     == [
       ItemMove(item_guid: 9, from: ItemPlace(1, 1), to: ItemPlace(0, 0)),
@@ -409,7 +442,7 @@ pub fn gear_with_stats_is_equipped_into_its_slot_test() -> Nil {
     ]
     as "the statted chest piece is worn in place of the novice one, which goes to the bag slot it left"
   let assert Ok(Refused(effects:)) =
-    taken(items:, life: alive(), from: #(1, 1), to: #(0, 1))
+    taken_by(wearer:, items:, life: alive(), from: #(1, 1), to: #(0, 1))
     as "the chest piece is still refused at the legs slot, bag index 1"
   assert failed_with(effects) == [#(9, 31)]
 }
@@ -540,6 +573,7 @@ fn split_taken(
     items:,
     life:,
     tables: fixture_tables.shared(),
+    wearer: equip_requirement_support.engineer(),
     message: SplitAsked,
     body: body_of_split(guid:, to:, count:),
   )
@@ -553,6 +587,7 @@ fn delete_taken(
     items:,
     life: alive(),
     tables: fixture_tables.shared(),
+    wearer: equip_requirement_support.engineer(),
     message: DeleteAsked,
     body: body_of_delete(at:),
   )
@@ -695,6 +730,7 @@ pub fn a_split_the_client_would_not_send_is_refused_with_its_code_test() -> Nil 
       items:,
       life: alive(),
       tables: fixture_tables.shared(),
+      wearer: equip_requirement_support.engineer(),
       message: SplitAsked,
       body: <<1, 2, 3>>,
     )
@@ -885,6 +921,7 @@ pub fn a_delete_the_client_would_not_send_is_refused_with_its_code_test() -> Nil
       items:,
       life: alive(),
       tables: fixture_tables.shared(),
+      wearer: equip_requirement_support.engineer(),
       message: DeleteAsked,
       body: <<1>>,
     )
@@ -943,5 +980,202 @@ pub fn a_split_merge_or_delete_the_store_did_not_save_is_refused_db_failure_test
       }
     assert string.contains(text, "character_item_one_per_slot")
       as { what <> ": the failed write names the constraint" }
+  })
+}
+
+/// The Engineer's worn items with one more in inventory slot 0: this Item2
+/// row, guid 9. The spare chest piece of `held` is not there.
+fn worn_with_slot_zero(item2_id: Int) -> List(HeldItem) {
+  let assert [_, ..] as worn =
+    list.filter(held(), fn(item) { item.location == 0 })
+  list.append(worn, [
+    HeldItem(
+      item_guid: 9,
+      item2_id: Item2Id(item2_id),
+      location: 1,
+      bag_index: 0,
+      stack_count: 1,
+    ),
+  ])
+}
+
+pub fn an_item_that_is_not_slotted_is_refused_not_valid_for_slot_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The client's Item2 row 80982 has its own equippedSlotFlags 0x1, but its
+  // Item2Type, Item2Category and Item2Family flags hold no 0x400, so
+  // CheckItemEquipSlot (0x1403b11b0) refuses every equipped location 0 slot for
+  // it, the chest slot (bag index 0, bit 0x1) included: Item_NotValidforSlot,
+  // 31. The server took the item's own flags alone and accepted the move.
+  let items = worn_with_slot_zero(80_982)
+  let assert Ok(Refused(effects:)) =
+    taken(items:, life: alive(), from: #(1, 0), to: #(0, 0))
+    as "the item is refused, so the store is not asked"
+  assert failed_with(effects) == [#(9, 31)]
+    as "one 0x56A with the guid of the item at the source and code 31"
+  assert list.length(effects) == 1 as "nothing else is written or logged"
+}
+
+/// The log lines of the effects, each with its level.
+fn logged(effects: List(Effect)) -> List(#(step.LogLevel, String)) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      Log(level:, text:) -> Ok(#(level, text))
+      Send(..) -> Error(Nil)
+    }
+  })
+}
+
+pub fn gear_the_character_cannot_wear_is_refused_with_its_code_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Each row: what it shows, the Item2 row put in inventory slot 1 (guid 9), the
+  // equipped bag index it is moved to (its slot's bit in the ItemSlot of its
+  // Item2Type: 12769 a primary weapon, bit 16; 1229 and 50770 a chest, bit 0;
+  // 77689 a head, bit 2) and the code the client's CheckEquipRequirements
+  // (0x1403b4710) gives the Engineer: 12769 is for class mask 64, 1229's
+  // category needs proficiency 4, 50770 needs level 3 and 77689's prerequisite
+  // is a loyalty. The codes are those of the first rows of
+  // `equip_requirement_test.the_checks_run_in_the_clients_order_test`.
+  let rows = [
+    #("class", 12_769, 16, 40),
+    #("proficiency", 1229, 0, 41),
+    #("level", 50_770, 0, 42),
+    #("a prerequisite the server does not read", 77_689, 2, 144),
+  ]
+  list.each(rows, fn(row) {
+    let #(what, item2_id, bag_index, code) = row
+    let result =
+      taken(items: with_spare(item2_id), life: alive(), from: #(1, 1), to: #(
+        0,
+        bag_index,
+      ))
+    let assert Ok(Refused(effects:)) = result
+      as { what <> ": refused, so the store is not asked and the items stay" }
+    assert failed_with(effects) == [#(9, code)]
+      as {
+        what
+        <> ": one 0x56A with the guid of the item at the source and the code"
+      }
+    // Only the prerequisite the server cannot read is logged: the client would
+    // decide it.
+    case code {
+      144 -> {
+        let assert [#(level, text)] = logged(effects)
+          as "the refusal is logged once"
+        assert level == step.LogWarning
+        assert string.contains(text, "PrerequisiteType 270")
+          as "the log names the condition type of prerequisite 39240, a loyalty"
+      }
+      _ -> {
+        assert list.length(effects) == 1
+          as { what <> ": nothing else is written or logged" }
+      }
+    }
+  })
+}
+
+pub fn a_swap_checks_the_other_item_against_the_source_slot_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 0x1403ad100 checks the item at the destination for the place the moved item
+  // leaves. 1133 is a chest piece for class mask 4, and 1229 a chest piece
+  // whose category needs proficiency 4, which the Engineer lacks: the unequip
+  // of the Engineer's chest piece onto either is refused.
+  let rows = [#("class", 1133, 40), #("proficiency", 1229, 41)]
+  list.each(rows, fn(row) {
+    let #(what, item2_id, code) = row
+    let result =
+      taken(
+        items: worn_with_slot_zero(item2_id),
+        life: alive(),
+        from: #(0, 0),
+        to: #(1, 0),
+      )
+    let assert Ok(Refused(effects:)) = result
+      as { what <> ": refused, so the store is not asked and the items stay" }
+    assert failed_with(effects) == [#(1, code)]
+      as {
+        what
+        <> ": the guid of the worn chest piece, the item at the source, and the code"
+      }
+    assert list.length(effects) == 1
+      as { what <> ": nothing else is written or logged" }
+  })
+}
+
+/// The Engineer's worn items with a bag, 17814, worn at equipped slot 17 (guid
+/// 20) and a second one in inventory slot 0 (guid 21).
+fn with_two_bags() -> List(HeldItem) {
+  let assert [_, ..] as worn =
+    list.filter(held(), fn(item) { item.location == 0 })
+  list.append(worn, [
+    HeldItem(
+      item_guid: 20,
+      item2_id: Item2Id(17_814),
+      location: 0,
+      bag_index: 17,
+      stack_count: 1,
+    ),
+    HeldItem(
+      item_guid: 21,
+      item2_id: Item2Id(17_814),
+      location: 1,
+      bag_index: 0,
+      stack_count: 1,
+    ),
+  ])
+}
+
+pub fn a_second_unique_equipped_item_is_refused_unique_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Item2 17814 has bindFlags 10, which holds bit 1, the unique-equipped bit
+  // (Item2.bindFlags), and its slot flags 0x7FFE0000 are the bag slots 17 to 30.
+  // 0x1403ad100: an item entering location 0 from outside is refused with
+  // Item_Unique, 30, when an item of its Item2 is worn, before the slot fit
+  // (bag slots 17 to 20 are closed, 31); a destination holding an item of the
+  // same Item2 skips the unique test.
+  let items = with_two_bags()
+  let assert Ok(Refused(effects:)) =
+    taken(items:, life: alive(), from: #(1, 0), to: #(0, 18))
+    as "a second bag is refused"
+  assert failed_with(effects) == [#(21, 30)]
+  assert list.length(effects) == 1 as "nothing else is written or logged"
+  let assert Ok(Refused(effects:)) =
+    taken(items:, life: alive(), from: #(1, 0), to: #(0, 17))
+    as "a bag onto its own copy is refused as a closed bag slot"
+  assert failed_with(effects) == [#(21, 31)]
+    as "the unique test is skipped for a destination of the same Item2, the slot fit follows"
+}
+
+pub fn gear_the_character_can_wear_is_equipped_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 0x1403b4710 passes: 50770 needs level 3, which the wearer has reached, and
+  // 12918 has requiredLevel 36 with flags bit 0, which sets it to 1. Each takes
+  // the place of the chest piece worn.
+  let rows = [
+    #(
+      "level reached",
+      50_770,
+      Wearer(..equip_requirement_support.engineer(), level: 3),
+    ),
+    #("flags bit 0 sets level 1", 12_918, equip_requirement_support.engineer()),
+  ]
+  list.each(rows, fn(row) {
+    let #(what, item2_id, wearer) = row
+    let assert Ok(Asks(moving:)) =
+      taken_by(
+        wearer:,
+        items: worn_with_slot_zero(item2_id),
+        life: alive(),
+        from: #(1, 0),
+        to: #(0, 0),
+      )
+      as { what <> ": the move passes every check, so the store is asked" }
+    assert moves_of(moving)
+      == [
+        ItemMove(item_guid: 9, from: ItemPlace(1, 0), to: ItemPlace(0, 0)),
+        ItemMove(item_guid: 1, from: ItemPlace(0, 0), to: ItemPlace(1, 0)),
+      ]
+      as {
+        what <> ": worn in place of the chest piece, which takes the bag slot"
+      }
   })
 }

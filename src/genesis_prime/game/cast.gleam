@@ -6248,6 +6248,8 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
     rolls: [],
     positions: prerequisite.Placed(first: pose, second: pose),
     factions: Some(caster.factions),
+    gender: None,
+    world: None,
     seen: prerequisite.WholeUnit,
   )
 }

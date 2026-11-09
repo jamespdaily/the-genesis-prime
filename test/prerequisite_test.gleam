@@ -80,6 +80,8 @@ fn bare() -> Subject {
     resource_slots: None,
     positions: prerequisite.NotPlaced,
     factions: None,
+    gender: None,
+    world: None,
     seen: prerequisite.WholeUnit,
   )
 }
@@ -545,11 +547,11 @@ pub fn the_types_the_server_decides_are_those_is_read_names_test() -> Nil {
       prerequisite.is_read(type_id:)
     })
     == [
-      0, 4, 11, 15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 64, 71, 72, 73, 75,
-      108, 116, 129, 132, 144, 156, 157, 158, 161, 165, 179, 181, 202, 243, 247,
-      249, 250, 257, 258, 274, 282, 284, 296, 297, 298, 299, 300,
+      0, 4, 10, 11, 15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 64, 71, 72, 73,
+      75, 108, 109, 116, 129, 132, 144, 156, 157, 158, 161, 165, 179, 181, 202,
+      243, 247, 249, 250, 257, 258, 274, 282, 284, 296, 297, 298, 299, 300,
     ]
-    as "the types the server reads (4, 11, 15, 28, 37, 50, 59, 64, 71, 73, 108, 116, 129, 179, 243, 250; Prerequisite.prerequisiteTypeId.4, .11, .64, .108, .116, .129, .243, .250) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
+    as "the types the server reads (4, 10, 11, 15, 28, 37, 50, 59, 64, 71, 73, 108, 109, 116, 129, 179, 243, 250; Prerequisite.prerequisiteTypeId.4, .10, .11, .64, .108, .109, .116, .129, .243, .250) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
 }
 
 fn types_up_to_300() -> List(Int) {

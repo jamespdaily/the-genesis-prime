@@ -15,9 +15,11 @@
 
 import genesis_prime/client_connection.{type Answer, Continue, FromStore}
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/character_state
 import genesis_prime/game/connection/state.{
   type Session, InWorld, MovingItem, Session,
 } as connection_state
+import genesis_prime/game/equip_requirement
 import genesis_prime/game/inventory
 import genesis_prime/game/movement
 import genesis_prime/game/world_entry
@@ -27,6 +29,7 @@ import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type Outcome,
 }
 import genesis_prime/store.{ForItems}
+import genesis_prime/table/loader/store as table_store
 import gleam/list
 
 /// The client's 0x182, 0x17D or 0x149, taken from inside 0x038C with the player
@@ -46,6 +49,7 @@ pub fn item_message(
       items: entered.items,
       life: entered.life,
       tables: session.settings.tables,
+      wearer: wearer_of(tables: session.settings.tables, entered:),
       message:,
       body: inner.body,
     )
@@ -74,6 +78,28 @@ pub fn item_message(
         text: inventory.describe(refusal:),
       )
   }
+}
+
+/// What the equip checks read of the entered character: its race, class, faction
+/// and gender, its level now (the unit's, which a kill's level-up raises), its
+/// World and the class's item proficiencies.
+fn wearer_of(
+  tables tables: table_store.Tables,
+  entered entered: world_entry.Entered,
+) -> equip_requirement.Wearer {
+  let character = entered.character
+  equip_requirement.Wearer(
+    race_id: character.race_id.value,
+    class_id: character.class_id.value,
+    faction_id: character.faction_id,
+    level: connection_state.level_of(entered:),
+    gender: character.gender,
+    world_id: entered.map.world_id,
+    item_proficiencies: character_state.item_proficiencies(
+      tables:,
+      class_id: character.class_id,
+    ),
+  )
 }
 
 /// The store's answer to the change: the player is in the world again with the
