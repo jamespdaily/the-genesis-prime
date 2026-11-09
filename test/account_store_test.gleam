@@ -2629,6 +2629,109 @@ pub fn a_move_moves_every_item_or_none_test() -> Nil {
   stop(store)
 }
 
+pub fn a_bag_off_and_its_displaced_items_save_all_or_none_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  // A bag of 8 (Item2 5423) worn at equipped 17 and an item in each of inventory
+  // slots 20, 21 and 23, which an inventory of 16 does not show.
+  let bag = 5423
+  let assert CharacterCreated(character_id:) =
+    create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: list.append(character_support.row_466_items(), [
+        NewItem(
+          item2_id: Item2Id(bag),
+          location: 0,
+          bag_index: 17,
+          stack_count: 1,
+        ),
+        NewItem(
+          item2_id: Item2Id(stackable_item2),
+          location: 1,
+          bag_index: 20,
+          stack_count: 1,
+        ),
+        NewItem(
+          item2_id: Item2Id(stackable_item2),
+          location: 1,
+          bag_index: 21,
+          stack_count: 1,
+        ),
+        NewItem(
+          item2_id: Item2Id(stackable_item2),
+          location: 1,
+          bag_index: 23,
+          stack_count: 1,
+        ),
+      ]),
+    )
+    as "a character holding the Novice set, a worn bag and three items past slot 16"
+  let CharacterId(number) = character_id
+  let before = held_by(store:, account:, character_id:)
+  let at = fn(items: List(store.HeldItem), location, index) {
+    let assert Ok(item) =
+      list.find(items, fn(item) {
+        item.location == location && item.bag_index == index
+      })
+      as "the character holds an item at the place"
+    item
+  }
+  let worn_bag = at(before, 0, 17)
+  let far_20 = at(before, 1, 20)
+  let far_21 = at(before, 1, 21)
+  let far_23 = at(before, 1, 23)
+  let moves = fn(last_from: Int) {
+    [
+      ItemMove(
+        item_guid: worn_bag.item_guid,
+        from: ItemPlace(location: 0, bag_index: 17),
+        to: ItemPlace(location: 1, bag_index: 3),
+      ),
+      ItemMove(
+        item_guid: far_20.item_guid,
+        from: ItemPlace(location: 1, bag_index: 20),
+        to: ItemPlace(location: 1, bag_index: 5),
+      ),
+      ItemMove(
+        item_guid: far_21.item_guid,
+        from: ItemPlace(location: 1, bag_index: 21),
+        to: ItemPlace(location: 1, bag_index: 7),
+      ),
+      ItemMove(
+        item_guid: far_23.item_guid,
+        from: ItemPlace(location: 1, bag_index: last_from),
+        to: ItemPlace(location: 1, bag_index: 9),
+      ),
+    ]
+  }
+  // Each load raises the epoch, so every move takes the epoch of its own load.
+  // The last move starts at slot 22, where the item is not: the four moves are
+  // one statement, so the bag and the two items that did move stay where they
+  // were (`move_character_items.sql` saves all its moves or none).
+  let epoch = epoch_of_load(store:, account:, character_id: number)
+  assert moved(store:, account:, character_id:, epoch:, moves: moves(22))
+    == ForItems(ItemsNotSaved)
+    as "one move from a place that holds no such item saves none of the four"
+  assert held_by(store:, account:, character_id:) == before
+    as "the bag and the three items are where they were"
+  let epoch = epoch_of_load(store:, account:, character_id: number)
+  assert moved(store:, account:, character_id:, epoch:, moves: moves(23))
+    == ForItems(ItemsSaved)
+    as "the four moves of a bag taken off and its displaced items are saved together"
+  let after = held_by(store:, account:, character_id:)
+  assert at(after, 1, 3) == HeldItem(..worn_bag, location: 1, bag_index: 3)
+  assert at(after, 1, 5) == HeldItem(..far_20, bag_index: 5)
+  assert at(after, 1, 7) == HeldItem(..far_21, bag_index: 7)
+  assert at(after, 1, 9) == HeldItem(..far_23, bag_index: 9)
+    as "each item is at its new place with the guid it had"
+  assert list.length(after) == list.length(before) as "no item was made or lost"
+  stop(store)
+}
+
 // ---- splitting, merging and deleting stacks ----
 
 /// Item2 1039 of the client's tables, which stacks to 20.

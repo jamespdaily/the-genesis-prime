@@ -3,9 +3,9 @@
 # ~/.genesis-prime) if it exists, then puts the patched OTP's bin
 # ($GENESIS_OTP_DIR, default $GENESIS_HOME/otp-<erlang version in
 # .tool-versions>-gc-marker) first on PATH, so the shell's own Erlang, used by
-# other projects, stays as it is. Not where GENESIS_NO_CLIENT=1 (no client) and
-# GENESIS_OTP_DIR is unset; CI sets both, so it runs on the patched build it
-# caches.
+# other projects, stays as it is. Not where GENESIS_NO_CLIENT=1 (no client, which only a
+# CI run without the client's data secret sets) and GENESIS_OTP_DIR is unset; CI sets
+# GENESIS_OTP_DIR, so it runs on the patched build it caches.
 # Where the client is installed it also names GENESIS_TABLE_DIR, the folder
 # setup_check/extract_tables.py fills with the client's game tables (default
 # $GENESIS_HOME/tables); env.sh may set it first.

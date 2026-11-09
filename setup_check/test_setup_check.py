@@ -163,6 +163,7 @@ class Plan:
     with_client: bool = True  # False: nothing of the client, the query process or the patched OTP
     otp_without_client: bool = False  # with_client False, and still GENESIS_OTP_DIR and the build there (CI)
     no_client_flag: bool = False  # GENESIS_NO_CLIENT=1
+    no_query_process_flag: bool = False  # GENESIS_NO_QUERY_PROCESS=1
     client: str = "good"  # good, other (another SHA-256) or missing
     index_builds: tuple = (TARGET_BUILD,) * 4  # per name in INDEX_NAMES: a build, "garbage" or "signature"
     otp_dir: str = "patched"  # patched, unmarked, stale, unlisted_patch or absent
@@ -217,6 +218,8 @@ class PlantedTestCase(unittest.TestCase):
         }
         if plan.no_client_flag:
             env["GENESIS_NO_CLIENT"] = "1"
+        if plan.no_query_process_flag:
+            env["GENESIS_NO_QUERY_PROCESS"] = "1"
         if plan.with_client:
             env.update(self.plant_client(plan))
         elif plan.otp_without_client:
@@ -468,6 +471,8 @@ def _version_number(version: str) -> str:
 
 
 INSTALL_WORDS = ("install", "asdf", "mise", "brew")
+# The query process's variables other than the client's, which the client's own part needs too.
+GHIDRA_VARIABLES = tuple(name for name in setup_check.QUERY_PROCESS_VARIABLES if name != "WILDSTAR_CLIENT_EXE")
 
 
 class AllPresentTest(PlantedTestCase):
@@ -480,6 +485,17 @@ class AllPresentTest(PlantedTestCase):
             any("wildstar64" in self.text(m) or "client" in m.part.lower() for m in result),
             "no Missing names the client: %r" % (result,),
         )
+
+    def test_a_machine_marked_as_having_no_query_process_needs_no_ghidra_variable(self):
+        self.assertEqual(setup_check.check_all(self.plant(no_query_process_flag=True, without_variables=GHIDRA_VARIABLES)), [])
+
+    def test_a_machine_without_the_query_process_and_not_marked_so_is_missing_its_variables(self):
+        result = setup_check.check_all(self.plant(without_variables=GHIDRA_VARIABLES))
+        self.assertEqual(len(result), len(GHIDRA_VARIABLES), result)
+
+    def test_a_machine_marked_as_having_no_query_process_still_needs_the_client(self):
+        result = setup_check.check_all(self.plant(no_query_process_flag=True, client="missing"))
+        self.assertTrue(any("wildstar64" in self.text(m) for m in result), "no Missing names the client: %r" % (result,))
 
 
 class GleamTest(PlantedTestCase):

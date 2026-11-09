@@ -22,10 +22,12 @@ import genesis_prime/step.{
   Stop, Stopping, TimerFired, TimerId, Write, WriteFailed,
 }
 import gleam/bit_array
+import gleam/dynamic/decode
 import gleam/erlang/atom
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/list
 import gleam/option.{None}
+import gleam/string
 import hello_rule
 import mailbox_support
 import mug
@@ -101,14 +103,20 @@ pub fn a_client_gets_the_hello_and_a_pong_for_its_ping_test() -> Nil {
 
 pub fn a_clients_close_ends_the_process_normally_test() -> Nil {
   use <- owned_test.run(30_000)
-  use server <- serving(hello_rule_as_rule(), 1000)
+  let #(rule, taken) = recording(hello_rule_as_rule())
+  use server <- serving(rule, 1000)
   let client = ask_support.connect(server)
-  let _hello = ask_support.read_bytes(client, 53)
-  let assert [connection] = ask_support.connections(server)
-    as "one connection process"
+  let connection = accepted_shell(taken)
   let watched = process.monitor(connection)
+  let _hello = ask_support.read_bytes(client, 53)
+  assert ask_support.connections(server) == [connection]
+    as "Ranch lists the one connection process"
+  assert mailbox_support.drain(taken) == []
+    as "nothing but Accepted reached the rule before the client closed"
   assert mug.shutdown(client) == Ok(Nil) as "the client closed"
   assert ask_support.ended(watched) == process.Normal as "a normal end"
+  assert events(mailbox_support.drain(taken)) == [OwnEvent(PeerClosed)]
+    as "the client's close was the one input after Accepted"
 }
 
 pub fn a_failed_write_reaches_the_rule_and_the_steps_later_effects_are_not_carried_out_test() -> Nil {
@@ -117,40 +125,36 @@ pub fn a_failed_write_reaches_the_rule_and_the_steps_later_effects_are_not_carri
   // stops. The BEAM queues the first write whole; the second waits for the
   // queue and cannot finish within the 300 ms send deadline. Had the shell
   // carried out the Stop after the failed write, no WriteFailed input would
-  // follow it. The inputs are read as the shell hands them to the rule.
-  let inputs = process.new_subject()
-  let writing = big_write_rule()
-  let rule =
-    Rule(..writing, step: fn(state, input: ConnectionInput(Nil, Nil)) {
-      process.send(inputs, input.event)
-      writing.step(state, input)
-    })
+  // follow it.
+  let #(rule, taken) = recording(big_write_rule())
   use server <- serving(rule, 1000)
   let client = ask_support.connect(server)
+  let connection = accepted_shell(taken)
+  let watched = process.monitor(connection)
   // The first byte shows the connection's process has started.
   let _first_byte = ask_support.read_bytes(client, 1)
-  let assert [connection] = ask_support.connections(server)
-    as "one connection process"
-  assert ask_support.ended(process.monitor(connection)) == process.Normal
+  assert ask_support.connections(server) == [connection]
+    as "Ranch lists the one connection process"
+  assert ask_support.ended(watched) == process.Normal
     as "the rule stopped after the failed write"
   let _still_open = client
-  let assert [OwnEvent(Accepted(..)), OwnEvent(WriteFailed(step.SendTimedOut))] =
-    mailbox_support.drain(inputs)
-    as "the failed write came back as the next input, before anything else"
-  Nil
+  assert events(mailbox_support.drain(taken))
+    == [OwnEvent(WriteFailed(step.SendTimedOut))]
+    as "the failed write came back as the next input after Accepted, before anything else"
 }
 
 pub fn a_rule_that_crashes_ends_only_its_connection_test() -> Nil {
   use <- owned_test.run(30_000)
-  use server <- serving(crash_on_0xee_rule(), 1000)
+  let #(rule, taken) = recording(crash_on_0xee_rule())
+  use server <- serving(rule, 1000)
   let first = ask_support.connect(server)
-  let _hello = ask_support.read_bytes(first, 53)
-  let assert [connection] = ask_support.connections(server)
-    as "one connection process"
+  let connection = accepted_shell(taken)
   let watched = process.monitor(connection)
+  let _hello = ask_support.read_bytes(first, 53)
+  assert ask_support.connections(server) == [connection]
+    as "Ranch lists the one connection process"
   assert mug.send(first, <<0xEE>>) == Ok(Nil) as "the byte that crashes it"
-  let assert process.Abnormal(_) = ask_support.ended(watched)
-    as "the connection crashed"
+  crashed_by_the_plant(watched)
   let second = ask_support.connect(server)
   assert ask_support.read_bytes(second, 53) == hello_frame()
     as "the listener still accepts and greets"
@@ -158,28 +162,30 @@ pub fn a_rule_that_crashes_ends_only_its_connection_test() -> Nil {
 
 pub fn a_connection_that_crashes_leaves_another_open_connection_running_unchanged_test() -> Nil {
   use <- owned_test.run(30_000)
-  use server <- serving(crash_on_0xee_rule(), 1000)
+  let #(rule, taken) = recording(crash_on_0xee_rule())
+  use server <- serving(rule, 1000)
   let crashing = ask_support.connect(server)
+  let crashing_process = accepted_shell(taken)
+  let watched = process.monitor(crashing_process)
   let _hello = ask_support.read_bytes(crashing, 53)
-  let assert [crashing_process] = ask_support.connections(server)
-    as "one connection process"
   let staying = ask_support.connect(server)
+  let staying_process = accepted_shell(taken)
   let _hello = ask_support.read_bytes(staying, 53)
-  let assert [staying_process] =
-    list.filter(ask_support.connections(server), fn(connection) {
+  assert list.filter(ask_support.connections(server), fn(connection) {
       connection != crashing_process
     })
+    == [staying_process]
     as "a second connection process, open beside the first"
-  let watched = process.monitor(crashing_process)
   assert mug.send(crashing, <<0xEE>>) == Ok(Nil) as "the byte that crashes it"
-  let assert process.Abnormal(_) = ask_support.ended(watched)
-    as "the first connection crashed"
+  crashed_by_the_plant(watched)
   assert mug.send(staying, <<7, 0, 0, 0, 0, 0, 9>>) == Ok(Nil)
     as "a ping on the connection that stayed"
   assert ask_support.read_bytes(staying, 7) == <<7, 0, 0, 0, 1, 0, 9>>
     as "opcode.0x1: the connection that stayed answers its ping after the other crashed"
-  assert ask_support.connections(server) == [staying_process]
-    as "the BEAM isolates a crash to its process: the connection that stayed is the same process it was before"
+  event_wait.until(
+    "Ranch lists only the connection that stayed, the same process it was before: the BEAM isolates a crash to its process",
+    fn() { ask_support.connections(server) == [staying_process] },
+  )
 }
 
 // ---- helpers ----
@@ -220,6 +226,62 @@ fn hello_rule_as_rule() -> HelloRule {
     new: hello_rule.new,
     step: hello_rule.step,
   )
+}
+
+/// An input the shell handed its rule, and the shell's process that took it.
+type Taken {
+  Taken(shell: Pid, event: step.Event(ConnectionEvent(Nil, Nil)))
+}
+
+/// The rule, and the subject that receives each input as the shell's process
+/// takes it, before the rule's step runs. A test watches the shell from its
+/// first input, so a shell that ended early is told from one that never
+/// started: a process listed by Ranch and watched only afterwards says
+/// `noproc` however it ended.
+fn recording(rule: HelloRule) -> #(HelloRule, Subject(Taken)) {
+  let taken = process.new_subject()
+  #(
+    Rule(..rule, step: fn(state, input: ConnectionInput(Nil, Nil)) {
+      process.send(taken, Taken(shell: process.self(), event: input.event))
+      rule.step(state, input)
+    }),
+    taken,
+  )
+}
+
+/// The shell's process, from the Accepted input every connection takes first.
+fn accepted_shell(taken: Subject(Taken)) -> Pid {
+  let assert Ok(Taken(shell:, event: OwnEvent(Accepted(..)))) =
+    process.receive(taken, ask_support.event_wait_ms)
+    as "the connection took Accepted first"
+  shell
+}
+
+fn events(inputs: List(Taken)) -> List(step.Event(ConnectionEvent(Nil, Nil))) {
+  list.map(inputs, fn(input) { input.event })
+}
+
+/// Waits for the watched shell to end and says it ended by the rule's planted
+/// crash: any other end, `noproc` included, fails with its reason.
+fn crashed_by_the_plant(watched: process.Monitor) -> Nil {
+  let reason = ask_support.ended(watched)
+  let assert process.Abnormal(abnormal) = reason
+    as { "the connection crashed, not " <> string.inspect(reason) }
+  assert decode.run(abnormal, crash_message()) == Ok("the planted crash")
+    as { "the crash was the rule's: " <> string.inspect(abnormal) }
+}
+
+/// The message of a process's crash: its exit reason is the pair of the panic's
+/// map, which holds `message`, and the stack.
+fn crash_message() -> decode.Decoder(String) {
+  use message <- decode.field(0, {
+    use message <- decode.field(
+      atom.to_dynamic(atom.create("message")),
+      decode.string,
+    )
+    decode.success(message)
+  })
+  decode.success(message)
 }
 
 /// The hello rule, except that a read starting with 0xEE crashes it.

@@ -168,13 +168,7 @@ fn prerequisites() -> EngineDeclaration {
     ],
     unread_rows: prerequisite_row.unread_by_type,
     unread_starting_rows: prerequisite_row.unread_starting,
-    missing: [
-      Missing(
-        type_number: 43,
-        reason: "needs the player's quest log and its done marks",
-        fact_key: "Prerequisite.prerequisiteTypeId.43",
-      ),
-    ],
+    missing: [],
     starting_abilities: Some(starting_ability.prerequisite_types),
   )
 }

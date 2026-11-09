@@ -56,6 +56,7 @@ import genesis_prime/message/realm_handoff.{type RealmHandoff}
 import genesis_prime/message/realm_list.{type RealmList}
 import genesis_prime/message/rename_character_result.{type RenameCharacterResult}
 import genesis_prime/message/resurrection_window.{type ResurrectionWindow}
+import genesis_prime/message/reward_properties.{type RewardProperties}
 import genesis_prime/message/server_hello.{type ServerHello}
 import genesis_prime/message/server_tutorial.{type ServerTutorial}
 import genesis_prime/message/spell_cast_confirmed.{type SpellCastConfirmed}
@@ -187,6 +188,7 @@ pub type ServerMessage {
   VendorItems(message: VendorItems)
   BuybackList(message: BuybackList)
   GenericError(message: GenericError)
+  RewardProperties(message: RewardProperties)
 }
 
 /// Why a body is not a message the server sends.
@@ -426,6 +428,8 @@ pub fn decode(
     0x090B -> decoded(body, message_id, vendor_items.decode, VendorItems)
     0x00BC -> decoded(body, message_id, buyback_list.decode, BuybackList)
     0x0106 -> decoded(body, message_id, generic_error.decode, GenericError)
+    0x092C ->
+      decoded(body, message_id, reward_properties.decode, RewardProperties)
     _ -> Error(UnknownMessage(message_id:))
   }
 }
@@ -518,6 +522,7 @@ pub fn name(message: ServerMessage) -> String {
     VendorItems(..) -> "vendor_items"
     BuybackList(..) -> "buyback_list"
     GenericError(..) -> "generic_error"
+    RewardProperties(..) -> "reward_properties"
   }
 }
 

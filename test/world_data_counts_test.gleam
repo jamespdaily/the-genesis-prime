@@ -12,8 +12,8 @@
 //// - Migration 0008: World 3460 also holds the 27 Virtual Defense Daguns, server
 ////   choices, which start (Hostile to Dominion), so 3460 has 66 + 27.
 //// The test needs the client's tables and the world database (`GENESIS_WORLD_DATA`),
-//// neither of which CI has (`GENESIS_NO_CLIENT=1`), so it is skipped there; it
-//// imports the whole file into a database of its own, which takes a few seconds.
+//// so it is skipped where either is missing (a fork's CI run without the client's
+//// data); it imports the whole file into a database of its own.
 
 import client_tables
 import content_support
@@ -46,7 +46,11 @@ fn asking() -> readiness.Settings {
 }
 
 pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_world_test() -> Nil {
-  use <- owned_test.run(300_000)
+  // A hang guard, not a result check: the world-data part took 162 s and 202 s on
+  // CI's runner in the two runs that passed and went past 300 s on a slow runner
+  // (the same run's glinter took 2.1 times, gleam-test 1.5 times and client-suite
+  // 1.8 times their passing runs). 600 s is three times the slowest passing run.
+  use <- owned_test.run(600_000)
   use <- unitest.tag("world_data")
   use <- unitest.guard(client_tables.present())
   use <- unitest.guard(envoy.get("GENESIS_WORLD_DATA") != Error(Nil))
