@@ -178,8 +178,9 @@ pub type NewItem {
 
 /// A character to make, from a create request and the CharacterCreation row it
 /// names: the row gives the gender (its sex), race, class and faction, its
-/// start the place (genesis_prime/game/start_place) and its experience the
-/// level (genesis_prime/game/level). `starting_items` are the items the
+/// start the place (genesis_prime/game/start_place) and its experience, which
+/// the character is stored with and which makes its level
+/// (genesis_prime/game/level). `starting_items` are the items the
 /// character holds from its first entry, stored with the character.
 pub type NewCharacter {
   NewCharacter(
@@ -189,6 +190,7 @@ pub type NewCharacter {
     class_id: ClassId,
     faction_id: Int,
     level: Int,
+    experience: Int,
     path: Int,
     place: Place,
     look: List(LookEntry),
@@ -198,13 +200,14 @@ pub type NewCharacter {
 }
 
 /// What a rule asks the store, grouped by who asks: the STS login's request,
-/// character select's, world entry's and the player's movement's, so a rule
-/// names only the groups it does not ask as a mismatch.
+/// character select's, world entry's, the player's movement's and the player's
+/// items', so a rule names only the groups it does not ask as a mismatch.
 pub type Request {
   Login(request: LoginRequest)
   Select(request: SelectRequest)
   World(request: WorldRequest)
   Move(request: MoveRequest)
+  Items(request: ItemsRequest)
 }
 
 /// What world entry asks the store.
@@ -228,7 +231,10 @@ pub type MoveRequest {
   /// the player has, 0 while it is dead, and `None` when there is none to keep,
   /// which leaves nothing saved, so the next entry is alive at full health. A
   /// health the table refuses, below 0, is `HealthRefused`. The character's
-  /// quest log, `quests`, is the whole log: the same statement writes the rows
+  /// `experience` and the `level` it makes are written by the same statement, so
+  /// the two stand together after a camp and a new login; an experience the
+  /// table refuses, below 0, is `ExperienceRefused`. The character's quest log,
+  /// `quests`, is the whole log: the same statement writes the rows
   /// that changed and deletes the rows it no longer holds, both under the same
   /// fence, so a refused save changes no quest row. A row a check of the
   /// character_quest table refuses is `QuestLogRefused`, which no log the rule
@@ -240,7 +246,67 @@ pub type MoveRequest {
     save_sequence: Int,
     place: Place,
     health: Option(Int),
+    experience: Int,
+    level: Int,
     quests: List(QuestRow),
+  )
+}
+
+/// A place in the character's held items: the client's location (0 equipped, 1
+/// inventory, 2 bank) and the slot in it, as `HeldItem` keeps them.
+pub type ItemPlace {
+  ItemPlace(location: Int, bag_index: Int)
+}
+
+/// One item's move: the item `item_guid`, held at `from`, goes to `to`. A swap is
+/// two moves, each item to the other's place.
+pub type ItemMove {
+  ItemMove(item_guid: Int, from: ItemPlace, to: ItemPlace)
+}
+
+/// What the player's items ask the store. Each request changes the character's
+/// item rows in one statement, only while the character's `session_epoch` is
+/// still `session_epoch`, the one the login that asks was told when it loaded the
+/// character, and only when each row it names is as the request holds it (its
+/// guid, place and count). The account's id is in the statement, as for a load.
+pub type ItemsRequest {
+  /// Moves the character's items, all or none, only when each item is at the
+  /// place its move leaves. The statement is one UPDATE under the character_item
+  /// table's deferrable unique key, so the moves of a swap pass it together.
+  MoveItems(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    moves: List(ItemMove),
+  )
+  /// Takes `count` off the stack `source` and makes a new stack of them at `to`,
+  /// which holds no item: one statement that lowers the source's count and
+  /// inserts the new row, answered by `ItemMade` with the new row's guid.
+  SplitItem(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    source: HeldItem,
+    count: Int,
+    to: ItemPlace,
+  )
+  /// Puts `count` of the stack `source` onto the stack `target`, of the same
+  /// Item2: one statement that adds them to the target and takes them off the
+  /// source, deleting the source when none are left.
+  MergeItems(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    source: HeldItem,
+    target: HeldItem,
+    count: Int,
+  )
+  /// Destroys the whole stack `item`: one statement that deletes its row.
+  DeleteItem(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    item: HeldItem,
   )
 }
 
@@ -296,13 +362,16 @@ pub type Answer {
   ForSelect(answer: SelectAnswer)
   ForWorld(answer: WorldAnswer)
   ForMove(answer: MoveAnswer)
+  ForItems(answer: ItemsAnswer)
 }
 
 /// What the store answers world entry.
 pub type WorldAnswer {
   /// The account's character, taken by this login, whose `session_epoch` is
   /// `session_epoch` after the raise, the health its last save kept
-  /// (`saved_health`: `None` when none was saved) and the items it holds, by
+  /// (`saved_health`: `None` when none was saved), the experience its last save
+  /// or its creation kept (`saved_experience`: `None` when none was saved, which
+  /// enters at the least experience of its level) and the items it holds, by
   /// location then bag index (none for a character with no stored items) and
   /// the rows of its quest log, in quest id order (none for a character with no
   /// quest). The rows are read in the transaction that raised the epoch, so no
@@ -312,6 +381,7 @@ pub type WorldAnswer {
     character: Character,
     session_epoch: SessionEpoch,
     saved_health: Option(Int),
+    saved_experience: Option(Int),
     items: List(HeldItem),
     quests: List(QuestRow),
   )
@@ -340,6 +410,28 @@ pub type MoveAnswer {
   /// which the rule never asks to keep below 0: a bug of the server's, so
   /// nothing was saved, neither the health nor the place beside it.
   HealthRefused
+  /// The database refused the experience (`character_experience_is_not_negative`),
+  /// which the rule never asks to keep below 0: a bug of the server's, so
+  /// nothing was saved, neither the experience nor the place beside it.
+  ExperienceRefused
+}
+
+/// What the store answers the player's items.
+pub type ItemsAnswer {
+  /// Every row the request changes is changed: the character's `session_epoch`
+  /// was the request's and each row was as the request held it.
+  ItemsSaved
+  /// A split's rows are saved, the new stack's row having this guid, the
+  /// database's identity for it.
+  ItemMade(item_guid: Int)
+  /// Nothing was saved, for one of three causes the statement cannot tell apart:
+  /// a later login raised the character's `session_epoch` past the request's, a
+  /// row was not as the request held it, or the account has no such character.
+  ItemsNotSaved
+  /// The database refused the change for the check constraint or unique key of
+  /// this name, which no change the rule asks for breaks: a bug of the server's,
+  /// so nothing was saved.
+  SaveRefused(constraint: String)
 }
 
 /// What the store answers character select, one variant for each of its

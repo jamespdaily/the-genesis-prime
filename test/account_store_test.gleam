@@ -35,16 +35,21 @@ import genesis_prime/store.{
   type AccountId, type ActiveQuest, type QuestRow, Account, AccountFound,
   AccountId, ActiveQuest, Character, CharacterCreated, CharacterDeleted,
   CharacterId, CharacterLoaded, CharacterRenamed, CreateCharacter,
-  CreateForNoSuchAccount, Created, DeleteCharacter, Deleted, FindAccount,
-  ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem,
-  ListCharacters, Listed, LoadCharacter, Login, LookEntry, Move, NameBreaksRule,
-  NameStands, NameTaken, NeedsRename, NewCharacter, NewItem, NewNameBreaksRule,
-  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable,
-  NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused,
-  QuestRow, RenameCharacter, Renamed, SavePlace, Select, Unavailable, World,
+  CreateForNoSuchAccount, Created, DeleteCharacter, DeleteItem, Deleted,
+  ExperienceRefused, FindAccount, ForItems, ForLogin, ForMove, ForSelect,
+  ForWorld, HealthRefused, HeldItem, ItemMade, ItemMove, ItemPlace, Items,
+  ItemsNotSaved, ItemsSaved, ListCharacters, Listed, LoadCharacter, Login,
+  LookEntry, MergeItems, Move, MoveItems, NameBreaksRule, NameStands, NameTaken,
+  NeedsRename, NewCharacter, NewItem, NewNameBreaksRule, NewNameTaken,
+  NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable, NotTheAccounts,
+  NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused, QuestRow,
+  RenameCharacter, Renamed, SavePlace, SaveRefused, Select, SplitItem,
+  Unavailable, World,
 }
 import genesis_prime/store/worker
-import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
+import genesis_prime/table/id.{
+  CharacterCustomizationLabelId, ClassId, Item2Id, RaceId,
+}
 import gleam/bool
 import gleam/dynamic/decode
 import gleam/erlang/process
@@ -810,6 +815,7 @@ fn a_new_character(name: String) -> store.NewCharacter {
     class_id: ClassId(1),
     faction_id: 167,
     level: 3,
+    experience: 1710,
     path: 2,
     place: place_support.at(
       world_id: 3460,
@@ -933,7 +939,7 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
   assert ask(store, World(LoadCharacter(account, CharacterId(character_id))))
     == ForWorld(
-      CharacterLoaded(character, character_support.epoch(1), None, [], []),
+      CharacterLoaded(character, character_support.epoch(1), None, None, [], []),
     )
     as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
   stop(store)
@@ -1024,6 +1030,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
           naming: NameStands,
         ),
         character_support.epoch(1),
+        None,
         None,
         [],
         [],
@@ -1242,7 +1249,9 @@ fn save(
   )
 }
 
-/// Saves the place under the epoch and sequence of a login, with the health.
+/// Saves the place under the epoch and sequence of a login, with the health. The
+/// experience and level it saves with are the stored characters' own level 9 and
+/// no experience beyond it: these tests are about the place and the health.
 fn save_keeping(
   store store: Store,
   account account: AccountId,
@@ -1251,6 +1260,32 @@ fn save_keeping(
   sequence sequence: Int,
   place place: start_place.Place,
   health health: Option(Int),
+) -> store.Answer {
+  save_progress(
+    store:,
+    account:,
+    character_id:,
+    epoch:,
+    sequence:,
+    place:,
+    health:,
+    experience: 0,
+    level: 9,
+  )
+}
+
+/// Saves the place under the epoch and sequence of a login, with the experience
+/// and level the player has made.
+fn save_progress(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: Int,
+  epoch epoch: Int,
+  sequence sequence: Int,
+  place place: start_place.Place,
+  health health: Option(Int),
+  experience experience: Int,
+  level level: Int,
 ) -> store.Answer {
   ask(
     store,
@@ -1262,10 +1297,25 @@ fn save_keeping(
         save_sequence: sequence,
         place:,
         health:,
+        experience:,
+        level:,
         quests: [],
       ),
     ),
   )
+}
+
+/// The experience and level the character's next load answers with (which raises
+/// the epoch), as a pair.
+fn experience_and_level_loaded(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: Int,
+) -> #(Option(Int), Int) {
+  let assert ForWorld(CharacterLoaded(character:, saved_experience:, ..)) =
+    ask(store, World(LoadCharacter(account, CharacterId(character_id))))
+    as "the account has the character"
+  #(saved_experience, character.level)
 }
 
 /// The health the character's row holds and the saved health its next load
@@ -1690,6 +1740,65 @@ pub fn a_save_with_a_health_the_table_refuses_is_answered_health_refused_and_sav
   stop(store)
 }
 
+pub fn a_save_keeps_the_experience_and_level_for_the_next_load_and_a_create_writes_its_xp_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let assert CharacterCreated(CharacterId(created)) =
+    create(store:, account:, name: "Ab Cd", slots: 2)
+    as "the account has a free slot"
+  assert experience_and_level_loaded(store:, account:, character_id: created)
+    == #(Some(1710), 3)
+    as "a create writes the experience of its level 3 row (xp 1710) and its level, which the first load answers"
+  let there =
+    place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  assert save_progress(
+      store:,
+      account:,
+      character_id: created,
+      epoch: 1,
+      sequence: 1,
+      place: there,
+      health: None,
+      experience: 1840,
+      level: 4,
+    )
+    == ForMove(PlaceSaved)
+  assert experience_and_level_loaded(store:, account:, character_id: created)
+    == #(Some(1840), 4)
+    as "the save's experience and level, which the next login enters with"
+  stop(store)
+}
+
+pub fn a_save_with_an_experience_the_table_refuses_is_answered_experience_refused_and_saves_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  let there =
+    place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  assert save_progress(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      place: there,
+      health: None,
+      experience: -1,
+      level: 4,
+    )
+    == ForMove(ExperienceRefused)
+    as "character_experience_is_not_negative refused a -1 planted straight into the query: its own answer, and the worker does not crash"
+  let row = character_support.place_row(pool: store.pool, character_id: id)
+  assert row.position == #(1.5, 2.5, 3.5) && row.save_sequence == 0
+    as "the statement is one: neither the place nor the sequence beside the refused experience was written"
+  assert experience_and_level_loaded(store:, account:, character_id: id)
+    == #(None, 9)
+    as "and the level beside it was not written either"
+  stop(store)
+}
+
 pub fn a_save_the_database_refuses_for_a_check_is_answered_place_refused_with_the_constraints_name_and_the_store_goes_on_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
@@ -1809,6 +1918,7 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
       "character_name_unique",
       "character_name_follows_rule_0",
       "character_health_is_not_negative",
+      "character_experience_is_not_negative",
       "character_quest_id_fits_15_bits",
       "character_quest_state_is_known",
       "character_quest_completed_has_a_time",
@@ -1820,7 +1930,7 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
       "character_quest_times_are_not_negative",
       "character_quest_placeholder_is_not_negative",
     ]
-    as "the refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0 and each check of a quest row"
+    as "the refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0, an experience below 0 and each check of a quest row"
   list.each(worker.mapped_constraints(), fn(name) {
     let assert Ok(returned) =
       pog.query(
@@ -2370,6 +2480,510 @@ pub fn an_item_keeps_its_guid_when_its_place_changes_and_two_items_swap_places_i
   stop(store)
 }
 
+// ---- moving held items ----
+
+/// The store's answer to the moves of a character's items under a login's epoch.
+fn moved(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+  epoch epoch: Int,
+  moves moves: List(store.ItemMove),
+) -> store.Answer {
+  ask(
+    store,
+    Items(MoveItems(
+      account_id: account,
+      character_id:,
+      session_epoch: character_support.epoch(epoch),
+      moves:,
+    )),
+  )
+}
+
+pub fn a_moved_and_a_swapped_item_are_where_the_next_login_finds_them_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let assert CharacterCreated(character_id:) =
+    create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: character_support.row_466_items(),
+    )
+    as "a character holding the Novice set"
+  let CharacterId(number) = character_id
+  let assert [chest, legs, shoulder, feet, hands, shield, weapon] =
+    held_by(store:, account:, character_id:)
+    as "the Novice set is seven items"
+  let epoch = epoch_of_load(store:, account:, character_id: number)
+  assert moved(store:, account:, character_id:, epoch:, moves: [
+      ItemMove(
+        item_guid: hands.item_guid,
+        from: ItemPlace(location: 0, bag_index: 5),
+        to: ItemPlace(location: 1, bag_index: 2),
+      ),
+    ])
+    == ForItems(ItemsSaved)
+    as "an unequip to a free inventory slot is stored"
+  assert moved(store:, account:, character_id:, epoch:, moves: [
+      ItemMove(
+        item_guid: chest.item_guid,
+        from: ItemPlace(location: 0, bag_index: 0),
+        to: ItemPlace(location: 1, bag_index: 2),
+      ),
+      ItemMove(
+        item_guid: hands.item_guid,
+        from: ItemPlace(location: 1, bag_index: 2),
+        to: ItemPlace(location: 0, bag_index: 0),
+      ),
+    ])
+    == ForItems(ItemsSaved)
+    as "migration 0019's unique key is deferrable and checked at the end of the statement, so the equipped chest piece and the inventory item trade places in one update"
+  assert held_by(store:, account:, character_id:)
+    == [
+      HeldItem(..hands, location: 0, bag_index: 0),
+      legs,
+      shoulder,
+      feet,
+      shield,
+      weapon,
+      HeldItem(..chest, location: 1, bag_index: 2),
+    ]
+    as "opcode.0x111.guid: each item is at its new place with the guid, item and stack it had"
+  stop(store)
+}
+
+pub fn a_move_moves_every_item_or_none_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let other = insert_account(store, "login-2")
+  let assert CharacterCreated(character_id:) =
+    create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: character_support.row_466_items(),
+    )
+    as "a character holding the Novice set"
+  let CharacterId(number) = character_id
+  let before = held_by(store:, account:, character_id:)
+  let assert [chest, _, _, _, hands, ..] = before
+    as "the Novice set is seven items"
+  let chest_to_inventory =
+    ItemMove(
+      item_guid: chest.item_guid,
+      from: ItemPlace(location: 0, bag_index: 0),
+      to: ItemPlace(location: 1, bag_index: 2),
+    )
+  let stale = epoch_of_load(store:, account:, character_id: number)
+  let current = epoch_of_load(store:, account:, character_id: number)
+  assert current > stale as "a later login raised the epoch"
+  assert moved(store:, account:, character_id:, epoch: stale, moves: [
+      chest_to_inventory,
+    ])
+    == ForItems(ItemsNotSaved)
+    as "a later login holds the character, so the earlier login's move is dropped (the storing-data fencing rule)"
+  assert moved(store:, account:, character_id:, epoch: current, moves: [
+      chest_to_inventory,
+      ItemMove(
+        item_guid: hands.item_guid,
+        from: ItemPlace(location: 1, bag_index: 9),
+        to: ItemPlace(location: 0, bag_index: 0),
+      ),
+    ])
+    == ForItems(ItemsNotSaved)
+    as "a swap with one item not at its old place moves neither item"
+  assert moved(store:, account: other, character_id:, epoch: current, moves: [
+      chest_to_inventory,
+    ])
+    == ForItems(ItemsNotSaved)
+    as "another account moves nothing of this character's"
+  assert moved(store:, account:, character_id:, epoch: current, moves: [
+      ItemMove(
+        item_guid: chest.item_guid,
+        from: ItemPlace(location: 0, bag_index: 0),
+        to: ItemPlace(location: 0, bag_index: 31),
+      ),
+    ])
+    == ForItems(SaveRefused(
+      constraint: "character_item_bag_index_is_a_slot_of_its_location",
+    ))
+    as "the equipped slots end at index 30"
+  assert moved(store:, account:, character_id:, epoch: current, moves: [
+      chest_to_inventory,
+      ItemMove(
+        item_guid: hands.item_guid,
+        from: ItemPlace(location: 0, bag_index: 5),
+        to: ItemPlace(location: 1, bag_index: 2),
+      ),
+    ])
+    == ForItems(SaveRefused(constraint: "character_item_one_per_slot"))
+    as "a place holds one item"
+  assert held_by(store:, account:, character_id:) == before
+    as "every move that did not happen left every item where it was"
+  stop(store)
+}
+
+// ---- splitting, merging and deleting stacks ----
+
+/// Item2 1039 of the client's tables, which stacks to 20.
+const stackable_item2 = 1039
+
+/// A character holding the Novice set and these stacks of Item2 1039, each
+/// `#(bag index, count)`, in the inventory: its account, its id and the stacks as
+/// the store holds them, in the order given.
+fn holding_stacks(
+  store store: Store,
+  stacks stacks: List(#(Int, Int)),
+) -> #(AccountId, store.CharacterId, List(store.HeldItem)) {
+  let account = insert_account(store, "login-1")
+  let assert CharacterCreated(character_id:) =
+    create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: list.append(
+        character_support.row_466_items(),
+        list.map(stacks, fn(stack) {
+          NewItem(
+            item2_id: Item2Id(stackable_item2),
+            location: 1,
+            bag_index: stack.0,
+            stack_count: stack.1,
+          )
+        }),
+      ),
+    )
+    as "a character holding the Novice set and the stacks"
+  let held = held_by(store:, account:, character_id:)
+  #(
+    account,
+    character_id,
+    list.map(stacks, fn(stack) { item_in_bag(items: held, index: stack.0) }),
+  )
+}
+
+/// A login: the epoch it is told and the items it finds. Each load raises the
+/// epoch, so a request is made under the epoch of the login just before it.
+fn login(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+) -> #(Int, List(store.HeldItem)) {
+  let assert ForWorld(CharacterLoaded(session_epoch:, items:, ..)) =
+    ask(store, World(LoadCharacter(account, character_id)))
+    as "the account's character loads"
+  #(store.session_epoch_number(session_epoch), items)
+}
+
+/// The item the load finds in the inventory slot.
+fn item_in_bag(
+  items items: List(store.HeldItem),
+  index index: Int,
+) -> store.HeldItem {
+  let assert Ok(item) =
+    list.find(items, fn(item) { item.location == 1 && item.bag_index == index })
+    as "the load finds an item in the slot"
+  item
+}
+
+fn split(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+  epoch epoch: Int,
+  source source: store.HeldItem,
+  count count: Int,
+  to to: Int,
+) -> store.Answer {
+  ask(
+    store,
+    Items(SplitItem(
+      account_id: account,
+      character_id:,
+      session_epoch: character_support.epoch(epoch),
+      source:,
+      count:,
+      to: ItemPlace(location: 1, bag_index: to),
+    )),
+  )
+}
+
+fn merge(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+  epoch epoch: Int,
+  source source: store.HeldItem,
+  target target: store.HeldItem,
+  count count: Int,
+) -> store.Answer {
+  ask(
+    store,
+    Items(MergeItems(
+      account_id: account,
+      character_id:,
+      session_epoch: character_support.epoch(epoch),
+      source:,
+      target:,
+      count:,
+    )),
+  )
+}
+
+fn destroy(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+  epoch epoch: Int,
+  item item: store.HeldItem,
+) -> store.Answer {
+  ask(
+    store,
+    Items(DeleteItem(
+      account_id: account,
+      character_id:,
+      session_epoch: character_support.epoch(epoch),
+      item:,
+    )),
+  )
+}
+
+pub fn a_split_item_is_found_with_its_new_guid_after_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 10)])
+  let assert [stack] = stacks
+  let #(epoch, before) = login(store:, account:, character_id:)
+  let assert ForItems(ItemMade(item_guid: first)) =
+    split(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      source: stack,
+      count: 3,
+      to: 2,
+    )
+    as "a split onto an empty slot makes a stack"
+  let #(epoch, after) = login(store:, account:, character_id:)
+  assert item_in_bag(items: after, index: 1)
+    == HeldItem(..stack, stack_count: 7)
+    as "the source keeps its guid and what is left of it"
+  assert item_in_bag(items: after, index: 2)
+    == HeldItem(
+      item_guid: first,
+      item2_id: stack.item2_id,
+      location: 1,
+      bag_index: 2,
+      stack_count: 3,
+    )
+    as "opcode.0x111.guid: the new row has the guid the store answered, the same Item2, the destination and the count"
+  assert first != stack.item_guid
+    as "migration 0019: the new row's guid is the database's own"
+  assert list.length(after) == list.length(before) + 1 as "one row was made"
+  let assert ForItems(ItemMade(item_guid: second)) =
+    split(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      source: item_in_bag(items: after, index: 1),
+      count: 2,
+      to: 3,
+    )
+    as "a second split of the stack as it now is"
+  assert second != first && second != stack.item_guid
+    as "the identity column never makes a guid twice"
+  let #(_, last) = login(store:, account:, character_id:)
+  assert item_in_bag(items: last, index: 1).stack_count == 5
+  assert item_in_bag(items: last, index: 3).item_guid == second
+  stop(store)
+}
+
+pub fn a_merge_saved_whole_or_in_part_is_found_after_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  // Item2 1039 holds 20: 3 and 4 fit in one stack; 5 and 18 fill one to 20 and
+  // leave 3.
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 3), #(2, 4), #(3, 5), #(4, 18)])
+  let assert [whole_source, whole_target, part_source, part_target] = stacks
+  let #(epoch, _) = login(store:, account:, character_id:)
+  assert merge(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      source: whole_source,
+      target: whole_target,
+      count: 3,
+    )
+    == ForItems(ItemsSaved)
+    as "a whole merge is stored"
+  let #(epoch, after) = login(store:, account:, character_id:)
+  assert list.find(after, fn(item) { item.item_guid == whole_source.item_guid })
+    == Error(Nil)
+    as "the source's row is gone"
+  assert item_in_bag(items: after, index: 2)
+    == HeldItem(..whole_target, stack_count: 7)
+    as "the target's row holds the sum and keeps its guid"
+  assert merge(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      source: part_source,
+      target: part_target,
+      count: 2,
+    )
+    == ForItems(ItemsSaved)
+    as "a partial merge is stored"
+  let #(_, after) = login(store:, account:, character_id:)
+  assert item_in_bag(items: after, index: 3)
+    == HeldItem(..part_source, stack_count: 3)
+    as "the source keeps what did not fit"
+  assert item_in_bag(items: after, index: 4)
+    == HeldItem(..part_target, stack_count: 20)
+    as "the target holds 20, the Item2's maxStackCount"
+  stop(store)
+}
+
+pub fn a_deleted_item_is_gone_after_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
+  let assert [doomed, kept] = stacks
+  let #(epoch, before) = login(store:, account:, character_id:)
+  assert destroy(store:, account:, character_id:, epoch:, item: doomed)
+    == ForItems(ItemsSaved)
+    as "a delete of the stack as held is stored"
+  let #(_, after) = login(store:, account:, character_id:)
+  assert after
+    == list.filter(before, fn(item) { item.item_guid != doomed.item_guid })
+    as "the row is gone and no other item changed"
+  assert list.contains(after, kept)
+  stop(store)
+}
+
+pub fn a_split_merge_or_delete_with_a_stale_epoch_or_count_changes_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
+  let assert [first, second] = stacks
+  let #(stale, _) = login(store:, account:, character_id:)
+  let #(current, before) = login(store:, account:, character_id:)
+  assert current > stale as "a later login raised the epoch"
+  // Stacks that are no longer as the rule held them.
+  let first_counted_wrong = HeldItem(..first, stack_count: 9)
+  let second_counted_wrong = HeldItem(..second, stack_count: 5)
+  let refused = [
+    #(
+      "a split under an older login's epoch",
+      split(
+        store:,
+        account:,
+        character_id:,
+        epoch: stale,
+        source: first,
+        count: 3,
+        to: 5,
+      ),
+    ),
+    #(
+      "a merge under an older login's epoch",
+      merge(
+        store:,
+        account:,
+        character_id:,
+        epoch: stale,
+        source: first,
+        target: second,
+        count: 4,
+      ),
+    ),
+    #(
+      "a delete under an older login's epoch",
+      destroy(store:, account:, character_id:, epoch: stale, item: first),
+    ),
+    #(
+      "a split of a stack whose count is no longer true",
+      split(
+        store:,
+        account:,
+        character_id:,
+        epoch: current,
+        source: first_counted_wrong,
+        count: 3,
+        to: 5,
+      ),
+    ),
+    #(
+      "a merge of a source whose count is no longer true",
+      merge(
+        store:,
+        account:,
+        character_id:,
+        epoch: current,
+        source: first_counted_wrong,
+        target: second,
+        count: 4,
+      ),
+    ),
+    #(
+      "a merge onto a target whose count is no longer true",
+      merge(
+        store:,
+        account:,
+        character_id:,
+        epoch: current,
+        source: first,
+        target: second_counted_wrong,
+        count: 4,
+      ),
+    ),
+    #(
+      "a delete of a stack whose count is no longer true",
+      destroy(
+        store:,
+        account:,
+        character_id:,
+        epoch: current,
+        item: first_counted_wrong,
+      ),
+    ),
+  ]
+  list.each(refused, fn(row) {
+    assert row.1 == ForItems(ItemsNotSaved) as { row.0 <> " saves nothing" }
+  })
+  let #(current, after) = login(store:, account:, character_id:)
+  assert after == before
+    as "every change that did not happen left every row as it was"
+  assert split(
+      store:,
+      account:,
+      character_id:,
+      epoch: current,
+      source: first,
+      count: 3,
+      to: 2,
+    )
+    == ForItems(SaveRefused(constraint: "character_item_one_per_slot"))
+    as "migration 0019's unique key refuses a split onto a taken slot"
+  let #(_, last) = login(store:, account:, character_id:)
+  assert last == before as "the refused split left its source as it was"
+  stop(store)
+}
+
 // ---- the quest log ----
 
 /// A quest the character completed, at Unix seconds 1_700_000_000.
@@ -2432,6 +3046,8 @@ fn save_log(
         roll: 0.0,
       ),
       health: None,
+      experience: 0,
+      level: 1,
       quests:,
     )),
   )

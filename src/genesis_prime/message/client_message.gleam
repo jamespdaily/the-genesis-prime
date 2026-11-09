@@ -26,6 +26,7 @@ import genesis_prime/message/create_character_carrier.{
 }
 import genesis_prime/message/credd_exchange_request.{type CreddExchangeRequest}
 import genesis_prime/message/delete_character.{type DeleteCharacter}
+import genesis_prime/message/dialog_responses_shown.{type DialogResponsesShown}
 import genesis_prime/message/fall_value.{type FallValue}
 import genesis_prime/message/fell_below_floor.{type FellBelowFloor}
 import genesis_prime/message/frame_time_report.{type FrameTimeReport}
@@ -33,6 +34,10 @@ import genesis_prime/message/game_hello_reply.{type GameHelloReply}
 import genesis_prime/message/graphics_report.{type GraphicsReport}
 import genesis_prime/message/innate_index_chosen.{type InnateIndexChosen}
 import genesis_prime/message/input_key_set_request.{type InputKeySetRequest}
+import genesis_prime/message/interaction_request.{type InteractionRequest}
+import genesis_prime/message/item_delete.{type ItemDelete}
+import genesis_prime/message/item_move.{type ItemMove}
+import genesis_prime/message/item_split.{type ItemSplit}
 import genesis_prime/message/login_request.{type LoginRequest}
 import genesis_prime/message/move_speed_setting.{type MoveSpeedSetting}
 import genesis_prime/message/movement_send_interval_answer.{
@@ -91,6 +96,9 @@ pub type ClientMessage {
   SendWhisper(message: SendWhisper)
   CastAbility(message: CastAbility)
   AbilityHold(message: AbilityHold)
+  ItemMove(message: ItemMove)
+  ItemSplit(message: ItemSplit)
+  ItemDelete(message: ItemDelete)
   InnateIndexChosen(message: InnateIndexChosen)
   CancelCast(message: CancelCast)
   ChooseResurrection(message: ChooseResurrection)
@@ -107,6 +115,8 @@ pub type ClientMessage {
   CreddExchangeRequest(message: CreddExchangeRequest)
   TradeCancel(message: TradeCancel)
   InputKeySetRequest(message: InputKeySetRequest)
+  InteractionRequest(message: InteractionRequest)
+  DialogResponsesShown(message: DialogResponsesShown)
 }
 
 /// Why a body is not a message the client sends.
@@ -183,6 +193,9 @@ pub fn decode(
     0x01D4 -> decoded(body, message_id, send_whisper.decode, SendWhisper)
     0x009A -> decoded(body, message_id, cast_ability.decode, CastAbility)
     0x04DB -> decoded(body, message_id, ability_hold.decode, AbilityHold)
+    0x0182 -> decoded(body, message_id, item_move.decode, ItemMove)
+    0x017D -> decoded(body, message_id, item_split.decode, ItemSplit)
+    0x0149 -> decoded(body, message_id, item_delete.decode, ItemDelete)
     0x016F ->
       decoded(body, message_id, innate_index_chosen.decode, InnateIndexChosen)
     0x0801 -> decoded(body, message_id, cancel_cast.decode, CancelCast)
@@ -222,6 +235,15 @@ pub fn decode(
         input_key_set_request.decode,
         InputKeySetRequest,
       )
+    0x07EA ->
+      decoded(body, message_id, interaction_request.decode, InteractionRequest)
+    0x0356 ->
+      decoded(
+        body,
+        message_id,
+        dialog_responses_shown.decode,
+        DialogResponsesShown,
+      )
     _ -> Error(UnknownMessage(message_id:))
   }
 }
@@ -259,6 +281,9 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     SendWhisper(message:) -> send_whisper.encode(message)
     CastAbility(message:) -> cast_ability.encode(message)
     AbilityHold(message:) -> ability_hold.encode(message)
+    ItemMove(message:) -> item_move.encode(message)
+    ItemSplit(message:) -> item_split.encode(message)
+    ItemDelete(message:) -> item_delete.encode(message)
     InnateIndexChosen(message:) -> innate_index_chosen.encode(message)
     CancelCast(message:) -> cancel_cast.encode(message)
     ChooseResurrection(message:) -> choose_resurrection.encode(message)
@@ -276,6 +301,8 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     CreddExchangeRequest(message:) -> credd_exchange_request.encode(message)
     TradeCancel(message:) -> trade_cancel.encode(message)
     InputKeySetRequest(message:) -> input_key_set_request.encode(message)
+    InteractionRequest(message:) -> interaction_request.encode(message)
+    DialogResponsesShown(message:) -> dialog_responses_shown.encode(message)
   }
 }
 
@@ -311,6 +338,9 @@ pub fn message_id(message: ClientMessage) -> Int {
     SendWhisper(..) -> send_whisper.message_id
     CastAbility(..) -> cast_ability.message_id
     AbilityHold(..) -> ability_hold.message_id
+    ItemMove(..) -> item_move.message_id
+    ItemSplit(..) -> item_split.message_id
+    ItemDelete(..) -> item_delete.message_id
     InnateIndexChosen(..) -> innate_index_chosen.message_id
     CancelCast(..) -> cancel_cast.message_id
     ChooseResurrection(..) -> choose_resurrection.message_id
@@ -327,6 +357,8 @@ pub fn message_id(message: ClientMessage) -> Int {
     CreddExchangeRequest(..) -> credd_exchange_request.message_id
     TradeCancel(..) -> trade_cancel.message_id
     InputKeySetRequest(..) -> input_key_set_request.message_id
+    InteractionRequest(..) -> interaction_request.message_id
+    DialogResponsesShown(..) -> dialog_responses_shown.message_id
   }
 }
 
@@ -362,6 +394,9 @@ pub fn name(message: ClientMessage) -> String {
     SendWhisper(..) -> "send_whisper"
     CastAbility(..) -> "cast_ability"
     AbilityHold(..) -> "ability_hold"
+    ItemMove(..) -> "item_move"
+    ItemSplit(..) -> "item_split"
+    ItemDelete(..) -> "item_delete"
     InnateIndexChosen(..) -> "innate_index_chosen"
     CancelCast(..) -> "cancel_cast"
     ChooseResurrection(..) -> "choose_resurrection"
@@ -378,6 +413,8 @@ pub fn name(message: ClientMessage) -> String {
     CreddExchangeRequest(..) -> "credd_exchange_request"
     TradeCancel(..) -> "trade_cancel"
     InputKeySetRequest(..) -> "input_key_set_request"
+    InteractionRequest(..) -> "interaction_request"
+    DialogResponsesShown(..) -> "dialog_responses_shown"
   }
 }
 

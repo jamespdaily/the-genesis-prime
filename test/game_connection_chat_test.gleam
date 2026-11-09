@@ -765,6 +765,7 @@ pub fn the_whisper_numbers_count_for_the_connections_life_across_a_camp_and_a_ne
               game_connection_support.world_character(),
               character_support.epoch(1),
               None,
+              None,
               [],
               [],
             ),
@@ -852,6 +853,7 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
         place: beast.place,
         hit_radius: beast.combat.hit_radius,
         attackable: beast.combat.attackable,
+        hostile_to: beast.combat.hostile_to,
       ),
     ))
   let #(state, taken) =

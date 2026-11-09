@@ -1767,6 +1767,106 @@ fields = [
 ]
 
 [[message]]
+id = 0x0182
+name = "item_move"
+direction = "client_to_server"
+evidence = "opcode.0x182"
+summary = "the client moves a held item: the place it leaves and the place it goes to; moves, swaps, equips and unequips are all this message, and a swap is a move onto an occupied slot. The client sends one at a time and refuses the others for 10 seconds, until 0x569, 0x568, 0x56A or 0x17F clears the wait"
+fields = [
+  { name = "from", kind = "record", record = "item_place", evidence = "opcode.0x182", named_by = "opcode.0x182" },
+  { name = "to", kind = "record", record = "item_place", evidence = "opcode.0x182", named_by = "opcode.0x182" },
+]
+
+[[message]]
+id = 0x017D
+name = "item_split"
+direction = "client_to_server"
+evidence = "opcode.0x17d"
+summary = "the client splits a stack: the guid of the stack, the empty place the new stack goes to and the count to take off, which the client sends as a move instead when it is the stack's whole count; the client sets no wait for it"
+fields = [
+  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x17d", named_by = "opcode.0x17d" },
+  { name = "to", kind = "record", record = "item_place", evidence = "opcode.0x17d", named_by = "opcode.0x17d" },
+  { name = "count", kind = "unsigned", bits = 32, evidence = "opcode.0x17d", named_by = "opcode.0x17d" },
+]
+
+[[message]]
+id = 0x0149
+name = "item_delete"
+direction = "client_to_server"
+evidence = "opcode.0x149"
+summary = "the client destroys the held item at a place; the client refuses before sending when there is no Item2 row or the item cannot be deleted, sends nothing for a worn bag or an item in a trade, and sets no wait for it"
+fields = [
+  { name = "place", kind = "record", record = "item_place", evidence = "opcode.0x149", named_by = "opcode.0x149" },
+]
+
+[[record]]
+name = "item_place"
+evidence = "opcode.0x182"
+summary = "a place in the held items as messages 0x182, 0x17d and 0x149 write it: the location (9 bits) and the bag index (32 bits)"
+fields = [
+  { name = "location", kind = "unsigned", bits = 9, evidence = "opcode.0x182", named_by = "opcode.0x182" },
+  { name = "bag_index", kind = "unsigned", bits = 32, evidence = "opcode.0x182", named_by = "opcode.0x182" },
+]
+
+[[message]]
+id = 0x017F
+name = "item_count_changed"
+direction = "server_to_client"
+evidence = "opcode.0x17f"
+summary = "a held item's stack count changed: the item's guid, the new count and the reason; the client sets the count, clears its move wait, and raises ItemRemoved for a drop or its gain events for a rise (reason 0, StackSplit, raises no further notice)"
+fields = [
+  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x17f", named_by = "opcode.0x17f" },
+  { name = "count", kind = "unsigned", bits = 32, evidence = "opcode.0x17f", named_by = "opcode.0x17f" },
+  { name = "reason", kind = "unsigned", bits = 6, evidence = "opcode.0x17f", named_by = "opcode.0x17f" },
+]
+
+[[message]]
+id = 0x0148
+name = "item_removed"
+direction = "server_to_client"
+evidence = "opcode.0x148"
+summary = "a held item is gone: the item's guid and the reason; the client empties the slot and raises ItemRemoved, with a further notice for the reason 21, PlayerRequested, and it does not clear the move wait"
+fields = [
+  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x148", named_by = "opcode.0x148" },
+  { name = "reason", kind = "unsigned", bits = 6, evidence = "opcode.0x148", named_by = "opcode.0x148" },
+]
+
+[[message]]
+id = 0x0569
+name = "item_moved"
+direction = "server_to_client"
+evidence = "opcode.0x569"
+summary = "a held item moved to an empty place: the item's guid and its new place as one 64-bit value, bag index in bits 0 to 7 and location in bits 8 to 15; the client files the item at the place, empties its old slot and clears its move wait, and moves no item already at the place, so a swap is message 0x568"
+fields = [
+  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x569", named_by = "opcode.0x569" },
+  { name = "place", kind = "unsigned", bits = 64, evidence = "opcode.0x569", named_by = "opcode.0x569" },
+]
+
+[[message]]
+id = 0x0568
+name = "items_swapped"
+direction = "server_to_client"
+evidence = "opcode.0x568"
+summary = "two held items swapped: each item's guid and its new place as one 64-bit value, as message 0x569 carries them (the moved item at the destination, then the other item at the source); the client empties both old slots, files each item at its place and clears its move wait"
+fields = [
+  { name = "first_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x568", named_by = "opcode.0x568" },
+  { name = "first_place", kind = "unsigned", bits = 64, evidence = "opcode.0x568", named_by = "opcode.0x568" },
+  { name = "second_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x568", named_by = "opcode.0x568" },
+  { name = "second_place", kind = "unsigned", bits = 64, evidence = "opcode.0x568", named_by = "opcode.0x568" },
+]
+
+[[message]]
+id = 0x056A
+name = "item_action_failed"
+direction = "server_to_client"
+evidence = "opcode.0x56a"
+summary = "an item action failed: a guid the client does not read and a GenericError code, which the client raises to its UI when it is not 0; the client always clears its move wait"
+fields = [
+  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x56a", safe_by = "opcode.0x56a" },
+  { name = "code", kind = "unsigned", bits = 32, evidence = "opcode.0x56a", named_by = "opcode.0x56a" },
+]
+
+[[message]]
 id = 0x01A0
 name = "ability_tiers"
 direction = "server_to_client"
@@ -2300,7 +2400,7 @@ id = 0x0938
 name = "unit_stat_changed"
 direction = "server_to_client"
 evidence = "opcode.0x938"
-summary = "a unit's stat changed, as an integer: the unit and the stat in 5 bits, which picks the value's layout. The schema holds stat 20, the shield, stat 21, the Interrupt Armor (clamped by the client to 0 and the unit's maximum) and stat 22, the absorption; the client also takes 10, the level, and stat 0 (health) is not taken here. The server writes only 20, 21 and 22, since for stats 2 to 9 it sets the resource slot to 0 (0x935 sets those), so any other stat is refused"
+summary = "a unit's stat changed, as an integer: the unit and the stat in 5 bits, which picks the value's layout. The schema holds stat 10, the level, stat 20, the shield, stat 21, the Interrupt Armor (clamped by the client to 0 and the unit's maximum) and stat 22, the absorption; stat 0 (health) is not taken here. The server writes only 10, 20, 21 and 22, since for stats 2 to 9 it sets the resource slot to 0 (0x935 sets those), so any other stat is refused"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x938", named_by = "opcode.0x938" },
   { name = "change", kind = "record", record = "unit_stat_change", evidence = "opcode.0x938", named_by = "opcode.0x938" },
@@ -2309,12 +2409,22 @@ fields = [
 [[union]]
 name = "unit_stat_change"
 evidence = "opcode.0x938"
-summary = "the stat of a 0x938 in 5 bits picks the layout of its value. Gap: the schema holds stats 20, 21 and 22; the client's ApplyUnitStat takes the level (10) too, which the server never writes"
+summary = "the stat of a 0x938 in 5 bits picks the layout of its value"
 tag_bits = 5
 variants = [
+  { tag = 10, name = "level", record = "unit_stat_level", named_by = "opcode.0x938" },
   { tag = 20, name = "shield", record = "unit_stat_shield", named_by = "opcode.0x938.resource_stats" },
   { tag = 21, name = "interrupt_armor", record = "unit_stat_interrupt_armor", named_by = "opcode.0x938.interrupt_armor" },
   { tag = 22, name = "absorption", record = "unit_stat_absorption", named_by = "opcode.0x938" },
+]
+
+[[record]]
+name = "unit_stat_level"
+evidence = "opcode.0x938"
+summary = "a 0x938 of stat 10: the unit's level, which the client raises"
+fields = [
+  { name = "stat", kind = "constant", bits = 5, value = 10, evidence = "opcode.0x938", named_by = "opcode.0x938" },
+  { name = "value", kind = "unsigned", bits = 32, evidence = "opcode.0x938", named_by = "opcode.0x938" },
 ]
 
 [[record]]
@@ -2342,6 +2452,20 @@ summary = "a 0x938 of stat 22: the unit's absorption, what Unit:GetAbsorptionVal
 fields = [
   { name = "stat", kind = "constant", bits = 5, value = 22, evidence = "opcode.0x938", named_by = "opcode.0x938" },
   { name = "value", kind = "unsigned", bits = 32, evidence = "opcode.0x938", named_by = "opcode.0x938" },
+]
+
+[[message]]
+id = 0x01AC
+name = "experience_gained"
+direction = "server_to_client"
+evidence = "opcode.0x1ac"
+summary = "experience the player gained: the amount added to its experience, the rest experience it used, a third amount the chat shows as its own gain line, the source kind and the unit the experience came from"
+fields = [
+  { name = "experience", kind = "unsigned", bits = 32, evidence = "opcode.0x1ac", named_by = "opcode.0x1ac.fields" },
+  { name = "rest_experience_used", kind = "unsigned", bits = 32, evidence = "opcode.0x1ac", named_by = "opcode.0x1ac.fields" },
+  { name = "bonus_experience", kind = "unsigned", bits = 32, evidence = "opcode.0x1ac", named_by = "opcode.0x1ac.fields" },
+  { name = "source_kind", kind = "unsigned", bits = 32, evidence = "opcode.0x1ac", named_by = "opcode.0x1ac.fields" },
+  { name = "source_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x1ac", named_by = "opcode.0x1ac.fields" },
 ]
 
 [[message]]
@@ -2694,4 +2818,34 @@ evidence = "opcode.0x570"
 summary = "the client asks for an input key set, the player's key bindings: the key set id, 0 for the account default set"
 fields = [
   { name = "key_set_id", kind = "unsigned", bits = 64, evidence = "opcode.0x570", named_by = "opcode.0x570" },
+]
+
+[[message]]
+id = 0x07EA
+name = "interaction_request"
+direction = "client_to_server"
+evidence = "opcode.0x7ea"
+summary = "the client sets the player's interaction: the unit and the interaction kind, where kind 37 is talking to the unit (a quest giver) and unit 0 with kind 0x65 ends the interaction"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ea", named_by = "opcode.0x7ea" },
+  { name = "kind", kind = "unsigned", bits = 7, evidence = "opcode.0x7ea", named_by = "opcode.0x7ea" },
+]
+
+[[message]]
+id = 0x0356
+name = "dialog_responses_shown"
+direction = "client_to_server"
+evidence = "opcode.0x356"
+summary = "the client has built more than one response for the dialog the server opened and shows it, with an empty body and no answer awaited"
+fields = []
+
+[[message]]
+id = 0x0357
+name = "unit_dialog_open"
+direction = "server_to_client"
+evidence = "opcode.0x357"
+summary = "opens a unit's dialog, the answer to the client's request to talk to the unit"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x357", named_by = "opcode.0x357" },
+  { name = "field_2", kind = "unsigned", bits = 1, evidence = "opcode.0x357", safe_by = "0x140554510" },
 ]

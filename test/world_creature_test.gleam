@@ -24,27 +24,33 @@ import ask_support
 import cast_support
 import event_wait
 import fixture_tables
+import game_connection_support
 import genesis_prime/client_connection.{
   type Message, CreatureAppeared, ForStay, PeerNews, SentByMap, SentByPeer,
 }
+import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/spell_plan
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Strike}
 import genesis_prime/message/float32
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
+import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
 import genesis_prime/message/unit_position_command
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
+import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/id.{Creature2Id, Spell4BaseId}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
+import genesis_prime/world_map/spawn
 import genesis_prime/world_map/unit_fields
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/float
@@ -98,20 +104,35 @@ fn creature_pid(
 /// The join of the connection as a player standing in sight of the creatures, an
 /// ask answered with the player's own unit.
 fn join(run run: MapProcess, connection connection: Int) -> Int {
+  join_at(
+    run:,
+    connection:,
+    character: map_support.character(number: 100 + connection),
+    place: place_support.at(
+      world_id: 3460,
+      world_zone_id: spawn_support.warfare_woods,
+      x: 100.0,
+      y: 0.0,
+      z: 0.0,
+    ),
+  )
+}
+
+/// The join of the connection as a player standing at `place`.
+fn join_at(
+  run run: MapProcess,
+  connection connection: Int,
+  character character: Character,
+  place place: Place,
+) -> Int {
   let #(_, answer) =
     ask_support.ask_and_wait(send: fn(reply) {
       service.call_subject(
         run.subject,
         map.Join(
           connection: ConnectionId(connection),
-          character: map_support.character(number: 100 + connection),
-          place: place_support.at(
-            world_id: 3460,
-            world_zone_id: spawn_support.warfare_woods,
-            x: 100.0,
-            y: 0.0,
-            z: 0.0,
-          ),
+          character:,
+          place:,
           stay: map_support.stay(count: 1),
           alive: True,
         ),
@@ -901,4 +922,66 @@ pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
   assert raised > plain
     as "and the raised amount differs from the plain one, so the test can tell"
   assert restored == plain as "after the end the same blow lands as before"
+}
+
+pub fn right_click_on_giver_opens_dialog_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // Dorian Walker (Creature2 74812) stands as a stored spawn 3.0 from the player's
+  // edge, within the 6.0 + 3.0 a TalkTo is answered up to (opcode.0x7ea; the edge
+  // gap is the distance less the player's hit radius 1.2, Race.hitRadius, and his
+  // 1.1, Creature2DisplayInfo 25510). The creature's process sends the news the
+  // connection shows him by; the connection answers the client's right-click, 0x7EA
+  // with kind 37 (TalkTo) and his unit id, with 0x357 naming that unit
+  // (opcode.0x357). The player is an Exile: his faction 171 is level 0 to the
+  // Dominion, whom the interaction rule refuses him to (Faction2Relationship 685),
+  // and level 10 to the Exile (771).
+  let entry = game_connection_support.entry_place()
+  let walker_place =
+    start_place.moved(
+      place: entry,
+      x: start_place.x(entry),
+      y: start_place.y(entry),
+      z: start_place.z(entry) -. { 3.0 +. 1.2 +. 1.1 },
+    )
+  let world =
+    world_support.start(
+      spawns: [spawn_support.dorian_walker(number: 1, place: walker_place)],
+      respawn_ms: 60_000,
+      idle_stop_ms:,
+      sweep_ms:,
+    )
+  let run = started(world)
+  let received = world_support.connection(world:, id: 1)
+  let exile =
+    Character(
+      ..map_support.character(number: 101),
+      faction_id: spawn.exile_faction,
+    )
+  let player = join_at(run:, connection: 1, character: exile, place: entry)
+  let #(news, shown) =
+    next(received:, what: "Dorian Walker's 0x262", wanted: fn(message) {
+      result.map(appearance(message), fn(unit) { #(message, unit) })
+    })
+  assert shown.creature_id == 74_812
+    as "the creature the map showed is Dorian Walker's row"
+  assert shown.unit_id != player as "he has a unit id of his own"
+  let assert ForStay(stay:, sent:) = news
+    as "the map's creature news is a message for a stay"
+  let #(state, _) =
+    game_connection_support.feed(
+      state: game_connection_support.in_world_as_exile(),
+      event: game_connection_support.for_stay(stay:, sent:),
+    )
+  let #(_, taken) =
+    game_connection_support.interaction_requested(
+      state:,
+      unit_id: shown.unit_id,
+      kind: 37,
+    )
+  let assert [Frame(message_id: 0x0357, body:)] =
+    game_connection_support.written(taken:)
+    as "the right-click on the giver is answered with 0x357 alone"
+  assert unit_dialog_open.decode(body)
+    == Ok(UnitDialogOpen(unit_id: shown.unit_id, field_2: 0))
+    as "opcode.0x357: it names the unit the client clicked"
 }

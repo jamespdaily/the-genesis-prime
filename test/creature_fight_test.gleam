@@ -247,7 +247,8 @@ fn fights_told_for(
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
       creature.FightTold(stay:, told:) -> Ok(#(sent.0, stay, told))
-      creature.News(..) | creature.Struck(..) -> Error(Nil)
+      creature.News(..) | creature.Struck(..) | creature.KillCredit(..) ->
+        Error(Nil)
     }
   })
 }
@@ -277,6 +278,7 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
           strike_tell.Returning -> "Refused(Returning)" <> to
         }
       creature.Struck(..) -> "Deflected" <> to
+      creature.KillCredit(..) -> "KillCredit" <> to
     }
   })
 }
@@ -324,6 +326,8 @@ fn name_of(news: News) -> String {
       "0x938(21, " <> int.to_string(armor) <> ")"
     client_connection.Absorption(absorption:) ->
       "0x938(22, " <> int.to_string(absorption) <> ")"
+    client_connection.Level(level:) ->
+      "0x938(10, " <> int.to_string(level) <> ")"
   }
 }
 
@@ -1237,11 +1241,11 @@ pub fn death_takes_the_creature_out_of_combat_and_releases_everyone_on_its_list_
     )
   assert said(killed)
     == [
-      "Landed to 2", "0x937(0) to 2", "0x937(0) to 5", "0x88c to 2",
-      "0x88c to 5", "0x89a(0) to 2", "0x89a(0) to 5", "Released(7) to 2",
-      "Released(7) to 5",
+      "Landed to 2", "KillCredit to 2", "0x937(0) to 2", "0x937(0) to 5",
+      "0x88c to 2", "0x88c to 5", "0x89a(0) to 2", "0x89a(0) to 5",
+      "Released(7) to 2", "Released(7) to 5",
     ]
-    as "death.combat_flag: 0x89a (C, 0) and Released to everyone on the threat list"
+    as "death.combat_flag: 0x89a (C, 0) and Released to everyone on the threat list; the credit goes to the killing blow's connection only, after its answer"
 }
 
 pub fn a_viewer_arriving_between_a_running_creatures_death_and_its_respawn_sees_it_where_it_fell_test() -> Nil {
@@ -1950,7 +1954,10 @@ fn landed_in(
         answered: Answered(outcome: Landed(controls:, ..), ..),
         ..,
       ) -> controls
-      creature.Struck(..) | creature.News(..) | creature.FightTold(..) -> []
+      creature.Struck(..)
+      | creature.News(..)
+      | creature.FightTold(..)
+      | creature.KillCredit(..) -> []
     }
   })
 }

@@ -503,6 +503,7 @@ fn is_cast_or_combat_news(news: client_connection.News) -> Bool {
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
+    | client_connection.Level(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..) -> False
@@ -557,6 +558,7 @@ pub fn a_viewer_of_the_engineer_is_told_42148s_cast_and_never_the_volatility_tes
       | client_connection.CrowdControlEnded(..)
       | client_connection.InterruptArmor(..)
       | client_connection.Absorption(..)
+      | client_connection.Level(..)
       | client_connection.PropertiesChanged(..)
       | client_connection.Stealth(..)
       | client_connection.LookChanged(..) -> False

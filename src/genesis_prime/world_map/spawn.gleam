@@ -7,19 +7,22 @@
 ////
 //// ```
 //// the spawn table (one query, at start) ─▶ Row ─▶ load checks (the client's validity rules)
-////                                                 ─▶ selection (who a player can attack)
+////                                                 ─▶ selection (who a player can attack or talk to)
 ////                                                 ─▶ Spawn, one WorldSpawns term for each world
 //// a map's start    ─▶ reads its world's WorldSpawns: no copy, no query
 //// a player's move  ─▶ spawn_cell.near ─▶ exact sight ─▶ the spawns it sees
 //// ```
 ////
 //// - **What starts.** A row of entity type 0 (NonPlayer, the unit type of message
-////   0x262: `world_data.entity_type`, `0x140649e20`) with a faction, that is not
-////   Friendly to both player factions, whose Creature2 row has no quest, trainer,
-////   station, taxi, bind or portal link, and whose health stat is not 0; a row
-////   with no stats is kept. The client lets a player attack a Hostile or a Neutral
-////   unit and not a Friendly one (`0x1403ad540`), and a faction's level to a
-////   player faction walks the faction's parents (`0x140787760`, `0x140717560`,
+////   0x262: `world_data.entity_type`, `0x140649e20`) with a faction, whose health
+////   stat is not 0, and either whose Creature2 row gives or receives a quest, or
+////   that is not Friendly to both player factions and whose Creature2 row has no
+////   trainer, station, taxi, bind or portal link; a row with no stats is kept. The
+////   client marks a creature's quest kinds from its own Creature2 row
+////   (`0x140479560.quest_kinds`, `0x1405a8d40`), so a quest creature stands
+////   whatever else it links to. The client lets a player attack a Hostile or a
+////   Neutral unit and not a Friendly one (`0x1403ad540`), and a faction's level to
+////   a player faction walks the faction's parents (`0x140787760`, `0x140717560`,
 ////   Faction2Relationship). Every other row is counted for the coverage measure.
 //// - **Static objects.** A row of entity type 4, 8, 10, 11, 12, 13, 14 or 32 is a
 ////   static object (genesis_prime/world_map/static_object), checked as a
@@ -310,10 +313,12 @@ pub type LeftOut {
   /// Faction 0: the client sees no faction, and a 0x262 with none fails
   /// (`opcode.0x262`).
   NoFaction
-  /// Friendly to both player factions.
+  /// Friendly to both player factions, and the creature gives and receives no
+  /// quest.
   FriendlyToBoth
-  /// The creature's row has a quest, trainer, station, taxi, bind or portal link.
-  NpcLink
+  /// The creature's row has a trainer, station, taxi, bind or portal link and
+  /// no quest.
+  ServiceLink
   /// Health stat 0: the client creates the unit dead (`opcode.0x262.creature`).
   Dead
 }
@@ -563,7 +568,8 @@ pub type SummonRefusal {
   FailsTheChecks(error: SpawnError)
   /// The row passes them, but a stored spawn of it would not start
   /// (`left_out_of`): a creature with no faction, one friendly to both player
-  /// factions, an NPC with a link, or one with no health. A summon is refused
+  /// factions, one with only a service link, or one with no health (a creature
+  /// with a quest is none of the middle two). A summon is refused
   /// for the same reason, a server choice, so it starts only what a spawn
   /// starts.
   WouldNotStart(creature_id: Creature2Id, reason: LeftOut)
@@ -1308,7 +1314,10 @@ fn hostile_to(
 
 /// The reason a row that passed the load checks does not start, or `Error(Nil)`
 /// for a row that does, in the order of the decode: no faction, Friendly to both
-/// player factions, an NPC link, health 0.
+/// player factions and no quest, a service link and no quest, health 0. A creature
+/// that gives or receives a quest passes the second and third: the client marks
+/// its quest kinds from its own Creature2 row (`0x1405a8d40`), and a Friendly
+/// giver is no target (`0x1403ad540`).
 fn left_out_of(
   catalog catalog: Catalog,
   checked checked: Checked,
@@ -1318,22 +1327,80 @@ fn left_out_of(
     row.faction_id == 0,
     attackable_by(catalog:, player: exile_faction, unit: row.faction_id)
     || attackable_by(catalog:, player: dominion_faction, unit: row.faction_id),
-    has_npc_link(checked.creature),
+    list.any(quest_ids(checked.creature), fn(id) { id != 0 }),
+    has_service_link(checked.creature),
     checked.spawn.health == 0
   {
-    True, _, _, _ -> Ok(NoFaction)
-    False, False, _, _ -> Ok(FriendlyToBoth)
-    False, True, True, _ -> Ok(NpcLink)
-    False, True, False, True -> Ok(Dead)
-    False, True, False, False -> Error(Nil)
+    True, _, _, _, _ -> Ok(NoFaction)
+    False, False, False, _, _ -> Ok(FriendlyToBoth)
+    False, _, False, True, _ -> Ok(ServiceLink)
+    False, _, _, _, True -> Ok(Dead)
+    False, _, _, _, False -> Error(Nil)
   }
 }
 
-/// Whether the creature gives or receives a quest, trains a class or a
-/// tradeskill, is a tradeskill station, or links to a taxi, a bind point or an
-/// instance portal: the columns the client reads for a unit's services, which wait
-/// for their own systems.
-fn has_npc_link(row: Creature2) -> Bool {
+/// The quests the creature gives and receives, by quest id, in the order of its
+/// Creature2 columns questIdGiven00 to 24 and questIdReceive00 to 24; 0 is an empty
+/// column.
+pub fn quest_ids(row: Creature2) -> List(Int) {
+  [
+    row.quest_id_given00,
+    row.quest_id_given01,
+    row.quest_id_given02,
+    row.quest_id_given03,
+    row.quest_id_given04,
+    row.quest_id_given05,
+    row.quest_id_given06,
+    row.quest_id_given07,
+    row.quest_id_given08,
+    row.quest_id_given09,
+    row.quest_id_given10,
+    row.quest_id_given11,
+    row.quest_id_given12,
+    row.quest_id_given13,
+    row.quest_id_given14,
+    row.quest_id_given15,
+    row.quest_id_given16,
+    row.quest_id_given17,
+    row.quest_id_given18,
+    row.quest_id_given19,
+    row.quest_id_given20,
+    row.quest_id_given21,
+    row.quest_id_given22,
+    row.quest_id_given23,
+    row.quest_id_given24,
+    row.quest_id_receive00,
+    row.quest_id_receive01,
+    row.quest_id_receive02,
+    row.quest_id_receive03,
+    row.quest_id_receive04,
+    row.quest_id_receive05,
+    row.quest_id_receive06,
+    row.quest_id_receive07,
+    row.quest_id_receive08,
+    row.quest_id_receive09,
+    row.quest_id_receive10,
+    row.quest_id_receive11,
+    row.quest_id_receive12,
+    row.quest_id_receive13,
+    row.quest_id_receive14,
+    row.quest_id_receive15,
+    row.quest_id_receive16,
+    row.quest_id_receive17,
+    row.quest_id_receive18,
+    row.quest_id_receive19,
+    row.quest_id_receive20,
+    row.quest_id_receive21,
+    row.quest_id_receive22,
+    row.quest_id_receive23,
+    row.quest_id_receive24,
+  ]
+}
+
+/// Whether the creature trains a class or a tradeskill, is a tradeskill station,
+/// or links to a taxi, a bind point or an instance portal: the columns the client
+/// reads for a unit's services, which wait for their own systems.
+fn has_service_link(row: Creature2) -> Bool {
   list.any(
     [
       row.trainer_class_id_mask,
@@ -1342,56 +1409,6 @@ fn has_npc_link(row: Creature2) -> Bool {
       row.taxi_node_id,
       row.bind_point_id,
       row.instance_portal_id,
-      row.quest_id_given00,
-      row.quest_id_given01,
-      row.quest_id_given02,
-      row.quest_id_given03,
-      row.quest_id_given04,
-      row.quest_id_given05,
-      row.quest_id_given06,
-      row.quest_id_given07,
-      row.quest_id_given08,
-      row.quest_id_given09,
-      row.quest_id_given10,
-      row.quest_id_given11,
-      row.quest_id_given12,
-      row.quest_id_given13,
-      row.quest_id_given14,
-      row.quest_id_given15,
-      row.quest_id_given16,
-      row.quest_id_given17,
-      row.quest_id_given18,
-      row.quest_id_given19,
-      row.quest_id_given20,
-      row.quest_id_given21,
-      row.quest_id_given22,
-      row.quest_id_given23,
-      row.quest_id_given24,
-      row.quest_id_receive00,
-      row.quest_id_receive01,
-      row.quest_id_receive02,
-      row.quest_id_receive03,
-      row.quest_id_receive04,
-      row.quest_id_receive05,
-      row.quest_id_receive06,
-      row.quest_id_receive07,
-      row.quest_id_receive08,
-      row.quest_id_receive09,
-      row.quest_id_receive10,
-      row.quest_id_receive11,
-      row.quest_id_receive12,
-      row.quest_id_receive13,
-      row.quest_id_receive14,
-      row.quest_id_receive15,
-      row.quest_id_receive16,
-      row.quest_id_receive17,
-      row.quest_id_receive18,
-      row.quest_id_receive19,
-      row.quest_id_receive20,
-      row.quest_id_receive21,
-      row.quest_id_receive22,
-      row.quest_id_receive23,
-      row.quest_id_receive24,
     ],
     fn(column) { column != 0 },
   )
@@ -1479,21 +1496,24 @@ fn coverage_of(judged: List(Judged)) -> List(WorldCoverage) {
           | ObjectDead(..) -> False
         }
       }),
-      left_out: list.map([NoFaction, FriendlyToBoth, NpcLink, Dead], fn(reason) {
-        #(
-          reason,
-          list.count(ones, fn(one) {
-            case one {
-              Excluded(reason: held, ..) -> held == reason
-              Other(..)
-              | Started(..)
-              | Refused(..)
-              | ObjectSent(..)
-              | ObjectDead(..) -> False
-            }
-          }),
-        )
-      }),
+      left_out: list.map(
+        [NoFaction, FriendlyToBoth, ServiceLink, Dead],
+        fn(reason) {
+          #(
+            reason,
+            list.count(ones, fn(one) {
+              case one {
+                Excluded(reason: held, ..) -> held == reason
+                Other(..)
+                | Started(..)
+                | Refused(..)
+                | ObjectSent(..)
+                | ObjectDead(..) -> False
+              }
+            }),
+          )
+        },
+      ),
       objects_sent: list.map(object_types, fn(unit_type) {
         #(
           unit_type,
@@ -1884,7 +1904,7 @@ fn describe_left_out(reason: LeftOut) -> String {
   case reason {
     NoFaction -> "no faction"
     FriendlyToBoth -> "friendly to both"
-    NpcLink -> "an NPC link"
+    ServiceLink -> "a service link"
     Dead -> "health 0"
   }
 }

@@ -27,6 +27,7 @@
 
 import client_tables
 import coverage_support
+import fixture_tables
 import genesis_prime/coverage
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine.{
@@ -198,7 +199,7 @@ pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_14_17_18_26_29_52_64_
     as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster or at struck units (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Scale 18 (Spell4Effects.effectType.18), Proxy 26 (Spell4Effects.effectType.26), ShieldOverload 64 for the rows aimed at the area (Spell4Effects.effectType.64), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), RavelSignal 81 (Spell4Effects.effectType.81), Stealth 83 (Spell4Effects.effectType.83), RemoveStealth 84 (Spell4Effects.effectType.84), DisguiseOutfit 112 for the rows aimed at the caster (Spell4Effects.effectType.112), UnitPropertyConversion 145 for the rows aimed at the caster (Spell4Effects.effectType.145) and Proc 14 (Spell4Effects.effectType.14) for the rows aimed at the caster, HealShields 118 (Spell4Effects.effectType.118) for the rows that reach the caster, and ModifyInterruptArmor 52 (Spell4Effects.effectType.52) and Absorption 29 (Spell4Effects.effectType.29) for the rows that reach the caster; every other type is unread"
 }
 
-pub fn the_prerequisite_types_the_measure_handles_are_the_sixteen_read_and_those_with_no_case_test() -> Nil {
+pub fn the_prerequisite_types_the_measure_handles_are_the_twenty_eight_read_and_those_with_no_case_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   assert handled_over(
@@ -206,11 +207,50 @@ pub fn the_prerequisite_types_the_measure_handles_are_the_sixteen_read_and_those
       types: numbers(from: 1, to: 295),
     )
     == [
-      4, 11, 15, 17, 21, 28, 32, 37, 45, 50, 57, 58, 59, 64, 71, 72, 73, 75, 108,
-      116, 129, 132, 144, 156, 157, 158, 161, 165, 179, 181, 202, 243, 247, 249,
-      250, 257, 258, 274, 282, 284,
+      4, 6, 10, 11, 15, 17, 21, 22, 23, 28, 32, 33, 34, 35, 36, 37, 43, 45, 50,
+      57, 58, 59, 64, 68, 71, 72, 73, 75, 94, 108, 109, 116, 129, 132, 144, 156,
+      157, 158, 161, 165, 179, 181, 202, 243, 247, 249, 250, 257, 258, 274, 282,
+      284,
     ]
-    as "the server reads 4 (the unit's current faction, Prerequisite.prerequisiteTypeId.4), 11 (a nested prerequisite, Prerequisite.prerequisiteTypeId.11), 15, 28, 37, 50, 59 (Prerequisite.prerequisiteTypeId.50 and .59), 64 (a resource slot, Prerequisite.prerequisiteTypeId.64), 71, 73, 108 (where the second unit stands around the first, Prerequisite.prerequisiteTypeId.108), 116 (the unit's stealth, Prerequisite.prerequisiteTypeId.116), 129 (under a spell of a group, Prerequisite.prerequisiteTypeId.129) 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), 243 (which the client's check always fails, Prerequisite.prerequisiteTypeId.243) and 250 (the unit's base faction, Prerequisite.prerequisiteTypeId.250), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
+    as "the server reads 4 (the unit's current faction, Prerequisite.prerequisiteTypeId.4), 11 (a nested prerequisite, Prerequisite.prerequisiteTypeId.11), 15, 28, 37, 50, 59 (Prerequisite.prerequisiteTypeId.50 and .59), 64 (a resource slot, Prerequisite.prerequisiteTypeId.64), 71, 73, 108 (where the second unit stands around the first, Prerequisite.prerequisiteTypeId.108), 10 (the gender) and 109 (the world), which the equip check decides and the cast's rows leave out (Prerequisite.prerequisiteTypeId.10 and .109), 116 (the unit's stealth, Prerequisite.prerequisiteTypeId.116), the quest log's types 6 (a quest's state, Prerequisite.prerequisiteTypeId.6), 68 (an objective done), 43 (an objective open, Prerequisite.prerequisiteTypeId.43), 22, 23 and 33 to 36 (an objective's progress, Prerequisite.prerequisiteTypeId.22) and 94 (Prerequisite.prerequisiteTypeId.94), 129 (under a spell of a group, Prerequisite.prerequisiteTypeId.129) 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), 243 (which the client's check always fails, Prerequisite.prerequisiteTypeId.243) and 250 (the unit's base faction, Prerequisite.prerequisiteTypeId.250), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
+}
+
+pub fn a_gender_or_world_condition_counts_as_read_only_in_the_rows_an_item_names_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  // Prerequisite 18276 (type 10) is Item2 90054's prerequisite and 37283 (type 109)
+  // Item2 73672's: the equip check decides them with the wearer's gender and world. A
+  // cast passes neither (`cast.gleam` builds its Subject with no gender and no world), so
+  // a row only a cast reaches is not decided: the fixture's 11311 (two type 109
+  // conditions, the target apply prerequisite of Spell4Effects 91018) and 43307 (one,
+  // named by Tutorial). The copy of 18276 added as 90001 is named by no item.
+  use tables <- fixture_tables.added(
+    table: "Prerequisite",
+    copy_of: 18_276,
+    id: 90_001,
+    with: [],
+  )
+  let assert Measured(types:, ..) =
+    measurement.measure(
+      EngineDeclaration(
+        ..coverage_support.engine_named("Prerequisites"),
+        starting_abilities: None,
+      ),
+      tables,
+    )
+    as "the engine's source is a table"
+  let gap_of = fn(type_number) {
+    let assert Ok(line) =
+      list.find(types, fn(line) { line.type_number == type_number })
+      as "the fixture holds a row of the type"
+    let assert HandledWithGap(unread_rows:, fact_key:, ..) = line.status
+      as "the type is handled with the gap stated"
+    #(line.rows, unread_rows, fact_key)
+  }
+  assert gap_of(10) == #(2, 1, "Prerequisite.prerequisiteTypeId.10")
+    as "18276 is read and its copy 90001, which no item names, is not"
+  assert gap_of(109) == #(4, 3, "Prerequisite.prerequisiteTypeId.109")
+    as "37283 is read; 11311 (twice) and 43307 are not"
 }
 
 // ---- the starting abilities' column ----
@@ -335,8 +375,8 @@ pub fn each_decoded_type_not_handled_is_listed_with_its_reason_and_a_fact_key_th
     as "the trace's effect type of the starting abilities that no rule reads: charges 90; proc 14 is read for the kinds the holder's own events make and listed as partial; forced move 3, property modifier 11 and cooldown change 73 are read for the rows aimed at the caster and listed as partial"
   assert missing_of("Spend-scaled costs") == [2, 5, 9, 10, 11]
     as "the innate cost EMM ids besides 4 and 7 that the rows hold"
-  assert missing_of("Prerequisites") == [43]
-    as "the trace's prerequisite types the server cannot decide: quest log 43; stealth 116 and position 108 are read"
+  assert missing_of("Prerequisites") == []
+    as "no prerequisite type of the trace is left that the server cannot decide: the quest log's types, 43 among them, are read from the checking player's log (Prerequisite.prerequisiteTypeId.43), and stealth 116 and position 108 are read"
 }
 
 pub fn a_partial_type_is_handled_and_carries_the_gap_it_states_test() -> Nil {
@@ -1978,9 +2018,38 @@ pub fn the_starting_abilities_totals_hold_184_of_196_effect_rows_and_77_of_79_co
     as "196 effect rows are left, 12 of them not handled (the two Proc rows the plan skips, 90 x4, 118 once (the Warrior's periodic row 210834, held and not applied), 24 once, the Stalker's 91018 of type 81, behind target apply prerequisite 11311, the two Proxies 121345 and 178429 whose dataBits00 is 0, and the Medic's gain 228918, which ticks every 2000 ms (scratch count over the 196 rows the coverage walk reaches); the five other Proc rows, the Medic's row 228914, 109482 of type 18, 229304 of type 145, the Esper's type 52 row 199192 and its type 29 row 178144, aimed at the caster with a durationTime, are read, and the two ExoSuit rows of type 112, 112543 and 178142, aimed at the caster with a durationTime and a display, are read too); the whole-game columns are the walk's of 2026-11-05, with types 14, 18, 29, 52, 64, 81, 83, 84, 112, 118 and 145 handled beside the nine"
   assert string.contains(
     totals,
-    "| Prerequisites (#47) | 232 | 49184 | 47209 | 17 | 77 of 79 |",
+    "| Prerequisites (#47) | 232 | 49184 | 47209 | 29 | 77 of 79 |",
   )
-    as "79 conditions are left, 2 of them not handled (type 109, twice); types 4, 243 and 250 are read beside the fourteen handled before (Prerequisite.prerequisiteTypeId.4, .243, .250), so 17 types are handled"
+    as "79 conditions are left, 2 of them not handled (type 109, twice: a cast gives its subject no world, so the row is read as not read); types 4, 243 and 250 are read beside the fourteen handled before (Prerequisite.prerequisiteTypeId.4, .243, .250), and the equip check decides 10 and 109 (Prerequisite.prerequisiteTypeId.10 and .109), so 19 types were handled before the quest log; it adds 6, 22, 23, 33 to 36, 43, 68 and 94 (Prerequisite.prerequisiteTypeId.6, .22, .43, .68 and .94), which the client's table uses, so 29 types are handled"
+}
+
+pub fn the_gender_and_world_conditions_no_item_names_are_counted_unread_in_the_clients_tables_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.guard(client_tables.present())
+  let assert Measured(types:, ..) =
+    measurement.measure(
+      coverage_support.engine_named("Prerequisites"),
+      client_tables.every_table(),
+    )
+    as "the engine's source is a table"
+  let unread_of = fn(type_number) {
+    let assert Ok(line) =
+      list.find(types, fn(line) { line.type_number == type_number })
+      as "the client's Prerequisite rows use the type"
+    let assert HandledWithGap(unread_rows:, ..) = line.status
+      as "the type is handled with the gap stated"
+    #(line.rows, unread_rows)
+  }
+  // The client's Prerequisite table holds 43 conditions of type 10 and 232 of type
+  // 109 (the totals test's column). The one gender condition an item names is
+  // Prerequisite 18276, Item2 90054's; the world conditions in rows the Item2 and
+  // ItemSpecial rows name or nest are the other 18, the rest are in rows no
+  // item's equip check loads.
+  assert unread_of(10) == #(43, 42)
+    as "42 of the 43 gender conditions are in rows no item's equip check loads"
+  assert unread_of(109) == #(232, 214)
+    as "214 of the 232 world conditions are in rows no item's equip check loads"
 }
 
 pub fn the_fact_file_holds_the_records_the_starting_reach_rules_cite_test() -> Nil {

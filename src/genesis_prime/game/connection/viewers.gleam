@@ -144,6 +144,7 @@ import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionId, type Effect, type Now,
 }
+import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
@@ -331,6 +332,7 @@ pub fn viewer_takes(
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
+    | client_connection.Level(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..) -> False
@@ -361,6 +363,7 @@ pub fn viewer_takes(
       place:,
       hit_radius:,
       attackable:,
+      hostile_to:,
     ) -> {
       use <- bool.guard(
         when: shown || set.contains(entered.gone, unit_id),
@@ -371,11 +374,13 @@ pub fn viewer_takes(
           _,
           unit_id,
           ShownCreature(
+            creature_id: Creature2Id(unit.creature_id),
             path: creature_path.Standing(at: place),
             life:,
             alive: creature_unit.health_of(unit:) > 0,
             hit_radius:,
             attackable:,
+            hostile_to:,
           ),
         )),
         [
@@ -581,6 +586,15 @@ pub fn viewer_takes(
         ),
       ])
     }
+    client_connection.Level(level:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(session, [
+        connection_state.to_client(
+          session,
+          connection_frames.level_frame(unit_id:, level:),
+        ),
+      ])
+    }
     client_connection.PropertiesChanged(properties:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(session, [
@@ -712,6 +726,7 @@ fn creature_news(
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
+    | client_connection.Level(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..) -> session
@@ -801,6 +816,7 @@ fn life_news(
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
+    | client_connection.Level(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..) -> Continue(session, [])

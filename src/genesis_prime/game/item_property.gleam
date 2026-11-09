@@ -43,14 +43,17 @@
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
   GameFormulaId, Item2CategoryId, Item2FamilyId, Item2Id, Item2TypeId,
-  ItemSlotId,
+  ItemProficiencyId, ItemSlotId, ItemSpecialId, PrerequisiteId,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/item2_category
 import genesis_prime/table/item2_family
 import genesis_prime/table/item2_type
+import genesis_prime/table/item_proficiency
 import genesis_prime/table/item_slot
+import genesis_prime/table/item_special
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/bool
 import gleam/float
 import gleam/int
@@ -152,6 +155,21 @@ pub fn sum(
 /// (FillItemInfo 0x1404445d0, PrepareItemPropertyBuilder 0x14040c610).
 const slotted_flag = 0x400
 
+/// The flags of an item's type, category and family, joined, that mark an item
+/// that stacks (0x1406d50f0).
+const stackable_flag = 0x4
+
+/// Item2.flags 0x10000: the item cannot be destroyed (0x1403c1360).
+const undeletable_flag = 0x10000
+
+/// Item2.bindFlags bit 1: only one of the item may be equipped (0x1403ad100,
+/// `Item2.bindFlags`).
+const unique_equipped_flag = 2
+
+/// Item2.flags bit 0: the item needs level 1 whatever its required level says
+/// (0x1403b4710).
+const no_level_flag = 1
+
 /// The equipped slot flags of the shield slot, ArmorShields.
 const shield_slot_flags = 0x8000
 
@@ -198,14 +216,45 @@ type Builder {
   )
 }
 
-fn builder(
+/// The rows an item's slot comes from: its own, the category's and the slot's
+/// modifiers, whether it may take a slot and its equipped slot flags. Only a
+/// missing row is an error: the slot does not depend on the item's budget, stat
+/// or flags (FillItemInfo 0x1404445d0, PrepareItemPropertyBuilder 0x14040c610).
+type Slotting {
+  Slotting(
+    item: item2.Item2,
+    category_armor_modifier: Float,
+    slot_modifier: Float,
+    slotted: Bool,
+    equipped_slot_flags: Int,
+  )
+}
+
+/// An Item2 row with the rows of its type, category and family, and the flags of
+/// those three joined (0x1403c1360 and 0x1406d50f0 join them the same way).
+type Rows {
+  Rows(
+    item: item2.Item2,
+    type_row: item2_type.Item2Type,
+    category: item2_category.Item2Category,
+    joined_flags: Int,
+  )
+}
+
+/// The item's own Item2 row; a missing one is `NoRow`.
+fn item_row(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
-) -> Result(Builder, ItemPropertyError) {
-  use item <- result.try(
-    item2.get(tables:, id: Item2Id(item2_id))
-    |> result.replace_error(NoRow(table: "Item2", id: item2_id)),
-  )
+) -> Result(item2.Item2, ItemPropertyError) {
+  item2.get(tables:, id: Item2Id(item2_id))
+  |> result.replace_error(NoRow(table: "Item2", id: item2_id))
+}
+
+fn rows(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Rows, ItemPropertyError) {
+  use item <- result.try(item_row(tables:, item2_id:))
   use type_row <- result.try(
     item2_type.get(tables:, id: Item2TypeId(item.item2_type_id))
     |> result.replace_error(NoRow(table: "Item2Type", id: item.item2_type_id)),
@@ -224,6 +273,61 @@ fn builder(
       id: item.item2_category_id,
     )),
   )
+  Ok(Rows(
+    item:,
+    type_row:,
+    category:,
+    joined_flags: int.bitwise_or(
+      int.bitwise_or(type_row.flags, category.flags),
+      family.flags,
+    ),
+  ))
+}
+
+fn slotting(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Slotting, ItemPropertyError) {
+  use Rows(item:, type_row:, category:, joined_flags:) <- result.try(rows(
+    tables:,
+    item2_id:,
+  ))
+  let slotted = int.bitwise_and(joined_flags, slotted_flag) != 0
+  let has_slot =
+    item.item2_family_id != family_without_slot
+    && item.item2_category_id != category_without_slot
+  use slot <- result.try(case has_slot {
+    True ->
+      item_slot.get(tables:, id: ItemSlotId(type_row.item_slot_id))
+      |> result.replace_error(NoRow(
+        table: "ItemSlot",
+        id: type_row.item_slot_id,
+      ))
+      |> result.map(Some)
+    False -> Ok(None)
+  })
+  let slot_flags = case slot, slotted {
+    Some(slot), True -> slot.equipped_slot_flags
+    Some(_), False | None, _ -> 0
+  }
+  Ok(Slotting(
+    item:,
+    category_armor_modifier: category.armor_modifier,
+    slot_modifier: case slot {
+      Some(slot) -> slot.armor_modifier
+      None -> 1.0
+    },
+    slotted:,
+    equipped_slot_flags: int.bitwise_or(slot_flags, item.equipped_slot_flags),
+  ))
+}
+
+fn builder(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Builder, ItemPropertyError) {
+  use slotting <- result.try(slotting(tables:, item2_id:))
+  let item = slotting.item
   use <- bool.guard(
     item.item_budget_id != 0 || item.item_stat_id != 0,
     Error(Unread(item2_id:, why: "it has a budget or a stat")),
@@ -243,51 +347,209 @@ fn builder(
       why: "its flags hold 0x4000, so the client takes its fields from a proxy item",
     )),
   )
-  let joined_flags =
-    int.bitwise_or(int.bitwise_or(type_row.flags, category.flags), family.flags)
-  let slotted = int.bitwise_and(joined_flags, slotted_flag) != 0
-  let has_slot =
-    item.item2_family_id != family_without_slot
-    && item.item2_category_id != category_without_slot
-  use slot <- result.try(case has_slot {
-    True ->
-      item_slot.get(tables:, id: ItemSlotId(type_row.item_slot_id))
-      |> result.replace_error(NoRow(
-        table: "ItemSlot",
-        id: type_row.item_slot_id,
-      ))
-      |> result.map(Some)
-    False -> Ok(None)
-  })
-  let slot_modifier = case slot {
-    Some(slot) -> slot.armor_modifier
-    None -> 1.0
-  }
-  let slot_flags = case slot, slotted {
-    Some(slot), True -> slot.equipped_slot_flags
-    Some(_), False | None, _ -> 0
-  }
-  let equipped_slot_flags = int.bitwise_or(slot_flags, item.equipped_slot_flags)
   Ok(Builder(
     item:,
     power_level: item.power_level,
-    slot_modifier:,
-    armor_modifier: category.armor_modifier *. slot_modifier,
-    equipped_slot_flags:,
-    is_shield: slotted
-      && int.bitwise_and(equipped_slot_flags, shield_slot_flags) != 0,
+    slot_modifier: slotting.slot_modifier,
+    armor_modifier: slotting.category_armor_modifier *. slotting.slot_modifier,
+    equipped_slot_flags: slotting.equipped_slot_flags,
+    is_shield: slotting.slotted
+      && int.bitwise_and(slotting.equipped_slot_flags, shield_slot_flags) != 0,
   ))
 }
 
 /// The equipped slot flags of the item: its slot's and its own, joined
 /// (FillItemInfo 0x1404445d0). A weapon's hold 0x10000, bit 16, WeaponPrimary,
-/// the slot a weapon is equipped in.
+/// the slot a weapon is equipped in. Only a missing row is an error: an item
+/// with a budget, a stat or scaled flags has its slot all the same.
 pub fn equipped_slot_flags(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
 ) -> Result(Int, ItemPropertyError) {
-  builder(tables:, item2_id:)
-  |> result.map(fn(builder) { builder.equipped_slot_flags })
+  slotting(tables:, item2_id:)
+  |> result.map(fn(slotting) { slotting.equipped_slot_flags })
+}
+
+/// Whether the item may take an equipped slot at all: the flags of its type,
+/// category and family, joined, hold 0x400. The client refuses an item that
+/// lacks it at every equipped slot of location 0, whatever equipped slot flags
+/// its own row holds (CheckItemEquipSlot 0x1403b11b0). Only a missing row is an
+/// error.
+pub fn is_slotted(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Bool, ItemPropertyError) {
+  use rows <- result.map(rows(tables:, item2_id:))
+  int.bitwise_and(rows.joined_flags, slotted_flag) != 0
+}
+
+/// Whether only one of the item may be equipped: Item2.bindFlags holds bit 1
+/// (CheckItemMove 0x1403ad100, `Item2.bindFlags`). Only a missing row is an
+/// error.
+pub fn is_unique_equipped(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Bool, ItemPropertyError) {
+  use item <- result.map(item_row(tables:, item2_id:))
+  int.bitwise_and(item.bind_flags, unique_equipped_flag) != 0
+}
+
+/// What the client's equip check reads of an item (CheckEquipRequirements
+/// 0x1403b4710): masks of the races and classes that may wear it, the faction
+/// it needs, the prerequisites its own row and its ItemSpecial give, the mask
+/// of its proficiency and the level it needs.
+pub type EquipRequirements {
+  EquipRequirements(
+    /// Item2.raceRequired: bit race - 1 for each race; 0 for any.
+    race_mask: Int,
+    /// Item2.classRequired: bit class - 1 for each class; 0 for any.
+    class_mask: Int,
+    /// Item2.faction2IdRequired; 0 for any.
+    faction_id: Int,
+    /// The Prerequisite ids that must all pass, those that are 0 left out: the
+    /// item's own, then its ItemSpecial's when that special has a spell to
+    /// activate.
+    prerequisite_ids: List(Int),
+    /// ItemProficiency.bitMask of the item's category; 0 for none.
+    proficiency_mask: Int,
+    /// Item2.requiredLevel, or 1 when it is 0 or the item's flags hold bit 0.
+    required_level: Int,
+  )
+}
+
+/// The item's equip requirements. Only a missing Item2, category or ItemSpecial
+/// row is an error; a category with no ItemProficiency row needs no proficiency
+/// (HasItemProficiency 0x1403ca2b0).
+pub fn equip_requirements(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(EquipRequirements, ItemPropertyError) {
+  use rows <- result.try(rows(tables:, item2_id:))
+  let item = rows.item
+  use special_prerequisite <- result.map(case item.item_special_id00 {
+    0 -> Ok(0)
+    special_id ->
+      item_special.get(tables:, id: ItemSpecialId(special_id))
+      |> result.replace_error(NoRow(table: "ItemSpecial", id: special_id))
+      |> result.map(fn(special) {
+        case special.spell4_id_on_activate {
+          0 -> 0
+          _ -> special.prerequisite_id_generic00
+        }
+      })
+  })
+  let proficiency_mask = case
+    item_proficiency.get(
+      tables:,
+      id: ItemProficiencyId(rows.category.item_proficiency_id),
+    )
+  {
+    Ok(proficiency) -> proficiency.bit_mask
+    Error(Nil) -> 0
+  }
+  EquipRequirements(
+    race_mask: item.race_required,
+    class_mask: item.class_required,
+    faction_id: item.faction2_id_required,
+    prerequisite_ids: list.filter(
+      [item.prerequisite_id, special_prerequisite],
+      fn(id) { id != 0 },
+    ),
+    proficiency_mask:,
+    required_level: case
+      item.required_level == 0
+      || int.bitwise_and(item.flags, no_level_flag) != 0
+    {
+      True -> 1
+      False -> item.required_level
+    },
+  )
+}
+
+/// The load's checks that the rows an item's equip check reads exist, so a
+/// table without them fails the server's start and not a player's equip: the
+/// Prerequisite row of each Item2 and ItemSpecial that names one, and the
+/// ItemSpecial row of each Item2 that names one (CheckEquipRequirements
+/// 0x1403b4710 reads all three; an id of 0 names none).
+pub fn requirements() -> List(table_store.Requirement) {
+  [
+    table_store.Requirement(
+      from_table: "Item2",
+      column: "prerequisiteId",
+      to_table: "Prerequisite",
+      missing: fn(tables) {
+        item2.all(tables)
+        |> list.map(fn(item) { item.prerequisite_id })
+        |> missing_prerequisites(tables:)
+      },
+    ),
+    table_store.Requirement(
+      from_table: "Item2",
+      column: "itemSpecialId00",
+      to_table: "ItemSpecial",
+      missing: fn(tables) {
+        item2.all(tables)
+        |> list.map(fn(item) { item.item_special_id00 })
+        |> list.filter(fn(special_id) {
+          special_id != 0
+          && result.is_error(item_special.get(
+            tables:,
+            id: ItemSpecialId(special_id),
+          ))
+        })
+      },
+    ),
+    table_store.Requirement(
+      from_table: "ItemSpecial",
+      column: "prerequisiteIdGeneric00",
+      to_table: "Prerequisite",
+      missing: fn(tables) {
+        item_special.all(tables)
+        |> list.map(fn(special) { special.prerequisite_id_generic00 })
+        |> missing_prerequisites(tables:)
+      },
+    ),
+  ]
+}
+
+/// The ids of these that name a Prerequisite row the tables lack; 0 names none.
+fn missing_prerequisites(
+  ids ids: List(Int),
+  tables tables: table_store.Tables,
+) -> List(Int) {
+  list.filter(ids, fn(id) {
+    id != 0
+    && result.is_error(prerequisite_table.get(tables:, id: PrerequisiteId(id)))
+  })
+}
+
+/// The most the item's stack holds, for an item that stacks: Item2.maxStackCount
+/// when the flags of its type, category and family, joined, hold 0x4 (the drop
+/// handler 0x1406d50f0 merges a drop only onto such an item), `None` for an item
+/// that does not stack. Only a missing row is an error. The client takes the
+/// fields of an item whose Item2.flags hold 0x4000 from GameFormula 1214's item
+/// (FillItemInfo 0x1404445d0), which this does not read: such an item is judged
+/// by its own row, a gap open in #333.
+pub fn stack_limit(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Option(Int), ItemPropertyError) {
+  use rows <- result.map(rows(tables:, item2_id:))
+  case int.bitwise_and(rows.joined_flags, stackable_flag) {
+    0 -> None
+    _ -> Some(rows.item.max_stack_count)
+  }
+}
+
+/// Whether the player may destroy the item: Item2.flags lacks 0x10000
+/// (SendItemDelete 0x1403c1360 refuses with Item_CannotBeDeleted when it holds
+/// it). The proxy gap of `stack_limit` applies (#333).
+pub fn deletable(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Bool, ItemPropertyError) {
+  use item <- result.map(item_row(tables:, item2_id:))
+  int.bitwise_and(item.flags, undeletable_flag) == 0
 }
 
 /// The bag index an item is equipped at: the index of the lowest bit set in its

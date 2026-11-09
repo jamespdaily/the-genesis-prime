@@ -402,6 +402,7 @@ pub fn after_a_camp_a_play_request_enters_the_world_again_as_a_new_unit_with_the
               game_connection_support.world_character(),
               character_support.epoch(1),
               None,
+              None,
               world_entry_support.novice_items(
                 character: game_connection_support.world_character(),
               ),

@@ -27,9 +27,15 @@ import genesis_prime/message/create_character_result.{type CreateCharacterResult
 import genesis_prime/message/delete_character_result.{type DeleteCharacterResult}
 import genesis_prime/message/disconnect_notice.{type DisconnectNotice}
 import genesis_prime/message/enter_world.{type EnterWorld}
+import genesis_prime/message/experience_gained.{type ExperienceGained}
 import genesis_prime/message/game_server_handoff.{type GameServerHandoff}
 import genesis_prime/message/innate_index_set.{type InnateIndexSet}
+import genesis_prime/message/item_action_failed.{type ItemActionFailed}
 import genesis_prime/message/item_added.{type ItemAdded}
+import genesis_prime/message/item_count_changed.{type ItemCountChanged}
+import genesis_prime/message/item_moved.{type ItemMoved}
+import genesis_prime/message/item_removed.{type ItemRemoved}
+import genesis_prime/message/items_swapped.{type ItemsSwapped}
 import genesis_prime/message/leave_world.{type LeaveWorld}
 import genesis_prime/message/login_accepted.{type LoginAccepted}
 import genesis_prime/message/login_refused.{type LoginRefused}
@@ -75,6 +81,7 @@ import genesis_prime/message/unit_create_portal.{type UnitCreatePortal}
 import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
 import genesis_prime/message/unit_death_state.{type UnitDeathState}
 import genesis_prime/message/unit_destroyed.{type UnitDestroyed}
+import genesis_prime/message/unit_dialog_open.{type UnitDialogOpen}
 import genesis_prime/message/unit_float_stat_changed.{type UnitFloatStatChanged}
 import genesis_prime/message/unit_health.{type UnitHealth}
 import genesis_prime/message/unit_is_player.{type UnitIsPlayer}
@@ -130,6 +137,11 @@ pub type ServerMessage {
   ChatChannelJoined(message: ChatChannelJoined)
   ChatZoneNamed(message: ChatZoneNamed)
   ItemAdded(message: ItemAdded)
+  ItemCountChanged(message: ItemCountChanged)
+  ItemRemoved(message: ItemRemoved)
+  ItemMoved(message: ItemMoved)
+  ItemsSwapped(message: ItemsSwapped)
+  ItemActionFailed(message: ItemActionFailed)
   AbilityTiers(message: AbilityTiers)
   ActionSet(message: ActionSet)
   InnateIndexSet(message: InnateIndexSet)
@@ -157,6 +169,7 @@ pub type ServerMessage {
   UnitHealth(message: UnitHealth)
   PlayerHealth(message: PlayerHealth)
   UnitStatChanged(message: UnitStatChanged)
+  ExperienceGained(message: ExperienceGained)
   UnitFloatStatChanged(message: UnitFloatStatChanged)
   UnitPropertiesChanged(message: UnitPropertiesChanged)
   UnitDeathState(message: UnitDeathState)
@@ -167,6 +180,7 @@ pub type ServerMessage {
   UnitItemVisualsChanged(message: UnitItemVisualsChanged)
   ResurrectionWindow(message: ResurrectionWindow)
   CombatLog(message: CombatLog)
+  UnitDialogOpen(message: UnitDialogOpen)
 }
 
 /// Why a body is not a message the server sends.
@@ -301,6 +315,13 @@ pub fn decode(
       decoded(body, message_id, chat_channel_joined.decode, ChatChannelJoined)
     0x01DA -> decoded(body, message_id, chat_zone_named.decode, ChatZoneNamed)
     0x0111 -> decoded(body, message_id, item_added.decode, ItemAdded)
+    0x017F ->
+      decoded(body, message_id, item_count_changed.decode, ItemCountChanged)
+    0x0148 -> decoded(body, message_id, item_removed.decode, ItemRemoved)
+    0x0569 -> decoded(body, message_id, item_moved.decode, ItemMoved)
+    0x0568 -> decoded(body, message_id, items_swapped.decode, ItemsSwapped)
+    0x056A ->
+      decoded(body, message_id, item_action_failed.decode, ItemActionFailed)
     0x01A0 -> decoded(body, message_id, ability_tiers.decode, AbilityTiers)
     0x019D -> decoded(body, message_id, action_set.decode, ActionSet)
     0x019F -> decoded(body, message_id, innate_index_set.decode, InnateIndexSet)
@@ -363,6 +384,8 @@ pub fn decode(
     0x092F -> decoded(body, message_id, player_health.decode, PlayerHealth)
     0x0938 ->
       decoded(body, message_id, unit_stat_changed.decode, UnitStatChanged)
+    0x01AC ->
+      decoded(body, message_id, experience_gained.decode, ExperienceGained)
     0x0935 ->
       decoded(
         body,
@@ -393,6 +416,7 @@ pub fn decode(
     0x01B3 ->
       decoded(body, message_id, resurrection_window.decode, ResurrectionWindow)
     0x0247 -> decoded(body, message_id, combat_log.decode, CombatLog)
+    0x0357 -> decoded(body, message_id, unit_dialog_open.decode, UnitDialogOpen)
     _ -> Error(UnknownMessage(message_id:))
   }
 }
@@ -438,6 +462,11 @@ pub fn name(message: ServerMessage) -> String {
     ChatChannelJoined(..) -> "chat_channel_joined"
     ChatZoneNamed(..) -> "chat_zone_named"
     ItemAdded(..) -> "item_added"
+    ItemCountChanged(..) -> "item_count_changed"
+    ItemRemoved(..) -> "item_removed"
+    ItemMoved(..) -> "item_moved"
+    ItemsSwapped(..) -> "items_swapped"
+    ItemActionFailed(..) -> "item_action_failed"
     AbilityTiers(..) -> "ability_tiers"
     ActionSet(..) -> "action_set"
     InnateIndexSet(..) -> "innate_index_set"
@@ -465,6 +494,7 @@ pub fn name(message: ServerMessage) -> String {
     UnitHealth(..) -> "unit_health"
     PlayerHealth(..) -> "player_health"
     UnitStatChanged(..) -> "unit_stat_changed"
+    ExperienceGained(..) -> "experience_gained"
     UnitFloatStatChanged(..) -> "unit_float_stat_changed"
     UnitPropertiesChanged(..) -> "unit_properties_changed"
     UnitDeathState(..) -> "unit_death_state"
@@ -475,6 +505,7 @@ pub fn name(message: ServerMessage) -> String {
     UnitItemVisualsChanged(..) -> "unit_item_visuals_changed"
     ResurrectionWindow(..) -> "resurrection_window"
     CombatLog(..) -> "combat_log"
+    UnitDialogOpen(..) -> "unit_dialog_open"
   }
 }
 

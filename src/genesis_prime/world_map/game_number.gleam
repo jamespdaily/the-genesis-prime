@@ -35,6 +35,13 @@
 ////   by the table (`game_number_interrupt_armor_refill_ms_is_a_whole_positive_ms`,
 ////   migration 0016): the creature starts a timer of that many, and the client holds no
 ////   value for it, so it is a server choice that states its reason.
+//// - **A kill's experience** is the fraction of the creature's level's base quest
+////   experience, above 0 and at most 1, times a level-gap multiplier of 0 or more
+////   (`game_number_kill_experience_fraction_is_above_0_up_to_1`,
+////   `game_number_kill_experience_multiplier_is_not_negative`, migration 0022). The
+////   client holds no kill formula, so each is a server choice that states its reason,
+////   and the creature's Creature2Difficulty `clusterContributionValueDifficulty` that
+////   weighs it is a client value no client code shows feeding experience.
 //// - **The quest reset times** are the server's choice, since the client holds no
 ////   schedule: a daily quest resets at `daily_quest_reset_ms` after 00:00 UTC and a
 ////   weekly one at `weekly_quest_reset_ms` after Monday 00:00 UTC, each a whole
@@ -85,6 +92,14 @@ pub type GameNumbers {
     /// How long a creature's Interrupt Armor takes to return to its maximum after the
     /// last point destroyed, in whole milliseconds (migration 0016).
     interrupt_armor_refill_ms: Int,
+    /// The share of the base quest experience of a creature's level that a kill
+    /// gives before the creature's difficulty weight and the level gap's multiplier
+    /// (migration 0022).
+    kill_experience_fraction: Float,
+    /// The multiplier of a kill's experience for the creature's level minus the
+    /// player's, from 4 or more below to 4 or more above: nine numbers, the gap -4
+    /// first and the gap 4 last (migration 0022).
+    kill_experience_multipliers: List(Float),
     /// The time of day the daily quests reset at, in whole milliseconds after
     /// 00:00 UTC (migration 0021).
     daily_quest_reset_ms: Int,
@@ -94,18 +109,38 @@ pub type GameNumbers {
   )
 }
 
-/// Each number the server reads, by name.
-const expected = [
-  "aggro_range",
-  "leash_range",
-  "aggro_threat",
-  "chase_stop_fraction",
-  "health_regen_fraction",
-  "health_regen_tick_ms",
-  "interrupt_armor_refill_ms",
-  "daily_quest_reset_ms",
-  "weekly_quest_reset_ms",
+/// The names of the nine level-gap multipliers, the creature 4 or more levels below
+/// the player first and 4 or more above last.
+const kill_experience_multiplier_names = [
+  "kill_experience_multiplier_below_4",
+  "kill_experience_multiplier_below_3",
+  "kill_experience_multiplier_below_2",
+  "kill_experience_multiplier_below_1",
+  "kill_experience_multiplier_same",
+  "kill_experience_multiplier_above_1",
+  "kill_experience_multiplier_above_2",
+  "kill_experience_multiplier_above_3",
+  "kill_experience_multiplier_above_4",
 ]
+
+/// Each number the server reads, by name.
+fn expected() -> List(String) {
+  list.append(
+    [
+      "aggro_range",
+      "leash_range",
+      "aggro_threat",
+      "chase_stop_fraction",
+      "health_regen_fraction",
+      "health_regen_tick_ms",
+      "interrupt_armor_refill_ms",
+      "kill_experience_fraction",
+      "daily_quest_reset_ms",
+      "weekly_quest_reset_ms",
+    ],
+    kill_experience_multiplier_names,
+  )
+}
 
 /// The numbers of the rows, or every refusal: a name missing or not known, a
 /// leash range not above the aggro range and an aggro range not below
@@ -116,7 +151,7 @@ pub fn select(
 ) -> Result(GameNumbers, List(Refusal)) {
   let unknown =
     list.filter_map(rows, fn(row) {
-      case list.contains(expected, row.name) {
+      case list.contains(expected(), row.name) {
         False ->
           Ok(refused(name: row.name, rule: "the server knows no such number"))
         True -> Error(Nil)
@@ -125,7 +160,7 @@ pub fn select(
   let values =
     list.map(rows, fn(row) { #(row.name, row.value) }) |> dict.from_list
   let missing =
-    list.filter_map(expected, fn(name) {
+    list.filter_map(expected(), fn(name) {
       case dict.has_key(values, name) {
         True -> Error(Nil)
         False ->
@@ -155,6 +190,11 @@ fn ranges_checked(
       health_regen_fraction: value("health_regen_fraction"),
       health_regen_tick_ms: float.round(value("health_regen_tick_ms")),
       interrupt_armor_refill_ms: float.round(value("interrupt_armor_refill_ms")),
+      kill_experience_fraction: value("kill_experience_fraction"),
+      kill_experience_multipliers: list.map(
+        kill_experience_multiplier_names,
+        value,
+      ),
       daily_quest_reset_ms: float.round(value("daily_quest_reset_ms")),
       weekly_quest_reset_ms: float.round(value("weekly_quest_reset_ms")),
     )

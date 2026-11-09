@@ -4,18 +4,18 @@
 //// addons wait for (`lua.event.CharacterCreated`, `opcode.0x25e`).
 ////
 //// ```
-//// Character.level  ─▶ XpPerLevel row with that ID ─▶ experience (minXpForLevel)
+//// the character's experience (saved, or the least of its level: genesis_prime/game/experience)
 //// Character.class  ─▶ Class row ─▶ item_proficiencies (startingItemProficiencies)
 //// the client's start values ─▶ costume index -1, input key set 3, action set 0
 //// every other field          ─▶ 0 or empty
 //// ```
 ////
-//// - **Experience** is the least experience of the saved level, so the client's
-////   progress shows the level the character is (`opcode.0x25e.safe_body`,
-////   GetLevelForExperience `0x140029820`). The server saves no experience
-////   beyond the level. A level with no XpPerLevel row has no frame (`Error(Nil)`),
-////   which world entry refuses before the map is asked: a level above the
-////   highest or 0 is not a level the client's table holds.
+//// - **Experience** is the character's own, given by world entry: the experience its
+////   last save kept, or the least experience of its level when none was saved, so
+////   the client's progress shows the level the character is
+////   (`opcode.0x25e.safe_body`, GetLevelForExperience `0x140029820`). World entry
+////   refuses a level with no XpPerLevel row before the map is asked
+////   (genesis_prime/game/experience).
 //// - **Item proficiencies** are the class's `Class.startingItemProficiencies`; the
 ////   client's proficiency test fails every ItemProficiency row with a mask when
 ////   the mask is 0 (`0x1403ca2b0`). The load requires a Class row for each
@@ -40,9 +40,8 @@ import genesis_prime/message/player_character_state.{PlayerCharacterState}
 import genesis_prime/message/reputation_list.{ReputationList}
 import genesis_prime/store.{type Character}
 import genesis_prime/table/class
-import genesis_prime/table/id.{ClassId, XpPerLevelId}
+import genesis_prime/table/id.{type ClassId, ClassId}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/table/xp_per_level
 import gleam/list
 import gleam/result
 
@@ -63,28 +62,36 @@ pub fn requirements() -> List(table_store.Requirement) {
   ]
 }
 
-/// 0x025E for the character at its level and class: the least experience of the
-/// level (`Error(Nil)` for a level with no XpPerLevel row), the class's item
+/// The mask of item proficiencies the class starts with, which 0x025E tells the
+/// client and the equip check reads (`Class.startingItemProficiencies`).
+pub fn item_proficiencies(
+  tables tables: table_store.Tables,
+  class_id class_id: ClassId,
+) -> Int {
+  let assert Ok(class_row) = class.get(tables:, id: class_id)
+    as "character creation makes only playable classes, and the load requires a Class row for each"
+  class_row.starting_item_proficiencies
+}
+
+/// 0x025E for the character at its class with its `experience`, the class's item
 /// proficiencies, the client's start values, and every other field 0 or empty.
 pub fn frame(
   tables tables: table_store.Tables,
   character character: Character,
-) -> Result(Frame, Nil) {
-  use level_row <- result.map(xp_per_level.get(
-    tables:,
-    id: XpPerLevelId(character.level),
-  ))
-  let assert Ok(class_row) = class.get(tables:, id: character.class_id)
-    as "character creation makes only playable classes, and the load requires a Class row for each"
+  experience experience: Int,
+) -> Frame {
   let assert Ok(body) =
     player_character_state.encode(
       PlayerCharacterState(
         held_items: [],
         currencies: <<0:size(960)>>,
         money_trade_limit: 0,
-        experience: level_row.min_xp_for_level,
+        experience:,
         rest_experience: 0,
-        item_proficiencies: class_row.starting_item_proficiencies,
+        item_proficiencies: item_proficiencies(
+          tables:,
+          class_id: character.class_id,
+        ),
         elder_points: 0,
         periodic_elder_points: 0,
         active_action_set: 0,
@@ -105,6 +112,6 @@ pub fn frame(
         character_entitlements: [],
       ),
     )
-    as "a table's minXpForLevel and a class's proficiency mask of 32 bits fit the message"
+    as "an experience below 2147483648 and a class's proficiency mask of 32 bits fit the message"
   Frame(message_id: player_character_state.message_id, body:)
 }

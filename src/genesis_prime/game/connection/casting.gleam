@@ -279,6 +279,7 @@ pub fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
       shield: player_life.shield(life:),
       max_shield: player_life.max_shield(life:),
     ),
+    quests: entered.quests,
   )
 }
 
@@ -666,6 +667,7 @@ pub fn creature_news_frames(
     | client_connection.CrowdControlEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
+    | client_connection.Level(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..) -> []

@@ -14,7 +14,10 @@ import genesis_prime/game/shown.{
   Dominion, Exile, ShownCreature, ShownObject, ShownPlayer,
 }
 import genesis_prime/game/start_place
-import genesis_prime/world_map/creature_life.{type Attackable, Attackable}
+import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/world_map/creature_life.{
+  type Attackable, Attackable, Hostile,
+}
 import genesis_prime/world_map/creature_path
 import gleam/dict
 import gleam/list
@@ -31,6 +34,7 @@ fn creature(
   alive alive: Bool,
 ) -> shown.Shown {
   ShownCreature(
+    creature_id: Creature2Id(73_464),
     path: creature_path.Standing(at: place_support.at(
       world_id: 3460,
       world_zone_id: 5967,
@@ -42,6 +46,7 @@ fn creature(
     alive:,
     hit_radius: 3.0,
     attackable:,
+    hostile_to: Hostile(exile: False, dominion: False),
   )
 }
 
@@ -69,6 +74,21 @@ pub fn only_alive_hostile_or_neutral_creatures_other_than_the_caster_are_candida
       Candidate(unit_id: 5, at: Point(x: 5.0, z: -3.0), hit_radius: 3.0),
     ]
     as "unit 2 is dead, 3 is a player, 4 is Friendly to Exiles (Friendly to Exiles), 7 is the caster; the Neutral unit 5 is struck"
+}
+
+pub fn a_creature_no_player_faction_may_attack_is_never_a_strike_candidate_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `0x1403ad540`: a player attacks a Hostile or Neutral unit, not a Friendly
+  // one; a quest giver Friendly to both player factions has neither flag.
+  let picture =
+    dict.from_list([
+      #(1, creature(x: 1.0, attackable: Attackable(False, False), alive: True)),
+    ])
+  list.each([Exile, Dominion], fn(faction) {
+    assert shown.candidates(picture:, faction:, caster_unit_id: 7, now_ms: 0)
+      == []
+      as "the Friendly creature is no candidate for either faction"
+  })
 }
 
 pub fn a_shown_static_object_is_never_a_candidate_nor_a_creatures_place_or_life_test() -> Nil {
@@ -136,11 +156,13 @@ fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
       facing: start_place.Facing(yaw: 0.7, pitch: 0.0, roll: 0.0),
     )
   ShownCreature(
+    creature_id: Creature2Id(73_464),
     path: creature_path.Standing(at: place),
     life: 4,
     alive: True,
     hit_radius: 3.0,
     attackable: both,
+    hostile_to: Hostile(exile: False, dominion: False),
   )
 }
 

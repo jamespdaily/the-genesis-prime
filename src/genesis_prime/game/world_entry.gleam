@@ -133,7 +133,9 @@ import genesis_prime/game/character_state
 import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
 import genesis_prime/game/class_resource
+import genesis_prime/game/experience
 import genesis_prime/game/innate
+import genesis_prime/game/inventory
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/look
 import genesis_prime/game/movement
@@ -150,14 +152,11 @@ import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/float32
-import genesis_prime/message/held_item.{HeldItem}
 import genesis_prime/message/innate_index_set.{InnateIndexSet}
-import genesis_prime/message/item_added.{ItemAdded}
 import genesis_prime/message/movement_send_interval.{MovementSendInterval}
 import genesis_prime/message/play_character.{type PlayCharacter}
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
 import genesis_prime/message/player_path.{PlayerPath}
-import genesis_prime/message/shared_item.{SharedItem}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/step.{type ConnectionId, type Now}
@@ -221,15 +220,18 @@ pub opaque type State {
   /// go on numbered after the earlier ones (`movement.placed`). `saved_health`
   /// is the health the character's last save kept, which a play enters at
   /// (`player_life.entering`) and the Holocrypt's join does not have: it enters
-  /// at full health. `items` are the items the character holds, which the
-  /// Holocrypt's join keeps from the stay it leaves. `quests` is the quest log
-  /// the character holds (genesis_prime/game/quest_log), which the Holocrypt's join
-  /// keeps from the stay it leaves as well.
+  /// at full health. `experience` is what the character enters with
+  /// (`experience.entering`; the Holocrypt's join keeps the stay's own). `items`
+  /// are the items the character holds, which the Holocrypt's join keeps from the
+  /// stay it leaves. `quests` is the quest log the character holds
+  /// (genesis_prime/game/quest_log), which the Holocrypt's join keeps from the
+  /// stay it leaves as well.
   Joining(
     character: Character,
     place: Place,
     movement: movement.State,
     saved_health: Option(Int),
+    experience: Int,
     items: List(store.HeldItem),
     quests: QuestLog,
     map: MapId,
@@ -305,6 +307,11 @@ pub type Entered {
     /// The items the character holds, as the store saved them: each with its
     /// own guid, its item2 id, where it is held and how many it stacks.
     items: List(store.HeldItem),
+    /// The character's experience: the saved one, or the least of its level when
+    /// none was saved (`experience.entering`). The connection adds each kill's
+    /// credit to it (genesis_prime/game/connection/experience) and saves it with
+    /// the place.
+    experience: Int,
     /// The quest log the character holds (genesis_prime/game/quest_log): the
     /// connection saves it with the place and, at a play, sends it after 0x25E.
     quests: QuestLog,
@@ -457,6 +464,7 @@ pub fn loaded(
           character:,
           session_epoch:,
           saved_health:,
+          saved_experience:,
           items:,
           quests:,
         ) ->
@@ -483,6 +491,7 @@ pub fn loaded(
                     place:,
                     movement: movement.entered(place:, session_epoch:),
                     saved_health:,
+                    saved_experience:,
                     items:,
                     quests: log,
                     connection:,
@@ -503,13 +512,20 @@ fn joining_a_play(
   place place: Place,
   movement movement: movement.State,
   saved_health saved_health: Option(Int),
+  saved_experience saved_experience: Option(Int),
   items items: List(store.HeldItem),
   quests quests: QuestLog,
   connection connection: ConnectionId,
   stay stay: Stay,
   tables tables: table_store.Tables,
 ) -> Loaded {
-  case character_state.frame(tables:, character:) {
+  case
+    experience.entering(
+      tables:,
+      level: character.level,
+      saved: saved_experience,
+    )
+  {
     Error(Nil) -> {
       let CharacterId(character_id) = character.character_id
       Refused(
@@ -521,13 +537,15 @@ fn joining_a_play(
           <> " has no XpPerLevel row",
       )
     }
-    Ok(frame) -> {
+    Ok(experience) -> {
+      let frame = character_state.frame(tables:, character:, experience:)
       let #(state, effects) =
         joining(
           character:,
           place:,
           movement:,
           saved_health:,
+          experience:,
           items:,
           quests:,
           connection:,
@@ -560,6 +578,7 @@ pub fn joined(
       place:,
       movement:,
       saved_health:,
+      experience:,
       items:,
       quests:,
       map:,
@@ -592,12 +611,14 @@ pub fn joined(
               place: sent,
             )
           let unit =
-            player_unit.with_shield(
-              record: player_unit.with_health(
-                record: unit,
-                health: player_life.health(life:),
-              ),
-              shield: player_life.shield(life:),
+            unit
+            |> player_unit.with_integer_stat(
+              stat_id: unit_fields.health_stat,
+              value: player_life.health(life:),
+            )
+            |> player_unit.with_integer_stat(
+              stat_id: unit_fields.shield_stat,
+              value: player_life.shield(life:),
             )
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id
@@ -615,6 +636,7 @@ pub fn joined(
               unit:,
               loadout:,
               items:,
+              experience:,
               quests:,
               max_health:,
               clock_origin_ms:,
@@ -743,6 +765,7 @@ pub fn rejoining(
     place:,
     movement: movement.placed(state: entered.movement, place:),
     saved_health: None,
+    experience: entered.experience,
     items: entered.items,
     quests: entered.quests,
     connection:,
@@ -760,6 +783,7 @@ fn joining(
   place place: Place,
   movement movement: movement.State,
   saved_health saved_health: Option(Int),
+  experience experience: Int,
   items items: List(store.HeldItem),
   quests quests: QuestLog,
   connection connection: ConnectionId,
@@ -774,6 +798,7 @@ fn joining(
       place:,
       movement:,
       saved_health:,
+      experience:,
       items:,
       quests:,
       map:,
@@ -994,9 +1019,7 @@ fn innate_index_frame() -> Effect {
   Send(Frame(message_id: innate_index_set.message_id, body:))
 }
 
-/// 0x111 for an item the character holds, with no charges and full
-/// durability. Every value the client's code does not name is 0
-/// (`opcode.0x111.shared_item_unnamed`), the lists empty.
+/// 0x111 for an item the character holds from the start, with the reason 49.
 fn held_item(
   item_guid item_guid: Int,
   item_id item_id: Int,
@@ -1004,42 +1027,14 @@ fn held_item(
   bag_index bag_index: Int,
   stack_count stack_count: Int,
 ) -> Effect {
-  let assert Ok(body) =
-    item_added.encode(
-      ItemAdded(held_item: HeldItem(
-        item: SharedItem(
-          item_guid:,
-          field_2: 0,
-          item_id:,
-          location:,
-          bag_index:,
-          stack_count:,
-          charges: 0,
-          field_8: 0,
-          field_9: 0,
-          field_10: 0,
-          durability: float32.to_bits(1.0),
-          field_12: 0,
-          field_13: 0,
-          field_14: 0,
-          field_15: 0,
-          field_16: 0,
-          field_17: 0,
-          field_18: 0,
-          field_19: 0,
-          field_20: 0,
-          field_21: 0,
-          field_22: 0,
-          field_23: 0,
-          list_a: [],
-          list_b: [],
-          field_27: 0,
-        ),
-        reason: held_from_the_start,
-      )),
-    )
-    as "an item of 18 bits, a location of 9 and a guid of 64 bits, a character number below 2^23, fit the message"
-  Send(Frame(message_id: item_added.message_id, body:))
+  Send(inventory.item_added_frame(
+    item_guid:,
+    item_id:,
+    location:,
+    bag_index:,
+    stack_count:,
+    reason: held_from_the_start,
+  ))
 }
 
 /// 0x1A0 with tier 1 of each ability in each action set.

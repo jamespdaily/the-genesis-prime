@@ -23,6 +23,7 @@ import genesis_prime/table/class
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import owned_test
 import planted_table
 import unitest
@@ -87,23 +88,33 @@ pub fn the_client_has_a_class_row_for_each_playable_class_test() -> Nil {
 pub fn a_level_with_no_xp_per_level_row_is_refused_before_the_map_is_asked_test() -> Nil {
   use <- owned_test.run(60_000)
   list.each([0, 202, 1000], fn(level) {
-    let #(_, loaded) =
-      world_entry_support.loaded(
-        tables: character_tables.shared(),
-        character: world_entry_support.character(class: 2, faction: 166, level:),
-        items: [],
-      )
-    assert loaded
-      == world_entry.Refused(
-        character_id: 42,
-        warning: "a play of character 42, whose level "
+    // With nothing saved, and with an experience saved: the level's row is
+    // asked first, so a saved experience does not let such a play in.
+    list.each([None, Some(5000)], fn(saved_experience) {
+      let #(_, loaded) =
+        world_entry_support.loaded_holding(
+          tables: character_tables.shared(),
+          character: world_entry_support.character(
+            class: 2,
+            faction: 166,
+            level:,
+          ),
+          items: [],
+          saved_experience:,
+          quests: [],
+        )
+      assert loaded
+        == world_entry.Refused(
+          character_id: 42,
+          warning: "a play of character 42, whose level "
+            <> int.to_string(level)
+            <> " has no XpPerLevel row",
+        )
+        as {
+          "XpPerLevel holds the client's records 1 to 201: level "
           <> int.to_string(level)
-          <> " has no XpPerLevel row",
-      )
-      as {
-        "XpPerLevel holds the client's records 1 to 201: level "
-        <> int.to_string(level)
-        <> " has none, so the play is refused and no Join is asked of the map"
-      }
+          <> " has none, so the play is refused and no Join is asked of the map"
+        }
+    })
   })
 }

@@ -34,6 +34,7 @@ import genesis_prime/login/guid
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason
+import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -463,21 +464,43 @@ pub fn joining_saved(
   character character: store.Character,
   saved_health saved_health: Option(Int),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  joining_with_quests(
+  joining_holding(
     in_character_select:,
     character:,
     saved_health:,
+    saved_experience: None,
     quests: [],
   )
 }
 
-/// `in_character_select` after the store gave `character` with these quest rows:
-/// the map is asked.
-pub fn joining_with_quests(
+/// `in_character_select` after the store gave `character` with the health, the
+/// experience (`None` for none) and the quest rows its last save kept: the map
+/// is asked.
+pub fn joining_holding(
   in_character_select in_character_select: game_connection.State,
   character character: store.Character,
   saved_health saved_health: Option(Int),
+  saved_experience saved_experience: Option(Int),
   quests quests: List(store.QuestRow),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  joining_holding_items(
+    in_character_select:,
+    character:,
+    saved_health:,
+    saved_experience:,
+    quests:,
+    items: world_entry_support.novice_items(character:),
+  )
+}
+
+/// `joining_holding` for a character whose store holds these items.
+pub fn joining_holding_items(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+  saved_health saved_health: Option(Int),
+  saved_experience saved_experience: Option(Int),
+  quests quests: List(store.QuestRow),
+  items items: List(store.HeldItem),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) = playing_from(in_character_select:, character_id: 42)
   answer(
@@ -489,7 +512,8 @@ pub fn joining_with_quests(
           character,
           character_support.epoch(1),
           saved_health,
-          world_entry_support.novice_items(character:),
+          saved_experience,
+          items,
           quests,
         )),
       ),
@@ -602,19 +626,55 @@ pub fn entered_saved(
   answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
 }
 
+/// `in_character_select` after the store gave `character` with the experience its
+/// last save kept and the map took it: the burst is written.
+pub fn entered_holding(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+  saved_experience saved_experience: Option(Int),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) =
+    joining_holding(
+      in_character_select:,
+      character:,
+      saved_health: None,
+      saved_experience:,
+      quests: [],
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
+}
+
 /// The connection after the store gave the tests' character these quest rows and
 /// the map took it: the burst is written.
 pub fn entered_with_quests(
   quests quests: List(store.QuestRow),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) =
-    joining_with_quests(
+    joining_holding(
       in_character_select: in_select(),
       character: world_character(),
       saved_health: None,
+      saved_experience: None,
       quests:,
     )
   answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
+}
+
+/// The connection in the world, with its burst taken, for a character whose
+/// store holds these items.
+pub fn in_world_holding(
+  items items: List(store.HeldItem),
+) -> game_connection.State {
+  let #(state, taken) =
+    joining_holding_items(
+      in_character_select: in_select(),
+      character: world_character(),
+      saved_health: None,
+      saved_experience: None,
+      quests: [],
+      items:,
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken)))).0
 }
 
 /// The tests' player's health at full: 736, the Engineer's level 1 maximum
@@ -630,6 +690,12 @@ pub fn entered() -> #(game_connection.State, ConnectionStep(Request)) {
 /// The connection in the world, with its burst taken.
 pub fn in_world() -> game_connection.State {
   entered().0
+}
+
+/// The connection in the world of an Exile, with its burst taken: the character
+/// of `in_world` (a Dominion one) with the Exile faction.
+pub fn in_world_as_exile() -> game_connection.State {
+  entered_as(Character(..world_character(), faction_id: spawn.exile_faction)).0
 }
 
 /// The connection in the world, with its burst taken, made with the
@@ -678,6 +744,19 @@ pub fn world_message(
   )
 }
 
+/// The client's 0x07EA of the unit and kind (`interaction_request`), read by the
+/// connection in the world.
+pub fn interaction_requested(
+  state state: game_connection.State,
+  unit_id unit_id: Int,
+  kind kind: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let assert Ok(body) =
+    interaction_request.encode(InteractionRequest(unit_id:, kind:))
+    as "a unit id and a 7-bit kind fit the message"
+  read(state:, bytes: world_message(message_id: 0x07EA, body:))
+}
+
 pub fn move_message(message_id: Int) -> BitArray {
   keyed_message(message_id:, body: <<0, 0, 0, 0>>)
 }
@@ -704,7 +783,9 @@ pub fn entry_place() -> Place {
 
 /// The ask of a save of the tests' player at full health: the account and
 /// character of the tests' connection, the epoch its load gave, the save's
-/// number and the place, and the full health (`full_health`).
+/// number and the place, the full health (`full_health`) and the level 1 the
+/// character has with the 0 experience that is the least of level 1 (XpPerLevel
+/// ID 1's minXpForLevel, `opcode.0x25e.safe_body`).
 pub fn save_asked(sequence sequence: Int, place place: Place) -> Request {
   save_asked_keeping(sequence:, place:, health: Some(full_health))
 }
@@ -724,6 +805,8 @@ pub fn save_asked_keeping(
         save_sequence: sequence,
         place:,
         health:,
+        experience: 0,
+        level: 1,
         quests: [],
       ),
     ),
@@ -1409,6 +1492,7 @@ pub fn cast_starts(news: List(News)) -> List(spell_started.SpellStarted) {
       | client_connection.Shield(..)
       | client_connection.InterruptArmor(..)
       | client_connection.Absorption(..)
+      | client_connection.Level(..)
       | client_connection.CrowdControlApplied(..)
       | client_connection.CrowdControlEnded(..)
       | client_connection.PropertiesChanged(..)
@@ -1444,6 +1528,7 @@ pub fn is_cast_removal(news: News) -> Bool {
     | client_connection.Shield(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
+    | client_connection.Level(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
     | client_connection.PropertiesChanged(..)
@@ -1499,6 +1584,7 @@ pub fn beast_appears_facing(
       place:,
       hit_radius: beast.combat.hit_radius,
       attackable: beast.combat.attackable,
+      hostile_to: beast.combat.hostile_to,
     ),
   ))
 }

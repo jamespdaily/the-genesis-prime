@@ -29,6 +29,7 @@ import genesis_prime/message/realm_list.{RealmList}
 import genesis_prime/message/realm_select_start.{RealmSelectStart}
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/message/text_group.{TextGroup}
+import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
 import genesis_prime/message/world_message.{WorldMessage}
 import gleam/list
 import message_support
@@ -361,6 +362,24 @@ pub fn a_body_with_a_whole_byte_after_its_last_field_is_a_decode_error_test() ->
     ))
     == Error(bit_stream.TrailingBytes(1))
     as "vector.opcode.0xf1.body is 74 bits in 10 bytes; an 11th byte is not padding"
+}
+
+pub fn unit_dialog_open_matches_client_layout_test() -> Nil {
+  use <- owned_test.run(5000)
+  // opcode.0x357: the client reads it with the reader it reads 0x355 with
+  // (ReadUint32AndBitBody 0x14007c340), so vector.opcode.0x355.body's bytes are
+  // its layout: the unit id, then one bit, 33 bits in all. Every shorter run of
+  // them, the 32 bits of a unit id alone included, is a decode error.
+  message_support.assert_vector(
+    name: "vector.opcode.0x355.body",
+    body: message_support.hex("0110000001"),
+    value: UnitDialogOpen(unit_id: 0x1001, field_2: 1),
+    encode: unit_dialog_open.encode,
+    decode: unit_dialog_open.decode,
+  )
+  let assert Error(_) = unit_dialog_open.decode(message_support.hex("01100000"))
+    as "opcode.0x357: a body of 32 bits is refused as too short"
+  Nil
 }
 
 pub fn pong_is_the_clients_8_bits_test() -> Nil {

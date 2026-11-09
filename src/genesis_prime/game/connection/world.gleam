@@ -73,7 +73,7 @@ import genesis_prime/game/connection/state.{
   type AfterLeave, type AfterSave, type EntryFrom, type Session,
   AwaitingHelloReply, Camped, ClaimingSession, EnteringWorld,
   FromCharacterSelect, FromHolocrypt, InCharacterSelect, InWorld, JoinAt,
-  Leaving, LeavingMap, Playing, SavingPlace, Session, Summoning,
+  Leaving, LeavingMap, MovingItem, Playing, SavingPlace, Session, Summoning,
   TakingSessionKey, ToCharacterSelect, WaitingToClaim,
 } as connection_state
 import genesis_prime/game/innate_choice
@@ -189,6 +189,7 @@ pub fn save_due(
     | InCharacterSelect(..)
     | EnteringWorld(..)
     | Summoning(..)
+    | MovingItem(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -248,6 +249,7 @@ pub fn quest_reset_due(
     | InCharacterSelect(..)
     | EnteringWorld(..)
     | Summoning(..)
+    | MovingItem(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -297,6 +299,7 @@ pub fn save_answered(
     step.Answer(FromStore(store.ForLogin(..)))
     | step.Answer(FromStore(store.ForSelect(..)))
     | step.Answer(FromStore(store.ForWorld(..)))
+    | step.Answer(FromStore(store.ForItems(..)))
     | step.Answer(FromHandOff(..))
     | step.Answer(FromSessions(..))
     | step.Answer(FromMap(..)) -> Error(Nil)
@@ -588,6 +591,7 @@ pub fn entry_answered(
     step.Answer(FromStore(store.ForLogin(..)))
     | step.Answer(FromStore(store.ForSelect(..)))
     | step.Answer(FromStore(store.ForMove(..)))
+    | step.Answer(FromStore(store.ForItems(..)))
     | step.Answer(FromHandOff(..))
     | step.Answer(FromSessions(..)) -> entry_unasked(session, now)
     step.NotRunning | step.NoAnswerInTime | step.EndedBeforeAnswer ->
