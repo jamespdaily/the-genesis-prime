@@ -8,8 +8,8 @@
 ////                                                 ─▶ Hello, CharacterSelect(message), WorldEntry or WorldMessage
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
 ////                                                 ─▶ Movement(message), Camp(message), Chat(message), Cast(message),
-////                                                    Life(message), Innate(message), Interaction(message), Inventory(message) or
-////                                                    Dropped(message)
+////                                                    Life(message), Innate(message), Interaction(message), Quest(message),
+////                                                    Inventory(message) or Dropped(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
 ////
@@ -41,6 +41,7 @@ import genesis_prime/game/interaction
 import genesis_prime/game/inventory
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
+import genesis_prime/game/quest
 import genesis_prime/message/ability_hold
 import genesis_prime/message/camp_finished
 import genesis_prime/message/camp_request
@@ -72,6 +73,8 @@ import genesis_prime/message/own_commodity_orders_request
 import genesis_prime/message/play_character
 import genesis_prime/message/player_movement
 import genesis_prime/message/pre_game_activity
+import genesis_prime/message/quest_accept
+import genesis_prime/message/quest_retry
 import genesis_prime/message/rename_character
 import genesis_prime/message/scanbot_request
 import genesis_prime/message/send_chat_line
@@ -111,6 +114,9 @@ pub type Feature {
   /// The player's request to talk to a unit, and the client's note that a dialog
   /// it opened has responses (genesis_prime/game/interaction).
   Interaction(message: interaction.Message)
+  /// The player's accept of a quest and retry of a botched one
+  /// (genesis_prime/game/quest).
+  Quest(message: quest.Message)
   /// The player's move, split or delete of a held item (genesis_prime/game/inventory).
   Inventory(message: inventory.Message)
   /// A report or request taken and dropped (genesis_prime/game/dropped).
@@ -282,6 +288,13 @@ const table = [
     Interaction(interaction.ResponsesShown),
     [AtWorld],
   ),
+  Row(
+    quest_accept.message_id,
+    InsideWorldMessage,
+    Quest(quest.Accept),
+    [AtWorld],
+  ),
+  Row(quest_retry.message_id, InsideWorldMessage, Quest(quest.Retry), [AtWorld]),
   Row(
     item_move.message_id,
     InsideWorldMessage,

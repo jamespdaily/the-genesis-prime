@@ -29,8 +29,8 @@
 ////   its last movement message; the 3.0 covers both for any gap the client opens at.
 //// - **The kind is not checked against the player's quest log**: the client opens the
 ////   dialog only for responses it builds from its own quest state, so the server's
-////   0x0357 for a giver with nothing to offer shows no dialog. The log is the quest
-////   log step's (#591).
+////   0x0357 for a giver with nothing to offer shows no dialog. What the client's accept
+////   checks make of the log is genesis_prime/game/quest's.
 //// - **A vendor's request** (kind 0x31) is checked as the client's CheckInteractionTarget
 ////   checks it (`opcode.0x7ea`), in its order: a unit not in the picture is 59, a unit that is
 ////   not a creature, a creature with no stock or a dead one is 16, a gap over the reach is
@@ -266,7 +266,7 @@ fn talked_to(
 
 /// Whether the creature is Hostile to the player's faction, as the client's own
 /// disposition of the creature toward the player gives it (`0x14045a950`).
-fn hostile_to_player(
+pub fn hostile_to_player(
   player player: Player,
   hostile_to hostile_to: Hostile,
 ) -> Bool {
@@ -279,7 +279,7 @@ fn hostile_to_player(
 /// Whether the creature, at its place now, is within reach of the player: the gap
 /// between the two bodies' edges is no more than the reach. The player's Race row is
 /// in the tables (the load fails otherwise), so a missing one crashes.
-fn within_reach(
+pub fn within_reach(
   player player: Player,
   tables tables: table_store.Tables,
   path path: Path,

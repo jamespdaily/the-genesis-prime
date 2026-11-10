@@ -727,6 +727,85 @@ pub fn state(log log: QuestLog, quest quest: Quest) -> Int {
   }
 }
 
+/// The state the log stores for a quest, without the derivation `state` makes from the
+/// done objectives: 0 for a quest not in the log, 1 accepted, 2 achieved, 3 completed
+/// and 4 to 7 for a quest it holds only a state of. It needs no quest rows; the accept
+/// checks compare it only against "absent", 1 to 3 and 4 to 7, which `state`'s
+/// all-done 2 for a stored 1 does not change.
+pub fn stored_state(log log: QuestLog, quest_id quest_id: Int) -> Int {
+  case dict.get(log.entries, quest_id) {
+    Error(Nil) -> 0
+    Ok(Completed(..)) -> 3
+    Ok(Known(state:)) -> known_state_number(state:)
+    Ok(Active(state:, ..)) -> active_state_number(state:)
+  }
+}
+
+/// How many quests the log holds in the client's active list that count toward its
+/// limit: every active entry whose Quest2 flags lack 0x80000, which contracts carry
+/// (`0x1405fc680`).
+pub fn active_count(
+  log log: QuestLog,
+  tables tables: table_store.Tables,
+) -> Int {
+  dict.to_list(log.entries)
+  |> list.count(fn(pair) {
+    case pair.1 {
+      Active(..) ->
+        case quest2.get(tables:, id: Quest2Id(pair.0)) {
+          Ok(row) -> !has_flag(flags: row.flags, flag: contract_flag)
+          Error(Nil) -> False
+        }
+      Completed(..) | Known(..) -> False
+    }
+  })
+}
+
+/// The Quest2 flag of a contract.
+const contract_flag = 0x80000
+
+/// The log after the player accepts the quest: an active Accepted entry in place of
+/// whatever the log held of it, tracked (the client gives a new entry the flag word
+/// 2, `0x1405fbdc0`), with no objective done, no progress and no time running.
+pub fn accept(log log: QuestLog, quest quest: Quest) -> QuestLog {
+  started(log:, quest:, quest_ms_left: 0)
+}
+
+/// The log after the player retries a Botched quest: as `accept`, with the quest's
+/// whole time left.
+pub fn retry(
+  log log: QuestLog,
+  quest quest: Quest,
+  quest_ms_left quest_ms_left: Int,
+) -> QuestLog {
+  started(log:, quest:, quest_ms_left:)
+}
+
+fn started(
+  log log: QuestLog,
+  quest quest: Quest,
+  quest_ms_left quest_ms_left: Int,
+) -> QuestLog {
+  let zeros = list.map(quest.objectives, fn(_) { 0 })
+  QuestLog(
+    ..log,
+    entries: dict.insert(
+      log.entries,
+      quest.id,
+      Active(
+        state: Accepted,
+        placeholder_objective_id: 0,
+        placeholder: None,
+        tracked: True,
+        done_mask: 0,
+        progress: zeros,
+        quest_ms_left:,
+        objective_ms_left: zeros,
+      ),
+    ),
+  )
+}
+
 /// Whether bit `index` of the done mask is set. The client's objective indexes run 0
 /// to 5; a later one is never done.
 fn done_in(mask mask: Int, index index: Int) -> Bool {

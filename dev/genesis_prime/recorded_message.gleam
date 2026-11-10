@@ -680,7 +680,9 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.TradeCancel(..)
     | client_message.InputKeySetRequest(..)
     | client_message.InteractionRequest(..)
-    | client_message.DialogResponsesShown(..) -> Plain
+    | client_message.DialogResponsesShown(..)
+    | client_message.QuestAccept(..)
+    | client_message.QuestRetry(..) -> Plain
   }
 }
 
