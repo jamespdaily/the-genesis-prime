@@ -10,6 +10,7 @@ import genesis_prime/table/loader/store
 import gleam/erlang/process
 import gleam/list
 import literal_area
+import open_wait
 import owned_test
 import unitest
 
@@ -24,9 +25,10 @@ pub fn callers_in_different_processes_at_once_get_the_same_load_test() -> Nil {
   })
   let loads =
     list.map(list.repeat(Nil, callers), fn(_) {
-      let assert Ok(tables) = process.receive(replies, within: 600_000)
-        as "a caller of the shared load did not answer"
-      tables
+      open_wait.received(
+        from: replies,
+        what: "a caller of the shared load to answer",
+      )
     })
   let assert [first, ..rest] = loads
   assert list.all(rest, fn(other) { other == first })

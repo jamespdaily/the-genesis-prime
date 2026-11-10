@@ -25,6 +25,7 @@ import gleam/otp/static_supervisor as supervisor
 import log_capture
 import mailbox_support
 import mug
+import open_wait
 import owned_test
 import recording_support
 import wire_replay_support
@@ -48,9 +49,11 @@ pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_
       directory: fn(request, deadline_ms, reply) {
         let acknowledged = process.new_subject()
         process.send(calls, #(acknowledged, deadline_ms))
-        let assert Ok(Nil) =
-          process.receive(acknowledged, within: ask_support.event_wait_ms)
-          as "the test read the step's write before the directory went on"
+        let Nil =
+          open_wait.received(
+            from: acknowledged,
+            what: "the test to read the step's write before the directory goes on",
+          )
         reaching_the_gate(request, deadline_ms, reply)
       },
       shutdown_ms: 1000,
@@ -65,9 +68,8 @@ pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_
     1,
     wait_ms: ask_support.patient,
   )
-  let assert Ok(#(acknowledged, given_deadline)) =
-    process.receive(calls, within: ask_support.event_wait_ms)
-    as "the shell reached the directory"
+  let #(acknowledged, given_deadline) =
+    open_wait.received(from: calls, what: "the shell's ask to the directory")
   let asked = ask_support.read_record(client)
   assert given_deadline == asked.milliseconds
     as "the directory is given the ask's own deadline, so a lookup on the way to the process (Maps') ends by it"
@@ -129,7 +131,11 @@ pub fn the_directory_is_given_the_ask_counted_from_the_nodes_time_the_script_gav
     )
   let client = ask_support.connect(server)
   ask_support.command(client, asking_rule.echo_command, 1, wait_ms: 1000)
-  assert process.receive(given, within: ask_support.event_wait_ms) == Ok(51_000)
+  assert open_wait.received(
+      from: given,
+      what: "the ask's input time the node gave",
+    )
+    == 51_000
     as "the node's time for the input (50 000) and the 1000 ms the ask allows"
   ask_support.stop(server)
 }
@@ -161,6 +167,8 @@ pub fn an_ask_to_an_address_with_no_running_process_gives_not_running_at_once_an
   assert outcome.milliseconds < asked.milliseconds
     as "at once, not at the ask's deadline"
   assert process.named(gate) == Error(Nil) as "nothing runs at the address"
+  // Absence check: the limit is how long this watches for a message that must not come,
+  // here a look at the mailbox now.
   assert process.receive(sent, within: 0) == Error(Nil)
     as "the directory reached no process, so nothing was sent"
   ask_support.stop(server)
@@ -250,6 +258,8 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
   assert !list.contains(mailbox_support.monitored(connection), gate_pid)
     as "and dropped: the shell holds no monitor of the gate for it"
   log_capture.stop(capture)
+  // Absence check: the limit is how long this watches for a message that must not come,
+  // here a look at the mailbox now.
   assert process.receive(lines, 0) == Error(Nil)
     as "the late answer logged nothing"
   ask_support.stop(server)
@@ -393,7 +403,7 @@ pub fn a_connection_step_of_stop_then_write_still_writes_the_bytes_before_the_so
   )
   assert ask_support.read_pong(client) == <<0x71, 4>>
     as "the write after Stop reached the client"
-  assert mug.receive(client, timeout_milliseconds: ask_support.event_wait_ms)
+  assert ask_support.receive_next(socket: client, what: "the socket to close")
     == Error(mug.Closed)
     as "and the socket closed after it"
   ask_support.stop(server)
@@ -413,7 +423,7 @@ pub fn the_writes_of_a_step_before_its_stop_leave_in_the_order_the_rule_gave_and
   assert [ask_support.read_pong(client), ask_support.read_pong(client)]
     == [<<0x70, 4>>, <<0x71, 4>>]
     as "the asking rule's contract: a step's effects are carried out in the order it gave them, the two writes first and Stop last"
-  assert mug.receive(client, timeout_milliseconds: ask_support.event_wait_ms)
+  assert ask_support.receive_next(socket: client, what: "the socket to close")
     == Error(mug.Closed)
     as "and the socket closed after them"
   ask_support.stop(server)
@@ -550,8 +560,8 @@ pub fn a_leave_whose_find_maps_never_answers_because_it_exited_after_the_find_gi
       let _find = process.selector_receive_forever(anything)
       Nil
     })
-  let assert Ok(Nil) = process.receive(registered, within: 5000)
-    as "the stand-in registered"
+  let Nil =
+    open_wait.received(from: registered, what: "the stand-in to register")
   let server = start_asking_a_run(maps:)
   let client = ask_support.connect(server)
   ask_support.command(client, asking_rule.echo_command, 1, wait_ms: short)

@@ -232,5 +232,7 @@ pub fn a_timer_cancelled_before_its_time_never_fires_on_the_driven_clock_test() 
       cancel()
     })
   driven_time.advance(time:, ms: 20)
+  // Absence check: the limit is how long this watches for a message that must not come,
+  // here a look at the mailbox now.
   assert process.receive(fired, 0) == Error(Nil)
 }

@@ -172,9 +172,11 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
         ToWorker(pid:) -> {
           let monitored = process.new_subject()
           process.send(workers, #(pid, monitored))
-          let assert Ok(Nil) =
-            process.receive(monitored, within: ask_support.event_wait_ms)
-            as "the test monitored the worker"
+          let Nil =
+            open_wait.received(
+              from: monitored,
+              what: "the test to monitor the worker",
+            )
           Nil
         }
         service.ToService(..) | service.NoReplyInTime -> Nil
@@ -184,9 +186,8 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
   // A transaction in another connection locks the table, so the query waits.
   let lock = lock_table(store.pool)
   ask_support.command(client, asking_rule.store_command, 1, wait_ms: 300)
-  let assert Ok(#(worker_pid, monitored)) =
-    process.receive(workers, within: ask_support.event_wait_ms)
-    as "the ask started a worker"
+  let #(worker_pid, monitored) =
+    open_wait.received(from: workers, what: "the worker the ask started")
   let worker_ended = process.monitor(worker_pid)
   process.send(monitored, Nil)
   let _asked = ask_support.read_record(client)
@@ -2192,8 +2193,11 @@ fn lock_table(pool: pog.Connection) -> Lock {
             |> pog.execute(connection)
             as "the table was locked"
           process.send(locked, release)
-          let assert Ok(Nil) = process.receive(release, within: 30_000)
-            as "the test released the lock"
+          let Nil =
+            open_wait.received(
+              from: release,
+              what: "the test to release the lock",
+            )
           Ok(Nil)
         })
         as "the locking transaction ran"
@@ -3381,8 +3385,11 @@ fn hold_an_earlier_save(
             |> pog.execute(connection)
             as "and a quest row the later log does not have"
           process.send(locked, release)
-          let assert Ok(Nil) = process.receive(release, within: 30_000)
-            as "the test released the row"
+          let Nil =
+            open_wait.received(
+              from: release,
+              what: "the test to release the row",
+            )
           Ok(Nil)
         })
         as "the earlier save's transaction ran"

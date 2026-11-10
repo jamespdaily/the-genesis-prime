@@ -13,6 +13,8 @@
 //// A process that is not a test body (a bot, a load player) runs the wait and
 //// reports it to no one: it keeps the bound its own caller gives it.
 
+import gleam/erlang/process.{type Selector, type Subject}
+
 /// What a test body is told of: a wait for the server, or a one-time build its
 /// deadline does not count (`database_support_ffi:once/2`).
 pub type Slot {
@@ -24,6 +26,17 @@ pub type Slot {
 /// `what` until `wait` ends, by its return or by a crash.
 pub fn named(what what: String, wait wait: fn() -> a) -> a {
   named_in_process(what, wait)
+}
+
+/// Receives the next message on `from`, with no limit of its own, and tells the
+/// test that owns this process that it waits for `what` until the message comes.
+pub fn received(from subject: Subject(a), what what: String) -> a {
+  named(what:, wait: fn() { process.receive_forever(subject) })
+}
+
+/// Receives the next message `selector` selects, as `received` does.
+pub fn selected(selector selector: Selector(a), what what: String) -> a {
+  named(what:, wait: fn() { process.selector_receive_forever(selector) })
 }
 
 /// Makes the calling process a test body that is told of each `slot` it runs:

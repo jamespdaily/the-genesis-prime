@@ -23,6 +23,7 @@ import gleam/otp/supervision
 import gleam/string
 import log_capture
 import mailbox_support
+import open_wait
 import owned_test
 
 /// What the held child sends when its supervisor has asked it to stop: the
@@ -48,14 +49,16 @@ fn start_supervisor(
             |> process.selector_receive_forever
           let release = process.new_subject()
           process.send(held, release)
-          let assert Ok(Nil) = process.receive(release, 30_000)
-            as "the test let the child end"
+          let Nil =
+            open_wait.received(
+              from: release,
+              what: "the test to let the child end",
+            )
           runtime.exit_now(Shutdown)
         })
       // The child is started once it traps exits: the stop the supervisor
       // sends it is then a message it answers, and no exit signal ends it first.
-      let assert Ok(Nil) = process.receive(ready, ask_support.event_wait_ms)
-        as "the child traps exits"
+      let Nil = open_wait.received(from: ready, what: "the child to trap exits")
       Ok(actor.Started(pid:, data: Nil))
     })
     |> factory_supervisor.named(name)
@@ -117,9 +120,8 @@ pub fn an_asker_of_a_child_that_does_not_start_logs_the_reason_and_one_of_a_supe
     ))
     == Error(Nil)
     as "the asker's directory gives no process for a child that did not start"
-  let assert Ok(#(level, text)) =
-    process.receive(lines, ask_support.event_wait_ms)
-    as "the failed start was logged"
+  let #(level, text) =
+    open_wait.received(from: lines, what: "the log line of the failed start")
   assert level == "warning" as "an outside failure the server went on from"
   assert string.contains(text, "no room")
     as "the reason the child's start gave is in the line"
@@ -130,6 +132,8 @@ pub fn an_asker_of_a_child_that_does_not_start_logs_the_reason_and_one_of_a_supe
     ))
     == Error(Nil)
   log_capture.stop(capture)
+  // Absence check: the limit is how long this watches for a message that must not come,
+  // here a look at the mailbox now.
   assert process.receive(lines, 0) == Error(Nil)
     as "a supervisor that is not running logs nothing: it is stopping or restarting, and says so itself"
 }
@@ -158,9 +162,8 @@ pub fn a_child_that_exits_while_it_starts_with_a_structured_reason_is_logged_wit
     ))
     == Error(Nil)
     as "the asker's directory gives no process for a child that did not start"
-  let assert Ok(#(level, text)) =
-    process.receive(lines, ask_support.event_wait_ms)
-    as "the failed start was logged"
+  let #(level, text) =
+    open_wait.received(from: lines, what: "the log line of the failed start")
   log_capture.stop(capture)
   assert level == "warning" as "an outside failure the server went on from"
   assert string.contains(text, "{boom,7}")
@@ -176,8 +179,8 @@ pub fn a_supervisor_that_ends_while_the_call_waits_is_a_supervisor_that_is_not_r
     as "a child started"
   // The supervisor now stops its child, which holds the stop open.
   let stopped = ask_support.begin_stop_tree(supervisor)
-  let assert Ok(release) = process.receive(held, ask_support.event_wait_ms)
-    as "the child was asked to stop"
+  let release =
+    open_wait.received(from: held, what: "the child to be asked to stop")
   let results = process.new_subject()
   let caller =
     process.spawn_unlinked(fn() {
@@ -192,8 +195,7 @@ pub fn a_supervisor_that_ends_while_the_call_waits_is_a_supervisor_that_is_not_r
   process.send(release, Nil)
   let _reason =
     ask_support.ended(watched: stopped, what: "the stopping supervisor to end")
-  let assert Ok(result) = process.receive(results, ask_support.event_wait_ms)
-    as "the call returned"
+  let result = open_wait.received(from: results, what: "the call to return")
   assert result == Error(service.SupervisorNotRunning)
     as "a call that waited while the supervisor stopped, and ended with it, is answered not running"
 }

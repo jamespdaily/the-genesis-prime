@@ -26,6 +26,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import login_support
+import open_wait
 import owned_test
 import pog
 import unitest
@@ -144,11 +145,10 @@ fn exit_of_failed(value: String) -> process.ExitReason {
       Nil
     })
   let monitor = process.monitor(pid)
-  let assert Ok(process.ProcessDown(reason:, ..)) =
+  let assert process.ProcessDown(reason:, ..) =
     process.new_selector()
     |> process.select_specific_monitor(monitor, fn(down) { down })
-    |> process.selector_receive(within: 5000)
-    as "the process ended"
+    |> open_wait.selected(what: "the process to end")
   reason
 }
 

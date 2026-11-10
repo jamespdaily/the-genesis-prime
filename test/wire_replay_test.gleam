@@ -47,6 +47,7 @@ import gleam/otp/static_supervisor as supervisor
 import gleam/result
 import gleam/string
 import lingering_rule
+import open_wait
 import owned_test
 import planted_table.{Integer}
 import recording_support
@@ -1051,8 +1052,9 @@ pub fn two_replays_at_once_share_no_state_test() -> Nil {
         support.run(folder: folder <> "/b", rule: script_rule.rule()),
       ))
     })
-  let assert Ok(first) = process.receive(results, 20_000) as "a replay ended"
-  let assert Ok(second) = process.receive(results, 20_000) as "the other ended"
+  let first = open_wait.received(from: results, what: "a replay to end")
+  let second =
+    open_wait.received(from: results, what: "the other replay to end")
   assert list.sort([first, second], fn(x, y) { string.compare(x.0, y.0) })
     == [#("a", Ok(Nil)), #("b", Ok(Nil))]
     as "each replay had its own scripts, timers, listener and database"

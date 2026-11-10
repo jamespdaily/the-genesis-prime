@@ -31,6 +31,7 @@ import gleam/string
 import hello_rule
 import mailbox_support
 import mug
+import open_wait
 import owned_test
 import replay_rule
 
@@ -260,9 +261,11 @@ fn recording(rule: HelloRule) -> #(HelloRule, Subject(Taken)) {
 
 /// The shell's process, from the Accepted input every connection takes first.
 fn accepted_shell(taken: Subject(Taken)) -> Pid {
-  let assert Ok(Taken(shell:, event: OwnEvent(Accepted(..)))) =
-    process.receive(taken, ask_support.event_wait_ms)
-    as "the connection took Accepted first"
+  let assert Taken(shell:, event: OwnEvent(Accepted(..))) =
+    open_wait.received(
+      from: taken,
+      what: "the connection to take Accepted first",
+    )
   shell
 }
 
@@ -417,8 +420,11 @@ pub fn a_close_between_the_shells_write_for_a_timer_and_its_next_read_reaches_th
               False -> {
                 let release = process.new_subject()
                 process.send(stalled, Stalled(shell: process.self(), release:))
-                let assert Ok(Nil) = process.receive(release, 5000)
-                  as "the test let the shell go on"
+                let Nil =
+                  open_wait.received(
+                    from: release,
+                    what: "the test to let the shell go on",
+                  )
                 Nil
               }
             }
@@ -446,8 +452,11 @@ pub fn a_close_between_the_shells_write_for_a_timer_and_its_next_read_reaches_th
     n: 1,
     wait_ms: 0,
   )
-  let assert Ok(Stalled(shell:, release:)) = process.receive(stalled, 5000)
-    as "the shell wrote for timer 1 and started timer 2"
+  let Stalled(shell:, release:) =
+    open_wait.received(
+      from: stalled,
+      what: "the shell's write for timer 1 and start of timer 2",
+    )
   assert ask_support.read_bytes(client, 9) == <<replay_rule.timer_fired, 1:64>>
     as "the record the rule wrote for timer 1"
   assert mug.shutdown(client) == Ok(Nil) as "the client closed"
@@ -455,7 +464,8 @@ pub fn a_close_between_the_shells_write_for_a_timer_and_its_next_read_reaches_th
     mailbox_support.tagged(shell, atom.create("tcp_closed")) == 1
   })
   process.send(release, Nil)
-  let assert Ok(OwnEvent(Accepted(..))) = process.receive(inputs, 5000)
+  let assert OwnEvent(Accepted(..)) =
+    open_wait.received(from: inputs, what: "the connection's accept event")
   assert after_reads(inputs) == OwnEvent(TimerFired(timer: TimerId(1)))
     as "the command's reads, however the socket split its bytes, then timer 1"
   assert after_reads(inputs) == OwnEvent(PeerClosed)
@@ -467,8 +477,7 @@ pub fn a_close_between_the_shells_write_for_a_timer_and_its_next_read_reaches_th
 fn after_reads(
   inputs: Subject(step.Event(ConnectionEvent(Nil, Nil))),
 ) -> step.Event(ConnectionEvent(Nil, Nil)) {
-  let assert Ok(event) = process.receive(inputs, 5000)
-    as "the rule took another input"
+  let event = open_wait.received(from: inputs, what: "the rule's next input")
   case event {
     OwnEvent(Read(..)) -> after_reads(inputs)
     OwnEvent(Accepted(..))

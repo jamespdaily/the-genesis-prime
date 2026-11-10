@@ -30,6 +30,7 @@ import gleam/erlang/process
 import login_client
 import login_support
 import login_vectors as vector
+import open_wait
 import owned_test
 import socket_read
 
@@ -169,9 +170,8 @@ pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_ha
       reply: fn(answer) { process.send(answers, answer) },
     )
     as "the hand-off is running"
-  let assert Ok(hand_off.Taken(holder:)) =
-    process.receive(answers, within: 5000)
-    as "the hand-off answered"
+  let assert hand_off.Taken(holder:) =
+    open_wait.received(from: answers, what: "the hand-off's answer")
   assert holder.account_id == AccountId(account_id)
   assert holder.login_name == vector.name
   login_support.stop(started)

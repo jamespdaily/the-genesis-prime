@@ -44,11 +44,7 @@ pub fn a_listener_that_stopped_accepting_refuses_a_new_connect_test() -> Nil {
   use <- owned_test.run(10_000)
   let server = ask_support.started_listener()
   assert listener.stop_accepting(server.name) == Ok(Nil)
-  let refused =
-    mug.new("127.0.0.1", port: server.port)
-    |> mug.ip_version_preference(mug.Ipv4Only)
-    |> mug.timeout(ask_support.event_wait_ms)
-    |> mug.connect
+  let refused = ask_support.connecting(port: server.port)
   assert refused == Error(mug.ConnectFailedIpv4(mug.Econnrefused))
     as "the listening socket is closed, so the system refuses the connect"
   ask_support.stop(server)

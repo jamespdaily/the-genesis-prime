@@ -64,9 +64,8 @@ pub fn a_service_starts_under_its_supervisor_by_its_name_and_its_first_input_is_
   let assert Ok(pid) = process.named(name) as "the name is registered"
   assert supervisor_children.in_start_order(tree) == [pid]
     as "the process holding the name is the supervisor's child"
-  let assert Ok(#(OwnEvent(Started), first)) =
-    process.receive(observed, within: ask_support.event_wait_ms)
-    as "the first input the rule took is Started"
+  let assert #(OwnEvent(Started), first) =
+    open_wait.received(from: observed, what: "the first input the rule took")
   assert first == Effects([]) as "Started does nothing"
   let _reason = ask_support.stop_tree(tree)
   Nil
@@ -96,14 +95,21 @@ pub fn an_ask_reaches_the_rule_as_asked_and_its_reply_reaches_the_asker_test() -
     })
     == Ok(service.ToService(pid))
     as "the call reached the process holding the name"
-  assert process.receive(replies, within: ask_support.event_wait_ms) == Ok(Kept)
+  assert open_wait.received(
+      from: replies,
+      what: "the rule's reply to the first ask",
+    )
+    == Kept
     as "the rule's reply reached the asker"
   assert service.call(name, Take(key:), fn(answer) {
       process.send(replies, answer)
     })
     == Ok(service.ToService(pid))
-  assert process.receive(replies, within: ask_support.event_wait_ms)
-    == Ok(Taken(holder:))
+  assert open_wait.received(
+      from: replies,
+      what: "the rule's reply to the second ask",
+    )
+    == Taken(holder:)
     as "the second ask is answered with the holder the first one put"
   let _reason = ask_support.stop_tree(tree)
   let assert [
@@ -269,15 +275,21 @@ pub fn a_send_is_handed_to_the_receivers_address_and_one_to_a_receiver_not_runni
   assert ask_support.call_gate(gate, gate_rule.SendTo(running, 3))
     == gate_rule.Echoed(3)
     as "the step went on to its reply"
-  assert process.receive(sent, within: ask_support.event_wait_ms)
-    == Ok(#(running, gate_rule.Echoed(3)))
+  assert open_wait.received(
+      from: sent,
+      what: "the shell's send of the rule's message to the running receiver",
+    )
+    == #(running, gate_rule.Echoed(3))
     as "the shell asked reach to send the rule's message to the rule's address"
   let absent = Connection(ConnectionId(2))
   assert ask_support.call_gate(gate, gate_rule.SendTo(absent, 4))
     == gate_rule.Echoed(4)
     as "a receiver that is not running drops the message and the step goes on"
-  assert process.receive(sent, within: ask_support.event_wait_ms)
-    == Ok(#(absent, gate_rule.Echoed(4)))
+  assert open_wait.received(
+      from: sent,
+      what: "the shell's send of the rule's message to the absent receiver",
+    )
+    == #(absent, gate_rule.Echoed(4))
   assert process.named(gate) == Ok(pid)
     as "the same process goes on: a dropped message is no failure"
   let _reason = ask_support.stop_tree(tree)
@@ -300,14 +312,19 @@ pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watch
     == gate_rule.Echoed(1)
     as "the address is found with reach's locate, which names the target"
   assert ask_support.call_gate(gate, gate_rule.Echo(0)) == gate_rule.Echoed(0)
+  // Absence check: the limit is how long this watches for a message that must not come,
+  // here a look at the mailbox now.
   assert process.receive(replies, within: 0) == Error(Nil)
     as "the target runs, so the watch has not ended"
   let ended = process.monitor(target)
   process.kill(target)
   let _reason =
     ask_support.ended(watched: ended, what: "the killed target to end")
-  assert process.receive(replies, within: ask_support.event_wait_ms)
-    == Ok(gate_rule.Opened(1))
+  assert open_wait.received(
+      from: replies,
+      what: "the rule's input for the target's end",
+    )
+    == gate_rule.Opened(1)
     as "the target's end reached the rule as WatchEnded(WatchId(1))"
   let _reason = ask_support.stop_tree(tree)
   Nil
@@ -363,8 +380,11 @@ pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_pro
       process.send(replies, answer)
     })
     as "the gate took the ask"
-  assert process.receive(replies, within: ask_support.event_wait_ms)
-    == Ok(gate_rule.Echoed(9))
+  assert open_wait.received(
+      from: replies,
+      what: "the reply carried out after Stop",
+    )
+    == gate_rule.Echoed(9)
     as "the reply after Stop was carried out"
   assert ask_support.ended(
       watched: service,
@@ -390,9 +410,8 @@ pub fn a_message_no_selector_takes_is_dropped_and_logged_by_its_kind_and_the_ser
       "a-fake-session-key":utf8,
     >>),
   )
-  let assert Ok(#(level, text)) =
-    process.receive(lines, ask_support.event_wait_ms)
-    as "the stray message was logged"
+  let #(level, text) =
+    open_wait.received(from: lines, what: "the log line of the stray message")
   log_capture.stop(capture)
   assert level == "warning" as "a message nobody takes is a warning"
   assert string.contains(text, "stray_message")
@@ -437,9 +456,8 @@ fn inputs_when_queued(
       as "the gate took the second message"
     Nil
   })
-  let assert Ok(_answer) =
-    process.receive(replies, within: ask_support.event_wait_ms)
-    as "the second message was answered"
+  let _answer =
+    open_wait.received(from: replies, what: "the answer to the second message")
   let _reason = ask_support.stop_tree(tree)
   list.filter(mailbox_support.drain(observed), fn(event) {
     case event {
@@ -620,9 +638,8 @@ pub fn a_service_found_at_an_address_is_found_there_when_its_first_step_sends_te
         send: fn(_to, _message) {
           let looked = process.new_subject()
           process.send(sent, #(process.self(), looked))
-          let assert Ok(Nil) =
-            process.receive(looked, within: ask_support.event_wait_ms)
-            as "the test looked the service up"
+          let Nil =
+            open_wait.received(from: looked, what: "the lookup of the service")
           Ok(Nil)
         },
         start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
@@ -637,9 +654,8 @@ pub fn a_service_found_at_an_address_is_found_there_when_its_first_step_sends_te
         as "the service starts"
       process.sleep_forever()
     })
-  let assert Ok(#(service, looked)) =
-    process.receive(sent, within: ask_support.event_wait_ms)
-    as "the first step sent its message"
+  let #(service, looked) =
+    open_wait.received(from: sent, what: "the message of the first step")
   assert group_registry.find(scope:, group: address) == Ok(service)
     as "the service is found at its address when its first step sends"
   process.send(looked, Nil)

@@ -15,6 +15,7 @@ import gleam/bit_array
 import gleam/erlang/process
 import gleam/list
 import login_client
+import open_wait
 import owned_test
 import socket_read
 
@@ -46,11 +47,10 @@ fn written_in_one_send(messages: List(Frame), after after: BitArray) -> Game {
 /// Whether `body` crashed, run in a process of its own so the test goes on.
 fn crashes(body: fn() -> Nil) -> Bool {
   let monitor = process.spawn_unlinked(body) |> process.monitor
-  let assert Ok(down) =
+  let down =
     process.new_selector()
     |> process.select_specific_monitor(monitor, fn(down) { down })
-    |> process.selector_receive(within: 10_000)
-    as "the process ended"
+    |> open_wait.selected(what: "the process to end")
   case down.reason {
     process.Normal -> False
     process.Killed | process.Abnormal(_) -> True

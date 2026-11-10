@@ -30,10 +30,7 @@ import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 import mug
 import open_wait
-
-/// How long one wait for an event may take, in milliseconds. A passing test
-/// never reaches it.
-pub const event_wait_ms = 5000
+import socket_read
 
 /// The wait, in milliseconds, of an ask whose answer is expected: a deadline
 /// a passing test never reaches.
@@ -294,12 +291,12 @@ pub fn ended_running(work: fn() -> Nil) -> process.ExitReason {
     process.spawn_unlinked(fn() {
       let go = process.new_subject()
       process.send(ready, go)
-      let assert Ok(Nil) = process.receive(go, event_wait_ms)
-        as "the test released the process"
+      let Nil =
+        open_wait.received(from: go, what: "the test to release the process")
       work()
     })
-  let assert Ok(go) = process.receive(ready, event_wait_ms)
-    as "the process waits to be released"
+  let go =
+    open_wait.received(from: ready, what: "the process to wait to be released")
   let watched = process.monitor(worker)
   process.send(go, Nil)
   ended(watched:, what: "the process to end after its work")
@@ -325,12 +322,21 @@ pub fn panic_message(raised: Dynamic) -> String {
   text
 }
 
-pub fn connect(server: Server) -> mug.Socket {
-  let assert Ok(client) =
-    mug.new("127.0.0.1", port: server.port)
+/// A client's connect to the listener on this machine at `port`, with no limit
+/// of its own: the test's deadline ends a connect that is never answered, and
+/// names it (`open_wait`).
+pub fn connecting(port port: Int) -> Result(mug.Socket, mug.ConnectError) {
+  open_wait.named("the listener's answer to the connect", fn() {
+    mug.new("127.0.0.1", port:)
     |> mug.ip_version_preference(mug.Ipv4Only)
-    |> mug.timeout(event_wait_ms)
+    |> mug.timeout(beyond_the_test_ms)
     |> mug.connect
+  })
+}
+
+/// A client connected to the server's listener.
+pub fn connect(server: Server) -> mug.Socket {
+  let assert Ok(client) = connecting(port: server.port)
     as "the client connected"
   client
 }
@@ -350,10 +356,10 @@ pub fn command(
 /// Reads the next twelve-byte record the rule wrote.
 pub fn read_record(client: mug.Socket) -> Record {
   let assert Ok(<<letter, ask, code, extra, milliseconds:64-signed>>) =
-    mug.receive_exact(
-      client,
+    receive_exactly(
+      socket: client,
       byte_size: 12,
-      timeout_milliseconds: event_wait_ms,
+      what: "the next record the server wrote",
     )
     as "a record arrived"
   Record(letter:, ask:, code:, extra:, milliseconds:)
@@ -367,13 +373,51 @@ pub fn read_pong(client: mug.Socket) -> BitArray {
 /// Reads exactly `bytes` bytes the server wrote.
 pub fn read_bytes(client client: mug.Socket, bytes bytes: Int) -> BitArray {
   let assert Ok(received) =
-    mug.receive_exact(
-      client,
+    receive_exactly(
+      socket: client,
       byte_size: bytes,
-      timeout_milliseconds: event_wait_ms,
+      what: "the bytes the server wrote",
     )
     as "the bytes arrived"
   received
+}
+
+/// Receives exactly `byte_size` bytes the server writes, with no limit of its
+/// own, and names the wait for the test that owns the calling process
+/// (`open_wait`). It looks at the socket again after each
+/// `socket_read.look_ms`, and the bytes that came in the look before stay in
+/// the socket; the sibling of `socket_read.receive` for a read of a known size.
+pub fn receive_exactly(
+  socket socket: mug.Socket,
+  byte_size byte_size: Int,
+  what what: String,
+) -> Result(BitArray, mug.Error) {
+  open_wait.named(what, fn() { looking_for(socket, byte_size) })
+}
+
+fn looking_for(
+  socket: mug.Socket,
+  byte_size: Int,
+) -> Result(BitArray, mug.Error) {
+  case
+    mug.receive_exact(
+      socket,
+      byte_size:,
+      timeout_milliseconds: socket_read.look_ms,
+    )
+  {
+    Error(mug.Timeout) -> looking_for(socket, byte_size)
+    received -> received
+  }
+}
+
+/// Waits for the socket's next bytes or its end, with no limit of its own,
+/// and says what came (`socket_read`).
+pub fn receive_next(
+  socket socket: mug.Socket,
+  what what: String,
+) -> Result(BitArray, mug.Error) {
+  socket_read.receive(socket:, limit: socket_read.Open, what:)
 }
 
 /// The server's connection processes, as Ranch lists them.
@@ -511,8 +555,7 @@ pub fn ask_and_wait(
   let replies = process.new_subject()
   let assert Ok(sent) = send(fn(answer) { process.send(replies, answer) })
     as "the ask reached a process"
-  let assert Ok(answer) = process.receive(replies, within: event_wait_ms)
-    as "the process answered"
+  let answer = open_wait.received(from: replies, what: "the process's answer")
   #(sent, answer)
 }
 
@@ -559,7 +602,7 @@ fn monotonic_time(unit: atom.Atom) -> Int
 /// How far ahead, in milliseconds, a server deadline that a test is not about
 /// lies: an hour, far beyond any test's deadline (`owned_test.run`), so the
 /// test's own deadline ends a find that is never answered.
-const beyond_the_test_ms = 3_600_000
+pub const beyond_the_test_ms = 3_600_000
 
 /// The moment, on the monotonic clock, of a server deadline that the test is
 /// not about (`beyond_the_test_ms`).

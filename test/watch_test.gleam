@@ -15,16 +15,16 @@ import gleam/erlang/process.{type Monitor}
 import gleam/list
 import gleam/string
 import log_capture
+import open_wait
 import owned_test
 import socket_watch
 
 /// Waits for the next DOWN in the mailbox and gives its monitor.
 fn next_down() -> Monitor {
-  let assert Ok(process.ProcessDown(monitor:, ..)) =
+  let assert process.ProcessDown(monitor:, ..) =
     process.new_selector()
     |> process.select_monitors(fn(down) { down })
-    |> process.selector_receive(within: ask_support.event_wait_ms)
-    as "a monitored process ended"
+    |> open_wait.selected(what: "a monitored process to end")
   monitor
 }
 
@@ -168,8 +168,7 @@ fn opening_twice_ends_the_process(
         )
       Nil
     })
-  let assert Ok(go) = process.receive(ready, within: ask_support.event_wait_ms)
-    as "the process started"
+  let go = open_wait.received(from: ready, what: "the process to start")
   let logged = process.new_subject()
   let capture = log_capture.start(from: opener, into: logged)
   let ended = process.monitor(opener)
@@ -177,9 +176,8 @@ fn opening_twice_ends_the_process(
   let assert process.Abnormal(_) =
     ask_support.ended(watched: ended, what: "the opener to end by its crash")
     as "opening an id already open ended the process"
-  let assert Ok(#("error", text)) =
-    process.receive(logged, within: ask_support.event_wait_ms)
-    as "the first thing logged is an error"
+  let assert #("error", text) =
+    open_wait.received(from: logged, what: "the first thing logged")
   assert string.contains(text, "already open")
     && string.contains(text, "test shell")
     as "it names the open id and the shell that does not carry it out"

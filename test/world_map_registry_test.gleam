@@ -121,8 +121,8 @@ fn connection(world: World, id: Int) -> Pid {
       process.send(ready, Nil)
       process.sleep_forever()
     })
-  let assert Ok(Nil) = process.receive(ready, within: ask_support.event_wait_ms)
-    as "the connection joined the registry"
+  let Nil =
+    open_wait.received(from: ready, what: "the connection to join the registry")
   pid
 }
 
@@ -359,6 +359,8 @@ pub fn an_ask_past_its_deadline_is_never_sent_to_maps_test() -> Nil {
     == Error(Nil)
   let anything =
     process.new_selector() |> process.select_other(fn(message) { message })
+  // Absence check: the limit is how long this watches for a message that must not come,
+  // here a look at the mailbox now.
   assert process.selector_receive(anything, within: 0) == Error(Nil)
     as "the asker's deadline had passed before it sent, so Maps is never asked: the find would start a map nobody waits for"
 }

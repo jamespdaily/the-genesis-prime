@@ -42,6 +42,7 @@ import gleam/option.{None, Some}
 import gleam/otp/static_supervisor as supervisor
 import mailbox_support
 import mug
+import open_wait
 import owned_test
 import recording_support
 import script_rule
@@ -84,8 +85,11 @@ pub fn the_servers_scheduler_sends_the_timer_to_the_subject_after_its_time_test(
   let fired = process.new_subject()
   let reference = reference.new()
   let _cancel = issued.script.schedule(fired, TimerId(4), reference, 1)
-  assert process.receive(fired, within: ask_support.event_wait_ms)
-    == Ok(script.Elapsed(timer: TimerId(4), reference:))
+  assert open_wait.received(
+      from: fired,
+      what: "the timer's message to the connection",
+    )
+    == script.Elapsed(timer: TimerId(4), reference:)
     as "the timer's message names the timer and the reference of its start"
 }
 
@@ -201,7 +205,10 @@ pub fn a_connection_with_no_script_to_take_is_closed_and_takes_no_input_test() -
   use <- owned_test.run(30_000)
   let server = start_script_rule(fn() { Error(Nil) })
   let client = ask_support.connect(server)
-  assert mug.receive(client, timeout_milliseconds: ask_support.event_wait_ms)
+  assert ask_support.receive_next(
+      socket: client,
+      what: "the connection to close",
+    )
     == Error(mug.Closed)
     as "the connection closes with no accept's write"
   ask_support.stop(server)
@@ -329,12 +336,12 @@ type Record {
 }
 
 fn read_record(client: mug.Socket) -> Record {
-  read_record_within(client, ask_support.event_wait_ms)
-}
-
-fn read_record_within(client: mug.Socket, within_ms: Int) -> Record {
   let assert Ok(<<letter, number:64>>) =
-    mug.receive_exact(client, byte_size: 9, timeout_milliseconds: within_ms)
+    ask_support.receive_exactly(
+      socket: client,
+      byte_size: 9,
+      what: "the next record the server wrote",
+    )
     as "a record arrived"
   Record(letter:, number:)
 }
@@ -390,8 +397,11 @@ pub fn a_message_delivered_between_the_parts_of_a_recorded_read_is_taken_after_t
     n: 1,
     wait_ms: 0,
   )
-  let assert Ok(Nil) = process.receive(looked, ask_support.event_wait_ms)
-    as "the shell took the first part and asked the script how many bytes the read holds"
+  let Nil =
+    open_wait.received(
+      from: looked,
+      what: "the shell's ask to the script for the bytes the read holds",
+    )
   // The shell now holds the first part. The message goes to its mailbox before
   // the second part is sent, so it is there before the second part can be.
   assert registry.deliver(scope, ConnectionId(id), 9) == Ok(Nil)
@@ -428,8 +438,8 @@ pub fn a_recorded_read_the_socket_delivers_in_parts_reaches_the_rule_as_one_inpu
   let client = ask_support.connect(server)
   let _accepted = ask_support.read_bytes(client, 49)
   assert mug.send(client, <<1>>) == Ok(Nil) as "the first part"
-  let assert Ok(Nil) = process.receive(looked, ask_support.event_wait_ms)
-    as "the shell took the first part and holds it"
+  let Nil =
+    open_wait.received(from: looked, what: "the shell to take the first part")
   assert mug.send(client, <<2, 3>>) == Ok(Nil) as "the rest"
   let _read = ask_support.read_bytes(client, 17)
   let assert [connection] = ask_support.connections(server)
@@ -474,8 +484,8 @@ pub fn a_stop_while_the_shell_holds_part_of_a_read_reaches_the_rule_as_stopping_
   let client = ask_support.connect(server)
   let _accepted = ask_support.read_bytes(client, 49)
   assert mug.send(client, <<1>>) == Ok(Nil) as "the first part"
-  let assert Ok(Nil) = process.receive(looked, ask_support.event_wait_ms)
-    as "the shell took the first part and holds it"
+  let Nil =
+    open_wait.received(from: looked, what: "the shell to take the first part")
   ask_support.stop(server)
   let assert Ok(Recording(lines:, closing: Some(closing), ..)) =
     wire_recording.read(recording_support.wire_text_in(folder))
@@ -509,11 +519,13 @@ pub fn a_shell_that_waits_for_the_rest_of_a_read_gives_up_when_the_bound_its_fir
     n: 1,
     wait_ms: 0,
   )
-  let assert Ok(Nil) = process.receive(looked, ask_support.event_wait_ms)
-    as "the shell took the first part and holds it"
-  let assert Ok(BoundStarted(subject:, timer:, reference:, after_ms:)) =
-    process.receive(bounds, ask_support.event_wait_ms)
-    as "the first part started the bound through the script's scheduler"
+  let Nil =
+    open_wait.received(from: looked, what: "the shell to take the first part")
+  let assert BoundStarted(subject:, timer:, reference:, after_ms:) =
+    open_wait.received(
+      from: bounds,
+      what: "the bound the first part started through the script's scheduler",
+    )
   assert timer == script.held_read_timer
   assert after_ms == 5000
     as "the shell gives a held read 5 s from its first part"
@@ -547,6 +559,8 @@ pub fn a_shell_that_waits_for_the_rest_of_a_read_gives_up_when_the_bound_its_fir
   process.send(subject, Elapsed(timer:, reference:))
   assert read_record(client) == Record(signalling_rule.woken, 9)
     as "after the bound the message is taken, and the held parts are not a read"
+  // Absence check: the limit is how long this watches for a message that must not come,
+  // here a look at the mailbox now.
   assert process.receive(bounds, 0) == Error(Nil)
     as "no part started another bound: the one the first part started is the only one"
   event_wait.until("the connection is still open", fn() {
@@ -570,11 +584,10 @@ pub fn a_read_that_comes_whole_in_parts_starts_one_bound_and_cancels_it_when_the
     n: 1,
     wait_ms: 0,
   )
-  let assert Ok(Nil) = process.receive(looked, ask_support.event_wait_ms)
-    as "the shell took the first part and holds it"
-  let assert Ok(BoundStarted(subject:, timer:, reference: first, ..)) =
-    process.receive(bounds, ask_support.event_wait_ms)
-    as "the first part started the bound"
+  let Nil =
+    open_wait.received(from: looked, what: "the shell to take the first part")
+  let assert BoundStarted(subject:, timer:, reference: first, ..) =
+    open_wait.received(from: bounds, what: "the bound the first part started")
   ask_support.command(
     client:,
     letter: signalling_rule.pong_command,
@@ -585,6 +598,8 @@ pub fn a_read_that_comes_whole_in_parts_starts_one_bound_and_cancels_it_when_the
   assert read_record(client) == Record(signalling_rule.pong, 2)
   assert process.receive(bounds, 0) == Ok(BoundCancelled(reference: first))
     as "the complete read cancelled its bound, and the second part started none"
+  // Absence check: the limit is how long this watches for a message that must not come,
+  // here a look at the mailbox now.
   assert process.receive(bounds, 0) == Error(Nil)
   // A firing of the cancelled bound that was already sent is dropped, also
   // while the shell holds the next read: it does not end that read's bound.
@@ -594,9 +609,11 @@ pub fn a_read_that_comes_whole_in_parts_starts_one_bound_and_cancels_it_when_the
     n: 3,
     wait_ms: 0,
   )
-  let assert Ok(BoundStarted(reference: second, ..)) =
-    process.receive(bounds, ask_support.event_wait_ms)
-    as "the next read's first part started a bound of its own"
+  let assert BoundStarted(reference: second, ..) =
+    open_wait.received(
+      from: bounds,
+      what: "the bound the next read's first part started",
+    )
   assert second != first
   process.send(subject, Elapsed(timer:, reference: first))
   ask_support.command(

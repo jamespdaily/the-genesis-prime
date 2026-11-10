@@ -22,6 +22,7 @@ import genesis_prime/world_map/spawn_source
 import gleam/erlang/process.{type Subject}
 import gleam/list
 import gleam/otp/supervision.{type ChildSpecification}
+import open_wait
 import owned_test
 
 /// The creature the gate is asked to start: unit 7 of the first run of World
@@ -113,12 +114,20 @@ pub fn a_creature_that_does_not_start_comes_back_as_not_started_and_no_watch_is_
     )
     == gate_rule.Echoed(1)
     as "the step went on to its reply"
-  assert process.receive(started, within: ask_support.event_wait_ms)
-    == Ok(a_creature())
+  assert open_wait.received(
+      from: started,
+      what: "the shell's ask to reach to start the creature",
+    )
+    == a_creature()
     as "the shell asked reach to start the creature the rule named"
-  assert process.receive(not_started, within: ask_support.event_wait_ms)
-    == Ok(gate_rule.Opened(-1))
+  assert open_wait.received(
+      from: not_started,
+      what: "the rule's input for the failed creature start",
+    )
+    == gate_rule.Opened(-1)
     as "the failed start reached the rule as CreatureNotStarted with the watch's id"
+  // Absence check: the limit is how long this watches for a message that must not come,
+  // here a look at the mailbox now.
   assert process.receive(located, within: 0) == Error(Nil)
     as "no watch was opened for a creature that did not start: its address was never looked up"
   process.kill(target)
@@ -162,11 +171,17 @@ pub fn a_timer_of_the_step_that_started_a_creature_fires_after_the_creatures_fai
       ),
     )
     == gate_rule.Echoed(4)
-  assert process.receive(arrivals, within: ask_support.event_wait_ms)
-    == Ok(gate_rule.Opened(-4))
+  assert open_wait.received(
+      from: arrivals,
+      what: "the rule's input for the failed creature start",
+    )
+    == gate_rule.Opened(-4)
     as "the failed start comes first"
-  assert process.receive(arrivals, within: ask_support.event_wait_ms)
-    == Ok(gate_rule.Opened(gate_rule.timer_key_base + 9))
+  assert open_wait.received(
+      from: arrivals,
+      what: "the rule's input for the timer of the same step",
+    )
+    == gate_rule.Opened(gate_rule.timer_key_base + 9)
     as "the timer of the same step comes after it"
   process.kill(target)
   let _reason = ask_support.stop_tree(tree)
@@ -193,19 +208,30 @@ pub fn a_creature_that_starts_is_watched_at_its_address_and_its_end_comes_back_a
       gate_rule.StartCreatureAs(watch: 2, creature: a_creature()),
     )
     == gate_rule.Echoed(2)
-  assert process.receive(started, within: ask_support.event_wait_ms)
-    == Ok(a_creature())
-  assert process.receive(located, within: ask_support.event_wait_ms)
-    == Ok(a_creatures_address())
+  assert open_wait.received(
+      from: started,
+      what: "the shell's ask to reach to start the creature",
+    )
+    == a_creature()
+  assert open_wait.received(
+      from: located,
+      what: "the address the shell watches for the started creature",
+    )
+    == a_creatures_address()
     as "the creature that started is watched at the address its unit gives"
+  // Absence check: the limit is how long this watches for a message that must not come,
+  // here a look at the mailbox now.
   assert process.receive(ended, within: 0) == Error(Nil)
     as "the creature runs, so the watch has not ended"
   let down = process.monitor(target)
   process.kill(target)
   let _reason =
     ask_support.ended(watched: down, what: "the killed target to end")
-  assert process.receive(ended, within: ask_support.event_wait_ms)
-    == Ok(gate_rule.Opened(2))
+  assert open_wait.received(
+      from: ended,
+      what: "the rule's input for the creature's end",
+    )
+    == gate_rule.Opened(2)
     as "the creature's end reached the rule as WatchEnded with the watch's id"
   let _reason = ask_support.stop_tree(tree)
   Nil
@@ -233,11 +259,19 @@ pub fn a_timer_fires_once_and_a_cancelled_timer_never_fires_test() -> Nil {
     == gate_rule.Echoed(1)
   assert ask_support.call_gate(gate, gate_rule.StartTimerAs(3, 400))
     == gate_rule.Echoed(3)
-  assert process.receive(fires, within: ask_support.event_wait_ms)
-    == Ok(gate_rule.Opened(gate_rule.timer_key_base + 1))
+  assert open_wait.received(
+      from: fires,
+      what: "the rule's input for the first timer's firing",
+    )
+    == gate_rule.Opened(gate_rule.timer_key_base + 1)
     as "the timer's firing reached the rule as ServiceTimerFired with its id"
-  assert process.receive(last, within: ask_support.event_wait_ms)
-    == Ok(gate_rule.Opened(gate_rule.timer_key_base + 3))
+  assert open_wait.received(
+      from: last,
+      what: "the rule's input for the last timer's firing",
+    )
+    == gate_rule.Opened(gate_rule.timer_key_base + 3)
+  // Absence check: the limit is how long this watches for a message that must not come,
+  // here a look at the mailbox now.
   assert process.receive(cancelled, within: 0) == Error(Nil)
     as "the cancelled timer, due long before the last one, never fired"
   let _reason = ask_support.stop_tree(tree)

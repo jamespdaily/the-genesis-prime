@@ -4,6 +4,7 @@
 
 import genesis_prime/table/loader/store
 import gleam/erlang/process.{type Pid}
+import open_wait
 import owned_key
 import owned_test
 
@@ -18,8 +19,7 @@ fn owner_with_a_term() -> #(Pid, store.Key) {
       process.send(reply, key)
       process.sleep_forever()
     })
-  let assert Ok(key) = process.receive(reply, within: 5000)
-    as "the owner made its key"
+  let key = open_wait.received(from: reply, what: "the key the owner made")
   #(owner, key)
 }
 
@@ -57,11 +57,10 @@ fn crashes_within(timeout_ms: Int, body: fn() -> Nil) -> Bool {
   let monitor =
     process.spawn_unlinked(fn() { owned_test.run(timeout_ms, body) })
     |> process.monitor
-  let assert Ok(down) =
+  let down =
     process.new_selector()
     |> process.select_specific_monitor(monitor, fn(down) { down })
-    |> process.selector_receive(within: 10_000)
-    as "the test process ended"
+    |> open_wait.selected(what: "the test process to end")
   case down.reason {
     process.Normal -> False
     process.Killed | process.Abnormal(_) -> True
@@ -78,8 +77,7 @@ pub fn a_body_that_ends_with_terms_under_its_keys_fails_and_its_terms_are_erased
       process.send(reply, key)
     })
   assert failed as "the body left a term behind"
-  let assert Ok(key) = process.receive(reply, within: 5000)
-    as "the body made its key"
+  let key = open_wait.received(from: reply, what: "the key the body made")
   assert owned_key.terms_under(key) == 0
     as "the failed test's term was erased so the tests after it do not carry it"
 }
@@ -94,8 +92,7 @@ pub fn a_body_that_ends_with_terms_under_a_fixture_key_passes_and_its_terms_are_
       process.send(reply, key)
     })
   assert !failed as "a fixture key is erased by the test run, not by the body"
-  let assert Ok(key) = process.receive(reply, within: 5000)
-    as "the body made its key"
+  let key = open_wait.received(from: reply, what: "the key the body made")
   assert owned_key.terms_under(key) == 0
     as "the terms of a fixture key are erased when the body ends"
 }
@@ -122,8 +119,7 @@ pub fn a_body_that_crashes_after_putting_terms_under_a_key_has_them_erased_test(
       panic as "the planted crash of the body"
     })
   assert failed as "a body that panics fails its test"
-  let assert Ok(key) = process.receive(reply, within: 5000)
-    as "the body made its key"
+  let key = open_wait.received(from: reply, what: "the key the body made")
   assert owned_key.terms_under(key) == 0
     as "the body died before its terms were counted, and they were erased all the same"
 }
@@ -141,8 +137,7 @@ pub fn a_body_that_runs_past_its_deadline_has_its_terms_erased_test() -> Nil {
       process.sleep_forever()
     })
   assert failed as "a body that never ends fails its test at the deadline"
-  let assert Ok(key) = process.receive(reply, within: 5000)
-    as "the body made its key"
+  let key = open_wait.received(from: reply, what: "the key the body made")
   assert owned_key.terms_under(key) == 0
     as "the body was ended before its terms were erased, so it put nothing after"
 }
