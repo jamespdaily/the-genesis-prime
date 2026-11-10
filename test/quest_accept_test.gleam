@@ -154,7 +154,12 @@ fn item(
 
 fn verdict(quest target: Quest2, asker asker: Asker) -> Verdict {
   let assert Ok(verdict) =
-    quest.can_accept(tables: tables(), quest: target, asker:)
+    quest.can_accept(
+      tables: tables(),
+      quest: target,
+      asker:,
+      mask: quest.every_check,
+    )
     as "the fixture holds every row the checks read"
   verdict
 }
@@ -454,7 +459,12 @@ pub fn accept_checks_the_prerequisite_for_the_player_test() -> Nil {
   ])
   let assert Ok(target) = quest2.get(tables:, id: Quest2Id(1806))
     as "the changed row is in the tables"
-  assert quest.can_accept(tables:, quest: target, asker: asker(log: []))
+  assert quest.can_accept(
+      tables:,
+      quest: target,
+      asker: asker(log: []),
+      mask: quest.every_check,
+    )
     == Ok(Refused(code: 12))
     as "a prerequisite id with no row fails, so the quest is refused by check 12"
 }
@@ -529,6 +539,7 @@ pub fn a_periodic_quest_of_no_known_group_takes_group_1s_limits_test() -> Nil {
       tables:,
       quest: Quest2(..row(1857), periodic_quest_group_id: group_id),
       asker: asker(log: []),
+      mask: quest.every_check,
     )
   }
   assert in_group(0) == Ok(NotRead(gap: quest.PeriodicDraw(group_id: 1)))

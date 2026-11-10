@@ -707,6 +707,22 @@ pub fn in_world_as_exile() -> game_connection.State {
   entered_as(Character(..world_character(), faction_id: spawn.exile_faction)).0
 }
 
+/// The connection in the world of an Exile, with its burst taken, whose log holds
+/// these quests.
+pub fn in_world_as_exile_holding(
+  quests quests: List(store.QuestRow),
+) -> game_connection.State {
+  let #(state, taken) =
+    joining_holding(
+      in_character_select: in_select(),
+      character: Character(..world_character(), faction_id: spawn.exile_faction),
+      saved_health: None,
+      saved_experience: None,
+      quests:,
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken)))).0
+}
+
 /// The connection in the world, with its burst taken, made with the
 /// development chat commands on.
 pub fn in_world_with_dev_commands() -> game_connection.State {
@@ -1389,11 +1405,24 @@ pub fn medic_in_world() -> game_connection.State {
 
 /// The Medic of these tables in the world.
 pub fn medic_in(tables tables: store_tables.Tables) -> game_connection.State {
+  medic_in_holding(tables:, quests: [])
+}
+
+/// The Medic of these tables in the world, whose log holds these quests.
+pub fn medic_in_holding(
+  tables tables: store_tables.Tables,
+  quests quests: List(store.QuestRow),
+) -> game_connection.State {
   let fresh = accepted(Settings(..settings(), tables:)).0
-  entered_from(
-    in_character_select: in_select_from(fresh),
-    character: Character(..world_character(), class_id: ClassId(4)),
-  ).0
+  let #(state, taken) =
+    joining_holding(
+      in_character_select: in_select_from(fresh),
+      character: Character(..world_character(), class_id: ClassId(4)),
+      saved_health: None,
+      saved_experience: None,
+      quests:,
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken)))).0
 }
 
 /// The place of the Stalker's Stealth in its ability bag: Spell4 46073, whose press

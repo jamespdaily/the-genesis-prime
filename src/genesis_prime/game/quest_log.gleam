@@ -118,7 +118,7 @@ type ActiveState {
 }
 
 /// The states of the client's second list (lua QuestState 4 to 7).
-type KnownState {
+pub type KnownState {
   Botched
   Mentioned
   Abandoned
@@ -804,6 +804,34 @@ fn started(
       ),
     ),
   )
+}
+
+/// The log after the quest is held in the client's second list in this state, in place
+/// of whatever the log held of it: the client's state setter moves a quest between its
+/// lists (`0x1405fbdc0`), so an active entry is dropped and the state is kept.
+pub fn hold(
+  log log: QuestLog,
+  quest_id quest_id: Int,
+  state state: KnownState,
+) -> QuestLog {
+  QuestLog(..log, entries: dict.insert(log.entries, quest_id, Known(state:)))
+}
+
+/// The log after the tracked flag of a quest of the active list is set
+/// (`0x1405fcb80`). A quest that is not in the active list is left as it is.
+pub fn track(
+  log log: QuestLog,
+  quest_id quest_id: Int,
+  tracked tracked: Bool,
+) -> QuestLog {
+  case dict.get(log.entries, quest_id) {
+    Ok(Active(..) as entry) ->
+      QuestLog(
+        ..log,
+        entries: dict.insert(log.entries, quest_id, Active(..entry, tracked:)),
+      )
+    Ok(Completed(..)) | Ok(Known(..)) | Error(Nil) -> log
+  }
 }
 
 /// Whether bit `index` of the done mask is set. The client's objective indexes run 0

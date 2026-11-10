@@ -9,9 +9,11 @@
 import genesis_prime/client_connection.{Continue}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection/frames as connection_frames
+import genesis_prime/game/connection/quest as connection_quest
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/interaction
 import genesis_prime/game/movement
+import genesis_prime/game/quest
 import genesis_prime/game/shown
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type Now}
@@ -42,6 +44,13 @@ pub fn interaction_message(
       tables: session.settings.tables,
       vendors: session.settings.vendors,
       now_ms: now.monotonic_ms,
+      offers: fn(creature) {
+        quest.offers(
+          tables: session.settings.tables,
+          asker: connection_quest.asker(session:, entered:),
+          creature:,
+        )
+      },
       logged: session.interaction_logged,
     )
   {

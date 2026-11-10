@@ -1,8 +1,9 @@
-//// The player's accept of a quest and retry of a botched one on the game connection
-//// (genesis_prime/game/quest): the rule decides, and this carries out its effects in
-//// order, a log line or the 0x035C that tells the client the quest's new state, and
-//// keeps the log the rule returns, which the next save writes. A body the client's own
-//// reader would refuse ends the connection with the sentence the rule gives.
+//// The player's accept of a quest, retry of a botched one, abandon, mention, track and
+//// ignore on the game connection (genesis_prime/game/quest): the rule decides, and this
+//// carries out its effects in order, a log line or the 0x035C that tells the client the
+//// quest's new state, and keeps the log the rule returns, which the next save writes. A
+//// body the client's own reader would refuse ends the connection with the sentence the
+//// rule gives.
 
 import genesis_prime/client_connection.{Continue}
 import genesis_prime/connection/frame.{type Frame}
@@ -17,6 +18,22 @@ import genesis_prime/game/shown
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type Now}
 import gleam/list
+
+/// What the quest checks read of the player in the world.
+pub fn asker(
+  session session: Session,
+  entered entered: world_entry.Entered,
+) -> quest.Asker {
+  quest.Asker(
+    player: prerequisite_player.of(tables: session.settings.tables, entered:),
+    factions: Factions(
+      current: entered.unit.tail.faction_id,
+      base: entered.unit.tail.base_faction_id,
+    ),
+    log: entered.quests,
+    items: entered.items,
+  )
+}
 
 /// What a message of the quest feature does, taken from inside 0x038C with the player
 /// in the world.
@@ -34,15 +51,7 @@ pub fn quest_message(
     quest.take(
       message:,
       body: inner.body,
-      asker: quest.Asker(
-        player: prerequisite_player.of(tables:, entered:),
-        factions: Factions(
-          current: entered.unit.tail.faction_id,
-          base: entered.unit.tail.base_faction_id,
-        ),
-        log: entered.quests,
-        items: entered.items,
-      ),
+      asker: asker(session:, entered:),
       standing: interaction.Player(
         race_id: entered.character.race_id,
         faction:,
