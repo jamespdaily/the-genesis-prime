@@ -265,7 +265,7 @@ pub fn a_spell_that_needs_the_weapon_is_refused_with_169_after_the_weapon_is_une
         character:,
         items:,
       )
-    casting.caster_of(entered:)
+    casting.caster_of(tables: character_tables.shared(), entered:)
   }
   // The Engineer's third ability, bag index 2, is Zap: weapon slot 1, a spell that
   // needs an item in slot 16 (`0x1403afb10`).
