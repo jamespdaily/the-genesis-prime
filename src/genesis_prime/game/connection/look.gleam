@@ -7,6 +7,7 @@
 //// ```
 //// the cast rule's CasterChangeStarts(Look) ─▶ look.start ─┐
 //// the cast rule's CasterChangeEnds              ─▶ look.end   ─┤ visuals whose display changed
+//// a worn item moves (genesis_prime/game/connection/inventory) ─▶ look.rebased ─┤
 ////                                                          ├─▶ 0x933 {owner, visuals} to the player's client
 ////                                                          └─▶ LookChanged(visuals) to each viewer
 //// ```
@@ -79,6 +80,15 @@ pub fn ended(
   source source: unit_properties.Source,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   changed(session:, change: look.end(look: _, source:))
+}
+
+/// The player's worn items changed (an equip, an unequip, a swap or a delete): its look's
+/// base is now `base`, the item visuals of its 0x262.
+pub fn rebased(
+  session session: Session,
+  base base: List(ItemVisual),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  changed(session:, change: look.rebased(look: _, base:))
 }
 
 /// The session with the look changed by `change`, and for the visuals it reports: the

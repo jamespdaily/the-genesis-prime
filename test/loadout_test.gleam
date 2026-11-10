@@ -36,9 +36,8 @@
 ////   38017; Engineer 26468, 25473, 25635; Esper 19102, 19019, 19022; Medic
 ////   38201, 16322, 26543; Stalker 23148, 23161, 23173; Spellslinger 27638,
 ////   20684, 20325.
-//// - Health: CreatureLevel row 1's Base Health 135.97 and the armor's 600, 736
-////   at level 1 (`player.level1_base_health`, `0x14040e3d0`); at level 9, the
-////   CreatureLevel row 9's 2295.49 and 600, 2895 (the same rule).
+//// - Health: the armor's Base Health, 600 (`0x14040e3d0`); the level's rows are
+////   gear_test's.
 //// - The formulas: a value is computed from the rows, so a changed GameFormula
 ////   row changes it; each changed value below is worked by hand from the
 ////   formula of the address in its message.
@@ -46,9 +45,11 @@
 ////   and the id in the reason.
 
 import fixture_tables
+import genesis_prime/game/gear
 import genesis_prime/game/item_property.{Shield}
 import genesis_prime/game/loadout.{type Loadout, Equipped}
 import genesis_prime/game/worn_visual
+import genesis_prime/store.{HeldItem}
 import genesis_prime/table/id.{
   ClassId, Item2Id, ItemDisplayId, ItemSlotId, Spell4BaseId,
 }
@@ -389,38 +390,6 @@ pub fn a_loadout_is_the_classes_weapon_in_slot_16_and_its_three_level_1_spells_i
   })
 }
 
-pub fn a_level_1_players_health_is_736_for_every_class_test() -> Nil {
-  use <- owned_test.run(60_000)
-  every_set(
-    tables: fixture_tables.shared(),
-    check: fn(class, _faction, loadout) {
-      assert loadout.max_health(
-          tables: fixture_tables.shared(),
-          loadout:,
-          level: 1,
-        )
-        == Ok(736)
-        as {
-          "player.level1_base_health: the "
-          <> class.name
-          <> "'s 135.97 (CreatureLevel row 1) and 600 (the armor) round to 736"
-        }
-    },
-  )
-}
-
-pub fn a_players_health_is_the_creature_level_rows_base_health_of_its_level_plus_the_armors_600_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let tables = fixture_tables.shared()
-  let assert Ok(loadout) =
-    loadout.of(tables:, class_id: ClassId(4), faction_id: 166)
-    as "class 4 faction 166 has a set"
-  assert loadout.max_health(tables:, loadout:, level: 9) == Ok(2895)
-    as "the client's CreatureLevel row 9's 2295.49 and 600, 2895"
-  assert loadout.max_health(tables:, loadout:, level: 102) == Error(Nil)
-    as "the client's CreatureLevel holds the rows 1 to 101 and none for level 102"
-}
-
 // ---- edits of the client's rows ----
 
 /// The rows with the cells of one row replaced.
@@ -476,7 +445,26 @@ fn warrior_in(rows rows: fixture_tables.Rows) -> #(Loadout, Int) {
   let assert Ok(loadout) =
     loadout.of(tables:, class_id: ClassId(1), faction_id: 166)
     as "class 1 faction 166 has a set"
-  let assert Ok(health) = loadout.max_health(tables:, loadout:, level: 1)
+  let worn =
+    gear.of_items(
+      tables:,
+      items: list.index_map(
+        [
+          Equipped(item: loadout.weapon, bag_index: loadout.weapon_slot),
+          ..loadout.armor
+        ],
+        fn(equipped, index) {
+          HeldItem(
+            item_guid: index + 1,
+            item2_id: equipped.item,
+            location: 0,
+            bag_index: equipped.bag_index,
+            stack_count: 1,
+          )
+        },
+      ),
+    )
+  let assert Ok(health) = gear.max_health(tables:, gear: worn, level: 1)
     as "CreatureLevel row 1 is the client's"
   #(loadout, health)
 }

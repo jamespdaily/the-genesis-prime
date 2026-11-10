@@ -574,6 +574,14 @@ pub fn entry_answered(
       {
         Ok(world_entry.InTheWorld(entered:, effects:)) ->
           in_the_world(session:, now:, holder:, entered:, effects:)
+        Ok(world_entry.GearFault(text:)) ->
+          connection_state.told(
+            session:,
+            now:,
+            reason: LostUserServer,
+            level: step.LogError,
+            text:,
+          )
         Ok(world_entry.NotInTheWorld(character_id:, warning:)) ->
           case from {
             FromCharacterSelect ->

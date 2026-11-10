@@ -17,6 +17,10 @@
 ////   viewer's client shows the unit when its news arrives and drops it otherwise
 ////   (genesis_prime/game/connection/viewers). A viewer that arrives later is created
 ////   with the current values in its 0x262 (`frames.appearance_at`).
+//// - **A change of the worn items or of the level sets bases** (`rebased`): the
+////   gear's base values (7, 35, 36, 42 and a shield's four) are put in as the
+////   properties' bases, told in the same one 0x93a as any other change, and a base
+////   that comes out as it was is not told.
 //// - **The armor follows property 44** (`player_life.armor_followed`): a start tells the
 ////   maximum, then the armor (0x938 of stat 21 to the player and the news to each viewer);
 ////   an end tells the armor first and the maximum after (`ended`), since the client keeps
@@ -38,12 +42,14 @@ import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/life_effect
 import genesis_prime/game/connection/state.{type Session} as connection_state
+import genesis_prime/game/item_property
 import genesis_prime/game/player_life
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
+import genesis_prime/table/id.{type UnitProperty2Id}
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 
 /// A modifier of the player's own spell starts (genesis_prime/game/cast
 /// `CasterChangeStarts`).
@@ -53,11 +59,12 @@ pub fn started(
   source source: unit_properties.Source,
   modifier modifier: unit_properties.Modifier,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  changed(session:, now:, change: unit_properties.apply(
-    properties: _,
-    source:,
-    modifier:,
-  ))
+  changed(
+    session:,
+    now:,
+    change: unit_properties.apply(properties: _, source:, modifier:),
+    follow: player_life.properties_changed,
+  )
 }
 
 /// A modifier of the player's own spell ends (genesis_prime/game/cast
@@ -82,39 +89,70 @@ pub fn ended(
       let assert Some(entered) = connection_state.entered_of(session.status)
         as "the player is still held in the world: only its life changed"
       let #(session, lowered) =
-        changed_to(session:, now:, entered:, properties:, entries:)
+        changed_to(
+          session:,
+          now:,
+          entered:,
+          properties:,
+          entries:,
+          follow: player_life.properties_changed,
+        )
       #(session, list.append(armor, lowered))
     }
   }
 }
 
+/// The gear of the player's worn items changes the bases of its properties (an equip, an
+/// unequip, a swap, a delete or a level-up): the same told entries and life changes as a
+/// modifier's.
+pub fn rebased(
+  session session: Session,
+  now now: Now,
+  bases bases: List(#(UnitProperty2Id, Float)),
+  shield shield: Option(item_property.Shield),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  changed(
+    session:,
+    now:,
+    change: unit_properties.rebased(properties: _, bases:),
+    follow: fn(life, properties) {
+      player_life.gear_changed(life:, properties:, shield:)
+    },
+  )
+}
+
 /// The session with the properties changed by `change`, and for the entries it
-/// reports: the life taken to the new values, 0x93a to the player's client and the news
-/// to each viewer, then what the life writes. The player's `Entered` is updated once.
+/// reports: the life taken to the new values by `follow`, 0x93a to the player's client
+/// and the news to each viewer, then what the life writes. The player's `Entered` is
+/// updated once.
 fn changed(
   session session: Session,
   now now: Now,
   change change: fn(unit_properties.Properties) ->
     #(unit_properties.Properties, List(unit_properties.Changed)),
+  follow follow: fn(player_life.Life, unit_properties.Properties) ->
+    #(player_life.Life, List(player_life.Effect)),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   case connection_state.held_in_the_world(session.status) {
     None -> #(session, [])
     Some(#(_, entered)) -> {
       let #(properties, entries) = change(entered.properties)
-      changed_to(session:, now:, entered:, properties:, entries:)
+      changed_to(session:, now:, entered:, properties:, entries:, follow:)
     }
   }
 }
 
 /// The player's `entered` with its properties now `properties`, which changed the
-/// `entries`: held as they are when none changed, else the life taken to the new values
-/// and everything told.
+/// `entries`: held as they are when none changed, else the life taken to the new values by
+/// `follow` and everything told.
 fn changed_to(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
   properties properties: unit_properties.Properties,
   entries entries: List(unit_properties.Changed),
+  follow follow: fn(player_life.Life, unit_properties.Properties) ->
+    #(player_life.Life, List(player_life.Effect)),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   case entries {
     [] -> #(
@@ -124,8 +162,7 @@ fn changed_to(
       [],
     )
     [_, ..] -> {
-      let #(life, life_effects) =
-        player_life.properties_changed(life: entered.life, properties:)
+      let #(life, life_effects) = follow(entered.life, properties)
       let updated = world_entry.Entered(..entered, properties:, life:)
       let session =
         connection_state.with_entered(session:, change: fn(_) { updated })

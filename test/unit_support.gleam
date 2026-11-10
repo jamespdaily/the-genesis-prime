@@ -37,25 +37,18 @@ pub fn bare_loadout() -> Loadout {
 /// unit's bytes against the client's own need.
 pub const bare_health = 136
 
-/// The unit of the character with `bare_loadout` and `bare_health`.
+/// The unit of the character with `bare_loadout`.
 pub fn bare_unit(
   character character: Character,
   place place: Place,
   unit_id unit_id: Int,
   body body: List(ItemVisual),
 ) -> PlayerUnit {
-  player_unit.new(
-    character:,
-    place:,
-    unit_id:,
-    body:,
-    loadout: bare_loadout(),
-    max_health: bare_health,
-  )
+  player_unit.new(character:, place:, unit_id:, body:, loadout: bare_loadout())
 }
 
-/// The unit of the character with the loadout of its class and faction and the
-/// health that gives at its level, from the tables.
+/// The unit of the character with the loadout of its class and faction, from the
+/// tables.
 pub fn novice_unit(
   tables tables: table_store.Tables,
   character character: Character,
@@ -70,8 +63,5 @@ pub fn novice_unit(
       faction_id: character.faction_id,
     )
     as "the tables hold a Novice set for the class and faction"
-  let assert Ok(max_health) =
-    loadout.max_health(tables:, loadout:, level: character.level)
-    as "the tables hold a CreatureLevel row for the level"
-  player_unit.new(character:, place:, unit_id:, body:, loadout:, max_health:)
+  player_unit.new(character:, place:, unit_id:, body:, loadout:)
 }

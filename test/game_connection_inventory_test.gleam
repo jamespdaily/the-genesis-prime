@@ -22,22 +22,37 @@
 ////   the client is told 0x036A reason 8 (LostUserServer), as for any server fault.
 
 import character_support
+import character_tables
 import connection_rule_support as support
 import experience_support
 import fixture_tables
 import game_connection_support
-import genesis_prime/client_connection.{AskStore, FromMap, FromStore}
+import genesis_prime/client_connection.{
+  type Request, AskStore, FromMap, FromStore, LookChanged, PropertiesChanged,
+}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/gear
 import genesis_prime/message/bit_stream
 import genesis_prime/message/disconnect_reason.{LostUserServer}
+import genesis_prime/message/float32
 import genesis_prime/message/item_action_failed.{ItemActionFailed}
+import genesis_prime/message/item_delete
 import genesis_prime/message/item_move
 import genesis_prime/message/item_moved.{ItemMoved}
 import genesis_prime/message/item_place
 import genesis_prime/message/item_split.{ItemSplit}
+import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
+import genesis_prime/message/player_health
 import genesis_prime/message/send_chat_line.{SendChatLine}
+import genesis_prime/message/unit_item_visuals_changed
+import genesis_prime/message/unit_properties_changed
+import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
+import genesis_prime/message/unit_stat_change
+import genesis_prime/message/unit_stat_changed
+import genesis_prime/message/unit_stat_shield
 import genesis_prime/step.{
-  EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning, OwnEvent,
+  type ConnectionStep, EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning,
+  OwnEffect, OwnEvent, StartTimer, TimerId, Unwatch, Watch,
 }
 import genesis_prime/store.{
   type HeldItem, AccountId, CharacterId, ForItems, HeldItem, ItemMade, ItemMove,
@@ -114,8 +129,9 @@ pub fn a_move_answer_comes_before_the_frames_after_it_test() -> Nil {
       taken:,
       outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
     )
-  assert game_connection_support.written_ids(answered) == [0x0569, 0x01C2]
-    as "opcode.0x569 then opcode.0x1c2: the move's answer goes out first, then the held line is taken and answered"
+  assert game_connection_support.written_ids(answered)
+    == [0x0569, 0x0933, 0x093A, 0x092F, 0x01C2]
+    as "opcode.0x569, then the chest's look, properties and capped health (health_above_the_new_maximum_is_capped_and_told_test), then opcode.0x1c2: the move's answer goes out first, then the held line is taken and answered"
   let assert [first, ..] = game_connection_support.written(answered)
   assert item_moved.decode(first.body)
     == Ok(ItemMoved(item_guid: 1, place: 256))
@@ -378,9 +394,355 @@ pub fn an_equip_is_checked_against_the_entered_character_test() -> Nil {
       taken:,
       outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
     )
-  let assert [moved] = game_connection_support.written(answered)
-    as "the saved move is answered with one frame"
-  assert moved.message_id == 0x0569
+  let worn_chest =
+    gear.of_items(tables: fixture_tables.shared(), items: [
+      HeldItem(
+        item_guid: 9,
+        item2_id: Item2Id(level_3_chest),
+        location: 0,
+        bag_index: 0,
+        stack_count: 1,
+      ),
+    ])
+  assert list.length(worn_chest.unread) == 1
+    as "0x1404445d0: the level 3 chest has a budget or a stat, which the properties reader refuses (issue 626): it is worn and shown and gives no properties"
+  assert game_connection_support.written_ids(answered) == [0x0569, 0x0933]
+    as "the move's frame, then the look with the chest shown; no 0x93a, since the chest gives no properties and leaves the gear's as they were"
+  let assert [moved, ..] = game_connection_support.written(answered)
   assert item_moved.decode(moved.body) == Ok(ItemMoved(item_guid: 9, place: 0))
     as "opcode.0x569: guid 9 at location 0, bag index 0, which is 0"
+}
+
+// ---- the gear after a worn item changes ----
+//
+// The Engineer of faction 166 (`game_connection_support.world_character`) wears the
+// Novice set of `gear_test`: its sums are Base Health 600 (the chest's quarter is 150, the
+// boots' three twentieths of the five slot modifiers 90), Armor 250 (62.5 and 37.5),
+// Assault Rating 203.0625 (the chest's 9.0) and the shield's four properties. A maximum
+// health is CreatureLevel row 1's 135.97 and the worn Base Health, rounded: 736 worn and
+// 586 without the chest (`player.level1_base_health`). The look names the empty slot with
+// display 0 (`opcode.0x933.empty_display`); the chest's ItemSlot is 1, the boots' 5, and
+// the Engineer of faction 166 shows display 3842 on the chest (`novice_tables.worn_displays`).
+
+/// The 0x93a entry of a property whose base and value are one number.
+fn entry(property property: Int, number number: Float) -> UnitProperty {
+  UnitProperty(
+    property_id: property,
+    base: float32.to_bits(number),
+    value: float32.to_bits(number),
+  )
+}
+
+/// The look the player's own client is told: slot `slot` with `display`, colour set 0 and
+/// dye 0.
+fn slot(slot slot: Int, display display: Int) -> ItemVisual {
+  ItemVisual(slot:, display_id: display, item_color_set_id: 0, dye: 0)
+}
+
+/// The 0x933 the step writes: its visuals, after checking it names the player's unit.
+fn looks_written(
+  taken taken: ConnectionStep(Request),
+) -> List(List(ItemVisual)) {
+  list.map(
+    game_connection_support.decoded(
+      game_connection_support.written(taken),
+      0x0933,
+      unit_item_visuals_changed.decode,
+    ),
+    fn(message) {
+      assert message.unit_id == game_connection_support.own_unit_id
+      message.item_visuals
+    },
+  )
+}
+
+/// The entries of each 0x93a the step writes, after checking it names the player's unit.
+fn properties_written(
+  taken taken: ConnectionStep(Request),
+) -> List(List(UnitProperty)) {
+  list.map(
+    game_connection_support.decoded(
+      game_connection_support.written(taken),
+      0x093A,
+      unit_properties_changed.decode,
+    ),
+    fn(message) {
+      assert message.unit_id == game_connection_support.own_unit_id
+      message.properties
+    },
+  )
+}
+
+/// The health each 0x92f the step writes gives.
+fn health_written(taken taken: ConnectionStep(Request)) -> List(Int) {
+  list.map(
+    game_connection_support.decoded(
+      game_connection_support.written(taken),
+      0x092F,
+      player_health.decode,
+    ),
+    fn(message) { message.health },
+  )
+}
+
+/// The player in the world, watched by the viewers 2 and 3, that has asked the store for
+/// `message` and is given its answer: the saved step.
+fn saved_after(
+  state state: game_connection.State,
+  message message: BitArray,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = game_connection_support.read(state, message)
+  game_connection_support.answer(
+    state:,
+    taken:,
+    outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
+  )
+}
+
+fn watched() -> game_connection.State {
+  game_connection_support.watched_by(
+    state: game_connection_support.in_world(),
+    viewers: [2, 3],
+  )
+}
+
+/// The Engineer's properties without its chest, as the three the chest gives are worked
+/// out: Base Health 586, Armor 187.5 and Assault Rating 194.0625.
+fn without_the_chest() -> List(UnitProperty) {
+  [
+    entry(property: 7, number: 586.0),
+    entry(property: 35, number: 194.0625),
+    entry(property: 42, number: 187.5),
+  ]
+}
+
+/// The Engineer's properties with its chest: 736, 203.0625 and 250.
+fn with_the_chest() -> List(UnitProperty) {
+  [
+    entry(property: 7, number: 736.0),
+    entry(property: 35, number: 203.0625),
+    entry(property: 42, number: 250.0),
+  ]
+}
+
+pub fn unequipping_the_chest_sends_0x569_then_0x933_then_0x93a_and_tells_each_viewer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, answered) =
+    saved_after(state: watched(), message: chest_unequipped())
+  assert list.take(game_connection_support.written_ids(answered), 3)
+    == [0x0569, 0x0933, 0x093A]
+    as "record D: the move's own frame, then the look, then the properties"
+  assert looks_written(taken: answered) == [[slot(slot: 1, display: 0)]]
+    as "opcode.0x933.empty_display: the chest's slot 1 is emptied"
+  assert properties_written(taken: answered) == [without_the_chest()]
+    as "opcode.0x93a: the three properties the chest gave, in property order, base and value as worked out"
+  list.each([2, 3], fn(viewer) {
+    let told = game_connection_support.news_told(taken: answered, viewer:)
+    assert list.take(told, 2)
+      == [
+        LookChanged(item_visuals: [slot(slot: 1, display: 0)]),
+        PropertiesChanged(properties: without_the_chest()),
+      ]
+      as "opcode.0x93a.other_unit: each viewer is told the same look and entries"
+  })
+}
+
+pub fn equipping_the_chest_back_restores_the_entry_properties_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = saved_after(state: watched(), message: chest_unequipped())
+  let #(_, answered) = saved_after(state:, message: chest_equipped())
+  assert game_connection_support.written_ids(answered)
+    == [0x0569, 0x0933, 0x093A]
+    as "the move's frame, the look, the properties; the health stays below the raised maximum, which tells nothing"
+  assert looks_written(taken: answered) == [[slot(slot: 1, display: 3842)]]
+    as "the chest's display comes back on slot 1"
+  assert properties_written(taken: answered) == [with_the_chest()]
+    as "the values the player's own 0x262 listed at entry (player.level1_gear_properties)"
+}
+
+pub fn health_above_the_new_maximum_is_capped_and_told_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, answered) =
+    saved_after(state: watched(), message: chest_unequipped())
+  assert health_written(taken: answered) == [586]
+    as "a player at full health, 736, is capped at the new maximum, 586, by the health path"
+  list.each([2, 3], fn(viewer) {
+    assert list.contains(
+      game_connection_support.news_told(taken: answered, viewer:),
+      client_connection.Health(health: 586, dead: False),
+    )
+      as "each viewer is told the capped health"
+  })
+}
+
+/// A 0x182 of the shield from worn slot 15 to inventory slot 0, inside 0x038C.
+fn shield_unequipped() -> BitArray {
+  let assert Ok(body) =
+    item_move.encode(item_move.ItemMove(
+      from: item_place.ItemPlace(location: 0, bag_index: 15),
+      to: item_place.ItemPlace(location: 1, bag_index: 0),
+    ))
+  game_connection_support.world_message(message_id: 0x0182, body:)
+}
+
+/// A 0x182 of inventory slot 0 to the worn shield slot 15, inside 0x038C.
+fn shield_equipped() -> BitArray {
+  let assert Ok(body) =
+    item_move.encode(item_move.ItemMove(
+      from: item_place.ItemPlace(location: 1, bag_index: 0),
+      to: item_place.ItemPlace(location: 0, bag_index: 15),
+    ))
+  game_connection_support.world_message(message_id: 0x0182, body:)
+}
+
+pub fn a_shield_put_back_below_its_maximum_starts_the_reboot_timer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = saved_after(state: watched(), message: shield_unequipped())
+  let #(_, answered) = saved_after(state:, message: shield_equipped())
+  assert list.filter_map(support.effects_of(answered), fn(effect) {
+      case effect {
+        OwnEffect(StartTimer(timer:, after_ms:)) -> Ok(#(timer, after_ms))
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          Error(Nil)
+      }
+    })
+    == [#(TimerId(9), 5125)]
+    as "player_life's rule for a shield below its maximum (shield_rebooted): the shield worn again is at 0 of 450, so ShieldRebootTime 5125 of the shield item starts its clock"
+}
+
+pub fn removing_the_shield_sets_stat_20_to_0_and_its_properties_to_the_defaults_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, answered) =
+    saved_after(state: watched(), message: shield_unequipped())
+  assert properties_written(taken: answered)
+    == [
+      [
+        entry(property: 41, number: 0.0),
+        entry(property: 175, number: 0.0),
+        entry(property: 176, number: 0.25),
+        entry(property: 178, number: 2500.0),
+      ],
+    ]
+    as "UnitProperty2's defaultValue of ShieldCapacityMax 0, ShieldMitigationMax 0, ShieldRegenPct 0.25 and ShieldRebootTime 2500, where the shield's own 450, 0.625, 0.15 and 5125 were"
+  assert list.map(
+      game_connection_support.decoded(
+        game_connection_support.written(answered),
+        0x0938,
+        unit_stat_changed.decode,
+      ),
+      fn(message) { message.change },
+    )
+    == [unit_stat_change.Shield(unit_stat_shield.UnitStatShield(value: 0))]
+    as "opcode.0x938: the full shield of 450 is cut to the maximum 0, stat 20"
+}
+
+/// A 0x149 of the boots at worn slot 4, inside 0x038C.
+fn boots_deleted() -> BitArray {
+  let assert Ok(body) =
+    item_delete.encode(
+      item_delete.ItemDelete(place: item_place.ItemPlace(
+        location: 0,
+        bag_index: 4,
+      )),
+    )
+  game_connection_support.world_message(
+    message_id: item_delete.message_id,
+    body:,
+  )
+}
+
+pub fn deleting_a_worn_item_sends_0x148_then_0x933_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, answered) = saved_after(state: watched(), message: boots_deleted())
+  assert list.take(game_connection_support.written_ids(answered), 3)
+    == [0x0148, 0x0933, 0x093A]
+    as "record B: the delete's 0x148, then the look, then the properties"
+  assert looks_written(taken: answered) == [[slot(slot: 5, display: 0)]]
+    as "opcode.0x933.empty_display: the boots' slot 5 is emptied"
+  let assert [entries] = properties_written(taken: answered)
+  assert list.map(entries, fn(entry) { entry.property_id }) == [7, 35, 42]
+    as "the boots' Base Health, Assault Rating and Armor"
+  assert list.filter(entries, fn(entry) { entry.property_id != 35 })
+    == [entry(property: 7, number: 646.0), entry(property: 42, number: 212.5)]
+    as "the boots hold 0.75 of the five slot modifiers' 5.0: 90 of the 600 and 37.5 of the 250"
+}
+
+pub fn a_worn_item_move_the_store_has_not_answered_ends_the_connection_and_the_next_entry_builds_from_the_saved_items_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) =
+    game_connection_support.read(
+      game_connection_support.in_world(),
+      chest_unequipped(),
+    )
+  let #(state, answered) =
+    game_connection_support.answer(state:, taken:, outcome: NoAnswerInTime)
+  assert game_connection_support.written_ids(answered) == []
+    as "no 0x569, 0x933 or 0x93a: nothing says whether the chest moved, so the look and the properties stay as they are"
+  let #(_, saved) =
+    game_connection_support.answer(
+      state:,
+      taken: answered,
+      outcome: game_connection_support.place_saved(),
+    )
+  assert game_connection_support.disconnect(
+      saved,
+      game_connection_support.keyed(),
+    )
+    == LostUserServer
+    as "the connection ends with 0x036A reason 8"
+  // The store never saved the move, so the next entry holds the chest still.
+  let character = game_connection_support.world_character()
+  let #(_, entered) =
+    world_entry_support.entry(tables: character_tables.shared(), character:)
+  assert entered.gear.properties.armor == 250.0
+    as "the next entry builds its gear from the items the store holds: the chest is worn, so the Engineer's armor is 250"
+}
+
+pub fn two_moves_of_worn_items_in_a_row_wait_behind_each_other_and_rebuild_the_gear_after_each_save_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, first_ask) =
+    game_connection_support.read(
+      game_connection_support.in_world(),
+      chest_unequipped(),
+    )
+  // The boots (worn slot 4) go to the second bag slot while the first move's ask is out.
+  let #(state, held) = game_connection_support.read(state, boots_unequipped())
+  assert support.writes(held) == [] && support.asked(held) == None
+    as "step.EffectsThenAsk: the second move is held while the first's ask is out"
+  let #(state, first_saved) =
+    game_connection_support.answer(
+      state:,
+      taken: first_ask,
+      outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
+    )
+  assert game_connection_support.written_ids(first_saved)
+    == [0x0569, 0x0933, 0x093A, 0x092F]
+    as "the first save's answer goes out with the look, the properties and the capped health (736 to 586) of the gear without the chest only"
+  assert properties_written(taken: first_saved) == [without_the_chest()]
+    as "the chest's three entries: the boots are still worn when the first is saved"
+  assert support.asked(first_saved) != None
+    as "the held second move is taken after the first's answer and asks the store"
+  let #(_, second_saved) =
+    game_connection_support.answer(
+      state:,
+      taken: first_saved,
+      outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
+    )
+  assert game_connection_support.written_ids(second_saved)
+    == [0x0569, 0x0933, 0x093A, 0x092F]
+    as "the second save's answer goes out with its own look, properties and capped health (586 to 496)"
+  assert looks_written(taken: second_saved) == [[slot(slot: 5, display: 0)]]
+    as "opcode.0x933.empty_display: the boots' slot 5 is emptied"
+  let assert [entries] = properties_written(taken: second_saved)
+  assert list.filter(entries, fn(entry) { entry.property_id != 35 })
+    == [entry(property: 7, number: 496.0), entry(property: 42, number: 150.0)]
+    as "the gear after both moves: the chest's 150 and the boots' 90 off the 600 (736 less 240), and their 62.5 and 37.5 off the armor 250"
+}
+
+/// A 0x182 of the boots from worn slot 4 to inventory slot 1, inside 0x038C.
+fn boots_unequipped() -> BitArray {
+  game_connection_support.item_moved_message(
+    from: item_place.ItemPlace(location: 0, bag_index: 4),
+    to: item_place.ItemPlace(location: 1, bag_index: 1),
+  )
 }

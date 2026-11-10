@@ -12,15 +12,28 @@
 ////             the store unavailable, not running, ended or past its deadline
 ////                                 ─▶ the connection ends with reason 8
 //// ```
+////
+//// - **The held items at location 0 are the only source of the player's gear**
+////   (genesis_prime/game/gear): after an answer the worn items are worked out again,
+////   and when they give other gear the wearer and each viewer are told the new look
+////   and the new properties after the move's own frames (`regeared`). The move's
+////   frames, 0x569, 0x568 and 0x148, change no unit's model, so the 0x933 is always
+////   ours to send (`opcode.0x569.model_unchanged`, `opcode.0x148.model_unchanged`);
+////   the Character window re-maps its equipment on its own event
+////   (`lua.Character.MapEquipment`), so the order of the 0x569 and the 0x93a does not
+////   change what it shows.
 
 import genesis_prime/client_connection.{type Answer, Continue, FromStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/character_state
+import genesis_prime/game/connection/look as connection_look
 import genesis_prime/game/connection/prerequisite_player
+import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/state.{
   type Session, InWorld, MovingItem, Session,
 } as connection_state
 import genesis_prime/game/equip_requirement
+import genesis_prime/game/gear
 import genesis_prime/game/inventory
 import genesis_prime/game/movement
 import genesis_prime/game/reward_property
@@ -32,7 +45,10 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{ForItems}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/player_unit
+import gleam/bool
 import gleam/list
+import gleam/option.{Some}
 
 /// The client's 0x182, 0x17D or 0x149, taken from inside 0x038C with the player
 /// in the world: a refusal is written and the player stays in the world; an
@@ -123,15 +139,15 @@ pub fn move_answered(
     step.Answer(FromStore(ForItems(answer))) -> {
       let #(items, effects) =
         inventory.answered(items: entered.items, moving:, answer:)
-      let session =
-        Session(
-          ..session,
-          status: InWorld(
-            holder:,
-            entered: world_entry.Entered(..entered, items:),
-          ),
-        )
-      Continue(session, effects_of(session:, effects:))
+      let entered = world_entry.Entered(..entered, items:)
+      let session = Session(..session, status: InWorld(holder:, entered:))
+      regeared(
+        session:,
+        now:,
+        holder:,
+        entered:,
+        moved: effects_of(session:, effects:),
+      )
     }
     step.StoppedWaiting ->
       connection_state.stopped(
@@ -171,6 +187,62 @@ pub fn move_answered(
         text: inventory.not_done(moving.change)
           <> ": the answer is none an item change asked for",
       )
+  }
+}
+
+/// The player after its items changed, `entered` holding the items now: the `moved`
+/// frames are written first, then, when the worn items give other gear than `entered`
+/// holds, the look and the properties follow it: 0x933 and `LookChanged` for the slots
+/// that changed, one 0x93a and `PropertiesChanged` for the properties, then the life's
+/// own writes, and a warning for each worn item newly read as giving nothing.
+fn regeared(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  moved moved: List(Effect(ConnectionEffect(client_connection.Request))),
+) -> client_connection.Handled(Session) {
+  let tables = session.settings.tables
+  let worn = gear.of_items(tables:, items: entered.items)
+  use <- bool.guard(
+    when: worn == entered.gear,
+    return: Continue(session, moved),
+  )
+  let level = connection_state.level_of(entered:)
+  case gear.bases(tables:, gear: worn, level:) {
+    Error(error) ->
+      lost(session:, now:, holder:, entered:, text: gear.describe(error:))
+    Ok(bases) -> {
+      let unit =
+        player_unit.with_gear(
+          record: entered.unit,
+          replacing: entered.gear.visuals,
+          item_visuals: worn.visuals,
+          bases:,
+          shield: gear.shield_capacity(gear: worn),
+        )
+      let warnings =
+        list.map(gear.warnings(gear: worn, known: Some(entered.gear)), fn(text) {
+          connection_state.log(session:, level: step.LogWarning, text:)
+        })
+      let session =
+        connection_state.with_entered(session:, change: fn(entered) {
+          world_entry.Entered(..entered, gear: worn, unit:)
+        })
+      let #(session, look_told) =
+        connection_look.rebased(session:, base: unit.tail.item_visuals)
+      let #(session, properties_told) =
+        connection_properties.rebased(
+          session:,
+          now:,
+          bases:,
+          shield: worn.properties.shield,
+        )
+      Continue(
+        session,
+        list.flatten([moved, look_told, properties_told, warnings]),
+      )
+    }
   }
 }
 

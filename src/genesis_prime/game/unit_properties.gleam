@@ -52,6 +52,10 @@
 //// - **A change reports the property's base and value** as the 0x93a carries them, for
 ////   the properties whose value changed, in property order, so a modifier that leaves the
 ////   value as it was reports nothing.
+//// - **A change of the worn items or of the level sets bases** (`rebased`): the gear's
+////   Base Health, ratings, armor and shield properties (genesis_prime/game/gear `bases`)
+////   replace the held bases as 32-bit floats, a live modifier is applied to them again,
+////   and the entries whose base or value moved are reported as a modifier's are.
 //// - **A modifier is read by a rule only for the properties the rules name.** The
 ////   constants below name them; a modifier on any other property is held and sent, and
 ////   no rule reads it (for example FallingDamageMultiplier, 134: falling damage is not
@@ -154,8 +158,14 @@ pub const healing_multiplier_incoming = UnitProperty2Id(163)
 /// ShieldMitigationMax (175): the most of a blow the shield takes.
 pub const shield_mitigation_max = UnitProperty2Id(175)
 
+/// ShieldRegenPct (176): the share of its capacity the shield regenerates a tick.
+pub const shield_regen_percent = UnitProperty2Id(176)
+
 /// ShieldTickTime (177): the milliseconds between the shield's regeneration ticks.
 pub const shield_tick_time = UnitProperty2Id(177)
+
+/// ShieldRebootTime (178): the milliseconds a broken shield takes to come back.
+pub const shield_reboot_time = UnitProperty2Id(178)
 
 /// A change a spell's row makes to the player's properties for its time.
 pub type Modifier {
@@ -247,7 +257,9 @@ const named = [
   healing_multiplier_outgoing,
   healing_multiplier_incoming,
   shield_mitigation_max,
+  shield_regen_percent,
   shield_tick_time,
+  shield_reboot_time,
 ]
 
 const defaults_key: table_store.DerivedKey(List(#(UnitProperty2Id, Float))) =
@@ -382,6 +394,7 @@ pub fn apply(
   recomputed(
     properties:,
     live: list.append(properties.live, [Live(source:, modifier:)]),
+    rebased: dict.new(),
   )
 }
 
@@ -398,8 +411,29 @@ pub fn remove(
       recomputed(
         properties:,
         live: list.filter(properties.live, fn(live) { live.source != source }),
+        rebased: dict.new(),
       )
   }
+}
+
+/// The properties with each base in `bases` set, the live modifiers applied to it again,
+/// and the entries whose base or value changed, in property order: the gear's change
+/// after a worn item moves or the level rises. A base that is already as given reports
+/// nothing. Each base is taken as the 32-bit float the player's 0x262 lists, the
+/// number the properties held already are, so a base that only has more digits than
+/// 32 bits hold is not a change.
+pub fn rebased(
+  properties properties: Properties,
+  bases bases: List(#(UnitProperty2Id, Float)),
+) -> #(Properties, List(Changed)) {
+  recomputed(
+    properties:,
+    live: properties.live,
+    rebased: list.map(bases, fn(entry) {
+      #({ entry.0 }.value, float_of(bits: float32.to_bits(entry.1)))
+    })
+      |> dict.from_list,
+  )
 }
 
 /// The property a modifier changes: the one a Change is on and the one a Conversion
@@ -415,23 +449,32 @@ pub fn changed_property(modifier modifier: Modifier) -> UnitProperty2Id {
 /// from the bases in two passes, with the entries whose value changed, in property
 /// order: first each Change in start order, then each Conversion in start order,
 /// which adds its share of the source's value as the values stand at that point. Only
-/// the properties a modifier held before or holds now are worked out; any other keeps its
-/// value.
+/// the properties a modifier held before or holds now, and those of `rebased`, which
+/// are the bases set in place of the held ones, are worked out; any other keeps its
+/// value. A property of `rebased` whose base moved is reported though its value did not.
 fn recomputed(
   properties properties: Properties,
   live live: List(Live),
+  rebased rebased: Dict(Int, Float),
 ) -> #(Properties, List(Changed)) {
   let touched =
     list.append(properties.live, live)
     |> list.map(fn(held) { changed_property(modifier: held.modifier).value })
+    |> list.append(dict.keys(rebased))
     |> list.unique
     |> list.sort(int.compare)
+  let base_of = fn(id) {
+    case dict.get(rebased, id) {
+      Ok(set) -> set
+      Error(Nil) -> base(properties:, property: UnitProperty2Id(id))
+    }
+  }
   let level = int.to_float(properties.level)
   let changed =
     list.map(touched, fn(id) {
       let property = UnitProperty2Id(id)
       let after =
-        list.fold(live, base(properties:, property:), fn(x, held) {
+        list.fold(live, base_of(id), fn(x, held) {
           case held.modifier {
             Change(property: on, multiplier:, flat:, per_level:, ..)
               if on == property
@@ -463,19 +506,18 @@ fn recomputed(
       let property = UnitProperty2Id(id)
       let assert Ok(after) = dict.get(converted, id)
         as "every touched property was worked out"
-      case after == value(properties:, property:) {
+      case
+        after == value(properties:, property:)
+        && base_of(id) == base(properties:, property:)
+      {
         True -> Error(Nil)
-        False ->
-          Ok(Changed(
-            property:,
-            base: base(properties:, property:),
-            value: after,
-          ))
+        False -> Ok(Changed(property:, base: base_of(id), value: after))
       }
     })
   #(
     Properties(
       ..properties,
+      base: dict.merge(properties.base, rebased),
       value: dict.merge(properties.value, converted),
       live:,
     ),

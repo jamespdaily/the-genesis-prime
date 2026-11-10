@@ -12,12 +12,12 @@
 ////   a kind 14 command with the saved yaw, pitch and roll (0x1404586e0,
 ////   0x140715350); 0.5 is the 32 bits 0x3F000000, -0.25 is 0xBE800000 and 1.5
 ////   is 0x3FC00000 (IEEE 754 binary32).
-//// - The health: a unit holds the maximum health its loadout gives
-////   (`genesis_prime/game/loadout.max_health`), as stat 0 and as property 7
-////   (Base Health); the vector's 136 is the client's level-1 creature Base
-////   Health (0x1404585c0), which `unit_support.bare_health` stands in for here.
-////   What a Novice set's gear adds (ratings, armor, shield) is
-////   `world_entry_loadout_test`'s and `step_b_unit_test`'s.
+//// - The health: the unit `create` makes holds no health and no gear property; the
+////   health as stat 0 (`with_integer_stat`) and the gear as properties 7 (Base Health)
+////   and the rest (`with_gear`) are put in by the connection's entry. The vector's 136
+////   is the client's level-1 creature Base Health (0x1404585c0), which
+////   `unit_support.bare_health` stands in for here. What a Novice set's gear adds
+////   (ratings, armor, shield) is `world_entry_loadout_test`'s and `step_b_unit_test`'s.
 //// - The level: stat 10 of the unit's stats is its level, and a unit created
 ////   without it is level 1 (0x140458140, 0x1404543c1).
 
@@ -31,11 +31,11 @@ import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/store.{Character, CharacterId, NameStands}
-import genesis_prime/table/id.{ClassId, RaceId}
+import genesis_prime/table/id.{ClassId, RaceId, UnitProperty2Id}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/unit_fields
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import message_support
 import owned_test
 import place_support
@@ -71,6 +71,14 @@ pub fn the_unit_of_the_live_character_is_the_clients_1120_bits_test() -> Nil {
       ),
       realm_id: 1,
     )
+  let unit =
+    player_unit.with_gear(
+      record: unit,
+      replacing: [],
+      item_visuals: [],
+      bases: [#(UnitProperty2Id(7), 136.0)],
+      shield: None,
+    )
   let assert Ok(body) =
     unit_create_player.encode(
       UnitCreatePlayer(
@@ -79,11 +87,10 @@ pub fn the_unit_of_the_live_character_is_the_clients_1120_bits_test() -> Nil {
           ..unit.tail,
           stats: [unit_fields.integer_stat(stat_id: 0, value: 136)],
           movement_commands: list.take(unit.tail.movement_commands, 1),
-          properties: list.take(unit.tail.properties, 1),
         ),
       ),
     )
-    as "the unit encodes, with the vector's one stat, its one property and its one kind 2 command: the vector holds no stat 10, no kind 14 and no rating or armor property (the bare loadout's gear gives 0 of them), and those are tested apart"
+    as "the unit encodes, with the vector's one stat, its one property and its one kind 2 command: the vector holds no stat 10, no kind 14 and no rating or armor property, and those are tested apart"
   assert body
     == message_support.hex(
       "0100000054000000000000004000e02105f0068007f006000230054007f006d006000730074007f006e006500630020000000000000000000000000000000001800800000000000010c44cfb639168913c70dfdffd908003000084210000842100000000008053e0140000000000000000000000004000000000000000000040000000000000000000000000",
@@ -149,19 +156,31 @@ pub fn the_unit_carries_the_visuals_and_bones_it_is_given_and_the_path_never_rea
   assert unit.unit_id == 9 && unit.realm_id == 4
 }
 
-pub fn the_unit_holds_the_maximum_health_it_was_made_with_as_stat_0_and_base_health_test() -> Nil {
+pub fn create_writes_no_gear_and_the_connection_puts_in_health_as_stat_0_and_base_health_as_property_7_test() -> Nil {
   use <- owned_test.run(10_000)
   let unit =
     player_unit.create(
-      unit: player_unit.new(
+      unit: unit_support.bare_unit(
         character: roxo(),
         place: place_support.live_character_place(),
         unit_id: 1,
         body: [],
-        loadout: unit_support.bare_loadout(),
-        max_health: 777,
       ),
       realm_id: 1,
+    )
+  assert unit.tail.properties == []
+    as "create writes no property: the gear's come only through with_gear"
+  let unit =
+    player_unit.with_gear(
+      record: player_unit.with_integer_stat(
+        record: unit,
+        stat_id: unit_fields.health_stat,
+        value: 777,
+      ),
+      replacing: [],
+      item_visuals: [],
+      bases: [#(UnitProperty2Id(7), 777.0)],
+      shield: None,
     )
   assert list.contains(
     unit.tail.stats,
@@ -196,24 +215,31 @@ pub fn the_unit_carries_its_characters_level_as_stat_10_test() -> Nil {
     unit_fields.integer_stat(stat_id: 10, value: 3),
   )
     as "0x140458140: stat 10, in the integer form, is the unit's level; a unit created without it is level 1 (0x1404543c1), so a level 3 character needs it"
-  assert list.contains(
-    unit.tail.stats,
-    unit_fields.integer_stat(stat_id: 0, value: 136),
-  )
-    as "stat 0 stays the health that keeps the unit alive (0x140457bc5)"
+  assert unit.tail.stats == [unit_fields.integer_stat(stat_id: 10, value: 3)]
+    as "create writes the level and no other stat: the health is the connection's (with_integer_stat)"
 }
 
 pub fn the_players_own_record_can_show_less_health_than_the_maximum_test() -> Nil {
   use <- owned_test.run(10_000)
   let unit =
-    player_unit.create(
-      unit: unit_support.bare_unit(
-        character: roxo(),
-        place: place_support.live_character_place(),
-        unit_id: 1,
-        body: [],
+    player_unit.with_gear(
+      record: player_unit.with_integer_stat(
+        record: player_unit.create(
+          unit: unit_support.bare_unit(
+            character: roxo(),
+            place: place_support.live_character_place(),
+            unit_id: 1,
+            body: [],
+          ),
+          realm_id: 1,
+        ),
+        stat_id: unit_fields.health_stat,
+        value: unit_support.bare_health,
       ),
-      realm_id: 1,
+      replacing: [],
+      item_visuals: [],
+      bases: [#(UnitProperty2Id(7), 136.0)],
+      shield: None,
     )
   let hurt =
     player_unit.with_integer_stat(
@@ -235,5 +261,5 @@ pub fn the_players_own_record_can_show_less_health_than_the_maximum_test() -> Ni
       value: unit_support.bare_health,
     )
     == unit
-    as "at the maximum it is the record the unit creates"
+    as "at the health it already shows the record is the same"
 }
