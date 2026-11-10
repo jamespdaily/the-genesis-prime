@@ -31,7 +31,10 @@ import genesis_prime/store.{
 import genesis_prime/table/id.{Item2Id}
 import gleam/list
 import gleam/option.{None, Some}
+import message_support
 import owned_test
+import planted_table.{Integer}
+import quest_support
 import quest_turn_in_support
 import quest_walker_support
 
@@ -162,6 +165,50 @@ pub fn turned_in_rewards_are_written_before_the_experience_and_the_state_test() 
   assert game_connection_support.written_ids(answered)
     == [0x0111, 0x0111, 0x01AC, 0x0919, 0x035C]
     as "an item added for each stack made, then the experience, then the credits held, then the quest's state"
+}
+
+pub fn reward_items_advance_the_held_item_objectives_of_other_quests_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 5859 gives Item2 81917 (one) and 29661. Quest 1854, taken and holding none, has a
+  // type 4 objective (1959, count 3) whose data is changed to 81917, the way 16 Item2s are
+  // both an item reward and the data of a type 4 objective in the client's tables.
+  use tables <- quest_turn_in_support.with_changes(changes: [
+    quest_turn_in_support.receiving(5859),
+    #("QuestObjective", 1959, [#("data", Integer(81_917))]),
+  ])
+  let state =
+    quest_walker_support.in_world_with_walker(tables:, quests: [
+      quest_turn_in_support.achieved(quest_id: 5859),
+      quest_support.accepted(quest_id: 1854, progress: [0]),
+    ])
+  let #(state, taken) =
+    game_connection_support.read(state:, bytes: turn_in_of(quest_id: 5859))
+  let assert TurnInQuest(placed:, ..) = asked_turn_in(taken:)
+  let made =
+    list.index_map(placed, fn(one, index) {
+      let assert [NewStack(location:, bag_index:, stack_count:)] = one.make
+        as "one stack of each, the Item2s' counts being 1"
+      HeldItem(
+        item_guid: 900 + index,
+        item2_id: one.item2_id,
+        location:,
+        bag_index:,
+        stack_count:,
+      )
+    })
+  let #(_, answered) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForItems(TurnedIn(credits: 145, made:)))),
+    )
+  assert game_connection_support.written_ids(answered)
+    == [0x0111, 0x0111, 0x01AC, 0x0919, 0x035C, 0x0361]
+    as "the turn-in's frames, then the progress of the other quest the reward item counts"
+  let assert Ok(progress) = list.last(game_connection_support.written(answered))
+  assert progress.body
+    == message_support.packed([#(15, 1854), #(32, 0), #(32, 1)])
+    as "opcode.0x361: quest 1854's objective 0 holds 1 of 3, the stack of 81917 the reward made"
 }
 
 pub fn turn_in_not_saved_leaves_the_quest_achieved_test() -> Nil {

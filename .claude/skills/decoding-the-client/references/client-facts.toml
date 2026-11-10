@@ -13532,6 +13532,12 @@ proof = "0x1405542da mov edx,0x212; 0x14055430c datafloat0; 0x14055431e call 0x1
 grade = "sure"
 name = "CalcQuestRewardCash"
 
+["0x1405535d0"]
+statement = "A quest's credits as an integer: Quest2.reward_cashOverride when above 0; else, when the Quest2Difficulty row of Quest2.quest2DifficultyId exists, the truncation of 0x1405542b0(conLevel, cashRewardMultiplier); else 0 (the override's own value, which is not above 0)."
+proof = "Saved C 0x1405535d0 (02ce70b035ab663d): the quest record's word at +0x44 (reward_cashOverride) is returned when it is 1 or more; else 0x1405535ee call 0x14022aec0 finds the Quest2Difficulty row from the word at +0x11c, none returns the override as it is; else 0x140553607 call 0x1405542b0 with conLevel (+0x10) and the row's word at +8 (cashRewardMultiplier), and the float result is converted to an integer by truncation. Caller 0x1404dd130."
+grade = "sure"
+name = "QuestCashReward"
+
 ["Quest2.reward_xpOverride"]
 statement = "The quest's reward experience when not 0, not scaled by difficulty or level. Quests 10518 and 10524 give 655, 10520 and 10523 give 1055, though their difficulty 6 has xpMultiplier 0."
 proof = "0x140553587 mov ecx, [rax+0x40] and 0x140553592 test ecx, ecx then 0x140553594 jne, taken for a nonzero override (record 0x1405534b0). table_rows -- Quest2 10518 10520 10523 10524, Quest2Difficulty 6."

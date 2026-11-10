@@ -1346,6 +1346,19 @@ pub fn describe(refusal refusal: Refusal) -> String {
   }
 }
 
+/// The items with each stack that grew holding its new count.
+pub fn grown(
+  items items: List(HeldItem),
+  grow grow: List(store.StackGrowth),
+) -> List(HeldItem) {
+  list.map(items, fn(item) {
+    case list.find(grow, fn(growth) { growth.item_guid == item.item_guid }) {
+      Ok(growth) -> store.HeldItem(..item, stack_count: growth.new_count)
+      Error(Nil) -> item
+    }
+  })
+}
+
 /// Where `wanted` items of an Item2 go (a server choice): the stacks of it in the usable
 /// inventory below the limit, lowest bag index first, then the empty usable slots, lowest
 /// first, each up to the limit. Nothing when they do not all fit.

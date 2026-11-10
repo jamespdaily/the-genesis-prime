@@ -49,10 +49,12 @@
 ////   character's row lock, the place save carrying the log with the quest Completed, the
 ////   experience and the level, then the credits and the items, so storage holds the whole
 ////   turn-in or none of it.
-//// - **The frames, in this order** (a server choice; the client needs only 0x35C last): 0x111
-////   (reason 8) for each stack made, a count change for each stack grown, 0x1ac of kind 3 when
-////   the gain is above 0, 0x938 of the level and the Level news when it rose, 0x919 when the
-////   credits changed, then 0x35C with state 3.
+//// - **The frames, in this order** (a server choice; the client needs only 0x35C last of the
+////   turn-in's): 0x111 (reason 8) for each stack made, a count change for each stack grown,
+////   0x1ac of kind 3 when the gain is above 0, 0x938 of the level and the Level news when it
+////   rose, 0x919 when the credits changed, then 0x35C with state 3, then the frames of the
+////   held-item objectives of other quests that the reward items advanced
+////   (`connection_objective.settled`, as a pickup does).
 ////
 //// | Point | What happens |
 //// |---|---|
@@ -85,7 +87,9 @@ import genesis_prime/table/id.{
   type Item2Id, GameFormulaId, Item2Id, LevelDifferentialAttributeId, Quest2Id,
   XpPerLevelId,
 }
-import genesis_prime/table/level_differential_attribute
+import genesis_prime/table/level_differential_attribute.{
+  type LevelDifferentialAttribute,
+}
 import genesis_prime/table/loader/formula_requirement
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2.{type Quest2}
@@ -94,6 +98,7 @@ import genesis_prime/table/quest2_reward.{type Quest2Reward}
 import genesis_prime/table/xp_per_level
 import genesis_prime/world_map/spawn
 import gleam/bool
+import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
@@ -107,6 +112,44 @@ pub const message_id = quest_turn_in_message.message_id
 /// The GameFormula row whose first float is the exponent of a quest's credits
 /// (`0x1405542b0`).
 const credits_formula = 530
+
+/// The Quest2Reward rows of each quest, in record order.
+type Rewards {
+  Rewards(by_quest: Dict(Int, List(Quest2Reward)))
+}
+
+/// The key of the rewards in the tables' store.
+const rewards_key: table_store.DerivedKey(Rewards) =
+  table_store.DerivedKey("QuestRewards")
+
+/// The rewards as a value the tables' load builds once, under the tables' key, so a turn-in
+/// reads the quest's rows without a pass over the table.
+pub fn derivation() -> table_store.Derivation {
+  table_store.derivation(key: rewards_key, build: fn(tables) {
+    Ok(
+      Rewards(
+        by_quest: list.fold(
+          list.reverse(quest2_reward.all(tables)),
+          dict.new(),
+          fn(by_quest, reward) {
+            dict.upsert(by_quest, reward.quest2_id, fn(found) {
+              [reward, ..option.unwrap(found, [])]
+            })
+          },
+        ),
+      ),
+    )
+  })
+}
+
+/// The Quest2Reward rows of a quest, in record order.
+fn rewards_of(
+  tables tables: table_store.Tables,
+  quest_id quest_id: Int,
+) -> List(Quest2Reward) {
+  let Rewards(by_quest:) = table_store.derived(tables:, key: rewards_key)
+  result.unwrap(dict.get(by_quest, quest_id), [])
+}
 
 /// What the tables must hold at load for the credits: GameFormula 530.
 pub fn requirements() -> List(table_store.Requirement) {
@@ -322,10 +365,7 @@ fn checked(
         <> " with no shown creature that receives it alive, not Hostile and within reach",
     )),
   )
-  let rows =
-    list.filter(quest2_reward.all(tables), fn(reward) {
-      reward.quest2_id == quest_id
-    })
+  let rows = rewards_of(tables:, quest_id:)
   let #(choices, fixed) =
     list.partition(rows, fn(reward) {
       int.bitwise_and(reward.flags, choice_flag) != 0
@@ -346,7 +386,7 @@ fn checked(
     return: Error(Declined(
       key: "tradeskill reward",
       text: turning
-        <> ", which has a fixed tradeskill experience reward the client refuses for a player with no learned tradeskill",
+        <> ", which has a fixed tradeskill experience reward the client refuses for a player with no learned tradeskill (#677)",
     )),
   )
   let given =
@@ -375,8 +415,9 @@ fn checked(
 }
 
 /// The log with the quest Completed, when its state allows a turn-in: Achieved (2), or, for
-/// a quest that completes without being taken (Quest2 flags bit 0), no entry or a Known one
-/// that passes the accept's checks but the one for a full log.
+/// a quest that completes without being taken (Quest2 flags bit 0), no entry, a Known one or
+/// a Completed one (the quest repeats) that passes the accept's checks but the one for a full
+/// log.
 fn state_allows(
   turning turning: String,
   row row: Quest2,
@@ -404,7 +445,7 @@ fn state_allows(
   }
   case state, int.bitwise_and(row.flags, auto_complete_flag) != 0 {
     2, _ -> Ok(completed)
-    1, _ | 3, _ -> Error(not_achieved)
+    1, _ -> Error(not_achieved)
     _, False -> Error(not_achieved)
     _, True ->
       case
@@ -488,8 +529,8 @@ fn chosen_reward(
 }
 
 /// The experience the quest gives (`0x1405534b0`): 0 when the XpPerLevel row of the quest's
-/// level, the LevelDifferentialAttribute row of the difference to the player's level (kept
-/// within 4 either way) or the Quest2Difficulty row is missing; else the quest's override
+/// level, the LevelDifferentialAttribute row of the difference to the player's level
+/// (`level_differential`) or the Quest2Difficulty row is missing; else the quest's override
 /// when it has one, else the base per level times the difficulty's multiplier times the
 /// difference's, truncated.
 fn experience_paid(
@@ -497,13 +538,9 @@ fn experience_paid(
   level level: Int,
   tables tables: table_store.Tables,
 ) -> Int {
-  let difference = int.min(4, int.max(-4, row.con_level - level))
   case
     xp_per_level.get(tables:, id: XpPerLevelId(row.con_level)),
-    level_differential_attribute.get(
-      tables:,
-      id: LevelDifferentialAttributeId(difference + 5),
-    ),
+    level_differential(tables:, difference: row.con_level - level),
     quest2_difficulty.get(tables:, id: quest2.quest2_difficulty_id(row))
   {
     Ok(per_level), Ok(differential), Ok(difficulty) ->
@@ -517,6 +554,32 @@ fn experience_paid(
         override -> override
       }
     _, _, _ -> 0
+  }
+}
+
+/// The LevelDifferentialAttribute row of a level difference (`0x1404cd1b0`): the difference
+/// kept between the table's smallest and largest `levelDifferentialValue` (compared as signed
+/// numbers), the row with that value, else row 1.
+fn level_differential(
+  tables tables: table_store.Tables,
+  difference difference: Int,
+) -> Result(LevelDifferentialAttribute, Nil) {
+  let rows = level_differential_attribute.all(tables)
+  let values = list.map(rows, fn(row) { row.level_differential_value })
+  let kept = case values {
+    [] -> difference
+    [first, ..rest] ->
+      difference
+      |> int.max(list.fold(rest, first, int.min))
+      |> int.min(list.fold(rest, first, int.max))
+  }
+  case list.find(rows, fn(row) { row.level_differential_value == kept }) {
+    Ok(row) -> Ok(row)
+    Error(Nil) ->
+      level_differential_attribute.get(
+        tables:,
+        id: LevelDifferentialAttributeId(1),
+      )
   }
 }
 
@@ -539,9 +602,9 @@ fn credits_paid(
           let assert Ok(formula) =
             game_formula.get(tables:, id: GameFormulaId(credits_formula))
             as "the load requires GameFormula row 530"
-          let raised =
+          let assert Ok(raised) =
             float.power(int.to_float(row.con_level), formula.datafloat0)
-            |> result.unwrap(0.0)
+            as "no Quest2 row holds a conLevel with bit 31 set (the generator's column-sign check), so the base is not negative and its power is a number"
           float.truncate(raised *. difficulty.cash_reward_multiplier +. 0.5)
         }
         Error(Nil) -> 0
@@ -643,7 +706,7 @@ fn after(
   make make: List(store.NewStack),
 ) -> List(HeldItem) {
   list.append(
-    grown(items:, grow:),
+    inventory.grown(items:, grow:),
     list.map(make, fn(stack) {
       HeldItem(
         item_guid: 0,
@@ -654,19 +717,6 @@ fn after(
       )
     }),
   )
-}
-
-/// The items with the stacks that grew holding their new counts.
-fn grown(
-  items items: List(HeldItem),
-  grow grow: List(store.StackGrowth),
-) -> List(HeldItem) {
-  list.map(items, fn(item) {
-    case list.find(grow, fn(growth) { growth.item_guid == item.item_guid }) {
-      Ok(growth) -> HeldItem(..item, stack_count: growth.new_count)
-      Error(Nil) -> item
-    }
-  })
 }
 
 /// The reward kinds the quest has that the server does not build, one line for each kind (its
@@ -797,7 +847,7 @@ pub fn answered(
         credits
         != currency.held(currencies:, currency_type_id: currency.credits_type)
       Saved(
-        items: list.append(grown(items:, grow:), made),
+        items: list.append(inventory.grown(items:, grow:), made),
         currencies: currency.with_amount(
           currencies:,
           currency_type_id: currency.credits_type,

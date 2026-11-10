@@ -246,13 +246,59 @@ pub fn auto_complete_quest_that_could_not_be_accepted_is_refused_test() -> Nil {
     #("Quest2", 1806, [#("flags", Integer(1))]),
     support.receiving(1806),
   ])
-  assert_refused(
-    scene: support.Scene(..scene, log: [
+  let completed =
+    support.Scene(..scene, log: [
       quest_support.completed(quest_id: 1806, at: 1000),
-    ]),
+    ])
+  let assert Ok(row) = quest2.get(tables:, id: Quest2Id(1806))
+  assert quest.can_accept(
+      tables:,
+      quest: row,
+      asker: support.asker(scene: completed),
+      mask: 0xffff_dfff,
+    )
+    == Ok(quest.Refused(code: 2))
+    as "a completed quest that does not repeat is refused by accept check 2 itself"
+  assert_refused(
+    scene: completed,
     tables:,
     because: "a completed one-time quest (accept check 2)",
   )
+}
+
+pub fn completed_repeatable_auto_complete_quest_is_turned_in_again_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // flags 0x21: auto-completes (bit 0) and repeats (bit 5, 0x140552550 check 2 lets a
+  // completed quest through when it repeats).
+  use tables <- support.with_changes(changes: [
+    #("Quest2", 1806, [#("flags", Integer(0x21))]),
+    support.receiving(1806),
+  ])
+  let scene =
+    support.Scene(..support.scene(quest_id: 1806), log: [
+      quest_support.completed(quest_id: 1806, at: 1000),
+    ])
+  let #(turn_in, _) = support.asked(scene:, tables:)
+  assert rows_of(log: turn_in.log)
+    == [
+      QuestRow(
+        quest_id: 1806,
+        state: 3,
+        completed_at: Some(1_700_000_000),
+        active: None,
+      ),
+    ]
+    as "a Completed repeatable quest is Completed again, at the new time"
+  use tables <- support.with_changes(changes: [
+    #("Quest2", 1806, [
+      #("flags", Integer(1)),
+      #("questRepeatPeriodEnum", Integer(1)),
+    ]),
+    support.receiving(1806),
+  ])
+  let #(by_period, _) = support.asked(scene:, tables:)
+  assert rows_of(log: by_period.log) == rows_of(log: turn_in.log)
+    as "a quest with a repeat period is turned in again too"
 }
 
 pub fn communicator_turn_in_is_refused_until_its_step_test() -> Nil {

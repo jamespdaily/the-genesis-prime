@@ -88,7 +88,7 @@ import genesis_prime/message/vendor_buyback
 import genesis_prime/message/vendor_purchase as vendor_purchase_message
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
-  type SessionEpoch, HeldItem, ItemsNotSaved, SaveRefused,
+  type SessionEpoch, ItemsNotSaved, SaveRefused,
 }
 import genesis_prime/table/id.{type Item2Id, Item2Id}
 import genesis_prime/table/item2
@@ -457,7 +457,7 @@ pub fn answered(
         )
       }
       #(
-        list.append(grown(items:, grow: purchase.grow), made),
+        list.append(inventory.grown(items:, grow: purchase.grow), made),
         currency.with_amount(
           currencies:,
           currency_type_id: purchase.currency_type_id,
@@ -519,19 +519,6 @@ fn removed_frame(buyback_id buyback_id: Int) -> Frame {
     buyback_removed.encode(buyback_removed.BuybackRemoved(buyback_id:))
     as "an id the list held, a 32-bit value, is written"
   frame.Frame(message_id: buyback_removed.message_id, body:)
-}
-
-/// The held items with each grown stack at its new count.
-fn grown(
-  items items: List(HeldItem),
-  grow grow: List(store.StackGrowth),
-) -> List(HeldItem) {
-  list.map(items, fn(item) {
-    case list.find(grow, fn(growth) { growth.item_guid == item.item_guid }) {
-      Ok(growth) -> HeldItem(..item, stack_count: growth.new_count)
-      Error(Nil) -> item
-    }
-  })
 }
 
 /// What a buy that was not saved did not do, for the log.

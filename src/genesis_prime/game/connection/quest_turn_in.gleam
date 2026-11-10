@@ -10,7 +10,8 @@
 ////    ─▶ TurnedIn(credits, made) ─▶ answered: entered.items, entered.currencies and entered.quests updated; then in order
 ////                                  0x111 reason 8 per stack made, a count change per stack grown,
 ////                                  the experience's frames (0x1ac kind 3, 0x938 and the Level news, the Base Health),
-////                                  0x919, 0x35C {quest, 3, 0}; status InWorld; held frames replayed
+////                                  0x919, 0x35C {quest, 3, 0}, then the frames of the held-item objectives the reward
+////                                  items advanced (`connection_objective.settled`); status InWorld; held frames replayed
 ////    ─▶ ItemsNotSaved | SaveRefused(constraint) ─▶ a warning or an error line; nothing in memory changes; status InWorld
 ////    ─▶ unavailable, not running, past deadline ─▶ the connection ends, reason 8 (as a buy)
 //// ```
@@ -26,6 +27,7 @@ import genesis_prime/client_connection.{Continue, FromStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/character_state
 import genesis_prime/game/connection/experience as connection_experience
+import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/quest as connection_quest
 import genesis_prime/game/connection/state.{
   type Session, InWorld, Session, TurningIn,
@@ -229,7 +231,8 @@ fn saved(
       credited: turn_in.credited,
     )
   {
-    Continue(session, told) ->
+    Continue(session, told) -> {
+      let #(session, settled) = connection_objective.settled(session:, now:)
       Continue(
         session,
         list.flatten([
@@ -237,8 +240,10 @@ fn saved(
           told,
           vendor_trade.effects_of(session:, effects: then),
           timers,
+          settled,
         ]),
       )
+    }
     client_connection.Asking(..) as ended
     | client_connection.Done(..) as ended -> ended
   }
