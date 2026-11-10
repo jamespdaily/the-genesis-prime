@@ -48,6 +48,8 @@ pub type CastResult {
   NoTarget
   /// The value 99, the fact file's `Spell.CodeEnumCastResult`.
   TargetFaction
+  /// The value 100, the fact file's `Spell.CodeEnumCastResult`.
+  TargetIsNotUseable
   /// The value 101, the fact file's `Spell.CodeEnumCastResult`.
   TargetOrientation
   /// The value 104, the fact file's `Spell.CodeEnumCastResult`.
@@ -104,6 +106,7 @@ pub fn to_value(value: CastResult) -> Int {
     TargetUnknown -> 90
     NoTarget -> 91
     TargetFaction -> 99
+    TargetIsNotUseable -> 100
     TargetOrientation -> 101
     TargetRangeMin -> 104
     TargetRangeMax -> 105
@@ -146,6 +149,7 @@ pub fn from_value(number: Int) -> CastResult {
     90 -> TargetUnknown
     91 -> NoTarget
     99 -> TargetFaction
+    100 -> TargetIsNotUseable
     101 -> TargetOrientation
     104 -> TargetRangeMin
     105 -> TargetRangeMax

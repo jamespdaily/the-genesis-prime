@@ -659,6 +659,7 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.SendChatLine(..)
     | client_message.SendWhisper(..)
     | client_message.CastAbility(..)
+    | client_message.CastActivate(..)
     | client_message.AbilityHold(..)
     | client_message.ItemMove(..)
     | client_message.ItemSplit(..)

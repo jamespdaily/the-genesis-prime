@@ -13,6 +13,7 @@ import genesis_prime/message/camp_finished.{type CampFinished}
 import genesis_prime/message/camp_request.{type CampRequest}
 import genesis_prime/message/cancel_cast.{type CancelCast}
 import genesis_prime/message/cast_ability.{type CastAbility}
+import genesis_prime/message/cast_activate.{type CastActivate}
 import genesis_prime/message/character_select_start.{type CharacterSelectStart}
 import genesis_prime/message/choose_realm.{type ChooseRealm}
 import genesis_prime/message/choose_resurrection.{type ChooseResurrection}
@@ -95,6 +96,7 @@ pub type ClientMessage {
   SendChatLine(message: SendChatLine)
   SendWhisper(message: SendWhisper)
   CastAbility(message: CastAbility)
+  CastActivate(message: CastActivate)
   AbilityHold(message: AbilityHold)
   ItemMove(message: ItemMove)
   ItemSplit(message: ItemSplit)
@@ -192,6 +194,7 @@ pub fn decode(
     0x01C3 -> decoded(body, message_id, send_chat_line.decode, SendChatLine)
     0x01D4 -> decoded(body, message_id, send_whisper.decode, SendWhisper)
     0x009A -> decoded(body, message_id, cast_ability.decode, CastAbility)
+    0x0097 -> decoded(body, message_id, cast_activate.decode, CastActivate)
     0x04DB -> decoded(body, message_id, ability_hold.decode, AbilityHold)
     0x0182 -> decoded(body, message_id, item_move.decode, ItemMove)
     0x017D -> decoded(body, message_id, item_split.decode, ItemSplit)
@@ -280,6 +283,7 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     SendChatLine(message:) -> send_chat_line.encode(message)
     SendWhisper(message:) -> send_whisper.encode(message)
     CastAbility(message:) -> cast_ability.encode(message)
+    CastActivate(message:) -> cast_activate.encode(message)
     AbilityHold(message:) -> ability_hold.encode(message)
     ItemMove(message:) -> item_move.encode(message)
     ItemSplit(message:) -> item_split.encode(message)
@@ -337,6 +341,7 @@ pub fn message_id(message: ClientMessage) -> Int {
     SendChatLine(..) -> send_chat_line.message_id
     SendWhisper(..) -> send_whisper.message_id
     CastAbility(..) -> cast_ability.message_id
+    CastActivate(..) -> cast_activate.message_id
     AbilityHold(..) -> ability_hold.message_id
     ItemMove(..) -> item_move.message_id
     ItemSplit(..) -> item_split.message_id
@@ -393,6 +398,7 @@ pub fn name(message: ClientMessage) -> String {
     SendChatLine(..) -> "send_chat_line"
     SendWhisper(..) -> "send_whisper"
     CastAbility(..) -> "cast_ability"
+    CastActivate(..) -> "cast_activate"
     AbilityHold(..) -> "ability_hold"
     ItemMove(..) -> "item_move"
     ItemSplit(..) -> "item_split"

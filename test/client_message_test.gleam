@@ -12,6 +12,7 @@ import genesis_prime/message/camp_finished.{CampFinished}
 import genesis_prime/message/camp_request.{CampRequest}
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_ability.{CastAbility}
+import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
 import genesis_prime/message/character_select_start.{CharacterSelectStart}
 import genesis_prime/message/choose_realm.{ChooseRealm}
@@ -310,6 +311,13 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
         bag_index: 2,
         target_unit_id: 0x12345,
         press: 1,
+      )),
+    ),
+    #(
+      0x0097,
+      client_message.CastActivate(message: CastActivate(
+        client_cast_id: 0x80002804,
+        target_unit_id: 0x12345,
       )),
     ),
     #(
