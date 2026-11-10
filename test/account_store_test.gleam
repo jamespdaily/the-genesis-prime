@@ -3812,6 +3812,196 @@ pub fn a_buy_into_a_taken_place_changes_nothing_and_names_the_constraint_test() 
   stop(store)
 }
 
+// ---- selling to a vendor ----
+
+/// A sale of the stacks under a login's epoch.
+fn sell(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+  epoch epoch: Int,
+  credits_held credits_held: Int,
+  credits_after credits_after: Int,
+  sold sold: List(store.SoldStack),
+) -> store.Answer {
+  ask(
+    store,
+    Items(store.SellToVendor(
+      account_id: account,
+      character_id:,
+      session_epoch: character_support.epoch(epoch),
+      credits_held:,
+      credits_after:,
+      sold:,
+    )),
+  )
+}
+
+pub fn a_sale_writes_the_credits_and_removes_or_lowers_the_stacks_in_one_statement_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 10), #(2, 4), #(3, 6)])
+  let assert [first, second, third] = stacks
+  let #(epoch, before) = login(store:, account:, character_id:)
+  assert sell(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      credits_held: 1000,
+      credits_after: 1050,
+      sold: [
+        store.SoldStack(
+          item_guid: first.item_guid,
+          held_count: 10,
+          sold_count: 3,
+        ),
+        store.SoldStack(
+          item_guid: second.item_guid,
+          held_count: 4,
+          sold_count: 4,
+        ),
+      ],
+    )
+    == ForItems(store.Sold(credits: 1050))
+    as "a sale of part of one stack and all of another is saved and answers the credits held after"
+  let #(saved_credits, items) = bought_state(store:, account:, character_id:)
+  assert saved_credits == 1050 as "the next login finds the higher credits"
+  assert item_in_bag(items:, index: 1) == HeldItem(..first, stack_count: 7)
+    as "a stack sold in part keeps its guid and holds the count not sold"
+  assert list.any(items, fn(item) { item.item_guid == second.item_guid })
+    == False
+    as "a stack sold whole is deleted"
+  assert item_in_bag(items:, index: 3) == third
+    as "a stack not named is as it was"
+  assert list.length(items) == list.length(before) - 1
+    as "only the whole stack left"
+  stop(store)
+}
+
+pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
+  let assert [first, second] = stacks
+  let #(stale, _) = login(store:, account:, character_id:)
+  let #(epoch, before) = login(store:, account:, character_id:)
+  assert epoch > stale as "a later login raised the epoch"
+  let assert Ok(novice_item) =
+    list.find(before, fn(item) { item.location == 0 })
+    as "the character holds the Novice set, at the worn places"
+  let part =
+    store.SoldStack(item_guid: first.item_guid, held_count: 10, sold_count: 3)
+  let whole =
+    store.SoldStack(item_guid: second.item_guid, held_count: 4, sold_count: 4)
+  let refused = [
+    #(
+      "an older login's sale",
+      sell(
+        store:,
+        account:,
+        character_id:,
+        epoch: stale,
+        credits_held: 1000,
+        credits_after: 1050,
+        sold: [part],
+      ),
+    ),
+    #(
+      "credits held that are not the credits saved",
+      sell(
+        store:,
+        account:,
+        character_id:,
+        epoch:,
+        credits_held: 1200,
+        credits_after: 1250,
+        sold: [part],
+      ),
+    ),
+    #(
+      "a stack sold in part whose count is not the count saved",
+      sell(
+        store:,
+        account:,
+        character_id:,
+        epoch:,
+        credits_held: 1000,
+        credits_after: 1050,
+        sold: [store.SoldStack(..part, held_count: 9)],
+      ),
+    ),
+    #(
+      "a stack sold whole whose count is not the count saved",
+      sell(
+        store:,
+        account:,
+        character_id:,
+        epoch:,
+        credits_held: 1000,
+        credits_after: 1050,
+        sold: [store.SoldStack(..whole, held_count: 5, sold_count: 5)],
+      ),
+    ),
+    #(
+      "a stack that is not held",
+      sell(
+        store:,
+        account:,
+        character_id:,
+        epoch:,
+        credits_held: 1000,
+        credits_after: 1050,
+        sold: [
+          store.SoldStack(
+            item_guid: second.item_guid + 1_000_000,
+            held_count: 1,
+            sold_count: 1,
+          ),
+        ],
+      ),
+    ),
+    #(
+      "a stack at a worn place, which a sale does not sell",
+      sell(
+        store:,
+        account:,
+        character_id:,
+        epoch:,
+        credits_held: 1000,
+        credits_after: 1050,
+        sold: [
+          store.SoldStack(
+            item_guid: novice_item.item_guid,
+            held_count: novice_item.stack_count,
+            sold_count: novice_item.stack_count,
+          ),
+        ],
+      ),
+    ),
+    #(
+      "one stack of two that is stale, though the other matches",
+      sell(
+        store:,
+        account:,
+        character_id:,
+        epoch:,
+        credits_held: 1000,
+        credits_after: 1050,
+        sold: [part, store.SoldStack(..whole, held_count: 3, sold_count: 3)],
+      ),
+    ),
+  ]
+  list.each(refused, fn(row) {
+    assert row.1 == ForItems(ItemsNotSaved) as { row.0 <> " is not saved" }
+  })
+  assert bought_state(store:, account:, character_id:) == #(1000, before)
+    as "each refusal changed nothing, the credits and the matching stack included"
+  stop(store)
+}
+
 pub fn a_new_character_starts_with_the_starting_credits_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
