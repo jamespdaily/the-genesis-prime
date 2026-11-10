@@ -380,14 +380,7 @@ fn put_worlds(
   content_vendor.put(key:, vendors: vendor.none())
   content_creature_kind.put(
     key:,
-    kinds: Kinds(
-      default: Kind(
-        respawn_ms:,
-        attack_spell4_id: Spell4Id(5649),
-        attack_interval_ms: 1500,
-      ),
-      by_creature: dict.new(),
-    ),
+    kinds: Kinds(..kinds(), default: Kind(..kinds().default, respawn_ms:)),
   )
   list.each(character_tables.content_worlds(), fn(world_id) {
     content_spawn.put_world(

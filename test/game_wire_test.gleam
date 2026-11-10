@@ -3696,8 +3696,9 @@ fn world_with_beasts(
 }
 
 /// Runs the body on the client's rows with Paralytic Surge's recharge taken
-/// off: a live fight presses it four times in a row, and Spell4 42352's
-/// spellCoolDown of 25000 ms would make the test wait 75 s of the wall clock.
+/// off: the fight presses it four times in a row, and Spell4 42352's spellCoolDown of
+/// 25000 ms would refuse each press after the first unless the clock moved on by
+/// that much between presses, which would move every timer the Beast holds with it.
 fn on_rows_without_paralytic_surges_recharge(
   body body: fn(table_store.Tables) -> a,
 ) -> a {
@@ -3762,6 +3763,10 @@ fn face(game game: game_client.Game, yaw yaw: Float, clock clock: Int) -> Nil {
   )
 }
 
+/// The cast time of Paralytic Surge (Spell4 42352, castTime 0): its go is due at
+/// the press.
+const paralytic_surge_cast_ms = 0
+
 /// How long a hit of Paralytic Surge lasts after its go: the cast ends, with its 0x7fe,
 /// when the node of its second effect, Spell4Effects 96126, ends at its durationTime
 /// (`Spell4Effects.durationTime`, 2700 ms).
@@ -3802,7 +3807,7 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
       game: first,
       have: first_have,
       bag_index: 2,
-      cast_ms: 0,
+      cast_ms: paralytic_surge_cast_ms,
       cast_id: 1,
     )
   assert holds_a_finish(frames: away)
@@ -3819,7 +3824,7 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
       game: first,
       have: first_have,
       bag_index: 2,
-      cast_ms: 0,
+      cast_ms: paralytic_surge_cast_ms,
       lingers_ms: paralytic_surge_lingers_ms,
       beast: beast_unit,
       cast_id: 2,
@@ -3854,7 +3859,10 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
   assert last == #(beast_unit, 0, True)
     as "opcode.0x937: health 0 with the dead bit, from the creature itself"
   // The creature stands again after its respawn time, 1000 ms from the kill, which
-  // the clock moves on by: 0x355, then a full 0x262.
+  // the clock moves on by: 0x355, then a full 0x262. The creature sends its news
+  // before it starts the corpse's timer, so the clock moves on after it has taken
+  // all it was sent.
+  the_creature_has_taken_what_it_was_sent(started:, unit_id: beast_unit)
   driven_time.advance(time:, ms: 1000)
   let #(after_first, first_have) =
     game_client.read_until(game: first, have: first_have, found: fn(frames) {
@@ -3881,7 +3889,7 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
       game: first,
       have: first_have,
       bag_index: 2,
-      cast_ms: 0,
+      cast_ms: paralytic_surge_cast_ms,
       beast: beast_unit,
       cast_id: 100,
     )
@@ -4041,8 +4049,9 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
       && psi_children(frames:) == 2
     })
   // The Beast ahead fights back every 1500 ms with its own attack, Spell4 5649,
-  // whose go names the caster; the clock has not moved since the first press, so
-  // it has not swung yet, and only the casts of Telekinetic Strike are read here.
+  // whose go names the caster; the kill lands 1250 ms after the first hit, before
+  // its first 1500 ms tick, so it has not swung yet, and only the casts of
+  // Telekinetic Strike are read here.
   let strike_cast_ids =
     list.filter_map(game_client.casts_in(frames: watched), fn(event) {
       case event {
@@ -4269,8 +4278,22 @@ fn press_loop(
   let healths = list.append(healths, hits)
   case list.last(healths) {
     Ok(0) -> {
-      assert list.contains(game_client.deaths_in(frames:), #(beast, True))
-        as "the killing hit is followed by the Beast's 0x88c, in the same pass"
+      // The Beast sends its health and then its death on its own process, so the
+      // pong does not show the death is written.
+      let #(more, have) = case
+        list.contains(game_client.deaths_in(frames:), #(beast, True))
+      {
+        True -> #([], have)
+        False ->
+          game_client.read_until(game:, have:, found: fn(more) {
+            list.contains(game_client.deaths_in(frames: more), #(beast, True))
+          })
+      }
+      assert list.contains(
+        game_client.deaths_in(frames: list.append(frames, more)),
+        #(beast, True),
+      )
+        as "the killing hit is followed by the Beast's 0x88c"
       #(have, healths)
     }
     Ok(_) | Error(Nil) -> {
@@ -4300,8 +4323,9 @@ fn press_loop(
 // tests' characters are of the Dominion (faction 166), so the planted creature is
 // a Virtual Defense Dagun, hostile to the Dominion (Faction2Relationship 1442-166
 // level 0, `Creature2.73465`), with the Battle Beast's 52 health and attack: spell
-// 5649's effect 184741 for 12 every 1500 ms (`Spell4Effects.184741`, migration
-// 0010), its own reach 5.0 + 2.0, run speed 10.0 (`0x1405b45e0`). The aggro range
+// 5649's effect 184741 for 12 (`Spell4Effects.184741`) every attack interval of the
+// creature kinds (a server choice: migration 0010; `spawn_support.kinds`), its own
+// reach 5.0 + 2.0, run speed 10.0 (`0x1405b45e0`). The aggro range
 // is 10 and the leash range 55 (migration 0010). A Medic of level 1 has 736 health
 // and a shield of 450 (`player.level1_gear_properties`). The 0x908, 0x90a, 0x89a,
 // 0x938, 0x92f and 0x638 are read as the client reads them (`opcode.0x908`,
@@ -4312,9 +4336,12 @@ fn press_loop(
 /// stands in World 1387, zone 1100, at 1.5, 2.5, 3.5.
 const dagun_z = -20.0
 
-/// The Dagun's attack tick, its attack's interval of 1500 ms (spell 5649's effect
-/// 184741 every 1500 ms: `Spell4Effects.184741`, migration 0010).
-const dagun_attack_interval_ms = 1500
+/// The Dagun's attack tick: the attack interval of the creature kinds the tests'
+/// worlds are planted with. The interval is a server choice (the client's effect
+/// 184741 has no tickTime), so it is read from those kinds.
+fn dagun_attack_interval_ms() -> Int {
+  spawn_support.kinds().default.attack_interval_ms
+}
 
 /// A world with one Dagun at x 1.5, z -20, its map's and creature's timers and the
 /// connections' on the clock `time`, so the Dagun's attack tick and home timer fire
@@ -4341,14 +4368,15 @@ fn world_with_a_dagun(time time: driven_time.Time) -> login_support.Started {
   })
 }
 
-/// Returns when the Dagun's creature has taken all it was sent, so a timer its
-/// last step started is on the clock: the frames of its aggro are written before
-/// the step's timer is started, and an advance with no timer due waits for nothing.
-fn the_dagun_has_started_its_timers(
+/// Returns when the first creature of the map, unit `unit_id`, has taken all it was
+/// sent, so a timer its last step started is on the clock: a creature's frames are
+/// sent before its step's timer is started, and an advance with no timer due waits
+/// for nothing.
+fn the_creature_has_taken_what_it_was_sent(
   started started: login_support.Started,
-  dagun dagun: Int,
+  unit_id unit_id: Int,
 ) -> Nil {
-  let #(_, creature) = the_dagun_and_its_map(started:, dagun:)
+  let #(_, creature) = the_dagun_and_its_map(started:, dagun: unit_id)
   driven_time.settled(creature)
 }
 
@@ -4671,7 +4699,7 @@ pub fn a_dagun_fighting_a_bot_that_then_stealths_keeps_striking_it_and_its_lande
     read_fight(game:, have:, found: fn(events) {
       list.contains(events, game_client.InCombat(unit_id: own, in_combat: True))
     })
-  the_dagun_has_started_its_timers(started:, dagun:)
+  the_creature_has_taken_what_it_was_sent(started:, unit_id: dagun)
   game_client.press_ability(
     game:,
     client_cast_id: 1,
@@ -4682,12 +4710,22 @@ pub fn a_dagun_fighting_a_bot_that_then_stealths_keeps_striking_it_and_its_lande
     game_client.read_until(game:, have:, found: fn(frames) {
       stealth_changes_in(frames:) != []
     })
-  // The Dagun's attack tick, its interval after the aggro (`attack_interval_ms`
-  // 1500): the bot is in its reach by then, and the strike's chain ends in the bot's
-  // 0x8f5 of the stealth ending.
-  driven_time.advance(time:, ms: dagun_attack_interval_ms)
-  let #(struck, _) = game_client.read_until_pong(game:, have:, number: 1)
-  let frames = list.append(entered, struck)
+  // The map has told the Dagun of the bot's stealth, and the Dagun has taken it,
+  // before the clock reaches its attack tick, so the tick meets the Dagun with the
+  // stealth on its threat list.
+  let #(taken, have) =
+    read_after_the_map_and_the_creature_took_it(
+      game:,
+      have:,
+      started:,
+      dagun:,
+      pongs: #(1, 2),
+    )
+  // The Dagun's attack tick, its interval after the aggro: the bot is in its reach
+  // by then, and the strike's chain ends in the bot's 0x8f5 of the stealth ending.
+  driven_time.advance(time:, ms: dagun_attack_interval_ms())
+  let #(struck, _) = game_client.read_until_pong(game:, have:, number: 3)
+  let frames = list.flatten([entered, taken, struck])
   assert stealth_changes_in(frames:) == [#(own, 1), #(own, 0)]
     as "opcode.0x8f5: the press enters stealth, and the Dagun, which keeps fighting the bot it already had on its threat list, strikes it: Spell4Effects.effectType.83 (83834, dataBits02 0) ends the stealth on the damage taken"
   assert struck_by(frames:, caster: dagun, target: own)
@@ -4790,7 +4828,7 @@ fn killed_by_the_dagun(
       dagun:,
       pongs: #(1, 2),
     )
-  driven_time.advance(time:, ms: dagun_attack_interval_ms)
+  driven_time.advance(time:, ms: dagun_attack_interval_ms())
   let #(_, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
       list.contains(game_client.deaths_in(frames:), #(own, True))
@@ -4975,7 +5013,7 @@ pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_
     )
   // The attack tick strikes and kills, and the clock fires the home timer the leash
   // started at the same instant, each after the barrier of the one before it.
-  driven_time.advance(time:, ms: dagun_attack_interval_ms)
+  driven_time.advance(time:, ms: dagun_attack_interval_ms())
   let #(died, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
       list.contains(game_client.deaths_in(frames:), #(own, True))
