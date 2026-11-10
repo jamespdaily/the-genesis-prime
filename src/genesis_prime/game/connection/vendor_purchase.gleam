@@ -7,7 +7,7 @@
 //// 0xBE ─▶ vendor_purchase.take(entered, picture, body)   (0xBB: take_back, the same ask and answer) ─▶ Refused(0x106 code, log once per reason)   status stays InWorld
 ////                                                      └▶ Asks(purchase) ─▶ AskStore(Items(BuyFromVendor ...))   status Buying(holder, entered, purchase), frames held
 //// store worker: lock_character_for_save then buy_from_vendor.sql, one transaction
-////    ─▶ Bought(total, made)    ─▶ answered: entered.currencies and entered.items updated; 0x919 kind 0, then 0x111 / 0x17F reason 7 (16 and a 0xBD after them for a buy back); status InWorld; held frames replayed
+////    ─▶ Bought(amount, made)   ─▶ answered: entered.currencies and entered.items updated; 0x919 of the currency's kind, then 0x111 / 0x17F reason 7 (16 and a 0xBD after them for a buy back); status InWorld; held frames replayed
 ////    ─▶ ItemsNotSaved | SaveRefused(constraint) ─▶ 0x106 5 and a warning; nothing in memory changes; status InWorld
 ////    ─▶ unavailable, not running, past deadline ─▶ the connection ends, reason 8 (as an item move)
 //// ```
@@ -15,7 +15,7 @@
 //// | Case | Killed there | Twice at once | Times out |
 //// |---|---|---|---|
 //// | take, before asking | nothing written, and the client's window stays | a second 0xBE is held while Buying, then taken against the new totals | n/a |
-//// | store asked, transaction open | Postgres rolls back; the monitor ends the connection with reason 8; the next login loads the old state | the epoch fence and the `credits.amount = $4` guard make the second change nothing | the connection ends with reason 8, and the result, if it commits, is loaded next login |
+//// | store asked, transaction open | Postgres rolls back; the monitor ends the connection with reason 8; the next login loads the old state | the epoch fence and the guard on the amount held of the currency make the second change nothing | the connection ends with reason 8, and the result, if it commits, is loaded next login |
 //// | store answered, before `answered` runs | the save is done; the next login loads the new state | n/a (frames held) | n/a |
 //// | connection dies while Buying | the store finishes or rolls back; the next login loads whichever | n/a | n/a |
 
