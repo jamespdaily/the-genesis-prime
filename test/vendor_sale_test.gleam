@@ -22,6 +22,8 @@
 ////   "Sold <item>"), `opcode.0xba.price`: the answer is a 0x919 of kind 0 with the new
 ////   total, then for each stack a 0x148 (whole) or 0x17F (part) and a 0xBA that adds the
 ////   entry to the Buyback list, its amount the credits paid and its currency type 1.
+//// - `opcode.0xba.random_stats`: the entry's five multipliers (fields 9 to 13) are the float
+////   1.0, 0x3f800000, so a fixed-budget stat keeps its value (`entry`, `entry_in`).
 //// - Where the server chooses: which 0x106 the server's own checks of a stale client give
 ////   (16, 2, 59, 62 and 18), and the logs.
 

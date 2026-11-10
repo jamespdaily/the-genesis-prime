@@ -100,6 +100,7 @@ import genesis_prime/game/world_entry.{
 }
 import genesis_prime/message/buyback_added
 import genesis_prime/message/buyback_entry
+import genesis_prime/message/float32
 import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/vendor_sale as vendor_sale_message
 import genesis_prime/message/vendor_sell_junk as vendor_sell_junk_message
@@ -790,11 +791,6 @@ fn buyback_frame(entry entry: BuybackEntry) -> Frame {
   frame.Frame(message_id: buyback_added.message_id, body:)
 }
 
-/// The 32-bit float 1.0, the value of each of a buyback entry's five multipliers that
-/// leaves a fixed-budget stat as it is: the client multiplies each such stat point by its
-/// multiplier (`opcode.0xba.random_stats`).
-const unchanged_multiplier = 0x3f800000
-
 /// An entry of the buyback list as the client's 0xBA and 0xBC carry it: the amount paid is
 /// its first amount, in its first currency type, the five multipliers are 1.0
 /// (`opcode.0xba.random_stats`), and every other field the client's code gives no use is 0
@@ -803,6 +799,9 @@ pub fn buyback_entry_message(
   entry entry: BuybackEntry,
 ) -> buyback_entry.BuybackEntry {
   let Item2Id(item_id) = entry.item2_id
+  // 1.0 leaves a fixed-budget stat as it is: the client multiplies each such stat point by
+  // its multiplier (`opcode.0xba.random_stats`).
+  let unchanged_multiplier = float32.to_bits(1.0)
   buyback_entry.BuybackEntry(
     buyback_id: entry.buyback_id,
     item_id:,
