@@ -9,8 +9,8 @@
 ////   (`pg_stat_activity`) says which connections the pool kept.
 
 import database_support
+import event_wait
 import genesis_prime.{PoolSettings}
-import gleam/bool
 import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/int
@@ -52,7 +52,6 @@ pub fn a_pool_made_with_other_settings_has_them_and_keeps_that_many_connections_
     shared:,
     database:,
     are: pool_backends,
-    attempts: 500,
     because: "the pool keeps its size's connections, no more, though it ran more queries than that",
   )
   process.kill(started.pid)
@@ -104,35 +103,21 @@ fn backends(
   rows
 }
 
-/// Waits until the backends open on `database` are exactly `expected`, polling
-/// Postgres's own list. The pool's driver opens a short-lived connection of its
-/// own to load the database's types, so another backend may be there for a
-/// moment; one the pool keeps stays, and the test fails with `because` when the
-/// polls end with it still there.
+/// Waits until the backends open on `database` are exactly `expected`, reading
+/// Postgres's own list every millisecond: Postgres sends the test no event when
+/// a backend closes. The pool's driver opens a short-lived connection of its own
+/// to load the database's types, so another backend may be there for a moment;
+/// one the pool keeps stays. The wait has no limit of its own: the test's
+/// deadline ends it, naming `because` (`event_wait`).
 fn await_backends(
   shared shared: database_support.Shared,
   database database: String,
   are expected: List(Int),
-  attempts attempts: Int,
   because reason: String,
 ) -> Nil {
-  let open = backends(shared:, database:)
-  use <- bool.guard(open == expected, Nil)
-  assert attempts > 0
-    as {
-      reason
-      <> ": the pool's backends are "
-      <> numbers(expected)
-      <> ", the database has "
-      <> numbers(open)
-    }
-  process.sleep(20)
-  await_backends(
-    shared:,
-    database:,
-    are: expected,
-    attempts: attempts - 1,
-    because: reason,
+  event_wait.until(
+    reason <> ": the backends open on the database to be " <> numbers(expected),
+    fn() { backends(shared:, database:) == expected },
   )
 }
 

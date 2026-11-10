@@ -1002,11 +1002,7 @@ pub fn a_service_that_crashes_is_restarted_as_live_and_the_replay_fails_only_if_
         let _releaser =
           process.spawn(fn() {
             let _restarted =
-              ask_support.await_new_pid(
-                name: gate,
-                not: crashing,
-                within_ms: 5000,
-              )
+              ask_support.await_new_pid(name: gate, not: crashing)
             replay_table.timer_started(
               table:,
               connection: "asking_rule-0.jsonl",

@@ -206,23 +206,23 @@ pub fn guard_with(tree: Pid, stop: fn() -> Nil) -> Nil {
 }
 
 /// Waits until a process other than `old` holds the name, and returns it. A
-/// supervisor that restarts a service does so within milliseconds; the wait
-/// is bounded, so a service that is never restarted fails the test.
-pub fn await_new_pid(
-  name name: Name(message),
-  not old: Pid,
-  within_ms within_ms: Int,
-) -> Pid {
+/// supervisor that restarts a service does so within milliseconds; the name has
+/// no event to wait for, so it is read every millisecond. The wait has no limit
+/// of its own: a service that is never restarted ends the test at its deadline,
+/// naming this wait (`open_wait`).
+pub fn await_new_pid(name name: Name(message), not old: Pid) -> Pid {
+  open_wait.named("a process other than the old one to take its name", fn() {
+    poll_for_new_pid(name:, not: old)
+  })
+}
+
+fn poll_for_new_pid(name name: Name(message), not old: Pid) -> Pid {
   case process.named(name) {
     Ok(pid) if pid != old -> pid
-    Ok(_) | Error(Nil) ->
-      case within_ms > 0 {
-        True -> {
-          process.sleep(1)
-          await_new_pid(name:, not: old, within_ms: within_ms - 1)
-        }
-        False -> panic as "no other process took the name in time"
-      }
+    Ok(_) | Error(Nil) -> {
+      process.sleep(1)
+      poll_for_new_pid(name:, not: old)
+    }
   }
 }
 
@@ -556,9 +556,15 @@ pub fn monotonic_ms() -> Int {
 @external(erlang, "erlang", "monotonic_time")
 fn monotonic_time(unit: atom.Atom) -> Int
 
-/// The moment a wait for an event ends, in monotonic milliseconds.
-pub fn event_wait() -> Int {
-  monotonic_ms() + event_wait_ms
+/// How far ahead, in milliseconds, a server deadline that a test is not about
+/// lies: an hour, far beyond any test's deadline (`owned_test.run`), so the
+/// test's own deadline ends a find that is never answered.
+const beyond_the_test_ms = 3_600_000
+
+/// The moment, on the monotonic clock, of a server deadline that the test is
+/// not about (`beyond_the_test_ms`).
+pub fn deadline_far_beyond_the_tests_deadline() -> Int {
+  monotonic_ms() + beyond_the_test_ms
 }
 
 /// Starts a supervisor tree of one child, unlinked from the test and ended with
