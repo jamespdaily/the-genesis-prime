@@ -180,8 +180,10 @@ fn quest_objectives() -> EngineDeclaration {
     // and rank the server does not hold, so no kill advances them; the issue "Kill
     // objectives count by cluster, rank and a unit's tagged value" closes that. Collect
     // (types 4 and 33) objectives take the held count and visit (type 17) objectives the
-    // player's zone chain, both after every change of either.
-    handled: Listed(ids: [2, 3, 4, 8, 12, 16, 17, 33]),
+    // player's zone chain, both after every change of either. A use of a creature whose
+    // row names the objective counts a collectible (type 32), which the partial list
+    // states the gap of.
+    handled: Listed(ids: [2, 3, 4, 8, 12, 16, 17, 32, 33]),
     partial: [
       Missing(
         type_number: 32,

@@ -892,6 +892,7 @@ pub fn a_type_both_handled_and_listed_missing_is_a_conflict_and_an_unused_missin
     EngineDeclaration(
       ..coverage_support.engine_named("Quest objectives"),
       handled: Listed(ids: [7]),
+      partial: [],
       missing: [
         Missing(type_number: 7, reason: "a reason", fact_key: "a.key"),
         Missing(type_number: 99, reason: "a reason", fact_key: "a.key"),
@@ -913,6 +914,7 @@ pub fn the_checklist_marks_handled_missing_and_undecoded_types_with_the_starting
     EngineDeclaration(
       ..coverage_support.engine_named("Quest objectives"),
       handled: Listed(ids: [7]),
+      partial: [],
       missing: [
         Missing(type_number: 2, reason: "needs a thing", fact_key: "Some.key"),
       ],
