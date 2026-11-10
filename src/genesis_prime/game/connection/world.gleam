@@ -65,7 +65,8 @@ import genesis_prime/game/camp
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/connection/effects.{
-  type Decided, Chats, StartsQuestResetTimer, StartsSaveTimer, ToClient,
+  type Decided, Chats, StartsQuestDeadlineTimer, StartsQuestResetTimer,
+  StartsSaveTimer, ToClient,
 } as connection_effects
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/select as connection_select
@@ -87,12 +88,14 @@ import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type Outcome, LogInfo,
-  LogWarning, Unwatch,
+  LogWarning, OwnEffect, StartTimer, Unwatch,
 }
 import genesis_prime/store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/stay
+import gleam/int
 import gleam/list
+import gleam/option
 
 /// What the camp messages do, taken from inside 0x038C, in the world
 /// (genesis_prime/game/camp): the camp is kept, its effects are carried out,
@@ -245,6 +248,87 @@ pub fn quest_reset_due(
         effects: decided,
         written: [],
       )
+    }
+    WaitingToClaim(..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | Summoning(..)
+    | MovingItem(..)
+    | Buying(..)
+    | Selling(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey ->
+      connection_state.end_for(
+        session:,
+        now:,
+        text: "a timer the rule did not start fired",
+      )
+  }
+}
+
+/// The milliseconds from `now_ms` until the earliest running quest's time runs out, in
+/// a list of none or one.
+fn deadline_after(
+  log log: quest_log.QuestLog,
+  now_ms now_ms: Int,
+) -> List(Int) {
+  case quest_log.next_deadline(log:) {
+    option.Some(deadline_ms) -> [int.max(0, deadline_ms - now_ms)]
+    option.None -> []
+  }
+}
+
+/// The quest deadline timer fired: every quest whose time has run out is botched
+/// (genesis_prime/game/quest_log `expire`), the client is told of each with 0x35C
+/// state 4, the timer starts again for the next deadline, and the log is saved so
+/// the botch outlasts the connection. A firing before the earliest deadline only
+/// starts the timer again. The timer runs only while the player is in the world, so
+/// a firing in any other status is a bug.
+pub fn quest_deadline_due(
+  session session: Session,
+  now now: Now,
+) -> client_connection.Handled(Session) {
+  case session.status {
+    InWorld(holder:, entered:) -> {
+      let #(log, botched) =
+        quest_log.expire(log: entered.quests, now_ms: now.monotonic_ms)
+      let entered = world_entry.Entered(..entered, quests: log)
+      let session = Session(..session, status: InWorld(holder:, entered:))
+      let written =
+        list.append(
+          list.map(botched, fn(quest_id) {
+            connection_state.to_client(
+              session,
+              connection_frames.quest_state_frame(
+                quest_id:,
+                state: 4,
+                objective_id: 0,
+              ),
+            )
+          }),
+          list.map(deadline_after(log:, now_ms: now.monotonic_ms), fn(after_ms) {
+            OwnEffect(StartTimer(
+              timer: connection_state.quest_deadline_timer,
+              after_ms:,
+            ))
+          }),
+        )
+      case botched {
+        [] -> Continue(session, written)
+        [_, ..] ->
+          connection_state.saving(
+            session:,
+            now:,
+            holder:,
+            entered:,
+            then: Playing,
+            before: written,
+            within_ms: session.settings.ask_deadline_ms,
+          )
+      }
     }
     WaitingToClaim(..)
     | ClaimingSession(..)
@@ -701,6 +785,10 @@ fn in_the_world(
       list.map(effects, connection_effects.from_entry),
       [Chats(effects: burst), StartsSaveTimer],
       reset,
+      list.map(
+        deadline_after(log: entered.quests, now_ms: now.monotonic_ms),
+        fn(after_ms) { StartsQuestDeadlineTimer(after_ms:) },
+      ),
     ]),
     written: [],
   )

@@ -44,6 +44,11 @@ pub type Decided {
   /// Start the timer that fires at the next quest reset (`quest_reset_timer`), in
   /// this many milliseconds.
   StartsQuestResetTimer(after_ms: Int)
+  /// Start the timer that fires when the earliest running quest's time runs out
+  /// (`quest_deadline_timer`), in this many milliseconds.
+  StartsQuestDeadlineTimer(after_ms: Int)
+  /// Cancel the quest deadline timer; nothing when none is running.
+  CancelsQuestDeadlineTimer
   /// What the life of the player the connection holds decided
   /// (genesis_prime/game/player_life), carried out as a fight's are
   /// (genesis_prime/game/connection/life_effect).
@@ -183,6 +188,19 @@ pub fn carry_out(
         )),
         ..written
       ])
+    [StartsQuestDeadlineTimer(after_ms:), ..rest] ->
+      carry_out(session:, now:, effects: rest, written: [
+        OwnEffect(StartTimer(
+          timer: connection_state.quest_deadline_timer,
+          after_ms:,
+        )),
+        ..written
+      ])
+    [CancelsQuestDeadlineTimer, ..rest] ->
+      carry_out(session:, now:, effects: rest, written: [
+        OwnEffect(CancelTimer(timer: connection_state.quest_deadline_timer)),
+        ..written
+      ])
     [LeavesWorld, ..] ->
       case connection_state.holds_a_player(session.status) {
         Some(#(holder, entered)) -> {
@@ -244,6 +262,7 @@ pub fn world_left(
       [
         OwnEffect(CancelTimer(timer: connection_state.save_timer)),
         OwnEffect(CancelTimer(timer: connection_state.quest_reset_timer)),
+        OwnEffect(CancelTimer(timer: connection_state.quest_deadline_timer)),
       ],
     ]),
   )

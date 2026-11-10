@@ -1192,12 +1192,19 @@ fn started(
     Ok(NotRead(gap:)) -> Error(GapUnread(quest_id:, gap:))
     Ok(Acceptable) ->
       Ok(case start {
-        Accepting -> quest_log.accept(log: asker.log, quest:)
+        Accepting ->
+          quest_log.accept(
+            log: asker.log,
+            quest:,
+            max_time_ms: row.max_time_allowed_ms,
+            now_ms:,
+          )
         Retrying ->
           quest_log.retry(
             log: asker.log,
             quest:,
-            quest_ms_left: row.max_time_allowed_ms,
+            max_time_ms: row.max_time_allowed_ms,
+            now_ms:,
           )
       })
   }

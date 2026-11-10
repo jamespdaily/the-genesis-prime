@@ -93,7 +93,9 @@ type Entry {
   /// that objective's row, which stands in the slot (0x1405fbdc0), whether it is
   /// tracked, the done mask (a bit for each of the six objectives), the progress of
   /// each objective and the time left of the quest and of each objective, in
-  /// milliseconds.
+  /// milliseconds. A quest whose Quest2 row has a time limit (`maxTimeAllowedMS`) also
+  /// holds the connection's monotonic time, in milliseconds, at which its time runs
+  /// out; `quest_ms_left` is the time the client was last told.
   Active(
     state: ActiveState,
     placeholder_objective_id: Int,
@@ -103,6 +105,7 @@ type Entry {
     progress: List(Int),
     quest_ms_left: Int,
     objective_ms_left: List(Int),
+    deadline_ms: Option(Int),
   )
   /// Completed, at this many Unix seconds.
   Completed(at: Int)
@@ -201,6 +204,7 @@ fn entry_of(
         progress: active.progress,
         quest_ms_left: active.quest_ms_left,
         objective_ms_left: active.objective_ms_left,
+        deadline_ms: None,
       )
     }
     3, Some(at), None -> Ok(Completed(at:))
@@ -313,8 +317,10 @@ pub fn told_reset(log log: QuestLog) -> Int {
   log.told_reset
 }
 
-/// The rows the log is saved as, in quest id order.
-pub fn rows(log log: QuestLog) -> List(QuestRow) {
+/// The rows the log is saved as at this monotonic time in milliseconds, in quest id
+/// order. A running timed quest is saved with the time it has left, and never 0, which
+/// the client's 0x35F shows as a full timer (`opcode.0x35f`, `0x1406118a0`).
+pub fn rows(log log: QuestLog, now_ms now_ms: Int) -> List(QuestRow) {
   in_quest_order(log:)
   |> list.map(fn(pair) {
     let #(quest_id, entry) = pair
@@ -325,10 +331,15 @@ pub fn rows(log log: QuestLog) -> List(QuestRow) {
         tracked:,
         done_mask:,
         progress:,
-        quest_ms_left:,
+        quest_ms_left: told_ms_left,
         objective_ms_left:,
+        deadline_ms:,
         ..,
-      ) ->
+      ) -> {
+        let quest_ms_left = case deadline_ms {
+          Some(deadline_ms) -> int.max(1, deadline_ms - now_ms)
+          None -> told_ms_left
+        }
         QuestRow(
           quest_id:,
           state: active_state_number(state:),
@@ -342,6 +353,7 @@ pub fn rows(log log: QuestLog) -> List(QuestRow) {
             objective_ms_left:,
           )),
         )
+      }
       Completed(at:) ->
         QuestRow(quest_id:, state: 3, completed_at: Some(at), active: None)
       Known(state:) ->
@@ -422,9 +434,43 @@ pub fn login(
     ))
     as "the saved quest ids fit 15 bits, the lists and the Unix seconds fit the message"
   #(
-    QuestLog(..log, told_reset: reset_time),
+    QuestLog(
+      entries: dict.map_values(log.entries, fn(quest_id, entry) {
+        started_running(entry:, quest_id:, tables:, now_ms: now.monotonic_ms)
+      }),
+      told_reset: reset_time,
+    ),
     Frame(message_id: quest_message.message_id, body:),
   )
+}
+
+/// The entry with its time running from this monotonic time, when its Quest2 row has a
+/// time limit: the time the client was told is left, and 0 is a full timer, which is
+/// what the client shows for 0 (`opcode.0x35f`, `0x1406118a0`).
+fn started_running(
+  entry entry: Entry,
+  quest_id quest_id: Int,
+  tables tables: table_store.Tables,
+  now_ms now_ms: Int,
+) -> Entry {
+  case entry {
+    Active(quest_ms_left:, ..) ->
+      case quest2.get(tables:, id: Quest2Id(quest_id)) {
+        Ok(quest) if quest.max_time_allowed_ms > 0 ->
+          Active(
+            ..entry,
+            deadline_ms: Some(
+              now_ms
+              + case quest_ms_left {
+                0 -> quest.max_time_allowed_ms
+                left -> left
+              },
+            ),
+          )
+        Ok(_) | Error(Nil) -> entry
+      }
+    Completed(..) | Known(..) -> entry
+  }
 }
 
 /// One entry of the completed list: flagged when the quest has a period and was
@@ -766,9 +812,16 @@ const contract_flag = 0x80000
 
 /// The log after the player accepts the quest: an active Accepted entry in place of
 /// whatever the log held of it, tracked (the client gives a new entry the flag word
-/// 2, `0x1405fbdc0`), with no objective done, no progress and no time running.
-pub fn accept(log log: QuestLog, quest quest: Quest) -> QuestLog {
-  started(log:, quest:, quest_ms_left: 0)
+/// 2, `0x1405fbdc0`), with no objective done and no progress. A quest with a time
+/// limit (`max_time_ms`, Quest2 `maxTimeAllowedMS`, 0 for none) runs out that long
+/// after `now_ms`, the monotonic time of the accept.
+pub fn accept(
+  log log: QuestLog,
+  quest quest: Quest,
+  max_time_ms max_time_ms: Int,
+  now_ms now_ms: Int,
+) -> QuestLog {
+  started(log:, quest:, quest_ms_left: 0, max_time_ms:, now_ms:)
 }
 
 /// The log after the player retries a Botched quest: as `accept`, with the quest's
@@ -776,15 +829,18 @@ pub fn accept(log log: QuestLog, quest quest: Quest) -> QuestLog {
 pub fn retry(
   log log: QuestLog,
   quest quest: Quest,
-  quest_ms_left quest_ms_left: Int,
+  max_time_ms max_time_ms: Int,
+  now_ms now_ms: Int,
 ) -> QuestLog {
-  started(log:, quest:, quest_ms_left:)
+  started(log:, quest:, quest_ms_left: max_time_ms, max_time_ms:, now_ms:)
 }
 
 fn started(
   log log: QuestLog,
   quest quest: Quest,
   quest_ms_left quest_ms_left: Int,
+  max_time_ms max_time_ms: Int,
+  now_ms now_ms: Int,
 ) -> QuestLog {
   let zeros = list.map(quest.objectives, fn(_) { 0 })
   QuestLog(
@@ -801,9 +857,46 @@ fn started(
         progress: zeros,
         quest_ms_left:,
         objective_ms_left: zeros,
+        deadline_ms: case max_time_ms > 0 {
+          True -> Some(now_ms + max_time_ms)
+          False -> None
+        },
       ),
     ),
   )
+}
+
+/// The log with every active quest whose time has run out at this monotonic time
+/// held Botched (`hold`), and the ids of those quests in ascending order.
+pub fn expire(log log: QuestLog, now_ms now_ms: Int) -> #(QuestLog, List(Int)) {
+  let due =
+    in_quest_order(log:)
+    |> list.filter_map(fn(pair) {
+      case pair.1 {
+        Active(deadline_ms: Some(deadline_ms), ..) if deadline_ms <= now_ms ->
+          Ok(pair.0)
+        Active(..) | Completed(..) | Known(..) -> Error(Nil)
+      }
+    })
+  #(
+    list.fold(due, log, fn(log, quest_id) {
+      hold(log:, quest_id:, state: Botched)
+    }),
+    due,
+  )
+}
+
+/// The earliest monotonic time at which an active quest runs out, when any does.
+pub fn next_deadline(log log: QuestLog) -> Option(Int) {
+  dict.values(log.entries)
+  |> list.filter_map(fn(entry) {
+    case entry {
+      Active(deadline_ms: Some(deadline_ms), ..) -> Ok(deadline_ms)
+      Active(..) | Completed(..) | Known(..) -> Error(Nil)
+    }
+  })
+  |> list.reduce(int.min)
+  |> option.from_result
 }
 
 /// The log after the quest is held in the client's second list in this state, in place
