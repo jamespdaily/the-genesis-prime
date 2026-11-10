@@ -33,6 +33,10 @@
 ////   colour set or dye, since the client draws all three), in slot order, so one 0x933
 ////   carries them. A start that changes nothing, because the slot already shows that
 ////   visual, reports nothing.
+//// - **A rebase reports the visuals whose shown visual changed** when the base changes,
+////   after a worn item moves: a slot the new base holds an item in shows it, and a slot
+////   it empties shows display 0. A slot a disguise holds reports nothing, and shows the
+////   new base when the disguise ends.
 //// - **The same source started twice is held once**, as for properties, and ending a
 ////   source that is not held reports nothing.
 //// - **The 0x262's list** is the base with each disguised slot's entry replaced, or
@@ -114,6 +118,21 @@ pub fn end(
         ),
       )
   }
+}
+
+/// The look with its base now `base`, and the visuals whose shown visual changed, in slot
+/// order: the visual of a slot the new base holds an item in, and display 0 for a slot it
+/// empties (`opcode.0x933.empty_display`). A slot a disguise holds reports nothing, and
+/// shows the new base when the disguise ends.
+pub fn rebased(
+  look look: Look,
+  base base: List(ItemVisual),
+) -> #(Look, List(ItemVisual)) {
+  changed_by(
+    look:,
+    slots: list.map(list.append(look.base, base), fn(visual) { visual.slot }),
+    after: Look(..look, base:),
+  )
 }
 
 /// The item visuals a 0x262 of the player lists: the base with each disguised slot's

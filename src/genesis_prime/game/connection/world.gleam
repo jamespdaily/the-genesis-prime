@@ -71,7 +71,7 @@ import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
   type AfterLeave, type AfterSave, type EntryFrom, type Session,
-  AwaitingHelloReply, Camped, ClaimingSession, EnteringWorld,
+  AwaitingHelloReply, Buying, Camped, ClaimingSession, EnteringWorld,
   FromCharacterSelect, FromHolocrypt, InCharacterSelect, InWorld, JoinAt,
   Leaving, LeavingMap, MovingItem, Playing, SavingPlace, Session, Summoning,
   TakingSessionKey, ToCharacterSelect, WaitingToClaim,
@@ -190,6 +190,7 @@ pub fn save_due(
     | EnteringWorld(..)
     | Summoning(..)
     | MovingItem(..)
+    | Buying(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -250,6 +251,7 @@ pub fn quest_reset_due(
     | EnteringWorld(..)
     | Summoning(..)
     | MovingItem(..)
+    | Buying(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -572,6 +574,14 @@ pub fn entry_answered(
       {
         Ok(world_entry.InTheWorld(entered:, effects:)) ->
           in_the_world(session:, now:, holder:, entered:, effects:)
+        Ok(world_entry.GearFault(text:)) ->
+          connection_state.told(
+            session:,
+            now:,
+            reason: LostUserServer,
+            level: step.LogError,
+            text:,
+          )
         Ok(world_entry.NotInTheWorld(character_id:, warning:)) ->
           case from {
             FromCharacterSelect ->

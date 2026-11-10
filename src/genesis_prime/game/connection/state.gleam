@@ -20,6 +20,7 @@ import genesis_prime/game/server_proxy.{type ServerProxies}
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/vendor.{type Vendors}
+import genesis_prime/game/vendor_purchase
 import genesis_prime/game/world_entry
 import genesis_prime/game/zone_welcome.{type ZoneWelcomes}
 import genesis_prime/game_settings.{type GameSettings}
@@ -195,6 +196,17 @@ pub type Status {
     entered: world_entry.Entered,
     moving: inventory.Moving,
   )
+  /// The player is in the world and the store is asked to take the price of the buy the
+  /// player's 0xBE made and to add its items (`purchase`, genesis_prime/game/vendor_purchase),
+  /// whose answer is awaited with the client's frames held. The player's place is not saved
+  /// yet, so a connection that ends in this status saves it as one in `InWorld` does; the
+  /// held items and credits in `entered` are the ones before the buy, which the answer
+  /// replaces.
+  Buying(
+    holder: Holder,
+    entered: world_entry.Entered,
+    purchase: vendor_purchase.Purchase,
+  )
   /// The store is asked to save where the player stands, and its answer is
   /// awaited; `then` says what follows it. A connection in this status ends
   /// without a second save: the save out is the one its end waits for.
@@ -301,6 +313,7 @@ pub fn standing(status: Status) -> Standing {
     | EnteringWorld(..)
     | Summoning(..)
     | MovingItem(..)
+    | Buying(..)
     | SavingPlace(..)
     | LeavingMap(..) -> Busy(text: "a frame was taken while an ask was out")
     WaitingToClaim(..) ->
@@ -393,6 +406,7 @@ pub fn held_in_the_world(
     | EnteringWorld(..)
     | Summoning(..)
     | MovingItem(..)
+    | Buying(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -485,6 +499,7 @@ pub fn with_entered(
     | EnteringWorld(..)
     | Summoning(..)
     | MovingItem(..)
+    | Buying(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -617,6 +632,7 @@ pub fn holds_a_player(
     InWorld(holder:, entered:)
     | Summoning(holder:, entered:)
     | MovingItem(holder:, entered:, ..)
+    | Buying(holder:, entered:, ..)
     | ClaimingSession(holder:, resume: ResumeWorld(entered:), ..)
     | WaitingToClaim(holder:, resume: ResumeWorld(entered:), ..) ->
       Some(#(holder, entered))
@@ -709,6 +725,7 @@ pub fn entered_of(status: Status) -> Option(world_entry.Entered) {
     InWorld(entered:, ..)
     | Summoning(entered:, ..)
     | MovingItem(entered:, ..)
+    | Buying(entered:, ..)
     | SavingPlace(entered:, ..)
     | LeavingMap(entered:, ..)
     | ClaimingSession(resume: ResumeWorld(entered:), ..)
@@ -743,6 +760,7 @@ fn account_id_of(status: Status) -> Option(Int) {
         holder: hand_off.Holder(account_id: store.AccountId(id), ..),
         ..,
       )
+    | Buying(holder: hand_off.Holder(account_id: store.AccountId(id), ..), ..)
     | SavingPlace(
         holder: hand_off.Holder(account_id: store.AccountId(id), ..),
         ..,

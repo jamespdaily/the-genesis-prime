@@ -64,6 +64,7 @@ import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/trade_cancel.{TradeCancel}
+import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/watchdog_report.{WatchdogReport}
 import genesis_prime/message/window_opened.{WindowOpened}
 import genesis_prime/message/world_message.{WorldMessage}
@@ -244,6 +245,13 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
     #(
       0x00F2,
       client_message.TerrainLoaded(message: TerrainLoaded(world_zone_id: 2)),
+    ),
+    #(
+      0x00BE,
+      client_message.VendorPurchase(message: VendorPurchase(
+        unique_id: 3,
+        quantity: 2,
+      )),
     ),
     #(0x00BF, client_message.CampRequest(message: CampRequest(start: 1))),
     #(0x00C0, client_message.CampFinished(message: CampFinished)),

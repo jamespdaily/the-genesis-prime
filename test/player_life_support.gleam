@@ -142,3 +142,22 @@ pub fn offence_of(
     strikethrough: 0.0,
   )
 }
+
+/// A player at full health.
+pub fn alive() -> Life {
+  player_life.new(health: 736, shield: 0, regeneration:)
+}
+
+/// A player who entered the world dead.
+pub fn dead() -> Life {
+  let #(life, _) =
+    player_life.entering(
+      saved: Some(0),
+      max_health: 736,
+      shield: 0,
+      regeneration:,
+      place: place(),
+    )
+  assert player_life.state(life:) == player_life.Dead
+  life
+}

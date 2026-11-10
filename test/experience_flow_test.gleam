@@ -9,18 +9,27 @@
 //// - The stay rule the connection applies to `Struck` and `FightTold`: a message for a
 ////   stay other than the connection's current one, or for a player not in the world, is
 ////   dropped; a credit that waits behind a camp's final save meets it.
+//// - `player.level1_base_health` and `CreatureLevel`: a player's Base Health (property 7)
+////   is the row of its level plus its worn items'. Row 1's 135.97 and row 2's 216.533
+////   (`gleam run -m genesis_prime/table_rows -- CreatureLevel 1 2`, unitPropertyValue07)
+////   with the Novice set's 600 give 736 and 817 (816.533 rounded).
 //// The store's part is played by the test: the experience the camp's save asks the
 //// store to keep is the experience the store gives the next entry.
 
 import connection_rule_support
 import experience_support as experience
 import game_connection_support as support
+import genesis_prime/client_connection.{PropertiesChanged}
 import genesis_prime/message/experience_gained.{
   type ExperienceGained, ExperienceGained,
 }
+import genesis_prime/message/float32
 import genesis_prime/message/player_character_state
+import genesis_prime/message/unit_properties_changed
+import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/store
 import genesis_prime/world_map/unit_fields
+import gleam/list
 import gleam/option.{Some}
 import map_support
 import owned_test
@@ -106,4 +115,44 @@ pub fn a_credit_for_a_player_who_left_is_dropped_test() -> Nil {
     )
   assert experience.gains(taken:) == [gain_of_5()]
     as "while one of the present stay still counts"
+}
+
+pub fn a_level_up_sends_property_7_at_the_new_level_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 650 experience at level 1: a kill of 5 reaches 655 and level 2 (XpPerLevel).
+  let state =
+    support.watched_by(
+      state: experience.entered_at(level: 1, saved_experience: Some(650)),
+      viewers: [2, 3],
+    )
+  let #(_, credit) = experience.credited(state:, creature_id: 73_464, level: 1)
+  assert experience.level_writes(taken: credit) == [#(support.own_unit_id, 2)]
+    as "the kill makes level 2"
+  let entry =
+    UnitProperty(
+      property_id: 7,
+      base: float32.to_bits(817.0),
+      value: float32.to_bits(817.0),
+    )
+  let written =
+    list.map(
+      support.decoded(
+        support.written(credit),
+        0x093A,
+        unit_properties_changed.decode,
+      ),
+      fn(message) {
+        assert message.unit_id == support.own_unit_id
+        message.properties
+      },
+    )
+  assert written == [[entry]]
+    as "0x93a {7 = CreatureLevel row 2's 216.533 and the worn 600, rounded: 817}, and nothing else: only the level's property moves"
+  list.each([2, 3], fn(viewer) {
+    assert list.contains(
+      support.news_told(taken: credit, viewer:),
+      PropertiesChanged(properties: [entry]),
+    )
+      as "each viewer is told the same entry"
+  })
 }

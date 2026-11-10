@@ -24,9 +24,11 @@
 ////   index -1 (the value 0 would make the first costume slot the active one),
 ////   input key set 3, action set 0 (a value of 4 or more empties the action bar)
 ////   (`0x1403e1400`, `opcode.0x25e.safe_body`).
+//// - **The 15 currencies** are what the character holds, credits first
+////   (genesis_prime/game/currency, `opcode.0x25e`).
 //// - **Sent as 0 or empty**, each the client's value for a character with none of
 ////   it (`opcode.0x25e.safe_body`): the held items (world entry sends them in
-////   0x111), the 15 currencies, the money trade limit, the rest experience, the
+////   0x111), the money trade limit, the rest experience, the
 ////   elder points, the periodic elder points, the attribute points, the bonus AMP
 ////   power, the bonus ability tier points, no unlocked AMPs (the client's list
 ////   holds at most 54), no reputations, no pets, the bind point, the PvP flag time
@@ -36,6 +38,7 @@
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/class_resource
+import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/message/player_character_state.{PlayerCharacterState}
 import genesis_prime/message/reputation_list.{ReputationList}
 import genesis_prime/store.{type Character}
@@ -73,18 +76,20 @@ pub fn item_proficiencies(
   class_row.starting_item_proficiencies
 }
 
-/// 0x025E for the character at its class with its `experience`, the class's item
-/// proficiencies, the client's start values, and every other field 0 or empty.
+/// 0x025E for the character at its class with its `experience` and `currencies`, the
+/// class's item proficiencies, the client's start values, and every other field 0 or
+/// empty.
 pub fn frame(
   tables tables: table_store.Tables,
   character character: Character,
   experience experience: Int,
+  currencies currencies: Currencies,
 ) -> Frame {
   let assert Ok(body) =
     player_character_state.encode(
       PlayerCharacterState(
         held_items: [],
-        currencies: <<0:size(960)>>,
+        currencies: currency.bytes(currencies:),
         money_trade_limit: 0,
         experience:,
         rest_experience: 0,

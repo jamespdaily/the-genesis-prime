@@ -9,7 +9,7 @@
 //// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id)
 //// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place, stay, alive)
 ////                                                 (or Refused, for a level with no XpPerLevel row too: the rule hands back to select)
-//// Joined(unit record, loadout, health, run)
+//// Joined(unit record, loadout, run)
 ////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x92C, 0x25E (a play only), 0x111 x 10 (x 11 with an
 ////                                                 innate), 0x1A0, 0x19D, 0x19F (with an innate), 0x6BC, 0x636, 0xF1, 0x61,
 ////                                                 WatchMap(map, run), StartPassive (with an innate passive)
@@ -21,10 +21,12 @@
 //// ```
 ////
 //// - **The unit** is the map's: it builds the player's unit when it takes the
-////   player (genesis_prime/world_map/map), with the loadout and the maximum
-////   health, and answers 0x262's record, which `joined` sends with the health
-////   the player enters at as stat 0, and the typed loadout and maximum health,
-////   which `Entered` keeps. A play enters at the health its last save kept,
+////   player (genesis_prime/world_map/map), with the body's visuals and the loadout,
+////   and answers 0x262's record and the typed loadout. `joined` works out the gear
+////   from the items the character holds at location 0 (genesis_prime/game/gear), which
+////   `Entered` keeps, writes its item visuals and properties into the record, and sends
+////   it with the health the player enters at as stat 0. A level the tables have no Base
+////   Health row for is `GearFault`: the connection is ended with an error. A play enters at the health its last save kept,
 ////   capped at the maximum, and at full health when none was kept; the
 ////   Holocrypt's join enters at full health (`player_life.entering`; the
 ////   server's choice). A play that enters below its maximum health starts the
@@ -115,7 +117,7 @@
 ////   sends 0x0162 Failed and the list again, as before world entry
 ////   (opcode.0x162.after_create).
 //// - **A join the map refuses** (`map.NotJoined`: the character's class and
-////   faction have no Novice set, or its level has no Base Health row) is not
+////   faction have no Novice set) is not
 ////   entered: a warning, and the rule hands back to character select as for a
 ////   character with no saved place.
 //// - **An answer that is none of the ask out** (the map's while the store is
@@ -138,7 +140,9 @@ import genesis_prime/game/character_state
 import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
 import genesis_prime/game/class_resource
+import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/experience
+import genesis_prime/game/gear.{type Gear}
 import genesis_prime/game/innate
 import genesis_prime/game/inventory
 import genesis_prime/game/loadout.{type Loadout}
@@ -151,6 +155,7 @@ import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
 import genesis_prime/game/unit_properties
+import genesis_prime/game/vendor
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers.{AbilityTiers}
 import genesis_prime/message/action_set.{ActionSet}
@@ -209,6 +214,8 @@ pub type Effect {
   /// Start the player's innate passive, the spell with this Spell4Base, which the
   /// plans hold.
   StartPassive(base: Spell4BaseId)
+  /// A line for the log at the warning level.
+  Warn(text: String)
 }
 
 /// Why the client's request to play is refused: its body is one the client's
@@ -240,6 +247,7 @@ pub opaque type State {
     saved_health: Option(Int),
     experience: Int,
     items: List(store.HeldItem),
+    currencies: Currencies,
     quests: QuestLog,
     map: MapId,
     stay: Stay,
@@ -276,15 +284,20 @@ pub type Joined {
   /// The map refused the character (`map.NotJoined`); character select refuses
   /// the play, as it does for a character with no saved place.
   NotInTheWorld(character_id: Int, warning: String)
+  /// The tables have no Base Health row for the character's level, so its maximum
+  /// health is unknown: no unit of it is made, the connection is ended and the text,
+  /// which names the level, is logged as an error.
+  GearFault(text: String)
 }
 
 /// A player in the world: its character as the store loaded it (which a join at
 /// the Holocrypt asks the map with again), the place it entered this stay at, the
 /// stay its join named, its map, the run of the map that took it, which the rule watches as
 /// `Map(map, incarnation)`, its unit id, the
-/// origin of the map's clock (`Joined` carries it), its loadout and maximum
-/// health (typed, from the tables: the weapon, the abilities and the gear's
-/// properties, which the 0x262 carries as bits), its own 0x262 record
+/// origin of the map's clock (`Joined` carries it), its loadout (typed, from the
+/// tables: the abilities and the innate), its gear (what the items it holds at
+/// location 0 give: the weapon, the visuals and the properties the 0x262 carries as bits,
+/// genesis_prime/game/gear), its own 0x262 record
 /// (`Joined`'s unit, which the connection sends the players who see it), who
 /// sees it, the units its own client shows, the casts of other units its client
 /// has been sent the start of, where it stands
@@ -314,6 +327,14 @@ pub type Entered {
     /// The items the character holds, as the store saved them: each with its
     /// own guid, its item2 id, where it is held and how many it stacks.
     items: List(store.HeldItem),
+    /// What the character holds of each currency: the saved amounts, which a
+    /// purchase lowers (genesis_prime/game/vendor_purchase) and the store saves with it.
+    currencies: Currencies,
+    /// The vendor window the player has open, which a purchase is made from
+    /// (genesis_prime/game/vendor_purchase): the result of each interaction message
+    /// sets it, clears it or keeps it (genesis_prime/game/interaction.Window), and a
+    /// join of a world has none.
+    vendor: Option(vendor.Opened),
     /// The character's experience: the saved one, or the least of its level when
     /// none was saved (`experience.entering`). The connection adds each kill's
     /// credit to it (genesis_prime/game/connection/experience) and saves it with
@@ -322,7 +343,10 @@ pub type Entered {
     /// The quest log the character holds (genesis_prime/game/quest_log): the
     /// connection saves it with the place and, at a play, sends it after 0x25E.
     quests: QuestLog,
-    max_health: Int,
+    /// What the worn items give (genesis_prime/game/gear): the connection works it out
+    /// again after each change of a worn item and keeps it with the unit, the look and
+    /// the properties it gave them.
+    gear: Gear,
     clock_origin_ms: Int,
     viewers: Dict(ConnectionId, Stay),
     shown: shown.Picture,
@@ -375,10 +399,29 @@ fn control_at_entry(
 }
 
 /// The shield a player enters the world with: the stat 20 its client was told in
-/// its 0x262 (`player_unit.create`), or 0 when the unit holds none.
+/// its 0x262 (`player_unit.with_gear`), or 0 when no shield is worn and the unit holds
+/// none.
 fn full_shield(unit unit: UnitCreatePlayer) -> Int {
   unit_fields.stat(tail: unit.tail, stat_id: unit_fields.shield_stat)
   |> result.unwrap(0)
+}
+
+/// The unit with the shield it enters with as stat 20, when a shield is worn: a unit
+/// with none holds no stat 20, as `player_unit.with_gear` leaves it.
+fn with_shield_stat(
+  unit unit: UnitCreatePlayer,
+  worn worn: Gear,
+  shield shield: Int,
+) -> UnitCreatePlayer {
+  case gear.shield_capacity(gear: worn) {
+    Some(_) ->
+      player_unit.with_integer_stat(
+        unit,
+        stat_id: unit_fields.shield_stat,
+        value: shield,
+      )
+    None -> unit
+  }
 }
 
 /// The process whose answer world entry waits for, for the log line of an ask
@@ -473,6 +516,7 @@ pub fn loaded(
           saved_health:,
           saved_experience:,
           items:,
+          currencies:,
           quests:,
         ) ->
           case character.place {
@@ -500,6 +544,7 @@ pub fn loaded(
                     saved_health:,
                     saved_experience:,
                     items:,
+                    currencies: currency.from_held(held: currencies),
                     quests: log,
                     connection:,
                     stay:,
@@ -521,6 +566,7 @@ fn joining_a_play(
   saved_health saved_health: Option(Int),
   saved_experience saved_experience: Option(Int),
   items items: List(store.HeldItem),
+  currencies currencies: Currencies,
   quests quests: QuestLog,
   connection connection: ConnectionId,
   stay stay: Stay,
@@ -545,7 +591,8 @@ fn joining_a_play(
       )
     }
     Ok(experience) -> {
-      let frame = character_state.frame(tables:, character:, experience:)
+      let frame =
+        character_state.frame(tables:, character:, experience:, currencies:)
       let #(state, effects) =
         joining(
           character:,
@@ -554,6 +601,7 @@ fn joining_a_play(
           saved_health:,
           experience:,
           items:,
+          currencies:,
           quests:,
           connection:,
           stay:,
@@ -587,18 +635,32 @@ pub fn joined(
       saved_health:,
       experience:,
       items:,
+      currencies:,
       quests:,
       map:,
       stay:,
       entry:,
     ) -> {
       case answer {
-        map.Joined(unit:, loadout:, max_health:, incarnation:, clock_origin_ms:) -> {
+        map.Joined(unit:, loadout:, incarnation:, clock_origin_ms:) -> {
+          let worn = gear.of_items(tables:, items:)
+          use bases <- with_bases(tables:, worn:, level: character.level)
+          let assert Ok(max_health) =
+            gear.max_health(tables:, gear: worn, level: character.level)
+            as "the bases are found only for a level with a Base Health row"
           let sent = start_place.within_the_worlds_box(place)
           let assert Ok(resource) =
             class_resource.of_class(classes:, class_id: character.class_id)
             as "character creation makes only playable classes, and the content load refuses a table with no resource for one"
-          let unit = player_unit.with_resource(record: unit, resource:)
+          let unit =
+            unit
+            |> player_unit.with_gear(
+              replacing: [],
+              item_visuals: worn.visuals,
+              bases:,
+              shield: gear.shield_capacity(gear: worn),
+            )
+            |> player_unit.with_resource(resource:)
           let properties =
             unit_properties.new(
               defaults:,
@@ -613,7 +675,7 @@ pub fn joined(
               regeneration: player_life.regeneration(
                 numbers:,
                 properties:,
-                shield: loadout.properties.shield,
+                shield: worn.properties.shield,
               ),
               place: sent,
             )
@@ -623,10 +685,7 @@ pub fn joined(
               stat_id: unit_fields.health_stat,
               value: player_life.health(life:),
             )
-            |> player_unit.with_integer_stat(
-              stat_id: unit_fields.shield_stat,
-              value: player_life.shield(life:),
-            )
+            |> with_shield_stat(worn:, shield: player_life.shield(life:))
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id
           let #(quests, quest_effects) =
@@ -643,9 +702,11 @@ pub fn joined(
               unit:,
               loadout:,
               items:,
+              currencies:,
+              vendor: None,
               experience:,
               quests:,
-              max_health:,
+              gear: worn,
               clock_origin_ms:,
               viewers: dict.new(),
               shown: dict.new(),
@@ -698,6 +759,7 @@ pub fn joined(
                 WatchMap(map:, incarnation:),
               ],
               passive_started(loadout:),
+              unread_warned(gear: worn),
             ]),
           ))
         }
@@ -724,6 +786,26 @@ pub fn joined(
       }
     }
     Loading(..) -> Error(Nil)
+  }
+}
+
+/// One warning for each worn item the gear lists as unread or undrawn, at entry, where
+/// none is known yet.
+fn unread_warned(gear gear: gear.Gear) -> List(Effect) {
+  list.map(gear.warnings(gear:, known: None), fn(text) { Warn(text:) })
+}
+
+/// The bases of the gear's properties at `level`, handed to `next`, or the fault that
+/// ends the connection when the tables have no Base Health row for the level.
+fn with_bases(
+  tables tables: table_store.Tables,
+  worn worn: Gear,
+  level level: Int,
+  next next: fn(List(#(UnitProperty2Id, Float))) -> Result(Joined, Nil),
+) -> Result(Joined, Nil) {
+  case gear.bases(tables:, gear: worn, level:) {
+    Ok(bases) -> next(bases)
+    Error(error) -> Ok(GearFault(text: gear.describe(error:)))
   }
 }
 
@@ -780,6 +862,7 @@ pub fn rejoining(
     saved_health: None,
     experience: entered.experience,
     items: entered.items,
+    currencies: entered.currencies,
     quests: entered.quests,
     connection:,
     stay:,
@@ -798,6 +881,7 @@ fn joining(
   saved_health saved_health: Option(Int),
   experience experience: Int,
   items items: List(store.HeldItem),
+  currencies currencies: Currencies,
   quests quests: QuestLog,
   connection connection: ConnectionId,
   stay stay: Stay,
@@ -813,6 +897,7 @@ fn joining(
       saved_health:,
       experience:,
       items:,
+      currencies:,
       quests:,
       map:,
       stay:,

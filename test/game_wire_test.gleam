@@ -58,6 +58,7 @@ import genesis_prime/message/chat_line_accepted
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
+import genesis_prime/message/currency_changed
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
 import genesis_prime/message/delete_result
@@ -67,12 +68,16 @@ import genesis_prime/message/disconnect_reason.{
 }
 import genesis_prime/message/enter_world
 import genesis_prime/message/float32
+import genesis_prime/message/interaction_request.{InteractionRequest}
+import genesis_prime/message/item_move
+import genesis_prime/message/item_place
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags
 import genesis_prime/message/movement_velocity
 import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/message/player_character_state
 import genesis_prime/message/player_health
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
@@ -85,10 +90,14 @@ import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_properties_changed
+import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_stealth
+import genesis_prime/message/vendor_items
+import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/whisper_failed
 import genesis_prime/readiness
 import genesis_prime/server
@@ -100,6 +109,7 @@ import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn
+import genesis_prime/world_map/spawn_id
 import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/dict
@@ -122,8 +132,10 @@ import owned_test
 import place_support
 import planted_table
 import pog
+import rating_support
 import spawn_support
 import unitest
+import vendor_support
 
 /// The 16 bytes the client shows as its session key: the wire bytes of the
 /// GUID the hand-off holds.
@@ -1196,6 +1208,199 @@ pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_a
   login_support.stop(started)
 }
 
+// ---- a purchase is saved ----
+
+/// The credits the character is given before it buys (the table's value is a server
+/// choice, `starting_credits`; the test gives its own so it does not depend on it).
+const credits_before_the_buy = 1000
+
+/// The credits slot of the entry's 0x25E: the first of 15 u64 little-endian, the types 1
+/// to 15 in order, credits first (opcode.0x25e).
+fn credits_in_entry(frames frames: List(Frame)) -> Int {
+  let assert [Frame(body:, ..)] =
+    list.filter(frames, fn(frame) { frame.message_id == 0x025E })
+    as "the entry sends one 0x25E"
+  let assert Ok(state) = player_character_state.decode(body)
+    as "the client's reader reads the 0x25E"
+  let assert <<credits:unsigned-little-size(64), _:bytes>> = state.currencies
+  credits
+}
+
+pub fn credits_survive_a_relog_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Supplier Ingavak (Creature2 28739) stands 3.0 from the player's edge, within the
+  // 9.0 a vendor request is answered up to (opcode.0x7ea). The player is an Exile
+  // (faction 167), to whom his faction 171 is friendly (Faction2Relationship 771). A
+  // buy of one Item2 14838 costs the 67 the window shows (`vendor.start_zone_prices`),
+  // and 0x919 kind 0 then carries the credits left (opcode.0x919). After a camp and a
+  // new play, the 0x25E carries them in its first currency slot (opcode.0x25e).
+  let vendors =
+    vendor_support.stocking_items(
+      creature_ids: [28_739],
+      items: vendor_support.ingavaks_items,
+    )
+  let selection =
+    spawn.select(
+      rows: [
+        spawn.Row(
+          ..spawn_support.beast_row(number: 10_706),
+          creature_id: 28_739,
+          display_info_id: 29_772,
+          outfit_info_id: 9029,
+          faction_id: 171,
+          base_faction_id: 171,
+        ),
+      ],
+      tables: character_tables.content_tables(),
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.kinds(),
+      vendors:,
+    )
+  assert selection.refusals == [] as "the row passes the spawn checks"
+  let assert Ok(spawns) = dict.get(selection.worlds, 3460)
+  let assert Ok(selected) = dict.get(spawns.by_id, spawn_id.SpawnId(10_706))
+  let ingavak =
+    spawn.Spawn(
+      ..selected,
+      place: beast_place(
+        x: 1.5,
+        z: 3.5 -. { 3.0 +. 1.2 +. selected.combat.hit_radius },
+      ),
+    )
+  let started =
+    login_support.start_with(change: fn(settings) {
+      let game = settings.game
+      server.Settings(
+        ..settings,
+        game: server.Served(
+          ..game,
+          settings: connection_state.Settings(
+            ..game.settings,
+            vendors:,
+            game: GameSettings(
+              ..game.settings.game,
+              camp_countdown_ms: bot_countdown_ms,
+            ),
+          ),
+        ),
+        world: server.World(
+          ..settings.world,
+          spawns: spawn_support.key_in(
+            world_id: 1387,
+            spawns: [ingavak],
+            respawn_ms: 60_000,
+          ),
+        ),
+      )
+    })
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 1,
+    )
+  let assert Ok(_) =
+    pog.query("update character set faction_id = 167 where character_id = $1")
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character is of the faction Ingavak is friendly to"
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_currency (character_id, currency_type_id, amount) values ($1, 1, $2)",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.parameter(pog.int(credits_before_the_buy))
+    |> pog.execute(pool)
+    as "the character holds credits"
+  send_play(game:, character_id: character)
+  let #(entry, have) =
+    game_client.read_until(
+      game:,
+      have: <<>>,
+      within_ms: 5000,
+      found: fn(frames) {
+        list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+        && game_client.creatures_created_in(frames:) != []
+      },
+    )
+  assert credits_in_entry(frames: entry) == credits_before_the_buy
+    as "the entry carries the credits the character holds"
+  let assert [shown] = game_client.creatures_created_in(frames: entry)
+  assert shown.creature_id == 28_739
+    as "the creature in sight is Supplier Ingavak"
+  // The right-click opens the window; the item's unique id is the one the window shows.
+  let assert Ok(request) =
+    interaction_request.encode(InteractionRequest(
+      unit_id: shown.unit_id,
+      kind: 0x31,
+    ))
+  game_client.send_world(
+    game:,
+    message_id: interaction_request.message_id,
+    body: request,
+  )
+  let #(window, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x090B })
+    })
+  let assert [Frame(body: items, ..)] =
+    list.filter(window, fn(frame) { frame.message_id == 0x090B })
+  let assert Ok(stock) = vendor_items.decode(items)
+  let assert Ok(stimpack) =
+    list.find(stock.items, fn(item) { item.entry_id == 14_838 })
+    as "the window shows Item2 14838"
+  let assert Ok(buy) =
+    vendor_purchase.encode(VendorPurchase(
+      unique_id: stimpack.unique_id,
+      quantity: 1,
+    ))
+  game_client.send_world(
+    game:,
+    message_id: vendor_purchase.message_id,
+    body: buy,
+  )
+  let #(bought, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0919 })
+      && list.any(frames, fn(frame) {
+        frame.message_id == 0x0111 || frame.message_id == 0x017F
+      })
+    })
+  let assert [Frame(body: changed, ..)] =
+    list.filter(bought, fn(frame) { frame.message_id == 0x0919 })
+  let assert Ok(told) = currency_changed.decode(changed)
+  assert told.kind == 0 && told.total == credits_before_the_buy - 67
+    as "opcode.0x919: kind 0 sets the total, the credits less the 67 the window showed"
+  // The player camps and plays the same character again.
+  game_client.send_world(game:, message_id: 0x00BF, body: <<1>>)
+  let #(_, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0092 })
+    })
+  game_client.send_world(game:, message_id: 0x00C0, body: <<>>)
+  let #(_, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0594 })
+    })
+  game_client.send(game:, message_id: 0x07E0, body: <<>>)
+  let #(_, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0117 })
+    })
+  send_play(game:, character_id: character)
+  let #(second_entry, _) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+    })
+  assert credits_in_entry(frames: second_entry) == credits_before_the_buy - 67
+    as "opcode.0x25e: the first currency slot carries the credits the buy saved"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
 // ---- two players see each other ----
 
 /// Puts a session key in the hand-off for an account and connects a client with
@@ -2196,6 +2401,103 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
   assert destroyed.unit_id == 3
     as "the connection that drops is removed for the first player by the map's Gone"
   game_client.close(game: first)
+  login_support.stop(started)
+}
+
+/// A created Warrior of CharacterCreation row 466 for the account, played into
+/// the map: its client, in the world, with the bytes read beyond its entry.
+fn created_warrior_enters(
+  game game: game_client.Game,
+  name name: String,
+) -> #(game_client.Game, BitArray) {
+  game_client.send_create(game:, body: create_request(name))
+  let created = created_result(game)
+  let _list = listed_entries(game)
+  send_play(game:, character_id: created.character_id)
+  let #(_burst, have) = game_client.read_entry_kept(game:, have: <<>>)
+  #(game, have)
+}
+
+pub fn a_second_player_sees_the_first_take_off_its_chest_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let first = in_select(started:, port:, account:)
+  let second_guid = support.guid_of(0x22)
+  let second_account =
+    AccountId(login_support.insert_other(
+      started:,
+      login_name: "player2",
+      game_account_id: second_guid,
+    ))
+  let second =
+    connected_as(
+      started:,
+      port:,
+      account: second_account,
+      login_name: "player2",
+      game_account_id: second_guid,
+      key: support.guid_of(2),
+    )
+  let #(first, first_have) = created_warrior_enters(game: first, name: "Zed Qu")
+  let #(second, second_have) =
+    created_warrior_enters(game: second, name: "Ann Qu")
+  // The second's entry is followed by the 0x262 of the first, which names its unit.
+  let #(seen_first, second_have) =
+    game_client.next(game: second, have: second_have)
+  let first_unit = unit_of(seen_first)
+  let #(_seen_second, _first_have) =
+    game_client.next(game: first, have: first_have)
+  // The first takes its chest, held at worn slot 0, into its first bag slot.
+  let assert Ok(move) =
+    item_move.encode(item_move.ItemMove(
+      from: item_place.ItemPlace(location: 0, bag_index: 0),
+      to: item_place.ItemPlace(location: 1, bag_index: 0),
+    ))
+    as "0x182 encodes"
+  game_client.send_world(game: first, message_id: 0x0182, body: move)
+  let is_properties = fn(frame: Frame) { frame.message_id == 0x093A }
+  let #(seen, _second_have) =
+    game_client.read_until(
+      game: second,
+      have: second_have,
+      within_ms: 5000,
+      found: fn(frames) { list.any(frames, is_properties) },
+    )
+  let assert [look] =
+    list.filter(seen, fn(frame) { frame.message_id == 0x0933 })
+    as "the second client is written one 0x933 when the first's chest comes off"
+  assert unit_item_visuals_changed.decode(look.body)
+    == Ok(
+      UnitItemVisualsChanged(unit_id: first_unit, item_visuals: [
+        ItemVisual(slot: 1, display_id: 0, item_color_set_id: 0, dye: 0),
+      ]),
+    )
+    as "opcode.0x933.empty_display: the first's chest slot 1 is emptied on the second's screen"
+  let assert [properties] = list.filter(seen, is_properties) as "and one 0x93a"
+  let assert Ok(changed) = unit_properties_changed.decode(properties.body)
+  assert changed.unit_id == first_unit
+  assert list.filter(changed.properties, fn(entry) {
+      entry.property_id == 7 || entry.property_id == 42
+    })
+    == [
+      UnitProperty(
+        property_id: 7,
+        base: float32.to_bits(586.0),
+        value: float32.to_bits(586.0),
+      ),
+      UnitProperty(
+        property_id: 42,
+        base: float32.to_bits(187.5),
+        value: float32.to_bits(187.5),
+      ),
+    ]
+    as "player.level1_gear_properties: without the chest's quarter of the 600 Base Health and its 62.5 Armor, 736 falls to 586 and 250 to 187.5"
+  assert list.map(seen, fn(frame) { frame.message_id })
+    |> list.filter(fn(id) { id == 0x0933 || id == 0x093A })
+    == [0x0933, 0x093A]
+    as "the look comes before the properties"
+  game_client.close(game: first)
+  game_client.close(game: second)
   login_support.stop(started)
 }
 
