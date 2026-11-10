@@ -347,3 +347,4 @@ QuestObjective	5763	the type 12 objective of quest 4290, which needs five uses	q
 Quest2	5622	quest whose objective 0 is 10263 (type 3, flags 0x20, count 1) and objectives 1 and 2 are 8742 and 8305 (type 3, flags 3)	quest_log_progress_test
 QuestObjective	10263	the optional type 3 objective of quest 5622	quest_log_progress_test
 Creature2	74787	a unit beside the mounts whose row gives no visibility prerequisite	tutorial_visibility_wire_test
+Creature2	73605	a Departures Terminal whose activate spell is a castMethod 5 interaction with activateSpellCastTime 0	cast_activate_test

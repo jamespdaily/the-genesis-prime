@@ -19,6 +19,9 @@ import genesis_prime/message/choose_realm.{type ChooseRealm}
 import genesis_prime/message/choose_resurrection.{type ChooseResurrection}
 import genesis_prime/message/client_control_echoed.{type ClientControlEchoed}
 import genesis_prime/message/client_option.{type ClientOption}
+import genesis_prime/message/client_side_interaction_result.{
+  type ClientSideInteractionResult,
+}
 import genesis_prime/message/client_wrapper.{type ClientWrapper}
 import genesis_prime/message/close_notice.{type CloseNotice}
 import genesis_prime/message/create_character.{type CreateCharacter}
@@ -119,6 +122,7 @@ pub type ClientMessage {
   ItemDelete(message: ItemDelete)
   InnateIndexChosen(message: InnateIndexChosen)
   CancelCast(message: CancelCast)
+  ClientSideInteractionResult(message: ClientSideInteractionResult)
   ChooseResurrection(message: ChooseResurrection)
   WatchdogReport(message: WatchdogReport)
   FrameTimeReport(message: FrameTimeReport)
@@ -228,6 +232,13 @@ pub fn decode(
     0x016F ->
       decoded(body, message_id, innate_index_chosen.decode, InnateIndexChosen)
     0x0801 -> decoded(body, message_id, cancel_cast.decode, CancelCast)
+    0x0805 ->
+      decoded(
+        body,
+        message_id,
+        client_side_interaction_result.decode,
+        ClientSideInteractionResult,
+      )
     0x015A ->
       decoded(body, message_id, choose_resurrection.decode, ChooseResurrection)
     0x023C -> decoded(body, message_id, watchdog_report.decode, WatchdogReport)
@@ -326,6 +337,8 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     ItemDelete(message:) -> item_delete.encode(message)
     InnateIndexChosen(message:) -> innate_index_chosen.encode(message)
     CancelCast(message:) -> cancel_cast.encode(message)
+    ClientSideInteractionResult(message:) ->
+      client_side_interaction_result.encode(message)
     ChooseResurrection(message:) -> choose_resurrection.encode(message)
     WatchdogReport(message:) -> watchdog_report.encode(message)
     FrameTimeReport(message:) -> frame_time_report.encode(message)
@@ -394,6 +407,7 @@ pub fn message_id(message: ClientMessage) -> Int {
     ItemDelete(..) -> item_delete.message_id
     InnateIndexChosen(..) -> innate_index_chosen.message_id
     CancelCast(..) -> cancel_cast.message_id
+    ClientSideInteractionResult(..) -> client_side_interaction_result.message_id
     ChooseResurrection(..) -> choose_resurrection.message_id
     WatchdogReport(..) -> watchdog_report.message_id
     FrameTimeReport(..) -> frame_time_report.message_id
@@ -461,6 +475,7 @@ pub fn name(message: ClientMessage) -> String {
     ItemDelete(..) -> "item_delete"
     InnateIndexChosen(..) -> "innate_index_chosen"
     CancelCast(..) -> "cancel_cast"
+    ClientSideInteractionResult(..) -> "client_side_interaction_result"
     ChooseResurrection(..) -> "choose_resurrection"
     WatchdogReport(..) -> "watchdog_report"
     FrameTimeReport(..) -> "frame_time_report"
