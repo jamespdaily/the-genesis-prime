@@ -1,0 +1,4 @@
+ID	localizedTextIdMessage	delay	flags	creatureId	worldId	worldZoneId	minLevel	maxLevel	quest00	quest01	quest02	state00	state01	state02	factionId	classId	raceId	factionIdReputation	reputationMin	reputationMax	questIdDelivered	prerequisiteId	displayDuration	communicatorMessagesIdNext	communicatorPortraitPlacementEnum	communicatorOverlayEnum	communicatorBackgroundEnum
+1281	0	2000	0	11063	426	0	0	0	3673	0	0	2	0	0	0	0	0	0	0	0	3673	0	0	0	0	0	0
+1907	0	1000	0	11066	51	13	0	0	3741	0	0	2	0	0	0	0	0	0	0	0	3741	0	0	0	0	0	0
+2081	0	0	1	11063	426	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	3673	0	0	0	0	0	0

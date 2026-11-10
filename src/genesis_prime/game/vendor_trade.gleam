@@ -107,20 +107,21 @@ pub fn opened(
         logged:,
       ))
     Some(window) ->
-      case player_life.state(life:) == player_life.Dead {
-        True ->
-          Error(refused_logged(
-            trade:,
-            reason: "dead",
-            text: label
-              <> " "
-              <> trade.verb
-              <> " a vendor while the player is dead: the client sends nothing for a dead player, so the server answers "
-              <> int.to_string(trade.dead_player_code),
-            code: trade.dead_player_code,
-            logged:,
-          ))
-        False ->
+      case
+        refused_when_dead(
+          key: trade.key <> " dead",
+          text: label
+            <> " "
+            <> trade.verb
+            <> " a vendor while the player is dead: the client sends nothing for a dead player, so the server answers "
+            <> int.to_string(trade.dead_player_code),
+          code: trade.dead_player_code,
+          life:,
+          logged:,
+        )
+      {
+        Error(declined) -> Error(declined)
+        Ok(Nil) ->
           case
             interaction.vendor_opened(
               unit_id: window.unit_id,
@@ -174,6 +175,26 @@ fn window_refused(
     code:,
     logged:,
   )
+}
+
+/// The refusal of a request a dead player makes, which the client never sends: `Ok` for a
+/// living player, else the effects that answer with `code` and log `text` once for `key` on
+/// the connection, with the log keys met so far. A buy, a sale and a quest's turn-in each ask
+/// it before they look at what the request names.
+pub fn refused_when_dead(
+  key key: String,
+  text text: String,
+  code code: Int,
+  life life: player_life.Life,
+  logged logged: Set(String),
+) -> Result(Nil, Declined) {
+  case player_life.state(life:) {
+    player_life.Alive -> Ok(Nil)
+    player_life.Dead -> {
+      let #(level, logged) = interaction.log_level(key:, logged:)
+      Error(Declined(effects: [Log(level:, text:), Refuse(code:)], logged:))
+    }
+  }
 }
 
 /// A refusal by a code the client's own check gives for a request it never sends, or that
