@@ -170,6 +170,7 @@ import genesis_prime/game/connection/world as connection_world
 import genesis_prime/game/player_life
 import genesis_prime/game/routing
 import genesis_prime/game/strike
+import genesis_prime/game/vendor_sale
 import genesis_prime/hand_off.{SessionKey, Take}
 import genesis_prime/login/guid
 import genesis_prime/message/bit_stream
@@ -568,7 +569,9 @@ fn routed(
     | Ok(routing.Interaction(..))
     | Ok(routing.Quest(..))
     | Ok(routing.Inventory(..))
-    | Ok(routing.VendorPurchase) ->
+    | Ok(routing.VendorPurchase)
+    | Ok(routing.VendorSale)
+    | Ok(routing.VendorSellJunk) ->
       connection_state.misrouted(session:, now:, inner:)
     Error(Nil) ->
       case stage {
@@ -750,6 +753,22 @@ fn world_carried(
                     holder:,
                     entered:,
                     inner: whole,
+                  )
+                Ok(routing.VendorSale) ->
+                  connection_vendor_sale.sale_message(
+                    session:,
+                    now:,
+                    holder:,
+                    entered:,
+                    request: vendor_sale.SellStack(body: whole.body),
+                  )
+                Ok(routing.VendorSellJunk) ->
+                  connection_vendor_sale.sale_message(
+                    session:,
+                    now:,
+                    holder:,
+                    entered:,
+                    request: vendor_sale.SellJunk(body: whole.body),
                   )
                 Ok(routing.Dropped(message:)) ->
                   connection_dropped.dropped_message(

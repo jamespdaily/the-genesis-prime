@@ -311,6 +311,20 @@ pub fn within_reach(
   creature_radius creature_radius: Float,
   now_ms now_ms: Int,
 ) -> Bool {
+  within(player:, tables:, path:, creature_radius:, now_ms:, range: reach)
+}
+
+/// Whether the creature, at its place now, is within `range` of the player, the gap
+/// counted between the two bodies' edges. The player's Race row is in the tables (the
+/// load fails otherwise), so a missing one crashes.
+pub fn within(
+  player player: Player,
+  tables tables: table_store.Tables,
+  path path: Path,
+  creature_radius creature_radius: Float,
+  now_ms now_ms: Int,
+  range range: Float,
+) -> Bool {
   let assert Ok(player_radius) =
     hit_radius.of_player(tables:, race_id: player.race_id)
     as "hit_radius.requirements fails the load when a playable race has no Race row"
@@ -321,7 +335,7 @@ pub fn within_reach(
       to: area.point_of(place: creature_path.place_at(path:, now_ms:)),
       to_radius: creature_radius,
     )
-  gap <=. reach
+  gap <=. range
 }
 
 /// The vendor whose window the player may open: the unit is a shown creature that is

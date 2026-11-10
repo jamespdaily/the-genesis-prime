@@ -163,6 +163,13 @@ const stackable_flag = 0x4
 /// (`Item2.bags`).
 const bag_flag = 0x100
 
+/// The flags of an item's type, category and family, joined, that let a vendor buy the item
+/// (`0x14040d160.sell_cleared`).
+const sellable_flag = 0x20
+
+/// The Item2Family of quest items, which no vendor buys (`0x14040d160.sell_cleared`).
+const quest_item_family = 24
+
 /// Item2.flags 0x10000: the item cannot be destroyed (0x1403c1360).
 const undeletable_flag = 0x10000
 
@@ -580,6 +587,19 @@ pub fn bag_size(
       }
     False -> None
   }
+}
+
+/// Whether the client lets the item be sold at all: the rule of BuildItemPrices, which keeps a
+/// sell price only when the joined flags hold 0x20 and the family is not Quest Item.
+pub fn sellable(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Bool, ItemPropertyError) {
+  use rows <- result.map(rows(tables:, item2_id:))
+  // A proxy's joined flags are 0x10004 (`is_proxy`), which lack 0x20.
+  !is_proxy(rows.item)
+  && int.bitwise_and(rows.joined_flags, sellable_flag) != 0
+  && rows.item.item2_family_id != quest_item_family
 }
 
 /// Whether the player may destroy the item: Item2.flags lacks 0x10000

@@ -1226,7 +1226,8 @@ pub fn answered(
             reason: stack_split,
           )),
           Send(case count == source.stack_count {
-            True -> removed(guid: source.item_guid, reason: stack_split)
+            True ->
+              item_removed_frame(guid: source.item_guid, reason: stack_split)
             False ->
               count_changed_frame(
                 guid: source.item_guid,
@@ -1236,7 +1237,10 @@ pub fn answered(
           }),
         ])
         Deleted(item:) -> #(moving.items, [
-          Send(removed(guid: item.item_guid, reason: player_requested)),
+          Send(item_removed_frame(
+            guid: item.item_guid,
+            reason: player_requested,
+          )),
         ])
         Split(..) -> panic as "the store answers a split with ItemMade"
       }
@@ -1317,7 +1321,7 @@ pub fn count_changed_frame(
 }
 
 /// The 0x148 that takes a held item away.
-fn removed(guid guid: Int, reason reason: Int) -> Frame {
+pub fn item_removed_frame(guid guid: Int, reason reason: Int) -> Frame {
   let assert Ok(body) =
     item_removed.encode(ItemRemoved(item_guid: guid, reason:))
     as "a guid and a reason of 6 bits fit 0x148"

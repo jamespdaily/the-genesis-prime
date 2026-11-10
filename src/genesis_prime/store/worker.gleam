@@ -416,15 +416,35 @@ fn items(
 /// it set the credits to `credits_after`, deleted each stack sold whole and lowered
 /// each stack sold in part.
 fn sell_to_vendor(
-  pool _pool: pog.Connection,
-  account_id _account_id: store.AccountId,
-  character_id _character_id: store.CharacterId,
-  session_epoch _session_epoch: store.SessionEpoch,
-  credits_held _credits_held: Int,
-  credits_after _credits_after: Int,
-  sold _sold: List(store.SoldStack),
+  pool pool: pog.Connection,
+  account_id account_id: store.AccountId,
+  character_id character_id: store.CharacterId,
+  session_epoch session_epoch: store.SessionEpoch,
+  credits_held credits_held: Int,
+  credits_after credits_after: Int,
+  sold sold: List(store.SoldStack),
 ) -> Result(ItemsAnswer, Nil) {
-  panic as "shape: #584"
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  locked(pool:, account_id:, character_id:, statement: fn(connection) {
+    sql.sell_to_vendor(
+      connection,
+      character_id,
+      account_id,
+      store.session_epoch_number(session_epoch),
+      credits_held,
+      credits_after,
+      list.map(sold, fn(stack) { stack.item_guid }),
+      list.map(sold, fn(stack) { stack.held_count }),
+      list.map(sold, fn(stack) { stack.sold_count }),
+    )
+  })
+  |> items_answer(saved: fn(rows) {
+    case rows {
+      [row] -> store.Sold(credits: row.credits)
+      _ -> panic as "the statement sets the credits once or returns no row"
+    }
+  })
 }
 
 /// A split: split_character_item.sql, answered with `ItemMade` and the new

@@ -9,7 +9,7 @@
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
 ////                                                 ─▶ Movement(message), Camp(message), Chat(message), Cast(message),
 ////                                                    Life(message), Innate(message), Interaction(message), Quest(message),
-////                                                    Inventory(message), VendorPurchase or Dropped(message)
+////                                                    Inventory(message), VendorPurchase, VendorSale, VendorSellJunk or Dropped(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
 ////
@@ -43,6 +43,7 @@ import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/quest
 import genesis_prime/game/vendor_purchase
+import genesis_prime/game/vendor_sale
 import genesis_prime/message/ability_hold
 import genesis_prime/message/camp_finished
 import genesis_prime/message/camp_request
@@ -122,6 +123,12 @@ pub type Feature {
   Inventory(message: inventory.Message)
   /// The player's buy from the open vendor, 0x00BE (genesis_prime/game/vendor_purchase).
   VendorPurchase
+  /// The player's sale of one stack or part of one to the open vendor, 0x0166
+  /// (genesis_prime/game/vendor_sale).
+  VendorSale
+  /// The player's sale of all junk to the open vendor, 0x0167
+  /// (genesis_prime/game/vendor_sale).
+  VendorSellJunk
   /// A report or request taken and dropped (genesis_prime/game/dropped).
   Dropped(message: dropped.Message)
 }
@@ -317,6 +324,13 @@ const table = [
     [AtWorld],
   ),
   Row(vendor_purchase.message_id, InsideWorldMessage, VendorPurchase, [AtWorld]),
+  Row(vendor_sale.sale_message_id, InsideWorldMessage, VendorSale, [AtWorld]),
+  Row(
+    vendor_sale.junk_message_id,
+    InsideWorldMessage,
+    VendorSellJunk,
+    [AtWorld],
+  ),
   Row(
     camp_request.message_id,
     InsideWorldMessage,
