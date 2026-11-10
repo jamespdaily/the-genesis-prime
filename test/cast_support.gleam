@@ -265,6 +265,15 @@ pub fn caster() -> Caster {
     stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
     vitals: damage.Vitals(health: 0, max_health: 0, shield: 0, max_shield: 0),
     quests: quest_support.log_of(rows: []),
+    player: prerequisite.Player(
+      race_id: 1,
+      class_id: 1,
+      level: 1,
+      path: 0,
+      gender: 0,
+      world_id: 3460,
+      zones: [],
+    ),
   )
 }
 

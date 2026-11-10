@@ -8,6 +8,7 @@ import gleam/bool
 import gleam/list
 import gleam/string
 import literal_area
+import module_preload
 import spawn_support
 import spell_tables
 import unitest
@@ -30,21 +31,26 @@ import unitest
 /// tagged `coverage` (`gleam test -- --tag coverage`).
 ///
 /// The client's spell plans are built before the first test starts: their one
-/// build for the run is setup, so no test's deadline holds it. A full run builds
-/// every other one-time build that tests call, before the first test, for the
-/// same reason: whichever test asks first would otherwise wait for the build
-/// inside its deadline, with the rest of the suite taking the processors. They
-/// are what the fixture's rows reach (`fixture_tables.reach`, about 3.4 s, which
-/// reads every fixture table), the keys of the client's fact file
-/// (`repository.fact_keys`, about 0.9 s), the repository's source tree
-/// (`repository.sources`, about 0.2 s), the fixture's server tables
-/// (`fixture_tables.shared`), the spell areas and server proxies built over
-/// them, the content tables, the Virtual Battle Beast the load builds from the
-/// rows (`spawn_support.loaded_beast`), and, where the client's files are on the
-/// machine, the client's tables (`client_tables.shared`, about 2.7 s, and
-/// `client_tables.every_table`, about 1.6 s more). A run of chosen tests
-/// (`--test`, `--tag`) leaves them to the tests that need them: those runs hold
-/// none or few of them, and run beside other runs.
+/// build for the run is setup, so no test's deadline holds it. A full run does
+/// the same, before the first test, for every module of the project and every
+/// other one-time build that tests call. The VM loads a module through one
+/// process the first time anything calls it, so on a machine with more runnable
+/// work than cores the queue of first calls ran past tests' 10 s deadlines
+/// (`module_preload`, about 0.8 s). And whichever test asks for a one-time build
+/// first would otherwise wait for it inside its deadline, with the rest of the
+/// suite taking the processors. Those builds are what the fixture's rows reach
+/// (`fixture_tables.reach`, about 3.4 s, which reads every fixture table), the
+/// keys of the client's fact file (`repository.fact_keys`, about 0.9 s), the
+/// repository's source tree (`repository.sources`, about 0.2 s), the fixture's
+/// server tables (`fixture_tables.shared`), the spell areas and server proxies
+/// built over them, the content tables, the Virtual Battle Beast the load
+/// builds from the rows (`spawn_support.loaded_beast`), and, where the client's
+/// files are on the machine, the client's tables (`client_tables.shared`, about
+/// 2.7 s, and `client_tables.every_table`, about 1.6 s more). A run of chosen
+/// tests (`--test`, `--tag`) leaves them to the tests that need them: those
+/// runs hold none or few of them, and run beside other runs, and the world-data
+/// run's literal area is 0.2% under its limit, which the modules' literals
+/// would pass.
 ///
 /// With `GENESIS_LITERAL_PEAK_FILE` set to a file, the run keeps the literal
 /// allocator's highest carriers size in it (`literal_area`), which `./check`
@@ -58,6 +64,7 @@ pub fn main() -> Nil {
   case runs_chosen_tests(argv.load().arguments) {
     True -> Nil
     False -> {
+      module_preload.load_project()
       let _reach = fixture_tables.reach()
       let _fact_keys = repository.fact_keys()
       let _sources = repository.sources(under: ["src"])

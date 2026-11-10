@@ -88,6 +88,7 @@ pub fn type_243_fails_for_every_subject_comparison_and_value_test() -> Nil {
     prerequisite.of_struck(
       first: None,
       second: origin,
+      player: prerequisite_support.player(),
       quests: quest_support.log_of(rows: []),
     ),
     prerequisite.of_difficulty(difficulty: 1),
@@ -210,6 +211,7 @@ pub fn a_subject_that_holds_no_factions_leaves_types_4_and_250_not_read_test() -
     prerequisite.of_struck(
       first: Some(origin),
       second: origin,
+      player: prerequisite_support.player(),
       quests: quest_support.log_of(rows: []),
     )
   list.each(
@@ -290,10 +292,16 @@ pub fn the_caster_carries_the_faction_and_base_faction_of_its_0x262_test() -> Ni
       ),
     )
   }
-  assert casting.caster_of(entered: with_unit_factions(dominion, exiles)).factions
+  assert casting.caster_of(
+      tables: character_tables.shared(),
+      entered: with_unit_factions(dominion, exiles),
+    ).factions
     == Factions(current: dominion, base: exiles)
     as "the 0x262's first faction field is the current faction and its second the base faction (opcode.0x262)"
-  assert casting.caster_of(entered: with_unit_factions(exiles, dominion)).factions
+  assert casting.caster_of(
+      tables: character_tables.shared(),
+      entered: with_unit_factions(exiles, dominion),
+    ).factions
     == Factions(current: exiles, base: dominion)
     as "swapped, they swap"
 }

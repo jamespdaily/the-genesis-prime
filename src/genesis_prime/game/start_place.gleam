@@ -125,7 +125,8 @@ pub fn facing_of_quaternion(
 /// position and the way it faces. It is always in a world: `place` refuses
 /// world 0, which is no World row (opcode.0xad), so a zone, a position and a
 /// facing with no world cannot be held. Moving or turning a place keeps its
-/// world and zone, so a moved place is never in another world.
+/// world and zone, so a moved place is never in another world; only `in_zone`
+/// changes the zone.
 pub opaque type Place {
   Place(
     world_id: Int,
@@ -200,6 +201,13 @@ pub fn within_the_worlds_box(place place: Place) -> Place {
 /// The place's world and zone, standing at the position `x`, `y`, `z`.
 pub fn moved(place place: Place, x x: Float, y y: Float, z z: Float) -> Place {
   Place(..place, x:, y:, z:)
+}
+
+/// The place's world and position, in the zone `world_zone_id`. The zone is
+/// kept as given: it is the zone the client reports, which it does not check
+/// against its WorldZone table (0x14036d040).
+pub fn in_zone(place place: Place, world_zone_id world_zone_id: Int) -> Place {
+  Place(..place, world_zone_id:)
 }
 
 /// The place's world, zone and position, facing `facing`.

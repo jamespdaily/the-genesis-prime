@@ -36,6 +36,10 @@ pub const health_stat = 0
 /// without it is level 1 (0x1404543c1).
 pub const level_stat = 10
 
+/// The stat the client keeps a unit's level override in: the level its formulas
+/// use when it is not 0 (`GetUnitFormulaLevel` 0x1403b5030).
+pub const level_override_stat = 11
+
 /// The stat the client keeps a unit's current shield in (0x140458140).
 pub const shield_stat = 20
 
