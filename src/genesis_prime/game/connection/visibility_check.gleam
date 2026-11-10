@@ -4,8 +4,11 @@
 //// worked out again from the cast rule's subject (`cast.subject_of`), and a set
 //// that differs from the one the entered player holds (`Entered.hidden`) is kept
 //// there and told to the map once (`TellVisibilityChanged`, the map's
-//// `VisibilityChanged`). A step that leaves the set as it was, a move included, tells
-//// nothing.
+//// `VisibilityChanged`). A step that leaves the set as it was tells nothing. A move
+//// is checked as well as the steps that change the log, a cast or the faction: a
+//// move can change the zone the player stands in, and a type 26 condition reads the
+//// zones. A step that ends the connection (`Done`) is not checked: no map is left to
+//// tell.
 ////
 //// ```
 //// a step's Handled(session) ─▶ rechecked ─▶ hidden(world's prerequisites, subject)
@@ -29,8 +32,8 @@ import gleam/result
 
 /// The step's outcome with the hidden set checked: unchanged when the set is
 /// the one held, else with the new set kept in the session and one tell of it to
-/// the player's map. A step that asks (`Asking`), or of a connection with no
-/// player in the world, is as it was: the next input checks it.
+/// the player's map. A step that asks (`Asking`) or ends the connection (`Done`), or of
+/// a connection with no player in the world, is as it was: the next input checks it.
 pub fn rechecked(
   handled handled: client_connection.Handled(Session),
 ) -> client_connection.Handled(Session) {
@@ -41,12 +44,7 @@ pub fn rechecked(
           Continue(session, list.append(effects, [tell]))
         None -> handled
       }
-    Done(session:, effects:) ->
-      case checked(session:) {
-        Some(#(session, tell)) -> Done(session, list.append(effects, [tell]))
-        None -> handled
-      }
-    client_connection.Asking(..) -> handled
+    Done(..) | client_connection.Asking(..) -> handled
   }
 }
 

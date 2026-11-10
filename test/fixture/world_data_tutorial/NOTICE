@@ -1,6 +1,7 @@
 test/fixture/world_data_tutorial/spawn.tsv holds the header and rows 29018, 29054, 29204, 29214,
-29215 and 29216 of spawn.tsv of the wildstar-knowledge world-data
+29215, 29216 and 29217 of spawn.tsv of the wildstar-knowledge world-data
 (https://github.com/jamespdaily/wildstar-knowledge, path world-data/spawn.tsv), copied as they
 are, under that repository's licence, the GNU Affero General Public License, version 3 (the same
 as this project's). The tests import it as the world database's own rows: the tutorial's
-hologram (73619), one Start Arrow (73707) and the four mount displays (74781 to 74784).
+hologram (73619), one Start Arrow (73707), the four mount displays (74781 to 74784) and a unit beside
+them that has no visibility prerequisite (74787).

@@ -2368,8 +2368,9 @@ fn joined(
 /// A second join of a connection in the map: the player kept with the new
 /// join's stay, an error line, the answer built from the unit the map keeps, for
 /// each player it sees a `SeenBy` for the joiner and one for that player, which
-/// sends the joiner its 0x262 again, and an `ObjectsSeen` of the objects it sees,
-/// under their ids, at monotonic time `now_ms`.
+/// sends the joiner its 0x262 again, an `ObjectsUnseen` of the objects it saw and
+/// no longer sees, and an `ObjectsSeen` of the objects it sees, under their ids, at
+/// monotonic time `now_ms`.
 fn joined_again(
   state state: State,
   caller caller: CallerId,
@@ -2399,6 +2400,7 @@ fn joined_again(
       now_ms:,
     )
   let kept = set.intersection(player.seen, seen)
+  let objects_before = player.objects
   let player = Player(..player, seen:, objects:)
   let #(player, ring_effects) = case player.readiness {
     StillLoading -> #(player, [])
@@ -2406,6 +2408,14 @@ fn joined_again(
   }
   let state =
     State(..state, players: dict.insert(state.players, connection, player))
+  let #(state, objects_left) =
+    objects_decided(
+      state:,
+      to: #(connection, player),
+      was: set.difference(objects_before, player.objects),
+      now: set.new(),
+      now_ms:,
+    )
   let #(state, objects_again) =
     objects_decided(
       state:,
@@ -2453,6 +2463,7 @@ fn joined_again(
           ),
           OwnEffect(Reply(caller, answer(state:, unit: player.unit))),
         ],
+        objects_left,
         objects_again,
         watched_again,
         spawn_changes,

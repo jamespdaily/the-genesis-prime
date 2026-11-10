@@ -3396,15 +3396,19 @@ fn static_objects_in(frames frames: List(Frame)) -> List(Int) {
 }
 
 /// A new character of the faction at the position in World 3460, entered as the
-/// player of the account number `number`, and everything the server wrote up to the
-/// pong of a ping sent after the entry (`read_until_pong`: all the server wrote
-/// before it took the ping, the map's tells of the join included).
+/// player of the account number `number`, and every message the server wrote up to
+/// the pong of a ping sent after the 0x262 of `anchor`, a unit that no
+/// prerequisite hides from the character. The map writes its objects in one tell,
+/// after its reply to the join and from another process than the connection's
+/// pong, so the pong alone does not follow them; the anchor's 0x262 shows the
+/// tell has been taken, and the connection writes all of it before it takes the ping.
 fn entering_3460_as(
   started started: login_support.Started,
   number number: Int,
   character_name character_name: String,
   faction_id faction_id: Int,
   at position: #(Float, Float, Float),
+  anchor anchor: Int,
 ) -> List(Frame) {
   let #(game, character_id) = new_player(started:, number:, character_name:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
@@ -3422,10 +3426,33 @@ fn entering_3460_as(
     position:,
   )
   send_play(game:, character_id:)
-  let #(_burst, have) = game_client.read_entry_kept(game:, have: <<>>)
-  let #(frames, _) = game_client.read_until_pong(game:, have:, number: 1)
+  let #(burst, have) = game_client.read_entry_kept(game:, have: <<>>)
+  let #(until_anchor, have) =
+    read_until_object(game:, have:, creature_id: anchor, read: burst)
+  let #(after, _) = game_client.read_until_pong(game:, have:, number: 1)
   game_client.close(game:)
-  frames
+  list.append(until_anchor, after)
+}
+
+/// Reads messages until the 0x262 of the static object with this Creature2 id has
+/// been read, which `read` may already hold.
+fn read_until_object(
+  game game: game_client.Game,
+  have have: BitArray,
+  creature_id creature_id: Int,
+  read read: List(Frame),
+) -> #(List(Frame), BitArray) {
+  use <- bool.guard(
+    when: list.contains(static_objects_in(frames: read), creature_id),
+    return: #(read, have),
+  )
+  let #(frame, rest) = game_client.next(game:, have:)
+  read_until_object(
+    game:,
+    have: rest,
+    creature_id:,
+    read: list.append(read, [frame]),
+  )
 }
 
 pub fn entering_world_3460_writes_no_start_arrow_and_mount_displays_only_to_an_exile_test() -> Nil {
@@ -3441,6 +3468,7 @@ pub fn entering_world_3460_writes_no_start_arrow_and_mount_displays_only_to_an_e
       character_name: "Zed Qu",
       faction_id: 167,
       at: at_the_arrows,
+      anchor: 73_619,
     ))
   assert exile == [73_619]
     as "an Exile with no tutorial quest at the Start Arrow's row 29054: the hologram 73619 (Creature2 prerequisite 41795, which passes for a player under no cast) is written and the Start Arrow 73707 (prerequisite 41803: neither quest 10527 nor 10532 is open) is not"
@@ -3451,9 +3479,10 @@ pub fn entering_world_3460_writes_no_start_arrow_and_mount_displays_only_to_an_e
       character_name: "Ann Qu",
       faction_id: 167,
       at: at_the_mounts,
+      anchor: 74_787,
     ))
-  assert exile_at_the_mounts == [74_781, 74_782, 74_783, 74_784]
-    as "an Exile at the mounts: the four EXILE mount displays are written (Creature2 prerequisite 19, base faction 167)"
+  assert exile_at_the_mounts == [74_781, 74_782, 74_783, 74_784, 74_787]
+    as "an Exile at the mounts: the four EXILE mount displays are written (Creature2 prerequisite 19, base faction 167), and 74787, which has none"
   let dominion_at_the_mounts =
     static_objects_in(frames: entering_3460_as(
       started:,
@@ -3461,9 +3490,10 @@ pub fn entering_world_3460_writes_no_start_arrow_and_mount_displays_only_to_an_e
       character_name: "Cal Qu",
       faction_id: 166,
       at: at_the_mounts,
+      anchor: 74_787,
     ))
-  assert dominion_at_the_mounts == []
-    as "a Dominion character at the same place is written none of them (Faction2 166 fails prerequisite 19)"
+  assert dominion_at_the_mounts == [74_787]
+    as "a Dominion character at the same place is written 74787, which has no visibility prerequisite, and none of the mount displays (Faction2 166 fails prerequisite 19)"
   login_support.stop(started)
 }
 

@@ -1348,8 +1348,7 @@ pub fn a_started_spawn_whose_visibility_prerequisite_has_no_row_fails_the_spawn_
     missing.refusals
     as "the started spawn is refused, the left-out one is not"
   assert string.contains(rule, "Creature2 73464")
-    && string.contains(rule, "999999")
-    && string.contains(rule, "Prerequisite table has no such row")
+    && string.contains(rule, "the table Prerequisite has no row 999999")
     as {
       "the rule names the creature, the prerequisite and the missing row: "
       <> rule

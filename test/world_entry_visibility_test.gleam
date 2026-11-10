@@ -20,7 +20,7 @@ import genesis_prime/table/id.{PrerequisiteId}
 import genesis_prime/world_map/map
 import gleam/dict
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{type Option, None, Some}
 import gleam/set.{type Set}
 import owned_test
 import prerequisite_support
@@ -58,12 +58,22 @@ fn join_hidden_by(
   faction faction: Int,
   index index: dict.Dict(Int, List(Prerequisite)),
 ) -> Set(Int) {
+  join_hidden_saved_at(faction:, index:, saved_health: None)
+}
+
+/// The same for a character whose last save kept this health (None: no save).
+fn join_hidden_saved_at(
+  faction faction: Int,
+  index index: dict.Dict(Int, List(Prerequisite)),
+  saved_health saved_health: Option(Int),
+) -> Set(Int) {
   let tables = character_tables.shared()
   let #(_state, loaded) =
     world_entry_support.loaded_seeing(
       tables:,
       character: world_entry_support.character(class: 1, faction:, level: 3),
       items: [],
+      saved_health:,
       saved_experience: None,
       quests: [],
       visibility: index,
@@ -118,4 +128,32 @@ pub fn the_join_names_the_hidden_set_by_faction_test() -> Nil {
     as "an Exile with no quest in World 3460 fails 41803 (neither quest open) and is under no cast, so it passes 41795 and 19 (the Exiles)"
   assert join_hidden(faction: 166) == set.from_list([19, 41_803])
     as "a Dominion character with no quest fails 19 (the base faction is not 167) as well as 41803"
+}
+
+/// A planted prerequisite of type 73 (`VitalCurrent`) on vital 1, Health, comparison 4
+/// (at least), value 11: it passes while the unit's current health is 11 or more.
+const needs_eleven_health = 900_003
+
+pub fn a_unit_whose_visibility_prerequisite_reads_health_is_hidden_from_a_player_entering_below_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let index =
+    dict.from_list([
+      #(3460, [
+        prerequisite_support.single(id: needs_eleven_health, condition: #(
+          73,
+          4,
+          1,
+          11,
+        )),
+      ]),
+    ])
+  assert join_hidden_saved_at(faction: 167, index:, saved_health: Some(10))
+    == set.from_list([needs_eleven_health])
+    as "Prerequisite.prerequisiteTypeId.73 compares the current health, cut to a whole number, with the value: a player whose last save kept 10 health enters at 10 (player_life.entering), which is below 11, so the join names it hidden"
+  assert join_hidden_saved_at(faction: 167, index:, saved_health: Some(0))
+    == set.from_list([needs_eleven_health])
+    as "a player saved dead enters at 0 health, below 11"
+  assert join_hidden_saved_at(faction: 167, index:, saved_health: None)
+    == set.new()
+    as "a player with no save enters at its maximum health, the Base Health of CreatureLevel row 3, which is above 11, so the unit is shown"
 }

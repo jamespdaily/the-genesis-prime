@@ -2121,7 +2121,7 @@ fn describe(error error: SpawnError) -> String {
       <> " has visibility prerequisite "
       <> int.to_string(prerequisite_id.value)
       <> ", which does not load: "
-      <> describe_load(reason:)
+      <> prerequisite.describe_load_error(error: reason)
     AttackNotEvaluated(creature_id: Creature2Id(creature_id), unevaluated:) ->
       "Creature2 "
       <> int.to_string(creature_id)
@@ -2155,27 +2155,6 @@ fn describe(error error: SpawnError) -> String {
 }
 
 /// The client's rule a creature's row fails, in words.
-fn describe_load(reason reason: prerequisite.LoadError) -> String {
-  case reason {
-    prerequisite.NoPrerequisiteRow(..) ->
-      "the client's Prerequisite table has no such row"
-    prerequisite.PrerequisiteCycle(path:) ->
-      "its rows nest each other round a cycle: "
-      <> string.join(
-        list.map(path, fn(one) { int.to_string(one.value) }),
-        " to ",
-      )
-    prerequisite.NoPositionalRequirementRow(id: arc_id) ->
-      "a type 108 condition names PositionalRequirement "
-      <> int.to_string(arc_id)
-      <> ", which the client's table does not hold"
-    prerequisite.NoQuestObjectiveRow(objective_id:) ->
-      "a quest condition names QuestObjective "
-      <> int.to_string(objective_id)
-      <> ", which the client's table does not hold"
-  }
-}
-
 fn describe_rule(rule: ValidityRule) -> String {
   case rule {
     ModelScaleNotAbove0 -> "its modelScale is not above 0"

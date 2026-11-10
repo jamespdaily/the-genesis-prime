@@ -6632,23 +6632,33 @@ pub fn subject_of(
 }
 
 /// What a prerequisite may read about a player entering a world, before its unit and
-/// its casts exist: the player and the factions and the quest log they hold, and the
-/// values a player starts with: no casts, not in combat, not stealthed, and health and
-/// shield full (current equal to maximum). The class resource slots and the positions
-/// are not held, so a prerequisite that reads those is `NotRead`, never `Fails`
-/// (genesis_prime/game/visibility); the first step's check decides it with the real
-/// values.
+/// its casts exist: the player and the factions and the quest log they hold, `health`
+/// (the health it enters at against its maximum, the value world entry makes the
+/// player's life from; `None` leaves the vital unread), and the values a player starts
+/// with: no casts, not in combat, not stealthed and a full shield. The class resource
+/// slots and the positions are not held, so a prerequisite that reads those is
+/// `NotRead`, never `Fails` (genesis_prime/game/visibility). None of the 68 condition
+/// types that the Creature2 rows' `prerequisiteIdVisibility` reach (2285 distinct
+/// root rows, nested rows followed) is type 64, which reads a resource slot, or type
+/// 108, the only type that reads a position, so no unit's visibility depends on them;
+/// types 71 and 73, which read a vital, are not among them either, but the health is
+/// held for a prerequisite the tables may add. The first step's check decides it all
+/// with the real values.
 pub fn entering_subject(
   player player: prerequisite.Player,
   factions factions: prerequisite.Factions,
   quests quests: QuestLog,
+  health health: Option(prerequisite.Vital),
 ) -> prerequisite.Subject {
   let full = prerequisite.Vital(current: 1.0, maximum: 1.0)
   prerequisite.Subject(
     under: [],
     second_unit: None,
     in_combat: False,
-    vitals: dict.from_list([#(health_vital, full), #(shield_vital, full)]),
+    vitals: dict.from_list(case health {
+      Some(held) -> [#(health_vital, held), #(shield_vital, full)]
+      None -> [#(shield_vital, full)]
+    }),
     difficulty: None,
     stealthed: Some(False),
     resource_slots: None,

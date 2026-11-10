@@ -831,6 +831,32 @@ fn unread_warned(gear gear: gear.Gear) -> List(Effect) {
   list.map(gear.warnings(gear:, known: None), fn(text) { Warn(text:) })
 }
 
+/// The health the character enters at against its maximum, as `player_life.entering`
+/// makes its life from them when the map answers; none when the tables have no Base
+/// Health row for its level, which ends the connection then (`GearFault`).
+fn entering_health(
+  tables tables: table_store.Tables,
+  character character: Character,
+  items items: List(store.HeldItem),
+  saved_health saved_health: Option(Int),
+) -> Option(prerequisite.Vital) {
+  gear.max_health(
+    tables:,
+    gear: gear.of_items(tables:, items:),
+    level: character.level,
+  )
+  |> result.map(fn(max_health) {
+    prerequisite.Vital(
+      current: int.to_float(player_life.entering_health(
+        saved: saved_health,
+        max_health:,
+      )),
+      maximum: int.to_float(max_health),
+    )
+  })
+  |> option.from_result
+}
+
 /// The bases of the gear's properties at `level`, handed to `next`, or the fault that
 /// ends the connection when the tables have no Base Health row for the level.
 fn with_bases(
@@ -938,6 +964,7 @@ fn joining(
       character:,
       place:,
       quests:,
+      health: entering_health(tables:, character:, items:, saved_health:),
     )
   #(
     Joining(

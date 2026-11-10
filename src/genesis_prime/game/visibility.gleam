@@ -13,11 +13,11 @@
 ////   not read (`NotRead`) and a unit with none (0) are shown. The client never tests
 ////   this column itself: it only removes a unit on the server's 0x355 or 0x262 flag
 ////   128 (`Creature2.prerequisiteIdVisibility`), so the server decides.
-//// - **At entry** the connection holds no cast, no unit and no vitals yet, so the
-////   subject is the player as the character and its place give it, with the quest log
-////   and no casts (`cast.entering_subject`); every started spawn's visibility
-////   prerequisite of the world reads only the faction, the quest log and the casts on
-////   the player.
+//// - **At entry** the connection holds no cast and no unit yet, so the subject is the
+////   player as the character and its place give it, with the quest log, the health it
+////   enters at and no casts (`cast.entering_subject`); every started spawn's
+////   visibility prerequisite of the world reads only the faction, the quest log and
+////   the casts on the player.
 //// - **At a step** the subject is the one the cast rule holds for the player
 ////   (`cast.subject_of`).
 
@@ -25,11 +25,11 @@ import genesis_prime/game/cast
 import genesis_prime/game/prerequisite.{type Prerequisite, type Subject}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/top_zone
 import genesis_prime/store.{type Character}
 import genesis_prime/table/id.{type PrerequisiteId}
 import genesis_prime/table/loader/store as table_store
 import gleam/list
+import gleam/option.{type Option}
 import gleam/set.{type Set}
 
 /// The ids of the prerequisites that fail for the subject: every one whose
@@ -52,29 +52,23 @@ pub fn hidden(
 /// The ids of the prerequisites that fail for a character entering a world at a
 /// place with the quest log it holds, before its unit and casts exist. The
 /// character's faction is both its current and its base faction, the level is the
-/// character's (a level override stat exists only on the unit), and the zones are
-/// the place's zone and each parent above it, as the connection's player gives
-/// them once the unit exists (genesis_prime/game/connection/prerequisite_player).
+/// character's (a level override stat exists only on the unit). `health` is the
+/// health the player enters at against its maximum.
 pub fn hidden_at_entry(
   prerequisites prerequisites: List(Prerequisite),
   tables tables: table_store.Tables,
   character character: Character,
   place place: Place,
   quests quests: QuestLog,
+  health health: Option(prerequisite.Vital),
 ) -> Set(PrerequisiteId) {
-  let zone = start_place.world_zone_id(place)
   let player =
-    prerequisite.Player(
-      race_id: character.race_id.value,
-      class_id: character.class_id.value,
-      level: character.level,
-      path: character.path,
-      gender: character.gender,
+    prerequisite.player_of(
+      tables:,
+      character:,
       world_id: start_place.world_id(place),
-      zones: case top_zone.chain(tables:, world_zone_id: zone) {
-        [] -> [zone]
-        chain -> chain
-      },
+      zone: start_place.world_zone_id(place),
+      level: character.level,
     )
   let subject =
     cast.entering_subject(
@@ -84,6 +78,7 @@ pub fn hidden_at_entry(
         base: character.faction_id,
       ),
       quests:,
+      health:,
     )
   hidden(prerequisites:, subject:)
 }

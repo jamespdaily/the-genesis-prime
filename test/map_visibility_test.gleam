@@ -505,7 +505,7 @@ pub fn a_late_or_unchanged_visibility_changed_gives_no_effect_test() -> Nil {
   assert logged(late) == 1 as "with one error line, as a late Moved is"
 }
 
-pub fn a_second_join_with_a_newly_hidden_unit_does_not_replay_it_test() -> Nil {
+pub fn a_second_join_with_a_newly_hidden_unit_removes_it_and_replays_the_rest_test() -> Nil {
   use <- owned_test.run(5000)
   let state =
     started(creatures: [hidden_beast(number: 1, x: 5.0)], objects: [
@@ -518,6 +518,8 @@ pub fn a_second_join_with_a_newly_hidden_unit_does_not_replay_it_test() -> Nil {
   let creature = { start.1 }.unit_id
   assert seen_creatures(first) == [#(1, [73_707, 72_051])]
     as "the first join sees both objects"
+  let assert [arrow_unit_id, _] = seen_unit_ids(first)
+    as "each object has its own unit id"
   // The same connection joins again, now with the Start Arrow's prerequisite failing.
   let #(state, again) =
     spawns.join_hiding(
@@ -529,8 +531,10 @@ pub fn a_second_join_with_a_newly_hidden_unit_does_not_replay_it_test() -> Nil {
       hidden: hidden([start_arrow_prerequisite]),
     )
   assert answers_the_join(again) as "the second join is answered"
-  assert seen_creatures(again) == [#(1, [72_051])] && unseen_ids(again) == []
+  assert seen_creatures(again) == [#(1, [72_051])]
     as "the replay writes only the object still shown: the arrow, newly hidden, gets no create"
+  assert unseen_ids(again) == [#(1, [arrow_unit_id])]
+    as "and one ObjectsUnseen removes the arrow the first join showed, under the unit id it was shown with"
   assert spawns.creature_sends(again) == [#(creature, "Unwatched by 1")]
     as "and the creature, newly hidden, is told the player no longer watches it, not that it does"
   // The map's sight now matches the hidden set, so showing again sends the arrow.
