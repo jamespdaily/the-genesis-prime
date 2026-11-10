@@ -26,6 +26,7 @@ import ask_support
 import asking_rule
 import character_support
 import database_support
+import event_wait
 import genesis_prime/add_character/sql as add_character_sql
 import genesis_prime/game/character_name
 import genesis_prime/game/start_place.{Facing}
@@ -3399,10 +3400,12 @@ fn release_earlier_save(earlier: EarlierSave) -> Nil {
 }
 
 /// Returns once a statement of this database waits for a lock, which is the
-/// later save waiting for the row the earlier one holds. It reads the database's
-/// own wait state, polling every 20 ms for at most `event_wait_ms`.
+/// later save waiting for the row the earlier one holds. Postgres sends the test
+/// no event for a statement that starts to wait, so the test reads the
+/// database's own wait state every millisecond; the wait has no limit of its
+/// own, and the test's deadline ends it (`event_wait`).
 fn await_a_statement_waiting_for_a_lock(store store: Store) -> Nil {
-  let waiting = fn() {
+  event_wait.until("a statement of the database to wait for a lock", fn() {
     let assert Ok(returned) =
       pog.query(
         "select count(*)::int from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'",
@@ -3411,19 +3414,7 @@ fn await_a_statement_waiting_for_a_lock(store store: Store) -> Nil {
       |> pog.execute(store.pool)
       as "the waiting statements were counted"
     returned.rows != [0]
-  }
-  await_until(waiting, polls: ask_support.event_wait_ms / 20)
-}
-
-fn await_until(done: fn() -> Bool, polls polls: Int) -> Nil {
-  case done(), polls {
-    True, _ -> Nil
-    False, 0 -> panic as "the event did not happen within the deadline"
-    False, _ -> {
-      process.sleep(20)
-      await_until(done, polls: polls - 1)
-    }
-  }
+  })
 }
 
 pub fn a_constraint_of_the_quest_table_the_worker_does_not_map_is_refused_as_a_place_test() -> Nil {

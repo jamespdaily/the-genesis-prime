@@ -6,7 +6,7 @@
 %% that started the node, which reads the node's output and exit status from its
 %% mailbox, so every call here is made by that process.
 -module(serving_node_ffi).
--export([start/2, await_output/3, terminate/1, await_exit/2, output/1, root_ended/0]).
+-export([start/2, await_output/2, terminate/1, await_exit/1, output/1, root_ended/0]).
 
 %% Whether the application's root has ended: the node sets its status to stopping
 %% before it stops the application, so a node that is stopping may still have
@@ -35,21 +35,17 @@ start(Module, Environment) ->
     end),
     {node, Port, OsPid}.
 
-%% Whether the node has printed Text within TimeoutMs milliseconds.
-await_output(Node, Text, TimeoutMs) ->
-    Deadline = erlang:monotonic_time(millisecond) + TimeoutMs,
-    wait_for(Node, binary_to_list(Text), Deadline).
+%% Whether the node printed Text before it ended. The wait has no limit of its
+%% own: a node that neither prints it nor ends leaves the test's deadline to end
+%% the wait.
+await_output(Node, Text) ->
+    wait_for(Node, binary_to_list(Text)).
 
-wait_for({node, Port, _} = Node, Text, Deadline) ->
+wait_for({node, Port, _} = Node, Text) ->
     case string:find(binary_to_list(output(Node)), Text) of
         nomatch ->
-            Remaining = Deadline - erlang:monotonic_time(millisecond),
-            case Remaining > 0 andalso exit_status(Port) =:= none of
-                true ->
-                    case pump(Port, Remaining) of
-                        true -> wait_for(Node, Text, Deadline);
-                        false -> false
-                    end;
+            case exit_status(Port) =:= none of
+                true -> pump(Port), wait_for(Node, Text);
                 false -> false
             end;
         _ -> true
@@ -60,20 +56,14 @@ terminate({node, _Port, OsPid}) ->
     os:cmd("kill -TERM " ++ integer_to_list(OsPid)),
     nil.
 
-%% The node's exit status, once it has ended within TimeoutMs milliseconds.
-await_exit({node, Port, _}, TimeoutMs) ->
-    Deadline = erlang:monotonic_time(millisecond) + TimeoutMs,
-    exit_loop(Port, Deadline).
+%% The node's exit status, once it has ended. The wait has no limit of its own.
+await_exit({node, Port, _}) ->
+    exit_loop(Port).
 
-exit_loop(Port, Deadline) ->
+exit_loop(Port) ->
     case exit_status(Port) of
-        none ->
-            Remaining = Deadline - erlang:monotonic_time(millisecond),
-            case Remaining > 0 andalso pump(Port, Remaining) of
-                true -> exit_loop(Port, Deadline);
-                false -> {error, nil}
-            end;
-        Status -> {ok, Status}
+        none -> pump(Port), exit_loop(Port);
+        Status -> Status
     end.
 
 %% Everything the node printed so far, as the process has read it.
@@ -83,17 +73,14 @@ output({node, Port, _}) ->
         Bytes -> Bytes
     end.
 
-%% Takes the node's next output or its exit status from the mailbox, within
-%% Remaining milliseconds; false when neither came.
-pump(Port, Remaining) ->
+%% Takes the node's next output or its exit status from the mailbox, and waits
+%% for one of them.
+pump(Port) ->
     receive
         {Port, {data, Bytes}} ->
-            put({output, Port}, <<(output({node, Port, 0}))/binary, Bytes/binary>>),
-            true;
+            put({output, Port}, <<(output({node, Port, 0}))/binary, Bytes/binary>>);
         {Port, {exit_status, Status}} ->
-            put({exit, Port}, Status),
-            true
-    after Remaining -> false
+            put({exit, Port}, Status)
     end.
 
 exit_status(Port) ->

@@ -228,12 +228,7 @@ pub fn a_crash_in_the_rule_restarts_it_empty_and_an_ask_made_meanwhile_gets_ende
   let crashed = ask_support.read_record(client)
   assert crashed.code == asking_rule.code_ended_before_answer
     as "the ask the gate crashed on ends with its process"
-  let _restarted =
-    ask_support.await_new_pid(
-      name: gate,
-      not: first,
-      within_ms: ask_support.event_wait_ms,
-    )
+  let _restarted = ask_support.await_new_pid(name: gate, not: first)
   ask_support.command(client, asking_rule.await_command, 5, wait_ms: 300)
   let _asked = ask_support.read_record(client)
   let waited = ask_support.read_record(client)

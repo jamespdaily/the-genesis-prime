@@ -637,7 +637,7 @@ pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connect
     world_map_registry.find_or_start(
       started.settings.world.maps,
       MapId(world_id: 1387, instance: 0),
-      deadline_ms: ask_support.monotonic_ms() + ask_support.event_wait_ms,
+      deadline_ms: ask_support.deadline_far_beyond_the_tests_deadline(),
     )
     as "the map is running, started by the play"
   process.kill(found.pid)
@@ -4489,7 +4489,7 @@ fn the_dagun_and_its_map(
     world_map_registry.find_or_start(
       started.settings.world.maps,
       MapId(world_id: 1387, instance: 0),
-      deadline_ms: ask_support.monotonic_ms() + ask_support.event_wait_ms,
+      deadline_ms: ask_support.deadline_far_beyond_the_tests_deadline(),
     )
     as "the map is running, started by the play"
   let assert Ok(creature) =

@@ -30,8 +30,11 @@ pub fn a_transaction_held_past_its_deadline_gives_a_query_timeout_test() -> Nil 
   use <- owned_test.run(60_000)
   use <- unitest.tag("dev_tool")
   let #(_database, db) = pool()
-  // The deadline is 100 ms and the one statement takes 500 ms, a margin a slow
-  // machine only widens. That a deadline above 5,000 ms is honoured as well
+  // This test is about a real deadline, so it passes the server its own 100 ms
+  // and does not drive time. Postgres holds the statement for 500 ms on its own
+  // clock, which a loaded machine does not shorten, so the deadline passes
+  // first; load can only delay the server's side of the wait. That a deadline
+  // above 5,000 ms is honoured as well
   // is not tested: it would take more than 5 s.
   let result =
     dev_database.transaction(db:, deadline_ms: 100, work: fn(tx) {

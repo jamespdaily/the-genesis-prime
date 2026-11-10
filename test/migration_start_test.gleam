@@ -30,9 +30,6 @@ import serving_node.{LateDatabase, Serving}
 /// line.
 const ready_line = "serves the STS login on port"
 
-/// How long a node has to start or to end; a passing test never reaches it.
-const node_wait_ms = 60_000
-
 /// The name of the last migration file, which is the newest.
 fn newest_migration() -> String {
   let assert Ok(newest) = list.last(genesis_prime.load_migrations())
@@ -67,7 +64,7 @@ fn with_node_after(
 /// Fails the test unless the node ended with status 1, printed `reason`, and
 /// printed no ready line.
 fn assert_refused(node: serving_node.Node, reason reason: String) -> Nil {
-  assert serving_node.await_exit(node, node_wait_ms) == Ok(1)
+  assert serving_node.await_exit(node) == 1
     as "the server refused to start: the node ended with status 1"
   let printed = serving_node.output(node)
   assert string.contains(printed, reason)
@@ -88,10 +85,10 @@ pub fn a_database_missing_the_newest_migration_refuses_the_server_and_names_it_t
 pub fn the_same_database_fully_migrated_starts_the_server_test() -> Nil {
   use <- owned_test.run(120_000)
   use node <- with_node_after(change: "select 1")
-  assert serving_node.await_output(node, ready_line, node_wait_ms)
+  assert serving_node.await_output(node, ready_line)
     as "the node printed its ready line: the recorded migrations are the files"
   serving_node.terminate(node)
-  assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
+  assert serving_node.await_exit(node) == 0
     as "SIGTERM ends the node with status 0"
 }
 
@@ -145,11 +142,7 @@ fn with_late_node(
   let shared = database_support.shared()
   let database = database_support.unused_name(on: shared)
   let node = serving_node.start(mode: LateDatabase, folder:, database:)
-  assert serving_node.await_output(
-    node,
-    "the database is unreachable",
-    node_wait_ms,
-  )
+  assert serving_node.await_output(node, "the database is unreachable")
     as "the node gave up its first ask and logged the database as unreachable"
   assert !string.contains(serving_node.output(node), ready_line)
     as "no ready line while the database is down"
@@ -174,10 +167,10 @@ fn with_late_node(
 pub fn a_database_down_at_start_that_comes_up_migrated_gets_the_ready_line_late_test() -> Nil {
   use <- owned_test.run(120_000)
   use node <- with_late_node(change: "select 1")
-  assert serving_node.await_output(node, ready_line, node_wait_ms)
+  assert serving_node.await_output(node, ready_line)
     as "the node kept asking, and printed its ready line once the migrated database answered"
   serving_node.terminate(node)
-  assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
+  assert serving_node.await_exit(node) == 0
     as "SIGTERM ends the node with status 0"
 }
 
