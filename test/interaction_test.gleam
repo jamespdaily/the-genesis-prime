@@ -753,7 +753,7 @@ pub fn a_sell_sent_while_the_store_works_is_held_and_taken_after_test() -> Nil {
         FromStore(
           store.ForItems(
             store.Sold(amount: 102, words: [
-              store.SoldWord(item_guid: 1, random_stats: 0),
+              store.SoldWord(item_guid: 500, random_stats: 0),
             ]),
           ),
         ),
@@ -827,7 +827,7 @@ fn sold(
       FromStore(
         store.ForItems(
           store.Sold(amount: credits, words: [
-            store.SoldWord(item_guid: 1, random_stats: 0),
+            store.SoldWord(item_guid: 500, random_stats: 0),
           ]),
         ),
       ),

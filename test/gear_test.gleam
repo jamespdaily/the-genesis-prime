@@ -30,6 +30,7 @@ import genesis_prime/game/gear
 import genesis_prime/game/item_property.{ItemProperties}
 import genesis_prime/game/loadout
 import genesis_prime/game/worn_visual
+import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/store.{type HeldItem, HeldItem}
 import genesis_prime/table/id.{ClassId, Item2Id, UnitProperty2Id}
@@ -38,6 +39,7 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import novice_tables.{type Set}
 import owned_test
 import planted_table.{Integer}
@@ -522,4 +524,82 @@ pub fn a_budget_base_health_adds_to_the_maximum_health_test() -> Nil {
     as "property 7 at level 1 is the maximum health there"
   assert list.key_find(bases, UnitProperty2Id(6)) == Ok(74.25)
     as "property 6: 0.5 x 14.85 x 10 = 74.25, 0x42948000, on its default 0"
+}
+
+/// Item2 48169 worn with a random-stat word. Its slot is not checked by `gear`, so any
+/// bag index will do.
+fn one_rolled(random_stats random_stats: Int) -> List(HeldItem) {
+  [
+    HeldItem(
+      item_guid: 1,
+      item2_id: Item2Id(fixture_tables.root("Item2", 48_169)),
+      location: 0,
+      bag_index: 10,
+      stack_count: 1,
+      random_stats:,
+    ),
+  ]
+}
+
+/// Item2 48169 with the word 0x0100000000030201 gives properties 34, 47 and 32 their picked
+/// shares, and its own Assault Rating (`item_property`'s test of the same word,
+/// 0x14040e6d0). `bases` lists each at UnitProperty2's defaultValue, 0, plus the item's
+/// value, and 35 at the item's own 180 (0x43340000).
+pub fn a_worn_rolled_item_adds_its_rolled_ratings_to_the_bases_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let worn =
+    gear.of_items(tables:, items: one_rolled(random_stats: 0x0100000000030201))
+  assert worn.unread == [] as "the item is read in full with its word"
+  let assert Ok(bases) = gear.bases(tables:, gear: worn, level: 1)
+    as "CreatureLevel has row 1"
+  let bits_of = fn(property_id) {
+    list.key_find(bases, UnitProperty2Id(property_id))
+    |> result.map(float32.to_bits)
+  }
+  assert bits_of(34) == Ok(0x42960001)
+    as "property 34 at its default 0 and 0.3 of the budget"
+  assert bits_of(47) == Ok(0x42480000)
+    as "property 47 at its default 0 and 0.2 of the budget"
+  assert bits_of(32) == Ok(0x42fa0000)
+    as "property 32 at its default 0 and 0.5 of the budget"
+  assert bits_of(35) == Ok(0x43340000) as "property 35 is the item's own 180"
+}
+
+/// A word whose choice for an entry the client refuses (0x14040e6d0 fails the whole build with
+/// 0x70) leaves the item worn and giving none of its instance properties, not even its
+/// innate Assault Rating: it is listed unread, with one warning.
+pub fn a_worn_item_with_a_refused_roll_is_worn_and_gives_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let worn =
+    gear.of_items(tables:, items: one_rolled(random_stats: 0x0100000000000201))
+  let nothing =
+    ItemProperties(
+      base_health: 0.0,
+      assault_rating: 0.0,
+      support_rating: 0.0,
+      armor: 0.0,
+      shield: None,
+      budget: dict.new(),
+    )
+  assert worn.properties == nothing
+    as "the refused build gives no property, not even 35"
+  assert worn.unread
+    == [
+      #(
+        Item2Id(48_169),
+        item_property.RandomStatsRefused(
+          item2_id: 48_169,
+          random_stats: 0x0100000000000201,
+          entry: 2,
+        ),
+      ),
+    ]
+    as "it is listed unread, naming the entry whose byte is 0"
+  assert gear.warnings(gear: worn, known: None)
+    == [
+      "the worn item 48169 gives no properties: the item 48169 has the random-stat word 72057594037928449, whose choice for entry 2 is 0 or past its group's rows, which the client refuses",
+    ]
+    as "one warning names the item and the word"
 }

@@ -1221,3 +1221,44 @@ pub fn a_sale_past_a_currency_cap_stops_that_currency_at_its_cap_and_its_entry_k
   assert list.map(buyback.entries, fn(entry) { entry.amount }) == [2500]
     as "lua.Vendor.buyback_price: the entry keeps the 2,500 the sale paid, before the cap"
 }
+
+/// A sold item's random-stat word goes to the buyback entry, which the client is sent in the
+/// 0xBA's `random_stats` (`opcode.0xba.random_stats`) and a buy back returns the item with.
+/// The word is the store's (the stack's saved word), not the rule's: the rule holds the
+/// stack's guid and the store answers each sold guid with its word.
+pub fn a_buyback_entry_carries_the_sold_items_word_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let word = 0x0100000000030201
+  let items = [
+    HeldItem(
+      item_guid: 11,
+      item2_id: Item2Id(fixture_tables.root("Item2", 48_169)),
+      location: 1,
+      bag_index: 2,
+      stack_count: 1,
+      random_stats: word,
+    ),
+  ]
+  let scene = sell(items:, index: 2, quantity: 1)
+  let sale = asked(scene:)
+  let #(_, _, buyback, effects) =
+    vendor_sale.answered(
+      sale:,
+      items:,
+      currencies: scene.credits,
+      buyback: Buyback(next_id: 3, entries: []),
+      answer: store.Sold(amount: 100 + sale.first.paid, words: [
+        store.SoldWord(item_guid: 11, random_stats: word),
+      ]),
+    )
+  let assert [entry] = buyback.entries as "the sale is one entry"
+  assert entry.random_stats == word
+    as "the entry holds the word the store saved with the stack"
+  let assert [_, _, added] = frames(effects:)
+    as "a 0x919, a 0x148 and a 0xBA for the stack"
+  let assert Ok(buyback_added.BuybackAdded(entry: sent)) =
+    buyback_added.decode(added.body)
+    as "0xBA decodes"
+  assert sent.random_stats == word
+    as "opcode.0xba.random_stats: the entry is sent with the word the item held"
+}

@@ -272,7 +272,7 @@ fn build_set(
   let items = items_of(row:)
   use read <- result.try(
     list.try_map(items, fn(item) {
-      item_property.of_item(tables:, item2_id: item)
+      item_property.of_item(tables:, item2_id: item, random_stats: 0)
       |> result.map(fn(properties) { #(item, properties) })
     })
     |> result.map_error(ItemFailed),

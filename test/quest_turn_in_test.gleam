@@ -30,9 +30,10 @@ import genesis_prime/game/quest
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/vendor_trade.{Log, Refuse, Send}
+import genesis_prime/message/item_added
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{
-  type QuestRow, NewStack, Placed, QuestRow, StackGrowth,
+  type QuestRow, HeldItem, NewStack, Placed, QuestRow, StackGrowth,
 }
 import genesis_prime/table/id.{Item2Id, Quest2Id}
 import genesis_prime/table/loader/store as table_store
@@ -744,4 +745,60 @@ pub fn left_out_reward_kinds_are_logged_once_test() -> Nil {
     }
   })
     as "the second time on the connection each is a debug line"
+}
+
+/// A quest reward with random stat entries is made rolled: quest 9376's reward is Item2 48169,
+/// which has three kind-2 entries, 4 bytes of entropy each. The bytes of `random_stat_test`'s
+/// pick (the fractions 0.0, 0.5 and 0.99) give the word 0x0100000000050401, which the stack is
+/// made with and the 0x111 carries (`opcode.0x111.shared_item_random_stats`).
+pub fn a_quest_reward_with_random_stats_is_made_rolled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- support.with_changes(changes: [support.receiving(9376)])
+  let #(turn_in, _) =
+    support.asked(scene: support.scene(quest_id: 9376), tables:)
+  assert quest_turn_in.entropy_needed(turn_in:, tables:) == 12
+    as "ItemStat 432 has three kind-2 entries, 4 bytes each, for the one stack made"
+  let rolled =
+    quest_turn_in.rolled(turn_in:, tables:, entropy: <<
+      0x00000000:size(32),
+      0x80000000:size(32),
+      0xFD70A3D7:size(32),
+    >>)
+  let word = 0x0100000000050401
+  assert rolled.placed
+    == [
+      Placed(Item2Id(48_169), grow: [], make: [
+        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: word),
+      ]),
+    ]
+    as "the reward is placed once, its stack carrying the rolled word"
+  let made =
+    HeldItem(
+      item_guid: 900,
+      item2_id: Item2Id(48_169),
+      location: 1,
+      bag_index: 0,
+      stack_count: 1,
+      random_stats: word,
+    )
+  let assert quest_turn_in.Saved(items:, rewards:, ..) =
+    quest_turn_in.answered(
+      turn_in: rolled,
+      items: [],
+      currencies: support.credits(total: 0),
+      answer: store.TurnedIn(credits: 0, made: [made]),
+    )
+    as "the store's answer is saved"
+  assert items == [made] as "the item is held with its word"
+  let assert [Send(frame:)] =
+    list.filter(rewards, fn(effect) {
+      case effect {
+        Send(frame:) -> frame.message_id == item_added.message_id
+        Log(..) | Refuse(..) -> False
+      }
+    })
+    as "one 0x111 for the one stack made"
+  let assert Ok(sent) = item_added.decode(frame.body) as "0x111 decodes"
+  assert sent.held_item.item.random_stats == word
+    as "opcode.0x111: the item is sent with its word"
 }

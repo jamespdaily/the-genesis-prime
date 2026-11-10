@@ -3586,6 +3586,33 @@ fn buy_in(
   grow grow: List(store.StackGrowth),
   make make: List(store.NewStack),
 ) -> store.Answer {
+  buy_item(
+    store:,
+    account:,
+    character_id:,
+    epoch:,
+    item2_id: stackable_item2,
+    currency_type_id:,
+    held:,
+    cost:,
+    grow:,
+    make:,
+  )
+}
+
+/// A purchase of the Item2 `item2_id` paid in the currency type `currency_type_id`.
+fn buy_item(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+  epoch epoch: Int,
+  item2_id item2_id: Int,
+  currency_type_id currency_type_id: Int,
+  held held: Int,
+  cost cost: Int,
+  grow grow: List(store.StackGrowth),
+  make make: List(store.NewStack),
+) -> store.Answer {
   ask(
     store,
     Items(store.BuyFromVendor(
@@ -3597,7 +3624,7 @@ fn buy_in(
       cost:,
       grow:,
       make:,
-      item2_id: Item2Id(stackable_item2),
+      item2_id: Item2Id(item2_id),
     )),
   )
 }
@@ -4721,5 +4748,158 @@ pub fn older_place_save_after_turn_in_changes_nothing_test() -> Nil {
   assert experience_and_level_loaded(store:, account:, character_id: id)
     == #(Some(300), 2)
     as "and the experience of the turn-in stands, not the older save's 0"
+  stop(store)
+}
+
+// ---- random stats ----
+
+/// Item2 48169, a bracer whose ItemStat names three random stat entries. The store keeps
+/// what it is given and checks no word against the item.
+const rolled_item2 = 48_169
+
+/// A made stack of one `rolled_item2` at the inventory slot `bag_index` with the word.
+fn rolled_stack(
+  bag_index bag_index: Int,
+  random_stats random_stats: Int,
+) -> store.NewStack {
+  store.NewStack(location: 1, bag_index:, stack_count: 1, random_stats:)
+}
+
+/// A purchase of `rolled_item2` that costs nothing and makes these stacks.
+fn buy_rolled(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+  epoch epoch: Int,
+  make make: List(store.NewStack),
+) -> store.Answer {
+  buy_item(
+    store:,
+    account:,
+    character_id:,
+    epoch:,
+    item2_id: rolled_item2,
+    currency_type_id: 1,
+    held: 1000,
+    cost: 0,
+    grow: [],
+    make:,
+  )
+}
+
+pub fn an_items_random_stats_are_kept_across_a_save_and_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, _) = holding_stacks(store:, stacks: [])
+  let #(epoch, novice) = login(store:, account:, character_id:)
+  let word = 0x0100000000030201
+  let assert ForItems(store.Bought(made: [made], ..)) =
+    buy_rolled(store:, account:, character_id:, epoch:, make: [
+      rolled_stack(bag_index: 5, random_stats: word),
+    ])
+    as "the purchase is saved"
+  assert made.random_stats == word as "the answer carries the word it saved"
+  let items = held_by(store:, account:, character_id:)
+  assert item_in_bag(items:, index: 5).random_stats == word
+    as "the next load finds the item with its word"
+  assert novice != [] && list.all(novice, fn(item) { item.random_stats == 0 })
+    as "an item stored without one, the Novice set's, loads with 0"
+  stop(store)
+}
+
+pub fn a_random_stats_value_the_client_would_clear_or_refuse_is_rejected_by_its_check_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(_, character_id, _) = holding_stacks(store:, stacks: [])
+  let CharacterId(number) = character_id
+  let put = fn(bag_index, random_stats) {
+    pog.query(
+      "insert into character_item (character_id, item2_id, location, bag_index, stack_count, random_stats) values ($1, $2, 1, $3, 1, $4)",
+    )
+    |> pog.parameter(pog.int(number))
+    |> pog.parameter(pog.int(rolled_item2))
+    |> pog.parameter(pog.int(bag_index))
+    |> pog.parameter(pog.int(random_stats))
+    |> pog.execute(store.pool)
+    |> result.map_error(fn(error) {
+      let assert pog.ConstraintViolated(constraint:, ..) = error
+        as "the table refused with a constraint"
+      constraint
+    })
+  }
+  assert result.is_ok(put(20, 0x0100000000030201))
+    as "a version 1 word with choices is kept"
+  list.index_map(
+    [
+      0x0100000000000000,
+      0x0000000000030201,
+      0x0200000000030201,
+      0x0100010000030201,
+    ],
+    fn(random_stats, index) {
+      assert put(21 + index, random_stats)
+        == Error("character_item_random_stats_version")
+        as "a word with no choice byte, in version 0 (the client clears it), in version 2, or with a byte in bits 40 to 55 is refused by the check"
+    },
+  )
+  stop(store)
+}
+
+pub fn a_buy_makes_each_stack_with_its_own_word_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, _) = holding_stacks(store:, stacks: [])
+  let #(epoch, _) = login(store:, account:, character_id:)
+  let first = 0x0100000000030201
+  let second = 0x0100000000050401
+  let assert ForItems(store.Bought(made:, ..)) =
+    buy_rolled(store:, account:, character_id:, epoch:, make: [
+      rolled_stack(bag_index: 5, random_stats: first),
+      rolled_stack(bag_index: 6, random_stats: second),
+    ])
+    as "a buy of two units of a kind-2 item is saved"
+  assert list.map(made, fn(item) { #(item.bag_index, item.random_stats) })
+    == [#(5, first), #(6, second)]
+    as "each stack is answered with the word it was given"
+  let items = held_by(store:, account:, character_id:)
+  assert item_in_bag(items:, index: 5).random_stats == first
+  assert item_in_bag(items:, index: 6).random_stats == second
+    as "and saved with it, one row for each"
+  stop(store)
+}
+
+pub fn a_sale_returns_the_sold_items_word_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, _) = holding_stacks(store:, stacks: [])
+  let #(epoch, _) = login(store:, account:, character_id:)
+  let word = 0x0100000000050401
+  let assert ForItems(store.Bought(made: [made], ..)) =
+    buy_rolled(store:, account:, character_id:, epoch:, make: [
+      rolled_stack(bag_index: 5, random_stats: word),
+    ])
+    as "the purchase is saved"
+  assert sell(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      held: 1000,
+      after: 1050,
+      sold: [
+        store.SoldStack(
+          item_guid: made.item_guid,
+          location: 1,
+          held_count: 1,
+          sold_count: 1,
+        ),
+      ],
+    )
+    == ForItems(
+      store.Sold(amount: 1050, words: [
+        store.SoldWord(item_guid: made.item_guid, random_stats: word),
+      ]),
+    )
+    as "the sale answers the word the sold stack was saved with, for the buyback entry"
   stop(store)
 }

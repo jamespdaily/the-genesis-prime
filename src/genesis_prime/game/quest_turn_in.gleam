@@ -45,6 +45,9 @@
 ////   once per kind and the turn-in goes on.
 //// - **Where the items go** is `inventory.placed`: the stacks below the limit first, then the
 ////   lowest empty usable slots, each Item2 against the items as the one before it left them.
+//// - **The roll.** An item with random stat entries is made with a word rolled when the store
+////   is asked (`entropy_needed`, `rolled`, `genesis_prime/game/random_stat`), one for each made
+////   stack, in the order of the placed items.
 //// - **The save** is the whole turn-in in the one transaction of the store's request: the
 ////   character's row lock, the place save carrying the log with the quest Completed, the
 ////   experience and the level, then the credits and the items, so storage holds the whole
@@ -73,6 +76,7 @@ import genesis_prime/game/inventory
 import genesis_prime/game/item_property
 import genesis_prime/game/quest
 import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/game/random_stat
 import genesis_prime/game/shown.{type Picture}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/vendor_trade.{type Effect, Log, Refuse, Send}
@@ -97,6 +101,7 @@ import genesis_prime/table/quest2_difficulty
 import genesis_prime/table/quest2_reward.{type Quest2Reward}
 import genesis_prime/table/xp_per_level
 import genesis_prime/world_map/spawn
+import gleam/bit_array
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -804,6 +809,51 @@ fn left_out(
         ),
       ])
   }
+}
+
+/// The bytes of entropy the turn-in needs to roll the stats of the items it makes: the roll
+/// of each made stack, in the order of the placed items.
+pub fn entropy_needed(
+  turn_in turn_in: TurnIn,
+  tables tables: table_store.Tables,
+) -> Int {
+  list.fold(turn_in.placed, 0, fn(sum, one) {
+    sum
+    + list.length(one.make)
+    * random_stat.roll_bytes(tables:, item2_id: one.item2_id.value)
+  })
+}
+
+/// The turn-in with each made stack rolled from `entropy`, which is `entropy_needed` long.
+pub fn rolled(
+  turn_in turn_in: TurnIn,
+  tables tables: table_store.Tables,
+  entropy entropy: BitArray,
+) -> TurnIn {
+  let #(_, placed) =
+    list.map_fold(turn_in.placed, 0, fn(offset, one) {
+      let each = random_stat.roll_bytes(tables:, item2_id: one.item2_id.value)
+      let count = list.length(one.make)
+      let assert Ok(part) = bit_array.slice(entropy, offset, count * each)
+        as "the caller drew entropy_needed bytes"
+      let words =
+        random_stat.roll_many(
+          tables:,
+          item2_id: one.item2_id.value,
+          count:,
+          entropy: part,
+        )
+      #(
+        offset + count * each,
+        store.Placed(
+          ..one,
+          make: list.map2(one.make, words, fn(stack, word) {
+            store.NewStack(..stack, random_stats: word)
+          }),
+        ),
+      )
+    })
+  TurnIn(..turn_in, placed:)
 }
 
 /// The request that asks the store to save the turn-in with the place save.

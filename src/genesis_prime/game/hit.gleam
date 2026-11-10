@@ -221,7 +221,8 @@ pub fn rolls_of(bytes bytes: BitArray) -> Result(Rolls, Nil) {
   }
 }
 
-fn fraction(number: Int) -> Float {
+/// The fraction below 1 that a 32-bit number is, a multiple of 2^-32.
+pub fn fraction(number: Int) -> Float {
   int.to_float(number) /. 4_294_967_296.0
 }
 

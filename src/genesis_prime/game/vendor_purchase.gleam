@@ -59,6 +59,9 @@
 ////   answer is the buy's, with
 ////   the reason 16 (Item.CodeEnumItemUpdateReason Buyback) and then a 0xBD naming the entry,
 ////   which leaves the list; an answer that saved nothing leaves the list as it was.
+//// - **The roll.** A bought item with random stat entries is made with a word rolled when
+////   the store is asked (`entropy_needed`, `rolled`, `genesis_prime/game/random_stat`), one
+////   roll for each made stack. A buy back makes no roll: the entry's word returns with the item.
 //// - **Gaps, each left to the vendor system** (#333): the control states (60, 61), the
 ////   prerequisites (15), Item_Unique (30) and sold out (13) are not checked. No stock row has
 ////   a prerequisite or a stock limit (0x90B sends 0 for both), and the held-unique rule is not
@@ -77,6 +80,7 @@ import genesis_prime/game/interaction
 import genesis_prime/game/inventory
 import genesis_prime/game/item_property
 import genesis_prime/game/player_life.{type Life}
+import genesis_prime/game/random_stat
 import genesis_prime/game/shown.{type Picture}
 import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game/vendor_trade.{
@@ -292,6 +296,7 @@ pub fn take_back(
             items_bought: entry.quantity,
             cost: entry.amount,
             currency_type_id: entry.currency_type_id,
+            random_stats: entry.random_stats,
             items:,
             currencies:,
             tables:,
@@ -339,6 +344,7 @@ fn buy_from(
     items_bought:,
     cost: stocked.price * items_bought,
     currency_type_id: currency.credits_type,
+    random_stats: 0,
     items:,
     currencies:,
     tables:,
@@ -355,6 +361,7 @@ fn asked(
   items_bought items_bought: Int,
   cost cost: Int,
   currency_type_id currency_type_id: Int,
+  random_stats random_stats: Int,
   items items: List(HeldItem),
   currencies currencies: Currencies,
   tables tables: table_store.Tables,
@@ -377,7 +384,11 @@ fn asked(
     inventory.placed(items:, item2_id:, size:, limit:, wanted: items_bought)
   {
     Error(Nil) -> Ok(refused(code: inventory_full, logged:))
-    Ok(#(grow, make)) ->
+    Ok(#(grow, make)) -> {
+      let make =
+        list.map(make, fn(stack) {
+          store.NewStack(..stack, random_stats: random_stats)
+        })
       Ok(Asks(
         purchase: Purchase(
           kind:,
@@ -392,6 +403,48 @@ fn asked(
         ),
         logged:,
       ))
+    }
+  }
+}
+
+/// The bytes of entropy the purchase needs to roll the stats of the items it makes: the roll
+/// of each made stack, 0 for a buy back (the item returns with the word it was sold with)
+/// and for an item with no random stat entry.
+pub fn entropy_needed(
+  purchase purchase: Purchase,
+  tables tables: table_store.Tables,
+) -> Int {
+  case purchase.kind {
+    BoughtBack(..) -> 0
+    Bought ->
+      list.length(purchase.make)
+      * random_stat.roll_bytes(tables:, item2_id: { purchase.item2_id }.value)
+  }
+}
+
+/// The purchase with each made stack rolled from `entropy`, which is `entropy_needed` long.
+pub fn rolled(
+  purchase purchase: Purchase,
+  tables tables: table_store.Tables,
+  entropy entropy: BitArray,
+) -> Purchase {
+  case purchase.kind {
+    BoughtBack(..) -> purchase
+    Bought -> {
+      let words =
+        random_stat.roll_many(
+          tables:,
+          item2_id: { purchase.item2_id }.value,
+          count: list.length(purchase.make),
+          entropy:,
+        )
+      Purchase(
+        ..purchase,
+        make: list.map2(purchase.make, words, fn(stack, word) {
+          store.NewStack(..stack, random_stats: word)
+        }),
+      )
+    }
   }
 }
 
