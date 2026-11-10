@@ -168,8 +168,20 @@ pub fn all() -> List(ColumnSign) {
     ColumnSign(
       table: "Quest2",
       column: "subMissionPathType",
-      sign: Unread,
-      evidence: "the server reads only objective0 to objective05 and questRepeatPeriodEnum of Quest2 (genesis_prime/game/quest_log); no rule reads subMissionPathType, which holds -1 in 5071 rows",
+      sign: Unsigned,
+      evidence: "0x14055283d (CanAcceptQuest check 13) compares the path type with 4 as unsigned: cmp ecx, 4 then jnc passes, so -1 (5071 rows) passes",
+    ),
+    ColumnSign(
+      table: "PeriodicQuestGroup",
+      column: "periodicQuestsOffered",
+      sign: Unsigned,
+      evidence: "0x14048ae40 takes 0xffffffff as all the group's quests; 4294967295 in the rows that offer all",
+    ),
+    ColumnSign(
+      table: "PeriodicQuestGroup",
+      column: "maxPeriodicQuestsAllowed",
+      sign: Unsigned,
+      evidence: "0x140552e30 compares the held count with the column as unsigned ((ulonglong) casts), so 0xffffffff is no limit",
     ),
     ColumnSign(
       table: "Quest2",

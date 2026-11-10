@@ -163,7 +163,7 @@ const default_quest_limit = 40
 
 /// The PeriodicQuestGroup value of a group that offers every quest, and of one with no
 /// limit on how many a player holds.
-const all_offered = -1
+const all_offered = 0xffffffff
 
 /// The Faction2 ids of the player factions.
 const exile = 167
@@ -478,13 +478,10 @@ fn prerequisite_met(
 }
 
 /// Check 13: the path of a quest of one (0 to 3), which is the player's; any other
-/// value of the signed column means no path.
+/// value of the unsigned column (-1 is 4294967295) means no path.
 fn path(quest quest: Quest2, asker asker: Asker) -> Result(Nil, Stop) {
   let wanted = quest.sub_mission_path_type
-  refuse_when(
-    when: wanted >= 0 && wanted < 4 && asker.player.path != wanted,
-    code: wrong_path,
-  )
+  refuse_when(when: wanted < 4 && asker.player.path != wanted, code: wrong_path)
 }
 
 /// Check 15: a quest that is not a contract needs a place in the active list, which
