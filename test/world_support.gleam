@@ -126,6 +126,14 @@ pub fn start_timed(
   )
 }
 
+/// Stops the world's tree and waits for it to end, as a test that drives its clock
+/// does before it returns, while the clock its maps and creatures read still runs
+/// (the clock ends with the test).
+pub fn stop(world world: World) -> Nil {
+  let _reason = ask_support.stop_tree(world.tree)
+  Nil
+}
+
 fn locate(
   connections connections: Registry(Message),
   address address: Address,

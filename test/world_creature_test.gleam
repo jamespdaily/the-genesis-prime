@@ -428,7 +428,7 @@ pub fn a_creature_stops_after_its_last_viewer_leaves_sight_and_the_spawn_seen_ag
   assert second.unit_id == first.unit_id
     as "the spawn keeps its unit id across a clean stop (death.creature_respawn)"
   let _second_pid = creature_pid(world:, run:, unit_id: second.unit_id, life: 3)
-  Nil
+  world_support.stop(world:)
 }
 
 pub fn a_dead_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
@@ -491,7 +491,7 @@ pub fn a_dead_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
     as "death.creature_respawn: the same unit id at full health, at the respawn time"
   let assert Landed(..) = outcome
     as "at the respawn time the creature stands and a strike lands"
-  Nil
+  world_support.stop(world:)
 }
 
 pub fn a_creature_stops_at_the_first_sweep_at_or_after_its_idle_limit_test() -> Nil {
@@ -514,6 +514,7 @@ pub fn a_creature_stops_at_the_first_sweep_at_or_after_its_idle_limit_test() -> 
   driven_time.advance(time:, ms: 1)
   assert !process.is_alive(pid)
     as "after the idle stop the creature is told to retire and has stopped"
+  world_support.stop(world:)
 }
 
 pub fn a_map_sweeps_exactly_at_its_sweep_time_test() -> Nil {
@@ -535,6 +536,7 @@ pub fn a_map_sweeps_exactly_at_its_sweep_time_test() -> Nil {
   driven_time.advance(time:, ms: 1)
   assert !process.is_alive(pid)
     as "at the sweep time the map retires the idle creature"
+  world_support.stop(world:)
 }
 
 pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
@@ -798,6 +800,7 @@ pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn
     )
   assert second.unit_id == first.unit_id
     as "a clean stop keeps the spawn's unit id, and the creature that starts is at full health (the corpse died with its process)"
+  world_support.stop(world:)
 }
 
 /// The summon of Creature2 `creature_id` by the connection's player, answered
