@@ -9,7 +9,7 @@
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
 ////                                                 ─▶ Movement(message), Camp(message), Chat(message), Cast(message),
 ////                                                    Activation, Life(message), Innate(message), Interaction(message), Quest(message),
-////                                                    Inventory(message), VendorPurchase, VendorBuyback, VendorSale, VendorSellJunk or Dropped(message)
+////                                                    QuestTurnIn, Inventory(message), VendorPurchase, VendorBuyback, VendorSale, VendorSellJunk or Dropped(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
 ////
@@ -42,6 +42,7 @@ import genesis_prime/game/inventory
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/quest
+import genesis_prime/game/quest_turn_in
 import genesis_prime/game/vendor_purchase
 import genesis_prime/game/vendor_sale
 import genesis_prime/message/ability_hold
@@ -128,6 +129,8 @@ pub type Feature {
   /// The player's accept of a quest and retry of a botched one
   /// (genesis_prime/game/quest).
   Quest(message: quest.Message)
+  /// The player's turn-in of a quest, 0x035D (genesis_prime/game/quest_turn_in).
+  QuestTurnIn
   /// The player's move, split or delete of a held item (genesis_prime/game/inventory).
   Inventory(message: inventory.Message)
   /// The player's buy from the open vendor, 0x00BE (genesis_prime/game/vendor_purchase).
@@ -361,6 +364,7 @@ const table = [
     Inventory(inventory.DeleteAsked),
     [AtWorld],
   ),
+  Row(quest_turn_in.message_id, InsideWorldMessage, QuestTurnIn, [AtWorld]),
   Row(vendor_purchase.message_id, InsideWorldMessage, VendorPurchase, [AtWorld]),
   Row(
     vendor_purchase.buy_back_message_id,

@@ -510,6 +510,13 @@ const child_rules = [
     "itemSourceId",
     "worn_visual.display_of (ItemDisplaySourceEntry.itemSourceId)",
   ),
+  ChildRule(
+    "Quest2Reward",
+    "quest2Id",
+    "Quest2",
+    "ID",
+    "quest_turn_in (Quest2Reward.quest2Id)",
+  ),
 ]
 
 /// The rows the server reads by the kind of a row, where no column's name says
@@ -528,6 +535,14 @@ type UntypedReference {
 }
 
 const untyped_references = [
+  UntypedReference(
+    "Quest2Reward",
+    [#("quest2RewardTypeId", 1)],
+    [],
+    "objectId",
+    "Item2",
+    "quest_turn_in.take (a type 1 reward's objectId is the Item2 it gives)",
+  ),
   UntypedReference(
     "Quest2",
     [],

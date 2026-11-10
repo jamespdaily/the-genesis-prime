@@ -34,7 +34,8 @@
 ////   (`0x140029820`). At the highest level a credit gives nothing, and a gain that crosses
 ////   into it stops at its minXpForLevel, so a saved experience stays inside the table's
 ////   levels (rows above it hold 2147483647, `opcode.0x25e.safe_body`).
-//// - **Not here:** kill objectives, quest experience (0x1ac kind 3), group sharing and
+//// - **A quest's experience** is the same stop and level rise through `gained` with kind 3.
+//// - **Not here:** kill objectives, group sharing and
 ////   tagging, rest experience, and the stats and points a level gives.
 
 import genesis_prime/game/level
@@ -67,10 +68,17 @@ pub type Progress {
   Progress(experience: Int, level: Int)
 }
 
-/// What a credit asks the connection to do.
+/// The source kind a kill's 0x1ac carries, KillCreature (`CombatFloater.CodeEnumExpReason`).
+const kill_kind = 2
+
+/// The source kind a quest's 0x1ac carries, Quest (`CombatFloater.CodeEnumExpReason`).
+pub const quest_kind = 3
+
+/// What a gain asks the connection to do.
 pub type Effect {
-  /// 0x1ac of kind 2 for a gain above 0, naming the creature's unit.
-  GainSent(gain: Int, unit_id: Int)
+  /// 0x1ac of the source `kind` for a gain above 0, naming the unit that gave it (a
+  /// creature's for a kill, 0 for a quest).
+  GainSent(gain: Int, kind: Int, unit_id: Int)
   /// The player's level rose to `level`: 0x938 of stat 10 to its client and a `Level` news
   /// to each viewer, and every holder of the level changes with it.
   LevelRose(level: Int)
@@ -147,6 +155,24 @@ pub fn credited(
   tables tables: table_store.Tables,
   numbers numbers: GameNumbers,
 ) -> Credited {
+  let assert Ok(highest) = level.highest_level(tables)
+    as "the load requires GameFormula row 145"
+  let gain =
+    gain(credit:, player_level: progress.level, highest:, tables:, numbers:)
+  gained(progress:, gain:, kind: kill_kind, unit_id: credit.unit_id, tables:)
+}
+
+/// The progress after `gain` experience of the source `kind`, from the unit `unit_id`: the
+/// same stop and level rise for every source. A gain that adds nothing (0, or the highest
+/// level) changes and sends nothing, and the gain sent is what was added after the stop
+/// at the highest level's minXpForLevel.
+pub fn gained(
+  progress progress: Progress,
+  gain gain: Int,
+  kind kind: Int,
+  unit_id unit_id: Int,
+  tables tables: table_store.Tables,
+) -> Credited {
   let unchanged = Credited(progress:, effects: [])
   let assert Ok(highest) = level.highest_level(tables)
     as "the load requires GameFormula row 145"
@@ -155,12 +181,10 @@ pub fn credited(
     False -> {
       let assert Ok(top) = xp_per_level.get(tables:, id: XpPerLevelId(highest))
         as "the load requires the XpPerLevel row of the highest level"
-      let gain =
-        gain(credit:, player_level: progress.level, highest:, tables:, numbers:)
       let experience = int.min(progress.experience + gain, top.min_xp_for_level)
       case experience > progress.experience {
         False -> unchanged
-        True -> added_to(progress:, experience:, credit:, tables:)
+        True -> added_to(progress:, experience:, kind:, unit_id:, tables:)
       }
     }
   }
@@ -171,7 +195,8 @@ pub fn credited(
 fn added_to(
   progress progress: Progress,
   experience experience: Int,
-  credit credit: Credit,
+  kind kind: Int,
+  unit_id unit_id: Int,
   tables tables: table_store.Tables,
 ) -> Credited {
   let assert Ok(made) = level.for_experience(tables:, experience:)
@@ -182,7 +207,7 @@ fn added_to(
     False -> []
   }
   Credited(progress: Progress(experience:, level: reached), effects: [
-    GainSent(gain: experience - progress.experience, unit_id: credit.unit_id),
+    GainSent(gain: experience - progress.experience, kind:, unit_id:),
     ..rise
   ])
 }

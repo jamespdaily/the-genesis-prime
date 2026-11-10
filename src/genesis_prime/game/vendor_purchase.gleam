@@ -88,7 +88,7 @@ import genesis_prime/message/vendor_buyback
 import genesis_prime/message/vendor_purchase as vendor_purchase_message
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
-  type SessionEpoch, HeldItem, ItemsNotSaved, SaveRefused,
+  type SessionEpoch, ItemsNotSaved, SaveRefused,
 }
 import genesis_prime/table/id.{type Item2Id, Item2Id}
 import genesis_prime/table/item2
@@ -184,9 +184,6 @@ const vendor_reason = 7
 
 /// The reason a bought-back item is shown for (Item.CodeEnumItemUpdateReason 16, Buyback).
 const buyback_reason = 16
-
-/// The usable slots of the inventory are in this location (`inventory`).
-const inventory_location = 1
 
 /// What the client's 0x00BE is answered with: a refusal with the code of the first check it
 /// breaks, or the store's ask, or the refusal for a body the client's reader refuses.
@@ -376,7 +373,9 @@ fn asked(
   use size <- result.try(
     inventory.size(items:, tables:) |> result.map_error(inventory_row),
   )
-  case placed(items:, item2_id:, size:, limit:, wanted: items_bought) {
+  case
+    inventory.placed(items:, item2_id:, size:, limit:, wanted: items_bought)
+  {
     Error(Nil) -> Ok(refused(code: inventory_full, logged:))
     Ok(#(grow, make)) ->
       Ok(Asks(
@@ -407,87 +406,6 @@ fn inventory_row(refusal refusal: inventory.Refusal) -> Refusal {
     inventory.NoItemRow(item2_id:) -> NoItemRow(item2_id:)
     inventory.NotDecoded(..) | inventory.EquipCheckBroken(..) ->
       panic as "the inventory's size reads only the rows of the held bags"
-  }
-}
-
-/// Where `wanted` items of an Item2 go (a server choice): the stacks of it in the usable
-/// inventory below the limit, lowest bag index first, then the empty usable slots, lowest
-/// first, each up to the limit. Nothing when they do not all fit.
-fn placed(
-  items items: List(HeldItem),
-  item2_id item2_id: Item2Id,
-  size size: Int,
-  limit limit: Int,
-  wanted wanted: Int,
-) -> Result(#(List(store.StackGrowth), List(store.NewStack)), Nil) {
-  let usable =
-    list.filter(items, fn(item) {
-      item.location == inventory_location && item.bag_index < size
-    })
-  let growable =
-    list.filter(usable, fn(item) {
-      item.item2_id == item2_id && item.stack_count < limit
-    })
-    |> list.sort(fn(a, b) { int.compare(a.bag_index, b.bag_index) })
-  let taken_places =
-    set.from_list(list.map(usable, fn(item) { item.bag_index }))
-  let empty =
-    int.range(from: 0, to: size, with: [], run: list.prepend)
-    |> list.reverse
-    |> list.filter(fn(index) { !set.contains(taken_places, index) })
-  let #(wanted, grow) = fill(growable:, limit:, wanted:)
-  let #(wanted, make) = open(empty:, limit:, wanted:)
-  case wanted {
-    0 -> Ok(#(grow, make))
-    _ -> Error(Nil)
-  }
-}
-
-/// The growth of each stack with room for the items wanted, in the order given, and the
-/// items left.
-fn fill(
-  growable growable: List(HeldItem),
-  limit limit: Int,
-  wanted wanted: Int,
-) -> #(Int, List(store.StackGrowth)) {
-  case growable, wanted {
-    [], _ | _, 0 -> #(wanted, [])
-    [stack, ..rest], _ -> {
-      let added = int.min(wanted, limit - stack.stack_count)
-      let #(left, grown) = fill(growable: rest, limit:, wanted: wanted - added)
-      #(left, [
-        store.StackGrowth(
-          item_guid: stack.item_guid,
-          held_count: stack.stack_count,
-          new_count: stack.stack_count + added,
-        ),
-        ..grown
-      ])
-    }
-  }
-}
-
-/// The new stack in each empty slot the items wanted need, in the order given, and the
-/// items left.
-fn open(
-  empty empty: List(Int),
-  limit limit: Int,
-  wanted wanted: Int,
-) -> #(Int, List(store.NewStack)) {
-  case empty, wanted {
-    [], _ | _, 0 -> #(wanted, [])
-    [index, ..rest], _ -> {
-      let added = int.min(wanted, limit)
-      let #(left, made) = open(empty: rest, limit:, wanted: wanted - added)
-      #(left, [
-        store.NewStack(
-          location: inventory_location,
-          bag_index: index,
-          stack_count: added,
-        ),
-        ..made
-      ])
-    }
   }
 }
 
@@ -539,7 +457,7 @@ pub fn answered(
         )
       }
       #(
-        list.append(grown(items:, grow: purchase.grow), made),
+        list.append(inventory.grown(items:, grow: purchase.grow), made),
         currency.with_amount(
           currencies:,
           currency_type_id: purchase.currency_type_id,
@@ -587,7 +505,10 @@ pub fn answered(
       buyback,
       vendor_trade.save_refused(what: not_bought(purchase:), constraint:),
     )
-    store.ItemsSaved | store.ItemMade(..) | store.Sold(..) ->
+    store.ItemsSaved
+    | store.ItemMade(..)
+    | store.Sold(..)
+    | store.TurnedIn(..) ->
       panic as "the store answers a purchase with Bought, ItemsNotSaved or SaveRefused"
   }
 }
@@ -598,19 +519,6 @@ fn removed_frame(buyback_id buyback_id: Int) -> Frame {
     buyback_removed.encode(buyback_removed.BuybackRemoved(buyback_id:))
     as "an id the list held, a 32-bit value, is written"
   frame.Frame(message_id: buyback_removed.message_id, body:)
-}
-
-/// The held items with each grown stack at its new count.
-fn grown(
-  items items: List(HeldItem),
-  grow grow: List(store.StackGrowth),
-) -> List(HeldItem) {
-  list.map(items, fn(item) {
-    case list.find(grow, fn(growth) { growth.item_guid == item.item_guid }) {
-      Ok(growth) -> HeldItem(..item, stack_count: growth.new_count)
-      Error(Nil) -> item
-    }
-  })
 }
 
 /// What a buy that was not saved did not do, for the log.

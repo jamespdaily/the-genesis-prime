@@ -11167,9 +11167,10 @@ grade = "sure"
 # Quests: turn in
 
 ["opcode.0x35d"]
-statement = "Message 0x35d, client to world server: turn in a quest. Body: quest id, 15 bits, chosen reward id, 15 bits, then a bit from the dialog. Sent by the dialog's complete response (type 10 in dialog state 3) and by Contract:Complete. The client refuses a reward choice that would grant a second tradeskill. Experience then arrives by message 0x1ac."
-proof = "Writer 0x14008b2f0: 0x14008b39d mov r8d, 0xf; 0x14008b3a6 call 0x140336470; 0x14008b448 mov r8d, 0xf; 0x14008b451 call 0x140336470. Senders DialogCompleteQuest 0x140557000, Contract:Complete 0x1406a3ba0 (saved C). Experience: existing record opcode.0x1ac."
-grade = "sure"
+statement = "Message 0x35d, client to world server: turn in a quest. Body: quest id, 15 bits, reward id, 15 bits, then one bit. The dialog's turn-in response (kind 10 in dialog state 3) sends the chosen choice row's Quest2Reward ID, or 0 when the quest has no choice rows; the client never checks the reward id against the quest's rows. The bit is 1 when the dialog was opened by the communicator (DAT_140c7dc68 holds the receiver's creature id, no unit) and 0 in a unit's dialog; only AnswerCommunicatorQuest sets it (0x1405545b7, sole caller 0x14043c99e), so bit 1 means a flag-8 or flag-0x10000 quest. Contract:Complete sends Lua argument 2 (0 from the shipped UI) and bit 0. The dialog refuses a turn-in whose fixed rewards include TradeSkillXp for a tradeskill the player has not learned. Experience then arrives by message 0x1ac."
+proof = "Writer 0x14008b2f0: 0x14008b39d mov r8d, 0xf; 0x14008b3a6 call 0x140336470; 0x14008b448 mov r8d, 0xf; 0x14008b451 call 0x140336470. Senders DialogCompleteQuest 0x140557000 (0x140557220 quest, 0x140557225 reward, 0x14055722a (DAT_140c7dc68 != 0)) and Contract:Complete 0x1406a3ba0. DAT_140c7dc68 writers: 0x140554580 (= creature id from AnswerCommunicatorQuest 0x14043c99e) and 0x140554510 (unit dialog, = 0). Records 0x140555350, 0x140557000, 0x1406a3ba0."
+grade = "fairly sure"
+gap = "What the server did with the bit is not in the client."
 
 ["opcode.0x35e"]
 statement = "Message 0x35e, client to world server: ignore (bit 1) or stop ignoring (bit 0) a quest. Body: quest id, 15 bits, then the bit. Its only sender is the Lua Quest:ToggleIgnored, which asks for the opposite of IsQuestIgnored (the quest's side-list state is 7, Ignored). The sender sends only when the bit differs from that and the quest is found; it checks no other state, so the C would send bit 1 for an Accepted quest too. The UI offers it only for an Abandoned or Mentioned quest (QuestLog's hide button) and for the Datachron's queued calls. The client changes no quest state before or after sending: no SetQuestState call, no side-list write. It waits for the server's 0x35c to set the state; the client does not say which state the server sets on stop-ignoring (it reads only 7 as ignored, and CanAcceptQuest bit 9 treats Mentioned, Abandoned and Ignored alike)."
@@ -12224,10 +12225,10 @@ grade = "sure"
 name = "CheckQuestExclusions"
 
 ["0x140552eb0"]
-statement = "CanAcceptQuest check 6 (reputation, factionIdPreq0..02). For each non-zero faction it asks the player's reputation object for that faction. When factionLevelCompPreq is 0 it refuses a value below factionLevelPreq; otherwise it refuses a value above it. With no reputation object any named faction refuses."
+statement = "CanAcceptQuest check 6 (reputation, factionIdPreq0..02). For each non-zero faction it asks the player's base faction object (unit word 0x110, set by 0x14045ac60) for its level toward that faction: slot 0x28 is GetFactionLevelTo 0x140787760, a level 0 to 10. When factionLevelCompPreq is 0 it refuses a level below factionLevelPreq; otherwise it refuses a level above it. With no faction object any named faction refuses."
 proof = "query.py disassemble 0x140552eb0: 0x140552ec4 test rdi, rdi (the unit's reputation object, unit word 0x110); 0x140552edf mov ebx, 0xb0 (factionIdPreq0); 0x140552ee7 test edx, edx (skip 0); 0x140552ef1 call [rax+0x28] with the faction id; 0x140552efa cmp dword [rbx+rax+0x18], 0x0 (factionLevelCompPreq, offset 0xc8); 0x140552f01 and 0x140552f19 cmp ecx, [rbx+rax+0xc] (factionLevelPreq, offset 0xbc) with jc and jbe; 0x140552f23 cmp rbx, 0xbc (three columns). Offsets by table_rows -- Quest2 --columns."
 grade = "fairly sure"
-gap = "Whether the reputation object's slot returns a standing level or a raw reputation amount is not read; reading the reputation object's class and its slot 0x28 would settle it."
+gap = "What 0x1407a2a00 does inside GetFactionLevelTo (a player faction's reputation mapped to a level) is not read."
 name = "CheckQuestReputation"
 
 ["0x1405529c0"]
@@ -13469,6 +13470,220 @@ proof = "Saved C 0x14049c880 (e9b6b6af37d00314): game 0x7188's slot 0x68 returns
 grade = "fairly sure"
 gap = "Read from the decompile."
 
+# Quests: turn in rewards
+
+["0x140551ac0"]
+statement = "Splits a quest's Quest2Reward rows into a fixed list (flags without bit 0) and a choice list (bit 0, kept when 0x140551c60 passes). When the quest has choice rows and every one is filtered out, the first row with bit 0 is put in the choice list, so a quest with choice rows always offers at least one."
+proof = "Saved C 0x140551ac0.c (8eb22adb6de47956): rows from quest+0x50; row+0x14 & 1 decides the list; the fallback loop after the main loop. Argument order checked in 0x140557000: 0x140557090 lea rdx,[rsp+0x50] the choice list, 0x14055708b lea r8,[rsp+0x40] the fixed list. Callers 0x140665c80, 0x140555350, 0x140557000, 0x1404dd130."
+grade = "sure"
+name = "SplitQuestRewards"
+
+["0x140551c60"]
+statement = "Whether a reward choice row is offered to the player: a row without bit 0, a row with bit 1 (2), or a row whose type is not 1 (Item) always is. An item choice with bit 0 and without bit 1 is offered only when the Item2 row exists, the player has its category's item proficiency, its race is in Item2.raceRequired (or that is 0) and its class is in Item2.classRequired (or that is 0)."
+proof = "Saved C 0x140551c60.c (cc54e920d5411539): (flags&1)==0 || (flags&2)!=0 returns 1; row+8 != 1 returns 1; item info 0x1400b5df0(row+0xc); HasItemProficiency(info+0x19c); race unit+0xd8 against info+0x190; class unit+0xdc against info+0x18c; offsets as record 0x1403b4710."
+grade = "fairly sure"
+gap = "0x1400b5df0 is taken as the item info getter by its offsets."
+name = "IsRewardChoiceOffered"
+
+["Quest2Reward.flags"]
+statement = "Bit 0 (1): the row is a reward choice; without it, a fixed reward. Bit 1 (2): the choice is offered to every player, skipping the race, class and proficiency filter. The rows hold 0, 1 and 3: flags 3 on 99 item rows, flags 1 on 3,430 item rows, 2 reputation rows and 1 tradeskill-experience row."
+proof = "Records 0x140551ac0 and 0x140551c60. gleam run -m genesis_prime/table_rows -- Quest2Reward, counted by flags and quest2RewardTypeId."
+grade = "sure"
+
+["Quest2Reward.quest2RewardTypeId"]
+statement = "Rows by type: 1 Item 4,021 (977 quests), 2 Reputation 228, 3 Money 691 (currency 4 577, 2 31, 5 24, 6 22, 9 16, 7 14, 3 6, 1 one row), 4 TradeSkillXp 378, 5 GrantTradeskill 1, 7 AccountCurrency 10, 10 RotationEssence 86 (objectId 0); types 6, 8 and 9 have no rows. 5,415 rows over 1,938 quests."
+proof = "gleam run -m genesis_prime/table_rows -- Quest2Reward, counted by quest2RewardTypeId and, for type 3, objectId."
+grade = "fairly sure"
+gap = "Counted from the table by table_rows, with no client instruction cited for the counts; the client reads the type in the reward split of 0x140551ac0."
+
+["0x140665c80"]
+statement = "Lua Quest:GetRewardData(): a table with arFixedRewards and arRewardChoices (each choice: idReward the Quest2Reward ID, eType its type; per-type fields itemReward, strFactionName, strTradeskill, tUnlockInfo, nAmount). Credits are a fixed entry with nAmount Quest2.reward_cashOverride when above 0, else trunc(0x1405542b0(conLevel, cashRewardMultiplier)), and no entry when 0. Reputation per nonzero faction2IdRewardReputation00/01 the player's reputation object accepts: rewardReputationOverride when above 0, else XpPerLevel[conLevel].baseRepRewardPerLevel x Quest2Difficulty.repRewardMultiplier, truncated, summed per faction, skipped when not above 0."
+proof = "Name pair at 0x140c5bc00: 0x140b2df78 'GetRewardData', 0x140665c80. Money: 0x140666545 mov edi,[rax+0x44]; 0x140666548 jg; 0x14066659f cashRewardMultiplier; 0x1406665a7 call 0x1405542b0; 0x1406665b2 jz skip. Reputation: 0x140667317 call [vtable+0x30] of unit+0x118; 0x140667322 override; 0x140667331 repRewardMultiplier; 0x140667346 baseRepRewardPerLevel. Saved C 0x140665c80.c (8eb22adb6de47956) lines 97, 196, 226, 384, 434, 1060."
+grade = "fairly sure"
+gap = "The money entry's eType and eCurrencyType values and the reputation object's slot 0x30 check are not read."
+name = "LuaQuestGetRewardData"
+
+["0x140665a90"]
+statement = "Lua Quest:CalcRewardXP(): the quest's reward experience as the client shows it (0x1405534b0); Dialog.lua shows it when above 0."
+proof = "Name pair at 0x140c5bba0: 0x140b2dfe8 'CalcRewardXP', 0x140665a90. Saved C 0x140665a90 (8eb22adb6de47956); 0x140665ac9 call 0x1405534b0. UI/Dialog/Dialog.lua 572-577."
+grade = "sure"
+name = "LuaQuestCalcRewardXP"
+
+["0x1405534b0"]
+statement = "A quest's reward experience: 0 when there is no XpPerLevel row for Quest2.conLevel, no LevelDifferentialAttribute row for the level difference (or its ID is 10 or more), or no Quest2Difficulty row; else Quest2.reward_xpOverride when not 0; else trunc(baseQuestXpPerLevel x Quest2Difficulty.xpMultiplier x LevelDifferentialAttribute.questXpMultiplier), the row picked by conLevel minus the player's level (0x1404cd1b0). The override is not scaled."
+proof = "Listing 0x1405534b0: 0x1405534cb conLevel; 0x1405534e5 call 0x14024dfc0 (XpPerLevel); 0x140553505 level-difference lookup; 0x140553508 cmp eax,0xa; 0x140553573 Quest2Difficulty; 0x140553587 mov ecx,[rax+0x40] (reward_xpOverride); 0x140553592 jnz return; 0x14055359e mulss xpMultiplier; 0x1405535a3 mulss questXpMultiplier; 0x1405535a8 cvttss2si."
+grade = "sure"
+name = "CalcQuestRewardXp"
+
+["0x1404cd1b0"]
+statement = "The level-difference lookup: quest level minus player level, clamped to the table's smallest and largest levelDifferentialValue (-4 and 4), gives the LevelDifferentialAttribute row ID with that value, or 1 when none."
+proof = "Saved C 0x1404cd1b0; built by 0x1404ccce0 from LevelDifferentialAttribute (IDs 1..9, values -4..4)."
+grade = "sure"
+name = "LevelDifferentialRowForLevels"
+
+["LevelDifferentialAttribute.questXpMultiplier"]
+statement = "Factor on a quest's computed experience (not the override), picked by conLevel minus the player's level clamped to -4..4. All 9 rows are 1.0."
+proof = "0x1405535a3 mulss [rbx+8] (record 0x1405534b0). gleam run -m genesis_prime/table_rows -- LevelDifferentialAttribute."
+grade = "sure"
+
+["0x1405542b0"]
+statement = "A quest's computed credits as a float: conLevel ^ GameFormula 530 datafloat0 (1.93) x cashRewardMultiplier + 0.5; the caller truncates, so it rounds. A missing GameFormula row gives an exponent of 0."
+proof = "0x1405542da mov edx,0x212; 0x14055430c datafloat0; 0x14055431e call 0x1408fbfc0 (powf: emulate 2.0,1.93 -> 3.8105519); 0x140554323 mulss; 0x14055432c addss 0.5 (0x140b79e48 = 0000003f)."
+grade = "sure"
+name = "CalcQuestRewardCash"
+
+["0x1405535d0"]
+statement = "A quest's credits as an integer: Quest2.reward_cashOverride when above 0; else, when the Quest2Difficulty row of Quest2.quest2DifficultyId exists, the truncation of 0x1405542b0(conLevel, cashRewardMultiplier); else 0 (the override's own value, which is not above 0)."
+proof = "Saved C 0x1405535d0 (02ce70b035ab663d): the quest record's word at +0x44 (reward_cashOverride) is returned when it is 1 or more; else 0x1405535ee call 0x14022aec0 finds the Quest2Difficulty row from the word at +0x11c, none returns the override as it is; else 0x140553607 call 0x1405542b0 with conLevel (+0x10) and the row's word at +8 (cashRewardMultiplier), and the float result is converted to an integer by truncation. Caller 0x1404dd130."
+grade = "sure"
+name = "QuestCashReward"
+
+["Quest2.reward_xpOverride"]
+statement = "The quest's reward experience when not 0, not scaled by difficulty or level. Quests 10518 and 10524 give 655, 10520 and 10523 give 1055, though their difficulty 6 has xpMultiplier 0."
+proof = "0x140553587 mov ecx, [rax+0x40] and 0x140553592 test ecx, ecx then 0x140553594 jne, taken for a nonzero override (record 0x1405534b0). table_rows -- Quest2 10518 10520 10523 10524, Quest2Difficulty 6."
+grade = "sure"
+
+["Quest2.reward_cashOverride"]
+statement = "The quest's credits when above 0; else round(conLevel^1.93 x cashRewardMultiplier): difficulty 3 gives 10 at conLevel 1 and 38 at conLevel 2; difficulty 6 gives 0 and no money entry."
+proof = "0x140666545 mov edi, [rax+0x44] and 0x14066654a jg, taken above 0 (record 0x140665c80); record 0x1405542b0. table_rows -- Quest2Difficulty, GameFormula 530."
+grade = "sure"
+
+["opcode.0x35c.rewards"]
+statement = "0x35c state 3 adds no experience or credits in the client: experience changes only in the 0x1ac and 0x25e handlers, credits only through 0x919. The server sends both."
+proof = "Saved C 0x1405fb670 and 0x1405fbdc0: no write of game+0x1678/+0x1688, no currency call. call_paths.py 0x1405fb670 --to 0x1403c6d80 0x1403b5730 0x1403c8760 --depth 6: no path. Writers of game+0x1678: 0x1403c8760 (0x1ac), 0x1403b5f80 (0x25e). SetCurrency 0x1403b5730's one caller 0x1403c70e0 (0x919)."
+grade = "fairly sure"
+gap = "call_paths could not follow 3 calls through memory (0x140191398, 0x140192170, 0x1401922ea)."
+
+["opcode.0x1ac.kinds"]
+statement = "0x1ac's source kind only picks the text: 2 37701 '$1n XP', 3 (Quest) 37702 '$1n XP', 4 37703 Bonus XP, 6 41338 Explorer's, 7 (QuestEpisodeCompletion) 52884 'Episode completion bonus', 16 262091 Rested, others (18 PeriodicQuest among them) 37704 '$1n XP'. These rows have no sound. FloatText, the only ExperienceGained listener, ignores the text and the unit and shows the number over the controlled unit, so a quest's 0x1ac may carry unit 0."
+proof = "Saved C 0x1403c8760 (2580df99bb1ce2aa) lines 66-170 and 252-256. client_files.py text 37701 37702 37703 37704 52884 41338 262091. table_rows -- LocalizedText 37702 52884 37704: soundEventId 0. UI/FloatText/FloatText.lua 34 and 442-488."
+grade = "fairly sure"
+gap = "How 'U' turns word 4 into a unit (nil for 0) is not read."
+
+["0x1405fbdc0.state_3"]
+statement = "SetQuestState with state 3: removes the quest from the log and both side lists and adds its id to the completed set (ids only). It reads no earlier state, so Accepted, Achieved and no entry all go to Completed. A first completion of a non-periodic quest without flags 0x20 and with experience above 0 adds one to its zone's completion count. It raises no QuestCompleted, sound or toast."
+proof = "Saved C 0x1405fbdc0.c: case 3 FUN_1405fd8c0 on +8, FUN_1405fda00 on +0x20 and +0x40, set at +0x70 / count +0x88; gate on row+0x1b4, row+0xc & 0x20, FUN_1405534b0 > 0; FUN_1404cf010 raises ZoneCompletionUpdated."
+grade = "fairly sure"
+gap = "From the saved C; FUN_1405533c0 and the tail calls are not read."
+
+["opcode.0x35c.completed"]
+statement = "On 0x35c state 3 the handler shows no floater, removes the quest's communicator call (Communicator_UpdateCallback), runs the open dialog's completed step (0x140554c30) and raises QuestStateChanged(quest, 3, subMissionPathType < 4), or ContractStateChanged for flags 0x80000. QuestTracker removes the quest's entry and hint arrow."
+proof = "Saved C 0x1405fb670.c; FUN_140551170 (floater only for 4 and 6); 0x1405fb6fe..0x1405fb71a; 0x1405fb74f / 0x1405fb75e call FUN_140554970 -> case 3 FUN_140554c30; FUN_1404261e0 QuestStateChanged. UI/QuestTracker/QuestTracker.lua 1164, UI/QuestLog/QuestLog.lua 1260."
+grade = "fairly sure"
+gap = "That no floater shows for state 3 is read from the floater's condition (states 4 and 6 only) in the saved C, not run."
+
+["0x140557000"]
+statement = "DialogCompleteQuest: sends 0x35d with the response's quest and reward id unchanged, with no state, distance or reward check. Before sending it refuses, with GenericError 'Profession not known: %s' (text 60109), a quest whose fixed rewards include a TradeSkillXp row for a tradeskill the player has not learned. It stores the receiver's completion line (the per-creature override or Quest2.localizedTextIdReceiverSayCompleted) as the say text and leaves the dialog open in state 3, until 0x35c state 3 for the quest, 0x358, the per-frame check failing or Esc."
+proof = "query.py disassemble 0x140557000: 0x1405570c4 cmp [rax+8],4; 0x1405570e4 TradeskillTier; 0x140557144 / 0x140557160 the player's list at game+0x1698; 0x140557169 call 0x1405be150; 0x1405572ce mov edx,0xeacd; 0x14055719e..0x1405571f5 the say text; 0x14055722f SendWorldMessage 0x35d. UpdateGame 0x1403e85d0 line 128. UI/Dialog/Dialog.lua 247-281, 763-765."
+grade = "fairly sure"
+gap = "What fills the tradeskill map at DAT_140c65b90+0x10 is not read."
+name = "DialogCompleteQuest"
+
+["0x140554c30"]
+statement = "The dialog's step when a quest becomes Completed: when the open dialog's state-3 list holds a quest response for it, the responses are rebuilt; if any remain it shows the list, else it closes the dialog (the NPC says the say text, Dialog_Close, ResetDialog sending 0x7ea {0, 0x65} for TalkTo 37). So 0x35c state 3 closes a turn-in dialog with nothing left by itself."
+proof = "Saved C 0x140554c30.c: mask 0x2dc0, quest id +0x3c; FUN_140555040; counts +0x28, +0x38; FUN_140558930(&dialog, 1, 0) or FUN_1405548f0 (FUN_140557c30, Dialog_Close, ResetDialog(1))."
+grade = "fairly sure"
+gap = "The unit's own quest markers are not shown refreshed in anything read."
+name = "DialogOnQuestCompleted"
+
+["0x140557c30"]
+statement = "Plays the dialog's closing line on every close: the say text as a speech bubble with its voice-over, or the creature's default line when there is none."
+proof = "Saved C 0x140557c30.c; callers 0x14050f770, 0x1405548f0, 0x140556780, 0x140556de0, 0x140558930."
+grade = "fairly sure"
+gap = "What the function picks between the say text and the default line is read from the saved C, not run."
+name = "SayDialogClosingLine"
+
+["0x140554580"]
+statement = "Opens the quest dialog with no unit, for the communicator: unit id 0, the receiver's creature id in DAT_140c7dc68, the quest id in DAT_140c7dc74. AnswerCommunicatorQuest uses it for an Achieved quest whose Quest2.flags has 8 or 0x10000, with the first receiver that passes a check on the player; flag 0x10000 also needs 0x14043d1f0."
+proof = "Saved C 0x140554580.c (cc54e920d5411539); 0x14043c700.c (e9b6b6af37d00314): GetQuestState == 2, row+0xc & 8 || & 0x10000, receivers at quest+0x88."
+grade = "fairly sure"
+gap = "Not run live."
+name = "OpenCommunicatorDialog"
+
+["0x14043c700.receiver"]
+statement = "AnswerCommunicatorQuest picks the quest's receiver for the unit-less dialog: for each Creature2 whose questIdReceive lists the quest, in order, it takes the player's current faction and the creature's Creature2.factionId and asks slot 0x30, FactionDispositionFromLevel 0x140787830 (0 Hostile at level 0-2, 1 Neutral, 2 Friendly); the first that is not Hostile is used. With none, the dialog opens with creature 0 and shows nothing. With no quest given and no call ringing, it takes the first Achieved log quest with flags 8 or 0x10000; with a call ringing, the call's creature and quest open with no checks."
+proof = "0x14043c83d unit+0x118; 0x14043c87e creature info +0x84 (Creature2.factionId); 0x14043c887 call [vtable+0x30]; 0x14043c8b6 xor r9d / 0x14043c8be call 0x14043d1f0; 0x14043c99e call 0x140554580. Ringing: list 0x140c7cc78, timer 0x140c7cd6c; log scan 0x1405fc730."
+grade = "fairly sure"
+gap = "What 0x1407a2a00 does inside GetFactionLevelTo 0x140787760 is not read."
+
+["0x14043d1f0"]
+statement = "Takes a quest id, a creature id and a mode. Looks the quest up in the questIdDelivered index of CommunicatorMessages (0x140c7cd30); no row means false. Mode 0 (from AnswerCommunicatorQuest): true when 0x14043d650(comm, quest, creature, 1) returns 0, i.e. the quest is in the active log, Quest2.flags has 0x10000, the creature is one of the quest's receivers and the quest is not Accepted. No player level, class, race or reputation test. Mode 1 (from QuestGivesReceiverResponse, with the first receiver): true when some delivering row has flags bit 1 clear and 0x14043d3d0(row) returns 0."
+proof = "query.py disassemble 0x14043d1f0: 0x14043d1f9 tree root 0x140c7cd38; 0x14043d254 test r9d (mode); 0x14043d322 test byte [rax+0xc],1; 0x14043d332 call 0x14043d3d0; 0x14043d3a7 mov r9d,1; 0x14043d3ad call 0x14043d650. Callers: 0x14043c8b6 xor r9d / 0x14043c8be call; 0x140553065 mov r9d,1. Saved C 0x14043d1f0.c (8eb22adb6de47956)."
+grade = "fairly sure"
+gap = "Mode 1's caller passes only the first receiver; not run live."
+name = "CommunicatorDeliversQuestTurnIn"
+
+["0x14043add0"]
+statement = "Indexes CommunicatorMessages at load. Each row with questIdDelivered nonzero goes into the tree at 0x140c7cd30 keyed by questIdDelivered, whatever its flags. Rows with flags bit 1 clear are also indexed by worldZoneId (0x140c7ccb0), minLevel (0x140c7ccd0), factionIdReputation (0x140c7ccf0) and quest00..02 (0x140c7cd10), which are the client-fired message triggers."
+proof = "query.py disassemble 0x14043add0: 0x14043aef7 mov r8d,[rbx+0x54]; 0x14043af02 lea r9,[0x140c7cd30]; 0x14043af09 call 0x14043b280."
+grade = "fairly sure"
+gap = "The four trigger trees' consumers are not traced, and only the questIdDelivered index is read from an instruction (0x14043aef7)."
+name = "IndexCommunicatorMessages"
+
+["0x14043d3d0"]
+statement = "Checks a CommunicatorMessages row against the player; returns 0 on pass, else a code. 1: no row. 2: worldId (0x14) is not the current world. 3: worldZoneId (0x18) fails 0x14043d7e0. 4: no player. 5: classId (0x40) != the player's class. 6: raceId (0x44) != the player's race. 7: factionId (0x3c) != the base faction's id (the unit's word 0x110, slot 0x18). 8: base faction slot 0x20 value for factionIdReputation (0x48) is outside reputationMin (0x4c)..reputationMax (0x50), where 0 means unbounded. 10: maxLevel (0x20) < the player's level. 9: minLevel (0x1c) > level. 0xb: quest00..02 (0x24..0x2c) / state00..02 (0x30..0x38) fail 0x14043d870. 0xc: prerequisiteId (0x58) fails the evaluator 0x140c659a0 slot 0x18. 0xd: delay (0x8) != 0, questIdDelivered != 0 and the row is already queued (list 0x140c7cd58). Otherwise the result of 0x14043d650(comm, questIdDelivered, creatureId (0x10), 0)."
+proof = "Saved C 0x14043d3d0.c (8eb22adb6de47956)."
+grade = "fairly sure"
+gap = "0x14043d7e0 (zone test) and 0x14043d870 (quest state test) not decoded; base-faction slot 0x20 assumed to be the reputation value."
+name = "CheckCommunicatorMessageConditions"
+
+["0x14043d650"]
+statement = "Checks a quest against a creature for a communicator call; 0 on pass. Mode 0 only: 0xe when the quest is held in the side list and the communicator's word 0xf4 != 0, or held and 0x14054f3a0(quest) == 0. 0xf: in the log without flag 0x10000. 0x11: the creature is a receiver but the quest is Accepted. 0x10: in the log and the creature is not a receiver. 0x12: the creature is a giver but flags&4 is clear or CanAcceptQuest(0xfffffdff) fails. 0x13: neither giver nor receiver."
+proof = "Saved C 0x14043d650.c (cc54e920d5411539)."
+grade = "fairly sure"
+gap = "0x14054f3a0 and comm+0xf4 not decoded."
+name = "CheckCommunicatorQuestCreature"
+
+["0x140757950"]
+statement = "Lua CommunicatorLib.CallContact(Game.Quest): calls AnswerCommunicatorQuest with that quest."
+proof = "Registration table 0x140b75870: {0x140b4c548 \"CallContact\", 0x140757950}; 0x140757972 call 0x14043c700."
+grade = "sure"
+name = "Lua_CommunicatorLib_CallContact"
+
+["0x140757980"]
+statement = "Lua CommunicatorLib.CallbackLastContact(): calls AnswerCommunicatorQuest with no quest. If a call is ringing, the last call's creature and quest open with no checks; otherwise the first Achieved log quest with flag 8 or 0x10000 opens."
+proof = "Registration table 0x140b75870: {0x140b4c530 \"CallbackLastContact\", 0x140757980}; ringing test in 0x14043c700 on list 0x140c7cc78 and timer 0x140c7cd6c; log scan 0x1405fc730."
+grade = "fairly sure"
+gap = "The call record's fields +0x18 and +0x40 are read from use only."
+name = "Lua_CommunicatorLib_CallbackLastContact"
+
+["0x1406a3ba0"]
+statement = "Lua Contract:Complete: sends 0x35d with the contract's quest, the reward from Lua argument 2 (0 when absent) and bit 0, after the quest is found and the player is near a Protostar Contract Dispenser (interaction kind 85), else floater text 651166. No reward, tradeskill or state check; the UI checks IsAchieved in Lua and passes no reward."
+proof = "0x1406a3bec mov edx,0x55; 0x1406a3bf1 call 0x1405a4850; 0x1406a3c8a mov edx,0x9ef9e. Saved C 0x1406a3ba0.c (e9b6b6af37d00314). UI/Contracts/Contracts.lua 983-985."
+grade = "fairly sure"
+gap = "0x140056d60 taken as lua_tointeger by its use."
+name = "ContractComplete"
+
+["0x1405a4850"]
+statement = "Whether a unit with this interaction kind active is near: the game keeps a map from kind to a near unit, set by 0x14045a640 for kinds 44, 87, 79, 85 and 67 when the player is within the kind's range. Kind 85 is the contract dispenser."
+proof = "0x14045a77b cmp byte [rbx+0x30fc],0; 0x14045a7b5 UnitsWithinRange; 0x14045a7c2 edx,0x55; 0x14045a7c7 call 0x1404824c0 (map at game+0x66c8, entry +0x24). 0x1405a4850 returns entry+0x24 != 0."
+grade = "fairly sure"
+gap = "Where the map is cleared is not read."
+name = "IsNearInteractionKind"
+
+["opcode.0x111.reason_quest"]
+statement = "0x111 checks no reason. Reason Quest (8) raises only ItemAdded: no loot toast, chat line or floating text, as 8 is not among the reasons that raise ChannelUpdate_Loot (4, 5, 10, 11, 15, 19, 25, 36, 38, 39, 40, 43, 44)."
+proof = "Saved C 0x1403b8060.c: ItemAdded, then cases 4..0x2c -> 0x140427fa0; 8 -> default. Records opcode.0x111.shared_item_unnamed, 0x1403b8060."
+grade = "fairly sure"
+gap = "Not seen live."
+
+["opcode.0x919.credits"]
+statement = "0x919 kinds 0 to 21 use only the 64-bit total; the two trailing 32-bit values are not read for them. The client stores the total and raises PlayerCurrencyChanged; no chat line shows a gain. Text 433843 shows when the total reaches the cap."
+proof = "Saved C 0x1403c70e0.c: cases 0..0x15 -> SetCurrency(game, kind+1, *(u64*)(body+8)); body+0x10/+0x14 only in the momentum cases. Saved C 0x1403b5730.c: GetCurrencyCap <= value -> text 0x69eb3."
+grade = "fairly sure"
+gap = "Read from the saved C, not run."
+
+["opcode.0xdd"]
+statement = "Message 0xdd, world server to client: a currency gain notice. Body: a 4-bit currency field, a 64-bit amount, a 64-bit value. An amount above 0 raises ChannelUpdate_Loot type Currency (2); ChatLog prints the credit loot line and LootStack adds credits to its display. This, not 0x919, puts a credit gain in chat."
+proof = "0x14006c290 line 580: 0xdd, size 0x18, reader 0x140090150. Jump table 0x1403f1344 -> 0x1403f12b0 -> FUN_1403d2550. FUN_140427fa0 types. UI/ChatLog/ChatLog.lua 743-751; UI/LootNotificationWindow/LootStack.lua 122-131."
+grade = "fairly sure"
+gap = "Whether the 4-bit field is the type id or type-1, and the third value, are not read."
+
+["lua.GameLib.ChannelUpdateLootType"]
+statement = "GameLib.ChannelUpdateLootType: Item 1, Currency 2, ItemDestroy 3."
+proof = "Saved C 0x140427fa0.c branches; ChatLog.lua 746-771; UI/LuaDocData/data.xml 5346."
+grade = "fairly sure"
+gap = "Numbers from the builder's branches, not the enum's registration."
 ["QuestObjective.type.4.progress"]
 statement = "The client counts nothing for QuestObjective types 4, 17, 32 and 33: an objective's value is the one the server last sent (0x35f at login, 0x361 after), and the objective is done when the value is at least QuestObjective.count, with no cap. A lower 0x361 clears the done bit, and a quest the server set to Achieved (0x35c 2) stays Achieved until 0x35c 1. Picking up, dropping, buying, selling or moving an item sends nothing from the client, so the server tells the held count: the sum of the stacks of the Item2 in item locations 0, 1, 8 and 9 (the accept check's mask 0x303, which leaves out the bank at 2) plus the supply satchel's count of that Item2."
 proof = "Value getter slot 0x40 0x140575a80 returns the stored value; the only writers are the 0x35f and 0x361 handlers (0x14079d700). Done test 0x1406115a0 (value >= count). State from the done bits: 0x1405fb830 and 0x1405fbdc0 (Achieved from log state 1 only with every done bit set; a log set to 2 stays 2). Held count: CanAcceptQuest 0x140552550 check 7 with mask 0x303, which calls CountItemsOfItem2AtLocation 0x1403ac840: per list it sums the item's +0x78 (a stack's count, 0 taken as 1), and when the mask has 0x42 (0x303 has 0x2) it also adds the supply satchel count at store +0xa8, indexed by the Item2's +0x1c8."

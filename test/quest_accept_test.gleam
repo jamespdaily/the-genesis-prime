@@ -35,8 +35,7 @@ import genesis_prime/game/quest.{
   type Asker, type Taken, type Verdict, Acceptable, Asker, NotRead, Refused,
 }
 import genesis_prime/game/quest_log
-import genesis_prime/game/shown.{type Picture, ShownCreature}
-import genesis_prime/game/start_place
+import genesis_prime/game/shown.{type Picture}
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/quest_retry.{QuestRetry}
@@ -44,11 +43,9 @@ import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{
   type HeldItem, type QuestRow, ActiveQuest, HeldItem, QuestRow,
 }
-import genesis_prime/table/id.{Creature2Id, Item2Id, Quest2Id, RaceId}
+import genesis_prime/table/id.{Item2Id, Quest2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2.{type Quest2, Quest2}
-import genesis_prime/world_map/creature_life.{Attackable, Hostile}
-import genesis_prime/world_map/creature_path
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -59,23 +56,11 @@ import owned_test
 import planted_table.{Integer}
 import prerequisite_support
 import quest_support
+import quest_walker_support
 
 const exile = 167
 
 const dominion = 166
-
-/// The 40 quests of the fixture that hold no condition and no contract, which fill the
-/// client's active list (GameFormula 655 dataint0, 40).
-fn plain() -> List(Int) {
-  list.flatten([
-    [1804, 1805, 1807, 1808, 1809, 1812, 1822],
-    [1854, 1855, 1856, 1859, 1860, 1861, 1862],
-    [1873, 1875, 2018, 2020, 2025],
-    [2042, 2043, 2044, 2045, 2046, 2047],
-    [2050, 2051, 2052, 2058, 2059],
-    [2073, 2074, 2075, 2076, 2077, 2078, 2079, 2080, 2081, 2082],
-  ])
-}
 
 fn tables() -> table_store.Tables {
   character_tables.shared()
@@ -90,20 +75,7 @@ fn row(quest_id: Int) -> Quest2 {
 /// The saved row of a quest the player holds accepted: one progress value for each
 /// objective the Quest2 row names.
 fn accepted(quest_id: Int) -> QuestRow {
-  let target = row(quest_id)
-  let count =
-    list.count(
-      [
-        target.objective0,
-        target.objective01,
-        target.objective02,
-        target.objective03,
-        target.objective04,
-        target.objective05,
-      ],
-      fn(objective) { objective != 0 },
-    )
-  quest_support.accepted(quest_id:, progress: list.repeat(0, count))
+  quest_support.untouched(quest_id:)
 }
 
 /// A level 20 Exile of race 3, class 5 and path 1 whose log holds these rows.
@@ -515,14 +487,14 @@ pub fn accept_refuses_another_path_test() -> Nil {
 
 pub fn accept_refuses_a_full_log_but_not_a_contract_count_test() -> Nil {
   use <- owned_test.run(10_000)
-  let full = asker(log: list.map(plain(), accepted))
-  assert list.length(plain()) == 40
+  let full = asker(log: list.map(quest_support.plain(), accepted))
+  assert list.length(quest_support.plain()) == 40
   assert verdict_of(1806, full) == Refused(code: 15)
     as "the active list holds 40 (GameFormula 655), all of them accepted"
   let with_contracts =
     asker(
       log: list.flatten([
-        list.map(list.take(plain(), 39), accepted),
+        list.map(list.take(quest_support.plain(), 39), accepted),
         [accepted(9880), accepted(9881)],
       ]),
     )
@@ -663,7 +635,7 @@ fn alone(
 }
 
 fn all_forty() -> List(QuestRow) {
-  list.map(plain(), accepted)
+  list.map(quest_support.plain(), accepted)
 }
 
 fn mentioned_5259() -> QuestRow {
@@ -950,33 +922,6 @@ fn assert_declined(taken: Taken, quest quest_id: Int) -> Nil {
   Nil
 }
 
-fn walker(gap gap: Float, alive alive: Bool, hostile hostile: Bool) -> Picture {
-  let entry = connection_support.entry_place()
-  // The gap is between the two edges: the player's hit radius 1.2 (Race.hitRadius) and
-  // Dorian Walker's 1.1 (Creature2DisplayInfo 25510) lie in between (`0x1403ad690`).
-  let place =
-    start_place.moved(
-      place: entry,
-      x: start_place.x(entry),
-      y: start_place.y(entry),
-      z: start_place.z(entry) -. { gap +. 1.2 +. 1.1 },
-    )
-  dict.from_list([
-    #(
-      40,
-      ShownCreature(
-        creature_id: Creature2Id(74_812),
-        path: creature_path.Standing(at: place),
-        life: 4,
-        alive:,
-        hit_radius: 1.1,
-        attackable: Attackable(exile: True, dominion: True),
-        hostile_to: Hostile(exile: hostile, dominion: hostile),
-      ),
-    ),
-  ])
-}
-
 pub fn accept_from_the_dialog_needs_a_giver_in_reach_or_a_mentioned_call_test() -> Nil {
   use <- owned_test.run(10_000)
   let dialog = fn(quest_id) {
@@ -988,23 +933,43 @@ pub fn accept_from_the_dialog_needs_a_giver_in_reach_or_a_mentioned_call_test() 
   }
   let sent = [quest.SendState(quest_id: 10_528, state: 1, objective_id: 0)]
   // Reach is 6.0 and a request may add 3.0 (`opcode.0x7ea`), measured edge to edge.
-  assert from(walker(gap: 8.9, alive: True, hostile: False), 10_528, done).effects
+  assert from(
+      quest_walker_support.walker(gap: 8.9, alive: True, hostile: False),
+      10_528,
+      done,
+    ).effects
     == sent
     as "Dorian Walker gives quest 10528 and stands within 9.0"
   assert_declined(
-    from(walker(gap: 9.1, alive: True, hostile: False), 10_528, done),
+    from(
+      quest_walker_support.walker(gap: 9.1, alive: True, hostile: False),
+      10_528,
+      done,
+    ),
     quest: 10_528,
   )
   assert_declined(
-    from(walker(gap: 1.0, alive: True, hostile: True), 10_528, done),
+    from(
+      quest_walker_support.walker(gap: 1.0, alive: True, hostile: True),
+      10_528,
+      done,
+    ),
     quest: 10_528,
   )
   assert_declined(
-    from(walker(gap: 1.0, alive: False, hostile: False), 10_528, done),
+    from(
+      quest_walker_support.walker(gap: 1.0, alive: False, hostile: False),
+      10_528,
+      done,
+    ),
     quest: 10_528,
   )
   assert_declined(
-    from(walker(gap: 1.0, alive: True, hostile: False), 1806, done),
+    from(
+      quest_walker_support.walker(gap: 1.0, alive: True, hostile: False),
+      1806,
+      done,
+    ),
     quest: 1806,
   )
   // A communicator quest the log holds a state of 4 to 7 for needs no creature.

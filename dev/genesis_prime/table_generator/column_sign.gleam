@@ -64,6 +64,12 @@ pub fn all() -> List(ColumnSign) {
       evidence: "0x140029820 compares the experience with the column as signed: cmp ebp, dword ptr [rbx+0x4] then jl, jg",
     ),
     ColumnSign(
+      table: "LevelDifferentialAttribute",
+      column: "levelDifferentialValue",
+      sign: Signed,
+      evidence: "0x1404cd1b0 clamps the level difference to the table's smallest and largest value and compares each row's value (the int at +0x20 of a node) with it as a signed int; the rows hold -4 to 4",
+    ),
+    ColumnSign(
       table: "WorldZone",
       column: "worldLocation2IdExit",
       sign: Unread,

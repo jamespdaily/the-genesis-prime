@@ -351,6 +351,31 @@ pub type ItemsRequest {
     after: Int,
     sold: List(SoldStack),
   )
+  /// A quest turned in, all or none: the place, experience, level and quest rows saved as
+  /// `SavePlace` saves them (the quest log then holds the quest Completed), and then
+  /// the credits set to `credits_after` only while the character holds exactly
+  /// `credits_held` of them (a missing row reads as 0) and each stack of `placed` raised and
+  /// made as `BuyFromVendor` does it, in one transaction. Answered by `TurnedIn` with the
+  /// credits held after and the rows made.
+  TurnInQuest(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    save_sequence: Int,
+    place: Place,
+    health: Option(Int),
+    experience: Int,
+    level: Int,
+    quests: List(QuestRow),
+    credits_held: Int,
+    credits_after: Int,
+    placed: List(Placed),
+  )
+}
+
+/// The stacks that grow and the stacks that are made to hold one Item2 a turn-in gives.
+pub type Placed {
+  Placed(item2_id: Item2Id, grow: List(StackGrowth), make: List(NewStack))
 }
 
 /// A held stack a sale sells from: the item `item_guid`, at `location`, held with
@@ -494,6 +519,9 @@ pub type ItemsAnswer {
   /// A sale's rows are saved: `amount` is what the character holds of the sale's
   /// currency after it.
   Sold(amount: Int)
+  /// A turn-in's rows are saved: `credits` is what the character holds of credits after
+  /// the turn-in, and `made` the new stacks, each with the guid the database gave it.
+  TurnedIn(credits: Int, made: List(HeldItem))
   /// Nothing was saved, for one of three causes the statement cannot tell apart:
   /// a later login raised the character's `session_epoch` past the request's, a
   /// row was not as the request held it, or the account has no such character.

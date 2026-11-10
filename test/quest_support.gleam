@@ -13,7 +13,9 @@ import character_tables
 import fixture_tables
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/store.{type QuestRow, ActiveQuest, QuestRow}
+import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/quest2
 import gleam/list
 import gleam/option.{None, Some}
 import planted_table.{Integer}
@@ -73,6 +75,19 @@ pub const placeholder_objective = 9461
 /// QuestObjective 1961, of type 2, the objective of quest 1857.
 pub const ordinary_objective = 1961
 
+/// The 40 quests of the fixture that hold no condition and no contract, which fill the
+/// client's active list (GameFormula 655 dataint0, 40).
+pub fn plain() -> List(Int) {
+  list.flatten([
+    [1804, 1805, 1807, 1808, 1809, 1812, 1822],
+    [1854, 1855, 1856, 1859, 1860, 1861, 1862],
+    [1873, 1875, 2018, 2020, 2025],
+    [2042, 2043, 2044, 2045, 2046, 2047],
+    [2050, 2051, 2052, 2058, 2059],
+    [2073, 2074, 2075, 2076, 2077, 2078, 2079, 2080, 2081, 2082],
+  ])
+}
+
 /// The log of these rows, each held to what the client would take
 /// (`quest_log.from_rows`).
 pub fn log_of(rows rows: List(QuestRow)) -> QuestLog {
@@ -129,6 +144,30 @@ pub fn accepted(
     done_mask: 0,
     progress:,
   )
+}
+
+/// The number of objectives the quest's Quest2 row names.
+pub fn objective_count(quest_id quest_id: Int) -> Int {
+  let assert Ok(row) =
+    quest2.get(tables: character_tables.shared(), id: id.Quest2Id(quest_id))
+    as "the fixture holds the quest"
+  list.count(
+    [
+      row.objective0,
+      row.objective01,
+      row.objective02,
+      row.objective03,
+      row.objective04,
+      row.objective05,
+    ],
+    fn(objective) { objective != 0 },
+  )
+}
+
+/// The saved row of a quest the player holds accepted with nothing done: one progress
+/// value of 0 for each objective the Quest2 row names.
+pub fn untouched(quest_id quest_id: Int) -> QuestRow {
+  accepted(quest_id:, progress: list.repeat(0, objective_count(quest_id:)))
 }
 
 /// Quest 4361: six objectives (QuestObjective 5871, 5907 to 5911, each of type 5 and
