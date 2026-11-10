@@ -373,3 +373,8 @@ Quest2	4517	quest whose objectives 6201 (type 5, flags 0), 6302 (type 5, flags 3
 QuestObjective	6201	objective 0 of quest 4517, type 5, flags 0, no limit	quest_log_timed_objective_test
 QuestObjective	6302	the optional (flag 0x20) timed objective of quest 4517 (maxTimeAllowedMS 33000, flags 35)	quest_log_timed_objective_test
 QuestObjective	7627	objective 2 of quest 4517, type 5, flags 8, no limit	quest_log_timed_objective_test
+Item2	48169	(ItemBudget 25, ItemStat 432: three kind-2 entries on group 11, level 50, the reward of quest 9376)	random_stat_test, item_property_test, gear_test, vendor_purchase_test, quest_turn_in_random_stat_test
+Item2	48170	(a shield: ItemBudget 51, ItemStat 439: four kind-2 entries on group 14, level 50, the reward of quest 9375)	random_stat_test, item_property_test, world_entry_loadout_test
+Item2	37685	(a weapon whose ItemStat 439 names group 14, the shield properties, so no roll is accepted)	random_stat_test
+Item2	37683	(ItemStat 443: four kind-4 entries, which only crafting fills)	random_stat_test
+Quest2	9376	quest whose reward is Item2 48169, an item with three random-stat entries	quest_turn_in_random_stat_test
