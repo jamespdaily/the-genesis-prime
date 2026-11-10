@@ -71,6 +71,7 @@ pub fn main() -> Nil {
 /// (genesis_prime/sitting), which stops the program with the reason when the
 /// sitting cannot begin.
 pub fn run(change change: fn(server.Settings) -> server.Settings) -> Nil {
+  application.register_program()
   let #(tables, count) = load_tables()
   let spawns = load_content(tables:)
   let settings =

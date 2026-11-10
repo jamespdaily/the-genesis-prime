@@ -16,12 +16,20 @@
 ////   node's own state tells the two ends apart.
 //// - The ready line is printed only when the server can serve: the database
 ////   answered and no stop has begun.
+//// - OTP's `init` (`init:stop`): it stops the applications, then closes the
+////   kernel's processes, `user` among them, and kills every process left, so a
+////   program still running then dies after the node's output is closed. A node
+////   ended by SIGTERM prints no error of that: neither "Failed to eval" nor a
+////   `badarg`, which `genesis_prime@@main:run` prints for a program that was
+////   killed. The race needs a loaded machine to show, so one test ends several
+////   nodes in a row.
 //// Each test starts a node of its own (`serving_node`), sends it SIGTERM or
 //// lets it fail, and reads what it printed, the recording it left and how it
 //// ended.
 
 import database_support
 import genesis_prime/wire_recording.{Recording, Server}
+import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import gleam/string
@@ -116,6 +124,26 @@ pub fn sigterm_before_the_ready_line_ends_the_node_with_status_0_and_no_ready_li
     as "no connection was made, so no recording is left without its closing line"
   assert !string.contains(serving_node.output(node), ready_line)
     as "no ready line is printed for a server that was stopped"
+}
+
+/// How many nodes the repeated SIGTERM test ends one after the other.
+const repeated_nodes = 6
+
+pub fn repeated_sigterm_before_the_ready_line_leaves_no_error_in_the_nodes_output_test() -> Nil {
+  use <- owned_test.run(120_000)
+  int.range(from: 1, to: repeated_nodes + 1, with: Nil, run: fn(_, attempt) {
+    use node, _folder <- with_node(UnreachableDatabase)
+    assert serving_node.await_output(node, "the tree started", node_wait_ms)
+      as "the tree started under the application"
+    serving_node.terminate(node)
+    assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
+      as "SIGTERM while the readiness ask waits ends the node with status 0"
+    let printed = serving_node.output(node)
+    let which = "node " <> int.to_string(attempt) <> " printed: " <> printed
+    assert !string.contains(printed, "Failed to eval") as which
+    assert !string.contains(printed, "badarg") as which
+    assert !string.contains(printed, "runtime error") as which
+  })
 }
 
 pub fn sigterm_while_the_probe_is_slow_prints_no_ready_line_test() -> Nil {

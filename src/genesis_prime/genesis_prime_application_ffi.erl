@@ -9,9 +9,12 @@
 %%   one. `application:get_supervisor/1` finds the root by the application's
 %%   name, and `supervisor:start_child/2` starts the tree under it.
 %% - The node's own state: gleam_erlang has nothing for `init:get_status/0`.
+%% - The node's program: gleam_erlang names a process with an atom made by
+%%   `process.new_name`, which differs in every run, and the application's stop
+%%   has to find the program by a name it knows.
 -module(genesis_prime_application_ffi).
 
--export([start_tree/1, node_stopping/0]).
+-export([start_tree/1, node_stopping/0, register_program/0, await_program_end/0]).
 
 %% Starts the server's tree under the application's root with the settings and
 %% gives its pid: Result(Pid, StartFailure). The failure is the Gleam value
@@ -45,3 +48,21 @@ start_error(Reason) -> {init_exited, {abnormal, Reason}}.
 node_stopping() ->
     {Internal, _Provided} = init:get_status(),
     Internal =:= stopping.
+
+%% Makes the calling process the node's program, the one `genesis_prime@@main:run`
+%% runs the module's `main` in. A node has one program, so a second one crashes.
+register_program() ->
+    true = register(genesis_prime_program, self()),
+    nil.
+
+%% Returns once the node's program has ended, at once when none was registered
+%% or it has ended.
+await_program_end() ->
+    case whereis(genesis_prime_program) of
+        undefined -> nil;
+        Program ->
+            Monitor = erlang:monitor(process, Program),
+            receive
+                {'DOWN', Monitor, process, Program, _Reason} -> nil
+            end
+    end.

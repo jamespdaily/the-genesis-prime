@@ -35,9 +35,18 @@
 ////                                                      store, pool
 ////                                              ◀─ tree ended ─────┘  ─▶ main's monitor
 ////                                                                       fires `shutdown`
-////                         stop/1 logs the stop                          main returns
+////                         stop/1 logs the stop, then                    main returns
+////                         waits for main to end ◀───────────────────────┘
 ////                         halts with status 0
 //// ```
+////
+//// **Why stop/1 waits for `main`.** After the applications stop, `init` closes
+//// the kernel's processes, `user` among them, and kills every process left. A
+//// `main` killed then reaches `genesis_prime@@main:run` as a non-normal exit,
+//// and `run` prints it to a standard error that is already closed, so the node
+//// prints "Failed to eval" and a `badarg`. A `main` that has ended normally
+//// reaches `run` as nothing. `register_program` names `main`'s process, and
+//// stop/1 returns only once it has ended, so `init` cannot go on before then.
 ////
 //// **How `main` tells an orderly end from a fatal one.** A tree that exceeds
 //// its restart intensity also ends with `shutdown`, so the reason says nothing.
@@ -133,10 +142,23 @@ pub fn start(
 }
 
 /// OTP's stop callback, run after the root and the tree under it have stopped:
-/// logs the stop.
+/// logs the stop, and returns once the node's program has ended
+/// (`register_program`).
 pub fn stop(_state: Dynamic) -> Nil {
   runtime.log(step.LogInfo, "the server stopped", step.no_one)
+  await_program_end()
 }
+
+/// Makes the calling process the node's program: the process that
+/// `genesis_prime@@main:run` runs `main` in. The application's stop does not
+/// return until the program has ended, so the VM does not go on to close the
+/// node's output and kill its processes while the program is still taking the
+/// tree's end. `main` calls it before anything else.
+@external(erlang, "genesis_prime_application_ffi", "register_program")
+pub fn register_program() -> Nil
+
+@external(erlang, "genesis_prime_application_ffi", "await_program_end")
+fn await_program_end() -> Nil
 
 /// Starts the server's tree under the application's root with these settings,
 /// and monitors it. Each fails with the reason it did not run.

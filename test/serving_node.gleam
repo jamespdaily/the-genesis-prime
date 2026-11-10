@@ -119,6 +119,7 @@ fn variable(name: String) -> String {
 
 /// What the node runs.
 pub fn main() -> Nil {
+  application.register_program()
   let mode = mode_of(variable("SERVING_MODE"))
   let pool =
     database_support.config(
