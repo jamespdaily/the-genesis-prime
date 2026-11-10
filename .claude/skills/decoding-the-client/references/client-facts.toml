@@ -12262,10 +12262,10 @@ proof = "0x140552882 mov ecx, 0x28f; 0x140552887 call 0x140200220; 0x140552891 m
 grade = "sure"
 
 ["0x140553030"]
-statement = "Whether a quest on a creature's receive list gives the creature a turn-in or accept response. In the unit dialog it is yes for an Achieved quest, or for a quest whose Quest2.flags has 1 when CanAcceptQuest with every check but the log-full one passes. In the other dialog it uses the mask that leaves out the mention check."
-proof = "query.py decode 0x1405530a0..0x1405530e6: 0x1405530ae mov edx, 0xfffffdff; 0x1405530d9 mov edx, 0xffffdfff after the flags & 1 test; GetQuestState compared with 2. Called by 0x140555350 for the receive list (creature info word 0x60)."
+statement = "Whether a quest on a creature's receive list gives the creature a turn-in or accept response, by the dialog's kind. Unit dialog (the dialog's word 8 is 0): yes for an Achieved quest, or for a quest whose Quest2.flags has 1 when CanAcceptQuest with every check but the log-full one passes. Communicator dialog (word 8 not 0, the creature id of OpenCommunicatorDialog): a quest whose Quest2.flags has 0x10000 gives a response only when the quest has at least one receiver and 0x14043d1f0 mode 1 holds for the quest and the dialog's creature, and no other flag is read; any other quest needs flags 8, then an Achieved quest gives a response, else it needs flags 1 and 4 and CanAcceptQuest with every check but the mention check (mask 0xfffffdff) passing."
+proof = "Saved C 0x140553030.c (hash 02ce70b035ab663d): param_2 == 0 branch: GetQuestState == 2 returns 1, flags & 1 clear returns 0, mask 0xffffdfff; else branch: (flags >> 16) & 1 set: receiver count at quest record +0x90 == 0 returns 0, else the result of CommunicatorDeliversQuestTurnIn(dialog, quest id, creature id at dialog +0x88, 1) is returned; flags & 8 clear returns 0; GetQuestState == 2 returns 1; flags & 1 clear or flags & 4 clear returns 0; mask 0xfffffdff. Caller 0x140555350 (saved C 02ce70b035ab663d) passes (dialog +8 != 0) as param_2. query.py decode 0x1405530a0..0x1405530e6: 0x1405530ae mov edx, 0xfffffdff; 0x1405530d9 mov edx, 0xffffdfff after the flags & 1 test."
 grade = "fairly sure"
-gap = "The path when the dialog's word 8 is set is read only to its mask."
+gap = "Not run live. That word 8 is set only to a creature id by OpenCommunicatorDialog 0x140554580 is read from that function's saved C, not from every writer of the dialog."
 name = "QuestGivesReceiverResponse"
 
 ["0x140555350"]
@@ -13707,3 +13707,24 @@ statement = "How a type 32 (virtual item) objective is fed: the client's virtual
 proof = "0x1405fcd70 (virtual item list from the log), 0x1405a8b30 (the quest anim columns), `gleam run -m genesis_prime/table_rows -- Creature2 12919`, `-- QuestObjective 4813`."
 grade = "guess"
 gap = "That a finished activate cast of such a creature is what the original server counts as one virtual item is a guess; a retail recording of such a creature would settle it. 448 of the 709 type 32 rows have no creature link in the tables."
+
+["0x14043d870"]
+statement = "Whether the player's held state of a quest meets a wanted state, for a CommunicatorMessages row's quest00..02 and state00..02. A quest id of 0 passes. A quest with no Quest2 row fails. The held state is the quest's QuestState with Mentioned, Abandoned and Ignored (5 to 7) read as 0. For a quest in the quest log's active list, a wanted state of 5 to 10 means objective (wanted - 5) is done, and 0xe to 0x13 means objective (wanted - 0xe) is not done (both through IsQuestObjectiveDone). Otherwise wanted 0xb holds for a held state of 0 or 4, or of 3 when Quest2.flags has 0x20 or Quest2.questRepeatPeriodEnum is not 0; wanted 0xc holds for a held state of 1 or 2; wanted 0xd holds for 2 or 3; any other wanted state holds when it equals the held state."
+proof = "Saved C 0x14043d870.c (hash e9b6b6af37d00314). Listing (query.py disassemble 0x14043d930..0x14043d9a6): 0x14043d935 lea edx, [rdi - 5]; 0x14043d938 cmp edx, 5; 0x14043d93d mov rcx, rsi; 0x14043d94f jmp IsQuestObjectiveDone (objective index = wanted - 5, record in rcx); 0x14043d954 lea edx, [rdi - 0xe]; 0x14043d957 cmp edx, 5; 0x14043d95f call IsQuestObjectiveDone; 0x14043d964 test eax, eax (not done). 0x14043d96b cmp edi, 0xb; 0x14043d970 test r8d, 0xfffffffb (held state 0 or 4 passes); 0x14043d979 cmp r8d, 3; 0x14043d97f test byte ptr [r10 + 0xc], 0x20; 0x14043d986 cmp dword ptr [r10 + 0x1b4], ebx (ebx 0): the record's word 0x6d, byte 0x1b4 = offset 436 = Quest2.questRepeatPeriodEnum by `gleam run -m genesis_prime/table_rows -- Quest2 --columns` (the same word as the proof of 0x140489aa0). Active list test: the tree at the quest log's +8 searched for the quest id. The only caller is 0x14043d3d0, at 0x14043d595, with the row's quest00..02 and state00..02."
+grade = "fairly sure"
+gap = "Not run live. The quest log's +8 tree is taken as the active list from GetQuestState's record, and the dependence of IsQuestObjectiveDone on a quest in state 3 is that function's own record."
+name = "CommunicatorQuestStateHolds"
+
+["0x14043d7e0"]
+statement = "Whether a CommunicatorMessages row's worldZoneId is the player's zone or one of its parents: start at the game's current zone id (0 means false), true when the id equals the wanted zone, else go to the zone's WorldZone.parentZoneId and repeat until the parent is 0 (false) or a zone has no WorldZone row (false). A row with worldZoneId 0 is not tested."
+proof = "Saved C 0x14043d7e0.c (hash 8eb22adb6de47956): iVar3 = game (DAT_140c65898) +0x74ec, the zone the per-frame zone update keeps (0x14053a990, whose record names the game's 0x74ec); loop: param_1 == iVar3 returns 1; the WorldZone row by the table getter with 'WorldZone' (PTR_u_WorldZone_140a6e3e8); no row returns 0; iVar3 = row word 2 (offset 8 = WorldZone.parentZoneId by `gleam run -m genesis_prime/table_rows -- WorldZone --columns`); while iVar3 != 0. The caller 0x14043d3d0 calls it only when the row's worldZoneId (+0x18) is not 0 (0x14043d427)."
+grade = "fairly sure"
+gap = "A cycle in the parent chain would not end in the client; the server's chain (top_zone.chain) ends at a repeated zone. Not run live."
+name = "WorldZoneIsCurrentOrParent"
+
+["0x14054f3a0"]
+statement = "Whether the client holds a mention of a quest: true when the quest has an entry in the quest log's side list (the one SetQuestState puts Mentioned, Abandoned and Ignored quests in) whose state is not Ignored (7)."
+proof = "Saved C 0x14054f3a0.c (hash 8eb22adb6de47956): the tree at the quest log's +0x28 searched for the quest's id (record +8 -> word 0); no node gives false; else the node's state word (+0x24) != 7. Same test as the held test of opcode.0x360's proof (0x1405fca62 cmp dword [rax+0x24], 7). Callers: 0x14043d650 (0x14043d6b6), 0x14043bf30 and 0x140664300."
+grade = "fairly sure"
+gap = "That the +0x28 tree is the side list is taken from the proof of opcode.0x360, which reads the same node state word."
+name = "QuestMentionIsHeld"
