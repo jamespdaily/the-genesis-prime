@@ -152,6 +152,8 @@ pub fn a_database_that_answers_late_is_waited_for_and_loaded_from_test() -> Nil 
     )
   assert loaded == Ok(Nil)
     as "the load asked again until the database answered, and then loaded it"
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(away, within: 0) == Error(Nil)
     as "it was told five times that the database was away"
   assert dict.size(content_spawn.world(key:, world_id: 3460).by_id) == 27

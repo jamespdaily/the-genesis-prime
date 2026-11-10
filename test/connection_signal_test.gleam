@@ -38,8 +38,10 @@ import gleam/string
 import log_capture
 import mailbox_support
 import mug
+import open_wait
 import owned_test
 import signalling_rule
+import socket_read
 import unitest
 
 /// One record the signalling rule wrote.
@@ -93,10 +95,10 @@ fn start_asking(
 
 fn read_record(client: mug.Socket) -> Record {
   let assert Ok(<<letter, number:64-signed>>) =
-    mug.receive_exact(
-      client,
+    socket_read.receive_exactly(
+      socket: client,
       byte_size: 9,
-      timeout_milliseconds: ask_support.event_wait_ms,
+      what: "the next record the server wrote",
     )
     as "a record arrived"
   Record(letter:, number:)
@@ -307,7 +309,12 @@ pub fn a_rule_that_starts_a_timer_with_a_negative_id_ends_its_connection_since_t
   event_wait.until("the connection ended", fn() {
     ask_support.connections(server) == []
   })
-  assert mug.receive(client, ask_support.event_wait_ms) == Error(mug.Closed)
+  assert socket_read.receive(
+      limit: socket_read.Open,
+      socket: client,
+      what: "the shell to close the socket",
+    )
+    == Error(mug.Closed)
     as "the shell closed the socket"
   ask_support.stop(server)
 }
@@ -357,8 +364,7 @@ pub fn a_timer_that_fired_during_an_ask_and_is_started_again_by_its_outcome_is_n
       signalling_rule.restarting_ask, 20_000:16,
     >>)
     as "the step was sent"
-  let assert Ok(reply) = process.receive(replies, ask_support.event_wait_ms)
-    as "the shell made the ask"
+  let reply = open_wait.received(from: replies, what: "the shell's ask")
   event_wait.until("the timer's timeout waits in the mailbox", fn() {
     mailbox_support.tagged_by_reference(connection) == 1
   })
@@ -398,8 +404,7 @@ pub fn a_timer_that_fired_during_an_ask_and_is_cancelled_by_its_outcome_never_re
       20_000:16,
     >>)
     as "the step was sent"
-  let assert Ok(reply) = process.receive(replies, ask_support.event_wait_ms)
-    as "the shell made the ask"
+  let reply = open_wait.received(from: replies, what: "the shell's ask")
   event_wait.until("the timer's timeout waits in the mailbox", fn() {
     mailbox_support.tagged_by_reference(connection) == 1
   })
@@ -452,8 +457,7 @@ pub fn a_message_a_timeout_and_a_watch_end_that_arrive_during_an_ask_are_taken_a
       20_000:16,
     >>)
     as "the step was sent"
-  let assert Ok(reply) = process.receive(replies, ask_support.event_wait_ms)
-    as "the shell made the ask"
+  let reply = open_wait.received(from: replies, what: "the shell's ask")
   assert registry.deliver(scope, ConnectionId(id), 7) == Ok(Nil)
   assert registry.deliver(scope, ConnectionId(id), 8) == Ok(Nil)
   process.kill(sessions)
@@ -511,9 +515,8 @@ pub fn a_message_no_selector_takes_is_dropped_and_logged_by_its_kind_with_the_co
       "a-fake-session-key":utf8,
     >>),
   )
-  let assert Ok(#(level, text, metadata)) =
-    process.receive(lines, ask_support.event_wait_ms)
-    as "the stray message was logged"
+  let #(level, text, metadata) =
+    open_wait.received(from: lines, what: "the log line of the stray message")
   log_capture.stop(capture)
   assert level == "warning" as "a message nobody takes is a warning"
   assert string.contains(text, "stray_message")
@@ -566,8 +569,7 @@ pub fn a_late_answer_between_steps_gives_the_rule_no_input_and_drops_the_kept_as
     n: 1,
     wait_ms: 100,
   )
-  let assert Ok(reply) = process.receive(replies, ask_support.event_wait_ms)
-    as "the shell made the ask"
+  let reply = open_wait.received(from: replies, what: "the shell's ask")
   assert read_record(client) == Record(signalling_rule.answered, 1)
     as "the ask came back as the rule's input"
   assert kept_asks(connection) == 1 as "the shell keeps the ask"
@@ -611,8 +613,7 @@ pub fn the_end_of_a_kept_asks_target_gives_the_rule_no_input_and_drops_the_kept_
     n: 1,
     wait_ms: 100,
   )
-  let assert Ok(_reply) = process.receive(replies, ask_support.event_wait_ms)
-    as "the shell made the ask"
+  let _reply = open_wait.received(from: replies, what: "the shell's ask")
   assert read_record(client) == Record(signalling_rule.answered, 1)
     as "the ask came back as the rule's input"
   assert kept_asks(connection) == 1 as "the shell keeps the ask"

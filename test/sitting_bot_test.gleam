@@ -36,6 +36,7 @@ import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/float
 import gleam/list
+import open_wait
 import owned_test
 import pog
 import unitest
@@ -606,10 +607,9 @@ pub fn seating_the_bot_twice_at_once_leaves_one_account_and_one_character_for_it
       process.send(seated, sitting_bot.seat(pool:, near: "Zed Qu"))
     })
   })
-  let assert Ok(first) = process.receive(seated, within: 30_000)
-    as "the first seat answered"
-  let assert Ok(second) = process.receive(seated, within: 30_000)
-    as "the second seat answered"
+  let first = open_wait.received(from: seated, what: "the first seat's answer")
+  let second =
+    open_wait.received(from: seated, what: "the second seat's answer")
   let assert Ok(first) = first
     as "a seat that runs beside another still finds or makes the bot's character"
   let assert Ok(second) = second as "so does the other"

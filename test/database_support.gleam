@@ -6,6 +6,7 @@
 //// VM ends however it ends, except when it is killed with its process group
 //// and the watcher with it: the next run's `sweep` drops what that run left.
 
+import ask_support
 import envoy
 import genesis_prime/step/runtime
 import gleam/bool
@@ -15,6 +16,7 @@ import gleam/list
 import gleam/option.{type Option}
 import gleam/result
 import gleam/string
+import open_wait
 import pog
 
 /// Where the Postgres server is. Read from PGHOST, PGPORT, PGUSER and
@@ -116,10 +118,12 @@ pub fn execute(
   on shared: Shared,
   sql sql: String,
 ) -> Result(Nil, pog.QueryError) {
-  pog.query(sql)
-  |> pog.timeout(60_000)
-  |> pog.execute(on: shared.admin)
-  |> result.replace(Nil)
+  open_wait.named("the database's answer to a statement", fn() {
+    pog.query(sql)
+    |> pog.timeout(ask_support.beyond_the_test_ms)
+    |> pog.execute(on: shared.admin)
+    |> result.replace(Nil)
+  })
 }
 
 /// A database of its own for one test: a copy of the migrated template, with
@@ -303,12 +307,10 @@ fn start_for_the_run(work: fn() -> a) -> a {
     process.new_selector()
     |> process.select_map(reply, Ok)
     |> process.select_specific_monitor(monitor, fn(_down) { Error(Nil) })
-    |> process.selector_receive(within: 60_000)
+    |> open_wait.selected(what: "the run's shared database state to start")
   case outcome {
-    Ok(Ok(value)) -> value
-    Ok(Error(Nil)) -> panic as "the run's shared database state did not start"
-    Error(Nil) ->
-      panic as "the run's shared database state did not start within 60 seconds"
+    Ok(value) -> value
+    Error(Nil) -> panic as "the run's shared database state did not start"
   }
 }
 

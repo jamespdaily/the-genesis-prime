@@ -14,6 +14,7 @@ import genesis_prime/step/runtime
 import gleam/erlang/atom
 import gleam/erlang/process
 import log_capture
+import open_wait
 import owned_test
 import unitest
 
@@ -58,10 +59,14 @@ pub fn the_servers_start_leaves_out_otps_progress_reports_test() -> Nil {
   runtime.show_info_lines()
   log_capture.log_progress_report()
   runtime.log(step.LogInfo, "an info line", step.no_one)
-  let first = process.receive(lines, ask_support.event_wait_ms)
+  let first =
+    open_wait.received(
+      from: lines,
+      what: "the first line the logger lets through",
+    )
   log_capture.stop(capture)
   log_capture.remove_progress_filter()
   log_capture.set_primary_level(before)
-  assert first == Ok(#("info", "an info line"))
+  assert first == #("info", "an info line")
     as "the info line is the first line the logger lets through, with no progress report before it"
 }

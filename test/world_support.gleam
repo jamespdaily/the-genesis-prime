@@ -19,6 +19,7 @@ import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/otp/static_supervisor as supervisor
 import gleam/result
+import open_wait
 import spawn_support
 import supervisor_children
 
@@ -188,8 +189,8 @@ pub fn connection(world world: World, id id: Int) -> Subject(Message) {
       process.send(ready, Nil)
       forward(selector:, to: received)
     })
-  let assert Ok(Nil) = process.receive(ready, within: ask_support.event_wait_ms)
-    as "the connection joined the registry"
+  let Nil =
+    open_wait.received(from: ready, what: "the connection to join the registry")
   received
 }
 

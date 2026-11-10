@@ -11,6 +11,7 @@ import gleam/erlang/process.{type Pid}
 import gleam/int
 import gleam/list
 import gleam/string
+import open_wait
 import owned_test
 
 /// Eight waiters that arrive while the first caller loads wait on the key's
@@ -32,14 +33,17 @@ pub fn waiters_return_as_soon_as_the_first_load_ends_test() -> Nil {
         database_support.once(key, fn() {
           let finish = process.new_subject()
           process.send(inside, finish)
-          let assert Ok(Nil) = process.receive(finish, within: 5000)
-            as "the first caller was never told to end its load"
+          let Nil =
+            open_wait.received(
+              from: finish,
+              what: "the first caller to be told to end its load",
+            )
           7
         }),
       )
     })
-  let assert Ok(finish) = process.receive(inside, within: 5000)
-    as "the first caller did not start its load"
+  let finish =
+    open_wait.received(from: inside, what: "the first caller to start its load")
   list.repeat(Nil, waiters)
   |> list.map(fn(_) {
     process.spawn(fn() {
@@ -56,9 +60,10 @@ pub fn waiters_return_as_soon_as_the_first_load_ends_test() -> Nil {
   let values =
     list.repeat(Nil, waiters + 1)
     |> list.map(fn(_) {
-      let assert Ok(value) = process.receive(returned, within: 5000)
-        as "a caller did not return the first caller's value"
-      value
+      open_wait.received(
+        from: returned,
+        what: "a caller to return the first caller's value",
+      )
     })
   assert values == list.repeat(7, waiters + 1)
 }
@@ -75,21 +80,27 @@ pub fn a_waiter_loads_for_itself_when_the_holder_crashes_test() -> Nil {
       database_support.once(key, fn() {
         let crash = process.new_subject()
         process.send(inside, crash)
-        let assert Ok(Nil) = process.receive(crash, within: 5000)
-          as "the holder was never told to crash"
+        let Nil =
+          open_wait.received(
+            from: crash,
+            what: "the holder to be told to crash",
+          )
         panic as "the holder crashed inside its load"
       })
     })
-  let assert Ok(crash) = process.receive(inside, within: 5000)
-    as "the holder did not start its load"
+  let crash =
+    open_wait.received(from: inside, what: "the holder to start its load")
   let waiter =
     process.spawn(fn() {
       process.send(waiter_value, database_support.once(key, fn() { 42 }))
     })
   wait_until_waiting(key, waiter)
   process.send(crash, Nil)
-  let assert Ok(42) = process.receive(waiter_value, within: 5000)
-    as "the waiter did not load for itself after the holder crashed"
+  let assert 42 =
+    open_wait.received(
+      from: waiter_value,
+      what: "the waiter to load for itself after the holder crashed",
+    )
   assert database_support.once(key, fn() { panic as "loaded again" }) == 42
 }
 

@@ -35,6 +35,7 @@ import gleam/otp/supervision.{Permanent}
 import log_capture
 import login_support
 import map_support
+import open_wait
 import owned_test
 import place_support
 import supervisor_children.{ChildSettings}
@@ -164,9 +165,11 @@ pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent
       message: map.Leave(connection:),
     ),
   )
-  let assert Ok(#("error", _text)) =
-    process.receive(logged, within: ask_support.event_wait_ms)
-    as "a tell that is an ask is a bug in the rule that tells it: an error line"
+  let assert #("error", _text) =
+    open_wait.received(
+      from: logged,
+      what: "the error line for a tell that is an ask",
+    )
   server.tell_the_run(
     run,
     TellPeer(
@@ -174,10 +177,14 @@ pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent
       news: PeerNews(unit_id: 9, news: Removed),
     ),
   )
-  let assert Ok(#("error", _text)) =
-    process.receive(logged, within: ask_support.event_wait_ms)
-    as "a tell for a connection is none for a map: an error line too"
+  let assert #("error", _text) =
+    open_wait.received(
+      from: logged,
+      what: "the error line for a tell for a connection that is none for a map",
+    )
   log_capture.stop(capture)
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(run, 0) == Error(Nil)
     as "and nothing is sent to the map"
 }
