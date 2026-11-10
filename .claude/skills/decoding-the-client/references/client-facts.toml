@@ -11700,7 +11700,7 @@ grade = "sure"
 
 ["0x14049fac0"]
 statement = "Prerequisite type 125's test: whether the player's challenge objectId is in cooldown. See Prerequisite.prerequisiteTypeId.125."
-proof = "As Prerequisite.prerequisiteTypeId.125."
+proof = "As Prerequisite.prerequisiteTypeId.125. Bytes at 0x14049fac0: 48 83 ec 18 4c 8b 15 7d 5e 7c 00 (sub rsp, 0x18; mov r10, [rip + 0x7c5e7d], which is 0x140c65948, the challenge manager, loaded before the map is read)."
 grade = "sure"
 name = "PrerequisiteChallengeInCooldown"
 
@@ -12572,7 +12572,7 @@ grade = "sure"
 
 ["0x14048c810"]
 statement = "Makes the challenge manager (0x140c65948) once at client start-up: the Challenge table loaded, the player's challenge records empty."
-proof = "As 0x140c65948."
+proof = "As 0x140c65948. Bytes at 0x14048c810: 48 83 ec 28 48 83 3d 2c 91 7d 00 00 (sub rsp, 0x28; cmp qword [rip + 0x7d912c], 0, which is 0x140c65948, so the function returns at once when the manager is already made)."
 grade = "sure"
 name = "CreateChallengeManager"
 
@@ -12591,7 +12591,7 @@ name = "HandleChallengeRecords"
 
 ["0x1400aacb0"]
 statement = "Reads message 0xc7's body: a 32-bit count and that many 0x60-byte challenge records (0x1400aa930)."
-proof = "As opcode.0xc7."
+proof = "As opcode.0xc7. Bytes at 0x1400aacb0: 48 89 5c 24 10 48 89 6c 24 18 57 (mov [rsp + 0x10], rbx; mov [rsp + 0x18], rbp; push rdi), the entry of the reader the registration in 0x1400a8190 names."
 grade = "sure"
 name = "ReadMessage00C7Body"
 
