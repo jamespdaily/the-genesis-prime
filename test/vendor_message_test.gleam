@@ -13,8 +13,11 @@
 
 import genesis_prime/message/buyback_added.{BuybackAdded}
 import genesis_prime/message/buyback_entry.{type BuybackEntry, BuybackEntry}
+import genesis_prime/message/buyback_list.{BuybackList}
+import genesis_prime/message/buyback_removed.{BuybackRemoved}
 import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/item_place.{ItemPlace}
+import genesis_prime/message/vendor_buyback.{VendorBuyback}
 import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/vendor_sale.{VendorSale}
 import gleam/bit_array
@@ -154,4 +157,46 @@ fn result_decode(
 ) -> Result(a, Nil) {
   use body <- result.try(result.replace_error(encoded, Nil))
   result.replace_error(decode(body), Nil)
+}
+
+pub fn the_buyback_list_codec_round_trips_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use #(entry_draws, buyback_id) <- qcheck.given(qcheck.tuple2(
+    qcheck.generic_list(
+      qcheck.fixed_length_list_from(
+        qcheck.bounded_int(from: 0, to: 9_223_372_036_854_775_807),
+        list.length(entry_widths),
+      ),
+      qcheck.bounded_int(from: 0, to: 4),
+    ),
+    qcheck.bounded_int(from: 0, to: 4_294_967_295),
+  ))
+  let entries =
+    list.map(entry_draws, fn(draws) {
+      entry_of(
+        list.map2(draws, entry_widths, fn(draw, width) {
+          int.bitwise_and(draw, int.bitwise_shift_left(1, width) - 1)
+        }),
+      )
+    })
+  let listed = BuybackList(entries:)
+  let assert Ok(body) = buyback_list.encode(listed)
+    as "values of the fields' widths are written"
+  assert bit_array.byte_size(body)
+    == { 32 + list.length(entries) * 908 + 7 } / 8
+    as "opcode.0xbc: a 32-bit count, then each entry's 908 bits, padded to the byte"
+  assert buyback_list.decode(body) == Ok(listed)
+    as "opcode.0xbc: the list reads back as it was written, in order"
+  let buy_back = VendorBuyback(buyback_id:)
+  let assert Ok(buy_back_body) = vendor_buyback.encode(buy_back)
+    as "a 32-bit id is written"
+  assert bit_array.byte_size(buy_back_body) == 4
+    as "opcode.0xbb: the body is one 32-bit id"
+  assert vendor_buyback.decode(buy_back_body) == Ok(buy_back)
+    as "opcode.0xbb: the id reads back as it was written"
+  let removed = BuybackRemoved(buyback_id:)
+  let assert Ok(removed_body) = buyback_removed.encode(removed)
+    as "a 32-bit id is written"
+  assert buyback_removed.decode(removed_body) == Ok(removed)
+    as "opcode.0xbd: the id reads back as it was written"
 }

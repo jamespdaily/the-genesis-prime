@@ -26,6 +26,7 @@
 import character_support
 import character_tables
 import connection_rule_support as support
+import experience_support
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{
@@ -38,10 +39,13 @@ import genesis_prime/game/shown
 import genesis_prime/game/start_place
 import genesis_prime/game/vendor
 import genesis_prime/message/buyback_list.{BuybackList}
+import genesis_prime/message/buyback_removed
+import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/dialog_responses_shown.{DialogResponsesShown}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/generic_error.{GenericError}
 import genesis_prime/message/interaction_request.{InteractionRequest}
+import genesis_prime/message/item_count_changed.{ItemCountChanged}
 import genesis_prime/message/item_place
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
 import genesis_prime/message/vendor_item.{type VendorItem, VendorItem}
@@ -786,4 +790,197 @@ pub fn a_sale_the_store_cannot_answer_ends_the_connection_with_reason_8_test() -
         as "the player's place is saved, then 0x036A reason 8"
     },
   )
+}
+
+/// The player sells `quantity` of its stack of 20791 at slot 0 and the store saves the sale,
+/// leaving `credits` credits held.
+fn sold(
+  state state: game_connection.State,
+  quantity quantity: Int,
+  credits credits: Int,
+) -> game_connection.State {
+  let #(state, taken) =
+    connection_support.sale_requested(
+      state:,
+      place: item_place.ItemPlace(location: 1, bag_index: 0),
+      quantity:,
+    )
+  connection_support.answer(
+    state:,
+    taken:,
+    outcome: step.Answer(FromStore(store.ForItems(store.Sold(credits:)))),
+  ).0
+}
+
+/// The entries of the 0xBC the vendor's window opens with, as the id, the Item2, the quantity
+/// and the credits of each in the order sent, and the connection after the request.
+fn buyback_listed(
+  state state: game_connection.State,
+) -> #(game_connection.State, List(#(Int, Int, Int, Int))) {
+  let #(state, taken) =
+    connection_support.interaction_requested(
+      state:,
+      unit_id: walker_unit,
+      kind: 0x31,
+    )
+  let assert [Frame(message_id: 0x090B, ..), Frame(message_id: 0x00BC, body:)] =
+    connection_support.written(taken:)
+    as "a vendor within reach is answered with 0x90b, then 0xbc"
+  let assert Ok(BuybackList(entries:)) = buyback_list.decode(body)
+    as "opcode.0xbc: the list decodes"
+  #(
+    state,
+    list.map(entries, fn(entry) {
+      #(entry.buyback_id, entry.item_id, entry.quantity, entry.amount_1)
+    }),
+  )
+}
+
+pub fn opening_a_vendor_sends_the_buyback_list_oldest_first_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Nothing has been sold: the Buyback tab is cleared by an empty 0xBC.
+  let #(state, listed) = buyback_listed(state: selling_state())
+  assert listed == []
+    as "opcode.0xbc: an empty list clears the tab; nothing has been sold"
+  // 2 and then 3 of the 5 items of 20791 are sold at the 1 credit each item sells for
+  // (`item_price_test`): entries 1 and 2, the credits each sale paid.
+  let state = sold(state:, quantity: 2, credits: 102)
+  let state = sold(state:, quantity: 3, credits: 105)
+  let #(state, listed) = buyback_listed(state:)
+  assert listed == [#(1, 20_791, 2, 2), #(2, 20_791, 3, 3)]
+    as "opcode.0xbc: every entry held, the oldest sale first, as 0xBA adds the newest last"
+  let #(_, again) = buyback_listed(state:)
+  assert again == listed
+    as "a second opening sends the same list: the list belongs to the player, not the window"
+}
+
+pub fn the_buyback_list_survives_a_world_change_and_is_empty_after_entering_the_world_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The player sells 2 of its 5 (entry 1), is struck dead and chooses the Holocrypt: the
+  // world is joined again through `world_entry.Joining`, which carries the list.
+  let state = sold(state: selling_state(), quantity: 2, credits: 102)
+  let dead =
+    connection_support.killed(
+      connection_support.watched_by(state:, viewers: [2]),
+    ).0
+  let #(rejoined, _) = connection_support.at_the_holocrypt_from(dead:)
+  // The join removes every unit; the vendor is shown again, in the player's second stay,
+  // and opened again.
+  let #(rejoined, _) =
+    connection_support.feed(
+      state: rejoined,
+      event: connection_support.in_second_stay(walker_appears(
+        unit_id: walker_unit,
+        gap: sale_reach -. 0.1,
+        health: 52,
+        hostile_to: friendly,
+      )),
+    )
+  let #(rejoined, listed) = buyback_listed(state: rejoined)
+  assert listed == [#(1, 20_791, 2, 2)]
+    as "the Holocrypt's join is a change of world, not a new entry: the entry sold before it is still held"
+  // A sale after the join takes the next id, not 1 again.
+  let rejoined = sold(state: rejoined, quantity: 3, credits: 105)
+  let #(rejoined, listed) = buyback_listed(state: rejoined)
+  assert listed == [#(1, 20_791, 2, 2), #(2, 20_791, 3, 3)]
+    as "an id is given once in a world entry, also across the join"
+  // The player camps out and plays the character again on the same connection: a new play
+  // entry, whose store holds the 5 of 20791 and 100 credits again, and in whose picture the
+  // vendor is shown again (the connection's third stay: the first, the Holocrypt's join).
+  let #(camped, _, _) = experience_support.camped(state: rejoined)
+  let entered =
+    connection_support.entered_stocking_holding(
+      in_character_select: camped,
+      credits: 100,
+      items: [
+        store.HeldItem(
+          item_guid: 500,
+          item2_id: id.Item2Id(20_791),
+          location: 1,
+          bag_index: 0,
+          stack_count: 5,
+        ),
+      ],
+    )
+  let #(entered, _) =
+    connection_support.feed(
+      state: entered,
+      event: connection_support.in_stay(
+        count: 3,
+        event: walker_appears(
+          unit_id: walker_unit,
+          gap: sale_reach -. 0.1,
+          health: 52,
+          hostile_to: friendly,
+        ),
+      ),
+    )
+  let #(entered, listed) = buyback_listed(state: entered)
+  assert listed == [] as "a play's entry holds no sale of an earlier one"
+  let entered = sold(state: entered, quantity: 2, credits: 102)
+  let #(_, listed) = buyback_listed(state: entered)
+  assert listed == [#(1, 20_791, 2, 2)]
+    as "the ids start at 1 on each play entry, on the same connection"
+}
+
+pub fn a_buy_back_through_the_connection_saves_the_shortened_list_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 2 of the 5 items of 20791 are sold for 2 credits (entry 1), leaving 3 held and 102
+  // credits.
+  let state = sold(state: selling_state(), quantity: 2, credits: 102)
+  let #(state, taken) =
+    connection_support.buyback_requested(state:, buyback_id: 1)
+  assert connection_support.ask_request(taken)
+    == AskStore(
+      store.Items(store.BuyFromVendor(
+        account_id: store.AccountId(7),
+        character_id: store.CharacterId(42),
+        session_epoch: character_support.epoch(1),
+        credits_held: 102,
+        cost: 2,
+        grow: [
+          store.StackGrowth(item_guid: 500, held_count: 3, new_count: 5),
+        ],
+        make: [],
+        item2_id: id.Item2Id(20_791),
+      )),
+    )
+    as "opcode.0xbb: the entry's 2 items for the 2 credits the sale paid, back into the held stack of 3"
+  assert support.writes(taken) == []
+    as "nothing is written before the store has saved the buy back"
+  // The store saved it: 100 credits are left.
+  let #(state, answered) =
+    connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(store.ForItems(store.Bought(credits: 100, made: []))),
+      ),
+    )
+  let assert [total, grown, removed] =
+    connection_support.written(taken: answered)
+    as "a 0x919, a 0x17F for the grown stack, then a 0xBD"
+  assert currency_changed.decode(total.body)
+    == Ok(CurrencyChanged(kind: 0, total: 100, field_3: 0, field_4: 0))
+    as "opcode.0x919: kind 0 sets the credits to the total the store left"
+  assert grown.message_id == item_count_changed.message_id
+  assert item_count_changed.decode(grown.body)
+    == Ok(ItemCountChanged(item_guid: 500, count: 5, reason: 16))
+    as "Item.CodeEnumItemUpdateReason: Buyback is 16"
+  assert removed.message_id == buyback_removed.message_id
+  assert buyback_removed.decode(removed.body)
+    == Ok(buyback_removed.BuybackRemoved(buyback_id: 1))
+    as "opcode.0xbd: the id of the entry bought back"
+  let #(state, listed) = buyback_listed(state:)
+  assert listed == []
+    as "the entry left the list the connection holds: opening the vendor sends none"
+  // The same entry again: it is no longer held.
+  let #(_, again) = connection_support.buyback_requested(state:, buyback_id: 1)
+  assert support.asked(again) == None
+    as "an entry already bought back asks the store nothing"
+  let assert [refusal] = connection_support.written(taken: again)
+    as "and is answered with one message"
+  assert refusal.message_id == generic_error.message_id
+  assert generic_error.decode(refusal.body) == Ok(GenericError(code: 14))
+    as "enum 14, Vendor_UnknownItem"
 }

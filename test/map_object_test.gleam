@@ -25,6 +25,7 @@ import genesis_prime/step.{
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/static_object.{CreatedWithChecklist}
 import gleam/list
+import gleam/set
 import map_spawn_support as spawns
 import map_support
 import owned_test
@@ -256,6 +257,7 @@ pub fn a_leave_sends_nothing_about_objects_and_a_join_again_sees_them_under_the_
           place: spawns.at(0.0),
           stay: map_support.stay(count: 2),
           alive: True,
+          hidden: set.new(),
         ),
       )),
     )

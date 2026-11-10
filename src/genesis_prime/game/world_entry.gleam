@@ -7,7 +7,7 @@
 ////
 //// ```
 //// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id)
-//// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place, stay, alive)
+//// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place, stay, alive, hidden)
 ////                                                 (or Refused, for a level with no XpPerLevel row too: the rule hands back to select)
 //// Joined(unit record, loadout, run)
 ////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x92C, 0x25E (a play only), 0x111 x 10 (x 11 with an
@@ -16,7 +16,7 @@
 ////                                                 (a player saved dead: the ghost's 0x262 and
 ////                                                 0x1B3 before 0x636, which names the ghost)
 //// NotJoined(reason)          ─▶ joined         ─▶ NotInTheWorld: the rule hands back to select
-//// the Holocrypt, map left    ─▶ rejoining      ─▶ Ask map of the place's world: Join(connection, character, place, stay, alive: True)
+//// the Holocrypt, map left    ─▶ rejoining      ─▶ Ask map of the place's world: Join(connection, character, place, stay, alive: True, hidden)
 ////                                                 (then Joined and NotJoined as above)
 //// ```
 ////
@@ -149,6 +149,7 @@ import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/look
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
+import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/reward_property
 import genesis_prime/game/shown
@@ -156,6 +157,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
 import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor
+import genesis_prime/game/visibility
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers.{AbilityTiers}
 import genesis_prime/message/action_set.{ActionSet}
@@ -176,7 +178,7 @@ import genesis_prime/store.{
   type AccountId, type Character, type CharacterId, CharacterId,
 }
 import genesis_prime/table/id.{
-  type Item2Id, type Spell4BaseId, type UnitProperty2Id,
+  type Item2Id, type PrerequisiteId, type Spell4BaseId, type UnitProperty2Id,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/game_number.{type GameNumbers}
@@ -241,7 +243,13 @@ pub opaque type State {
   /// are the items the character holds, which the Holocrypt's join keeps from the
   /// stay it leaves. `quests` is the quest log the character holds
   /// (genesis_prime/game/quest_log), which the Holocrypt's join keeps from the
-  /// stay it leaves as well.
+  /// stay it leaves as well. `buyback` is the list the player has to buy back
+  /// (genesis_prime/game/vendor_sale): a play starts it empty and the Holocrypt's join
+  /// keeps the stay's own, as the client keeps its Buyback tab across the world
+  /// change (only a 0xBC replaces it).
+  /// `hidden` is the visibility prerequisites of the world
+  /// that fail for the character as it enters (genesis_prime/game/visibility
+  /// `hidden_at_entry`), which the Join names and the connection then holds.
   Joining(
     character: Character,
     place: Place,
@@ -251,9 +259,11 @@ pub opaque type State {
     items: List(store.HeldItem),
     currencies: Currencies,
     quests: QuestLog,
+    buyback: Buyback,
     map: MapId,
     stay: Stay,
     entry: Entry,
+    hidden: Set(PrerequisiteId),
   )
 }
 
@@ -338,8 +348,9 @@ pub type Entered {
     /// join of a world has none.
     vendor: Option(vendor.Opened),
     /// What the character has sold to vendors since it entered, which the vendor
-    /// window lists to buy back (genesis_prime/game/vendor_sale): a join of a world
-    /// has none, and the list is lost with the connection.
+    /// window lists to buy back (genesis_prime/game/vendor_sale): a play starts with
+    /// none and the Holocrypt's join keeps it (`Joining`); the list is lost with the
+    /// connection, as the character's next play starts it empty.
     buyback: Buyback,
     /// The character's experience: the saved one, or the least of its level when
     /// none was saved (`experience.entering`). The connection adds each kill's
@@ -374,6 +385,11 @@ pub type Entered {
     cast: cast.State,
     strike: strike.State,
     chat: chat.Chat,
+    /// The visibility prerequisites of the world that fail for the player, as the
+    /// join named them and the connection's end-of-step check last told its map
+    /// (genesis_prime/game/connection/visibility_check): a change from this set is
+    /// what the connection tells the map.
+    hidden: Set(PrerequisiteId),
   )
 }
 
@@ -517,6 +533,7 @@ pub fn loaded(
   connection connection: ConnectionId,
   stay stay: Stay,
   tables tables: table_store.Tables,
+  visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> Result(Loaded, Nil) {
   case state {
     Loading(character_id: CharacterId(character_id)) ->
@@ -567,6 +584,7 @@ pub fn loaded(
                     connection:,
                     stay:,
                     tables:,
+                    visibility:,
                   )
               }
           }
@@ -589,6 +607,7 @@ fn joining_a_play(
   connection connection: ConnectionId,
   stay stay: Stay,
   tables tables: table_store.Tables,
+  visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> Loaded {
   case
     experience.entering(
@@ -621,9 +640,12 @@ fn joining_a_play(
           items:,
           currencies:,
           quests:,
+          buyback: Buyback(next_id: 1, entries: []),
           connection:,
           stay:,
           entry: PlayEntry(character_state: frame),
+          tables:,
+          visibility:,
         )
       Join(state:, effects:)
     }
@@ -655,9 +677,11 @@ pub fn joined(
       items:,
       currencies:,
       quests:,
+      buyback:,
       map:,
       stay:,
       entry:,
+      hidden:,
     ) -> {
       case answer {
         map.Joined(unit:, loadout:, incarnation:, clock_origin_ms:) -> {
@@ -722,7 +746,7 @@ pub fn joined(
               items:,
               currencies:,
               vendor: None,
-              buyback: Buyback(next_id: 1, entries: []),
+              buyback:,
               experience:,
               quests:,
               gear: worn,
@@ -752,6 +776,7 @@ pub fn joined(
                 ),
                 next_whisper:,
               ),
+              hidden:,
             ),
             effects: list.flatten([
               [
@@ -814,6 +839,32 @@ fn unread_warned(gear gear: gear.Gear) -> List(Effect) {
   list.map(gear.warnings(gear:, known: None), fn(text) { Warn(text:) })
 }
 
+/// The health the character enters at against its maximum, as `player_life.entering`
+/// makes its life from them when the map answers; none when the tables have no Base
+/// Health row for its level, which ends the connection then (`GearFault`).
+fn entering_health(
+  tables tables: table_store.Tables,
+  character character: Character,
+  items items: List(store.HeldItem),
+  saved_health saved_health: Option(Int),
+) -> Option(prerequisite.Vital) {
+  gear.max_health(
+    tables:,
+    gear: gear.of_items(tables:, items:),
+    level: character.level,
+  )
+  |> result.map(fn(max_health) {
+    prerequisite.Vital(
+      current: int.to_float(player_life.entering_health(
+        saved: saved_health,
+        max_health:,
+      )),
+      maximum: int.to_float(max_health),
+    )
+  })
+  |> option.from_result
+}
+
 /// The bases of the gear's properties at `level`, handed to `next`, or the fault that
 /// ends the connection when the tables have no Base Health row for the level.
 fn with_bases(
@@ -873,6 +924,8 @@ pub fn rejoining(
   place place: Place,
   connection connection: ConnectionId,
   stay stay: Stay,
+  tables tables: table_store.Tables,
+  visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> #(State, List(Effect)) {
   joining(
     character: entered.character,
@@ -883,9 +936,12 @@ pub fn rejoining(
     items: entered.items,
     currencies: entered.currencies,
     quests: entered.quests,
+    buyback: entered.buyback,
     connection:,
     stay:,
     entry: HolocryptEntry,
+    tables:,
+    visibility:,
   )
 }
 
@@ -902,12 +958,24 @@ fn joining(
   items items: List(store.HeldItem),
   currencies currencies: Currencies,
   quests quests: QuestLog,
+  buyback buyback: Buyback,
   connection connection: ConnectionId,
   stay stay: Stay,
   entry entry: Entry,
+  tables tables: table_store.Tables,
+  visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> #(State, List(Effect)) {
   let map =
     MapId(world_id: start_place.world_id(place), instance: open_world_instance)
+  let hidden =
+    visibility.hidden_at_entry(
+      prerequisites: result.unwrap(dict.get(visibility, map.world_id), []),
+      tables:,
+      character:,
+      place:,
+      quests:,
+      health: entering_health(tables:, character:, items:, saved_health:),
+    )
   #(
     Joining(
       character:,
@@ -918,9 +986,11 @@ fn joining(
       items:,
       currencies:,
       quests:,
+      buyback:,
       map:,
       stay:,
       entry:,
+      hidden:,
     ),
     [
       AskMap(
@@ -931,6 +1001,7 @@ fn joining(
           place: start_place.within_the_worlds_box(place),
           stay:,
           alive: bool.negate(player_life.saved_dead(saved: saved_health)),
+          hidden:,
         ),
       ),
     ],

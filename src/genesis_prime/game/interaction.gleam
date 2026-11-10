@@ -51,8 +51,8 @@
 ////   is answered as the client would be: 0x106 with the code, then a 0x90b that opens and
 ////   refuses, which ends the interaction (`opcode.0x90b`), and the log line says why. The
 ////   control states (60 and 61) and the combat checks are left to the client, so the server
-////   opens the window for a vendor whose player is stunned; that gap and the contents of
-////   buying, selling and buyback, which stay empty, are the vendor trading step's (#583).
+////   opens the window for a vendor whose player is stunned; that gap is the vendor trading
+////   step's (#583). The window opens with the stock and the player's buyback list.
 //// - **The vendor window ends with any 0x07EA but the one that opens a vendor**: the
 ////   client sets its interaction kind and closes the previous interaction's window before
 ////   it sends any 0x07EA, its own end (unit 0, kind 0x65) among them, and it sends 0x00BE only
@@ -106,8 +106,8 @@ pub type Effect {
   /// The player talked to a creature that an open type 3 objective names: the connection
   /// counts the talk (genesis_prime/game/objective), after the dialog is opened.
   TalkedTo(creature_id: Int)
-  /// Write 0x090B with the vendor's stock, which opens its window, then 0x00BC with no
-  /// buyback entries.
+  /// Write 0x090B with the vendor's stock, which opens its window, then 0x00BC with the
+  /// player's buyback list, which the connection holds.
   OpenVendor(unit_id: Int, vendor: Vendor)
   /// Write 0x0106 with the code the client's own check would have shown, then the 0x090B
   /// that refuses, which ends the interaction.

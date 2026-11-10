@@ -64,8 +64,10 @@
 ////   0x148 (whole) or 0x17F (part) with the reason 7 (Vendor), which makes the client show
 ////   "Sold <item>" (`lua.Vendor.respond_alerts`), and a 0xBA that adds the entry to the
 ////   buyback list (`opcode.0xba.price`), the entry's id `buyback.next_id` and up.
-//// - **Gaps**: buy back (0xBB), the list sent when a vendor window opens (0xBC) and the
-////   list's lifetime are #651's; the vendor open still sends the empty list.
+//// - **The list** is `Entered.buyback`, oldest first, each entry with the id it was added
+////   with: a buy back (genesis_prime/game/vendor_purchase) takes one off, a vendor window
+////   opening sends the whole of it (0xBC), and the Holocrypt's join keeps it
+////   (`world_entry.Joining`). It lives in the connection: a play starts it empty.
 ////
 //// | Point | What happens |
 //// |---|---|
@@ -797,44 +799,51 @@ fn stack_frame(stack stack: SoldItem) -> Frame {
   }
 }
 
-/// The 0xBA that adds the entry to the client's Buyback list: the credits paid are its first
-/// amount in credits (currency type 1), and every field the client's code gives no use is 0
-/// (`opcode.0xba.price`).
+/// The 0xBA that adds the entry to the client's Buyback list (`opcode.0xba.price`).
 fn buyback_frame(entry entry: BuybackEntry) -> Frame {
-  let Item2Id(item_id) = entry.item2_id
   let assert Ok(body) =
     buyback_added.encode(
-      buyback_added.BuybackAdded(entry: buyback_entry.BuybackEntry(
-        buyback_id: entry.buyback_id,
-        item_id:,
-        quantity: entry.quantity,
-        field_4: 0,
-        field_5: 0,
-        field_6: 0,
-        field_7: 0,
-        field_8: 0,
-        field_9: 0,
-        field_10: 0,
-        field_11: 0,
-        field_12: 0,
-        field_13: 0,
-        field_14: 0,
-        field_15: 0,
-        field_16: 0,
-        field_17: 0,
-        field_18: 0,
-        field_19: 0,
-        field_20: 0,
-        field_21: 0,
-        amount_1: entry.credits,
-        amount_2: 0,
-        currency_type_1: credits_currency_type,
-        currency_type_2: 0,
-        field_26: 0,
-      )),
+      buyback_added.BuybackAdded(entry: buyback_entry_message(entry:)),
     )
     as "an entry whose fields are held values of their widths is written"
   frame.Frame(message_id: buyback_added.message_id, body:)
+}
+
+/// An entry of the buyback list as the client's 0xBA and 0xBC carry it: the credits paid
+/// are its first amount in credits (currency type 1), and every field the client's code gives
+/// no use is 0 (`opcode.0xba.price`).
+pub fn buyback_entry_message(
+  entry entry: BuybackEntry,
+) -> buyback_entry.BuybackEntry {
+  let Item2Id(item_id) = entry.item2_id
+  buyback_entry.BuybackEntry(
+    buyback_id: entry.buyback_id,
+    item_id:,
+    quantity: entry.quantity,
+    field_4: 0,
+    field_5: 0,
+    field_6: 0,
+    field_7: 0,
+    field_8: 0,
+    field_9: 0,
+    field_10: 0,
+    field_11: 0,
+    field_12: 0,
+    field_13: 0,
+    field_14: 0,
+    field_15: 0,
+    field_16: 0,
+    field_17: 0,
+    field_18: 0,
+    field_19: 0,
+    field_20: 0,
+    field_21: 0,
+    amount_1: entry.credits,
+    amount_2: 0,
+    currency_type_1: credits_currency_type,
+    currency_type_2: 0,
+    field_26: 0,
+  )
 }
 
 /// The CurrencyType row of credits (`currency`).

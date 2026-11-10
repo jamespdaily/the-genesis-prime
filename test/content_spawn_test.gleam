@@ -76,6 +76,7 @@ pub fn a_selections_worlds_are_put_once_and_read_back_by_world_test() -> Nil {
       refusals: [],
       out_of_range_levels: [],
       coverage: [],
+      visibility: dict.new(),
     ),
   )
   assert content_spawn.world(key:, world_id: 3460) == beasts

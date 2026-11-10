@@ -15,6 +15,7 @@ import genesis_prime/game/class_resource
 import genesis_prime/game/inventory
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
+import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/quest_log
 import genesis_prime/game/server_proxy.{type ServerProxies}
 import genesis_prime/game/spell_plan
@@ -89,6 +90,11 @@ pub type Settings {
     /// (genesis_prime/content/game_number), of which a player entering the world
     /// reads its health regeneration (genesis_prime/game/player_life).
     numbers: GameNumbers,
+    /// The loaded visibility prerequisites of each world, from the content load
+    /// (genesis_prime/content/spawn `visibility`): the prerequisites the started
+    /// spawns and sent objects of the world hide behind, which the connection checks
+    /// for its player to tell the map what to hide (genesis_prime/game/visibility).
+    visibility: dict.Dict(Int, List(Prerequisite)),
   )
 }
 

@@ -16,6 +16,7 @@ import genesis_prime/message/action_set.{type ActionSet}
 import genesis_prime/message/bit_stream.{type DecodeError}
 import genesis_prime/message/buyback_added.{type BuybackAdded}
 import genesis_prime/message/buyback_list.{type BuybackList}
+import genesis_prime/message/buyback_removed.{type BuybackRemoved}
 import genesis_prime/message/camp_countdown.{type CampCountdown}
 import genesis_prime/message/character_list.{type CharacterList}
 import genesis_prime/message/chat_channel_joined.{type ChatChannelJoined}
@@ -198,6 +199,7 @@ pub type ServerMessage {
   BuybackAdded(message: BuybackAdded)
   GenericError(message: GenericError)
   RewardProperties(message: RewardProperties)
+  BuybackRemoved(message: BuybackRemoved)
   CurrencyChanged(message: CurrencyChanged)
 }
 
@@ -449,6 +451,7 @@ pub fn decode(
     0x0106 -> decoded(body, message_id, generic_error.decode, GenericError)
     0x092C ->
       decoded(body, message_id, reward_properties.decode, RewardProperties)
+    0x00BD -> decoded(body, message_id, buyback_removed.decode, BuybackRemoved)
     0x0919 ->
       decoded(body, message_id, currency_changed.decode, CurrencyChanged)
     _ -> Error(UnknownMessage(message_id:))
@@ -547,6 +550,7 @@ pub fn name(message: ServerMessage) -> String {
     BuybackAdded(..) -> "buyback_added"
     GenericError(..) -> "generic_error"
     RewardProperties(..) -> "reward_properties"
+    BuybackRemoved(..) -> "buyback_removed"
     CurrencyChanged(..) -> "currency_changed"
   }
 }

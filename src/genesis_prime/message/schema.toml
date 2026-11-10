@@ -3131,6 +3131,26 @@ fields = [
 ]
 
 [[message]]
+id = 0x00BB
+name = "vendor_buyback"
+direction = "client_to_server"
+evidence = "opcode.0xbb"
+summary = "the client buys back an entry of its Buyback tab: the buyback id the entry was added with (0xBA, 0xBC); the client sends it under the conditions of a buy (a vendor interaction, alive, no no-action control state) and checks nothing of the list or the cash"
+fields = [
+  { name = "buyback_id", kind = "unsigned", bits = 32, evidence = "opcode.0xbb", named_by = "opcode.0xbb" },
+]
+
+[[message]]
+id = 0x00BD
+name = "buyback_removed"
+direction = "server_to_client"
+evidence = "opcode.0xbd"
+summary = "an entry taken off the player's buyback list by its id; the client treats an id it does not hold as an error and changes nothing"
+fields = [
+  { name = "buyback_id", kind = "unsigned", bits = 32, evidence = "opcode.0xbd", named_by = "opcode.0xbd" },
+]
+
+[[message]]
 id = 0x0167
 name = "vendor_sell_junk"
 direction = "client_to_server"

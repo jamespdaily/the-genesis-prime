@@ -319,6 +319,17 @@ Quest2	3216	exclusion quest of 3195, which the log holds	quest_accept_test
 Quest2	3176	prerequisite quest of 3243, which the log holds	quest_accept_test
 Quest2	3185	prerequisite quest of 3243, which the log holds	quest_accept_test
 Quest2	10520	prerequisite quest of 10528, which the log holds	quest_accept_test
+Prerequisite	41803	type 43 on quest 10527 or on quest 10532, objective 3: the tutorial's Start Arrow visibility	visibility_test
+Prerequisite	41795	type 15 on spell 85562: a tutorial unit shown while the spell is cast	visibility_test
+Prerequisite	19	type 250: the player's base faction is 167, the Exiles	visibility_test
+Quest2	10527	the first quest the Start Arrow's prerequisite reads	visibility_test
+Quest2	10532	the second quest the Start Arrow's prerequisite reads	visibility_test
+Creature2	73707	the Start Arrow, whose row gives visibility prerequisite 41803	tutorial_visibility_wire_test
+Creature2	73619	the tutorial hologram, whose row gives visibility prerequisite 41795	tutorial_visibility_wire_test
+Creature2	74781	an Exile mount display, whose row gives visibility prerequisite 19	tutorial_visibility_wire_test
+Creature2	74782	an Exile mount display, whose row gives visibility prerequisite 19	tutorial_visibility_wire_test
+Creature2	74783	an Exile mount display, whose row gives visibility prerequisite 19	tutorial_visibility_wire_test
+Creature2	74784	an Exile mount display, whose row gives visibility prerequisite 19	tutorial_visibility_wire_test
 Item2	85531	(a bag priced in credits in its buy columns, with no sell columns set)	item_price_test
 Item2	23318	(a tradeskill additive row with no currency columns, sellable)	item_price_test
 Creature2	12484	a creature the open type 3 objective 4744 of quest 3668 names	objective_test, interaction_test, game_connection_objective_test
@@ -333,3 +344,4 @@ QuestObjective	17988	objective 0 of quest 9428, type 3	objective_test
 QuestObjective	17989	objective 1 of quest 9428, type 12	objective_test
 Quest2	4290	quest whose one objective 5763 is type 12, flags 0, count 5	quest_log_progress_test
 QuestObjective	5763	the type 12 objective of quest 4290, which needs five uses	quest_log_progress_test
+Creature2	74787	a unit beside the mounts whose row gives no visibility prerequisite	tutorial_visibility_wire_test

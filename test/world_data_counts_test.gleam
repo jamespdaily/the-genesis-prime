@@ -22,6 +22,7 @@ import envoy
 import genesis_prime
 import genesis_prime/content
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/game/prerequisite
 import genesis_prime/game/rating
 import genesis_prime/game/vendor
 import genesis_prime/import_world_data
@@ -156,4 +157,44 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
   })
     as "every type 13 and 32 object is sent a health above 0, so the client does not create it dead"
   Nil
+}
+
+pub fn world_3460_visibility_index_is_19_41795_and_41803_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.tag("world_data")
+  use <- unitest.guard(client_tables.present())
+  use <- unitest.guard(envoy.get("GENESIS_WORLD_DATA") != Error(Nil))
+  // Creature2.prerequisiteIdVisibility of the creatures that start in World 3460
+  // (spawn.left_out_of): Prerequisite 19 (type 250, the Exiles' base faction),
+  // 41795 (type 15 on the hologram's spell 85562) and 41803 (type 43 on the
+  // tutorial's quests 10527 and 10532). Prerequisites 41959 and 42962 belong to
+  // creatures Friendly to both player factions, which are left out, so no unit
+  // is shown or hidden by them.
+  let assert Ok(folder) = envoy.get("GENESIS_WORLD_DATA")
+    as "the guard saw the variable"
+  let database = database_support.new_database(on: database_support.shared())
+  let assert Ok(_) =
+    import_world_data.import_spawns(
+      db: content_support.connect(database:),
+      folder:,
+    )
+    as "the world database imports"
+  let tables = client_tables.every_table()
+  let assert Ok(rows) =
+    content_spawn.rows(db: content_support.connect(database:))
+    as "the spawn rows read back"
+  let selection =
+    spawn.select(
+      rows: list.filter(rows, fn(row) { row.world_id == 3460 }),
+      tables:,
+      formulas: rating.formulas(tables:),
+      kinds: spawn_support.kinds(),
+      vendors: vendor.none(),
+    )
+  assert selection.refusals == [] as "every started spawn's prerequisite loads"
+  let assert Ok(index) = dict.get(selection.visibility, 3460)
+    as "World 3460 has an index"
+  assert list.map(index, fn(one) { prerequisite.id(one).value })
+    == [19, 41_795, 41_803]
+    as "the World 3460 index holds the prerequisites of its started spawns and sent objects"
 }

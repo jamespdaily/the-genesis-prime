@@ -16,7 +16,7 @@
 //// |---|---|---|---|
 //// | take, before asking | nothing written; the window stays | a second 0x166 or the auto-sell 0x167 is held while Selling, then taken against the new items and credits | n/a |
 //// | store asked, transaction open | Postgres rolls back; the connection ends, reason 8; the next login loads the old credits and items | the epoch fence, the credits guard and the held-count guard make the second change nothing | the connection ends, reason 8; a committed result is what the next login loads |
-//// | store answered, before `answered` runs | the save is done; the next login loads the new credits and items; the buyback entries are lost with the connection (#651 owns the list's lifetime) | n/a (frames held) | n/a |
+//// | store answered, before `answered` runs | the save is done; the next login loads the new credits and items; the buyback entries are lost with the connection | n/a (frames held) | n/a |
 //// | connection dies while Selling | the store finishes or rolls back on its own | n/a | n/a |
 
 import genesis_prime/client_connection.{type Answer, Continue}

@@ -31,6 +31,7 @@ import genesis_prime/world_map/sight
 import genesis_prime/world_map/stay
 import gleam/int
 import gleam/list
+import gleam/set
 import gleam/string
 import map_spawn_support
 import map_support
@@ -94,6 +95,7 @@ fn join_for(
         place:,
         stay: map_support.stay(count: stay),
         alive: True,
+        hidden: set.new(),
       ),
     )),
   )

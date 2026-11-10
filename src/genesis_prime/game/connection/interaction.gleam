@@ -100,7 +100,9 @@ pub fn interaction_message(
               ),
               connection_state.to_client(
                 session,
-                connection_frames.buyback_list_empty_frame(),
+                connection_frames.buyback_list_frame(
+                  entries: entered.buyback.entries,
+                ),
               ),
             ])
             interaction.RefuseVendor(unit_id:, code:) -> #(session, [
