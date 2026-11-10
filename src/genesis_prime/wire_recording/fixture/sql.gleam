@@ -342,6 +342,70 @@ order by character_id;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `currencies_of_characters_of_accounts_named` query
+/// defined in `./src/genesis_prime/wire_recording/fixture/sql/currencies_of_characters_of_accounts_named.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type CurrenciesOfCharactersOfAccountsNamedRow {
+  CurrenciesOfCharactersOfAccountsNamedRow(
+    character_id: Int,
+    currency_type_id: Int,
+    amount: Int,
+  )
+}
+
+/// The currencies held by the characters of the accounts with these login names,
+/// in the order of their characters and types, with every column the fixture of a
+/// recorded session keeps (genesis_prime/wire_recording/fixture): the character
+/// that holds it, the currency type and the amount.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn currencies_of_characters_of_accounts_named(
+  db: pog.Connection,
+  arg_1: List(String),
+) -> Result(
+  pog.Returned(CurrenciesOfCharactersOfAccountsNamedRow),
+  pog.QueryError,
+) {
+  let decoder = {
+    use character_id <- decode.field(0, decode.int)
+    use currency_type_id <- decode.field(1, decode.int)
+    use amount <- decode.field(2, decode.int)
+    decode.success(CurrenciesOfCharactersOfAccountsNamedRow(
+      character_id:,
+      currency_type_id:,
+      amount:,
+    ))
+  }
+
+  "-- The currencies held by the characters of the accounts with these login names,
+-- in the order of their characters and types, with every column the fixture of a
+-- recorded session keeps (genesis_prime/wire_recording/fixture): the character
+-- that holds it, the currency type and the amount.
+select
+  character_id,
+  currency_type_id::int as currency_type_id,
+  amount
+from character_currency
+where character_id in (
+  select character_id
+  from character
+  where account_id in (
+    select account_id from account where login_name = any($1)
+  )
+)
+order by character_id, currency_type_id;
+"
+  |> pog.query
+  |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_1))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `items_of_characters_of_accounts_named` query
 /// defined in `./src/genesis_prime/wire_recording/fixture/sql/items_of_characters_of_accounts_named.sql`.
 ///
@@ -408,6 +472,107 @@ where character_id in (
   )
 )
 order by item_guid;
+"
+  |> pog.query
+  |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_1))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `quests_of_characters_of_accounts_named` query
+/// defined in `./src/genesis_prime/wire_recording/fixture/sql/quests_of_characters_of_accounts_named.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type QuestsOfCharactersOfAccountsNamedRow {
+  QuestsOfCharactersOfAccountsNamedRow(
+    character_id: Int,
+    quest_id: Int,
+    state: Int,
+    completed_at_microseconds: Int,
+    placeholder_objective_id: Option(Int),
+    tracked: Option(Bool),
+    done_mask: Option(Int),
+    progress: Option(List(Int)),
+    quest_ms_left: Option(Int),
+    objective_ms_left: Option(List(Int)),
+  )
+}
+
+/// The quests recorded for the characters of the accounts with these login names,
+/// in the order of their characters and quest ids, with every column the fixture
+/// of a recorded session keeps (genesis_prime/wire_recording/fixture). A row of a
+/// state but 1 and 2 has no active entry, so its active columns are NULL. Only a
+/// completed row (state 3) has a time (`character_quest_completed_has_a_time`):
+/// `completed_at_microseconds` is its Unix time in whole microseconds, the
+/// column's own precision, and 0 for a row of another state, since squirrel cannot
+/// type a computed column that may be NULL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn quests_of_characters_of_accounts_named(
+  db: pog.Connection,
+  arg_1: List(String),
+) -> Result(pog.Returned(QuestsOfCharactersOfAccountsNamedRow), pog.QueryError) {
+  let decoder = {
+    use character_id <- decode.field(0, decode.int)
+    use quest_id <- decode.field(1, decode.int)
+    use state <- decode.field(2, decode.int)
+    use completed_at_microseconds <- decode.field(3, decode.int)
+    use placeholder_objective_id <- decode.field(4, decode.optional(decode.int))
+    use tracked <- decode.field(5, decode.optional(decode.bool))
+    use done_mask <- decode.field(6, decode.optional(decode.int))
+    use progress <- decode.field(7, decode.optional(decode.list(decode.int)))
+    use quest_ms_left <- decode.field(8, decode.optional(decode.int))
+    use objective_ms_left <- decode.field(
+      9,
+      decode.optional(decode.list(decode.int)),
+    )
+    decode.success(QuestsOfCharactersOfAccountsNamedRow(
+      character_id:,
+      quest_id:,
+      state:,
+      completed_at_microseconds:,
+      placeholder_objective_id:,
+      tracked:,
+      done_mask:,
+      progress:,
+      quest_ms_left:,
+      objective_ms_left:,
+    ))
+  }
+
+  "-- The quests recorded for the characters of the accounts with these login names,
+-- in the order of their characters and quest ids, with every column the fixture
+-- of a recorded session keeps (genesis_prime/wire_recording/fixture). A row of a
+-- state but 1 and 2 has no active entry, so its active columns are NULL. Only a
+-- completed row (state 3) has a time (`character_quest_completed_has_a_time`):
+-- `completed_at_microseconds` is its Unix time in whole microseconds, the
+-- column's own precision, and 0 for a row of another state, since squirrel cannot
+-- type a computed column that may be NULL.
+select
+  character_id,
+  quest_id,
+  state::int as state,
+  coalesce(floor(extract(epoch from completed_at) * 1000000), 0)::bigint
+    as completed_at_microseconds,
+  placeholder_objective_id,
+  tracked,
+  done_mask,
+  progress,
+  quest_ms_left,
+  objective_ms_left
+from character_quest
+where character_id in (
+  select character_id
+  from character
+  where account_id in (
+    select account_id from account where login_name = any($1)
+  )
+)
+order by character_id, quest_id;
 "
   |> pog.query
   |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_1))

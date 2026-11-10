@@ -1,27 +1,30 @@
 //// The rows a recorded session starts from, saved beside its recordings as a
-//// file of data-only SQL (`INSERT` statements for the account, character and
-//// character item tables, no schema), so a replay applies every migration and
-//// then the fixture, and the session finds the same account, characters and held
-//// items it found live.
+//// file of data-only SQL (`INSERT` statements for the account, character,
+//// character item, character currency and character quest tables, no schema), so
+//// a replay applies every migration and then the fixture, and the session finds
+//// the same account, characters, held items, currencies and quests it found live.
 ////
 //// - **What is kept.** The accounts the session names by login name, their
-////   characters and the items those characters hold, never the rest of the
-////   database, and every column of the three tables but `created_at`, which no
-////   flow reads. The ids and an item's guid are identity columns, so each insert
+////   characters and the items, currencies and quests those characters hold, never
+////   the rest of the database, and every column of the five tables but
+////   `created_at`, which no flow reads. The ids and an item's guid are identity columns, so each insert
 ////   overrides its own. A statement after the rows of each table sets its
 ////   sequence to where the live database's stood (its last value and whether it
 ////   had given one), so a row a replay makes gets the id or guid it got live,
 ////   whatever rows the live database lost since: a deleted character or item, a
-////   rolled-back insert, a row of another account.
+////   rolled-back insert, a row of another account. The currency and quest tables
+////   have no id to restore.
 //// - **The order.** Accounts first, then the characters that reference them,
-////   then the items that reference the characters.
+////   then the items, currencies and quests that reference the characters.
 //// - **The file.** One statement for each row, each ending in a semicolon and a
 ////   line feed. A text is quoted by doubling its quotes and a byte string is
 ////   written in hexadecimal, so no value is read as SQL; the tables' columns
 ////   hold no line feed followed by a semicolon (a login name or a character
 ////   name is letters and a space; an item row holds numbers only).
 //// - **Applying.** The statements run in one transaction, so a statement the
-////   database refuses leaves no row of the file behind.
+////   database refuses leaves no row of the file behind. A file with no currency
+////   or quest statement leaves those tables empty, as a file written before they
+////   were kept does.
 
 import genesis_prime/store/worker
 import genesis_prime/wire_recording
@@ -49,9 +52,10 @@ pub type FixtureError {
   DatabaseFailed(reason: String)
 }
 
-/// Saves the accounts of `login_names`, their characters and the items those
-/// characters hold from the database `database` reaches, and where its three
-/// sequences stand, as data-only SQL in the file at `path`, in an order that satisfies each table's references. A
+/// Saves the accounts of `login_names`, their characters and the items,
+/// currencies and quests those characters hold from the database `database`
+/// reaches, and where its three sequences stand, as data-only SQL in the file at
+/// `path`, in an order that satisfies each table's references. A
 /// login name the database has no account for is `NoSuchAccount`, and a file
 /// already there is never overwritten. A sitting writes it before it accepts
 /// the first connection (genesis_prime/sitting).
@@ -78,6 +82,14 @@ pub fn write(
   )
   use items <- result.try(
     sql.items_of_characters_of_accounts_named(database, login_names)
+    |> result.map_error(database_failed),
+  )
+  use currencies <- result.try(
+    sql.currencies_of_characters_of_accounts_named(database, login_names)
+    |> result.map_error(database_failed),
+  )
+  use quests <- result.try(
+    sql.quests_of_characters_of_accounts_named(database, login_names)
     |> result.map_error(database_failed),
   )
   use account_sequence <- result.try(
@@ -115,6 +127,8 @@ pub fn write(
         last_value: item_sequence.last_value,
         is_called: item_sequence.is_called,
       ),
+      currencies: currencies.rows,
+      quests: quests.rows,
     ),
   )
   |> result.map_error(file_failed(path))
@@ -128,8 +142,9 @@ type Sequence {
 
 /// The text of a fixture file for these rows: an insert for each account, the
 /// statement that sets the account id sequence, an insert for each character, the
-/// statement that sets the character id sequence, an insert for each item and the
-/// statement that sets the item guid sequence.
+/// statement that sets the character id sequence, an insert for each item, the
+/// statement that sets the item guid sequence, and an insert for each currency
+/// and each quest.
 fn render(
   accounts accounts: List(sql.AccountsNamedRow),
   account_sequence account_sequence: Sequence,
@@ -137,6 +152,8 @@ fn render(
   character_sequence character_sequence: Sequence,
   items items: List(sql.ItemsOfCharactersOfAccountsNamedRow),
   item_sequence item_sequence: Sequence,
+  currencies currencies: List(sql.CurrenciesOfCharactersOfAccountsNamedRow),
+  quests quests: List(sql.QuestsOfCharactersOfAccountsNamedRow),
 ) -> String {
   string.concat(
     list.flatten([
@@ -164,6 +181,8 @@ fn render(
           state: item_sequence,
         ),
       ],
+      list.map(currencies, currency_statement),
+      list.map(quests, quest_statement),
     ]),
   )
 }
@@ -267,6 +286,48 @@ fn item_statement(row: sql.ItemsOfCharactersOfAccountsNamedRow) -> String {
   <> ");\n"
 }
 
+fn currency_statement(
+  row: sql.CurrenciesOfCharactersOfAccountsNamedRow,
+) -> String {
+  "insert into character_currency (character_id, currency_type_id, amount) values ("
+  <> string.join(
+    [
+      int.to_string(row.character_id),
+      int.to_string(row.currency_type_id),
+      int.to_string(row.amount),
+    ],
+    ", ",
+  )
+  <> ");\n"
+}
+
+/// The state of a completed quest, the only state whose row holds a time
+/// (`character_quest_completed_has_a_time`, migration 0021).
+const completed_quest_state = 3
+
+fn quest_statement(row: sql.QuestsOfCharactersOfAccountsNamedRow) -> String {
+  "insert into character_quest (character_id, quest_id, state, completed_at, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ("
+  <> string.join(
+    [
+      int.to_string(row.character_id),
+      int.to_string(row.quest_id),
+      int.to_string(row.state),
+      case row.state == completed_quest_state {
+        True -> instant(row.completed_at_microseconds)
+        False -> "null"
+      },
+      optional_integer(row.placeholder_objective_id),
+      optional_bool(row.tracked),
+      optional_integer(row.done_mask),
+      optional_integers(row.progress),
+      optional_integer(row.quest_ms_left),
+      optional_integers(row.objective_ms_left),
+    ],
+    ", ",
+  )
+  <> ");\n"
+}
+
 /// The statement that sets the id sequence of `table` to `state`.
 fn sequence_statement(
   table table: String,
@@ -305,6 +366,33 @@ fn real(value: Float) -> String {
 fn optional_integer(value: Option(Int)) -> String {
   case value {
     Some(value) -> int.to_string(value)
+    None -> "null"
+  }
+}
+
+/// A `timestamptz` column's value from its Unix time in whole microseconds, the
+/// column's own precision, as an interval after the epoch so no float rounds it.
+fn instant(microseconds: Int) -> String {
+  "'epoch'::timestamptz + '"
+  <> int.to_string(microseconds)
+  <> " microseconds'::interval"
+}
+
+/// A nullable `boolean` column's value: true or false, or NULL when there is none.
+fn optional_bool(value: Option(Bool)) -> String {
+  case value {
+    Some(value) -> bool(value)
+    None -> "null"
+  }
+}
+
+/// A nullable `integer[]` column's value: its numbers, or NULL when there is none.
+fn optional_integers(values: Option(List(Int))) -> String {
+  case values {
+    Some(values) ->
+      "'{"
+      <> string.join(list.map(values, int.to_string), ",")
+      <> "}'::integer[]"
     None -> "null"
   }
 }

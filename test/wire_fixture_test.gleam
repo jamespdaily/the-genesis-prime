@@ -1,11 +1,13 @@
 //// The fixture beside a wire recording (genesis_prime/wire_recording/fixture):
-//// the rows of the session's account, its characters and their held items, and
-//// where the id sequences stood, as data-only SQL a replay applies after the
-//// migrations.
+//// the rows of the session's account, its characters and their held items,
+//// currencies and quests, and where the id sequences stood, as data-only SQL a
+//// replay applies after the migrations.
 //// Expected values come from these places.
 //// - The rows the tests insert, and the tables' columns in
 ////   `priv/migrations/0001_account_and_character.sql` through
-////   `priv/migrations/0004_character_needs_rename.sql`.
+////   `priv/migrations/0004_character_needs_rename.sql`, and of the character's
+////   quests and currencies in `priv/migrations/0021_character_quest.sql` and
+////   `priv/migrations/0024_character_currency.sql`.
 //// - The fixture's own contract in its module doc: the named accounts and their
 ////   characters only, every column but `created_at`, ids kept as they were (they
 ////   are identity columns, so the inserts override them), each id sequence set
@@ -147,33 +149,125 @@ pub fn the_fixtures_columns_are_the_tables_columns_but_created_at_test() -> Nil 
   use folder <- recording_support.in_folder
   let source = pool()
   insert_rows(source)
+  insert_currencies_and_quests(source)
   let path = path_in(folder)
   assert fixture.write(source, path, ["genesis"]) == Ok(Nil)
   let assert Ok(text) = simplifile.read(path) as "the fixture reads"
-  list.each(["account", "character", "character_item"], fn(table) {
-    let assert Ok(statement) =
-      string.split(text, ";\n")
-      |> list.find(fn(statement) {
-        string.starts_with(statement, "insert into " <> table <> " (")
-      })
-      as "the fixture inserts into the table"
-    let assert [_, after] =
-      string.split(statement, "insert into " <> table <> " (")
-    let assert [columns, _] = string.split(after, ") overriding")
-      as "the insert lists its columns before its values"
-    assert list.sort(string.split(columns, ", "), string.compare)
-      == query_texts(
-        source,
-        "select column_name::text from information_schema.columns where table_schema = 'public' and table_name = '"
+  list.each(
+    [
+      "account",
+      "character",
+      "character_item",
+      "character_currency",
+      "character_quest",
+    ],
+    fn(table) {
+      let assert Ok(statement) =
+        string.split(text, ";\n")
+        |> list.find(fn(statement) {
+          string.starts_with(statement, "insert into " <> table <> " (")
+        })
+        as "the fixture inserts into the table"
+      let assert [_, after] =
+        string.split(statement, "insert into " <> table <> " (")
+      let assert [columns, ..] = string.split(after, ") ")
+        as "the insert lists its columns before its values"
+      assert list.sort(string.split(columns, ", "), string.compare)
+        == query_texts(
+          source,
+          "select column_name::text from information_schema.columns where table_schema = 'public' and table_name = '"
+            <> table
+            <> "' and column_name <> 'created_at' order by column_name",
+        )
+        as {
+          "the fixture keeps every column of "
           <> table
-          <> "' and column_name <> 'created_at' order by column_name",
-      )
-      as {
-        "the fixture keeps every column of "
-        <> table
-        <> " but created_at, the contract of its module doc"
-      }
-  })
+          <> " but created_at, the contract of its module doc"
+        }
+    },
+  )
+}
+
+/// Currencies and quests of the characters `insert_rows` makes: a zero amount
+/// and one past 32 bits, an active quest with its objectives, a completed quest
+/// with a time that has microseconds, and a known one with none of the active
+/// columns, and a currency of the character of the other account.
+fn insert_currencies_and_quests(pool: pog.Connection) -> Nil {
+  run(
+    pool,
+    "insert into character_currency (character_id, currency_type_id, amount) values (1, 1, 1000), (1, 2, 9000000000), (2, 1, 0), (6, 1, 55)",
+  )
+  run(
+    pool,
+    "insert into character_quest (character_id, quest_id, state, completed_at, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values (1, 100, 1, null, 5, true, 3, '{2,0}', 60000, '{1000,0}'), (1, 101, 3, '2026-11-08 10:00:00.123456+00', null, null, null, null, null, null), (1, 102, 4, null, null, null, null, null, null, null), (6, 100, 2, null, 0, false, 0, '{}', 0, '{}')",
+  )
+}
+
+/// The currency rows, one text each, with every column.
+fn currency_rows(pool: pog.Connection) -> List(String) {
+  query_texts(
+    pool,
+    "select concat_ws('|', character_id, currency_type_id, amount) from character_currency order by character_id, currency_type_id",
+  )
+}
+
+/// The quest rows, one text each, with every column; a NULL reads `null` and the
+/// completion time keeps its microseconds.
+fn quest_rows(pool: pog.Connection) -> List(String) {
+  query_texts(
+    pool,
+    "select concat_ws('|', character_id, quest_id, state, coalesce(to_char(completed_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), 'null'), coalesce(placeholder_objective_id::text, 'null'), coalesce(tracked::text, 'null'), coalesce(done_mask::text, 'null'), coalesce(progress::text, 'null'), coalesce(quest_ms_left::text, 'null'), coalesce(objective_ms_left::text, 'null')) from character_quest order by character_id, quest_id",
+  )
+}
+
+pub fn the_currencies_of_the_named_accounts_characters_are_kept_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use folder <- recording_support.in_folder
+  let source = pool()
+  insert_rows(source)
+  insert_currencies_and_quests(source)
+  let path = path_in(folder)
+  assert fixture.write(source, path, ["genesis"]) == Ok(Nil)
+  let target = pool()
+  assert fixture.apply(target, path) == Ok(Nil)
+  assert currency_rows(target) == ["1|1|1000", "1|2|9000000000", "2|1|0"]
+    as "each currency row of the named account's characters as inserted, a zero amount and an amount past 32 bits included, and not the row of the other account's character"
+}
+
+pub fn the_quests_of_the_named_accounts_characters_are_kept_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use folder <- recording_support.in_folder
+  let source = pool()
+  insert_rows(source)
+  insert_currencies_and_quests(source)
+  let path = path_in(folder)
+  assert fixture.write(source, path, ["genesis", "o'brien"]) == Ok(Nil)
+  let target = pool()
+  assert fixture.apply(target, path) == Ok(Nil)
+  assert quest_rows(target)
+    == [
+      "1|100|1|null|5|true|3|{2,0}|60000|{1000,0}",
+      "1|101|3|2026-11-08 10:00:00.123456|null|null|null|null|null|null",
+      "1|102|4|null|null|null|null|null|null|null",
+      "6|100|2|null|0|false|0|{}|0|{}",
+    ]
+    as "an active quest with its objectives and timers, a completed quest with its time to the microsecond, a known quest with no active columns, and an active quest with empty objectives, as inserted"
+}
+
+pub fn a_fixture_file_with_no_currency_or_quest_rows_leaves_those_tables_empty_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use folder <- recording_support.in_folder
+  let path = path_in(folder)
+  let assert Ok(Nil) =
+    simplifile.write(
+      path,
+      "insert into account (account_id, login_name, srp_salt, srp_verifier, game_account_id) overriding system value values (1, 'genesis', '\\x01'::bytea, '\\x02'::bytea, '01234567-89ab-cdef-0123-456789abcdef');\n",
+    )
+    as "a fixture file of the shape written before these tables were kept"
+  let target = pool()
+  assert fixture.apply(target, path) == Ok(Nil)
+  assert currency_rows(target) == [] && quest_rows(target) == []
+    as "a recording made before the tables were kept replays with them empty, as it did"
 }
 
 pub fn the_fixture_holds_only_the_named_accounts_and_their_characters_test() -> Nil {
