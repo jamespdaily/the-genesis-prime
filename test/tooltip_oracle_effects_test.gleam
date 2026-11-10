@@ -62,7 +62,7 @@ import genesis_prime/message/spell_go
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/class
 import genesis_prime/table/id.{
-  ClassId, Creature2Id, Spell4AoeTargetConstraintsId, Spell4BaseId,
+  ClassId, Creature2Id, Faction2Id, Spell4AoeTargetConstraintsId, Spell4BaseId,
   Spell4EffectsId, Spell4Id, Spell4StackGroupId,
 }
 import genesis_prime/table/spell4
@@ -971,6 +971,7 @@ fn selected(
 fn foe_at(z z: Float) -> shown.Shown {
   shown.ShownCreature(
     creature_id: Creature2Id(73_464),
+    faction_id: Faction2Id(0),
     path: creature_path.Standing(at: place_support.at(
       world_id: 3460,
       world_zone_id: 5967,

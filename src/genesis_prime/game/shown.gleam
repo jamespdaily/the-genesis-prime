@@ -29,7 +29,7 @@
 
 import genesis_prime/game/area.{type Candidate, type Pose, Candidate}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/table/id.{type Creature2Id}
+import genesis_prime/table/id.{type Creature2Id, type Faction2Id}
 import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
 import genesis_prime/world_map/creature_path.{type Path}
 import genesis_prime/world_map/spawn
@@ -65,6 +65,9 @@ pub type Shown {
   ShownCreature(
     /// The Creature2 row it was created from.
     creature_id: Creature2Id,
+    /// The faction its 0x262 gave it, which a type 3 TargetGroup tests
+    /// (`0x1403b4a20`).
+    faction_id: Faction2Id,
     /// Where it stands or runs: standing at the place of its 0x262 until a
     /// CreatureMoved news.
     path: Path,

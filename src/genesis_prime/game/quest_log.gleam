@@ -642,10 +642,18 @@ pub fn reset_due(
 
 /// One objective of a quest as the client keeps it (`0x1405a8a40`, the quest record's
 /// words 0x18 and after): its QuestObjective type, flags, count and data (the id of
-/// the row its type names, a Creature2 id for types 3 and 12), and whether it counts
-/// its progress as bits (`0x1405517a0`).
+/// the row its type names, a Creature2 id for types 3 and 12), the TargetGroup row of
+/// its reward pane (0 for none), and whether it counts its progress as bits
+/// (`0x1405517a0`).
 pub type Objective {
-  Objective(type_: Int, flags: Int, count: Int, data: Int, checklist: Bool)
+  Objective(
+    type_: Int,
+    flags: Int,
+    count: Int,
+    data: Int,
+    reward_pane: Int,
+    checklist: Bool,
+  )
 }
 
 /// A quest as the client keeps it beside its log: its Quest2 id and its objectives in
@@ -698,6 +706,7 @@ fn objective_of(
     flags: row.flags,
     count: row.count,
     data: row.data,
+    reward_pane: row.target_group_id_reward_pane,
     checklist: is_checklist(tables:, objective: row),
   )
 }
@@ -1085,14 +1094,31 @@ fn is_percent_kind(objective objective: Objective) -> Bool {
   }
 }
 
+/// Whether the objective's stored progress is thousandths of completion: a percent kind
+/// objective of a count above 1.
+fn is_thousandths(objective objective: Objective) -> Bool {
+  is_percent_kind(objective:) && objective.count > 1
+}
+
 /// How much progress completes the objective (`0x140551840`): 100 for a percent kind
 /// objective of a count above 1, else its count.
 fn needed(objective objective: Objective) -> Int {
-  use <- bool.guard(
-    when: is_percent_kind(objective:) && objective.count > 1,
-    return: 100,
-  )
+  use <- bool.guard(when: is_thousandths(objective:), return: 100)
   objective.count
+}
+
+/// The stored progress of a thousandths objective of `count` after `kills` more: an
+/// equal share of 1000 for each kill, floored, and 1000 once finished. The log keeps
+/// the stored value, not the kills, so the kills before are recovered from it by
+/// rounding up, which returns them exactly for any count up to 1000 (the floor takes
+/// less than one kill's share off).
+fn thousandths_after(
+  stored stored: Int,
+  count count: Int,
+  kills kills: Int,
+) -> Int {
+  let before = { stored * count + 999 } / 1000
+  int.min(1000, { 1000 * { before + kills } } / count)
 }
 
 /// What one objective's progress leads to: the log after it, the objective's new
@@ -1110,9 +1136,12 @@ pub type Progressed {
 /// objective is done once its progress reaches the needed count, which sets bit `index`
 /// of the done mask (`0x1406115a0`); when every objective without flag 0x20 is then
 /// done, an Accepted quest becomes Achieved (`0x1405fbc40`, `0x1405fbdc0`). An Achieved
-/// quest stays Achieved: only an objective with flag 0x20 is still open in it. Only
-/// count objectives are added to: a percent kind objective's progress is in thousandths
-/// and a checklist's in bits, which this does not read.
+/// quest stays Achieved: only an objective with flag 0x20 is still open in it. A count
+/// objective takes `amount` as it is. A percent kind objective of a count above 1 holds
+/// thousandths (`0x1406113b0`), and `amount` is a number of kills: each is an equal
+/// share of 1000 (floored), and the objective is done once the progress the client
+/// shows reaches 100, which is its count's kills. A checklist's progress is in bits,
+/// which this does not read.
 pub fn progressed(
   log log: QuestLog,
   quest quest: Quest,
@@ -1128,13 +1157,18 @@ pub fn progressed(
         when: !objective_open(log:, quest:, index:),
         return: Error(Nil),
       )
-      let new_progress =
-        int.min(
-          needed(objective:),
-          { list.drop(progress, index) |> list.first |> result.unwrap(0) }
-            + amount,
-        )
-      let done_mask = case new_progress >= needed(objective:) {
+      let stored = list.drop(progress, index) |> list.first |> result.unwrap(0)
+      let thousandths = is_thousandths(objective:)
+      let new_progress = case thousandths {
+        True ->
+          thousandths_after(stored:, count: objective.count, kills: amount)
+        False -> int.min(objective.count, stored + amount)
+      }
+      let shown = case thousandths {
+        True -> in_log_progress(objective:, stored: new_progress)
+        False -> new_progress
+      }
+      let done_mask = case shown >= needed(objective:) {
         True -> int.bitwise_or(done_mask, int.bitwise_shift_left(1, index))
         False -> done_mask
       }

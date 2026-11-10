@@ -11,18 +11,28 @@
 ////   0x97, answered by the start of the cast; its go and finish come after the cast time of
 ////   the creature's activate spell, and the use is complete at the go.
 //// - `opcode.0x801`: a cancel before the go ends the cast, and the use never happened.
+//// - `opcode.0x1ac`: the kill's experience, written before its objective progress (the
+////   order is this step's design choice, as for talks); the kill's amount, 5 for a level 1
+////   player and the level 1 Beast (Creature2 73464), is `experience_flow_test`'s evidence.
+//// - A credit told for another stay of the player is dropped (the stay rule of
+////   `experience_flow_test`), so it counts for no objective either.
 ////
 //// The client's rows in the fixture, each objective count 1 (`table_rows -- QuestObjective`):
 //// - quest 6961's only objective, 12889, is type 3 for Creature2 57050, so a talk to that
 ////   creature finishes the quest.
 //// - quest 3668's objective 0, 4744, is type 3 for Creature2 12484, and its objectives 1 and 2
 ////   (types 5 and 8) are not talks, so a talk to that creature leaves the quest Accepted.
+//// - quest 1857's only objective, 1961, is type 2 for Creature2 5006 with count 1; pointed
+////   at the Beast (Creature2 73464) by its data, the Beast's kill finishes the quest. No
+////   real quest names a creature the tests' player kills at level 1.
 //// - quest 9207's only objective, 17932, is type 12 for Creature2 58487, whose activate spell
 ////   is Spell4 1817, cast time 2000 ms (Creature2.58487 activateSpellCastTime) and maximum
 ////   range 1.0 (activateSpellMaxRange). Its display 24340 has hitRadius 3.5; the player's
 ////   Race hitRadius is 1.2, so a creature 5.0 east is 5.0 - 1.2 - 3.5 = 0.3 away.
 
 import cast_support
+import experience_support
+import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Answer, type Message, type Request}
 import genesis_prime/connection/frame.{type Frame}
@@ -30,6 +40,7 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
+import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/step.{type ConnectionEvent, type Event, OwnEvent}
 import genesis_prime/table/id.{Creature2Id}
@@ -42,6 +53,7 @@ import gleam/list
 import gleam/option.{None}
 import message_support
 import owned_test
+import planted_table.{Integer}
 import quest_support
 import spawn_support
 import vendor_support
@@ -337,4 +349,48 @@ pub fn an_interrupted_use_counts_nothing_test() -> Nil {
       state_frame(quest: 9207, state: 2),
     ]
     as "a use of the same creature after the cancel completes at its go and counts once: one 0x361 at 1 of 1, then 0x35c, so the silence before was the cancel and not a count that is never wired"
+}
+
+pub fn a_kill_sends_its_experience_then_objective_progress_and_achieved_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 1857's objective 1961 (type 2, count 1) names the Beast, Creature2 73464.
+  use tables <- fixture_tables.changed(table: "QuestObjective", id: 1961, with: [
+    #("data", Integer(73_464)),
+  ])
+  let #(state, _) =
+    connection_support.entered_with_quests_on(tables:, quests: [
+      quest_support.accepted(quest_id: 1857, progress: [0]),
+    ])
+  let #(state, stale) =
+    experience_support.credited_in(
+      state:,
+      stay: connection_support.viewer_stay(2),
+      creature_id: 73_464,
+      level: 1,
+    )
+  assert connection_support.written_ids(stale) == []
+    as "a credit for another stay writes neither the experience nor any objective message"
+
+  let #(_, credit) =
+    experience_support.credited(state:, creature_id: 73_464, level: 1)
+  assert experience_support.gains(taken: credit)
+    == [
+      ExperienceGained(
+        experience: 5,
+        rest_experience_used: 0,
+        bonus_experience: 0,
+        source_kind: 2,
+        source_unit_id: experience_support.creature_unit_id,
+      ),
+    ]
+    as "opcode.0x1ac: the kill's experience"
+  let written = as_pairs(frames: frames(taken: credit))
+  assert list.map(written, fn(frame) { frame.0 }) == [0x01AC, 0x0361, 0x035C]
+    as "the experience is written first, then the objective's progress and, the quest's only objective being done, its state; the credit for the other stay left the objective open"
+  assert list.drop(written, 1)
+    == [
+      progress_frame(quest: 1857, index: 0, progress: 1),
+      state_frame(quest: 1857, state: 2),
+    ]
+    as "opcode.0x361 and opcode.0x35c: objective 0 of quest 1857 is at 1 of 1, and the quest is Achieved"
 }

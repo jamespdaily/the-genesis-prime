@@ -1,4 +1,4 @@
-//// A talk to a creature or a use of one on the game connection
+//// A talk to a creature, a use of one or a kill of one on the game connection
 //// (genesis_prime/game/objective): the rule decides, and this keeps the quest log it
 //// returns, tells the client each objective's progress (0x0361) and a quest's state
 //// (0x035C) in the rule's order, and moves the quest deadline timer when the log's
@@ -8,15 +8,60 @@
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/state.{type Session} as connection_state
+import genesis_prime/game/experience
 import genesis_prime/game/objective
 import genesis_prime/game/quest_log
+import genesis_prime/game/shown
+import genesis_prime/game/target_group
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
+import genesis_prime/table/creature2
+import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
 
 /// The state number of an Achieved quest in 0x035C (`opcode.0x35c`).
 const achieved_state = 2
+
+/// The session and what is written after the player's blow killed the creature of
+/// the credit. The unit is what the client's picture holds of it: its faction (which a
+/// type 3 TargetGroup tests) is known only while the creature is shown, and a creature
+/// that has left the picture counts by its Creature2 id and race alone.
+pub fn killed(
+  session session: Session,
+  now now: Now,
+  credit credit: experience.Credit,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  case connection_state.entered_of(session.status) {
+    None -> #(session, [])
+    Some(entered) -> {
+      let #(creature_id, faction_id) = case
+        dict.get(entered.shown, credit.unit_id)
+      {
+        Ok(shown.ShownCreature(creature_id:, faction_id:, ..)) -> #(
+          creature_id,
+          Some(faction_id),
+        )
+        Ok(shown.ShownPlayer) | Ok(shown.ShownObject(..)) | Error(Nil) -> #(
+          credit.creature_id,
+          None,
+        )
+      }
+      // The experience rule has just read this creature's row.
+      let assert Ok(row) =
+        creature2.get(tables: session.settings.tables, id: creature_id)
+      counted(
+        session:,
+        now:,
+        event: objective.Killed(target_group.Unit(
+          creature_id:,
+          faction_id:,
+          unit_race_id: creature2.unit_race_id(row),
+        )),
+      )
+    }
+  }
+}
 
 /// The session and what is written after the player did this to a creature. A
 /// connection with no player in the world counts nothing.
