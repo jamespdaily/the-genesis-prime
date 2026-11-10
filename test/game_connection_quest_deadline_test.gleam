@@ -18,7 +18,8 @@
 
 import connection_rule_support as support
 import game_connection_support
-import genesis_prime/client_connection.{type Request, AskStore}
+import genesis_prime/account_session.{Claimed}
+import genesis_prime/client_connection.{type Request, AskStore, FromSessions}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/message/item_place.{ItemPlace}
@@ -27,11 +28,11 @@ import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/quest_log as quest_message
 import genesis_prime/step.{
   type ConnectionStep, CancelTimer, OwnEffect, OwnEvent, StartTimer, TimerFired,
-  TimerId,
+  TimerId, WatchEnded, WatchId,
 }
 import genesis_prime/store.{Move, QuestRow, SavePlace}
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import owned_test
 import quest_support
 
@@ -316,4 +317,102 @@ pub fn a_timed_quest_resumes_from_its_saved_time_left_test() -> Nil {
     ])
   assert timer_effects(taken: entry) == []
     as "Quest2 2417 has no maxTimeAllowedMS, so no timer runs"
+}
+
+/// The step of Sessions' answer `Claimed` to the claim `taken` asked, at this monotonic
+/// time.
+fn claimed_at(
+  state state: game_connection.State,
+  taken taken: ConnectionStep(Request),
+  at ms: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let assert Some(ask) = support.asked(taken) as "the step ends in the claim"
+  game_connection.step(
+    state,
+    support.input_at_ms(
+      ms:,
+      event: OwnEvent(step.Answered(
+        ask: ask.ask,
+        outcome: step.Answer(FromSessions(Claimed)),
+      )),
+    ),
+  )
+}
+
+pub fn the_deadline_timer_is_cancelled_while_the_connection_waits_to_claim_and_started_again_when_claimed_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- quest_support.with_time_limits(limits:)
+  let #(entered, _) =
+    game_connection_support.entered_with_quests_on(tables:, quests: [
+      quest_support.timed(1872, progress: [], quest_ms_left: 0),
+    ])
+  // Sessions ends at 5000 ms (watch 1 is the rule's watch on it): the wait to claim
+  // again is its own status, in which a deadline firing is a bug, so the timer is
+  // cancelled and the shell drops a firing already waiting (`step.CancelTimer`).
+  let #(waiting, taken) =
+    game_connection.step(
+      entered,
+      support.input_at_ms(ms: 5000, event: WatchEnded(WatchId(1))),
+    )
+  assert timer_effects(taken:) == [OwnEffect(CancelTimer(deadline_timer))]
+    as "the wait to claim cancels the deadline timer"
+  let #(claiming, claim) = fire(state: waiting, timer: TimerId(1), at: 5100)
+  // Claimed at 5200 ms: 1872 is due at 61,000 ms, so 55,800 ms are left.
+  let #(_, taken) = claimed_at(state: claiming, taken: claim, at: 5200)
+  assert timer_effects(taken:)
+    == [OwnEffect(StartTimer(deadline_timer, 55_800))]
+    as "the claim starts the timer again for the 61,000 ms deadline"
+  // Claimed after the deadline passed during the wait: the timer starts at once.
+  let #(back, taken) = claimed_at(state: claiming, taken: claim, at: 70_000)
+  assert timer_effects(taken:) == [OwnEffect(StartTimer(deadline_timer, 0))]
+    as "a deadline that passed meanwhile fires at once"
+  let #(_, taken) = fire(state: back, timer: deadline_timer, at: 70_000)
+  assert quest_states(taken:) == [botched_1872]
+    as "the quest is botched as soon as the connection is back in the world"
+}
+
+/// An achieved timed quest: state 2, as the client's active list holds it.
+fn achieved(
+  quest_id quest_id: Int,
+  quest_ms_left quest_ms_left: Int,
+) -> store.QuestRow {
+  QuestRow(
+    ..quest_support.timed(quest_id, progress: [], quest_ms_left:),
+    state: 2,
+  )
+}
+
+pub fn an_achieved_timed_quest_is_not_botched_at_its_deadline_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- quest_support.with_time_limits(limits:)
+  // 1872 is achieved with a full timer (due at 61,000 ms) and 1806 accepted with
+  // 90,000 ms left (due at 91,000 ms).
+  let #(entered, entry) =
+    game_connection_support.entered_with_quests_on(tables:, quests: [
+      achieved(quest_id: 1872, quest_ms_left: 0),
+      quest_support.timed(1806, progress: [0], quest_ms_left: 90_000),
+    ])
+  assert timer_effects(taken: entry)
+    == [OwnEffect(StartTimer(deadline_timer, 90_000))]
+    as "the client shows an achieved quest as complete and never as a countdown (QuestTracker.lua 775-782), so the timer is for the accepted quest alone"
+  // The achieved one is saved with its time left: a later return to accepted is
+  // checked against it.
+  let #(_, taken) =
+    fire(state: entered, timer: connection_state.save_timer, at: 21_000)
+  assert saved_quests(taken:)
+    == [
+      quest_support.timed(1806, progress: [0], quest_ms_left: 70_000),
+      achieved(quest_id: 1872, quest_ms_left: 40_000),
+    ]
+    as "the periodic save writes the time left of each, 61,000 ms and 91,000 ms - 21,000 ms"
+  // Both are past their deadlines: only the accepted one is botched.
+  let #(_, taken) = fire(state: entered, timer: deadline_timer, at: 200_000)
+  assert quest_states(taken:) == [botched_1806]
+    as "a quest that is achieved is not botched when its time runs out"
+  assert saved_quests(taken:)
+    == [
+      QuestRow(quest_id: 1806, state: 4, completed_at: None, active: None),
+      achieved(quest_id: 1872, quest_ms_left: 1),
+    ]
+    as "the achieved quest stays, with 1 ms left (0 would show a full timer, 0x1406118a0)"
 }

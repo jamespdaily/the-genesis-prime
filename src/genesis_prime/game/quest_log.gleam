@@ -866,15 +866,19 @@ fn started(
   )
 }
 
-/// The log with every active quest whose time has run out at this monotonic time
-/// held Botched (`hold`), and the ids of those quests in ascending order.
+/// The log with every accepted quest whose time has run out at this monotonic time
+/// held Botched (`hold`), and the ids of those quests in ascending order. An achieved
+/// quest keeps its deadline, which is saved and resumed, but is never botched: the
+/// client's trackers show it as complete and never as a countdown
+/// (`QuestTracker.lua` 775-782, `ContractTracker.lua` 349-356).
 pub fn expire(log log: QuestLog, now_ms now_ms: Int) -> #(QuestLog, List(Int)) {
   let due =
     in_quest_order(log:)
     |> list.filter_map(fn(pair) {
       case pair.1 {
-        Active(deadline_ms: Some(deadline_ms), ..) if deadline_ms <= now_ms ->
-          Ok(pair.0)
+        Active(state: Accepted, deadline_ms: Some(deadline_ms), ..)
+          if deadline_ms <= now_ms
+        -> Ok(pair.0)
         Active(..) | Completed(..) | Known(..) -> Error(Nil)
       }
     })
@@ -886,12 +890,13 @@ pub fn expire(log log: QuestLog, now_ms now_ms: Int) -> #(QuestLog, List(Int)) {
   )
 }
 
-/// The earliest monotonic time at which an active quest runs out, when any does.
+/// The earliest monotonic time at which an accepted quest runs out, when any does.
 pub fn next_deadline(log log: QuestLog) -> Option(Int) {
   dict.values(log.entries)
   |> list.filter_map(fn(entry) {
     case entry {
-      Active(deadline_ms: Some(deadline_ms), ..) -> Ok(deadline_ms)
+      Active(state: Accepted, deadline_ms: Some(deadline_ms), ..) ->
+        Ok(deadline_ms)
       Active(..) | Completed(..) | Known(..) -> Error(Nil)
     }
   })

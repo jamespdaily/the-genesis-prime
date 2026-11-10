@@ -27,18 +27,21 @@
 
 import connection_rule_support as support
 import game_connection_support
-import genesis_prime/client_connection.{type Answer, type Message, type Request}
+import genesis_prime/account_session.{Claimed}
+import genesis_prime/client_connection.{
+  type Answer, type Message, type Request, FromSessions,
+}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/message/quest_periodic_reset.{
   type QuestPeriodicReset, QuestPeriodicReset,
 }
 import genesis_prime/step.{
-  type ConnectionEvent, type ConnectionStep, OwnEffect, OwnEvent, StartTimer,
-  TimerFired, TimerId, Unwatch, Watch,
+  type ConnectionEvent, type ConnectionStep, CancelTimer, OwnEffect, OwnEvent,
+  StartTimer, TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId,
 }
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import owned_test
 import quest_support
 
@@ -206,4 +209,37 @@ pub fn a_reset_that_passed_while_the_player_crossed_the_holocrypt_is_sent_when_i
     as "opcode.0x362: the client is told the daily reset of Friday 2025-04-25 10:00 UTC that passed during the transfer, with the daily bit"
   assert reset_timers(taken: next_day) == [#(timer, 82_800_000)]
     as "the next reset is Saturday 2025-04-26 10:00 UTC, 23 hours after the rejoin"
+}
+
+pub fn the_reset_timer_is_cancelled_while_the_connection_waits_to_claim_and_a_reset_that_passed_is_sent_when_claimed_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(entered, _) = game_connection_support.entered_with_quests(quests: [])
+  // Sessions ends (the rule's watch 1): the wait to claim again is its own status,
+  // in which the reset timer must not fire, so it is cancelled.
+  let #(waiting, taken) =
+    game_connection_support.feed(state: entered, event: WatchEnded(WatchId(1)))
+  assert list.contains(support.effects_of(taken), OwnEffect(CancelTimer(timer)))
+    as "the wait to claim cancels the reset timer"
+  let #(claiming, claim) =
+    game_connection_support.feed(
+      state: waiting,
+      event: OwnEvent(TimerFired(TimerId(1))),
+    )
+  let assert Some(ask) = support.asked(claim) as "the wait ends in the claim"
+  // Claimed an hour after the daily reset of Friday 2025-04-25 10:00 UTC, which
+  // passed during the wait.
+  let #(_, taken) =
+    game_connection_support.feed_at(
+      state: claiming,
+      filetime: friday_11,
+      event: OwnEvent(step.Answered(
+        ask: ask.ask,
+        outcome: step.Answer(FromSessions(Claimed)),
+      )),
+    )
+  assert resets_sent(taken:)
+    == [QuestPeriodicReset(reset_time: 1_745_575_200, periods: 1)]
+    as "opcode.0x362: the client is told the daily reset that passed during the wait, with the daily bit"
+  assert reset_timers(taken:) == [#(timer, 82_800_000)]
+    as "the claim starts the timer for Saturday 2025-04-26 10:00 UTC, 23 hours after"
 }
