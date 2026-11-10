@@ -26,6 +26,9 @@ import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_ability.{CastAbility}
 import genesis_prime/message/cast_result.{SpellCancelled, TargetRangeMax}
 import genesis_prime/message/choose_resurrection.{ChooseResurrection}
+import genesis_prime/message/client_side_interaction_result.{
+  ClientSideInteractionResult,
+}
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_death.{CombatLogDeath}
 import genesis_prime/message/combat_log_entry
@@ -36,6 +39,7 @@ import genesis_prime/message/damage_type
 import genesis_prime/message/held_item.{HeldItem}
 import genesis_prime/message/innate_index_chosen.{InnateIndexChosen}
 import genesis_prime/message/innate_index_set.{InnateIndexSet}
+import genesis_prime/message/interaction_result
 import genesis_prime/message/item_added.{ItemAdded}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
 import genesis_prime/message/movement_path.{MovementPath}
@@ -1159,4 +1163,30 @@ pub fn a_0x16f_body_of_the_wrong_length_is_refused_test() -> Nil {
   assert innate_index_chosen.decode(<<2, 0>>)
     == Error(bit_stream.TrailingBytes(count: 1))
     as "opcode.0x16f: the client's writer adds 8 bits, so a body of two bytes is longer than any the client writes"
+}
+
+pub fn the_recorded_interaction_results_decode_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_codec(
+    name: "opcode.0x805.fields, stopper_expedition.jsonl line 10083 (client bytes): cast 29800 (68740000), result 3 in 3 bits, Spell4Base id plus 1 = 57540 (Spell4Base 57539)",
+    body: message_support.hex("687400002306070000"),
+    value: ClientSideInteractionResult(
+      cast_id: 29_800,
+      result: interaction_result.Started,
+      spell4_base_id_plus_one: 57_540,
+    ),
+    encode: client_side_interaction_result.encode,
+    decode: client_side_interaction_result.decode,
+  )
+  message_support.assert_codec(
+    name: "opcode.0x805.fields, stopper_expedition.jsonl line 10098 (client bytes): the same cast ends with result 1",
+    body: message_support.hex("687400002106070000"),
+    value: ClientSideInteractionResult(
+      cast_id: 29_800,
+      result: interaction_result.Succeeded,
+      spell4_base_id_plus_one: 57_540,
+    ),
+    encode: client_side_interaction_result.encode,
+    decode: client_side_interaction_result.decode,
+  )
 }

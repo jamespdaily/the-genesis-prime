@@ -3,19 +3,26 @@
 //// come from the client's pick, `0x14046c580` (fact `opcode.0x97.pick`), and the rows of the
 //// Seaspine Mollusk, Creature2 26462, in the client's tables.
 
+import client_tables
 import fixture_tables
 import genesis_prime/game/activate.{
   ActivateEffect, CannotBePlanned, Column, Creature, NoActivateSpell, Picked,
   Planned, Unread,
 }
 import genesis_prime/game/prerequisite.{Fails, NotRead, Passes}
+import genesis_prime/game/spell_plan
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
+import genesis_prime/table/spell4
+import genesis_prime/table/spell4_base
+import gleam/int
 import gleam/list
 import gleam/option.{Some}
+import gleam/set
 import gleam/string
 import owned_test
 import prerequisite_support
+import unitest
 
 /// A creature of these columns, with the cast time and range of no row.
 fn creature_of(columns columns: List(#(Int, Int))) -> activate.Creature {
@@ -115,4 +122,54 @@ pub fn activate_spell_with_an_unread_target_effect_is_planned_test() -> Nil {
   assert effects
     == [ActivateEffect(effect_id: Spell4EffectsId(68_310), delay_ms: 0)]
     as "Spell4Effects 68310 is Spell4 34512's Activate row, delay 0"
+}
+
+pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let activations = activate.activations(tables:)
+  let interaction_spells =
+    list.flat_map(creature2.all(tables), fn(row) {
+      list.map(activate.creature_of(row:).columns, fn(column) {
+        column.spell4_id
+      })
+    })
+    |> list.filter(fn(spell4_id) { spell4_id != 0 })
+    |> set.from_list
+    |> set.to_list
+    |> list.sort(by: int.compare)
+    |> list.filter(fn(spell4_id) {
+      case spell4.get(tables:, id: id.Spell4Id(spell4_id)) {
+        Ok(row) ->
+          case
+            spell4_base.get(tables:, id: spell4.spell4_base_id_base_spell(row))
+          {
+            Ok(base) -> base.cast_method == 5
+            Error(Nil) -> False
+          }
+        Error(Nil) -> False
+      }
+    })
+  assert list.length(interaction_spells) == 767
+    as "Creature2 spell4IdActivate00-03 name 767 distinct spells whose Spell4Base castMethod is 5 (Spell.CodeEnumCastMethod: ClientSideInteraction)"
+  let planned =
+    list.filter(interaction_spells, fn(spell4_id) {
+      case activate.planned_of(activations:, spell4_id:) {
+        Ok(Planned(spell:, ..)) -> {
+          assert spell.method == spell_plan.ClientSideInteraction
+            as "a planned castMethod 5 spell is planned as ClientSideInteraction"
+          True
+        }
+        Ok(CannotBePlanned(why:)) -> {
+          assert string.starts_with(why, "the ")
+            as "a castMethod 5 spell the plan cannot build holds the plan's own reason in words"
+          False
+        }
+        Ok(activate.NoSpell4Row) | Error(Nil) ->
+          panic as "a castMethod 5 activate spell is planned or names its reason, never refused as not built"
+      }
+    })
+  assert list.length(planned) == 688
+    as "688 of the 767 are planned: the other 79 hold a Spell4Effects row aimed at the target, which an activate cast strikes no one with (Spell4Effects targetFlags)"
 }

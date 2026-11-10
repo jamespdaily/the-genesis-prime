@@ -487,6 +487,11 @@
 //// | two casts whose persistence fails in one input, or one that fails because the other ended | both end in that input, the lower cast id first |
 //// | a persistence check while the player is leaving or dead | nothing: `left` and `died` have already dropped every cast |
 //// | a press while one is held | 0x7fc 13 |
+//// | a 0x805 result 3 of an activate cast of castMethod 5 | nothing: the interaction only began |
+//// | a 0x805 result 1 before or after the cast time has run | the go and the finish at the later of the two: at the answer, or at the go's timer when the answer came first |
+//// | a 0x805 result 0 or 2 | 0x7f9 146, 0x7fe, the go's timer cancelled; no go and no `Activated` |
+//// | a 0x805 for a cast that is not live (the client's 0 as a finish closes its window) | nothing; a debug line |
+//// | a 0x805 for a live cast that waits for no answer, naming another spell, or with a result of 4 to 7 | the connection ends |
 //// | a go lists a shield heal while the caster's shield is full | the description is written with amount 0; the shield writes nothing (genesis_prime/game/player_life) |
 //// | a heal's timer fires after its cast's node was taken off, the caster died or its persistence ended | no timer: it was cancelled with the node; nothing lands |
 //// | a heal's start and its node's end fire in either order | the heal lands once, in the step of whichever is delivered first |
@@ -553,6 +558,7 @@ import genesis_prime/message/cancel_cast.{type CancelCast}
 import genesis_prime/message/cast_ability
 import genesis_prime/message/cast_activate
 import genesis_prime/message/cast_result
+import genesis_prime/message/client_side_interaction_result
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
 import genesis_prime/message/combat_log_entry
@@ -561,6 +567,7 @@ import genesis_prime/message/crowd_control_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
+import genesis_prime/message/interaction_result
 import genesis_prime/message/miss_reason
 import genesis_prime/message/spell_cast_confirmed.{SpellCastConfirmed}
 import genesis_prime/message/spell_cast_refused.{SpellCastRefused}
@@ -619,6 +626,8 @@ pub type Message {
   KeyHeld
   /// 0x0801, the client ends one of its player's casts.
   Cancelled
+  /// 0x0805, the client's answer to its client-side interaction of a cast.
+  Answered
 }
 
 /// The Vital id of Health and of Shield Capacity in `Caster.life_vitals`
@@ -819,6 +828,16 @@ pub type Refusal {
   /// A 0x801 whose reason and bit are none the client sends together
   /// (`opcode.0x801`).
   UnknownCancel(reason: Int, bit: Int)
+  /// A 0x805 whose result is none of the 0, 1, 2 and 3 the client sends
+  /// (`opcode.0x805.fields`).
+  UnknownAnswer(result: Int)
+  /// A 0x805 for a live cast that is not waiting for an interaction's answer: not an
+  /// activate cast of castMethod 5, or one already answered (`opcode.0x805.fields`,
+  /// `csi.ends`).
+  NoInteractionWaits(cast_id: Int)
+  /// A 0x805 whose third field is not the waiting cast's Spell4Base id plus 1
+  /// (`opcode.0x805.fields`).
+  WrongAnswerSpell(cast_id: Int, sent: Int, expected: Int)
 }
 
 /// What a timer of the rule is for, which `State` keeps by the timer's id.
@@ -903,7 +922,21 @@ pub type Activating {
     creature_id: Int,
     /// The spell's Activate rows, which the go lists on the unit.
     effects: List(activate.ActivateEffect),
+    /// What the client's interaction has answered, for a spell of castMethod 5.
+    interaction: Interaction,
   )
+}
+
+/// Where the client's interaction of an activate cast stands: the go of a castMethod 5
+/// spell waits for both the cast time and the client's answer 1
+/// (`opcode.0x805.fields`).
+pub type Interaction {
+  /// The spell is not of castMethod 5: its go waits for the cast time alone.
+  NoInteraction
+  /// The client's interaction has not answered 1 yet.
+  AwaitingAnswer
+  /// The client answered 1.
+  AnswerSucceeded
 }
 
 /// A cast of the caster that has started and not finished.
@@ -1154,6 +1187,7 @@ pub fn take(
     Cancelled ->
       cancelled(cast:, body:, caster:, now:)
       |> result.map(fn(taken) { released(taken:, caster:, now_ms:) })
+    Answered -> answered(cast:, body:, caster:, now_ms:)
   }
   |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
   |> result.map(fn(taken) {
@@ -1318,6 +1352,10 @@ fn activation_in_range(
         unit_id:,
         creature_id:,
         spell: activation_spell(spell:, cast_time_ms: creature.cast_time_ms),
+        interaction: case spell.method == spell_plan.ClientSideInteraction {
+          True -> AwaitingAnswer
+          False -> NoInteraction
+        },
         effects:,
       )
   }
@@ -1325,18 +1363,32 @@ fn activation_in_range(
 
 /// The plan's spell as an activate cast casts it: one go after the creature's activate
 /// cast time, with the cast bar shown, whatever the spell's own cast time, phases or
-/// channel are (`Creature2.activateSpellCastTime`). A spell whose method is not built
-/// is left as it is, so the verdict refuses it.
+/// channel are (`Creature2.activateSpellCastTime`). A castMethod 5 spell casts the same
+/// way, its time the creature's when that is set and else the spell's own, and its bar
+/// shown only when that time is not 0 (`opcode.0x7ff.csi_cast_bar`); its go also waits for
+/// the client's answer (`asked`). A spell whose method is not built is left as it is, so
+/// the verdict refuses it.
 fn activation_spell(
   spell spell: Spell,
   cast_time_ms cast_time_ms: Int,
 ) -> Spell {
-  use <- bool.guard(when: !is_built(spell.method), return: spell)
+  let interaction = spell.method == spell_plan.ClientSideInteraction
+  use <- bool.guard(
+    when: !is_built(spell.method) && !interaction,
+    return: spell,
+  )
+  let cast_time_ms = case interaction && cast_time_ms == 0 {
+    True -> spell.cast_time_ms
+    False -> cast_time_ms
+  }
   spell_plan.Spell(
     ..spell,
     method: spell_plan.Normal,
     cast_time_ms:,
-    cast_bar: spell_plan.ShowsCastBar,
+    cast_bar: case interaction && cast_time_ms == 0 {
+      True -> spell_plan.HidesCastBar
+      False -> spell_plan.ShowsCastBar
+    },
     phase_delays_ms: [],
     channel: None,
     stages: [],
@@ -1354,6 +1406,7 @@ fn activation_started(
   unit_id unit_id: Int,
   creature_id creature_id: Int,
   spell spell: Spell,
+  interaction interaction: Interaction,
   effects effects: List(activate.ActivateEffect),
 ) -> Result(#(State, List(Effect)), Refusal) {
   let spell4_id = spell.spell4_id.value
@@ -1392,6 +1445,7 @@ fn activation_started(
             unit_id:,
             creature_id:,
             effects:,
+            interaction:,
           )),
           spent: paid.spent,
           reserved:,
@@ -2639,8 +2693,11 @@ fn cooldown_left_ms(
 
 /// The methods the rule casts; a spell of any other is refused 285.
 ///
-/// Gap: a spell of castMethod 5 (`ClientSideInteraction`) is not cast; the issue for a
-/// client-side interaction activate cast (#645) builds it.
+/// A press of a spell of castMethod 5 (`ClientSideInteraction`) is refused too: only the
+/// activate cast runs one (`activation_spell`), since the client opens its interaction on
+/// the 0x7fd of a right-click. Gap: a castMethod 5 spell a Spell4Effects row aims at the
+/// target is not planned for an activate cast (`activate.planned_of`), the issue for the
+/// aimed effects of an activate cast (#336).
 fn is_built(method: spell_plan.CastMethod) -> Bool {
   case method {
     spell_plan.Normal
@@ -2723,6 +2780,108 @@ fn cancelled(
   let #(cast, effects) =
     cancelling(cast:, cancel:, caster:, now_ms: now.monotonic_ms)
   Ok(#(cast, list.append(stopped, effects)))
+}
+
+/// The client's 0x805, the answer of the interaction an activate cast of castMethod 5
+/// opened (`opcode.0x805.fields`): 3 says it began and changes nothing; 1 lets the go
+/// happen once the cast time has run; 0 and 2 fail the cast with 146
+/// (ClientSideInteractionFail), which ends it with no go. An answer for a cast that is not
+/// live is dropped, since the client sends 0 when a finish closes its window
+/// (`opcode.0x7fe.csi`); one for a live cast that waits for no answer, one that names
+/// another spell or a result the client never sends is refused.
+fn answered(
+  cast cast: State,
+  body body: BitArray,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+) -> Result(#(State, List(Effect)), Refusal) {
+  use answer <- result.try(
+    client_side_interaction_result.decode(body)
+    |> client_connection.decoded(
+      message_id: client_side_interaction_result.message_id,
+    )
+    |> result.map_error(NotDecoded),
+  )
+  let cast_id = answer.cast_id
+  use <- bool.guard(
+    when: interaction_result.to_value(answer.result) > 3,
+    return: Error(
+      UnknownAnswer(result: interaction_result.to_value(answer.result)),
+    ),
+  )
+  case dict.get(cast.casts, cast_id) {
+    Error(Nil) ->
+      Ok(
+        #(cast, [
+          Log(
+            level: LogDebug,
+            text: "the client answered the interaction of the cast "
+              <> int.to_string(cast_id)
+              <> ", which is not live",
+          ),
+        ]),
+      )
+    Ok(live) ->
+      case live.activation {
+        Some(Activating(interaction: AwaitingAnswer, ..) as activating) ->
+          answer_taken(cast:, caster:, now_ms:, answer:, live:, activating:)
+        Some(Activating(interaction: NoInteraction, ..))
+        | Some(Activating(interaction: AnswerSucceeded, ..))
+        | None -> Error(NoInteractionWaits(cast_id:))
+      }
+  }
+}
+
+/// The answer of a live cast that waits for one, once its spell is the one it names.
+fn answer_taken(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  answer answer: client_side_interaction_result.ClientSideInteractionResult,
+  live live: Live,
+  activating activating: Activating,
+) -> Result(#(State, List(Effect)), Refusal) {
+  let cast_id = answer.cast_id
+  let expected = live.spell.spell4_base_id.value + 1
+  use <- bool.guard(
+    when: answer.spell4_base_id_plus_one != expected,
+    return: Error(WrongAnswerSpell(
+      cast_id:,
+      sent: answer.spell4_base_id_plus_one,
+      expected:,
+    )),
+  )
+  case answer.result {
+    interaction_result.Started | interaction_result.Other(..) -> Ok(#(cast, []))
+    interaction_result.Succeeded -> {
+      let succeeded =
+        Live(
+          ..live,
+          activation: Some(
+            Activating(..activating, interaction: AnswerSucceeded),
+          ),
+        )
+      let cast =
+        State(..cast, casts: dict.insert(cast.casts, cast_id, succeeded))
+      case go_waits(cast:, cast_id:) {
+        True -> Ok(#(cast, []))
+        False -> Ok(asked(cast:, caster:, now_ms:, cast_id:, phase: 0))
+      }
+    }
+    interaction_result.Failed | interaction_result.CancelledBeforeStart ->
+      Ok(persistence_end(
+        cast:,
+        caster:,
+        now_ms:,
+        cast_id:,
+        result: cast_result.ClientSideInteractionFail,
+      ))
+  }
+}
+
+/// Whether the cast's go timer is still to fire: the cast time has not run.
+fn go_waits(cast cast: State, cast_id cast_id: Int) -> Bool {
+  list.any(dict.values(cast.timers), fn(due) { due == Go(cast_id:, phase: 0) })
 }
 
 /// The hold whose last cast is `cast_id` ends.
@@ -3247,7 +3406,8 @@ pub fn went(
 
 /// A go of a live cast is asked: its first go pays the cast's reserved costs, then
 /// the connection selects its targets and strikes them, and answers with `went` when
-/// the round closes. A cast that is not live has no go.
+/// the round closes. A cast that is not live has no go, and an activate cast of
+/// castMethod 5 has none until the client has answered 1 (`answered` asks again).
 fn asked(
   cast cast: State,
   caster caster: Caster,
@@ -3257,6 +3417,10 @@ fn asked(
 ) -> #(State, List(Effect)) {
   case dict.get(cast.casts, cast_id) {
     Error(Nil) -> #(cast, [])
+    Ok(Live(activation: Some(Activating(interaction: AwaitingAnswer, ..)), ..)) -> #(
+      cast,
+      [],
+    )
     Ok(live) -> {
       // The first go pays what the accept reserved as its strike begins: creatures
       // apply the round's hits as soon as they are told, so they are always paid for,
@@ -7554,6 +7718,21 @@ pub fn describe(refusal refusal: Refusal) -> String {
       <> " and the bit "
       <> int.to_string(bit)
       <> ", which the client never sends together"
+    UnknownAnswer(result:) ->
+      "0x0805 holds the result "
+      <> int.to_string(result)
+      <> ", which the client never sends"
+    NoInteractionWaits(cast_id:) ->
+      "0x0805 answers the cast "
+      <> int.to_string(cast_id)
+      <> ", which waits for no interaction's answer"
+    WrongAnswerSpell(cast_id:, sent:, expected:) ->
+      "0x0805 for the cast "
+      <> int.to_string(cast_id)
+      <> " holds the spell word "
+      <> int.to_string(sent)
+      <> " in place of "
+      <> int.to_string(expected)
   }
 }
 

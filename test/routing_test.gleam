@@ -49,6 +49,7 @@ const cast_rows = [
   #(0x009A, cast.Pressed),
   #(0x04DB, cast.KeyHeld),
   #(0x0801, cast.Cancelled),
+  #(0x0805, cast.Answered),
 ]
 
 pub fn movement_messages_are_rows_taken_inside_0x038c_with_the_player_in_the_world_test() -> Nil {
