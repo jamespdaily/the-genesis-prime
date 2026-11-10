@@ -9,14 +9,28 @@
 ////   and has equipped slot flags 0x7FFE0000 (bag indexes 17 to 30), 5423 holds 8
 ////   (it needs level 18), 4763 is a proxy whose row holds 4 as maxStackCount, and
 ////   the Novice chest piece is armor.
+//// - What a budget gives: the client's code of `AddItemBudgetProperties`
+////   (0x14040ca70 to 0x14040db30) and the budget curve (0x14041e670) run on the
+////   Item2, ItemBudget, ItemStat, ItemSlot, GameFormula and UnitProperty2 rows each
+////   test names; every product is rounded to 32 bits as the client's code rounds it.
 
 import client_tables
 import fixture_tables
 import game_connection_support
-import genesis_prime/game/item_property
+import genesis_prime/game/item_property.{type ItemProperties}
+import genesis_prime/message/float32
+import genesis_prime/table/game_formula
+import genesis_prime/table/id.{GameFormulaId, ItemStatId, UnitProperty2Id}
 import genesis_prime/table/item2
+import genesis_prime/table/item_stat
+import genesis_prime/table/loader/store as table_store
+import gleam/dict
+import gleam/float
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
+import gleam/string
 import owned_test
 import planted_table.{Integer}
 import unitest
@@ -122,4 +136,459 @@ pub fn the_client_rule_makes_56437_item2_rows_sellable_and_every_bag_among_them_
     as "item.bags_sellable: the client's Item2 holds 142 bag rows"
   assert list.filter(bags, fn(item2_id) { !sellable(item2_id) }) == []
     as "item.bags_sellable: every bag row is sellable (a worn bag is refused by its location, not by this rule)"
+}
+
+// ------------------------------------------------------------------ budgets
+
+/// The properties of an item the tables read in full.
+fn given(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> ItemProperties {
+  let assert Ok(properties) = item_property.of_item(tables:, item2_id:)
+    as "the item's rows are in the tables and the reader follows its branches"
+  properties
+}
+
+/// The bits of the 32-bit float a budget gave a property, if it gave one.
+fn bits(
+  properties properties: ItemProperties,
+  property_id property_id: Int,
+) -> Result(Int, Nil) {
+  dict.get(properties.budget, UnitProperty2Id(property_id))
+  |> result.map(float32.to_bits)
+}
+
+/// The ids of the properties a budget gave, in id order.
+fn budget_ids(properties properties: ItemProperties) -> List(Int) {
+  dict.keys(properties.budget)
+  |> list.map(fn(property_id) { property_id.value })
+  |> list.sort(int.compare)
+}
+
+/// Whether a value is the source's decimal, to the 32-bit floats' error.
+fn close(value value: Float, to expected: Float) -> Bool {
+  float.absolute_value(value -. expected) <. 0.001
+}
+
+/// The budget of an item is the points of its ItemBudget row times the scale, the budget
+/// curve at the power level times the slot's armorModifier, times the property's
+/// valuePerPoint, each product rounded to 32 bits (AddItemBudgetProperties 0x14040ca70,
+/// 0x14040d060, 0x14040d3d0, 0x14040db30). The expected bits come from the client's code
+/// run on the rows (the Client trace of this step).
+///
+/// Item2 1375 (Scout's Thermal Gloves): ItemBudget 3 gives its one entry the share 1.0,
+/// ItemStat 4 names property 34, ItemSlot ArmorHands has armorModifier 0.75, the curve at
+/// power level 3 is GameFormula 1028's 8.55 (0x4108cccd), UnitProperty2 34 has
+/// valuePerPoint 10: 8.55 x 0.75 x 1.0 x 10 = 64.125 (0x42804000).
+pub fn scouts_thermal_gloves_give_crit_chance_rating_64_125_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let gloves = given(tables:, item2_id: fixture_tables.root("Item2", 1375))
+  assert bits(properties: gloves, property_id: 34) == Ok(0x42804000)
+    as "0x14040db30: property 34, Critical Hit Rating, is 64.125"
+  assert budget_ids(properties: gloves) == [34]
+    as "ItemStat 4 has no other entry of kind 1"
+  // The budget leaves the item's own formulas as they are.
+  assert close(value: gloves.assault_rating, to: 8.1)
+    && close(value: gloves.armor, to: 45.0)
+    && close(value: gloves.base_health, to: 135.0)
+    as "0x14040df10, 0x14040e340, 0x14040e3d0: the gloves' own Assault Rating, Armor and Base Health"
+}
+
+/// Item2 8441 (Unclean Carver): ItemBudget 8 gives 0.6 and 0.4, ItemStat 20 names
+/// properties 34 and 32, ItemSlot WeaponPrimary has armorModifier 0.75, the curve at power
+/// level 20 is GameFormula 1028's 14.5.
+pub fn unclean_carver_gives_crit_chance_and_strikethrough_ratings_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let carver = given(tables:, item2_id: fixture_tables.root("Item2", 8441))
+  assert bits(properties: carver, property_id: 34) == Ok(0x42828000)
+    as "0x14040db30: property 34 is 65.25"
+  assert bits(properties: carver, property_id: 32) == Ok(0x422e0000)
+    as "0x14040db30: property 32 is 43.5"
+  assert budget_ids(properties: carver) == [32, 34]
+    as "the two entries of ItemStat 20"
+}
+
+/// Item2 1156 (Bacchanal Probe): ItemBudget 6 gives 0.7 and 0.3, ItemStat 51 names
+/// properties 34 and 47, ItemSlot ArmorSystem has armorModifier 1.0, the curve at power
+/// level 36 is the 32-bit 20.1, 0x41a0cccc. The client's products are 0x430cb332 and
+/// 0x42713332; the 64-bit products are 0x430cb333 and 0x42713334.
+pub fn bacchanal_probe_values_are_the_clients_32_bit_products_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let probe = given(tables:, item2_id: fixture_tables.root("Item2", 1156))
+  assert bits(properties: probe, property_id: 34) == Ok(0x430cb332)
+    as "0x14040db30: property 34, each product rounded to 32 bits"
+  assert bits(properties: probe, property_id: 47) == Ok(0x42713332)
+    as "0x14040db30: property 47, each product rounded to 32 bits"
+}
+
+/// The budget curve is a GameFormula row chosen by the power level, 1028 below 50, 1027
+/// from 50 to 129 and 1255 from 130 (0x14041e670), at the level less the row's start
+/// (m = L, L - 50, L - 130). Item2 8441's budget at those levels, each product rounded
+/// to 32 bits as the client's code gives it.
+pub fn the_budget_curve_changes_row_at_power_levels_50_and_130_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let at_level = fn(level) {
+    use tables <- fixture_tables.changed(
+      table: "Item2",
+      id: fixture_tables.root("Item2", 8441),
+      with: [#("powerLevel", Integer(level))],
+    )
+    let carver = given(tables:, item2_id: fixture_tables.root("Item2", 8441))
+    #(
+      bits(properties: carver, property_id: 34),
+      bits(properties: carver, property_id: 32),
+    )
+  }
+  assert at_level(49) == #(Ok(0x42ddd999), Ok(0x4293e666))
+    as "0x14041e670: level 49 is GameFormula 1028 at m 49"
+  assert at_level(50) == #(Ok(0x42e10000), Ok(0x42960000))
+    as "0x14041e670: level 50 is GameFormula 1027 at m 0, 112.5 and 75.0"
+  assert at_level(129) == #(Ok(0x439127d4), Ok(0x43418a71))
+    as "0x14041e670: level 129 is GameFormula 1027 at m 79"
+  assert at_level(130) == #(Ok(0x440d04cd), Ok(0x43bc0666))
+    as "0x14041e670: level 130 is GameFormula 1255 at m 0"
+}
+
+/// Item2 16397 has ItemBudget 3 (1.0 and 0.0) and ItemStat 54, which names property 29 and
+/// property 0, Strength. UnitProperty2 0 has valuePerPoint 0, so its value is 0 and
+/// AddItemProperty adds no entry (0x14040db30). The item is run twice, the second time
+/// with a share on the second entry, so that the 0 is the property's and not the
+/// share's.
+pub fn a_property_worth_0_per_point_gives_no_entry_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item2_id = fixture_tables.root("Item2", 16_397)
+  let tables = fixture_tables.shared()
+  let item = given(tables:, item2_id:)
+  assert bits(properties: item, property_id: 29) == Ok(0x43340000)
+    as "0x14040db30: property 29 is 180.0"
+  assert budget_ids(properties: item) == [29]
+    as "no entry for Strength, whose value is 0"
+  use tables <- fixture_tables.changed(table: "ItemBudget", id: 3, with: [
+    #("budget01", planted_table.Float(0.5)),
+  ])
+  let shared = given(tables:, item2_id:)
+  assert budget_ids(properties: shared) == [29]
+    as "0x14040db30: a share on Strength still gives 0 points of value"
+}
+
+/// Item2 9965 has ItemStat 415, one entry of kind 2, a random stat group. The client reads
+/// the item's random-stat byte, which the server sends as 0 (the shared item record's
+/// field_8), and no byte makes the entry kind 0 (0x14040e6d0). So the item gives what
+/// the same item with no entry gives: its own armor and Base Health. The roll is the
+/// open issue #665.
+pub fn a_random_stat_entry_gives_nothing_while_the_item_holds_no_roll_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item2_id = fixture_tables.root("Item2", 9965)
+  let tables = fixture_tables.shared()
+  let item = given(tables:, item2_id:)
+  assert budget_ids(properties: item) == []
+    as "0x14040e6d0: a kind-2 entry with no byte is kind 0"
+  assert item.armor >. 0.0 && item.base_health >. 0.0
+    as "0x14040e340, 0x14040e3d0: the item's own armor and Base Health"
+  use tables <- fixture_tables.changed(table: "ItemStat", id: 415, with: [
+    #("itemStatTypeEnum00", Integer(0)),
+  ])
+  assert given(tables:, item2_id:) == item
+    as "an entry of kind 0 gives the same"
+}
+
+/// A budget value and an innate value on one property add (0x14040db30 adds onto the
+/// property's entry, and 0x14040ca70 runs before 0x14040df10). Item2 8441's ItemStat 20
+/// names property 34 and 32; with the first changed to 35, Assault Rating, the item
+/// gives its own 1670.625 and the budget's 65.25, which is 1735.875 as the 32-bit
+/// float 0x44d8fc00.
+pub fn a_budget_value_and_an_innate_value_on_one_property_add_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item2_id = fixture_tables.root("Item2", 8441)
+  let innate = given(tables: fixture_tables.shared(), item2_id:)
+  assert close(value: innate.assault_rating, to: 1670.625)
+    as "0x14040df10: the carver's own Assault Rating"
+  use tables <- fixture_tables.changed(table: "ItemStat", id: 20, with: [
+    #("itemStatData00", Integer(35)),
+  ])
+  let both = given(tables:, item2_id:)
+  assert float32.to_bits(both.assault_rating) == 0x44d8fc00
+    as "0x14040db30: 1670.625 and 65.25 add on property 35"
+  assert budget_ids(properties: both) == [32]
+    as "property 35 is Assault Rating, which the item's own field holds"
+}
+
+/// Item2 8829 is a shield, with ItemBudget 47 (0.5, 0, 0.75, 0.75) and ItemStat 139, which names
+/// 41, 175, 176 and 178. The shares replace the 0.5 of the factors in 0x14040dbf0: the
+/// capacity at GameFormula 1260's range half way (2250), the mitigation at the bottom of
+/// GameFormula 1261's, 0.25, the regeneration at three quarters of 1260's, 0.2, and the
+/// reboot time at three quarters of 1261's range, 2687.
+pub fn a_shields_budget_shares_replace_the_middle_of_its_factor_ranges_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let shield = given(tables:, item2_id: fixture_tables.root("Item2", 8829))
+  let assert Some(item_property.Shield(
+    capacity_max:,
+    mitigation_max:,
+    regen_percent:,
+    reboot_time_ms:,
+  )) = shield.shield
+    as "0x14040dbf0: the item is a shield"
+  assert close(value: capacity_max, to: 2250.0)
+    && close(value: mitigation_max, to: 0.25)
+    && close(value: regen_percent, to: 0.2)
+    && reboot_time_ms == 2687
+    as "0x14040dbf0: the shares 0.5, 0, 0.75 and 0.75 in place of the middle"
+  assert budget_ids(properties: shield) == []
+    as "0x14040db30: the shield properties are given by the shield, not as budget values"
+}
+
+/// A shield property (41, 175, 176, 178) on an item that is no shield fails the client's
+/// branch (0x14040db30, 0x95): the item is refused, not worth 0. Item2 1375 (gloves) with
+/// ItemStat 4 changed to name property 41.
+pub fn a_shield_property_on_an_item_that_is_no_shield_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item2_id = fixture_tables.root("Item2", 1375)
+  use tables <- fixture_tables.changed(table: "ItemStat", id: 4, with: [
+    #("itemStatData00", Integer(41)),
+  ])
+  assert item_property.of_item(tables:, item2_id:)
+    == Error(item_property.Refused(
+      item2_id:,
+      property_id: 41,
+      why: item_property.ShieldPropertyOnNonShield,
+    ))
+    as "0x14040db30: a shield property on a non-shield"
+}
+
+/// A property whose UnitProperty2.flags lack 4 is no item property, and one whose
+/// equippedSlotFlags share no bit with the item's slot is not for the item (0x14040db30,
+/// 0x95). Item2 1375 is a glove (slot flags 0x20); property 30's flags are 0.
+pub fn a_property_without_flag_4_or_off_the_items_slot_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item2_id = fixture_tables.root("Item2", 1375)
+  let without_flag = {
+    use tables <- fixture_tables.changed(table: "ItemStat", id: 4, with: [
+      #("itemStatData00", Integer(30)),
+    ])
+    item_property.of_item(tables:, item2_id:)
+  }
+  assert without_flag
+    == Error(item_property.Refused(
+      item2_id:,
+      property_id: 30,
+      why: item_property.NotAnItemProperty,
+    ))
+    as "0x14040db30: UnitProperty2 30's flags are 0, without bit 4"
+  use tables <- fixture_tables.changed(table: "UnitProperty2", id: 34, with: [
+    #("equippedSlotFlags", Integer(1)),
+  ])
+  assert item_property.of_item(tables:, item2_id:)
+    == Error(item_property.Refused(
+      item2_id:,
+      property_id: 34,
+      why: item_property.OffTheItemsSlot,
+    ))
+    as "0x14040db30: slot flags 1 share no bit with the gloves' 0x20"
+}
+
+/// A budget entry on a ResourceMax property is left to the class resource, which sets that
+/// property's base (`genesis_prime/game/class_resource`, the player unit's resource).
+/// UnitProperty2 12 is ResourceMax_3, with flags 52 and valuePerPoint 0.2, so a client
+/// row would give it; the code does not, and says why, naming no open issue.
+pub fn a_resource_maximum_from_a_budget_is_unread_with_its_reason_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item2_id = fixture_tables.root("Item2", 1375)
+  use tables <- fixture_tables.changed(table: "ItemStat", id: 4, with: [
+    #("itemStatData00", Integer(12)),
+  ])
+  let result = item_property.of_item(tables:, item2_id:)
+  assert result
+    == Error(item_property.Unread(item2_id:, gap: item_property.ResourceMaximum))
+    as "UnitProperty2 12 is a ResourceMax property"
+  let assert Error(error) = result
+  assert string.contains(item_property.describe(error:), "class resource")
+    as "the reason says the class resource sets that base"
+  assert item_property.gap_issue(gap: item_property.ResourceMaximum) == None
+    as "no open issue closes it: the class resource sets that base by design"
+}
+
+/// An item the code does not read is `Unread` with its own reason, which names the open issue
+/// that closes it. One client row of each: Item2 13394 (flags bit 3, level-scaled,
+/// 0x14040f710), 5312 (flags 0x8000, PvP), 12654 (itemImbuementId 3, imbued), 447 (an
+/// armor item of power level 52, from GameFormula 1286's 50 on) and 80982 (family 33, a
+/// rune).
+pub fn level_scaled_pvp_imbued_and_late_armor_curve_items_stay_unread_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let gap_of = fn(item2_id) {
+    let item2_id = fixture_tables.root("Item2", item2_id)
+    case item_property.of_item(tables:, item2_id:) {
+      Error(item_property.Unread(item2_id: unread, gap:))
+        if unread == item2_id
+      -> Ok(gap)
+      _ -> Error(Nil)
+    }
+  }
+  assert gap_of(13_394) == Ok(item_property.LevelScaled)
+    as "0x14040f710: flags bit 3 scales the power level with the wearer"
+  assert gap_of(5312) == Ok(item_property.PvpItem) as "flags 0x8000 is PvP"
+  assert gap_of(12_654) == Ok(item_property.Imbued)
+    as "0x14040ce50: itemImbuementId 3"
+  assert gap_of(447) == Ok(item_property.LateArmorCurve)
+    as "0x14041deb0: armor at power level 52 takes GameFormula 1286's curve"
+  assert gap_of(80_982) == Ok(item_property.Rune)
+    as "0x14041f1b0: Item2Family 33's budget curve is another"
+  assert list.map(
+      [
+        item_property.LevelScaled,
+        item_property.PvpItem,
+        item_property.Imbued,
+        item_property.LateArmorCurve,
+        item_property.Rune,
+      ],
+      fn(gap) { item_property.gap_issue(gap:) },
+    )
+    == [Some(666), Some(56), Some(666), Some(666), Some(666)]
+    as "level-scaled, imbued, late armor and rune items are open issue 666, PvP 56"
+}
+
+/// Every wearable client row is given, or is `Unread` for one of the reasons its own columns
+/// hold. The reasons are worked out here from Item2's columns, not from the reader:
+/// flags bit 3, flags 0x8000, itemImbuementId not 0, Item2Family 33, and an armor
+/// item that is no shield with a power level from GameFormula 1286's dataint0. The
+/// counts are the coverage measure of this step: 46,842 wearable rows (an Item2 row with
+/// flags 0x4000 is a proxy, and one whose type has no ItemSlot row is not wearable),
+/// 12,278 given with nothing random, 22,182 given with their random entries empty,
+/// 12,382 unread.
+pub fn every_client_wearable_row_is_given_or_unread_with_a_named_reason_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let assert Ok(late) = game_formula.get(tables:, id: GameFormulaId(1286))
+    as "the client's GameFormula holds row 1286"
+  let wearable =
+    list.filter(item2.all(tables), fn(item) {
+      item_property.equipped_slot_flags(tables:, item2_id: item.id)
+      |> result.map(fn(slot_flags) {
+        !item_property.is_proxy(item) && slot_flags != 0
+      })
+      |> result.unwrap(False)
+    })
+  let reasons = fn(item: item2.Item2) {
+    let assert Ok(slotted) =
+      item_property.is_slotted(tables:, item2_id: item.id)
+      as "every Item2 row has its type, category and family rows"
+    let assert Ok(slot_flags) =
+      item_property.equipped_slot_flags(tables:, item2_id: item.id)
+      as "every Item2 row has its type, category, family and slot rows"
+    let is_shield = slotted && int.bitwise_and(slot_flags, 0x8000) != 0
+    [
+      #(int.bitwise_and(item.flags, 8) != 0, item_property.LevelScaled),
+      #(int.bitwise_and(item.flags, 0x8000) != 0, item_property.PvpItem),
+      #(item.item_imbuement_id != 0, item_property.Imbued),
+      #(item.item2_family_id == 33, item_property.Rune),
+      #(
+        item.item2_family_id == 1
+          && item.power_level >= late.dataint0
+          && !is_shield,
+        item_property.LateArmorCurve,
+      ),
+    ]
+    |> list.filter_map(fn(reason) {
+      case reason.0 {
+        True -> Ok(reason.1)
+        False -> Error(Nil)
+      }
+    })
+  }
+  let has_random_entry = fn(item: item2.Item2) {
+    item_stat.get(tables:, id: ItemStatId(item.item_stat_id))
+    |> result.map(fn(stat) {
+      list.any(
+        [
+          stat.item_stat_type_enum00,
+          stat.item_stat_type_enum01,
+          stat.item_stat_type_enum02,
+          stat.item_stat_type_enum03,
+          stat.item_stat_type_enum04,
+        ],
+        fn(kind) { kind == 2 || kind == 4 },
+      )
+    })
+    |> result.unwrap(False)
+  }
+  let outcomes =
+    list.map(wearable, fn(item) {
+      #(item, item_property.of_item(tables:, item2_id: item.id))
+    })
+  assert list.filter(outcomes, fn(outcome) {
+      let #(item, result) = outcome
+      case result {
+        Ok(_) -> reasons(item) != []
+        Error(item_property.Unread(gap:, ..)) ->
+          !list.contains(reasons(item), gap)
+        Error(item_property.NoRow(..))
+        | Error(item_property.Refused(..))
+        | Error(item_property.NoCurveValue(..))
+        | Error(item_property.TwoShields) -> True
+      }
+    })
+    == []
+    as "every row is given, or unread for one of its own reasons, and none is refused"
+  let given_rows =
+    list.filter_map(outcomes, fn(outcome) {
+      case outcome.1 {
+        Ok(_) -> Ok(outcome.0)
+        Error(_) -> Error(Nil)
+      }
+    })
+  assert list.length(wearable) == 46_842
+    as "the client holds 46,842 wearable rows that are no proxy"
+  assert list.length(
+      list.filter(given_rows, fn(item) { !has_random_entry(item) }),
+    )
+    == 12_278
+    as "12,278 rows are given with every entry read"
+  assert list.length(list.filter(given_rows, has_random_entry)) == 22_182
+    as "22,182 rows are given with their random entries empty"
+  assert list.length(wearable) - list.length(given_rows) == 12_382
+    as "12,382 rows are unread"
+}
+
+/// The load fails when a row the budget reads is missing, naming it: the ItemBudget row of an
+/// Item2, its ItemStat row, or the UnitProperty2 row an ItemStat entry of kind 1 names
+/// (0x14040ca70, 0x14040db30: no row is 0x95). Item2 1375 names ItemBudget 3 and ItemStat 4,
+/// which names UnitProperty2 34.
+pub fn the_load_fails_on_a_missing_budget_stat_or_property_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let without = fn(table, id) {
+    let assert Ok(rows) =
+      fixture_tables.remove(rows: fixture_tables.rows(), table:, id:)
+      as "the fixture's rows hold the row"
+    fixture_tables.load(rows:)
+  }
+  assert without("ItemBudget", 3)
+    == Error(table_store.RowMissing(
+      from_table: "Item2",
+      column: "itemBudgetId",
+      to_table: "ItemBudget",
+      id: 3,
+    ))
+    as "Item2 1375 names ItemBudget 3"
+  assert without("ItemStat", 4)
+    == Error(table_store.RowMissing(
+      from_table: "Item2",
+      column: "itemStatId",
+      to_table: "ItemStat",
+      id: 4,
+    ))
+    as "Item2 1375 names ItemStat 4"
+  assert without("UnitProperty2", 34)
+    == Error(table_store.RowMissing(
+      from_table: "ItemStat",
+      column: "itemStatData00",
+      to_table: "UnitProperty2",
+      id: 34,
+    ))
+    as "ItemStat 4's first entry is kind 1 and names UnitProperty2 34"
 }

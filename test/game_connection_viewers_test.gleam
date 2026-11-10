@@ -394,7 +394,7 @@ fn appearance_at(place: Place, time_ms: Int) -> UnitCreatePlayer {
       properties: list.sort(
         list.append(
           list.filter(player.tail.properties, fn(property) {
-            property.property_id != 10
+            property.property_id != 10 && property.property_id != 60
           }),
           [
             UnitProperty(property_id: 60, base: 0, value: 0),

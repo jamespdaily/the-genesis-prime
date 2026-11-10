@@ -404,10 +404,20 @@ pub fn an_equip_is_checked_against_the_entered_character_test() -> Nil {
         stack_count: 1,
       ),
     ])
-  assert list.length(worn_chest.unread) == 1
-    as "0x1404445d0: the level 3 chest has a budget or a stat, which the properties reader refuses (issue 626): it is worn and shown and gives no properties"
-  assert game_connection_support.written_ids(answered) == [0x0569, 0x0933]
-    as "the move's frame, then the look with the chest shown; no 0x93a, since the chest gives no properties and leaves the gear's as they were"
+  assert worn_chest.unread == []
+    as "Item2 50770 has ItemStat 414, whose only entry is kind 2, a random stat (ItemBudget 3 gives it a share of 1.0): the reader reads the chest, and its random stat gives nothing until issue 665"
+  assert game_connection_support.written_ids(answered)
+    == [0x0569, 0x0933, 0x093A]
+    as "the move's frame, the look with the chest shown, and the properties the chest gives"
+  assert properties_written(taken: answered)
+    == [
+      [
+        entry(property: 7, number: 1017.0),
+        entry(property: 35, number: 207.5625),
+        entry(property: 42, number: 281.25),
+      ],
+    ]
+    as "the chest's own properties at power level 3: Base Health 225 and Armor 93.75 (GameFormula 67 and 547 give 60 and 20 for each level, ItemSlot 1's 1.25 and the armor category's 1.25) and Assault Rating 13.5, over the worn Novice set without a chest (450, 187.5, 194.0625) and CreatureLevel row 3's Base Health 342.09"
   let assert [moved, ..] = game_connection_support.written(answered)
   assert item_moved.decode(moved.body) == Ok(ItemMoved(item_guid: 9, place: 0))
     as "opcode.0x569: guid 9 at location 0, bag index 0, which is 0"

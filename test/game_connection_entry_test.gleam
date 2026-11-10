@@ -39,7 +39,7 @@ import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
-import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/message/unit_stat_float.{UnitStatFloat}
 import genesis_prime/message/unit_stat_value
@@ -167,6 +167,11 @@ pub fn message_0xad_carries_the_saved_world_and_position_and_0_in_its_last_two_f
     as "opcode.0xad: World 3460 and the position of WorldLocation2 row 51596 as 32-bit floats (29.1286, -853.8716 and -560.1880 are 0x41E9075F, 0xC45577C8 and 0xC40C0C08); the fourth and fifth floats are never read, 0.0 (opcode.0xad.last_floats)"
 }
 
+/// A 0x262 property at its UnitProperty2 defaultValue, 0.0.
+fn at_default(property_id: Int) -> UnitProperty {
+  UnitProperty(property_id:, base: 0, value: 0)
+}
+
 pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body_and_bones_its_class_resource_and_nothing_else_test() -> Nil {
   use <- owned_test.run(10_000)
   assert game_connection_support.player_in(game_connection_support.entered().1)
@@ -215,15 +220,42 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
             blends: 0,
           )),
         ],
+        // The 24 properties an item's budget may give (UnitProperty2 rows with flags
+        // bit 4 and a valuePerPoint, but ResourceMax_ and the gear's own eight) are
+        // listed at their defaultValue, 0, until a worn item gives them a value.
         properties: [
+          at_default(5),
+          at_default(6),
           UnitProperty(property_id: 7, base: 0x44380000, value: 0x44380000),
           // ResourceMax_1 (UnitProperty2.ResourceMax_0) at 100.0, the Engineer's
           // maximum (the design: Tenton Hammer's Engineer guide).
           UnitProperty(property_id: 10, base: 0x42C80000, value: 0x42C80000),
+          at_default(25),
+          at_default(29),
+          at_default(32),
+          at_default(33),
+          at_default(34),
           UnitProperty(property_id: 35, base: 0x434B1000, value: 0x434B1000),
           UnitProperty(property_id: 36, base: 0x425EC000, value: 0x425EC000),
+          at_default(37),
           UnitProperty(property_id: 41, base: 0x43E10000, value: 0x43E10000),
           UnitProperty(property_id: 42, base: 0x437A0000, value: 0x437A0000),
+          at_default(43),
+          at_default(47),
+          at_default(48),
+          at_default(49),
+          at_default(56),
+          at_default(57),
+          at_default(58),
+          at_default(59),
+          at_default(60),
+          at_default(61),
+          at_default(62),
+          at_default(63),
+          at_default(64),
+          at_default(168),
+          at_default(169),
+          at_default(170),
           UnitProperty(property_id: 175, base: 0x3F200000, value: 0x3F200000),
           UnitProperty(property_id: 176, base: 0x3E19999A, value: 0x3E19999A),
           UnitProperty(property_id: 178, base: 0x45A02800, value: 0x45A02800),

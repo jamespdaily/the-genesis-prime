@@ -333,3 +333,14 @@ Creature2	74784	an Exile mount display, whose row gives visibility prerequisite 
 Item2	85531	(a bag priced in credits in its buy columns, with no sell columns set)	item_price_test
 Item2	23318	(a tradeskill additive row with no currency columns, sellable)	item_price_test
 Creature2	74787	a unit beside the mounts whose row gives no visibility prerequisite	tutorial_visibility_wire_test
+Item2	1375	Scout's Thermal Gloves (ItemBudget 3, ItemStat 4: Critical Hit Rating, level 3)	item_property_test, gear_test
+Item2	8441	Unclean Carver (ItemBudget 8, ItemStat 20: Critical Hit Rating and Strikethrough rating, a weapon, level 20)	item_property_test
+Item2	1156	Bacchanal Probe (ItemBudget 6, ItemStat 51: Critical Hit Rating and Critical Severity, level 36)	item_property_test
+Item2	16397	(ItemStat 54: kind-1 entries on property 29 and on Strength, which is worth 0 per point)	item_property_test
+Item2	9965	(ItemStat 415: one random stat entry, kind 2)	item_property_test
+Item2	8829	(a shield whose ItemBudget 47 shares 0.5, 0, 0.75 and 0.75 on the shield properties)	item_property_test
+Item2	71653	(ItemStat 226: kind-1 entries on Rating Focus Recovery and Base Health)	gear_test
+Item2	447	(armor at power level 52, from the late armor curve)	item_property_test
+Item2	5312	(a PvP weapon, flags 0x8000)	item_property_test
+Item2	12654	(an imbued weapon, itemImbuementId 3)	item_property_test
+Item2	13394	(a level-scaled armor piece, flags bit 3)	item_property_test

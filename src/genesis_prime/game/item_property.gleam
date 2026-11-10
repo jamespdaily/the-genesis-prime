@@ -32,34 +32,57 @@
 ////   `m = power level - dataint0` (0x14041da70, 0x14041dc90, 0x14041e450). The
 ////   armor curve is GameFormula 547's below the power level GameFormula 1286
 ////   names (0x14041deb0).
-//// - **What the code does not read:** an item with a budget or a stat, a
-////   level-scaled item (Item2.flags bit 3), a PvP item (flags 0x8000), a proxy
-////   item (flags 0x4000, whose fields FillItemInfo 0x1404445d0 takes from
-////   GameFormula 1214's item), a supportPowerPercentage beyond -1 to 1 and an armor curve from power level
-////   50 up are items whose properties the client's code gives by branches this
-////   code does not follow, so such an item is an `Unread` error, which fails the
-////   load.
+//// - **A budget** is the points an item's ItemBudget shares among the entries of
+////   its ItemStat (AddItemBudgetProperties 0x14040ca70, which runs before the
+////   values above). Each entry of kind 1 names a UnitProperty2 and gives
+////   `share x scale x valuePerPoint`, with `scale` the budget curve at the power
+////   level (0x14041e670) times the slot's modifier (0x14040d060, 0x14040d3d0,
+////   0x14040db30). All of it is 32-bit float arithmetic, step by step, so it is
+////   worked out with `genesis_prime/message/float32`. A value adds onto the
+////   property's own: Base Health, Assault Rating, Support Rating and Armor are
+////   the fields above, every other property is in `budget`. On a shield the
+////   shares of properties 41, 175, 176 and 178 replace the 0.5 of their
+////   factors. An entry the client refuses (a property that is no item property,
+////   is off the item's slot, is a shield property on a non-shield) is
+////   `Refused`.
+//// - **What the code does not read** is a `Gap`: a level-scaled item
+////   (Item2.flags bit 3), a PvP item (flags 0x8000), an imbued item, a rune, a
+////   proxy item (flags 0x4000, whose fields FillItemInfo 0x1404445d0 takes from
+////   GameFormula 1214's item), a supportPowerPercentage beyond -1 to 1, an armor
+////   curve from power level 50 up, and a budget entry on a ResourceMax property
+////   are items whose properties the client's code gives by branches this code
+////   does not follow, so such an item is an `Unread` error, with its gap, which
+////   names the open issue that closes it. The random stat entries of an item
+////   (kinds 2 and 4) give nothing, since the server sends no roll: the open
+////   issue #665 closes that.
 
+import genesis_prime/message/float32
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
-  GameFormulaId, Item2CategoryId, Item2FamilyId, Item2Id, Item2TypeId,
-  ItemProficiencyId, ItemSlotId, ItemSpecialId, PrerequisiteId,
+  type UnitProperty2Id, GameFormulaId, Item2CategoryId, Item2FamilyId, Item2Id,
+  Item2TypeId, ItemBudgetId, ItemProficiencyId, ItemSlotId, ItemSpecialId,
+  ItemStatId, PrerequisiteId, UnitProperty2Id,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/item2_category
 import genesis_prime/table/item2_family
 import genesis_prime/table/item2_type
+import genesis_prime/table/item_budget
 import genesis_prime/table/item_proficiency
 import genesis_prime/table/item_slot
 import genesis_prime/table/item_special
+import genesis_prime/table/item_stat
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
+import genesis_prime/table/unit_property2
 import gleam/bool
+import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/string
 
 /// A shield item's properties: ShieldCapacityMax (property 41),
 /// ShieldMitigationMax (175), ShieldRegenPct (176) and ShieldRebootTime (178),
@@ -74,7 +97,8 @@ pub type Shield {
 }
 
 /// What an item, or a set of items, gives: Base Health (property 7), Assault
-/// Rating (35), Support Rating (36), Armor (42) and the shield.
+/// Rating (35), Support Rating (36), Armor (42), the shield, and every other
+/// property a budget gives, each with its value.
 pub type ItemProperties {
   ItemProperties(
     base_health: Float,
@@ -82,7 +106,57 @@ pub type ItemProperties {
     support_rating: Float,
     armor: Float,
     shield: Option(Shield),
+    budget: Dict(UnitProperty2Id, Float),
   )
+}
+
+/// A branch of the client's code that this code does not follow, so an item that
+/// takes it is not read. Each names the open issue that closes it, or none.
+pub type Gap {
+  /// Item2.flags bit 3: the power level scales with the wearer (0x14040f710).
+  /// Open issue #666.
+  LevelScaled
+  /// Item2.flags 0x8000. Open issue #56.
+  PvpItem
+  /// Item2.flags 0x4000: the client takes the item's fields from GameFormula
+  /// 1214's item (FillItemInfo 0x1404445d0). Open issue #333.
+  ProxyItem
+  /// Item2.itemImbuementId is not 0 (0x14040ce50, not decoded). Open issue #666.
+  Imbued
+  /// Item2Family 33: the budget curve is another (0x14041f1b0). Open issue #666.
+  Rune
+  /// An armor item from the power level GameFormula 1286 names: its armor curve
+  /// is GameFormula 1286's or 1287's. Open issue #666.
+  LateArmorCurve
+  /// A budget entry on a ResourceMax property. The player's class resource sets
+  /// that base (`genesis_prime/game/class_resource`), so nothing is open.
+  ResourceMaximum
+  /// A supportPowerPercentage beyond -1 to 1, which no client row holds.
+  SupportBeyondRange
+  /// An ItemStat entry of a kind other than 0, 1, 2 and 4, which no client row
+  /// holds.
+  StatKind(kind: Int)
+}
+
+/// The open issue that closes a gap, `None` when none is open.
+pub fn gap_issue(gap gap: Gap) -> Option(Int) {
+  case gap {
+    LevelScaled | Imbued | Rune | LateArmorCurve -> Some(666)
+    PvpItem -> Some(56)
+    ProxyItem -> Some(333)
+    ResourceMaximum | SupportBeyondRange | StatKind(..) -> None
+  }
+}
+
+/// Why the client refuses a budget entry (0x95 from 0x14040db30).
+pub type Refusal {
+  /// A shield property (41, 175, 176, 178) on an item that is no shield.
+  ShieldPropertyOnNonShield
+  /// A property whose UnitProperty2.flags lack 4, so it is no item property.
+  NotAnItemProperty
+  /// A property whose UnitProperty2.equippedSlotFlags share no bit with the
+  /// item's slot flags.
+  OffTheItemsSlot
 }
 
 /// Why an item's properties cannot be given.
@@ -91,7 +165,10 @@ pub type ItemPropertyError {
   NoRow(table: String, id: Int)
   /// An item whose properties the client's code gives by a branch this code does
   /// not follow (see the module's last point).
-  Unread(item2_id: Int, why: String)
+  Unread(item2_id: Int, gap: Gap)
+  /// An item whose budget has an entry the client refuses: the client then shows
+  /// the item with no budget properties at all.
+  Refused(item2_id: Int, property_id: Int, why: Refusal)
   /// A GameFormula row's curve has no value at the power level: a negative
   /// offset to a fractional power.
   NoCurveValue(formula: Int, level: Int)
@@ -106,14 +183,43 @@ pub fn describe(error error: ItemPropertyError) -> String {
   case error {
     NoRow(table:, id:) ->
       "the table " <> table <> " has no row " <> int.to_string(id)
-    Unread(item2_id:, why:) ->
-      "the item " <> int.to_string(item2_id) <> " is not read: " <> why
+    Unread(item2_id:, gap:) ->
+      "the item " <> int.to_string(item2_id) <> " is not read: " <> why(gap:)
+    Refused(item2_id:, property_id:, why:) ->
+      "the item "
+      <> int.to_string(item2_id)
+      <> " has a budget entry on property "
+      <> int.to_string(property_id)
+      <> " that the client refuses: "
+      <> case why {
+        ShieldPropertyOnNonShield -> "it is a shield property on a non-shield"
+        NotAnItemProperty -> "the property's flags lack 4"
+        OffTheItemsSlot -> "the property is for another slot than the item's"
+      }
     NoCurveValue(formula:, level:) ->
       "the curve of GameFormula "
       <> int.to_string(formula)
       <> " has no value at power level "
       <> int.to_string(level)
     TwoShields -> "a set holds two shield items"
+  }
+}
+
+fn why(gap gap: Gap) -> String {
+  case gap {
+    LevelScaled -> "its power level scales with the wearer"
+    PvpItem -> "it is a PvP item"
+    ProxyItem ->
+      "its flags hold 0x4000, so the client takes its fields from a proxy item"
+    Imbued -> "it is imbued"
+    Rune -> "it is a rune, whose budget curve is another"
+    LateArmorCurve ->
+      "its armor curve is GameFormula 1286's or 1287's, which are not followed"
+    ResourceMaximum ->
+      "its budget gives a ResourceMax property, whose base the player's class resource sets"
+    SupportBeyondRange -> "its supportPowerPercentage is beyond -1 to 1"
+    StatKind(kind:) ->
+      "its ItemStat has an entry of kind " <> int.to_string(kind)
   }
 }
 
@@ -125,12 +231,13 @@ fn none() -> ItemProperties {
     support_rating: 0.0,
     armor: 0.0,
     shield: None,
+    budget: dict.new(),
   )
 }
 
-/// The properties of the items together: each of the ratings, the armor and the
-/// health added, and the one shield an item gives, which is none when no item
-/// is a shield.
+/// The properties of the items together: each of the ratings, the armor, the
+/// health and the budget properties added, and the one shield an item gives, which
+/// is none when no item is a shield.
 pub fn sum(
   items items: List(ItemProperties),
 ) -> Result(ItemProperties, ItemPropertyError) {
@@ -147,6 +254,9 @@ pub fn sum(
     support_rating: float.sum(list.map(items, fn(item) { item.support_rating })),
     armor: float.sum(list.map(items, fn(item) { item.armor })),
     shield:,
+    budget: list.fold(items, dict.new(), fn(total, item) {
+      dict.combine(total, item.budget, fn(held, more) { held +. more })
+    }),
   ))
 }
 
@@ -208,8 +318,12 @@ const pvp_flag = 0x8000
 /// of GameFormula 1214 (FillItemInfo 0x1404445d0).
 const proxy_flag = 0x4000
 
-/// The Item2Family of an item the slot is never looked up for (0x14040c610).
+/// The Item2Family of an item the slot is never looked up for (0x14040c610): the
+/// runes, whose budget curve is another (0x14041f1b0).
 const family_without_slot = 33
+
+/// The Item2Family of runes.
+const rune_family = family_without_slot
 
 /// The Item2Category of an item the slot is never looked up for (0x14040c610).
 const category_without_slot = 143
@@ -353,24 +467,22 @@ fn builder(
   use slotting <- result.try(slotting(tables:, item2_id:))
   let item = slotting.item
   use <- bool.guard(
-    item.item_budget_id != 0 || item.item_stat_id != 0,
-    Error(Unread(item2_id:, why: "it has a budget or a stat")),
-  )
-  use <- bool.guard(
     int.bitwise_and(item.flags, level_scaled_flag) != 0,
-    Error(Unread(item2_id:, why: "its power level scales with the wearer")),
+    Error(Unread(item2_id:, gap: LevelScaled)),
   )
   use <- bool.guard(
     int.bitwise_and(item.flags, pvp_flag) != 0,
-    Error(Unread(item2_id:, why: "it is a PvP item")),
+    Error(Unread(item2_id:, gap: PvpItem)),
   )
   use <- bool.guard(
-    int.bitwise_and(item.flags, proxy_flag) != 0,
-    Error(Unread(
-      item2_id:,
-      why: "its flags hold 0x4000, so the client takes its fields from a proxy item",
-    )),
+    item.item_imbuement_id != 0,
+    Error(Unread(item2_id:, gap: Imbued)),
   )
+  use <- bool.guard(
+    item.item2_family_id == rune_family,
+    Error(Unread(item2_id:, gap: Rune)),
+  )
+  use <- bool.guard(is_proxy(item), Error(Unread(item2_id:, gap: ProxyItem)))
   Ok(Builder(
     item:,
     power_level: item.power_level,
@@ -496,6 +608,108 @@ pub fn equip_requirements(
 /// ItemSpecial row of each Item2 that names one (CheckEquipRequirements
 /// 0x1403b4710 reads all three; an id of 0 names none).
 pub fn requirements() -> List(table_store.Requirement) {
+  list.append(budget_requirements(), equip_requirement_rows())
+}
+
+/// The load's checks that the rows an item's budget reads exist: the ItemBudget
+/// and ItemStat rows of each Item2 that names one, and the UnitProperty2 row of
+/// each ItemStat entry of kind 1 (AddItemBudgetProperties 0x14040ca70 fails the
+/// whole branch without one; an id of 0 names none).
+fn budget_requirements() -> List(table_store.Requirement) {
+  [
+    table_store.Requirement(
+      from_table: "Item2",
+      column: "itemBudgetId",
+      to_table: "ItemBudget",
+      missing: fn(tables) {
+        item2.all(tables)
+        |> list.map(fn(item) { item.item_budget_id })
+        |> list.filter(fn(budget_id) {
+          budget_id != 0
+          && result.is_error(item_budget.get(
+            tables:,
+            id: ItemBudgetId(budget_id),
+          ))
+        })
+      },
+    ),
+    table_store.Requirement(
+      from_table: "Item2",
+      column: "itemStatId",
+      to_table: "ItemStat",
+      missing: fn(tables) {
+        item2.all(tables)
+        |> list.map(fn(item) { item.item_stat_id })
+        |> list.filter(fn(stat_id) {
+          stat_id != 0
+          && result.is_error(item_stat.get(tables:, id: ItemStatId(stat_id)))
+        })
+      },
+    ),
+    stat_property_requirement(
+      column: "itemStatData00",
+      entry: fn(stat: item_stat.ItemStat) {
+        #(stat.item_stat_type_enum00, stat.item_stat_data00)
+      },
+    ),
+    stat_property_requirement(
+      column: "itemStatData01",
+      entry: fn(stat: item_stat.ItemStat) {
+        #(stat.item_stat_type_enum01, stat.item_stat_data01)
+      },
+    ),
+    stat_property_requirement(
+      column: "itemStatData02",
+      entry: fn(stat: item_stat.ItemStat) {
+        #(stat.item_stat_type_enum02, stat.item_stat_data02)
+      },
+    ),
+    stat_property_requirement(
+      column: "itemStatData03",
+      entry: fn(stat: item_stat.ItemStat) {
+        #(stat.item_stat_type_enum03, stat.item_stat_data03)
+      },
+    ),
+    stat_property_requirement(
+      column: "itemStatData04",
+      entry: fn(stat: item_stat.ItemStat) {
+        #(stat.item_stat_type_enum04, stat.item_stat_data04)
+      },
+    ),
+  ]
+}
+
+/// The check that the UnitProperty2 row an ItemStat's entry names exists, for the
+/// entries of kind 1, the data of which is a property.
+fn stat_property_requirement(
+  column column: String,
+  entry entry: fn(item_stat.ItemStat) -> #(Int, Int),
+) -> table_store.Requirement {
+  table_store.Requirement(
+    from_table: "ItemStat",
+    column:,
+    to_table: "UnitProperty2",
+    missing: fn(tables) {
+      item_stat.all(tables)
+      |> list.map(entry)
+      |> list.filter_map(fn(pair) {
+        let #(kind, property_id) = pair
+        case
+          kind == 1
+          && result.is_error(unit_property2.get(
+            tables:,
+            id: UnitProperty2Id(property_id),
+          ))
+        {
+          True -> Ok(property_id)
+          False -> Error(Nil)
+        }
+      })
+    },
+  )
+}
+
+fn equip_requirement_rows() -> List(table_store.Requirement) {
   [
     table_store.Requirement(
       from_table: "Item2",
@@ -650,10 +864,291 @@ pub fn of_item(
   item2_id item2_id: Int,
 ) -> Result(ItemProperties, ItemPropertyError) {
   use builder <- result.try(builder(tables:, item2_id:))
-  case builder.is_shield {
-    True -> shield(tables:, builder:)
+  use given <- result.try(budget(tables:, builder:))
+  use properties <- result.map(case builder.is_shield {
+    True -> shield(tables:, builder:, shares: given.shares)
     False -> worn(tables:, builder:)
+  })
+  with_budget(properties:, values: given.values)
+}
+
+/// What an item's budget gives: the value of each property it gives, in the
+/// order of the entries, and the shares a shield's properties name.
+type Given {
+  Given(values: List(#(Int, Float)), shares: Dict(Int, Float))
+}
+
+/// The properties of a shield, which a budget's shares set and no value is given
+/// for (0x14040db30).
+const shield_properties = [
+  shield_capacity_property,
+  shield_mitigation_property,
+  shield_regen_property,
+  shield_reboot_property,
+]
+
+const shield_capacity_property = 41
+
+const shield_mitigation_property = 175
+
+const shield_regen_property = 176
+
+const shield_reboot_property = 178
+
+/// The properties an item's own formulas give, which a budget's value is added to
+/// or, for a shield's, which the shield gives: Base Health, Assault Rating,
+/// Support Rating, Armor and the four of a shield.
+const base_health_property = 7
+
+const assault_rating_property = 35
+
+const support_rating_property = 36
+
+const armor_property = 42
+
+/// UnitProperty2.flags bit 2: the property is one an item may give (0x14040db30).
+const item_property_flag = 4
+
+/// The prefix of the UnitProperty2.enumName of the resource maximums, whose base
+/// the player's class resource sets (`genesis_prime/game/class_resource`).
+const resource_maximum_prefix = "ResourceMax_"
+
+/// Whether a UnitProperty2 row is a property a budget gives that is in none of the
+/// fields above: an item property worth something per point, that is no resource
+/// maximum. The base of each is its default plus what the worn items give.
+fn is_budget_property(row row: unit_property2.UnitProperty2) -> Bool {
+  int.bitwise_and(row.flags, item_property_flag) != 0
+  && row.value_per_point != 0.0
+  && !string.starts_with(row.enum_name, resource_maximum_prefix)
+  && !list.contains(
+    [
+      base_health_property,
+      assault_rating_property,
+      support_rating_property,
+      armor_property,
+      ..shield_properties
+    ],
+    row.id,
+  )
+}
+
+/// The properties a budget may give that no field above holds, in id order.
+pub fn budget_properties(
+  tables tables: table_store.Tables,
+) -> List(UnitProperty2Id) {
+  unit_property2.all(tables)
+  |> list.filter(fn(row) { is_budget_property(row:) })
+  |> list.map(unit_property2.id)
+}
+
+/// The value each entry of the item's budget gives, and the shares of a shield's
+/// properties: the points of the ItemBudget row's share times the scale, times the
+/// property's valuePerPoint, in 32-bit steps (AddItemBudgetProperties 0x14040ca70,
+/// 0x14040d060, 0x14040d3d0, 0x14040db30). An item with no ItemStat gives nothing.
+fn budget(
+  tables tables: table_store.Tables,
+  builder builder: Builder,
+) -> Result(Given, ItemPropertyError) {
+  let item = builder.item
+  use stat <- result.try(case item.item_stat_id {
+    0 -> Ok(None)
+    stat_id ->
+      item_stat.get(tables:, id: ItemStatId(stat_id))
+      |> result.replace_error(NoRow(table: "ItemStat", id: stat_id))
+      |> result.map(Some)
+  })
+  use shares <- result.try(case item.item_budget_id {
+    0 -> Ok([0.0, 0.0, 0.0, 0.0, 0.0])
+    budget_id ->
+      item_budget.get(tables:, id: ItemBudgetId(budget_id))
+      |> result.replace_error(NoRow(table: "ItemBudget", id: budget_id))
+      |> result.map(fn(row) {
+        [
+          row.budget00,
+          row.budget01,
+          row.budget02,
+          row.budget03,
+          row.budget04,
+        ]
+      })
+  })
+  let none = Given(values: [], shares: dict.new())
+  case stat {
+    None -> Ok(none)
+    Some(stat) -> {
+      use scale <- result.try(scale(tables:, builder:))
+      list.try_fold(entries(stat:, shares:), none, fn(given, entry) {
+        give_entry(tables:, builder:, scale:, given:, entry:)
+      })
+      |> result.map(fn(given) {
+        Given(..given, values: list.reverse(given.values))
+      })
+    }
   }
+}
+
+/// The entries of an ItemStat: each kind, property and share of the ItemBudget.
+fn entries(
+  stat stat: item_stat.ItemStat,
+  shares shares: List(Float),
+) -> List(#(Int, Int, Float)) {
+  let kinds = [
+    stat.item_stat_type_enum00,
+    stat.item_stat_type_enum01,
+    stat.item_stat_type_enum02,
+    stat.item_stat_type_enum03,
+    stat.item_stat_type_enum04,
+  ]
+  let data = [
+    stat.item_stat_data00,
+    stat.item_stat_data01,
+    stat.item_stat_data02,
+    stat.item_stat_data03,
+    stat.item_stat_data04,
+  ]
+  list.zip(kinds, list.zip(data, shares))
+  |> list.map(fn(entry) { #(entry.0, entry.1.0, entry.1.1) })
+}
+
+/// What one ItemStat entry adds to what the earlier ones gave (0x14040e6d0).
+fn give_entry(
+  tables tables: table_store.Tables,
+  builder builder: Builder,
+  scale scale: Float,
+  given given: Given,
+  entry entry: #(Int, Int, Float),
+) -> Result(Given, ItemPropertyError) {
+  let #(kind, property_id, share) = entry
+  case kind {
+    // None.
+    0 -> Ok(given)
+    // A random stat group and a random property: the server sends no roll, so
+    // the entry is none (open issue #665).
+    2 | 4 -> Ok(given)
+    // A property.
+    1 ->
+      entry_gives(tables:, builder:, scale:, property_id:, share:)
+      |> result.map(fn(gives) { add_entry(given:, property_id:, gives:) })
+    _ -> Error(Unread(item2_id: builder.item.id, gap: StatKind(kind:)))
+  }
+}
+
+/// What one entry gives.
+type EntryGives {
+  /// A shield property: the share the shield reads.
+  ShieldShare(share: Float)
+  /// A property worth something: its value.
+  Value(Float)
+  /// A property worth 0, which the client adds no entry for.
+  Nothing
+}
+
+fn add_entry(
+  given given: Given,
+  property_id property_id: Int,
+  gives gives: EntryGives,
+) -> Given {
+  case gives {
+    ShieldShare(share:) ->
+      Given(..given, shares: dict.insert(given.shares, property_id, share))
+    Value(value) ->
+      Given(..given, values: [#(property_id, value), ..given.values])
+    Nothing -> given
+  }
+}
+
+/// The budget's scale: its curve at the power level times the slot's
+/// armorModifier times the factor, which is 1 for an item built from its record
+/// (0x14040d060).
+fn scale(
+  tables tables: table_store.Tables,
+  builder builder: Builder,
+) -> Result(Float, ItemPropertyError) {
+  use curve <- result.map(budget_curve(tables:, level: builder.power_level))
+  float32.product(float32.product(curve, builder.slot_modifier), 1.0)
+}
+
+/// What one kind-1 entry gives, or why the client refuses it (0x14040db30, 0x95).
+fn entry_gives(
+  tables tables: table_store.Tables,
+  builder builder: Builder,
+  scale scale: Float,
+  property_id property_id: Int,
+  share share: Float,
+) -> Result(EntryGives, ItemPropertyError) {
+  let item2_id = builder.item.id
+  let refused = fn(why) { Error(Refused(item2_id:, property_id:, why:)) }
+  use <- bool.lazy_guard(list.contains(shield_properties, property_id), fn() {
+    case builder.is_shield {
+      True -> Ok(ShieldShare(share:))
+      False -> refused(ShieldPropertyOnNonShield)
+    }
+  })
+  use row <- result.try(
+    unit_property2.get(tables:, id: UnitProperty2Id(property_id))
+    |> result.replace_error(NoRow(table: "UnitProperty2", id: property_id)),
+  )
+  use <- bool.guard(
+    int.bitwise_and(row.flags, item_property_flag) == 0,
+    refused(NotAnItemProperty),
+  )
+  use <- bool.guard(
+    row.equipped_slot_flags != 0
+      && int.bitwise_and(row.equipped_slot_flags, builder.equipped_slot_flags)
+      == 0,
+    refused(OffTheItemsSlot),
+  )
+  use <- bool.guard(
+    string.starts_with(row.enum_name, resource_maximum_prefix),
+    Error(Unread(item2_id:, gap: ResourceMaximum)),
+  )
+  let points = float32.product(share, scale)
+  case float32.product(float32.product(points, 1.0), row.value_per_point) {
+    0.0 -> Ok(Nothing)
+    value -> Ok(Value(value))
+  }
+}
+
+/// The properties with the budget's values added: onto an item's own Base Health,
+/// ratings and armor in 32 bits as the client's entry adds (0x14040db30), and into
+/// `budget` for every other property.
+fn with_budget(
+  properties properties: ItemProperties,
+  values values: List(#(Int, Float)),
+) -> ItemProperties {
+  list.fold(values, properties, fn(properties, entry) {
+    let #(property_id, value) = entry
+    let add = fn(own) { float32.sum(value, float32.rounded(own)) }
+    case property_id {
+      7 ->
+        ItemProperties(..properties, base_health: add(properties.base_health))
+      35 ->
+        ItemProperties(
+          ..properties,
+          assault_rating: add(properties.assault_rating),
+        )
+      36 ->
+        ItemProperties(
+          ..properties,
+          support_rating: add(properties.support_rating),
+        )
+      42 -> ItemProperties(..properties, armor: add(properties.armor))
+      _ ->
+        ItemProperties(
+          ..properties,
+          budget: dict.upsert(
+            properties.budget,
+            UnitProperty2Id(property_id),
+            fn(held) {
+              case held {
+                Some(held) -> float32.sum(held, value)
+                None -> value
+              }
+            },
+          ),
+        )
+    }
+  })
 }
 
 /// An armor piece's or a weapon's properties: ratings, armor and health.
@@ -692,6 +1187,7 @@ fn worn(
     support_rating:,
     armor:,
     shield: None,
+    budget: dict.new(),
   ))
 }
 
@@ -754,6 +1250,42 @@ pub fn curve(
   )
 }
 
+/// The GameFormula rows of the budget's curve by power level: 1255 from its
+/// dataint0 (130), 1027 from its dataint0 (50), 1028 below (0x14041e670). Each is read
+/// at the level less its own dataint0.
+const budget_curve_late_formula = 1255
+
+const budget_curve_middle_formula = 1027
+
+const budget_curve_early_formula = 1028
+
+/// The budget's curve at a power level (0x14041e670): `f0 x e^(f01 x m) + f02 x
+/// m^f03` of the row the level selects, at `m = level - dataint0`, with each step
+/// rounded to 32 bits as the client's single-precision arithmetic gives.
+fn budget_curve(
+  tables tables: table_store.Tables,
+  level level: Int,
+) -> Result(Float, ItemPropertyError) {
+  use late <- result.try(formula(tables:, id: budget_curve_late_formula))
+  use middle <- result.try(formula(tables:, id: budget_curve_middle_formula))
+  use row <- result.try(case level >= late.dataint0, level >= middle.dataint0 {
+    True, _ -> Ok(late)
+    False, True -> Ok(middle)
+    False, False -> formula(tables:, id: budget_curve_early_formula)
+  })
+  let offset = int.to_float(level - row.dataint0)
+  use power <- result.map(
+    float.power(offset, row.datafloat03)
+    |> result.replace_error(NoCurveValue(formula: row.id, level:)),
+  )
+  let growth =
+    float32.rounded(float.exponential(float32.product(row.datafloat01, offset)))
+  float32.sum(
+    float32.product(row.datafloat0, growth),
+    float32.product(row.datafloat02, float32.rounded(power)),
+  )
+}
+
 /// The Assault Rating and Support Rating of an item (0x14040df10).
 fn ratings(
   tables tables: table_store.Tables,
@@ -763,10 +1295,7 @@ fn ratings(
   let support = item.support_power_percentage
   use <- bool.guard(
     support <. -1.0 || support >. 1.0,
-    Error(Unread(
-      item2_id: item.id,
-      why: "its supportPowerPercentage is beyond -1 to 1",
-    )),
+    Error(Unread(item2_id: item.id, gap: SupportBeyondRange)),
   )
   use curve_row <- result.try(
     formula(tables:, id: case item.item2_family_id == weapon_family {
@@ -795,22 +1324,24 @@ fn armor(
   use change <- result.try(formula(tables:, id: armor_curve_change_formula))
   use <- bool.guard(
     builder.power_level >= change.dataint0,
-    Error(Unread(
-      item2_id: builder.item.id,
-      why: "its armor curve is GameFormula 1286's or 1287's, which are not followed",
-    )),
+    Error(Unread(item2_id: builder.item.id, gap: LateArmorCurve)),
   )
   use row <- result.try(formula(tables:, id: armor_formula))
   use curve <- result.try(curve(row:, level: builder.power_level))
   Ok(curve *. builder.armor_modifier)
 }
 
-/// A shield item's properties (0x14040dbf0), each factor read at 0.5, the
-/// middle of its range, which is what an item with no budget gets.
+/// A shield item's properties (0x14040dbf0), each factor read at the share its
+/// budget gives the property, or 0.5, the middle of its range, when the budget
+/// gives it none.
 fn shield(
   tables tables: table_store.Tables,
   builder builder: Builder,
+  shares shares: Dict(Int, Float),
 ) -> Result(ItemProperties, ItemPropertyError) {
+  let share = fn(property_id) {
+    result.unwrap(dict.get(shares, property_id), 0.5)
+  }
   use capacity_row <- result.try(formula(tables:, id: shield_capacity_formula))
   use capacity_curve <- result.try(curve(
     row: capacity_row,
@@ -823,36 +1354,52 @@ fn shield(
       ..none(),
       shield: Some(Shield(
         capacity_max: capacity_curve
-          *. between(low: factors.datafloat0, high: factors.datafloat01),
+          *. between(
+          low: factors.datafloat0,
+          high: factors.datafloat01,
+          share: share(shield_capacity_property),
+        ),
         mitigation_max: between(
           low: reboot.datafloat0,
           high: reboot.datafloat01,
+          share: share(shield_mitigation_property),
         ),
         regen_percent: between(
           low: factors.datafloat02,
           high: factors.datafloat03,
+          share: share(shield_regen_property),
         ),
         reboot_time_ms: whole_number_between(
           first: reboot.dataint0,
           second: reboot.dataint01,
+          share: share(shield_reboot_property),
         ),
       )),
     ),
   )
 }
 
-/// The value halfway between two, floored at 0 (0x14041d420).
-fn between(low low: Float, high high: Float) -> Float {
-  float.max(0.0, low +. { high -. low } *. 0.5)
+/// The value a share of the way from `low` to `high`, floored at 0 (0x14041d420).
+fn between(low low: Float, high high: Float, share share: Float) -> Float {
+  float.max(0.0, low +. { high -. low } *. share)
 }
 
-/// The whole number halfway between two bounds, as the client cuts it: with the
-/// bounds put low to high, `low + (high - low) x 0.5 + 0.00001` (0x14041fac0,
-/// for a fraction of 0.5, which the swap of the bounds leaves at 0.5).
-fn whole_number_between(first first: Int, second second: Int) -> Int {
+/// The whole number a share of the way between two bounds, as the client cuts it:
+/// with the bounds put low to high, `low + (high - low) x share + 0.00001`
+/// truncated, the share taken from the high end when the first bound is above the
+/// second (0x14041fac0).
+fn whole_number_between(
+  first first: Int,
+  second second: Int,
+  share share: Float,
+) -> Int {
   let low = int.min(first, second)
   let high = int.max(first, second)
+  let share = case first > second {
+    True -> 1.0 -. share
+    False -> share
+  }
   float.truncate(
-    int.to_float(low) +. int.to_float(high - low) *. 0.5 +. 0.00001,
+    int.to_float(low) +. int.to_float(high - low) *. share +. 0.00001,
   )
 }
