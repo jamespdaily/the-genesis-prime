@@ -41,6 +41,7 @@ import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/migration
 import genesis_prime/readiness
 import genesis_prime/server
+import genesis_prime/service/shell as service_shell
 import genesis_prime/sitting
 import genesis_prime/step
 import genesis_prime/step/runtime
@@ -369,6 +370,7 @@ fn world(spawns: store.Key) -> server.World {
     idle_stop_ms: 60_000,
     sweep_ms: 10_000,
     spawns:,
+    service_time: service_shell.real_time(),
   )
 }
 

@@ -25,6 +25,7 @@ import event_wait
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/server
 import genesis_prime/service
+import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{type Address, Connection, ConnectionId}
 import genesis_prime/store.{type Character}
 import genesis_prime/world_map/creature_registry
@@ -70,6 +71,7 @@ fn start_world() -> World {
       idle_stop_ms: 60_000,
       sweep_ms: 10_000,
       spawns: spawn_support.key_without_spawns(),
+      service_time: service_shell.real_time(),
     )
   let tree =
     supervisor.new(supervisor.RestForOne)

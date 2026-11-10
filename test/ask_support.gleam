@@ -430,6 +430,7 @@ fn gate_settings(
     reach:,
     shutdown_ms:,
     found_at: None,
+    time: service_shell.real_time(),
   )
 }
 

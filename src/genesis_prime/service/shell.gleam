@@ -99,8 +99,9 @@
 ////   and takes `CreatureNotStarted(watch, reason)` as the next input once the
 ////   step's effects are carried out, in the order named, before any
 ////   `WatchEnded` the step's watches held to end give.
-//// - **Timers.** `StartServiceTimer(id, ms)` starts the operating system's timer
-////   (`script.operating_system_timer`), kept under `id` with the reference its
+//// - **Timers.** `StartServiceTimer(id, ms)` starts a timer on the service's
+////   scheduler (`Settings.time`; the operating system's timer, `script.operating_system_timer`,
+////   for a server), kept under `id` with the reference its
 ////   firing carries (genesis_prime/step/timer); the firing comes back once as
 ////   `ServiceTimerFired(id)`, and the shell forgets the timer. `CancelServiceTimer(id)`
 ////   cancels it, so no firing follows: a firing whose reference is not the
@@ -118,15 +119,16 @@
 ////   has no values, so no rule can build a step that ends in one; the shell's
 ////   case for such a step is unreachable.
 
-import genesis_prime/connection/script.{type Elapsed}
+import genesis_prime/connection/script.{type Elapsed, type Scheduler}
 import genesis_prime/group_registry.{type Scope}
 import genesis_prime/service.{type Call, type Reach, Call, TellCall}
 import genesis_prime/step.{
-  type Address, type CreatureStart, type Effect, type Event, type ServiceEffect,
-  type ServiceEvent, type ServiceRule, type TimerId, type WatchId, Asked,
-  CallerId, CancelServiceTimer, CreatureNotStarted, Effects, EffectsThenAsk,
-  Input, LogError, OwnEffect, OwnEvent, Reply, Send, ServiceTimerFired,
-  StartCreature, StartServiceTimer, Started, Stopping, Told, WatchEnded,
+  type Address, type CreatureStart, type Effect, type Event, type Now,
+  type ServiceEffect, type ServiceEvent, type ServiceRule, type TimerId,
+  type WatchId, Asked, CallerId, CancelServiceTimer, CreatureNotStarted, Effects,
+  EffectsThenAsk, Input, LogError, OwnEffect, OwnEvent, Reply, Send,
+  ServiceTimerFired, StartCreature, StartServiceTimer, Started, Stopping, Told,
+  WatchEnded,
 }
 import genesis_prime/step/runtime.{Shutdown}
 import genesis_prime/step/timer as timer_book
@@ -140,6 +142,19 @@ import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
+
+/// The clock a service's inputs take their `Now` from and the scheduler its
+/// timers start on. A server's is `real_time()`; a whole-server test gives the
+/// service the driven clock's (`driven_time.service_time`), so a timer fires
+/// only when the test advances the clock.
+pub type ServiceTime {
+  ServiceTime(clock: fn() -> Now, schedule: Scheduler)
+}
+
+/// The node's own clock and the operating system's timer.
+pub fn real_time() -> ServiceTime {
+  ServiceTime(clock: runtime.now, schedule: script.operating_system_timer)
+}
 
 /// What a service is started with.
 pub type Settings(settings, state, message, outgoing) {
@@ -155,6 +170,8 @@ pub type Settings(settings, state, message, outgoing) {
     /// The address it is found at and the scope it is told through there, or
     /// `None` for a service told only by its subject.
     found_at: Option(FoundAt(message, outgoing)),
+    /// Where it reads the time of each input and starts its timers.
+    time: ServiceTime,
   )
 }
 
@@ -296,7 +313,7 @@ fn initialise(
         elapsed:,
         unstarted: [],
       ),
-      now: runtime.now(),
+      now: settings.time.clock(),
       event: OwnEvent(Started),
     )
   let selector =
@@ -336,14 +353,14 @@ fn handle(
         )
       actor.continue(take(
         running:,
-        now: runtime.now(),
+        now: running.settings.time.clock(),
         event: OwnEvent(Asked(caller: CallerId(number), message:)),
       ))
     }
     Called(TellCall(message:)) ->
       actor.continue(take(
         running:,
-        now: runtime.now(),
+        now: running.settings.time.clock(),
         event: OwnEvent(Told(message:)),
       ))
     TimerElapsed(timer:, reference:) ->
@@ -351,7 +368,7 @@ fn handle(
         Ok(timers) ->
           actor.continue(take(
             running: Running(..running, timers:),
-            now: runtime.now(),
+            now: running.settings.time.clock(),
             event: OwnEvent(ServiceTimerFired(timer:)),
           ))
         Error(Nil) -> actor.continue(running)
@@ -364,7 +381,7 @@ fn handle(
     Exited(exit:) ->
       case exit.pid == running.parent {
         True -> {
-          let now = runtime.now()
+          let now = running.settings.time.clock()
           actor.continue(take(
             running:,
             now:,
@@ -400,7 +417,7 @@ fn take(
     [#(watch, reason), ..later] ->
       take(
         running: Running(..running, unstarted: later),
-        now: runtime.now(),
+        now: running.settings.time.clock(),
         event: OwnEvent(CreatureNotStarted(watch:, reason:)),
       )
     [] ->
@@ -408,7 +425,7 @@ fn take(
         Ok(#(watch, watches)) ->
           take(
             running: Running(..running, watches:),
-            now: runtime.now(),
+            now: running.settings.time.clock(),
             event: WatchEnded(watch:),
           )
         Error(Nil) -> running
@@ -511,11 +528,11 @@ fn start_timer(
 ) -> Running(settings, state, message, outgoing) {
   let started =
     timer_book.start(timers: running.timers, timer:, schedule: fn(reference) {
-      script.operating_system_timer(
-        subject: running.elapsed,
-        timer:,
-        reference:,
-        after_ms:,
+      running.settings.time.schedule(
+        running.elapsed,
+        timer,
+        reference,
+        after_ms,
       )
     })
   case started {
@@ -599,7 +616,7 @@ fn watch_ended(
     Ok(#(watch, watches)) ->
       take(
         running: Running(..running, watches:),
-        now: runtime.now(),
+        now: running.settings.time.clock(),
         event: WatchEnded(watch:),
       )
     Error(Nil) -> running

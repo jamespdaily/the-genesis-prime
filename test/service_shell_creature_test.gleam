@@ -26,7 +26,7 @@ import owned_test
 
 /// The creature the gate is asked to start: unit 7 of the first run of World
 /// 3460, standing at spawn 1.
-fn a_creature() -> step.CreatureStart {
+pub fn a_creature() -> step.CreatureStart {
   CreatureStart(
     map: MapId(world_id: 3460, instance: 0),
     incarnation: 1,
@@ -39,7 +39,7 @@ fn a_creature() -> step.CreatureStart {
 }
 
 /// The address `a_creature` is found at.
-fn a_creatures_address() -> Address {
+pub fn a_creatures_address() -> Address {
   Creature(
     map: MapId(world_id: 3460, instance: 0),
     incarnation: 1,
