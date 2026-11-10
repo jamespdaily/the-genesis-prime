@@ -52,6 +52,7 @@ import genesis_prime/message/unit_create_player.{
 }
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stealth
+import genesis_prime/message/vendor_buyback.{VendorBuyback}
 import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/vendor_sale.{VendorSale}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
@@ -763,15 +764,26 @@ pub fn in_world_stocking_holding(
   credits credits: Int,
   items items: List(store.HeldItem),
 ) -> game_connection.State {
+  entered_stocking_holding(
+    in_character_select: in_select_from(
+      accepted(Settings(..settings(), vendors:)).0,
+    ),
+    credits:,
+    items:,
+  )
+}
+
+/// `in_character_select` after the store gave its Exile `credits` credits and, besides the
+/// Novice set, these `items`, and the map took it: the burst is written, and the vendors are
+/// those of the connection's settings.
+pub fn entered_stocking_holding(
+  in_character_select in_character_select: game_connection.State,
+  credits credits: Int,
+  items items: List(store.HeldItem),
+) -> game_connection.State {
   let character =
     Character(..world_character(), faction_id: spawn.exile_faction)
-  let #(state, taken) =
-    playing_from(
-      in_character_select: in_select_from(
-        accepted(Settings(..settings(), vendors:)).0,
-      ),
-      character_id: 42,
-    )
+  let #(state, taken) = playing_from(in_character_select:, character_id: 42)
   let #(state, taken) =
     answer(
       state:,
@@ -806,6 +818,17 @@ pub fn purchase_requested(
     vendor_purchase.encode(VendorPurchase(unique_id:, quantity:))
     as "a unique id and a quantity of 32 bits fit the message"
   read(state:, bytes: world_message(message_id: 0x00BE, body:))
+}
+
+/// The client's 0x00BB for the buyback entry with this id (`vendor_purchase`), read by the
+/// connection in the world.
+pub fn buyback_requested(
+  state state: game_connection.State,
+  buyback_id buyback_id: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let assert Ok(body) = vendor_buyback.encode(VendorBuyback(buyback_id:))
+    as "a buyback id of 32 bits fits the message"
+  read(state:, bytes: world_message(message_id: 0x00BB, body:))
 }
 
 /// The client's 0x0166 for `quantity` of the stack at a place (`vendor_sale`), read by the
@@ -1230,9 +1253,17 @@ pub fn for_stay(
 pub fn in_second_stay(
   event: Event(ConnectionEvent(Message, Answer)),
 ) -> Event(ConnectionEvent(Message, Answer)) {
+  in_stay(count: 2, event:)
+}
+
+/// The same message as `event`, for the player's `count`th stay.
+pub fn in_stay(
+  count count: Int,
+  event event: Event(ConnectionEvent(Message, Answer)),
+) -> Event(ConnectionEvent(Message, Answer)) {
   let assert OwnEvent(Woken(ForStay(sent:, ..))) = event
     as "a message for a stay"
-  for_stay(stay: map_support.stay(count: 2), sent:)
+  for_stay(stay: map_support.stay(count:), sent:)
 }
 
 /// A notice of the map to the connection, for the tests' player's first stay.

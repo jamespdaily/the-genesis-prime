@@ -582,6 +582,7 @@ fn routed(
     | Ok(routing.Quest(..))
     | Ok(routing.Inventory(..))
     | Ok(routing.VendorPurchase)
+    | Ok(routing.VendorBuyback)
     | Ok(routing.VendorSale)
     | Ok(routing.VendorSellJunk) ->
       connection_state.misrouted(session:, now:, inner:)
@@ -767,6 +768,14 @@ fn world_carried(
                   )
                 Ok(routing.VendorPurchase) ->
                   connection_vendor_purchase.purchase_message(
+                    session:,
+                    now:,
+                    holder:,
+                    entered:,
+                    inner: whole,
+                  )
+                Ok(routing.VendorBuyback) ->
+                  connection_vendor_purchase.buy_back_message(
                     session:,
                     now:,
                     holder:,

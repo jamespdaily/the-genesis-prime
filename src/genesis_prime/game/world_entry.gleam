@@ -243,7 +243,11 @@ pub opaque type State {
   /// are the items the character holds, which the Holocrypt's join keeps from the
   /// stay it leaves. `quests` is the quest log the character holds
   /// (genesis_prime/game/quest_log), which the Holocrypt's join keeps from the
-  /// stay it leaves as well. `hidden` is the visibility prerequisites of the world
+  /// stay it leaves as well. `buyback` is the list the player has to buy back
+  /// (genesis_prime/game/vendor_sale): a play starts it empty and the Holocrypt's join
+  /// keeps the stay's own, as the client keeps its Buyback tab across the world
+  /// change (only a 0xBC replaces it).
+  /// `hidden` is the visibility prerequisites of the world
   /// that fail for the character as it enters (genesis_prime/game/visibility
   /// `hidden_at_entry`), which the Join names and the connection then holds.
   Joining(
@@ -255,6 +259,7 @@ pub opaque type State {
     items: List(store.HeldItem),
     currencies: Currencies,
     quests: QuestLog,
+    buyback: Buyback,
     map: MapId,
     stay: Stay,
     entry: Entry,
@@ -343,8 +348,9 @@ pub type Entered {
     /// join of a world has none.
     vendor: Option(vendor.Opened),
     /// What the character has sold to vendors since it entered, which the vendor
-    /// window lists to buy back (genesis_prime/game/vendor_sale): a join of a world
-    /// has none, and the list is lost with the connection.
+    /// window lists to buy back (genesis_prime/game/vendor_sale): a play starts with
+    /// none and the Holocrypt's join keeps it (`Joining`); the list is lost with the
+    /// connection, as the character's next play starts it empty.
     buyback: Buyback,
     /// The character's experience: the saved one, or the least of its level when
     /// none was saved (`experience.entering`). The connection adds each kill's
@@ -634,6 +640,7 @@ fn joining_a_play(
           items:,
           currencies:,
           quests:,
+          buyback: Buyback(next_id: 1, entries: []),
           connection:,
           stay:,
           entry: PlayEntry(character_state: frame),
@@ -670,6 +677,7 @@ pub fn joined(
       items:,
       currencies:,
       quests:,
+      buyback:,
       map:,
       stay:,
       entry:,
@@ -738,7 +746,7 @@ pub fn joined(
               items:,
               currencies:,
               vendor: None,
-              buyback: Buyback(next_id: 1, entries: []),
+              buyback:,
               experience:,
               quests:,
               gear: worn,
@@ -928,6 +936,7 @@ pub fn rejoining(
     items: entered.items,
     currencies: entered.currencies,
     quests: entered.quests,
+    buyback: entered.buyback,
     connection:,
     stay:,
     entry: HolocryptEntry,
@@ -949,6 +958,7 @@ fn joining(
   items items: List(store.HeldItem),
   currencies currencies: Currencies,
   quests quests: QuestLog,
+  buyback buyback: Buyback,
   connection connection: ConnectionId,
   stay stay: Stay,
   entry entry: Entry,
@@ -976,6 +986,7 @@ fn joining(
       items:,
       currencies:,
       quests:,
+      buyback:,
       map:,
       stay:,
       entry:,

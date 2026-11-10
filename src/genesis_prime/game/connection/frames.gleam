@@ -10,6 +10,7 @@ import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor.{type Vendor}
+import genesis_prime/game/vendor_sale
 import genesis_prime/game/world_entry
 import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/combat_log.{CombatLog}
@@ -612,13 +613,16 @@ fn vendor_items_message(message: VendorItems) -> Frame {
   Frame(message_id: vendor_items.message_id, body:)
 }
 
-/// 0xbc with no entries, which the client's vendor window reads after the stock
-/// (`opcode.0xbc`). Gap: a window opened after a sale still shows no buyback entries,
-/// though the sale's 0xba added them to the one open; the held list on opening is the
-/// open issue #651.
-pub fn buyback_list_empty_frame() -> Frame {
-  let assert Ok(body) = buyback_list.encode(BuybackList(entries: []))
-    as "an empty list fits its 32-bit count"
+/// 0xbc with the player's whole buyback list, oldest first, which the client's vendor window
+/// reads after the stock and which replaces the list the client holds (`opcode.0xbc`).
+pub fn buyback_list_frame(
+  entries entries: List(world_entry.BuybackEntry),
+) -> Frame {
+  let assert Ok(body) =
+    buyback_list.encode(
+      BuybackList(entries: list.map(entries, vendor_sale.buyback_entry_message)),
+    )
+    as "a list of held entries fits its 32-bit count"
   Frame(message_id: buyback_list.message_id, body:)
 }
 

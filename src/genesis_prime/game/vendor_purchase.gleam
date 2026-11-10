@@ -1,6 +1,7 @@
-//// The player's buy from the open vendor: the client's 0x00BE, a feature of the game
-//// connection's rule (genesis_prime/game/connection) taken from inside 0x038C with the
-//// player in the world. The sequence is genesis_prime/game/connection/vendor_purchase's.
+//// The player's buy from the open vendor, the client's 0x00BE, and buy back of an entry of
+//// their buyback list, the client's 0x00BB: features of the game connection's rule
+//// (genesis_prime/game/connection) taken from inside 0x038C with the player in the world.
+//// The sequence is genesis_prime/game/connection/vendor_purchase's.
 ////
 //// ```
 //// 0x00BE {unique id, quantity} ─▶ take(body, items, currencies, opened, ...)
@@ -48,10 +49,17 @@
 //// - **The answer's frames**: 0x919 kind 0 with the new total, then 0x111 for each new stack
 ////   and 0x17F for each grown stack, with the reason 7 (Vendor), which makes the client show
 ////   "Bought <item>" (Vendor.lua OnItemAdded l.733, `ktVendorRespondEvent`).
+//// - **The buy back, 0x00BB {buyback id}**, is taken under the conditions of 0xBE
+////   (`opcode.0xbb`), so checks 1 to 4, 7 and 8 and their codes are the buy's. The entry is
+////   one of the player's buyback list (`world_entry.Buyback`), not of a vendor's stock: an id
+////   the list does not hold is 14 Vendor_UnknownItem, and the entry's Item2 is returned for
+////   the credits the sale paid, at whichever vendor is open. The answer is the buy's, with
+////   the reason 16 (Item.CodeEnumItemUpdateReason Buyback) and then a 0xBD naming the entry,
+////   which leaves the list; an answer that saved nothing leaves the list as it was.
 //// - **Gaps, each left to the vendor system** (#333): the control states (60, 61), the
 ////   prerequisites (15), Item_Unique (30) and sold out (13) are not checked. No stock row has
 ////   a prerequisite or a stock limit (0x90B sends 0 for both), and the held-unique rule is not
-////   read. Selling, buyback, other currencies and the credit cap are #333's.
+////   read. Other currencies and the credit cap are #333's.
 ////
 //// | Point | What happens |
 //// |---|---|
@@ -60,6 +68,7 @@
 //// | the connection ends while the store works | the store finishes or rolls back; the next login loads whichever |
 
 import genesis_prime/client_connection
+import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
@@ -70,10 +79,13 @@ import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game/vendor_trade.{
   type Effect, type Refusal, NoItemRow, NotDecoded, Refuse, Send,
 }
+import genesis_prime/game/world_entry.{type Buyback, Buyback}
+import genesis_prime/message/buyback_removed
+import genesis_prime/message/vendor_buyback
 import genesis_prime/message/vendor_purchase as vendor_purchase_message
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
-  type SessionEpoch, Bought, HeldItem, ItemsNotSaved, SaveRefused,
+  type SessionEpoch, HeldItem, ItemsNotSaved, SaveRefused,
 }
 import genesis_prime/table/id.{type Item2Id, Item2Id}
 import genesis_prime/table/item2
@@ -88,11 +100,24 @@ import gleam/set.{type Set}
 /// The id of the message this rule takes.
 pub const message_id = vendor_purchase_message.message_id
 
-/// A buy the rule accepted and the store is asked for: the unit it was made at, the Item2
-/// bought and how many items, what is paid, the credits held when it was taken (which fence
-/// the store's statement), the stacks that grow and the stacks that are made.
+/// The id of the buy back's message.
+pub const buy_back_message_id = vendor_buyback.message_id
+
+/// What a purchase is: an item of the open vendor's stock (0x00BE), or an entry of the
+/// player's buyback list, by the id it was added with (0x00BB). The store is asked the same
+/// for both; they differ in the price, the reason the client shows and the entry that leaves
+/// the list.
+pub type Kind {
+  Bought
+  BoughtBack(buyback_id: Int)
+}
+
+/// A buy the rule accepted and the store is asked for: its kind, the unit it was made at, the
+/// Item2 bought and how many items, what is paid, the credits held when it was taken (which
+/// fence the store's statement), the stacks that grow and the stacks that are made.
 pub type Purchase {
   Purchase(
+    kind: Kind,
     unit_id: Int,
     item2_id: Item2Id,
     items_bought: Int,
@@ -123,7 +148,20 @@ const trade =
     reach: interaction.CheckReach,
   )
 
-/// The client's code for a buy of an id the vendor does not sell (Vendor_UnknownItem).
+/// How the buy back words and codes the refusals of its window and player: the client sends
+/// 0xBB under the conditions of 0xBE (`opcode.0xbb`), so the codes and the reach are the buy's.
+const buy_back_trade =
+  vendor_trade.Trade(
+    key: "buyback",
+    verb: "buys back from",
+    refused: "the interaction",
+    dead_player_code: 57,
+    dead_vendor_code: 16,
+    reach: interaction.CheckReach,
+  )
+
+/// The client's code for a buy of an id the vendor does not sell, or a buy back of an id the
+/// player's list does not hold (Vendor_UnknownItem).
 const unknown_item = 14
 
 /// The client's code for a buy of a quantity of 0 (Vendor_NoQuantity).
@@ -138,6 +176,9 @@ const inventory_full = 27
 /// The reason a vendor purchase's items are shown for (Item.CodeEnumItemUpdateReason 7,
 /// Vendor): the client shows "Bought <item>".
 const vendor_reason = 7
+
+/// The reason a bought-back item is shown for (Item.CodeEnumItemUpdateReason 16, Buyback).
+const buyback_reason = 16
 
 /// The usable slots of the inventory are in this location (`inventory`).
 const inventory_location = 1
@@ -182,6 +223,80 @@ pub fn take(
   }
 }
 
+/// What the client's 0x00BB is answered with: the checks of a buy that apply to an entry
+/// (the window, the credits, the inventory) with the entry's items for the entry's credits,
+/// or 14 for an id the list does not hold, or the refusal for a body the client's reader refuses.
+pub fn take_back(
+  body body: BitArray,
+  items items: List(HeldItem),
+  currencies currencies: Currencies,
+  opened opened: Option(vendor.Opened),
+  buyback buyback: Buyback,
+  life life: Life,
+  player player: interaction.Player,
+  picture picture: Picture,
+  tables tables: table_store.Tables,
+  vendors vendors: Vendors,
+  now_ms now_ms: Int,
+  logged logged: Set(String),
+) -> Result(Taken, Refusal) {
+  use back <- result.try(
+    vendor_buyback.decode(body)
+    |> client_connection.decoded(message_id: buy_back_message_id)
+    |> result.map_error(NotDecoded),
+  )
+  case
+    vendor_trade.opened(
+      trade: buy_back_trade,
+      label: "0x00BB",
+      opened:,
+      life:,
+      player:,
+      picture:,
+      tables:,
+      vendors:,
+      now_ms:,
+      logged:,
+    )
+  {
+    Error(vendor_trade.Declined(effects:, logged:)) ->
+      Ok(Refused(effects:, logged:))
+    Ok(window) ->
+      case
+        list.find(buyback.entries, fn(entry) {
+          entry.buyback_id == back.buyback_id
+        })
+      {
+        Error(Nil) -> {
+          let vendor_trade.Declined(effects:, logged:) =
+            vendor_trade.refused_logged(
+              trade: buy_back_trade,
+              reason: "unknown id",
+              text: "0x00BB buys back entry "
+                <> int.to_string(back.buyback_id)
+                <> " that the buyback list does not hold: the client names only the entries it was sent, so the server answers "
+                <> int.to_string(unknown_item),
+              code: unknown_item,
+              logged:,
+            )
+          Ok(Refused(effects:, logged:))
+        }
+        Ok(entry) ->
+          asked(
+            kind: BoughtBack(buyback_id: entry.buyback_id),
+            window:,
+            item2_id: entry.item2_id,
+            items_bought: entry.quantity,
+            cost: entry.credits,
+            items:,
+            currencies:,
+            tables:,
+            logged:,
+          )
+      }
+  }
+}
+
 /// A buy the player may make from the window's stock: the checks of the stock, the quantity,
 /// the credits and the inventory.
 fn buy_from(
@@ -213,7 +328,32 @@ fn buy_from(
     |> result.replace_error(NoItemRow(item2_id:)),
   )
   let items_bought = buy.quantity * lot
-  let cost = stocked.price * items_bought
+  asked(
+    kind: Bought,
+    window:,
+    item2_id:,
+    items_bought:,
+    cost: stocked.price * items_bought,
+    items:,
+    currencies:,
+    tables:,
+    logged:,
+  )
+}
+
+/// A buy of `items_bought` of an Item2 for `cost` credits that the player may make: the
+/// checks of the credits and the inventory, shared by the buy and the buy back.
+fn asked(
+  kind kind: Kind,
+  window window: vendor.Opened,
+  item2_id item2_id: Item2Id,
+  items_bought items_bought: Int,
+  cost cost: Int,
+  items items: List(HeldItem),
+  currencies currencies: Currencies,
+  tables tables: table_store.Tables,
+  logged logged: Set(String),
+) -> Result(Taken, Refusal) {
   let credits_held = currency.credits(currencies:)
   use <- bool.guard(
     when: cost > credits_held,
@@ -232,6 +372,7 @@ fn buy_from(
     Ok(#(grow, make)) ->
       Ok(Asks(
         purchase: Purchase(
+          kind:,
           unit_id: window.unit_id,
           item2_id:,
           items_bought:,
@@ -359,25 +500,44 @@ pub fn request(
   ))
 }
 
-/// What the store's answer leaves: the items, the credits held and the effects, in order.
+/// What the store's answer leaves: the items, the credits held, the buyback list and the
+/// effects, in order. A buy back takes its entry off the list, after the items it returns.
 pub fn answered(
   purchase purchase: Purchase,
   items items: List(HeldItem),
   currencies currencies: Currencies,
+  buyback buyback: Buyback,
   answer answer: ItemsAnswer,
-) -> #(List(HeldItem), Currencies, List(Effect)) {
+) -> #(List(HeldItem), Currencies, Buyback, List(Effect)) {
   case answer {
-    Bought(credits:, made:) -> {
+    store.Bought(credits:, made:) -> {
+      let reason = case purchase.kind {
+        Bought -> vendor_reason
+        BoughtBack(..) -> buyback_reason
+      }
+      let #(buyback, removal) = case purchase.kind {
+        Bought -> #(buyback, [])
+        BoughtBack(buyback_id:) -> #(
+          Buyback(
+            ..buyback,
+            entries: list.filter(buyback.entries, fn(entry) {
+              entry.buyback_id != buyback_id
+            }),
+          ),
+          [Send(removed_frame(buyback_id:))],
+        )
+      }
       #(
         list.append(grown(items:, grow: purchase.grow), made),
         currency.with_credits(currencies:, credits:),
+        buyback,
         list.flatten([
           [Send(currency.changed_frame(total: credits))],
           list.map(purchase.grow, fn(growth) {
             Send(inventory.count_changed_frame(
               guid: growth.item_guid,
               count: growth.new_count,
-              reason: vendor_reason,
+              reason:,
             ))
           }),
           list.map(made, fn(item) {
@@ -388,25 +548,36 @@ pub fn answered(
               location: item.location,
               bag_index: item.bag_index,
               stack_count: item.stack_count,
-              reason: vendor_reason,
+              reason:,
             ))
           }),
+          removal,
         ]),
       )
     }
     ItemsNotSaved -> #(
       items,
       currencies,
+      buyback,
       vendor_trade.not_saved(what: not_bought(purchase:)),
     )
     SaveRefused(constraint:) -> #(
       items,
       currencies,
+      buyback,
       vendor_trade.save_refused(what: not_bought(purchase:), constraint:),
     )
     store.ItemsSaved | store.ItemMade(..) | store.Sold(..) ->
       panic as "the store answers a purchase with Bought, ItemsNotSaved or SaveRefused"
   }
+}
+
+/// The 0xBD that takes an entry off the client's Buyback list (`opcode.0xbd`).
+fn removed_frame(buyback_id buyback_id: Int) -> Frame {
+  let assert Ok(body) =
+    buyback_removed.encode(buyback_removed.BuybackRemoved(buyback_id:))
+    as "an id the list held, a 32-bit value, is written"
+  frame.Frame(message_id: buyback_removed.message_id, body:)
 }
 
 /// The held items with each grown stack at its new count.
@@ -424,7 +595,11 @@ fn grown(
 
 /// What a buy that was not saved did not do, for the log.
 pub fn not_bought(purchase purchase: Purchase) -> String {
-  "the purchase of "
+  case purchase.kind {
+    Bought -> "the purchase of "
+    BoughtBack(buyback_id:) ->
+      "the buy back of entry " <> int.to_string(buyback_id) <> ", "
+  }
   <> int.to_string(purchase.items_bought)
   <> " of Item2 "
   <> int.to_string({ purchase.item2_id }.value)

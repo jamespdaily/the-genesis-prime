@@ -70,6 +70,7 @@ import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/trade_cancel.{TradeCancel}
+import genesis_prime/message/vendor_buyback.{VendorBuyback}
 import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/vendor_sale.{VendorSale}
 import genesis_prime/message/vendor_sell_junk.{VendorSellJunk}
@@ -269,6 +270,10 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       )),
     ),
     #(0x0167, client_message.VendorSellJunk(message: VendorSellJunk)),
+    #(
+      0x00BB,
+      client_message.VendorBuyback(message: VendorBuyback(buyback_id: 5)),
+    ),
     #(0x00BF, client_message.CampRequest(message: CampRequest(start: 1))),
     #(0x00C0, client_message.CampFinished(message: CampFinished)),
     #(
