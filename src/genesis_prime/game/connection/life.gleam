@@ -259,7 +259,10 @@ pub fn carried(
                   now:,
                   taken: cast.died(
                     cast: entered.cast,
-                    caster: connection_casting.caster_of(entered:),
+                    caster: connection_casting.caster_of(
+                      tables: session.settings.tables,
+                      entered:,
+                    ),
                     now:,
                   ),
                 )
@@ -272,7 +275,10 @@ pub fn carried(
                   now:,
                   taken: cast.combat_left(
                     cast: entered.cast,
-                    caster: connection_casting.caster_of(entered:),
+                    caster: connection_casting.caster_of(
+                      tables: session.settings.tables,
+                      entered:,
+                    ),
                     now:,
                   ),
                 )
@@ -285,7 +291,10 @@ pub fn carried(
                   now:,
                   taken: cast.damage_taken(
                     cast: entered.cast,
-                    caster: connection_casting.caster_of(entered:),
+                    caster: connection_casting.caster_of(
+                      tables: session.settings.tables,
+                      entered:,
+                    ),
                     now:,
                   ),
                 )

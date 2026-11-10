@@ -27,6 +27,7 @@ import genesis_prime/client_connection.{type Answer, Continue, FromStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/character_state
 import genesis_prime/game/connection/look as connection_look
+import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/state.{
   type Session, InWorld, MovingItem, Session,
@@ -103,21 +104,19 @@ pub fn item_message(
   }
 }
 
-/// What the equip checks read of the entered character: its race, class, faction
-/// and gender, its level now (the unit's, which a kill's level-up raises), its
-/// World and the class's item proficiencies.
+/// What the equip checks read of the entered character: its faction, its level
+/// now (the unit's, which a kill's level-up raises), the player facts the
+/// prerequisites read, race and class among them (`prerequisite_player`), and the
+/// class's item proficiencies.
 fn wearer_of(
   tables tables: table_store.Tables,
   entered entered: world_entry.Entered,
 ) -> equip_requirement.Wearer {
   let character = entered.character
   equip_requirement.Wearer(
-    race_id: character.race_id.value,
-    class_id: character.class_id.value,
     faction_id: character.faction_id,
     level: connection_state.level_of(entered:),
-    gender: character.gender,
-    world_id: entered.map.world_id,
+    player: prerequisite_player.of(tables:, entered:),
     item_proficiencies: character_state.item_proficiencies(
       tables:,
       class_id: character.class_id,

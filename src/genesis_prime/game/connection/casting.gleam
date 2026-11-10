@@ -83,6 +83,7 @@ import genesis_prime/game/connection/absorption as connection_absorption
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/healing as connection_healing
 import genesis_prime/game/connection/look as connection_look
+import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
@@ -103,6 +104,7 @@ import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type TimerId, CancelTimer,
   OwnEffect, StartTimer,
 }
+import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/dict
 import gleam/int
@@ -126,7 +128,7 @@ pub fn cast_message(
       cast: entered.cast,
       message:,
       body: inner.body,
-      caster: caster_of(entered:),
+      caster: caster_of(tables: session.settings.tables, entered:),
       plans: connection_state.plans_of(session:),
       now:,
     )
@@ -194,7 +196,7 @@ pub fn cast_due(
         cast.timer_fired(
           cast: entered.cast,
           timer:,
-          caster: caster_of(entered:),
+          caster: caster_of(tables: session.settings.tables, entered:),
           now:,
         )
       carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
@@ -221,7 +223,7 @@ pub fn persisted(
               let #(updated, ended) =
                 cast.persisted(
                   cast: entered.cast,
-                  caster: caster_of(entered:),
+                  caster: caster_of(tables: session.settings.tables, entered:),
                   now:,
                 )
               let #(session, written) =
@@ -241,7 +243,10 @@ pub fn persisted(
 
 /// The player as its cast rule takes it: who it is, where it stands, what it
 /// holds, who sees it, whether it is dead or in combat and its health and shield.
-pub fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
+pub fn caster_of(
+  tables tables: table_store.Tables,
+  entered entered: world_entry.Entered,
+) -> cast.Caster {
   let life = entered.life
   cast.Caster(
     unit_id: entered.unit_id,
@@ -280,6 +285,7 @@ pub fn caster_of(entered entered: world_entry.Entered) -> cast.Caster {
       max_shield: player_life.max_shield(life:),
     ),
     quests: entered.quests,
+    player: prerequisite_player.of(tables:, entered:),
   )
 }
 
@@ -583,7 +589,7 @@ pub fn carry_strike(
         let #(updated, cast_effects_out) =
           cast.went(
             cast: entered.cast,
-            caster: caster_of(entered:),
+            caster: caster_of(tables: session.settings.tables, entered:),
             now:,
             cast_id: asked.cast_id,
             phase: asked.phase,

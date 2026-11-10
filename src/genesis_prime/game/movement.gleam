@@ -31,11 +31,11 @@
 //// - **The client's clock** and kind 0's time are the client's own milliseconds
 ////   (0x140c3a004, 0x14057a190); nothing here reads them or compares them with
 ////   the server's clock.
-//// - **The place** is `genesis_prime/game/start_place`'s, so the world and the
-////   zone never change here and a moved place is never in world 0. The WorldZone
-////   id the client reports (0xF2, and 0x63A's new id) is not kept here, so the
-////   saved zone is the one the player entered with; zone chat takes it
-////   (genesis_prime/game/chat `world_zone_reported`).
+//// - **The place** is `genesis_prime/game/start_place`'s, so the world never
+////   changes here and a moved place is never in world 0. The WorldZone id the
+////   client reports (0xF2, and 0x63A's new id) becomes the place's zone as
+////   reported, so the saved zone is the last one the client reported; zone chat
+////   takes it too (genesis_prime/game/chat `world_zone_reported`).
 //// - **The epoch and the sequence** name the login's saves. The epoch is the
 ////   one the login was told when it loaded the character
 ////   (genesis_prime/store `SessionEpoch`); the sequence numbers the saves the
@@ -203,6 +203,12 @@ pub fn placed(state state: State, place place: Place) -> State {
   State(..state, place:, footing: OnTheWorld)
 }
 
+/// The movement with its place in the zone the client reported; the footing
+/// and the rest stay.
+fn in_zone(state state: State, world_zone_id world_zone_id: Int) -> State {
+  State(..state, place: start_place.in_zone(place: state.place, world_zone_id:))
+}
+
 /// The place the player last stood at in the world's own frame, with the way
 /// it faced.
 pub fn place(state state: State) -> Place {
@@ -293,8 +299,8 @@ pub type Taken {
   /// The message changes what the rule keeps, or nothing, and has nothing to
   /// relay: the state it leaves.
   Kept(state: State)
-  /// An accepted 0xF2 or 0x63A: the state it leaves, which it does not change,
-  /// and the WorldZone id the client reports the player stands in (0xF2's, or
+  /// An accepted 0xF2 or 0x63A: the state it leaves, whose place is in the zone
+  /// reported, and the WorldZone id the client reports the player stands in (0xF2's, or
   /// 0x63A's new id; opcode.0xf2, opcode.0x63a), which zone chat takes
   /// (genesis_prime/game/chat `world_zone_reported`, `terrain_ready`). `by` says
   /// which message it was, and for a 0x63A holds the old id the client reports, which
@@ -419,7 +425,7 @@ pub fn take(
       |> undecoded(world_zone_changed.message_id)
       |> result.map(fn(decoded) {
         Reported(
-          state:,
+          state: in_zone(state:, world_zone_id: decoded.new_world_zone_id),
           world_zone_id: decoded.new_world_zone_id,
           by: ReportedByZoneChanged(
             old_world_zone_id: decoded.old_world_zone_id,
@@ -435,7 +441,7 @@ pub fn take(
       |> undecoded(terrain_loaded.message_id)
       |> result.map(fn(decoded) {
         Reported(
-          state:,
+          state: in_zone(state:, world_zone_id: decoded.world_zone_id),
           world_zone_id: decoded.world_zone_id,
           by: ReportedByTerrainReady,
         )
