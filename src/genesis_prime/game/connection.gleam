@@ -160,15 +160,17 @@ import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
   type Ending, type Session, type Status, AwaitingHelloReply, Busy, Buying,
   ClaimingSession, Ending, EnteringWorld, Greeting, InCharacterSelect, InWorld,
-  LeavingMap, MovingItem, Present, SavingPlace, Selecting, Session, Summoning,
-  TakingSessionKey, WaitingToClaim,
+  LeavingMap, MovingItem, Present, SavingPlace, Selecting, Selling, Session,
+  Summoning, TakingSessionKey, WaitingToClaim,
 } as connection_state
 import genesis_prime/game/connection/vendor_purchase as connection_vendor_purchase
+import genesis_prime/game/connection/vendor_sale as connection_vendor_sale
 import genesis_prime/game/connection/viewers as connection_viewers
 import genesis_prime/game/connection/world as connection_world
 import genesis_prime/game/player_life
 import genesis_prime/game/routing
 import genesis_prime/game/strike
+import genesis_prime/game/vendor_sale
 import genesis_prime/hand_off.{SessionKey, Take}
 import genesis_prime/login/guid
 import genesis_prime/message/bit_stream
@@ -434,6 +436,7 @@ fn asking(status: Status) -> Bool {
     | Summoning(..)
     | MovingItem(..)
     | Buying(..)
+    | Selling(..)
     | SavingPlace(..)
     | LeavingMap(..) -> True
     InCharacterSelect(select:, ..) -> character_select.waiting(select)
@@ -567,7 +570,9 @@ fn routed(
     | Ok(routing.Interaction(..))
     | Ok(routing.Quest(..))
     | Ok(routing.Inventory(..))
-    | Ok(routing.VendorPurchase) ->
+    | Ok(routing.VendorPurchase)
+    | Ok(routing.VendorSale)
+    | Ok(routing.VendorSellJunk) ->
       connection_state.misrouted(session:, now:, inner:)
     Error(Nil) ->
       case stage {
@@ -757,6 +762,22 @@ fn world_carried(
                     entered:,
                     inner: whole,
                   )
+                Ok(routing.VendorSale) ->
+                  connection_vendor_sale.sale_message(
+                    session:,
+                    now:,
+                    holder:,
+                    entered:,
+                    request: vendor_sale.SellStack(body: whole.body),
+                  )
+                Ok(routing.VendorSellJunk) ->
+                  connection_vendor_sale.sale_message(
+                    session:,
+                    now:,
+                    holder:,
+                    entered:,
+                    request: vendor_sale.SellJunk(body: whole.body),
+                  )
                 Ok(routing.Dropped(message:)) ->
                   connection_dropped.dropped_message(
                     session:,
@@ -915,6 +936,15 @@ fn answered(
         holder:,
         entered:,
         purchase:,
+        outcome:,
+      )
+    Selling(holder:, entered:, sale:) ->
+      connection_vendor_sale.sale_answered(
+        session:,
+        now:,
+        holder:,
+        entered:,
+        sale:,
         outcome:,
       )
     SavingPlace(holder:, entered:, then:) ->

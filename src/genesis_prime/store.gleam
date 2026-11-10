@@ -334,6 +334,25 @@ pub type ItemsRequest {
     make: List(NewStack),
     item2_id: Item2Id,
   )
+  /// A sale to a vendor, all or none, only while the character holds exactly
+  /// `credits_held` credits (the total the connection holds) and each stack of
+  /// `sold` is held with its `held_count` at an inventory bag place: one statement
+  /// that sets the credits to `credits_after`, deletes each stack sold whole and
+  /// lowers each stack sold in part. Answered by `Sold` with the credits held after.
+  SellToVendor(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    credits_held: Int,
+    credits_after: Int,
+    sold: List(SoldStack),
+  )
+}
+
+/// A held stack a sale sells from: the item `item_guid`, held with `held_count`,
+/// has `sold_count` of its items sold; all of them when the two are equal.
+pub type SoldStack {
+  SoldStack(item_guid: Int, held_count: Int, sold_count: Int)
 }
 
 /// A held stack that a purchase fills: the item `item_guid`, held with `held_count`,
@@ -468,6 +487,8 @@ pub type ItemsAnswer {
   /// cost was taken, and `made` the new stacks, each with the guid the database gave
   /// it.
   Bought(credits: Int, made: List(HeldItem))
+  /// A sale's rows are saved: `credits` is what the character holds after it.
+  Sold(credits: Int)
   /// Nothing was saved, for one of three causes the statement cannot tell apart:
   /// a later login raised the character's `session_epoch` past the request's, a
   /// row was not as the request held it, or the account has no such character.

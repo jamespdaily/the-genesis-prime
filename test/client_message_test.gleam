@@ -67,6 +67,8 @@ import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/trade_cancel.{TradeCancel}
 import genesis_prime/message/vendor_purchase.{VendorPurchase}
+import genesis_prime/message/vendor_sale.{VendorSale}
+import genesis_prime/message/vendor_sell_junk.{VendorSellJunk}
 import genesis_prime/message/watchdog_report.{WatchdogReport}
 import genesis_prime/message/window_opened.{WindowOpened}
 import genesis_prime/message/world_message.{WorldMessage}
@@ -255,6 +257,14 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
         quantity: 2,
       )),
     ),
+    #(
+      0x0166,
+      client_message.VendorSale(message: VendorSale(
+        place: ItemPlace(location: 1, bag_index: 2),
+        quantity: 4,
+      )),
+    ),
+    #(0x0167, client_message.VendorSellJunk(message: VendorSellJunk)),
     #(0x00BF, client_message.CampRequest(message: CampRequest(start: 1))),
     #(0x00C0, client_message.CampFinished(message: CampFinished)),
     #(

@@ -613,7 +613,9 @@ fn vendor_items_message(message: VendorItems) -> Frame {
 }
 
 /// 0xbc with no entries, which the client's vendor window reads after the stock
-/// (`opcode.0xbc`): nothing has been sold to a vendor.
+/// (`opcode.0xbc`). Gap: a window opened after a sale still shows no buyback entries,
+/// though the sale's 0xba added them to the one open; the held list on opening is the
+/// open issue #651.
 pub fn buyback_list_empty_frame() -> Frame {
   let assert Ok(body) = buyback_list.encode(BuybackList(entries: []))
     as "an empty list fits its 32-bit count"

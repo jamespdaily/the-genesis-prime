@@ -140,7 +140,38 @@ type Declined {
 /// Why a vendor request is refused with the client's code: the unit, the code
 /// (`opcode.0x7ea`), the reason that is logged once, and what to say of the unit.
 pub type VendorRefusal {
-  VendorRefusal(unit_id: Int, code: Int, reason: String, why: String)
+  VendorRefusal(unit_id: Int, code: Int, reason: VendorReason, why: String)
+}
+
+/// The check a vendor request breaks, in the order of the client's
+/// CheckInteractionTarget (`opcode.0x7ea`).
+pub type VendorReason {
+  VendorNotShown
+  VendorNotACreature
+  VendorNoStock
+  VendorDead
+  VendorTooFar
+  VendorHostile
+}
+
+/// Whether the vendor's window is checked against the reach of a request.
+pub type ReachCheck {
+  /// The gap between the two edges is no more than the request's reach.
+  CheckReach
+  /// The request has a range of its own, which the caller checks.
+  SkipReach
+}
+
+/// The words a reason is logged under, one key for each reason.
+pub fn reason_key(reason reason: VendorReason) -> String {
+  case reason {
+    VendorNotShown -> "not shown"
+    VendorNotACreature -> "not a creature"
+    VendorNoStock -> "no stock"
+    VendorDead -> "dead"
+    VendorTooFar -> "too far"
+    VendorHostile -> "hostile"
+  }
 }
 
 /// The kind of a request to talk to a quest giver (`opcode.0x7ea`).
@@ -223,6 +254,7 @@ pub fn take(
                 picture:,
                 tables:,
                 vendors:,
+                reach: CheckReach,
                 now_ms:,
               )
             {
@@ -311,6 +343,20 @@ pub fn within_reach(
   creature_radius creature_radius: Float,
   now_ms now_ms: Int,
 ) -> Bool {
+  within(player:, tables:, path:, creature_radius:, now_ms:, range: reach)
+}
+
+/// Whether the creature, at its place now, is within `range` of the player, the gap
+/// counted between the two bodies' edges. The player's Race row is in the tables (the
+/// load fails otherwise), so a missing one crashes.
+pub fn within(
+  player player: Player,
+  tables tables: table_store.Tables,
+  path path: Path,
+  creature_radius creature_radius: Float,
+  now_ms now_ms: Int,
+  range range: Float,
+) -> Bool {
   let assert Ok(player_radius) =
     hit_radius.of_player(tables:, race_id: player.race_id)
     as "hit_radius.requirements fails the load when a playable race has no Race row"
@@ -321,19 +367,21 @@ pub fn within_reach(
       to: area.point_of(place: creature_path.place_at(path:, now_ms:)),
       to_radius: creature_radius,
     )
-  gap <=. reach
+  gap <=. range
 }
 
 /// The vendor whose window the player may open: the unit is a shown creature that is
 /// alive and has stock, within reach and not Hostile to the player, checked in the order
 /// of the client's CheckInteractionTarget (`opcode.0x7ea`), or the refusal the client's
-/// check would have given.
+/// check would have given. `reach` says whether the gap is checked: a trade with a range
+/// of its own skips it.
 pub fn vendor_opened(
   unit_id unit_id: Int,
   player player: Player,
   picture picture: Picture,
   tables tables: table_store.Tables,
   vendors vendors: Vendors,
+  reach reach_check: ReachCheck,
   now_ms now_ms: Int,
 ) -> Result(Vendor, VendorRefusal) {
   use shown <- result.try(
@@ -341,7 +389,7 @@ pub fn vendor_opened(
     |> result.replace_error(VendorRefusal(
       unit_id:,
       code: vendor_no_vendor,
-      reason: "not shown",
+      reason: VendorNotShown,
       why: "which is not shown in the player's picture",
     )),
   )
@@ -350,7 +398,7 @@ pub fn vendor_opened(
       Error(VendorRefusal(
         unit_id:,
         code: vendor_not_a_vendor,
-        reason: "not a creature",
+        reason: VendorNotACreature,
         why: "which is not a creature",
       ))
     ShownCreature(
@@ -366,7 +414,7 @@ pub fn vendor_opened(
         |> result.replace_error(VendorRefusal(
           unit_id:,
           code: vendor_not_a_vendor,
-          reason: "no stock",
+          reason: VendorNoStock,
           why: "whose Creature2 row "
             <> int.to_string(creature_id.value)
             <> " has no stock",
@@ -377,16 +425,17 @@ pub fn vendor_opened(
         return: Error(VendorRefusal(
           unit_id:,
           code: vendor_not_a_vendor,
-          reason: "dead",
+          reason: VendorDead,
           why: "a dead creature",
         )),
       )
       use <- bool.guard(
-        when: !within_reach(player:, tables:, path:, creature_radius:, now_ms:),
+        when: reach_check == CheckReach
+          && !within_reach(player:, tables:, path:, creature_radius:, now_ms:),
         return: Error(VendorRefusal(
           unit_id:,
           code: vendor_too_far,
-          reason: "too far",
+          reason: VendorTooFar,
           why: "too far from the player: the client's reach is "
             <> float.to_string(reach)
             <> " between the two edges",
@@ -397,7 +446,7 @@ pub fn vendor_opened(
         return: Error(VendorRefusal(
           unit_id:,
           code: vendor_disposition,
-          reason: "hostile",
+          reason: VendorHostile,
           why: "a creature Hostile to the player",
         )),
       )
@@ -414,7 +463,7 @@ fn vendor_refused_with(
 ) -> Taken {
   let #(log, logged) =
     log_once(
-      key: "vendor " <> refusal.reason,
+      key: "vendor " <> reason_key(reason: refusal.reason),
       text: "0x07EA kind 0x31 names unit "
         <> int.to_string(refusal.unit_id)
         <> ", "

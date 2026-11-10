@@ -175,7 +175,7 @@ fn stock_of(priced: List(#(ItemRow, Int)), vendor: VendorRow) -> List(Stocked) {
     Stocked(
       position: row.position,
       item_id: Item2Id(row.item_id),
-      price: item_price.shown(base:, buy_multiplier: vendor.buy_multiplier),
+      price: item_price.shown(base:, multiplier: vendor.buy_multiplier),
     )
   })
 }
