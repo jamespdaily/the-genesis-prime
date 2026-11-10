@@ -7178,10 +7178,10 @@ gap = "As opcode.0x7ff.activate."
 name = "FindCreatureActivateEntry"
 
 ["0x14039c430"]
-statement = "Casts a creature's activate spell at the player's target (the spell given, or the client's default activate spell): refuses with 31 without a target unit, 91 when the target is not a creature, 100 when the target's activate state is missing, 4 for an unknown spell; otherwise starts a local cast marked as an activate cast and sends message 0x97."
-proof = "Saved C 0x14039c430.c (hash 49fd5a78aaad3411): codes 0x1f, 0x5b, 100, 4, 0x106; info 0x54 = 1 and 0x58 = 1; StartLocalCast; SendWorldMessage 0x97 with the cast's target and client id."
+statement = "Casts a creature's activate spell at the player's target: the spell given, or the client's default activate spell (GameFormula 414). It refuses with 31 CasterMustHaveTarget without a target unit, 91 NoTarget when the target is not a creature, 100 when the target's activate state is missing, and 4 SpellUnknown for an unknown spell. It refuses with 262 CSICooldown when the spell's cast method is 5 (ClientSideInteraction) and the player's current client-side interaction is in state 1 to 3 or 7 and under 1000 ms old. Otherwise it starts a local cast marked as an activate cast, so the cast checks use the creature's activate range (record 0x1403b2240). It sends message 0x97 only when those checks give 0 or 317 Queued. Any other result (105 TargetRangeMax when out of range) is reported as a cast failure, and nothing is sent."
+proof = "Saved C 0x14039c430.c (hash 6ba38d868f75acff): the 0x106 return needs spell record 0x18 == 5 and game 0x7188's vtable 0x68 object word 4 in 1..3 or 7, with DAT_140c636a8 - game 0x7190 < 1000. Record word 0x18 is Spell4Base offset 80 castMethod (FillSpellRecord 0x140568540 line 83; `gleam run -m genesis_prime/table_rows -- Spell4Base --columns`). 0x106 = 262 CSICooldown (enum entry 258 at 0x140c2f290: name pointer 0x140aba5c8, UTF-16 'CSICooldown'). Info 0x54 = 1 (local_94). SendWorldMessage 0x97 only under (iVar1 == 0 || iVar1 == 0x13d); else 0x1403b5250(iVar1) and 0x1400035b0(0x18, 3, 0, text)."
 grade = "fairly sure"
-gap = "The default spell (GameFormula 0x19e) and 0x97's layout are not read."
+gap = "What sets the cast's out flag (local_res8) that, on a failure, saves a deferred retry (game 0x6648 to 0x6650, then 0x14039e400) was not read."
 name = "CastActivateSpell"
 
 ["0x1405d6880"]
@@ -7748,10 +7748,10 @@ grade = "fairly sure"
 gap = "Where the unit's scale comes from (GetUnitScale reads the model's scale; Creature2DisplayInfo.scale and Creature2.modelScale are the likely sources) is not read, so a creature's radius is its display row's hitRadius times a scale the server cannot yet name; at scale 1 it is the display row's value. The readers 0x14062b670, 0x140459330, 0x1404a2100, 0x14071e3f0, 0x14061b900, 0x1403f7460, 0x140621c30, 0x1403ada10, 0x14045f080, 0x14071cfe0, 0x1405b8cb0 and 0x1405d8110 were not each read for what they use the radius for. A call to a Creature2ModelInfo getter through its descriptor would be missed. Whether the retail server tested a struck unit's radius against an area is not in the client: its telegraphs drawn without the viewer's radius (flag 0x200: 1,243 of 10,029 drawn rows, Gamma Rays' 310, 311 and 312 among them) suggest it did not for those rows."
 
 ["0x1403b2240"]
-statement = "Checks a cast's unit target's range before the cast is sent: the gap is the distance between the caster's and the target's positions (each height less its own vertical offset) less both units' hit radii (unit.hit_radius), never below 0. A gap above the spell's maximum range (plus the bonus argument when both are non-zero) is refused with 105 TargetRangeMax; a height difference less both radii above the spell's vertical range (when that is above -1) with 183 TargetRangeVertical."
-proof = "Saved C 0x1403b2240.c (hash 8eb22adb6de47956) lines 304-427: distance SQRT over the 0x11e0 positions with 0x11e4 less 0x1324; the radius pattern twice per unit; fVar19 = (distance - caster radius) - target radius, clamped at 0; spell 0x70 + 0x70 compared, return 0x69; spell 0x70 + 0x74 against DAT_140b7a23c (-1.0, bytes 000080bf), height with the sign mask DAT_140b7b500 less both radii, return 0xb7. Called by CheckCastTarget 0x1403b0880 (6ba38d868f75acff) line 404 for a unit target. The range words follow Spell4 targetMinRange, targetMaxRange and targetVerticalRange's order (offsets 40, 44, 48 in `gleam run -m genesis_prime/table_rows -- Spell4 --columns`)."
+statement = "Checks a cast's unit target's range before the cast is sent, edge to edge. The gap is the distance between the caster's and the target's positions (each height less its own vertical offset) less both units' hit radii (unit.hit_radius), never below 0. The range is Spell4 targetMinRange and targetMaxRange. For a creature activate cast (the info's activate mark set), it is GetActivateMinRange and GetActivateMaxRange instead: Creature2 activateSpellMinRange and activateSpellMaxRange for the spell, with targetMaxRange when the creature max is 0. A gap below the min is refused with 104 TargetRangeMin, through CheckCastMinRange; with a margin the min is reduced by it, or dropped when the margin is not below it. A gap above the max (plus the margin when both are non-zero) is refused with 105 TargetRangeMax. A height difference less both radii above the spell's targetVerticalRange (when that is above -1) is refused with 183 TargetRangeVertical. The whole range block runs only when the caster's word 0x84 is 0."
+proof = "Saved C 0x1403b2240.c (hash 2580df99bb1ce2aa) lines 301-428. In the listing, 0x1403b2894 cmp dword ptr [R12 + 0x54], EDI, with R12 from Stack[0x30] (0x1403b25f9; the sixth argument). CheckCastTarget 0x1403b0880 passes its cast info (R13) there: 0x1403b0d73 mov [RSP+0x28], R13 before the call at 0x1403b0d7d. Its range margin (XMM9) is 0, or the spell system's vtable 0x20 value when info 0x14 != 0 (saved C 0x1403b0880, lines 159-161). When the mark is set: 0x1403b28a8 call 0x1403ad860 (min) and 0x1403b28c2 call 0x1403ad8f0 (max), with R8 = the target unit (RBX, Stack[0x28]). The min test is 0x1407a17d0. The max test returns 0x69; the vertical test spell 0x70 + 0x74 against -1.0 returns 0xb7. FillSpellRecord 0x140568540 (saved C 2580df99bb1ce2aa) lines 295-297 copy Spell4 words 10, 11 and 12 (offsets 40, 44, 48: targetMinRange, targetMaxRange, targetVerticalRange) to record words 0x6c, 0x70 and 0x74."
 grade = "fairly sure"
-gap = "The copy of Spell4's range columns into the spell's 0x6c to 0x74 words is inferred from their order, not read; what the units' vertical offset (0x1324) holds and the min-range test FUN_1407a17d0 are not read."
+gap = "What the caster's word 0x84 holds (the range block is skipped when it is not 0) was not read. Not run live."
 name = "CheckCastUnitTargetRange"
 
 ["0x1403ad690"]
@@ -11340,10 +11340,9 @@ grade = "guess"
 gap = "Which of state 3 and the others is open is not read: slot 0x128 of the world object class was not found. A lead (not evidence): a recording of another server sent stand state 4 to open a door. A live test sending 0x93c with states 3 and 4 to door 18510 of world 426 would settle it."
 
 ["0x1403a6440"]
-statement = "Whether the player can loot or interact with a unit: true when the unit is in range and either has a loot entry or is of type 1 (Chest) or 8 (Collectible)."
-proof = "Saved C 0x1403a6440.c (hash 2580df99bb1ce2aa): a range test and the loot list check, or the unit's type 0x80 == 1 or == 8."
-grade = "fairly sure"
-gap = "The range used was not read."
+statement = "Whether the player can loot or collect a unit. It is true when the unit is not the player's own, the gap between the two units' edges is at most 5.0 (no minimum, no margin), and the unit either has a loot entry or is of type 1 (Chest) or 8 (Collectible). The 5.0 is a fixed client constant, not a table value. On the 0x97 path it is used only by CollectUnit, the Collect command; clicking a unit (ClickInteraction, ActivateUnit) does not use it."
+proof = "Listing 0x1403a6468 movss xmm3, [0x140b79ff8]; 0x1403a6470 xorps xmm2, xmm2; 0x1403a6473 movss [rsp+local_18], xmm2; 0x1403a6479 call UnitsWithinRange. RCX is game 0x6490 (the player unit) and RDX the unit, so the arguments are min 0.0, max [0x140b79ff8], margin 0.0. Bytes at 0x140b79ff8: 0000a040 = 5.0. Callers: LootUnit 0x14039cff0, CollectUnit 0x14039d0f0, 0x140459330 (client_trace.py)."
+grade = "sure"
 name = "IsUnitLootableInRange"
 
 ["0x14039d0f0"]
@@ -11367,10 +11366,10 @@ grade = "fairly sure"
 gap = "The meaning of 0x140516ae0's two values (entry 0x2c and param 0x10) rests on the event name; the loot window's Lua was not read. The server's answer the client waits for (a loot list message) was not traced."
 
 ["0x14046c580"]
-statement = "Gives the spell a unit's activation casts. The default is GameFormula 414's dataint0 (8). For a unit of type 20 (Player), when a lookup by the other player's word 0xdc finds a row and the disposition test passes, it is that row's word 0x54. Otherwise, for a unit with creature data whose words 0x6c and 0x148 are both 0, it walks Creature2 spell4IdActivate00 to 03. It returns the first whose prerequisiteIdActivateSpell is 0 or passes (prerequisite class slot 0x18), even when that spell is 0. When none passes, the default stays. When either word is nonzero, the result is 0. A result of 0 means the unit is activated with no spell (message 0xb3); any other result is cast (message 0x97)."
-proof = "Saved C 0x14046c580.c (hash 49fd5a78aaad3411): FUN_140200220(0x19e) (GameFormula by id) word 4; type 0x14 branch; the creature data's pointer 0xc0 indexes words 0 to 3 (spell) with words 0x10 to 0x1c (prerequisite), matching Creature2 offsets 60 and 76. GameFormula row 414: dataint0 = 8 (table_rows)."
+statement = "Gives the spell a unit's activation casts. The default is GameFormula 414's dataint0 (8). For a unit of type 20 (Player), when a lookup by the other player's word 0xdc finds a row and the disposition test passes, it is that row's word 0x54. Otherwise, for a unit with creature data whose words 0x6c and 0x148 are both 0, it walks Creature2 spell4IdActivate00 to 03. It returns the first whose prerequisiteIdActivateSpell is 0 or passes, even when that spell is 0. The check is the ordinary one: CheckPrerequisiteForUnits with the player as first unit and the activated unit as second. ActivateUnit and the interaction chooser pass the player (game 0x78); CollectUnit and 0x14039e260 pass the controlled unit (game 0x6490). When none passes, the default stays. When either creature word is nonzero, the result is 0. A result of 0 means the unit is activated with no spell (message 0xb3); any other result is cast (message 0x97)."
+proof = "Saved C 0x14046c580.c (e9b6b6af37d00314): FUN_140200220(0x19e) word 4; type 0x14 branch; creature record (unit 0x18) pointer 0xc0 indexes spell words 0..3 and prerequisite words 0x10..0x1c (Creature2 offsets 60 and 76); (*DAT_140c659a0)[0x18](DAT_140c659a0, param_2, prereqId, param_1, 0, 0). DAT_140c659a0 is made by 0x14049be30 (8eb22adb6de47956) with vtable &PTR_FUN_140b67740; slot 0x18 of that class is CheckPrerequisiteForUnits 0x14049bf10 (units[0] = second argument, units[1] = fourth). Callers' second argument: 0x14039d4a0 line 17 and 0x140479560 line 332 (DAT_140c65898 + 0x78); 0x14039d0f0 line 24 and 0x14039e260 line 32 (game + 0x6490). GameFormula row 414: dataint0 = 8 (table_rows)."
 grade = "fairly sure"
-gap = "Creature data words 0x6c and 0x148, and the type 20 lookup's table, were not read."
+gap = "The creature record's words 0x6c and 0x148 (the client's own record, not the Creature2 row: its word 0xc0 points into the row at offset 60) and the type 20 lookup's table are not read."
 name = "GetUnitActivateSpell"
 
 ["0x14039d4a0"]
@@ -11604,10 +11603,10 @@ gap = "As Prerequisite.prerequisiteTypeId.68."
 name = "PrerequisiteQuestObjectiveDone"
 
 ["Prerequisite.prerequisiteTypeId.69"]
-statement = "Prerequisite type 69 ('Challenge', text 147487): a flag of the player's challenge objectId (a Challenge id) from the challenge list: comparison 1 passes when it is set, 2 when clear; with no challenge list both fail. The value and the units are not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (1, 0) 1; objectIds: 328."
-proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 69 dispatches to 0x14049f990, slot 0x440 of the prerequisite class 0x140b67740 (bytes at 0x140b67b80). Saved C 0x14049f990.c (hash 8eb22adb6de47956): 0x14048d530: the challenge tree at word 0x30 of 0x140c65948 searched by objectId; the challenge record's word 0x30. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 69`."
-grade = "guess"
-gap = "Which challenge state word 0x30 is (active, most likely) and the message that sets it are not read."
+statement = "Prerequisite type 69 ('Challenge', text 147487): whether the player's challenge objectId is active (the flag that makes it its type's active challenge). Comparison 1 passes when it is active, 2 when not; a challenge with no record counts as not active. The list exists from start-up, empty until message 0xc7. The value and the units are not read."
+proof = "Saved C 0x1404a2100.c (2580df99bb1ce2aa): case 69 -> 0x14049f990 (slot 0x440). 0x14048d530 (8eb22adb6de47956): record word 0x30, 0 when absent. Word 0x30 is the 0xc7 record's second 1-bit flag (0x1400aa930); when set, 0x14048ded0 makes the record its type's active one (manager 0x68 + type*8) and raises ChallengeUpdated; GetTimer 0x1406862d0 line 43 gives timer kind 2 for it. Manager lifetime: 0x140c65948."
+grade = "fairly sure"
+gap = "'Active' is read from how the client uses the flag, not from a Lua name: no Lua challenge function returning word 0x30 alone was found among 0x140685210 to 0x1406876b0."
 
 ["0x14049f990"]
 statement = "Prerequisite type 69's test. See Prerequisite.prerequisiteTypeId.69."
@@ -11695,17 +11694,15 @@ gap = "As Prerequisite.prerequisiteTypeId.117."
 name = "PrerequisitePublicEventActive"
 
 ["Prerequisite.prerequisiteTypeId.125"]
-statement = "Prerequisite type 125 ('Challenge', text 180401): a third flag of the player's challenge objectId: comparison 1 passes when set, 2 when clear; with no challenge list or no such challenge it counts as clear (and with no list both fail). The value and the units are not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (2, 0) 1; objectIds: 328."
-proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 125 dispatches to 0x14049fac0, slot 0x458 of the prerequisite class 0x140b67740 (bytes at 0x140b67b98). Saved C 0x14049fac0.c (hash 8eb22adb6de47956): 0x14049fac0: the challenge tree at word 0x30 of 0x140c65948; the record's word 0x34. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 125`."
-grade = "guess"
-gap = "Which challenge state word 0x34 is (completed, most likely) is not read."
+statement = "Prerequisite type 125 ('Challenge', text 180401): whether the player's challenge objectId is in cooldown. Comparison 1 passes when it is in cooldown, comparison 2 when it is not; any other comparison fails. A challenge the server has sent no record for counts as not in cooldown, so with no challenge data comparison 2 passes. The client's challenge list exists from start-up to shutdown, empty until message 0xc7 fills it; only outside that time (no manager) do both comparisons fail. The value and the units are not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (2, 0) 1; objectIds: 328 (Challenge 328, Pilfering Pearls)."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 125 dispatches to 0x14049fac0, slot 0x458 of the prerequisite class 0x140b67740. Saved C 0x14049fac0.c (hash e9b6b6af37d00314): DAT_140c65948 null -> 0; lower_bound on the map at manager word 0x30 by objectId; not found -> flag 0; else record word 0x34; param_3 == 1 -> flag, == 2 -> (flag == 0), else 0. Word 0x34 is the in-cooldown flag: Lua IsInCooldown 0x140685ad0 (hash 8eb22adb6de47956, line 40: record 0x34 != 0; name pointer at 0x140c5c8e0 -> 'IsInCooldown' at 0x140b322b0) and GetTimer 0x1406862d0 (line 44: 0x30 -> timer kind 2, else 0x34 -> kind 4). The manager's lifetime and the map's only filler: see 0x140c65948 and opcode.0xc7. `gleam run -m genesis_prime/table_rows -- Challenge 328`."
+grade = "sure"
 
 ["0x14049fac0"]
-statement = "Prerequisite type 125's test. See Prerequisite.prerequisiteTypeId.125."
+statement = "Prerequisite type 125's test: whether the player's challenge objectId is in cooldown. See Prerequisite.prerequisiteTypeId.125."
 proof = "As Prerequisite.prerequisiteTypeId.125."
-grade = "guess"
-gap = "As Prerequisite.prerequisiteTypeId.125."
-name = "PrerequisiteChallengeFlagC"
+grade = "sure"
+name = "PrerequisiteChallengeInCooldown"
 
 ["Prerequisite.prerequisiteTypeId.149"]
 statement = "Prerequisite type 149 ('State requirement not met', text 218077): 1 when either of two state words of the first unit is nonzero, else 0, compared with the value: comparison 1 equal, 2 different. The objectId is not read. Start content: 2 condition(s) in 2 row(s); (comparison, value): (1, 0) 1, (1, 1) 1; objectIds: 0."
@@ -11913,10 +11910,10 @@ grade = "fairly sure"
 gap = "That no other client lookup by guid reaches the ability bag rests on a grep of the saved C for '+ 0xa90)', which would miss a pointer to the vector passed under another base. Not emulated. Settled by emulating 0x1403acbb0 after AddHeldItem has added an ability item with guid low 32 bits 1 and an ordinary item with guid 2^32 + 1, looking up 1 (expect null) and 2^32 + 1 (expect the ordinary item), or by a live run that sends a 0x569 for an ordinary item with guid 1 while an ability item's guid is 1."
 
 ["0x14039d2c0"]
-statement = "Clicks a unit by id: it finds the unit, reads the unit's current interaction entry (the pointer at its word 0x1908) and does nothing, and sends nothing, when that entry is not active or has no handler. Otherwise, when the player is in range of the unit it calls the entry's handler; when out of range it walks to the unit if the entry's walk-to byte is set, and fails if it is not."
-proof = "Saved C 0x14039d2c0.c (hash 8eb22adb6de47956) lines 47 to 50: the entry is the pointer at unit word 0x1908; byte 4 of the entry (active) == 0 or the handler at offset 0x40 == 0 returns 0 at 0x14039d318 with nothing sent. Lines 75 to 99: 0x1403ebe80 (the range test) nonzero calls the handler at offset 0x40; zero returns an error unless byte 9 (walk-to) is set, then 0x1405592f0 walks. Callers: 0x1404d9450 (jmp at 0x1404d9527) and 0x14077e2c0 (call at 0x14077e38f); 0x14077e2c0 passes the current target's id (word 0x108 of the object at 0x6490)."
+statement = "Clicks a unit by id. It finds the unit and reads the unit's current interaction entry; when that entry is not active or has no handler it does nothing and sends nothing. Otherwise it asks IsUnitInInteractRange (0x1403ebe80). That test takes the entry's range (5.0 when not above 0), but uses the unit's activate spell range instead when the unit has an activate spell. In range, it calls the entry's handler (ActivateUnit for kind 50). Out of range, it starts the player walking to the unit (0x1405592f0) when the entry's walk-to flag is set, and fails otherwise. No cast is started and nothing is sent when out of range."
+proof = "Saved C 0x14039d2c0.c (hash 8eb22adb6de47956): fVar8 = entry word 4 (offset 0x10), DAT_140b79ff8 when not above 0 (bytes 0000a040 = 5.0). 0x1403ebe80(game, unit, fVar8, ..., uVar7), where uVar7 is set only for kind 0x4d. Result 0: walk-to byte 9 set calls 0x1405592f0(game + 0x70b0, unit, 3), else 0x80004005. Nonzero: the handler at entry 0x40. Saved C 0x1403ebe80.c (hash e9b6b6af37d00314): UnitsWithinRange's nonzero result means in range."
 grade = "fairly sure"
-gap = "That 0x1403ebe80's nonzero result means in range was read from its use here, not from its body. Not run live."
+gap = "Not run live. Whether a finished walk clicks the unit again (0x1405598d0, 0x1404d9450) was not read."
 name = "ClickInteraction"
 
 ["0x140c48150"]
@@ -12500,3 +12497,177 @@ proof = "Saved C 0x1405e6230.c and 0x14079e630.c (hash 8eb22adb6de47956): list =
 grade = "fairly sure"
 gap = "The code that fills game+0x1698 from TradeskillBonus (0x1405bcf90 reads that table) is not read, so the match of entry[0], entry[2] and entry[3] to objectIdPrimary, objectIdTertiary and value, and kind 14's op, rest on the rows' shape and texts. Kinds 0xf and 0x10 are not decoded."
 name = "GetTradeskillBonusFactor"
+
+["opcode.0x97.range"]
+statement = "The client sends message 0x97 only for a creature activation within the creature's activate range. The test is edge to edge: the gap is the units' 3D distance less both hit radii, never below 0. The limits are Creature2 activateSpellMinRange and activateSpellMaxRange for the cast spell. A max of 0, or a spell not among the creature's spell4IdActivate00 to 03, falls back to Spell4 targetMaxRange; with no entry the min is Spell4 targetMinRange too. Nothing is added to the range for an activate cast. Height is checked against Spell4 targetVerticalRange when that is above -1. Out of range is refused before sending with 105 TargetRangeMax, too close with 104 TargetRangeMin, too far vertically with 183. Through the Collect command the client also needs a gap of at most 5.0. The server refuses the 0x97 activations the client would refuse by the same test."
+proof = "CastActivateSpell 0x14039c430 (saved C 6ba38d868f75acff) sends 0x97 only when StartLocalCast 0x1403988d0 gives 0 or 0x13d. StartLocalCast reaches CheckCastUnitTargetRange 0x1403b2240 through 0x140398800, CheckCastAndPrerequisites 0x1403ace00, 0x1403ae8c0 and CheckCastTarget 0x1403b0880 (call_paths.py 0x1403b2240 --up --to 0x1403988d0 --depth 7). Its activate branch, min test and max test are in record 0x1403b2240. The range values are in records 0x1403ad860, 0x1403ad8f0 and 0x140560f80. CastActivateSpell zeroes the 200-byte cast info and never sets info 0x14, so CheckCastTarget passes 0.0 as the range margin (saved C 0x1403b0880, lines 159-161). Collect's 5.0 is in record 0x1403a6440. `gleam run -m genesis_prime/table_rows -- Creature2 26462 12919`: both have spell4IdActivate00 1817 and activateSpellMinRange 0.0; activateSpellMaxRange is 3.0 and 5.0. `-- Spell4 1817 8`: 1817 has targetMaxRange 5.0 and targetVerticalRange -1.0; 8 has targetMaxRange 0.0. So 26462 is held to 3.0 and 12919 to 5.0."
+grade = "fairly sure"
+gap = "The range block in 0x1403b2240 runs only when the caster unit's word 0x84 is 0, and that word was not read. How 0x1403ae8c0 combines a 0x13d with a target failure (its bVar1) was not read. Not run live: an activation at the edge of 3.0 against Creature2 26462 would settle the margin."
+
+["0x140c48f60"]
+statement = "Interaction kind 50 (Spell) in the interaction kind table: range 3.0, the walk-to flag set (the player walks to the unit when out of range), the dead-unit flag set, the hostile-unit flag clear, and the handler ActivateUnit. This 3.0 applies only when the unit has no activate spell (the 0xb3 path). With an activate spell, ClickInteraction's range test uses the activate range instead (record 0x1403ebe80)."
+proof = "Bytes at 0x140c48f60 (0x140c48150 + 50 x 0x48), 72 bytes, query bytes request: 32000000 00010000 00010100 00000000 00004040 ... 685db040 01000000 b85cb040 01000000 85840200 00000000 585db040 01000000 a0d43940 01000000. Offset 0 kind 0x32; 4 active 0; 5 dead 1; 6 hostile 0; 9 walk-to 1; 0xd flag 0; 0x10 range 0x40400000 = 3.0; 0x40 handler 0x14039d4a0 (ActivateUnit). Offsets follow record 0x140c48150."
+grade = "sure"
+
+["0x1403ebe80"]
+statement = "Whether the player's unit is within interaction range of a unit. The spell is the one given, else GetUnitActivateSpell. If there is no spell (0), the range is from 0 to the range argument. If there is a spell and the client has it, the range is GetActivateMinRange to GetActivateMaxRange for that spell and unit: Creature2 activateSpellMinRange and activateSpellMaxRange, else the spell's targetMinRange and targetMaxRange. If the spell is unknown, the answer is out of range. The test is UnitsWithinRange (edge to edge) with no margin. The min and max used are also returned through two out pointers."
+proof = "Saved C 0x1403ebe80.c (hash e9b6b6af37d00314): param_6 or GetUnitActivateSpell(unit, game 0x78). FindSpell(DAT_140c65b70, spell, game 0x6490) == 0 returns 0. Otherwise uVar3 = 0x1403ad860(spell system, spell, unit) and param_3 = 0x1403ad8f0(...). Then UnitsWithinRange(game 0x6490, unit, uVar3, param_3, 0). Its only caller is ClickInteraction 0x14039d2c0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not the listing; not run live."
+name = "IsUnitInInteractRange"
+
+["0x1403ad860"]
+statement = "The minimum range of a spell cast at a unit. When the unit is a creature whose activate spells hold the spell, it is the creature's activateSpellMinRange, even when that is 0. Otherwise it is the spell's Spell4 targetMinRange. It gives 0 for spell 0 or an unknown spell."
+proof = "Saved C 0x1403ad860.c (hash 6ba38d868f75acff): FindSpell; with unit 0x18 (creature info) set, FindCreatureActivateEntry(spell system, creature id at creature info word 0, spell). An entry whose word 0 is not 0 returns word 8. Else spell record (spell + 0x70) word 0x6c. Record word 0x6c is Spell4 word 10, offset 40 targetMinRange (FillSpellRecord 0x140568540, saved C 2580df99bb1ce2aa, line 295). Entry word 0 is the creature id (record 0x140560f80), so it is never 0 for a found entry."
+grade = "fairly sure"
+gap = "Read from the decompile (the return value is typed int there but holds the float's bits); not run."
+name = "GetActivateMinRange"
+
+["0x1403ad8f0"]
+statement = "The maximum range of a spell cast at a unit. When the unit is a creature whose activate spells hold the spell and its activateSpellMaxRange is not 0, it is that. Otherwise it is the spell's Spell4 targetMaxRange. It gives 0.0 for spell 0 or an unknown spell."
+proof = "Saved C 0x1403ad8f0.c (hash 6ba38d868f75acff): as 0x1403ad860, but it returns entry word 9 when entry word 0 != 0 and word 9 != 0.0, else spell record word 0x70. Record word 0x70 is Spell4 word 0xb, offset 44 targetMaxRange (FillSpellRecord 0x140568540 line 296)."
+grade = "fairly sure"
+gap = "Read from the decompile; not run."
+name = "GetActivateMaxRange"
+
+["0x140560f80"]
+statement = "Builds the cast system's map of creature activate entries at load, keyed by Creature2 id. Each entry holds: word 0 the creature id; words 1 to 4 its four activate spells (spell4IdActivate00 to 03); word 5 activateSpellCastTime; words 8 and 9 activateSpellMinRange and activateSpellMaxRange; words 6, 7 and 10 three more creature values."
+proof = "Saved C 0x140560f80.c (hash 49fd5a78aaad3411): for each id in the list at DAT_140c65918 + 8 (count at + 0x10), FindCreatureInfo gives record r. The node is 0x58 bytes, key at 0x20, entry at node 0x28 (FindCreatureActivateEntry 0x1407a1680 returns node + 0x28; saved C 5c0332ef738ce6d5). Node 0x28 = CONCAT44(spells[0], r[0]); 0x30 = spells[1..2]; 0x38 = CONCAT44(r[0x12], spells[3]); 0x40 = r[0x4e..0x4f]; 0x48 = r[0x13..0x14]; 0x50 = r[0x50]. Spells is the pointer at r word 0x30. FillCreatureInfoBase 0x1404852b0 (saved C 49fd5a78aaad3411) lines 29-31: r[0x12..0x14] = row words 0x17..0x19, offsets 92, 96 and 100. `gleam run -m genesis_prime/table_rows -- Creature2 --columns`: 92 activateSpellCastTime, 96 activateSpellMinRange (float), 100 activateSpellMaxRange (float)."
+grade = "fairly sure"
+gap = "Which ids the list at DAT_140c65918 + 8 holds (all loaded creatures, or only those with activate spells) and the columns behind entry words 6, 7 and 10 were not read."
+name = "BuildCreatureActivateEntries"
+
+["0x1407a17d0"]
+statement = "Checks a cast's minimum range, given the distance, both hit radii, the minimum and a margin. The gap is the distance less both radii, never below 0. With no margin, a gap below the minimum gives 104 TargetRangeMin. With a margin and a minimum above it, a gap below the minimum less the margin gives 104. With a margin that is not below the minimum, or no minimum, there is no refusal."
+proof = "Saved C 0x1407a17d0.c (hash 8eb22adb6de47956): the whole body. 0x68 = 104 TargetRangeMin (enum entry 102 at 0x140c2f290 names 0x140ab88d8 'TargetRangeMin')."
+grade = "fairly sure"
+gap = "Read from the decompile; not emulated."
+name = "CheckCastMinRange"
+
+["Creature2.activateSpellMaxRange"]
+statement = "The farthest a player may be from the creature, edge to edge, to cast one of its activate spells. The client tests it before sending message 0x97 and refuses beyond it with 105 TargetRangeMax. It also sets how near ClickInteraction walks the player to the creature. A value of 0 means the spell's Spell4 targetMaxRange applies instead."
+proof = "Row offset 100 (float) to creature record word 0x14 (FillCreatureInfoBase 0x1404852b0 line 31), then activate entry word 9 (record 0x140560f80), read by GetActivateMaxRange 0x1403ad8f0. That is used by CheckCastUnitTargetRange 0x1403b2240 for activate casts and by IsUnitInInteractRange 0x1403ebe80."
+grade = "fairly sure"
+gap = "As records 0x140560f80 and 0x1403b2240; not run live."
+
+["Creature2.activateSpellMinRange"]
+statement = "The nearest a player may be to the creature, edge to edge, to cast one of its activate spells. It always replaces the spell's targetMinRange for those spells, even when 0. The client refuses nearer than it with 104 TargetRangeMin."
+proof = "Row offset 96 (float) to creature record word 0x13 (FillCreatureInfoBase 0x1404852b0 line 30), then activate entry word 8 (record 0x140560f80), read by GetActivateMinRange 0x1403ad860. That is used by CheckCastUnitTargetRange 0x1403b2240 through CheckCastMinRange 0x1407a17d0, and by IsUnitInInteractRange 0x1403ebe80."
+grade = "fairly sure"
+gap = "As records 0x140560f80 and 0x1403b2240; not run live."
+
+["0x1405592f0"]
+statement = "Starts the player walking to a unit, for a reason code below 36 (ClickInteraction uses 3). It does nothing (fails) when a client option for this kind of move is off, or when there is no player unit."
+proof = "Saved C 0x1405592f0.c (hash 8eb22adb6de47956): gated by byte tables at 0x140c4d270 or 0x140c4d2b0, indexed by DAT_140c4d260 or DAT_140c4d2a0 capped by *DAT_140c63750. Then mover + 4 = 2, + 0xc = the unit id, + 0x54 = the reason, + 0x3c = param_5, and 0x140559920 is called. The UnitsWithinRange record names 0x140559920 as using a range and that range times 1.5."
+grade = "guess"
+gap = "Which option the byte tables hold, and how 0x140559920 picks the stopping distance, were not read. Settle it by reading 0x140559920 and the tables' writers."
+name = "StartMoveToUnit"
+
+# Challenge prerequisite decoder (2026-11-09)
+
+["0x140c65948"]
+statement = "The client's challenge manager, one per client. It holds the Challenge table's rows by id (word 0x10), the player's challenge records the server sent, by challenge id (word 0x30, a map of 0x60-byte records), and the active record of each challenge type (from word 0x68, 8 bytes per type). The client makes it once at start-up, with the record map empty, and frees it only at client shutdown. Game teardown and message 0xc6 kind 13 empty the record map. Only message 0xc7 adds records."
+proof = "StartClient 0x14000b690 line 2308 (call at 0x14000e401): FUN_14048c810 in the start-up chain, after 0x14048c540 succeeds. Saved C 0x14048c810.c (8eb22adb6de47956): returns if already set; AllocMemory(0x100); 0x14048c8a0; vtable slot 1 (0x14048cb50, from bytes at 0x140b67220: d0c94840 01000000 50cb4840 01000000); on success stores DAT_140c65948. 0x14048c8a0.c (8eb22adb6de47956): words 0x10 and 0x30 set to fresh empty tree heads, sizes 0. 0x14048cb50.c (8eb22adb6de47956): walks the 'Challenge' table (PTR_u_Challenge_140a69640) into 0x60-byte entries; its only return is 0 (line 237). Freed only in 0x140012c10 (8eb22adb6de47956) lines 139-142, the shutdown reached by the pointer at 0x140b55130. Emptied by 0x14048d060 from 0x1403e3350 (game teardown, under the destructor 0x1403e3310) and from 0x14048e2b0. The only map insert: 0x14048ded0 line 67 (FUN_140055f80 on manager + 0x28); a grep of the 36 users of DAT_140c65948 for another insert found none. Active slot: 0x14048ded0 lines 151-182 (manager + 0x68 + type*8)."
+grade = "sure"
+
+["0x14048c810"]
+statement = "Makes the challenge manager (0x140c65948) once at client start-up: the Challenge table loaded, the player's challenge records empty."
+proof = "As 0x140c65948."
+grade = "sure"
+name = "CreateChallengeManager"
+
+["opcode.0xc7"]
+statement = "Message 0xc7 (199), world server to client: the player's challenge records, the only message that adds challenges to the client's list. Body: a count (32 bits), then that many records, each: challenge id (14 bits), a 4-bit value, nine 32-bit values, four 1-bit flags (the second is active, the third is in cooldown), six 32-bit values, and 12 bytes. Each record replaces or adds the challenge's entry and raises ChallengeTimeUpdated. A new entry also copies its last values into the challenge's table entry. An entry whose active flag is set becomes its type's active challenge and raises ChallengeUpdated. Three of the six later times have the client clock added, which turns them into deadlines. Prerequisite types 69 (active) and 125 (in cooldown) read these flags."
+proof = "Registered in 0x1400a8190 line 20: id 199, record 0x10, sizer 0x1400aab80, writer 0x1400aabc0, reader 0x1400aacb0. 0x1400aacb0.c (8eb22adb6de47956): ReadBits32 count (32), AllocateMessageSpace(count * 0x60), 0x1400aa930 per record. 0x1400aa930.c (8eb22adb6de47956): 0x00 bits 14; 0x04 bits 4; 0x08..0x28 bits 32 each; 0x2c, 0x30, 0x34, 0x38 bits 1 each; 0x3c..0x50 bits 32 each; 0x54 ReadBytesAsBits 0xc. Dispatch: HandleWorldMessage's jump table at 0x1403f1344 (bytes read via query.py bytes): entry for id 199 -> 0x1403ef24c, which calls 0x14048ded0 (saved C 0x1403ec6a0 line 1927). 0x14048ded0.c (2580df99bb1ce2aa): lines 38-67 lookup, else AllocMemory(0x60) and insert; 0x60 bytes copied; words 0xf, 0x11, 0x13 += DAT_140c636a8; ChallengeTimeUpdated; new -> table entry words 0x2c.. from record word 0x15..; record word 0xc (0x30) nonzero -> manager 0x68 + type*8 = record, ChallengeUpdated."
+grade = "fairly sure"
+gap = "The 4-bit value is read as the type from its use as the active-slot index, not from a label. The nine and six 32-bit values and the first and fourth flags are not named. Whether the client also sends 0xc7 (a writer is registered) is not read."
+
+["0x14048ded0"]
+statement = "Handles message 0xc7, the player's challenge records. See opcode.0xc7."
+proof = "As opcode.0xc7."
+grade = "fairly sure"
+gap = "As opcode.0xc7."
+name = "HandleChallengeRecords"
+
+["0x1400aacb0"]
+statement = "Reads message 0xc7's body: a 32-bit count and that many 0x60-byte challenge records (0x1400aa930)."
+proof = "As opcode.0xc7."
+grade = "sure"
+name = "ReadMessage00C7Body"
+
+["0x1400aa930"]
+statement = "Reads one challenge record of message 0xc7. See opcode.0xc7 for its fields."
+proof = "As opcode.0xc7. The decompile shows only the stream argument passed from 0x1400aacb0; the record address (base + i * 0x60) is not shown."
+grade = "fairly sure"
+gap = "The record argument passed from 0x1400aacb0 is not shown by the decompile; the call's listing would show it."
+name = "ReadChallengeRecord"
+
+["opcode.0xc6"]
+statement = "Message 0xc6 (198), world server to client: a challenge event. Body: challenge id (14 bits), a kind (5 bits), a value (32 bits). For a challenge in the Challenge table, the kind raises one of ChallengeUnlocked, ChallengeActivate, ChallengeAbandon, ChallengeFailSound, ChallengeCompletedSound and ChallengeFailTime. For an id not in the table, kind 13 empties the player's challenge records; any other kind is refused (0x80004005). It does not add a record."
+proof = "Registered in 0x14006c290 line 527: 0xc6, record 0xc, reader 0x14008ecb0 (8eb22adb6de47956: bits 14 at 0, ReadBits8 5 at 4, bits 32 at 8). Jump table 0x1403f1344: id 198 -> 0x1403ef25b -> 0x14048e2b0 (saved C 0x1403ec6a0 line 1930). 0x14048e2b0.c (e9b6b6af37d00314) lines 111-131: lookup in manager word 0x10 by id; not found: (char)body[1] == 13 -> 0x14048d060, return 0; else 0x80004005. Events at lines 174, 184, 187, 236, 285, 305."
+grade = "fairly sure"
+gap = "Which kind value raises which event (the switch after line 134) and what the value carries are not read."
+
+["0x14048e2b0"]
+statement = "Handles message 0xc6, a challenge event. See opcode.0xc6."
+proof = "As opcode.0xc6."
+grade = "fairly sure"
+gap = "As opcode.0xc6."
+name = "HandleChallengeEvent"
+
+["0x14048d060"]
+statement = "Empties the player's challenge records in the challenge manager and its two side lists, then refreshes the challenge display. Game teardown (0x1403e3350) and message 0xc6 kind 13 call it."
+proof = "Saved C 0x14048d060.c (8eb22adb6de47956): walks the map at word 0x30 freeing each record (FUN_14018b900), clears manager + 0x28 and + 0x48 (FUN_140008410), 0x14048d860, sets game 0x6f98 = 1. Callers: 0x1403e3350 (line 205), 0x14048ca10 (the manager's destructor body, from 0x14048c9d0), 0x14048e2b0."
+grade = "fairly sure"
+gap = "0x14048d860 and the list at + 0x48 are not read."
+name = "ClearChallengeRecords"
+
+["0x1403b44b0"]
+statement = "The cast check of a spell on a creature against the creature's activate spell. When the target has creature data and the spell is the activate spell GetUnitActivateSpell gives (for the same caster), it passes (0). Otherwise, when the target's byte 0x24 has bit 0 set, a spell whose record word 0x4a is 0 fails with cast result 89 (TargetGroup). A spell with that word set goes to a further check (0x1403b4a20), whether or not bit 0 is set. A target without the bit with word 0 passes. The client's own activate casts always pass it: the spell was chosen by the same function, so a failed activate prerequisite only makes the client fall back to the default activate spell, never refuse."
+proof = "Saved C 0x1403b44b0.c (e9b6b6af37d00314): param_5 (target unit word 0x18) != 0 -> GetUnitActivateSpell(target, caster) == spell -> 0; byte target 0x24 & 1 and param_3 == 0 -> 0x59; param_3 != 0 -> 0x1403b4a20. Call sites: CheckCastUnitTargetRange 0x1403b2240 line 268 (spell record word 0 as the spell, word 0x4a as param_3, target, its word 0x18, the caster), result other than 0 or 0x13d returned; 0x14055bdc0 line 52. Cast result 89: the enum table 0x140c2f290 entry with value 89 names the UTF-16 text at 0x140ab85c0, 'TargetGroup'."
+grade = "fairly sure"
+gap = "What the unit's byte 0x24 bit 0 and the spell record's word 0x4a are, and what 0x1403b4a20 checks, are not read."
+name = "CheckCastActivateSpell"
+
+["Creature2.26462.activate_spell"]
+statement = "The Seaspine Mollusk challenge object (Creature2 26462) activates with spell 1817 (Generic Quest Spell - Instant Activate - Tier 1) unless the player's challenge 328 (Pilfering Pearls) is in cooldown, in which case it uses the default activate spell 8. Its only activate column is 1817 with Prerequisite 9358. That is an OR of: challenge 328 not in cooldown (type 125, comparison 2), and nested Prerequisite 328, which has no row and so always fails. With no challenge data from the server, the client has no record for 328, so 9358 passes and it casts 1817. Message 0x97 does not carry the spell, so the server must apply the same rule from the challenge state it has sent: none sent gives 1817."
+proof = "`gleam run -m genesis_prime/table_rows -- Creature2 26462` (spell4IdActivate00 1817, prerequisiteIdActivateSpell00 9358, others 0); `-- Prerequisite 9358` (flags 1; type 125 comparison 2 objectId 328; type 11 comparison 1 objectId 328); `-- Prerequisite 328` (no row); `-- Challenge 328`; `-- Spell4 1817`; `client_files.py text 228737 228738 228721`. Rules: GetUnitActivateSpell 0x14046c580, EvaluatePrerequisite 0x1404a1ca0 (flags bit 0 = OR), Prerequisite.prerequisiteTypeId.125, Prerequisite.prerequisiteTypeId.11, opcode.0x97 (body: cast id and target only)."
+grade = "fairly sure"
+gap = "Assumes the creature record's words 0x6c and 0x148 are 0 for this unit (see 0x14046c580's gap); if either is nonzero the client activates with no spell (0xb3) instead."
+
+["Spell4Effects.effectType.7"]
+statement = "Activate (type 7) has no class or reader of its own on the client: the effect switch gives it the default effect object, whose apply does nothing, so an Activate effect in a go fires no Lua event, opens no loot window, hides nothing and sends nothing. Its lifetime is its delayTime plus its durationTime. Effect 2821 (Spell4 1817 'Generic Quest Spell - Instant Activate') and 3292 (Spell4 8, the default activate spell) are targetFlags 2 with no data, delay 0 and duration 0. What an activation does in the game (removing the unit, quest credit, loot) is the server's, sent by its own messages."
+proof = "Effect switch 0x140718120.c (hash e9b6b6af37d00314): no case 7, so the default branch, AllocMemory(0x150) and 0x1405d65a0 alone. 0x1405d65a0.c (8eb22adb6de47956) sets class 0x140b6e240. Query bytes at 0x140b6e240 (112 bytes): slot 0 0x1405d6640, 1 0x140001b70, 2 0x140001b70, 3 0x1405d6b30, 4 0x14013d8f0, 5 0x14028d4c0, 6 0x1405da910, 7 0x1405da930, 8 0x140001b70, 9 0x1405da950, 10 0x140001e50, 11 0x140001e20, 12 0x1404bcac0, 13 0x1404c0e80. Query decode: 0x140001b70 RET; 0x1405da950 mov rax, [rcx+0xb0]; mov eax, [rax+0x38]; ret (row durationTime, as opcode.0x7f4.effect_time). No type-7 test: grep of the saved C for `0x10) == 7` / `!= 7` / `case 7:` in the 13 files that call FindSpellEffect finds none, and the effect-object pattern `0xb0) + 0x10) ==` has one hit (type 4, 0x14045d9c0). The 18 other `+ 0x10) == 7` hits (0x14058f0c0, 0x140737400 and others) walk the list at DAT_140c7de18, not effects. Rows: `gleam run -m genesis_prime/table_rows -- Spell4Effects 2821 3292`."
+grade = "fairly sure"
+gap = "The class and its slots were read (sure). That no other client code acts on type 7 rests on two grep patterns; a test through another base or a register would be missed."
+
+["opcode.0x7f4.activate"]
+statement = "To end a creature activate cast, the go (0x7f4) needs only the server's cast id that 0x7fd gave. The client does all of the activation without target infos: for a Normal spell with no cast time in its record and no channel (1817 and 8), the go clears the caster's current cast, so the cast bar ends; a 0x7fe alone also clears it and removes the cast. Neither spell has a cooldown or cooldown group, so a missing go starts nothing that the go would. A go with no target infos makes no target node and records no 'player's spell went off' event (kind 8). A target info that names the activated unit with effect info 2821 (delay 0, lifetime 0) makes a target node and a do-nothing effect, records the kind 8 event, and makes no buff. A target info that names the unit with no effect infos makes a buff on the unit unless the spell's uiFlags have 0x4 (1817 has uiFlags 6, so no buff; spell 8 has 0, so it gets one). Safe go for an activate cast: the activated unit with its Activate effect info (delay 0, lifetime 0), or no target info."
+proof = "ApplySpellGo 0x14053e5a0.c (6ba38d868f75acff) lines 151-185: spell record (cast 0x138, record 0x70) word 0x1c == 0 (castTime: FillSpellRecord 0x140568540.c, 2580df99bb1ce2aa, line 47 copies Spell4 dword 7, offset 28) -> FindCast of caster 0x1600 == this cast, spell 0x50 (channel) null, method (record 0x18) not 2, 7 or 8 -> unit 0x1600 = 0. Lines 260-296: ApplyGoTargetInfo per target info only. Lines 218-221: FUN_14039c720(player, 8, caster, spell) only when caster == player and go byte 0x14 (target count) != 0. FinishCast 0x14053e1b0.c (6ba38d868f75acff) lines 111-115: ClearUnitCast unless method 2 or 7; cooldowns there only for methods 1 and 2. ApplyGoTargetInfo 0x14053d680.c (2580df99bb1ce2aa) and InitCastTargetNode 0x140717990.c (2580df99bb1ce2aa) lines 87-102: record 0x10c & 1 -> no buff; spell 0x50 == 0 and node 0x4c + node 0x48 == 0 -> no buff (a node with no effects keeps 0x4c = 0xffffffff, opcode.0x7f4.first_start). FillSpellRecord lines 206-208: record 0x10c bit 1 = (uiFlags >> 2) & 1. Rows: `gleam run -m genesis_prime/table_rows -- Spell4 1817 8` (castTime 0, channel 0, spellCoolDown 0, spellCoolDownId00-02 0, uiFlags 6 and 0, spell4VisualGroupId 0); `table_rows -- Spell4Base 1817 8` (castMethod 0); `table_rows -- Spell4Effects 2821 3292`."
+grade = "fairly sure"
+gap = "Read from the decompile; not run. Whether the caster's unit 0x1600 holds the id FindCast finds after 0x7fd re-files the cast under the server id was not traced (opcode.0x7fe's clear covers it either way). How a buff made for spell 8 shows on the unit's frame was not read. A live activation of Creature2 12919 with each of the three go forms would settle it."
+
+["0x140717990.ui_flags"]
+statement = "Four Spell4 uiFlags bits decide where a cast's go makes buffs: 0x4 makes none; 0x20 makes none on the caster; 0x40 makes none on the primary target; 0x80 makes them only on the caster and the primary target. The target node and its effects are made in every case; only the buff is skipped."
+proof = "FillSpellRecord 0x140568540.c (2580df99bb1ce2aa) lines 206-216: record 0x10c bit 1 = (uiFlags >> 2) & 1, bit 2 = (uiFlags >> 5) & 1, bit 4 = (uiFlags >> 6) & 1, bit 8 = (uiFlags >> 7) & 1 (uiFlags is Spell4 dword 0x59, offset 356, per the Spell4.propertyFlags record). InitCastTargetNode 0x140717990.c (2580df99bb1ce2aa) lines 87-99, after the effect infos are added: & 1 return; & 2 and node unit == cast 0x154 (caster) return; & 4 and node unit == cast 0x158 (primary target) return; & 8 and unit neither return."
+grade = "fairly sure"
+gap = "Read from the decompile; the other uiFlags bits copied into record 0x10c are not read."
+
+["0x14053e5a0.player_cast_event"]
+statement = "When the player's own cast goes off with at least one target info, the go records a kind-8 event (the caster and the Spell4 id) in the client's list of recent combat events, which the caster check of a later press reads. A go with no target infos records nothing."
+proof = "ApplySpellGo 0x14053e5a0.c (6ba38d868f75acff) lines 218-221: player (game 0x6490) id == cast 0x154 and go byte 0x14 != 0 -> FUN_14039c720(player, 8, cast 0x154, cast 0x130). 0x14039c720.c (8eb22adb6de47956): an entry of the list at game 0x7178 with the same kind, unit and spell has its time renewed and its timer re-armed; else a new 0x70-byte entry (0x1407a0610). Readers of game 0x7178: CheckCastCaster 0x1403afb10.c (2580df99bb1ce2aa) line 404 through 0x1403b4e40, and 0x14049d5b0.c (8eb22adb6de47956)."
+grade = "fairly sure"
+gap = "Which spell conditions read kind 8, and how long an entry lives (DAT_140c6664c), were not read."
+
+["opcode.0x7fe.activate"]
+statement = "Nothing at the go or the finish of a creature activate cast is specific to activation: the go and finish code never reads the activate marks. No Lua event is raised for the activation, no collect or loot is asked for, and the client sends nothing to the server after it. The activate state (UnitActivationTypeChanged) is refreshed when the cast starts, not when it ends. The result of the activation reaches the client only by the server's own messages."
+proof = "No read of cast 0xbc (activate mark, info 0x54) or 0xc0 (info 0x58, set to 1 by CastActivateSpell 0x14039c430.c line 76) in 0x14053e5a0.c, 0x14053e1b0.c or 0x14053d680.c (grep). FinishCast 0x14053e1b0.c (6ba38d868f75acff) lines 117-138 call the listeners at game 0x6cd8 for the player's cast; the only registration is SetShortcutSpell 0x1405c7620.c (8eb22adb6de47956) line 157. `call_paths.py 0x14053e5a0 --to 0x1403f4900 --depth 4` finds only 0x14055b0e0 at 0x14053ee08, reached (lines 268-304) when the struck unit is the player and the caster is not. `call_paths.py 0x14053e1b0 --to 0x1403f4900` finds only ReleaseSpellThreshold -> SendCastCancel, gated (lines 52-63) on castMethod 2, 6 or 7. UnitActivationTypeChanged is raised in 0x14046c300.c line 102 (called by CastActivateSpell with 1) and 0x140479200.c line 23."
+grade = "fairly sure"
+gap = "call_paths does not follow virtual calls (cast 0x210's slots 0x58 and 0x8, the listener calls); a send behind one would be missed. What the server sends to show the result (unit removal, loot, quest credit) is not in this record."
+
+["0x14055b0e0"]
+statement = "Sets the player's target to a unit and tells the server: it returns when the unit is already the target, keeps the new target id on the player, sends message 0x185 and raises 'TargetUnitChanged' (with 'UnitDestroyed' and 'UnitCreated' along the way for some units). A go calls it when a spell from another unit strikes the player and the player has no target; CollectUnit calls it before casting a unit's activate spell, so collecting by command first targets the unit."
+proof = "Saved C 0x14055b0e0.c (2580df99bb1ce2aa): line 37 returns when player (game 0x6490) word 0x108 == the id; lines 123 and 130 player 0x108 = the id; line 224 SendWorldMessage(game, 0x185, ...); line 229 RaiseUiEvent 'TargetUnitChanged'; lines 48 and 85 'UnitDestroyed', 'UnitCreated'. ApplySpellGo 0x14053e5a0.c (6ba38d868f75acff) lines 268-304: the target is the player, record 0x10c & 0x4000000 clear, player 0x108 == 0, caster not the player -> FUN_14055b0e0(game, caster) unless DAT_140c45ed0's entry is set. CollectUnit 0x14039d0f0 (e9b6b6af37d00314) calls it before CastActivateSpell."
+grade = "fairly sure"
+gap = "Read by grep of the decompile, not line by line: the conditions around lines 48-130 and 0x185's layout were not read; nor is the setting at DAT_140c45ed0."
+name = "SetPlayerTarget"
