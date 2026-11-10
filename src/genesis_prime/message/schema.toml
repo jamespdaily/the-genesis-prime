@@ -3052,7 +3052,7 @@ fields = [
 [[record]]
 name = "buyback_entry"
 evidence = "opcode.0xba"
-summary = "one buyback entry as messages 0xBA and 0xBC carry it: the buyback id, the Item2 id and the quantity, the item property inputs (fields 4 to 21, which the server writes as 0, read as message 0x111's are), the two amounts and their currency types as the tab shows them, and a last 32-bit value"
+summary = "one buyback entry as messages 0xBA and 0xBC carry it: the buyback id, the Item2 id and the quantity, the item property inputs (fields 4 to 21, read as message 0x111's are; the server writes the five multipliers, fields 9 to 13, as the float 1.0 and the rest as 0), the two amounts and their currency types as the tab shows them, and a last 32-bit value"
 fields = [
   { name = "buyback_id", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba" },
   { name = "item_id", kind = "unsigned", bits = 18, evidence = "opcode.0xba", named_by = "opcode.0xba" },
@@ -3062,11 +3062,11 @@ fields = [
   { name = "field_6", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
   { name = "field_7", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
   { name = "field_8", kind = "unsigned", bits = 18, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_9", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_10", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_11", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_12", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_13", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "multiplier_1", kind = "float32", evidence = "opcode.0xba.random_stats", named_by = "opcode.0xba.random_stats" },
+  { name = "multiplier_2", kind = "float32", evidence = "opcode.0xba.random_stats", named_by = "opcode.0xba.random_stats" },
+  { name = "multiplier_3", kind = "float32", evidence = "opcode.0xba.random_stats", named_by = "opcode.0xba.random_stats" },
+  { name = "multiplier_4", kind = "float32", evidence = "opcode.0xba.random_stats", named_by = "opcode.0xba.random_stats" },
+  { name = "multiplier_5", kind = "float32", evidence = "opcode.0xba.random_stats", named_by = "opcode.0xba.random_stats" },
   { name = "field_14", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
   { name = "field_15", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
   { name = "field_16", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
