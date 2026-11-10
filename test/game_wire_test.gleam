@@ -4133,9 +4133,10 @@ fn last_cast_of(frames: List(Frame)) -> Int {
 
 /// Presses the ability of the bag index and moves the clock on by its cast time, so
 /// the timer of its go fires: the first pong shows the connection took the press and
-/// started the go's timer on the clock, and the barrier of the advance leaves every
-/// frame the go caused in the socket before the second pong. The frames of both reads
-/// and the bytes beyond.
+/// started the go's timer on the clock. The Beast answers the strike on its own
+/// process, so the read after the advance goes on until the go is written with its
+/// outcome (a health, a miss, or no target at all), and the second pong follows it.
+/// The frames of the reads and the bytes beyond.
 fn press_and_fire(
   time time: driven_time.Time,
   game game: game_client.Game,
@@ -4152,8 +4153,19 @@ fn press_and_fire(
   )
   let #(taken, have) = game_client.read_until_pong(game:, have:, number: 1)
   driven_time.advance(time:, ms: cast_ms)
-  let #(fired, have) = game_client.read_until_pong(game:, have:, number: 2)
-  #(list.append(taken, fired), have)
+  let #(went, have) =
+    game_client.read_until(game:, have:, found: fn(went) {
+      let seen = list.append(taken, went)
+      let gos = game_client.go_targets_in(frames: seen)
+      gos != []
+      && {
+        list.all(gos, fn(go) { go.1 == [] })
+        || game_client.health_in(frames: seen) != []
+        || game_client.missed_in(frames: seen) != []
+      }
+    })
+  let #(settled, have) = game_client.read_until_pong(game:, have:, number: 2)
+  #(list.flatten([taken, went, settled]), have)
 }
 
 /// Presses the ability of the bag index until a press hits the Beast (a deflected one
