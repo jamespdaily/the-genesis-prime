@@ -3184,8 +3184,11 @@ fn events_until(
   case done(seen) {
     True -> list.reverse(seen)
     False -> {
-      let assert Ok(event) = process.receive(events, 20_000)
-        as "the bot reported what the test waits for"
+      let event =
+        open_wait.received(
+          from: events,
+          what: "the bot's report of what the test waits for",
+        )
       events_until(events:, seen: [event, ..seen], done:)
     }
   }
@@ -3216,7 +3219,8 @@ pub fn a_sitting_bot_and_a_player_see_each_other_appear_hear_each_others_say_lin
             chat_every_ms: 300,
             whisper_every_ms: 600,
           ),
-          for_ms: 60_000,
+          // Past the test's deadline: only the stop can end the bot inside it.
+          for_ms: 300_000,
           report: fn(event) { process.send(events, event) },
         ),
       )
@@ -3265,8 +3269,11 @@ pub fn a_sitting_bot_and_a_player_see_each_other_appear_hear_each_others_say_lin
     as "the bot's first line, numbered 1 as the client numbers, is answered with its accept"
   // The bot stops and leaves: the player sees its unit go.
   sitting_bot.request_stop(bot)
-  let assert Ok(tally) = process.receive(finished, 20_000)
-    as "the bot ended when asked to stop"
+  let tally =
+    open_wait.received(
+      from: finished,
+      what: "the bot to end when asked to stop",
+    )
   assert tally.lines_heard >= 1
     && tally.units_seen >= 1
     && tally.lines_sent >= 1
@@ -3349,8 +3356,11 @@ pub fn a_sitting_bot_that_follows_replays_the_named_players_moves_test() -> Nil 
     ]
     as "the bot walks as the player did, every command as the client sent it"
   sitting_bot.request_stop(bot)
-  let assert Ok(_tally) = process.receive(finished, 20_000)
-    as "the bot ended when asked to stop"
+  let _tally =
+    open_wait.received(
+      from: finished,
+      what: "the bot to end when asked to stop",
+    )
   game_client.close(game: zed)
   login_support.stop(started)
 }
@@ -3397,7 +3407,8 @@ pub fn a_sigterm_to_the_node_ends_the_sitting_bot_which_leaves_and_gives_its_tal
           seat:,
           near: "Zed Qu",
           schedule: sitting_bot.client_schedule(walk: sitting_bot.client_circle),
-          for_ms: 60_000,
+          // Past the test's deadline: only the stop can end the bot inside it.
+          for_ms: 300_000,
           report: fn(_event) { Nil },
         ),
       )
@@ -3407,8 +3418,11 @@ pub fn a_sigterm_to_the_node_ends_the_sitting_bot_which_leaves_and_gives_its_tal
   let zed_seat = Seat(game: zed, have: zed_have, zone_channel: 0)
   let #(appeared, zed_seat) = wait_for_frame(seat: zed_seat, message_id: 0x0262)
   send_sigterm()
-  let assert Ok(_tally) = process.receive(finished, 20_000)
-    as "the bot ended on SIGTERM, well before its 60 s, and gave its tally"
+  let _tally =
+    open_wait.received(
+      from: finished,
+      what: "the bot to end on SIGTERM and give its tally",
+    )
   let #(gone, _zed_seat) = wait_for_frame(seat: zed_seat, message_id: 0x0355)
   let assert Ok(destroyed) = unit_destroyed.decode(gone.body)
   assert destroyed.unit_id == unit_of(appeared)

@@ -5,6 +5,7 @@
 //// arrives inside 0x03DC with every byte after its length enciphered:
 //// opcode.0x3dc; the pong answering a ping arrives bare: opcode.0x1).
 
+import ask_support
 import event_wait
 import frame_peer
 import game_client.{type Game}
@@ -46,12 +47,7 @@ fn written_in_one_send(messages: List(Frame), after after: BitArray) -> Game {
 /// Whether `body` crashed, run in a process of its own so the test goes on.
 fn crashes(body: fn() -> Nil) -> Bool {
   let monitor = process.spawn_unlinked(body) |> process.monitor
-  let assert Ok(down) =
-    process.new_selector()
-    |> process.select_specific_monitor(monitor, fn(down) { down })
-    |> process.selector_receive(within: 10_000)
-    as "the process ended"
-  case down.reason {
+  case ask_support.ended(watched: monitor, what: "the process to end") {
     process.Normal -> False
     process.Killed | process.Abnormal(_) -> True
   }

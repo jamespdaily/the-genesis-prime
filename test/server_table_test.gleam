@@ -23,7 +23,9 @@
 ////   Quest2Reward (the rewards of a quest a turn-in gives,
 ////   `genesis_prime/game/quest_turn_in`), and Quest2Difficulty and
 ////   LevelDifferentialAttribute (the multipliers of a quest's experience and credits,
-////   `genesis_prime/game/quest_turn_in`) are the ones a rule reads today.
+////   `genesis_prime/game/quest_turn_in`), and CommunicatorMessages (the rows that deliver a
+////   quest over the communicator), Faction2 and Faction2Relationship (the levels of one faction
+////   toward another, `genesis_prime/game/faction_level`) are the ones a rule reads today.
 //// - The load: one file for each table of the list and no other is read, the
 ////   rows the rules follow are required, and a missing row fails the load. The
 ////   load runs in a fresh node, since it is under the server's own key, which
@@ -45,7 +47,7 @@ import owned_test
 import planted_table
 import simplifile
 
-pub fn the_servers_tables_are_the_sixty_six_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_the_sixty_nine_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
@@ -57,6 +59,7 @@ pub fn the_servers_tables_are_the_sixty_six_its_rules_read_test() -> Nil {
       "CharacterCustomizationLabel",
       "ChatChannel",
       "Class",
+      "CommunicatorMessages",
       "Creature2",
       "Creature2ArcheType",
       "Creature2Difficulty",
@@ -72,6 +75,8 @@ pub fn the_servers_tables_are_the_sixty_six_its_rules_read_test() -> Nil {
       "CustomizationParameterMap",
       "Episode",
       "EpisodeQuest",
+      "Faction2",
+      "Faction2Relationship",
       "GameFormula",
       "InstancePortal",
       "Item2",

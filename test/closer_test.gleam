@@ -93,11 +93,7 @@ pub fn a_listener_whose_supervisor_ends_while_the_close_waits_does_not_stop_the_
     == ask_support.shutdown()
     as "the closing tree stopped as a stop ends it"
   log_capture.stop(capture)
-  let refused =
-    mug.new("127.0.0.1", port: second.port)
-    |> mug.ip_version_preference(mug.Ipv4Only)
-    |> mug.timeout(ask_support.event_wait_ms)
-    |> mug.connect
+  let refused = ask_support.connecting(port: second.port)
   assert refused == Error(mug.ConnectFailedIpv4(mug.Econnrefused))
     as "the listener after the one that ended was closed to new connections"
   let closed =

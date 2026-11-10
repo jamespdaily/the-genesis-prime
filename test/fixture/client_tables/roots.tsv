@@ -378,3 +378,31 @@ Item2	48170	(a shield: ItemBudget 51, ItemStat 439: four kind-2 entries on group
 Item2	37685	(a weapon whose ItemStat 439 names group 14, the shield properties, so no roll is accepted)	random_stat_test
 Item2	37683	(ItemStat 443: four kind-4 entries, which only crafting fills)	random_stat_test
 Quest2	9376	quest whose reward is Item2 48169, an item with three random-stat entries	quest_turn_in_test
+Quest2	10519	tutorial quest (flags 0x4008) whose receiver Creature2 73491 has factionId 171	quest_turn_in_test, game_connection_quest_turn_in_test
+QuestObjective	21293	objective 0 of quest 10519	quest_turn_in_test, game_connection_quest_turn_in_test
+QuestObjective	21345	objective 1 of quest 10519	quest_turn_in_test, game_connection_quest_turn_in_test
+QuestObjective	21346	objective 2 of quest 10519	quest_turn_in_test, game_connection_quest_turn_in_test
+Quest2	10522	tutorial quest (flags 0x4008) whose only receiver Creature2 74861 has factionId 170	quest_turn_in_test
+QuestObjective	21306	objective 0 of quest 10522	quest_turn_in_test
+QuestObjective	21359	objective 1 of quest 10522	quest_turn_in_test
+QuestObjective	21360	objective 2 of quest 10522	quest_turn_in_test
+Quest2	3673	quest with flags 0x18004 delivered by CommunicatorMessages 1281 and 2081	quest_turn_in_test, communicator_test, communicator_tables_test
+QuestObjective	4748	objective 0 of quest 3673	quest_turn_in_test, communicator_test
+QuestObjective	4888	objective 1 of quest 3673	quest_turn_in_test, communicator_test
+QuestObjective	4889	objective 2 of quest 3673	quest_turn_in_test, communicator_test
+QuestObjective	4890	objective 3 of quest 3673	quest_turn_in_test, communicator_test
+QuestObjective	13391	objective 4 of quest 3673	quest_turn_in_test, communicator_test
+Quest2	6654	quest with flags 0x10008 that no CommunicatorMessages row delivers, whose receiver Creature2 30336 has factionId 170	quest_turn_in_test, communicator_tables_test
+QuestObjective	10552	objective 0 of quest 6654	quest_turn_in_test, communicator_tables_test
+Quest2	3741	quest with flags 0x10000 delivered by CommunicatorMessages 1907 (zone 13 of World 51)	communicator_test, communicator_tables_test
+QuestObjective	4813	objective 0 of quest 3741	communicator_test
+CommunicatorMessages	1281	row of quest 3673 in World 426 with flags 0, quest00 3673 state00 2	quest_turn_in_test, communicator_test, communicator_tables_test
+CommunicatorMessages	2081	row of quest 3673 in World 426 with flags bit 1 set	communicator_test, communicator_tables_test
+CommunicatorMessages	1907	row of quest 3741 in zone 13 of World 51	communicator_test, communicator_tables_test
+Creature2	73491	tutorial giver and receiver of 10519 and 10520, factionId 171	quest_turn_in_test, game_connection_quest_turn_in_test
+Creature2	74861	receiver of 10522, factionId 170	quest_turn_in_test
+Creature2	11063	receiver of 3673 and the creature of CommunicatorMessages 1281, factionId 171	communicator_test, communicator_tables_test
+Creature2	12959	receiver of 3673, factionId 171	communicator_tables_test
+Creature2	16622	receiver of 3673, factionId 171	communicator_tables_test
+Creature2	30336	receiver of 6654, factionId 170	communicator_tables_test
+Creature2	11066	creature of CommunicatorMessages 1907, receiver of 3741	communicator_test

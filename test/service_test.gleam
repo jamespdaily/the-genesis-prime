@@ -10,6 +10,7 @@
 
 import genesis_prime/service
 import gleam/erlang/process
+import open_wait
 import owned_test
 
 pub fn a_message_sent_by_name_is_received_through_the_named_subject_test() -> Nil {
@@ -20,8 +21,11 @@ pub fn a_message_sent_by_name_is_received_through_the_named_subject_test() -> Ni
   let sent = service.send_by_name(name:, message: "hello")
   assert sent == Ok(process.self())
     as "the pid of the process that holds the name, which the asker monitors"
-  assert process.receive(process.named_subject(name), within: 1000)
-    == Ok("hello")
+  assert open_wait.received(
+      from: process.named_subject(name),
+      what: "the message sent by name",
+    )
+    == "hello"
     as "gleam_erlang: a named subject takes the message sent to its registered process as #(name, message)"
 }
 

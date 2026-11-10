@@ -38,6 +38,7 @@ import owned_test
 import recording_support
 import script_rule
 import simplifile
+import socket_read
 
 fn seed_value() -> seed.Seed {
   let assert Ok(value) =
@@ -237,6 +238,8 @@ pub fn a_connection_is_recorded_input_by_input_with_the_time_its_script_gave_eac
     as "the clock was called for the read, told its bytes"
   let assert Ok(#(PeerClosed, third)) = process.receive(given, 0)
     as "the clock was called for the client's close"
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(given, 0) == Error(Nil)
     as "no other input was taken, so no other call was made"
   let assert Ok(Recording(header:, lines:, closing: Some(closing))) =
@@ -364,7 +367,11 @@ pub fn a_recording_that_cannot_be_written_ends_the_connection_before_the_steps_e
   let server =
     start(folder: blocked, scripts: scripted(1, given), shutdown_ms: 1000)
   let client = ask_support.connect(server)
-  assert mug.receive(client, timeout_milliseconds: ask_support.event_wait_ms)
+  assert socket_read.receive(
+      limit: socket_read.Open,
+      socket: client,
+      what: "the connection to close",
+    )
     == Error(mug.Closed)
     as "the connection closed without the accept's record, the accept's effect"
   ask_support.stop(server)

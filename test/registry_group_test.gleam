@@ -14,6 +14,7 @@ import genesis_prime/world_map/map_id.{MapId}
 import gleam/erlang/process.{type Subject}
 import gleam/list
 import gleam/otp/static_supervisor as supervisor
+import open_wait
 import owned_test
 
 /// What a member process is told to do, or was delivered.
@@ -60,7 +61,7 @@ fn member(scope scope: Registry(Int)) -> Member {
         |> registry.select_delivered(scope, _, Delivered)
       loop(scope:, selector:, done:, got:)
     })
-  let assert Ok(commands) = process.receive(ready, 5000) as "the member started"
+  let commands = open_wait.received(from: ready, what: "the member to start")
   Member(commands:, done:, got:)
 }
 
@@ -91,8 +92,11 @@ fn loop(
 
 fn told(member: Member, command: Command) -> Nil {
   process.send(member.commands, command)
-  let assert Ok(Nil) = process.receive(member.done, 5000)
-    as "the member carried the command out"
+  let Nil =
+    open_wait.received(
+      from: member.done,
+      what: "the member to carry the command out",
+    )
   Nil
 }
 
@@ -102,8 +106,7 @@ fn got_before_last(member: Member) -> List(Int) {
 }
 
 fn collect(got: Subject(Int), found: List(Int)) -> List(Int) {
-  let assert Ok(message) = process.receive(got, 5000)
-    as "the last message arrived"
+  let message = open_wait.received(from: got, what: "the last message")
   case message == last {
     True -> list.reverse(found)
     False -> collect(got, [message, ..found])

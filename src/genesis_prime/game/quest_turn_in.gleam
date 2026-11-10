@@ -3,8 +3,8 @@
 //// sequence is genesis_prime/game/connection/quest_turn_in's.
 ////
 //// ```
-//// 0x35D {quest, reward, by communicator} ─▶ take(body, asker, standing, picture, progress, currencies, ...)
-////                                           ├─ refused ─▶ Refused([Log])  or  Refused([Refuse(27)])   nothing asked, nothing changed
+//// 0x35D {quest, reward, by communicator} ─▶ take(body, asker, standing, picture, progress, currencies, life, ...)
+////                                           ├─ refused ─▶ Refused([Log])  or  Refused([Refuse(27)])  or  Refused([Log, Refuse(57)])   nothing asked, nothing changed
 ////                                           └─ accepted ─▶ Asks(turn_in) ─▶ the connection asks the store (request(..))
 //// the store's answer ─▶ answered(turn_in, items, currencies, answer)
 ////                       TurnedIn(credits, made): the log has the quest Completed, the items, the credits, the
@@ -19,15 +19,20 @@
 ////   it built from the same tables, so a refusal is a modified or stale client or a gap this
 ////   server has; the first that fails answers:
 ////   1. a body the client's reader refuses ends the connection (`NotDecoded`)
+////   1a. the player is dead, over the communicator or at a creature: 0x106 code 57
+////      (Player_CantDoWhileDead), as a buy answers; the client's dialog closes on death
+////      (`0x140554470.communicator_dialog`), so it never sends this
 ////   2. the quest has no Quest2 row, or a row the client's quest reader refuses
 ////   3. the log's state for it is not Achieved (2), unless the quest auto-completes (Quest2
 ////      flags bit 0): it is then taken as `quest.can_accept` takes an accept with the log-full
 ////      bit masked, and goes from no entry, or a Known one, straight to Completed
 ////   4. the receiver: a shown creature alive, not Hostile to the player, within reach, whose
 ////      Creature2 row receives the quest (`spawn.received_quest_ids`, through `quest.in_reach`);
-////      with the by-communicator bit set, the communicator's check instead: the quest has flags
-////      8, or flags 0x10000 with a CommunicatorMessages row delivering it, and some creature that
-////      receives it has a faction that is not Hostile to the player's
+////      with the by-communicator bit set, the communicator's check instead, and no creature is
+////      needed (genesis_prime/game/communicator): the quest must be Achieved, with no
+////      auto-complete, and the dialog the client opens must offer it, which is flags 0x10000 with a
+////      CommunicatorMessages row delivering it, or flags 8 with a receiver whose faction is not
+////      Hostile to the player's current faction
 ////   5. the reward id: 0 only when the quest has no choice rows, else the Quest2Reward id of a
 ////      choice row the player is offered (`equip_requirement.offered`)
 ////   6. the quest has a fixed TradeSkillXp row (Quest2Reward type 4): refused, as the client
@@ -67,6 +72,7 @@
 //// | the same message while the store works | held, then taken against the new log |
 
 import genesis_prime/client_connection
+import genesis_prime/game/communicator
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/equip_requirement.{Wearer}
@@ -74,6 +80,7 @@ import genesis_prime/game/experience
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
 import genesis_prime/game/item_property
+import genesis_prime/game/player_life
 import genesis_prime/game/quest
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/random_stat
@@ -172,6 +179,12 @@ const auto_complete_checks = 0xffff_dfff
 /// Quest2 flags bit 0: the quest completes without being taken.
 const auto_complete_flag = 1
 
+/// Quest2 flags bit 3: the quest is one the communicator turns in.
+const communicable_flag = 8
+
+/// Quest2 flags bits 0 and 2: a quest the client completes through a call from the server.
+const completes_by_call_flags = 5
+
 /// Quest2 flags bit 19: a quest of the contracts manager.
 const contract_flag = 0x80000
 
@@ -201,6 +214,9 @@ const rotation_essence_type = 10
 
 /// The client's code for a turn-in the inventory has no room for (Item_InventoryFull).
 const inventory_full = 27
+
+/// The client's code for a request a dead player makes (Player_CantDoWhileDead).
+const cant_do_while_dead = 57
 
 /// The reason the turn-in's items are shown for (Item.CodeEnumItemUpdateReason 8, Quest).
 const quest_reason = 8
@@ -259,6 +275,7 @@ pub fn take(
   progress progress: experience.Progress,
   currencies currencies: Currencies,
   item_proficiencies item_proficiencies: Int,
+  life life: player_life.Life,
   tables tables: table_store.Tables,
   now_ms now_ms: Int,
   unix_seconds unix_seconds: Int,
@@ -269,6 +286,7 @@ pub fn take(
     |> client_connection.decoded(message_id:)
     |> result.map_error(quest.NotDecoded),
   )
+  use <- refused_when_dead(message:, life:, logged:)
   case
     checked(
       message:,
@@ -297,6 +315,33 @@ pub fn take(
         })
       Asks(turn_in:, effects: list.reverse(lines), logged:)
     }
+  }
+}
+
+/// The refusal of a dead player's turn-in, which the client never sends: its dialog closes
+/// on death and AnswerCommunicatorQuest returns (`0x140554470.communicator_dialog`), so the
+/// server answers 57 (Player_CantDoWhileDead) as it does a buy. Otherwise `next` decides.
+fn refused_when_dead(
+  message message: quest_turn_in_message.QuestTurnIn,
+  life life: player_life.Life,
+  logged logged: Set(String),
+  next next: fn() -> Taken,
+) -> Taken {
+  case
+    vendor_trade.refused_when_dead(
+      key: "dead player",
+      text: "0x035D turns in quest "
+        <> int.to_string(message.quest_id)
+        <> " while the player is dead: the client sends nothing for a dead player, so the server answers "
+        <> int.to_string(cant_do_while_dead),
+      code: cant_do_while_dead,
+      life:,
+      logged:,
+    )
+  {
+    Error(vendor_trade.Declined(effects:, logged:)) ->
+      Refused(effects:, logged:)
+    Ok(Nil) -> next()
   }
 }
 
@@ -338,24 +383,23 @@ fn checked(
   )
   let assert Ok(row) = quest2.get(tables:, id: Quest2Id(quest_id))
     as "a quest the client's rows read has its Quest2 row"
-  use log <- result.try(state_allows(
-    turning:,
-    row:,
-    state: quest_log.state(log: asker.log, quest: known),
-    asker:,
-    tables:,
-    unix_seconds:,
-  ))
+  let state = quest_log.state(log: asker.log, quest: known)
+  use log <- result.try(case message.by_communicator != 0 {
+    True ->
+      by_communicator_allows(
+        turning:,
+        row:,
+        state:,
+        asker:,
+        tables:,
+        unix_seconds:,
+      )
+    False ->
+      state_allows(turning:, row:, state:, asker:, tables:, unix_seconds:)
+  })
   use <- bool.guard(
-    when: message.by_communicator != 0,
-    return: Error(Declined(
-      key: "by communicator",
-      text: turning
-        <> " by the communicator, whose turn-in is not built yet (#673)",
-    )),
-  )
-  use <- bool.guard(
-    when: !quest.in_reach(
+    when: message.by_communicator == 0
+      && !quest.in_reach(
       quest_id:,
       quest_ids: spawn.received_quest_ids,
       standing:,
@@ -477,6 +521,54 @@ fn state_allows(
             <> quest.describe(error:),
           ))
       }
+  }
+}
+
+/// The log with the quest Completed, when the communicator turns it in: the quest is
+/// Achieved (2), as `0x14043c700` requires before it opens the dialog, and
+/// `communicator.turn_in` allows it. The communicator does not complete a quest that
+/// completes without being taken: the client's path for it needs a side-list entry only a
+/// call from the server makes, and the server sends no call (#334).
+fn by_communicator_allows(
+  turning turning: String,
+  row row: Quest2,
+  state state: Int,
+  asker asker: quest.Asker,
+  tables tables: table_store.Tables,
+  unix_seconds unix_seconds: Int,
+) -> Result(QuestLog, Stop) {
+  use <- bool.guard(
+    when: state != 2,
+    return: Error(Declined(
+      key: "state " <> int.to_string(state),
+      text: turning
+        <> " by the communicator, whose state in the log is "
+        <> int.to_string(state)
+        <> " and not Achieved"
+        <> case
+        int.bitwise_and(row.flags, communicable_flag) != 0
+        && int.bitwise_and(row.flags, completes_by_call_flags) != 0
+      {
+        True ->
+          ", and with flag 1 or 4 it completes over the communicator only through a side-list entry a call from the server makes, which the server does not send (#334)"
+        False -> ""
+      },
+    )),
+  )
+  case communicator.turn_in(quest: row, asker:, tables:) {
+    Ok(Nil) ->
+      Ok(quest_log.complete(
+        log: asker.log,
+        quest_id: row.id,
+        at_seconds: unix_seconds,
+      ))
+    Error(refusal) ->
+      Error(Declined(
+        key: communicator.key(refusal:),
+        text: turning
+          <> " by the communicator, "
+          <> communicator.describe(refusal:),
+      ))
   }
 }
 

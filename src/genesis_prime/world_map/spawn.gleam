@@ -64,6 +64,7 @@
 
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/damage
+import genesis_prime/game/faction_level
 import genesis_prime/game/hit
 import genesis_prime/game/hit_radius
 import genesis_prime/game/prerequisite.{type Prerequisite}
@@ -84,8 +85,6 @@ import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/creature2_resist
 import genesis_prime/table/creature2_tier
 import genesis_prime/table/creature_level
-import genesis_prime/table/faction2
-import genesis_prime/table/faction2_relationship
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
   type Creature2Id, type PrerequisiteId, type UnitProperty2Id,
@@ -421,9 +420,8 @@ type Checked {
 /// other than a row's id, built once for a load so no check scans a table for
 /// each of the 77,794 rows: each creature's override of Base Health, the display
 /// ids of each display group, the first display and the first outfit of each
-/// group, the ids of the outfits that have a Creature2OutfitInfo row, each
-/// faction's parent, and the level of each pair of factions that has a
-/// relationship, filed under both orders as the client files it, and each
+/// group, the ids of the outfits that have a Creature2OutfitInfo row, the
+/// factions' levels (genesis_prime/game/faction_level) and each
 /// UnitProperty2 row's default and flags. Creature2OutfitInfo
 /// is a table only the content load reads, so the checks of a summon read the ids
 /// and not the table.
@@ -435,8 +433,7 @@ type Catalog {
     first_displays: Dict(Int, Int),
     first_outfits: Dict(Int, Int),
     outfits: Set(Int),
-    parents: Dict(Int, Int),
-    levels: Dict(#(Int, Int), Int),
+    factions: faction_level.Levels,
     worlds: Set(Int),
     property_rows: Dict(Int, #(Float, Int)),
   )
@@ -452,10 +449,6 @@ pub const dominion_faction = 166
 /// (FactionDispositionFromLevel: 0 to 2 Hostile, 3 to 7 Neutral, 8 to 10
 /// Friendly, `world_data.creature_disposition`).
 const highest_neutral_level = 7
-
-/// The highest level the client calls Hostile (FactionDispositionFromLevel,
-/// `world_data.creature_disposition`).
-const highest_hostile_level = 2
 
 /// The rows of the spawn table in, the selection out: every NonPlayer row and
 /// every static object row is checked (a row that fails is a refusal, and fails
@@ -742,7 +735,6 @@ fn created_dead(object: StaticObject) -> Bool {
 
 /// The tables' lookups by something other than an id, built once.
 fn catalog(tables tables: table_store.Tables) -> Catalog {
-  let relationships = faction2_relationship.all(tables)
   Catalog(
     tables:,
     overrides: list.fold(
@@ -793,9 +785,7 @@ fn catalog(tables tables: table_store.Tables) -> Catalog {
     outfits: set.from_list(
       list.map(creature2_outfit_info.all(tables), fn(row) { row.id }),
     ),
-    parents: list.fold(faction2.all(tables), dict.new(), fn(found, faction) {
-      dict.insert(found, faction.id, faction.faction2_id_parent)
-    }),
+    factions: faction_level.build(tables:),
     worlds: set.from_list(list.map(world.all(tables), fn(row) { row.id })),
     property_rows: list.fold(
       unit_property2.all(tables),
@@ -804,17 +794,6 @@ fn catalog(tables tables: table_store.Tables) -> Catalog {
         dict.insert(found, row.id, #(row.default_value, row.flags))
       },
     ),
-    levels: list.fold(relationships, dict.new(), fn(found, relationship) {
-      found
-      |> dict.insert(
-        #(relationship.faction_id0, relationship.faction_id1),
-        relationship.faction_level,
-      )
-      |> dict.insert(
-        #(relationship.faction_id1, relationship.faction_id0),
-        relationship.faction_level,
-      )
-    }),
   )
 }
 
@@ -828,67 +807,17 @@ fn first_kept(
   dict.upsert(found, group, option.unwrap(_, entry))
 }
 
-/// A faction and its parents, nearest first: the chain the client walks
-/// (`0x140717560`). A faction with no parent, a parent that is 0 and a parent
-/// already met end it, so a cycle cannot loop.
-fn lineage(catalog catalog: Catalog, faction faction: Int) -> List(Int) {
-  lineage_loop(catalog:, faction:, met: [])
-}
-
-fn lineage_loop(
-  catalog catalog: Catalog,
-  faction faction: Int,
-  met met: List(Int),
-) -> List(Int) {
-  case faction == 0 || list.contains(met, faction) {
-    True -> list.reverse(met)
-    False ->
-      lineage_loop(
-        catalog:,
-        faction: dict.get(catalog.parents, faction) |> result.unwrap(0),
-        met: [faction, ..met],
-      )
-  }
-}
-
-/// A faction's level, 0 to 10, toward another (GetFactionLevelTo `0x140787760`,
-/// the reputation a player's faction may carry aside): for the other faction and
-/// then each of its parents, the first relationship it has with this faction or,
-/// failing that, with any of this faction's parents in turn; with none, 10 when
-/// the other is this faction and 5 otherwise.
-fn faction_level(
-  catalog catalog: Catalog,
-  from this: Int,
-  to other: Int,
-) -> Int {
-  let own = lineage(catalog:, faction: this)
-  let found =
-    list.find_map(lineage(catalog:, faction: other), fn(candidate) {
-      list.find_map(own, fn(relative) {
-        dict.get(catalog.levels, #(relative, candidate))
-      })
-    })
-  case found {
-    Ok(level) -> level
-    Error(Nil) ->
-      case this == other {
-        True -> 10
-        False -> 5
-      }
-  }
-}
-
 /// A faction's level toward the Exile player faction and toward the Dominion one,
-/// as the client gives them (`faction_level`): 0 to 2 Hostile, 3 to 7 Neutral, 8 to
+/// as the client gives them (`faction_level.level`): 0 to 2 Hostile, 3 to 7 Neutral, 8 to
 /// 10 Friendly. The levels a row's selection and the planted-rows guard assert.
 pub fn faction_levels(
   tables tables: table_store.Tables,
   faction faction: Int,
 ) -> #(Int, Int) {
-  let catalog = catalog(tables:)
+  let levels = faction_level.build(tables:)
   #(
-    faction_level(catalog:, from: exile_faction, to: faction),
-    faction_level(catalog:, from: dominion_faction, to: faction),
+    faction_level.level(levels:, from: exile_faction, to: faction),
+    faction_level.level(levels:, from: dominion_faction, to: faction),
   )
 }
 
@@ -1338,7 +1267,8 @@ fn attackable_by(
   player player: Int,
   unit unit: Int,
 ) -> Bool {
-  faction_level(catalog:, from: player, to: unit) <= highest_neutral_level
+  faction_level.level(levels: catalog.factions, from: player, to: unit)
+  <= highest_neutral_level
 }
 
 /// Whether a unit of the faction fights a player of the other on sight: its level
@@ -1348,7 +1278,7 @@ fn hostile_to(
   player player: Int,
   unit unit: Int,
 ) -> Bool {
-  faction_level(catalog:, from: player, to: unit) <= highest_hostile_level
+  faction_level.hostile(levels: catalog.factions, from: player, to: unit)
 }
 
 /// The reason a row that passed the load checks does not start, or `Error(Nil)`

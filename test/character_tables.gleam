@@ -4,7 +4,7 @@
 ////   their expected values from the same rows (`start_rows`, `row_10_look`,
 ////   `exile_circle_centre`).
 //// - `content_tables()` is the content load over `shared()`: the client's rows of
-////   Faction2, Faction2Relationship, World and Creature2OutfitInfo, with
+////   World, Tutorial and Creature2OutfitInfo, with
 ////   `content_over` for the same load over a test's edited tables.
 //// - `map_file_naming` is a CustomizationParameterMap file of one map.
 
@@ -16,8 +16,6 @@ import genesis_prime/store.{type LookEntry, LookEntry} as _
 import genesis_prime/table/character_customization
 import genesis_prime/table/creature2_outfit_info
 import genesis_prime/table/customization_parameter_map
-import genesis_prime/table/faction2
-import genesis_prime/table/faction2_relationship
 import genesis_prime/table/id.{
   CharacterCustomizationId, CharacterCustomizationLabelId, WorldLocation2Id,
 }
@@ -87,8 +85,6 @@ pub fn content_files() -> List(#(String, BitArray)) {
   list.map(
     [
       creature2_outfit_info.schema,
-      faction2.schema,
-      faction2_relationship.schema,
       tutorial.schema,
       world.schema,
     ],

@@ -172,9 +172,11 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
         ToWorker(pid:) -> {
           let monitored = process.new_subject()
           process.send(workers, #(pid, monitored))
-          let assert Ok(Nil) =
-            process.receive(monitored, within: ask_support.event_wait_ms)
-            as "the test monitored the worker"
+          let Nil =
+            open_wait.received(
+              from: monitored,
+              what: "the test to monitor the worker",
+            )
           Nil
         }
         service.ToService(..) | service.NoReplyInTime -> Nil
@@ -184,9 +186,8 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
   // A transaction in another connection locks the table, so the query waits.
   let lock = lock_table(store.pool)
   ask_support.command(client, asking_rule.store_command, 1, wait_ms: 300)
-  let assert Ok(#(worker_pid, monitored)) =
-    process.receive(workers, within: ask_support.event_wait_ms)
-    as "the ask started a worker"
+  let #(worker_pid, monitored) =
+    open_wait.received(from: workers, what: "the worker the ask started")
   let worker_ended = process.monitor(worker_pid)
   process.send(monitored, Nil)
   let _asked = ask_support.read_record(client)
@@ -1176,9 +1177,7 @@ pub fn two_creates_at_once_for_an_account_with_one_slot_make_one_character_test(
   })
   let received =
     list.map(character_support.numbers(4), fn(_) {
-      open_wait.named("every create to be answered", fn() {
-        process.receive_forever(answers)
-      })
+      open_wait.received(from: answers, what: "every create to be answered")
     })
   assert list.count(received, is_created) == 1
     as "storing-data: the slot count is held by Postgres, in one statement under the account's row lock, so racing creates of one account make one character"
@@ -2192,17 +2191,17 @@ fn lock_table(pool: pog.Connection) -> Lock {
             |> pog.execute(connection)
             as "the table was locked"
           process.send(locked, release)
-          let assert Ok(Nil) = process.receive(release, within: 30_000)
-            as "the test released the lock"
+          let Nil =
+            open_wait.received(
+              from: release,
+              what: "the test to release the lock",
+            )
           Ok(Nil)
         })
         as "the locking transaction ran"
       process.send(committed, Nil)
     })
-  let release =
-    open_wait.named("the table is locked", fn() {
-      process.receive_forever(locked)
-    })
+  let release = open_wait.received(from: locked, what: "the table is locked")
   Lock(release:, committed:)
 }
 
@@ -2210,9 +2209,10 @@ fn lock_table(pool: pog.Connection) -> Lock {
 /// pool the test stops next has no commit still on the wire.
 fn release_lock(lock: Lock) -> Nil {
   process.send(lock.release, Nil)
-  open_wait.named("the locking transaction committed", fn() {
-    process.receive_forever(lock.committed)
-  })
+  open_wait.received(
+    from: lock.committed,
+    what: "the locking transaction committed",
+  )
 }
 
 // ---- held items ----
@@ -3338,9 +3338,9 @@ pub fn a_quest_log_save_naming_an_older_epoch_or_sequence_changes_no_quest_row_t
   await_a_statement_waiting_for_a_lock(store:)
   release_earlier_save(earlier)
   let answered =
-    open_wait.named(
-      "the later save to be answered once the earlier one commits",
-      fn() { process.receive_forever(later) },
+    open_wait.received(
+      from: later,
+      what: "the later save to be answered once the earlier one commits",
     )
   assert answered == ForMove(PlaceSaved)
   assert quest_states(store:, character_id: id) == [#(1001, 3), #(1002, 4)]
@@ -3382,26 +3382,28 @@ fn hold_an_earlier_save(
             |> pog.execute(connection)
             as "and a quest row the later log does not have"
           process.send(locked, release)
-          let assert Ok(Nil) = process.receive(release, within: 30_000)
-            as "the test released the row"
+          let Nil =
+            open_wait.received(
+              from: release,
+              what: "the test to release the row",
+            )
           Ok(Nil)
         })
         as "the earlier save's transaction ran"
       process.send(committed, Nil)
     })
   let release =
-    open_wait.named("the earlier save holds the row", fn() {
-      process.receive_forever(locked)
-    })
+    open_wait.received(from: locked, what: "the earlier save holds the row")
   EarlierSave(release:, committed:)
 }
 
 /// Commits the earlier save and returns once it has.
 fn release_earlier_save(earlier: EarlierSave) -> Nil {
   process.send(earlier.release, Nil)
-  open_wait.named("the earlier save committed", fn() {
-    process.receive_forever(earlier.committed)
-  })
+  open_wait.received(
+    from: earlier.committed,
+    what: "the earlier save committed",
+  )
 }
 
 /// Returns once a statement of this database waits for a lock, which is the

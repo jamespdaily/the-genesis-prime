@@ -31,6 +31,7 @@ import gleam/string
 import log_capture
 import login_support
 import mailbox_support
+import open_wait
 import owned_test
 import pog
 import readiness_support
@@ -62,13 +63,17 @@ pub fn the_ask_gives_ready_only_after_the_probe_is_answered_test() -> Nil {
         ),
       )
     })
-  let assert Ok(release) = process.receive(held, ask_support.event_wait_ms)
-    as "the ask made its probe"
+  let release = open_wait.received(from: held, what: "the ask's probe")
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(outcomes, 0) == Error(Nil)
     as "an unanswered probe gives no outcome"
   process.send(release, Release)
-  assert process.receive(outcomes, ask_support.event_wait_ms)
-    == Ok(readiness.Ready)
+  assert open_wait.received(
+      from: outcomes,
+      what: "the outcome of the ask after its probe was answered",
+    )
+    == readiness.Ready
     as "the answer Reached gives Ready"
 }
 
@@ -114,8 +119,8 @@ fn held_probe(
     process.spawn(fn() {
       let release = process.new_subject()
       process.send(held, release)
-      let assert Ok(Release) = process.receive(release, 30_000)
-        as "the test let the probe go"
+      let Release =
+        open_wait.received(from: release, what: "the test to let the probe go")
       reply(Reached(recorded: Recorded([])))
     })
   ToWorker(pid: worker)
@@ -147,13 +152,14 @@ pub fn the_ask_ends_with_the_trees_end_when_the_tree_ends_while_it_waits_test() 
         ),
       )
     })
-  let assert Ok(worker) = process.receive(asked, ask_support.event_wait_ms)
-    as "the ask made its probe"
+  let worker = open_wait.received(from: asked, what: "the ask's probe")
   let worker_ended = process.monitor(worker)
   process.kill(tree)
-  let assert Ok(readiness.TreeEnded(reason: process.Killed)) =
-    process.receive(outcomes, ask_support.event_wait_ms)
-    as "the tree's end, with its reason, ends the ask at once"
+  let assert readiness.TreeEnded(reason: process.Killed) =
+    open_wait.received(
+      from: outcomes,
+      what: "the ask's outcome once the tree ended",
+    )
   let _reason =
     ask_support.ended(
       watched: worker_ended,
@@ -186,8 +192,11 @@ pub fn an_ask_the_database_never_answers_keeps_asking_until_its_time_runs_out_te
         ),
       )
     })
-  assert process.receive(outcomes, ask_support.event_wait_ms)
-    == Ok(readiness.DatabaseUnreachable)
+  assert open_wait.received(
+      from: outcomes,
+      what: "the ask's outcome once no attempt reached the database",
+    )
+    == readiness.DatabaseUnreachable
     as "no attempt reached the database, so the ask gives up"
   assert runtime.now().monotonic_ms - started_ms >= settings.within_ms
     as "and only when its time has run out, not at the first failure"
@@ -226,8 +235,11 @@ pub fn an_ask_waits_a_whole_pause_after_each_attempt_that_failed_before_it_asks_
         ),
       )
     })
-  assert process.receive(outcomes, ask_support.event_wait_ms)
-    == Ok(readiness.Ready)
+  assert open_wait.received(
+      from: outcomes,
+      what: "the ask's outcome once the third attempt reached the database",
+    )
+    == readiness.Ready
     as "the third attempt reached the database"
   let times = mailbox_support.drain(asked)
   assert list.length(times) >= 3
@@ -269,8 +281,11 @@ pub fn an_ask_leaves_no_answer_behind_in_its_mailbox_test() -> Nil {
         )
       process.send(outcomes, #(outcome, mailbox_support.queued(process.self())))
     })
-  assert process.receive(outcomes, ask_support.event_wait_ms)
-    == Ok(#(readiness.DatabaseUnreachable, 0))
+  assert open_wait.received(
+      from: outcomes,
+      what: "the ask's outcome and the answers left in its mailbox",
+    )
+    == #(readiness.DatabaseUnreachable, 0)
     as "the answers of each attempt beyond the one the ask took are dropped, so none stays in the mailbox of the process that asked"
 }
 
@@ -312,7 +327,7 @@ fn serve_in_a_process(
     process.spawn_unlinked(fn() {
       let go = process.new_subject()
       process.send(waiting, go)
-      let assert Ok(Nil) = process.receive(go, 5000) as "the test is ready"
+      let Nil = open_wait.received(from: go, what: "the test to be ready")
       let assert Ok(tree) = application.start_server(settings:)
         as "the tree started under the application's root"
       process.send(started, tree.pid)
@@ -326,12 +341,15 @@ fn serve_in_a_process(
         say: fn(line) { process.send(said, line) },
       )
     })
-  let assert Ok(go) = process.receive(waiting, ask_support.event_wait_ms)
-    as "the process waits for the capture"
+  let go =
+    open_wait.received(
+      from: waiting,
+      what: "the process to wait for the capture",
+    )
   let _capture = log_capture.start(from: serving, into: logged)
   process.send(go, Nil)
-  let assert Ok(tree) = process.receive(started, ask_support.event_wait_ms)
-    as "the process started the tree"
+  let tree =
+    open_wait.received(from: started, what: "the process to start the tree")
   application_support.guard(tree)
   Serving(serving:, tree:, said:)
 }
@@ -347,10 +365,14 @@ pub fn a_database_that_does_not_answer_gets_a_warning_no_ready_line_and_a_login_
   let settings = unreachable_settings()
   let logged = process.new_subject()
   let serving = serve_in_a_process(settings:, ready: short(), logged:)
-  let assert Ok(#("warning", line)) =
-    process.receive(logged, ask_support.event_wait_ms)
-    as "the server logged a warning when the ask's time ran out"
+  let assert #("warning", line) =
+    open_wait.received(
+      from: logged,
+      what: "the server's warning that the ask's time ran out",
+    )
   assert string.contains(line, "the database is unreachable")
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(serving.said, 0) == Error(Nil)
     as "no ready line was said: the ask gave up, and the line is said only on Ready"
   let #(_sent, answer) =
@@ -382,8 +404,11 @@ pub fn a_database_that_answers_gets_the_ready_line_once_the_probe_returns_test()
       ready: readiness_support.settings(),
       logged: process.new_subject(),
     )
-  let assert Ok(line) = process.receive(serving.said, 30_000)
-    as "the server said its ready line once the database answered"
+  let line =
+    open_wait.received(
+      from: serving.said,
+      what: "the server's ready line once the database answered",
+    )
   assert string.starts_with(line, "the server loaded 7 game tables and serves")
     as "the line names the tables the server loaded, as the live-play scripts read it"
   stop(serving)

@@ -83,6 +83,7 @@ pub fn turn_in_message(
         tables:,
         class_id: entered.character.class_id,
       ),
+      life: entered.life,
       tables:,
       now_ms: now.monotonic_ms,
       unix_seconds: step.unix_milliseconds(now:) / 1000,

@@ -42,6 +42,7 @@ import gleam/string
 import log_capture
 import mailbox_support
 import mug
+import open_wait
 import owned_test
 import recording_support
 import simplifile
@@ -422,9 +423,8 @@ pub fn an_exit_from_a_process_that_is_not_the_parent_gives_no_input_and_no_warni
     atom.create("marker_after_exit"),
     atom.create("marker_after_exit"),
   ))
-  let assert Ok(#(level, text, _)) =
-    process.receive(lines, ask_support.event_wait_ms)
-    as "the marker was logged"
+  let #(level, text, _) =
+    open_wait.received(from: lines, what: "the log line of the marker")
   log_capture.stop(capture)
   assert level == "warning" && string.contains(text, "marker_after_exit")
     as "the first line is the marker's stray warning, so the exit logged nothing"
@@ -443,8 +443,7 @@ pub fn a_line_the_rule_logs_carries_the_connection_and_the_peer_address_test() -
   let lines = process.new_subject()
   let capture = log_capture.start_with_metadata(from: connection, into: lines)
   assert mug.send(client, <<0xAA>>) == Ok(Nil)
-  let assert Ok(line) = process.receive(lines, ask_support.event_wait_ms)
-    as "the rule's line was logged"
+  let line = open_wait.received(from: lines, what: "the log line of the rule")
   log_capture.stop(capture)
   assert line.0 == "warning" && line.1 == "the planted line"
   assert names_connection_and_peer(line)
@@ -506,8 +505,7 @@ pub fn a_crash_report_leaves_out_the_messages_waiting_in_the_mailbox_test() -> N
 
 /// The first line at error level, or a failure when none comes in time.
 fn first_error(lines: Subject(Line)) -> Line {
-  let assert Ok(line) = process.receive(lines, ask_support.event_wait_ms)
-    as "a line at error level was logged"
+  let line = open_wait.received(from: lines, what: "a log line at error level")
   case line.0 {
     "error" -> line
     _ -> first_error(lines)

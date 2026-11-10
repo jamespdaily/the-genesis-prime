@@ -26,7 +26,7 @@ import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/step
 import genesis_prime/store.{
-  type QuestRow, AccountId, CharacterId, ForItems, HeldItem, Items,
+  type QuestRow, AccountId, Character, CharacterId, ForItems, HeldItem, Items,
   ItemsNotSaved, NewStack, QuestRow, SaveRefused, TurnInQuest, TurnedIn,
 }
 import genesis_prime/table/id.{Item2Id}
@@ -388,4 +388,100 @@ pub fn a_turn_in_asks_the_store_to_make_a_random_stat_reward_with_a_rolled_word_
   assert list.all(choices, fn(choice) { choice >= 1 && choice <= 5 })
     as "each entry takes one of the five rows of its group"
   assert list.unique(choices) == choices as "no two entries take the same row"
+}
+
+pub fn communicator_turn_in_sends_rewards_then_state_as_the_unit_dialog_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 10519 (flags 0x4008) is turned in over the communicator with no creature shown
+  // to the player: the store is asked for what it is asked when the same player turns it
+  // in at a receiver (Dorian Walker, given the quest), and the answer is written in the
+  // unit dialog's order.
+  let over_the_communicator =
+    game_connection_support.world_message(
+      message_id: 0x035D,
+      body: quest_turn_in_support.body(
+        scene: quest_turn_in_support.Scene(
+          ..quest_turn_in_support.scene(quest_id: 10_519),
+          by_communicator: 1,
+        ),
+      ),
+    )
+  let held = [quest_turn_in_support.achieved(quest_id: 10_519)]
+  let alone =
+    quest_walker_support.in_world_as(
+      tables: character_tables.shared(),
+      quests: held,
+      character: Character(
+        ..game_connection_support.world_character(),
+        faction_id: 167,
+      ),
+    )
+  let #(alone, by_communicator) =
+    game_connection_support.read(state: alone, bytes: over_the_communicator)
+  let assert TurnInQuest(
+    experience:,
+    level:,
+    quests:,
+    credits_held:,
+    credits_after:,
+    placed:,
+    ..,
+  ) = asked_turn_in(taken: by_communicator)
+    as "the communicator's turn-in asks the store"
+  use tables <- quest_turn_in_support.with_changes(changes: [
+    quest_turn_in_support.receiving(10_519),
+  ])
+  let at_the_unit =
+    quest_walker_support.in_world_with_walker(tables:, quests: held)
+  let #(at_the_unit, by_unit) =
+    game_connection_support.read(
+      state: at_the_unit,
+      bytes: turn_in_of(quest_id: 10_519),
+    )
+  let assert TurnInQuest(
+    experience: unit_experience,
+    level: unit_level,
+    quests: unit_quests,
+    credits_held: unit_credits_held,
+    credits_after: unit_credits_after,
+    placed: unit_placed,
+    ..,
+  ) = asked_turn_in(taken: by_unit)
+    as "the unit's turn-in asks the store"
+  assert experience == unit_experience && level == unit_level
+  assert quests == unit_quests
+  assert credits_held == unit_credits_held
+  assert credits_after == unit_credits_after
+  assert placed == unit_placed
+  assert quests
+    == [
+      QuestRow(
+        quest_id: 10_519,
+        state: 3,
+        completed_at: Some(unix_seconds),
+        active: None,
+      ),
+    ]
+  let answer =
+    step.Answer(FromStore(ForItems(TurnedIn(credits: credits_after, made: []))))
+  let #(_, answered_by_communicator) =
+    game_connection_support.answer(
+      state: alone,
+      taken: by_communicator,
+      outcome: answer,
+    )
+  let #(_, answered_by_unit) =
+    game_connection_support.answer(
+      state: at_the_unit,
+      taken: by_unit,
+      outcome: answer,
+    )
+  assert game_connection_support.written_ids(answered_by_communicator)
+    == game_connection_support.written_ids(answered_by_unit)
+    as "the same frames in the same order"
+  let assert Ok(state_frame) =
+    list.last(game_connection_support.written(answered_by_communicator))
+  assert quest_state.decode(state_frame.body)
+    == Ok(QuestState(quest_id: 10_519, state: 3, objective_id: 0))
+    as "opcode.0x35c: the quest in state 3 with objective 0, last"
 }

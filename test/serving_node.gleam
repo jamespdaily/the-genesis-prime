@@ -42,7 +42,6 @@ import gleam/erlang/process
 import gleam/io
 import gleam/option.{None, Some}
 import login_support
-import mug
 import open_wait
 import pog
 import recording_support
@@ -267,11 +266,7 @@ fn hold_a_connection(settings: server.Settings) -> Nil {
     as "the STS listener has a port"
   let _client =
     process.spawn(fn() {
-      let assert Ok(_socket) =
-        mug.new("127.0.0.1", port:)
-        |> mug.ip_version_preference(mug.Ipv4Only)
-        |> mug.timeout(5000)
-        |> mug.connect
+      let assert Ok(_socket) = ask_support.connecting(port:)
         as "the node connected to its STS listener"
       await_recording(variable("SERVING_FOLDER"))
       io.println("a connection is recorded")

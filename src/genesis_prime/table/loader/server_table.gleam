@@ -10,6 +10,7 @@ import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
 import genesis_prime/table/chat_channel
 import genesis_prime/table/class
+import genesis_prime/table/communicator_messages
 import genesis_prime/table/creature2
 import genesis_prime/table/creature2_arche_type
 import genesis_prime/table/creature2_difficulty
@@ -90,6 +91,12 @@ import genesis_prime/table/xp_per_level
 ///   OutfitGroupEntry, OverrideProperties, Resist and Tier, InstancePortal and
 ///   PathMission, and CreatureLevel: the creatures that stand and their values
 ///   (genesis_prime/world_map/spawn).
+/// - CommunicatorMessages, with Creature2 and Quest2: the calls that deliver a quest, which
+///   decide whether a communicator turn-in is one the client could send
+///   (genesis_prime/game/communicator).
+/// - Faction2 and Faction2Relationship: which creatures a player can attack
+///   (genesis_prime/world_map/spawn) and which receivers of a quest are Hostile to a
+///   player's faction (genesis_prime/game/faction_level, genesis_prime/game/communicator).
 /// - CurrencyType: the cap of a currency other than credits and Renown
 ///   (genesis_prime/game/currency).
 /// - CustomizationParameter and CustomizationParameterMap: the bone values a
@@ -151,6 +158,7 @@ pub fn entries() -> List(store.Entry) {
     class.entry(),
     character_customization.entry(),
     character_customization_label.entry(),
+    communicator_messages.entry(),
     creature2.entry(),
     creature2_arche_type.entry(),
     creature2_difficulty.entry(),
@@ -166,6 +174,8 @@ pub fn entries() -> List(store.Entry) {
     customization_parameter_map.entry(),
     episode.entry(),
     episode_quest.entry(),
+    faction2.entry(),
+    faction2_relationship.entry(),
     game_formula.entry(),
     instance_portal.entry(),
     item2.entry(),
@@ -219,8 +229,6 @@ pub fn entries() -> List(store.Entry) {
 /// from `entries` so that they are read beside the server's tables on the caller's
 /// heap and the server's tables hold only what its rules read:
 /// - Creature2OutfitInfo: the outfit of a spawn (genesis_prime/world_map/spawn).
-/// - Faction2 and Faction2Relationship: which creatures a player can attack
-///   (genesis_prime/world_map/spawn).
 /// - World: the worlds a map can run in, each of which gets a term of its spawns
 ///   (genesis_prime/world_map/spawn).
 /// - Tutorial: the category of each row a zone's welcome names
@@ -228,8 +236,6 @@ pub fn entries() -> List(store.Entry) {
 pub fn content_entries() -> List(store.Entry) {
   [
     creature2_outfit_info.entry(),
-    faction2.entry(),
-    faction2_relationship.entry(),
     tutorial.entry(),
     world.entry(),
   ]

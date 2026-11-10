@@ -59,6 +59,26 @@ pub fn in_world_with_walker(
   tables tables: table_store.Tables,
   quests quests: List(store.QuestRow),
 ) -> game_connection.State {
+  connection_support.feed(
+    state: in_world(tables:, quests:),
+    event: walker_appears(),
+  ).0
+}
+
+/// The same connection with no creature shown to it.
+pub fn in_world(
+  tables tables: table_store.Tables,
+  quests quests: List(store.QuestRow),
+) -> game_connection.State {
+  in_world_as(tables:, quests:, character: connection_support.world_character())
+}
+
+/// The same for a character of the test's choosing, for a quest whose rule reads the faction.
+pub fn in_world_as(
+  tables tables: table_store.Tables,
+  quests quests: List(store.QuestRow),
+  character character: store.Character,
+) -> game_connection.State {
   let #(accepted, _) =
     connection_support.accepted(
       Settings(..connection_support.settings(), tables:),
@@ -66,20 +86,18 @@ pub fn in_world_with_walker(
   let #(state, taken) =
     connection_support.joining_holding(
       in_character_select: connection_support.in_select_from(accepted),
-      character: connection_support.world_character(),
+      character:,
       saved_health: option.None,
       saved_experience: option.None,
       quests:,
     )
-  let #(state, _) =
-    connection_support.answer(
-      state:,
-      taken:,
-      outcome: step.Answer(
-        client_connection.FromMap(connection_support.map_answer(taken)),
-      ),
-    )
-  connection_support.feed(state:, event: walker_appears()).0
+  connection_support.answer(
+    state:,
+    taken:,
+    outcome: step.Answer(
+      client_connection.FromMap(connection_support.map_answer(taken)),
+    ),
+  ).0
 }
 
 /// The 0x262 news of Dorian Walker as unit 40, as his process sends it, standing 1.0 from the
