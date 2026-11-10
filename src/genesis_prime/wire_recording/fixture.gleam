@@ -7,8 +7,8 @@
 //// - **What is kept.** The accounts the session names by login name, their
 ////   characters and the items, currencies and quests those characters hold, never
 ////   the rest of the database, and every column of the five tables but
-////   `created_at`, which no flow reads. The ids and an item's guid are identity columns, so each insert
-////   overrides its own. A statement after the rows of each table sets its
+////   `created_at`, which no flow reads. The ids and an item's guid are identity
+////   columns, so each insert overrides its own. A statement after the rows of each table sets its
 ////   sequence to where the live database's stood (its last value and whether it
 ////   had given one), so a row a replay makes gets the id or guid it got live,
 ////   whatever rows the live database lost since: a deleted character or item, a
@@ -33,7 +33,7 @@ import gleam/bool
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{type Option}
 import gleam/result
 import gleam/string
 import pog
@@ -262,8 +262,8 @@ fn character_statement(row: sql.CharactersOfAccountsNamedRow) -> String {
       integers(row.look_values),
       integers(row.bones),
       bool(row.needs_rename),
-      optional_integer(row.health),
-      optional_integer(row.experience),
+      nullable(row.health, int.to_string),
+      nullable(row.experience, int.to_string),
     ],
     ", ",
   )
@@ -316,12 +316,12 @@ fn quest_statement(row: sql.QuestsOfCharactersOfAccountsNamedRow) -> String {
         True -> instant(row.completed_at_microseconds)
         False -> "null"
       },
-      optional_integer(row.placeholder_objective_id),
-      optional_bool(row.tracked),
-      optional_integer(row.done_mask),
-      optional_integers(row.progress),
-      optional_integer(row.quest_ms_left),
-      optional_integers(row.objective_ms_left),
+      nullable(row.placeholder_objective_id, int.to_string),
+      nullable(row.tracked, bool),
+      nullable(row.done_mask, int.to_string),
+      nullable(row.progress, integers),
+      nullable(row.quest_ms_left, int.to_string),
+      nullable(row.objective_ms_left, integers),
     ],
     ", ",
   )
@@ -362,12 +362,9 @@ fn real(value: Float) -> String {
   "'" <> float.to_string(value) <> "'::real"
 }
 
-/// A nullable `integer` column's value: its number, or NULL when there is none.
-fn optional_integer(value: Option(Int)) -> String {
-  case value {
-    Some(value) -> int.to_string(value)
-    None -> "null"
-  }
+/// A nullable column's value: `render` of its value, or NULL when there is none.
+fn nullable(value: Option(a), render: fn(a) -> String) -> String {
+  value |> option.map(render) |> option.unwrap("null")
 }
 
 /// A `timestamptz` column's value from its Unix time in whole microseconds, the
@@ -376,25 +373,6 @@ fn instant(microseconds: Int) -> String {
   "'epoch'::timestamptz + '"
   <> int.to_string(microseconds)
   <> " microseconds'::interval"
-}
-
-/// A nullable `boolean` column's value: true or false, or NULL when there is none.
-fn optional_bool(value: Option(Bool)) -> String {
-  case value {
-    Some(value) -> bool(value)
-    None -> "null"
-  }
-}
-
-/// A nullable `integer[]` column's value: its numbers, or NULL when there is none.
-fn optional_integers(values: Option(List(Int))) -> String {
-  case values {
-    Some(values) ->
-      "'{"
-      <> string.join(list.map(values, int.to_string), ",")
-      <> "}'::integer[]"
-    None -> "null"
-  }
 }
 
 fn integers(values: List(Int)) -> String {

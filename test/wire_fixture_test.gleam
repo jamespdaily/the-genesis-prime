@@ -31,6 +31,7 @@ import owned_test
 import pog
 import recording_support
 import simplifile
+import wire_replay_support
 
 /// A pool on a migrated database of the test's own.
 fn pool() -> pog.Connection {
@@ -256,18 +257,17 @@ pub fn the_quests_of_the_named_accounts_characters_are_kept_test() -> Nil {
 
 pub fn a_fixture_file_with_no_currency_or_quest_rows_leaves_those_tables_empty_test() -> Nil {
   use <- owned_test.run(60_000)
-  use folder <- recording_support.in_folder
-  let path = path_in(folder)
-  let assert Ok(Nil) =
-    simplifile.write(
-      path,
-      "insert into account (account_id, login_name, srp_salt, srp_verifier, game_account_id) overriding system value values (1, 'genesis', '\\x01'::bytea, '\\x02'::bytea, '01234567-89ab-cdef-0123-456789abcdef');\n",
-    )
-    as "a fixture file of the shape written before these tables were kept"
   let target = pool()
-  assert fixture.apply(target, path) == Ok(Nil)
+  assert fixture.apply(
+      target,
+      wire_replay_support.committed_session <> "/" <> fixture.file_name,
+    )
+    == Ok(Nil)
+    as "the committed session's fixture, written before these tables were kept, applies"
+  assert query_texts(target, "select login_name from account") != []
+    as "and it holds rows"
   assert currency_rows(target) == [] && quest_rows(target) == []
-    as "a recording made before the tables were kept replays with them empty, as it did"
+    as "the tables it has no statement for stay empty, as they did before they were kept"
 }
 
 pub fn the_fixture_holds_only_the_named_accounts_and_their_characters_test() -> Nil {
