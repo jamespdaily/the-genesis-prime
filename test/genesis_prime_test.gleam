@@ -5,6 +5,7 @@ import fixture_tables
 import gleam/list
 import gleam/string
 import literal_area
+import module_preload
 import spell_tables
 import unitest
 
@@ -27,12 +28,17 @@ import unitest
 ///
 /// The client's spell plans are built before the first test starts: their one
 /// build for the run is setup, so no test's deadline holds it. So is what the
-/// fixture's rows reach (`fixture_tables.reach`, about 3.4 s) and the keys of the
-/// client's fact file (`repository.fact_keys`, about 0.9 s), which the tests that
-/// select rows or check the schema's evidence would otherwise wait on together
-/// inside their deadlines. A run of chosen tests (`--test`, `--tag`) leaves both
-/// to the tests that need them: those runs hold none or few of them, and run
-/// beside other runs.
+/// fixture's rows reach (`fixture_tables.reach`, about 3.4 s), the keys of the
+/// client's fact file (`repository.fact_keys`, about 0.9 s) and every module of
+/// the project (`module_preload`, about 0.8 s). The tests that select rows or
+/// check the schema's evidence would otherwise wait on the first two together
+/// inside their deadlines, and the VM loads a module through one process the
+/// first time anything calls it, so on a machine with more runnable work than
+/// cores the queue of first calls ran past tests' 10 s deadlines. A run of
+/// chosen tests (`--test`, `--tag`) leaves all three to the tests that need
+/// them: those runs hold none or few of them, and run beside other runs, and
+/// the world-data run's literal area is 0.2% under its limit, which the
+/// modules' literals would pass.
 ///
 /// With `GENESIS_LITERAL_PEAK_FILE` set to a file, the run keeps the literal
 /// allocator's highest carriers size in it (`literal_area`), which `./check`
@@ -46,6 +52,7 @@ pub fn main() -> Nil {
   case runs_chosen_tests(argv.load().arguments) {
     True -> Nil
     False -> {
+      module_preload.load_project()
       let _reach = fixture_tables.reach()
       let _fact_keys = repository.fact_keys()
       Nil
