@@ -299,10 +299,13 @@ pub fn quest_deadline_due(
               objective_id: 0,
             ))
           }),
-          connection_effects.quest_deadline_timer_moved(
-            before: option.None,
-            after: quest_log.next_deadline(log:),
-            now_ms: now.monotonic_ms,
+          list.map(
+            quest_log.deadline_moved(
+              before: option.None,
+              after: quest_log.next_deadline(log:),
+              now_ms: now.monotonic_ms,
+            ),
+            connection_effects.MovesQuestDeadlineTimer,
           ),
           case botched {
             [] -> []
@@ -350,10 +353,13 @@ pub fn claimed_again(
     effects: list.flatten([
       [StartsSaveTimer],
       reset,
-      connection_effects.quest_deadline_timer_moved(
-        before: option.None,
-        after: quest_log.next_deadline(log: entered.quests),
-        now_ms: now.monotonic_ms,
+      list.map(
+        quest_log.deadline_moved(
+          before: option.None,
+          after: quest_log.next_deadline(log: entered.quests),
+          now_ms: now.monotonic_ms,
+        ),
+        connection_effects.MovesQuestDeadlineTimer,
       ),
     ]),
     written: [],
@@ -798,10 +804,13 @@ fn in_the_world(
       list.map(effects, connection_effects.from_entry),
       [Chats(effects: burst), StartsSaveTimer],
       reset,
-      connection_effects.quest_deadline_timer_moved(
-        before: option.None,
-        after: quest_log.next_deadline(log: entered.quests),
-        now_ms: now.monotonic_ms,
+      list.map(
+        quest_log.deadline_moved(
+          before: option.None,
+          after: quest_log.next_deadline(log: entered.quests),
+          now_ms: now.monotonic_ms,
+        ),
+        connection_effects.MovesQuestDeadlineTimer,
       ),
     ]),
     written: [],

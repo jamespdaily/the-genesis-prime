@@ -11225,6 +11225,43 @@ statement = "Message 0x361, world server to client: an objective's progress. Bod
 proof = "Same reader as 0x35c (0x14008f100: 15, 32, 32 bits at 0x14008f125, 0x14008f13b, 0x14008f151 mov r8d). Handler 0x1405fb830 (saved C) calls 0x1406115a0, which compares GetObjectiveProgress 0x1405515c0 to GetObjectiveNeeded 0x140551840 and sets or clears done bit 1 shl (index + 2)."
 grade = "sure"
 
+["0x140553110"]
+statement = "Whether a quest in the player's log makes a unit a talk target: true when one of the quest's six objectives is of QuestObjective type 3 whose data equals the unit's Creature2 id, is not done and is reachable (a type 18 objective also passes, by a test of its own). It is the quest-log source of the TalkTo (37) kind of UpdateUnitActivationStates. The caller skips a quest when a game flag word is set with bit 2 and the quest's Quest2 flags lack 0x40000."
+proof = "Saved C 0x140553110.c (hash 6ba38d868f75acff): `*(int *)(objective + 4) == 3` and `*(int *)(objective + 0xc) == **(int **)(unit + 0x18)` and IsQuestObjectiveDone 0x1405510d0 == 0 and IsQuestObjectiveReachable 0x140553790 != 0 return 1; the objectives are read from the quest record's 0x18 for six slots. The only caller is 0x1405fc800 (saved C hash e9b6b6af37d00314), which walks a container of quest ids, finds each by FindQuestById 0x1405a8a40 and tests `(*(longlong *)(game + 0x6c50) == 0 || (*(uint *)(*(longlong *)(game + 0x6c50) + 8) >> 1 & 1) == 0 || (Quest2 flags word & 0x40000) != 0)` before calling 0x140553110 (call at 0x1405fc86a). QuestObjective type is at offset 4 and data at offset 12 (`table_rows -- QuestObjective --columns`)."
+grade = "fairly sure"
+gap = "The game word at offset 0x6c50 and its bit 2 are not read, nor which container of quest ids 0x1405fc800 walks (it is taken to be the player's logged quests). A gate can only make the client send fewer clicks."
+name = "IsQuestTalkTarget"
+
+["0x140555040"]
+statement = "Builds the response list of a unit's dialog. A creature's quest lists add the quest responses (0x140555350). By the unit's interaction kinds it adds one response each: kind 49 response 0, kind 43 response 2, kind 44 response 3, kind 70 response 4 and kind 71 response 5; and, when the dialog's list holds anything, a response 9. No branch reads a QuestObjective, so an open talk-to objective (type 3) adds no response and no message of its own: a creature with no quest to show gets no response from this function."
+proof = "Saved C 0x140555040.c (hash 49fd5a78aaad3411): the kind bytes read are the unit's 0x26dc, 0x252c, 0x2574, 0x2cc4 and 0x2d0c, which are (offset - 0x1914) / 0x48 = 49, 43, 44, 70 and 71 (the entry stride of PickInteractionKind), each followed by FUN_1405564f0 with the response numbers 0, 2, 3, 4 and 5 in that order; the last block counts the list at dialog word 0x70 and, when it is not empty, adds response 9 through FUN_1405582b0 and FUN_1405564f0 (lines 79 to 91). A grep of the function for a quest objective read finds none."
+grade = "fairly sure"
+gap = "What fills the list at dialog word 0x70, and the code that closes a dialog with no response (a 0x7ea with unit 0 and kind 101) were not read here."
+name = "BuildUnitDialogResponses"
+
+["0x1404dd4c0.objective_creature"]
+statement = "The objective text of QuestObjective types 2, 3, 9, 12 and 18 reads the objective's data as a Creature2 id: the creature's localized name is looked up by it, and when the client has no Creature2 row for the id the text is left out. Types 3 and 12 name a creature and nothing else."
+proof = "Saved C 0x1404dd4c0.c (hash e9b6b6af37d00314): `switch(uVar3)` over the objective's type with `case 2: case 3: case 9: case 0xc: case 0x12:` reading `*(undefined4 *)(*(longlong *)(lVar12 + 0x18) + 0xc)` (the objective's data) into FindCreatureInfo and returning when it finds no row, then GetLocalizedText with the word `creature`. 0x140553110 compares a type 3 objective's data to the unit's creature id."
+grade = "sure"
+
+["QuestObjective.type.12.activate_spells"]
+statement = "What a use (QuestObjective type 12) target does in the client, by the activate spell of the creature its data names, over the 1187 type 12 rows (GetUnitActivateSpell 0x14046c580): castMethod 0 Normal 825 rows; castMethod 5 ClientSideInteraction 142; castMethods 6 and 8, 3; spell 0, which the client sends as 0xb3 with no cast, 59; a spell the pick makes depend on a prerequisite, 86; no Creature2 row, 72. A castMethod 5 activation still sends 0x97 first, runs its interaction after the server's 0x7ff and ends by sending 0x805, which the client expects no answer to."
+proof = "`gleam run -m genesis_prime/table_rows -- QuestObjective type=12` prints 1187 rows (rerun when this was saved); the split by Creature2, Spell4 and Spell4Base is the decoder's, from the same reader."
+grade = "fairly sure"
+gap = "The split counts were not rerun when this record was saved; Creature2 words 0x6c and 0x148, which force spell 0, are not read."
+
+["opcode.0x805"]
+statement = "Message 0x805, client to world server: the result of a client-side interaction (SendClientSideInteractionResult 0x1405465a0). Body: a 32-bit cast id, a 3-bit result and a 32-bit word (the spell data's second word plus 1). The client reads no answer to it."
+proof = "Registration at 0x14006c290.c line 654 (`0x805, 0xc, ... FUN_1400943d0`); the writer 0x1400943d0 (saved C hash 8eb22adb6de47956) writes three words at 0x20, 3 and 0x20 bits (WriteBitsSlow with 0x20, 3, 0x20). The sender 0x1405465a0 (saved C hash 8eb22adb6de47956) builds the body from the cast's word at offset 0x5c, its argument and a spell data word plus 1 and calls SendWorldMessage with 0x805 (call at 0x1405465df). The saved C holds no reader and no handler for 0x805."
+grade = "fairly sure"
+gap = "What each result value and the third word mean."
+
+["0x14039c430.csi_guard"]
+statement = "CastActivateSpell (0x14039c430) refuses with 0x106 an activation of a ClientSideInteraction spell (castMethod 5) when the unit's current interaction is of kind 1 to 3 or 7 and started under 1000 ms ago; otherwise it starts the local cast as for a Normal cast and sends 0x97 with the cast id and the unit when the start succeeds."
+proof = "Saved C 0x14039c430.c (hash 6ba38d868f75acff) lines 68 to 74: `*(int *)(*(longlong *)(lVar3 + 0x70) + 0x18) == 5`, then `(*(int *)(lVar4 + 4) - 1U < 3) || *(int *)(lVar4 + 4) == 7` and `(uint)(DAT_140c636a8 - *(int *)(param_1 + 0x7190)) < 1000` return 0x106; line 88 `SendWorldMessage(param_1,0x97,&local_res8)` after StartLocalCast returns 0 or 0x13d."
+grade = "fairly sure"
+gap = "What kinds 1 to 3 and 7 are, and which clock DAT_140c636a8 is."
+
 ["0x140551840"]
 statement = "An objective's needed count: 0 at or past the quest's objective count or for count 0; 100 for the kill types 2, 8, 15, 16 and 46 when the count is above 1 and objective flag 0x200 is clear (shown and judged as a percent); else its QuestObjective count."
 proof = "Listing 0x140551840: cmp edx, [rcx+0x10] (count), at or past -> 0x140551898 xor eax, eax; r8 = [rcx+0x18+8*index], null -> 0; eax = [r8+0x10] (count), 0 -> 0; ecx = [r8+4] (type), above 0x2e -> count; bt 0x400000018104 clear -> count; cmp eax, 1; jbe -> count; test [r8+8], 0x200; mov ecx, 0x64; cmove eax, ecx. QuestObjective columns ID, type, flags, data, count at offsets 0, 4, 8, 0xc, 0x10 (`table_rows -- QuestObjective --columns`)."

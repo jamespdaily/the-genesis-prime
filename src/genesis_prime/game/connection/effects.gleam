@@ -18,6 +18,7 @@ import genesis_prime/game/connection/state.{
 } as connection_state
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
+import genesis_prime/game/quest_log
 import genesis_prime/game/strike
 import genesis_prime/game/world_entry
 import genesis_prime/step.{
@@ -27,9 +28,8 @@ import genesis_prime/step.{
 import genesis_prime/store
 import genesis_prime/table/id.{type Spell4BaseId}
 import genesis_prime/world_map/map_id.{type MapId}
-import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{None, Some}
 
 /// What a feature of the rule decided that the rule carries out, in order.
 pub type Decided {
@@ -47,11 +47,9 @@ pub type Decided {
   /// Start the timer that fires at the next quest reset (`quest_reset_timer`), in
   /// this many milliseconds.
   StartsQuestResetTimer(after_ms: Int)
-  /// Start the timer that fires when the earliest running quest's time runs out
-  /// (`quest_deadline_timer`), in this many milliseconds.
-  StartsQuestDeadlineTimer(after_ms: Int)
-  /// Cancel the quest deadline timer; nothing when none is running.
-  CancelsQuestDeadlineTimer
+  /// Start or cancel the timer that fires when the earliest running quest's time runs
+  /// out (`quest_deadline_timer`).
+  MovesQuestDeadlineTimer(move: quest_log.DeadlineTimer)
   /// Save the player's place and the quest log, which ends the step; the player goes
   /// on playing once the store answers.
   SavesPlace
@@ -194,17 +192,9 @@ pub fn carry_out(
         )),
         ..written
       ])
-    [StartsQuestDeadlineTimer(after_ms:), ..rest] ->
+    [MovesQuestDeadlineTimer(move:), ..rest] ->
       carry_out(session:, now:, effects: rest, written: [
-        OwnEffect(StartTimer(
-          timer: connection_state.quest_deadline_timer,
-          after_ms:,
-        )),
-        ..written
-      ])
-    [CancelsQuestDeadlineTimer, ..rest] ->
-      carry_out(session:, now:, effects: rest, written: [
-        OwnEffect(CancelTimer(timer: connection_state.quest_deadline_timer)),
+        connection_state.quest_deadline_timer_move(move:),
         ..written
       ])
     [SavesPlace, ..] ->
@@ -292,31 +282,6 @@ pub fn world_left(
       ],
     ]),
   )
-}
-
-/// What the quest deadline timer needs when the earliest deadline of the quest log
-/// (genesis_prime/game/quest_log `next_deadline`, on the monotonic clock) goes from
-/// `before`, the deadline the running timer is set for, or none when no timer runs, to
-/// `after`: nothing when it did not move, the timer started when none ran, the running
-/// one cancelled and then started for the new deadline, or only cancelled when none is
-/// left. A timer that has just fired or been cancelled is not running.
-pub fn quest_deadline_timer_moved(
-  before before: Option(Int),
-  after after: Option(Int),
-  now_ms now_ms: Int,
-) -> List(Decided) {
-  case before, after {
-    None, None -> []
-    None, Some(deadline_ms) -> [
-      StartsQuestDeadlineTimer(after_ms: int.max(0, deadline_ms - now_ms)),
-    ]
-    Some(_), None -> [CancelsQuestDeadlineTimer]
-    Some(was), Some(deadline_ms) if was == deadline_ms -> []
-    Some(_), Some(deadline_ms) -> [
-      CancelsQuestDeadlineTimer,
-      StartsQuestDeadlineTimer(after_ms: int.max(0, deadline_ms - now_ms)),
-    ]
-  }
 }
 
 /// Starts the timer that saves the player's place every `movement.save_period_ms`.

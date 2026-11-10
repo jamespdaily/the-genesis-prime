@@ -332,4 +332,18 @@ Creature2	74783	an Exile mount display, whose row gives visibility prerequisite 
 Creature2	74784	an Exile mount display, whose row gives visibility prerequisite 19	tutorial_visibility_wire_test
 Item2	85531	(a bag priced in credits in its buy columns, with no sell columns set)	item_price_test
 Item2	23318	(a tradeskill additive row with no currency columns, sellable)	item_price_test
+Creature2	12484	a creature the open type 3 objective 4744 of quest 3668 names	objective_test, interaction_test, game_connection_objective_test
+Creature2	57050	a creature the type 3 objective 12889 of quest 6961 names	objective_test
+Creature2	58487	a creature the type 12 objectives 17932 of quest 9207 and 17989 of quest 9428 name	objective_test, game_connection_objective_test
+Quest2	6961	quest whose one objective 12889 is type 3, flags 0	objective_test
+Quest2	9207	quest whose one objective 17932 is type 12, flags 0	objective_test, game_connection_objective_test
+Quest2	9428	quest whose objective 0 is 17988 (type 3, flags 3) and objective 1 is 17989 (type 12, flags 3)	objective_test, quest_log_progress_test
+QuestObjective	12889	the type 3 objective of quest 6961	objective_test
+QuestObjective	17932	the type 12 objective of quest 9207	objective_test
+QuestObjective	17988	objective 0 of quest 9428, type 3	objective_test
+QuestObjective	17989	objective 1 of quest 9428, type 12	objective_test
+Quest2	4290	quest whose one objective 5763 is type 12, flags 0, count 5	quest_log_progress_test
+QuestObjective	5763	the type 12 objective of quest 4290, which needs five uses	quest_log_progress_test
+Quest2	5622	quest whose objective 0 is 10263 (type 3, flags 0x20, count 1) and objectives 1 and 2 are 8742 and 8305 (type 3, flags 3)	quest_log_progress_test
+QuestObjective	10263	the optional type 3 objective of quest 5622	quest_log_progress_test
 Creature2	74787	a unit beside the mounts whose row gives no visibility prerequisite	tutorial_visibility_wire_test
