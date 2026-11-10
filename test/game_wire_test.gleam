@@ -41,7 +41,6 @@ import game_client
 import genesis_prime
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/registry
-import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/content
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/cast
@@ -1724,16 +1723,30 @@ fn two_players_enter_one_map() -> TwoEntered {
 
 /// As `two_players_enter_one_map`, the first player being of the class given, the
 /// server holding the fixture's rows (the starting abilities' own trees) and its game
-/// connections taking their time and their timers from `scripts`, which a test whose casts run on
-/// timers gives so it moves them by hand (`driven_time.scripts`).
+/// connections and its World taking their time and their timers from `time`, which a
+/// test whose casts run on timers moves by hand (`driven_by`).
 fn two_players_of_class_enter_one_map_with(
   first_class first_class: Int,
-  scripts scripts: Scripts,
+  time time: driven_time.Time,
 ) -> TwoEntered {
-  two_players_enter_on(
-    tables: character_tables.shared(),
-    first_class:,
-    scripts:,
+  two_players_enter_on(tables: character_tables.shared(), first_class:, time:)
+}
+
+/// The settings with the game connections and the World taking their time and
+/// their timers from `time` (`driven_time.scripts`, `driven_time.service_time`), so
+/// one clock moves every timer of the listener and of the maps and creatures, and a
+/// timer fires only when the test advances it.
+fn driven_by(
+  settings settings: server.Settings,
+  time time: driven_time.Time,
+) -> server.Settings {
+  server.Settings(
+    ..settings,
+    game: server.Served(..settings.game, scripts: driven_time.scripts(time)),
+    world: server.World(
+      ..settings.world,
+      service_time: driven_time.service_time(time),
+    ),
   )
 }
 
@@ -1741,15 +1754,15 @@ fn two_players_of_class_enter_one_map_with(
 fn two_players_enter_on(
   tables tables: table_store.Tables,
   first_class first_class: Int,
-  scripts scripts: Scripts,
+  time time: driven_time.Time,
 ) -> TwoEntered {
   let started =
     login_support.start_with(change: fn(settings) {
+      let settings = driven_by(settings:, time:)
       server.Settings(
         ..settings,
         game: server.Served(
           ..settings.game,
-          scripts:,
           settings: connection_state.Settings(..settings.game.settings, tables:),
         ),
       )
@@ -1863,10 +1876,7 @@ pub fn a_medics_discharge_pulses_three_times_and_a_player_in_sight_reads_the_sam
   use <- owned_test.run(60_000)
   let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
-    two_players_of_class_enter_one_map_with(
-      first_class: 4,
-      scripts: driven_time.scripts(time),
-    )
+    two_players_of_class_enter_one_map_with(first_class: 4, time:)
   game_client.press_ability(
     game: first,
     client_cast_id: 1,
@@ -1922,10 +1932,7 @@ pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in
   use <- owned_test.run(60_000)
   let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
-    two_players_of_class_enter_one_map_with(
-      first_class: 5,
-      scripts: driven_time.scripts(time),
-    )
+    two_players_of_class_enter_one_map_with(first_class: 5, time:)
   game_client.press_ability(
     game: first,
     client_cast_id: 1,
@@ -2072,10 +2079,10 @@ pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on
   use <- owned_test.run(120_000)
   let time = driven_time.new()
   let started =
-    world_with_beasts_driven_by(
+    world_with_beasts(
       places: [beast_place(x: 1.5, z: 0.5)],
       tables: character_tables.shared(),
-      scripts: fn(_) { driven_time.scripts(time) },
+      time:,
     )
   let #(game, frames, have) =
     enters_and_sees_the_beasts(
@@ -2134,10 +2141,7 @@ pub fn a_stalkers_held_shred_taps_its_stages_again_and_a_player_in_sight_reads_t
   use <- owned_test.run(60_000)
   let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
-    two_players_of_class_enter_one_map_with(
-      first_class: 5,
-      scripts: driven_time.scripts(time),
-    )
+    two_players_of_class_enter_one_map_with(first_class: 5, time:)
   game_client.hold_ability(game: first, bag_index: 0, target: 0, held: 1)
   let #(pressed, first_have) =
     game_client.read_until_pong(game: first, have: first_have, number: 1)
@@ -2219,10 +2223,7 @@ pub fn a_stalkers_connection_ending_mid_hold_removes_it_for_a_player_in_sight_an
   use <- owned_test.run(60_000)
   let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
-    two_players_of_class_enter_one_map_with(
-      first_class: 5,
-      scripts: driven_time.scripts(time),
-    )
+    two_players_of_class_enter_one_map_with(first_class: 5, time:)
   game_client.hold_ability(game: first, bag_index: 0, target: 0, held: 1)
   // The hold is under way with the Proxy's phases and the repeat still to fire: the
   // clock does not move, so the connection ends in the middle of it.
@@ -2269,11 +2270,7 @@ fn a_suited_players_connection_ends(
 ) -> Nil {
   let time = driven_time.new()
   let TwoEntered(started:, first:, second:, second_have:, ..) =
-    two_players_enter_on(
-      tables:,
-      first_class:,
-      scripts: driven_time.scripts(time),
-    )
+    two_players_enter_on(tables:, first_class:, time:)
   game_client.press_ability(
     game: first,
     client_cast_id: 1,
@@ -2331,10 +2328,7 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
   use <- owned_test.run(60_000)
   let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
-    two_players_of_class_enter_one_map_with(
-      first_class: 7,
-      scripts: driven_time.scripts(time),
-    )
+    two_players_of_class_enter_one_map_with(first_class: 7, time:)
   game_client.press_ability(
     game: first,
     client_cast_id: 1,
@@ -3671,28 +3665,20 @@ fn beast_place(x x: Float, z z: Float) -> Place {
 
 /// A world with a Virtual Battle Beast at each of these places, none of which
 /// deflects, and which respawn after 1000 ms (the least a creature kind may hold, the
-/// strike deadline), on the tables given.
+/// strike deadline), on the tables given. The game connections and the World take
+/// their time and timers from `time` (`driven_by`): a Beast's swing, strike deadline,
+/// respawn and leash fire only when the test advances it.
 fn world_with_beasts(
   places places: List(Place),
   tables tables: table_store.Tables,
-) -> login_support.Started {
-  world_with_beasts_driven_by(places:, tables:, scripts: fn(scripts) { scripts })
-}
-
-/// The same with the game connections' time and timers from `scripts`, which a test
-/// whose presses are a cooldown apart gives so it moves the clock by hand
-/// (`driven_time.scripts`).
-fn world_with_beasts_driven_by(
-  places places: List(Place),
-  tables tables: table_store.Tables,
-  scripts scripts: fn(Scripts) -> Scripts,
+  time time: driven_time.Time,
 ) -> login_support.Started {
   login_support.start_with(change: fn(settings) {
+    let settings = driven_by(settings:, time:)
     server.Settings(
       ..settings,
       game: server.Served(
         ..settings.game,
-        scripts: scripts(settings.game.scripts),
         settings: connection_state.Settings(..settings.game.settings, tables:),
       ),
       world: server.World(
@@ -3710,8 +3696,9 @@ fn world_with_beasts_driven_by(
 }
 
 /// Runs the body on the client's rows with Paralytic Surge's recharge taken
-/// off: a live fight presses it four times in a row, and Spell4 42352's
-/// spellCoolDown of 25000 ms would make the test wait 75 s of the wall clock.
+/// off: the fight presses it four times in a row, and Spell4 42352's spellCoolDown of
+/// 25000 ms would refuse each press after the first unless the clock moved on by
+/// that much between presses, which would move every timer the Beast holds with it.
 fn on_rows_without_paralytic_surges_recharge(
   body body: fn(table_store.Tables) -> a,
 ) -> a {
@@ -3726,8 +3713,9 @@ fn on_rows_without_paralytic_surges_recharge(
 /// A world with one Beast 3 m ahead of the place a new test character stands at.
 fn world_with_a_beast_ahead(
   tables tables: table_store.Tables,
+  time time: driven_time.Time,
 ) -> login_support.Started {
-  world_with_beasts(places: [beast_place(x: 1.5, z: 0.5)], tables:)
+  world_with_beasts(places: [beast_place(x: 1.5, z: 0.5)], tables:, time:)
 }
 
 /// Plays a new player's character into the world and reads until the Beast's 0x262
@@ -3775,10 +3763,20 @@ fn face(game game: game_client.Game, yaw yaw: Float, clock clock: Int) -> Nil {
   )
 }
 
+/// The cast time of Paralytic Surge (Spell4 42352, castTime 0): its go is due at
+/// the press.
+const paralytic_surge_cast_ms = 0
+
+/// How long a hit of Paralytic Surge lasts after its go: the cast ends, with its 0x7fe,
+/// when the node of its second effect, Spell4Effects 96126, ends at its durationTime
+/// (`Spell4Effects.durationTime`, 2700 ms).
+const paralytic_surge_lingers_ms = 2700
+
 pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_the_same_fight_test() -> Nil {
   use <- owned_test.run(120_000)
   use tables <- on_rows_without_paralytic_surges_recharge()
-  let started = world_with_a_beast_ahead(tables:)
+  let time = driven_time.new()
+  let started = world_with_a_beast_ahead(tables:, time:)
   let #(first, first_frames, first_have) =
     enters_and_sees_the_beast(started:, number: 1, character_name: "Zed Qu")
   let #(second, second_frames, second_have) =
@@ -3803,28 +3801,17 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
     ))
   // The caster turns its back on the Beast: the press strikes nothing.
   face(game: first, yaw: toward +. 3.1415927, clock: 100)
-  game_client.press_ability(
-    game: first,
-    client_cast_id: 1,
-    bag_index: 2,
-    target: 0,
-  )
   let #(away, first_have) =
-    game_client.read_until(game: first, have: first_have, found: fn(frames) {
-      list.any(game_client.casts_in(frames:), fn(event) {
-        case event {
-          game_client.CastFinished(..) -> True
-          game_client.CastRefused(..)
-          | game_client.CastConfirmed(..)
-          | game_client.CastStarted(..)
-          | game_client.ThresholdOpened(..)
-          | game_client.ThresholdIndex(..)
-          | game_client.ThresholdClosed(..)
-          | game_client.ThresholdEnded(..)
-          | game_client.CastWent(..) -> False
-        }
-      })
-    })
+    press_and_fire(
+      time:,
+      game: first,
+      have: first_have,
+      bag_index: 2,
+      cast_ms: paralytic_surge_cast_ms,
+      cast_id: 1,
+    )
+  assert holds_a_finish(frames: away)
+    as "the press's cast finished once the clock has fired its timer"
   assert list.map(game_client.go_targets_in(frames: away), fn(go) { go.1 })
     == [[]]
     && game_client.health_in(frames: away) == []
@@ -3833,9 +3820,12 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
   face(game: first, yaw: toward, clock: 200)
   let #(first_have, healths) =
     press_until_dead(
+      time:,
       game: first,
       have: first_have,
       bag_index: 2,
+      cast_ms: paralytic_surge_cast_ms,
+      lingers_ms: paralytic_surge_lingers_ms,
       beast: beast_unit,
       cast_id: 2,
     )
@@ -3868,7 +3858,12 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
   let assert Ok(last) = list.last(game_client.health_in(frames: watched))
   assert last == #(beast_unit, 0, True)
     as "opcode.0x937: health 0 with the dead bit, from the creature itself"
-  // The creature stands again after its respawn time: 0x355, then a full 0x262.
+  // The creature stands again after its respawn time, 1000 ms from the kill, which
+  // the clock moves on by: 0x355, then a full 0x262. The creature sends its news
+  // before it starts the corpse's timer, so the clock moves on after it has taken
+  // all it was sent.
+  the_creature_has_taken_what_it_was_sent(started:, unit_id: beast_unit)
+  driven_time.advance(time:, ms: 1000)
   let #(after_first, first_have) =
     game_client.read_until(game: first, have: first_have, found: fn(frames) {
       game_client.removals_in(frames:) != []
@@ -3890,9 +3885,11 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
   // The picture of the respawned Beast is alive again: a press strikes it.
   let #(_, after_respawn) =
     press_until_a_hit(
+      time:,
       game: first,
       have: first_have,
       bag_index: 2,
+      cast_ms: paralytic_surge_cast_ms,
       beast: beast_unit,
       cast_id: 100,
     )
@@ -3940,12 +3937,22 @@ fn psi_children(frames frames: List(Frame)) -> Int {
   })
 }
 
+/// The cast time of Telekinetic Strike (Spell4 32893, castTime 1250): its go is that long
+/// after the press.
+const telekinetic_strike_cast_ms = 1250
+
+/// How long after its go a hit of Telekinetic Strike lasts: none, the cast ends with
+/// its go (its effects 62159 and 62204 have no durationTime).
+const telekinetic_strike_lingers_ms = 0
+
 pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_telegraph_and_a_watcher_reads_the_same_fight_test() -> Nil {
   use <- owned_test.run(120_000)
+  let time = driven_time.new()
   let started =
     world_with_beasts(
       places: [beast_place(x: 1.5, z: 0.5), beast_place(x: 11.5, z: 3.5)],
       tables: character_tables.shared(),
+      time:,
     )
   let #(first, first_frames, first_have) =
     enters_and_sees_the_beasts(
@@ -3987,14 +3994,17 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
     ))
   // The caster turns its back on the Beasts: the press strikes nothing.
   face(game: first, yaw: toward +. 3.1415927, clock: 100)
-  game_client.press_ability(
-    game: first,
-    client_cast_id: 1,
-    bag_index: 0,
-    target: 0,
-  )
   let #(away, first_have) =
-    game_client.read_until(game: first, have: first_have, found: holds_a_finish)
+    press_and_fire(
+      time:,
+      game: first,
+      have: first_have,
+      bag_index: 0,
+      cast_ms: telekinetic_strike_cast_ms,
+      cast_id: 1,
+    )
+  assert holds_a_finish(frames: away)
+    as "the press's cast finished once the clock has moved on by its cast time"
   assert list.map(game_client.go_targets_in(frames: away), fn(go) { go.1 })
     == [[]]
     && game_client.health_in(frames: away) == []
@@ -4016,9 +4026,12 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
   face(game: first, yaw: toward, clock: 200)
   let #(first_have, healths) =
     press_until_dead(
+      time:,
       game: first,
       have: first_have,
       bag_index: 0,
+      cast_ms: telekinetic_strike_cast_ms,
+      lingers_ms: telekinetic_strike_lingers_ms,
       beast: ahead,
       cast_id: 2,
     )
@@ -4036,9 +4049,9 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
       && psi_children(frames:) == 2
     })
   // The Beast ahead fights back every 1500 ms with its own attack, Spell4 5649,
-  // whose go names the caster; how many of those the watcher has read when this
-  // runs depends on how long the fight took, so only the casts of Telekinetic
-  // Strike are read here.
+  // whose go names the caster; the kill lands 1250 ms after the first hit, before
+  // its first 1500 ms tick, so it has not swung yet, and only the casts of
+  // Telekinetic Strike are read here.
   let strike_cast_ids =
     list.filter_map(game_client.casts_in(frames: watched), fn(event) {
       case event {
@@ -4080,7 +4093,9 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
     as "the watcher reads the same 0x937 the caster did, then 0x88c"
   assert psi_children(frames: watched) == 2
     as "Proxy 62204 starts the Psi Point child 30900 on each struck unit (Spell4Effects.targetFlags 4): two hits, two children"
-  // The Beast stands again after its respawn time: 0x355, then a full 0x262.
+  // The Beast stands again after its respawn time, 1000 ms from the kill, which the
+  // clock moves on by: 0x355, then a full 0x262.
+  driven_time.advance(time:, ms: 1000)
   let #(after_first, _) =
     game_client.read_until(game: first, have: first_have, found: fn(frames) {
       game_client.removals_in(frames:) != []
@@ -4125,32 +4140,73 @@ fn last_cast_of(frames: List(Frame)) -> Int {
   cast_id
 }
 
-/// Presses the ability of the bag index until a press hits the Beast (a deflected one
-/// is shown by a 0x7fb and strikes again), and gives the Beast's health after the hit.
-fn press_until_a_hit(
+/// Presses the ability of the bag index and moves the clock on by its cast time, so
+/// the timer of its go fires: the first pong shows the connection took the press and
+/// started the go's timer on the clock. The Beast answers the strike on its own
+/// process, so the read after the advance goes on until the go is written with its
+/// outcome (a health, a miss, or no target at all), and the second pong follows it.
+/// The frames of the reads and the bytes beyond.
+fn press_and_fire(
+  time time: driven_time.Time,
   game game: game_client.Game,
   have have: BitArray,
   bag_index bag_index: Int,
-  beast beast: Int,
+  cast_ms cast_ms: Int,
   cast_id cast_id: Int,
-) -> #(BitArray, Int) {
+) -> #(List(Frame), BitArray) {
   game_client.press_ability(
     game:,
     client_cast_id: cast_id,
     bag_index:,
     target: 0,
   )
-  let #(frames, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      game_client.health_in(frames:) != []
-      || game_client.missed_in(frames:) != []
+  let #(taken, have) = game_client.read_until_pong(game:, have:, number: 1)
+  driven_time.advance(time:, ms: cast_ms)
+  let #(went, have) =
+    game_client.read_until(game:, have:, found: fn(went) {
+      let seen = list.append(taken, went)
+      let gos = game_client.go_targets_in(frames: seen)
+      gos != []
+      && {
+        list.all(gos, fn(go) { go.1 == [] })
+        || game_client.health_in(frames: seen) != []
+        || game_client.missed_in(frames: seen) != []
+      }
     })
+  let #(settled, have) = game_client.read_until_pong(game:, have:, number: 2)
+  #(list.flatten([taken, went, settled]), have)
+}
+
+/// Presses the ability of the bag index until a press hits the Beast (a deflected one
+/// is shown by a 0x7fb and strikes again), and gives the Beast's health after the hit.
+fn press_until_a_hit(
+  time time: driven_time.Time,
+  game game: game_client.Game,
+  have have: BitArray,
+  bag_index bag_index: Int,
+  cast_ms cast_ms: Int,
+  beast beast: Int,
+  cast_id cast_id: Int,
+) -> #(BitArray, Int) {
+  let #(frames, have) =
+    press_and_fire(time:, game:, have:, bag_index:, cast_ms:, cast_id:)
+  assert game_client.health_in(frames:) != []
+    || game_client.missed_in(frames:) != []
+    as "the press's hit or miss is written once the clock has fired its timer"
   case
     list.find(game_client.health_in(frames:), fn(health) { health.0 == beast })
   {
     Ok(health) -> #(have, health.1)
     Error(Nil) ->
-      press_until_a_hit(game:, have:, bag_index:, beast:, cast_id: cast_id + 1)
+      press_until_a_hit(
+        time:,
+        game:,
+        have:,
+        bag_index:,
+        cast_ms:,
+        beast:,
+        cast_id: cast_id + 1,
+      )
   }
 }
 
@@ -4165,54 +4221,49 @@ fn position_of(frames frames: List(Frame), message_id message_id: Int) -> Int {
   }
 }
 
-/// Presses the ability of the bag index, one cast after another, until the 0x88c of the
-/// Beast arrives; the Beast's health after each hit, in order, and the bytes beyond.
+/// Presses the ability of the bag index, one cast after another, until the 0x88c of
+/// the Beast arrives: each press moves the clock on by the ability's cast time, and a
+/// press that leaves the Beast alive moves it on by `lingers_ms` more, to the end of
+/// the cast. The Beast's health after each hit, in order, and the bytes beyond.
 fn press_until_dead(
+  time time: driven_time.Time,
   game game: game_client.Game,
   have have: BitArray,
   bag_index bag_index: Int,
+  cast_ms cast_ms: Int,
+  lingers_ms lingers_ms: Int,
   beast beast: Int,
   cast_id cast_id: Int,
 ) -> #(BitArray, List(Int)) {
-  press_loop(game:, have:, bag_index:, beast:, cast_id:, healths: [])
+  press_loop(
+    time:,
+    game:,
+    have:,
+    bag_index:,
+    cast_ms:,
+    lingers_ms:,
+    beast:,
+    cast_id:,
+    healths: [],
+  )
 }
 
 fn press_loop(
+  time time: driven_time.Time,
   game game: game_client.Game,
   have have: BitArray,
   bag_index bag_index: Int,
+  cast_ms cast_ms: Int,
+  lingers_ms lingers_ms: Int,
   beast beast: Int,
   cast_id cast_id: Int,
   healths healths: List(Int),
 ) -> #(BitArray, List(Int)) {
-  game_client.press_ability(
-    game:,
-    client_cast_id: cast_id,
-    bag_index:,
-    target: 0,
-  )
   let #(frames, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      let finished =
-        list.any(game_client.casts_in(frames:), fn(event) {
-          case event {
-            game_client.CastFinished(..) -> True
-            game_client.CastRefused(..)
-            | game_client.CastConfirmed(..)
-            | game_client.CastStarted(..)
-            | game_client.ThresholdOpened(..)
-            | game_client.ThresholdIndex(..)
-            | game_client.ThresholdClosed(..)
-            | game_client.ThresholdEnded(..)
-            | game_client.CastWent(..) -> False
-          }
-        })
-      finished
-      && {
-        game_client.health_in(frames:) != []
-        || game_client.missed_in(frames:) != []
-      }
-    })
+    press_and_fire(time:, game:, have:, bag_index:, cast_ms:, cast_id:)
+  assert game_client.health_in(frames:) != []
+    || game_client.missed_in(frames:) != []
+    as "the press's hit or miss is written once the clock has fired its timer"
   assert list.is_empty(game_client.health_in(frames:))
     || position_of(frames:, message_id: 0x07F4)
     < position_of(frames:, message_id: 0x0937)
@@ -4227,24 +4278,41 @@ fn press_loop(
   let healths = list.append(healths, hits)
   case list.last(healths) {
     Ok(0) -> {
-      let #(_, have) =
-        game_client.read_until(game:, have:, found: fn(more) {
-          list.any(
-            list.append(frames, more) |> game_client.deaths_in(frames: _),
-            fn(death) { death == #(beast, True) },
-          )
-        })
+      // The Beast sends its health and then its death on its own process, so the
+      // pong does not show the death is written.
+      let #(more, have) = case
+        list.contains(game_client.deaths_in(frames:), #(beast, True))
+      {
+        True -> #([], have)
+        False ->
+          game_client.read_until(game:, have:, found: fn(more) {
+            list.contains(game_client.deaths_in(frames: more), #(beast, True))
+          })
+      }
+      assert list.contains(
+        game_client.deaths_in(frames: list.append(frames, more)),
+        #(beast, True),
+      )
+        as "the killing hit is followed by the Beast's 0x88c"
       #(have, healths)
     }
-    Ok(_) | Error(Nil) ->
+    Ok(_) | Error(Nil) -> {
+      driven_time.advance(time:, ms: lingers_ms)
+      let #(later, have) = game_client.read_until_pong(game:, have:, number: 3)
+      assert holds_a_finish(frames: list.append(frames, later))
+        as "the cast of the press has finished when the next press comes"
       press_loop(
+        time:,
         game:,
         have:,
         bag_index:,
+        cast_ms:,
+        lingers_ms:,
         beast:,
         cast_id: cast_id + 1,
         healths:,
       )
+    }
   }
 }
 
@@ -4255,8 +4323,9 @@ fn press_loop(
 // tests' characters are of the Dominion (faction 166), so the planted creature is
 // a Virtual Defense Dagun, hostile to the Dominion (Faction2Relationship 1442-166
 // level 0, `Creature2.73465`), with the Battle Beast's 52 health and attack: spell
-// 5649's effect 184741 for 12 every 1500 ms (`Spell4Effects.184741`, migration
-// 0010), its own reach 5.0 + 2.0, run speed 10.0 (`0x1405b45e0`). The aggro range
+// 5649's effect 184741 for 12 (`Spell4Effects.184741`) every attack interval of the
+// creature kinds (a server choice: migration 0010; `spawn_support.kinds`), its own
+// reach 5.0 + 2.0, run speed 10.0 (`0x1405b45e0`). The aggro range
 // is 10 and the leash range 55 (migration 0010). A Medic of level 1 has 736 health
 // and a shield of 450 (`player.level1_gear_properties`). The 0x908, 0x90a, 0x89a,
 // 0x938, 0x92f and 0x638 are read as the client reads them (`opcode.0x908`,
@@ -4267,24 +4336,21 @@ fn press_loop(
 /// stands in World 1387, zone 1100, at 1.5, 2.5, 3.5.
 const dagun_z = -20.0
 
-/// A world with one Dagun at x 1.5, z -20.
-fn world_with_a_dagun() -> login_support.Started {
-  world_with_a_dagun_driven_by(scripts: fn(scripts) { scripts })
+/// The Dagun's attack tick: the attack interval of the creature kinds the tests'
+/// worlds are planted with. The interval is a server choice (the client's effect
+/// 184741 has no tickTime), so it is read from those kinds.
+fn dagun_attack_interval_ms() -> Int {
+  spawn_support.kinds().default.attack_interval_ms
 }
 
-/// The same with the game connections' time and timers from `scripts`, which a test
-/// whose presses are a recharge apart gives so it moves the clock by hand
-/// (`driven_time.scripts`).
-fn world_with_a_dagun_driven_by(
-  scripts scripts: fn(Scripts) -> Scripts,
-) -> login_support.Started {
+/// A world with one Dagun at x 1.5, z -20, its map's and creature's timers and the
+/// connections' on the clock `time`, so the Dagun's attack tick and home timer fire
+/// only when the test advances it (`driven_by`).
+fn world_with_a_dagun(time time: driven_time.Time) -> login_support.Started {
   login_support.start_with(change: fn(settings) {
+    let settings = driven_by(settings:, time:)
     server.Settings(
       ..settings,
-      game: server.Served(
-        ..settings.game,
-        scripts: scripts(settings.game.scripts),
-      ),
       world: server.World(
         ..settings.world,
         spawns: spawn_support.key_in(
@@ -4300,6 +4366,18 @@ fn world_with_a_dagun_driven_by(
       ),
     )
   })
+}
+
+/// Returns when the first creature of the map, unit `unit_id`, has taken all it was
+/// sent, so a timer its last step started is on the clock: a creature's frames are
+/// sent before its step's timer is started, and an advance with no timer due waits
+/// for nothing.
+fn the_creature_has_taken_what_it_was_sent(
+  started started: login_support.Started,
+  unit_id unit_id: Int,
+) -> Nil {
+  let #(_, creature) = the_dagun_and_its_map(started:, dagun: unit_id)
+  driven_time.settled(creature)
 }
 
 /// A Medic of level 1 played in, its 0x262 and the Dagun's read, and ready: its
@@ -4393,7 +4471,8 @@ pub fn a_bot_entering_a_daguns_ring_is_targeted_and_chased_on_the_whole_server_t
   // move, with no tick to wait for. The strike, the shield and the leash are driven
   // with the creature's timers in the test of both rules together
   // (game_connection_fight_test, `a_beasts_aggro_strike_and_leash_...`).
-  let started = world_with_a_dagun()
+  let time = driven_time.new()
+  let started = world_with_a_dagun(time:)
   let #(game, own, dagun, have) =
     a_ready_medic(started:, number: 1, character_name: "Zed Qu")
   // Into the ring: 9 units from the Dagun, beyond its reach of 7.
@@ -4540,8 +4619,7 @@ pub fn a_stealthed_bot_walking_into_a_daguns_ring_gets_no_aggro_and_pressing_ste
   // and a second ends it. The toggle recharges in 1000 ms out of combat, so the
   // connections' clock is driven and moved by hand between the presses.
   let time = driven_time.new()
-  let started =
-    world_with_a_dagun_driven_by(scripts: fn(_) { driven_time.scripts(time) })
+  let started = world_with_a_dagun(time:)
   let #(game, own, dagun, have) =
     a_ready_stalker(started:, number: 1, character_name: "Zed Qu")
   game_client.press_ability(
@@ -4612,7 +4690,8 @@ pub fn a_dagun_fighting_a_bot_that_then_stealths_keeps_striking_it_and_its_lande
   use <- owned_test.run(120_000)
   // The same Stalker as above: Stealth 38784's row 83834 (dataBits02 0: damage taken
   // ends it) is the one a press out of combat reaches.
-  let started = world_with_a_dagun()
+  let time = driven_time.new()
+  let started = world_with_a_dagun(time:)
   let #(game, own, dagun, have) =
     a_ready_stalker(started:, number: 1, character_name: "Zed Qu")
   walk_to(game:, z: dagun_z +. 9.0, clock: 100)
@@ -4620,17 +4699,33 @@ pub fn a_dagun_fighting_a_bot_that_then_stealths_keeps_striking_it_and_its_lande
     read_fight(game:, have:, found: fn(events) {
       list.contains(events, game_client.InCombat(unit_id: own, in_combat: True))
     })
+  the_creature_has_taken_what_it_was_sent(started:, unit_id: dagun)
   game_client.press_ability(
     game:,
     client_cast_id: 1,
     bag_index: stealth_index,
     target: 0,
   )
-  let #(frames, _) =
+  let #(entered, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
-      list.length(stealth_changes_in(frames:)) >= 2
-      && struck_by(frames:, caster: dagun, target: own)
+      stealth_changes_in(frames:) != []
     })
+  // The map has told the Dagun of the bot's stealth, and the Dagun has taken it,
+  // before the clock reaches its attack tick, so the tick meets the Dagun with the
+  // stealth on its threat list.
+  let #(taken, have) =
+    read_after_the_map_and_the_creature_took_it(
+      game:,
+      have:,
+      started:,
+      dagun:,
+      pongs: #(1, 2),
+    )
+  // The Dagun's attack tick, its interval after the aggro: the bot is in its reach
+  // by then, and the strike's chain ends in the bot's 0x8f5 of the stealth ending.
+  driven_time.advance(time:, ms: dagun_attack_interval_ms())
+  let #(struck, _) = game_client.read_until_pong(game:, have:, number: 3)
+  let frames = list.flatten([entered, taken, struck])
   assert stealth_changes_in(frames:) == [#(own, 1), #(own, 0)]
     as "opcode.0x8f5: the press enters stealth, and the Dagun, which keeps fighting the bot it already had on its threat list, strikes it: Spell4Effects.effectType.83 (83834, dataBits02 0) ends the stealth on the damage taken"
   assert struck_by(frames:, caster: dagun, target: own)
@@ -4643,7 +4738,8 @@ pub fn a_dagun_fighting_a_bot_that_then_stealths_keeps_striking_it_and_its_lande
 
 pub fn a_dagun_that_crashes_mid_fight_is_gone_and_the_bots_combat_flag_clears_test() -> Nil {
   use <- owned_test.run(120_000)
-  let started = world_with_a_dagun()
+  let time = driven_time.new()
+  let started = world_with_a_dagun(time:)
   let #(game, own, dagun, have) =
     a_ready_medic(started:, number: 1, character_name: "Zed Qu")
   walk_to(game:, z: dagun_z +. 9.0, clock: 100)
@@ -4684,13 +4780,16 @@ pub fn a_dagun_that_crashes_mid_fight_is_gone_and_the_bots_combat_flag_clears_te
 /// player of level 1, and the test is of the death and the coming back, not of the
 /// number. The fight's sequence is the client's as on the Dagun of
 /// `world_with_a_dagun`.
-fn world_with_a_lethal_dagun() -> login_support.Started {
+fn world_with_a_lethal_dagun(
+  time time: driven_time.Time,
+) -> login_support.Started {
   let dagun =
     spawn_support.spawn_dealing(
       spawn: spawn_support.dagun(number: 1, x: 0.0),
       damage: 100_000,
     )
   login_support.start_with(change: fn(settings) {
+    let settings = driven_by(settings:, time:)
     server.Settings(
       ..settings,
       world: server.World(
@@ -4707,15 +4806,29 @@ fn world_with_a_lethal_dagun() -> login_support.Started {
   })
 }
 
-/// The player of the frames' 0x262 walks into the Dagun's ring and is read until
+/// The player of the frames' 0x262 walks into the Dagun's ring, the Dagun's aggro
+/// is read with its tick on the clock, the clock moves on to the tick (the Dagun runs
+/// to within its reach of the bot in less than that), and the player is read until
 /// its own 0x88c marks it dead and the death's last frame, the ghost's 0x636, has
 /// come: the bytes kept.
 fn killed_by_the_dagun(
+  time time: driven_time.Time,
+  started started: login_support.Started,
   game game: game_client.Game,
   own own: Int,
+  dagun dagun: Int,
   have have: BitArray,
 ) -> BitArray {
   walk_to(game:, z: dagun_z +. 9.0, clock: 100)
+  let #(_, have) =
+    read_after_the_map_and_the_creature_took_it(
+      game:,
+      have:,
+      started:,
+      dagun:,
+      pongs: #(1, 2),
+    )
+  driven_time.advance(time:, ms: dagun_attack_interval_ms())
   let #(_, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
       list.contains(game_client.deaths_in(frames:), #(own, True))
@@ -4759,7 +4872,8 @@ pub fn a_bot_of_each_class_killed_by_a_planted_dagun_comes_back_by_wake_here_ove
   use <- owned_test.run(120_000)
   // The Medic's half of the fight, a creature it kills standing again at its
   // respawn, is `a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_the_same_fight_test`.
-  let started = world_with_a_lethal_dagun()
+  // Each bot has a world and a clock of its own: the Dagun that has killed one is
+  // walking home on a timer, and the next bot's death should not wait on it.
   list.each(
     [
       #(1, "Ann Qu", 1),
@@ -4771,10 +4885,21 @@ pub fn a_bot_of_each_class_killed_by_a_planted_dagun_comes_back_by_wake_here_ove
     fn(bot) {
       let #(number, character_name, class_id) = bot
       let class = "class " <> int.to_string(class_id)
+      let time = driven_time.new()
+      let started = world_with_a_lethal_dagun(time:)
       let #(game, entry, have) =
         a_ready_player(started:, number:, character_name:, class_id:)
       let own = game_client.unit_create_player_in(frames: entry).unit_id
-      let have = killed_by_the_dagun(game:, own:, have:)
+      let assert [dagun] = game_client.creatures_created_in(frames: entry)
+      let have =
+        killed_by_the_dagun(
+          time:,
+          started:,
+          game:,
+          own:,
+          dagun: dagun.unit_id,
+          have:,
+        )
       choose(game:, own:, choice: 1)
       let #(frames, _) =
         game_client.read_until(game:, have:, found: fn(frames) {
@@ -4803,13 +4928,25 @@ pub fn a_bot_of_each_class_killed_by_a_planted_dagun_comes_back_by_wake_here_ove
         && shield == entry_stat(entry:, stat_id: 20)
         as { class <> ": at the full health and shield it entered with" }
       game_client.close(game:)
+      login_support.stop(started)
     },
   )
   // The Spellslinger comes back by the Holocrypt.
+  let time = driven_time.new()
+  let started = world_with_a_lethal_dagun(time:)
   let #(game, entry, have) =
     a_ready_player(started:, number: 6, character_name: "Fay Qu", class_id: 7)
   let own = game_client.unit_create_player_in(frames: entry).unit_id
-  let have = killed_by_the_dagun(game:, own:, have:)
+  let assert [dagun] = game_client.creatures_created_in(frames: entry)
+  let have =
+    killed_by_the_dagun(
+      time:,
+      started:,
+      game:,
+      own:,
+      dagun: dagun.unit_id,
+      have:,
+    )
   choose(game:, own:, choice: 2)
   let #(frames, _) =
     game_client.read_until(game:, have:, found: fn(frames) {
@@ -4858,12 +4995,25 @@ pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_
   // again in the same instant. A server choice (the Design of issue 496): a dead unit is
   // struck by nothing (`Spell4ValidTargets.targetBitmask`), so the Dagun rests, and a
   // player that wakes inside its ring is aggroed as a walk-in is.
-  let started = world_with_a_lethal_dagun()
+  let time = driven_time.new()
+  let started = world_with_a_lethal_dagun(time:)
   let #(game, own, dagun, have) =
     a_ready_medic(started:, number: 1, character_name: "Zed Qu")
   // Into the ring and within the Dagun's reach: it strikes from home and never runs, so
-  // its home timer after the kill has no walk to wait for.
+  // its home timer after the kill has no walk to wait for, and is due when the leash
+  // starts it.
   walk_to(game:, z: dagun_z +. 5.0, clock: 100)
+  let #(aggro, have) =
+    read_after_the_map_and_the_creature_took_it(
+      game:,
+      have:,
+      started:,
+      dagun:,
+      pongs: #(1, 2),
+    )
+  // The attack tick strikes and kills, and the clock fires the home timer the leash
+  // started at the same instant, each after the barrier of the one before it.
+  driven_time.advance(time:, ms: dagun_attack_interval_ms())
   let #(died, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
       list.contains(game_client.deaths_in(frames:), #(own, True))
@@ -4878,24 +5028,21 @@ pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_
     game_client.Threatens(unit_id: dagun, other_unit_id: own, threat: 0),
   )
     as "opcode.0x90a: the Dagun erases the body's threat when it leashes"
-  // The home timer fires at once, but its firing is not in the creature's mailbox when
-  // the barrier's `get_state` is, so the test waits for the creature to leave Returning.
   let #(_, creature) = the_dagun_and_its_map(started:, dagun:)
-  event_wait.until("the Dagun took its home timer", fn() {
-    !creature_walks_home(creature:)
-  })
+  assert !creature_walks_home(creature:)
+    as "the Dagun took its home timer: the clock fired it after the leash"
   let #(settled, have) =
     read_after_the_map_and_the_creature_took_it(
       game:,
       have:,
       started:,
       dagun:,
-      pongs: #(1, 2),
+      pongs: #(3, 4),
     )
   let after_the_leash =
     list.drop(
       list.drop_while(
-        game_client.fight_in(frames: list.append(died, settled)),
+        game_client.fight_in(frames: list.flatten([aggro, died, settled])),
         fn(event) {
           event != game_client.InCombat(unit_id: dagun, in_combat: False)
         },
@@ -4938,7 +5085,8 @@ pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_
 
 pub fn a_player_whose_connection_ends_mid_chase_makes_the_dagun_leash_test() -> Nil {
   use <- owned_test.run(120_000)
-  let started = world_with_a_dagun()
+  let time = driven_time.new()
+  let started = world_with_a_dagun(time:)
   let #(watcher, _, dagun, watcher_have) =
     a_ready_medic(started:, number: 2, character_name: "Ann Qu")
   let #(fighter, own, _, have) =
@@ -4982,11 +5130,11 @@ pub fn a_timed_quest_is_botched_over_the_connection_test() -> Nil {
   let time = driven_time.new()
   let started =
     login_support.start_with(change: fn(settings) {
+      let settings = driven_by(settings:, time:)
       server.Settings(
         ..settings,
         game: server.Served(
           ..settings.game,
-          scripts: driven_time.scripts(time),
           settings: connection_state.Settings(..settings.game.settings, tables:),
         ),
       )
