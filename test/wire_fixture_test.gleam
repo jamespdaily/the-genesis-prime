@@ -257,13 +257,24 @@ pub fn the_quests_of_the_named_accounts_characters_are_kept_test() -> Nil {
 
 pub fn a_fixture_file_with_no_currency_or_quest_rows_leaves_those_tables_empty_test() -> Nil {
   use <- owned_test.run(60_000)
+  use folder <- recording_support.in_folder
   let target = pool()
-  assert fixture.apply(
-      target,
+  let assert Ok(text) =
+    simplifile.read(
       wire_replay_support.committed_session <> "/" <> fixture.file_name,
     )
-    == Ok(Nil)
-    as "the committed session's fixture, written before these tables were kept, applies"
+    as "the committed session's fixture reads"
+  let older =
+    string.split(text, "\n")
+    |> list.filter(fn(line) {
+      !string.starts_with(line, "insert into character_currency ")
+      && !string.starts_with(line, "insert into character_quest ")
+    })
+    |> string.join("\n")
+  assert simplifile.write(path_in(folder), older) == Ok(Nil)
+    as "the older fixture is written"
+  assert fixture.apply(target, path_in(folder)) == Ok(Nil)
+    as "the committed session's fixture without its currency and quest statements, as one written before these tables were kept is, applies"
   assert query_texts(target, "select login_name from account") != []
     as "and it holds rows"
   assert currency_rows(target) == [] && quest_rows(target) == []

@@ -19,8 +19,10 @@ InstancePortal
 Item2Category
 Item2Family
 Item2Type
+ItemBudget
 ItemProficiency
 ItemSlot
+ItemStat
 PathSoldierActivate
 PeriodicQuestGroup
 PositionalRequirement

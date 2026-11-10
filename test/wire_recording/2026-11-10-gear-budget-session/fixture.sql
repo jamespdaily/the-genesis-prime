@@ -50,3 +50,9 @@ insert into character_item (item_guid, character_id, item2_id, location, bag_ind
 insert into character_item (item_guid, character_id, item2_id, location, bag_index, stack_count) overriding system value values (55, 21, 8535, 0, 15, 1);
 insert into character_item (item_guid, character_id, item2_id, location, bag_index, stack_count) overriding system value values (56, 21, 81356, 0, 16, 1);
 select setval(pg_get_serial_sequence('character_item', 'item_guid'), 56, true);
+insert into character_currency (character_id, currency_type_id, amount) values (1, 1, 1000);
+insert into character_currency (character_id, currency_type_id, amount) values (13, 1, 1000);
+insert into character_currency (character_id, currency_type_id, amount) values (16, 1, 1000);
+insert into character_currency (character_id, currency_type_id, amount) values (19, 1, 1000);
+insert into character_currency (character_id, currency_type_id, amount) values (20, 1, 1000);
+insert into character_currency (character_id, currency_type_id, amount) values (21, 1, 1000);
