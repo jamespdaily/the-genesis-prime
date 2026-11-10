@@ -14,7 +14,7 @@ import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_level.{UnitStatLevel}
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/store
-import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/id.{Creature2Id, Faction2Id}
 import genesis_prime/world_map/map.{Left}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/list
@@ -37,11 +37,24 @@ pub fn entered_at(
 }
 
 /// The credit of a kill of a creature of this Creature2 row and level, told to the
-/// connection for the stay `stay`.
+/// connection for the stay `stay`. The creature has no faction (Faction2 0), which
+/// no experience rule reads.
 pub fn credited_in(
   state state: game_connection.State,
   stay stay: Stay,
   creature_id creature_id: Int,
+  level level: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  credited_of_faction(state:, stay:, creature_id:, faction_id: 0, level:)
+}
+
+/// The credit of a kill of a creature of this Creature2 row, Faction2 and level,
+/// told to the connection for the stay `stay`.
+pub fn credited_of_faction(
+  state state: game_connection.State,
+  stay stay: Stay,
+  creature_id creature_id: Int,
+  faction_id faction_id: Int,
   level level: Int,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   support.feed(
@@ -51,6 +64,7 @@ pub fn credited_in(
       sent: SentByKill(Credit(
         unit_id: creature_unit_id,
         creature_id: Creature2Id(creature_id),
+        faction_id: Faction2Id(faction_id),
         level:,
       )),
     ),

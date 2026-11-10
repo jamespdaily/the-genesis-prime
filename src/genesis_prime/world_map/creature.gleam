@@ -39,7 +39,7 @@
 ////                                    alive: Send(c0, Struck(Landed | Deflected))   Send(each viewer, Health(h', dead))
 ////                                    landed: the fight takes StruckBy (genesis_prime/world_map/creature_fight)
 ////                                    killed: Send(each viewer, Died); StartServiceTimer(corpse, respawn_ms); the fight takes Killed
-////                                            Send(c0, KillCredit(unit, creature row, level)), once, for the blow that killed it
+////                                            Send(c0, KillCredit(unit, creature row, faction, level)), once, for the blow that killed it
 ////                                    dead:  Send(c0, Struck(Refused(Dead)))
 ////                                    walking home: Send(c0, Struck(Refused(Returning)))
 //// Approached(c, unit, place, seq), Withdrew(c), PlayerDied(c) from the map,
@@ -166,7 +166,7 @@ import genesis_prime/step.{
   ServiceTimerFired, Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded,
   WatchId,
 }
-import genesis_prime/table/id.{type Creature2Id}
+import genesis_prime/table/id.{type Creature2Id, type Faction2Id, Faction2Id}
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight.{
   type Fighter, AttackTick, Fighter, HomeArrival, StrikeDeadline,
@@ -273,9 +273,15 @@ pub type Outgoing {
   FightTold(stay: Stay, told: Fight)
   /// The credit for a kill, for the connection of the player whose blow killed the
   /// creature, in the stay the killing strike was told for: the creature's unit, its
-  /// Creature2 row and its level. Sent once per death, after the strike's answer
-  /// (genesis_prime/game/experience).
-  KillCredit(stay: Stay, unit_id: Int, creature_id: Creature2Id, level: Int)
+  /// Creature2 row, its Faction2 (its spawn row's) and its level. Sent once per death,
+  /// after the strike's answer (genesis_prime/game/experience).
+  KillCredit(
+    stay: Stay,
+    unit_id: Int,
+    creature_id: Creature2Id,
+    faction_id: Faction2Id,
+    level: Int,
+  )
 }
 
 /// A creature's players in sight, each by its connection with the stay the map
@@ -860,6 +866,7 @@ fn credit_for(
           stay:,
           unit_id: state.settings.creature.unit_id,
           creature_id: state.settings.spawn.creature_id,
+          faction_id: Faction2Id(state.settings.spawn.faction_id),
           level: state.settings.spawn.level,
         ),
       )),
