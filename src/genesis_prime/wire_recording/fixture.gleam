@@ -271,7 +271,7 @@ fn character_statement(row: sql.CharactersOfAccountsNamedRow) -> String {
 }
 
 fn item_statement(row: sql.ItemsOfCharactersOfAccountsNamedRow) -> String {
-  "insert into character_item (item_guid, character_id, item2_id, location, bag_index, stack_count) overriding system value values ("
+  "insert into character_item (item_guid, character_id, item2_id, location, bag_index, stack_count, random_stats) overriding system value values ("
   <> string.join(
     [
       int.to_string(row.item_guid),
@@ -280,6 +280,7 @@ fn item_statement(row: sql.ItemsOfCharactersOfAccountsNamedRow) -> String {
       int.to_string(row.location),
       int.to_string(row.bag_index),
       int.to_string(row.stack_count),
+      int.to_string(row.random_stats),
     ],
     ", ",
   )

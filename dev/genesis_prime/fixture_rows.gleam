@@ -517,14 +517,6 @@ const child_rules = [
     "ID",
     "quest_turn_in (Quest2Reward.quest2Id)",
   ),
-  // The roll picks among all the rows of a group, in table order.
-  ChildRule(
-    "ItemRandomStat",
-    "itemRandomStatGroupId",
-    "ItemRandomStatGroup",
-    "ID",
-    "random_stat.roll (ItemRandomStat.itemRandomStatGroupId)",
-  ),
 ]
 
 /// The rows the server reads by the kind of a row, where no column's name says
@@ -814,46 +806,6 @@ const untyped_references = [
     "dataBits02",
     "ItemDisplay",
     "spell_plan.disguise_of (DisguiseOutfit effect type 112)",
-  ),
-  UntypedReference(
-    "ItemStat",
-    [#("itemStatTypeEnum00", 2)],
-    [],
-    "itemStatData00",
-    "ItemRandomStatGroup",
-    "random_stat.roll (an ItemStat entry of kind 2 names the group its choice is made in)",
-  ),
-  UntypedReference(
-    "ItemStat",
-    [#("itemStatTypeEnum01", 2)],
-    [],
-    "itemStatData01",
-    "ItemRandomStatGroup",
-    "random_stat.roll (an ItemStat entry of kind 2 names the group its choice is made in)",
-  ),
-  UntypedReference(
-    "ItemStat",
-    [#("itemStatTypeEnum02", 2)],
-    [],
-    "itemStatData02",
-    "ItemRandomStatGroup",
-    "random_stat.roll (an ItemStat entry of kind 2 names the group its choice is made in)",
-  ),
-  UntypedReference(
-    "ItemStat",
-    [#("itemStatTypeEnum03", 2)],
-    [],
-    "itemStatData03",
-    "ItemRandomStatGroup",
-    "random_stat.roll (an ItemStat entry of kind 2 names the group its choice is made in)",
-  ),
-  UntypedReference(
-    "ItemStat",
-    [#("itemStatTypeEnum04", 2)],
-    [],
-    "itemStatData04",
-    "ItemRandomStatGroup",
-    "random_stat.roll (an ItemStat entry of kind 2 names the group its choice is made in)",
   ),
 ]
 

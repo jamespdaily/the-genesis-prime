@@ -1,14 +1,15 @@
 -- The items held by the characters of the accounts with these login names, in
 -- the order of their guids, with every column the fixture of a recorded session
 -- keeps (genesis_prime/wire_recording/fixture): the guid, the character that
--- holds it, the item's id, its place and its stack count.
+-- holds it, the item's id, its place, its stack count and its random-stat word.
 select
   item_guid,
   character_id,
   item2_id,
   location::int as location,
   bag_index,
-  stack_count
+  stack_count,
+  random_stats
 from character_item
 where character_id in (
   select character_id
