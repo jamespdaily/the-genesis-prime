@@ -65,7 +65,8 @@ import genesis_prime/game/camp
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/connection/effects.{
-  type Decided, Chats, StartsQuestResetTimer, StartsSaveTimer, ToClient,
+  type Decided, Chats, SavesPlace, StartsQuestResetTimer, StartsSaveTimer,
+  ToClient,
 } as connection_effects
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/select as connection_select
@@ -93,6 +94,7 @@ import genesis_prime/store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/stay
 import gleam/list
+import gleam/option
 
 /// What the camp messages do, taken from inside 0x038C, in the world
 /// (genesis_prime/game/camp): the camp is kept, its effects are carried out,
@@ -264,6 +266,98 @@ pub fn quest_reset_due(
         text: "a timer the rule did not start fired",
       )
   }
+}
+
+/// The quest deadline timer fired: every quest whose time has run out is botched
+/// (genesis_prime/game/quest_log `expire`), the client is told of each with 0x35C
+/// state 4, the timer starts again for the next deadline, and the log is saved so
+/// the botch outlasts the connection. A firing before the earliest deadline only
+/// starts the timer again. The timer runs only while the player is in the world, so
+/// a firing in any other status is a bug.
+pub fn quest_deadline_due(
+  session session: Session,
+  now now: Now,
+) -> client_connection.Handled(Session) {
+  case session.status {
+    InWorld(holder:, entered:) -> {
+      let #(log, botched) =
+        quest_log.expire(log: entered.quests, now_ms: now.monotonic_ms)
+      connection_effects.carry_out(
+        session: Session(
+          ..session,
+          status: InWorld(
+            holder:,
+            entered: world_entry.Entered(..entered, quests: log),
+          ),
+        ),
+        now:,
+        effects: list.flatten([
+          list.map(botched, fn(quest_id) {
+            ToClient(frame: connection_frames.quest_state_frame(
+              quest_id:,
+              state: 4,
+              objective_id: 0,
+            ))
+          }),
+          connection_effects.quest_deadline_timer_moved(
+            before: option.None,
+            after: quest_log.next_deadline(log:),
+            now_ms: now.monotonic_ms,
+          ),
+          case botched {
+            [] -> []
+            [_, ..] -> [SavesPlace]
+          },
+        ]),
+        written: [],
+      )
+    }
+    WaitingToClaim(..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | Summoning(..)
+    | MovingItem(..)
+    | Buying(..)
+    | Selling(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey ->
+      connection_state.end_for(
+        session:,
+        now:,
+        text: "a timer the rule did not start fired",
+      )
+  }
+}
+
+/// The connection claimed its account again after Sessions went away, and the player
+/// is in the world as it was: the timers cancelled when the wait began start again, the
+/// save timer, the quest reset timer, which also sends the 0x362 of a reset that passed
+/// during the wait, and the quest deadline timer, which for a quest whose time ran out
+/// meanwhile fires at once.
+pub fn claimed_again(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+) -> client_connection.Handled(Session) {
+  let #(entered, reset) = reset_effects(session:, entered:, now:)
+  connection_effects.carry_out(
+    session: Session(..session, status: InWorld(holder:, entered:)),
+    now:,
+    effects: list.flatten([
+      [StartsSaveTimer],
+      reset,
+      connection_effects.quest_deadline_timer_moved(
+        before: option.None,
+        after: quest_log.next_deadline(log: entered.quests),
+        now_ms: now.monotonic_ms,
+      ),
+    ]),
+    written: [],
+  )
 }
 
 /// The store's answer to the save of the player's place: what it says is
@@ -701,6 +795,11 @@ fn in_the_world(
       list.map(effects, connection_effects.from_entry),
       [Chats(effects: burst), StartsSaveTimer],
       reset,
+      connection_effects.quest_deadline_timer_moved(
+        before: option.None,
+        after: quest_log.next_deadline(log: entered.quests),
+        now_ms: now.monotonic_ms,
+      ),
     ]),
     written: [],
   )

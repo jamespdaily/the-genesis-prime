@@ -13,7 +13,9 @@ import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/chat as connection_chat
 import genesis_prime/game/connection/life_effect as connection_life_effect
 import genesis_prime/game/connection/resource as connection_resource
-import genesis_prime/game/connection/state.{type Session, Camped, Session} as connection_state
+import genesis_prime/game/connection/state.{
+  type Session, Camped, Playing, Session,
+} as connection_state
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/strike
@@ -25,8 +27,9 @@ import genesis_prime/step.{
 import genesis_prime/store
 import genesis_prime/table/id.{type Spell4BaseId}
 import genesis_prime/world_map/map_id.{type MapId}
+import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 
 /// What a feature of the rule decided that the rule carries out, in order.
 pub type Decided {
@@ -44,6 +47,14 @@ pub type Decided {
   /// Start the timer that fires at the next quest reset (`quest_reset_timer`), in
   /// this many milliseconds.
   StartsQuestResetTimer(after_ms: Int)
+  /// Start the timer that fires when the earliest running quest's time runs out
+  /// (`quest_deadline_timer`), in this many milliseconds.
+  StartsQuestDeadlineTimer(after_ms: Int)
+  /// Cancel the quest deadline timer; nothing when none is running.
+  CancelsQuestDeadlineTimer
+  /// Save the player's place and the quest log, which ends the step; the player goes
+  /// on playing once the store answers.
+  SavesPlace
   /// What the life of the player the connection holds decided
   /// (genesis_prime/game/player_life), carried out as a fight's are
   /// (genesis_prime/game/connection/life_effect).
@@ -183,6 +194,38 @@ pub fn carry_out(
         )),
         ..written
       ])
+    [StartsQuestDeadlineTimer(after_ms:), ..rest] ->
+      carry_out(session:, now:, effects: rest, written: [
+        OwnEffect(StartTimer(
+          timer: connection_state.quest_deadline_timer,
+          after_ms:,
+        )),
+        ..written
+      ])
+    [CancelsQuestDeadlineTimer, ..rest] ->
+      carry_out(session:, now:, effects: rest, written: [
+        OwnEffect(CancelTimer(timer: connection_state.quest_deadline_timer)),
+        ..written
+      ])
+    [SavesPlace, ..] ->
+      case connection_state.holds_a_player(session.status) {
+        Some(#(holder, entered)) ->
+          connection_state.saving(
+            session:,
+            now:,
+            holder:,
+            entered:,
+            then: Playing,
+            before: list.reverse(written),
+            within_ms: session.settings.ask_deadline_ms,
+          )
+        None ->
+          connection_state.end_for(
+            session:,
+            now:,
+            text: "a feature saved the place with no player in it",
+          )
+      }
     [LeavesWorld, ..] ->
       case connection_state.holds_a_player(session.status) {
         Some(#(holder, entered)) -> {
@@ -216,8 +259,9 @@ pub fn carry_out(
 
 /// What the player leaves behind as it leaves its stay in the world, by its camp
 /// or the Holocrypt: its chat groups, its casts and its strikes are left, its
-/// class resource's and its life's regeneration timers and the save timer cancelled; the session keeps the chat's next whisper number, which
-/// counts for the connection's life.
+/// class resource's and its life's regeneration timers and the save, quest reset and
+/// quest deadline timers cancelled; the session keeps the chat's next whisper number,
+/// which counts for the connection's life.
 pub fn world_left(
   session session: Session,
   now now: Now,
@@ -244,9 +288,35 @@ pub fn world_left(
       [
         OwnEffect(CancelTimer(timer: connection_state.save_timer)),
         OwnEffect(CancelTimer(timer: connection_state.quest_reset_timer)),
+        OwnEffect(CancelTimer(timer: connection_state.quest_deadline_timer)),
       ],
     ]),
   )
+}
+
+/// What the quest deadline timer needs when the earliest deadline of the quest log
+/// (genesis_prime/game/quest_log `next_deadline`, on the monotonic clock) goes from
+/// `before`, the deadline the running timer is set for, or none when no timer runs, to
+/// `after`: nothing when it did not move, the timer started when none ran, the running
+/// one cancelled and then started for the new deadline, or only cancelled when none is
+/// left. A timer that has just fired or been cancelled is not running.
+pub fn quest_deadline_timer_moved(
+  before before: Option(Int),
+  after after: Option(Int),
+  now_ms now_ms: Int,
+) -> List(Decided) {
+  case before, after {
+    None, None -> []
+    None, Some(deadline_ms) -> [
+      StartsQuestDeadlineTimer(after_ms: int.max(0, deadline_ms - now_ms)),
+    ]
+    Some(_), None -> [CancelsQuestDeadlineTimer]
+    Some(was), Some(deadline_ms) if was == deadline_ms -> []
+    Some(_), Some(deadline_ms) -> [
+      CancelsQuestDeadlineTimer,
+      StartsQuestDeadlineTimer(after_ms: int.max(0, deadline_ms - now_ms)),
+    ]
+  }
 }
 
 /// Starts the timer that saves the player's place every `movement.save_period_ms`.

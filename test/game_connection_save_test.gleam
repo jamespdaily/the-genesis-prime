@@ -1114,6 +1114,8 @@ pub fn the_save_timer_is_cancelled_while_the_connection_claims_again_and_started
   assert support.effects_of(taken)
     == [
       OwnEffect(CancelTimer(TimerId(2))),
+      OwnEffect(CancelTimer(TimerId(10))),
+      OwnEffect(CancelTimer(TimerId(11))),
       OwnEffect(StartTimer(TimerId(1), 100)),
     ]
     as "the save timer is cancelled with the claim's wait, so no save fires while the claim is out; a firing already queued is dropped by the shell"
@@ -1121,8 +1123,11 @@ pub fn the_save_timer_is_cancelled_while_the_connection_claims_again_and_started
     game_connection_support.feed(state, OwnEvent(TimerFired(TimerId(1))))
   let #(state, taken) = game_connection_support.claimed(state:, taken:)
   assert support.effects_of(taken)
-    == [OwnEffect(StartTimer(TimerId(2), 60_000))]
-    as "the claim answered, the player is in the world and the save timer runs again"
+    == [
+      OwnEffect(StartTimer(TimerId(2), 60_000)),
+      OwnEffect(StartTimer(TimerId(10), 48_800_000)),
+    ]
+    as "the claim answered, the player is in the world and the save timer and the reset timer (Friday 2025-04-25 10:00 UTC, 48,800,000 ms after) run again"
   let state =
     game_connection_support.moved_to(state: state, x: 4.5, y: 5.5, z: 6.5)
   let #(_, taken) =
@@ -1153,7 +1158,10 @@ pub fn a_claim_that_finds_sessions_not_running_keeps_the_save_timer_cancelled_un
     game_connection_support.feed(state, OwnEvent(TimerFired(TimerId(1))))
   let #(_, taken) = game_connection_support.claimed(state:, taken:)
   assert support.effects_of(taken)
-    == [OwnEffect(StartTimer(TimerId(2), 60_000))]
+    == [
+      OwnEffect(StartTimer(TimerId(2), 60_000)),
+      OwnEffect(StartTimer(TimerId(10), 48_800_000)),
+    ]
 }
 
 pub fn a_save_timer_that_fires_while_the_connection_claims_again_is_a_bug_that_saves_and_ends_test() -> Nil {
