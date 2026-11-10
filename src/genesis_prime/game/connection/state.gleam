@@ -33,7 +33,8 @@ import genesis_prime/message/disconnect_reason.{
 }
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionId, type Effect, type Now,
-  About, LogWarning, OwnEffect, Stop, TimerId, WatchId, Write,
+  About, CancelTimer, LogWarning, OwnEffect, StartTimer, Stop, TimerId, WatchId,
+  Write,
 }
 import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
@@ -286,6 +287,19 @@ pub const quest_reset_timer = TimerId(10)
 /// The timer that fires when the earliest running quest's time limit runs out while
 /// the player is in the world (genesis_prime/game/quest_log `next_deadline`).
 pub const quest_deadline_timer = TimerId(11)
+
+/// The effect that carries out a move of the quest deadline timer
+/// (genesis_prime/game/quest_log `deadline_moved`).
+pub fn quest_deadline_timer_move(
+  move move: quest_log.DeadlineTimer,
+) -> Effect(ConnectionEffect(Request)) {
+  case move {
+    quest_log.StartDeadlineTimer(after_ms:) ->
+      OwnEffect(StartTimer(timer: quest_deadline_timer, after_ms:))
+    quest_log.CancelDeadlineTimer ->
+      OwnEffect(CancelTimer(timer: quest_deadline_timer))
+  }
+}
 
 /// A message in the game wrapper under the cipher the connection holds.
 pub fn to_client(

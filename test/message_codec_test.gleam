@@ -203,6 +203,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/quest_known.gleam",
       "src/genesis_prime/message/quest_log.gleam",
       "src/genesis_prime/message/quest_mention.gleam",
+      "src/genesis_prime/message/quest_objective_progress.gleam",
       "src/genesis_prime/message/quest_periodic_reset.gleam",
       "src/genesis_prime/message/quest_retry.gleam",
       "src/genesis_prime/message/quest_state.gleam",

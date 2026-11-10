@@ -3,6 +3,7 @@
 
 import genesis_prime/game/appearance
 import genesis_prime/game/character_state
+import genesis_prime/game/currency
 import genesis_prime/game/dropped
 import genesis_prime/game/hit_radius
 import genesis_prime/game/item_property
@@ -28,8 +29,9 @@ import gleam/list
 ///   ItemSpecial row of each Item2 that names one (genesis_prime/game/item_property).
 /// - A Race row for each playable race, whose hitRadius a quest giver's reach counts
 ///   (genesis_prime/game/hit_radius).
-/// - GameFormula rows 1115, the credit cap, and 1026, the fraction of the buy price an item
-///   sells for (genesis_prime/game/vendor_sale).
+/// - GameFormula rows 1115 and 1116, the credit and Renown caps (genesis_prime/game/currency).
+/// - GameFormula row 1026, the fraction of the buy price an item sells for
+///   (genesis_prime/game/vendor_sale).
 pub fn all() -> List(store.Requirement) {
   list.flatten([
     [start_place.requirement()],
@@ -39,6 +41,7 @@ pub fn all() -> List(store.Requirement) {
     dropped.requirements(),
     item_property.requirements(),
     hit_radius.requirements(),
+    currency.requirements(),
     vendor_sale.requirements(),
   ])
 }

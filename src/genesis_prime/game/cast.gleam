@@ -752,8 +752,9 @@ pub type Effect {
   /// (`opcode.0x8f5`, genesis_prime/client_connection `Stealth`).
   StealthChanged(stealthed: Bool)
   /// The go of an activate cast: the player activated the static object `unit_id`, a
-  /// creature of the Creature2 row `creature_id`. Nothing consumes it yet; the connection
-  /// logs it (a quest step or a collectible's reward will read it).
+  /// creature of the Creature2 row `creature_id`. The connection counts it for the open
+  /// type 12 objectives that name the creature (genesis_prime/game/objective); a
+  /// collectible's reward will read it too.
   Activated(unit_id: Int, creature_id: Int)
 }
 

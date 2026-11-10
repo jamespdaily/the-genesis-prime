@@ -8,7 +8,7 @@
 ////                                 ├─ refused ─▶ Refused([Refuse(code), Log])   nothing asked, nothing changed
 ////                                 └─ accepted ─▶ Asks(purchase) ─▶ the connection asks the store (request(..))
 //// the store's answer ─▶ answered(purchase, items, currencies, answer)
-////                       Bought(total, made): items and credits updated, 0x919 then 0x111 / 0x17F
+////                       Bought(amount, made): items and the currency spent updated, 0x919 then 0x111 / 0x17F
 ////                       ItemsNotSaved:       Warning, 0x106 5, nothing changed
 ////                       SaveRefused(c):      Warning naming c, 0x106 5, nothing changed
 //// ```
@@ -25,8 +25,9 @@
 ////      (`interaction.vendor_opened`)
 ////   5. the unique id is not in the open vendor's stock: 14 Vendor_UnknownItem
 ////   6. the quantity is 0: 24 Vendor_NoQuantity
-////   7. the price times the item's stack count times the quantity is over the credits held:
-////      20 Vendor_NotEnoughCash
+////   7. the price times the item's stack count times the quantity is over what is held of
+////      the price's currency (credits for a stocked item, the entry's currency for a buy
+////      back): 20 Vendor_NotEnoughCash
 ////   8. the items do not fit the usable inventory (`inventory.size`): 27 Item_InventoryFull
 ////   Cases 2 to 4 are a modified or stale client, answered and logged once for each reason
 ////   on the connection (a warning the first time, a debug line after): the picture can be
@@ -43,23 +44,25 @@
 ////   limit of 1. Items left over are check 8, before the store is asked.
 //// - **The store's answer** decides the reply, so storage and the client agree after it:
 ////   `ItemsNotSaved` (a stale epoch, a total that moved, a stack that changed or too few
-////   credits) and `SaveRefused` leave the items and credits as they were and answer 0x106
+////   of the currency) and `SaveRefused` leave the items and the currency as they were and answer 0x106
 ////   code 5 DbFailure. A store that is unavailable, not running or past its deadline ends the
 ////   connection with reason 8, which the connection decides.
-//// - **The answer's frames**: 0x919 kind 0 with the new total, then 0x111 for each new stack
+//// - **The answer's frames**: 0x919 with the currency's kind (type - 1) and the new total,
+////   then 0x111 for each new stack
 ////   and 0x17F for each grown stack, with the reason 7 (Vendor), which makes the client show
 ////   "Bought <item>" (Vendor.lua OnItemAdded l.733, `ktVendorRespondEvent`).
 //// - **The buy back, 0x00BB {buyback id}**, is taken under the conditions of 0xBE
 ////   (`opcode.0xbb`), so checks 1 to 4, 7 and 8 and their codes are the buy's. The entry is
 ////   one of the player's buyback list (`world_entry.Buyback`), not of a vendor's stock: an id
 ////   the list does not hold is 14 Vendor_UnknownItem, and the entry's Item2 is returned for
-////   the credits the sale paid, at whichever vendor is open. The answer is the buy's, with
+////   the amount the sale paid, in the currency it paid, at whichever vendor is open. The
+////   answer is the buy's, with
 ////   the reason 16 (Item.CodeEnumItemUpdateReason Buyback) and then a 0xBD naming the entry,
 ////   which leaves the list; an answer that saved nothing leaves the list as it was.
 //// - **Gaps, each left to the vendor system** (#333): the control states (60, 61), the
 ////   prerequisites (15), Item_Unique (30) and sold out (13) are not checked. No stock row has
 ////   a prerequisite or a stock limit (0x90B sends 0 for both), and the held-unique rule is not
-////   read. Other currencies and the credit cap are #333's.
+////   read. A stocked item priced in another currency is #333's.
 ////
 //// | Point | What happens |
 //// |---|---|
@@ -113,8 +116,9 @@ pub type Kind {
 }
 
 /// A buy the rule accepted and the store is asked for: its kind, the unit it was made at, the
-/// Item2 bought and how many items, what is paid, the credits held when it was taken (which
-/// fence the store's statement), the stacks that grow and the stacks that are made.
+/// Item2 bought and how many items, what is paid and in which currency, what is held of that
+/// currency when it was taken (which fences the store's statement), the stacks that grow and
+/// the stacks that are made.
 pub type Purchase {
   Purchase(
     kind: Kind,
@@ -122,7 +126,8 @@ pub type Purchase {
     item2_id: Item2Id,
     items_bought: Int,
     cost: Int,
-    credits_held: Int,
+    currency_type_id: Int,
+    held: Int,
     grow: List(store.StackGrowth),
     make: List(store.NewStack),
   )
@@ -224,7 +229,8 @@ pub fn take(
 }
 
 /// What the client's 0x00BB is answered with: the checks of a buy that apply to an entry
-/// (the window, the credits, the inventory) with the entry's items for the entry's credits,
+/// (the window, the currency, the inventory) with the entry's items for the entry's amount of
+/// its currency,
 /// or 14 for an id the list does not hold, or the refusal for a body the client's reader refuses.
 pub fn take_back(
   body body: BitArray,
@@ -287,7 +293,8 @@ pub fn take_back(
             window:,
             item2_id: entry.item2_id,
             items_bought: entry.quantity,
-            cost: entry.credits,
+            cost: entry.amount,
+            currency_type_id: entry.currency_type_id,
             items:,
             currencies:,
             tables:,
@@ -334,6 +341,7 @@ fn buy_from(
     item2_id:,
     items_bought:,
     cost: stocked.price * items_bought,
+    currency_type_id: currency.credits_type,
     items:,
     currencies:,
     tables:,
@@ -341,22 +349,23 @@ fn buy_from(
   )
 }
 
-/// A buy of `items_bought` of an Item2 for `cost` credits that the player may make: the
-/// checks of the credits and the inventory, shared by the buy and the buy back.
+/// A buy of `items_bought` of an Item2 for `cost` of a currency that the player may make: the
+/// checks of the currency and the inventory, shared by the buy and the buy back.
 fn asked(
   kind kind: Kind,
   window window: vendor.Opened,
   item2_id item2_id: Item2Id,
   items_bought items_bought: Int,
   cost cost: Int,
+  currency_type_id currency_type_id: Int,
   items items: List(HeldItem),
   currencies currencies: Currencies,
   tables tables: table_store.Tables,
   logged logged: Set(String),
 ) -> Result(Taken, Refusal) {
-  let credits_held = currency.credits(currencies:)
+  let held = currency.held(currencies:, currency_type_id:)
   use <- bool.guard(
-    when: cost > credits_held,
+    when: cost > held,
     return: Ok(refused(code: not_enough_cash, logged:)),
   )
   use limit <- result.try(
@@ -377,7 +386,8 @@ fn asked(
           item2_id:,
           items_bought:,
           cost:,
-          credits_held:,
+          currency_type_id:,
+          held:,
           grow:,
           make:,
         ),
@@ -492,7 +502,8 @@ pub fn request(
     account_id:,
     character_id:,
     session_epoch:,
-    credits_held: purchase.credits_held,
+    currency_type_id: purchase.currency_type_id,
+    held: purchase.held,
     cost: purchase.cost,
     grow: purchase.grow,
     make: purchase.make,
@@ -500,7 +511,7 @@ pub fn request(
   ))
 }
 
-/// What the store's answer leaves: the items, the credits held, the buyback list and the
+/// What the store's answer leaves: the items, the amounts held, the buyback list and the
 /// effects, in order. A buy back takes its entry off the list, after the items it returns.
 pub fn answered(
   purchase purchase: Purchase,
@@ -510,7 +521,7 @@ pub fn answered(
   answer answer: ItemsAnswer,
 ) -> #(List(HeldItem), Currencies, Buyback, List(Effect)) {
   case answer {
-    store.Bought(credits:, made:) -> {
+    store.Bought(amount:, made:) -> {
       let reason = case purchase.kind {
         Bought -> vendor_reason
         BoughtBack(..) -> buyback_reason
@@ -529,10 +540,19 @@ pub fn answered(
       }
       #(
         list.append(grown(items:, grow: purchase.grow), made),
-        currency.with_credits(currencies:, credits:),
+        currency.with_amount(
+          currencies:,
+          currency_type_id: purchase.currency_type_id,
+          total: amount,
+        ),
         buyback,
         list.flatten([
-          [Send(currency.changed_frame(total: credits))],
+          [
+            Send(currency.changed_frame(
+              currency_type_id: purchase.currency_type_id,
+              total: amount,
+            )),
+          ],
           list.map(purchase.grow, fn(growth) {
             Send(inventory.count_changed_frame(
               guid: growth.item_guid,
@@ -605,5 +625,7 @@ pub fn not_bought(purchase purchase: Purchase) -> String {
   <> int.to_string({ purchase.item2_id }.value)
   <> " for "
   <> int.to_string(purchase.cost)
-  <> " credits was not saved"
+  <> " of currency type "
+  <> int.to_string(purchase.currency_type_id)
+  <> " was not saved"
 }

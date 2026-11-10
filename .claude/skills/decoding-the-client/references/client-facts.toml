@@ -7237,7 +7237,7 @@ gap = "As opcode.0x7ff.activate."
 name = "FindCreatureActivateEntry"
 
 ["0x14039c430"]
-statement = "Casts a creature's activate spell at the player's target: the spell given, or the client's default activate spell (GameFormula 414). It refuses with 31 CasterMustHaveTarget without a target unit, 91 NoTarget when the target is not a creature, 100 when the target's activate state is missing, and 4 SpellUnknown for an unknown spell. It refuses with 262 CSICooldown when the spell's cast method is 5 (ClientSideInteraction) and the player's current client-side interaction is in state 1 to 3 or 7 and under 1000 ms old. Otherwise it starts a local cast marked as an activate cast, so the cast checks use the creature's activate range (record 0x1403b2240). It sends message 0x97 only when those checks give 0 or 317 Queued. Any other result (105 TargetRangeMax when out of range) is reported as a cast failure, and nothing is sent."
+statement = "Casts a creature's activate spell at the player's target: the spell given, or the client's default activate spell (GameFormula 414). It refuses with 31 CasterMustHaveTarget without a target unit, 91 NoTarget when the target is not a creature, 100 when the target's activate state is missing, and 4 SpellUnknown for an unknown spell. It refuses with 262 CSICooldown when the spell's cast method is 5 (ClientSideInteraction) and the player's current client-side interaction has interactionType 1 to 3 or 7 (ClientSideInteraction.interactionType) and started under 1000 ms ago. Otherwise it starts a local cast marked as an activate cast, so the cast checks use the creature's activate range (record 0x1403b2240). It sends message 0x97 only when those checks give 0 or 317 Queued. Any other result (105 TargetRangeMax when out of range) is reported as a cast failure, and nothing is sent."
 proof = "Saved C 0x14039c430.c (hash 6ba38d868f75acff): the 0x106 return needs spell record 0x18 == 5 and game 0x7188's vtable 0x68 object word 4 in 1..3 or 7, with DAT_140c636a8 - game 0x7190 < 1000. Record word 0x18 is Spell4Base offset 80 castMethod (FillSpellRecord 0x140568540 line 83; `gleam run -m genesis_prime/table_rows -- Spell4Base --columns`). 0x106 = 262 CSICooldown (enum entry 258 at 0x140c2f290: name pointer 0x140aba5c8, UTF-16 'CSICooldown'). Info 0x54 = 1 (local_94). SendWorldMessage 0x97 only under (iVar1 == 0 || iVar1 == 0x13d); else 0x1403b5250(iVar1) and 0x1400035b0(0x18, 3, 0, text)."
 grade = "fairly sure"
 gap = "What sets the cast's out flag (local_res8) that, on a failure, saves a deferred retry (game 0x6648 to 0x6650, then 0x14039e400) was not read."
@@ -11231,6 +11231,43 @@ statement = "Message 0x361, world server to client: an objective's progress. Bod
 proof = "Same reader as 0x35c (0x14008f100: 15, 32, 32 bits at 0x14008f125, 0x14008f13b, 0x14008f151 mov r8d). Handler 0x1405fb830 (saved C) calls 0x1406115a0, which compares GetObjectiveProgress 0x1405515c0 to GetObjectiveNeeded 0x140551840 and sets or clears done bit 1 shl (index + 2)."
 grade = "sure"
 
+["0x140553110"]
+statement = "Whether a quest in the player's log makes a unit a talk target: true when one of the quest's six objectives is of QuestObjective type 3 whose data equals the unit's Creature2 id, is not done and is reachable (a type 18 objective also passes, by a test of its own). It is the quest-log source of the TalkTo (37) kind of UpdateUnitActivationStates. The caller skips a quest when a game flag word is set with bit 2 and the quest's Quest2 flags lack 0x40000."
+proof = "Saved C 0x140553110.c (hash 6ba38d868f75acff): `*(int *)(objective + 4) == 3` and `*(int *)(objective + 0xc) == **(int **)(unit + 0x18)` and IsQuestObjectiveDone 0x1405510d0 == 0 and IsQuestObjectiveReachable 0x140553790 != 0 return 1; the objectives are read from the quest record's 0x18 for six slots. The only caller is 0x1405fc800 (saved C hash e9b6b6af37d00314), which walks a container of quest ids, finds each by FindQuestById 0x1405a8a40 and tests `(*(longlong *)(game + 0x6c50) == 0 || (*(uint *)(*(longlong *)(game + 0x6c50) + 8) >> 1 & 1) == 0 || (Quest2 flags word & 0x40000) != 0)` before calling 0x140553110 (call at 0x1405fc86a). QuestObjective type is at offset 4 and data at offset 12 (`table_rows -- QuestObjective --columns`)."
+grade = "fairly sure"
+gap = "The game word at offset 0x6c50 and its bit 2 are not read, nor which container of quest ids 0x1405fc800 walks (it is taken to be the player's logged quests). A gate can only make the client send fewer clicks."
+name = "IsQuestTalkTarget"
+
+["0x140555040"]
+statement = "Builds the response list of a unit's dialog. A creature's quest lists add the quest responses (0x140555350). By the unit's interaction kinds it adds one response each: kind 49 response 0, kind 43 response 2, kind 44 response 3, kind 70 response 4 and kind 71 response 5; and, when the dialog's list holds anything, a response 9. No branch reads a QuestObjective, so an open talk-to objective (type 3) adds no response and no message of its own: a creature with no quest to show gets no response from this function."
+proof = "Saved C 0x140555040.c (hash 49fd5a78aaad3411): the kind bytes read are the unit's 0x26dc, 0x252c, 0x2574, 0x2cc4 and 0x2d0c, which are (offset - 0x1914) / 0x48 = 49, 43, 44, 70 and 71 (the entry stride of PickInteractionKind), each followed by FUN_1405564f0 with the response numbers 0, 2, 3, 4 and 5 in that order; the last block counts the list at dialog word 0x70 and, when it is not empty, adds response 9 through FUN_1405582b0 and FUN_1405564f0 (lines 79 to 91). A grep of the function for a quest objective read finds none."
+grade = "fairly sure"
+gap = "What fills the list at dialog word 0x70, and the code that closes a dialog with no response (a 0x7ea with unit 0 and kind 101) were not read here."
+name = "BuildUnitDialogResponses"
+
+["0x1404dd4c0.objective_creature"]
+statement = "The objective text of QuestObjective types 2, 3, 9, 12 and 18 reads the objective's data as a Creature2 id: the creature's localized name is looked up by it, and when the client has no Creature2 row for the id the text is left out. Types 3 and 12 name a creature and nothing else."
+proof = "Saved C 0x1404dd4c0.c (hash e9b6b6af37d00314): `switch(uVar3)` over the objective's type with `case 2: case 3: case 9: case 0xc: case 0x12:` reading `*(undefined4 *)(*(longlong *)(lVar12 + 0x18) + 0xc)` (the objective's data) into FindCreatureInfo and returning when it finds no row, then GetLocalizedText with the word `creature`. 0x140553110 compares a type 3 objective's data to the unit's creature id."
+grade = "sure"
+
+["QuestObjective.type.12.activate_spells"]
+statement = "What a use (QuestObjective type 12) target does in the client, by the activate spell of the creature its data names, over the 1187 type 12 rows (GetUnitActivateSpell 0x14046c580): castMethod 0 Normal 825 rows; castMethod 5 ClientSideInteraction 142; castMethods 6 and 8, 3; spell 0, which the client sends as 0xb3 with no cast, 59; a spell the pick makes depend on a prerequisite, 86; no Creature2 row, 72. A castMethod 5 activation still sends 0x97 first, runs its interaction after the server's 0x7ff and ends by sending 0x805, which the client expects no answer to."
+proof = "`gleam run -m genesis_prime/table_rows -- QuestObjective type=12` prints 1187 rows (rerun when this was saved); the split by Creature2, Spell4 and Spell4Base is the decoder's, from the same reader."
+grade = "fairly sure"
+gap = "The split counts were not rerun when this record was saved; Creature2 words 0x6c and 0x148, which force spell 0, are not read."
+
+["opcode.0x805"]
+statement = "Message 0x805, client to world server: the result of a client-side interaction (SendClientSideInteractionResult 0x1405465a0). Body: a 32-bit cast id, a 3-bit result and a 32-bit word (the spell data's second word plus 1). The client reads no answer to it."
+proof = "Registration at 0x14006c290.c line 654 (`0x805, 0xc, ... FUN_1400943d0`); the writer 0x1400943d0 (saved C hash 8eb22adb6de47956) writes three words at 0x20, 3 and 0x20 bits (WriteBitsSlow with 0x20, 3, 0x20). The sender 0x1405465a0 (saved C hash 8eb22adb6de47956) builds the body from the cast's word at offset 0x5c, its argument and a spell data word plus 1 and calls SendWorldMessage with 0x805 (call at 0x1405465df). The saved C holds no reader and no handler for 0x805."
+grade = "fairly sure"
+gap = "What the server does with each result and the third word is not the client's to say; the client's meaning of both is read in opcode.0x805.fields."
+
+["0x14039c430.csi_guard"]
+statement = "CastActivateSpell (0x14039c430) refuses with 0x106 an activation of a ClientSideInteraction spell (castMethod 5) when the unit's current interaction is of kind 1 to 3 or 7 and started under 1000 ms ago; otherwise it starts the local cast as for a Normal cast and sends 0x97 with the cast id and the unit when the start succeeds."
+proof = "Saved C 0x14039c430.c (hash 6ba38d868f75acff) lines 68 to 74: `*(int *)(*(longlong *)(lVar3 + 0x70) + 0x18) == 5`, then `(*(int *)(lVar4 + 4) - 1U < 3) || *(int *)(lVar4 + 4) == 7` and `(uint)(DAT_140c636a8 - *(int *)(param_1 + 0x7190)) < 1000` return 0x106; line 88 `SendWorldMessage(param_1,0x97,&local_res8)` after StartLocalCast returns 0 or 0x13d."
+grade = "fairly sure"
+gap = "What kinds 1 to 3 and 7 are, and which clock DAT_140c636a8 is."
+
 ["0x140551840"]
 statement = "An objective's needed count: 0 at or past the quest's objective count or for count 0; 100 for the kill types 2, 8, 15, 16 and 46 when the count is above 1 and objective flag 0x200 is clear (shown and judged as a percent); else its QuestObjective count."
 proof = "Listing 0x140551840: cmp edx, [rcx+0x10] (count), at or past -> 0x140551898 xor eax, eax; r8 = [rcx+0x18+8*index], null -> 0; eax = [r8+0x10] (count), 0 -> 0; ecx = [r8+4] (type), above 0x2e -> count; bt 0x400000018104 clear -> count; cmp eax, 1; jbe -> count; test [r8+8], 0x200; mov ecx, 0x64; cmove eax, ecx. QuestObjective columns ID, type, flags, data, count at offsets 0, 4, 8, 0xc, 0x10 (`table_rows -- QuestObjective --columns`)."
@@ -11790,17 +11827,17 @@ gap = "As Prerequisite.prerequisiteTypeId.155."
 name = "PrerequisitePathMissionValue"
 
 ["Prerequisite.prerequisiteTypeId.170"]
-statement = "Prerequisite type 170 ('Requirement not met', text 307985): with a first unit: when value is 0, whether an object the game holds exists; otherwise whether that object's id equals value. Comparison 1 passes when true, 2 when false. The objectId is not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (2, 266) 1; objectIds: 0."
-proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 170 dispatches to 0x14049c880, slot 0x90 of the prerequisite class 0x140b67740 (bytes at 0x140b677d0). Saved C 0x14049c880.c (hash 8eb22adb6de47956): 0x14049c880: game 0x140c65898 word 0x7188; its slot 0x68 gives a word compared with the value. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 170`."
-grade = "guess"
-gap = "What the object at game word 0x7188 is (the value seen is 266) is not read."
+statement = "Prerequisite type 170 ('Requirement not met', text 307985): tests the active client-side interaction (csi.active): with value 0, whether one is active; otherwise whether its ClientSideInteraction ID equals value. Comparison 1 passes when true, 2 when false. The objectId is not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (2, 266) 1; objectIds: 0."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 170 dispatches to 0x14049c880, slot 0x90 of the prerequisite class 0x140b67740 (bytes at 0x140b677d0). Saved C 0x14049c880.c (hash 8eb22adb6de47956): 0x14049c880: game 0x140c65898 word 0x7188, the active client-side interaction, its slot 0x68 gives its ClientSideInteraction ID, compared with the value (read in Prerequisite.prerequisiteTypeId.170.csi). Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 170`."
+grade = "fairly sure"
+gap = "Read from the decompile, as in Prerequisite.prerequisiteTypeId.170.csi."
 
 ["0x14049c880"]
-statement = "Prerequisite type 170's test. See Prerequisite.prerequisiteTypeId.170."
-proof = "As Prerequisite.prerequisiteTypeId.170."
-grade = "guess"
-gap = "As Prerequisite.prerequisiteTypeId.170."
-name = "PrerequisiteGameObjectIs"
+statement = "Prerequisite type 170's test: whether the active client-side interaction exists, or has the given ClientSideInteraction ID. See Prerequisite.prerequisiteTypeId.170.csi."
+proof = "As Prerequisite.prerequisiteTypeId.170.csi."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.170.csi."
+name = "PrerequisiteActiveClientSideInteractionIs"
 
 ["Prerequisite.prerequisiteTypeId.201"]
 statement = "Prerequisite type 201 ('Achievement object', text 428132): whether checklist item value (bit 0 to 63) of the player's achievement objectId is done: comparison 1 passes when set, 2 when clear; an achievement not in the list counts as clear. The units are not read. Start content: 3 condition(s) in 3 row(s); (comparison, value): (1, 0) 1, (1, 1) 1, (1, 2) 1; objectIds: 3362."
@@ -12934,3 +12971,423 @@ proof = "Saved C 0x140673160 (8eb22adb6de47956): test (family 0x140 == 0x21 || i
 grade = "fairly sure"
 gap = "How String_GetWeaselString formats '$1c' (rounding or digit grouping of 64.125) is not read; reading that native would settle the shown digits."
 name = "PushItemPropertiesToLua"
+
+# CSI server-side decoder (2026-11-10)
+
+["opcode.0x7fd.csi"]
+statement = "For a ClientSideInteraction spell (castMethod 5), the player's interaction (the prompt or progress window named by the Spell4Base clientSideInteractionId) starts when the cast starts on the player's own client: at 0x7fd for the player's pending cast, or at a 0x7ff whose caster is the player. A viewer's 0x7ff for another caster starts none, and no other server message starts one: the server needs no message of its own. The new interaction becomes the client's one current interaction (an earlier one is cancelled), raises ProgressClickWindowCompletionLevel, and for the yes/no kind (interactionType 4) raises ProgressClickWindowDisplay and at once sends 0x805 with result 3 under the server's cast id, so the server gets a 0x805 right after its 0x7fd. A clientSideInteractionId of 0 or with no row starts nothing, and the cast goes on without one."
+proof = "StartCast 0x14053dd00.c (2580df99bb1ce2aa) lines 18-34: spell record 0x18 (castMethod) == 5, game 0x78 set and cast 0x154 (caster) == the player's id -> an info of (spell 8's word 0x30, caster, cast 0x158, 0, callback 0x1405465a0, the cast) to 0x14077bd10, kept at cast 0x210 after releasing the old one. Spell 8's word 0x30 is Spell4Base clientSideInteractionId: BuildSpellTables 0x14055e180.c (cc54e920d5411539) line 1351 copies Spell4Base row offset 0x78. Callers of StartCast (grep of the saved C): HandleSpellConfirmCast 0x1405a4e60 (0x7fd) and HandleSpellStart 0x1405a51a0 (0x7ff) only. 0x14077bd10.c (e9b6b6af37d00314): id 0 or no row (0x1401f42e0) -> error; class by the row's interactionType, 4 -> the yes/no object (vtable 0x140b76780: slots 0x20 no 0x14077b750, 0x28 yes 0x14077b780, 0x50 begin 0x140779a70, 0x58 cancel 0x14077b7b0, 0x80 start 0x14077b650, 0x88 tick 0x14077b6f0). 0x1407798c0.c (2580df99bb1ce2aa): keeps the row and callback, 0x14039ce20 to make it current (failure -> cancel itself), raises ProgressClickWindowCompletionLevel. 0x14077b650.c (2580df99bb1ce2aa) line 31 raises ProgressClickWindowDisplay with 1, then slot 0x50; 0x140779a70.c (90c9bd90a6f6a3c3) line 13 calls the callback with 3; 0x1405465a0 sends 0x805. Grep of the saved C: ProgressClickWindow is raised only in the interaction classes (0x140779660 to 0x14077bbe0); 0x14077bd10 is called only by StartCast; 0x14039ce20 only by 0x1407798c0. Vtable bytes read with query.py (bytes at 0x140b76780, 200)."
+grade = "fairly sure"
+gap = "Read from the decompile, not run. The begin slot was followed only for the yes/no kind; the other kinds' start functions (0x14077a200, 0x140779f10 and others) were not read, so whether they send result 3 at once is open. A live 0x7fd for Creature2 73605 with the 0x805 logged would settle it."
+
+["opcode.0x7ff.csi_cast_bar"]
+statement = "A ClientSideInteraction spell's cast time is the Spell4 castTime, or for a creature activate cast the creature's activateSpellCastTime when it is set; the ClientSideInteraction row's duration never sets it. The cast bar shows, for the caster and every viewer alike, when that cast time is not 0 (castMethod 5 falls to the default case of the cast-bar test, which returns the cast time) or for an activate cast with a time. Creatures 73605 and 73606 (Spell4 34680 and 34681, castTime 0, activateSpellCastTime 0) show no cast bar. Of the 1123 Spell4 rows whose Spell4Base has castMethod 5, 83 have a cast time."
+proof = "InitCast 0x14053d1f0.c (5c0332ef738ce6d5): cast 0x50 = spell record 0x1c (FillSpellRecord 0x140568540.c (2580df99bb1ce2aa) line 47: Spell4 dword 7, castTime); an activate cast at a creature takes GetActivateCastTime 0x14054e340; no read of the interaction row. SpellShowsCastBar 0x1407a1820.c (5c0332ef738ce6d5): no case for 5, the default returns record 0x1c. StartCast 0x14053dd00.c (2580df99bb1ce2aa) line 44: SetUnitCast when SpellShowsCastBar or (cast 0x50 and cast 0xbc), the same for any caster. Rows: `gleam run -m genesis_prime/table_rows -- Creature2 73605 73606`, `-- Spell4 34680 34681`, `-- Spell4Base castMethod=5` joined with `-- Spell4` on spell4BaseIdBaseSpell (castTime)."
+grade = "fairly sure"
+gap = "Read from the decompile, not run. Which of the 83 timed spells a creature casts at activation was not listed."
+
+["opcode.0x7f4.csi"]
+statement = "A go (0x7f4) does nothing to a running client-side interaction: the go code has no case for castMethod 5 and never touches the cast's interaction, so the window stays up and the player can still answer. A go during the interaction is safe. For castMethod 5 the go starts no cooldowns (only Normal does), and for a spell with no cast time and no channel it clears the caster's current cast as it does for Normal. A go naming the activated unit with its Activate effect info acts as opcode.0x7f4.activate says."
+proof = "ApplySpellGo 0x14053e5a0.c (cc54e920d5411539): no read of cast 0x210 (grep); the cast-method tests are 0 (StartSpellCooldowns, lines 237 and 251), 2, 6, 7 and 8 (line 322); line 308 tests record 0x7c, another word, for 5. Record opcode.0x7f4.activate for the cast clear (lines 151-185) and the target infos."
+grade = "fairly sure"
+gap = "Read from the decompile, not run. A virtual call reached from the go that reaches the interaction would be missed by the grep."
+
+["opcode.0x7fe.csi"]
+statement = "A finish (0x7fe), a fail (0x7f9) or an interrupt (0x7fa) ends a client-side interaction still running on that cast: the client cancels it, which sends 0x805 with result 0 for the yes/no kind, hides the window (ProgressClickWindowDisplay) and clears the current interaction. So a finish sent before the player answers takes the window away. Once the player has answered, the interaction has already ended and these send no second 0x805. Destroying a cast that still holds an interaction also clears the current interaction, without a 0x805."
+proof = "FinishCast 0x14053e1b0.c (6ba38d868f75acff) lines 41-46 and FailCast 0x14053df40.c (5c0332ef738ce6d5) lines 27-31: cast 0x210 set -> its slot 0x58 (cancel), slot 8 (release), cast 0x210 = 0. Yes/no cancel 0x14077b7b0.c (8eb22adb6de47956) -> 0x140779660 with 0. 0x140779660.c (2580df99bb1ce2aa): only while its state word is 0; state 1, the callback (0x1405465a0 -> 0x805) with the result, ProgressClickWindowDisplay with DAT_1409ec19c, game 0x7188 released and cleared when it is this one, game 0x7190 = the clock. The cast destructor 0x14053c8e0.c (8eb22adb6de47956) lines 44-58: cast 0x210 set -> game 0x7188 released and cleared (whatever it holds), game 0x7190 = the clock, cast 0x210 released. Records opcode.0x7f9 and opcode.0x7fa for the handlers."
+grade = "fairly sure"
+gap = "Read from the decompile, not run. The cancel of the other interaction kinds (0x140779bc0 for the base) passes another result, not read. DAT_1409ec19c (the hide argument) is not read."
+
+["opcode.0x7fc.csi"]
+statement = "A refusal (0x7fc) does not touch a client-side interaction: it looks only at pending casts, and the interaction starts only once 0x7fd has made the pending cast live. Sent before 0x7fd, it removes the pending cast, so no interaction ever starts. Sent after, it finds no pending cast and only reports the result (nothing is shown for 146 ClientSideInteractionFail, whose row has no text) and clears the global cooldown when a spell id is given. To end a running interaction the server sends 0x7f9, 0x7fa or 0x7fe."
+proof = "HandleSpellCastResult 0x1405a5010.c (5c0332ef738ce6d5): search of the pending list at cast system 0x7c8 by client id only, then ReportCastFailure 0x1403a12a0, 0x14046aa00, DestroyCast 0x140561ad0 of a found pending cast; no read of cast 0x210 or game 0x7188. HandleSpellConfirmCast 0x1405a4e60.c (5c0332ef738ce6d5): ConfirmLocalCast moves the cast out of the pending list before StartCast. Records opcode.0x7fc, 0x1403a12a0 and Spell.CodeEnumCastResult.146."
+grade = "fairly sure"
+gap = "Read from the decompile, not run."
+
+["Spell.CodeEnumCastResult.146"]
+statement = "Cast result 146 is ClientSideInteractionFail and 262 is CSICooldown. 146's Spell4CastResult row has no display text, so a refusal or failure with it shows the player nothing; 262 shows 'Ability on cooldown'. The client produces 262 itself when an activation is pressed too soon after an interaction starts (0x14039c430.csi_guard); no client code produces 146, so it comes only from the server."
+proof = "The enum table at 0x140c2f290 read with client_pe.ClientPE (16-byte entries): entry 142 at 0x140c2fb70, name at 0x140ab8fb8 'ClientSideInteractionFail', value 146; entry 258 at 0x140c302b0, name at 0x140aba5c8 'CSICooldown', value 262. `gleam run -m genesis_prime/table_rows -- Spell4CastResult 146 262` (146 text 0; 262 text 420936); `client_files.py text 420936`. Grep of the saved C for 'return 0x92;' and '= 0x92;': no file."
+grade = "fairly sure"
+gap = "The grep would miss 146 built as a register value in a switch; a search of the listing for the immediate 0x92 next to a result store would settle it."
+
+["ClientSideInteraction.interactionType"]
+statement = "Chooses the client's interaction class; 4 is the yes/no prompt (row 356, used by Creature2 73605 and 73606, has 4). The activation guard's 'kind 1 to 3 or 7' (0x14039c430.csi_guard) is this column of the current interaction's row. The same kinds are refused as a new current interaction when none is current and the last one ended under 1000 ms ago; the new interaction then cancels itself, and the cast goes on without it."
+proof = "0x14077bd10.c (e9b6b6af37d00314) switch on the row's word 4 (cases 0 to 5, 7; case 4 sets vtable 0x140b76780, line 144). Slot 0x68 of every class is 0x140343ac0.c (8eb22adb6de47956), which returns the object's word 0x90, set to the row by 0x1407798c0 (2580df99bb1ce2aa) line 12. 0x14039ce20.c (8eb22adb6de47956): no current and the new row's word 4 in 1..3 or 7 and the clock minus game 0x7190 under 1000 -> 0x80004005; 0x1407798c0 then calls its slot 0x58. `gleam run -m genesis_prime/table_rows -- ClientSideInteraction --columns` (word 4 interactionType), `-- ClientSideInteraction 356`."
+grade = "fairly sure"
+gap = "The classes for kinds 0 to 3, 5 and 7 were not read; what each kind shows is open."
+
+["ClientSideInteraction.duration"]
+statement = "The client ends an interaction by itself after duration milliseconds, unless its interactionType is 5 or the duration is 0, and it also ends it when the player is out of the cast's range of the target (the creature's activate range for an activate cast). The yes/no prompt also ends when the player moves more than 5 units from where it opened, unless the row's flags have bit 1. Each such end sends 0x805 with result 0 and hides the window, except going out of range before the interaction has started, which sends result 2 (opcode.0x805.fields). The cast is not ended: it waits for the server's 0x7fe or 0x7f9, and its cast bar, if any, ends with those or with the go. Row 356: 60000 ms, flags 1."
+proof = "0x1407799e0.c (90c9bd90a6f6a3c3), the update slot: 0x140779be0 gives 0 -> slot 0x58 (cancel); while running, slot 0x88 then row word 4 != 5 and row word 0xc != 0 and word 0xc < now minus the start (0x9c) -> 0x140779660 with 0. 0x140779be0.c (cc54e920d5411539): the cast's spell min and max range, GetActivateMinRange and GetActivateMaxRange for an activate cast, UnitsWithinRange. Yes/no tick 0x14077b6f0.c (8eb22adb6de47956): row word 0x1c bit 1 clear and the squared distance from the start position (set in 0x14077b650) above the float at 0x140b7a06c -> 0x140779660 with 0; bytes at 0x140b7a06c are 0000c841 (25.0). `gleam run -m genesis_prime/table_rows -- ClientSideInteraction 356`."
+grade = "fairly sure"
+gap = "Read from the decompile, not run. Who drives the update slot each frame was not traced. The range check's result when a unit is missing was not read."
+
+["opcode.0x7fa"]
+statement = "Message 0x7fa (2042), world server to client: a cast is interrupted with a result, without being finished. Body in wire order: cast id (32 bits), a CastResult (9 bits) and a 32-bit value the client never reads. The client finds the cast (an unknown id is dropped) and logs it; for the player it clears the global cooldown when the cast has not gone off and raises CraftingInterrupted for the player's crafting cast. It then fails the cast: the result is kept, the cast is marked failed, a running client-side interaction is cancelled (0x805 result 0), the caster's cast bar is cleared when this is the caster's current cast (not for castMethods 2 and 7), and its target nodes are destroyed. It shows no failure text and does not take the cast out of the cast table."
+proof = "Registered in 0x14006c290 (saved C line 658, hash 8eb22adb6de47956): id 0x7fa, record 0xc, reader 0x1400950a0.c (8eb22adb6de47956): ReadBits32 0x20, 9, 0x20. Case 0x1403ee193 in 0x1403ec6a0 calls 0x1405a56b0.c (2580df99bb1ce2aa): FindCast of word 0; log 0x1400035b0; with a player, 0x14053fca0 -> 0x14046aa00; CraftingInterrupted when the spell matches GameFormula 417's word (0x140200220(0x1a1)) and the caster is the player; then 0x14053df40 with word 1; word 2 is not read. 0x14053df40.c (5c0332ef738ce6d5): cast 0x34c = result, state 5, cancel of cast 0x210 (lines 27-31), 0x1404698a0 on the caster when its current cast is this one and castMethod is not 2 or 7 (line 63), cooldowns for castMethod 8 only, the target node list freed; no call of ReportCastFailure 0x1403a12a0 (grep)."
+grade = "fairly sure"
+gap = "Read from the decompile, not run. 0x1404698a0 is taken to clear the unit's cast from FinishCast's same use (record opcode.0x7f4.activate). The third word's meaning and the server's use of 0x7fa against 0x7f9 are open; a retail capture would settle it."
+
+["0x1405a56b0"]
+statement = "Handles message 0x7fa: the cast interrupt (record opcode.0x7fa)."
+proof = "Saved C 0x1405a56b0.c (2580df99bb1ce2aa); the dispatch case 0x1403ee193 in 0x1403ec6a0."
+grade = "fairly sure"
+gap = "Read from the decompile, not run."
+name = "HandleSpellInterrupted"
+
+["0x1400950a0"]
+statement = "Reads message 0x7fa's body: a 32-bit cast id, a 9-bit CastResult and a 32-bit value."
+proof = "Saved C 0x1400950a0.c (8eb22adb6de47956): ReadBits32 with 0x20 at 0, 9 at 4, 0x20 at 8; registered for 0x7fa in 0x14006c290 line 658."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "ReadMessage07FA"
+
+["0x14053df40"]
+statement = "Fails a cast without finishing it, for 0x7fa: keeps the result, marks the cast failed, cancels its client-side interaction, clears the caster's cast bar when this is its current cast (not for castMethods 2 and 7), starts castMethod 8 cooldowns when due and frees the cast's target nodes."
+proof = "Saved C 0x14053df40.c (5c0332ef738ce6d5) lines 25-70: cast 0x34c and 0x150 = 5, the cast 0x210 cancel, 0x1404698a0, StartSpellCooldowns for castMethod 8, 0x14053fd20, 0x14053ff40, the list at 0x1c8 freed by 0x140624200."
+grade = "fairly sure"
+gap = "0x14053fd20 and 0x14053ff40 were not read."
+name = "FailCast"
+
+["0x14053fca0"]
+statement = "Says whether failing a cast clears the player's global cooldown: only for a spell whose global cooldown kind is below 2 and whose cast has not gone off (a castMethod 8 cast follows its own counters)."
+proof = "Saved C 0x14053fca0.c (8eb22adb6de47956): record 0x24 < 2; castMethod 7 and 8 cases; else the go count (cast 400) == 0. Called by 0x1405a56b0 before 0x14046aa00."
+grade = "fairly sure"
+gap = "The castMethod 7 branch's test reads as never true in the decompile; the listing would settle it."
+name = "CastFailClearsGlobalCooldown"
+
+["0x1405465a0"]
+statement = "The result callback of a cast's client-side interaction: sends 0x805 with the cast's server id, the result and the spell's second record word plus 1. The yes/no prompt passes 3 when it opens, 1 for yes, and 0 for no, cancel, time-out and moving away; the other kinds pass 2 when cancelled before they have started (opcode.0x805.fields)."
+proof = "Saved C 0x1405465a0.c (8eb22adb6de47956). Its results: begin 0x140779a70.c (90c9bd90a6f6a3c3) line 13 passes 3; no 0x14077b750 and yes 0x14077b780 (8eb22adb6de47956) pass 0 and 1 to 0x140779660; cancel 0x14077b7b0 passes 0; the update 0x1407799e0 and tick 0x14077b6f0 pass 0, and 0x1407799e0 passes 2 through the cancel of a kind but YesNo that has not started (0x1407799e0.unstarted). Registered by StartCast 0x14053dd00 as the interaction's callback."
+grade = "fairly sure"
+gap = "Which button calls slot 0x20 and which 0x28 is inferred from the values 0 and 1; the Lua side belongs to the client-side decoder. The server's use of the third word is not the client's to say (opcode.0x805.fields)."
+name = "SendClientSideInteractionResult"
+
+["0x14077bd10"]
+statement = "Creates a cast's client-side interaction from its ClientSideInteraction id: looks the row up, makes the class its interactionType picks and starts it; an id of 0 or a missing row makes nothing."
+proof = "Saved C 0x14077bd10.c (e9b6b6af37d00314): *param_2 == 0 or 0x1401f42e0 null -> error; switch on the row's word 4; called only by StartCast 0x14053dd00 (grep)."
+grade = "fairly sure"
+gap = "The classes other than yes/no were not read."
+name = "CreateClientSideInteraction"
+
+["0x1407798c0"]
+statement = "The common start of a client-side interaction: keeps its row and callback, makes it the client's current interaction (cancelling itself when refused) and raises ProgressClickWindowCompletionLevel."
+proof = "Saved C 0x1407798c0.c (2580df99bb1ce2aa)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "StartClientSideInteraction"
+
+["0x14039ce20"]
+statement = "Sets the client's current client-side interaction: cancels the one there, refuses a new one of interactionType 1 to 3 or 7 within 1000 ms of the last change when none is current, and stamps the time of the change."
+proof = "Saved C 0x14039ce20.c (8eb22adb6de47956): game 0x7188 and 0x7190; slot 0x58 of the old one; slot 0x68 for the row."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "SetCurrentClientSideInteraction"
+
+["0x140779660"]
+statement = "Ends a client-side interaction once: marks it done, calls its result callback, frees its parts, hides the window (ProgressClickWindowDisplay) and, when it is the current interaction, clears it and stamps the time. A later call does nothing."
+proof = "Saved C 0x140779660.c (2580df99bb1ce2aa)."
+grade = "fairly sure"
+gap = "The freed parts (lists at words 2 to 0xb and 0xc) are not named."
+name = "EndClientSideInteraction"
+
+["0x1407799e0"]
+statement = "Updates a client-side interaction: cancels it when the player is out of the cast's range, runs its kind's tick, and ends it with result 0 when its row's duration has passed (record ClientSideInteraction.duration)."
+proof = "Saved C 0x1407799e0.c (90c9bd90a6f6a3c3); slot 0x10 of both vtables read (bytes at 0x140b76780 and 0x140b769c0)."
+grade = "fairly sure"
+gap = "Its caller was not traced."
+name = "UpdateClientSideInteraction"
+
+["0x14077b6f0"]
+statement = "The yes/no prompt's tick: ends it with result 0 when the player has moved more than 5 units from where it opened, unless the row's flags have bit 1."
+proof = "Saved C 0x14077b6f0.c (8eb22adb6de47956); bytes at 0x140b7a06c 0000c841 (25.0, the squared distance)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "TickYesNoInteraction"
+
+["0x14077b650"]
+statement = "Starts the yes/no prompt: the common start, the player's position kept, a time of the row's duration or 60000 ms, ProgressClickWindowDisplay raised to show it, then its begin, which sends 0x805 with result 3 and plays the row's visual effects."
+proof = "Saved C 0x14077b650.c (2580df99bb1ce2aa); begin 0x140779a70.c (90c9bd90a6f6a3c3) lines 12-30."
+grade = "fairly sure"
+gap = "What the kept 60000 ms default is read by was not traced; the update's time-out reads the row's duration itself."
+name = "StartYesNoInteraction"
+
+["0x140779a70"]
+statement = "Begins a client-side interaction: calls its result callback with 3 (so 0x805 is sent) and plays the visual effects its row names."
+proof = "Saved C 0x140779a70.c (90c9bd90a6f6a3c3) lines 12-30: the callback with 3, then the loop over row words from 0x28."
+grade = "fairly sure"
+gap = "The rest of the function (target and caster effects) was not read."
+name = "BeginClientSideInteraction"
+
+["0x14077b7b0"]
+statement = "Cancels a yes/no prompt: ends it with result 0."
+proof = "Saved C 0x14077b7b0.c (8eb22adb6de47956); slot 0x58 of the vtable at 0x140b76780 (bytes at 0x140b76780)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "CancelYesNoInteraction"
+
+["0x14053c8e0"]
+statement = "The cast's destructor; among other things, when the cast still holds a client-side interaction it clears the client's current interaction (that clear sends no 0x805 and does not hide the window) and releases its own hold; when that was the last hold on an interaction that had not finished, the interaction's destruction sends 0x805 result 0 (0x14053c8e0.csi)."
+proof = "Saved C 0x14053c8e0.c (8eb22adb6de47956) lines 44-58."
+grade = "fairly sure"
+gap = "The rest of the destructor was not read; the clear does not check that the current interaction is this cast's."
+name = "DestroyCastObject"
+
+["cast.csi_server_flow"]
+statement = "What the server sends for a creature activate cast of a castMethod 5 spell, and what the client does. The client presses activate and sends 0x97 (refusing locally with 262 CSICooldown when too soon, 0x14039c430.csi_guard). The server answers the caster with 0x7fd: the cast starts, the interaction opens and the client sends 0x805 result 3 (opcode.0x7fd.csi); viewers may get 0x7ff, which shows a cast bar only when the spell has a cast time and opens no interaction (opcode.0x7ff.csi_cast_bar). The player answers, or the interaction times out or the player moves away (ClientSideInteraction.duration), and the client sends 0x805 with 1 or 0 (0x1405465a0); the interaction is then over on the client, which waits for nothing more for it. The cast stays live until the server sends 0x7fe, or 0x7f9 or 0x7fa with a result; any of them before the answer closes the window and makes the client send 0x805 result 0 (opcode.0x7fe.csi). A go (0x7f4) at any time leaves the interaction alone (opcode.0x7f4.csi). 0x7fc after 0x7fd does nothing to it (opcode.0x7fc.csi). Result 146 ClientSideInteractionFail shows the player nothing (Spell.CodeEnumCastResult.146)."
+proof = "The records named in the statement."
+grade = "fairly sure"
+gap = "Not run. Whether retail sent the go on result 1 and 0x7f9 or 0x7fa with 146 on result 0 is a server choice the client does not fix; the client accepts either order. A live run on Creature2 73605 with each order would confirm it."
+
+# CSI client-side decoder (2026-11-10)
+
+["opcode.0x97.csi"]
+statement = "Right-clicking a creature whose activate spell has castMethod 5 (ClientSideInteraction) sends 0x97 exactly as for any activate cast: CastActivateSpell's only extra step for castMethod 5 is the 262 CSICooldown refusal (0x14039c430.csi_guard). The local cast it starts makes no client-side interaction yet; that is made when the server's 0x7fd or 0x7ff starts the cast (0x14053dd00.csi). The cast shows a cast bar only when the spell's Spell4 castTime is nonzero (castMethod 5 takes the default branch of SpellShowsCastBar), and the start worlds' castMethod 5 activate spells all have castTime 0 (Spell4 34680 and 34681, the Departures Terminals; Spell4 82086, a recorded door), so no cast bar and no cast time show."
+proof = "Saved C 0x14039c430 (6ba38d868f75acff) lines 68-88. Saved C 0x1407a1820 SpellShowsCastBar: castMethod 5 has no case and returns record 0x1c (Spell4 castTime). StartCast 0x14053dd00 (2580df99bb1ce2aa) lines 44-46 call SetUnitCast only when SpellShowsCastBar != 0 or the activate cast has a cast time. `gleam run -m genesis_prime/table_rows -- Spell4 34680 34681 82086` (castTime 0, 0, 0); `-- Spell4Base 20650 20651 57539` (castMethod 5; clientSideInteractionId 356, 357, 1322); `-- Creature2 73605` (activateSpellCastTime 0). Recording /Users/jimd/Projects/the-eldan-experiment/test/golden_packets/instances_and_store/stopper_expedition.jsonl line 10060: 0x97 'D700000030000000', line 10062: 0x7fd with client cast 0xd7 and server cast 0x7468."
+grade = "fairly sure"
+gap = "Read from the decompile; a castMethod 5 spell with a nonzero castTime, if any exists, would show a bar, and none was searched for."
+
+["0x14053dd00.csi"]
+statement = "Starting a cast makes its client-side interaction: when the spell's castMethod is 5, a player exists and the caster is the player, the cast builds a request (the Spell4Base clientSideInteractionId, the caster's id, the cast's target id, the result callback SendClientSideInteractionResult and the cast), releases any interaction the cast held, and calls CreateClientSideInteraction, which makes the interaction and arms it as the game's active one at once. So the interaction is made on the server's 0x7fd (the player's confirmed cast) or 0x7ff (a cast the server starts), not when the player clicks. A cast of another caster makes none."
+proof = "Saved C 0x14053dd00 StartCast (2580df99bb1ce2aa) lines 18-36: test record 0x70 word 0x18 == 5 (castMethod), game 0x78 != 0 and cast 0x154 == player word 8; request = {spell 8 word 0x30, cast 0x154, cast 0x158, 0, FUN_1405465a0, cast}; release cast 0x210; FUN_14077bd10(&cast 0x210, &request). Spell 8 word 0x30 is Spell4Base clientSideInteractionId (BuildSpellTables 0x14055e180 line 1351, the Spell4Base row's offset 0x78). Recording stopper_expedition.jsonl lines 10062 and 10083: the 0x805 carries the 0x7fd's server cast id 0x7468."
+grade = "fairly sure"
+gap = "The 0x7ff path into StartCast for a server-started castMethod 5 cast is left to the server-side decoder; this record reads only StartCast."
+
+["0x14077bd10.kinds"]
+statement = "Makes a client-side interaction from a request: finds the ClientSideInteraction row by the request's id (id 0 or a missing row fails with 0x80070057) and makes the class for its interactionType: 0 PressAndHold, 1 RapidTapping and 7 RapidTappingInverse (one class), 2 PrecisionTapping, 3 Metronome, 4 YesNo, 5 Memory, 6 Keypad; any other type fails with 0x80070057. It then runs the class's Init with the row and request; on failure it releases the object, on success it stores it in the cast and shows a first-time tutorial for the type (0 -> 164, 1 -> 165, 2 -> 166, 5 -> 167, 6 -> 168, 3 -> 169; none for 4 and 7)."
+proof = "Saved C 0x14077bd10 (e9b6b6af37d00314): FUN_1401f42e0 row lookup at line 15; switch on row word 4 with cases at lines 22 (0, tutorial 0xa4), 58 (1, 0xa5), 60 (7), 97 (2, 0xa6), 108 (3, 0xa9), 119 (4), 149 (5, 0xa7), 160 (6, 0xa8); class tables 0x140b76a50 (0), 0x140b76810 (1, 7), 0x140b76780 (4), 0x140b76660 (6), constructors FUN_14077a2a0 (2), FUN_14077aa10 (3), FUN_14077c2d0 (5); slot 0x80 Init call; release on a negative result."
+grade = "fairly sure"
+gap = "The tutorial call's target was named from its use, not read through."
+
+["0x1401f42e0"]
+statement = "Looks up a ClientSideInteraction row by id; returns none for an unknown id."
+proof = "Saved C 0x1401f42e0 (8eb22adb6de47956); its caller 0x14077bd10 reads the row's interactionType at offset 4 and fails on none."
+grade = "fairly sure"
+gap = "Read from the caller's use; the table pointer it searches was not followed."
+name = "GetClientSideInteractionRow"
+
+["ClientSideInteraction.columns"]
+statement = "The ClientSideInteraction columns the client reads: ID (prerequisite type 170), interactionType (the class), threshold (RapidTapping's goal, Keypad's code), duration (ms the interaction may run once started; 0 means no limit; YesNo shows 60000 when 0), incrementValue (RapidTapping's gain per tap), decay (RapidTapping's loss per second), flags (lowest bit, value 1: moving away does not end a YesNo or Keypad interaction), visualEffectId0 to 3 (played on the player while it runs), visualEffectIdTarget00 to 04 and visualEffectIdCaster00 to 04 (one pair per phase, on the target and on the caster) and localizedTextIdContext (the window's text, through GetActiveCSI). windowSize, tapTime0 and tapTime1 belong to the PrecisionTapping and Metronome classes, which were not read."
+proof = "Row offsets from `gleam run -m genesis_prime/table_rows -- ClientSideInteraction --columns`: ID 0, interactionType 4, threshold 8, duration 12, incrementValue 16, windowSize 20, decay 24, flags 28, tapTime0 32, tapTime1 36, visualEffectId0-3 40-52, visualEffectIdTarget00-04 56-72, visualEffectIdCaster00-04 76-92, localizedTextIdContext 96. Reads: 0x14077bd10 (4), 0x1407799e0 (0xc), 0x14077a000 (8, 0x10, 0x18 through the request copy of the row), 0x14077bc40 (8), 0x14077b650 (0xc), 0x14077b6f0 and 0x14077bc90 (0x1c bit 0), 0x140779a70 (0x28-0x34), 0x1407797a0 (0x38 + 4i, 0x4c + 4i), 0x140755000 (0x60), 0x14049c880 (0)."
+grade = "fairly sure"
+gap = "RapidTapping's Init 0x14077a000 divides words 0x10 and 0x18 of its second argument by word 8; that this argument is the row (not the request) was read from the order of Init's arguments in 0x14077bd10, not checked in the instructions."
+
+["ClientSideInteraction.interactionType.values"]
+statement = "A ClientSideInteraction row's kind, the same values as CSIsLib's ClientSideInteractionType_* constants: 0 PressAndHold, 1 RapidTapping, 2 PrecisionTapping, 3 Metronome, 4 YesNo, 5 Memory, 6 Keypad, 7 RapidTappingInverse. Kinds 1, 2, 3 and 7 are the ones under the 1000 ms re-arm rule (csi.last_change). Row 356 and 357 (the Departures Terminals) and 266 (prerequisite type 170) are 4 YesNo; row 1322 (the recorded door) is 1 RapidTapping."
+proof = "Factory switch 0x14077bd10; Lua constants CSIsLib.ClientSideInteractionType. `gleam run -m genesis_prime/table_rows -- ClientSideInteraction 266 356 357 1322`."
+grade = "fairly sure"
+gap = "The PrecisionTapping, Metronome and Memory classes were matched to their values by the factory and the Lua names only; their behaviour was not read."
+
+["CSIsLib.ClientSideInteractionType"]
+statement = "CSIsLib's ClientSideInteractionType_* constants: PressAndHold 0, RapidTapping 1, RapidTappingInverse 7, PrecisionTapping 2, Metronome 3, YesNo 4, Memory 5, Keypad 6. They match ClientSideInteraction.interactionType and the factory's switch."
+proof = "Saved C 0x140755330 RegisterCSIsLib (8eb22adb6de47956): each constant pushed as a double before its name string, in the order PressAndHold 0.0, RapidTapping 1.0, RapidTappingInverse 7.0, PrecisionTapping 2.0, Metronome 3.0, YesNo 4.0, Memory 5.0, Keypad 6.0. UI/CSI/CSI.lua lines 159-169 pick the window by these names."
+grade = "fairly sure"
+gap = "Read from the decompiled double literals; the instruction bytes of each push were not read."
+
+["0x140755330"]
+statement = "Registers the Lua library CSIsLib: the functions GetActiveCSI, StartActiveCSI, CancelActiveCSI, IsCSIRunning, CSIProcessInteraction, SelectCSIOption and GetTimeRemainingForActiveCSI, and the ClientSideInteractionType_* constants."
+proof = "Saved C 0x140755330 (8eb22adb6de47956); function table at 0x140b75690 with GetActiveCSI 0x140755000, StartActiveCSI 0x1407550d0, CancelActiveCSI 0x140755100, IsCSIRunning 0x140755130, CSIProcessInteraction 0x1407551c0, SelectCSIOption 0x140755220, GetTimeRemainingForActiveCSI 0x1407552c0."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "RegisterCSIsLib"
+
+["CSIsLib.functions"]
+statement = "What each CSIsLib function does to the active interaction (csi.active): GetActiveCSI returns its eType (interactionType), its context text and, for Metronome, one more value, or nil with none; StartActiveCSI starts it (BeginClientSideInteraction: sends 0x805 result 3 if not yet started); CancelActiveCSI cancels it (0x805 result 0 if started, 2 if not; a YesNo always 0); IsCSIRunning says whether it has started and not finished; CSIProcessInteraction(true) is the press or Yes, CSIProcessInteraction(false or nil) the release or No; SelectCSIOption(n) gives a Keypad or Memory choice; GetTimeRemainingForActiveCSI returns its remaining time scaled by a constant."
+proof = "Saved C (8eb22adb6de47956): 0x140755000 (row word 4, row 0x60 text, a third value when type 3), 0x1407550d0 (slot 0x50), 0x140755100 (slot 0x58), 0x140755130 (slot 0x48, word 0xa8), 0x1407551c0 (truthy argument -> slot 0x28, else slot 0x20), 0x140755220 (slot 0x30 with a number), 0x1407552c0 (slot 0x40 times a float constant). Each returns nothing when game 0x7188 is null."
+grade = "fairly sure"
+gap = "The Metronome third value and the time constant were not read."
+
+["csi.active"]
+statement = "The game holds one active client-side interaction (game word 0x7188). It is set when an interaction's Init arms it (SetCurrentClientSideInteraction), and cleared when that interaction finishes, when a newer one replaces it (the old one is cancelled first), or when any cast that holds an interaction is destroyed. The game ticks it every update (UpdateClientSideInteraction) and runs its window update every frame; the click, interact-key and action-bar paths read it (0x14039d2c0.csi, 0x1404d9450.csi, 0x1405c9590.csi), as do CastActivateSpell's 262 test, prerequisite type 170 and CSIsLib."
+proof = "Writers: 0x14039ce20 (set), 0x140779660 (clear when it is this interaction), 0x14053c8e0 lines 44-52 (clear). Tick: UpdateGame 0x1403e85d0 at 0x1403e918a, `mov rcx, qword ptr [rsi + 0x7188]` then `call qword ptr [rax + 0x10]` (scratch llvm-objdump of WildStar64.exe). Window update: 0x1403e9aa0 at 0x1403ea0a1 calls slot 0x18."
+grade = "fairly sure"
+gap = "The tick's guard conditions in UpdateGame (whether it ticks while loading or dead) were not read."
+
+["csi.last_change"]
+statement = "Game word 0x7190 is the frame time (ms) at which the active client-side interaction was last set or cleared. With no active interaction, a new one of kind 1, 2, 3 or 7 (RapidTapping, PrecisionTapping, Metronome, RapidTappingInverse) is refused within 1000 ms of that time: CastActivateSpell refuses the click with 262 CSICooldown, and an interaction made by a cast start in that window fails its Init, which sends 0x805 result 2 for it. With an interaction still active the 1000 ms rule does not apply: the old one is cancelled and replaced."
+proof = "Saved C 0x14039ce20 (8eb22adb6de47956): with game 0x7188 null, row word 4 - 1 < 3 or == 7 and DAT_140c636a8 - game 0x7190 < 1000 return 0x80004005; else cancel the old (slot 0x58), AddRef the new, release the old, 0x7188 = new, 0x7190 = DAT_140c636a8. Also written by 0x140779660 and 0x14053c8e0 line 52. 0x1407798c0 calls slot 0x58 when 0x14039ce20 fails. 0x14039c430 lines 68-74 (262)."
+grade = "fairly sure"
+gap = "DAT_140c636a8 is taken as the frame clock in ms from its writer 0x14018cd50 being called once a frame; its unit was not checked against a timer read."
+
+["0x1407798c0.refused"]
+statement = "A client-side interaction's common Init: keeps the row and the request (id, caster, target, result callback and cast), resets its tick time, arms it as the active interaction and raises ProgressClickWindowCompletionLevel. When arming is refused (csi.last_change) it cancels itself, which sends 0x805 result 2, and fails."
+proof = "Saved C 0x1407798c0 (2580df99bb1ce2aa): param_1[0x12] = row, [0xd..0x11] = request, word 0xa4 = 0; FUN_14039ce20(obj, obj); on < 0 slot 0x58 then 0x80004005; RaiseUiEvent 'ProgressClickWindowCompletionLevel'."
+grade = "fairly sure"
+gap = "Read from the decompile."
+
+["0x140779a70.once"]
+statement = "Starts a client-side interaction, once: when not yet started it sends 0x805 result 3 (started) through the callback, plays the row's visualEffectId0 to 3 on the player, marks it started and notes the start time. A second call does nothing."
+proof = "Saved C 0x140779a70 (90c9bd90a6f6a3c3): guard word 0xa8 == 0; callback (word 0x80) with 3 and the cast (word 0x88); row 0x28-0x34 visuals; word 0xa8 = 1; words 0x9c and 0xa0 = ReadClientClock. Recording stopper_expedition.jsonl line 10083: result 3 sent 766 ms after the 0x7fd, at the first tap of a RapidTapping row (which starts on its first tap, 0x14077a260)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+
+["0x140779bc0"]
+statement = "Cancels a client-side interaction: finishes it with result 0 when it has started, 2 when it has not. (YesNo overrides it with result 0 always, 0x14077b7b0.)"
+proof = "Saved C 0x140779bc0 (8eb22adb6de47956): EndClientSideInteraction(obj, word 0xa8 != 0 ? 0 : 2)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "CancelClientSideInteraction"
+
+["0x140779580"]
+statement = "Destroys a client-side interaction: finishes it with result 0 first, which sends 0x805 result 0 only if it had not finished."
+proof = "Saved C 0x140779580 (8eb22adb6de47956): FUN_140779660(obj, 0) then frees its parts."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "DestroyClientSideInteraction"
+
+["0x1407799e0.unstarted"]
+statement = "Ticks the active client-side interaction each game update. First the cast and range check (ClientSideInteractionInRange): when it fails, the interaction is cancelled (0x805 result 0 if started, 2 if not). Then, only while started, it measures the time since the last tick, runs the kind's own tick, and when the kind is not 5 (Memory), the row's duration is nonzero and the time since the start exceeds it, finishes with 0. An interaction that never starts (a RapidTapping row never tapped) never times out."
+proof = "Saved C 0x1407799e0 (90c9bd90a6f6a3c3): FUN_140779be0 == 0 -> slot 0x58; if word 0xa8: word 0xa0 = ReadClientClock, word 0xa4 = delta, slot 0x88; row word 4 != 5 and row 0xc != 0 and row 0xc < now - word 0x9c -> FUN_140779660(obj, 0)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+
+["0x140779be0"]
+statement = "Whether a client-side interaction may go on: false when its cast is gone, or when the caster and target are out of range: for an activate cast the creature's activate minimum and maximum range, else the spell's range. A false result cancels the interaction at the next tick, so walking out of range ends it."
+proof = "Saved C 0x140779be0 (cc54e920d5411539): returns 0 when word 0x88 (cast) is null; FindUnit of word 0x6c and word 0x70; with cast 0xbc set GetActivateMinRange / GetActivateMaxRange, else spell record 0x70 and 0x74 (FillSpellRecord 0x140568540 lines 296-297)."
+grade = "fairly sure"
+gap = "Whether the range is edge to edge (as unit.range) was not read through."
+name = "ClientSideInteractionInRange"
+
+["0x1407797a0"]
+statement = "Turns a client-side interaction's phase visuals on or off: phase i plays the row's visualEffectIdCaster0i on the caster and visualEffectIdTarget0i on the target."
+proof = "Saved C 0x1407797a0 (8eb22adb6de47956): row 0x4c + 4i on unit word 0x6c, row 0x38 + 4i on unit word 0x70."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "SetClientSideInteractionVisuals"
+
+["0x14077b750"]
+statement = "A YesNo interaction's No: shows phase 1's visuals and finishes with 0."
+proof = "Saved C 0x14077b750 (8eb22adb6de47956): FUN_1407797a0(obj, 1, 1); FUN_140779660(obj, 0)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "YesNoInteractionNo"
+
+["0x14077b780"]
+statement = "A YesNo interaction's Yes: finishes with 1 (success)."
+proof = "Saved C 0x14077b780 (8eb22adb6de47956): FUN_140779660(obj, 1)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "YesNoInteractionYes"
+
+["0x14077a000"]
+statement = "A RapidTapping or RapidTappingInverse interaction's Init: the common Init; progress starts at 0 (Inverse: 1.0); each tap adds incrementValue / threshold and each ms takes decay / threshold / 1000 (with threshold 0: 1.0 per tap, about 0.001 per ms); an Inverse one starts at once (sending 0x805 result 3); then it raises ProgressClickWindowDisplay true and SetProgressClickTimes."
+proof = "Saved C 0x14077a000 (2580df99bb1ce2aa): word 0xb4 = 1.0 when type 7; word 0xb8 = word 0x10 / word 8, word 0xbc = word 0x18 / word 8 times DAT_140b79d04 (bytes at 0x140b79d04: float 0.001), or 1.0 and 0x3a83126f; slot 0x50 when type 7; the two RaiseUiEvent calls. Class table 0x140b76810 slot 0x80."
+grade = "fairly sure"
+gap = "As ClientSideInteraction.columns: that the divided words are the row's threshold, incrementValue and decay."
+name = "InitRapidTapInteraction"
+
+["0x14077a260"]
+statement = "A RapidTapping interaction's tap (CSIProcessInteraction true): starts it if not started (sending 0x805 result 3) and counts one tap for the next tick. Its No (false) does nothing."
+proof = "Saved C 0x14077a260 (8eb22adb6de47956): word 0xa8 == 0 -> FUN_140779a70; word 0xb0 = 1. Class table 0x140b76810: slot 0x28 = 0x14077a260, slot 0x20 = 0x140001b70 (`140001b70: ret 0x0`, scratch llvm-objdump)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "RapidTapInteractionTap"
+
+["0x14077a120"]
+statement = "A RapidTapping interaction's own tick: progress falls with time (never below 0) and rises by a tap's gain; reaching 1.0 finishes with 1 (success). The Inverse kind subtracts the tap's gain instead and succeeds when progress falls to 0 or below. Row 1322 (threshold 1000, incrementValue 100, decay 200) needs about ten quick taps; the recording shows success 1862 ms after the first tap."
+proof = "Saved C 0x14077a120 (8eb22adb6de47956): word 0xb4 updated from word 0xa4 times word 0xbc, clamped at 0; word 0xb0 times word 0xb8 added (type 7: subtracted); compares with DAT_140b79ed0 (bytes at 0x140b79ed0: float 1.0) and calls FUN_140779660(obj, 1). Recording stopper_expedition.jsonl lines 10083 (t 470442.195, result 3) and 10098 (t 472304.698, result 1)."
+grade = "fairly sure"
+gap = "The decompile lost the first subtraction's operands; the decay-per-ms reading rests on the Init's factor."
+name = "TickRapidTapInteraction"
+
+["0x140779f80"]
+statement = "A PressAndHold interaction's press (CSIProcessInteraction true): starts it if not started (sending 0x805 result 3) and marks it held."
+proof = "Saved C 0x140779f80 (8eb22adb6de47956): word 0xa8 == 0 -> FUN_140779a70; word 0xbc = 1. Class table 0x140b76a50 slot 0x28."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "PressAndHoldInteractionPress"
+
+["0x140779f70"]
+statement = "A PressAndHold interaction's release (CSIProcessInteraction false): marks it not held."
+proof = "Saved C 0x140779f70 (8eb22adb6de47956): word 0xbc = 0. Class table 0x140b76a50 slot 0x20."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "PressAndHoldInteractionRelease"
+
+["0x140779e40"]
+statement = "A PressAndHold interaction's own tick: progress rises with time while held and falls while released (never below 0), switching its phase visuals when the hold changes; reaching 1.0 finishes with 1 (success)."
+proof = "Saved C 0x140779e40 (8eb22adb6de47956): word 0xb0 += delta times (held ? word 0xb4 : -word 0xb8); FUN_1407797a0 phases 0 and 2 on a change; DAT_140b79ed0 (1.0) <= word 0xb0 -> FUN_140779660(obj, 1)."
+grade = "fairly sure"
+gap = "The rates are set by Init 0x140779d40, which was not read."
+name = "TickPressAndHoldInteraction"
+
+["0x14077bc40"]
+statement = "A Keypad interaction's choice (SelectCSIOption): the row's threshold is the code; the right number finishes with 1, any other with 0."
+proof = "Saved C 0x14077bc40 (8eb22adb6de47956): param == row word 8 -> FUN_1407797a0(obj, 1, 0), FUN_140779660(obj, 1); else phase 2 and FUN_140779660(obj, 0). Class table 0x140b76660 slot 0x30."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "KeypadInteractionSelect"
+
+["0x14077bc90"]
+statement = "A Keypad interaction's own tick: as the YesNo one, moving more than 5 m from the start finishes it with 0 unless the row's lowest flags bit (value 1) is set."
+proof = "Saved C 0x14077bc90 (8eb22adb6de47956): (row 0x1c & 1) == 0 and squared distance from words 0xb0-0xb8 > DAT_140b7a06c (25.0) -> FUN_140779660(obj, 0). Class table 0x140b76660 slot 0x88."
+grade = "fairly sure"
+gap = "Keypad's Init 0x14077bbe0, which saves the position, was not read."
+name = "TickKeypadInteraction"
+
+["opcode.0x805.fields"]
+statement = "Message 0x805 (2053, ClientSpellClientSideInteraction) in wire order: the server's cast id (32 bits, the id from 0x7fd or 0x7ff, never the client's own), the result (3 bits) and the cast's Spell4Base id plus 1 (32 bits). Results: 3 started; 1 success; 0 failed, timed out, cancelled after starting, refused by moving or range after starting, No on a YesNo, or a YesNo cancelled at any time; 2 cancelled before starting (all kinds but YesNo, and a failed arming). One interaction sends at most one 3 and then exactly one of 0, 1 or 2. The two recorded bodies read: 68 74 00 00 | 23 06 07 00 00 -> cast 29800, result 3, field 57540; 68 74 00 00 | 21 06 07 00 00 -> cast 29800, result 1, field 57540; 57540 = 57539 + 1, Spell4 82086's Spell4Base, castMethod 5, ClientSideInteraction 1322 (RapidTapping)."
+proof = "Writer 0x1400943d0 (8eb22adb6de47956): WriteBits word 0 (0x20), word 1 (3), word 2 (0x20), low bits first. Sender 0x1405465a0 (8eb22adb6de47956): {cast 0x5c, result, cast 0x138 record 0x70 word 4 + 1}; record 0x70 word 4 = Spell4 word 4 spell4BaseIdBaseSpell (FillSpellRecord 0x140568540 line 33). Senders of each value: 0x140779a70 (3), 0x140779660 callers 0x14077b780, 0x14077a120, 0x140779e40, 0x14077bc40 (1), 0x140779bc0, 0x14077b7b0, 0x14077b750, 0x14077b6f0, 0x14077bc90, 0x1407799e0, 0x140779580 (0 or 2). Recording stopper_expedition.jsonl lines 10083 and 10098; `gleam run -m genesis_prime/table_rows -- Spell4 82086`, `-- Spell4Base 57539`, `-- ClientSideInteraction 1322`."
+grade = "fairly sure"
+gap = "The PrecisionTapping, Metronome and Memory classes were not read; they may send 1 or 0 on other conditions. The server's use of the third field is not the client's to say."
+
+["0x1400943d0"]
+statement = "Writes message 0x805's body: a 32-bit word, a 3-bit word and a 32-bit word. See opcode.0x805.fields."
+proof = "Saved C 0x1400943d0 (8eb22adb6de47956); registration 0x14006c290 line 654 (0x805, size 0xc, sizer 0x1400943c0)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "WriteClientSideInteractionResult"
+
+["0x14053e1b0.csi"]
+statement = "When a cast finishes or fails (the server's 0x7fe, the caster's destruction, a spell failure, or the failure path 0x14053df40), the cast cancels its client-side interaction and drops it. If the interaction had not finished, this sends 0x805 result 0 (started) or 2 (not started; a YesNo 0); after a success or another end it sends nothing."
+proof = "Saved C 0x14053e1b0 FinishCast (6ba38d868f75acff) lines 41-45 and 0x14053df40 (5c0332ef738ce6d5) lines 27-31: cast 0x210 slot 0x58 then release, cast 0x210 = 0. Cancel's guard: 0x140779660 word 8."
+grade = "fairly sure"
+gap = "The callers of 0x14053df40 (0x1405a56b0 from HandleWorldMessage) were not traced to their message."
+
+["0x14053c8e0.csi"]
+statement = "Destroying a cast that holds a client-side interaction clears the game's active interaction (whichever it is, without checking it is this cast's), sets csi.last_change to now, and drops the cast's own hold; if that was the last hold and the interaction had not finished, its destruction sends 0x805 result 0."
+proof = "Saved C 0x14053c8e0 (8eb22adb6de47956) lines 44-56: param_1[0x42] (cast 0x210) != 0 -> release game 0x7188, 0x7188 = 0, 0x7190 = DAT_140c636a8; release cast 0x210. 0x140779580 finishes with 0."
+grade = "fairly sure"
+gap = "That the active interaction can belong to another cast when this one is destroyed was not tried; a live run with two castMethod 5 casts would show it."
+
+["0x14039d2c0.csi"]
+statement = "Clicking the creature that the active client-side interaction targets is refused (no new activate cast, nothing sent)."
+proof = "Saved C 0x14039d2c0 ClickInteraction (cc54e920d5411539) lines 32-34: game 0x7188 != 0 and its slot 0x70 (word 0x70, target id) == the clicked unit -> 0x80004005."
+grade = "fairly sure"
+gap = "Read from the decompile."
+
+["0x1404d9450.csi"]
+statement = "The interact key, while a client-side interaction that takes it is active (every kind but YesNo), raises the Lua event CSIKeyPressed (key down or up) and does nothing else; the CSI addon turns that into StartActiveCSI and CSIProcessInteraction."
+proof = "Saved C 0x1404d9450 InteractWithUnit (cc54e920d5411539) lines 15-16: game 0x7188 slot 0x60 != 0 -> CSIKeyPressed. Slot 0x60: 0x14001d310 in the PressAndHold, RapidTapping and Keypad class tables (`14001d310: mov eax, 0x1` in the scratch llvm-objdump); 0x140001ba0 in YesNo's (`140001ba0: xor eax, eax`). UI/CSI/CSI.lua lines 637-678."
+grade = "fairly sure"
+gap = "Read from the decompile."
+
+["0x1405c9590.csi"]
+statement = "With a client-side interaction active, an action-bar shortcut casts nothing: pressing the shortcut of the player's current cast's spell is a press or Yes (CSIProcessInteraction true) and releasing it a release or No (false); any other shortcut does nothing."
+proof = "Saved C 0x1405c9590 (5c0332ef738ce6d5) lines 29-63: with game 0x7188 null the cast path 0x1403998e0; else FindCast(player 0x1600) or the current cast, spell id compared, param_2 == 1 -> slot 0x28, 0 -> slot 0x20."
+grade = "guess"
+gap = "Which input reaches 0x1405c9590 (action bar or keybinding) was not traced; a live press while a CSI runs would settle it."
+
+["lua.CSI"]
+statement = "The CSI addon's window per kind: CSI_YesNo (not closed by Escape), CSI_Progress_Tap, CSI_Progress_Hold, CSI_Precision, CSI_Keypad and CSI_Memory (closed by Escape). Yes calls CSIProcessInteraction(true) and No or the close button CSIProcessInteraction(false), each only while IsCSIRunning. Closing any other window (Escape or its close button) calls CancelActiveCSI. A key or button press starts the interaction (StartActiveCSI) for all kinds but Metronome and PrecisionTapping, then sends CSIProcessInteraction(true) when running or for PressAndHold and RapidTapping; Metronome and PrecisionTapping start on the first press; a release sends CSIProcessInteraction(false) for PressAndHold."
+proof = "~/.genesis-prime/client-files/UI/CSI/CSI.xml lines 2-13 (CSI_YesNo, Escapable 0, WindowClosed OnYesNo_WindowClosed, ButtonSignal OnYesNo_NoPicked twice, OnYesNo_YesPicked), lines 16, 42, 67, 110, 165 (Escapable 1) with WindowClosed OnCancel at 40, 65, 108, 163, 166. CSI.lua lines 198-230 (YesNo), 626-635 (OnCancel), 651-688 (OnButtonDown, OnButtonUp)."
+grade = "fairly sure"
+gap = "Read from the addon's files; that Escape closes only windows marked Escapable was taken from the attribute's name, not from the client's window code."
+
+["csi.ends"]
+statement = "Every way a castMethod 5 interaction ends, and its 0x805 result: success by its kind (YesNo Yes, enough taps, held long enough, the right Keypad code) 1; YesNo No or its close button 0; Escape or the close button on any window but YesNo's (CancelActiveCSI) 0 if started, 2 if not; Escape on the YesNo window nothing (the window is not escapable); the started duration running out 0; walking out of the activate range or losing the cast 0 if started, 2 if not; moving 5 m from the start, for YesNo and Keypad rows without lowest flags bit (value 1), 0; another castMethod 5 cast starting (another creature) cancels it first (0 or 2, YesNo 0); clicking the same creature again is refused and changes nothing; the server finishing or failing the cast while it runs 0 or 2; the cast being destroyed 0. Dying and jumping have no path of their own to the interaction: they act on the cast (opcode.0x801), and the interaction ends only when the cast is finished, failed or destroyed, or by range."
+proof = "0x140779660 (one send), 0x140779bc0, 0x14077b7b0, 0x14077b750, 0x14077b780, 0x14077a120, 0x140779e40, 0x14077bc40, 0x1407799e0, 0x140779be0, 0x14077b6f0, 0x14077bc90, 0x14039ce20, 0x14039d2c0.csi, 0x14053e1b0.csi, 0x14053c8e0.csi, lua.CSI. Dying and jumping: every instruction naming game word 0x7188 (scratch llvm-objdump of WildStar64.exe, grep '+ 0x7188]', 30 hits) lies in 0x14039c430, 0x14039ce20, 0x14039d2c0, 0x1403e1400 (the game's constructor zeroing it at 0x1403e2e9e), 0x1403e85d0, 0x1403e9aa0, 0x140479560 (UpdateUnitActivationStates line 192: only whether one is active), 0x14049c880, 0x1404d9450, 0x14053c8e0, 0x1405c9590, 0x1406139c0, the seven CSIsLib functions and 0x140779660; none is a death or jump path."
+grade = "fairly sure"
+gap = "The PrecisionTapping, Metronome and Memory classes' own ends were not read. The objdump grep finds only direct uses of 0x7188; a reader through a copied pointer would be missed."
+
+["csi.after_result"]
+statement = "After its last 0x805 the client keeps nothing waiting on the interaction: it is already cleared from csi.active, and no timer waits for a reply. The cast stays as the server left it (no cast bar, castTime 0) until the server's 0x7f4, 0x7fe or a failure ends it (the server's side). If nothing comes back, the cast stays live as in cast.no_answer, and a new click on a tapping kind is refused for 1000 ms after the end (csi.last_change). The recording shows the server's 0x7f4 for cast 29800 7.6 ms after the success."
+proof = "0x140779660 (clears 0x7188, no timer set); 0x1405465a0 (send only); cast.no_answer. Recording stopper_expedition.jsonl line 10110: 0x7f4 body '68740000...' at t 472312.333 after line 10098 at t 472304.698."
+grade = "fairly sure"
+gap = "Whether a live castMethod 5 cast without a server finish blocks the next activate cast (13 SpellAlreadyCasting) rests on cast.no_answer, itself a guess; a live run that never finishes the cast would settle it."
+
+["Prerequisite.prerequisiteTypeId.170.csi"]
+statement = "Prerequisite type 170 tests the active client-side interaction (csi.active): with value 0, whether one is active; otherwise whether its ClientSideInteraction ID equals value. Comparison 1 passes when true, 2 when false. The start content's one row (2, 266) passes unless ClientSideInteraction 266 (a YesNo) is active. This replaces the guessed 'object' in Prerequisite.prerequisiteTypeId.170."
+proof = "Saved C 0x14049c880 (e9b6b6af37d00314): game 0x7188's slot 0x68 returns word 0x90, the row (0x1407798c0 keeps the row there), and its word 0 (ID) is compared with the value. `gleam run -m genesis_prime/table_rows -- ClientSideInteraction 266` (interactionType 4)."
+grade = "fairly sure"
+gap = "Read from the decompile."

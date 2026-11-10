@@ -195,8 +195,10 @@ pub fn move_answered(
 /// frames are written first, then, when the worn items give other gear than `entered`
 /// holds, the look and the properties follow it: 0x933 and `LookChanged` for the slots
 /// that changed, one 0x93a and `PropertiesChanged` for the properties, then the life's
-/// own writes, and a warning for each worn item newly read as giving nothing.
-fn regeared(
+/// own writes, and a warning for each worn item newly read as giving nothing. A sale
+/// that sold a worn item (genesis_prime/game/connection/vendor_sale) follows its frames the
+/// same way.
+pub fn regeared(
   session session: Session,
   now now: Now,
   holder holder: Holder,

@@ -30,12 +30,11 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/loadout
-import genesis_prime/message/float32
 import genesis_prime/message/item_place
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
-import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
+import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/step.{type ConnectionStep, ConnectionId}
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId, Spell4BaseId}
@@ -445,15 +444,6 @@ fn chest_unequipped() -> BitArray {
   )
 }
 
-/// The 0x93a-style entry of a property whose base and value are one number.
-fn entry(property property: Int, number number: Float) -> UnitProperty {
-  UnitProperty(
-    property_id: property,
-    base: float32.to_bits(number),
-    value: float32.to_bits(number),
-  )
-}
-
 /// The entry a created unit lists for a property.
 fn property_of(
   unit unit: UnitCreatePlayer,
@@ -487,10 +477,10 @@ pub fn a_viewer_that_arrives_after_an_unequip_is_created_without_the_chest_test(
     == list.filter(before.tail.item_visuals, fn(visual) { visual.slot != 1 })
     as "and the rest of the list is the same"
   assert property_of(unit: after, id: 7)
-    == Ok(entry(property: 7, number: 586.0))
+    == Ok(support.property(id: 7, number: 586.0))
     as "Base Health 586: CreatureLevel row 1's 135.97 and the worn 450, rounded"
   assert property_of(unit: after, id: 42)
-    == Ok(entry(property: 42, number: 187.5))
+    == Ok(support.property(id: 42, number: 187.5))
     as "Armor 187.5: the set's 250 less the chest's quarter"
 }
 

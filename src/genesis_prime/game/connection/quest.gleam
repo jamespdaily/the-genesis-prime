@@ -74,10 +74,13 @@ pub fn quest_message(
           },
         ),
         now:,
-        effects: connection_effects.quest_deadline_timer_moved(
-          before: quest_log.next_deadline(log: entered.quests),
-          after: quest_log.next_deadline(log: taken.log),
-          now_ms: now.monotonic_ms,
+        effects: list.map(
+          quest_log.deadline_moved(
+            before: quest_log.next_deadline(log: entered.quests),
+            after: quest_log.next_deadline(log: taken.log),
+            now_ms: now.monotonic_ms,
+          ),
+          connection_effects.MovesQuestDeadlineTimer,
         ),
         written: list.reverse(
           list.map(taken.effects, fn(effect) {

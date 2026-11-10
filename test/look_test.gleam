@@ -12,9 +12,10 @@
 ////   shows, and a source is held once (the properties' rule, `unit_properties`).
 
 import cast_support
+import game_connection_support
 import genesis_prime/game/look.{Disguise}
 import genesis_prime/game/worn_visual.{WornVisual}
-import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
+import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/table/id.{ItemDisplayId, ItemSlotId}
 import owned_test
 
@@ -41,10 +42,6 @@ fn disguise(slot slot: Int, display display: Int) -> look.Disguise {
   ])
 }
 
-fn visual(slot slot: Int, display display: Int) -> ItemVisual {
-  ItemVisual(slot:, display_id: display, item_color_set_id: 0, dye: 0)
-}
-
 /// An Engineer whose 0x262 lists its chest and weapon and nothing in slot 64.
 fn engineer() -> look.Look {
   look.new(base: [chest, novice_weapon])
@@ -58,7 +55,8 @@ pub fn a_disguise_on_a_slot_the_base_lacks_reports_that_slot_with_its_display_an
       source: cast_support.source_of(cast_id: 1, effect_id: 112_543),
       disguise: disguise(slot: suit_slot, display: exile_suit),
     )
-  assert changed == [visual(slot: suit_slot, display: exile_suit)]
+  assert changed
+    == [game_connection_support.look(slot: suit_slot, display: exile_suit)]
     as "slot 64, display 4807, colour set 0 and dye 0 (opcode.0x262.worn_visuals)"
 }
 
@@ -72,7 +70,7 @@ pub fn ending_a_disguise_over_a_slot_the_base_lacks_reports_display_0_test() -> 
       disguise: disguise(slot: suit_slot, display: exile_suit),
     )
   let #(look, changed) = look.end(look:, source: started)
-  assert changed == [visual(slot: suit_slot, display: 0)]
+  assert changed == [game_connection_support.look(slot: suit_slot, display: 0)]
     as "display 0 empties slot 64 (opcode.0x933.empty_display)"
   assert look.visuals(look:) == [chest, novice_weapon]
     as "the 0x262's list after the end is the base's"
@@ -91,7 +89,8 @@ pub fn a_disguise_on_a_base_slot_replaces_its_display_and_its_end_puts_the_whole
       source: held,
       disguise: disguise(slot: weapon_slot, display: 119),
     )
-  assert started == [visual(slot: weapon_slot, display: 119)]
+  assert started
+    == [game_connection_support.look(slot: weapon_slot, display: 119)]
     as "the disguise's display with colour 0, over the base's"
   let #(_, ended) = look.end(look:, source: held)
   assert ended == [dyed]
@@ -114,13 +113,16 @@ pub fn two_disguises_on_one_slot_show_the_newest_and_ending_the_newest_shows_the
       source: newer,
       disguise: disguise(slot: suit_slot, display: dominion_suit),
     )
-  assert second == [visual(slot: suit_slot, display: dominion_suit)]
+  assert second
+    == [game_connection_support.look(slot: suit_slot, display: dominion_suit)]
     as "the newest shows"
   let #(look, ended_newer) = look.end(look:, source: newer)
-  assert ended_newer == [visual(slot: suit_slot, display: exile_suit)]
+  assert ended_newer
+    == [game_connection_support.look(slot: suit_slot, display: exile_suit)]
     as "the older shows again"
   let #(_, ended_older) = look.end(look:, source: older)
-  assert ended_older == [visual(slot: suit_slot, display: 0)]
+  assert ended_older
+    == [game_connection_support.look(slot: suit_slot, display: 0)]
 }
 
 pub fn ending_the_older_of_two_disguises_first_reports_nothing_test() -> Nil {
@@ -142,7 +144,8 @@ pub fn ending_the_older_of_two_disguises_first_reports_nothing_test() -> Nil {
   let #(look, ended_older) = look.end(look:, source: older)
   assert ended_older == [] as "the newer still shows, so no slot changed"
   let #(_, ended_newer) = look.end(look:, source: newer)
-  assert ended_newer == [visual(slot: suit_slot, display: 0)]
+  assert ended_newer
+    == [game_connection_support.look(slot: suit_slot, display: 0)]
     as "the older is gone, so the base's nothing shows"
 }
 
@@ -164,7 +167,7 @@ pub fn the_same_source_started_twice_is_held_once_and_a_source_not_held_ends_wit
     )
   assert again == [] as "the second start of one source reports nothing"
   let #(look, ended) = look.end(look:, source: held)
-  assert ended == [visual(slot: suit_slot, display: 0)]
+  assert ended == [game_connection_support.look(slot: suit_slot, display: 0)]
   let #(_, ended_twice) = look.end(look:, source: held)
   assert ended_twice == [] as "held once, so the second end reports nothing"
   let #(_, never_held) =
@@ -206,8 +209,8 @@ pub fn the_0x262_list_is_the_base_with_each_disguised_slots_entry_replaced_or_ad
   assert look.visuals(look:)
     == [
       chest,
-      visual(slot: weapon_slot, display: 119),
-      visual(slot: suit_slot, display: exile_suit),
+      game_connection_support.look(slot: weapon_slot, display: 119),
+      game_connection_support.look(slot: suit_slot, display: exile_suit),
     ]
     as "slot 20 replaced in place, slot 64 added at the end (opcode.0x262.worn_visuals)"
 }
@@ -231,8 +234,8 @@ pub fn a_row_with_two_displays_reports_both_in_slot_order_test() -> Nil {
     )
   assert changed
     == [
-      visual(slot: weapon_slot, display: 119),
-      visual(slot: suit_slot, display: exile_suit),
+      game_connection_support.look(slot: weapon_slot, display: 119),
+      game_connection_support.look(slot: suit_slot, display: exile_suit),
     ]
 }
 
@@ -244,43 +247,50 @@ pub fn a_rebase_reports_each_changed_slot_and_display_0_for_an_emptied_one_test(
   let before =
     look.new(base: [
       chest,
-      visual(slot: 2, display: 3844),
-      visual(slot: 4, display: 4179),
+      game_connection_support.look(slot: 2, display: 3844),
+      game_connection_support.look(slot: 4, display: 4179),
       novice_weapon,
     ])
   let #(look, changed) =
     look.rebased(look: before, base: [
-      visual(slot: 1, display: 3838),
-      visual(slot: 4, display: 4179),
+      game_connection_support.look(slot: 1, display: 3838),
+      game_connection_support.look(slot: 4, display: 4179),
     ])
   assert changed
     == [
-      visual(slot: 1, display: 3838),
-      visual(slot: 2, display: 0),
-      visual(slot: weapon_slot, display: 0),
+      game_connection_support.look(slot: 1, display: 3838),
+      game_connection_support.look(slot: 2, display: 0),
+      game_connection_support.look(slot: weapon_slot, display: 0),
     ]
     as "slot 1 shows the new chest, the emptied slots 2 and 20 show display 0 (opcode.0x933.empty_display), slot 4 is unchanged and reports nothing, in slot order"
   assert look.visuals(look:)
-    == [visual(slot: 1, display: 3838), visual(slot: 4, display: 4179)]
+    == [
+      game_connection_support.look(slot: 1, display: 3838),
+      game_connection_support.look(slot: 4, display: 4179),
+    ]
     as "the 0x262's list is the new base"
   let #(_, again) =
     look.rebased(look:, base: [
-      visual(slot: 1, display: 3838),
-      visual(slot: 4, display: 4179),
+      game_connection_support.look(slot: 1, display: 3838),
+      game_connection_support.look(slot: 4, display: 4179),
     ])
   assert again == [] as "the same base reports nothing"
   let #(_, added) =
     look.rebased(look:, base: [
-      visual(slot: 1, display: 3838),
-      visual(slot: 4, display: 4179),
-      visual(slot: weapon_slot, display: 119),
+      game_connection_support.look(slot: 1, display: 3838),
+      game_connection_support.look(slot: 4, display: 4179),
+      game_connection_support.look(slot: weapon_slot, display: 119),
     ])
-  assert added == [visual(slot: weapon_slot, display: 119)]
+  assert added
+    == [game_connection_support.look(slot: weapon_slot, display: 119)]
     as "a slot the base gains reports its visual"
   let dyed =
     ItemVisual(slot: 1, display_id: 3838, item_color_set_id: 5, dye: 0x12345)
   let #(_, dye_changed) =
-    look.rebased(look:, base: [dyed, visual(slot: 4, display: 4179)])
+    look.rebased(look:, base: [
+      dyed,
+      game_connection_support.look(slot: 4, display: 4179),
+    ])
   assert dye_changed == [dyed]
     as "a colour set or dye that changes is a change, carried whole"
 }
@@ -297,14 +307,19 @@ pub fn a_rebase_under_a_held_look_reports_nothing_and_its_end_shows_the_new_base
   // The weapon is taken off and the chest changed while the disguise holds the weapon
   // slot.
   let #(look, changed) =
-    look.rebased(look:, base: [visual(slot: 1, display: 3838)])
-  assert changed == [visual(slot: 1, display: 3838)]
+    look.rebased(look:, base: [
+      game_connection_support.look(slot: 1, display: 3838),
+    ])
+  assert changed == [game_connection_support.look(slot: 1, display: 3838)]
     as "the chest's change shows, and slot 20, which the disguise holds, reports nothing"
   assert look.visuals(look:)
-    == [visual(slot: 1, display: 3838), visual(slot: weapon_slot, display: 119)]
+    == [
+      game_connection_support.look(slot: 1, display: 3838),
+      game_connection_support.look(slot: weapon_slot, display: 119),
+    ]
     as "the 0x262's list keeps the disguise on slot 20"
   let #(_, ended) = look.end(look:, source: held)
-  assert ended == [visual(slot: weapon_slot, display: 0)]
+  assert ended == [game_connection_support.look(slot: weapon_slot, display: 0)]
     as "the end shows the new base, which holds no weapon: display 0"
   // A weapon the base holds in place of the one it had shows when the hold ends.
   let #(look, _) =
@@ -314,9 +329,13 @@ pub fn a_rebase_under_a_held_look_reports_nothing_and_its_end_shows_the_new_base
       disguise: disguise(slot: weapon_slot, display: 119),
     )
   let #(look, changed) =
-    look.rebased(look:, base: [chest, visual(slot: weapon_slot, display: 1354)])
+    look.rebased(look:, base: [
+      chest,
+      game_connection_support.look(slot: weapon_slot, display: 1354),
+    ])
   assert changed == [] as "a new weapon under the disguise reports nothing"
   let #(_, ended) = look.end(look:, source: held)
-  assert ended == [visual(slot: weapon_slot, display: 1354)]
+  assert ended
+    == [game_connection_support.look(slot: weapon_slot, display: 1354)]
     as "the end shows the new weapon, the Esper's display 1354"
 }

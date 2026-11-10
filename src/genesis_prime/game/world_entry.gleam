@@ -400,9 +400,16 @@ pub type Buyback {
 }
 
 /// One sale on the buyback list: the id the client names it by, the Item2 sold,
-/// how many were sold and the credits the vendor paid for them all.
+/// how many were sold and what the vendor paid for them all: `amount` of the currency
+/// `currency_type_id` (a CurrencyType row's id), before the currency's cap.
 pub type BuybackEntry {
-  BuybackEntry(buyback_id: Int, item2_id: Item2Id, quantity: Int, credits: Int)
+  BuybackEntry(
+    buyback_id: Int,
+    item2_id: Item2Id,
+    quantity: Int,
+    currency_type_id: Int,
+    amount: Int,
+  )
 }
 
 /// Whether the player's client has finished loading the world: the connection

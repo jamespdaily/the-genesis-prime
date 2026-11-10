@@ -35,9 +35,11 @@ import genesis_prime/login/guid
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason
+import genesis_prime/message/float32
 import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/item_move
 import genesis_prime/message/item_place
+import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -51,6 +53,7 @@ import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stealth
 import genesis_prime/message/vendor_buyback.{VendorBuyback}
 import genesis_prime/message/vendor_purchase.{VendorPurchase}
@@ -1413,6 +1416,30 @@ pub fn watched_by(
 
 /// The tests' player's unit id: the map's fifth.
 pub const own_unit_id = 5
+
+/// The player's look in a slot: `slot` with `display`, colour set 0 and dye 0.
+pub fn look(slot slot: Int, display display: Int) -> ItemVisual {
+  ItemVisual(slot:, display_id: display, item_color_set_id: 0, dye: 0)
+}
+
+/// The 0x93a entry of a property whose base and value are `number`.
+pub fn property(id id: Int, number number: Float) -> UnitProperty {
+  UnitProperty(
+    property_id: id,
+    base: float32.to_bits(number),
+    value: float32.to_bits(number),
+  )
+}
+
+/// The Engineer's properties without its chest: Base Health 586, Armor 187.5 and Assault
+/// Rating 194.0625, as `game_connection_inventory_test` works them out.
+pub fn without_the_chest() -> List(UnitProperty) {
+  [
+    property(id: 7, number: 586.0),
+    property(id: 35, number: 194.0625),
+    property(id: 42, number: 187.5),
+  ]
+}
 
 pub fn zone_group(top_zone_id: Int) -> step.Address {
   step.ZoneChannel(map: camp_map(), incarnation:, top_zone_id:)

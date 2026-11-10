@@ -1,0 +1,14 @@
+ID	description	localizedTextId	iconName	capAmount
+1	Credits	79451		0
+2	Community currency - Renown	79452	Icon_Windows_UI_CRB_Coin_Reknown	0
+3	Elder Gems	79450	Icon_Windows16_UI_CRB_Coin_ElderGems	0
+4	Crafting Voucher	374373	Icon_Windows16_UI_CRB_Coin_TradeskillVoucher	0
+5	Prestige	375828	Icon_Windows_UI_CRB_Coin_Prestige	12000
+6	Holidy Currency: Shade's Eve	631478	Icon_TradeskillMisc_Grimgourd_plant	5000
+7	Glory	649365	Icon_Windows_UI_CRB_Coin_Raid	0
+9	Holiday Currency: Winterfest	735161	Icon_Windows16_UI_CRB_ProtoCurrency	5000
+10	PvE - Raid - Triploons	758272	IconSprites:Icon_Windows_UI_CRB_Coin_Raid_RMT	200
+11	Primal Matrix - Red Essence	765443	IconSprites:Icon_Windows_UI_Coin_Essence_Red	0
+12	Primal Matrix - Blue Essence	766345	IconSprites:Icon_Windows_UI_Coin_Essence_Blue	0
+13	Primal Matrix - Green Essence	766346	IconSprites:Icon_Windows_UI_Coin_Essence_Green	0
+14	Primal Matrix - Purple Essence	766347	IconSprites:Icon_Windows_UI_Coin_Essence_Purple	0

@@ -30,7 +30,8 @@ import experience_support
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{
-  type Answer, type Message, AskStore, CreatureAppeared, FromStore,
+  type Answer, type Message, AskStore, CreatureAppeared, FromStore, LookChanged,
+  PropertiesChanged,
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
@@ -47,7 +48,10 @@ import genesis_prime/message/generic_error.{GenericError}
 import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/item_count_changed.{ItemCountChanged}
 import genesis_prime/message/item_place
+import genesis_prime/message/item_removed.{ItemRemoved}
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
+import genesis_prime/message/unit_item_visuals_changed
+import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/vendor_item.{type VendorItem, VendorItem}
 import genesis_prime/message/vendor_items.{VendorItems}
 import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
@@ -536,6 +540,7 @@ fn window_after(
       vendors: vendor_support.stocking(creature_ids: [74_812]),
       now_ms: 0,
       offers: fn(_) { interaction.Offered },
+      talk_targets: set.new(),
       logged: set.new(),
     )
     as "the body is one the client's reader accepts"
@@ -705,11 +710,13 @@ fn sale_asked(
         account_id: store.AccountId(7),
         character_id: store.CharacterId(42),
         session_epoch: character_support.epoch(1),
-        credits_held:,
-        credits_after: credits_held + quantity,
+        currency_type_id: 1,
+        held: credits_held,
+        after: credits_held + quantity,
         sold: [
           store.SoldStack(
             item_guid: 500,
+            location: 1,
             held_count: held,
             sold_count: quantity,
           ),
@@ -741,7 +748,7 @@ pub fn a_sell_sent_while_the_store_works_is_held_and_taken_after_test() -> Nil {
     connection_support.answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(store.ForItems(store.Sold(credits: 102)))),
+      outcome: step.Answer(FromStore(store.ForItems(store.Sold(amount: 102)))),
     )
   assert connection_support.written_ids(answered) == [0x0919, 0x017F, 0x00BA]
     as "opcode.0x919 (the total), 0x17F (3 left, reason 7) and 0xBA (the buyback entry): the sale's answer goes out first, then the held line is taken"
@@ -807,7 +814,7 @@ fn sold(
   connection_support.answer(
     state:,
     taken:,
-    outcome: step.Answer(FromStore(store.ForItems(store.Sold(credits:)))),
+    outcome: step.Answer(FromStore(store.ForItems(store.Sold(amount: credits)))),
   ).0
 }
 
@@ -935,7 +942,8 @@ pub fn a_buy_back_through_the_connection_saves_the_shortened_list_test() -> Nil 
         account_id: store.AccountId(7),
         character_id: store.CharacterId(42),
         session_epoch: character_support.epoch(1),
-        credits_held: 102,
+        currency_type_id: 1,
+        held: 102,
         cost: 2,
         grow: [
           store.StackGrowth(item_guid: 500, held_count: 3, new_count: 5),
@@ -953,7 +961,7 @@ pub fn a_buy_back_through_the_connection_saves_the_shortened_list_test() -> Nil 
       state:,
       taken:,
       outcome: step.Answer(
-        FromStore(store.ForItems(store.Bought(credits: 100, made: []))),
+        FromStore(store.ForItems(store.Bought(amount: 100, made: []))),
       ),
     )
   let assert [total, grown, removed] =
@@ -982,4 +990,71 @@ pub fn a_buy_back_through_the_connection_saves_the_shortened_list_test() -> Nil 
   assert refusal.message_id == generic_error.message_id
   assert generic_error.decode(refusal.body) == Ok(GenericError(code: 14))
     as "enum 14, Vendor_UnknownItem"
+}
+
+pub fn selling_a_worn_item_sends_0x148_then_0x933_and_0x93a_and_tells_each_viewer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state =
+    connection_support.watched_by(state: selling_state(), viewers: [2, 3])
+  // The Engineer's chest is worn at location 0, bag index 0 (ItemSlot 1), as guid 1.
+  let #(state, taken) =
+    connection_support.sale_requested(
+      state:,
+      place: item_place.ItemPlace(location: 0, bag_index: 0),
+      quantity: 1,
+    )
+  let assert AskStore(store.Items(store.SellToVendor(sold:, ..))) =
+    connection_support.ask_request(taken)
+    as "0x1403d6a10 refuses only a worn bag at location 0: a worn chest is a sale like any other"
+  assert sold
+    == [
+      store.SoldStack(item_guid: 1, location: 0, held_count: 1, sold_count: 1),
+    ]
+    as "the store is asked to delete the worn stack at location 0"
+  let #(_, answered) =
+    connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(store.ForItems(store.Sold(amount: 150)))),
+    )
+  assert connection_support.written_ids(answered)
+    == [0x0919, 0x0148, 0x00BA, 0x0933, 0x093A, 0x092F]
+    as "the sale's total, the removal, the buyback entry, then the look and the properties as the delete of a worn item sends them, then the health the lower maximum caps"
+  let assert [total] =
+    connection_support.decoded(
+      connection_support.written(answered),
+      0x0919,
+      currency_changed.decode,
+    )
+  assert total == CurrencyChanged(kind: 0, total: 150, field_3: 0, field_4: 0)
+    as "opcode.0x919: the total the store left"
+  let assert [removed] =
+    connection_support.decoded(
+      connection_support.written(answered),
+      0x0148,
+      item_removed.decode,
+    )
+  assert removed == ItemRemoved(item_guid: 1, reason: 7)
+    as "Item.CodeEnumItemUpdateReason: Vendor is 7; opcode.0x148.model_unchanged: the frame changes no model, so the 0x933 below is the server's"
+  let assert [looks] =
+    connection_support.decoded(
+      connection_support.written(answered),
+      0x0933,
+      unit_item_visuals_changed.decode,
+    )
+  assert looks.unit_id == connection_support.own_unit_id
+    as "opcode.0x933: the look is the player's own unit's; its content is the gear step's"
+  let assert [properties] =
+    connection_support.decoded(
+      connection_support.written(answered),
+      0x093A,
+      unit_properties_changed.decode,
+    )
+  assert properties.unit_id == connection_support.own_unit_id
+    as "opcode.0x93a: the properties are the player's own unit's; their values are the gear step's"
+  list.each([2, 3], fn(viewer) {
+    let assert [LookChanged(..), PropertiesChanged(..), ..] =
+      connection_support.news_told(taken: answered, viewer:)
+      as "opcode.0x93a.other_unit: each viewer is told the look, then the properties"
+  })
 }

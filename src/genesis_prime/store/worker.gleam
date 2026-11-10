@@ -330,8 +330,8 @@ fn run_request(request: Request, pool: pog.Connection) -> Answer {
 /// merge_character_items.sql, delete_character_item.sql, buy_from_vendor.sql). A
 /// move answers `ItemsSaved` when it moved as many items as the request has moves,
 /// a split `ItemMade` with the new stack's guid, a merge and a delete `ItemsSaved`,
-/// a purchase `Bought` with the credits left and the stacks it made, a sale `Sold`
-/// with the credits held after it;
+/// a purchase `Bought` with the amount of its currency left and the stacks it made, a
+/// sale `Sold` with the amount of its currency held after it;
 /// each answers `ItemsNotSaved` when it changed nothing and `SaveRefused` when a
 /// check or the unique key of the character_item table refused a place;
 /// `Error(Nil)` when the database is away.
@@ -375,7 +375,8 @@ fn items(
       account_id:,
       character_id:,
       session_epoch:,
-      credits_held:,
+      currency_type_id:,
+      held:,
       cost:,
       grow:,
       make:,
@@ -386,7 +387,8 @@ fn items(
         account_id:,
         character_id:,
         session_epoch:,
-        credits_held:,
+        currency_type_id:,
+        held:,
         cost:,
         grow:,
         make:,
@@ -396,8 +398,9 @@ fn items(
       account_id:,
       character_id:,
       session_epoch:,
-      credits_held:,
-      credits_after:,
+      currency_type_id:,
+      held:,
+      after:,
       sold:,
     ) ->
       sell_to_vendor(
@@ -405,23 +408,25 @@ fn items(
         account_id:,
         character_id:,
         session_epoch:,
-        credits_held:,
-        credits_after:,
+        currency_type_id:,
+        held:,
+        after:,
         sold:,
       )
   }
 }
 
-/// A sale: sell_to_vendor.sql, answered with `Sold` and the credits held after, when
-/// it set the credits to `credits_after`, deleted each stack sold whole and lowered
+/// A sale: sell_to_vendor.sql, answered with `Sold` and the amount held of the currency
+/// after, when it set that currency to `after`, deleted each stack sold whole and lowered
 /// each stack sold in part.
 fn sell_to_vendor(
   pool pool: pog.Connection,
   account_id account_id: store.AccountId,
   character_id character_id: store.CharacterId,
   session_epoch session_epoch: store.SessionEpoch,
-  credits_held credits_held: Int,
-  credits_after credits_after: Int,
+  currency_type_id currency_type_id: Int,
+  held held: Int,
+  after after: Int,
   sold sold: List(store.SoldStack),
 ) -> Result(ItemsAnswer, Nil) {
   let AccountId(account_id) = account_id
@@ -432,17 +437,19 @@ fn sell_to_vendor(
       character_id,
       account_id,
       store.session_epoch_number(session_epoch),
-      credits_held,
-      credits_after,
+      currency_type_id,
+      held,
+      after,
       list.map(sold, fn(stack) { stack.item_guid }),
+      list.map(sold, fn(stack) { stack.location }),
       list.map(sold, fn(stack) { stack.held_count }),
       list.map(sold, fn(stack) { stack.sold_count }),
     )
   })
   |> items_answer(saved: fn(rows) {
     case rows {
-      [row] -> store.Sold(credits: row.credits)
-      _ -> panic as "the statement sets the credits once or returns no row"
+      [row] -> store.Sold(amount: row.amount)
+      _ -> panic as "the statement sets the amount once or returns no row"
     }
   })
 }
@@ -522,14 +529,16 @@ fn merge_items(
   })
 }
 
-/// A purchase: buy_from_vendor.sql, answered with `Bought`, the credits left and the
-/// stacks it made in the order the database made them, when it took the credits.
+/// A purchase: buy_from_vendor.sql, answered with `Bought`, the amount left of the
+/// currency and the stacks it made in the order the database made them, when it took the
+/// cost.
 fn buy_from_vendor(
   pool pool: pog.Connection,
   account_id account_id: store.AccountId,
   character_id character_id: store.CharacterId,
   session_epoch session_epoch: store.SessionEpoch,
-  credits_held credits_held: Int,
+  currency_type_id currency_type_id: Int,
+  held held: Int,
   cost cost: Int,
   grow grow: List(store.StackGrowth),
   make make: List(store.NewStack),
@@ -544,7 +553,8 @@ fn buy_from_vendor(
       character_id,
       account_id,
       store.session_epoch_number(session_epoch),
-      credits_held,
+      currency_type_id,
+      held,
       cost,
       item2,
       list.map(grow, fn(growth) { growth.item_guid }),
@@ -558,7 +568,7 @@ fn buy_from_vendor(
   |> items_answer(saved: fn(rows) {
     let assert [first, ..] = rows as "the statement returns a row or none"
     Bought(
-      credits: first.credits,
+      amount: first.amount,
       made: list.filter_map(rows, fn(row) {
         case row.item_guid, row.location, row.bag_index, row.stack_count {
           Some(item_guid), Some(location), Some(bag_index), Some(stack_count) ->
