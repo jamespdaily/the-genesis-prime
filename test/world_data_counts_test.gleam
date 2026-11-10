@@ -64,7 +64,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       folder:,
     )
     as "the world database imports"
-  let tables = client_tables.every_table()
+  let tables = client_tables.with_content_tables()
   let key = owned_key.new_fixture_key()
   let pool =
     database_support.config(
@@ -179,7 +179,7 @@ pub fn world_3460_visibility_index_is_19_41795_and_41803_test() -> Nil {
       folder:,
     )
     as "the world database imports"
-  let tables = client_tables.every_table()
+  let tables = client_tables.with_content_tables()
   let assert Ok(rows) =
     content_spawn.rows(db: content_support.connect(database:))
     as "the spawn rows read back"

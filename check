@@ -159,7 +159,7 @@ client_scripts=.claude/skills/decoding-the-client/scripts
 # full check took 146, 145 and 146 s with 1 and 119, 123 and 125 s with 2 on the
 # idle development Mac (12 schedulers), and the first test run's literal area peaked
 # at 80.4% with 1 and 76.2% with 2, under the 85% limit below (the world-data run,
-# a VM of its own, 61.7% in every run). More than 2 would not shorten the check: the
+# a VM of its own, 60.4% in every run). More than 2 would not shorten the check: the
 # client suite, 118 to 123 s, is then its longest part.
 test_workers=${GENESIS_TEST_WORKERS:-2}
 
@@ -170,8 +170,8 @@ test_workers=${GENESIS_TEST_WORKERS:-2}
 # The client's tables are persistent terms held once for the run, and a `Tables`
 # is only a handle of their keys and its own edits, so a copy of it (an ETS
 # insert, a spawn, Ranch's protocol options) copies no table. The test VM's
-# first run peaked at 717 MiB (70.0%) and the world-data VM's at 655 MiB
-# (64.0%), under the 85% limit below. The limit is 85%: it warns at 870 MiB and
+# first run peaked at 717 MiB (70.0%) and the world-data VM's at 619 MiB
+# (60.4%), under the 85% limit below. The limit is 85%: it warns at 870 MiB and
 # leaves 154 MiB free, 1.4 times the largest table the suite puts (Spline2Node,
 # 115.7 MB), and 123 MiB before the 97% where the VM dies. A run over it warns in
 # the summary, so the margin cannot vanish unnoticed again; the limit is on the
@@ -567,7 +567,7 @@ gleam_test() {
 
 # world_data_test: the world-data test alone, in a VM of its own beside the first
 # test run, with its own literal peak file: its VM has a literal region of its own,
-# the test alone holds 62% of it, and the first run's peak does not include it.
+# the test alone holds 60.4% of it, and the first run's peak does not include it.
 world_data_test() {
   GENESIS_LITERAL_PEAK_FILE="$work/literal-peak-world-data" run_built genesis_prime_test --tag world_data
 }
