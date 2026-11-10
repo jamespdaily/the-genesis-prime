@@ -493,7 +493,7 @@
 //// | a dead player's connection ends or camps | its creatures are told `Unwatched`; the next entry's `Join` names `alive` False from its saved health 0 |
 //// | the Holocrypt's `Leave`, then its `Join` | `alive` True; the old map sent no `LifeChanged(True)`, so no ring creature aggroes the player for one step before the leave |
 //// | an `ObjectsSeen` or `ObjectsUnseen` reaches a later stay | dropped by the connection's stay envelope |
-//// | the map crashes and restarts | the existing rejoin path; the new `Join` carries the hidden set worked out again |
+//// | the map crashes and restarts | the player's connection's watch of the map ends: it saves the place, writes 0x036A reason 8 (LostUserServer) and ends, so no rejoin happens and the hidden set dies with the connection (`the_end_of_the_players_map_saves_the_place_then_writes_0x036a_reason_8_and_ends_the_connection_test`); the next play's `Join` carries the set worked out from the store |
 //// | the connection ends | the existing path: the map removes the player and sends `Unwatched` and `Gone` |
 //// | a `VisibilityChanged` reaches a map the player has left, or from a connection never in it | dropped, like `Moved`, with an error line |
 //// | a `VisibilityChanged` with the set the map already holds | no effect |
@@ -992,7 +992,12 @@ pub fn step(
     OwnEvent(Told(message: LifeChanged(connection:, alive:))) ->
       life_changed(state:, connection:, alive:)
     OwnEvent(Told(message: VisibilityChanged(connection:, hidden:))) ->
-      visibility_changed(state:, connection:, hidden:)
+      visibility_changed(
+        state:,
+        connection:,
+        hidden:,
+        now_ms: input.now.monotonic_ms,
+      )
     OwnEvent(Asked(caller:, message: Summon(connection:, creature_id:, level:))) ->
       summoned(state:, caller:, connection:, creature_id:, level:)
     OwnEvent(Asked(message: Moved(..), ..))
@@ -1571,8 +1576,9 @@ fn start_creature(
 fn world_in_sight(
   state state: State,
   place place: Place,
+  hidden hidden: Set(PrerequisiteId),
 ) -> #(Set(SpawnId), Set(SpawnId)) {
-  let #(creatures, objects) = stored_in_sight(state:, place:)
+  let #(creatures, objects) = stored_in_sight(state:, place:, hidden:)
   #(
     dict.fold(state.run_spawns, creatures, fn(found, id, run_spawn) {
       case sight.sees(place, run_spawn.place) {
@@ -1585,10 +1591,12 @@ fn world_in_sight(
 }
 
 /// The stored creature spawns and static objects of the map's world within sight
-/// of `place`, through the cell index.
+/// of `place`, through the cell index, but those whose visibility prerequisite is
+/// in `hidden` (`shown`). A run-only spawn names none.
 fn stored_in_sight(
   state state: State,
   place place: Place,
+  hidden hidden: Set(PrerequisiteId),
 ) -> #(Set(SpawnId), Set(SpawnId)) {
   let spawns = state.settings.spawns
   spawn_cell.near(
@@ -1601,18 +1609,36 @@ fn stored_in_sight(
     let #(creatures, objects) = found
     case dict.get(spawns.by_id, id), dict.get(spawns.objects, id) {
       Ok(spawn), _ ->
-        case sight.sees(place, spawn.place) {
+        case
+          sight.sees(place, spawn.place)
+          && shown(visibility: spawn.visibility, hidden:)
+        {
           True -> #(set.insert(creatures, id), objects)
           False -> found
         }
       Error(Nil), Ok(object) ->
-        case sight.sees(place, object.place) {
+        case
+          sight.sees(place, object.place)
+          && shown(visibility: object.visibility, hidden:)
+        {
           True -> #(creatures, set.insert(objects, id))
           False -> found
         }
       Error(Nil), Error(Nil) -> found
     }
   })
+}
+
+/// Whether a unit with this visibility prerequisite is shown to a player whose
+/// failing prerequisites are `hidden`: it is unless its prerequisite is one of them.
+fn shown(
+  visibility visibility: Option(PrerequisiteId),
+  hidden hidden: Set(PrerequisiteId),
+) -> Bool {
+  case visibility {
+    Some(prerequisite_id) -> !set.contains(hidden, prerequisite_id)
+    option.None -> True
+  }
 }
 
 /// The notices of the static objects the player of `to` comes to see (`now`) and
@@ -1899,7 +1925,8 @@ fn moved(
             }
           },
         )
-      let #(seen, objects) = world_in_sight(state:, place:)
+      let #(seen, objects) =
+        world_in_sight(state:, place:, hidden: mover.hidden)
       let #(state, object_effects) =
         objects_decided(
           state:,
@@ -2037,11 +2064,58 @@ fn told_about_player(
 /// unit ids, as the module's `VisibilityChanged` says. A connection with no player
 /// here, or a set equal to the held one, changes nothing.
 fn visibility_changed(
-  state _state: State,
-  connection _connection: ConnectionId,
-  hidden _hidden: Set(PrerequisiteId),
+  state state: State,
+  connection connection: ConnectionId,
+  hidden hidden: Set(PrerequisiteId),
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  panic as "shape: #601 the map shows and hides units for a changed visibility set"
+  case dict.get(state.players, connection) {
+    Error(Nil) -> #(
+      state,
+      Effects([
+        log_error(
+          state:,
+          about: step.About(..step.no_one, connection: Some(connection)),
+          text: "the connection told its visibility to the map, but it is not in it",
+        ),
+      ]),
+    )
+    Ok(player) -> {
+      use <- bool.guard(when: hidden == player.hidden, return: #(
+        state,
+        Effects([]),
+      ))
+      let player = Player(..player, hidden:)
+      let #(seen, objects) =
+        world_in_sight(state:, place: player_unit.place(player.unit), hidden:)
+      let #(state, object_effects) =
+        objects_decided(
+          state:,
+          to: #(connection, player),
+          was: player.objects,
+          now: objects,
+          now_ms:,
+        )
+      let #(state, spawn_effects) =
+        spawns_decided(
+          state:,
+          connection:,
+          stay: player.stay,
+          was: player.seen,
+          now: seen,
+          now_ms:,
+        )
+      let player = Player(..player, seen:, objects:)
+      let #(player, ring_effects) = case player.readiness {
+        StillLoading -> #(player, [])
+        Loaded -> rings_decided(state:, connection:, player:)
+      }
+      #(
+        State(..state, players: dict.insert(state.players, connection, player)),
+        Effects(list.flatten([object_effects, spawn_effects, ring_effects])),
+      )
+    }
+  }
 }
 
 /// The player of `connection` died or woke where its body lies. A connection not in
@@ -2150,7 +2224,10 @@ fn rings_holding(state state: State, player player: Player) -> Set(SpawnId) {
   let place = player_unit.place(player.unit)
   let range = state.settings.numbers.aggro_range
   let faction_id = player_unit.faction_id(player.unit)
-  let holds = in_ring(spawn: _, place:, faction_id:, range:)
+  let holds = fn(found: spawn.Spawn) {
+    in_ring(spawn: found, place:, faction_id:, range:)
+    && shown(visibility: found.visibility, hidden: player.hidden)
+  }
   let stored =
     spawn_cell.near(
       cells: spawns.cells,
@@ -2302,6 +2379,31 @@ fn joined_again(
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   let CharacterId(second_character_id) = character.character_id
+  // The join names the set that holds now, which may differ from the one the
+  // map held: what the player sees, its objects and its rings are decided again
+  // from it, so a unit it newly hides is not replayed, and one it newly shows
+  // starts.
+  let #(seen, objects) =
+    world_in_sight(
+      state:,
+      place: player_unit.place(player.unit),
+      hidden: player.hidden,
+    )
+  let #(state, spawn_changes) =
+    spawns_decided(
+      state:,
+      connection:,
+      stay: player.stay,
+      was: player.seen,
+      now: seen,
+      now_ms:,
+    )
+  let kept = set.intersection(player.seen, seen)
+  let player = Player(..player, seen:, objects:)
+  let #(player, ring_effects) = case player.readiness {
+    StillLoading -> #(player, [])
+    Loaded -> rings_decided(state:, connection:, player:)
+  }
   let state =
     State(..state, players: dict.insert(state.players, connection, player))
   let #(state, objects_again) =
@@ -2322,7 +2424,7 @@ fn joined_again(
       ]
     })
     |> list.append(
-      list.flat_map(seen_in_order(player), fn(spawn) {
+      list.flat_map(in_order(kept), fn(spawn) {
         tell_live(
           state:,
           spawn:,
@@ -2353,6 +2455,8 @@ fn joined_again(
         ],
         objects_again,
         watched_again,
+        spawn_changes,
+        ring_effects,
       ]),
     ),
   )
@@ -2499,7 +2603,7 @@ fn joined_with(
     list.flat_map(in_sight, fn(other) {
       comes_into_sight(newcomer: #(connection, player), other:)
     })
-  let #(seen, objects) = world_in_sight(state:, place:)
+  let #(seen, objects) = world_in_sight(state:, place:, hidden: player.hidden)
   let #(state, object_effects) =
     objects_decided(
       state:,

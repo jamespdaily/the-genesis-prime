@@ -149,6 +149,7 @@ import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/look
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
+import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/reward_property
 import genesis_prime/game/shown
@@ -156,6 +157,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
 import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor
+import genesis_prime/game/visibility
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers.{AbilityTiers}
 import genesis_prime/message/action_set.{ActionSet}
@@ -509,6 +511,7 @@ pub fn loaded(
   connection connection: ConnectionId,
   stay stay: Stay,
   tables tables: table_store.Tables,
+  visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> Result(Loaded, Nil) {
   case state {
     Loading(character_id: CharacterId(character_id)) ->
@@ -559,6 +562,7 @@ pub fn loaded(
                     connection:,
                     stay:,
                     tables:,
+                    visibility:,
                   )
               }
           }
@@ -581,6 +585,7 @@ fn joining_a_play(
   connection connection: ConnectionId,
   stay stay: Stay,
   tables tables: table_store.Tables,
+  visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> Loaded {
   case
     experience.entering(
@@ -616,6 +621,8 @@ fn joining_a_play(
           connection:,
           stay:,
           entry: PlayEntry(character_state: frame),
+          tables:,
+          visibility:,
         )
       Join(state:, effects:)
     }
@@ -866,6 +873,8 @@ pub fn rejoining(
   place place: Place,
   connection connection: ConnectionId,
   stay stay: Stay,
+  tables tables: table_store.Tables,
+  visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> #(State, List(Effect)) {
   joining(
     character: entered.character,
@@ -879,6 +888,8 @@ pub fn rejoining(
     connection:,
     stay:,
     entry: HolocryptEntry,
+    tables:,
+    visibility:,
   )
 }
 
@@ -898,11 +909,19 @@ fn joining(
   connection connection: ConnectionId,
   stay stay: Stay,
   entry entry: Entry,
+  tables tables: table_store.Tables,
+  visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> #(State, List(Effect)) {
   let map =
     MapId(world_id: start_place.world_id(place), instance: open_world_instance)
-  // shape: #601 the build commits work this out with `visibility.hidden_at_entry`
-  let hidden = set.new()
+  let hidden =
+    visibility.hidden_at_entry(
+      prerequisites: result.unwrap(dict.get(visibility, map.world_id), []),
+      tables:,
+      character:,
+      place:,
+      quests:,
+    )
   #(
     Joining(
       character:,

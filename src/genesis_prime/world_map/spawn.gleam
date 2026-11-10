@@ -480,7 +480,7 @@ pub fn select(
       rule: describe(error:),
     ))
   }
-  let #(_shared, judged) =
+  let #(_shared, judged_by_checks) =
     list.map_fold(rows, dict.new(), fn(shared, row) {
       case
         row.entity_type == non_player,
@@ -513,6 +513,8 @@ pub fn select(
         False, Error(Nil) -> #(shared, Other(row:))
       }
     })
+  let #(judged, loaded) =
+    visibility_judged(tables:, judged: judged_by_checks, refused:)
   let started =
     list.filter_map(judged, fn(one) {
       case one {
@@ -554,8 +556,11 @@ pub fn select(
       }
     }),
     coverage: coverage_of(judged),
-    // shape: #601 the build commits fill this with `visibility_index`
-    visibility: dict.new(),
+    visibility: visibility_index(
+      loaded:,
+      started: list.map(started, fn(checked) { checked.spawn }),
+      objects:,
+    ),
   )
 }
 
@@ -1792,18 +1797,113 @@ fn visibility_of(creature creature: Creature2) -> Option(PrerequisiteId) {
   Some(prerequisite_id)
 }
 
+/// Each started spawn and sent object whose visibility prerequisite does not load is
+/// refused as a row of the load (the client never tests the column, so the server
+/// keeps the prerequisite and every one a started spawn names must load), and the
+/// prerequisites that load, each once, by number. A row the load leaves out names
+/// none, so a prerequisite only a left-out creature holds is neither loaded nor
+/// required.
+fn visibility_judged(
+  tables tables: table_store.Tables,
+  judged judged: List(Judged),
+  refused refused: fn(Row, SpawnError) -> Judged,
+) -> #(List(Judged), Dict(Int, Prerequisite)) {
+  let #(cache, rows) =
+    list.map_fold(judged, dict.new(), fn(cache, one) {
+      let named = case one {
+        Started(checked:) ->
+          Some(#(
+            checked.row,
+            checked.spawn.creature_id,
+            checked.spawn.visibility,
+          ))
+        ObjectSent(row:, object:) ->
+          Some(#(row, object.creature_id, object.visibility))
+        Other(..) | Excluded(..) | Refused(..) | ObjectDead(..) -> None
+      }
+      case named {
+        Some(#(row, creature_id, Some(prerequisite_id))) -> {
+          let #(cache, found) =
+            loaded_prerequisite(tables:, cache:, prerequisite_id:)
+          case found {
+            Ok(_) -> #(cache, one)
+            Error(reason) -> #(
+              cache,
+              refused(
+                row,
+                NoVisibilityRow(creature_id:, prerequisite_id:, reason:),
+              ),
+            )
+          }
+        }
+        Some(#(_, _, None)) | None -> #(cache, one)
+      }
+    })
+  #(
+    rows,
+    dict.to_list(cache)
+      |> list.filter_map(fn(one) {
+        result.map(one.1, fn(prerequisite) { #(one.0, prerequisite) })
+      })
+      |> dict.from_list,
+  )
+}
+
+/// The prerequisite loaded from the tables, kept in the cache by number.
+fn loaded_prerequisite(
+  tables tables: table_store.Tables,
+  cache cache: Dict(Int, Result(Prerequisite, prerequisite.LoadError)),
+  prerequisite_id prerequisite_id: PrerequisiteId,
+) -> #(
+  Dict(Int, Result(Prerequisite, prerequisite.LoadError)),
+  Result(Prerequisite, prerequisite.LoadError),
+) {
+  case dict.get(cache, prerequisite_id.value) {
+    Ok(found) -> #(cache, found)
+    Error(Nil) -> {
+      let found =
+        prerequisite.load(
+          id: prerequisite_id,
+          rows: prerequisite.table_rows(tables:),
+          arcs: prerequisite.table_arcs(tables:),
+          quests: prerequisite.table_quests(tables:),
+        )
+      #(dict.insert(cache, prerequisite_id.value, found), found)
+    }
+  }
+}
+
 /// The loaded visibility prerequisites of a load's started spawns and sent objects,
-/// by world: each distinct prerequisite of a world once, in id order, loaded from the
-/// tables the catalog holds. A prerequisite that does not load refuses the row that
-/// names it, so a started spawn or a sent object never meets a missing row at play.
-/// A row the load leaves out names none, so a prerequisite only a left-out creature
-/// holds is neither loaded nor required.
-pub fn visibility_index(
-  tables _tables: table_store.Tables,
-  started _started: List(Spawn),
-  objects _objects: List(StaticObject),
-) -> #(Dict(Int, List(Prerequisite)), List(Refusal)) {
-  panic as "shape: #601 the visibility index of a load"
+/// by world: each distinct prerequisite of a world once, in id order.
+fn visibility_index(
+  loaded loaded: Dict(Int, Prerequisite),
+  started started: List(Spawn),
+  objects objects: List(StaticObject),
+) -> Dict(Int, List(Prerequisite)) {
+  let named =
+    list.append(
+      list.map(started, fn(spawn) {
+        #(start_place.world_id(spawn.place), spawn.visibility)
+      }),
+      list.map(objects, fn(object) {
+        #(start_place.world_id(object.place), object.visibility)
+      }),
+    )
+  list.filter_map(named, fn(one) {
+    case one {
+      #(world_id, Some(prerequisite_id)) ->
+        Ok(#(world_id, prerequisite_id.value))
+      #(_, None) -> Error(Nil)
+    }
+  })
+  |> list.unique
+  |> list.group(fn(one) { one.0 })
+  |> dict.map_values(fn(_world_id, ones) {
+    ones
+    |> list.map(fn(one) { one.1 })
+    |> list.sort(int.compare)
+    |> list.filter_map(fn(number) { dict.get(loaded, number) })
+  })
 }
 
 /// The row's outfit is 0, or has a Creature2OutfitInfo row.

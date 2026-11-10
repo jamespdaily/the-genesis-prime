@@ -6631,17 +6631,34 @@ pub fn subject_of(
   )
 }
 
-/// What a prerequisite may read about a player entering a world, before its unit,
-/// its casts and its vitals exist: the player and the factions and the quest log
-/// they hold, and no casts, no combat, no vitals and no position. A prerequisite that
-/// reads any of those the subject lacks is `NotRead`, never `Fails`
-/// (genesis_prime/game/visibility).
+/// What a prerequisite may read about a player entering a world, before its unit and
+/// its casts exist: the player and the factions and the quest log they hold, and the
+/// values a player starts with: no casts, not in combat, not stealthed, and health and
+/// shield full (current equal to maximum). The class resource slots and the positions
+/// are not held, so a prerequisite that reads those is `NotRead`, never `Fails`
+/// (genesis_prime/game/visibility); the first step's check decides it with the real
+/// values.
 pub fn entering_subject(
-  player _player: prerequisite.Player,
-  factions _factions: prerequisite.Factions,
-  quests _quests: QuestLog,
+  player player: prerequisite.Player,
+  factions factions: prerequisite.Factions,
+  quests quests: QuestLog,
 ) -> prerequisite.Subject {
-  panic as "shape: #601 the subject of a player entering a world"
+  let full = prerequisite.Vital(current: 1.0, maximum: 1.0)
+  prerequisite.Subject(
+    under: [],
+    second_unit: None,
+    in_combat: False,
+    vitals: dict.from_list([#(health_vital, full), #(shield_vital, full)]),
+    difficulty: None,
+    stealthed: Some(False),
+    resource_slots: None,
+    rolls: [],
+    positions: prerequisite.NotPlaced,
+    factions: Some(factions),
+    player: Some(player),
+    quests: Some(quests),
+    seen: prerequisite.WholeUnit,
+  )
 }
 
 /// What the live and lingering casts hold on the caster's own unit, as a

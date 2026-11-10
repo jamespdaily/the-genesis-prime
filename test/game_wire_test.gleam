@@ -43,6 +43,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/registry
 import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/content
+import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/cast
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
@@ -86,6 +87,7 @@ import genesis_prime/message/rename_result
 import genesis_prime/message/start_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player
+import genesis_prime/message/unit_create_static
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
 import genesis_prime/message/unit_movement
@@ -3261,6 +3263,14 @@ pub fn a_sigterm_to_the_node_ends_the_sitting_bot_which_leaves_and_gives_its_tal
 /// and the 27 Virtual Battle Beasts of the planted world-database file, loaded
 /// through the content load into a key of the test's own.
 fn start_with_creatures() -> login_support.Started {
+  start_with_world_data(folder: content_support.fixture_folder)
+}
+
+/// The server's tree with the world standing the spawns of the planted world-database
+/// file in the folder and the migrations' seeded ones, loaded through the content load
+/// into a key of the test's own, and the game connections holding the visibility
+/// prerequisites the load found (as the server's own start passes them).
+fn start_with_world_data(folder folder: String) -> login_support.Started {
   login_support.start_with(change: fn(settings) {
     let pool =
       pog.Config(
@@ -3271,7 +3281,7 @@ fn start_with_creatures() -> login_support.Started {
     let assert Ok(_) =
       import_world_data.import_spawns(
         db: content_support.connect_with(config: pool),
-        folder: content_support.fixture_folder,
+        folder:,
       )
       as "the planted world-database file imports"
     let key = owned_key.new_fixture_key()
@@ -3287,6 +3297,13 @@ fn start_with_creatures() -> login_support.Started {
       as "the content load puts the seeded spawns in the world's term"
     server.Settings(
       ..settings,
+      game: server.Served(
+        ..settings.game,
+        settings: connection_state.Settings(
+          ..settings.game.settings,
+          visibility: content_spawn.visibility(key:),
+        ),
+      ),
       world: server.World(..settings.world, spawns: key),
     )
   })
@@ -3353,6 +3370,100 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
     as "two players see one unit id for each creature"
   game_client.close(game: first)
   game_client.close(game: second)
+  login_support.stop(started)
+}
+
+/// The Creature2 ids of the static objects the frames create, sorted: the 0x262 of a
+/// type 8, 10, 11, 13 or 32 object (`unit_create_static`), as the client reads them.
+fn static_objects_in(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x0262 ->
+        case game_client.created_unit(body: frame.body) {
+          Ok(game_client.ObjectCreated(..)) ->
+            result.map(unit_create_static.decode(frame.body), fn(object) {
+              object.creature_id
+            })
+            |> result.replace_error(Nil)
+          Ok(game_client.PlayerCreated(..))
+          | Ok(game_client.CreatureCreated(..))
+          | Error(Nil) -> Error(Nil)
+        }
+      _ -> Error(Nil)
+    }
+  })
+  |> list.sort(int.compare)
+}
+
+/// A new character of the faction at the position in World 3460, entered as the
+/// player of the account number `number`, and everything the server wrote up to the
+/// pong of a ping sent after the entry (`read_until_pong`: all the server wrote
+/// before it took the ping, the map's tells of the join included).
+fn entering_3460_as(
+  started started: login_support.Started,
+  number number: Int,
+  character_name character_name: String,
+  faction_id faction_id: Int,
+  at position: #(Float, Float, Float),
+) -> List(Frame) {
+  let #(game, character_id) = new_player(started:, number:, character_name:)
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let assert Ok(_) =
+    pog.query("update character set faction_id = $2 where character_id = $1")
+    |> pog.parameter(pog.int(character_id))
+    |> pog.parameter(pog.int(faction_id))
+    |> pog.execute(pool)
+    as "the character took its faction"
+  character_support.move_to(
+    pool:,
+    character_id:,
+    world_id: 3460,
+    world_zone_id: 6009,
+    position:,
+  )
+  send_play(game:, character_id:)
+  let #(_burst, have) = game_client.read_entry_kept(game:, have: <<>>)
+  let #(frames, _) = game_client.read_until_pong(game:, have:, number: 1)
+  game_client.close(game:)
+  frames
+}
+
+pub fn entering_world_3460_writes_no_start_arrow_and_mount_displays_only_to_an_exile_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started =
+    start_with_world_data(folder: "test/fixture/world_data_tutorial")
+  let at_the_arrows = #(71.4148, -855.3006, -479.419)
+  let at_the_mounts = #(1381.03, -495.32764, 213.793)
+  let exile =
+    static_objects_in(frames: entering_3460_as(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      faction_id: 167,
+      at: at_the_arrows,
+    ))
+  assert exile == [73_619]
+    as "an Exile with no tutorial quest at the Start Arrow's row 29054: the hologram 73619 (Creature2 prerequisite 41795, which passes for a player under no cast) is written and the Start Arrow 73707 (prerequisite 41803: neither quest 10527 nor 10532 is open) is not"
+  let exile_at_the_mounts =
+    static_objects_in(frames: entering_3460_as(
+      started:,
+      number: 2,
+      character_name: "Ann Qu",
+      faction_id: 167,
+      at: at_the_mounts,
+    ))
+  assert exile_at_the_mounts == [74_781, 74_782, 74_783, 74_784]
+    as "an Exile at the mounts: the four EXILE mount displays are written (Creature2 prerequisite 19, base faction 167)"
+  let dominion_at_the_mounts =
+    static_objects_in(frames: entering_3460_as(
+      started:,
+      number: 3,
+      character_name: "Cal Qu",
+      faction_id: 166,
+      at: at_the_mounts,
+    ))
+  assert dominion_at_the_mounts == []
+    as "a Dominion character at the same place is written none of them (Faction2 166 fails prerequisite 19)"
   login_support.stop(started)
 }
 

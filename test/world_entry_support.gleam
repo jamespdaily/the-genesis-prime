@@ -5,6 +5,7 @@
 import character_support
 import class_resource_support
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/item_added
@@ -18,6 +19,7 @@ import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/player_unit
+import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import map_support
@@ -59,6 +61,26 @@ pub fn loaded_holding(
   saved_experience saved_experience: Option(Int),
   quests quests: List(QuestRow),
 ) -> #(world_entry.State, world_entry.Loaded) {
+  loaded_seeing(
+    tables:,
+    character:,
+    items:,
+    saved_experience:,
+    quests:,
+    visibility: dict.new(),
+  )
+}
+
+/// What the store's answer to a play of the character leads to when the content
+/// load holds these visibility prerequisites for the worlds (`Settings.visibility`).
+pub fn loaded_seeing(
+  tables tables: table_store.Tables,
+  character character: Character,
+  items items: List(HeldItem),
+  saved_experience saved_experience: Option(Int),
+  quests quests: List(QuestRow),
+  visibility visibility: Dict(Int, List(Prerequisite)),
+) -> #(world_entry.State, world_entry.Loaded) {
   let assert Ok(body) = play_character.encode(PlayCharacter(character_id: 42))
     as "a character id fits the message"
   let assert Ok(#(state, _asks)) =
@@ -79,6 +101,7 @@ pub fn loaded_holding(
       connection: ConnectionId(1),
       stay: map_support.stay(count: 1),
       tables:,
+      visibility:,
     )
     as "the store's answer is the one world entry asked for"
   #(state, loaded)

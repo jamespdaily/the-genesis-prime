@@ -28,6 +28,7 @@ import character_tables
 import fixture_tables
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/game/hit.{Blow}
+import genesis_prime/game/prerequisite
 import genesis_prime/game/start_place
 import genesis_prime/game/vendor
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
@@ -44,6 +45,7 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
+import gleam/result
 import gleam/string
 import owned_test
 import place_support
@@ -1293,4 +1295,66 @@ pub fn a_spawn_is_a_vendor_when_its_creature_has_stock_test() -> Nil {
   assert vendor_of(1) && vendor_of(2)
     as "both spawns of the creature with stock are vendors"
   assert !vendor_of(3) as "a spawn of a creature with no stock is not"
+}
+
+/// The ids of the prerequisites in the world's visibility index, in order.
+fn visibility_ids(selection selection: Selection) -> List(Int) {
+  dict.get(selection.visibility, 3460)
+  |> result.unwrap([])
+  |> list.map(fn(one) { prerequisite.id(one).value })
+}
+
+pub fn a_started_spawn_whose_visibility_prerequisite_has_no_row_fails_the_spawn_load_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // `Creature2.prerequisiteIdVisibility`: the client never tests it, so the server
+  // keeps each started spawn's prerequisite and every one must load. Prerequisite
+  // 41803 has a row (`table_rows -- Prerequisite 41803`), 999999 has none.
+  let two_beasts = [
+    spawn_support.beast_row(number: 1),
+    spawn_support.beast_row(number: 2),
+  ]
+  let held =
+    selected_beast_changed(
+      changes: [#("prerequisiteIdVisibility", Integer(41_803))],
+      rows: two_beasts,
+    )
+  assert held.refusals == [] as "a prerequisite with a row loads"
+  assert visibility_ids(selection: held) == [41_803]
+    as "two started spawns of one prerequisite hold it once in their world's index"
+  // A row left out (faction 0, `opcode.0x262`) never starts, so its creature's
+  // prerequisite is neither loaded nor required.
+  let factionless = fn(number) {
+    spawn.Row(
+      ..spawn_support.beast_row(number:),
+      faction_id: 0,
+      base_faction_id: 0,
+    )
+  }
+  let left_out_only =
+    selected_beast_changed(
+      changes: [#("prerequisiteIdVisibility", Integer(999_999))],
+      rows: [factionless(1)],
+    )
+  assert left_out_only.refusals == []
+    as "a left-out spawn whose prerequisite has no row does not fail the load"
+  assert visibility_ids(selection: left_out_only) == []
+    as "and its prerequisite is not in the index"
+  let missing =
+    selected_beast_changed(
+      changes: [#("prerequisiteIdVisibility", Integer(999_999))],
+      rows: [spawn_support.beast_row(number: 1), factionless(2)],
+    )
+  let assert [Refusal(table: "spawn", row: refusal.RowId(1), rule:)] =
+    missing.refusals
+    as "the started spawn is refused, the left-out one is not"
+  assert string.contains(rule, "Creature2 73464")
+    && string.contains(rule, "999999")
+    && string.contains(rule, "Prerequisite table has no such row")
+    as {
+      "the rule names the creature, the prerequisite and the missing row: "
+      <> rule
+    }
+  assert started(missing) == [] as "the refused spawn does not start"
+  assert visibility_ids(selection: missing) == []
+    as "a refused spawn's prerequisite is not in the index"
 }

@@ -21,31 +21,69 @@
 //// - **At a step** the subject is the one the cast rule holds for the player
 ////   (`cast.subject_of`).
 
+import genesis_prime/game/cast
 import genesis_prime/game/prerequisite.{type Prerequisite, type Subject}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/top_zone
 import genesis_prime/store.{type Character}
 import genesis_prime/table/id.{type PrerequisiteId}
 import genesis_prime/table/loader/store as table_store
+import gleam/list
 import gleam/set.{type Set}
 
 /// The ids of the prerequisites that fail for the subject: every one whose
 /// verdict is `Fails`.
 pub fn hidden(
-  prerequisites _prerequisites: List(Prerequisite),
-  subject _subject: Subject,
+  prerequisites prerequisites: List(Prerequisite),
+  subject subject: Subject,
 ) -> Set(PrerequisiteId) {
-  panic as "shape: #601 the rule that hides a failing prerequisite"
+  prerequisites
+  |> list.filter(fn(found) {
+    case prerequisite.check(prerequisite: found, subject:) {
+      prerequisite.Fails -> True
+      prerequisite.Passes | prerequisite.NotRead(..) -> False
+    }
+  })
+  |> list.map(fn(found) { prerequisite.id(prerequisite: found) })
+  |> set.from_list
 }
 
 /// The ids of the prerequisites that fail for a character entering a world at a
-/// place with the quest log it holds, before its unit and casts exist.
+/// place with the quest log it holds, before its unit and casts exist. The
+/// character's faction is both its current and its base faction, the level is the
+/// character's (a level override stat exists only on the unit), and the zones are
+/// the place's zone and each parent above it, as the connection's player gives
+/// them once the unit exists (genesis_prime/game/connection/prerequisite_player).
 pub fn hidden_at_entry(
-  prerequisites _prerequisites: List(Prerequisite),
-  tables _tables: table_store.Tables,
-  character _character: Character,
-  place _place: Place,
-  quests _quests: QuestLog,
+  prerequisites prerequisites: List(Prerequisite),
+  tables tables: table_store.Tables,
+  character character: Character,
+  place place: Place,
+  quests quests: QuestLog,
 ) -> Set(PrerequisiteId) {
-  panic as "shape: #601 the set an entering character hides"
+  let zone = start_place.world_zone_id(place)
+  let player =
+    prerequisite.Player(
+      race_id: character.race_id.value,
+      class_id: character.class_id.value,
+      level: character.level,
+      path: character.path,
+      gender: character.gender,
+      world_id: start_place.world_id(place),
+      zones: case top_zone.chain(tables:, world_zone_id: zone) {
+        [] -> [zone]
+        chain -> chain
+      },
+    )
+  let subject =
+    cast.entering_subject(
+      player:,
+      factions: prerequisite.Factions(
+        current: character.faction_id,
+        base: character.faction_id,
+      ),
+      quests:,
+    )
+  hidden(prerequisites:, subject:)
 }
