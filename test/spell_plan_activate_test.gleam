@@ -59,13 +59,13 @@ pub fn every_activate_spell_has_a_plan_or_a_reason_test() -> Nil {
     })
   assert list.all(reasons, fn(reason) { string.starts_with(reason.1, "the ") })
     as "each spell the plan cannot build holds the plan's own reason in words: the Spell4 row and the effect it does not read, or the table row it lacks"
-  assert list.length(reasons) == 820
-    as "820 of the activate spells cannot be planned: 103 hold an effect the plan does not read (a CCStateSet, a DisguiseOutfit, a SpellForceRemove, a VitalModifier, a Stealth or a Proxy row, or a missing Spell4Base row) and 717 more hold an effect other than Activate aimed at the target or an area, which an activate cast, striking no one, would lose: the press is refused as not built, with the reason logged once"
+  assert list.length(reasons) == 511
+    as "511 of the activate spells cannot be planned: 103 hold an effect the plan does not read (a CCStateSet, a DisguiseOutfit, a SpellForceRemove, a VitalModifier, a Stealth or a Proxy row, or a missing Spell4Base row) and 408 more hold an effect other than Activate aimed at the target or an area of a type some rule reads for that aim (a Proxy, Damage, Fluff, RavelSignal and so on), which an activate cast, striking no one, would lose: the press is refused as not built, with the reason logged once; a row of a type no rule reads is dropped by every cast and refuses nothing"
   assert list.count(reasons, fn(reason) {
       string.contains(reason.1, "aims at the target or an area")
     })
-    == 717
-    as "717 of the 820 are refused for an effect aimed at the target or an area"
+    == 408
+    as "408 of the 511 are refused for an effect aimed at the target or an area"
   let assert Ok(why) = list.key_find(reasons, 38_392)
     as "Spell4 38392 (Creature2 19232's spell) is among them"
   assert string.contains(why, "82255")

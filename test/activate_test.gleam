@@ -99,4 +99,20 @@ pub fn activate_spell_that_strikes_cannot_be_planned_test() -> Nil {
     as "Spell4 38392, Creature2 19232's activate spell, is held with a reason"
   assert string.contains(why, "82255") && string.contains(why, "38392")
     as "Spell4Effects 82255 of Spell4 38392 is a Proxy (effectType 26) aimed at the primary target (targetFlags 2) beside its Activate row 82254: the activate cast strikes no one, so the reason names that row"
+  let assert Ok(CannotBePlanned(why: signal)) =
+    activate.planned_of(activations:, spell4_id: 39_244)
+    as "Spell4 39244 is held with a reason"
+  assert string.contains(signal, "85564")
+    as "Spell4Effects 85564 of Spell4 39244 is a RavelSignal (effectType 81) aimed at the primary target (targetFlags 2): the strike lists it as a life on each struck unit (genesis_prime/game/cast aimed_at), so an activate cast that strikes no one would lose it"
+}
+
+pub fn activate_spell_with_an_unread_target_effect_is_planned_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let activations = activate.activations(tables: fixture_tables.shared())
+  let assert Ok(Planned(effects:, ..)) =
+    activate.planned_of(activations:, spell4_id: 34_512)
+    as "Spell4 34512 is planned: its only other row, Spell4Effects 179989, is effectType 107 aimed at the primary target (targetFlags 2), a type no server rule reads, which the strike drops on every path"
+  assert effects
+    == [ActivateEffect(effect_id: Spell4EffectsId(68_310), delay_ms: 0)]
+    as "Spell4Effects 68310 is Spell4 34512's Activate row, delay 0"
 }

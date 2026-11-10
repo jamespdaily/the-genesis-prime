@@ -21,8 +21,9 @@
 ////   the Prerequisite rows the columns name; the Creature2 rows are read from the tables
 ////   when an activation arrives (the derivation stores none of the 8,463 creatures that
 ////   have an activate column).
-//// - A spell with an effect aimed at the target or an area is refused with result 285 and
-////   logged once, since the activate cast strikes no unit (gap, #336).
+//// - A spell with an effect the strike would apply, aimed at the target or an area, is
+////   refused with result 285 and logged once, since the activate cast strikes no unit
+////   (gap, #336).
 //// - Gaps, each closed by the quests, zones and prerequisites issue (#334): the client's
 ////   per-unit vertical offset and the creature words 0x6c and 0x148 that make the client
 ////   pick no spell are not modelled.
@@ -274,17 +275,23 @@ fn planned(
   }
 }
 
-/// An effect of an activate spell that aims at the target or an area.
+/// An effect of an activate spell that aims at the target or an area and that the strike
+/// would apply.
 type AimedAtTarget {
   AimedAtTarget(effect_id: Int)
 }
 
-/// The Activate rows of the spell, or the first effect that aims at the target or an area.
+/// The Activate rows of the spell, or the first effect that aims at the target or an area
+/// and that the strike would apply.
 ///
 /// Gap: the activate cast carries out the caster's effects and the Activate rows and
-/// strikes no unit, so a spell with an effect aimed at the target or an area would lose
-/// it without a word; it is refused instead, until the issue for spells in depth (#336)
-/// builds the strike of an activate cast.
+/// strikes no unit, so a spell with such an effect would lose it without a word; it is
+/// refused instead, until the issue for spells in depth (#336) builds the strike of an
+/// activate cast. An effect is one the strike applies when `effect_kind.is_row_read`
+/// holds for its type and aim: the strike lists a Fluff, Scale or RavelSignal row as a
+/// life on each struck unit (genesis_prime/game/cast `aimed_at`) and starts a Proxy's
+/// spell at it. A row of a type no rule reads is dropped by every cast, so it does not
+/// refuse the spell.
 fn activate_rows_of(
   sources sources: spell_plan.Sources,
   spell4_id spell4_id: Int,
@@ -299,6 +306,10 @@ fn activate_rows_of(
     list.find(others, fn(effect) {
       spell_plan.aim_of(target_flags: effect.target_flags)
       != spell_plan.AimsAtCaster
+      && effect_kind.is_row_read(
+        effect_type: effect.effect_type,
+        target_flags: effect.target_flags,
+      )
     })
   {
     Ok(effect) -> Error(AimedAtTarget(effect_id: effect.id))

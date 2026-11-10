@@ -2637,6 +2637,9 @@ fn cooldown_left_ms(
 }
 
 /// The methods the rule casts; a spell of any other is refused 285.
+///
+/// Gap: a spell of castMethod 5 (`ClientSideInteraction`) is not cast; the issue for a
+/// client-side interaction activate cast (#645) builds it.
 fn is_built(method: spell_plan.CastMethod) -> Bool {
   case method {
     spell_plan.Normal
