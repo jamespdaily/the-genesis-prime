@@ -9,24 +9,31 @@
 %% makes a second caller wait for the first and wakes it when the first ends
 %% (local_lock_ffi). The atom made from each key is bounded by the repository's
 %% files and literals: the keys are literals, and some are made per source file
-%% or per label count.
+%% or per label count. A call that has to build or wait is open to the test that
+%% owns the calling process (owned_test_ffi:counting_build/2), so its deadline
+%% does not count that time.
 once(Key, Create) ->
     Slot = {?MODULE, Key},
     case persistent_term:get(Slot, none) of
         {value, Value} ->
             Value;
         none ->
-            local_lock_ffi:with_lock(
-                lock_name(Key),
+            owned_test_ffi:counting_build(
+                Key,
                 fun() ->
-                    case persistent_term:get(Slot, none) of
-                        {value, Value} ->
-                            Value;
-                        none ->
-                            persistent_term:put(Slot, {value, Create()}),
-                            {value, Stored} = persistent_term:get(Slot),
-                            Stored
-                    end
+                    local_lock_ffi:with_lock(
+                        lock_name(Key),
+                        fun() ->
+                            case persistent_term:get(Slot, none) of
+                                {value, Value} ->
+                                    Value;
+                                none ->
+                                    persistent_term:put(Slot, {value, Create()}),
+                                    {value, Stored} = persistent_term:get(Slot),
+                                    Stored
+                            end
+                        end
+                    )
                 end
             )
     end.
