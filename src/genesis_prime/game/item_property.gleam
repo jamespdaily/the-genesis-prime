@@ -1164,27 +1164,23 @@ pub fn stat_entries_of(
   |> result.map(fn(stat) { stat_entries(stat:) })
 }
 
-/// Whether the client's builder accepts the property for an entry of the item: the checks
-/// `entry_gives` makes that fail with 0x95 in the client (a shield property on a
-/// non-shield, a property that is no item property or is off the item's slot), and the
-/// resource maximums this code does not read. It looks at the item's slot only, so an item
-/// this code leaves unread for its flags still has its roll made.
+/// Whether the client's builder accepts the property for an entry of the item: `False`
+/// for the refusals `entry_gives` makes with 0x95 in the client (a shield property on a
+/// non-shield, a property that is no item property or is off the item's slot). Any other
+/// error, a missing row or a resource maximum this code does not read, is returned. It
+/// looks at the item's slot only, so an item this code leaves unread for its flags still
+/// has its roll made.
 pub fn takes_property(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
   property_id property_id: Int,
-) -> Bool {
-  slot_builder(tables:, item2_id:)
-  |> result.map(fn(builder) {
-    result.is_ok(entry_gives(
-      tables:,
-      builder:,
-      scale: 1.0,
-      property_id:,
-      share: 1.0,
-    ))
-  })
-  |> result.unwrap(or: False)
+) -> Result(Bool, ItemPropertyError) {
+  use builder <- result.try(slot_builder(tables:, item2_id:))
+  case entry_gives(tables:, builder:, scale: 1.0, property_id:, share: 1.0) {
+    Ok(_) -> Ok(True)
+    Error(Refused(..)) -> Ok(False)
+    Error(error) -> Error(error)
+  }
 }
 
 /// What one entry gives.

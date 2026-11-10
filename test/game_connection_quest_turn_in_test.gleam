@@ -20,6 +20,7 @@ import character_tables
 import connection_rule_support as support
 import game_connection_support
 import genesis_prime/client_connection.{AskStore, FromStore}
+import genesis_prime/game/random_stat_word
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/quest_state.{QuestState}
@@ -359,4 +360,32 @@ pub fn a_turn_in_the_store_cannot_answer_ends_the_connection_with_reason_8_test(
         as "0x036A reason 8"
     },
   )
+}
+
+/// Quest 9376's reward is Item2 48169, a bracer with three kind-2 entries on the group 11,
+/// which has five rows (`random_stat_test`): the connection draws entropy for the stack and
+/// the store is asked to make it with a word that holds three choices, each within 1 to 5
+/// and no two the same.
+pub fn a_turn_in_asks_the_store_to_make_a_random_stat_reward_with_a_rolled_word_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- quest_turn_in_support.with_changes(changes: [
+    quest_turn_in_support.receiving(9376),
+  ])
+  let state =
+    quest_walker_support.in_world_with_walker(tables:, quests: [
+      quest_turn_in_support.achieved(quest_id: 9376),
+    ])
+  let #(_, taken) =
+    game_connection_support.read(state:, bytes: turn_in_of(quest_id: 9376))
+  let assert TurnInQuest(placed: [placed], ..) = asked_turn_in(taken:)
+    as "one reward item"
+  assert placed.item2_id == Item2Id(48_169)
+  let assert [NewStack(random_stats: word, ..)] = placed.make as "one stack"
+  assert random_stat_word.has_data(word:)
+    as "the stack is made with a word the client reads"
+  let choices =
+    list.map([0, 1, 2], fn(entry) { random_stat_word.choice(word:, entry:) })
+  assert list.all(choices, fn(choice) { choice >= 1 && choice <= 5 })
+    as "each entry takes one of the five rows of its group"
+  assert list.unique(choices) == choices as "no two entries take the same row"
 }

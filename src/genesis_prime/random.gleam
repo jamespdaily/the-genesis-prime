@@ -8,6 +8,7 @@
 import gleam/bit_array
 import gleam/bool
 import gleam/crypto
+import gleam/int
 
 /// A source of random bytes: the seed and the next block's counter.
 pub opaque type Random {
@@ -29,6 +30,11 @@ pub fn bytes(random random: Random, count count: Int) -> #(Random, BitArray) {
   let assert Ok(wanted) = bit_array.slice(drawn, 0, count)
     as "the blocks drawn hold at least `count` bytes"
   #(Random(..random, counter: random.counter + blocks), wanted)
+}
+
+/// The fraction below 1 that a 32-bit number is, a multiple of 2^-32.
+pub fn fraction(number: Int) -> Float {
+  int.to_float(number) /. 4_294_967_296.0
 }
 
 /// HMAC-SHA256's output is 32 bytes.

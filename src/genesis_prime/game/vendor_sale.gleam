@@ -800,8 +800,8 @@ fn buyback_frame(entry entry: BuybackEntry) -> Frame {
 
 /// An entry of the buyback list as the client's 0xBA and 0xBC carry it: the amount paid is
 /// its first amount, in its first currency type, the random-stat word is the sold item's
-/// (`opcode.0xba.random_stats`), the five multipliers are 1.0
-/// (`opcode.0xba.random_stats`), and every other field the client's code gives no use is 0
+/// (`opcode.0xba.random_stats`), the five multipliers are 1.0 (an entry sold as credits has
+/// them so, `opcode.0xba.price`), and every other field the client's code gives no use is 0
 /// (`opcode.0xba.price`).
 pub fn buyback_entry_message(
   entry entry: BuybackEntry,

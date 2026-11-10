@@ -22,9 +22,8 @@
 ////   the rows' weights: the client holds no rule for it (it never rolls), so the weighted
 ////   pick is the table's own meaning of `weight`, and every client row's weight is 1.
 //// - One item's random stats are different stats: an entry never takes a row that an
-////   earlier entry of the same group took (Jim's decision on issue 665, 2026-11-10). The
-////   client adds two entries on one property when a word names it twice, so this is a
-////   server choice and no client rule.
+////   earlier entry of the same group took. The client adds two entries on one property
+////   when a word names it twice, so this is a server choice and no client rule.
 //// - A row the client's builder refuses (0x95) is no candidate, since a word naming it
 ////   makes the client drop every instance property of the item (0x70): a shield property on
 ////   an item that is no shield, a property that is no item property, or one off the
@@ -32,15 +31,22 @@
 //// - An item with a group named more times than it has candidates gets no roll (word 0),
 ////   which the client reads as no data: Item2 37685 is a weapon whose ItemStat names the
 ////   shield group.
-//// - Entries of kind 4 get no roll, so crafting and gathering work on the real client
-////   (open issue #53) is where they are given a property. Loot is made by open issue #58.
+//// - An item with an entry of kind 4 gets no roll (word 0), because the client's builder
+////   fails a word with data whose kind-4 choice is 0 (0x14040e6d0, 0x50). Crafting and
+////   gathering work on the real client (open issue #53) fills a kind-4 entry; loot is made
+////   by open issue #58.
+//// - A proxy item (Item2.flags 0x4000) gets no roll: the client takes its stats from the
+////   Item2 row GameFormula 1214 names, which has no ItemStat (`0x1404445d0.proxy`).
 
-import genesis_prime/game/hit
 import genesis_prime/game/item_property
 import genesis_prime/game/random_stat_word
+import genesis_prime/random
+import genesis_prime/store.{type NewStack}
+import genesis_prime/table/id.{Item2Id}
+import genesis_prime/table/item2
 import genesis_prime/table/item_random_stat.{type ItemRandomStat}
 import genesis_prime/table/loader/store as table_store
-import gleam/bit_array
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/result
@@ -73,26 +79,43 @@ pub fn roll(
   }
 }
 
-/// The words of `count` rolls of the item, each from its own `roll_bytes` of `entropy`.
-pub fn roll_many(
+/// The bytes of entropy that rolling each of `stacks` made stacks of the item takes.
+pub fn stacks_bytes(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
-  count count: Int,
+  stacks stacks: List(NewStack),
+) -> Int {
+  list.length(stacks) * roll_bytes(tables:, item2_id:)
+}
+
+/// The stacks with each one's word rolled from the front of `entropy`, which holds at
+/// least `stacks_bytes`, and the entropy left after them.
+pub fn roll_stacks(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+  stacks stacks: List(NewStack),
   entropy entropy: BitArray,
-) -> List(Int) {
+) -> #(List(NewStack), BitArray) {
   let each = roll_bytes(tables:, item2_id:)
-  list.repeat(Nil, count)
-  |> list.index_map(fn(_, index) {
-    let assert Ok(part) = bit_array.slice(entropy, index * each, each)
-      as "the caller drew roll_bytes for each roll"
-    roll(tables:, item2_id:, entropy: part)
-  })
+  let #(left, rolled) =
+    list.map_fold(stacks, entropy, fn(left, stack) {
+      let assert <<part:bytes-size(each), rest:bytes>> = left
+        as "the caller drew stacks_bytes"
+      #(
+        rest,
+        store.NewStack(
+          ..stack,
+          random_stats: roll(tables:, item2_id:, entropy: part),
+        ),
+      )
+    })
+  #(rolled, left)
 }
 
 fn fractions(entropy entropy: BitArray) -> List(Float) {
   case entropy {
     <<number:size(32), rest:bits>> -> [
-      hit.fraction(number),
+      random.fraction(number),
       ..fractions(entropy: rest)
     ]
     _ -> []
@@ -111,18 +134,21 @@ type Fold {
   )
 }
 
-/// Each entry's choice and the number of kind-2 entries, or `Error(Nil)` when a group is
-/// named more times than it has candidates. An entry with no fraction left takes the first
-/// candidate, which is how `roll_bytes` counts.
+/// Each entry's choice and the number of kind-2 entries, or `Error(Nil)` for an item that
+/// gets no roll: a proxy, an item with a kind-4 entry, or one whose group is named more
+/// times than it has candidates. An entry with no fraction left takes the first candidate,
+/// which is how `roll_bytes` counts. An item or ItemStat row the tables lack crashes.
 fn choices(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
   fractions fractions: List(Float),
 ) -> Result(#(List(Int), Int), Nil) {
-  use entries <- result.try(
-    item_property.stat_entries_of(tables:, item2_id:)
-    |> result.replace_error(Nil),
-  )
+  let assert Ok(item) = item2.get(tables:, id: Item2Id(item2_id))
+    as "the item is a row of the Item2 table"
+  let assert Ok(entries) = item_property.stat_entries_of(tables:, item2_id:)
+    as "the item's ItemStat is a row of the ItemStat table"
+  use <- bool.guard(item_property.is_proxy(item), Error(Nil))
+  use <- bool.guard(list.any(entries, fn(entry) { entry.0 == 4 }), Error(Nil))
   list.try_fold(
     entries,
     Fold(chosen: [], left: fractions, taken: dict.new(), used: 0),
@@ -206,16 +232,20 @@ fn weighted(
 }
 
 /// Whether the client's builder accepts the row for the item: a property row whose
-/// property the item takes.
+/// property the item takes. A property the tables or the builder's reading cannot
+/// settle crashes.
 fn accepted(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
   row row: ItemRandomStat,
 ) -> Bool {
-  row.item_stat_type_enum == 1
-  && item_property.takes_property(
-    tables:,
-    item2_id:,
-    property_id: row.item_stat_data,
-  )
+  use <- bool.guard(row.item_stat_type_enum != 1, False)
+  let assert Ok(takes) =
+    item_property.takes_property(
+      tables:,
+      item2_id:,
+      property_id: row.item_stat_data,
+    )
+    as "the builder accepts or refuses the property"
+  takes
 }

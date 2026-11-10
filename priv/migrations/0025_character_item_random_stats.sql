@@ -4,7 +4,7 @@
 -- entry's random stat group. The word is chosen when the item is made, stored with it and
 -- sent as it is; the client never sends it back.
 --
--- 0 holds an item with no roll, which every item stored before this column was. Any other
+-- 0 holds an item with no random stats, which the client reads as no data. Any other
 -- value is one the client keeps: version 1 (a version 0 word with choices the client clears
 -- to none, and the other versions it reads as 1), nothing in bits 40 to 55 (the word's
 -- unused bytes) and at least one choice byte (a word with none is no roll). Whether a choice

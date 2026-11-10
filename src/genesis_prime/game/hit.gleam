@@ -81,6 +81,7 @@ import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription, SpellDamageDescription,
 }
+import genesis_prime/random
 import gleam/float
 import gleam/int
 import gleam/list
@@ -213,17 +214,12 @@ pub fn rolls_of(bytes bytes: BitArray) -> Result(Rolls, Nil) {
   case bytes {
     <<crit:size(32), deflect:size(32), glance:size(32)>> ->
       Ok(Rolls(
-        crit: fraction(crit),
-        deflect: fraction(deflect),
-        glance: fraction(glance),
+        crit: random.fraction(crit),
+        deflect: random.fraction(deflect),
+        glance: random.fraction(glance),
       ))
     _ -> Error(Nil)
   }
-}
-
-/// The fraction below 1 that a 32-bit number is, a multiple of 2^-32.
-pub fn fraction(number: Int) -> Float {
-  int.to_float(number) /. 4_294_967_296.0
 }
 
 /// The hit rule: what `offence` does to a unit with `health`, `shield`, `absorbs` and

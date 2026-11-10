@@ -4903,3 +4903,33 @@ pub fn a_sale_returns_the_sold_items_word_test() -> Nil {
     as "the sale answers the word the sold stack was saved with, for the buyback entry"
   stop(store)
 }
+
+pub fn a_turn_ins_reward_is_made_and_saved_with_its_word_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, _) = holding_stacks(store:, stacks: [])
+  let #(epoch, _) = login(store:, account:, character_id:)
+  let word = 0x0100000000050401
+  let assert ForItems(store.TurnedIn(made: [made], ..)) =
+    turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 1,
+      quests: [completed_quest(1001)],
+      credits_held: 1000,
+      credits_after: 1000,
+      placed: [
+        store.Placed(item2_id: Item2Id(rolled_item2), grow: [], make: [
+          rolled_stack(bag_index: 5, random_stats: word),
+        ]),
+      ],
+    )
+    as "a turn-in whose reward is made rolled is saved"
+  assert made.random_stats == word as "the answer carries the word it saved"
+  let items = held_by(store:, account:, character_id:)
+  assert item_in_bag(items:, index: 5).random_stats == word
+    as "the next load finds the reward with its word"
+  stop(store)
+}

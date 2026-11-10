@@ -177,23 +177,35 @@ pub fn an_item_whose_group_holds_no_property_it_accepts_gets_no_roll_test() -> N
 }
 
 /// No row of the client's ItemStat mixes kinds (it holds only whole entries of kind 1, only
-/// of kind 2 or only of kind 4), so ItemStat 432 is changed: entry 0 becomes a kind-1
-/// entry on property 35 and entry 3 a kind-4 entry. Only the two kind-2 entries draw bytes
-/// and they take rows 1 and 2 of group 11; the others hold choice 0 (0x14040e6d0 reads a
-/// kind-2 entry's byte only for a kind-2 entry).
+/// of kind 2 or only of kind 4), so ItemStat 432 is changed. With entry 0 a kind-1 entry on
+/// property 35, only the other two draw bytes and take rows 1 and 2 of group 11; the entry
+/// holds choice 0 (0x14040e6d0 reads a kind-2 entry's byte only for a kind-2 entry). With
+/// entry 3 also a kind-4 entry the item gets no roll: the client's builder fails a word with
+/// data whose kind-4 choice is 0 (0x50), and nothing here fills a kind-4 entry.
 pub fn kind_4_and_kind_1_entries_get_byte_0_test() -> Nil {
   use <- owned_test.run(10_000)
   let item2_id = fixture_tables.root("Item2", bracer)
-  use tables <- fixture_tables.changed(table: "ItemStat", id: 432, with: [
+  use with_kind_1 <- fixture_tables.changed(table: "ItemStat", id: 432, with: [
+    #("itemStatTypeEnum00", Integer(1)),
+    #("itemStatData00", Integer(35)),
+  ])
+  assert random_stat.roll_bytes(tables: with_kind_1, item2_id:) == 8
+    as "two kind-2 entries"
+  assert random_stat.roll(tables: with_kind_1, item2_id:, entropy: <<
+      0:size(64),
+    >>)
+    == 0x0100000000020100
+    as "entry 0 (kind 1) holds 0, entry 1 takes row 1 and entry 2 row 2"
+  use with_kind_4 <- fixture_tables.changed(table: "ItemStat", id: 432, with: [
     #("itemStatTypeEnum00", Integer(1)),
     #("itemStatData00", Integer(35)),
     #("itemStatTypeEnum03", Integer(4)),
     #("itemStatData03", Integer(63)),
   ])
-  assert random_stat.roll_bytes(tables:, item2_id:) == 8 as "two kind-2 entries"
-  assert random_stat.roll(tables:, item2_id:, entropy: <<0:size(64)>>)
-    == 0x0100000000020100
-    as "entry 0 (kind 1) and entry 3 (kind 4) hold 0, entry 1 takes row 1 and entry 2 row 2"
+  assert random_stat.roll_bytes(tables: with_kind_4, item2_id:) == 0
+    as "an item with a kind-4 entry draws no bytes"
+  assert random_stat.roll(tables: with_kind_4, item2_id:, entropy: <<>>) == 0
+    as "its word is 0, which the client reads as no data"
   // The client's own kind-4 item: no kind-2 entry, so no bytes and no word.
   let tables = fixture_tables.shared()
   let crafted = fixture_tables.root("Item2", kind_4_item)
@@ -201,9 +213,29 @@ pub fn kind_4_and_kind_1_entries_get_byte_0_test() -> Nil {
   assert random_stat.roll(tables:, item2_id: crafted, entropy: <<>>) == 0
 }
 
+/// A proxy item (Item2.flags 0x4000) takes its stats from another row, so the client reads
+/// no word of its own (`0x1404445d0.proxy`). No client proxy holds a group row its builder
+/// would take, so the bracer's row is changed to hold the flag: it draws no bytes and rolls
+/// no word, where the bracer as the client has it draws 12.
+pub fn a_proxy_item_gets_no_roll_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item2_id = fixture_tables.root("Item2", bracer)
+  assert random_stat.roll_bytes(tables: fixture_tables.shared(), item2_id:)
+    == 12
+    as "the bracer, with three kind-2 entries, draws 12 bytes"
+  use proxy <- fixture_tables.changed(table: "Item2", id: bracer, with: [
+    #("flags", Integer(0x4000)),
+  ])
+  assert random_stat.roll_bytes(tables: proxy, item2_id:) == 0
+    as "a proxy item draws no bytes"
+  assert random_stat.roll(tables: proxy, item2_id:, entropy: <<>>) == 0
+    as "its word is 0, which the client reads as no data"
+}
+
 /// Every Item2 row of the client with a kind-2 entry: it rolls to a word, and the word is
 /// one the client accepts. The rows that get none are 37685, the weapon whose ItemStat names
-/// the shield group, and eight proxy items on that group.
+/// the shield group, and eight proxy items (flags 0x4000, whose stats the client takes from
+/// the Item2 row GameFormula 1214 names, which has no ItemStat: `0x1404445d0.proxy`).
 pub fn every_client_random_stat_row_rolls_to_a_word_the_client_accepts_or_none_with_its_reason_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
@@ -247,13 +279,13 @@ pub fn every_client_random_stat_row_rolls_to_a_word_the_client_accepts_or_none_w
         False -> Error(Nil)
       }
     })
-  assert list.length(unrolled) == 9
-    && list.contains(unrolled, weapon_with_shield_group)
-    as "nine rows get no roll, 37685 among them"
-  assert list.all(unrolled, fn(id) {
-    id == weapon_with_shield_group || list.contains(proxies, id)
-  })
-    as "37685, a weapon whose group holds only shield properties, and eight proxy items (flags 0x4000, which the client builds no gear properties for, so no slot takes a shield property), get no roll"
+  assert list.length(proxies) == 8 as "eight proxy items hold a kind-2 entry"
+  assert list.sort(unrolled, int.compare)
+    == list.sort([weapon_with_shield_group, ..proxies], int.compare)
+    as "the rows that get no roll are the eight proxy items (the client builds their stats from another row, so no word of theirs is read) and 37685"
+  assert list.filter(unrolled, fn(id) { !list.contains(proxies, id) })
+    == [weapon_with_shield_group]
+    as "the one non-proxy row that gets no roll is 37685, a weapon whose group holds only shield properties, which the builder refuses on a non-shield (0x95)"
   assert list.filter(outcomes, fn(outcome) {
       let #(_, _, rolled, bare) = outcome
       case rolled, bare {

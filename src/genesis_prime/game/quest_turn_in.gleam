@@ -101,7 +101,6 @@ import genesis_prime/table/quest2_difficulty
 import genesis_prime/table/quest2_reward.{type Quest2Reward}
 import genesis_prime/table/xp_per_level
 import genesis_prime/world_map/spawn
-import gleam/bit_array
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -819,8 +818,11 @@ pub fn entropy_needed(
 ) -> Int {
   list.fold(turn_in.placed, 0, fn(sum, one) {
     sum
-    + list.length(one.make)
-    * random_stat.roll_bytes(tables:, item2_id: one.item2_id.value)
+    + random_stat.stacks_bytes(
+      tables:,
+      item2_id: one.item2_id.value,
+      stacks: one.make,
+    )
   })
 }
 
@@ -831,27 +833,15 @@ pub fn rolled(
   entropy entropy: BitArray,
 ) -> TurnIn {
   let #(_, placed) =
-    list.map_fold(turn_in.placed, 0, fn(offset, one) {
-      let each = random_stat.roll_bytes(tables:, item2_id: one.item2_id.value)
-      let count = list.length(one.make)
-      let assert Ok(part) = bit_array.slice(entropy, offset, count * each)
-        as "the caller drew entropy_needed bytes"
-      let words =
-        random_stat.roll_many(
+    list.map_fold(turn_in.placed, entropy, fn(left, one) {
+      let #(make, left) =
+        random_stat.roll_stacks(
           tables:,
           item2_id: one.item2_id.value,
-          count:,
-          entropy: part,
+          stacks: one.make,
+          entropy: left,
         )
-      #(
-        offset + count * each,
-        store.Placed(
-          ..one,
-          make: list.map2(one.make, words, fn(stack, word) {
-            store.NewStack(..stack, random_stats: word)
-          }),
-        ),
-      )
+      #(left, store.Placed(..one, make:))
     })
   TurnIn(..turn_in, placed:)
 }

@@ -417,8 +417,11 @@ pub fn entropy_needed(
   case purchase.kind {
     BoughtBack(..) -> 0
     Bought ->
-      list.length(purchase.make)
-      * random_stat.roll_bytes(tables:, item2_id: { purchase.item2_id }.value)
+      random_stat.stacks_bytes(
+        tables:,
+        item2_id: { purchase.item2_id }.value,
+        stacks: purchase.make,
+      )
   }
 }
 
@@ -431,19 +434,14 @@ pub fn rolled(
   case purchase.kind {
     BoughtBack(..) -> purchase
     Bought -> {
-      let words =
-        random_stat.roll_many(
+      let #(make, _) =
+        random_stat.roll_stacks(
           tables:,
           item2_id: { purchase.item2_id }.value,
-          count: list.length(purchase.make),
+          stacks: purchase.make,
           entropy:,
         )
-      Purchase(
-        ..purchase,
-        make: list.map2(purchase.make, words, fn(stack, word) {
-          store.NewStack(..stack, random_stats: word)
-        }),
-      )
+      Purchase(..purchase, make:)
     }
   }
 }
