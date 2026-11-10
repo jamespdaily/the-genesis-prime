@@ -1226,9 +1226,7 @@ pub fn a_listener_killed_under_replay_ends_its_connections_and_the_replay_fails_
             let assert [shell] = ask_support.connections(server)
               as "the connection is open"
             process.kill(listener)
-            event_wait.until("the connection's shell ended", fn() {
-              !process.is_alive(shell)
-            })
+            let _ended = ask_support.ended(process.monitor(shell))
             replay_table.timer_started(
               table:,
               connection: support.rule_recording_file(),

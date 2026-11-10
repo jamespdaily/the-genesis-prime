@@ -29,6 +29,7 @@ import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 import mug
+import open_wait
 
 /// How long one wait for an event may take, in milliseconds. A passing test
 /// never reaches it.
@@ -265,13 +266,16 @@ pub fn shutdown() -> process.ExitReason {
   process.Abnormal(atom.to_dynamic(atom.create("shutdown")))
 }
 
-/// Waits for a watched process to end and says how.
+/// Waits for a watched process to end and says how. The wait has no limit of its
+/// own: a process that does not end ends the test at its deadline, naming it
+/// (`open_wait`).
 pub fn ended(watched: process.Monitor) -> process.ExitReason {
-  let assert Ok(down) =
-    process.new_selector()
-    |> process.select_specific_monitor(watched, fn(down) { down })
-    |> process.selector_receive(within: event_wait_ms)
-    as "the process ended"
+  let down =
+    open_wait.named("a watched process to end", fn() {
+      process.new_selector()
+      |> process.select_specific_monitor(watched, fn(down) { down })
+      |> process.selector_receive_forever
+    })
   case down {
     process.ProcessDown(reason:, ..) -> reason
     process.PortDown(reason:, ..) -> reason

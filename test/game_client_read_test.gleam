@@ -145,3 +145,19 @@ pub fn the_innate_passives_cast_is_dropped_only_after_the_0x61_of_an_entry_test(
     == list.map(kept, fn(frame) { frame.message_id })
     as "the ids drop the cast after 0x61 alike"
 }
+
+pub fn a_read_returns_its_message_after_any_number_of_other_frames_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Three hundred other messages come first: the read drops each and goes on, with
+  // no count of reads or time that ends it before the wanted message.
+  let others =
+    list.repeat(Nil, times: 300)
+    |> list.index_map(fn(_, index) { destroyed(unit_id: index + 1) })
+  let wanted = bare(0x01C8)
+  let game = written_in_one_send(list.append(others, [wanted]), after: <<>>)
+  assert game_client.read_message(game:, have: <<>>, message_id: 0x01C8)
+    == #(wanted, <<>>)
+    as "the wanted message, with nothing kept beyond it"
+  game_client.nothing_more(game:)
+  game_client.close(game:)
+}

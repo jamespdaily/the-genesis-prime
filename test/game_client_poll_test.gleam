@@ -39,3 +39,17 @@ pub fn a_poll_gives_the_whole_messages_it_already_holds_without_waiting_for_the_
   game_client.close(game:)
   login_support.stop(started)
 }
+
+pub fn a_poll_with_a_bound_still_returns_empty_after_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started = login_support.start()
+  // The bots keep sitting by their own bound on `poll` (`sitting_bot`): a socket
+  // that stays silent gives no messages and the bytes held, not a wait without end.
+  let socket = login_client.connect(login_support.ports(started).sts_port)
+  let cipher = game_client.session_cipher(session_key: <<1:128>>)
+  let game = game_client.new(socket:, cipher:)
+  assert game_client.poll(game:, have: <<>>, wait_ms: 0) == Ok(#([], <<>>))
+    as "no message and no bytes, once the bound has passed"
+  game_client.close(game:)
+  login_support.stop(started)
+}

@@ -243,7 +243,7 @@ pub fn a_second_login_to_the_account_disconnects_the_first_with_0x036a_reason_19
   assert disconnect_notice.decode(notice.body)
     == Ok(DisconnectNotice(reason: AccountDisconnected))
     as "0x1400168a0: 19 is 'This account has been disconnected', which the connection a newer login took over gets"
-  assert game_client.closed(game: first) as "and the server closes it"
+  game_client.await_closed(game: first)
   // The newest login stays connected: its ping is answered.
   game_client.send(game: second, message_id: 0x07E0, body: <<>>)
   let assert [_tier, _entitlements, _level, listed] =
@@ -265,7 +265,7 @@ pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_
   assert disconnect_notice.decode(notice.body)
     == Ok(DisconnectNotice(reason: AccountDisconnected))
     as "0x1400168a0: 19 is 'This account has been disconnected', for a key the hand-off never held"
-  assert game_client.closed(game:) as "the server closes the connection"
+  game_client.await_closed(game:)
   login_support.stop(started)
 }
 
@@ -295,17 +295,17 @@ pub fn a_stop_closes_every_listener_to_new_connects_before_an_open_game_connecti
   assert disconnect_notice.decode(notice.body)
     == Ok(DisconnectNotice(reason: LostUserServer))
     as "0x1400168a0: 8 is the server's own end, which the open connection is told when the stop reaches it"
-  assert game_client.closed(game:) as "and the server closes it"
+  game_client.await_closed(game:)
   let _reason = ask_support.ended(stopping)
   Nil
 }
 
 /// Waits until a connect to the port is refused: a wait for the listener to
-/// close, ended by the test's own deadline.
+/// close, ended by the test's own deadline, which names it.
 fn await_refused(port: Int) -> Nil {
-  use <- bool.guard(when: login_client.refused(port), return: Nil)
-  process.sleep(1)
-  await_refused(port)
+  event_wait.until("a connect to the closed listener is refused", fn() {
+    login_client.refused(port)
+  })
 }
 
 /// A create request for CharacterCreation row 466 with a path of 1 and the
@@ -624,7 +624,7 @@ pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connect
   assert disconnect_notice.decode(body)
     == Ok(DisconnectNotice(reason: LostUserServer))
     as "0x1400168a0: 8, 'Lost connection with user server.'"
-  assert game_client.closed(game:) as "and the connection ends"
+  game_client.await_closed(game:)
   login_support.stop(started)
 }
 
@@ -1099,7 +1099,7 @@ pub fn a_connection_that_crashes_saves_nothing_is_not_restarted_and_the_place_sa
     as "the game listener holds the one connection"
   process.kill(connection)
   login_support.await_no_game_connection(started)
-  assert game_client.closed(game:) as "the client's socket is closed with it"
+  game_client.await_closed(game:)
   assert character_support.place_row(pool:, character_id: character)
     == character_support.PlaceRow(
       world_id: 1387,
@@ -1321,15 +1321,10 @@ pub fn credits_survive_a_relog_test() -> Nil {
     as "the character holds credits"
   send_play(game:, character_id: character)
   let #(entry, have) =
-    game_client.read_until(
-      game:,
-      have: <<>>,
-      within_ms: 5000,
-      found: fn(frames) {
-        list.any(frames, fn(frame) { frame.message_id == 0x01BC })
-        && game_client.creatures_created_in(frames:) != []
-      },
-    )
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+      && game_client.creatures_created_in(frames:) != []
+    })
   assert credits_in_entry(frames: entry) == credits_before_the_buy
     as "the entry carries the credits the character holds"
   let assert [shown] = game_client.creatures_created_in(frames: entry)
@@ -1347,7 +1342,7 @@ pub fn credits_survive_a_relog_test() -> Nil {
     body: request,
   )
   let #(window, have) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.any(frames, fn(frame) { frame.message_id == 0x090B })
     })
   let assert [Frame(body: items, ..)] =
@@ -1367,7 +1362,7 @@ pub fn credits_survive_a_relog_test() -> Nil {
     body: buy,
   )
   let #(bought, have) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.any(frames, fn(frame) { frame.message_id == 0x0919 })
       && list.any(frames, fn(frame) {
         frame.message_id == 0x0111 || frame.message_id == 0x017F
@@ -1381,22 +1376,22 @@ pub fn credits_survive_a_relog_test() -> Nil {
   // The player camps and plays the same character again.
   game_client.send_world(game:, message_id: 0x00BF, body: <<1>>)
   let #(_, have) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.any(frames, fn(frame) { frame.message_id == 0x0092 })
     })
   game_client.send_world(game:, message_id: 0x00C0, body: <<>>)
   let #(_, have) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.any(frames, fn(frame) { frame.message_id == 0x0594 })
     })
   game_client.send(game:, message_id: 0x07E0, body: <<>>)
   let #(_, have) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.any(frames, fn(frame) { frame.message_id == 0x0117 })
     })
   send_play(game:, character_id: character)
   let #(second_entry, _) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.any(frames, fn(frame) { frame.message_id == 0x01BC })
     })
   assert credits_in_entry(frames: second_entry) == credits_before_the_buy - 67
@@ -1492,15 +1487,10 @@ pub fn objective_progress_survives_a_relog_test() -> Nil {
     as "the character holds quest 3668 with nothing done"
   send_play(game:, character_id: character)
   let #(entry, have) =
-    game_client.read_until(
-      game:,
-      have: <<>>,
-      within_ms: 5000,
-      found: fn(frames) {
-        list.any(frames, fn(frame) { frame.message_id == 0x01BC })
-        && game_client.creatures_created_in(frames:) != []
-      },
-    )
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+      && game_client.creatures_created_in(frames:) != []
+    })
   let assert [shown] = game_client.creatures_created_in(frames: entry)
   assert shown.creature_id == 12_484
     as "the creature in sight is Scientist Lusk"
@@ -1515,7 +1505,7 @@ pub fn objective_progress_survives_a_relog_test() -> Nil {
     body: request,
   )
   let #(talked, have) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.any(frames, fn(frame) { frame.message_id == 0x0361 })
     })
   assert list.filter(talked, fn(frame) { frame.message_id == 0x0361 })
@@ -1529,22 +1519,22 @@ pub fn objective_progress_survives_a_relog_test() -> Nil {
   // The player camps and plays the same character again.
   game_client.send_world(game:, message_id: 0x00BF, body: <<1>>)
   let #(_, have) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.any(frames, fn(frame) { frame.message_id == 0x0092 })
     })
   game_client.send_world(game:, message_id: 0x00C0, body: <<>>)
   let #(_, have) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.any(frames, fn(frame) { frame.message_id == 0x0594 })
     })
   game_client.send(game:, message_id: 0x07E0, body: <<>>)
   let #(_, have) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.any(frames, fn(frame) { frame.message_id == 0x0117 })
     })
   send_play(game:, character_id: character)
   let #(second_entry, _) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.any(frames, fn(frame) { frame.message_id == 0x01BC })
     })
   let assert [Frame(body: log, ..)] =
@@ -2005,7 +1995,7 @@ fn press_and_read_gos(
   let #(pressed, have) = game_client.read_until_pong(game:, have:, number: pong)
   driven_time.advance(time:, ms: advance_ms)
   let #(later, have) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(later) {
+    game_client.read_until(game:, have:, found: fn(later) {
       let seen = list.append(pressed, later)
       list.length(own_go_targets(frames: seen, beast:)) >= gos
       || refusals(frames: seen) != []
@@ -2209,14 +2199,9 @@ pub fn a_stalkers_connection_ending_mid_hold_removes_it_for_a_player_in_sight_an
     game_client.read_until_pong(game: first, have: first_have, number: 1)
   game_client.close(game: first)
   let #(seen, second_have) =
-    game_client.read_until(
-      game: second,
-      have: second_have,
-      within_ms: 5000,
-      found: fn(frames) {
-        list.any(frames, fn(frame) { frame.message_id == 0x0355 })
-      },
-    )
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0355 })
+    })
   assert list.any(seen, fn(frame) {
     frame.message_id == 0x0355
     && unit_destroyed.decode(frame.body)
@@ -2266,12 +2251,9 @@ fn a_suited_players_connection_ends(
   )
   let is_suit = fn(frame: Frame) { frame.message_id == 0x0933 }
   let #(suited, second_have) =
-    game_client.read_until(
-      game: second,
-      have: second_have,
-      within_ms: 5000,
-      found: fn(frames) { list.any(frames, is_suit) },
-    )
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      list.any(frames, is_suit)
+    })
   let assert [suit] = list.filter(suited, is_suit)
     as "the watcher's client is written one 0x933 when the suit goes on"
   assert unit_item_visuals_changed.decode(suit.body)
@@ -2285,14 +2267,9 @@ fn a_suited_players_connection_ends(
   // connection ends in the middle of the suit.
   game_client.close(game: first)
   let #(after, second_have) =
-    game_client.read_until(
-      game: second,
-      have: second_have,
-      within_ms: 5000,
-      found: fn(frames) {
-        list.any(frames, fn(frame) { frame.message_id == 0x0355 })
-      },
-    )
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0355 })
+    })
   assert list.any(after, fn(frame) {
     frame.message_id == 0x0355
     && unit_destroyed.decode(frame.body)
@@ -2619,12 +2596,9 @@ pub fn a_second_player_sees_the_first_take_off_its_chest_test() -> Nil {
   game_client.send_world(game: first, message_id: 0x0182, body: move)
   let is_properties = fn(frame: Frame) { frame.message_id == 0x093A }
   let #(seen, _second_have) =
-    game_client.read_until(
-      game: second,
-      have: second_have,
-      within_ms: 5000,
-      found: fn(frames) { list.any(frames, is_properties) },
-    )
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      list.any(frames, is_properties)
+    })
   let assert [look] =
     list.filter(seen, fn(frame) { frame.message_id == 0x0933 })
     as "the second client is written one 0x933 when the first's chest comes off"
@@ -3753,14 +3727,9 @@ fn enters_and_sees_the_beasts(
     new_player_at_level(started:, number:, character_name:, class_id:, level: 1)
   send_play(game:, character_id: character)
   let #(frames, have) =
-    game_client.read_until(
-      game:,
-      have: <<>>,
-      within_ms: 5000,
-      found: fn(frames) {
-        list.length(game_client.creatures_created_in(frames:)) >= beasts
-      },
-    )
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.length(game_client.creatures_created_in(frames:)) >= beasts
+    })
   #(game, frames, have)
 }
 
@@ -3809,26 +3778,21 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
     target: 0,
   )
   let #(away, first_have) =
-    game_client.read_until(
-      game: first,
-      have: first_have,
-      within_ms: 5000,
-      found: fn(frames) {
-        list.any(game_client.casts_in(frames:), fn(event) {
-          case event {
-            game_client.CastFinished(..) -> True
-            game_client.CastRefused(..)
-            | game_client.CastConfirmed(..)
-            | game_client.CastStarted(..)
-            | game_client.ThresholdOpened(..)
-            | game_client.ThresholdIndex(..)
-            | game_client.ThresholdClosed(..)
-            | game_client.ThresholdEnded(..)
-            | game_client.CastWent(..) -> False
-          }
-        })
-      },
-    )
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      list.any(game_client.casts_in(frames:), fn(event) {
+        case event {
+          game_client.CastFinished(..) -> True
+          game_client.CastRefused(..)
+          | game_client.CastConfirmed(..)
+          | game_client.CastStarted(..)
+          | game_client.ThresholdOpened(..)
+          | game_client.ThresholdIndex(..)
+          | game_client.ThresholdClosed(..)
+          | game_client.ThresholdEnded(..)
+          | game_client.CastWent(..) -> False
+        }
+      })
+    })
   assert list.map(game_client.go_targets_in(frames: away), fn(go) { go.1 })
     == [[]]
     && game_client.health_in(frames: away) == []
@@ -3846,20 +3810,15 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
   assert healths == [38, 24, 10, 0]
     as "a Medic of level 1 with the Novice gear (Assault Rating 203.0625, Support Rating 55.6875: Assault Power 50.77, Support Power 13.92): a hit of Paralytic Surge is 0.0935 x 50.77 + 0.0935 x 13.92 = 6.05, rounded to 6, plus 8.14 for the level, 14.14, rounded to 14 (Spell4Effects 96125, 0x140565600); the Beast has 52 health, never deflects and the player has no critical hit rating, so the health is 38, 24, 10 and 0, each 0x937 held until its go"
   let #(watched, second_have) =
-    game_client.read_until(
-      game: second,
-      have: second_have,
-      within_ms: 5000,
-      found: fn(frames) {
-        list.any(game_client.deaths_in(frames:), fn(death) {
-          death == #(beast_unit, True)
-        })
-        && list.contains(
-          game_client.go_targets_in(frames:),
-          #(last_cast_of(frames), [beast_unit]),
-        )
-      },
-    )
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      list.any(game_client.deaths_in(frames:), fn(death) {
+        death == #(beast_unit, True)
+      })
+      && list.contains(
+        game_client.go_targets_in(frames:),
+        #(last_cast_of(frames), [beast_unit]),
+      )
+    })
   let seen_health =
     list.filter_map(game_client.health_in(frames: watched), fn(health) {
       case health.0 == beast_unit {
@@ -3879,25 +3838,15 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
     as "opcode.0x937: health 0 with the dead bit, from the creature itself"
   // The creature stands again after its respawn time: 0x355, then a full 0x262.
   let #(after_first, first_have) =
-    game_client.read_until(
-      game: first,
-      have: first_have,
-      within_ms: 5000,
-      found: fn(frames) {
-        game_client.removals_in(frames:) != []
-        && game_client.creatures_created_in(frames:) != []
-      },
-    )
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      game_client.removals_in(frames:) != []
+      && game_client.creatures_created_in(frames:) != []
+    })
   let #(after_second, _) =
-    game_client.read_until(
-      game: second,
-      have: second_have,
-      within_ms: 5000,
-      found: fn(frames) {
-        game_client.removals_in(frames:) != []
-        && game_client.creatures_created_in(frames:) != []
-      },
-    )
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      game_client.removals_in(frames:) != []
+      && game_client.creatures_created_in(frames:) != []
+    })
   list.each([after_first, after_second], fn(frames) {
     assert list.contains(game_client.removals_in(frames:), beast_unit)
       && list.map(game_client.creatures_created_in(frames:), fn(unit) {
@@ -4013,12 +3962,7 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
     target: 0,
   )
   let #(away, first_have) =
-    game_client.read_until(
-      game: first,
-      have: first_have,
-      within_ms: 5000,
-      found: holds_a_finish,
-    )
+    game_client.read_until(game: first, have: first_have, found: holds_a_finish)
   assert list.map(game_client.go_targets_in(frames: away), fn(go) { go.1 })
     == [[]]
     && game_client.health_in(frames: away) == []
@@ -4049,21 +3993,16 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
   assert healths == [17, 0]
     as "an Esper of level 1 with the Novice gear (Assault Rating 203.0625, Assault Power 50.77): a hit of Telekinetic Strike is 0.336 x 50.77 = 17.06, rounded to 17, plus 18.0 for the level, 35 (Spell4Effects 62159, 0x140565600); the Beast has 52 health and never deflects, so the health is 17 and then 0"
   let #(watched, second_have) =
-    game_client.read_until(
-      game: second,
-      have: second_have,
-      within_ms: 5000,
-      found: fn(frames) {
-        list.any(game_client.deaths_in(frames:), fn(death) {
-          death == #(ahead, True)
-        })
-        && list.count(game_client.go_targets_in(frames:), fn(go) {
-          go.1 == [ahead]
-        })
-        == 2
-        && psi_children(frames:) == 2
-      },
-    )
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      list.any(game_client.deaths_in(frames:), fn(death) {
+        death == #(ahead, True)
+      })
+      && list.count(game_client.go_targets_in(frames:), fn(go) {
+        go.1 == [ahead]
+      })
+      == 2
+      && psi_children(frames:) == 2
+    })
   // The Beast ahead fights back every 1500 ms with its own attack, Spell4 5649,
   // whose go names the caster; how many of those the watcher has read when this
   // runs depends on how long the fight took, so only the casts of Telekinetic
@@ -4111,25 +4050,15 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
     as "Proxy 62204 starts the Psi Point child 30900 on each struck unit (Spell4Effects.targetFlags 4): two hits, two children"
   // The Beast stands again after its respawn time: 0x355, then a full 0x262.
   let #(after_first, _) =
-    game_client.read_until(
-      game: first,
-      have: first_have,
-      within_ms: 5000,
-      found: fn(frames) {
-        game_client.removals_in(frames:) != []
-        && game_client.creatures_created_in(frames:) != []
-      },
-    )
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      game_client.removals_in(frames:) != []
+      && game_client.creatures_created_in(frames:) != []
+    })
   let #(after_second, _) =
-    game_client.read_until(
-      game: second,
-      have: second_have,
-      within_ms: 5000,
-      found: fn(frames) {
-        game_client.removals_in(frames:) != []
-        && game_client.creatures_created_in(frames:) != []
-      },
-    )
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      game_client.removals_in(frames:) != []
+      && game_client.creatures_created_in(frames:) != []
+    })
   list.each([after_first, after_second], fn(frames) {
     assert game_client.removals_in(frames:) == [ahead]
       && list.map(game_client.creatures_created_in(frames:), fn(unit) {
@@ -4180,7 +4109,7 @@ fn press_until_a_hit(
     target: 0,
   )
   let #(frames, have) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       game_client.health_in(frames:) != []
       || game_client.missed_in(frames:) != []
     })
@@ -4231,7 +4160,7 @@ fn press_loop(
     target: 0,
   )
   let #(frames, have) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       let finished =
         list.any(game_client.casts_in(frames:), fn(event) {
           case event {
@@ -4267,7 +4196,7 @@ fn press_loop(
   case list.last(healths) {
     Ok(0) -> {
       let #(_, have) =
-        game_client.read_until(game:, have:, within_ms: 5000, found: fn(more) {
+        game_client.read_until(game:, have:, found: fn(more) {
           list.any(
             list.append(frames, more) |> game_client.deaths_in(frames: _),
             fn(death) { death == #(beast, True) },
@@ -4408,7 +4337,7 @@ fn read_fight(
   found found: fn(List(game_client.FightEvent)) -> Bool,
 ) -> #(List(game_client.FightEvent), BitArray) {
   let #(frames, have) =
-    game_client.read_until(game:, have:, within_ms: 10_000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       found(game_client.fight_in(frames:))
     })
   #(game_client.fight_in(frames:), have)
@@ -4588,7 +4517,7 @@ pub fn a_stealthed_bot_walking_into_a_daguns_ring_gets_no_aggro_and_pressing_ste
     target: 0,
   )
   let #(entered, have) =
-    game_client.read_until(game:, have:, within_ms: 10_000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       stealth_changes_in(frames:) != []
     })
   assert stealth_changes_in(frames: entered) == [#(own, 1)]
@@ -4664,7 +4593,7 @@ pub fn a_dagun_fighting_a_bot_that_then_stealths_keeps_striking_it_and_its_lande
     target: 0,
   )
   let #(frames, _) =
-    game_client.read_until(game:, have:, within_ms: 20_000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.length(stealth_changes_in(frames:)) >= 2
       && struck_by(frames:, caster: dagun, target: own)
     })
@@ -4691,7 +4620,7 @@ pub fn a_dagun_that_crashes_mid_fight_is_gone_and_the_bots_combat_flag_clears_te
   let #(_, pid) = the_dagun_and_its_map(started:, dagun:)
   process.kill(pid)
   let #(frames, _) =
-    game_client.read_until(game:, have:, within_ms: 10_000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.contains(
         game_client.fight_in(frames:),
         game_client.InCombat(unit_id: own, in_combat: False),
@@ -4754,7 +4683,7 @@ fn killed_by_the_dagun(
 ) -> BitArray {
   walk_to(game:, z: dagun_z +. 9.0, clock: 100)
   let #(_, have) =
-    game_client.read_until(game:, have:, within_ms: 10_000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.contains(game_client.deaths_in(frames:), #(own, True))
       && list.any(frames, fn(frame) { frame.message_id == 0x0636 })
     })
@@ -4814,17 +4743,12 @@ pub fn a_bot_of_each_class_killed_by_a_planted_dagun_comes_back_by_wake_here_ove
       let have = killed_by_the_dagun(game:, own:, have:)
       choose(game:, own:, choice: 1)
       let #(frames, _) =
-        game_client.read_until(
-          game:,
-          have:,
-          within_ms: 10_000,
-          found: fn(frames) {
-            list.contains(
-              list.map(coming_back_in(frames:), fn(frame) { frame.message_id }),
-              0x0247,
-            )
-          },
-        )
+        game_client.read_until(game:, have:, found: fn(frames) {
+          list.contains(
+            list.map(coming_back_in(frames:), fn(frame) { frame.message_id }),
+            0x0247,
+          )
+        })
       let back = coming_back_in(frames:)
       assert cast_support.ids(frames: back)
         == [0x092F, 0x0938, 0x088C, 0x01B3, 0x0355, 0x0636, 0x0247]
@@ -4854,7 +4778,7 @@ pub fn a_bot_of_each_class_killed_by_a_planted_dagun_comes_back_by_wake_here_ove
   let have = killed_by_the_dagun(game:, own:, have:)
   choose(game:, own:, choice: 2)
   let #(frames, _) =
-    game_client.read_until(game:, have:, within_ms: 10_000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.count(
         list.drop_while(frames, fn(frame) { frame.message_id != 0x00AD }),
         fn(_) { True },
@@ -4907,7 +4831,7 @@ pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_
   // its home timer after the kill has no walk to wait for.
   walk_to(game:, z: dagun_z +. 5.0, clock: 100)
   let #(died, have) =
-    game_client.read_until(game:, have:, within_ms: 10_000, found: fn(frames) {
+    game_client.read_until(game:, have:, found: fn(frames) {
       list.contains(game_client.deaths_in(frames:), #(own, True))
       && list.any(frames, fn(frame) { frame.message_id == 0x0636 })
       && list.contains(
