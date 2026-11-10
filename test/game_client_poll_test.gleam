@@ -13,6 +13,7 @@ import gleam/bit_array
 import login_client
 import login_support
 import owned_test
+import socket_read
 
 pub fn a_poll_gives_the_whole_messages_it_already_holds_without_waiting_for_the_server_test() -> Nil {
   use <- owned_test.run(60_000)
@@ -21,7 +22,7 @@ pub fn a_poll_gives_the_whole_messages_it_already_holds_without_waiting_for_the_
   // a client sends it.
   let socket = login_client.connect(login_support.ports(started).sts_port)
   let cipher = game_client.session_cipher(session_key: <<1:128>>)
-  let game = game_client.new(socket:, cipher:)
+  let game = game_client.new(socket:, cipher:, limit: socket_read.Open)
   let assert Ok(body) =
     unit_destroyed.encode(unit_destroyed.UnitDestroyed(unit_id: 9, field_2: 0))
   let assert Ok(whole) =
@@ -36,6 +37,20 @@ pub fn a_poll_gives_the_whole_messages_it_already_holds_without_waiting_for_the_
     )
     == Ok(#([Frame(0x0355, body)], partial))
     as "the message held whole is given, and the start of the next kept"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_poll_with_a_bound_still_returns_empty_after_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started = login_support.start()
+  // The bots keep sitting by their own bound on `poll` (`sitting_bot`): a socket
+  // that stays silent gives no messages and the bytes held, not a wait without end.
+  let socket = login_client.connect(login_support.ports(started).sts_port)
+  let cipher = game_client.session_cipher(session_key: <<1:128>>)
+  let game = game_client.new(socket:, cipher:, limit: socket_read.Open)
+  assert game_client.poll(game:, have: <<>>, wait_ms: 0) == Ok(#([], <<>>))
+    as "no message and no bytes, once the bound has passed"
   game_client.close(game:)
   login_support.stop(started)
 }

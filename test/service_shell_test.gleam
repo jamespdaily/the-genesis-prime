@@ -144,7 +144,11 @@ pub fn a_reply_to_an_asker_that_stopped_waiting_is_dropped_and_the_process_goes_
     as "one connection process"
   let gone = process.monitor(connection)
   let assert Ok(Nil) = mug.shutdown(client) as "the client closed"
-  let _reason = ask_support.ended(gone)
+  let _reason =
+    ask_support.ended(
+      watched: gone,
+      what: "the connection to end after the client closed",
+    )
   assert ask_support.open_key(gate, 1) == 1
     as "the gate answered the asker that had gone, and went on to answer us"
   assert process.named(gate) == Ok(pid) as "the same process goes on"
@@ -168,9 +172,14 @@ pub fn the_trees_stop_arrives_as_stopping_with_the_childs_shutdown_time_from_its
   let service = process.monitor(pid)
   let before_stop = ask_support.monotonic_ms()
   let stopped = ask_support.begin_stop_tree(tree)
-  assert ask_support.ended(service) == ask_support.shutdown()
+  assert ask_support.ended(
+      watched: service,
+      what: "the service to end at the stop",
+    )
+    == ask_support.shutdown()
     as "the service exits with the reason shutdown, never normal"
-  let _reason = ask_support.ended(stopped)
+  let _reason =
+    ask_support.ended(watched: stopped, what: "the stopped tree to end")
   let after_stop = ask_support.monotonic_ms()
   let assert [#(OwnEvent(Started), _), #(Stopping(deadline_ms:), stop)] =
     mailbox_support.drain(observed)
@@ -295,7 +304,8 @@ pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watch
     as "the target runs, so the watch has not ended"
   let ended = process.monitor(target)
   process.kill(target)
-  let _reason = ask_support.ended(ended)
+  let _reason =
+    ask_support.ended(watched: ended, what: "the killed target to end")
   assert process.receive(replies, within: ask_support.event_wait_ms)
     == Ok(gate_rule.Opened(1))
     as "the target's end reached the rule as WatchEnded(WatchId(1))"
@@ -356,7 +366,11 @@ pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_pro
   assert process.receive(replies, within: ask_support.event_wait_ms)
     == Ok(gate_rule.Echoed(9))
     as "the reply after Stop was carried out"
-  assert ask_support.ended(service) == ask_support.shutdown()
+  assert ask_support.ended(
+      watched: service,
+      what: "the service to end at the stop",
+    )
+    == ask_support.shutdown()
     as "and then the process ended with the reason shutdown"
   let _reason = ask_support.stop_tree(tree)
   Nil
@@ -551,7 +565,8 @@ pub fn a_message_to_an_unnamed_service_that_ended_is_dropped_and_its_pid_is_stil
   process.unlink(started.pid)
   let ended = process.monitor(started.pid)
   process.kill(started.pid)
-  let _reason = ask_support.ended(ended)
+  let _reason =
+    ask_support.ended(watched: ended, what: "the killed service to end")
   assert service.call_subject(
       started.data,
       Take(key: SessionKey(a_guid())),

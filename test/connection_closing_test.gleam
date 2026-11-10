@@ -46,7 +46,11 @@ pub fn a_close_by_the_client_that_asks_before_it_stops_is_recorded_as_the_client
     as "one connection process"
   let watched = process.monitor(connection)
   let assert Ok(Nil) = mug.shutdown(client) as "the client closed"
-  let _reason = ask_support.ended(watched)
+  let _reason =
+    ask_support.ended(
+      watched: watched,
+      what: "the connection to end after the client closed",
+    )
   let assert Ok(Recording(closing: Some(closing), ..)) =
     wire_recording.read(recording_support.wire_text_in(folder))
     as "the recording is whole"

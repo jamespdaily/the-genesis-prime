@@ -7,6 +7,7 @@ import gleam/int
 import gleam/io
 import gleam/list
 import gleam/string
+import open_wait
 import owned_key
 import unitest
 
@@ -16,18 +17,21 @@ pub type Outcome(a) {
   Crashed
 }
 
-/// What the waiting caller hears: the body's end, or a one-time build the body
-/// opened or closed (`database_support.once`).
+/// What the waiting caller hears: the body's end, a one-time build the body
+/// opened or closed (`database_support.once`), or a wait the body began or
+/// ended (`open_wait.named`).
 type Event(a) {
   Finished(Outcome(a))
   Down
   BuildOpened(key: String)
   BuildClosed
+  WaitOpened(what: String)
+  WaitClosed
 }
 
 /// Why a body ended without returning.
 type Failure {
-  PastDeadline
+  PastDeadline(waiting: List(String))
   BuildNeverEnded(keys: String)
 }
 
@@ -48,6 +52,11 @@ const build_limit_ms = 120_000
 /// started is not the body's, so its time counts. An open build has a limit of
 /// its own (`build_limit_ms`); past it the test fails, naming the key.
 ///
+/// A wait of the body (a read of the server's frames, a poll of a state) has no
+/// limit of its own: it ends with the event it waits for, or the deadline ends
+/// the test, and the failure then names the waits still open, the innermost
+/// first.
+///
 /// A body that returns after more than half its deadline prints one
 /// `check WARNING` line with the test's name, the milliseconds of its own work
 /// and its deadline, which `./check`'s summary repeats. It warns and never
@@ -62,9 +71,15 @@ pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
   let reply = process.new_subject()
   let worker =
     process.spawn_unlinked(fn() {
-      mark_body(
+      open_wait.reporting(
+        slot: open_wait.Build,
         opened: fn(key) { process.send(reply, BuildOpened(key)) },
         closed: fn() { process.send(reply, BuildClosed) },
+      )
+      open_wait.reporting(
+        slot: open_wait.Wait,
+        opened: fn(what) { process.send(reply, WaitOpened(what)) },
+        closed: fn() { process.send(reply, WaitClosed) },
       )
       process.send(
         reply,
@@ -83,6 +98,7 @@ pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
       monitor:,
       own_left: timeout_ms,
       open: [],
+      waiting: [],
       build_began: started,
       since: started,
     )
@@ -110,7 +126,14 @@ pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
     Ok(Skipped) ->
       unitest.guard(False, fn() { panic as "a skipped body does not run" })
     Ok(Crashed) -> panic as "the test body crashed"
-    Error(PastDeadline) -> panic as "the test ran past its deadline"
+    Error(PastDeadline(waiting:)) ->
+      panic as {
+        "the test ran past its deadline "
+        <> case waiting {
+          [] -> "with no wait open"
+          _ -> "while waiting for: " <> string.join(waiting, " > ")
+        }
+      }
     Error(BuildNeverEnded(keys:)) ->
       panic as {
         "a one-time build stayed open past its "
@@ -125,12 +148,14 @@ pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
 /// is the deadline not yet used, `open` the keys of the builds the body is
 /// inside (the innermost first), `build_began` when the outermost of them
 /// opened and `since` when the last event came. The time with a build open is
-/// not taken from `own_left`.
+/// not taken from `own_left`. `waiting` holds the names of the waits the body is
+/// inside, the innermost first; they do not stop the deadline.
 fn wait(
   reply reply: process.Subject(Event(a)),
   monitor monitor: process.Monitor,
   own_left own_left: Int,
   open open: List(String),
+  waiting waiting: List(String),
   build_began build_began: Int,
   since since: Int,
 ) -> #(Result(Outcome(a), Failure), Int) {
@@ -151,7 +176,7 @@ fn wait(
   case received {
     Error(Nil) ->
       case open {
-        [] -> #(Error(PastDeadline), own_left)
+        [] -> #(Error(PastDeadline(waiting:)), own_left)
         _ -> #(
           Error(BuildNeverEnded(string.join(list.reverse(open), " > "))),
           own_left,
@@ -165,6 +190,7 @@ fn wait(
         monitor:,
         own_left:,
         open: [key, ..open],
+        waiting:,
         build_began: case open {
           [] -> now
           _ -> build_began
@@ -177,6 +203,27 @@ fn wait(
         monitor:,
         own_left:,
         open: list.drop(open, 1),
+        waiting:,
+        build_began:,
+        since: now,
+      )
+    Ok(WaitOpened(what)) ->
+      wait(
+        reply:,
+        monitor:,
+        own_left:,
+        open:,
+        waiting: [what, ..waiting],
+        build_began:,
+        since: now,
+      )
+    Ok(WaitClosed) ->
+      wait(
+        reply:,
+        monitor:,
+        own_left:,
+        open:,
+        waiting: list.drop(waiting, 1),
         build_began:,
         since: now,
       )
@@ -204,15 +251,6 @@ fn warn_when_near_deadline(
 /// (`{gleam_unitest, skip}`, unitest_ffi:skip/0).
 @external(erlang, "owned_test_ffi", "run_unless_skipped")
 fn run_unless_skipped(body: fn() -> a) -> Result(a, Nil)
-
-/// Marks the calling process as a test body: its one-time builds
-/// (`owned_test_ffi:counting_build/2`) call `opened` with the key when one
-/// starts and `closed` when it has ended.
-@external(erlang, "owned_test_ffi", "mark_body")
-fn mark_body(
-  opened opened: fn(String) -> Nil,
-  closed closed: fn() -> Nil,
-) -> Nil
 
 /// Returns when the process has ended, at once if it already has.
 @external(erlang, "owned_key_ffi", "wait_until_dead")

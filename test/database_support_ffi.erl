@@ -10,7 +10,7 @@
 %% (local_lock_ffi). The atom made from each key is bounded by the repository's
 %% files and literals: the keys are literals, and some are made per source file
 %% or per label count. A call that has to build or wait is open to the test that
-%% owns the calling process (owned_test_ffi:counting_build/2), so its deadline
+%% owns the calling process (open_wait_ffi:reported/3), so its deadline
 %% does not count that time.
 once(Key, Create) ->
     Slot = {?MODULE, Key},
@@ -18,7 +18,8 @@ once(Key, Create) ->
         {value, Value} ->
             Value;
         none ->
-            owned_test_ffi:counting_build(
+            open_wait_ffi:reported(
+                build,
                 Key,
                 fun() ->
                     local_lock_ffi:with_lock(

@@ -114,7 +114,12 @@ pub fn a_clients_close_ends_the_process_normally_test() -> Nil {
   assert mailbox_support.drain(taken) == []
     as "nothing but Accepted reached the rule before the client closed"
   assert mug.shutdown(client) == Ok(Nil) as "the client closed"
-  assert ask_support.ended(watched) == process.Normal as "a normal end"
+  assert ask_support.ended(
+      watched: watched,
+      what: "the shell to end after the client closed",
+    )
+    == process.Normal
+    as "a normal end"
   assert events(mailbox_support.drain(taken)) == [OwnEvent(PeerClosed)]
     as "the client's close was the one input after Accepted"
 }
@@ -135,7 +140,11 @@ pub fn a_failed_write_reaches_the_rule_and_the_steps_later_effects_are_not_carri
   let _first_byte = ask_support.read_bytes(client, 1)
   assert ask_support.connections(server) == [connection]
     as "Ranch lists the one connection process"
-  assert ask_support.ended(watched) == process.Normal
+  assert ask_support.ended(
+      watched: watched,
+      what: "the shell to stop after the failed write",
+    )
+    == process.Normal
     as "the rule stopped after the failed write"
   let _still_open = client
   assert events(mailbox_support.drain(taken))
@@ -264,7 +273,11 @@ fn events(inputs: List(Taken)) -> List(step.Event(ConnectionEvent(Nil, Nil))) {
 /// Waits for the watched shell to end and says it ended by the rule's planted
 /// crash: any other end, `noproc` included, fails with its reason.
 fn crashed_by_the_plant(watched: process.Monitor) -> Nil {
-  let reason = ask_support.ended(watched)
+  let reason =
+    ask_support.ended(
+      watched: watched,
+      what: "the shell to end by the rule's planted crash",
+    )
   let assert process.Abnormal(abnormal) = reason
     as { "the connection crashed, not " <> string.inspect(reason) }
   assert decode.run(abnormal, crash_message()) == Ok("the planted crash")

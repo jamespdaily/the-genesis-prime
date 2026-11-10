@@ -29,6 +29,7 @@ import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 import mug
+import open_wait
 
 /// How long one wait for an event may take, in milliseconds. A passing test
 /// never reaches it.
@@ -251,7 +252,7 @@ pub fn begin_stop_tree(tree: Pid) -> process.Monitor {
 
 /// Stops a tree as the server's stop does, and waits for it to end.
 pub fn stop_tree(tree: Pid) -> process.ExitReason {
-  ended(begin_stop_tree(tree))
+  ended(watched: begin_stop_tree(tree), what: "the tree to end at its stop")
 }
 
 /// Stops the server's tree and waits for it to end.
@@ -265,13 +266,19 @@ pub fn shutdown() -> process.ExitReason {
   process.Abnormal(atom.to_dynamic(atom.create("shutdown")))
 }
 
-/// Waits for a watched process to end and says how.
-pub fn ended(watched: process.Monitor) -> process.ExitReason {
-  let assert Ok(down) =
-    process.new_selector()
-    |> process.select_specific_monitor(watched, fn(down) { down })
-    |> process.selector_receive(within: event_wait_ms)
-    as "the process ended"
+/// Waits for a watched process to end and says how. The wait has no limit of its
+/// own: a process that does not end ends the test at its deadline, naming it
+/// as `what` says (`open_wait`).
+pub fn ended(
+  watched watched: process.Monitor,
+  what what: String,
+) -> process.ExitReason {
+  let down =
+    open_wait.named(what, fn() {
+      process.new_selector()
+      |> process.select_specific_monitor(watched, fn(down) { down })
+      |> process.selector_receive_forever
+    })
   case down {
     process.ProcessDown(reason:, ..) -> reason
     process.PortDown(reason:, ..) -> reason
@@ -295,7 +302,7 @@ pub fn ended_running(work: fn() -> Nil) -> process.ExitReason {
     as "the process waits to be released"
   let watched = process.monitor(worker)
   process.send(go, Nil)
-  ended(watched)
+  ended(watched:, what: "the process to end after its work")
 }
 
 /// What a process raised when it crashed: the error of the `{Error, Stacktrace}`

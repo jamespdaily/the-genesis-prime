@@ -309,7 +309,11 @@ pub fn a_stop_during_an_ask_ends_the_wait_at_once_and_stopping_counts_from_the_s
   assert stopping.milliseconds >= before_stop + shutdown_ms - 300
     && stopping.milliseconds <= after_stopping + shutdown_ms - 300
     as "the deadline is the stop's arrival plus the shutdown time less the send deadline"
-  assert ask_support.ended(stopped) == ask_support.shutdown()
+  assert ask_support.ended(
+      watched: stopped,
+      what: "the server's tree to end after its stop",
+    )
+    == ask_support.shutdown()
     as "the tree stopped when the rule had stopped"
 }
 
@@ -346,7 +350,11 @@ pub fn a_recorded_session_with_asks_replays_to_the_same_bytes_with_no_other_proc
     as "one connection process"
   let watched = process.monitor(connection)
   let assert Ok(Nil) = mug.shutdown(client) as "the client closed"
-  let _reason = ask_support.ended(watched)
+  let _reason =
+    ask_support.ended(
+      watched: watched,
+      what: "the connection to end after the client closed",
+    )
   ask_support.stop(server)
   assert process.named(gate) == Error(Nil)
     as "no other process runs: the gate and the listener are gone"

@@ -13,6 +13,7 @@
 //// every message from the server arrives inside 0x3DC under it.
 
 import frame_reader
+import genesis_prime/client_connection
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -84,29 +85,40 @@ import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
 import gleam/float
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import login_client
 import mug
-
-/// How long a test waits for the server to write the bytes it must, in
-/// milliseconds.
-const wait_ms = 5000
+import open_wait
+import socket_read.{type Limit}
 
 /// A connection that has sent 0x58F: the socket and the cipher the session
 /// key made, and `kept`, a mailbox of the process that made the connection,
 /// where `read` leaves the bytes it read beyond the count it was asked for, so
 /// the next read of any kind starts there however the socket's reads were
-/// split. Only the process that made the connection reads it.
+/// split. Only the process that made the connection reads it. Its reads wait
+/// by its `limit`: a test's have none of their own (`socket_read.Open`), and a
+/// load client's stop the process when the server does not answer in time
+/// (`socket_read.Within`).
 pub type Game {
-  Game(socket: mug.Socket, cipher: Cipher, kept: Subject(BitArray))
+  Game(
+    socket: mug.Socket,
+    cipher: Cipher,
+    kept: Subject(BitArray),
+    limit: Limit,
+  )
 }
 
 /// A connection over `socket` whose messages come under `cipher`, with nothing
-/// kept from an earlier read.
-pub fn new(socket socket: mug.Socket, cipher cipher: Cipher) -> Game {
-  Game(socket:, cipher:, kept: process.new_subject())
+/// kept from an earlier read, and reads that wait by `limit`.
+pub fn new(
+  socket socket: mug.Socket,
+  cipher cipher: Cipher,
+  limit limit: Limit,
+) -> Game {
+  Game(socket:, cipher:, kept: process.new_subject(), limit:)
 }
 
 /// The cipher the client keys from the session key right after sending 0x58F
@@ -172,13 +184,13 @@ pub fn in_the_game_wrapper(outer outer: Frame, cipher cipher: Cipher) -> Frame {
 /// Connects to the game listener and reads its hello: message 3 inside 0x3DC
 /// under the base key, with the build and the message table checksum the client
 /// checks (opcode.0x3).
-fn open(port: Int) -> mug.Socket {
+fn open(port: Int, limit: Limit) -> mug.Socket {
   let socket = login_client.connect(port)
   let assert Ok([outer, ..]) =
     frame_reader.read(have: <<>>, count: 1, next: fn() {
-      mug.receive(socket, timeout_milliseconds: wait_ms)
+      socket_read.receive(socket:, limit:, what: "the game server's hello")
     })
-    as "the game server did not greet the client"
+    as "the game server's connection ended before it greeted the client"
   assert outer.message_id == 0x03DC
     as "opcode.0x3dc: the game server's hello arrives inside 0x3DC"
   let assert Ok(hello) = encrypted_frame.unwrap(outer, cipher.base())
@@ -197,20 +209,23 @@ fn answer_hello(
   socket socket: mug.Socket,
   session_key session_key: BitArray,
   account_name account_name: String,
+  limit limit: Limit,
 ) -> Game {
   let assert Ok(Nil) =
     mug.send(socket, hello_reply(session_key:, account_name:))
     as "the server closed the connection before 0x58F"
-  new(socket:, cipher: session_cipher(session_key:))
+  new(socket:, cipher: session_cipher(session_key:), limit:)
 }
 
-/// Connects, reads the hello and answers it.
+/// Connects, reads the hello and answers it. The reads of the game it gives wait
+/// by `limit`.
 pub fn connect(
   port port: Int,
   session_key session_key: BitArray,
   account_name account_name: String,
+  limit limit: Limit,
 ) -> Game {
-  answer_hello(socket: open(port), session_key:, account_name:)
+  answer_hello(socket: open(port, limit), session_key:, account_name:, limit:)
 }
 
 /// Sends a message inside 0x244 under the session cipher.
@@ -520,35 +535,29 @@ pub fn yaw_toward(
 
 /// Reads game messages, waiting on the server and never for a fixed time, until the
 /// frames read so far satisfy `found`, and gives all of them in order with the bytes
-/// kept; a connection that ends or no progress within `within_ms` stops the test.
+/// kept; a connection that ends stops the test. The wait has no limit of its own
+/// (`open_wait`): a message that never comes ends the test at its deadline.
 pub fn read_until(
   game game: Game,
   have have: BitArray,
-  within_ms within_ms: Int,
   found found: fn(List(Frame)) -> Bool,
 ) -> #(List(Frame), BitArray) {
-  read_until_from(game:, have:, frames: [], within_ms:, found:)
+  open_wait.named(
+    "frames from the game server that satisfy the test's condition",
+    fn() { read_until_from(game:, have:, frames: [], found:) },
+  )
 }
 
 fn read_until_from(
   game game: Game,
   have have: BitArray,
   frames frames: List(Frame),
-  within_ms within_ms: Int,
   found found: fn(List(Frame)) -> Bool,
 ) -> #(List(Frame), BitArray) {
   use <- bool.guard(when: found(frames), return: #(frames, have))
-  case poll(game:, have:, wait_ms: within_ms) {
-    Ok(#([], _)) ->
-      panic as "the server wrote nothing while a client waited for a message"
+  case poll_open(game:, have:) {
     Ok(#(more, have)) ->
-      read_until_from(
-        game:,
-        have:,
-        frames: list.append(frames, more),
-        within_ms:,
-        found:,
-      )
+      read_until_from(game:, have:, frames: list.append(frames, more), found:)
     Error(error) ->
       panic as {
         "the game server's connection failed while a client waited: "
@@ -691,7 +700,8 @@ fn next_outer(game game: Game, have have: BitArray) -> #(Frame, BitArray) {
 }
 
 /// Reads `count` messages as the server wrote them, keeping the bytes beyond
-/// them.
+/// them. The wait has no limit of its own: a connection that ends stops the
+/// test, and a message that never comes ends it at its deadline.
 fn outers_kept(
   game game: Game,
   have have: BitArray,
@@ -699,9 +709,15 @@ fn outers_kept(
 ) -> #(List(Frame), BitArray) {
   let assert Ok(kept) =
     frame_reader.read_kept(have: with_kept(game:, have:), count:, next: fn() {
-      mug.receive(game.socket, timeout_milliseconds: wait_ms)
+      socket_read.receive(
+        socket: game.socket,
+        limit: game.limit,
+        what: "the game server to write "
+          <> int.to_string(count)
+          <> " message(s)",
+      )
     })
-    as "the game server did not write the messages"
+    as "the game server's connection ended before it wrote the messages"
   kept
 }
 
@@ -725,7 +741,21 @@ pub fn read_kept(
 /// Reads until the server writes a message with this id, and gives it with the
 /// bytes kept beyond it. Every message before it is dropped, the connection's
 /// own included, so a test that needs those checks them with `next` instead.
+/// However many messages come first, the wait has no limit of its own.
 pub fn read_message(
+  game game: Game,
+  have have: BitArray,
+  message_id message_id: Int,
+) -> #(Frame, BitArray) {
+  open_wait.named(
+    "message "
+      <> client_connection.message_text(message_id:)
+      <> " from the game server",
+    fn() { read_message_from(game:, have:, message_id:) },
+  )
+}
+
+fn read_message_from(
   game game: Game,
   have have: BitArray,
   message_id message_id: Int,
@@ -733,7 +763,7 @@ pub fn read_message(
   let #(frame, rest) = next(game:, have:)
   case frame.message_id == message_id {
     True -> #(frame, rest)
-    False -> read_message(game:, have: rest, message_id:)
+    False -> read_message_from(game:, have: rest, message_id:)
   }
 }
 
@@ -784,6 +814,30 @@ pub fn poll(
         }
         Error(mug.Timeout) -> Ok(#([], rest))
         Error(error) -> Error(error)
+      }
+  }
+}
+
+/// Gives the game messages that have arrived, waiting for the server to write
+/// when it has written none whole, by the game's limit: an open game looks again
+/// after each `socket_read.look_ms`, so the wait has no limit; a game with a
+/// bound stops the process when the server writes nothing whole within it.
+fn poll_open(
+  game game: Game,
+  have have: BitArray,
+) -> Result(#(List(Frame), BitArray), mug.Error) {
+  case game.limit {
+    socket_read.Open ->
+      case poll(game:, have:, wait_ms: socket_read.look_ms) {
+        Ok(#([], have)) -> poll_open(game:, have:)
+        found -> found
+      }
+    socket_read.Within(wait_ms:) ->
+      case poll(game:, have:, wait_ms:) {
+        Ok(#([], more)) if more != have -> poll_open(game:, have: more)
+        Ok(#([], _)) ->
+          panic as "the server wrote nothing while a client waited for a message"
+        found -> found
       }
   }
 }
@@ -1127,25 +1181,38 @@ pub fn read_pong(game game: Game) -> Int {
     frame_reader.read_kept(
       have: with_kept(game:, have: <<>>),
       count: 1,
-      next: fn() { mug.receive(game.socket, timeout_milliseconds: wait_ms) },
+      next: fn() {
+        socket_read.receive(
+          socket: game.socket,
+          limit: game.limit,
+          what: "the game server's pong",
+        )
+      },
     )
     as "the game server answered the ping with a bare pong"
   keep(game:, rest:)
   number
 }
 
-/// Whether the server closes the connection within the wait: what it sends
-/// meanwhile is read and dropped, and a reset counts as a close, as does a
-/// socket no longer connected, which is what an earlier read that saw the close
-/// (`nothing_more`) leaves.
-pub fn closed(game game: Game) -> Bool {
-  case mug.receive(game.socket, timeout_milliseconds: wait_ms) {
-    Ok(_) -> closed(game:)
-    Error(mug.Timeout) -> False
+/// Waits until the server closes the connection: what it sends meanwhile is read
+/// and dropped, and a reset counts as a close, as does a socket no longer
+/// connected, which is what an earlier read that saw the close (`nothing_more`)
+/// leaves. The wait has no limit of its own, whatever the game's limit: only a
+/// test waits for a close, and a connection that stays open ends the test at its
+/// deadline.
+pub fn await_closed(game game: Game) -> Nil {
+  open_wait.named("the game server to close the connection", fn() {
+    closing(game:)
+  })
+}
+
+fn closing(game game: Game) -> Nil {
+  case socket_read.looking(game.socket) {
+    Ok(_) -> closing(game:)
     Error(mug.Closed)
     | Error(mug.Econnreset)
     | Error(mug.Econnaborted)
-    | Error(mug.Enotconn) -> True
+    | Error(mug.Enotconn) -> Nil
     Error(error) ->
       panic as {
         "the wait for the server to close ended with "
@@ -1252,7 +1319,19 @@ pub fn read_chat(
 /// Reads until the server answers the line sent with `chat_message_id`: the 0x1c2
 /// it gives, dropping the messages before it. An answer that is a refusal (0x1d3)
 /// or a failed whisper (0x1d9) for that slot stops the caller with its message.
+/// The wait has no limit of its own, however many messages come first.
 pub fn read_accepted(
+  game game: Game,
+  have have: BitArray,
+  chat_message_id chat_message_id: Int,
+) -> #(ChatLineAccepted, BitArray) {
+  open_wait.named(
+    "the game server to accept chat line " <> int.to_string(chat_message_id),
+    fn() { accepted_from(game:, have:, chat_message_id:) },
+  )
+}
+
+fn accepted_from(
   game game: Game,
   have have: BitArray,
   chat_message_id chat_message_id: Int,
@@ -1264,12 +1343,12 @@ pub fn read_accepted(
         as "0x01C2 decodes"
       case accept.chat_message_id == chat_message_id {
         True -> #(accept, rest)
-        False -> read_accepted(game:, have: rest, chat_message_id:)
+        False -> accepted_from(game:, have: rest, chat_message_id:)
       }
     }
     0x01D3 | 0x01D9 ->
       panic as "the server refused the bot's line instead of accepting it"
-    _ -> read_accepted(game:, have: rest, chat_message_id:)
+    _ -> accepted_from(game:, have: rest, chat_message_id:)
   }
 }
 
@@ -1283,7 +1362,9 @@ pub fn read_until_pong(
   number number: Int,
 ) -> #(List(Frame), BitArray) {
   send_ping(game:, number:)
-  collect_until_pong(game:, have:, number:, found: [])
+  open_wait.named("the game server's pong " <> int.to_string(number), fn() {
+    collect_until_pong(game:, have:, number:, found: [])
+  })
 }
 
 fn collect_until_pong(

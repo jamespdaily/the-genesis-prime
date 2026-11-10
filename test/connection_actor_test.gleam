@@ -314,7 +314,11 @@ fn hand_over(
   let lines = process.new_subject()
   let capture = log_capture.start_with_metadata(from: connection, into: lines)
   hand_over(connection, ref)
-  let reason = ask_support.ended(watched)
+  let reason =
+    ask_support.ended(
+      watched: watched,
+      what: "the connection to end after its handover",
+    )
   log_capture.stop(capture)
   #(reason, mailbox_support.drain(lines), simplifile.read_directory(folder))
 }
@@ -333,7 +337,11 @@ pub fn a_parent_that_stops_before_the_handshake_ends_the_connection_with_no_reco
   // The test process is the parent. The connection traps exits only once it
   // holds the socket, so before that the parent's stop ends it.
   process.send_abnormal_exit(connection, atom.create("shutdown"))
-  assert ask_support.ended(watched) == ask_support.shutdown()
+  assert ask_support.ended(
+      watched: watched,
+      what: "the connection to end at its parent's stop",
+    )
+    == ask_support.shutdown()
     as "the connection ended with the parent's reason"
   assert simplifile.read_directory(folder) == Ok([])
     as "no recording was opened"
@@ -364,7 +372,11 @@ pub fn no_read_a_rule_takes_holds_more_than_16384_bytes_test() -> Nil {
   assert ask_support.read_bytes(client, sent) == <<0:size(sent * 8)>>
     as "every byte reached the rule, which echoes what it reads"
   assert mug.shutdown(client) == Ok(Nil) as "the client left"
-  assert ask_support.ended(watched) == process.Normal
+  assert ask_support.ended(
+      watched: watched,
+      what: "the connection to end after the client left",
+    )
+    == process.Normal
     as "the rule stopped when the client left"
   let assert Ok(Recording(lines:, ..)) =
     wire_recording.read(recording_support.wire_text_in(folder))
@@ -511,7 +523,11 @@ pub fn a_crash_leaves_the_recording_without_its_closing_line_test() -> Nil {
   let #(client, connection) = greeted(server)
   let watched = process.monitor(connection)
   assert mug.send(client, <<0xEE>>) == Ok(Nil) as "the byte that crashes it"
-  let assert process.Abnormal(_) = ask_support.ended(watched)
+  let assert process.Abnormal(_) =
+    ask_support.ended(
+      watched: watched,
+      what: "the connection to end at the byte that crashes it",
+    )
     as "the connection crashed"
   let assert Error(Cut(..)) =
     wire_recording.read(recording_support.wire_text_in(folder))

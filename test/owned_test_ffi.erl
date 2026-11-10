@@ -3,9 +3,7 @@
     is_skip/1,
     run_unless_skipped/1,
     monotonic_milliseconds/0,
-    body_name/1,
-    mark_body/2,
-    counting_build/2
+    body_name/1
 ]).
 
 %% unitest marks a skipped test by throwing {gleam_unitest, skip}
@@ -34,24 +32,3 @@ body_name(Body) ->
             Plain -> Plain
         end,
     unicode:characters_to_binary([atom_to_list(Module), ":", Function]).
-
-mark_body(Opened, Closed) ->
-    put(owned_test_builds, {Opened, Closed}),
-    nil.
-
-%% Runs Build, and tells the test that owns this process, when this process is
-%% its body, that a one-time build for Key is open until Build ends, so the
-%% test's deadline does not count it. A process that is not a test body just
-%% runs Build.
-counting_build(Key, Build) ->
-    case get(owned_test_builds) of
-        undefined ->
-            Build();
-        {Opened, Closed} ->
-            Opened(Key),
-            try
-                Build()
-            after
-                Closed()
-            end
-    end.
