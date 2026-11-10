@@ -500,6 +500,7 @@ fn hand_off_child(
       reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
       shutdown_ms:,
       found_at: None,
+      time: service_shell.real_time(),
     ),
   )
 }
@@ -525,6 +526,7 @@ fn unnamed_hand_off() -> service_shell.Settings(
     reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
     shutdown_ms: 1000,
     found_at: None,
+    time: service_shell.real_time(),
   )
 }
 
@@ -627,6 +629,7 @@ pub fn a_service_found_at_an_address_is_found_there_when_its_first_step_sends_te
       ),
       shutdown_ms: 1000,
       found_at: Some(service_shell.FoundAt(scope:, address:)),
+      time: service_shell.real_time(),
     )
   let _starter =
     process.spawn(fn() {

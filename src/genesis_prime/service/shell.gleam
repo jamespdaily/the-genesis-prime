@@ -118,15 +118,16 @@
 ////   has no values, so no rule can build a step that ends in one; the shell's
 ////   case for such a step is unreachable.
 
-import genesis_prime/connection/script.{type Elapsed}
+import genesis_prime/connection/script.{type Elapsed, type Scheduler}
 import genesis_prime/group_registry.{type Scope}
 import genesis_prime/service.{type Call, type Reach, Call, TellCall}
 import genesis_prime/step.{
-  type Address, type CreatureStart, type Effect, type Event, type ServiceEffect,
-  type ServiceEvent, type ServiceRule, type TimerId, type WatchId, Asked,
-  CallerId, CancelServiceTimer, CreatureNotStarted, Effects, EffectsThenAsk,
-  Input, LogError, OwnEffect, OwnEvent, Reply, Send, ServiceTimerFired,
-  StartCreature, StartServiceTimer, Started, Stopping, Told, WatchEnded,
+  type Address, type CreatureStart, type Effect, type Event, type Now,
+  type ServiceEffect, type ServiceEvent, type ServiceRule, type TimerId,
+  type WatchId, Asked, CallerId, CancelServiceTimer, CreatureNotStarted, Effects,
+  EffectsThenAsk, Input, LogError, OwnEffect, OwnEvent, Reply, Send,
+  ServiceTimerFired, StartCreature, StartServiceTimer, Started, Stopping, Told,
+  WatchEnded,
 }
 import genesis_prime/step/runtime.{Shutdown}
 import genesis_prime/step/timer as timer_book
@@ -140,6 +141,19 @@ import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
+
+/// The clock a service's inputs take their `Now` from and the scheduler its
+/// timers start on. A server's is `real_time()`; a whole-server test gives the
+/// service the driven clock's (`driven_time.service_time`), so a timer fires
+/// only when the test advances the clock.
+pub type ServiceTime {
+  ServiceTime(clock: fn() -> Now, schedule: Scheduler)
+}
+
+/// The node's own clock and the operating system's timer.
+pub fn real_time() -> ServiceTime {
+  ServiceTime(clock: runtime.now, schedule: script.operating_system_timer)
+}
 
 /// What a service is started with.
 pub type Settings(settings, state, message, outgoing) {
@@ -155,6 +169,8 @@ pub type Settings(settings, state, message, outgoing) {
     /// The address it is found at and the scope it is told through there, or
     /// `None` for a service told only by its subject.
     found_at: Option(FoundAt(message, outgoing)),
+    /// Where it reads the time of each input and starts its timers.
+    time: ServiceTime,
   )
 }
 

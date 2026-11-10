@@ -26,6 +26,7 @@ import genesis_prime/login/guid
 import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
+import genesis_prime/service/shell as service_shell
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/creature_registry
 import gleam/dict
@@ -113,6 +114,7 @@ pub fn world() -> server.World {
     idle_stop_ms: 60_000,
     sweep_ms: 10_000,
     spawns: spawn_support.key_without_spawns(),
+    service_time: service_shell.real_time(),
   )
 }
 
