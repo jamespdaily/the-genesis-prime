@@ -531,7 +531,7 @@ fn window_after(
       tables: character_tables.shared(),
       vendors: vendor_support.stocking(creature_ids: [74_812]),
       now_ms: 0,
-      offers: fn(_) { True },
+      offers: fn(_) { interaction.Offered },
       logged: set.new(),
     )
     as "the body is one the client's reader accepts"

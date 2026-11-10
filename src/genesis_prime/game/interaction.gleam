@@ -32,9 +32,12 @@
 ////   its last movement message; the 3.0 covers both for any gap the client opens at.
 //// - **A quest to show** is what the client marks for the creature from the player's quest
 ////   log (`0x1405a8d40`), which `offers` says for the creature's row: a creature with
-////   nothing to show gets no request, and one the server cannot tell of opens the dialog.
-////   The rule is genesis_prime/game/quest's (`offers`), which imports this module, so the
-////   connection passes it in; the checks the client's accept makes of the log are its too.
+////   nothing to show gets no request, and one whose quest the server cannot decide for a
+////   table row it lacks is logged and gets no dialog. The rule is
+////   genesis_prime/game/quest's (`offers`), which imports this module, so the connection
+////   passes it in; the checks the client's accept makes of the log are its too. The
+////   client marks the creature before any click, so the order of this check and the
+////   reach changes only the reason that is logged.
 //// - **A vendor's request** (kind 0x31) is checked as the client's CheckInteractionTarget
 ////   checks it (`opcode.0x7ea`), in its order: a unit not in the picture is 59, a unit that is
 ////   not a creature, a creature with no stock or a dead one is 16, a gap over the reach is
@@ -130,6 +133,18 @@ pub type Taken {
   Taken(effects: List(Effect), window: Window, logged: Set(String))
 }
 
+/// What a player's quest log says of a creature's quests, as the client marks the
+/// creature (`0x1405a8d40`).
+pub type Offer {
+  /// A quest of the creature shows its dialog.
+  Offered
+  /// No quest of the creature shows its dialog.
+  NothingToOffer
+  /// No quest of the creature shows its dialog, and a check of one needed a table row
+  /// the tables lack: the quest and a sentence that says which row.
+  Undecided(quest_id: Int, cause: String)
+}
+
 /// Why a request is answered with nothing.
 type Declined {
   NotShown(unit_id: Int)
@@ -138,6 +153,12 @@ type Declined {
   HostileToPlayer(unit_id: Int)
   NoQuest(unit_id: Int, creature_id: Creature2Id)
   NothingOffered(unit_id: Int, creature_id: Creature2Id)
+  OfferUndecided(
+    unit_id: Int,
+    creature_id: Creature2Id,
+    quest_id: Int,
+    cause: String,
+  )
   TooFar(unit_id: Int)
   KindNotTaken(kind: Int)
 }
@@ -217,7 +238,7 @@ pub fn take(
   tables tables: table_store.Tables,
   vendors vendors: Vendors,
   now_ms now_ms: Int,
-  offers offers: fn(Creature2) -> Bool,
+  offers offers: fn(Creature2) -> Offer,
   logged logged: Set(String),
 ) -> Result(Taken, Refusal) {
   case message {
@@ -295,7 +316,7 @@ fn talked_to(
   picture picture: Picture,
   tables tables: table_store.Tables,
   now_ms now_ms: Int,
-  offers offers: fn(Creature2) -> Bool,
+  offers offers: fn(Creature2) -> Offer,
 ) -> Result(Nil, Declined) {
   use shown <- result.try(
     dict.get(picture, unit_id) |> result.replace_error(NotShown(unit_id:)),
@@ -325,11 +346,12 @@ fn talked_to(
         when: !within_reach(player:, tables:, path:, creature_radius:, now_ms:),
         return: Error(TooFar(unit_id:)),
       )
-      use <- bool.guard(
-        when: !offers(row),
-        return: Error(NothingOffered(unit_id:, creature_id:)),
-      )
-      Ok(Nil)
+      case offers(row) {
+        Offered -> Ok(Nil)
+        NothingToOffer -> Error(NothingOffered(unit_id:, creature_id:))
+        Undecided(quest_id:, cause:) ->
+          Error(OfferUndecided(unit_id:, creature_id:, quest_id:, cause:))
+      }
     }
   }
 }
@@ -537,6 +559,7 @@ fn reason_of(declined declined: Declined) -> String {
     HostileToPlayer(..) -> "hostile"
     NoQuest(..) -> "no quest"
     NothingOffered(..) -> "nothing offered"
+    OfferUndecided(..) -> "offer undecided"
     TooFar(..) -> "too far"
     KindNotTaken(kind:) -> "kind " <> int.to_string(kind)
   }
@@ -573,6 +596,16 @@ fn describe(declined declined: Declined) -> String {
       <> ", whose Creature2 row "
       <> int.to_string(creature_id.value)
       <> " has no quest to show for the player's log: the client sends no request for it"
+    OfferUndecided(unit_id:, creature_id:, quest_id:, cause:) ->
+      "0x07EA names unit "
+      <> int.to_string(unit_id)
+      <> ", whose Creature2 row "
+      <> int.to_string(creature_id.value)
+      <> " has no quest to show unless quest "
+      <> int.to_string(quest_id)
+      <> " can be decided, which needs a row the tables lack ("
+      <> cause
+      <> "): nothing is answered"
     TooFar(unit_id:) ->
       "0x07EA names unit "
       <> int.to_string(unit_id)

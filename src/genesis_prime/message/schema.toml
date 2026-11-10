@@ -625,7 +625,7 @@ id = 0x035A
 name = "quest_abandon"
 direction = "client_to_server"
 evidence = "opcode.0x35a"
-summary = "the client abandons a quest, only when it allows it (Accepted, Achieved, Botched or Mentioned; not Quest2.flags 0x4000 unless Botched; not Achieved with flags 0x8000): only the quest id; the client changes no state and the server's 0x35c answer sets it"
+summary = "the client abandons a quest, only when it allows it (Accepted, Achieved or Botched; not Quest2.flags 0x4000 unless Botched; not Achieved with flags 0x8000): only the quest id; the client changes no state and the server's 0x35c answer sets it"
 fields = [
   { name = "quest_id", kind = "unsigned", bits = 15, evidence = "opcode.0x35a", named_by = "opcode.0x35a" },
 ]

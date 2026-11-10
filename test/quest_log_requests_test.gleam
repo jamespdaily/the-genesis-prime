@@ -8,16 +8,14 @@
 ////   0x8000 may not be; past those the code takes only the states 1, 2 and 4 (it computes
 ////   `(state - 1) & ~3` and refuses a non-zero result, and refuses 3), so Mentioned (5),
 ////   Abandoned (6), Ignored (7), Completed (3) and a quest the log lacks (0) are refused.
-////   The statement of the fact lists Mentioned as well; its own proof and the decompiled
-////   code do not, and the code is followed.
 //// - `opcode.0x35a`, `0x1405fbdc0`: the answer is 0x35C with state 6, and the client
 ////   keeps the state in its side list (a quest held Abandoned), where `0x140552490`
 ////   (CanAcceptQuest check 2) lets the quest be taken again.
-//// - `opcode.0x360`, `0x1405fca00`: the client sends it when the wish differs from what
-////   it holds (a side-list entry of a state but 7), and sets Mentioned (5) for both bits
-////   and keeps the entry; the client waits for no answer. So a mention comes for a quest
-////   the log lacks or holds Ignored, and a withdrawal for one held Botched, Mentioned or
-////   Abandoned.
+//// - `opcode.0x360`, `0x1405fca00`: the client sets Mentioned (5) for both bits and keeps
+////   the entry; it waits for no answer. A mention is sent only from `0x14043c1a0`, after
+////   `GetQuestState == 0`, so for a quest the log lacks; a withdrawal only from the
+////   communicator's refresh `0x1405fccb0`, which walks the quests with Quest2 flags 4 held
+////   Botched (4), Mentioned (5) or Abandoned (6).
 //// - `opcode.0x364`, `0x1405fcb80`: a tracked flag of a quest of the active list, no answer.
 //// - `opcode.0x35e` and Jim's answer: the client sends it for Abandoned or Mentioned
 ////   quests (bit 1) and for Ignored ones (bit 0) and changes no state itself, so the
@@ -54,7 +52,7 @@ import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/quest_ignore.{QuestIgnore}
 import genesis_prime/message/quest_mention.{QuestMention}
 import genesis_prime/message/quest_track.{QuestTrack}
-import genesis_prime/step.{LogWarning}
+import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{type HeldItem, type QuestRow, HeldItem}
 import genesis_prime/table/id.{Item2Id, Quest2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
@@ -385,12 +383,6 @@ pub fn mention_stores_mentioned_for_both_bits_test() -> Nil {
   // Each case: what it is, the bit, the rows the log holds, and the rows after it.
   let taken = [
     #("a mention of a quest the log lacks", 1, [], mentioned),
-    #(
-      "a mention of an Ignored quest",
-      1,
-      [quest_support.known(1872, 7)],
-      mentioned,
-    ),
     #("a withdrawal of a Mentioned quest", 0, mentioned, mentioned),
     #(
       "a withdrawal of a Botched quest",
@@ -415,10 +407,11 @@ pub fn mention_stores_mentioned_for_both_bits_test() -> Nil {
   assert result.effects == [] as { what <> " sends no answer (opcode.0x360)" }
   assert quest_log.rows(log: result.log) == after
     as { what <> " leaves the quest Mentioned in the log, never removed" }
-  // The requests the client would not send: a mention of a quest it holds a state of
-  // but 7, a withdrawal of one it holds none of or holds Ignored, and either of a quest
-  // in the active list or completed.
+  // The requests the client would not send: a mention of a quest it holds a state of, a
+  // withdrawal of one it holds none of, holds Ignored or in the active list, and a
+  // withdrawal of a quest without Quest2 flags 4 (1806 has none), whatever its state.
   let refused = [
+    #("a mention of an Ignored quest", 1, [quest_support.known(1872, 7)]),
     #("a mention of a Mentioned quest", 1, [quest_support.known(1872, 5)]),
     #("a mention of a Botched quest", 1, [quest_support.known(1872, 4)]),
     #("a mention of an Accepted quest", 1, [accepted(1872, progress: [])]),
@@ -438,6 +431,32 @@ pub fn mention_stores_mentioned_for_both_bits_test() -> Nil {
       asker: held,
     )
   assert_declined(taken: result, what:, quest: 1872, log: held.log)
+}
+
+pub fn withdrawal_is_taken_only_for_a_quest_with_the_communicator_flag_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The communicator's refresh (`0x1405fccb0`) walks the quests with Quest2 flags 4, so a
+  // withdrawal of a quest without them is one the client does not send, in every state
+  // it withdraws from. 1806 has no flags.
+  let states = [
+    #("Botched", 4),
+    #("Mentioned", 5),
+    #("Abandoned", 6),
+  ]
+  use #(name, state) <- list.each(states)
+  let held = asker(log: [quest_support.known(1806, state)])
+  let result =
+    took(
+      message: quest.Mention,
+      body: mention_body(quest_id: 1806, mentioned: 0),
+      asker: held,
+    )
+  assert_declined(
+    taken: result,
+    what: "a withdrawal of a " <> name <> " quest without flags 4",
+    quest: 1806,
+    log: held.log,
+  )
 }
 
 pub fn track_sets_the_tracked_flag_without_an_answer_test() -> Nil {
@@ -567,6 +586,15 @@ fn talked_to_walker(
   tables tables: table_store.Tables,
   rows rows: List(QuestRow),
 ) -> interaction.Taken {
+  talked_to_walker_again(tables:, rows:, logged: set.new())
+}
+
+/// `talked_to_walker` for a connection that has logged these reasons already.
+fn talked_to_walker_again(
+  tables tables: table_store.Tables,
+  rows rows: List(QuestRow),
+  logged logged: set.Set(String),
+) -> interaction.Taken {
   let held = asker(log: rows)
   let assert Ok(body) =
     interaction_request.encode(InteractionRequest(unit_id: 40, kind: 37))
@@ -581,7 +609,7 @@ fn talked_to_walker(
       vendors: vendor_support.stocking(creature_ids: []),
       now_ms: 0,
       offers: fn(creature) { quest.offers(tables:, asker: held, creature:) },
-      logged: set.new(),
+      logged:,
     )
     as "the body is one the client's reader takes"
   taken
@@ -670,4 +698,49 @@ pub fn giver_dialog_opens_only_for_a_creature_with_a_quest_to_show_test() -> Nil
     talked_to_walker(tables:, rows: []),
     what: "a received quest with flags 1 that passes CanAcceptQuest",
   )
+}
+
+pub fn a_giver_quest_without_a_quest2_row_is_not_shown_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The client marks nothing for a quest it has no Quest2 row for (`0x1405a8d40` reads
+  // the row before any mark), so Dorian Walker with 10528 swapped for 999999, which no
+  // Quest2 row has, and 10520 neither held nor flagged 1 has no quest to show, though
+  // the player has completed 10520 for the quest that is gone.
+  use tables <- fixture_tables.changed(table: "Creature2", id: 74_812, with: [
+    #("questIdGiven00", Integer(999_999)),
+  ])
+  assert_nothing_offered(
+    talked_to_walker(tables:, rows: [quest_support.completed(10_520, at: 1000)]),
+    what: "a giver whose only given quest has no Quest2 row",
+  )
+}
+
+pub fn a_check_that_cannot_run_is_logged_once_and_shows_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Walker is given quest 5259 in place of 10528. The player holds it Mentioned, so its
+  // check 11 passes and check 10 reads the Episode row 411, which is removed: the check
+  // cannot run. The quest counts as not shown, and the cause is logged once.
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "Creature2",
+      id: 74_812,
+      with: [#("questIdGiven00", Integer(5259))],
+    )
+    as "Creature2 74812 and its column are in the fixture"
+  let assert Ok(rows) = fixture_tables.remove(rows:, table: "Episode", id: 411)
+    as "Episode 411 is in the fixture"
+  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  let held = [quest_support.known(5259, 5)]
+  let first = talked_to_walker(tables:, rows: held)
+  let assert [interaction.Log(level: LogWarning, text:)] = first.effects
+    as "an undecidable quest is logged and unanswered"
+  assert string.contains(text, "unit 40") as "the line names the unit"
+  assert string.contains(text, "quest 5259") as "the line names the quest"
+  assert string.contains(text, "the table Episode has no row 411")
+    as "the line says which row is missing"
+  let second = talked_to_walker_again(tables:, rows: held, logged: first.logged)
+  let assert [interaction.Log(level: LogDebug, ..)] = second.effects
+    as "the second request of the reason is a debug line, so it is logged once"
+  Nil
 }

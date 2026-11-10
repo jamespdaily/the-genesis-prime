@@ -2,11 +2,11 @@
 //// never edited by hand.
 ////
 //// Message 0x035A (quest_abandon), client to server: the client abandons a
-//// quest, only when it allows it (Accepted, Achieved, Botched or Mentioned;
-//// not Quest2.flags 0x4000 unless Botched; not Achieved with flags 0x8000):
-//// only the quest id; the client changes no state and the server's 0x35c
-//// answer sets it. Its fields are listed in `schema.toml` with the client's
-//// evidence, and the fact file's `opcode.0x35a` names the message.
+//// quest, only when it allows it (Accepted, Achieved or Botched; not
+//// Quest2.flags 0x4000 unless Botched; not Achieved with flags 0x8000): only
+//// the quest id; the client changes no state and the server's 0x35c answer
+//// sets it. Its fields are listed in `schema.toml` with the client's evidence,
+//// and the fact file's `opcode.0x35a` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import gleam/result

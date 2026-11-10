@@ -194,6 +194,12 @@ const episode_open_flag = 0x10
 /// The EpisodeQuest flag that leaves the quest out of the episode's order.
 const episode_left_out_flag = 0x1
 
+/// The `can_accept` mask bit of the level check.
+const level_bit = 0x2
+
+/// The `can_accept` mask bit of the prerequisite-quests check.
+const prerequisite_quests_bit = 0x40
+
 /// The prerequisite-quest flag that needs only one of the quests, not all.
 const any_quest_flag = 0x1
 
@@ -248,8 +254,8 @@ const periodic_refused = 16
 /// The mask that asks every check of `CanAcceptQuest` (`0x140552550`).
 pub const every_check = 0xffff_ffff
 
-/// The mask the client's marking of a creature's quests passes (`0x1405a8d40`): every
-/// check but the one for a full log (bit 13).
+/// The mask the client's marking of a creature's quests passes (`0x1405a8d40`, `mov edx,
+/// 0xffffdfff` at `0x1405a8e26`): every check but the one for a full log (bit 13).
 const giver_checks = 0xffff_dfff
 
 /// Whether the player may accept the quest, with the checks the mask asks for, in the
@@ -257,8 +263,9 @@ const giver_checks = 0xffff_dfff
 /// mask has a bit for each check: 0 already held, 1 level, 2 race, 3 class, 4
 /// reputation, 5 prerequisite item, 6 prerequisite quests, 7 exclusions, 8 episode, 9
 /// mentioned, 10 prerequisite, 11 path, 12 faction, 13 log full, 14 periodic, 15
-/// contract. The level and the prerequisite quests are one joined check for a quest with
-/// that flag, so it runs when either bit is asked. A table row a check needs that the
+/// contract. The level (bit 1) and the prerequisite quests (bit 6) are separate checks,
+/// each run on its own bit; a quest with the joined flag, asked for both, refuses only
+/// when both fail. A table row a check needs that the
 /// tables lack is an error.
 pub fn can_accept(
   tables tables: table_store.Tables,
@@ -273,7 +280,7 @@ pub fn can_accept(
     #(0x4, fn() { race(quest:, asker:) }),
     #(0x8, fn() { class(quest:, asker:) }),
     #(0x100, fn() { episode_allows(tables:, quest:, asker:) }),
-    #(0x42, fn() { level_and_quests(quest:, asker:) }),
+    #(0x42, fn() { level_and_quests(quest:, asker:, mask:) }),
     #(0x80, fn() { exclusions(quest:, asker:) }),
     #(0x10, fn() { reputation(quest:) }),
     #(0x20, fn() { prerequisite_item(quest:, asker:) }),
@@ -348,65 +355,91 @@ pub fn gaps(
 /// the quest shows to its receiver, or holds; or a quest it gives that the player holds,
 /// or may accept. A quest whose dialog the client does not open is not counted: one that
 /// starts with a click that activates the unit, one that needs a mention the player has
-/// not had, and one the player may not accept yet. Only a refusal hides a quest: one the
-/// server cannot decide, or a row it lacks, counts as shown, so that no giver is hidden.
+/// not had, one the player may not accept yet, and one whose Quest2 row the tables lack.
+/// A quest that starts with a click that activates the unit (kind 12) shows no dialog
+/// though the creature is marked for another of its quests. Only a refusal hides a quest:
+/// one the server cannot decide for a gap in what it reads counts as shown, so that no
+/// giver is hidden, and one a table row it needs is missing from is `Undecided`, which
+/// the caller logs, unless another quest of the creature shows.
 pub fn offers(
   tables tables: table_store.Tables,
   asker asker: Asker,
   creature creature: Creature2,
-) -> Bool {
-  list.any(named(ids: spawn.received_quest_ids(creature)), fn(quest_id) {
-    receive_shown(tables:, asker:, quest_id:)
-  })
-  || list.any(named(ids: spawn.given_quest_ids(creature)), fn(quest_id) {
-    give_shown(tables:, asker:, quest_id:)
-  })
+) -> interaction.Offer {
+  let received =
+    list.map(named(ids: spawn.received_quest_ids(creature)), fn(quest_id) {
+      #(quest_id, receive_shown(tables:, asker:, quest_id:))
+    })
+  let given =
+    list.map(named(ids: spawn.given_quest_ids(creature)), fn(quest_id) {
+      #(quest_id, give_shown(tables:, asker:, quest_id:))
+    })
+  let decided = list.append(received, given)
+  case list.any(decided, fn(quest) { quest.1 == Ok(True) }) {
+    True -> interaction.Offered
+    False ->
+      case
+        list.find_map(decided, fn(quest) {
+          case quest.1 {
+            Error(error) -> Ok(#(quest.0, describe(error:)))
+            Ok(_) -> Error(Nil)
+          }
+        })
+      {
+        Ok(#(quest_id, cause)) -> interaction.Undecided(quest_id:, cause:)
+        Error(Nil) -> interaction.NothingToOffer
+      }
+  }
 }
 
 /// Whether the client shows a quest the creature receives (`0x1405a8d40`): the player
 /// has achieved it, or it is flagged 1 and the player may accept it, or the player holds
-/// it.
+/// it. A quest with no Quest2 row is not marked.
 fn receive_shown(
   tables tables: table_store.Tables,
   asker asker: Asker,
   quest_id quest_id: Int,
-) -> Bool {
-  quest2.get(tables:, id: Quest2Id(quest_id))
-  |> result.map(fn(row) {
-    let state = derived_state(tables:, asker:, quest_id:)
-    state == 2
-    || {
-      has_flag(row.flags, receivable_flag) && !refused(tables:, asker:, row:)
+) -> Result(Bool, CheckError) {
+  case quest2.get(tables:, id: Quest2Id(quest_id)) {
+    Error(Nil) -> Ok(False)
+    Ok(row) -> {
+      let state = derived_state(tables:, asker:, quest_id:)
+      use <- bool.guard(when: state == 1 || state == 2, return: Ok(True))
+      case has_flag(row.flags, receivable_flag) {
+        True -> refused(tables:, asker:, row:) |> result.map(bool.negate)
+        False -> Ok(False)
+      }
     }
-    || state == 1
-  })
-  |> result.unwrap(True)
+  }
 }
 
-/// Whether the client shows a quest the creature gives with a dialog (`0x1405a8d40`).
+/// Whether the client shows a quest the creature gives with a dialog (`0x1405a8d40`). A
+/// quest with no Quest2 row is not marked.
 fn give_shown(
   tables tables: table_store.Tables,
   asker asker: Asker,
   quest_id quest_id: Int,
-) -> Bool {
-  quest2.get(tables:, id: Quest2Id(quest_id))
-  |> result.map(fn(row) { gives_dialog(tables:, asker:, quest_id:, row:) })
-  |> result.unwrap(True)
+) -> Result(Bool, CheckError) {
+  case quest2.get(tables:, id: Quest2Id(quest_id)) {
+    Error(Nil) -> Ok(False)
+    Ok(row) -> gives_dialog(tables:, asker:, quest_id:, row:)
+  }
 }
 
+/// No Quest2 row has a repeat period above 4, so the client's skip of a quest of that
+/// kind (`0x1405a8d40`) is not built.
 fn gives_dialog(
   tables tables: table_store.Tables,
   asker asker: Asker,
   quest_id quest_id: Int,
   row row: Quest2,
-) -> Bool {
-  use <- bool.guard(when: has_flag(row.flags, instant_flag), return: False)
-  use <- bool.guard(
-    when: waits_for_mention(tables:, asker:, quest_id:, row:),
-    return: False,
-  )
+) -> Result(Bool, CheckError) {
+  use <- bool.guard(when: has_flag(row.flags, instant_flag), return: Ok(False))
+  use waits <- result.try(waits_for_mention(tables:, asker:, quest_id:, row:))
+  use <- bool.guard(when: waits, return: Ok(False))
   let state = derived_state(tables:, asker:, quest_id:)
-  state == 1 || state == 2 || !refused(tables:, asker:, row:)
+  use <- bool.guard(when: state == 1 || state == 2, return: Ok(True))
+  refused(tables:, asker:, row:) |> result.map(bool.negate)
 }
 
 /// Whether a quest that needs a mention is acceptable without one, which the client's
@@ -416,19 +449,23 @@ fn waits_for_mention(
   asker asker: Asker,
   quest_id quest_id: Int,
   row row: Quest2,
-) -> Bool {
-  has_flag(row.flags, needs_mention_flag)
-  && !in_second_list(state: state_of(asker:, quest_id:))
-  && can_accept(tables:, quest: row, asker:, mask: giver_checks)
-  == Ok(Acceptable)
+) -> Result(Bool, CheckError) {
+  use <- bool.guard(
+    when: !has_flag(row.flags, needs_mention_flag)
+      || in_second_list(state: state_of(asker:, quest_id:)),
+    return: Ok(False),
+  )
+  can_accept(tables:, quest: row, asker:, mask: giver_checks)
+  |> result.map(fn(verdict) { verdict == Acceptable })
 }
 
-/// Whether the client's check with the giver's mask refuses the quest.
+/// Whether the client's check with the giver's mask refuses the quest. A gap the server
+/// does not read is not a refusal.
 fn refused(
   tables tables: table_store.Tables,
   asker asker: Asker,
   row row: Quest2,
-) -> Bool {
+) -> Result(Bool, CheckError) {
   can_accept(tables:, quest: row, asker:, mask: giver_checks)
   |> result.map(fn(verdict) {
     case verdict {
@@ -436,7 +473,6 @@ fn refused(
       Acceptable | NotRead(..) -> False
     }
   })
-  |> result.unwrap(False)
 }
 
 /// The state the client derives for a quest of the log, or the stored one when the
@@ -566,12 +602,16 @@ fn named(ids ids: List(Int)) -> List(Int) {
   list.filter(ids, fn(id) { id != 0 })
 }
 
-/// Checks 3 and 8: the level, and the quests that must be completed, all or any one.
-/// With the joined flag they are one check, which refuses only when both fail.
+/// Checks 3 and 8: the level (mask bit 1), and the quests that must be completed, all or
+/// any one (mask bit 6), each run on its own bit. With the joined flag and both bits
+/// asked they are one check, which refuses only when both fail.
 fn level_and_quests(
   quest quest: Quest2,
   asker asker: Asker,
+  mask mask: Int,
 ) -> Result(Nil, Stop) {
+  let level_asked = int.bitwise_and(mask, level_bit) != 0
+  let quests_asked = int.bitwise_and(mask, prerequisite_quests_bit) != 0
   let too_low = asker.player.level < quest.preq_level
   let required =
     named(ids: [quest.preq_quest0, quest.preq_quest01, quest.preq_quest02])
@@ -584,11 +624,14 @@ fn level_and_quests(
         False -> list.all(required, completed)
       }
   }
-  case has_flag(quest.preq_flags, joined_flag) {
+  case has_flag(quest.preq_flags, joined_flag) && level_asked && quests_asked {
     True -> refuse_when(when: too_low && !met, code: level_low)
     False -> {
-      use Nil <- result.try(refuse_when(when: too_low, code: level_low))
-      refuse_when(when: !met, code: prerequisite_quests_missing)
+      use Nil <- result.try(refuse_when(
+        when: level_asked && too_low,
+        code: level_low,
+      ))
+      refuse_when(when: quests_asked && !met, code: prerequisite_quests_missing)
     }
   }
 }
@@ -895,8 +938,24 @@ pub fn take(
   now_ms now_ms: Int,
   logged logged: Set(String),
 ) -> Result(Taken, Refusal) {
-  let answered = fn(quest_id, outcome) {
-    answer(message:, outcome:, quest_id:, asker:, logged:)
+  let answered = fn(outcome) { answer(message:, outcome:, asker:, logged:) }
+  // Both requests that start a quest answer 0x035C with state 1 and the log it left.
+  let start_answered = fn(start, quest_id, place) {
+    answered(
+      started(
+        start:,
+        quest_id:,
+        place:,
+        asker:,
+        standing:,
+        picture:,
+        tables:,
+        now_ms:,
+      )
+      |> result.map(fn(log) {
+        #([SendState(quest_id:, state: 1, objective_id: 0)], log)
+      }),
+    )
   }
   case message {
     Accept ->
@@ -904,115 +963,55 @@ pub fn take(
       |> client_connection.decoded(message_id: quest_accept.message_id)
       |> result.map_error(NotDecoded)
       |> result.map(fn(request) {
-        answered(
-          request.quest_id,
-          started(
-            start: Accepting,
-            quest_id: request.quest_id,
-            place: Some(request.item),
-            asker:,
-            standing:,
-            picture:,
-            tables:,
-            now_ms:,
-          )
-            |> result.map(fn(log) {
-              #(
-                [
-                  SendState(
-                    quest_id: request.quest_id,
-                    state: 1,
-                    objective_id: 0,
-                  ),
-                ],
-                log,
-              )
-            }),
-        )
+        start_answered(Accepting, request.quest_id, Some(request.item))
       })
     Retry ->
       quest_retry.decode(body)
       |> client_connection.decoded(message_id: quest_retry.message_id)
       |> result.map_error(NotDecoded)
       |> result.map(fn(request) {
-        answered(
-          request.quest_id,
-          started(
-            start: Retrying,
-            quest_id: request.quest_id,
-            place: option.None,
-            asker:,
-            standing:,
-            picture:,
-            tables:,
-            now_ms:,
-          )
-            |> result.map(fn(log) {
-              #(
-                [
-                  SendState(
-                    quest_id: request.quest_id,
-                    state: 1,
-                    objective_id: 0,
-                  ),
-                ],
-                log,
-              )
-            }),
-        )
+        start_answered(Retrying, request.quest_id, option.None)
       })
     Abandon ->
       quest_abandon.decode(body)
       |> client_connection.decoded(message_id: quest_abandon.message_id)
       |> result.map_error(NotDecoded)
       |> result.map(fn(request) {
-        answered(
-          request.quest_id,
-          abandoned(quest_id: request.quest_id, asker:, tables:),
-        )
+        answered(abandoned(quest_id: request.quest_id, asker:, tables:))
       })
     Mention ->
       quest_mention.decode(body)
       |> client_connection.decoded(message_id: quest_mention.message_id)
       |> result.map_error(NotDecoded)
       |> result.map(fn(request) {
-        answered(
-          request.quest_id,
-          mentioned_by(
-            quest_id: request.quest_id,
-            wish: request.mentioned == 1,
-            asker:,
-            tables:,
-          ),
-        )
+        answered(mentioned_by(
+          quest_id: request.quest_id,
+          wish: request.mentioned == 1,
+          asker:,
+          tables:,
+        ))
       })
     Track ->
       quest_track.decode(body)
       |> client_connection.decoded(message_id: quest_track.message_id)
       |> result.map_error(NotDecoded)
       |> result.map(fn(request) {
-        answered(
-          request.quest_id,
-          tracked_by(
-            quest_id: request.quest_id,
-            wish: request.tracked == 1,
-            asker:,
-          ),
-        )
+        answered(tracked_by(
+          quest_id: request.quest_id,
+          wish: request.tracked == 1,
+          asker:,
+        ))
       })
     Ignore ->
       quest_ignore.decode(body)
       |> client_connection.decoded(message_id: quest_ignore.message_id)
       |> result.map_error(NotDecoded)
       |> result.map(fn(request) {
-        answered(
-          request.quest_id,
-          ignored_by(
-            quest_id: request.quest_id,
-            wish: request.ignored == 1,
-            asker:,
-          ),
-        )
+        answered(ignored_by(
+          quest_id: request.quest_id,
+          wish: request.ignored == 1,
+          asker:,
+        ))
       })
   }
 }
@@ -1022,7 +1021,6 @@ pub fn take(
 fn answer(
   message message: Message,
   outcome outcome: Result(#(List(Effect), QuestLog), Declined),
-  quest_id quest_id: Int,
   asker asker: Asker,
   logged logged: Set(String),
 ) -> Taken {
@@ -1032,7 +1030,7 @@ fn answer(
       let #(line, logged) =
         log_once(
           key: reason_of(declined:),
-          text: describe_declined(message:, quest_id:, declined:),
+          text: describe_declined(message:, declined:),
           logged:,
         )
       Taken(effects: [line], log: asker.log, logged:)
@@ -1090,22 +1088,30 @@ fn abandoned(
 }
 
 /// The log with the quest held Mentioned, which the client keeps for a mention and a
-/// withdrawal alike, or why the client would not send it.
+/// withdrawal alike, or why the client would not send it. The client sends a mention
+/// only for a quest it has no state for (`0x14043c1a0`), and a withdrawal only from the
+/// communicator's refresh, which walks the quests with the communicator flag
+/// (`0x1405fccb0`).
 fn mentioned_by(
   quest_id quest_id: Int,
   wish wish: Bool,
   asker asker: Asker,
   tables tables: table_store.Tables,
 ) -> Result(#(List(Effect), QuestLog), Declined) {
-  use #(_, _) <- result.try(read_quest(tables:, quest_id:))
+  use #(_, row) <- result.try(read_quest(tables:, quest_id:))
   let state = state_of(asker:, quest_id:)
-  case wish, state {
-    True, 0 | True, 7 | False, 4 | False, 5 | False, 6 ->
+  let sent = case wish, state {
+    True, 0 -> True
+    False, 4 | False, 5 | False, 6 -> has_flag(row.flags, communicator_flag)
+    _, _ -> False
+  }
+  case sent {
+    True ->
       Ok(#(
         [],
         quest_log.hold(log: asker.log, quest_id:, state: quest_log.Mentioned),
       ))
-    _, _ -> Error(CannotMention(quest_id:, state:, mentioned: wish))
+    False -> Error(CannotMention(quest_id:, state:, mentioned: wish))
   }
 }
 
@@ -1308,7 +1314,6 @@ fn reason_of(declined declined: Declined) -> String {
 /// A sentence that says why the request is answered with nothing, for the log.
 fn describe_declined(
   message message: Message,
-  quest_id _quest_id: Int,
   declined declined: Declined,
 ) -> String {
   let request = case message {
@@ -1335,9 +1340,9 @@ fn describe_declined(
       <> held(state)
       <> case mentioned {
         True ->
-          ", which the client mentions only for a quest it holds no state of or holds ignored: it would not have sent it"
+          ", which the client mentions only for a quest it holds no state of: it would not have sent it"
         False ->
-          ", which the client withdraws a mention of only for a quest held botched, mentioned or abandoned: it would not have sent it"
+          ", which the client withdraws a mention of only for a quest with the communicator flag held botched, mentioned or abandoned: it would not have sent it"
       }
     NotInActiveList(quest_id:, state:) ->
       request
