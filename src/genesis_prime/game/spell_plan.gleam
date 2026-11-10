@@ -1008,6 +1008,9 @@ pub type RowReading {
   /// A damage row: the area load reads it (genesis_prime/game/spell_area `damage_row_of`),
   /// and the plan holds it in no list.
   ReadByArea
+  /// An Activate row: the activate plan lists it (genesis_prime/game/activate), and the
+  /// ability's plan holds it in no list.
+  ReadByActivation
 }
 
 /// Why a row is in no list of its spell.
@@ -1550,6 +1553,15 @@ pub fn sources_of(tables tables: table_store.Tables) -> Sources {
   )
 }
 
+/// The effects of one spell in the grouped rows, in the order they take effect: none
+/// for a spell with no Spell4Effects row.
+pub fn effects_of(
+  sources sources: Sources,
+  spell4_id spell4_id: Int,
+) -> List(spell4_effects.Spell4Effects) {
+  dict.get(sources.effects, spell4_id) |> result.unwrap([])
+}
+
 /// Every spell group id some Spell4GroupList row holds, which a SpellForceRemove selector
 /// may name (`read_row`).
 pub fn spell_groups(tables tables: table_store.Tables) -> Set(Int) {
@@ -1929,7 +1941,8 @@ fn spell_of(
             condition:,
           )
           |> result.map(fn(proxy) { [proxy] })
-        Applied(..) | Held(..) | LeftOut(..) | ReadByArea -> Ok([])
+        Applied(..) | Held(..) | LeftOut(..) | ReadByArea | ReadByActivation ->
+          Ok([])
       }
     })
     |> result.map(list.flatten),
@@ -2290,6 +2303,7 @@ pub fn modifier_of(
     | effect_kind.Proc
     | effect_kind.Scale
     | effect_kind.RavelSignal
+    | effect_kind.Activate
     | effect_kind.Unread(..) ->
       change_of(tables:, spell4_id:, effect:)
       |> result.map(PropertyChange)
@@ -2847,7 +2861,8 @@ fn procs_of(
           ),
         ])
       }
-      Applied(..) | Held(..) | LeftOut(..) | ReadByArea -> Ok([])
+      Applied(..) | Held(..) | LeftOut(..) | ReadByArea | ReadByActivation ->
+        Ok([])
     }
   })
   |> result.map(list.flatten)
@@ -3111,7 +3126,8 @@ fn lists_of(
               RowLists(..lists, shield_heals: [heal, ..lists.shield_heals])
             PlannedProc(..) | PlannedProxy(..) -> lists
           }
-        Ok(LeftOut(..)) | Ok(ReadByArea) | Error(..) -> lists
+        Ok(LeftOut(..)) | Ok(ReadByArea) | Ok(ReadByActivation) | Error(..) ->
+          lists
       }
     })
   RowLists(
@@ -3202,7 +3218,7 @@ fn held_without_a_phase(
   use <- bool.guard(when: effect.phase_flags != 0, return: reading)
   case reading {
     Applied(row) -> Held(row)
-    ReadByArea -> LeftOut(why: InNoPhase)
+    ReadByArea | ReadByActivation -> LeftOut(why: InNoPhase)
     Held(..) | LeftOut(..) -> reading
   }
 }
@@ -3305,6 +3321,7 @@ fn kind_reading(
         }
       }
     effect_kind.Damage -> Ok(ReadByArea)
+    effect_kind.Activate -> Ok(ReadByActivation)
     effect_kind.Unread(..) -> Ok(LeftOut(why: TypeNotRead))
   }
 }

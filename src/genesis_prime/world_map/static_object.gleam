@@ -219,9 +219,9 @@ pub fn standing_at(
       }
     }),
   )
-  use x <- result.try(float_of(command.x))
-  use y <- result.try(float_of(command.y))
-  use z <- result.try(float_of(command.z))
+  use x <- result.try(float_of(bits: command.x))
+  use y <- result.try(float_of(bits: command.y))
+  use z <- result.try(float_of(bits: command.z))
   Ok(#(x, y, z))
 }
 

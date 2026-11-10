@@ -25,7 +25,7 @@ import genesis_prime/coverage/effect_row
 import genesis_prime/game/effect_kind
 import genesis_prime/game/spell_plan.{
   type PlanError, type RowReading, type Spell, Applied, Held, LeftOut,
-  ReadByArea,
+  ReadByActivation, ReadByArea,
 }
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4
@@ -55,6 +55,7 @@ fn describe_reading(reading: Result(RowReading, PlanError)) -> String {
     Ok(Held(..)) -> "Held"
     Ok(LeftOut(..)) -> "LeftOut"
     Ok(ReadByArea) -> "ReadByArea"
+    Ok(ReadByActivation) -> "ReadByActivation"
     Error(error) -> "refused: " <> spell_plan.describe(error:)
   }
 }
@@ -226,7 +227,7 @@ fn agrees(
 ) -> Bool {
   case reading {
     Ok(Applied(..)) | Ok(Held(..)) -> in_a_list
-    Ok(LeftOut(..)) | Ok(ReadByArea) -> !in_a_list
+    Ok(LeftOut(..)) | Ok(ReadByArea) | Ok(ReadByActivation) -> !in_a_list
     Error(..) -> False
   }
 }
@@ -396,6 +397,7 @@ fn children_of(
           | effect_kind.PropertyConversion
           | effect_kind.DisguiseOutfit
           | effect_kind.Absorption
+          | effect_kind.Activate
           | effect_kind.Unread(..) -> Error(Nil)
         }
       })

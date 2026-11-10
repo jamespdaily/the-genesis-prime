@@ -8,7 +8,7 @@
 ////                                                 ─▶ Hello, CharacterSelect(message), WorldEntry or WorldMessage
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
 ////                                                 ─▶ Movement(message), Camp(message), Chat(message), Cast(message),
-////                                                    Life(message), Innate(message), Interaction(message), Inventory(message) or
+////                                                    Activation, Life(message), Innate(message), Interaction(message), Inventory(message) or
 ////                                                    Dropped(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
@@ -46,6 +46,7 @@ import genesis_prime/message/camp_finished
 import genesis_prime/message/camp_request
 import genesis_prime/message/cancel_cast
 import genesis_prime/message/cast_ability
+import genesis_prime/message/cast_activate
 import genesis_prime/message/character_select_start
 import genesis_prime/message/choose_resurrection
 import genesis_prime/message/client_option
@@ -103,6 +104,9 @@ pub type Feature {
   /// The press or hold of an ability or the cancel of a cast
   /// (genesis_prime/game/cast).
   Cast(message: cast.Message)
+  /// The right-click of a unit, the client's cast of its activate spell
+  /// (genesis_prime/game/cast `activate`).
+  Activation
   /// The player's choice of how to come back from death
   /// (genesis_prime/game/player_life).
   Life(message: player_life.Message)
@@ -246,6 +250,7 @@ const table = [
     Cast(cast.Pressed),
     [AtWorld],
   ),
+  Row(cast_activate.message_id, InsideWorldMessage, Activation, [AtWorld]),
   Row(
     ability_hold.message_id,
     InsideWorldMessage,

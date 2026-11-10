@@ -1,0 +1,90 @@
+//// The activate cast's pick of a spell (genesis_prime/game/activate): which of a creature's
+//// four activate columns the client casts when the player right-clicks it. Expected values
+//// come from the client's pick, `0x14046c580` (fact `opcode.0x97.pick`), and the rows of the
+//// Seaspine Mollusk, Creature2 26462, in the client's tables.
+
+import fixture_tables
+import genesis_prime/game/activate.{
+  ActivateEffect, Column, Creature, NoActivateSpell, Picked, Planned, Unread,
+}
+import genesis_prime/game/prerequisite.{Fails, NotRead, Passes}
+import genesis_prime/table/creature2
+import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
+import gleam/list
+import gleam/option.{Some}
+import owned_test
+import prerequisite_support
+
+/// A creature of these columns, with the cast time and range of no row.
+fn creature_of(columns columns: List(#(Int, Int))) -> activate.Creature {
+  Creature(
+    columns: list.map(columns, fn(column) {
+      Column(prerequisite_id: column.0, spell4_id: column.1)
+    }),
+    cast_time_ms: 0,
+    min_range: 0.0,
+    max_range: 0.0,
+  )
+}
+
+pub fn activate_pick_takes_first_passing_column_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The prerequisites the check answers: 11 and 13 pass, 12 fails, 14 holds a condition the
+  // server does not read.
+  let check = fn(prerequisite_id) {
+    case prerequisite_id {
+      11 | 13 -> Passes
+      14 -> NotRead(prerequisite_type: 999)
+      _ -> Fails
+    }
+  }
+  let picked = fn(columns) {
+    activate.pick(creature: creature_of(columns:), default_spell: 8, check:)
+  }
+  assert picked([#(0, 100), #(11, 200)]) == Picked(spell4_id: 100)
+    as "0x14046c580: a column whose prerequisite is 0 wins without a check"
+  assert picked([#(12, 100), #(13, 200), #(11, 300)]) == Picked(spell4_id: 200)
+    as "0x14046c580: a failing first column is skipped, and the first passing one wins even when a later one passes too"
+  assert picked([#(12, 100), #(12, 200)]) == Picked(spell4_id: 8)
+    as "0x14046c580: when no column passes the pick stays GameFormula 414's dataint0, 8"
+  assert picked([#(12, 100), #(11, 0), #(13, 300)]) == NoActivateSpell
+    as "0x14046c580: a passing column whose spell is 0 wins and the client refuses with result 100 (TargetIsNotUseable)"
+  assert picked([#(0, 0)]) == NoActivateSpell
+    as "0x14046c580: a column of prerequisite 0 and spell 0 is the same refusal"
+  assert picked([#(12, 100), #(14, 200), #(11, 300)])
+    == Unread(prerequisite_type: 999)
+    as "a column the server cannot read stops the pick, so the cast is refused as not built, never another column's spell"
+  assert picked([#(11, 100), #(14, 200)]) == Picked(spell4_id: 100)
+    as "a column after the winner is never checked"
+}
+
+pub fn seaspine_mollusk_activates_with_1817_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let assert Ok(row) = creature2.get(tables:, id: Creature2Id(26_462))
+    as "Creature2 26462, the Seaspine Mollusk, is a root of the fixture"
+  let creature = activate.creature_of(row:)
+  let activations = activate.activations(tables:)
+  assert activations.default_spell == 8
+    as "GameFormula 414's dataint0 (0x14046c580)"
+  assert creature.cast_time_ms == 2000
+    as "Creature2 26462's activateSpellCastTime is 2000"
+  let player_with_it =
+    prerequisite.Subject(
+      ..prerequisite_support.holding(held: [], second_unit: Some(5000)),
+      player: Some(prerequisite_support.player()),
+    )
+  assert activate.pick(
+      creature:,
+      default_spell: activations.default_spell,
+      check: activate.checker(activations:, subject: player_with_it),
+    )
+    == Picked(spell4_id: 1817)
+    as "the creature's first column names Prerequisite 9358, which passes for a player with no challenge record (type 125 comparison 2), so the pick is Spell4 1817"
+  let assert Ok(Planned(effects:, ..)) =
+    activate.planned_of(activations:, spell4_id: 1817)
+    as "the load plans Spell4 1817"
+  assert effects
+    == [ActivateEffect(effect_id: Spell4EffectsId(2821), delay_ms: 0)]
+    as "Spell4 1817's one Activate row is Spell4Effects 2821, delay 0"
+}

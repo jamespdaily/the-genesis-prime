@@ -31,8 +31,8 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{
   AimedAtOtherUnits, AimsAtArea, AimsAtCaster, AimsAtPrimaryTarget, Always,
-  Applied, Held, Lasting, LeftOut, PlannedLasting, PlannedShieldHeal, ReadByArea,
-  ShieldHeal, TickingShieldHeal,
+  Applied, Held, Lasting, LeftOut, PlannedLasting, PlannedShieldHeal,
+  ReadByActivation, ReadByArea, ShieldHeal, TickingShieldHeal,
 }
 import genesis_prime/game/spend
 import genesis_prime/table/id.{Spell4EffectsId}
@@ -98,8 +98,11 @@ fn heals_of(
     case reading {
       Ok(Applied(PlannedShieldHeal(heal:)))
       | Ok(Held(PlannedShieldHeal(heal:))) -> Ok(heal)
-      Ok(Applied(..)) | Ok(Held(..)) | Ok(LeftOut(..)) | Ok(ReadByArea) ->
-        Error(Nil)
+      Ok(Applied(..))
+      | Ok(Held(..))
+      | Ok(LeftOut(..))
+      | Ok(ReadByArea)
+      | Ok(ReadByActivation) -> Error(Nil)
       Error(error) ->
         panic as { "the row is refused: " <> spell_plan.describe(error:) }
     }
