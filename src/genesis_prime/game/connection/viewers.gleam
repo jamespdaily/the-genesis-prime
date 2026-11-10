@@ -133,6 +133,7 @@ import genesis_prime/game/hit_radius
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/shown.{ShownCreature, ShownObject, ShownPlayer}
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
 import genesis_prime/game/world_entry
 import genesis_prime/message/unit_create_player.{
@@ -246,7 +247,11 @@ pub fn map_sent(
             dict.insert(
               picture,
               unit.0,
-              object_shown(tables: session.settings.tables, created: unit.1),
+              object_shown(
+                tables: session.settings.tables,
+                created: unit.1,
+                world_place: movement.place(entered.movement),
+              ),
             )
           })
         }),
@@ -677,11 +682,13 @@ fn names_own_unit(
 
 /// What the picture holds of a static object its 0x262 creates: the 0x262's creature,
 /// where it puts the unit and its display's hit radius, 0.0 for a display with no
-/// Creature2DisplayInfo row. The server wrote the 0x262 with `static_object.create`,
-/// which always writes a position of finite numbers.
+/// Creature2DisplayInfo row. The object stands in the world and zone of `world_place`,
+/// the player's place. The server wrote the 0x262 with `static_object.create`, which
+/// always writes a position of finite numbers.
 fn object_shown(
   tables tables: table_store.Tables,
   created created: static_object.Created,
+  world_place world_place: Place,
 ) -> shown.Shown {
   let assert Ok(#(x, y, z)) = static_object.standing_at(created:)
     as "static_object.create writes a position of finite numbers"
@@ -694,9 +701,7 @@ fn object_shown(
     |> result.unwrap(0.0)
   ShownObject(
     creature_id: static_object.creature_id(created:),
-    x:,
-    y:,
-    z:,
+    place: start_place.moved(place: world_place, x:, y:, z:),
     hit_radius:,
   )
 }

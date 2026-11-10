@@ -21,6 +21,7 @@ import genesis_prime/game/activate.{
   Object, Planned,
 }
 import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
@@ -33,10 +34,12 @@ import genesis_prime/step.{ConnectionId, LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/string
 import owned_test
 import place_support
+import prerequisite_support
 
 const the_mollusk = 26_462
 
@@ -83,7 +86,16 @@ fn object(
   Object(
     creature_id: the_mollusk,
     creature:,
-    body: Body(x: 4096.0 +. east, y: up, z: 512.0, radius: object_radius),
+    body: Body(
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 6009,
+        x: 4096.0 +. east,
+        y: up,
+        z: 512.0,
+      ),
+      radius: object_radius,
+    ),
   )
 }
 
@@ -461,6 +473,123 @@ pub fn activate_refuses_unknown_and_unbuilt_spells_test() -> Nil {
     )
     == cast_result.to_value(cast_result.IllegalSpellCast)
     as "a spell the plan cannot build is refused as not built"
+  let assert Ok(#(_, struck)) =
+    right_click(
+      state: cast.new(),
+      activations: the_activations(),
+      unit_id: its_unit,
+      target: object(creature: creature_of_spell(38_392), east: 1.0, up: 0.0),
+      at: 1000,
+    )
+  assert support.refusal_results(effects: struck)
+    == [cast_result.to_value(cast_result.IllegalSpellCast)]
+    && support.started_timers(effects: struck) == []
+    as "Spell4 38392 (Creature2 19232's spell) has Spell4Effects 82255, a Proxy aimed at the primary target (targetFlags 2): the activate cast strikes no one, so the press is refused as not built, never run with the effect lost"
+  let assert [#(LogWarning, struck_line)] = support.logs(effects: struck)
+    as "the refusal is logged"
+  assert string.contains(struck_line, "82255")
+    as "the log names the effect that would be lost"
+}
+
+/// Condition types below 301 the server does not read, lowest first.
+fn unread_types() -> List(Int) {
+  int.range(from: 300, to: 0, with: [], run: fn(unread, type_id) {
+    case prerequisite.is_read(type_id:) {
+      True -> unread
+      False -> [type_id, ..unread]
+    }
+  })
+}
+
+/// Activations of two creatures' prerequisites, each of one condition of an unread type.
+fn behind_unread_types(
+  first first: Int,
+  second second: Int,
+) -> activate.Activations {
+  let activations = the_activations()
+  Activations(
+    ..activations,
+    prerequisites: activations.prerequisites
+      |> dict.insert(
+        900_001,
+        prerequisite_support.single(id: 900_001, condition: #(first, 1, 0, 0)),
+      )
+      |> dict.insert(
+        900_002,
+        prerequisite_support.single(id: 900_002, condition: #(second, 1, 0, 0)),
+      ),
+  )
+}
+
+fn behind(prerequisite_id prerequisite_id: Int) -> Target {
+  object(
+    creature: Creature(
+      columns: [Column(prerequisite_id:, spell4_id: 1817)],
+      cast_time_ms: 2000,
+      min_range: 0.0,
+      max_range: 3.0,
+    ),
+    east: 1.0,
+    up: 0.0,
+  )
+}
+
+pub fn activate_logs_each_unread_prerequisite_type_once_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert [first_type, second_type, ..] = unread_types()
+    as "the client's Prerequisite types include some the server does not read"
+  let activations = behind_unread_types(first: first_type, second: second_type)
+  let click = fn(state, target, at) {
+    let assert Ok(taken) =
+      right_click(state:, activations:, unit_id: its_unit, target:, at:)
+    taken
+  }
+  let #(state, first) =
+    click(cast.new(), behind(prerequisite_id: 900_001), 1000)
+  assert support.refusal_results(effects: first)
+    == [cast_result.to_value(cast_result.IllegalSpellCast)]
+    as "a creature that activates through a condition the server does not read is refused as not built"
+  let assert [#(LogWarning, first_line)] = support.logs(effects: first)
+    as "the first type is logged"
+  assert string.contains(first_line, "type " <> int.to_string(first_type))
+  let #(state, second) = click(state, behind(prerequisite_id: 900_002), 1100)
+  let assert [#(LogWarning, second_line)] = support.logs(effects: second)
+    as "a different unread type is logged too, not hidden by the first"
+  assert string.contains(second_line, "type " <> int.to_string(second_type))
+  let #(state, again) = click(state, behind(prerequisite_id: 900_001), 1200)
+  assert support.logs(effects: again) == []
+    && support.refusal_results(effects: again)
+    == [cast_result.to_value(cast_result.IllegalSpellCast)]
+    as "the first type's second right-click is refused and not logged again"
+  let by_spell =
+    Activations(
+      ..activations,
+      spells: dict.insert(
+        activations.spells,
+        first_type,
+        CannotBePlanned(why: "the Spell4Effects row 1 is a Stealth"),
+      ),
+    )
+  let assert Ok(#(_, by_spell_effects)) =
+    right_click(
+      state:,
+      activations: by_spell,
+      unit_id: its_unit,
+      target: object(
+        creature: Creature(
+          columns: [Column(prerequisite_id: 0, spell4_id: first_type)],
+          cast_time_ms: 2000,
+          min_range: 0.0,
+          max_range: 3.0,
+        ),
+        east: 1.0,
+        up: 0.0,
+      ),
+      at: 1300,
+    )
+  assert list.length(support.logs(effects: by_spell_effects)) == 1
+    as "a spell whose Spell4 id equals an unread type already logged is still logged: the types and the spell ids are kept apart"
+  Nil
 }
 
 pub fn activate_cancelled_raises_nothing_test() -> Nil {

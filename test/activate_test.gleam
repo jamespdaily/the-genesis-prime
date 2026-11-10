@@ -5,13 +5,15 @@
 
 import fixture_tables
 import genesis_prime/game/activate.{
-  ActivateEffect, Column, Creature, NoActivateSpell, Picked, Planned, Unread,
+  ActivateEffect, CannotBePlanned, Column, Creature, NoActivateSpell, Picked,
+  Planned, Unread,
 }
 import genesis_prime/game/prerequisite.{Fails, NotRead, Passes}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
 import gleam/list
 import gleam/option.{Some}
+import gleam/string
 import owned_test
 import prerequisite_support
 
@@ -87,4 +89,14 @@ pub fn seaspine_mollusk_activates_with_1817_test() -> Nil {
   assert effects
     == [ActivateEffect(effect_id: Spell4EffectsId(2821), delay_ms: 0)]
     as "Spell4 1817's one Activate row is Spell4Effects 2821, delay 0"
+}
+
+pub fn activate_spell_that_strikes_cannot_be_planned_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let activations = activate.activations(tables: fixture_tables.shared())
+  let assert Ok(CannotBePlanned(why:)) =
+    activate.planned_of(activations:, spell4_id: 38_392)
+    as "Spell4 38392, Creature2 19232's activate spell, is held with a reason"
+  assert string.contains(why, "82255") && string.contains(why, "38392")
+    as "Spell4Effects 82255 of Spell4 38392 is a Proxy (effectType 26) aimed at the primary target (targetFlags 2) beside its Activate row 82254: the activate cast strikes no one, so the reason names that row"
 }

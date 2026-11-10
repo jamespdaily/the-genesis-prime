@@ -1026,8 +1026,8 @@ pub opaque type State {
     presses: Int,
     /// How many timers the rule has started, which the timer ids are made from.
     timers_started: Int,
-    /// The Spell4 ids already logged as unbuilt on this connection.
-    logged: Set(Int),
+    /// What the rule has already logged as unbuilt on this connection.
+    logged: Set(Unbuilt),
     /// The Stealth rows the caster's casts hold on it, by cast id and effect id, each
     /// with whether damage ends it; the caster is stealthed while this is not empty.
     stealth: Dict(unit_properties.Source, spell_plan.Breaks),
@@ -1238,7 +1238,7 @@ fn activation_pressed(
             cast:,
             client_cast_id:,
             spell4_id: 0,
-            key: 0,
+            key: UnreadPrerequisite(prerequisite_type:),
             result: cast_result.IllegalSpellCast,
             why: "of a creature activates through a prerequisite of the type "
               <> int.to_string(prerequisite_type)
@@ -1253,7 +1253,7 @@ fn activation_pressed(
                 cast:,
                 client_cast_id:,
                 spell4_id:,
-                key: spell4_id,
+                key: UnbuiltSpell(spell4_id:),
                 result: cast_result.IllegalSpellCast,
                 why: "cannot be planned: " <> why,
               )
@@ -1301,12 +1301,7 @@ fn activation_in_range(
   case
     activate.range_of(
       limits: activate.limits_for(creature:, spell4_id:, spell: limits),
-      caster: activate.Body(
-        x: start_place.x(caster.place),
-        y: start_place.y(caster.place),
-        z: start_place.z(caster.place),
-        radius: caster_radius,
-      ),
+      caster: activate.Body(place: caster.place, radius: caster_radius),
       target:,
     )
   {
@@ -1373,7 +1368,7 @@ fn activation_started(
         cast:,
         client_cast_id:,
         spell4_id:,
-        key: spell4_id,
+        key: UnbuiltSpell(spell4_id:),
         result:,
         why:,
       )
@@ -1405,13 +1400,21 @@ fn activation_started(
   }
 }
 
+/// What a log of a cast the server does not build is kept once for.
+pub type Unbuilt {
+  /// A spell, by Spell4 id.
+  UnbuiltSpell(spell4_id: Int)
+  /// A prerequisite type the server does not read.
+  UnreadPrerequisite(prerequisite_type: Int)
+}
+
 /// A right-click refused because the server does not build what the cast needs: the
-/// refusal, with a log the first time for the spell `key` (0 for none).
+/// refusal, with a log the first time for `key`.
 fn not_built_refusal(
   cast cast: State,
   client_cast_id client_cast_id: Int,
   spell4_id spell4_id: Int,
-  key key: Int,
+  key key: Unbuilt,
   result result: cast_result.CastResult,
   why why: String,
 ) -> Result(#(State, List(Effect)), Refusal) {
@@ -2079,7 +2082,7 @@ fn press_of(
         ],
       )
     NotBuilt(result:, why:) ->
-      case set.contains(cast.logged, spell.spell4_id.value) {
+      case set.contains(cast.logged, UnbuiltSpell(spell.spell4_id.value)) {
         True ->
           refused_hold(
             cast:,
@@ -2091,7 +2094,10 @@ fn press_of(
           refused_hold(
             cast: State(
               ..cast,
-              logged: set.insert(cast.logged, spell.spell4_id.value),
+              logged: set.insert(
+                cast.logged,
+                UnbuiltSpell(spell.spell4_id.value),
+              ),
             ),
             client_cast_id:,
             ability: resolution.ability,

@@ -21,12 +21,16 @@
 ////   the Prerequisite rows the columns name; the Creature2 rows are read from the tables
 ////   when an activation arrives (the derivation stores none of the 8,463 creatures that
 ////   have an activate column).
-//// - Gaps: the client's per-unit vertical offset and the creature words 0x6c and 0x148 that
-////   make the client pick no spell are not modelled.
+//// - A spell with an effect aimed at the target or an area is refused with result 285 and
+////   logged once, since the activate cast strikes no unit (gap, #336).
+//// - Gaps, each closed by the quests, zones and prerequisites issue (#334): the client's
+////   per-unit vertical offset and the creature words 0x6c and 0x148 that make the client
+////   pick no spell are not modelled.
 
 import genesis_prime/game/effect_kind
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/table/creature2
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
@@ -34,6 +38,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
+import genesis_prime/world_map/creature_path
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -245,26 +250,67 @@ fn planned(
       case spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: []) {
         Error(error) -> CannotBePlanned(why: spell_plan.describe(error:))
         Ok(spell) ->
-          Planned(
-            spell:,
-            effects: spell_plan.effects_of(sources:, spell4_id:)
-              |> list.filter(fn(effect) {
-                effect_kind.kind_of(effect_type: effect.effect_type)
-                == effect_kind.Activate
-              })
-              |> list.map(fn(effect) {
-                ActivateEffect(
-                  effect_id: Spell4EffectsId(effect.id),
-                  delay_ms: effect.delay_time,
-                )
-              }),
-            limits: Limits(
-              min: row.target_min_range,
-              max: row.target_max_range,
-              vertical: row.target_vertical_range,
-            ),
-          )
+          case activate_rows_of(sources:, spell4_id:) {
+            Error(AimedAtTarget(effect_id:)) ->
+              CannotBePlanned(
+                why: "the effect "
+                <> int.to_string(effect_id)
+                <> " of the spell "
+                <> int.to_string(spell4_id)
+                <> " aims at the target or an area, and the activate cast strikes no one",
+              )
+            Ok(effects) ->
+              Planned(
+                spell:,
+                effects:,
+                limits: Limits(
+                  min: row.target_min_range,
+                  max: row.target_max_range,
+                  vertical: row.target_vertical_range,
+                ),
+              )
+          }
       }
+  }
+}
+
+/// An effect of an activate spell that aims at the target or an area.
+type AimedAtTarget {
+  AimedAtTarget(effect_id: Int)
+}
+
+/// The Activate rows of the spell, or the first effect that aims at the target or an area.
+///
+/// Gap: the activate cast carries out the caster's effects and the Activate rows and
+/// strikes no unit, so a spell with an effect aimed at the target or an area would lose
+/// it without a word; it is refused instead, until the issue for spells in depth (#336)
+/// builds the strike of an activate cast.
+fn activate_rows_of(
+  sources sources: spell_plan.Sources,
+  spell4_id spell4_id: Int,
+) -> Result(List(ActivateEffect), AimedAtTarget) {
+  let #(activates, others) =
+    spell_plan.effects_of(sources:, spell4_id:)
+    |> list.partition(fn(effect) {
+      effect_kind.kind_of(effect_type: effect.effect_type)
+      == effect_kind.Activate
+    })
+  case
+    list.find(others, fn(effect) {
+      spell_plan.aim_of(target_flags: effect.target_flags)
+      != spell_plan.AimsAtCaster
+    })
+  {
+    Ok(effect) -> Error(AimedAtTarget(effect_id: effect.id))
+    Error(Nil) ->
+      Ok(
+        list.map(activates, fn(effect) {
+          ActivateEffect(
+            effect_id: Spell4EffectsId(effect.id),
+            delay_ms: effect.delay_time,
+          )
+        }),
+      )
   }
 }
 
@@ -290,8 +336,9 @@ pub type Target {
   Unseen
   /// Another player's unit.
   AnotherPlayer
-  /// A creature with a fight state, whose place moves: its activate cast is not
-  /// built.
+  /// A creature with a fight state, whose place moves: its activate cast is refused
+  /// with result 100 until the issue for quests, zones and prerequisites (#334) reads its
+  /// place.
   Fighter
   /// A static object: the id of its Creature2 row, what the row says of its activate
   /// cast, and where it stands.
@@ -300,7 +347,7 @@ pub type Target {
 
 /// A unit's body for the range test: where it stands (y is up) and its hit radius.
 pub type Body {
-  Body(x: Float, y: Float, z: Float, radius: Float)
+  Body(place: Place, radius: Float)
 }
 
 /// How far the caster stands from the target.
@@ -340,11 +387,12 @@ pub fn limits_for(
 /// The gap between two bodies: the distance between their places less both radii, never
 /// below 0 (`0x1403b2240`).
 fn gap(from from: Body, to to: Body) -> Float {
-  let dx = to.x -. from.x
-  let dy = to.y -. from.y
-  let dz = to.z -. from.z
-  let distance = float.square_root(dx *. dx +. dy *. dy +. dz *. dz)
-  float.max(result.unwrap(distance, 0.0) -. from.radius -. to.radius, 0.0)
+  float.max(
+    creature_path.distance(from: from.place, to: to.place)
+      -. from.radius
+      -. to.radius,
+    0.0,
+  )
 }
 
 /// Whether the caster stands where `limits` allow its activate cast at the target, as
@@ -357,7 +405,11 @@ pub fn range_of(
 ) -> Range {
   let gap = gap(from: caster, to: target)
   let height =
-    float.absolute_value(target.y -. caster.y) -. caster.radius -. target.radius
+    float.absolute_value(
+      start_place.y(target.place) -. start_place.y(caster.place),
+    )
+    -. caster.radius
+    -. target.radius
   case
     gap <. limits.min,
     gap >. limits.max,

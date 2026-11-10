@@ -190,14 +190,14 @@ fn activate_target(
       Error(Nil) -> activate.Unseen
       Ok(shown.ShownPlayer) -> activate.AnotherPlayer
       Ok(shown.ShownCreature(..)) -> activate.Fighter
-      Ok(shown.ShownObject(creature_id:, x:, y:, z:, hit_radius:)) -> {
+      Ok(shown.ShownObject(creature_id:, place:, hit_radius:)) -> {
         // The object's Creature2 row is in the tables, since its 0x262 was made from it.
         let assert Ok(row) = creature2.get(tables:, id: creature_id)
           as "a shown object's Creature2 row is in the tables it was made from"
         activate.Object(
           creature_id: creature_id.value,
           creature: activate.creature_of(row:),
-          body: activate.Body(x:, y:, z:, radius: hit_radius),
+          body: activate.Body(place:, radius: hit_radius),
         )
       }
     }

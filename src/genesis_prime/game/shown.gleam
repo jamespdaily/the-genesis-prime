@@ -55,10 +55,8 @@ pub type Shown {
   ShownObject(
     /// The Creature2 row of its 0x262.
     creature_id: Creature2Id,
-    /// Where its 0x262 puts it.
-    x: Float,
-    y: Float,
-    z: Float,
+    /// Where its 0x262 puts it, in the world and zone of the player it was shown to.
+    place: Place,
     /// Creature2DisplayInfo.hitRadius of its display, 0.0 when the display has no
     /// row.
     hit_radius: Float,

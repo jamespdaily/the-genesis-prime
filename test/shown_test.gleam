@@ -54,9 +54,13 @@ fn creature(
 fn an_object() -> shown.Shown {
   ShownObject(
     creature_id: Creature2Id(26_462),
-    x: 0.0,
-    y: 0.0,
-    z: 0.0,
+    place: place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 0.0,
+      y: 0.0,
+      z: 0.0,
+    ),
     hit_radius: 0.5,
   )
 }
