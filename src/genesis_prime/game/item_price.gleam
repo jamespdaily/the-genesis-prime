@@ -8,11 +8,13 @@
 ////   curve = GameFormula 1078 at the item's powerLevel
 ////   buy   = max(1, trunc(curve × quality × mult))      (base)
 ////   shown = trunc(buy × the vendor's buy multiplier)   (shown)
-////   sell  = max(1, trunc(buy × GameFormula 1026's 0.15))  (sell_base), or the row's own
-////           SellToVendor credit amount when its currency type columns are set
+////   sell  = max(1, trunc(buy × GameFormula 1026's 0.15)) credits  (sell_price), or the row's
+////           own SellToVendor amount in its one currency when its currency type columns are set
 //// ```
 ////
-//// - **A vendor's sale** is priced as `shown(sell_base, the vendor's sell multiplier)`.
+//// - **A vendor's sale** is priced as `paid(sell_price, the vendor's sell multiplier)`: a
+////   credit price is scaled by the multiplier, a price in any other currency is paid as the
+////   row gives it (`0x14041bcc0.formula`).
 //// - **Every product is a 32-bit float** (`message/float32`), as the client's code rounds
 ////   each step, so the price is the client's to the credit.
 //// - **A proxy item** (Item2.flags 0x4000) takes its quality from the Item2 its row
@@ -45,7 +47,6 @@ import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/float
 import gleam/int
-import gleam/list
 import gleam/result
 
 /// The GameFormula row of the price curve (ItemPriceLevelCurve 0x14041d200).
@@ -56,18 +57,22 @@ const price_curve_formula = 1078
 const proxy_formula = 1214
 
 /// The GameFormula row whose datafloat0 is the fraction of the buy price an item sells for
-/// (`0x14040bfb0`).
-const sell_fraction_formula = 1026
+/// (`0x14040bfb0`), read by `sell_price`.
+pub const sell_fraction_formula = 1026
 
-/// The CurrencyType row of credits.
-const credit_type = 1
+/// What an item sells for: an amount of one currency, a CurrencyType row's id.
+pub type SellPrice {
+  SellPrice(currency_type_id: Int, amount: Int)
+}
 
-/// Why an item has no credit price.
+/// Why an item has no price.
 pub type PriceError {
   /// A row the formula reads is not in the client's tables.
   MissingRow(table: String, id: Int)
   /// The item is priced in a currency other than credits.
   OtherCurrency(item2_id: Item2Id)
+  /// The row's two SellToVendor slots both hold an amount, which no client row does.
+  TwoSellCurrencies(item2_id: Item2Id)
   /// The item's price has a trade skill additive.
   TradeskillAdditive(item2_id: Item2Id, additive_id: Int)
   /// The price curve has no value at the item's power level.
@@ -183,62 +188,27 @@ fn quality(
   })
 }
 
-/// The item's sell price in credits at a vendor multiplier of 1.0 (`0x14040d160`): the
-/// computed buy price times GameFormula 1026's fraction, at least 1, when neither of the row's
-/// SellToVendor currency types is set; else the row's own SellToVendor amount in credits. 0 is
-/// a price the client does not pay. Whether the item may be sold at all is
+/// The item's sell price at a vendor multiplier of 1.0 (`0x14040d160`): the computed buy
+/// price times GameFormula 1026's fraction, at least 1, in credits when neither of the row's
+/// SellToVendor currency types is set; else the row's own SellToVendor slot with an amount,
+/// in its currency. A row with an amount in both slots is `TwoSellCurrencies`. An amount of 0
+/// is a price the client does not pay. Whether the item may be sold at all is
 /// `item_property.sellable`'s.
-pub fn sell_base(
-  tables tables: table_store.Tables,
-  item2_id item2_id: Item2Id,
-) -> Result(Int, PriceError) {
-  let Item2Id(raw_id) = item2_id
-  use item <- result.try(
-    item2.get(tables:, id: item2_id)
-    |> result.replace_error(MissingRow(table: "Item2", id: raw_id)),
-  )
-  case
-    item.currency_type_id0_sell_to_vendor != 0
-    || item.currency_type_id1_sell_to_vendor != 0
-  {
-    True -> own_sell_price(item2_id:, item:)
-    False -> {
-      use buy <- result.try(computed_buy(tables:, item:))
-      use fraction_row <- result.try(
-        game_formula.get(tables:, id: GameFormulaId(sell_fraction_formula))
-        |> result.replace_error(MissingRow(
-          table: "GameFormula",
-          id: sell_fraction_formula,
-        )),
-      )
-      Ok(int.max(1, shown(base: buy, multiplier: fraction_row.datafloat0)))
-    }
-  }
+pub fn sell_price(
+  tables _tables: table_store.Tables,
+  item2_id _item2_id: Item2Id,
+) -> Result(SellPrice, PriceError) {
+  panic as "not built"
 }
 
-/// The credits of the row's own sell price: each of its two slots with an amount is a credit
-/// slot (currency type 1), or the item is priced in another currency.
-fn own_sell_price(
-  item2_id item2_id: Item2Id,
-  item item: item2.Item2,
-) -> Result(Int, PriceError) {
-  let slots = [
-    #(
-      item.currency_type_id0_sell_to_vendor,
-      item.currency_amount0_sell_to_vendor,
-    ),
-    #(
-      item.currency_type_id1_sell_to_vendor,
-      item.currency_amount1_sell_to_vendor,
-    ),
-  ]
-  list.try_fold(slots, 0, fn(credits, slot) {
-    case slot {
-      #(_, 0) -> Ok(credits)
-      #(currency, amount) if currency == credit_type -> Ok(credits + amount)
-      _ -> Error(OtherCurrency(item2_id:))
-    }
-  })
+/// The price the vendor pays for one item at its sell multiplier: a credit price is
+/// `shown(amount, multiplier)`, a price in another currency is unchanged
+/// (`0x14041bcc0.formula`).
+pub fn paid(
+  price _price: SellPrice,
+  multiplier _multiplier: Float,
+) -> SellPrice {
+  panic as "not built"
 }
 
 /// The price the vendor's window shows and the vendor pays or charges for a base price: the
@@ -259,6 +229,10 @@ pub fn describe(error error: PriceError) -> String {
       "Item2 "
       <> int.to_string(item)
       <> " is priced in a currency other than credits, which #333 builds"
+    TwoSellCurrencies(item2_id: Item2Id(item)) ->
+      "Item2 "
+      <> int.to_string(item)
+      <> " has an amount in both sell currency slots"
     TradeskillAdditive(item2_id: Item2Id(item), additive_id:) ->
       "Item2 "
       <> int.to_string(item)

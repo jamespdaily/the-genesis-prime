@@ -83,13 +83,13 @@ pub fn the_buy_price_of_each_stocked_item_is_the_price_the_client_shows_test() -
 /// What a vendor pays for each item at the sell multiplier 1.0, over the committed tables.
 fn sell_bases(items items: List(Int)) -> List(#(Int, Int)) {
   list.map(items, fn(item) {
-    let assert Ok(price) =
-      item_price.sell_base(
+    let assert Ok(item_price.SellPrice(currency_type_id: 1, amount:)) =
+      item_price.sell_price(
         tables: character_tables.shared(),
         item2_id: Item2Id(item),
       )
       as "the committed rows hold these items and price them in credits"
-    #(item, price)
+    #(item, amount)
   })
 }
 
@@ -142,9 +142,9 @@ pub fn a_sell_to_vendor_credit_amount_replaces_the_computed_price_test() -> Nil 
     use tables <- fixture_tables.changed(table: "Item2", id: item, with: [
       #("currencyAmount0SellToVendor", Integer(7)),
     ])
-    item_price.sell_base(tables:, item2_id: Item2Id(item))
+    item_price.sell_price(tables:, item2_id: Item2Id(item))
   }
-  assert planted == Ok(7)
+  assert planted == Ok(item_price.SellPrice(currency_type_id: 1, amount: 7))
     as "0x14040d160: with a sell currency type set the amount column is the price, not the computed 0.15 of the buy price"
   assert item_price.shown(base: 1, multiplier: 2.5) == 2
     as "0x14041bcc0.formula: trunc(f32(1) x f32(2.5)) = 2"

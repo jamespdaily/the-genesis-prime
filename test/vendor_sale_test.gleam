@@ -23,7 +23,7 @@
 ////   total, then for each stack a 0x148 (whole) or 0x17F (part) and a 0xBA that adds the
 ////   entry to the Buyback list, its amount the credits paid and its currency type 1.
 //// - Where the server chooses: which 0x106 the server's own checks of a stale client give
-////   (16, 2, 59, 62, 18 and the worn items of issue 650), and the logs.
+////   (16, 2, 59, 62 and 18), and the logs.
 
 import character_tables
 import fixture_tables
@@ -109,9 +109,10 @@ fn junk_body() -> BitArray {
 }
 
 fn credits(total total: Int) -> Currencies {
-  currency.with_credits(
+  currency.with_amount(
     currencies: currency.from_held(held: []),
-    credits: total,
+    currency_type_id: currency.credits_type,
+    total:,
   )
 }
 
@@ -366,13 +367,15 @@ pub fn selling_a_whole_stack_removes_it_pays_the_shown_price_and_adds_a_buyback_
       first: SoldItem(
         item_guid: 11,
         item2_id: Item2Id(14_838),
+        location: 1,
         held_count: 7,
         sold_count: 7,
-        credits: 105,
+        paid: 105,
       ),
       rest: [],
-      credits_held: 1000,
-      credits_after: 1105,
+      currency_type_id: 1,
+      held: 1000,
+      after: 1105,
     )
     as "opcode.0x166: the whole stack for the 15 the vendor pays for each, against the 1000 held"
   let #(left, held_credits, buyback, effects) =
@@ -381,7 +384,7 @@ pub fn selling_a_whole_stack_removes_it_pays_the_shown_price_and_adds_a_buyback_
       items:,
       currencies: scene.credits,
       buyback: Buyback(next_id: 3, entries: []),
-      answer: store.Sold(credits: 1105),
+      answer: store.Sold(amount: 1105),
     )
   assert left == [] as "the stack is gone"
   assert currency.credits(currencies: held_credits) == 1105
@@ -391,7 +394,8 @@ pub fn selling_a_whole_stack_removes_it_pays_the_shown_price_and_adds_a_buyback_
         buyback_id: 3,
         item2_id: Item2Id(14_838),
         quantity: 7,
-        credits: 105,
+        currency_type_id: 1,
+        amount: 105,
       ),
     ])
     as "the sale is the buyback list's entry 3, the next id 4"
@@ -417,13 +421,15 @@ pub fn selling_part_of_a_stack_lowers_its_count_and_pays_for_the_part_sold_test(
       first: SoldItem(
         item_guid: 12,
         item2_id: Item2Id(20_791),
+        location: 1,
         held_count: 5,
         sold_count: 2,
-        credits: 2,
+        paid: 2,
       ),
       rest: [],
-      credits_held: 100,
-      credits_after: 102,
+      currency_type_id: 1,
+      held: 100,
+      after: 102,
     )
     as "opcode.0x166: a quantity below the stack's count is allowed and pays for the part"
   let #(left, held_credits, buyback, effects) =
@@ -432,7 +438,7 @@ pub fn selling_part_of_a_stack_lowers_its_count_and_pays_for_the_part_sold_test(
       items:,
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
-      answer: store.Sold(credits: 102),
+      answer: store.Sold(amount: 102),
     )
   assert left == [in_bag(guid: 12, item2_id: 20_791, index: 0, count: 3)]
     as "the stack keeps the 3 not sold"
@@ -443,7 +449,8 @@ pub fn selling_part_of_a_stack_lowers_its_count_and_pays_for_the_part_sold_test(
         buyback_id: 1,
         item2_id: Item2Id(20_791),
         quantity: 2,
-        credits: 2,
+        currency_type_id: 1,
+        amount: 2,
       ),
     ]
     as "lua.Vendor.buyback_price: the entry holds the 2 items sold and the 2 credits"
@@ -496,7 +503,7 @@ pub fn a_sell_of_more_than_one_of_an_item_that_does_not_stack_is_refused_with_st
   assert codes(effects: refused(scene: sell(items:, index: 0, quantity: 2)))
     == [11]
     as "0x1403d6a10: more than one of an item that does not stack is enum 11, Vendor_StackSize"
-  assert asked(scene: sell(items:, index: 0, quantity: 1)).first.credits == 78
+  assert asked(scene: sell(items:, index: 0, quantity: 1)).first.paid == 78
     as "one is sold for the 78 of `item_price_test`"
 }
 
@@ -521,30 +528,9 @@ pub fn a_worn_bag_is_refused_with_bag_is_not_empty_test() -> Nil {
     as "0x1403d6a10: a bag whose location word is 0 is enum 25, Vendor_BagIsNotEmpty, whatever it holds"
   // The same bag in the bags passes to the price: its row sells for 42.
   let carried = [in_bag(guid: 15, item2_id: 4753, index: 3, count: 1)]
-  assert asked(scene: sell(items: carried, index: 3, quantity: 1)).first.credits
+  assert asked(scene: sell(items: carried, index: 3, quantity: 1)).first.paid
     == 42
     as "item.bags_sellable: a bag in the bags sells; its sell price is 42"
-}
-
-pub fn a_worn_item_is_refused_until_issue_650_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let worn = [held(guid: 16, item2_id: 13_176, location: 0, index: 5, count: 1)]
-  let scene = Scene(..selling(location: 0, index: 5, quantity: 1), items: worn)
-  let #(level, code, text) = logged_text(effects: refused(scene:))
-  assert #(level, code) == #(LogWarning, 23)
-    as "the coordinator's decision: worn items are issue 650's, so they are enum 23 until then"
-  assert string.contains(text, "650") as "the log line names the issue"
-}
-
-pub fn an_item_priced_in_another_currency_is_refused_until_issue_650_test() -> Nil {
-  use <- owned_test.run(10_000)
-  // Item2 16053 sells for 60 Glory (`item_price_test`).
-  let items = [in_bag(guid: 17, item2_id: 16_053, index: 0, count: 1)]
-  let #(level, code, text) =
-    logged_text(effects: refused(scene: sell(items:, index: 0, quantity: 1)))
-  assert #(level, code) == #(LogWarning, 23)
-    as "0x14041bcc0.formula: a price in another currency is issue 650's, so it is enum 23 until then"
-  assert string.contains(text, "650") as "the log line names the issue"
 }
 
 pub fn an_item_in_the_bank_is_refused_and_an_empty_place_is_refused_with_bad_item_rec_test() -> Nil {
@@ -733,9 +719,9 @@ pub fn a_sale_past_the_credit_cap_stops_credits_at_the_cap_test() -> Nil {
       credits: credits(total: 499_990),
     )
   let sale = asked(scene:)
-  assert sale.first.credits == 30 as "the sale pays 30"
-  assert sale.credits_held == 499_990
-  assert sale.credits_after == 500_000 as "the total stops at the cap"
+  assert sale.first.paid == 30 as "the sale pays 30"
+  assert sale.held == 499_990
+  assert sale.after == 500_000 as "the total stops at the cap"
 }
 
 pub fn a_sale_at_the_credit_cap_still_sells_and_its_entry_keeps_the_full_price_test() -> Nil {
@@ -747,14 +733,14 @@ pub fn a_sale_at_the_credit_cap_still_sells_and_its_entry_keeps_the_full_price_t
       credits: credits(total: 500_000),
     )
   let sale = asked(scene:)
-  assert sale.credits_after == 500_000 as "the credits stay at the cap"
+  assert sale.after == 500_000 as "the credits stay at the cap"
   let #(left, held_credits, buyback, effects) =
     vendor_sale.answered(
       sale:,
       items:,
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
-      answer: store.Sold(credits: 500_000),
+      answer: store.Sold(amount: 500_000),
     )
   assert left == [] as "the item still leaves"
   assert currency.credits(currencies: held_credits) == 500_000
@@ -771,7 +757,8 @@ pub fn a_sale_at_the_credit_cap_still_sells_and_its_entry_keeps_the_full_price_t
         buyback_id: 1,
         item2_id: Item2Id(14_838),
         quantity: 3,
-        credits: 30,
+        currency_type_id: 1,
+        amount: 30,
       ),
     ]
     as "lua.Vendor.buyback_price: the entry holds the price the sale paid for the stack, before the cap"
@@ -803,9 +790,10 @@ pub fn sell_junk_sells_every_sellable_category_94_stack_in_the_bags_test() -> Ni
     SoldItem(
       item_guid: guid,
       item2_id: Item2Id(item2_id),
+      location: 1,
       held_count: 1,
       sold_count: 1,
-      credits: 2,
+      paid: 2,
     )
   }
   assert sale
@@ -813,8 +801,9 @@ pub fn sell_junk_sells_every_sellable_category_94_stack_in_the_bags_test() -> Ni
       unit_id: vendor_support.walker_unit,
       first: junk(1, 175),
       rest: [junk(5, 176), junk(7, 177)],
-      credits_held: 100,
-      credits_after: 106,
+      currency_type_id: 1,
+      held: 100,
+      after: 106,
     )
     as "lua.Item.CodeEnumItem2Category.Junk: the three junk stacks that sell, whole, in bag-index order; the proxy, the item of no price, the bank's stack and 14838 stay"
   let #(left, held_credits, buyback, effects) =
@@ -823,7 +812,7 @@ pub fn sell_junk_sells_every_sellable_category_94_stack_in_the_bags_test() -> Ni
       items:,
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
-      answer: store.Sold(credits: 106),
+      answer: store.Sold(amount: 106),
     )
   assert list.map(left, fn(item) { item.item_guid }) == [2, 3, 4, 6]
     as "the stacks not sold stay held"
@@ -927,15 +916,16 @@ pub fn a_sale_the_store_did_not_save_answers_db_failure_and_keeps_items_and_cred
 
 pub fn a_table_set_without_the_credit_cap_or_the_sell_fraction_row_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert vendor_sale.requirements()
+  assert list.append(vendor_sale.requirements(), currency.requirements())
     |> list.flat_map(fn(requirement) {
       requirement.missing(fixture_tables.shared())
     })
     == []
-    as "the client's GameFormula holds rows 1115 and 1026"
+    as "the client's GameFormula holds rows 1115, 1116 and 1026"
   list.each(
     [
       #(1115, "the server's credit cap"),
+      #(1116, "the server's Renown cap"),
       #(1026, "the server's sell price fraction"),
     ],
     fn(row_and_name) {
@@ -950,7 +940,10 @@ pub fn a_table_set_without_the_credit_cap_or_the_sell_fraction_row_fails_the_loa
       assert fixture_tables.edited(
           rows:,
           entries: [game_formula.entry()],
-          requirements: vendor_sale.requirements(),
+          requirements: list.append(
+            vendor_sale.requirements(),
+            currency.requirements(),
+          ),
           derivations: [],
         )
         == Error(table_store.RowMissing(

@@ -3555,7 +3555,7 @@ fn buy(
   account account: AccountId,
   character_id character_id: store.CharacterId,
   epoch epoch: Int,
-  credits_held credits_held: Int,
+  held held: Int,
   cost cost: Int,
   grow grow: List(store.StackGrowth),
   make make: List(store.NewStack),
@@ -3566,7 +3566,8 @@ fn buy(
       account_id: account,
       character_id:,
       session_epoch: character_support.epoch(epoch),
-      credits_held:,
+      currency_type_id: 1,
+      held:,
       cost:,
       grow:,
       make:,
@@ -3582,13 +3583,13 @@ pub fn a_buy_takes_the_credits_and_adds_the_items_in_one_statement_test() -> Nil
     holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
   let assert [first, second] = stacks
   let #(epoch, _) = login(store:, account:, character_id:)
-  let assert ForItems(store.Bought(credits:, made:)) =
+  let assert ForItems(store.Bought(amount:, made:)) =
     buy(
       store:,
       account:,
       character_id:,
       epoch:,
-      credits_held: 1000,
+      held: 1000,
       cost: 300,
       grow: [
         store.StackGrowth(
@@ -3608,7 +3609,7 @@ pub fn a_buy_takes_the_credits_and_adds_the_items_in_one_statement_test() -> Nil
       ],
     )
     as "a purchase the character can pay and place is saved"
-  assert credits == 700
+  assert amount == 700
     as "the cost came off the 1,000 credits the character held"
   let #(saved_credits, items) = bought_state(store:, account:, character_id:)
   assert saved_credits == 700 as "the next login finds the lower credits"
@@ -3643,7 +3644,7 @@ pub fn a_buy_with_only_grown_stacks_answers_the_credits_left_and_no_made_stack_t
       account:,
       character_id:,
       epoch:,
-      credits_held: 1000,
+      held: 1000,
       cost: 1000,
       grow: [
         store.StackGrowth(
@@ -3654,7 +3655,7 @@ pub fn a_buy_with_only_grown_stacks_answers_the_credits_left_and_no_made_stack_t
       ],
       make: [],
     )
-    == ForItems(store.Bought(credits: 0, made: []))
+    == ForItems(store.Bought(amount: 0, made: []))
     as "a purchase that spends every credit leaves a row of 0 and makes no stack"
   let #(saved_credits, items) = bought_state(store:, account:, character_id:)
   assert saved_credits == 0
@@ -3676,7 +3677,7 @@ pub fn a_buy_under_a_stale_epoch_changes_nothing_test() -> Nil {
       account:,
       character_id:,
       epoch: stale,
-      credits_held: 1000,
+      held: 1000,
       cost: 300,
       grow: [
         store.StackGrowth(
@@ -3716,7 +3717,7 @@ pub fn a_buy_with_too_few_credits_saved_changes_nothing_test() -> Nil {
         account:,
         character_id:,
         epoch:,
-        credits_held: 1000,
+        held: 1000,
         cost: 1001,
         grow:,
         make:,
@@ -3729,7 +3730,7 @@ pub fn a_buy_with_too_few_credits_saved_changes_nothing_test() -> Nil {
         account:,
         character_id:,
         epoch:,
-        credits_held: 1200,
+        held: 1200,
         cost: 300,
         grow:,
         make:,
@@ -3742,7 +3743,7 @@ pub fn a_buy_with_too_few_credits_saved_changes_nothing_test() -> Nil {
         account:,
         character_id:,
         epoch:,
-        credits_held: 1000,
+        held: 1000,
         cost: 300,
         grow: [
           store.StackGrowth(
@@ -3761,7 +3762,7 @@ pub fn a_buy_with_too_few_credits_saved_changes_nothing_test() -> Nil {
         account:,
         character_id:,
         epoch:,
-        credits_held: 1000,
+        held: 1000,
         cost: 300,
         grow: [
           store.StackGrowth(
@@ -3794,7 +3795,7 @@ pub fn a_buy_into_a_taken_place_changes_nothing_and_names_the_constraint_test() 
       account:,
       character_id:,
       epoch:,
-      credits_held: 1000,
+      held: 1000,
       cost: 300,
       grow: [
         store.StackGrowth(
@@ -3820,8 +3821,8 @@ fn sell(
   account account: AccountId,
   character_id character_id: store.CharacterId,
   epoch epoch: Int,
-  credits_held credits_held: Int,
-  credits_after credits_after: Int,
+  held held: Int,
+  after after: Int,
   sold sold: List(store.SoldStack),
 ) -> store.Answer {
   ask(
@@ -3830,8 +3831,9 @@ fn sell(
       account_id: account,
       character_id:,
       session_epoch: character_support.epoch(epoch),
-      credits_held:,
-      credits_after:,
+      currency_type_id: 1,
+      held:,
+      after:,
       sold:,
     )),
   )
@@ -3849,22 +3851,24 @@ pub fn a_sale_writes_the_credits_and_removes_or_lowers_the_stacks_in_one_stateme
       account:,
       character_id:,
       epoch:,
-      credits_held: 1000,
-      credits_after: 1050,
+      held: 1000,
+      after: 1050,
       sold: [
         store.SoldStack(
           item_guid: first.item_guid,
+          location: 1,
           held_count: 10,
           sold_count: 3,
         ),
         store.SoldStack(
           item_guid: second.item_guid,
+          location: 1,
           held_count: 4,
           sold_count: 4,
         ),
       ],
     )
-    == ForItems(store.Sold(credits: 1050))
+    == ForItems(store.Sold(amount: 1050))
     as "a sale of part of one stack and all of another is saved and answers the credits held after"
   let #(saved_credits, items) = bought_state(store:, account:, character_id:)
   assert saved_credits == 1050 as "the next login finds the higher credits"
@@ -3889,13 +3893,20 @@ pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
   let #(stale, _) = login(store:, account:, character_id:)
   let #(epoch, before) = login(store:, account:, character_id:)
   assert epoch > stale as "a later login raised the epoch"
-  let assert Ok(novice_item) =
-    list.find(before, fn(item) { item.location == 0 })
-    as "the character holds the Novice set, at the worn places"
   let part =
-    store.SoldStack(item_guid: first.item_guid, held_count: 10, sold_count: 3)
+    store.SoldStack(
+      item_guid: first.item_guid,
+      location: 1,
+      held_count: 10,
+      sold_count: 3,
+    )
   let whole =
-    store.SoldStack(item_guid: second.item_guid, held_count: 4, sold_count: 4)
+    store.SoldStack(
+      item_guid: second.item_guid,
+      location: 1,
+      held_count: 4,
+      sold_count: 4,
+    )
   let refused = [
     #(
       "an older login's sale",
@@ -3904,8 +3915,8 @@ pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
         account:,
         character_id:,
         epoch: stale,
-        credits_held: 1000,
-        credits_after: 1050,
+        held: 1000,
+        after: 1050,
         sold: [part],
       ),
     ),
@@ -3916,8 +3927,8 @@ pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
         account:,
         character_id:,
         epoch:,
-        credits_held: 1200,
-        credits_after: 1250,
+        held: 1200,
+        after: 1250,
         sold: [part],
       ),
     ),
@@ -3928,8 +3939,8 @@ pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
         account:,
         character_id:,
         epoch:,
-        credits_held: 1000,
-        credits_after: 1050,
+        held: 1000,
+        after: 1050,
         sold: [store.SoldStack(..part, held_count: 9)],
       ),
     ),
@@ -3940,8 +3951,8 @@ pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
         account:,
         character_id:,
         epoch:,
-        credits_held: 1000,
-        credits_after: 1050,
+        held: 1000,
+        after: 1050,
         sold: [store.SoldStack(..whole, held_count: 5, sold_count: 5)],
       ),
     ),
@@ -3952,11 +3963,12 @@ pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
         account:,
         character_id:,
         epoch:,
-        credits_held: 1000,
-        credits_after: 1050,
+        held: 1000,
+        after: 1050,
         sold: [
           store.SoldStack(
             item_guid: second.item_guid + 1_000_000,
+            location: 1,
             held_count: 1,
             sold_count: 1,
           ),
@@ -3964,21 +3976,15 @@ pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
       ),
     ),
     #(
-      "a stack at a worn place, which a sale does not sell",
+      "a stack named at a location it is not held at",
       sell(
         store:,
         account:,
         character_id:,
         epoch:,
-        credits_held: 1000,
-        credits_after: 1050,
-        sold: [
-          store.SoldStack(
-            item_guid: novice_item.item_guid,
-            held_count: novice_item.stack_count,
-            sold_count: novice_item.stack_count,
-          ),
-        ],
+        held: 1000,
+        after: 1050,
+        sold: [store.SoldStack(..part, location: 0)],
       ),
     ),
     #(
@@ -3988,8 +3994,8 @@ pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
         account:,
         character_id:,
         epoch:,
-        credits_held: 1000,
-        credits_after: 1050,
+        held: 1000,
+        after: 1050,
         sold: [part, store.SoldStack(..whole, held_count: 3, sold_count: 3)],
       ),
     ),

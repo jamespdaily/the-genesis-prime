@@ -705,11 +705,13 @@ fn sale_asked(
         account_id: store.AccountId(7),
         character_id: store.CharacterId(42),
         session_epoch: character_support.epoch(1),
-        credits_held:,
-        credits_after: credits_held + quantity,
+        currency_type_id: 1,
+        held: credits_held,
+        after: credits_held + quantity,
         sold: [
           store.SoldStack(
             item_guid: 500,
+            location: 1,
             held_count: held,
             sold_count: quantity,
           ),
@@ -741,7 +743,7 @@ pub fn a_sell_sent_while_the_store_works_is_held_and_taken_after_test() -> Nil {
     connection_support.answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(store.ForItems(store.Sold(credits: 102)))),
+      outcome: step.Answer(FromStore(store.ForItems(store.Sold(amount: 102)))),
     )
   assert connection_support.written_ids(answered) == [0x0919, 0x017F, 0x00BA]
     as "opcode.0x919 (the total), 0x17F (3 left, reason 7) and 0xBA (the buyback entry): the sale's answer goes out first, then the held line is taken"
@@ -807,7 +809,7 @@ fn sold(
   connection_support.answer(
     state:,
     taken:,
-    outcome: step.Answer(FromStore(store.ForItems(store.Sold(credits:)))),
+    outcome: step.Answer(FromStore(store.ForItems(store.Sold(amount: credits)))),
   ).0
 }
 
@@ -935,7 +937,8 @@ pub fn a_buy_back_through_the_connection_saves_the_shortened_list_test() -> Nil 
         account_id: store.AccountId(7),
         character_id: store.CharacterId(42),
         session_epoch: character_support.epoch(1),
-        credits_held: 102,
+        currency_type_id: 1,
+        held: 102,
         cost: 2,
         grow: [
           store.StackGrowth(item_guid: 500, held_count: 3, new_count: 5),
@@ -953,7 +956,7 @@ pub fn a_buy_back_through_the_connection_saves_the_shortened_list_test() -> Nil 
       state:,
       taken:,
       outcome: step.Answer(
-        FromStore(store.ForItems(store.Bought(credits: 100, made: []))),
+        FromStore(store.ForItems(store.Bought(amount: 100, made: []))),
       ),
     )
   let assert [total, grown, removed] =

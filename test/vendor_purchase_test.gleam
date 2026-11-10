@@ -90,9 +90,10 @@ fn body(unique_id unique_id: Int, quantity quantity: Int) -> BitArray {
 }
 
 fn credits(total total: Int) -> Currencies {
-  currency.with_credits(
+  currency.with_amount(
     currencies: currency.from_held(held: []),
-    credits: total,
+    currency_type_id: currency.credits_type,
+    total:,
   )
 }
 
@@ -204,13 +205,15 @@ fn held_back() -> Buyback {
       buyback_id: 2,
       item2_id: Item2Id(14_838),
       quantity: 3,
-      credits: 40,
+      currency_type_id: 1,
+      amount: 40,
     ),
     BuybackEntry(
       buyback_id: 3,
       item2_id: Item2Id(20_791),
       quantity: 7,
-      credits: 91,
+      currency_type_id: 1,
+      amount: 91,
     ),
   ])
 }
@@ -288,7 +291,8 @@ pub fn a_buy_at_the_shown_price_asks_the_store_to_take_the_price_and_add_the_ite
       item2_id: Item2Id(14_838),
       items_bought: 1,
       cost: 67,
-      credits_held: 100,
+      currency_type_id: 1,
+      held: 100,
       grow: [],
       make: [NewStack(location: 1, bag_index: 0, stack_count: 1)],
     )
@@ -303,7 +307,8 @@ pub fn a_buy_at_the_shown_price_asks_the_store_to_take_the_price_and_add_the_ite
       account_id: AccountId(7),
       character_id: CharacterId(42),
       session_epoch: character_support.epoch(1),
-      credits_held: 100,
+      currency_type_id: 1,
+      held: 100,
       cost: 67,
       grow: [],
       make: [NewStack(location: 1, bag_index: 0, stack_count: 1)],
@@ -493,7 +498,7 @@ pub fn a_saved_buy_sends_the_new_total_then_the_items_with_reason_vendor_test() 
       items:,
       currencies: credits(total: 1000),
       buyback: listed,
-      answer: Bought(credits: 665, made: [made]),
+      answer: Bought(amount: 665, made: [made]),
     )
   assert buyback == listed
     as "a buy of the stock leaves the buyback list as it was"
@@ -606,7 +611,8 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
       item2_id: Item2Id(14_838),
       items_bought: 3,
       cost: 40,
-      credits_held: 100,
+      currency_type_id: 1,
+      held: 100,
       grow: [StackGrowth(item_guid: 12, held_count: 48, new_count: 50)],
       make: [NewStack(location: 1, bag_index: 0, stack_count: 1)],
     )
@@ -621,7 +627,8 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
       account_id: AccountId(7),
       character_id: CharacterId(42),
       session_epoch: character_support.epoch(1),
-      credits_held: 100,
+      currency_type_id: 1,
+      held: 100,
       cost: 40,
       grow: [StackGrowth(item_guid: 12, held_count: 48, new_count: 50)],
       make: [NewStack(location: 1, bag_index: 0, stack_count: 1)],
@@ -637,7 +644,7 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
       items:,
       currencies: credits(total: 100),
       buyback: scene.buyback,
-      answer: Bought(credits: 60, made: [made]),
+      answer: Bought(amount: 60, made: [made]),
     )
   assert currency.credits(currencies: held_credits) == 60
     as "the credits the store left: 100 less the entry's 40"
@@ -650,7 +657,8 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
         buyback_id: 3,
         item2_id: Item2Id(20_791),
         quantity: 7,
-        credits: 91,
+        currency_type_id: 1,
+        amount: 91,
       ),
     ])
     as "entry 2 leaves the list and nothing else changes, not even the next id"
