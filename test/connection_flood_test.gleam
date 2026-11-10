@@ -34,6 +34,7 @@ import login_support
 import mailbox_support
 import owned_test
 import recording_support
+import socket_read
 import wire_replay_support
 
 /// What a flooded connection left behind: the bytes it wrote to the client
@@ -125,7 +126,13 @@ fn flood(sending bytes: BitArray) -> Flooded {
       scripts: driven_time.scripts(driven_time.new()),
     )
   let client = login_client.connect(login_support.ports(started).auth_port)
-  let assert [_hello] = login_client.read_frames(client:, have: <<>>, count: 1)
+  let assert [_hello] =
+    login_client.read_frames(
+      client:,
+      have: <<>>,
+      count: 1,
+      limit: socket_read.Open,
+    )
     as "the auth server greets the client first"
   let assert [connection] =
     ask_support.connections_of(started.settings.login.auth.listener)
@@ -135,7 +142,8 @@ fn flood(sending bytes: BitArray) -> Flooded {
   let capture = log_capture.start(from: connection, into: lines)
   login_client.send(client:, bytes:)
   let heard = login_client.read_until_closed(client:)
-  let _reason = ask_support.ended(ended)
+  let _reason =
+    ask_support.ended(watched: ended, what: "the flooded connection to end")
   log_capture.stop(capture)
   let lines = mailbox_support.drain(lines)
   login_support.stop(started)

@@ -36,6 +36,9 @@
 ////   (`lua.ActionBarFrame.ActionBarInnate`, `0x14077dfa0`), and it is in no action set
 ////   (`opcode.0x19d`). A class whose innate has the base of one of its abilities fails
 ////   the load.
+//// - **The set's properties** add the items in bag index order, the order the worn gear adds them
+////   in (genesis_prime/game/gear): the 32-bit additions of the client's entry give other bits
+////   in another order (0x14040db30).
 //// - **The set's properties and visuals** are what a new character's Novice items give; the
 ////   connection reads a player's gear from the items it holds (genesis_prime/game/gear),
 ////   and the set is what character creation saves there.
@@ -267,13 +270,24 @@ fn build_set(
   innate held: Option(Innate),
 ) -> Result(Loadout, LoadoutError) {
   let items = items_of(row:)
-  use properties <- result.try(
-    list.try_map(items, item_property.of_item(tables:, item2_id: _))
-    |> result.try(item_property.sum)
+  use read <- result.try(
+    list.try_map(items, fn(item) {
+      item_property.of_item(tables:, item2_id: item)
+      |> result.map(fn(properties) { #(item, properties) })
+    })
     |> result.map_error(ItemFailed),
   )
   use weapon <- result.try(weapon_of(tables:, row:, items:))
   use armor <- result.try(armor_of(tables:, items:, weapon: weapon.0))
+  use properties <- result.try(
+    list.append(armor, [Equipped(item: Item2Id(weapon.0), bag_index: weapon.1)])
+    |> list.sort(fn(first, second) {
+      int.compare(first.bag_index, second.bag_index)
+    })
+    |> list.filter_map(fn(worn) { list.key_find(read, { worn.item }.value) })
+    |> item_property.sum
+    |> result.map_error(ItemFailed),
+  )
   use visuals <- result.try(visuals_of(tables:, items:))
   use abilities <- result.try(abilities_of(tables:, class_id: row.class_id))
   use Nil <- result.try(case held {

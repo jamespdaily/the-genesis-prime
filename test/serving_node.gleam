@@ -14,6 +14,9 @@
 //// - `SlowStop`: Sessions is suspended, so a stop takes its shutdown time, and
 ////   the probe answers as soon as the node is stopping, so the answer comes
 ////   while the tree is still ending.
+//// - `StoppedBeforeTree`: `main` waits until the application's root has ended
+////   before it starts the tree, as a SIGTERM that comes while the tables load
+////   and ends the root first does.
 //// - `GivesUp`: the hand-off is killed once more than the tree's restart
 ////   intensity allows, in a restart period of an hour, so the tree ends with
 ////   `shutdown` while the node runs however far apart the kills fall.
@@ -37,7 +40,7 @@ import genesis_prime/store/worker.{type Probed, Reached}
 import gleam/bool
 import gleam/erlang/process
 import gleam/io
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import login_support
 import mug
 import pog
@@ -54,6 +57,7 @@ pub type Mode {
   UnreachableDatabase
   LateDatabase
   SlowStop
+  StoppedBeforeTree
   GivesUp
 }
 
@@ -97,6 +101,7 @@ fn mode_name(mode: Mode) -> String {
     UnreachableDatabase -> "unreachable_database"
     LateDatabase -> "late_database"
     SlowStop -> "slow_stop"
+    StoppedBeforeTree -> "stopped_before_tree"
     GivesUp -> "gives_up"
   }
 }
@@ -107,6 +112,7 @@ fn mode_of(name: String) -> Mode {
     "unreachable_database" -> UnreachableDatabase
     "late_database" -> LateDatabase
     "slow_stop" -> SlowStop
+    "stopped_before_tree" -> StoppedBeforeTree
     "gives_up" -> GivesUp
     _ -> panic as "SERVING_MODE names no mode"
   }
@@ -119,6 +125,7 @@ fn variable(name: String) -> String {
 
 /// What the node runs.
 pub fn main() -> Nil {
+  application.register_program()
   let mode = mode_of(variable("SERVING_MODE"))
   let pool =
     database_support.config(
@@ -129,7 +136,7 @@ pub fn main() -> Nil {
     )
   let pool = case mode {
     UnreachableDatabase -> pog.port(pool, 1)
-    Serving | LateDatabase | SlowStop | GivesUp -> pool
+    Serving | LateDatabase | SlowStop | StoppedBeforeTree | GivesUp -> pool
   }
   let base = login_support.settings(pool:)
   let settings =
@@ -147,19 +154,43 @@ pub fn main() -> Nil {
       sessions_shutdown_ms: 3000,
       tree_restarts: case mode {
         GivesUp -> gives_up_restarts
-        Serving | UnreachableDatabase | LateDatabase | SlowStop ->
-          base.tree_restarts
+        Serving
+        | UnreachableDatabase
+        | LateDatabase
+        | SlowStop
+        | StoppedBeforeTree -> base.tree_restarts
       },
     )
   runtime.show_info_lines()
-  let assert Ok(tree) = application.start_server(settings:)
-    as "the tree started under the application"
+  case mode {
+    StoppedBeforeTree -> {
+      io.println("waiting for the stop")
+      await_root_ended()
+    }
+    Serving | UnreachableDatabase | LateDatabase | SlowStop | GivesUp -> Nil
+  }
+  case application.start_server_unless_stopping(settings:) {
+    Some(tree) -> serve_tree(mode:, settings:, tree:)
+    None -> Nil
+  }
+}
+
+/// Serves the started tree in `mode`.
+fn serve_tree(
+  mode mode: Mode,
+  settings settings: server.Settings,
+  tree tree: application.Tree,
+) -> Nil {
   io.println("the tree started")
   let ready =
     readiness.Settings(
       within_ms: case mode {
         LateDatabase -> 1000
-        Serving | UnreachableDatabase | SlowStop | GivesUp -> 60_000
+        Serving
+        | UnreachableDatabase
+        | SlowStop
+        | StoppedBeforeTree
+        | GivesUp -> 60_000
       },
       attempt_ms: 2000,
       pause_ms: 100,
@@ -167,10 +198,14 @@ pub fn main() -> Nil {
   let probe = fn(reply) { worker.probe(store: settings.store, reply:) }
   case mode {
     Serving -> hold_a_connection(settings)
-    UnreachableDatabase | LateDatabase | SlowStop | GivesUp -> Nil
+    UnreachableDatabase
+    | LateDatabase
+    | SlowStop
+    | StoppedBeforeTree
+    | GivesUp -> Nil
   }
   case mode {
-    Serving | UnreachableDatabase | LateDatabase ->
+    Serving | UnreachableDatabase | LateDatabase | StoppedBeforeTree ->
       genesis_prime.serve(
         tree:,
         settings:,
@@ -288,6 +323,16 @@ fn probe_after_stop(reply: fn(Probed) -> Nil) -> Result(Sent, Nil) {
     })
   Ok(ToWorker(pid:))
 }
+
+/// Waits until the application's root has ended, asking every millisecond.
+fn await_root_ended() -> Nil {
+  use <- bool.guard(when: root_ended(), return: Nil)
+  process.sleep(1)
+  await_root_ended()
+}
+
+@external(erlang, "serving_node_ffi", "root_ended")
+fn root_ended() -> Bool
 
 fn await_stop() -> Nil {
   use <- bool.guard(when: application.node_stopping(), return: Nil)

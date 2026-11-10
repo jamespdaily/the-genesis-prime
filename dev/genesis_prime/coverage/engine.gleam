@@ -179,9 +179,17 @@ fn quest_objectives() -> EngineDeclaration {
     // one, and kill objectives count a kill: type 2 by the creature, types 8 and 16 by a
     // TargetGroup (genesis_prime/game/objective). Types 15 and 46 need a unit's cluster
     // and rank the server does not hold, so no kill advances them; the issue "Kill
-    // objectives count by cluster, rank and a unit's tagged value" closes that.
-    handled: Listed(ids: [2, 3, 8, 12, 16]),
-    partial: [],
+    // objectives count by cluster, rank and a unit's tagged value" closes that. Collect
+    // (types 4 and 33) objectives take the held count and visit (type 17) objectives the
+    // player's zone chain, both after every change of either.
+    handled: Listed(ids: [2, 3, 4, 8, 12, 16, 17, 33]),
+    partial: [
+      Missing(
+        type_number: 32,
+        reason: "a finished activate cast of a creature whose row names the objective counts one, which is a guess; the 448 rows no table links to a creature have no source",
+        fact_key: "QuestObjective.type.32.sources",
+      ),
+    ],
     unread_rows: no_unread_rows,
     unread_starting_rows: no_unread_starting_rows,
     missing: [],

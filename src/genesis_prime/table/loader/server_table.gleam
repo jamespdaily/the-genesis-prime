@@ -34,11 +34,13 @@ import genesis_prime/table/item2
 import genesis_prime/table/item2_category
 import genesis_prime/table/item2_family
 import genesis_prime/table/item2_type
+import genesis_prime/table/item_budget
 import genesis_prime/table/item_display
 import genesis_prime/table/item_display_source_entry
 import genesis_prime/table/item_proficiency
 import genesis_prime/table/item_slot
 import genesis_prime/table/item_special
+import genesis_prime/table/item_stat
 import genesis_prime/table/level_differential_attribute
 import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/requirement
@@ -69,6 +71,7 @@ import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
 import genesis_prime/table/target_group
 import genesis_prime/table/telegraph_damage
+import genesis_prime/table/tradeskill_schematic2
 import genesis_prime/table/tutorial
 import genesis_prime/table/unit_property2
 import genesis_prime/table/world
@@ -94,6 +97,8 @@ import genesis_prime/table/xp_per_level
 /// - CreatureLevel: a player's Base Health by level (genesis_prime/game/loadout).
 /// - Item2, Item2Category, Item2Family, Item2Type and ItemSlot, with GameFormula:
 ///   the Novice gear's properties (genesis_prime/game/item_property).
+/// - ItemBudget and ItemStat, with Item2, ItemSlot, UnitProperty2 and GameFormula: the
+///   properties a worn item's budget gives (genesis_prime/game/item_property).
 /// - ItemProficiency and ItemSpecial, with Item2 and Item2Category: whether a
 ///   character may wear an item (genesis_prime/game/item_property and
 ///   genesis_prime/game/equip_requirement).
@@ -126,6 +131,7 @@ import genesis_prime/table/xp_per_level
 /// - Quest2Difficulty and LevelDifferentialAttribute, with Quest2 and XpPerLevel: the
 ///   experience and credits a quest gives (genesis_prime/game/quest_turn_in).
 /// - TargetGroup: the units a kill objective counts (genesis_prime/game/target_group).
+/// - TradeskillSchematic2: the item a type 33 objective counts (genesis_prime/game/objective).
 /// - Episode, EpisodeQuest and PeriodicQuestGroup, with Quest2 and GameFormula: whether
 ///   a player may accept a quest (genesis_prime/game/quest).
 /// - PathSoldierActivate: whether a type 28 objective is a checklist, which a
@@ -163,11 +169,13 @@ pub fn entries() -> List(store.Entry) {
     item2_category.entry(),
     item2_family.entry(),
     item2_type.entry(),
+    item_budget.entry(),
     item_display.entry(),
     item_display_source_entry.entry(),
     item_proficiency.entry(),
     item_slot.entry(),
     item_special.entry(),
+    item_stat.entry(),
     level_differential_attribute.entry(),
     path_mission.entry(),
     path_soldier_activate.entry(),
@@ -195,6 +203,7 @@ pub fn entries() -> List(store.Entry) {
     spell_phase.entry(),
     target_group.entry(),
     telegraph_damage.entry(),
+    tradeskill_schematic2.entry(),
     unit_property2.entry(),
     world_location2.entry(),
     world_zone.entry(),

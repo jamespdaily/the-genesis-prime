@@ -1163,7 +1163,7 @@ pub fn progressed(
 ) -> Result(Progressed, Nil) {
   let quest = as_logged(log:, quest:)
   case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
-    Ok(Active(state:, done_mask:, progress:, ..) as entry), [objective, ..]
+    Ok(Active(done_mask:, progress:, ..) as entry), [objective, ..]
       if index >= 0
     -> {
       use <- bool.guard(
@@ -1185,36 +1185,130 @@ pub fn progressed(
         True -> int.bitwise_or(done_mask, int.bitwise_shift_left(1, index))
         False -> done_mask
       }
-      let became_achieved =
-        state == Accepted && every_objective_is_done(quest:, done_mask:)
+      let #(log, moved) =
+        store_progress(
+          log:,
+          quest:,
+          entry:,
+          index:,
+          progress: new_progress,
+          done_mask:,
+        )
       Ok(Progressed(
-        log: QuestLog(
-          ..log,
-          entries: dict.insert(
-            log.entries,
-            quest.id,
-            Active(
-              ..entry,
-              state: case became_achieved {
-                True -> Achieved
-                False -> state
-              },
-              done_mask:,
-              progress: list.index_map(progress, fn(old, at) {
-                case at == index {
-                  True -> new_progress
-                  False -> old
-                }
-              }),
-            ),
-          ),
-        ),
+        log:,
         progress: new_progress,
-        became_achieved:,
+        became_achieved: moved == BecameAchieved,
       ))
     }
     _, _ -> Error(Nil)
   }
+}
+
+/// How an objective's count moved its quest: it stayed as it was, an Accepted quest
+/// became Achieved or an Achieved one became Accepted again.
+pub type Moved {
+  Stayed
+  BecameAchieved
+  BecameAccepted
+}
+
+/// What one objective's count leads to: the log after it, the objective's stored
+/// progress, whether that is a change from what was stored, and how the quest moved.
+pub type Counted {
+  Counted(log: QuestLog, progress: Int, changed: Bool, moved: Moved)
+}
+
+/// The log after the server counts the quest's objective at `index` as `value`, or
+/// `Error(Nil)` when the quest is not in the active list or has no such objective. The
+/// client counts nothing for a collect or visit objective and stores the value of the
+/// server's 0x361 (`0x140575a80`), so the stored progress is the value capped at the
+/// objective's count and the done bit follows it, set at the count and cleared below it
+/// (`0x1406115a0`). Reachability is not tested: the count is a fact about the world, not
+/// progress the objective takes. An Accepted quest whose every objective without flag
+/// 0x20 is then done becomes Achieved, and an Achieved quest with one not done becomes
+/// Accepted again (`0x1405fb830`, `0x1405fbdc0`).
+pub fn counted(
+  log log: QuestLog,
+  quest quest: Quest,
+  index index: Int,
+  value value: Int,
+) -> Result(Counted, Nil) {
+  let quest = as_logged(log:, quest:)
+  case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
+    Ok(Active(done_mask:, progress:, ..) as entry), [objective, ..]
+      if index >= 0
+    -> {
+      let new_progress = int.max(0, int.min(objective.count, value))
+      let done_bit = int.bitwise_shift_left(1, index)
+      let done_mask = case new_progress >= needed(objective:) {
+        True -> int.bitwise_or(done_mask, done_bit)
+        False -> int.bitwise_and(done_mask, int.bitwise_not(done_bit))
+      }
+      let before = list.drop(progress, index) |> list.first |> result.unwrap(0)
+      let #(log, moved) =
+        store_progress(
+          log:,
+          quest:,
+          entry:,
+          index:,
+          progress: new_progress,
+          done_mask:,
+        )
+      Ok(Counted(
+        log:,
+        progress: new_progress,
+        changed: new_progress != before,
+        moved:,
+      ))
+    }
+    _, _ -> Error(Nil)
+  }
+}
+
+/// The log with the quest's objective at `index` stored as `progress` and the done mask
+/// as given, and how that moved the quest: a quest whose every objective without flag
+/// 0x20 is done is Achieved and one with an objective not done is Accepted
+/// (`0x1405fbc40`, `0x1405fbdc0`). A count that falls can take an Achieved quest back to
+/// Accepted, which a timed quest would carry past its deadline; no quest with a time
+/// limit has an objective counted this way, which
+/// `every_quest_collect_and_visit_objective_names_a_row_test` checks.
+fn store_progress(
+  log log: QuestLog,
+  quest quest: Quest,
+  entry entry: Entry,
+  index index: Int,
+  progress progress: Int,
+  done_mask done_mask: Int,
+) -> #(QuestLog, Moved) {
+  let assert Active(state:, progress: kept, ..) = entry
+    as "only an entry in the active list takes a count"
+  let all_done = every_objective_is_done(quest:, done_mask:)
+  let #(state, moved) = case state, all_done {
+    Accepted, True -> #(Achieved, BecameAchieved)
+    Achieved, False -> #(Accepted, BecameAccepted)
+    Accepted, False | Achieved, True -> #(state, Stayed)
+  }
+  #(
+    QuestLog(
+      ..log,
+      entries: dict.insert(
+        log.entries,
+        quest.id,
+        Active(
+          ..entry,
+          state:,
+          done_mask:,
+          progress: list.index_map(kept, fn(old, at) {
+            case at == index {
+              True -> progress
+              False -> old
+            }
+          }),
+        ),
+      ),
+    ),
+    moved,
+  )
 }
 
 /// The progress of the quest's objective at `index` as a prerequisite compares it

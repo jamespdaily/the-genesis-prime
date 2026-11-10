@@ -77,6 +77,7 @@ pub fn the_unit_of_the_live_character_is_the_clients_1120_bits_test() -> Nil {
       replacing: [],
       item_visuals: [],
       bases: [#(UnitProperty2Id(7), 136.0)],
+      defaults: [],
       shield: None,
     )
   let assert Ok(body) =
@@ -180,6 +181,7 @@ pub fn create_writes_no_gear_and_the_connection_puts_in_health_as_stat_0_and_bas
       replacing: [],
       item_visuals: [],
       bases: [#(UnitProperty2Id(7), 777.0)],
+      defaults: [],
       shield: None,
     )
   assert list.contains(
@@ -239,6 +241,7 @@ pub fn the_players_own_record_can_show_less_health_than_the_maximum_test() -> Ni
       replacing: [],
       item_visuals: [],
       bases: [#(UnitProperty2Id(7), 136.0)],
+      defaults: [],
       shield: None,
     )
   let hurt =
@@ -262,4 +265,59 @@ pub fn the_players_own_record_can_show_less_health_than_the_maximum_test() -> Ni
     )
     == unit
     as "at the health it already shows the record is the same"
+}
+
+/// 0x1404584b0 starts every property at its UnitProperty2 default and keeps no count, so
+/// an entry equal to its default changes nothing and the record leaves it out. The held
+/// entries of the gear's ids go first, so a worn item taken off leaves its property at
+/// the default, not at its old value.
+pub fn a_gear_property_at_its_default_is_left_out_and_a_taken_off_value_is_restored_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let unit =
+    player_unit.create(
+      unit: unit_support.bare_unit(
+        character: roxo(),
+        place: place_support.live_character_place(),
+        unit_id: 1,
+        body: [],
+      ),
+      realm_id: 1,
+    )
+  let defaults = [
+    #(UnitProperty2Id(7), 0.0),
+    #(UnitProperty2Id(34), 0.0),
+    #(UnitProperty2Id(176), 0.25),
+  ]
+  let worn =
+    player_unit.with_gear(
+      record: unit,
+      replacing: [],
+      item_visuals: [],
+      bases: [
+        #(UnitProperty2Id(7), 136.0),
+        #(UnitProperty2Id(34), 64.125),
+        #(UnitProperty2Id(176), 0.25),
+      ],
+      defaults:,
+      shield: None,
+    )
+  assert list.map(worn.tail.properties, fn(held) { held.property_id })
+    == [7, 34]
+    as "176 is at its default 0.25 and is left out; 34 is worn at 64.125 and 7 is 136.0"
+  let taken_off =
+    player_unit.with_gear(
+      record: worn,
+      replacing: [],
+      item_visuals: [],
+      bases: [
+        #(UnitProperty2Id(7), 136.0),
+        #(UnitProperty2Id(34), 0.0),
+        #(UnitProperty2Id(176), 0.25),
+      ],
+      defaults:,
+      shield: None,
+    )
+  assert list.map(taken_off.tail.properties, fn(held) { held.property_id })
+    == [7]
+    as "34 is back at its default 0.0, so the record lists no entry that would hold 64.125"
 }

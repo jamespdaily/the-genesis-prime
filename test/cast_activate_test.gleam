@@ -12,6 +12,13 @@
 ////   dimensions, is held to the minimum, then the maximum, then the height.
 //// - `opcode.0x7f4.target_info` and `opcode.0x7f4.instance_count`: the go names the unit with
 ////   the effect info of its Activate row.
+//// - The Departures Terminal, Creature2 73605: activateSpellCastTime 0, activateSpellMaxRange 4.0,
+////   activate spell Spell4 34681 (castTime 0, global cooldown kind 2, Spell4Base 20651:
+////   castMethod 5, clientSideInteractionId 357), whose Activate row is Spell4Effects 68913.
+//// - `opcode.0x805.fields`: the client's answer is the server's cast id, a result (3 started,
+////   1 success, 0 failed, 2 cancelled before starting) and the Spell4Base id plus 1.
+//// - `cast.csi_server_flow`, `csi.after_result`, `opcode.0x7fe.csi`: the client never ends the
+////   cast; the server's go and finish, or 0x7f9 146 and the finish, end it.
 
 import cast_support as support
 import fixture_tables
@@ -25,12 +32,17 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
+import genesis_prime/message/client_side_interaction_result.{
+  ClientSideInteractionResult,
+}
+import genesis_prime/message/interaction_result.{type InteractionResult}
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
+import genesis_prime/message/spell_failed
 import genesis_prime/message/spell_go
-import genesis_prime/step.{ConnectionId, LogWarning}
+import genesis_prime/step.{ConnectionId, LogDebug, LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
 import gleam/dict
@@ -83,8 +95,17 @@ fn object(
   east east: Float,
   up up: Float,
 ) -> Target {
+  object_of(creature_id: the_mollusk, creature:, east:, up:)
+}
+
+fn object_of(
+  creature_id creature_id: Int,
+  creature creature: activate.Creature,
+  east east: Float,
+  up up: Float,
+) -> Target {
   Object(
-    creature_id: the_mollusk,
+    creature_id:,
     creature:,
     body: Body(
       place: place_support.at(
@@ -427,10 +448,7 @@ pub fn activate_refuses_unknown_and_unbuilt_spells_test() -> Nil {
     with_planned(
       spell4_id: 1817,
       planned: Planned(
-        spell: spell_plan.Spell(
-          ..spell,
-          method: spell_plan.ClientSideInteraction,
-        ),
+        spell: spell_plan.Spell(..spell, method: spell_plan.Transactional),
         effects:,
         limits:,
       ),
@@ -445,7 +463,7 @@ pub fn activate_refuses_unknown_and_unbuilt_spells_test() -> Nil {
     )
   assert support.refusal_results(effects: first)
     == [cast_result.to_value(cast_result.IllegalSpellCast)]
-    as "a cast method the rule does not build (castMethod 5, client side interaction) is IllegalSpellCast, as an ability's is"
+    as "Spell.CodeEnumCastMethod: a cast method the rule does not build (castMethod 9, transactional) is IllegalSpellCast, as an ability's is"
   assert support.started_timers(effects: first) == []
     && support.tells(effects: first) == []
     as "no cast starts"
@@ -489,6 +507,24 @@ pub fn activate_refuses_unknown_and_unbuilt_spells_test() -> Nil {
     as "the refusal is logged"
   assert string.contains(struck_line, "82255")
     as "the log names the effect that would be lost"
+  // A castMethod 5 spell pressed from the bag has no activated unit to interact with.
+  let interaction_spell =
+    spell_plan.Spell(
+      ..support.unbuilt(),
+      method: spell_plan.ClientSideInteraction,
+    )
+  let #(_, pressed) =
+    support.pressed_raw_in(
+      plans: support.plans_with(spell: interaction_spell),
+      state: cast.new(),
+      caster: standing(),
+      bag_index: support.unbuilt_bag_index,
+      target: 0,
+      at: 1000,
+    )
+  assert support.refusal_results(effects: pressed)
+    == [cast_result.to_value(cast_result.IllegalSpellCast)]
+    as "Spell.CodeEnumCastMethod: a castMethod 5 spell pressed through 0x9a is still refused 285: only an activate cast opens the interaction"
 }
 
 /// Condition types below 301 the server does not read, lowest first.
@@ -615,4 +651,540 @@ pub fn activate_cancelled_raises_nothing_test() -> Nil {
     cast.Activated(unit_id: its_unit, creature_id: the_mollusk),
   )
     as "a cast cancelled before its go raises no Activated"
+}
+
+const the_terminal = 73_605
+
+/// Spell4Base 20651 (the terminal's spell's base) plus 1, the word the client's 0x805
+/// carries (`opcode.0x805.fields`).
+const the_terminals_word = 20_652
+
+/// The Departures Terminal on the client's own rows: no activate cast time.
+fn terminal() -> activate.Creature {
+  let assert Ok(row) =
+    creature2.get(
+      tables: fixture_tables.shared(),
+      id: Creature2Id(the_terminal),
+    )
+    as "Creature2 73605 is a root of the fixture"
+  activate.creature_of(row:)
+}
+
+/// The terminal with an activate cast time of 2000, for the casts that have a time to
+/// wait out.
+fn timed_terminal() -> activate.Creature {
+  Creature(..terminal(), cast_time_ms: 2000)
+}
+
+fn terminal_object(creature creature: activate.Creature) -> Target {
+  object_of(creature_id: the_terminal, creature:, east: 1.0, up: 0.0)
+}
+
+/// The right-click of the terminal's unit, taken by the rule.
+fn click_terminal(
+  state state: State,
+  creature creature: activate.Creature,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  let assert Ok(taken) =
+    right_click(
+      state:,
+      activations: the_activations(),
+      unit_id: its_unit,
+      target: terminal_object(creature:),
+      at: ms,
+    )
+    as "a 0x97 that fits the message is taken"
+  taken
+}
+
+/// The client's 0x805 for the cast at the time, taken by the rule.
+fn answered(
+  state state: State,
+  cast_id cast_id: Int,
+  result result: InteractionResult,
+  word word: Int,
+  at ms: Int,
+) -> Result(#(State, List(Effect)), cast.Refusal) {
+  let assert Ok(body) =
+    client_side_interaction_result.encode(ClientSideInteractionResult(
+      cast_id:,
+      result:,
+      spell4_base_id_plus_one: word,
+    ))
+    as "the answer fits the message"
+  cast.take(
+    cast: state,
+    message: cast.Answered,
+    body:,
+    caster: standing(),
+    plans: support.plans(),
+    now: support.at(ms:),
+  )
+}
+
+/// The answer, which must be taken, not refused.
+fn answered_ok(
+  state state: State,
+  cast_id cast_id: Int,
+  result result: InteractionResult,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  let assert Ok(taken) =
+    answered(state:, cast_id:, result:, word: the_terminals_word, at: ms)
+    as "an answer that names a waiting interaction and its spell is taken"
+  taken
+}
+
+fn activated_by(effects effects: List(Effect)) -> Int {
+  list.count(effects, fn(effect) {
+    effect == cast.Activated(unit_id: its_unit, creature_id: the_terminal)
+  })
+}
+
+/// The go and the finish of a cast that went, and the activation it raises.
+fn assert_went_and_finished(effects effects: List(Effect)) -> Nil {
+  assert support.ids(frames: support.writes(effects:)) == [0x07F4, 0x07FE]
+    as "the go, then the finish"
+  assert go_targets(effects:)
+    == [
+      #(its_unit, [
+        SpellEffectInfo(
+          spell4_effects_id: 68_913,
+          instance_id: 1,
+          delay_ms: 0,
+          field_4: 0,
+          result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
+        ),
+      ]),
+    ]
+    as "opcode.0x7f4.activate: the go names the unit with the effect info of Spell4 34681's Activate row, Spell4Effects 68913 (delay 0)"
+  assert list.count(effects, fn(effect) {
+      effect == cast.Activated(unit_id: its_unit, creature_id: the_terminal)
+    })
+    == 1
+    as "the go raises Activated for the unit and its creature, once"
+}
+
+/// Nothing was written, nothing raised and no timer started.
+fn assert_nothing_happened(effects effects: List(Effect)) -> Nil {
+  assert support.writes(effects:) == []
+    && support.started_timers(effects:) == []
+    && activated_by(effects:) == 0
+    as "nothing is written, started or raised"
+}
+
+pub fn a_client_side_interaction_activate_cast_starts_and_waits_for_the_answer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, effects) =
+    click_terminal(state: cast.new(), creature: terminal(), at: 1000)
+  assert support.ids(frames: support.writes(effects:)) == [0x07FD]
+    as "opcode.0x7fd.csi: the caster is written the start, and no go or finish: the client's interaction opens on the 0x7fd and the cast waits for its answer"
+  let assert [frame] = support.writes(effects:)
+  let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
+  assert confirmed.client_cast_id == clients_cast_id
+    && confirmed.primary_target_unit_id == its_unit
+    as "opcode.0x97: the confirmation answers the client's cast id and names the unit"
+  let assert [#(ConnectionId(2), news_2), #(ConnectionId(3), news_3)] =
+    support.tells(effects:)
+    as "each viewer is told the start"
+  assert news_2 == news_3
+  let assert CastStarted(start: started) = news_2
+  assert started.spell4_id == 34_681
+    && started.field_13 == 1
+    && started.caster_unit_id == 7
+    && started.primary_target_unit_id == its_unit
+    as "the viewers see Spell4 34681 cast by the caster at the unit, with the activate bit (opcode.0x7ff.activate)"
+  assert support.started_timers(effects:) == []
+    as "Creature2 73605's activateSpellCastTime is 0: no go timer waits"
+  let assert Ok(#(_, cancel_effects)) =
+    support.cancelled(
+      state:,
+      cast_id: confirmed.server_cast_id,
+      reason: cast_result.SpellCancelled,
+      bit: 1,
+      at: 60_000,
+    )
+  assert support.ids(frames: support.writes(effects: cancel_effects))
+    == [0x07FE]
+    as "a minute later the cast is still live: a cancel ends it with its finish (opcode.0x7fe.csi), and the cast never went"
+}
+
+pub fn a_success_answer_sends_the_go_and_the_finish_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: terminal(), at: 1000)
+  let id = support.pressed_id(effects: pressed)
+  let #(_, effects) =
+    answered_ok(
+      state:,
+      cast_id: id,
+      result: interaction_result.Succeeded,
+      at: 1200,
+    )
+  assert_went_and_finished(effects:)
+  assert support.finished_ids(support.writes(effects:)) == [id]
+    as "the finish names the cast"
+}
+
+pub fn a_failed_or_cancelled_answer_fails_the_cast_with_146_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: terminal(), at: 1000)
+  let id = support.pressed_id(effects: pressed)
+  let fails = fn(result) {
+    let #(_, effects) = answered_ok(state:, cast_id: id, result:, at: 1200)
+    assert support.ids(frames: support.writes(effects:)) == [0x07F9, 0x07FE]
+      as "opcode.0x7fe.csi: the cast fails with 0x7f9 and its finish, and no go"
+    let assert [failed_frame, _] = support.writes(effects:)
+    let assert Ok(failed) = spell_failed.decode(failed_frame.body)
+    assert failed.cast_id == id && cast_result.to_value(failed.result) == 146
+      as "Spell.CodeEnumCastResult.146: ClientSideInteractionFail"
+    assert activated_by(effects:) == 0
+      as "a failed interaction activates nothing"
+  }
+  fails(interaction_result.Failed)
+  fails(interaction_result.CancelledBeforeStart)
+}
+
+pub fn a_started_answer_changes_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: terminal(), at: 1000)
+  let id = support.pressed_id(effects: pressed)
+  let #(state, started) =
+    answered_ok(
+      state:,
+      cast_id: id,
+      result: interaction_result.Started,
+      at: 1001,
+    )
+  assert support.writes(effects: started) == []
+    && support.started_timers(effects: started) == []
+    && activated_by(effects: started) == 0
+    as "0x140779a70.once: the client's 3 only says the interaction began: nothing is sent, started or raised"
+  let assert [#(LogDebug, text)] = support.logs(effects: started)
+    as "the answer 3 is logged at debug"
+  assert string.contains(text, "began")
+    && string.contains(text, int.to_string(id))
+    as "the log names the cast whose interaction began"
+  let #(_, effects) =
+    answered_ok(
+      state:,
+      cast_id: id,
+      result: interaction_result.Succeeded,
+      at: 1500,
+    )
+  assert_went_and_finished(effects:)
+}
+
+pub fn a_timed_interaction_goes_at_its_cast_time_after_an_early_answer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+  let id = support.pressed_id(effects: pressed)
+  let #(state, early) =
+    answered_ok(
+      state:,
+      cast_id: id,
+      result: interaction_result.Succeeded,
+      at: 500,
+    )
+  assert_nothing_happened(effects: early)
+  let #(_, steps) = support.run_timers(state:, effects: pressed, from_ms: 0)
+  assert list.map(steps, fn(step) { step.0 }) == [2000]
+    as "opcode.0x7ff.csi_cast_bar: the cast's time is the creature's activateSpellCastTime, 2000"
+  assert_went_and_finished(effects: flattened(steps:))
+}
+
+pub fn a_timed_interaction_waits_for_the_answer_after_its_cast_time_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+  let id = support.pressed_id(effects: pressed)
+  let #(state, steps) = support.run_timers(state:, effects: pressed, from_ms: 0)
+  assert list.map(steps, fn(step) { step.0 }) == [2000]
+    as "the go's timer fires at the cast time"
+  assert_nothing_happened(effects: flattened(steps:))
+  let #(_, effects) =
+    answered_ok(
+      state:,
+      cast_id: id,
+      result: interaction_result.Succeeded,
+      at: 3000,
+    )
+  assert_went_and_finished(effects:)
+}
+
+pub fn a_client_side_interaction_cast_shows_a_cast_bar_only_with_a_cast_time_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The cast bar is not in the start's bytes: it makes the cast the caster's current
+  // cast, which refuses the caster's next press with 13 (SpellAlreadyCasting) while it
+  // has more than the queue window left.
+  let next_press_refused_with = fn(creature) {
+    let #(state, _) = click_terminal(state: cast.new(), creature:, at: 1000)
+    let #(_, effects) =
+      support.pressed_raw_in(
+        plans: support.plans(),
+        state:,
+        caster: standing(),
+        bag_index: support.electrocute,
+        target: 0,
+        at: 1500,
+      )
+    support.refusal_results(effects:)
+  }
+  assert next_press_refused_with(timed_terminal())
+    == [cast_result.to_value(cast_result.SpellAlreadyCasting)]
+    as "opcode.0x7ff.csi_cast_bar: an activateSpellCastTime of 2000 shows the cast bar"
+  assert next_press_refused_with(terminal()) == []
+    as "opcode.0x7ff.csi_cast_bar: Creature2 73605's activateSpellCastTime 0 shows none, so the caster is free to press"
+}
+
+pub fn an_answer_for_a_cast_that_is_not_live_is_dropped_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: timed_terminal(), at: 1000)
+  let id = support.pressed_id(effects: pressed)
+  let assert Ok(#(ended, _)) =
+    support.cancelled(
+      state:,
+      cast_id: id,
+      reason: cast_result.SpellCancelled,
+      bit: 1,
+      at: 1500,
+    )
+  let dropped = fn(state, cast_id) {
+    let assert Ok(#(_, effects)) =
+      answered(
+        state:,
+        cast_id:,
+        result: interaction_result.Failed,
+        word: the_terminals_word,
+        at: 1600,
+      )
+      as "an answer for a cast that is not live is dropped, never an error"
+    assert_nothing_happened(effects:)
+    let assert [#(LogDebug, _)] = support.logs(effects:)
+      as "the drop is logged at debug"
+    Nil
+  }
+  dropped(ended, id)
+  dropped(cast.new(), 12_345)
+}
+
+pub fn an_answer_naming_no_waiting_interaction_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(normal, normal_pressed) =
+    right_click_mollusk(state: cast.new(), east: 1.0, at: 1000)
+  let normal_id = support.pressed_id(effects: normal_pressed)
+  assert answered(
+      state: normal,
+      cast_id: normal_id,
+      result: interaction_result.Succeeded,
+      word: the_terminals_word,
+      at: 1100,
+    )
+    == Error(cast.NoInteractionWaits(cast_id: normal_id))
+    as "opcode.0x805.fields: the client sends 0x805 only for a castMethod 5 cast, and the mollusk's cast is a Normal one"
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: timed_terminal(), at: 1000)
+  let id = support.pressed_id(effects: pressed)
+  assert answered(
+      state:,
+      cast_id: id,
+      result: interaction_result.Succeeded,
+      word: 20_651,
+      at: 1100,
+    )
+    == Error(cast.WrongAnswerSpell(
+      cast_id: id,
+      sent: 20_651,
+      expected: the_terminals_word,
+    ))
+    as "opcode.0x805.fields: the third field is the cast's Spell4Base id plus 1, 20652 for Spell4Base 20651, not 20651"
+  let #(answered_once, _) =
+    answered_ok(
+      state:,
+      cast_id: id,
+      result: interaction_result.Succeeded,
+      at: 1200,
+    )
+  assert answered(
+      state: answered_once,
+      cast_id: id,
+      result: interaction_result.Succeeded,
+      word: the_terminals_word,
+      at: 1300,
+    )
+    == Error(cast.NoInteractionWaits(cast_id: id))
+    as "csi.ends: one interaction sends exactly one of 0, 1 or 2, so a second answer after the 1 names no waiting interaction"
+}
+
+pub fn an_answer_result_the_client_never_sends_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: terminal(), at: 1000)
+  let id = support.pressed_id(effects: pressed)
+  list.each([4, 5, 6, 7], fn(result) {
+    assert answered(
+        state:,
+        cast_id: id,
+        result: interaction_result.Other(result),
+        word: the_terminals_word,
+        at: 1100,
+      )
+      == Error(cast.UnknownAnswer(result:))
+      as "opcode.0x805.fields: the client's results are 0, 1, 2 and 3, and nothing else"
+  })
+}
+
+pub fn a_cancel_ends_a_waiting_interaction_cast_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: timed_terminal(), at: 1000)
+  let id = support.pressed_id(effects: pressed)
+  let assert Ok(#(state, effects)) =
+    support.cancelled(
+      state:,
+      cast_id: id,
+      reason: cast_result.SpellCancelled,
+      bit: 1,
+      at: 1500,
+    )
+  assert support.ids(frames: support.writes(effects:)) == [0x07FE]
+    as "opcode.0x801: the cancel ends the cast with its finish and no go"
+  assert support.cancelled_timers(effects:) != []
+    as "the go's timer is cancelled"
+  let assert Ok(#(_, later)) =
+    answered(
+      state:,
+      cast_id: id,
+      result: interaction_result.Failed,
+      word: the_terminals_word,
+      at: 1600,
+    )
+    as "opcode.0x7fe.csi: the client answers 0 when the finish closes its window, which finds no cast"
+  assert_nothing_happened(effects: later)
+}
+
+pub fn a_second_activate_while_an_interaction_waits_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    click_terminal(state: cast.new(), creature: timed_terminal(), at: 1000)
+  let assert Ok(#(_, effects)) =
+    right_click(
+      state:,
+      activations: the_activations(),
+      unit_id: its_unit,
+      target: terminal_object(creature: timed_terminal()),
+      at: 1500,
+    )
+  assert support.refusal_results(effects:)
+    == [cast_result.to_value(cast_result.SpellAlreadyCasting)]
+    as "cast.no_answer: the waiting cast is the caster's current cast, which refuses the next with 13"
+  assert support.started_timers(effects:) == []
+    as "the refused right-click starts nothing"
+}
+
+pub fn a_second_activate_while_an_untimed_interaction_waits_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: terminal(), at: 1000)
+  let id = support.pressed_id(effects: pressed)
+  let assert Ok(#(refused_state, effects)) =
+    right_click(
+      state:,
+      activations: the_activations(),
+      unit_id: its_unit,
+      target: terminal_object(creature: terminal()),
+      at: 1500,
+    )
+  assert support.refusal_results(effects:)
+    == [cast_result.to_value(cast_result.SpellAlreadyCasting)]
+    as "cast.no_answer: an interaction with no cast bar still waits for its answer, and a second right-click is refused 13"
+  assert list.length(support.writes(effects:)) == 1
+    && support.started_timers(effects:) == []
+    as "the refused right-click writes only its refusal and starts nothing"
+  let #(_, answer) =
+    answered_ok(
+      state: refused_state,
+      cast_id: id,
+      result: interaction_result.Succeeded,
+      at: 1600,
+    )
+  assert_went_and_finished(effects: answer)
+}
+
+/// The press of Electrocute, a cast with no cast time, as the rule gives it.
+fn pressed_electrocute(
+  state state: State,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  support.pressed_raw_in(
+    plans: support.plans(),
+    state:,
+    caster: standing(),
+    bag_index: support.electrocute,
+    target: 0,
+    at: ms,
+  )
+}
+
+/// A timed interaction with a press held in the last 500 ms of its bar, and the bar run
+/// with no answer yet.
+fn held_press_after_the_bar() -> #(State, Int) {
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+  let id = support.pressed_id(effects: pressed)
+  let #(state, held) = pressed_electrocute(state:, at: 1800)
+  assert support.writes(effects: held) == []
+    && support.refusal_results(effects: held) == []
+    as "cast.press_queue: 200 ms of the bar are left, within the queue window: the press is held"
+  let #(state, steps) = support.run_timers(state:, effects: pressed, from_ms: 0)
+  assert list.map(steps, fn(step) { step.0 }) == [2000]
+    as "the go's timer fires at the bar's end"
+  assert_nothing_happened(effects: flattened(steps:))
+  #(state, id)
+}
+
+pub fn a_held_press_starts_when_the_answer_succeeds_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, id) = held_press_after_the_bar()
+  let #(_, effects) =
+    answered_ok(
+      state:,
+      cast_id: id,
+      result: interaction_result.Succeeded,
+      at: 2500,
+    )
+  assert list.take(support.ids(frames: support.writes(effects:)), 3)
+    == [0x07F4, 0x07FE, 0x07FD]
+    as "the go and the finish end the cast, and the held press starts after them (cast.press_queue)"
+}
+
+pub fn a_held_press_starts_when_the_answer_fails_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, id) = held_press_after_the_bar()
+  let #(_, effects) =
+    answered_ok(
+      state:,
+      cast_id: id,
+      result: interaction_result.Failed,
+      at: 2500,
+    )
+  assert list.take(support.ids(frames: support.writes(effects:)), 3)
+    == [0x07F9, 0x07FE, 0x07FD]
+    as "the failure and the finish end the cast, and the held press starts after them (cast.press_queue)"
+}
+
+pub fn a_press_after_the_bar_while_the_answer_is_out_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+  let #(state, _) = support.run_timers(state:, effects: pressed, from_ms: 0)
+  let #(_, effects) = pressed_electrocute(state:, at: 3000)
+  assert support.refusal_results(effects:)
+    == [cast_result.to_value(cast_result.SpellAlreadyCasting)]
+    as "cast.no_answer: the bar has run and the answer is out, so the cast has no end of its own and the press is refused 13, not held"
 }

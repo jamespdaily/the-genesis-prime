@@ -43,6 +43,7 @@ import owned_test
 import pog
 import recording_support
 import simplifile
+import socket_read
 
 pub fn a_sitting_records_each_sts_auth_and_game_connection_test() -> Nil {
   use <- owned_test.run(60_000)
@@ -64,10 +65,22 @@ pub fn a_sitting_records_each_sts_auth_and_game_connection_test() -> Nil {
       name: vector.name,
       password: vector.password,
       seed: 7,
+      limit: socket_read.Open,
     )
-  let auth = login_client.auth_login(ports:, login:, build: 16_042)
+  let auth =
+    login_client.auth_login(
+      ports:,
+      login:,
+      build: 16_042,
+      limit: socket_read.Open,
+    )
   let assert [_accepted, handoff] =
-    login_client.read_frames(client: auth, have: <<>>, count: 2)
+    login_client.read_frames(
+      client: auth,
+      have: <<>>,
+      count: 2,
+      limit: socket_read.Open,
+    )
     as "the auth server answers a login with 0x0591 and 0x03DB"
   let assert Ok(handed) =
     game_server_handoff.decode(login_client.in_the_auth_wrapper(handoff).body)
@@ -77,6 +90,7 @@ pub fn a_sitting_records_each_sts_auth_and_game_connection_test() -> Nil {
       port: ports.game_port,
       session_key: handed.session_key,
       account_name: vector.name,
+      limit: socket_read.Open,
     )
   game_client.send(game:, message_id: 0x07E0, body: <<>>)
   let answer = game_client.read(game:, count: 4)

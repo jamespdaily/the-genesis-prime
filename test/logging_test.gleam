@@ -39,7 +39,11 @@ pub fn a_level_set_for_a_test_is_put_back_when_the_test_fails_test() -> Nil {
       })
     })
   let ended = process.monitor(worker)
-  let _reason = ask_support.ended(ended)
+  let _reason =
+    ask_support.ended(
+      watched: ended,
+      what: "the worker with the planted failure to end",
+    )
   event_wait.until("the level the test found is back", fn() {
     log_capture.primary_level() == before
   })

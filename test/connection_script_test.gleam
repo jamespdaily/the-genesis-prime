@@ -436,7 +436,11 @@ pub fn a_recorded_read_the_socket_delivers_in_parts_reaches_the_rule_as_one_inpu
     as "one connection process"
   let watched = process.monitor(connection)
   let assert Ok(Nil) = mug.shutdown(client) as "the client closed"
-  let _reason = ask_support.ended(watched)
+  let _reason =
+    ask_support.ended(
+      watched: watched,
+      what: "the connection to end after the client closed",
+    )
   let assert Ok(Recording(lines:, ..)) =
     wire_recording.read(recording_support.wire_text_in(folder))
     as "the recording is whole"

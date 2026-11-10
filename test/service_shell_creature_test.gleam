@@ -202,7 +202,8 @@ pub fn a_creature_that_starts_is_watched_at_its_address_and_its_end_comes_back_a
     as "the creature runs, so the watch has not ended"
   let down = process.monitor(target)
   process.kill(target)
-  let _reason = ask_support.ended(down)
+  let _reason =
+    ask_support.ended(watched: down, what: "the killed target to end")
   assert process.receive(ended, within: ask_support.event_wait_ms)
     == Ok(gate_rule.Opened(2))
     as "the creature's end reached the rule as WatchEnded with the watch's id"

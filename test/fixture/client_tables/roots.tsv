@@ -348,3 +348,18 @@ Quest2	5622	quest whose objective 0 is 10263 (type 3, flags 0x20, count 1) and o
 QuestObjective	10263	the optional type 3 objective of quest 5622	quest_log_progress_test
 Creature2	74787	a unit beside the mounts whose row gives no visibility prerequisite	tutorial_visibility_wire_test
 Quest2	2909	quest whose choice reward 2368 names Item2 13005, a row the client lacks	quest_turn_in_tables_test
+Creature2	12919	quest-anim collectible whose questAnim columns name quest 3741 objective index 0 (type 32)	objective_test, game_connection_objective_test
+Quest2	3741	quest whose type 32 objective 4813 the creature 12919 advances	objective_test, game_connection_objective_test
+Quest2	7415	quest whose one objective 13485 is type 33 on schematic 374, which outputs item 21484	objective_test, game_connection_objective_test
+Item2	1375	Scout's Thermal Gloves (ItemBudget 3, ItemStat 4: Critical Hit Rating, level 3)	item_property_test, gear_test
+Item2	8441	Unclean Carver (ItemBudget 8, ItemStat 20: Critical Hit Rating and Strikethrough rating, a weapon, level 20)	item_property_test
+Item2	1156	Bacchanal Probe (ItemBudget 6, ItemStat 51: Critical Hit Rating and Critical Severity, level 36)	item_property_test
+Item2	16397	(ItemStat 54: kind-1 entries on property 29 and on Strength, which is worth 0 per point)	item_property_test
+Item2	9965	(ItemStat 415: one random stat entry, kind 2)	item_property_test
+Item2	8829	(a shield whose ItemBudget 47 shares 0.5, 0, 0.75 and 0.75 on the shield properties)	item_property_test
+Item2	71653	(ItemStat 226: kind-1 entries on Rating Focus Recovery and Base Health)	gear_test
+Item2	447	(armor at power level 52, from the late armor curve)	item_property_test
+Item2	5312	(a PvP weapon, flags 0x8000)	item_property_test
+Item2	12654	(an imbued weapon, itemImbuementId 3)	item_property_test
+Item2	13394	(a level-scaled armor piece, flags bit 3)	item_property_test
+Creature2	73605	a Departures Terminal whose activate spell is a castMethod 5 interaction with activateSpellCastTime 0	cast_activate_test

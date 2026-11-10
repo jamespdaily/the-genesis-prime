@@ -191,7 +191,11 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
   let outcome = ask_support.read_record(client)
   assert outcome.code == asking_rule.code_no_answer_in_time
     as "the query was still waiting for the lock at the deadline"
-  assert ask_support.ended(worker_ended) == ask_support.shutdown()
+  assert ask_support.ended(
+      watched: worker_ended,
+      what: "the query's worker to end at the stop",
+    )
+    == ask_support.shutdown()
     as "the asker ended the worker with exit shutdown, the lock still held"
   release_lock(lock)
   ask_support.stop(server)

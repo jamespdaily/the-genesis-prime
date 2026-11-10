@@ -142,7 +142,11 @@ pub fn a_connection_that_ended_leaves_its_group_and_a_message_to_it_is_dropped_t
   let assert [connection] = ask_support.connections(server)
   let gone = process.monitor(connection)
   let assert Ok(Nil) = mug.shutdown(client) as "the client closed"
-  let _reason = ask_support.ended(gone)
+  let _reason =
+    ask_support.ended(
+      watched: gone,
+      what: "the connection to end after the client closed",
+    )
   event_wait.until(
     "the scope noticed the end by itself, so no process finds the id",
     fn() { registry.find(scope, ConnectionId(id)) == Error(Nil) },
@@ -174,7 +178,11 @@ pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watch
     as "the watch is open and the target runs, so nothing has ended"
   let ended = process.monitor(sessions)
   process.kill(sessions)
-  let _reason = ask_support.ended(ended)
+  let _reason =
+    ask_support.ended(
+      watched: ended,
+      what: "the killed sessions process to end",
+    )
   assert read_record(client) == Record(signalling_rule.watch_ended, 1)
     as "the target's end reached the rule as WatchEnded(WatchId(1))"
   ask_support.command(
@@ -793,7 +801,11 @@ pub fn a_tell_after_the_watched_process_ended_goes_nowhere_test() -> Nil {
   )
   let ended = process.monitor(sessions)
   process.kill(sessions)
-  let _reason = ask_support.ended(ended)
+  let _reason =
+    ask_support.ended(
+      watched: ended,
+      what: "the killed sessions process to end",
+    )
   assert read_record(client) == Record(signalling_rule.watch_ended, 1)
   command_then_pong(
     client:,
@@ -832,7 +844,11 @@ pub fn a_read_that_cannot_be_armed_because_the_peer_closed_reaches_the_rule_as_a
       mailbox_support.queued(connection) >= 2
     })
   })
-  let _reason = ask_support.ended(gone)
+  let _reason =
+    ask_support.ended(
+      watched: gone,
+      what: "the connection to end after its mailbox held the close",
+    )
   ask_support.stop(server)
   log_capture.stop(capture)
   assert list.filter(mailbox_support.drain(lines), fn(line) {
@@ -943,7 +959,11 @@ pub fn a_join_makes_the_connection_a_member_of_the_group_and_a_leave_or_its_end_
   )
   let gone = process.monitor(connection)
   let assert Ok(Nil) = mug.shutdown(client) as "the client closed"
-  let _reason = ask_support.ended(gone)
+  let _reason =
+    ask_support.ended(
+      watched: gone,
+      what: "the connection to end after the client closed",
+    )
   event_wait.until("the scope noticed the end by itself", fn() {
     registry.find_named(scope, "6") == Error(Nil)
   })

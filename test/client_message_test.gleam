@@ -20,6 +20,9 @@ import genesis_prime/message/choose_resurrection.{ChooseResurrection}
 import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
 import genesis_prime/message/client_message
 import genesis_prime/message/client_option.{ClientOption}
+import genesis_prime/message/client_side_interaction_result.{
+  ClientSideInteractionResult,
+}
 import genesis_prime/message/client_wrapper.{ClientWrapper}
 import genesis_prime/message/close_notice.{CloseNotice}
 import genesis_prime/message/create_character.{CreateCharacter}
@@ -35,6 +38,7 @@ import genesis_prime/message/graphics_report.{GraphicsReport}
 import genesis_prime/message/innate_index_chosen.{InnateIndexChosen}
 import genesis_prime/message/input_key_set_request.{InputKeySetRequest}
 import genesis_prime/message/interaction_request.{InteractionRequest}
+import genesis_prime/message/interaction_result
 import genesis_prime/message/item_delete.{ItemDelete}
 import genesis_prime/message/item_move.{ItemMove}
 import genesis_prime/message/item_place.{ItemPlace}
@@ -392,6 +396,16 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
         reason: cast_result.SpellCancelled,
         field_3: 1,
       )),
+    ),
+    #(
+      0x0805,
+      client_message.ClientSideInteractionResult(
+        message: ClientSideInteractionResult(
+          cast_id: 0x80002804,
+          result: interaction_result.Succeeded,
+          spell4_base_id_plus_one: 20_652,
+        ),
+      ),
     ),
     #(
       0x015A,

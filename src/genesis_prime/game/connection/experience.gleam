@@ -98,6 +98,7 @@ pub fn gained(
               replacing: entered.gear.visuals,
               item_visuals: entered.gear.visuals,
               bases:,
+              defaults: unit_properties.defaults(tables:),
               shield: gear.shield_capacity(gear: entered.gear),
             ),
             properties: unit_properties.at_level(

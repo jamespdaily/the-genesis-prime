@@ -154,7 +154,11 @@ pub fn the_ask_ends_with_the_trees_end_when_the_tree_ends_while_it_waits_test() 
   let assert Ok(readiness.TreeEnded(reason: process.Killed)) =
     process.receive(outcomes, ask_support.event_wait_ms)
     as "the tree's end, with its reason, ends the ask at once"
-  let _reason = ask_support.ended(worker_ended)
+  let _reason =
+    ask_support.ended(
+      watched: worker_ended,
+      what: "the ask's probe to end with its tree",
+    )
   Nil
 }
 

@@ -10,6 +10,7 @@ import genesis_prime/store.{type Character}
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
+import gleam/dict
 import gleam/option.{None}
 
 /// A loadout of no armor, no ability, no drawn piece and gear that gives
@@ -28,6 +29,7 @@ pub fn bare_loadout() -> Loadout {
       support_rating: 0.0,
       armor: 0.0,
       shield: None,
+      budget: dict.new(),
     ),
   )
 }

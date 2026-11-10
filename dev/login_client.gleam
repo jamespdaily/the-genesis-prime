@@ -4,8 +4,11 @@
 //// (`scripted_client` holds the library's requests and the SRP exchange) and
 //// shared by the tests that log a player in before they play.
 ////
-//// Every wait is for bytes the server writes or for the socket to close; the
-//// deadlines are for a server that does not answer, never a pause.
+//// Every wait is for bytes the server writes or for the socket to close, never
+//// a pause. A test's wait has no limit of its own: the test's deadline names the
+//// wait still open (`socket_read.Open`). A load client gives the wait a bound,
+//// and a server that does not answer within it stops the client
+//// (`socket_read.Within`).
 
 import frame_reader
 import genesis_prime/connection/cipher
@@ -20,11 +23,9 @@ import gleam/int
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import mug
+import open_wait
 import scripted_client.{type Reply}
-
-/// How long a test waits for the server to write the bytes it must, in
-/// milliseconds.
-const wait_ms = 5000
+import socket_read.{type Limit}
 
 /// The ports the tree's three listeners opened.
 pub type Ports {
@@ -87,9 +88,15 @@ pub type Ciphers {
 }
 
 /// The client's side of an STS connection: its socket, its ciphers once the
-/// exchange is done (`None` before), and the next sequence number.
+/// exchange is done (`None` before), the next sequence number, and the limit its
+/// reads wait by.
 pub type StsClient {
-  StsClient(socket: mug.Socket, ciphers: Option(Ciphers), next_sequence: Int)
+  StsClient(
+    socket: mug.Socket,
+    ciphers: Option(Ciphers),
+    next_sequence: Int,
+    limit: Limit,
+  )
 }
 
 /// What the server answered, or that it closed the connection first.
@@ -172,7 +179,11 @@ pub fn receive_through(
 /// one whole reply; gives the ciphers after them and the reply.
 fn read_reply(client: StsClient, have: BitArray) -> #(Option(Ciphers), Reply) {
   let assert Ok(bytes) =
-    mug.receive(client.socket, timeout_milliseconds: wait_ms)
+    socket_read.receive(
+      socket: client.socket,
+      limit: client.limit,
+      what: "the server's reply to the request",
+    )
     as "the server did not answer the request"
   let #(ciphers, plain) = receive_through(ciphers: client.ciphers, bytes:)
   let all = <<have:bits, plain:bits>>
@@ -189,7 +200,8 @@ pub fn child(reply reply: Reply, name name: String) -> String {
   text
 }
 
-/// Starts an STS connection with the one-way Connect the library sends first.
+/// Starts an STS connection with the one-way Connect the library sends first,
+/// whose reads wait without a limit of their own.
 pub fn sts_connect(ports: Ports) -> StsClient {
   let socket = connect(ports.sts_port)
   send(
@@ -203,7 +215,7 @@ pub fn sts_connect(ports: Ports) -> StsClient {
       ),
     ),
   )
-  StsClient(socket:, ciphers: None, next_sequence: 1)
+  StsClient(socket:, ciphers: None, next_sequence: 1, limit: socket_read.Open)
 }
 
 /// LoginStart and the SRP answer: the reply to the answer, and what the client
@@ -246,16 +258,18 @@ pub fn srp_exchange(
   #(answered, exchange)
 }
 
-/// The client's whole STS login to the game token, as the library goes.
+/// The client's whole STS login to the game token, as the library goes, its
+/// reads waiting by `limit`.
 pub fn sts_login(
   ports ports: Ports,
   name name: String,
   password password: String,
   seed seed: Int,
+  limit limit: Limit,
 ) -> scripted_client.StsLogin {
   let #(answered, exchange) =
     srp_exchange(
-      client: sts_connect(ports),
+      client: StsClient(..sts_connect(ports), limit:),
       name: string.lowercase(name),
       password:,
       seed:,
@@ -312,32 +326,40 @@ pub fn sts_login(
   )
 }
 
-/// Reads frames from the auth connection until there are `count` of them.
+/// Reads frames from the auth connection until there are `count` of them,
+/// waiting for each write by `limit`.
 pub fn read_frames(
   client client: mug.Socket,
   have have: BitArray,
   count count: Int,
+  limit limit: Limit,
 ) -> List(Frame) {
   let assert Ok(frames) =
     frame_reader.read(have:, count:, next: fn() {
-      mug.receive(client, timeout_milliseconds: wait_ms)
+      socket_read.receive(
+        socket: client,
+        limit:,
+        what: "the auth server to write " <> int.to_string(count) <> " frame(s)",
+      )
     })
     as "the auth server did not write the frames"
   frames
 }
 
 /// Reads everything the server writes until it closes the connection, and
-/// gives those bytes. A reset counts as a close. A server that does not close
-/// within the wait fails the test.
+/// gives those bytes. A reset counts as a close. A server that never closes ends
+/// the test at its deadline, with this wait named.
 pub fn read_until_closed(client client: mug.Socket) -> BitArray {
-  collect_until_closed(client:, heard: <<>>)
+  open_wait.named("the server to close the connection", fn() {
+    collect_until_closed(client:, heard: <<>>)
+  })
 }
 
 fn collect_until_closed(
   client client: mug.Socket,
   heard heard: BitArray,
 ) -> BitArray {
-  case mug.receive(client, timeout_milliseconds: wait_ms) {
+  case socket_read.looking(client) {
     Ok(bytes) ->
       collect_until_closed(client:, heard: <<heard:bits, bytes:bits>>)
     Error(mug.Closed) | Error(mug.Econnreset) | Error(mug.Econnaborted) -> heard
@@ -365,14 +387,15 @@ pub fn in_the_auth_wrapper(sent: Frame) -> Frame {
 }
 
 /// Connects to the auth listener, reads the hello and sends the login request
-/// of an STS login with the given build.
+/// of an STS login with the given build, its reads waiting by `limit`.
 pub fn auth_login(
   ports ports: Ports,
   login login: scripted_client.StsLogin,
   build build: Int,
+  limit limit: Limit,
 ) -> mug.Socket {
   let socket = connect(ports.auth_port)
-  let assert [hello] = read_frames(client: socket, have: <<>>, count: 1)
+  let assert [hello] = read_frames(client: socket, have: <<>>, count: 1, limit:)
     as "the auth server did not greet the client"
   assert hello.message_id == 0x0003
     as "opcode.0x3: the server's hello is message 3"

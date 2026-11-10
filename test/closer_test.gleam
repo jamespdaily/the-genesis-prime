@@ -86,7 +86,11 @@ pub fn a_listener_whose_supervisor_ends_while_the_close_waits_does_not_stop_the_
     mailbox_support.call_waiting_from(pid: first_supervisor, caller: closer)
   })
   process.kill(first_supervisor)
-  assert ask_support.ended(stopping) == ask_support.shutdown()
+  assert ask_support.ended(
+      watched: stopping,
+      what: "the closing tree to stop as a stop ends it",
+    )
+    == ask_support.shutdown()
     as "the closing tree stopped as a stop ends it"
   log_capture.stop(capture)
   let refused =

@@ -71,8 +71,8 @@ import genesis_prime/table/episode
 import genesis_prime/table/episode_quest
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
-  EpisodeId, GameFormulaId, Item2Id, PeriodicQuestGroupId, PrerequisiteId,
-  Quest2Id,
+  type Item2Id, EpisodeId, GameFormulaId, Item2Id, PeriodicQuestGroupId,
+  PrerequisiteId, Quest2Id,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
@@ -680,20 +680,36 @@ fn reputation(quest quest: Quest2) -> Result(Nil, Stop) {
 /// `0x140552550`).
 const counted_locations = [0, 1, 8, 9]
 
-/// Check 7: the item the quest needs, held in one of the counted locations. An item
-/// the server does not find there may be in the client's per-item inventory counter,
-/// which it does not read.
+/// How many of the Item2 the player holds in the counted locations: the sum of the
+/// stacks there (a stack's `stack_count`), which a collect objective takes as its
+/// progress. The client also adds the supply satchel's count of the Item2
+/// (`0x1403ac840`); it is not counted here because the server holds no satchel items
+/// yet (issue 53, "Crafting and gathering work on the real client").
+pub fn held_count(
+  items items: List(HeldItem),
+  item2_id item2_id: Item2Id,
+) -> Int {
+  list.fold(items, 0, fn(total, item) {
+    case
+      item.item2_id == item2_id
+      && list.contains(counted_locations, item.location)
+    {
+      True -> total + item.stack_count
+      False -> total
+    }
+  })
+}
+
+/// Check 7: the item the quest needs, held in one of the counted locations (check 7 of
+/// `0x140552550` asks for at least one, and a stack holds at least one). An item the
+/// server does not find there may be in the client's per-item inventory counter, which
+/// it does not read.
 fn prerequisite_item(
   quest quest: Quest2,
   asker asker: Asker,
 ) -> Result(Nil, Stop) {
   use <- bool.guard(when: quest.preq_item == 0, return: Ok(Nil))
-  case
-    list.any(asker.items, fn(item) {
-      item.item2_id == Item2Id(quest.preq_item)
-      && list.contains(counted_locations, item.location)
-    })
-  {
+  case held_count(items: asker.items, item2_id: Item2Id(quest.preq_item)) > 0 {
     True -> Ok(Nil)
     False -> Error(Unread(PrerequisiteItemCounter))
   }

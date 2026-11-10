@@ -12,6 +12,10 @@
 //// - The reset time is the latest daily or weekly reset before the entry time,
 ////   2025-04-24 10:00:00 UTC (the entry is made at 2025-04-24 20:26:40 UTC,
 ////   `world_entry_support.filetime`), 1745488800 Unix seconds.
+//// - `QuestObjective.type.4.progress`: the client takes the log's collect progress as
+////   sent and counts nothing, so the log sent at login holds each collect objective's
+////   count of the items the character holds (item locations 0, 1, 8 and 9), not the
+////   saved progress.
 
 import cast_support
 import character_tables
@@ -22,6 +26,8 @@ import genesis_prime/message/quest_active.{QuestActive}
 import genesis_prime/message/quest_completed.{QuestCompleted}
 import genesis_prime/message/quest_known.{QuestKnown}
 import genesis_prime/message/quest_log as quest_message
+import genesis_prime/store.{HeldItem}
+import genesis_prime/table/id.{Item2Id}
 import gleam/list
 import owned_test
 import quest_support
@@ -65,12 +71,23 @@ pub fn the_play_entry_sends_the_quest_log_after_the_character_state_and_a_holocr
     as "the empty log is three empty lists and the latest reset time"
   assert quest_log.told_reset(entered.quests) == reset_time
     as "the log the connection keeps remembers the time the client was told"
-  // A character with quests is sent each in its list, in quest id order.
+  // A character with quests is sent each in its list, in quest id order. Quest 2347's
+  // three objectives are collects of one each (objectives 2709 to 2711, items 4857 to
+  // 4859), counted from what the player holds at entry: one of item 4857, so the
+  // saved progress [5, 0, 3] is sent as [1, 0, 0] and the done mask keeps bit 0.
   let #(effects, _) =
     world_entry_support.entry_at(
       tables:,
       character:,
-      items: world_entry_support.novice_items(character:),
+      items: list.append(world_entry_support.novice_items(character:), [
+        HeldItem(
+          item_guid: 4857,
+          item2_id: Item2Id(4857),
+          location: 1,
+          bag_index: 7,
+          stack_count: 1,
+        ),
+      ]),
       quests: [
         quest_support.completed(quest_id: quest_support.daily, at: reset_time),
         quest_support.active(
@@ -108,7 +125,7 @@ pub fn the_play_entry_sends_the_quest_log_after_the_character_state_and_a_holocr
           state: 1,
           placeholder_objective_id: 0,
           flags: 6,
-          progress: [5, 0, 3],
+          progress: [1, 0, 0],
           quest_ms_left: 0,
           objective_ms_left: [0, 0, 0],
         ),
@@ -124,7 +141,7 @@ pub fn the_play_entry_sends_the_quest_log_after_the_character_state_and_a_holocr
       ],
       reset_time:,
     )
-    as "the saved quests are sent as the saved rows give them, each in its list"
+    as "the saved quests are sent as the saved rows give them, each in its list, but a collect objective's progress is the held count (item 4857 x1 for 2347's first objective)"
   // The Holocrypt's join of a dead player with quests sends no quest log.
   let dead =
     game_connection_support.killed(
@@ -142,4 +159,63 @@ pub fn the_play_entry_sends_the_quest_log_after_the_character_state_and_a_holocr
     as "the player joins the Holocrypt: the world is loaded again"
   assert !list.contains(ids, 0x035F)
     as "quest_log.process_wide: the client keeps its quest log across the join, so a second 0x35F would add to it again"
+}
+
+pub fn login_sends_the_log_with_the_held_count_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  // Quest 1854's objective 1959 is a type 4 for item 3993, count 3. The saved
+  // row says three were counted and the quest is Achieved, but the bag holds one
+  // (location 1), so the player has lost two since the save.
+  let items = [
+    HeldItem(
+      item_guid: 3993,
+      item2_id: Item2Id(3993),
+      location: 1,
+      bag_index: 0,
+      stack_count: 1,
+    ),
+  ]
+  let saved =
+    quest_support.active(
+      quest_id: 1854,
+      state: 2,
+      placeholder: 0,
+      tracked: False,
+      done_mask: 1,
+      progress: [3],
+    )
+  let #(effects, entered) =
+    world_entry_support.entry_at(
+      tables:,
+      character:,
+      items:,
+      quests: [saved],
+      now: world_entry_support.now(),
+    )
+  let frames = world_entry_support.frames_of(effects:)
+  assert quest_log_of(frames:)
+    == quest_message.QuestLog(
+      completed: [],
+      known: [],
+      active: [
+        QuestActive(
+          quest_id: 1854,
+          state: 1,
+          placeholder_objective_id: 0,
+          flags: 0,
+          progress: [1],
+          quest_ms_left: 0,
+          objective_ms_left: [0],
+        ),
+      ],
+      reset_time:,
+    )
+    as "0x035F carries the held count (one), the done bit cleared and the quest Accepted, as the client's own accept check counts (0x140552550)"
+  assert !list.contains(cast_support.ids(frames:), 0x0361)
+    as "the whole log is one message, so no 0x361 follows at login"
+  assert quest_log.stored_state(log: entered.quests, quest_id: 1854) == 1
+    as "the log the connection keeps is the one sent"
 }

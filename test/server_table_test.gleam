@@ -45,7 +45,7 @@ import owned_test
 import planted_table
 import simplifile
 
-pub fn the_servers_tables_are_the_sixty_two_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_the_sixty_five_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
@@ -78,11 +78,13 @@ pub fn the_servers_tables_are_the_sixty_two_its_rules_read_test() -> Nil {
       "Item2Category",
       "Item2Family",
       "Item2Type",
+      "ItemBudget",
       "ItemDisplay",
       "ItemDisplaySourceEntry",
       "ItemProficiency",
       "ItemSlot",
       "ItemSpecial",
+      "ItemStat",
       "LevelDifferentialAttribute",
       "PathMission",
       "PathSoldierActivate",
@@ -110,12 +112,13 @@ pub fn the_servers_tables_are_the_sixty_two_its_rules_read_test() -> Nil {
       "SpellPhase",
       "TargetGroup",
       "TelegraphDamage",
+      "TradeskillSchematic2",
       "UnitProperty2",
       "WorldLocation2",
       "WorldZone",
       "XpPerLevel",
     ]
-    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, what it is drawn with, abilities and health, the stages of an ability's taps and charge levels, the spell groups and stack groups of the spells that last on a unit, whether an ability's caster may be dead (Spell4.spell4ConditionsIdCaster), the training creatures' rows, what each spell strikes, the hit rule's formulas and bases, the prerequisites that gate a spell's resource gains, a Proxy's child and a creature attack's effects, the arcs a position condition names, the episodes, the quests of each and the periodic groups whose rules the accept check reads (Episode, EpisodeQuest, PeriodicQuestGroup, read by `quest`), the quests and their objectives a saved quest log is checked against (Quest2 and QuestObjective, read by the quest log at a load and a login, and by a prerequisite's quest conditions at a load), whether a type 28 objective is a checklist (PathSoldierActivate), the hit radius of each playable race (Race.hitRadius), the cap of each currency other than credits and Renown (CurrencyType.capAmount, read by `currency`), and the tables an equip check reads (ItemProficiency for an item category's proficiency mask and ItemSpecial for the prerequisite a special gives), and the premium rows that give a signature tier its bag and bank slots (RewardPropertyPremiumModifier, read by `reward_property`), the groups of units a kill objective counts (TargetGroup, read by `target_group`), and the rewards of a quest and the multipliers of its experience and credits (Quest2Reward, Quest2Difficulty and LevelDifferentialAttribute, read by `quest_turn_in`)"
+    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, what it is drawn with, abilities and health, the stages of an ability's taps and charge levels, the spell groups and stack groups of the spells that last on a unit, whether an ability's caster may be dead (Spell4.spell4ConditionsIdCaster), the training creatures' rows, what each spell strikes, the hit rule's formulas and bases, the prerequisites that gate a spell's resource gains, a Proxy's child and a creature attack's effects, the arcs a position condition names, the episodes, the quests of each and the periodic groups whose rules the accept check reads (Episode, EpisodeQuest, PeriodicQuestGroup, read by `quest`), the quests and their objectives a saved quest log is checked against (Quest2 and QuestObjective, read by the quest log at a load and a login, and by a prerequisite's quest conditions at a load), whether a type 28 objective is a checklist (PathSoldierActivate), the hit radius of each playable race (Race.hitRadius), the cap of each currency other than credits and Renown (CurrencyType.capAmount, read by `currency`), and the tables an equip check reads (ItemProficiency for an item category's proficiency mask and ItemSpecial for the prerequisite a special gives), the premium rows that give a signature tier its bag and bank slots (RewardPropertyPremiumModifier, read by `reward_property`), the groups of units a kill objective counts (TargetGroup, read by `target_group`), the rewards of a quest and the multipliers of its experience and credits (Quest2Reward, Quest2Difficulty and LevelDifferentialAttribute, read by `quest_turn_in`), and the budget and stat rows an item's properties come from (ItemBudget and ItemStat, read by `item_property`), and the schematic whose output item a made-item objective counts (TradeskillSchematic2, read by `objective`)"
 }
 
 /// Runs a function of this module in a fresh node, which must return.
