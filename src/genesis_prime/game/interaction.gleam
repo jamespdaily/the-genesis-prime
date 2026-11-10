@@ -236,7 +236,7 @@ fn talked_to(
     dict.get(picture, unit_id) |> result.replace_error(NotShown(unit_id:)),
   )
   case shown {
-    ShownPlayer | ShownObject -> Error(NotACreature(unit_id:))
+    ShownPlayer | ShownObject(..) -> Error(NotACreature(unit_id:))
     ShownCreature(
       creature_id:,
       path:,
@@ -321,7 +321,7 @@ fn vendor_opened(
     )),
   )
   case shown {
-    ShownPlayer | ShownObject ->
+    ShownPlayer | ShownObject(..) ->
       Error(VendorRefusal(
         unit_id:,
         code: vendor_not_a_vendor,

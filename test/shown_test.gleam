@@ -50,6 +50,17 @@ fn creature(
   )
 }
 
+/// A static object of no particular creature, standing at the origin.
+fn an_object() -> shown.Shown {
+  ShownObject(
+    creature_id: Creature2Id(26_462),
+    x: 0.0,
+    y: 0.0,
+    z: 0.0,
+    hit_radius: 0.5,
+  )
+}
+
 fn picture() -> shown.Picture {
   dict.from_list([
     #(1, creature(x: 1.0, attackable: both, alive: True)),
@@ -95,7 +106,7 @@ pub fn a_shown_static_object_is_never_a_candidate_nor_a_creatures_place_or_life_
   use <- owned_test.run(5000)
   // A server choice of the static objects' design (the issue's "Design"
   // artifact): an object has no fight state, so no area strikes it.
-  let picture = dict.insert(picture(), 6, ShownObject)
+  let picture = dict.insert(picture(), 6, an_object())
   list.each([Exile, Dominion], fn(faction) {
     assert !list.any(
       shown.candidates(picture:, faction:, caster_unit_id: 7, now_ms: 0),
@@ -212,7 +223,7 @@ pub fn a_unit_that_is_not_a_shown_creature_has_no_pose_test() -> Nil {
     dict.from_list([
       #(1, facing_creature(x: 10.0, z: -20.0)),
       #(2, ShownPlayer),
-      #(3, ShownObject),
+      #(3, an_object()),
     ])
   assert shown.pose_of(picture:, unit_id: 2, now_ms: 0) == Error(Nil)
   assert shown.pose_of(picture:, unit_id: 3, now_ms: 0) == Error(Nil)

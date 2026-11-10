@@ -33,6 +33,8 @@
 //// - Every other field as every spawned unit's (`unit_fields.spawned_tail`).
 
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/message/float32
+import genesis_prime/message/start_movement.{Position, Rotation}
 import genesis_prime/message/static_unit_type
 import genesis_prime/message/unit_create_door.{
   type UnitCreateDoor, UnitCreateDoor,
@@ -46,11 +48,14 @@ import genesis_prime/message/unit_create_portal.{
 import genesis_prime/message/unit_create_static.{
   type UnitCreateStatic, UnitCreateStatic,
 }
+import genesis_prime/message/unit_create_tail.{type UnitCreateTail}
 import genesis_prime/table/id.{type Creature2Id, Creature2Id}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/unit_fields.{type HealthSource}
+import gleam/list
 import gleam/option.{type Option}
+import gleam/result
 
 /// The unit type of a static object, as message 0x262 numbers it
 /// (`0x140649e20`, `world_data.entity_type`): only these eight are static
@@ -174,6 +179,54 @@ pub fn unit_id(created created: Created) -> Int {
     CreatedMailbox(message) -> message.unit_id
     CreatedPortal(message) -> message.unit_id
   }
+}
+
+/// The Creature2 row a 0x262 draws its unit from.
+pub fn creature_id(created created: Created) -> Creature2Id {
+  case created {
+    CreatedWithChecklist(message) -> Creature2Id(message.creature_id)
+    CreatedDoor(message) -> Creature2Id(message.creature_id)
+    CreatedMailbox(message) -> Creature2Id(message.creature_id)
+    CreatedPortal(message) -> Creature2Id(message.creature_id)
+  }
+}
+
+/// The tail every unit type's 0x262 ends with.
+fn tail_of(created created: Created) -> UnitCreateTail {
+  case created {
+    CreatedWithChecklist(message) -> message.tail
+    CreatedDoor(message) -> message.tail
+    CreatedMailbox(message) -> message.tail
+    CreatedPortal(message) -> message.tail
+  }
+}
+
+/// The Creature2DisplayInfo a 0x262 sends.
+pub fn display_info_id(created created: Created) -> Int {
+  tail_of(created:).display_info_id
+}
+
+/// Where a 0x262's kind 2 movement command puts the unit: x, y and z, or
+/// `Error(Nil)` for a 0x262 with none (`create` writes one, `player_unit.standing`).
+pub fn standing_at(
+  created created: Created,
+) -> Result(#(Float, Float, Float), Nil) {
+  use command <- result.try(
+    list.find_map(tail_of(created:).movement_commands, fn(command) {
+      case command {
+        Position(position) -> Ok(position)
+        Rotation(..) -> Error(Nil)
+      }
+    }),
+  )
+  use x <- result.try(float_of(command.x))
+  use y <- result.try(float_of(command.y))
+  use z <- result.try(float_of(command.z))
+  Ok(#(x, y, z))
+}
+
+fn float_of(bits bits: Int) -> Result(Float, Nil) {
+  float32.bits(bits) |> result.try(float32.value)
 }
 
 /// Message 0x262 for the object as unit `unit_id`, stamped with

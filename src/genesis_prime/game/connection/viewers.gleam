@@ -129,6 +129,7 @@ import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/state.{type Session} as connection_state
+import genesis_prime/game/hit_radius
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/shown.{ShownCreature, ShownObject, ShownPlayer}
@@ -144,7 +145,9 @@ import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionId, type Effect, type Now,
 }
-import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/creature2_display_info
+import genesis_prime/table/id.{Creature2DisplayInfoId, Creature2Id}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
@@ -156,6 +159,7 @@ import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/set
 
 /// What the map sent for the player's stay (`stay_sent`): who sees its player
@@ -239,7 +243,11 @@ pub fn map_sent(
       Continue(
         shown_changed(session:, change: fn(picture) {
           list.fold(fresh, picture, fn(picture, unit) {
-            dict.insert(picture, unit.0, ShownObject)
+            dict.insert(
+              picture,
+              unit.0,
+              object_shown(tables: session.settings.tables, created: unit.1),
+            )
           })
         }),
         list.append(
@@ -665,6 +673,32 @@ fn names_own_unit(
   unit_id unit_id: Int,
 ) -> Bool {
   unit_id == 0 || unit_id == entered.unit_id
+}
+
+/// What the picture holds of a static object its 0x262 creates: the 0x262's creature,
+/// where it puts the unit and its display's hit radius, 0.0 for a display with no
+/// Creature2DisplayInfo row. The server wrote the 0x262 with `static_object.create`,
+/// which always writes a position of finite numbers.
+fn object_shown(
+  tables tables: table_store.Tables,
+  created created: static_object.Created,
+) -> shown.Shown {
+  let assert Ok(#(x, y, z)) = static_object.standing_at(created:)
+    as "static_object.create writes a position of finite numbers"
+  let hit_radius =
+    creature2_display_info.get(
+      tables,
+      Creature2DisplayInfoId(static_object.display_info_id(created:)),
+    )
+    |> result.map(fn(display) { hit_radius.of_creature(display:) })
+    |> result.unwrap(0.0)
+  ShownObject(
+    creature_id: static_object.creature_id(created:),
+    x:,
+    y:,
+    z:,
+    hit_radius:,
+  )
 }
 
 /// The error line for a unit a 0x262 or 0x355 was refused for (`names_own_unit`).
