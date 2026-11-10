@@ -684,6 +684,10 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.DialogResponsesShown(..)
     | client_message.QuestAccept(..)
     | client_message.QuestRetry(..)
+    | client_message.QuestAbandon(..)
+    | client_message.QuestMention(..)
+    | client_message.QuestTrack(..)
+    | client_message.QuestIgnore(..)
     | client_message.VendorPurchase(..)
     | client_message.VendorSale(..)
     | client_message.VendorSellJunk(..) -> Plain

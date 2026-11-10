@@ -105,10 +105,9 @@ pub fn the_messages_in_the_clients_wrapper_are_rows_with_the_stages_that_take_th
 
 pub fn a_message_with_no_row_is_taken_at_no_stage_either_way_test() -> Nil {
   use <- owned_test.run(5000)
-  // 0x0635 is the client's echo of 0x0636, 0x082D and 0x07CC are messages the
-  // game connection's tests log as unhandled, and 0x0360 is the quest the
-  // client mentions, which a later step takes (a quest's state must be kept).
-  list.each([0x0635, 0x07CC, 0x082D, 0x0360], fn(id) {
+  // 0x0635 is the client's echo of 0x0636, and 0x082D and 0x07CC are messages the
+  // game connection's tests log as unhandled.
+  list.each([0x0635, 0x07CC, 0x082D], fn(id) {
     list.each(stages, fn(stage) {
       assert routing.route(stage, OnItsOwn, id) == Error(Nil)
       assert routing.route(stage, InsideWorldMessage, id) == Error(Nil)

@@ -1419,7 +1419,7 @@ pub fn given_quest_ids(row: Creature2) -> List(Int) {
 
 /// The quests the creature receives, by quest id, in the order of its Creature2
 /// columns questIdReceive00 to 24; 0 is an empty column.
-fn received_quest_ids(row: Creature2) -> List(Int) {
+pub fn received_quest_ids(row: Creature2) -> List(Int) {
   [
     row.quest_id_receive00,
     row.quest_id_receive01,

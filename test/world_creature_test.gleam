@@ -67,6 +67,7 @@ import gleam/set
 import map_support
 import owned_test
 import place_support
+import quest_support
 import rating_support
 import spawn_support
 import vendor_support
@@ -979,7 +980,11 @@ pub fn right_click_on_giver_opens_dialog_test() -> Nil {
     as "the map's creature news is a message for a stay"
   let #(state, _) =
     game_connection_support.feed(
-      state: game_connection_support.in_world_as_exile(),
+      // Walker receives quest 10520, which the player holds Accepted, so the client's
+      // marking shows him with a dialog (`0x1405a8d40`).
+      state: game_connection_support.in_world_as_exile_holding(quests: [
+        quest_support.accepted(10_520, progress: [0, 0, 0, 0, 0]),
+      ]),
       event: game_connection_support.for_stay(stay:, sent:),
     )
   let #(_, taken) =

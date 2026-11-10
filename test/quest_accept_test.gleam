@@ -154,7 +154,12 @@ fn item(
 
 fn verdict(quest target: Quest2, asker asker: Asker) -> Verdict {
   let assert Ok(verdict) =
-    quest.can_accept(tables: tables(), quest: target, asker:)
+    quest.can_accept(
+      tables: tables(),
+      quest: target,
+      asker:,
+      mask: quest.every_check,
+    )
     as "the fixture holds every row the checks read"
   verdict
 }
@@ -348,6 +353,37 @@ pub fn accept_joins_level_and_prerequisite_quests_with_preq_flags_2_test() -> Ni
     as "without bit 2 the quest check stands alone"
 }
 
+pub fn the_level_and_quest_checks_each_run_on_their_own_mask_bit_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // `0x140552550` tests bit 1 (level, code 3) and bit 6 (prerequisite quests, code 8)
+  // apart and joins them only for preq_flags bit 2 with both bits asked. 3918 has
+  // preq_level 11, preq_flags 2 and preq_quest0 4294; 2575 has preq_level 40 alone.
+  let verdict_under = fn(mask, quest_id, asker) {
+    let assert Ok(verdict) =
+      quest.can_accept(tables: tables(), quest: row(quest_id), asker:, mask:)
+      as "the fixture holds every row the checks read"
+    verdict
+  }
+  let without_level = int.bitwise_and(quest.every_check, int.bitwise_not(0x2))
+  let without_quests = int.bitwise_and(quest.every_check, int.bitwise_not(0x40))
+  let low = at_level(asker(log: []), 10)
+  assert verdict_under(without_level, 2575, asker(log: [])) == Acceptable
+    as "a mask without bit 1 does not refuse a quest of level 40 for a level 20 player"
+  assert verdict_under(without_level, 3918, low) == Refused(code: 8)
+    as "without bit 1 the joined check does not run, so the quest check stands alone"
+  assert verdict_under(
+      without_level,
+      3918,
+      at_level(asker(log: [quest_support.completed(4294, at: 1000)]), 10),
+    )
+    == Acceptable
+    as "without bit 1 the level is not asked, so a met prerequisite quest passes"
+  assert verdict_under(without_quests, 3918, low) == Refused(code: 3)
+    as "without bit 6 the level stands alone"
+  assert verdict_under(quest.every_check, 3918, low) == Refused(code: 3)
+    as "with both bits the joined check refuses with the level's code"
+}
+
 pub fn accept_needs_prerequisite_quests_all_or_any_test() -> Nil {
   use <- owned_test.run(10_000)
   let done = fn(ids) {
@@ -454,7 +490,12 @@ pub fn accept_checks_the_prerequisite_for_the_player_test() -> Nil {
   ])
   let assert Ok(target) = quest2.get(tables:, id: Quest2Id(1806))
     as "the changed row is in the tables"
-  assert quest.can_accept(tables:, quest: target, asker: asker(log: []))
+  assert quest.can_accept(
+      tables:,
+      quest: target,
+      asker: asker(log: []),
+      mask: quest.every_check,
+    )
     == Ok(Refused(code: 12))
     as "a prerequisite id with no row fails, so the quest is refused by check 12"
 }
@@ -529,6 +570,7 @@ pub fn a_periodic_quest_of_no_known_group_takes_group_1s_limits_test() -> Nil {
       tables:,
       quest: Quest2(..row(1857), periodic_quest_group_id: group_id),
       asker: asker(log: []),
+      mask: quest.every_check,
     )
   }
   assert in_group(0) == Ok(NotRead(gap: quest.PeriodicDraw(group_id: 1)))

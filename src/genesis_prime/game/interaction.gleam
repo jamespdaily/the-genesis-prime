@@ -5,7 +5,8 @@
 ////
 //// ```
 //// 0x7EA {unit, 37}, inside 0x38C ─▶ take(Requested, ...) ─▶ a shown, alive creature whose row gives or
-////                                                           receives a quest, within reach: OpenDialog(unit)
+////                                                           receives a quest the client would show, within
+////                                                           reach: OpenDialog(unit)
 ////                                                        ─▶ any other: a log line, nothing written
 //// 0x7EA {unit, 0x31}             ─▶ a shown, alive creature of the vendor table, within reach and not
 ////                                   Hostile: OpenVendor(unit, vendor)
@@ -19,18 +20,24 @@
 ////   from its own quest state, and sends 0x0356 when there is more than one
 ////   (`opcode.0x356`), which needs no answer.
 //// - **The client sends the request** only for a creature that is alive, not Hostile
-////   to the player and a quest giver (`0x14047a060`), so a unit that is not shown,
-////   not a creature, dead, Hostile or with no quest in its row is one the client
-////   would not have sent: it is logged and answered with nothing. The connection goes on, since the picture is
-////   one news message stale at worst (genesis_prime/game/shown).
+////   to the player and one that marks a quest interaction kind with a click handler
+////   (`0x14047a060`, `0x1405a8d40`), so a unit that is not shown, not a creature, dead,
+////   Hostile, with no quest in its row or with none the player's log shows is one the
+////   client would not have sent: it is logged and answered with nothing. The connection
+////   goes on, since the picture is one news message stale at worst
+////   (genesis_prime/game/shown).
 //// - **The reach** is 6.0 for a quest kind, measured between the two bodies' edges
 ////   (`0x1403ad690`), plus the 3.0 a request may add (`opcode.0x7ea`). The gap here
 ////   is on the ground, with the hit radii at scale 1.0, from the player's place at
 ////   its last movement message; the 3.0 covers both for any gap the client opens at.
-//// - **The kind is not checked against the player's quest log**: the client opens the
-////   dialog only for responses it builds from its own quest state, so the server's
-////   0x0357 for a giver with nothing to offer shows no dialog. What the client's accept
-////   checks make of the log is genesis_prime/game/quest's.
+//// - **A quest to show** is what the client marks for the creature from the player's quest
+////   log (`0x1405a8d40`), which `offers` says for the creature's row: a creature with
+////   nothing to show gets no request, and one whose quest the server cannot decide for a
+////   table row it lacks is logged and gets no dialog. The rule is
+////   genesis_prime/game/quest's (`offers`), which imports this module, so the connection
+////   passes it in; the checks the client's accept makes of the log are its too. The
+////   client marks the creature before any click, so the order of this check and the
+////   reach changes only the reason that is logged.
 //// - **A vendor's request** (kind 0x31) is checked as the client's CheckInteractionTarget
 ////   checks it (`opcode.0x7ea`), in its order: a unit not in the picture is 59, a unit that is
 ////   not a creature, a creature with no stock or a dead one is 16, a gap over the reach is
@@ -61,7 +68,7 @@ import genesis_prime/game/vendor.{type Vendor, type Vendors}
 import genesis_prime/message/dialog_responses_shown
 import genesis_prime/message/interaction_request
 import genesis_prime/step.{type LogLevel, LogDebug, LogWarning}
-import genesis_prime/table/creature2
+import genesis_prime/table/creature2.{type Creature2}
 import genesis_prime/table/id.{type Creature2Id, type RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{type Hostile}
@@ -126,6 +133,18 @@ pub type Taken {
   Taken(effects: List(Effect), window: Window, logged: Set(String))
 }
 
+/// What a player's quest log says of a creature's quests, as the client marks the
+/// creature (`0x1405a8d40`).
+pub type Offer {
+  /// A quest of the creature shows its dialog.
+  Offered
+  /// No quest of the creature shows its dialog.
+  NothingToOffer
+  /// No quest of the creature shows its dialog, and a check of one needed a table row
+  /// the tables lack: the quest and a sentence that says which row.
+  Undecided(quest_id: Int, cause: String)
+}
+
 /// Why a request is answered with nothing.
 type Declined {
   NotShown(unit_id: Int)
@@ -133,6 +152,13 @@ type Declined {
   Dead(unit_id: Int)
   HostileToPlayer(unit_id: Int)
   NoQuest(unit_id: Int, creature_id: Creature2Id)
+  NothingOffered(unit_id: Int, creature_id: Creature2Id)
+  OfferUndecided(
+    unit_id: Int,
+    creature_id: Creature2Id,
+    quest_id: Int,
+    cause: String,
+  )
   TooFar(unit_id: Int)
   KindNotTaken(kind: Int)
 }
@@ -212,6 +238,7 @@ pub fn take(
   tables tables: table_store.Tables,
   vendors vendors: Vendors,
   now_ms now_ms: Int,
+  offers offers: fn(Creature2) -> Offer,
   logged logged: Set(String),
 ) -> Result(Taken, Refusal) {
   case message {
@@ -236,6 +263,7 @@ pub fn take(
                 picture:,
                 tables:,
                 now_ms:,
+                offers:,
               )
             {
               Ok(Nil) ->
@@ -280,7 +308,7 @@ pub fn take(
 
 /// Whether the player may open the unit's dialog: the unit is a shown creature that is
 /// alive, not Hostile to the player, whose row gives or receives a quest, within
-/// reach. A creature's Creature2 row and the player's Race row are in the tables
+/// reach, with a quest `offers` says the player's log shows. A creature's Creature2 row and the player's Race row are in the tables
 /// (the load fails otherwise), so a missing one crashes.
 fn talked_to(
   unit_id unit_id: Int,
@@ -288,6 +316,7 @@ fn talked_to(
   picture picture: Picture,
   tables tables: table_store.Tables,
   now_ms now_ms: Int,
+  offers offers: fn(Creature2) -> Offer,
 ) -> Result(Nil, Declined) {
   use shown <- result.try(
     dict.get(picture, unit_id) |> result.replace_error(NotShown(unit_id:)),
@@ -313,9 +342,15 @@ fn talked_to(
         when: !list.any(spawn.quest_ids(row), fn(id) { id != 0 }),
         return: Error(NoQuest(unit_id:, creature_id:)),
       )
-      case within_reach(player:, tables:, path:, creature_radius:, now_ms:) {
-        True -> Ok(Nil)
-        False -> Error(TooFar(unit_id:))
+      use <- bool.guard(
+        when: !within_reach(player:, tables:, path:, creature_radius:, now_ms:),
+        return: Error(TooFar(unit_id:)),
+      )
+      case offers(row) {
+        Offered -> Ok(Nil)
+        NothingToOffer -> Error(NothingOffered(unit_id:, creature_id:))
+        Undecided(quest_id:, cause:) ->
+          Error(OfferUndecided(unit_id:, creature_id:, quest_id:, cause:))
       }
     }
   }
@@ -523,6 +558,8 @@ fn reason_of(declined declined: Declined) -> String {
     Dead(..) -> "dead"
     HostileToPlayer(..) -> "hostile"
     NoQuest(..) -> "no quest"
+    NothingOffered(..) -> "nothing offered"
+    OfferUndecided(..) -> "offer undecided"
     TooFar(..) -> "too far"
     KindNotTaken(kind:) -> "kind " <> int.to_string(kind)
   }
@@ -553,6 +590,22 @@ fn describe(declined declined: Declined) -> String {
       <> ", whose Creature2 row "
       <> int.to_string(creature_id.value)
       <> " has no quest to give or receive: the client sends no request for it"
+    NothingOffered(unit_id:, creature_id:) ->
+      "0x07EA names unit "
+      <> int.to_string(unit_id)
+      <> ", whose Creature2 row "
+      <> int.to_string(creature_id.value)
+      <> " has no quest to show for the player's log: the client sends no request for it"
+    OfferUndecided(unit_id:, creature_id:, quest_id:, cause:) ->
+      "0x07EA names unit "
+      <> int.to_string(unit_id)
+      <> ", whose Creature2 row "
+      <> int.to_string(creature_id.value)
+      <> " has no quest to show unless quest "
+      <> int.to_string(quest_id)
+      <> " can be decided, which needs a row the tables lack ("
+      <> cause
+      <> "): nothing is answered"
     TooFar(unit_id:) ->
       "0x07EA names unit "
       <> int.to_string(unit_id)

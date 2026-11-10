@@ -44,7 +44,8 @@ fn verdict_of(tables: table_store.Tables, target: Quest2) -> Verdict {
       log: quest_support.log_of(rows: []),
       items: [],
     )
-  let assert Ok(verdict) = quest.can_accept(tables:, quest: target, asker:)
+  let assert Ok(verdict) =
+    quest.can_accept(tables:, quest: target, asker:, mask: quest.every_check)
     as {
       "quest "
       <> int.to_string(quest2.id(target).value)

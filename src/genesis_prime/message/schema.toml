@@ -621,6 +621,49 @@ fields = [
 ]
 
 [[message]]
+id = 0x035A
+name = "quest_abandon"
+direction = "client_to_server"
+evidence = "opcode.0x35a"
+summary = "the client abandons a quest, only when it allows it (Accepted, Achieved or Botched; not Quest2.flags 0x4000 unless Botched; not Achieved with flags 0x8000): only the quest id; the client changes no state and the server's 0x35c answer sets it"
+fields = [
+  { name = "quest_id", kind = "unsigned", bits = 15, evidence = "opcode.0x35a", named_by = "opcode.0x35a" },
+]
+
+[[message]]
+id = 0x0360
+name = "quest_mention"
+direction = "client_to_server"
+evidence = "opcode.0x360"
+summary = "the client's notice that a quest is mentioned to the player (bit 1) or that the mention is withdrawn (bit 0), sent only when the wish differs from what it holds; the client has set the quest Mentioned itself in both cases and waits for no answer"
+fields = [
+  { name = "quest_id", kind = "unsigned", bits = 15, evidence = "opcode.0x360", named_by = "opcode.0x360" },
+  { name = "mentioned", kind = "unsigned", bits = 1, evidence = "opcode.0x360", named_by = "opcode.0x360" },
+]
+
+[[message]]
+id = 0x035E
+name = "quest_ignore"
+direction = "client_to_server"
+evidence = "opcode.0x35e"
+summary = "the client ignores a quest (bit 1) or stops ignoring it (bit 0); the client changes no state and waits for the server's 0x35c to set it"
+fields = [
+  { name = "quest_id", kind = "unsigned", bits = 15, evidence = "opcode.0x35e", named_by = "opcode.0x35e" },
+  { name = "ignored", kind = "unsigned", bits = 1, evidence = "opcode.0x35e", named_by = "opcode.0x35e" },
+]
+
+[[message]]
+id = 0x0364
+name = "quest_track"
+direction = "client_to_server"
+evidence = "opcode.0x364"
+summary = "the client tracks (bit 1) or stops tracking (bit 0) a quest in its tracker; the client has set its own flag and waits for no answer"
+fields = [
+  { name = "quest_id", kind = "unsigned", bits = 15, evidence = "opcode.0x364", named_by = "opcode.0x364" },
+  { name = "tracked", kind = "unsigned", bits = 1, evidence = "0x1405fcb80", named_by = "opcode.0x364" },
+]
+
+[[message]]
 id = 0x06BC
 name = "player_path"
 direction = "server_to_client"
