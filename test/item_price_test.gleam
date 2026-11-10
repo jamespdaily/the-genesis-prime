@@ -320,6 +320,23 @@ pub fn a_row_with_amounts_in_both_sell_slots_is_refused_by_name_test() -> Nil {
     as "the sentence names the Item2 row"
 }
 
+pub fn a_row_with_an_amount_only_in_its_second_sell_slot_sells_for_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Synthetic: no row of the client has an amount only in its second slot
+  // (`every_sellable_item2_row_names_its_sell_price_in_at_most_one_currency_test`).
+  let item = fixture_tables.root("Item2", 16_053)
+  let priced = {
+    use tables <- fixture_tables.changed(table: "Item2", id: item, with: [
+      #("currencyAmount0SellToVendor", Integer(0)),
+      #("currencyTypeId1SellToVendor", Integer(1)),
+      #("currencyAmount1SellToVendor", Integer(5)),
+    ])
+    item_price.sell_price(tables:, item2_id: Item2Id(item))
+  }
+  assert priced == Ok(item_price.SellPrice(currency_type_id: 7, amount: 0))
+    as "0x1403d6a10 tests the first slot's amount (+0x58) and refuses the sale with code 23 when it is 0, so a second slot's amount never prices the item"
+}
+
 /// The client's Item2 rows, each with its two SellToVendor slots as (currency type, amount).
 fn sell_slots() -> List(#(item2.Item2, #(Int, Int), #(Int, Int))) {
   list.map(item2.all(client_tables.shared()), fn(row) {

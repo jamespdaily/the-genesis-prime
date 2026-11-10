@@ -44,17 +44,14 @@ import genesis_prime/message/buyback_removed
 import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/dialog_responses_shown.{DialogResponsesShown}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
-import genesis_prime/message/float32
 import genesis_prime/message/generic_error.{GenericError}
 import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/item_count_changed.{ItemCountChanged}
 import genesis_prime/message/item_place
 import genesis_prime/message/item_removed.{ItemRemoved}
-import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
 import genesis_prime/message/unit_item_visuals_changed
 import genesis_prime/message/unit_properties_changed
-import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/vendor_item.{type VendorItem, VendorItem}
 import genesis_prime/message/vendor_items.{VendorItems}
 import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
@@ -994,30 +991,6 @@ pub fn a_buy_back_through_the_connection_saves_the_shortened_list_test() -> Nil 
     as "enum 14, Vendor_UnknownItem"
 }
 
-/// The player's look in a slot: `slot` with `display`, colour set 0 and no dye.
-fn look(slot slot: Int, display display: Int) -> ItemVisual {
-  ItemVisual(slot:, display_id: display, item_color_set_id: 0, dye: 0)
-}
-
-/// A unit property whose base and value are `number`.
-fn property(id id: Int, number number: Float) -> UnitProperty {
-  UnitProperty(
-    property_id: id,
-    base: float32.to_bits(number),
-    value: float32.to_bits(number),
-  )
-}
-
-/// The Engineer's properties without its chest: Base Health 586, Armor 187.5 and Assault
-/// Rating 194.0625, as `game_connection_inventory_test` works them out.
-fn without_the_chest() -> List(UnitProperty) {
-  [
-    property(id: 7, number: 586.0),
-    property(id: 35, number: 194.0625),
-    property(id: 42, number: 187.5),
-  ]
-}
-
 pub fn selling_a_worn_item_sends_0x148_then_0x933_and_0x93a_and_tells_each_viewer_test() -> Nil {
   use <- owned_test.run(10_000)
   let state =
@@ -1069,8 +1042,7 @@ pub fn selling_a_worn_item_sends_0x148_then_0x933_and_0x93a_and_tells_each_viewe
       unit_item_visuals_changed.decode,
     )
   assert looks.unit_id == connection_support.own_unit_id
-  assert looks.item_visuals == [look(slot: 1, display: 0)]
-    as "opcode.0x933.empty_display: the chest's slot 1 is emptied"
+    as "opcode.0x933: the look is the player's own unit's; its content is the gear step's"
   let assert [properties] =
     connection_support.decoded(
       connection_support.written(answered),
@@ -1078,14 +1050,10 @@ pub fn selling_a_worn_item_sends_0x148_then_0x933_and_0x93a_and_tells_each_viewe
       unit_properties_changed.decode,
     )
   assert properties.unit_id == connection_support.own_unit_id
-  assert properties.properties == without_the_chest()
-    as "opcode.0x93a: the three properties the chest gave, in property order"
+    as "opcode.0x93a: the properties are the player's own unit's; their values are the gear step's"
   list.each([2, 3], fn(viewer) {
-    assert list.take(connection_support.news_told(taken: answered, viewer:), 2)
-      == [
-        LookChanged(item_visuals: [look(slot: 1, display: 0)]),
-        PropertiesChanged(properties: without_the_chest()),
-      ]
-      as "opcode.0x93a.other_unit: each viewer is told the same look and entries"
+    let assert [LookChanged(..), PropertiesChanged(..), ..] =
+      connection_support.news_told(taken: answered, viewer:)
+      as "opcode.0x93a.other_unit: each viewer is told the look, then the properties"
   })
 }

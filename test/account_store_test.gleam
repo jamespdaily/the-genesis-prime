@@ -4108,6 +4108,45 @@ pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
   })
   assert bought_state(store:, account:, character_id:) == #(1000, before)
     as "each refusal changed nothing, the credits and the matching stack included"
+  // The Glory row, made by selling the worn chest for 70, so the guard compares a saved
+  // amount: the refusals above reached only the missing-row path of the currency guard. The
+  // check above loaded the character, which raised the epoch, so the sales log in again.
+  let #(epoch, before) = login(store:, account:, character_id:)
+  let chest = worn_chest(items: before)
+  assert sell_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      currency_type_id: 7,
+      held: 0,
+      after: 70,
+      sold: [worn_whole(item: chest)],
+    )
+    == ForItems(store.Sold(amount: 70))
+    as "the chest's sale for 70 Glory is saved, which leaves a Glory row of 70"
+  assert sell_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      currency_type_id: 7,
+      held: 10,
+      after: 80,
+      sold: [part],
+    )
+    == ForItems(ItemsNotSaved)
+    as "a sale that holds 10 Glory against a saved 70, with the stack still held, is not saved"
+  let #(currencies, items) = held_everything(store:, account:, character_id:)
+  assert currencies
+    == [
+      store.HeldCurrency(currency_type_id: 1, amount: 1000),
+      store.HeldCurrency(currency_type_id: 7, amount: 70),
+    ]
+    as "the Glory is the 70 the chest sold for, and the credits are as they were"
+  assert items
+    == list.filter(before, fn(item) { item.item_guid != chest.item_guid })
+    as "the stack of the refused sale is as it was"
   stop(store)
 }
 

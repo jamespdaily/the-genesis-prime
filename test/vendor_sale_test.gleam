@@ -982,7 +982,7 @@ pub fn a_table_set_without_the_credit_cap_or_the_sell_fraction_row_fails_the_loa
           to_table: "GameFormula",
           id: row,
         ))
-        as "GetCurrencyCap.entitlement_14 and 0x14040bfb0: the cap and the sell fraction are read from GameFormula rows 1115 and 1026, so a load without one fails"
+        as "GetCurrencyCap.entitlement_14 and 0x14040bfb0: the cap and the sell fraction are read from GameFormula rows 1115, 1116 and 1026, so a load without one fails"
     },
   )
 }

@@ -107,9 +107,9 @@ import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
   type SessionEpoch, HeldItem, ItemsNotSaved, SaveRefused, Sold,
 }
-import genesis_prime/table/game_formula
-import genesis_prime/table/id.{type Item2Id, GameFormulaId, Item2Id}
+import genesis_prime/table/id.{type Item2Id, Item2Id}
 import genesis_prime/table/item2
+import genesis_prime/table/loader/formula_requirement
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/dict
@@ -573,15 +573,11 @@ fn each_pays(
   vendor stock: vendor.Vendor,
   tables tables: table_store.Tables,
 ) -> Result(item_price.SellPrice, Refusal) {
-  case item_price.sell_price(tables:, item2_id: item.item2_id) {
-    Ok(price) -> Ok(item_price.paid(price:, multiplier: stock.sell_multiplier))
-    Error(item_price.MissingRow(..))
-    | Error(item_price.NoCurveValue(..))
-    | Error(item_price.TwoSellCurrencies(..))
-    | Error(item_price.OtherCurrency(..))
-    | Error(item_price.TradeskillAdditive(..)) ->
-      Error(NoItemRow(item2_id: item.item2_id))
-  }
+  item_price.sell_price(tables:, item2_id: item.item2_id)
+  |> result.replace_error(NoItemRow(item2_id: item.item2_id))
+  |> result.map(fn(price) {
+    item_price.paid(price:, multiplier: stock.sell_multiplier)
+  })
 }
 
 /// Every junk stack of the usable inventory the vendor pays for, whole, in bag-index order.
@@ -854,23 +850,11 @@ pub fn not_sold(sale sale: Sale) -> String {
 /// `currency.requirements`.
 pub fn requirements() -> List(table_store.Requirement) {
   [
-    table_store.Requirement(
+    formula_requirement.row_present(
       from_table: "the server's sell price fraction",
-      column: "GameFormula id",
-      to_table: "GameFormula",
-      missing: fn(tables) {
-        missing_formula(tables:, id: item_price.sell_fraction_formula)
-      },
+      id: item_price.sell_fraction_formula,
     ),
   ]
-}
-
-/// The GameFormula row's id when the tables lack it.
-fn missing_formula(tables tables: table_store.Tables, id id: Int) -> List(Int) {
-  case game_formula.get(tables:, id: GameFormulaId(id)) {
-    Ok(_) -> []
-    Error(Nil) -> [id]
-  }
 }
 
 /// The stacks of the sale as the store's request names them.

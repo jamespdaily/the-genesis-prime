@@ -24,6 +24,7 @@ import genesis_prime/store
 import genesis_prime/table/currency_type
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{CurrencyTypeId, GameFormulaId}
+import genesis_prime/table/loader/formula_requirement
 import genesis_prime/table/loader/store as table_store
 import gleam/bit_array
 import gleam/dict.{type Dict}
@@ -40,6 +41,9 @@ pub type Currencies {
 /// The currency type of credits.
 pub const credits_type = 1
 
+/// The currency type of Renown, whose cap is its own GameFormula row (`GetCurrencyCap.entitlement_14`).
+const renown_type = 2
+
 /// The number of currency types 0x025E holds amounts for (`opcode.0x25e`).
 const currency_types = 15
 
@@ -55,32 +59,15 @@ const renown_cap_formula = 1116
 /// Renown.
 pub fn requirements() -> List(table_store.Requirement) {
   [
-    cap_requirement(
+    formula_requirement.row_present(
       from_table: "the server's credit cap",
       id: credit_cap_formula,
     ),
-    cap_requirement(
+    formula_requirement.row_present(
       from_table: "the server's Renown cap",
       id: renown_cap_formula,
     ),
   ]
-}
-
-fn cap_requirement(
-  from_table from_table: String,
-  id id: Int,
-) -> table_store.Requirement {
-  table_store.Requirement(
-    from_table:,
-    column: "GameFormula id",
-    to_table: "GameFormula",
-    missing: fn(tables) {
-      case game_formula.get(tables:, id: GameFormulaId(id)) {
-        Ok(_) -> []
-        Error(Nil) -> [id]
-      }
-    },
-  )
 }
 
 /// The currencies the saved rows give.
@@ -121,8 +108,10 @@ pub fn cap(
   currency_type_id currency_type_id: Int,
 ) -> Option(Int) {
   case currency_type_id {
-    1 -> Some(formula_cap(tables:, formula: credit_cap_formula))
-    2 -> Some(formula_cap(tables:, formula: renown_cap_formula))
+    id if id == credits_type ->
+      Some(formula_cap(tables:, formula: credit_cap_formula))
+    id if id == renown_type ->
+      Some(formula_cap(tables:, formula: renown_cap_formula))
     _ ->
       case currency_type.get(tables:, id: CurrencyTypeId(currency_type_id)) {
         Ok(row) if row.cap_amount > 0 -> Some(row.cap_amount)

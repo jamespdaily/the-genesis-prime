@@ -191,10 +191,11 @@ fn quality(
 
 /// The item's sell price at a vendor multiplier of 1.0 (`0x14040d160`): the computed buy
 /// price times GameFormula 1026's fraction, at least 1, in credits when neither of the row's
-/// SellToVendor currency types is set; else the row's own SellToVendor slot with an amount,
-/// in its currency. A row with an amount in both slots is `TwoSellCurrencies`. An amount of 0
-/// is a price the client does not pay. Whether the item may be sold at all is
-/// `item_property.sellable`'s.
+/// SellToVendor currency types is set; else the row's first SellToVendor slot, in its
+/// currency. The client's sale check reads the first slot's amount alone (`0x1403d6a10`), so
+/// the second slot never prices an item, and a first amount of 0 is a price of 0, which the
+/// sale refuses. A row with an amount in both slots is `TwoSellCurrencies`. Whether the item
+/// may be sold at all is `item_property.sellable`'s.
 pub fn sell_price(
   tables tables: table_store.Tables,
   item2_id item2_id: Item2Id,
@@ -214,13 +215,11 @@ pub fn sell_price(
       currency_type_id: item.currency_type_id1_sell_to_vendor,
       amount: item.currency_amount1_sell_to_vendor,
     )
-  case first.currency_type_id != 0, second.currency_type_id != 0 {
-    False, False -> computed_sell(tables:, item:)
-    True, True if first.amount > 0 && second.amount > 0 ->
+  case first.currency_type_id != 0 || second.currency_type_id != 0 {
+    False -> computed_sell(tables:, item:)
+    True if first.amount > 0 && second.amount > 0 ->
       Error(TwoSellCurrencies(item2_id:))
-    True, True if second.amount > 0 -> Ok(second)
-    True, _ -> Ok(first)
-    False, True -> Ok(second)
+    True -> Ok(first)
   }
 }
 
