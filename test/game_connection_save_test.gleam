@@ -32,6 +32,7 @@ import gleam/bit_array
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
+import place_support
 
 // ---- the player moves, and the place is saved ----
 //
@@ -381,6 +382,58 @@ pub fn every_60_seconds_the_last_known_position_is_saved_also_when_no_move_came_
       game_connection_support.standing_at(x: 1.5, y: 2.5, z: 3.5),
     )
     as "a move since the last save is in the next"
+}
+
+pub fn a_saved_place_keeps_the_reported_zone_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // opcode.0x63a: the client reports the zone it entered; the next save writes
+  // the place in that zone, at the position the player last held.
+  let #(state, taken) =
+    game_connection_support.read(
+      game_connection_support.in_world(),
+      game_connection_support.zone_changed_message(old: 6009, new: 4962),
+    )
+  assert support.logs(taken) == [] && !support.stops(taken)
+    as "the rule takes the 0x63a"
+  let #(state, taken) =
+    game_connection_support.feed(state, OwnEvent(TimerFired(TimerId(2))))
+  assert game_connection_support.ask_request(taken)
+    == game_connection_support.save_asked(
+      1,
+      place_support.at(
+        world_id: 3460,
+        world_zone_id: 4962,
+        x: 29.128599166870117,
+        y: -853.87158203125,
+        z: -560.18798828125,
+      ),
+    )
+    as "the saved place holds the zone the client reported, not the one the player entered with"
+  let #(state, _) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: game_connection_support.place_saved(),
+    )
+  let #(state, _) =
+    game_connection_support.read(
+      state,
+      game_connection_support.terrain_loaded_message(1411),
+    )
+  let #(_, taken) =
+    game_connection_support.feed(state, OwnEvent(TimerFired(TimerId(2))))
+  assert game_connection_support.ask_request(taken)
+    == game_connection_support.save_asked(
+      2,
+      place_support.at(
+        world_id: 3460,
+        world_zone_id: 1411,
+        x: 29.128599166870117,
+        y: -853.87158203125,
+        z: -560.18798828125,
+      ),
+    )
+    as "opcode.0xf2: the last zone the client reported is the one saved"
 }
 
 pub fn a_frame_that_arrives_while_the_save_is_out_waits_and_is_taken_after_the_answer_test() -> Nil {

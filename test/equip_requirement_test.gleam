@@ -59,7 +59,10 @@ pub fn the_checks_run_in_the_clients_order_test() -> Nil {
     #(
       "race before class",
       12_769,
-      Wearer(..equip_requirement_support.engineer(), race_id: 3),
+      equip_requirement_support.of_race(
+        equip_requirement_support.engineer(),
+        race_id: 3,
+      ),
       Refused(code: 39),
     ),
     #("class", 12_769, equip_requirement_support.engineer(), Refused(code: 40)),
@@ -81,13 +84,19 @@ pub fn the_checks_run_in_the_clients_order_test() -> Nil {
     #(
       "prerequisite before level",
       73_672,
-      Wearer(..equip_requirement_support.engineer(), world_id: 870),
+      equip_requirement_support.in_world(
+        equip_requirement_support.engineer(),
+        world_id: 870,
+      ),
       Refused(code: 144),
     ),
     #(
       "level after prerequisite",
       73_672,
-      Wearer(..equip_requirement_support.engineer(), world_id: 2979),
+      equip_requirement_support.in_world(
+        equip_requirement_support.engineer(),
+        world_id: 2979,
+      ),
       Refused(code: 42),
     ),
     #(
@@ -157,13 +166,19 @@ pub fn an_equip_prerequisite_is_read_or_refused_and_logged_test() -> Nil {
   // unit's gender is the one 0x262's type 20 data carries, 0 male, 1 female.
   assert verdict(
       item2_id: 90_054,
-      wearer: Wearer(..equip_requirement_support.engineer(), gender: 1),
+      wearer: equip_requirement_support.of_gender(
+        equip_requirement_support.engineer(),
+        gender: 1,
+      ),
     )
     == Wearable
     as "a female wearer passes the gender prerequisite"
   assert verdict(
       item2_id: 90_054,
-      wearer: Wearer(..equip_requirement_support.engineer(), gender: 0),
+      wearer: equip_requirement_support.of_gender(
+        equip_requirement_support.engineer(),
+        gender: 0,
+      ),
     )
     == Refused(code: 144)
     as "a male wearer fails it: Item_EquipPrereqFailed"

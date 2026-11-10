@@ -872,3 +872,71 @@ pub fn a_live_cast_whose_primary_target_is_another_unit_does_not_stop_stealth_te
   assert refusals(effects:) == []
     as "the child's primary target is the unit 99, not the caster: the caster is not under it, and the press is accepted"
 }
+
+// ---- the caster's gender, world and zone ----
+
+/// A caster who is female, in World 870 and in zone 1411 under 1305 under 1304: what
+/// the player the cast's subject holds says.
+fn female_in_zone_1411() -> Caster {
+  cast.Caster(
+    ..support.caster(),
+    player: prerequisite.Player(
+      race_id: 1,
+      class_id: 1,
+      level: 1,
+      path: 0,
+      gender: 1,
+      world_id: 870,
+      zones: [1411, 1305, 1304],
+    ),
+  )
+}
+
+pub fn a_cast_reads_the_casters_world_zone_and_gender_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Each case: the condition (type, comparison, objectId, value) of the spell's
+  // CasterCast, and whether a press of the spell is accepted. Types 10 (the
+  // gender), 26 (the zone) and 109 (the world) are the ones a cast could not
+  // decide before the caster held them (Prerequisite.prerequisiteTypeId.10, .26
+  // and .109).
+  let cases = [
+    #(#(109, 1, 870, 0), True),
+    #(#(109, 1, 3460, 0), False),
+    #(#(109, 2, 3460, 0), True),
+    #(#(109, 2, 870, 0), False),
+    #(#(10, 1, 0, 1), True),
+    #(#(10, 1, 0, 0), False),
+    #(#(10, 2, 0, 0), True),
+    #(#(26, 1, 0, 1305), True),
+    #(#(26, 1, 0, 4962), False),
+    #(#(26, 2, 0, 4962), True),
+    #(#(26, 2, 0, 1411), False),
+  ]
+  list.each(cases, fn(case_) {
+    let #(condition, accepted) = case_
+    let spell =
+      gated(
+        caster_cast: CastGate(prerequisite: prerequisites.single(
+          id: 77_001,
+          condition:,
+        )),
+        target_cast: None,
+      )
+    let #(_, effects) =
+      support.press_by(
+        plans: support.plans_with(spell:),
+        state: cast.new(),
+        caster: female_in_zone_1411(),
+        bag: gated_bag,
+        at: 1000,
+      )
+    assert refusals(effects:)
+      == case accepted {
+        True -> []
+        False -> [151]
+      }
+      as "a condition the player's facts decide accepts or refuses the press by its own verdict, with the CasterCast result 151"
+    assert support.logs(effects:) == []
+      as "the type is read, so no warning about a condition the server cannot read is written"
+  })
+}

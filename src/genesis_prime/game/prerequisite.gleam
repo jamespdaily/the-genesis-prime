@@ -74,12 +74,33 @@
 //// - **Type 10** passes, by comparison 1, when the player's gender equals the value
 ////   and by comparison 2 when it does not; any other comparison fails, and its
 ////   objectId is not read. The gender is the one the unit-create message 0x262
-////   carries (0 male, 1 female). Only a player's side holds one, so a subject with
-////   none gives `NotRead` (`Prerequisite.prerequisiteTypeId.10`, `0x14049c5e0`).
-//// - **Type 109** passes, by comparison 1, when the player's world is the World the
+////   carries (0 male, 1 female). Only a subject that holds the player (`Player`)
+////   decides it, so another gives `NotRead`
+////   (`Prerequisite.prerequisiteTypeId.10`, `0x14049c5e0`).
+//// - **Type 109** passes, by comparison 1, when the player's World is the World the
 ////   objectId names and by comparison 2 when it is another; any other comparison
-////   fails, and its value is not read. A subject with no world gives `NotRead`
-////   (`Prerequisite.prerequisiteTypeId.109`, `0x14049e780`).
+////   fails, and its value is not read. A subject that holds no player gives
+////   `NotRead` (`Prerequisite.prerequisiteTypeId.109`, `0x14049e780`).
+//// - **Type 1** compares the first unit's level for formulas (`Player.level`) with
+////   the value by comparisons 1 to 6, unsigned, any other fails, and its objectId
+////   is not read (`Prerequisite.prerequisiteTypeId.1`, `0x1403b5030`). **Types 2, 3
+////   and 52** pass, by comparison 1, when the player's race, class or path equals
+////   the value and by comparison 2 when it does not; any other comparison fails,
+////   and the objectId is not read (`Prerequisite.prerequisiteTypeId.2`, `.3`,
+////   `.52`).
+//// - **Type 26** passes, by comparison 1, when the value is a zone the player is in
+////   or one above it (`Player.zones`: the zone, then each parent through the
+////   WorldZone table's parentZoneId), by comparison 2 when it is none; any other
+////   comparison fails, and the objectId is not read
+////   (`Prerequisite.prerequisiteTypeId.26`, `0x14049e680`).
+//// - **Type 39** passes, by comparison 1, when the first unit is a player and by
+////   comparison 2 when it is another; any other comparison fails, and the objectId
+////   and the value are not read (`Prerequisite.prerequisiteTypeId.39`). A subject
+////   that holds a player has the player as its first unit.
+//// - **A subject known by its place alone** (`Seen`) holds the player's facts but
+////   not the first unit's, so types 1, 3 and 39, which read that unit, give
+////   `NotRead` for it; a subject that holds no player gives `NotRead` for all of
+////   these types.
 //// - **Type 243** always fails: the client's check reads nothing from the unit
 ////   (`Prerequisite.prerequisiteTypeId.243`, `0x140001ba0`).
 //// - **Type 179** compares the unit's difficulty with the condition's objectId, not
@@ -271,6 +292,24 @@ type Condition {
   /// Type 250: whether the unit's base faction equals the value
   /// (`Prerequisite.prerequisiteTypeId.250`, `0x14049c6a0`).
   BaseFaction(comparison: Comparison, value: Int)
+  /// Type 1: the first unit's level for formulas against the value
+  /// (`Prerequisite.prerequisiteTypeId.1`, `0x1403b5030`).
+  UnitLevel(relation: Relation, value: Int)
+  /// Type 2: whether the player's race equals the value
+  /// (`Prerequisite.prerequisiteTypeId.2`, `0x14049c4e0`).
+  PlayerRace(comparison: Comparison, value: Int)
+  /// Type 3: whether the first unit's class equals the value
+  /// (`Prerequisite.prerequisiteTypeId.3`, `0x14049c560`).
+  UnitClass(comparison: Comparison, value: Int)
+  /// Type 26: whether the player is in the WorldZone the value names or under it
+  /// (`Prerequisite.prerequisiteTypeId.26`, `0x1403c92e0`).
+  InZone(comparison: Comparison, value: Int)
+  /// Type 39: whether the first unit is a player
+  /// (`Prerequisite.prerequisiteTypeId.39`).
+  IsPlayer(comparison: Comparison)
+  /// Type 52: whether the player's path equals the value
+  /// (`Prerequisite.prerequisiteTypeId.52`, `0x14049fd50`).
+  PlayerPath(comparison: Comparison, value: Int)
   /// Type 10: whether the player's gender equals the value
   /// (`Prerequisite.prerequisiteTypeId.10`, `0x14049c5e0`).
   Gender(comparison: Comparison, value: Int)
@@ -357,6 +396,30 @@ pub type Factions {
   Factions(current: Int, base: Int)
 }
 
+/// What the client's player record holds that the conditions on the player read:
+/// the character's race, class, path and gender, its level, the World it is in and
+/// the zones it stands in.
+pub type Player {
+  Player(
+    /// The Race id.
+    race_id: Int,
+    /// The Class id.
+    class_id: Int,
+    /// The level the client's formulas read: the level override when it is not 0,
+    /// else the level.
+    level: Int,
+    /// The path (0 Soldier, 1 Settler, 2 Scientist, 3 Explorer).
+    path: Int,
+    /// The gender (0 male, 1 female).
+    gender: Int,
+    /// The World id the player is in.
+    world_id: Int,
+    /// The WorldZone ids the player is in: its current zone first, then each
+    /// parent zone above it.
+    zones: List(Int),
+  )
+}
+
 /// What a check may read about its subject, the check's first unit.
 pub type Subject {
   Subject(
@@ -393,14 +456,10 @@ pub type Subject {
     /// creature's side, so types 4 and 250 are not read for it
     /// (`Prerequisite.prerequisiteTypeId.4`, `.250`).
     factions: Option(Factions),
-    /// The subject's gender (0 male, 1 female), which only a player's side holds:
-    /// `None` for a creature's side, so type 10 is not read for it
-    /// (`Prerequisite.prerequisiteTypeId.10`).
-    gender: Option(Int),
-    /// The World id the subject is in, which only a player's side holds: `None`
-    /// for a creature's side, so type 109 is not read for it
-    /// (`Prerequisite.prerequisiteTypeId.109`).
-    world: Option(Int),
+    /// The player the check runs for, which only a player's side holds: `None` for
+    /// a creature's side, so the types on the player (1, 2, 3, 10, 26, 39, 52 and
+    /// 109) are not read for it. The player is the check's first unit.
+    player: Option(Player),
     /// The quest log of the player whose client runs the check, which only a player's
     /// cast rule holds: `None` for a creature's side, so types 6, 68, 43 and 22 to 36
     /// are not read for it (`Prerequisite.prerequisiteTypeId.6`, `.68`, `.43`, `.22`).
@@ -431,7 +490,7 @@ pub type Seen {
 /// The subject of a unit the caster struck, for a target-side check (a Proxy's target apply
 /// prerequisite): the struck unit first with the pose its place and facing give in the
 /// caster's picture, `None` when the picture no longer shows it, and the caster second;
-/// the quest log is the caster's, whose client runs the check.
+/// the quest log and the player's facts are the caster's, whose client runs the check.
 /// The connection holds none of a creature's casts, combat state or vitals, so the subject
 /// holds none of them either: a condition that reads what else it holds is `NotRead`
 /// (`PlaceOnly`), where an empty `under` would read as "under no cast" and pass a
@@ -439,6 +498,7 @@ pub type Seen {
 pub fn of_struck(
   first first: Option(Pose),
   second second: Pose,
+  player player: Player,
   quests quests: QuestLog,
 ) -> Subject {
   Subject(
@@ -455,8 +515,7 @@ pub fn of_struck(
       None -> NotPlaced
     },
     factions: None,
-    gender: None,
-    world: None,
+    player: Some(player),
     quests: Some(quests),
     seen: PlaceOnly,
   )
@@ -477,21 +536,19 @@ pub fn of_difficulty(difficulty difficulty: Int) -> Subject {
     rolls: [],
     positions: NotPlaced,
     factions: None,
-    gender: None,
-    world: None,
+    player: None,
     quests: None,
     seen: WholeUnit,
   )
 }
 
-/// A subject that is a player about to wear an item: its factions, gender and
-/// world, under no cast, out of combat, with no vital and no roll. The equip
+/// A subject that is a player about to wear an item: its factions and the player's
+/// facts, under no cast, out of combat, with no vital and no roll. The equip
 /// check's prerequisites (genesis_prime/game/equip_requirement) are checked
 /// against it.
 pub fn of_wearer(
   factions factions: Factions,
-  gender gender: Int,
-  world world: Int,
+  player player: Player,
 ) -> Subject {
   Subject(
     under: [],
@@ -504,8 +561,7 @@ pub fn of_wearer(
     rolls: [],
     positions: NotPlaced,
     factions: Some(factions),
-    gender: Some(gender),
-    world: Some(world),
+    player: Some(player),
     quests: None,
     seen: WholeUnit,
   )
@@ -842,6 +898,12 @@ fn condition_of(
     179 -> Difficulty(relation: relation_of(code: comparison), object_id:)
     4 -> CurrentFaction(comparison: comparison_of(comparison), value:)
     250 -> BaseFaction(comparison: comparison_of(comparison), value:)
+    1 -> UnitLevel(relation: relation_of(code: comparison), value:)
+    2 -> PlayerRace(comparison: comparison_of(comparison), value:)
+    3 -> UnitClass(comparison: comparison_of(comparison), value:)
+    26 -> InZone(comparison: comparison_of(comparison), value:)
+    39 -> IsPlayer(comparison: comparison_of(comparison))
+    52 -> PlayerPath(comparison: comparison_of(comparison), value:)
     10 -> Gender(comparison: comparison_of(comparison), value:)
     109 -> InWorld(comparison: comparison_of(comparison), world_id: object_id)
     243 -> NeverMet
@@ -859,11 +921,6 @@ fn condition_of(
       }
   }
 }
-
-/// The types of the conditions on the wearer's own gender and world, which only
-/// the equip check gives its subject: a cast has neither, so such a condition in
-/// a cast's prerequisite is not decided.
-pub const wearer_only_types = [10, 109]
 
 /// Whether the server decides a condition of this PrerequisiteType: the types it
 /// reads and the types the client's check has no case for, which fail
@@ -887,6 +944,12 @@ pub fn is_read(type_id type_id: Int) -> Bool {
     | Difficulty(..)
     | CurrentFaction(..)
     | BaseFaction(..)
+    | UnitLevel(..)
+    | PlayerRace(..)
+    | UnitClass(..)
+    | InZone(..)
+    | IsPlayer(..)
+    | PlayerPath(..)
     | Gender(..)
     | InWorld(..)
     | QuestState(..)
@@ -925,6 +988,12 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
       | Difficulty(..)
       | CurrentFaction(..)
       | BaseFaction(..)
+      | UnitLevel(..)
+      | PlayerRace(..)
+      | UnitClass(..)
+      | InZone(..)
+      | IsPlayer(..)
+      | PlayerPath(..)
       | Gender(..)
       | InWorld(..)
       | QuestState(..)
@@ -1023,12 +1092,18 @@ fn reads_held_state(condition condition: Condition) -> Option(Int) {
     VitalPercent(..) -> Some(71)
     VitalCurrent(..) -> Some(73)
     UnderGroup(..) -> Some(129)
+    UnitLevel(..) -> Some(1)
+    UnitClass(..) -> Some(3)
+    IsPlayer(..) -> Some(39)
     Nested(..)
     | ResourceSlot(..)
     | Stealthed(..)
     | Difficulty(..)
     | CurrentFaction(..)
     | BaseFaction(..)
+    | PlayerRace(..)
+    | InZone(..)
+    | PlayerPath(..)
     | Gender(..)
     | InWorld(..)
     | QuestState(..)
@@ -1159,19 +1234,62 @@ fn condition_decided(
         read: fn(factions) { factions.base },
       ),
     )
-    Gender(comparison:, value:) -> #(rolls, case subject.gender {
-      Some(gender) ->
+    UnitLevel(relation:, value:) -> #(rolls, case subject.player {
+      Some(player) ->
+        verdict_of(compare(relation:, measured: player.level, value:))
+      None -> NotRead(prerequisite_type: 1)
+    })
+    PlayerRace(comparison:, value:) -> #(rolls, case subject.player {
+      Some(player) ->
         equality_verdict(
           comparison:,
-          equal: compare(relation: Equal, measured: gender, value:),
+          equal: compare(relation: Equal, measured: player.race_id, value:),
+        )
+      None -> NotRead(prerequisite_type: 2)
+    })
+    UnitClass(comparison:, value:) -> #(rolls, case subject.player {
+      Some(player) ->
+        equality_verdict(
+          comparison:,
+          equal: compare(relation: Equal, measured: player.class_id, value:),
+        )
+      None -> NotRead(prerequisite_type: 3)
+    })
+    InZone(comparison:, value:) -> #(rolls, case subject.player {
+      Some(player) ->
+        equality_verdict(comparison:, equal: list.contains(player.zones, value))
+      None -> NotRead(prerequisite_type: 26)
+    })
+    IsPlayer(comparison:) -> #(rolls, case subject.player {
+      // The first unit of a subject that holds a player is that player.
+      Some(_) -> equality_verdict(comparison:, equal: True)
+      None -> NotRead(prerequisite_type: 39)
+    })
+    PlayerPath(comparison:, value:) -> #(rolls, case subject.player {
+      Some(player) ->
+        equality_verdict(
+          comparison:,
+          equal: compare(relation: Equal, measured: player.path, value:),
+        )
+      None -> NotRead(prerequisite_type: 52)
+    })
+    Gender(comparison:, value:) -> #(rolls, case subject.player {
+      Some(player) ->
+        equality_verdict(
+          comparison:,
+          equal: compare(relation: Equal, measured: player.gender, value:),
         )
       None -> NotRead(prerequisite_type: 10)
     })
-    InWorld(comparison:, world_id:) -> #(rolls, case subject.world {
-      Some(world) ->
+    InWorld(comparison:, world_id:) -> #(rolls, case subject.player {
+      Some(player) ->
         equality_verdict(
           comparison:,
-          equal: compare(relation: Equal, measured: world, value: world_id),
+          equal: compare(
+            relation: Equal,
+            measured: player.world_id,
+            value: world_id,
+          ),
         )
       None -> NotRead(prerequisite_type: 109)
     })
