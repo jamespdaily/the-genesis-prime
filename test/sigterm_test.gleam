@@ -35,7 +35,9 @@ import gleam/option.{Some}
 import gleam/string
 import owned_test
 import recording_support
-import serving_node.{GivesUp, Serving, SlowStop, UnreachableDatabase}
+import serving_node.{
+  GivesUp, Serving, SlowStop, StoppedBeforeTree, UnreachableDatabase,
+}
 import simplifile
 
 /// What the node prints when the server can serve: the start of its ready
@@ -69,6 +71,16 @@ fn assert_no_crash(node: serving_node.Node) -> Nil {
     as "the node took the end of its tree as orderly, not as a failure"
   assert !string.contains(printed, "runtime error")
     as "the node's program did not crash"
+}
+
+/// Fails the test when what the node printed holds an error: the program's
+/// crash, or what `genesis_prime@@main:run` prints for a program killed while
+/// the node's output was closing (`Failed to eval` and its `badarg`).
+fn assert_no_error_printed(node: serving_node.Node, which: String) -> Nil {
+  let printed = which <> " printed: " <> serving_node.output(node)
+  assert !string.contains(printed, "Failed to eval") as printed
+  assert !string.contains(printed, "badarg") as printed
+  assert !string.contains(printed, "runtime error") as printed
 }
 
 /// The side that closed each recording in the folder, which must be whole: a
@@ -138,12 +150,28 @@ pub fn repeated_sigterm_before_the_ready_line_leaves_no_error_in_the_nodes_outpu
     serving_node.terminate(node)
     assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
       as "SIGTERM while the readiness ask waits ends the node with status 0"
-    let printed = serving_node.output(node)
-    let which = "node " <> int.to_string(attempt) <> " printed: " <> printed
-    assert !string.contains(printed, "Failed to eval") as which
-    assert !string.contains(printed, "badarg") as which
-    assert !string.contains(printed, "runtime error") as which
+    assert_no_error_printed(node, "node " <> int.to_string(attempt))
   })
+}
+
+pub fn a_sigterm_before_the_tree_starts_ends_the_node_with_status_0_and_no_error_in_its_output_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use node, folder <- with_node(StoppedBeforeTree)
+  assert serving_node.await_output(node, "waiting for the stop", node_wait_ms)
+    as "the node is before the start of its tree"
+  serving_node.terminate(node)
+  assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
+    as "SIGTERM before the tree started ends the node with status 0"
+  assert_no_error_printed(node, "the node")
+  assert string.contains(
+    serving_node.output(node),
+    "the node stopped before the server's tree started",
+  )
+    as "the node took the stop as the end of its program"
+  assert !string.contains(serving_node.output(node), "the tree started")
+    as "no tree was started for a node that was stopped"
+  assert closed_by(folder) == []
+    as "no connection was made, so no recording is left without its closing line"
 }
 
 pub fn sigterm_while_the_probe_is_slow_prints_no_ready_line_test() -> Nil {
