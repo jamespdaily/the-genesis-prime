@@ -35,9 +35,23 @@
 ////                                                      store, pool
 ////                                              ◀─ tree ended ─────┘  ─▶ main's monitor
 ////                                                                       fires `shutdown`
-////                         stop/1 logs the stop                          main returns
+////                         stop/1 logs the stop, then                    main returns
+////                         waits for main to end ◀───────────────────────┘
 ////                         halts with status 0
 //// ```
+////
+//// **Why stop/1 waits for `main`.** After the applications stop, `init` closes
+//// the kernel's processes, `user` among them, and kills every process left. A
+//// `main` killed then reaches `genesis_prime@@main:run` as a non-normal exit,
+//// and `run` prints it to a standard error that is already closed, so the node
+//// prints "Failed to eval" and a `badarg`. A `main` that has ended normally
+//// reaches `run` as nothing. `register_program` names `main`'s process, and
+//// stop/1 returns only once it has ended, so `init` cannot go on before then.
+//// `main` asks nothing of the application master meanwhile: the master has
+//// handed its own stop to the process that runs stop/1, so a call to the
+//// master (`application:get_supervisor`) would wait on a process that waits on
+//// `main`. The root is registered under a name of its own (`register_root`),
+//// and `start_server` finds it with `whereis`.
 ////
 //// **How `main` tells an orderly end from a fatal one.** A tree that exceeds
 //// its restart intensity also ends with `shutdown`, so the reason says nothing.
@@ -57,10 +71,12 @@
 //// - **The pool dying during the stop.** The pool is the tree's first child, so it
 ////   stops last. A pool that dies earlier is not restarted, since the tree is
 ////   stopping; a draining connection's ask meanwhile answers `Unavailable`.
-//// - **SIGTERM before `main` has started the tree.** The root has stopped or is
-////   stopping, and `start_server` fails with `ApplicationNotRunning`; `main`
-////   crashes with that message while the VM, already stopping, halts with
-////   status 0: the first `init:stop` sets the status.
+//// - **SIGTERM before `main` has started the tree.** `stop/1` waits for `main`,
+////   which is loading the tables and the content, so the wait lasts as long
+////   as the load. The root has stopped and its name is gone, so `start_server`
+////   fails with `NodeStopping`; `main` logs it and returns
+////   (`start_server_unless_stopping`), and the node halts with status 0, with
+////   no error printed.
 //// - **SIGTERM while the tree starts.** The root handles the stop after its
 ////   start call returns, then stops the tree it started, in order.
 //// - **SIGTERM before the ready line.** The tree stops as above, the readiness
@@ -83,6 +99,7 @@ import gleam/bool
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/application.{type StartType}
 import gleam/erlang/process.{type Monitor, type Pid}
+import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision
@@ -96,9 +113,11 @@ pub type Tree {
 
 /// Why `start_server` did not give a running tree.
 pub type StartFailure {
-  /// No application root is running: the node is stopping, or the server runs
-  /// without its application.
+  /// No application root is running and the node is not stopping: the server
+  /// runs without its application.
   ApplicationNotRunning
+  /// No application root is running because the node is stopping.
+  NodeStopping
   /// The root is running and the tree did not start, as the tree's start
   /// reported it.
   TreeNotStarted(reason: actor.StartError)
@@ -113,8 +132,9 @@ pub type Ending {
   Fatal(reason: process.ExitReason)
 }
 
-/// OTP's start callback: starts the root supervisor, which has no child, and
-/// gives its pid. The tree is started later by `start_server`.
+/// OTP's start callback: starts the root supervisor, which has no child,
+/// registers it under the name `start_server` finds it by, and gives its pid.
+/// The tree is started later by `start_server`.
 pub fn start(
   start_type _start_type: StartType,
   start_argument _start_argument: Dynamic,
@@ -124,7 +144,10 @@ pub fn start(
   // A temporary child is never restarted, so this limit is never reached.
   |> factory_supervisor.restart_tolerance(intensity: 1, period: 5)
   |> factory_supervisor.start
-  |> result.map(fn(started) { started.pid })
+  |> result.map(fn(started) {
+    register_root(started.pid)
+    started.pid
+  })
   |> result.map_error(fn(error) {
     dynamic.string(
       "the root supervisor " <> runtime.describe_start_error(error),
@@ -133,10 +156,23 @@ pub fn start(
 }
 
 /// OTP's stop callback, run after the root and the tree under it have stopped:
-/// logs the stop.
+/// logs the stop, and returns once the node's program has ended
+/// (`register_program`).
 pub fn stop(_state: Dynamic) -> Nil {
   runtime.log(step.LogInfo, "the server stopped", step.no_one)
+  await_program_end()
 }
+
+/// Makes the calling process the node's program: the process that
+/// `genesis_prime@@main:run` runs `main` in. The application's stop does not
+/// return until the program has ended, so the VM does not go on to close the
+/// node's output and kill its processes while the program is still taking the
+/// tree's end. `main` calls it before anything else.
+@external(erlang, "genesis_prime_application_ffi", "register_program")
+pub fn register_program() -> Nil
+
+@external(erlang, "genesis_prime_application_ffi", "await_program_end")
+fn await_program_end() -> Nil
 
 /// Starts the server's tree under the application's root with these settings,
 /// and monitors it. Each fails with the reason it did not run.
@@ -145,13 +181,54 @@ pub fn start_server(
 ) -> Result(Tree, StartFailure) {
   start_tree(settings)
   |> result.map(fn(pid) { Tree(pid:, monitor: process.monitor(pid)) })
+  |> result.map_error(fn(failure) {
+    case failure {
+      ApplicationNotRunning ->
+        case node_stopping() {
+          True -> NodeStopping
+          False -> ApplicationNotRunning
+        }
+      NodeStopping | TreeNotStarted(..) -> failure
+    }
+  })
 }
 
-/// Finds the root with `application:get_supervisor/1` and starts the tree
-/// under it with `supervisor:start_child/2`; no gleam_erlang or gleam_otp
-/// function does either (genesis_prime_application_ffi says why).
+/// Starts the server's tree as `start_server` does and gives it, or gives
+/// nothing when the node is stopping, which `main` takes as its orderly end
+/// (it logs it). Crashes with the reason when the tree did not start while the
+/// node runs.
+pub fn start_server_unless_stopping(
+  settings settings: server.Settings,
+) -> Option(Tree) {
+  case start_server(settings:) {
+    Ok(tree) -> Some(tree)
+    Error(NodeStopping) -> {
+      runtime.log(
+        step.LogInfo,
+        "the node stopped before the server's tree started",
+        step.no_one,
+      )
+      None
+    }
+    Error(ApplicationNotRunning) ->
+      panic as "the supervision tree did not start: no application root runs"
+    Error(TreeNotStarted(reason:)) ->
+      panic as {
+        "the supervision tree did not start: "
+        <> runtime.describe_start_error(reason)
+      }
+  }
+}
+
+/// Starts the tree under the root registered by `register_root`, with
+/// `supervisor:start_child/2`; no gleam_erlang or gleam_otp function does it
+/// (genesis_prime_application_ffi says why).
 @external(erlang, "genesis_prime_application_ffi", "start_tree")
 fn start_tree(settings: server.Settings) -> Result(Pid, StartFailure)
+
+/// Registers the root under the name `start_tree` finds it by.
+@external(erlang, "genesis_prime_application_ffi", "register_root")
+fn register_root(root: Pid) -> Nil
 
 /// Whether the node has begun to stop: `init:get_status/0` says `stopping`.
 @external(erlang, "genesis_prime_application_ffi", "node_stopping")

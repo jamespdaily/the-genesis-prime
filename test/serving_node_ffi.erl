@@ -6,7 +6,13 @@
 %% that started the node, which reads the node's output and exit status from its
 %% mailbox, so every call here is made by that process.
 -module(serving_node_ffi).
--export([start/2, await_output/3, terminate/1, await_exit/2, output/1]).
+-export([start/2, await_output/3, terminate/1, await_exit/2, output/1, root_ended/0]).
+
+%% Whether the application's root has ended: the node sets its status to stopping
+%% before it stops the application, so a node that is stopping may still have
+%% its root, and a tree started then is stopped with it.
+root_ended() ->
+    whereis(genesis_prime_root) =:= undefined.
 
 %% Starts the node running Module's main with the environment, a list of name
 %% and value pairs added to the test VM's own. A guardian ends the node when the
