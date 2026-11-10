@@ -77,6 +77,18 @@ pub fn shared() -> store.Tables {
   })
 }
 
+/// The server's tables (`shared`) and the content tables the server's start adds to them.
+pub fn with_content_tables() -> store.Tables {
+  case server_table.load_content_tables(over: shared(), from: folder()) {
+    Ok(tables) -> tables
+    Error(error) ->
+      panic as {
+        "the content tables did not load from the client's files: "
+        <> store.describe(error)
+      }
+  }
+}
+
 /// Every one of the client's 384 tables, for the tests that read a table no rule
 /// of the server reads, such as the measure of the client's tables: the server's
 /// own (`shared`) and the other 348 tables beside them. The other tables are

@@ -52,8 +52,8 @@ import unitest
 /// `client_tables.every_table`, about 1.6 s more). A run of chosen tests
 /// (`--test`, `--tag`) leaves them to the tests that need them: those runs hold
 /// none or few of them, and run beside other runs, and the world-data run's
-/// literal area is 0.2% under its limit, which the modules' literals would
-/// pass.
+/// literal area is 60% of its region, which the modules' literals would
+/// push toward the limit.
 ///
 /// With `GENESIS_LITERAL_PEAK_FILE` set to a file, the run keeps the literal
 /// allocator's highest carriers size in it (`literal_area`), which `./check`
