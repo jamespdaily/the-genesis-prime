@@ -50,6 +50,7 @@ import genesis_prime/message/unit_create_player.{
 }
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stealth
+import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
@@ -59,8 +60,8 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{
   AccountId, Character, CharacterId, CharacterLoaded, ForMove, ForSelect,
-  ForWorld, Listed, Move, NameStands, NotTheAccounts, PlaceSaved, SavePlace,
-  Unavailable,
+  ForWorld, HeldCurrency, Listed, Move, NameStands, NotTheAccounts, PlaceSaved,
+  SavePlace, Unavailable,
 }
 import genesis_prime/table/id.{
   ClassId, Creature2Id, RaceId, Spell4BaseId, Spell4Id,
@@ -723,6 +724,56 @@ pub fn in_world_stocking(vendors vendors: Vendors) -> game_connection.State {
     ),
     character: Character(..world_character(), faction_id: spawn.exile_faction),
   ).0
+}
+
+/// `in_world_stocking`'s Exile, whose store holds `credits` credits for it.
+pub fn in_world_stocking_holding_credits(
+  vendors vendors: Vendors,
+  credits credits: Int,
+) -> game_connection.State {
+  let character =
+    Character(..world_character(), faction_id: spawn.exile_faction)
+  let #(state, taken) =
+    playing_from(
+      in_character_select: in_select_from(
+        accepted(Settings(..settings(), vendors:)).0,
+      ),
+      character_id: 42,
+    )
+  let #(state, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(
+          ForWorld(
+            CharacterLoaded(
+              character,
+              character_support.epoch(1),
+              None,
+              None,
+              world_entry_support.novice_items(character:),
+              [],
+              [HeldCurrency(currency_type_id: 1, amount: credits)],
+            ),
+          ),
+        ),
+      ),
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken)))).0
+}
+
+/// The client's 0x00BE for the stock position and the quantity of lots (`vendor_purchase`),
+/// read by the connection in the world.
+pub fn purchase_requested(
+  state state: game_connection.State,
+  unique_id unique_id: Int,
+  quantity quantity: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let assert Ok(body) =
+    vendor_purchase.encode(VendorPurchase(unique_id:, quantity:))
+    as "a unique id and a quantity of 32 bits fit the message"
+  read(state:, bytes: world_message(message_id: 0x00BE, body:))
 }
 
 /// The ask of a `!summon` line of the tests' player: the run of the map that

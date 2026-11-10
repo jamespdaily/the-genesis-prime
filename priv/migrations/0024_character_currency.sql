@@ -42,4 +42,4 @@ insert into game_number (name, value, unit, source, reason) values
 insert into character_currency (character_id, currency_type_id, amount)
 select character_id, 1, value::bigint
 from character, game_number
-where game_number.name = 'starting_credits';
+where game_number.name = 'starting_credits' and game_number.value > 0;

@@ -19,6 +19,7 @@ import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/store
 import gleam/bit_array
 import gleam/dict.{type Dict}
+import gleam/int
 import gleam/list
 import gleam/result
 
@@ -68,8 +69,9 @@ fn amount(
 
 /// The 15 amounts of 0x025E, 8 bytes each, little-endian, type 1 first.
 pub fn bytes(currencies currencies: Currencies) -> BitArray {
-  list.repeat(Nil, currency_types)
-  |> list.index_map(fn(_, index) {
+  int.range(from: 0, to: currency_types, with: [], run: list.prepend)
+  |> list.reverse
+  |> list.map(fn(index) {
     <<amount(currencies:, currency_type_id: index + 1):little-size(64)>>
   })
   |> bit_array.concat

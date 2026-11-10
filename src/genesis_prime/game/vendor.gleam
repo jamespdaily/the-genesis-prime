@@ -21,6 +21,7 @@
 //// | a vendor row names a Creature2 the client's table lacks | the load stops, naming `vendor` and the row |
 //// | an item row names an Item2 the client's table lacks | the load stops, naming `vendor_item` and the row |
 //// | an item row names a creature with no vendor row | the load stops, naming `vendor_item` and the row |
+//// | an item row's Item2 holds a buy lot (buyFromVendorStackCount) of 0 | the load stops, naming `vendor_item` and the row |
 //// | an item row's Item2 has no credit price (another currency, a tradeskill additive, a missing row of its price) | the load stops, naming `vendor_item` and the row (genesis_prime/game/item_price) |
 
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowId, RowName}
@@ -125,6 +126,12 @@ pub fn select(
               "Item2 "
               <> int.to_string(row.item_id)
               <> " has no row in the client's table",
+            ))
+          True, Ok(item) if item.buy_from_vendor_stack_count == 0 ->
+            Error(refused(
+              "Item2 "
+              <> int.to_string(row.item_id)
+              <> " holds a buy lot of 0, which would sell no items (opcode.0xbe, 0x14047aba0 copies the lot as it stands)",
             ))
           True, Ok(_) ->
             item_price.base(tables:, item2_id: Item2Id(row.item_id))

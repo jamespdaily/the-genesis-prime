@@ -33,7 +33,8 @@
 //// - **The quantity counts lots.** Each lot is the Item2's buyFromVendorStackCount items
 ////   (Vendor.lua l.437 to 452): the player gets quantity times that many items and pays the
 ////   price the client's window shows for it (`item_price`)
-////   times that count times the quantity.
+////   times that count times the quantity. The vendor load refuses a stocked item whose lot is 0
+////   (`vendor`), so a stocked item's lot is at least 1.
 //// - **Where the items go** is a server choice, as no client code decides it: stacks of the
 ////   same Item2 in the usable inventory (location 1, bag index below `inventory.size`) that
 ////   are below `item_property.stack_limit` are filled lowest bag index first, then empty
@@ -221,8 +222,15 @@ pub fn take(
                 code: refusal.code,
                 logged:,
               ))
-            Ok(_) ->
-              buy_from(buy:, window:, items:, currencies:, tables:, logged:)
+            Ok(opened) ->
+              buy_from(
+                buy:,
+                window: vendor.Opened(..window, vendor: opened),
+                items:,
+                currencies:,
+                tables:,
+                logged:,
+              )
           }
       }
   }
@@ -255,7 +263,7 @@ fn buy_from(
   let item2_id = stocked.item_id
   use lot <- result.try(
     item2.get(tables:, id: item2_id)
-    |> result.map(fn(row) { int.max(1, row.buy_from_vendor_stack_count) })
+    |> result.map(fn(row) { row.buy_from_vendor_stack_count })
     |> result.replace_error(NoItemRow(item2_id:)),
   )
   let items_bought = buy.quantity * lot
@@ -339,8 +347,8 @@ fn placed(
   let taken_places =
     set.from_list(list.map(usable, fn(item) { item.bag_index }))
   let empty =
-    list.repeat(Nil, size)
-    |> list.index_map(fn(_, index) { index })
+    int.range(from: 0, to: size, with: [], run: list.prepend)
+    |> list.reverse
     |> list.filter(fn(index) { !set.contains(taken_places, index) })
   let #(wanted, grow) = fill(growable:, limit:, wanted:)
   let #(wanted, make) = open(empty:, limit:, wanted:)

@@ -161,3 +161,28 @@ pub fn a_stock_row_with_a_tradeskill_additive_stops_the_load_test() -> Nil {
     ])
     as "0x140243a00, 0x1405e6230: a row with a tradeskillAdditiveId is priced with a bonus factor in place of the vendor multiplier, which is not built here"
 }
+
+pub fn a_stock_row_whose_item_holds_a_buy_lot_of_0_stops_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Synthetic: the client's Item2 14838 has buyFromVendorStackCount 1, and none of the 22
+  // stocked items holds 0 (the Item2 column; 0x14047aba0 copies it as it stands).
+  let selected = {
+    use tables <- fixture_tables.changed(table: "Item2", id: 14_838, with: [
+      #("buyFromVendorStackCount", Integer(0)),
+    ])
+    vendor.select(
+      vendors: [VendorRow(28_739, 1.0, 1.0)],
+      items: [ItemRow(28_739, 2, 14_838)],
+      tables:,
+    )
+  }
+  assert selected
+    == Error([
+      Refusal(
+        table: "vendor_item",
+        row: RowName("28739/2"),
+        rule: "Item2 14838 holds a buy lot of 0, which would sell no items (opcode.0xbe, 0x14047aba0 copies the lot as it stands)",
+      ),
+    ])
+    as "a lot of 0 would charge nothing and give nothing, so a stocked row of 0 is a missing-data failure at start"
+}

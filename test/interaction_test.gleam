@@ -28,7 +28,7 @@ import connection_rule_support as support
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{
-  type Answer, type Message, CreatureAppeared,
+  type Answer, type Message, AskStore, CreatureAppeared, FromStore,
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
@@ -38,6 +38,7 @@ import genesis_prime/game/start_place
 import genesis_prime/game/vendor
 import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/dialog_responses_shown.{DialogResponsesShown}
+import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/generic_error.{GenericError}
 import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
@@ -45,6 +46,7 @@ import genesis_prime/message/vendor_item.{type VendorItem, VendorItem}
 import genesis_prime/message/vendor_items.{VendorItems}
 import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
 import genesis_prime/step.{type ConnectionEvent, type Event, LogWarning}
+import genesis_prime/store
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{type Hostile, Hostile}
@@ -563,4 +565,60 @@ pub fn an_opened_vendor_is_held_and_any_other_interaction_answer_clears_it_test(
   assert window_after(message: interaction.ResponsesShown, body: shown_body)
     == interaction.Keeps
     as "opcode.0x7ea: 0x356 is not an interaction request, so the client's window stays"
+}
+
+pub fn a_buy_the_store_cannot_answer_ends_the_connection_with_reason_8_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A buy whose outcome is unknown (the 0x919, 0x111 and 0x106 say what the store did) is
+  // an error line and reason 8 once the place is saved, as a move the store cannot answer.
+  list.each(
+    [
+      step.Answer(FromStore(store.Unavailable)),
+      step.NotRunning,
+      step.NoAnswerInTime,
+      step.EndedBeforeAnswer,
+    ],
+    fn(outcome) {
+      let #(state, _) =
+        connection_support.feed(
+          state: connection_support.in_world_stocking_holding_credits(
+            vendors: vendor_support.stocking(creature_ids: [74_812]),
+            credits: 100,
+          ),
+          event: walker_appears(
+            unit_id: walker_unit,
+            gap: reach -. 0.1,
+            health: 52,
+            hostile_to: friendly,
+          ),
+        )
+      let #(state, _) =
+        connection_support.interaction_requested(
+          state:,
+          unit_id: walker_unit,
+          kind: 0x31,
+        )
+      let #(state, taken) =
+        connection_support.purchase_requested(state:, unique_id: 2, quantity: 1)
+      let assert AskStore(store.Items(store.BuyFromVendor(cost: 67, ..))) =
+        connection_support.ask_request(taken)
+        as "opcode.0xbe: position 2 is Item2 14838 at 67 credits, within the 100 held"
+      let #(state, answered) =
+        connection_support.answer(state:, taken:, outcome:)
+      assert list.length(support.logs_of(step: answered, level: step.LogError))
+        == 1
+        as "a buy whose outcome is unknown is an error line"
+      assert connection_support.written_ids(answered) == []
+        as "no 0x919, 0x111, 0x17F or 0x106: nothing says whether the buy was saved"
+      let #(_, saved) =
+        connection_support.answer(
+          state:,
+          taken: answered,
+          outcome: connection_support.place_saved(),
+        )
+      assert connection_support.disconnect(saved, connection_support.keyed())
+        == LostUserServer
+        as "the player's place is saved, then 0x036A reason 8"
+    },
+  )
 }

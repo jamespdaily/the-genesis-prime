@@ -246,12 +246,12 @@ pub fn a_migrated_database_holds_the_seeded_numbers_test() -> Nil {
     content_game_number.rows(db: content_support.connect(database:))
     as "the query ran"
   assert rows == seeded()
-    as "migration 0010's four rows, migration 0015's two, migration 0016's refill time, migration 0021's two quest reset times and migration 0022's kill experience fraction and nine multipliers, in name order"
+    as "migration 0010's four rows, migration 0015's two, migration 0016's refill time, migration 0021's two quest reset times and migration 0022's kill experience fraction and nine multipliers and migration 0024's starting credits, in name order"
   assert content_support.count(
       database:,
       sql: "select count(*) from game_number where source = 'server_choice' and reason is not null",
     )
-    == 19
+    == 20
     as "each is a server choice that states its reason"
 }
 

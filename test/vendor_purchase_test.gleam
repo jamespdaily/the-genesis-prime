@@ -118,6 +118,7 @@ type Scene {
     opened: Option(vendor.Opened),
     life: Life,
     gap: Float,
+    vendors: vendor.Vendors,
     logged: set.Set(String),
   )
 }
@@ -130,6 +131,7 @@ fn scene(unique_id unique_id: Int, quantity quantity: Int) -> Scene {
     opened: walkers_window(),
     life: player_life_support.alive(),
     gap: 1.0,
+    vendors: vendor_support.stocking(creature_ids: [74_812]),
     logged: set.new(),
   )
 }
@@ -148,7 +150,7 @@ fn taken(scene scene: Scene) -> Result(Taken, vendor_purchase.Refusal) {
     ),
     picture: vendor_support.picture_with_walker(gap: scene.gap),
     tables: character_tables.shared(),
-    vendors: vendor_support.stocking(creature_ids: [74_812]),
+    vendors: scene.vendors,
     now_ms: 0,
     logged: scene.logged,
   )
@@ -470,4 +472,27 @@ pub fn a_buy_the_store_did_not_save_sends_db_failure_and_keeps_credits_and_items
         as "the log says why the buy was not saved"
     },
   )
+}
+
+pub fn a_buy_is_priced_from_the_vendor_now_at_the_unit_not_the_one_the_window_opened_on_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The window opened while the unit was a vendor selling 12078, 14838 and 20791 at
+  // positions 1 to 3 (67 credits for 14838 at position 2); the unit is now a vendor selling
+  // 20791, 12078 and 14838, whose position 2 is 12078 at the 20 the window of that vendor
+  // shows (`item_price_test`). The buy repeats the 0x7EA's checks against the unit as it is
+  // now (opcode.0x7ea), so it is the stock the checks read that the buy is made from.
+  let scene =
+    Scene(
+      ..scene(unique_id: position_14838, quantity: 1),
+      vendors: vendor_support.stocking_items(creature_ids: [74_812], items: [
+        20_791,
+        12_078,
+        14_838,
+      ]),
+    )
+  let purchase = asked(scene:)
+  assert purchase.item2_id == Item2Id(12_078)
+    as "position 2 of the vendor now at the unit is 12078"
+  assert purchase.cost == 20
+    as "the price of 12078, not the 67 of the old window's 14838"
 }

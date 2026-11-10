@@ -133,6 +133,7 @@ raised as (
   set stack_count = grown.new_count
   from grown
   where held.item_guid = grown.item_guid
+    and held.character_id = $1
     and exists (select 1 from allowed)
   returning held.item_guid
 ),
