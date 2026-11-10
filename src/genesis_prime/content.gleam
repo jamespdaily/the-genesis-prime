@@ -307,6 +307,7 @@ fn read(
         refusals: [],
         out_of_range_levels: [],
         coverage: [],
+        visibility: dict.new(),
       )
   }
   case

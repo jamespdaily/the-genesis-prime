@@ -56,6 +56,7 @@ import genesis_prime/world_map/map.{Join}
 import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/set
 import owned_test
 import world_entry_support
 
@@ -103,6 +104,7 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
         game_connection_support.entry_place(),
         game_connection_support.own_stay(),
         True,
+        set.new(),
       ),
     )
     as "the saved world of the character, its one open instance, the connection's id, the character and the place the client is told"

@@ -166,6 +166,7 @@ import genesis_prime/game/connection/state.{
 import genesis_prime/game/connection/vendor_purchase as connection_vendor_purchase
 import genesis_prime/game/connection/vendor_sale as connection_vendor_sale
 import genesis_prime/game/connection/viewers as connection_viewers
+import genesis_prime/game/connection/visibility_check
 import genesis_prime/game/connection/world as connection_world
 import genesis_prime/game/player_life
 import genesis_prime/game/routing
@@ -427,7 +428,10 @@ fn settled(
   now now: Now,
 ) -> #(State, ConnectionStep(Request)) {
   client_connection.settle(
-    handled: connection_casting.persisted(handled:, now:),
+    handled: visibility_check.rechecked(handled: connection_casting.persisted(
+      handled:,
+      now:,
+    )),
     flow: flow(now),
     carried: [],
   )
@@ -457,14 +461,14 @@ fn flow(now: Now) -> client_connection.Flow(Session, Frame, FrameError, State) {
     pending: fn(session: Session) { session.pending },
     take: frame.take,
     taking: fn(session, whole, rest) {
-      connection_casting.persisted(
+      visibility_check.rechecked(handled: connection_casting.persisted(
         handled: handle(
           session: Session(..session, pending: rest),
           now:,
           frame: whole,
         ),
         now:,
-      )
+      ))
     },
     refused: fn(session, error) {
       connection_state.end_for(

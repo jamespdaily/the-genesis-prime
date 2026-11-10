@@ -107,6 +107,7 @@ import genesis_prime/client_connection.{
   SentByKill, SentByMap, SentByPeer, SentBySessions, SentByTarget, TellChat,
   TellLifeChanged, TellMoved, TellPeer, TellReady, TellStealthChanged,
   TellStrike, TellStrikeAnswered, TellTargetChange, TellTargetMoved,
+  TellVisibilityChanged,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -354,6 +355,7 @@ fn directory(settings: Settings) -> Directory {
       | TellReady(..)
       | TellStealthChanged(..)
       | TellLifeChanged(..)
+      | TellVisibilityChanged(..)
       | TellPeer(..)
       | TellChat(..)
       | TellStrike(..)
@@ -461,6 +463,7 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     | TellReady(..)
     | TellStealthChanged(..)
     | TellLifeChanged(..)
+    | TellVisibilityChanged(..)
     | TellPeer(..)
     | TellStrike(..)
     | TellTargetMoved(..)
@@ -501,6 +504,14 @@ pub fn tell_the_run(
         service.tell_subject(
           subject,
           map.StealthChanged(connection:, stealthed:),
+        )
+      Nil
+    }
+    TellVisibilityChanged(connection:, hidden:) -> {
+      let _sent =
+        service.tell_subject(
+          subject,
+          map.VisibilityChanged(connection:, hidden:),
         )
       Nil
     }
@@ -587,6 +598,7 @@ fn creature_told(request: Request) -> Result(creature.Message, Nil) {
     | TellReady(..)
     | TellStealthChanged(..)
     | TellLifeChanged(..)
+    | TellVisibilityChanged(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -633,6 +645,7 @@ fn connection_deliver(
       | TellReady(..), _
       | TellStealthChanged(..), _
       | TellLifeChanged(..), _
+      | TellVisibilityChanged(..), _
       | AskStore(..), _
       | AskHandOff(..), _
       | AskSessions(..), _
