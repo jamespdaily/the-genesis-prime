@@ -2944,42 +2944,52 @@ id = 0x00BC
 name = "buyback_list"
 direction = "server_to_client"
 evidence = "opcode.0xbc"
-summary = "the player's whole buyback list: the entries replace the list the client holds. Gap: the entry's layout is widths in order with three names, and no step sends an entry yet (buying and selling is #583)"
+summary = "the player's whole buyback list: the entries replace the list the client holds, and an empty list clears the Buyback tab"
 fields = [
   { name = "entries", kind = "array", count_bits = 32, element = "buyback_entry", evidence = "opcode.0xbc", named_by = "opcode.0xbc" },
+]
+
+[[message]]
+id = 0x00BA
+name = "buyback_added"
+direction = "server_to_client"
+evidence = "opcode.0xba"
+summary = "one entry added to the end of the player's buyback list; the client keeps no count limit or expiry, and an entry whose Item2 id it does not know is dropped"
+fields = [
+  { name = "entry", kind = "record", record = "buyback_entry", evidence = "opcode.0xba", named_by = "opcode.0xba" },
 ]
 
 [[record]]
 name = "buyback_entry"
 evidence = "opcode.0xba"
-summary = "one buyback entry (message 0xBA's layout): the buyback id, the Item2 id and the quantity are named; the other widths are in the client's order and have no reader found"
+summary = "one buyback entry as messages 0xBA and 0xBC carry it: the buyback id, the Item2 id and the quantity, the item property inputs (fields 4 to 21, which the server writes as 0, read as message 0x111's are), the two amounts and their currency types as the tab shows them, and a last 32-bit value"
 fields = [
   { name = "buyback_id", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba" },
   { name = "item_id", kind = "unsigned", bits = 18, evidence = "opcode.0xba", named_by = "opcode.0xba" },
   { name = "quantity", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba" },
-  { name = "field_4", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_6", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_7", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_8", kind = "unsigned", bits = 18, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_9", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_10", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_11", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_12", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_13", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_14", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_15", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_16", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_17", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_18", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_19", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_20", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_21", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_22", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_23", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_24", kind = "unsigned", bits = 4, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_25", kind = "unsigned", bits = 4, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
-  { name = "field_26", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba" },
+  { name = "field_4", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_5", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_6", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_7", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_8", kind = "unsigned", bits = 18, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_9", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_10", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_11", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_12", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_13", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_14", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_15", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_16", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_17", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_18", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_19", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_20", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "field_21", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "amount_1", kind = "unsigned", bits = 64, evidence = "opcode.0xba.price", named_by = "opcode.0xba.price" },
+  { name = "amount_2", kind = "unsigned", bits = 64, evidence = "opcode.0xba.price", named_by = "opcode.0xba.price" },
+  { name = "currency_type_1", kind = "unsigned", bits = 4, evidence = "opcode.0xba.price", named_by = "opcode.0xba.price" },
+  { name = "currency_type_2", kind = "unsigned", bits = 4, evidence = "opcode.0xba.price", named_by = "opcode.0xba.price" },
+  { name = "field_26", kind = "unsigned", bits = 32, evidence = "opcode.0xba.price", safe_by = "opcode.0xba.price" },
 ]
 
 [[message]]
@@ -3042,6 +3052,25 @@ fields = [
   { name = "unique_id", kind = "unsigned", bits = 32, evidence = "opcode.0xbe", named_by = "opcode.0xbe" },
   { name = "quantity", kind = "unsigned", bits = 32, evidence = "opcode.0xbe", named_by = "opcode.0xbe" },
 ]
+
+[[message]]
+id = 0x0166
+name = "vendor_sale"
+direction = "client_to_server"
+evidence = "opcode.0x166"
+summary = "the client sells to the open vendor the item at a place, a quantity of it (a quantity below the stack's count sells part of the stack); the client checks the quantity, the item, the player and the vendor before sending"
+fields = [
+  { name = "place", kind = "record", record = "item_place", evidence = "opcode.0x166", named_by = "opcode.0x166" },
+  { name = "quantity", kind = "unsigned", bits = 32, evidence = "opcode.0x166", named_by = "opcode.0x166" },
+]
+
+[[message]]
+id = 0x0167
+name = "vendor_sell_junk"
+direction = "client_to_server"
+evidence = "opcode.0x167"
+summary = "the client sells all its junk to the open vendor: the Sell Junk button, or the addon's auto-sell as the vendor window opens; its body is empty and the client sends no item list"
+fields = []
 
 [[message]]
 id = 0x0919

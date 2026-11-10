@@ -63,6 +63,8 @@ import genesis_prime/message/send_whisper.{type SendWhisper}
 import genesis_prime/message/terrain_loaded.{type TerrainLoaded}
 import genesis_prime/message/trade_cancel.{type TradeCancel}
 import genesis_prime/message/vendor_purchase.{type VendorPurchase}
+import genesis_prime/message/vendor_sale.{type VendorSale}
+import genesis_prime/message/vendor_sell_junk.{type VendorSellJunk}
 import genesis_prime/message/watchdog_report.{type WatchdogReport}
 import genesis_prime/message/window_opened.{type WindowOpened}
 import genesis_prime/message/world_message.{type WorldMessage}
@@ -123,6 +125,8 @@ pub type ClientMessage {
   InteractionRequest(message: InteractionRequest)
   DialogResponsesShown(message: DialogResponsesShown)
   VendorPurchase(message: VendorPurchase)
+  VendorSale(message: VendorSale)
+  VendorSellJunk(message: VendorSellJunk)
 }
 
 /// Why a body is not a message the client sends.
@@ -253,6 +257,8 @@ pub fn decode(
         DialogResponsesShown,
       )
     0x00BE -> decoded(body, message_id, vendor_purchase.decode, VendorPurchase)
+    0x0166 -> decoded(body, message_id, vendor_sale.decode, VendorSale)
+    0x0167 -> decoded(body, message_id, vendor_sell_junk.decode, VendorSellJunk)
     _ -> Error(UnknownMessage(message_id:))
   }
 }
@@ -315,6 +321,8 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     InteractionRequest(message:) -> interaction_request.encode(message)
     DialogResponsesShown(message:) -> dialog_responses_shown.encode(message)
     VendorPurchase(message:) -> vendor_purchase.encode(message)
+    VendorSale(message:) -> vendor_sale.encode(message)
+    VendorSellJunk(message:) -> vendor_sell_junk.encode(message)
   }
 }
 
@@ -374,6 +382,8 @@ pub fn message_id(message: ClientMessage) -> Int {
     InteractionRequest(..) -> interaction_request.message_id
     DialogResponsesShown(..) -> dialog_responses_shown.message_id
     VendorPurchase(..) -> vendor_purchase.message_id
+    VendorSale(..) -> vendor_sale.message_id
+    VendorSellJunk(..) -> vendor_sell_junk.message_id
   }
 }
 
@@ -433,6 +443,8 @@ pub fn name(message: ClientMessage) -> String {
     InteractionRequest(..) -> "interaction_request"
     DialogResponsesShown(..) -> "dialog_responses_shown"
     VendorPurchase(..) -> "vendor_purchase"
+    VendorSale(..) -> "vendor_sale"
+    VendorSellJunk(..) -> "vendor_sell_junk"
   }
 }
 

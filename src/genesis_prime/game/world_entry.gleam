@@ -175,7 +175,9 @@ import genesis_prime/step.{type ConnectionId, type Now}
 import genesis_prime/store.{
   type AccountId, type Character, type CharacterId, CharacterId,
 }
-import genesis_prime/table/id.{type Spell4BaseId, type UnitProperty2Id}
+import genesis_prime/table/id.{
+  type Item2Id, type Spell4BaseId, type UnitProperty2Id,
+}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
@@ -335,6 +337,10 @@ pub type Entered {
     /// sets it, clears it or keeps it (genesis_prime/game/interaction.Window), and a
     /// join of a world has none.
     vendor: Option(vendor.Opened),
+    /// What the character has sold to vendors since it entered, which the vendor
+    /// window lists to buy back (genesis_prime/game/vendor_sale): a join of a world
+    /// has none, and the list is lost with the connection.
+    buyback: Buyback,
     /// The character's experience: the saved one, or the least of its level when
     /// none was saved (`experience.entering`). The connection adds each kill's
     /// credit to it (genesis_prime/game/connection/experience) and saves it with
@@ -369,6 +375,18 @@ pub type Entered {
     strike: strike.State,
     chat: chat.Chat,
   )
+}
+
+/// What a character has sold to vendors since it entered, newest last: the id the
+/// next sale gets, which the client names an entry by, and each entry.
+pub type Buyback {
+  Buyback(next_id: Int, entries: List(BuybackEntry))
+}
+
+/// One sale on the buyback list: the id the client names it by, the Item2 sold,
+/// how many were sold and the credits the vendor paid for them all.
+pub type BuybackEntry {
+  BuybackEntry(buyback_id: Int, item2_id: Item2Id, quantity: Int, credits: Int)
 }
 
 /// Whether the player's client has finished loading the world: the connection
@@ -704,6 +722,7 @@ pub fn joined(
               items:,
               currencies:,
               vendor: None,
+              buyback: Buyback(next_id: 1, entries: []),
               experience:,
               quests:,
               gear: worn,

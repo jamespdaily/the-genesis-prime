@@ -101,7 +101,7 @@ import genesis_prime/store.{
   NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
   NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
   PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
-  SaveRefused, Select, SplitItem, Unavailable, World,
+  SaveRefused, Select, SellToVendor, SplitItem, Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{type Item2Id, ClassId, Item2Id, RaceId}
@@ -330,7 +330,8 @@ fn run_request(request: Request, pool: pog.Connection) -> Answer {
 /// merge_character_items.sql, delete_character_item.sql, buy_from_vendor.sql). A
 /// move answers `ItemsSaved` when it moved as many items as the request has moves,
 /// a split `ItemMade` with the new stack's guid, a merge and a delete `ItemsSaved`,
-/// a purchase `Bought` with the credits left and the stacks it made;
+/// a purchase `Bought` with the credits left and the stacks it made, a sale `Sold`
+/// with the credits held after it;
 /// each answers `ItemsNotSaved` when it changed nothing and `SaveRefused` when a
 /// check or the unique key of the character_item table refused a place;
 /// `Error(Nil)` when the database is away.
@@ -391,7 +392,39 @@ fn items(
         make:,
         item2_id:,
       )
+    SellToVendor(
+      account_id:,
+      character_id:,
+      session_epoch:,
+      credits_held:,
+      credits_after:,
+      sold:,
+    ) ->
+      sell_to_vendor(
+        pool:,
+        account_id:,
+        character_id:,
+        session_epoch:,
+        credits_held:,
+        credits_after:,
+        sold:,
+      )
   }
+}
+
+/// A sale: sell_to_vendor.sql, answered with `Sold` and the credits held after, when
+/// it set the credits to `credits_after`, deleted each stack sold whole and lowered
+/// each stack sold in part.
+fn sell_to_vendor(
+  pool _pool: pog.Connection,
+  account_id _account_id: store.AccountId,
+  character_id _character_id: store.CharacterId,
+  session_epoch _session_epoch: store.SessionEpoch,
+  credits_held _credits_held: Int,
+  credits_after _credits_after: Int,
+  sold _sold: List(store.SoldStack),
+) -> Result(ItemsAnswer, Nil) {
+  panic as "shape: #584"
 }
 
 /// A split: split_character_item.sql, answered with `ItemMade` and the new

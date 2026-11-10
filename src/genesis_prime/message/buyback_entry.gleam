@@ -1,11 +1,12 @@
 //// Generated from `schema.toml` by `genesis_prime/generate_messages`;
 //// never edited by hand.
 ////
-//// A record inside a message body: one buyback entry (message 0xBA's layout):
-//// the buyback id, the Item2 id and the quantity are named; the other widths
-//// are in the client's order and have no reader found. Its fields are listed
-//// in `schema.toml` with the client's evidence, and the fact file's
-//// `opcode.0xba` names the record.
+//// A record inside a message body: one buyback entry as messages 0xBA and 0xBC
+//// carry it: the buyback id, the Item2 id and the quantity, the item property
+//// inputs (fields 4 to 21, which the server writes as 0, read as message
+//// 0x111's are), the two amounts and their currency types as the tab shows
+//// them, and a last 32-bit value. Its fields are listed in `schema.toml` with
+//// the client's evidence, and the fact file's `opcode.0xba` names the record.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
@@ -20,74 +21,66 @@ pub type BuybackEntry {
     buyback_id: Int,
     item_id: Int,
     quantity: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_4: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_5: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_6: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_7: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_8: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_9: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_10: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_11: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_12: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_13: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_14: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_15: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_16: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_17: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_18: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_19: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_20: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_21: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
-    field_22: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
-    field_23: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
-    field_24: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
-    field_25: Int,
-    /// Safe by `opcode.0xba`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
+    amount_1: Int,
+    amount_2: Int,
+    currency_type_1: Int,
+    currency_type_2: Int,
+    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
     field_26: Int,
   )
 }
@@ -116,10 +109,10 @@ pub fn write(writer writer: Writer, record record: BuybackEntry) -> Writer {
   |> bit_stream.write_unsigned("field_19", record.field_19, 32)
   |> bit_stream.write_unsigned("field_20", record.field_20, 32)
   |> bit_stream.write_unsigned("field_21", record.field_21, 32)
-  |> bit_stream.write_unsigned("field_22", record.field_22, 64)
-  |> bit_stream.write_unsigned("field_23", record.field_23, 64)
-  |> bit_stream.write_unsigned("field_24", record.field_24, 4)
-  |> bit_stream.write_unsigned("field_25", record.field_25, 4)
+  |> bit_stream.write_unsigned("amount_1", record.amount_1, 64)
+  |> bit_stream.write_unsigned("amount_2", record.amount_2, 64)
+  |> bit_stream.write_unsigned("currency_type_1", record.currency_type_1, 4)
+  |> bit_stream.write_unsigned("currency_type_2", record.currency_type_2, 4)
   |> bit_stream.write_unsigned("field_26", record.field_26, 32)
 }
 
@@ -146,10 +139,16 @@ pub fn read(reader: Reader) -> Result(#(BuybackEntry, Reader), DecodeError) {
   use #(field_19, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_20, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_21, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_22, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
-  use #(field_23, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
-  use #(field_24, reader) <- result.try(bit_stream.read_unsigned(reader, 4))
-  use #(field_25, reader) <- result.try(bit_stream.read_unsigned(reader, 4))
+  use #(amount_1, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
+  use #(amount_2, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
+  use #(currency_type_1, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    4,
+  ))
+  use #(currency_type_2, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    4,
+  ))
   use #(field_26, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   Ok(#(
     BuybackEntry(
@@ -174,10 +173,10 @@ pub fn read(reader: Reader) -> Result(#(BuybackEntry, Reader), DecodeError) {
       field_19:,
       field_20:,
       field_21:,
-      field_22:,
-      field_23:,
-      field_24:,
-      field_25:,
+      amount_1:,
+      amount_2:,
+      currency_type_1:,
+      currency_type_2:,
       field_26:,
     ),
     reader,

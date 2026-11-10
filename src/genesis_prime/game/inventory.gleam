@@ -140,7 +140,7 @@ import genesis_prime/step.{type LogLevel, LogError, LogWarning}
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemMove,
   type ItemsAnswer, type SessionEpoch, Bought, ItemMade, ItemsNotSaved,
-  ItemsSaved, SaveRefused,
+  ItemsSaved, SaveRefused, Sold,
 }
 import genesis_prime/table/id.{type Item2Id}
 import genesis_prime/table/loader/store as table_store
@@ -1272,6 +1272,7 @@ pub fn answered(
           panic as "the store answers only a split with ItemMade"
       }
     Bought(..) -> panic as "the store answers a purchase only to a vendor buy"
+    Sold(..) -> panic as "the store answers a sale only to a vendor sale"
     ItemsNotSaved -> #(items, [
       Log(
         level: LogWarning,

@@ -73,7 +73,7 @@ import genesis_prime/step.{type LogLevel, LogError, LogWarning}
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
   type SessionEpoch, Bought, HeldItem, ItemMade, ItemsNotSaved, ItemsSaved,
-  SaveRefused,
+  SaveRefused, Sold,
 }
 import genesis_prime/table/id.{type Item2Id, Item2Id}
 import genesis_prime/table/item2
@@ -477,7 +477,7 @@ pub fn answered(
       ),
       Refuse(code: db_failure),
     ])
-    ItemsSaved | ItemMade(..) ->
+    ItemsSaved | ItemMade(..) | Sold(..) ->
       panic as "the store answers a purchase with Bought, ItemsNotSaved or SaveRefused"
   }
 }

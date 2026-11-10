@@ -2,10 +2,9 @@
 //// never edited by hand.
 ////
 //// Message 0x00BC (buyback_list), server to client: the player's whole buyback
-//// list: the entries replace the list the client holds. Gap: the entry's
-//// layout is widths in order with three names, and no step sends an entry yet
-//// (buying and selling is #583). Its fields are listed in `schema.toml` with
-//// the client's evidence, and the fact file's `opcode.0xbc` names the message.
+//// list: the entries replace the list the client holds, and an empty list
+//// clears the Buyback tab. Its fields are listed in `schema.toml` with the
+//// client's evidence, and the fact file's `opcode.0xbc` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/buyback_entry.{type BuybackEntry}
