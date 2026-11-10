@@ -217,6 +217,10 @@ pub type World {
     /// (genesis_prime/content/spawn): a map reads its world's term when it
     /// starts, and a creature reads its spawn from it, with no query during play.
     spawns: table_store.Key,
+    /// The clock the maps and creatures take each input's time from and the
+    /// scheduler their timers start on: `service_shell.real_time()` on a
+    /// server, the driven clock's in a whole-server test.
+    service_time: service_shell.ServiceTime,
   )
 }
 
@@ -285,6 +289,7 @@ pub fn start(
       reach: service.watch_only(locate: locate(settings)),
       shutdown_ms: settings.hand_off_shutdown_ms,
       found_at: None,
+      time: service_shell.real_time(),
     ),
   ))
   |> supervisor.add(service_shell.supervised(
@@ -296,6 +301,7 @@ pub fn start(
       }),
       shutdown_ms: settings.sessions_shutdown_ms,
       found_at: None,
+      time: service_shell.real_time(),
     ),
   ))
   |> supervisor.add(world(settings))
@@ -802,6 +808,7 @@ pub fn add_world(
           reach: map_reach(world:, reach:),
           shutdown_ms: world.map_shutdown_ms,
           found_at: None,
+          time: world.service_time,
         ))
       },
     ),
@@ -906,6 +913,7 @@ fn start_creature_process(
             life: wanted.life,
           ),
         )),
+        time: world.service_time,
       ))
   }
 }

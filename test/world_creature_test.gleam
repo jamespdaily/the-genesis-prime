@@ -23,6 +23,7 @@
 import ask_support
 import cast_support
 import character_tables
+import driven_time
 import event_wait
 import fixture_tables
 import game_connection_support
@@ -204,6 +205,93 @@ fn one_beast(respawn_ms respawn_ms: Int) -> World {
   )
 }
 
+/// A world of one Battle Beast at x 0 whose maps and creatures take their time from
+/// `time`, so a timer fires only when the test advances it.
+fn one_beast_timed(
+  time time: driven_time.Time,
+  respawn_ms respawn_ms: Int,
+  idle_stop_ms idle_stop_ms: Int,
+) -> World {
+  world_support.start_timed(
+    time: driven_time.service_time(time),
+    spawns: [spawn_support.battle_beast(number: 1, x: 0.0)],
+    respawn_ms:,
+    idle_stop_ms:,
+    sweep_ms:,
+  )
+}
+
+/// The connection is told the creature it saw is out of its sight (0x355). The map
+/// sends it in the step that took the player's move, so the map has by then taken
+/// the move and read the clock for it.
+fn left_sight(received received: Subject(Message), what what: String) -> Nil {
+  next(received:, what:, wanted: fn(message) {
+    case message {
+      ForStay(
+        sent: SentByPeer(PeerNews(news: client_connection.Removed, ..)),
+        ..,
+      ) -> Ok(Nil)
+      ForStay(..)
+      | client_connection.SentBySessions(..)
+      | client_connection.SentByChat(..) -> Error(Nil)
+    }
+  })
+}
+
+/// What the connection was sent that a wait for a strike's answer takes: a
+/// creature's 0x262 or the answer itself.
+type Heard {
+  Appeared(UnitCreateCreature)
+  Answer(strike_tell.Outcome)
+}
+
+/// The outcome of the creature's answer to strike `cast_id`, as the connection was
+/// sent it, and the creatures' 0x262s the connection was sent before it, in the
+/// order they came.
+fn answer_to_strike(
+  received received: Subject(Message),
+  cast_id cast_id: Int,
+) -> #(List(UnitCreateCreature), strike_tell.Outcome) {
+  open_wait.named("the answer to strike " <> int.to_string(cast_id), fn() {
+    answer_after(received:, cast_id:, appeared: [])
+  })
+}
+
+fn answer_after(
+  received received: Subject(Message),
+  cast_id cast_id: Int,
+  appeared appeared: List(UnitCreateCreature),
+) -> #(List(UnitCreateCreature), strike_tell.Outcome) {
+  case taken(received:, wanted: heard(_, cast_id)) {
+    Appeared(unit) ->
+      answer_after(received:, cast_id:, appeared: [unit, ..appeared])
+    Answer(outcome) -> #(list.reverse(appeared), outcome)
+  }
+}
+
+fn heard(message: Message, cast_id: Int) -> Result(Heard, Nil) {
+  case answer_to(message, cast_id) {
+    Ok(outcome) -> Ok(Answer(outcome))
+    Error(Nil) -> result.map(appearance(message), Appeared)
+  }
+}
+
+/// The outcome of the creature's answer to strike `cast_id`, when the message is
+/// that answer.
+fn answer_to(
+  message: Message,
+  cast_id: Int,
+) -> Result(strike_tell.Outcome, Nil) {
+  case message {
+    ForStay(sent: client_connection.SentByTarget(answered:), ..)
+      if answered.key.cast_id == cast_id
+    -> Ok(answered.outcome)
+    ForStay(..)
+    | client_connection.SentBySessions(..)
+    | client_connection.SentByChat(..) -> Error(Nil)
+  }
+}
+
 /// The connection's player moves to `x` in the world, a tell the map takes in
 /// the order it takes its other inputs.
 fn move_to(run run: MapProcess, connection connection: Int, x x: Float) -> Nil {
@@ -305,13 +393,16 @@ pub fn a_killed_creature_is_gone_to_the_players_and_its_spawn_returns_as_a_new_u
 
 pub fn a_creature_stops_after_its_last_viewer_leaves_sight_and_the_spawn_seen_again_keeps_its_unit_id_and_shows_once_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = one_beast(respawn_ms: 60_000)
+  let time = driven_time.new()
+  let world = one_beast_timed(time:, respawn_ms: 60_000, idle_stop_ms:)
   let run = started(world)
   let received = world_support.connection(world:, id: 1)
   let _player = join(run:, connection: 1)
   let first = next(received:, what: "the creature's 0x262", wanted: appearance)
   let first_pid = creature_pid(world:, run:, unit_id: first.unit_id, life: 2)
   move_to(run:, connection: 1, x: far)
+  left_sight(received:, what: "the creature's 0x355 when the player left sight")
+  driven_time.advance(time:, ms: idle_stop_ms)
   let _stopped =
     ask_support.ended(
       watched: process.monitor(first_pid),
@@ -338,6 +429,112 @@ pub fn a_creature_stops_after_its_last_viewer_leaves_sight_and_the_spawn_seen_ag
     as "the spawn keeps its unit id across a clean stop (death.creature_respawn)"
   let _second_pid = creature_pid(world:, run:, unit_id: second.unit_id, life: 3)
   Nil
+}
+
+pub fn a_dead_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let respawn_ms = 1000
+  let time = driven_time.new()
+  let world = one_beast_timed(time:, respawn_ms:, idle_stop_ms:)
+  let run = started(world)
+  let received = world_support.connection(world:, id: 1)
+  let _player = join(run:, connection: 1)
+  let first = next(received:, what: "the creature's 0x262", wanted: appearance)
+  let pid = creature_pid(world:, run:, unit_id: first.unit_id, life: 2)
+  strike_with(
+    world:,
+    run:,
+    unit_id: first.unit_id,
+    life: 2,
+    damage_type: 3,
+    damage: 60,
+    cast_id: 1,
+  )
+  let #(_, outcome) = answer_to_strike(received:, cast_id: 1)
+  let assert Landed(descriptions: [description], controls: []) = outcome
+  assert description.damage.killed == 1
+    as "the 60 damage takes the Beast's 52 health to 0"
+  // The answer is sent before the corpse timer starts: the clock moves only after
+  // the creature has taken the strike whole.
+  driven_time.settled(pid)
+  driven_time.advance(time:, ms: respawn_ms - 1)
+  strike_with(
+    world:,
+    run:,
+    unit_id: first.unit_id,
+    life: 2,
+    damage_type: 3,
+    damage: 1,
+    cast_id: 2,
+  )
+  assert answer_to_strike(received:, cast_id: 2)
+    == #([], strike_tell.Refused(why: strike_tell.Dead))
+    as "1 ms before the respawn time the creature is still dead: it refuses a strike and shows no creature standing"
+  driven_time.advance(time:, ms: 1)
+  strike_with(
+    world:,
+    run:,
+    unit_id: first.unit_id,
+    life: 2,
+    damage_type: 3,
+    damage: 1,
+    cast_id: 3,
+  )
+  let #(appeared, outcome) = answer_to_strike(received:, cast_id: 3)
+  let assert [again] = appeared
+    as "the creature stood again, once, before it answered the strike"
+  assert again.unit_id == first.unit_id
+    && list.contains(
+      again.tail.stats,
+      unit_fields.integer_stat(stat_id: 0, value: 52),
+    )
+    as "death.creature_respawn: the same unit id at full health, at the respawn time"
+  let assert Landed(..) = outcome
+    as "at the respawn time the creature stands and a strike lands"
+  Nil
+}
+
+pub fn a_creature_stops_at_the_first_sweep_at_or_after_its_idle_limit_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let time = driven_time.new()
+  let world = one_beast_timed(time:, respawn_ms: 60_000, idle_stop_ms:)
+  let run = started(world)
+  let received = world_support.connection(world:, id: 1)
+  let _player = join(run:, connection: 1)
+  let first = next(received:, what: "the creature's 0x262", wanted: appearance)
+  let pid = creature_pid(world:, run:, unit_id: first.unit_id, life: 2)
+  move_to(run:, connection: 1, x: far)
+  left_sight(received:, what: "the creature's 0x355 when the player left sight")
+  // The sweeps at 20, 40, 60 and 80 ms find it idle for less than the idle stop;
+  // the sweep at 100 ms is the first at or after it, and lands on exactly the idle
+  // stop only because 100 is a multiple of the 20 ms sweep.
+  driven_time.advance(time:, ms: idle_stop_ms - 1)
+  assert process.is_alive(pid)
+    as "1 ms before the idle stop the creature is running"
+  driven_time.advance(time:, ms: 1)
+  assert !process.is_alive(pid)
+    as "after the idle stop the creature is told to retire and has stopped"
+}
+
+pub fn a_map_sweeps_exactly_at_its_sweep_time_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let time = driven_time.new()
+  // An idle stop of 0 ms: a creature no player sees is idle long enough for the
+  // first sweep, so what the sweep does shows when it runs.
+  let world = one_beast_timed(time:, respawn_ms: 60_000, idle_stop_ms: 0)
+  let run = started(world)
+  let received = world_support.connection(world:, id: 1)
+  let _player = join(run:, connection: 1)
+  let first = next(received:, what: "the creature's 0x262", wanted: appearance)
+  let pid = creature_pid(world:, run:, unit_id: first.unit_id, life: 2)
+  move_to(run:, connection: 1, x: far)
+  left_sight(received:, what: "the creature's 0x355 when the player left sight")
+  driven_time.advance(time:, ms: sweep_ms - 1)
+  assert process.is_alive(pid)
+    as "1 ms before the sweep time the map has not retired the idle creature"
+  driven_time.advance(time:, ms: 1)
+  assert !process.is_alive(pid)
+    as "at the sweep time the map retires the idle creature"
 }
 
 pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
@@ -551,13 +748,13 @@ pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_
 pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn_seen_again_stands_full_with_its_unit_id_test() -> Nil {
   use <- owned_test.run(30_000)
   let respawn_ms = 1000
-  let world = one_beast(respawn_ms:)
+  let time = driven_time.new()
+  let world = one_beast_timed(time:, respawn_ms:, idle_stop_ms:)
   let run = started(world)
   let received = world_support.connection(world:, id: 1)
   let _player = join(run:, connection: 1)
   let first = next(received:, what: "the creature's 0x262", wanted: appearance)
   let pid = creature_pid(world:, run:, unit_id: first.unit_id, life: 2)
-  let before_strike_ms = ask_support.monotonic_ms()
   strike_with(
     world:,
     run:,
@@ -567,34 +764,17 @@ pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn
     damage: 60,
     cast_id: 1,
   )
+  // The corpse timer starts once the creature has taken the strike whole; the clock
+  // moves only after.
+  driven_time.settled(pid)
   move_to(run:, connection: 1, x: far)
-  next(
-    received:,
-    what: "the corpse's 0x355 when the player left sight",
-    wanted: fn(message) {
-      case message {
-        ForStay(
-          sent: SentByPeer(PeerNews(news: client_connection.Removed, ..)),
-          ..,
-        ) -> Ok(Nil)
-        ForStay(..)
-        | client_connection.SentBySessions(..)
-        | client_connection.SentByChat(..) -> Error(Nil)
-      }
-    },
-  )
-  let alive = process.is_alive(pid)
-  let read_at_ms = ask_support.monotonic_ms()
-  // The corpse timer runs `respawn_ms` from the kill, which is after
-  // `before_strike_ms`, so before that time the creature cannot have stopped.
-  // Later, a slow machine may have let the respawn pass, and nothing is asserted.
-  assert alive || read_at_ms >= before_strike_ms + respawn_ms
+  left_sight(received:, what: "the corpse's 0x355 when the player left sight")
+  // The sweeps retire it at the idle stop, 100 ms after the player left sight.
+  driven_time.advance(time:, ms: respawn_ms - 1)
+  assert process.is_alive(pid)
     as "a dead creature told to retire keeps its corpse and its respawn: the creature process lives until the respawn time (genesis_prime/world_map/creature), well after the player's 0x355 and the idle stop of 100 ms"
-  let _stopped =
-    ask_support.ended(
-      watched: process.monitor(pid),
-      what: "the dead creature stopped at its respawn",
-    )
+  driven_time.advance(time:, ms: 1)
+  assert !process.is_alive(pid) as "the dead creature stopped at its respawn"
   move_to(run:, connection: 1, x: 0.0)
   let second =
     next(

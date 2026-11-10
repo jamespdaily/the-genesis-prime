@@ -18,6 +18,8 @@
 
 import ask_support
 import asking_rule
+import clock_rule
+import driven_time
 import gate_rule
 import genesis_prime/group_registry
 import genesis_prime/hand_off.{Holder, Kept, Put, SessionKey, Take, Taken}
@@ -26,15 +28,16 @@ import genesis_prime/service
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{
   type Address, type Event, type NoAsk, type ServiceEffect, type ServiceEvent,
-  type Step, Asked, CallerId, Connection, ConnectionId, Creature,
-  CreatureNotStarted, Effects, OwnEffect, OwnEvent, Reply, Rule, Send,
-  ServiceTimerFired, Sessions, Started, Stop, Stopping, Told, WatchEnded,
-  WatchId,
+  type ServiceInput, type Step, Asked, CallerId, Connection, ConnectionId,
+  Creature, CreatureNotStarted, Effects, Input, Now, OwnEffect, OwnEvent, Reply,
+  Rule, Send, ServiceTimerFired, Sessions, Started, Stop, Stopping, TimerId,
+  Told, WatchEnded, WatchId,
 }
+import genesis_prime/step/runtime
 import genesis_prime/store.{AccountId}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/erlang/atom
-import gleam/erlang/process.{type Subject}
+import gleam/erlang/process.{type Pid, type Subject}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/static_supervisor as supervisor
@@ -43,7 +46,9 @@ import gleam/string
 import log_capture
 import mailbox_support
 import mug
+import open_wait
 import owned_test
+import service_shell_creature_test
 import supervisor_children
 
 pub fn a_service_starts_under_its_supervisor_by_its_name_and_its_first_input_is_started_test() -> Nil {
@@ -500,6 +505,7 @@ fn hand_off_child(
       reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
       shutdown_ms:,
       found_at: None,
+      time: service_shell.real_time(),
     ),
   )
 }
@@ -525,6 +531,7 @@ fn unnamed_hand_off() -> service_shell.Settings(
     reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
     shutdown_ms: 1000,
     found_at: None,
+    time: service_shell.real_time(),
   )
 }
 
@@ -627,6 +634,7 @@ pub fn a_service_found_at_an_address_is_found_there_when_its_first_step_sends_te
       ),
       shutdown_ms: 1000,
       found_at: Some(service_shell.FoundAt(scope:, address:)),
+      time: service_shell.real_time(),
     )
   let _starter =
     process.spawn(fn() {
@@ -641,5 +649,187 @@ pub fn a_service_found_at_an_address_is_found_there_when_its_first_step_sends_te
     as "the service is found at its address when its first step sends"
   process.send(looked, Nil)
   let _reason = ask_support.stop_tree(tree)
+  Nil
+}
+
+// ---- the clock and the timers a service is given ----
+
+/// What a service of the clock rule is asked, and what it answers with.
+type Clocked =
+  ServiceInput(clock_rule.Command)
+
+/// A service of the clock rule that takes its time from `time`, tells `sink` each
+/// input it takes that is not an ask, finds a creature's address at `target` and
+/// no other, and starts no creature.
+fn clocked(
+  time time: service_shell.ServiceTime,
+  sink sink: Subject(Clocked),
+  target target: Pid,
+) -> Subject(service.Call(clock_rule.Command, Clocked)) {
+  let assert Ok(started) =
+    service_shell.start_unnamed(service_shell.Settings(
+      rule: Rule(
+        name: "clock",
+        settings: Nil,
+        new: clock_rule.new,
+        step: clock_rule.step,
+      ),
+      reach: service.Reach(
+        locate: fn(address) {
+          case address == service_shell_creature_test.a_creatures_address() {
+            True -> Ok(target)
+            False -> Error(Nil)
+          }
+        },
+        send: fn(_to, message) {
+          process.send(sink, message)
+          Ok(Nil)
+        },
+        start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
+      ),
+      shutdown_ms: 1000,
+      found_at: None,
+      time:,
+    ))
+    as "the service of the clock rule starts"
+  started.data
+}
+
+/// The next input the service told the test of, waited for without a limit of its
+/// own.
+fn took(sink: Subject(Clocked), what what: String) -> Clocked {
+  open_wait.named(what, fn() { process.receive_forever(sink) })
+}
+
+/// Asks the service and waits for its answer, which is the ask as the service took
+/// it, after its command was carried out.
+fn asked(
+  service: Subject(service.Call(clock_rule.Command, Clocked)),
+  command command: clock_rule.Command,
+) -> Clocked {
+  let answers = process.new_subject()
+  let assert Ok(_sent) =
+    service.call_subject(service, command, fn(answer) {
+      process.send(answers, answer)
+    })
+    as "the ask reached the service"
+  open_wait.named("the service to answer", fn() {
+    process.receive_forever(answers)
+  })
+}
+
+/// A clock that always reads this: no real clock does.
+const the_clocks_now = Now(monotonic_ms: 4242, filetime: 133_000_000_000_000_000)
+
+pub fn a_service_given_a_time_takes_each_inputs_now_from_it_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let sink = process.new_subject()
+  let target = process.spawn_unlinked(process.sleep_forever)
+  // Its timers are the operating system's, so a timer of 0 ms fires at once and
+  // the test waits for the firing as an event.
+  let time =
+    service_shell.ServiceTime(
+      clock: fn() { the_clocks_now },
+      schedule: service_shell.real_time().schedule,
+    )
+  let service = clocked(time:, sink:, target:)
+  let assert Ok(pid) = process.subject_owner(service)
+  process.unlink(pid)
+  assert took(sink, what: "the first input")
+    == Input(now: the_clocks_now, event: OwnEvent(Started))
+    as "the first input's Now is the given clock's"
+  assert asked(service, command: clock_rule.Report)
+    == Input(
+      now: the_clocks_now,
+      event: OwnEvent(Asked(caller: CallerId(1), message: clock_rule.Report)),
+    )
+    as "an ask's Now is the given clock's"
+  let assert Ok(_sent) = service.tell_subject(service, clock_rule.Report)
+  assert took(sink, what: "the tell")
+    == Input(
+      now: the_clocks_now,
+      event: OwnEvent(Told(message: clock_rule.Report)),
+    )
+    as "a tell's Now is the given clock's"
+  let _answer =
+    asked(service, command: clock_rule.StartTimer(timer: 1, after_ms: 0))
+  assert took(sink, what: "the timer's firing")
+    == Input(
+      now: the_clocks_now,
+      event: OwnEvent(ServiceTimerFired(timer: TimerId(1))),
+    )
+    as "a timer firing's Now is the given clock's"
+  let _answer =
+    asked(
+      service,
+      command: clock_rule.StartCreatureAs(
+        watch: 5,
+        creature: service_shell_creature_test.a_creature(),
+      ),
+    )
+  let Input(now:, event:) = took(sink, what: "the creature that did not start")
+  let assert OwnEvent(CreatureNotStarted(watch: WatchId(5), ..)) = event
+    as "the creature that did not start comes back as the next input"
+  assert now == the_clocks_now
+    as "the Now of a creature that did not start is the given clock's"
+  let _answer =
+    asked(service, command: clock_rule.WatchAddress(watch: 6, target: Sessions))
+  assert took(sink, what: "the end of a watch of no process")
+    == Input(now: the_clocks_now, event: WatchEnded(watch: WatchId(6)))
+    as "the Now of a watch that found no process is the given clock's"
+  let _answer =
+    asked(
+      service,
+      command: clock_rule.WatchAddress(
+        watch: 7,
+        target: service_shell_creature_test.a_creatures_address(),
+      ),
+    )
+  process.kill(target)
+  assert took(sink, what: "the end of a watched process")
+    == Input(now: the_clocks_now, event: WatchEnded(watch: WatchId(7)))
+    as "the Now of the end of a watched process is the given clock's"
+  process.send_abnormal_exit(pid, runtime.Shutdown)
+  let Input(now:, event:) = took(sink, what: "the stop")
+  let assert Stopping(..) = event as "the parent's exit comes as Stopping"
+  assert now == the_clocks_now as "the Now of the stop is the given clock's"
+}
+
+pub fn a_service_timer_fires_only_when_its_time_has_come_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let time = driven_time.new()
+  let sink = process.new_subject()
+  let service =
+    clocked(time: driven_time.service_time(time), sink:, target: process.self())
+  let _first = took(sink, what: "the first input")
+  let Input(now: started_at, ..) =
+    asked(service, command: clock_rule.StartTimer(timer: 1, after_ms: 1000))
+  driven_time.advance(time:, ms: 999)
+  assert mailbox_support.drain(sink) == []
+    as "a timer started for 1000 ms has not fired at 999 ms"
+  driven_time.advance(time:, ms: 1)
+  let assert [Input(now:, event: OwnEvent(ServiceTimerFired(TimerId(1))))] =
+    mailbox_support.drain(sink)
+    as "the timer fired once at 1000 ms"
+  assert now.monotonic_ms == started_at.monotonic_ms + 1000
+    as "the firing's Now is the time the timer was due"
+}
+
+pub fn a_cancelled_service_timer_never_fires_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let time = driven_time.new()
+  let sink = process.new_subject()
+  let service =
+    clocked(time: driven_time.service_time(time), sink:, target: process.self())
+  let _first = took(sink, what: "the first input")
+  let _answer =
+    asked(service, command: clock_rule.StartTimer(timer: 1, after_ms: 1000))
+  let _answer =
+    asked(service, command: clock_rule.StartTimer(timer: 2, after_ms: 1000))
+  let _answer = asked(service, command: clock_rule.CancelTimer(timer: 1))
+  driven_time.advance(time:, ms: 2000)
+  let assert [Input(event: OwnEvent(ServiceTimerFired(TimerId(2))), ..)] =
+    mailbox_support.drain(sink)
+    as "only the timer that was not cancelled fired, once"
   Nil
 }
