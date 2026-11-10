@@ -250,10 +250,14 @@ pub fn sum(
     [_, _, ..] -> Error(TwoShields)
   })
   Ok(ItemProperties(
-    base_health: sum_in_32_bits(items, fn(item) { item.base_health }),
-    assault_rating: sum_in_32_bits(items, fn(item) { item.assault_rating }),
-    support_rating: sum_in_32_bits(items, fn(item) { item.support_rating }),
-    armor: sum_in_32_bits(items, fn(item) { item.armor }),
+    base_health: sum_in_32_bits(items:, field: fn(item) { item.base_health }),
+    assault_rating: sum_in_32_bits(items:, field: fn(item) {
+      item.assault_rating
+    }),
+    support_rating: sum_in_32_bits(items:, field: fn(item) {
+      item.support_rating
+    }),
+    armor: sum_in_32_bits(items:, field: fn(item) { item.armor }),
     shield:,
     budget: list.fold(items, dict.new(), fn(total, item) {
       dict.combine(total, item.budget, float32.sum)
