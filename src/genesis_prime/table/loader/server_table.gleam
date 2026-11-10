@@ -66,6 +66,7 @@ import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
 import genesis_prime/table/target_group
 import genesis_prime/table/telegraph_damage
+import genesis_prime/table/tradeskill_schematic2
 import genesis_prime/table/tutorial
 import genesis_prime/table/unit_property2
 import genesis_prime/table/world
@@ -119,6 +120,7 @@ import genesis_prime/table/xp_per_level
 ///   objectives and period (genesis_prime/game/quest_log), and the quests a
 ///   prerequisite's quest conditions name (genesis_prime/game/prerequisite).
 /// - TargetGroup: the units a kill objective counts (genesis_prime/game/target_group).
+/// - TradeskillSchematic2: the item a type 33 objective counts (genesis_prime/game/objective).
 /// - Episode, EpisodeQuest and PeriodicQuestGroup, with Quest2 and GameFormula: whether
 ///   a player may accept a quest (genesis_prime/game/quest).
 /// - PathSoldierActivate: whether a type 28 objective is a checklist, which a
@@ -185,6 +187,7 @@ pub fn entries() -> List(store.Entry) {
     spell_phase.entry(),
     target_group.entry(),
     telegraph_damage.entry(),
+    tradeskill_schematic2.entry(),
     unit_property2.entry(),
     world_location2.entry(),
     world_zone.entry(),

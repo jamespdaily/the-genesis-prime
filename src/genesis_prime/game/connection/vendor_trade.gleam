@@ -5,6 +5,7 @@
 
 import genesis_prime/client_connection.{type Answer, Continue, FromStore}
 import genesis_prime/game/connection/frames as connection_frames
+import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/state.{type Session, InWorld, Session} as connection_state
 import genesis_prime/game/vendor_trade.{type Effect as TradeEffect}
 import genesis_prime/game/world_entry
@@ -53,7 +54,8 @@ pub fn answered(
     step.Answer(FromStore(ForItems(answer))) -> {
       let #(entered, effects) = left(answer)
       let session = Session(..session, status: InWorld(holder:, entered:))
-      Continue(session, effects_of(session:, effects:))
+      let #(session, settled) = connection_objective.settled(session:, now:)
+      Continue(session, list.append(effects_of(session:, effects:), settled))
     }
     step.StoppedWaiting ->
       connection_state.stopped(

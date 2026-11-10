@@ -71,8 +71,8 @@ import genesis_prime/table/episode
 import genesis_prime/table/episode_quest
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
-  EpisodeId, GameFormulaId, Item2Id, PeriodicQuestGroupId, PrerequisiteId,
-  Quest2Id,
+  type Item2Id, EpisodeId, GameFormulaId, Item2Id, PeriodicQuestGroupId,
+  PrerequisiteId, Quest2Id,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
@@ -679,6 +679,24 @@ fn reputation(quest quest: Quest2) -> Result(Nil, Stop) {
 /// The locations check 7 counts: equipped, the bags, and 8 and 9 (mask 0x303 of
 /// `0x140552550`).
 const counted_locations = [0, 1, 8, 9]
+
+/// How many of the Item2 the player holds in the counted locations: the sum of the
+/// stacks there (a stack's `stack_count`), which a collect objective takes as its
+/// progress.
+pub fn held_count(
+  items items: List(HeldItem),
+  item2_id item2_id: Item2Id,
+) -> Int {
+  list.fold(items, 0, fn(total, item) {
+    case
+      item.item2_id == item2_id
+      && list.contains(counted_locations, item.location)
+    {
+      True -> total + item.stack_count
+      False -> total
+    }
+  })
+}
 
 /// Check 7: the item the quest needs, held in one of the counted locations. An item
 /// the server does not find there may be in the client's per-item inventory counter,

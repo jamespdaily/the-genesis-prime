@@ -148,6 +148,7 @@ import genesis_prime/game/inventory
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/look
 import genesis_prime/game/movement
+import genesis_prime/game/objective
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/quest_log.{type QuestLog}
@@ -738,7 +739,7 @@ pub fn joined(
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id
           let #(quests, quest_effects) =
-            quest_log_sent(entry:, quests:, numbers:, tables:, now:)
+            quest_log_sent(entry:, quests:, items:, numbers:, tables:, now:)
           Ok(InTheWorld(
             entered: Entered(
               character:,
@@ -897,17 +898,22 @@ fn readiness_of(entry entry: Entry) -> Readiness {
 }
 
 /// 0x35F for a play, with the log that remembers the reset time it carried, and
-/// nothing for the Holocrypt's join.
+/// nothing for the Holocrypt's join. The log is the saved one with each collect
+/// objective set to what the player holds now, since the player may have lost or
+/// gained the items since the save: the client takes the whole log in this one message
+/// (`objective.settle`; no zone is known yet, so no visit counts here).
 fn quest_log_sent(
   entry entry: Entry,
   quests quests: QuestLog,
+  items items: List(store.HeldItem),
   numbers numbers: GameNumbers,
   tables tables: table_store.Tables,
   now now: Now,
 ) -> #(QuestLog, List(Effect)) {
   case entry {
     PlayEntry(..) -> {
-      let #(told, frame) = quest_log.login(log: quests, numbers:, tables:, now:)
+      let held = objective.settle(log: quests, tables:, items:, zones: []).log
+      let #(told, frame) = quest_log.login(log: held, numbers:, tables:, now:)
       #(told, [Send(frame:)])
     }
     HolocryptEntry -> #(quests, [])

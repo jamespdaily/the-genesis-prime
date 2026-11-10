@@ -27,6 +27,7 @@ import genesis_prime/client_connection.{type Answer, Continue, FromStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/character_state
 import genesis_prime/game/connection/look as connection_look
+import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/state.{
@@ -141,12 +142,13 @@ pub fn move_answered(
         inventory.answered(items: entered.items, moving:, answer:)
       let entered = world_entry.Entered(..entered, items:)
       let session = Session(..session, status: InWorld(holder:, entered:))
+      let #(session, settled) = connection_objective.settled(session:, now:)
       regeared(
         session:,
         now:,
         holder:,
         entered:,
-        moved: effects_of(session:, effects:),
+        moved: list.append(effects_of(session:, effects:), settled),
       )
     }
     step.StoppedWaiting ->
