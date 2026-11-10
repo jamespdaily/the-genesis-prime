@@ -22,38 +22,241 @@
 //// | store answered, before `answered` runs | the turn-in is saved; the next login loads it | n/a (frames held) | n/a |
 //// | connection dies while TurningIn | the store finishes or rolls back; the next login loads whichever | n/a | n/a |
 
-import genesis_prime/client_connection
+import genesis_prime/client_connection.{Continue, FromStore}
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/connection/state.{type Session}
+import genesis_prime/game/character_state
+import genesis_prime/game/connection/experience as connection_experience
+import genesis_prime/game/connection/quest as connection_quest
+import genesis_prime/game/connection/state.{
+  type Session, InWorld, Session, TurningIn,
+} as connection_state
+import genesis_prime/game/connection/vendor_trade
+import genesis_prime/game/experience
+import genesis_prime/game/interaction
+import genesis_prime/game/movement
+import genesis_prime/game/player_life
+import genesis_prime/game/quest as quest_rule
+import genesis_prime/game/quest_log
 import genesis_prime/game/quest_turn_in
+import genesis_prime/game/shown
+import genesis_prime/game/vendor_trade as trade_rule
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
+import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/step.{type Now, type Outcome}
+import genesis_prime/store.{ForItems}
+import gleam/list
+import gleam/option.{Some}
 
 /// The client's 0x035D, taken from inside 0x038C with the player in the world: a refusal is
 /// written or logged and the player stays in the world; an accepted turn-in asks the store and
 /// the connection waits in `TurningIn`; a body the client's reader would refuse ends the
 /// connection.
 pub fn turn_in_message(
-  session _session: Session,
-  now _now: Now,
-  holder _holder: Holder,
-  entered _entered: world_entry.Entered,
-  inner _inner: Frame,
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
 ) -> client_connection.Handled(Session) {
-  panic as "shape: #593"
+  let assert Ok(faction) = shown.faction_of(entered.unit.tail.faction_id)
+    as "a character's faction is Exile or Dominion (start_place)"
+  let tables = session.settings.tables
+  case
+    quest_turn_in.take(
+      body: inner.body,
+      asker: connection_quest.asker(session:, entered:),
+      standing: interaction.Player(
+        race_id: entered.character.race_id,
+        faction:,
+        place: movement.place(state: entered.movement),
+      ),
+      picture: entered.shown,
+      progress: experience.Progress(
+        experience: entered.experience,
+        level: connection_state.level_of(entered:),
+      ),
+      currencies: entered.currencies,
+      item_proficiencies: character_state.item_proficiencies(
+        tables:,
+        class_id: entered.character.class_id,
+      ),
+      tables:,
+      now_ms: now.monotonic_ms,
+      unix_seconds: step.unix_milliseconds(now:) / 1000,
+      logged: session.interaction_logged,
+    )
+  {
+    Ok(quest_turn_in.Refused(effects:, logged:)) ->
+      Continue(
+        Session(..session, interaction_logged: logged),
+        vendor_trade.effects_of(session:, effects:),
+      )
+    Ok(quest_turn_in.Asks(turn_in:, effects:, logged:)) -> {
+      let #(advanced, save_sequence) =
+        movement.next_save(state: entered.movement)
+      connection_state.ask(
+        session: Session(
+          ..session,
+          interaction_logged: logged,
+          status: TurningIn(
+            holder:,
+            entered: world_entry.Entered(..entered, movement: advanced),
+            turn_in:,
+          ),
+        ),
+        now:,
+        request: client_connection.AskStore(quest_turn_in.request(
+          turn_in:,
+          account_id: holder.account_id,
+          character_id: entered.character_id,
+          session_epoch: movement.session_epoch(state: entered.movement),
+          save_sequence:,
+          place: movement.place(state: entered.movement),
+          health: Some(player_life.saved_health(life: entered.life)),
+          quests: quest_log.rows(log: turn_in.log, now_ms: now.monotonic_ms),
+        )),
+        before: vendor_trade.effects_of(session:, effects:),
+      )
+    }
+    Error(refusal) ->
+      connection_state.end_for(
+        session:,
+        now:,
+        text: quest_rule.describe_refusal(refusal:),
+      )
+  }
 }
 
 /// The store's answer to the turn-in: the player is in the world again with the quest
 /// Completed and the rewards the answer leaves, and the frames written; a store that failed
 /// ends the connection with reason 8.
 pub fn turn_in_answered(
-  session _session: Session,
-  now _now: Now,
-  holder _holder: Holder,
-  entered _entered: world_entry.Entered,
-  turn_in _turn_in: quest_turn_in.TurnIn,
-  outcome _outcome: Outcome(client_connection.Answer),
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  turn_in turn_in: quest_turn_in.TurnIn,
+  outcome outcome: Outcome(client_connection.Answer),
 ) -> client_connection.Handled(Session) {
-  panic as "shape: #593"
+  let what = quest_turn_in.not_turned_in(turn_in:)
+  case outcome {
+    step.Answer(FromStore(ForItems(answer))) ->
+      case
+        quest_turn_in.answered(
+          turn_in:,
+          items: entered.items,
+          currencies: entered.currencies,
+          answer:,
+        )
+      {
+        quest_turn_in.Saved(items:, currencies:, rewards:, then:) ->
+          saved(
+            session:,
+            now:,
+            holder:,
+            entered: world_entry.Entered(
+              ..entered,
+              items:,
+              currencies:,
+              quests: turn_in.log,
+            ),
+            before: entered.quests,
+            turn_in:,
+            rewards:,
+            then:,
+          )
+        quest_turn_in.NotSaved(effects:) -> {
+          let session = Session(..session, status: InWorld(holder:, entered:))
+          Continue(session, vendor_trade.effects_of(session:, effects:))
+        }
+      }
+    step.StoppedWaiting -> connection_state.stopped(session, now)
+    step.Answer(FromStore(store.Unavailable)) ->
+      lost(session:, now:, text: what <> ": the store is unavailable")
+    step.NotRunning | step.NoAnswerInTime | step.EndedBeforeAnswer ->
+      lost(
+        session:,
+        now:,
+        text: what
+          <> ": "
+          <> client_connection.without_answer(who: "the store", outcome:),
+      )
+    step.Answer(FromStore(store.ForLogin(..)))
+    | step.Answer(FromStore(store.ForSelect(..)))
+    | step.Answer(FromStore(store.ForWorld(..)))
+    | step.Answer(FromStore(store.ForMove(..)))
+    | step.Answer(client_connection.FromHandOff(..))
+    | step.Answer(client_connection.FromSessions(..))
+    | step.Answer(client_connection.FromMap(..)) ->
+      lost(
+        session:,
+        now:,
+        text: what <> ": the answer is none a turn-in asked for",
+      )
+  }
+}
+
+/// The player in the world with what the turn-in left (`entered` holds the items, credits and
+/// quest log after it, `before` the log before it): the item frames, the experience's frames,
+/// then the credits and the quest's state, and the quest deadline's timer moved when the
+/// completed quest was the one running out.
+fn saved(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  before before: quest_log.QuestLog,
+  turn_in turn_in: quest_turn_in.TurnIn,
+  rewards rewards: List(trade_rule.Effect),
+  then then: List(trade_rule.Effect),
+) -> client_connection.Handled(Session) {
+  let session = Session(..session, status: InWorld(holder:, entered:))
+  let timers =
+    list.map(
+      quest_log.deadline_moved(
+        before: quest_log.next_deadline(log: before),
+        after: quest_log.next_deadline(log: entered.quests),
+        now_ms: now.monotonic_ms,
+      ),
+      connection_state.quest_deadline_timer_move,
+    )
+  case
+    connection_experience.gained(
+      session:,
+      now:,
+      entered:,
+      credited: turn_in.credited,
+    )
+  {
+    Continue(session, told) ->
+      Continue(
+        session,
+        list.flatten([
+          vendor_trade.effects_of(session:, effects: rewards),
+          told,
+          vendor_trade.effects_of(session:, effects: then),
+          timers,
+        ]),
+      )
+    client_connection.Asking(..) as ended
+    | client_connection.Done(..) as ended -> ended
+  }
+}
+
+/// The connection ends with reason 8 and asks the store nothing more: the status stays
+/// `TurningIn`, whose request saved the place, and a later save would carry the quest log and
+/// experience from before the turn-in.
+fn lost(
+  session session: Session,
+  now now: Now,
+  text text: String,
+) -> client_connection.Handled(Session) {
+  connection_state.told(
+    session:,
+    now:,
+    reason: LostUserServer,
+    level: step.LogError,
+    text:,
+  )
 }

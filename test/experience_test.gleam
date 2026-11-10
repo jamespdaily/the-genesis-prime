@@ -174,6 +174,22 @@ pub fn crossing_a_level_sends_stat_10_to_the_player_and_its_viewers_test() -> Ni
     as "the next kill weighs the level the player holds now: a creature one level below is 0.75, round(100 x 0.25 x 0.2 x 0.75) = 4, where level 1 would give 5"
 }
 
+pub fn kill_experience_still_sends_kind_two_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The kill's credit goes through the experience a quest's turn-in shares, which sends
+  // kind 3 (CodeEnumExpReason Quest): a kill still sends kind 2 and the creature's unit.
+  // A level 3 Beast (Creature2 73464) for a level 1 player is a gap of 2, the multiplier
+  // 1.2, and XpPerLevel 3 holds 152: round(152 x 0.25 x 0.2 x 1.2) = 9.
+  let #(_, taken) =
+    experience.credited(
+      state: experience.entered_at(level: 1, saved_experience: None),
+      creature_id: 73_464,
+      level: 3,
+    )
+  assert experience.gains(taken:) == [gain_of(experience: 9)]
+    as "0x1ac {9, 0, 0, 2, the creature's unit}"
+}
+
 pub fn the_top_level_gains_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   // The player at level 50 holds the least experience of it, 26,360,090 (XpPerLevel

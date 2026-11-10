@@ -79,6 +79,7 @@
 //// - **The supervisor stopping.** Its workers get its shutdown timeout to end;
 ////   an asker waiting on one gets `EndedBeforeAnswer`.
 
+import genesis_prime/game/currency
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/login/guid
 import genesis_prime/migration.{
@@ -101,7 +102,8 @@ import genesis_prime/store.{
   NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
   NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
   PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
-  SaveRefused, Select, SellToVendor, SplitItem, TurnInQuest, Unavailable, World,
+  SaveRefused, Select, SellToVendor, SplitItem, TurnInQuest, TurnedIn,
+  Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{type Item2Id, ClassId, Item2Id, RaceId}
@@ -448,24 +450,132 @@ fn items(
 
 /// A quest turned in: save_place.sql and then turn_in_rewards.sql in the one transaction
 /// of the character's row lock, answered with `TurnedIn`, the credits held after and the
-/// stacks made, when both changed their rows; `ItemsNotSaved` when either changed nothing,
-/// which rolls the other back.
+/// stacks made in the order of the request, when both changed their rows; `ItemsNotSaved`
+/// when either changed nothing, which rolls the other back; `SaveRefused` when a check or
+/// the unique key of a table refused a row, which rolls the transaction back too.
 fn turn_in_quest(
-  pool _pool: pog.Connection,
-  account_id _account_id: store.AccountId,
-  character_id _character_id: store.CharacterId,
-  session_epoch _session_epoch: store.SessionEpoch,
-  save_sequence _save_sequence: Int,
-  place _place: Place,
-  health _health: Option(Int),
-  experience _experience: Int,
-  level _level: Int,
-  quests _quests: List(store.QuestRow),
-  credits_held _credits_held: Int,
-  credits_after _credits_after: Int,
-  placed _placed: List(store.Placed),
+  pool pool: pog.Connection,
+  account_id account_id: store.AccountId,
+  character_id character_id: store.CharacterId,
+  session_epoch session_epoch: store.SessionEpoch,
+  save_sequence save_sequence: Int,
+  place place: Place,
+  health health: Option(Int),
+  experience experience: Int,
+  level level: Int,
+  quests quests: List(store.QuestRow),
+  credits_held credits_held: Int,
+  credits_after credits_after: Int,
+  placed placed: List(store.Placed),
 ) -> Result(ItemsAnswer, Nil) {
-  panic as "shape: #593"
+  let save =
+    SavePlace(
+      account_id:,
+      character_id:,
+      session_epoch:,
+      save_sequence:,
+      place:,
+      health:,
+      experience:,
+      level:,
+      quests:,
+    )
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  let grown =
+    list.flat_map(placed, fn(one) {
+      list.map(one.grow, fn(growth) { #(one.item2_id, growth) })
+    })
+  let made =
+    list.flat_map(placed, fn(one) {
+      list.map(one.make, fn(stack) { #(one.item2_id, stack) })
+    })
+  let item2_number = fn(item2_id: Item2Id) {
+    let Item2Id(number) = item2_id
+    number
+  }
+  let transaction = fn() {
+    pog.transaction(pool, fn(connection) {
+      use _ <- result.try(
+        sql.lock_character_for_save(connection, character_id, account_id)
+        |> result.map_error(Failed),
+      )
+      use saved <- result.try(
+        save_place(connection, save) |> result.map_error(Failed),
+      )
+      use <- bool.guard(saved.rows == [], Error(Unchanged))
+      use rewarded <- result.try(
+        sql.turn_in_rewards(
+          connection,
+          character_id,
+          account_id,
+          store.session_epoch_number(session_epoch),
+          currency.credits_type,
+          credits_held,
+          credits_after,
+          list.map(grown, fn(one) { { one.1 }.item_guid }),
+          list.map(grown, fn(one) { item2_number(one.0) }),
+          list.map(grown, fn(one) { { one.1 }.held_count }),
+          list.map(grown, fn(one) { { one.1 }.new_count }),
+          list.map(made, fn(one) { item2_number(one.0) }),
+          list.map(made, fn(one) { { one.1 }.location }),
+          list.map(made, fn(one) { { one.1 }.bag_index }),
+          list.map(made, fn(one) { { one.1 }.stack_count }),
+        )
+        |> result.map_error(Failed),
+      )
+      case rewarded.rows {
+        [] -> Error(Unchanged)
+        _ -> Ok(rewarded)
+      }
+    })
+  }
+  attempt(fn() {
+    case transaction() {
+      Ok(returned) -> Ok(returned)
+      Error(pog.TransactionQueryError(error))
+      | Error(pog.TransactionRolledBack(Failed(error))) -> Error(error)
+      Error(pog.TransactionRolledBack(Unchanged)) ->
+        Ok(pog.Returned(count: 0, rows: []))
+    }
+  })
+  |> items_answer(saved: fn(rows) {
+    let assert [first, ..] = rows as "the statement returns a row or none"
+    TurnedIn(
+      credits: first.amount,
+      made: list.filter_map(rows, fn(row) {
+        case
+          row.item_guid,
+          row.item2_id,
+          row.location,
+          row.bag_index,
+          row.stack_count
+        {
+          Some(item_guid),
+            Some(item2_id),
+            Some(location),
+            Some(bag_index),
+            Some(stack_count)
+          ->
+            Ok(HeldItem(
+              item_guid:,
+              item2_id: Item2Id(item2_id),
+              location:,
+              bag_index:,
+              stack_count:,
+            ))
+          _, _, _, _, _ -> Error(Nil)
+        }
+      }),
+    )
+  })
+}
+
+/// Why a turn-in's transaction rolled back: the database failed a statement, or a
+/// statement changed nothing.
+type TurnInFailure {
+  Failed(pog.QueryError)
+  Unchanged
 }
 
 /// A sale: sell_to_vendor.sql, answered with `Sold` and the amount held of the currency
@@ -810,44 +920,10 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
   let SavePlace(
     account_id: AccountId(account_id),
     character_id: CharacterId(character_id),
-    session_epoch:,
-    save_sequence:,
-    place:,
-    health:,
-    experience:,
-    level:,
-    quests:,
+    ..,
   ) = request
-  let facing = start_place.facing(place)
-  // squirrel cannot type a parameter that may be NULL (save_place.sql): the
-  // health goes as a number and whether to keep it.
-  let #(health, keeps_health) = case health {
-    Some(health) -> #(health, True)
-    None -> #(0, False)
-  }
   case
-    locked(pool:, account_id:, character_id:, statement: fn(connection) {
-      sql.save_place(
-        connection,
-        character_id,
-        account_id,
-        store.session_epoch_number(session_epoch),
-        start_place.world_id(place),
-        start_place.world_zone_id(place),
-        start_place.x(place),
-        start_place.y(place),
-        start_place.z(place),
-        facing.yaw,
-        facing.pitch,
-        facing.roll,
-        save_sequence,
-        health,
-        keeps_health,
-        experience,
-        level,
-        quests_json(quests),
-      )
-    })
+    locked(pool:, account_id:, character_id:, statement: save_place(_, request))
   {
     Ok([_]) -> Ok(PlaceSaved)
     Ok([]) -> Ok(NothingSaved)
@@ -866,6 +942,52 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
       }
     Error(Unexpected(error:)) -> exit_with(error)
   }
+}
+
+/// save_place.sql for the save on the connection of a transaction that holds the
+/// character's row lock.
+fn save_place(
+  connection: pog.Connection,
+  request: MoveRequest,
+) -> Result(pog.Returned(sql.SavePlaceRow), pog.QueryError) {
+  let SavePlace(
+    account_id: AccountId(account_id),
+    character_id: CharacterId(character_id),
+    session_epoch:,
+    save_sequence:,
+    place:,
+    health:,
+    experience:,
+    level:,
+    quests:,
+  ) = request
+  let facing = start_place.facing(place)
+  // squirrel cannot type a parameter that may be NULL (save_place.sql): the
+  // health goes as a number and whether to keep it.
+  let #(health, keeps_health) = case health {
+    Some(health) -> #(health, True)
+    None -> #(0, False)
+  }
+  sql.save_place(
+    connection,
+    character_id,
+    account_id,
+    store.session_epoch_number(session_epoch),
+    start_place.world_id(place),
+    start_place.world_zone_id(place),
+    start_place.x(place),
+    start_place.y(place),
+    start_place.z(place),
+    facing.yaw,
+    facing.pitch,
+    facing.roll,
+    save_sequence,
+    health,
+    keeps_health,
+    experience,
+    level,
+    quests_json(quests),
+  )
 }
 
 /// The account's characters in creation order; an account with none, or no

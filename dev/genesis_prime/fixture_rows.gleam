@@ -536,6 +536,14 @@ type UntypedReference {
 
 const untyped_references = [
   UntypedReference(
+    "Quest2Reward",
+    [#("quest2RewardTypeId", 1)],
+    [],
+    "objectId",
+    "Item2",
+    "quest_turn_in.take (a type 1 reward's objectId is the Item2 it gives)",
+  ),
+  UntypedReference(
     "Quest2",
     [],
     ["objective0"],

@@ -835,7 +835,7 @@ fn contract(quest quest: Quest2) -> Result(Nil, Stop) {
 }
 
 /// A sentence that says which row a check could not read, for the log.
-fn describe(error error: CheckError) -> String {
+pub fn describe(error error: CheckError) -> String {
   case error {
     PrerequisiteNotLoaded(id:, error:) ->
       equip_requirement.describe(error: equip_requirement.PrerequisiteNotLoaded(

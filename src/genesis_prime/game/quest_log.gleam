@@ -857,11 +857,14 @@ pub fn accept(
 /// The log after the player turns the quest in: a Completed entry at `at_seconds` (Unix
 /// seconds) in place of the active one, which leaves the active list.
 pub fn complete(
-  log _log: QuestLog,
-  quest_id _quest_id: Int,
-  at_seconds _at_seconds: Int,
+  log log: QuestLog,
+  quest_id quest_id: Int,
+  at_seconds at_seconds: Int,
 ) -> QuestLog {
-  panic as "shape: #593"
+  QuestLog(
+    ..log,
+    entries: dict.insert(log.entries, quest_id, Completed(at: at_seconds)),
+  )
 }
 
 /// The log after the player retries a Botched quest: as `accept`, with the quest's

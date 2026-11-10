@@ -226,10 +226,11 @@ pub type Status {
   Selling(holder: Holder, entered: world_entry.Entered, sale: vendor_sale.Sale)
   /// The player is in the world and the store is asked to complete the quest the player's
   /// 0x35D turned in and to give its rewards (`turn_in`, genesis_prime/game/quest_turn_in),
-  /// whose answer is awaited with the client's frames held. The player's place is not saved
-  /// yet, so a connection that ends in this status saves it as one in `InWorld` does; the
-  /// quest log, items, credits and experience in `entered` are the ones before the turn-in,
-  /// which the answer replaces.
+  /// whose answer is awaited with the client's frames held. The store's request saves the
+  /// place with the turn-in, so a connection that ends in this status saves nothing more (a
+  /// later save would carry the quest log and experience from before the turn-in); the quest
+  /// log, items, credits and experience in `entered` are the ones before the turn-in, which
+  /// the answer replaces.
   TurningIn(
     holder: Holder,
     entered: world_entry.Entered,
@@ -674,8 +675,9 @@ pub fn end_with(
 /// The player the connection holds in the world and the holder it plays for,
 /// when its place is to be saved by an end: in the world, or claiming its
 /// account again with the player in the world. A connection already in
-/// `SavingPlace` holds the player too, but its save is out, so its end saves
-/// nothing more; in `LeavingMap` the place is already saved.
+/// `SavingPlace` or `TurningIn` holds the player too, but its save is out (the
+/// turn-in's transaction saves the place), so its end saves nothing more; in
+/// `LeavingMap` the place is already saved.
 pub fn holds_a_player(
   status: Status,
 ) -> Option(#(Holder, world_entry.Entered)) {
@@ -685,11 +687,11 @@ pub fn holds_a_player(
     | MovingItem(holder:, entered:, ..)
     | Buying(holder:, entered:, ..)
     | Selling(holder:, entered:, ..)
-    | TurningIn(holder:, entered:, ..)
     | ClaimingSession(holder:, resume: ResumeWorld(entered:), ..)
     | WaitingToClaim(holder:, resume: ResumeWorld(entered:), ..) ->
       Some(#(holder, entered))
-    SavingPlace(..)
+    TurningIn(..)
+    | SavingPlace(..)
     | LeavingMap(..)
     | ClaimingSession(resume: ResumeSelect, ..)
     | WaitingToClaim(resume: ResumeSelect, ..)

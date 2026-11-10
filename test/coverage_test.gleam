@@ -36,6 +36,7 @@ import genesis_prime/table/item2
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file.{type Schema}
 import genesis_prime/table/prerequisite
+import genesis_prime/table/quest2_reward
 import genesis_prime/table/quest_objective
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
@@ -228,6 +229,7 @@ fn schema_of(table_name: String) -> Schema {
   case table_name {
     "Prerequisite" -> prerequisite.schema
     "QuestObjective" -> quest_objective.schema
+    "Quest2Reward" -> quest2_reward.schema
     "Spell4Effects" -> spell4_effects.schema
     "Creature2" -> creature2.schema
     "Spell4" -> spell4.schema
@@ -240,12 +242,13 @@ pub fn every_engine_declares_its_area_and_the_type_columns_its_table_has_test() 
   use <- unitest.tags(["dev_tool", "coverage"])
   let declared = engine.all()
   assert list.map(declared, fn(declaration) { declaration.area_issue })
-    == [47, 48, 49, 50, 51, 437]
-    as "Milestone 2's area issues: prerequisites 47, quest objectives 48, spell effects 49, unit types 50, messages 51; then the spend-scaled costs' issue 437"
+    == [47, 48, 334, 49, 50, 51, 437]
+    as "Milestone 2's area issues: prerequisites 47, quest objectives 48, then the quest rewards' 334, spell effects 49, unit types 50, messages 51; then the spend-scaled costs' issue 437"
   assert list.map(declared, fn(declaration) { declaration.name })
     == [
       "Prerequisites",
       "Quest objectives",
+      "Quest rewards",
       "Spell effects",
       "Unit types",
       "Client message routing",
@@ -276,6 +279,7 @@ pub fn every_engine_declares_its_area_and_the_type_columns_its_table_has_test() 
         "prerequisiteTypeId2",
       ]),
       #("QuestObjective", ["type"]),
+      #("Quest2Reward", ["quest2RewardTypeId"]),
       #("Spell4Effects", ["effectType"]),
       #("Creature2", ["CreationTypeEnum"]),
       #("Spell4", ["innateCostEMMId0", "innateCostEMMId1"]),
@@ -519,11 +523,11 @@ pub fn the_routing_engine_handles_the_ids_the_rules_and_the_shared_connection_co
       0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x012B, 0x0149, 0x015A, 0x0166, 0x0167,
       0x016F, 0x017D, 0x0180, 0x0182, 0x018F, 0x01C3, 0x01D4, 0x023C, 0x023D,
       0x023E, 0x023F, 0x0240, 0x0241, 0x0244, 0x025B, 0x025C, 0x0269, 0x0352,
-      0x0356, 0x035A, 0x035B, 0x035E, 0x0360, 0x0364, 0x0365, 0x038C, 0x03EC,
-      0x03ED, 0x04DB, 0x0570, 0x058F, 0x0592, 0x0637, 0x063A, 0x063B, 0x0786,
-      0x07DD, 0x07E0, 0x07EA, 0x0801,
+      0x0356, 0x035A, 0x035B, 0x035D, 0x035E, 0x0360, 0x0364, 0x0365, 0x038C,
+      0x03EC, 0x03ED, 0x04DB, 0x0570, 0x058F, 0x0592, 0x0637, 0x063A, 0x063B,
+      0x0786, 0x07DD, 0x07E0, 0x07EA, 0x0801,
     ]
-    as "the network layer's ids 0, 1 and 2 and the wrapper 0x0244 (fact 0x140332580, fact 0x140332920), the auth rule's 0x0592, and the game rule's 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, 0x038C and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4, the cast messages 0x009A, 0x0097, 0x04DB and 0x0801 (opcode.0x9a, opcode.0x97, opcode.0x4db, opcode.0x801), the choice of how to come back, 0x015A (opcode.0x15a), the choice of an innate, 0x016F (opcode.0x16f), the interaction messages 0x07EA and 0x0356 (opcode.0x7ea, opcode.0x356), the move of a held item, 0x0182 (opcode.0x182), the split of a stack, 0x017D (opcode.0x17d), the destroy of a held item, 0x0149 (opcode.0x149), the buy from a vendor and the buy back of a sold item, 0x00BE and 0x00BB (opcode.0xbe, opcode.0xbb), the accept and retry of a quest, 0x035B and 0x0365 (opcode.0x35b, opcode.0x365), the abandon, mention, ignore and track of a quest, 0x035A, 0x0360, 0x035E and 0x0364 (opcode.0x35a, opcode.0x360, opcode.0x35e, opcode.0x364), the sale to a vendor, 0x0166, and the sale of junk, 0x0167 (opcode.0x166, opcode.0x167), and the thirteen reports and window requests the game rule takes and drops (the opcode records of 0x023C, 0x0240, 0x023F, 0x023E, 0x023D, 0x0241, 0x012B, 0x0180, 0x03ED, 0x03EC, 0x0269, 0x018F and 0x0570)"
+    as "the network layer's ids 0, 1 and 2 and the wrapper 0x0244 (fact 0x140332580, fact 0x140332920), the auth rule's 0x0592, and the game rule's 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, 0x038C and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4, the cast messages 0x009A, 0x0097, 0x04DB and 0x0801 (opcode.0x9a, opcode.0x97, opcode.0x4db, opcode.0x801), the choice of how to come back, 0x015A (opcode.0x15a), the choice of an innate, 0x016F (opcode.0x16f), the interaction messages 0x07EA and 0x0356 (opcode.0x7ea, opcode.0x356), the move of a held item, 0x0182 (opcode.0x182), the split of a stack, 0x017D (opcode.0x17d), the destroy of a held item, 0x0149 (opcode.0x149), the buy from a vendor and the buy back of a sold item, 0x00BE and 0x00BB (opcode.0xbe, opcode.0xbb), the accept and retry of a quest, 0x035B and 0x0365 (opcode.0x35b, opcode.0x365), the turn-in of a quest, 0x035D (opcode.0x35d), the abandon, mention, ignore and track of a quest, 0x035A, 0x0360, 0x035E and 0x0364 (opcode.0x35a, opcode.0x360, opcode.0x35e, opcode.0x364), the sale to a vendor, 0x0166, and the sale of junk, 0x0167 (opcode.0x166, opcode.0x167), and the thirteen reports and window requests the game rule takes and drops (the opcode records of 0x023C, 0x0240, 0x023F, 0x023E, 0x023D, 0x0241, 0x012B, 0x0180, 0x03ED, 0x03EC, 0x0269, 0x018F and 0x0570)"
   let assert Measured(types:, breaches:, ..) =
     measurement.from_values(
       engine: routing,
@@ -533,8 +537,8 @@ pub fn the_routing_engine_handles_the_ids_the_rules_and_the_shared_connection_co
     as "the routing engine is measured over the ids the client sends"
   assert breaches == [] as "every handled id is one the client sends"
   assert list.length(list.filter(types, fn(line) { line.status == Handled }))
-    == 51
-    as "the 58 ids above are handled among the 352, and 7 of them (0x3ED, 0x3EC, 0x269, 0x18F, 0x180, 0x570, 0x12B) are handled with a stated gap, so 51 are marked handled without one"
+    == 52
+    as "the 59 ids above are handled among the 352, and 7 of them (0x3ED, 0x3EC, 0x269, 0x18F, 0x180, 0x570, 0x12B) are handled with a stated gap, so 52 are marked handled without one"
 }
 
 pub fn a_handled_type_with_unread_rows_and_no_stated_gap_stops_the_measure_test() -> Nil {

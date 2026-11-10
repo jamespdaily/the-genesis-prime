@@ -22,6 +22,7 @@ import genesis_prime/login/auth_connection
 import genesis_prime/table/creature2
 import genesis_prime/table/loader/store
 import genesis_prime/table/prerequisite
+import genesis_prime/table/quest2_reward
 import genesis_prime/table/quest_objective
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
@@ -184,6 +185,47 @@ fn quest_objectives() -> EngineDeclaration {
     unread_rows: no_unread_rows,
     unread_starting_rows: no_unread_starting_rows,
     missing: [],
+    starting_abilities: None,
+  )
+}
+
+/// The quest reward engine: the `quest2RewardTypeId` column of Quest2Reward, the client's
+/// own column name (`game_table.schema`). The client reads the type when it splits a quest's
+/// rewards (`0x140551ac0`). Items (type 1) and credits (type 3, currency 1) are given by the
+/// turn-in (genesis_prime/game/quest_turn_in).
+fn quest_rewards() -> EngineDeclaration {
+  let not_given = fn(type_number, reason) {
+    Missing(type_number:, reason:, fact_key: "Quest2Reward.quest2RewardTypeId")
+  }
+  EngineDeclaration(
+    name: "Quest rewards",
+    area_issue: 334,
+    source: TableColumns(
+      table: "Quest2Reward",
+      columns: ["quest2RewardTypeId"],
+      evidence: "the client's column name in Quest2Reward.tbl (game_table.schema); the client reads the type in the reward split of 0x140551ac0",
+      values: fn(tables) {
+        list.map(quest2_reward.all(tables), fn(row) {
+          row.quest2_reward_type_id
+        })
+      },
+    ),
+    handled: Listed(ids: [1, 3]),
+    partial: [
+      not_given(
+        3,
+        "rows of a currency but credits (objectId other than 1), which no turn-in gives (#675)",
+      ),
+    ],
+    unread_rows: no_unread_rows,
+    unread_starting_rows: no_unread_starting_rows,
+    missing: [
+      not_given(2, "a reputation reward is not given (#674)"),
+      not_given(4, "a tradeskill experience reward is not given (#677)"),
+      not_given(5, "a new tradeskill is not given (#677)"),
+      not_given(7, "an account currency reward is not given (#675)"),
+      not_given(10, "a rotation essence reward is not given (#676)"),
+    ],
     starting_abilities: None,
   )
 }
@@ -496,6 +538,7 @@ pub fn all() -> List(EngineDeclaration) {
   [
     prerequisites(),
     quest_objectives(),
+    quest_rewards(),
     spell_effects(),
     unit_types(),
     messages(),

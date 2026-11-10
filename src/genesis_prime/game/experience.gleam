@@ -69,7 +69,7 @@ pub type Progress {
 }
 
 /// The source kind a kill's 0x1ac carries, KillCreature (`CombatFloater.CodeEnumExpReason`).
-pub const kill_kind = 2
+const kill_kind = 2
 
 /// The source kind a quest's 0x1ac carries, Quest (`CombatFloater.CodeEnumExpReason`).
 pub const quest_kind = 3

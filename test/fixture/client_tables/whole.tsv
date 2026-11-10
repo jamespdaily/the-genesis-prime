@@ -21,9 +21,11 @@ Item2Family
 Item2Type
 ItemProficiency
 ItemSlot
+LevelDifferentialAttribute
 PathSoldierActivate
 PeriodicQuestGroup
 PositionalRequirement
+Quest2Difficulty
 Race
 RewardPropertyPremiumModifier
 Spell4AoeTargetConstraints

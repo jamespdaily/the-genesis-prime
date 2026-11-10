@@ -20,7 +20,7 @@
 ////   server has; the first that fails answers:
 ////   1. a body the client's reader refuses ends the connection (`NotDecoded`)
 ////   2. the quest has no Quest2 row, or a row the client's quest reader refuses
-////   3. the log's state for it is not Achieved (4), unless the quest auto-completes (Quest2
+////   3. the log's state for it is not Achieved (2), unless the quest auto-completes (Quest2
 ////      flags bit 0): it is then taken as `quest.can_accept` takes an accept with the log-full
 ////      bit masked, and goes from no entry, or a Known one, straight to Completed
 ////   4. the receiver: a shown creature alive, not Hostile to the player, within reach, whose
@@ -41,8 +41,8 @@
 ////   override when above 0, else the quest's level raised to GameFormula 530's first value
 ////   times the cash multiplier, plus a half, truncated, at most the currency's cap
 ////   (`currency.cap`). Reward kinds the server does not build yet (reputation, other
-////   currencies, account currency, rotation essence) are logged once per kind and the turn-in
-////   goes on.
+////   currencies, account currency, rotation essence, tradeskill kinds, contracts) are logged
+////   once per kind and the turn-in goes on.
 //// - **Where the items go** is `inventory.placed`: the stacks below the limit first, then the
 ////   lowest empty usable slots, each Item2 against the items as the one before it left them.
 //// - **The save** is the whole turn-in in the one transaction of the store's request: the
@@ -56,29 +56,107 @@
 ////
 //// | Point | What happens |
 //// |---|---|
-//// | the quest's Quest2, Quest2Reward, Item2 or CommunicatorMessages row a check reads is missing | the connection ends |
+//// | the quest's Quest2, Quest2Reward or Item2 row a check reads is missing | a logged refusal |
 //// | the store changes nothing or refuses a place | a warning, nothing sent, the quest stays Achieved |
 //// | the connection ends while the store works | the store finishes or rolls back; the next login loads whichever |
 //// | the same message while the store works | held, then taken against the new log |
 
+import genesis_prime/client_connection
+import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/currency.{type Currencies}
+import genesis_prime/game/equip_requirement.{Wearer}
 import genesis_prime/game/experience
+import genesis_prime/game/interaction
+import genesis_prime/game/inventory
+import genesis_prime/game/item_property
 import genesis_prime/game/quest
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shown.{type Picture}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/vendor_trade.{type Effect}
+import genesis_prime/game/vendor_trade.{type Effect, Log, Refuse, Send}
 import genesis_prime/message/quest_turn_in as quest_turn_in_message
+import genesis_prime/step.{LogError, LogWarning}
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
-  type SessionEpoch,
+  type SessionEpoch, HeldItem, ItemsNotSaved, SaveRefused,
 }
+import genesis_prime/table/game_formula
+import genesis_prime/table/id.{
+  type Item2Id, GameFormulaId, Item2Id, LevelDifferentialAttributeId, Quest2Id,
+  XpPerLevelId,
+}
+import genesis_prime/table/level_differential_attribute
+import genesis_prime/table/loader/formula_requirement
 import genesis_prime/table/loader/store as table_store
-import gleam/option.{type Option}
+import genesis_prime/table/quest2.{type Quest2}
+import genesis_prime/table/quest2_difficulty
+import genesis_prime/table/quest2_reward.{type Quest2Reward}
+import genesis_prime/table/xp_per_level
+import genesis_prime/world_map/spawn
+import gleam/bool
+import gleam/float
+import gleam/int
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/set.{type Set}
 
 /// The id of the message this rule takes.
 pub const message_id = quest_turn_in_message.message_id
+
+/// The GameFormula row whose first float is the exponent of a quest's credits
+/// (`0x1405542b0`).
+const credits_formula = 530
+
+/// What the tables must hold at load for the credits: GameFormula 530.
+pub fn requirements() -> List(table_store.Requirement) {
+  [
+    formula_requirement.row_present(
+      from_table: "the server's quest credits",
+      id: credits_formula,
+    ),
+  ]
+}
+
+/// The checks of the client's auto-complete turn-in (`0x140553030`: `mov edx, 0xffffdfff` at
+/// `0x1405530d9`): every check of an accept but the one for a full log (bit 13).
+const auto_complete_checks = 0xffff_dfff
+
+/// Quest2 flags bit 0: the quest completes without being taken.
+const auto_complete_flag = 1
+
+/// Quest2 flags bit 19: a quest of the contracts manager.
+const contract_flag = 0x80000
+
+/// Quest2Reward flags bit 0: the row is a choice.
+const choice_flag = 1
+
+/// Quest2RewardType 1, an item.
+const item_type = 1
+
+/// Quest2RewardType 2, reputation.
+const reputation_type = 2
+
+/// Quest2RewardType 3, money: the credits when its object is currency 1.
+const money_type = 3
+
+/// Quest2RewardType 4, tradeskill experience.
+const tradeskill_experience_type = 4
+
+/// Quest2RewardType 5, a new tradeskill.
+const tradeskill_grant_type = 5
+
+/// Quest2RewardType 7, an account currency.
+const account_currency_type = 7
+
+/// Quest2RewardType 10, rotation essence.
+const rotation_essence_type = 10
+
+/// The client's code for a turn-in the inventory has no room for (Item_InventoryFull).
+const inventory_full = 27
+
+/// The reason the turn-in's items are shown for (Item.CodeEnumItemUpdateReason 8, Quest).
+const quest_reason = 8
 
 /// A turn-in the store is asked to save: the quest, the log with it Completed, the
 /// experience and level after the gain, the credits held and the credits after the reward
@@ -117,51 +195,681 @@ pub type Answered {
   NotSaved(effects: List(Effect))
 }
 
+/// Why a turn-in does not go on: a check broken, logged once for its `key`, or no room
+/// for an item, the one refusal the player is told of.
+type Stop {
+  Declined(key: String, text: String)
+  NoRoom
+}
+
 /// What the client's 0x035D is answered with: a refusal, or the turn-in to ask the store to
-/// save. `Error` ends the connection: a body the client's reader refuses, or a table row a
-/// check reads that is missing.
+/// save. `Error` ends the connection: a body the client's reader refuses.
 pub fn take(
-  body _body: BitArray,
-  asker _asker: quest.Asker,
-  standing _standing: quest.Standing,
-  picture _picture: Picture,
-  progress _progress: experience.Progress,
-  currencies _currencies: Currencies,
-  item_proficiencies _item_proficiencies: Int,
-  tables _tables: table_store.Tables,
-  now_ms _now_ms: Int,
-  unix_seconds _unix_seconds: Int,
-  logged _logged: Set(String),
+  body body: BitArray,
+  asker asker: quest.Asker,
+  standing standing: quest.Standing,
+  picture picture: Picture,
+  progress progress: experience.Progress,
+  currencies currencies: Currencies,
+  item_proficiencies item_proficiencies: Int,
+  tables tables: table_store.Tables,
+  now_ms now_ms: Int,
+  unix_seconds unix_seconds: Int,
+  logged logged: Set(String),
 ) -> Result(Taken, quest.Refusal) {
-  panic as "shape: #593"
+  use message <- result.map(
+    quest_turn_in_message.decode(body)
+    |> client_connection.decoded(message_id:)
+    |> result.map_error(quest.NotDecoded),
+  )
+  case
+    checked(
+      message:,
+      asker:,
+      standing:,
+      picture:,
+      progress:,
+      currencies:,
+      item_proficiencies:,
+      tables:,
+      now_ms:,
+      unix_seconds:,
+    )
+  {
+    Error(Declined(key:, text:)) -> {
+      let #(level, logged) = interaction.log_level(key:, logged:)
+      Refused(effects: [Log(level:, text:)], logged:)
+    }
+    Error(NoRoom) -> Refused(effects: [Refuse(code: inventory_full)], logged:)
+    Ok(#(turn_in, left_out)) -> {
+      let #(lines, logged) =
+        list.fold(left_out, #([], logged), fn(so_far, kind) {
+          let #(lines, logged) = so_far
+          let #(level, logged) = interaction.log_level(key: kind.0, logged:)
+          #([Log(level:, text: kind.1), ..lines], logged)
+        })
+      Asks(turn_in:, effects: list.reverse(lines), logged:)
+    }
+  }
 }
 
-/// The store's request for the turn-in, numbered `save_sequence` and carrying the
-/// character's place and `health`.
+/// The turn-in the checks let through, with the reward kinds it leaves out (each a log key
+/// and its line), or the first check that fails.
+fn checked(
+  message message: quest_turn_in_message.QuestTurnIn,
+  asker asker: quest.Asker,
+  standing standing: quest.Standing,
+  picture picture: Picture,
+  progress progress: experience.Progress,
+  currencies currencies: Currencies,
+  item_proficiencies item_proficiencies: Int,
+  tables tables: table_store.Tables,
+  now_ms now_ms: Int,
+  unix_seconds unix_seconds: Int,
+) -> Result(#(TurnIn, List(#(String, String))), Stop) {
+  let quest_id = message.quest_id
+  let turning = "0x035D turns in quest " <> int.to_string(quest_id)
+  use known <- result.try(
+    quest_log.quest_of(tables:, id: quest_id)
+    |> result.map_error(fn(error) {
+      case error {
+        quest_log.NoQuestRow ->
+          Declined(
+            key: "unknown quest",
+            text: turning <> ", which has no Quest2 row",
+          )
+        quest_log.NoObjectiveRow(objective_id:) ->
+          Declined(
+            key: "quest row",
+            text: turning
+              <> ", whose QuestObjective row "
+              <> int.to_string(objective_id)
+              <> " is missing",
+          )
+      }
+    }),
+  )
+  let assert Ok(row) = quest2.get(tables:, id: Quest2Id(quest_id))
+    as "a quest the client's rows read has its Quest2 row"
+  use log <- result.try(state_allows(
+    turning:,
+    row:,
+    state: quest_log.state(log: asker.log, quest: known),
+    asker:,
+    tables:,
+    unix_seconds:,
+  ))
+  use <- bool.guard(
+    when: message.by_communicator != 0,
+    return: Error(Declined(
+      key: "by communicator",
+      text: turning
+        <> " by the communicator, whose turn-in is not built yet (#673)",
+    )),
+  )
+  use <- bool.guard(
+    when: !quest.in_reach(
+      quest_id:,
+      quest_ids: spawn.received_quest_ids,
+      standing:,
+      picture:,
+      tables:,
+      now_ms:,
+    ),
+    return: Error(Declined(
+      key: "no receiver",
+      text: turning
+        <> " with no shown creature that receives it alive, not Hostile and within reach",
+    )),
+  )
+  let rows =
+    list.filter(quest2_reward.all(tables), fn(reward) {
+      reward.quest2_id == quest_id
+    })
+  let #(choices, fixed) =
+    list.partition(rows, fn(reward) {
+      int.bitwise_and(reward.flags, choice_flag) != 0
+    })
+  use chosen <- result.try(chosen_reward(
+    turning:,
+    reward_id: message.reward_id,
+    choices:,
+    asker:,
+    progress:,
+    item_proficiencies:,
+    tables:,
+  ))
+  use <- bool.guard(
+    when: list.any(fixed, fn(reward) {
+      reward.quest2_reward_type_id == tradeskill_experience_type
+    }),
+    return: Error(Declined(
+      key: "tradeskill reward",
+      text: turning
+        <> ", which has a fixed tradeskill experience reward the client refuses for a player with no learned tradeskill",
+    )),
+  )
+  let given =
+    list.append(fixed, option.unwrap(option.map(chosen, fn(row) { [row] }), []))
+  use placed <- result.try(place_items(turning:, given:, asker:, tables:))
+  let credits_held =
+    currency.held(currencies:, currency_type_id: currency.credits_type)
+  let credits_after =
+    currency.added(
+      held: credits_held,
+      paid: credits_paid(row:, given:, tables:),
+      cap: currency.cap(tables:, currency_type_id: currency.credits_type),
+    )
+  let credited =
+    experience.gained(
+      progress:,
+      gain: experience_paid(row:, level: progress.level, tables:),
+      kind: experience.quest_kind,
+      unit_id: 0,
+      tables:,
+    )
+  Ok(#(
+    TurnIn(quest_id:, log:, credited:, credits_held:, credits_after:, placed:),
+    left_out(quest_id:, row:, given:),
+  ))
+}
+
+/// The log with the quest Completed, when its state allows a turn-in: Achieved (2), or, for
+/// a quest that completes without being taken (Quest2 flags bit 0), no entry or a Known one
+/// that passes the accept's checks but the one for a full log.
+fn state_allows(
+  turning turning: String,
+  row row: Quest2,
+  state state: Int,
+  asker asker: quest.Asker,
+  tables tables: table_store.Tables,
+  unix_seconds unix_seconds: Int,
+) -> Result(QuestLog, Stop) {
+  let completed =
+    quest_log.complete(
+      log: asker.log,
+      quest_id: row.id,
+      at_seconds: unix_seconds,
+    )
+  let not_achieved =
+    Declined(
+      key: "state " <> int.to_string(state),
+      text: turning
+        <> ", whose state in the log is "
+        <> int.to_string(state)
+        <> " and not Achieved",
+    )
+  let declined = fn(why) {
+    Declined(key: "auto-complete", text: turning <> ", which " <> why)
+  }
+  case state, int.bitwise_and(row.flags, auto_complete_flag) != 0 {
+    2, _ -> Ok(completed)
+    1, _ | 3, _ -> Error(not_achieved)
+    _, False -> Error(not_achieved)
+    _, True ->
+      case
+        quest.can_accept(
+          tables:,
+          quest: row,
+          asker:,
+          mask: auto_complete_checks,
+        )
+      {
+        Ok(quest.Acceptable) -> Ok(completed)
+        Ok(quest.Refused(code:)) ->
+          Error(declined(
+            "completes without being taken, but the accept's checks refuse it with code "
+            <> int.to_string(code),
+          ))
+        Ok(quest.NotRead(gap:)) ->
+          Error(declined(
+            "completes without being taken, but its checks need "
+            <> quest.describe_gap(gap:),
+          ))
+        Error(error) ->
+          Error(declined(
+            "completes without being taken, but its checks cannot be read: "
+            <> quest.describe(error:),
+          ))
+      }
+  }
+}
+
+/// The choice row the reward id names: none when the quest has no choice rows (and the id
+/// is 0), else one of the rows the player is offered, which are the rows the wearer may
+/// equip, or the first row when no row is offered (as the client's dialog shows it).
+fn chosen_reward(
+  turning turning: String,
+  reward_id reward_id: Int,
+  choices choices: List(Quest2Reward),
+  asker asker: quest.Asker,
+  progress progress: experience.Progress,
+  item_proficiencies item_proficiencies: Int,
+  tables tables: table_store.Tables,
+) -> Result(Option(Quest2Reward), Stop) {
+  let refused = fn(why) {
+    Error(Declined(
+      key: "reward choice",
+      text: turning
+        <> " with reward id "
+        <> int.to_string(reward_id)
+        <> ", "
+        <> why,
+    ))
+  }
+  case choices {
+    [] ->
+      case reward_id {
+        0 -> Ok(None)
+        _ -> refused("which the quest has no choice for")
+      }
+    [first, ..] -> {
+      let wearer =
+        Wearer(
+          faction_id: asker.factions.current,
+          level: progress.level,
+          player: asker.player,
+          item_proficiencies:,
+        )
+      let offered = case
+        list.filter(choices, fn(reward) {
+          equip_requirement.offered(tables:, reward:, wearer:)
+        })
+      {
+        [] -> [first]
+        offered -> offered
+      }
+      case list.find(offered, fn(reward) { reward.id == reward_id }) {
+        Ok(reward) -> Ok(Some(reward))
+        Error(Nil) -> refused("which is not a choice the player is offered")
+      }
+    }
+  }
+}
+
+/// The experience the quest gives (`0x1405534b0`): 0 when the XpPerLevel row of the quest's
+/// level, the LevelDifferentialAttribute row of the difference to the player's level (kept
+/// within 4 either way) or the Quest2Difficulty row is missing; else the quest's override
+/// when it has one, else the base per level times the difficulty's multiplier times the
+/// difference's, truncated.
+fn experience_paid(
+  row row: Quest2,
+  level level: Int,
+  tables tables: table_store.Tables,
+) -> Int {
+  let difference = int.min(4, int.max(-4, row.con_level - level))
+  case
+    xp_per_level.get(tables:, id: XpPerLevelId(row.con_level)),
+    level_differential_attribute.get(
+      tables:,
+      id: LevelDifferentialAttributeId(difference + 5),
+    ),
+    quest2_difficulty.get(tables:, id: quest2.quest2_difficulty_id(row))
+  {
+    Ok(per_level), Ok(differential), Ok(difficulty) ->
+      case row.reward_xp_override {
+        0 ->
+          float.truncate(
+            int.to_float(per_level.base_quest_xp_per_level)
+            *. difficulty.xp_multiplier
+            *. differential.quest_xp_multiplier,
+          )
+        override -> override
+      }
+    _, _, _ -> 0
+  }
+}
+
+/// The credits the quest pays (`0x1405535d0`, `0x1405542b0`): the quest's override when above
+/// 0, else its level raised to GameFormula 530's first float times the difficulty's cash
+/// multiplier, plus a half, truncated (0 with no difficulty row); plus the amount of each
+/// reward row of money in currency 1.
+fn credits_paid(
+  row row: Quest2,
+  given given: List(Quest2Reward),
+  tables tables: table_store.Tables,
+) -> Int {
+  let quest_paid = case row.reward_cash_override > 0 {
+    True -> row.reward_cash_override
+    False ->
+      case
+        quest2_difficulty.get(tables:, id: quest2.quest2_difficulty_id(row))
+      {
+        Ok(difficulty) -> {
+          let assert Ok(formula) =
+            game_formula.get(tables:, id: GameFormulaId(credits_formula))
+            as "the load requires GameFormula row 530"
+          let raised =
+            float.power(int.to_float(row.con_level), formula.datafloat0)
+            |> result.unwrap(0.0)
+          float.truncate(raised *. difficulty.cash_reward_multiplier +. 0.5)
+        }
+        Error(Nil) -> 0
+      }
+  }
+  list.fold(given, quest_paid, fn(total, reward) {
+    case is_credits(reward) {
+      True -> total + reward.object_amount
+      False -> total
+    }
+  })
+}
+
+/// Whether the reward row is money of currency 1, the credits.
+fn is_credits(reward: Quest2Reward) -> Bool {
+  reward.quest2_reward_type_id == money_type
+  && reward.object_id == currency.credits_type
+}
+
+/// Where each item the rewards give goes: the amounts of one Item2 added together, placed
+/// in order of first appearance, each against the items as the one before it left them.
+/// `NoRoom` when an Item2 does not fit.
+fn place_items(
+  turning turning: String,
+  given given: List(Quest2Reward),
+  asker asker: quest.Asker,
+  tables tables: table_store.Tables,
+) -> Result(List(store.Placed), Stop) {
+  let wanted =
+    list.fold(given, [], fn(wanted, reward) {
+      case reward.quest2_reward_type_id == item_type {
+        False -> wanted
+        True ->
+          case list.key_find(wanted, reward.object_id) {
+            Ok(amount) ->
+              list.key_set(
+                wanted,
+                reward.object_id,
+                amount + reward.object_amount,
+              )
+            Error(Nil) ->
+              list.append(wanted, [#(reward.object_id, reward.object_amount)])
+          }
+      }
+    })
+  use size <- result.try(
+    inventory.size(items: asker.items, tables:)
+    |> result.map_error(fn(refusal) {
+      Declined(
+        key: "bags",
+        text: turning
+          <> ", whose bags are not read: "
+          <> inventory.describe(refusal:),
+      )
+    }),
+  )
+  list.try_fold(wanted, #(asker.items, []), fn(so_far, want) {
+    let #(working, placed) = so_far
+    let #(item2_id, amount) = want
+    use limit <- result.try(
+      item_property.stack_limit(tables:, item2_id:)
+      |> result.map(option.unwrap(_, 1))
+      |> result.map_error(fn(error) {
+        Declined(
+          key: "item " <> int.to_string(item2_id),
+          text: turning
+            <> ", whose reward item is not read: "
+            <> item_property.describe(error:),
+        )
+      }),
+    )
+    case
+      inventory.placed(
+        items: working,
+        item2_id: Item2Id(item2_id),
+        size:,
+        limit:,
+        wanted: amount,
+      )
+    {
+      Error(Nil) -> Error(NoRoom)
+      Ok(#(grow, make)) ->
+        Ok(
+          #(after(items: working, item2_id: Item2Id(item2_id), grow:, make:), [
+            store.Placed(item2_id: Item2Id(item2_id), grow:, make:),
+            ..placed
+          ]),
+        )
+    }
+  })
+  |> result.map(fn(done) { list.reverse(done.1) })
+}
+
+/// The items after stacks grow and new stacks are made (a made stack has no guid yet, 0).
+fn after(
+  items items: List(HeldItem),
+  item2_id item2_id: Item2Id,
+  grow grow: List(store.StackGrowth),
+  make make: List(store.NewStack),
+) -> List(HeldItem) {
+  list.append(
+    grown(items:, grow:),
+    list.map(make, fn(stack) {
+      HeldItem(
+        item_guid: 0,
+        item2_id:,
+        location: stack.location,
+        bag_index: stack.bag_index,
+        stack_count: stack.stack_count,
+      )
+    }),
+  )
+}
+
+/// The items with the stacks that grew holding their new counts.
+fn grown(
+  items items: List(HeldItem),
+  grow grow: List(store.StackGrowth),
+) -> List(HeldItem) {
+  list.map(items, fn(item) {
+    case list.find(grow, fn(growth) { growth.item_guid == item.item_guid }) {
+      Ok(growth) -> HeldItem(..item, stack_count: growth.new_count)
+      Error(Nil) -> item
+    }
+  })
+}
+
+/// The reward kinds the quest has that the server does not build, one line for each kind (its
+/// log key and text), in the order of their issues.
+fn left_out(
+  quest_id quest_id: Int,
+  row row: Quest2,
+  given given: List(Quest2Reward),
+) -> List(#(String, String)) {
+  let has = fn(types: List(Int)) {
+    list.any(given, fn(reward) {
+      list.contains(types, reward.quest2_reward_type_id)
+    })
+  }
+  let line = fn(kind: String, issue: String) {
+    "quest "
+    <> int.to_string(quest_id)
+    <> " has "
+    <> kind
+    <> " the server does not give yet ("
+    <> issue
+    <> "); the turn-in goes on without it"
+  }
+  let kinds = [
+    #(
+      row.faction2_id_reward_reputation00 != 0
+        || row.faction2_id_reward_reputation01 != 0
+        || has([reputation_type]),
+      #("reputation reward", line("a reputation reward", "#674")),
+    ),
+    #(
+      list.any(given, fn(reward) {
+        reward.quest2_reward_type_id == money_type && !is_credits(reward)
+      })
+        || has([account_currency_type]),
+      #("currency reward", line("a reward of a currency but credits", "#675")),
+    ),
+    #(
+      has([rotation_essence_type]),
+      #("rotation essence reward", line("a rotation essence reward", "#676")),
+    ),
+    #(
+      has([tradeskill_experience_type, tradeskill_grant_type]),
+      #("tradeskill reward kind", line("a tradeskill reward", "#677")),
+    ),
+    #(
+      int.bitwise_and(row.flags, contract_flag) != 0,
+      #("contract reward", line("a contract reward", "#678")),
+    ),
+  ]
+  let unknown =
+    list.filter(given, fn(reward) {
+      !list.contains(
+        [
+          item_type,
+          reputation_type,
+          money_type,
+          tradeskill_experience_type,
+          tradeskill_grant_type,
+          account_currency_type,
+          rotation_essence_type,
+        ],
+        reward.quest2_reward_type_id,
+      )
+    })
+  let known =
+    list.filter_map(kinds, fn(kind) {
+      case kind.0 {
+        True -> Ok(kind.1)
+        False -> Error(Nil)
+      }
+    })
+  case unknown {
+    [] -> known
+    [reward, ..] ->
+      list.append(known, [
+        #(
+          "unknown reward type",
+          "quest "
+            <> int.to_string(quest_id)
+            <> " has a reward of type "
+            <> int.to_string(reward.quest2_reward_type_id)
+            <> ", which the client's tables do not name for the server; the turn-in goes on without it",
+        ),
+      ])
+  }
+}
+
+/// The request that asks the store to save the turn-in with the place save.
 pub fn request(
-  turn_in _turn_in: TurnIn,
-  account_id _account_id: AccountId,
-  character_id _character_id: CharacterId,
-  session_epoch _session_epoch: SessionEpoch,
-  save_sequence _save_sequence: Int,
-  place _place: Place,
-  health _health: Option(Int),
-  quests _quests: List(store.QuestRow),
+  turn_in turn_in: TurnIn,
+  account_id account_id: AccountId,
+  character_id character_id: CharacterId,
+  session_epoch session_epoch: SessionEpoch,
+  save_sequence save_sequence: Int,
+  place place: Place,
+  health health: Option(Int),
+  quests quests: List(store.QuestRow),
 ) -> store.Request {
-  panic as "shape: #593"
+  store.Items(store.TurnInQuest(
+    account_id:,
+    character_id:,
+    session_epoch:,
+    save_sequence:,
+    place:,
+    health:,
+    experience: turn_in.credited.progress.experience,
+    level: turn_in.credited.progress.level,
+    quests:,
+    credits_held: turn_in.credits_held,
+    credits_after: turn_in.credits_after,
+    placed: turn_in.placed,
+  ))
 }
 
-/// What the store's answer leaves: the items and the amounts held, and the effects, in order.
+/// What the store's answer leaves. Only the three answers to a turn-in come: the others are
+/// answers to other requests, and the connection takes them as an answer it did not ask for.
 pub fn answered(
-  turn_in _turn_in: TurnIn,
-  items _items: List(HeldItem),
-  currencies _currencies: Currencies,
-  answer _answer: ItemsAnswer,
+  turn_in turn_in: TurnIn,
+  items items: List(HeldItem),
+  currencies currencies: Currencies,
+  answer answer: ItemsAnswer,
 ) -> Answered {
-  panic as "shape: #593"
+  case answer {
+    store.TurnedIn(credits:, made:) -> {
+      let grow = list.flat_map(turn_in.placed, fn(one) { one.grow })
+      let credits_changed =
+        credits
+        != currency.held(currencies:, currency_type_id: currency.credits_type)
+      Saved(
+        items: list.append(grown(items:, grow:), made),
+        currencies: currency.with_amount(
+          currencies:,
+          currency_type_id: currency.credits_type,
+          total: credits,
+        ),
+        rewards: list.map(
+          list.append(
+            list.map(made, fn(stack) {
+              inventory.item_added_frame(
+                item_guid: stack.item_guid,
+                item_id: stack.item2_id.value,
+                location: stack.location,
+                bag_index: stack.bag_index,
+                stack_count: stack.stack_count,
+                reason: quest_reason,
+              )
+            }),
+            list.map(grow, fn(growth) {
+              inventory.count_changed_frame(
+                guid: growth.item_guid,
+                count: growth.new_count,
+                reason: quest_reason,
+              )
+            }),
+          ),
+          Send,
+        ),
+        then: list.map(
+          case credits_changed {
+            True -> [
+              currency.changed_frame(
+                currency_type_id: currency.credits_type,
+                total: credits,
+              ),
+            ]
+            False -> []
+          }
+            |> list.append([
+              connection_frames.quest_state_frame(
+                quest_id: turn_in.quest_id,
+                state: 3,
+                objective_id: 0,
+              ),
+            ]),
+          Send,
+        ),
+      )
+    }
+    ItemsNotSaved ->
+      NotSaved([
+        Log(
+          level: LogWarning,
+          text: not_turned_in(turn_in:)
+            <> " was not saved: the character's rows were not as the turn-in held them, or a later login took its place; nothing changed",
+        ),
+      ])
+    SaveRefused(constraint:) ->
+      NotSaved([
+        Log(
+          level: LogError,
+          text: not_turned_in(turn_in:)
+            <> " was not saved: the store refused the change by the constraint "
+            <> constraint
+            <> "; nothing changed",
+        ),
+      ])
+    store.ItemsSaved | store.ItemMade(..) | store.Bought(..) | store.Sold(..) ->
+      panic as "the store answers a turn-in with TurnedIn, ItemsNotSaved or SaveRefused"
+  }
 }
 
-/// What the log line of a failed answer starts with.
-pub fn not_turned_in(turn_in _turn_in: TurnIn) -> String {
-  panic as "shape: #593"
+/// Which turn-in a log line is about.
+pub fn not_turned_in(turn_in turn_in: TurnIn) -> String {
+  "the turn-in of quest " <> int.to_string(turn_in.quest_id)
 }
