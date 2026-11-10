@@ -1616,24 +1616,56 @@ pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in
   login_support.stop(started)
 }
 
-/// Presses the ability and reads until `gos` gos of the player's own casts have
-/// arrived and the server has written all it held for this connection (a ping and
-/// its pong), giving the frames of the press.
+/// Presses the ability, moves the clock `advance_ms` on so the stage Proxy's phases fire,
+/// and reads until `gos` gos of the player's own casts have arrived and the server has
+/// written all it held for this connection (pings numbered `pong` and `pong + 1`),
+/// giving the frames of the press. A refusal of the press (0x7fc) fails at once, naming
+/// its result, because no go would follow it and the Beast's own attacks would keep the
+/// wait for them alive until the test's deadline. `advance_ms` must be in [500, 1133).
 fn press_and_read_gos(
   game game: game_client.Game,
   have have: BitArray,
+  time time: driven_time.Time,
   client_cast_id client_cast_id: Int,
+  advance_ms advance_ms: Int,
   gos gos: Int,
   pong pong: Int,
   beast beast: Int,
 ) -> #(List(Frame), BitArray) {
+  assert advance_ms >= 500 && advance_ms < 1133
+    as "the advance is at least 500 ms, so the global cooldown's 500 ms refusal window has passed (below it a second tap is refused with result 14), and under 1133 ms, because both stage Proxies start with no delay (Spell4Effects 83776 and 83782, delayTime 0) and their first phase is at 133 ms (SpellPhase 3712 and 4032), so the first Beast round's 1000 ms strike deadline (strike_tell.deadline_ms) falls at press + 1133 and an advance past it closes that round in driven time while the Beast's real answer is still coming"
   game_client.press_ability(game:, client_cast_id:, bag_index: 0, target: 0)
-  let #(frames, have) =
-    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
-      list.length(own_go_targets(frames:, beast:)) >= gos
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: pong)
+  driven_time.advance(time:, ms: advance_ms)
+  let #(later, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(later) {
+      let seen = list.append(pressed, later)
+      list.length(own_go_targets(frames: seen, beast:)) >= gos
+      || refusals(frames: seen) != []
     })
-  let #(rest, have) = game_client.read_until_pong(game:, have:, number: pong)
-  #(list.append(frames, rest), have)
+  let #(rest, have) =
+    game_client.read_until_pong(game:, have:, number: pong + 1)
+  let frames = list.flatten([pressed, later, rest])
+  assert refusals(frames:) == []
+    as "opcode.0x7fc: the press is accepted, so no refusal is written"
+  #(frames, have)
+}
+
+/// The results of the refusals (0x7fc) among the frames, in order.
+fn refusals(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(game_client.casts_in(frames:), fn(event) {
+    case event {
+      game_client.CastRefused(result:, ..) -> Ok(result)
+      game_client.CastConfirmed(..)
+      | game_client.CastStarted(..)
+      | game_client.CastWent(..)
+      | game_client.CastFinished(..)
+      | game_client.ThresholdOpened(..)
+      | game_client.ThresholdIndex(..)
+      | game_client.ThresholdClosed(..)
+      | game_client.ThresholdEnded(..) -> Error(Nil)
+    }
+  })
 }
 
 /// The targets of each go of a cast that is not the Beast's, in order: a Beast a
@@ -1650,10 +1682,12 @@ fn own_go_targets(
 
 pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(120_000)
+  let time = driven_time.new()
   let started =
-    world_with_beasts(
+    world_with_beasts_driven_by(
       places: [beast_place(x: 1.5, z: 0.5)],
       tables: character_tables.shared(),
+      scripts: fn(_) { driven_time.scripts(time) },
     )
   let #(game, frames, have) =
     enters_and_sees_the_beasts(
@@ -1670,7 +1704,9 @@ pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on
     press_and_read_gos(
       game:,
       have:,
+      time:,
       client_cast_id: 1,
+      advance_ms: 1000,
       gos: 5,
       pong: 1,
       beast: beast_unit,
@@ -1687,9 +1723,11 @@ pub fn a_stalkers_second_tap_of_shred_strikes_the_beast_with_the_stages_proxy_on
     press_and_read_gos(
       game:,
       have:,
+      time:,
       client_cast_id: 2,
+      advance_ms: 1000,
       gos: 5,
-      pong: 2,
+      pong: 3,
       beast: beast_unit,
     )
   assert own_go_targets(frames: second_tap, beast: beast_unit)
@@ -3029,11 +3067,23 @@ fn world_with_beasts(
   places places: List(Place),
   tables tables: table_store.Tables,
 ) -> login_support.Started {
+  world_with_beasts_driven_by(places:, tables:, scripts: fn(scripts) { scripts })
+}
+
+/// The same with the game connections' time and timers from `scripts`, which a test
+/// whose presses are a cooldown apart gives so it moves the clock by hand
+/// (`driven_time.scripts`).
+fn world_with_beasts_driven_by(
+  places places: List(Place),
+  tables tables: table_store.Tables,
+  scripts scripts: fn(Scripts) -> Scripts,
+) -> login_support.Started {
   login_support.start_with(change: fn(settings) {
     server.Settings(
       ..settings,
       game: server.Served(
         ..settings.game,
+        scripts: scripts(settings.game.scripts),
         settings: connection_state.Settings(..settings.game.settings, tables:),
       ),
       world: server.World(
