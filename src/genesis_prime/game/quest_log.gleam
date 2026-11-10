@@ -99,7 +99,9 @@ type Entry {
   /// time limit (`QuestObjective.maxTimeAllowedMS`) holds, once its timer has started,
   /// the monotonic time at which its time runs out (`objective_deadlines_ms`, one for
   /// each objective, `None` before the start and for an objective with no limit);
-  /// `objective_ms_left` is what the client was last told.
+  /// `objective_ms_left` is what the client was last told. `optional_mask` has a bit for
+  /// each objective with flag 0x20, whose time may run and show but never botches the
+  /// quest, since the quest needs no such objective to be achieved.
   Active(
     state: ActiveState,
     placeholder_objective_id: Int,
@@ -111,6 +113,7 @@ type Entry {
     objective_ms_left: List(Int),
     deadline_ms: Option(Int),
     objective_deadlines_ms: List(Option(Int)),
+    optional_mask: Int,
   )
   /// Completed, at this many Unix seconds.
   Completed(at: Int)
@@ -211,6 +214,7 @@ fn entry_of(
         objective_ms_left: active.objective_ms_left,
         deadline_ms: None,
         objective_deadlines_ms: list.map(active.progress, fn(_) { None }),
+        optional_mask: 0,
       )
     }
     3, Some(at), None -> Ok(Completed(at:))
@@ -492,8 +496,9 @@ fn started_running(
     ) -> {
       let assert Ok(row) = quest2.get(tables:, id: Quest2Id(quest_id))
         as "from_rows held the saved quest to a Quest2 row"
-      let assert Ok(quest) = quest_of(tables:, id: quest_id)
+      let assert Ok(raw_quest) = quest_of(tables:, id: quest_id)
         as "the objectives of a saved quest are rows of the tables"
+      let quest = as_logged(log:, quest: raw_quest)
       let deadlines =
         list.index_map(objective_deadlines_ms, fn(held, index) {
           let told = list.drop(objective_ms_left, index) |> list.first
@@ -535,7 +540,7 @@ fn started_running(
 /// when a quest enters state 1 (`0x1406111a0`) and, when an objective is done, those of
 /// the later reachable ones whose timer is 0 (`0x1405fb830`). A timer that started is
 /// never cleared or started again, so a done objective that a falling count reopens keeps
-/// the time it started with.
+/// the time it started with. It also marks the objectives with flag 0x20 (`optional_mask`).
 fn start_reachable(
   log log: QuestLog,
   quest quest: Quest,
@@ -544,17 +549,32 @@ fn start_reachable(
 ) -> QuestLog {
   let quest = as_logged(log:, quest:)
   case dict.get(log.entries, quest.id) {
-    Ok(Active(objective_deadlines_ms:, ..) as entry) -> {
+    Ok(Active(objective_deadlines_ms:, done_mask:, ..) as entry) -> {
       let deadlines =
         list.index_map(objective_deadlines_ms, fn(held, index) {
-          started_deadline(log:, quest:, held:, index:, from:, now_ms:)
+          started_deadline(
+            log:,
+            quest:,
+            held:,
+            done: done_in(mask: done_mask, index:),
+            index:,
+            from:,
+            now_ms:,
+          )
+        })
+      let optional_mask =
+        list.index_fold(quest.objectives, 0, fn(mask, objective, index) {
+          case has_flag(flags: objective.flags, flag: skipped_flag) {
+            True -> int.bitwise_or(mask, int.bitwise_shift_left(1, index))
+            False -> mask
+          }
         })
       QuestLog(
         ..log,
         entries: dict.insert(
           log.entries,
           quest.id,
-          Active(..entry, objective_deadlines_ms: deadlines),
+          Active(..entry, objective_deadlines_ms: deadlines, optional_mask:),
         ),
       )
     }
@@ -563,18 +583,21 @@ fn start_reachable(
 }
 
 /// The deadline of the quest's objective at `index`: the one it holds, or, when it holds
-/// none, is at or after `from` and has a time limit, and is reachable, the one that
-/// starts at this monotonic time.
+/// none, is not done, is at or after `from` and has a time limit, and is reachable, the
+/// one that starts at this monotonic time.
 fn started_deadline(
   log log: QuestLog,
   quest quest: Quest,
   held held: Option(Int),
+  done done: Bool,
   index index: Int,
   from from: Int,
   now_ms now_ms: Int,
 ) -> Option(Int) {
   case held, list.drop(quest.objectives, index) {
-    None, [objective, ..] if index >= from && objective.time_limit_ms > 0 ->
+    None, [objective, ..]
+      if index >= from && objective.time_limit_ms > 0 && !done
+    ->
       case reachable(log:, quest:, index:) {
         True -> Some(now_ms + objective.time_limit_ms)
         False -> held
@@ -1004,6 +1027,7 @@ fn started(
           False -> None
         },
         objective_deadlines_ms: list.map(zeros, fn(_) { None }),
+        optional_mask: 0,
       ),
     ),
   )
@@ -1016,8 +1040,8 @@ fn started(
 /// objective is done (`entry_deadline`). An achieved quest keeps its deadlines, which are
 /// saved and resumed, but is never botched: the client's trackers show it as complete and
 /// never as a countdown (`QuestTracker.lua` 775-782, `ContractTracker.lua` 349-356). The
-/// client botches nothing itself; that a timed objective botches its quest is Jim's
-/// decision of 2026-11-09.
+/// server botches a quest whose timed objective runs out; the client never botches on its
+/// own.
 pub fn expire(log log: QuestLog, now_ms now_ms: Int) -> #(QuestLog, List(Int)) {
   let due =
     in_quest_order(log:)
@@ -1046,8 +1070,9 @@ pub fn next_deadline(log log: QuestLog) -> Option(Int) {
 }
 
 /// The monotonic time at which an accepted quest runs out: the earlier of its own time
-/// and the time of an objective that is not done. A done objective's time botches
-/// nothing, and an Achieved quest has no time that does.
+/// and the time of an objective that is not done, reachable or not. A done objective's
+/// time botches nothing, nor does that of an objective with flag 0x20, and an Achieved
+/// quest has no time that does.
 fn entry_deadline(entry entry: Entry) -> Option(Int) {
   case entry {
     Active(
@@ -1055,10 +1080,14 @@ fn entry_deadline(entry entry: Entry) -> Option(Int) {
       done_mask:,
       deadline_ms:,
       objective_deadlines_ms:,
+      optional_mask:,
       ..,
     ) ->
       list.index_map(objective_deadlines_ms, fn(deadline, index) {
-        case done_in(mask: done_mask, index:) {
+        case
+          done_in(mask: done_mask, index:)
+          || done_in(mask: optional_mask, index:)
+        {
           True -> None
           False -> deadline
         }
@@ -1132,7 +1161,7 @@ pub fn track(
   }
 }
 
-/// Whether bit `index` of the done mask is set. The client's objective indexes run 0
+/// Whether bit `index` of a mask of the six objectives is set. The client's objective indexes run 0
 /// to 5; a later one is never done.
 fn done_in(mask mask: Int, index index: Int) -> Bool {
   index < 6 && int.bitwise_and(mask, int.bitwise_shift_left(1, index)) != 0

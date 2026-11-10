@@ -9,7 +9,10 @@
 //// the other types' own tests are not kills). Types 15 and 46 count by a cluster value
 //// and a rank the server has no unit data for, so they take a kill only by the pane
 //// (a gap, the issue "Kill objectives count by cluster, rank and a unit's tagged
-//// value"). An objective takes the event only while it is open (`0x1405510d0`,
+//// value"). A type 5 objective (`QuestObjective.type.5`, a scripted objective) takes
+//// none of these events: nothing completes it (a gap, the issue "Quests, zones and
+//// prerequisites work on the real client"), so a timed one runs out
+//// (`quest_log.expire`). An objective takes the event only while it is open (`0x1405510d0`,
 //// `0x140553790`): its quest is in the active list, Accepted or Achieved (`0x1405510d0`
 //// tests only for state 3), it is not done and it is reachable. Every objective that is
 //// open and counts the event counts once for it, so a later objective that the event

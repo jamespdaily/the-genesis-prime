@@ -8,8 +8,11 @@
 ////   objective done starts each later reachable objective's timer where it is 0, and the
 ////   client never clears one; at login a saved value is the time left and 0 is a full
 ////   timer for the objectives the client started (the reachable ones).
-//// - Botched when it runs out: Jim's decision of 2026-11-09. The client never botches or
-////   sends anything at zero; a quest it holds only a state of is Botched, state 4.
+//// - The server botches a quest whose timed objective runs out; the client never botches
+////   or sends anything at zero. A quest it holds only a state of is Botched, state 4.
+//// - An objective with flag 0x20 is skipped by the client's state and reachability
+////   (`0x1405fbc40`) and shown as optional, so its time may run and show but never
+////   botches its quest.
 //// - Only an Accepted quest is botched, and a done objective's deadline botches nothing:
 ////   the client's trackers show a done objective and an achieved quest as complete, never
 ////   as a countdown (`QuestTracker.lua` 775-782).
@@ -23,6 +26,14 @@
 ////   (type 2, flags 3, 30,000 ms). Flag 2 waits for every earlier objective to be done.
 //// - 3204: 4182 (type 5, count 1, flags 0, no limit) and 4183 (type 8, count 35, flags 3,
 ////   600,000 ms). A kill of a type 8 objective is a share of 1000, so 35 kills finish it.
+//// - 4517: 6201 (type 5, count 1, flags 0, no limit), 6302 (type 5, count 1, flags 35 so
+////   optional and waiting on 6201, 33,000 ms) and 7627 (type 5, flags 8).
+//// - A gap: no event completes a type 5 objective (`QuestObjective.type.5`, a scripted
+////   objective whose completion is the server's script; `0x140551d40` has no case for 5),
+////   so a timed one runs out and botches its quest, as the ten quests 4041, 4216, 4517,
+////   6794, 6901, 7027, 7657, 9282, 9647 and 9839 with a timed type 5 objective do, until
+////   the issue "Quests, zones and prerequisites work on the real client" gives such an
+////   objective its trigger.
 //// - The times are the tests' choice: a connection's monotonic milliseconds.
 
 import character_tables
@@ -44,6 +55,8 @@ const one_kill = 2911
 const chain = 2923
 
 const gated_timer = 3204
+
+const optional_timer = 4517
 
 fn quest(id id: Int) -> quest_log.Quest {
   let assert Ok(quest) =
@@ -238,14 +251,14 @@ pub fn a_done_objective_starts_the_later_reachable_timers_test() -> Nil {
 
 pub fn a_timed_objective_running_out_botches_the_quest_test() -> Nil {
   use <- owned_test.run(60_000)
-  // 3677 is open at its deadline: the quest is Botched, one ms before it is not.
+  // 3677 is not done at its deadline: the quest is Botched, one ms before it is not.
   let log =
     accepted(log: nothing(), quest_id: one_kill, max_time_ms: 0, at: 1000)
   assert quest_log.expire(log:, now_ms: 60_999) == #(log, [])
     as "an objective before its deadline botches nothing"
   let #(expired, due) = quest_log.expire(log:, now_ms: 61_000)
   assert due == [one_kill]
-    as "the open objective at its deadline botches its quest"
+    as "the objective that is not done at its deadline botches its quest"
   assert quest_log.stored_state(log: expired, quest_id: one_kill) == 4
     as "the quest is held Botched, state 4 (opcode.0x35c)"
   assert quest_log.next_deadline(log: expired) == None
@@ -289,6 +302,25 @@ pub fn a_timed_objective_running_out_botches_the_quest_test() -> Nil {
     counted(log:, quest_id: gated_timer, index: 1, value: 0, at: 701_000)
   assert quest_log.expire(log:, now_ms: 701_000).1 == [gated_timer]
     as "4183 open again is held to the deadline that started at 1000 ms (a count that goes down does not stop or restart it)"
+}
+
+pub fn an_optional_timed_objective_running_out_botches_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 6302 (flag 0x20) starts at 5000 ms, when 6201 is done, and runs out at 38,000 ms.
+  let log =
+    accepted(log: nothing(), quest_id: optional_timer, max_time_ms: 0, at: 1000)
+  let log =
+    progressed(log:, quest_id: optional_timer, index: 0, amount: 1, at: 5000)
+  assert ms_left(log:, quest_id: optional_timer, at: 20_000) == [0, 18_000, 0]
+    as "the optional objective's time runs and shows"
+  assert ms_left(log:, quest_id: optional_timer, at: 40_000) == [0, 1, 0]
+    as "and is saved with 1 ms left once it has run out"
+  assert quest_log.next_deadline(log:) == None
+    as "no deadline of a quest that botches is left"
+  let #(expired, due) = quest_log.expire(log:, now_ms: 40_000)
+  assert due == [] as "the optional objective's running out botches nothing"
+  assert quest_log.stored_state(log: expired, quest_id: optional_timer) == 1
+    as "the quest stays Accepted"
 }
 
 pub fn objective_time_left_is_saved_never_zero_and_resumed_test() -> Nil {
