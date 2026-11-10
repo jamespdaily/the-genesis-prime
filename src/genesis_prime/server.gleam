@@ -998,10 +998,15 @@ pub fn creature_message(outgoing outgoing: creature.Outgoing) -> Message {
     creature.Struck(stay:, answered:) ->
       ForStay(stay:, sent: SentByTarget(answered))
     creature.FightTold(stay:, told:) -> ForStay(stay:, sent: SentByFoe(told))
-    creature.KillCredit(stay:, unit_id:, creature_id:, level:) ->
+    creature.KillCredit(stay:, unit_id:, creature_id:, faction_id:, level:) ->
       ForStay(
         stay:,
-        sent: SentByKill(experience.Credit(unit_id:, creature_id:, level:)),
+        sent: SentByKill(experience.Credit(
+          unit_id:,
+          creature_id:,
+          faction_id:,
+          level:,
+        )),
       )
   }
 }

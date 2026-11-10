@@ -154,6 +154,7 @@ import genesis_prime/game/connection/inventory as connection_inventory
 import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/login as connection_login
 import genesis_prime/game/connection/movement as connection_movement
+import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/quest as connection_quest
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/select as connection_select
@@ -1019,7 +1020,19 @@ fn stay_sent(
         client_connection.SentByTarget(answered:) ->
           connection_casting.target_taken(session:, now:, entered:, answered:)
         client_connection.SentByKill(credit:) ->
-          connection_experience.credited(session:, now:, entered:, credit:)
+          case
+            connection_experience.credited(session:, now:, entered:, credit:)
+          {
+            // The experience first, then the kill's objectives; a connection
+            // the experience ended counts nothing.
+            Continue(session, told) -> {
+              let #(session, counted) =
+                connection_objective.killed(session:, now:, credit:)
+              Continue(session, list.append(told, counted))
+            }
+            client_connection.Asking(..) as ended
+            | client_connection.Done(..) as ended -> ended
+          }
       }
     Some(_) | None -> Continue(session, [])
   }

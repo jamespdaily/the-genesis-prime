@@ -21,6 +21,7 @@ import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/creature2_resist
 import genesis_prime/table/creature2_tier
 import genesis_prime/table/creature_level
+import genesis_prime/table/currency_type
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/episode
@@ -63,6 +64,7 @@ import genesis_prime/table/spell4_valid_targets
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
+import genesis_prime/table/target_group
 import genesis_prime/table/telegraph_damage
 import genesis_prime/table/tutorial
 import genesis_prime/table/unit_property2
@@ -81,6 +83,8 @@ import genesis_prime/table/xp_per_level
 ///   OutfitGroupEntry, OverrideProperties, Resist and Tier, InstancePortal and
 ///   PathMission, and CreatureLevel: the creatures that stand and their values
 ///   (genesis_prime/world_map/spawn).
+/// - CurrencyType: the cap of a currency other than credits and Renown
+///   (genesis_prime/game/currency).
 /// - CustomizationParameter and CustomizationParameterMap: the bone values a
 ///   create request carries (genesis_prime/game/appearance).
 /// - GameFormula and XpPerLevel: the starting level (genesis_prime/game/level).
@@ -114,6 +118,7 @@ import genesis_prime/table/xp_per_level
 /// - Quest2 and QuestObjective: the quests a saved quest log may name, each with its
 ///   objectives and period (genesis_prime/game/quest_log), and the quests a
 ///   prerequisite's quest conditions name (genesis_prime/game/prerequisite).
+/// - TargetGroup: the units a kill objective counts (genesis_prime/game/target_group).
 /// - Episode, EpisodeQuest and PeriodicQuestGroup, with Quest2 and GameFormula: whether
 ///   a player may accept a quest (genesis_prime/game/quest).
 /// - PathSoldierActivate: whether a type 28 objective is a checklist, which a
@@ -140,6 +145,7 @@ pub fn entries() -> List(store.Entry) {
     creature2_resist.entry(),
     creature2_tier.entry(),
     creature_level.entry(),
+    currency_type.entry(),
     customization_parameter.entry(),
     customization_parameter_map.entry(),
     episode.entry(),
@@ -177,6 +183,7 @@ pub fn entries() -> List(store.Entry) {
     spell_cool_down.entry(),
     spell_level.entry(),
     spell_phase.entry(),
+    target_group.entry(),
     telegraph_damage.entry(),
     unit_property2.entry(),
     world_location2.entry(),

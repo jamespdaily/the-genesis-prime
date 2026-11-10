@@ -6,6 +6,7 @@
 
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId, XpPerLevelId}
+import genesis_prime/table/loader/formula_requirement
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
 import gleam/bool
@@ -49,16 +50,9 @@ pub fn highest_level(tables: table_store.Tables) -> Result(Int, Nil) {
 /// its position plus one, which is its ID in the client's data.
 pub fn requirements() -> List(table_store.Requirement) {
   [
-    table_store.Requirement(
+    formula_requirement.row_present(
       from_table: "the server's starting level",
-      column: "GameFormula id",
-      to_table: "GameFormula",
-      missing: fn(tables) {
-        case highest_level(tables) {
-          Ok(_) -> []
-          Error(Nil) -> [highest_level_formula]
-        }
-      },
+      id: highest_level_formula,
     ),
     table_store.Requirement(
       from_table: "the server's starting level",

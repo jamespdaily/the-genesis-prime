@@ -17,8 +17,10 @@
 ////   Quest2 and QuestObjective (the quests a saved log names and their
 ////   objective slots, `genesis_prime/game/quest_log`), and
 ////   RewardPropertyPremiumModifier (the bag and bank slots of a signature
-////   tier, `genesis_prime/game/reward_property`) are the ones a rule reads
-////   today.
+////   tier, `genesis_prime/game/reward_property`), CurrencyType (the cap of a
+////   currency, `genesis_prime/game/currency`), and TargetGroup (the groups of
+////   units a kill objective counts, `genesis_prime/game/target_group`) are the
+////   ones a rule reads today.
 //// - The load: one file for each table of the list and no other is read, the
 ////   rows the rules follow are required, and a missing row fails the load. The
 ////   load runs in a fresh node, since it is under the server's own key, which
@@ -40,7 +42,7 @@ import owned_test
 import planted_table
 import simplifile
 
-pub fn the_servers_tables_are_the_fifty_seven_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_the_fifty_nine_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
@@ -62,6 +64,7 @@ pub fn the_servers_tables_are_the_fifty_seven_its_rules_read_test() -> Nil {
       "Creature2Resist",
       "Creature2Tier",
       "CreatureLevel",
+      "CurrencyType",
       "CustomizationParameter",
       "CustomizationParameterMap",
       "Episode",
@@ -99,13 +102,14 @@ pub fn the_servers_tables_are_the_fifty_seven_its_rules_read_test() -> Nil {
       "SpellCoolDown",
       "SpellLevel",
       "SpellPhase",
+      "TargetGroup",
       "TelegraphDamage",
       "UnitProperty2",
       "WorldLocation2",
       "WorldZone",
       "XpPerLevel",
     ]
-    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, what it is drawn with, abilities and health, the stages of an ability's taps and charge levels, the spell groups and stack groups of the spells that last on a unit, whether an ability's caster may be dead (Spell4.spell4ConditionsIdCaster), the training creatures' rows, what each spell strikes, the hit rule's formulas and bases, the prerequisites that gate a spell's resource gains, a Proxy's child and a creature attack's effects, the arcs a position condition names, the episodes, the quests of each and the periodic groups whose rules the accept check reads (Episode, EpisodeQuest, PeriodicQuestGroup, read by `quest`), the quests and their objectives a saved quest log is checked against (Quest2 and QuestObjective, read by the quest log at a load and a login, and by a prerequisite's quest conditions at a load), whether a type 28 objective is a checklist (PathSoldierActivate), the hit radius of each playable race (Race.hitRadius), and the tables an equip check reads (ItemProficiency for an item category's proficiency mask and ItemSpecial for the prerequisite a special gives), and the premium rows that give a signature tier its bag and bank slots (RewardPropertyPremiumModifier, read by `reward_property`)"
+    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, what it is drawn with, abilities and health, the stages of an ability's taps and charge levels, the spell groups and stack groups of the spells that last on a unit, whether an ability's caster may be dead (Spell4.spell4ConditionsIdCaster), the training creatures' rows, what each spell strikes, the hit rule's formulas and bases, the prerequisites that gate a spell's resource gains, a Proxy's child and a creature attack's effects, the arcs a position condition names, the episodes, the quests of each and the periodic groups whose rules the accept check reads (Episode, EpisodeQuest, PeriodicQuestGroup, read by `quest`), the quests and their objectives a saved quest log is checked against (Quest2 and QuestObjective, read by the quest log at a load and a login, and by a prerequisite's quest conditions at a load), whether a type 28 objective is a checklist (PathSoldierActivate), the hit radius of each playable race (Race.hitRadius), the cap of each currency other than credits and Renown (CurrencyType.capAmount, read by `currency`), and the tables an equip check reads (ItemProficiency for an item category's proficiency mask and ItemSpecial for the prerequisite a special gives), and the premium rows that give a signature tier its bag and bank slots (RewardPropertyPremiumModifier, read by `reward_property`), and the groups of units a kill objective counts (TargetGroup, read by `target_group`)"
 }
 
 /// Runs a function of this module in a fresh node, which must return.

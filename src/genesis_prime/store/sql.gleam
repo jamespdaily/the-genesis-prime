@@ -17,7 +17,7 @@ import pog
 ///
 pub type BuyFromVendorRow {
   BuyFromVendorRow(
-    credits: Int,
+    amount: Int,
     item_guid: Option(Int),
     location: Option(Int),
     bag_index: Option(Int),
@@ -25,21 +25,22 @@ pub type BuyFromVendorRow {
   )
 }
 
-/// A purchase from a vendor, all or none, in one statement: the credits of the character
-/// `$1` of the account `$2` are lowered by `$5`, each stack of the lists `$7` to `$9` at the
-/// same position (an item's guid, the count it is held with, the count it holds after) is
-/// raised, and a stack of the Item2 `$6` is inserted at each place of the lists `$10` to
-/// `$12` (a location, a bag index and a count). It changes only while the character is still
-/// held by the login that asks, that is while its `session_epoch` ($3) is still the one that
-/// login was told (load_character.sql), only while the character holds exactly `$4` credits
-/// (the total the login holds) and at least `$5`, and only when each stack to raise is the
-/// character's, of the Item2 `$6`, with the count it is held with; otherwise it changes
-/// nothing and returns no row. The account's id is in the statement, as for a load.
+/// A purchase from a vendor, all or none, in one statement: the amount the character `$1` of
+/// the account `$2` holds of the currency type `$4` is lowered by `$6`, each stack of the
+/// lists `$8` to `$10` at the same position (an item's guid, the count it is held with, the
+/// count it holds after) is raised, and a stack of the Item2 `$7` is inserted at each place
+/// of the lists `$11` to `$13` (a location, a bag index and a count). It changes only while
+/// the character is still held by the login that asks, that is while its `session_epoch`
+/// ($3) is still the one that login was told (load_character.sql), only while the character
+/// holds exactly `$5` of that currency (the total the login holds) and at least `$6`, and
+/// only when each stack to raise is the character's, of the Item2 `$7`, with the count it is
+/// held with; otherwise it changes nothing and returns no row. The account's id is in the
+/// statement, as for a load.
 ///
-/// The rows it returns are one for each stack made, each with the credits left; one row with
+/// The rows it returns are one for each stack made, each with the amount left; one row with
 /// no stack when none is made. A place that holds an item breaks the table's
 /// `character_item_one_per_slot` at the statement's end and the statement changes nothing,
-/// the credits and the raised stacks included. Whether a stack may hold its new count is the
+/// the currency and the raised stacks included. Whether a stack may hold its new count is the
 /// Item2's maxStackCount, which the rule checks. The statement runs after
 /// lock_character_for_save.sql in one transaction, so it waits for a login that is raising
 /// the epoch and then reads the epoch that login stored.
@@ -52,24 +53,25 @@ pub fn buy_from_vendor(
   character_id: Int,
   character_account_id: Int,
   character_session_epoch: Int,
-  credits_amount: Int,
-  arg_5: Int,
+  balance_currency_type_id: Int,
+  balance_amount: Int,
+  arg_6: Int,
   held_item2_id: Int,
-  arg_7: List(Int),
   arg_8: List(Int),
   arg_9: List(Int),
   arg_10: List(Int),
   arg_11: List(Int),
   arg_12: List(Int),
+  arg_13: List(Int),
 ) -> Result(pog.Returned(BuyFromVendorRow), pog.QueryError) {
   let decoder = {
-    use credits <- decode.field(0, decode.int)
+    use amount <- decode.field(0, decode.int)
     use item_guid <- decode.field(1, decode.optional(decode.int))
     use location <- decode.field(2, decode.optional(decode.int))
     use bag_index <- decode.field(3, decode.optional(decode.int))
     use stack_count <- decode.field(4, decode.optional(decode.int))
     decode.success(BuyFromVendorRow(
-      credits:,
+      amount:,
       item_guid:,
       location:,
       bag_index:,
@@ -77,56 +79,57 @@ pub fn buy_from_vendor(
     ))
   }
 
-  "-- A purchase from a vendor, all or none, in one statement: the credits of the character
--- `$1` of the account `$2` are lowered by `$5`, each stack of the lists `$7` to `$9` at the
--- same position (an item's guid, the count it is held with, the count it holds after) is
--- raised, and a stack of the Item2 `$6` is inserted at each place of the lists `$10` to
--- `$12` (a location, a bag index and a count). It changes only while the character is still
--- held by the login that asks, that is while its `session_epoch` ($3) is still the one that
--- login was told (load_character.sql), only while the character holds exactly `$4` credits
--- (the total the login holds) and at least `$5`, and only when each stack to raise is the
--- character's, of the Item2 `$6`, with the count it is held with; otherwise it changes
--- nothing and returns no row. The account's id is in the statement, as for a load.
+  "-- A purchase from a vendor, all or none, in one statement: the amount the character `$1` of
+-- the account `$2` holds of the currency type `$4` is lowered by `$6`, each stack of the
+-- lists `$8` to `$10` at the same position (an item's guid, the count it is held with, the
+-- count it holds after) is raised, and a stack of the Item2 `$7` is inserted at each place
+-- of the lists `$11` to `$13` (a location, a bag index and a count). It changes only while
+-- the character is still held by the login that asks, that is while its `session_epoch`
+-- ($3) is still the one that login was told (load_character.sql), only while the character
+-- holds exactly `$5` of that currency (the total the login holds) and at least `$6`, and
+-- only when each stack to raise is the character's, of the Item2 `$7`, with the count it is
+-- held with; otherwise it changes nothing and returns no row. The account's id is in the
+-- statement, as for a load.
 --
--- The rows it returns are one for each stack made, each with the credits left; one row with
+-- The rows it returns are one for each stack made, each with the amount left; one row with
 -- no stack when none is made. A place that holds an item breaks the table's
 -- `character_item_one_per_slot` at the statement's end and the statement changes nothing,
--- the credits and the raised stacks included. Whether a stack may hold its new count is the
+-- the currency and the raised stacks included. Whether a stack may hold its new count is the
 -- Item2's maxStackCount, which the rule checks. The statement runs after
 -- lock_character_for_save.sql in one transaction, so it waits for a login that is raising
 -- the epoch and then reads the epoch that login stored.
 with grown as (
   select grow.item_guid, grow.held_count, grow.new_count
-  from unnest($7::bigint[], $8::int[], $9::int[])
+  from unnest($8::bigint[], $9::int[], $10::int[])
     as grow (item_guid, held_count, new_count)
 ),
 allowed as (
-  select credits.character_id
+  select balance.character_id
   from character
-  join character_currency as credits on credits.character_id = character.character_id
+  join character_currency as balance on balance.character_id = character.character_id
   where character.character_id = $1
     and character.account_id = $2
     and character.session_epoch = $3
-    and credits.currency_type_id = 1
-    and credits.amount = $4
-    and $5 >= 0
-    and credits.amount >= $5
+    and balance.currency_type_id = $4
+    and balance.amount = $5
+    and $6 >= 0
+    and balance.amount >= $6
     and (
       select count(*)
       from grown
       join character_item as held on held.item_guid = grown.item_guid
       where held.character_id = $1
-        and held.item2_id = $6
+        and held.item2_id = $7
         and held.stack_count = grown.held_count
     ) = (select count(*) from grown)
 ),
 spent as (
-  update character_currency as credits
-  set amount = credits.amount - $5
+  update character_currency as balance
+  set amount = balance.amount - $6
   from allowed
-  where credits.character_id = allowed.character_id
-    and credits.currency_type_id = 1
-  returning credits.amount
+  where balance.character_id = allowed.character_id
+    and balance.currency_type_id = $4
+  returning balance.amount
 ),
 raised as (
   update character_item as held
@@ -139,14 +142,14 @@ raised as (
 ),
 made as (
   insert into character_item (character_id, item2_id, location, bag_index, stack_count)
-  select $1, $6, new_stack.location::smallint, new_stack.bag_index, new_stack.stack_count
-  from unnest($10::int[], $11::int[], $12::int[])
+  select $1, $7, new_stack.location::smallint, new_stack.bag_index, new_stack.stack_count
+  from unnest($11::int[], $12::int[], $13::int[])
     as new_stack (location, bag_index, stack_count)
   where exists (select 1 from allowed)
   returning item_guid, location::int as location, bag_index, stack_count
 )
 select
-  spent.amount as credits,
+  spent.amount as amount,
   made.item_guid,
   made.location,
   made.bag_index,
@@ -159,15 +162,16 @@ order by made.item_guid;
   |> pog.parameter(pog.int(character_id))
   |> pog.parameter(pog.int(character_account_id))
   |> pog.parameter(pog.int(character_session_epoch))
-  |> pog.parameter(pog.int(credits_amount))
-  |> pog.parameter(pog.int(arg_5))
+  |> pog.parameter(pog.int(balance_currency_type_id))
+  |> pog.parameter(pog.int(balance_amount))
+  |> pog.parameter(pog.int(arg_6))
   |> pog.parameter(pog.int(held_item2_id))
-  |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_7))
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_8))
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_9))
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_10))
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_11))
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_12))
+  |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_13))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
@@ -1611,21 +1615,22 @@ select 1 as one;
 /// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
 pub type SellToVendorRow {
-  SellToVendorRow(credits: Int)
+  SellToVendorRow(amount: Int)
 }
 
-/// A sale to a vendor, all or none, in one statement: the credits of the character `$1` of
-/// the account `$2` are set to `$5`, each stack of the lists `$6` to `$8` at the same
-/// position (an item's guid, the count it is held with, the count sold) that is sold whole
-/// (the count sold is the count held) is deleted, and each that is sold in part is lowered
-/// by the count sold. It changes only while the character is still held by the login that
-/// asks, that is while its `session_epoch` ($3) is still the one that login was told
-/// (load_character.sql), only while the character holds exactly `$4` credits (the total the
-/// login holds) and not more than `$5`, and only when every stack named is the character's,
-/// at an inventory place (location 1), with the count it is held with; a stack that is
-/// missing, that another login moved or that holds another count stops the whole sale, and
-/// it changes nothing and returns no row. The account's id is in the statement, as for a
-/// load. The row it returns holds the credits after the sale.
+/// A sale to a vendor, all or none, in one statement: the amount the character `$1` of the
+/// account `$2` holds of the currency type `$4` is set to `$6` (its row is made when the
+/// character holds none), each stack of the lists `$7` to `$10` at the same position (an
+/// item's guid, the location it is held at, the count it is held with, the count sold) that
+/// is sold whole (the count sold is the count held) is deleted, and each that is sold in
+/// part is lowered by the count sold. It changes only while the character is still held by
+/// the login that asks, that is while its `session_epoch` ($3) is still the one that login
+/// was told (load_character.sql), only while the character holds exactly `$5` of that
+/// currency (the total the login holds, a missing row being 0) and not more than `$6`, and
+/// only when every stack named is the character's, at the location named, with the count it
+/// is held with; a stack that is missing, that another login moved or that holds another
+/// count stops the whole sale, and it changes nothing and returns no row. The account's id
+/// is in the statement, as for a load. The row it returns holds the amount after the sale.
 ///
 /// The statement runs after lock_character_for_save.sql in one transaction, so it waits for
 /// a login that is raising the epoch and then reads the epoch that login stored.
@@ -1638,65 +1643,71 @@ pub fn sell_to_vendor(
   character_id: Int,
   character_account_id: Int,
   character_session_epoch: Int,
-  credits_amount: Int,
-  amount: Int,
-  arg_6: List(Int),
+  held_currency_type_id: Int,
+  arg_5: Int,
+  arg_6: Int,
   arg_7: List(Int),
   arg_8: List(Int),
+  arg_9: List(Int),
+  arg_10: List(Int),
 ) -> Result(pog.Returned(SellToVendorRow), pog.QueryError) {
   let decoder = {
-    use credits <- decode.field(0, decode.int)
-    decode.success(SellToVendorRow(credits:))
+    use amount <- decode.field(0, decode.int)
+    decode.success(SellToVendorRow(amount:))
   }
 
-  "-- A sale to a vendor, all or none, in one statement: the credits of the character `$1` of
--- the account `$2` are set to `$5`, each stack of the lists `$6` to `$8` at the same
--- position (an item's guid, the count it is held with, the count sold) that is sold whole
--- (the count sold is the count held) is deleted, and each that is sold in part is lowered
--- by the count sold. It changes only while the character is still held by the login that
--- asks, that is while its `session_epoch` ($3) is still the one that login was told
--- (load_character.sql), only while the character holds exactly `$4` credits (the total the
--- login holds) and not more than `$5`, and only when every stack named is the character's,
--- at an inventory place (location 1), with the count it is held with; a stack that is
--- missing, that another login moved or that holds another count stops the whole sale, and
--- it changes nothing and returns no row. The account's id is in the statement, as for a
--- load. The row it returns holds the credits after the sale.
+  "-- A sale to a vendor, all or none, in one statement: the amount the character `$1` of the
+-- account `$2` holds of the currency type `$4` is set to `$6` (its row is made when the
+-- character holds none), each stack of the lists `$7` to `$10` at the same position (an
+-- item's guid, the location it is held at, the count it is held with, the count sold) that
+-- is sold whole (the count sold is the count held) is deleted, and each that is sold in
+-- part is lowered by the count sold. It changes only while the character is still held by
+-- the login that asks, that is while its `session_epoch` ($3) is still the one that login
+-- was told (load_character.sql), only while the character holds exactly `$5` of that
+-- currency (the total the login holds, a missing row being 0) and not more than `$6`, and
+-- only when every stack named is the character's, at the location named, with the count it
+-- is held with; a stack that is missing, that another login moved or that holds another
+-- count stops the whole sale, and it changes nothing and returns no row. The account's id
+-- is in the statement, as for a load. The row it returns holds the amount after the sale.
 --
 -- The statement runs after lock_character_for_save.sql in one transaction, so it waits for
 -- a login that is raising the epoch and then reads the epoch that login stored.
 with sold as (
-  select sale.item_guid, sale.held_count, sale.sold_count
-  from unnest($6::bigint[], $7::int[], $8::int[])
-    as sale (item_guid, held_count, sold_count)
+  select sale.item_guid, sale.location, sale.held_count, sale.sold_count
+  from unnest($7::bigint[], $8::int[], $9::int[], $10::int[])
+    as sale (item_guid, location, held_count, sold_count)
 ),
 allowed as (
-  select credits.character_id
+  select character.character_id
   from character
-  join character_currency as credits on credits.character_id = character.character_id
   where character.character_id = $1
     and character.account_id = $2
     and character.session_epoch = $3
-    and credits.currency_type_id = 1
-    and credits.amount = $4
-    and $5 >= credits.amount
+    and coalesce((
+      select held.amount
+      from character_currency as held
+      where held.character_id = character.character_id
+        and held.currency_type_id = $4
+    ), 0) = $5
+    and $6 >= $5
     and (
       select count(*)
       from sold
       join character_item as held on held.item_guid = sold.item_guid
       where held.character_id = $1
-        and held.location = 1
+        and held.location = sold.location
         and held.stack_count = sold.held_count
         and sold.sold_count >= 1
         and sold.sold_count <= sold.held_count
     ) = (select count(*) from sold)
 ),
 paid as (
-  update character_currency as credits
-  set amount = $5
+  insert into character_currency (character_id, currency_type_id, amount)
+  select allowed.character_id, $4, $6
   from allowed
-  where credits.character_id = allowed.character_id
-    and credits.currency_type_id = 1
-  returning credits.amount
+  on conflict (character_id, currency_type_id) do update
+    set amount = excluded.amount
+  returning amount
 ),
 removed as (
   delete from character_item as held
@@ -1717,18 +1728,20 @@ lowered as (
     and exists (select 1 from allowed)
   returning held.item_guid
 )
-select paid.amount as credits
+select paid.amount as amount
 from paid;
 "
   |> pog.query
   |> pog.parameter(pog.int(character_id))
   |> pog.parameter(pog.int(character_account_id))
   |> pog.parameter(pog.int(character_session_epoch))
-  |> pog.parameter(pog.int(credits_amount))
-  |> pog.parameter(pog.int(amount))
-  |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_6))
+  |> pog.parameter(pog.int(held_currency_type_id))
+  |> pog.parameter(pog.int(arg_5))
+  |> pog.parameter(pog.int(arg_6))
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_7))
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_8))
+  |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_9))
+  |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_10))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
