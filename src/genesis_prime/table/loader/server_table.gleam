@@ -48,6 +48,7 @@ import genesis_prime/table/periodic_quest_group
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite
 import genesis_prime/table/quest2
+import genesis_prime/table/quest2_reward
 import genesis_prime/table/quest_objective
 import genesis_prime/table/race
 import genesis_prime/table/reward_property_premium_modifier
@@ -118,6 +119,8 @@ import genesis_prime/table/xp_per_level
 /// - Quest2 and QuestObjective: the quests a saved quest log may name, each with its
 ///   objectives and period (genesis_prime/game/quest_log), and the quests a
 ///   prerequisite's quest conditions name (genesis_prime/game/prerequisite).
+/// - Quest2Reward: the rewards of a quest and the choices it offers
+///   (genesis_prime/game/equip_requirement, genesis_prime/game/quest_turn_in).
 /// - TargetGroup: the units a kill objective counts (genesis_prime/game/target_group).
 /// - Episode, EpisodeQuest and PeriodicQuestGroup, with Quest2 and GameFormula: whether
 ///   a player may accept a quest (genesis_prime/game/quest).
@@ -167,6 +170,7 @@ pub fn entries() -> List(store.Entry) {
     positional_requirement.entry(),
     prerequisite.entry(),
     quest2.entry(),
+    quest2_reward.entry(),
     quest_objective.entry(),
     race.entry(),
     reward_property_premium_modifier.entry(),

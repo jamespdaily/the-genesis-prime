@@ -101,7 +101,7 @@ import genesis_prime/store.{
   NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
   NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
   PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
-  SaveRefused, Select, SellToVendor, SplitItem, Unavailable, World,
+  SaveRefused, Select, SellToVendor, SplitItem, TurnInQuest, Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{type Item2Id, ClassId, Item2Id, RaceId}
@@ -331,7 +331,8 @@ fn run_request(request: Request, pool: pog.Connection) -> Answer {
 /// move answers `ItemsSaved` when it moved as many items as the request has moves,
 /// a split `ItemMade` with the new stack's guid, a merge and a delete `ItemsSaved`,
 /// a purchase `Bought` with the amount of its currency left and the stacks it made, a
-/// sale `Sold` with the amount of its currency held after it;
+/// sale `Sold` with the amount of its currency held after it, a turn-in `TurnedIn` with the
+/// credits held after it and the stacks it made;
 /// each answers `ItemsNotSaved` when it changed nothing and `SaveRefused` when a
 /// check or the unique key of the character_item table refused a place;
 /// `Error(Nil)` when the database is away.
@@ -413,7 +414,58 @@ fn items(
         after:,
         sold:,
       )
+    TurnInQuest(
+      account_id:,
+      character_id:,
+      session_epoch:,
+      save_sequence:,
+      place:,
+      health:,
+      experience:,
+      level:,
+      quests:,
+      credits_held:,
+      credits_after:,
+      placed:,
+    ) ->
+      turn_in_quest(
+        pool:,
+        account_id:,
+        character_id:,
+        session_epoch:,
+        save_sequence:,
+        place:,
+        health:,
+        experience:,
+        level:,
+        quests:,
+        credits_held:,
+        credits_after:,
+        placed:,
+      )
   }
+}
+
+/// A quest turned in: save_place.sql and then turn_in_rewards.sql in the one transaction
+/// of the character's row lock, answered with `TurnedIn`, the credits held after and the
+/// stacks made, when both changed their rows; `ItemsNotSaved` when either changed nothing,
+/// which rolls the other back.
+fn turn_in_quest(
+  pool _pool: pog.Connection,
+  account_id _account_id: store.AccountId,
+  character_id _character_id: store.CharacterId,
+  session_epoch _session_epoch: store.SessionEpoch,
+  save_sequence _save_sequence: Int,
+  place _place: Place,
+  health _health: Option(Int),
+  experience _experience: Int,
+  level _level: Int,
+  quests _quests: List(store.QuestRow),
+  credits_held _credits_held: Int,
+  credits_after _credits_after: Int,
+  placed _placed: List(store.Placed),
+) -> Result(ItemsAnswer, Nil) {
+  panic as "shape: #593"
 }
 
 /// A sale: sell_to_vendor.sql, answered with `Sold` and the amount held of the currency

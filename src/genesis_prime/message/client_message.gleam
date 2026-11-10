@@ -60,6 +60,7 @@ import genesis_prime/message/quest_ignore.{type QuestIgnore}
 import genesis_prime/message/quest_mention.{type QuestMention}
 import genesis_prime/message/quest_retry.{type QuestRetry}
 import genesis_prime/message/quest_track.{type QuestTrack}
+import genesis_prime/message/quest_turn_in.{type QuestTurnIn}
 import genesis_prime/message/realm_select_start.{type RealmSelectStart}
 import genesis_prime/message/rename_character.{type RenameCharacter}
 import genesis_prime/message/scanbot_request.{type ScanbotRequest}
@@ -94,6 +95,7 @@ pub type ClientMessage {
   RenameCharacter(message: RenameCharacter)
   ChooseRealm(message: ChooseRealm)
   QuestAccept(message: QuestAccept)
+  QuestTurnIn(message: QuestTurnIn)
   QuestRetry(message: QuestRetry)
   QuestAbandon(message: QuestAbandon)
   QuestMention(message: QuestMention)
@@ -188,6 +190,7 @@ pub fn decode(
       decoded(body, message_id, rename_character.decode, RenameCharacter)
     0x07DF -> decoded(body, message_id, choose_realm.decode, ChooseRealm)
     0x035B -> decoded(body, message_id, quest_accept.decode, QuestAccept)
+    0x035D -> decoded(body, message_id, quest_turn_in.decode, QuestTurnIn)
     0x0365 -> decoded(body, message_id, quest_retry.decode, QuestRetry)
     0x035A -> decoded(body, message_id, quest_abandon.decode, QuestAbandon)
     0x0360 -> decoded(body, message_id, quest_mention.decode, QuestMention)
@@ -300,6 +303,7 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     RenameCharacter(message:) -> rename_character.encode(message)
     ChooseRealm(message:) -> choose_realm.encode(message)
     QuestAccept(message:) -> quest_accept.encode(message)
+    QuestTurnIn(message:) -> quest_turn_in.encode(message)
     QuestRetry(message:) -> quest_retry.encode(message)
     QuestAbandon(message:) -> quest_abandon.encode(message)
     QuestMention(message:) -> quest_mention.encode(message)
@@ -369,6 +373,7 @@ pub fn message_id(message: ClientMessage) -> Int {
     RenameCharacter(..) -> rename_character.message_id
     ChooseRealm(..) -> choose_realm.message_id
     QuestAccept(..) -> quest_accept.message_id
+    QuestTurnIn(..) -> quest_turn_in.message_id
     QuestRetry(..) -> quest_retry.message_id
     QuestAbandon(..) -> quest_abandon.message_id
     QuestMention(..) -> quest_mention.message_id
@@ -436,6 +441,7 @@ pub fn name(message: ClientMessage) -> String {
     RenameCharacter(..) -> "rename_character"
     ChooseRealm(..) -> "choose_realm"
     QuestAccept(..) -> "quest_accept"
+    QuestTurnIn(..) -> "quest_turn_in"
     QuestRetry(..) -> "quest_retry"
     QuestAbandon(..) -> "quest_abandon"
     QuestMention(..) -> "quest_mention"

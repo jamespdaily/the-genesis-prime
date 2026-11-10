@@ -599,6 +599,18 @@ fields = [
 ]
 
 [[message]]
+id = 0x035D
+name = "quest_turn_in"
+direction = "client_to_server"
+evidence = "opcode.0x35d"
+summary = "the client turns in a quest: the quest id, the chosen reward's Quest2Reward id (0 when the quest has no choice rows), and whether the communicator opened the dialog; the client sends no state change and waits for the server's 0x35c"
+fields = [
+  { name = "quest_id", kind = "unsigned", bits = 15, evidence = "opcode.0x35d", named_by = "opcode.0x35d" },
+  { name = "reward_id", kind = "unsigned", bits = 15, evidence = "opcode.0x35d", named_by = "opcode.0x35d" },
+  { name = "by_communicator", kind = "unsigned", bits = 1, evidence = "opcode.0x35d", named_by = "opcode.0x35d" },
+]
+
+[[message]]
 id = 0x0365
 name = "quest_retry"
 direction = "client_to_server"

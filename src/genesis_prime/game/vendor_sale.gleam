@@ -735,7 +735,10 @@ pub fn answered(
       buyback,
       vendor_trade.save_refused(what: not_sold(sale:), constraint:),
     )
-    store.ItemsSaved | store.ItemMade(..) | store.Bought(..) ->
+    store.ItemsSaved
+    | store.ItemMade(..)
+    | store.Bought(..)
+    | store.TurnedIn(..) ->
       panic as "the store answers a sale with Sold, ItemsNotSaved or SaveRefused"
   }
 }

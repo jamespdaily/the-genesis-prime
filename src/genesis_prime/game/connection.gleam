@@ -156,13 +156,14 @@ import genesis_prime/game/connection/login as connection_login
 import genesis_prime/game/connection/movement as connection_movement
 import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/quest as connection_quest
+import genesis_prime/game/connection/quest_turn_in as connection_quest_turn_in
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
   type Ending, type Session, type Status, AwaitingHelloReply, Busy, Buying,
   ClaimingSession, Ending, EnteringWorld, Greeting, InCharacterSelect, InWorld,
   LeavingMap, MovingItem, Present, SavingPlace, Selecting, Selling, Session,
-  Summoning, TakingSessionKey, WaitingToClaim,
+  Summoning, TakingSessionKey, TurningIn, WaitingToClaim,
 } as connection_state
 import genesis_prime/game/connection/vendor_purchase as connection_vendor_purchase
 import genesis_prime/game/connection/vendor_sale as connection_vendor_sale
@@ -449,6 +450,7 @@ fn asking(status: Status) -> Bool {
     | MovingItem(..)
     | Buying(..)
     | Selling(..)
+    | TurningIn(..)
     | SavingPlace(..)
     | LeavingMap(..) -> True
     InCharacterSelect(select:, ..) -> character_select.waiting(select)
@@ -581,6 +583,7 @@ fn routed(
     | Ok(routing.Innate(..))
     | Ok(routing.Interaction(..))
     | Ok(routing.Quest(..))
+    | Ok(routing.QuestTurnIn)
     | Ok(routing.Inventory(..))
     | Ok(routing.VendorPurchase)
     | Ok(routing.VendorBuyback)
@@ -757,6 +760,14 @@ fn world_carried(
                     entered:,
                     inner: whole,
                     message:,
+                  )
+                Ok(routing.QuestTurnIn) ->
+                  connection_quest_turn_in.turn_in_message(
+                    session:,
+                    now:,
+                    holder:,
+                    entered:,
+                    inner: whole,
                   )
                 Ok(routing.Inventory(message:)) ->
                   connection_inventory.item_message(
@@ -957,6 +968,15 @@ fn answered(
         holder:,
         entered:,
         purchase:,
+        outcome:,
+      )
+    TurningIn(holder:, entered:, turn_in:) ->
+      connection_quest_turn_in.turn_in_answered(
+        session:,
+        now:,
+        holder:,
+        entered:,
+        turn_in:,
         outcome:,
       )
     Selling(holder:, entered:, sale:) ->

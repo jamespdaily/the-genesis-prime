@@ -1223,7 +1223,14 @@ fn has_source(
   now_ms now_ms: Int,
 ) -> Bool {
   let dialog = fn() {
-    giver_in_reach(quest:, standing:, picture:, tables:, now_ms:)
+    in_reach(
+      quest_id: quest.id,
+      quest_ids: spawn.given_quest_ids,
+      standing:,
+      picture:,
+      tables:,
+      now_ms:,
+    )
     || called(quest:, asker:)
   }
   let item = fn(held: HeldItem) { starts(item: held, quest:, tables:) }
@@ -1261,10 +1268,12 @@ fn starts(
   }
 }
 
-/// Whether a shown creature the client would open a dialog with gives the quest: alive,
-/// not Hostile to the player, within reach.
-fn giver_in_reach(
-  quest quest: Quest2,
+/// Whether a shown creature the client would open a dialog with names the quest in `quest_ids`
+/// (the quests it gives, or the quests it receives): alive, not Hostile to the player,
+/// within reach.
+pub fn in_reach(
+  quest_id quest_id: Int,
+  quest_ids quest_ids: fn(Creature2) -> List(Int),
   standing standing: Standing,
   picture picture: Picture,
   tables tables: table_store.Tables,
@@ -1283,7 +1292,7 @@ fn giver_in_reach(
         !interaction.hostile_to_player(player: standing, hostile_to:)
         && case creature2.get(tables, creature_id) {
           Ok(row) ->
-            list.contains(spawn.given_quest_ids(row), quest.id)
+            list.contains(quest_ids(row), quest_id)
             && interaction.within_reach(
               player: standing,
               tables:,

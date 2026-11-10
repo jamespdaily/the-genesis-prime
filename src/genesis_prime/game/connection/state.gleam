@@ -17,6 +17,7 @@ import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/quest_log
+import genesis_prime/game/quest_turn_in
 import genesis_prime/game/server_proxy.{type ServerProxies}
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
@@ -223,6 +224,17 @@ pub type Status {
   /// saves it as one in `InWorld` does; the held items, credits and buyback list in
   /// `entered` are the ones before the sale, which the answer replaces.
   Selling(holder: Holder, entered: world_entry.Entered, sale: vendor_sale.Sale)
+  /// The player is in the world and the store is asked to complete the quest the player's
+  /// 0x35D turned in and to give its rewards (`turn_in`, genesis_prime/game/quest_turn_in),
+  /// whose answer is awaited with the client's frames held. The player's place is not saved
+  /// yet, so a connection that ends in this status saves it as one in `InWorld` does; the
+  /// quest log, items, credits and experience in `entered` are the ones before the turn-in,
+  /// which the answer replaces.
+  TurningIn(
+    holder: Holder,
+    entered: world_entry.Entered,
+    turn_in: quest_turn_in.TurnIn,
+  )
   /// The store is asked to save where the player stands, and its answer is
   /// awaited; `then` says what follows it. A connection in this status ends
   /// without a second save: the save out is the one its end waits for.
@@ -348,6 +360,7 @@ pub fn standing(status: Status) -> Standing {
     | MovingItem(..)
     | Buying(..)
     | Selling(..)
+    | TurningIn(..)
     | SavingPlace(..)
     | LeavingMap(..) -> Busy(text: "a frame was taken while an ask was out")
     WaitingToClaim(..) ->
@@ -442,6 +455,7 @@ pub fn held_in_the_world(
     | MovingItem(..)
     | Buying(..)
     | Selling(..)
+    | TurningIn(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -536,6 +550,7 @@ pub fn with_entered(
     | MovingItem(..)
     | Buying(..)
     | Selling(..)
+    | TurningIn(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -670,6 +685,7 @@ pub fn holds_a_player(
     | MovingItem(holder:, entered:, ..)
     | Buying(holder:, entered:, ..)
     | Selling(holder:, entered:, ..)
+    | TurningIn(holder:, entered:, ..)
     | ClaimingSession(holder:, resume: ResumeWorld(entered:), ..)
     | WaitingToClaim(holder:, resume: ResumeWorld(entered:), ..) ->
       Some(#(holder, entered))
@@ -764,6 +780,7 @@ pub fn entered_of(status: Status) -> Option(world_entry.Entered) {
     | MovingItem(entered:, ..)
     | Buying(entered:, ..)
     | Selling(entered:, ..)
+    | TurningIn(entered:, ..)
     | SavingPlace(entered:, ..)
     | LeavingMap(entered:, ..)
     | ClaimingSession(resume: ResumeWorld(entered:), ..)
@@ -800,6 +817,10 @@ fn account_id_of(status: Status) -> Option(Int) {
       )
     | Buying(holder: hand_off.Holder(account_id: store.AccountId(id), ..), ..)
     | Selling(holder: hand_off.Holder(account_id: store.AccountId(id), ..), ..)
+    | TurningIn(
+        holder: hand_off.Holder(account_id: store.AccountId(id), ..),
+        ..,
+      )
     | SavingPlace(
         holder: hand_off.Holder(account_id: store.AccountId(id), ..),
         ..,

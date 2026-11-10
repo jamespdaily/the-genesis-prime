@@ -140,7 +140,7 @@ import genesis_prime/step.{type LogLevel, LogError, LogWarning}
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemMove,
   type ItemsAnswer, type SessionEpoch, Bought, ItemMade, ItemsNotSaved,
-  ItemsSaved, SaveRefused, Sold,
+  ItemsSaved, SaveRefused, Sold, TurnedIn,
 }
 import genesis_prime/table/id.{type Item2Id}
 import genesis_prime/table/loader/store as table_store
@@ -149,6 +149,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/set
 
 /// The inventory message of the player in the world, which the client sends
 /// inside 0x038C (genesis_prime/game/routing says which id is which).
@@ -1277,6 +1278,8 @@ pub fn answered(
       }
     Bought(..) -> panic as "the store answers a purchase only to a vendor buy"
     Sold(..) -> panic as "the store answers a sale only to a vendor sale"
+    TurnedIn(..) ->
+      panic as "the store answers a turn-in only to a quest turned in"
     ItemsNotSaved -> #(items, [
       Log(
         level: LogWarning,
@@ -1340,5 +1343,82 @@ pub fn describe(refusal refusal: Refusal) -> String {
       <> int.to_string(item2_id.value)
       <> " cannot read the tables: "
       <> equip_requirement.describe(error:)
+  }
+}
+
+/// Where `wanted` items of an Item2 go (a server choice): the stacks of it in the usable
+/// inventory below the limit, lowest bag index first, then the empty usable slots, lowest
+/// first, each up to the limit. Nothing when they do not all fit.
+pub fn placed(
+  items items: List(HeldItem),
+  item2_id item2_id: Item2Id,
+  size size: Int,
+  limit limit: Int,
+  wanted wanted: Int,
+) -> Result(#(List(store.StackGrowth), List(store.NewStack)), Nil) {
+  let usable =
+    list.filter(items, fn(item) {
+      item.location == in_bags && item.bag_index < size
+    })
+  let growable =
+    list.filter(usable, fn(item) {
+      item.item2_id == item2_id && item.stack_count < limit
+    })
+    |> list.sort(fn(a, b) { int.compare(a.bag_index, b.bag_index) })
+  let taken_places =
+    set.from_list(list.map(usable, fn(item) { item.bag_index }))
+  let empty =
+    int.range(from: 0, to: size, with: [], run: list.prepend)
+    |> list.reverse
+    |> list.filter(fn(index) { !set.contains(taken_places, index) })
+  let #(wanted, grow) = fill(growable:, limit:, wanted:)
+  let #(wanted, make) = open(empty:, limit:, wanted:)
+  case wanted {
+    0 -> Ok(#(grow, make))
+    _ -> Error(Nil)
+  }
+}
+
+/// The growth of each stack with room for the items wanted, in the order given, and the
+/// items left.
+fn fill(
+  growable growable: List(HeldItem),
+  limit limit: Int,
+  wanted wanted: Int,
+) -> #(Int, List(store.StackGrowth)) {
+  case growable, wanted {
+    [], _ | _, 0 -> #(wanted, [])
+    [stack, ..rest], _ -> {
+      let added = int.min(wanted, limit - stack.stack_count)
+      let #(left, grown) = fill(growable: rest, limit:, wanted: wanted - added)
+      #(left, [
+        store.StackGrowth(
+          item_guid: stack.item_guid,
+          held_count: stack.stack_count,
+          new_count: stack.stack_count + added,
+        ),
+        ..grown
+      ])
+    }
+  }
+}
+
+/// The new stack in each empty slot the items wanted need, in the order given, and the
+/// items left.
+fn open(
+  empty empty: List(Int),
+  limit limit: Int,
+  wanted wanted: Int,
+) -> #(Int, List(store.NewStack)) {
+  case empty, wanted {
+    [], _ | _, 0 -> #(wanted, [])
+    [index, ..rest], _ -> {
+      let added = int.min(wanted, limit)
+      let #(left, made) = open(empty: rest, limit:, wanted: wanted - added)
+      #(left, [
+        store.NewStack(location: in_bags, bag_index: index, stack_count: added),
+        ..made
+      ])
+    }
   }
 }

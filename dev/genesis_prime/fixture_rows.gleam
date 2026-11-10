@@ -510,6 +510,13 @@ const child_rules = [
     "itemSourceId",
     "worn_visual.display_of (ItemDisplaySourceEntry.itemSourceId)",
   ),
+  ChildRule(
+    "Quest2Reward",
+    "quest2Id",
+    "Quest2",
+    "ID",
+    "quest_turn_in (Quest2Reward.quest2Id)",
+  ),
 ]
 
 /// The rows the server reads by the kind of a row, where no column's name says

@@ -29,6 +29,7 @@ import genesis_prime/game/item_property
 import genesis_prime/game/prerequisite
 import genesis_prime/table/id.{type Item2Id, PrerequisiteId}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/quest2_reward.{type Quest2Reward}
 import gleam/bool
 import gleam/int
 import gleam/list
@@ -156,6 +157,18 @@ pub fn check(
     code: level_too_low,
   )
   Ok(Wearable)
+}
+
+/// Whether a Quest2Reward row is offered to the wearer as a choice, as the client's
+/// IsRewardChoiceOffered decides (`0x140551ac0`): a row without bit 0, a row with bit 1, or a
+/// row that is not an item is offered; an item choice is offered only when its Item2 row
+/// exists and the wearer's race, class and item proficiency allow it.
+pub fn offered(
+  tables _tables: table_store.Tables,
+  reward _reward: Quest2Reward,
+  wearer _wearer: Wearer,
+) -> Bool {
+  panic as "shape: #593"
 }
 
 /// Whether a mask of races or classes, bit `number - 1` for each, allows the
