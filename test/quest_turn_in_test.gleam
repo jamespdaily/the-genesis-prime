@@ -46,6 +46,7 @@ import gleam/set
 import gleam/string
 import owned_test
 import planted_table.{Float, Integer}
+import player_life_support
 import quest_support
 import quest_turn_in_support as support
 import quest_walker_support
@@ -487,6 +488,36 @@ pub fn each_communicator_refusal_has_its_own_log_key_test() -> Nil {
   ]
   assert list.length(list.unique(keys)) == 3
     as "three kinds of refusal, three keys"
+}
+
+/// A dead player's turn-in of `scene`: refused with the client's code 57 and a log line under
+/// the dead player's own key, nothing asked, the same scene alive being accepted.
+fn assert_refused_dead(scene scene: support.Scene) -> Nil {
+  assert_asked(scene:, tables: tables())
+  let dead = support.Scene(..scene, life: player_life_support.dead())
+  let #(effects, logged) = support.refused(scene: dead, tables: tables())
+  let assert [Log(level: LogWarning, text:), Refuse(code: 57)] = effects
+    as "a warning, then 0x106 with enum 57 Player_CantDoWhileDead (the client's dialog closes and sends nothing for a dead player)"
+  assert string.contains(text, "dead")
+  assert logged == set.from_list(["dead player"])
+    as "the dead player's own key, not one of the checks the client's dialog passes"
+  let #(again, still) =
+    support.refused(scene: support.Scene(..dead, logged:), tables: tables())
+  let assert [Log(level: LogDebug, ..), Refuse(code: 57)] = again
+    as "the same reason is a debug line the second time, and answered again"
+  assert still == logged
+}
+
+pub fn a_dead_players_turn_in_at_a_creature_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert_refused_dead(scene: support.scene(quest_id: tutorial_quest))
+}
+
+pub fn a_dead_players_turn_in_over_the_communicator_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert_refused_dead(
+    scene: by_communicator(scene: support.scene(quest_id: 10_519)),
+  )
 }
 
 pub fn communicator_turn_in_with_a_delivering_row_is_accepted_test() -> Nil {

@@ -12,6 +12,7 @@ import game_connection_support as connection_support
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/experience.{Progress}
 import genesis_prime/game/interaction
+import genesis_prime/game/player_life.{type Life}
 import genesis_prime/game/prerequisite.{type Factions, Factions}
 import genesis_prime/game/quest.{type Asker, Asker}
 import genesis_prime/game/quest_turn_in.{type Taken}
@@ -25,6 +26,7 @@ import gleam/int
 import gleam/list
 import gleam/set.{type Set}
 import planted_table.{type Cell, Integer}
+import player_life_support
 import prerequisite_support
 import quest_support
 import quest_walker_support
@@ -37,7 +39,7 @@ pub const walker_unit = 40
 
 /// Everything a turn-in reads, with Dorian Walker in reach, the player at level 1 with no
 /// experience and no credits, a race 3, class 5 Exile in World 870 and zone 1411 under 1305
-/// under 1304, and quest 10520 Achieved; each test changes what it is about.
+/// under 1304, alive, and quest 10520 Achieved; each test changes what it is about.
 pub type Scene {
   Scene(
     quest_id: Int,
@@ -56,6 +58,7 @@ pub type Scene {
     class_id: Int,
     race_id: Int,
     factions: Factions,
+    life: Life,
   )
 }
 
@@ -78,6 +81,7 @@ pub fn scene(quest_id quest_id: Int) -> Scene {
     class_id: 5,
     race_id: 3,
     factions: Factions(current: 167, base: 167),
+    life: player_life_support.alive(),
   )
 }
 
@@ -161,6 +165,7 @@ pub fn taken_from(
     now_ms: 0,
     unix_seconds:,
     logged: scene.logged,
+    life: scene.life,
   )
 }
 

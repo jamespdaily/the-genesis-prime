@@ -3,8 +3,8 @@
 //// sequence is genesis_prime/game/connection/quest_turn_in's.
 ////
 //// ```
-//// 0x35D {quest, reward, by communicator} ─▶ take(body, asker, standing, picture, progress, currencies, ...)
-////                                           ├─ refused ─▶ Refused([Log])  or  Refused([Refuse(27)])   nothing asked, nothing changed
+//// 0x35D {quest, reward, by communicator} ─▶ take(body, asker, standing, picture, progress, currencies, life, ...)
+////                                           ├─ refused ─▶ Refused([Log])  or  Refused([Refuse(27)])  or  Refused([Log, Refuse(57)])   nothing asked, nothing changed
 ////                                           └─ accepted ─▶ Asks(turn_in) ─▶ the connection asks the store (request(..))
 //// the store's answer ─▶ answered(turn_in, items, currencies, answer)
 ////                       TurnedIn(credits, made): the log has the quest Completed, the items, the credits, the
@@ -19,6 +19,9 @@
 ////   it built from the same tables, so a refusal is a modified or stale client or a gap this
 ////   server has; the first that fails answers:
 ////   1. a body the client's reader refuses ends the connection (`NotDecoded`)
+////   1a. the player is dead, over the communicator or at a creature: 0x106 code 57
+////      (Player_CantDoWhileDead), as a buy answers; the client's dialog closes on death
+////      (`0x140554470.communicator_dialog`), so it never sends this
 ////   2. the quest has no Quest2 row, or a row the client's quest reader refuses
 ////   3. the log's state for it is not Achieved (2), unless the quest auto-completes (Quest2
 ////      flags bit 0): it is then taken as `quest.can_accept` takes an accept with the log-full
@@ -74,6 +77,7 @@ import genesis_prime/game/experience
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
 import genesis_prime/game/item_property
+import genesis_prime/game/player_life
 import genesis_prime/game/quest
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shown.{type Picture}
@@ -207,6 +211,9 @@ const rotation_essence_type = 10
 /// The client's code for a turn-in the inventory has no room for (Item_InventoryFull).
 const inventory_full = 27
 
+/// The client's code for a request a dead player makes (Player_CantDoWhileDead).
+const cant_do_while_dead = 57
+
 /// The reason the turn-in's items are shown for (Item.CodeEnumItemUpdateReason 8, Quest).
 const quest_reason = 8
 
@@ -264,6 +271,7 @@ pub fn take(
   progress progress: experience.Progress,
   currencies currencies: Currencies,
   item_proficiencies item_proficiencies: Int,
+  life life: player_life.Life,
   tables tables: table_store.Tables,
   now_ms now_ms: Int,
   unix_seconds unix_seconds: Int,
@@ -274,6 +282,7 @@ pub fn take(
     |> client_connection.decoded(message_id:)
     |> result.map_error(quest.NotDecoded),
   )
+  use <- refused_when_dead(message:, life:, logged:)
   case
     checked(
       message:,
@@ -302,6 +311,33 @@ pub fn take(
         })
       Asks(turn_in:, effects: list.reverse(lines), logged:)
     }
+  }
+}
+
+/// The refusal of a dead player's turn-in, which the client never sends: its dialog closes
+/// on death and AnswerCommunicatorQuest returns (`0x140554470.communicator_dialog`), so the
+/// server answers 57 (Player_CantDoWhileDead) as it does a buy. Otherwise `next` decides.
+fn refused_when_dead(
+  message message: quest_turn_in_message.QuestTurnIn,
+  life life: player_life.Life,
+  logged logged: Set(String),
+  next next: fn() -> Taken,
+) -> Taken {
+  case
+    vendor_trade.refused_when_dead(
+      key: "dead player",
+      text: "0x035D turns in quest "
+        <> int.to_string(message.quest_id)
+        <> " while the player is dead: the client sends nothing for a dead player, so the server answers "
+        <> int.to_string(cant_do_while_dead),
+      code: cant_do_while_dead,
+      life:,
+      logged:,
+    )
+  {
+    Error(vendor_trade.Declined(effects:, logged:)) ->
+      Refused(effects:, logged:)
+    Ok(Nil) -> next()
   }
 }
 
