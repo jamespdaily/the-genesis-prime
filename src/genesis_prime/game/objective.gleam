@@ -29,7 +29,6 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/tradeskill_schematic2
 import gleam/int
 import gleam/list
-import gleam/result
 import gleam/set.{type Set}
 
 /// The objective type of a talk.
@@ -300,47 +299,52 @@ type Settling {
   Settling(log: QuestLog, progress: List(Effect))
 }
 
-/// The Item2 whose held count a type 4 or type 33 objective takes as its progress.
+/// The Item2 whose held count a type 4 or type 33 objective takes as its progress, or
+/// `Error(Nil)` for an objective of another type. A type 33 objective's schematic is a
+/// row of the table (the tables test checks every one a quest names), so a missing row
+/// ends the process.
 fn held_item(
   tables tables: table_store.Tables,
   objective objective: quest_log.Objective,
 ) -> Result(Item2Id, Nil) {
   case objective.type_ == held_type, objective.type_ == made_type {
     True, _ -> Ok(Item2Id(objective.data))
-    _, True ->
-      tradeskill_schematic2.get(
-        tables:,
-        id: TradeskillSchematic2Id(objective.data),
-      )
-      |> result.map(tradeskill_schematic2.item2_id_output)
+    _, True -> {
+      let assert Ok(schematic) =
+        tradeskill_schematic2.get(
+          tables:,
+          id: TradeskillSchematic2Id(objective.data),
+        )
+        as "a type 33 objective names a TradeskillSchematic2 row"
+      Ok(tradeskill_schematic2.item2_id_output(schematic))
+    }
     _, _ -> Error(Nil)
   }
 }
 
 /// The objective at `index` set to `value`, with its progress message when its progress
-/// changed.
+/// changed. Only a quest in the active list is settled and `index` is one of its
+/// objectives, so the count is always taken.
 fn set_count(
   settling settling: Settling,
   quest quest: quest_log.Quest,
   index index: Int,
   value value: Int,
 ) -> Settling {
-  case quest_log.counted(log: settling.log, quest:, index:, value:) {
-    Ok(counted) ->
-      Settling(log: counted.log, progress: case counted.changed {
-        True -> [
-          SendProgress(
-            quest_id: quest.id,
-            objective_index: index,
-            progress: counted.progress,
-          ),
-          ..settling.progress
-        ]
-        False -> settling.progress
-      })
-    // Only a quest in the active list is settled, so this does not happen.
-    Error(Nil) -> settling
-  }
+  let assert Ok(counted) =
+    quest_log.counted(log: settling.log, quest:, index:, value:)
+    as "a settled quest is in the active list and the index is one of its objectives"
+  Settling(log: counted.log, progress: case counted.changed {
+    True -> [
+      SendProgress(
+        quest_id: quest.id,
+        objective_index: index,
+        progress: counted.progress,
+      ),
+      ..settling.progress
+    ]
+    False -> settling.progress
+  })
 }
 
 /// Every open visit of the quest whose zone is among `zones` done, again while a visit

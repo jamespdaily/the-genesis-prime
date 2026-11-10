@@ -1255,7 +1255,10 @@ pub fn counted(
 /// The log with the quest's objective at `index` stored as `progress` and the done mask
 /// as given, and how that moved the quest: a quest whose every objective without flag
 /// 0x20 is done is Achieved and one with an objective not done is Accepted
-/// (`0x1405fbc40`, `0x1405fbdc0`).
+/// (`0x1405fbc40`, `0x1405fbdc0`). A count that falls can take an Achieved quest back to
+/// Accepted, which a timed quest would carry past its deadline; no quest with a time
+/// limit has an objective counted this way, which
+/// `every_quest_collect_and_visit_objective_names_a_row_test` checks.
 fn store_progress(
   log log: QuestLog,
   quest quest: Quest,

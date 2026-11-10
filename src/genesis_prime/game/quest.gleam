@@ -682,7 +682,9 @@ const counted_locations = [0, 1, 8, 9]
 
 /// How many of the Item2 the player holds in the counted locations: the sum of the
 /// stacks there (a stack's `stack_count`), which a collect objective takes as its
-/// progress.
+/// progress. The client also adds the supply satchel's count of the Item2
+/// (`0x1403ac840`); it is not counted here because the server holds no satchel items
+/// yet (issue 53, "Crafting and gathering work on the real client").
 pub fn held_count(
   items items: List(HeldItem),
   item2_id item2_id: Item2Id,
@@ -698,20 +700,16 @@ pub fn held_count(
   })
 }
 
-/// Check 7: the item the quest needs, held in one of the counted locations. An item
-/// the server does not find there may be in the client's per-item inventory counter,
-/// which it does not read.
+/// Check 7: the item the quest needs, held in one of the counted locations (check 7 of
+/// `0x140552550` asks for at least one, and a stack holds at least one). An item the
+/// server does not find there may be in the client's per-item inventory counter, which
+/// it does not read.
 fn prerequisite_item(
   quest quest: Quest2,
   asker asker: Asker,
 ) -> Result(Nil, Stop) {
   use <- bool.guard(when: quest.preq_item == 0, return: Ok(Nil))
-  case
-    list.any(asker.items, fn(item) {
-      item.item2_id == Item2Id(quest.preq_item)
-      && list.contains(counted_locations, item.location)
-    })
-  {
+  case held_count(items: asker.items, item2_id: Item2Id(quest.preq_item)) > 0 {
     True -> Ok(Nil)
     False -> Error(Unread(PrerequisiteItemCounter))
   }

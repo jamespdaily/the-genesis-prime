@@ -62,7 +62,10 @@ fn objectives_of(
 /// `table_rows Item2`: ten of them name item 0, the rest name an item the Item2 table
 /// lacks (quests 1854 to 1856, 2138 to 2141, 2347, 2914, 3730 and 6629 among them). The
 /// server counts such an objective from the held items as any other, and no item can
-/// be held for it.
+/// be held for it. No client table gives these items to a player either, so the client
+/// itself cannot finish those quests by collecting: the coordinator's review looked in
+/// Quest2's pushed items and preq_item, Quest2Reward, TradeskillSchematic2's outputs
+/// and materials, and Spell4Effects' data, and found none of them.
 const type_4_without_an_item = [
   1957, 1959, 1960, 2337, 2345, 2350, 2351, 2352, 2356, 2357, 2358, 2364, 2709,
   2710, 2711, 3680, 4066, 4569, 4694, 4795, 5874, 6062, 6079, 6210, 6226, 6248,
@@ -94,7 +97,25 @@ pub fn every_quest_collect_and_visit_objective_names_a_row_test() -> Nil {
       }),
     )
     == type_4_without_an_item
-    as "every type 4 objective of a quest names an Item2, but the listed ones"
+    as {
+      "every type 4 objective of a quest names an Item2, but the listed ones, "
+      <> "whose items no client table holds or gives (Quest2 pushed items and "
+      <> "preq_item, Quest2Reward, TradeskillSchematic2 outputs and materials, "
+      <> "Spell4Effects data), so the client cannot finish those quests by collecting"
+    }
+
+  // A count that falls takes an Achieved quest back to Accepted, which a timed quest
+  // would carry past its deadline (`quest_log.store_progress`).
+  assert list.any(quest2.all(tables), fn(quest) {
+    quest.max_time_allowed_ms > 0
+  })
+    as "the client's tables hold timed quests"
+  assert list.filter(in_quests, fn(pair) {
+      { pair.0 }.max_time_allowed_ms > 0
+      && list.contains([4, 17, 32, 33], { pair.1 }.type_)
+    })
+    == []
+    as "no timed quest has an objective of type 4, 17, 32 or 33"
 
   assert of_type(33) != [] as "the client's quests hold type 33 objectives"
   assert ids(
