@@ -63,6 +63,7 @@ import genesis_prime/message/quest_ignore.{QuestIgnore}
 import genesis_prime/message/quest_mention.{QuestMention}
 import genesis_prime/message/quest_retry.{QuestRetry}
 import genesis_prime/message/quest_track.{QuestTrack}
+import genesis_prime/message/quest_turn_in.{QuestTurnIn}
 import genesis_prime/message/realm_select_start.{RealmSelectStart}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/scanbot_request.{ScanbotRequest}
@@ -518,6 +519,14 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       client_message.QuestAccept(message: QuestAccept(
         item: ItemPlace(location: 300, bag_index: 0xFFFF_FFFF),
         quest_id: 1872,
+      )),
+    ),
+    #(
+      0x035D,
+      client_message.QuestTurnIn(message: QuestTurnIn(
+        quest_id: 10_518,
+        reward_id: 0,
+        by_communicator: 0,
       )),
     ),
     #(
