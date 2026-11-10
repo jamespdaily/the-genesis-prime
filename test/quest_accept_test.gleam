@@ -44,9 +44,7 @@ import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{
   type HeldItem, type QuestRow, ActiveQuest, HeldItem, QuestRow,
 }
-import genesis_prime/table/id.{
-  Creature2Id, Faction2Id, Item2Id, Quest2Id, RaceId,
-}
+import genesis_prime/table/id.{Creature2Id, Item2Id, Quest2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2.{type Quest2, Quest2}
 import genesis_prime/world_map/creature_life.{Attackable, Hostile}
@@ -968,7 +966,6 @@ fn walker(gap gap: Float, alive alive: Bool, hostile hostile: Bool) -> Picture {
       40,
       ShownCreature(
         creature_id: Creature2Id(74_812),
-        faction_id: Faction2Id(0),
         path: creature_path.Standing(at: place),
         life: 4,
         alive:,

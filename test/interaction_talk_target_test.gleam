@@ -68,7 +68,6 @@ fn picture_with(creature_id creature_id: Int, gap gap: Float) -> shown.Picture {
       unit,
       shown.ShownCreature(
         creature_id: id.Creature2Id(creature_id),
-        faction_id: id.Faction2Id(0),
         path: creature_path.Standing(at: place),
         life: 4,
         alive: True,

@@ -394,3 +394,47 @@ pub fn a_kill_sends_its_experience_then_objective_progress_and_achieved_test() -
     ]
     as "opcode.0x361 and opcode.0x35c: objective 0 of quest 1857 is at 1 of 1, and the quest is Achieved"
 }
+
+/// TargetGroup 847 is type 3 with value 248 (`table_rows -- TargetGroup`): its members are
+/// the units whose current Faction2 is 248 (`0x1403b4a20`), and the faction is the one
+/// the killed creature's spawn row gives, which the kill's credit carries.
+pub fn a_kill_counts_toward_a_group_objective_by_the_credits_faction_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Objective 1961 as type 8 (a kill of a unit of a TargetGroup) naming group 847.
+  use tables <- fixture_tables.changed(table: "QuestObjective", id: 1961, with: [
+    #("type", Integer(8)),
+    #("data", Integer(847)),
+  ])
+  let #(state, _) =
+    connection_support.entered_with_quests_on(tables:, quests: [
+      quest_support.accepted(quest_id: 1857, progress: [0]),
+    ])
+
+  // No creature is shown to this connection, so the faction can only come from the credit.
+  let #(_, other) =
+    experience_support.credited_of_faction(
+      state:,
+      stay: connection_support.own_stay(),
+      creature_id: 73_464,
+      faction_id: 249,
+      level: 1,
+    )
+  assert list.map(as_pairs(frames: frames(taken: other)), fn(frame) { frame.0 })
+    == [0x01AC]
+    as "a kill of a creature of Faction2 249 is no member of group 847 (type 3, faction 248), so only the experience is written"
+
+  let #(_, member) =
+    experience_support.credited_of_faction(
+      state:,
+      stay: connection_support.own_stay(),
+      creature_id: 73_464,
+      faction_id: 248,
+      level: 1,
+    )
+  assert list.drop(as_pairs(frames: frames(taken: member)), 1)
+    == [
+      progress_frame(quest: 1857, index: 0, progress: 1),
+      state_frame(quest: 1857, state: 2),
+    ]
+    as "a kill of a creature of Faction2 248, which the connection does not show, is a member of group 847 and finishes the objective"
+}

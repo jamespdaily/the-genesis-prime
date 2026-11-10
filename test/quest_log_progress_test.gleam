@@ -36,7 +36,7 @@
 //// trunc(100 x (stored x 0.001f)) in 32-bit floats (`0x1406113b0`), so its stored
 //// progress is thousandths of completion and 1000 is done. How much one kill is worth
 //// is no client fact: a kill is an equal share, stored floor(1000 x kills / count)
-//// (the coordinator's decision on the step's issue), so count kills finish it.
+//// (Jim's decision on the step's issue), so count kills finish it.
 
 import character_tables
 import genesis_prime/game/quest_log.{type QuestLog}

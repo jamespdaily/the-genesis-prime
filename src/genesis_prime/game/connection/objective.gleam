@@ -11,12 +11,10 @@ import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/experience
 import genesis_prime/game/objective
 import genesis_prime/game/quest_log
-import genesis_prime/game/shown
 import genesis_prime/game/target_group
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 import genesis_prime/table/creature2
-import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
 
@@ -24,43 +22,25 @@ import gleam/option.{None, Some}
 const achieved_state = 2
 
 /// The session and what is written after the player's blow killed the creature of
-/// the credit. The unit is what the client's picture holds of it: its faction (which a
-/// type 3 TargetGroup tests) is known only while the creature is shown, and a creature
-/// that has left the picture counts by its Creature2 id and race alone.
+/// the credit. The unit is the creature as the credit names it: its Creature2 row, the
+/// Faction2 its spawn gave it (which a type 3 TargetGroup tests) and the race of its row.
 pub fn killed(
   session session: Session,
   now now: Now,
   credit credit: experience.Credit,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  case connection_state.entered_of(session.status) {
-    None -> #(session, [])
-    Some(entered) -> {
-      let #(creature_id, faction_id) = case
-        dict.get(entered.shown, credit.unit_id)
-      {
-        Ok(shown.ShownCreature(creature_id:, faction_id:, ..)) -> #(
-          creature_id,
-          Some(faction_id),
-        )
-        Ok(shown.ShownPlayer) | Ok(shown.ShownObject(..)) | Error(Nil) -> #(
-          credit.creature_id,
-          None,
-        )
-      }
-      // The experience rule has just read this creature's row.
-      let assert Ok(row) =
-        creature2.get(tables: session.settings.tables, id: creature_id)
-      counted(
-        session:,
-        now:,
-        event: objective.Killed(target_group.Unit(
-          creature_id:,
-          faction_id:,
-          unit_race_id: creature2.unit_race_id(row),
-        )),
-      )
-    }
-  }
+  let assert Ok(row) =
+    creature2.get(tables: session.settings.tables, id: credit.creature_id)
+    as "the kill's creature row was read by the experience rule a moment ago"
+  counted(
+    session:,
+    now:,
+    event: objective.Killed(target_group.Unit(
+      creature_id: credit.creature_id,
+      faction_id: Some(credit.faction_id),
+      unit_race_id: creature2.unit_race_id(row),
+    )),
+  )
 }
 
 /// The session and what is written after the player did this to a creature. A

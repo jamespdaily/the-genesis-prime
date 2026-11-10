@@ -38,7 +38,7 @@
 //// - quest 1805: objective 1890, type 15, data 4976, count 2.
 //// - quest 1806: objective 1891, type 8, TargetGroup 307, count 4.
 //// - quest 1807: objective 1892, type 16, TargetGroup 307, count 2.
-//// - quest 1857: objective 1961, type 2, Creature2 5006, count 1, flags 0x204.
+//// - quest 1857: objective 1961, type 2, Creature2 5006, count 1, flags 0.
 //// - quest 1859: objective 1962 (type 5), then 1963, type 2, flags 3, count 1, which
 ////   waits for 1962.
 //// - quest 1949: objective 2072 (type 9, flag 0x20), then 2073, type 2, Creature2 5006,

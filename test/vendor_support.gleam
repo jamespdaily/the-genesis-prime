@@ -79,7 +79,6 @@ pub fn picture_with_walker(gap gap: Float) -> shown.Picture {
       walker_unit,
       shown.ShownCreature(
         creature_id: id.Creature2Id(74_812),
-        faction_id: id.Faction2Id(0),
         path: creature_path.Standing(at: place),
         life: 4,
         alive: True,

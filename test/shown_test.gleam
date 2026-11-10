@@ -14,7 +14,7 @@ import genesis_prime/game/shown.{
   Dominion, Exile, ShownCreature, ShownObject, ShownPlayer,
 }
 import genesis_prime/game/start_place
-import genesis_prime/table/id.{Creature2Id, Faction2Id}
+import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_life.{
   type Attackable, Attackable, Hostile,
 }
@@ -35,7 +35,6 @@ fn creature(
 ) -> shown.Shown {
   ShownCreature(
     creature_id: Creature2Id(73_464),
-    faction_id: Faction2Id(0),
     path: creature_path.Standing(at: place_support.at(
       world_id: 3460,
       world_zone_id: 5967,
@@ -173,7 +172,6 @@ fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
     )
   ShownCreature(
     creature_id: Creature2Id(73_464),
-    faction_id: Faction2Id(0),
     path: creature_path.Standing(at: place),
     life: 4,
     alive: True,

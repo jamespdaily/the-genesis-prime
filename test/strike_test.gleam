@@ -44,9 +44,7 @@ import genesis_prime/game/unit_properties
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/step.{ConnectionId, Now}
-import genesis_prime/table/id.{
-  Creature2Id, Faction2Id, Spell4EffectsId, Spell4Id,
-}
+import genesis_prime/table/id.{Creature2Id, Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/creature_life.{
   type Attackable, Attackable, Hostile,
 }
@@ -855,7 +853,6 @@ fn creature_at(
 ) -> shown.Shown {
   ShownCreature(
     creature_id: Creature2Id(73_464),
-    faction_id: Faction2Id(0),
     path: creature_path.Standing(at: place_support.at(
       world_id: 3460,
       world_zone_id: 5967,

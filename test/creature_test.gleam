@@ -28,7 +28,9 @@ import genesis_prime/step.{
   ConnectionId, CreatureStart, OwnEffect, OwnEvent, Reply, Send, StartCreature,
   StartServiceTimer, Started, Stop, TimerId, Told, WatchEnded, WatchId,
 }
-import genesis_prime/table/id.{Creature2Id, Spell4Id, UnitProperty2Id}
+import genesis_prime/table/id.{
+  Creature2Id, Faction2Id, Spell4Id, UnitProperty2Id,
+}
 import genesis_prime/world_map/creature.{
   type State, Retire, Settings, Unwatched, Watched,
 }
@@ -418,11 +420,12 @@ pub fn a_killing_strike_sends_the_killer_one_credit_test() -> Nil {
           stay: map_support.stay(count: 2),
           unit_id: 7,
           creature_id: Creature2Id(73_464),
+          faction_id: Faction2Id(1441),
           level: 1,
         ),
       ),
     ]
-    as "the killing blow sends the connection of the player who struck it, for the stay the strike came from, one credit naming the unit, the Creature2 row of the spawn (73464) and its level 1 (opcode.0x262.creature_level)"
+    as "the killing blow sends the connection of the player who struck it, for the stay the strike came from, one credit naming the unit, the Creature2 row of the spawn (73464), its Faction2 (1441, the faction of the spawn row spawn_support.battle_beast, which the creature's 0x262 sends as its faction) and its level 1 (opcode.0x262.creature_level)"
   let #(_, taken) =
     feed(
       state: dead,

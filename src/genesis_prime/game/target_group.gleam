@@ -12,8 +12,8 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// What the client's tester reads of a unit (`0x140b66440`): the unit's Creature2 id,
-/// its current Faction2 id (the one its 0x262 gave it, which a unit the connection no
-/// longer shows does not have) and the UnitRace id of its Creature2 row.
+/// its current Faction2 id (the one its 0x262 gave it, which its spawn row holds; none
+/// when a caller does not know it) and the UnitRace id of its Creature2 row.
 pub type Unit {
   Unit(
     creature_id: Creature2Id,

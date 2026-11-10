@@ -174,11 +174,12 @@ fn quest_objectives() -> EngineDeclaration {
         list.map(quest_objective.all(tables), fn(row) { row.type_ })
       },
     ),
-    // Kill objectives: type 2 by the creature, types 8 and 16 by a TargetGroup
-    // (genesis_prime/game/objective). Types 15 and 46 need a unit's cluster and rank
-    // the server does not hold, so no kill advances them; the issue "Kill objectives
-    // count by cluster, rank and a unit's tagged value" closes that.
-    handled: Listed(ids: [2, 8, 16]),
+    // Talk (type 3) and use (type 12) objectives count a talk to a creature or a use of
+    // one, and kill objectives count a kill: type 2 by the creature, types 8 and 16 by a
+    // TargetGroup (genesis_prime/game/objective). Types 15 and 46 need a unit's cluster
+    // and rank the server does not hold, so no kill advances them; the issue "Kill
+    // objectives count by cluster, rank and a unit's tagged value" closes that.
+    handled: Listed(ids: [2, 3, 8, 12, 16]),
     partial: [],
     unread_rows: no_unread_rows,
     unread_starting_rows: no_unread_starting_rows,
