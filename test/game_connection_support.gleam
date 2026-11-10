@@ -52,6 +52,7 @@ import genesis_prime/message/unit_create_player.{
 }
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stealth
+import genesis_prime/message/vendor_buyback.{VendorBuyback}
 import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/vendor_sale.{VendorSale}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
@@ -803,6 +804,17 @@ pub fn purchase_requested(
     vendor_purchase.encode(VendorPurchase(unique_id:, quantity:))
     as "a unique id and a quantity of 32 bits fit the message"
   read(state:, bytes: world_message(message_id: 0x00BE, body:))
+}
+
+/// The client's 0x00BB for the buyback entry with this id (`vendor_purchase`), read by the
+/// connection in the world.
+pub fn buyback_requested(
+  state state: game_connection.State,
+  buyback_id buyback_id: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let assert Ok(body) = vendor_buyback.encode(VendorBuyback(buyback_id:))
+    as "a buyback id of 32 bits fits the message"
+  read(state:, bytes: world_message(message_id: 0x00BB, body:))
 }
 
 /// The client's 0x0166 for `quantity` of the stack at a place (`vendor_sale`), read by the

@@ -689,6 +689,7 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.QuestTrack(..)
     | client_message.QuestIgnore(..)
     | client_message.VendorPurchase(..)
+    | client_message.VendorBuyback(..)
     | client_message.VendorSale(..)
     | client_message.VendorSellJunk(..) -> Plain
   }

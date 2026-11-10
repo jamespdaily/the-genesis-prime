@@ -786,3 +786,104 @@ pub fn a_sale_the_store_cannot_answer_ends_the_connection_with_reason_8_test() -
     },
   )
 }
+
+/// The player sells `quantity` of its stack of 20791 at slot 0 and the store saves the sale,
+/// leaving `credits` credits held.
+fn sold(
+  state state: game_connection.State,
+  quantity quantity: Int,
+  credits credits: Int,
+) -> game_connection.State {
+  let #(state, taken) =
+    connection_support.sale_requested(
+      state:,
+      place: item_place.ItemPlace(location: 1, bag_index: 0),
+      quantity:,
+    )
+  connection_support.answer(
+    state:,
+    taken:,
+    outcome: step.Answer(FromStore(store.ForItems(store.Sold(credits:)))),
+  ).0
+}
+
+/// The entries of the 0xBC the vendor's window opens with, as the id, the Item2, the quantity
+/// and the credits of each in the order sent, and the connection after the request.
+fn buyback_listed(
+  state state: game_connection.State,
+) -> #(game_connection.State, List(#(Int, Int, Int, Int))) {
+  let #(state, taken) =
+    connection_support.interaction_requested(
+      state:,
+      unit_id: walker_unit,
+      kind: 0x31,
+    )
+  let assert [Frame(message_id: 0x090B, ..), Frame(message_id: 0x00BC, body:)] =
+    connection_support.written(taken:)
+    as "a vendor within reach is answered with 0x90b, then 0xbc"
+  let assert Ok(BuybackList(entries:)) = buyback_list.decode(body)
+    as "opcode.0xbc: the list decodes"
+  #(
+    state,
+    list.map(entries, fn(entry) {
+      #(entry.buyback_id, entry.item_id, entry.quantity, entry.amount_1)
+    }),
+  )
+}
+
+pub fn opening_a_vendor_sends_the_buyback_list_oldest_first_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Nothing has been sold: the Buyback tab is cleared by an empty 0xBC.
+  let #(state, listed) = buyback_listed(state: selling_state())
+  assert listed == []
+    as "opcode.0xbc: an empty list clears the tab; nothing has been sold"
+  // 2 and then 3 of the 5 items of 20791 are sold at the 1 credit each item sells for
+  // (`item_price_test`): entries 1 and 2, the credits each sale paid.
+  let state = sold(state:, quantity: 2, credits: 102)
+  let state = sold(state:, quantity: 3, credits: 105)
+  let #(state, listed) = buyback_listed(state:)
+  assert listed == [#(1, 20_791, 2, 2), #(2, 20_791, 3, 3)]
+    as "opcode.0xbc: every entry held, the oldest sale first, as 0xBA adds the newest last"
+  let #(_, again) = buyback_listed(state:)
+  assert again == listed
+    as "a second opening sends the same list: the list belongs to the player, not the window"
+}
+
+pub fn the_buyback_list_survives_a_world_change_and_is_empty_after_entering_the_world_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The player sells 2 of its 5 (entry 1), is struck dead and chooses the Holocrypt: the
+  // world is joined again through `world_entry.Joining`, which carries the list.
+  let state = sold(state: selling_state(), quantity: 2, credits: 102)
+  let dead =
+    connection_support.killed(
+      connection_support.watched_by(state:, viewers: [2]),
+    ).0
+  let #(rejoined, _) = connection_support.at_the_holocrypt_from(dead:)
+  // The join removes every unit; the vendor is shown again, in the player's second stay,
+  // and opened again.
+  let #(rejoined, _) =
+    connection_support.feed(
+      state: rejoined,
+      event: connection_support.in_second_stay(walker_appears(
+        unit_id: walker_unit,
+        gap: sale_reach -. 0.1,
+        health: 52,
+        hostile_to: friendly,
+      )),
+    )
+  let #(rejoined, listed) = buyback_listed(state: rejoined)
+  assert listed == [#(1, 20_791, 2, 2)]
+    as "the Holocrypt's join is a change of world, not a new entry: the entry sold before it is still held"
+  // A sale after the join takes the next id, not 1 again.
+  let rejoined = sold(state: rejoined, quantity: 3, credits: 105)
+  let #(_, listed) = buyback_listed(state: rejoined)
+  assert listed == [#(1, 20_791, 2, 2), #(2, 20_791, 3, 3)]
+    as "an id is given once in a world entry, also across the join"
+  // Entering the world again, as a new play, holds an empty list whose first id is 1.
+  let fresh = selling_state()
+  let #(fresh, listed) = buyback_listed(state: fresh)
+  assert listed == [] as "a play's entry holds no sale of an earlier one"
+  let fresh = sold(state: fresh, quantity: 2, credits: 102)
+  let #(_, listed) = buyback_listed(state: fresh)
+  assert listed == [#(1, 20_791, 2, 2)] as "the ids start at 1 on each entry"
+}

@@ -67,6 +67,7 @@ import genesis_prime/message/send_chat_line.{type SendChatLine}
 import genesis_prime/message/send_whisper.{type SendWhisper}
 import genesis_prime/message/terrain_loaded.{type TerrainLoaded}
 import genesis_prime/message/trade_cancel.{type TradeCancel}
+import genesis_prime/message/vendor_buyback.{type VendorBuyback}
 import genesis_prime/message/vendor_purchase.{type VendorPurchase}
 import genesis_prime/message/vendor_sale.{type VendorSale}
 import genesis_prime/message/vendor_sell_junk.{type VendorSellJunk}
@@ -136,6 +137,7 @@ pub type ClientMessage {
   DialogResponsesShown(message: DialogResponsesShown)
   VendorPurchase(message: VendorPurchase)
   VendorSale(message: VendorSale)
+  VendorBuyback(message: VendorBuyback)
   VendorSellJunk(message: VendorSellJunk)
 }
 
@@ -273,6 +275,7 @@ pub fn decode(
       )
     0x00BE -> decoded(body, message_id, vendor_purchase.decode, VendorPurchase)
     0x0166 -> decoded(body, message_id, vendor_sale.decode, VendorSale)
+    0x00BB -> decoded(body, message_id, vendor_buyback.decode, VendorBuyback)
     0x0167 -> decoded(body, message_id, vendor_sell_junk.decode, VendorSellJunk)
     _ -> Error(UnknownMessage(message_id:))
   }
@@ -342,6 +345,7 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     DialogResponsesShown(message:) -> dialog_responses_shown.encode(message)
     VendorPurchase(message:) -> vendor_purchase.encode(message)
     VendorSale(message:) -> vendor_sale.encode(message)
+    VendorBuyback(message:) -> vendor_buyback.encode(message)
     VendorSellJunk(message:) -> vendor_sell_junk.encode(message)
   }
 }
@@ -408,6 +412,7 @@ pub fn message_id(message: ClientMessage) -> Int {
     DialogResponsesShown(..) -> dialog_responses_shown.message_id
     VendorPurchase(..) -> vendor_purchase.message_id
     VendorSale(..) -> vendor_sale.message_id
+    VendorBuyback(..) -> vendor_buyback.message_id
     VendorSellJunk(..) -> vendor_sell_junk.message_id
   }
 }
@@ -474,6 +479,7 @@ pub fn name(message: ClientMessage) -> String {
     DialogResponsesShown(..) -> "dialog_responses_shown"
     VendorPurchase(..) -> "vendor_purchase"
     VendorSale(..) -> "vendor_sale"
+    VendorBuyback(..) -> "vendor_buyback"
     VendorSellJunk(..) -> "vendor_sell_junk"
   }
 }
