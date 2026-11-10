@@ -3,8 +3,16 @@
 //// client has.
 
 import character_tables
+import game_connection_support as connection_support
+import genesis_prime/game/shown
+import genesis_prime/game/start_place
 import genesis_prime/game/vendor.{type Vendors, ItemRow, VendorRow}
+import genesis_prime/table/id
+import genesis_prime/world_map/creature_life.{Hostile}
+import genesis_prime/world_map/creature_path
+import gleam/dict
 import gleam/list
+import spawn_support
 
 /// The Item2 ids a test stocks: the first three of Supplier Ingavak's list, rows of the
 /// committed Item2 table.
@@ -42,4 +50,43 @@ pub fn stocking_items(
     )
     as "the creatures and items of the support are rows of the client's committed tables"
   vendors
+}
+
+/// The player's hit radius (Race.hitRadius, 0x3f99999a, every playable race) and Dorian
+/// Walker's (Creature2DisplayInfo 25510's hitRadius, 0x3f8ccccd).
+pub const player_radius = 1.2
+
+pub const walker_radius = 1.1
+
+/// The unit Dorian Walker is in `picture_with_walker`.
+pub const walker_unit = 40
+
+/// Dorian Walker (Creature2 74812, alive, Hostile to neither faction) as unit 40 in a
+/// picture, `gap` from the player's edge straight ahead of the player at the entry place,
+/// with another player's unit 9: what a rule that reads the connection's picture sees.
+pub fn picture_with_walker(gap gap: Float) -> shown.Picture {
+  let entry = connection_support.entry_place()
+  let place =
+    start_place.moved(
+      place: entry,
+      x: start_place.x(entry),
+      y: start_place.y(entry),
+      z: start_place.z(entry) -. { gap +. player_radius +. walker_radius },
+    )
+  let walker = spawn_support.dorian_walker(number: 1, place:)
+  dict.from_list([
+    #(
+      walker_unit,
+      shown.ShownCreature(
+        creature_id: id.Creature2Id(74_812),
+        path: creature_path.Standing(at: place),
+        life: 4,
+        alive: True,
+        hit_radius: walker.combat.hit_radius,
+        attackable: walker.combat.attackable,
+        hostile_to: Hostile(exile: False, dominion: False),
+      ),
+    ),
+    #(9, shown.ShownPlayer),
+  ])
 }

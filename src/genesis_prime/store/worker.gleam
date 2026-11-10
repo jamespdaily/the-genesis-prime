@@ -91,20 +91,20 @@ import genesis_prime/store.{
   type ItemsAnswer, type ItemsRequest, type MoveAnswer, type MoveRequest,
   type Naming, type NewCharacter, type NewItem, type QuestRow, type RenameAnswer,
   type Request, type SelectAnswer, type SelectRequest, type WorldAnswer,
-  type WorldRequest, Account, AccountFound, AccountId, ActiveQuest, Character,
-  CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
-  CharacterRenamed, CreateCharacter, CreateForNoSuchAccount, Created,
-  DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FindAccount, ForItems,
-  ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem, ItemMade,
-  Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed, LoadCharacter, Login,
-  MergeItems, Move, MoveItems, NameBreaksRule, NameStands, NameTaken,
-  NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount,
-  NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved,
-  QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace, SaveRefused,
-  Select, SplitItem, Unavailable, World,
+  type WorldRequest, Account, AccountFound, AccountId, ActiveQuest, Bought,
+  BuyFromVendor, Character, CharacterCreated, CharacterDeleted, CharacterId,
+  CharacterLoaded, CharacterRenamed, CreateCharacter, CreateForNoSuchAccount,
+  Created, DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FindAccount,
+  ForItems, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldCurrency,
+  HeldItem, ItemMade, Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed,
+  LoadCharacter, Login, MergeItems, Move, MoveItems, NameBreaksRule, NameStands,
+  NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
+  NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
+  PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
+  SaveRefused, Select, SplitItem, Unavailable, World,
 }
 import genesis_prime/store/sql
-import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
+import genesis_prime/table/id.{type Item2Id, ClassId, Item2Id, RaceId}
 import gleam/bool
 import gleam/erlang/process.{type Name}
 import gleam/json.{type Json}
@@ -327,9 +327,10 @@ fn run_request(request: Request, pool: pog.Connection) -> Answer {
 /// character's row lock (lock_character_for_save.sql) and then one statement
 /// that names the account, the character, the epoch and each item as the request
 /// holds it (move_character_items.sql, split_character_item.sql,
-/// merge_character_items.sql, delete_character_item.sql). A move answers
-/// `ItemsSaved` when it moved as many items as the request has moves, a split
-/// `ItemMade` with the new stack's guid, a merge and a delete `ItemsSaved`;
+/// merge_character_items.sql, delete_character_item.sql, buy_from_vendor.sql). A
+/// move answers `ItemsSaved` when it moved as many items as the request has moves,
+/// a split `ItemMade` with the new stack's guid, a merge and a delete `ItemsSaved`,
+/// a purchase `Bought` with the credits left and the stacks it made;
 /// each answers `ItemsNotSaved` when it changed nothing and `SaveRefused` when a
 /// check or the unique key of the character_item table refused a place;
 /// `Error(Nil)` when the database is away.
@@ -369,6 +370,27 @@ fn items(
       )
     DeleteItem(account_id:, character_id:, session_epoch:, item:) ->
       delete_item(pool:, account_id:, character_id:, session_epoch:, item:)
+    BuyFromVendor(
+      account_id:,
+      character_id:,
+      session_epoch:,
+      credits_held:,
+      cost:,
+      grow:,
+      make:,
+      item2_id:,
+    ) ->
+      buy_from_vendor(
+        pool:,
+        account_id:,
+        character_id:,
+        session_epoch:,
+        credits_held:,
+        cost:,
+        grow:,
+        make:,
+        item2_id:,
+      )
   }
 }
 
@@ -444,6 +466,60 @@ fn merge_items(
       [_, _] -> ItemsSaved
       _ -> panic as "the statement changes both stacks or none"
     }
+  })
+}
+
+/// A purchase: buy_from_vendor.sql, answered with `Bought`, the credits left and the
+/// stacks it made in the order the database made them, when it took the credits.
+fn buy_from_vendor(
+  pool pool: pog.Connection,
+  account_id account_id: store.AccountId,
+  character_id character_id: store.CharacterId,
+  session_epoch session_epoch: store.SessionEpoch,
+  credits_held credits_held: Int,
+  cost cost: Int,
+  grow grow: List(store.StackGrowth),
+  make make: List(store.NewStack),
+  item2_id item2_id: Item2Id,
+) -> Result(ItemsAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  let Item2Id(item2) = item2_id
+  locked(pool:, account_id:, character_id:, statement: fn(connection) {
+    sql.buy_from_vendor(
+      connection,
+      character_id,
+      account_id,
+      store.session_epoch_number(session_epoch),
+      credits_held,
+      cost,
+      item2,
+      list.map(grow, fn(growth) { growth.item_guid }),
+      list.map(grow, fn(growth) { growth.held_count }),
+      list.map(grow, fn(growth) { growth.new_count }),
+      list.map(make, fn(stack) { stack.location }),
+      list.map(make, fn(stack) { stack.bag_index }),
+      list.map(make, fn(stack) { stack.stack_count }),
+    )
+  })
+  |> items_answer(saved: fn(rows) {
+    let assert [first, ..] = rows as "the statement returns a row or none"
+    Bought(
+      credits: first.credits,
+      made: list.filter_map(rows, fn(row) {
+        case row.item_guid, row.location, row.bag_index, row.stack_count {
+          Some(item_guid), Some(location), Some(bag_index), Some(stack_count) ->
+            Ok(HeldItem(
+              item_guid:,
+              item2_id:,
+              location:,
+              bag_index:,
+              stack_count:,
+            ))
+          _, _, _, _ -> Error(Nil)
+        }
+      }),
+    )
   })
 }
 
@@ -713,21 +789,37 @@ fn load_character(
         [_] -> sql.load_character_items(connection, character_id)
         _ -> Ok(pog.Returned(count: 0, rows: []))
       })
-      use quest_rows <- result.map(case loaded.rows {
+      use quest_rows <- result.try(case loaded.rows {
         [_] -> sql.load_quest_log(connection, character_id)
+        _ -> Ok(pog.Returned(count: 0, rows: []))
+      })
+      use currency_rows <- result.map(case loaded.rows {
+        [_] -> sql.load_character_currencies(connection, character_id)
         _ -> Ok(pog.Returned(count: 0, rows: []))
       })
       pog.Returned(
         ..loaded,
         rows: list.map(loaded.rows, fn(row) {
-          LoadedRow(row:, items: item_rows.rows, quests: quest_rows.rows)
+          LoadedRow(
+            row:,
+            items: item_rows.rows,
+            quests: quest_rows.rows,
+            currencies: currency_rows.rows,
+          )
         }),
       )
     })
   }
   use rows <- result.map(query(transaction))
   case rows {
-    [LoadedRow(row:, items: item_rows, quests: quest_rows)] -> {
+    [
+      LoadedRow(
+        row:,
+        items: item_rows,
+        quests: quest_rows,
+        currencies: currency_rows,
+      ),
+    ] -> {
       let assert Ok(epoch) = store.session_epoch(row.session_epoch)
         as "a load raises the epoch by one, so it is 1 or more"
       CharacterLoaded(
@@ -759,6 +851,12 @@ fn load_character(
         saved_experience: row.experience,
         items: held_items(item_rows),
         quests: quest_rows_of(quest_rows),
+        currencies: list.map(currency_rows, fn(row) {
+          HeldCurrency(
+            currency_type_id: row.currency_type_id,
+            amount: row.amount,
+          )
+        }),
       )
     }
     [] -> NotTheAccounts
@@ -767,12 +865,13 @@ fn load_character(
 }
 
 /// The one row a load's transaction gives: the character whose epoch the
-/// update raised, with its items.
+/// update raised, with its items, quest log and currencies.
 type LoadRow {
   LoadedRow(
     row: sql.LoadCharacterRow,
     items: List(sql.LoadCharacterItemsRow),
     quests: List(sql.LoadQuestLogRow),
+    currencies: List(sql.LoadCharacterCurrenciesRow),
   )
 }
 
@@ -1000,6 +1099,7 @@ fn create_character(
         start_place.facing(character.place).pitch,
         start_place.facing(character.place).roll,
         character.experience,
+        character.starting_credits,
       ))
       use Nil <- result.map(case made.rows {
         [row] ->

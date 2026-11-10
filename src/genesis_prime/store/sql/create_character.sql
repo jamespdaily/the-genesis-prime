@@ -1,19 +1,28 @@
 -- Makes a character of an account: at the level the create gave, standing at
 -- the start place the create gave (a world, a zone, a position and a facing),
--- with the experience the create gave, and the values the create request gave. It makes none, and gives no row, when the
+-- with the experience the create gave, the credits the create gave (no row when
+-- they are 0, the client's start value) and the values the create request gave.
+-- It makes none, and gives no row, when the
 -- account already has as many characters as its slots. A name that another
 -- character holds in any case breaks the unique index on
 -- lower(name collate "und-x-icu"), which the caller reports as its own error.
-insert into character (
-  account_id, name, gender, race_id, class_id, faction_id, level, path,
-  world_id, world_zone_id, position_x, position_y, position_z,
-  rotation_yaw, rotation_pitch, rotation_roll,
-  look_labels, look_values, bones, experience
+with made as (
+  insert into character (
+    account_id, name, gender, race_id, class_id, faction_id, level, path,
+    world_id, world_zone_id, position_x, position_y, position_z,
+    rotation_yaw, rotation_pitch, rotation_roll,
+    look_labels, look_values, bones, experience
+  )
+  select
+    $1::bigint, $2::text, $3::int, $4::int, $5::int, $6::int, $17::int, $7::int,
+    $12::int, $13::int, $14::real, $15::real, $16::real,
+    $18::real, $19::real, $20::real,
+    $8::bigint[], $9::bigint[], $10::bigint[], $21::int
+  where (select count(*) from character where account_id = $1::bigint) < $11::bigint
+  returning character_id
+),
+credited as (
+  insert into character_currency (character_id, currency_type_id, amount)
+  select character_id, 1, $22::bigint from made where $22::bigint > 0
 )
-select
-  $1::bigint, $2::text, $3::int, $4::int, $5::int, $6::int, $17::int, $7::int,
-  $12::int, $13::int, $14::real, $15::real, $16::real,
-  $18::real, $19::real, $20::real,
-  $8::bigint[], $9::bigint[], $10::bigint[], $21::int
-where (select count(*) from character where account_id = $1::bigint) < $11::bigint
-returning character_id;
+select character_id from made;

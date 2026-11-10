@@ -85,6 +85,7 @@ pub type Refusal {
 pub fn check(
   tables tables: table_store.Tables,
   request request: CreateCharacter,
+  starting_credits starting_credits: Int,
 ) -> Result(NewCharacter, Refusal) {
   case
     character_creation.get(
@@ -93,16 +94,17 @@ pub fn check(
     )
   {
     Error(Nil) -> Error(NoSuchRow(creation_id: request.creation_id))
-    Ok(row) -> check_row(tables:, row:, request:)
+    Ok(row) -> check_row(tables:, row:, request:, starting_credits:)
   }
 }
 
 /// Checks the row the request names and the request's path, labels and bone
-/// values, and gives the character to make.
+/// values, and gives the character to make, holding `starting_credits` credits.
 pub fn check_row(
   tables tables: table_store.Tables,
   row row: CharacterCreation,
   request request: CreateCharacter,
+  starting_credits starting_credits: Int,
 ) -> Result(NewCharacter, Refusal) {
   let creation_id = row.id
   let labels = list.length(request.customisation_labels)
@@ -183,6 +185,7 @@ pub fn check_row(
               class_id: character_creation.class_id(row),
               faction_id: row.faction_id,
             ),
+            starting_credits:,
           ))
       }
   }

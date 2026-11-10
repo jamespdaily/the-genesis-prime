@@ -58,6 +58,7 @@ import genesis_prime/message/chat_line_accepted
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
+import genesis_prime/message/currency_changed
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
 import genesis_prime/message/delete_result
@@ -67,12 +68,14 @@ import genesis_prime/message/disconnect_reason.{
 }
 import genesis_prime/message/enter_world
 import genesis_prime/message/float32
+import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags
 import genesis_prime/message/movement_velocity
 import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/message/player_character_state
 import genesis_prime/message/player_health
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
@@ -89,6 +92,8 @@ import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_stealth
+import genesis_prime/message/vendor_items
+import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/whisper_failed
 import genesis_prime/readiness
 import genesis_prime/server
@@ -100,6 +105,7 @@ import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn
+import genesis_prime/world_map/spawn_id
 import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/dict
@@ -122,8 +128,10 @@ import owned_test
 import place_support
 import planted_table
 import pog
+import rating_support
 import spawn_support
 import unitest
+import vendor_support
 
 /// The 16 bytes the client shows as its session key: the wire bytes of the
 /// GUID the hand-off holds.
@@ -1192,6 +1200,199 @@ pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_a
       blends: 0,
     )
     as "the place the player camped at, saved before 0x594: the camp's save is done before the client can pick the character again"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+// ---- a purchase is saved ----
+
+/// The credits the character is given before it buys (the table's value is a server
+/// choice, `starting_credits`; the test gives its own so it does not depend on it).
+const credits_before_the_buy = 1000
+
+/// The credits slot of the entry's 0x25E: the first of 15 u64 little-endian, the types 1
+/// to 15 in order, credits first (opcode.0x25e).
+fn credits_in_entry(frames frames: List(Frame)) -> Int {
+  let assert [Frame(body:, ..)] =
+    list.filter(frames, fn(frame) { frame.message_id == 0x025E })
+    as "the entry sends one 0x25E"
+  let assert Ok(state) = player_character_state.decode(body)
+    as "the client's reader reads the 0x25E"
+  let assert <<credits:unsigned-little-size(64), _:bytes>> = state.currencies
+  credits
+}
+
+pub fn credits_survive_a_relog_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Supplier Ingavak (Creature2 28739) stands 3.0 from the player's edge, within the
+  // 9.0 a vendor request is answered up to (opcode.0x7ea). The player is an Exile
+  // (faction 167), to whom his faction 171 is friendly (Faction2Relationship 771). A
+  // buy of one Item2 14838 costs the 67 the window shows (`vendor.start_zone_prices`),
+  // and 0x919 kind 0 then carries the credits left (opcode.0x919). After a camp and a
+  // new play, the 0x25E carries them in its first currency slot (opcode.0x25e).
+  let vendors =
+    vendor_support.stocking_items(
+      creature_ids: [28_739],
+      items: vendor_support.ingavaks_items,
+    )
+  let selection =
+    spawn.select(
+      rows: [
+        spawn.Row(
+          ..spawn_support.beast_row(number: 10_706),
+          creature_id: 28_739,
+          display_info_id: 29_772,
+          outfit_info_id: 9029,
+          faction_id: 171,
+          base_faction_id: 171,
+        ),
+      ],
+      tables: character_tables.content_tables(),
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.kinds(),
+      vendors:,
+    )
+  assert selection.refusals == [] as "the row passes the spawn checks"
+  let assert Ok(spawns) = dict.get(selection.worlds, 3460)
+  let assert Ok(selected) = dict.get(spawns.by_id, spawn_id.SpawnId(10_706))
+  let ingavak =
+    spawn.Spawn(
+      ..selected,
+      place: beast_place(
+        x: 1.5,
+        z: 3.5 -. { 3.0 +. 1.2 +. selected.combat.hit_radius },
+      ),
+    )
+  let started =
+    login_support.start_with(change: fn(settings) {
+      let game = settings.game
+      server.Settings(
+        ..settings,
+        game: server.Served(
+          ..game,
+          settings: connection_state.Settings(
+            ..game.settings,
+            vendors:,
+            game: GameSettings(
+              ..game.settings.game,
+              camp_countdown_ms: bot_countdown_ms,
+            ),
+          ),
+        ),
+        world: server.World(
+          ..settings.world,
+          spawns: spawn_support.key_in(
+            world_id: 1387,
+            spawns: [ingavak],
+            respawn_ms: 60_000,
+          ),
+        ),
+      )
+    })
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 1,
+    )
+  let assert Ok(_) =
+    pog.query("update character set faction_id = 167 where character_id = $1")
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character is of the faction Ingavak is friendly to"
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_currency (character_id, currency_type_id, amount) values ($1, 1, $2)",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.parameter(pog.int(credits_before_the_buy))
+    |> pog.execute(pool)
+    as "the character holds credits"
+  send_play(game:, character_id: character)
+  let #(entry, have) =
+    game_client.read_until(
+      game:,
+      have: <<>>,
+      within_ms: 5000,
+      found: fn(frames) {
+        list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+        && game_client.creatures_created_in(frames:) != []
+      },
+    )
+  assert credits_in_entry(frames: entry) == credits_before_the_buy
+    as "the entry carries the credits the character holds"
+  let assert [shown] = game_client.creatures_created_in(frames: entry)
+  assert shown.creature_id == 28_739
+    as "the creature in sight is Supplier Ingavak"
+  // The right-click opens the window; the item's unique id is the one the window shows.
+  let assert Ok(request) =
+    interaction_request.encode(InteractionRequest(
+      unit_id: shown.unit_id,
+      kind: 0x31,
+    ))
+  game_client.send_world(
+    game:,
+    message_id: interaction_request.message_id,
+    body: request,
+  )
+  let #(window, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x090B })
+    })
+  let assert [Frame(body: items, ..)] =
+    list.filter(window, fn(frame) { frame.message_id == 0x090B })
+  let assert Ok(stock) = vendor_items.decode(items)
+  let assert Ok(stimpack) =
+    list.find(stock.items, fn(item) { item.entry_id == 14_838 })
+    as "the window shows Item2 14838"
+  let assert Ok(buy) =
+    vendor_purchase.encode(VendorPurchase(
+      unique_id: stimpack.unique_id,
+      quantity: 1,
+    ))
+  game_client.send_world(
+    game:,
+    message_id: vendor_purchase.message_id,
+    body: buy,
+  )
+  let #(bought, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0919 })
+      && list.any(frames, fn(frame) {
+        frame.message_id == 0x0111 || frame.message_id == 0x017F
+      })
+    })
+  let assert [Frame(body: changed, ..)] =
+    list.filter(bought, fn(frame) { frame.message_id == 0x0919 })
+  let assert Ok(told) = currency_changed.decode(changed)
+  assert told.kind == 0 && told.total == credits_before_the_buy - 67
+    as "opcode.0x919: kind 0 sets the total, the credits less the 67 the window showed"
+  // The player camps and plays the same character again.
+  game_client.send_world(game:, message_id: 0x00BF, body: <<1>>)
+  let #(_, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0092 })
+    })
+  game_client.send_world(game:, message_id: 0x00C0, body: <<>>)
+  let #(_, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0594 })
+    })
+  game_client.send(game:, message_id: 0x07E0, body: <<>>)
+  let #(_, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0117 })
+    })
+  send_play(game:, character_id: character)
+  let #(second_entry, _) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+    })
+  assert credits_in_entry(frames: second_entry) == credits_before_the_buy - 67
+    as "opcode.0x25e: the first currency slot carries the credits the buy saved"
   game_client.close(game:)
   login_support.stop(started)
 }

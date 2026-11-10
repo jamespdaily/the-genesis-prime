@@ -169,6 +169,14 @@ pub type ActiveQuest {
   )
 }
 
+/// The amount of one currency a character holds, as the character_currency table
+/// keeps it: the client's currency type id (1 credits, 2 to 14 the others the client
+/// keeps; opcode.0x25e) and the amount, 0 or more. A currency with no row is 0 and is
+/// not listed.
+pub type HeldCurrency {
+  HeldCurrency(currency_type_id: Int, amount: Int)
+}
+
 /// A held item before its row gives it a guid: the same place and stack as a
 /// `HeldItem`, which the store writes in the same transaction as the character
 /// that holds it.
@@ -181,7 +189,9 @@ pub type NewItem {
 /// start the place (genesis_prime/game/start_place) and its experience, which
 /// the character is stored with and which makes its level
 /// (genesis_prime/game/level). `starting_items` are the items the
-/// character holds from its first entry, stored with the character.
+/// character holds from its first entry, stored with the character, and
+/// `starting_credits` the credits it holds from its first entry (a row of
+/// character_currency when above 0).
 pub type NewCharacter {
   NewCharacter(
     name: String,
@@ -196,6 +206,7 @@ pub type NewCharacter {
     look: List(LookEntry),
     bones: List(Int),
     starting_items: List(NewItem),
+    starting_credits: Int,
   )
 }
 
@@ -308,6 +319,33 @@ pub type ItemsRequest {
     session_epoch: SessionEpoch,
     item: HeldItem,
   )
+  /// A purchase from a vendor, all or none, only while the character holds exactly
+  /// `credits_held` credits (the total the connection holds) and at least `cost`: one
+  /// statement that takes `cost` off the credits, raises each stack of `grow` from
+  /// its `held_count` to its `new_count`, and inserts a stack of the Item2 `item2_id`
+  /// for each of `make`. Answered by `Bought` with the credits left and the rows made.
+  BuyFromVendor(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    credits_held: Int,
+    cost: Int,
+    grow: List(StackGrowth),
+    make: List(NewStack),
+    item2_id: Item2Id,
+  )
+}
+
+/// A held stack that a purchase fills: the item `item_guid`, held with `held_count`,
+/// holds `new_count` after the purchase.
+pub type StackGrowth {
+  StackGrowth(item_guid: Int, held_count: Int, new_count: Int)
+}
+
+/// A stack a purchase makes, at a place that holds no item: the place and the count
+/// of the new row, whose Item2 is the request's.
+pub type NewStack {
+  NewStack(location: Int, bag_index: Int, stack_count: Int)
 }
 
 /// What the STS login asks the store.
@@ -374,7 +412,8 @@ pub type WorldAnswer {
   /// enters at the least experience of its level) and the items it holds, by
   /// location then bag index (none for a character with no stored items) and
   /// the rows of its quest log, in quest id order (none for a character with no
-  /// quest). The rows are read in the transaction that raised the epoch, so no
+  /// quest) and the currencies it holds, by type (none for a character that holds
+  /// none). The rows are read in the transaction that raised the epoch, so no
   /// delete lands between them. Asking again takes the character again and raises
   /// it again.
   CharacterLoaded(
@@ -384,6 +423,7 @@ pub type WorldAnswer {
     saved_experience: Option(Int),
     items: List(HeldItem),
     quests: List(QuestRow),
+    currencies: List(HeldCurrency),
   )
   /// The account has no character with the id.
   NotTheAccounts
@@ -424,6 +464,10 @@ pub type ItemsAnswer {
   /// A split's rows are saved, the new stack's row having this guid, the
   /// database's identity for it.
   ItemMade(item_guid: Int)
+  /// A purchase's rows are saved: `credits` is what the character holds after the
+  /// cost was taken, and `made` the new stacks, each with the guid the database gave
+  /// it.
+  Bought(credits: Int, made: List(HeldItem))
   /// Nothing was saved, for one of three causes the statement cannot tell apart:
   /// a later login raised the character's `session_epoch` past the request's, a
   /// row was not as the request held it, or the account has no such character.

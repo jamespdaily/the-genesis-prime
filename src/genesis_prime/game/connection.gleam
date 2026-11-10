@@ -157,11 +157,12 @@ import genesis_prime/game/connection/movement as connection_movement
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
-  type Ending, type Session, type Status, AwaitingHelloReply, Busy,
+  type Ending, type Session, type Status, AwaitingHelloReply, Busy, Buying,
   ClaimingSession, Ending, EnteringWorld, Greeting, InCharacterSelect, InWorld,
   LeavingMap, MovingItem, Present, SavingPlace, Selecting, Session, Summoning,
   TakingSessionKey, WaitingToClaim,
 } as connection_state
+import genesis_prime/game/connection/vendor_purchase as connection_vendor_purchase
 import genesis_prime/game/connection/viewers as connection_viewers
 import genesis_prime/game/connection/world as connection_world
 import genesis_prime/game/player_life
@@ -431,6 +432,7 @@ fn asking(status: Status) -> Bool {
     | EnteringWorld(..)
     | Summoning(..)
     | MovingItem(..)
+    | Buying(..)
     | SavingPlace(..)
     | LeavingMap(..) -> True
     InCharacterSelect(select:, ..) -> character_select.waiting(select)
@@ -561,7 +563,8 @@ fn routed(
     | Ok(routing.Life(..))
     | Ok(routing.Innate(..))
     | Ok(routing.Interaction(..))
-    | Ok(routing.Inventory(..)) ->
+    | Ok(routing.Inventory(..))
+    | Ok(routing.VendorPurchase) ->
       connection_state.misrouted(session:, now:, inner:)
     Error(Nil) ->
       case stage {
@@ -728,6 +731,14 @@ fn world_carried(
                     inner: whole,
                     message:,
                   )
+                Ok(routing.VendorPurchase) ->
+                  connection_vendor_purchase.purchase_message(
+                    session:,
+                    now:,
+                    holder:,
+                    entered:,
+                    inner: whole,
+                  )
                 Ok(routing.Dropped(message:)) ->
                   connection_dropped.dropped_message(
                     session:,
@@ -877,6 +888,15 @@ fn answered(
         holder:,
         entered:,
         moving:,
+        outcome:,
+      )
+    Buying(holder:, entered:, purchase:) ->
+      connection_vendor_purchase.buy_answered(
+        session:,
+        now:,
+        holder:,
+        entered:,
+        purchase:,
         outcome:,
       )
     SavingPlace(holder:, entered:, then:) ->
