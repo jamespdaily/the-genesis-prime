@@ -24,6 +24,9 @@
 ////   with the new total, then a 0x111 for each new stack and a 0x17F for each grown stack,
 ////   each with the reason 7 (Vendor), which makes the client show "Bought <item>"
 ////   (Vendor.lua OnItemAdded l.733).
+//// - `opcode.0xba.price` and `lua.Vendor.buyback_price`: a buy back costs what its entry
+////   holds, in the entry's currency, so the 0x919 it ends in has that currency's kind (the
+////   type - 1); the entry names no place, so a worn item's entry returns a stack to the bags.
 
 import character_support
 import character_tables
@@ -769,6 +772,175 @@ pub fn a_buy_back_over_the_credits_held_or_the_room_left_is_refused_test() -> Ni
     )
     == [27]
     as "enum 27, Item_InventoryFull: the store is not asked and the list is not changed"
+}
+
+/// The buyback list of the sales in other places and currencies: entry 5 is 1 of Item2 16053
+/// sold for 60 Glory (CurrencyType 7), entry 6 is 1 of 13176 sold for 78 credits from its
+/// worn place.
+fn sold_elsewhere() -> Buyback {
+  Buyback(next_id: 7, entries: [
+    BuybackEntry(
+      buyback_id: 5,
+      item2_id: Item2Id(16_053),
+      quantity: 1,
+      currency_type_id: 7,
+      amount: 60,
+    ),
+    BuybackEntry(
+      buyback_id: 6,
+      item2_id: Item2Id(13_176),
+      quantity: 1,
+      currency_type_id: 1,
+      amount: 78,
+    ),
+  ])
+}
+
+/// The credits and the 80 Glory a player holds for the entries sold in Glory.
+fn credits_and_glory() -> Currencies {
+  currency.with_amount(
+    currencies: credits(total: 100),
+    currency_type_id: 7,
+    total: 80,
+  )
+}
+
+pub fn a_buy_back_of_an_entry_sold_for_glory_takes_glory_and_sends_its_total_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // `opcode.0xba.price`: an entry carries the currency type and the amount its sale paid, and
+  // `lua.Vendor.buyback_price` is what the client shows for it. The player holds 100 credits
+  // and 80 Glory; entry 5 costs 60 Glory.
+  let scene =
+    Scene(
+      ..buying_back(buyback_id: 5),
+      credits: credits_and_glory(),
+      buyback: sold_elsewhere(),
+    )
+  let purchase = asked_back(scene:)
+  assert purchase
+    == Purchase(
+      kind: vendor_purchase.BoughtBack(buyback_id: 5),
+      unit_id: vendor_support.walker_unit,
+      item2_id: Item2Id(16_053),
+      items_bought: 1,
+      cost: 60,
+      currency_type_id: 7,
+      held: 80,
+      grow: [],
+      make: [NewStack(location: 1, bag_index: 0, stack_count: 1)],
+    )
+    as "the entry's 60 Glory against the 80 Glory held, not the credits"
+  assert vendor_purchase.request(
+      purchase:,
+      account_id: AccountId(7),
+      character_id: CharacterId(42),
+      session_epoch: character_support.epoch(1),
+    )
+    == store.Items(store.BuyFromVendor(
+      account_id: AccountId(7),
+      character_id: CharacterId(42),
+      session_epoch: character_support.epoch(1),
+      currency_type_id: 7,
+      held: 80,
+      cost: 60,
+      grow: [],
+      make: [NewStack(location: 1, bag_index: 0, stack_count: 1)],
+      item2_id: Item2Id(16_053),
+    ))
+    as "the store is asked to take the 60 off the 80 Glory held"
+  let made = in_bag(guid: 500, item2_id: 16_053, index: 0, count: 1)
+  let #(_, held_currencies, buyback, effects) =
+    vendor_purchase.answered(
+      purchase:,
+      items: [],
+      currencies: credits_and_glory(),
+      buyback: sold_elsewhere(),
+      answer: Bought(amount: 20, made: [made]),
+    )
+  assert currency.held(currencies: held_currencies, currency_type_id: 7) == 20
+    as "the Glory the store left: 80 less the entry's 60"
+  assert currency.credits(currencies: held_currencies) == 100
+    as "the credits are as they were"
+  assert list.map(buyback.entries, fn(entry) { entry.buyback_id }) == [6]
+    as "entry 5 leaves the list"
+  let assert [total, _, removed] = frames(effects:)
+    as "a 0x919, a 0x111 for the new stack, then a 0xBD"
+  assert total.message_id == currency_changed.message_id
+  assert currency_changed.decode(total.body)
+    == Ok(CurrencyChanged(kind: 6, total: 20, field_3: 0, field_4: 0))
+    as "opcode.0x919: the kind is the currency type 7 - 1, and the total is Glory's"
+  assert buyback_removed.decode(removed.body)
+    == Ok(buyback_removed.BuybackRemoved(buyback_id: 5))
+    as "opcode.0xbd: the id of the entry bought back"
+}
+
+pub fn a_buy_back_over_the_amount_held_of_its_currency_is_refused_with_not_enough_cash_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Entry 5 costs 60 Glory. 100,000 credits are held, which the entry does not ask for, and
+  // 59 Glory is one short; 60 is enough; no Glory row is 0 held.
+  let with_glory = fn(glory) {
+    Scene(
+      ..buying_back(buyback_id: 5),
+      credits: currency.with_amount(
+        currencies: credits(total: 100_000),
+        currency_type_id: 7,
+        total: glory,
+      ),
+      buyback: sold_elsewhere(),
+    )
+  }
+  assert codes(effects: refused_back(scene: with_glory(59)).0) == [20]
+    as "enum 20, Vendor_NotEnoughCash: the credits held do not pay for an entry in Glory"
+  assert asked_back(scene: with_glory(60)).cost == 60
+    as "the Glory held may equal the entry's price"
+  let none_held =
+    Scene(
+      ..buying_back(buyback_id: 5),
+      credits: credits(total: 100_000),
+      buyback: sold_elsewhere(),
+    )
+  assert codes(effects: refused_back(scene: none_held).0) == [20]
+    as "a currency with no held row is 0 held"
+}
+
+pub fn a_bought_back_worn_item_returns_to_the_bags_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The entry names no place (`opcode.0xba.price`), so item 13176 sold from its worn place
+  // (location 0) comes back as a new stack in the first empty inventory slot, here index 1
+  // beside a stack at index 0. Wearing it again is left to the player.
+  let items = [in_bag(guid: 12, item2_id: 20_791, index: 0, count: 5)]
+  let scene =
+    Scene(
+      ..buying_back(buyback_id: 6),
+      items:,
+      credits: credits(total: 100),
+      buyback: sold_elsewhere(),
+    )
+  let purchase = asked_back(scene:)
+  assert purchase.item2_id == Item2Id(13_176)
+  assert purchase.cost == 78
+  assert purchase.grow == []
+  assert purchase.make == [NewStack(location: 1, bag_index: 1, stack_count: 1)]
+    as "a new stack in the bags: the entry holds no worn place"
+  let made = in_bag(guid: 500, item2_id: 13_176, index: 1, count: 1)
+  let #(held, held_credits, _, effects) =
+    vendor_purchase.answered(
+      purchase:,
+      items:,
+      currencies: credits(total: 100),
+      buyback: scene.buyback,
+      answer: Bought(amount: 22, made: [made]),
+    )
+  assert list.contains(held, made) as "the item is held again, in the bags"
+  assert currency.credits(currencies: held_credits) == 22
+  let assert [_, added, _] = frames(effects:) as "a 0x919, a 0x111 and a 0xBD"
+  let assert Ok(item_added.ItemAdded(held_item:)) =
+    item_added.decode(added.body)
+    as "0x111 decodes"
+  assert held_item.reason == 16
+    as "Item.CodeEnumItemUpdateReason: Buyback is 16"
+  assert held_item.item.location == 1
+  assert held_item.item.bag_index == 1
 }
 
 pub fn a_buy_back_body_the_client_reader_refuses_ends_the_connection_test() -> Nil {

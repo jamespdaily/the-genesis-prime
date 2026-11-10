@@ -30,7 +30,8 @@ import experience_support
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{
-  type Answer, type Message, AskStore, CreatureAppeared, FromStore,
+  type Answer, type Message, AskStore, CreatureAppeared, FromStore, LookChanged,
+  PropertiesChanged,
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
@@ -43,11 +44,17 @@ import genesis_prime/message/buyback_removed
 import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/dialog_responses_shown.{DialogResponsesShown}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
+import genesis_prime/message/float32
 import genesis_prime/message/generic_error.{GenericError}
 import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/item_count_changed.{ItemCountChanged}
 import genesis_prime/message/item_place
+import genesis_prime/message/item_removed.{ItemRemoved}
+import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
+import genesis_prime/message/unit_item_visuals_changed
+import genesis_prime/message/unit_properties_changed
+import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/vendor_item.{type VendorItem, VendorItem}
 import genesis_prime/message/vendor_items.{VendorItems}
 import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
@@ -985,4 +992,100 @@ pub fn a_buy_back_through_the_connection_saves_the_shortened_list_test() -> Nil 
   assert refusal.message_id == generic_error.message_id
   assert generic_error.decode(refusal.body) == Ok(GenericError(code: 14))
     as "enum 14, Vendor_UnknownItem"
+}
+
+/// The player's look in a slot: `slot` with `display`, colour set 0 and no dye.
+fn look(slot slot: Int, display display: Int) -> ItemVisual {
+  ItemVisual(slot:, display_id: display, item_color_set_id: 0, dye: 0)
+}
+
+/// A unit property whose base and value are `number`.
+fn property(id id: Int, number number: Float) -> UnitProperty {
+  UnitProperty(
+    property_id: id,
+    base: float32.to_bits(number),
+    value: float32.to_bits(number),
+  )
+}
+
+/// The Engineer's properties without its chest: Base Health 586, Armor 187.5 and Assault
+/// Rating 194.0625, as `game_connection_inventory_test` works them out.
+fn without_the_chest() -> List(UnitProperty) {
+  [
+    property(id: 7, number: 586.0),
+    property(id: 35, number: 194.0625),
+    property(id: 42, number: 187.5),
+  ]
+}
+
+pub fn selling_a_worn_item_sends_0x148_then_0x933_and_0x93a_and_tells_each_viewer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state =
+    connection_support.watched_by(state: selling_state(), viewers: [2, 3])
+  // The Engineer's chest is worn at location 0, bag index 0 (ItemSlot 1), as guid 1.
+  let #(state, taken) =
+    connection_support.sale_requested(
+      state:,
+      place: item_place.ItemPlace(location: 0, bag_index: 0),
+      quantity: 1,
+    )
+  let assert AskStore(store.Items(store.SellToVendor(sold:, ..))) =
+    connection_support.ask_request(taken)
+    as "0x1403d6a10 refuses only a worn bag at location 0: a worn chest is a sale like any other"
+  assert sold
+    == [
+      store.SoldStack(item_guid: 1, location: 0, held_count: 1, sold_count: 1),
+    ]
+    as "the store is asked to delete the worn stack at location 0"
+  let #(_, answered) =
+    connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(store.ForItems(store.Sold(amount: 150)))),
+    )
+  assert connection_support.written_ids(answered)
+    == [0x0919, 0x0148, 0x00BA, 0x0933, 0x093A, 0x092F]
+    as "the sale's total, the removal, the buyback entry, then the look and the properties as the delete of a worn item sends them, then the health the lower maximum caps"
+  let assert [total] =
+    connection_support.decoded(
+      connection_support.written(answered),
+      0x0919,
+      currency_changed.decode,
+    )
+  assert total == CurrencyChanged(kind: 0, total: 150, field_3: 0, field_4: 0)
+    as "opcode.0x919: the total the store left"
+  let assert [removed] =
+    connection_support.decoded(
+      connection_support.written(answered),
+      0x0148,
+      item_removed.decode,
+    )
+  assert removed == ItemRemoved(item_guid: 1, reason: 7)
+    as "Item.CodeEnumItemUpdateReason: Vendor is 7; opcode.0x148.model_unchanged: the frame changes no model, so the 0x933 below is the server's"
+  let assert [looks] =
+    connection_support.decoded(
+      connection_support.written(answered),
+      0x0933,
+      unit_item_visuals_changed.decode,
+    )
+  assert looks.unit_id == connection_support.own_unit_id
+  assert looks.item_visuals == [look(slot: 1, display: 0)]
+    as "opcode.0x933.empty_display: the chest's slot 1 is emptied"
+  let assert [properties] =
+    connection_support.decoded(
+      connection_support.written(answered),
+      0x093A,
+      unit_properties_changed.decode,
+    )
+  assert properties.unit_id == connection_support.own_unit_id
+  assert properties.properties == without_the_chest()
+    as "opcode.0x93a: the three properties the chest gave, in property order"
+  list.each([2, 3], fn(viewer) {
+    assert list.take(connection_support.news_told(taken: answered, viewer:), 2)
+      == [
+        LookChanged(item_visuals: [look(slot: 1, display: 0)]),
+        PropertiesChanged(properties: without_the_chest()),
+      ]
+      as "opcode.0x93a.other_unit: each viewer is told the same look and entries"
+  })
 }

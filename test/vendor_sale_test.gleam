@@ -62,6 +62,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/set
 import gleam/string
 import owned_test
+import planted_table.{Integer}
 import player_life_support
 import vendor_support
 
@@ -155,6 +156,7 @@ type Scene {
     picture: shown.Picture,
     vendors: vendor.Vendors,
     logged: set.Set(String),
+    tables: table_store.Tables,
   )
 }
 
@@ -173,6 +175,7 @@ fn selling(
     picture: vendor_support.picture_with_walker(gap: 1.0),
     vendors: vendor_support.stocking(creature_ids: [74_812]),
     logged: set.new(),
+    tables: character_tables.shared(),
   )
 }
 
@@ -207,7 +210,7 @@ fn taken(scene scene: Scene) -> Result(Taken, vendor_trade.Refusal) {
       place: connection_support.entry_place(),
     ),
     picture: scene.picture,
-    tables: character_tables.shared(),
+    tables: scene.tables,
     vendors: scene.vendors,
     now_ms: 0,
     logged: scene.logged,
@@ -269,6 +272,24 @@ fn entry(
   quantity quantity: Int,
   paid paid: Int,
 ) -> buyback_entry.BuybackEntry {
+  entry_in(
+    buyback_id:,
+    item_id:,
+    quantity:,
+    paid:,
+    currency_type: currency.credits_type,
+  )
+}
+
+/// The 0xBA entry for a sale of `quantity` of an item for `paid` of the currency type
+/// `currency_type`.
+fn entry_in(
+  buyback_id buyback_id: Int,
+  item_id item_id: Int,
+  quantity quantity: Int,
+  paid paid: Int,
+  currency_type currency_type: Int,
+) -> buyback_entry.BuybackEntry {
   buyback_entry.BuybackEntry(
     buyback_id:,
     item_id:,
@@ -293,7 +314,7 @@ fn entry(
     field_21: 0,
     amount_1: paid,
     amount_2: 0,
-    currency_type_1: 1,
+    currency_type_1: currency_type,
     currency_type_2: 0,
     field_26: 0,
   )
@@ -324,10 +345,19 @@ fn walker_with(
 
 /// A 0x919, which must set credits to `total`.
 fn assert_total(frame frame: Frame, total total: Int) -> Nil {
+  assert_total_of(frame:, kind: 0, total:)
+}
+
+/// A 0x919 of this kind (the currency type - 1), which must set that currency to `total`.
+fn assert_total_of(
+  frame frame: Frame,
+  kind kind: Int,
+  total total: Int,
+) -> Nil {
   assert frame.message_id == currency_changed.message_id
   assert currency_changed.decode(frame.body)
-    == Ok(CurrencyChanged(kind: 0, total:, field_3: 0, field_4: 0))
-    as "opcode.0x919: kind 0 sets credits to the new total, and the two 32-bit values are 0"
+    == Ok(CurrencyChanged(kind:, total:, field_3: 0, field_4: 0))
+    as "opcode.0x919: the kind is the currency type - 1, it sets that currency to the new total, and the two 32-bit values are 0"
 }
 
 /// A 0x148 that takes the stack away with the reason Vendor.
@@ -955,4 +985,190 @@ pub fn a_table_set_without_the_credit_cap_or_the_sell_fraction_row_fails_the_loa
         as "GetCurrencyCap.entitlement_14 and 0x14040bfb0: the cap and the sell fraction are read from GameFormula rows 1115 and 1026, so a load without one fails"
     },
   )
+}
+
+pub fn selling_a_worn_item_removes_it_with_0x148_reason_vendor_and_adds_a_buyback_entry_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Item2 13176 sells for 78 (`item_price_test`); it is worn at location 0, slot 5, beside a
+  // stack in the bags. `0x1403d6a10` refuses only a worn bag at location 0, so this sells.
+  let worn = held(guid: 16, item2_id: 13_176, location: 0, index: 5, count: 1)
+  let bagged = in_bag(guid: 12, item2_id: 20_791, index: 0, count: 5)
+  let items = [worn, bagged]
+  let scene = sell_at(items:, location: 0, index: 5, quantity: 1)
+  let sale = asked(scene:)
+  assert sale
+    == Sale(
+      unit_id: vendor_support.walker_unit,
+      first: SoldItem(
+        item_guid: 16,
+        item2_id: Item2Id(13_176),
+        location: 0,
+        held_count: 1,
+        sold_count: 1,
+        paid: 78,
+      ),
+      rest: [],
+      currency_type_id: 1,
+      held: 100,
+      after: 178,
+    )
+    as "0x1403d6a10: the worn item is let through, and the store is asked to delete the stack at location 0"
+  let #(left, held_credits, buyback, effects) =
+    vendor_sale.answered(
+      sale:,
+      items:,
+      currencies: scene.credits,
+      buyback: Buyback(next_id: 1, entries: []),
+      answer: store.Sold(amount: 178),
+    )
+  assert left == [bagged]
+    as "the worn item leaves the held items; the stack in the bags stays"
+  assert currency.credits(currencies: held_credits) == 178
+  let assert [total, removed, added] = frames(effects:)
+    as "a 0x919, then a 0x148 and a 0xBA, as for a stack in the bags"
+  assert_total(frame: total, total: 178)
+  assert_removed(frame: removed, guid: 16)
+  assert_entry(
+    frame: added,
+    entry: entry(buyback_id: 1, item_id: 13_176, quantity: 1, paid: 78),
+  )
+  assert buyback.entries
+    == [
+      world_entry.BuybackEntry(
+        buyback_id: 1,
+        item2_id: Item2Id(13_176),
+        quantity: 1,
+        currency_type_id: 1,
+        amount: 78,
+      ),
+    ]
+    as "opcode.0xba.price: the sale is the buyback list's entry 1"
+}
+
+/// A sale of `quantity` of the stack at a place `location`, `index`, which `items` hold.
+fn sell_at(
+  items items: List(HeldItem),
+  location location: Int,
+  index index: Int,
+  quantity quantity: Int,
+) -> Scene {
+  Scene(..selling(location:, index:, quantity:), items:)
+}
+
+pub fn selling_an_item_priced_in_glory_pays_its_row_amount_in_glory_and_its_entry_names_glory_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Item2 16053 sells for 60 Glory, CurrencyType 7 (`item_price_test`); the player holds 100
+  // credits and no Glory, so the one of 16053 asks for a held of 0 and an after of 60.
+  let items = [in_bag(guid: 21, item2_id: 16_053, index: 0, count: 1)]
+  let scene =
+    Scene(
+      ..sell(items:, index: 0, quantity: 1),
+      vendors: paying(multiplier: 1.55),
+    )
+  let sale = asked(scene:)
+  assert sale
+    == Sale(
+      unit_id: vendor_support.walker_unit,
+      first: SoldItem(
+        item_guid: 21,
+        item2_id: Item2Id(16_053),
+        location: 1,
+        held_count: 1,
+        sold_count: 1,
+        paid: 60,
+      ),
+      rest: [],
+      currency_type_id: 7,
+      held: 0,
+      after: 60,
+    )
+    as "0x14041bcc0.formula: a price in Glory is the row's 60 whatever the vendor's sell multiplier 1.55 says, against the 0 Glory held"
+  let #(left, held_currencies, buyback, effects) =
+    vendor_sale.answered(
+      sale:,
+      items:,
+      currencies: scene.credits,
+      buyback: Buyback(next_id: 1, entries: []),
+      answer: store.Sold(amount: 60),
+    )
+  assert left == [] as "the item leaves"
+  assert currency.held(currencies: held_currencies, currency_type_id: 7) == 60
+    as "the Glory held is the total the store left"
+  assert currency.credits(currencies: held_currencies) == 100
+    as "the credits are as they were"
+  let assert [total, removed, added] = frames(effects:)
+    as "a 0x919, then a 0x148 and a 0xBA"
+  assert_total_of(frame: total, kind: 6, total: 60)
+  assert_removed(frame: removed, guid: 21)
+  assert_entry(
+    frame: added,
+    entry: entry_in(
+      buyback_id: 1,
+      item_id: 16_053,
+      quantity: 1,
+      paid: 60,
+      currency_type: 7,
+    ),
+  )
+  assert buyback.entries
+    == [
+      world_entry.BuybackEntry(
+        buyback_id: 1,
+        item2_id: Item2Id(16_053),
+        quantity: 1,
+        currency_type_id: 7,
+        amount: 60,
+      ),
+    ]
+    as "opcode.0xba.price: the entry names Glory (type 7) and the 60 paid"
+}
+
+pub fn a_sale_past_a_currency_cap_stops_that_currency_at_its_cap_and_its_entry_keeps_the_full_price_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The fixture holds no Item2 row priced in Renown (CurrencyType 2, capped by GameFormula
+  // 1116 at 5,000), so Item2 16053 is edited to the 2,500 Renown that Item2 16069 sells for
+  // in the client's own table.
+  use tables <- fixture_tables.changed(table: "Item2", id: 16_053, with: [
+    #("currencyTypeId0SellToVendor", Integer(2)),
+    #("currencyAmount0SellToVendor", Integer(2500)),
+  ])
+  let items = [in_bag(guid: 21, item2_id: 16_053, index: 0, count: 1)]
+  let renown =
+    currency.with_amount(
+      currencies: credits(total: 100),
+      currency_type_id: 2,
+      total: 4000,
+    )
+  let scene =
+    Scene(..sell(items:, index: 0, quantity: 1), credits: renown, tables:)
+  let sale = asked(scene:)
+  assert sale.currency_type_id == 2 as "the item sells for Renown"
+  assert sale.first.paid == 2500
+  assert sale.held == 4000
+  assert sale.after == 5000
+    as "GetCurrencyCap.entitlement_14: Renown stops at GameFormula 1116's 5,000, not 6,500"
+  let #(_, held_currencies, buyback, effects) =
+    vendor_sale.answered(
+      sale:,
+      items:,
+      currencies: scene.credits,
+      buyback: Buyback(next_id: 1, entries: []),
+      answer: store.Sold(amount: 5000),
+    )
+  assert currency.held(currencies: held_currencies, currency_type_id: 2) == 5000
+  assert currency.credits(currencies: held_currencies) == 100
+  let assert [total, _, added] = frames(effects:)
+  assert_total_of(frame: total, kind: 1, total: 5000)
+  assert_entry(
+    frame: added,
+    entry: entry_in(
+      buyback_id: 1,
+      item_id: 16_053,
+      quantity: 1,
+      paid: 2500,
+      currency_type: 2,
+    ),
+  )
+  assert list.map(buyback.entries, fn(entry) { entry.amount }) == [2500]
+    as "lua.Vendor.buyback_price: the entry keeps the 2,500 the sale paid, before the cap"
 }

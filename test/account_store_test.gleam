@@ -53,6 +53,7 @@ import genesis_prime/table/id.{
 import gleam/bool
 import gleam/dynamic/decode
 import gleam/erlang/process
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/factory_supervisor
@@ -3560,13 +3561,38 @@ fn buy(
   grow grow: List(store.StackGrowth),
   make make: List(store.NewStack),
 ) -> store.Answer {
+  buy_in(
+    store:,
+    account:,
+    character_id:,
+    epoch:,
+    currency_type_id: 1,
+    held:,
+    cost:,
+    grow:,
+    make:,
+  )
+}
+
+/// A purchase of the stackable Item2 paid in the currency type `currency_type_id`.
+fn buy_in(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+  epoch epoch: Int,
+  currency_type_id currency_type_id: Int,
+  held held: Int,
+  cost cost: Int,
+  grow grow: List(store.StackGrowth),
+  make make: List(store.NewStack),
+) -> store.Answer {
   ask(
     store,
     Items(store.BuyFromVendor(
       account_id: account,
       character_id:,
       session_epoch: character_support.epoch(epoch),
-      currency_type_id: 1,
+      currency_type_id:,
       held:,
       cost:,
       grow:,
@@ -3756,6 +3782,34 @@ pub fn a_buy_with_too_few_credits_saved_changes_nothing_test() -> Nil {
       ),
     ),
     #(
+      "a cost in a currency the character holds none of",
+      buy_in(
+        store:,
+        account:,
+        character_id:,
+        epoch:,
+        currency_type_id: 7,
+        held: 0,
+        cost: 5,
+        grow:,
+        make:,
+      ),
+    ),
+    #(
+      "a currency held that is not the currency saved",
+      buy_in(
+        store:,
+        account:,
+        character_id:,
+        epoch:,
+        currency_type_id: 7,
+        held: 1000,
+        cost: 300,
+        grow:,
+        make:,
+      ),
+    ),
+    #(
       "a grown stack that is not of the purchased Item2",
       buy(
         store:,
@@ -3825,13 +3879,36 @@ fn sell(
   after after: Int,
   sold sold: List(store.SoldStack),
 ) -> store.Answer {
+  sell_in(
+    store:,
+    account:,
+    character_id:,
+    epoch:,
+    currency_type_id: 1,
+    held:,
+    after:,
+    sold:,
+  )
+}
+
+/// A sale of the stacks paid in the currency type `currency_type_id`.
+fn sell_in(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+  epoch epoch: Int,
+  currency_type_id currency_type_id: Int,
+  held held: Int,
+  after after: Int,
+  sold sold: List(store.SoldStack),
+) -> store.Answer {
   ask(
     store,
     Items(store.SellToVendor(
       account_id: account,
       character_id:,
       session_epoch: character_support.epoch(epoch),
-      currency_type_id: 1,
+      currency_type_id:,
       held:,
       after:,
       sold:,
@@ -3957,6 +4034,32 @@ pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
       ),
     ),
     #(
+      "an amount held of the sale's currency that is not the amount saved",
+      sell_in(
+        store:,
+        account:,
+        character_id:,
+        epoch:,
+        currency_type_id: 7,
+        held: 10,
+        after: 70,
+        sold: [part],
+      ),
+    ),
+    #(
+      "an amount held of the sale's currency that is the credits saved",
+      sell_in(
+        store:,
+        account:,
+        character_id:,
+        epoch:,
+        currency_type_id: 7,
+        held: 1000,
+        after: 1060,
+        sold: [part],
+      ),
+    ),
+    #(
       "a stack that is not held",
       sell(
         store:,
@@ -4005,6 +4108,197 @@ pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
   })
   assert bought_state(store:, account:, character_id:) == #(1000, before)
     as "each refusal changed nothing, the credits and the matching stack included"
+  stop(store)
+}
+
+/// Every amount a login finds, sorted by currency type, and the items it finds.
+fn held_everything(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+) -> #(List(store.HeldCurrency), List(store.HeldItem)) {
+  let assert ForWorld(CharacterLoaded(currencies:, items:, ..)) =
+    ask(store, World(LoadCharacter(account, character_id)))
+    as "the account's character loads"
+  #(
+    list.sort(currencies, fn(a, b) {
+      int.compare(a.currency_type_id, b.currency_type_id)
+    }),
+    items,
+  )
+}
+
+/// The Novice chest, the one item the set wears at location 0, slot 0.
+fn worn_chest(items items: List(store.HeldItem)) -> store.HeldItem {
+  let assert Ok(chest) =
+    list.find(items, fn(item) { item.location == 0 && item.bag_index == 0 })
+    as "the Novice set wears an item at location 0, bag index 0"
+  chest
+}
+
+/// A sale of the whole of a worn item.
+fn worn_whole(item item: store.HeldItem) -> store.SoldStack {
+  store.SoldStack(
+    item_guid: item.item_guid,
+    location: 0,
+    held_count: item.stack_count,
+    sold_count: item.stack_count,
+  )
+}
+
+pub fn a_sale_in_another_currency_writes_that_currency_and_makes_its_row_when_none_is_held_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
+  let assert [first, second] = stacks
+  let #(epoch, before) = login(store:, account:, character_id:)
+  assert sell_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      currency_type_id: 7,
+      held: 0,
+      after: 60,
+      sold: [
+        store.SoldStack(
+          item_guid: first.item_guid,
+          location: 1,
+          held_count: 10,
+          sold_count: 10,
+        ),
+      ],
+    )
+    == ForItems(store.Sold(amount: 60))
+    as "a sale for 60 Glory (type 7) of a character with no Glory row is saved and answers the Glory held after"
+  let #(currencies, items) = held_everything(store:, account:, character_id:)
+  assert currencies
+    == [
+      store.HeldCurrency(currency_type_id: 1, amount: 1000),
+      store.HeldCurrency(currency_type_id: 7, amount: 60),
+    ]
+    as "the next login finds 60 Glory in a row the sale made, and the credits as they were"
+  assert list.length(items) == list.length(before) - 1
+    as "only the stack sold left"
+  assert item_in_bag(items:, index: 2) == second
+    as "the other stack is as it was"
+  stop(store)
+}
+
+pub fn a_sale_of_a_worn_stack_deletes_it_from_its_worn_place_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, _) = holding_stacks(store:, stacks: [])
+  let #(epoch, before) = login(store:, account:, character_id:)
+  let chest = worn_chest(items: before)
+  assert sell(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      held: 1000,
+      after: 1078,
+      sold: [worn_whole(item: chest)],
+    )
+    == ForItems(store.Sold(amount: 1078))
+    as "a sale of the worn chest at location 0 is saved"
+  let #(currencies, items) = held_everything(store:, account:, character_id:)
+  assert currencies == [store.HeldCurrency(currency_type_id: 1, amount: 1078)]
+  assert list.any(items, fn(item) { item.item_guid == chest.item_guid })
+    == False
+    as "the chest is gone at the next load"
+  assert list.filter(before, fn(item) { item.item_guid != chest.item_guid })
+    == items
+    as "the rest of the set stays where it was worn"
+  stop(store)
+}
+
+pub fn a_buy_back_in_another_currency_takes_that_currency_in_one_statement_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 10)])
+  let assert [first] = stacks
+  let #(epoch, _) = login(store:, account:, character_id:)
+  assert sell_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      currency_type_id: 7,
+      held: 0,
+      after: 60,
+      sold: [
+        store.SoldStack(
+          item_guid: first.item_guid,
+          location: 1,
+          held_count: 10,
+          sold_count: 10,
+        ),
+      ],
+    )
+    == ForItems(store.Sold(amount: 60))
+    as "the character earns 60 Glory"
+  let assert ForItems(store.Bought(amount:, made:)) =
+    buy_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      currency_type_id: 7,
+      held: 60,
+      cost: 25,
+      grow: [],
+      make: [store.NewStack(location: 1, bag_index: 1, stack_count: 10)],
+    )
+    as "a buy back for 25 Glory, which the character holds, is saved"
+  assert amount == 35 as "the Glory left"
+  let #(currencies, items) = held_everything(store:, account:, character_id:)
+  assert currencies
+    == [
+      store.HeldCurrency(currency_type_id: 1, amount: 1000),
+      store.HeldCurrency(currency_type_id: 7, amount: 35),
+    ]
+    as "the Glory fell by the cost and the credits did not change"
+  let assert [made_stack] = made as "the one stack is made"
+  assert item_in_bag(items:, index: 1) == made_stack
+  assert made_stack.stack_count == 10
+  stop(store)
+}
+
+pub fn the_same_sale_sent_twice_to_the_store_changes_nothing_the_second_time_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, _) = holding_stacks(store:, stacks: [])
+  let #(epoch, before) = login(store:, account:, character_id:)
+  let chest = worn_chest(items: before)
+  let send = fn() {
+    sell_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      currency_type_id: 7,
+      held: 0,
+      after: 60,
+      sold: [worn_whole(item: chest)],
+    )
+  }
+  assert send() == ForItems(store.Sold(amount: 60))
+    as "the first sale of a worn item for 60 Glory, with no Glory row, is saved"
+  assert send() == ForItems(ItemsNotSaved)
+    as "the same request again names a stack that is gone and a Glory total that is no longer 0, so it is refused"
+  let #(currencies, items) = held_everything(store:, account:, character_id:)
+  assert currencies
+    == [
+      store.HeldCurrency(currency_type_id: 1, amount: 1000),
+      store.HeldCurrency(currency_type_id: 7, amount: 60),
+    ]
+    as "the Glory is the first sale's, paid once"
+  assert list.filter(before, fn(item) { item.item_guid != chest.item_guid })
+    == items
+    as "the worn item is gone once and nothing else changed"
   stop(store)
 }
 

@@ -21,14 +21,15 @@
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/store
+import genesis_prime/table/currency_type
 import genesis_prime/table/game_formula
-import genesis_prime/table/id.{GameFormulaId}
+import genesis_prime/table/id.{CurrencyTypeId, GameFormulaId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bit_array
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
-import gleam/option.{type Option}
+import gleam/option.{type Option, Some}
 import gleam/result
 
 /// The amounts held, by currency type (1 to 15); a type with no row is 0.
@@ -116,10 +117,24 @@ pub fn held(
 /// The most a character holds of a currency type (the client's GetCurrencyCap), or None
 /// when the type has no cap.
 pub fn cap(
-  tables _tables: table_store.Tables,
-  currency_type_id _currency_type_id: Int,
+  tables tables: table_store.Tables,
+  currency_type_id currency_type_id: Int,
 ) -> Option(Int) {
-  panic as "not built"
+  case currency_type_id {
+    1 -> Some(formula_cap(tables:, formula: credit_cap_formula))
+    2 -> Some(formula_cap(tables:, formula: renown_cap_formula))
+    _ ->
+      case currency_type.get(tables:, id: CurrencyTypeId(currency_type_id)) {
+        Ok(row) if row.cap_amount > 0 -> Some(row.cap_amount)
+        Ok(_) | Error(Nil) -> option.None
+      }
+  }
+}
+
+fn formula_cap(tables tables: table_store.Tables, formula formula: Int) -> Int {
+  let assert Ok(row) = game_formula.get(tables:, id: GameFormulaId(formula))
+    as "the cap's GameFormula row is required at load (requirements)"
+  row.dataint0
 }
 
 /// The total held after `paid` is added to `held` under `cap`: it stops at the cap, and a

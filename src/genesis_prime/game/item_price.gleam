@@ -32,6 +32,7 @@
 //// | the row's tradeskillAdditiveId is not 0 | the error names the item; the vendor load stops |
 //// | the curve has no value at the item's power level | the error names the formula and the level; the vendor load stops |
 
+import genesis_prime/game/currency
 import genesis_prime/game/item_property
 import genesis_prime/message/float32
 import genesis_prime/table/game_formula
@@ -195,20 +196,60 @@ fn quality(
 /// is a price the client does not pay. Whether the item may be sold at all is
 /// `item_property.sellable`'s.
 pub fn sell_price(
-  tables _tables: table_store.Tables,
-  item2_id _item2_id: Item2Id,
+  tables tables: table_store.Tables,
+  item2_id item2_id: Item2Id,
 ) -> Result(SellPrice, PriceError) {
-  panic as "not built"
+  let Item2Id(raw_id) = item2_id
+  use item <- result.try(
+    item2.get(tables:, id: item2_id)
+    |> result.replace_error(MissingRow(table: "Item2", id: raw_id)),
+  )
+  let first =
+    SellPrice(
+      currency_type_id: item.currency_type_id0_sell_to_vendor,
+      amount: item.currency_amount0_sell_to_vendor,
+    )
+  let second =
+    SellPrice(
+      currency_type_id: item.currency_type_id1_sell_to_vendor,
+      amount: item.currency_amount1_sell_to_vendor,
+    )
+  case first.currency_type_id != 0, second.currency_type_id != 0 {
+    False, False -> computed_sell(tables:, item:)
+    True, True if first.amount > 0 && second.amount > 0 ->
+      Error(TwoSellCurrencies(item2_id:))
+    True, True if second.amount > 0 -> Ok(second)
+    True, _ -> Ok(first)
+    False, True -> Ok(second)
+  }
+}
+
+/// The price the client computes for a row with no SellToVendor currency type
+/// (`0x14040bfb0`): the computed buy price times GameFormula 1026's fraction, at least 1.
+fn computed_sell(
+  tables tables: table_store.Tables,
+  item item: item2.Item2,
+) -> Result(SellPrice, PriceError) {
+  use buy <- result.try(computed_buy(tables:, item:))
+  use fraction_row <- result.try(
+    game_formula.get(tables:, id: GameFormulaId(sell_fraction_formula))
+    |> result.replace_error(MissingRow(
+      table: "GameFormula",
+      id: sell_fraction_formula,
+    )),
+  )
+  Ok(SellPrice(
+    currency_type_id: currency.credits_type,
+    amount: int.max(1, shown(base: buy, multiplier: fraction_row.datafloat0)),
+  ))
 }
 
 /// The price the vendor pays for one item at its sell multiplier: a credit price is
 /// `shown(amount, multiplier)`, a price in another currency is unchanged
 /// (`0x14041bcc0.formula`).
-pub fn paid(
-  price _price: SellPrice,
-  multiplier _multiplier: Float,
-) -> SellPrice {
-  panic as "not built"
+pub fn paid(price price: SellPrice, multiplier multiplier: Float) -> SellPrice {
+  use <- bool.guard(price.currency_type_id != currency.credits_type, price)
+  SellPrice(..price, amount: shown(base: price.amount, multiplier:))
 }
 
 /// The price the vendor's window shows and the vendor pays or charges for a base price: the
