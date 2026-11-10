@@ -48,6 +48,7 @@ pub fn select_message(
           body: inner.body,
           tables: session.settings.tables,
           character_slots: session.settings.game.character_slots,
+          starting_credits: session.settings.numbers.starting_credits,
         )
       {
         Ok(step) -> select_step(session:, now:, holder:, step:)

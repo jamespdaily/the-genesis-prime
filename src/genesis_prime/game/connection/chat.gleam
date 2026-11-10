@@ -36,7 +36,7 @@ import genesis_prime/game/chat
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
 import genesis_prime/game/connection/state.{
-  type Session, AwaitingHelloReply, ClaimingSession, EnteringWorld,
+  type Session, AwaitingHelloReply, Buying, ClaimingSession, EnteringWorld,
   InCharacterSelect, InWorld, LeavingMap, MovingItem, SavingPlace, Session,
   Summoning, TakingSessionKey, WaitingToClaim,
 } as connection_state
@@ -123,6 +123,7 @@ fn summoning(
       )
     Summoning(..)
     | MovingItem(..)
+    | Buying(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | EnteringWorld(..)

@@ -193,6 +193,7 @@ pub fn pre_game_activity_before_world_entry_is_dropped_test() -> Nil {
               saved_experience: None,
               items: [],
               quests: [],
+              currencies: [],
             ),
           ),
         ),

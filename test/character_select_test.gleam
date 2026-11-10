@@ -136,6 +136,7 @@ fn create(
     request:,
     tables: character_tables.shared(),
     character_slots: 2,
+    starting_credits: 1000,
   )
 }
 
@@ -296,6 +297,7 @@ pub fn a_valid_request_asks_the_store_to_make_the_character_with_the_slot_count_
           ],
           bones: character_support.bones(46),
           starting_items: character_support.row_466_items(),
+          starting_credits: 1000,
         ),
         character_slots: 2,
       )),

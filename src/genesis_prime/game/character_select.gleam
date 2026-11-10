@@ -222,6 +222,7 @@ pub fn take(
   body body: BitArray,
   tables tables: table_store.Tables,
   character_slots character_slots: Int,
+  starting_credits starting_credits: Int,
 ) -> Result(#(State, List(Effect)), Refusal) {
   case message {
     Started ->
@@ -252,7 +253,13 @@ pub fn take(
         |> client_connection.decoded(message_id: create_character.message_id)
         |> result.map_error(NotDecoded),
       )
-      create_requested(account_id:, request:, tables:, character_slots:)
+      create_requested(
+        account_id:,
+        request:,
+        tables:,
+        character_slots:,
+        starting_credits:,
+      )
     }
     DeleteAsked ->
       delete_character.decode(body)
@@ -298,8 +305,9 @@ pub fn create_requested(
   request request: CreateCharacter,
   tables tables: table_store.Tables,
   character_slots character_slots: Int,
+  starting_credits starting_credits: Int,
 ) -> #(State, List(Effect)) {
-  case character_creation.check(tables:, request:) {
+  case character_creation.check(tables:, request:, starting_credits:) {
     Ok(character) -> #(Creating, [
       Ask(request: store.CreateCharacter(
         account_id:,

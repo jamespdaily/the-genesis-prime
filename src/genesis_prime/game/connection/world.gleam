@@ -71,7 +71,7 @@ import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
   type AfterLeave, type AfterSave, type EntryFrom, type Session,
-  AwaitingHelloReply, Camped, ClaimingSession, EnteringWorld,
+  AwaitingHelloReply, Buying, Camped, ClaimingSession, EnteringWorld,
   FromCharacterSelect, FromHolocrypt, InCharacterSelect, InWorld, JoinAt,
   Leaving, LeavingMap, MovingItem, Playing, SavingPlace, Session, Summoning,
   TakingSessionKey, ToCharacterSelect, WaitingToClaim,
@@ -190,6 +190,7 @@ pub fn save_due(
     | EnteringWorld(..)
     | Summoning(..)
     | MovingItem(..)
+    | Buying(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -250,6 +251,7 @@ pub fn quest_reset_due(
     | EnteringWorld(..)
     | Summoning(..)
     | MovingItem(..)
+    | Buying(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
