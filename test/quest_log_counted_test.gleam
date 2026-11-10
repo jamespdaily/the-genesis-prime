@@ -65,7 +65,13 @@ fn counted(
   value value: Int,
 ) -> quest_log.Counted {
   let assert Ok(counted) =
-    quest_log.counted(log:, quest: quest(id: quest_id), index:, value:)
+    quest_log.counted(
+      log:,
+      quest: quest(id: quest_id),
+      index:,
+      value:,
+      now_ms: 0,
+    )
     as "a quest in the active list takes a count"
   counted
 }
@@ -131,6 +137,7 @@ pub fn counted_sets_progress_capped_at_needed_and_the_done_bit_test() -> Nil {
       quest: quest(id: collect_three),
       index: 0,
       value: 3,
+      now_ms: 0,
     )
     == Error(Nil)
     as "a completed quest takes none (0x1405510d0)"
@@ -139,6 +146,7 @@ pub fn counted_sets_progress_capped_at_needed_and_the_done_bit_test() -> Nil {
       quest: quest(id: collect_three),
       index: 0,
       value: 3,
+      now_ms: 0,
     )
     == Error(Nil)
     as "a quest not in the log takes none"

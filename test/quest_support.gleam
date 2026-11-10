@@ -157,6 +157,30 @@ pub fn timed(
   )
 }
 
+/// An accepted quest with no placeholder, tracked, with these progress values, done mask
+/// and milliseconds left of each objective's time limit (`objective_ms_left`; 0 for an
+/// objective whose timer is not started).
+pub fn with_objective_time(
+  quest_id quest_id: Int,
+  progress progress: List(Int),
+  done_mask done_mask: Int,
+  objective_ms_left objective_ms_left: List(Int),
+) -> QuestRow {
+  QuestRow(
+    quest_id:,
+    state: 1,
+    completed_at: None,
+    active: Some(ActiveQuest(
+      placeholder_objective_id: 0,
+      tracked: True,
+      done_mask:,
+      progress:,
+      quest_ms_left: 0,
+      objective_ms_left:,
+    )),
+  )
+}
+
 /// Runs the body on the fixture's tables with these quests' time limits
 /// (`Quest2.maxTimeAllowedMS`, in milliseconds) set, built on the body's heap. The
 /// fixture holds none of the client's 14 timed quests, so a test that needs one

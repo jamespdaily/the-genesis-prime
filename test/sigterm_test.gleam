@@ -44,9 +44,6 @@ import simplifile
 /// line.
 const ready_line = "serves the STS login on port"
 
-/// How long a node has to start or to end; a passing test never reaches it.
-const node_wait_ms = 60_000
-
 /// A node in `mode` on a database of its own, recording into a folder of its
 /// own, handed to `body` with the folder.
 fn with_node(
@@ -102,16 +99,12 @@ fn closed_by(folder: String) -> List(wire_recording.Side) {
 pub fn sigterm_stops_the_server_through_otp_and_its_recording_ends_with_its_closing_line_test() -> Nil {
   use <- owned_test.run(120_000)
   use node, folder <- with_node(Serving)
-  assert serving_node.await_output(node, ready_line, node_wait_ms)
+  assert serving_node.await_output(node, ready_line)
     as "the node printed its ready line"
-  assert serving_node.await_output(
-    node,
-    "a connection is recorded",
-    node_wait_ms,
-  )
+  assert serving_node.await_output(node, "a connection is recorded")
     as "the node holds a connection to its STS listener, and the shell has opened its recording"
   serving_node.terminate(node)
-  assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
+  assert serving_node.await_exit(node) == 0
     as "SIGTERM ends the node with status 0"
   assert_no_crash(node)
   assert closed_by(folder) == [Server]
@@ -126,10 +119,10 @@ pub fn sigterm_stops_the_server_through_otp_and_its_recording_ends_with_its_clos
 pub fn sigterm_before_the_ready_line_ends_the_node_with_status_0_and_no_ready_line_test() -> Nil {
   use <- owned_test.run(120_000)
   use node, folder <- with_node(UnreachableDatabase)
-  assert serving_node.await_output(node, "the tree started", node_wait_ms)
+  assert serving_node.await_output(node, "the tree started")
     as "the tree started under the application"
   serving_node.terminate(node)
-  assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
+  assert serving_node.await_exit(node) == 0
     as "SIGTERM while the readiness ask waits ends the node with status 0"
   assert_no_crash(node)
   assert closed_by(folder) == []
@@ -145,10 +138,10 @@ pub fn repeated_sigterm_before_the_ready_line_leaves_no_error_in_the_nodes_outpu
   use <- owned_test.run(120_000)
   int.range(from: 1, to: repeated_nodes + 1, with: Nil, run: fn(_, attempt) {
     use node, _folder <- with_node(UnreachableDatabase)
-    assert serving_node.await_output(node, "the tree started", node_wait_ms)
+    assert serving_node.await_output(node, "the tree started")
       as "the tree started under the application"
     serving_node.terminate(node)
-    assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
+    assert serving_node.await_exit(node) == 0
       as "SIGTERM while the readiness ask waits ends the node with status 0"
     assert_no_error_printed(node, "node " <> int.to_string(attempt))
   })
@@ -157,10 +150,10 @@ pub fn repeated_sigterm_before_the_ready_line_leaves_no_error_in_the_nodes_outpu
 pub fn a_sigterm_before_the_tree_starts_ends_the_node_with_status_0_and_no_error_in_its_output_test() -> Nil {
   use <- owned_test.run(120_000)
   use node, folder <- with_node(StoppedBeforeTree)
-  assert serving_node.await_output(node, "waiting for the stop", node_wait_ms)
+  assert serving_node.await_output(node, "waiting for the stop")
     as "the node is before the start of its tree"
   serving_node.terminate(node)
-  assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
+  assert serving_node.await_exit(node) == 0
     as "SIGTERM before the tree started ends the node with status 0"
   assert_no_error_printed(node, "the node")
   assert string.contains(
@@ -177,10 +170,10 @@ pub fn a_sigterm_before_the_tree_starts_ends_the_node_with_status_0_and_no_error
 pub fn sigterm_while_the_probe_is_slow_prints_no_ready_line_test() -> Nil {
   use <- owned_test.run(120_000)
   use node, _folder <- with_node(SlowStop)
-  assert serving_node.await_output(node, "probing", node_wait_ms)
+  assert serving_node.await_output(node, "probing")
     as "the readiness ask asked, with Sessions suspended so the stop takes its time"
   serving_node.terminate(node)
-  assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
+  assert serving_node.await_exit(node) == 0
     as "SIGTERM ends the node with status 0"
   assert_no_crash(node)
   assert !string.contains(serving_node.output(node), ready_line)
@@ -190,7 +183,7 @@ pub fn sigterm_while_the_probe_is_slow_prints_no_ready_line_test() -> Nil {
 pub fn a_tree_that_gives_up_while_the_node_runs_ends_the_node_with_status_1_test() -> Nil {
   use <- owned_test.run(120_000)
   use node, _folder <- with_node(GivesUp)
-  assert serving_node.await_exit(node, node_wait_ms) == Ok(1)
+  assert serving_node.await_exit(node) == 1
     as "a tree that ends while the node is not stopping is fatal, though it ends with shutdown, so the host restarts the node"
   assert string.contains(
     serving_node.output(node),

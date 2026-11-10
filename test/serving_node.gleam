@@ -28,6 +28,7 @@
 import ask_support
 import database_support
 import envoy
+import event_wait
 import genesis_prime
 import genesis_prime/application
 import genesis_prime/connection/listener
@@ -37,12 +38,12 @@ import genesis_prime/server
 import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/step/runtime
 import genesis_prime/store/worker.{type Probed, Reached}
-import gleam/bool
 import gleam/erlang/process
 import gleam/io
 import gleam/option.{None, Some}
 import login_support
 import mug
+import open_wait
 import pog
 import recording_support
 import simplifile
@@ -76,9 +77,17 @@ pub fn start(
   ])
 }
 
-/// Whether the node printed `text` within `within_ms` milliseconds.
+/// Whether the node printed `text` before it ended. The wait has no limit of
+/// its own: a node that neither prints it nor ends ends the test at its
+/// deadline, naming this wait (`open_wait`).
+pub fn await_output(node node: Node, text text: String) -> Bool {
+  open_wait.named("the node to print \"" <> text <> "\"", fn() {
+    printed(node, text)
+  })
+}
+
 @external(erlang, "serving_node_ffi", "await_output")
-pub fn await_output(node: Node, text: String, within_ms: Int) -> Bool
+fn printed(node: Node, text: String) -> Bool
 
 /// Everything the node has printed that the caller has read.
 @external(erlang, "serving_node_ffi", "output")
@@ -88,9 +97,14 @@ pub fn output(node: Node) -> String
 @external(erlang, "serving_node_ffi", "terminate")
 pub fn terminate(node: Node) -> Nil
 
-/// The node's exit status, once it has ended within `within_ms` milliseconds.
+/// The node's exit status, once it has ended. The wait has no limit of its own:
+/// a node that does not end ends the test at its deadline, naming this wait.
+pub fn await_exit(node: Node) -> Int {
+  open_wait.named("the node to end", fn() { exit_status(node) })
+}
+
 @external(erlang, "serving_node_ffi", "await_exit")
-pub fn await_exit(node: Node, within_ms: Int) -> Result(Int, Nil)
+fn exit_status(node: Node) -> Int
 
 @external(erlang, "serving_node_ffi", "start")
 fn start_node(module: String, environment: List(#(String, String))) -> Node
@@ -259,26 +273,21 @@ fn hold_a_connection(settings: server.Settings) -> Nil {
         |> mug.timeout(5000)
         |> mug.connect
         as "the node connected to its STS listener"
-      await_recording(variable("SERVING_FOLDER"), 3000)
+      await_recording(variable("SERVING_FOLDER"))
       io.println("a connection is recorded")
       process.sleep_forever()
     })
   Nil
 }
 
-/// Waits until the folder holds a recording, asking every 10 ms up to `times`
-/// times.
-fn await_recording(folder: String, times: Int) -> Nil {
-  let assert Ok(names) = simplifile.read_directory(folder)
-    as "the recording folder reads"
-  case names, times > 0 {
-    [_, ..], _ -> Nil
-    [], True -> {
-      process.sleep(10)
-      await_recording(folder, times - 1)
-    }
-    [], False -> panic as "the connection was never recorded"
-  }
+/// Waits until the folder holds a recording, asking every millisecond. The wait
+/// has no limit of its own: the node ends with the test that started it.
+fn await_recording(folder: String) -> Nil {
+  event_wait.until("the connection's recording in the folder", fn() {
+    let assert Ok(names) = simplifile.read_directory(folder)
+      as "the recording folder reads"
+    names != []
+  })
 }
 
 /// Kills the hand-off one more time than the tree restarts in its period, each
@@ -298,11 +307,7 @@ fn kill_hand_off(settings: server.Settings, times: Int) -> Nil {
   case times > 1 {
     True -> {
       let _restarted =
-        ask_support.await_new_pid(
-          name: settings.hand_off,
-          not: pid,
-          within_ms: 5000,
-        )
+        ask_support.await_new_pid(name: settings.hand_off, not: pid)
       kill_hand_off(settings, times - 1)
     }
     False -> Nil
@@ -324,18 +329,14 @@ fn probe_after_stop(reply: fn(Probed) -> Nil) -> Result(Sent, Nil) {
   Ok(ToWorker(pid:))
 }
 
-/// Waits until the application's root has ended, asking every millisecond.
+/// Waits until the application's root has ended.
 fn await_root_ended() -> Nil {
-  use <- bool.guard(when: root_ended(), return: Nil)
-  process.sleep(1)
-  await_root_ended()
+  event_wait.until("the application's root to end", root_ended)
 }
 
 @external(erlang, "serving_node_ffi", "root_ended")
 fn root_ended() -> Bool
 
 fn await_stop() -> Nil {
-  use <- bool.guard(when: application.node_stopping(), return: Nil)
-  process.sleep(1)
-  await_stop()
+  event_wait.until("the node to be stopping", application.node_stopping)
 }

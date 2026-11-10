@@ -5,8 +5,8 @@
 //// `database_support.sweep`: a run drops the databases of runs that ended.
 
 import database_support
+import event_wait
 import genesis_prime/step/runtime
-import gleam/bool
 import gleam/erlang/process.{type Pid}
 import gleam/int
 import gleam/list
@@ -98,11 +98,14 @@ pub fn a_waiter_loads_for_itself_when_the_holder_crashes_test() -> Nil {
 fn lock_waiters(key: String) -> List(Pid)
 
 /// Waits until `waiter` is among the processes waiting for the lock on `key`,
-/// so the holder ends while the waiter waits for it.
+/// so the holder ends while the waiter waits for it. The lock sends the test no
+/// event when a process starts to wait for it, so the test reads its waiters
+/// every millisecond; the wait has no limit of its own, and the test's deadline
+/// ends it (`event_wait`).
 fn wait_until_waiting(key: String, waiter: Pid) -> Nil {
-  use <- bool.guard(when: list.contains(lock_waiters(key), waiter), return: Nil)
-  process.sleep(1)
-  wait_until_waiting(key, waiter)
+  event_wait.until("the waiter to wait for the lock on " <> key, fn() {
+    list.contains(lock_waiters(key), waiter)
+  })
 }
 
 /// A run drops the databases of runs that ended and keeps the rest. The game
