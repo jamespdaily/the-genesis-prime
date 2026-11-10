@@ -14,8 +14,9 @@
 //// - `SlowStop`: Sessions is suspended, so a stop takes its shutdown time, and
 ////   the probe answers as soon as the node is stopping, so the answer comes
 ////   while the tree is still ending.
-//// - `StoppedBeforeTree`: `main` waits until the node is stopping before it
-////   starts the tree, as a SIGTERM that comes while the tables load does.
+//// - `StoppedBeforeTree`: `main` waits until the application's root has ended
+////   before it starts the tree, as a SIGTERM that comes while the tables load
+////   and ends the root first does.
 //// - `GivesUp`: the hand-off is killed once more than the tree's restart
 ////   intensity allows, in a restart period of an hour, so the tree ends with
 ////   `shutdown` while the node runs however far apart the kills fall.
@@ -164,7 +165,7 @@ pub fn main() -> Nil {
   case mode {
     StoppedBeforeTree -> {
       io.println("waiting for the stop")
-      await_stop()
+      await_root_ended()
     }
     Serving | UnreachableDatabase | LateDatabase | SlowStop | GivesUp -> Nil
   }
@@ -322,6 +323,16 @@ fn probe_after_stop(reply: fn(Probed) -> Nil) -> Result(Sent, Nil) {
     })
   Ok(ToWorker(pid:))
 }
+
+/// Waits until the application's root has ended, asking every millisecond.
+fn await_root_ended() -> Nil {
+  use <- bool.guard(when: root_ended(), return: Nil)
+  process.sleep(1)
+  await_root_ended()
+}
+
+@external(erlang, "serving_node_ffi", "root_ended")
+fn root_ended() -> Bool
 
 fn await_stop() -> Nil {
   use <- bool.guard(when: application.node_stopping(), return: Nil)
