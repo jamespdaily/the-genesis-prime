@@ -104,18 +104,18 @@ pub fn every_quest_collect_and_visit_objective_names_a_row_test() -> Nil {
       <> "Spell4Effects data), so the client cannot finish those quests by collecting"
     }
 
-  // A count that falls takes an Achieved quest back to Accepted, which a timed quest
-  // would carry past its deadline (`quest_log.store_progress`).
-  assert list.any(quest2.all(tables), fn(quest) {
-    quest.max_time_allowed_ms > 0
-  })
-    as "the client's tables hold timed quests"
-  assert list.filter(in_quests, fn(pair) {
-      { pair.0 }.max_time_allowed_ms > 0
-      && list.contains([4, 17, 32, 33], { pair.1 }.type_)
-    })
-    == []
-    as "no timed quest has an objective of type 4, 17, 32 or 33"
+  // A count that falls takes an Achieved quest back to Accepted, and a timed counted
+  // objective then runs against the deadline it started with
+  // (`quest_log.store_progress`); the client's tables hold two such objectives, from
+  // `table_rows QuestObjective type=4` and `type=17` with maxTimeAllowedMS above 0.
+  assert ids(
+      list.filter(in_quests, fn(pair) {
+        { pair.1 }.max_time_allowed_ms > 0
+        && list.contains([4, 17, 32, 33], { pair.1 }.type_)
+      }),
+    )
+    == [5219, 10_030]
+    as "the only timed objectives of type 4, 17, 32 or 33 are the collect objective 5219 and the visit objective 10030"
 
   assert of_type(33) != [] as "the client's quests hold type 33 objectives"
   assert ids(
