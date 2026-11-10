@@ -78,11 +78,13 @@ const ship = MapId(world_id: 3460, instance: 0)
 
 fn started(world: World) -> MapProcess {
   let assert Ok(found) =
-    world_map_registry.find_or_start(
-      world.maps,
-      ship,
-      deadline_ms: ask_support.deadline_far_beyond_the_tests_deadline(),
-    )
+    open_wait.named("Maps to answer the find", fn() {
+      world_map_registry.find_or_start(
+        world.maps,
+        ship,
+        deadline_ms: ask_support.deadline_far_beyond_the_tests_deadline(),
+      )
+    })
     as "Maps started the map or found it running"
   found
 }

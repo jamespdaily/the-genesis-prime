@@ -634,11 +634,13 @@ pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connect
     as "the player entered the world"
   // The player's map is the run the real Maps holds for the character's world.
   let assert Ok(found) =
-    world_map_registry.find_or_start(
-      started.settings.world.maps,
-      MapId(world_id: 1387, instance: 0),
-      deadline_ms: ask_support.deadline_far_beyond_the_tests_deadline(),
-    )
+    open_wait.named("Maps to answer the find", fn() {
+      world_map_registry.find_or_start(
+        started.settings.world.maps,
+        MapId(world_id: 1387, instance: 0),
+        deadline_ms: ask_support.deadline_far_beyond_the_tests_deadline(),
+      )
+    })
     as "the map is running, started by the play"
   process.kill(found.pid)
   let assert [Frame(message_id: 0x036A, body:)] =
@@ -4486,11 +4488,13 @@ fn the_dagun_and_its_map(
   dagun dagun: Int,
 ) -> #(world_map_registry.MapProcess, process.Pid) {
   let assert Ok(run) =
-    world_map_registry.find_or_start(
-      started.settings.world.maps,
-      MapId(world_id: 1387, instance: 0),
-      deadline_ms: ask_support.deadline_far_beyond_the_tests_deadline(),
-    )
+    open_wait.named("Maps to answer the find", fn() {
+      world_map_registry.find_or_start(
+        started.settings.world.maps,
+        MapId(world_id: 1387, instance: 0),
+        deadline_ms: ask_support.deadline_far_beyond_the_tests_deadline(),
+      )
+    })
     as "the map is running, started by the play"
   let assert Ok(creature) =
     creature_registry.find(
