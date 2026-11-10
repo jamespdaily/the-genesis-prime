@@ -558,10 +558,16 @@ pub fn a_target_counted_condition_passes_only_not_counted_test() -> Nil {
   let subjects = [
     player_with(log: in_log),
     player_with(log: log_of(rows: [])),
-    prerequisite.of_struck(first: Some(origin), second: origin, quests: in_log),
+    prerequisite.of_struck(
+      first: Some(origin),
+      second: origin,
+      player: prerequisite_support.player(),
+      quests: in_log,
+    ),
     prerequisite.of_struck(
       first: None,
       second: origin,
+      player: prerequisite_support.player(),
       quests: log_of(rows: []),
     ),
   ]
@@ -689,11 +695,13 @@ pub fn a_cast_gate_reads_the_caster_quest_log_test() -> Nil {
       character: character_support.character(number: 1),
     )
   assert casting.caster_of(
+      tables: character_tables.shared(),
       entered: world_entry.Entered(..entered, quests: in_log),
     ).quests
     == in_log
     as "the caster carries the quest log of the entered player"
-  assert casting.caster_of(entered:).quests == entered.quests
+  assert casting.caster_of(tables: character_tables.shared(), entered:).quests
+    == entered.quests
     as "and the log it holds when none was changed"
   // A caster-side gate.
   let accepted_caster = cast.Caster(..support.caster(), quests: in_log)

@@ -2,7 +2,7 @@
 //// name, each a tuple of its rows indexed by id, and a map of each derived value
 //// by its name. A load reads each table's file, then checks that every row the
 //// server requires exists, then builds each derived value. A load also digests
-//// the files it read.
+//// the table files of its folder.
 ////
 //// - **`read`** gives the value on the caller's heap, which a test of its own
 ////   tables and the content load use: nothing is stored, so there is nothing
@@ -31,9 +31,14 @@
 ////   `ServerKey`, a constant the server writes once at start; the content
 ////   terms of the server are stored under it too. A test that loads under a key
 ////   takes one made for it.
-//// - **The digest** is SHA-256 over every file read, each preceded by its
-////   name, in the order of the entries. A recording's header holds it, so a
-////   replay on other table files is told to record again.
+//// - **The digest** is SHA-256 over every `.tbl` file of the folder a load
+////   reads, in name order, each preceded by its name and a zero byte,
+////   whatever entries the load reads, so it changes only when a table file
+////   does and not when the server reads one more table. The folder holds the
+////   client's index files and nothing else (`setup_check/extract_tables.py`
+////   `verify_staged`). A recording's header holds it, so a replay on other
+////   table files is told to record again. Tables read beside a load's
+////   (`read_more`) add no digest: the digest is the first read's.
 
 import genesis_prime/table/loader/tbl_file
 import gleam/bit_array
@@ -43,6 +48,7 @@ import gleam/erlang/reference.{type Reference}
 import gleam/int
 import gleam/list
 import gleam/result
+import gleam/string
 import simplifile
 
 /// What the terms of a load are stored under.
@@ -166,6 +172,9 @@ pub type Requirement {
 pub type LoadError {
   /// A table's file could not be read.
   TableFileUnreadable(file: String, reason: simplifile.FileError)
+  /// The folder the tables are read from could not be listed, to digest its
+  /// files.
+  TableFolderUnreadable(folder: String, reason: simplifile.FileError)
   /// A table's file is not accepted as that table.
   TableFileInvalid(table: String, error: tbl_file.FileError)
   /// A required row is missing: a column of one table names an id the other
@@ -191,6 +200,11 @@ pub fn describe(error: LoadError) -> String {
       "the file "
       <> file
       <> ".tbl could not be read: "
+      <> simplifile.describe_error(reason)
+    TableFolderUnreadable(folder:, reason:) ->
+      "the folder "
+      <> folder
+      <> " could not be listed: "
       <> simplifile.describe_error(reason)
     TableFileInvalid(table:, error:) ->
       "the file of the table "
@@ -302,7 +316,8 @@ pub fn derived(tables tables: Tables, key key: DerivedKey(value)) -> value {
   }
 }
 
-/// The digest of the files the tables were read from, as upper-case hex.
+/// The digest of the table files of the folder the tables were read from, as
+/// upper-case hex.
 pub fn digest(tables: Tables) -> String {
   tables.digest
 }
@@ -324,16 +339,21 @@ pub fn ids(entry entry: Entry, tables tables: Tables) -> List(Int) {
 
 /// Reads every entry's file from the folder into one value on the caller's
 /// heap, checks each requirement, then builds each derivation from the
-/// tables. Stops at the first failure. Nothing is stored, so there is nothing
-/// to unload.
+/// tables, and digests the folder's table files. Stops at the first failure.
+/// Nothing is stored, so there is nothing to unload.
 pub fn read(
   from folder: String,
   entries entries: List(Entry),
   requirements requirements: List(Requirement),
   derivations derivations: List(Derivation),
 ) -> Result(Tables, LoadError) {
-  use tables <- result.try(read_value(folder:, entries:))
-  check_and_derive(tables:, requirements:, derivations:)
+  use tables <- result.try(read_entries(folder:, entries:))
+  use digest <- result.try(digest_folder(folder))
+  check_and_derive(
+    tables: Tables(..tables, digest:),
+    requirements:,
+    derivations:,
+  )
 }
 
 /// `read`, then stores the value under `key` and gives the handle to it. A key
@@ -401,15 +421,13 @@ fn store_tables(tables tables: Tables, load load: Key) -> Tables {
 /// file, on the caller's heap: the tables a load reads that the rest of the
 /// server does not (genesis_prime/content) are read this way, beside the ones
 /// already loaded, and a read of any of them finds each. The stored value is
-/// not touched.
+/// not touched, and the digest stays `tables`'s.
 pub fn read_more(
   over tables: Tables,
   from folder: String,
   entries entries: List(Entry),
 ) -> Result(Tables, LoadError) {
-  use more <- result.map(
-    read(from: folder, entries:, requirements: [], derivations: []),
-  )
+  use more <- result.map(read_entries(folder:, entries:))
   merge(tables:, more:)
 }
 
@@ -467,46 +485,61 @@ fn check_and_derive(
   })
 }
 
-/// Reads each entry in turn into tables of edits only, with the digest of the
-/// files read, or the first error.
-fn read_value(
+/// Reads each entry's file in turn into tables of edits only, with no digest,
+/// or the first error.
+fn read_entries(
   folder folder: String,
   entries entries: List(Entry),
 ) -> Result(Tables, LoadError) {
-  use #(tables, hasher) <- result.map(
-    list.try_fold(
-      entries,
-      #(
-        Tables(stored: [], stored_derived: [], edits: empty(), digest: ""),
-        crypto.new_hasher(crypto.Sha256),
-      ),
-      fn(state, entry) { read_one(folder:, entry:, state:) },
-    ),
+  list.try_fold(
+    entries,
+    Tables(stored: [], stored_derived: [], edits: empty(), digest: ""),
+    fn(tables, entry) { read_one(folder:, entry:, tables:) },
   )
-  Tables(..tables, digest: bit_array.base16_encode(crypto.digest(hasher)))
 }
 
-/// Reads one entry's file and puts its table in the tables, giving the hasher
-/// with the file's name and bytes added.
+/// Reads one entry's file and puts its table in the tables.
 fn read_one(
   folder folder: String,
   entry entry: Entry,
-  state state: #(Tables, crypto.Hasher),
-) -> Result(#(Tables, crypto.Hasher), LoadError) {
+  tables tables: Tables,
+) -> Result(Tables, LoadError) {
   use bytes <- result.try(
     simplifile.read_bits(folder <> "/" <> entry.file <> ".tbl")
     |> result.map_error(TableFileUnreadable(entry.file, _)),
   )
-  use tables <- result.map(
-    entry.put(bytes, state.0)
-    |> result.map_error(TableFileInvalid(entry.table, _)),
+  entry.put(bytes, tables)
+  |> result.map_error(TableFileInvalid(entry.table, _))
+}
+
+/// The names of the `.tbl` files in the folder, without `.tbl`, in name order.
+pub fn table_files(folder: String) -> Result(List(String), LoadError) {
+  use names <- result.map(
+    simplifile.read_directory(folder)
+    |> result.map_error(TableFolderUnreadable(folder, _)),
   )
-  #(
-    tables,
-    state.1
-      |> crypto.hash_chunk(<<entry.file:utf8, 0>>)
-      |> crypto.hash_chunk(bytes),
+  names
+  |> list.filter(string.ends_with(_, ".tbl"))
+  |> list.map(string.remove_suffix(_, ".tbl"))
+  |> list.sort(string.compare)
+}
+
+/// SHA-256, as upper-case hex, over each `.tbl` file of the folder in name
+/// order: its name without `.tbl`, a zero byte and its bytes.
+fn digest_folder(folder: String) -> Result(String, LoadError) {
+  use files <- result.try(table_files(folder))
+  use hasher <- result.map(
+    list.try_fold(files, crypto.new_hasher(crypto.Sha256), fn(hasher, file) {
+      use bytes <- result.map(
+        simplifile.read_bits(folder <> "/" <> file <> ".tbl")
+        |> result.map_error(TableFileUnreadable(file, _)),
+      )
+      hasher
+      |> crypto.hash_chunk(<<file:utf8, 0>>)
+      |> crypto.hash_chunk(bytes)
+    }),
   )
+  bit_array.base16_encode(crypto.digest(hasher))
 }
 
 fn first_missing_row(

@@ -11,7 +11,6 @@
 
 import genesis_prime/client_connection
 import genesis_prime/coverage/effect_row
-import genesis_prime/coverage/prerequisite_row
 import genesis_prime/coverage/sent_message
 import genesis_prime/coverage/starting_ability
 import genesis_prime/game/connection as game_connection
@@ -128,9 +127,7 @@ pub fn handles(
 /// (`game_table.schema`); each names a PrerequisiteType row, and the client's
 /// handler of type 71 is fact 0x1404a4e48. No fact records the code that reads
 /// the three columns. A type is handled when the prerequisite rule's decode reads
-/// it (genesis_prime/game/prerequisite `is_read`); a gender or world condition is
-/// counted as read only in the rows an item's equip check loads
-/// (genesis_prime/coverage/prerequisite_row).
+/// it (genesis_prime/game/prerequisite `is_read`).
 fn prerequisites() -> EngineDeclaration {
   EngineDeclaration(
     name: "Prerequisites",
@@ -154,20 +151,9 @@ fn prerequisites() -> EngineDeclaration {
       },
     ),
     handled: Decoded(is_read: game_prerequisite.is_read),
-    partial: [
-      Missing(
-        type_number: 10,
-        reason: "conditions in rows no item's equip check loads, where a cast gives its subject no gender and reads the condition as not read (#585)",
-        fact_key: "Prerequisite.prerequisiteTypeId.10",
-      ),
-      Missing(
-        type_number: 109,
-        reason: "conditions in rows no item's equip check loads, where a cast gives its subject no world and reads the condition as not read (#585)",
-        fact_key: "Prerequisite.prerequisiteTypeId.109",
-      ),
-    ],
-    unread_rows: prerequisite_row.unread_by_type,
-    unread_starting_rows: prerequisite_row.unread_starting,
+    partial: [],
+    unread_rows: no_unread_rows,
+    unread_starting_rows: no_unread_starting_rows,
     missing: [],
     starting_abilities: Some(starting_ability.prerequisite_types),
   )

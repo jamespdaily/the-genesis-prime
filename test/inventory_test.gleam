@@ -522,8 +522,10 @@ pub fn gear_with_stats_is_equipped_into_its_slot_test() -> Nil {
   let items = with_spare(8527)
   let wearer =
     Wearer(
-      ..equip_requirement_support.engineer(),
-      class_id: 4,
+      ..equip_requirement_support.of_class(
+        equip_requirement_support.engineer(),
+        class_id: 4,
+      ),
       item_proficiencies: 4,
     )
   let assert Ok(Asks(moving:)) =

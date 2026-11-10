@@ -663,6 +663,9 @@ pub type Caster {
     /// The player's quest log, which the quest conditions of a prerequisite (types 6,
     /// 68, 43 and 22 to 36) read: the client reads the checking player's own log.
     quests: QuestLog,
+    /// The player's race, class, path, gender, level, World and zones, which the
+    /// prerequisite types on the player (1, 2, 3, 10, 26, 39, 52 and 109) read.
+    player: prerequisite.Player,
   )
 }
 
@@ -6252,8 +6255,7 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
     rolls: [],
     positions: prerequisite.Placed(first: pose, second: pose),
     factions: Some(caster.factions),
-    gender: None,
-    world: None,
+    player: Some(caster.player),
     quests: Some(caster.quests),
     seen: prerequisite.WholeUnit,
   )
@@ -6655,6 +6657,7 @@ fn target_gate(
           prerequisite.of_struck(
             first: option.from_result(dict.get(poses, primary_target)),
             second: area.pose_of(place: caster.place),
+            player: caster.player,
             quests: caster.quests,
           )
       }

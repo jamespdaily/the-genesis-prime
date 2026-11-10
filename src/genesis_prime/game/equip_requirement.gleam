@@ -53,18 +53,15 @@ const wrong_faction = 132
 /// Item_EquipPrereqFailed.
 pub const prerequisite_failed = 144
 
-/// What the checks read of the character: its race, class and faction ids, its
-/// level, gender (0 male, 1 female), the World it is in and the mask of its item
-/// proficiencies (`Class.startingItemProficiencies`, what player_character_state
-/// sends).
+/// What the checks read of the character: its faction id, its level, the player
+/// facts the prerequisites read (race, class, gender, World, zones and the rest;
+/// the race and class checks read these too) and the mask of its item proficiencies (`Class.startingItemProficiencies`,
+/// what player_character_state sends).
 pub type Wearer {
   Wearer(
-    race_id: Int,
-    class_id: Int,
     faction_id: Int,
     level: Int,
-    gender: Int,
-    world_id: Int,
+    player: prerequisite.Player,
     item_proficiencies: Int,
   )
 }
@@ -123,11 +120,11 @@ pub fn check(
     |> result.map_error(NoItemProperties),
   )
   use <- first_failure(
-    fails: !allows(mask: required.race_mask, number: wearer.race_id),
+    fails: !allows(mask: required.race_mask, number: wearer.player.race_id),
     code: wrong_race,
   )
   use <- first_failure(
-    fails: !allows(mask: required.class_mask, number: wearer.class_id),
+    fails: !allows(mask: required.class_mask, number: wearer.player.class_id),
     code: wrong_class,
   )
   use <- first_failure(
@@ -151,8 +148,7 @@ pub fn check(
         current: wearer.faction_id,
         base: wearer.faction_id,
       ),
-      gender: wearer.gender,
-      world: wearer.world_id,
+      player: wearer.player,
     )
   let verdicts =
     list.map(prerequisites, fn(prerequisite) {

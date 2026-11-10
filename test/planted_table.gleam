@@ -5,6 +5,7 @@
 //// planted by giving the lookup or a string offset directly.
 
 import envoy
+import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file.{type Column, type Schema}
 import gleam/bit_array
 import gleam/bool
@@ -328,6 +329,19 @@ pub fn in_folder(files: List(#(String, BitArray)), body: fn(String) -> a) -> a {
     })
     body(folder)
   })
+}
+
+/// The digest (`store.digest`) of a read of `entries` from a folder that holds
+/// `files`.
+pub fn digest_of_read(
+  files files: List(#(String, BitArray)),
+  entries entries: List(store.Entry),
+) -> String {
+  use folder <- in_folder(files)
+  let assert Ok(tables) =
+    store.read(from: folder, entries:, requirements: [], derivations: [])
+    as "the planted tables load"
+  store.digest(tables)
 }
 
 @external(erlang, "planted_table_ffi", "with_folder")

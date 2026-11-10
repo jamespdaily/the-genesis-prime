@@ -68,8 +68,8 @@ pub type Header {
     rule: String,
     /// The client build the session was played on.
     client_build: Int,
-    /// A digest of the game table files the rule reads, or `None` for a rule
-    /// that reads no table.
+    /// A digest of the client's game table files (every `.tbl` file of the
+    /// tables folder), or `None` for a rule that reads no table.
     tables_digest: Option(String),
     /// The seed the rule's random values are all drawn from.
     seed: Seed,
