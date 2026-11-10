@@ -41,6 +41,7 @@ import mug
 import open_wait
 import owned_test
 import signalling_rule
+import socket_read
 import unitest
 
 /// One record the signalling rule wrote.
@@ -94,7 +95,7 @@ fn start_asking(
 
 fn read_record(client: mug.Socket) -> Record {
   let assert Ok(<<letter, number:64-signed>>) =
-    ask_support.receive_exactly(
+    socket_read.receive_exactly(
       socket: client,
       byte_size: 9,
       what: "the next record the server wrote",
@@ -308,7 +309,8 @@ pub fn a_rule_that_starts_a_timer_with_a_negative_id_ends_its_connection_since_t
   event_wait.until("the connection ended", fn() {
     ask_support.connections(server) == []
   })
-  assert ask_support.receive_next(
+  assert socket_read.receive(
+      limit: socket_read.Open,
       socket: client,
       what: "the shell to close the socket",
     )

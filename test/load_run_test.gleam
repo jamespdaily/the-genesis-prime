@@ -14,6 +14,7 @@
 //// - `eaddrnotavail` is the operating system's answer when the machine has no
 ////   local port to connect from.
 
+import ask_support
 import genesis_prime/load_player.{
   AuthLogin, CharacterList, Create, EnterWorld, FirstPong, GameHello, Ping,
   Position, StsLogin,
@@ -26,7 +27,6 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import login_support
-import open_wait
 import owned_test
 import pog
 import unitest
@@ -144,12 +144,7 @@ fn exit_of_failed(value: String) -> process.ExitReason {
         as "the connect failed"
       Nil
     })
-  let monitor = process.monitor(pid)
-  let assert process.ProcessDown(reason:, ..) =
-    process.new_selector()
-    |> process.select_specific_monitor(monitor, fn(down) { down })
-    |> open_wait.selected(what: "the process to end")
-  reason
+  ask_support.ended(watched: process.monitor(pid), what: "the process to end")
 }
 
 pub fn an_exit_with_eaddrnotavail_deep_in_a_long_term_is_no_local_port_test() -> Nil {

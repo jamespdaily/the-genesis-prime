@@ -126,8 +126,8 @@ pub fn a_creature_that_does_not_start_comes_back_as_not_started_and_no_watch_is_
     )
     == gate_rule.Opened(-1)
     as "the failed start reached the rule as CreatureNotStarted with the watch's id"
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(located, within: 0) == Error(Nil)
     as "no watch was opened for a creature that did not start: its address was never looked up"
   process.kill(target)
@@ -219,8 +219,8 @@ pub fn a_creature_that_starts_is_watched_at_its_address_and_its_end_comes_back_a
     )
     == a_creatures_address()
     as "the creature that started is watched at the address its unit gives"
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(ended, within: 0) == Error(Nil)
     as "the creature runs, so the watch has not ended"
   let down = process.monitor(target)
@@ -270,8 +270,8 @@ pub fn a_timer_fires_once_and_a_cancelled_timer_never_fires_test() -> Nil {
       what: "the rule's input for the last timer's firing",
     )
     == gate_rule.Opened(gate_rule.timer_key_base + 3)
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(cancelled, within: 0) == Error(Nil)
     as "the cancelled timer, due long before the last one, never fired"
   let _reason = ask_support.stop_tree(tree)

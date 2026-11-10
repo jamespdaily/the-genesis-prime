@@ -183,8 +183,8 @@ pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent
       what: "the error line for a tell for a connection that is none for a map",
     )
   log_capture.stop(capture)
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(run, 0) == Error(Nil)
     as "and nothing is sent to the map"
 }

@@ -132,8 +132,8 @@ pub fn an_asker_of_a_child_that_does_not_start_logs_the_reason_and_one_of_a_supe
     ))
     == Error(Nil)
   log_capture.stop(capture)
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(lines, 0) == Error(Nil)
     as "a supervisor that is not running logs nothing: it is stopping or restarting, and says so itself"
 }

@@ -2,6 +2,7 @@
 //// fails (`owned_test.run`), so no test takes room in the literal area for the
 //// rest of the run.
 
+import ask_support
 import genesis_prime/table/loader/store
 import gleam/erlang/process.{type Pid}
 import open_wait
@@ -57,11 +58,7 @@ fn crashes_within(timeout_ms: Int, body: fn() -> Nil) -> Bool {
   let monitor =
     process.spawn_unlinked(fn() { owned_test.run(timeout_ms, body) })
     |> process.monitor
-  let down =
-    process.new_selector()
-    |> process.select_specific_monitor(monitor, fn(down) { down })
-    |> open_wait.selected(what: "the test process to end")
-  case down.reason {
+  case ask_support.ended(watched: monitor, what: "the test process to end") {
     process.Normal -> False
     process.Killed | process.Abnormal(_) -> True
   }

@@ -312,8 +312,8 @@ pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watch
     == gate_rule.Echoed(1)
     as "the address is found with reach's locate, which names the target"
   assert ask_support.call_gate(gate, gate_rule.Echo(0)) == gate_rule.Echoed(0)
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(replies, within: 0) == Error(Nil)
     as "the target runs, so the watch has not ended"
   let ended = process.monitor(target)
@@ -709,7 +709,7 @@ fn clocked(
 /// The next input the service told the test of, waited for without a limit of its
 /// own.
 fn took(sink: Subject(Clocked), what what: String) -> Clocked {
-  open_wait.named(what, fn() { process.receive_forever(sink) })
+  open_wait.received(from: sink, what: what)
 }
 
 /// Asks the service and waits for its answer, which is the ask as the service took
@@ -724,9 +724,7 @@ fn asked(
       process.send(answers, answer)
     })
     as "the ask reached the service"
-  open_wait.named("the service to answer", fn() {
-    process.receive_forever(answers)
-  })
+  open_wait.received(from: answers, what: "the service to answer")
 }
 
 /// A clock that always reads this: no real clock does.

@@ -64,8 +64,8 @@ pub fn the_ask_gives_ready_only_after_the_probe_is_answered_test() -> Nil {
       )
     })
   let release = open_wait.received(from: held, what: "the ask's probe")
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(outcomes, 0) == Error(Nil)
     as "an unanswered probe gives no outcome"
   process.send(release, Release)
@@ -120,7 +120,7 @@ fn held_probe(
       let release = process.new_subject()
       process.send(held, release)
       let Release =
-        open_wait.received(from: release, what: "the test let the probe go")
+        open_wait.received(from: release, what: "the test to let the probe go")
       reply(Reached(recorded: Recorded([])))
     })
   ToWorker(pid: worker)
@@ -371,8 +371,8 @@ pub fn a_database_that_does_not_answer_gets_a_warning_no_ready_line_and_a_login_
       what: "the server's warning that the ask's time ran out",
     )
   assert string.contains(line, "the database is unreachable")
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(serving.said, 0) == Error(Nil)
     as "no ready line was said: the ask gave up, and the line is said only on Ready"
   let #(_sent, answer) =

@@ -28,6 +28,7 @@ import mug
 import open_wait
 import owned_test
 import recording_support
+import socket_read
 import wire_replay_support
 
 /// How long an ask whose deadline is meant to pass waits, in milliseconds.
@@ -167,8 +168,8 @@ pub fn an_ask_to_an_address_with_no_running_process_gives_not_running_at_once_an
   assert outcome.milliseconds < asked.milliseconds
     as "at once, not at the ask's deadline"
   assert process.named(gate) == Error(Nil) as "nothing runs at the address"
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(sent, within: 0) == Error(Nil)
     as "the directory reached no process, so nothing was sent"
   ask_support.stop(server)
@@ -258,8 +259,8 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
   assert !list.contains(mailbox_support.monitored(connection), gate_pid)
     as "and dropped: the shell holds no monitor of the gate for it"
   log_capture.stop(capture)
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(lines, 0) == Error(Nil)
     as "the late answer logged nothing"
   ask_support.stop(server)
@@ -403,7 +404,11 @@ pub fn a_connection_step_of_stop_then_write_still_writes_the_bytes_before_the_so
   )
   assert ask_support.read_pong(client) == <<0x71, 4>>
     as "the write after Stop reached the client"
-  assert ask_support.receive_next(socket: client, what: "the socket to close")
+  assert socket_read.receive(
+      socket: client,
+      limit: socket_read.Open,
+      what: "the socket to close",
+    )
     == Error(mug.Closed)
     as "and the socket closed after it"
   ask_support.stop(server)
@@ -423,7 +428,11 @@ pub fn the_writes_of_a_step_before_its_stop_leave_in_the_order_the_rule_gave_and
   assert [ask_support.read_pong(client), ask_support.read_pong(client)]
     == [<<0x70, 4>>, <<0x71, 4>>]
     as "the asking rule's contract: a step's effects are carried out in the order it gave them, the two writes first and Stop last"
-  assert ask_support.receive_next(socket: client, what: "the socket to close")
+  assert socket_read.receive(
+      socket: client,
+      limit: socket_read.Open,
+      what: "the socket to close",
+    )
     == Error(mug.Closed)
     as "and the socket closed after them"
   ask_support.stop(server)

@@ -240,9 +240,7 @@ pub fn concurrent_finds_for_one_map_start_it_once_test() -> Nil {
   let found =
     list.map([1, 2, 3, 4, 5, 6, 7, 8], fn(_) {
       let assert Ok(found) =
-        open_wait.named("each find to be answered", fn() {
-          process.receive_forever(results)
-        })
+        open_wait.received(from: results, what: "each find to be answered")
         as "each find was answered with a map run"
       found
     })
@@ -359,8 +357,8 @@ pub fn an_ask_past_its_deadline_is_never_sent_to_maps_test() -> Nil {
     == Error(Nil)
   let anything =
     process.new_selector() |> process.select_other(fn(message) { message })
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.selector_receive(anything, within: 0) == Error(Nil)
     as "the asker's deadline had passed before it sent, so Maps is never asked: the find would start a map nobody waits for"
 }

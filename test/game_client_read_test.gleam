@@ -5,6 +5,7 @@
 //// arrives inside 0x03DC with every byte after its length enciphered:
 //// opcode.0x3dc; the pong answering a ping arrives bare: opcode.0x1).
 
+import ask_support
 import event_wait
 import frame_peer
 import game_client.{type Game}
@@ -15,7 +16,6 @@ import gleam/bit_array
 import gleam/erlang/process
 import gleam/list
 import login_client
-import open_wait
 import owned_test
 import socket_read
 
@@ -47,11 +47,7 @@ fn written_in_one_send(messages: List(Frame), after after: BitArray) -> Game {
 /// Whether `body` crashed, run in a process of its own so the test goes on.
 fn crashes(body: fn() -> Nil) -> Bool {
   let monitor = process.spawn_unlinked(body) |> process.monitor
-  let down =
-    process.new_selector()
-    |> process.select_specific_monitor(monitor, fn(down) { down })
-    |> open_wait.selected(what: "the process to end")
-  case down.reason {
+  case ask_support.ended(watched: monitor, what: "the process to end") {
     process.Normal -> False
     process.Killed | process.Abnormal(_) -> True
   }

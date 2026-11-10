@@ -41,3 +41,26 @@ pub fn looking(socket: mug.Socket) -> Result(BitArray, mug.Error) {
     received -> received
   }
 }
+
+/// Receives exactly `byte_size` bytes the server writes, with no limit of its
+/// own, and names the wait for the test that owns the calling process
+/// (`open_wait`). It looks at the socket again after each `look_ms`, and the
+/// bytes that came in the look before stay in the socket. It is the sibling of
+/// `receive` for a read of a known size.
+pub fn receive_exactly(
+  socket socket: mug.Socket,
+  byte_size byte_size: Int,
+  what what: String,
+) -> Result(BitArray, mug.Error) {
+  open_wait.named(what, fn() { looking_for(socket, byte_size) })
+}
+
+fn looking_for(
+  socket: mug.Socket,
+  byte_size: Int,
+) -> Result(BitArray, mug.Error) {
+  case mug.receive_exact(socket, byte_size:, timeout_milliseconds: look_ms) {
+    Error(mug.Timeout) -> looking_for(socket, byte_size)
+    received -> received
+  }
+}

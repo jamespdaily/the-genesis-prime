@@ -796,8 +796,8 @@ pub fn a_derived_value_is_built_once_from_the_loaded_tables_and_every_read_gives
   let second: List(Int) = store.derived(tables:, key: ids_key)
   assert first == [1, 3] as "the ids of the two planted rows, read by the build"
   assert second == first as "every read gives the value the load built"
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(built, 0) == Error(Nil)
     as "reading the value does not build it again"
 }
@@ -846,8 +846,8 @@ pub fn a_derived_value_is_not_built_when_a_required_row_is_missing_test() -> Nil
     ),
   )
     as "Creature2 row 1 names a LocalizedText row the planted table lacks, so the load fails"
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(built, 0) == Error(Nil)
     as "a derivation reads tables the requirements have vouched for, so it is not built when one fails"
 }

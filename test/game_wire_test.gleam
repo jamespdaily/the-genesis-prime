@@ -3219,7 +3219,8 @@ pub fn a_sitting_bot_and_a_player_see_each_other_appear_hear_each_others_say_lin
             chat_every_ms: 300,
             whisper_every_ms: 600,
           ),
-          for_ms: 60_000,
+          // Past the test's deadline: only the stop can end the bot inside it.
+          for_ms: 300_000,
           report: fn(event) { process.send(events, event) },
         ),
       )
@@ -3406,7 +3407,8 @@ pub fn a_sigterm_to_the_node_ends_the_sitting_bot_which_leaves_and_gives_its_tal
           seat:,
           near: "Zed Qu",
           schedule: sitting_bot.client_schedule(walk: sitting_bot.client_circle),
-          for_ms: 60_000,
+          // Past the test's deadline: only the stop can end the bot inside it.
+          for_ms: 300_000,
           report: fn(_event) { Nil },
         ),
       )

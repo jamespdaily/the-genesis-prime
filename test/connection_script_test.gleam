@@ -47,6 +47,7 @@ import owned_test
 import recording_support
 import script_rule
 import signalling_rule
+import socket_read
 
 // ---- the server's own script ----
 
@@ -205,7 +206,8 @@ pub fn a_connection_with_no_script_to_take_is_closed_and_takes_no_input_test() -
   use <- owned_test.run(30_000)
   let server = start_script_rule(fn() { Error(Nil) })
   let client = ask_support.connect(server)
-  assert ask_support.receive_next(
+  assert socket_read.receive(
+      limit: socket_read.Open,
       socket: client,
       what: "the connection to close",
     )
@@ -337,7 +339,7 @@ type Record {
 
 fn read_record(client: mug.Socket) -> Record {
   let assert Ok(<<letter, number:64>>) =
-    ask_support.receive_exactly(
+    socket_read.receive_exactly(
       socket: client,
       byte_size: 9,
       what: "the next record the server wrote",
@@ -559,8 +561,8 @@ pub fn a_shell_that_waits_for_the_rest_of_a_read_gives_up_when_the_bound_its_fir
   process.send(subject, Elapsed(timer:, reference:))
   assert read_record(client) == Record(signalling_rule.woken, 9)
     as "after the bound the message is taken, and the held parts are not a read"
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(bounds, 0) == Error(Nil)
     as "no part started another bound: the one the first part started is the only one"
   event_wait.until("the connection is still open", fn() {
@@ -598,8 +600,8 @@ pub fn a_read_that_comes_whole_in_parts_starts_one_bound_and_cancels_it_when_the
   assert read_record(client) == Record(signalling_rule.pong, 2)
   assert process.receive(bounds, 0) == Ok(BoundCancelled(reference: first))
     as "the complete read cancelled its bound, and the second part started none"
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(bounds, 0) == Error(Nil)
   // A firing of the cancelled bound that was already sent is dropped, also
   // while the shell holds the next read: it does not end that read's bound.

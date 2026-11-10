@@ -86,9 +86,7 @@ fn start_participant(
       serve(who:, visits:, handle:, release:, take:)
     })
   let #(handle, release) =
-    open_wait.named("a participant to join the clock", fn() {
-      process.receive_forever(ready)
-    })
+    open_wait.received(from: ready, what: "a participant to join the clock")
   Participant(handle:, release:, pid:)
 }
 
@@ -164,11 +162,11 @@ fn start_holder(
 }
 
 fn announcement(announced: Subject(Announced), what what: String) -> Announced {
-  open_wait.named(what, fn() { process.receive_forever(announced) })
+  open_wait.received(from: announced, what: what)
 }
 
 fn visit(visits: Subject(Who), what what: String) -> Who {
-  open_wait.named(what, fn() { process.receive_forever(visits) })
+  open_wait.received(from: visits, what: what)
 }
 
 /// How many system messages (`sys:get_state` is one) wait in the process's
@@ -232,7 +230,7 @@ pub fn a_timer_cancelled_before_its_time_never_fires_on_the_driven_clock_test() 
       cancel()
     })
   driven_time.advance(time:, ms: 20)
-  // Absence check: the limit is how long this watches for a message that must not come,
-  // here a look at the mailbox now.
+  // Absence check: the limit is how long this watches for a message that must
+  // not come, here a look at the mailbox now.
   assert process.receive(fired, 0) == Error(Nil)
 }
