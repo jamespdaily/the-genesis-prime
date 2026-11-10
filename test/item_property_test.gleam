@@ -433,7 +433,7 @@ pub fn level_scaled_pvp_imbued_and_late_armor_curve_items_stay_unread_test() -> 
     as "0x14040f710: flags bit 3 scales the power level with the wearer"
   assert gap_of(5312) == Ok(item_property.PvpItem) as "flags 0x8000 is PvP"
   assert gap_of(12_654) == Ok(item_property.Imbued)
-    as "0x14040ce50: itemImbuementId 3"
+    as "0x1404445d0: itemImbuementId 3"
   assert gap_of(447) == Ok(item_property.LateArmorCurve)
     as "0x14041deb0: armor at power level 52 takes GameFormula 1286's curve"
   assert gap_of(80_982) == Ok(item_property.Rune)

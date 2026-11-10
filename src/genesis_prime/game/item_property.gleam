@@ -121,7 +121,7 @@ pub type Gap {
   /// Item2.flags 0x4000: the client takes the item's fields from GameFormula
   /// 1214's item (FillItemInfo 0x1404445d0). Open issue #333.
   ProxyItem
-  /// Item2.itemImbuementId is not 0 (0x14040ce50, not decoded). Open issue #666.
+  /// Item2.itemImbuementId is not 0 (FillItemInfo 0x1404445d0 copies it; what it adds is not decoded). Open issue #666.
   Imbued
   /// Item2Family 33: the budget curve is another (0x14041f1b0). Open issue #666.
   Rune
