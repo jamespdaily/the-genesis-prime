@@ -467,6 +467,9 @@ fn find_left_unanswered_in(
   }
 }
 
+/// The one test here that is about the deadline of a find, so it gives the find
+/// a real deadline of its own (`unanswered_ms`) and not one far beyond the
+/// test's (`ask_support.deadline_far_beyond_the_tests_deadline`).
 pub fn a_find_that_maps_does_not_answer_by_its_deadline_is_no_reply_and_not_not_found_test() -> Nil {
   use <- owned_test.run(30_000)
   let stand_in = process.new_name("stand_in_maps")
