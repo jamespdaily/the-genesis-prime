@@ -16,36 +16,42 @@
 //// - **The price** is what the client's window shows (`opcode.0x166`, `0x14041bcc0.formula`):
 ////   per item `item_price.shown(base, vendor sell multiplier)`, and the sale pays that
 ////   times the quantity. The base is the Item2's SellToVendor credit amount when either of
-////   its currency type columns is set, else the computed buy price times GameFormula 1026
-////   (0.15), at least 1. A row that needs a currency other than credits is refused with 23
-////   and a log line: worn items and those prices are #650's.
-//// - **The checks, in order**, each a 0x106 with its code (`GameLib.CodeEnumGenericError`):
+////   its SellToVendor currency type columns is set, else the computed buy price times
+////   GameFormula 1026 (0.15), at least 1 (`0x14040d160`; `item_price.sell_base`). A price
+////   in a currency other than credits is refused with 23 and a log line: #650's.
+//// - **The checks, in the order of the client's CheckVendorSell** (`0x1403d3a60`, with
+////   `0x1403d6a10` for the item), each a 0x106 with its code
+////   (`GameLib.CodeEnumGenericError`); the first that fails answers:
 ////   1. a body the client's reader refuses ends the connection (`NotDecoded`)
 ////   2. no vendor window is open on the connection: 16 Vendor_NotAVendor, logged
-////   3. the player is dead: 2 PlayerBusy (`opcode.0x166`), logged
-////   4. the open vendor's unit is gone from the picture, not a creature, without stock,
-////      dead, beyond the window's reach or Hostile: 59, 16, 16, 23, 17 or 62, logged
-////      (`interaction.vendor_opened`; the sale's code for a dead vendor is 23)
-////   5. no held item at the place: 18 Vendor_BadItemRec, logged (the client sends nothing then)
-////   6. a worn bag, location 0 with the bag's joined flag: 25 Vendor_BagIsNotEmpty
-////      (`0x1403d6a10`), logged
-////   7. a place that is not the usable inventory (location 1): 23; worn items (location 0)
-////      are #650's and logged, the bank's (2 and 3) are the client's own 23
-////   8. the quantity is 0: 24 Vendor_NoQuantity
-////   9. the quantity is over the stack's count, a count of 0 reading as 1: 19
-////   10. the item does not stack and the quantity is over 1: 11 Vendor_StackSize
+////   3. the player is dead: 2 PlayerBusy, logged
+////   4. the window's own checks, the unit gone from the picture, not a creature, without
+////      stock, Hostile: 59, 16, 16 or 62, logged (`interaction.vendor_opened` with no
+////      window reach: the sale's only range is the last check); the vendor dead is 23
+////   5. the quantity is 0: 24 Vendor_NoQuantity
+////   6. no held item at the place: 18 Vendor_BadItemRec, logged (the client sends nothing then)
+////   7. the quantity is over the stack's count, a count of 0 reading as 1: 19
+////   8. the item does not stack and the quantity is over 1: 11 Vendor_StackSize
+////   9. a bank place (location 2 or 3): 23
+////   10. a worn bag, location 0 with the bag's joined flag: 25 Vendor_BagIsNotEmpty, logged
 ////   11. the item is not sellable (`item_property.sellable`) or its shown price is 0: 23
-////   12. the item is priced in a currency other than credits: 23, logged; #650's
-////   13. the vendor is beyond 6.0 between the two edges, the sale's own range
-////       (`opcode.0x166`; the window's reach is 9.0): 17 Vendor_TooFar, logged
-////   The logged cases are a modified or stale client, or a gap this server has: each
-////   reason is a warning the first time on the connection and a debug line after, and the
-////   connection goes on, as the buy's cases do.
+////   12. the vendor is beyond 6.0 between the two edges, the sale's own range
+////       (`opcode.0x166`): 17 Vendor_TooFar, logged
+////   Then the refusals the client has no check for, 23 and logged, run after all of the
+////   above: a worn item that is not a bag (#650), a price in another currency (#650), and
+////   a location the client has no check for, which no open issue builds. The logged cases
+////   are a modified or stale client, or a gap this server has: each reason is a warning
+////   the first time on the connection and a debug line after, and the connection goes on,
+////   as the buy's cases do. The client's checks for the vendor's crowd-control states
+////   (60, 61) are not modelled.
 //// - **Junk** (0x167) sells every held item of Item2Category 94
-////   (`lua.Item.CodeEnumItem2Category.Junk`) in the usable inventory that passes cases 11
-////   and 12, whole, in bag-index order, in one statement; the others stay. A body that is
-////   not empty ends the connection. With nothing to sell nothing is sent. The checks of
-////   cases 2 to 4 and 13 apply to it.
+////   (`lua.Item.CodeEnumItem2Category.Junk`) in the usable inventory that passes checks 11
+////   and the currency check, whole, in bag-index order, in one statement; the others stay.
+////   A body that is not empty ends the connection. With nothing to sell nothing is sent.
+////   The checks 2 to 4 and 12 apply to it.
+//// - **What the sale and the buy share** is genesis_prime/game/vendor_trade's: the window
+////   open and the player and vendor alive (the codes differ: 2 and 23 here, 57 and 16 in
+////   the buy), the logged refusal, and the store's failed answers.
 //// - **The credit cap** is GameFormula 1115, 500,000 (`GetCurrencyCap.entitlement_14`): the
 ////   new total is clamped to it and the excess is lost; a total already at the cap stays
 ////   there and the sale goes through. A buyback entry carries the credits the sale paid for
@@ -68,7 +74,7 @@
 //// | the store changes nothing or refuses a place | 0x106 5, a log line, items, credits and buyback as before |
 //// | the connection ends while the store works | the store finishes or rolls back; the next login loads whichever |
 
-import genesis_prime/client_connection.{type Undecoded}
+import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/interaction
@@ -78,6 +84,9 @@ import genesis_prime/game/item_property
 import genesis_prime/game/player_life.{type Life}
 import genesis_prime/game/shown.{type Picture}
 import genesis_prime/game/vendor
+import genesis_prime/game/vendor_trade.{
+  type Effect, type Refusal, Declined, NoItemRow, NotDecoded, Refuse, Send,
+}
 import genesis_prime/game/world_entry.{
   type Buyback, type BuybackEntry, Buyback, BuybackEntry,
 }
@@ -86,7 +95,6 @@ import genesis_prime/message/buyback_entry
 import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/vendor_sale as vendor_sale_message
 import genesis_prime/message/vendor_sell_junk as vendor_sell_junk_message
-import genesis_prime/step.{type LogLevel, LogError, LogWarning}
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
   type SessionEpoch, HeldItem, ItemsNotSaved, SaveRefused, Sold,
@@ -110,16 +118,6 @@ pub const sale_message_id = vendor_sale_message.message_id
 
 /// The id of the message that sells all junk.
 pub const junk_message_id = vendor_sell_junk_message.message_id
-
-/// What the rule asks the connection to do.
-pub type Effect {
-  /// Write a frame to the player's client.
-  Send(frame: Frame)
-  /// Write a 0x106 with the client's code for why the sale is refused.
-  Refuse(code: Int)
-  /// Write a log line.
-  Log(level: LogLevel, text: String)
-}
 
 /// A sale message the client sent, with its body.
 pub type Request {
@@ -164,16 +162,6 @@ pub type Taken {
   Asks(sale: Sale, logged: Set(String))
 }
 
-/// Why the sale ends the connection with no answer: the client's own code never sends it, or
-/// the server's own state is broken.
-pub type Refusal {
-  /// A body the client's own reader would refuse.
-  NotDecoded(undecoded: Undecoded)
-  /// A held item whose row, or a row its price reads, the tables lack: the server's own
-  /// state is broken, since the item rows require them.
-  NoItemRow(item2_id: Item2Id)
-}
-
 /// What a request asks to sell, once its body is read.
 type Wanted {
   /// `quantity` of the stack at a place.
@@ -184,15 +172,27 @@ type Wanted {
 
 /// The stacks a request sells, or the answer that stops it.
 type Picked {
+  /// The stacks the client's own checks let through, which may be none.
   Picked(stacks: List(SoldItem))
+  /// A sale the client's checks before the range refuse, with their code.
   Stopped(taken: Taken)
+  /// A sale the client's checks let through but this server cannot make: it is refused
+  /// with 23 once the range check has passed, since the client's checks come first.
+  Withheld(reason: String, text: String)
 }
 
-/// The client's code for a sale the window is not open for (Vendor_NotAVendor).
-const not_a_vendor = 16
-
-/// The client's code for a player who is dead (PlayerBusy).
-const player_busy = 2
+/// How the sale words and codes the refusals of its window and player: a dead player is 2
+/// (PlayerBusy) and a dead vendor 23 (`opcode.0x166`), and the window's reach does not apply,
+/// as the sale's own range is checked last.
+const trade =
+  vendor_trade.Trade(
+    key: "sell",
+    verb: "sells to",
+    refused: "the sale",
+    dead_player_code: 2,
+    dead_vendor_code: 23,
+    reach: interaction.SkipReach,
+  )
 
 /// The client's code for a place that holds no item (Vendor_BadItemRec).
 const bad_item_rec = 18
@@ -209,21 +209,27 @@ const over_the_count = 19
 /// The client's code for more than one of an item that does not stack (Vendor_StackSize).
 const stack_size = 11
 
-/// The client's code for an item the vendor will not buy, a bank place and a dead vendor.
+/// The client's code for an item the vendor will not buy, a bank place and a dead vendor,
+/// and the server's for a sale it cannot make yet.
 const wont_buy = 23
 
 /// The client's code for a vendor beyond the sale's range (Vendor_TooFar).
 const too_far = 17
 
-/// The client's code for a change that was not saved (DbFailure).
-const db_failure = 5
-
 /// The reason a vendor sale's items are shown for (Item.CodeEnumItemUpdateReason 7,
 /// Vendor): the client shows "Sold <item>".
 const vendor_reason = 7
 
+/// The worn items and bags are in this location (`inventory`).
+const worn_location = 0
+
 /// The usable slots of the inventory are in this location (`inventory`).
 const inventory_location = 1
+
+/// The bank's locations (`0x1403d6a10`: 2 and 3 are refused with 23).
+const bank_location = 2
+
+const bank_vault_location = 3
 
 /// Item2Category Junk (`lua.Item.CodeEnumItem2Category`).
 const junk_category = 94
@@ -257,54 +263,34 @@ pub fn take(
 ) -> Result(Taken, Refusal) {
   use wanted <- result.try(wanted(request:))
   let label = label(request:)
-  case opened {
-    None ->
-      Ok(refused_logged(
-        reason: "no window",
-        text: label
-          <> " sells to a vendor with no vendor window open on the connection: the client sends it only in a vendor interaction, so the server answers "
-          <> int.to_string(not_a_vendor),
-        code: not_a_vendor,
+  case
+    vendor_trade.opened(
+      trade:,
+      label:,
+      opened:,
+      life:,
+      player:,
+      picture:,
+      tables:,
+      vendors:,
+      now_ms:,
+      logged:,
+    )
+  {
+    Error(Declined(effects:, logged:)) -> Ok(Refused(effects:, logged:))
+    Ok(window) ->
+      sold_to(
+        wanted:,
+        label:,
+        window:,
+        items:,
+        currencies:,
+        player:,
+        picture:,
+        tables:,
+        now_ms:,
         logged:,
-      ))
-    Some(window) ->
-      case player_life.state(life:) == player_life.Dead {
-        True ->
-          Ok(refused_logged(
-            reason: "dead",
-            text: label
-              <> " sells to a vendor while the player is dead: the client sends nothing for a dead player, so the server answers "
-              <> int.to_string(player_busy),
-            code: player_busy,
-            logged:,
-          ))
-        False ->
-          case
-            interaction.vendor_opened(
-              unit_id: window.unit_id,
-              player:,
-              picture:,
-              tables:,
-              vendors:,
-              now_ms:,
-            )
-          {
-            Error(refusal) -> Ok(window_refused(label:, refusal:, logged:))
-            Ok(stock) ->
-              sold_to(
-                wanted:,
-                label:,
-                window: vendor.Opened(..window, vendor: stock),
-                items:,
-                currencies:,
-                player:,
-                picture:,
-                tables:,
-                now_ms:,
-                logged:,
-              )
-          }
-      }
+      )
   }
 }
 
@@ -364,46 +350,68 @@ fn sold_to(
   case picked {
     Stopped(taken:) -> Ok(taken)
     Picked(stacks: []) -> Ok(Refused(effects: [], logged:))
-    Picked(stacks: [first, ..rest]) -> {
-      let assert Ok(shown.ShownCreature(path:, hit_radius:, ..)) =
-        dict.get(picture, window.unit_id)
-        as "interaction.vendor_opened passed, so the vendor's unit is a shown creature"
-      case
-        interaction.within(
-          player:,
-          tables:,
-          path:,
-          creature_radius: hit_radius,
-          now_ms:,
-          range: sale_range,
-        )
-      {
-        False ->
-          Ok(refused_logged(
-            reason: "beyond the sale's range",
-            text: label
-              <> " sells to unit "
-              <> int.to_string(window.unit_id)
-              <> ", which is more than the sale's "
-              <> float.to_string(sale_range)
-              <> " from the player between the two edges: the client would refuse the sale with code "
-              <> int.to_string(too_far)
-              <> ", so the server answers that",
-            code: too_far,
-            logged:,
-          ))
+    Picked(stacks: [first, ..rest]) ->
+      Ok(case in_range(window:, player:, picture:, tables:, now_ms:) {
+        False -> beyond_range(label:, unit_id: window.unit_id, logged:)
         True ->
-          Ok(asked(
+          asked(
             unit_id: window.unit_id,
             first:,
             rest:,
             currencies:,
             tables:,
             logged:,
-          ))
-      }
-    }
+          )
+      })
+    Withheld(reason:, text:) ->
+      Ok(case in_range(window:, player:, picture:, tables:, now_ms:) {
+        False -> beyond_range(label:, unit_id: window.unit_id, logged:)
+        True -> refused_logged(reason:, text:, code: wont_buy, logged:)
+      })
   }
+}
+
+/// Whether the vendor is within the sale's range of the player, between the two edges: the
+/// last check of the client's (`0x1403d3a60`).
+fn in_range(
+  window window: vendor.Opened,
+  player player: interaction.Player,
+  picture picture: Picture,
+  tables tables: table_store.Tables,
+  now_ms now_ms: Int,
+) -> Bool {
+  let assert Ok(shown.ShownCreature(path:, hit_radius:, ..)) =
+    dict.get(picture, window.unit_id)
+    as "vendor_trade.opened passed, so the vendor's unit is a shown creature"
+  interaction.within(
+    player:,
+    tables:,
+    path:,
+    creature_radius: hit_radius,
+    now_ms:,
+    range: sale_range,
+  )
+}
+
+/// The answer for a vendor beyond the sale's range.
+fn beyond_range(
+  label label: String,
+  unit_id unit_id: Int,
+  logged logged: Set(String),
+) -> Taken {
+  refused_logged(
+    reason: "beyond the sale's range",
+    text: label
+      <> " sells to unit "
+      <> int.to_string(unit_id)
+      <> ", which is more than the sale's "
+      <> float.to_string(sale_range)
+      <> " from the player between the two edges: the client would refuse the sale with code "
+      <> int.to_string(too_far)
+      <> ", so the server answers that",
+    code: too_far,
+    logged:,
+  )
 }
 
 /// The sale the store is asked for: the stacks picked, the credits held and the total they
@@ -431,32 +439,6 @@ fn asked(
   )
 }
 
-/// The answer for a window the vendor's own checks refuse: their code, but a dead vendor is
-/// refused with 23, not the window's 16 (the sale's sender).
-fn window_refused(
-  label label: String,
-  refusal refusal: interaction.VendorRefusal,
-  logged logged: Set(String),
-) -> Taken {
-  let code = case refusal.reason {
-    "dead" -> wont_buy
-    _ -> refusal.code
-  }
-  refused_logged(
-    reason: refusal.reason,
-    text: label
-      <> " sells to unit "
-      <> int.to_string(refusal.unit_id)
-      <> ", "
-      <> refusal.why
-      <> ": the client would refuse the sale with code "
-      <> int.to_string(code)
-      <> ", so the server answers that",
-    code:,
-    logged:,
-  )
-}
-
 /// The credits a character holds most (`GetCurrencyCap.entitlement_14`).
 fn credit_cap(tables tables: table_store.Tables) -> Int {
   let assert Ok(row) =
@@ -471,7 +453,8 @@ fn capped(held held: Int, paid paid: Int, cap cap: Int) -> Int {
   int.max(held, int.min(cap, held + paid))
 }
 
-/// The stack at a place, sold in part or whole, or the answer for the first check it breaks.
+/// The stack at a place, sold in part or whole, or the answer for the first check it breaks,
+/// in the order of the client's (`0x1403d3a60`, `0x1403d6a10`).
 fn part(
   place place: ItemPlace,
   quantity quantity: Int,
@@ -481,6 +464,7 @@ fn part(
   tables tables: table_store.Tables,
   logged logged: Set(String),
 ) -> Result(Picked, Refusal) {
+  use <- bool.guard(quantity == 0, Ok(stopped(code: no_quantity, logged:)))
   case
     list.find(items, fn(item) {
       item.location == place.location && item.bag_index == place.bag_index
@@ -499,47 +483,15 @@ fn part(
         code: bad_item_rec,
         logged:,
       ))
-    Ok(item) -> {
-      let Item2Id(raw_id) = item.item2_id
-      use bag <- result.try(
-        item_property.bag_size(tables:, item2_id: raw_id)
-        |> result.replace_error(NoItemRow(item2_id: item.item2_id)),
-      )
-      case item.location, bag {
-        0, Some(_) ->
-          Ok(stopped_logged(
-            reason: "worn bag",
-            text: label
-              <> " sells the worn bag Item2 "
-              <> int.to_string(raw_id)
-              <> ": the client refuses a worn bag with code "
-              <> int.to_string(bag_is_not_empty)
-              <> ", so the server answers that",
-            code: bag_is_not_empty,
-            logged:,
-          ))
-        0, None ->
-          Ok(stopped_logged(
-            reason: "worn item",
-            text: label
-              <> " sells the worn Item2 "
-              <> int.to_string(raw_id)
-              <> ", whose sale is #650's, so the server answers "
-              <> int.to_string(wont_buy),
-            code: wont_buy,
-            logged:,
-          ))
-        location, _ if location == inventory_location ->
-          priced(item:, quantity:, label:, vendor: stock, tables:, logged:)
-        _, _ -> Ok(stopped(code: wont_buy, logged:))
-      }
-    }
+    Ok(item) ->
+      checked(item:, quantity:, label:, vendor: stock, tables:, logged:)
   }
 }
 
-/// The stack in the usable inventory, sold for `quantity`, or the answer for the first of
-/// the quantity, stacking, sellable and price checks it breaks.
-fn priced(
+/// The stack at a place, sold for `quantity`, or the answer for the first of the count,
+/// stacking, bank, bag, sellable and price checks it breaks. A stack the client's checks let
+/// through but this server cannot sell yet is `Withheld`.
+fn checked(
   item item: HeldItem,
   quantity quantity: Int,
   label label: String,
@@ -550,7 +502,6 @@ fn priced(
   let Item2Id(raw_id) = item.item2_id
   let no_row = NoItemRow(item2_id: item.item2_id)
   // A held count of 0 reads as 1 (`0x1403d6a10`).
-  use <- bool.guard(quantity == 0, Ok(stopped(code: no_quantity, logged:)))
   use <- bool.guard(
     quantity > int.max(1, item.stack_count),
     Ok(stopped(code: over_the_count, logged:)),
@@ -563,26 +514,64 @@ fn priced(
     option.is_none(limit) && quantity > 1,
     Ok(stopped(code: stack_size, logged:)),
   )
+  use <- bool.guard(
+    item.location == bank_location || item.location == bank_vault_location,
+    Ok(stopped(code: wont_buy, logged:)),
+  )
+  use bag <- result.try(
+    item_property.bag_size(tables:, item2_id: raw_id)
+    |> result.replace_error(no_row),
+  )
+  use <- bool.guard(
+    item.location == worn_location && option.is_some(bag),
+    Ok(stopped_logged(
+      reason: "worn bag",
+      text: label
+        <> " sells the worn bag Item2 "
+        <> int.to_string(raw_id)
+        <> ": the client refuses a worn bag with code "
+        <> int.to_string(bag_is_not_empty)
+        <> ", so the server answers that",
+      code: bag_is_not_empty,
+      logged:,
+    )),
+  )
   use sellable <- result.try(
     item_property.sellable(tables:, item2_id: raw_id)
     |> result.replace_error(no_row),
   )
   use <- bool.guard(!sellable, Ok(stopped(code: wont_buy, logged:)))
-  case each_pays(item:, vendor: stock, tables:) {
-    Error(PricedOther(error:)) ->
-      Ok(stopped_logged(
+  use paid <- result.try(each_pays(item:, vendor: stock, tables:))
+  case item.location, paid {
+    _, Pays(each: 0) -> Ok(stopped(code: wont_buy, logged:))
+    location, _ if location == worn_location ->
+      Ok(Withheld(
+        reason: "worn item",
+        text: label
+          <> " sells the worn Item2 "
+          <> int.to_string(raw_id)
+          <> ", whose sale is #650's, so the server answers "
+          <> int.to_string(wont_buy),
+      ))
+    location, _ if location != inventory_location ->
+      Ok(Withheld(
+        reason: "unknown location",
+        text: label
+          <> " sells from location "
+          <> int.to_string(location)
+          <> ", which the client's checks do not name and the server holds no item at; no open issue builds it, so the server answers "
+          <> int.to_string(wont_buy),
+      ))
+    _, InOtherCurrency(error:) ->
+      Ok(Withheld(
         reason: "priced in another currency",
         text: label
           <> " sells "
           <> item_price.describe(error:)
           <> "; the sale of it is #650's, so the server answers "
           <> int.to_string(wont_buy),
-        code: wont_buy,
-        logged:,
       ))
-    Error(Unpriced(refusal:)) -> Error(refusal)
-    Ok(0) -> Ok(stopped(code: wont_buy, logged:))
-    Ok(each) ->
+    _, Pays(each:) ->
       Ok(
         Picked(stacks: [
           SoldItem(
@@ -597,28 +586,28 @@ fn priced(
   }
 }
 
-/// Why an item has no credit price to pay.
-type Unpaid {
-  /// The item's price is in another currency or has an additive, which #650 and #333
-  /// build.
-  PricedOther(error: item_price.PriceError)
-  /// A row the price reads is missing: the server's own state is broken.
-  Unpriced(refusal: Refusal)
+/// What the vendor pays for one of an item.
+type Paid {
+  /// So many credits, which is 0 for an item it does not buy.
+  Pays(each: Int)
+  /// The sell price is in a currency other than credits, which #650 builds.
+  InOtherCurrency(error: item_price.PriceError)
 }
 
-/// The credits the vendor pays for one of the item, which is 0 for an item it does not buy.
+/// What the vendor pays for one of the item.
 fn each_pays(
   item item: HeldItem,
   vendor stock: vendor.Vendor,
   tables tables: table_store.Tables,
-) -> Result(Int, Unpaid) {
+) -> Result(Paid, Refusal) {
   case item_price.sell_base(tables:, item2_id: item.item2_id) {
-    Ok(base) -> Ok(item_price.shown(base:, multiplier: stock.sell_multiplier))
+    Ok(base) ->
+      Ok(Pays(each: item_price.shown(base:, multiplier: stock.sell_multiplier)))
     Error(item_price.OtherCurrency(..) as error)
     | Error(item_price.TradeskillAdditive(..) as error) ->
-      Error(PricedOther(error:))
+      Ok(InOtherCurrency(error:))
     Error(item_price.MissingRow(..)) | Error(item_price.NoCurveValue(..)) ->
-      Error(Unpriced(refusal: NoItemRow(item2_id: item.item2_id)))
+      Error(NoItemRow(item2_id: item.item2_id))
   }
 }
 
@@ -652,10 +641,10 @@ fn junk_stack(
     |> result.replace_error(no_row),
   )
   use <- bool.guard(!sellable, Ok(None))
-  case each_pays(item:, vendor: stock, tables:) {
-    Error(PricedOther(..)) | Ok(0) -> Ok(None)
-    Error(Unpriced(refusal:)) -> Error(refusal)
-    Ok(each) -> {
+  use paid <- result.try(each_pays(item:, vendor: stock, tables:))
+  case paid {
+    InOtherCurrency(..) | Pays(each: 0) -> Ok(None)
+    Pays(each:) -> {
       let count = int.max(1, item.stack_count)
       Ok(
         Some(SoldItem(
@@ -692,8 +681,9 @@ fn refused_logged(
   code code: Int,
   logged logged: Set(String),
 ) -> Taken {
-  let #(level, logged) = interaction.log_level(key: "sell " <> reason, logged:)
-  Refused(effects: [Log(level:, text:), Refuse(code:)], logged:)
+  let Declined(effects:, logged:) =
+    vendor_trade.refused_logged(trade:, reason:, text:, code:, logged:)
+  Refused(effects:, logged:)
 }
 
 /// The store's request for the sale: the character's currency and items in one change.
@@ -750,23 +740,18 @@ pub fn answered(
         ],
       )
     }
-    ItemsNotSaved -> #(items, currencies, buyback, [
-      Log(
-        level: LogWarning,
-        text: not_sold(sale:)
-          <> ": a later login holds the character, or the credits or the items are not as the connection holds them",
-      ),
-      Refuse(code: db_failure),
-    ])
-    SaveRefused(constraint:) -> #(items, currencies, buyback, [
-      Log(
-        level: LogError,
-        text: not_sold(sale:)
-          <> ": the store refused the change by the constraint "
-          <> constraint,
-      ),
-      Refuse(code: db_failure),
-    ])
+    ItemsNotSaved -> #(
+      items,
+      currencies,
+      buyback,
+      vendor_trade.not_saved(what: not_sold(sale:)),
+    )
+    SaveRefused(constraint:) -> #(
+      items,
+      currencies,
+      buyback,
+      vendor_trade.save_refused(what: not_sold(sale:), constraint:),
+    )
     store.ItemsSaved | store.ItemMade(..) | store.Bought(..) ->
       panic as "the store answers a sale with Sold, ItemsNotSaved or SaveRefused"
   }
@@ -870,16 +855,6 @@ pub fn not_sold(sale sale: Sale) -> String {
   <> " for "
   <> int.to_string(sale.credits_after - sale.credits_held)
   <> " credits was not saved"
-}
-
-/// A sentence that says what the client sent that is refused, for the log.
-pub fn describe(refusal refusal: Refusal) -> String {
-  case refusal {
-    NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
-    NoItemRow(item2_id:) ->
-      "a held item has no row in the client's tables, or a row its price reads: Item2 "
-      <> int.to_string(item2_id.value)
-  }
 }
 
 /// What the tables must hold at load for a sale: the credit cap and the sell fraction.

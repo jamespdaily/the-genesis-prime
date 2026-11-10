@@ -36,8 +36,10 @@ import genesis_prime/game/player_life.{type Life}
 import genesis_prime/game/shown
 import genesis_prime/game/vendor
 import genesis_prime/game/vendor_sale.{
-  type Effect, type Taken, Asks, Log, NotDecoded, Refuse, Refused, Sale,
-  SellJunk, SellStack, Send, SoldItem,
+  type Taken, Asks, Refused, Sale, SellJunk, SellStack, SoldItem,
+}
+import genesis_prime/game/vendor_trade.{
+  type Effect, Log, NotDecoded, Refuse, Send,
 }
 import genesis_prime/game/world_entry.{Buyback}
 import genesis_prime/message/buyback_added
@@ -191,7 +193,7 @@ fn selling_junk(items items: List(HeldItem)) -> Scene {
   )
 }
 
-fn taken(scene scene: Scene) -> Result(Taken, vendor_sale.Refusal) {
+fn taken(scene scene: Scene) -> Result(Taken, vendor_trade.Refusal) {
   vendor_sale.take(
     request: scene.request,
     items: scene.items,
@@ -564,6 +566,76 @@ pub fn an_item_in_the_bank_is_refused_and_an_empty_place_is_refused_with_bad_ite
     )
     == #(LogWarning, 18)
     as "enum 18, Vendor_BadItemRec: no stack is held at the place"
+}
+
+pub fn an_item_failing_two_checks_gets_the_code_of_the_check_the_client_runs_first_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let far = vendor_support.picture_with_walker(gap: 9.5)
+  // 0x1403d3a60 checks the quantity (24) before 0x1403d6a10, whose checks run in the order
+  // count 19, stack size 11, bank 23, bag 25, price 23, and the range (17) last.
+  let worn_bag = [
+    held(guid: 15, item2_id: 4753, location: 0, index: 17, count: 1),
+  ]
+  let bag_scene = fn(quantity) {
+    Scene(
+      ..selling(location: 0, index: 17, quantity:),
+      items: worn_bag,
+      picture: far,
+    )
+  }
+  assert codes(effects: refused(scene: bag_scene(0))) == [24]
+    as "a worn bag sold in a quantity of 0 is refused with 24, the quantity check, not 25"
+  assert logged_code(effects: refused(scene: bag_scene(1))) == #(LogWarning, 25)
+    as "a worn bag with a vendor beyond the window's 9.0 is refused with 25 first: the range comes last"
+  assert codes(effects: refused(scene: bag_scene(2))) == [19]
+    as "and a quantity over its count of 1 is refused with 19, before the bag check"
+  // 13176 does not stack: two of three is 11, and 6 of 3 is 19 first.
+  let unstacking = [in_bag(guid: 13, item2_id: 13_176, index: 0, count: 3)]
+  let far_sale = fn(items, quantity) {
+    Scene(..sell(items:, index: 0, quantity:), picture: far)
+  }
+  assert codes(effects: refused(scene: far_sale(unstacking, 6))) == [19]
+    as "0x1403d6a10: the count check is before the stack-size check"
+  assert codes(effects: refused(scene: far_sale(unstacking, 2))) == [11]
+    as "and the stack-size check is before the range"
+  // An item with no price is 23 from the client's price check, before the range's 17.
+  let unpriced = [in_bag(guid: 14, item2_id: 9939, index: 0, count: 1)]
+  assert codes(effects: refused(scene: far_sale(unpriced, 1))) == [23]
+    as "0x1403d6a10 ends with the price check, which is before the range"
+  // The server's own refusals come after all of the client's checks, the range included.
+  let worn_item = [
+    held(guid: 16, item2_id: 13_176, location: 0, index: 5, count: 1),
+  ]
+  let worn_scene =
+    Scene(
+      ..selling(location: 0, index: 5, quantity: 1),
+      items: worn_item,
+      picture: far,
+    )
+  assert logged_code(effects: refused(scene: worn_scene)) == #(LogWarning, 17)
+    as "a worn item too far from the vendor is refused with the client's 17, not the server's 23"
+  let other_currency = [in_bag(guid: 17, item2_id: 16_053, index: 0, count: 1)]
+  assert logged_code(effects: refused(scene: far_sale(other_currency, 1)))
+    == #(LogWarning, 17)
+    as "an item priced in another currency too far from the vendor is refused with 17, not 23"
+}
+
+pub fn a_place_at_a_location_the_client_has_no_check_for_is_refused_and_logged_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 0x1403d6a10 knows the locations 0 to 3; the server holds items at 0 to 2 only.
+  let held_at_5 = [
+    held(guid: 20, item2_id: 14_838, location: 5, index: 0, count: 1),
+  ]
+  let scene =
+    Scene(..selling(location: 5, index: 0, quantity: 1), items: held_at_5)
+  let assert Ok(Refused(effects:, logged:)) = taken(scene:)
+    as "the sale breaks a check"
+  let #(level, code, _) = logged_text(effects:)
+  assert #(level, code) == #(LogWarning, 23)
+    as "a location other than 0 to 3 is enum 23, logged as a gap the first time"
+  assert logged_code(effects: refused(scene: Scene(..scene, logged:)))
+    == #(LogDebug, 23)
+    as "and as a debug line after"
 }
 
 pub fn a_sell_with_no_vendor_open_is_refused_with_not_a_vendor_test() -> Nil {

@@ -18,8 +18,10 @@
 //// - **A proxy item** (Item2.flags 0x4000) takes its quality from the Item2 its row
 ////   names (GameFormula 1214) and keeps its own power level.
 //// - **Only a credit price is read.** An item whose row names another currency, or a
-////   trade skill additive, is refused with the row named: other currencies and the
-////   additive are #333's.
+////   trade skill additive, has no buy price here, and the error names the row: other
+////   currencies and the additive are #333's. The computed sell price does not read those
+////   columns (`0x14040bfb0` computes it from the computed buy price), so a row with no
+////   SellToVendor currency type sells for that whatever they hold.
 ////
 //// | Point | What happens |
 //// |---|---|
@@ -93,6 +95,16 @@ pub fn base(
       additive_id: item.tradeskill_additive_id,
     )),
   )
+  computed_buy(tables:, item:)
+}
+
+/// The price the client computes from the row's curve, quality and multipliers, whatever
+/// currency the row's own buy columns name (`0x14040bee0`): the buy price when they are
+/// both 0, and the price the computed sell price is a fraction of (`0x14040bfb0`).
+fn computed_buy(
+  tables tables: table_store.Tables,
+  item item: item2.Item2,
+) -> Result(Int, PriceError) {
   use category <- result.try(
     item2_category.get(tables:, id: Item2CategoryId(item.item2_category_id))
     |> result.replace_error(MissingRow(
@@ -191,7 +203,7 @@ pub fn sell_base(
   {
     True -> own_sell_price(item2_id:, item:)
     False -> {
-      use buy <- result.try(base(tables:, item2_id:))
+      use buy <- result.try(computed_buy(tables:, item:))
       use fraction_row <- result.try(
         game_formula.get(tables:, id: GameFormulaId(sell_fraction_formula))
         |> result.replace_error(MissingRow(

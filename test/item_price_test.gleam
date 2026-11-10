@@ -120,7 +120,7 @@ pub fn the_sell_base_of_each_start_zone_item_is_the_price_the_client_shows_test(
       #(13_148, 70),
       #(13_160, 70),
     ]
-    as "vendor.start_zone_prices: the sell prices the client shows for the 22 stocked items at multiplier 1.0, in the order of the page (12078 3, 14838 10, 20791 1, 12044 4; armor 78, 49, 42, 63, 70)"
+    as "vendor.start_zone_prices: the sell base BuildItemPrices computes for the 22 stocked items, in the order of the page (12078 3, 14838 10, 20791 1, 12044 4; armor 78, 49, 42, 63, 70); the client then clears the sell price of 12078 to 0 (0x14040d160.sell_cleared), so 3 is never shown for it"
 }
 
 pub fn the_sell_multiplier_scales_the_shown_price_and_cuts_it_to_a_whole_credit_test() -> Nil {
@@ -148,6 +148,27 @@ pub fn a_sell_to_vendor_credit_amount_replaces_the_computed_price_test() -> Nil 
     as "0x14040d160: with a sell currency type set the amount column is the price, not the computed 0.15 of the buy price"
   assert item_price.shown(base: 1, multiplier: 2.5) == 2
     as "0x14041bcc0.formula: trunc(f32(1) x f32(2.5)) = 2"
+}
+
+pub fn a_sell_currency_set_with_an_amount_of_0_sells_for_nothing_whatever_the_computed_price_is_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item = fixture_tables.root("Item2", 1154)
+  assert sell_bases(items: [item]) == [#(1154, 0)]
+    as "0x14040d160 (sell branch tests currencyTypeId0SellToVendor and currencyTypeId1SellToVendor, offsets 0x98 and 0x9c): Item2 1154 has sell currency type 1 and amount 0, so its price is the amount, 0, and not the 3 that 0.15 of its computed buy price 21 would give; its buy columns are 0 and 0"
+}
+
+pub fn a_row_with_a_buy_currency_and_no_sell_currency_sells_for_the_computed_price_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item = fixture_tables.root("Item2", 85_531)
+  assert sell_bases(items: [item]) == [#(85_531, 5625)]
+    as "0x14040d160 (both sell currency types 0, so 0x14040bfb0): Item2 85531 sells for max(1, trunc(f32(37 500) x f32(0.15))) = 5625, 37 500 being its computed buy price (level 50: 7.5 x 50^2 = 18 750, times quality 4, times 0.5); its own buy price of 250 000 credits in currencyAmount0 is not read"
+}
+
+pub fn a_tradeskill_additive_changes_the_buy_price_only_not_the_computed_sell_price_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item = fixture_tables.root("Item2", 23_318)
+  assert sell_bases(items: [item]) == [#(23_318, 37)]
+    as "0x14040d160 (both sell currency types 0): Item2 23318 has tradeskillAdditiveId 95 and sells for max(1, trunc(f32(248) x f32(0.15))) = 37, 248 being its computed buy price (level 47: 7.5 x 47^2 = 16 567.5, times quality 3, times 0.005); the additive reaches only Item GetBuyPrice (0x14041bf80)"
 }
 
 pub fn a_proxy_item_takes_its_quality_from_the_proxy_row_test() -> Nil {
