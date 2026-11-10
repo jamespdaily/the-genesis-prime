@@ -12,9 +12,8 @@
 
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/movement
-import genesis_prime/game/prerequisite.{type Player, Player}
+import genesis_prime/game/prerequisite.{type Player}
 import genesis_prime/game/start_place
-import genesis_prime/game/top_zone
 import genesis_prime/game/world_entry
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/unit_fields
@@ -24,19 +23,12 @@ pub fn of(
   tables tables: table_store.Tables,
   entered entered: world_entry.Entered,
 ) -> Player {
-  let character = entered.character
-  let zone = start_place.world_zone_id(movement.place(state: entered.movement))
-  Player(
-    race_id: character.race_id.value,
-    class_id: character.class_id.value,
-    level: formula_level(entered:),
-    path: character.path,
-    gender: character.gender,
+  prerequisite.player_of(
+    tables:,
+    character: entered.character,
     world_id: entered.map.world_id,
-    zones: case top_zone.chain(tables:, world_zone_id: zone) {
-      [] -> [zone]
-      chain -> chain
-    },
+    zone: start_place.world_zone_id(movement.place(state: entered.movement)),
+    level: formula_level(entered:),
   )
 }
 

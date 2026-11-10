@@ -6580,7 +6580,10 @@ fn finished_effects(
 /// its own point, facing its own yaw, for both units of a type 108 condition
 /// (`Spell4Effects.prerequisiteIdTargetApply`: the caster is both units of a caster-side
 /// check).
-fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
+pub fn subject_of(
+  cast cast: State,
+  caster caster: Caster,
+) -> prerequisite.Subject {
   let slot = class_resource.slot(resources: caster.resources)
   let held = case slot >= 0 && slot <= 6 {
     True -> [
@@ -6624,6 +6627,46 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
     factions: Some(caster.factions),
     player: Some(caster.player),
     quests: Some(caster.quests),
+    seen: prerequisite.WholeUnit,
+  )
+}
+
+/// What a prerequisite may read about a player entering a world, before its unit and
+/// its casts exist: the player and the factions and the quest log they hold, `health`
+/// (the health it enters at against its maximum, the value world entry makes the
+/// player's life from; `None` leaves the vital unread), and the values a player starts
+/// with: no casts, not in combat, not stealthed and a full shield. The class resource
+/// slots and the positions are not held, so a prerequisite that reads those is
+/// `NotRead`, never `Fails` (genesis_prime/game/visibility). None of the 68 condition
+/// types that the Creature2 rows' `prerequisiteIdVisibility` reach (2285 distinct
+/// root rows, nested rows followed) is type 64, which reads a resource slot, or type
+/// 108, the only type that reads a position, so no unit's visibility depends on them;
+/// types 71 and 73, which read a vital, are not among them either, but the health is
+/// held for a prerequisite the tables may add. The first step's check decides it all
+/// with the real values.
+pub fn entering_subject(
+  player player: prerequisite.Player,
+  factions factions: prerequisite.Factions,
+  quests quests: QuestLog,
+  health health: Option(prerequisite.Vital),
+) -> prerequisite.Subject {
+  let full = prerequisite.Vital(current: 1.0, maximum: 1.0)
+  prerequisite.Subject(
+    under: [],
+    second_unit: None,
+    in_combat: False,
+    vitals: dict.from_list(case health {
+      Some(held) -> [#(health_vital, held), #(shield_vital, full)]
+      None -> [#(shield_vital, full)]
+    }),
+    difficulty: None,
+    stealthed: Some(False),
+    resource_slots: None,
+    rolls: [],
+    positions: prerequisite.NotPlaced,
+    factions: Some(factions),
+    player: Some(player),
+    quests: Some(quests),
     seen: prerequisite.WholeUnit,
   )
 }

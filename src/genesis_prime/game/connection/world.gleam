@@ -568,6 +568,8 @@ fn joining_at_the_holocrypt(
       place:,
       connection: client_connection.connection(session.link),
       stay:,
+      tables: session.settings.tables,
+      visibility: session.settings.visibility,
     )
   connection_select.entering_world(
     session: Session(..session, last_stay: stay),
@@ -624,6 +626,7 @@ pub fn entry_answered(
           connection: client_connection.connection(session.link),
           stay:,
           tables: session.settings.tables,
+          visibility: session.settings.visibility,
         )
       {
         Ok(world_entry.Join(state:, effects:)) ->

@@ -82,6 +82,7 @@ pub fn battle_beast(number number: Int, x x: Float) -> Spawn {
     display_info_id: 26_565,
     outfit_info_id: 0,
     vendor: False,
+    visibility: option.None,
     combat: beast_combat(),
     bases: loaded_beast().bases,
     context: loaded_beast().context,
@@ -183,6 +184,7 @@ pub fn holoring(number number: Int, place place: Place) -> StaticObject {
     checklist_index: 0,
     world_object_id: 0,
     world_socket_id: 0,
+    visibility: option.None,
   )
 }
 
@@ -371,6 +373,7 @@ fn put_worlds(
 ) -> Nil {
   content_game_number.put(key:, numbers:)
   content_spawn.put_summon_checks(key:, checks: summon_checks())
+  content_spawn.put_visibility(key:, visibility: dict.new())
   content_class_resource.put(key:, classes: class_resource_support.classes())
   content_server_proxy.put(key:, proxies: server_proxy_support.none())
   content_zone_welcome.put(key:, welcomes: zone_welcome_support.none())

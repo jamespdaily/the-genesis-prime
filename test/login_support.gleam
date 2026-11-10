@@ -28,6 +28,7 @@ import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/creature_registry
+import gleam/dict
 import gleam/erlang/process.{type Pid}
 import gleam/option.{None, Some}
 import login_client.{type Ports, Ports}
@@ -135,6 +136,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
       zone_welcomes: zone_welcome_support.none(),
       vendors: vendor.none(),
       numbers: spawn_support.numbers,
+      visibility: dict.new(),
     ),
     wire_recorder: None,
     scripts: script.operating_system,

@@ -624,7 +624,7 @@ pub fn entering(
   regeneration regeneration: Regeneration,
   place place: Place,
 ) -> #(Life, List(Effect)) {
-  let health = int.min(option.unwrap(saved, or: max_health), max_health)
+  let health = entering_health(saved:, max_health:)
   let life = Life(..new(health: max_health, shield:, regeneration:), health:)
   case saved_dead(saved:) {
     True -> #(Life(..life, shield: 0, state: Dead), [
@@ -634,6 +634,16 @@ pub fn entering(
     ])
     False -> health_clock_settled(life:)
   }
+}
+
+/// The health a player enters at: `saved` capped at `max_health`, or `max_health`
+/// when nothing was saved. `entering` makes the life with it, and the join's
+/// visibility check reads it before the life exists.
+pub fn entering_health(
+  saved saved: Option(Int),
+  max_health max_health: Int,
+) -> Int {
+  int.min(option.unwrap(saved, or: max_health), max_health)
 }
 
 /// Whether a saved health is a player that left dead: 0. `entering` starts such a player

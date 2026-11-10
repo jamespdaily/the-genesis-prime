@@ -11,7 +11,7 @@ import genesis_prime/step.{
   Reply, Send, ServiceTimerFired, StartCreature, StartServiceTimer, Started,
   Told,
 }
-import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/id.{type PrerequisiteId, Spell4Id}
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/map.{type State, Join, Leave, Moved, Watched}
 import genesis_prime/world_map/map_id.{MapId}
@@ -21,6 +21,7 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None}
+import gleam/set.{type Set}
 import gleam/string
 import map_support
 import place_support
@@ -113,6 +114,19 @@ pub fn join_as(
   x x: Float,
   alive alive: Bool,
 ) -> #(State, ServiceStep(map.Outgoing)) {
+  join_hiding(state:, at_ms:, connection:, x:, alive:, hidden: set.new())
+}
+
+/// A join of connection `connection` at `x`, at time `at_ms`, of a player for whom
+/// these visibility prerequisites fail.
+pub fn join_hiding(
+  state state: State,
+  at_ms at_ms: Int,
+  connection connection: Int,
+  x x: Float,
+  alive alive: Bool,
+  hidden hidden: Set(PrerequisiteId),
+) -> #(State, ServiceStep(map.Outgoing)) {
   feed(
     state:,
     at_ms:,
@@ -124,8 +138,29 @@ pub fn join_as(
         place: at(x),
         stay: map_support.stay(count: 1),
         alive:,
+        hidden:,
       ),
     )),
+  )
+}
+
+/// The connection's tell that the visibility prerequisites failing for its player
+/// are now these, at time `at_ms`.
+pub fn visibility_changed(
+  state state: State,
+  at_ms at_ms: Int,
+  connection connection: Int,
+  hidden hidden: Set(PrerequisiteId),
+) -> #(State, ServiceStep(map.Outgoing)) {
+  feed(
+    state:,
+    at_ms:,
+    event: OwnEvent(
+      Told(message: map.VisibilityChanged(
+        connection: ConnectionId(connection),
+        hidden:,
+      )),
+    ),
   )
 }
 

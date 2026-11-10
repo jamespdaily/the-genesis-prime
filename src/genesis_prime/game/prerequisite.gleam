@@ -160,7 +160,9 @@ import genesis_prime/game/lasting
 import genesis_prime/game/quest_log.{
   type Quest, type QuestLog, type QuestRowError,
 }
+import genesis_prime/game/top_zone
 import genesis_prime/message/float32
+import genesis_prime/store.{type Character}
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4Id, PrerequisiteId, Spell4Id,
 }
@@ -175,6 +177,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
+import gleam/string
 import gleam_community/maths
 
 /// A Prerequisite row as the client keeps it: its id, whether any condition is
@@ -430,6 +433,32 @@ pub type Player {
   )
 }
 
+/// The player a character is at a place and level: its own row's race, class, path
+/// and gender, the World and zone it stands in, and the zone's parents above it in
+/// the WorldZone table, which is the walk the client's zone check makes
+/// (0x1403c92e0, `Prerequisite.prerequisiteTypeId.26`). A zone with no row has no
+/// parent to walk to, so it is the one zone the player is in.
+pub fn player_of(
+  tables tables: table_store.Tables,
+  character character: Character,
+  world_id world_id: Int,
+  zone zone: Int,
+  level level: Int,
+) -> Player {
+  Player(
+    race_id: character.race_id.value,
+    class_id: character.class_id.value,
+    level:,
+    path: character.path,
+    gender: character.gender,
+    world_id:,
+    zones: case top_zone.chain(tables:, world_zone_id: zone) {
+      [] -> [zone]
+      chain -> chain
+    },
+  )
+}
+
 /// What a check may read about its subject, the check's first unit.
 pub type Subject {
   Subject(
@@ -601,6 +630,24 @@ pub type LoadError {
   /// A quest a condition names has an objective slot whose QuestObjective row the table
   /// lacks. No slot of the game's quests does, so the load refuses it.
   NoQuestObjectiveRow(objective_id: Int)
+}
+
+/// A sentence that says which row the load could not read, for the log.
+pub fn describe_load_error(error error: LoadError) -> String {
+  case error {
+    NoPrerequisiteRow(id:) ->
+      "the table Prerequisite has no row " <> int.to_string(id.value)
+    PrerequisiteCycle(path:) ->
+      "Prerequisite rows nest each other: "
+      <> string.join(
+        list.map(path, fn(id) { int.to_string(id.value) }),
+        with: " > ",
+      )
+    NoPositionalRequirementRow(id:) ->
+      "the table PositionalRequirement has no row " <> int.to_string(id)
+    NoQuestObjectiveRow(objective_id:) ->
+      "the table QuestObjective has no row " <> int.to_string(objective_id)
+  }
 }
 
 /// The Prerequisite rows of the loaded tables by id, for `load`.

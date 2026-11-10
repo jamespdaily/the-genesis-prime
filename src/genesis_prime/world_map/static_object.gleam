@@ -49,7 +49,9 @@ import genesis_prime/message/unit_create_static.{
   type UnitCreateStatic, UnitCreateStatic,
 }
 import genesis_prime/message/unit_create_tail.{type UnitCreateTail}
-import genesis_prime/table/id.{type Creature2Id, Creature2Id}
+import genesis_prime/table/id.{
+  type Creature2Id, type PrerequisiteId, Creature2Id,
+}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/unit_fields.{type HealthSource}
@@ -112,6 +114,10 @@ pub type StaticObject {
     world_object_id: Int,
     /// The row's WorldSocket id, sent with `world_object_id`.
     world_socket_id: Int,
+    /// The creature's `prerequisiteIdVisibility`, `None` for 0: the player sees the
+    /// object only while this prerequisite does not fail for them
+    /// (genesis_prime/game/visibility).
+    visibility: Option(PrerequisiteId),
   )
 }
 

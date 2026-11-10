@@ -81,6 +81,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/set
 import map_support
 import message_support
 import place_support
@@ -111,6 +112,7 @@ pub fn settings() -> game_connection.Settings {
     zone_welcomes: zone_welcome_support.none(),
     vendors: vendor.none(),
     numbers: spawn_support.numbers,
+    visibility: dict.new(),
   )
 }
 
@@ -587,6 +589,7 @@ pub fn map_run_with_four_players(run: Int) -> map.State {
               place:,
               stay: viewer_stay(other),
               alive: True,
+              hidden: set.new(),
             ),
           )),
         ),
@@ -1194,6 +1197,7 @@ pub fn mapped(
     | TellMoved(..)
     | client_connection.TellReady(..)
     | client_connection.TellStealthChanged(..)
+    | client_connection.TellVisibilityChanged(..)
     | client_connection.TellLifeChanged(..)
     | TellPeer(..)
     | client_connection.TellStrike(..)

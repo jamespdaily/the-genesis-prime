@@ -236,6 +236,7 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
                 place: map_spawn_support.at(x_of(stop)),
                 stay: map_support.stay(count: 1),
                 alive: True,
+                hidden: set.new(),
               ),
             )),
             connection:,

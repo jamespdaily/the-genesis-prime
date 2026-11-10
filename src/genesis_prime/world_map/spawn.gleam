@@ -66,6 +66,7 @@ import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/damage
 import genesis_prime/game/hit
 import genesis_prime/game/hit_radius
+import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/unit_properties.{type Properties}
@@ -87,10 +88,10 @@ import genesis_prime/table/faction2
 import genesis_prime/table/faction2_relationship
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
-  type Creature2Id, type UnitProperty2Id, Creature2ArcheTypeId,
-  Creature2DifficultyId, Creature2DisplayInfoId, Creature2Id, Creature2ResistId,
-  Creature2TierId, CreatureLevelId, InstancePortalId, PathMissionId,
-  UnitProperty2Id,
+  type Creature2Id, type PrerequisiteId, type UnitProperty2Id,
+  Creature2ArcheTypeId, Creature2DifficultyId, Creature2DisplayInfoId,
+  Creature2Id, Creature2ResistId, Creature2TierId, CreatureLevelId,
+  InstancePortalId, PathMissionId, UnitProperty2Id,
 }
 import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/store as table_store
@@ -187,6 +188,10 @@ pub type Spawn {
     /// Whether the creature sells (`vendor` content table): its 0x262 carries the vendor
     /// create flag, which shows the client its bag icon.
     vendor: Bool,
+    /// The creature's `prerequisiteIdVisibility`, `None` for 0: the player sees the
+    /// creature only while this prerequisite does not fail for them
+    /// (genesis_prime/game/visibility).
+    visibility: Option(PrerequisiteId),
   )
 }
 
@@ -309,6 +314,10 @@ pub type Selection {
     refusals: List(Refusal),
     out_of_range_levels: List(SpawnId),
     coverage: List(WorldCoverage),
+    /// The loaded prerequisites of each world's started spawns and sent objects
+    /// that have a visibility prerequisite, each distinct one once, in id order, for
+    /// each world that has any (`visibility_index`).
+    visibility: Dict(Int, List(Prerequisite)),
   )
 }
 
@@ -360,6 +369,14 @@ pub type SpawnError {
   NoOutfitRow(outfit_info_id: Int)
   /// The row's world has no row in the client's World table (world 0 has none).
   InNoWorld(world_id: Int)
+  /// A started spawn or a sent object names a visibility prerequisite the
+  /// Prerequisite table has no row for, or one that does not load
+  /// (genesis_prime/game/prerequisite `load`).
+  NoVisibilityRow(
+    creature_id: Creature2Id,
+    prerequisite_id: PrerequisiteId,
+    reason: prerequisite.LoadError,
+  )
   /// A damage effect of the creature's attack spell has a caster prerequisite the
   /// server does not evaluate (genesis_prime/world_map/creature_attack).
   AttackNotEvaluated(
@@ -463,7 +480,7 @@ pub fn select(
       rule: describe(error:),
     ))
   }
-  let #(_shared, judged) =
+  let #(_shared, judged_by_checks) =
     list.map_fold(rows, dict.new(), fn(shared, row) {
       case
         row.entity_type == non_player,
@@ -496,6 +513,8 @@ pub fn select(
         False, Error(Nil) -> #(shared, Other(row:))
       }
     })
+  let #(judged, loaded) =
+    visibility_judged(tables:, judged: judged_by_checks, refused:)
   let started =
     list.filter_map(judged, fn(one) {
       case one {
@@ -537,6 +556,11 @@ pub fn select(
       }
     }),
     coverage: coverage_of(judged),
+    visibility: visibility_index(
+      loaded:,
+      started: list.map(started, fn(checked) { checked.spawn }),
+      objects:,
+    ),
   )
 }
 
@@ -657,7 +681,9 @@ pub fn summoned(
   )
   case left_out_of(catalog:, checked:) {
     Ok(reason) -> Error(WouldNotStart(creature_id:, reason:))
-    Error(Nil) -> Ok(checked.spawn)
+    // A summon is a development one, outside the load's index of visibility
+    // prerequisites, so it is shown to every player.
+    Error(Nil) -> Ok(Spawn(..checked.spawn, visibility: None))
   }
 }
 
@@ -1692,6 +1718,7 @@ fn object_checks(
     checklist_index: row.checklist_index,
     world_object_id: row.world_object_id,
     world_socket_id: row.world_socket_id,
+    visibility: visibility_of(creature:),
   ))
 }
 
@@ -1755,10 +1782,128 @@ fn load_checks(
         bases:,
         context:,
         vendor: vendor.is_vendor(vendors:, creature_id:),
+        visibility: visibility_of(creature:),
       ),
     ),
     shared,
   ))
+}
+
+/// The creature's visibility prerequisite, `None` for 0, which the client reads
+/// as no prerequisite.
+fn visibility_of(creature creature: Creature2) -> Option(PrerequisiteId) {
+  let prerequisite_id = creature2.prerequisite_id_visibility(creature)
+  use <- bool.guard(when: prerequisite_id.value == 0, return: None)
+  Some(prerequisite_id)
+}
+
+/// Each started spawn and sent object whose visibility prerequisite does not load is
+/// refused as a row of the load (the client never tests the column, so the server
+/// keeps the prerequisite and every one a started spawn names must load), and the
+/// prerequisites that load, each once, by number. A row the load leaves out names
+/// none, so a prerequisite only a left-out creature holds is neither loaded nor
+/// required.
+fn visibility_judged(
+  tables tables: table_store.Tables,
+  judged judged: List(Judged),
+  refused refused: fn(Row, SpawnError) -> Judged,
+) -> #(List(Judged), Dict(Int, Prerequisite)) {
+  let #(cache, rows) =
+    list.map_fold(judged, dict.new(), fn(cache, one) {
+      let named = case one {
+        Started(checked:) ->
+          Some(#(
+            checked.row,
+            checked.spawn.creature_id,
+            checked.spawn.visibility,
+          ))
+        ObjectSent(row:, object:) ->
+          Some(#(row, object.creature_id, object.visibility))
+        Other(..) | Excluded(..) | Refused(..) | ObjectDead(..) -> None
+      }
+      case named {
+        Some(#(row, creature_id, Some(prerequisite_id))) -> {
+          let #(cache, found) =
+            loaded_prerequisite(tables:, cache:, prerequisite_id:)
+          case found {
+            Ok(_) -> #(cache, one)
+            Error(reason) -> #(
+              cache,
+              refused(
+                row,
+                NoVisibilityRow(creature_id:, prerequisite_id:, reason:),
+              ),
+            )
+          }
+        }
+        Some(#(_, _, None)) | None -> #(cache, one)
+      }
+    })
+  #(
+    rows,
+    dict.to_list(cache)
+      |> list.filter_map(fn(one) {
+        result.map(one.1, fn(prerequisite) { #(one.0, prerequisite) })
+      })
+      |> dict.from_list,
+  )
+}
+
+/// The prerequisite loaded from the tables, kept in the cache by number.
+fn loaded_prerequisite(
+  tables tables: table_store.Tables,
+  cache cache: Dict(Int, Result(Prerequisite, prerequisite.LoadError)),
+  prerequisite_id prerequisite_id: PrerequisiteId,
+) -> #(
+  Dict(Int, Result(Prerequisite, prerequisite.LoadError)),
+  Result(Prerequisite, prerequisite.LoadError),
+) {
+  case dict.get(cache, prerequisite_id.value) {
+    Ok(found) -> #(cache, found)
+    Error(Nil) -> {
+      let found =
+        prerequisite.load(
+          id: prerequisite_id,
+          rows: prerequisite.table_rows(tables:),
+          arcs: prerequisite.table_arcs(tables:),
+          quests: prerequisite.table_quests(tables:),
+        )
+      #(dict.insert(cache, prerequisite_id.value, found), found)
+    }
+  }
+}
+
+/// The loaded visibility prerequisites of a load's started spawns and sent objects,
+/// by world: each distinct prerequisite of a world once, in id order.
+fn visibility_index(
+  loaded loaded: Dict(Int, Prerequisite),
+  started started: List(Spawn),
+  objects objects: List(StaticObject),
+) -> Dict(Int, List(Prerequisite)) {
+  let named =
+    list.append(
+      list.map(started, fn(spawn) {
+        #(start_place.world_id(spawn.place), spawn.visibility)
+      }),
+      list.map(objects, fn(object) {
+        #(start_place.world_id(object.place), object.visibility)
+      }),
+    )
+  list.filter_map(named, fn(one) {
+    case one {
+      #(world_id, Some(prerequisite_id)) ->
+        Ok(#(world_id, prerequisite_id.value))
+      #(_, None) -> Error(Nil)
+    }
+  })
+  |> list.unique
+  |> list.group(fn(one) { one.0 })
+  |> dict.map_values(fn(_world_id, ones) {
+    ones
+    |> list.map(fn(one) { one.1 })
+    |> list.sort(int.compare)
+    |> list.filter_map(fn(number) { dict.get(loaded, number) })
+  })
 }
 
 /// The row's outfit is 0, or has a Creature2OutfitInfo row.
@@ -1966,6 +2111,17 @@ fn describe(error error: SpawnError) -> String {
     NoOutfitRow(outfit_info_id:) ->
       "Creature2OutfitInfo " <> int.to_string(outfit_info_id) <> " has no row"
     InNoWorld(world_id:) -> "World " <> int.to_string(world_id) <> " has no row"
+    NoVisibilityRow(
+      creature_id: Creature2Id(creature_id),
+      prerequisite_id:,
+      reason:,
+    ) ->
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> " has visibility prerequisite "
+      <> int.to_string(prerequisite_id.value)
+      <> ", which does not load: "
+      <> prerequisite.describe_load_error(error: reason)
     AttackNotEvaluated(creature_id: Creature2Id(creature_id), unevaluated:) ->
       "Creature2 "
       <> int.to_string(creature_id)
