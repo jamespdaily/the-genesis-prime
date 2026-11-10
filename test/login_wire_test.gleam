@@ -31,6 +31,7 @@ import login_client
 import login_support
 import login_vectors as vector
 import owned_test
+import socket_read
 
 pub fn the_sts_login_runs_plain_to_m2_and_then_both_ways_on_rc4_under_k_one_state_per_direction_test() -> Nil {
   use <- owned_test.run(60_000)
@@ -90,7 +91,12 @@ pub fn a_client_that_connects_to_the_auth_listener_gets_the_hello_test() -> Nil 
   let #(started, ports, _account_id) = login_support.start_with_jim()
   let socket = login_client.connect(ports.auth_port)
   let assert [hello] =
-    login_client.read_frames(client: socket, have: <<>>, count: 1)
+    login_client.read_frames(
+      client: socket,
+      have: <<>>,
+      count: 1,
+      limit: socket_read.Open,
+    )
     as "the auth server greets the client first"
   assert hello.message_id == 0x0003 as "the hello travels bare"
   let assert Ok(decoded) = server_hello.decode(hello.body)
@@ -122,10 +128,22 @@ pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_ha
       name: vector.name,
       password: vector.password,
       seed: 7,
+      limit: socket_read.Open,
     )
-  let socket = login_client.auth_login(ports: ports, login:, build: 16_042)
+  let socket =
+    login_client.auth_login(
+      ports: ports,
+      login:,
+      build: 16_042,
+      limit: socket_read.Open,
+    )
   let assert [accepted, handoff] =
-    login_client.read_frames(client: socket, have: <<>>, count: 2)
+    login_client.read_frames(
+      client: socket,
+      have: <<>>,
+      count: 2,
+      limit: socket_read.Open,
+    )
     as "0x591 then 0x3db"
   let accepted = login_client.in_the_auth_wrapper(accepted)
   let handoff = login_client.in_the_auth_wrapper(handoff)

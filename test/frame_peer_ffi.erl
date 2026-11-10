@@ -1,5 +1,5 @@
 -module(frame_peer_ffi).
--export([listen/0, write_once_accepted/2]).
+-export([listen/0, write_once_accepted/2, accept/1, write/2, bytes_received/1]).
 
 %% A listening socket on the loopback, on a port the system chooses, and that
 %% port. The socket is owned by the process that calls this and closes with it.
@@ -27,3 +27,21 @@ write_once_accepted(Listen, Bytes) ->
     ok = gen_tcp:controlling_process(Listen, Writer),
     Writer ! go,
     nil.
+
+%% The one connection waiting on `Listen`, accepted by the calling process.
+-spec accept(port()) -> port().
+accept(Listen) ->
+    {ok, Connection} = gen_tcp:accept(Listen, 10000),
+    Connection.
+
+%% `Bytes` in a single send on an accepted connection.
+-spec write(port(), binary()) -> nil.
+write(Connection, Bytes) ->
+    ok = gen_tcp:send(Connection, Bytes),
+    nil.
+
+%% The bytes the client's socket has received from the system so far.
+-spec bytes_received(port()) -> non_neg_integer().
+bytes_received(Socket) ->
+    {ok, [{recv_oct, Received}]} = inet:getstat(Socket, [recv_oct]),
+    Received.

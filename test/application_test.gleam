@@ -53,7 +53,11 @@ pub fn a_tree_that_ends_while_the_node_runs_is_fatal_whatever_the_reason_test() 
 pub fn the_end_of_the_tree_while_the_node_runs_crashes_the_process_that_takes_it_test() -> Nil {
   use <- owned_test.run(10_000)
   let taker = process.spawn_unlinked(fn() { application.end_of(shutdown()) })
-  let assert process.Abnormal(_) = ask_support.ended(process.monitor(taker))
+  let assert process.Abnormal(_) =
+    ask_support.ended(
+      watched: process.monitor(taker),
+      what: "the process that took the end of the tree to crash",
+    )
     as "taking the end of a tree while the node is not stopping crashes, so the node ends with status 1"
   Nil
 }
@@ -64,7 +68,11 @@ pub fn a_tree_serves_while_it_runs_and_the_node_is_not_stopping_test() -> Nil {
   let tree = Tree(pid:, monitor: process.monitor(pid))
   assert application.serving(tree) as "a tree that runs on a node that runs"
   process.kill(pid)
-  let _reason = ask_support.ended(tree.monitor)
+  let _reason =
+    ask_support.ended(
+      watched: tree.monitor,
+      what: "the tree to end when its pid is killed",
+    )
   assert !application.serving(tree) as "a tree that has ended does not serve"
 }
 
@@ -82,7 +90,11 @@ pub fn a_tree_started_under_the_root_gives_its_pid_and_a_monitor_on_it_test() ->
   assert process.is_alive(tree.pid)
     as "supervisor:start_child gives the tree's own pid, which `Tree` holds"
   application_support.stop(tree.pid)
-  let _reason = ask_support.ended(tree.monitor)
+  let _reason =
+    ask_support.ended(
+      watched: tree.monitor,
+      what: "the tree to end when it is stopped",
+    )
   Nil
 }
 

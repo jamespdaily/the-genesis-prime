@@ -31,6 +31,7 @@ import gleam/list
 import gleam/string
 import login_client.{Ports}
 import mug
+import socket_read
 
 /// How long to wait for the game server's next bytes, in milliseconds.
 const wait_ms = 5000
@@ -39,10 +40,28 @@ pub fn main() -> Nil {
   let account = variable("GENESIS_PLAY_ACCOUNT")
   let password = variable("GENESIS_PLAY_PASSWORD")
   let ports = Ports(sts_port: 6600, auth_port: 23_115, game_port: 24_000)
-  let login = login_client.sts_login(ports:, name: account, password:, seed: 7)
-  let auth = login_client.auth_login(ports:, login:, build: 16_042)
+  let login =
+    login_client.sts_login(
+      ports:,
+      name: account,
+      password:,
+      seed: 7,
+      limit: socket_read.Within(wait_ms),
+    )
+  let auth =
+    login_client.auth_login(
+      ports:,
+      login:,
+      build: 16_042,
+      limit: socket_read.Within(wait_ms),
+    )
   let assert [_accepted, handoff] =
-    login_client.read_frames(client: auth, have: <<>>, count: 2)
+    login_client.read_frames(
+      client: auth,
+      have: <<>>,
+      count: 2,
+      limit: socket_read.Within(wait_ms),
+    )
     as "the auth server answers a login with 0x0591 and 0x03DB"
   let assert Ok(handed) =
     game_server_handoff.decode(login_client.in_the_auth_wrapper(handoff).body)
@@ -53,6 +72,7 @@ pub fn main() -> Nil {
       port: ports.game_port,
       session_key: handed.session_key,
       account_name: account,
+      limit: socket_read.Within(wait_ms),
     )
   game_client.send(game:, message_id: 0x07E0, body: <<>>)
   case

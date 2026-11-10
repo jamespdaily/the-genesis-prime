@@ -247,7 +247,11 @@ pub fn a_map_that_ended_is_started_again_with_a_new_incarnation_and_the_old_run_
   let first = started(world, ship)
   let ended = process.monitor(first.pid)
   process.kill(first.pid)
-  let _reason = ask_support.ended(ended)
+  let _reason =
+    ask_support.ended(
+      watched: ended,
+      what: "the first map run to end when killed",
+    )
   // Maps takes the end of the map from its monitor; the old run is not found
   // once it has.
   await_not_found(world:, map: ship, incarnation: first.incarnation)
@@ -286,7 +290,11 @@ pub fn a_map_that_ended_keeps_no_player_so_the_same_connection_joins_the_new_run
     as "the connection is unit 1 of the first run, as character 101"
   let ended = process.monitor(first.pid)
   process.kill(first.pid)
-  let _reason = ask_support.ended(ended)
+  let _reason =
+    ask_support.ended(
+      watched: ended,
+      what: "the first map run to end when killed",
+    )
   await_not_found(world:, map: ship, incarnation: first.incarnation)
   let again = started(world, ship)
   let assert map.Joined(unit: after, incarnation:, ..) =
@@ -373,7 +381,11 @@ pub fn a_map_gives_each_player_a_unit_id_and_never_gives_one_twice_after_a_leave
     as "the second joins as a connection that is not in the map's registry: its watch ends at once, and it is still a unit of its own"
   let ended = process.monitor(first_connection)
   process.kill(first_connection)
-  let _reason = ask_support.ended(ended)
+  let _reason =
+    ask_support.ended(
+      watched: ended,
+      what: "the first connection to end when killed",
+    )
   // The next joiner is another connection: a rejoin by the killed one's id
   // would race the map's taking of its end, which comes from another sender
   // than this test's join. That the end removes the player is the rule's,
@@ -392,7 +404,11 @@ pub fn a_restart_of_maps_ends_every_map_and_the_map_supervisor_restarts_with_it_
     as "the map supervisor is registered"
   let ended = process.monitor(first.pid)
   process.kill(maps_pid)
-  let _reason = ask_support.ended(ended)
+  let _reason =
+    ask_support.ended(
+      watched: ended,
+      what: "the first map run to end when the map supervisor is killed",
+    )
   let new_maps =
     ask_support.await_new_pid(
       name: world.maps,

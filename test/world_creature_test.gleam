@@ -312,7 +312,11 @@ pub fn a_creature_stops_after_its_last_viewer_leaves_sight_and_the_spawn_seen_ag
   let first = next(received:, what: "the creature's 0x262", wanted: appearance)
   let first_pid = creature_pid(world:, run:, unit_id: first.unit_id, life: 2)
   move_to(run:, connection: 1, x: far)
-  let _stopped = ask_support.ended(process.monitor(first_pid))
+  let _stopped =
+    ask_support.ended(
+      watched: process.monitor(first_pid),
+      what: "the creature stopped after the idle stop",
+    )
   event_wait.until("the stopped creature is found no more", fn() {
     creature_registry.find(
       world.creatures,
@@ -354,9 +358,18 @@ pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
   let second = creature_pid(world:, run:, unit_id: 3, life: 3)
   let ended = process.monitor(run.pid)
   process.kill(run.pid)
-  let _reason = ask_support.ended(ended)
-  let _first_ended = ask_support.ended(process.monitor(first))
-  let _second_ended = ask_support.ended(process.monitor(second))
+  let _reason =
+    ask_support.ended(watched: ended, what: "the run to end when killed")
+  let _first_ended =
+    ask_support.ended(
+      watched: process.monitor(first),
+      what: "the first creature ended with its run",
+    )
+  let _second_ended =
+    ask_support.ended(
+      watched: process.monitor(second),
+      what: "the second creature ended with its run",
+    )
   event_wait.until("neither creature is found any more", fn() {
     creature_registry.find(
       world.creatures,
@@ -426,7 +439,7 @@ pub fn a_map_that_ends_while_its_burst_of_starts_runs_ends_every_creature_it_sta
   })
   let ended = process.monitor(run.pid)
   process.kill(run.pid)
-  let _reason = ask_support.ended(ended)
+  let _reason = ask_support.ended(watched: ended, what: "the killed run to end")
   event_wait.until("every creature the map started has ended", fn() {
     world_support.creature_pids(world) == []
   })
@@ -577,7 +590,11 @@ pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn
   // Later, a slow machine may have let the respawn pass, and nothing is asserted.
   assert alive || read_at_ms >= before_strike_ms + respawn_ms
     as "a dead creature told to retire keeps its corpse and its respawn: the creature process lives until the respawn time (genesis_prime/world_map/creature), well after the player's 0x355 and the idle stop of 100 ms"
-  let _stopped = ask_support.ended(process.monitor(pid))
+  let _stopped =
+    ask_support.ended(
+      watched: process.monitor(pid),
+      what: "the dead creature stopped at its respawn",
+    )
   move_to(run:, connection: 1, x: 0.0)
   let second =
     next(

@@ -51,6 +51,7 @@ import gleam/string
 import login_client.{type Ports}
 import mug
 import pog
+import socket_read
 
 /// A player's account: its login name, the one password every account has, the
 /// number its SRP secret is made from, and the name of the character it
@@ -93,6 +94,10 @@ pub type Ping {
 
 /// The client's build, which the auth server checks.
 const build = 16_042
+
+/// How long a scripted client waits for the server to write, in milliseconds,
+/// before it stops the process.
+const answer_within = socket_read.Within(wait_ms: 5000)
 
 /// The stages of the path, in the order a player goes them.
 pub fn stages() -> List(Stage) {
@@ -199,9 +204,11 @@ pub fn play(
       name: account.login_name,
       password: account.password,
       seed: account.seed,
+      limit: answer_within,
     )
   let mark = reached(StsLogin, begun)
-  let auth = login_client.auth_login(ports:, login:, build:)
+  let auth =
+    login_client.auth_login(ports:, login:, build:, limit: answer_within)
   let handed = handed_off(auth)
   let mark = reached(AuthLogin, mark)
   let game =
@@ -209,6 +216,7 @@ pub fn play(
       port: ports.game_port,
       session_key: handed.session_key,
       account_name: account.login_name,
+      limit: answer_within,
     )
   let mark = reached(GameHello, mark)
   list_characters(game)
@@ -284,14 +292,17 @@ pub fn log_in(
       name: account.login_name,
       password: account.password,
       seed: account.seed,
+      limit: answer_within,
     )
-  let auth = login_client.auth_login(ports:, login:, build:)
+  let auth =
+    login_client.auth_login(ports:, login:, build:, limit: answer_within)
   let handed = handed_off(auth)
   let game =
     game_client.connect(
       port: ports.game_port,
       session_key: handed.session_key,
       account_name: account.login_name,
+      limit: answer_within,
     )
   #(game, auth)
 }
@@ -300,7 +311,12 @@ pub fn log_in(
 /// 0x03DB answer the login, and 0x03DB carries the session key.
 fn handed_off(auth: mug.Socket) -> game_server_handoff.GameServerHandoff {
   let assert [_accepted, handoff] =
-    login_client.read_frames(client: auth, have: <<>>, count: 2)
+    login_client.read_frames(
+      client: auth,
+      have: <<>>,
+      count: 2,
+      limit: answer_within,
+    )
     as "the auth server answers a login with 0x0591 and 0x03DB"
   let assert Ok(handed) =
     game_server_handoff.decode(login_client.in_the_auth_wrapper(handoff).body)

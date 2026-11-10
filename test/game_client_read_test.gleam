@@ -5,6 +5,7 @@
 //// arrives inside 0x03DC with every byte after its length enciphered:
 //// opcode.0x3dc; the pong answering a ping arrives bare: opcode.0x1).
 
+import event_wait
 import frame_peer
 import game_client.{type Game}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -15,6 +16,7 @@ import gleam/erlang/process
 import gleam/list
 import login_client
 import owned_test
+import socket_read
 
 fn destroyed(unit_id unit_id: Int) -> Frame {
   let assert Ok(body) =
@@ -34,7 +36,11 @@ fn written_in_one_send(messages: List(Frame), after after: BitArray) -> Game {
     listener,
     bit_array.concat([bit_array.concat(wrapped), after]),
   )
-  game_client.new(socket: login_client.connect(port), cipher:)
+  game_client.new(
+    socket: login_client.connect(port),
+    cipher:,
+    limit: socket_read.Open,
+  )
 }
 
 /// Whether `body` crashed, run in a process of its own so the test goes on.
@@ -159,5 +165,37 @@ pub fn a_read_returns_its_message_after_any_number_of_other_frames_test() -> Nil
     == #(wanted, <<>>)
     as "the wanted message, with nothing kept beyond it"
   game_client.nothing_more(game:)
+  game_client.close(game:)
+}
+
+pub fn a_read_until_waits_for_the_rest_of_a_message_that_arrives_in_parts_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // One socket read gives at most the system's buffer (9216 bytes on macOS), so
+  // a message the server wrote whole can reach the client in parts. The peer
+  // writes the rest only once the client has taken the first part.
+  let #(listener, port) = frame_peer.listen()
+  let client = login_client.connect(port)
+  let peer = frame_peer.accept(listener)
+  let cipher = game_client.session_cipher(session_key: <<1:128>>)
+  let assert Ok(whole) =
+    encrypted_frame.wrap(GameWrapper, destroyed(unit_id: 5), cipher)
+    as "the message wraps"
+  let assert Ok(first) = bit_array.slice(whole, 0, 5)
+  let assert Ok(rest) =
+    bit_array.slice(whole, 5, bit_array.byte_size(whole) - 5)
+  frame_peer.write(peer, first)
+  let _writer =
+    process.spawn(fn() {
+      event_wait.until("the client to have taken the first part", fn() {
+        frame_peer.bytes_received(client) >= bit_array.byte_size(first)
+      })
+      frame_peer.write(peer, rest)
+    })
+  let game = game_client.new(socket: client, cipher:, limit: socket_read.Open)
+  assert game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      frames != []
+    })
+    == #([destroyed(unit_id: 5)], <<>>)
+    as "the message, though its bytes came in two reads"
   game_client.close(game:)
 }

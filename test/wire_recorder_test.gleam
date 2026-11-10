@@ -226,7 +226,11 @@ pub fn a_connection_is_recorded_input_by_input_with_the_time_its_script_gave_eac
     as "one connection process"
   let watched = process.monitor(connection)
   assert mug.shutdown(client) == Ok(Nil) as "the client closed"
-  let _reason = ask_support.ended(watched)
+  let _reason =
+    ask_support.ended(
+      watched: watched,
+      what: "the connection to end after the client closed",
+    )
   let assert Ok(#(Accepted, first)) = process.receive(given, 0)
     as "the clock was called for the accept"
   let assert Ok(#(Read(<<1, 2, 3, 4>>), second)) = process.receive(given, 0)
@@ -395,7 +399,11 @@ pub fn an_input_taken_with_the_servers_script_carries_readings_between_the_tests
   let watched = process.monitor(connection)
   let before_close = ask_support.monotonic_ms()
   assert mug.shutdown(client) == Ok(Nil) as "the client closed"
-  let _reason = ask_support.ended(watched)
+  let _reason =
+    ask_support.ended(
+      watched: watched,
+      what: "the connection to end after the client closed",
+    )
   let after_close = ask_support.monotonic_ms()
   let assert Ok(Recording(header:, lines:, ..)) =
     wire_recording.read(recording_support.wire_text_in(folder))

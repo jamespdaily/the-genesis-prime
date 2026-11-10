@@ -15,6 +15,7 @@ import login_client
 import login_support
 import mailbox_support
 import owned_test
+import socket_read
 import unitest
 
 pub fn the_sampler_reports_a_planted_processs_mailbox_and_heap_test() -> Nil {
@@ -53,10 +54,21 @@ pub fn the_sampler_reports_each_listeners_connections_and_an_idle_stores_workers
     == [0, 0, 0]
   let first = login_client.connect(ports.auth_port)
   let second = login_client.connect(ports.auth_port)
-  let assert [_] = login_client.read_frames(client: first, have: <<>>, count: 1)
+  let assert [_] =
+    login_client.read_frames(
+      client: first,
+      have: <<>>,
+      count: 1,
+      limit: socket_read.Open,
+    )
     as "the auth listener greets the first client"
   let assert [_] =
-    login_client.read_frames(client: second, have: <<>>, count: 1)
+    login_client.read_frames(
+      client: second,
+      have: <<>>,
+      count: 1,
+      limit: socket_read.Open,
+    )
     as "and the second"
   event_wait.until("both clients' connections are held", fn() {
     list.length(ask_support.connections_of(login.auth.listener)) == 2

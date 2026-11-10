@@ -31,9 +31,10 @@
 ////   game connections in the casts' tests, an auth connection in the flood test. The
 ////   map's and the creatures' timers use the real scheduler, so a test whose frames
 ////   depend on them waits for those frames as it did.
-//// - **The barrier** is `sys:get_state` of the connection, which can race a
-////   connection that is ending: a connection that ends between the check that it is
-////   alive and the call fails the test.
+//// - **The barrier** is `sys:get_state` of the connection with an infinite timeout, which
+////   can race a connection that is ending: a connection that ends between the check
+////   that it is alive and the call fails the test at once, as does a clock that has
+////   ended.
 //// - **No wait here has a time limit.** A call to the clock and the barrier wait until
 ////   they are answered, and the test's deadline ends one that never is, naming it
 ////   (`open_wait`, `owned_test.run`).
@@ -45,6 +46,8 @@ import genesis_prime/step.{type Now, type TimerId, Now}
 import genesis_prime/step/runtime
 import genesis_prime/step/timer
 import gleam/bool
+import gleam/dynamic.{type Dynamic}
+import gleam/erlang/atom.{type Atom}
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/erlang/reference.{type Reference}
 import gleam/int
@@ -52,7 +55,6 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/otp/actor
-import gleam/otp/system
 import open_wait
 
 /// How far ahead of the node's own time the clock starts.
@@ -246,9 +248,7 @@ fn started(
 /// Asks the clock and waits for its answer, with no limit of its own.
 fn asked(time time: Time, make make: fn(Subject(reply)) -> Message) -> reply {
   open_wait.named("the driven clock to answer", fn() {
-    let reply = process.new_subject()
-    process.send(time.driver, make(reply))
-    process.receive_forever(reply)
+    process.call_forever(time.driver, make)
   })
 }
 
@@ -280,7 +280,12 @@ fn finish_step(owner: Pid) -> Nil {
   use <- bool.guard(when: !process.is_alive(owner), return: Nil)
   let _step_done =
     open_wait.named("a driven connection to finish its step", fn() {
-      system.get_state(owner)
+      get_state_within(owner, atom.create("infinity"))
     })
   Nil
 }
+
+/// `sys:get_state` of the process with a timeout of its own: the one in
+/// `gleam/otp/system` has no way to lift its five seconds.
+@external(erlang, "sys", "get_state")
+fn get_state_within(pid: Pid, timeout: Atom) -> Dynamic

@@ -174,7 +174,8 @@ fn opening_twice_ends_the_process(
   let capture = log_capture.start(from: opener, into: logged)
   let ended = process.monitor(opener)
   process.send(go, Nil)
-  let assert process.Abnormal(_) = ask_support.ended(ended)
+  let assert process.Abnormal(_) =
+    ask_support.ended(watched: ended, what: "the opener to end by its crash")
     as "opening an id already open ended the process"
   let assert Ok(#("error", text)) =
     process.receive(logged, within: ask_support.event_wait_ms)

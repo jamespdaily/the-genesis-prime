@@ -252,7 +252,7 @@ pub fn begin_stop_tree(tree: Pid) -> process.Monitor {
 
 /// Stops a tree as the server's stop does, and waits for it to end.
 pub fn stop_tree(tree: Pid) -> process.ExitReason {
-  ended(begin_stop_tree(tree))
+  ended(watched: begin_stop_tree(tree), what: "the tree to end at its stop")
 }
 
 /// Stops the server's tree and waits for it to end.
@@ -268,10 +268,13 @@ pub fn shutdown() -> process.ExitReason {
 
 /// Waits for a watched process to end and says how. The wait has no limit of its
 /// own: a process that does not end ends the test at its deadline, naming it
-/// (`open_wait`).
-pub fn ended(watched: process.Monitor) -> process.ExitReason {
+/// as `what` says (`open_wait`).
+pub fn ended(
+  watched watched: process.Monitor,
+  what what: String,
+) -> process.ExitReason {
   let down =
-    open_wait.named("a watched process to end", fn() {
+    open_wait.named(what, fn() {
       process.new_selector()
       |> process.select_specific_monitor(watched, fn(down) { down })
       |> process.selector_receive_forever
@@ -299,7 +302,7 @@ pub fn ended_running(work: fn() -> Nil) -> process.ExitReason {
     as "the process waits to be released"
   let watched = process.monitor(worker)
   process.send(go, Nil)
-  ended(watched)
+  ended(watched:, what: "the process to end after its work")
 }
 
 /// What a process raised when it crashed: the error of the `{Error, Stacktrace}`

@@ -190,7 +190,8 @@ pub fn a_supervisor_that_ends_while_the_call_waits_is_a_supervisor_that_is_not_r
     mailbox_support.call_waiting_from(pid: supervisor, caller:)
   })
   process.send(release, Nil)
-  let _reason = ask_support.ended(stopped)
+  let _reason =
+    ask_support.ended(watched: stopped, what: "the stopping supervisor to end")
   let assert Ok(result) = process.receive(results, ask_support.event_wait_ms)
     as "the call returned"
   assert result == Error(service.SupervisorNotRunning)

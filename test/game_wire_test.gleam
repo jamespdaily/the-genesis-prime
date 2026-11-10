@@ -130,6 +130,7 @@ import login_support
 import mailbox_support
 import message_support
 import novice_tables
+import open_wait
 import owned_key
 import owned_test
 import place_support
@@ -137,6 +138,7 @@ import planted_table
 import pog
 import quest_support
 import rating_support
+import socket_read
 import spawn_support
 import unitest
 import vendor_support
@@ -203,7 +205,12 @@ pub fn a_client_with_a_held_session_key_gets_the_hello_and_then_the_list_of_its_
     )
   put_session_key(started, account)
   let game =
-    game_client.connect(port:, session_key: session_key(), account_name: "jim")
+    game_client.connect(
+      port:,
+      session_key: session_key(),
+      account_name: "jim",
+      limit: socket_read.Open,
+    )
   game_client.send(game:, message_id: 0x07E0, body: <<>>)
   let assert [_tier, _entitlements, _level, listed] =
     game_client.read(game:, count: 4)
@@ -243,7 +250,10 @@ pub fn a_second_login_to_the_account_disconnects_the_first_with_0x036a_reason_19
   assert disconnect_notice.decode(notice.body)
     == Ok(DisconnectNotice(reason: AccountDisconnected))
     as "0x1400168a0: 19 is 'This account has been disconnected', which the connection a newer login took over gets"
-  game_client.await_closed(game: first)
+  open_wait.named(
+    "the first connection to close after a newer login took over",
+    fn() { game_client.await_closed(game: first) },
+  )
   // The newest login stays connected: its ping is answered.
   game_client.send(game: second, message_id: 0x07E0, body: <<>>)
   let assert [_tier, _entitlements, _level, listed] =
@@ -258,14 +268,22 @@ pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_
   use <- owned_test.run(60_000)
   let #(started, port, _account) = start()
   let game =
-    game_client.connect(port:, session_key: session_key(), account_name: "jim")
+    game_client.connect(
+      port:,
+      session_key: session_key(),
+      account_name: "jim",
+      limit: socket_read.Open,
+    )
   let assert [notice] = game_client.read(game:, count: 1)
   game_client.nothing_more(game:)
   assert notice.message_id == 0x036A as "opcode.0x36a"
   assert disconnect_notice.decode(notice.body)
     == Ok(DisconnectNotice(reason: AccountDisconnected))
     as "0x1400168a0: 19 is 'This account has been disconnected', for a key the hand-off never held"
-  game_client.await_closed(game:)
+  open_wait.named(
+    "the connection to close after a key the hand-off never held",
+    fn() { game_client.await_closed(game:) },
+  )
   login_support.stop(started)
 }
 
@@ -295,8 +313,14 @@ pub fn a_stop_closes_every_listener_to_new_connects_before_an_open_game_connecti
   assert disconnect_notice.decode(notice.body)
     == Ok(DisconnectNotice(reason: LostUserServer))
     as "0x1400168a0: 8 is the server's own end, which the open connection is told when the stop reaches it"
-  game_client.await_closed(game:)
-  let _reason = ask_support.ended(stopping)
+  open_wait.named("the connection to close after the server's stop", fn() {
+    game_client.await_closed(game:)
+  })
+  let _reason =
+    ask_support.ended(
+      watched: stopping,
+      what: "the server's tree to end after its stop",
+    )
   Nil
 }
 
@@ -624,7 +648,9 @@ pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connect
   assert disconnect_notice.decode(body)
     == Ok(DisconnectNotice(reason: LostUserServer))
     as "0x1400168a0: 8, 'Lost connection with user server.'"
-  game_client.await_closed(game:)
+  open_wait.named("the connection to close at the end of its map", fn() {
+    game_client.await_closed(game:)
+  })
   login_support.stop(started)
 }
 
@@ -1099,7 +1125,9 @@ pub fn a_connection_that_crashes_saves_nothing_is_not_restarted_and_the_place_sa
     as "the game listener holds the one connection"
   process.kill(connection)
   login_support.await_no_game_connection(started)
-  game_client.await_closed(game:)
+  open_wait.named("the connection to close after its process was killed", fn() {
+    game_client.await_closed(game:)
+  })
   assert character_support.place_row(pool:, character_id: character)
     == character_support.PlaceRow(
       world_id: 1387,
@@ -1571,6 +1599,7 @@ fn connected_as(
       port:,
       session_key: guid.to_wire(key),
       account_name: login_name,
+      limit: socket_read.Open,
     )
   game_client.send(game:, message_id: 0x07E0, body: <<>>)
   let assert [_, _, _, _] = game_client.read(game:, count: 4)
@@ -3054,7 +3083,8 @@ pub fn a_member_whose_connection_crashes_leaves_its_groups_and_later_lines_reach
     as "the member is in its name group"
   let gone = process.monitor(pid)
   process.kill(pid)
-  let _reason = ask_support.ended(gone)
+  let _reason =
+    ask_support.ended(watched: gone, what: "the killed member to end")
   event_wait.until("the scope noticed the crash by itself", fn() {
     registry.find_named(started.settings.registry, "ann qu") == Error(Nil)
   })

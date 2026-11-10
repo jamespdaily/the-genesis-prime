@@ -71,11 +71,13 @@ pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
   let reply = process.new_subject()
   let worker =
     process.spawn_unlinked(fn() {
-      mark_body(
+      open_wait.reporting(
+        slot: open_wait.Build,
         opened: fn(key) { process.send(reply, BuildOpened(key)) },
         closed: fn() { process.send(reply, BuildClosed) },
       )
       open_wait.reporting(
+        slot: open_wait.Wait,
         opened: fn(what) { process.send(reply, WaitOpened(what)) },
         closed: fn() { process.send(reply, WaitClosed) },
       )
@@ -249,15 +251,6 @@ fn warn_when_near_deadline(
 /// (`{gleam_unitest, skip}`, unitest_ffi:skip/0).
 @external(erlang, "owned_test_ffi", "run_unless_skipped")
 fn run_unless_skipped(body: fn() -> a) -> Result(a, Nil)
-
-/// Marks the calling process as a test body: its one-time builds
-/// (`owned_test_ffi:counting_build/2`) call `opened` with the key when one
-/// starts and `closed` when it has ended.
-@external(erlang, "owned_test_ffi", "mark_body")
-fn mark_body(
-  opened opened: fn(String) -> Nil,
-  closed closed: fn() -> Nil,
-) -> Nil
 
 /// Returns when the process has ended, at once if it already has.
 @external(erlang, "owned_key_ffi", "wait_until_dead")
