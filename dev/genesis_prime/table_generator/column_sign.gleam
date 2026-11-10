@@ -181,7 +181,7 @@ pub fn all() -> List(ColumnSign) {
       table: "PeriodicQuestGroup",
       column: "maxPeriodicQuestsAllowed",
       sign: Unsigned,
-      evidence: "0x140552e30 compares the held count with the column as unsigned ((ulonglong) casts), so 0xffffffff is no limit",
+      evidence: "0x140552e30 compares the held count with the column as unsigned (zero-extended to 64 bits against the count), and 0x1405a7c90 names group 1's 0xffffffff as all on offer, so 0xffffffff is no limit",
     ),
     ColumnSign(
       table: "Quest2",

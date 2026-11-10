@@ -4,11 +4,12 @@
 ////   that the tables lack is a load that fails (CLAUDE.md), so no quest may end in a
 ////   check error.
 //// - Each gap names the column that makes it: `Quest2.factionIdPreq0` to `02` for a
-////   reputation, `Quest2.flags` 0x80000 for a contract, `Quest2.periodicQuestGroupId`
-////   for a periodic draw, `Quest2.preqItem` for a prerequisite item place and a
-////   Prerequisite row of that type for a prerequisite type. A quest is counted as a
-////   gap only where its own row holds that column, so the counts below owe nothing to
-////   the order of the checks.
+////   reputation, `Quest2.flags` 0x80000 for a contract, `Quest2.preqItem` for the
+////   per-item counter of a prerequisite item, `Quest2.questRepeatPeriodEnum` with a
+////   periodic group that draws or limits for a periodic draw, and a Prerequisite row
+////   of that type (nested rows followed) for a prerequisite type. A gap is counted
+////   for every quest whose own columns reach it, whatever the first check to stop a
+////   particular player is.
 ////
 //// The counts of each verdict are printed for the issue's coverage measure.
 
@@ -66,28 +67,68 @@ pub fn every_quest_runs_the_accept_check_and_counts_its_gaps_test() -> Nil {
   // Every quest got a verdict: a missing Prerequisite, Episode or periodic group
   // row would have stopped the run above.
   assert list.length(verdicts) == list.length(quests)
-  // A gap is named only for a quest whose own row holds the thing the gap is about.
+  // A quest whose rows the table lacks has no gaps to count: its verdict stops on
+  // that row, so `gaps` states the same error. Every other quest has its gaps.
+  let #(stated, lacking) =
+    list.partition(quests, fn(target) {
+      result.is_ok(quest.gaps(tables:, quest: target))
+    })
+  assert list.length(lacking) == 2
+    as "only the two quests naming a Prerequisite row the table lacks"
+  let gaps_of = fn(target) {
+    let assert Ok(found) = quest.gaps(tables:, quest: target)
+    found
+  }
+  // A gap a check stops on is one the quest's own columns reach.
   list.each(verdicts, fn(pair) {
     let #(target, verdict) = pair
-    let explained = case verdict {
-      NotRead(gap: quest.Reputation) ->
-        target.faction_id_preq0 != 0
-        || target.faction_id_preq01 != 0
-        || target.faction_id_preq02 != 0
-      NotRead(gap: quest.Contract) -> has_flag(target, 0x80000)
-      NotRead(gap: quest.PeriodicDraw(group_id:)) ->
-        group_id == target.periodic_quest_group_id && group_id != 0
-      NotRead(gap: quest.PrerequisiteItemPlace) -> target.preq_item != 0
-      NotRead(gap: quest.PrerequisiteType(..)) -> target.prerequisite_id != 0
-      Acceptable | Refused(..) -> True
-    }
-    assert explained
-      as {
-        "quest "
-        <> int.to_string(quest2.id(target).value)
-        <> ": a gap is named only where the quest's own row holds what it is about"
+    case verdict {
+      NotRead(gap:) -> {
+        assert list.contains(gaps_of(target), gap)
+          as {
+            "quest "
+            <> int.to_string(quest2.id(target).value)
+            <> ": a gap the check stops on is one its own columns reach"
+          }
+        Nil
       }
+      Acceptable | Refused(..) -> Nil
+    }
   })
+  let reached = list.flat_map(stated, gaps_of)
+  // The gaps whose columns the table states directly, counted from the table.
+  assert list.count(reached, fn(gap) { gap == quest.Contract })
+    == list.count(stated, fn(target) { has_flag(target, 0x80000) })
+    as "a contract gap for each quest with flags 0x80000"
+  assert list.count(reached, fn(gap) { gap == quest.Reputation })
+    == list.count(stated, fn(target) {
+      target.faction_id_preq0 != 0
+      || target.faction_id_preq01 != 0
+      || target.faction_id_preq02 != 0
+    })
+    as "a reputation gap for each quest that names a faction"
+  assert list.count(reached, fn(gap) { gap == quest.PrerequisiteItemCounter })
+    == list.count(stated, fn(target) { target.preq_item != 0 })
+    as "an item-counter gap for each quest that needs an item"
+  let reached_counts =
+    list.fold(reached, dict.new(), fn(counts, gap) {
+      dict.upsert(counts, quest.describe_gap(gap:), fn(count) {
+        case count {
+          Some(count) -> count + 1
+          None -> 1
+        }
+      })
+    })
+  io.println(
+    "quests whose own columns reach each gap:\n"
+    <> string.join(
+      reached_counts
+        |> dict.to_list
+        |> list.sort(fn(a, b) { int.compare(b.1, a.1) })
+        |> list.map(fn(pair) { int.to_string(pair.1) <> "  " <> pair.0 }),
+      "\n",
+    ),
+  )
   // A quest naming a Prerequisite id the table lacks fails the client's evaluator
   // (`0x1404a1ca0`), so no such quest is acceptable: it is refused by check 12 or
   // by an earlier check.

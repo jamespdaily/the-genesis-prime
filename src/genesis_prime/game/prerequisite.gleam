@@ -1010,6 +1010,48 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
   |> int.sum
 }
 
+/// The PrerequisiteTypes of the conditions the client decides and the server does
+/// not read, in the prerequisite and the rows it nests, each once.
+pub fn unread_types(prerequisite prerequisite: Prerequisite) -> List(Int) {
+  list.flat_map(prerequisite.conditions, fn(condition) {
+    case condition {
+      Unread(prerequisite_type:) -> [prerequisite_type]
+      Nested(row: Some(nested), ..) -> unread_types(prerequisite: nested)
+      Nested(row: None, ..)
+      | TargetOfLiveCast(..)
+      | UnderCastBy(..)
+      | StackCount(..)
+      | InCombat(..)
+      | Roll(..)
+      | VitalPercent(..)
+      | VitalCurrent(..)
+      | ResourceSlot(..)
+      | UnderGroup(..)
+      | Stealthed(..)
+      | Difficulty(..)
+      | CurrentFaction(..)
+      | BaseFaction(..)
+      | UnitLevel(..)
+      | PlayerRace(..)
+      | UnitClass(..)
+      | InZone(..)
+      | IsPlayer(..)
+      | PlayerPath(..)
+      | Gender(..)
+      | InWorld(..)
+      | QuestState(..)
+      | ObjectiveDone(..)
+      | ObjectiveOpen(..)
+      | TargetCounted(..)
+      | ObjectiveProgress(..)
+      | NeverMet
+      | InArc(..)
+      | NoCase -> []
+    }
+  })
+  |> list.unique
+}
+
 /// The bytes of one roll: 4, a draw r of a multiple of 2^-32 in [0, 1).
 pub const roll_bytes = 4
 

@@ -20,8 +20,8 @@
 ////   carries no place, so it takes any of the three.
 //// - **The checks** are the client's, in its order, and the first that does not pass
 ////   decides: `can_accept` gives the code the client would show, or the gap it names when
-////   the server does not read what the check needs (reputation, a prerequisite item in
-////   location 8 or 9, an unread prerequisite type, a drawn periodic quest, a contract;
+////   the server does not read what the check needs (reputation, a prerequisite item's
+////   per-item counter, an unread prerequisite type, a drawn periodic quest, a contract;
 ////   the quest log step, #334). A quest the server cannot say a gap of is never accepted.
 //// - **The log** reads each quest's stored state (`quest_log.stored_state`), which the
 ////   checks that compare it only against absent, 1 to 3 and 4 to 7 get the same from as
@@ -41,7 +41,7 @@ import genesis_prime/game/shown.{
 import genesis_prime/message/item_place
 import genesis_prime/message/quest_accept
 import genesis_prime/message/quest_retry
-import genesis_prime/step.{type LogLevel, LogDebug, LogWarning}
+import genesis_prime/step.{type LogLevel}
 import genesis_prime/store.{type HeldItem}
 import genesis_prime/table/creature2
 import genesis_prime/table/episode
@@ -78,8 +78,9 @@ pub type Message {
 pub type Gap {
   /// The reputation a quest requires (Quest2 `factionIdPreq`): the server holds none.
   Reputation
-  /// A prerequisite item held in location 8 or 9, or counted per item.
-  PrerequisiteItemPlace
+  /// A prerequisite item the client may count in its per-item inventory counter,
+  /// which the server does not hold.
+  PrerequisiteItemCounter
   /// A prerequisite condition of this PrerequisiteType.
   PrerequisiteType(prerequisite_type: Int)
   /// A periodic quest of a group that offers only some of its quests or limits how
@@ -228,6 +229,51 @@ pub fn can_accept(
     Error(Unread(gap:)) -> Ok(NotRead(gap:))
     Error(Broken(error:)) -> Error(error)
   }
+}
+
+/// Every gap the quest's own columns reach, for any player: the reputation it names,
+/// its contract flag, the per-item counter of its prerequisite item, the group's draw
+/// of a periodic quest, and each unread type of its prerequisite and the rows that
+/// prerequisite nests. A check stops on the first of these a player meets; this is
+/// the whole of what the quest needs the server to read. A prerequisite or periodic
+/// group row the table lacks is the error.
+pub fn gaps(
+  tables tables: table_store.Tables,
+  quest quest: Quest2,
+) -> Result(List(Gap), CheckError) {
+  use own <- result.try(
+    list.try_fold(
+      [reputation(quest:), contract(quest:), periodic(tables:, quest:)],
+      [],
+      fn(found, checked) {
+        case checked {
+          Error(Unread(gap:)) -> Ok([gap, ..found])
+          Error(Broken(error:)) -> Error(error)
+          Ok(Nil) | Error(Refuse(..)) -> Ok(found)
+        }
+      },
+    ),
+  )
+  let item = case quest.preq_item {
+    0 -> []
+    _ -> [PrerequisiteItemCounter]
+  }
+  use types <- result.try(case quest.prerequisite_id {
+    0 -> Ok([])
+    _ ->
+      case loaded_prerequisite(tables:, quest:) {
+        Ok(loaded) ->
+          Ok(
+            list.map(
+              prerequisite.unread_types(prerequisite: loaded),
+              fn(type_id) { PrerequisiteType(prerequisite_type: type_id) },
+            ),
+          )
+        Error(error) ->
+          Error(PrerequisiteNotLoaded(id: quest.prerequisite_id, error:))
+      }
+  })
+  Ok(list.flatten([list.reverse(own), item, types]))
 }
 
 fn refuse_when(when when: Bool, code code: Int) -> Result(Nil, Stop) {
@@ -412,13 +458,12 @@ fn reputation(quest quest: Quest2) -> Result(Nil, Stop) {
   }
 }
 
-/// The locations of the equipped and bag items.
-const equipped = 0
+/// The locations check 7 counts: equipped, the bags, and 8 and 9 (mask 0x303 of
+/// `0x140552550`).
+const counted_locations = [0, 1, 8, 9]
 
-const in_bags = 1
-
-/// Check 7: the item the quest needs, held equipped or in the bags. An item the
-/// server does not find there may be in location 8 or 9 or in the per-item counter,
+/// Check 7: the item the quest needs, held in one of the counted locations. An item
+/// the server does not find there may be in the client's per-item inventory counter,
 /// which it does not read.
 fn prerequisite_item(
   quest quest: Quest2,
@@ -428,12 +473,25 @@ fn prerequisite_item(
   case
     list.any(asker.items, fn(item) {
       item.item2_id == Item2Id(quest.preq_item)
-      && { item.location == equipped || item.location == in_bags }
+      && list.contains(counted_locations, item.location)
     })
   {
     True -> Ok(Nil)
-    False -> Error(Unread(PrerequisiteItemPlace))
+    False -> Error(Unread(PrerequisiteItemCounter))
   }
+}
+
+/// The prerequisite the quest names, loaded with the rows it nests.
+fn loaded_prerequisite(
+  tables tables: table_store.Tables,
+  quest quest: Quest2,
+) -> Result(prerequisite.Prerequisite, prerequisite.LoadError) {
+  prerequisite.load(
+    id: PrerequisiteId(quest.prerequisite_id),
+    rows: prerequisite.table_rows(tables:),
+    arcs: prerequisite.table_arcs(tables:),
+    quests: prerequisite.table_quests(tables:),
+  )
 }
 
 /// Check 12: the prerequisite the quest names, for the player with its log.
@@ -443,14 +501,7 @@ fn prerequisite_met(
   asker asker: Asker,
 ) -> Result(Nil, Stop) {
   use <- bool.guard(when: quest.prerequisite_id == 0, return: Ok(Nil))
-  case
-    prerequisite.load(
-      id: PrerequisiteId(quest.prerequisite_id),
-      rows: prerequisite.table_rows(tables:),
-      arcs: prerequisite.table_arcs(tables:),
-      quests: prerequisite.table_quests(tables:),
-    )
-  {
+  case loaded_prerequisite(tables:, quest:) {
     // A prerequisite id with no row fails (EvaluatePrerequisite 0x1404a1ca0, reached
     // through slot 0x18, CheckPrerequisiteForUnits 0x14049bf10): 2 quests of the game
     // name one, so the check refuses them as the client does.
@@ -504,31 +555,53 @@ fn log_has_room(
   )
 }
 
-/// Check 16: a quest with no repeat period passes. One in no group, or in a group
-/// that offers all its quests with no limit on how many a player holds, passes; one
-/// with weight 0 joins no group and is refused; one in a group that draws some or
-/// limits the count is not read.
+/// Check 16: a quest with no repeat period passes. One with weight 0 joins no group
+/// and is refused. Any other is in its group, which offers all its quests with no
+/// limit on how many a player holds (passes) or draws some or limits the count (not
+/// read).
 fn periodic(
   tables tables: table_store.Tables,
   quest quest: Quest2,
 ) -> Result(Nil, Stop) {
-  case quest.quest_repeat_period_enum, quest.periodic_quest_group_id {
-    0, _ -> Ok(Nil)
-    _, _ if quest.periodic_quest_weight == 0 -> Error(Refuse(periodic_refused))
-    _, 0 -> Ok(Nil)
-    _, group_id ->
-      case
-        periodic_quest_group.get(tables:, id: PeriodicQuestGroupId(group_id))
-      {
-        Error(Nil) -> Error(Broken(NoPeriodicGroupRow(group_id:)))
+  case quest.quest_repeat_period_enum {
+    0 -> Ok(Nil)
+    _ if quest.periodic_quest_weight == 0 -> Error(Refuse(periodic_refused))
+    _ ->
+      case periodic_group(tables:, quest:) {
+        Error(error) -> Error(Broken(error))
         Ok(group) ->
           case
             group.periodic_quests_offered == all_offered
             && group.max_periodic_quests_allowed == all_offered
           {
             True -> Ok(Nil)
-            False -> Error(Unread(PeriodicDraw(group_id:)))
+            False -> Error(Unread(PeriodicDraw(group_id: group.id)))
           }
+      }
+  }
+}
+
+/// The group a periodic quest joins: the one its periodicQuestGroupId names or, when
+/// no group has that id (0 among them), the group with the lowest id at or above 1
+/// (`0x1405a7c90`).
+fn periodic_group(
+  tables tables: table_store.Tables,
+  quest quest: Quest2,
+) -> Result(periodic_quest_group.PeriodicQuestGroup, CheckError) {
+  case
+    periodic_quest_group.get(
+      tables:,
+      id: PeriodicQuestGroupId(quest.periodic_quest_group_id),
+    )
+  {
+    Ok(group) -> Ok(group)
+    Error(Nil) ->
+      case
+        list.find(periodic_quest_group.all(tables), fn(group) { group.id >= 1 })
+      {
+        Ok(group) -> Ok(group)
+        Error(Nil) ->
+          Error(NoPeriodicGroupRow(group_id: quest.periodic_quest_group_id))
       }
   }
 }
@@ -562,8 +635,8 @@ fn describe(error error: CheckError) -> String {
 pub fn describe_gap(gap gap: Gap) -> String {
   case gap {
     Reputation -> "the reputation a quest needs, which the server does not hold"
-    PrerequisiteItemPlace ->
-      "a prerequisite item in location 8 or 9, or the per-item counter, which the server does not read"
+    PrerequisiteItemCounter ->
+      "a prerequisite item in the per-item inventory counter, which the server does not read"
     PrerequisiteType(prerequisite_type:) ->
       "a prerequisite condition of type "
       <> int.to_string(prerequisite_type)
@@ -601,6 +674,7 @@ type Declined {
   UnknownQuest(quest_id: Int)
   BadQuestRow(quest_id: Int, error: quest_log.QuestRowError)
   NotBotched(quest_id: Int, state: Int)
+  BotchedAccepted(quest_id: Int)
   NoSource(quest_id: Int)
   NotAccepted(quest_id: Int, code: Int)
   GapUnread(quest_id: Int, gap: Gap)
@@ -698,6 +772,7 @@ fn started(
     as "a quest the client's rows read has its Quest2 row"
   let state = state_of(asker:, quest_id:)
   use Nil <- result.try(case message, state {
+    Accept, 4 -> Error(BotchedAccepted(quest_id:))
     Retry, 4 | Accept, _ -> Ok(Nil)
     Retry, _ -> Error(NotBotched(quest_id:, state:))
   })
@@ -827,6 +902,7 @@ fn reason_of(declined declined: Declined) -> String {
     UnknownQuest(..) -> "unknown quest"
     BadQuestRow(..) -> "quest row"
     NotBotched(..) -> "not botched"
+    BotchedAccepted(..) -> "botched sent as an accept"
     NoSource(..) -> "no source"
     NotAccepted(code:, ..) -> "refused " <> int.to_string(code)
     GapUnread(gap:, ..) -> "not read " <> describe_gap(gap:)
@@ -864,6 +940,10 @@ fn describe_declined(
       <> ", which the log holds in state "
       <> int.to_string(state)
       <> ", not botched: the client sends a retry only for a botched quest"
+    BotchedAccepted(quest_id:) ->
+      request
+      <> of(quest_id)
+      <> ", which the log holds botched: the client sends a botched quest only as 0x0365"
     NoSource(quest_id:) ->
       request
       <> of(quest_id)
@@ -895,11 +975,8 @@ fn log_once(
   text text: String,
   logged logged: Set(String),
 ) -> #(Effect, Set(String)) {
-  let level = case set.contains(logged, key) {
-    True -> LogDebug
-    False -> LogWarning
-  }
-  #(Log(level:, text:), set.insert(logged, key))
+  let #(level, logged) = interaction.log_level(key:, logged:)
+  #(Log(level:, text:), logged)
 }
 
 /// A sentence that says what the client sent that is refused, for the log.

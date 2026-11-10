@@ -6,13 +6,14 @@
 ////   race, 5 class, 10 episode, 3 level and 8 prerequisite quests (one check when
 ////   Quest2.preq_flags has bit 2), 9 exclusions, 6 reputation, 7 prerequisite item, 12
 ////   prerequisite, 13 path, 15 log full, 16 periodic, 17 contract. The server does not
-////   read 6, 7 (in location 8 or 9), a prerequisite type it lacks, a periodic draw and
+////   read 6, the per-item counter of 7, a prerequisite type it lacks, a periodic draw and
 ////   17, and says so (`NotRead`) where the client would decide.
 //// - `client-facts opcode.0x35b`: the dialog's accept sends location 300 and bag index
 ////   0xFFFFFFFF; any other place is the item the quest came from, whose Item2
 ////   `quest2IdActivation` is the quest (Item2 4861 starts quest 2417). `opcode.0x365`:
 ////   a retry carries only the quest and the client sends it only for a botched one
-////   (state 4). The answer is 0x35C {quest, state 1, objective 0}.
+////   (state 4), and a botched quest goes out as a retry only. The answer is 0x35C
+////   {quest, state 1, objective 0}.
 //// - The Faction2 ids are Exile 167 and Dominion 166; Quest2.questPlayerFactionEnum is 0
 ////   Exile, 1 Dominion, 2 either. The active list holds GameFormula 655's dataint0
 ////   quests, 40 in the client's row, and contracts (Quest2 flags 0x80000) do not count.
@@ -222,8 +223,9 @@ pub fn accept_refuses_a_quest_already_accepted_or_achieved_test() -> Nil {
 pub fn accept_takes_a_quest_held_in_the_side_list_test() -> Nil {
   use <- owned_test.run(10_000)
   // Check 2 refuses only the states 1 to 3; the second list holds 4 to 7, and the
-  // accepted entry replaces the held one.
-  list.each([4, 5, 6, 7], fn(state) {
+  // accepted entry replaces the held one. A Botched entry (4) is not taken by an
+  // accept: the client sends it as a retry (see the would-not-send test).
+  list.each([5, 6, 7], fn(state) {
     let held =
       Asker(..asker(log: [quest_support.known(2417, state)]), items: [
         item(item2_id: 4861, location: 1, bag_index: 0),
@@ -236,7 +238,7 @@ pub fn accept_takes_a_quest_held_in_the_side_list_test() -> Nil {
       )
     assert taken.effects
       == [quest.SendState(quest_id: 2417, state: 1, objective_id: 0)]
-      as "a quest held in state 4 to 7 is accepted"
+      as "a quest held in state 5 to 7 is accepted"
     assert list.map(quest_log.rows(log: taken.log), fn(row) { row.state })
       == [1]
       as "one entry, now Accepted"
@@ -416,10 +418,16 @@ pub fn accept_needs_the_prerequisite_item_held_test() -> Nil {
     == Acceptable
     as "in a bag"
   assert verdict_of(3627, holding(asker: ready, item: 6873, location: 8))
-    == NotRead(gap: quest.PrerequisiteItemPlace)
-    as "location 8 is not read"
-  assert verdict_of(3627, ready) == NotRead(gap: quest.PrerequisiteItemPlace)
-    as "an item not found in 0 or 1 may be in a place the server does not read"
+    == Acceptable
+    as "location 8 counts (mask 0x303 of 0x140552550)"
+  assert verdict_of(3627, holding(asker: ready, item: 6873, location: 9))
+    == Acceptable
+    as "location 9 counts"
+  assert verdict_of(3627, holding(asker: ready, item: 6873, location: 2))
+    == NotRead(gap: quest.PrerequisiteItemCounter)
+    as "location 2 is none of the four, and the per-item counter is not read"
+  assert verdict_of(3627, ready) == NotRead(gap: quest.PrerequisiteItemCounter)
+    as "an item not found in the four places may be in the per-item counter"
   assert verdict_of(
       9793,
       holding(asker: asker(log: []), item: 49_795, location: 1),
@@ -502,6 +510,33 @@ pub fn accept_offers_undrawn_periodic_quests_and_names_drawn_ones_test() -> Nil 
     )
     == Refused(code: 16)
     as "a repeating quest of weight 0 joins no group"
+}
+
+pub fn a_periodic_quest_of_no_known_group_takes_group_1s_limits_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // `0x1405a7c90`: the group named by periodicQuestGroupId, or when no group has
+  // that id, the group with the lowest id at or above 1. Group 1 is limited here, so
+  // a quest that falls to it is a draw the server does not read.
+  use tables <- fixture_tables.changed(
+    table: "PeriodicQuestGroup",
+    id: 1,
+    with: [
+      #("maxPeriodicQuestsAllowed", Integer(1)),
+    ],
+  )
+  let in_group = fn(group_id) {
+    quest.can_accept(
+      tables:,
+      quest: Quest2(..row(1857), periodic_quest_group_id: group_id),
+      asker: asker(log: []),
+    )
+  }
+  assert in_group(0) == Ok(NotRead(gap: quest.PeriodicDraw(group_id: 1)))
+    as "group 0 is no group, so group 1"
+  assert in_group(999_999) == Ok(NotRead(gap: quest.PeriodicDraw(group_id: 1)))
+    as "an id with no row falls to group 1"
+  assert in_group(34) == Ok(NotRead(gap: quest.PeriodicDraw(group_id: 34)))
+    as "a group with its own row keeps it"
 }
 
 pub fn accept_names_a_contract_as_not_read_test() -> Nil {
@@ -717,7 +752,7 @@ fn order_6_7() -> Order {
         faction: 0,
       ),
       asker: asker(log:),
-      verdict: NotRead(gap: quest.PrerequisiteItemPlace),
+      verdict: NotRead(gap: quest.PrerequisiteItemCounter),
     ),
   )
 }
@@ -728,7 +763,7 @@ fn order_7_12() -> Order {
     name: "7 before 12",
     quest: target,
     asker: on_path(asker(log: []), 1),
-    earlier: NotRead(gap: quest.PrerequisiteItemPlace),
+    earlier: NotRead(gap: quest.PrerequisiteItemCounter),
     later: alone(
       quest: target,
       asker: holding(asker: on_path(asker(log: []), 1), item: 6873, location: 1),
@@ -1029,6 +1064,26 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
     )
   let assert [quest.Log(level: LogWarning, ..)] = other.effects
     as "another reason warns once again: 1806 is Mentioned, not Botched"
+  // 2417 is held Botched and its item is in a bag, so only the message is wrong: the
+  // client sends a Botched quest as 0x0365 only (`opcode.0x35b`, `opcode.0x365`).
+  let botched = asker(log: [quest_support.known(2417, 4)])
+  let from_item =
+    Asker(..botched, items: [item(item2_id: 4861, location: 1, bag_index: 0)])
+  let assert Ok(accepted_botched) =
+    quest.take(
+      message: quest.Accept,
+      body: accept_body(location: 1, bag_index: 0, quest_id: 2417),
+      asker: from_item,
+      standing: standing(),
+      picture: dict.new(),
+      tables: tables(),
+      now_ms: 0,
+      logged: set.new(),
+    )
+  assert_declined(accepted_botched, quest: 2417)
+  assert quest_log.rows(log: accepted_botched.log)
+    == quest_log.rows(log: botched.log)
+    as "an accept for a Botched quest leaves the log as it was"
   let assert Error(quest.NotDecoded(_)) =
     quest.take(
       message: quest.Accept,
