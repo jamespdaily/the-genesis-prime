@@ -913,7 +913,14 @@ fn quest_log_sent(
 ) -> #(QuestLog, List(Effect)) {
   case entry {
     PlayEntry(..) -> {
-      let held = objective.settle(log: quests, tables:, items:, zones: []).log
+      let held =
+        objective.settle(
+          log: quests,
+          tables:,
+          items:,
+          zones: [],
+          now_ms: now.monotonic_ms,
+        ).log
       let #(told, frame) = quest_log.login(log: held, numbers:, tables:, now:)
       #(told, [Send(frame:)])
     }

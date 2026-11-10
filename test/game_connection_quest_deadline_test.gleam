@@ -416,3 +416,66 @@ pub fn an_achieved_timed_quest_is_not_botched_at_its_deadline_test() -> Nil {
     ]
     as "the achieved quest stays, with 1 ms left (0 would show a full timer, 0x1406118a0)"
 }
+
+/// 0x35C {quest 2911 (0xB5F), state 4, objective 0}.
+const botched_2911 = <<0x5f, 0x0b, 0x02, 0, 0, 0, 0, 0, 0, 0>>
+
+pub fn a_timed_objective_is_botched_over_the_connection_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 2911 has no limit of its own; its one objective, QuestObjective 3677, has
+  // 60,000 ms (`QuestObjective.maxTimeAllowedMS`), so the fixture's rows are the real ones.
+  use tables <- quest_support.with_time_limits(limits: [])
+  let started =
+    quest_support.with_objective_time(
+      2911,
+      progress: [0],
+      done_mask: 0,
+      objective_ms_left: [0],
+    )
+  let #(entered, entry) =
+    game_connection_support.entered_with_quests_on(tables:, quests: [started])
+  assert timer_effects(taken: entry)
+    == [OwnEffect(StartTimer(deadline_timer, 60_000))]
+    as "the entry starts the timer for the objective's full 60,000 ms (0x1406118a0: a saved 0 is a full timer)"
+
+  // The time runs out at 61,000 ms: the quest is Botched, saved at once, and no timer
+  // is left.
+  let #(_, taken) = fire(state: entered, timer: deadline_timer, at: 61_000)
+  assert quest_states(taken:) == [botched_2911]
+    as "0x35C tells the client 2911 is Botched"
+  assert saved_quests(taken:)
+    == [QuestRow(quest_id: 2911, state: 4, completed_at: None, active: None)]
+    as "the botch is saved: the quest held Botched with no active entry"
+  assert timer_effects(taken:) == []
+    as "no deadline is left, so no timer starts"
+
+  // The periodic save at 21,000 ms writes the objective's time left.
+  let #(_, taken) =
+    fire(state: entered, timer: connection_state.save_timer, at: 21_000)
+  let saved_midway =
+    quest_support.with_objective_time(
+      2911,
+      progress: [0],
+      done_mask: 0,
+      objective_ms_left: [40_000],
+    )
+  assert saved_quests(taken:) == [saved_midway]
+    as "the periodic save writes the objective's time left, 61,000 ms - 21,000 ms"
+
+  // A relog resumes the time left.
+  let #(_, relog) =
+    game_connection_support.entered_with_quests_on(tables:, quests: [
+      saved_midway,
+    ])
+  assert timer_effects(taken: relog)
+    == [OwnEffect(StartTimer(deadline_timer, 40_000))]
+    as "the entry starts the timer for the 40,000 ms saved"
+
+  // A Botched quest stays Botched after a relog and runs no timer.
+  let #(_, relog) =
+    game_connection_support.entered_with_quests_on(tables:, quests: [
+      quest_support.known(2911, 4),
+    ])
+  assert timer_effects(taken: relog) == []
+    as "a Botched quest has no deadline after a relog"
+}

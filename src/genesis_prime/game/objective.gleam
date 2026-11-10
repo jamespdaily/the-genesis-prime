@@ -114,6 +114,7 @@ pub fn advance(
   log log: QuestLog,
   tables tables: table_store.Tables,
   event event: Event,
+  now_ms now_ms: Int,
 ) -> Advanced {
   list.fold(
     quest_log.active_ids(log:),
@@ -122,6 +123,7 @@ pub fn advance(
       advance_quest(
         so_far:,
         quest: quest_of(tables:, quest_id:),
+        now_ms:,
         counts: fn(index, objective) {
           counts(tables:, event:, quest_id:, index:, objective:)
         },
@@ -177,6 +179,7 @@ fn counts(
 fn advance_quest(
   so_far so_far: Advanced,
   quest quest: quest_log.Quest,
+  now_ms now_ms: Int,
   counts counts: fn(Int, quest_log.Objective) -> Bool,
 ) -> Advanced {
   let named =
@@ -185,7 +188,9 @@ fn advance_quest(
   let #(log, progress, became_achieved) =
     list.fold(named, #(so_far.log, [], False), fn(counted, open) {
       let #(log, progress, became_achieved) = counted
-      case quest_log.progressed(log:, quest:, index: open.0, amount: 1) {
+      case
+        quest_log.progressed(log:, quest:, index: open.0, amount: 1, now_ms:)
+      {
         Ok(progressed) -> #(
           progressed.log,
           [
@@ -252,6 +257,7 @@ pub fn settle(
   tables tables: table_store.Tables,
   items items: List(HeldItem),
   zones zones: List(Int),
+  now_ms now_ms: Int,
 ) -> Advanced {
   list.fold(
     quest_log.active_ids(log:),
@@ -271,12 +277,13 @@ pub fn settle(
                   quest:,
                   index:,
                   value: quest_rules.held_count(items:, item2_id:),
+                  now_ms:,
                 )
               Error(Nil) -> settling
             }
           },
         )
-      let settling = visits(settling: held, quest:, zones:)
+      let settling = visits(settling: held, quest:, zones:, now_ms:)
       let after = quest_log.stored_state(log: settling.log, quest_id:)
       let state = case after != before {
         True -> [SendState(quest_id:, state: after)]
@@ -330,9 +337,10 @@ fn set_count(
   quest quest: quest_log.Quest,
   index index: Int,
   value value: Int,
+  now_ms now_ms: Int,
 ) -> Settling {
   let assert Ok(counted) =
-    quest_log.counted(log: settling.log, quest:, index:, value:)
+    quest_log.counted(log: settling.log, quest:, index:, value:, now_ms:)
     as "a settled quest is in the active list and the index is one of its objectives"
   Settling(log: counted.log, progress: case counted.changed {
     True -> [
@@ -354,6 +362,7 @@ fn visits(
   settling settling: Settling,
   quest quest: quest_log.Quest,
   zones zones: List(Int),
+  now_ms now_ms: Int,
 ) -> Settling {
   let waiting =
     quest_log.open_objectives(log: settling.log, quest:)
@@ -369,8 +378,14 @@ fn visits(
     [] -> settling
     _ ->
       list.fold(waiting, settling, fn(settling, open) {
-        set_count(settling:, quest:, index: open.0, value: { open.1 }.count)
+        set_count(
+          settling:,
+          quest:,
+          index: open.0,
+          value: { open.1 }.count,
+          now_ms:,
+        )
       })
-      |> visits(quest:, zones:)
+      |> visits(quest:, zones:, now_ms:)
   }
 }
