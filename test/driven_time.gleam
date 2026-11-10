@@ -9,7 +9,7 @@
 ////                           ├─ the clock reads that timer's due time
 ////                           ├─ Elapsed is sent to the process that started it
 ////                           └─ barrier: passes of sys:get_state over every participant
-////                              until two passes in a row saw no clock read; only then
+////                              until two passes in a row saw no change; only then
 ////                              the clock is asked for the next due timer
 //// ```
 ////
@@ -29,9 +29,11 @@
 ////   the connections of the listeners given these scripts and the shells of a world
 ////   given this service time. The hand-off and Sessions take the real time and are
 ////   not participants. A participant that has ended is dropped at the next pass.
-//// - **The read counter** counts the clock reads of participants. Each input of a
-////   driven shell reads the clock exactly once, so a pass in which the counter does
-////   not move is a pass in which no participant took an input.
+//// - **The change counter** counts the clock reads of participants and the
+////   participants found ended. Each input of a driven shell reads the clock at
+////   least once (a connection input that asks reads it again when the answer comes
+////   back), so a pass in which the counter does not move is a pass in which no
+////   participant took an input and none ended.
 //// - **The barrier** (`wait_until_quiet`) makes `advance` return only when every frame
 ////   a timer caused is in the client's socket. A chain through a process that is not a
 ////   participant (a registry, the store) is invisible to the counter; the creatures
@@ -49,8 +51,6 @@ import genesis_prime/step.{type Now, type TimerId, Now}
 import genesis_prime/step/runtime
 import genesis_prime/step/timer
 import gleam/bool
-import gleam/dynamic.{type Dynamic}
-import gleam/erlang/atom.{type Atom}
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/erlang/reference.{type Reference}
 import gleam/int
@@ -85,15 +85,16 @@ type State {
     start_filetime: Int,
     next_number: Int,
     pending: List(Pending),
-    reads: Int,
+    changes: Int,
     participants: List(Pid),
   )
 }
 
-/// What the clock has seen of the participants at one moment: how many clock reads
-/// they have made and which of them are still running.
+/// What the clock has seen of the participants at one moment: how many changes
+/// (clock reads, participants found ended) there have been and which participants
+/// are still running.
 type Participation {
-  Participation(reads: Int, running: List(Pid))
+  Participation(changes: Int, running: List(Pid))
 }
 
 type Message {
@@ -101,7 +102,8 @@ type Message {
   ReadNow(reader: Pid, reply: Subject(Now))
   /// The test's own read of the clock: neither counted nor a participant.
   Peek(reply: Subject(Now))
-  /// The read counter and the participants still running; an ended one is dropped.
+  /// The change counter and the participants still running; an ended one is dropped
+  /// and counts as a change.
   Observe(reply: Subject(Participation))
   Start(
     owner: Pid,
@@ -129,7 +131,7 @@ pub fn new() -> Time {
         start_filetime: filetime,
         next_number: 0,
         pending: [],
-        reads: 0,
+        changes: 0,
         participants: [],
       ),
     )
@@ -146,7 +148,7 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
       actor.continue(
         State(
           ..state,
-          reads: state.reads + 1,
+          changes: state.changes + 1,
           participants: joined(state.participants, reader),
         ),
       )
@@ -157,8 +159,10 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
     }
     Observe(reply:) -> {
       let running = list.filter(state.participants, process.is_alive)
-      process.send(reply, Participation(reads: state.reads, running:))
-      actor.continue(State(..state, participants: running))
+      let changes =
+        state.changes + list.length(state.participants) - list.length(running)
+      process.send(reply, Participation(changes:, running:))
+      actor.continue(State(..state, changes:, participants: running))
     }
     Start(owner:, subject:, timer:, reference:, after_ms:, reply:) -> {
       process.send(reply, state.next_number)
@@ -333,27 +337,30 @@ fn fire_until(time time: Time, limit_ms limit_ms: Int) -> Nil {
   }
 }
 
-/// Returns after two passes in a row that saw no clock read. A pass reads the
-/// counter, waits until each participant that is still running has taken everything
-/// in its mailbox (`settled`), and reads the counter again; a changed counter means
-/// some participant took an input during the pass, and the pass is made again over
-/// the participants as they are then.
+/// Returns after two passes in a row that saw no change. A pass reads the counter,
+/// waits until each participant that is still running has taken everything in its
+/// mailbox (`settled`), and reads the counter again; a changed counter means some
+/// participant took an input or ended during the pass, and the pass is made again
+/// over the participants as they are then.
 ///
 /// One quiet pass is not enough. A participant A can read the clock for an input
-/// before the pass's opening read, and during the pass send a message to a
-/// participant B the pass has already settled. B takes the message after its
-/// `settled`, and its read for it comes after the pass's closing read when B is
-/// slow: the counter then did not move, and the pass is quiet while B holds the
-/// message. The second pass opens at the first one's closing read. A's send was
-/// made before A answered the first pass's `settled`, and a local send is enqueued
-/// at the send, so the message is in B's mailbox before the second pass reaches B;
-/// B's `settled` returns only after B has taken it, so B's read for it is counted
-/// in the second pass, which is then not quiet. Any input whose read is not before
-/// the first pass's opening read is after its closing read, so the second pass
-/// counts it.
+/// before the pass's opening read, and during the pass send a message M to a
+/// participant B the pass has already settled. B takes M after its `settled`, and
+/// its read for M comes after the pass's closing read when B is slow: the counter
+/// then did not move, and the pass is quiet while B holds M. The second pass opens
+/// at the first one's closing read. A's send returned before A answered the first
+/// pass's `settled`, and a local send has put M in B's queue, or in one of B's
+/// signal buffers (a receiver with its messages off the heap, as a connection shell
+/// is), before the send returns. B's next fetch moves every buffered signal into
+/// its queue, at the latest when B takes the first pass's `sys:get_state`, which may
+/// be after that request. So by the time B answers the first pass, M is in B's
+/// queue, and the second pass's request is queued behind it: B's read for M is
+/// counted in the second pass, which is then not quiet. Any input whose read is not
+/// before the first pass's opening read is after its closing read, so the second
+/// pass counts it.
 ///
-/// This assumes that a local send is enqueued at the send. A participant that ends
-/// during a pass is dropped by the next.
+/// A participant that ends during a pass is dropped by the next look, which counts
+/// it as a change, so the last signals of an ended participant get one more pass.
 fn wait_until_quiet(time: Time) -> Nil {
   let opening = asked(time:, make: Observe)
   pass(time:, opening:, after_a_quiet_pass: False)
@@ -368,7 +375,7 @@ fn pass(
 ) -> Nil {
   list.each(opening.running, settled)
   let closing = asked(time:, make: Observe)
-  case closing.reads == opening.reads, after_a_quiet_pass {
+  case closing.changes == opening.changes, after_a_quiet_pass {
     True, True -> Nil
     True, False -> pass(time:, opening: closing, after_a_quiet_pass: True)
     False, _ -> pass(time:, opening: closing, after_a_quiet_pass: False)
@@ -377,27 +384,16 @@ fn pass(
 
 /// Returns when the participant has taken what was in its mailbox when this was
 /// called (`sys:get_state` is answered in the order of its mailbox), or has ended.
-/// The call is made from a process of its own, so a participant that ends before it
-/// answers ends the wait through its monitor and fails nothing.
+/// The wait has no limit of its own (`open_wait`).
 pub fn settled(participant: Pid) -> Nil {
-  let monitor = process.monitor(participant)
-  let answered = process.new_subject()
-  let _asker =
-    process.spawn_unlinked(fn() {
-      let _state = get_state_within(participant, atom.create("infinity"))
-      process.send(answered, Nil)
-    })
-  let selector =
-    process.new_selector()
-    |> process.select(answered)
-    |> process.select_specific_monitor(monitor, fn(_down) { Nil })
   open_wait.named("a driven process to take its mailbox", fn() {
-    process.selector_receive_forever(selector)
+    taken_or_ended(participant)
   })
-  process.demonitor_process(monitor)
 }
 
-/// `sys:get_state` of the process with a timeout of its own: the one in
-/// `gleam/otp/system` has no way to lift its five seconds.
-@external(erlang, "sys", "get_state")
-fn get_state_within(pid: Pid, timeout: Atom) -> Dynamic
+/// `sys:get_state` of the process, which waits until the process answers or ends;
+/// the call monitors the process, so one that ends gives its exit at once and
+/// leaves no crash report. The one in `gleam/otp/system` has no way to lift its
+/// five seconds.
+@external(erlang, "driven_time_ffi", "taken_or_ended")
+fn taken_or_ended(participant: Pid) -> Nil

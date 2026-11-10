@@ -238,6 +238,13 @@ fn left_sight(received received: Subject(Message), what what: String) -> Nil {
   })
 }
 
+/// What the connection was sent that a wait for a strike's answer takes: a
+/// creature's 0x262 or the answer itself.
+type Heard {
+  Appeared(UnitCreateCreature)
+  Answer(strike_tell.Outcome)
+}
+
 /// The outcome of the creature's answer to strike `cast_id`, as the connection was
 /// sent it, and the creatures' 0x262s the connection was sent before it, in the
 /// order they came.
@@ -245,7 +252,9 @@ fn answer_to_strike(
   received received: Subject(Message),
   cast_id cast_id: Int,
 ) -> #(List(UnitCreateCreature), strike_tell.Outcome) {
-  answer_after(received:, cast_id:, appeared: [])
+  open_wait.named("the answer to strike " <> int.to_string(cast_id), fn() {
+    answer_after(received:, cast_id:, appeared: [])
+  })
 }
 
 fn answer_after(
@@ -253,22 +262,33 @@ fn answer_after(
   cast_id cast_id: Int,
   appeared appeared: List(UnitCreateCreature),
 ) -> #(List(UnitCreateCreature), strike_tell.Outcome) {
-  let message =
-    open_wait.named("the answer to strike " <> int.to_string(cast_id), fn() {
-      process.receive_forever(received)
-    })
+  case taken(received:, wanted: heard(_, cast_id)) {
+    Appeared(unit) ->
+      answer_after(received:, cast_id:, appeared: [unit, ..appeared])
+    Answer(outcome) -> #(list.reverse(appeared), outcome)
+  }
+}
+
+fn heard(message: Message, cast_id: Int) -> Result(Heard, Nil) {
+  case answer_to(message, cast_id) {
+    Ok(outcome) -> Ok(Answer(outcome))
+    Error(Nil) -> result.map(appearance(message), Appeared)
+  }
+}
+
+/// The outcome of the creature's answer to strike `cast_id`, when the message is
+/// that answer.
+fn answer_to(
+  message: Message,
+  cast_id: Int,
+) -> Result(strike_tell.Outcome, Nil) {
   case message {
     ForStay(sent: client_connection.SentByTarget(answered:), ..)
       if answered.key.cast_id == cast_id
-    -> #(list.reverse(appeared), answered.outcome)
+    -> Ok(answered.outcome)
     ForStay(..)
     | client_connection.SentBySessions(..)
-    | client_connection.SentByChat(..) ->
-      case appearance(message) {
-        Ok(unit) ->
-          answer_after(received:, cast_id:, appeared: [unit, ..appeared])
-        Error(Nil) -> answer_after(received:, cast_id:, appeared:)
-      }
+    | client_connection.SentByChat(..) -> Error(Nil)
   }
 }
 
@@ -474,7 +494,7 @@ pub fn a_dead_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
   Nil
 }
 
-pub fn a_creature_stops_exactly_at_its_idle_stop_test() -> Nil {
+pub fn a_creature_stops_at_the_first_sweep_at_or_after_its_idle_limit_test() -> Nil {
   use <- owned_test.run(30_000)
   let time = driven_time.new()
   let world = one_beast_timed(time:, respawn_ms: 60_000, idle_stop_ms:)
@@ -486,7 +506,8 @@ pub fn a_creature_stops_exactly_at_its_idle_stop_test() -> Nil {
   move_to(run:, connection: 1, x: far)
   left_sight(received:, what: "the creature's 0x355 when the player left sight")
   // The sweeps at 20, 40, 60 and 80 ms find it idle for less than the idle stop;
-  // the sweep at 100 ms finds it idle for exactly the idle stop.
+  // the sweep at 100 ms is the first at or after it, and lands on exactly the idle
+  // stop only because 100 is a multiple of the 20 ms sweep.
   driven_time.advance(time:, ms: idle_stop_ms - 1)
   assert process.is_alive(pid)
     as "1 ms before the idle stop the creature is running"
