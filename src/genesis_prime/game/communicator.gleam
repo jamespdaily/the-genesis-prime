@@ -20,9 +20,10 @@
 ////   three quest states (`quest_state_holds`), 0xc the prerequisite, then the row's creature
 ////   (`0x14043d650`): 0xf the quest lacks flag 0x10000, 0x10 the creature does not receive it,
 ////   0x11 the quest is Accepted. Code 0xd (the row is already queued to ring) is the client's
-////   own queue and is taken as passing. A row with flags bit 0 set is not read
+////   own queue and is taken as passing; code 0xe is the client's own test and is not read.
+////   A row with flags bit 0 set is not read
 ////   (`0x14043d1f0` mode 1).
-//// - **Reputation is not read**: the server keeps none (the open issue 674). A row that
+//// - **Reputation is not read**: the server keeps none (#674). A row that
 ////   reaches the condition is reported as unread, never as passing or failing.
 //// - **Built once**, when the tables load (genesis_prime/table/loader/derivation): the rows of
 ////   each quest they deliver (`0x14043add0`'s index by questIdDelivered) and the creatures that
@@ -77,9 +78,6 @@ const by_receiver_flag = 8
 
 /// The CommunicatorMessages flag bit that keeps a row from delivering (`0x14043d1f0`).
 const not_delivering_flag = 1
-
-/// Quest2 flag 0x20: the quest repeats (`0x14043d870`).
-const repeatable_flag = 0x20
 
 /// The rows of each quest they deliver and the receivers of each quest.
 type Communicator {
@@ -197,9 +195,7 @@ fn state_holds(
     False -> state
   }
   let active = list.contains(quest_log.active_ids(log:), known.id)
-  let repeats =
-    int.bitwise_and(row.flags, repeatable_flag) != 0
-    || row.quest_repeat_period_enum != 0
+  let repeats = quest.takes_again(quest: row)
   case wanted {
     _ if active && wanted >= 5 && wanted <= 10 ->
       quest_log.objective_done(log:, quest: known, index: wanted - 5)
@@ -438,6 +434,17 @@ fn creature(
   }
 }
 
+/// The log key of a refusal, one per kind, so each kind's first line is a warning.
+pub fn key(refusal refusal: Refusal) -> String {
+  case refusal {
+    NotCommunicable -> "communicator: not communicable"
+    NoDeliveringRow(..) -> "communicator: no delivering row"
+    NoOpenReceiver -> "communicator: no open receiver"
+    Unread(..) -> "communicator: unread condition"
+    Broken(..) -> "communicator: unreadable row"
+  }
+}
+
 /// A sentence that says why the communicator does not turn the quest in, for the log.
 pub fn describe(refusal refusal: Refusal) -> String {
   case refusal {
@@ -464,7 +471,7 @@ pub fn describe(refusal refusal: Refusal) -> String {
       <> int.to_string(row_id)
       <> " needs the player's reputation with faction "
       <> int.to_string(faction_id)
-      <> ", which the server does not hold yet (#674)"
+      <> ", which the server does not hold (#674)"
     Unread(gap: PrerequisiteCondition(row_id:, gap:)) ->
       "whose delivering CommunicatorMessages row "
       <> int.to_string(row_id)

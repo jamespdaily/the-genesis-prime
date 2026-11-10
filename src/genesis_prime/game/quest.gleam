@@ -508,7 +508,7 @@ fn in_second_list(state state: Int) -> Bool {
 }
 
 /// Whether a completed quest may be taken again: it repeats or has a period.
-fn takes_again(quest quest: Quest2) -> Bool {
+pub fn takes_again(quest quest: Quest2) -> Bool {
   has_flag(quest.flags, repeats_flag) || quest.quest_repeat_period_enum != 0
 }
 

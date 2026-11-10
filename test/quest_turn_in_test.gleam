@@ -363,8 +363,8 @@ pub fn communicator_turn_in_of_a_quest_without_flag_8_or_0x10000_is_refused_test
       tables: tables(),
       because: "a quest of flags 0x4404 over the communicator",
     )
-  assert string.contains(text, "communicator")
-    as "the line says the communicator's turn-in is what refused it"
+  assert string.contains(text, "neither flag 8 nor flag 0x10000")
+    as "the line gives the flag reason"
 }
 
 pub fn communicator_turn_in_with_every_receiver_hostile_is_refused_test() -> Nil {
@@ -440,20 +440,53 @@ pub fn communicator_turn_in_of_an_accepted_quest_is_refused_test() -> Nil {
 
 pub fn communicator_turn_in_does_not_auto_complete_test() -> Nil {
   use <- owned_test.run(10_000)
-  // Flags 1 (bit 0): auto-completes at a creature, as the test above shows, and the
-  // communicator's accept path needs a side-list entry that only a call (0x757) makes, which
-  // this step's turn-in does not take.
+  // Flags 9 (bits 0 and 3): communicable and auto-completing. The communicator's accept path
+  // for it needs a side-list entry that only a call (0x757) makes, which the server does not
+  // send (#334), so a quest not in the log is not turned in over the communicator.
+  use tables <- support.with_changes(changes: [
+    #("Quest2", 1806, [#("flags", Integer(9))]),
+    support.receiving(1806),
+  ])
+  let scene = support.Scene(..support.scene(quest_id: 1806), log: [])
+  let text =
+    refused_text(
+      scene: by_communicator(scene:),
+      tables:,
+      because: "a communicable auto-complete quest not in the log",
+    )
+  assert string.contains(text, "#334") as "the line names the gap"
+  // The unit path completes the same quest with flags 1 (bit 0).
   use tables <- support.with_changes(changes: [
     #("Quest2", 1806, [#("flags", Integer(1))]),
     support.receiving(1806),
   ])
-  let scene = support.Scene(..support.scene(quest_id: 1806), log: [])
-  assert_refused(
-    scene: by_communicator(scene:),
-    tables:,
-    because: "a quest not in the log is not turned in over the communicator",
-  )
   assert_asked(scene:, tables:)
+}
+
+pub fn each_communicator_refusal_has_its_own_log_key_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quests 10520 (neither flag), 10522 (receiver Hostile to an Exile) and 6654 (flag
+  // 0x10000, no row delivers it) are refused for three different reasons; a key's first line
+  // is a warning and later lines are debug, so each reason has its own key.
+  let key_of = fn(quest_id, factions) {
+    let scene =
+      support.Scene(
+        ..by_communicator(scene: support.scene(quest_id:)),
+        factions:,
+      )
+    let #(_, logged) = support.refused(scene:, tables: tables())
+    let assert [key] = set.to_list(logged) as "one key"
+    key
+  }
+  let exile = prerequisite.Factions(current: 167, base: 167)
+  let dominion = prerequisite.Factions(current: 166, base: 166)
+  let keys = [
+    key_of(tutorial_quest, exile),
+    key_of(10_522, exile),
+    key_of(6654, dominion),
+  ]
+  assert list.length(list.unique(keys)) == 3
+    as "three kinds of refusal, three keys"
 }
 
 pub fn communicator_turn_in_with_a_delivering_row_is_accepted_test() -> Nil {

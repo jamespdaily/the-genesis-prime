@@ -171,6 +171,12 @@ const auto_complete_checks = 0xffff_dfff
 /// Quest2 flags bit 0: the quest completes without being taken.
 const auto_complete_flag = 1
 
+/// Quest2 flags bit 3: the quest is one the communicator turns in.
+const communicable_flag = 8
+
+/// Quest2 flags bits 0 and 2: a quest the client completes through a call from the server.
+const completes_by_call_flags = 5
+
 /// Quest2 flags bit 19: a quest of the contracts manager.
 const contract_flag = 0x80000
 
@@ -481,7 +487,8 @@ fn state_allows(
 /// The log with the quest Completed, when the communicator turns it in: the quest is
 /// Achieved (2), as `0x14043c700` requires before it opens the dialog, and
 /// `communicator.turn_in` allows it. The communicator does not complete a quest that
-/// completes without being taken: that path needs a side-list entry only a call makes.
+/// completes without being taken: the client's path for it needs a side-list entry only a
+/// call from the server makes, and the server sends no call (#334).
 fn by_communicator_allows(
   turning turning: String,
   row row: Quest2,
@@ -497,7 +504,15 @@ fn by_communicator_allows(
       text: turning
         <> " by the communicator, whose state in the log is "
         <> int.to_string(state)
-        <> " and not Achieved",
+        <> " and not Achieved"
+        <> case
+        int.bitwise_and(row.flags, communicable_flag) != 0
+        && int.bitwise_and(row.flags, completes_by_call_flags) != 0
+      {
+        True ->
+          ", and with flag 1 or 4 it completes over the communicator only through a side-list entry a call from the server makes, which the server does not send (#334)"
+        False -> ""
+      },
     )),
   )
   case communicator.turn_in(quest: row, asker:, tables:) {
@@ -509,7 +524,7 @@ fn by_communicator_allows(
       ))
     Error(refusal) ->
       Error(Declined(
-        key: "by communicator",
+        key: communicator.key(refusal:),
         text: turning
           <> " by the communicator, "
           <> communicator.describe(refusal:),
