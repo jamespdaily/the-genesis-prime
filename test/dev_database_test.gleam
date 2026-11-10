@@ -30,12 +30,16 @@ pub fn a_transaction_held_past_its_deadline_gives_a_query_timeout_test() -> Nil 
   use <- owned_test.run(60_000)
   use <- unitest.tag("dev_tool")
   let #(_database, db) = pool()
-  // The deadline is 100 ms and the one statement takes 500 ms, a margin a slow
-  // machine only widens. That a deadline above 5,000 ms is honoured as well
-  // is not tested: it would take more than 5 s.
+  // This test is about a real deadline, so it passes the server its own 100 ms
+  // and does not drive time. The pool's own timer (`pgo_pool` `disconnect_holder`)
+  // must fire before Postgres answers, so the statement sleeps 2 s on
+  // Postgres's clock: a loaded BEAM can delay the timer by up to that before
+  // the answer could come first. The test returns at about 100 ms. That a
+  // deadline above 5,000 ms is honoured as well is not tested: it would take
+  // more than 5 s.
   let result =
     dev_database.transaction(db:, deadline_ms: 100, work: fn(tx) {
-      pog.query("select pg_sleep(0.5)")
+      pog.query("select pg_sleep(2)")
       |> pog.execute(tx)
       |> result.replace(Nil)
     })

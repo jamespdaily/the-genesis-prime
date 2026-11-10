@@ -26,6 +26,7 @@ import ask_support
 import asking_rule
 import character_support
 import database_support
+import event_wait
 import genesis_prime/add_character/sql as add_character_sql
 import genesis_prime/game/character_name
 import genesis_prime/game/start_place.{Facing}
@@ -61,6 +62,7 @@ import gleam/otp/static_supervisor as supervisor
 import gleam/result
 import gleam/string
 import login_support
+import open_wait
 import owned_test
 import place_support
 import pog
@@ -1174,9 +1176,9 @@ pub fn two_creates_at_once_for_an_account_with_one_slot_make_one_character_test(
   })
   let received =
     list.map(character_support.numbers(4), fn(_) {
-      let assert Ok(answer) = process.receive(answers, within: 30_000)
-        as "every create is answered"
-      answer
+      open_wait.named("every create to be answered", fn() {
+        process.receive_forever(answers)
+      })
     })
   assert list.count(received, is_created) == 1
     as "storing-data: the slot count is held by Postgres, in one statement under the account's row lock, so racing creates of one account make one character"
@@ -2197,9 +2199,10 @@ fn lock_table(pool: pog.Connection) -> Lock {
         as "the locking transaction ran"
       process.send(committed, Nil)
     })
-  let assert Ok(release) =
-    process.receive(locked, within: ask_support.event_wait_ms)
-    as "the table is locked"
+  let release =
+    open_wait.named("the table is locked", fn() {
+      process.receive_forever(locked)
+    })
   Lock(release:, committed:)
 }
 
@@ -2207,10 +2210,9 @@ fn lock_table(pool: pog.Connection) -> Lock {
 /// pool the test stops next has no commit still on the wire.
 fn release_lock(lock: Lock) -> Nil {
   process.send(lock.release, Nil)
-  let assert Ok(Nil) =
-    process.receive(lock.committed, within: ask_support.event_wait_ms)
-    as "the locking transaction committed"
-  Nil
+  open_wait.named("the locking transaction committed", fn() {
+    process.receive_forever(lock.committed)
+  })
 }
 
 // ---- held items ----
@@ -3334,8 +3336,11 @@ pub fn a_quest_log_save_naming_an_older_epoch_or_sequence_changes_no_quest_row_t
     })
   await_a_statement_waiting_for_a_lock(store:)
   release_earlier_save(earlier)
-  let assert Ok(answered) = process.receive(later, within: 30_000)
-    as "the later save is answered once the earlier one commits"
+  let answered =
+    open_wait.named(
+      "the later save to be answered once the earlier one commits",
+      fn() { process.receive_forever(later) },
+    )
   assert answered == ForMove(PlaceSaved)
   assert quest_states(store:, character_id: id) == [#(1001, 3), #(1002, 4)]
     as "two saves of one character run one after another: the later log, which dropped the quest, is the whole log"
@@ -3383,26 +3388,28 @@ fn hold_an_earlier_save(
         as "the earlier save's transaction ran"
       process.send(committed, Nil)
     })
-  let assert Ok(release) =
-    process.receive(locked, within: ask_support.event_wait_ms)
-    as "the earlier save holds the row"
+  let release =
+    open_wait.named("the earlier save holds the row", fn() {
+      process.receive_forever(locked)
+    })
   EarlierSave(release:, committed:)
 }
 
 /// Commits the earlier save and returns once it has.
 fn release_earlier_save(earlier: EarlierSave) -> Nil {
   process.send(earlier.release, Nil)
-  let assert Ok(Nil) =
-    process.receive(earlier.committed, within: ask_support.event_wait_ms)
-    as "the earlier save committed"
-  Nil
+  open_wait.named("the earlier save committed", fn() {
+    process.receive_forever(earlier.committed)
+  })
 }
 
 /// Returns once a statement of this database waits for a lock, which is the
-/// later save waiting for the row the earlier one holds. It reads the database's
-/// own wait state, polling every 20 ms for at most `event_wait_ms`.
+/// later save waiting for the row the earlier one holds. Postgres sends the test
+/// no event for a statement that starts to wait, so the test reads the
+/// database's own wait state every millisecond; the wait has no limit of its
+/// own, and the test's deadline ends it (`event_wait`).
 fn await_a_statement_waiting_for_a_lock(store store: Store) -> Nil {
-  let waiting = fn() {
+  event_wait.until("a statement of the database to wait for a lock", fn() {
     let assert Ok(returned) =
       pog.query(
         "select count(*)::int from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'",
@@ -3411,19 +3418,7 @@ fn await_a_statement_waiting_for_a_lock(store store: Store) -> Nil {
       |> pog.execute(store.pool)
       as "the waiting statements were counted"
     returned.rows != [0]
-  }
-  await_until(waiting, polls: ask_support.event_wait_ms / 20)
-}
-
-fn await_until(done: fn() -> Bool, polls polls: Int) -> Nil {
-  case done(), polls {
-    True, _ -> Nil
-    False, 0 -> panic as "the event did not happen within the deadline"
-    False, _ -> {
-      process.sleep(20)
-      await_until(done, polls: polls - 1)
-    }
-  }
+  })
 }
 
 pub fn a_constraint_of_the_quest_table_the_worker_does_not_map_is_refused_as_a_place_test() -> Nil {
