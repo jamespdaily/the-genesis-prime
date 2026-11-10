@@ -9,7 +9,7 @@
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
 ////                                                 ─▶ Movement(message), Camp(message), Chat(message), Cast(message),
 ////                                                    Life(message), Innate(message), Interaction(message), Quest(message),
-////                                                    Inventory(message) or Dropped(message)
+////                                                    Inventory(message), VendorPurchase or Dropped(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
 ////
@@ -42,6 +42,7 @@ import genesis_prime/game/inventory
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/quest
+import genesis_prime/game/vendor_purchase
 import genesis_prime/message/ability_hold
 import genesis_prime/message/camp_finished
 import genesis_prime/message/camp_request
@@ -119,6 +120,8 @@ pub type Feature {
   Quest(message: quest.Message)
   /// The player's move, split or delete of a held item (genesis_prime/game/inventory).
   Inventory(message: inventory.Message)
+  /// The player's buy from the open vendor, 0x00BE (genesis_prime/game/vendor_purchase).
+  VendorPurchase
   /// A report or request taken and dropped (genesis_prime/game/dropped).
   Dropped(message: dropped.Message)
 }
@@ -313,6 +316,7 @@ const table = [
     Inventory(inventory.DeleteAsked),
     [AtWorld],
   ),
+  Row(vendor_purchase.message_id, InsideWorldMessage, VendorPurchase, [AtWorld]),
   Row(
     camp_request.message_id,
     InsideWorldMessage,

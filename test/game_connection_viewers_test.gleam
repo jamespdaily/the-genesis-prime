@@ -8,8 +8,8 @@ import connection_rule_support as support
 import game_client
 import game_connection_support.{type Step, Appears, MapSaysGone, Moves, Removes}
 import genesis_prime/client_connection.{
-  Appeared, ForStay, FromMap, FromStore, Moving, PeerNews, Removed, SentByMap,
-  SentByPeer, TellMoved,
+  Appeared, ForStay, FromMap, FromStore, LookChanged, Moving, PeerNews,
+  PropertiesChanged, Removed, SentByMap, SentByPeer, TellMoved,
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
@@ -17,6 +17,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
+import genesis_prime/message/item_place
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_kind_26.{MovementKind26}
 import genesis_prime/message/movement_mode.{MovementMode}
@@ -40,7 +41,7 @@ import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
 import genesis_prime/step.{
   ConnectionId, LogError, LogInfo, Map, OwnEffect, OwnEvent, Woken,
 }
-import genesis_prime/store.{Character, ForSelect, Listed}
+import genesis_prime/store.{Character, ForItems, ForSelect, ItemsSaved, Listed}
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/world_map/map.{
   Left, ObjectsSeen, ObjectsUnseen, SeenBy, UnseenBy,
@@ -694,20 +695,14 @@ pub fn a_move_of_40_commands_is_sent_to_each_viewer_as_31_and_9_in_order_and_the
 pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x638_and_its_0x262_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = game_connection_support.joining()
-  let assert map.Joined(unit:, loadout:, max_health:, incarnation:, ..) =
+  let assert map.Joined(unit:, loadout:, incarnation:, clock_origin_ms: _) =
     game_connection_support.map_answer(taken)
   let #(state, _) =
     game_connection_support.answer(
       state:,
       taken:,
       outcome: step.Answer(
-        FromMap(map.Joined(
-          unit:,
-          loadout:,
-          max_health:,
-          incarnation:,
-          clock_origin_ms: 600,
-        )),
+        FromMap(map.Joined(unit:, loadout:, incarnation:, clock_origin_ms: 600)),
       ),
     )
   let moves =
@@ -1302,4 +1297,76 @@ pub fn a_shown_units_interrupt_armor_news_is_written_as_0x938_of_stat_21_and_non
   let #(_, taken) = game_connection_support.feed(shown, news_of(77))
   assert support.writes(taken) == []
     as "a unit the viewer's client does not show is written nothing"
+}
+
+pub fn a_viewer_that_leaves_between_the_save_and_the_news_is_dropped_like_other_news_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state =
+    game_connection_support.watched_by(game_connection_support.in_world(), [
+      2,
+      3,
+    ])
+  // The chest comes off: the store is asked to move it.
+  let #(state, taken) =
+    game_connection_support.read(
+      state,
+      game_connection_support.item_moved_message(
+        from: item_place.ItemPlace(location: 0, bag_index: 0),
+        to: item_place.ItemPlace(location: 1, bag_index: 0),
+      ),
+    )
+  let #(state, answered) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
+    )
+  // The map's UnseenBy of viewer 2 comes while the ask is out, and the shell takes it
+  // only after the answer's step (genesis_prime/game/connection/viewers.map_sent), so
+  // the news goes to both viewers held when the answer comes, and viewer 2's removal
+  // follows it.
+  let #(_, unseen) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_the_map(UnseenBy(by: ConnectionId(2))),
+    )
+  list.each([2, 3], fn(viewer) {
+    let assert [LookChanged(..), PropertiesChanged(..), ..] =
+      game_connection_support.news_told(taken: answered, viewer:)
+      as "each viewer held when the answer comes is told the look and then the properties"
+    Nil
+  })
+  assert game_connection_support.news_told(taken: unseen, viewer: 2)
+    == [Removed]
+    as "then the viewer that left is told the unit is removed"
+  assert game_connection_support.news_told(taken: unseen, viewer: 3) == []
+    as "and the viewer that stayed is told nothing more"
+  // The viewer's own connection: its client showed the unit, then the map said the unit
+  // is gone, so the look and the properties the player told it find no unit shown and
+  // are dropped, as any news of a unit not shown is. A viewer that still shows the unit
+  // writes them, so the empty writes are the drop and not news the viewer never writes.
+  let told =
+    list.take(game_connection_support.news_told(taken: answered, viewer: 2), 2)
+  let #(shown, _) =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      game_connection_support.event_of(Appears),
+    )
+  let #(gone, _) =
+    game_connection_support.feed(
+      shown,
+      game_connection_support.event_of(MapSaysGone),
+    )
+  let written = fn(state, news) {
+    game_connection_support.written_ids(
+      game_connection_support.feed(
+        state,
+        game_connection_support.news_sent_by_a_peer(unit_id: 9, news:),
+      ).1,
+    )
+  }
+  assert list.map(told, written(shown, _)) == [[0x0933], [0x093A]]
+    as "a viewer whose client shows the unit writes 0x933 for the look and 0x93a for the properties"
+  assert list.map(told, written(gone, _)) == [[], []]
+    as "a viewer whose client no longer shows the unit writes nothing"
 }

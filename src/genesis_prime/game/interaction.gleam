@@ -40,6 +40,11 @@
 ////   control states (60 and 61) and the combat checks are left to the client, so the server
 ////   opens the window for a vendor whose player is stunned; that gap and the contents of
 ////   buying, selling and buyback, which stay empty, are the vendor trading step's (#583).
+//// - **The vendor window ends with any 0x07EA but the one that opens a vendor**: the
+////   client sets its interaction kind and closes the previous interaction's window before
+////   it sends any 0x07EA, its own end (unit 0, kind 0x65) among them, and it sends 0x00BE only
+////   while its kind is 0x31 (`opcode.0x7ea`, `opcode.0xbe`). Each result of `take` says whether the
+////   window opens, closes or stays: 0x0356 keeps it, and a refused or unhandled 0x07EA closes it.
 //// - **A kind no step takes** is logged, not answered: any kind but 37 and 0x31 waits for a
 ////   step of its own.
 //// - **A log line** is a warning the first time its reason is met on the connection
@@ -104,9 +109,21 @@ pub type Player {
   Player(race_id: RaceId, faction: PlayerFaction, place: Place)
 }
 
-/// The effects of a message and the reasons now logged on the connection.
+/// What a message does to the vendor window the player has open, which a purchase
+/// is made from (genesis_prime/game/vendor_purchase).
+pub type Window {
+  /// The vendor's window is open on this unit.
+  Opens(opened: vendor.Opened)
+  /// The player has no vendor window open.
+  Closes
+  /// The window is as it was.
+  Keeps
+}
+
+/// The effects of a message, what it does to the vendor window and the reasons now
+/// logged on the connection.
 pub type Taken {
-  Taken(effects: List(Effect), logged: Set(String))
+  Taken(effects: List(Effect), window: Window, logged: Set(String))
 }
 
 /// Why a request is answered with nothing.
@@ -122,7 +139,7 @@ type Declined {
 
 /// Why a vendor request is refused with the client's code: the unit, the code
 /// (`opcode.0x7ea`), the reason that is logged once, and what to say of the unit.
-type VendorRefusal {
+pub type VendorRefusal {
   VendorRefusal(unit_id: Int, code: Int, reason: String, why: String)
 }
 
@@ -173,7 +190,7 @@ pub fn take(
         message_id: dialog_responses_shown.message_id,
       )
       |> result.map_error(NotDecoded)
-      |> result.map(fn(_) { Taken(effects: [], logged:) })
+      |> result.map(fn(_) { Taken(effects: [], window: Keeps, logged:) })
     Requested ->
       interaction_request.decode(body)
       |> client_connection.decoded(message_id: interaction_request.message_id)
@@ -191,7 +208,11 @@ pub fn take(
               )
             {
               Ok(Nil) ->
-                Taken(effects: [OpenDialog(unit_id: request.unit_id)], logged:)
+                Taken(
+                  effects: [OpenDialog(unit_id: request.unit_id)],
+                  window: Closes,
+                  logged:,
+                )
               Error(declined) -> declined_with(declined:, logged:)
             }
           kind, _ if kind == vendor_kind ->
@@ -210,11 +231,15 @@ pub fn take(
                   effects: [
                     OpenVendor(unit_id: request.unit_id, vendor: opened),
                   ],
+                  window: Opens(opened: vendor.Opened(
+                    unit_id: request.unit_id,
+                    vendor: opened,
+                  )),
                   logged:,
                 )
               Error(refusal) -> vendor_refused_with(refusal:, logged:)
             }
-          kind, 0 if kind == end -> Taken(effects: [], logged:)
+          kind, 0 if kind == end -> Taken(effects: [], window: Closes, logged:)
           kind, _ -> declined_with(declined: KindNotTaken(kind:), logged:)
         }
       })
@@ -303,7 +328,7 @@ pub fn within_reach(
 /// alive and has stock, within reach and not Hostile to the player, checked in the order
 /// of the client's CheckInteractionTarget (`opcode.0x7ea`), or the refusal the client's
 /// check would have given.
-fn vendor_opened(
+pub fn vendor_opened(
   unit_id unit_id: Int,
   player player: Player,
   picture picture: Picture,
@@ -401,6 +426,7 @@ fn vendor_refused_with(
     )
   Taken(
     effects: [log, RefuseVendor(unit_id: refusal.unit_id, code: refusal.code)],
+    window: Closes,
     logged:,
   )
 }
@@ -412,11 +438,21 @@ fn log_once(
   text text: String,
   logged logged: Set(String),
 ) -> #(Effect, Set(String)) {
+  let #(level, logged) = log_level(key:, logged:)
+  #(Log(level:, text:), logged)
+}
+
+/// The level a reason is logged at: a warning the first time its key is met on the
+/// connection and a debug line after, with the keys met so far.
+pub fn log_level(
+  key key: String,
+  logged logged: Set(String),
+) -> #(LogLevel, Set(String)) {
   let level = case set.contains(logged, key) {
     True -> LogDebug
     False -> LogWarning
   }
-  #(Log(level:, text:), set.insert(logged, key))
+  #(level, set.insert(logged, key))
 }
 
 /// The log line of a declined request: a warning the first time its reason is met,
@@ -427,7 +463,7 @@ fn declined_with(
 ) -> Taken {
   let #(log, logged) =
     log_once(key: reason_of(declined:), text: describe(declined:), logged:)
-  Taken(effects: [log], logged:)
+  Taken(effects: [log], window: Closes, logged:)
 }
 
 /// The reason of a declined request, one for each kind of reason.

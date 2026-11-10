@@ -450,19 +450,24 @@ pub fn regeneration(
   properties properties: Properties,
   shield shield: Option(item_property.Shield),
 ) -> Regeneration {
-  let shield =
-    option.map(shield, fn(item) {
-      ShieldRegeneration(
-        percent: item.regen_percent,
-        reboot_ms: item.reboot_time_ms,
-        tick_ms: shield_tick_ms(properties:),
-      )
-    })
   Regeneration(
     health_fraction: numbers.health_regen_fraction,
     health_multiplier: health_multiplier(properties:),
     health_tick_ms: numbers.health_regen_tick_ms,
-    shield:,
+    shield: option.map(shield, shield_regeneration(item: _, properties:)),
+  )
+}
+
+/// The shield's regeneration: ShieldRegenPct and ShieldRebootTime of the shield item, and
+/// the player's ShieldTickTime.
+fn shield_regeneration(
+  item item: item_property.Shield,
+  properties properties: Properties,
+) -> ShieldRegeneration {
+  ShieldRegeneration(
+    percent: item.regen_percent,
+    reboot_ms: item.reboot_time_ms,
+    tick_ms: shield_tick_ms(properties:),
   )
 }
 
@@ -494,6 +499,45 @@ pub fn properties_changed(
   life life: Life,
   properties properties: Properties,
 ) -> #(Life, List(Effect)) {
+  let shield =
+    option.map(life.regeneration.shield, fn(shield) {
+      ShieldRegeneration(..shield, tick_ms: shield_tick_ms(properties:))
+    })
+  properties_followed(life:, properties:, shield:)
+}
+
+/// The life after the player's worn items changed its properties: as
+/// `properties_changed`, with the regeneration of the shield now worn (`None` for
+/// none, which stops a running shield clock). The shield kept is capped, so a shield worn
+/// for the first time or put back starts below its maximum; a living player whose shield
+/// clock is idle then starts the reboot as a blow would (`shield_rebooted`), and the shield
+/// charges from its current value.
+pub fn gear_changed(
+  life life: Life,
+  properties properties: Properties,
+  shield worn: Option(item_property.Shield),
+) -> #(Life, List(Effect)) {
+  let shield = option.map(worn, shield_regeneration(item: _, properties:))
+  let #(changed, effects) = properties_followed(life:, properties:, shield:)
+  case shield, changed.shield_clock {
+    None, Running -> #(
+      Life(..changed, shield_clock: Idle),
+      list.append(effects, [CancelTimer(timer: shield_timer)]),
+    )
+    Some(_), Idle if changed.state != Dead -> {
+      let #(rebooting, timers) = shield_rebooted(life: changed)
+      #(rebooting, list.append(effects, timers))
+    }
+    None, Idle | Some(_), Running | Some(_), Idle -> #(changed, effects)
+  }
+}
+
+/// The life after its properties changed, the shield regeneration being `shield`.
+fn properties_followed(
+  life life: Life,
+  properties properties: Properties,
+  shield shield: Option(ShieldRegeneration),
+) -> #(Life, List(Effect)) {
   let max_health =
     float.round(unit_properties.value(
       properties:,
@@ -508,9 +552,7 @@ pub fn properties_changed(
     Regeneration(
       ..life.regeneration,
       health_multiplier: health_multiplier(properties:),
-      shield: option.map(life.regeneration.shield, fn(shield) {
-        ShieldRegeneration(..shield, tick_ms: shield_tick_ms(properties:))
-      }),
+      shield:,
     )
   let health = int.min(life.health, max_health)
   let shield = int.min(life.shield, max_shield)

@@ -329,7 +329,8 @@ pub fn new_character_of_row(
         ),
       ),
     )
-  let assert Ok(character) = character_creation.check_row(tables, open, request)
+  let assert Ok(character) =
+    character_creation.check_row(tables, open, request, starting_credits: 1000)
     as {
       "a create of CharacterCreation row "
       <> int.to_string(row.id)

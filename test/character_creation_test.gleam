@@ -39,6 +39,7 @@ import genesis_prime/table/character_creation as creation_table
 import genesis_prime/table/id.{
   CharacterCreationId, CharacterCustomizationLabelId, ClassId, Item2Id, RaceId,
 }
+import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
 import gleam/pair
@@ -57,11 +58,10 @@ fn request(creation_id: Int, name: String) -> CreateCharacter {
 pub fn a_name_that_breaks_rule_0_is_the_stores_to_refuse_and_the_row_is_checked_first_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
-  let assert Ok(character) =
-    character_creation.check(tables, request(466, "Abcd"))
+  let assert Ok(character) = check(tables, request(466, "Abcd"))
     as "the name's rule 0 is held by the table's character_name_follows_rule_0, so this check passes the name on and the store's refusal is the client's 10 (migration 0014)"
   assert character.name == "Abcd"
-  assert character_creation.check(tables, request(99_999, "Abcd"))
+  assert check(tables, request(99_999, "Abcd"))
     == Error(NoSuchRow(creation_id: 99_999))
     as "a request that breaks the name and the row is answered for the row"
 }
@@ -76,7 +76,7 @@ pub fn a_valid_request_gives_the_new_character_from_its_creation_row_test() -> N
       customisation_labels: [2, 22],
       customisation_values: [1, 1],
     )
-  assert character_creation.check(tables, asked)
+  assert check(tables, asked)
     == Ok(NewCharacter(
       name: "Ab Cd",
       gender: 1,
@@ -93,6 +93,7 @@ pub fn a_valid_request_gives_the_new_character_from_its_creation_row_test() -> N
       ],
       bones: character_support.bones(46),
       starting_items: character_support.row_466_items(),
+      starting_credits: starting_credits,
     ))
     as "CharacterCreation row 466: class 1, race 1, sex 1, faction 167; the path, the labels with their values and the bone values as the request carries them (opcode.0x25b); xp 0, so level 1 (0x140029820); a PreTutorial start, so the place of WorldLocation2 row 51596: World 3460, zone 6009 and its position; its seven items itemId0 to itemId06 at location 0, each at the bag index of its slot: chest 81359 at 0, legs 81344 at 1, shoulder 81381 at 3, feet 81345 at 4, hands 81380 at 5, shield 8534 at 15, weapon 81346 at 16 (ItemSlot.equippedSlotFlags, opcode.0x111.equipped_set)"
 }
@@ -100,8 +101,7 @@ pub fn a_valid_request_gives_the_new_character_from_its_creation_row_test() -> N
 pub fn a_nexus_row_gives_the_character_the_place_of_its_veteran_start_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
-  let assert Ok(character) =
-    character_creation.check(tables, request(338, "Ab Cd"))
+  let assert Ok(character) = check(tables, request(338, "Ab Cd"))
     as "CharacterCreation row 338 is an enabled Nexus row with no entitlement and no cost"
   assert character_tables.is_the_place_of(
     place: character.place,
@@ -113,13 +113,13 @@ pub fn a_nexus_row_gives_the_character_the_place_of_its_veteran_start_test() -> 
 pub fn a_row_that_is_missing_disabled_arkship_costume_only_or_needs_what_the_account_lacks_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
-  assert character_creation.check(tables, request(99_999, "Ab Cd"))
+  assert check(tables, request(99_999, "Ab Cd"))
     == Error(NoSuchRow(creation_id: 99_999))
     as "LuaCreateCharacter 0x140023e90: a missing row is refused"
   let assert Ok(row) = creation_table.get(tables:, id: CharacterCreationId(466))
     as "CharacterCreation row 466 exists"
   let check_row = fn(changed) {
-    character_creation.check_row(tables, changed, request(466, "Ab Cd"))
+    check_row(tables:, row: changed, request: request(466, "Ab Cd"))
   }
   assert check_row(creation_table.CharacterCreation(..row, enabled: False))
     == Error(RowDisabled(creation_id: 466))
@@ -127,16 +127,16 @@ pub fn a_row_that_is_missing_disabled_arkship_costume_only_or_needs_what_the_acc
   assert check_row(creation_table.CharacterCreation(..row, costume_only: True))
     == Error(CostumeOnlyRow(creation_id: 466))
     as "a costume-only row is for the create screen's model and makes no character (rows 530 and 531 have class 0)"
-  assert character_creation.check(tables, request(21, "Ab Cd"))
+  assert check(tables, request(21, "Ab Cd"))
     == Error(RowDisabled(creation_id: 21))
     as "CharacterCreation row 21 is a disabled Arkship row (start 0), which is refused for its enabled column"
-  assert character_creation.check(tables, request(530, "Ab Cd"))
+  assert check(tables, request(530, "Ab Cd"))
     == Error(CostumeOnlyRow(creation_id: 530))
     as "CharacterCreation row 530: costume only, class 0"
-  assert character_creation.check(tables, request(536, "Ab Cd"))
+  assert check(tables, request(536, "Ab Cd"))
     == Error(NeedsEntitlement(creation_id: 536))
     as "CharacterCreation row 536: a Nexus row needing entitlement 61, which no account holds yet (0x140023e90)"
-  assert character_creation.check(tables, request(539, "Ab Cd"))
+  assert check(tables, request(539, "Ab Cd"))
     == Error(CostsCurrency(creation_id: 539))
     as "CharacterCreation row 539: a Level50 row costing 1 of account currency 13, which no account holds yet (0x140023e90)"
 }
@@ -144,18 +144,15 @@ pub fn a_row_that_is_missing_disabled_arkship_costume_only_or_needs_what_the_acc
 pub fn a_path_above_3_or_the_wrong_bone_count_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
-  assert result.is_ok(character_creation.check(
+  assert result.is_ok(check(
     tables,
     CreateCharacter(..request(466, "Ab Cd"), path: 3),
   ))
     as "0x140023e90: path 3 is allowed"
-  assert character_creation.check(
-      tables,
-      CreateCharacter(..request(466, "Ab Cd"), path: 4),
-    )
+  assert check(tables, CreateCharacter(..request(466, "Ab Cd"), path: 4))
     == Error(PathAbove3(creation_id: 466, path: 4))
     as "0x140023e90: a path above 3 is refused"
-  assert character_creation.check(
+  assert check(
       tables,
       CreateCharacter(
         ..request(466, "Ab Cd"),
@@ -164,7 +161,7 @@ pub fn a_path_above_3_or_the_wrong_bone_count_is_refused_test() -> Nil {
     )
     == Error(WrongBoneCount(creation_id: 466, expected: 46, got: 45))
     as "opcode.0x25b.counts: race 1, sex 1 carries 46 bone values"
-  assert character_creation.check(
+  assert check(
       tables,
       CreateCharacter(
         ..request(339, "Ab Cd"),
@@ -173,7 +170,7 @@ pub fn a_path_above_3_or_the_wrong_bone_count_is_refused_test() -> Nil {
     )
     == Error(WrongBoneCount(creation_id: 339, expected: 48, got: 46))
     as "opcode.0x25b.counts: race 1, sex 0 carries 48"
-  assert result.is_ok(character_creation.check(
+  assert result.is_ok(check(
     tables,
     CreateCharacter(
       ..request(339, "Ab Cd"),
@@ -232,12 +229,12 @@ pub fn a_request_with_more_than_25_look_labels_is_refused_test() -> Nil {
       customisation_values: list.repeat(1, count),
     )
   }
-  assert result.is_ok(character_creation.check(tables, with_labels(25)))
+  assert result.is_ok(check(tables, with_labels(25)))
     as "opcode.0x25b.counts: a look holds at most 25 labels (labels 26 and 27 set the race and never enter a look), so 25 labels each held by the index are accepted"
-  assert character_creation.check(tables, with_labels(26))
+  assert check(tables, with_labels(26))
     == Error(TooManyLabels(creation_id: 466, count: 26))
     as "opcode.0x25b.counts: at most 25 labels"
-  assert character_creation.check(tables, with_labels(27))
+  assert check(tables, with_labels(27))
     == Error(TooManyLabels(creation_id: 466, count: 27))
     as "opcode.0x25b.counts: at most 25 labels, not the label table's 27"
 }
@@ -254,33 +251,30 @@ fn looking(pairs: List(#(Int, Int))) -> CreateCharacter {
 pub fn a_label_that_repeats_is_refused_and_says_which_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
-  assert character_creation.check(tables, looking([#(2, 1), #(2, 1)]))
+  assert check(tables, looking([#(2, 1), #(2, 1)]))
     == Error(LabelsNotIncreasing(creation_id: 466, previous: 2, label: 2))
     as "opcode.0x25b.counts: each label at most once; CharacterCustomization rows 603 and 604 hold label 2 at 1, so only the repeat refuses it"
-  assert result.is_ok(character_creation.check(tables, looking([#(2, 1)])))
+  assert result.is_ok(check(tables, looking([#(2, 1)])))
     as "label 2 at value 1 is held by CharacterCustomization row 603 (race 1, sex 1)"
 }
 
 pub fn labels_out_of_label_id_order_are_refused_and_say_which_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
-  assert character_creation.check(tables, looking([#(22, 1), #(2, 1)]))
+  assert check(tables, looking([#(22, 1), #(2, 1)]))
     == Error(LabelsNotIncreasing(creation_id: 466, previous: 22, label: 2))
     as "opcode.0x25b.counts: labels in label-id order; labels 2 and 22 at 1 are held by CharacterCustomization row 603 and allowed for faction 167, so only the order refuses it"
-  assert result.is_ok(character_creation.check(
-    tables,
-    looking([#(2, 1), #(22, 1)]),
-  ))
+  assert result.is_ok(check(tables, looking([#(2, 1), #(22, 1)])))
     as "the same look in label-id order is accepted"
 }
 
 pub fn a_label_of_another_faction_is_refused_and_says_which_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
-  assert character_creation.check(tables, looking([#(2, 1), #(21, 2)]))
+  assert check(tables, looking([#(2, 1), #(21, 2)]))
     == Error(LabelNotAllowed(creation_id: 466, label: 21))
     as "CharacterCustomizationLabel row 21 is faction 166's, and row 466 is faction 167 (SetLookLabel 0x1400310b0)"
-  assert character_creation.check(tables, looking([#(28, 1)]))
+  assert check(tables, looking([#(28, 1)]))
     == Error(LabelNotAllowed(creation_id: 466, label: 28))
     as "the client's CharacterCustomizationLabel has no row 28, and a label with no row can be set for no faction (SetLookLabel 0x1400310b0)"
 }
@@ -291,10 +285,10 @@ pub fn the_race_labels_are_allowed_for_their_faction_only_and_no_look_holds_them
   let assert Ok(row) = creation_table.get(tables:, id: CharacterCreationId(466))
     as "CharacterCreation row 466 exists"
   let of_faction = fn(faction_id, label) {
-    character_creation.check_row(
-      tables,
-      creation_table.CharacterCreation(..row, faction_id:),
-      CreateCharacter(
+    check_row(
+      tables:,
+      row: creation_table.CharacterCreation(..row, faction_id:),
+      request: CreateCharacter(
         ..request(466, "Ab Cd"),
         customisation_labels: [label],
         customisation_values: [1],
@@ -318,10 +312,10 @@ pub fn the_race_labels_are_allowed_for_their_faction_only_and_no_look_holds_them
 pub fn a_value_the_index_does_not_hold_is_refused_and_says_which_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
-  assert character_creation.check(tables, looking([#(2, 1), #(22, 3)]))
+  assert check(tables, looking([#(2, 1), #(22, 3)]))
     == Error(LookValueNotHeld(creation_id: 466, label: 22, value: 3))
     as "CharacterCustomization rows 603 and 604 hold label 22 at 1 and 2 for race 1, sex 1, so 3 is no value of the index (SetLookValue 0x14002ec40)"
-  assert result.is_ok(character_creation.check(tables, looking([#(22, 2)])))
+  assert result.is_ok(check(tables, looking([#(22, 2)])))
     as "label 22 at 2 is held by CharacterCustomization row 604 (race 1, sex 1)"
 }
 
@@ -331,7 +325,7 @@ pub fn a_start_race_or_faction_with_no_start_place_is_refused_and_says_which_tes
   let assert Ok(row) = creation_table.get(tables:, id: CharacterCreationId(466))
     as "CharacterCreation row 466 exists"
   let check_row = fn(changed) {
-    character_creation.check_row(tables, changed, request(466, "Ab Cd"))
+    check_row(tables:, row: changed, request: request(466, "Ab Cd"))
   }
   assert check_row(
       creation_table.CharacterCreation(..row, character_creation_start_enum: 7),
@@ -390,16 +384,16 @@ pub fn a_bone_value_that_is_not_a_finite_float_is_refused_test() -> Nil {
     ],
     fn(case_) {
       let #(bits, name) = case_
-      assert character_creation.check(tables, with_bone(bits))
+      assert check(tables, with_bone(bits))
         == Error(BoneNotFinite(creation_id: 466))
         as { "IEEE 754 single precision: an exponent of all ones is " <> name }
     },
   )
-  assert result.is_ok(character_creation.check(tables, with_bone(0x7F7FFFFF)))
+  assert result.is_ok(check(tables, with_bone(0x7F7FFFFF)))
     as "IEEE 754 single precision: 0x7F7FFFFF is the largest finite float"
-  assert result.is_ok(character_creation.check(tables, with_bone(0xFF7FFFFF)))
+  assert result.is_ok(check(tables, with_bone(0xFF7FFFFF)))
     as "IEEE 754 single precision: 0xFF7FFFFF is the most negative finite float"
-  assert result.is_ok(character_creation.check(tables, with_bone(0x00000000)))
+  assert result.is_ok(check(tables, with_bone(0x00000000)))
     as "ExportBoneValues 0x1401e3580: a part the actor holds no adjustment for is 0.0"
 }
 
@@ -435,8 +429,7 @@ pub fn a_veteran_row_makes_a_level_3_character_and_a_novice_row_a_level_1_charac
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
   let level_of = fn(creation_id) {
-    let assert Ok(character) =
-      character_creation.check(tables, request(creation_id, "Ab Cd"))
+    let assert Ok(character) = check(tables, request(creation_id, "Ab Cd"))
       as "the row is an enabled row with no entitlement and no cost"
     character.level
   }
@@ -482,10 +475,10 @@ pub fn a_novice_character_of_every_class_is_made_on_the_shared_load_with_the_cli
     as "the client's CharacterCreation holds row 479"
   let look = character_tables.row_10_look()
   let assert Ok(_) =
-    character_creation.check_row(
-      tables,
-      row,
-      CreateCharacter(
+    check_row(
+      tables:,
+      row:,
+      request: CreateCharacter(
         ..request(479, "Ab Cd"),
         customisation_labels: list.map(look, fn(entry) { entry.label.value }),
         customisation_values: list.map(look, fn(entry) { entry.value }),
@@ -510,10 +503,10 @@ pub fn a_row_whose_xp_is_no_level_is_refused_and_says_which_test() -> Nil {
   let tables = character_tables.shared()
   let assert Ok(row) = creation_table.get(tables:, id: CharacterCreationId(466))
     as "CharacterCreation row 466 exists"
-  assert character_creation.check_row(
-      tables,
-      creation_table.CharacterCreation(..row, xp: -1),
-      request(466, "Ab Cd"),
+  assert check_row(
+      tables:,
+      row: creation_table.CharacterCreation(..row, xp: -1),
+      request: request(466, "Ab Cd"),
     )
     == Error(NoLevelForExperience(creation_id: 466, experience: -1))
     as "0x140029870 jl: an experience below XpPerLevel record 0's minXpForLevel gives -3, which is no level"
@@ -565,7 +558,7 @@ pub fn every_arkship_row_of_the_clients_table_is_disabled_so_the_enabled_check_r
   assert list.all(arkship, fn(row) { !row.enabled })
     as "fact CharacterCreation.characterCreationStartEnum: every Arkship row is disabled, so RowDisabled refuses it before its start is read"
   list.each(arkship, fn(row) {
-    assert character_creation.check_row(tables, row, request(row.id, "Ab Cd"))
+    assert check_row(tables:, row:, request: request(row.id, "Ab Cd"))
       == Error(RowDisabled(creation_id: row.id))
       as "a disabled Arkship row is refused for its enabled column"
   })
@@ -579,10 +572,10 @@ pub fn the_new_character_carries_the_novice_set_of_its_class_and_faction_at_loca
       creation_table.get(tables:, id: CharacterCreationId(set.creation_id))
       as "the client's CharacterCreation holds the row of each Novice set"
     let assert Ok(character) =
-      character_creation.check_row(
-        tables,
-        row,
-        CreateCharacter(
+      check_row(
+        tables:,
+        row:,
+        request: CreateCharacter(
           ..request(set.creation_id, "Ab Cd"),
           bone_values: list.repeat(
             0,
@@ -621,4 +614,25 @@ pub fn the_new_character_carries_the_novice_set_of_its_class_and_faction_at_loca
       ))
       as "the weapon of the row (itemId04) is the item in slot 16"
   })
+}
+
+/// The credits a character created in these tests starts with, passed to the rule as
+/// the setting's value.
+const starting_credits = 1000
+
+/// The rule's check with the tests' starting credits.
+fn check(
+  tables: table_store.Tables,
+  request: CreateCharacter,
+) -> Result(store.NewCharacter, character_creation.Refusal) {
+  character_creation.check(tables:, request:, starting_credits:)
+}
+
+/// The rule's check of one row with the tests' starting credits.
+fn check_row(
+  tables tables: table_store.Tables,
+  row row: creation_table.CharacterCreation,
+  request request: CreateCharacter,
+) -> Result(store.NewCharacter, character_creation.Refusal) {
+  character_creation.check_row(tables:, row:, request:, starting_credits:)
 }

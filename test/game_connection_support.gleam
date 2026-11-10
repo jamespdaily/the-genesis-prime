@@ -36,6 +36,8 @@ import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason
 import genesis_prime/message/interaction_request.{InteractionRequest}
+import genesis_prime/message/item_move
+import genesis_prime/message/item_place
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -50,6 +52,7 @@ import genesis_prime/message/unit_create_player.{
 }
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stealth
+import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
@@ -59,8 +62,8 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{
   AccountId, Character, CharacterId, CharacterLoaded, ForMove, ForSelect,
-  ForWorld, Listed, Move, NameStands, NotTheAccounts, PlaceSaved, SavePlace,
-  Unavailable,
+  ForWorld, HeldCurrency, Listed, Move, NameStands, NotTheAccounts, PlaceSaved,
+  SavePlace, Unavailable,
 }
 import genesis_prime/table/id.{
   ClassId, Creature2Id, RaceId, Spell4BaseId, Spell4Id,
@@ -510,14 +513,17 @@ pub fn joining_holding_items(
     taken:,
     outcome: step.Answer(
       FromStore(
-        ForWorld(CharacterLoaded(
-          character,
-          character_support.epoch(1),
-          saved_health,
-          saved_experience,
-          items,
-          quests,
-        )),
+        ForWorld(
+          CharacterLoaded(
+            character,
+            character_support.epoch(1),
+            saved_health,
+            saved_experience,
+            items,
+            quests,
+            [],
+          ),
+        ),
       ),
     ),
   )
@@ -720,6 +726,56 @@ pub fn in_world_stocking(vendors vendors: Vendors) -> game_connection.State {
     ),
     character: Character(..world_character(), faction_id: spawn.exile_faction),
   ).0
+}
+
+/// `in_world_stocking`'s Exile, whose store holds `credits` credits for it.
+pub fn in_world_stocking_holding_credits(
+  vendors vendors: Vendors,
+  credits credits: Int,
+) -> game_connection.State {
+  let character =
+    Character(..world_character(), faction_id: spawn.exile_faction)
+  let #(state, taken) =
+    playing_from(
+      in_character_select: in_select_from(
+        accepted(Settings(..settings(), vendors:)).0,
+      ),
+      character_id: 42,
+    )
+  let #(state, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(
+          ForWorld(
+            CharacterLoaded(
+              character,
+              character_support.epoch(1),
+              None,
+              None,
+              world_entry_support.novice_items(character:),
+              [],
+              [HeldCurrency(currency_type_id: 1, amount: credits)],
+            ),
+          ),
+        ),
+      ),
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken)))).0
+}
+
+/// The client's 0x00BE for the stock position and the quantity of lots (`vendor_purchase`),
+/// read by the connection in the world.
+pub fn purchase_requested(
+  state state: game_connection.State,
+  unique_id unique_id: Int,
+  quantity quantity: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let assert Ok(body) =
+    vendor_purchase.encode(VendorPurchase(unique_id:, quantity:))
+    as "a unique id and a quantity of 32 bits fit the message"
+  read(state:, bytes: world_message(message_id: 0x00BE, body:))
 }
 
 /// The ask of a `!summon` line of the tests' player: the run of the map that
@@ -1946,13 +2002,12 @@ pub fn with_the_tables_loadout(
   tables tables: store_tables.Tables,
   class_id class_id: Int,
 ) -> map.Outgoing {
-  let assert map.Joined(unit:, max_health:, incarnation:, clock_origin_ms:, ..) =
-    joined
+  let assert map.Joined(unit:, incarnation:, clock_origin_ms:, ..) = joined
     as "the map took the player"
   let assert Ok(held) =
     loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
     as "the tables hold a Novice set for the class"
-  map.Joined(unit:, loadout: held, max_health:, incarnation:, clock_origin_ms:)
+  map.Joined(unit:, loadout: held, incarnation:, clock_origin_ms:)
 }
 
 /// The connection after the map took a character of the class, with its entry burst,
@@ -2116,6 +2171,26 @@ pub fn casts_run_answered(
   steps steps: List(ConnectionStep(Request)),
   answer answer: Answering(world),
 ) -> #(game_connection.State, world, List(ConnectionStep(Request))) {
+  let #(state, world, _, steps) =
+    casts_left_answered(state:, world:, pending:, until_ms:, steps:, answer:)
+  #(state, world, steps)
+}
+
+/// `casts_run_answered`, and the timers still due after `until_ms` as well, to run on
+/// from a later point.
+pub fn casts_left_answered(
+  state state: game_connection.State,
+  world world: world,
+  pending pending: List(#(Int, TimerId)),
+  until_ms until_ms: Int,
+  steps steps: List(ConnectionStep(Request)),
+  answer answer: Answering(world),
+) -> #(
+  game_connection.State,
+  world,
+  List(#(Int, TimerId)),
+  List(ConnectionStep(Request)),
+) {
   case
     list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
   {
@@ -2123,7 +2198,7 @@ pub fn casts_run_answered(
       let #(state, fired) =
         at(state:, ms: due, event: OwnEvent(TimerFired(timer:)))
       let #(world, state, more) = answer(world, state, due, fired)
-      casts_run_answered(
+      casts_left_answered(
         state:,
         world:,
         pending: list.append(rest, cast_timers(steps: more, ms: due)),
@@ -2132,7 +2207,7 @@ pub fn casts_run_answered(
         answer:,
       )
     }
-    _ -> #(state, world, steps)
+    sorted -> #(state, world, sorted, steps)
   }
 }
 
@@ -2195,6 +2270,29 @@ pub fn casts_run(
   #(state, steps)
 }
 
+/// `casts_run`, and the timers still due after `until_ms` as well.
+pub fn casts_left(
+  state state: game_connection.State,
+  pending pending: List(#(Int, TimerId)),
+  until_ms until_ms: Int,
+  steps steps: List(ConnectionStep(Request)),
+) -> #(
+  game_connection.State,
+  List(#(Int, TimerId)),
+  List(ConnectionStep(Request)),
+) {
+  let #(state, _, pending, steps) =
+    casts_left_answered(
+      state:,
+      world: Nil,
+      pending:,
+      until_ms:,
+      steps:,
+      answer: landed_at_once,
+    )
+  #(state, pending, steps)
+}
+
 /// A press of the bag index at `ms`, and the cast timers it leads to up to
 /// `until_ms`, each strike landing.
 pub fn pressed_until(
@@ -2215,4 +2313,34 @@ pub fn pressed_until(
       answer: landed_at_once,
     )
   #(state, steps)
+}
+
+/// A 0x182 of the item at `from` to the empty or other place `to`, as the client sends
+/// it, inside 0x038C.
+pub fn item_moved_message(
+  from from: item_place.ItemPlace,
+  to to: item_place.ItemPlace,
+) -> BitArray {
+  let assert Ok(body) = item_move.encode(item_move.ItemMove(from:, to:))
+  world_message(message_id: item_move.message_id, body:)
+}
+
+/// The connection that took the client's message that changes a held item at `ms`,
+/// asked the store, and was given its answer that the change is saved, at the same
+/// time: the state and the step of the answer.
+pub fn item_change_saved(
+  state state: game_connection.State,
+  ms ms: Int,
+  message message: BitArray,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = at(state:, ms:, event: OwnEvent(step.Read(message)))
+  let assert Some(ask) = support.asked(taken) as "the step ends in an ask"
+  at(
+    state:,
+    ms:,
+    event: OwnEvent(step.Answered(
+      ask: ask.ask,
+      outcome: step.Answer(FromStore(store.ForItems(store.ItemsSaved))),
+    )),
+  )
 }

@@ -33,6 +33,7 @@
 import cast_support
 import character_tables
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/gear
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers
@@ -48,6 +49,8 @@ import genesis_prime/world_map/unit_fields
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
+import gleam/string
 import owned_test
 import world_entry_support
 
@@ -423,7 +426,7 @@ pub fn a_level_9_players_health_adds_the_armors_600_to_the_creature_level_rows_b
     as "player.level1_base_health: the CreatureLevel row of the level, here the planted row 9's 2295.49, and the armor's 600"
 }
 
-pub fn the_player_the_connection_keeps_holds_its_loadout_and_its_max_health_test() -> Nil {
+pub fn the_player_the_connection_keeps_holds_its_loadout_and_the_gear_of_its_held_items_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, entered) =
     entering(character: world_entry_support.character(
@@ -436,10 +439,17 @@ pub fn the_player_the_connection_keeps_holds_its_loadout_and_its_max_health_test
     && entered.loadout.abilities
     == [Spell4BaseId(26_468), Spell4BaseId(25_473), Spell4BaseId(25_635)]
     as "the typed loadout: CharacterCreation row 479's weapon in slot 16 and the Engineer's three Spell4Base ids"
-  assert entered.max_health == 736
-    as "player.level1_base_health: the typed maximum health the 0x262 carries"
-  assert entered.loadout.properties.armor == 250.0
-    as "the typed gear: the Engineer's heavy armor, 250"
+  assert gear.max_health(
+      tables: character_tables.shared(),
+      gear: entered.gear,
+      level: 1,
+    )
+    == Ok(736)
+    as "player.level1_base_health: the maximum health the gear of the held items gives at level 1, as the 0x262 carries it"
+  assert entered.gear.properties.armor == 250.0
+    as "the typed gear of the held items: the Engineer's heavy armor, 250"
+  assert entered.gear.weapon == Some(Item2Id(81_353))
+    as "the gear's weapon is the item held at location 0, index 16"
 }
 
 pub fn the_abilities_items_have_guids_of_their_own_that_are_not_0_and_not_a_held_items_test() -> Nil {
@@ -534,9 +544,8 @@ pub fn the_entry_sends_an_item_added_for_each_saved_item_with_its_saved_guid_and
   assert list.count(before_tiers, fn(id) { id == 0x0111 }) == 7
     && !list.contains(from_tiers, 0x0111)
     as "every item added, the three saved and the four abilities, comes before the tiers (0x1a0) and the action set"
-  assert entered.loadout.weapon == Item2Id(81_353)
-    && entered.loadout.weapon_slot == 16
-    as "casting still reads the weapon from the loadout (0x1403afb10: location 0, index 16)"
+  assert entered.gear.weapon == Some(Item2Id(81_353))
+    as "casting reads the weapon from the item held at location 0, index 16 (0x1403afb10)"
 
   let #(effects, entered) =
     world_entry_support.entry_holding(
@@ -559,6 +568,114 @@ pub fn the_entry_sends_an_item_added_for_each_saved_item_with_its_saved_guid_and
     )
     == 2
     as "the tiers (0x1a0) and the action set (0x19d) go out as before"
-  assert entered.loadout.weapon == Item2Id(81_353)
-    as "casting reads the weapon from the loadout"
+  assert entered.gear.weapon == None
+    as "a character that holds no weapon wields none (0x1403afb10: no item at location 0, index 16)"
+}
+
+pub fn a_character_saved_without_its_weapon_enters_without_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  let unarmed =
+    list.filter(world_entry_support.novice_items(character:), fn(item) {
+      item.bag_index != 16
+    })
+  let #(effects, entered) =
+    world_entry_support.entry_holding(
+      tables: character_tables.shared(),
+      character:,
+      items: unarmed,
+    )
+  let frames = world_entry_support.frames_of(effects:)
+  let player = player_of(frames:)
+  assert list.map(player.tail.item_visuals, fn(visual) { visual.slot })
+    == [1, 2, 4, 5, 6]
+    as "opcode.0x262.worn_visuals: only the five armor pieces held at location 0 are drawn; the weapon's visual, slot 20, is not, since no weapon is held"
+  assert list.count(world_entry_support.items_added(frames:), fn(added) {
+      added.held_item.item.location == 0
+    })
+    == 6
+    as "one item added for each saved item: the five armor pieces and the shield"
+  assert property_value(properties: player.tail.properties, id: 35)
+    == float32.rounded(36.0)
+    as "0x14040df10: the armor's Assault Rating 36.0, without the weapon's 167.0625"
+  assert property_value(properties: player.tail.properties, id: 36) == 0.0
+    as "0x14040df10: the Support Rating 55.6875 came wholly from the weapon; the armor gives none"
+  assert property_value(properties: player.tail.properties, id: 7) == 736.0
+    && property_value(properties: player.tail.properties, id: 42) == 250.0
+    && property_value(properties: player.tail.properties, id: 41) == 450.0
+    as "the weapon gives no Base Health, Armor or shield: 135.97 and 600 round to 736, the armor is 250 and the shield 450"
+  assert entered.gear.weapon == None
+    as "the player wields none: a spell that needs the weapon is refused"
+}
+
+pub fn a_character_saved_without_its_shield_enters_with_no_stat_20_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  let unshielded =
+    list.filter(world_entry_support.novice_items(character:), fn(item) {
+      item.bag_index != 15
+    })
+  let #(effects, entered) =
+    world_entry_support.entry_holding(
+      tables: character_tables.shared(),
+      character:,
+      items: unshielded,
+    )
+  let player = player_of(frames: world_entry_support.frames_of(effects:))
+  assert unit_fields.stat(tail: player.tail, stat_id: unit_fields.shield_stat)
+    == Error(Nil)
+    as "stat 20 is the shield (`opcode.0x938`) and is written only for a worn shield, so a unit with none holds no stat 20 and enters the same whatever it wore before"
+  assert gear.shield_capacity(gear: entered.gear) == None as "no shield is worn"
+}
+
+pub fn a_join_whose_gear_has_no_base_health_row_at_the_level_ends_the_connection_naming_the_level_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // XpPerLevel holds level 102 but CreatureLevel stops at row 101 (`table_rows`).
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 102)
+  let assert world_entry.GearFault(text:) =
+    world_entry_support.answered_at(
+      tables: character_tables.shared(),
+      character:,
+      items: world_entry_support.novice_items(character:),
+      quests: [],
+      now: world_entry_support.now(),
+    )
+    as "a join of a level with no Base Health row is not entered: the player is not in the world"
+  assert string.contains(text, "level 102")
+    as "the text the connection logs as an error names the level"
+}
+
+pub fn a_connection_that_ends_after_the_save_enters_again_with_the_gear_of_the_saved_items_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  // The items the store holds once its save of the chest's move has been answered:
+  // the chest (bag index 0) is in the first bag slot, the rest as the create stored.
+  let saved =
+    list.map(world_entry_support.novice_items(character:), fn(item) {
+      case item.bag_index {
+        0 -> HeldItem(..item, location: 1, bag_index: 0)
+        _ -> item
+      }
+    })
+  let #(effects, entered) =
+    world_entry_support.entry_holding(
+      tables: character_tables.shared(),
+      character:,
+      items: saved,
+    )
+  let player = player_of(frames: world_entry_support.frames_of(effects:))
+  assert list.map(player.tail.item_visuals, fn(visual) { visual.slot })
+    == [2, 4, 5, 6, 20]
+    as "opcode.0x262.worn_visuals: the entry draws the items held at location 0, so not the chest saved in a bag"
+  assert property_value(properties: player.tail.properties, id: 7) == 586.0
+    && property_value(properties: player.tail.properties, id: 42) == 187.5
+    as "the chest's quarter of the 600 Base Health and of the 250 Armor is gone: 135.97 and 450 round to 586"
+  assert stat(player:, id: 0) == 586 as "health at its new maximum"
+  assert entered.gear
+    == gear.of_items(tables: character_tables.shared(), items: saved)
+    as "the player the connection keeps holds the gear of the saved items"
 }

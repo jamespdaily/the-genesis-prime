@@ -3031,3 +3031,27 @@ fields = [
   { name = "type", kind = "constant", bits = 2, value = 1, evidence = "0x140c1f178", named_by = "0x140c1f178" },
   { name = "value", kind = "unsigned", bits = 32, evidence = "0x140c1f178", named_by = "0x140c1f178" },
 ]
+
+[[message]]
+id = 0x00BE
+name = "vendor_purchase"
+direction = "client_to_server"
+evidence = "opcode.0xbe"
+summary = "the client buys from the open vendor: the unique id of the vendor item (the id 0x90b sent for the item) and the quantity, which counts lots of the item's buyFromVendorStackCount; the client sends it only while the player is alive, under no no-action control state and in a vendor interaction, and checks neither the stock nor the cash"
+fields = [
+  { name = "unique_id", kind = "unsigned", bits = 32, evidence = "opcode.0xbe", named_by = "opcode.0xbe" },
+  { name = "quantity", kind = "unsigned", bits = 32, evidence = "opcode.0xbe", named_by = "opcode.0xbe" },
+]
+
+[[message]]
+id = 0x0919
+name = "currency_changed"
+direction = "server_to_client"
+evidence = "opcode.0x919"
+summary = "a currency's new total (a total, not a change): the kind, 0 to 13 for the currency types 1 to 14 (credits are kind 0; the client logs and drops the kinds 14 to 21, and the kinds 22 and up are not currencies), the total and two 32-bit values the currency kinds do not read"
+fields = [
+  { name = "kind", kind = "unsigned", bits = 5, evidence = "opcode.0x919", named_by = "opcode.0x919" },
+  { name = "total", kind = "unsigned", bits = 64, evidence = "opcode.0x919", named_by = "opcode.0x919" },
+  { name = "field_3", kind = "unsigned", bits = 32, evidence = "opcode.0x919", safe_by = "opcode.0x919" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "opcode.0x919", safe_by = "opcode.0x919" },
+]

@@ -58,6 +58,7 @@ pub const numbers: GameNumbers =
     kill_experience_multipliers: [0.0, 0.25, 0.5, 0.75, 1.0, 1.1, 1.2, 1.3, 1.4],
     daily_quest_reset_ms: 36_000_000,
     weekly_quest_reset_ms: 122_400_000,
+    starting_credits: 1000,
   )
 
 /// The spawn numbered `number` of a Virtual Battle Beast, `x` units along the
