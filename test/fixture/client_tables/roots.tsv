@@ -216,6 +216,15 @@ Item2	13148	Cloth Shirt (sold by Supplier Ingavak)	content_vendor_test, world_cr
 Item2	13160	Leather Jacket (sold by Supplier Ingavak)	content_vendor_test, world_creature_test
 Item2	74201	(the proxy item GameFormula 1214 names, whose quality prices Small Stimpack)	item_price_test
 Item2	4753	(bag of 4, no proxy flag)	item_property_test
+Item2	11538	(stacks to 99, sells for a credit amount in its own price columns)	item_price_test, item_property_test, vendor_sale_test
+Item2	1154	(sells for a credit amount of 0 in its own price columns)	vendor_sale_test
+Item2	16053	(sells for 60 Glory)	item_price_test, vendor_sale_test
+Item2	175	(Junk, sellable)	vendor_sale_test
+Item2	176	(Junk, sellable)	vendor_sale_test
+Item2	177	(Junk, sellable)	vendor_sale_test
+Item2	6141	(Junk, a proxy item that cannot be sold)	vendor_sale_test
+Item2	6516	(Quest Item family whose type, category and family flags hold 0x20)	item_property_test
+Item2	9939	(no flag 0x20 in its type, category or family)	item_property_test, vendor_sale_test
 Item2	5423	(bag of 8, required level 18)	item_property_test
 Item2	4763	(proxy bag, flags 0x4000, maxStackCount 4)	item_property_test
 RewardPropertyPremiumModifier	109	(BagSlots 4, Hybrid tier 0, carries up)	reward_property_test
@@ -321,3 +330,5 @@ Creature2	74781	an Exile mount display, whose row gives visibility prerequisite 
 Creature2	74782	an Exile mount display, whose row gives visibility prerequisite 19	tutorial_visibility_wire_test
 Creature2	74783	an Exile mount display, whose row gives visibility prerequisite 19	tutorial_visibility_wire_test
 Creature2	74784	an Exile mount display, whose row gives visibility prerequisite 19	tutorial_visibility_wire_test
+Item2	85531	(a bag priced in credits in its buy columns, with no sell columns set)	item_price_test
+Item2	23318	(a tradeskill additive row with no currency columns, sellable)	item_price_test

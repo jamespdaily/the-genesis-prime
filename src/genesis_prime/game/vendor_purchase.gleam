@@ -59,8 +59,7 @@
 //// | the store changes nothing or refuses a place | 0x106 5, a warning, items and credits as before |
 //// | the connection ends while the store works | the store finishes or rolls back; the next login loads whichever |
 
-import genesis_prime/client_connection.{type Undecoded}
-import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/client_connection
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
@@ -68,12 +67,13 @@ import genesis_prime/game/item_property
 import genesis_prime/game/player_life.{type Life}
 import genesis_prime/game/shown.{type Picture}
 import genesis_prime/game/vendor.{type Vendors}
+import genesis_prime/game/vendor_trade.{
+  type Effect, type Refusal, NoItemRow, NotDecoded, Refuse, Send,
+}
 import genesis_prime/message/vendor_purchase as vendor_purchase_message
-import genesis_prime/step.{type LogLevel, LogError, LogWarning}
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
-  type SessionEpoch, Bought, HeldItem, ItemMade, ItemsNotSaved, ItemsSaved,
-  SaveRefused,
+  type SessionEpoch, Bought, HeldItem, ItemsNotSaved, SaveRefused,
 }
 import genesis_prime/table/id.{type Item2Id, Item2Id}
 import genesis_prime/table/item2
@@ -81,22 +81,12 @@ import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{type Option}
 import gleam/result
 import gleam/set.{type Set}
 
 /// The id of the message this rule takes.
 pub const message_id = vendor_purchase_message.message_id
-
-/// What the rule asks the connection to do.
-pub type Effect {
-  /// Write a frame to the player's client.
-  Send(frame: Frame)
-  /// Write a 0x106 with the client's code for why the buy is refused.
-  Refuse(code: Int)
-  /// Write a log line.
-  Log(level: LogLevel, text: String)
-}
 
 /// A buy the rule accepted and the store is asked for: the unit it was made at, the Item2
 /// bought and how many items, what is paid, the credits held when it was taken (which fence
@@ -121,18 +111,17 @@ pub type Taken {
   Asks(purchase: Purchase, logged: Set(String))
 }
 
-/// Why the buy ends the connection with no answer: the client's own code never sends it, or
-/// the server's own state is broken.
-pub type Refusal {
-  /// A body the client's own reader would refuse.
-  NotDecoded(undecoded: Undecoded)
-  /// A held item or the bought item whose row the tables lack: the server's own state is
-  /// broken, since the vendor load and the item rows require them.
-  NoItemRow(item2_id: Item2Id)
-}
-
-/// The client's code for a vendor the window is not open on (Vendor_NotAVendor).
-const not_a_vendor = 16
+/// How the buy words and codes the refusals of its window and player: a dead player is 57
+/// and a dead vendor 16, and the window's reach applies (`opcode.0xbe`).
+const trade =
+  vendor_trade.Trade(
+    key: "buy",
+    verb: "buys from",
+    refused: "the interaction",
+    dead_player_code: 57,
+    dead_vendor_code: 16,
+    reach: interaction.CheckReach,
+  )
 
 /// The client's code for a buy of an id the vendor does not sell (Vendor_UnknownItem).
 const unknown_item = 14
@@ -145,12 +134,6 @@ const not_enough_cash = 20
 
 /// The client's code for a buy the inventory has no place for (Item_InventoryFull).
 const inventory_full = 27
-
-/// The client's code for a player who is dead (Player_CantDoWhileDead).
-const cant_do_while_dead = 57
-
-/// The client's code for a change that was not saved (DbFailure).
-const db_failure = 5
 
 /// The reason a vendor purchase's items are shown for (Item.CodeEnumItemUpdateReason 7,
 /// Vendor): the client shows "Bought <item>".
@@ -179,60 +162,23 @@ pub fn take(
     |> client_connection.decoded(message_id:)
     |> result.map_error(NotDecoded),
   )
-  case opened {
-    None ->
-      Ok(refused_logged(
-        reason: "no window",
-        text: "0x00BE buys from a vendor with no vendor window open on the connection: the client sends it only in a vendor interaction, so the server answers "
-          <> int.to_string(not_a_vendor),
-        code: not_a_vendor,
-        logged:,
-      ))
-    Some(window) ->
-      case player_life.state(life:) == player_life.Dead {
-        True ->
-          Ok(refused_logged(
-            reason: "dead",
-            text: "0x00BE buys from a vendor while the player is dead: the client sends nothing for a dead player, so the server answers "
-              <> int.to_string(cant_do_while_dead),
-            code: cant_do_while_dead,
-            logged:,
-          ))
-        False ->
-          case
-            interaction.vendor_opened(
-              unit_id: window.unit_id,
-              player:,
-              picture:,
-              tables:,
-              vendors:,
-              now_ms:,
-            )
-          {
-            Error(refusal) ->
-              Ok(refused_logged(
-                reason: refusal.reason,
-                text: "0x00BE buys from unit "
-                  <> int.to_string(refusal.unit_id)
-                  <> ", "
-                  <> refusal.why
-                  <> ": the client would refuse the interaction with code "
-                  <> int.to_string(refusal.code)
-                  <> ", so the server answers that",
-                code: refusal.code,
-                logged:,
-              ))
-            Ok(opened) ->
-              buy_from(
-                buy:,
-                window: vendor.Opened(..window, vendor: opened),
-                items:,
-                currencies:,
-                tables:,
-                logged:,
-              )
-          }
-      }
+  case
+    vendor_trade.opened(
+      trade:,
+      label: "0x00BE",
+      opened:,
+      life:,
+      player:,
+      picture:,
+      tables:,
+      vendors:,
+      now_ms:,
+      logged:,
+    )
+  {
+    Error(vendor_trade.Declined(effects:, logged:)) ->
+      Ok(Refused(effects:, logged:))
+    Ok(window) -> buy_from(buy:, window:, items:, currencies:, tables:, logged:)
   }
 }
 
@@ -302,18 +248,6 @@ fn buy_from(
 /// A refusal of a buy by the client's code, with nothing to log.
 fn refused(code code: Int, logged logged: Set(String)) -> Taken {
   Refused(effects: [Refuse(code:)], logged:)
-}
-
-/// A refusal of a buy a client that follows its own code never sends, with a line to log
-/// once for each reason on the connection.
-fn refused_logged(
-  reason reason: String,
-  text text: String,
-  code code: Int,
-  logged logged: Set(String),
-) -> Taken {
-  let #(level, logged) = interaction.log_level(key: "buy " <> reason, logged:)
-  Refused(effects: [Log(level:, text:), Refuse(code:)], logged:)
 }
 
 /// The row a held item lacks, which only the inventory's size reads.
@@ -460,24 +394,17 @@ pub fn answered(
         ]),
       )
     }
-    ItemsNotSaved -> #(items, currencies, [
-      Log(
-        level: LogWarning,
-        text: not_bought(purchase:)
-          <> ": a later login holds the character, or the credits or the items are not as the connection holds them",
-      ),
-      Refuse(code: db_failure),
-    ])
-    SaveRefused(constraint:) -> #(items, currencies, [
-      Log(
-        level: LogError,
-        text: not_bought(purchase:)
-          <> ": the store refused the places by the constraint "
-          <> constraint,
-      ),
-      Refuse(code: db_failure),
-    ])
-    ItemsSaved | ItemMade(..) ->
+    ItemsNotSaved -> #(
+      items,
+      currencies,
+      vendor_trade.not_saved(what: not_bought(purchase:)),
+    )
+    SaveRefused(constraint:) -> #(
+      items,
+      currencies,
+      vendor_trade.save_refused(what: not_bought(purchase:), constraint:),
+    )
+    store.ItemsSaved | store.ItemMade(..) | store.Sold(..) ->
       panic as "the store answers a purchase with Bought, ItemsNotSaved or SaveRefused"
   }
 }
@@ -504,14 +431,4 @@ pub fn not_bought(purchase purchase: Purchase) -> String {
   <> " for "
   <> int.to_string(purchase.cost)
   <> " credits was not saved"
-}
-
-/// A sentence that says what the client sent that is refused, for the log.
-pub fn describe(refusal refusal: Refusal) -> String {
-  case refusal {
-    NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
-    NoItemRow(item2_id:) ->
-      "a held or stocked item has no row in the client's tables: Item2 "
-      <> int.to_string(item2_id.value)
-  }
 }

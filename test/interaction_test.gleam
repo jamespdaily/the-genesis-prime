@@ -23,6 +23,7 @@
 //// - Creature2 74812 (Dorian Walker) gives quest 10528 and receives quest 10520;
 ////   Creature2 73464, the Virtual Battle Beast, gives and receives none.
 
+import character_support
 import character_tables
 import connection_rule_support as support
 import fixture_tables
@@ -41,6 +42,7 @@ import genesis_prime/message/dialog_responses_shown.{DialogResponsesShown}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/generic_error.{GenericError}
 import genesis_prime/message/interaction_request.{InteractionRequest}
+import genesis_prime/message/item_place
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
 import genesis_prime/message/vendor_item.{type VendorItem, VendorItem}
 import genesis_prime/message/vendor_items.{VendorItems}
@@ -610,6 +612,143 @@ pub fn a_buy_the_store_cannot_answer_ends_the_connection_with_reason_8_test() ->
         as "a buy whose outcome is unknown is an error line"
       assert connection_support.written_ids(answered) == []
         as "no 0x919, 0x111, 0x17F or 0x106: nothing says whether the buy was saved"
+      let #(_, saved) =
+        connection_support.answer(
+          state:,
+          taken: answered,
+          outcome: connection_support.place_saved(),
+        )
+      assert connection_support.disconnect(saved, connection_support.keyed())
+        == LostUserServer
+        as "the player's place is saved, then 0x036A reason 8"
+    },
+  )
+}
+
+/// Dorian Walker's window open on a connection that holds 100 credits and, besides the Novice
+/// set, 5 of Item2 20791 (guid 500, inventory slot 0).
+fn selling_state() -> game_connection.State {
+  let #(state, _) =
+    connection_support.feed(
+      state: connection_support.in_world_stocking_holding(
+        vendors: vendor_support.stocking(creature_ids: [74_812]),
+        credits: 100,
+        items: [
+          store.HeldItem(
+            item_guid: 500,
+            item2_id: id.Item2Id(20_791),
+            location: 1,
+            bag_index: 0,
+            stack_count: 5,
+          ),
+        ],
+      ),
+      event: walker_appears(
+        unit_id: walker_unit,
+        gap: sale_reach -. 0.1,
+        health: 52,
+        hostile_to: friendly,
+      ),
+    )
+  let #(state, _) =
+    connection_support.interaction_requested(
+      state:,
+      unit_id: walker_unit,
+      kind: 0x31,
+    )
+  state
+}
+
+/// The edge gap a sale is accepted up to: 6.0 (`opcode.0x166`), within the window's `reach`.
+const sale_reach = 6.0
+
+/// The store's ask for a sale of `quantity` of the stack of 20791, which holds `held`, while
+/// the connection holds `credits_held`: the tests' account and character, the epoch their load
+/// gave, and the one stack. Each item is worth 1 credit (`item_price_test`).
+fn sale_asked(
+  held held: Int,
+  quantity quantity: Int,
+  credits_held credits_held: Int,
+) -> client_connection.Request {
+  AskStore(
+    store.Items(
+      store.SellToVendor(
+        account_id: store.AccountId(7),
+        character_id: store.CharacterId(42),
+        session_epoch: character_support.epoch(1),
+        credits_held:,
+        credits_after: credits_held + quantity,
+        sold: [
+          store.SoldStack(
+            item_guid: 500,
+            held_count: held,
+            sold_count: quantity,
+          ),
+        ],
+      ),
+    ),
+  )
+}
+
+pub fn a_sell_sent_while_the_store_works_is_held_and_taken_after_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let place = item_place.ItemPlace(location: 1, bag_index: 0)
+  let #(state, taken) =
+    connection_support.sale_requested(
+      state: selling_state(),
+      place:,
+      quantity: 2,
+    )
+  assert connection_support.ask_request(taken)
+    == sale_asked(held: 5, quantity: 2, credits_held: 100)
+    as "opcode.0x166: 2 of the 5 held, at the 1 credit each item sells for, fenced by the login's epoch and the 100 credits held"
+  assert support.writes(taken) == []
+    as "nothing is written before the store has saved the sale"
+  let #(state, held) =
+    connection_support.sale_requested(state:, place:, quantity: 3)
+  assert support.writes(held) == [] && support.asked(held) == None
+    as "step.EffectsThenAsk: the client's frames are held while the ask is out"
+  let #(_, answered) =
+    connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(store.ForItems(store.Sold(credits: 102)))),
+    )
+  assert connection_support.written_ids(answered) == [0x0919, 0x017F, 0x00BA]
+    as "opcode.0x919 (the total), 0x17F (3 left, reason 7) and 0xBA (the buyback entry): the sale's answer goes out first, then the held line is taken"
+  assert connection_support.ask_request(answered)
+    == sale_asked(held: 3, quantity: 3, credits_held: 102)
+    as "the held 0x166 is taken against the state after the first sale: 3 are left and 102 credits are held"
+}
+
+pub fn a_sale_the_store_cannot_answer_ends_the_connection_with_reason_8_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // As the buy's: a sale whose outcome is unknown (the 0x919, 0x17F and 0xBA say what the
+  // store did) is an error line and reason 8 once the place is saved.
+  list.each(
+    [
+      step.Answer(FromStore(store.Unavailable)),
+      step.NotRunning,
+      step.NoAnswerInTime,
+      step.EndedBeforeAnswer,
+    ],
+    fn(outcome) {
+      let #(state, taken) =
+        connection_support.sale_requested(
+          state: selling_state(),
+          place: item_place.ItemPlace(location: 1, bag_index: 0),
+          quantity: 2,
+        )
+      assert connection_support.ask_request(taken)
+        == sale_asked(held: 5, quantity: 2, credits_held: 100)
+        as "opcode.0x166: the accepted sale is the store's ask"
+      let #(state, answered) =
+        connection_support.answer(state:, taken:, outcome:)
+      assert list.length(support.logs_of(step: answered, level: step.LogError))
+        == 1
+        as "a sale whose outcome is unknown is an error line"
+      assert connection_support.written_ids(answered) == []
+        as "no 0x919, 0x17F, 0xBA or 0x106: nothing says whether the sale was saved"
       let #(_, saved) =
         connection_support.answer(
           state:,

@@ -34,9 +34,9 @@ import genesis_prime/game/interaction.{Player}
 import genesis_prime/game/player_life.{type Life}
 import genesis_prime/game/shown
 import genesis_prime/game/vendor
-import genesis_prime/game/vendor_purchase.{
-  type Effect, type Taken, Asks, Log, NotDecoded, Purchase, Refuse, Refused,
-  Send,
+import genesis_prime/game/vendor_purchase.{type Taken, Asks, Purchase, Refused}
+import genesis_prime/game/vendor_trade.{
+  type Effect, Log, NotDecoded, Refuse, Send,
 }
 import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/item_added
@@ -136,7 +136,7 @@ fn scene(unique_id unique_id: Int, quantity quantity: Int) -> Scene {
   )
 }
 
-fn taken(scene scene: Scene) -> Result(Taken, vendor_purchase.Refusal) {
+fn taken(scene scene: Scene) -> Result(Taken, vendor_trade.Refusal) {
   vendor_purchase.take(
     body: scene.body,
     items: scene.items,

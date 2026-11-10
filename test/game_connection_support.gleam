@@ -53,6 +53,7 @@ import genesis_prime/message/unit_create_player.{
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stealth
 import genesis_prime/message/vendor_purchase.{VendorPurchase}
+import genesis_prime/message/vendor_sale.{VendorSale}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
@@ -736,6 +737,16 @@ pub fn in_world_stocking_holding_credits(
   vendors vendors: Vendors,
   credits credits: Int,
 ) -> game_connection.State {
+  in_world_stocking_holding(vendors:, credits:, items: [])
+}
+
+/// `in_world_stocking`'s Exile, whose store holds `credits` credits and, besides the
+/// Novice set, these `items` for it.
+pub fn in_world_stocking_holding(
+  vendors vendors: Vendors,
+  credits credits: Int,
+  items items: List(store.HeldItem),
+) -> game_connection.State {
   let character =
     Character(..world_character(), faction_id: spawn.exile_faction)
   let #(state, taken) =
@@ -757,7 +768,7 @@ pub fn in_world_stocking_holding_credits(
               character_support.epoch(1),
               None,
               None,
-              world_entry_support.novice_items(character:),
+              list.append(world_entry_support.novice_items(character:), items),
               [],
               [HeldCurrency(currency_type_id: 1, amount: credits)],
             ),
@@ -779,6 +790,18 @@ pub fn purchase_requested(
     vendor_purchase.encode(VendorPurchase(unique_id:, quantity:))
     as "a unique id and a quantity of 32 bits fit the message"
   read(state:, bytes: world_message(message_id: 0x00BE, body:))
+}
+
+/// The client's 0x0166 for `quantity` of the stack at a place (`vendor_sale`), read by the
+/// connection in the world.
+pub fn sale_requested(
+  state state: game_connection.State,
+  place place: item_place.ItemPlace,
+  quantity quantity: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let assert Ok(body) = vendor_sale.encode(VendorSale(place:, quantity:))
+    as "a place and a quantity of 32 bits fit the message"
+  read(state:, bytes: world_message(message_id: 0x0166, body:))
 }
 
 /// The ask of a `!summon` line of the tests' player: the run of the map that

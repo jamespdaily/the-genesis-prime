@@ -140,7 +140,7 @@ import genesis_prime/step.{type LogLevel, LogError, LogWarning}
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemMove,
   type ItemsAnswer, type SessionEpoch, Bought, ItemMade, ItemsNotSaved,
-  ItemsSaved, SaveRefused,
+  ItemsSaved, SaveRefused, Sold,
 }
 import genesis_prime/table/id.{type Item2Id}
 import genesis_prime/table/loader/store as table_store
@@ -1226,7 +1226,8 @@ pub fn answered(
             reason: stack_split,
           )),
           Send(case count == source.stack_count {
-            True -> removed(guid: source.item_guid, reason: stack_split)
+            True ->
+              item_removed_frame(guid: source.item_guid, reason: stack_split)
             False ->
               count_changed_frame(
                 guid: source.item_guid,
@@ -1236,7 +1237,10 @@ pub fn answered(
           }),
         ])
         Deleted(item:) -> #(moving.items, [
-          Send(removed(guid: item.item_guid, reason: player_requested)),
+          Send(item_removed_frame(
+            guid: item.item_guid,
+            reason: player_requested,
+          )),
         ])
         Split(..) -> panic as "the store answers a split with ItemMade"
       }
@@ -1272,6 +1276,7 @@ pub fn answered(
           panic as "the store answers only a split with ItemMade"
       }
     Bought(..) -> panic as "the store answers a purchase only to a vendor buy"
+    Sold(..) -> panic as "the store answers a sale only to a vendor sale"
     ItemsNotSaved -> #(items, [
       Log(
         level: LogWarning,
@@ -1316,7 +1321,7 @@ pub fn count_changed_frame(
 }
 
 /// The 0x148 that takes a held item away.
-fn removed(guid guid: Int, reason reason: Int) -> Frame {
+pub fn item_removed_frame(guid guid: Int, reason reason: Int) -> Frame {
   let assert Ok(body) =
     item_removed.encode(ItemRemoved(item_guid: guid, reason:))
     as "a guid and a reason of 6 bits fit 0x148"

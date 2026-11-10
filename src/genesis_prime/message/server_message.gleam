@@ -14,6 +14,7 @@ import genesis_prime/message/ability_tiers.{type AbilityTiers}
 import genesis_prime/message/account_entitlements.{type AccountEntitlements}
 import genesis_prime/message/action_set.{type ActionSet}
 import genesis_prime/message/bit_stream.{type DecodeError}
+import genesis_prime/message/buyback_added.{type BuybackAdded}
 import genesis_prime/message/buyback_list.{type BuybackList}
 import genesis_prime/message/camp_countdown.{type CampCountdown}
 import genesis_prime/message/character_list.{type CharacterList}
@@ -190,6 +191,7 @@ pub type ServerMessage {
   UnitDialogOpen(message: UnitDialogOpen)
   VendorItems(message: VendorItems)
   BuybackList(message: BuybackList)
+  BuybackAdded(message: BuybackAdded)
   GenericError(message: GenericError)
   RewardProperties(message: RewardProperties)
   CurrencyChanged(message: CurrencyChanged)
@@ -432,6 +434,7 @@ pub fn decode(
     0x0357 -> decoded(body, message_id, unit_dialog_open.decode, UnitDialogOpen)
     0x090B -> decoded(body, message_id, vendor_items.decode, VendorItems)
     0x00BC -> decoded(body, message_id, buyback_list.decode, BuybackList)
+    0x00BA -> decoded(body, message_id, buyback_added.decode, BuybackAdded)
     0x0106 -> decoded(body, message_id, generic_error.decode, GenericError)
     0x092C ->
       decoded(body, message_id, reward_properties.decode, RewardProperties)
@@ -529,6 +532,7 @@ pub fn name(message: ServerMessage) -> String {
     UnitDialogOpen(..) -> "unit_dialog_open"
     VendorItems(..) -> "vendor_items"
     BuybackList(..) -> "buyback_list"
+    BuybackAdded(..) -> "buyback_added"
     GenericError(..) -> "generic_error"
     RewardProperties(..) -> "reward_properties"
     CurrencyChanged(..) -> "currency_changed"
