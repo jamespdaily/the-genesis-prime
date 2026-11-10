@@ -54,8 +54,14 @@ pub fn counted(
     None -> #(session, [])
     Some(entered) -> {
       let tables = session.settings.tables
-      let advanced = objective.advance(log: entered.quests, tables:, event:)
-      let settled = settle(tables:, entered:, log: advanced.log)
+      let advanced =
+        objective.advance(
+          log: entered.quests,
+          tables:,
+          event:,
+          now_ms: now.monotonic_ms,
+        )
+      let settled = settle(tables:, entered:, log: advanced.log, now:)
       told(
         session:,
         now:,
@@ -88,6 +94,7 @@ pub fn settled(
           tables: session.settings.tables,
           entered:,
           log: entered.quests,
+          now:,
         ),
       )
   }
@@ -98,12 +105,14 @@ fn settle(
   tables tables: table_store.Tables,
   entered entered: world_entry.Entered,
   log log: quest_log.QuestLog,
+  now now: Now,
 ) -> objective.Advanced {
   objective.settle(
     log:,
     tables:,
     items: entered.items,
     zones: prerequisite_player.of(tables:, entered:).zones,
+    now_ms: now.monotonic_ms,
   )
 }
 

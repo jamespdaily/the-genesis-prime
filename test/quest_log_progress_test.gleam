@@ -97,7 +97,7 @@ pub fn progress_adds_and_marks_the_objective_done_at_its_count_test() -> Nil {
       quest_support.accepted(quest_id: counted_use, progress: [0]),
     ])
   let assert Ok(first) =
-    quest_log.progressed(log:, quest: counted, index: 0, amount: 1)
+    quest_log.progressed(log:, quest: counted, index: 0, amount: 1, now_ms: 0)
     as "an open objective takes progress"
   assert first.progress == 1 as "one use adds one"
   assert progress_of(row: saved(log: first.log, quest_id: counted_use)) == [1]
@@ -112,7 +112,7 @@ pub fn progress_adds_and_marks_the_objective_done_at_its_count_test() -> Nil {
       quest_support.accepted(quest_id: counted_use, progress: [4]),
     ])
   let assert Ok(last) =
-    quest_log.progressed(log:, quest: counted, index: 0, amount: 1)
+    quest_log.progressed(log:, quest: counted, index: 0, amount: 1, now_ms: 0)
     as "the objective is still open at 4 of 5"
   assert last.progress == 5 as "the fifth use makes the count"
   assert done_mask_of(row: saved(log: last.log, quest_id: counted_use)) == 0b1
@@ -121,7 +121,7 @@ pub fn progress_adds_and_marks_the_objective_done_at_its_count_test() -> Nil {
     as "the log reads the objective done"
 
   let assert Ok(capped) =
-    quest_log.progressed(log:, quest: counted, index: 0, amount: 9)
+    quest_log.progressed(log:, quest: counted, index: 0, amount: 9, now_ms: 0)
     as "a larger amount still applies to an open objective"
   assert capped.progress == 5 as "progress is capped at the needed count of 5"
   assert progress_of(row: saved(log: capped.log, quest_id: counted_use)) == [5]
@@ -144,10 +144,22 @@ pub fn progress_reaches_only_open_objectives_test() -> Nil {
         progress: [5],
       ),
     ])
-  assert quest_log.progressed(log: done, quest: counted, index: 0, amount: 1)
+  assert quest_log.progressed(
+      log: done,
+      quest: counted,
+      index: 0,
+      amount: 1,
+      now_ms: 0,
+    )
     == Error(Nil)
     as "a done objective takes no progress (0x1405510d0)"
-  assert quest_log.progressed(log: done, quest: counted, index: 1, amount: 1)
+  assert quest_log.progressed(
+      log: done,
+      quest: counted,
+      index: 1,
+      amount: 1,
+      now_ms: 0,
+    )
     == Error(Nil)
     as "an index past the quest's objectives takes none"
 
@@ -160,6 +172,7 @@ pub fn progress_reaches_only_open_objectives_test() -> Nil {
       quest: chain,
       index: 1,
       amount: 1,
+      now_ms: 0,
     )
     == Error(Nil)
     as "3668 objective 1 has flag 2 and waits for objective 0 (0x140553790)"
@@ -168,15 +181,28 @@ pub fn progress_reaches_only_open_objectives_test() -> Nil {
       quest: chain,
       index: 2,
       amount: 1,
+      now_ms: 0,
     )
     == Error(Nil)
     as "3668 objective 2 has flag 1 and follows objective 1, which is neither done nor reachable"
   let assert Ok(first) =
-    quest_log.progressed(log: nothing_done, quest: chain, index: 0, amount: 1)
+    quest_log.progressed(
+      log: nothing_done,
+      quest: chain,
+      index: 0,
+      amount: 1,
+      now_ms: 0,
+    )
     as "3668 objective 0 has no flag and is open"
   assert first.progress == 1
   let assert Ok(second) =
-    quest_log.progressed(log: first.log, quest: chain, index: 1, amount: 1)
+    quest_log.progressed(
+      log: first.log,
+      quest: chain,
+      index: 1,
+      amount: 1,
+      now_ms: 0,
+    )
     as "with objective 0 done, objective 1 is reachable"
   assert second.progress == 1
 
@@ -201,6 +227,7 @@ pub fn progress_reaches_only_open_objectives_test() -> Nil {
         quest: counted,
         index: 0,
         amount: 1,
+        now_ms: 0,
       )
       == Error(Nil)
       as {
@@ -219,7 +246,7 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
       quest_support.accepted(quest_id: gated_chain, progress: [0, 0, 0]),
     ])
   let assert Ok(first) =
-    quest_log.progressed(log:, quest: chain, index: 0, amount: 1)
+    quest_log.progressed(log:, quest: chain, index: 0, amount: 1, now_ms: 0)
     as "3668 objective 0 is open"
   assert !first.became_achieved
     as "objectives 1 and 2 of 3668 are still open, so the quest is not achieved"
@@ -232,7 +259,7 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
       quest_support.accepted(quest_id: skipped_then_gated, progress: [0, 0]),
     ])
   let assert Ok(only) =
-    quest_log.progressed(log:, quest: skipped, index: 1, amount: 1)
+    quest_log.progressed(log:, quest: skipped, index: 1, amount: 1, now_ms: 0)
     as "3297 objective 1 is reachable because objective 0 has flag 0x20"
   assert only.became_achieved
     as "objective 0 of 3297 has flag 0x20 and is skipped, so finishing objective 1 achieves it (0x1405fbdc0)"
@@ -250,11 +277,17 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
       quest_support.accepted(quest_id: talk_then_use, progress: [0, 0]),
     ])
   let assert Ok(talked) =
-    quest_log.progressed(log:, quest: pair, index: 0, amount: 1)
+    quest_log.progressed(log:, quest: pair, index: 0, amount: 1, now_ms: 0)
     as "9428 objective 0 is open"
   assert !talked.became_achieved as "9428 objective 1 is still open"
   let assert Ok(used) =
-    quest_log.progressed(log: talked.log, quest: pair, index: 1, amount: 1)
+    quest_log.progressed(
+      log: talked.log,
+      quest: pair,
+      index: 1,
+      amount: 1,
+      now_ms: 0,
+    )
     as "with objective 0 done, objective 1 (flag 2) is reachable"
   assert used.became_achieved as "the last open objective achieves the quest"
   assert quest_log.stored_state(log: used.log, quest_id: talk_then_use) == 2
@@ -265,7 +298,13 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
     == 0b11
     as "both done bits are saved"
 
-  assert quest_log.progressed(log: used.log, quest: pair, index: 0, amount: 1)
+  assert quest_log.progressed(
+      log: used.log,
+      quest: pair,
+      index: 0,
+      amount: 1,
+      now_ms: 0,
+    )
     == Error(Nil)
     as "a done objective takes none, in an Achieved quest too (0x1405510d0)"
   an_achieved_quest_takes_progress_on_its_optional_objectives()
@@ -280,7 +319,13 @@ fn an_achieved_quest_takes_progress_on_its_optional_objectives() -> Nil {
       quest_support.accepted(quest_id: optional_talk, progress: [0, 0, 0]),
     ])
   let assert Ok(skipped) =
-    quest_log.progressed(log: accepted, quest: optional, index: 0, amount: 1)
+    quest_log.progressed(
+      log: accepted,
+      quest: optional,
+      index: 0,
+      amount: 1,
+      now_ms: 0,
+    )
     as "5622 objective 0 has flag 0x20 and is open in an Accepted quest"
   assert !skipped.became_achieved
     as "5622's objectives 1 and 2 are still open, and the optional one does not count (0x1405fbc40)"
@@ -301,7 +346,13 @@ fn an_achieved_quest_takes_progress_on_its_optional_objectives() -> Nil {
   assert quest_log.state(log: achieved, quest: optional) == 2
     as "objectives 1 and 2 are done, so 5622 is Achieved without objective 0"
   let assert Ok(late) =
-    quest_log.progressed(log: achieved, quest: optional, index: 0, amount: 1)
+    quest_log.progressed(
+      log: achieved,
+      quest: optional,
+      index: 0,
+      amount: 1,
+      now_ms: 0,
+    )
     as "the optional objective of an Achieved quest is open, since only state 3 stops it (0x1405510d0)"
   assert late.progress == 1 as "the optional objective counts its one talk"
   assert !late.became_achieved
@@ -318,6 +369,7 @@ fn an_achieved_quest_takes_progress_on_its_optional_objectives() -> Nil {
       quest: optional,
       index: 0,
       amount: 1,
+      now_ms: 0,
     )
     == Error(Nil)
     as "once done it takes no more"
@@ -334,6 +386,7 @@ fn kill_objective(count count: Int) -> quest_log.Quest {
       data: 5006,
       reward_pane: 0,
       checklist: False,
+      time_limit_ms: 0,
     ),
   ])
 }
@@ -351,7 +404,8 @@ fn killed(
   quest quest: quest_log.Quest,
   kills kills: Int,
 ) -> quest_log.Progressed {
-  let assert Ok(first) = quest_log.progressed(log:, quest:, index: 0, amount: 1)
+  let assert Ok(first) =
+    quest_log.progressed(log:, quest:, index: 0, amount: 1, now_ms: 0)
     as "the first kill is taken"
   case kills {
     1 -> first
@@ -382,7 +436,13 @@ pub fn a_percent_kill_stores_thousandths_and_finishes_on_its_count_test() -> Nil
     })
     == [33, 66, 100]
     as "0x1406113b0 shows trunc(100 x (stored x 0.001f)) of the stored thousandths"
-  assert quest_log.progressed(log: third.log, quest: three, index: 0, amount: 1)
+  assert quest_log.progressed(
+      log: third.log,
+      quest: three,
+      index: 0,
+      amount: 1,
+      now_ms: 0,
+    )
     == Error(Nil)
     as "a done objective takes no more kills"
 
@@ -439,7 +499,7 @@ pub fn a_counted_kill_adds_one_per_kill_test() -> Nil {
     as "the done bit is set at the count"
   assert third.became_achieved as "and the only objective's quest is Achieved"
   let assert Ok(capped) =
-    quest_log.progressed(log:, quest: counted, index: 0, amount: 5)
+    quest_log.progressed(log:, quest: counted, index: 0, amount: 5, now_ms: 0)
     as "an amount past the count is taken"
   assert capped.progress == 3 as "and stops at the count (0x140551840)"
 

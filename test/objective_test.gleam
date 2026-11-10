@@ -144,7 +144,12 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
       quest_support.accepted(quest_id: 3668, progress: [0, 0, 0]),
     ])
   let talked =
-    objective.advance(log:, tables:, event: TalkedTo(Creature2Id(talk_target)))
+    objective.advance(
+      log:,
+      tables:,
+      event: TalkedTo(Creature2Id(talk_target)),
+      now_ms: 0,
+    )
   assert talked.effects
     == [
       SendProgress(quest_id: 3668, objective_index: 0, progress: 1),
@@ -163,10 +168,16 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
       log: talked.log,
       tables:,
       event: TalkedTo(Creature2Id(talk_target)),
+      now_ms: 0,
     )
     == Advanced(log: talked.log, effects: [])
     as "a done objective and gated objectives take nothing from a second talk"
-  assert objective.advance(log:, tables:, event: TalkedTo(Creature2Id(unnamed)))
+  assert objective.advance(
+      log:,
+      tables:,
+      event: TalkedTo(Creature2Id(unnamed)),
+      now_ms: 0,
+    )
     == Advanced(log:, effects: [])
     as "a creature no open objective names changes nothing"
 
@@ -186,6 +197,7 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
       log: achieved,
       tables:,
       event: TalkedTo(Creature2Id(talk_target)),
+      now_ms: 0,
     )
   assert late.effects
     == [SendProgress(quest_id: 5622, objective_index: 0, progress: 1)]
@@ -213,7 +225,12 @@ pub fn a_use_advances_each_open_type_12_objective_naming_the_creature_test() -> 
       ),
     ])
   let used =
-    objective.advance(log:, tables:, event: Used(Creature2Id(use_target)))
+    objective.advance(
+      log:,
+      tables:,
+      event: Used(Creature2Id(use_target)),
+      now_ms: 0,
+    )
   assert used.effects
     == [
       SendProgress(quest_id: 9207, objective_index: 0, progress: 1),
@@ -237,6 +254,7 @@ pub fn a_use_advances_each_open_type_12_objective_naming_the_creature_test() -> 
       log: waiting,
       tables:,
       event: Used(Creature2Id(use_target)),
+      now_ms: 0,
     )
     == Advanced(log: waiting, effects: [])
     as "9428's objective 1 has flag 2 and waits for objective 0, so it takes nothing (0x140553790)"
@@ -294,6 +312,7 @@ pub fn a_kill_advances_each_open_type_2_objective_naming_the_creature_test() -> 
       log:,
       tables:,
       event: killed(creature: kill_target, faction: unlisted_faction),
+      now_ms: 0,
     )
   assert slain.effects
     == [
@@ -314,6 +333,7 @@ pub fn a_kill_advances_each_open_type_2_objective_naming_the_creature_test() -> 
       log:,
       tables:,
       event: killed(creature: stranger, faction: unlisted_faction),
+      now_ms: 0,
     )
     == Advanced(log:, effects: [])
     as "a creature no open objective names changes nothing"
@@ -336,6 +356,7 @@ pub fn a_kill_advances_each_open_type_2_objective_naming_the_creature_test() -> 
       log: closed,
       tables:,
       event: killed(creature: kill_target, faction: unlisted_faction),
+      now_ms: 0,
     )
     == Advanced(log: closed, effects: [])
     as "a done objective, and a quest that is not in the active list, take no kill"
@@ -356,6 +377,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
       log:,
       tables:,
       event: killed(creature: group_member, faction: unlisted_faction),
+      now_ms: 0,
     )
   assert slain.effects
     == [
@@ -367,6 +389,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
       log:,
       tables:,
       event: killed(creature: stranger, faction: unlisted_faction),
+      now_ms: 0,
     )
     == Advanced(log:, effects: [])
     as "a creature outside the group advances neither"
@@ -389,6 +412,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
       log: factions,
       tables:,
       event: killed(creature: stranger, faction: 248),
+      now_ms: 0,
     )
   assert by_faction.effects
     == [SendProgress(quest_id: 3204, objective_index: 1, progress: 28)]
@@ -397,6 +421,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
       log: factions,
       tables:,
       event: killed(creature: stranger, faction: 249),
+      now_ms: 0,
     )
     == Advanced(log: factions, effects: [])
     as "a unit of another faction is not"
@@ -412,6 +437,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
       log: clustered,
       tables:,
       event: killed(creature: 4976, faction: unlisted_faction),
+      now_ms: 0,
     )
     == Advanced(log: clustered, effects: [])
     as "a type 15 objective takes no kill by its data"
@@ -420,6 +446,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
       log: clustered,
       tables: ranked,
       event: killed(creature: 4976, faction: unlisted_faction),
+      now_ms: 0,
     )
     == Advanced(log: clustered, effects: [])
     as "nor does the same objective as type 46"
@@ -448,6 +475,7 @@ pub fn a_kill_in_an_objectives_reward_pane_counts_test() -> Nil {
       log:,
       tables:,
       event: killed(creature: group_member, faction: unlisted_faction),
+      now_ms: 0,
     )
   assert slain.effects
     == [
@@ -459,6 +487,7 @@ pub fn a_kill_in_an_objectives_reward_pane_counts_test() -> Nil {
       log:,
       tables:,
       event: killed(creature: stranger, faction: unlisted_faction),
+      now_ms: 0,
     )
     == Advanced(log:, effects: [])
     as "a creature outside every pane changes nothing"
@@ -486,7 +515,7 @@ fn settled(
   items items: List(store.HeldItem),
   zones zones: List(Int),
 ) -> objective.Advanced {
-  objective.settle(log:, tables:, items:, zones:)
+  objective.settle(log:, tables:, items:, zones:, now_ms: 0)
 }
 
 pub fn settle_counts_held_type_4_items_in_the_counted_locations_test() -> Nil {
@@ -715,6 +744,7 @@ pub fn settle_counts_a_visit_once_its_objective_opens_test() -> Nil {
       log:,
       tables:,
       event: killed(creature: 73_499, faction: unlisted_faction),
+      now_ms: 0,
     )
   assert slain.effects
     == [SendProgress(quest_id: 10_520, objective_index: 3, progress: 1)]
@@ -774,12 +804,18 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: 3741, progress: [0]),
     ])
-  let used = objective.advance(log:, tables:, event: Used(collectible))
+  let used =
+    objective.advance(log:, tables:, event: Used(collectible), now_ms: 0)
   assert used.effects
     == [SendProgress(quest_id: 3741, objective_index: 0, progress: 1)]
     as "one cast of the collectible is one of the six"
   let again =
-    objective.advance(log: used.log, tables:, event: Used(collectible))
+    objective.advance(
+      log: used.log,
+      tables:,
+      event: Used(collectible),
+      now_ms: 0,
+    )
   assert again.effects
     == [SendProgress(quest_id: 3741, objective_index: 0, progress: 2)]
     as "and each later one is one more"
@@ -795,19 +831,34 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
         progress: [6],
       ),
     ])
-  assert objective.advance(log: done, tables:, event: Used(collectible))
+  assert objective.advance(
+      log: done,
+      tables:,
+      event: Used(collectible),
+      now_ms: 0,
+    )
     == Advanced(log: done, effects: [])
     as "a done objective takes nothing"
   let finished =
     quest_support.log_of(rows: [quest_support.completed(quest_id: 3741, at: 1)])
-  assert objective.advance(log: finished, tables:, event: Used(collectible))
+  assert objective.advance(
+      log: finished,
+      tables:,
+      event: Used(collectible),
+      now_ms: 0,
+    )
     == Advanced(log: finished, effects: [])
     as "a completed quest takes nothing"
   let other =
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: 1805, progress: [0, 0]),
     ])
-  assert objective.advance(log: other, tables:, event: Used(collectible))
+  assert objective.advance(
+      log: other,
+      tables:,
+      event: Used(collectible),
+      now_ms: 0,
+    )
     == Advanced(log: other, effects: [])
     as "a creature naming another quest does nothing for a quest whose type 32 objective it does not name"
 
@@ -821,6 +872,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       log: waiting,
       tables: named_elsewhere,
       event: Used(collectible),
+      now_ms: 0,
     )
     == Advanced(log: waiting, effects: [])
     as "an unreachable objective takes nothing (0x140553790)"
@@ -839,6 +891,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       log: reachable,
       tables: named_elsewhere,
       event: Used(collectible),
+      now_ms: 0,
     ).effects
     == [SendProgress(quest_id: 5857, objective_index: 1, progress: 1)]
     as "the same objective counts once the one before it is done"
@@ -846,6 +899,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       log:,
       tables: named_elsewhere,
       event: Used(collectible),
+      now_ms: 0,
     )
     == Advanced(log:, effects: [])
     as "and the creature now names quest 5857, so quest 3741's objective takes nothing from it"
