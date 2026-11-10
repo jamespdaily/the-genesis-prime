@@ -54,8 +54,12 @@ import genesis_prime/message/play_character.{type PlayCharacter}
 import genesis_prime/message/player_movement.{type PlayerMovement}
 import genesis_prime/message/pong.{type Pong}
 import genesis_prime/message/pre_game_activity.{type PreGameActivity}
+import genesis_prime/message/quest_abandon.{type QuestAbandon}
 import genesis_prime/message/quest_accept.{type QuestAccept}
+import genesis_prime/message/quest_ignore.{type QuestIgnore}
+import genesis_prime/message/quest_mention.{type QuestMention}
 import genesis_prime/message/quest_retry.{type QuestRetry}
+import genesis_prime/message/quest_track.{type QuestTrack}
 import genesis_prime/message/realm_select_start.{type RealmSelectStart}
 import genesis_prime/message/rename_character.{type RenameCharacter}
 import genesis_prime/message/scanbot_request.{type ScanbotRequest}
@@ -90,6 +94,10 @@ pub type ClientMessage {
   ChooseRealm(message: ChooseRealm)
   QuestAccept(message: QuestAccept)
   QuestRetry(message: QuestRetry)
+  QuestAbandon(message: QuestAbandon)
+  QuestMention(message: QuestMention)
+  QuestIgnore(message: QuestIgnore)
+  QuestTrack(message: QuestTrack)
   ClientControlEchoed(message: ClientControlEchoed)
   TerrainLoaded(message: TerrainLoaded)
   CampRequest(message: CampRequest)
@@ -179,6 +187,10 @@ pub fn decode(
     0x07DF -> decoded(body, message_id, choose_realm.decode, ChooseRealm)
     0x035B -> decoded(body, message_id, quest_accept.decode, QuestAccept)
     0x0365 -> decoded(body, message_id, quest_retry.decode, QuestRetry)
+    0x035A -> decoded(body, message_id, quest_abandon.decode, QuestAbandon)
+    0x0360 -> decoded(body, message_id, quest_mention.decode, QuestMention)
+    0x035E -> decoded(body, message_id, quest_ignore.decode, QuestIgnore)
+    0x0364 -> decoded(body, message_id, quest_track.decode, QuestTrack)
     0x0635 ->
       decoded(
         body,
@@ -286,6 +298,10 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     ChooseRealm(message:) -> choose_realm.encode(message)
     QuestAccept(message:) -> quest_accept.encode(message)
     QuestRetry(message:) -> quest_retry.encode(message)
+    QuestAbandon(message:) -> quest_abandon.encode(message)
+    QuestMention(message:) -> quest_mention.encode(message)
+    QuestIgnore(message:) -> quest_ignore.encode(message)
+    QuestTrack(message:) -> quest_track.encode(message)
     ClientControlEchoed(message:) -> client_control_echoed.encode(message)
     TerrainLoaded(message:) -> terrain_loaded.encode(message)
     CampRequest(message:) -> camp_request.encode(message)
@@ -350,6 +366,10 @@ pub fn message_id(message: ClientMessage) -> Int {
     ChooseRealm(..) -> choose_realm.message_id
     QuestAccept(..) -> quest_accept.message_id
     QuestRetry(..) -> quest_retry.message_id
+    QuestAbandon(..) -> quest_abandon.message_id
+    QuestMention(..) -> quest_mention.message_id
+    QuestIgnore(..) -> quest_ignore.message_id
+    QuestTrack(..) -> quest_track.message_id
     ClientControlEchoed(..) -> client_control_echoed.message_id
     TerrainLoaded(..) -> terrain_loaded.message_id
     CampRequest(..) -> camp_request.message_id
@@ -412,6 +432,10 @@ pub fn name(message: ClientMessage) -> String {
     ChooseRealm(..) -> "choose_realm"
     QuestAccept(..) -> "quest_accept"
     QuestRetry(..) -> "quest_retry"
+    QuestAbandon(..) -> "quest_abandon"
+    QuestMention(..) -> "quest_mention"
+    QuestIgnore(..) -> "quest_ignore"
+    QuestTrack(..) -> "quest_track"
     ClientControlEchoed(..) -> "client_control_echoed"
     TerrainLoaded(..) -> "terrain_loaded"
     CampRequest(..) -> "camp_request"

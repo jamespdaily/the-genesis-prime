@@ -12,8 +12,8 @@
 //// - The owning issues, as the step's design assigns them: the economy and loot
 ////   work #58, the paths and titles work #55, the player and account work #60
 ////   and the public events and challenges work #52.
-//// - 0x0360, the quest the client mentions, is left to the quest log's step, so
-////   no row takes it.
+//// - 0x0072 is an id the client sends that no row takes yet, so the measure
+////   counts it and the ranking lists it.
 //// - The planted folder is written and read back as `unhandled_ranking_test`'s
 ////   is.
 
@@ -104,8 +104,7 @@ pub fn dropped_ids_are_handled_and_the_missing_replies_are_stated_test() -> Nil 
         named(message_id: id) <> " is a routing row, so the measure counts it"
       }
   })
-  assert !list.contains(handled, 0x0360)
-    as "0x0360 has no row: the quest log's step takes it"
+  assert !list.contains(handled, 0x0072) as "0x0072 has no row"
   let assert Measured(types:, breaches:, ..) =
     measurement.from_values(
       engine: routing,
@@ -144,13 +143,13 @@ pub fn dropped_ids_are_handled_and_the_missing_replies_are_stated_test() -> Nil 
       }
     }
   })
-  assert list.any(types, fn(line) { line.type_number == 0x0360 })
+  assert list.any(types, fn(line) { line.type_number == 0x0072 })
     && !list.any(types, fn(line) {
-      line.type_number == 0x0360 && line.status == Handled
+      line.type_number == 0x0072 && line.status == Handled
     })
-    as "0x0360 is an id the client sends and is not handled"
+    as "0x0072 is an id the client sends and is not handled"
   // The ranking of a planted folder in which the client sent every recorded body
-  // of the thirteen ids and 0x0360.
+  // of the thirteen ids and 0x0072.
   use folder <- recording_support.in_folder
   let planted =
     wire.Planted(
@@ -160,7 +159,7 @@ pub fn dropped_ids_are_handled_and_the_missing_replies_are_stated_test() -> Nil 
     )
   let reads =
     list.append(list.map(dropped_support.recorded(), as_sent), [
-      carried(id: 0x0360, body: <<>>),
+      carried(id: 0x0072, body: <<>>),
     ])
   wire.write(
     folder:,
@@ -183,6 +182,6 @@ pub fn dropped_ids_are_handled_and_the_missing_replies_are_stated_test() -> Nil 
       let assert [_, id, ..] = string.split(string.trim(line), "  ")
       id
     })
-  assert ranked == ["0x0360"]
-    as "the thirteen ids are taken, so only 0x0360, which no row takes, is ranked"
+  assert ranked == ["0x0072"]
+    as "the thirteen ids are taken, so only 0x0072, which no row takes yet, is ranked"
 }

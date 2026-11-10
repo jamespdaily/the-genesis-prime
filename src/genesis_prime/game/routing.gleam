@@ -76,8 +76,12 @@ import genesis_prime/message/own_commodity_orders_request
 import genesis_prime/message/play_character
 import genesis_prime/message/player_movement
 import genesis_prime/message/pre_game_activity
+import genesis_prime/message/quest_abandon
 import genesis_prime/message/quest_accept
+import genesis_prime/message/quest_ignore
+import genesis_prime/message/quest_mention
 import genesis_prime/message/quest_retry
+import genesis_prime/message/quest_track
 import genesis_prime/message/rename_character
 import genesis_prime/message/scanbot_request
 import genesis_prime/message/send_chat_line
@@ -310,6 +314,25 @@ const table = [
     [AtWorld],
   ),
   Row(quest_retry.message_id, InsideWorldMessage, Quest(quest.Retry), [AtWorld]),
+  Row(
+    quest_abandon.message_id,
+    InsideWorldMessage,
+    Quest(quest.Abandon),
+    [AtWorld],
+  ),
+  Row(
+    quest_mention.message_id,
+    InsideWorldMessage,
+    Quest(quest.Mention),
+    [AtWorld],
+  ),
+  Row(quest_track.message_id, InsideWorldMessage, Quest(quest.Track), [AtWorld]),
+  Row(
+    quest_ignore.message_id,
+    InsideWorldMessage,
+    Quest(quest.Ignore),
+    [AtWorld],
+  ),
   Row(
     item_move.message_id,
     InsideWorldMessage,

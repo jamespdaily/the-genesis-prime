@@ -57,8 +57,12 @@ import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/pong.{Pong}
 import genesis_prime/message/pre_game_activity.{PreGameActivity}
+import genesis_prime/message/quest_abandon.{QuestAbandon}
 import genesis_prime/message/quest_accept.{QuestAccept}
+import genesis_prime/message/quest_ignore.{QuestIgnore}
+import genesis_prime/message/quest_mention.{QuestMention}
 import genesis_prime/message/quest_retry.{QuestRetry}
+import genesis_prime/message/quest_track.{QuestTrack}
 import genesis_prime/message/realm_select_start.{RealmSelectStart}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/scanbot_request.{ScanbotRequest}
@@ -501,11 +505,33 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       client_message.DialogResponsesShown(message: DialogResponsesShown),
     ),
     #(
+      0x035A,
+      client_message.QuestAbandon(message: QuestAbandon(quest_id: 1872)),
+    ),
+    #(
       0x035B,
       client_message.QuestAccept(message: QuestAccept(
         item: ItemPlace(location: 300, bag_index: 0xFFFF_FFFF),
         quest_id: 1872,
       )),
+    ),
+    #(
+      0x035E,
+      client_message.QuestIgnore(message: QuestIgnore(
+        quest_id: 1872,
+        ignored: 1,
+      )),
+    ),
+    #(
+      0x0360,
+      client_message.QuestMention(message: QuestMention(
+        quest_id: 1872,
+        mentioned: 1,
+      )),
+    ),
+    #(
+      0x0364,
+      client_message.QuestTrack(message: QuestTrack(quest_id: 1872, tracked: 1)),
     ),
     #(0x0365, client_message.QuestRetry(message: QuestRetry(quest_id: 2417))),
   ]

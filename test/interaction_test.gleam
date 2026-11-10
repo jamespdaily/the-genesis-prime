@@ -58,6 +58,7 @@ import gleam/option.{None}
 import gleam/set
 import owned_test
 import planted_table.{Integer}
+import quest_support
 import spawn_support
 import vendor_support
 
@@ -116,10 +117,19 @@ fn walker_appears(
   ))
 }
 
-/// A connection with Dorian Walker in its picture `gap` away, alive.
+/// A connection with Dorian Walker in its picture `gap` away, alive, whose player holds
+/// no quest.
 fn with_walker(gap gap: Float) -> game_connection.State {
+  with_walker_for(state: connection_support.in_world(), gap:)
+}
+
+/// Dorian Walker `gap` away, alive, in the picture of this connection.
+fn with_walker_for(
+  state state: game_connection.State,
+  gap gap: Float,
+) -> game_connection.State {
   connection_support.feed(
-    state: connection_support.in_world(),
+    state:,
     event: walker_appears(
       unit_id: walker_unit,
       gap:,
@@ -131,7 +141,15 @@ fn with_walker(gap gap: Float) -> game_connection.State {
 
 pub fn talk_to_giver_in_range_opens_dialog_test() -> Nil {
   use <- owned_test.run(10_000)
-  let state = with_walker(gap: reach -. 0.1)
+  // Walker receives quest 10520 and the player holds it Accepted, which the client's
+  // marking of the creature shows (opcode.0x7ea, `0x1405a8d40`).
+  let state =
+    with_walker_for(
+      state: connection_support.entered_with_quests(quests: [
+        quest_support.accepted(10_520, progress: [0, 0, 0, 0, 0]),
+      ]).0,
+      gap: reach -. 0.1,
+    )
   let #(state, taken) =
     connection_support.interaction_requested(
       state:,
@@ -156,12 +174,18 @@ pub fn talk_to_giver_in_range_opens_dialog_test() -> Nil {
 }
 
 /// A giver that does only one of giving and receiving (a row that gives or receives
-/// is a quest giver as well), asked for its dialog from 1.0 away.
-fn only_one_is_a_giver(tables tables: table_store.Tables) -> Nil {
+/// is a quest giver as well), asked for its dialog from 1.0 away by a player whose log
+/// holds this quest Accepted, which the client's marking shows for either list.
+fn only_one_is_a_giver(
+  tables tables: table_store.Tables,
+  held held: Int,
+) -> Nil {
   let #(_, taken) =
     connection_support.interaction_requested(
       state: connection_support.feed(
-        state: connection_support.medic_in(tables:),
+        state: connection_support.medic_in_holding(tables:, quests: [
+          quest_support.accepted(held, progress: [0, 0, 0, 0, 0]),
+        ]),
         event: walker_appears(
           unit_id: walker_unit,
           gap: 1.0,
@@ -180,7 +204,7 @@ pub fn a_creature_that_only_gives_a_quest_is_a_giver_test() -> Nil {
   use tables <- fixture_tables.changed(table: "Creature2", id: 74_812, with: [
     #("questIdReceive00", Integer(0)),
   ])
-  only_one_is_a_giver(tables:)
+  only_one_is_a_giver(tables:, held: 10_528)
 }
 
 pub fn a_creature_that_only_receives_a_quest_is_a_giver_test() -> Nil {
@@ -188,7 +212,7 @@ pub fn a_creature_that_only_receives_a_quest_is_a_giver_test() -> Nil {
   use tables <- fixture_tables.changed(table: "Creature2", id: 74_812, with: [
     #("questIdGiven00", Integer(0)),
   ])
-  only_one_is_a_giver(tables:)
+  only_one_is_a_giver(tables:, held: 10_520)
 }
 
 pub fn talk_to_refused_sends_nothing_test() -> Nil {
@@ -507,6 +531,7 @@ fn window_after(
       tables: character_tables.shared(),
       vendors: vendor_support.stocking(creature_ids: [74_812]),
       now_ms: 0,
+      offers: fn(_) { interaction.Offered },
       logged: set.new(),
     )
     as "the body is one the client's reader accepts"
