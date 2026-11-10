@@ -182,7 +182,7 @@ fn item() -> SharedItem {
     bag_index: 2,
     stack_count: 1,
     charges: 0,
-    field_8: 0,
+    random_stats: 0,
     field_9: 0,
     field_10: 0,
     durability: 0x3F80_0000,

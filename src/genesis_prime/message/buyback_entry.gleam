@@ -4,10 +4,11 @@
 //// A record inside a message body: one buyback entry as messages 0xBA and 0xBC
 //// carry it: the buyback id, the Item2 id and the quantity, the item property
 //// inputs (fields 4 to 21, read as message 0x111's are; the server writes the
-//// five multipliers, fields 9 to 13, as the float 1.0 and the rest as 0), the
-//// two amounts and their currency types as the tab shows them, and a last
-//// 32-bit value. Its fields are listed in `schema.toml` with the client's
-//// evidence, and the fact file's `opcode.0xba` names the record.
+//// random-stat word, field 4, as the item's, the five multipliers, fields 9 to
+//// 13, as the float 1.0 and the rest as 0), the two amounts and their currency
+//// types as the tab shows them, and a last 32-bit value. Its fields are listed
+//// in `schema.toml` with the client's evidence, and the fact file's
+//// `opcode.0xba` names the record.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
@@ -22,9 +23,7 @@ pub type BuybackEntry {
     buyback_id: Int,
     item_id: Int,
     quantity: Int,
-    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_4: Int,
+    random_stats: Int,
     /// Safe by `opcode.0xba.price`: the client's code gives this field no use
     /// the server needs, and that fact shows its value is safe.
     field_5: Int,
@@ -82,7 +81,7 @@ pub fn write(writer writer: Writer, record record: BuybackEntry) -> Writer {
   |> bit_stream.write_unsigned("buyback_id", record.buyback_id, 32)
   |> bit_stream.write_unsigned("item_id", record.item_id, 18)
   |> bit_stream.write_unsigned("quantity", record.quantity, 32)
-  |> bit_stream.write_unsigned("field_4", record.field_4, 64)
+  |> bit_stream.write_unsigned("random_stats", record.random_stats, 64)
   |> bit_stream.write_unsigned("field_5", record.field_5, 32)
   |> bit_stream.write_unsigned("field_6", record.field_6, 64)
   |> bit_stream.write_unsigned("field_7", record.field_7, 64)
@@ -112,7 +111,7 @@ pub fn read(reader: Reader) -> Result(#(BuybackEntry, Reader), DecodeError) {
   use #(buyback_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(item_id, reader) <- result.try(bit_stream.read_unsigned(reader, 18))
   use #(quantity, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_4, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
+  use #(random_stats, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
   use #(field_5, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_6, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
   use #(field_7, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
@@ -146,7 +145,7 @@ pub fn read(reader: Reader) -> Result(#(BuybackEntry, Reader), DecodeError) {
       buyback_id:,
       item_id:,
       quantity:,
-      field_4:,
+      random_stats:,
       field_5:,
       field_6:,
       field_7:,

@@ -8,7 +8,7 @@
 ////                                       ├─ refused ─▶ Refused([Log, Refuse(code)])   nothing asked, nothing changed
 ////                                       └─ accepted ─▶ Asks(sale) ─▶ the connection asks the store (request(..))
 //// the store's answer ─▶ answered(sale, items, currencies, buyback, answer)
-////                       Sold(amount):    items, the currency paid and buyback list updated; 0x919, then per stack 0x148 / 0x17F and 0xBA
+////                       Sold(amount, words): items, the currency paid and buyback list updated; 0x919, then per stack 0x148 / 0x17F and 0xBA
 ////                       ItemsNotSaved:   Warning, 0x106 5, nothing changed
 ////                       SaveRefused(c):  Error naming c, 0x106 5, nothing changed
 //// the connection then ─▶ inventory.regeared: a changed worn set sends 0x933, LookChanged and 0x93a
@@ -689,14 +689,18 @@ pub fn answered(
   answer answer: ItemsAnswer,
 ) -> #(List(HeldItem), Currencies, Buyback, List(Effect)) {
   case answer {
-    Sold(amount:) -> {
+    Sold(amount:, words:) -> {
       let stacks = [sale.first, ..sale.rest]
       let entries =
         list.index_map(stacks, fn(stack, position) {
+          let assert Ok(word) =
+            list.find(words, fn(word) { word.item_guid == stack.item_guid })
+            as "the store answers a sale with the word of each stack it sold"
           BuybackEntry(
             buyback_id: buyback.next_id + position,
             item2_id: stack.item2_id,
             quantity: stack.sold_count,
+            random_stats: word.random_stats,
             currency_type_id: sale.currency_type_id,
             amount: stack.paid,
           )
@@ -795,7 +799,8 @@ fn buyback_frame(entry entry: BuybackEntry) -> Frame {
 }
 
 /// An entry of the buyback list as the client's 0xBA and 0xBC carry it: the amount paid is
-/// its first amount, in its first currency type, the five multipliers are 1.0
+/// its first amount, in its first currency type, the random-stat word is the sold item's
+/// (`opcode.0xba.random_stats`), the five multipliers are 1.0
 /// (`opcode.0xba.random_stats`), and every other field the client's code gives no use is 0
 /// (`opcode.0xba.price`).
 pub fn buyback_entry_message(
@@ -809,7 +814,7 @@ pub fn buyback_entry_message(
     buyback_id: entry.buyback_id,
     item_id:,
     quantity: entry.quantity,
-    field_4: 0,
+    random_stats: entry.random_stats,
     field_5: 0,
     field_6: 0,
     field_7: 0,

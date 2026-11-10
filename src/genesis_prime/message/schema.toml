@@ -1846,7 +1846,7 @@ fields = [
 [[record]]
 name = "shared_item"
 evidence = "opcode.0x111.ability_bag"
-summary = "the item record message 0x111 carries: the GUID, the item id, the location and bag index, the stack count and charges, the durability and the values the client's code names only by width and position. Gap: the server writes no id in the list of realm and character ids (a count of 0), since the width of one entry is not read"
+summary = "the item record message 0x111 carries: the GUID, the item id, the location and bag index, the stack count and charges, the random-stat word, the durability and the values the client's code names only by width and position. Gap: the server writes no id in the list of realm and character ids (a count of 0), since the width of one entry is not read"
 fields = [
   { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
   { name = "field_2", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
@@ -1855,7 +1855,7 @@ fields = [
   { name = "bag_index", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
   { name = "stack_count", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
   { name = "charges", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
-  { name = "field_8", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "random_stats", kind = "unsigned", bits = 64, evidence = "opcode.0x111.shared_item_random_stats", named_by = "opcode.0x111.shared_item_random_stats" },
   { name = "field_9", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
   { name = "field_10", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
   { name = "durability", kind = "float32", evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
@@ -3052,12 +3052,12 @@ fields = [
 [[record]]
 name = "buyback_entry"
 evidence = "opcode.0xba"
-summary = "one buyback entry as messages 0xBA and 0xBC carry it: the buyback id, the Item2 id and the quantity, the item property inputs (fields 4 to 21, read as message 0x111's are; the server writes the five multipliers, fields 9 to 13, as the float 1.0 and the rest as 0), the two amounts and their currency types as the tab shows them, and a last 32-bit value"
+summary = "one buyback entry as messages 0xBA and 0xBC carry it: the buyback id, the Item2 id and the quantity, the item property inputs (fields 4 to 21, read as message 0x111's are; the server writes the random-stat word, field 4, as the item's, the five multipliers, fields 9 to 13, as the float 1.0 and the rest as 0), the two amounts and their currency types as the tab shows them, and a last 32-bit value"
 fields = [
   { name = "buyback_id", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba" },
   { name = "item_id", kind = "unsigned", bits = 18, evidence = "opcode.0xba", named_by = "opcode.0xba" },
   { name = "quantity", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba" },
-  { name = "field_4", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "random_stats", kind = "unsigned", bits = 64, evidence = "opcode.0xba.random_stats", named_by = "opcode.0xba.random_stats" },
   { name = "field_5", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
   { name = "field_6", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
   { name = "field_7", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },

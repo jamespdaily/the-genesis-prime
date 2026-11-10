@@ -146,7 +146,9 @@ pub fn turned_in_rewards_are_written_before_the_experience_and_the_state_test() 
     == [Item2Id(81_917), Item2Id(29_661)]
   let made =
     list.index_map(placed, fn(one, index) {
-      let assert [NewStack(location:, bag_index:, stack_count:)] = one.make
+      let assert [
+        NewStack(location:, bag_index:, stack_count:, random_stats: 0),
+      ] = one.make
         as "one stack of each, the Item2s' counts being 1"
       HeldItem(
         item_guid: 900 + index,
@@ -154,6 +156,7 @@ pub fn turned_in_rewards_are_written_before_the_experience_and_the_state_test() 
         location:,
         bag_index:,
         stack_count:,
+        random_stats: 0,
       )
     })
   let #(_, answered) =
@@ -186,7 +189,9 @@ pub fn reward_items_advance_the_held_item_objectives_of_other_quests_test() -> N
   let assert TurnInQuest(placed:, ..) = asked_turn_in(taken:)
   let made =
     list.index_map(placed, fn(one, index) {
-      let assert [NewStack(location:, bag_index:, stack_count:)] = one.make
+      let assert [
+        NewStack(location:, bag_index:, stack_count:, random_stats: 0),
+      ] = one.make
         as "one stack of each, the Item2s' counts being 1"
       HeldItem(
         item_guid: 900 + index,
@@ -194,6 +199,7 @@ pub fn reward_items_advance_the_held_item_objectives_of_other_quests_test() -> N
         location:,
         bag_index:,
         stack_count:,
+        random_stats: 0,
       )
     })
   let #(_, answered) =

@@ -486,6 +486,7 @@ pub fn answered(
               location: item.location,
               bag_index: item.bag_index,
               stack_count: item.stack_count,
+              random_stats: item.random_stats,
               reason:,
             ))
           }),

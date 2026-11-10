@@ -490,6 +490,7 @@ pub fn the_entry_sends_an_item_added_for_each_saved_item_with_its_saved_guid_and
       location: 1,
       bag_index: 3,
       stack_count: 5,
+      random_stats: 0,
     ),
     HeldItem(
       item_guid: 5_000_000_001,
@@ -497,6 +498,7 @@ pub fn the_entry_sends_an_item_added_for_each_saved_item_with_its_saved_guid_and
       location: 0,
       bag_index: 16,
       stack_count: 1,
+      random_stats: 0,
     ),
     HeldItem(
       item_guid: 7,
@@ -504,6 +506,7 @@ pub fn the_entry_sends_an_item_added_for_each_saved_item_with_its_saved_guid_and
       location: 0,
       bag_index: 15,
       stack_count: 1,
+      random_stats: 0,
     ),
   ]
   let #(effects, entered) =

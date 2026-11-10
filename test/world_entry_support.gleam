@@ -128,6 +128,7 @@ pub fn novice_items(character character: Character) -> List(HeldItem) {
           location: 0,
           bag_index: pair.1,
           stack_count: 1,
+          random_stats: 0,
         )
       })
     Error(Nil) -> []

@@ -99,6 +99,7 @@ fn item(location location: Int) -> HeldItem {
     location:,
     bag_index: 0,
     stack_count: 1,
+    random_stats: 0,
   )
 }
 

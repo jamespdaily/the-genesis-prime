@@ -629,16 +629,16 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
   assert turn_in.placed
     == [
       Placed(Item2Id(179), grow: [], make: [
-        NewStack(location: 1, bag_index: 2, stack_count: 1),
-        NewStack(location: 1, bag_index: 3, stack_count: 1),
-        NewStack(location: 1, bag_index: 4, stack_count: 1),
+        NewStack(location: 1, bag_index: 2, stack_count: 1, random_stats: 0),
+        NewStack(location: 1, bag_index: 3, stack_count: 1, random_stats: 0),
+        NewStack(location: 1, bag_index: 4, stack_count: 1, random_stats: 0),
       ]),
       Placed(
         Item2Id(6998),
         grow: [StackGrowth(item_guid: 601, held_count: 90, new_count: 100)],
         make: [
-          NewStack(location: 1, bag_index: 5, stack_count: 100),
-          NewStack(location: 1, bag_index: 6, stack_count: 40),
+          NewStack(location: 1, bag_index: 5, stack_count: 100, random_stats: 0),
+          NewStack(location: 1, bag_index: 6, stack_count: 40, random_stats: 0),
         ],
       ),
     ]
@@ -660,11 +660,11 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
   assert sum.placed
     == [
       Placed(Item2Id(179), grow: [], make: [
-        NewStack(location: 1, bag_index: 0, stack_count: 1),
-        NewStack(location: 1, bag_index: 1, stack_count: 1),
-        NewStack(location: 1, bag_index: 2, stack_count: 1),
-        NewStack(location: 1, bag_index: 3, stack_count: 1),
-        NewStack(location: 1, bag_index: 4, stack_count: 1),
+        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+        NewStack(location: 1, bag_index: 1, stack_count: 1, random_stats: 0),
+        NewStack(location: 1, bag_index: 2, stack_count: 1, random_stats: 0),
+        NewStack(location: 1, bag_index: 3, stack_count: 1, random_stats: 0),
+        NewStack(location: 1, bag_index: 4, stack_count: 1, random_stats: 0),
       ]),
     ]
     as "three fixed and two chosen of one Item2 are five stacks"

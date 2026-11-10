@@ -133,6 +133,7 @@ fn held(
     location:,
     bag_index: index,
     stack_count: count,
+    random_stats: 0,
   )
 }
 
@@ -297,7 +298,7 @@ fn entry_in(
     buyback_id:,
     item_id:,
     quantity:,
-    field_4: 0,
+    random_stats: 0,
     field_5: 0,
     field_6: 0,
     field_7: 0,
@@ -391,6 +392,7 @@ pub fn a_buyback_entry_sends_multipliers_of_one_test() -> Nil {
       quantity: 1,
       currency_type_id: currency.credits_type,
       amount: 10,
+      random_stats: 0,
     ))
   // `opcode.0xba.random_stats`: the client builds the properties with 5 multipliers read
   // as 32-bit floats, and 0x3f800000 is the float 1.0 (IEEE 754 single precision).
@@ -440,7 +442,9 @@ pub fn selling_a_whole_stack_removes_it_pays_the_shown_price_and_adds_a_buyback_
       items:,
       currencies: scene.credits,
       buyback: Buyback(next_id: 3, entries: []),
-      answer: store.Sold(amount: 1105),
+      answer: store.Sold(amount: 1105, words: [
+        store.SoldWord(item_guid: 11, random_stats: 0),
+      ]),
     )
   assert left == [] as "the stack is gone"
   assert currency.credits(currencies: held_credits) == 1105
@@ -452,6 +456,7 @@ pub fn selling_a_whole_stack_removes_it_pays_the_shown_price_and_adds_a_buyback_
         quantity: 7,
         currency_type_id: 1,
         amount: 105,
+        random_stats: 0,
       ),
     ])
     as "the sale is the buyback list's entry 3, the next id 4"
@@ -494,7 +499,9 @@ pub fn selling_part_of_a_stack_lowers_its_count_and_pays_for_the_part_sold_test(
       items:,
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
-      answer: store.Sold(amount: 102),
+      answer: store.Sold(amount: 102, words: [
+        store.SoldWord(item_guid: 12, random_stats: 0),
+      ]),
     )
   assert left == [in_bag(guid: 12, item2_id: 20_791, index: 0, count: 3)]
     as "the stack keeps the 3 not sold"
@@ -507,6 +514,7 @@ pub fn selling_part_of_a_stack_lowers_its_count_and_pays_for_the_part_sold_test(
         quantity: 2,
         currency_type_id: 1,
         amount: 2,
+        random_stats: 0,
       ),
     ]
     as "lua.Vendor.buyback_price: the entry holds the 2 items sold and the 2 credits"
@@ -796,7 +804,9 @@ pub fn a_sale_at_the_credit_cap_still_sells_and_its_entry_keeps_the_full_price_t
       items:,
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
-      answer: store.Sold(amount: 500_000),
+      answer: store.Sold(amount: 500_000, words: [
+        store.SoldWord(item_guid: 11, random_stats: 0),
+      ]),
     )
   assert left == [] as "the item still leaves"
   assert currency.credits(currencies: held_credits) == 500_000
@@ -815,6 +825,7 @@ pub fn a_sale_at_the_credit_cap_still_sells_and_its_entry_keeps_the_full_price_t
         quantity: 3,
         currency_type_id: 1,
         amount: 30,
+        random_stats: 0,
       ),
     ]
     as "lua.Vendor.buyback_price: the entry holds the price the sale paid for the stack, before the cap"
@@ -868,7 +879,11 @@ pub fn sell_junk_sells_every_sellable_category_94_stack_in_the_bags_test() -> Ni
       items:,
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
-      answer: store.Sold(amount: 106),
+      answer: store.Sold(amount: 106, words: [
+        store.SoldWord(item_guid: 1, random_stats: 0),
+        store.SoldWord(item_guid: 5, random_stats: 0),
+        store.SoldWord(item_guid: 7, random_stats: 0),
+      ]),
     )
   assert list.map(left, fn(item) { item.item_guid }) == [2, 3, 4, 6]
     as "the stacks not sold stay held"
@@ -1045,7 +1060,9 @@ pub fn selling_a_worn_item_removes_it_with_0x148_reason_vendor_and_adds_a_buybac
       items:,
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
-      answer: store.Sold(amount: 178),
+      answer: store.Sold(amount: 178, words: [
+        store.SoldWord(item_guid: 16, random_stats: 0),
+      ]),
     )
   assert left == [bagged]
     as "the worn item leaves the held items; the stack in the bags stays"
@@ -1066,6 +1083,7 @@ pub fn selling_a_worn_item_removes_it_with_0x148_reason_vendor_and_adds_a_buybac
         quantity: 1,
         currency_type_id: 1,
         amount: 78,
+        random_stats: 0,
       ),
     ]
     as "opcode.0xba.price: the sale is the buyback list's entry 1"
@@ -1115,7 +1133,9 @@ pub fn selling_an_item_priced_in_glory_pays_its_row_amount_in_glory_and_its_entr
       items:,
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
-      answer: store.Sold(amount: 60),
+      answer: store.Sold(amount: 60, words: [
+        store.SoldWord(item_guid: 21, random_stats: 0),
+      ]),
     )
   assert left == [] as "the item leaves"
   assert currency.held(currencies: held_currencies, currency_type_id: 7) == 60
@@ -1144,6 +1164,7 @@ pub fn selling_an_item_priced_in_glory_pays_its_row_amount_in_glory_and_its_entr
         quantity: 1,
         currency_type_id: 7,
         amount: 60,
+        random_stats: 0,
       ),
     ]
     as "opcode.0xba.price: the entry names Glory (type 7) and the 60 paid"
@@ -1179,7 +1200,9 @@ pub fn a_sale_past_a_currency_cap_stops_that_currency_at_its_cap_and_its_entry_k
       items:,
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
-      answer: store.Sold(amount: 5000),
+      answer: store.Sold(amount: 5000, words: [
+        store.SoldWord(item_guid: 21, random_stats: 0),
+      ]),
     )
   assert currency.held(currencies: held_currencies, currency_type_id: 2) == 5000
   assert currency.credits(currencies: held_currencies) == 100

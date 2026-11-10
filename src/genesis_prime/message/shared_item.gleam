@@ -3,11 +3,11 @@
 ////
 //// A record inside a message body: the item record message 0x111 carries: the
 //// GUID, the item id, the location and bag index, the stack count and charges,
-//// the durability and the values the client's code names only by width and
-//// position. Gap: the server writes no id in the list of realm and character
-//// ids (a count of 0), since the width of one entry is not read. Its fields
-//// are listed in `schema.toml` with the client's evidence, and the fact file's
-//// `opcode.0x111.ability_bag` names the record.
+//// the random-stat word, the durability and the values the client's code names
+//// only by width and position. Gap: the server writes no id in the list of
+//// realm and character ids (a count of 0), since the width of one entry is not
+//// read. Its fields are listed in `schema.toml` with the client's evidence,
+//// and the fact file's `opcode.0x111.ability_bag` names the record.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
@@ -28,9 +28,7 @@ pub type SharedItem {
     bag_index: Int,
     stack_count: Int,
     charges: Int,
-    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
-    /// field no use the server needs, and that fact shows its value is safe.
-    field_8: Int,
+    random_stats: Int,
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
     field_9: Int,
@@ -96,7 +94,7 @@ pub fn write(writer writer: Writer, record record: SharedItem) -> Writer {
   |> bit_stream.write_unsigned("bag_index", record.bag_index, 32)
   |> bit_stream.write_unsigned("stack_count", record.stack_count, 32)
   |> bit_stream.write_unsigned("charges", record.charges, 32)
-  |> bit_stream.write_unsigned("field_8", record.field_8, 64)
+  |> bit_stream.write_unsigned("random_stats", record.random_stats, 64)
   |> bit_stream.write_unsigned("field_9", record.field_9, 32)
   |> bit_stream.write_unsigned("field_10", record.field_10, 64)
   |> bit_stream.write_float32_bits("durability", record.durability)
@@ -127,7 +125,7 @@ pub fn read(reader: Reader) -> Result(#(SharedItem, Reader), DecodeError) {
   use #(bag_index, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(stack_count, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(charges, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_8, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
+  use #(random_stats, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
   use #(field_9, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_10, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
   use #(durability, reader) <- result.try(bit_stream.read_float32_bits(reader))
@@ -169,7 +167,7 @@ pub fn read(reader: Reader) -> Result(#(SharedItem, Reader), DecodeError) {
       bag_index:,
       stack_count:,
       charges:,
-      field_8:,
+      random_stats:,
       field_9:,
       field_10:,
       durability:,

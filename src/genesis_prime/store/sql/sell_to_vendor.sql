@@ -10,7 +10,9 @@
 -- only when every stack named is the character's, at the location named, with the count it
 -- is held with; a stack that is missing, that another login moved or that holds another
 -- count stops the whole sale, and it changes nothing and returns no row. The account's id
--- is in the statement, as for a load. The row it returns holds the amount after the sale.
+-- is in the statement, as for a load. The rows it returns are one for each stack sold, each with the amount after the sale and
+-- the stack's random-stat word as the database held it, which the buyback entry keeps (a sale
+-- names at least one stack).
 --
 -- The statement runs after lock_character_for_save.sql in one transaction, so it waits for
 -- a login that is raising the epoch and then reads the epoch that login stored.
@@ -58,7 +60,7 @@ removed as (
     and held.character_id = $1
     and sold.sold_count = sold.held_count
     and exists (select 1 from allowed)
-  returning held.item_guid
+  returning held.item_guid, held.random_stats
 ),
 lowered as (
   update character_item as held
@@ -68,7 +70,16 @@ lowered as (
     and held.character_id = $1
     and sold.sold_count < sold.held_count
     and exists (select 1 from allowed)
-  returning held.item_guid
+  returning held.item_guid, held.random_stats
 )
-select paid.amount as amount
-from paid;
+select
+  paid.amount as amount,
+  gone.item_guid,
+  gone.random_stats
+from paid
+join (
+  select item_guid, random_stats from removed
+  union all
+  select item_guid, random_stats from lowered
+) as gone on true
+order by gone.item_guid;

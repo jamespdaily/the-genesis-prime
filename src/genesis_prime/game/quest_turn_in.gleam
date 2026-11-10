@@ -714,6 +714,7 @@ fn after(
         location: stack.location,
         bag_index: stack.bag_index,
         stack_count: stack.stack_count,
+        random_stats: stack.random_stats,
       )
     }),
   )
@@ -862,6 +863,7 @@ pub fn answered(
                 location: stack.location,
                 bag_index: stack.bag_index,
                 stack_count: stack.stack_count,
+                random_stats: stack.random_stats,
                 reason: quest_reason,
               )
             }),

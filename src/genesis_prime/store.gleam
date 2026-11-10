@@ -126,7 +126,9 @@ pub type Character {
 /// (opcode.0x111.guid). `location` is 0 (equipped), 1 (inventory) or 2 (bank)
 /// and `bag_index` the slot in it (the client's own numbers; the table's checks
 /// hold the ranges); ability items (location 4) are not stored. `stack_count` is
-/// 1 or more.
+/// 1 or more. `random_stats` is the item's random-stat word as the client reads it
+/// (`opcode.0x111.shared_item_random_stats`): chosen when the item was made, sent as it is
+/// with the item, and 0 for an item with no roll.
 pub type HeldItem {
   HeldItem(
     item_guid: Int,
@@ -134,6 +136,7 @@ pub type HeldItem {
     location: Int,
     bag_index: Int,
     stack_count: Int,
+    random_stats: Int,
   )
 }
 
@@ -341,7 +344,7 @@ pub type ItemsRequest {
   /// reads as 0) and each stack of `sold` is held with its `held_count` at its
   /// `location`: one statement that sets that currency to `after` (making its row when
   /// none is held), deletes each stack sold whole and lowers each stack sold in part.
-  /// Answered by `Sold` with the amount held after.
+  /// Answered by `Sold` with the amount held after and the word of each stack sold.
   SellToVendor(
     account_id: AccountId,
     character_id: CharacterId,
@@ -390,10 +393,16 @@ pub type StackGrowth {
   StackGrowth(item_guid: Int, held_count: Int, new_count: Int)
 }
 
-/// A stack a purchase makes, at a place that holds no item: the place and the count
-/// of the new row, whose Item2 is the request's.
+/// A stack a purchase or a reward makes, at a place that holds no item: the place, the
+/// count and the random-stat word of the new row, whose Item2 is the request's.
 pub type NewStack {
-  NewStack(location: Int, bag_index: Int, stack_count: Int)
+  NewStack(location: Int, bag_index: Int, stack_count: Int, random_stats: Int)
+}
+
+/// The random-stat word of a stack a sale sold, as the database held it
+/// (`opcode.0xba.random_stats`: the buyback entry carries it).
+pub type SoldWord {
+  SoldWord(item_guid: Int, random_stats: Int)
 }
 
 /// What the STS login asks the store.
@@ -517,8 +526,8 @@ pub type ItemsAnswer {
   /// the guid the database gave it.
   Bought(amount: Int, made: List(HeldItem))
   /// A sale's rows are saved: `amount` is what the character holds of the sale's
-  /// currency after it.
-  Sold(amount: Int)
+  /// currency after it, and `words` the random-stat word each stack sold held, by guid.
+  Sold(amount: Int, words: List(SoldWord))
   /// A turn-in's rows are saved: `credits` is what the character holds of credits after
   /// the turn-in, and `made` the new stacks, each with the guid the database gave it.
   TurnedIn(credits: Int, made: List(HeldItem))

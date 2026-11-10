@@ -674,6 +674,7 @@ fn selling_state() -> game_connection.State {
             location: 1,
             bag_index: 0,
             stack_count: 5,
+            random_stats: 0,
           ),
         ],
       ),
@@ -748,7 +749,15 @@ pub fn a_sell_sent_while_the_store_works_is_held_and_taken_after_test() -> Nil {
     connection_support.answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(store.ForItems(store.Sold(amount: 102)))),
+      outcome: step.Answer(
+        FromStore(
+          store.ForItems(
+            store.Sold(amount: 102, words: [
+              store.SoldWord(item_guid: 1, random_stats: 0),
+            ]),
+          ),
+        ),
+      ),
     )
   assert connection_support.written_ids(answered) == [0x0919, 0x017F, 0x00BA]
     as "opcode.0x919 (the total), 0x17F (3 left, reason 7) and 0xBA (the buyback entry): the sale's answer goes out first, then the held line is taken"
@@ -814,7 +823,15 @@ fn sold(
   connection_support.answer(
     state:,
     taken:,
-    outcome: step.Answer(FromStore(store.ForItems(store.Sold(amount: credits)))),
+    outcome: step.Answer(
+      FromStore(
+        store.ForItems(
+          store.Sold(amount: credits, words: [
+            store.SoldWord(item_guid: 1, random_stats: 0),
+          ]),
+        ),
+      ),
+    ),
   ).0
 }
 
@@ -905,6 +922,7 @@ pub fn the_buyback_list_survives_a_world_change_and_is_empty_after_entering_the_
           location: 1,
           bag_index: 0,
           stack_count: 5,
+          random_stats: 0,
         ),
       ],
     )
@@ -1015,7 +1033,15 @@ pub fn selling_a_worn_item_sends_0x148_then_0x933_and_0x93a_and_tells_each_viewe
     connection_support.answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(store.ForItems(store.Sold(amount: 150)))),
+      outcome: step.Answer(
+        FromStore(
+          store.ForItems(
+            store.Sold(amount: 150, words: [
+              store.SoldWord(item_guid: 1, random_stats: 0),
+            ]),
+          ),
+        ),
+      ),
     )
   assert connection_support.written_ids(answered)
     == [0x0919, 0x0148, 0x00BA, 0x0933, 0x093A, 0x092F]

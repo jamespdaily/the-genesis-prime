@@ -92,6 +92,7 @@ fn held() -> List(HeldItem) {
       location: 1,
       bag_index: 0,
       stack_count: 1,
+      random_stats: 0,
     ),
   ])
 }
@@ -504,6 +505,7 @@ fn with_spare(item2_id: Int) -> List(HeldItem) {
       location: 1,
       bag_index: 1,
       stack_count: 1,
+      random_stats: 0,
     ),
   ])
 }
@@ -651,6 +653,7 @@ fn in_bag(
     location: 1,
     bag_index: index,
     stack_count: count,
+    random_stats: 0,
   )
 }
 
@@ -1127,6 +1130,7 @@ fn worn_with_slot_zero(item2_id: Int) -> List(HeldItem) {
       location: 1,
       bag_index: 0,
       stack_count: 1,
+      random_stats: 0,
     ),
   ])
 }
@@ -1305,6 +1309,7 @@ fn with_two_bags() -> List(HeldItem) {
       location: 0,
       bag_index: 17,
       stack_count: 1,
+      random_stats: 0,
     ),
     HeldItem(
       item_guid: 21,
@@ -1312,6 +1317,7 @@ fn with_two_bags() -> List(HeldItem) {
       location: 1,
       bag_index: 0,
       stack_count: 1,
+      random_stats: 0,
     ),
   ])
 }
@@ -1412,6 +1418,7 @@ fn worn_bag(
     location: 0,
     bag_index: slot,
     stack_count: 1,
+    random_stats: 0,
   )
 }
 

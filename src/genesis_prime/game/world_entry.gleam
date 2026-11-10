@@ -401,13 +401,16 @@ pub type Buyback {
 }
 
 /// One sale on the buyback list: the id the client names it by, the Item2 sold,
-/// how many were sold and what the vendor paid for them all: `amount` of the currency
-/// `currency_type_id` (a CurrencyType row's id), before the currency's cap.
+/// how many were sold, the random-stat word the item held (which the entry carries to the
+/// client and a buy back gives the item again) and what the vendor paid for them all:
+/// `amount` of the currency `currency_type_id` (a CurrencyType row's id), before the
+/// currency's cap.
 pub type BuybackEntry {
   BuybackEntry(
     buyback_id: Int,
     item2_id: Item2Id,
     quantity: Int,
+    random_stats: Int,
     currency_type_id: Int,
     amount: Int,
   )
@@ -1189,6 +1192,7 @@ fn items_sent(items items: List(store.HeldItem)) -> List(Effect) {
       location: item.location,
       bag_index: item.bag_index,
       stack_count: item.stack_count,
+      random_stats: item.random_stats,
     )
   })
 }
@@ -1211,6 +1215,7 @@ fn loadout_sent(
         location: ability_location,
         bag_index:,
         stack_count: 1,
+        random_stats: 0,
       )
     })
   let innate = case loadout.innate {
@@ -1252,6 +1257,7 @@ fn held_item(
   location location: Int,
   bag_index bag_index: Int,
   stack_count stack_count: Int,
+  random_stats random_stats: Int,
 ) -> Effect {
   Send(inventory.item_added_frame(
     item_guid:,
@@ -1259,6 +1265,7 @@ fn held_item(
     location:,
     bag_index:,
     stack_count:,
+    random_stats:,
     reason: held_from_the_start,
   ))
 }

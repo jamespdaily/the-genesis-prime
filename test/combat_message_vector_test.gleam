@@ -195,7 +195,7 @@ pub fn an_ability_is_a_shared_item_at_location_4_and_a_reason_test() -> Nil {
         bag_index: 2,
         stack_count: 0x21,
         charges: 0x22,
-        field_8: 0x3132333435363738,
+        random_stats: 0x3132333435363738,
         field_9: 0x41,
         field_10: 0x5152535455565758,
         durability: 0x3FC00000,
