@@ -6834,10 +6834,10 @@ gap = "Read from the C; not emulated."
 name = "PowerLevelOverrideItemBudgetCurve"
 
 ["0x14040dbf0"]
-statement = "Adds a shield item's innate shield properties, in place of ratings, armor and health: ShieldCapacityMax (41) = the shield curve at the power level x a capacity factor; ShieldRegenPct (176), ShieldRebootTime (178) and ShieldMitigationMax (175) from their own factors. Each factor is read at the item budget's fraction for that property, or 0.5 when the item has no budget entry for it. A Novice shield (Item2 8534 or 8535, power level 2, no budget) gives ShieldCapacityMax 450, ShieldRegenPct 0.15, ShieldRebootTime 5125 and ShieldMitigationMax 0.625. A value within 84 float steps of zero is not added."
-proof = "Decompiled: returns 0 unless the builder's 0xc0 (the shield flag of PrepareItemPropertyBuilder); x = 0.5 (0x140b79e48, bytes 00 00 00 3f) into 0x14041d420, 0x14041d540, 0x14041d660, 0x14041d780; the builder's five budget entries at 0x118/0x11c (kind 1 and property 0x29, 0xaf, 0xb0, 0xb2) replace x with the ItemBudget row's value (0x108 + 4 + 4i), and those entries are filled only by 0x14040ca70 through 0x14040e6d0, which BuildItemProperties runs only for an item with an itemBudgetId or itemStatId; curve object 0x140c8abe8 (class 0x140b66a88, slot 1 0x14041d850) at the output's 0xc; 0x14040e610(…, 0x29, curve x factor), then 0xb0, 0xb2, 0xaf added inline after the 84-step test. Emulated helpers (emulate requests, 0x140200220 standing in with the planted row, args [0, 0.5]): 0x14041d420 with GameFormula 1260 -> 1.0; 0x14041d540 with 1260 -> 0.15000001; 0x14041d660 with 1261 -> 0.625; 0x14041d780 with 1261 -> 5125; 0x14041d850 with 548 at power level 2 -> 450.0. Rows: `gleam run -m genesis_prime/table_rows -- GameFormula 1260`, `1261`, `548`; `Item2 8534`, `Item2 8535` (budget 0, stat 0, power level 2, type 53, slot 43 ArmorShields)."
+statement = "Adds a shield item's innate shield properties, in place of ratings, armor and health: ShieldCapacityMax (41) = the shield curve at the power level x a capacity factor; ShieldRegenPct (176), ShieldRebootTime (178) and ShieldMitigationMax (175) from their own factors. Each factor is read at the item budget's fraction for the resolved ItemStat entry naming that property, or 0.5 when no entry names it; a shield property does not also get budget points, and two entries naming the same one give one value, not a sum. A Novice shield (Item2 8534 or 8535, power level 2, no budget) gives ShieldCapacityMax 450, ShieldRegenPct 0.15, ShieldRebootTime 5125 and ShieldMitigationMax 0.625. A value within 84 float steps of zero is not added."
+proof = "Saved C 0x14040dbf0 (737aa5af0120fae9) and its helpers 0x14041d420, 0x14041d540, 0x14041d660, 0x14041d780 (each sure). Emulated through 0x14056a430 with run_held.py on Item2 48170 (budget 51: 0.75, 0.75, 0, 0.5; ItemStat 439 = kind 2 x 4 on group 14 = 41, 175, 176, 178; power level 50): word 0x0100000004030201 gives 41 = 12656.25 (0x4645c100, factor 1.125 at 0.75), 175 = 0.8125 (0x3f500000, at 0.75), 176 = 0.05 (0x3d4ccccd, at 0), 178 = 5125.0 (0x45a02800, at 0.5); 0x0100000001020304 gives 41 = 11250.0 (0x462fc800), 176 = 0.2 (0x3e4ccccd), 178 = 2687.0 (0x4527f000), 175 = 0.25 (0x3e800000); 0x0100000000000000 gives 11250.0, 0.15 (0x3e19999a), 5125.0, 0.625 (0x3f200000); 0x0100000003020101 gives 41 = 12656.25, 175 = 0.25, 176 = 0.15, 178 = 5125.0. Each list holds only those four properties."
 grade = "fairly sure"
-gap = "0x14040dbf0 itself is not emulated (its helpers are); that the builder's budget entries are zero for an item with no budget rests on the callers' clearing of the builder, not fully read."
+gap = "Two entries picking the same shield property with different budget fractions are not tested (48170's duplicates are both 0.75); the no-budget Novice case rests on the helpers' emulation and the callers' clearing of the builder."
 name = "AddShieldItemProperties"
 
 ["0x14041d420"]
@@ -6885,10 +6885,10 @@ gap = "Run only on lists with free entries, each property added once, none of th
 name = "AddItemProperty"
 
 ["0x14040c610"]
-statement = "Prepares an item's property builder from its item record: looks up the Item2 row, its Item2Type, Item2Family, Item2Category, ItemBudget and ItemStat rows and the ItemSlot its type names (none for family 33 or category 143); the slot modifier is ItemSlot.armorModifier (1.0 with no slot) and the armor modifier Item2Category.armorModifier x that; the item is a shield when its type, category or family flags hold 0x400 and its equipped slot flags hold 0x8000 (ArmorShields); the effective power level is the record's power level (Item2.powerLevel) unless the item scales (Item2.flags bit 3)."
-proof = "Decompiled: builder 0xe0 = 0x1402096e0 (Item2) on record 0; 0xe8 = 0x14020a3a0 (Item2Type) on 0x144; 0xf0 = 0x140209f60 (Item2Family) on 0x140; 0xf8 = 0x140209b20 (Item2Category) on 0x148; 0x108 = 0x14020a7e0 (ItemBudget) on 0x168; 0x110 = 0x14020ac20 (ItemStat) on 0x16c; 0x100 = 0x14020e7a0 (ItemSlot) on Item2Type's 8 (itemSlotId), cleared when 0x140 == 0x21 or 0x148 == 0x8f; 0xc8 = ItemSlot 0x14 (armorModifier) or 1.0; 0xc4 = Item2Category 0x20 (armorModifier) x 0xc8; 0xb8 = record 0x14c bit 3, 0xbc bit 20; 0xc0 = (record 0x154 & 0x400) and record 0x180 & 0x8000; then 0x14040d060, which sets the output's 4 and 0xc (the power level, or the builder's 0x18 when 0xb8 is set) and passes 0xc to the level-scaling 0x14040f710, which leaves it when the builder's 0x1c is 0 and its 0x28..0x34 limits are 0. Table names from each lookup's PTR_u_ string; column offsets from `gleam run -m genesis_prime/table_rows -- <Table> --columns`."
+statement = "Prepares an item's property builder from its item record: looks up the Item2 row, its Item2Type, Item2Family, Item2Category, ItemBudget and ItemStat rows and the ItemSlot its type names (none for family 33 or category 143); the slot modifier is ItemSlot.armorModifier (1.0 with no slot) and the armor modifier Item2Category.armorModifier x that; the item is a shield when its type, category or family flags hold 0x400 and its equipped slot flags hold 0x8000 (ArmorShields); the effective power level is the record's power level (Item2.powerLevel) unless the item scales (Item2.flags bit 3). Random stats: builder 0x88 points at the unpacked word (builder 0x58); when it is set and its version is below 1, builder 0x78 = that version and the word goes through ConvertOld 0x14040bdf0, and on a conversion builder 0x88 points at the converted struct (builder 0x7c); otherwise builder 0x78 = 1. Builder 0x78 below 1 makes the rune data (0xa0 by 0x14040bcd0, 0xb0 as three 10-bit values) read in their old format."
+proof = "Decompiled: builder 0xe0 = 0x1402096e0 (Item2) on record 0; 0xe8 = 0x14020a3a0 (Item2Type) on 0x144; 0xf0 = 0x140209f60 (Item2Family) on 0x140; 0xf8 = 0x140209b20 (Item2Category) on 0x148; 0x108 = 0x14020a7e0 (ItemBudget) on 0x168; 0x110 = 0x14020ac20 (ItemStat) on 0x16c; 0x100 = 0x14020e7a0 (ItemSlot) on Item2Type's 8 (itemSlotId), cleared when 0x140 == 0x21 or 0x148 == 0x8f; 0xc8 = ItemSlot 0x14 (armorModifier) or 1.0; 0xc4 = Item2Category 0x20 (armorModifier) x 0xc8; 0xb8 = record 0x14c bit 3, 0xbc bit 20; 0xc0 = (record 0x154 & 0x400) and record 0x180 & 0x8000; then 0x14040d060, which sets the output's 4 and 0xc (the power level, or the builder's 0x18 when 0xb8 is set) and passes 0xc to the level-scaling 0x14040f710, which leaves it when the builder's 0x1c is 0 and its 0x28..0x34 limits are 0. Table names from each lookup's PTR_u_ string; column offsets from `gleam run -m genesis_prime/table_rows -- <Table> --columns`. Random-stat path from the instructions at 0x14040c635..0x14040c6a1 (cmp eax,1; jge; 0x14040bdb0; 0x14040bdf0; 0x14040bd50 into builder 0x7c)."
 grade = "fairly sure"
-gap = "Read from the decompile; which caller fills the builder's level-scaling words (0x18..0x34) for a unit's equipped item is not read, so the power level is the row's only for an item outside scaling (as every Novice item, flags bit 3 clear)."
+gap = "Apart from the random-stat path, read from the decompile; which caller fills the builder's level-scaling words (0x18..0x34) for a unit's equipped item is not read, so the power level is the row's only for an item outside scaling (as every Novice item, flags bit 3 clear). The old rune format is not decoded."
 name = "PrepareItemPropertyBuilder"
 
 ["0x14040d060"]
@@ -12833,9 +12833,10 @@ grade = "fairly sure"
 gap = "Read from the saved C; property fields 4 to 8 and 14 to 21 are named only as 0x111's inputs, not one by one. Not seen live."
 
 ["opcode.0xba.random_stats"]
-statement = "In buyback_entry (0xBA and each entry of 0xBC), fields 9 to 13 are the item's five multipliers, 32-bit floats. GetBuybackItems builds every entry's properties with a FIXED multiplier count of 5 read from them, and ItemBudgetToStatPoints multiplies each fixed-budget (kind 1) stat point by the multiplier of its index, so an entry whose fields 9 to 13 are 1.0f (0x3f800000) shows its stats unchanged and a 0 leaves every fixed-budget stat out of the buyback tooltip (AddItemProperty 0x14040e610 adds nothing within 84 ulps of 0)."
-proof = "Reader 0x14008e3e0 puts fields 9 to 13 at +0x34 (saved C 8eb22adb6de47956). Handler 0x1403b8790 passes them to AddBuybackItem 0x1403b8a60, which stores them at entry +0x4c (saved C 2580df99bb1ce2aa and 8eb22adb6de47956). GetBuybackItems 0x14065b2b0 (saved C 49fd5a78aaad3411) sets the builder's multiplier count (+0x48) to 5 and its multiplier pointer (+0x50) to entry +0x4c, then calls BuildItemProperties unconditionally. AddItemBudgetProperties 0x14040ca70 calls ItemBudgetToStatPoints 0x14040d3d0 (cc54e920d5411539), which multiplies a kind-1 point by float[i] for i < count, and adds each result through AddItemProperty 0x14040e610."
-grade = "sure"
+statement = "In buyback_entry (0xBA and each entry of 0xBC): field_4 (u64) is the random-stat word, field_5 (u32) the rune-slot value, field_6 (u64) the 4+3x10 value, field_8 (18 bits) the category-143 id, fields 9 to 13 the five multipliers as 32-bit floats, fields 14 to 21 list B (its count is the highest nonzero entry), field_26 the item level. GetBuybackItems builds every entry's properties with a FIXED multiplier count of 5, so fields 9 to 13 must be 1.0f (0x3f800000) for an unchanged stat: a 0 makes every fixed-budget (kind 1) stat 0 in the buyback tooltip."
+proof = "Reader 0x14008e3e0 (8eb22adb6de47956) puts field_4 at +0x10, field_5 +0x18, field_6 +0x20, field_7 +0x28, field_8 +0x30, fields 9-13 +0x34, fields 14-21 +0x48. Handler 0x1403b8790 (2580df99bb1ce2aa) passes them to AddBuybackItem 0x1403b8a60 (8eb22adb6de47956), stored at entry +0x30 (field_4), +0x38, +0x40, +0x48, +0x4c, +0x60/+0x64, +0xf8 (field_26). GetBuybackItems 0x14065b2b0 (49fd5a78aaad3411): builder +0x58 = 0x14040bd50(entry+0x30), +0x70 = rune split of +0x38, +0x38 = split of +0x40, +0x40 = entry+0x48, +0x48 = 5, +0x50 = entry+0x4c, level 0x140445320(entry+0xf8), then BuildItemProperties unconditionally. ItemBudgetToStatPoints 0x14040d3d0 (cc54e920d5411539) multiplies a kind-1 point by float[i] for i < count."
+grade = "fairly sure"
+gap = "field_7 (u64, entry+0x28) has no reader found in GetBuybackItems; its use is unknown."
 
 ["lua.Vendor.buyback_price"]
 statement = "The Vendor addon's buyback tab shows and checks nAmount1 as the whole price of the entry (it multiplies by nStackSize only outside the buyback tab), disables Buy when nAmount1 is above the player's amount of eCurrencyType1, and buys back the whole sold entry (no quantity). After a buy back it shows GetSellPrice x nStackSize as the cost. So nAmount1 should be what the sale paid: trunc(base x sell multiplier) x quantity."
@@ -12926,10 +12927,10 @@ gap = "What the output's flag bit 1 means to its readers is not read."
 name = "AddItemBudgetProperties"
 
 ["0x14040e6d0"]
-statement = "Resolves an item's five ItemStat entries into (kind, property) pairs, using the item's random-stat bytes, where byte i serves entry i (bytes 5 and 6 are unused here). Kinds 0 and 1 are copied. Kind 2: itemStatData is an ItemRandomStatGroup id, and byte b (1-based) picks the b-th ItemRandomStat row of that group in table order, giving that row's kind and property. Kind 4: byte b names property b - 1, allowed only when 0x14040f120 passes (properties 5, 29, 32, 33, 34, 37, 47, 56, 57, 58). An entry with no bytes, a byte of 0, a byte past the group's size or a refused property becomes kind 0, so it adds nothing. It fails (0x70 for kind 2, 0x50 for kind 4) only when the item has random-stat data. A negative kind, kind 3 or kind 5 and up becomes kind 0 and fails with 0x70. ItemRandomStat.weight is not read: the client never rolls."
-proof = "Saved C 0x14040e6d0 (8eb22adb6de47956): zeroes 0x28 bytes of builder 0x118; for i < 5, kind = ItemStat 4 + 4i, data = ItemStat 0x18 + 4i; bVar11 = (0x14040bdb0(bytes) & 0xfeffffffffffffff) != 0; kind 2: b = bytes[i], list = 0x1400b5f60 (map at tableset 0x68), list 8 = rows, 0x10 = count; row 0xc / 0x10 = itemStatTypeEnum / itemStatData; kind 4: iVar5 = b - 1 (0xc5 when no bytes or b == 0), 0x14040f120(iVar5). Map built in 0x1404422f0 (737aa5af0120fae9). `gleam run -m genesis_prime/table_rows -- UnitProperty2 0..199` filtered by flags & 0x204 == 0x204 and itemCraftingGroupFlagBitMask & 0x7f gives the 10 properties. Emulated end to end (emulate request on FillItemInfo 0x1404445d0 to 0x140444b93, past its BuildItemProperties 0x14040c310 call; follow_calls; no instance data, so no random-stat bytes and no multipliers): the client's own getters, loaders and RecordById 0x1407c1ab0 read rows planted in the shared-table layout (class 0x140b79850) from `gleam run -m genesis_prime/table_rows -- Item2 1375 8441 1156` and whole Item2Family, Item2Category, Item2Type, ItemSlot, ItemBudget, ItemStat, UnitProperty2, GameFormula, ItemRuneInstance and ItemQuality, by scratch scripts emulate_items.py and run_fill.py; stand-ins: 0x1407dd89c (atexit) returning 0, 0x14018b280 (AllocMemory) heap_alloc, 0x1407db590 (memcpy, reached only to grow the empty per-level curve cache, 0 bytes) returning 0, and an empty item-display-source map at the caller's 0x20 (read by 0x140444130 for the display id only). Lists read back (ids at output 0x94, values at 0xd0): 1375 (34, 0x42804000 64.125), (35, 8.0999994), (42, 45.0), (7, 135.0), scale at output 0x18 0x40cd3334, ratio 0x1c 1.0; 8441 (34, 0x42828000 65.25), (32, 0x422e0000 43.5), (35, 1670.625), (36, 556.875), scale 10.875; 1156 (34, 0x430cb332 140.69998), (47, 0x42713332 60.299995), (36, 129.59999), scale 0x41a0cccc. Its kind-0 and kind-1 copies ran there (ItemStat 4, 20, 51)."
+statement = "Resolves an item's five ItemStat entries into (kind, property) pairs, using the item's random-stat bytes, where byte i serves entry i alone, even when several entries name the same group (bytes 5 and 6 are unused here). Kinds 0 and 1 are copied. Kind 2: itemStatData is an ItemRandomStatGroup id, and byte b (1-based) picks the b-th ItemRandomStat row of that group in table order, giving that row's kind and property; two entries may pick the same property, and on a non-shield item their budget values add. Kind 4: byte b names property b - 1, allowed only when 0x14040f120 passes (properties 5, 29, 32, 33, 34, 37, 47, 56, 57, 58). The item has random-stat data when its word has any bit set other than bit 56, so version 1 with all bytes 0 has none and version 2 and up always has some. Without data, an entry with byte 0, a byte past the group's size or a refused property becomes kind 0 and adds nothing. With data, the same entry fails the whole build (0x70 for kind 2, 0x50 for kind 4). A negative kind, kind 3 or kind 5 and up becomes kind 0 and fails with 0x70. ItemRandomStat.weight is not read: the client never rolls."
+proof = "Saved C 0x14040e6d0 (cc54e920d5411539): has data = (0x14040bdb0(bytes) & 0xfeffffffffffffff) != 0; kind 2: b = bytes[i], list = 0x1400b5f60 (map at tableset 0x68, built in 0x1404422f0), list 8 = rows, 0x10 = count; row 0xc / 0x10 = itemStatTypeEnum / itemStatData; kind 4: 0x14040f120(b - 1). Emulated with run_held.py: FillItemInfo 0x1404445d0 to 0x140444b93, then BuildHeldItemProperties 0x14056a430 to 0x14056a8d1 with the word at held item 0xb0 and the group map planted from `gleam run -m genesis_prime/table_rows -- ItemRandomStat` (group 11 = 34, 47, 32, 29, 57; group 14 = 41, 175, 176, 178). Item2 48169 (budget 25: 0.3, 0.2, 0.5; ItemStat 432 = kind 2 x 3 on group 11): 0x0100000000030201 gives (34, 0x42960001), (47, 0x42480000), (32, 0x42fa0000), (35, 0x43340000); 0x0100000000010405 gives (57, 0x42960001), (29, 0x42480000), (34, 0x42fa0000), (35); 0x0100000000020101 gives (34, 0x42fa0001), (47, 0x42fa0000), (35); 0x0200000000030201 is the same as version 1; 0x0100000000010106, 0x0100000000000201 and 0x0200000000000000 return 0x70. Item2 48170 (shield): 0x0100000000000005 returns 0x70; 0x0100000000000000 builds with result 0."
 grade = "fairly sure"
-gap = "Kinds 2 and 4 are read from the decompile; the emulated items have only kinds 0 and 1 and no random-stat bytes. An emulation with planted random-stat bytes and the ItemRandomStat group map (tableset 0x68, built in 0x1404422f0) would settle it."
+gap = "Kind 4 is read from the decompile only; no emulated item has a kind-4 entry."
 name = "ResolveItemStatEntries"
 
 ["0x14040f120"]
@@ -12946,30 +12947,29 @@ grade = "fairly sure"
 gap = "A group whose rows are not contiguous would start a second list under the same id; all 14 groups are contiguous, so this does not occur in this client's data."
 
 ["0x14040bd50"]
-statement = "Unpacks an item's random-stat word: the low 7 bytes are the per-entry choice bytes and the top byte is a version. A zero word gives version 1, or 0 for Item2Family 1 and 2."
-proof = "Saved C 0x14040bd50 (8eb22adb6de47956); the same unpacking inlined in 0x14056a430 (49fd5a78aaad3411) for held item 0xb0."
-grade = "fairly sure"
-gap = "Read from the decompile, not from the instructions."
+statement = "Unpacks an item's random-stat word into a 12-byte struct: the low 7 bytes go to struct bytes 0..6 (byte 7 is left as it was) and the top byte to the int at struct 8, as 0..255. A zero word gives struct 0 = 0 and version 1, or version 0 when the item record is given and its Item2Family is 1 or 2."
+proof = "Instructions of 0x14040bd50 show that a zero word stores qword 0 at [rcx] and 1 at [rcx+8], then 0 at [rcx+8] when r8 is non-null and family - 1 <= 1; a nonzero word stores bytes 0..6 at [rcx]..[rcx+6] and movzx of the top byte at [rcx+8]. Emulated through 0x14056a430, which inlines the same unpacking at held item 0xb0 into builder 0x58: word 0x0100000000030201 unpacks to 010203000000000001000000 (run_held.py)."
+grade = "sure"
+name = "UnpackItemRandomStats"
 
 ["0x14040bdf0"]
-statement = "Converts an item's random-stat word of version 0 (an older format) into choice bytes; it does nothing unless the word is nonzero with top byte 0."
-proof = "Saved C 0x14040bdf0 (8eb22adb6de47956): returns 0 unless word != 0 and word >> 56 == 0; the conversion writes a stack buffer the decompile lost. Called from 0x14040c610 when builder 0x58's version is 0."
-grade = "guess"
-gap = "Disassembling 0x14040bdf0 would settle the old format's layout; a server that always sends version >= 1 never reaches it."
+statement = "Converts an item's version-0 random-stat word: a nonzero word whose top byte is 0 is replaced by 0x0100000000000000 (every choice cleared, version 1) and it returns 1; any other word (zero, or version 1 and up) is left as it was and it returns 0. So a version-0 word silently gives every kind-2 and kind-4 entry kind 0."
+proof = "Instructions of 0x14040bdf0 show that unpacks the word (a zero word gives version 1), returns 0 when version >= 1, otherwise stores 0x0100000000000000 through its pointer and returns 1. Emulated: held item 48169 with word 0x0000000000030201 builds with result 0 and only (35, 180.0), whereas 0x0100000000030201 gives 34, 47 and 32 too (run_held.py)."
+grade = "sure"
 name = "ConvertOldItemRandomStats"
 
 ["0x14056a430"]
-statement = "Builds a held item's display properties from its instance data: the Item2 record, the 18-bit item id at 0x90 (an item of category 143 sets the budget points from its own power level and quality), the multiplier count at 0x94 and floats at 0x98, the random-stat word at 0xb0, rune data (0xb8, 0xbc, 0xdc, 0xe0) and the level words (0xe8), then calls BuildItemProperties. It returns at once when Item2.flags bit 3 is clear and all those fields are 0."
-proof = "Saved C 0x14056a430 (49fd5a78aaad3411): builder 0x10 = item 0x40, 0x40 = item 0x90, 0x44 = 1, 0x48 = item 0x94, 0x50 = &item 0x98, 0x58 = unpacked item 0xb0, 0x38 = item 0x68, 0x60 = item 0xb8, 0x68 = &item 0xbc, 0x70 = item 0x60; 0x140445320(item 0xe8); BuildItemProperties(builder, item 0x48, tableset, item 0x50). Filled by 0x14056aa20 (2580df99bb1ce2aa) from message 0x111's shared item record."
+statement = "Builds a held item's display properties from its instance data: the Item2 record, the 18-bit item id at 0x90 (an item of category 143 sets the budget points from its own power level and quality), the multiplier count at 0x94 and floats at 0x98, the random-stat word at 0xb0 (unpacked into 0x58 as 0x14040bd50 does), rune data (0xb8, 0xbc, 0xdc, 0xe0) and the level words (0xe8), then calls BuildItemProperties. It returns at once when Item2.flags bit 3 is clear and all those fields are 0. When BuildItemProperties fails, it calls ReportError (0x1c), which writes an error report and lets the client go on, frees and nulls 0x48, 0x50, 0x58, 0x60 and 0x68 and returns 0x80004005; the item stays (caller 0x140569d30 ignores the result; caller 0x14056aa20 zeroes item 0x90 on a negative result). On success it sets 1 at DAT_140c65898 + 0x558."
+proof = "Saved C 0x14056a430 (cc54e920d5411539): builder 0x10 = item 0x40, 0x40 = item 0x90, 0x44 = 1, 0x48 = item 0x94, 0x50 = &item 0x98, 0x58 = unpacked item 0xb0, 0x38 = item 0x68, 0x60 = item 0xb8, 0x68 = &item 0xbc, 0x70 = item 0x60; 0x140445320(item 0xe8); BuildItemProperties(builder, item 0x48, DAT_140c658f0, item 0x50) at 0x14056a8cc; the failure branch calls ReportError(&DAT_140c8af2c, 0x1c, ...) then frees the five fields. Emulated to 0x14056a8d1 with run_held.py on Item2 48169 and 48170: valid words return 0 with the lists in the 0x14040e6d0 and 0x14040dbf0 records; a zero word returns before building (42 steps); bad bytes return 0x70 from BuildItemProperties."
 grade = "fairly sure"
-gap = "Read from the decompile; the level words (0x140445320) are not followed."
+gap = "The level words (0x140445320) are not followed; the failure branch after 0x14056a8d1 is read from the decompile, and what the tooltip shows once 0x48 is null is not traced."
 name = "BuildHeldItemProperties"
 
 ["opcode.0x111.shared_item_random_stats"]
-statement = "The server sends a worn item's random stats; the client does not roll them. In the shared item record: the u64 after the charges (record 0x28) is the random-stat word (low 7 bytes choose each ItemStat entry's kind-2 row or kind-4 property, top byte is the version, 0 means none); the 3-bit count and its floats (record 0x74, 0x78) are per-entry multipliers on the kind-1 entries' points, entry i using float i, missing ones 1.0; the 18-bit value at record 0x70 is an Item2 id whose power level and quality set the budget points when its category is 143. With none of them, kinds 2 and 4 give nothing and kind 1 gives its full points."
-proof = "Reader 0x14008c0d0 (8eb22adb6de47956): u64 at 0x28, 18 bits at 0x70, 3-bit count at 0x74 then count x 4 bytes at 0x78. Copier 0x14056aa20 (2580df99bb1ce2aa): item 0x90 = record 0x70, 0x94 = count, 0x98.. = floats with the rest of 5 set to 0x3f800000, 0xb0 = record 0x28; then 0x14056a430. Use in 0x14040e6d0, 0x14040d3d0 (builder 0x50 applied only for i < count and kind 1) and 0x14040d5d0 (category 0x8f)."
+statement = "The server sends a worn item's random stats; the client does not roll them. In the shared item record: the u64 after the charges (record 0x28, schema field_8) is the random-stat word, sent as the integer (1 << 56) | b0 | b1 << 8 | b2 << 16 | b3 << 24 | b4 << 32, where bi (1..group size) chooses ItemStat entry i's kind-2 row (or b - 1 its kind-4 property) and the top byte is the version; 0 means none. Version 0 with any byte set is silently cleared to none and makes the rune data read in their old format; versions 2 to 255 act as 1 but always count as data. A word with data whose kind-2 byte is 0 or past its group's size (or whose kind-4 byte is refused) fails the item's property build: the client writes an error report, drops the item's instance properties and keeps the item. The 3-bit count and its floats (record 0x74, 0x78) are per-entry multipliers on the kind-1 entries' points, entry i using float i, missing ones 1.0; the 18-bit value at record 0x70 is an Item2 id whose power level and quality set the budget points when its category is 143. With none of them, kinds 2 and 4 give nothing and kind 1 gives its full points."
+proof = "Reader 0x14008c0d0 (8eb22adb6de47956): u64 at 0x28 by ReadUint64 0x14006c120 (least significant bit first, as bit_stream.gleam writes, so little-endian on a byte boundary), 18 bits at 0x70, 3-bit count at 0x74 then count x 4 bytes at 0x78. Copier 0x14056aa20 (2580df99bb1ce2aa): item 0x90 = record 0x70, 0x94 = count, 0x98.. = floats with the rest of 5 set to 0x3f800000, 0xb0 = record 0x28; then 0x14056a430. Use in 0x14040c610, 0x14040bdf0, 0x14040e6d0, 0x14040d3d0 (builder 0x50 applied only for i < count and kind 1) and 0x14040d5d0 (category 0x8f). Emulated expectations on Item2 48169 and 48170 are in the 0x14040e6d0 and 0x14040dbf0 records."
 grade = "fairly sure"
-gap = "Builds on opcode.0x111.shared_item_unnamed; the old version-0 word (0x14040bdf0) is not read."
+gap = "Builds on opcode.0x111.shared_item_unnamed; what the tooltip shows after a failed build is not traced."
 
 ["0x140673160"]
 statement = "Splits an item's display properties for the tooltip Lua: properties 7 (BaseHealth), 35 (AssaultRating), 36 (SupportRating), 41 and 42 (Armor) go to arInnateProperties, all others (and every property of an Item2Family 33 item) to arBudgetBasedProperties; each entry is made by 0x1406769c0 with eProperty, nSortOrder and nValue = the property's float as stored (x a constant for 175-176 percentages and 178 seconds), plus nDiff against a compared item. Budget and innate values on one property are already summed by then. ToolTips.lua sorts each list by nSortOrder and prints Tooltips_StatEven (text 542995 '$1c $2n') with nValue."
@@ -13707,3 +13707,132 @@ statement = "How a type 32 (virtual item) objective is fed: the client's virtual
 proof = "0x1405fcd70 (virtual item list from the log), 0x1405a8b30 (the quest anim columns), `gleam run -m genesis_prime/table_rows -- Creature2 12919`, `-- QuestObjective 4813`."
 grade = "guess"
 gap = "That a finished activate cast of such a creature is what the original server counts as one virtual item is a guess; a retail recording of such a creature would settle it. 448 of the 709 type 32 rows have no creature link in the tables."
+
+["0x14040bdb0"]
+statement = "Packs an unpacked random-stat struct back into its word: (low byte of the version int << 56) | struct bytes 6..0."
+proof = "Instructions of 0x14040bdb0 show that the result is built from struct bytes 6 down to 0 and the version's movzx byte shifted by 56. Callers: 0x14040e6d0 (the has-data test) and 0x14040c610 (before ConvertOld)."
+grade = "sure"
+name = "PackItemRandomStats"
+
+["0x14056aa20"]
+name = "SetHeldItemRandomStats"
+statement = "Copies a held item's random stats from a server message: the 18-bit value, the multiplier count, the random-stat word, then count floats with no bound. Slots count..4 are filled with 1.0, the item is marked changed, the properties are rebuilt (the item's first qword is cleared if the rebuild fails), and the UI event ItemModified is raised. Because the word is written before the float copy, count 6 writes the unread padding before the word, and count 7 overwrites the low 4 bytes of the word (the choice bytes for entries 0-3)."
+proof = "Disassembly 14056aa7f mov [rbx+0x90],edi; 14056aa85 mov [rbx+0x94],esi; 14056aa8b mov [rbx+0xb0],rax; 14056aa92 cmp esi,4 (unrolled copy); 14056ab1a cmp esi,5; 14056ab33 rep stosd (1.0); 14056ab38 [rbx+0x124]=1; 14056ab4b qword [rbx+0x90]=0. Saved C 0x14056aa20 (cc54e920d5411539). The held-item constructor 0x140569a60 sets +0x98..+0xa8 to 1.0 and never writes +0xac. Offsets: 18-bit value +0x90, count +0x94, floats +0x98, padding +0xac, word +0xb0, changed flag +0x124."
+grade = "fairly sure"
+gap = "Count 7's damage to +0xb0 is read from the store order; not run live."
+
+["opcode.0x111.shared_item_multipliers"]
+statement = "list_a in shared_item is a 3-bit count and count raw 32-bit values that the client uses as f32 budget multipliers. No receive or display code refuses or clamps them (negatives, 0 and NaN pass through). Only the first 5 are used. The server should send count 0..5, and count 0 (all 1.0) for an item that was not crafted."
+proof = "0x14008c0d0 (8eb22adb6de47956) lines 49-54: ReadBits8 3 at +0x74, AllocateMessageSpace(count*4), ReadBytesAsBits. 0x14040d3d0 (8eb22adb6de47956): for kind-1 entries with i < +0x48, point i is multiplied by float i; the loop is while i < 5. See 0x14056aa20 for counts 6 and 7."
+grade = "fairly sure"
+gap = "Not run on the live client: that a count of 5 with values other than 1.0 shows as expected."
+
+["opcode.0x56c"]
+statement = "Message 0x56c, world server to client: sets a held item's random-stat inputs. Body: item GUID (u64), a u64 (the crafter's character id), the random-stat word (u64), the 18-bit category-143 id, a 3-bit count and that many 32-bit floats (the per-entry multipliers). The handler finds the held item by GUID, calls 0x14056aa20 (the copier that sets the word, the 18-bit id and the multipliers, padding the missing ones with 1.0, and rebuilds the stats), and stores the crafter's id on the item."
+proof = "Reader 0x1400a3d50 (8eb22adb6de47956). Handler 0x1403b8540 (13906f95d07bb7f9): FindHeldItemByGuid; 0x14056aa20(item, rec+0x18, rec+0x1c, floats, rec+0x10); item+0x70 = rec+8. 0x14056aa20 (cc54e920d5411539) pads with 0x3f800000. Body offsets: crafter id +8, word +0x10, 18-bit id +0x18, count +0x1c; the crafter id is stored at item+0x70."
+grade = "fairly sure"
+gap = "That +8 is the crafter id rests on item+0x70 matching shared_item field_2's place in the held item (read, not run)."
+
+["0x140591bd0"]
+name = "CraftingChargeToMultiplier"
+statement = "Turns a crafting socket's charge into a budget multiplier: x = clamp(charge*inc, -D, D); f = 1/(GF1229.dataint01 * GF1229.datafloat0) = 1/512; m = max(f*x + 1, f). With inc = max(32 >> s, 1) and D = min(t*32 + 128, 512), the range is [1/512, 2.0], or 0.75..1.25 when D = 128."
+proof = "Saved C 0x140591bd0, 0x1405918a0 (+0x368 = max(GF1229.dataint0 >> (+0x19c & 31), 1); +0x36c = FUN_140591e40()), 0x140591e40 (min(+0x1b0*dataint02 + dataint01, dataint03)). `gleam run -m genesis_prime/table_rows -- GameFormula 1229`: dataint0 32, dataint01 128, dataint02 32, dataint03 512, datafloat0 4.0."
+grade = "fairly sure"
+gap = "What sets +0x19c (s) and +0x1b0 (t) is not decoded; they are likely the schematic's or circuit's tier."
+
+["0x1405917b0"]
+name = "BuildCraftingMultipliers"
+statement = "When a power core is chosen or the second selector is set, it clamps the socket count to 5 and fills each socket's multiplier with CraftingChargeToMultiplier(charge). It also sets a byte to clamp(power / 2^shift, 0, 1) * 255. These become the builder's multiplier count and floats for the crafting preview. This is the client's only producer of multipliers found."
+proof = "Saved C 0x1405917b0 and 0x1405918a0 (builder 0x40=+0x188, 0x44=+0x198, 0x48=+0x17c, 0x50=&+0x1b8, 0x58=+0x18c). Crafting.lua sends nChargeDelta per socket through CraftingLib.GetPreviewInfo, read by 0x14059d660 (strings arStats, nChargeDelta, itemPowerCore). Offsets: power core +0x188, second selector +0x198, socket count +0x17c, multipliers +0x1b8[i], byte +0x192, power +0x178, shift +0x1ac."
+grade = "fairly sure"
+gap = "Not read: any other client path that produces multipliers; the live crafting window was not run."
+
+["0x14040d5d0"]
+name = "ApplyItemPropertyFlags"
+statement = "Sets the built item's flags. A power-core item (category 0x8f) sets bit 2 and takes level and budget scale from the core's record. Otherwise any ItemStat entry of kind 4 sets bit 1. If the builder's second selector is 0, it then returns 0; else it takes level and scale from the item's own record. Kind 2 never sets bit 1."
+proof = "Saved C 0x14040d5d0 (8eb22adb6de47956). Offsets: flags at props+0x20; the core record's level +0x160 and scale +0x15c; the selector is builder +0x44."
+grade = "fairly sure"
+gap = "Read from the saved C only; not run on the live client."
+
+["0x14066e860.level_lines"]
+statement = "Tooltip level lines: family 0x21 shows nItemLevel and nInstalledMinimumItemLevel. Otherwise, when the item's kind-4-stat flag is set, only nPowerCoreMaximumLevel is shown ('Power Core Max Level: $1c', text 730028). Otherwise it shows nItemLevel, nEffectiveLevel and nCraftedMultiplier, which ToolTips.lua shows as 'Overcharged: $1c%' (730029) or 'Undercharged: $1c%' (730030), and nothing at 1.0. 0x1406701f0 also hides the level requirement when the flag is set."
+proof = "0x14066e860 lines 296-445, test at 0x14066ef06 (test byte [rax+0x20],2); 0x1406701f0 line 83, at 0x140670295. ToolTips.lua 1030-1040 and 1160-1185. LocalizedEnum 9269-9271 -> texts 730028-730030. Offsets: the level shown is record+0x164; the flag is bit 1 of props+0x20; nItemLevel props+4, nEffectiveLevel props+0xc, nCraftedMultiplier props+0x1c."
+grade = "fairly sure"
+gap = "Not run on the live client."
+
+["0x140673800"]
+name = "FillTooltipUndefinedProperties"
+statement = "Fills tUndefinedProperties only for a non-instance item (no source instance, two flags set, and the properties equal to the record's). nRandomProperties counts kind-2 entries, nCraftableProperties counts kind-4 entries, and arStrNamedRandomProperties lists the names of kind-2 groups whose name flag in ItemRandomStatGroup is nonzero. No stock Lua reads it (the LuaDocData marks all three Deprecated), and no C writes arRandomProperties."
+proof = "Saved C 0x140673800 (8eb22adb6de47956); 0x140673160 lines 290-292; LuaDocData/data.xml 6317-6320; grep of the UI Lua for tUndefinedProperties and arRandomProperties (the ToolTips.lua uses at 1432 and 1469-1480 are in --[[ ]] comments). Offsets: source instance +0xa0, flags +0x540 and +0xa8; the group's name flag is ItemRandomStatGroup +4."
+grade = "fairly sure"
+gap = "Not run on the live client; no stock Lua reads these fields, so no effect on the client was found."
+
+["ItemStat.itemStatData.kind4"]
+statement = "GUESS: for kind 4, itemStatData (63, 64, 127) is a crafting-group mask (CodeEnumItemCraftingGroupFlag) for the socket, read by CraftingLib.GetAvailableProperties. No display code reads it: the property comes from the item's choice byte."
+proof = "0x14040e6d0 (8eb22adb6de47956) uses itemStatData only for kind 2; Crafting.lua BuildPropertySelection uses eCraftingGroup masks from GetAvailableProperties."
+grade = "guess"
+gap = "Settle by finding GetAvailableProperties's C (from the 'eCraftingGroup'/'arProperties' strings near 0x1405a0660) and checking that it reads ItemStat +0x18..+0x28 for kind 4."
+
+["Item2.record_0x164"]
+statement = "GUESS: the item record's power-core maximum level / installed minimum item level is Item2.requiredItemLevel."
+proof = "Item2 column offsets: powerLevel 60, requiredLevel 64, requiredItemLevel 68; the record's +0x160 is the power level read by SetItemPowerLevelAndBudgetScale. The record offset is +0x164."
+grade = "guess"
+gap = "Settle by reading FillItemInfo's store to record+0x164 and matching the Item2 column offset it loads."
+
+["opcode.0x25e.random_stats"]
+statement = "Each held item in 0x25e is a full shared item record, the same as 0x111's: the random-stat word (schema held_items[].item.field_8), the 18-bit category-143 id (field_23) and the multiplier list (list_a) reach the held item, and the stats are then built by BuildHeldItemProperties, the same as for 0x111. A server that rolls stats must send the same word here as in 0x111."
+proof = "ReadMessage025EBody 0x14008cee0 (saved C, 2580df99bb1ce2aa) calls the shared item reader 0x14008c0d0 for each entry; HandleMessage025E 0x1403b5f80 (2580df99bb1ce2aa) calls AddHeldItem 0x1403b77d0, which calls 0x140569a60/0x140569c90, the filler that 0x111 uses (opcode.0x111.shared_item_unnamed). Offsets: record word 0x28, id 0x70; the word lands at held item +0xb0."
+grade = "sure"
+
+["opcode.0x47a"]
+statement = "Message 0x47a, world server to client: one guild bank tab. Body: 14 bits, a u64, 9 bits, a 32-bit count, then that many shared item records (0xa8 bytes each, laid out as 0x111's). The handler fills a held item from each record with the same filler as 0x111, so the random-stat word (record 0x28) lands in the held item and builds stats; it then raises GuildBankTab."
+proof = "Registered in 0x14006c290 (saved C ad8f7cc3426fd648, line 612) with reader 0x140092470 (8eb22adb6de47956). Handler 0x14057cdc0 (2580df99bb1ce2aa) calls 0x140569a60 and 0x140569c90, then RaiseUiEvent 'GuildBankTab'. The word lands at held item +0xb0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile only. The meaning of the 14-bit, u64 and 9-bit head fields was not read (probably guild id and tab index)."
+
+["opcode.0x46f"]
+statement = "Message 0x46f, world server to client: one guild bank item. Body: 14 bits, a u64, then one shared item record. The same held-item filler as 0x111, so the random-stat word lands in the held item; then 0x1404277d0 raises GuildBankItem."
+proof = "Registered in 0x14006c290 (ad8f7cc3426fd648, line 613), reader 0x140092580 (8eb22adb6de47956); handler 0x14057d190 (8eb22adb6de47956) calls 0x140569a60/0x140569c90, then 0x1404277d0, whose only string is 'GuildBankItem'. The record is at body +0x10; the word lands at held item +0xb0."
+grade = "fairly sure"
+gap = "Read from the decompile only; head fields not named."
+
+["opcode.0x56b"]
+statement = "Message 0x56b, world server to client: an item's stats changed. Body: item GUID (u64), a u64 (the 4+3x10 value), a u32 (rune slots) and the random-stat word (u64). The handler finds the held item by GUID, stores the word, the rune slots and the 4+3x10 value on it, marks it changed, calls BuildHeldItemProperties and raises ItemModified. This is the message for re-rolling or changing an instance's random stats without re-sending the item."
+proof = "Reader 0x1400a3ce0 (8eb22adb6de47956): u64, u64, u32, u64 into +0, +8, +0x10, +0x18. Handler 0x1403b85a0 (cc54e920d5411539): FindHeldItemByGuid, then stores rec+0x18 into item+0xb0, rec+0x10 into +0xdc, rec+8 into +0xe0, 1 into +0x124, then 0x14056a430 and RaiseUiEvent 'ItemModified'. Body offsets: GUID +0, 4+3x10 value +8, rune slots +0x10, word +0x18; stored at item +0xb0 (word), +0xdc (rune slots), +0xe0 (value), and +0x124 = 1."
+grade = "sure"
+
+["opcode.0x553.item_properties"]
+statement = "Message 0x553 (Inspect), world server to client: a 32-bit value, a 5-bit count, then that many shared item records (0xa8 bytes, laid out as 0x111's). Each record's stats are built by 0x140411b60, not through a held item, from the same record fields: word 0x28, rune slots 0x30, 4+3x10 value 0x38, 18-bit id 0x70, counted multipliers 0x74/0x78, list B 0x80/0x88, level 0xa0. It builds when any of these is nonzero, and uses the count as sent (an entry past the count keeps its full point). Then it raises Inspect."
+proof = "Registered in 0x14006c290 (ad8f7cc3426fd648, line 565), reader 0x14008f8d0 (8eb22adb6de47956). Dispatch case 0x1403f0ff3 calls handler 0x1403deff0 (2580df99bb1ce2aa), which calls 0x140411b60 (49fd5a78aaad3411); that reads the offsets above and calls BuildItemProperties 0x14040c310. The held-item word would be at +0xb0; this path does not use it."
+grade = "sure"
+
+["opcode.0x5a3.attachment_properties"]
+statement = "Message 0x5a3 (mail list), world server to client: a 1-bit flag, a 32-bit count, then mail records; each mail holds a count of attachments, and each attachment is laid out as: 18-bit item id, u32 stack, u32, random-stat word (u64), rune slots (u32), the 4+3x10 value (u64), 18-bit category-143 id, five 32-bit float multipliers and eight u32 list B. The Lua mail builder makes each attachment's properties with a FIXED count of 5 multipliers, so they must be 1.0f for an unchanged stat."
+proof = "Registered in the second table 0x1400a8190 (cc54e920d5411539, line 17), reader 0x1400a9f60 (8eb22adb6de47956), mail record 0x1400a9900, attachment reader 0x1400a9450 (8eb22adb6de47956). Dispatch case 0x1403ef1bb calls 0x14062a340. Lua builder 0x1406b33f0 (49fd5a78aaad3411; keys arAttachments, itemAttached, nStackCount) calls 0x14040bd50 on +0x10, sets count 5 with floats at +0x2c, list B count 8 at +0x40, then BuildItemProperties. Layout offsets: mail record 0x68 bytes, attachment count +0x58; attachment 0x60 bytes: item id +0, stack +4, u32 +8, word +0x10, rune slots +0x18, value +0x20, category id +0x28, multipliers +0x2c, list B +0x40."
+grade = "fairly sure"
+gap = "Read from the decompile only; the u32 at +8 is not named."
+
+["opcode.0x18e"]
+statement = "Message 0x18e, world server to client: one trade window item, a 0x50-byte record: u32, u32, 18-bit item id, u64, u32, random-stat word (u64), rune slots (u32), the 4+3x10 value (u64), 18-bit category-143 id and five 32-bit float multipliers. The record is appended to the trade object and the Lua trade builder (itemTrading, bIsMine, nItemId, nQuantity) builds properties with a FIXED count of 5 multipliers and no list B, so they must be 1.0f."
+proof = "Registered in 0x1400a8190 (cc54e920d5411539, line 18), record 0x50, reader 0x1400aa2b0 (8eb22adb6de47956). Dispatch case 0x1403eca70 appends via 0x140718bd0 to (game+0x6718)+0x18. 0x14074b1d0 (49fd5a78aaad3411, param_2 an int pointer): param_2[10] rune slots, *(u64*)(param_2+0xc) = byte 0x30 split as 4+3x10, *(u64*)(param_2+8) = byte 0x20 the word (0 gives version 1, or 0 for Item2Family 1/2), count 5 with floats at +0x3c, then BuildItemProperties. Record offsets: u32 +0, u32 +4, item id +8, u64 +0x10, u32 +0x18, word +0x20, rune slots +0x28, value +0x30, category id +0x38, multipliers +0x3c."
+grade = "fairly sure"
+gap = "The fields at +0, +4, +0x10 and +0x18 are not named (probably side, slot, guid, count). No client sender of 0x18e was found."
+
+["0x140099c90"]
+statement = "Reads one auction item record: seven u64, the 18-bit item id, a u32, the 18-bit category-143 id, a 3-bit multiplier count and that many 32-bit floats, the random-stat word (u64), rune slots (u32), the 4+3x10 value (u64) and a u32. Used by the readers of 0x565, 0x64d, 0x560, 0x6dd and 0x563. The Lua ItemAuction builder 0x1406a1530 builds properties from the word, the counted multipliers, the 18-bit id, the rune slots and the 4+3x10 value."
+proof = "Saved C 0x140099c90.c (8eb22adb6de47956). Callers registered in 0x14006c290 (ad8f7cc3426fd648): 0x565 via 0x14009b0f0 (line 825), 0x64d via 0x14009af30 (line 819; handler 0x14042b770 raises OwnedItemAuctions), 0x560 and 0x6dd via 0x14009b1a0, 0x563 via 0x14009aff0. 0x1406a1530 (49fd5a78aaad3411) reads object +0x40, +0x48, +0x4c, +0x50, +0x58, +0x60, +0x68 (the record's offsets plus 8), then BuildItemProperties. Record offsets: u64s +0 to +0x30, item id +0x38, u32 +0x3c, category id +0x40, count +0x44, floats pointer +0x48, word +0x50, rune slots +0x58, value +0x60, u32 +0x68."
+grade = "fairly sure"
+name = "ReadAuctionItemRecord"
+gap = "The copy from record to auction object was not traced; the plus-8 match is by layout. The seven u64 and the two u32 are not named."
+
+["chat_format_item_record.random_stats"]
+statement = "In chat_format_item_record (chat format type 8, and each item record of 0x1c2): field_4 (u64) is the random-stat word, field_5 the rune slots, field_6 the 4+3x10 value, field_8 the item level, field_10 the 18-bit category-143 id, list_a the counted multipliers and list_b list B. BuildChatItemLink builds properties when any of these is nonzero. The client never makes a type 8 format itself: ParseChatText makes item links only as type 9 (GUID) or type 4 (item id), so the server must replace each type 9 by a type 8 record carrying the item's word when it sends 0x1c8 and 0x1c2."
+proof = "BuildChatItemLink 0x1404112e0 (49fd5a78aaad3411) splits field_4 into w & 0xffffffffffffff and w >> 0x38 (lines 161-162) and calls BuildItemProperties. ParseChatText record (client-facts.toml: 'No tag makes type 0, 3, 7 or 8'); opcode.0x1c2 record: type 9 formats are replaced by type 8 with the item record."
+grade = "fairly sure"
+gap = "Not seen in a recording: that the server must replace each type 9 format by a type 8 record is read from the parser and the builder, not from a live chat message."
+
+["item.random_stats.client_to_server"]
+statement = "The client never sends an item's random-stat word, multipliers or category-143 id to the server: its item actions name an item by GUID or location, and its chat item links are type 9 (GUID) or type 4 (item id). Only the server writes these values, in 0x111, 0x25e, 0x47a, 0x46f, 0x56b, 0x56c, 0x553, 0xBA/0xBC, 0x5a3, 0x18e, the auction records and chat type 8."
+proof = "The 11 callers of BuildItemProperties 0x14040c310 each take their input from a server message, the Item2 row, vendor stock or the client's crafting preview 0x1405918a0. WriteChatItemRecord 0x140085510 is referred to only by ReadChatFormat's writer table, and ParseChatText never makes type 8. client_trace reports no client sender for 0x18e or 0x5a3."
+grade = "fairly sure"
+gap = "Does any client-sent message write a u64 copied from held item +0xb0? A grep of all of the client's writers for a load from +0xb0 would settle it."
