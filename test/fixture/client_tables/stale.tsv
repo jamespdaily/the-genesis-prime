@@ -8,6 +8,7 @@ PathSoldierActivate	5	Creature2	18274
 PathSoldierActivate	7	Creature2	18875
 PathSoldierActivate	16	Creature2	19790
 PathSoldierActivate	17	Creature2	19789
+Prerequisite	9358	Prerequisite	328
 Quest2	3204	WorldZone	1480
 Quest2	8256	WorldZone	1480
 Spell4Base	16242	Class	16

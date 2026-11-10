@@ -224,3 +224,9 @@ RewardPropertyPremiumModifier	30	(BankSlots 2, Hybrid tier 0, does not carry up)
 RewardPropertyPremiumModifier	31	(BankSlots 2, Hybrid tier 1)	reward_property_test
 RewardPropertyPremiumModifier	33	(BankSlots 7, system 2 tier 1)	reward_property_test
 RewardPropertyPremiumModifier	67	(BankSlots, Hybrid tier 0, carries up, names an entitlement)	reward_property_test
+Creature2	26462	Seaspine Mollusk, a collectible whose first activate column holds Prerequisite 9358	activate_test, spell_plan_activate_test
+Creature2	19232	a creature with two activate columns	activate_test
+Creature2	5713	a creature whose activate spell is a castMethod 5 interaction	spell_plan_activate_test
+Spell4	1817	the activate spell of the Seaspine Mollusk	activate_test, cast_activate_test
+Spell4	8	the activate spell no column replaces	activate_test, cast_activate_test
+Prerequisite	9358	the first activate column of the Seaspine Mollusk: type 125 or row 328	activate_test
