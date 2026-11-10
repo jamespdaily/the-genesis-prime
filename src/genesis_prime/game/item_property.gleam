@@ -75,6 +75,7 @@ import genesis_prime/table/item_stat
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
 import genesis_prime/table/unit_property2
+import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -82,7 +83,6 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import gleam/string
 
 /// A shield item's properties: ShieldCapacityMax (property 41),
 /// ShieldMitigationMax (175), ShieldRegenPct (176) and ShieldRebootTime (178),
@@ -166,8 +166,9 @@ pub type ItemPropertyError {
   /// An item whose properties the client's code gives by a branch this code does
   /// not follow (see the module's last point).
   Unread(item2_id: Int, gap: Gap)
-  /// An item whose budget has an entry the client refuses: the client then shows
-  /// the item with no budget properties at all.
+  /// An item whose budget has an entry the client refuses (AddItemBudgetProperties
+  /// 0x14040ca70 fails with 0x95): the server gives this error in place of the
+  /// item's properties.
   Refused(item2_id: Int, property_id: Int, why: Refusal)
   /// A GameFormula row's curve has no value at the power level: a negative
   /// offset to a fractional power.
@@ -249,15 +250,24 @@ pub fn sum(
     [_, _, ..] -> Error(TwoShields)
   })
   Ok(ItemProperties(
-    base_health: float.sum(list.map(items, fn(item) { item.base_health })),
-    assault_rating: float.sum(list.map(items, fn(item) { item.assault_rating })),
-    support_rating: float.sum(list.map(items, fn(item) { item.support_rating })),
-    armor: float.sum(list.map(items, fn(item) { item.armor })),
+    base_health: sum_in_32_bits(items, fn(item) { item.base_health }),
+    assault_rating: sum_in_32_bits(items, fn(item) { item.assault_rating }),
+    support_rating: sum_in_32_bits(items, fn(item) { item.support_rating }),
+    armor: sum_in_32_bits(items, fn(item) { item.armor }),
     shield:,
     budget: list.fold(items, dict.new(), fn(total, item) {
-      dict.combine(total, item.budget, fn(held, more) { held +. more })
+      dict.combine(total, item.budget, float32.sum)
     }),
   ))
+}
+
+/// One field of the items added in order, each addition rounded to 32 bits as the
+/// client's entry adds (0x14040db30).
+fn sum_in_32_bits(
+  items items: List(ItemProperties),
+  field field: fn(ItemProperties) -> Float,
+) -> Float {
+  list.fold(items, 0.0, fn(total, item) { float32.sum(total, field(item)) })
 }
 
 /// The flags the type, the category and the family of an item hold, joined,
@@ -646,44 +656,36 @@ fn budget_requirements() -> List(table_store.Requirement) {
         })
       },
     ),
-    stat_property_requirement(
-      column: "itemStatData00",
-      entry: fn(stat: item_stat.ItemStat) {
-        #(stat.item_stat_type_enum00, stat.item_stat_data00)
-      },
-    ),
-    stat_property_requirement(
-      column: "itemStatData01",
-      entry: fn(stat: item_stat.ItemStat) {
-        #(stat.item_stat_type_enum01, stat.item_stat_data01)
-      },
-    ),
-    stat_property_requirement(
-      column: "itemStatData02",
-      entry: fn(stat: item_stat.ItemStat) {
-        #(stat.item_stat_type_enum02, stat.item_stat_data02)
-      },
-    ),
-    stat_property_requirement(
-      column: "itemStatData03",
-      entry: fn(stat: item_stat.ItemStat) {
-        #(stat.item_stat_type_enum03, stat.item_stat_data03)
-      },
-    ),
-    stat_property_requirement(
-      column: "itemStatData04",
-      entry: fn(stat: item_stat.ItemStat) {
-        #(stat.item_stat_type_enum04, stat.item_stat_data04)
-      },
-    ),
+  ]
+  |> list.append(
+    list.index_map(stat_data_columns, fn(column, index) {
+      stat_property_requirement(column:, index:)
+    }),
+  )
+}
+
+/// The columns of an ItemStat's five entries' data, in the order of `stat_entries`.
+const stat_data_columns = [
+  "itemStatData00", "itemStatData01", "itemStatData02", "itemStatData03",
+  "itemStatData04",
+]
+
+/// The kind and the data of each of an ItemStat's five entries.
+fn stat_entries(stat stat: item_stat.ItemStat) -> List(#(Int, Int)) {
+  [
+    #(stat.item_stat_type_enum00, stat.item_stat_data00),
+    #(stat.item_stat_type_enum01, stat.item_stat_data01),
+    #(stat.item_stat_type_enum02, stat.item_stat_data02),
+    #(stat.item_stat_type_enum03, stat.item_stat_data03),
+    #(stat.item_stat_type_enum04, stat.item_stat_data04),
   ]
 }
 
-/// The check that the UnitProperty2 row an ItemStat's entry names exists, for the
-/// entries of kind 1, the data of which is a property.
+/// The check that the UnitProperty2 row the `index`th entry of an ItemStat names
+/// exists, for the entries of kind 1, the data of which is a property.
 fn stat_property_requirement(
   column column: String,
-  entry entry: fn(item_stat.ItemStat) -> #(Int, Int),
+  index index: Int,
 ) -> table_store.Requirement {
   table_store.Requirement(
     from_table: "ItemStat",
@@ -691,7 +693,9 @@ fn stat_property_requirement(
     to_table: "UnitProperty2",
     missing: fn(tables) {
       item_stat.all(tables)
-      |> list.map(entry)
+      |> list.filter_map(fn(stat) {
+        stat_entries(stat:) |> list.drop(index) |> list.first
+      })
       |> list.filter_map(fn(pair) {
         let #(kind, property_id) = pair
         case
@@ -909,9 +913,16 @@ const armor_property = 42
 /// UnitProperty2.flags bit 2: the property is one an item may give (0x14040db30).
 const item_property_flag = 4
 
-/// The prefix of the UnitProperty2.enumName of the resource maximums, whose base
-/// the player's class resource sets (`genesis_prime/game/class_resource`).
-const resource_maximum_prefix = "ResourceMax_"
+const resource_slots = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+/// Whether a property is the maximum of one of the client's resource slots 0 to 10
+/// (`unit_fields.resource_max_property`), whose base the player's class resource sets
+/// (`genesis_prime/game/class_resource`).
+fn is_resource_maximum(property_id property_id: Int) -> Bool {
+  list.any(resource_slots, fn(slot) {
+    unit_fields.resource_max_property(slot:) == property_id
+  })
+}
 
 /// Whether a UnitProperty2 row is a property a budget gives that is in none of the
 /// fields above: an item property worth something per point, that is no resource
@@ -919,7 +930,7 @@ const resource_maximum_prefix = "ResourceMax_"
 fn is_budget_property(row row: unit_property2.UnitProperty2) -> Bool {
   int.bitwise_and(row.flags, item_property_flag) != 0
   && row.value_per_point != 0.0
-  && !string.starts_with(row.enum_name, resource_maximum_prefix)
+  && !is_resource_maximum(property_id: row.id)
   && !list.contains(
     [
       base_health_property,
@@ -944,47 +955,38 @@ pub fn budget_properties(
 /// The value each entry of the item's budget gives, and the shares of a shield's
 /// properties: the points of the ItemBudget row's share times the scale, times the
 /// property's valuePerPoint, in 32-bit steps (AddItemBudgetProperties 0x14040ca70,
-/// 0x14040d060, 0x14040d3d0, 0x14040db30). An item with no ItemStat gives nothing.
+/// 0x14040d060, 0x14040d3d0, 0x14040db30). An item with neither an ItemStat nor an ItemBudget gives nothing;
+/// one with only one of them has no row for the other, which is `NoRow` (id 0).
 fn budget(
   tables tables: table_store.Tables,
   builder builder: Builder,
 ) -> Result(Given, ItemPropertyError) {
   let item = builder.item
-  use stat <- result.try(case item.item_stat_id {
-    0 -> Ok(None)
-    stat_id ->
-      item_stat.get(tables:, id: ItemStatId(stat_id))
-      |> result.replace_error(NoRow(table: "ItemStat", id: stat_id))
-      |> result.map(Some)
-  })
-  use shares <- result.try(case item.item_budget_id {
-    0 -> Ok([0.0, 0.0, 0.0, 0.0, 0.0])
-    budget_id ->
-      item_budget.get(tables:, id: ItemBudgetId(budget_id))
-      |> result.replace_error(NoRow(table: "ItemBudget", id: budget_id))
-      |> result.map(fn(row) {
-        [
-          row.budget00,
-          row.budget01,
-          row.budget02,
-          row.budget03,
-          row.budget04,
-        ]
-      })
-  })
   let none = Given(values: [], shares: dict.new())
-  case stat {
-    None -> Ok(none)
-    Some(stat) -> {
-      use scale <- result.try(scale(tables:, builder:))
-      list.try_fold(entries(stat:, shares:), none, fn(given, entry) {
-        give_entry(tables:, builder:, scale:, given:, entry:)
-      })
-      |> result.map(fn(given) {
-        Given(..given, values: list.reverse(given.values))
-      })
-    }
-  }
+  use <- bool.guard(
+    item.item_stat_id == 0 && item.item_budget_id == 0,
+    Ok(none),
+  )
+  use stat <- result.try(
+    item_stat.get(tables:, id: ItemStatId(item.item_stat_id))
+    |> result.replace_error(NoRow(table: "ItemStat", id: item.item_stat_id)),
+  )
+  use budget_row <- result.try(
+    item_budget.get(tables:, id: ItemBudgetId(item.item_budget_id))
+    |> result.replace_error(NoRow(table: "ItemBudget", id: item.item_budget_id)),
+  )
+  let shares = [
+    budget_row.budget00,
+    budget_row.budget01,
+    budget_row.budget02,
+    budget_row.budget03,
+    budget_row.budget04,
+  ]
+  use scale <- result.try(scale(tables:, builder:))
+  list.try_fold(entries(stat:, shares:), none, fn(given, entry) {
+    give_entry(tables:, builder:, scale:, given:, entry:)
+  })
+  |> result.map(fn(given) { Given(..given, values: list.reverse(given.values)) })
 }
 
 /// The entries of an ItemStat: each kind, property and share of the ItemBudget.
@@ -992,22 +994,8 @@ fn entries(
   stat stat: item_stat.ItemStat,
   shares shares: List(Float),
 ) -> List(#(Int, Int, Float)) {
-  let kinds = [
-    stat.item_stat_type_enum00,
-    stat.item_stat_type_enum01,
-    stat.item_stat_type_enum02,
-    stat.item_stat_type_enum03,
-    stat.item_stat_type_enum04,
-  ]
-  let data = [
-    stat.item_stat_data00,
-    stat.item_stat_data01,
-    stat.item_stat_data02,
-    stat.item_stat_data03,
-    stat.item_stat_data04,
-  ]
-  list.zip(kinds, list.zip(data, shares))
-  |> list.map(fn(entry) { #(entry.0, entry.1.0, entry.1.1) })
+  list.zip(stat_entries(stat:), shares)
+  |> list.map(fn(entry) { #(entry.0.0, entry.0.1, entry.1) })
 }
 
 /// What one ItemStat entry adds to what the earlier ones gave (0x14040e6d0).
@@ -1099,7 +1087,7 @@ fn entry_gives(
     refused(OffTheItemsSlot),
   )
   use <- bool.guard(
-    string.starts_with(row.enum_name, resource_maximum_prefix),
+    is_resource_maximum(property_id:),
     Error(Unread(item2_id:, gap: ResourceMaximum)),
   )
   let points = float32.product(share, scale)
@@ -1259,9 +1247,16 @@ const budget_curve_middle_formula = 1027
 
 const budget_curve_early_formula = 1028
 
+/// The 32-bit float the client's curve raises to the power f01 x m: 2.7182817
+/// (0x14041e670), whose exact value is this 64-bit float.
+const single_precision_e = 2.7182817459106445
+
 /// The budget's curve at a power level (0x14041e670): `f0 x e^(f01 x m) + f02 x
 /// m^f03` of the row the level selects, at `m = level - dataint0`, with each step
-/// rounded to 32 bits as the client's single-precision arithmetic gives.
+/// rounded to 32 bits as the client's single-precision arithmetic gives. The
+/// growth term is the client's powf (0x1408fbfc0) of the 32-bit e, not the
+/// exponential function: the two differ by one or two ulps at some levels, and
+/// 0x14040db30 gives the values of item 8441 at levels 75 and 129.
 fn budget_curve(
   tables tables: table_store.Tables,
   level level: Int,
@@ -1274,12 +1269,15 @@ fn budget_curve(
     False, False -> formula(tables:, id: budget_curve_early_formula)
   })
   let offset = int.to_float(level - row.dataint0)
-  use power <- result.map(
-    float.power(offset, row.datafloat03)
-    |> result.replace_error(NoCurveValue(formula: row.id, level:)),
+  let no_value = NoCurveValue(formula: row.id, level:)
+  use power <- result.try(
+    float.power(offset, row.datafloat03) |> result.replace_error(no_value),
   )
-  let growth =
-    float32.rounded(float.exponential(float32.product(row.datafloat01, offset)))
+  use growth <- result.map(
+    float.power(single_precision_e, float32.product(row.datafloat01, offset))
+    |> result.map(float32.rounded)
+    |> result.replace_error(no_value),
+  )
   float32.sum(
     float32.product(row.datafloat0, growth),
     float32.product(row.datafloat02, float32.rounded(power)),

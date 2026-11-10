@@ -37,6 +37,7 @@ import genesis_prime/game/gear
 import genesis_prime/game/inventory
 import genesis_prime/game/movement
 import genesis_prime/game/reward_property
+import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
@@ -219,6 +220,7 @@ fn regeared(
           replacing: entered.gear.visuals,
           item_visuals: worn.visuals,
           bases:,
+          defaults: unit_properties.defaults(tables:),
           shield: gear.shield_capacity(gear: worn),
         )
       let warnings =

@@ -17,7 +17,7 @@
 import client_tables
 import fixture_tables
 import game_connection_support
-import genesis_prime/game/item_property.{type ItemProperties}
+import genesis_prime/game/item_property.{type ItemProperties, ItemProperties}
 import genesis_prime/message/float32
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId, ItemStatId, UnitProperty2Id}
@@ -228,7 +228,9 @@ pub fn bacchanal_probe_values_are_the_clients_32_bit_products_test() -> Nil {
 /// The budget curve is a GameFormula row chosen by the power level, 1028 below 50, 1027
 /// from 50 to 129 and 1255 from 130 (0x14041e670), at the level less the row's start
 /// (m = L, L - 50, L - 130). Item2 8441's budget at those levels, each product rounded
-/// to 32 bits as the client's code gives it.
+/// to 32 bits as the client's code gives it, the power through the client's powf
+/// (0x1408fbfc0) of the 32-bit e, 2.7182817; the values at levels 75 and 129 are the
+/// client's code emulated on these rows.
 pub fn the_budget_curve_changes_row_at_power_levels_50_and_130_test() -> Nil {
   use <- owned_test.run(10_000)
   let at_level = fn(level) {
@@ -247,8 +249,10 @@ pub fn the_budget_curve_changes_row_at_power_levels_50_and_130_test() -> Nil {
     as "0x14041e670: level 49 is GameFormula 1028 at m 49"
   assert at_level(50) == #(Ok(0x42e10000), Ok(0x42960000))
     as "0x14041e670: level 50 is GameFormula 1027 at m 0, 112.5 and 75.0"
-  assert at_level(129) == #(Ok(0x439127d4), Ok(0x43418a71))
-    as "0x14041e670: level 129 is GameFormula 1027 at m 79"
+  assert at_level(75) == #(Ok(0x4317dbef), Ok(0x42ca7a93))
+    as "0x14040db30: level 75 is GameFormula 1027 at m 25; the curve is 0x4206fc62 (0x14041e670, powf 0x1408fbfc0)"
+  assert at_level(129) == #(Ok(0x439127d3), Ok(0x43418a6e))
+    as "0x14040db30: level 129 is GameFormula 1027 at m 79; the curve is 0x428106f4 (0x14041e670, powf 0x1408fbfc0)"
   assert at_level(130) == #(Ok(0x440d04cd), Ok(0x43bc0666))
     as "0x14041e670: level 130 is GameFormula 1255 at m 0"
 }
@@ -389,6 +393,105 @@ pub fn a_property_without_flag_4_or_off_the_items_slot_is_refused_test() -> Nil 
       why: item_property.OffTheItemsSlot,
     ))
     as "0x14040db30: slot flags 1 share no bit with the gloves' 0x20"
+}
+
+/// 0x14040ca70 fails with 0x95 when the ItemStat row or the ItemBudget row is missing, and
+/// a 0 id has no row. An item with neither id has no budget and gives its own values. No
+/// client row holds one id alone, so the rows are Item2 1375 (ItemBudget 3, ItemStat 4)
+/// with one id changed to 0.
+pub fn a_budget_id_or_a_stat_id_of_0_while_the_other_is_set_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item2_id = fixture_tables.root("Item2", 1375)
+  use tables <- fixture_tables.changed(table: "Item2", id: item2_id, with: [
+    #("itemBudgetId", Integer(0)),
+  ])
+  assert item_property.of_item(tables:, item2_id:)
+    == Error(item_property.NoRow(table: "ItemBudget", id: 0))
+    as "0x14040ca70: a stat with no budget row is refused"
+  use tables <- fixture_tables.changed(table: "Item2", id: item2_id, with: [
+    #("itemStatId", Integer(0)),
+  ])
+  assert item_property.of_item(tables:, item2_id:)
+    == Error(item_property.NoRow(table: "ItemStat", id: 0))
+    as "0x14040ca70: a budget with no stat row is refused"
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "Item2",
+      id: item2_id,
+      with: [#("itemBudgetId", Integer(0)), #("itemStatId", Integer(0))],
+    )
+  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  let none = given(tables:, item2_id:)
+  assert budget_ids(properties: none) == []
+    as "an item with neither id has no budget"
+}
+
+/// A ResourceMax property is the one of the client's eleven slots, UnitProperty2 9 to 15,
+/// 38, 50, 52 and 54 (`unit_fields.resource_max_property`, 0x140466360), whatever its row
+/// is named. UnitProperty2 12 renamed is still a resource maximum a budget leaves to the
+/// class resource and no budget property of the gear; 34 renamed with the prefix is
+/// still the Critical Hit Rating Scout's Thermal Gloves give.
+pub fn a_resource_maximum_is_one_of_the_clients_slot_properties_whatever_its_name_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item2_id = fixture_tables.root("Item2", 1375)
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "UnitProperty2",
+      id: 12,
+      with: [#("enumName", planted_table.Text("Renamed"))],
+    )
+  let assert Ok(rows) =
+    fixture_tables.change(rows:, table: "ItemStat", id: 4, with: [
+      #("itemStatData00", Integer(12)),
+    ])
+  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  assert item_property.of_item(tables:, item2_id:)
+    == Error(item_property.Unread(item2_id:, gap: item_property.ResourceMaximum))
+    as "UnitProperty2 12 is slot 3's maximum by the client's map"
+  assert !list.contains(
+    list.map(item_property.budget_properties(tables:), fn(id) { id.value }),
+    12,
+  )
+    as "the gear lists no base for a resource maximum"
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "UnitProperty2",
+      id: 34,
+      with: [#("enumName", planted_table.Text("ResourceMax_Renamed"))],
+    )
+  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  assert bits(properties: given(tables:, item2_id:), property_id: 34)
+    == Ok(0x42804000)
+    as "34 is no slot's maximum, so the gloves still give 64.125"
+  assert list.contains(
+    list.map(item_property.budget_properties(tables:), fn(id) { id.value }),
+    34,
+  )
+    as "and the gear lists its base"
+}
+
+/// The properties of a set add in 32 bits, as the client's single-precision add gives
+/// (IEEE 754 binary32): 16777216.0 is 2^24, past which a 32-bit float holds only even
+/// numbers, so 2^24 + 1.0 is 2^24 again, where a 64-bit sum would hold 16777217.0.
+pub fn the_sum_of_a_set_adds_in_32_bits_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item = fn(value) {
+    ItemProperties(
+      base_health: value,
+      assault_rating: value,
+      support_rating: value,
+      armor: value,
+      shield: None,
+      budget: dict.from_list([#(UnitProperty2Id(34), value)]),
+    )
+  }
+  let assert Ok(total) =
+    item_property.sum(items: [item(16_777_216.0), item(1.0)])
+  assert total == item(16_777_216.0)
+    as "2^24 + 1.0 is 2^24 in every sum of the set, the budget's included"
 }
 
 /// A budget entry on a ResourceMax property is left to the class resource, which sets that
