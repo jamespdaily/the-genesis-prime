@@ -26,6 +26,7 @@
 
 import character_tables
 import genesis_prime/game/experience.{GainSent, LevelRose, Progress}
+import genesis_prime/game/prerequisite
 import genesis_prime/game/quest
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/quest_turn_in
@@ -301,26 +302,179 @@ pub fn completed_repeatable_auto_complete_quest_is_turned_in_again_test() -> Nil
     as "a quest with a repeat period is turned in again too"
 }
 
-pub fn communicator_turn_in_is_refused_until_its_step_test() -> Nil {
+/// The warning a refused scene gives, with the same asserts as `assert_refused`.
+fn refused_text(
+  scene scene: support.Scene,
+  tables tables: table_store.Tables,
+  because because: String,
+) -> String {
+  assert_refused(scene:, tables:, because:)
+  let #(effects, _) = support.refused(scene:, tables:)
+  let assert [Log(text:, ..)] = effects as "one log line"
+  text
+}
+
+/// A turn-in over the communicator: the bit is set and no creature is shown.
+fn by_communicator(scene scene: support.Scene) -> support.Scene {
+  support.Scene(..scene, by_communicator: 1, picture: dict.new())
+}
+
+/// The scene of quest 3673 over the communicator. Its Quest2Reward rows are item choices
+/// (flags 1), so the player picks row 2187 and holds every proficiency.
+fn choosing_3673() -> support.Scene {
+  support.Scene(
+    ..by_communicator(scene: support.scene(quest_id: 3673)),
+    reward_id: 2187,
+    proficiencies: 0x7fffffff,
+    world_id: 426,
+  )
+}
+
+pub fn communicator_turn_in_needs_no_creature_near_test() -> Nil {
   use <- owned_test.run(10_000)
-  use tables <- support.with_changes(changes: [support.receiving(2909)])
+  // Quest2 10519 has flags 0x4008 (bit 3); its receiver Creature2 73491 has factionId 171,
+  // whose level from the Exile faction 167 is above 2 (Faction2Relationship), so
+  // `0x14043c700` opens the dialog and `0x140553030` gives the turn-in.
+  let scene = by_communicator(scene: support.scene(quest_id: 10_519))
+  assert dict.is_empty(scene.picture) as "no creature is shown"
+  let #(turn_in, _) = support.asked(scene:, tables: tables())
+  assert turn_in.quest_id == 10_519
+  assert rows_of(log: turn_in.log)
+    == [
+      QuestRow(
+        quest_id: 10_519,
+        state: 3,
+        completed_at: Some(1_700_000_000),
+        active: None,
+      ),
+    ]
+    as "the log holds the quest Completed at the Unix second of the turn-in"
+}
+
+pub fn communicator_turn_in_of_a_quest_without_flag_8_or_0x10000_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest2 10520 has flags 0x4404: neither bit 3 nor bit 16, so the communicator's dialog
+  // gives it no turn-in (`0x140553030`, `0x14043c700`).
+  let scene = support.scene(quest_id: tutorial_quest)
+  assert_asked(scene:, tables: tables())
+  let text =
+    refused_text(
+      scene: by_communicator(scene:),
+      tables: tables(),
+      because: "a quest of flags 0x4404 over the communicator",
+    )
+  assert string.contains(text, "communicator")
+    as "the line says the communicator's turn-in is what refused it"
+}
+
+pub fn communicator_turn_in_with_every_receiver_hostile_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest2 10522 has flags 0x4008; its only receiver Creature2 74861 has factionId 170,
+  // level 2 or below from Exile 167 (Hostile) and above 2 from Dominion 166.
+  let scene = by_communicator(scene: support.scene(quest_id: 10_522))
+  assert string.contains(
+    refused_text(
+      scene:,
+      tables: tables(),
+      because: "the only receiver is Hostile to an Exile",
+    ),
+    "Hostile",
+  )
+    as "the line says why"
+  assert_asked(
+    scene: support.Scene(
+      ..scene,
+      factions: prerequisite.Factions(current: 166, base: 166),
+    ),
+    tables: tables(),
+  )
+  assert_refused(
+    scene: support.Scene(
+      ..scene,
+      factions: prerequisite.Factions(current: 167, base: 166),
+    ),
+    tables: tables(),
+    because: "the check reads the current faction and not the base one",
+  )
+}
+
+pub fn communicator_turn_in_of_a_0x10000_quest_no_row_delivers_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest2 6654 has flags 0x10008. No CommunicatorMessages row has questIdDelivered 6654,
+  // and flag 8 does not rescue it: the dialog tests bit 16 first (`0x140553030`). Its
+  // receiver Creature2 30336 (faction 170) is not Hostile to the Dominion.
   let scene =
     support.Scene(
-      ..support.scene(quest_id: 2909),
-      reward_id: 2369,
-      by_communicator: 1,
+      ..by_communicator(scene: support.scene(quest_id: 6654)),
+      factions: prerequisite.Factions(current: 166, base: 166),
     )
-  let #(effects, _) = support.refused(scene:, tables:)
-  let assert [Log(level: LogWarning, text:)] = effects
-    as "a log line and nothing sent"
-  assert string.contains(text, "#673")
-    as "the line names the issue that builds the communicator's turn-in"
-  let #(away, _) =
-    support.refused(scene: support.Scene(..scene, picture: dict.new()), tables:)
-  let assert [Log(level: LogWarning, text: away_text)] = away
-  assert string.contains(away_text, "#673")
-    as "the bit is refused before the receiver is looked for"
-  assert_asked(scene: support.Scene(..scene, by_communicator: 0), tables:)
+  assert string.contains(
+    refused_text(
+      scene:,
+      tables: tables(),
+      because: "no row delivers a quest of flags 0x10008",
+    ),
+    "delivers",
+  )
+    as "the line says no row delivers it"
+}
+
+pub fn communicator_turn_in_of_an_accepted_quest_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // `0x14043c700` takes the turn-in path only for a quest whose state is 2.
+  let scene =
+    support.Scene(
+      ..by_communicator(scene: support.scene(quest_id: 10_519)),
+      log: [quest_support.untouched(10_519)],
+    )
+  assert string.contains(
+    refused_text(
+      scene:,
+      tables: tables(),
+      because: "the quest is Accepted with no objective done",
+    ),
+    "is 1 and not Achieved",
+  )
+    as "the line names the state in the log"
+}
+
+pub fn communicator_turn_in_does_not_auto_complete_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Flags 1 (bit 0): auto-completes at a creature, as the test above shows, and the
+  // communicator's accept path needs a side-list entry that only a call (0x757) makes, which
+  // this step's turn-in does not take.
+  use tables <- support.with_changes(changes: [
+    #("Quest2", 1806, [#("flags", Integer(1))]),
+    support.receiving(1806),
+  ])
+  let scene = support.Scene(..support.scene(quest_id: 1806), log: [])
+  assert_refused(
+    scene: by_communicator(scene:),
+    tables:,
+    because: "a quest not in the log is not turned in over the communicator",
+  )
+  assert_asked(scene:, tables:)
+}
+
+pub fn communicator_turn_in_with_a_delivering_row_is_accepted_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest2 3673 has flags 0x18004 (bit 16): CommunicatorMessages row 1281 (flags 0, worldId
+  // 426, quest00 3673 in state 2, creatureId 11063, which receives 3673) delivers it.
+  let scene = choosing_3673()
+  let #(turn_in, _) = support.asked(scene:, tables: tables())
+  assert turn_in.quest_id == 3673
+}
+
+pub fn communicator_turn_in_of_a_0x10000_quest_reads_no_receiver_faction_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The same quest for a Dominion player: every receiver (11063, 12959, 16622) has factionId
+  // 171, Hostile from 166, and the dialog's 0x10000 branch has no faction test.
+  let scene =
+    support.Scene(
+      ..choosing_3673(),
+      factions: prerequisite.Factions(current: 166, base: 166),
+    )
+  assert_asked(scene:, tables: tables())
 }
 
 pub fn chosen_reward_is_one_the_client_offers_test() -> Nil {

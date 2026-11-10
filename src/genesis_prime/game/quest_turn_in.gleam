@@ -25,9 +25,11 @@
 ////      bit masked, and goes from no entry, or a Known one, straight to Completed
 ////   4. the receiver: a shown creature alive, not Hostile to the player, within reach, whose
 ////      Creature2 row receives the quest (`spawn.received_quest_ids`, through `quest.in_reach`);
-////      with the by-communicator bit set, the communicator's check instead: the quest has flags
-////      8, or flags 0x10000 with a CommunicatorMessages row delivering it, and some creature that
-////      receives it has a faction that is not Hostile to the player's
+////      with the by-communicator bit set, the communicator's check instead, and no creature is
+////      needed (genesis_prime/game/communicator): the quest must be Achieved, with no
+////      auto-complete, and the dialog the client opens must offer it, which is flags 0x10000 with a
+////      CommunicatorMessages row delivering it, or flags 8 with a receiver whose faction is not
+////      Hostile to the player's current faction
 ////   5. the reward id: 0 only when the quest has no choice rows, else the Quest2Reward id of a
 ////      choice row the player is offered (`equip_requirement.offered`)
 ////   6. the quest has a fixed TradeSkillXp row (Quest2Reward type 4): refused, as the client
@@ -64,6 +66,7 @@
 //// | the same message while the store works | held, then taken against the new log |
 
 import genesis_prime/client_connection
+import genesis_prime/game/communicator
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/equip_requirement.{Wearer}
@@ -334,24 +337,23 @@ fn checked(
   )
   let assert Ok(row) = quest2.get(tables:, id: Quest2Id(quest_id))
     as "a quest the client's rows read has its Quest2 row"
-  use log <- result.try(state_allows(
-    turning:,
-    row:,
-    state: quest_log.state(log: asker.log, quest: known),
-    asker:,
-    tables:,
-    unix_seconds:,
-  ))
+  let state = quest_log.state(log: asker.log, quest: known)
+  use log <- result.try(case message.by_communicator != 0 {
+    True ->
+      by_communicator_allows(
+        turning:,
+        row:,
+        state:,
+        asker:,
+        tables:,
+        unix_seconds:,
+      )
+    False ->
+      state_allows(turning:, row:, state:, asker:, tables:, unix_seconds:)
+  })
   use <- bool.guard(
-    when: message.by_communicator != 0,
-    return: Error(Declined(
-      key: "by communicator",
-      text: turning
-        <> " by the communicator, whose turn-in is not built yet (#673)",
-    )),
-  )
-  use <- bool.guard(
-    when: !quest.in_reach(
+    when: message.by_communicator == 0
+      && !quest.in_reach(
       quest_id:,
       quest_ids: spawn.received_quest_ids,
       standing:,
@@ -473,6 +475,45 @@ fn state_allows(
             <> quest.describe(error:),
           ))
       }
+  }
+}
+
+/// The log with the quest Completed, when the communicator turns it in: the quest is
+/// Achieved (2), as `0x14043c700` requires before it opens the dialog, and
+/// `communicator.turn_in` allows it. The communicator does not complete a quest that
+/// completes without being taken: that path needs a side-list entry only a call makes.
+fn by_communicator_allows(
+  turning turning: String,
+  row row: Quest2,
+  state state: Int,
+  asker asker: quest.Asker,
+  tables tables: table_store.Tables,
+  unix_seconds unix_seconds: Int,
+) -> Result(QuestLog, Stop) {
+  use <- bool.guard(
+    when: state != 2,
+    return: Error(Declined(
+      key: "state " <> int.to_string(state),
+      text: turning
+        <> " by the communicator, whose state in the log is "
+        <> int.to_string(state)
+        <> " and not Achieved",
+    )),
+  )
+  case communicator.turn_in(quest: row, asker:, tables:) {
+    Ok(Nil) ->
+      Ok(quest_log.complete(
+        log: asker.log,
+        quest_id: row.id,
+        at_seconds: unix_seconds,
+      ))
+    Error(refusal) ->
+      Error(Declined(
+        key: "by communicator",
+        text: turning
+          <> " by the communicator, "
+          <> communicator.describe(refusal:),
+      ))
   }
 }
 

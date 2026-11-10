@@ -335,7 +335,9 @@ pub fn gaps(
   use types <- result.try(case quest.prerequisite_id {
     0 -> Ok([])
     _ ->
-      case loaded_prerequisite(tables:, quest:) {
+      case
+        loaded_prerequisite(tables:, prerequisite_id: quest.prerequisite_id)
+      {
         Ok(loaded) ->
           Ok(
             list.map(
@@ -715,34 +717,49 @@ fn prerequisite_item(
   }
 }
 
-/// The prerequisite the quest names, loaded with the rows it nests.
+/// The prerequisite an id names, loaded with the rows it nests.
 fn loaded_prerequisite(
   tables tables: table_store.Tables,
-  quest quest: Quest2,
+  prerequisite_id prerequisite_id: Int,
 ) -> Result(prerequisite.Prerequisite, prerequisite.LoadError) {
   prerequisite.load(
-    id: PrerequisiteId(quest.prerequisite_id),
+    id: PrerequisiteId(prerequisite_id),
     rows: prerequisite.table_rows(tables:),
     arcs: prerequisite.table_arcs(tables:),
     quests: prerequisite.table_quests(tables:),
   )
 }
 
-/// Check 12: the prerequisite the quest names, for the player with its log.
-fn prerequisite_met(
+/// Why a prerequisite does not hold.
+pub type PrerequisiteFailure {
+  /// The prerequisite is not met, or its id has no row.
+  PrerequisiteUnmet
+  /// The prerequisite has a condition the server cannot read yet.
+  PrerequisiteUnread(gap: Gap)
+  /// The prerequisite cannot be loaded.
+  PrerequisiteBroken(error: CheckError)
+}
+
+/// Whether the prerequisite of an id holds for the player with its log: 0 names none. An
+/// id with no row fails (EvaluatePrerequisite `0x1404a1ca0`, reached through slot 0x18,
+/// CheckPrerequisiteForUnits `0x14049bf10`): 2 quests of the game name one, so the check
+/// refuses them as the client does. The quest's own prerequisite and the prerequisite of a
+/// communicator row (`0x14043d3d0`) are judged by it alike.
+pub fn prerequisite_holds(
   tables tables: table_store.Tables,
-  quest quest: Quest2,
+  prerequisite_id prerequisite_id: Int,
   asker asker: Asker,
-) -> Result(Nil, Stop) {
-  use <- bool.guard(when: quest.prerequisite_id == 0, return: Ok(Nil))
-  case loaded_prerequisite(tables:, quest:) {
-    // A prerequisite id with no row fails (EvaluatePrerequisite 0x1404a1ca0, reached
-    // through slot 0x18, CheckPrerequisiteForUnits 0x14049bf10): 2 quests of the game
-    // name one, so the check refuses them as the client does.
-    Error(prerequisite.NoPrerequisiteRow(..)) ->
-      Error(Refuse(prerequisite_unmet))
+) -> Result(Nil, PrerequisiteFailure) {
+  use <- bool.guard(when: prerequisite_id == 0, return: Ok(Nil))
+  case loaded_prerequisite(tables:, prerequisite_id:) {
+    Error(prerequisite.NoPrerequisiteRow(..)) -> Error(PrerequisiteUnmet)
     Error(error) ->
-      Error(Broken(PrerequisiteNotLoaded(id: quest.prerequisite_id, error:)))
+      Error(
+        PrerequisiteBroken(error: PrerequisiteNotLoaded(
+          id: prerequisite_id,
+          error:,
+        )),
+      )
     Ok(loaded) -> {
       let subject =
         prerequisite.Subject(
@@ -754,11 +771,27 @@ fn prerequisite_met(
         )
       case prerequisite.check(prerequisite: loaded, subject:) {
         prerequisite.Passes -> Ok(Nil)
-        prerequisite.Fails -> Error(Refuse(prerequisite_unmet))
+        prerequisite.Fails -> Error(PrerequisiteUnmet)
         prerequisite.NotRead(prerequisite_type:) ->
-          Error(Unread(PrerequisiteType(prerequisite_type:)))
+          Error(PrerequisiteUnread(gap: PrerequisiteType(prerequisite_type:)))
       }
     }
+  }
+}
+
+/// Check 12: the prerequisite the quest names, for the player with its log.
+fn prerequisite_met(
+  tables tables: table_store.Tables,
+  quest quest: Quest2,
+  asker asker: Asker,
+) -> Result(Nil, Stop) {
+  case
+    prerequisite_holds(tables:, prerequisite_id: quest.prerequisite_id, asker:)
+  {
+    Ok(Nil) -> Ok(Nil)
+    Error(PrerequisiteUnmet) -> Error(Refuse(prerequisite_unmet))
+    Error(PrerequisiteUnread(gap:)) -> Error(Unread(gap))
+    Error(PrerequisiteBroken(error:)) -> Error(Broken(error))
   }
 }
 
