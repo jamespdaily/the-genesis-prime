@@ -153,23 +153,54 @@ pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_
     })
   assert list.length(interaction_spells) == 767
     as "Creature2 spell4IdActivate00-03 name 767 distinct spells whose Spell4Base castMethod is 5 (Spell.CodeEnumCastMethod: ClientSideInteraction)"
-  let planned =
-    list.filter(interaction_spells, fn(spell4_id) {
+  let refusals =
+    list.filter_map(interaction_spells, fn(spell4_id) {
       case activate.planned_of(activations:, spell4_id:) {
         Ok(Planned(spell:, ..)) -> {
           assert spell.method == spell_plan.ClientSideInteraction
             as "a planned castMethod 5 spell is planned as ClientSideInteraction"
-          True
+          Error(Nil)
         }
-        Ok(CannotBePlanned(why:)) -> {
-          assert string.starts_with(why, "the ")
-            as "a castMethod 5 spell the plan cannot build holds the plan's own reason in words"
-          False
-        }
+        Ok(CannotBePlanned(why:)) -> Ok(refusal_reason(why:))
         Ok(activate.NoSpell4Row) | Error(Nil) ->
           panic as "a castMethod 5 activate spell is planned or names its reason, never refused as not built"
       }
     })
-  assert list.length(planned) == 688
-    as "688 of the 767 are planned: the other 79 hold a Spell4Effects row aimed at the target, which an activate cast strikes no one with (Spell4Effects targetFlags)"
+  let count_of = fn(reason) {
+    list.count(refusals, fn(found) { found == reason })
+  }
+  assert count_of("aimed at the target") == 72
+    as "72 hold a Spell4Effects row aimed at the target or an area that the strike applies, which an activate cast strikes no one with (Spell4Effects targetFlags)"
+  assert count_of("control state") == 11
+    as "11 hold a CCStateSet effect of a state other than Stun (0) and Knockdown (8) (Unit.CodeEnumCCState)"
+  assert count_of("disguise") == 4
+    as "4 hold a DisguiseOutfit effect the server does not read (Spell4Effects.effectType.112)"
+  assert count_of("force remove counts") == 2
+    as "2 hold a SpellForceRemove effect whose dataBits03 differs from its dataBits04 (Spell4Effects.effectType.80)"
+  assert count_of("lasting aim") == 2
+    as "2 hold a Fluff, SpellForceRemove, Scale or RavelSignal effect aimed by flags the server does not read (Spell4Effects.targetFlags)"
+  assert count_of("stealth condition") == 1
+    as "1 holds a Spell4Conditions row whose mask tests stealth, with the refusals 65 and 114 not checked"
+  assert count_of("control aim") == 1
+    as "1 holds a CCStateSet effect aimed by flags the server does not read (Spell4Effects.targetFlags)"
+  assert list.length(refusals) == 93
+    as "93 of the 767 are refused, each for one of the reasons above, so 674 are planned"
+}
+
+/// The short name of a refusal's reason, by the text of the plan's own reason; a reason
+/// this list does not name stops the test.
+fn refusal_reason(why why: String) -> String {
+  let reasons = [
+    #("aims at the target or an area", "aimed at the target"),
+    #("of state", "control state"),
+    #("DisguiseOutfit", "disguise"),
+    #("differs from its dataBits04", "force remove counts"),
+    #("Fluff, SpellForceRemove, Scale or RavelSignal", "lasting aim"),
+    #("whose mask tests stealth", "stealth condition"),
+    #("CCStateSet effect", "control aim"),
+  ]
+  let assert Ok(#(_, reason)) =
+    list.find(reasons, fn(reason) { string.contains(why, reason.0) })
+    as { "the plan's reason is one the test names: " <> why }
+  reason
 }
