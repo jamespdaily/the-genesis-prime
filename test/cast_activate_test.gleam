@@ -859,8 +859,15 @@ pub fn a_started_answer_changes_nothing_test() -> Nil {
       result: interaction_result.Started,
       at: 1001,
     )
-  assert started == []
-    as "0x140779a70.once: the client's 3 only says the interaction began: nothing is sent"
+  assert support.writes(effects: started) == []
+    && support.started_timers(effects: started) == []
+    && activated_by(effects: started) == 0
+    as "0x140779a70.once: the client's 3 only says the interaction began: nothing is sent, started or raised"
+  let assert [#(LogDebug, text)] = support.logs(effects: started)
+    as "the answer 3 is logged at debug"
+  assert string.contains(text, "began")
+    && string.contains(text, int.to_string(id))
+    as "the log names the cast whose interaction began"
   let #(_, effects) =
     answered_ok(
       state:,
@@ -1078,4 +1085,106 @@ pub fn a_second_activate_while_an_interaction_waits_is_refused_test() -> Nil {
     as "cast.no_answer: the waiting cast is the caster's current cast, which refuses the next with 13"
   assert support.started_timers(effects:) == []
     as "the refused right-click starts nothing"
+}
+
+pub fn a_second_activate_while_an_untimed_interaction_waits_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: terminal(), at: 1000)
+  let id = support.pressed_id(effects: pressed)
+  let assert Ok(#(refused_state, effects)) =
+    right_click(
+      state:,
+      activations: the_activations(),
+      unit_id: its_unit,
+      target: terminal_object(creature: terminal()),
+      at: 1500,
+    )
+  assert support.refusal_results(effects:)
+    == [cast_result.to_value(cast_result.SpellAlreadyCasting)]
+    as "cast.no_answer: an interaction with no cast bar still waits for its answer, and a second right-click is refused 13"
+  assert list.length(support.writes(effects:)) == 1
+    && support.started_timers(effects:) == []
+    as "the refused right-click writes only its refusal and starts nothing"
+  let #(_, answer) =
+    answered_ok(
+      state: refused_state,
+      cast_id: id,
+      result: interaction_result.Succeeded,
+      at: 1600,
+    )
+  assert_went_and_finished(effects: answer)
+}
+
+/// The press of Electrocute, a cast with no cast time, as the rule gives it.
+fn pressed_electrocute(
+  state state: State,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  support.pressed_raw_in(
+    plans: support.plans(),
+    state:,
+    caster: standing(),
+    bag_index: support.electrocute,
+    target: 0,
+    at: ms,
+  )
+}
+
+/// A timed interaction with a press held in the last 500 ms of its bar, and the bar run
+/// with no answer yet.
+fn held_press_after_the_bar() -> #(State, Int) {
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+  let id = support.pressed_id(effects: pressed)
+  let #(state, held) = pressed_electrocute(state:, at: 1800)
+  assert support.writes(effects: held) == []
+    && support.refusal_results(effects: held) == []
+    as "cast.press_queue: 200 ms of the bar are left, within the queue window: the press is held"
+  let #(state, steps) = support.run_timers(state:, effects: pressed, from_ms: 0)
+  assert list.map(steps, fn(step) { step.0 }) == [2000]
+    as "the go's timer fires at the bar's end"
+  assert_nothing_happened(effects: flattened(steps:))
+  #(state, id)
+}
+
+pub fn a_held_press_starts_when_the_answer_succeeds_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, id) = held_press_after_the_bar()
+  let #(_, effects) =
+    answered_ok(
+      state:,
+      cast_id: id,
+      result: interaction_result.Succeeded,
+      at: 2500,
+    )
+  assert list.take(support.ids(frames: support.writes(effects:)), 3)
+    == [0x07F4, 0x07FE, 0x07FD]
+    as "the go and the finish end the cast, and the held press starts after them (cast.press_queue)"
+}
+
+pub fn a_held_press_starts_when_the_answer_fails_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, id) = held_press_after_the_bar()
+  let #(_, effects) =
+    answered_ok(
+      state:,
+      cast_id: id,
+      result: interaction_result.Failed,
+      at: 2500,
+    )
+  assert list.take(support.ids(frames: support.writes(effects:)), 3)
+    == [0x07F9, 0x07FE, 0x07FD]
+    as "the failure and the finish end the cast, and the held press starts after them (cast.press_queue)"
+}
+
+pub fn a_press_after_the_bar_while_the_answer_is_out_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+  let #(state, _) = support.run_timers(state:, effects: pressed, from_ms: 0)
+  let #(_, effects) = pressed_electrocute(state:, at: 3000)
+  assert support.refusal_results(effects:)
+    == [cast_result.to_value(cast_result.SpellAlreadyCasting)]
+    as "cast.no_answer: the bar has run and the answer is out, so the cast has no end of its own and the press is refused 13, not held"
 }

@@ -1187,7 +1187,9 @@ pub fn take(
     Cancelled ->
       cancelled(cast:, body:, caster:, now:)
       |> result.map(fn(taken) { released(taken:, caster:, now_ms:) })
-    Answered -> answered(cast:, body:, caster:, now_ms:)
+    Answered ->
+      answered(cast:, body:, caster:, now_ms:)
+      |> result.map(fn(taken) { released(taken:, caster:, now_ms:) })
   }
   |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
   |> result.map(fn(taken) {
@@ -1413,6 +1415,10 @@ fn activation_started(
   let refusal = fn(result) {
     Ok(#(cast, [refused(client_cast_id:, spell4_id:, result:)]))
   }
+  use <- bool.guard(
+    when: answer_is_out(cast:),
+    return: refusal(cast_result.SpellAlreadyCasting),
+  )
   case verdict(cast:, caster:, spell:, now_ms:, is_release: False) {
     Refuse(result:) -> refusal(result)
     Hold(..) -> refusal(cast_result.SpellGlobalCooldown)
@@ -2693,11 +2699,12 @@ fn cooldown_left_ms(
 
 /// The methods the rule casts; a spell of any other is refused 285.
 ///
-/// A press of a spell of castMethod 5 (`ClientSideInteraction`) is refused too: only the
-/// activate cast runs one (`activation_spell`), since the client opens its interaction on
-/// the 0x7fd of a right-click. Gap: a castMethod 5 spell a Spell4Effects row aims at the
-/// target is not planned for an activate cast (`activate.planned_of`), the issue for the
-/// aimed effects of an activate cast (#336).
+/// A press of a spell of castMethod 5 (`ClientSideInteraction`) is refused too, and only
+/// the activate cast runs one (`activation_spell`). Gap: the client opens its interaction
+/// on the 0x7fd of any pending cast of the player, an ability's or an item's as well
+/// (`opcode.0x7fd.csi`), so a pressed castMethod 5 spell is a cast the client would run;
+/// the server does not build it yet, the issue "Spells work in depth on the real client:
+/// cast times, telegraphs, buffs, crowd control and ticking effects" (#336).
 fn is_built(method: spell_plan.CastMethod) -> Bool {
   case method {
     spell_plan.Normal
@@ -2737,19 +2744,34 @@ fn casting(cast: State) -> Bool {
 
 /// The time the caster's current cast has left, in milliseconds, from its start
 /// and its duration (`cast.press_queue`); none when it has no end of its own,
-/// such as a charge held until its release.
+/// such as a charge held until its release, or an interaction whose bar has run and
+/// whose answer is still out.
 fn time_left_of_current_cast(
   cast cast: State,
   now_ms now_ms: Int,
 ) -> Option(Int) {
-  option.then(cast.current, fn(cast_id) {
-    dict.get(cast.casts, cast_id) |> option.from_result
-  })
-  |> option.then(fn(live) {
-    spell_plan.duration_ms(spell: live.spell)
-    |> option.map(fn(duration_ms) {
-      int.max(0, live.started_ms + duration_ms - now_ms)
-    })
+  use cast_id <- option.then(cast.current)
+  use live <- option.then(dict.get(cast.casts, cast_id) |> option.from_result)
+  let bar_running = go_waits(cast:, cast_id:)
+  case live.activation {
+    Some(Activating(interaction: AwaitingAnswer, ..)) if !bar_running -> None
+    Some(_) | None ->
+      spell_plan.duration_ms(spell: live.spell)
+      |> option.map(fn(duration_ms) {
+        int.max(0, live.started_ms + duration_ms - now_ms)
+      })
+  }
+}
+
+/// Whether a live cast waits for the answer of its interaction, with or without a bar.
+fn answer_is_out(cast cast: State) -> Bool {
+  list.any(dict.values(cast.casts), fn(live) {
+    case live.activation {
+      Some(Activating(interaction: AwaitingAnswer, ..)) -> True
+      Some(Activating(interaction: NoInteraction, ..))
+      | Some(Activating(interaction: AnswerSucceeded, ..))
+      | None -> False
+    }
   })
 }
 
@@ -2852,7 +2874,19 @@ fn answer_taken(
     )),
   )
   case answer.result {
-    interaction_result.Started | interaction_result.Other(..) -> Ok(#(cast, []))
+    interaction_result.Started ->
+      Ok(
+        #(cast, [
+          Log(
+            level: LogDebug,
+            text: "the client's interaction of the cast "
+              <> int.to_string(cast_id)
+              <> " began",
+          ),
+        ]),
+      )
+    interaction_result.Other(..) ->
+      Error(UnknownAnswer(result: interaction_result.to_value(answer.result)))
     interaction_result.Succeeded -> {
       let succeeded =
         Live(

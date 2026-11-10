@@ -172,17 +172,17 @@ pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_
   assert count_of("aimed at the target") == 72
     as "72 hold a Spell4Effects row aimed at the target or an area that the strike applies, which an activate cast strikes no one with (Spell4Effects targetFlags)"
   assert count_of("control state") == 11
-    as "11 hold a CCStateSet effect of a state other than Stun (0) and Knockdown (8) (Unit.CodeEnumCCState)"
+    as "11 hold a CCStateSet effect of a state other than Stun (0) and Knockdown (8) (Unit.CodeEnumCCState). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("disguise") == 4
-    as "4 hold a DisguiseOutfit effect the server does not read (Spell4Effects.effectType.112)"
+    as "4 hold a DisguiseOutfit effect the server does not read (Spell4Effects.effectType.112). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("force remove counts") == 2
-    as "2 hold a SpellForceRemove effect whose dataBits03 differs from its dataBits04 (Spell4Effects.effectType.80)"
+    as "2 hold a SpellForceRemove effect whose dataBits03 differs from its dataBits04 (Spell4Effects.effectType.80). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("lasting aim") == 2
-    as "2 hold a Fluff, SpellForceRemove, Scale or RavelSignal effect aimed by flags the server does not read (Spell4Effects.targetFlags)"
+    as "2 hold a Fluff, SpellForceRemove, Scale or RavelSignal effect aimed by flags the server does not read (Spell4Effects.targetFlags). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("stealth condition") == 1
-    as "1 holds a Spell4Conditions row whose mask tests stealth, with the refusals 65 and 114 not checked"
+    as "1 holds a Spell4Conditions row whose mask tests stealth, with the refusals 65 and 114 not checked. Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("control aim") == 1
-    as "1 holds a CCStateSet effect aimed by flags the server does not read (Spell4Effects.targetFlags)"
+    as "1 holds a CCStateSet effect aimed by flags the server does not read (Spell4Effects.targetFlags). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert list.length(refusals) == 93
     as "93 of the 767 are refused, each for one of the reasons above, so 674 are planned"
 }
