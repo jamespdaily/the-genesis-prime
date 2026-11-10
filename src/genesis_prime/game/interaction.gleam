@@ -105,7 +105,7 @@ pub type Effect {
   OpenDialog(unit_id: Int)
   /// The player talked to a creature that an open type 3 objective names: the connection
   /// counts the talk (genesis_prime/game/objective), after the dialog is opened.
-  TalkedTo(creature_id: Int)
+  TalkedTo(creature_id: Creature2Id)
   /// Write 0x090B with the vendor's stock, which opens its window, then 0x00BC with the
   /// player's buyback list, which the connection holds.
   OpenVendor(unit_id: Int, vendor: Vendor)
@@ -248,7 +248,7 @@ pub fn take(
   vendors vendors: Vendors,
   now_ms now_ms: Int,
   offers offers: fn(Creature2) -> Offer,
-  talk_targets talk_targets: Set(Int),
+  talk_targets talk_targets: Set(Creature2Id),
   logged logged: Set(String),
 ) -> Result(Taken, Refusal) {
   case message {
@@ -326,10 +326,10 @@ pub fn take(
 fn dialog_effects(
   unit_id unit_id: Int,
   creature_id creature_id: Creature2Id,
-  talk_targets talk_targets: Set(Int),
+  talk_targets talk_targets: Set(Creature2Id),
 ) -> List(Effect) {
-  case set.contains(talk_targets, creature_id.value) {
-    True -> [OpenDialog(unit_id:), TalkedTo(creature_id: creature_id.value)]
+  case set.contains(talk_targets, creature_id) {
+    True -> [OpenDialog(unit_id:), TalkedTo(creature_id:)]
     False -> [OpenDialog(unit_id:)]
   }
 }
@@ -347,7 +347,7 @@ fn talked_to(
   tables tables: table_store.Tables,
   now_ms now_ms: Int,
   offers offers: fn(Creature2) -> Offer,
-  talk_targets talk_targets: Set(Int),
+  talk_targets talk_targets: Set(Creature2Id),
 ) -> Result(Creature2Id, Declined) {
   use shown <- result.try(
     dict.get(picture, unit_id) |> result.replace_error(NotShown(unit_id:)),
@@ -369,7 +369,7 @@ fn talked_to(
       )
       let assert Ok(row) = creature2.get(tables, creature_id)
         as "a shown creature's Creature2 row is in the tables its spawn was loaded from"
-      let target = set.contains(talk_targets, creature_id.value)
+      let target = set.contains(talk_targets, creature_id)
       use <- bool.guard(
         when: !target && !list.any(spawn.quest_ids(row), fn(id) { id != 0 }),
         return: Error(NoQuest(unit_id:, creature_id:)),

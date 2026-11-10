@@ -109,7 +109,7 @@ import genesis_prime/step.{
   OwnEffect, StartTimer,
 }
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{RaceId}
+import genesis_prime/table/id.{Creature2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/dict
@@ -434,7 +434,7 @@ pub fn cast_effects(
             connection_objective.counted(
               session:,
               now:,
-              event: objective.Used(creature_id:),
+              event: objective.Used(creature_id: Creature2Id(creature_id)),
             )
           False -> #(session, [])
         }

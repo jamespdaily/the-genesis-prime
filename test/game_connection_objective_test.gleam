@@ -304,7 +304,7 @@ pub fn an_interrupted_use_counts_nothing_test() -> Nil {
         )),
       ),
     )
-  let #(_, later) =
+  let #(state, later) =
     connection_support.casts_run(
       state:,
       pending: connection_support.cast_timers(steps: [started], ms: 0),
@@ -316,4 +316,25 @@ pub fn an_interrupted_use_counts_nothing_test() -> Nil {
     as "opcode.0x801: a cast cancelled before its go at 2000 ms counts no use"
   assert !list.contains(all, 0x07F4)
     as "the cancelled cast never reaches its go, so the 0x361 is absent because the use did not happen, not because the timer was lost"
+
+  let #(state, again) =
+    connection_support.at(
+      state:,
+      ms: 5000,
+      event: OwnEvent(step.Read(right_click())),
+    )
+  let #(_, go) =
+    connection_support.casts_run(
+      state:,
+      pending: connection_support.cast_timers(steps: [again], ms: 5000),
+      until_ms: 7000,
+      steps: [],
+    )
+  assert list.flat_map(go, fn(taken) { as_pairs(frames: frames(taken:)) })
+    |> list.drop(2)
+    == [
+      progress_frame(quest: 9207, index: 0, progress: 1),
+      state_frame(quest: 9207, state: 2),
+    ]
+    as "a use of the same creature after the cancel completes at its go and counts once: one 0x361 at 1 of 1, then 0x35c, so the silence before was the cancel and not a count that is never wired"
 }

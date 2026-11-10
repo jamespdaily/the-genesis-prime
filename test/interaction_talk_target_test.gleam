@@ -140,7 +140,10 @@ pub fn a_type_3_target_opens_its_dialog_and_counts_the_talk_test() -> Nil {
       offer: interaction.NothingToOffer,
     )
   assert target.effects
-    == [OpenDialog(unit_id: unit), TalkedTo(creature_id: talk_target)]
+    == [
+      OpenDialog(unit_id: unit),
+      TalkedTo(creature_id: id.Creature2Id(talk_target)),
+    ]
     as "a creature with no quest of its own, named by an open type 3 objective, gets 0x357 and then counts the talk (0x140553110, opcode.0x357)"
   assert target.window == Closes
     as "the talk closes a vendor window as any request to talk does"
@@ -154,7 +157,10 @@ pub fn a_type_3_target_opens_its_dialog_and_counts_the_talk_test() -> Nil {
       offer: Offered,
     )
   assert offering.effects
-    == [OpenDialog(unit_id: unit), TalkedTo(creature_id: talk_target)]
+    == [
+      OpenDialog(unit_id: unit),
+      TalkedTo(creature_id: id.Creature2Id(talk_target)),
+    ]
     as "a creature that also offers a quest opens its dialog once and counts the talk"
 
   let edge =
@@ -166,7 +172,10 @@ pub fn a_type_3_target_opens_its_dialog_and_counts_the_talk_test() -> Nil {
       offer: interaction.NothingToOffer,
     )
   assert edge.effects
-    == [OpenDialog(unit_id: unit), TalkedTo(creature_id: talk_target)]
+    == [
+      OpenDialog(unit_id: unit),
+      TalkedTo(creature_id: id.Creature2Id(talk_target)),
+    ]
     as "a target within 6.0 + 3.0 is answered"
 
   assert_declined(
@@ -258,6 +267,9 @@ pub fn a_type_3_target_opens_its_dialog_and_counts_the_talk_test() -> Nil {
       gap: 1.0,
       offer: interaction.NothingToOffer,
     ).effects
-    == [OpenDialog(unit_id: unit), TalkedTo(creature_id: 58_487)]
+    == [
+      OpenDialog(unit_id: unit),
+      TalkedTo(creature_id: id.Creature2Id(58_487)),
+    ]
     as "the same creature once the earlier objective is done"
 }

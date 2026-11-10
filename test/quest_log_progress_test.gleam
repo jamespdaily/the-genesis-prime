@@ -7,9 +7,14 @@
 ////   done mask (`opcode.0x35f`). The counts and flags below are the client's rows in
 ////   the fixture (`table_rows -- QuestObjective`).
 //// - `0x1405510d0` and `0x140553790`: only an objective of a quest in the active list
-////   that is not done and is reachable takes progress.
-//// - `0x1405fbdc0` and `opcode.0x35c`: a quest whose every objective without flag
-////   0x20 is done is Achieved (state 2), and an Achieved quest is stored as such.
+////   that is not done and is reachable takes progress. `0x1405510d0` treats only state
+////   3 (completed) as a quest with nothing left, so an Achieved quest is in the list and
+////   takes progress too; `0x140553110` and `opcode.0x361` have no state test either.
+//// - `0x1405fbc40`, `0x1405fbdc0` and `opcode.0x35c`: a quest whose every objective
+////   without flag 0x20 is done is Achieved (state 2), and an Achieved quest is stored
+////   as such and stays in the active list. Only the objectives with flag 0x20 are still
+////   open in it, and finishing one leaves it Achieved: there is nothing to tell the
+////   client again.
 ////
 //// The quests, from the client's rows:
 //// - 4290: one type 12 objective (5763), flags 0, count 5.
@@ -19,6 +24,8 @@
 ////   flags 18, count 1).
 //// - 9428: objective 0 is 17988 (type 3, flags 3, count 1), objective 1 is 17989 (type
 ////   12, flags 3, count 1).
+//// - 5622: objective 0 is 10263 (type 3, flags 0x20, count 1), objectives 1 and 2 are
+////   8742 and 8305 (type 3, flags 3, count 1).
 
 import character_tables
 import genesis_prime/game/quest_log.{type QuestLog}
@@ -35,6 +42,8 @@ const gated_chain = 3668
 const skipped_then_gated = 3297
 
 const talk_then_use = 9428
+
+const optional_talk = 5622
 
 fn quest(id id: Int) -> quest_log.Quest {
   let assert Ok(quest) =
@@ -166,19 +175,6 @@ pub fn progress_reaches_only_open_objectives_test() -> Nil {
         quest_support.known(quest_id: counted_use, state: 4),
       ]),
     ),
-    #(
-      "an achieved quest",
-      quest_support.log_of(rows: [
-        quest_support.active(
-          quest_id: counted_use,
-          state: 2,
-          placeholder: 0,
-          tracked: False,
-          done_mask: 0b1,
-          progress: [5],
-        ),
-      ]),
-    ),
     #("a quest not in the log", quest_support.log_of(rows: [])),
   ]
   list.each(not_accepted, fn(case_) {
@@ -191,7 +187,7 @@ pub fn progress_reaches_only_open_objectives_test() -> Nil {
       == Error(Nil)
       as {
         case_.0
-        <> " takes no progress: only an Accepted quest does (0x1405510d0)"
+        <> " takes no progress: only a quest in the active list does (0x1405510d0)"
       }
   })
 }
@@ -207,7 +203,7 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
   let assert Ok(first) =
     quest_log.progressed(log:, quest: chain, index: 0, amount: 1)
     as "3668 objective 0 is open"
-  assert !first.achieved
+  assert !first.became_achieved
     as "objectives 1 and 2 of 3668 are still open, so the quest is not achieved"
   assert quest_log.stored_state(log: first.log, quest_id: gated_chain) == 1
     as "the stored state stays Accepted"
@@ -220,7 +216,7 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
   let assert Ok(only) =
     quest_log.progressed(log:, quest: skipped, index: 1, amount: 1)
     as "3297 objective 1 is reachable because objective 0 has flag 0x20"
-  assert only.achieved
+  assert only.became_achieved
     as "objective 0 of 3297 has flag 0x20 and is skipped, so finishing objective 1 achieves it (0x1405fbdc0)"
   assert quest_log.stored_state(log: only.log, quest_id: skipped_then_gated)
     == 2
@@ -238,11 +234,11 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
   let assert Ok(talked) =
     quest_log.progressed(log:, quest: pair, index: 0, amount: 1)
     as "9428 objective 0 is open"
-  assert !talked.achieved as "9428 objective 1 is still open"
+  assert !talked.became_achieved as "9428 objective 1 is still open"
   let assert Ok(used) =
     quest_log.progressed(log: talked.log, quest: pair, index: 1, amount: 1)
     as "with objective 0 done, objective 1 (flag 2) is reachable"
-  assert used.achieved as "the last open objective achieves the quest"
+  assert used.became_achieved as "the last open objective achieves the quest"
   assert quest_log.stored_state(log: used.log, quest_id: talk_then_use) == 2
     as "the stored state becomes Achieved"
   assert quest_log.state(log: used.log, quest: pair) == 2
@@ -253,5 +249,58 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
 
   assert quest_log.progressed(log: used.log, quest: pair, index: 0, amount: 1)
     == Error(Nil)
-    as "an achieved quest takes no more progress"
+    as "a done objective takes none, in an Achieved quest too (0x1405510d0)"
+  an_achieved_quest_takes_progress_on_its_optional_objectives()
+}
+
+/// An Achieved quest takes progress on its optional objectives and stays Achieved.
+fn an_achieved_quest_takes_progress_on_its_optional_objectives() -> Nil {
+  let optional = quest(id: optional_talk)
+
+  let accepted =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: optional_talk, progress: [0, 0, 0]),
+    ])
+  let assert Ok(skipped) =
+    quest_log.progressed(log: accepted, quest: optional, index: 0, amount: 1)
+    as "5622 objective 0 has flag 0x20 and is open in an Accepted quest"
+  assert !skipped.became_achieved
+    as "5622's objectives 1 and 2 are still open, and the optional one does not count (0x1405fbc40)"
+  assert quest_log.stored_state(log: skipped.log, quest_id: optional_talk) == 1
+    as "the quest stays Accepted"
+
+  let achieved =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: optional_talk,
+        state: 2,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b110,
+        progress: [0, 1, 1],
+      ),
+    ])
+  assert quest_log.state(log: achieved, quest: optional) == 2
+    as "objectives 1 and 2 are done, so 5622 is Achieved without objective 0"
+  let assert Ok(late) =
+    quest_log.progressed(log: achieved, quest: optional, index: 0, amount: 1)
+    as "the optional objective of an Achieved quest is open, since only state 3 stops it (0x1405510d0)"
+  assert late.progress == 1 as "the optional objective counts its one talk"
+  assert !late.became_achieved
+    as "the quest was Achieved already, so the client is not told again"
+  assert quest_log.stored_state(log: late.log, quest_id: optional_talk) == 2
+    as "the quest stays Achieved"
+  assert saved(log: late.log, quest_id: optional_talk).state == 2
+    as "the place save writes Achieved"
+  assert done_mask_of(row: saved(log: late.log, quest_id: optional_talk))
+    == 0b111
+    as "the optional objective's done bit joins the others"
+  assert quest_log.progressed(
+      log: late.log,
+      quest: optional,
+      index: 0,
+      amount: 1,
+    )
+    == Error(Nil)
+    as "once done it takes no more"
 }

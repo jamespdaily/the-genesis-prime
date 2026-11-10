@@ -925,6 +925,39 @@ pub fn next_deadline(log log: QuestLog) -> Option(Int) {
   |> option.from_result
 }
 
+/// What the quest deadline timer is told when the earliest deadline moves.
+pub type DeadlineTimer {
+  /// Start the timer, which is not running, to fire in this many milliseconds.
+  StartDeadlineTimer(after_ms: Int)
+  /// Cancel the running timer.
+  CancelDeadlineTimer
+}
+
+/// What the quest deadline timer needs when the earliest deadline of the log
+/// (`next_deadline`, on the monotonic clock) goes from `before`, the deadline the
+/// running timer is set for, or none when no timer runs, to `after`: nothing when it did
+/// not move, the timer started when none ran, the running one cancelled and then started
+/// for the new deadline, or only cancelled when none is left. A timer that has just fired
+/// or been cancelled is not running.
+pub fn deadline_moved(
+  before before: Option(Int),
+  after after: Option(Int),
+  now_ms now_ms: Int,
+) -> List(DeadlineTimer) {
+  case before, after {
+    None, None -> []
+    None, Some(deadline_ms) -> [
+      StartDeadlineTimer(after_ms: int.max(0, deadline_ms - now_ms)),
+    ]
+    Some(_), None -> [CancelDeadlineTimer]
+    Some(was), Some(deadline_ms) if was == deadline_ms -> []
+    Some(_), Some(deadline_ms) -> [
+      CancelDeadlineTimer,
+      StartDeadlineTimer(after_ms: int.max(0, deadline_ms - now_ms)),
+    ]
+  }
+}
+
 /// The log after the quest is held in the client's second list in this state, in place
 /// of whatever the log held of it: the client's state setter moves a quest between its
 /// lists (`0x1405fbdc0`), so an active entry is dropped and the state is kept.
@@ -1063,20 +1096,23 @@ fn needed(objective objective: Objective) -> Int {
 }
 
 /// What one objective's progress leads to: the log after it, the objective's new
-/// progress and whether the quest is now achieved.
+/// progress and whether this progress made the quest Achieved, which is only so for a
+/// quest that was Accepted before it.
 pub type Progressed {
-  Progressed(log: QuestLog, progress: Int, achieved: Bool)
+  Progressed(log: QuestLog, progress: Int, became_achieved: Bool)
 }
 
 /// The log after `amount` is added to the progress of the quest's objective at `index`,
 /// capped at the objective's needed count (`0x140551840`), or `Error(Nil)` when the
-/// objective takes none: the quest is not Accepted in the log, or the objective is done,
-/// not reachable or past the quest's objectives (`0x1405510d0`, `0x140553790`). The
+/// objective takes none: the quest is not in the active list (Accepted or Achieved), or
+/// the objective is done, not reachable or past the quest's objectives (`0x1405510d0`
+/// tests only for state 3, so an Achieved quest takes progress; `0x140553790`). The
 /// objective is done once its progress reaches the needed count, which sets bit `index`
 /// of the done mask (`0x1406115a0`); when every objective without flag 0x20 is then
-/// done, the stored state becomes Achieved (`0x1405fbdc0`), the state `state` derives.
-/// Only count objectives are added to: a percent kind objective's progress is in
-/// thousandths and a checklist's in bits, which this does not read.
+/// done, an Accepted quest becomes Achieved (`0x1405fbc40`, `0x1405fbdc0`). An Achieved
+/// quest stays Achieved: only an objective with flag 0x20 is still open in it. Only
+/// count objectives are added to: a percent kind objective's progress is in thousandths
+/// and a checklist's in bits, which this does not read.
 pub fn progressed(
   log log: QuestLog,
   quest quest: Quest,
@@ -1085,8 +1121,7 @@ pub fn progressed(
 ) -> Result(Progressed, Nil) {
   let quest = as_logged(log:, quest:)
   case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
-    Ok(Active(state: Accepted, done_mask:, progress:, ..) as entry),
-      [objective, ..]
+    Ok(Active(state:, done_mask:, progress:, ..) as entry), [objective, ..]
       if index >= 0
     -> {
       use <- bool.guard(
@@ -1103,7 +1138,8 @@ pub fn progressed(
         True -> int.bitwise_or(done_mask, int.bitwise_shift_left(1, index))
         False -> done_mask
       }
-      let achieved = every_objective_is_done(quest:, done_mask:)
+      let became_achieved =
+        state == Accepted && every_objective_is_done(quest:, done_mask:)
       Ok(Progressed(
         log: QuestLog(
           ..log,
@@ -1112,9 +1148,9 @@ pub fn progressed(
             quest.id,
             Active(
               ..entry,
-              state: case achieved {
+              state: case became_achieved {
                 True -> Achieved
-                False -> Accepted
+                False -> state
               },
               done_mask:,
               progress: list.index_map(progress, fn(old, at) {
@@ -1127,7 +1163,7 @@ pub fn progressed(
           ),
         ),
         progress: new_progress,
-        achieved:,
+        became_achieved:,
       ))
     }
     _, _ -> Error(Nil)
