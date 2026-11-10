@@ -9,8 +9,8 @@
 ////                           ├─ the clock reads that timer's due time
 ////                           ├─ Elapsed is sent to the process that started it
 ////                           └─ barrier: passes of sys:get_state over every participant
-////                              until a whole pass saw no clock read; only then the
-////                              clock is asked for the next due timer
+////                              until two passes in a row saw no clock read; only then
+////                              the clock is asked for the next due timer
 //// ```
 ////
 //// - **Contract:** a script's clock gives each connection input its `Now` and its
@@ -333,27 +333,53 @@ fn fire_until(time time: Time, limit_ms limit_ms: Int) -> Nil {
   }
 }
 
-/// Returns when a whole pass over the participants saw no clock read. A pass reads
-/// the counter, waits until each participant that is still running has taken
-/// everything in its mailbox (`settled`), and reads the counter again; a changed
-/// counter means some participant took an input during the pass, and the pass is
-/// made again over the participants as they are then. A local send is enqueued at
-/// the send, so a message a participant sent before it answered the pass is in its
-/// receiver's mailbox before the next pass reaches that receiver, and that pass sees
-/// the receiver's read. A participant that ends during a pass is dropped by the next.
+/// Returns after two passes in a row that saw no clock read. A pass reads the
+/// counter, waits until each participant that is still running has taken everything
+/// in its mailbox (`settled`), and reads the counter again; a changed counter means
+/// some participant took an input during the pass, and the pass is made again over
+/// the participants as they are then.
+///
+/// One quiet pass is not enough. A participant A can read the clock for an input
+/// before the pass's opening read, and during the pass send a message to a
+/// participant B the pass has already settled. B takes the message after its
+/// `settled`, and its read for it comes after the pass's closing read when B is
+/// slow: the counter then did not move, and the pass is quiet while B holds the
+/// message. The second pass opens at the first one's closing read. A's send was
+/// made before A answered the first pass's `settled`, and a local send is enqueued
+/// at the send, so the message is in B's mailbox before the second pass reaches B;
+/// B's `settled` returns only after B has taken it, so B's read for it is counted
+/// in the second pass, which is then not quiet. Any input whose read is not before
+/// the first pass's opening read is after its closing read, so the second pass
+/// counts it.
+///
+/// This assumes that a local send is enqueued at the send. A participant that ends
+/// during a pass is dropped by the next.
 fn wait_until_quiet(time: Time) -> Nil {
-  let Participation(reads: reads_before, running:) = asked(time:, make: Observe)
-  list.each(running, settled)
-  let Participation(reads: reads_after, ..) = asked(time:, make: Observe)
-  use <- bool.guard(when: reads_after == reads_before, return: Nil)
-  wait_until_quiet(time)
+  let opening = asked(time:, make: Observe)
+  pass(time:, opening:, after_a_quiet_pass: False)
+}
+
+/// One pass over the participants `opening` names, which ends the barrier when it
+/// is quiet after a quiet pass, and is made again from its closing look otherwise.
+fn pass(
+  time time: Time,
+  opening opening: Participation,
+  after_a_quiet_pass after_a_quiet_pass: Bool,
+) -> Nil {
+  list.each(opening.running, settled)
+  let closing = asked(time:, make: Observe)
+  case closing.reads == opening.reads, after_a_quiet_pass {
+    True, True -> Nil
+    True, False -> pass(time:, opening: closing, after_a_quiet_pass: True)
+    False, _ -> pass(time:, opening: closing, after_a_quiet_pass: False)
+  }
 }
 
 /// Returns when the participant has taken what was in its mailbox when this was
 /// called (`sys:get_state` is answered in the order of its mailbox), or has ended.
 /// The call is made from a process of its own, so a participant that ends before it
 /// answers ends the wait through its monitor and fails nothing.
-fn settled(participant: Pid) -> Nil {
+pub fn settled(participant: Pid) -> Nil {
   let monitor = process.monitor(participant)
   let answered = process.new_subject()
   let _asker =

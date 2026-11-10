@@ -99,8 +99,9 @@
 ////   and takes `CreatureNotStarted(watch, reason)` as the next input once the
 ////   step's effects are carried out, in the order named, before any
 ////   `WatchEnded` the step's watches held to end give.
-//// - **Timers.** `StartServiceTimer(id, ms)` starts the operating system's timer
-////   (`script.operating_system_timer`), kept under `id` with the reference its
+//// - **Timers.** `StartServiceTimer(id, ms)` starts a timer on the service's
+////   scheduler (`Settings.time`; the operating system's timer, `script.operating_system_timer`,
+////   for a server), kept under `id` with the reference its
 ////   firing carries (genesis_prime/step/timer); the firing comes back once as
 ////   `ServiceTimerFired(id)`, and the shell forgets the timer. `CancelServiceTimer(id)`
 ////   cancels it, so no firing follows: a firing whose reference is not the
@@ -312,7 +313,7 @@ fn initialise(
         elapsed:,
         unstarted: [],
       ),
-      now: runtime.now(),
+      now: settings.time.clock(),
       event: OwnEvent(Started),
     )
   let selector =
@@ -352,14 +353,14 @@ fn handle(
         )
       actor.continue(take(
         running:,
-        now: runtime.now(),
+        now: running.settings.time.clock(),
         event: OwnEvent(Asked(caller: CallerId(number), message:)),
       ))
     }
     Called(TellCall(message:)) ->
       actor.continue(take(
         running:,
-        now: runtime.now(),
+        now: running.settings.time.clock(),
         event: OwnEvent(Told(message:)),
       ))
     TimerElapsed(timer:, reference:) ->
@@ -367,7 +368,7 @@ fn handle(
         Ok(timers) ->
           actor.continue(take(
             running: Running(..running, timers:),
-            now: runtime.now(),
+            now: running.settings.time.clock(),
             event: OwnEvent(ServiceTimerFired(timer:)),
           ))
         Error(Nil) -> actor.continue(running)
@@ -380,7 +381,7 @@ fn handle(
     Exited(exit:) ->
       case exit.pid == running.parent {
         True -> {
-          let now = runtime.now()
+          let now = running.settings.time.clock()
           actor.continue(take(
             running:,
             now:,
@@ -416,7 +417,7 @@ fn take(
     [#(watch, reason), ..later] ->
       take(
         running: Running(..running, unstarted: later),
-        now: runtime.now(),
+        now: running.settings.time.clock(),
         event: OwnEvent(CreatureNotStarted(watch:, reason:)),
       )
     [] ->
@@ -424,7 +425,7 @@ fn take(
         Ok(#(watch, watches)) ->
           take(
             running: Running(..running, watches:),
-            now: runtime.now(),
+            now: running.settings.time.clock(),
             event: WatchEnded(watch:),
           )
         Error(Nil) -> running
@@ -527,11 +528,11 @@ fn start_timer(
 ) -> Running(settings, state, message, outgoing) {
   let started =
     timer_book.start(timers: running.timers, timer:, schedule: fn(reference) {
-      script.operating_system_timer(
-        subject: running.elapsed,
-        timer:,
-        reference:,
-        after_ms:,
+      running.settings.time.schedule(
+        running.elapsed,
+        timer,
+        reference,
+        after_ms,
       )
     })
   case started {
@@ -615,7 +616,7 @@ fn watch_ended(
     Ok(#(watch, watches)) ->
       take(
         running: Running(..running, watches:),
-        now: runtime.now(),
+        now: running.settings.time.clock(),
         event: WatchEnded(watch:),
       )
     Error(Nil) -> running
