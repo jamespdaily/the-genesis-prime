@@ -534,6 +534,7 @@
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/activate
 import genesis_prime/game/area
 import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
 import genesis_prime/game/cooldown
@@ -550,6 +551,7 @@ import genesis_prime/game/unit_properties
 import genesis_prime/message/ability_hold
 import genesis_prime/message/cancel_cast.{type CancelCast}
 import genesis_prime/message/cast_ability
+import genesis_prime/message/cast_activate
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
@@ -749,6 +751,10 @@ pub type Effect {
   /// the connection writes 0x8f5 to the caster's client and tells each viewer
   /// (`opcode.0x8f5`, genesis_prime/client_connection `Stealth`).
   StealthChanged(stealthed: Bool)
+  /// The go of an activate cast: the player activated the static object `unit_id`, a
+  /// creature of the Creature2 row `creature_id`. Nothing consumes it yet; the connection
+  /// logs it (a quest step or a collectible's reward will read it).
+  Activated(unit_id: Int, creature_id: Int)
 }
 
 /// A go of a live cast that waits for its targets: which cast and phase, the spell,
@@ -806,8 +812,8 @@ pub type OnCreature {
 pub type Refusal {
   /// A body the client's own reader would refuse.
   NotDecoded(undecoded: client_connection.Undecoded)
-  /// A 0x9a with the client's cast id 0, which its counter never gives
-  /// (`opcode.0x9a`).
+  /// A 0x9a or 0x97 with the client's cast id 0, which its counter never gives
+  /// (`opcode.0x9a`, `opcode.0x97`).
   NoClientCastId
   /// A 0x801 whose reason and bit are none the client sends together
   /// (`opcode.0x801`).
@@ -884,6 +890,19 @@ type Role {
   /// A class's innate passive, which no press made: no threshold is touched, no
   /// global cooldown starts and it is never the current cast.
   Passive
+  /// The activate cast of a unit the player right-clicked: no threshold is touched.
+  Activation(activating: Activating)
+}
+
+/// The unit an activate cast activates and what its go names on it.
+pub type Activating {
+  Activating(
+    unit_id: Int,
+    /// The Creature2 row of the unit.
+    creature_id: Int,
+    /// The spell's Activate rows, which the go lists on the unit.
+    effects: List(activate.ActivateEffect),
+  )
 }
 
 /// A cast of the caster that has started and not finished.
@@ -915,6 +934,8 @@ pub type Live {
     /// The nodes the cast's gos left on units, by unit id: a later go on the same
     /// unit sets its node again (`opcode.0x7f4.instance_count`).
     nodes: Dict(Int, lasting.Node),
+    /// The unit the cast activates, for an activate cast.
+    activation: Option(Activating),
   )
 }
 
@@ -1005,8 +1026,8 @@ pub opaque type State {
     presses: Int,
     /// How many timers the rule has started, which the timer ids are made from.
     timers_started: Int,
-    /// The Spell4 ids already logged as unbuilt on this connection.
-    logged: Set(Int),
+    /// What the rule has already logged as unbuilt on this connection.
+    logged: Set(Unbuilt),
     /// The Stealth rows the caster's casts hold on it, by cast id and effect id, each
     /// with whether damage ends it; the caster is stealthed while this is not empty.
     stealth: Dict(unit_properties.Source, spell_plan.Breaks),
@@ -1137,6 +1158,285 @@ pub fn take(
   |> result.map(fn(taken) {
     settled(cast:, caster:, now:, own: [], step: fn() { taken })
   })
+}
+
+/// The caster's 0x97, the right-click of a unit, decoded and decided: the client's cast
+/// of the unit's activate spell (`opcode.0x97`). `target_of` says what the unit the
+/// message names is to the caster's connection (its picture), and `caster_radius` is the
+/// hit radius of the caster's own body, which the range check takes beside the target's.
+/// The spell is the creature's pick (genesis_prime/game/activate `pick`); a cast that
+/// cannot start is refused with the result the client names, and one that can runs as any
+/// cast does, for the creature's activate cast time, and its go raises `Activated`.
+pub fn activate(
+  cast cast: State,
+  body body: BitArray,
+  caster caster: Caster,
+  activations activations: activate.Activations,
+  target_of target_of: fn(Int) -> activate.Target,
+  caster_radius caster_radius: Float,
+  now now: Now,
+) -> Result(#(State, List(Effect)), Refusal) {
+  let now_ms = now.monotonic_ms
+  activation_pressed(
+    cast:,
+    body:,
+    caster:,
+    activations:,
+    target_of:,
+    caster_radius:,
+    now_ms:,
+  )
+  |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
+  |> result.map(fn(taken) {
+    settled(cast:, caster:, now:, own: [], step: fn() { taken })
+  })
+}
+
+fn activation_pressed(
+  cast cast: State,
+  body body: BitArray,
+  caster caster: Caster,
+  activations activations: activate.Activations,
+  target_of target_of: fn(Int) -> activate.Target,
+  caster_radius caster_radius: Float,
+  now_ms now_ms: Int,
+) -> Result(#(State, List(Effect)), Refusal) {
+  use press <- result.try(
+    cast_activate.decode(body)
+    |> client_connection.decoded(message_id: cast_activate.message_id)
+    |> result.map_error(NotDecoded),
+  )
+  use <- bool.guard(
+    when: press.client_cast_id == 0,
+    return: Error(NoClientCastId),
+  )
+  let client_cast_id = press.client_cast_id
+  let refusal = fn(spell4_id, result) {
+    Ok(#(cast, [refused(client_cast_id:, spell4_id:, result:)]))
+  }
+  case target_of(press.target_unit_id) {
+    activate.Unseen -> refusal(0, cast_result.CasterMustHaveTarget)
+    activate.AnotherPlayer -> refusal(0, cast_result.NoTarget)
+    activate.Fighter -> refusal(0, cast_result.TargetIsNotUseable)
+    activate.Object(creature_id:, creature:, body: target) -> {
+      let subject =
+        prerequisite.Subject(
+          ..subject_of(cast:, caster:),
+          second_unit: Some(press.target_unit_id),
+          positions: prerequisite.NotPlaced,
+        )
+      let picked =
+        activate.pick(
+          creature:,
+          default_spell: activations.default_spell,
+          check: activate.checker(activations:, subject:),
+        )
+      case picked {
+        activate.NoActivateSpell -> refusal(0, cast_result.TargetIsNotUseable)
+        activate.Unread(prerequisite_type:) ->
+          not_built_refusal(
+            cast:,
+            client_cast_id:,
+            spell4_id: 0,
+            key: UnreadPrerequisite(prerequisite_type:),
+            result: cast_result.IllegalSpellCast,
+            why: "of a creature activates through a prerequisite of the type "
+              <> int.to_string(prerequisite_type)
+              <> ", which the server does not read",
+          )
+        activate.Picked(spell4_id:) ->
+          case activate.planned_of(activations:, spell4_id:) {
+            Error(Nil) | Ok(activate.NoSpell4Row) ->
+              refusal(spell4_id, cast_result.SpellUnknown)
+            Ok(activate.CannotBePlanned(why:)) ->
+              not_built_refusal(
+                cast:,
+                client_cast_id:,
+                spell4_id:,
+                key: UnbuiltSpell(spell4_id:),
+                result: cast_result.IllegalSpellCast,
+                why: "cannot be planned: " <> why,
+              )
+            Ok(activate.Planned(spell:, effects:, limits:)) ->
+              activation_in_range(
+                cast:,
+                caster:,
+                caster_radius:,
+                now_ms:,
+                client_cast_id:,
+                unit_id: press.target_unit_id,
+                creature_id:,
+                creature:,
+                target:,
+                spell:,
+                effects:,
+                limits:,
+              )
+          }
+      }
+    }
+  }
+}
+
+/// An activate cast of a planned spell at an object: refused with the range's result when
+/// the caster stands out of the limits the creature and the spell hold, else started.
+fn activation_in_range(
+  cast cast: State,
+  caster caster: Caster,
+  caster_radius caster_radius: Float,
+  now_ms now_ms: Int,
+  client_cast_id client_cast_id: Int,
+  unit_id unit_id: Int,
+  creature_id creature_id: Int,
+  creature creature: activate.Creature,
+  target target: activate.Body,
+  spell spell: Spell,
+  effects effects: List(activate.ActivateEffect),
+  limits limits: activate.Limits,
+) -> Result(#(State, List(Effect)), Refusal) {
+  let spell4_id = spell.spell4_id.value
+  let refusal = fn(result) {
+    Ok(#(cast, [refused(client_cast_id:, spell4_id:, result:)]))
+  }
+  case
+    activate.range_of(
+      limits: activate.limits_for(creature:, spell4_id:, spell: limits),
+      caster: activate.Body(place: caster.place, radius: caster_radius),
+      target:,
+    )
+  {
+    activate.TooClose -> refusal(cast_result.TargetRangeMin)
+    activate.TooFar -> refusal(cast_result.TargetRangeMax)
+    activate.TooHigh -> refusal(cast_result.TargetRangeVertical)
+    activate.Within ->
+      activation_started(
+        cast:,
+        caster:,
+        now_ms:,
+        client_cast_id:,
+        unit_id:,
+        creature_id:,
+        spell: activation_spell(spell:, cast_time_ms: creature.cast_time_ms),
+        effects:,
+      )
+  }
+}
+
+/// The plan's spell as an activate cast casts it: one go after the creature's activate
+/// cast time, with the cast bar shown, whatever the spell's own cast time, phases or
+/// channel are (`Creature2.activateSpellCastTime`). A spell whose method is not built
+/// is left as it is, so the verdict refuses it.
+fn activation_spell(
+  spell spell: Spell,
+  cast_time_ms cast_time_ms: Int,
+) -> Spell {
+  use <- bool.guard(when: !is_built(spell.method), return: spell)
+  spell_plan.Spell(
+    ..spell,
+    method: spell_plan.Normal,
+    cast_time_ms:,
+    cast_bar: spell_plan.ShowsCastBar,
+    phase_delays_ms: [],
+    channel: None,
+    stages: [],
+  )
+}
+
+/// The activate cast of `unit_id` under the same checks as a press of its spell, then
+/// started: the verdict's holds are refusals here, since the client does not send the
+/// cast again.
+fn activation_started(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  client_cast_id client_cast_id: Int,
+  unit_id unit_id: Int,
+  creature_id creature_id: Int,
+  spell spell: Spell,
+  effects effects: List(activate.ActivateEffect),
+) -> Result(#(State, List(Effect)), Refusal) {
+  let spell4_id = spell.spell4_id.value
+  let refusal = fn(result) {
+    Ok(#(cast, [refused(client_cast_id:, spell4_id:, result:)]))
+  }
+  case verdict(cast:, caster:, spell:, now_ms:, is_release: False) {
+    Refuse(result:) -> refusal(result)
+    Hold(..) -> refusal(cast_result.SpellGlobalCooldown)
+    HoldForCast -> refusal(cast_result.SpellAlreadyCasting)
+    NotBuilt(result:, why:) ->
+      not_built_refusal(
+        cast:,
+        client_cast_id:,
+        spell4_id:,
+        key: UnbuiltSpell(spell4_id:),
+        result:,
+        why:,
+      )
+    Accept(paid:) -> {
+      let #(taken, reserved) = case pays_at_accept(spell:) {
+        True -> #(paying(payments: paid.payments), [])
+        False -> #([], paid.payments)
+      }
+      let #(cast, started) =
+        start(
+          cast:,
+          caster:,
+          now_ms:,
+          spell:,
+          root: spell.spell4_id,
+          parent: None,
+          primary_target: unit_id,
+          client_cast_id: Some(client_cast_id),
+          role: Activation(activating: Activating(
+            unit_id:,
+            creature_id:,
+            effects:,
+          )),
+          spent: paid.spent,
+          reserved:,
+        )
+      Ok(#(cast, list.append(taken, started)))
+    }
+  }
+}
+
+/// What a log of a cast the server does not build is kept once for.
+pub type Unbuilt {
+  /// A spell, by Spell4 id.
+  UnbuiltSpell(spell4_id: Int)
+  /// A prerequisite type the server does not read.
+  UnreadPrerequisite(prerequisite_type: Int)
+}
+
+/// A right-click refused because the server does not build what the cast needs: the
+/// refusal, with a log the first time for `key`.
+fn not_built_refusal(
+  cast cast: State,
+  client_cast_id client_cast_id: Int,
+  spell4_id spell4_id: Int,
+  key key: Unbuilt,
+  result result: cast_result.CastResult,
+  why why: String,
+) -> Result(#(State, List(Effect)), Refusal) {
+  let refusal = refused(client_cast_id:, spell4_id:, result:)
+  case set.contains(cast.logged, key) {
+    True -> Ok(#(cast, [refusal]))
+    False ->
+      Ok(
+        #(State(..cast, logged: set.insert(cast.logged, key)), [
+          Log(
+            level: LogWarning,
+            text: "the activate cast of Spell4 "
+              <> int.to_string(spell4_id)
+              <> " "
+              <> why
+              <> ": it is refused with "
+              <> int.to_string(cast_result.to_value(result)),
+          ),
+          refusal,
+        ]),
+      )
+  }
 }
 
 /// What an input did, with `StealthChanged` after its own effects when the caster's stealth
@@ -1782,7 +2082,7 @@ fn press_of(
         ],
       )
     NotBuilt(result:, why:) ->
-      case set.contains(cast.logged, spell.spell4_id.value) {
+      case set.contains(cast.logged, UnbuiltSpell(spell.spell4_id.value)) {
         True ->
           refused_hold(
             cast:,
@@ -1794,7 +2094,10 @@ fn press_of(
           refused_hold(
             cast: State(
               ..cast,
-              logged: set.insert(cast.logged, spell.spell4_id.value),
+              logged: set.insert(
+                cast.logged,
+                UnbuiltSpell(spell.spell4_id.value),
+              ),
             ),
             client_cast_id:,
             ability: resolution.ability,
@@ -2305,7 +2608,8 @@ pub fn after_payments(
         | CasterChangeEnds(..)
         | TargetChangeStarts(..)
         | TargetChangeEnds(..)
-        | StealthChanged(..) -> resources
+        | StealthChanged(..)
+        | Activated(..) -> resources
       }
     }),
   )
@@ -2333,6 +2637,9 @@ fn cooldown_left_ms(
 }
 
 /// The methods the rule casts; a spell of any other is refused 285.
+///
+/// Gap: a spell of castMethod 5 (`ClientSideInteraction`) is not cast; the issue for a
+/// client-side interaction activate cast (#645) builds it.
 fn is_built(method: spell_plan.CastMethod) -> Bool {
   case method {
     spell_plan.Normal
@@ -2593,7 +2900,7 @@ fn fire(
       let cast = State(..cast, timers: dict.delete(cast.timers, timer))
       let now_ms = now.monotonic_ms
       case due {
-        Go(cast_id:, phase:) -> asked(cast:, cast_id:, phase:)
+        Go(cast_id:, phase:) -> asked(cast:, caster:, now_ms:, cast_id:, phase:)
         Finish(cast_id:) ->
           case dict.get(cast.casts, cast_id) {
             Error(Nil) -> #(cast, [])
@@ -2942,6 +3249,8 @@ pub fn went(
 /// the round closes. A cast that is not live has no go.
 fn asked(
   cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
   cast_id cast_id: Int,
   phase phase: Int,
 ) -> #(State, List(Effect)) {
@@ -2954,18 +3263,36 @@ fn asked(
       // order at one go is not recorded).
       let reserved = live.reserved
       let live = Live(..live, reserved: [])
-      #(
-        State(..cast, casts: dict.insert(cast.casts, cast_id, live)),
-        list.append(paying(payments: reserved), [
-          Strike(asked: GoAsked(
-            cast_id:,
-            phase:,
-            spell4_id: live.spell.spell4_id,
-            primary_target: live.primary_target,
-            spent: live.spent,
-          )),
-        ]),
-      )
+      let cast = State(..cast, casts: dict.insert(cast.casts, cast_id, live))
+      case live.activation {
+        // An activate cast selects no targets: its go names the activated unit alone.
+        Some(_) -> {
+          let #(cast, going) =
+            go(
+              cast:,
+              caster:,
+              now_ms:,
+              cast_id:,
+              phase:,
+              struck: [],
+              poses: dict.new(),
+              rolls: [],
+            )
+          #(cast, list.append(paying(payments: reserved), going))
+        }
+        None -> #(
+          cast,
+          list.append(paying(payments: reserved), [
+            Strike(asked: GoAsked(
+              cast_id:,
+              phase:,
+              spell4_id: live.spell.spell4_id,
+              primary_target: live.primary_target,
+              spent: live.spent,
+            )),
+          ]),
+        )
+      }
     }
   }
 }
@@ -3993,7 +4320,18 @@ fn start(
       #(cast, list.append(effects, [start]))
     })
   let start_message =
-    started_message(id:, spell:, root:, parent:, primary_target:, caster:)
+    started_message(
+      id:,
+      spell:,
+      root:,
+      parent:,
+      primary_target:,
+      caster:,
+      activating: case role {
+        Activation(..) -> True
+        Child | Base(..) | Stage(..) | Passive -> False
+      },
+    )
   let live =
     Live(
       spell:,
@@ -4007,16 +4345,23 @@ fn start(
       started_ms: now_ms,
       stage_of: case role {
         Stage(ability:, ..) -> Some(ability)
-        Child | Base(..) | Passive -> None
+        Child | Base(..) | Passive | Activation(..) -> None
       },
       closes_threshold: closes_threshold(role:),
       nodes: dict.new(),
+      activation: case role {
+        Activation(activating:) -> Some(activating)
+        Child | Base(..) | Stage(..) | Passive -> None
+      },
     )
   let global_ends = case role, spell.global_cooldown.starts_for_ms {
     Passive, _ -> cast.global_cooldown_ends_ms
-    Child, Some(wait_ms) | Base(..), Some(wait_ms) | Stage(..), Some(wait_ms) ->
-      Some(now_ms + wait_ms)
-    Child, None | Base(..), None | Stage(..), None ->
+    Child, Some(wait_ms)
+    | Base(..), Some(wait_ms)
+    | Stage(..), Some(wait_ms)
+    | Activation(..), Some(wait_ms)
+    -> Some(now_ms + wait_ms)
+    Child, None | Base(..), None | Stage(..), None | Activation(..), None ->
       cast.global_cooldown_ends_ms
   }
   let cast =
@@ -4027,7 +4372,7 @@ fn start(
       casts: dict.insert(cast.casts, id, live),
       passive: case role {
         Passive -> Some(id)
-        Child | Base(..) | Stage(..) -> cast.passive
+        Child | Base(..) | Stage(..) | Activation(..) -> cast.passive
       },
       current: case
         role != Passive
@@ -4059,7 +4404,7 @@ fn start(
     ])
   case go_times {
     [0, ..] -> {
-      let #(cast, going) = asked(cast:, cast_id: id, phase: 0)
+      let #(cast, going) = asked(cast:, caster:, now_ms:, cast_id: id, phase: 0)
       #(cast, list.append(opening, going))
     }
     _ -> #(cast, opening)
@@ -4070,7 +4415,7 @@ fn start(
 /// release always does, a tap only when it is the last stage.
 fn closes_threshold(role role: Role) -> Bool {
   case role {
-    Child | Base(..) | Passive -> False
+    Child | Base(..) | Passive | Activation(..) -> False
     Stage(ability:, index:) ->
       case ability.method {
         spell_plan.ChargeRelease -> True
@@ -4096,7 +4441,7 @@ fn threshold_step(
   cast_id cast_id: Int,
 ) -> #(State, List(Effect)) {
   case role {
-    Child | Passive -> #(cast, [])
+    Child | Passive | Activation(..) -> #(cast, [])
     Base(ability:) ->
       case spell_plan.opens_threshold(spell: ability) {
         True -> open_threshold(cast:, ability:, cast_id:)
@@ -4510,6 +4855,12 @@ fn go(
         True -> rearmed(cast:, cast_id:, now_ms:)
         False -> #(cast, [])
       }
+      let activated = case live.activation {
+        Some(Activating(unit_id:, creature_id:, ..)) -> [
+          Activated(unit_id:, creature_id:),
+        ]
+        None -> []
+      }
       #(
         cast,
         list.flatten([
@@ -4527,6 +4878,7 @@ fn go(
           children,
           stealth,
           finished,
+          activated,
           armed,
         ]),
       )
@@ -5039,6 +5391,21 @@ fn aimed_at(
           ),
         )
       }),
+      case live.activation {
+        Some(Activating(unit_id:, effects:, ..)) ->
+          list.map(effects, fn(effect) {
+            #(
+              unit_id,
+              Listed(
+                effect_id: effect.effect_id,
+                delay_ms: effect.delay_ms,
+                instance_id: None,
+                damage: None,
+              ),
+            )
+          })
+        None -> []
+      },
     ])
   let units =
     list.fold(listed, [], fn(units: List(#(Int, List(Listed))), entry) {
@@ -6891,6 +7258,7 @@ fn started_message(
   parent parent: Option(Spell4Id),
   primary_target primary_target: Int,
   caster caster: Caster,
+  activating activating: Bool,
 ) -> SpellStarted {
   SpellStarted(
     cast_id: id,
@@ -6908,7 +7276,10 @@ fn started_message(
     initial_positions: [],
     telegraph_positions: [],
     field_12: 1,
-    field_13: 0,
+    field_13: case activating {
+      True -> 1
+      False -> 0
+    },
   )
 }
 
@@ -7132,7 +7503,7 @@ pub fn describe(refusal refusal: Refusal) -> String {
   case refusal {
     NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
     NoClientCastId ->
-      "0x009A names the client's cast id 0, which its counter never gives"
+      "0x009A or 0x0097 names the client's cast id 0, which its counter never gives"
     UnknownCancel(reason:, bit:) ->
       "0x0801 holds the reason "
       <> int.to_string(reason)

@@ -58,6 +58,9 @@
 ////   shield and health; the client has no class for it, so the server keeps the pool and
 ////   sends its sum as stat 22; the server reads the rows whose aim reaches the caster
 ////   (`Spell4Effects.effectType.29`).
+//// - **Activate** (7) is the effect a creature's activate spell has: the client's apply is
+////   empty, so the server only names the activated unit in the go with the row's effect
+////   id and raises `Activated` (`Spell4Effects.effectType.7`, genesis_prime/game/activate).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -145,6 +148,10 @@ pub type Kind {
   /// spell cast on the caster makes the caster; a row aimed only at the area or at the
   /// primary target and the area is not read (`is_row_read`).
   Absorption
+  /// An Activate effect (7): the activate spell of a creature the player right-clicked
+  /// (`Spell4Effects.effectType.7`). Every row is read, whatever it aims at; the activate
+  /// plan lists it (genesis_prime/game/activate), no go of an ability applies it.
+  Activate
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -172,6 +179,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     145 -> PropertyConversion
     112 -> DisguiseOutfit
     29 -> Absorption
+    7 -> Activate
     other -> Unread(effect_type: other)
   }
 }
@@ -201,7 +209,8 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | ShieldOverload
     | InterruptArmor
     | DisguiseOutfit
-    | Absorption -> True
+    | Absorption
+    | Activate -> True
     Unread(..) -> False
   }
 }
@@ -243,7 +252,8 @@ pub fn is_row_read(
     | ForceRemove
     | CrowdControl
     | Scale
-    | RavelSignal -> True
+    | RavelSignal
+    | Activate -> True
     Unread(..) -> False
   }
 }

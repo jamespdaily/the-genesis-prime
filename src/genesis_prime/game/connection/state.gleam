@@ -9,6 +9,7 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/activate
 import genesis_prime/game/character_select
 import genesis_prime/game/class_resource
 import genesis_prime/game/inventory
@@ -98,6 +99,12 @@ pub fn plans_of(session session: Session) -> spell_plan.Plans {
     plans: spell_plan.plans(session.settings.tables),
     proxies: session.settings.server_proxies,
   )
+}
+
+/// The activate spells' plans and prerequisites the cast rule reads
+/// (genesis_prime/game/activate).
+pub fn activations_of(session session: Session) -> activate.Activations {
+  activate.activations(tables: session.settings.tables)
 }
 
 /// What an accepted connection keeps.

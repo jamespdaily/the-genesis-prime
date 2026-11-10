@@ -16,7 +16,7 @@ import fixture_tables
 import genesis_prime/coverage/effect_row
 import genesis_prime/game/spell_plan.{
   Applied, Held, LeftOut, PlannedProc, PlannedProxy, ProcOfAnotherKind,
-  ProxyNamesNoSpell, ReadByArea,
+  ProxyNamesNoSpell, ReadByActivation, ReadByArea,
 }
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/spell4
@@ -191,6 +191,7 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
             Ok(Held(..)) -> "held"
             Ok(LeftOut(..)) -> "left out"
             Ok(ReadByArea) -> "area"
+            Ok(ReadByActivation) -> "activation"
             Error(error) -> "refused: " <> spell_plan.describe(error:)
           }
           #(effect.id, kind)
@@ -401,7 +402,10 @@ pub fn a_property_row_with_no_life_is_held_whatever_its_type_test() -> Nil {
           #(effect.id, case reading {
             Ok(Applied(..)) -> "applied"
             Ok(Held(..)) -> "held"
-            Ok(LeftOut(..)) | Ok(ReadByArea) | Error(..) -> "other"
+            Ok(LeftOut(..))
+            | Ok(ReadByArea)
+            | Ok(ReadByActivation)
+            | Error(..) -> "other"
           })
         })
       assert verdicts

@@ -15,6 +15,7 @@ PathSoldierActivate	5	Creature2	18274
 PathSoldierActivate	7	Creature2	18875
 PathSoldierActivate	16	Creature2	19790
 PathSoldierActivate	17	Creature2	19789
+Prerequisite	9358	Prerequisite	328
 Quest2	2018	WorldZone	1480
 Quest2	2020	WorldZone	1480
 Quest2	2025	WorldZone	1480

@@ -141,7 +141,8 @@ fn trace(effects effects: List(Effect)) -> List(String) {
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..) -> Error(Nil)
+      | cast.TargetChangeEnds(..)
+      | cast.Activated(..) -> Error(Nil)
     }
   })
 }
@@ -162,7 +163,8 @@ fn changes(effects effects: List(Effect)) -> List(Bool) {
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..) -> Error(Nil)
+      | cast.TargetChangeEnds(..)
+      | cast.Activated(..) -> Error(Nil)
     }
   })
 }
@@ -300,6 +302,7 @@ fn goes_apart(
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.Activated(..)
       | cast.StealthChanged(..) -> so_far
     }
   })

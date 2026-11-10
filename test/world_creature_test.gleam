@@ -749,6 +749,7 @@ fn tell_change(
     | cast.Log(..)
     | cast.CasterChangeStarts(..)
     | cast.CasterChangeEnds(..)
+    | cast.Activated(..)
     | cast.StealthChanged(..) -> panic as "not a change of a creature's property"
   }
   let assert Ok(Nil) =

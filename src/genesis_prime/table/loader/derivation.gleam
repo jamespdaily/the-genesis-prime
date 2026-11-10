@@ -1,6 +1,7 @@
 //// The values the server builds once when its tables load, each from the
 //// tables a rule reads, and stores under the tables' key.
 
+import genesis_prime/game/activate
 import genesis_prime/game/appearance
 import genesis_prime/game/loadout
 import genesis_prime/game/rating
@@ -21,6 +22,9 @@ import genesis_prime/table/loader/store
 /// - The spell areas: what each spell of those trees strikes (genesis_prime/game/spell_area),
 ///   built after the trees, which it reads from the built value: the list is in
 ///   build order, and an edit rebuilds the derivations it is given in that order.
+/// - The activations: the spell each creature's right-click casts and the plans of those
+///   spells, built after the ability trees' sources, whose missing GameFormula 414 row or
+///   unreadable Prerequisite row fails the load (genesis_prime/game/activate).
 /// - The rating formulas: the hit rule's GameFormula rows (genesis_prime/game/rating).
 /// - The top zones: each WorldZone's top zone, which a cycle in the parent chain
 ///   fails (genesis_prime/game/top_zone).
@@ -33,6 +37,7 @@ pub fn all() -> List(store.Derivation) {
     loadout.derivation(),
     spell_plan.derivation(),
     spell_area.derivation(),
+    activate.derivation(),
     rating.derivation(),
     top_zone.derivation(),
     unit_properties.derivation(),

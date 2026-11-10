@@ -891,7 +891,7 @@ fn giver_in_reach(
             )
           Error(Nil) -> False
         }
-      ShownCreature(alive: False, ..) | ShownPlayer | ShownObject -> False
+      ShownCreature(alive: False, ..) | ShownPlayer | ShownObject(..) -> False
     }
   })
 }

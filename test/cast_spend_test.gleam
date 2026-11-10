@@ -95,6 +95,7 @@ fn asked_goes(effects effects: List(cast.Effect)) -> List(GoAsked) {
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.Activated(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
