@@ -1616,13 +1616,12 @@ pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in
   login_support.stop(started)
 }
 
-/// Presses the ability, moves the clock `advance_ms` on so the cast's timers fire (the
-/// Proxy's phases, the held press's cooldown), and reads until `gos` gos of the
-/// player's own casts have arrived and the server has written all it held for this
-/// connection (a ping and its pong), giving the frames of the press. A refusal of the
-/// press (0x7fc) fails at once, naming its result, because no go would follow it and
-/// the Beast's own attacks would keep the wait for them alive until the test's
-/// deadline.
+/// Presses the ability, moves the clock `advance_ms` on so the stage Proxy's phases fire,
+/// and reads until `gos` gos of the player's own casts have arrived and the server has
+/// written all it held for this connection (pings numbered `pong` and `pong + 1`),
+/// giving the frames of the press. A refusal of the press (0x7fc) fails at once, naming
+/// its result, because no go would follow it and the Beast's own attacks would keep the
+/// wait for them alive until the test's deadline. `advance_ms` must be in [500, 1133).
 fn press_and_read_gos(
   game game: game_client.Game,
   have have: BitArray,
@@ -1633,6 +1632,8 @@ fn press_and_read_gos(
   pong pong: Int,
   beast beast: Int,
 ) -> #(List(Frame), BitArray) {
+  assert advance_ms >= 500 && advance_ms < 1133
+    as "the advance is at least 500 ms, so the global cooldown's 500 ms refusal window has passed (below it a second tap is refused with result 14), and under 1133 ms, because both stage Proxies start with no delay (Spell4Effects 83776 and 83782, delayTime 0) and their first phase is at 133 ms (SpellPhase 3712 and 4032), so the first Beast round's 1000 ms strike deadline (strike_tell.deadline_ms) falls at press + 1133 and an advance past it closes that round in driven time while the Beast's real answer is still coming"
   game_client.press_ability(game:, client_cast_id:, bag_index: 0, target: 0)
   let #(pressed, have) = game_client.read_until_pong(game:, have:, number: pong)
   driven_time.advance(time:, ms: advance_ms)
