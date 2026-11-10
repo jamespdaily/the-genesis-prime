@@ -53,6 +53,7 @@ import genesis_prime/message/cast_activate
 import genesis_prime/message/character_select_start
 import genesis_prime/message/choose_resurrection
 import genesis_prime/message/client_option
+import genesis_prime/message/client_side_interaction_result
 import genesis_prime/message/create_character_carrier
 import genesis_prime/message/credd_exchange_request
 import genesis_prime/message/delete_character
@@ -284,6 +285,12 @@ const table = [
     cancel_cast.message_id,
     InsideWorldMessage,
     Cast(cast.Cancelled),
+    [AtWorld],
+  ),
+  Row(
+    client_side_interaction_result.message_id,
+    InsideWorldMessage,
+    Cast(cast.Answered),
     [AtWorld],
   ),
   Row(

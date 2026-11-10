@@ -3,19 +3,26 @@
 //// come from the client's pick, `0x14046c580` (fact `opcode.0x97.pick`), and the rows of the
 //// Seaspine Mollusk, Creature2 26462, in the client's tables.
 
+import client_tables
 import fixture_tables
 import genesis_prime/game/activate.{
   ActivateEffect, CannotBePlanned, Column, Creature, NoActivateSpell, Picked,
   Planned, Unread,
 }
 import genesis_prime/game/prerequisite.{Fails, NotRead, Passes}
+import genesis_prime/game/spell_plan
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
+import genesis_prime/table/spell4
+import genesis_prime/table/spell4_base
+import gleam/int
 import gleam/list
 import gleam/option.{Some}
+import gleam/set
 import gleam/string
 import owned_test
 import prerequisite_support
+import unitest
 
 /// A creature of these columns, with the cast time and range of no row.
 fn creature_of(columns columns: List(#(Int, Int))) -> activate.Creature {
@@ -115,4 +122,85 @@ pub fn activate_spell_with_an_unread_target_effect_is_planned_test() -> Nil {
   assert effects
     == [ActivateEffect(effect_id: Spell4EffectsId(68_310), delay_ms: 0)]
     as "Spell4Effects 68310 is Spell4 34512's Activate row, delay 0"
+}
+
+pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let activations = activate.activations(tables:)
+  let interaction_spells =
+    list.flat_map(creature2.all(tables), fn(row) {
+      list.map(activate.creature_of(row:).columns, fn(column) {
+        column.spell4_id
+      })
+    })
+    |> list.filter(fn(spell4_id) { spell4_id != 0 })
+    |> set.from_list
+    |> set.to_list
+    |> list.sort(by: int.compare)
+    |> list.filter(fn(spell4_id) {
+      case spell4.get(tables:, id: id.Spell4Id(spell4_id)) {
+        Ok(row) ->
+          case
+            spell4_base.get(tables:, id: spell4.spell4_base_id_base_spell(row))
+          {
+            Ok(base) -> base.cast_method == 5
+            Error(Nil) -> False
+          }
+        Error(Nil) -> False
+      }
+    })
+  assert list.length(interaction_spells) == 767
+    as "Creature2 spell4IdActivate00-03 name 767 distinct spells whose Spell4Base castMethod is 5 (Spell.CodeEnumCastMethod: ClientSideInteraction)"
+  let refusals =
+    list.filter_map(interaction_spells, fn(spell4_id) {
+      case activate.planned_of(activations:, spell4_id:) {
+        Ok(Planned(spell:, ..)) -> {
+          assert spell.method == spell_plan.ClientSideInteraction
+            as "a planned castMethod 5 spell is planned as ClientSideInteraction"
+          Error(Nil)
+        }
+        Ok(CannotBePlanned(why:)) -> Ok(refusal_reason(why:))
+        Ok(activate.NoSpell4Row) | Error(Nil) ->
+          panic as "a castMethod 5 activate spell is planned or names its reason, never refused as not built"
+      }
+    })
+  let count_of = fn(reason) {
+    list.count(refusals, fn(found) { found == reason })
+  }
+  assert count_of("aimed at the target") == 72
+    as "72 hold a Spell4Effects row aimed at the target or an area that the strike applies, which an activate cast strikes no one with (Spell4Effects targetFlags)"
+  assert count_of("control state") == 11
+    as "11 hold a CCStateSet effect of a state other than Stun (0) and Knockdown (8) (Unit.CodeEnumCCState). Gap: the issue Spells work in depth on the real client (#336) owns it"
+  assert count_of("disguise") == 4
+    as "4 hold a DisguiseOutfit effect the server does not read (Spell4Effects.effectType.112). Gap: the issue Spells work in depth on the real client (#336) owns it"
+  assert count_of("force remove counts") == 2
+    as "2 hold a SpellForceRemove effect whose dataBits03 differs from its dataBits04 (Spell4Effects.effectType.80). Gap: the issue Spells work in depth on the real client (#336) owns it"
+  assert count_of("lasting aim") == 2
+    as "2 hold a Fluff, SpellForceRemove, Scale or RavelSignal effect aimed by flags the server does not read (Spell4Effects.targetFlags). Gap: the issue Spells work in depth on the real client (#336) owns it"
+  assert count_of("stealth condition") == 1
+    as "1 holds a Spell4Conditions row whose mask tests stealth, with the refusals 65 and 114 not checked. Gap: the issue Spells work in depth on the real client (#336) owns it"
+  assert count_of("control aim") == 1
+    as "1 holds a CCStateSet effect aimed by flags the server does not read (Spell4Effects.targetFlags). Gap: the issue Spells work in depth on the real client (#336) owns it"
+  assert list.length(refusals) == 93
+    as "93 of the 767 are refused, each for one of the reasons above, so 674 are planned"
+}
+
+/// The short name of a refusal's reason, by the text of the plan's own reason; a reason
+/// this list does not name stops the test.
+fn refusal_reason(why why: String) -> String {
+  let reasons = [
+    #("aims at the target or an area", "aimed at the target"),
+    #("of state", "control state"),
+    #("DisguiseOutfit", "disguise"),
+    #("differs from its dataBits04", "force remove counts"),
+    #("Fluff, SpellForceRemove, Scale or RavelSignal", "lasting aim"),
+    #("whose mask tests stealth", "stealth condition"),
+    #("CCStateSet effect", "control aim"),
+  ]
+  let assert Ok(#(_, reason)) =
+    list.find(reasons, fn(reason) { string.contains(why, reason.0) })
+    as { "the plan's reason is one the test names: " <> why }
+  reason
 }

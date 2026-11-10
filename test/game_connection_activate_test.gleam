@@ -10,14 +10,23 @@
 ////   refused by the client's own sender, so the connection ends.
 //// - `opcode.0x7fd` and `opcode.0x7fc`: the caster is written a confirmation of a started cast
 ////   and a refusal of one that is not.
+//// - Creature2 73605, the Departures Terminal: activateSpellCastTime 0, activate spell 34681,
+////   Spell4Base 20651 of castMethod 5.
+//// - `opcode.0x805` and `opcode.0x7f4`: the client's answer 1 to its interaction is followed
+////   by the server's go and finish.
 
 import connection_rule_support as support
 import game_connection_support as connection_support
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/cast
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/routing
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/cast_activate.{CastActivate}
+import genesis_prime/message/client_side_interaction_result.{
+  ClientSideInteractionResult,
+}
+import genesis_prime/message/interaction_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/step
 import genesis_prime/table/id.{Creature2Id}
@@ -169,4 +178,69 @@ pub fn activate_frame_reaches_the_cast_rule_test() -> Nil {
     as "nothing is written to the client on the way out"
   assert list.length(support.logs_of(step: ended, level: step.LogError)) == 1
     as "the end is logged once as an error with the refusal's own words"
+}
+
+/// The Departures Terminal (Creature2 73605) as unit `nearby`, 3.0 east of the player.
+fn terminal() -> Created {
+  static_object.create(
+    object: StaticObject(
+      ..spawn_support.holoring(
+        number: nearby,
+        place: east_of_the_player(east: 3.0),
+      ),
+      creature_id: Creature2Id(73_605),
+      display_info_id: mollusk_display,
+    ),
+    unit_id: nearby,
+    server_time_estimate_start: 0,
+  )
+}
+
+pub fn an_interaction_answer_reaches_the_cast_rule_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert routing.route(
+      routing.AtWorld,
+      routing.InsideWorldMessage,
+      client_side_interaction_result.message_id,
+    )
+    == Ok(routing.Cast(message: cast.Answered))
+    as "opcode.0x805: a 0x805 inside 0x038C is a cast row in the world"
+  let #(seeing, _) =
+    connection_support.feed(
+      connection_support.in_world(),
+      connection_support.sent_by_the_map(ObjectsSeen(units: [terminal()])),
+    )
+  let #(clicked, started) =
+    connection_support.read(
+      state: seeing,
+      bytes: right_click_bytes(client_cast_id: clients_cast_id, unit_id: nearby),
+    )
+  assert connection_support.written_ids(started) == confirmed_start
+    as "opcode.0x7fd.csi: the right-click of the terminal writes the start, and no go yet: the cast waits for the client's answer"
+  let assert [confirmed] =
+    list.filter(
+      connection_support.heard(
+        taken: started,
+        cipher: connection_support.keyed(),
+      ),
+      fn(frame) { frame.message_id == spell_cast_confirmed.message_id },
+    )
+  let assert Ok(confirmed) = spell_cast_confirmed.decode(confirmed.body)
+  let assert Ok(body) =
+    client_side_interaction_result.encode(ClientSideInteractionResult(
+      cast_id: confirmed.server_cast_id,
+      result: interaction_result.Succeeded,
+      spell4_base_id_plus_one: 20_652,
+    ))
+    as "the answer fits the message"
+  let #(_, answered) =
+    connection_support.read(
+      state: clicked,
+      bytes: connection_support.world_message(
+        message_id: client_side_interaction_result.message_id,
+        body:,
+      ),
+    )
+  assert connection_support.written_ids(answered) == [0x07F4, 0x07FE]
+    as "opcode.0x805, opcode.0x7f4: the answer 1 sends the go and the finish to the player"
 }

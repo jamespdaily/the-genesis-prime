@@ -358,3 +358,4 @@ Item2	447	(armor at power level 52, from the late armor curve)	item_property_tes
 Item2	5312	(a PvP weapon, flags 0x8000)	item_property_test
 Item2	12654	(an imbued weapon, itemImbuementId 3)	item_property_test
 Item2	13394	(a level-scaled armor piece, flags bit 3)	item_property_test
+Creature2	73605	a Departures Terminal whose activate spell is a castMethod 5 interaction with activateSpellCastTime 0	cast_activate_test
