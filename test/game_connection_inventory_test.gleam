@@ -411,9 +411,9 @@ pub fn an_equip_is_checked_against_the_entered_character_test() -> Nil {
   assert properties_written(taken: answered)
     == [
       [
-        entry(property: 7, number: 1017.0),
-        entry(property: 35, number: 207.5625),
-        entry(property: 42, number: 281.25),
+        game_connection_support.property(id: 7, number: 1017.0),
+        game_connection_support.property(id: 35, number: 207.5625),
+        game_connection_support.property(id: 42, number: 281.25),
       ],
     ]
     as "the chest's own properties at power level 3: Base Health 225 and Armor 93.75 (GameFormula 67 and 547 give 60 and 20 for each level, ItemSlot 1's 1.25 and the armor category's 1.25) and Assault Rating 13.5, over the worn Novice set without a chest (450, 187.5, 194.0625) and CreatureLevel row 3's Base Health 342.09"
