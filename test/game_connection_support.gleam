@@ -1439,6 +1439,24 @@ pub fn medic_in(tables tables: store_tables.Tables) -> game_connection.State {
   medic_in_holding(tables:, quests: [])
 }
 
+/// The connection of the test's character in the world on these tables, whose log holds
+/// these quests, and the step that took it in.
+pub fn entered_with_quests_on(
+  tables tables: store_tables.Tables,
+  quests quests: List(store.QuestRow),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let fresh = accepted(Settings(..settings(), tables:)).0
+  let #(state, taken) =
+    joining_holding(
+      in_character_select: in_select_from(fresh),
+      character: world_character(),
+      saved_health: None,
+      saved_experience: None,
+      quests:,
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
+}
+
 /// The Medic of these tables in the world, whose log holds these quests.
 pub fn medic_in_holding(
   tables tables: store_tables.Tables,

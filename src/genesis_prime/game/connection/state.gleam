@@ -277,6 +277,10 @@ pub const save_timer = TimerId(2)
 /// world (genesis_prime/game/quest_log `reset_due`).
 pub const quest_reset_timer = TimerId(10)
 
+/// The timer that fires when the earliest running quest's time limit runs out while
+/// the player is in the world (genesis_prime/game/quest_log `next_deadline`).
+pub const quest_deadline_timer = TimerId(11)
+
 /// A message in the game wrapper under the cipher the connection holds.
 pub fn to_client(
   session session: Session,
@@ -540,7 +544,7 @@ pub fn saving(
       health: Some(player_life.saved_health(life: entered.life)),
       experience: entered.experience,
       level: entered.character.level,
-      quests: quest_log.rows(log: entered.quests),
+      quests: quest_log.rows(log: entered.quests, now_ms: now.monotonic_ms),
     )
   ask_within(
     session: Session(

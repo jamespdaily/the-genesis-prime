@@ -30,27 +30,30 @@ import unitest
 /// with `gleam test -- --tag dev_tool`; the coverage measure's own are also
 /// tagged `coverage` (`gleam test -- --tag coverage`).
 ///
-/// The client's spell plans are built before the first test starts: their one
-/// build for the run is setup, so no test's deadline holds it. A full run does
-/// the same, before the first test, for every module of the project and every
-/// other one-time build that tests call. The VM loads a module through one
-/// process the first time anything calls it, so on a machine with more runnable
-/// work than cores the queue of first calls ran past tests' 10 s deadlines
-/// (`module_preload`, about 0.8 s). And whichever test asks for a one-time build
-/// first would otherwise wait for it inside its deadline, with the rest of the
-/// suite taking the processors. Those builds are what the fixture's rows reach
-/// (`fixture_tables.reach`, about 3.4 s, which reads every fixture table), the
-/// keys of the client's fact file (`repository.fact_keys`, about 0.9 s), the
-/// repository's source tree (`repository.sources`, about 0.2 s), the fixture's
-/// server tables (`fixture_tables.shared`), the spell areas and server proxies
-/// built over them, the content tables, the Virtual Battle Beast the load
-/// builds from the rows (`spawn_support.loaded_beast`), and, where the client's
-/// files are on the machine, the client's tables (`client_tables.shared`, about
-/// 2.7 s, and `client_tables.every_table`, about 1.6 s more). A run of chosen
-/// tests (`--test`, `--tag`) leaves them to the tests that need them: those
-/// runs hold none or few of them, and run beside other runs, and the world-data
-/// run's literal area is 0.2% under its limit, which the modules' literals
-/// would pass.
+/// A one-time build (`database_support.once`) never counts against a test's
+/// deadline: `owned_test.run` stops the clock while its body is inside one, so
+/// whichever test asks first does not pay for it. The client's spell plans are
+/// built before the first test starts, and a full run does the same, before the
+/// first test, for every module of the project and every other one-time build
+/// that tests call, because that saves wall time: the builds run once, ahead of
+/// tests that run side by side, instead of inside the first of them while the
+/// rest of the suite takes the processors. Modules are loaded through one
+/// process the first time anything calls them, which is not a one-time build,
+/// so on a machine with more runnable work than cores the queue of first calls
+/// ran past tests' 10 s deadlines (`module_preload`, about 0.8 s). The builds
+/// are what the fixture's rows reach (`fixture_tables.reach`, about 3.4 s,
+/// which reads every fixture table), the keys of the client's fact file
+/// (`repository.fact_keys`, about 0.9 s), the repository's source tree
+/// (`repository.sources`, about 0.2 s), the fixture's server tables
+/// (`fixture_tables.shared`), the spell areas and server proxies built over
+/// them, the content tables, the Virtual Battle Beast the load builds from the
+/// rows (`spawn_support.loaded_beast`), and, where the client's files are on the
+/// machine, the client's tables (`client_tables.shared`, about 2.7 s, and
+/// `client_tables.every_table`, about 1.6 s more). A run of chosen tests
+/// (`--test`, `--tag`) leaves them to the tests that need them: those runs hold
+/// none or few of them, and run beside other runs, and the world-data run's
+/// literal area is 0.2% under its limit, which the modules' literals would
+/// pass.
 ///
 /// With `GENESIS_LITERAL_PEAK_FILE` set to a file, the run keeps the literal
 /// allocator's highest carriers size in it (`literal_area`), which `./check`

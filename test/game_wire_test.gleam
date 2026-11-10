@@ -132,6 +132,7 @@ import owned_test
 import place_support
 import planted_table
 import pog
+import quest_support
 import rating_support
 import spawn_support
 import unitest
@@ -4707,5 +4708,72 @@ pub fn a_player_whose_connection_ends_mid_chase_makes_the_dagun_leash_test() -> 
     && list.contains(game_client.health_of(events: seen, unit: dagun), 52)
     as "the fighter's end is its Unwatched: no threat is left, so the Dagun leashes (0x90a 0, 0x89a (C, 0), a full 0x937) and runs home, which the watcher sees"
   game_client.close(game: watcher)
+  login_support.stop(started)
+}
+
+// ---- a timed quest is botched ----
+
+pub fn a_timed_quest_is_botched_over_the_connection_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 1872 (Quest2 flags 0x404) is given a limit of 60,000 ms, as the fixture
+  // holds none of the client's timed quests. The character holds it with 60,000 ms
+  // left; the entry starts its timer on the driven clock, and 0x35C of quest 1872 in
+  // state 4 (Botched; its 10 bytes are 0x50, 0x07, 0x02 and zeros) is written when
+  // the clock reaches the deadline, never before (opcode.0x35c).
+  use tables <- quest_support.with_time_limits(limits: [#(1872, 60_000)])
+  let time = driven_time.new()
+  let started =
+    login_support.start_with(change: fn(settings) {
+      server.Settings(
+        ..settings,
+        game: server.Served(
+          ..settings.game,
+          scripts: driven_time.scripts(time),
+          settings: connection_state.Settings(..settings.game.settings, tables:),
+        ),
+      )
+    })
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player(started:, number: 1, character_name: "Zed Qu")
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 1872, 1, 0, true, 0, '{}', 60000, '{}')",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character holds quest 1872 with 60,000 ms left"
+  send_play(game:, character_id: character)
+  let #(_, have) = game_client.read_entry_kept(game:, have: <<>>)
+  // The pong shows the entry's step is done, so its timer is on the clock.
+  let #(_, have) = game_client.read_until_pong(game:, have:, number: 1)
+  driven_time.advance(time:, ms: 59_999)
+  let #(before, have) = game_client.read_until_pong(game:, have:, number: 2)
+  assert !list.any(before, fn(frame) { frame.message_id == 0x035C })
+    as "1 ms before its deadline the quest is not botched"
+  driven_time.advance(time:, ms: 1)
+  let #(after, _) = game_client.read_until_pong(game:, have:, number: 3)
+  assert list.filter(after, fn(frame) { frame.message_id == 0x035C })
+    == [
+      Frame(message_id: 0x035C, body: <<0x50, 0x07, 0x02, 0, 0, 0, 0, 0, 0, 0>>),
+    ]
+    as "opcode.0x35c: quest 1872 is Botched at its deadline"
+  // The pong follows the save the botch asked for, which the connection answers
+  // before it takes the ping.
+  let assert Ok(saved) =
+    pog.query(
+      "select state, quest_ms_left from character_quest where character_id = $1 and quest_id = 1872",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.returning({
+      use state <- decode.field(0, decode.int)
+      use ms_left <- decode.field(1, decode.optional(decode.int))
+      decode.success(#(state, ms_left))
+    })
+    |> pog.execute(pool)
+    as "the quest row is read"
+  assert saved.rows == [#(4, None)]
+    as "the botch is saved: state 4, which holds no time left"
+  game_client.close(game:)
   login_support.stop(started)
 }

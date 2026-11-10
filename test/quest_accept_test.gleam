@@ -183,7 +183,7 @@ pub fn accept_answers_accepted_and_adds_a_tracked_entry_test() -> Nil {
   assert taken.effects
     == [quest.SendState(quest_id: 2417, state: 1, objective_id: 0)]
     as "0x35C {quest 2417, state 1, objective 0}, the answer the client waits for"
-  assert quest_log.rows(log: taken.log)
+  assert quest_log.rows(log: taken.log, now_ms: 0)
     == [
       QuestRow(
         quest_id: 2417,
@@ -244,7 +244,9 @@ pub fn accept_takes_a_quest_held_in_the_side_list_test() -> Nil {
     assert taken.effects
       == [quest.SendState(quest_id: 2417, state: 1, objective_id: 0)]
       as "a quest held in state 5 to 7 is accepted"
-    assert list.map(quest_log.rows(log: taken.log), fn(row) { row.state })
+    assert list.map(quest_log.rows(log: taken.log, now_ms: 0), fn(row) {
+        row.state
+      })
       == [1]
       as "one entry, now Accepted"
   })
@@ -1036,7 +1038,7 @@ pub fn retry_takes_only_a_botched_quest_test() -> Nil {
   assert taken.effects
     == [quest.SendState(quest_id: 2417, state: 1, objective_id: 0)]
     as "a Botched quest (4) is taken again"
-  assert quest_log.rows(log: taken.log)
+  assert quest_log.rows(log: taken.log, now_ms: 0)
     == [
       QuestRow(
         quest_id: 2417,
@@ -1079,7 +1081,8 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
   let assert Ok(first) = first
   let assert [quest.Log(level: LogWarning, ..)] = first.effects
     as "the first request of a reason is a warning: Quest2 has no row 32000"
-  assert quest_log.rows(log: first.log) == quest_log.rows(log: unchanged.log)
+  assert quest_log.rows(log: first.log, now_ms: 0)
+    == quest_log.rows(log: unchanged.log, now_ms: 0)
   let assert Ok(second) =
     quest.take(
       message: quest.Accept,
@@ -1123,8 +1126,8 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
       logged: set.new(),
     )
   assert_declined(accepted_botched, quest: 2417)
-  assert quest_log.rows(log: accepted_botched.log)
-    == quest_log.rows(log: botched.log)
+  assert quest_log.rows(log: accepted_botched.log, now_ms: 0)
+    == quest_log.rows(log: botched.log, now_ms: 0)
     as "an accept for a Botched quest leaves the log as it was"
   let assert Error(quest.NotDecoded(_)) =
     quest.take(

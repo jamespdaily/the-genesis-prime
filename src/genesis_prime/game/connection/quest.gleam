@@ -5,8 +5,9 @@
 //// body the client's own reader would refuse ends the connection with the sentence the
 //// rule gives.
 
-import genesis_prime/client_connection.{Continue}
+import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
@@ -14,6 +15,7 @@ import genesis_prime/game/interaction
 import genesis_prime/game/movement
 import genesis_prime/game/prerequisite.{Factions}
 import genesis_prime/game/quest
+import genesis_prime/game/quest_log
 import genesis_prime/game/shown
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type Now}
@@ -64,28 +66,36 @@ pub fn quest_message(
     )
   {
     Ok(taken) ->
-      Continue(
-        connection_state.with_entered(
+      connection_effects.carry_out(
+        session: connection_state.with_entered(
           session: Session(..session, interaction_logged: taken.logged),
           change: fn(entered) {
             world_entry.Entered(..entered, quests: taken.log)
           },
         ),
-        list.map(taken.effects, fn(effect) {
-          case effect {
-            quest.Log(level:, text:) ->
-              connection_state.log(session:, level:, text:)
-            quest.SendState(quest_id:, state:, objective_id:) ->
-              connection_state.to_client(
-                session,
-                connection_frames.quest_state_frame(
-                  quest_id:,
-                  state:,
-                  objective_id:,
-                ),
-              )
-          }
-        }),
+        now:,
+        effects: connection_effects.quest_deadline_timer_moved(
+          before: quest_log.next_deadline(log: entered.quests),
+          after: quest_log.next_deadline(log: taken.log),
+          now_ms: now.monotonic_ms,
+        ),
+        written: list.reverse(
+          list.map(taken.effects, fn(effect) {
+            case effect {
+              quest.Log(level:, text:) ->
+                connection_state.log(session:, level:, text:)
+              quest.SendState(quest_id:, state:, objective_id:) ->
+                connection_state.to_client(
+                  session,
+                  connection_frames.quest_state_frame(
+                    quest_id:,
+                    state:,
+                    objective_id:,
+                  ),
+                )
+            }
+          }),
+        ),
       )
     Error(refusal) ->
       connection_state.end_for(

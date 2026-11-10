@@ -135,7 +135,8 @@ fn assert_declined(
     as { what <> " is logged and answered with nothing" }
   assert string.contains(text, "quest " <> int.to_string(quest_id))
     as { what <> ": the line names the quest" }
-  assert quest_log.rows(log: taken.log) == quest_log.rows(log:)
+  assert quest_log.rows(log: taken.log, now_ms: 0)
+    == quest_log.rows(log:, now_ms: 0)
     as { what <> " leaves the log as it was" }
   Nil
 }
@@ -341,7 +342,8 @@ pub fn abandon_keeps_the_quest_abandoned_and_acceptable_test() -> Nil {
   assert abandoned.effects
     == [SendState(quest_id: 2417, state: 6, objective_id: 0)]
     as "opcode.0x35a: the answer is 0x35C {quest 2417, state 6, objective 0}"
-  assert quest_log.rows(log: abandoned.log) == [quest_support.known(2417, 6)]
+  assert quest_log.rows(log: abandoned.log, now_ms: 0)
+    == [quest_support.known(2417, 6)]
     as "0x1405fbdc0: state 6 is kept in the side list, with no active entry"
   let again = Asker(..held, log: abandoned.log)
   assert target(again) == Acceptable
@@ -405,7 +407,7 @@ pub fn mention_stores_mentioned_for_both_bits_test() -> Nil {
       asker: asker(log: rows),
     )
   assert result.effects == [] as { what <> " sends no answer (opcode.0x360)" }
-  assert quest_log.rows(log: result.log) == after
+  assert quest_log.rows(log: result.log, now_ms: 0) == after
     as { what <> " leaves the quest Mentioned in the log, never removed" }
   // The requests the client would not send: a mention of a quest it holds a state of, a
   // withdrawal of one it holds none of, holds Ignored or in the active list, and a
@@ -509,7 +511,7 @@ pub fn track_sets_the_tracked_flag_without_an_answer_test() -> Nil {
       asker: asker(log: [row]),
     )
   assert result.effects == [] as { what <> " sends no answer (opcode.0x364)" }
-  assert quest_log.rows(log: result.log) == [after]
+  assert quest_log.rows(log: result.log, now_ms: 0) == [after]
     as { what <> " changes the tracked flag of the entry and nothing else" }
   // A quest outside the active list has no tracker entry for the client to flip.
   let outside = [
@@ -553,7 +555,8 @@ pub fn ignore_answers_ignored_and_stop_ignoring_answers_mentioned_test() -> Nil 
       <> int.to_string(state)
       <> " (opcode.0x35e)"
     }
-  assert quest_log.rows(log: result.log) == [quest_support.known(1806, state)]
+  assert quest_log.rows(log: result.log, now_ms: 0)
+    == [quest_support.known(1806, state)]
     as { what <> " leaves the quest held in that state" }
   // The states the client's UI does not offer the toggle for.
   let refused = [

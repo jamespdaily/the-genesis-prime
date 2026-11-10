@@ -302,6 +302,13 @@ fn connected(
     OwnEvent(TimerFired(timer:))
       if timer == connection_state.quest_reset_timer
     -> settled(handled: connection_world.quest_reset_due(session:, now:), now:)
+    OwnEvent(TimerFired(timer:))
+      if timer == connection_state.quest_deadline_timer
+    ->
+      settled(
+        handled: connection_world.quest_deadline_due(session:, now:),
+        now:,
+      )
     OwnEvent(TimerFired(timer:)) ->
       settled(handled: other_timer_fired(session:, now:, timer:), now:)
     OwnEvent(step.PeerClosed)

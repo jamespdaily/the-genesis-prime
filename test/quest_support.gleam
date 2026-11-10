@@ -10,10 +10,13 @@
 //// - **No row:** 32000, which fits the 15 bits of the message and names no Quest2 row.
 
 import character_tables
+import fixture_tables
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/store.{type QuestRow, ActiveQuest, QuestRow}
+import genesis_prime/table/loader/store as table_store
 import gleam/list
 import gleam/option.{None, Some}
+import planted_table.{Integer}
 
 pub const one_time = 2347
 
@@ -131,3 +134,47 @@ pub fn accepted(
 /// Quest 4361: six objectives (QuestObjective 5871, 5907 to 5911, each of type 5 and
 /// count 1), the only quest here whose objective index 5 is a real objective.
 pub const six_objectives = 4361
+
+/// An accepted quest with no placeholder, tracked, with these progress values and this
+/// many milliseconds left of its time limit (`quest_ms_left`; 0 shows a full timer).
+pub fn timed(
+  quest_id quest_id: Int,
+  progress progress: List(Int),
+  quest_ms_left quest_ms_left: Int,
+) -> QuestRow {
+  QuestRow(
+    quest_id:,
+    state: 1,
+    completed_at: None,
+    active: Some(ActiveQuest(
+      placeholder_objective_id: 0,
+      tracked: True,
+      done_mask: 0,
+      progress:,
+      quest_ms_left:,
+      objective_ms_left: list.map(progress, fn(_) { 0 }),
+    )),
+  )
+}
+
+/// Runs the body on the fixture's tables with these quests' time limits
+/// (`Quest2.maxTimeAllowedMS`, in milliseconds) set, built on the body's heap. The
+/// fixture holds none of the client's 14 timed quests, so a test that needs one
+/// gives a quest of the fixture a limit.
+pub fn with_time_limits(
+  limits limits: List(#(Int, Int)),
+  body body: fn(table_store.Tables) -> a,
+) -> a {
+  let rows =
+    list.fold(limits, fixture_tables.rows(), fn(rows, limit) {
+      case
+        fixture_tables.change(rows:, table: "Quest2", id: limit.0, with: [
+          #("maxTimeAllowedMS", Integer(limit.1)),
+        ])
+      {
+        Ok(changed) -> changed
+        Error(refusal) -> panic as fixture_tables.describe(refusal)
+      }
+    })
+  fixture_tables.on_rows(rows:, reaching: [], body:)
+}

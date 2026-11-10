@@ -617,9 +617,11 @@ pub fn the_end_of_sessions_in_the_world_claims_again_and_the_claim_puts_the_play
   assert support.effects_of(taken)
     == [
       OwnEffect(CancelTimer(TimerId(2))),
+      OwnEffect(CancelTimer(TimerId(10))),
+      OwnEffect(CancelTimer(TimerId(11))),
       OwnEffect(StartTimer(TimerId(1), 100)),
     ]
-    as "Sessions is likely still restarting, so the claim waits a moment, as in character select; the save timer is cancelled meanwhile"
+    as "Sessions is likely still restarting, so the claim waits a moment, as in character select; the save, quest reset and quest deadline timers are cancelled meanwhile"
   assert support.writes(taken) == [] as "the client sees nothing"
   let #(state, taken) =
     game_connection_support.feed(state, OwnEvent(TimerFired(TimerId(1))))

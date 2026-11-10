@@ -36,8 +36,9 @@
 ////   timer's firing is taken only there, and an answer only while the claim's
 ////   ask is out (`ClaimingSession`); either in the other is a bug.
 //// - **Sessions ending in the world.** The claim again keeps where the
-////   client is: character select, or the player in the world, whose save timer
-////   is cancelled while the claim waits and started again when it is answered.
+////   client is: character select, or the player in the world, whose save, quest
+////   reset and quest deadline timers are cancelled while the claim waits and
+////   started again when it is answered.
 
 import genesis_prime/account_session
 import genesis_prime/client_connection.{
@@ -45,13 +46,13 @@ import genesis_prime/client_connection.{
   FromStore,
 }
 import genesis_prime/game/character_select
-import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/state.{
   type Resume, type Session, AwaitingHelloReply, Buying, ClaimingSession,
   EnteringWorld, InCharacterSelect, InWorld, LeavingMap, MovingItem,
   ResumeSelect, ResumeWorld, SavingPlace, Selling, Session, Summoning,
   TakingSessionKey, WaitingToClaim,
 } as connection_state
+import genesis_prime/game/connection/world as connection_world
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_reason.{
   AccountDisconnected, LostUserServer,
@@ -175,9 +176,7 @@ pub fn claim_answered(
             [],
           )
         ResumeWorld(entered:) ->
-          Continue(Session(..session, status: InWorld(holder:, entered:)), [
-            connection_effects.start_save_timer(),
-          ])
+          connection_world.claimed_again(session:, now:, holder:, entered:)
       }
     step.Answer(FromSessions(account_session.TakenOver)) ->
       taken_over(session, now)
@@ -323,8 +322,9 @@ pub fn own_watch_ended(
 
 /// The connection waits on the claim timer before it claims its account
 /// again, with the place of the client kept. A player in the world is not
-/// saved by the timer meanwhile: the save timer is cancelled, and a firing
-/// already waiting is dropped by the shell.
+/// saved by the timer meanwhile, and no quest timer fires: the save, quest reset
+/// and quest deadline timers are cancelled, and a firing already waiting is dropped
+/// by the shell. The claim starts them again (`connection/world.claimed_again`).
 fn waiting_to_claim(
   session session: Session,
   holder holder: Holder,
@@ -334,6 +334,8 @@ fn waiting_to_claim(
     ResumeSelect -> []
     ResumeWorld(..) -> [
       OwnEffect(CancelTimer(timer: connection_state.save_timer)),
+      OwnEffect(CancelTimer(timer: connection_state.quest_reset_timer)),
+      OwnEffect(CancelTimer(timer: connection_state.quest_deadline_timer)),
     ]
   }
   Done(
