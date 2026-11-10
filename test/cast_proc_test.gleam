@@ -210,7 +210,8 @@ fn trace(
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..) -> []
+      | cast.TargetChangeEnds(..)
+      | cast.Activated(..) -> []
     }
   })
 }
@@ -268,6 +269,7 @@ fn is_strike(effect effect: Effect) -> Bool {
     | cast.CasterChangeEnds(..)
     | cast.TargetChangeStarts(..)
     | cast.TargetChangeEnds(..)
+    | cast.Activated(..)
     | cast.StealthChanged(..) -> False
   }
 }

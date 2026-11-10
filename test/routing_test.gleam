@@ -154,7 +154,7 @@ pub fn the_connection_imports_no_message_only_a_feature_decodes_test() -> Nil {
       "camp_request", "camp_finished", "camp_countdown",
       "character_select_start", "create_character_carrier", "delete_character",
       "rename_character", "play_character", "interaction_request",
-      "dialog_responses_shown",
+      "dialog_responses_shown", "cast_activate",
     ],
     fn(name) {
       assert !list.contains(imported, "genesis_prime/message/" <> name)

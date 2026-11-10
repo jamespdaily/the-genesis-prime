@@ -166,7 +166,7 @@ fn handled_over(
   |> list.sort(int.compare)
 }
 
-pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_14_17_18_26_29_52_64_73_80_81_83_84_112_118_and_145_test() -> Nil {
+pub fn the_effect_types_the_measure_handles_are_1_3_4_7_8_11_14_17_18_26_29_52_64_73_80_81_83_84_112_118_and_145_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   assert handled_over(
@@ -177,6 +177,7 @@ pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_14_17_18_26_29_52_64_
       1,
       3,
       4,
+      7,
       8,
       11,
       14,
@@ -195,10 +196,10 @@ pub fn the_effect_types_the_measure_handles_are_1_3_4_8_11_14_17_18_26_29_52_64_
       118,
       145,
     ]
-    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster or at struck units (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Scale 18 (Spell4Effects.effectType.18), Proxy 26 (Spell4Effects.effectType.26), ShieldOverload 64 for the rows aimed at the area (Spell4Effects.effectType.64), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), RavelSignal 81 (Spell4Effects.effectType.81), Stealth 83 (Spell4Effects.effectType.83), RemoveStealth 84 (Spell4Effects.effectType.84), DisguiseOutfit 112 for the rows aimed at the caster (Spell4Effects.effectType.112), UnitPropertyConversion 145 for the rows aimed at the caster (Spell4Effects.effectType.145) and Proc 14 (Spell4Effects.effectType.14) for the rows aimed at the caster, HealShields 118 (Spell4Effects.effectType.118) for the rows that reach the caster, and ModifyInterruptArmor 52 (Spell4Effects.effectType.52) and Absorption 29 (Spell4Effects.effectType.29) for the rows that reach the caster; every other type is unread"
+    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Activate 7 (Spell4Effects.effectType.7, the activate spell of a creature the player right-clicked), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster or at struck units (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Scale 18 (Spell4Effects.effectType.18), Proxy 26 (Spell4Effects.effectType.26), ShieldOverload 64 for the rows aimed at the area (Spell4Effects.effectType.64), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), RavelSignal 81 (Spell4Effects.effectType.81), Stealth 83 (Spell4Effects.effectType.83), RemoveStealth 84 (Spell4Effects.effectType.84), DisguiseOutfit 112 for the rows aimed at the caster (Spell4Effects.effectType.112), UnitPropertyConversion 145 for the rows aimed at the caster (Spell4Effects.effectType.145) and Proc 14 (Spell4Effects.effectType.14) for the rows aimed at the caster, HealShields 118 (Spell4Effects.effectType.118) for the rows that reach the caster, and ModifyInterruptArmor 52 (Spell4Effects.effectType.52) and Absorption 29 (Spell4Effects.effectType.29) for the rows that reach the caster; every other type is unread"
 }
 
-pub fn the_prerequisite_types_the_measure_handles_are_the_thirty_four_read_and_those_with_no_case_test() -> Nil {
+pub fn the_prerequisite_types_the_measure_handles_are_the_thirty_five_read_and_those_with_no_case_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   assert handled_over(
@@ -208,10 +209,10 @@ pub fn the_prerequisite_types_the_measure_handles_are_the_thirty_four_read_and_t
     == [
       1, 2, 3, 4, 6, 10, 11, 15, 17, 21, 22, 23, 26, 28, 32, 33, 34, 35, 36, 37,
       39, 43, 45, 50, 52, 57, 58, 59, 64, 68, 71, 72, 73, 75, 94, 108, 109, 116,
-      129, 132, 144, 156, 157, 158, 161, 165, 179, 181, 202, 243, 247, 249, 250,
-      257, 258, 274, 282, 284,
+      125, 129, 132, 144, 156, 157, 158, 161, 165, 179, 181, 202, 243, 247, 249,
+      250, 257, 258, 274, 282, 284,
     ]
-    as "the server reads 4 (the unit's current faction, Prerequisite.prerequisiteTypeId.4), 11 (a nested prerequisite, Prerequisite.prerequisiteTypeId.11), 15, 28, 37, 50, 59 (Prerequisite.prerequisiteTypeId.50 and .59), 64 (a resource slot, Prerequisite.prerequisiteTypeId.64), 71, 73, 108 (where the second unit stands around the first, Prerequisite.prerequisiteTypeId.108), the player's own facts 1 (its level), 2 (its race), 3 (its class), 10 (its gender), 26 (its zone), 39 (that it is a player), 52 (its path) and 109 (its World), which a cast and the equip check decide alike (Prerequisite.prerequisiteTypeId.1, .2, .3, .10, .26, .39, .52 and .109), 116 (the unit's stealth, Prerequisite.prerequisiteTypeId.116), the quest log's types 6 (a quest's state, Prerequisite.prerequisiteTypeId.6), 68 (an objective done), 43 (an objective open, Prerequisite.prerequisiteTypeId.43), 22, 23 and 33 to 36 (an objective's progress, Prerequisite.prerequisiteTypeId.22) and 94 (Prerequisite.prerequisiteTypeId.94), 129 (under a spell of a group, Prerequisite.prerequisiteTypeId.129) 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), 243 (which the client's check always fails, Prerequisite.prerequisiteTypeId.243) and 250 (the unit's base faction, Prerequisite.prerequisiteTypeId.250), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
+    as "the server reads 4 (the unit's current faction, Prerequisite.prerequisiteTypeId.4), 11 (a nested prerequisite, Prerequisite.prerequisiteTypeId.11), 15, 28, 37, 50, 59 (Prerequisite.prerequisiteTypeId.50 and .59), 64 (a resource slot, Prerequisite.prerequisiteTypeId.64), 71, 73, 108 (where the second unit stands around the first, Prerequisite.prerequisiteTypeId.108), the player's own facts 1 (its level), 2 (its race), 3 (its class), 10 (its gender), 26 (its zone), 39 (that it is a player), 52 (its path) and 109 (its World), which a cast and the equip check decide alike (Prerequisite.prerequisiteTypeId.1, .2, .3, .10, .26, .39, .52 and .109), 116 (the unit's stealth, Prerequisite.prerequisiteTypeId.116), the quest log's types 6 (a quest's state, Prerequisite.prerequisiteTypeId.6), 68 (an objective done), 43 (an objective open, Prerequisite.prerequisiteTypeId.43), 22, 23 and 33 to 36 (an objective's progress, Prerequisite.prerequisiteTypeId.22) and 94 (Prerequisite.prerequisiteTypeId.94), 125 (a challenge in cooldown, which reads as not in cooldown with no record, Prerequisite.prerequisiteTypeId.125), 129 (under a spell of a group, Prerequisite.prerequisiteTypeId.129) 179 (the unit's difficulty, 0x14049eeb0, which the creature attack's load reads), 243 (which the client's check always fails, Prerequisite.prerequisiteTypeId.243) and 250 (the unit's base faction, Prerequisite.prerequisiteTypeId.250), and fails the 24 types the client's check has no case for as the client does (0x1404a2100: 17, 21, 32, 45, 57, 58, 72, 75, 132, 144, 156, 157, 158, 161, 165, 181, 202, 247, 249, 257, 258, 274, 282, 284)"
 }
 
 // ---- the starting abilities' column ----
@@ -1974,14 +1975,14 @@ pub fn the_starting_abilities_totals_hold_184_of_196_effect_rows_and_79_of_79_co
     )
   assert string.contains(
     totals,
-    "| Spell effects (#49) | 133 | 131200 | 18 | 20 | 184 of 196 |",
+    "| Spell effects (#49) | 133 | 131200 | 18 | 21 | 184 of 196 |",
   )
     as "196 effect rows are left, 12 of them not handled (the two Proc rows the plan skips, 90 x4, 118 once (the Warrior's periodic row 210834, held and not applied), 24 once, the Stalker's 91018 of type 81, behind target apply prerequisite 11311, the two Proxies 121345 and 178429 whose dataBits00 is 0, and the Medic's gain 228918, which ticks every 2000 ms (scratch count over the 196 rows the coverage walk reaches); the five other Proc rows, the Medic's row 228914, 109482 of type 18, 229304 of type 145, the Esper's type 52 row 199192 and its type 29 row 178144, aimed at the caster with a durationTime, are read, and the two ExoSuit rows of type 112, 112543 and 178142, aimed at the caster with a durationTime and a display, are read too); the whole-game columns are the walk's of 2026-11-05, with types 14, 18, 29, 52, 64, 81, 83, 84, 112, 118 and 145 handled beside the nine"
   assert string.contains(
     totals,
-    "| Prerequisites (#47) | 232 | 49184 | 47209 | 35 | 79 of 79 |",
+    "| Prerequisites (#47) | 232 | 49184 | 47209 | 36 | 79 of 79 |",
   )
-    as "79 conditions are left, all handled: types 4, 243 and 250 are read beside the fourteen handled before (Prerequisite.prerequisiteTypeId.4, .243, .250), and the equip check decides 10 and 109 (Prerequisite.prerequisiteTypeId.10 and .109), so 19 types were handled before the quest log; it adds 6, 22, 23, 33 to 36, 43, 68 and 94 (Prerequisite.prerequisiteTypeId.6, .22, .43, .68 and .94), which the client's table uses, so 29 types are handled; a cast now gives its subject the player (its gender, World and zones), so 10 and 109 are read in every row, and the player's level, race, class, zone, kind and path add 1, 2, 3, 26, 39 and 52 (Prerequisite.prerequisiteTypeId.1, .2, .3, .26, .39 and .52), so 35 types are handled"
+    as "79 conditions are left, all handled: types 4, 243 and 250 are read beside the fourteen handled before (Prerequisite.prerequisiteTypeId.4, .243, .250), and the equip check decides 10 and 109 (Prerequisite.prerequisiteTypeId.10 and .109), so 19 types were handled before the quest log; it adds 6, 22, 23, 33 to 36, 43, 68 and 94 (Prerequisite.prerequisiteTypeId.6, .22, .43, .68 and .94), which the client's table uses, so 29 types are handled; a cast now gives its subject the player (its gender, World and zones), so 10 and 109 are read in every row, and the player's level, race, class, zone, kind and path add 1, 2, 3, 26, 39 and 52 (Prerequisite.prerequisiteTypeId.1, .2, .3, .26, .39 and .52), so 35 types are handled; the activate pick reads 125, a challenge in cooldown (Prerequisite.prerequisiteTypeId.125), so 36 types are handled"
 }
 
 pub fn the_fact_file_holds_the_records_the_starting_reach_rules_cite_test() -> Nil {

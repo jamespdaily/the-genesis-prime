@@ -77,6 +77,7 @@
 
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/activate
 import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/connection/absorption as connection_absorption
@@ -88,6 +89,7 @@ import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/damage
+import genesis_prime/game/hit_radius
 import genesis_prime/game/loadout
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
@@ -104,6 +106,8 @@ import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type TimerId, CancelTimer,
   OwnEffect, StartTimer,
 }
+import genesis_prime/table/creature2
+import genesis_prime/table/id.{RaceId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/dict
@@ -137,6 +141,66 @@ pub fn cast_message(
       carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
     Error(refusal) ->
       connection_state.end_for(session:, now:, text: cast.describe(refusal))
+  }
+}
+
+/// The player's right-click of a unit, its 0x97, from inside 0x038C in the world: the
+/// cast rule decides what the unit is to the player from the picture (`activate_target`),
+/// refuses or starts the activate cast, and a refusal of the frame ends the connection.
+pub fn activate_message(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+) -> client_connection.Handled(Session) {
+  let tables = session.settings.tables
+  let caster = caster_of(tables:, entered:)
+  // The player's Race row is in the tables (the load fails otherwise), so a missing one
+  // crashes.
+  let assert Ok(caster_radius) =
+    hit_radius.of_player(tables:, race_id: RaceId(caster.player.race_id))
+    as "hit_radius.requirements fails the load when a playable race has no Race row"
+  case
+    cast.activate(
+      cast: entered.cast,
+      body: inner.body,
+      caster:,
+      activations: connection_state.activations_of(session:),
+      target_of: activate_target(tables:, picture: entered.shown),
+      caster_radius:,
+      now:,
+    )
+  {
+    Ok(#(updated, effects)) ->
+      carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
+    Error(refusal) ->
+      connection_state.end_for(session:, now:, text: cast.describe(refusal))
+  }
+}
+
+/// What the unit a right-click names is to the player, from the units its client shows:
+/// a static object with its creature's activate row and body, a creature that fights,
+/// another player or nothing shown.
+fn activate_target(
+  tables tables: table_store.Tables,
+  picture picture: shown.Picture,
+) -> fn(Int) -> activate.Target {
+  fn(unit_id) {
+    case dict.get(picture, unit_id) {
+      Error(Nil) -> activate.Unseen
+      Ok(shown.ShownPlayer) -> activate.AnotherPlayer
+      Ok(shown.ShownCreature(..)) -> activate.Fighter
+      Ok(shown.ShownObject(creature_id:, place:, hit_radius:)) -> {
+        // The object's Creature2 row is in the tables, since its 0x262 was made from it.
+        let assert Ok(row) = creature2.get(tables:, id: creature_id)
+          as "a shown object's Creature2 row is in the tables it was made from"
+        activate.Object(
+          creature_id: creature_id.value,
+          creature: activate.creature_of(row:),
+          body: activate.Body(place:, radius: hit_radius),
+        )
+      }
+    }
   }
 }
 
@@ -360,6 +424,18 @@ pub fn cast_effects(
       cast.Strike(asked:), Some(entered) ->
         strike_begins(session:, now:, entered:, asked:)
       cast.Strike(..), None -> #(session, [])
+      cast.Activated(unit_id:, creature_id:), _ -> #(session, [
+        // Nothing consumes an activation yet: a collectible's reward is the quest
+        // step and reward issues' (#592, #598, #645), the creature's own change #52.
+        connection_state.log(
+          session:,
+          level: step.LogInfo,
+          text: "the player activated the unit "
+            <> int.to_string(unit_id)
+            <> " of the creature "
+            <> int.to_string(creature_id),
+        ),
+      ])
       cast.Pay(payments:), _ -> connection_resource.paid(session:, payments:)
       cast.Gain(gains:), _ -> connection_resource.gained(session:, gains:)
       cast.CasterChangeStarts(source:, change: cast.Property(modifier:)), _ ->
