@@ -145,8 +145,17 @@ fn given(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
 ) -> ItemProperties {
+  given_with(tables:, item2_id:, random_stats: 0)
+}
+
+/// What an item gives with the random-stat word `random_stats`.
+fn given_with(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+  random_stats random_stats: Int,
+) -> ItemProperties {
   let assert Ok(properties) =
-    item_property.of_item(tables:, item2_id:, random_stats: 0)
+    item_property.of_item(tables:, item2_id:, random_stats:)
     as "the item's rows are in the tables and the reader follows its branches"
   properties
 }
@@ -278,26 +287,6 @@ pub fn a_property_worth_0_per_point_gives_no_entry_test() -> Nil {
   let shared = given(tables:, item2_id:)
   assert budget_ids(properties: shared) == [29]
     as "0x14040db30: a share on Strength still gives 0 points of value"
-}
-
-/// Item2 9965 has ItemStat 415, one entry of kind 2, a random stat group. With the
-/// random-stat word 0 the client reads no data, and an entry then gives nothing
-/// (0x14040e6d0). So the item gives what the same item with no entry gives: its own
-/// armor and Base Health.
-pub fn a_random_stat_entry_gives_nothing_while_the_item_holds_no_roll_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let item2_id = fixture_tables.root("Item2", 9965)
-  let tables = fixture_tables.shared()
-  let item = given(tables:, item2_id:)
-  assert budget_ids(properties: item) == []
-    as "0x14040e6d0: a kind-2 entry with no byte is kind 0"
-  assert item.armor >. 0.0 && item.base_health >. 0.0
-    as "0x14040e340, 0x14040e3d0: the item's own armor and Base Health"
-  use tables <- fixture_tables.changed(table: "ItemStat", id: 415, with: [
-    #("itemStatTypeEnum00", Integer(0)),
-  ])
-  assert given(tables:, item2_id:) == item
-    as "an entry of kind 0 gives the same"
 }
 
 /// A budget value and an innate value on one property add (0x14040db30 adds onto the
@@ -879,4 +868,24 @@ pub fn a_word_with_data_and_a_bad_byte_is_refused_whole_test() -> Nil {
       entry: 0,
     ))
     as "entry 0's byte 5 is past group 14's four rows"
+}
+
+/// Item2 9965 has ItemStat 415, one entry of kind 2, a random stat group. With the
+/// random-stat word 0 the client reads no data, and an entry then gives nothing
+/// (0x14040e6d0). So the item gives what the same item with no entry gives: its own
+/// armor and Base Health.
+pub fn a_random_stat_entry_gives_nothing_while_the_item_holds_no_roll_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item2_id = fixture_tables.root("Item2", 9965)
+  let tables = fixture_tables.shared()
+  let item = given_with(tables:, item2_id:, random_stats: 0)
+  assert budget_ids(properties: item) == []
+    as "0x14040e6d0: a kind-2 entry with no byte is kind 0"
+  assert item.armor >. 0.0 && item.base_health >. 0.0
+    as "0x14040e340, 0x14040e3d0: the item's own armor and Base Health"
+  use tables <- fixture_tables.changed(table: "ItemStat", id: 415, with: [
+    #("itemStatTypeEnum00", Integer(0)),
+  ])
+  assert given_with(tables:, item2_id:, random_stats: 0) == item
+    as "an entry of kind 0 gives the same"
 }
