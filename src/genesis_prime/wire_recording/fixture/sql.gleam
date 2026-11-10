@@ -420,13 +420,14 @@ pub type ItemsOfCharactersOfAccountsNamedRow {
     location: Int,
     bag_index: Int,
     stack_count: Int,
+    random_stats: Int,
   )
 }
 
 /// The items held by the characters of the accounts with these login names, in
 /// the order of their guids, with every column the fixture of a recorded session
 /// keeps (genesis_prime/wire_recording/fixture): the guid, the character that
-/// holds it, the item's id, its place and its stack count.
+/// holds it, the item's id, its place, its stack count and its random-stat word.
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
@@ -442,6 +443,7 @@ pub fn items_of_characters_of_accounts_named(
     use location <- decode.field(3, decode.int)
     use bag_index <- decode.field(4, decode.int)
     use stack_count <- decode.field(5, decode.int)
+    use random_stats <- decode.field(6, decode.int)
     decode.success(ItemsOfCharactersOfAccountsNamedRow(
       item_guid:,
       character_id:,
@@ -449,20 +451,22 @@ pub fn items_of_characters_of_accounts_named(
       location:,
       bag_index:,
       stack_count:,
+      random_stats:,
     ))
   }
 
   "-- The items held by the characters of the accounts with these login names, in
 -- the order of their guids, with every column the fixture of a recorded session
 -- keeps (genesis_prime/wire_recording/fixture): the guid, the character that
--- holds it, the item's id, its place and its stack count.
+-- holds it, the item's id, its place, its stack count and its random-stat word.
 select
   item_guid,
   character_id,
   item2_id,
   location::int as location,
   bag_index,
-  stack_count
+  stack_count,
+  random_stats
 from character_item
 where character_id in (
   select character_id

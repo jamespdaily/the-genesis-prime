@@ -111,6 +111,7 @@ pub fn in_bag(
     location: 1,
     bag_index: index,
     stack_count: count,
+    random_stats: 0,
   )
 }
 

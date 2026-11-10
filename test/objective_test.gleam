@@ -506,6 +506,7 @@ fn held(
     location:,
     bag_index:,
     stack_count:,
+    random_stats: 0,
   )
 }
 

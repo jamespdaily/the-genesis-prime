@@ -5,7 +5,8 @@ select
   item2_id,
   location::int as location,
   bag_index,
-  stack_count
+  stack_count,
+  random_stats
 from character_item
 where character_id = $1
 order by location, bag_index;

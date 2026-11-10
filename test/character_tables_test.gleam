@@ -53,10 +53,10 @@ pub fn the_content_tables_are_the_content_load_of_the_committed_files_over_the_s
   assert list.length(faction2_relationship.all(content)) == 1964
     as "the content load read the committed Faction2Relationship file"
   assert list.map(world.all(content), fn(row) { world.id(row).value })
-    == [22, 51, 426, 870, 990, 1068, 1333, 1387, 3045, 3460]
+    == [22, 51, 426, 870, 990, 1068, 1333, 1387, 2979, 3045, 3460]
     as "the content load read the committed World file: the fixture's World ids"
   assert character_tables.content_worlds()
-    == [22, 51, 426, 870, 990, 1068, 1333, 1387, 3045, 3460]
+    == [22, 51, 426, 870, 990, 1068, 1333, 1387, 2979, 3045, 3460]
     as "the worlds a test's map may run in are the fixture's World ids"
   assert list.map(creature2_outfit_info.all(content), fn(row) {
       creature2_outfit_info.id(row).value

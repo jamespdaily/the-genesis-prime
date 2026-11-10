@@ -96,11 +96,19 @@ pub fn turn_in_message(
         vendor_trade.effects_of(session:, effects:),
       )
     Ok(quest_turn_in.Asks(turn_in:, effects:, logged:)) -> {
+      let tables = session.settings.tables
+      let #(link, entropy) =
+        client_connection.draw(
+          session.link,
+          quest_turn_in.entropy_needed(turn_in:, tables:),
+        )
+      let turn_in = quest_turn_in.rolled(turn_in:, tables:, entropy:)
       let #(advanced, save_sequence) =
         movement.next_save(state: entered.movement)
       connection_state.ask(
         session: Session(
           ..session,
+          link:,
           interaction_logged: logged,
           status: TurningIn(
             holder:,

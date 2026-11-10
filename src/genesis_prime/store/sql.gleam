@@ -22,6 +22,7 @@ pub type BuyFromVendorRow {
     location: Option(Int),
     bag_index: Option(Int),
     stack_count: Option(Int),
+    random_stats: Option(Int),
   )
 }
 
@@ -29,7 +30,7 @@ pub type BuyFromVendorRow {
 /// the account `$2` holds of the currency type `$4` is lowered by `$6`, each stack of the
 /// lists `$8` to `$10` at the same position (an item's guid, the count it is held with, the
 /// count it holds after) is raised, and a stack of the Item2 `$7` is inserted at each place
-/// of the lists `$11` to `$13` (a location, a bag index and a count). It changes only while
+/// of the lists `$11` to `$14` (a location, a bag index, a count and the item's random-stat word). It changes only while
 /// the character is still held by the login that asks, that is while its `session_epoch`
 /// ($3) is still the one that login was told (load_character.sql), only while the character
 /// holds exactly `$5` of that currency (the total the login holds) and at least `$6`, and
@@ -37,7 +38,8 @@ pub type BuyFromVendorRow {
 /// held with; otherwise it changes nothing and returns no row. The account's id is in the
 /// statement, as for a load.
 ///
-/// The rows it returns are one for each stack made, each with the amount left; one row with
+/// The rows it returns are one for each stack made, each with the amount left and the word it
+/// was made with; one row with
 /// no stack when none is made. A place that holds an item breaks the table's
 /// `character_item_one_per_slot` at the statement's end and the statement changes nothing,
 /// the currency and the raised stacks included. Whether a stack may hold its new count is the
@@ -63,6 +65,7 @@ pub fn buy_from_vendor(
   arg_11: List(Int),
   arg_12: List(Int),
   arg_13: List(Int),
+  arg_14: List(Int),
 ) -> Result(pog.Returned(BuyFromVendorRow), pog.QueryError) {
   let decoder = {
     use amount <- decode.field(0, decode.int)
@@ -70,12 +73,14 @@ pub fn buy_from_vendor(
     use location <- decode.field(2, decode.optional(decode.int))
     use bag_index <- decode.field(3, decode.optional(decode.int))
     use stack_count <- decode.field(4, decode.optional(decode.int))
+    use random_stats <- decode.field(5, decode.optional(decode.int))
     decode.success(BuyFromVendorRow(
       amount:,
       item_guid:,
       location:,
       bag_index:,
       stack_count:,
+      random_stats:,
     ))
   }
 
@@ -83,7 +88,7 @@ pub fn buy_from_vendor(
 -- the account `$2` holds of the currency type `$4` is lowered by `$6`, each stack of the
 -- lists `$8` to `$10` at the same position (an item's guid, the count it is held with, the
 -- count it holds after) is raised, and a stack of the Item2 `$7` is inserted at each place
--- of the lists `$11` to `$13` (a location, a bag index and a count). It changes only while
+-- of the lists `$11` to `$14` (a location, a bag index, a count and the item's random-stat word). It changes only while
 -- the character is still held by the login that asks, that is while its `session_epoch`
 -- ($3) is still the one that login was told (load_character.sql), only while the character
 -- holds exactly `$5` of that currency (the total the login holds) and at least `$6`, and
@@ -91,7 +96,8 @@ pub fn buy_from_vendor(
 -- held with; otherwise it changes nothing and returns no row. The account's id is in the
 -- statement, as for a load.
 --
--- The rows it returns are one for each stack made, each with the amount left; one row with
+-- The rows it returns are one for each stack made, each with the amount left and the word it
+-- was made with; one row with
 -- no stack when none is made. A place that holds an item breaks the table's
 -- `character_item_one_per_slot` at the statement's end and the statement changes nothing,
 -- the currency and the raised stacks included. Whether a stack may hold its new count is the
@@ -141,19 +147,20 @@ raised as (
   returning held.item_guid
 ),
 made as (
-  insert into character_item (character_id, item2_id, location, bag_index, stack_count)
-  select $1, $7, new_stack.location::smallint, new_stack.bag_index, new_stack.stack_count
-  from unnest($11::int[], $12::int[], $13::int[])
-    as new_stack (location, bag_index, stack_count)
+  insert into character_item (character_id, item2_id, location, bag_index, stack_count, random_stats)
+  select $1, $7, new_stack.location::smallint, new_stack.bag_index, new_stack.stack_count, new_stack.random_stats
+  from unnest($11::int[], $12::int[], $13::int[], $14::bigint[])
+    as new_stack (location, bag_index, stack_count, random_stats)
   where exists (select 1 from allowed)
-  returning item_guid, location::int as location, bag_index, stack_count
+  returning item_guid, location::int as location, bag_index, stack_count, random_stats
 )
 select
   spent.amount as amount,
   made.item_guid,
   made.location,
   made.bag_index,
-  made.stack_count
+  made.stack_count,
+  made.random_stats
 from spent
 left join made on true
 order by made.item_guid;
@@ -172,6 +179,7 @@ order by made.item_guid;
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_11))
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_12))
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_13))
+  |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_14))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
@@ -861,6 +869,7 @@ pub type LoadCharacterItemsRow {
     location: Int,
     bag_index: Int,
     stack_count: Int,
+    random_stats: Int,
   )
 }
 
@@ -880,12 +889,14 @@ pub fn load_character_items(
     use location <- decode.field(2, decode.int)
     use bag_index <- decode.field(3, decode.int)
     use stack_count <- decode.field(4, decode.int)
+    use random_stats <- decode.field(5, decode.int)
     decode.success(LoadCharacterItemsRow(
       item_guid:,
       item2_id:,
       location:,
       bag_index:,
       stack_count:,
+      random_stats:,
     ))
   }
 
@@ -896,7 +907,8 @@ select
   item2_id,
   location::int as location,
   bag_index,
-  stack_count
+  stack_count,
+  random_stats
 from character_item
 where character_id = $1
 order by location, bag_index;
@@ -1615,7 +1627,7 @@ select 1 as one;
 /// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
 pub type SellToVendorRow {
-  SellToVendorRow(amount: Int)
+  SellToVendorRow(amount: Int, item_guid: Int, random_stats: Int)
 }
 
 /// A sale to a vendor, all or none, in one statement: the amount the character `$1` of the
@@ -1630,7 +1642,9 @@ pub type SellToVendorRow {
 /// only when every stack named is the character's, at the location named, with the count it
 /// is held with; a stack that is missing, that another login moved or that holds another
 /// count stops the whole sale, and it changes nothing and returns no row. The account's id
-/// is in the statement, as for a load. The row it returns holds the amount after the sale.
+/// is in the statement, as for a load. The rows it returns are one for each stack sold,
+/// each with the amount after the sale and the stack's random-stat word as the database
+/// held it, which the buyback entry keeps (a sale names at least one stack).
 ///
 /// The statement runs after lock_character_for_save.sql in one transaction, so it waits for
 /// a login that is raising the epoch and then reads the epoch that login stored.
@@ -1653,7 +1667,9 @@ pub fn sell_to_vendor(
 ) -> Result(pog.Returned(SellToVendorRow), pog.QueryError) {
   let decoder = {
     use amount <- decode.field(0, decode.int)
-    decode.success(SellToVendorRow(amount:))
+    use item_guid <- decode.field(1, decode.int)
+    use random_stats <- decode.field(2, decode.int)
+    decode.success(SellToVendorRow(amount:, item_guid:, random_stats:))
   }
 
   "-- A sale to a vendor, all or none, in one statement: the amount the character `$1` of the
@@ -1668,7 +1684,9 @@ pub fn sell_to_vendor(
 -- only when every stack named is the character's, at the location named, with the count it
 -- is held with; a stack that is missing, that another login moved or that holds another
 -- count stops the whole sale, and it changes nothing and returns no row. The account's id
--- is in the statement, as for a load. The row it returns holds the amount after the sale.
+-- is in the statement, as for a load. The rows it returns are one for each stack sold,
+-- each with the amount after the sale and the stack's random-stat word as the database
+-- held it, which the buyback entry keeps (a sale names at least one stack).
 --
 -- The statement runs after lock_character_for_save.sql in one transaction, so it waits for
 -- a login that is raising the epoch and then reads the epoch that login stored.
@@ -1716,7 +1734,7 @@ removed as (
     and held.character_id = $1
     and sold.sold_count = sold.held_count
     and exists (select 1 from allowed)
-  returning held.item_guid
+  returning held.item_guid, held.random_stats
 ),
 lowered as (
   update character_item as held
@@ -1726,10 +1744,19 @@ lowered as (
     and held.character_id = $1
     and sold.sold_count < sold.held_count
     and exists (select 1 from allowed)
-  returning held.item_guid
+  returning held.item_guid, held.random_stats
 )
-select paid.amount as amount
-from paid;
+select
+  paid.amount as amount,
+  gone.item_guid,
+  gone.random_stats
+from paid
+join (
+  select item_guid, random_stats from removed
+  union all
+  select item_guid, random_stats from lowered
+) as gone on true
+order by gone.item_guid;
 "
   |> pog.query
   |> pog.parameter(pog.int(character_id))
@@ -1765,7 +1792,8 @@ pub type SplitCharacterItemRow {
 /// `$8` is at least 1 and less than `$7`, which leaves the source at 1 or more.
 /// Otherwise it changes nothing and returns no row. The account's id is in the
 /// statement, as for a load. The row it returns is the new stack's, whose guid
-/// the database makes (opcode.0x111.guid).
+/// the database makes (opcode.0x111.guid). The new stack keeps the source's random-stat word,
+/// so a split never loses a roll.
 ///
 /// A place that holds an item breaks the table's `character_item_one_per_slot` at
 /// the statement's end and the statement changes nothing, the source included. The
@@ -1803,7 +1831,8 @@ pub fn split_character_item(
 -- `$8` is at least 1 and less than `$7`, which leaves the source at 1 or more.
 -- Otherwise it changes nothing and returns no row. The account's id is in the
 -- statement, as for a load. The row it returns is the new stack's, whose guid
--- the database makes (opcode.0x111.guid).
+-- the database makes (opcode.0x111.guid). The new stack keeps the source's random-stat word,
+-- so a split never loses a roll.
 --
 -- A place that holds an item breaks the table's `character_item_one_per_slot` at
 -- the statement's end and the statement changes nothing, the source included. The
@@ -1824,10 +1853,10 @@ with lowered as (
     and source.stack_count = $7
     and $8 >= 1
     and $8 < $7
-  returning source.item2_id
+  returning source.item2_id, source.random_stats
 )
-insert into character_item (character_id, item2_id, location, bag_index, stack_count)
-select $1, lowered.item2_id, $9, $10, $8
+insert into character_item (character_id, item2_id, location, bag_index, stack_count, random_stats)
+select $1, lowered.item2_id, $9, $10, $8, lowered.random_stats
 from lowered
 returning item_guid;
 "
@@ -1860,6 +1889,7 @@ pub type TurnInRewardsRow {
     location: Option(Int),
     bag_index: Option(Int),
     stack_count: Option(Int),
+    random_stats: Option(Int),
   )
 }
 
@@ -1867,7 +1897,8 @@ pub type TurnInRewardsRow {
 /// `$1` of the account `$2` holds (the currency type `$4`) are set to `$6`, each stack of
 /// the lists `$7` to `$10` at the same position (an item's guid, its Item2, the count it is
 /// held with, the count it holds after) is raised, and a stack is inserted for each position of
-/// the lists `$11` to `$14` (an Item2, a location, a bag index and a count). It changes only
+/// the lists `$11` to `$15` (an Item2, a location, a bag index, a count and the item's
+/// random-stat word). It changes only
 /// while the character is still held by the login that asks, that is while its
 /// `session_epoch` ($3) is still the one that login was told (load_character.sql), only while
 /// the character holds exactly `$5` credits (the total the login holds, a missing row being 0)
@@ -1875,8 +1906,8 @@ pub type TurnInRewardsRow {
 /// with the count it is held with; otherwise it changes nothing and returns no row. The
 /// account's id is in the statement, as for a load.
 ///
-/// The rows it returns are one for each stack made, each with the credits held after and the
-/// stack's Item2, in the order of the lists; one row with no stack when none is made. A place
+/// The rows it returns are one for each stack made, each with the credits held after, the
+/// stack's Item2 and its word, in the order of the lists; one row with no stack when none is made. A place
 /// that holds an item breaks the table's `character_item_one_per_slot` at the statement's end
 /// and the statement changes nothing, the credits and the raised stacks included. Whether a
 /// stack may hold its new count is the Item2's maxStackCount, which the rule checks.
@@ -1905,6 +1936,7 @@ pub fn turn_in_rewards(
   arg_12: List(Int),
   arg_13: List(Int),
   arg_14: List(Int),
+  arg_15: List(Int),
 ) -> Result(pog.Returned(TurnInRewardsRow), pog.QueryError) {
   let decoder = {
     use amount <- decode.field(0, decode.int)
@@ -1913,6 +1945,7 @@ pub fn turn_in_rewards(
     use location <- decode.field(3, decode.optional(decode.int))
     use bag_index <- decode.field(4, decode.optional(decode.int))
     use stack_count <- decode.field(5, decode.optional(decode.int))
+    use random_stats <- decode.field(6, decode.optional(decode.int))
     decode.success(TurnInRewardsRow(
       amount:,
       item_guid:,
@@ -1920,6 +1953,7 @@ pub fn turn_in_rewards(
       location:,
       bag_index:,
       stack_count:,
+      random_stats:,
     ))
   }
 
@@ -1927,7 +1961,8 @@ pub fn turn_in_rewards(
 -- `$1` of the account `$2` holds (the currency type `$4`) are set to `$6`, each stack of
 -- the lists `$7` to `$10` at the same position (an item's guid, its Item2, the count it is
 -- held with, the count it holds after) is raised, and a stack is inserted for each position of
--- the lists `$11` to `$14` (an Item2, a location, a bag index and a count). It changes only
+-- the lists `$11` to `$15` (an Item2, a location, a bag index, a count and the item's
+-- random-stat word). It changes only
 -- while the character is still held by the login that asks, that is while its
 -- `session_epoch` ($3) is still the one that login was told (load_character.sql), only while
 -- the character holds exactly `$5` credits (the total the login holds, a missing row being 0)
@@ -1935,8 +1970,8 @@ pub fn turn_in_rewards(
 -- with the count it is held with; otherwise it changes nothing and returns no row. The
 -- account's id is in the statement, as for a load.
 --
--- The rows it returns are one for each stack made, each with the credits held after and the
--- stack's Item2, in the order of the lists; one row with no stack when none is made. A place
+-- The rows it returns are one for each stack made, each with the credits held after, the
+-- stack's Item2 and its word, in the order of the lists; one row with no stack when none is made. A place
 -- that holds an item breaks the table's `character_item_one_per_slot` at the statement's end
 -- and the statement changes nothing, the credits and the raised stacks included. Whether a
 -- stack may hold its new count is the Item2's maxStackCount, which the rule checks.
@@ -1990,13 +2025,13 @@ raised as (
   returning held.item_guid
 ),
 made as (
-  insert into character_item (character_id, item2_id, location, bag_index, stack_count)
-  select $1, new_stack.item2_id, new_stack.location::smallint, new_stack.bag_index, new_stack.stack_count
-  from unnest($11::int[], $12::int[], $13::int[], $14::int[])
-    with ordinality as new_stack (item2_id, location, bag_index, stack_count, position)
+  insert into character_item (character_id, item2_id, location, bag_index, stack_count, random_stats)
+  select $1, new_stack.item2_id, new_stack.location::smallint, new_stack.bag_index, new_stack.stack_count, new_stack.random_stats
+  from unnest($11::int[], $12::int[], $13::int[], $14::int[], $15::bigint[])
+    with ordinality as new_stack (item2_id, location, bag_index, stack_count, random_stats, position)
   where exists (select 1 from allowed)
   order by new_stack.position
-  returning item_guid, item2_id, location::int as location, bag_index, stack_count
+  returning item_guid, item2_id, location::int as location, bag_index, stack_count, random_stats
 )
 select
   paid.amount as amount,
@@ -2004,7 +2039,8 @@ select
   made.item2_id,
   made.location,
   made.bag_index,
-  made.stack_count
+  made.stack_count,
+  made.random_stats
 from paid
 left join made on true
 order by made.item_guid;
@@ -2024,6 +2060,7 @@ order by made.item_guid;
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_12))
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_13))
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_14))
+  |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_15))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

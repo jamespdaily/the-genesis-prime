@@ -127,10 +127,18 @@ fn taken(
         Session(..session, interaction_logged: logged),
         vendor_trade.effects_of(session:, effects:),
       )
-    Ok(vendor_purchase.Asks(purchase:, logged:)) ->
+    Ok(vendor_purchase.Asks(purchase:, logged:)) -> {
+      let tables = session.settings.tables
+      let #(link, entropy) =
+        client_connection.draw(
+          session.link,
+          vendor_purchase.entropy_needed(purchase:, tables:),
+        )
+      let purchase = vendor_purchase.rolled(purchase:, tables:, entropy:)
       connection_state.ask(
         session: Session(
           ..session,
+          link:,
           interaction_logged: logged,
           status: Buying(holder:, entered:, purchase:),
         ),
@@ -143,6 +151,7 @@ fn taken(
         )),
         before: [],
       )
+    }
     Error(refusal) ->
       connection_state.end_for(
         session:,

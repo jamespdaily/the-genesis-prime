@@ -39,6 +39,7 @@ import genesis_prime/table/item_budget
 import genesis_prime/table/item_display
 import genesis_prime/table/item_display_source_entry
 import genesis_prime/table/item_proficiency
+import genesis_prime/table/item_random_stat
 import genesis_prime/table/item_slot
 import genesis_prime/table/item_special
 import genesis_prime/table/item_stat
@@ -106,6 +107,8 @@ import genesis_prime/table/xp_per_level
 ///   the Novice gear's properties (genesis_prime/game/item_property).
 /// - ItemBudget and ItemStat, with Item2, ItemSlot, UnitProperty2 and GameFormula: the
 ///   properties a worn item's budget gives (genesis_prime/game/item_property).
+/// - ItemRandomStat, with ItemStat: the properties a random-stat entry of an item may
+///   pick, by group id (genesis_prime/game/random_stat and genesis_prime/game/item_property).
 /// - ItemProficiency and ItemSpecial, with Item2 and Item2Category: whether a
 ///   character may wear an item (genesis_prime/game/item_property and
 ///   genesis_prime/game/equip_requirement).
@@ -183,6 +186,7 @@ pub fn entries() -> List(store.Entry) {
     item_display.entry(),
     item_display_source_entry.entry(),
     item_proficiency.entry(),
+    item_random_stat.entry(),
     item_slot.entry(),
     item_special.entry(),
     item_stat.entry(),

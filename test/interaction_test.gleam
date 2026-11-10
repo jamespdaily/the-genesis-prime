@@ -36,6 +36,7 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/interaction
+import genesis_prime/game/random_stat_word
 import genesis_prime/game/shown
 import genesis_prime/game/start_place
 import genesis_prime/game/vendor
@@ -674,6 +675,7 @@ fn selling_state() -> game_connection.State {
             location: 1,
             bag_index: 0,
             stack_count: 5,
+            random_stats: 0,
           ),
         ],
       ),
@@ -748,7 +750,15 @@ pub fn a_sell_sent_while_the_store_works_is_held_and_taken_after_test() -> Nil {
     connection_support.answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(store.ForItems(store.Sold(amount: 102)))),
+      outcome: step.Answer(
+        FromStore(
+          store.ForItems(
+            store.Sold(amount: 102, words: [
+              store.SoldWord(item_guid: 500, random_stats: 0),
+            ]),
+          ),
+        ),
+      ),
     )
   assert connection_support.written_ids(answered) == [0x0919, 0x017F, 0x00BA]
     as "opcode.0x919 (the total), 0x17F (3 left, reason 7) and 0xBA (the buyback entry): the sale's answer goes out first, then the held line is taken"
@@ -814,7 +824,15 @@ fn sold(
   connection_support.answer(
     state:,
     taken:,
-    outcome: step.Answer(FromStore(store.ForItems(store.Sold(amount: credits)))),
+    outcome: step.Answer(
+      FromStore(
+        store.ForItems(
+          store.Sold(amount: credits, words: [
+            store.SoldWord(item_guid: 500, random_stats: 0),
+          ]),
+        ),
+      ),
+    ),
   ).0
 }
 
@@ -905,6 +923,7 @@ pub fn the_buyback_list_survives_a_world_change_and_is_empty_after_entering_the_
           location: 1,
           bag_index: 0,
           stack_count: 5,
+          random_stats: 0,
         ),
       ],
     )
@@ -1015,7 +1034,15 @@ pub fn selling_a_worn_item_sends_0x148_then_0x933_and_0x93a_and_tells_each_viewe
     connection_support.answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(store.ForItems(store.Sold(amount: 150)))),
+      outcome: step.Answer(
+        FromStore(
+          store.ForItems(
+            store.Sold(amount: 150, words: [
+              store.SoldWord(item_guid: 1, random_stats: 0),
+            ]),
+          ),
+        ),
+      ),
     )
   assert connection_support.written_ids(answered)
     == [0x0919, 0x0148, 0x00BA, 0x0933, 0x093A, 0x092F]
@@ -1057,4 +1084,71 @@ pub fn selling_a_worn_item_sends_0x148_then_0x933_and_0x93a_and_tells_each_viewe
       connection_support.news_told(taken: answered, viewer:)
       as "opcode.0x93a.other_unit: each viewer is told the look, then the properties"
   })
+}
+
+/// Dorian Walker sells Item2 48169, a bracer with three kind-2 random stat entries in the
+/// first position. Two buys on one connection draw their entropy one after the other from
+/// the connection's seed, so the two stacks are made with different words: the connection
+/// keeps the link its draw advanced.
+pub fn two_buys_of_a_random_stat_item_on_one_connection_make_different_words_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state =
+    connection_support.in_world_stocking_holding_credits(
+      vendors: vendor_support.stocking_items(creature_ids: [74_812], items: [
+        fixture_tables.root("Item2", 48_169),
+      ]),
+      credits: 1_000_000,
+    )
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: walker_appears(
+        unit_id: walker_unit,
+        gap: reach -. 0.1,
+        health: 52,
+        hostile_to: friendly,
+      ),
+    )
+  let #(state, _) =
+    connection_support.interaction_requested(
+      state:,
+      unit_id: walker_unit,
+      kind: 0x31,
+    )
+  let buy = fn(state, guid) {
+    let #(state, taken) =
+      connection_support.purchase_requested(state:, unique_id: 1, quantity: 1)
+    let assert AskStore(store.Items(store.BuyFromVendor(make: [stack], ..))) =
+      connection_support.ask_request(taken)
+      as "position 1 is Item2 48169, one unit, one stack"
+    let #(state, _) =
+      connection_support.answer(
+        state:,
+        taken:,
+        outcome: step.Answer(
+          FromStore(
+            store.ForItems(
+              store.Bought(amount: 900_000, made: [
+                store.HeldItem(
+                  item_guid: guid,
+                  item2_id: id.Item2Id(48_169),
+                  location: stack.location,
+                  bag_index: stack.bag_index,
+                  stack_count: stack.stack_count,
+                  random_stats: stack.random_stats,
+                ),
+              ]),
+            ),
+          ),
+        ),
+      )
+    #(state, stack.random_stats)
+  }
+  let #(state, first) = buy(state, 900)
+  let #(_, second) = buy(state, 901)
+  assert random_stat_word.has_data(word: first)
+    && random_stat_word.has_data(word: second)
+    as "each stack is made with a rolled word the client reads"
+  assert first != second
+    as "the second buy drew its own bytes, not the first's again"
 }

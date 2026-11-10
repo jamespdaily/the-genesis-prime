@@ -145,7 +145,17 @@ fn given(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
 ) -> ItemProperties {
-  let assert Ok(properties) = item_property.of_item(tables:, item2_id:)
+  given_with(tables:, item2_id:, random_stats: 0)
+}
+
+/// What an item gives with the random-stat word `random_stats`.
+fn given_with(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+  random_stats random_stats: Int,
+) -> ItemProperties {
+  let assert Ok(properties) =
+    item_property.of_item(tables:, item2_id:, random_stats:)
     as "the item's rows are in the tables and the reader follows its branches"
   properties
 }
@@ -279,27 +289,6 @@ pub fn a_property_worth_0_per_point_gives_no_entry_test() -> Nil {
     as "0x14040db30: a share on Strength still gives 0 points of value"
 }
 
-/// Item2 9965 has ItemStat 415, one entry of kind 2, a random stat group. The client reads
-/// the item's random-stat byte, which the server sends as 0 (the shared item record's
-/// field_8), and no byte makes the entry kind 0 (0x14040e6d0). So the item gives what
-/// the same item with no entry gives: its own armor and Base Health. The roll is the
-/// open issue #665.
-pub fn a_random_stat_entry_gives_nothing_while_the_item_holds_no_roll_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let item2_id = fixture_tables.root("Item2", 9965)
-  let tables = fixture_tables.shared()
-  let item = given(tables:, item2_id:)
-  assert budget_ids(properties: item) == []
-    as "0x14040e6d0: a kind-2 entry with no byte is kind 0"
-  assert item.armor >. 0.0 && item.base_health >. 0.0
-    as "0x14040e340, 0x14040e3d0: the item's own armor and Base Health"
-  use tables <- fixture_tables.changed(table: "ItemStat", id: 415, with: [
-    #("itemStatTypeEnum00", Integer(0)),
-  ])
-  assert given(tables:, item2_id:) == item
-    as "an entry of kind 0 gives the same"
-}
-
 /// A budget value and an innate value on one property add (0x14040db30 adds onto the
 /// property's entry, and 0x14040ca70 runs before 0x14040df10). Item2 8441's ItemStat 20
 /// names property 34 and 32; with the first changed to 35, Assault Rating, the item
@@ -355,7 +344,7 @@ pub fn a_shield_property_on_an_item_that_is_no_shield_is_refused_test() -> Nil {
   use tables <- fixture_tables.changed(table: "ItemStat", id: 4, with: [
     #("itemStatData00", Integer(41)),
   ])
-  assert item_property.of_item(tables:, item2_id:)
+  assert item_property.of_item(tables:, item2_id:, random_stats: 0)
     == Error(item_property.Refused(
       item2_id:,
       property_id: 41,
@@ -374,7 +363,7 @@ pub fn a_property_without_flag_4_or_off_the_items_slot_is_refused_test() -> Nil 
     use tables <- fixture_tables.changed(table: "ItemStat", id: 4, with: [
       #("itemStatData00", Integer(30)),
     ])
-    item_property.of_item(tables:, item2_id:)
+    item_property.of_item(tables:, item2_id:, random_stats: 0)
   }
   assert without_flag
     == Error(item_property.Refused(
@@ -386,7 +375,7 @@ pub fn a_property_without_flag_4_or_off_the_items_slot_is_refused_test() -> Nil 
   use tables <- fixture_tables.changed(table: "UnitProperty2", id: 34, with: [
     #("equippedSlotFlags", Integer(1)),
   ])
-  assert item_property.of_item(tables:, item2_id:)
+  assert item_property.of_item(tables:, item2_id:, random_stats: 0)
     == Error(item_property.Refused(
       item2_id:,
       property_id: 34,
@@ -405,13 +394,13 @@ pub fn a_budget_id_or_a_stat_id_of_0_while_the_other_is_set_is_refused_test() ->
   use tables <- fixture_tables.changed(table: "Item2", id: item2_id, with: [
     #("itemBudgetId", Integer(0)),
   ])
-  assert item_property.of_item(tables:, item2_id:)
+  assert item_property.of_item(tables:, item2_id:, random_stats: 0)
     == Error(item_property.NoRow(table: "ItemBudget", id: 0))
     as "0x14040ca70: a stat with no budget row is refused"
   use tables <- fixture_tables.changed(table: "Item2", id: item2_id, with: [
     #("itemStatId", Integer(0)),
   ])
-  assert item_property.of_item(tables:, item2_id:)
+  assert item_property.of_item(tables:, item2_id:, random_stats: 0)
     == Error(item_property.NoRow(table: "ItemStat", id: 0))
     as "0x14040ca70: a budget with no stat row is refused"
   let assert Ok(rows) =
@@ -447,7 +436,7 @@ pub fn a_resource_maximum_is_one_of_the_clients_slot_properties_whatever_its_nam
       #("itemStatData00", Integer(12)),
     ])
   use tables <- fixture_tables.on_rows(rows:, reaching: [])
-  assert item_property.of_item(tables:, item2_id:)
+  assert item_property.of_item(tables:, item2_id:, random_stats: 0)
     == Error(item_property.Unread(item2_id:, gap: item_property.ResourceMaximum))
     as "UnitProperty2 12 is slot 3's maximum by the client's map"
   assert !list.contains(
@@ -504,7 +493,7 @@ pub fn a_resource_maximum_from_a_budget_is_unread_with_its_reason_test() -> Nil 
   use tables <- fixture_tables.changed(table: "ItemStat", id: 4, with: [
     #("itemStatData00", Integer(12)),
   ])
-  let result = item_property.of_item(tables:, item2_id:)
+  let result = item_property.of_item(tables:, item2_id:, random_stats: 0)
   assert result
     == Error(item_property.Unread(item2_id:, gap: item_property.ResourceMaximum))
     as "UnitProperty2 12 is a ResourceMax property"
@@ -525,7 +514,7 @@ pub fn level_scaled_pvp_imbued_and_late_armor_curve_items_stay_unread_test() -> 
   let tables = fixture_tables.shared()
   let gap_of = fn(item2_id) {
     let item2_id = fixture_tables.root("Item2", item2_id)
-    case item_property.of_item(tables:, item2_id:) {
+    case item_property.of_item(tables:, item2_id:, random_stats: 0) {
       Error(item_property.Unread(item2_id: unread, gap:))
         if unread == item2_id
       -> Ok(gap)
@@ -622,7 +611,10 @@ pub fn every_client_wearable_row_is_given_or_unread_with_a_named_reason_test() -
   }
   let outcomes =
     list.map(wearable, fn(item) {
-      #(item, item_property.of_item(tables:, item2_id: item.id))
+      #(
+        item,
+        item_property.of_item(tables:, item2_id: item.id, random_stats: 0),
+      )
     })
   assert list.filter(outcomes, fn(outcome) {
       let #(item, result) = outcome
@@ -633,6 +625,7 @@ pub fn every_client_wearable_row_is_given_or_unread_with_a_named_reason_test() -
         Error(item_property.NoRow(..))
         | Error(item_property.Refused(..))
         | Error(item_property.NoCurveValue(..))
+        | Error(item_property.RandomStatsRefused(..))
         | Error(item_property.TwoShields) -> True
       }
     })
@@ -694,4 +687,205 @@ pub fn the_load_fails_on_a_missing_budget_stat_or_property_row_test() -> Nil {
       id: 34,
     ))
     as "ItemStat 4's first entry is kind 1 and names UnitProperty2 34"
+}
+
+// ------------------------------------------------------------ random stats
+
+/// The properties of an item the tables read in full, with the item's random-stat word.
+fn rolled(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+  random_stats random_stats: Int,
+) -> ItemProperties {
+  let assert Ok(properties) =
+    item_property.of_item(tables:, item2_id:, random_stats:)
+    as "the item's rows are in the tables and the word is one the client accepts"
+  properties
+}
+
+/// The bits of a value as the client's float.
+fn value_bits(value value: Float) -> Int {
+  float32.to_bits(value)
+}
+
+/// Item2 48169 has ItemBudget 25 (0.3, 0.2, 0.5) and ItemStat 432: three kind-2 entries
+/// on ItemRandomStatGroup 11, whose rows in table order are properties 34, 47, 32, 29
+/// and 57. The word's byte i is entry i's row (0x14040e6d0), and the entry takes its
+/// property with its own share of the budget. The scale is the item's (the budget curve
+/// at power level 50 times the slot's armorModifier), so a share 0.3 gives 0x42960001, 0.2
+/// 0x42480000 and 0.5 0x42fa0000 on a property whose valuePerPoint is 1 (the Client
+/// trace of this step). The item's own Assault Rating, 180, is 0x43340000.
+pub fn a_rolled_item_gives_its_picked_rows_as_budget_stats_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let item2_id = fixture_tables.root("Item2", 48_169)
+  let first = rolled(tables:, item2_id:, random_stats: 0x0100000000030201)
+  assert bits(properties: first, property_id: 34) == Ok(0x42960001)
+    as "entry 0 takes row 1, property 34, with share 0.3"
+  assert bits(properties: first, property_id: 47) == Ok(0x42480000)
+    as "entry 1 takes row 2, property 47, with share 0.2"
+  assert bits(properties: first, property_id: 32) == Ok(0x42fa0000)
+    as "entry 2 takes row 3, property 32, with share 0.5"
+  assert budget_ids(properties: first) == [32, 34, 47]
+  assert value_bits(value: first.assault_rating) == 0x43340000
+    as "property 35 is the item's own innate Assault Rating"
+  let second = rolled(tables:, item2_id:, random_stats: 0x0100000000010405)
+  assert bits(properties: second, property_id: 57) == Ok(0x42960001)
+    as "entry 0 takes row 5, property 57, with share 0.3"
+  assert bits(properties: second, property_id: 29) == Ok(0x42480000)
+    as "entry 1 takes row 4, property 29, with share 0.2"
+  assert bits(properties: second, property_id: 34) == Ok(0x42fa0000)
+    as "entry 2 takes row 1, property 34, with share 0.5"
+  assert budget_ids(properties: second) == [29, 34, 57]
+  assert value_bits(value: second.assault_rating) == 0x43340000
+}
+
+/// Two entries that take one property add their values on a non-shield (0x14040db30 adds
+/// onto the property's entry): word 0x0100000000020101 has entries 0 and 1 on row 1,
+/// property 34, with shares 0.3 and 0.2, and entry 2 on row 2, property 47, with 0.5.
+pub fn two_entries_picking_one_property_add_on_a_non_shield_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let item =
+    rolled(
+      tables:,
+      item2_id: fixture_tables.root("Item2", 48_169),
+      random_stats: 0x0100000000020101,
+    )
+  assert bits(properties: item, property_id: 34) == Ok(0x42fa0001)
+    as "0.3 + 0.2 of the budget on property 34, in 32 bits"
+  assert bits(properties: item, property_id: 47) == Ok(0x42fa0000)
+    as "entry 2's share 0.5 on property 47"
+}
+
+/// Item2 48170 is a shield with ItemBudget 51 (0.75, 0.75, 0, 0.5) and ItemStat 439:
+/// four kind-2 entries on group 14, whose rows are 41, 175, 176 and 178. A picked
+/// shield property takes its entry's share in place of the middle of its factor's range
+/// (0x14040dbf0); a property no entry picks keeps the middle. The expected bits are the
+/// client's code run on GameFormula 1260's and 1261's ranges (the Client trace).
+pub fn a_shields_picks_move_its_factors_to_their_entries_fractions_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let item2_id = fixture_tables.root("Item2", 48_170)
+  let shield = fn(random_stats) {
+    let assert Some(item_property.Shield(
+      capacity_max:,
+      mitigation_max:,
+      regen_percent:,
+      reboot_time_ms:,
+    )) = rolled(tables:, item2_id:, random_stats:).shield
+      as "the item is a shield"
+    #(
+      value_bits(value: capacity_max),
+      value_bits(value: regen_percent),
+      value_bits(value: int.to_float(reboot_time_ms)),
+      value_bits(value: mitigation_max),
+    )
+  }
+  assert shield(0x0100000004030201)
+    == #(0x4645c100, 0x3d4ccccd, 0x45a02800, 0x3f500000)
+    as "entry 0 on 41 (share 0.75), entry 1 on 175 (0.75), entry 2 on 176 (0), entry 3 on 178 (0.5)"
+  assert shield(0x0100000001020304)
+    == #(0x462fc800, 0x3e4ccccd, 0x4527f000, 0x3e800000)
+    as "entry 0 on 178 (0.75), entry 1 on 176 (0.75), entry 2 on 175 (0), entry 3 on 41 (0.5)"
+  assert shield(0x0100000003020101)
+    == #(0x4645c100, 0x3e19999a, 0x45a02800, 0x3e800000)
+    as "41 named by entries 0 and 1 (one share), 175 by entry 2 (0), 176 by entry 3 (0.5); 178 unnamed keeps the middle"
+}
+
+/// A word that holds no data gives the entries nothing, whatever it is (0x14040e6d0): 0, the
+/// version alone, and choices under version 0 (which 0x14040bdf0 clears). An item's own
+/// innate Assault Rating and a shield's middle factors are what is left.
+pub fn a_word_without_data_gives_nothing_for_random_entries_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let bracer = fixture_tables.root("Item2", 48_169)
+  list.each([0, 0x0100000000000000, 0x0000000000030201], fn(random_stats) {
+    let item = rolled(tables:, item2_id: bracer, random_stats:)
+    assert budget_ids(properties: item) == [] as "no entry gives a budget value"
+    assert value_bits(value: item.assault_rating) == 0x43340000
+      as "only the item's own Assault Rating, property 35, is given"
+  })
+  let assert Some(item_property.Shield(
+    capacity_max:,
+    mitigation_max:,
+    regen_percent:,
+    reboot_time_ms:,
+  )) =
+    rolled(
+      tables:,
+      item2_id: fixture_tables.root("Item2", 48_170),
+      random_stats: 0x0100000000000000,
+    ).shield
+    as "the item is a shield"
+  assert #(
+      value_bits(value: capacity_max),
+      value_bits(value: regen_percent),
+      value_bits(value: int.to_float(reboot_time_ms)),
+      value_bits(value: mitigation_max),
+    )
+    == #(0x462fc800, 0x3e19999a, 0x45a02800, 0x3f200000)
+    as "a shield with no picks has the middle of each factor's range"
+}
+
+/// A word with data fails the client's whole build when a kind-2 entry's byte is 0 or past
+/// its group's rows (0x14040e6d0 fails with 0x70): the item is worn and gives none of its
+/// instance properties, so the reader refuses it and names the entry. Version 2 acts as
+/// version 1 and counts as data even with every byte 0 (0x14040bdf0).
+pub fn a_word_with_data_and_a_bad_byte_is_refused_whole_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let bracer = fixture_tables.root("Item2", 48_169)
+  let shield = fixture_tables.root("Item2", 48_170)
+  let refused = fn(item2_id, random_stats) {
+    item_property.of_item(tables:, item2_id:, random_stats:)
+  }
+  assert refused(bracer, 0x0100000000010106)
+    == Error(item_property.RandomStatsRefused(
+      item2_id: bracer,
+      random_stats: 0x0100000000010106,
+      entry: 0,
+    ))
+    as "entry 0's byte 6 is past group 11's five rows"
+  assert refused(bracer, 0x0100000000000201)
+    == Error(item_property.RandomStatsRefused(
+      item2_id: bracer,
+      random_stats: 0x0100000000000201,
+      entry: 2,
+    ))
+    as "entry 2's byte is 0"
+  assert refused(bracer, 0x0200000000000000)
+    == Error(item_property.RandomStatsRefused(
+      item2_id: bracer,
+      random_stats: 0x0200000000000000,
+      entry: 0,
+    ))
+    as "version 2 with every byte 0 is data, and entry 0's byte is 0"
+  assert refused(shield, 0x0100000000000005)
+    == Error(item_property.RandomStatsRefused(
+      item2_id: shield,
+      random_stats: 0x0100000000000005,
+      entry: 0,
+    ))
+    as "entry 0's byte 5 is past group 14's four rows"
+}
+
+/// Item2 9965 has ItemStat 415, one entry of kind 2, a random stat group. With the
+/// random-stat word 0 the client reads no data, and an entry then gives nothing
+/// (0x14040e6d0). So the item gives what the same item with no entry gives: its own
+/// armor and Base Health.
+pub fn a_random_stat_entry_gives_nothing_while_the_item_holds_no_roll_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item2_id = fixture_tables.root("Item2", 9965)
+  let tables = fixture_tables.shared()
+  let item = given_with(tables:, item2_id:, random_stats: 0)
+  assert budget_ids(properties: item) == []
+    as "0x14040e6d0: a kind-2 entry with no byte is kind 0"
+  assert item.armor >. 0.0 && item.base_health >. 0.0
+    as "0x14040e340, 0x14040e3d0: the item's own armor and Base Health"
+  use tables <- fixture_tables.changed(table: "ItemStat", id: 415, with: [
+    #("itemStatTypeEnum00", Integer(0)),
+  ])
+  assert given_with(tables:, item2_id:, random_stats: 0) == item
+    as "an entry of kind 0 gives the same"
 }

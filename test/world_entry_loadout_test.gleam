@@ -32,8 +32,12 @@
 
 import cast_support
 import character_tables
+import client_tables
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/gear
+import genesis_prime/game/item_property
+import genesis_prime/game/loadout
+import genesis_prime/game/random_stat
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers
@@ -44,7 +48,8 @@ import genesis_prime/message/item_added
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/store.{type Character, HeldItem}
-import genesis_prime/table/id.{Item2Id, Spell4BaseId}
+import genesis_prime/table/character_creation
+import genesis_prime/table/id.{ClassId, Item2Id, Spell4BaseId}
 import genesis_prime/world_map/unit_fields
 import gleam/float
 import gleam/int
@@ -52,6 +57,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import owned_test
+import unitest
 import world_entry_support
 
 /// A class's id, its armor, its three Spell4Base ids (the SpellLevel rows of
@@ -490,6 +496,7 @@ pub fn the_entry_sends_an_item_added_for_each_saved_item_with_its_saved_guid_and
       location: 1,
       bag_index: 3,
       stack_count: 5,
+      random_stats: 0,
     ),
     HeldItem(
       item_guid: 5_000_000_001,
@@ -497,6 +504,7 @@ pub fn the_entry_sends_an_item_added_for_each_saved_item_with_its_saved_guid_and
       location: 0,
       bag_index: 16,
       stack_count: 1,
+      random_stats: 0,
     ),
     HeldItem(
       item_guid: 7,
@@ -504,6 +512,7 @@ pub fn the_entry_sends_an_item_added_for_each_saved_item_with_its_saved_guid_and
       location: 0,
       bag_index: 15,
       stack_count: 1,
+      random_stats: 0,
     ),
   ]
   let #(effects, entered) =
@@ -680,4 +689,92 @@ pub fn a_connection_that_ends_after_the_save_enters_again_with_the_gear_of_the_s
   assert entered.gear
     == gear.of_items(tables: character_tables.shared(), items: saved)
     as "the player the connection keeps holds the gear of the saved items"
+}
+
+/// A held item with a random-stat word goes out in its 0x111 with the word as saved
+/// (`opcode.0x111.shared_item_random_stats`, 8 bytes, least significant first), and the unit's
+/// gear takes the item's rolled values: Item2 48170 is a shield whose four kind-2 entries on
+/// group 14 pick, with the word 0x0100000004030201, the shield values `item_property_test`
+/// derives from the client's code for the same word, worn in the place of the Novice shield.
+pub fn a_held_rolled_item_is_sent_with_its_word_at_world_entry_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  let word = 0x0100000004030201
+  let rolled =
+    HeldItem(
+      item_guid: 40,
+      item2_id: Item2Id(48_170),
+      location: 0,
+      bag_index: 15,
+      stack_count: 1,
+      random_stats: word,
+    )
+  let items = [
+    rolled,
+    ..list.filter(world_entry_support.novice_items(character:), fn(item) {
+      item.bag_index != 15
+    })
+  ]
+  let #(effects, _) =
+    world_entry_support.entry_holding(
+      tables: character_tables.shared(),
+      character:,
+      items:,
+    )
+  let frames = world_entry_support.frames_of(effects:)
+  let assert Ok(sent) =
+    list.find(world_entry_support.items_added(frames:), fn(added) {
+      added.held_item.item.item_guid == 40
+    })
+    as "the rolled shield is sent"
+  assert <<sent.held_item.item.random_stats:size(64)-little>>
+    == <<0x01, 0x02, 0x03, 0x04, 0x00, 0x00, 0x00, 0x01>>
+    as "opcode.0x111.shared_item_random_stats: the saved word, least significant byte first"
+  let properties = player_of(frames:).tail.properties
+  let bits = fn(id) {
+    let assert Ok(value) = float32.of_column(number: id)
+      as "the expected bits are a finite float"
+    value
+  }
+  assert property_value(properties:, id: 41) == bits(0x4645c100)
+    as "ShieldCapacityMax: entry 0 on property 41 takes 0.75 of its range"
+  assert property_value(properties:, id: 175) == bits(0x3f500000)
+    as "ShieldMitigationMax: entry 1 on property 175 takes 0.75"
+  assert property_value(properties:, id: 176) == bits(0x3d4ccccd)
+    as "ShieldRegenPct: entry 2 on property 176 takes 0"
+  assert property_value(properties:, id: 178) == bits(0x45a02800)
+    as "ShieldRebootTime: entry 3 on property 178 takes 0.5"
+}
+
+/// No item the Novice loadouts wear has a kind-2 or kind-4 ItemStat entry, so every item the
+/// loadout puts on at entry is rolled with no byte and its word is 0.
+pub fn no_novice_loadout_item_has_a_random_stat_entry_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let loadouts =
+    list.filter_map(character_creation.all(tables), fn(row) {
+      loadout.of(
+        tables:,
+        class_id: ClassId(row.class_id),
+        faction_id: row.faction_id,
+      )
+    })
+  assert loadouts != [] as "the client's CharacterCreation holds Novice starts"
+  list.each(loadouts, fn(loadout) {
+    let items =
+      list.append(list.map(loadout.armor, fn(equipped) { equipped.item }), [
+        loadout.weapon,
+      ])
+    list.each(items, fn(item) {
+      let assert Ok(entries) =
+        item_property.stat_entries_of(tables:, item2_id: item.value)
+        as "the Novice item has its Item2 and ItemStat rows"
+      assert list.all(entries, fn(entry) { entry.0 != 2 && entry.0 != 4 })
+        as "the Novice item holds no random entry"
+      assert random_stat.roll_bytes(tables:, item2_id: item.value) == 0
+        as "so no entropy is drawn for it"
+    })
+  })
 }

@@ -487,6 +487,7 @@ fn stack_of_14838(slot slot: Int, count count: Int) -> store.HeldItem {
     location: 1,
     bag_index: slot,
     stack_count: count,
+    random_stats: 0,
   )
 }
 
@@ -635,6 +636,7 @@ pub fn buying_a_collected_item_sends_its_progress_test() -> Nil {
                 location: 1,
                 bag_index: 0,
                 stack_count: 1,
+                random_stats: 0,
               ),
             ]),
           ),

@@ -50,7 +50,7 @@ fn item(location location: Int, index index: Int, id id: Int) -> SharedItem {
     bag_index: index,
     stack_count: 1,
     charges: 0,
-    field_8: 0,
+    random_stats: 0,
     field_9: 0,
     field_10: 0,
     durability: float32.to_bits(1.0),

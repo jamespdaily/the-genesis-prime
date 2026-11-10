@@ -2,7 +2,7 @@
 -- the account `$2` holds of the currency type `$4` is lowered by `$6`, each stack of the
 -- lists `$8` to `$10` at the same position (an item's guid, the count it is held with, the
 -- count it holds after) is raised, and a stack of the Item2 `$7` is inserted at each place
--- of the lists `$11` to `$13` (a location, a bag index and a count). It changes only while
+-- of the lists `$11` to `$14` (a location, a bag index, a count and the item's random-stat word). It changes only while
 -- the character is still held by the login that asks, that is while its `session_epoch`
 -- ($3) is still the one that login was told (load_character.sql), only while the character
 -- holds exactly `$5` of that currency (the total the login holds) and at least `$6`, and
@@ -10,7 +10,8 @@
 -- held with; otherwise it changes nothing and returns no row. The account's id is in the
 -- statement, as for a load.
 --
--- The rows it returns are one for each stack made, each with the amount left; one row with
+-- The rows it returns are one for each stack made, each with the amount left and the word it
+-- was made with; one row with
 -- no stack when none is made. A place that holds an item breaks the table's
 -- `character_item_one_per_slot` at the statement's end and the statement changes nothing,
 -- the currency and the raised stacks included. Whether a stack may hold its new count is the
@@ -60,19 +61,20 @@ raised as (
   returning held.item_guid
 ),
 made as (
-  insert into character_item (character_id, item2_id, location, bag_index, stack_count)
-  select $1, $7, new_stack.location::smallint, new_stack.bag_index, new_stack.stack_count
-  from unnest($11::int[], $12::int[], $13::int[])
-    as new_stack (location, bag_index, stack_count)
+  insert into character_item (character_id, item2_id, location, bag_index, stack_count, random_stats)
+  select $1, $7, new_stack.location::smallint, new_stack.bag_index, new_stack.stack_count, new_stack.random_stats
+  from unnest($11::int[], $12::int[], $13::int[], $14::bigint[])
+    as new_stack (location, bag_index, stack_count, random_stats)
   where exists (select 1 from allowed)
-  returning item_guid, location::int as location, bag_index, stack_count
+  returning item_guid, location::int as location, bag_index, stack_count, random_stats
 )
 select
   spent.amount as amount,
   made.item_guid,
   made.location,
   made.bag_index,
-  made.stack_count
+  made.stack_count,
+  made.random_stats
 from spent
 left join made on true
 order by made.item_guid;

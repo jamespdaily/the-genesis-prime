@@ -521,6 +521,7 @@ fn turn_in_quest(
           list.map(made, fn(one) { { one.1 }.location }),
           list.map(made, fn(one) { { one.1 }.bag_index }),
           list.map(made, fn(one) { { one.1 }.stack_count }),
+          list.map(made, fn(one) { { one.1 }.random_stats }),
         )
         |> result.map_error(Failed),
       )
@@ -549,13 +550,15 @@ fn turn_in_quest(
           row.item2_id,
           row.location,
           row.bag_index,
-          row.stack_count
+          row.stack_count,
+          row.random_stats
         {
           Some(item_guid),
             Some(item2_id),
             Some(location),
             Some(bag_index),
-            Some(stack_count)
+            Some(stack_count),
+            Some(random_stats)
           ->
             Ok(HeldItem(
               item_guid:,
@@ -563,8 +566,9 @@ fn turn_in_quest(
               location:,
               bag_index:,
               stack_count:,
+              random_stats:,
             ))
-          _, _, _, _, _ -> Error(Nil)
+          _, _, _, _, _, _ -> Error(Nil)
         }
       }),
     )
@@ -609,10 +613,13 @@ fn sell_to_vendor(
     )
   })
   |> items_answer(saved: fn(rows) {
-    case rows {
-      [row] -> store.Sold(amount: row.amount)
-      _ -> panic as "the statement sets the amount once or returns no row"
-    }
+    let assert [first, ..] = rows as "the statement returns a row or none"
+    store.Sold(
+      amount: first.amount,
+      words: list.map(rows, fn(row) {
+        store.SoldWord(item_guid: row.item_guid, random_stats: row.random_stats)
+      }),
+    )
   })
 }
 
@@ -725,6 +732,7 @@ fn buy_from_vendor(
       list.map(make, fn(stack) { stack.location }),
       list.map(make, fn(stack) { stack.bag_index }),
       list.map(make, fn(stack) { stack.stack_count }),
+      list.map(make, fn(stack) { stack.random_stats }),
     )
   })
   |> items_answer(saved: fn(rows) {
@@ -732,16 +740,28 @@ fn buy_from_vendor(
     Bought(
       amount: first.amount,
       made: list.filter_map(rows, fn(row) {
-        case row.item_guid, row.location, row.bag_index, row.stack_count {
-          Some(item_guid), Some(location), Some(bag_index), Some(stack_count) ->
+        case
+          row.item_guid,
+          row.location,
+          row.bag_index,
+          row.stack_count,
+          row.random_stats
+        {
+          Some(item_guid),
+            Some(location),
+            Some(bag_index),
+            Some(stack_count),
+            Some(random_stats)
+          ->
             Ok(HeldItem(
               item_guid:,
               item2_id:,
               location:,
               bag_index:,
               stack_count:,
+              random_stats:,
             ))
-          _, _, _, _ -> Error(Nil)
+          _, _, _, _, _ -> Error(Nil)
         }
       }),
     )
@@ -1214,6 +1234,7 @@ fn held_items(rows: List(sql.LoadCharacterItemsRow)) -> List(HeldItem) {
       location: row.location,
       bag_index: row.bag_index,
       stack_count: row.stack_count,
+      random_stats: row.random_stats,
     )
   })
 }

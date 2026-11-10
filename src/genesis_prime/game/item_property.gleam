@@ -52,10 +52,19 @@
 ////   curve from power level 50 up, and a budget entry on a ResourceMax property
 ////   are items whose properties the client's code gives by branches this code
 ////   does not follow, so such an item is an `Unread` error, with its gap, which
-////   names the open issue that closes it. The random stat entries of an item
-////   (kinds 2 and 4) give nothing, since the server sends no roll: the open
-////   issue #665 closes that.
+////   names the open issue that closes it.
+//// - **A random stat entry** (kind 2) names an ItemRandomStatGroup, and the
+////   item's random-stat word (`genesis_prime/game/random_stat_word`) says which
+////   row of it the entry takes, in table order: that row's property is the
+////   entry's, with the entry's own share of the budget (0x14040e6d0). A word
+////   with no data gives the entry nothing. A word with data whose choice is 0 or
+////   past the group is `RandomStatsRefused`: the client fails the whole build
+////   and keeps the item without its instance properties. Two entries that take
+////   one property add on a non-shield and give one share on a shield. A kind-4
+////   entry (a property crafting picks) gives nothing: the open issue #53
+////   closes that, and no client row mixes it with a kind-2 entry.
 
+import genesis_prime/game/random_stat_word
 import genesis_prime/message/float32
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
@@ -69,6 +78,7 @@ import genesis_prime/table/item2_family
 import genesis_prime/table/item2_type
 import genesis_prime/table/item_budget
 import genesis_prime/table/item_proficiency
+import genesis_prime/table/item_random_stat
 import genesis_prime/table/item_slot
 import genesis_prime/table/item_special
 import genesis_prime/table/item_stat
@@ -176,6 +186,10 @@ pub type ItemPropertyError {
   /// A set holds two shield items, whose properties would share one property
   /// each.
   TwoShields
+  /// An item whose random-stat word has data and a choice the client refuses for
+  /// its kind-2 entry `entry` (0 to 4): 0, or past its group's rows (0x14040e6d0
+  /// fails the build with 0x70).
+  RandomStatsRefused(item2_id: Int, random_stats: Int, entry: Int)
 }
 
 /// A sentence that says why, for the load's message: the table and the row
@@ -203,6 +217,14 @@ pub fn describe(error error: ItemPropertyError) -> String {
       <> " has no value at power level "
       <> int.to_string(level)
     TwoShields -> "a set holds two shield items"
+    RandomStatsRefused(item2_id:, random_stats:, entry:) ->
+      "the item "
+      <> int.to_string(item2_id)
+      <> " has the random-stat word "
+      <> int.to_string(random_stats)
+      <> ", whose choice for entry "
+      <> int.to_string(entry)
+      <> " is 0 or past its group's rows, which the client refuses"
   }
 }
 
@@ -478,8 +500,8 @@ fn builder(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
 ) -> Result(Builder, ItemPropertyError) {
-  use slotting <- result.try(slotting(tables:, item2_id:))
-  let item = slotting.item
+  use builder <- result.try(slot_builder(tables:, item2_id:))
+  let item = builder.item
   use <- bool.guard(
     int.bitwise_and(item.flags, level_scaled_flag) != 0,
     Error(Unread(item2_id:, gap: LevelScaled)),
@@ -497,15 +519,25 @@ fn builder(
     Error(Unread(item2_id:, gap: Rune)),
   )
   use <- bool.guard(is_proxy(item), Error(Unread(item2_id:, gap: ProxyItem)))
-  Ok(Builder(
-    item:,
-    power_level: item.power_level,
+  Ok(builder)
+}
+
+/// The builder's view of the item's slot and power level, whatever its flags: only a
+/// missing row is an error.
+fn slot_builder(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Builder, ItemPropertyError) {
+  use slotting <- result.map(slotting(tables:, item2_id:))
+  Builder(
+    item: slotting.item,
+    power_level: slotting.item.power_level,
     slot_modifier: slotting.slot_modifier,
     armor_modifier: slotting.category_armor_modifier *. slotting.slot_modifier,
     equipped_slot_flags: slotting.equipped_slot_flags,
     is_shield: slotting.slotted
       && int.bitwise_and(slotting.equipped_slot_flags, shield_slot_flags) != 0,
-  ))
+  )
 }
 
 /// The equipped slot flags of the item: its slot's and its own, joined
@@ -870,9 +902,10 @@ pub fn is_weapon(slot_flags slot_flags: Int) -> Bool {
 pub fn of_item(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
+  random_stats random_stats: Int,
 ) -> Result(ItemProperties, ItemPropertyError) {
   use builder <- result.try(builder(tables:, item2_id:))
-  use given <- result.try(budget(tables:, builder:))
+  use given <- result.try(budget(tables:, builder:, random_stats:))
   use properties <- result.map(case builder.is_shield {
     True -> shield(tables:, builder:, shares: given.shares)
     False -> worn(tables:, builder:)
@@ -964,6 +997,7 @@ pub fn budget_properties(
 fn budget(
   tables tables: table_store.Tables,
   builder builder: Builder,
+  random_stats random_stats: Int,
 ) -> Result(Given, ItemPropertyError) {
   let item = builder.item
   let none = Given(values: [], shares: dict.new())
@@ -987,9 +1021,21 @@ fn budget(
     budget_row.budget04,
   ]
   use scale <- result.try(scale(tables:, builder:))
-  list.try_fold(entries(stat:, shares:), none, fn(given, entry) {
-    give_entry(tables:, builder:, scale:, given:, entry:)
-  })
+  list.try_fold(
+    list.index_map(entries(stat:, shares:), fn(entry, index) { #(index, entry) }),
+    none,
+    fn(given, indexed) {
+      let #(index, entry) = indexed
+      give_entry(
+        tables:,
+        builder:,
+        scale:,
+        given:,
+        entry:,
+        choice: random_choice(random_stats:, entry: index),
+      )
+    },
+  )
   |> result.map(fn(given) { Given(..given, values: list.reverse(given.values)) })
 }
 
@@ -1002,6 +1048,22 @@ fn entries(
   |> list.map(fn(entry) { #(entry.0.0, entry.0.1, entry.1) })
 }
 
+/// What the item's random-stat word chooses for one entry: nothing when the word
+/// holds no data, else the entry's 1-based row in its group, 0 for none.
+type Choice {
+  NoData
+  Chosen(entry: Int, row: Int, word: Int)
+}
+
+fn random_choice(random_stats random_stats: Int, entry entry: Int) -> Choice {
+  use <- bool.guard(!random_stat_word.has_data(word: random_stats), NoData)
+  Chosen(
+    entry:,
+    row: random_stat_word.choice(word: random_stats, entry:),
+    word: random_stats,
+  )
+}
+
 /// What one ItemStat entry adds to what the earlier ones gave (0x14040e6d0).
 fn give_entry(
   tables tables: table_store.Tables,
@@ -1009,19 +1071,115 @@ fn give_entry(
   scale scale: Float,
   given given: Given,
   entry entry: #(Int, Int, Float),
+  choice choice: Choice,
 ) -> Result(Given, ItemPropertyError) {
   let #(kind, property_id, share) = entry
   case kind {
     // None.
     0 -> Ok(given)
-    // A random stat group and a random property: the server sends no roll, so
-    // the entry is none (open issue #665).
-    2 | 4 -> Ok(given)
+    // A random property crafting picks: nothing is given until crafting is
+    // built (open issue #53).
+    4 -> Ok(given)
+    // A random stat group: the word's choice picks the row.
+    2 ->
+      case choice {
+        NoData -> Ok(given)
+        Chosen(entry: index, row:, word:) ->
+          case
+            list.drop(random_group(tables:, group_id: property_id), row - 1)
+          {
+            [picked, ..] if row >= 1 ->
+              give_picked(tables:, builder:, scale:, given:, share:, picked:)
+            _ ->
+              Error(RandomStatsRefused(
+                item2_id: builder.item.id,
+                random_stats: word,
+                entry: index,
+              ))
+          }
+      }
     // A property.
-    1 ->
-      entry_gives(tables:, builder:, scale:, property_id:, share:)
-      |> result.map(fn(gives) { add_entry(given:, property_id:, gives:) })
+    1 -> give_property(tables:, builder:, scale:, given:, property_id:, share:)
     _ -> Error(Unread(item2_id: builder.item.id, gap: StatKind(kind:)))
+  }
+}
+
+fn give_picked(
+  tables tables: table_store.Tables,
+  builder builder: Builder,
+  scale scale: Float,
+  given given: Given,
+  share share: Float,
+  picked picked: item_random_stat.ItemRandomStat,
+) -> Result(Given, ItemPropertyError) {
+  case picked.item_stat_type_enum {
+    1 ->
+      give_property(
+        tables:,
+        builder:,
+        scale:,
+        given:,
+        property_id: picked.item_stat_data,
+        share:,
+      )
+    kind -> Error(Unread(item2_id: builder.item.id, gap: StatKind(kind:)))
+  }
+}
+
+fn give_property(
+  tables tables: table_store.Tables,
+  builder builder: Builder,
+  scale scale: Float,
+  given given: Given,
+  property_id property_id: Int,
+  share share: Float,
+) -> Result(Given, ItemPropertyError) {
+  entry_gives(tables:, builder:, scale:, property_id:, share:)
+  |> result.map(fn(gives) { add_entry(given:, property_id:, gives:) })
+}
+
+/// The rows of an ItemRandomStatGroup in table order, which is the order the client keeps
+/// them in: the row a choice b names is the b-th (`ItemRandomStat.itemRandomStatGroupId`).
+pub fn random_group(
+  tables tables: table_store.Tables,
+  group_id group_id: Int,
+) -> List(item_random_stat.ItemRandomStat) {
+  item_random_stat.all(tables)
+  |> list.filter(fn(row) { row.item_random_stat_group_id == group_id })
+}
+
+/// The kind and data of each of an item's five ItemStat entries, none for an item with no
+/// ItemStat.
+pub fn stat_entries_of(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(List(#(Int, Int)), ItemPropertyError) {
+  use item <- result.try(
+    item2.get(tables:, id: Item2Id(item2_id))
+    |> result.replace_error(NoRow(table: "Item2", id: item2_id)),
+  )
+  use <- bool.guard(item.item_stat_id == 0, Ok([]))
+  item_stat.get(tables:, id: ItemStatId(item.item_stat_id))
+  |> result.replace_error(NoRow(table: "ItemStat", id: item.item_stat_id))
+  |> result.map(fn(stat) { stat_entries(stat:) })
+}
+
+/// Whether the client's builder accepts the property for an entry of the item: `False`
+/// for the refusals `entry_gives` makes with 0x95 in the client (a shield property on a
+/// non-shield, a property that is no item property or is off the item's slot). Any other
+/// error, a missing row or a resource maximum this code does not read, is returned. It
+/// looks at the item's slot only, so an item this code leaves unread for its flags still
+/// has its roll made.
+pub fn takes_property(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+  property_id property_id: Int,
+) -> Result(Bool, ItemPropertyError) {
+  use builder <- result.try(slot_builder(tables:, item2_id:))
+  case entry_gives(tables:, builder:, scale: 1.0, property_id:, share: 1.0) {
+    Ok(_) -> Ok(True)
+    Error(Refused(..)) -> Ok(False)
+    Error(error) -> Error(error)
   }
 }
 

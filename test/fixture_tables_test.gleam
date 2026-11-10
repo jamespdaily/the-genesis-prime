@@ -178,7 +178,7 @@ pub fn the_content_tables_are_committed_and_each_root_reaches_a_committed_row_te
     == 1964
     as "Faction2Relationship is whole"
   assert fixture_tables.committed_ids(world.schema)
-    == [22, 51, 426, 870, 990, 1068, 1333, 1387, 3045, 3460]
+    == [22, 51, 426, 870, 990, 1068, 1333, 1387, 2979, 3045, 3460]
     as "the Worlds the tests' maps run in"
   assert fixture_tables.committed_ids(creature2_outfit_info.schema)
     == [7475, 7912, 8952, 8979, 9029, 9064, 9065, 9074, 9080, 9350, 9351, 9777]

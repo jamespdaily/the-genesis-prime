@@ -50,6 +50,9 @@
 ////   once per kind and the turn-in goes on.
 //// - **Where the items go** is `inventory.placed`: the stacks below the limit first, then the
 ////   lowest empty usable slots, each Item2 against the items as the one before it left them.
+//// - **The roll.** An item with random stat entries is made with a word rolled when the store
+////   is asked (`entropy_needed`, `rolled`, `genesis_prime/game/random_stat`), one for each made
+////   stack, in the order of the placed items.
 //// - **The save** is the whole turn-in in the one transaction of the store's request: the
 ////   character's row lock, the place save carrying the log with the quest Completed, the
 ////   experience and the level, then the credits and the items, so storage holds the whole
@@ -80,6 +83,7 @@ import genesis_prime/game/item_property
 import genesis_prime/game/player_life
 import genesis_prime/game/quest
 import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/game/random_stat
 import genesis_prime/game/shown.{type Picture}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/vendor_trade.{type Effect, Log, Refuse, Send}
@@ -806,6 +810,7 @@ fn after(
         location: stack.location,
         bag_index: stack.bag_index,
         stack_count: stack.stack_count,
+        random_stats: stack.random_stats,
       )
     }),
   )
@@ -897,6 +902,42 @@ fn left_out(
   }
 }
 
+/// The bytes of entropy the turn-in needs to roll the stats of the items it makes: the roll
+/// of each made stack, in the order of the placed items.
+pub fn entropy_needed(
+  turn_in turn_in: TurnIn,
+  tables tables: table_store.Tables,
+) -> Int {
+  list.fold(turn_in.placed, 0, fn(sum, one) {
+    sum
+    + random_stat.stacks_bytes(
+      tables:,
+      item2_id: one.item2_id.value,
+      stacks: one.make,
+    )
+  })
+}
+
+/// The turn-in with each made stack rolled from `entropy`, which is `entropy_needed` long.
+pub fn rolled(
+  turn_in turn_in: TurnIn,
+  tables tables: table_store.Tables,
+  entropy entropy: BitArray,
+) -> TurnIn {
+  let #(_, placed) =
+    list.map_fold(turn_in.placed, entropy, fn(left, one) {
+      let #(make, left) =
+        random_stat.roll_stacks(
+          tables:,
+          item2_id: one.item2_id.value,
+          stacks: one.make,
+          entropy: left,
+        )
+      #(left, store.Placed(..one, make:))
+    })
+  TurnIn(..turn_in, placed:)
+}
+
 /// The request that asks the store to save the turn-in with the place save.
 pub fn request(
   turn_in turn_in: TurnIn,
@@ -954,6 +995,7 @@ pub fn answered(
                 location: stack.location,
                 bag_index: stack.bag_index,
                 stack_count: stack.stack_count,
+                random_stats: stack.random_stats,
                 reason: quest_reason,
               )
             }),

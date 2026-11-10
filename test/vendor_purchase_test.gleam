@@ -30,6 +30,7 @@
 
 import character_support
 import character_tables
+import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection
 import genesis_prime/connection/frame
@@ -113,6 +114,7 @@ fn in_bag(
     location: 1,
     bag_index: index,
     stack_count: count,
+    random_stats: 0,
   )
 }
 
@@ -210,6 +212,7 @@ fn held_back() -> Buyback {
       quantity: 3,
       currency_type_id: 1,
       amount: 40,
+      random_stats: 0,
     ),
     BuybackEntry(
       buyback_id: 3,
@@ -217,6 +220,7 @@ fn held_back() -> Buyback {
       quantity: 7,
       currency_type_id: 1,
       amount: 91,
+      random_stats: 0,
     ),
   ])
 }
@@ -297,7 +301,9 @@ pub fn a_buy_at_the_shown_price_asks_the_store_to_take_the_price_and_add_the_ite
       currency_type_id: 1,
       held: 100,
       grow: [],
-      make: [NewStack(location: 1, bag_index: 0, stack_count: 1)],
+      make: [
+        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+      ],
     )
     as "opcode.0xbe: one item for the 67 the window shows, against the 100 held, in the first empty slot"
   assert vendor_purchase.request(
@@ -314,7 +320,9 @@ pub fn a_buy_at_the_shown_price_asks_the_store_to_take_the_price_and_add_the_ite
       held: 100,
       cost: 67,
       grow: [],
-      make: [NewStack(location: 1, bag_index: 0, stack_count: 1)],
+      make: [
+        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+      ],
       item2_id: Item2Id(14_838),
     ))
     as "the store is asked to take the price off the total held and add the item, fenced by the login's epoch"
@@ -328,7 +336,8 @@ pub fn a_buy_of_several_lots_gives_stack_count_times_quantity_items_test() -> Ni
   assert purchase.items_bought == 15
     as "Vendor.lua l.437 to 452: 3 lots of 5 items"
   assert purchase.cost == 195 as "13 credits an item, 15 items"
-  assert purchase.make == [NewStack(location: 1, bag_index: 0, stack_count: 15)]
+  assert purchase.make
+    == [NewStack(location: 1, bag_index: 0, stack_count: 15, random_stats: 0)]
     as "20791 stacks to 99, so the 15 items are one stack"
 }
 
@@ -345,16 +354,17 @@ pub fn a_buy_fills_a_held_stack_with_room_before_an_empty_slot_test() -> Nil {
   assert purchase.grow
     == [StackGrowth(item_guid: 12, held_count: 48, new_count: 50)]
     as "the stack with room is filled up to its limit"
-  assert purchase.make == [NewStack(location: 1, bag_index: 0, stack_count: 3)]
+  assert purchase.make
+    == [NewStack(location: 1, bag_index: 0, stack_count: 3, random_stats: 0)]
     as "the rest goes to the lowest empty slot"
   // A buy larger than a stack limit makes stacks of the limit, lowest slot first, the
   // last holding the rest: 120 items into an empty inventory is 50, 50 and 20.
   let large = asked(scene: scene(unique_id: position_14838, quantity: 120))
   assert large.make
     == [
-      NewStack(location: 1, bag_index: 0, stack_count: 50),
-      NewStack(location: 1, bag_index: 1, stack_count: 50),
-      NewStack(location: 1, bag_index: 2, stack_count: 20),
+      NewStack(location: 1, bag_index: 0, stack_count: 50, random_stats: 0),
+      NewStack(location: 1, bag_index: 1, stack_count: 50, random_stats: 0),
+      NewStack(location: 1, bag_index: 2, stack_count: 20, random_stats: 0),
     ]
     as "a stack holds at most the Item2's maxStackCount"
 }
@@ -617,7 +627,9 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
       currency_type_id: 1,
       held: 100,
       grow: [StackGrowth(item_guid: 12, held_count: 48, new_count: 50)],
-      make: [NewStack(location: 1, bag_index: 0, stack_count: 1)],
+      make: [
+        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+      ],
     )
     as "the entry's 3 items for the entry's 40 credits, not the 3 x 67 of the stock, into the held stack's room then the first empty slot"
   assert vendor_purchase.request(
@@ -634,7 +646,9 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
       held: 100,
       cost: 40,
       grow: [StackGrowth(item_guid: 12, held_count: 48, new_count: 50)],
-      make: [NewStack(location: 1, bag_index: 0, stack_count: 1)],
+      make: [
+        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+      ],
       item2_id: Item2Id(14_838),
     ))
     as "the store is asked as for a buy: the entry's price off the total, the items added"
@@ -662,6 +676,7 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
         quantity: 7,
         currency_type_id: 1,
         amount: 91,
+        random_stats: 0,
       ),
     ])
     as "entry 2 leaves the list and nothing else changes, not even the next id"
@@ -785,6 +800,7 @@ fn sold_elsewhere() -> Buyback {
       quantity: 1,
       currency_type_id: 7,
       amount: 60,
+      random_stats: 0,
     ),
     BuybackEntry(
       buyback_id: 6,
@@ -792,6 +808,7 @@ fn sold_elsewhere() -> Buyback {
       quantity: 1,
       currency_type_id: 1,
       amount: 78,
+      random_stats: 0,
     ),
   ])
 }
@@ -827,7 +844,9 @@ pub fn a_buy_back_of_an_entry_sold_for_glory_takes_glory_and_sends_its_total_tes
       currency_type_id: 7,
       held: 80,
       grow: [],
-      make: [NewStack(location: 1, bag_index: 0, stack_count: 1)],
+      make: [
+        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+      ],
     )
     as "the entry's 60 Glory against the 80 Glory held, not the credits"
   assert vendor_purchase.request(
@@ -844,7 +863,9 @@ pub fn a_buy_back_of_an_entry_sold_for_glory_takes_glory_and_sends_its_total_tes
       held: 80,
       cost: 60,
       grow: [],
-      make: [NewStack(location: 1, bag_index: 0, stack_count: 1)],
+      make: [
+        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+      ],
       item2_id: Item2Id(16_053),
     ))
     as "the store is asked to take the 60 off the 80 Glory held"
@@ -920,7 +941,8 @@ pub fn a_bought_back_worn_item_returns_to_the_bags_test() -> Nil {
   assert purchase.item2_id == Item2Id(13_176)
   assert purchase.cost == 78
   assert purchase.grow == []
-  assert purchase.make == [NewStack(location: 1, bag_index: 1, stack_count: 1)]
+  assert purchase.make
+    == [NewStack(location: 1, bag_index: 1, stack_count: 1, random_stats: 0)]
     as "a new stack in the bags: the entry holds no worn place"
   let made = in_bag(guid: 500, item2_id: 13_176, index: 1, count: 1)
   let #(held, held_credits, _, effects) =
@@ -950,4 +972,176 @@ pub fn a_buy_back_body_the_client_reader_refuses_ends_the_connection_test() -> N
     as "opcode.0xbb: the body is one 32-bit id; three bytes are no message"
   assert undecoded.message_id == vendor_purchase.buy_back_message_id
   assert client_connection.describe_undecoded(undecoded:) != ""
+}
+
+// ---- random stats ----
+
+/// The bytes that give Item2 48169's three entries the fractions 0.0, 0.5 and 0.99 (the
+/// 32-bit numbers 0x00000000, 0x80000000 and 0xFD70A3D7 over 2^32), which pick rows 1, 4 and 5
+/// of the item's group (`random_stat_test`): the word 0x0100000000050401.
+const bracer_entropy = <<
+  0x00000000:size(32),
+  0x80000000:size(32),
+  0xFD70A3D7:size(32),
+>>
+
+/// The frame of a 0x111 among the effects, decoded.
+fn added_item(effects effects: List(Effect)) -> item_added.ItemAdded {
+  let assert [added] =
+    list.filter(frames(effects:), fn(frame) {
+      frame.message_id == item_added.message_id
+    })
+    as "one 0x111"
+  let assert Ok(item) = item_added.decode(added.body) as "0x111 decodes"
+  item
+}
+
+/// A buy back returns the item with the word it was sold with: the entry's word is the new
+/// stack's, no entropy is asked for, and the 0x111 carries it (`opcode.0xba.random_stats`).
+pub fn buying_back_an_item_keeps_its_word_and_draws_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let word = 0x0100000000030201
+  let item2_id = fixture_tables.root("Item2", 48_169)
+  let scene =
+    Scene(
+      ..buying_back(buyback_id: 9),
+      buyback: Buyback(next_id: 10, entries: [
+        BuybackEntry(
+          buyback_id: 9,
+          item2_id: Item2Id(item2_id),
+          quantity: 1,
+          currency_type_id: 1,
+          amount: 40,
+          random_stats: word,
+        ),
+      ]),
+    )
+  let purchase = asked_back(scene:)
+  assert purchase.make
+    == [NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: word)]
+    as "the stack is placed with the word the item was sold with"
+  assert vendor_purchase.entropy_needed(
+      purchase:,
+      tables: character_tables.shared(),
+    )
+    == 0
+    as "a buy back draws no entropy"
+  assert vendor_purchase.rolled(
+      purchase:,
+      tables: character_tables.shared(),
+      entropy: <<>>,
+    )
+    == purchase
+    as "and no roll replaces the word"
+  let made =
+    HeldItem(
+      item_guid: 500,
+      item2_id: Item2Id(item2_id),
+      location: 1,
+      bag_index: 0,
+      stack_count: 1,
+      random_stats: word,
+    )
+  let #(_, _, _, effects) =
+    vendor_purchase.answered(
+      purchase:,
+      items: [],
+      currencies: credits(total: 100),
+      buyback: scene.buyback,
+      answer: Bought(amount: 60, made: [made]),
+    )
+  assert added_item(effects:).held_item.item.random_stats == word
+    as "opcode.0x111: the item is sent with its word"
+}
+
+/// A bought item with random stat entries is made with a roll: Item2 48169 has three kind-2
+/// entries, 4 bytes of entropy each, and the bytes of `random_stat_test`'s pick give the word
+/// 0x0100000000050401, which the 0x111 carries (`opcode.0x111.shared_item_random_stats`), with
+/// the list `list_a` empty.
+pub fn buying_a_random_stat_item_rolls_it_and_sends_the_word_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = character_tables.shared()
+  let item2_id = fixture_tables.root("Item2", 48_169)
+  let scene =
+    Scene(
+      ..scene(unique_id: 1, quantity: 1),
+      vendors: vendor_support.stocking_items(creature_ids: [74_812], items: [
+        item2_id,
+      ]),
+    )
+  let purchase = asked(scene:)
+  assert vendor_purchase.entropy_needed(purchase:, tables:) == 12
+    as "ItemStat 432 has three kind-2 entries, 4 bytes each, for the one stack made"
+  let rolled =
+    vendor_purchase.rolled(purchase:, tables:, entropy: bracer_entropy)
+  assert rolled.make
+    == [
+      NewStack(
+        location: 1,
+        bag_index: 0,
+        stack_count: 1,
+        random_stats: 0x0100000000050401,
+      ),
+    ]
+    as "the stack is made with the rolled word"
+  let made =
+    HeldItem(
+      item_guid: 500,
+      item2_id: Item2Id(item2_id),
+      location: 1,
+      bag_index: 0,
+      stack_count: 1,
+      random_stats: 0x0100000000050401,
+    )
+  let #(_, _, _, effects) =
+    vendor_purchase.answered(
+      purchase: rolled,
+      items: [],
+      currencies: credits(total: 100_000),
+      buyback: held_back(),
+      answer: Bought(amount: 0, made: [made]),
+    )
+  let sent = added_item(effects:).held_item.item
+  assert sent.random_stats == 0x0100000000050401
+    as "the 0x111 is sent with the word"
+  assert sent.list_a == [] as "the item's list is empty"
+}
+
+/// An item with no random stat entry is made with no roll: Item2 1375's ItemStat 4 has one
+/// kind-1 entry and no kind-2 entry, so no byte is drawn and the word is 0.
+pub fn buying_an_item_without_random_stats_draws_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = character_tables.shared()
+  let item2_id = fixture_tables.root("Item2", 1375)
+  let scene =
+    Scene(
+      ..scene(unique_id: 1, quantity: 1),
+      vendors: vendor_support.stocking_items(creature_ids: [74_812], items: [
+        item2_id,
+      ]),
+    )
+  let purchase = asked(scene:)
+  assert vendor_purchase.entropy_needed(purchase:, tables:) == 0
+    as "no kind-2 entry, no byte"
+  let rolled = vendor_purchase.rolled(purchase:, tables:, entropy: <<>>)
+  assert rolled == purchase as "nothing is rolled"
+  let made =
+    HeldItem(
+      item_guid: 500,
+      item2_id: Item2Id(item2_id),
+      location: 1,
+      bag_index: 0,
+      stack_count: 1,
+      random_stats: 0,
+    )
+  let #(_, _, _, effects) =
+    vendor_purchase.answered(
+      purchase: rolled,
+      items: [],
+      currencies: credits(total: 100_000),
+      buyback: held_back(),
+      answer: Bought(amount: 0, made: [made]),
+    )
+  assert added_item(effects:).held_item.item.random_stats == 0
+    as "the 0x111 word is 0"
 }

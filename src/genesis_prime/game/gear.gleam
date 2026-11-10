@@ -81,7 +81,14 @@ pub fn of_items(
     })
   let read =
     list.map(worn, fn(item) {
-      #(item, item_property.of_item(tables:, item2_id: item.item2_id.value))
+      #(
+        item,
+        item_property.of_item(
+          tables:,
+          item2_id: item.item2_id.value,
+          random_stats: item.random_stats,
+        ),
+      )
     })
   let #(given, unread) = keep_one_shield(read:)
   let assert Ok(properties) = item_property.sum(items: given)
@@ -258,6 +265,7 @@ pub fn warnings(gear gear: Gear, known known: Option(Gear)) -> List(String) {
         item_property.TwoShields
         | item_property.NoRow(..)
         | item_property.Refused(..)
+        | item_property.RandomStatsRefused(..)
         | item_property.NoCurveValue(..) -> ""
       }
     })

@@ -1126,14 +1126,16 @@ fn failed(guid guid: Int, code code: Int) -> Frame {
 }
 
 /// 0x111 for an item the character holds, with no charges and full durability,
-/// added for `reason`. Every value the client's code does not name is 0
-/// (`opcode.0x111.shared_item_unnamed`), the lists empty.
+/// added for `reason`, carrying the item's random-stat word as stored
+/// (`opcode.0x111.shared_item_random_stats`). Every other value the client's code does not
+/// name is 0 (`opcode.0x111.shared_item_unnamed`), the lists empty.
 pub fn item_added_frame(
   item_guid item_guid: Int,
   item_id item_id: Int,
   location location: Int,
   bag_index bag_index: Int,
   stack_count stack_count: Int,
+  random_stats random_stats: Int,
   reason reason: Int,
 ) -> Frame {
   let assert Ok(body) =
@@ -1147,7 +1149,7 @@ pub fn item_added_frame(
           bag_index:,
           stack_count:,
           charges: 0,
-          field_8: 0,
+          random_stats:,
           field_9: 0,
           field_10: 0,
           durability: float32.to_bits(1.0),
@@ -1255,6 +1257,7 @@ pub fn answered(
               location: to.location,
               bag_index: to.bag_index,
               stack_count: count,
+              random_stats: source.random_stats,
             ),
           ]),
           [
@@ -1269,6 +1272,7 @@ pub fn answered(
               location: to.location,
               bag_index: to.bag_index,
               stack_count: count,
+              random_stats: source.random_stats,
               reason: stack_split,
             )),
           ],
@@ -1429,7 +1433,12 @@ fn open(
       let added = int.min(wanted, limit)
       let #(left, made) = open(empty: rest, limit:, wanted: wanted - added)
       #(left, [
-        store.NewStack(location: in_bags, bag_index: index, stack_count: added),
+        store.NewStack(
+          location: in_bags,
+          bag_index: index,
+          stack_count: added,
+          random_stats: 0,
+        ),
         ..made
       ])
     }
