@@ -1,10 +1,14 @@
 import argv
+import character_tables
+import client_tables
 import code_rule/repository
 import envoy
 import fixture_tables
+import gleam/bool
 import gleam/list
 import gleam/string
 import literal_area
+import spawn_support
 import spell_tables
 import unitest
 
@@ -26,13 +30,21 @@ import unitest
 /// tagged `coverage` (`gleam test -- --tag coverage`).
 ///
 /// The client's spell plans are built before the first test starts: their one
-/// build for the run is setup, so no test's deadline holds it. So is what the
-/// fixture's rows reach (`fixture_tables.reach`, about 3.4 s) and the keys of the
-/// client's fact file (`repository.fact_keys`, about 0.9 s), which the tests that
-/// select rows or check the schema's evidence would otherwise wait on together
-/// inside their deadlines. A run of chosen tests (`--test`, `--tag`) leaves both
-/// to the tests that need them: those runs hold none or few of them, and run
-/// beside other runs.
+/// build for the run is setup, so no test's deadline holds it. A full run builds
+/// every other one-time build that tests call, before the first test, for the
+/// same reason: whichever test asks first would otherwise wait for the build
+/// inside its deadline, with the rest of the suite taking the processors. They
+/// are what the fixture's rows reach (`fixture_tables.reach`, about 3.4 s, which
+/// reads every fixture table), the keys of the client's fact file
+/// (`repository.fact_keys`, about 0.9 s), the repository's source tree
+/// (`repository.sources`, about 0.2 s), the fixture's server tables
+/// (`fixture_tables.shared`), the spell areas and server proxies built over
+/// them, the content tables, the Virtual Battle Beast the load builds from the
+/// rows (`spawn_support.loaded_beast`), and, where the client's files are on the
+/// machine, the client's tables (`client_tables.shared`, about 2.7 s, and
+/// `client_tables.every_table`, about 1.6 s more). A run of chosen tests
+/// (`--test`, `--tag`) leaves them to the tests that need them: those runs hold
+/// none or few of them, and run beside other runs.
 ///
 /// With `GENESIS_LITERAL_PEAK_FILE` set to a file, the run keeps the literal
 /// allocator's highest carriers size in it (`literal_area`), which `./check`
@@ -48,7 +60,14 @@ pub fn main() -> Nil {
     False -> {
       let _reach = fixture_tables.reach()
       let _fact_keys = repository.fact_keys()
-      Nil
+      let _sources = repository.sources(under: ["src"])
+      let _fixture = fixture_tables.shared()
+      let _areas = spell_tables.fixture_areas()
+      let _server_proxies = spell_tables.server_proxies()
+      let _planted_plans = spell_tables.plans_with_server_proxies()
+      let _content = character_tables.content_tables()
+      let _beast = spawn_support.loaded_beast()
+      warm_client_tables()
     }
   }
   unitest.run(
@@ -64,6 +83,13 @@ pub fn main() -> Nil {
       ),
     ),
   )
+}
+
+fn warm_client_tables() -> Nil {
+  use <- bool.guard(when: !client_tables.present(), return: Nil)
+  let _server_tables = client_tables.shared()
+  let _every_table = client_tables.every_table()
+  Nil
 }
 
 fn runs_chosen_tests(arguments: List(String)) -> Bool {
