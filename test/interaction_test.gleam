@@ -26,6 +26,7 @@
 import character_support
 import character_tables
 import connection_rule_support as support
+import experience_support
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{
@@ -38,10 +39,13 @@ import genesis_prime/game/shown
 import genesis_prime/game/start_place
 import genesis_prime/game/vendor
 import genesis_prime/message/buyback_list.{BuybackList}
+import genesis_prime/message/buyback_removed
+import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/dialog_responses_shown.{DialogResponsesShown}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/generic_error.{GenericError}
 import genesis_prime/message/interaction_request.{InteractionRequest}
+import genesis_prime/message/item_count_changed.{ItemCountChanged}
 import genesis_prime/message/item_place
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
 import genesis_prime/message/vendor_item.{type VendorItem, VendorItem}
@@ -876,14 +880,106 @@ pub fn the_buyback_list_survives_a_world_change_and_is_empty_after_entering_the_
     as "the Holocrypt's join is a change of world, not a new entry: the entry sold before it is still held"
   // A sale after the join takes the next id, not 1 again.
   let rejoined = sold(state: rejoined, quantity: 3, credits: 105)
-  let #(_, listed) = buyback_listed(state: rejoined)
+  let #(rejoined, listed) = buyback_listed(state: rejoined)
   assert listed == [#(1, 20_791, 2, 2), #(2, 20_791, 3, 3)]
     as "an id is given once in a world entry, also across the join"
-  // Entering the world again, as a new play, holds an empty list whose first id is 1.
-  let fresh = selling_state()
-  let #(fresh, listed) = buyback_listed(state: fresh)
+  // The player camps out and plays the character again on the same connection: a new play
+  // entry, whose store holds the 5 of 20791 and 100 credits again, and in whose picture the
+  // vendor is shown again (the connection's third stay: the first, the Holocrypt's join).
+  let #(camped, _, _) = experience_support.camped(state: rejoined)
+  let entered =
+    connection_support.entered_stocking_holding(
+      in_character_select: camped,
+      credits: 100,
+      items: [
+        store.HeldItem(
+          item_guid: 500,
+          item2_id: id.Item2Id(20_791),
+          location: 1,
+          bag_index: 0,
+          stack_count: 5,
+        ),
+      ],
+    )
+  let #(entered, _) =
+    connection_support.feed(
+      state: entered,
+      event: connection_support.in_stay(
+        count: 3,
+        event: walker_appears(
+          unit_id: walker_unit,
+          gap: sale_reach -. 0.1,
+          health: 52,
+          hostile_to: friendly,
+        ),
+      ),
+    )
+  let #(entered, listed) = buyback_listed(state: entered)
   assert listed == [] as "a play's entry holds no sale of an earlier one"
-  let fresh = sold(state: fresh, quantity: 2, credits: 102)
-  let #(_, listed) = buyback_listed(state: fresh)
-  assert listed == [#(1, 20_791, 2, 2)] as "the ids start at 1 on each entry"
+  let entered = sold(state: entered, quantity: 2, credits: 102)
+  let #(_, listed) = buyback_listed(state: entered)
+  assert listed == [#(1, 20_791, 2, 2)]
+    as "the ids start at 1 on each play entry, on the same connection"
+}
+
+pub fn a_buy_back_through_the_connection_saves_the_shortened_list_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 2 of the 5 items of 20791 are sold for 2 credits (entry 1), leaving 3 held and 102
+  // credits.
+  let state = sold(state: selling_state(), quantity: 2, credits: 102)
+  let #(state, taken) =
+    connection_support.buyback_requested(state:, buyback_id: 1)
+  assert connection_support.ask_request(taken)
+    == AskStore(
+      store.Items(store.BuyFromVendor(
+        account_id: store.AccountId(7),
+        character_id: store.CharacterId(42),
+        session_epoch: character_support.epoch(1),
+        credits_held: 102,
+        cost: 2,
+        grow: [
+          store.StackGrowth(item_guid: 500, held_count: 3, new_count: 5),
+        ],
+        make: [],
+        item2_id: id.Item2Id(20_791),
+      )),
+    )
+    as "opcode.0xbb: the entry's 2 items for the 2 credits the sale paid, back into the held stack of 3"
+  assert support.writes(taken) == []
+    as "nothing is written before the store has saved the buy back"
+  // The store saved it: 100 credits are left.
+  let #(state, answered) =
+    connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(store.ForItems(store.Bought(credits: 100, made: []))),
+      ),
+    )
+  let assert [total, grown, removed] =
+    connection_support.written(taken: answered)
+    as "a 0x919, a 0x17F for the grown stack, then a 0xBD"
+  assert currency_changed.decode(total.body)
+    == Ok(CurrencyChanged(kind: 0, total: 100, field_3: 0, field_4: 0))
+    as "opcode.0x919: kind 0 sets the credits to the total the store left"
+  assert grown.message_id == item_count_changed.message_id
+  assert item_count_changed.decode(grown.body)
+    == Ok(ItemCountChanged(item_guid: 500, count: 5, reason: 16))
+    as "Item.CodeEnumItemUpdateReason: Buyback is 16"
+  assert removed.message_id == buyback_removed.message_id
+  assert buyback_removed.decode(removed.body)
+    == Ok(buyback_removed.BuybackRemoved(buyback_id: 1))
+    as "opcode.0xbd: the id of the entry bought back"
+  let #(state, listed) = buyback_listed(state:)
+  assert listed == []
+    as "the entry left the list the connection holds: opening the vendor sends none"
+  // The same entry again: it is no longer held.
+  let #(_, again) = connection_support.buyback_requested(state:, buyback_id: 1)
+  assert support.asked(again) == None
+    as "an entry already bought back asks the store nothing"
+  let assert [refusal] = connection_support.written(taken: again)
+    as "and is answered with one message"
+  assert refusal.message_id == generic_error.message_id
+  assert generic_error.decode(refusal.body) == Ok(GenericError(code: 14))
+    as "enum 14, Vendor_UnknownItem"
 }

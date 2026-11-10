@@ -761,15 +761,26 @@ pub fn in_world_stocking_holding(
   credits credits: Int,
   items items: List(store.HeldItem),
 ) -> game_connection.State {
+  entered_stocking_holding(
+    in_character_select: in_select_from(
+      accepted(Settings(..settings(), vendors:)).0,
+    ),
+    credits:,
+    items:,
+  )
+}
+
+/// `in_character_select` after the store gave its Exile `credits` credits and, besides the
+/// Novice set, these `items`, and the map took it: the burst is written, and the vendors are
+/// those of the connection's settings.
+pub fn entered_stocking_holding(
+  in_character_select in_character_select: game_connection.State,
+  credits credits: Int,
+  items items: List(store.HeldItem),
+) -> game_connection.State {
   let character =
     Character(..world_character(), faction_id: spawn.exile_faction)
-  let #(state, taken) =
-    playing_from(
-      in_character_select: in_select_from(
-        accepted(Settings(..settings(), vendors:)).0,
-      ),
-      character_id: 42,
-    )
+  let #(state, taken) = playing_from(in_character_select:, character_id: 42)
   let #(state, taken) =
     answer(
       state:,
@@ -1238,9 +1249,17 @@ pub fn for_stay(
 pub fn in_second_stay(
   event: Event(ConnectionEvent(Message, Answer)),
 ) -> Event(ConnectionEvent(Message, Answer)) {
+  in_stay(count: 2, event:)
+}
+
+/// The same message as `event`, for the player's `count`th stay.
+pub fn in_stay(
+  count count: Int,
+  event event: Event(ConnectionEvent(Message, Answer)),
+) -> Event(ConnectionEvent(Message, Answer)) {
   let assert OwnEvent(Woken(ForStay(sent:, ..))) = event
     as "a message for a stay"
-  for_stay(stay: map_support.stay(count: 2), sent:)
+  for_stay(stay: map_support.stay(count:), sent:)
 }
 
 /// A notice of the map to the connection, for the tests' player's first stay.
