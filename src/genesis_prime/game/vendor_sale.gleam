@@ -8,17 +8,19 @@
 ////                                       ├─ refused ─▶ Refused([Log, Refuse(code)])   nothing asked, nothing changed
 ////                                       └─ accepted ─▶ Asks(sale) ─▶ the connection asks the store (request(..))
 //// the store's answer ─▶ answered(sale, items, currencies, buyback, answer)
-////                       Sold(total):     items, credits and buyback list updated; 0x919, then per stack 0x148 / 0x17F and 0xBA
+////                       Sold(amount):    items, the currency paid and buyback list updated; 0x919, then per stack 0x148 / 0x17F and 0xBA
 ////                       ItemsNotSaved:   Warning, 0x106 5, nothing changed
 ////                       SaveRefused(c):  Error naming c, 0x106 5, nothing changed
+//// the connection then ─▶ inventory.regeared: a changed worn set sends 0x933, LookChanged and 0x93a
 //// ```
 ////
 //// - **The price** is what the client's window shows (`opcode.0x166`, `0x14041bcc0.formula`):
-////   per item `item_price.shown(base, vendor sell multiplier)`, and the sale pays that
-////   times the quantity. The base is the Item2's SellToVendor credit amount when either of
-////   its SellToVendor currency type columns is set, else the computed buy price times
-////   GameFormula 1026 (0.15), at least 1 (`0x14040d160`; `item_price.sell_base`). A price
-////   in a currency other than credits is refused with 23 and a log line: #650's.
+////   per item `item_price.paid(sell_price, vendor sell multiplier)`, and the sale pays that
+////   times the quantity, in the price's one currency. The base is the Item2's one SellToVendor
+////   amount in its currency when either of its SellToVendor currency type columns is set,
+////   else the computed buy price times GameFormula 1026 (0.15) in credits, at least 1
+////   (`0x14040d160`; `item_price.sell_price`). A credit price is scaled by the vendor's sell
+////   multiplier, a price in another currency is paid as the row gives it.
 //// - **The checks, in the order of the client's CheckVendorSell** (`0x1403d3a60`, with
 ////   `0x1403d6a10` for the item), each a 0x106 with its code
 ////   (`GameLib.CodeEnumGenericError`); the first that fails answers:
@@ -34,36 +36,39 @@
 ////   8. the item does not stack and the quantity is over 1: 11 Vendor_StackSize
 ////   9. a bank place (location 2 or 3): 23
 ////   10. a worn bag, location 0 with the bag's joined flag: 25 Vendor_BagIsNotEmpty, logged
+////       (a worn item that is not a bag is sold: `0x1403d6a10` has no check for it)
 ////   11. the item is not sellable (`item_property.sellable`) or its shown price is 0: 23
 ////   12. the vendor is beyond 6.0 between the two edges, the sale's own range
 ////       (`opcode.0x166`): 17 Vendor_TooFar, logged
-////   Then the refusals the client has no check for, 23 and logged, run after all of the
-////   above: a worn item that is not a bag (#650), a price in another currency (#650), and
-////   a location the client has no check for, which no open issue builds. The logged cases
+////   Then the refusal the client has no check for, 23 and logged, runs after all of the
+////   above: a location the client has no check for (4 and up), which no open issue
+////   builds. The logged cases
 ////   are a modified or stale client, or a gap this server has: each reason is a warning
 ////   the first time on the connection and a debug line after, and the connection goes on,
 ////   as the buy's cases do. The client's checks for the vendor's crowd-control states
 ////   (60, 61) are not modelled.
 //// - **Junk** (0x167) sells every held item of Item2Category 94
-////   (`lua.Item.CodeEnumItem2Category.Junk`) in the usable inventory that passes checks 11
-////   and the currency check, whole, in bag-index order, in one statement; the others stay.
+////   (`lua.Item.CodeEnumItem2Category.Junk`) in the usable inventory that passes check 11
+////   and is priced in credits, whole, in bag-index order, in one statement; the others stay.
 ////   A body that is not empty ends the connection. With nothing to sell nothing is sent.
 ////   The checks 2 to 4 and 12 apply to it.
 //// - **What the sale and the buy share** is genesis_prime/game/vendor_trade's: the window
 ////   open and the player and vendor alive (the codes differ: 2 and 23 here, 57 and 16 in
 ////   the buy), the logged refusal, and the store's failed answers.
-//// - **The credit cap** is GameFormula 1115, 500,000 (`GetCurrencyCap.entitlement_14`): the
-////   new total is clamped to it and the excess is lost; a total already at the cap stays
-////   there and the sale goes through. A buyback entry carries the credits the sale paid for
-////   its stack, before the clamp.
+//// - **The cap** is the currency's (`currency.cap`, the client's GetCurrencyCap): the new total
+////   is clamped to it and the excess is lost; a total already at the cap stays there and
+////   the sale goes through (`currency.added`). A buyback entry carries the amount the sale
+////   paid for its stack, in the sale's currency, before the clamp.
 //// - **The store's answer** decides the reply, so storage and the client agree after it:
-////   `ItemsNotSaved` and `SaveRefused` leave the items, credits and buyback list as they were
+////   `ItemsNotSaved` and `SaveRefused` leave the items, currencies and buyback list as they were
 ////   and answer 0x106 code 5 DbFailure. A store that is unavailable, not running or past its
 ////   deadline ends the connection with reason 8, which the connection decides.
-//// - **The answer's frames**: 0x919 kind 0 with the new total once, then for each stack sold
-////   0x148 (whole) or 0x17F (part) with the reason 7 (Vendor), which makes the client show
-////   "Sold <item>" (`lua.Vendor.respond_alerts`), and a 0xBA that adds the entry to the
-////   buyback list (`opcode.0xba.price`), the entry's id `buyback.next_id` and up.
+//// - **The answer's frames**: 0x919 with the currency's kind (type - 1) and the new total
+////   once, then for each stack sold 0x148 (whole) or 0x17F (part) with the reason 7
+////   (Vendor), which makes the client show "Sold <item>" (`lua.Vendor.respond_alerts`), and
+////   a 0xBA that adds the entry to the buyback list (`opcode.0xba.price`), naming the
+////   currency, the entry's id `buyback.next_id` and up. A worn item sold changes the worn
+////   set, which the connection's `inventory.regeared` sends on.
 //// - **The list** is `Entered.buyback`, oldest first, each entry with the id it was added
 ////   with: a buy back (genesis_prime/game/vendor_purchase) takes one off, a vendor window
 ////   opening sends the whole of it (0xBC), and the Holocrypt's join keeps it
@@ -72,8 +77,9 @@
 //// | Point | What happens |
 //// |---|---|
 //// | the held item's Item2 row, or a table row its price reads, is missing | the connection ends (`NoItemRow`) |
-//// | GameFormula 1115 or 1026 has no row | the load fails (`requirements`) |
-//// | the store changes nothing or refuses a place | 0x106 5, a log line, items, credits and buyback as before |
+//// | GameFormula 1026 has no row | the load fails (`requirements`) |
+//// | the item's Item2 row has an amount in both sell slots | the connection ends (`NoItemRow`) |
+//// | the store changes nothing or refuses a place | 0x106 5, a log line, items, currencies and buyback as before |
 //// | the connection ends while the store works | the store finishes or rolls back; the next login loads whichever |
 
 import genesis_prime/client_connection
@@ -101,9 +107,9 @@ import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
   type SessionEpoch, HeldItem, ItemsNotSaved, SaveRefused, Sold,
 }
-import genesis_prime/table/game_formula
-import genesis_prime/table/id.{type Item2Id, GameFormulaId, Item2Id}
+import genesis_prime/table/id.{type Item2Id, Item2Id}
 import genesis_prime/table/item2
+import genesis_prime/table/loader/formula_requirement
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/dict
@@ -129,29 +135,32 @@ pub type Request {
   SellJunk(body: BitArray)
 }
 
-/// One stack a sale sells from: the held stack (`item_guid`, its Item2 and the count it is
-/// held with), how many of its items are sold, and the credits the vendor pays for them,
-/// before the credit cap.
+/// One stack a sale sells from: the held stack (`item_guid`, its Item2, the location it is
+/// held at and the count it is held with), how many of its items are sold, and what the vendor
+/// pays for them in the sale's currency, before the cap.
 pub type SoldItem {
   SoldItem(
     item_guid: Int,
     item2_id: Item2Id,
+    location: Int,
     held_count: Int,
     sold_count: Int,
-    credits: Int,
+    paid: Int,
   )
 }
 
 /// A sale the rule accepted and the store is asked for: the unit it was made at, each stack
-/// sold in bag-index order (at least one, `first` and `rest`), the credits held when it was
-/// taken (which fence the store's statement) and the credits held after it, capped.
+/// sold in bag-index order (at least one, `first` and `rest`), the currency the stacks are
+/// paid in, what is held of it when the sale was taken (which fences the store's statement)
+/// and what is held of it after the sale, capped.
 pub type Sale {
   Sale(
     unit_id: Int,
     first: SoldItem,
     rest: List(SoldItem),
-    credits_held: Int,
-    credits_after: Int,
+    currency_type_id: Int,
+    held: Int,
+    after: Int,
   )
 }
 
@@ -174,12 +183,14 @@ type Wanted {
 
 /// The stacks a request sells, or the answer that stops it.
 type Picked {
-  /// The stacks the client's own checks let through, which may be none.
-  Picked(stacks: List(SoldItem))
+  /// The stacks the client's own checks let through, which may be none, and the one
+  /// currency they are paid in.
+  Picked(currency_type_id: Int, stacks: List(SoldItem))
   /// A sale the client's checks before the range refuse, with their code.
   Stopped(taken: Taken)
-  /// A sale the client's checks let through but this server cannot make: it is refused
-  /// with 23 once the range check has passed, since the client's checks come first.
+  /// A sale at a location the client's checks let through but the server holds no item at:
+  /// it is refused with 23 once the range check has passed, since the client's checks come
+  /// first.
   Withheld(reason: String, text: String)
 }
 
@@ -212,7 +223,7 @@ const over_the_count = 19
 const stack_size = 11
 
 /// The client's code for an item the vendor will not buy, a bank place and a dead vendor,
-/// and the server's for a sale it cannot make yet.
+/// and the server's for a location it holds no item at.
 const wont_buy = 23
 
 /// The client's code for a vendor beyond the sale's range (Vendor_TooFar).
@@ -238,14 +249,6 @@ const junk_category = 94
 
 /// The gap between the two edges the sale's sender allows (`opcode.0x166`: 0 to 6.0).
 const sale_range = 6.0
-
-/// The GameFormula row whose dataint0 is the most credits a character holds
-/// (`GetCurrencyCap.entitlement_14`).
-const credit_cap_formula = 1115
-
-/// The GameFormula row whose datafloat0 is the fraction of the buy price an item sells for
-/// (`0x14040bfb0`), read by `item_price.sell_base`.
-const sell_fraction_formula = 1026
 
 /// What the client's sale message is answered with: a refusal with the code of the first
 /// check it breaks, or the store's ask, or the refusal for a body the client's reader
@@ -351,13 +354,14 @@ fn sold_to(
   })
   case picked {
     Stopped(taken:) -> Ok(taken)
-    Picked(stacks: []) -> Ok(Refused(effects: [], logged:))
-    Picked(stacks: [first, ..rest]) ->
+    Picked(stacks: [], ..) -> Ok(Refused(effects: [], logged:))
+    Picked(currency_type_id:, stacks: [first, ..rest]) ->
       Ok(case in_range(window:, player:, picture:, tables:, now_ms:) {
         False -> beyond_range(label:, unit_id: window.unit_id, logged:)
         True ->
           asked(
             unit_id: window.unit_id,
+            currency_type_id:,
             first:,
             rest:,
             currencies:,
@@ -416,43 +420,35 @@ fn beyond_range(
   )
 }
 
-/// The sale the store is asked for: the stacks picked, the credits held and the total they
-/// come to once the price is paid and the cap applied.
+/// The sale the store is asked for: the stacks picked, the amount held of their currency
+/// and the total they come to once the price is paid and the cap applied.
 fn asked(
   unit_id unit_id: Int,
+  currency_type_id currency_type_id: Int,
   first first: SoldItem,
   rest rest: List(SoldItem),
   currencies currencies: Currencies,
   tables tables: table_store.Tables,
   logged logged: Set(String),
 ) -> Taken {
-  let credits_held = currency.credits(currencies:)
+  let held = currency.held(currencies:, currency_type_id:)
   let paid =
-    list.fold([first, ..rest], 0, fn(total, stack) { total + stack.credits })
+    list.fold([first, ..rest], 0, fn(total, stack) { total + stack.paid })
   Asks(
     sale: Sale(
       unit_id:,
       first:,
       rest:,
-      credits_held:,
-      credits_after: capped(held: credits_held, paid:, cap: credit_cap(tables:)),
+      currency_type_id:,
+      held:,
+      after: currency.added(
+        held:,
+        paid:,
+        cap: currency.cap(tables:, currency_type_id:),
+      ),
     ),
     logged:,
   )
-}
-
-/// The credits a character holds most (`GetCurrencyCap.entitlement_14`).
-fn credit_cap(tables tables: table_store.Tables) -> Int {
-  let assert Ok(row) =
-    game_formula.get(tables:, id: GameFormulaId(credit_cap_formula))
-    as "GameFormula row 1115 is required at load (requirements)"
-  row.dataint0
-}
-
-/// The credits held after `paid` is added to `held`: the total stops at the cap, and a
-/// total already at the cap stays.
-fn capped(held held: Int, paid paid: Int, cap cap: Int) -> Int {
-  int.max(held, int.min(cap, held + paid))
 }
 
 /// The stack at a place, sold in part or whole, or the answer for the first check it breaks,
@@ -491,8 +487,8 @@ fn part(
 }
 
 /// The stack at a place, sold for `quantity`, or the answer for the first of the count,
-/// stacking, bank, bag, sellable and price checks it breaks. A stack the client's checks let
-/// through but this server cannot sell yet is `Withheld`.
+/// stacking, bank, bag, sellable and price checks it breaks. A stack at a location the
+/// client's checks let through but the server holds no item at is `Withheld`.
 fn checked(
   item item: HeldItem,
   quantity quantity: Int,
@@ -543,19 +539,10 @@ fn checked(
     |> result.replace_error(no_row),
   )
   use <- bool.guard(!sellable, Ok(stopped(code: wont_buy, logged:)))
-  use paid <- result.try(each_pays(item:, vendor: stock, tables:))
-  case item.location, paid {
-    _, Pays(each: 0) -> Ok(stopped(code: wont_buy, logged:))
-    location, _ if location == worn_location ->
-      Ok(Withheld(
-        reason: "worn item",
-        text: label
-          <> " sells the worn Item2 "
-          <> int.to_string(raw_id)
-          <> ", whose sale is #650's, so the server answers "
-          <> int.to_string(wont_buy),
-      ))
-    location, _ if location != inventory_location ->
+  use price <- result.try(each_pays(item:, vendor: stock, tables:))
+  case item.location {
+    _ if price.amount == 0 -> Ok(stopped(code: wont_buy, logged:))
+    location if location != worn_location && location != inventory_location ->
       Ok(Withheld(
         reason: "unknown location",
         text: label
@@ -564,53 +551,33 @@ fn checked(
           <> ", which the client's checks do not name and the server holds no item at; no open issue builds it, so the server answers "
           <> int.to_string(wont_buy),
       ))
-    _, InOtherCurrency(error:) ->
-      Ok(Withheld(
-        reason: "priced in another currency",
-        text: label
-          <> " sells "
-          <> item_price.describe(error:)
-          <> "; the sale of it is #650's, so the server answers "
-          <> int.to_string(wont_buy),
-      ))
-    _, Pays(each:) ->
+    location ->
       Ok(
-        Picked(stacks: [
+        Picked(currency_type_id: price.currency_type_id, stacks: [
           SoldItem(
             item_guid: item.item_guid,
             item2_id: item.item2_id,
+            location:,
             held_count: item.stack_count,
             sold_count: quantity,
-            credits: each * quantity,
+            paid: price.amount * quantity,
           ),
         ]),
       )
   }
 }
 
-/// What the vendor pays for one of an item.
-type Paid {
-  /// So many credits, which is 0 for an item it does not buy.
-  Pays(each: Int)
-  /// The sell price is in a currency other than credits, which #650 builds.
-  InOtherCurrency(error: item_price.PriceError)
-}
-
-/// What the vendor pays for one of the item.
+/// What the vendor pays for one of the item, in the currency of its price.
 fn each_pays(
   item item: HeldItem,
   vendor stock: vendor.Vendor,
   tables tables: table_store.Tables,
-) -> Result(Paid, Refusal) {
-  case item_price.sell_base(tables:, item2_id: item.item2_id) {
-    Ok(base) ->
-      Ok(Pays(each: item_price.shown(base:, multiplier: stock.sell_multiplier)))
-    Error(item_price.OtherCurrency(..) as error)
-    | Error(item_price.TradeskillAdditive(..) as error) ->
-      Ok(InOtherCurrency(error:))
-    Error(item_price.MissingRow(..)) | Error(item_price.NoCurveValue(..)) ->
-      Error(NoItemRow(item2_id: item.item2_id))
-  }
+) -> Result(item_price.SellPrice, Refusal) {
+  item_price.sell_price(tables:, item2_id: item.item2_id)
+  |> result.replace_error(NoItemRow(item2_id: item.item2_id))
+  |> result.map(fn(price) {
+    item_price.paid(price:, multiplier: stock.sell_multiplier)
+  })
 }
 
 /// Every junk stack of the usable inventory the vendor pays for, whole, in bag-index order.
@@ -623,7 +590,12 @@ fn junk(
   |> list.filter(fn(item) { item.location == inventory_location })
   |> list.sort(fn(a, b) { int.compare(a.bag_index, b.bag_index) })
   |> list.try_map(fn(item) { junk_stack(item:, vendor: stock, tables:) })
-  |> result.map(fn(stacks) { Picked(stacks: option.values(stacks)) })
+  |> result.map(fn(stacks) {
+    Picked(
+      currency_type_id: currency.credits_type,
+      stacks: option.values(stacks),
+    )
+  })
 }
 
 /// The whole stack as a sold stack when it is junk, sellable and paid for.
@@ -643,22 +615,22 @@ fn junk_stack(
     |> result.replace_error(no_row),
   )
   use <- bool.guard(!sellable, Ok(None))
-  use paid <- result.try(each_pays(item:, vendor: stock, tables:))
-  case paid {
-    InOtherCurrency(..) | Pays(each: 0) -> Ok(None)
-    Pays(each:) -> {
-      let count = int.max(1, item.stack_count)
-      Ok(
-        Some(SoldItem(
-          item_guid: item.item_guid,
-          item2_id: item.item2_id,
-          held_count: item.stack_count,
-          sold_count: count,
-          credits: each * count,
-        )),
-      )
-    }
-  }
+  use price <- result.try(each_pays(item:, vendor: stock, tables:))
+  use <- bool.guard(
+    price.currency_type_id != currency.credits_type || price.amount == 0,
+    Ok(None),
+  )
+  let count = int.max(1, item.stack_count)
+  Ok(
+    Some(SoldItem(
+      item_guid: item.item_guid,
+      item2_id: item.item2_id,
+      location: item.location,
+      held_count: item.stack_count,
+      sold_count: count,
+      paid: price.amount * count,
+    )),
+  )
 }
 
 /// A refusal of a sale by the client's code, with nothing to log.
@@ -699,13 +671,14 @@ pub fn request(
     account_id:,
     character_id:,
     session_epoch:,
-    credits_held: sale.credits_held,
-    credits_after: sale.credits_after,
+    currency_type_id: sale.currency_type_id,
+    held: sale.held,
+    after: sale.after,
     sold: list_sold(sale:),
   ))
 }
 
-/// What the store's answer leaves: the items, the credits held, the buyback list and the
+/// What the store's answer leaves: the items, the amounts held, the buyback list and the
 /// effects, in order.
 pub fn answered(
   sale sale: Sale,
@@ -715,7 +688,7 @@ pub fn answered(
   answer answer: ItemsAnswer,
 ) -> #(List(HeldItem), Currencies, Buyback, List(Effect)) {
   case answer {
-    Sold(credits:) -> {
+    Sold(amount:) -> {
       let stacks = [sale.first, ..sale.rest]
       let entries =
         list.index_map(stacks, fn(stack, position) {
@@ -723,18 +696,26 @@ pub fn answered(
             buyback_id: buyback.next_id + position,
             item2_id: stack.item2_id,
             quantity: stack.sold_count,
-            credits: stack.credits,
+            currency_type_id: sale.currency_type_id,
+            amount: stack.paid,
           )
         })
       #(
         sold_from(items:, stacks:),
-        currency.with_credits(currencies:, credits:),
+        currency.with_amount(
+          currencies:,
+          currency_type_id: sale.currency_type_id,
+          total: amount,
+        ),
         Buyback(
           next_id: buyback.next_id + list.length(stacks),
           entries: list.append(buyback.entries, entries),
         ),
         [
-          Send(currency.changed_frame(total: credits)),
+          Send(currency.changed_frame(
+            currency_type_id: sale.currency_type_id,
+            total: amount,
+          )),
           ..list.flat_map(list.zip(stacks, entries), fn(pair) {
             let #(stack, entry) = pair
             [Send(stack_frame(stack:)), Send(buyback_frame(entry:))]
@@ -809,9 +790,9 @@ fn buyback_frame(entry entry: BuybackEntry) -> Frame {
   frame.Frame(message_id: buyback_added.message_id, body:)
 }
 
-/// An entry of the buyback list as the client's 0xBA and 0xBC carry it: the credits paid
-/// are its first amount in credits (currency type 1), and every field the client's code gives
-/// no use is 0 (`opcode.0xba.price`).
+/// An entry of the buyback list as the client's 0xBA and 0xBC carry it: the amount paid is
+/// its first amount, in its first currency type, and every field the client's code gives no
+/// use is 0 (`opcode.0xba.price`).
 pub fn buyback_entry_message(
   entry entry: BuybackEntry,
 ) -> buyback_entry.BuybackEntry {
@@ -838,16 +819,13 @@ pub fn buyback_entry_message(
     field_19: 0,
     field_20: 0,
     field_21: 0,
-    amount_1: entry.credits,
+    amount_1: entry.amount,
     amount_2: 0,
-    currency_type_1: credits_currency_type,
+    currency_type_1: entry.currency_type_id,
     currency_type_2: 0,
     field_26: 0,
   )
 }
-
-/// The CurrencyType row of credits (`currency`).
-const credits_currency_type = 1
 
 /// A sentence that says which sale was not saved, for the log.
 pub fn not_sold(sale sale: Sale) -> String {
@@ -862,36 +840,21 @@ pub fn not_sold(sale sale: Sale) -> String {
   "the sale of "
   <> stacks
   <> " for "
-  <> int.to_string(sale.credits_after - sale.credits_held)
-  <> " credits was not saved"
+  <> int.to_string(sale.after - sale.held)
+  <> " of currency type "
+  <> int.to_string(sale.currency_type_id)
+  <> " was not saved"
 }
 
-/// What the tables must hold at load for a sale: the credit cap and the sell fraction.
+/// What the tables must hold at load for a sale: the sell fraction. The currencies' caps are
+/// `currency.requirements`.
 pub fn requirements() -> List(table_store.Requirement) {
   [
-    table_store.Requirement(
-      from_table: "the server's credit cap",
-      column: "GameFormula id",
-      to_table: "GameFormula",
-      missing: fn(tables) { missing_formula(tables:, id: credit_cap_formula) },
-    ),
-    table_store.Requirement(
+    formula_requirement.row_present(
       from_table: "the server's sell price fraction",
-      column: "GameFormula id",
-      to_table: "GameFormula",
-      missing: fn(tables) {
-        missing_formula(tables:, id: sell_fraction_formula)
-      },
+      id: item_price.sell_fraction_formula,
     ),
   ]
-}
-
-/// The GameFormula row's id when the tables lack it.
-fn missing_formula(tables tables: table_store.Tables, id id: Int) -> List(Int) {
-  case game_formula.get(tables:, id: GameFormulaId(id)) {
-    Ok(_) -> []
-    Error(Nil) -> [id]
-  }
 }
 
 /// The stacks of the sale as the store's request names them.
@@ -899,6 +862,7 @@ fn list_sold(sale sale: Sale) -> List(store.SoldStack) {
   list.map([sale.first, ..sale.rest], fn(stack) {
     store.SoldStack(
       item_guid: stack.item_guid,
+      location: stack.location,
       held_count: stack.held_count,
       sold_count: stack.sold_count,
     )

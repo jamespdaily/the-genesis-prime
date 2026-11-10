@@ -57,7 +57,6 @@ import genesis_prime/game/target_group
 import genesis_prime/table/id.{Creature2Id, Faction2Id, UnitRaceId}
 import genesis_prime/table/loader/store as table_store
 import gleam/list
-import gleam/option.{type Option, None, Some}
 import owned_test
 import planted_table.{Integer}
 import quest_support
@@ -229,15 +228,16 @@ const group_member = 5007
 
 const stranger = 73_464
 
+/// A faction no TargetGroup row of the fixture names (`table_rows -- TargetGroup`), for
+/// the kills these tests count by creature.
+const unlisted_faction = 1441
+
 /// A killed unit of this creature and faction. Its race, which only a type 12 group
 /// reads, is 0: no group of these tests names it.
-fn killed(
-  creature creature: Int,
-  faction faction: Option(Int),
-) -> objective.Event {
+fn killed(creature creature: Int, faction faction: Int) -> objective.Event {
   Killed(target_group.Unit(
     creature_id: Creature2Id(creature),
-    faction_id: option.map(faction, Faction2Id),
+    faction_id: Faction2Id(faction),
     unit_race_id: UnitRaceId(0),
   ))
 }
@@ -265,7 +265,7 @@ pub fn a_kill_advances_each_open_type_2_objective_naming_the_creature_test() -> 
     objective.advance(
       log:,
       tables:,
-      event: killed(creature: kill_target, faction: None),
+      event: killed(creature: kill_target, faction: unlisted_faction),
     )
   assert slain.effects
     == [
@@ -285,7 +285,7 @@ pub fn a_kill_advances_each_open_type_2_objective_naming_the_creature_test() -> 
   assert objective.advance(
       log:,
       tables:,
-      event: killed(creature: stranger, faction: None),
+      event: killed(creature: stranger, faction: unlisted_faction),
     )
     == Advanced(log:, effects: [])
     as "a creature no open objective names changes nothing"
@@ -307,7 +307,7 @@ pub fn a_kill_advances_each_open_type_2_objective_naming_the_creature_test() -> 
   assert objective.advance(
       log: closed,
       tables:,
-      event: killed(creature: kill_target, faction: None),
+      event: killed(creature: kill_target, faction: unlisted_faction),
     )
     == Advanced(log: closed, effects: [])
     as "a done objective, and a quest that is not in the active list, take no kill"
@@ -327,7 +327,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
     objective.advance(
       log:,
       tables:,
-      event: killed(creature: group_member, faction: None),
+      event: killed(creature: group_member, faction: unlisted_faction),
     )
   assert slain.effects
     == [
@@ -338,13 +338,13 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
   assert objective.advance(
       log:,
       tables:,
-      event: killed(creature: stranger, faction: None),
+      event: killed(creature: stranger, faction: unlisted_faction),
     )
     == Advanced(log:, effects: [])
     as "a creature outside the group advances neither"
 
   // TargetGroup 847 is type 3 with Faction2 248: objective 4183 of quest 3204 (type 8,
-  // count 35) follows the faction the unit was shown with. Objective 4182 is done.
+  // count 35) follows the unit's faction. Objective 4182 is done.
   let factions =
     quest_support.log_of(rows: [
       quest_support.active(
@@ -360,7 +360,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
     objective.advance(
       log: factions,
       tables:,
-      event: killed(creature: stranger, faction: Some(248)),
+      event: killed(creature: stranger, faction: 248),
     )
   assert by_faction.effects
     == [SendProgress(quest_id: 3204, objective_index: 1, progress: 28)]
@@ -368,17 +368,10 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
   assert objective.advance(
       log: factions,
       tables:,
-      event: killed(creature: stranger, faction: Some(249)),
+      event: killed(creature: stranger, faction: 249),
     )
     == Advanced(log: factions, effects: [])
     as "a unit of another faction is not"
-  assert objective.advance(
-      log: factions,
-      tables:,
-      event: killed(creature: stranger, faction: None),
-    )
-    == Advanced(log: factions, effects: [])
-    as "a unit with no shown faction is in no type 3 group"
 
   // Types 15 and 46 are not read from their own data: the server holds no cluster
   // value and no rank of a unit. Objective 1890 is type 15 with data 4976, so a kill
@@ -390,7 +383,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
   assert objective.advance(
       log: clustered,
       tables:,
-      event: killed(creature: 4976, faction: None),
+      event: killed(creature: 4976, faction: unlisted_faction),
     )
     == Advanced(log: clustered, effects: [])
     as "a type 15 objective takes no kill by its data"
@@ -398,7 +391,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
   assert objective.advance(
       log: clustered,
       tables: ranked,
-      event: killed(creature: 4976, faction: None),
+      event: killed(creature: 4976, faction: unlisted_faction),
     )
     == Advanced(log: clustered, effects: [])
     as "nor does the same objective as type 46"
@@ -426,7 +419,7 @@ pub fn a_kill_in_an_objectives_reward_pane_counts_test() -> Nil {
     objective.advance(
       log:,
       tables:,
-      event: killed(creature: group_member, faction: None),
+      event: killed(creature: group_member, faction: unlisted_faction),
     )
   assert slain.effects
     == [
@@ -437,7 +430,7 @@ pub fn a_kill_in_an_objectives_reward_pane_counts_test() -> Nil {
   assert objective.advance(
       log:,
       tables:,
-      event: killed(creature: stranger, faction: None),
+      event: killed(creature: stranger, faction: unlisted_faction),
     )
     == Advanced(log:, effects: [])
     as "a creature outside every pane changes nothing"

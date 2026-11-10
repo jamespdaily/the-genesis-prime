@@ -8,16 +8,15 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/target_group.{type TargetGroup}
 import gleam/bool
 import gleam/list
-import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// What the client's tester reads of a unit (`0x140b66440`): the unit's Creature2 id,
-/// its current Faction2 id (the one its 0x262 gave it, which its spawn row holds; none
-/// when a caller does not know it) and the UnitRace id of its Creature2 row.
+/// its current Faction2 id (the one its 0x262 gave it, which its spawn row holds) and
+/// the UnitRace id of its Creature2 row.
 pub type Unit {
   Unit(
     creature_id: Creature2Id,
-    faction_id: Option(Faction2Id),
+    faction_id: Faction2Id,
     unit_race_id: UnitRaceId,
   )
 }
@@ -29,8 +28,7 @@ pub type Unit {
 /// negations. Type 10 needs every sub-group its words name (not its own id) and type 11
 /// any. A missing row, or a type the client has no case for, is not a member. Types 5 to
 /// 9 read the unit's race, class and the third tagged value of its 0x262, which the
-/// server does not hold, so they are never members here; a type 3 or 4 group of a unit
-/// whose faction the server does not know is none either, whichever way it would go.
+/// server does not hold, so they are never members here.
 pub fn contains(
   tables tables: table_store.Tables,
   group group: Int,
@@ -97,10 +95,7 @@ fn by_faction(
   unit unit: Unit,
   wanted wanted: Bool,
 ) -> Bool {
-  case unit.faction_id {
-    Some(faction) -> names(words:, value: faction.value) == wanted
-    None -> False
-  }
+  names(words:, value: unit.faction_id.value) == wanted
 }
 
 /// The non-zero words of a type 10 or 11 group that are not its own id.

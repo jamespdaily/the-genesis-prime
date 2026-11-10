@@ -21,6 +21,7 @@ import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/creature2_resist
 import genesis_prime/table/creature2_tier
 import genesis_prime/table/creature_level
+import genesis_prime/table/currency_type
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/episode
@@ -82,6 +83,8 @@ import genesis_prime/table/xp_per_level
 ///   OutfitGroupEntry, OverrideProperties, Resist and Tier, InstancePortal and
 ///   PathMission, and CreatureLevel: the creatures that stand and their values
 ///   (genesis_prime/world_map/spawn).
+/// - CurrencyType: the cap of a currency other than credits and Renown
+///   (genesis_prime/game/currency).
 /// - CustomizationParameter and CustomizationParameterMap: the bone values a
 ///   create request carries (genesis_prime/game/appearance).
 /// - GameFormula and XpPerLevel: the starting level (genesis_prime/game/level).
@@ -142,6 +145,7 @@ pub fn entries() -> List(store.Entry) {
     creature2_resist.entry(),
     creature2_tier.entry(),
     creature_level.entry(),
+    currency_type.entry(),
     customization_parameter.entry(),
     customization_parameter_map.entry(),
     episode.entry(),

@@ -17,6 +17,7 @@ import client_tables
 import fixture_tables
 import genesis_prime/content/refusal.{Refusal, RowName}
 import genesis_prime/game/item_price
+import genesis_prime/game/item_property
 import genesis_prime/game/vendor.{ItemRow, VendorRow}
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/item2
@@ -83,13 +84,13 @@ pub fn the_buy_price_of_each_stocked_item_is_the_price_the_client_shows_test() -
 /// What a vendor pays for each item at the sell multiplier 1.0, over the committed tables.
 fn sell_bases(items items: List(Int)) -> List(#(Int, Int)) {
   list.map(items, fn(item) {
-    let assert Ok(price) =
-      item_price.sell_base(
+    let assert Ok(item_price.SellPrice(currency_type_id: 1, amount:)) =
+      item_price.sell_price(
         tables: character_tables.shared(),
         item2_id: Item2Id(item),
       )
       as "the committed rows hold these items and price them in credits"
-    #(item, price)
+    #(item, amount)
   })
 }
 
@@ -142,9 +143,9 @@ pub fn a_sell_to_vendor_credit_amount_replaces_the_computed_price_test() -> Nil 
     use tables <- fixture_tables.changed(table: "Item2", id: item, with: [
       #("currencyAmount0SellToVendor", Integer(7)),
     ])
-    item_price.sell_base(tables:, item2_id: Item2Id(item))
+    item_price.sell_price(tables:, item2_id: Item2Id(item))
   }
-  assert planted == Ok(7)
+  assert planted == Ok(item_price.SellPrice(currency_type_id: 1, amount: 7))
     as "0x14040d160: with a sell currency type set the amount column is the price, not the computed 0.15 of the buy price"
   assert item_price.shown(base: 1, multiplier: 2.5) == 2
     as "0x14041bcc0.formula: trunc(f32(1) x f32(2.5)) = 2"
@@ -276,4 +277,147 @@ pub fn a_stock_row_whose_item_holds_a_buy_lot_of_0_stops_the_load_test() -> Nil 
       ),
     ])
     as "a lot of 0 would charge nothing and give nothing, so a stocked row of 0 is a missing-data failure at start"
+}
+
+pub fn an_item_priced_in_another_currency_sells_for_its_row_amount_in_that_currency_unscaled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item = fixture_tables.root("Item2", 16_053)
+  let assert Ok(price) =
+    item_price.sell_price(
+      tables: character_tables.shared(),
+      item2_id: Item2Id(item),
+    )
+    as "the committed rows hold Item2 16053"
+  assert price == item_price.SellPrice(currency_type_id: 7, amount: 60)
+    as "0x14040d160: Item2 16053's currencyTypeId0SellToVendor is 7 (Glory) and currencyAmount0SellToVendor 60, which is its price in that currency"
+  assert item_price.paid(price:, multiplier: 1.55) == price
+    as "0x14041bcc0.formula: only a credit slot is scaled by the vendor's sell multiplier; another currency's amount is paid as the row gives it"
+  assert item_price.paid(
+      price: item_price.SellPrice(currency_type_id: 1, amount: 10),
+      multiplier: 1.55,
+    )
+    == item_price.SellPrice(currency_type_id: 1, amount: 15)
+    as "0x14041bcc0.formula: a credit slot pays trunc(f32(10) x f32(1.55)) = 15"
+}
+
+pub fn a_row_with_amounts_in_both_sell_slots_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Synthetic: no row of the client has an amount in both slots
+  // (`every_sellable_item2_row_names_its_sell_price_in_at_most_one_currency_test`).
+  let item = fixture_tables.root("Item2", 16_053)
+  let priced = {
+    use tables <- fixture_tables.changed(table: "Item2", id: item, with: [
+      #("currencyTypeId1SellToVendor", Integer(1)),
+      #("currencyAmount1SellToVendor", Integer(5)),
+    ])
+    item_price.sell_price(tables:, item2_id: Item2Id(item))
+  }
+  assert priced == Error(item_price.TwoSellCurrencies(item2_id: Item2Id(item)))
+    as "0x14040d160 reads one currency slot's price; a row with an amount in both has no one price, so the error names the item"
+  let assert Error(error) = priced
+  assert item_price.describe(error:)
+    == "Item2 16053 has an amount in both sell currency slots"
+    as "the sentence names the Item2 row"
+}
+
+pub fn a_row_with_an_amount_only_in_its_second_sell_slot_sells_for_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Synthetic: no row of the client has an amount only in its second slot
+  // (`every_sellable_item2_row_names_its_sell_price_in_at_most_one_currency_test`).
+  let item = fixture_tables.root("Item2", 16_053)
+  let priced = {
+    use tables <- fixture_tables.changed(table: "Item2", id: item, with: [
+      #("currencyAmount0SellToVendor", Integer(0)),
+      #("currencyTypeId1SellToVendor", Integer(1)),
+      #("currencyAmount1SellToVendor", Integer(5)),
+    ])
+    item_price.sell_price(tables:, item2_id: Item2Id(item))
+  }
+  assert priced == Ok(item_price.SellPrice(currency_type_id: 7, amount: 0))
+    as "0x1403d6a10 tests the first slot's amount (+0x58) and refuses the sale with code 23 when it is 0, so a second slot's amount never prices the item"
+}
+
+/// The client's Item2 rows, each with its two SellToVendor slots as (currency type, amount).
+fn sell_slots() -> List(#(item2.Item2, #(Int, Int), #(Int, Int))) {
+  list.map(item2.all(client_tables.shared()), fn(row) {
+    #(
+      row,
+      #(
+        row.currency_type_id0_sell_to_vendor,
+        row.currency_amount0_sell_to_vendor,
+      ),
+      #(
+        row.currency_type_id1_sell_to_vendor,
+        row.currency_amount1_sell_to_vendor,
+      ),
+    )
+  })
+}
+
+pub fn every_sellable_item2_row_names_its_sell_price_in_at_most_one_currency_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let both =
+    list.filter_map(sell_slots(), fn(slots) {
+      let #(row, #(first_type, first), #(second_type, second)) = slots
+      case first_type != 0 && first > 0 && second_type != 0 && second > 0 {
+        True -> Ok(row.id)
+        False -> Error(Nil)
+      }
+    })
+  assert both == []
+    as "0x14040d160 reads one SellToVendor slot: no row of the client holds an amount in both, so sell_price names one currency"
+  let refused =
+    list.filter_map(item2.all(tables), fn(row) {
+      case item_price.sell_price(tables:, item2_id: Item2Id(row.id)) {
+        Ok(_) -> Error(Nil)
+        Error(error) -> Ok(#(row.id, error))
+      }
+    })
+  assert refused == []
+    as "every row of the client has a sell price: the sell price reads no column that can be missing"
+}
+
+pub fn every_junk_item2_row_sells_for_credits_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let junk =
+    list.filter(item2.all(tables), fn(row) {
+      row.item2_category_id == junk_category
+      && item_property.sellable(tables:, item2_id: row.id) == Ok(True)
+    })
+  assert junk != [] as "the client's Item2 holds junk that sells"
+  let elsewhere =
+    list.filter_map(junk, fn(row) {
+      case item_price.sell_price(tables:, item2_id: Item2Id(row.id)) {
+        Ok(item_price.SellPrice(currency_type_id: 1, ..)) -> Error(Nil)
+        other -> Ok(#(row.id, other))
+      }
+    })
+  assert elsewhere == []
+    as "lua.Item.CodeEnumItem2Category (Junk is 94), Vendor.lua l.520 to 537: sell junk is paid in credits, so every junk row that sells must have a credit price"
+}
+
+/// Item2Category 94, Junk (`lua.Item.CodeEnumItem2Category`).
+const junk_category = 94
+
+pub fn every_currency_an_item2_row_sells_for_is_one_the_client_keeps_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let outside =
+    list.filter_map(sell_slots(), fn(slots) {
+      let #(row, #(first_type, _), #(second_type, _)) = slots
+      let kept = fn(currency_type_id) {
+        currency_type_id == 0
+        || { currency_type_id >= 1 && currency_type_id <= 14 }
+      }
+      case kept(first_type) && kept(second_type) {
+        True -> Error(Nil)
+        False -> Ok(#(row.id, first_type, second_type))
+      }
+    })
+  assert outside == []
+    as "opcode.0x25e holds the amounts of types 1 to 15 and opcode.0x919 drops kinds 14 and over (types 15 and over), so a row sold for another type could not be shown or kept"
 }

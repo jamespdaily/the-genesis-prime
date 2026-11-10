@@ -24,7 +24,6 @@ import genesis_prime/table/id.{Creature2Id, Faction2Id, UnitRaceId}
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
 import owned_test
 import planted_table.{Integer}
 
@@ -37,7 +36,7 @@ const race = 170
 fn unit() -> target_group.Unit {
   Unit(
     creature_id: Creature2Id(creature),
-    faction_id: Some(Faction2Id(faction)),
+    faction_id: Faction2Id(faction),
     unit_race_id: UnitRaceId(race),
   )
 }
@@ -134,14 +133,6 @@ pub fn target_group_membership_follows_the_clients_cases_test() -> Nil {
     == True
     as "a type 2 group's zero words are skipped too: a creature 0 is in none of the others"
 
-  let no_faction = Unit(..unit(), faction_id: None)
-  assert target_group.contains(tables:, group: 90_005, unit: no_faction)
-    == False
-    as "a unit with no known faction is in no type 3 group"
-  assert target_group.contains(tables:, group: 90_007, unit: no_faction)
-    == False
-    as "nor, as the server cannot say, is it outside one"
-
   assert member(90_013) as "type 10: every sub-group names the unit"
   assert !member(90_014) as "type 10: one sub-group does not"
   assert member(90_015)
@@ -168,7 +159,7 @@ pub fn target_group_membership_follows_the_clients_cases_test() -> Nil {
   assert target_group.contains(
     tables:,
     group: 847,
-    unit: Unit(..unit(), faction_id: Some(Faction2Id(248))),
+    unit: Unit(..unit(), faction_id: Faction2Id(248)),
   )
     as "the client's group 847 holds faction 248"
   assert target_group.contains(

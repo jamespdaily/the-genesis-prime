@@ -37,7 +37,7 @@ pub fn killed(
     now:,
     event: objective.Killed(target_group.Unit(
       creature_id: credit.creature_id,
-      faction_id: Some(credit.faction_id),
+      faction_id: credit.faction_id,
       unit_race_id: creature2.unit_race_id(row),
     )),
   )
