@@ -599,8 +599,10 @@ pub fn a_character_saved_without_its_weapon_enters_without_it_test() -> Nil {
   assert property_value(properties: player.tail.properties, id: 35)
     == float32.rounded(36.0)
     as "0x14040df10: the armor's Assault Rating 36.0, without the weapon's 167.0625"
-  assert property_value(properties: player.tail.properties, id: 36) == 0.0
-    as "0x14040df10: the Support Rating 55.6875 came wholly from the weapon; the armor gives none"
+  assert list.all(player.tail.properties, fn(property) {
+    property.property_id != 36
+  })
+    as "0x14040df10: the Support Rating 55.6875 came wholly from the weapon; the armor gives none, so it stays at its UnitProperty2 default 0, which the unit starts at (0x1404584b0) and the 0x262 leaves out"
   assert property_value(properties: player.tail.properties, id: 7) == 736.0
     && property_value(properties: player.tail.properties, id: 42) == 250.0
     && property_value(properties: player.tail.properties, id: 41) == 450.0

@@ -16,7 +16,8 @@
 ////   properties 7 (Base Health), 35 and 36 (Assault Rating and Support Rating), 41
 ////   (ShieldCapacityMax), 42 (Armor), 175 (ShieldMitigationMax), 176
 ////   (ShieldRegenPct) and 178 (ShieldRebootTime), each as base and value alike
-////   (0x1404584b0, 0x140458140), the item visuals of the worn items after the
+////   (0x1404584b0, 0x140458140) and none at its UnitProperty2 default, which the
+////   client's unit starts at, the item visuals of the worn items after the
 ////   body's, and, with a shield, stat 20, its current shield. A record with no
 ////   shield has no stat 20. `with_gear` again replaces them when a worn item changes,
 ////   so a viewer created later is sent the current gear.
@@ -231,22 +232,31 @@ pub fn with_integer_stat(
 /// The player's 0x262 record with the gear of its worn items: `item_visuals`, the worn
 /// items' visuals, in place of `replacing`, the ones the record lists after its body's
 /// (none for a record that has no gear yet), the `bases` as the gear properties it holds,
-/// base and value alike, and, with a shield, `shield` as stat 20, which a viewer created
-/// later is sent; with `None` the record holds no stat 20.
+/// base and value alike, except those equal to their `defaults`, which the client's unit
+/// starts at (0x1404584b0) and the record leaves out, and, with a shield, `shield` as
+/// stat 20, which a viewer created later is sent; with `None` the record holds no stat 20.
 pub fn with_gear(
   record record: UnitCreatePlayer,
   replacing replacing: List(ItemVisual),
   item_visuals item_visuals: List(ItemVisual),
   bases bases: List(#(UnitProperty2Id, Float)),
+  defaults defaults: List(#(UnitProperty2Id, Float)),
   shield shield: Option(Int),
 ) -> UnitCreatePlayer {
   let ids = list.map(bases, fn(base) { { base.0 }.value })
+  let listed =
+    list.filter(bases, fn(base) {
+      case list.key_find(defaults, base.0) {
+        Ok(default) -> float32.to_bits(default) != float32.to_bits(base.1)
+        Error(Nil) -> True
+      }
+    })
   let properties =
     list.filter(record.tail.properties, fn(held) {
       !list.contains(ids, held.property_id)
     })
     |> list.append(
-      list.map(bases, fn(base) {
+      list.map(listed, fn(base) {
         let bits = float32.to_bits(base.1)
         UnitProperty(property_id: { base.0 }.value, base: bits, value: bits)
       }),

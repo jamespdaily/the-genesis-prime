@@ -71,6 +71,7 @@ pub fn main() -> Nil {
 /// (genesis_prime/sitting), which stops the program with the reason when the
 /// sitting cannot begin.
 pub fn run(change change: fn(server.Settings) -> server.Settings) -> Nil {
+  application.register_program()
   let #(tables, count) = load_tables()
   let spawns = load_content(tables:)
   let settings =
@@ -196,17 +197,19 @@ fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
   runtime.show_info_lines()
   runtime.keep_mailboxes_out_of_crash_reports()
   let migrations = load_migrations()
-  let assert Ok(tree) = application.start_server(settings:)
-    as "the supervision tree did not start"
-  serve(
-    tree:,
-    settings:,
-    tables:,
-    ready: ready_ask(),
-    probe: fn(reply) { worker.probe(store: settings.store, reply:) },
-    migrations:,
-    say: io.println,
-  )
+  case application.start_server_unless_stopping(settings:) {
+    Some(tree) ->
+      serve(
+        tree:,
+        settings:,
+        tables:,
+        ready: ready_ask(),
+        probe: fn(reply) { worker.probe(store: settings.store, reply:) },
+        migrations:,
+        say: io.println,
+      )
+    None -> Nil
+  }
 }
 
 /// Asks the database through `probe` until it answers, says through `say` what

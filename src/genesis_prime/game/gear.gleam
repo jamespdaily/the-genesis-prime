@@ -23,7 +23,9 @@
 ////   (`player.level1_base_health`).
 //// - **The gear properties** are 7, 35, 36 and 42, and 41, 175, 176 and 178 from a
 ////   shield; with no shield worn the four shield properties are their UnitProperty2
-////   defaults (`player.level1_gear_properties`, `UnitProperty2.client_value`).
+////   defaults (`player.level1_gear_properties`, `UnitProperty2.client_value`). Every
+////   other property an item's budget may give is its default plus the worn items'
+////   budget values, so taking an item off returns it to the default.
 
 import genesis_prime/game/item_property.{
   type ItemProperties, type ItemPropertyError, Shield,
@@ -37,6 +39,7 @@ import genesis_prime/table/id.{
   type Item2Id, type UnitProperty2Id, CreatureLevelId, UnitProperty2Id,
 }
 import genesis_prime/table/loader/store as table_store
+import gleam/dict
 import gleam/float
 import gleam/int
 import gleam/list
@@ -172,7 +175,9 @@ pub fn max_health(
 }
 
 /// The base of each property the gear sets at `level`: 7, 35, 36 and 42, and the four
-/// shield properties, which are their UnitProperty2 defaults when no shield is worn.
+/// shield properties, which are their UnitProperty2 defaults when no shield is worn,
+/// then each property an item's budget may give (`item_property.budget_properties`), in
+/// id order, at its default plus what the worn items give.
 /// `NoCreatureLevel` when the table has no Base Health row for the level.
 pub fn bases(
   tables tables: table_store.Tables,
@@ -196,17 +201,27 @@ pub fn bases(
       default_of(defaults:, id: unit_properties.shield_reboot_time),
     )
   }
-  [
-    #(7, int.to_float(health)),
-    #(35, properties.assault_rating),
-    #(36, properties.support_rating),
-    #(41, capacity),
-    #(42, properties.armor),
-    #(175, mitigation),
-    #(176, regen),
-    #(178, reboot),
-  ]
-  |> list.map(fn(pair) { #(UnitProperty2Id(pair.0), pair.1) })
+  let fixed =
+    [
+      #(7, int.to_float(health)),
+      #(35, properties.assault_rating),
+      #(36, properties.support_rating),
+      #(41, capacity),
+      #(42, properties.armor),
+      #(175, mitigation),
+      #(176, regen),
+      #(178, reboot),
+    ]
+    |> list.map(fn(pair) { #(UnitProperty2Id(pair.0), pair.1) })
+  let budget =
+    list.map(item_property.budget_properties(tables:), fn(property_id) {
+      #(
+        property_id,
+        default_of(defaults:, id: property_id)
+          +. result.unwrap(dict.get(properties.budget, property_id), 0.0),
+      )
+    })
+  list.append(fixed, budget)
 }
 
 /// The worn shield's capacity, which is stat 20 of the player's unit when it is created:
@@ -219,8 +234,8 @@ pub fn shield_capacity(gear gear: Gear) -> Option(Int) {
 
 /// One warning for each worn item `gear` lists unread or undrawn that `known`, the gear
 /// the player wore before, does not list: the item and why it gives no properties or no
-/// drawing. `None` at entry, where nothing is known yet. Gear with a budget or a stat is
-/// the open issue "Gear with a budget or a stat gives its properties" (#626).
+/// drawing, and the open issue that closes the gap when the item is unread for one.
+/// `None` at entry, where nothing is known yet.
 pub fn warnings(gear gear: Gear, known known: Option(Gear)) -> List(String) {
   let #(known_unread, known_undrawn) = case known {
     Some(before) -> #(before.unread, before.undrawn)
@@ -235,11 +250,15 @@ pub fn warnings(gear gear: Gear, known known: Option(Gear)) -> List(String) {
       <> " gives no properties: "
       <> item_property.describe(error:)
       <> case error {
-        item_property.TwoShields -> ""
-        item_property.NoRow(..)
-        | item_property.Unread(..)
-        | item_property.NoCurveValue(..) ->
-          " (open issue 626, gear with a budget or a stat gives its properties)"
+        item_property.Unread(gap:, ..) ->
+          case item_property.gap_issue(gap:) {
+            Some(issue) -> " (open issue " <> int.to_string(issue) <> ")"
+            None -> ""
+          }
+        item_property.TwoShields
+        | item_property.NoRow(..)
+        | item_property.Refused(..)
+        | item_property.NoCurveValue(..) -> ""
       }
     })
   let undrawn =

@@ -708,6 +708,7 @@ pub fn joined(
               replacing: [],
               item_visuals: worn.visuals,
               bases:,
+              defaults:,
               shield: gear.shield_capacity(gear: worn),
             )
             |> player_unit.with_resource(resource:)
