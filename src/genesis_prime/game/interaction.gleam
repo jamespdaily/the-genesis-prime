@@ -38,6 +38,12 @@
 ////   passes it in; the checks the client's accept makes of the log are its too. The
 ////   client marks the creature before any click, so the order of this check and the
 ////   reach changes only the reason that is logged.
+//// - **A creature an objective names** is marked with the talk kind while an open type 3
+////   objective of the player's log names its Creature2 id (`0x140553110`), whatever its
+////   row gives, so the client sends the request for it. `take` answers it with the dialog
+////   and then `TalkedTo`, which the connection counts (genesis_prime/game/objective); a
+////   creature that also offers a quest opens one dialog. Its dead, Hostile and reach checks
+////   are the same.
 //// - **A vendor's request** (kind 0x31) is checked as the client's CheckInteractionTarget
 ////   checks it (`opcode.0x7ea`), in its order: a unit not in the picture is 59, a unit that is
 ////   not a creature, a creature with no stock or a dead one is 16, a gap over the reach is
@@ -97,6 +103,9 @@ pub type Effect {
   Log(level: LogLevel, text: String)
   /// Write 0x0357, which opens the unit's dialog.
   OpenDialog(unit_id: Int)
+  /// The player talked to a creature that an open type 3 objective names: the connection
+  /// counts the talk (genesis_prime/game/objective), after the dialog is opened.
+  TalkedTo(creature_id: Int)
   /// Write 0x090B with the vendor's stock, which opens its window, then 0x00BC with no
   /// buyback entries.
   OpenVendor(unit_id: Int, vendor: Vendor)
@@ -239,6 +248,7 @@ pub fn take(
   vendors vendors: Vendors,
   now_ms now_ms: Int,
   offers offers: fn(Creature2) -> Offer,
+  talk_targets talk_targets: Set(Int),
   logged logged: Set(String),
 ) -> Result(Taken, Refusal) {
   case message {
@@ -264,11 +274,16 @@ pub fn take(
                 tables:,
                 now_ms:,
                 offers:,
+                talk_targets:,
               )
             {
-              Ok(Nil) ->
+              Ok(creature_id) ->
                 Taken(
-                  effects: [OpenDialog(unit_id: request.unit_id)],
+                  effects: dialog_effects(
+                    unit_id: request.unit_id,
+                    creature_id:,
+                    talk_targets:,
+                  ),
                   window: Closes,
                   logged:,
                 )
@@ -306,10 +321,25 @@ pub fn take(
   }
 }
 
-/// Whether the player may open the unit's dialog: the unit is a shown creature that is
-/// alive, not Hostile to the player, whose row gives or receives a quest, within
-/// reach, with a quest `offers` says the player's log shows. A creature's Creature2 row and the player's Race row are in the tables
-/// (the load fails otherwise), so a missing one crashes.
+/// The dialog's opening, and the talk's count when an open type 3 objective names the
+/// creature.
+fn dialog_effects(
+  unit_id unit_id: Int,
+  creature_id creature_id: Creature2Id,
+  talk_targets talk_targets: Set(Int),
+) -> List(Effect) {
+  case set.contains(talk_targets, creature_id.value) {
+    True -> [OpenDialog(unit_id:), TalkedTo(creature_id: creature_id.value)]
+    False -> [OpenDialog(unit_id:)]
+  }
+}
+
+/// The creature whose dialog the player may open: the unit is a shown creature that is
+/// alive, not Hostile to the player and within reach, and either one an open type 3
+/// objective names (`talk_targets`, whatever its row gives), or one whose row gives or
+/// receives a quest that `offers` says the player's log shows. A creature's Creature2 row
+/// and the player's Race row are in the tables (the load fails otherwise), so a missing
+/// one crashes.
 fn talked_to(
   unit_id unit_id: Int,
   player player: Player,
@@ -317,7 +347,8 @@ fn talked_to(
   tables tables: table_store.Tables,
   now_ms now_ms: Int,
   offers offers: fn(Creature2) -> Offer,
-) -> Result(Nil, Declined) {
+  talk_targets talk_targets: Set(Int),
+) -> Result(Creature2Id, Declined) {
   use shown <- result.try(
     dict.get(picture, unit_id) |> result.replace_error(NotShown(unit_id:)),
   )
@@ -338,16 +369,18 @@ fn talked_to(
       )
       let assert Ok(row) = creature2.get(tables, creature_id)
         as "a shown creature's Creature2 row is in the tables its spawn was loaded from"
+      let target = set.contains(talk_targets, creature_id.value)
       use <- bool.guard(
-        when: !list.any(spawn.quest_ids(row), fn(id) { id != 0 }),
+        when: !target && !list.any(spawn.quest_ids(row), fn(id) { id != 0 }),
         return: Error(NoQuest(unit_id:, creature_id:)),
       )
       use <- bool.guard(
         when: !within_reach(player:, tables:, path:, creature_radius:, now_ms:),
         return: Error(TooFar(unit_id:)),
       )
+      use <- bool.guard(when: target, return: Ok(creature_id))
       case offers(row) {
-        Offered -> Ok(Nil)
+        Offered -> Ok(creature_id)
         NothingToOffer -> Error(NothingOffered(unit_id:, creature_id:))
         Undecided(quest_id:, cause:) ->
           Error(OfferUndecided(unit_id:, creature_id:, quest_id:, cause:))

@@ -612,6 +612,7 @@ fn talked_to_walker_again(
       vendors: vendor_support.stocking(creature_ids: []),
       now_ms: 0,
       offers: fn(creature) { quest.offers(tables:, asker: held, creature:) },
+      talk_targets: set.new(),
       logged:,
     )
     as "the body is one the client's reader takes"

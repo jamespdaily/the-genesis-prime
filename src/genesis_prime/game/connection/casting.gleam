@@ -84,6 +84,7 @@ import genesis_prime/game/connection/absorption as connection_absorption
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/healing as connection_healing
 import genesis_prime/game/connection/look as connection_look
+import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/resource as connection_resource
@@ -92,6 +93,7 @@ import genesis_prime/game/damage
 import genesis_prime/game/hit_radius
 import genesis_prime/game/loadout
 import genesis_prime/game/movement
+import genesis_prime/game/objective
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite
 import genesis_prime/game/rating
@@ -424,18 +426,19 @@ pub fn cast_effects(
       cast.Strike(asked:), Some(entered) ->
         strike_begins(session:, now:, entered:, asked:)
       cast.Strike(..), None -> #(session, [])
-      cast.Activated(unit_id:, creature_id:), _ -> #(session, [
-        // Nothing consumes an activation yet: a collectible's reward is the quest
-        // step and reward issues' (#592, #598, #645), the creature's own change #52.
-        connection_state.log(
-          session:,
-          level: step.LogInfo,
-          text: "the player activated the unit "
-            <> int.to_string(unit_id)
-            <> " of the creature "
-            <> int.to_string(creature_id),
-        ),
-      ])
+      cast.Activated(unit_id:, creature_id:), Some(entered) ->
+        // The go is raised even when the unit has left the picture, and a use of a
+        // creature the player no longer sees counts for no objective.
+        case dict.has_key(entered.shown, unit_id) {
+          True ->
+            connection_objective.counted(
+              session:,
+              now:,
+              event: objective.Used(creature_id:),
+            )
+          False -> #(session, [])
+        }
+      cast.Activated(..), None -> #(session, [])
       cast.Pay(payments:), _ -> connection_resource.paid(session:, payments:)
       cast.Gain(gains:), _ -> connection_resource.gained(session:, gains:)
       cast.CasterChangeStarts(source:, change: cast.Property(modifier:)), _ ->

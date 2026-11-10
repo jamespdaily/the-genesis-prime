@@ -621,6 +621,18 @@ fields = [
 ]
 
 [[message]]
+id = 0x0361
+name = "quest_objective_progress"
+direction = "server_to_client"
+evidence = "opcode.0x361"
+summary = "sets the progress of one objective of a quest in the client's log: the client stores it, marks the objective done when it reaches the needed count and raises its objective-updated event; a quest the client does not hold is refused"
+fields = [
+  { name = "quest_id", kind = "unsigned", bits = 15, evidence = "opcode.0x361", named_by = "opcode.0x361" },
+  { name = "objective_index", kind = "unsigned", bits = 32, evidence = "opcode.0x361", named_by = "opcode.0x361" },
+  { name = "progress", kind = "unsigned", bits = 32, evidence = "opcode.0x361", named_by = "opcode.0x361" },
+]
+
+[[message]]
 id = 0x035A
 name = "quest_abandon"
 direction = "client_to_server"

@@ -641,10 +641,11 @@ pub fn reset_due(
 // ---- the client's reads of a quest ----
 
 /// One objective of a quest as the client keeps it (`0x1405a8a40`, the quest record's
-/// words 0x18 and after): its QuestObjective type, flags and count, and whether it
-/// counts its progress as bits (`0x1405517a0`).
+/// words 0x18 and after): its QuestObjective type, flags, count and data (the id of
+/// the row its type names, a Creature2 id for types 3 and 12), and whether it counts
+/// its progress as bits (`0x1405517a0`).
 pub type Objective {
-  Objective(type_: Int, flags: Int, count: Int, checklist: Bool)
+  Objective(type_: Int, flags: Int, count: Int, data: Int, checklist: Bool)
 }
 
 /// A quest as the client keeps it beside its log: its Quest2 id and its objectives in
@@ -696,6 +697,7 @@ fn objective_of(
     type_: row.type_,
     flags: row.flags,
     count: row.count,
+    data: row.data,
     checklist: is_checklist(tables:, objective: row),
   )
 }
@@ -760,17 +762,24 @@ pub fn state(log log: QuestLog, quest quest: Quest) -> Int {
     Ok(Known(state:)) -> known_state_number(state:)
     Ok(Active(state: Achieved, ..)) -> 2
     Ok(Active(state: Accepted, done_mask:, ..)) ->
-      case
-        list.index_map(quest.objectives, fn(objective, index) {
-          has_flag(flags: objective.flags, flag: skipped_flag)
-          || done_in(mask: done_mask, index:)
-        })
-        |> list.all(fn(done) { done })
-      {
+      case every_objective_is_done(quest:, done_mask:) {
         True -> 2
         False -> 1
       }
   }
+}
+
+/// Whether every objective of the quest without flag 0x20 is done in the mask
+/// (`0x1405fbc40`); a quest with no objectives is.
+fn every_objective_is_done(
+  quest quest: Quest,
+  done_mask done_mask: Int,
+) -> Bool {
+  list.index_map(quest.objectives, fn(objective, index) {
+    has_flag(flags: objective.flags, flag: skipped_flag)
+    || done_in(mask: done_mask, index:)
+  })
+  |> list.all(fn(done) { done })
 }
 
 /// The state the log stores for a quest, without the derivation `state` makes from the
@@ -785,6 +794,18 @@ pub fn stored_state(log log: QuestLog, quest_id quest_id: Int) -> Int {
     Ok(Known(state:)) -> known_state_number(state:)
     Ok(Active(state:, ..)) -> active_state_number(state:)
   }
+}
+
+/// The ids of the quests in the client's active list, accepted or achieved, in
+/// ascending order.
+pub fn active_ids(log log: QuestLog) -> List(Int) {
+  in_quest_order(log:)
+  |> list.filter_map(fn(pair) {
+    case pair.1 {
+      Active(..) -> Ok(pair.0)
+      Completed(..) | Known(..) -> Error(Nil)
+    }
+  })
 }
 
 /// How many quests the log holds in the client's active list that count toward its
@@ -976,6 +997,17 @@ pub fn objective_open(
   && reachable(log:, quest:, index:)
 }
 
+/// The quest's open objectives with their indexes (`0x14049f3d0`), the quest read as the
+/// log holds it.
+pub fn open_objectives(
+  log log: QuestLog,
+  quest quest: Quest,
+) -> List(#(Int, Objective)) {
+  let quest = as_logged(log:, quest:)
+  list.index_map(quest.objectives, fn(objective, index) { #(index, objective) })
+  |> list.filter(fn(pair) { objective_open(log:, quest:, index: pair.0) })
+}
+
 /// Whether the objective at `index` is reachable (`0x140553790`): never at or past
 /// the count; always for objective type 0; with flag 2, when every earlier objective
 /// without flag 0x20 is done; else with flag 1, when every earlier objective is done
@@ -1028,6 +1060,78 @@ fn needed(objective objective: Objective) -> Int {
     return: 100,
   )
   objective.count
+}
+
+/// What one objective's progress leads to: the log after it, the objective's new
+/// progress and whether the quest is now achieved.
+pub type Progressed {
+  Progressed(log: QuestLog, progress: Int, achieved: Bool)
+}
+
+/// The log after `amount` is added to the progress of the quest's objective at `index`,
+/// capped at the objective's needed count (`0x140551840`), or `Error(Nil)` when the
+/// objective takes none: the quest is not Accepted in the log, or the objective is done,
+/// not reachable or past the quest's objectives (`0x1405510d0`, `0x140553790`). The
+/// objective is done once its progress reaches the needed count, which sets bit `index`
+/// of the done mask (`0x1406115a0`); when every objective without flag 0x20 is then
+/// done, the stored state becomes Achieved (`0x1405fbdc0`), the state `state` derives.
+/// Only count objectives are added to: a percent kind objective's progress is in
+/// thousandths and a checklist's in bits, which this does not read.
+pub fn progressed(
+  log log: QuestLog,
+  quest quest: Quest,
+  index index: Int,
+  amount amount: Int,
+) -> Result(Progressed, Nil) {
+  let quest = as_logged(log:, quest:)
+  case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
+    Ok(Active(state: Accepted, done_mask:, progress:, ..) as entry),
+      [objective, ..]
+      if index >= 0
+    -> {
+      use <- bool.guard(
+        when: !objective_open(log:, quest:, index:),
+        return: Error(Nil),
+      )
+      let new_progress =
+        int.min(
+          needed(objective:),
+          { list.drop(progress, index) |> list.first |> result.unwrap(0) }
+            + amount,
+        )
+      let done_mask = case new_progress >= needed(objective:) {
+        True -> int.bitwise_or(done_mask, int.bitwise_shift_left(1, index))
+        False -> done_mask
+      }
+      let achieved = every_objective_is_done(quest:, done_mask:)
+      Ok(Progressed(
+        log: QuestLog(
+          ..log,
+          entries: dict.insert(
+            log.entries,
+            quest.id,
+            Active(
+              ..entry,
+              state: case achieved {
+                True -> Achieved
+                False -> Accepted
+              },
+              done_mask:,
+              progress: list.index_map(progress, fn(old, at) {
+                case at == index {
+                  True -> new_progress
+                  False -> old
+                }
+              }),
+            ),
+          ),
+        ),
+        progress: new_progress,
+        achieved:,
+      ))
+    }
+    _, _ -> Error(Nil)
+  }
 }
 
 /// The progress of the quest's objective at `index` as a prerequisite compares it

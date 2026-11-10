@@ -79,6 +79,7 @@ import genesis_prime/message/movement_velocity
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/player_character_state
 import genesis_prime/message/player_health
+import genesis_prime/message/quest_log as quest_message
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
@@ -1398,6 +1399,164 @@ pub fn credits_survive_a_relog_test() -> Nil {
     })
   assert credits_in_entry(frames: second_entry) == credits_before_the_buy - 67
     as "opcode.0x25e: the first currency slot carries the credits the buy saved"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+// ---- an objective's progress is saved ----
+
+pub fn objective_progress_survives_a_relog_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Scientist Lusk (Creature2 12484) stands 3.0 from the player's edge. Quest 3668's
+  // objective 0 (4744) is a type 3 objective for him with count 1, and its objectives 1
+  // and 2 are not talks, so the quest stays Accepted (QuestObjective rows). The talk is
+  // the client's 0x7ea kind 37 (opcode.0x7ea) and is counted with a 0x361 (opcode.0x361);
+  // after a camp and a new play, the 0x35f entry of the quest carries state 1, the flags
+  // word 6 (tracked bit 1 and the done bit of objective 0, bit 2) and the progress 1, 0, 0
+  // (opcode.0x35f).
+  let selection =
+    spawn.select(
+      rows: [
+        spawn.Row(
+          ..spawn_support.beast_row(number: 10_707),
+          creature_id: 12_484,
+          display_info_id: 27_273,
+          outfit_info_id: 0,
+          faction_id: 171,
+          base_faction_id: 171,
+        ),
+      ],
+      tables: character_tables.content_tables(),
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.kinds(),
+      vendors: vendor_support.stocking(creature_ids: []),
+    )
+  assert selection.refusals == [] as "the row passes the spawn checks"
+  let assert Ok(spawns) = dict.get(selection.worlds, 3460)
+  let assert Ok(selected) = dict.get(spawns.by_id, spawn_id.SpawnId(10_707))
+  let lusk =
+    spawn.Spawn(
+      ..selected,
+      place: beast_place(
+        x: 1.5,
+        z: 3.5 -. { 3.0 +. 1.2 +. selected.combat.hit_radius },
+      ),
+    )
+  let started =
+    login_support.start_with(change: fn(settings) {
+      let game = settings.game
+      server.Settings(
+        ..settings,
+        game: server.Served(
+          ..game,
+          settings: connection_state.Settings(
+            ..game.settings,
+            game: GameSettings(
+              ..game.settings.game,
+              camp_countdown_ms: bot_countdown_ms,
+            ),
+          ),
+        ),
+        world: server.World(
+          ..settings.world,
+          spawns: spawn_support.key_in(
+            world_id: 1387,
+            spawns: [lusk],
+            respawn_ms: 60_000,
+          ),
+        ),
+      )
+    })
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 1,
+    )
+  let assert Ok(_) =
+    pog.query("update character set faction_id = 167 where character_id = $1")
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character is of the faction Lusk's faction 171 is friendly to"
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 3668, 1, 0, true, 0, '{0,0,0}', 0, '{0,0,0}')",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character holds quest 3668 with nothing done"
+  send_play(game:, character_id: character)
+  let #(entry, have) =
+    game_client.read_until(
+      game:,
+      have: <<>>,
+      within_ms: 5000,
+      found: fn(frames) {
+        list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+        && game_client.creatures_created_in(frames:) != []
+      },
+    )
+  let assert [shown] = game_client.creatures_created_in(frames: entry)
+  assert shown.creature_id == 12_484
+    as "the creature in sight is Scientist Lusk"
+  let assert Ok(request) =
+    interaction_request.encode(InteractionRequest(
+      unit_id: shown.unit_id,
+      kind: 37,
+    ))
+  game_client.send_world(
+    game:,
+    message_id: interaction_request.message_id,
+    body: request,
+  )
+  let #(talked, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0361 })
+    })
+  assert list.filter(talked, fn(frame) { frame.message_id == 0x0361 })
+    == [
+      Frame(
+        message_id: 0x0361,
+        body: message_support.packed([#(15, 3668), #(32, 0), #(32, 1)]),
+      ),
+    ]
+    as "opcode.0x361: the talk counts objective 0 of quest 3668"
+  // The player camps and plays the same character again.
+  game_client.send_world(game:, message_id: 0x00BF, body: <<1>>)
+  let #(_, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0092 })
+    })
+  game_client.send_world(game:, message_id: 0x00C0, body: <<>>)
+  let #(_, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0594 })
+    })
+  game_client.send(game:, message_id: 0x07E0, body: <<>>)
+  let #(_, have) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0117 })
+    })
+  send_play(game:, character_id: character)
+  let #(second_entry, _) =
+    game_client.read_until(game:, have:, within_ms: 5000, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+    })
+  let assert [Frame(body: log, ..)] =
+    list.filter(second_entry, fn(frame) { frame.message_id == 0x035F })
+    as "the entry sends one 0x35f"
+  let assert Ok(quest_message.QuestLog(active: [entry], ..)) =
+    quest_message.decode(log)
+    as "the client's reader reads the 0x35f, which holds the one quest"
+  assert entry.quest_id == 3668 && entry.state == 1
+    as "the quest is still Accepted: objectives 1 and 2 are open"
+  assert entry.flags == 6
+    as "opcode.0x35f: tracked (bit 1) and the done bit of objective 0 (bit 2)"
+  assert entry.progress == [1, 0, 0]
+    as "opcode.0x35f: the progress of each objective, the talk's saved"
   game_client.close(game:)
   login_support.stop(started)
 }
