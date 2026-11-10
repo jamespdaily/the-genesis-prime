@@ -790,9 +790,15 @@ fn buyback_frame(entry entry: BuybackEntry) -> Frame {
   frame.Frame(message_id: buyback_added.message_id, body:)
 }
 
+/// The 32-bit float 1.0, the value of each of a buyback entry's five multipliers that
+/// leaves a fixed-budget stat as it is: the client multiplies each such stat point by its
+/// multiplier (`opcode.0xba.random_stats`).
+const unchanged_multiplier = 0x3f800000
+
 /// An entry of the buyback list as the client's 0xBA and 0xBC carry it: the amount paid is
-/// its first amount, in its first currency type, and every field the client's code gives no
-/// use is 0 (`opcode.0xba.price`).
+/// its first amount, in its first currency type, the five multipliers are 1.0
+/// (`opcode.0xba.random_stats`), and every other field the client's code gives no use is 0
+/// (`opcode.0xba.price`).
 pub fn buyback_entry_message(
   entry entry: BuybackEntry,
 ) -> buyback_entry.BuybackEntry {
@@ -806,11 +812,11 @@ pub fn buyback_entry_message(
     field_6: 0,
     field_7: 0,
     field_8: 0,
-    field_9: 0,
-    field_10: 0,
-    field_11: 0,
-    field_12: 0,
-    field_13: 0,
+    multiplier_1: unchanged_multiplier,
+    multiplier_2: unchanged_multiplier,
+    multiplier_3: unchanged_multiplier,
+    multiplier_4: unchanged_multiplier,
+    multiplier_5: unchanged_multiplier,
     field_14: 0,
     field_15: 0,
     field_16: 0,

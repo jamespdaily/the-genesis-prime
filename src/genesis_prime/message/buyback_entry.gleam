@@ -3,10 +3,11 @@
 ////
 //// A record inside a message body: one buyback entry as messages 0xBA and 0xBC
 //// carry it: the buyback id, the Item2 id and the quantity, the item property
-//// inputs (fields 4 to 21, which the server writes as 0, read as message
-//// 0x111's are), the two amounts and their currency types as the tab shows
-//// them, and a last 32-bit value. Its fields are listed in `schema.toml` with
-//// the client's evidence, and the fact file's `opcode.0xba` names the record.
+//// inputs (fields 4 to 21, read as message 0x111's are; the server writes the
+//// five multipliers, fields 9 to 13, as the float 1.0 and the rest as 0), the
+//// two amounts and their currency types as the tab shows them, and a last
+//// 32-bit value. Its fields are listed in `schema.toml` with the client's
+//// evidence, and the fact file's `opcode.0xba` names the record.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
@@ -36,21 +37,11 @@ pub type BuybackEntry {
     /// Safe by `opcode.0xba.price`: the client's code gives this field no use
     /// the server needs, and that fact shows its value is safe.
     field_8: Int,
-    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_9: Int,
-    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_10: Int,
-    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_11: Int,
-    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_12: Int,
-    /// Safe by `opcode.0xba.price`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_13: Int,
+    multiplier_1: Int,
+    multiplier_2: Int,
+    multiplier_3: Int,
+    multiplier_4: Int,
+    multiplier_5: Int,
     /// Safe by `opcode.0xba.price`: the client's code gives this field no use
     /// the server needs, and that fact shows its value is safe.
     field_14: Int,
@@ -96,11 +87,11 @@ pub fn write(writer writer: Writer, record record: BuybackEntry) -> Writer {
   |> bit_stream.write_unsigned("field_6", record.field_6, 64)
   |> bit_stream.write_unsigned("field_7", record.field_7, 64)
   |> bit_stream.write_unsigned("field_8", record.field_8, 18)
-  |> bit_stream.write_unsigned("field_9", record.field_9, 32)
-  |> bit_stream.write_unsigned("field_10", record.field_10, 32)
-  |> bit_stream.write_unsigned("field_11", record.field_11, 32)
-  |> bit_stream.write_unsigned("field_12", record.field_12, 32)
-  |> bit_stream.write_unsigned("field_13", record.field_13, 32)
+  |> bit_stream.write_unsigned("multiplier_1", record.multiplier_1, 32)
+  |> bit_stream.write_unsigned("multiplier_2", record.multiplier_2, 32)
+  |> bit_stream.write_unsigned("multiplier_3", record.multiplier_3, 32)
+  |> bit_stream.write_unsigned("multiplier_4", record.multiplier_4, 32)
+  |> bit_stream.write_unsigned("multiplier_5", record.multiplier_5, 32)
   |> bit_stream.write_unsigned("field_14", record.field_14, 32)
   |> bit_stream.write_unsigned("field_15", record.field_15, 32)
   |> bit_stream.write_unsigned("field_16", record.field_16, 32)
@@ -126,11 +117,11 @@ pub fn read(reader: Reader) -> Result(#(BuybackEntry, Reader), DecodeError) {
   use #(field_6, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
   use #(field_7, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
   use #(field_8, reader) <- result.try(bit_stream.read_unsigned(reader, 18))
-  use #(field_9, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_10, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_11, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_12, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_13, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(multiplier_1, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(multiplier_2, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(multiplier_3, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(multiplier_4, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(multiplier_5, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_14, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_15, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_16, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
@@ -160,11 +151,11 @@ pub fn read(reader: Reader) -> Result(#(BuybackEntry, Reader), DecodeError) {
       field_6:,
       field_7:,
       field_8:,
-      field_9:,
-      field_10:,
-      field_11:,
-      field_12:,
-      field_13:,
+      multiplier_1:,
+      multiplier_2:,
+      multiplier_3:,
+      multiplier_4:,
+      multiplier_5:,
       field_14:,
       field_15:,
       field_16:,

@@ -41,7 +41,7 @@ import genesis_prime/game/vendor_sale.{
 import genesis_prime/game/vendor_trade.{
   type Effect, Log, NotDecoded, Refuse, Send,
 }
-import genesis_prime/game/world_entry.{Buyback}
+import genesis_prime/game/world_entry.{Buyback, BuybackEntry}
 import genesis_prime/message/buyback_added
 import genesis_prime/message/buyback_entry
 import genesis_prime/message/currency_changed.{CurrencyChanged}
@@ -265,7 +265,8 @@ fn frames(effects effects: List(Effect)) -> List(Frame) {
 }
 
 /// The 0xBA entry the client reads for a sale of `quantity` of an item for `paid` credits:
-/// every field the client's code gives no use is 0.
+/// the five multipliers are 1.0 (`opcode.0xba.random_stats`) and every other field the
+/// client's code gives no use is 0.
 fn entry(
   buyback_id buyback_id: Int,
   item_id item_id: Int,
@@ -299,11 +300,11 @@ fn entry_in(
     field_6: 0,
     field_7: 0,
     field_8: 0,
-    field_9: 0,
-    field_10: 0,
-    field_11: 0,
-    field_12: 0,
-    field_13: 0,
+    multiplier_1: 0x3f800000,
+    multiplier_2: 0x3f800000,
+    multiplier_3: 0x3f800000,
+    multiplier_4: 0x3f800000,
+    multiplier_5: 0x3f800000,
     field_14: 0,
     field_15: 0,
     field_16: 0,
@@ -377,6 +378,29 @@ fn assert_entry(
   assert buyback_added.decode(frame.body)
     == Ok(buyback_added.BuybackAdded(entry:))
     as "opcode.0xba.price: the entry's amount is the credits paid and its currency type 1"
+}
+
+pub fn a_buyback_entry_sends_multipliers_of_one_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let message =
+    vendor_sale.buyback_entry_message(entry: BuybackEntry(
+      buyback_id: 3,
+      item2_id: Item2Id(14_838),
+      quantity: 1,
+      currency_type_id: currency.credits_type,
+      amount: 10,
+    ))
+  // `opcode.0xba.random_stats`: the client builds the properties with 5 multipliers read
+  // as 32-bit floats, and 0x3f800000 is the float 1.0 (IEEE 754 single precision).
+  assert [
+      message.multiplier_1,
+      message.multiplier_2,
+      message.multiplier_3,
+      message.multiplier_4,
+      message.multiplier_5,
+    ]
+    == [0x3f800000, 0x3f800000, 0x3f800000, 0x3f800000, 0x3f800000]
+    as "fields 9 to 13 are the five multipliers, 1.0 so a fixed stat keeps its full value"
 }
 
 pub fn selling_a_whole_stack_removes_it_pays_the_shown_price_and_adds_a_buyback_entry_test() -> Nil {
