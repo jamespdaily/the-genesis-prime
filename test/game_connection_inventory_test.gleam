@@ -34,19 +34,18 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/gear
 import genesis_prime/message/bit_stream
 import genesis_prime/message/disconnect_reason.{LostUserServer}
-import genesis_prime/message/float32
 import genesis_prime/message/item_action_failed.{ItemActionFailed}
 import genesis_prime/message/item_delete
 import genesis_prime/message/item_move
 import genesis_prime/message/item_moved.{ItemMoved}
 import genesis_prime/message/item_place
 import genesis_prime/message/item_split.{ItemSplit}
-import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
+import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/message/player_health
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/unit_item_visuals_changed
 import genesis_prime/message/unit_properties_changed
-import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
+import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield
@@ -424,21 +423,6 @@ pub fn an_equip_is_checked_against_the_entered_character_test() -> Nil {
 // display 0 (`opcode.0x933.empty_display`); the chest's ItemSlot is 1, the boots' 5, and
 // the Engineer of faction 166 shows display 3842 on the chest (`novice_tables.worn_displays`).
 
-/// The 0x93a entry of a property whose base and value are one number.
-fn entry(property property: Int, number number: Float) -> UnitProperty {
-  UnitProperty(
-    property_id: property,
-    base: float32.to_bits(number),
-    value: float32.to_bits(number),
-  )
-}
-
-/// The look the player's own client is told: slot `slot` with `display`, colour set 0 and
-/// dye 0.
-fn slot(slot slot: Int, display display: Int) -> ItemVisual {
-  ItemVisual(slot:, display_id: display, item_color_set_id: 0, dye: 0)
-}
-
 /// The 0x933 the step writes: its visuals, after checking it names the player's unit.
 fn looks_written(
   taken taken: ConnectionStep(Request),
@@ -506,22 +490,12 @@ fn watched() -> game_connection.State {
   )
 }
 
-/// The Engineer's properties without its chest, as the three the chest gives are worked
-/// out: Base Health 586, Armor 187.5 and Assault Rating 194.0625.
-fn without_the_chest() -> List(UnitProperty) {
-  [
-    entry(property: 7, number: 586.0),
-    entry(property: 35, number: 194.0625),
-    entry(property: 42, number: 187.5),
-  ]
-}
-
 /// The Engineer's properties with its chest: 736, 203.0625 and 250.
 fn with_the_chest() -> List(UnitProperty) {
   [
-    entry(property: 7, number: 736.0),
-    entry(property: 35, number: 203.0625),
-    entry(property: 42, number: 250.0),
+    game_connection_support.property(id: 7, number: 736.0),
+    game_connection_support.property(id: 35, number: 203.0625),
+    game_connection_support.property(id: 42, number: 250.0),
   ]
 }
 
@@ -532,16 +506,22 @@ pub fn unequipping_the_chest_sends_0x569_then_0x933_then_0x93a_and_tells_each_vi
   assert list.take(game_connection_support.written_ids(answered), 3)
     == [0x0569, 0x0933, 0x093A]
     as "record D: the move's own frame, then the look, then the properties"
-  assert looks_written(taken: answered) == [[slot(slot: 1, display: 0)]]
+  assert looks_written(taken: answered)
+    == [[game_connection_support.look(slot: 1, display: 0)]]
     as "opcode.0x933.empty_display: the chest's slot 1 is emptied"
-  assert properties_written(taken: answered) == [without_the_chest()]
+  assert properties_written(taken: answered)
+    == [game_connection_support.without_the_chest()]
     as "opcode.0x93a: the three properties the chest gave, in property order, base and value as worked out"
   list.each([2, 3], fn(viewer) {
     let told = game_connection_support.news_told(taken: answered, viewer:)
     assert list.take(told, 2)
       == [
-        LookChanged(item_visuals: [slot(slot: 1, display: 0)]),
-        PropertiesChanged(properties: without_the_chest()),
+        LookChanged(item_visuals: [
+          game_connection_support.look(slot: 1, display: 0),
+        ]),
+        PropertiesChanged(
+          properties: game_connection_support.without_the_chest(),
+        ),
       ]
       as "opcode.0x93a.other_unit: each viewer is told the same look and entries"
   })
@@ -554,7 +534,8 @@ pub fn equipping_the_chest_back_restores_the_entry_properties_test() -> Nil {
   assert game_connection_support.written_ids(answered)
     == [0x0569, 0x0933, 0x093A]
     as "the move's frame, the look, the properties; the health stays below the raised maximum, which tells nothing"
-  assert looks_written(taken: answered) == [[slot(slot: 1, display: 3842)]]
+  assert looks_written(taken: answered)
+    == [[game_connection_support.look(slot: 1, display: 3842)]]
     as "the chest's display comes back on slot 1"
   assert properties_written(taken: answered) == [with_the_chest()]
     as "the values the player's own 0x262 listed at entry (player.level1_gear_properties)"
@@ -617,10 +598,10 @@ pub fn removing_the_shield_sets_stat_20_to_0_and_its_properties_to_the_defaults_
   assert properties_written(taken: answered)
     == [
       [
-        entry(property: 41, number: 0.0),
-        entry(property: 175, number: 0.0),
-        entry(property: 176, number: 0.25),
-        entry(property: 178, number: 2500.0),
+        game_connection_support.property(id: 41, number: 0.0),
+        game_connection_support.property(id: 175, number: 0.0),
+        game_connection_support.property(id: 176, number: 0.25),
+        game_connection_support.property(id: 178, number: 2500.0),
       ],
     ]
     as "UnitProperty2's defaultValue of ShieldCapacityMax 0, ShieldMitigationMax 0, ShieldRegenPct 0.25 and ShieldRebootTime 2500, where the shield's own 450, 0.625, 0.15 and 5125 were"
@@ -657,13 +638,17 @@ pub fn deleting_a_worn_item_sends_0x148_then_0x933_test() -> Nil {
   assert list.take(game_connection_support.written_ids(answered), 3)
     == [0x0148, 0x0933, 0x093A]
     as "record B: the delete's 0x148, then the look, then the properties"
-  assert looks_written(taken: answered) == [[slot(slot: 5, display: 0)]]
+  assert looks_written(taken: answered)
+    == [[game_connection_support.look(slot: 5, display: 0)]]
     as "opcode.0x933.empty_display: the boots' slot 5 is emptied"
   let assert [entries] = properties_written(taken: answered)
   assert list.map(entries, fn(entry) { entry.property_id }) == [7, 35, 42]
     as "the boots' Base Health, Assault Rating and Armor"
   assert list.filter(entries, fn(entry) { entry.property_id != 35 })
-    == [entry(property: 7, number: 646.0), entry(property: 42, number: 212.5)]
+    == [
+      game_connection_support.property(id: 7, number: 646.0),
+      game_connection_support.property(id: 42, number: 212.5),
+    ]
     as "the boots hold 0.75 of the five slot modifiers' 5.0: 90 of the 600 and 37.5 of the 250"
 }
 
@@ -718,7 +703,8 @@ pub fn two_moves_of_worn_items_in_a_row_wait_behind_each_other_and_rebuild_the_g
   assert game_connection_support.written_ids(first_saved)
     == [0x0569, 0x0933, 0x093A, 0x092F]
     as "the first save's answer goes out with the look, the properties and the capped health (736 to 586) of the gear without the chest only"
-  assert properties_written(taken: first_saved) == [without_the_chest()]
+  assert properties_written(taken: first_saved)
+    == [game_connection_support.without_the_chest()]
     as "the chest's three entries: the boots are still worn when the first is saved"
   assert support.asked(first_saved) != None
     as "the held second move is taken after the first's answer and asks the store"
@@ -731,11 +717,15 @@ pub fn two_moves_of_worn_items_in_a_row_wait_behind_each_other_and_rebuild_the_g
   assert game_connection_support.written_ids(second_saved)
     == [0x0569, 0x0933, 0x093A, 0x092F]
     as "the second save's answer goes out with its own look, properties and capped health (586 to 496)"
-  assert looks_written(taken: second_saved) == [[slot(slot: 5, display: 0)]]
+  assert looks_written(taken: second_saved)
+    == [[game_connection_support.look(slot: 5, display: 0)]]
     as "opcode.0x933.empty_display: the boots' slot 5 is emptied"
   let assert [entries] = properties_written(taken: second_saved)
   assert list.filter(entries, fn(entry) { entry.property_id != 35 })
-    == [entry(property: 7, number: 496.0), entry(property: 42, number: 150.0)]
+    == [
+      game_connection_support.property(id: 7, number: 496.0),
+      game_connection_support.property(id: 42, number: 150.0),
+    ]
     as "the gear after both moves: the chest's 150 and the boots' 90 off the 600 (736 less 240), and their 62.5 and 37.5 off the armor 250"
 }
 

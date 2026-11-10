@@ -53,6 +53,7 @@ import genesis_prime/message/watchdog_report
 import genesis_prime/message/window_opened
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId}
+import genesis_prime/table/loader/formula_requirement
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/int
@@ -267,16 +268,9 @@ pub fn describe(refusal refusal: Refusal) -> String {
 /// fails the server's start.
 pub fn requirements() -> List(table_store.Requirement) {
   [
-    table_store.Requirement(
+    formula_requirement.row_present(
       from_table: "the server's window name limit",
-      column: "GameFormula id",
-      to_table: "GameFormula",
-      missing: fn(tables) {
-        case game_formula.get(tables:, id: GameFormulaId(window_name_formula)) {
-          Ok(_) -> []
-          Error(Nil) -> [window_name_formula]
-        }
-      },
+      id: window_name_formula,
     ),
   ]
 }
