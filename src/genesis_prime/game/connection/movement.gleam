@@ -13,6 +13,7 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/chat
 import genesis_prime/game/connection/chat as connection_chat
+import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/state.{type Session, InWorld, Session} as connection_state
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
@@ -108,6 +109,7 @@ fn body_moving(
             new_world_zone_id: world_zone_id,
           )
       }
+      let #(session, visited) = connection_objective.settled(session:, now:)
       Continue(
         session,
         list.flatten([
@@ -116,6 +118,7 @@ fn body_moving(
           list.map(welcome, fn(inner) {
             connection_state.to_client(session:, inner:)
           }),
+          visited,
         ]),
       )
     }
