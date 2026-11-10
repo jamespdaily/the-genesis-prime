@@ -82,6 +82,7 @@ pub fn battle_beast(number number: Int, x x: Float) -> Spawn {
     display_info_id: 26_565,
     outfit_info_id: 0,
     vendor: False,
+    visibility: option.None,
     combat: beast_combat(),
     bases: loaded_beast().bases,
     context: loaded_beast().context,
@@ -183,6 +184,7 @@ pub fn holoring(number number: Int, place place: Place) -> StaticObject {
     checklist_index: 0,
     world_object_id: 0,
     world_socket_id: 0,
+    visibility: option.None,
   )
 }
 

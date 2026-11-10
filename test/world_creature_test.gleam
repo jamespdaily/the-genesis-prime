@@ -63,6 +63,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/result
+import gleam/set
 import map_support
 import owned_test
 import place_support
@@ -142,6 +143,7 @@ fn join_at(
           place:,
           stay: map_support.stay(count: 1),
           alive: True,
+          hidden: set.new(),
         ),
         reply,
       )

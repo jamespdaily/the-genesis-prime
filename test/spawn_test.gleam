@@ -250,6 +250,7 @@ pub fn rows_of_types_10_11_and_32_load_as_static_objects_with_every_field_of_the
         checklist_index: 4,
         world_object_id: 0x369123456789,
         world_socket_id: 0x1234,
+        visibility: option.None,
       ),
       StaticObject(
         id: SpawnId(2),
@@ -265,6 +266,7 @@ pub fn rows_of_types_10_11_and_32_load_as_static_objects_with_every_field_of_the
         checklist_index: 0,
         world_object_id: 0,
         world_socket_id: 0,
+        visibility: option.None,
       ),
       StaticObject(
         id: SpawnId(3),
@@ -283,6 +285,7 @@ pub fn rows_of_types_10_11_and_32_load_as_static_objects_with_every_field_of_the
         checklist_index: 0,
         world_object_id: 0,
         world_socket_id: 0,
+        visibility: option.None,
       ),
     ]
     as "each object holds its row's type, creature, place, factions (0 kept), display, outfit, checklist index and world object link; types 10 and 11 the stats the row records, type 32 the creature rule's level (minLevel 1) and health"

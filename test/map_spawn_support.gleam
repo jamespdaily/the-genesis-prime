@@ -21,6 +21,7 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None}
+import gleam/set
 import gleam/string
 import map_support
 import place_support
@@ -124,6 +125,7 @@ pub fn join_as(
         place: at(x),
         stay: map_support.stay(count: 1),
         alive:,
+        hidden: set.new(),
       ),
     )),
   )

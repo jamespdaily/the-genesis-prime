@@ -39,6 +39,7 @@ import genesis_prime/world_map/player_unit
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
+import gleam/set
 import map_support
 import novice_tables
 import owned_test
@@ -108,6 +109,7 @@ fn join_as(
         place: place_support.live_character_place(),
         stay: map_support.stay(count: 1),
         alive: True,
+        hidden: set.new(),
       ),
     )),
   )

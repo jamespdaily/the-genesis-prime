@@ -6580,7 +6580,10 @@ fn finished_effects(
 /// its own point, facing its own yaw, for both units of a type 108 condition
 /// (`Spell4Effects.prerequisiteIdTargetApply`: the caster is both units of a caster-side
 /// check).
-fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
+pub fn subject_of(
+  cast cast: State,
+  caster caster: Caster,
+) -> prerequisite.Subject {
   let slot = class_resource.slot(resources: caster.resources)
   let held = case slot >= 0 && slot <= 6 {
     True -> [
@@ -6626,6 +6629,19 @@ fn subject_of(cast cast: State, caster caster: Caster) -> prerequisite.Subject {
     quests: Some(caster.quests),
     seen: prerequisite.WholeUnit,
   )
+}
+
+/// What a prerequisite may read about a player entering a world, before its unit,
+/// its casts and its vitals exist: the player and the factions and the quest log
+/// they hold, and no casts, no combat, no vitals and no position. A prerequisite that
+/// reads any of those the subject lacks is `NotRead`, never `Fails`
+/// (genesis_prime/game/visibility).
+pub fn entering_subject(
+  player _player: prerequisite.Player,
+  factions _factions: prerequisite.Factions,
+  quests _quests: QuestLog,
+) -> prerequisite.Subject {
+  panic as "shape: #601 the subject of a player entering a world"
 }
 
 /// What the live and lingering casts hold on the caster's own unit, as a

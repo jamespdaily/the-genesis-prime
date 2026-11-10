@@ -67,6 +67,7 @@ import gleam/io
 import gleam/list
 import gleam/option.{None}
 import gleam/result
+import gleam/set
 import gleam_community/maths
 
 /// The world walked in: Eastern, with 12,788 spawns that start.
@@ -236,6 +237,7 @@ fn player(
             place: place(x:, y:, z:),
             stay: stay.next(stay.none_yet()),
             alive: True,
+            hidden: set.new(),
           ),
           fn(answer) { process.send(replies, answer) },
         )

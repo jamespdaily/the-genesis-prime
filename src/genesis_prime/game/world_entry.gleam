@@ -7,7 +7,7 @@
 ////
 //// ```
 //// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id)
-//// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place, stay, alive)
+//// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place, stay, alive, hidden)
 ////                                                 (or Refused, for a level with no XpPerLevel row too: the rule hands back to select)
 //// Joined(unit record, loadout, run)
 ////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x92C, 0x25E (a play only), 0x111 x 10 (x 11 with an
@@ -16,7 +16,7 @@
 ////                                                 (a player saved dead: the ghost's 0x262 and
 ////                                                 0x1B3 before 0x636, which names the ghost)
 //// NotJoined(reason)          ─▶ joined         ─▶ NotInTheWorld: the rule hands back to select
-//// the Holocrypt, map left    ─▶ rejoining      ─▶ Ask map of the place's world: Join(connection, character, place, stay, alive: True)
+//// the Holocrypt, map left    ─▶ rejoining      ─▶ Ask map of the place's world: Join(connection, character, place, stay, alive: True, hidden)
 ////                                                 (then Joined and NotJoined as above)
 //// ```
 ////
@@ -175,7 +175,9 @@ import genesis_prime/step.{type ConnectionId, type Now}
 import genesis_prime/store.{
   type AccountId, type Character, type CharacterId, CharacterId,
 }
-import genesis_prime/table/id.{type Spell4BaseId, type UnitProperty2Id}
+import genesis_prime/table/id.{
+  type PrerequisiteId, type Spell4BaseId, type UnitProperty2Id,
+}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
@@ -239,7 +241,9 @@ pub opaque type State {
   /// are the items the character holds, which the Holocrypt's join keeps from the
   /// stay it leaves. `quests` is the quest log the character holds
   /// (genesis_prime/game/quest_log), which the Holocrypt's join keeps from the
-  /// stay it leaves as well.
+  /// stay it leaves as well. `hidden` is the visibility prerequisites of the world
+  /// that fail for the character as it enters (genesis_prime/game/visibility
+  /// `hidden_at_entry`), which the Join names and the connection then holds.
   Joining(
     character: Character,
     place: Place,
@@ -252,6 +256,7 @@ pub opaque type State {
     map: MapId,
     stay: Stay,
     entry: Entry,
+    hidden: Set(PrerequisiteId),
   )
 }
 
@@ -368,6 +373,11 @@ pub type Entered {
     cast: cast.State,
     strike: strike.State,
     chat: chat.Chat,
+    /// The visibility prerequisites of the world that fail for the player, as the
+    /// join named them and the connection's end-of-step check last told its map
+    /// (genesis_prime/game/connection/visibility_check): a change from this set is
+    /// what the connection tells the map.
+    hidden: Set(PrerequisiteId),
   )
 }
 
@@ -640,6 +650,7 @@ pub fn joined(
       map:,
       stay:,
       entry:,
+      hidden:,
     ) -> {
       case answer {
         map.Joined(unit:, loadout:, incarnation:, clock_origin_ms:) -> {
@@ -733,6 +744,7 @@ pub fn joined(
                 ),
                 next_whisper:,
               ),
+              hidden:,
             ),
             effects: list.flatten([
               [
@@ -889,6 +901,8 @@ fn joining(
 ) -> #(State, List(Effect)) {
   let map =
     MapId(world_id: start_place.world_id(place), instance: open_world_instance)
+  // shape: #601 the build commits work this out with `visibility.hidden_at_entry`
+  let hidden = set.new()
   #(
     Joining(
       character:,
@@ -902,6 +916,7 @@ fn joining(
       map:,
       stay:,
       entry:,
+      hidden:,
     ),
     [
       AskMap(
@@ -912,6 +927,7 @@ fn joining(
           place: start_place.within_the_worlds_box(place),
           stay:,
           alive: bool.negate(player_life.saved_dead(saved: saved_health)),
+          hidden:,
         ),
       ),
     ],

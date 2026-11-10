@@ -50,6 +50,7 @@ import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/set
 import map_support
 import owned_test
 import planted_table
@@ -756,6 +757,7 @@ pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_th
         place: start,
         stay: map_support.stay(count: 2),
         alive: True,
+        hidden: set.new(),
       ),
     )
     as "a Dominion Cassian in World 3460: the Novice start's row 51596 is that world's start of its race and faction"
@@ -916,6 +918,7 @@ pub fn the_holocrypt_of_a_world_with_no_start_of_the_race_and_faction_is_the_pla
         place: game_connection_support.entry_place(),
         stay: map_support.stay(count: 2),
         alive: True,
+        hidden: set.new(),
       ),
     )
 }

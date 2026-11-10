@@ -53,6 +53,7 @@ import genesis_prime/step.{
   Stop, Stopping, TimerFired, Woken, Write, WriteFailed,
 }
 import genesis_prime/store
+import genesis_prime/table/id.{type PrerequisiteId}
 import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
 import genesis_prime/world_map/creature_path.{type Path}
 import genesis_prime/world_map/map
@@ -64,6 +65,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/set.{type Set}
 import gleam/string
 
 /// What a connection rule asks.
@@ -102,6 +104,13 @@ pub type Request {
   /// tells the creatures it sees `PlayerDied`. Told only on a change, once per change,
   /// before the death's `StealthChanged` and after a waking's frames and news; never asked.
   TellLifeChanged(connection: ConnectionId, alive: Bool)
+  /// What a `Tell` effect sends the run of a map: the visibility prerequisites that
+  /// fail for the player of `connection` now, as its connection worked them out
+  /// (genesis_prime/world_map/map `VisibilityChanged`, genesis_prime/game/visibility),
+  /// so the map shows the player a unit with a prerequisite only while it does not
+  /// fail. Told only when the set changed, once per change, after the step's own
+  /// frames; never asked.
+  TellVisibilityChanged(connection: ConnectionId, hidden: Set(PrerequisiteId))
   /// What a `Tell` effect sends the connection of a player who sees this one
   /// (genesis_prime/step `Connection`): news of this player's unit, which that
   /// connection writes as 0x262, 0x638 or 0x355 when its client can take it, for
