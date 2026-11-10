@@ -81,12 +81,16 @@ pub fn put(key key: Key, selection selection: Selection) -> Nil {
   dict.each(selection.worlds, fn(world_id, spawns) {
     put_world(key:, world_id:, spawns:)
   })
-  store.put_content(
-    key:,
-    table: visibility_table,
-    id: 0,
-    value: selection.visibility,
-  )
+  put_visibility(key:, visibility: selection.visibility)
+}
+
+/// Writes the visibility prerequisites of the worlds under the key, once: a world
+/// with none has no entry.
+pub fn put_visibility(
+  key key: Key,
+  visibility visibility: Dict(Int, List(Prerequisite)),
+) -> Nil {
+  store.put_content(key:, table: visibility_table, id: 0, value: visibility)
 }
 
 /// The visibility prerequisites of each world as the load put them under the key:
