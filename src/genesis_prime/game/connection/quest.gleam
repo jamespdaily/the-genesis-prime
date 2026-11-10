@@ -5,10 +5,11 @@
 //// body the client's own reader would refuse ends the connection with the sentence the
 //// rule gives.
 
-import genesis_prime/client_connection
+import genesis_prime/client_connection.{Asking, Continue, Done}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/frames as connection_frames
+import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/interaction
@@ -66,38 +67,41 @@ pub fn quest_message(
     )
   {
     Ok(taken) ->
-      connection_effects.carry_out(
-        session: connection_state.with_entered(
-          session: Session(..session, interaction_logged: taken.logged),
-          change: fn(entered) {
-            world_entry.Entered(..entered, quests: taken.log)
-          },
-        ),
+      settled_after(
         now:,
-        effects: list.map(
-          quest_log.deadline_moved(
-            before: quest_log.next_deadline(log: entered.quests),
-            after: quest_log.next_deadline(log: taken.log),
-            now_ms: now.monotonic_ms,
+        handled: connection_effects.carry_out(
+          session: connection_state.with_entered(
+            session: Session(..session, interaction_logged: taken.logged),
+            change: fn(entered) {
+              world_entry.Entered(..entered, quests: taken.log)
+            },
           ),
-          connection_effects.MovesQuestDeadlineTimer,
-        ),
-        written: list.reverse(
-          list.map(taken.effects, fn(effect) {
-            case effect {
-              quest.Log(level:, text:) ->
-                connection_state.log(session:, level:, text:)
-              quest.SendState(quest_id:, state:, objective_id:) ->
-                connection_state.to_client(
-                  session,
-                  connection_frames.quest_state_frame(
-                    quest_id:,
-                    state:,
-                    objective_id:,
-                  ),
-                )
-            }
-          }),
+          now:,
+          effects: list.map(
+            quest_log.deadline_moved(
+              before: quest_log.next_deadline(log: entered.quests),
+              after: quest_log.next_deadline(log: taken.log),
+              now_ms: now.monotonic_ms,
+            ),
+            connection_effects.MovesQuestDeadlineTimer,
+          ),
+          written: list.reverse(
+            list.map(taken.effects, fn(effect) {
+              case effect {
+                quest.Log(level:, text:) ->
+                  connection_state.log(session:, level:, text:)
+                quest.SendState(quest_id:, state:, objective_id:) ->
+                  connection_state.to_client(
+                    session,
+                    connection_frames.quest_state_frame(
+                      quest_id:,
+                      state:,
+                      objective_id:,
+                    ),
+                  )
+              }
+            }),
+          ),
         ),
       )
     Error(refusal) ->
@@ -106,5 +110,22 @@ pub fn quest_message(
         now:,
         text: quest.describe_refusal(refusal:),
       )
+  }
+}
+
+/// What the held items and the zone the player stands in do to the log a quest message
+/// left (`connection_objective.settled`): a quest taken while the player holds what it
+/// asks for, or stands where a visit asks, counts it at once. The messages follow the
+/// message's own.
+fn settled_after(
+  now now: Now,
+  handled handled: client_connection.Handled(Session),
+) -> client_connection.Handled(Session) {
+  case handled {
+    Continue(session:, effects:) -> {
+      let #(session, settled) = connection_objective.settled(session:, now:)
+      Continue(session, list.append(effects, settled))
+    }
+    Asking(..) | Done(..) -> handled
   }
 }

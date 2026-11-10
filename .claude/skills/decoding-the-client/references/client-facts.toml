@@ -13463,3 +13463,27 @@ statement = "Prerequisite type 170 tests the active client-side interaction (csi
 proof = "Saved C 0x14049c880 (e9b6b6af37d00314): game 0x7188's slot 0x68 returns word 0x90, the row (0x1407798c0 keeps the row there), and its word 0 (ID) is compared with the value. `gleam run -m genesis_prime/table_rows -- ClientSideInteraction 266` (interactionType 4)."
 grade = "fairly sure"
 gap = "Read from the decompile."
+
+["QuestObjective.type.4.progress"]
+statement = "The client counts nothing for QuestObjective types 4, 17, 32 and 33: an objective's value is the one the server last sent (0x35f at login, 0x361 after), and the objective is done when the value is at least QuestObjective.count, with no cap. A lower 0x361 clears the done bit, and a quest the server set to Achieved (0x35c 2) stays Achieved until 0x35c 1. Picking up, dropping, buying, selling or moving an item sends nothing from the client, so the server tells the held count: the sum of the stacks of the Item2 in item locations 0, 1, 8 and 9 (the accept check's mask 0x303, which leaves out the bank at 2) plus the supply satchel's count of that Item2."
+proof = "Value getter slot 0x40 0x140575a80 returns the stored value; the only writers are the 0x35f and 0x361 handlers (0x14079d700). Done test 0x1406115a0 (value >= count). State from the done bits: 0x1405fb830 and 0x1405fbdc0 (Achieved from log state 1 only with every done bit set; a log set to 2 stays 2). Held count: CanAcceptQuest 0x140552550 check 7 with mask 0x303, which calls CountItemsOfItem2AtLocation 0x1403ac840: per list it sums the item's +0x78 (a stack's count, 0 taken as 1), and when the mask has 0x42 (0x303 has 0x2) it also adds the supply satchel count at store +0xa8, indexed by the Item2's +0x1c8."
+grade = "fairly sure"
+gap = "The order of 0x361 and 0x35c when a count falls is the server's choice; the client takes either. What fills the supply satchel's count of an Item2 (store +0xa8) was not traced."
+
+["QuestObjective.type.17"]
+statement = "QuestObjective type 17: visit a zone. Data is a WorldZone id (199 rows, 198 in quests, 131 zones). No client code compares the objective's zone with the player's; the server tells 0x361 once the player is in the zone or in an area inside it. The client's only zone-match rule is prerequisite 26, which walks parentZoneId upward from the zone, and 0x63a carries the most specific zone, so the player's zone chain is the zone and its parents. Objective 6375 (quest 4647) has data 0, which names no zone; objective 6389 (data 967, a zone the table lacks) is in no quest."
+proof = "0x1403c92e0 (prerequisite 26's parent walk); opcode.0x63a (old and new zone); `gleam run -m genesis_prime/table_rows -- QuestObjective type=17` and `-- Quest2` read for the quests."
+grade = "fairly sure"
+gap = "That the original server counts a visit in an inner area was not seen; it follows the client's only zone rule."
+
+["QuestObjective.type.33"]
+statement = "QuestObjective type 33: collect a crafted item. Data is a TradeskillSchematic2 id, and the client shows the schematic's item2IdOutput as a type 4 objective, so it counts like a type 4 objective of that Item2. 215 rows, 34 in quests (the 141 whose schematic row is missing are in no quest)."
+proof = "Saved C 0x140551d40.c (objective text by type, type 0x21 reads the schematic); `gleam run -m genesis_prime/table_rows -- QuestObjective type=33` and `-- TradeskillSchematic2`."
+grade = "fairly sure"
+gap = "The held count that finishes a type 33 objective is taken as the type 4 count; the client's own check was not traced."
+
+["QuestObjective.type.32.sources"]
+statement = "How a type 32 (virtual item) objective is fed: the client's virtual item list is rebuilt from the quest log, an entry's count being the objective's progress, and no client message fills it. What the tables link is a creature to the objective: Creature2.questAnimStateId is the quest and questAnimObjectiveIndex the objective's index, and while that objective is open the client offers Interact (kind 39), which casts the creature's activate spell (0x97) or sends 0xb3 when it has none. Collecting does not send 0x14f. Creature2 12919 names quest 3741 objective 0 (QuestObjective 4813, VirtualItem 363, count 6)."
+proof = "0x1405fcd70 (virtual item list from the log), 0x1405a8b30 (the quest anim columns), `gleam run -m genesis_prime/table_rows -- Creature2 12919`, `-- QuestObjective 4813`."
+grade = "guess"
+gap = "That a finished activate cast of such a creature is what the original server counts as one virtual item is a guess; a retail recording of such a creature would settle it. 448 of the 709 type 32 rows have no creature link in the tables."

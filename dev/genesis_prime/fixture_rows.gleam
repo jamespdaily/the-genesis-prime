@@ -593,6 +593,14 @@ const untyped_references = [
     "objective.advance (a type 16 kill objective's data is a TargetGroup the kill is tested against)",
   ),
   UntypedReference(
+    "QuestObjective",
+    [#("type", 33)],
+    [],
+    "data",
+    "TradeskillSchematic2",
+    "objective.settle (a type 33 objective's data is the TradeskillSchematic2 whose output item it counts)",
+  ),
+  UntypedReference(
     "TargetGroup",
     [#("type", 10)],
     ["data0"],
