@@ -210,6 +210,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/quest_retry.gleam",
       "src/genesis_prime/message/quest_state.gleam",
       "src/genesis_prime/message/quest_track.gleam",
+      "src/genesis_prime/message/quest_turn_in.gleam",
       "src/genesis_prime/message/realm_entry.gleam",
       "src/genesis_prime/message/realm_handoff.gleam",
       "src/genesis_prime/message/realm_list.gleam",

@@ -347,6 +347,7 @@ QuestObjective	5763	the type 12 objective of quest 4290, which needs five uses	q
 Quest2	5622	quest whose objective 0 is 10263 (type 3, flags 0x20, count 1) and objectives 1 and 2 are 8742 and 8305 (type 3, flags 3)	quest_log_progress_test
 QuestObjective	10263	the optional type 3 objective of quest 5622	quest_log_progress_test
 Creature2	74787	a unit beside the mounts whose row gives no visibility prerequisite	tutorial_visibility_wire_test
+Quest2	2909	quest whose choice reward 2368 names Item2 13005, a row the client lacks	quest_turn_in_tables_test
 Creature2	12919	quest-anim collectible whose questAnim columns name quest 3741 objective index 0 (type 32)	objective_test, game_connection_objective_test
 Quest2	3741	quest whose type 32 objective 4813 the creature 12919 advances	objective_test, game_connection_objective_test
 Quest2	7415	quest whose one objective 13485 is type 33 on schematic 374, which outputs item 21484	objective_test, game_connection_objective_test

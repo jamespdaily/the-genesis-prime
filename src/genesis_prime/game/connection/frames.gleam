@@ -230,16 +230,20 @@ pub fn shield_frame(unit_id unit_id: Int, shield shield: Int) -> Frame {
   )
 }
 
-/// 0x1ac of kind 2, a kill: the client adds `gain` to its experience, with no rest
-/// experience used and nothing of the third amount, and names the creature's unit
-/// (`opcode.0x1ac`, `opcode.0x1ac.fields`, `CombatFloater.CodeEnumExpReason`).
-pub fn experience_gained_frame(gain gain: Int, unit_id unit_id: Int) -> Frame {
+/// 0x1ac of the source `kind` (2 a kill, 3 a quest): the client adds `gain` to its
+/// experience, with no rest experience used and nothing of the third amount, and names the
+/// unit that gave it (`opcode.0x1ac`, `opcode.0x1ac.fields`, `opcode.0x1ac.kinds`).
+pub fn experience_gained_frame(
+  gain gain: Int,
+  kind kind: Int,
+  unit_id unit_id: Int,
+) -> Frame {
   let assert Ok(body) =
     experience_gained.encode(ExperienceGained(
       experience: gain,
       rest_experience_used: 0,
       bonus_experience: 0,
-      source_kind: 2,
+      source_kind: kind,
       source_unit_id: unit_id,
     ))
     as "an amount and a unit id of 32 bits and a kind of 32 bits fit the message"

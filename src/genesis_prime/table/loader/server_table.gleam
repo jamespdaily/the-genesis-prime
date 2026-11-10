@@ -41,6 +41,7 @@ import genesis_prime/table/item_proficiency
 import genesis_prime/table/item_slot
 import genesis_prime/table/item_special
 import genesis_prime/table/item_stat
+import genesis_prime/table/level_differential_attribute
 import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
@@ -50,6 +51,8 @@ import genesis_prime/table/periodic_quest_group
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite
 import genesis_prime/table/quest2
+import genesis_prime/table/quest2_difficulty
+import genesis_prime/table/quest2_reward
 import genesis_prime/table/quest_objective
 import genesis_prime/table/race
 import genesis_prime/table/reward_property_premium_modifier
@@ -123,6 +126,10 @@ import genesis_prime/table/xp_per_level
 /// - Quest2 and QuestObjective: the quests a saved quest log may name, each with its
 ///   objectives and period (genesis_prime/game/quest_log), and the quests a
 ///   prerequisite's quest conditions name (genesis_prime/game/prerequisite).
+/// - Quest2Reward: the rewards of a quest and the choices it offers
+///   (genesis_prime/game/equip_requirement, genesis_prime/game/quest_turn_in).
+/// - Quest2Difficulty and LevelDifferentialAttribute, with Quest2 and XpPerLevel: the
+///   experience and credits a quest gives (genesis_prime/game/quest_turn_in).
 /// - TargetGroup: the units a kill objective counts (genesis_prime/game/target_group).
 /// - TradeskillSchematic2: the item a type 33 objective counts (genesis_prime/game/objective).
 /// - Episode, EpisodeQuest and PeriodicQuestGroup, with Quest2 and GameFormula: whether
@@ -169,12 +176,15 @@ pub fn entries() -> List(store.Entry) {
     item_slot.entry(),
     item_special.entry(),
     item_stat.entry(),
+    level_differential_attribute.entry(),
     path_mission.entry(),
     path_soldier_activate.entry(),
     periodic_quest_group.entry(),
     positional_requirement.entry(),
     prerequisite.entry(),
     quest2.entry(),
+    quest2_difficulty.entry(),
+    quest2_reward.entry(),
     quest_objective.entry(),
     race.entry(),
     reward_property_premium_modifier.entry(),

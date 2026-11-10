@@ -18,6 +18,8 @@
 ////                               maximum health follows (genesis_prime/game/connection/properties)
 //// ```
 ////
+//// - **A gain of another source** (a quest turned in) is `gained`, with the rule's `Credited`
+////   made by the source, and is carried out the same way.
 //// - **A credit for another stay, or for a player not in the world,** never gets here:
 ////   `stay_sent` drops it, as it drops every other send for a stay the player has left. A
 ////   credit that waits behind the camp's final save is dropped once the player has left.
@@ -29,7 +31,7 @@ import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/experience.{
-  type Credit, Credited, GainSent, LevelRose, Progress,
+  type Credit, type Credited, Credited, GainSent, LevelRose, Progress,
 }
 import genesis_prime/game/gear
 import genesis_prime/game/unit_properties
@@ -48,8 +50,11 @@ pub fn credited(
   entered entered: world_entry.Entered,
   credit credit: Credit,
 ) -> client_connection.Handled(Session) {
-  let Credited(progress:, effects:) =
-    experience.credited(
+  gained(
+    session:,
+    now:,
+    entered:,
+    credited: experience.credited(
       progress: Progress(
         experience: entered.experience,
         level: entered.character.level,
@@ -57,7 +62,19 @@ pub fn credited(
       credit:,
       tables: session.settings.tables,
       numbers: session.settings.numbers,
-    )
+    ),
+  )
+}
+
+/// What the rule made of a gain of any source, carried out: the new experience and level in
+/// `Entered`, the frames of its effects, and the Base Health the level gives.
+pub fn gained(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  credited credited: Credited,
+) -> client_connection.Handled(Session) {
+  let Credited(progress:, effects:) = credited
   let tables = session.settings.tables
   case gear.bases(tables:, gear: entered.gear, level: progress.level) {
     Error(error) ->
@@ -112,10 +129,10 @@ fn carried_out(
   effect effect: experience.Effect,
 ) -> List(Effect(ConnectionEffect(client_connection.Request))) {
   case effect {
-    GainSent(gain:, unit_id:) -> [
+    GainSent(gain:, kind:, unit_id:) -> [
       connection_state.to_client(
         session,
-        connection_frames.experience_gained_frame(gain:, unit_id:),
+        connection_frames.experience_gained_frame(gain:, kind:, unit_id:),
       ),
     ]
     LevelRose(level:) -> [

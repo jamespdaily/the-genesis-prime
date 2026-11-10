@@ -577,6 +577,13 @@ pub fn describe(refusal refusal: Refusal) -> String {
   }
 }
 
+/// The state that numbers the next save, one above the last this login asked, and that
+/// number: for a request that carries the save's number itself.
+pub fn next_save(state state: State) -> #(State, Int) {
+  let save_sequence = state.save_sequence + 1
+  #(State(..state, save_sequence:), save_sequence)
+}
+
 /// The save of where the player stands now, named by the login's epoch and
 /// numbered one above the last save this login asked, and the state that holds
 /// that number, with the `health` the player keeps (`player_life.saved_health`)

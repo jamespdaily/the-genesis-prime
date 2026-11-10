@@ -8,6 +8,7 @@ import genesis_prime/game/dropped
 import genesis_prime/game/hit_radius
 import genesis_prime/game/item_property
 import genesis_prime/game/level
+import genesis_prime/game/quest_turn_in
 import genesis_prime/game/start_place
 import genesis_prime/game/vendor_sale
 import genesis_prime/table/loader/store
@@ -32,6 +33,7 @@ import gleam/list
 /// - GameFormula rows 1115 and 1116, the credit and Renown caps (genesis_prime/game/currency).
 /// - GameFormula row 1026, the fraction of the buy price an item sells for
 ///   (genesis_prime/game/vendor_sale).
+/// - GameFormula row 530, the exponent of a quest's credits (genesis_prime/game/quest_turn_in).
 pub fn all() -> List(store.Requirement) {
   list.flatten([
     [start_place.requirement()],
@@ -43,5 +45,6 @@ pub fn all() -> List(store.Requirement) {
     hit_radius.requirements(),
     currency.requirements(),
     vendor_sale.requirements(),
+    quest_turn_in.requirements(),
   ])
 }

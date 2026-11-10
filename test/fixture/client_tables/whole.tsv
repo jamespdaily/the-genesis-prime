@@ -23,9 +23,11 @@ ItemBudget
 ItemProficiency
 ItemSlot
 ItemStat
+LevelDifferentialAttribute
 PathSoldierActivate
 PeriodicQuestGroup
 PositionalRequirement
+Quest2Difficulty
 Race
 RewardPropertyPremiumModifier
 Spell4AoeTargetConstraints

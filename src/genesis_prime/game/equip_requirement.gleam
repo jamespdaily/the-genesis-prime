@@ -29,6 +29,7 @@ import genesis_prime/game/item_property
 import genesis_prime/game/prerequisite
 import genesis_prime/table/id.{type Item2Id, PrerequisiteId}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/quest2_reward.{type Quest2Reward}
 import gleam/bool
 import gleam/int
 import gleam/list
@@ -51,6 +52,15 @@ const wrong_faction = 132
 
 /// Item_EquipPrereqFailed.
 pub const prerequisite_failed = 144
+
+/// Quest2Reward flags bit 0: the row is a choice.
+const choice_flag = 1
+
+/// Quest2Reward flags bit 1: the choice is offered to every player.
+const offered_to_all_flag = 2
+
+/// Quest2RewardType 1: an item.
+const item_reward_type = 1
 
 /// What the checks read of the character: its faction id, its level, the player
 /// facts the prerequisites read (race, class, gender, World, zones and the rest;
@@ -146,9 +156,7 @@ pub fn check(
     code: prerequisite_failed,
   )
   use <- first_failure(
-    fails: required.proficiency_mask != 0
-      && int.bitwise_and(required.proficiency_mask, wearer.item_proficiencies)
-      != required.proficiency_mask,
+    fails: !proficient(required:, wearer:),
     code: failed_proficiency,
   )
   use <- first_failure(
@@ -156,6 +164,40 @@ pub fn check(
     code: level_too_low,
   )
   Ok(Wearable)
+}
+
+/// Whether a Quest2Reward row is offered to the wearer as a choice, as the client's
+/// IsRewardChoiceOffered decides (`0x140551c60`): a row without bit 0, a row with bit 1, or a
+/// row that is not an item is offered; an item choice is offered only when its Item2 row
+/// exists and the wearer's race, class and item proficiency allow it.
+pub fn offered(
+  tables tables: table_store.Tables,
+  reward reward: Quest2Reward,
+  wearer wearer: Wearer,
+) -> Bool {
+  use <- bool.guard(
+    when: int.bitwise_and(reward.flags, choice_flag) == 0
+      || int.bitwise_and(reward.flags, offered_to_all_flag) != 0
+      || reward.quest2_reward_type_id != item_reward_type,
+    return: True,
+  )
+  item_property.equip_requirements(tables:, item2_id: reward.object_id)
+  |> result.map(fn(required) {
+    allows(mask: required.race_mask, number: wearer.player.race_id)
+    && allows(mask: required.class_mask, number: wearer.player.class_id)
+    && proficient(required:, wearer:)
+  })
+  |> result.unwrap(or: False)
+}
+
+/// Whether the wearer has the item's proficiency: an item that needs none is allowed.
+fn proficient(
+  required required: item_property.EquipRequirements,
+  wearer wearer: Wearer,
+) -> Bool {
+  required.proficiency_mask == 0
+  || int.bitwise_and(required.proficiency_mask, wearer.item_proficiencies)
+  == required.proficiency_mask
 }
 
 /// Whether a mask of races or classes, bit `number - 1` for each, allows the

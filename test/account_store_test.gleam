@@ -4365,3 +4365,293 @@ pub fn a_new_character_starts_with_the_starting_credits_test() -> Nil {
   assert bought_state(store:, account:, character_id: second).0 == 250
   stop(store)
 }
+
+// ---- turning in a quest ----
+
+/// A turn-in under a login's epoch and save sequence: the place saved with the quest log
+/// `quests` and the experience 300 at level 2, the credits `credits_held` set to
+/// `credits_after`, and the items `placed` grown and made.
+fn turn_in(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+  epoch epoch: Int,
+  sequence sequence: Int,
+  quests quests: List(QuestRow),
+  credits_held credits_held: Int,
+  credits_after credits_after: Int,
+  placed placed: List(store.Placed),
+) -> store.Answer {
+  ask(
+    store,
+    Items(store.TurnInQuest(
+      account_id: account,
+      character_id:,
+      session_epoch: character_support.epoch(epoch),
+      save_sequence: sequence,
+      place: place_facing(
+        x: 10.0,
+        y: 20.0,
+        z: 30.0,
+        yaw: 0.0,
+        pitch: 0.0,
+        roll: 0.0,
+      ),
+      health: None,
+      experience: 300,
+      level: 2,
+      quests:,
+      credits_held:,
+      credits_after:,
+      placed:,
+    )),
+  )
+}
+
+/// A purchase's items without a grown stack: one new stack of the stackable Item2 at the
+/// inventory slot, and one of another Item2 at the slot after it.
+fn two_made(bag_index bag_index: Int) -> List(store.Placed) {
+  [
+    store.Placed(item2_id: Item2Id(stackable_item2), grow: [], make: [
+      store.NewStack(location: 1, bag_index:, stack_count: 7),
+    ]),
+    store.Placed(item2_id: Item2Id(1154), grow: [], make: [
+      store.NewStack(location: 1, bag_index: bag_index + 1, stack_count: 1),
+    ]),
+  ]
+}
+
+pub fn turn_in_saves_quest_progress_and_rewards_together_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
+  let assert [first, _] = stacks
+  let CharacterId(id) = character_id
+  let #(epoch, _) = login(store:, account:, character_id:)
+  let assert ForItems(store.TurnedIn(credits:, made:)) =
+    turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 1,
+      quests: [completed_quest(1001)],
+      credits_held: 1000,
+      credits_after: 1145,
+      placed: [
+        store.Placed(
+          item2_id: Item2Id(stackable_item2),
+          grow: [
+            store.StackGrowth(
+              item_guid: first.item_guid,
+              held_count: 10,
+              new_count: 15,
+            ),
+          ],
+          make: [store.NewStack(location: 1, bag_index: 5, stack_count: 7)],
+        ),
+        store.Placed(item2_id: Item2Id(1154), grow: [], make: [
+          store.NewStack(location: 1, bag_index: 6, stack_count: 1),
+        ]),
+      ],
+    )
+    as "a turn-in the character can be paid and placed is saved"
+  assert credits == 1145
+    as "the credits held after, from the 1,000 the character held"
+  assert list.map(made, fn(item) {
+      #(item.item2_id, item.location, item.bag_index, item.stack_count)
+    })
+    == [
+      #(Item2Id(stackable_item2), 1, 5, 7),
+      #(Item2Id(1154), 1, 6, 1),
+    ]
+    as "a stack is made for each place, of its own Item2, in the order of the request"
+  assert quest_states(store:, character_id: id) == [#(1001, 3)]
+    as "the quest row is saved Completed in the same transaction"
+  let #(saved_credits, items) = bought_state(store:, account:, character_id:)
+  assert saved_credits == 1145 as "the next login finds the credits"
+  assert item_in_bag(items:, index: 1) == HeldItem(..first, stack_count: 15)
+    as "a grown stack keeps its guid and holds its new count"
+  let assert [made_first, made_second] = made as "two stacks were made"
+  assert item_in_bag(items:, index: 5) == made_first
+    as "the next login finds the made stack with the guid the answer gave"
+  assert item_in_bag(items:, index: 6) == made_second
+  assert experience_and_level_loaded(store:, account:, character_id: id)
+    == #(Some(300), 2)
+    as "the experience and level are saved with the place"
+  stop(store)
+}
+
+pub fn turn_in_changes_nothing_when_any_part_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, stacks) =
+    holding_stacks(store:, stacks: [#(1, 10)])
+  let assert [first] = stacks
+  let CharacterId(id) = character_id
+  let #(_, before) = login(store:, account:, character_id:)
+  let refused = fn(
+    case_: String,
+    answer: store.Answer,
+    expected: store.ItemsAnswer,
+  ) {
+    assert answer == ForItems(expected) as case_
+    assert bought_state(store:, account:, character_id:) == #(1000, before)
+      as { case_ <> ": the credits and the items are as they were" }
+    assert quest_states(store:, character_id: id) == []
+      as { case_ <> ": no quest row was written" }
+    assert experience_and_level_loaded(store:, account:, character_id: id)
+      == #(Some(1710), 3)
+      as { case_ <> ": the experience and level are as the create wrote them" }
+  }
+  // Each load raises the epoch: the checks above load, so every request below is made
+  // under the epoch of the load just before it.
+  let #(epoch, _) = login(store:, account:, character_id:)
+  refused(
+    "credits not as the login held them",
+    turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 1,
+      quests: [completed_quest(1001)],
+      credits_held: 999,
+      credits_after: 1100,
+      placed: two_made(bag_index: 5),
+    ),
+    ItemsNotSaved,
+  )
+  let #(epoch, _) = login(store:, account:, character_id:)
+  refused(
+    "a stale epoch",
+    turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch: epoch - 1,
+      sequence: 1,
+      quests: [completed_quest(1001)],
+      credits_held: 1000,
+      credits_after: 1100,
+      placed: two_made(bag_index: 5),
+    ),
+    ItemsNotSaved,
+  )
+  let #(epoch, _) = login(store:, account:, character_id:)
+  refused(
+    "a stack to grow that is not as held",
+    turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 1,
+      quests: [completed_quest(1001)],
+      credits_held: 1000,
+      credits_after: 1100,
+      placed: [
+        store.Placed(
+          item2_id: Item2Id(stackable_item2),
+          grow: [
+            store.StackGrowth(
+              item_guid: first.item_guid,
+              held_count: 9,
+              new_count: 12,
+            ),
+          ],
+          make: [],
+        ),
+      ],
+    ),
+    ItemsNotSaved,
+  )
+  let #(epoch, _) = login(store:, account:, character_id:)
+  refused(
+    "a made stack's slot already taken",
+    turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 1,
+      quests: [completed_quest(1001)],
+      credits_held: 1000,
+      credits_after: 1100,
+      placed: two_made(bag_index: 1),
+    ),
+    store.SaveRefused(constraint: "character_item_one_per_slot"),
+  )
+  // The refused attempts took no save sequence: the same turn-in under sequence 1 is
+  // saved, and a second under the same sequence is stale.
+  let #(epoch, _) = login(store:, account:, character_id:)
+  let assert ForItems(store.TurnedIn(..)) =
+    turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 1,
+      quests: [completed_quest(1001)],
+      credits_held: 1000,
+      credits_after: 1100,
+      placed: two_made(bag_index: 5),
+    )
+    as "the refusals above rolled back the save of the place too, so sequence 1 is free"
+  assert turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 1,
+      quests: [completed_quest(1001), completed_quest(1002)],
+      credits_held: 1100,
+      credits_after: 1200,
+      placed: [],
+    )
+    == ForItems(ItemsNotSaved)
+    as "a stale save_sequence: the place's own fence refuses it and the rewards go with it"
+  assert quest_states(store:, character_id: id) == [#(1001, 3)]
+    as "the stale turn-in wrote no second quest row"
+  let #(saved_credits, _) = bought_state(store:, account:, character_id:)
+  assert saved_credits == 1100 as "and gave no credits"
+  stop(store)
+}
+
+pub fn older_place_save_after_turn_in_changes_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, _) = holding_stacks(store:, stacks: [#(1, 10)])
+  let CharacterId(id) = character_id
+  let #(epoch, _) = login(store:, account:, character_id:)
+  let assert ForItems(store.TurnedIn(..)) =
+    turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 5,
+      quests: [completed_quest(1001)],
+      credits_held: 1000,
+      credits_after: 1100,
+      placed: [],
+    )
+    as "the turn-in is saved"
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch:,
+      sequence: 3,
+      quests: [],
+    )
+    == ForMove(NothingSaved)
+    as "a place saved under an older sequence matches no row"
+  assert quest_states(store:, character_id: id) == [#(1001, 3)]
+    as "the quest stays Completed: the older log did not delete it"
+  assert experience_and_level_loaded(store:, account:, character_id: id)
+    == #(Some(300), 2)
+    as "and the experience of the turn-in stands, not the older save's 0"
+  stop(store)
+}

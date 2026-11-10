@@ -75,7 +75,7 @@ import genesis_prime/game/connection/state.{
   AwaitingHelloReply, Buying, Camped, ClaimingSession, EnteringWorld,
   FromCharacterSelect, FromHolocrypt, InCharacterSelect, InWorld, JoinAt,
   Leaving, LeavingMap, MovingItem, Playing, SavingPlace, Selling, Session,
-  Summoning, TakingSessionKey, ToCharacterSelect, WaitingToClaim,
+  Summoning, TakingSessionKey, ToCharacterSelect, TurningIn, WaitingToClaim,
 } as connection_state
 import genesis_prime/game/innate_choice
 import genesis_prime/game/movement
@@ -194,6 +194,7 @@ pub fn save_due(
     | MovingItem(..)
     | Buying(..)
     | Selling(..)
+    | TurningIn(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -256,6 +257,7 @@ pub fn quest_reset_due(
     | MovingItem(..)
     | Buying(..)
     | Selling(..)
+    | TurningIn(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
@@ -323,6 +325,7 @@ pub fn quest_deadline_due(
     | MovingItem(..)
     | Buying(..)
     | Selling(..)
+    | TurningIn(..)
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
