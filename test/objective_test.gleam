@@ -47,14 +47,42 @@
 ////   count 35.
 //// - TargetGroup 307 is type 1 with Creature2 5006 and 5007; 847 is type 3 with
 ////   Faction2 248.
+//// The collect, visit and quest-collectible tests (`objective.settle`, types 4, 33, 17
+//// and 32) read these places. The client counts nothing for these types: it stores
+//// the server's 0x361 value and the objective is done once the value reaches the
+//// count (`0x1406115a0`, `QuestObjective.type.4.progress`).
+//// - `0x140552550` (accept check 7): the items held are those at locations 0, 1, 8
+////   and 9 (mask 0x303), summed over their stacks.
+//// - `QuestObjective.type.33`: its data is a TradeskillSchematic2 id, and it counts
+////   that schematic's output item (`item2IdOutput`): schematic 374 gives Item2 21484.
+//// - `QuestObjective.type.17`, `Prerequisite.prerequisiteTypeId.26` (`0x1403c92e0`):
+////   a visit's data is a WorldZone id, and a zone matches when it is the player's zone
+////   or one of its parents. The zone chain 5998, 5997, 4961 is from the WorldZone rows
+////   (`parentZoneId`). Row 6375 has data 0 and count 0 and names no zone.
+//// - `QuestObjective.type.32`, `Creature2.questAnimStateId` (`0x1405a8b30`): the
+////   creature 12919 names quest 3741, objective index 0, whose objective 4813 is a
+////   type 32 of count 6 and flags 4. Quest 5857's objective index 1 (8784, type 32,
+////   flags 3) waits for index 0.
+////
+//// The quests, from the client's rows in the fixture:
+//// - 1854: objective 1959, type 4, item 3993, count 3. 1855: 1957, item 3995, count
+////   3. 1856: 1960, item 3997, count 3.
+//// - 2347: objectives 2709, 2710 and 2711, type 4, items 4857, 4858 and 4859, count 1.
+//// - 2989: objective 3866, type 4, item 5913, count 12.
+//// - 7415: objective 13485, type 33, schematic 374, count 1.
+//// - 1862: objective 1965, type 17, zone 263, count 1, flags 0.
+//// - 10520: objective 0 is 21294 (type 14, count 3), 1 is 21297 (type 22, flags
+////   0x21), 2 is 21295 (type 22, flags 3), 3 is 21296 (type 2, creature 73499, flags 3)
+////   and 4 is 21298 (type 17, zone 5998, flags 3).
 
 import fixture_tables
 import genesis_prime/game/objective.{
-  Advanced, Killed, SendAchieved, SendProgress, TalkedTo, Used,
+  Advanced, Killed, SendProgress, SendState, TalkedTo, Used,
 }
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
-import genesis_prime/table/id.{Creature2Id, Faction2Id, UnitRaceId}
+import genesis_prime/store.{HeldItem}
+import genesis_prime/table/id.{Creature2Id, Faction2Id, Item2Id, UnitRaceId}
 import genesis_prime/table/loader/store as table_store
 import gleam/list
 import owned_test
@@ -121,7 +149,7 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
     == [
       SendProgress(quest_id: 3668, objective_index: 0, progress: 1),
       SendProgress(quest_id: 6961, objective_index: 0, progress: 1),
-      SendAchieved(quest_id: 6961),
+      SendState(quest_id: 6961, state: 2),
     ]
     as "quests in id order, one 0x361 for each type 3 objective naming the creature, and 0x35c 2 for 6961, whose only objective is done; 3668 has objectives 1 and 2 open and 9207's type 12 objective is not a talk"
   assert quest_log.stored_state(log: talked.log, quest_id: 3668) == 1
@@ -189,9 +217,9 @@ pub fn a_use_advances_each_open_type_12_objective_naming_the_creature_test() -> 
   assert used.effects
     == [
       SendProgress(quest_id: 9207, objective_index: 0, progress: 1),
-      SendAchieved(quest_id: 9207),
+      SendState(quest_id: 9207, state: 2),
       SendProgress(quest_id: 9428, objective_index: 1, progress: 1),
-      SendAchieved(quest_id: 9428),
+      SendState(quest_id: 9428, state: 2),
     ]
     as "quests in id order, one 0x361 for each type 12 objective naming the creature and 0x35c 2 for each quest it finishes; 6961's type 3 objective naming the same creature is not a use"
   assert quest_log.stored_state(log: used.log, quest_id: 6961) == 1
@@ -271,7 +299,7 @@ pub fn a_kill_advances_each_open_type_2_objective_naming_the_creature_test() -> 
     == [
       SendProgress(quest_id: 1804, objective_index: 0, progress: 333),
       SendProgress(quest_id: 1857, objective_index: 0, progress: 1),
-      SendAchieved(quest_id: 1857),
+      SendState(quest_id: 1857, state: 2),
       SendProgress(quest_id: 1949, objective_index: 1, progress: 83),
     ]
     as "quests in id order: 1804's percent objective (count 3) is at floor(1000 / 3), 1857's (count 1) is a count and finishes the quest, 1949's objective 1 (count 12) is at floor(1000 / 12); 1859's objective 1963 waits for 1962, and the talk of 6961 and the use of 9207 are not kills"
@@ -434,4 +462,391 @@ pub fn a_kill_in_an_objectives_reward_pane_counts_test() -> Nil {
     )
     == Advanced(log:, effects: [])
     as "a creature outside every pane changes nothing"
+}
+
+/// A held item stack. Its guid only has to differ between the stacks of one test.
+fn held(
+  item item: Int,
+  at location: Int,
+  slot bag_index: Int,
+  stack stack_count: Int,
+) -> store.HeldItem {
+  HeldItem(
+    item_guid: item * 1000 + location * 10 + bag_index,
+    item2_id: Item2Id(item),
+    location:,
+    bag_index:,
+    stack_count:,
+  )
+}
+
+fn settled(
+  log log: quest_log.QuestLog,
+  tables tables: table_store.Tables,
+  items items: List(store.HeldItem),
+  zones zones: List(Int),
+) -> objective.Advanced {
+  objective.settle(log:, tables:, items:, zones:)
+}
+
+pub fn settle_counts_held_type_4_items_in_the_counted_locations_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 2710 of quest 2347 waits for objective 2709 (flags 2), which the
+  // player holds no item for: the count does not wait with it.
+  use tables <- with_objectives(edits: [#(2710, "flags", 2)])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 1854, progress: [0]),
+      quest_support.active(
+        quest_id: 1855,
+        state: 2,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [3],
+      ),
+      quest_support.active(
+        quest_id: 1856,
+        state: 2,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [3],
+      ),
+      quest_support.accepted(quest_id: 2347, progress: [0, 0, 0]),
+      quest_support.completed(quest_id: 2989, at: 1_700_000_000),
+    ])
+  let items = [
+    // 1854's item 3993: a stack in the inventory (location 1) and one at location
+    // 8 count; five in the bank (location 2) count for nothing (0x140552550).
+    held(item: 3993, at: 1, slot: 0, stack: 1),
+    held(item: 3993, at: 8, slot: 0, stack: 1),
+    held(item: 3993, at: 2, slot: 0, stack: 5),
+    // 1855's item 3995: one of the three needed.
+    held(item: 3995, at: 0, slot: 0, stack: 1),
+    // 1856's item 3997: five held, two more than needed.
+    held(item: 3997, at: 9, slot: 0, stack: 5),
+    // 2347's items 4857 (four) and 4858 (one); 4859 is not held.
+    held(item: 4857, at: 1, slot: 3, stack: 4),
+    held(item: 4858, at: 9, slot: 1, stack: 1),
+    // 2989 is completed, whatever is held for it.
+    held(item: 5913, at: 1, slot: 5, stack: 12),
+  ]
+  let counted = settled(log:, tables:, items:, zones: [])
+  assert counted.effects
+    == [
+      SendProgress(quest_id: 1854, objective_index: 0, progress: 2),
+      SendProgress(quest_id: 1855, objective_index: 0, progress: 1),
+      SendState(quest_id: 1855, state: 1),
+      SendProgress(quest_id: 2347, objective_index: 0, progress: 1),
+      SendProgress(quest_id: 2347, objective_index: 1, progress: 1),
+    ]
+    as "quests in id order: 1854 holds 1 + 1 of 3 (the bank's five do not count); 1855, Achieved, falls from 3 to 1 and is Accepted again; 1856 holds more than the 3 it had, which changes nothing; 2347's capped four and its unreachable second objective are counted, its third is not held; 2989 is completed and untouched"
+  assert quest_log.stored_state(log: counted.log, quest_id: 1854) == 1
+    as "1854 stays Accepted"
+  assert quest_log.stored_state(log: counted.log, quest_id: 1855) == 1
+    as "1855 is Accepted again"
+  assert quest_log.stored_state(log: counted.log, quest_id: 1856) == 2
+    as "1856 stays Achieved"
+  assert quest_log.stored_state(log: counted.log, quest_id: 2989) == 3
+    as "2989 stays completed"
+  assert settled(log: counted.log, tables:, items:, zones: [])
+    == Advanced(log: counted.log, effects: [])
+    as "a second count of the same items changes nothing"
+}
+
+pub fn settle_counts_type_33_through_the_schematic_output_item_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 7415, progress: [0]),
+    ])
+  // Objective 13485 names schematic 374, whose output is Item2 21484.
+  let by_schematic_id =
+    settled(
+      log:,
+      tables:,
+      items: [held(item: 374, at: 1, slot: 0, stack: 1)],
+      zones: [],
+    )
+  assert by_schematic_id == Advanced(log:, effects: [])
+    as "the item whose id is the schematic's id is not the one it counts"
+  let made =
+    settled(
+      log:,
+      tables:,
+      items: [held(item: 21_484, at: 1, slot: 0, stack: 1)],
+      zones: [],
+    )
+  assert made.effects
+    == [
+      SendProgress(quest_id: 7415, objective_index: 0, progress: 1),
+      SendState(quest_id: 7415, state: 2),
+    ]
+    as "the schematic's output item held counts for the objective"
+  assert quest_log.stored_state(log: made.log, quest_id: 7415) == 2
+    as "and finishes the quest"
+}
+
+pub fn settle_sends_progress_before_the_state_both_ways_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 1854, progress: [0]),
+    ])
+  let up =
+    settled(
+      log:,
+      tables:,
+      items: [held(item: 3993, at: 1, slot: 0, stack: 3)],
+      zones: [],
+    )
+  assert up.effects
+    == [
+      SendProgress(quest_id: 1854, objective_index: 0, progress: 3),
+      SendState(quest_id: 1854, state: 2),
+    ]
+    as "the third item: 0x361 then 0x35c 2"
+  let down =
+    settled(
+      log: up.log,
+      tables:,
+      items: [held(item: 3993, at: 1, slot: 0, stack: 2)],
+      zones: [],
+    )
+  assert down.effects
+    == [
+      SendProgress(quest_id: 1854, objective_index: 0, progress: 2),
+      SendState(quest_id: 1854, state: 1),
+    ]
+    as "losing one: 0x361 then 0x35c 1"
+  assert quest_log.stored_state(log: down.log, quest_id: 1854) == 1
+    as "the quest is Accepted again"
+
+  // Three objectives lost at once are three 0x361 and one 0x35c.
+  let all_three =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 2347,
+        state: 2,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b111,
+        progress: [1, 1, 1],
+      ),
+    ])
+  assert settled(log: all_three, tables:, items: [], zones: []).effects
+    == [
+      SendProgress(quest_id: 2347, objective_index: 0, progress: 0),
+      SendProgress(quest_id: 2347, objective_index: 1, progress: 0),
+      SendProgress(quest_id: 2347, objective_index: 2, progress: 0),
+      SendState(quest_id: 2347, state: 1),
+    ]
+    as "the state is sent once, after the quest's progress messages"
+}
+
+pub fn entering_a_zone_advances_open_type_17_objectives_in_its_chain_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  // Objective 1965 of quest 1862 names zone 263.
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 1862, progress: [0]),
+    ])
+  assert settled(log:, tables:, items: [], zones: [12])
+    == Advanced(log:, effects: [])
+    as "an unrelated zone changes nothing"
+  let entered = settled(log:, tables:, items: [], zones: [263])
+  assert entered.effects
+    == [
+      SendProgress(quest_id: 1862, objective_index: 0, progress: 1),
+      SendState(quest_id: 1862, state: 2),
+    ]
+    as "entering the zone finishes the visit and the quest"
+  assert settled(log: entered.log, tables:, items: [], zones: [12])
+    == Advanced(log: entered.log, effects: [])
+    as "a done visit stays done when the player leaves"
+
+  // Zone 5998 is inside 5997, which is inside 4961 (WorldZone parentZoneId).
+  use parent <- with_objectives(edits: [#(1965, "data", 5997)])
+  assert settled(log:, tables: parent, items: [], zones: [5998, 5997, 4961]).effects
+    == [
+      SendProgress(quest_id: 1862, objective_index: 0, progress: 1),
+      SendState(quest_id: 1862, state: 2),
+    ]
+    as "a visit naming a parent zone counts in the child zone (prerequisite 26 walks parentZoneId upward)"
+  assert settled(log:, tables: parent, items: [], zones: [4000])
+    == Advanced(log:, effects: [])
+    as "a zone outside the chain does not"
+  use child <- with_objectives(edits: [#(1965, "data", 5998)])
+  assert settled(log:, tables: child, items: [], zones: [5997, 4961])
+    == Advanced(log:, effects: [])
+    as "a visit naming the child zone does not count in the parent"
+  use none <- with_objectives(edits: [#(1965, "data", 0)])
+  assert settled(log:, tables: none, items: [], zones: [0])
+    == Advanced(log:, effects: [])
+    as "data 0 names no zone (row 6375's shape), though the chain of zone 0 is [0]"
+}
+
+pub fn settle_counts_a_visit_once_its_objective_opens_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  let standing_in = [5998, 5997, 4961]
+  // Quest 10520's visit (objective index 4, zone 5998, flags 3) waits for the
+  // objectives of index 0, 2 and 3; index 3 is a kill of creature 73499.
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 10_520,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b101,
+        progress: [7, 0, 1, 0, 0],
+      ),
+    ])
+  assert settled(log:, tables:, items: [], zones: standing_in)
+    == Advanced(log:, effects: [])
+    as "standing in the zone counts nothing while the visit waits for an earlier objective"
+  let slain =
+    objective.advance(
+      log:,
+      tables:,
+      event: killed(creature: 73_499, faction: unlisted_faction),
+    )
+  assert slain.effects
+    == [SendProgress(quest_id: 10_520, objective_index: 3, progress: 1)]
+    as "the kill opens the visit but does not count it"
+  let opened = settled(log: slain.log, tables:, items: [], zones: standing_in)
+  assert opened.effects
+    == [
+      SendProgress(quest_id: 10_520, objective_index: 4, progress: 1),
+      SendState(quest_id: 10_520, state: 2),
+    ]
+    as "the player still stands in the zone, so the visit counts once it is open"
+
+  // A quest taken while standing in the zone counts at once.
+  let taken =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 1862, progress: [0]),
+    ])
+  assert settled(log: taken, tables:, items: [], zones: [263]).effects
+    == [
+      SendProgress(quest_id: 1862, objective_index: 0, progress: 1),
+      SendState(quest_id: 1862, state: 2),
+    ]
+    as "a quest accepted in the zone counts its visit at accept"
+}
+
+/// Runs the body on the fixture's tables with creature 12919's quest-anim columns
+/// naming this quest and objective index, built on the body's heap.
+fn with_quest_anim(
+  quest quest: Int,
+  index index: Int,
+  body body: fn(table_store.Tables) -> a,
+) -> a {
+  let rows = case
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "Creature2",
+      id: 12_919,
+      with: [
+        #("questAnimStateId", Integer(quest)),
+        #("questAnimObjectiveIndex", Integer(index)),
+      ],
+    )
+  {
+    Ok(changed) -> changed
+    Error(refusal) -> panic as fixture_tables.describe(refusal)
+  }
+  fixture_tables.on_rows(rows:, reaching: [], body:)
+}
+
+pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 12919's questAnim columns name quest 3741, objective index 0
+  // (objective 4813, type 32, count 6).
+  use tables <- with_objectives(edits: [])
+  let collectible = Creature2Id(12_919)
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 3741, progress: [0]),
+    ])
+  let used = objective.advance(log:, tables:, event: Used(collectible))
+  assert used.effects
+    == [SendProgress(quest_id: 3741, objective_index: 0, progress: 1)]
+    as "one cast of the collectible is one of the six"
+  let again =
+    objective.advance(log: used.log, tables:, event: Used(collectible))
+  assert again.effects
+    == [SendProgress(quest_id: 3741, objective_index: 0, progress: 2)]
+    as "and each later one is one more"
+
+  let done =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 3741,
+        state: 2,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [6],
+      ),
+    ])
+  assert objective.advance(log: done, tables:, event: Used(collectible))
+    == Advanced(log: done, effects: [])
+    as "a done objective takes nothing"
+  let finished =
+    quest_support.log_of(rows: [quest_support.completed(quest_id: 3741, at: 1)])
+  assert objective.advance(log: finished, tables:, event: Used(collectible))
+    == Advanced(log: finished, effects: [])
+    as "a completed quest takes nothing"
+  let other =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 1805, progress: [0, 0]),
+    ])
+  assert objective.advance(log: other, tables:, event: Used(collectible))
+    == Advanced(log: other, effects: [])
+    as "a creature naming another quest does nothing for a quest whose type 32 objective it does not name"
+
+  // Quest 5857's objective index 1 (8784, type 32, flags 3) waits for index 0.
+  use named_elsewhere <- with_quest_anim(quest: 5857, index: 1)
+  let waiting =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 5857, progress: [0, 0]),
+    ])
+  assert objective.advance(
+      log: waiting,
+      tables: named_elsewhere,
+      event: Used(collectible),
+    )
+    == Advanced(log: waiting, effects: [])
+    as "an unreachable objective takes nothing (0x140553790)"
+  let reachable =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 5857,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [1, 0],
+      ),
+    ])
+  assert objective.advance(
+      log: reachable,
+      tables: named_elsewhere,
+      event: Used(collectible),
+    ).effects
+    == [SendProgress(quest_id: 5857, objective_index: 1, progress: 1)]
+    as "the same objective counts once the one before it is done"
+  assert objective.advance(
+      log:,
+      tables: named_elsewhere,
+      event: Used(collectible),
+    )
+    == Advanced(log:, effects: [])
+    as "and the creature now names quest 5857, so quest 3741's objective takes nothing from it"
 }

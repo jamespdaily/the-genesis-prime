@@ -784,6 +784,21 @@ pub fn entered_stocking_holding(
   credits credits: Int,
   items items: List(store.HeldItem),
 ) -> game_connection.State {
+  entered_stocking_with_quests(
+    in_character_select:,
+    credits:,
+    items:,
+    quests: [],
+  )
+}
+
+/// `entered_stocking_holding` for a character whose log holds these quest rows.
+pub fn entered_stocking_with_quests(
+  in_character_select in_character_select: game_connection.State,
+  credits credits: Int,
+  items items: List(store.HeldItem),
+  quests quests: List(store.QuestRow),
+) -> game_connection.State {
   let character =
     Character(..world_character(), faction_id: spawn.exile_faction)
   let #(state, taken) = playing_from(in_character_select:, character_id: 42)
@@ -800,7 +815,7 @@ pub fn entered_stocking_holding(
               None,
               None,
               list.append(world_entry_support.novice_items(character:), items),
-              [],
+              quests,
               [HeldCurrency(currency_type_id: 1, amount: credits)],
             ),
           ),
@@ -1484,6 +1499,27 @@ pub fn entered_with_quests_on(
       saved_health: None,
       saved_experience: None,
       quests:,
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
+}
+
+/// `entered_with_quests_on` for a character whose store holds these items besides the
+/// Novice set.
+pub fn entered_with_quests_and_items_on(
+  tables tables: store_tables.Tables,
+  quests quests: List(store.QuestRow),
+  items items: List(store.HeldItem),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let fresh = accepted(Settings(..settings(), tables:)).0
+  let character = world_character()
+  let #(state, taken) =
+    joining_holding_items(
+      in_character_select: in_select_from(fresh),
+      character:,
+      saved_health: None,
+      saved_experience: None,
+      quests:,
+      items: list.append(world_entry_support.novice_items(character:), items),
     )
   answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
 }
