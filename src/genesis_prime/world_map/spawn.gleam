@@ -1356,6 +1356,12 @@ fn left_out_of(
 /// Creature2 columns questIdGiven00 to 24 and questIdReceive00 to 24; 0 is an empty
 /// column.
 pub fn quest_ids(row: Creature2) -> List(Int) {
+  list.append(given_quest_ids(row), received_quest_ids(row))
+}
+
+/// The quests the creature gives, by quest id, in the order of its Creature2
+/// columns questIdGiven00 to 24; 0 is an empty column.
+pub fn given_quest_ids(row: Creature2) -> List(Int) {
   [
     row.quest_id_given00,
     row.quest_id_given01,
@@ -1382,6 +1388,13 @@ pub fn quest_ids(row: Creature2) -> List(Int) {
     row.quest_id_given22,
     row.quest_id_given23,
     row.quest_id_given24,
+  ]
+}
+
+/// The quests the creature receives, by quest id, in the order of its Creature2
+/// columns questIdReceive00 to 24; 0 is an empty column.
+fn received_quest_ids(row: Creature2) -> List(Int) {
+  [
     row.quest_id_receive00,
     row.quest_id_receive01,
     row.quest_id_receive02,

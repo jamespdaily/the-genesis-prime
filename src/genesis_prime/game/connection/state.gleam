@@ -121,9 +121,10 @@ pub type Session {
     unhandled_channels_logged: Set(Int),
     /// The WorldZone ids already logged as having no row on this connection.
     unknown_zones_logged: Set(Int),
-    /// The reasons a request to talk to a unit was declined that are already
-    /// logged on this connection (genesis_prime/game/interaction `Declined`): the
-    /// first of a reason is a warning, a repeat a debug line.
+    /// The reasons a request to talk to a unit or to accept or retry a quest was
+    /// declined that are already logged on this connection (genesis_prime/game/
+    /// interaction and genesis_prime/game/quest `Declined`): the first of a reason is
+    /// a warning, a repeat a debug line.
     interaction_logged: Set(String),
     /// The number of the next whisper the connection's players make: it counts
     /// for the connection's life, so a reply to a whisper of an earlier stay in

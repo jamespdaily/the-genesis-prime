@@ -852,7 +852,7 @@ fn decode_record(
       c72:size(32)-little-signed,
       c73:size(32)-little-signed,
       c74:size(32)-little-signed,
-      c75:size(32)-little-signed,
+      c75:size(32)-little,
       c76:size(32)-little-signed,
       c77:size(32)-little-signed,
       c78:size(32)-little-signed,

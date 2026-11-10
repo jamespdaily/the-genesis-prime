@@ -9,6 +9,8 @@ Creature2Tier
 CreatureLevel
 CustomizationParameter
 CustomizationParameterMap
+Episode
+EpisodeQuest
 Faction2
 Faction2Relationship
 GameFormula
@@ -19,6 +21,7 @@ Item2Type
 ItemProficiency
 ItemSlot
 PathSoldierActivate
+PeriodicQuestGroup
 PositionalRequirement
 Race
 RewardPropertyPremiumModifier

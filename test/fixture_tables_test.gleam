@@ -171,14 +171,14 @@ pub fn the_content_tables_are_committed_and_each_root_reaches_a_committed_row_te
   // `server_table.content_entries` are the tables only the content load reads:
   // the client's Faction2 holds 1189 rows and Faction2Relationship 1964, kept
   // whole (`the_whole_content_tables_hold_every_row_the_client_holds_test`), and
-  // World is 7 of the client's rows.
+  // World is 10 of the client's rows.
   assert list.length(fixture_tables.committed_ids(faction2.schema)) == 1189
     as "Faction2 is whole"
   assert list.length(fixture_tables.committed_ids(faction2_relationship.schema))
     == 1964
     as "Faction2Relationship is whole"
   assert fixture_tables.committed_ids(world.schema)
-    == [22, 51, 426, 870, 990, 1387, 3460]
+    == [22, 51, 426, 870, 990, 1068, 1333, 1387, 3045, 3460]
     as "the Worlds the tests' maps run in"
   assert fixture_tables.committed_ids(creature2_outfit_info.schema)
     == [7475, 7912, 8952, 8979, 9029, 9350, 9351, 9777]

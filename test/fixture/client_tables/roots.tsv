@@ -225,3 +225,82 @@ RewardPropertyPremiumModifier	30	(BankSlots 2, Hybrid tier 0, does not carry up)
 RewardPropertyPremiumModifier	31	(BankSlots 2, Hybrid tier 1)	reward_property_test
 RewardPropertyPremiumModifier	33	(BankSlots 7, system 2 tier 1)	reward_property_test
 RewardPropertyPremiumModifier	67	(BankSlots, Hybrid tier 0, carries up, names an entitlement)	reward_property_test
+Quest2	1806	plain quest for both factions at level 1	quest_accept_test, quest_accept_tables_test
+Quest2	3555	quest with flag 0x20 and no repeat period (taken again once completed)	quest_accept_test, quest_accept_tables_test
+Quest2	1872	communicator quest (flags 0x400 and 4)	quest_accept_test, quest_accept_tables_test
+Quest2	2989	Dominion-only quest	quest_accept_test, quest_accept_tables_test
+Quest2	2545	Exile-only quest	quest_accept_test, quest_accept_tables_test
+Quest2	5259	quest in episode 411 on a flagged EpisodeQuest row	quest_accept_test, quest_accept_tables_test
+Quest2	4791	quest in episode 411 on an unflagged EpisodeQuest row	quest_accept_test, quest_accept_tables_test
+Quest2	3918	quest with level 11 and quest 4294 joined by preq_flags 2	quest_accept_test, quest_accept_tables_test
+Quest2	9299	quest that needs any of quests 9428 and 9207 (preq_flags 1)	quest_accept_test, quest_accept_tables_test
+Quest2	5859	Dominion quest that needs quests 5857 and 6789	quest_accept_test, quest_accept_tables_test
+Quest2	3195	quest with exclusions 3215 and 3216	quest_accept_test, quest_accept_tables_test
+Quest2	5364	quest with preq_flags 0x20 and one exclusion	quest_accept_test, quest_accept_tables_test
+Quest2	5452	quest with preq_flags 0x20 and one exclusion, with objectives	quest_accept_test, quest_accept_tables_test
+Quest2	6961	quest with preq_flags 0x20, two prerequisite quests and one exclusion	quest_accept_test, quest_accept_tables_test
+Quest2	3243	quest with a reputation prerequisite	quest_accept_test, quest_accept_tables_test
+Quest2	3627	Dominion quest that needs item 6873	quest_accept_test, quest_accept_tables_test
+Quest2	9793	quest that needs item 49795	quest_accept_test, quest_accept_tables_test
+Quest2	3678	quest whose prerequisite 2967 is a type 52 condition	quest_accept_test, quest_accept_tables_test
+Quest2	4943	quest whose prerequisite 2968 is a type 52 condition	quest_accept_test, quest_accept_tables_test
+Quest2	5084	quest whose prerequisite 8252 is a type 19 condition	quest_accept_test, quest_accept_tables_test
+Quest2	4004	quest for path 3	quest_accept_test, quest_accept_tables_test
+Quest2	4940	quest for path 2	quest_accept_test, quest_accept_tables_test
+Quest2	9880	contract quest	quest_accept_test, quest_accept_tables_test
+Quest2	9881	second contract quest	quest_accept_test, quest_accept_tables_test
+Quest2	9578	periodic quest of group 34	quest_accept_test, quest_accept_tables_test
+Quest2	6276	periodic quest of group 18	quest_accept_test, quest_accept_tables_test
+Quest2	2575	plain quest that needs level 40	quest_accept_test, quest_accept_tables_test
+Quest2	2417	quest an item starts	quest_accept_test, quest_accept_tables_test
+Quest2	10528	quest Dorian Walker gives, which needs quest 10520	quest_accept_test, quest_accept_tables_test
+Quest2	1804	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1805	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1807	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1808	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1809	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1812	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1822	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1854	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1855	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1856	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1859	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1860	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1861	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1862	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1873	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	1875	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2018	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2020	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2025	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2042	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2043	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2044	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2045	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2046	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2047	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2050	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2051	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2052	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2058	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2059	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2073	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2074	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2075	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2076	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2077	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2078	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2079	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2080	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2081	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Quest2	2082	plain quest with objectives and no prerequisite, one of forty in a full log	quest_accept_test
+Item2	4861	a quest item that starts quest 2417	quest_accept_test
+Quest2	4294	prerequisite quest of 3918, which the log holds	quest_accept_test
+Quest2	6789	prerequisite quest of 5859, which the log holds	quest_accept_test
+Quest2	9428	prerequisite quest of 9299, which the log holds	quest_accept_test
+Quest2	9207	prerequisite quest of 9299, which the log holds	quest_accept_test
+Quest2	3215	exclusion quest of 3195, which the log holds	quest_accept_test
+Quest2	3216	exclusion quest of 3195, which the log holds	quest_accept_test
+Quest2	3176	prerequisite quest of 3243, which the log holds	quest_accept_test
+Quest2	3185	prerequisite quest of 3243, which the log holds	quest_accept_test
+Quest2	10520	prerequisite quest of 10528, which the log holds	quest_accept_test

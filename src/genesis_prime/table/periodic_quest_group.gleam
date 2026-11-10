@@ -98,8 +98,8 @@ fn decode_record(
     <<
       c0:size(32)-little-signed,
       c1:size(32)-little-signed,
-      c2:size(32)-little-signed,
-      c3:size(32)-little-signed,
+      c2:size(32)-little,
+      c3:size(32)-little,
       c4:size(32)-little-signed,
       c5:size(32)-little-signed,
       c6:size(32)-little-signed,

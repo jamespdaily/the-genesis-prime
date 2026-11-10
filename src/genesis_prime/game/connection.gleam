@@ -154,6 +154,7 @@ import genesis_prime/game/connection/inventory as connection_inventory
 import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/login as connection_login
 import genesis_prime/game/connection/movement as connection_movement
+import genesis_prime/game/connection/quest as connection_quest
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
@@ -563,6 +564,7 @@ fn routed(
     | Ok(routing.Life(..))
     | Ok(routing.Innate(..))
     | Ok(routing.Interaction(..))
+    | Ok(routing.Quest(..))
     | Ok(routing.Inventory(..))
     | Ok(routing.VendorPurchase) ->
       connection_state.misrouted(session:, now:, inner:)
@@ -716,6 +718,14 @@ fn world_carried(
                   )
                 Ok(routing.Interaction(message:)) ->
                   connection_interaction.interaction_message(
+                    session:,
+                    now:,
+                    entered:,
+                    inner: whole,
+                    message:,
+                  )
+                Ok(routing.Quest(message:)) ->
+                  connection_quest.quest_message(
                     session:,
                     now:,
                     entered:,

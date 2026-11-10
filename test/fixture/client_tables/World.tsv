@@ -4,5 +4,8 @@ ID	assetPath	flags	type	screenPath	screenModelPath	chunkBounds00	chunkBounds01	c
 426	Map\\Eastern	0	0	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_StarterPack_000.m3	1135	833	1188	871	0	0	0	0	0	0	0	0	0
 870	Map\\Western	0	0	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_StarterPack_000.m3	756	970	813	1034	0	0	0	0	0	0	0	0	0
 990	Map\\Eastern	0	0	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_StarterPack_000.m3	950	850	1065	975	0	0	0	0	0	0	0	0	0
+1068	Map\\HalonRingNew	1	0	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	500	655	895	935	0	0	0	0	0	0	0	0	0
+1333	Map\\Datascape	1	9	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Dungeon_000.m3	0	0	2048	2048	0	439159	0	0	0	0	4	0	0
 1387	Map\\Western	0	0	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_StarterPack_000.m3	890	815	977	883	0	0	0	0	0	0	0	0	0
+3045	Map\\WorldStory01	1	10	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Isigrol_000.m3	1008	967	1320	1039	0	0	0	0	0	0	0	0	0
 3460	Map\\NewPlayerExperience	1	0		Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_NPE_000.m3	0	0	2048	2048	0	0	0	0	0	0	0	0	0
