@@ -23,6 +23,8 @@ import genesis_prime/table/creature2_tier
 import genesis_prime/table/creature_level
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
+import genesis_prime/table/episode
+import genesis_prime/table/episode_quest
 import genesis_prime/table/faction2
 import genesis_prime/table/faction2_relationship
 import genesis_prime/table/game_formula
@@ -41,6 +43,7 @@ import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
 import genesis_prime/table/path_mission
 import genesis_prime/table/path_soldier_activate
+import genesis_prime/table/periodic_quest_group
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite
 import genesis_prime/table/quest2
@@ -111,6 +114,8 @@ import genesis_prime/table/xp_per_level
 /// - Quest2 and QuestObjective: the quests a saved quest log may name, each with its
 ///   objectives and period (genesis_prime/game/quest_log), and the quests a
 ///   prerequisite's quest conditions name (genesis_prime/game/prerequisite).
+/// - Episode, EpisodeQuest and PeriodicQuestGroup, with Quest2 and GameFormula: whether
+///   a player may accept a quest (genesis_prime/game/quest).
 /// - PathSoldierActivate: whether a type 28 objective is a checklist, which a
 ///   prerequisite's progress condition reads (genesis_prime/game/prerequisite).
 /// - Race: a player's hit radius (genesis_prime/game/hit_radius).
@@ -137,6 +142,8 @@ pub fn entries() -> List(store.Entry) {
     creature_level.entry(),
     customization_parameter.entry(),
     customization_parameter_map.entry(),
+    episode.entry(),
+    episode_quest.entry(),
     game_formula.entry(),
     instance_portal.entry(),
     item2.entry(),
@@ -150,6 +157,7 @@ pub fn entries() -> List(store.Entry) {
     item_special.entry(),
     path_mission.entry(),
     path_soldier_activate.entry(),
+    periodic_quest_group.entry(),
     positional_requirement.entry(),
     prerequisite.entry(),
     quest2.entry(),

@@ -54,6 +54,8 @@ import genesis_prime/message/play_character.{type PlayCharacter}
 import genesis_prime/message/player_movement.{type PlayerMovement}
 import genesis_prime/message/pong.{type Pong}
 import genesis_prime/message/pre_game_activity.{type PreGameActivity}
+import genesis_prime/message/quest_accept.{type QuestAccept}
+import genesis_prime/message/quest_retry.{type QuestRetry}
 import genesis_prime/message/realm_select_start.{type RealmSelectStart}
 import genesis_prime/message/rename_character.{type RenameCharacter}
 import genesis_prime/message/scanbot_request.{type ScanbotRequest}
@@ -84,6 +86,8 @@ pub type ClientMessage {
   DeleteCharacter(message: DeleteCharacter)
   RenameCharacter(message: RenameCharacter)
   ChooseRealm(message: ChooseRealm)
+  QuestAccept(message: QuestAccept)
+  QuestRetry(message: QuestRetry)
   ClientControlEchoed(message: ClientControlEchoed)
   TerrainLoaded(message: TerrainLoaded)
   CampRequest(message: CampRequest)
@@ -169,6 +173,8 @@ pub fn decode(
     0x0786 ->
       decoded(body, message_id, rename_character.decode, RenameCharacter)
     0x07DF -> decoded(body, message_id, choose_realm.decode, ChooseRealm)
+    0x035B -> decoded(body, message_id, quest_accept.decode, QuestAccept)
+    0x0365 -> decoded(body, message_id, quest_retry.decode, QuestRetry)
     0x0635 ->
       decoded(
         body,
@@ -272,6 +278,8 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     DeleteCharacter(message:) -> delete_character.encode(message)
     RenameCharacter(message:) -> rename_character.encode(message)
     ChooseRealm(message:) -> choose_realm.encode(message)
+    QuestAccept(message:) -> quest_accept.encode(message)
+    QuestRetry(message:) -> quest_retry.encode(message)
     ClientControlEchoed(message:) -> client_control_echoed.encode(message)
     TerrainLoaded(message:) -> terrain_loaded.encode(message)
     CampRequest(message:) -> camp_request.encode(message)
@@ -332,6 +340,8 @@ pub fn message_id(message: ClientMessage) -> Int {
     DeleteCharacter(..) -> delete_character.message_id
     RenameCharacter(..) -> rename_character.message_id
     ChooseRealm(..) -> choose_realm.message_id
+    QuestAccept(..) -> quest_accept.message_id
+    QuestRetry(..) -> quest_retry.message_id
     ClientControlEchoed(..) -> client_control_echoed.message_id
     TerrainLoaded(..) -> terrain_loaded.message_id
     CampRequest(..) -> camp_request.message_id
@@ -390,6 +400,8 @@ pub fn name(message: ClientMessage) -> String {
     DeleteCharacter(..) -> "delete_character"
     RenameCharacter(..) -> "rename_character"
     ChooseRealm(..) -> "choose_realm"
+    QuestAccept(..) -> "quest_accept"
+    QuestRetry(..) -> "quest_retry"
     ClientControlEchoed(..) -> "client_control_echoed"
     TerrainLoaded(..) -> "terrain_loaded"
     CampRequest(..) -> "camp_request"

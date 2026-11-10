@@ -588,6 +588,39 @@ fields = [
 ]
 
 [[message]]
+id = 0x035B
+name = "quest_accept"
+direction = "client_to_server"
+evidence = "opcode.0x35b"
+summary = "the client accepts a quest: the held item that starts it, or location 300 and bag index -1 (the 32-bit all-ones value) when the dialog's accept response sends it, and the quest id; the client sends nothing when it could not start the quest, changes no state, and waits for 0x35c"
+fields = [
+  { name = "item", kind = "record", record = "item_place", evidence = "opcode.0x35b", named_by = "opcode.0x35b" },
+  { name = "quest_id", kind = "unsigned", bits = 15, evidence = "opcode.0x35b", named_by = "opcode.0x35b" },
+]
+
+[[message]]
+id = 0x0365
+name = "quest_retry"
+direction = "client_to_server"
+evidence = "opcode.0x365"
+summary = "the client retries a Botched quest, which both accept paths send instead of 0x35b for a quest held Botched: only the quest id; the client changes no state and the server's 0x35c answer sets it"
+fields = [
+  { name = "quest_id", kind = "unsigned", bits = 15, evidence = "opcode.0x365", named_by = "opcode.0x365" },
+]
+
+[[message]]
+id = 0x035C
+name = "quest_state"
+direction = "server_to_client"
+evidence = "opcode.0x35c"
+summary = "sets a quest's state (1 Accepted, 2 Achieved, 3 Completed, 4 Botched, 5 Mentioned, 6 Abandoned, 7 Ignored) and, when its objective id is not 0 and the quest has a placeholder objective, replaces that placeholder with the QuestObjective; a quest the client does not know is refused"
+fields = [
+  { name = "quest_id", kind = "unsigned", bits = 15, evidence = "opcode.0x35c", named_by = "opcode.0x35c" },
+  { name = "state", kind = "unsigned", bits = 32, evidence = "opcode.0x35c", named_by = "opcode.0x35c" },
+  { name = "objective_id", kind = "unsigned", bits = 32, evidence = "opcode.0x35c", named_by = "opcode.0x35c" },
+]
+
+[[message]]
 id = 0x06BC
 name = "player_path"
 direction = "server_to_client"
