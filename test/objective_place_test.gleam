@@ -52,6 +52,7 @@ import owned_test
 import place_support
 import planted_table.{Integer}
 import quest_support
+import spawn_support
 
 /// Runs the body on the fixture's tables with these QuestObjective cells changed (the
 /// objective's id, the column and its new value), built on the body's heap.
@@ -139,6 +140,8 @@ fn settled_among(
       list.index_map(units, fn(unit, number) { #(number, unit) }),
     ),
     now_ms: 0,
+    numbers: spawn_support.numbers,
+    unix_ms: 0,
   )
 }
 

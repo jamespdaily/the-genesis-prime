@@ -205,8 +205,8 @@ pub fn guard_with(tree: Pid, stop: fn() -> Nil) -> Nil {
 /// Waits until a process other than `old` holds the name, and returns it. A
 /// supervisor that restarts a service does so within milliseconds; the name has
 /// no event to wait for, so it is read every millisecond. The wait has no limit
-/// of its own: a service that is never restarted ends the test at its deadline,
-/// naming this wait (`open_wait`).
+/// of its own: a service that is never restarted keeps the test waiting past its
+/// deadline, which warns and names this wait (`open_wait`).
 pub fn await_new_pid(name name: Name(message), not old: Pid) -> Pid {
   open_wait.named("a process other than the old one to take its name", fn() {
     poll_for_new_pid(name:, not: old)
@@ -264,8 +264,8 @@ pub fn shutdown() -> process.ExitReason {
 }
 
 /// Waits for a watched process to end and says how. The wait has no limit of its
-/// own: a process that does not end ends the test at its deadline, naming it
-/// as `what` says (`open_wait`).
+/// own: a process that does not end keeps the test waiting past its deadline,
+/// which warns and names it as `what` says (`open_wait`).
 pub fn ended(
   watched watched: process.Monitor,
   what what: String,
@@ -324,7 +324,7 @@ pub fn panic_message(raised: Dynamic) -> String {
 
 /// A client's connect to the listener on this machine at `port`, with a limit
 /// far beyond the test's deadline (`beyond_the_test_ms`): the test's deadline
-/// ends a connect that is never answered, and names it (`open_wait`).
+/// warns of a connect that is never answered, and names it (`open_wait`).
 pub fn connecting(port port: Int) -> Result(mug.Socket, mug.ConnectError) {
   open_wait.named("the listener's answer to the connect", fn() {
     mug.new("127.0.0.1", port:)
@@ -563,7 +563,7 @@ fn monotonic_time(unit: atom.Atom) -> Int
 
 /// How long, in milliseconds, a limit that a test is not about lasts: an hour,
 /// far beyond any test's deadline (`owned_test.run`), so the test's own
-/// deadline ends a connect, a statement or a find that is never answered.
+/// deadline warns of a connect, a statement or a find that is never answered.
 pub const beyond_the_test_ms = 3_600_000
 
 /// The moment, on the monotonic clock, of a server deadline that the test is

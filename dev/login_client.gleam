@@ -5,8 +5,8 @@
 //// shared by the tests that log a player in before they play.
 ////
 //// Every wait is for bytes the server writes or for the socket to close, never
-//// a pause. A test's wait has no limit of its own: the test's deadline names the
-//// wait still open (`socket_read.Open`). A load client gives the wait a bound,
+//// a pause. A test's wait has no limit of its own: the test's deadline warns, names the
+//// wait still open and the wait goes on (`socket_read.Open`). A load client gives the wait a bound,
 //// and a server that does not answer within it stops the client
 //// (`socket_read.Within`).
 
@@ -347,8 +347,8 @@ pub fn read_frames(
 }
 
 /// Reads everything the server writes until it closes the connection, and
-/// gives those bytes. A reset counts as a close. A server that never closes ends
-/// the test at its deadline, with this wait named.
+/// gives those bytes. A reset counts as a close. A server that never closes keeps
+/// the test waiting past its deadline, which warns with this wait named.
 pub fn read_until_closed(client client: mug.Socket) -> BitArray {
   open_wait.named("the server to close the connection", fn() {
     collect_until_closed(client:, heard: <<>>)

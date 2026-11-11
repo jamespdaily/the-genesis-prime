@@ -112,7 +112,7 @@ fn lock_waiters(key: String) -> List(Pid)
 /// so the holder ends while the waiter waits for it. The lock sends the test no
 /// event when a process starts to wait for it, so the test reads its waiters
 /// every millisecond; the wait has no limit of its own, and the test's deadline
-/// ends it (`event_wait`).
+/// only warns while it goes on (`event_wait`).
 fn wait_until_waiting(key: String, waiter: Pid) -> Nil {
   event_wait.until("the waiter to wait for the lock on " <> key, fn() {
     list.contains(lock_waiters(key), waiter)

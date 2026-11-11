@@ -187,8 +187,10 @@ fn quest_objectives() -> EngineDeclaration {
     // a PathSoldierActivate row) count a talk to or an activate of a target as the target's
     // bit of the objective's 32-bit mask, and the objective is done at its count of bits
     // (genesis_prime/game/objective; the index of each target is
-    // genesis_prime/world_map/checklist_index). Types 10 and 13 are not counted.
-    handled: Listed(ids: [2, 3, 4, 5, 8, 12, 14, 16, 17, 18, 22, 28, 32, 33]),
+    // genesis_prime/world_map/checklist_index). A finish (type 24) objective takes the
+    // completion of the quest its data names, now or earlier in its repeat period. Types
+    // 10 and 13 are not counted.
+    handled: Listed(ids: [2, 3, 4, 5, 8, 12, 14, 16, 17, 18, 22, 24, 28, 32, 33]),
     partial: [
       Missing(
         type_number: 22,

@@ -40,8 +40,8 @@
 ////   send straight to the connections, so no frame path of a map or a creature goes
 ////   through one.
 //// - **No wait here has a time limit.** A call to the clock and the barrier wait until
-////   they are answered, and the test's deadline ends one that never is, naming it
-////   (`open_wait`, `owned_test.run`).
+////   they are answered, and the test's deadline warns of one that never is, naming
+////   it, and the wait goes on (`open_wait`, `owned_test.run`).
 
 import genesis_prime/connection/script.{
   type Elapsed, type Scripts, Elapsed, Issued, Script,

@@ -481,3 +481,11 @@ Creature2	53445	a creature with both link columns: questAnim 9110 index 5 and pr
 Quest2	9110	quest whose objective 5 (18164, type 5, flags 3) is the questAnim link of Creature2 53445 and the one Prerequisite 29873 reads	cast_activate_test
 Creature2	19277	a creature whose prerequisiteIdAnimState 7341 reaches the type 5 objective 15980 of quest 4975 only through the nested Prerequisite 7340	objective_test
 Quest2	4975	quest whose objective 0 (15980) is type 5 with count 3, named by Prerequisite 7340	objective_test
+Quest2	7540	quest whose two objectives are type 24, naming quests 6305 and 6306	objective_test
+Quest2	6305	quest named by a type 24 objective	objective_test
+Quest2	6306	quest named by a type 24 objective	objective_test
+Quest2	9492	quest whose second objective is a type 24 gated behind a type 22 place	objective_test
+Quest2	9494	quest named by a gated type 24 objective	objective_test
+Quest2	10502	yearly quest whose objectives are type 24 naming a yearly quest	objective_test
+Quest2	10503	yearly quest named by a type 24 objective	objective_test
+WorldLocation2	46118	marker of the type 22 objective 18249	objective_test

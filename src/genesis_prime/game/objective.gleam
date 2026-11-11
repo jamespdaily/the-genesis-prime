@@ -41,6 +41,7 @@ import genesis_prime/table/id.{
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_soldier_activate
 import genesis_prime/table/tradeskill_schematic2
+import genesis_prime/world_map/game_number.{type GameNumbers}
 import gleam/int
 import gleam/list
 
@@ -77,6 +78,9 @@ const visit_type = 17
 
 /// The objective type of a place: done where the player stands at its marker.
 const place_type = 22
+
+/// The objective type of a finished quest: a Quest2 id in its data.
+const finish_type = 24
 
 /// The QuestObjective flag of an optional objective, which the client's quest state and
 /// reachability skip (`quest_log`).
@@ -391,6 +395,14 @@ fn activates_creature(
 /// does not count them (the issue "Place objectives with no marker or a count above one
 /// complete (objective type 22)"). An objective such a pass opens is settled in the same
 /// call.
+///
+/// The client sends nothing for a type 24 objective either (`QuestObjective.type.24`):
+/// it is done once the quest its data names is finished (`quest_log.finished`, at
+/// `unix_ms`, the Unix time in milliseconds, whose repeat periods `numbers` sets). The
+/// objective counts when it is open, and an objective that this opens counts in the same
+/// call. That a completion is what sets it is read from the objective's text and title,
+/// not from client code (a gap in the fact's record; the issue "Quests, zones and
+/// prerequisites work on the real client" closes it by recording quest 7540 live).
 pub fn settle(
   log log: QuestLog,
   tables tables: table_store.Tables,
@@ -398,6 +410,8 @@ pub fn settle(
   zones zones: List(Int),
   place place: Place,
   shown shown: shown.Picture,
+  numbers numbers: GameNumbers,
+  unix_ms unix_ms: Int,
   now_ms now_ms: Int,
 ) -> Advanced {
   list.fold(
@@ -425,9 +439,17 @@ pub fn settle(
           },
         )
       let settling =
-        visits(settling: held, quest:, zones:, now_ms:)
-        |> arrivals(quest:, tables:, place:, shown:, now_ms:)
-        |> visits(quest:, zones:, now_ms:)
+        opened(
+          settling: held,
+          quest:,
+          tables:,
+          zones:,
+          place:,
+          shown:,
+          numbers:,
+          unix_ms:,
+          now_ms:,
+        )
       let after = quest_log.stored_state(log: settling.log, quest_id:)
       let state = case after != before {
         True -> [SendState(quest_id:, state: after)]
@@ -443,6 +465,74 @@ pub fn settle(
       )
     },
   )
+}
+
+/// The visits, place objectives and finished-quest objectives that are done, again while
+/// a pass counted anything, because a count can open the objective after it (a type 22
+/// objective's flags, a later objective of the quest).
+fn opened(
+  settling settling: Settling,
+  quest quest: quest_log.Quest,
+  tables tables: table_store.Tables,
+  zones zones: List(Int),
+  place place: Place,
+  shown shown: shown.Picture,
+  numbers numbers: GameNumbers,
+  unix_ms unix_ms: Int,
+  now_ms now_ms: Int,
+) -> Settling {
+  let next =
+    visits(settling:, quest:, zones:, now_ms:)
+    |> arrivals(quest:, tables:, place:, shown:, now_ms:)
+    |> finishes(quest:, tables:, numbers:, unix_ms:, now_ms:)
+  case list.length(next.progress) > list.length(settling.progress) {
+    True ->
+      opened(
+        settling: next,
+        quest:,
+        tables:,
+        zones:,
+        place:,
+        shown:,
+        numbers:,
+        unix_ms:,
+        now_ms:,
+      )
+    False -> next
+  }
+}
+
+/// Every open type 24 objective of the quest whose quest is finished done. A done
+/// objective is not open, so it is not counted again.
+fn finishes(
+  settling settling: Settling,
+  quest quest: quest_log.Quest,
+  tables tables: table_store.Tables,
+  numbers numbers: GameNumbers,
+  unix_ms unix_ms: Int,
+  now_ms now_ms: Int,
+) -> Settling {
+  quest_log.open_objectives(log: settling.log, quest:)
+  |> list.filter(fn(open) {
+    let #(_, objective) = open
+    objective.type_ == finish_type
+    && quest_log.finished(
+      log: settling.log,
+      quest_id: objective.data,
+      tables:,
+      numbers:,
+      unix_ms:,
+    )
+  })
+  |> list.fold(settling, fn(settling, open) {
+    set_count(
+      settling:,
+      quest:,
+      index: open.0,
+      value: { open.1 }.count,
+      now_ms:,
+    )
+  })
 }
 
 /// The open place objectives of the quest that the place completes or counts, again

@@ -36,8 +36,8 @@ start(Module, Environment) ->
     {node, Port, OsPid}.
 
 %% Whether the node printed Text before it ended. The wait has no limit of its
-%% own: a node that neither prints it nor ends leaves the test's deadline to end
-%% the wait.
+%% own: a node that neither prints it nor ends keeps the test waiting, and the
+%% test's deadline only warns.
 await_output(Node, Text) ->
     wait_for(Node, binary_to_list(Text)).
 

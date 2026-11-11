@@ -1,12 +1,13 @@
 //// A wait with no time limit of its own, named, for the test that runs it. A
-//// test's only time limit is its deadline (`owned_test.run`); a read, poll or
-//// call that stops the test body for the server runs inside `named`, which
-//// tells the test that owns the process what the body is waiting for, so the
-//// failure at the deadline names the wait that was still open.
+//// test's only time limit is its deadline, which warns (`owned_test.run`); a
+//// read, poll or call that stops the test body for the server runs inside
+//// `named`, which tells the test that owns the process what the body is
+//// waiting for, so the warning at the deadline names the wait that was still
+//// open.
 ////
 //// ```
 //// body ──named("a frame")──▶ owned_test: open = ["a frame"]
-////        (blocks, no limit)   ... the deadline ends the test: "waiting for: a frame"
+////        (blocks, no limit)   ... the deadline warns: "waiting for: a frame"
 //// body ◀── returns ───────── owned_test: open = []
 //// ```
 ////

@@ -933,6 +933,8 @@ fn quest_log_sent(
           zones: [],
           place:,
           shown: dict.new(),
+          numbers:,
+          unix_ms: step.unix_milliseconds(now:),
           now_ms: now.monotonic_ms,
         ).log
       let #(told, frame) = quest_log.login(log: held, numbers:, tables:, now:)

@@ -158,8 +158,8 @@ fn join_at(
 }
 
 /// The next message the connection was sent that `wanted` takes, in the order
-/// they came. The wait has no limit of its own: a message that never comes ends
-/// the test at its deadline, naming `what`.
+/// they came. The wait has no limit of its own: a message that never comes keeps
+/// the test waiting past its deadline, which warns and names `what`.
 fn next(
   received received: Subject(Message),
   what what: String,
