@@ -53,10 +53,12 @@ import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/quest_objective
 import genesis_prime/table/world_location2
+import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/objective_spawn.{type Placed}
 import genesis_prime/world_map/spawn.{type Row}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source
+import gleam/dict
 import gleam/float
 import gleam/int
 import gleam/list
@@ -112,6 +114,7 @@ fn stored(
       z: 0.0,
     ),
     level: None,
+    factions: creature_faction.none(),
   )
 }
 
@@ -141,7 +144,11 @@ pub fn a_lone_target_stands_at_the_marker_centre_with_its_facing_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.content_tables()
   let placed =
-    objective_spawn.place(tables:, stored: the_world_holds_spawns(tables:))
+    objective_spawn.place(
+      tables:,
+      stored: the_world_holds_spawns(tables:),
+      factions: creature_faction.none(),
+    )
   // Objectives 21296 and 21310 name the boss at marker 51744, count 1.
   let assert [row] = of_creatures(placed:, creatures: [boss])
     as "one boss, for two objectives of the same creature and marker"
@@ -167,7 +174,11 @@ pub fn a_count_spread_over_two_markers_gives_one_each_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.content_tables()
   let placed =
-    objective_spawn.place(tables:, stored: the_world_holds_spawns(tables:))
+    objective_spawn.place(
+      tables:,
+      stored: the_world_holds_spawns(tables:),
+      factions: creature_faction.none(),
+    )
   // Objective 21316: Creature2 74862, count 2, markers 52902 and 52903.
   let assert [first, second] = of_creatures(placed:, creatures: [turret])
     as "one turret for each of the two markers"
@@ -190,7 +201,11 @@ pub fn a_group_target_alternates_its_creatures_on_the_ring_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.content_tables()
   let placed =
-    objective_spawn.place(tables:, stored: the_world_holds_spawns(tables:))
+    objective_spawn.place(
+      tables:,
+      stored: the_world_holds_spawns(tables:),
+      factions: creature_faction.none(),
+    )
   // Objective 21290: TargetGroup 14356 lists 73492 then 73567, count 3, marker
   // 51740 of radius 38 at (-142.06599, -860.46375, 556.80902).
   let assert [one, two, three] =
@@ -225,7 +240,12 @@ pub fn a_creature_with_a_stored_spawn_in_the_world_gets_none_test() -> Nil {
     stored(tables:, id: 5, creature_id: boss, world_id: world),
     ..the_world_holds_spawns(tables:)
   ]
-  let placed = objective_spawn.place(tables:, stored: held)
+  let placed =
+    objective_spawn.place(
+      tables:,
+      stored: held,
+      factions: creature_faction.none(),
+    )
   assert of_creatures(placed:, creatures: [boss]) == []
     as "the boss has a spawn in World 3460, where its marker is"
   assert of_creatures(placed:, creatures: [turret]) != []
@@ -237,7 +257,12 @@ pub fn a_marker_in_a_world_with_no_stored_spawn_is_skipped_and_reported_test() -
   let tables = character_tables.content_tables()
   // Rows are stored in World 1387 only; the fixture's markers are in World 3460.
   let elsewhere = [stored(tables:, id: 1, creature_id: filler, world_id: 1387)]
-  let placed = objective_spawn.place(tables:, stored: elsewhere)
+  let placed =
+    objective_spawn.place(
+      tables:,
+      stored: elsewhere,
+      factions: creature_faction.none(),
+    )
   assert placed.rows == []
     as "no marker is in a world the server holds spawns for"
   // Objectives 21296 and 21310 name marker 51744, which is in World 3460.
@@ -251,7 +276,11 @@ pub fn a_marker_in_a_world_with_no_stored_spawn_is_skipped_and_reported_test() -
     as "the report names the objective, the marker and its world"
   // A stored row in World 3460 makes the same marker one the creatures stand at.
   let placed =
-    objective_spawn.place(tables:, stored: the_world_holds_spawns(tables:))
+    objective_spawn.place(
+      tables:,
+      stored: the_world_holds_spawns(tables:),
+      factions: creature_faction.none(),
+    )
   assert of_creatures(placed:, creatures: [boss]) != []
   assert !list.contains(
     placed.skipped,
@@ -267,7 +296,11 @@ pub fn a_refused_placed_row_is_labelled_as_a_placement_not_a_spawn_test() -> Nil
   use <- owned_test.run(60_000)
   let tables = character_tables.content_tables()
   let placed =
-    objective_spawn.place(tables:, stored: the_world_holds_spawns(tables:))
+    objective_spawn.place(
+      tables:,
+      stored: the_world_holds_spawns(tables:),
+      factions: creature_faction.none(),
+    )
   let assert [first, ..] = of_creatures(placed:, creatures: [boss])
     as "the boss is placed"
   let assert [held] = the_world_holds_spawns(tables:)
@@ -283,6 +316,7 @@ pub fn a_refused_placed_row_is_labelled_as_a_placement_not_a_spawn_test() -> Nil
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
       vendors: vendor.none(),
+      factions: creature_faction.none(),
     )
   let SpawnId(placed_number) = placed_row.id
   let labelled =
@@ -312,7 +346,11 @@ pub fn two_objectives_on_one_creature_and_marker_place_once_test() -> Nil {
   // Both objectives count 1: the boss is placed once, not twice.
   let tables = character_tables.content_tables()
   let placed =
-    objective_spawn.place(tables:, stored: the_world_holds_spawns(tables:))
+    objective_spawn.place(
+      tables:,
+      stored: the_world_holds_spawns(tables:),
+      factions: creature_faction.none(),
+    )
   assert list.length(of_creatures(placed:, creatures: [boss])) == 1
   // With objective 21310's count 2 the larger count is placed, not the sum 3.
   use changed <- fixture_tables.changed(
@@ -324,6 +362,7 @@ pub fn two_objectives_on_one_creature_and_marker_place_once_test() -> Nil {
     objective_spawn.place(
       tables: character_tables.content_over(tables: changed),
       stored: the_world_holds_spawns(tables:),
+      factions: creature_faction.none(),
     )
   assert list.length(of_creatures(placed:, creatures: [boss])) == 2
     as "the larger of the counts 1 and 2"
@@ -333,7 +372,11 @@ pub fn a_target_with_no_creature2_row_is_skipped_and_reported_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.content_tables()
   let placed =
-    objective_spawn.place(tables:, stored: the_world_holds_spawns(tables:))
+    objective_spawn.place(
+      tables:,
+      stored: the_world_holds_spawns(tables:),
+      factions: creature_faction.none(),
+    )
   // Objective 1889 is type 2 of Creature2 5006, which the client's table lacks.
   assert of_creatures(placed:, creatures: [5006]) == []
   assert list.contains(
@@ -356,7 +399,12 @@ pub fn placement_ids_take_no_stored_or_run_only_id_test() -> Nil {
     stored(tables:, id: 70_880, creature_id: boss, world_id: 1387),
     stored(tables:, id: 2, creature_id: filler, world_id: world),
   ]
-  let placed = objective_spawn.place(tables:, stored: held)
+  let placed =
+    objective_spawn.place(
+      tables:,
+      stored: held,
+      factions: creature_faction.none(),
+    )
   assert placed.rows != []
   let numbers =
     list.map(placed.rows, fn(row: Row) {
@@ -405,7 +453,8 @@ pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
     content_spawn.rows(db: content_support.connect(database:))
     as "the stored spawn rows read back"
   let tables = client_tables.with_content_tables()
-  let placed = objective_spawn.place(tables:, stored:)
+  let factions = spawn_support.the_boss_is_given_233(tables:)
+  let placed = objective_spawn.place(tables:, stored:, factions:)
   let worlds = set.from_list(list.map(stored, fn(row: Row) { row.world_id }))
   let held =
     list.filter_map(stored, fn(row: Row) {
@@ -452,6 +501,7 @@ pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
       vendors: vendor.none(),
+      factions:,
     )
   assert selection.refusals == []
     as "a placed row that the checks refuse would stop the server's start"
@@ -621,4 +671,36 @@ fn creatures_of(
     2 -> [objective.data]
     _ -> target_group.listed_creatures(tables:, group: objective.data)
   }
+}
+
+pub fn the_placed_boss_takes_its_chosen_faction_and_starts_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objectives 21296 and 21310 name Creature2 73499 at marker 51744; its Creature2 row
+  // gives faction 219, Friendly to both player factions, and creature_faction
+  // 73499 -> 233 stands it with 233, Hostile to both (Faction2Relationship 746).
+  let tables = character_tables.content_tables()
+  let factions = spawn_support.the_boss_is_given_233(tables:)
+  let placed =
+    objective_spawn.place(
+      tables:,
+      stored: the_world_holds_spawns(tables:),
+      factions:,
+    )
+  let assert [row] = of_creatures(placed:, creatures: [boss])
+    as "one boss, for two objectives of the same creature and marker"
+  assert row.faction_id == 233 && row.base_faction_id == 233
+    as "the placed row carries the chosen faction as its faction and its base faction"
+  let selection =
+    spawn.select(
+      rows: placed.rows,
+      tables:,
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.kinds(),
+      vendors: vendor.none(),
+      factions:,
+    )
+  let assert Ok(started) = dict.get(selection.worlds, world)
+    as "the selection holds world 3460"
+  assert dict.has_key(started.by_id, row.id)
+    as "the boss starts: with 233 it is no longer Friendly to both"
 }

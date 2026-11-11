@@ -34,6 +34,7 @@
 //// tables and are not part of `./check`: whoever changes the measure runs them
 //// with `gleam test -- --tag coverage`.
 
+import genesis_prime/content/creature_faction as content_creature_faction
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal
 import genesis_prime/content/server_proxy as content_server_proxy
@@ -54,6 +55,7 @@ import genesis_prime/table
 import genesis_prime/table/loader/store
 import genesis_prime/table_folder
 import genesis_prime/tooltip_token
+import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/spawn
 import gleam/int
@@ -236,16 +238,26 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
             content_creature_kind.rows(db)
             |> result.map(fn(kind_rows) {
               creature_kind.select(rows: kind_rows, tables:)
+            }),
+            content_creature_faction.rows(db)
+            |> result.map(fn(faction_rows) {
+              creature_faction.select(rows: faction_rows, tables:)
             })
           {
-            Error(error), _ -> rating.describe(error:)
-            Ok(_), Error(error) ->
+            Error(error), _, _ -> rating.describe(error:)
+            Ok(_), Error(error), _ ->
               "The spawn coverage needs the creature_kind table: "
               <> worker.describe_query_error(error)
-            Ok(_), Ok(Error(refusals)) ->
+            Ok(_), Ok(Error(refusals)), _ ->
               "The spawn coverage needs creature kinds the load takes: "
               <> string.join(list.map(refusals, refusal.describe), "; ")
-            Ok(formulas), Ok(Ok(kinds)) ->
+            Ok(_), Ok(_), Error(error) ->
+              "The spawn coverage needs the creature_faction table: "
+              <> worker.describe_query_error(error)
+            Ok(_), Ok(_), Ok(Error(refusals)) ->
+              "The spawn coverage needs creature factions the load takes: "
+              <> string.join(list.map(refusals, refusal.describe), "; ")
+            Ok(formulas), Ok(Ok(kinds)), Ok(Ok(factions)) ->
               string.join(
                 [
                   "Spawns that start, by world:",
@@ -255,6 +267,7 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
                       tables:,
                       formulas:,
                       kinds:,
+                      factions:,
                       vendors: vendor.none(),
                     ).coverage,
                     fn(coverage) { "- " <> spawn.describe_coverage(coverage:) },

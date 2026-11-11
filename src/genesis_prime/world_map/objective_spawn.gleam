@@ -51,6 +51,7 @@ import genesis_prime/table/id.{Creature2Id, WorldLocation2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest_objective.{type QuestObjective}
 import genesis_prime/table/world_location2.{type WorldLocation2}
+import genesis_prime/world_map/creature_faction.{type Factions}
 import genesis_prime/world_map/spawn.{type Row}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/bool
@@ -113,10 +114,12 @@ type Job {
 /// The rows to stand for the kill objectives, given the rows the stored spawn
 /// table holds: only a marker in a world one of them is in gets creatures, and a
 /// creature with a stored non-player spawn in a marker's world is left to it.
-/// Pure: the tables and the stored rows are all it reads.
+/// A creature stands with its chosen faction when it has one (`factions`).
+/// Pure: the tables, the chosen factions and the stored rows are all it reads.
 pub fn place(
   tables tables: table_store.Tables,
   stored stored: List(Row),
+  factions factions: Factions,
 ) -> Placed {
   let objectives =
     quest_objective.all(tables)
@@ -134,7 +137,8 @@ pub fn place(
     |> merged
   let held = held_by(stored:)
   let looks = spawn.looks(tables:)
-  let rows = list.flat_map(jobs, fn(job) { rows_of(job:, held:, looks:) })
+  let rows =
+    list.flat_map(jobs, fn(job) { rows_of(job:, held:, looks:, factions:) })
   let first = highest_id(stored:) + 1
   let rows =
     list.index_map(rows, fn(row, index) {
@@ -267,6 +271,7 @@ fn rows_of(
   job job: Job,
   held held: Set(#(Int, Int)),
   looks looks: spawn.Looks,
+  factions factions: Factions,
 ) -> List(Row) {
   job.markers
   |> list.map(fn(marker) { marker.row.world_id })
@@ -278,7 +283,7 @@ fn rows_of(
       })
     let markers =
       list.filter(job.markers, fn(marker) { marker.row.world_id == world_id })
-    rows_in_world(creatures:, markers:, count: job.count, looks:)
+    rows_in_world(creatures:, markers:, count: job.count, looks:, factions:)
   })
 }
 
@@ -289,6 +294,7 @@ fn rows_in_world(
   markers markers: List(Marker),
   count count: Int,
   looks looks: spawn.Looks,
+  factions factions: Factions,
 ) -> List(Row) {
   let creature_count = list.length(creatures)
   let marker_count = list.length(markers)
@@ -316,6 +322,7 @@ fn rows_in_world(
           use creature <- result.map(dict.get(by_turn, turn % creature_count))
           spawn.creature_row(
             looks:,
+            factions:,
             id: SpawnId(0),
             creature:,
             place: slot_place(marker:, slot:, slots:),
