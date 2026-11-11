@@ -1769,11 +1769,16 @@ fn exile_whose_mine_cast_went() -> #(
   let #(entry, have) =
     game_client.read_until(game:, have: <<>>, found: fn(frames) {
       list.any(frames, fn(frame) { frame.message_id == 0x01BC })
-      && static_objects_created_in(frames:) != []
+      && list.contains(static_objects_in(frames:), 73_463)
     })
-  let assert [mine] = static_objects_created_in(frames: entry)
-    as "the mine is the one static object shown"
-  assert mine.creature_id == 73_463
+  // The Sim-Turrets of objectives 21288 and 21316 stand within sight of the mine, and
+  // each writes its own 0x262 from its own process, so they may come before or after
+  // the mine's: the mine is the one object of its Creature2.
+  let assert [mine] =
+    list.filter(static_objects_created_in(frames: entry), fn(object) {
+      object.creature_id == 73_463
+    })
+    as "the mine is the one static object of Creature2 73463 shown"
   let assert Ok(press) =
     cast_activate.encode(CastActivate(
       client_cast_id: 1,
@@ -4225,18 +4230,20 @@ fn static_objects_created_in(
 
 /// A new character of the faction at the position in World 3460, entered as the
 /// player of the account number `number`, and every message the server wrote up to
-/// the pong of a ping sent after the 0x262 of `anchor`, a unit that no
+/// the pong of a ping sent after the 0x262 of each of `anchors`, units that no
 /// prerequisite hides from the character. The map writes its objects in one tell,
 /// after its reply to the join and from another process than the connection's
-/// pong, so the pong alone does not follow them; the anchor's 0x262 shows the
-/// tell has been taken, and the connection writes all of it before it takes the ping.
+/// pong, so the pong alone does not follow them; a creature of the map writes its
+/// own 0x262 from its own process, so it too is named among the anchors to be
+/// followed. The anchors' 0x262 show the tell has been taken, and the connection
+/// writes all of it before it takes the ping.
 fn entering_3460_as(
   started started: login_support.Started,
   number number: Int,
   character_name character_name: String,
   faction_id faction_id: Int,
   at position: #(Float, Float, Float),
-  anchor anchor: Int,
+  anchors anchors: List(Int),
 ) -> List(Frame) {
   let #(game, character_id) = new_player(started:, number:, character_name:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
@@ -4256,31 +4263,55 @@ fn entering_3460_as(
   send_play(game:, character_id:)
   let #(burst, have) = game_client.read_entry_kept(game:, have: <<>>)
   let #(until_anchor, have) =
-    read_until_object(game:, have:, creature_id: anchor, read: burst)
+    read_until_objects(game:, have:, creature_ids: anchors, read: burst)
   let #(after, _) = game_client.read_until_pong(game:, have:, number: 1)
   game_client.close(game:)
   list.append(until_anchor, after)
 }
 
-/// Reads messages until the 0x262 of the static object with this Creature2 id has
-/// been read, which `read` may already hold.
-fn read_until_object(
+/// Reads messages until the 0x262 of a static object with each of these Creature2 ids
+/// has been read (an id listed twice, twice), which `read` may already hold.
+fn read_until_objects(
   game game: game_client.Game,
   have have: BitArray,
-  creature_id creature_id: Int,
+  creature_ids creature_ids: List(Int),
   read read: List(Frame),
 ) -> #(List(Frame), BitArray) {
   use <- bool.guard(
-    when: list.contains(static_objects_in(frames: read), creature_id),
+    when: includes_each(
+      read: static_objects_in(frames: read),
+      wanted: creature_ids,
+    ),
     return: #(read, have),
   )
   let #(frame, rest) = game_client.next(game:, have:)
-  read_until_object(
+  read_until_objects(
     game:,
     have: rest,
-    creature_id:,
+    creature_ids:,
     read: list.append(read, [frame]),
   )
+}
+
+/// Whether `read` holds each of `wanted`, an id listed twice twice.
+fn includes_each(read read: List(Int), wanted wanted: List(Int)) -> Bool {
+  list.all(wanted, fn(id) {
+    list.count(read, fn(seen) { seen == id })
+    >= list.count(wanted, fn(listed) { listed == id })
+  })
+}
+
+/// The tutorial's two Sim-Turrets, each twice: objectives 21288 and 21316 count 2 of
+/// Creature2 73494 and 74862, which the world data of this test holds no row of, so the
+/// load places both at their markers (WorldLocation2 51671, 52753, 52902 and 52903, all
+/// within the sight range of 1024 units of the Start Arrow's row 29054 and past it from
+/// the mounts). They start as creatures of unit type 13, and the 0x262 of each is
+/// written to a character in sight of them, whatever its faction.
+const sim_turrets = [73_494, 73_494, 74_862, 74_862]
+
+/// The ids with the Sim-Turrets, sorted as `static_objects_in` sorts them.
+fn with_the_sim_turrets(ids ids: List(Int)) -> List(Int) {
+  list.append(ids, sim_turrets) |> list.sort(int.compare)
 }
 
 pub fn entering_world_3460_writes_no_start_arrow_and_mount_displays_only_to_an_exile_test() -> Nil {
@@ -4289,6 +4320,7 @@ pub fn entering_world_3460_writes_no_start_arrow_and_mount_displays_only_to_an_e
     start_with_world_data(folder: "test/fixture/world_data_tutorial")
   let at_the_arrows = #(71.4148, -855.3006, -479.419)
   let at_the_mounts = #(1381.03, -495.32764, 213.793)
+  let at_the_arrows_ids = with_the_sim_turrets(ids: [73_619])
   let exile =
     static_objects_in(frames: entering_3460_as(
       started:,
@@ -4296,30 +4328,34 @@ pub fn entering_world_3460_writes_no_start_arrow_and_mount_displays_only_to_an_e
       character_name: "Zed Qu",
       faction_id: 167,
       at: at_the_arrows,
-      anchor: 73_619,
+      anchors: at_the_arrows_ids,
     ))
-  assert exile == [73_619]
+  assert exile == at_the_arrows_ids
     as "an Exile with no tutorial quest at the Start Arrow's row 29054: the hologram 73619 (Creature2 prerequisite 41795, which passes for a player under no cast) is written and the Start Arrow 73707 (prerequisite 41803: neither quest 10527 nor 10532 is open) is not"
   let exile_at_the_mounts =
-    static_objects_in(frames: entering_3460_as(
-      started:,
-      number: 2,
-      character_name: "Ann Qu",
-      faction_id: 167,
-      at: at_the_mounts,
-      anchor: 74_787,
-    ))
+    static_objects_in(
+      frames: entering_3460_as(
+        started:,
+        number: 2,
+        character_name: "Ann Qu",
+        faction_id: 167,
+        at: at_the_mounts,
+        anchors: [74_787],
+      ),
+    )
   assert exile_at_the_mounts == [74_781, 74_782, 74_783, 74_784, 74_787]
     as "an Exile at the mounts: the four EXILE mount displays are written (Creature2 prerequisite 19, base faction 167), and 74787, which has none"
   let dominion_at_the_mounts =
-    static_objects_in(frames: entering_3460_as(
-      started:,
-      number: 3,
-      character_name: "Cal Qu",
-      faction_id: 166,
-      at: at_the_mounts,
-      anchor: 74_787,
-    ))
+    static_objects_in(
+      frames: entering_3460_as(
+        started:,
+        number: 3,
+        character_name: "Cal Qu",
+        faction_id: 166,
+        at: at_the_mounts,
+        anchors: [74_787],
+      ),
+    )
   assert dominion_at_the_mounts == [74_787]
     as "a Dominion character at the same place is written 74787, which has no visibility prerequisite, and none of the mount displays (Faction2 166 fails prerequisite 19)"
   login_support.stop(started)
