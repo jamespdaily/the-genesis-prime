@@ -1599,11 +1599,9 @@ fn remember_used(
       let units = case objective_done(log:, quest:, index:) {
         True -> dict.delete(used, index)
         False ->
-          dict.insert(
-            used,
-            index,
-            set.insert(dict.get(used, index) |> result.unwrap(set.new()), unit),
-          )
+          dict.upsert(used, index, fn(units) {
+            set.insert(option.unwrap(units, set.new()), unit)
+          })
       }
       QuestLog(
         ..log,

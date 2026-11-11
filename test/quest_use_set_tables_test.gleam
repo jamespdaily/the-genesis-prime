@@ -23,6 +23,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
 import genesis_prime/table/quest_objective
 import genesis_prime/table/target_group as target_group_table
+import gleam/bool
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -96,7 +97,7 @@ pub fn every_creature_a_type_23_group_reaches_counts_once_test() -> Nil {
     })
   assert list.length(wanted) == 87
     as "96 rows, less 2 with data 0, 3 in no quest and 4 terminal choices"
-  let tried =
+  let second_use_checked =
     list.flat_map(wanted, fn(row) {
       let assert Ok(quest_id) = dict.get(quest_of_objective, row.id)
         as "the objective is in a quest"
@@ -110,18 +111,24 @@ pub fn every_creature_a_type_23_group_reaches_counts_once_test() -> Nil {
         },
       )
     })
-  assert tried != [] as "the groups reach creatures"
+  assert list.length(second_use_checked) == 236
+    as "the 87 objectives' groups reach 236 creatures with a Creature2 row"
+  assert list.length(list.filter(second_use_checked, fn(checked) { checked }))
+    == 170
+    as "56 of the 87 objectives count 2 or more, and their groups reach 170 of those creatures"
 }
 
-/// Uses the creature as unit 1 and again as unit 1 on a fresh log of the quest whose
-/// earlier objectives are done and whose objective is open, and checks that the first
-/// counts one and the second nothing for that objective.
+/// Uses the creature as unit 1 on a fresh log of the quest whose earlier objectives are
+/// done and whose objective is open, and checks that it counts one. Where the objective
+/// counts 2 or more it is still open, and the same unit again must count nothing for it
+/// (a count of 1 closes the objective, which refuses a second use for that reason, tested
+/// in `objective_test`). Returns whether the second use was checked.
 fn counts_once(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,
   row row: quest_objective.QuestObjective,
   creature creature: creature2.Creature2,
-) -> Nil {
+) -> Bool {
   let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
     as "the quest's rows are in the tables"
   let assert Ok(#(index, _)) =
@@ -168,6 +175,7 @@ fn counts_once(
       <> " counts one for "
       <> where
     }
+  use <- bool.guard(when: row.count < 2, return: False)
   let second = objective.advance(log: first.log, tables:, event:, now_ms: 0)
   // A later objective the first use opened may count the unit itself: quest 6251's
   // objective 9944 follows 9943 with a group (3260) that lists the same creature, so the
@@ -180,6 +188,7 @@ fn counts_once(
     })
     == []
     as { "the same unit again counts nothing for " <> where }
+  True
 }
 
 /// The bits of the objective indexes below `index`.

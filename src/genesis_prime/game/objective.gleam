@@ -95,10 +95,6 @@ const collectible_type = 32
 /// The objective type of a scripted objective: a use of a creature linked to it.
 const scripted_type = 5
 
-/// The objective type of a use of a unit of the TargetGroup in its data, one count for
-/// each unit (`QuestObjective.type.23`; the once is the server's choice, `quest_log.used`).
-const use_a_group_type = 23
-
 /// The objective type of a held item: the Item2 id in its data.
 const held_type = 4
 
@@ -354,7 +350,7 @@ fn counts(
         && target_group.contains(tables:, group: objective.data, unit: target)
       }
       || {
-        objective.type_ == use_a_group_type
+        quest_log.counted_by_unit(objective:)
         && target_group.contains(tables:, group: objective.data, unit: target)
         && is_the_terminals_choice(
           objective_id: objective.objective_id,
@@ -528,7 +524,11 @@ fn advance_quest(
                 )
                 Ok(_) | Error(Nil) -> counted
               }
-            _, _ -> progressed_by_one(counted:, quest:, index: open.0, now_ms:)
+            // A use always carries its unit, so a type 23 objective with none counts
+            // nothing.
+            True, Error(Nil) -> counted
+            False, _ ->
+              progressed_by_one(counted:, quest:, index: open.0, now_ms:)
           }
       }
     })
