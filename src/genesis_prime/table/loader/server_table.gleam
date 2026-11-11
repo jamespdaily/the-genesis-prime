@@ -55,6 +55,8 @@ import genesis_prime/table/prerequisite
 import genesis_prime/table/quest2
 import genesis_prime/table/quest2_difficulty
 import genesis_prime/table/quest2_reward
+import genesis_prime/table/quest_direction
+import genesis_prime/table/quest_direction_entry
 import genesis_prime/table/quest_objective
 import genesis_prime/table/race
 import genesis_prime/table/reward_property_premium_modifier
@@ -199,6 +201,8 @@ pub fn entries() -> List(store.Entry) {
     quest2.entry(),
     quest2_difficulty.entry(),
     quest2_reward.entry(),
+    quest_direction.entry(),
+    quest_direction_entry.entry(),
     quest_objective.entry(),
     race.entry(),
     reward_property_premium_modifier.entry(),

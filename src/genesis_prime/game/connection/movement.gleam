@@ -142,6 +142,17 @@ fn body_moving(
           ),
         )
       let connection = client_connection.connection(session.link)
+      // A move that changed the position can reach a marker (the client sends nothing
+      // for a place), so the objectives are settled against it.
+      let #(session, reached) = case
+        changed_position(
+          from: movement.place(state: entered.movement),
+          to: place,
+        )
+      {
+        True -> connection_objective.settled(session:, now:)
+        False -> #(session, [])
+      }
       Continue(
         session,
         list.flatten([
@@ -179,12 +190,22 @@ fn body_moving(
                 }),
               ])
           },
+          reached,
         ]),
       )
     }
     Error(refusal) ->
       connection_state.end_for(session:, now:, text: movement.describe(refusal))
   }
+}
+
+/// Whether the two places differ in the world or the position; the way the player
+/// faces does not count.
+fn changed_position(from from: Place, to to: Place) -> Bool {
+  start_place.world_id(from) != start_place.world_id(to)
+  || start_place.x(from) != start_place.x(to)
+  || start_place.y(from) != start_place.y(to)
+  || start_place.z(from) != start_place.z(to)
 }
 
 /// A 0x637 while the player is dead moves its ghost, the client's controlled

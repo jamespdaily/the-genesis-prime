@@ -380,6 +380,7 @@ fn an_achieved_quest_takes_progress_on_its_optional_objectives() -> Nil {
 fn kill_objective(count count: Int) -> quest_log.Quest {
   quest_log.Quest(id: one_kill, objectives: [
     quest_log.Objective(
+      objective_id: 0,
       type_: 2,
       flags: 0,
       count:,

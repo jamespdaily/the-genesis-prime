@@ -93,6 +93,7 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/class_resource
+import genesis_prime/game/place_objective
 import genesis_prime/game/rating
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_plan
@@ -330,6 +331,7 @@ fn read(
         )
       })
       log_levels_out_of_range(selection)
+      log_place_objectives(tables:, selection:)
       content_spawn.put(key:, selection:)
       let assert Ok(kinds_of_summons) = kinds_for_spawns
         as "no kinds were taken, which refuses the kind rows, so the load has refusals and does not reach here"
@@ -395,6 +397,43 @@ fn log_levels_out_of_range(selection: spawn.Selection) -> Nil {
         step.no_one,
       )
   }
+}
+
+/// The info lines of the type 22 objectives with no marker, which nothing can complete,
+/// and of the place-counted checklist objectives with a place where no spawn of their
+/// group stands, where reaching the place counts nothing.
+fn log_place_objectives(
+  tables tables: store.Tables,
+  selection selection: spawn.Selection,
+) -> Nil {
+  case place_objective.unmarked(tables:) {
+    [] -> Nil
+    unmarked ->
+      runtime.log(
+        step.LogInfo,
+        "type 22 objectives with no marker, which nothing completes: "
+          <> string.join(
+          list.map(unmarked, fn(objective) { int.to_string(objective.id) }),
+          ", ",
+        ),
+        step.no_one,
+      )
+  }
+  list.each(
+    place_objective.places_without_unit(tables:, worlds: selection.worlds),
+    fn(empty) {
+      let #(objective_id, places) = empty
+      runtime.log(
+        step.LogInfo,
+        "objective "
+          <> int.to_string(objective_id)
+          <> " counts nothing at its places "
+          <> string.join(list.map(places, int.to_string), ", ")
+          <> ", where no spawn of its group stands",
+        step.no_one,
+      )
+    },
+  )
 }
 
 /// Asks the database through the load's pool until it answers, as readiness

@@ -188,7 +188,7 @@ fn quest_objectives() -> EngineDeclaration {
     // bit of the objective's 32-bit mask, and the objective is done at its count of bits
     // (genesis_prime/game/objective; the index of each target is
     // genesis_prime/world_map/checklist_index). Types 10 and 13 are not counted.
-    handled: Listed(ids: [2, 3, 4, 8, 12, 14, 16, 17, 18, 28, 32, 33]),
+    handled: Listed(ids: [2, 3, 4, 8, 12, 14, 16, 17, 18, 22, 28, 32, 33]),
     partial: [
       Missing(
         type_number: 32,

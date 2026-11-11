@@ -81,7 +81,7 @@ fn indexes_of(
   list.map(numbers, fn(number) { index_of(indexes:, number:) })
 }
 
-pub fn each_target_spawn_of_a_checklist_objective_gets_a_distinct_index_test() -> Nil {
+pub fn the_three_manifestations_hold_distinct_checklist_indexes_test() -> Nil {
   use <- owned_test.run(10_000)
   // Objectives 21294 and 21307 count three of the three spawns of Creature2 73500: the
   // client's mask needs the three bits apart (0x140611680), and the world database's

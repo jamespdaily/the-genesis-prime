@@ -774,12 +774,13 @@ pub fn reset_due(
 // ---- the client's reads of a quest ----
 
 /// One objective of a quest as the client keeps it (`0x1405a8a40`, the quest record's
-/// words 0x18 and after): its QuestObjective type, flags, count and data (the id of
+/// words 0x18 and after): its QuestObjective id, type, flags, count and data (the id of
 /// the row its type names, a Creature2 id for types 3 and 12), the TargetGroup row of
 /// its reward pane (0 for none), and whether it counts its progress as bits
 /// (`0x1405517a0`), and its time limit in milliseconds (`maxTimeAllowedMS`, 0 for none).
 pub type Objective {
   Objective(
+    objective_id: Int,
     type_: Int,
     flags: Int,
     count: Int,
@@ -839,6 +840,7 @@ fn objective_of(
   row row: quest_objective.QuestObjective,
 ) -> Objective {
   Objective(
+    objective_id: row.id,
     type_: row.type_,
     flags: row.flags,
     count: row.count,

@@ -2,11 +2,58 @@ ID	assetPath	flags	type	screenPath	screenModelPath	chunkBounds00	chunkBounds01	c
 22	Map\\Western	0	0	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Olyssia_000.m3	736	794	1200	1200	0	0	0	0	0	0	0	0	0
 51	Map\\Eastern	0	0	UI\\Screens\\UI_CRB_WorldID51_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Alizar_000.m3	986	800	1260	1236	0	0	0	0	0	0	0	0	0
 426	Map\\Eastern	0	0	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_StarterPack_000.m3	1135	833	1188	871	0	0	0	0	0	0	0	0	0
+625	Map\\QuestTestIsland	0	0			991	992	1100	1100	0	0	0	0	0	0	0	0	0
 870	Map\\Western	0	0	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_StarterPack_000.m3	756	970	813	1034	0	0	0	0	0	0	0	0	0
+930	Map\\TheSkullsEye	0	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	1019	1013	1029	1030	0	0	0	0	0	0	0	0	0
+983	Map\\AlgorocGroupInstance	0	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Alizar_000.m3	1015	1010	1032	1037	0	0	0	0	0	0	0	0	0
 990	Map\\Eastern	0	0	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_StarterPack_000.m3	950	850	1065	975	0	0	0	0	0	0	0	0	0
+1061	Map\\NewCentral	0	0	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Isigrol_000.m3	944	700	1262	1214	0	0	0	0	0	0	0	0	0
 1068	Map\\HalonRingNew	1	0	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	500	655	895	935	0	0	0	0	0	0	0	0	0
+1138	Map\\GalerasBanditBeachShip	1	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	1013	1012	1039	1040	0	0	0	0	0	0	0	0	0
+1149	Map\\AdventureHycrest	20	6	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Dungeon_000.m3	933	950	972	991	0	0	0	0	0	0	0	0	0
+1181	Map\\AdventureMalgrave	20	6	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Dungeon_000.m3	1008	1072	1136	1199	0	0	0	0	0	0	0	0	0
+1229	Map\\HousingAlgorocSky	1	5	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Housing_000.m3	1024	1024	1100	1100	0	0	0	0	0	0	0	0	0
+1232	Map\\ShiphandInfestation	449	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	1008	1008	1039	1039	0	766942	0	0	0	15	2	0	18
+1233	Map\\AdventureGaleras	20	6	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Dungeon_000.m3	1170	930	1214	960	0	0	0	0	0	0	0	0	0
+1263	Map\\Skullcano	320	11	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Dungeon_000.m3	900	900	1100	1100	0	766937	0	0	0	15	1	0	13
+1319	Map\\ShiphandAsteroidMining	449	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	976	978	1343	1199	0	766943	0	0	0	15	2	0	19
+1323	Map\\AdventureWhitevale	20	6	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Dungeon_000.m3	1140	975	1210	1040	0	0	0	0	0	0	0	0	0
 1333	Map\\Datascape	1	9	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Dungeon_000.m3	0	0	2048	2048	0	439159	0	0	0	0	4	0	0
 1387	Map\\Western	0	0	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_StarterPack_000.m3	890	815	977	883	0	0	0	0	0	0	0	0	0
+1393	Map\\AdventureNorthernWilds	20	6	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Dungeon_000.m3	1088	784	1215	895	0	0	0	0	0	0	0	0	0
+1421	Map\\Farsidesque	0	0	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	1024	630	1380	1024	0	0	0	0	0	0	0	0	0
+1437	Map\\AdventureAstrovoidPrison	21	6	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Dungeon_000.m3	975	975	1055	1070	0	0	0	0	0	0	0	0	0
+1463	Map\\HalonRingNew	1	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	550	800	650	900	0	0	0	0	0	0	0	0	0
+1537	Map\\ExileArkShipTutorial	5	0	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	969	955	1200	1100	0	0	0	0	0	0	0	0	0
+1606	Map\\ShiphandVoidHunter	1	1			1008	1008	1039	1039	0	0	0	0	0	0	0	0	0
+1627	Map\\ShiphandRageLogic	449	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	975	953	1077	1055	0	766944	0	0	0	15	2	0	20
+1629	Map\\PublicEventIsland	0	0			0	0	2048	2048	0	0	0	0	0	0	0	0	0
+1634	Map\\DominionArkShipTutorial	5	0	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	944	944	1200	1120	0	0	0	0	0	0	0	0	0
+1658	Map\\PocketCaps	0	0	UI\\Screens\\UI_CRB_WorldID51_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Alizar_000.m3	115	95	160	130	0	0	0	0	0	0	0	0	0
+1833	Map\\Malgrave2ElderCubeMicro	0	10			1000	1006	1041	1044	0	0	0	0	0	0	0	0	0
+1892	Map\\HousingDungeonAuroria1	0	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Dungeon_000.m3	1008	1008	1040	1040	0	0	0	0	0	0	0	0	0
+1894	Map\\Housing1x1GenericEldanTestLabDungeon	0	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Dungeon_000.m3	1008	1009	1039	1055	0	0	0	0	0	0	0	0	0
+1895	Map\\Housing1x1DungeonCreeperCave	0	1			1008	1008	1039	1039	0	0	0	0	0	0	0	0	0
+1901	Map\\Housing1x1DungeonMayday	0	1			1008	1008	1055	1055	0	0	0	0	0	0	0	0	0
+1982	Map\\GrimvaultCore	1	0			993	993	1055	1055	0	0	0	0	0	0	0	0	0
+2161	Map\\Q6734Micro	0	10			1008	1008	1040	1040	0	0	0	0	0	0	0	0	0
+2166	Map\\ExcavationSabotage	0	3			944	944	1087	1087	0	769446	0	0	0	0	0	0	40
+2173	Map\\DruseraMicroInstance1	0	10	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Isigrol_000.m3	998	1001	1049	1060	0	0	0	0	0	0	0	0	0
+2188	Map\\ShiphandDeepSpaceDisappearance	449	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	976	976	1072	1072	0	766947	0	0	0	15	2	0	23
+2189	Map\\DruseraMicroInstance2	0	10	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Isigrol_000.m3	992	992	1056	1056	0	0	0	0	0	0	0	0	0
+2352	Map\\DruseraMicroInstance3	1	10	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Isigrol_000.m3	992	992	1056	1056	0	0	0	0	0	0	0	0	0
+2967	Map\\DruseraInstance4	0	10	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Isigrol_000.m3	976	976	1072	1072	0	0	0	0	0	0	0	0	0
 2979	Map\\PCPLevianBay	0	0	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Olyssia_000.m3	1006	1003	1041	1041	0	0	0	0	0	0	0	0	0
+2988	Map\\NewCentral	0	10	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Isigrol_000.m3	1120	910	1145	945	0	0	0	0	0	0	0	0	0
+2997	Map\\PocketCaps	0	0	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Olyssia_000.m3	207	114	365	208	0	0	0	0	0	0	0	0	0
+3009	Map\\HalloftheHundred	1	11		Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Arcterra_000.m3	0	0	2048	2048	0	0	0	0	0	0	0	0	0
+3023	Map\\RaidAttunementArkshipLibraries	0	10			992	992	1056	1056	0	0	0	0	0	0	0	0	0
 3045	Map\\WorldStory01	1	10	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Isigrol_000.m3	1008	967	1320	1039	0	0	0	0	0	0	0	0	0
+3094	Map\\ProtostarWinterfest	9	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Temp_000.m3	1008	1008	1056	1056	0	0	0	0	0	0	0	0	0
+3173	Map\\UltimateProtogamesJuniors	321	11	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Dungeon_000.m3	48	48	1103	191	0	766939	0	0	0	15	1	0	17
+3176	Map\\AdventureLevianBay	20	6	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex		890	815	977	883	0	0	0	0	0	0	0	0	0
+3180	Map\\ShiphandLevel6	449	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	1300	800	1360	860	0	766941	0	0	0	15	2	0	24
+3335	Map\\Arcterra	0	0		Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Arcterra_000.m3	0	0	2048	2048	0	767613	0	0	0	0	0	0	0
+3404	Map\\ShiphandHungerFromtheVoid	449	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	1008	1008	1039	1039	0	766985	0	0	0	15	2	0	25
+3406	Map\\CombatRolesTraining	1	0	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Temp_000.m3	970	970	1070	1070	0	0	0	0	0	0	0	0	0
 3460	Map\\NewPlayerExperience	1	0		Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_NPE_000.m3	0	0	2048	2048	0	0	0	0	0	0	0	0	0
