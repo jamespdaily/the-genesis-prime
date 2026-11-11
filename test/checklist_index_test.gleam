@@ -28,6 +28,7 @@ import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
+import gleam/result
 import gleam/set
 import owned_test
 import planted_table.{Integer}
@@ -188,6 +189,76 @@ pub fn an_objective_with_more_than_32_targets_still_completes_on_distinct_target
     as "the first 32 spawns hold 32 distinct indexes, in order"
 }
 
+pub fn a_spawn_in_an_objective_of_more_than_32_targets_and_a_small_one_takes_an_index_free_in_the_small_one_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Four objectives, from the fixture's four with their groups changed:
+  // - 21294 and 21307 count the group 14425, Creature2 73500 and 73422: 33 spawns of
+  //   73500 and one of 73422, 34 targets, more than the 32 bits of the mask.
+  // - 21319 counts the group 14368, Creature2 73422 and 73464: that spawn of 73422 and 31
+  //   of 73464, 32 targets.
+  // - 21378 counts the new group 99001, Creature2 73465 and 73464: one spawn of 73465 and
+  //   the same 31 of 73464, which makes them take 1 to 31 (the spawn of 73465 holds 0 in
+  //   21378) and leaves 0 the only index free in 21319.
+  // The client's mask needs the 32 targets of 21319 apart (0x140611680): the spawn of
+  // 73422 must take 0, though the 33rd spawn of 73500 took 0 again in the big objective,
+  // which makes 0 the most held index there.
+  let rows =
+    fixture_tables.rows()
+    |> fixture_tables.add(
+      table: "TargetGroup",
+      copy_of: 14_368,
+      id: 99_001,
+      with: [#("data0", Integer(73_465)), #("data1", Integer(73_464))],
+    )
+    |> result.try(
+      fixture_tables.change(_, table: "QuestObjective", id: 21_378, with: [
+        #("data", Integer(99_001)),
+      ]),
+    )
+    |> result.try(
+      fixture_tables.change(_, table: "TargetGroup", id: 14_425, with: [
+        #("data1", Integer(73_422)),
+      ]),
+    )
+    |> result.try(
+      fixture_tables.change(_, table: "TargetGroup", id: 14_368, with: [
+        #("data1", Integer(73_464)),
+      ]),
+    )
+  let assert Ok(rows) = rows as "the four objectives' groups are changed"
+  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  let shared = 100
+  let spawns =
+    list.flatten([
+      spawns_of(tables:, creature: 73_465, numbers: [1]),
+      spawns_of(tables:, creature: 73_464, numbers: upto(32, from: 2)),
+      spawns_of(tables:, creature: 73_500, numbers: upto(65, from: 33)),
+      spawns_of(tables:, creature: 73_422, numbers: [shared]),
+    ])
+  let indexes = checklist_index.assign(tables:, candidates: spawns)
+  let checklists = checklist_index.checklists(tables:, candidates: spawns)
+  let of_objective = fn(objective_id) {
+    let assert Ok(found) =
+      list.find(checklists, fn(checklist) {
+        checklist.objective_id == objective_id
+      })
+      as "the objective is a checklist"
+    found
+  }
+  assert list.length({ of_objective(21_294) }.targets) == 34
+    as "21294 counts the 34 spawns of 73500 and 73422"
+  assert list.length({ of_objective(21_319) }.targets) == 32
+    as "21319 counts the 31 spawns of 73464 and the one of 73422"
+  let held_in_21319 =
+    list.map({ of_objective(21_319) }.targets, fn(spawn) {
+      index_of(indexes:, number: spawn_number(spawn))
+    })
+  assert set.size(set.from_list(held_in_21319)) == 32
+    as "the 32 targets of 21319 hold 32 distinct indexes, so the objective reaches its count in the client's mask"
+  assert index_of(indexes:, number: shared) == 0
+    as "the spawn of 73422 takes 0, the one index no other target of 21319 holds"
+}
+
 /// How many spawns each target creature gets in the whole-table test: as many as a
 /// 32-bit mask has bits, the most an objective can count.
 const spawns_each = 32
@@ -235,7 +306,7 @@ pub fn every_checklist_objective_in_a_quest_has_distinct_indexes_for_its_count_t
         list.filter_map(checklist.targets, dict.get(indexes, _))
         |> set.from_list
         |> set.size
-      case
+      let outcome = case
         checklist.targets,
         checklist.count > 32,
         distinct >= checklist.count
@@ -245,10 +316,32 @@ pub fn every_checklist_objective_in_a_quest_has_distinct_indexes_for_its_count_t
         _, False, True -> "distinct"
         _, False, False -> "shared"
       }
+      #(checklist.objective_id, outcome)
     })
-  let count_of = fn(outcome) {
-    list.count(outcomes, fn(found) { found == outcome })
+  let of_outcome = fn(outcome) {
+    list.filter_map(outcomes, fn(found) {
+      case found.1 == outcome {
+        True -> Ok(found.0)
+        False -> Error(Nil)
+      }
+    })
+    |> list.sort(int.compare)
   }
+  // The twenty objectives that count no creature, by what leaves them none:
+  // - 1915 and 3673: TargetGroup 310 and 738 (type 1) name Creature2 ids 5138, 8354, 8335
+  //   and 8334, which the Creature2 table has no row for.
+  // - 3801, 4061, 5316, 6080, 6095, 8559, 13114, 15778, 15952, 16571, 16572, 17804 and
+  //   18154: data 0, no TargetGroup row.
+  // - 6218, 6298, 8895, 11515 and 11516: TargetGroup 1615, 1611, 2787, 3665 and 3666 are
+  //   of type 9, which reads the unit's race, class and third tagged value, so no unit
+  //   the server holds is a member.
+  assert of_outcome("no creature counted")
+    == [
+      1915, 3673, 3801, 4061, 5316, 6080, 6095, 6218, 6298, 8559, 8895, 11_515,
+      11_516, 13_114, 15_778, 15_952, 16_571, 16_572, 17_804, 18_154,
+    ]
+    as "the objectives that count no creature are the twenty listed above, and no others"
+  let count_of = fn(outcome) { list.length(of_outcome(outcome)) }
   assert #(
       count_of("distinct"),
       count_of("no creature counted"),

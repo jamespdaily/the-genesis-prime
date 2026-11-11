@@ -7,10 +7,12 @@
 //// 0 to 31 for the objective to reach its count. The world data's indexes do not: all
 //// three spawns of Creature2 73500 carry 0. So the index is worked out from the client's
 //// tables and the spawn list. In spawn order, each target spawn takes the lowest index
-//// that no target spawn already given one holds in any of its objectives; with all 32
-//// held (an objective of more than 32 targets) it takes the least held one, so the
-//// objective still completes on distinct targets up to its count. A spawn that no
-//// checklist counts takes 0, the index the client reads of a unit no objective counts.
+//// that no target spawn already given one holds in any of its objectives. With none
+//// free (an objective of more than 32 targets holds all 32), it takes an index free in
+//// every one of its objectives of 32 targets or fewer, which can still be distinct, and
+//// of those the least held in all its objectives, so a big objective still completes on
+//// distinct targets up to its count. A spawn that no checklist counts takes 0, the
+//// index the client reads of a unit no objective counts.
 
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group.{type Unit}
@@ -29,6 +31,7 @@ import gleam/list
 import gleam/option
 import gleam/order
 import gleam/result
+import gleam/set.{type Set}
 
 /// The bits of the server's mask.
 const mask_bits = 32
@@ -136,12 +139,19 @@ fn indexes(checklists checklists: List(Checklist)) -> Dict(SpawnId, Int) {
         })
       })
     })
+  let small =
+    list.index_fold(checklists, set.new(), fn(found, checklist, at) {
+      case list.length(checklist.targets) <= mask_bits {
+        True -> set.insert(found, at)
+        False -> found
+      }
+    })
   let spawns = dict.keys(memberships) |> list.sort(by: by_spawn)
   let #(indexes, _) =
     list.fold(spawns, #(dict.new(), dict.new()), fn(state, spawn) {
       let #(indexes, held) = state
       let in = result.unwrap(dict.get(memberships, spawn), or: [])
-      let index = pick(in:, held:)
+      let index = pick(in:, held:, small:)
       let held =
         list.fold(in, held, fn(held, checklist) {
           dict.upsert(held, checklist, fn(before) {
@@ -154,29 +164,48 @@ fn indexes(checklists checklists: List(Checklist)) -> Dict(SpawnId, Int) {
   indexes
 }
 
-/// The lowest index that none of the checklists `in` holds, or, with all held, the least
-/// held one (the lowest of those). `held` is, for each checklist, how many of its targets
-/// hold each index.
-fn pick(in checklists: List(Int), held held: Dict(Int, Dict(Int, Int))) -> Int {
-  let counts =
-    list.fold(checklists, dict.new(), fn(counts, checklist) {
-      dict.get(held, checklist)
-      |> result.unwrap(or: dict.new())
-      |> dict.fold(counts, fn(counts, index, count) {
-        dict.upsert(counts, index, fn(before) {
-          option.unwrap(before, 0) + count
-        })
-      })
-    })
-  let #(index, _) =
-    int.range(from: 0, to: mask_bits, with: #(0, -1), run: fn(best, index) {
+/// The index for a spawn in the checklists `in`: the lowest that none holds, else the
+/// lowest that none of the `small` checklists (32 targets or fewer) holds and, of those,
+/// the least held in all of them, else the least held one. `held` is, for each
+/// checklist, how many of its targets hold each index.
+fn pick(
+  in checklists: List(Int),
+  held held: Dict(Int, Dict(Int, Int)),
+  small small: Set(Int),
+) -> Int {
+  let counts = held_by(checklists:, held:)
+  let small_counts =
+    held_by(checklists: list.filter(checklists, set.contains(small, _)), held:)
+  let #(_, _, index) =
+    int.range(from: 0, to: mask_bits, with: #(2, 0, 0), run: fn(best, index) {
+      let in_small = case dict.has_key(small_counts, index) {
+        True -> 1
+        False -> 0
+      }
       let used = result.unwrap(dict.get(counts, index), or: 0)
-      case best.1 < 0 || used < best.1 {
-        True -> #(index, used)
+      let against_best =
+        int.compare(in_small, best.0)
+        |> order.break_tie(int.compare(used, best.1))
+      case best.0 == 2 || against_best == order.Lt {
+        True -> #(in_small, used, index)
         False -> best
       }
     })
   index
+}
+
+/// How many targets of the checklists hold each index, summed over the checklists.
+fn held_by(
+  checklists checklists: List(Int),
+  held held: Dict(Int, Dict(Int, Int)),
+) -> Dict(Int, Int) {
+  list.fold(checklists, dict.new(), fn(counts, checklist) {
+    dict.get(held, checklist)
+    |> result.unwrap(or: dict.new())
+    |> dict.fold(counts, fn(counts, index, count) {
+      dict.upsert(counts, index, fn(before) { option.unwrap(before, 0) + count })
+    })
+  })
 }
 
 /// The index of each candidate: its checklist index when it is a target, else 0.

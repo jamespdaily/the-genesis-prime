@@ -124,6 +124,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/system
 import gleam/result
+import gleam/string
 import item_bot
 import log_capture
 import login_client
@@ -1602,6 +1603,35 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
       ),
     ]
     as "opcode.0x361: the go of the activate counts the bit of index 1, the second object's, in objective 8782 of quest 5855"
+  // The same object activated a second time: its cast goes, and the server has written
+  // all it held for this connection when its pong comes, so a 0x361 that the go would
+  // send is among those frames.
+  let assert Ok(again) =
+    cast_activate.encode(CastActivate(
+      client_cast_id: 2,
+      target_unit_id: second.unit_id,
+    ))
+    as "the right-click fits the message"
+  game_client.send_world(
+    game:,
+    message_id: cast_activate.message_id,
+    body: again,
+  )
+  let #(_, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x07FD })
+    })
+  driven_time.advance(time:, ms: 1500)
+  let #(went_again, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(cast_support.cast_lines(frames:), string.starts_with(_, "went"))
+    })
+  let #(rest, have) = game_client.read_until_pong(game:, have:, number: 1)
+  assert list.filter(list.append(went_again, rest), fn(frame) {
+      frame.message_id == 0x0361
+    })
+    == []
+    as "opcode.0x361: the second activate's go counts nothing, the bit of index 1 is set in objective 8782, so no 0x361 follows the go"
   let #(second_entry, _) =
     game_client.camp_and_play(game:, have:, character_id: character)
   let assert [Frame(body: log, ..)] =
