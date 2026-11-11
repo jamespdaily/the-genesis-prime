@@ -22,8 +22,7 @@
 ////   (ShieldCapacityMax) 0.0, 175 (ShieldMitigationMax) 0.0, 176 (ShieldRegenPct) 0.25
 ////   and 178 (ShieldRebootTime) 2500.0 (`UnitProperty2.client_value`).
 //// - An item the reader leaves unread: the PvP flags 0x8000 (the PvP gap record, open
-////   issue #56), `0x1404445d0` (the flags 0x4000) and `0x14041deb0` (GameFormula
-////   1286's armor curve), as `item_property` records.
+////   issue #56) and `0x1404445d0` (the flags 0x4000), as `item_property` records.
 
 import fixture_tables
 import genesis_prime/game/gear
@@ -101,7 +100,8 @@ pub fn the_novice_set_held_at_location_0_gives_the_loadouts_properties_visuals_a
       <> int.to_string(set.class_id)
       <> " faction "
       <> int.to_string(set.faction_id)
-    let worn = gear.of_items(tables:, items: held_at(set:, location: 0))
+    let worn =
+      gear.of_items(tables:, level: 1, items: held_at(set:, location: 0))
     let properties = worn.properties
     assert close(value: properties.assault_rating, to: 203.0625)
       as { "0x14040df10: the Assault Rating of " <> name <> " is 203.0625" }
@@ -163,7 +163,7 @@ pub fn items_not_at_location_0_give_nothing_test() -> Nil {
     )
   // The bag (location 1), the bank (location 2) and the ability bag (location 4).
   list.each([1, 2, 4], fn(location) {
-    let worn = gear.of_items(tables:, items: held_at(set:, location:))
+    let worn = gear.of_items(tables:, level: 1, items: held_at(set:, location:))
     assert worn.properties == nothing
       && worn.visuals == []
       && worn.weapon == None
@@ -181,7 +181,7 @@ pub fn items_not_at_location_0_give_nothing_test() -> Nil {
         _ -> item
       }
     })
-  let worn = gear.of_items(tables:, items: chest_worn)
+  let worn = gear.of_items(tables:, level: 1, items: chest_worn)
   assert close(value: worn.properties.base_health, to: 150.0)
     && close(value: worn.properties.assault_rating, to: 9.0)
     && worn.properties.shield == None
@@ -195,7 +195,7 @@ pub fn without_the_chest_armor_and_health_fall_by_its_values_test() -> Nil {
   let set = warrior_167()
   let without_chest =
     list.filter(held_at(set:, location: 0), fn(item) { item.bag_index != 0 })
-  let worn = gear.of_items(tables:, items: without_chest)
+  let worn = gear.of_items(tables:, level: 1, items: without_chest)
   assert close(value: worn.properties.base_health, to: 450.0)
     as "the chest's quarter of the 600 is gone"
   assert close(value: worn.properties.armor, to: 187.5)
@@ -233,7 +233,7 @@ pub fn without_a_shield_its_four_properties_are_the_defaults_test() -> Nil {
   let set = warrior_167()
   let all = held_at(set:, location: 0)
   let without_shield = list.filter(all, fn(item) { item.bag_index != 15 })
-  let bare = gear.of_items(tables:, items: without_shield)
+  let bare = gear.of_items(tables:, level: 1, items: without_shield)
   assert bare.properties.shield == None as "no shield is worn"
   let assert Ok(bases) = gear.bases(tables:, gear: bare, level: 1)
     as "CreatureLevel has row 1"
@@ -252,7 +252,7 @@ pub fn without_a_shield_its_four_properties_are_the_defaults_test() -> Nil {
       #(UnitProperty2Id(178), 2500.0),
     ]
     as "UnitProperty2's defaultValue of ShieldCapacityMax 0, ShieldMitigationMax 0, ShieldRegenPct 0.25 and ShieldRebootTime 2500"
-  let shielded = gear.of_items(tables:, items: all)
+  let shielded = gear.of_items(tables:, level: 1, items: all)
   let assert Ok(with_shield) = gear.bases(tables:, gear: shielded, level: 1)
     as "CreatureLevel has row 1"
   let shield_part =
@@ -293,7 +293,7 @@ pub fn an_item_the_reader_refuses_is_worn_and_shown_but_gives_nothing_test() -> 
     with: [#("flags", Integer(0x8001))],
     body: fn(tables) {
       let worn =
-        gear.of_items(tables:, items: [
+        gear.of_items(tables:, level: 1, items: [
           HeldItem(
             item_guid: 1,
             item2_id: Item2Id(99_001),
@@ -329,7 +329,7 @@ pub fn an_item_the_reader_refuses_is_worn_and_shown_but_gives_nothing_test() -> 
     with: [#("flags", Integer(0x4001))],
     body: fn(tables) {
       let worn =
-        gear.of_items(tables:, items: [
+        gear.of_items(tables:, level: 1, items: [
           HeldItem(
             item_guid: 1,
             item2_id: Item2Id(99_001),
@@ -350,41 +350,51 @@ pub fn an_item_the_reader_refuses_is_worn_and_shown_but_gives_nothing_test() -> 
       Nil
     },
   )
-  // The armor curve of GameFormula 1286 from the item's power level 50 (the row's
-  // dataint0): a copy of the chest at that level.
-  fixture_tables.added(
-    table: "Item2",
-    copy_of: 81_359,
-    id: 99_001,
-    with: [#("powerLevel", Integer(50))],
-    body: fn(tables) {
-      let worn =
-        gear.of_items(tables:, items: [
-          HeldItem(
-            item_guid: 1,
-            item2_id: Item2Id(99_001),
-            location: 0,
-            bag_index: 0,
-            stack_count: 1,
-            random_stats: 0,
-          ),
-        ])
-      assert worn.properties == nothing
-        as "0x14041deb0: an armor item whose power level reaches GameFormula 1286's dataint0, 50, takes the armor curve this reader does not follow"
-      let assert [
-        #(Item2Id(99_001), item_property.Unread(item2_id: 99_001, ..)),
-      ] = worn.unread
-        as "it is listed unread"
-      Nil
-    },
-  )
+}
+
+/// Item2 13394, a level-scaled light armor of power level 1 worn in the chest slot, gives its
+/// Armor and Base Health at the wearer's level (`item_property`'s test of the same item): at
+/// level 10 Armor 187.5 and Base Health 750 on top of CreatureLevel row 10's 2777.491, a
+/// maximum health of 3527.
+pub fn worn_level_scaled_gear_gives_its_bases_at_the_wearers_level_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let worn =
+    gear.of_items(
+      tables:,
+      level: 10,
+      items: one_item(item2_id: 13_394, location: 0, bag_index: 0),
+    )
+  assert worn.unread == [] as "the level-scaled armor is read"
+  let assert Ok(bases) = gear.bases(tables:, gear: worn, level: 10)
+    as "CreatureLevel has row 10"
+  assert bases
+    |> list.key_find(UnitProperty2Id(42))
+    |> result_is_close(to: 187.5)
+    as "property 42, Armor, at the level 10 of the wearer"
+  assert bases
+    |> list.key_find(UnitProperty2Id(7))
+    |> result_is_close(to: 3527.0)
+    as "property 7, Base Health: CreatureLevel row 10's 2777.491 and the armor's 750, whole"
+  assert gear.max_health(tables:, gear: worn, level: 10) == Ok(3527)
+  let at_one =
+    gear.of_items(
+      tables:,
+      level: 1,
+      items: one_item(item2_id: 13_394, location: 0, bag_index: 0),
+    )
+  assert at_one != worn as "the same item at level 1 gives other properties"
 }
 
 pub fn max_health_at_a_level_uses_that_levels_creature_level_row_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = fixture_tables.shared()
   let worn =
-    gear.of_items(tables:, items: held_at(set: warrior_167(), location: 0))
+    gear.of_items(
+      tables:,
+      level: 9,
+      items: held_at(set: warrior_167(), location: 0),
+    )
   assert gear.max_health(tables:, gear: worn, level: 9) == Ok(2895)
     as "the client's CreatureLevel row 9's 2295.49 and the armor's 600, 2895"
   assert gear.max_health(tables:, gear: worn, level: 102)
@@ -411,7 +421,7 @@ pub fn an_item_whose_display_row_is_missing_is_not_drawn_and_gives_one_warning_t
     with: [#("itemDisplayId", Integer(99_999_999))],
     body: fn(tables) {
       let worn =
-        gear.of_items(tables:, items: [
+        gear.of_items(tables:, level: 1, items: [
           HeldItem(
             item_guid: 1,
             item2_id: Item2Id(99_001),
@@ -438,7 +448,7 @@ pub fn an_item_whose_display_row_is_missing_is_not_drawn_and_gives_one_warning_t
     with: [#("itemDisplayId", Integer(0)), #("itemSourceId", Integer(0))],
     body: fn(tables) {
       let worn =
-        gear.of_items(tables:, items: [
+        gear.of_items(tables:, level: 1, items: [
           HeldItem(
             item_guid: 1,
             item2_id: Item2Id(99_001),
@@ -484,6 +494,7 @@ pub fn a_budget_rating_is_its_default_plus_the_worn_sum_and_returns_on_unequip_t
     let worn =
       gear.of_items(
         tables:,
+        level: 1,
         items: one_item(item2_id: 1375, location:, bag_index: 5),
       )
     assert worn.unread == [] as "the gloves are read in full"
@@ -505,12 +516,13 @@ pub fn a_budget_rating_is_its_default_plus_the_worn_sum_and_returns_on_unequip_t
 pub fn a_budget_base_health_adds_to_the_maximum_health_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = fixture_tables.shared()
-  let bare = gear.of_items(tables:, items: [])
+  let bare = gear.of_items(tables:, level: 1, items: [])
   assert gear.max_health(tables:, gear: bare, level: 1) == Ok(136)
     as "CreatureLevel row 1's 135.97"
   let worn =
     gear.of_items(
       tables:,
+      level: 1,
       items: one_item(item2_id: 71_653, location: 0, bag_index: 10),
     )
   assert worn.unread == [] as "the implant is read in full"
@@ -549,7 +561,11 @@ pub fn a_worn_rolled_item_adds_its_rolled_ratings_to_the_bases_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = fixture_tables.shared()
   let worn =
-    gear.of_items(tables:, items: one_rolled(random_stats: 0x0100000000030201))
+    gear.of_items(
+      tables:,
+      level: 1,
+      items: one_rolled(random_stats: 0x0100000000030201),
+    )
   assert worn.unread == [] as "the item is read in full with its word"
   let assert Ok(bases) = gear.bases(tables:, gear: worn, level: 1)
     as "CreatureLevel has row 1"
@@ -573,7 +589,11 @@ pub fn a_worn_item_with_a_refused_roll_is_worn_and_gives_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = fixture_tables.shared()
   let worn =
-    gear.of_items(tables:, items: one_rolled(random_stats: 0x0100000000000201))
+    gear.of_items(
+      tables:,
+      level: 1,
+      items: one_rolled(random_stats: 0x0100000000000201),
+    )
   let nothing =
     ItemProperties(
       base_health: 0.0,
