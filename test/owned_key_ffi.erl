@@ -3,7 +3,7 @@
 
 %% The references each process made, kept in a table that outlives the
 %% processes: {Owner, Reference, Kind}. A body that crashes, is killed by a
-%% linked process or runs past its deadline is dead when its terms are counted,
+%% linked process or returns is dead when its terms are counted,
 %% so a process dictionary would be gone with it.
 -define(TABLE, owned_key_references).
 

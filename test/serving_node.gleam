@@ -77,8 +77,8 @@ pub fn start(
 }
 
 /// Whether the node printed `text` before it ended. The wait has no limit of
-/// its own: a node that neither prints it nor ends ends the test at its
-/// deadline, naming this wait (`open_wait`).
+/// its own: a node that neither prints it nor ends keeps the test waiting past
+/// its deadline, which warns and names this wait (`open_wait`).
 pub fn await_output(node node: Node, text text: String) -> Bool {
   open_wait.named("the node to print \"" <> text <> "\"", fn() {
     printed(node, text)
@@ -97,7 +97,8 @@ pub fn output(node: Node) -> String
 pub fn terminate(node: Node) -> Nil
 
 /// The node's exit status, once it has ended. The wait has no limit of its own:
-/// a node that does not end ends the test at its deadline, naming this wait.
+/// a node that does not end keeps the test waiting past its deadline, which
+/// warns and names this wait.
 pub fn await_exit(node: Node) -> Int {
   open_wait.named("the node to end", fn() { exit_status(node) })
 }

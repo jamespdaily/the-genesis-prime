@@ -108,7 +108,7 @@ fn backends(
 /// a backend closes. The pool's driver opens a short-lived connection of its own
 /// to load the database's types, so another backend may be there for a moment;
 /// one the pool keeps stays. The wait has no limit of its own: the test's
-/// deadline ends it, naming `because` (`event_wait`).
+/// deadline warns, naming `because`, and the wait goes on (`event_wait`).
 fn await_backends(
   shared shared: database_support.Shared,
   database database: String,
