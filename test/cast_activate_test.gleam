@@ -163,6 +163,7 @@ fn usable_in_state(
       radius: object_radius,
     ),
     alive:,
+    in_combat: False,
     withheld:,
   )
 }

@@ -38,6 +38,8 @@ pub type CastResult {
   CasterUnknown
   /// The value 31, the fact file's `Spell.CodeEnumCastResult`.
   CasterMustHaveTarget
+  /// The value 32, the fact file's `Spell.CodeEnumCastResult`.
+  CasterCannotBePrimaryTarget
   /// The value 33, the fact file's `Spell.CodeEnumCastResult`.
   CasterNotIncontrolOfSelf
   /// The value 34, the fact file's `Spell.CodeEnumCastResult`.
@@ -62,6 +64,8 @@ pub type CastResult {
   TargetIsNotUseable
   /// The value 101, the fact file's `Spell.CodeEnumCastResult`.
   TargetOrientation
+  /// The value 102, the fact file's `Spell.CodeEnumCastResult`.
+  TargetCannotBePlayer
   /// The value 104, the fact file's `Spell.CodeEnumCastResult`.
   TargetRangeMin
   /// The value 105, the fact file's `Spell.CodeEnumCastResult`.
@@ -70,6 +74,8 @@ pub type CastResult {
   TargetCannotBeDead
   /// The value 107, the fact file's `Spell.CodeEnumCastResult`.
   TargetMustBeDead
+  /// The value 108, the fact file's `Spell.CodeEnumCastResult`.
+  TargetCannotBeInCombat
   /// The value 146, the fact file's `Spell.CodeEnumCastResult.146`.
   ClientSideInteractionFail
   /// The value 151, the fact file's `0x1405648a0`.
@@ -115,6 +121,7 @@ pub fn to_value(value: CastResult) -> Int {
     ItemObjectiveComplete -> 29
     CasterUnknown -> 30
     CasterMustHaveTarget -> 31
+    CasterCannotBePrimaryTarget -> 32
     CasterNotIncontrolOfSelf -> 33
     CasterMovement -> 34
     CasterVitalCostResource1 -> 51
@@ -127,10 +134,12 @@ pub fn to_value(value: CastResult) -> Int {
     TargetFaction -> 99
     TargetIsNotUseable -> 100
     TargetOrientation -> 101
+    TargetCannotBePlayer -> 102
     TargetRangeMin -> 104
     TargetRangeMax -> 105
     TargetCannotBeDead -> 106
     TargetMustBeDead -> 107
+    TargetCannotBeInCombat -> 108
     ClientSideInteractionFail -> 146
     PrereqCasterCast -> 151
     CasterNeedsLos -> 166
@@ -165,6 +174,7 @@ pub fn from_value(number: Int) -> CastResult {
     29 -> ItemObjectiveComplete
     30 -> CasterUnknown
     31 -> CasterMustHaveTarget
+    32 -> CasterCannotBePrimaryTarget
     33 -> CasterNotIncontrolOfSelf
     34 -> CasterMovement
     51 -> CasterVitalCostResource1
@@ -177,10 +187,12 @@ pub fn from_value(number: Int) -> CastResult {
     99 -> TargetFaction
     100 -> TargetIsNotUseable
     101 -> TargetOrientation
+    102 -> TargetCannotBePlayer
     104 -> TargetRangeMin
     105 -> TargetRangeMax
     106 -> TargetCannotBeDead
     107 -> TargetMustBeDead
+    108 -> TargetCannotBeInCombat
     146 -> ClientSideInteractionFail
     151 -> PrereqCasterCast
     166 -> CasterNeedsLos
