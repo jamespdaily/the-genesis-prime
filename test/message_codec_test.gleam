@@ -107,6 +107,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/crowd_control_result.gleam",
       "src/genesis_prime/message/crowd_control_state.gleam",
       "src/genesis_prime/message/currency_changed.gleam",
+      "src/genesis_prime/message/currency_gained.gleam",
       "src/genesis_prime/message/damage_type.gleam",
       "src/genesis_prime/message/delete_character.gleam",
       "src/genesis_prime/message/delete_character_result.gleam",

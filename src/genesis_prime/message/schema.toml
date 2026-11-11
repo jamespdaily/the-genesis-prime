@@ -3232,3 +3232,15 @@ fields = [
   { name = "field_3", kind = "unsigned", bits = 32, evidence = "opcode.0x919", safe_by = "opcode.0x919" },
   { name = "field_4", kind = "unsigned", bits = 32, evidence = "opcode.0x919", safe_by = "opcode.0x919" },
 ]
+
+[[message]]
+id = 0x00DD
+name = "currency_gained"
+direction = "server_to_client"
+evidence = "opcode.0xdd"
+summary = "a gain of a currency, for the chat line \"You receive X\" and the loot window's recent gains (it changes no total; 0x0919 sets that): the currency type id (1 for credits, never 0), the amount gained (read signed; 0 or less does nothing) and the part of the amount that came from Signature (above 0 shows \"from Signature\" in the line)"
+fields = [
+  { name = "currency_type_id", kind = "unsigned", bits = 4, evidence = "opcode.0xdd", named_by = "opcode.0xdd" },
+  { name = "amount", kind = "unsigned", bits = 64, evidence = "opcode.0xdd", named_by = "opcode.0xdd" },
+  { name = "signature_amount", kind = "unsigned", bits = 64, evidence = "opcode.0xdd", named_by = "opcode.0xdd" },
+]
