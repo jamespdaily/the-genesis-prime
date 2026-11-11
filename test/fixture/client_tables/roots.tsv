@@ -580,3 +580,69 @@ Creature2	17397	Cartel Slaver Shack	cast_item_use_test
 Creature2	17398	Cartel Slaver Shack	cast_item_use_test
 Creature2	17399	Cartel Slaver Shack	cast_item_use_test
 Creature2	17107	farmhand, outside the grenade's cast group	cast_item_use_test
+Quest2	6723	quest of a use-once test	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	10383	type 23 objective of quest 6723	objective_test, quest_log_test, game_connection_objective_test
+TargetGroup	3568	data group of objective 10383	objective_test, quest_log_test, game_connection_objective_test
+Creature2	30826	creature of TargetGroup 3568	objective_test, quest_log_test, game_connection_objective_test
+Creature2	30827	creature of TargetGroup 3568	objective_test, quest_log_test, game_connection_objective_test
+Quest2	6607	quest of a use-once test	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	10278	type 23 objective of quest 6607	objective_test, quest_log_test, game_connection_objective_test
+TargetGroup	3437	data group of objective 10278	objective_test, quest_log_test, game_connection_objective_test
+Creature2	30470	creature of TargetGroup 3437	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	10279	type 8 objective of quest 6607	objective_test, quest_log_test, game_connection_objective_test
+Quest2	9682	quest of a use-once test	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	18560	type 14 objective of quest 9682	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	18548	type 32 objective of quest 9682	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	18550	type 32 objective of quest 9682	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	18559	type 32 objective of quest 9682	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	18561	type 23 objective of quest 9682	objective_test, quest_log_test, game_connection_objective_test
+TargetGroup	10971	data group of objective 18561	objective_test, quest_log_test, game_connection_objective_test
+TargetGroup	10968	member of data group of objective 18561	objective_test, quest_log_test, game_connection_objective_test
+Creature2	65280	creature of TargetGroup 10968	objective_test, quest_log_test, game_connection_objective_test
+TargetGroup	10969	member of data group of objective 18561	objective_test, quest_log_test, game_connection_objective_test
+Creature2	65282	creature of TargetGroup 10969	objective_test, quest_log_test, game_connection_objective_test
+TargetGroup	10958	member of data group of objective 18561	objective_test, quest_log_test, game_connection_objective_test
+Creature2	65281	creature of TargetGroup 10958	objective_test, quest_log_test, game_connection_objective_test
+TargetGroup	12216	reward pane group of objective 18561	objective_test, quest_log_test, game_connection_objective_test
+TargetGroup	10970	member of reward pane group of objective 18561	objective_test, quest_log_test, game_connection_objective_test
+Creature2	65279	creature of TargetGroup 10970	objective_test, quest_log_test, game_connection_objective_test
+Quest2	5568	quest of a use-once test	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	8323	type 23 objective of quest 5568	objective_test, quest_log_test, game_connection_objective_test
+Quest2	3167	quest of a use-once test	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	4143	type 23 objective of quest 3167	objective_test, quest_log_test, game_connection_objective_test
+TargetGroup	7687	data group of objective 4143	objective_test, quest_log_test, game_connection_objective_test
+Creature2	9868	creature of TargetGroup 7687	objective_test, quest_log_test, game_connection_objective_test
+Creature2	9869	creature of TargetGroup 7687	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	4145	type 12 objective of quest 3167	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	9033	type 12 objective of quest 3167	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	18864	type 22 objective of quest 3167	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	4146	type 2 objective of quest 3167	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	4147	type 2 objective of quest 3167	objective_test, quest_log_test, game_connection_objective_test
+Quest2	4522	quest of a use-once test	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	6167	type 23 objective of quest 4522	objective_test, quest_log_test, game_connection_objective_test
+TargetGroup	4314	data group of objective 6167	objective_test, quest_log_test, game_connection_objective_test
+Creature2	16645	creature of TargetGroup 4314	objective_test, quest_log_test, game_connection_objective_test
+Creature2	16646	creature of TargetGroup 4314	objective_test, quest_log_test, game_connection_objective_test
+Creature2	16647	creature of TargetGroup 4314	objective_test, quest_log_test, game_connection_objective_test
+Quest2	5531	quest of a use-once test	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	8271	type 23 objective of quest 5531	objective_test, quest_log_test, game_connection_objective_test
+TargetGroup	6355	data group of objective 8271	objective_test, quest_log_test, game_connection_objective_test
+Creature2	24308	creature of TargetGroup 6355	objective_test, quest_log_test, game_connection_objective_test
+Creature2	24310	creature of TargetGroup 6355	objective_test, quest_log_test, game_connection_objective_test
+TargetGroup	2648	reward pane group of objective 8271	objective_test, quest_log_test, game_connection_objective_test
+Quest2	5718	quest of a use-once test	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	8527	type 23 objective of quest 5718	objective_test, quest_log_test, game_connection_objective_test
+Quest2	9122	quest of a use-once test	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	16477	type 12 objective of quest 9122	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	16478	type 17 objective of quest 9122	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	16479	type 23 objective of quest 9122	objective_test, quest_log_test, game_connection_objective_test
+TargetGroup	8374	data group of objective 16479	objective_test, quest_log_test, game_connection_objective_test
+Creature2	52900	creature of TargetGroup 8374	objective_test, quest_log_test, game_connection_objective_test
+Creature2	52901	creature of TargetGroup 8374	objective_test, quest_log_test, game_connection_objective_test
+Creature2	52902	creature of TargetGroup 8374	objective_test, quest_log_test, game_connection_objective_test
+Creature2	52903	creature of TargetGroup 8374	objective_test, quest_log_test, game_connection_objective_test
+Creature2	52904	creature of TargetGroup 8374	objective_test, quest_log_test, game_connection_objective_test
+Creature2	52905	creature of TargetGroup 8374	objective_test, quest_log_test, game_connection_objective_test
+TargetGroup	8008	reward pane group of objective 16479	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	16480	type 8 objective of quest 9122	objective_test, quest_log_test, game_connection_objective_test
+QuestObjective	16579	type 22 objective of quest 9122	objective_test, quest_log_test, game_connection_objective_test

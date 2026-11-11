@@ -46,6 +46,7 @@
 ////   0, VirtualItem 363) counts one; a guess, graded so.
 
 import cast_support
+import connection_rule_support as support
 import experience_support
 import fixture_tables
 import game_connection_support as connection_support
@@ -55,6 +56,7 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
+import genesis_prime/message/client_activate_unit.{ClientActivateUnit}
 import genesis_prime/message/client_side_interaction_result.{
   ClientSideInteractionResult,
 }
@@ -67,7 +69,7 @@ import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/quest_log as quest_message
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/step.{type ConnectionEvent, type Event, OwnEvent}
-import genesis_prime/store.{HeldItem}
+import genesis_prime/store.{type QuestRow, HeldItem}
 import genesis_prime/table/id.{Creature2Id, Item2Id}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_life.{Hostile}
@@ -243,10 +245,62 @@ fn seeing_a_use_target(
 
 /// The client's 0x97 right-click of the unit, inside the client's 0x038C.
 fn right_click() -> BitArray {
+  right_click_on(unit_id: unit)
+}
+
+/// The client's 0x97 right-click of this unit.
+fn right_click_on(unit_id unit_id: Int) -> BitArray {
   let assert Ok(body) =
-    cast_activate.encode(CastActivate(client_cast_id:, target_unit_id: unit))
+    cast_activate.encode(CastActivate(client_cast_id:, target_unit_id: unit_id))
     as "the message fits"
   connection_support.world_message(message_id: cast_activate.message_id, body:)
+}
+
+/// The client's 0xb3 use of this unit, which has no activate spell, inside the client's
+/// 0x038C.
+fn activate_unit_on(unit_id unit_id: Int) -> BitArray {
+  let assert Ok(body) =
+    client_activate_unit.encode(ClientActivateUnit(unit_id:))
+    as "the message fits"
+  connection_support.world_message(
+    message_id: client_activate_unit.message_id,
+    body:,
+  )
+}
+
+/// The connection of a player whose log holds this row, which sees each of these units
+/// (unit id, creature id, display info id) 2.7 east of the player: with the player's
+/// Race hitRadius 1.2 and the creatures' display hitRadius 1.0 (`Creature2DisplayInfo`
+/// 25769, 26051 and 26092), 0.5 from the player's edge to theirs.
+fn seeing_units(
+  row row: QuestRow,
+  units units: List(#(Int, Int, Int)),
+) -> game_connection.State {
+  let #(state, _) = connection_support.entered_with_quests(quests: [row])
+  let place =
+    connection_support.standing_at(
+      x: 29.128599166870117 +. 2.7,
+      y: -853.87158203125,
+      z: -560.18798828125,
+    )
+  connection_support.feed(
+    state:,
+    event: connection_support.sent_by_the_map(
+      ObjectsSeen(
+        units: list.map(units, fn(seen) {
+          static_object.create(
+            object: StaticObject(
+              ..spawn_support.holoring(number: seen.0, place:),
+              creature_id: Creature2Id(seen.1),
+              display_info_id: seen.2,
+            ),
+            unit_id: seen.0,
+            server_time_estimate_start: 0,
+          )
+        }),
+      ),
+    ),
+  ).0
 }
 
 fn ids_of(steps steps: List(step.ConnectionStep(Request))) -> List(Int) {
@@ -1240,4 +1294,88 @@ pub fn throwing_the_grenade_at_a_slaver_shack_sends_its_progress_after_the_go_te
       progress_frame(quest: 4743, index: 1, progress: 1),
     ]
     as "opcode.0x361: objective 0 of quest 4743 (QuestObjective 6553) is at 1 of 3, and objective 1 (QuestObjective 7616) at 1 of 1"
+}
+
+const other_unit = 41
+
+pub fn using_the_same_unit_twice_sends_progress_once_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 6723's objective 10383 is type 23 on TargetGroup 3568 with count 15; Creature2
+  // 30826 (display 26092) and 30827 (display 25769) are in the group, and each has the
+  // activate spell Spell4 35250 (castTime 1000, spellCoolDown 2000, so the uses are 5 s
+  // apart).
+  let state =
+    seeing_units(row: quest_support.untouched(quest_id: 6723), units: [
+      #(unit, 30_826, 26_092),
+      #(other_unit, 30_827, 25_769),
+    ])
+  let use_at = fn(state, at, unit_id) {
+    let #(state, started) =
+      connection_support.at(
+        state:,
+        ms: at,
+        event: OwnEvent(step.Read(right_click_on(unit_id:))),
+      )
+    let #(state, go) =
+      connection_support.casts_run(
+        state:,
+        pending: connection_support.cast_timers(steps: [started], ms: at),
+        until_ms: at + 2000,
+        steps: [],
+      )
+    let steps = [started, ..go]
+    #(state, ids_of(steps:), steps)
+  }
+  let #(state, first_ids, first) = use_at(state, 0, unit)
+  assert first_ids == [0x07FD, 0x07F4, 0x07FE, 0x0361]
+    as "opcode.0x97 and 0x7fd: the cast, its go and finish, then the use counts"
+  assert progress_frames(steps: first)
+    == [progress_frame(quest: 6723, index: 0, progress: 1)]
+    as "opcode.0x361: the first unit counts one of 15"
+  let #(state, again_ids, again) = use_at(state, 5000, unit)
+  assert again_ids == [0x07FD, 0x07F4, 0x07FE]
+    as "QuestObjective.type.32.repeat_use: the client sends a second 0x97, and the cast goes as before"
+  assert progress_frames(steps: again) == []
+    as "the same unit again counts nothing: no 0x361"
+  let #(_, _, other) = use_at(state, 10_000, other_unit)
+  assert progress_frames(steps: other)
+    == [progress_frame(quest: 6723, index: 0, progress: 2)]
+    as "opcode.0x361: the other unit counts, 2 of 15"
+}
+
+pub fn a_second_click_on_a_captive_with_no_activate_spell_counts_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 9122's objective 16479 (index 2) is type 23 on TargetGroup 8374: captives
+  // 52900 to 52905, none with an activate spell, so the client sends 0xb3 for them.
+  // Flags 4 wait for no earlier objective, so a fresh log has index 2 open. Creature2
+  // 52900's display is 26051.
+  let state =
+    seeing_units(row: quest_support.untouched(quest_id: 9122), units: [
+      #(unit, 52_900, 26_051),
+    ])
+  let #(state, first) =
+    connection_support.at(
+      state:,
+      ms: 0,
+      event: OwnEvent(step.Read(activate_unit_on(unit_id: unit))),
+    )
+  assert progress_frames(steps: [first])
+    == [progress_frame(quest: 9122, index: 2, progress: 1)]
+    as "opcode.0x361: the first 0xb3 counts one of 9 for objective index 2"
+  let #(_, second) =
+    connection_support.at(
+      state:,
+      ms: 1000,
+      event: OwnEvent(step.Read(activate_unit_on(unit_id: unit))),
+    )
+  assert progress_frames(steps: [second]) == []
+    as "the same captive again counts nothing: no 0x361"
+  assert list.map(
+      support.logs_of(step: second, level: step.LogWarning),
+      fn(line) { line.text },
+    )
+    == [
+      "the use of unit 40 (0xb3) names a unit that is not offered: no open objective counts a use of it, or its bit is set: it counts for nothing",
+    ]
+    as "cast.activate_unit declines a unit no open objective offers, with a warning, and the connection goes on"
 }

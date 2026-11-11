@@ -61,6 +61,7 @@ fn used(
   Used(
     target: unit_of(tables:, creature:),
     checklist_index: index,
+    unit: quest_support.unit_ref(unit_id: index),
     by_item: False,
   )
 }
@@ -205,9 +206,17 @@ pub fn a_checklist_target_is_used_while_its_objective_is_open_and_its_bit_clear_
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
   let used_now = objective.use_targets(log: fresh_log(), tables:)
-  assert used_now(unit_of(tables:, creature: checklist_creature), 2)
+  assert used_now(
+    unit_of(tables:, creature: checklist_creature),
+    2,
+    quest_support.unit_ref(unit_id: 2),
+  )
     as "an open type 14 objective whose group holds the unit, bit 2 clear"
-  assert !used_now(unit_of(tables:, creature: outsider), 2)
+  assert !used_now(
+    unit_of(tables:, creature: outsider),
+    2,
+    quest_support.unit_ref(unit_id: 2),
+  )
     as "a unit TargetGroup 14425 does not hold counts for no objective"
 }
 
@@ -223,9 +232,9 @@ pub fn a_checklist_target_whose_bit_is_set_is_not_used_test() -> Nil {
     )
   let used_now = objective.use_targets(log: counted.log, tables:)
   let unit = unit_of(tables:, creature: checklist_creature)
-  assert !used_now(unit, 2)
+  assert !used_now(unit, 2, quest_support.unit_ref(unit_id: 2))
     as "bit 2 is set: the client counts the unit never again (0x140611680)"
-  assert used_now(unit, 1)
+  assert used_now(unit, 1, quest_support.unit_ref(unit_id: 1))
     as "another unit of the objective, bit 1 clear, still counts"
 }
 
@@ -244,6 +253,7 @@ pub fn a_checklist_target_of_a_done_objective_is_not_used_test() -> Nil {
   assert !objective.use_targets(log: done, tables:)(
     unit_of(tables:, creature: checklist_creature),
     3,
+    quest_support.unit_ref(unit_id: 3),
   )
     as "the objective's count of 3 is reached, so it is not open and counts nothing"
 }

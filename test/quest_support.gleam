@@ -11,11 +11,12 @@
 
 import character_tables
 import fixture_tables
-import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/game/quest_log.{type QuestLog, type UnitRef, UnitRef}
 import genesis_prime/store.{type QuestRow, ActiveQuest, QuestRow}
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
+import genesis_prime/world_map/map_id.{MapId}
 import gleam/list
 import gleam/option.{None, Some}
 import planted_table.{Integer}
@@ -95,6 +96,12 @@ pub fn log_of(rows rows: List(QuestRow)) -> QuestLog {
     quest_log.from_rows(rows:, tables: character_tables.shared())
     as "the rows are ones the client takes"
   log
+}
+
+/// The unit of this id in the first run of the map the tests' players stand in (world 22,
+/// instance 1, incarnation 1).
+pub fn unit_ref(unit_id unit_id: Int) -> UnitRef {
+  UnitRef(map: MapId(world_id: 22, instance: 1), incarnation: 1, unit_id:)
 }
 
 /// A quest completed at this many Unix seconds.

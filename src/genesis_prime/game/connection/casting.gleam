@@ -339,6 +339,7 @@ pub fn activate_unit_message(
         tables:,
         picture: entered.shown,
         quests: entered.quests,
+        entered:,
         link_of: link_of(
           tables:,
           activations: connection_state.activations_of(session:),
@@ -365,12 +366,18 @@ fn used_unit(
   tables tables: table_store.Tables,
   picture picture: shown.Picture,
   quests quests: QuestLog,
+  entered entered: world_entry.Entered,
   link_of link_of: fn(Int, creature2.Creature2, Int) -> activate.Link,
   now_ms now_ms: Int,
 ) -> fn(Int) -> Result(cast.UsedUnit, Nil) {
-  let offered_to = objective.use_targets(log: quests, tables:)
+  let use_targets = objective.use_targets(log: quests, tables:)
   fn(unit_id) {
     use one <- result.try(dict.get(picture, unit_id))
+    let unit = unit_ref(entered:, unit_id:)
+    let offered_to = fn(target, checklist_index) {
+      use_targets(target, checklist_index, unit)
+    }
+    let link_of = fn(row, index) { link_of(unit_id, row, index) }
     case one {
       shown.ShownPlayer -> Error(Nil)
       shown.ShownObject(place:, hit_radius:, ..) ->
@@ -378,7 +385,7 @@ fn used_unit(
           tables:,
           one:,
           offered_to:,
-          link_of: fn(row, index) { link_of(unit_id, row, index) },
+          link_of:,
           alive: True,
           body: activate.Body(place:, radius: hit_radius),
         )
@@ -387,7 +394,7 @@ fn used_unit(
           tables:,
           one:,
           offered_to:,
-          link_of: fn(row, index) { link_of(unit_id, row, index) },
+          link_of:,
           alive:,
           body: activate.Body(
             place: creature_path.place_at(path:, now_ms:),
@@ -396,6 +403,19 @@ fn used_unit(
         )
     }
   }
+}
+
+/// The unit `unit_id` of the player's current map run, as the quest log remembers a use of
+/// it.
+fn unit_ref(
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+) -> quest_log.UnitRef {
+  quest_log.UnitRef(
+    map: entered.map,
+    incarnation: entered.incarnation,
+    unit_id:,
+  )
 }
 
 fn used_unit_at(
@@ -821,6 +841,7 @@ pub fn cast_effects(
               now:,
               target:,
               checklist_index:,
+              unit: unit_ref(entered:, unit_id:),
               by_item:,
             )
           Error(Nil) -> #(session, [])
