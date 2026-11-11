@@ -10,9 +10,14 @@
 //// dead; the other types never are), the movement commands (kind 2, the
 //// position, and kind 14, the rotation), the properties, both factions, the
 //// world object the unit claims (0 for none, when the unit builds its own) and
-//// the display info, which must be sent since with 0 no model is described.
-//// Its fields are listed in `schema.toml` with the client's evidence, and the
-//// fact file's `opcode.0x262.simple` names the message.
+//// the display info, which must be sent since with 0 no model is described. A
+//// creature the server fights that stands as a turret (type 13) is sent as
+//// this message too, with its health and the same body as a creature's: the
+//// type-data reader 0x140095fb0 reads entries 0, 8, 10, 11, 13 and 32 alike,
+//// and the type switch 0x140456b18 of InitUnitFromCreate (0x140456960) sends
+//// types 0, 8, 11, 13 and 32 to the same create code 0x140457247. Its fields
+//// are listed in `schema.toml` with the client's evidence, and the fact file's
+//// `opcode.0x262.simple` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/static_unit_type.{type StaticUnitType}

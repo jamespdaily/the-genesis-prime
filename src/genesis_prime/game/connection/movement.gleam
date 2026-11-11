@@ -15,6 +15,7 @@ import genesis_prime/game/chat
 import genesis_prime/game/connection/chat as connection_chat
 import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/state.{type Session, InWorld, Session} as connection_state
+import genesis_prime/game/hit_radius
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
@@ -186,6 +187,10 @@ fn body_moving(
                     fighter:,
                     place:,
                     seq: move_seq,
+                    hit_radius: hit_radius.of_playing(
+                      tables: session.settings.tables,
+                      race_id: entered.character.race_id,
+                    ),
                   )
                 }),
               ])
@@ -243,14 +248,15 @@ fn moving(
 }
 
 /// The tell to a creature that holds the player on its threat list of the place the
-/// player stands at and the move's sequence number, through the creature registry
-/// with no watch.
+/// player stands at, the move's sequence number and the hit radius of the player's race,
+/// through the creature registry with no watch.
 pub fn tells_a_fighter_the_place(
   connection connection: ConnectionId,
   entered entered: world_entry.Entered,
   fighter fighter: #(Int, Int),
   place place: Place,
   seq seq: Int,
+  hit_radius hit_radius: Float,
 ) -> Effect(ConnectionEffect(Request)) {
   OwnEffect(step.Tell(
     to: step.Creature(
@@ -264,6 +270,7 @@ pub fn tells_a_fighter_the_place(
       place:,
       seq:,
       stay: entered.stay,
+      hit_radius:,
     ),
   ))
 }

@@ -375,6 +375,21 @@ pub type CastEvent {
   ThresholdEnded(spell4_id: Int)
 }
 
+/// The cast id and caster of each 0x7ff among the events that starts `spell4_id`.
+pub fn starts_of(
+  events events: List(CastEvent),
+  spell4_id spell4_id: Int,
+) -> List(#(Int, Int)) {
+  list.filter_map(events, fn(event) {
+    case event {
+      CastStarted(cast_id:, spell4_id: started, caster_unit_id:, ..)
+        if started == spell4_id
+      -> Ok(#(cast_id, caster_unit_id))
+      _ -> Error(Nil)
+    }
+  })
+}
+
 /// The cast messages among the frames, in order, each as the client's reader
 /// takes it; every other frame is skipped.
 pub fn casts_in(frames frames: List(Frame)) -> List(CastEvent) {
@@ -994,15 +1009,16 @@ fn created(others others: Others, body body: BitArray) -> Others {
   case unit {
     PlayerCreated(unit:) -> dict.insert(others, unit.unit_id, placed_at(unit:))
     CreatureCreated(unit:) ->
-      dict.insert(others, unit.unit_id, first_position(unit.tail))
+      dict.insert(others, unit.unit_id, placed_by_tail(tail: unit.tail))
     ObjectCreated(unit_id:, tail:, ..) ->
-      dict.insert(others, unit_id, first_position(tail))
+      dict.insert(others, unit_id, placed_by_tail(tail:))
   }
 }
 
-/// Where a 0x262's tail places its unit: the kind 2 command that is the first of
-/// its commands (0x1404586e0).
-fn first_position(tail: UnitCreateTail) -> #(Float, Float, Float) {
+/// Where a 0x262's tail places its unit, whatever its type (a player's, a creature's
+/// or a static object's): the kind 2 command that is the first of its commands
+/// (0x1404586e0).
+pub fn placed_by_tail(tail tail: UnitCreateTail) -> #(Float, Float, Float) {
   let assert [start_movement.Position(placed), ..] = tail.movement_commands
     as "0x0262 places the unit with a kind 2 command first"
   standing(placed)
@@ -1029,7 +1045,7 @@ pub fn creatures_created_in(
 /// Where a 0x262 places its unit: the kind 2 command that is the first of its
 /// commands (0x1404586e0).
 pub fn placed_at(unit unit: UnitCreatePlayer) -> #(Float, Float, Float) {
-  first_position(unit.tail)
+  placed_by_tail(tail: unit.tail)
 }
 
 fn moved(others others: Others, body body: BitArray) -> Others {
@@ -1067,13 +1083,6 @@ fn last_position(
 fn removed(others others: Others, body body: BitArray) -> Others {
   let assert Ok(gone) = unit_destroyed.decode(body) as "0x0355 decodes"
   dict.delete(others, gone.unit_id)
-}
-
-/// Where a creature's 0x262 places it, as `placed_at` reads a player's.
-pub fn creature_placed_at(
-  unit unit: UnitCreateCreature,
-) -> #(Float, Float, Float) {
-  first_position(unit.tail)
 }
 
 fn standing(
@@ -1658,13 +1667,28 @@ pub type FightEvent {
   /// or a kind 2 position with its blend bit clear, which places the unit at once
   /// (`0x140714120`).
   Moves(unit_id: Int, kinds: List(Int), ends_at: Option(#(Float, Float, Float)))
-  /// 0x7f4: each target's unit with the effect ids and raw damage of its effects
+  /// 0x7f4: each target's unit with the damage of each of its effects
   /// (opcode.0x7f4).
-  Went(cast_id: Int, targets: List(#(Int, List(#(Int, Int)))))
+  Went(cast_id: Int, targets: List(#(Int, List(Blow))))
   /// 0x7ff: a unit's cast starts (opcode.0x7ff).
   Started(cast_id: Int, caster_unit_id: Int, spell4_id: Int)
   /// 0x937: a unit's health (opcode.0x937).
   HealthIs(unit_id: Int, health: Int)
+}
+
+/// One damage effect of a 0x7f4 as its description gives it (opcode.0x7f4): the
+/// Spell4Effects id, the damage before any critical hit, the part a glance took off,
+/// the part mitigation and absorbs took, the part the shield took, and the health
+/// damage with the overkill.
+pub type Blow {
+  Blow(
+    effect_id: Int,
+    raw_damage: Int,
+    glance: Int,
+    absorbed: Int,
+    shield_absorbed: Int,
+    health_damage: Int,
+  )
 }
 
 /// The fight's frames among the frames, in order.
@@ -1771,14 +1795,18 @@ fn ends_at_of(
   }
 }
 
-/// An effect info's Spell4Effects id and raw damage, or `Error(Nil)` for an effect
-/// that is not damage.
-fn damage_of(
-  effect: spell_effect_info.SpellEffectInfo,
-) -> Result(#(Int, Int), Nil) {
+/// An effect info's damage, or `Error(Nil)` for an effect that is not damage.
+fn damage_of(effect: spell_effect_info.SpellEffectInfo) -> Result(Blow, Nil) {
   case effect.result {
     spell_effect_result.Damage(damage) ->
-      Ok(#(effect.spell4_effects_id, damage.description.raw_damage))
+      Ok(Blow(
+        effect_id: effect.spell4_effects_id,
+        raw_damage: damage.description.raw_damage,
+        glance: damage.description.glance,
+        absorbed: damage.description.absorbed,
+        shield_absorbed: damage.description.shield_absorbed,
+        health_damage: damage.description.health_damage_with_overkill,
+      ))
     _ -> Error(Nil)
   }
 }
@@ -1803,6 +1831,29 @@ pub fn health_of(events events: List(FightEvent), unit unit: Int) -> List(Int) {
   list.filter_map(events, fn(event) {
     case event {
       HealthIs(unit_id:, health:) if unit_id == unit -> Ok(health)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The shield each 0x938 of stat 20 among the events gives `unit`, in order.
+pub fn shield_of(events events: List(FightEvent), unit unit: Int) -> List(Int) {
+  list.filter_map(events, fn(event) {
+    case event {
+      ShieldIs(unit_id:, shield:) if unit_id == unit -> Ok(shield)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The health each 0x92f among the events gives `unit`, in order.
+pub fn own_health_of(
+  events events: List(FightEvent),
+  unit unit: Int,
+) -> List(Int) {
+  list.filter_map(events, fn(event) {
+    case event {
+      OwnHealthIs(unit_id:, health:) if unit_id == unit -> Ok(health)
       _ -> Error(Nil)
     }
   })

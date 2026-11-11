@@ -36,6 +36,7 @@ import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/map.{
   CreatureRefused, Left, NoPlayerHere, NotSummoned, SeenBy, Summoned,
 }
@@ -849,6 +850,7 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
     game_connection_support.sent_by_a_peer(game_connection_support.news_of(
       unit_id: 40,
       news: CreatureAppeared(
+        unit_type: NonPlayer,
         unit: creature,
         life: 4,
         place: beast.place,

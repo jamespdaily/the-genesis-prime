@@ -171,7 +171,7 @@ pub type AreaError {
 
 /// A sentence that says why the areas cannot be built, naming the table, the
 /// spell and the row, for the message the server stops with.
-fn describe(error error: AreaError) -> String {
+pub fn describe(error error: AreaError) -> String {
   case error {
     NoRow(table:, id:) ->
       "the table "
@@ -618,9 +618,41 @@ pub fn of_spell(
 /// How a unit counts as inside the spell's area: the hit shapes when the spell has
 /// any, capped by the area row's range, else the area row's range and arc.
 pub fn inside(spell spell: SpellArea) -> Inside {
-  case spell.shapes {
+  inside_of(shapes: spell.shapes)
+}
+
+fn inside_of(shapes shapes: List(Placement)) -> Inside {
+  case shapes {
     [] -> InsideRow
     shapes -> InsideShapes(placements: shapes)
+  }
+}
+
+/// The area of a spell read from its own rows, for a spell no player's ability tree
+/// holds, such as a creature's charge: the area row and how a unit counts as inside it,
+/// the same pair a player's cast selects by (`inside`). `None` for a spell with no
+/// `Spell4AoeTargetConstraints` row. A row or telegraph the tables lack, or a shape the
+/// rule does not build, is the refusal.
+pub fn area_of_spell(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Spell4Id,
+) -> Result(Option(#(Row, Inside)), AreaError) {
+  let id = spell4_id.value
+  use row <- result.try(
+    spell4.get(tables:, id: spell4_id)
+    |> result.replace_error(NoRow(table: "Spell4", id:)),
+  )
+  use area_row <- result.try(area_row_of(tables:, id:, row:))
+  case area_row {
+    None -> Ok(None)
+    Some(area_row) -> {
+      use shapes <- result.try(hit_shapes_of(
+        tables:,
+        links: telegraph_links_by_spell(tables:),
+        id:,
+      ))
+      Ok(Some(#(area_row, inside_of(shapes:))))
+    }
   }
 }
 
