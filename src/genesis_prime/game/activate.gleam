@@ -25,9 +25,9 @@
 ////   too, for the cast of an item (`cast.use_item`): its use at a unit counts that unit as an
 ////   activate cast does. Item spells with no Activate effect are not planned.
 //// - **The cast group** of a spell cast at a creature is checked as the client does
-////   (`passes_cast_group`): refused 89 outside it, passed when the spell is the creature's
-////   own activate spell, and refused 89 for a spell with no group at a creature whose
-////   Creature2.flags has bit 0.
+////   (`passes_cast_group`): a member of the group passes, and so does any creature when the
+////   spell has no group and Creature2.flags bit 0 is clear; otherwise only the creature's
+////   own activate spell passes, and the rest are refused 89.
 //// - A spell with an effect the strike would apply, aimed at the target or an area, is
 ////   refused with result 285 and logged once, since the activate cast strikes no unit
 ////   (gap, #336).
@@ -78,8 +78,9 @@ pub type Column {
 pub type Creature {
   Creature(
     columns: List(Column),
-    /// Creature2.activateSpellCastTime: the cast time of an activate cast, whatever
-    /// the spell's own is.
+    /// Creature2.activateSpellCastTime: the cast time of an activate cast of a spell among
+    /// the creature's columns when it is not 0; any other spell casts with its own
+    /// (`0x1407a1680`, `0x14054e340`; see `cast_time_for`).
     cast_time_ms: Int,
     /// Creature2.activateSpellMinRange and activateSpellMaxRange.
     min_range: Float,
@@ -161,11 +162,11 @@ pub type CastGroup {
 
 /// The client's check of a spell cast at a creature against the spell's cast group
 /// (`CheckCastActivateSpell` `0x1403b44b0`, run by `CheckCastUnitTargetRange`
-/// `0x1403b2240` before a cast at a unit is sent). The spell the creature itself
-/// activates with passes, whatever the group. Otherwise a spell with a cast group
+/// `0x1403b2240` before a cast at a unit is sent). A spell with a cast group
 /// (`cast_group_id`, Spell4Base.targetGroupIdCastGroup, 0 for none) passes a member
-/// (`in_cast_group`, asked only then) and refuses any other unit; a spell with none
-/// refuses a creature whose Creature2.flags has bit 0.
+/// (`in_cast_group`), and a spell with none passes a creature whose Creature2.flags
+/// has bit 0 clear; both pass whatever the creature's pick is. Any other cast passes
+/// only when the spell is the creature's own activate spell, else it is refused 89.
 pub fn passes_cast_group(
   spell4_id spell4_id: Int,
   cast_group_id cast_group_id: Int,
@@ -173,36 +174,28 @@ pub fn passes_cast_group(
   picked picked: Pick,
   in_cast_group in_cast_group: fn(Int) -> Bool,
 ) -> CastGroup {
-  let own_spell = case picked {
-    Picked(spell4_id: own) -> Ok(own == spell4_id)
-    NoActivateSpell -> Ok(False)
-    Unread(prerequisite_type:) ->
+  let passes_at_once = case cast_group_id {
+    0 -> int.bitwise_and(creature.flags, 1) == 0
+    group -> in_cast_group(group)
+  }
+  case passes_at_once, picked {
+    True, _ -> InCastGroup
+    False, Picked(spell4_id: own) if own == spell4_id -> InCastGroup
+    False, Picked(..) | False, NoActivateSpell -> OutsideCastGroup
+    False, Unread(prerequisite_type:) ->
       case
         list.any(creature.columns, fn(column) { column.spell4_id == spell4_id })
       {
-        True -> Error(prerequisite_type)
-        False -> Ok(False)
-      }
-  }
-  case own_spell, cast_group_id {
-    Error(prerequisite_type), _ -> CastGroupUnread(prerequisite_type:)
-    Ok(True), _ -> InCastGroup
-    Ok(False), 0 ->
-      case int.bitwise_and(creature.flags, 1) {
-        0 -> InCastGroup
-        _ -> OutsideCastGroup
-      }
-    Ok(False), group ->
-      case in_cast_group(group) {
-        True -> InCastGroup
+        True -> CastGroupUnread(prerequisite_type:)
         False -> OutsideCastGroup
       }
   }
 }
 
-/// An Activate effect of a spell: its row and the delay the go lists it with.
+/// An Activate effect of a spell: its row, the delay the go lists it with and the phases
+/// it is listed in (Spell4Effects.phaseFlags: bit n is phase n, every bit for -1).
 pub type ActivateEffect {
-  ActivateEffect(effect_id: Spell4EffectsId, delay_ms: Int)
+  ActivateEffect(effect_id: Spell4EffectsId, delay_ms: Int, phase_flags: Int)
 }
 
 /// The limits of a spell cast at a unit from its Spell4 row (targetMinRange,
@@ -561,6 +554,7 @@ fn activate_rows_of(
           ActivateEffect(
             effect_id: Spell4EffectsId(effect.id),
             delay_ms: effect.delay_time,
+            phase_flags: effect.phase_flags,
           )
         }),
         dropped_signals: list.map(signals, fn(effect) {
@@ -605,6 +599,9 @@ pub type Target {
     link: Link,
     body: Body,
     alive: Bool,
+    /// Whether the creature is in combat, which a cast's target conditions may test (bit 1
+    /// of the target row's mask).
+    in_combat: Bool,
     withheld: Option(Withheld),
   )
 }
@@ -657,6 +654,25 @@ pub type Range {
   TooHigh
 }
 
+/// Whether `spell4_id` is one of the creature's four activate columns.
+fn among_columns(
+  creature creature: Creature,
+  spell4_id spell4_id: Int,
+) -> Bool {
+  list.any(creature.columns, fn(column) { column.spell4_id == spell4_id })
+}
+
+/// The creature's own cast time for an activate cast of `spell4_id`: its
+/// `activateSpellCastTime` for a spell among its columns, 0 (the spell's own castTime)
+/// for any other, such as the default spell (`0x1407a1680`, `0x14054e340`).
+pub fn cast_time_for(
+  creature creature: Creature,
+  spell4_id spell4_id: Int,
+) -> Int {
+  use <- bool.guard(when: !among_columns(creature:, spell4_id:), return: 0)
+  creature.cast_time_ms
+}
+
 /// The limits the cast of `spell4_id` at the creature is held to: the creature's own for
 /// a spell among its columns, the spell's for any other (`0x1403ad860`, `0x1403ad8f0`).
 pub fn limits_for(
@@ -664,12 +680,7 @@ pub fn limits_for(
   spell4_id spell4_id: Int,
   spell spell: Limits,
 ) -> Limits {
-  use <- bool.guard(
-    when: !list.any(creature.columns, fn(column) {
-      column.spell4_id == spell4_id
-    }),
-    return: spell,
-  )
+  use <- bool.guard(when: !among_columns(creature:, spell4_id:), return: spell)
   Limits(
     min: creature.min_range,
     max: case creature.max_range == 0.0 {

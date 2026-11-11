@@ -563,6 +563,12 @@ Creature2	13623	checklist target of objective 5052	game_wire_test
 Quest2Reward	2192	reward choice of quest 3886	game_wire_test
 Quest2Reward	2430	reward choice of quest 3886	game_wire_test
 Quest2Reward	4767	reward choice of quest 3886	game_wire_test
+Creature2	8047	a creature whose activate spell is a channel with activateSpellCastTime 0	cast_activate_test, game_connection_activate_test
+Spell4	5725	the channel Creature2 8047 casts (castTime 3000, channel 0, 3000, 2999)	cast_activate_test, game_connection_activate_test
+Spell4Base	5020	the base of Spell4 5725 (castMethod 1)	cast_activate_test, game_connection_activate_test
+Creature2	766	a creature with a Normal activate spell and activateSpellCastTime 0 (Northern Wilds Teleporter)	cast_activate_test
+Spell4	1783	the Normal spell Creature2 766 casts (castTime 2000)	cast_activate_test
+Quest2	2570	the quest whose state 1 opens the anim-state link of Creature2 8047 (Prerequisite 1276)	game_connection_activate_test
 Item2	12444	Incendiary Grenade, the slaver-shack quest item	item_use_test
 Item2	12402	Yockum Bingberry Tonic, an item that names no quest	item_use_test
 Item2	21966	Security access codes item of the objective 14327	item_use_test
@@ -652,3 +658,53 @@ Creature2	52905	creature of TargetGroup 8374	objective_test, quest_log_test, gam
 TargetGroup	8008	reward pane group of objective 16479	objective_test, quest_log_test, game_connection_objective_test
 QuestObjective	16480	type 8 objective of quest 9122	objective_test, quest_log_test, game_connection_objective_test
 QuestObjective	16579	type 22 objective of quest 9122	objective_test, quest_log_test, game_connection_objective_test
+Quest2	7757	quest whose objective 14295 is a type 11 cast of Spell4 69507 on cast group 7102, pane 8954, count 8	objective_test, game_connection_objective_cast_test
+Quest2	3145	quest whose objective 4098 is a type 11 cast of Spell4 7103 with no pane, count 10	objective_test, quest_log_test
+Quest2	8539	quest whose objective 15119 (index 1) is a type 11 cast of Spell4 41218 on pane 8784	objective_test
+Quest2	8184	quest whose objective 15092 is a type 11 cast of Spell4 42735 on cast group 5506, count 10	game_connection_objective_cast_test
+Quest2	8935	quest whose objective 16055 is a type 11 cast of Spell4 47953, castTime 3000, cast group 7083	game_connection_objective_cast_test
+Spell4	69507	cast objective spell of quest 7757, cast group 7102	objective_test, game_connection_objective_cast_test
+Spell4	7103	cast objective spell of quest 3145, targeted	objective_test, quest_log_test
+Spell4	41218	cast objective spell of quest 8539, targeted, no cast group, range 0 to 50	objective_test, cast_shortcut_test
+Spell4	42735	cast objective spell of quest 8184, targeted at cast group 5506, castTime 0, range 0 to 15	cast_shortcut_test, game_connection_objective_cast_test
+Spell4	47953	cast objective spell of quest 8935, targeted, castTime 3000	game_connection_objective_cast_test
+Spell4	30485	cast objective spell of row 1913, targeted, no cast group, range 0 to 5	cast_shortcut_test
+Spell4	36050	cast objective spell of row 12624, range 5 to 15, Spell4Conditions 15	cast_shortcut_test
+Spell4	38090	cast objective spell of row 13003, Spell4Conditions 16, cast group 4075	cast_shortcut_test
+Spell4	36212	cast objective spell of row 12612, Spell4Conditions 17, cast group 3829	cast_shortcut_test
+Spell4	27684	cast objective spell of row 7082, valid targets 10	cast_shortcut_test
+Spell4	77268	cast objective spell of row 18770, mechanics flags 11, a TargetCast of type 15	cast_shortcut_test
+Spell4	77269	the Spell4 that Prerequisite 36053 of spell 77268 names	cast_shortcut_test
+Spell4	43164	cast objective spell of row 15363, a TargetCast of type 71	cast_shortcut_test
+Spell4	32581	cast objective spell of row 9399, a CasterCast of type 16, cast group 3082	cast_shortcut_test
+Spell4	25207	cast objective spell of row 5085, targetType 5, castTime 2000	cast_shortcut_test
+Spell4	5725	cast objective spell of rows 3018 and 3019, a channel	cast_shortcut_test
+Spell4	30832	cast objective spell of row 8221, targetType 3, cast group 2591	cast_shortcut_test
+Creature2	38290	creature of pane 8954 and cast group 7102	objective_test, game_connection_objective_cast_test
+Creature2	58762	creature of cast group 7102 that pane 8954 lacks	objective_test, game_connection_objective_cast_test
+Creature2	9369	creature of cast group 836	objective_test, quest_log_test
+Creature2	24571	creature that cast group 836 lacks	objective_test
+Creature2	39073	creature of pane 8784 whose flags bit 0 is set and whose activate spell is 41218	objective_test, activate_test, cast_shortcut_test
+Creature2	32668	creature outside cast group 5506 whose flags bit 0 is clear	objective_test, activate_test, cast_shortcut_test, game_connection_objective_cast_test
+Creature2	8047	Vault Data Crystal: flags bit 0 set, activate spell 5725	cast_shortcut_test
+Creature2	30233	creature whose flags bit 0 is clear	cast_shortcut_test
+Creature2	41604	creature of cast group 5506	shown_test, cast_shortcut_test, game_connection_objective_cast_test
+Creature2	49963	creature of cast group 7083	game_connection_objective_cast_test
+Creature2	32526	creature of cast group 3829	cast_shortcut_test
+Creature2	34081	creature of cast group 4075	cast_shortcut_test
+Creature2	41884	creature of a cast group of row 15363	cast_shortcut_test
+Creature2	27545	creature of cast group 3082	cast_shortcut_test
+Creature2	26145	creature of the cast group of row 5085	cast_shortcut_test
+Faction2	390	faction of cast group 2591	cast_shortcut_test
+QuestObjective	12624	type 11 cast objective of Spell4 36050	cast_shortcut_test
+QuestObjective	13003	type 11 cast objective of Spell4 38090	cast_shortcut_test
+QuestObjective	12612	type 11 cast objective of Spell4 36212	cast_shortcut_test
+QuestObjective	18770	type 11 cast objective of Spell4 77268	cast_shortcut_test
+QuestObjective	15363	type 11 cast objective of Spell4 43164	cast_shortcut_test
+QuestObjective	9399	type 11 cast objective of Spell4 32581	cast_shortcut_test
+QuestObjective	8221	type 11 cast objective of Spell4 30832	cast_shortcut_test
+QuestObjective	5085	type 11 cast objective of Spell4 25207	cast_shortcut_test
+QuestObjective	3018	type 11 cast objective of Spell4 5725	cast_shortcut_test
+Creature2	33885	a creature whose activate time (1500) differs from its first column's spell castTime (4000)	cast_activate_test
+Spell4	46055	the ungated first activate spell of Creature2 33885 (castTime 4000)	cast_activate_test
+Creature2	46497	a creature whose four activate columns are all gated by Exile-only (base faction 166) prerequisites and whose activateSpellCastTime is 3000	cast_activate_test

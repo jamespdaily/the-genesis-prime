@@ -581,6 +581,40 @@ pub fn of_struck(
   )
 }
 
+/// The subject of a creature a player's press named as the target of its spell, for the
+/// spell's TargetCast: the creature first, with what the player's own casts hold on it
+/// (`under`), whether the caster's picture shows it in combat, and the pose its place and
+/// facing give, and the caster second, with its quest log. The connection holds no life,
+/// vital, faction or flag of a creature, so the subject holds none of them either: a
+/// condition that reads what else it holds is `NotRead`. Another player's casts on the
+/// creature are not in `under` (gap: Quests, zones and prerequisites work on the real
+/// client, #334).
+pub fn of_target(
+  under under: List(lasting.Held),
+  caster_unit caster_unit: Int,
+  in_combat in_combat: Bool,
+  target target: Pose,
+  caster caster: Pose,
+  quests quests: QuestLog,
+) -> Subject {
+  Subject(
+    under:,
+    second_unit: Some(caster_unit),
+    in_combat:,
+    vitals: dict.new(),
+    difficulty: None,
+    stealthed: None,
+    resource_slots: None,
+    rolls: [],
+    positions: Placed(first: target, second: caster),
+    factions: None,
+    player: None,
+    quests: Some(quests),
+    creature_index: None,
+    seen: WholeUnit,
+  )
+}
+
 /// A subject that holds only this difficulty: under no cast, out of combat, with
 /// no vital and no roll. A creature's side checks the prerequisites of its
 /// attack's effects against it (genesis_prime/world_map/creature_attack).

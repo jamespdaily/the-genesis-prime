@@ -184,10 +184,10 @@ pub fn the_content_tables_are_the_content_load_of_the_committed_files_over_the_s
     })
     == [
       7475, 7909, 7912, 8009, 8201, 8563, 8599, 8612, 8632, 8775, 8952, 8979,
-      9003, 9024, 9029, 9064, 9065, 9074, 9080, 9350, 9351, 9659, 9739, 9777,
-      9796, 9824,
+      9003, 9024, 9029, 9052, 9064, 9065, 9074, 9080, 9152, 9350, 9351, 9659,
+      9739, 9777, 9796, 9824,
     ]
-    as "Creature2OutfitInfo holds the rows the committed outfit groups point to, 8952 being the one Dorian Walker's group points to, 9029 the one Supplier Ingavak's group 9725 points to, 9064 the one group 9756 points to (Creature2 11063, 12959 and 16622), 9065 the one Creature2 11066's group 9757 points to, 9074 the one Creature2 57050's group 9766 points to, 9080 the one Creature2 74861's group 9772 points to, and 9777 the one group 10505 points to, which Mazzu, Razzu and Darru share, 9739 and 9824 the two group 10539 points to (Creature2 73492 and 73567), 9796 the one group 10572 points to (Creature2 73473 and 73566), 8009 the one group 8704 points to (Creature2 53445), and the one each creature of the type 23 objectives' groups points to: Creature2 52900 to 52905 (9258, 9470, 9307, 9327, 8896 and 9294, the captives of quest 9122's group 8374), 16645 to 16647 (9024, group 9720), 24310 (9003, group 9699), and 30826 and 30827 (9659, group 10408), 7909 the one group 8604 points to (Creature2 17107)"
+    as "Creature2OutfitInfo holds the rows the committed outfit groups point to, 8952 being the one Dorian Walker's group points to, 9029 the one Supplier Ingavak's group 9725 points to, 9064 the one group 9756 points to (Creature2 11063, 12959 and 16622), 9065 the one Creature2 11066's group 9757 points to, 9074 the one Creature2 57050's group 9766 points to, 9080 the one Creature2 74861's group 9772 points to, and 9777 the one group 10505 points to, which Mazzu, Razzu and Darru share, 9739 and 9824 the two group 10539 points to (Creature2 73492 and 73567), 9796 the one group 10572 points to (Creature2 73473 and 73566), 8009 the one group 8704 points to (Creature2 53445), and the one each creature of the type 23 objectives' groups points to: Creature2 52900 to 52905 (9258, 9470, 9307, 9327, 8896 and 9294, the captives of quest 9122's group 8374), 16645 to 16647 (9024, group 9720), 24310 (9003, group 9699), and 30826 and 30827 (9659, group 10408), and the one each creature of the cast objectives' groups points to: Creature2 34081 (9052, group 9747) and 41604 (9152, group 9839), and the one Creature2 17107's group 8604 points to (7909)"
   let shared = character_tables.shared()
   assert creature2.get(tables: content, id: Creature2Id(73_464))
     == creature2.get(tables: shared, id: Creature2Id(73_464))

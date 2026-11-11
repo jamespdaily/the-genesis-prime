@@ -95,7 +95,13 @@ pub fn seaspine_mollusk_activates_with_1817_test() -> Nil {
     activate.planned_of(activations:, spell4_id: 1817)
     as "the load plans Spell4 1817"
   assert effects
-    == [ActivateEffect(effect_id: Spell4EffectsId(2821), delay_ms: 0)]
+    == [
+      ActivateEffect(
+        effect_id: Spell4EffectsId(2821),
+        delay_ms: 0,
+        phase_flags: 1,
+      ),
+    ]
     as "Spell4 1817's one Activate row is Spell4Effects 2821, delay 0"
 }
 
@@ -132,7 +138,13 @@ pub fn activate_spell_with_an_unread_target_effect_is_planned_test() -> Nil {
     activate.planned_of(activations:, spell4_id: 34_512)
     as "Spell4 34512 is planned: its only other row, Spell4Effects 179989, is effectType 107 aimed at the primary target (targetFlags 2), a type no server rule reads, which the strike drops on every path"
   assert effects
-    == [ActivateEffect(effect_id: Spell4EffectsId(68_310), delay_ms: 0)]
+    == [
+      ActivateEffect(
+        effect_id: Spell4EffectsId(68_310),
+        delay_ms: 0,
+        phase_flags: 1,
+      ),
+    ]
     as "Spell4Effects 68310 is Spell4 34512's Activate row, delay 0"
 }
 
@@ -228,16 +240,28 @@ pub fn the_activations_plan_item_spells_with_an_activate_effect_test() -> Nil {
     activate.planned_of(activations:, spell4_id: 26_663)
     as "Spell4 26663, ItemSpecial 4363's spell, is planned"
   assert effects
-    == [ActivateEffect(effect_id: Spell4EffectsId(43_805), delay_ms: 0)]
-    as "Spell4Effects 43805 is its Activate row, delay 0"
+    == [
+      ActivateEffect(
+        effect_id: Spell4EffectsId(43_805),
+        delay_ms: 0,
+        phase_flags: 1,
+      ),
+    ]
+    as "Spell4Effects 43805 is its Activate row, delay 0, phaseFlags 1"
   assert limits == Limits(min: 0.0, max: 30.0, vertical: -1.0)
     as "Spell4 26663: targetMaxRange 30.0, no minimum, targetVerticalRange -1"
   let assert Ok(Planned(effects:, limits:, ..)) =
     activate.planned_of(activations:, spell4_id: 1545)
     as "Spell4 1545, ItemSpecial 4350's spell, is planned"
   assert effects
-    == [ActivateEffect(effect_id: Spell4EffectsId(2348), delay_ms: 0)]
-    as "Spell4Effects 2348 is its Activate row, delay 0"
+    == [
+      ActivateEffect(
+        effect_id: Spell4EffectsId(2348),
+        delay_ms: 0,
+        phase_flags: 1,
+      ),
+    ]
+    as "Spell4Effects 2348 is its Activate row, delay 0, phaseFlags 1"
   assert limits.max == 5.0 as "Spell4 1545: targetMaxRange 5.0"
   assert activate.planned_of(activations:, spell4_id: 41_914) == Error(Nil)
     as "Spell4 41914 has no Activate row, so no plan is held"
@@ -348,4 +372,61 @@ pub fn a_pick_through_an_unread_prerequisite_is_judged_only_when_a_column_names_
     )
     == activate.OutsideCastGroup
     as "no column names the spell, so the unread pick cannot make it the activate spell"
+}
+
+pub fn the_cast_group_rule_follows_the_clients_three_branches_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `CheckCastActivateSpell 0x1403b44b0`: a creature whose activate spell is the cast
+  // spell passes; else a cast group decides; else Creature2.flags bit 0 refuses 89; else
+  // the cast passes. Whichever branch passes first, the pick the group or the flags
+  // already passed is not needed, so an unread one does not refuse the cast.
+  assert cast_group_of(
+      group: 1691,
+      picked: Picked(spell4_id: 26_663),
+      flags: 1,
+      holds: False,
+    )
+    == activate.InCastGroup
+    as "the creature's picked activate spell is the cast spell: it passes, whatever the group"
+  assert cast_group_of(
+      group: 1691,
+      picked: Unread(prerequisite_type: 76),
+      flags: 1,
+      holds: True,
+    )
+    == activate.InCastGroup
+    as "a group that holds the unit passes it, whichever spell the creature picks, so an unread pick does not matter"
+  assert cast_group_of(
+      group: 0,
+      picked: Unread(prerequisite_type: 76),
+      flags: 24_576,
+      holds: False,
+    )
+    == activate.InCastGroup
+    as "no group and flags bit 0 clear passes, whichever spell the creature picks"
+  assert cast_group_of(
+      group: 1691,
+      picked: NoActivateSpell,
+      flags: 0,
+      holds: False,
+    )
+    == activate.OutsideCastGroup
+    as "a group that does not hold the unit refuses it (89)"
+  assert cast_group_of(
+      group: 0,
+      picked: NoActivateSpell,
+      flags: 16_385,
+      holds: False,
+    )
+    == activate.OutsideCastGroup
+    as "no group and bit 0 set refuses it (89)"
+  assert activate.passes_cast_group(
+      spell4_id: 26_663,
+      cast_group_id: 1691,
+      creature: creature_of(columns: [#(5, 41_914)]),
+      picked: Unread(prerequisite_type: 76),
+      in_cast_group: fn(_) { False },
+    )
+    == activate.OutsideCastGroup
+    as "outside the group, an unread pick no column of the creature ties to the spell is refused 89, not left open"
 }
