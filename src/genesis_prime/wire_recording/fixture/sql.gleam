@@ -501,6 +501,7 @@ pub type QuestsOfCharactersOfAccountsNamedRow {
     progress: Option(List(Int)),
     quest_ms_left: Option(Int),
     objective_ms_left: Option(List(Int)),
+    kill_mask: Option(List(Int)),
   )
 }
 
@@ -534,6 +535,7 @@ pub fn quests_of_characters_of_accounts_named(
       9,
       decode.optional(decode.list(decode.int)),
     )
+    use kill_mask <- decode.field(10, decode.optional(decode.list(decode.int)))
     decode.success(QuestsOfCharactersOfAccountsNamedRow(
       character_id:,
       quest_id:,
@@ -545,6 +547,7 @@ pub fn quests_of_characters_of_accounts_named(
       progress:,
       quest_ms_left:,
       objective_ms_left:,
+      kill_mask:,
     ))
   }
 
@@ -567,7 +570,8 @@ select
   done_mask,
   progress,
   quest_ms_left,
-  objective_ms_left
+  objective_ms_left,
+  kill_mask
 from character_quest
 where character_id in (
   select character_id
