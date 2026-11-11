@@ -221,3 +221,48 @@ pub fn login_sends_the_log_with_the_held_count_test() -> Nil {
   assert quest_log.stored_state(log: entered.quests, quest_id: 1854) == 1
     as "the log the connection keeps is the one sent"
 }
+
+pub fn the_log_sent_at_login_counts_a_quest_finished_before_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  // Quest 7540's objective 13654 (type 24, data 6305, count 1) is saved with no
+  // progress, though quest 6305 was completed since (a save lost, or a quest finished
+  // while the objective was not open): the client takes the whole log in 0x35F, so the
+  // count is in it (`QuestObjective.type.24`).
+  let #(effects, entered) =
+    world_entry_support.entry_at(
+      tables:,
+      character:,
+      items: [],
+      quests: [
+        quest_support.completed(quest_id: 6305, at: 1_745_000_000),
+        quest_support.accepted(quest_id: 7540, progress: [0, 0]),
+      ],
+      now: world_entry_support.now(),
+    )
+  let frames = world_entry_support.frames_of(effects:)
+  assert quest_log_of(frames:)
+    == quest_message.QuestLog(
+      completed: [QuestCompleted(quest_id: 6305, in_current_period: 0)],
+      known: [],
+      active: [
+        QuestActive(
+          quest_id: 7540,
+          state: 1,
+          placeholder_objective_id: 0,
+          flags: 4,
+          progress: [1, 0],
+          quest_ms_left: 0,
+          objective_ms_left: [0, 0],
+        ),
+      ],
+      reset_time:,
+    )
+    as "0x035F carries progress 1 for objective 0 and its done bit (flags 4: the done mask 1 shifted by 2); 6305 has no repeat period, so its completed bit is clear"
+  assert !list.contains(cast_support.ids(frames:), 0x0361)
+    as "the whole log is one message, so no 0x361 follows at login"
+  assert quest_log.stored_state(log: entered.quests, quest_id: 7540) == 1
+    as "the log the connection keeps is the one sent, with the quest still Accepted"
+}

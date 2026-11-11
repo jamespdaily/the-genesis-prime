@@ -466,3 +466,11 @@ WorldLocation2	28530	marker of objective 13674, which has a vertical limit of 35
 WorldLocation2	44761	marker of objective 13907, which has a vertical limit of 8	objective_place_test
 Quest2	7667	quest whose objective 1 (14205) is a type 22 place with count 10 and marker 30725	objective_place_test
 WorldLocation2	30725	marker of objective 14205, a type 22 objective with count 10	objective_place_test
+Quest2	7540	quest whose two objectives are type 24, naming quests 6305 and 6306	objective_test
+Quest2	6305	quest named by a type 24 objective	objective_test
+Quest2	6306	quest named by a type 24 objective	objective_test
+Quest2	9492	quest whose second objective is a type 24 gated behind a type 22 place	objective_test
+Quest2	9494	quest named by a gated type 24 objective	objective_test
+Quest2	10502	yearly quest whose objectives are type 24 naming a yearly quest	objective_test
+Quest2	10503	yearly quest named by a type 24 objective	objective_test
+WorldLocation2	46118	marker of the type 22 objective 18249	objective_test
