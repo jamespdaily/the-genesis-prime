@@ -32,8 +32,8 @@ import genesis_prime/game/crowd_control
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{
-  Answered, Attacks, CreatureStriker, Key, Landed, PlayerStriker, Refused,
-  Released, Strike, Threatened,
+  type Key, Answered, Attacks, CreatureStriker, Key, Landed, PlayerStriker,
+  Refused, Released, Strike, Threatened,
 }
 import genesis_prime/game/unit_properties.{type Modifier, Change}
 import genesis_prime/message/combat_result
@@ -47,7 +47,7 @@ import genesis_prime/step.{
 import genesis_prime/table/id.{Spell4Id, UnitProperty2Id}
 import genesis_prime/world_map/creature.{type State, Settings}
 import genesis_prime/world_map/creature_fight
-import genesis_prime/world_map/creature_kind.{Kind}
+import genesis_prime/world_map/creature_kind.{type Kind, Kind}
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_path.{Running}
 import genesis_prime/world_map/map_id.{MapId}
@@ -56,6 +56,7 @@ import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None}
@@ -102,6 +103,27 @@ fn beast_from(
   viewers viewers: List(Int),
   armor armor: creature_life.InterruptArmor,
 ) -> State {
+  started_from(
+    source:,
+    spawn:,
+    kind: Kind(
+      respawn_ms: 60_000,
+      attack_spell4_id: Spell4Id(5649),
+      attack_interval_ms: 1500,
+    ),
+    viewers:,
+    armor:,
+  )
+}
+
+/// A creature of this kind started at this source's spawn, `Started` taken.
+fn started_from(
+  source source: spawn_source.SpawnSource,
+  spawn spawn: Spawn,
+  kind kind: Kind,
+  viewers viewers: List(Int),
+  armor armor: creature_life.InterruptArmor,
+) -> State {
   let state =
     creature.new(Settings(
       creature: CreatureStart(
@@ -119,11 +141,7 @@ fn beast_from(
         ..spawn,
         combat: creature_life.Combat(..spawn.combat, interrupt_armor: armor),
       ),
-      kind: Kind(
-        respawn_ms: 60_000,
-        attack_spell4_id: Spell4Id(5649),
-        attack_interval_ms: 1500,
-      ),
+      kind:,
       numbers: spawn_support.numbers,
     ))
   let #(state, _) =
@@ -184,6 +202,7 @@ fn approached(
     place: at(x),
     seq:,
     stay: map_support.stay(count: number),
+    hit_radius: place_support.player_hit_radius,
   )
 }
 
@@ -193,6 +212,7 @@ fn moved(number number: Int, x x: Float, seq seq: Int) -> creature.Message {
     place: at(x),
     seq:,
     stay: map_support.stay(count: number),
+    hit_radius: place_support.player_hit_radius,
   )
 }
 
@@ -212,6 +232,7 @@ fn strike_of(
         place: at(2.0),
         seq: 1,
         stay: map_support.stay(count: number),
+        hit_radius: place_support.player_hit_radius,
         rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
       ),
       offence: Offence(
@@ -1682,6 +1703,7 @@ pub fn a_player_back_in_the_ring_under_a_new_unit_with_the_same_sequence_number_
         place: at(5.0),
         seq: 7,
         stay: stay.next(map_support.stay(count: 2)),
+        hit_radius: place_support.player_hit_radius,
       ),
     )
   assert list.contains(said(again), "0x908(21, 1) to 2")
@@ -2015,8 +2037,8 @@ pub fn a_struck_creature_with_no_armor_holds_the_state_its_viewers_get_the_0x87f
     ]
     as "the answer names it, with the time the creature holds it until: its arrival, 10000 + 1000, plus 166 plus 3000"
   assert creature.controlled(state:)
-  assert control_timers(taken) == [#(step.TimerId(5), 3166)]
-    as "one timer for the state, 166 + 3000 from the tell; ids 4n + 1 from 5"
+  assert control_timers(taken) == [#(step.TimerId(9), 3166)]
+    as "one timer for the state, 166 + 3000 from the tell; ids 5n + 4 from 9"
 }
 
 pub fn the_state_ends_with_a_0x880_at_arrival_plus_delay_plus_duration_and_not_before_test() -> Nil {
@@ -2041,7 +2063,7 @@ pub fn the_state_ends_with_a_0x880_at_arrival_plus_delay_plus_duration_and_not_b
   assert state_news(ended, 2) == [over] && state_news(ended, 5) == [over]
     as "0x880 names the unit's state, the strike's cast and the go's instance id"
   assert !creature.controlled(state:)
-  let #(_, again) = fire(state:, at_ms: 4200, timer: step.TimerId(5))
+  let #(_, again) = fire(state:, at_ms: 4200, timer: step.TimerId(9))
   assert support.effects_of(again) == []
     as "a timer that fires for a state already ended writes nothing"
 }
@@ -2059,13 +2081,13 @@ pub fn two_states_of_one_kind_from_one_caster_are_held_separately_and_two_ending
     )
   assert list.length(state_news(taken, 2)) == 2
     && control_timers(taken)
-    == [#(step.TimerId(5), 2500), #(step.TimerId(9), 2500)]
+    == [#(step.TimerId(9), 2500), #(step.TimerId(14), 2500)]
     as "two 0x87f and a timer for each state"
-  let #(state, first) = fire(state:, at_ms: 3500, timer: step.TimerId(5))
+  let #(state, first) = fire(state:, at_ms: 3500, timer: step.TimerId(9))
   assert list.map(state_news(first, 2), name_of) == ["0x880"]
     && creature.controlled(state:)
     as "one 0x880 for the first, and the second still holds"
-  let #(state, second) = fire(state:, at_ms: 3500, timer: step.TimerId(9))
+  let #(state, second) = fire(state:, at_ms: 3500, timer: step.TimerId(14))
   assert list.map(state_news(second, 2), name_of) == ["0x880"]
     && !creature.controlled(state:)
     as "each ends with its own 0x880, though both end in one millisecond"
@@ -2091,10 +2113,10 @@ pub fn two_players_states_have_two_0x87f_and_two_0x880_each_with_its_own_instanc
     )
   assert list.map(state_news(first, 5), name_of) == ["0x87f"]
     && list.map(state_news(second, 5), name_of) == ["0x87f"]
-  let #(state, one) = fire(state:, at_ms: 3500, timer: step.TimerId(5))
+  let #(state, one) = fire(state:, at_ms: 3500, timer: step.TimerId(9))
   assert list.map(state_news(one, 5), name_of) == ["0x880"]
     && creature.controlled(state:)
-  let #(state, two) = fire(state:, at_ms: 4000, timer: step.TimerId(9))
+  let #(state, two) = fire(state:, at_ms: 4000, timer: step.TimerId(14))
   assert list.map(state_news(two, 5), name_of) == ["0x880"]
     && !creature.controlled(state:)
     as "each state ends with its own 0x880; the creature is held until the later one"
@@ -2118,10 +2140,10 @@ pub fn a_creature_that_dies_stunned_sends_no_0x880_and_a_timer_after_death_write
     )
   assert state_news(killed, 5) == []
     as "the client clears every state at a death: no 0x880"
-  assert list.contains(timers_cancelled(killed), step.TimerId(5))
+  assert list.contains(timers_cancelled(killed), step.TimerId(9))
     as "the state's timer is cancelled"
   assert !creature.controlled(state:)
-  let #(_, late) = fire(state:, at_ms: 3500, timer: step.TimerId(5))
+  let #(_, late) = fire(state:, at_ms: 3500, timer: step.TimerId(9))
   assert support.effects_of(late) == []
     as "a timer already waiting in the mailbox writes nothing"
 }
@@ -2197,6 +2219,7 @@ pub fn a_deflected_stun_only_strike_lands_no_state_and_sends_no_0x87f_test() -> 
           place:,
           seq:,
           stay:,
+          hit_radius: place_support.player_hit_radius,
           rolls: Rolls(crit: 0.5, deflect: 0.0, glance: 0.5),
         ),
       ),
@@ -2702,4 +2725,562 @@ pub fn creature_blow_uses_damage_dealt_multiplier_test() -> Nil {
     })
     == [#(184_741, 24)]
     as "effect 184741 is 12 and the Physical multiplier (141) is 2.0"
+}
+
+// ---- the Sim-Turret's charge (Spell4 85469, castTime 8000) ----
+//
+// The turret is Creature2 73494 as the content load starts it, at the origin facing
+// -z (yaw 0, `movement_command.kind_14.facing`), with its kind's attack every 3000 ms
+// (migration 0029). Its charge's rectangle is TelegraphDamage 16212: 3 wide and 30 long
+// from the caster along its facing, and a player's hit radius is 1.2, so a player is
+// struck when its centre is within 1.5 + 1.2 = 2.7 aside of the line and within 30 +
+// 1.2 ahead.
+
+/// The Exile Sim-Turret at the origin, started for these viewers, `Started` taken.
+fn turret(viewers viewers: List(Int)) -> State {
+  let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
+  let assert Ok(kind) =
+    dict.get(spawn_support.turret_kinds().by_creature, 73_494)
+    as "migration 0029 gives the Exile turret its kind"
+  started_from(
+    source: spawn_source.Stored(id: SpawnId(1)),
+    spawn:,
+    kind:,
+    viewers:,
+    armor: creature_life.NoArmor,
+  )
+}
+
+/// A place `x` along the world's x axis and `z` along its z axis: the turret faces -z, so
+/// a negative `z` is ahead of it.
+fn at_xz(x x: Float, z z: Float) -> start_place.Place {
+  place_support.at(world_id: 3460, world_zone_id: 5967, x:, y: 0.0, z:)
+}
+
+fn approached_at(
+  number number: Int,
+  x x: Float,
+  z z: Float,
+  seq seq: Int,
+) -> creature.Message {
+  creature.Approached(
+    by: ConnectionId(number),
+    unit_id: unit_of(number),
+    place: at_xz(x:, z:),
+    seq:,
+    stay: map_support.stay(count: number),
+    hit_radius: place_support.player_hit_radius,
+  )
+}
+
+fn moved_at(
+  number number: Int,
+  x x: Float,
+  z z: Float,
+  seq seq: Int,
+) -> creature.Message {
+  creature.TargetMoved(
+    by: ConnectionId(number),
+    place: at_xz(x:, z:),
+    seq:,
+    stay: map_support.stay(count: number),
+    hit_radius: place_support.player_hit_radius,
+  )
+}
+
+/// The turret fought by player 2, who comes near 10 units ahead of it at 0 ms: the state
+/// and the step of the aggro, which starts the first attack tick at 3000 ms.
+fn fought(
+  viewers viewers: List(Int),
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  tell(
+    state: turret(viewers:),
+    at_ms: 0,
+    message: approached_at(number: 2, x: 0.0, z: -10.0, seq: 1),
+  )
+}
+
+/// Player 5 joins the threat list by a light strike and stands at `x`, `z`.
+fn with_player_5_at(state state: State, x x: Float, z z: Float) -> State {
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: strike_of(number: 5, cast_id: 1, blows: [#(1, 1, 0.5)]),
+    )
+  let #(state, _) =
+    tell(state:, at_ms: 200, message: moved_at(number: 5, x:, z:, seq: 2))
+  state
+}
+
+/// The attack tick of 3000 ms opens the charge: the state, the step of its start and the
+/// timer of its end, 8000 ms later.
+fn charge_opened(
+  state state: State,
+  aggro aggro: ServiceStep(creature.Outgoing),
+) -> #(State, ServiceStep(creature.Outgoing), step.TimerId) {
+  let #(state, opened) =
+    fire(state:, at_ms: 3000, timer: timer_for(aggro, 3000))
+  #(state, opened, timer_for(opened, 8000))
+}
+
+/// The cast id the step's 0x7ff gave viewer `number`.
+fn cast_id_sent(taken: ServiceStep(creature.Outgoing), number: Int) -> Int {
+  let assert [CastStarted(start:), ..] = news_to(taken, number)
+    as "the step sends the 0x7ff first"
+  start.cast_id
+}
+
+/// Player `number`'s answer that the charge's effect 224644 hit it for 400, to the strike
+/// `key`.
+fn landed(key key: Key) -> creature.Message {
+  creature.StrikeAnswered(answered: Answered(
+    key:,
+    outcome: Landed(
+      descriptions: [
+        hit.Description(
+          spell4_effects_id: 224_644,
+          delay_ms: 0,
+          damage: SpellDamageDescription(
+            raw_damage: 400,
+            scaled_raw_damage: 400,
+            absorbed: 0,
+            shield_absorbed: 0,
+            health_damage_with_overkill: 400,
+            overkill: 0,
+            glance: 0,
+            killed: 0,
+            combat_result: combat_result.Hit,
+            damage_type: damage_type.Physical,
+            hits: [],
+          ),
+        ),
+      ],
+      controls: [],
+    ),
+  ))
+}
+
+pub fn a_charge_starts_with_its_cast_time_and_telegraph_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell4 85469 has castTime 8000 and the telegraph Spell4Telegraph 57886; the client
+  // draws it on the caster (`0x140546e60`, `0x14054b1b0.follows_caster`), so the 0x7ff
+  // carries no positions.
+  let #(state, aggro) = fought(viewers: [2, 5])
+  assert said(aggro)
+    == [
+      "0x908(20, 1) to 2", "0x908(20, 1) to 5", "0x89a(1) to 2", "0x89a(1) to 5",
+      "Threatened(7, 3) to 2",
+    ]
+    as "the 0x908 that names the target goes before any 0x7ff: the client's turret aims at the unit it names (`0x14046cdc0.turret_cast_aim`)"
+  assert list.map(timers(aggro), fn(timer) { timer.1 }) == [3000]
+    as "the attack tick starts at the kind's interval, 3000 ms"
+  let #(_, opened) = fire(state:, at_ms: 3000, timer: timer_for(aggro, 3000))
+  assert said(opened) == ["0x7ff to 2", "0x7ff to 5"]
+    as "the tick opens the charge: the cast to each viewer and no strike yet"
+  assert fights_told(opened) == []
+  let assert [CastStarted(start:)] = news_to(opened, 2)
+  assert start.spell4_id == 85_469
+    && start.caster_unit_id == 7
+    && start.primary_target_unit_id == 20
+    as "the kind's charge, cast by the turret on its target"
+  assert start.telegraph_positions == [] && start.initial_positions == []
+    as "no positions: the client draws the rectangle on the turret"
+  assert list.map(timers(opened), fn(timer) { timer.1 }) == [8000]
+    as "one timer, the cast's end 8000 ms later, and no next attack tick"
+}
+
+pub fn at_its_end_the_charge_strikes_each_fighter_inside_its_rectangle_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The turret faces player 2, 10 units ahead of it. Player 5 stands 5 units aside of
+  // that line, beyond 1.5 + 1.2.
+  let #(state, aggro) = fought(viewers: [2, 5])
+  let state = with_player_5_at(state:, x: 5.0, z: -10.0)
+  let #(state, opened, ends) = charge_opened(state:, aggro:)
+  let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
+  assert said(went) == ["Attacks to 2"]
+    as "the strike goes to the player inside the rectangle only"
+  let assert [
+    #(2, Attacks(tell: Strike(key:, from:, striker:, offence:, controls: []))),
+  ] = fights_told(went)
+  assert from == address()
+    && striker == CreatureStriker
+    && key.cast_id == cast_id_sent(opened, 2)
+    && key.unit_id == 20
+    as "the strike answers to the turret and names the charge's cast and the struck unit"
+  assert list.map(offence.blows, fn(blow) { blow.spell4_effects_id })
+    == [224_644]
+    as "the charge's damage effect, Spell4Effects 224644"
+  assert list.map(timers(went), fn(timer) { timer.1 }) == [1000]
+    as "the strike's 1 s deadline starts, and no attack tick while the round is open"
+}
+
+pub fn a_charge_with_nobody_inside_goes_with_no_target_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The target walks 40 units off while the turret charges: beyond the 30 of the
+  // rectangle, which the turret does not follow.
+  let #(state, aggro) = fought(viewers: [2])
+  let #(state, opened, ends) = charge_opened(state:, aggro:)
+  let #(state, walked) =
+    tell(
+      state:,
+      at_ms: 5000,
+      message: moved_at(number: 2, x: 0.0, z: -40.0, seq: 2),
+    )
+  assert said(walked) == [] as "the turret never moves: no path is sent"
+  let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
+  assert said(went) == ["0x7f4 to 2", "0x7fe to 2"]
+    as "the go and the finish of the cast, and no strike"
+  let assert [CastWent(go:), CastFinished(cast_id:)] = news_to(went, 2)
+  assert go.targets == []
+    && go.cast_id == cast_id_sent(opened, 2)
+    && cast_id == go.cast_id
+    as "the go names no unit and the cast's own id"
+  assert fights_told(went) == []
+  assert list.map(timers(went), fn(timer) { timer.1 }) == [3000]
+    as "the next attack tick starts"
+}
+
+pub fn the_struck_go_and_finish_follow_the_answers_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = fought(viewers: [2])
+  let #(state, opened, ends) = charge_opened(state:, aggro:)
+  let #(state, went) = fire(state:, at_ms: 11_000, timer: ends)
+  let deadline = timer_for(went, 1000)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(went)
+  let #(state, answered) = tell(state:, at_ms: 11_100, message: landed(key:))
+  assert said(answered) == ["0x7f4 to 2", "0x7fe to 2"]
+    as "the go lists the struck player, then the cast finishes"
+  let assert [CastWent(go:), CastFinished(cast_id:)] = news_to(answered, 2)
+  let assert [target] = go.targets
+  let assert [effect] = target.effects
+  assert target.unit_id == 20
+    && effect.spell4_effects_id == 224_644
+    && go.cast_id == cast_id_sent(opened, 2)
+    && cast_id == go.cast_id
+    as "the go names player 2 and effect 224644, under the charge's cast id"
+  assert timers_cancelled(answered) == [deadline]
+    as "the last answer closes the round: its deadline is cancelled"
+  assert list.map(timers(answered), fn(timer) { timer.1 }) == [3000]
+    as "the next attack tick starts when the round closes"
+  let #(_, second) =
+    fire(state:, at_ms: 14_100, timer: timer_for(answered, 3000))
+  assert said(second) == ["0x7ff to 2"] as "that tick opens the next charge"
+  assert cast_id_sent(second, 2) != cast_id_sent(opened, 2)
+    as "under a cast id of its own"
+}
+
+pub fn a_turret_never_chases_or_walks_home_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = fought(viewers: [2, 5])
+  // 40 units off: beyond the charge's reach 30 and within the leash range 55 of home, where
+  // a creature that runs would chase.
+  let #(state, away) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: moved_at(number: 2, x: 0.0, z: -40.0, seq: 2),
+    )
+  assert said(away) == [] as "no path to the target"
+  let #(state, ticked) =
+    fire(state:, at_ms: 3000, timer: timer_for(aggro, 3000))
+  assert said(ticked) == [] as "the tick starts no chase and no charge"
+  assert list.map(timers(ticked), fn(timer) { timer.1 }) == [3000]
+    as "and goes on ticking"
+  let #(_, leashed) =
+    tell(state:, at_ms: 3500, message: creature.Unwatched(by: ConnectionId(2)))
+  assert list.contains(said(leashed), "0x89a(0) to 5")
+    as "the target is gone: the turret leashes"
+  assert !list.contains(said(leashed), "0x638 to 5")
+    && !list.contains(said(leashed), "0x638(placed) to 5")
+    && timers(leashed) == []
+    as "it walks nowhere: no path and no home timer"
+}
+
+pub fn a_charge_faces_its_target_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `0x14046cdc0.turret_cast_aim`: an aiming turret turns toward the unit its 0x908 names
+  // every frame, so at the cast's end the rectangle points at the target where it
+  // stands then. Player 2, the target, is 10 units ahead of the turret when the charge
+  // opens and walks round it to 10 units along +x; player 5 stands in the opening
+  // line, 20 units ahead, and walks out of it behind the turret.
+  let #(state, aggro) = fought(viewers: [2, 5])
+  let state = with_player_5_at(state:, x: 0.0, z: -20.0)
+  let #(state, _, ends) = charge_opened(state:, aggro:)
+  let #(state, walked) =
+    tell(
+      state:,
+      at_ms: 6000,
+      message: moved_at(number: 2, x: 10.0, z: 0.0, seq: 2),
+    )
+  assert said(walked) == [] as "the turret does not move"
+  let #(state, left) =
+    tell(
+      state:,
+      at_ms: 7000,
+      message: moved_at(number: 5, x: 0.0, z: 20.0, seq: 3),
+    )
+  assert said(left) == []
+  let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
+  assert said(went) == ["Attacks to 2"]
+    as "the target is struck at its end place, which the opening line missed, and player 5, who stood in that line, is not"
+}
+
+pub fn a_second_attack_tick_during_a_charge_starts_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = fought(viewers: [2])
+  let #(state, _, _) = charge_opened(state:, aggro:)
+  let #(_, again) = fire(state:, at_ms: 4000, timer: timer_for(aggro, 3000))
+  assert said(again) == [] && timers(again) == []
+    as "the tick that opened the charge fires again: no second 0x7ff, no strike and no new tick"
+}
+
+pub fn a_stale_cast_end_does_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = fought(viewers: [2])
+  let #(state, _, ends) = charge_opened(state:, aggro:)
+  let #(_, old) = fire(state:, at_ms: 5000, timer: step.TimerId(5 * 99 + 3))
+  assert said(old) == [] && timers(old) == []
+    as "a cast end of another generation fires while the charge is open: it does nothing"
+  let #(state, _) = fire(state:, at_ms: 11_000, timer: ends)
+  let #(state, again) = fire(state:, at_ms: 11_050, timer: ends)
+  assert said(again) == [] && timers(again) == []
+    as "the charge struck already: its cast end fires again and finds no charge"
+  let #(_, unknown) =
+    fire(state:, at_ms: 11_060, timer: step.TimerId(5 * 99 + 3))
+  assert said(unknown) == [] && timers(unknown) == []
+    as "a cast end of a generation no charge holds does nothing"
+}
+
+pub fn death_during_a_charge_ends_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = fought(viewers: [2])
+  let #(state, _, ends) = charge_opened(state:, aggro:)
+  let #(state, killed) =
+    tell(
+      state:,
+      at_ms: 5000,
+      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 1_000_000, 1.0)]),
+    )
+  assert list.contains(said(killed), "0x7fe to 2")
+    as "the cast finishes with the death"
+  assert !list.contains(said(killed), "0x7f4 to 2") as "and nothing went: no go"
+  assert list.contains(timers_cancelled(killed), ends)
+    as "the cast end is cancelled"
+  let #(_, late) = fire(state:, at_ms: 11_000, timer: ends)
+  assert said(late) == [] && timers(late) == []
+    as "the cast end that fires all the same finds no charge"
+}
+
+pub fn leash_during_a_charge_ends_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = fought(viewers: [2, 5])
+  let #(state, _, ends) = charge_opened(state:, aggro:)
+  let #(state, leashed) =
+    tell(state:, at_ms: 5000, message: creature.Unwatched(by: ConnectionId(2)))
+  assert list.contains(said(leashed), "0x7fe to 5")
+    as "the last threat entry is released: the cast finishes"
+  assert !list.contains(said(leashed), "0x7f4 to 5")
+    as "and nothing went: no go"
+  assert list.contains(timers_cancelled(leashed), ends)
+    as "the cast end is cancelled"
+  let #(_, late) = fire(state:, at_ms: 11_000, timer: ends)
+  assert said(late) == [] && timers(late) == []
+    as "the cast end that fires all the same finds no charge"
+}
+
+pub fn a_viewer_arriving_mid_charge_gets_the_open_cast_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = fought(viewers: [2])
+  let #(state, opened, ends) = charge_opened(state:, aggro:)
+  let #(state, watched) =
+    tell(
+      state:,
+      at_ms: 5000,
+      message: creature.Watched(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
+    )
+  assert list.map(news_to(watched, 9), name_of)
+    == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x7ff"]
+    as "the fight, then the open cast: the 0x908 that names the target goes before the 0x7ff"
+  let assert [_, _, _, CastStarted(start:)] = news_to(watched, 9)
+  assert start.cast_id == cast_id_sent(opened, 2)
+    && start.spell4_id == 85_469
+    && start.primary_target_unit_id == 20
+    as "the same cast as the others' client holds, so the later go names it"
+  let #(state, went) = fire(state:, at_ms: 11_000, timer: ends)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(went)
+  let #(_, answered) = tell(state:, at_ms: 11_100, message: landed(key:))
+  assert list.contains(said(answered), "0x7f4 to 9")
+    && list.contains(said(answered), "0x7fe to 9")
+    as "the arriving viewer is told the go and the finish too"
+}
+
+pub fn a_viewer_arriving_mid_charge_is_told_the_current_target_in_the_open_cast_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 5 takes the top of the threat list from player 2 while the turret charges: the
+  // 0x908 a later viewer gets names player 5, and so does its 0x7ff, the target the
+  // turret's cast is on now.
+  let #(state, aggro) = fought(viewers: [2, 5])
+  let #(state, _, _) = charge_opened(state:, aggro:)
+  let #(state, struck) =
+    tell(
+      state:,
+      at_ms: 5000,
+      message: strike_of(number: 5, cast_id: 1, blows: [#(1, 10, 1.0)]),
+    )
+  assert list.contains(said(struck), "0x908(50, 10) to 2")
+    as "player 5 is the target now"
+  let #(_, watched) =
+    tell(
+      state:,
+      at_ms: 6000,
+      message: creature.Watched(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
+    )
+  let assert [_, _, targeting, _, CastStarted(start:)] = news_to(watched, 9)
+  assert name_of(targeting) == "0x908(50, 10)"
+  assert start.primary_target_unit_id == 50
+    as "the open cast is sent on the unit the fight targets now, not the one it began on"
+}
+
+pub fn a_controlled_turret_keeps_its_aim_while_its_target_moves_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `0x14046cdc0.turret_cast_aim`: the aim is held while the unit has crowd-control state
+  // flag 0x10 (Stun and Knockdown carry it). Player 2, the target, is 10 units ahead of the
+  // turret and player 5 stands in the same line, 20 units ahead. Player 5 stuns the turret
+  // at 9000 ms, which lasts 2500 ms, and the target then walks 10 units along +x, off the
+  // line. At the cast's end the turret, held, still strikes along the line it held: player
+  // 5 is struck and the target is not.
+  let #(state, aggro) = fought(viewers: [2, 5])
+  let state = with_player_5_at(state:, x: 0.0, z: -20.0)
+  let #(state, _, ends) = charge_opened(state:, aggro:)
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 9000,
+      message: controlling(number: 5, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  assert list.contains(said(stunned), "0x87f to 2")
+    as "the state took hold on the turret"
+  let #(state, back) =
+    tell(
+      state:,
+      at_ms: 9100,
+      message: moved_at(number: 5, x: 0.0, z: -20.0, seq: 3),
+    )
+  assert said(back) == []
+  let #(state, walked) =
+    tell(
+      state:,
+      at_ms: 9500,
+      message: moved_at(number: 2, x: 10.0, z: 0.0, seq: 2),
+    )
+  assert said(walked) == [] as "the turret does not move"
+  let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
+  assert said(went) == ["Attacks to 5"]
+    as "the held aim still points up the line: player 5 is struck and the target, who left it, is not"
+}
+
+pub fn a_turret_aims_at_its_target_again_when_the_state_that_held_it_ends_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The same fight, but the stun is over (it ends at 6500 ms) before the target walks off
+  // the line: the aim follows the target again, so the cast's end strikes it at its new
+  // place and not player 5, who stays in the old line.
+  let #(state, aggro) = fought(viewers: [2, 5])
+  let state = with_player_5_at(state:, x: 0.0, z: -20.0)
+  let #(state, _, ends) = charge_opened(state:, aggro:)
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 4000,
+      message: controlling(number: 5, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let state_ends = timer_for(stunned, 2500)
+  let #(state, _) = fire(state:, at_ms: 6500, timer: state_ends)
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 6600,
+      message: moved_at(number: 5, x: 0.0, z: -20.0, seq: 3),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 7000,
+      message: moved_at(number: 2, x: 10.0, z: 0.0, seq: 2),
+    )
+  let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
+  assert said(went) == ["Attacks to 2"]
+    as "the state ended before the target moved: the aim follows it, so it is struck where it stands and player 5, in the old line, is not"
+}
+
+pub fn a_controlled_turret_still_strikes_at_the_charge_end_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = fought(viewers: [2])
+  let #(state, _, ends) = charge_opened(state:, aggro:)
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 4000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  assert list.contains(said(stunned), "0x87f to 2")
+    as "the state took hold on the turret"
+  let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
+  assert said(went) == ["Attacks to 2"]
+    as "the cast was begun before the state: the strike goes at the cast's end all the same"
+}
+
+pub fn a_turret_leashes_in_place_when_its_target_is_beyond_its_leash_range_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = fought(viewers: [2])
+  // 60 units off: beyond the leash range 55 from home.
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: moved_at(number: 2, x: 0.0, z: -60.0, seq: 2),
+    )
+  let #(state, leashed) =
+    fire(state:, at_ms: 3000, timer: timer_for(aggro, 3000))
+  assert list.contains(said(leashed), "0x89a(0) to 2")
+    && fights_told(leashed) == [#(2, Released(unit_id: unit))]
+    as "the turret leashes: out of combat and the player released"
+  assert !list.contains(said(leashed), "0x638 to 2")
+    && !list.contains(said(leashed), "0x638(placed) to 2")
+    && timers(leashed) == []
+    as "it has no walk: no path and no home timer, though it is the leash"
+  let #(_, again) =
+    tell(
+      state:,
+      at_ms: 4000,
+      message: approached_at(number: 2, x: 0.0, z: -10.0, seq: 3),
+    )
+  assert list.contains(said(again), "0x908(20, 1) to 2")
+    as "a player that comes near again is fought again"
+}
+
+pub fn a_fighter_released_mid_charge_is_not_struck_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Both stand in the rectangle; player 5 leaves the threat list while the turret
+  // charges.
+  let #(state, aggro) = fought(viewers: [2, 5])
+  let state = with_player_5_at(state:, x: 0.0, z: -20.0)
+  let #(state, _, ends) = charge_opened(state:, aggro:)
+  let #(state, _) =
+    tell(state:, at_ms: 5000, message: creature.Unwatched(by: ConnectionId(5)))
+  let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
+  assert said(went) == ["Attacks to 2"]
+    as "player 5 is off the threat list at the cast's end: only player 2 is struck"
 }

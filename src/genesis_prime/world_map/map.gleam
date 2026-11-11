@@ -502,6 +502,7 @@
 //// | a move crosses an object's sight twice in one `Moved` batch | decided on the final place: at most one entry per object per `Moved` |
 
 import genesis_prime/game/appearance
+import genesis_prime/game/hit_radius
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
@@ -716,7 +717,14 @@ pub type Outgoing {
   /// A send to a creature: the ready player of connection `by`, its unit
   /// `unit_id`, entered the creature's ring at `place`, its move `seq`; or stood
   /// in it when it became ready or when the creature started.
-  Approached(by: ConnectionId, unit_id: Int, place: Place, seq: Int, stay: Stay)
+  Approached(
+    by: ConnectionId,
+    unit_id: Int,
+    place: Place,
+    seq: Int,
+    stay: Stay,
+    hit_radius: Float,
+  )
   /// A send to a creature: the player of connection `by` left its ring.
   Withdrew(by: ConnectionId)
   /// A send to a creature: the player of connection `by` died. It leaves the
@@ -1432,7 +1440,7 @@ fn approaches_at_start(
           state:,
           unit_id:,
           life:,
-          message: approached(connection: player.0, player: player.1),
+          message: approached(state:, connection: player.0, player: player.1),
         )
       })
     Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) -> []
@@ -1440,8 +1448,9 @@ fn approaches_at_start(
 }
 
 /// The `Approached` of a player: its unit, its place, its move's sequence
-/// number and its stay.
+/// number, its stay and the hit radius of its race.
 fn approached(
+  state state: State,
   connection connection: ConnectionId,
   player player: Player,
 ) -> Outgoing {
@@ -1451,6 +1460,10 @@ fn approached(
     place: player_unit.place(player.unit),
     seq: player.seq,
     stay: player.stay,
+    hit_radius: hit_radius.of_playing(
+      tables: state.settings.tables,
+      race_id: player_unit.race_id(player.unit),
+    ),
   )
 }
 
@@ -2202,7 +2215,11 @@ fn rings_decided(
     player,
     list.append(
       list.flat_map(entered, fn(spawn) {
-        tell_live(state:, spawn:, message: approached(connection:, player:))
+        tell_live(
+          state:,
+          spawn:,
+          message: approached(state:, connection:, player:),
+        )
       }),
       list.flat_map(left, fn(spawn) {
         tell_live(state:, spawn:, message: Withdrew(by: connection))

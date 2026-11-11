@@ -56,6 +56,7 @@ import genesis_prime/store
 import genesis_prime/table/id.{type PrerequisiteId}
 import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
 import genesis_prime/world_map/creature_path.{type Path}
+import genesis_prime/world_map/creature_unit_type.{type CreatureUnitType}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/stay.{type Stay}
@@ -130,9 +131,15 @@ pub type Request {
   TellStrike(tell: StrikeTell)
   /// What a `Tell` effect sends a creature that holds this connection's player
   /// on its threat list: the player stands at `place`, the connection's move
-  /// `seq` (genesis_prime/world_map/creature `TargetMoved`). Told through the
+  /// `seq`, with the player's hit radius (genesis_prime/world_map/creature `TargetMoved`). Told through the
   /// creature registry with no watch, and never asked.
-  TellTargetMoved(connection: ConnectionId, place: Place, seq: Int, stay: Stay)
+  TellTargetMoved(
+    connection: ConnectionId,
+    place: Place,
+    seq: Int,
+    stay: Stay,
+    hit_radius: Float,
+  )
   /// What a `Tell` effect sends a creature whose strike this connection's player
   /// took: the answer (genesis_prime/world_map/creature `StrikeAnswered`). Told
   /// through the creature registry with no watch, and never asked.
@@ -168,7 +175,8 @@ pub type News {
   /// from the map's clock: 0x262 (opcode.0x262).
   Appeared(unit: UnitCreatePlayer)
   /// A creature as the client creates it, at its spawn and stamped from the
-  /// map's clock: 0x262 of type 0 (opcode.0x262.creature), at its current health
+  /// map's clock: 0x262 of type 0 (opcode.0x262.creature), or of type 13 when
+  /// `unit_type` is a Turret (opcode.0x262.simple), at its current health
   /// (0 for a corpse). Sent by the creature's own process
   /// (genesis_prime/world_map/creature), which owns the unit, with what the viewer's
   /// strikes and requests need of it: its life, which its address needs, the hit
@@ -176,6 +184,7 @@ pub type News {
   /// is Hostile to.
   CreatureAppeared(
     unit: UnitCreateCreature,
+    unit_type: CreatureUnitType,
     life: Int,
     place: Place,
     hit_radius: Float,

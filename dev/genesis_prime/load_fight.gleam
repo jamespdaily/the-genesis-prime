@@ -47,6 +47,7 @@ import genesis_prime/client_connection.{type Message, ForStay, SentByFoe}
 import genesis_prime/connection/registry
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/game/hit_radius
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/load_moves
@@ -345,6 +346,10 @@ fn walk(
           place:,
           seq: step,
           stay: stay.next(stay.none_yet()),
+          hit_radius: hit_radius.of_playing(
+            tables: settings.game.settings.tables,
+            race_id: RaceId(1),
+          ),
         ),
       )
     })

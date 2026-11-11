@@ -30,6 +30,7 @@
 ////   retiring until the creature ends, so no viewer is sent a corpse the spawn's next
 ////   creature does not know.
 
+import genesis_prime/game/area.{type Inside, type Row}
 import genesis_prime/game/hit.{type Defence, type Offence}
 import genesis_prime/game/strike_tell.{
   type Answered, type Tell, Answered, CreatureStriker, Landed, PlayerStriker,
@@ -66,9 +67,28 @@ pub type Hostile {
 /// properties; the speed it runs at, in units a second
 /// (Creature2DisplayInfo.runLand times property 100, `0x1405b45e0`); and its reach,
 /// centre to centre: the spell's `targetMaxRange` plus its hit radius (a server
-/// choice, checked live).
+/// choice, checked live); and how the spell is cast (`cast`). A creature whose `run_speed`
+/// is 0 never moves.
 pub type Attack {
-  Attack(spell4_id: Spell4Id, offence: Offence, run_speed: Float, reach: Float)
+  Attack(
+    spell4_id: Spell4Id,
+    offence: Offence,
+    run_speed: Float,
+    reach: Float,
+    cast: Cast,
+  )
+}
+
+/// How a creature's attack spell is cast, by the spell's `castTime`.
+pub type Cast {
+  /// A cast time of 0: the attack strikes its target at once.
+  Instant
+  /// A cast time above 0: a charge, which strikes each fighter inside `area` when the
+  /// time is out, and whose reach is the area row's `maxRange`, not the spell's
+  /// `targetMaxRange`. `inside` is how a unit counts as inside the area
+  /// (genesis_prime/game/spell_area `area_of_spell`); a spell with a cast time and no
+  /// area it can read fails the load.
+  Charged(cast_ms: Int, area: Row, inside: Inside)
 }
 
 /// A creature's Interrupt Armor maximum, unit property 44

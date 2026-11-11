@@ -5,7 +5,9 @@
 ////
 //// - **Type 0** (a NonPlayer unit) with the Creature2 id, which the client
 ////   refuses unless it loaded the row, and the quest checklist index 0
-////   (opcode.0x262.creature, `0x140095fb0`).
+////   (opcode.0x262.creature, `0x140095fb0`); **type 13** (Turret) for a spawn
+////   that is a turret's, with the same type data and values (`body`,
+////   opcode.0x262.simple).
 //// - **Health:** stat 0, which is above 0 for a creature that stands and 0 for one
 ////   that lies dead, which the client creates dead (opcode.0x262.creature); a
 ////   creature at full health holds the spawn's Base Health. Stat 10 is the spawn's
@@ -34,11 +36,17 @@
 ////   (`unit_fields.spawned_tail`).
 
 import genesis_prime/game/unit_properties.{type Properties}
+import genesis_prime/message/bit_stream.{type EncodeError}
+import genesis_prime/message/static_unit_type
 import genesis_prime/message/unit_create_creature.{
   type UnitCreateCreature, UnitCreateCreature,
 }
+import genesis_prime/message/unit_create_static.{UnitCreateStatic}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/world_map/creature_unit_type.{
+  type CreatureUnitType, NonPlayer, Turret,
+}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/unit_fields
@@ -86,6 +94,27 @@ pub fn create(
       server_time_estimate_start:,
     ),
   )
+}
+
+/// The bytes of the creature's 0x262 of the creature's unit type: of type 0 as
+/// `create` built it, or of type 13 (Turret), which the client reads with the same
+/// type data and the same values (`opcode.0x262.simple`), so only the type number
+/// differs.
+pub fn body(
+  unit unit: UnitCreateCreature,
+  unit_type unit_type: CreatureUnitType,
+) -> Result(BitArray, EncodeError) {
+  case unit_type {
+    NonPlayer -> unit_create_creature.encode(unit)
+    Turret ->
+      unit_create_static.encode(UnitCreateStatic(
+        unit_id: unit.unit_id,
+        unit_type: static_unit_type.Turret,
+        creature_id: unit.creature_id,
+        checklist_index: unit.checklist_index,
+        tail: unit.tail,
+      ))
+  }
 }
 
 /// The creature's 0x262 with the current base and value of each property a live
