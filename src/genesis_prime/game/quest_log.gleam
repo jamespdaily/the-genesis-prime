@@ -67,6 +67,7 @@ import genesis_prime/table/path_soldier_activate
 import genesis_prime/table/quest2.{type Quest2}
 import genesis_prime/table/quest_objective
 import genesis_prime/world_map/game_number.{type GameNumbers}
+import genesis_prime/world_map/map_id.{type MapId}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -74,6 +75,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/set.{type Set}
 import gleam/time/calendar.{Date, January, TimeOfDay}
 import gleam/time/duration
 import gleam/time/timestamp
@@ -104,7 +106,8 @@ type Entry {
   /// quest, since the quest needs no such objective to be achieved. `kill_masks` holds,
   /// for each of the six objective slots, a bit for each creature of the objective's
   /// named group that the player's blow has killed (`kill_marked`); the client is never
-  /// sent it.
+  /// sent it. `used` holds, for each use-a-group objective (type 23) by its index, the
+  /// units whose use has counted (`used`); it is not saved and starts empty.
   Active(
     state: ActiveState,
     placeholder_objective_id: Int,
@@ -118,6 +121,7 @@ type Entry {
     objective_deadlines_ms: List(Option(Int)),
     optional_mask: Int,
     kill_masks: List(Int),
+    used: Dict(Int, Set(UnitRef)),
   )
   /// Completed, at this many Unix seconds.
   Completed(at: Int)
@@ -220,6 +224,7 @@ fn entry_of(
         objective_deadlines_ms: list.map(active.progress, fn(_) { None }),
         optional_mask: 0,
         kill_masks: active.kill_mask,
+        used: dict.new(),
       )
     }
     3, Some(at), None -> Ok(Completed(at:))
@@ -1107,6 +1112,7 @@ fn started(
         objective_deadlines_ms: list.map(zeros, fn(_) { None }),
         optional_mask: 0,
         kill_masks: list.repeat(0, max_objectives),
+        used: dict.new(),
       ),
     ),
   )
@@ -1503,6 +1509,125 @@ pub fn is_marked(
       int.bitwise_and(stored, int.bitwise_shift_left(1, bit)) != 0
     }
     _, _ -> False
+  }
+}
+
+/// One unit of a map run, as the player's client shows it. Unit ids start at 1 again in
+/// each run of a map (`world_map/map`), so a unit is named by its map, the run's
+/// incarnation and its id.
+pub type UnitRef {
+  UnitRef(map: MapId, incarnation: Int, unit_id: Int)
+}
+
+/// The QuestObjective type of a use-a-creature objective whose data names a TargetGroup
+/// (`0x140550c50`): each unit of the group counts toward its count.
+const use_a_group_type = 23
+
+/// The log after a use of `unit` is counted for the quest's type 23 objective at `index`:
+/// one more of its count, which `progressed` takes, and the unit remembered as used, so
+/// that a second use of the same unit counts nothing: `changed` is false and the log is as
+/// it was. The client keeps no per-unit record of a type 23 objective (it makes only types
+/// 14, 18 and 28 checklists, `0x1405517a0`), so one count for each unit is the server's
+/// choice. The set is kept only on the quest's entry in the log: it is not saved
+/// (`rows`), so a relog lets a unit count again, and an abandoned quest that is retaken
+/// starts it empty. It is dropped when the objective is done. `Error(Nil)` when the
+/// objective is no type 23 objective or takes no progress (`progressed`).
+pub fn used(
+  log log: QuestLog,
+  quest quest: Quest,
+  index index: Int,
+  unit unit: UnitRef,
+  now_ms now_ms: Int,
+) -> Result(Counted, Nil) {
+  let quest = as_logged(log:, quest:)
+  case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
+    Ok(Active(progress:, ..)), [objective, ..]
+      if index >= 0 && objective.type_ == use_a_group_type
+    -> {
+      use <- bool.guard(
+        when: !objective_open(log:, quest:, index:),
+        return: Error(Nil),
+      )
+      let stored = list.drop(progress, index) |> list.first |> result.unwrap(0)
+      case is_used(log:, quest:, index:, unit:) {
+        True ->
+          Ok(Counted(log:, progress: stored, changed: False, moved: Stayed))
+        False -> counted_new_unit(log:, quest:, index:, unit:, now_ms:)
+      }
+    }
+    _, _ -> Error(Nil)
+  }
+}
+
+/// The count of a unit this objective has not counted: one more progress and the unit
+/// remembered (`used`).
+fn counted_new_unit(
+  log log: QuestLog,
+  quest quest: Quest,
+  index index: Int,
+  unit unit: UnitRef,
+  now_ms now_ms: Int,
+) -> Result(Counted, Nil) {
+  use counted <- result.map(progressed(log:, quest:, index:, amount: 1, now_ms:))
+  Counted(
+    log: remember_used(log: counted.log, quest:, index:, unit:),
+    progress: counted.progress,
+    changed: True,
+    moved: case counted.became_achieved {
+      True -> BecameAchieved
+      False -> Stayed
+    },
+  )
+}
+
+/// The log with `unit` added to the units used for the objective at `index`, or with the
+/// objective's set dropped once the objective is done.
+fn remember_used(
+  log log: QuestLog,
+  quest quest: Quest,
+  index index: Int,
+  unit unit: UnitRef,
+) -> QuestLog {
+  case dict.get(log.entries, quest.id) {
+    Ok(Active(used:, ..) as entry) -> {
+      let units = case objective_done(log:, quest:, index:) {
+        True -> dict.delete(used, index)
+        False ->
+          dict.insert(
+            used,
+            index,
+            set.insert(dict.get(used, index) |> result.unwrap(set.new()), unit),
+          )
+      }
+      QuestLog(
+        ..log,
+        entries: dict.insert(
+          log.entries,
+          quest.id,
+          Active(..entry, used: units),
+        ),
+      )
+    }
+    _ -> log
+  }
+}
+
+/// Whether `unit` is used already for the quest's type 23 objective at `index`: false for
+/// any other objective and for a quest not in the active list.
+pub fn is_used(
+  log log: QuestLog,
+  quest quest: Quest,
+  index index: Int,
+  unit unit: UnitRef,
+) -> Bool {
+  let quest = as_logged(log:, quest:)
+  case dict.get(log.entries, quest.id) {
+    Ok(Active(used:, ..)) ->
+      case dict.get(used, index) {
+        Ok(units) -> set.contains(units, unit)
+        Error(Nil) -> False
+      }
+    _ -> False
   }
 }
 

@@ -95,8 +95,8 @@ const collectible_type = 32
 /// The objective type of a scripted objective: a use of a creature linked to it.
 const scripted_type = 5
 
-/// The objective type of a use of a unit of the TargetGroup in its data, one count per use
-/// (`QuestObjective.type.23`).
+/// The objective type of a use of a unit of the TargetGroup in its data, one count for
+/// each unit (`QuestObjective.type.23`; the once is the server's choice, `quest_log.used`).
 const use_a_group_type = 23
 
 /// The objective type of a held item: the Item2 id in its data.
@@ -130,7 +130,7 @@ const kill_types = [2, 8, 15, 16, 46]
 /// (the bit the unit stands for in a checklist objective's mask).
 pub type Event {
   TalkedTo(target: target_group.Unit, checklist_index: Int)
-  Used(target: target_group.Unit, checklist_index: Int)
+  Used(target: target_group.Unit, checklist_index: Int, unit: quest_log.UnitRef)
   Killed(target: target_group.Unit)
   Cast(spell4_id: Spell4Id)
 }
@@ -216,42 +216,62 @@ pub fn talk_targets(
   log log: QuestLog,
   tables tables: table_store.Tables,
 ) -> fn(target_group.Unit, Int) -> Bool {
-  counted_by(log:, tables:, event_of: fn(unit, checklist_index) {
-    TalkedTo(target: unit, checklist_index:)
-  })
+  let offered = counted_by(log:, tables:)
+  fn(unit, checklist_index) {
+    offered(TalkedTo(target: unit, checklist_index:))
+  }
 }
 
 /// Whether a use of the unit, of the checklist index, counts for an open objective of the
 /// log: the objectives a `Used` event counts for (`counts`) while the unit's bit is not
-/// yet set, as a talk's is (`talk_targets`). A unit no open objective counts a use of is
-/// offered no use by the server.
+/// yet set, as a talk's is (`talk_targets`), and while a type 23 objective has not counted
+/// this unit (`quest_log.is_used`). A unit no open objective counts a use of is offered no
+/// use by the server.
 pub fn use_targets(
   log log: QuestLog,
   tables tables: table_store.Tables,
-) -> fn(target_group.Unit, Int) -> Bool {
-  counted_by(log:, tables:, event_of: fn(unit, checklist_index) {
-    Used(target: unit, checklist_index:)
-  })
+) -> fn(target_group.Unit, Int, quest_log.UnitRef) -> Bool {
+  let offered = counted_by(log:, tables:)
+  fn(unit, checklist_index, ref) {
+    offered(Used(target: unit, checklist_index:, unit: ref))
+  }
 }
 
 fn counted_by(
   log log: QuestLog,
   tables tables: table_store.Tables,
-  event_of event_of: fn(target_group.Unit, Int) -> Event,
-) -> fn(target_group.Unit, Int) -> Bool {
+) -> fn(Event) -> Bool {
   let open =
     list.flat_map(quest_log.active_ids(log:), fn(quest_id) {
       let quest = quest_of(tables:, quest_id:)
       quest_log.open_objectives(log:, quest:)
       |> list.map(fn(open) { #(quest, open.0, open.1) })
     })
-  fn(unit, checklist_index) {
-    let event = event_of(unit, checklist_index)
+  fn(event) {
     list.any(open, fn(found) {
       let #(quest, index, objective) = found
       counts(tables:, event:, quest_id: quest.id, index:, objective:)
-      && !quest_log.is_marked(log:, quest:, index:, bit: checklist_index)
+      && !counted_already(log:, quest:, index:, event:)
     })
+  }
+}
+
+/// Whether the objective at `index` has counted the unit of the event already: the unit's
+/// bit is set in a checklist objective's mask (`0x140611680`: the client marks the unit
+/// only then), or a type 23 objective has counted this unit of the map run.
+fn counted_already(
+  log log: QuestLog,
+  quest quest: quest_log.Quest,
+  index index: Int,
+  event event: Event,
+) -> Bool {
+  case event {
+    TalkedTo(checklist_index:, ..) ->
+      quest_log.is_marked(log:, quest:, index:, bit: checklist_index)
+    Used(checklist_index:, unit:, ..) ->
+      quest_log.is_marked(log:, quest:, index:, bit: checklist_index)
+      || quest_log.is_used(log:, quest:, index:, unit:)
+    Killed(..) | Cast(..) -> False
   }
 }
 
@@ -296,6 +316,10 @@ pub fn advance(
           TalkedTo(checklist_index:, ..) | Used(checklist_index:, ..) ->
             checklist_index
           Killed(..) | Cast(..) -> -1
+        },
+        used_unit: case event {
+          Used(unit:, ..) -> Ok(unit)
+          TalkedTo(..) | Killed(..) | Cast(..) -> Error(Nil)
         },
       )
     },
@@ -426,6 +450,7 @@ fn advance_quest(
   counts counts: fn(Int, quest_log.Objective) -> Bool,
   group_member group_member: fn(quest_log.Objective) -> Result(#(Int, Int), Nil),
   checklist_index checklist_index: Int,
+  used_unit used_unit: Result(quest_log.UnitRef, Nil),
 ) -> Advanced {
   let named =
     quest_log.open_objectives(log: so_far.log, quest:)
@@ -484,7 +509,27 @@ fn advance_quest(
             Ok(_) | Error(Nil) -> counted
           }
         Error(Nil), False ->
-          progressed_by_one(counted:, quest:, index: open.0, now_ms:)
+          case { open.1 }.type_ == use_a_group_type, used_unit {
+            True, Ok(unit) ->
+              case quest_log.used(log:, quest:, index: open.0, unit:, now_ms:) {
+                // A unit this objective counted already counts for nothing and tells
+                // nothing.
+                Ok(used) if used.changed -> #(
+                  used.log,
+                  [
+                    SendProgress(
+                      quest_id: quest.id,
+                      objective_index: open.0,
+                      progress: used.progress,
+                    ),
+                    ..progress
+                  ],
+                  became_achieved || used.moved == quest_log.BecameAchieved,
+                )
+                Ok(_) | Error(Nil) -> counted
+              }
+            _, _ -> progressed_by_one(counted:, quest:, index: open.0, now_ms:)
+          }
       }
     })
   let state = case became_achieved {

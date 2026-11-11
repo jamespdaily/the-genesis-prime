@@ -116,6 +116,7 @@ import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Creature2Id, RaceId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/map_id.{type MapId}
 import gleam/bool
 import gleam/dict
 import gleam/int
@@ -257,6 +258,7 @@ pub fn activate_unit_message(
         tables:,
         picture: entered.shown,
         quests: entered.quests,
+        run: #(entered.map, entered.incarnation),
         link_of: link_of(
           tables:,
           activations: connection_state.activations_of(session:),
@@ -283,19 +285,23 @@ fn used_unit(
   tables tables: table_store.Tables,
   picture picture: shown.Picture,
   quests quests: QuestLog,
+  run run: #(MapId, Int),
   link_of link_of: fn(Int, creature2.Creature2, Int) -> activate.Link,
   now_ms now_ms: Int,
 ) -> fn(Int) -> Result(cast.UsedUnit, Nil) {
   let offered_to = objective.use_targets(log: quests, tables:)
   fn(unit_id) {
     use one <- result.try(dict.get(picture, unit_id))
+    let ref = quest_log.UnitRef(map: run.0, incarnation: run.1, unit_id:)
     case one {
       shown.ShownPlayer -> Error(Nil)
       shown.ShownObject(place:, hit_radius:, ..) ->
         used_unit_at(
           tables:,
           one:,
-          offered_to:,
+          offered_to: fn(unit, checklist_index) {
+            offered_to(unit, checklist_index, ref)
+          },
           link_of: fn(row, index) { link_of(unit_id, row, index) },
           alive: True,
           body: activate.Body(place:, radius: hit_radius),
@@ -304,7 +310,9 @@ fn used_unit(
         used_unit_at(
           tables:,
           one:,
-          offered_to:,
+          offered_to: fn(unit, checklist_index) {
+            offered_to(unit, checklist_index, ref)
+          },
           link_of: fn(row, index) { link_of(unit_id, row, index) },
           alive:,
           body: activate.Body(
@@ -734,7 +742,17 @@ pub fn cast_effects(
           )
         {
           Ok(#(target, checklist_index)) ->
-            connection_objective.used(session:, now:, target:, checklist_index:)
+            connection_objective.used(
+              session:,
+              now:,
+              target:,
+              checklist_index:,
+              unit: quest_log.UnitRef(
+                map: entered.map,
+                incarnation: entered.incarnation,
+                unit_id:,
+              ),
+            )
           Error(Nil) -> #(session, [])
         }
       cast.Activated(..), None -> #(session, [])
