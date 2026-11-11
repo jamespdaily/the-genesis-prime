@@ -28,8 +28,9 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/zone_welcome
 import genesis_prime/migration
 import genesis_prime/readiness
-import genesis_prime/table/id.{ClassId}
+import genesis_prime/table/id.{ClassId, Creature2Id}
 import genesis_prime/world_map/creature_kind
+import genesis_prime/world_map/spawn
 import gleam/dict
 import gleam/erlang/process
 import gleam/int
@@ -52,14 +53,33 @@ fn bad_row(row row: Int, creature creature: Int) -> String {
   <> ", 3460, 0, 0, 0, 0, 0, 0, 0, 26565, 0, 1441, 1441, 0, 0)"
 }
 
+/// How many of the spawns stand a creature of this Creature2 id.
+fn count_of(
+  spawns spawns: dict.Dict(a, spawn.Spawn),
+  creature creature: Int,
+) -> Int {
+  list.count(dict.values(spawns), fn(one) {
+    one.creature_id == Creature2Id(creature)
+  })
+}
+
 pub fn the_load_puts_the_migrated_databases_spawns_in_the_worlds_term_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
   let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil) as "a migrated database loads"
   let world = content_spawn.world(key:, world_id: 3460)
-  assert dict.size(world.by_id) == 27
-    as "migration 0008's 27 Virtual Defense Daguns, the only spawns the template holds"
+  assert dict.size(world.by_id) == 27 + 11
+    as "migration 0008's 27 Virtual Defense Daguns, and the 11 creatures that start of the ones the fixture's kill objectives with a marker in World 3460 place"
+  assert count_of(spawns: world.by_id, creature: 73_465) == 27
+    as "the 27 Virtual Defense Daguns are the stored spawns the template holds"
+  assert list.map([73_492, 73_567, 73_473, 73_566], fn(creature) {
+      count_of(spawns: world.by_id, creature:)
+    })
+    == [2, 1, 2, 1]
+    as "objective 21290's group 14356 (73492, 73567, 73492) and objective 21317's group 14402 (73473, 73566, 73473) place 3 each, alternating the group's creatures; objective 21296 and 21310's boss 73499 and objective 21316's 74862 are Friendly to both player factions with no quest, so they are left out"
+  assert count_of(spawns: world.by_id, creature: 73_464) == 5
+    as "objective 21286 (quest 10518) counts 5 of Creature2 73464, which stands 5 times"
   assert dict.size(content_spawn.world(key:, world_id: 22).by_id) == 0
     as "a World row with no spawn that starts has an empty term"
 }
@@ -156,7 +176,8 @@ pub fn a_database_that_answers_late_is_waited_for_and_loaded_from_test() -> Nil 
   // not come, here a look at the mailbox now.
   assert process.receive(away, within: 0) == Error(Nil)
     as "it was told five times that the database was away"
-  assert dict.size(content_spawn.world(key:, world_id: 3460).by_id) == 27
+  assert dict.size(content_spawn.world(key:, world_id: 3460).by_id) == 27 + 11
+    as "the 27 stored spawns and the 11 marker-placed ones that start"
 }
 
 pub fn a_database_whose_migrations_differ_stops_the_load_with_the_difference_test() -> Nil {

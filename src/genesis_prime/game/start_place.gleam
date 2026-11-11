@@ -345,6 +345,12 @@ fn place_of_row(
     tables:,
     id: WorldLocation2Id(location_id),
   ))
+  of_row(row:)
+}
+
+/// The place of a WorldLocation2 row: its world, zone, position and facing.
+/// `Error(Nil)` for a row in world 0.
+pub fn of_row(row row: world_location2.WorldLocation2) -> Result(Place, Nil) {
   place(
     world_id: row.world_id,
     world_zone_id: row.world_zone_id,
