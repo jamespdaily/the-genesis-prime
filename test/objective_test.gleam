@@ -148,7 +148,7 @@ fn a_use_of(
   creature creature: id.Creature2Id,
   unit unit: quest_log.UnitRef,
 ) -> objective.Event {
-  Used(target: plain_unit(creature:), checklist_index: 0, unit:)
+  Used(target: plain_unit(creature:), checklist_index: 0, unit:, by_item: False)
 }
 
 const use_target = 58_487
@@ -1368,6 +1368,19 @@ pub fn a_quest_anim_link_counts_a_type_5_objective_test() -> Nil {
     ).effects
     == [SendProgress(quest_id: 2020, objective_index: 1, progress: 1)]
     as "the link counts whatever the objective's type is"
+  assert objective.advance(
+      log:,
+      tables:,
+      event: Used(
+        target: plain_unit(creature: Creature2Id(4989)),
+        checklist_index: 0,
+        unit: quest_support.unit_ref(unit_id: 4989),
+        by_item: True,
+      ),
+      now_ms: 0,
+    )
+    == Advanced(log:, effects: [])
+    as "an item's spell at the same creature is not the creature's own activate cast, so the link does not count it"
 }
 
 pub fn a_prerequisite_link_counts_a_type_32_objective_test() -> Nil {
@@ -2451,4 +2464,32 @@ pub fn a_type_23_use_counts_nothing_for_another_type_on_the_same_group_test() ->
   }
   counts_only_index_2(fresh(quest_id: 9122))
   counts_only_index_2(after_16477)
+}
+
+pub fn an_items_use_does_not_advance_a_type_32_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 12919's questAnim columns name quest 3741, objective index 0 (objective
+  // 4813, type 32): the objective counts the creature's own activate cast.
+  use tables <- with_objectives(edits: [])
+  let collectible = Creature2Id(12_919)
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 3741, progress: [0]),
+    ])
+  assert objective.advance(
+      log:,
+      tables:,
+      event: Used(
+        target: plain_unit(creature: collectible),
+        checklist_index: 0,
+        unit: quest_support.unit_ref(unit_id: collectible.value),
+        by_item: True,
+      ),
+      now_ms: 0,
+    )
+    == Advanced(log:, effects: [])
+    as "an item's spell at the collectible is not the creature's own activate cast"
+  assert objective.advance(log:, tables:, event: a_use(collectible), now_ms: 0).effects
+    == [SendProgress(quest_id: 3741, objective_index: 0, progress: 1)]
+    as "the creature's own activate cast counts it"
 }

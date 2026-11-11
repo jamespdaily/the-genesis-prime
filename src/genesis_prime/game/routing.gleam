@@ -8,7 +8,7 @@
 ////                                                 ─▶ Hello, CharacterSelect(message), WorldEntry or WorldMessage
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
 ////                                                 ─▶ Movement(message), Camp(message), Chat(message), Cast(message),
-////                                                    Activation, Shortcut, UnitActivation, Life(message), Innate(message), Interaction(message), Quest(message),
+////                                                    Activation, Shortcut, UnitActivation, ItemUse, Life(message), Innate(message), Interaction(message), Quest(message),
 ////                                                    QuestTurnIn, Inventory(message), VendorPurchase, VendorBuyback, VendorSale, VendorSellJunk or Dropped(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
@@ -72,6 +72,7 @@ import genesis_prime/message/interaction_request
 import genesis_prime/message/item_delete
 import genesis_prime/message/item_move
 import genesis_prime/message/item_split
+import genesis_prime/message/item_use
 import genesis_prime/message/move_speed_setting
 import genesis_prime/message/movement_send_interval_answer
 import genesis_prime/message/network_report
@@ -126,6 +127,8 @@ pub type Feature {
   /// The use of a unit whose creature has no activate spell, which the client sends at
   /// once with no cast (genesis_prime/game/cast `activate_unit`).
   UnitActivation
+  /// The use of an item that casts a spell, 0x0943 (genesis_prime/game/cast `use_item`).
+  ItemUse
   /// The player's choice of how to come back from death
   /// (genesis_prime/game/player_life).
   Life(message: player_life.Message)
@@ -298,6 +301,7 @@ const table = [
     UnitActivation,
     [AtWorld],
   ),
+  Row(item_use.message_id, InsideWorldMessage, ItemUse, [AtWorld]),
   Row(
     ability_hold.message_id,
     InsideWorldMessage,

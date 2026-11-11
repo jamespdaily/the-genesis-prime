@@ -121,13 +121,13 @@ fn planned(
 }
 
 /// Which table row a spell's targetType could not be read from.
-type NoTargetType {
+pub type NoTargetType {
   NoBaseRow
   NoMechanicsRow
 }
 
 /// The targetType of the spell's Spell4TargetMechanics row, or the row it lacks.
-fn target_type_of(
+pub fn target_type_of(
   tables tables: table_store.Tables,
   row row: spell4.Spell4,
 ) -> Result(Int, NoTargetType) {
