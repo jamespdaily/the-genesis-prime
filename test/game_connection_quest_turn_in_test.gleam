@@ -167,8 +167,8 @@ pub fn turned_in_rewards_are_written_before_the_experience_and_the_state_test() 
       outcome: step.Answer(FromStore(ForItems(TurnedIn(credits: 145, made:)))),
     )
   assert game_connection_support.written_ids(answered)
-    == [0x0111, 0x0111, 0x01AC, 0x0919, 0x035C]
-    as "an item added for each stack made, then the experience, then the credits held, then the quest's state"
+    == [0x0111, 0x0111, 0x01AC, 0x0919, 0x00DD, 0x035C]
+    as "an item added for each stack made, then the experience, then the credits held and, per opcode.0xdd, the credits gained, then the quest's state"
 }
 
 pub fn reward_items_advance_the_held_item_objectives_of_other_quests_test() -> Nil {
@@ -210,7 +210,7 @@ pub fn reward_items_advance_the_held_item_objectives_of_other_quests_test() -> N
       outcome: step.Answer(FromStore(ForItems(TurnedIn(credits: 145, made:)))),
     )
   assert game_connection_support.written_ids(answered)
-    == [0x0111, 0x0111, 0x01AC, 0x0919, 0x035C, 0x0361]
+    == [0x0111, 0x0111, 0x01AC, 0x0919, 0x00DD, 0x035C, 0x0361]
     as "the turn-in's frames, then the progress of the other quest the reward item counts"
   let assert Ok(progress) = list.last(game_connection_support.written(answered))
   assert progress.body

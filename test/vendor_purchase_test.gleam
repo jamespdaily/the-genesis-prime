@@ -46,6 +46,7 @@ import genesis_prime/game/vendor_trade.{
 import genesis_prime/game/world_entry.{type Buyback, Buyback, BuybackEntry}
 import genesis_prime/message/buyback_removed
 import genesis_prime/message/currency_changed.{CurrencyChanged}
+import genesis_prime/message/currency_gained
 import genesis_prime/message/item_added
 import genesis_prime/message/item_count_changed.{ItemCountChanged}
 import genesis_prime/message/vendor_buyback
@@ -1144,4 +1145,48 @@ pub fn buying_an_item_without_random_stats_draws_nothing_test() -> Nil {
     )
   assert added_item(effects:).held_item.item.random_stats == 0
     as "the 0x111 word is 0"
+}
+
+/// A buy and a buy back take credits, so the total drops: the 0x919 sets it and no 0xDD
+/// follows (`opcode.0xdd`: a spend is no gain, and the client's amount check refuses 0 or
+/// less).
+pub fn a_buy_sends_no_gain_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(purchase, items) = two_places()
+  let made = in_bag(guid: 500, item2_id: 14_838, index: 0, count: 3)
+  let #(_, _, _, bought) =
+    vendor_purchase.answered(
+      purchase:,
+      items:,
+      currencies: credits(total: 1000),
+      buyback: held_back(),
+      answer: Bought(amount: 665, made: [made]),
+    )
+  assert list.map(frames(effects: bought), fn(frame) { frame.message_id })
+    |> list.contains(currency_changed.message_id)
+    as "a buy sets the new total with a 0x919"
+  assert !list.any(frames(effects: bought), fn(frame) {
+    frame.message_id == currency_gained.message_id
+  })
+    as "opcode.0xdd: a buy is a spend, so no gain line"
+  let back = buying_back(buyback_id: 2)
+  let back_purchase =
+    asked_back(scene: Scene(..back, credits: credits(total: 100)))
+  let #(_, _, _, bought_back) =
+    vendor_purchase.answered(
+      purchase: back_purchase,
+      items: [],
+      currencies: credits(total: 100),
+      buyback: back.buyback,
+      answer: Bought(amount: 60, made: [
+        in_bag(guid: 501, item2_id: 14_838, index: 0, count: 1),
+      ]),
+    )
+  assert list.map(frames(effects: bought_back), fn(frame) { frame.message_id })
+    |> list.contains(currency_changed.message_id)
+    as "a buy back sets the new total with a 0x919"
+  assert !list.any(frames(effects: bought_back), fn(frame) {
+    frame.message_id == currency_gained.message_id
+  })
+    as "opcode.0xdd: a buy back is a spend, so no gain line"
 }

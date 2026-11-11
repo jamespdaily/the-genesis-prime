@@ -47,6 +47,7 @@ import genesis_prime/game/world_entry.{Buyback, BuybackEntry}
 import genesis_prime/message/buyback_added
 import genesis_prime/message/buyback_entry
 import genesis_prime/message/currency_changed.{CurrencyChanged}
+import genesis_prime/message/currency_gained.{CurrencyGained}
 import genesis_prime/message/item_count_changed.{ItemCountChanged}
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/item_removed.{ItemRemoved}
@@ -460,9 +461,11 @@ pub fn selling_a_whole_stack_removes_it_pays_the_shown_price_and_adds_a_buyback_
       ),
     ])
     as "the sale is the buyback list's entry 3, the next id 4"
-  let assert [total, removed, added] = frames(effects:)
-    as "a 0x919, then a 0x148 and a 0xBA for the stack"
+  let assert [total, gain, removed, added] = frames(effects:)
+    as "a 0x919, a 0xDD, then a 0x148 and a 0xBA for the stack"
   assert_total(frame: total, total: 1105)
+  // opcode.0xdd: the 1105 less the 1000 held
+  assert_gain(frame: gain, currency_type_id: 1, amount: 105)
   assert_removed(frame: removed, guid: 11)
   assert_entry(
     frame: added,
@@ -518,9 +521,11 @@ pub fn selling_part_of_a_stack_lowers_its_count_and_pays_for_the_part_sold_test(
       ),
     ]
     as "lua.Vendor.buyback_price: the entry holds the 2 items sold and the 2 credits"
-  let assert [total, lowered, added] = frames(effects:)
-    as "a 0x919, then a 0x17F and a 0xBA"
+  let assert [total, gain, lowered, added] = frames(effects:)
+    as "a 0x919, a 0xDD, then a 0x17F and a 0xBA"
   assert_total(frame: total, total: 102)
+  // opcode.0xdd: the 102 less the 100 held
+  assert_gain(frame: gain, currency_type_id: 1, amount: 2)
   assert lowered.message_id == item_count_changed.message_id
   assert item_count_changed.decode(lowered.body)
     == Ok(ItemCountChanged(item_guid: 12, count: 3, reason: 7))
@@ -891,9 +896,11 @@ pub fn sell_junk_sells_every_sellable_category_94_stack_in_the_bags_test() -> Ni
   assert list.map(buyback.entries, fn(entry) { entry.buyback_id }) == [1, 2, 3]
     as "each stack is an entry, from the next id"
   assert buyback.next_id == 4
-  let assert [total, r1, b1, r2, b2, r3, b3] = frames(effects:)
-    as "one 0x919, then a 0x148 and a 0xBA for each stack"
+  let assert [total, gain, r1, b1, r2, b2, r3, b3] = frames(effects:)
+    as "one 0x919 and one 0xDD, then a 0x148 and a 0xBA for each stack"
   assert_total(frame: total, total: 106)
+  // opcode.0xdd: one line for the whole sale, the 106 less the 100 held
+  assert_gain(frame: gain, currency_type_id: 1, amount: 6)
   assert_removed(frame: r1, guid: 1)
   assert_entry(
     frame: b1,
@@ -1067,9 +1074,11 @@ pub fn selling_a_worn_item_removes_it_with_0x148_reason_vendor_and_adds_a_buybac
   assert left == [bagged]
     as "the worn item leaves the held items; the stack in the bags stays"
   assert currency.credits(currencies: held_credits) == 178
-  let assert [total, removed, added] = frames(effects:)
-    as "a 0x919, then a 0x148 and a 0xBA, as for a stack in the bags"
+  let assert [total, gain, removed, added] = frames(effects:)
+    as "a 0x919, a 0xDD, then a 0x148 and a 0xBA, as for a stack in the bags"
   assert_total(frame: total, total: 178)
+  // opcode.0xdd: the 178 less the 100 held
+  assert_gain(frame: gain, currency_type_id: 1, amount: 78)
   assert_removed(frame: removed, guid: 16)
   assert_entry(
     frame: added,
@@ -1142,9 +1151,11 @@ pub fn selling_an_item_priced_in_glory_pays_its_row_amount_in_glory_and_its_entr
     as "the Glory held is the total the store left"
   assert currency.credits(currencies: held_currencies) == 100
     as "the credits are as they were"
-  let assert [total, removed, added] = frames(effects:)
-    as "a 0x919, then a 0x148 and a 0xBA"
+  let assert [total, gain, removed, added] = frames(effects:)
+    as "a 0x919, a 0xDD, then a 0x148 and a 0xBA"
   assert_total_of(frame: total, kind: 6, total: 60)
+  // opcode.0xdd: the 4-bit field is the currency type 7, Glory, and the amount the 60 less the 0 held
+  assert_gain(frame: gain, currency_type_id: 7, amount: 60)
   assert_removed(frame: removed, guid: 21)
   assert_entry(
     frame: added,
@@ -1206,8 +1217,10 @@ pub fn a_sale_past_a_currency_cap_stops_that_currency_at_its_cap_and_its_entry_k
     )
   assert currency.held(currencies: held_currencies, currency_type_id: 2) == 5000
   assert currency.credits(currencies: held_currencies) == 100
-  let assert [total, _, added] = frames(effects:)
+  let assert [total, gain, _, added] = frames(effects:)
   assert_total_of(frame: total, kind: 1, total: 5000)
+  // opcode.0xdd: what Renown gained after the cap, the 5,000 less the 4,000 held, not the 2,500 the item pays
+  assert_gain(frame: gain, currency_type_id: 2, amount: 1000)
   assert_entry(
     frame: added,
     entry: entry_in(
@@ -1254,11 +1267,57 @@ pub fn a_buyback_entry_carries_the_sold_items_word_test() -> Nil {
   let assert [entry] = buyback.entries as "the sale is one entry"
   assert entry.random_stats == word
     as "the entry holds the word the store saved with the stack"
-  let assert [_, _, added] = frames(effects:)
-    as "a 0x919, a 0x148 and a 0xBA for the stack"
+  let assert [_, _, _, added] = frames(effects:)
+    as "a 0x919, a 0xDD, a 0x148 and a 0xBA for the stack"
   let assert Ok(buyback_added.BuybackAdded(entry: sent)) =
     buyback_added.decode(added.body)
     as "0xBA decodes"
   assert sent.random_stats == word
     as "opcode.0xba.random_stats: the entry is sent with the word the item held"
+}
+
+/// A 0xDD, which must show a gain of `amount` of a currency type.
+fn assert_gain(
+  frame frame: Frame,
+  currency_type_id currency_type_id: Int,
+  amount amount: Int,
+) -> Nil {
+  assert frame.message_id == currency_gained.message_id
+  assert currency_gained.decode(frame.body)
+    == Ok(CurrencyGained(currency_type_id:, amount:, signature_amount: 0))
+    as "opcode.0xdd: the currency type, the amount gained and a Signature part of 0"
+}
+
+/// Item2 14838 sells for 10 at the multiplier 1.0 (`item_price_test`), so a vendor with the
+/// sell multiplier 3.0 pays trunc(10 x 3.0) = 30 for the one item (`0x14041bcc0.formula`).
+/// The player held 100, so the sale leaves 130; the 0x919 sets that total and the 0xDD shows
+/// the 30 gained (`opcode.0xdd.with_0x919`: the client prints a sale's credits only for it).
+pub fn a_sale_sends_the_gain_after_the_total_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let items = [in_bag(guid: 11, item2_id: 14_838, index: 2, count: 1)]
+  let scene =
+    Scene(
+      ..sell(items:, index: 2, quantity: 1),
+      vendors: paying(multiplier: 3.0),
+    )
+  let sale = asked(scene:)
+  let #(_, _, _, effects) =
+    vendor_sale.answered(
+      sale:,
+      items:,
+      currencies: scene.credits,
+      buyback: Buyback(next_id: 3, entries: []),
+      answer: store.Sold(amount: 130, words: [
+        store.SoldWord(item_guid: 11, random_stats: 0),
+      ]),
+    )
+  let assert [total, gain, removed, added] = frames(effects:)
+    as "a 0x919, a 0xDD, then the stack's 0x148 and 0xBA"
+  assert_total(frame: total, total: 130)
+  assert_gain(frame: gain, currency_type_id: 1, amount: 30)
+  assert_removed(frame: removed, guid: 11)
+  assert_entry(
+    frame: added,
+    entry: entry(buyback_id: 3, item_id: 14_838, quantity: 1, paid: 30),
+  )
 }
