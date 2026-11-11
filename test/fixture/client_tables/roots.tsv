@@ -454,3 +454,4 @@ Creature2	73567	member of TargetGroup 14356	objective_spawn_test
 Creature2	73473	member of TargetGroup 14402	objective_spawn_test
 Creature2	73566	member of TargetGroup 14402	objective_spawn_test
 Creature2	74862	turret of objective 21316	objective_spawn_test
+Quest2	10518	the quest holding objective 21290 at its index 5	game_wire_test
