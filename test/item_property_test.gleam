@@ -577,8 +577,12 @@ pub fn a_rune_reads_its_budget_on_the_rune_curve_test() -> Nil {
     as "0x14041f1b0: property 34 at the rune curve of power level 80"
 }
 
-/// A rune has no armor item slot, so it gives no ratings, no armor and no Base Health
-/// whatever its budget holds: only the budget property.
+/// A rune has no ItemSlot for the client's builder (0x14040c610: none for Item2Family 33),
+/// and BuildItemProperties adds ratings, armor, Base Health and a shield only when the
+/// builder has one (0x14040c310), so a rune gives none of them whatever its budget holds:
+/// only the budget property. Item2 80984 is one of the 68 runes whose own Item2
+/// equippedSlotFlags are 0x10000, WeaponPrimary, which the ratings would take for a
+/// weapon's slot if they went by the flags alone: it gives nothing at all.
 pub fn a_rune_gives_no_ratings_armor_or_health_test() -> Nil {
   use <- owned_test.run(10_000)
   let tables = fixture_tables.shared()
@@ -589,6 +593,18 @@ pub fn a_rune_gives_no_ratings_armor_or_health_test() -> Nil {
   assert rune.armor == 0.0 as "no Armor (property 42)"
   assert budget_ids(properties: rune) == [34]
     as "the one property the rune's budget gives"
+  let weapon_flagged =
+    given(tables:, item2_id: fixture_tables.root("Item2", 80_984))
+  assert weapon_flagged
+    == ItemProperties(
+      base_health: 0.0,
+      assault_rating: 0.0,
+      support_rating: 0.0,
+      armor: 0.0,
+      shield: None,
+      budget: dict.new(),
+    )
+    as "0x14040c310: no ItemSlot for the builder, so no rating, armor or Base Health, and no budget"
 }
 
 /// Item2 15052 is a weapon whose itemImbuementId is 106: the client takes an item's
@@ -611,7 +627,10 @@ pub fn an_imbued_item_gives_its_unimbued_properties_test() -> Nil {
 
 /// Item2 13394 is a level-scaled (flags bit 3) light armor of power level 1: every curve
 /// reads the wearer's level in place of the power level (0x14040f710). The expected bits
-/// come from the client's code run on the row with the level in both scaling words.
+/// come from the emulator run `scaled_fill.py 13394 L L 0 0 0 0 0 0` for L = 1, 10 and 50:
+/// FillItemInfo 0x1404445d0 on Item2 13394, then BuildItemProperties 0x14040c310 with the
+/// scaling words 0 and 1 (the player's level and the effective level) set to L (the fact
+/// `Item2.flags.level_scaled`).
 pub fn a_level_scaled_item_reads_every_curve_at_the_wearers_level_test() -> Nil {
   use <- owned_test.run(10_000)
   let tables = fixture_tables.shared()
@@ -634,7 +653,13 @@ pub fn a_level_scaled_item_reads_every_curve_at_the_wearers_level_test() -> Nil 
 }
 
 /// Item2 13411 is a level-scaled weapon and 13410 a level-scaled shield, each of power
-/// level 1: the ratings and the shield's capacity follow the wearer's level.
+/// level 1: the ratings and the shield's capacity follow the wearer's level. The expected
+/// bits come from the emulator runs `scaled_fill.py 13411 L L 0 0 0 0 0 0` and
+/// `scaled_fill.py 13410 L L 0 0 0 0 0 0` for L = 10 and 50 (FillItemInfo 0x1404445d0, then
+/// BuildItemProperties 0x14040c310 with the scaling words 0 and 1 set to L): for L = 10
+/// the weapon gives property 47 = 82.5 (0x42a50000), 35 = 835.3125 (0x4450d400) and 36 =
+/// 278.4375 (0x438b3800), the shield 41 = 1687.5 (0x44d2f000), 175 = 0.625 (0x3f200000),
+/// 176 = 0.2 (0x3e4ccccd) and 178 = 2687 (0x4527f000).
 pub fn a_level_scaled_weapon_and_shield_read_their_curves_at_the_wearers_level_test() -> Nil {
   use <- owned_test.run(10_000)
   let tables = fixture_tables.shared()
@@ -782,6 +807,88 @@ pub fn every_client_item_of_the_four_kinds_is_read_or_refused_only_for_another_g
     as "the wearer's level changes no row's outcome kind"
   assert #(total, given, pvp, budget_gaps) == #(9802, 7883, 1917, 2)
     as "the counts of the four kinds: wearable rows, given, PvP, and the budget's own gaps"
+}
+
+/// Every wearable client row is given, or is `Unread` for one of the gaps that remain.
+/// A row is wearable when it is no proxy (Item2.flags 0x4000, which issue 333 closes) and
+/// its slot flags are not 0, as the client's slot rows say. The remaining gaps are
+/// flags 0x8000, PvP, worked out here from the column and open under issue 56, and the
+/// budget's own (an ItemStat kind no row holds, a support beyond its range, a resource
+/// maximum). The counts are the coverage measure of items' properties: 46,842 wearable
+/// rows, 42,343 given, 4,497 PvP and 2 for the budget's own gaps.
+pub fn every_client_wearable_row_is_given_or_unread_with_a_named_reason_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let wearable =
+    list.filter(item2.all(tables), fn(item) {
+      item_property.equipped_slot_flags(tables:, item2_id: item.id)
+      |> result.map(fn(slot_flags) {
+        !item_property.is_proxy(item) && slot_flags != 0
+      })
+      |> result.unwrap(False)
+    })
+  let outcomes =
+    list.map(wearable, fn(item) {
+      #(
+        item,
+        item_property.of_item(
+          tables:,
+          level: 1,
+          item2_id: item.id,
+          random_stats: 0,
+        ),
+      )
+    })
+  assert list.filter(outcomes, fn(outcome) {
+      let #(item, outcome) = outcome
+      case outcome {
+        Ok(_) -> int.bitwise_and(item.flags, 0x8000) != 0
+        Error(item_property.Unread(gap: item_property.PvpItem, ..)) ->
+          int.bitwise_and(item.flags, 0x8000) == 0
+        Error(item_property.Unread(gap: item_property.StatKind(..), ..))
+        | Error(item_property.Unread(gap: item_property.SupportBeyondRange, ..))
+        | Error(item_property.Unread(gap: item_property.ResourceMaximum, ..)) ->
+          False
+        Error(item_property.Unread(gap: item_property.ProxyItem, ..))
+        | Error(item_property.NoRow(..))
+        | Error(item_property.Refused(..))
+        | Error(item_property.NoCurveValue(..))
+        | Error(item_property.RandomStatsRefused(..))
+        | Error(item_property.TwoShields) -> True
+      }
+    })
+    == []
+    as "every row is given, or unread for flags 0x8000 or a gap of the budget's own, and none is refused"
+  assert list.filter(outcomes, fn(outcome) {
+      case outcome {
+        #(item, Ok(properties)) ->
+          item.item2_family_id == 33
+          && item.item_budget_id == 0
+          && item.item_stat_id == 0
+          && properties
+          != ItemProperties(
+            base_health: 0.0,
+            assault_rating: 0.0,
+            support_rating: 0.0,
+            armor: 0.0,
+            shield: None,
+            budget: dict.new(),
+          )
+        #(_, Error(_)) -> False
+      }
+    })
+    == []
+    as "0x14040c310: a rune has no ItemSlot for the builder, so one with no budget gives nothing at all, whatever its own equippedSlotFlags"
+  let count = fn(keep) {
+    list.count(outcomes, fn(outcome) { keep(outcome.0, outcome.1) })
+  }
+  let given = count(fn(_, outcome) { result.is_ok(outcome) })
+  let pvp = count(fn(item, _) { int.bitwise_and(item.flags, 0x8000) != 0 })
+  let budget_gaps = list.length(wearable) - given - pvp
+  assert #(list.length(wearable), given, pvp, budget_gaps)
+    == #(46_842, 42_343, 4497, 2)
+    as "the counts: wearable rows, given, PvP, and the budget's own gaps"
 }
 
 /// The load fails when a row the budget reads is missing, naming it: the ItemBudget row of an

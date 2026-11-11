@@ -368,6 +368,7 @@ Item2	69826	(armor at power level 120, from GameFormula 1287)	item_property_test
 Item2	78256	(a rune of power level 20, ItemBudget 26, ItemStat 140)	item_property_test
 Item2	78320	(a rune of power level 80, ItemBudget 26, ItemStat 140)	item_property_test
 Item2	83331	(a PvP rune, flags 0x8000)	item_property_test
+Item2	80984	(a rune of power level 30 with no budget whose own equippedSlotFlags are 0x10000, WeaponPrimary)	item_property_test
 Item2	29213	(a proxy rune, flags 0x4000)	item_property_test
 Item2	15052	(an imbued weapon, itemImbuementId 106, power level 24)	item_property_test
 Item2	13411	(a level-scaled weapon, flags bit 3, ItemBudget 3, ItemStat 5)	item_property_test

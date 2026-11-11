@@ -166,8 +166,10 @@ pub fn a_level_up_sends_property_7_at_the_new_level_test() -> Nil {
 /// level holds every property the level moved: Base Health, the armor's budget property
 /// 34 and its Assault Rating and Armor, each at level 4. Base Health is CreatureLevel row
 /// 4's 569.698, the Novice set without the chest's 450 and the armor's 300, rounded:
-/// 1320. The armor's values at level 4 are the client's code run on the row: 34 =
-/// 111.25, Assault Rating 18.0 over the set's 194.0625, Armor 125.0 over its 187.5.
+/// 1320. The armor's values at level 4 are the emulator run `scaled_fill.py 27106 4 4 0 0 0 0
+/// 0 0` (FillItemInfo 0x1404445d0, then BuildItemProperties 0x14040c310 with the scaling
+/// words 0 and 1 set to 4): 34 = 111.25, Assault Rating 18.0 over the set's 194.0625, Armor
+/// 125.0 over its 187.5, Base Health 300.0.
 pub fn a_level_up_resends_the_properties_of_level_scaled_gear_test() -> Nil {
   use <- owned_test.run(10_000)
   let character = store.Character(..support.world_character(), level: 3)

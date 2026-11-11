@@ -756,7 +756,10 @@ fn boots_unequipped() -> BitArray {
 /// slot 0, equips it, and the 0x93a gives its properties at level 5, not at its power level:
 /// Base Health CreatureLevel row 5's 735.861 with the set's 450 and the armor's 375,
 /// rounded: 1561; property 34 is 115.625; the Assault Rating 22.5 over the set's 194.0625
-/// and the Armor 156.25 over its 187.5 (the client's code run on the row at level 5).
+/// and the Armor 156.25 over its 187.5: the armor's values are the emulator run
+/// `scaled_fill.py 27106 5 5 0 0 0 0 0 0` (FillItemInfo 0x1404445d0, then
+/// BuildItemProperties 0x14040c310 with the scaling words 0 and 1 set to 5): 34 = 115.625,
+/// Assault Rating 22.5, Armor 156.25, Base Health 375.0.
 pub fn equipping_a_level_scaled_item_gives_it_at_the_players_level_test() -> Nil {
   use <- owned_test.run(10_000)
   let character =

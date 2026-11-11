@@ -151,7 +151,10 @@ type LoadoutError {
   NoHighestLevel
   /// CreatureLevel has no row for a level a character can have.
   NoCreatureLevel(level: Int)
-  /// No level is the experience a CharacterCreation row starts with.
+  /// No level is the experience a CharacterCreation row starts with. The client's
+  /// tables never give it: the largest CharacterCreation xp, 26,360,090, is the
+  /// minXpForLevel of XpPerLevel record 50, GameFormula 145's highest level, and
+  /// the load checks that row and every record before it.
   NoLevelForExperience(creation_id: Int, experience: Int)
   /// A row a player can make has no Novice set for its class and faction.
   NoNoviceSet(creation_id: Int, class_id: Int, faction_id: Int)

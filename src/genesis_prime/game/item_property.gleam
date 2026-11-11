@@ -359,7 +359,8 @@ const family_without_slot = rune_family
 /// The Item2Category of an item the slot is never looked up for (0x14040c610).
 const category_without_slot = 143
 
-/// What the builder knows of an item: its row, power level, the modifiers and
+/// What the builder knows of an item: its row, power level, the modifiers, the
+/// equipped slot flags of its ItemSlot row (`None` for an item with no ItemSlot) and
 /// whether it is a shield (PrepareItemPropertyBuilder 0x14040c610).
 type Builder {
   Builder(
@@ -367,13 +368,15 @@ type Builder {
     curve_level: Int,
     slot_modifier: Float,
     armor_modifier: Float,
+    slot_row_flags: Option(Int),
     equipped_slot_flags: Int,
     is_shield: Bool,
   )
 }
 
 /// The rows an item's slot comes from: its own, the category's and the slot's
-/// modifiers, whether it may take a slot and its equipped slot flags. Only a
+/// modifiers, the ItemSlot row's equipped slot flags (`None` when the client looks
+/// no slot up), whether it may take a slot and its equipped slot flags. Only a
 /// missing row is an error: the slot does not depend on the item's budget, stat
 /// or flags (FillItemInfo 0x1404445d0, PrepareItemPropertyBuilder 0x14040c610).
 type Slotting {
@@ -381,6 +384,7 @@ type Slotting {
     item: item2.Item2,
     category_armor_modifier: Float,
     slot_modifier: Float,
+    slot_row_flags: Option(Int),
     slotted: Bool,
     equipped_slot_flags: Int,
   )
@@ -475,6 +479,7 @@ fn slotting(
         Some(slot) -> slot.armor_modifier
         None -> 1.0
       },
+      slot_row_flags: option.map(slot, fn(slot) { slot.equipped_slot_flags }),
       slotted:,
       equipped_slot_flags: case proxy {
         True -> 0
@@ -524,6 +529,7 @@ fn slot_builder(
       slotting.category_armor_modifier,
       slotting.slot_modifier,
     ),
+    slot_row_flags: slotting.slot_row_flags,
     equipped_slot_flags: slotting.equipped_slot_flags,
     is_shield: slotting.slotted
       && int.bitwise_and(slotting.equipped_slot_flags, shield_slot_flags) != 0,
@@ -897,11 +903,19 @@ pub fn of_item(
 ) -> Result(ItemProperties, ItemPropertyError) {
   use builder <- result.try(builder(tables:, item2_id:, level:))
   use given <- result.try(budget(tables:, builder:, random_stats:))
-  use properties <- result.map(case builder.is_shield {
-    True -> shield(tables:, builder:, shares: given.shares)
-    False -> worn(tables:, builder:)
+  use properties <- result.map(case innate(builder:), builder.is_shield {
+    False, _ -> Ok(none())
+    True, True -> shield(tables:, builder:, shares: given.shares)
+    True, False -> worn(tables:, builder:)
   })
   with_budget(properties:, values: given.values)
+}
+
+/// Whether the item has the properties its own formulas give, its ratings, armor,
+/// Base Health or shield: BuildItemProperties adds them only when the builder has an
+/// ItemSlot and the curve level is not 0 (0x14040c310).
+fn innate(builder builder: Builder) -> Bool {
+  option.is_some(builder.slot_row_flags) && builder.curve_level != 0
 }
 
 /// What an item's budget gives: the value of each property it gives, in the
@@ -1217,6 +1231,20 @@ fn scale(
   float32.product(float32.product(curve, builder.slot_modifier), 1.0)
 }
 
+/// Whether a property's equippedSlotFlags rule the item out: they are not 0 and
+/// share no bit with the equipped slot flags of the item's ItemSlot row alone, not
+/// the item's own. An item with no ItemSlot is never ruled out (0x14040db30).
+fn off_the_slot(
+  property_flags property_flags: Int,
+  builder builder: Builder,
+) -> Bool {
+  case builder.slot_row_flags {
+    Some(slot_flags) ->
+      property_flags != 0 && int.bitwise_and(property_flags, slot_flags) == 0
+    None -> False
+  }
+}
+
 /// What one kind-1 entry gives, or why the client refuses it (0x14040db30, 0x95).
 fn entry_gives(
   tables tables: table_store.Tables,
@@ -1242,9 +1270,7 @@ fn entry_gives(
     refused(NotAnItemProperty),
   )
   use <- bool.guard(
-    row.equipped_slot_flags != 0
-      && int.bitwise_and(row.equipped_slot_flags, builder.equipped_slot_flags)
-      == 0,
+    off_the_slot(property_flags: row.equipped_slot_flags, builder:),
     refused(OffTheItemsSlot),
   )
   use <- bool.guard(
