@@ -1586,10 +1586,11 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
     message_id: cast_activate.message_id,
     body: press,
   )
-  let #(_, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(frames, fn(frame) { frame.message_id == 0x07FD })
-    })
+  // The server has taken the press, and armed the go's timer, when its pong comes: the
+  // confirmation is sent before the timer starts, so the clock moves only after the pong.
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 1)
+  assert list.any(pressed, fn(frame) { frame.message_id == 0x07FD })
+    as "opcode.0x7fd: the first press is confirmed"
   driven_time.advance(time:, ms: 1500)
   let #(went, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
@@ -1617,16 +1618,16 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
     message_id: cast_activate.message_id,
     body: again,
   )
-  let #(_, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(frames, fn(frame) { frame.message_id == 0x07FD })
-    })
+  let #(pressed_again, have) =
+    game_client.read_until_pong(game:, have:, number: 2)
+  assert list.any(pressed_again, fn(frame) { frame.message_id == 0x07FD })
+    as "opcode.0x7fd: the second press is confirmed, so its cast is armed before the clock moves"
   driven_time.advance(time:, ms: 1500)
   let #(went_again, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
       list.any(cast_support.cast_lines(frames:), string.starts_with(_, "went"))
     })
-  let #(rest, have) = game_client.read_until_pong(game:, have:, number: 1)
+  let #(rest, have) = game_client.read_until_pong(game:, have:, number: 3)
   assert list.filter(list.append(went_again, rest), fn(frame) {
       frame.message_id == 0x0361
     })
