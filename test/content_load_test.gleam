@@ -10,6 +10,9 @@
 ////   sentences `migration_start_test` pins).
 //// - The 27 Virtual Defense Daguns are server-choice rows of migration 0008, so a
 ////   migrated database holds them and the load puts them in World 3460's term.
+//// - Migration 0027 gives the tutorial boss (Creature2 73499, whose row says faction
+////   219, Friendly to both player factions) faction 233, Hostile to both
+////   (Faction2Relationship 746), so the boss starts; Creature2 74862 keeps 219.
 //// The waits are the load's own settings, shortened here, so no test waits 30 s.
 
 import character_tables
@@ -69,19 +72,38 @@ pub fn the_load_puts_the_migrated_databases_spawns_in_the_worlds_term_test() -> 
   let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil) as "a migrated database loads"
   let world = content_spawn.world(key:, world_id: 3460)
-  assert dict.size(world.by_id) == 27 + 11
-    as "migration 0008's 27 Virtual Defense Daguns, and the 11 creatures that start of the ones the fixture's kill objectives with a marker in World 3460 place"
+  assert dict.size(world.by_id) == 27 + 12
+    as "migration 0008's 27 Virtual Defense Daguns, and the 12 creatures that start of the ones the fixture's kill objectives with a marker in World 3460 place, the boss included"
   assert count_of(spawns: world.by_id, creature: 73_465) == 27
     as "the 27 Virtual Defense Daguns are the stored spawns the template holds"
   assert list.map([73_492, 73_567, 73_473, 73_566], fn(creature) {
       count_of(spawns: world.by_id, creature:)
     })
     == [2, 1, 2, 1]
-    as "objective 21290's group 14356 (73492, 73567, 73492) and objective 21317's group 14402 (73473, 73566, 73473) place 3 each, alternating the group's creatures; objective 21296 and 21310's boss 73499 and objective 21316's 74862 are Friendly to both player factions with no quest, so they are left out"
+    as "objective 21290's group 14356 (73492, 73567, 73492) and objective 21317's group 14402 (73473, 73566, 73473) place 3 each, alternating the group's creatures"
   assert count_of(spawns: world.by_id, creature: 73_464) == 5
     as "objective 21286 (quest 10518) counts 5 of Creature2 73464, which stands 5 times"
   assert dict.size(content_spawn.world(key:, world_id: 22).by_id) == 0
     as "a World row with no spawn that starts has an empty term"
+}
+
+pub fn the_boss_starts_and_74862_is_still_left_out_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil) as "a migrated database loads"
+  let world = content_spawn.world(key:, world_id: 3460)
+  assert count_of(spawns: world.by_id, creature: 73_499) == 1
+    as "objectives 21296 and 21310 place one boss at marker 51744, and migration 0027 gives it faction 233 in place of its Creature2 row's 219, Friendly to both"
+  assert count_of(spawns: world.by_id, creature: 74_862) == 0
+    as "Creature2 74862 gives factionId 219, Friendly to both player factions, with no quest and no creature_faction row, so it is left out"
+  let assert Ok(boss) =
+    list.find(dict.values(world.by_id), fn(one) {
+      one.creature_id == Creature2Id(73_499)
+    })
+    as "the boss starts"
+  assert boss.faction_id == 233 && boss.base_faction_id == 233
+    as "Faction2Relationship 746 makes 233 Hostile to the parent of both player factions"
 }
 
 pub fn the_load_puts_the_kinds_in_a_term_the_default_row_is_the_60_second_choice_test() -> Nil {
@@ -176,8 +198,8 @@ pub fn a_database_that_answers_late_is_waited_for_and_loaded_from_test() -> Nil 
   // not come, here a look at the mailbox now.
   assert process.receive(away, within: 0) == Error(Nil)
     as "it was told five times that the database was away"
-  assert dict.size(content_spawn.world(key:, world_id: 3460).by_id) == 27 + 11
-    as "the 27 stored spawns and the 11 marker-placed ones that start"
+  assert dict.size(content_spawn.world(key:, world_id: 3460).by_id) == 27 + 12
+    as "the 27 stored spawns and the 12 marker-placed ones that start"
 }
 
 pub fn a_database_whose_migrations_differ_stops_the_load_with_the_difference_test() -> Nil {

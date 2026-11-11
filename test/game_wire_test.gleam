@@ -110,6 +110,7 @@ import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/table/id.{XpPerLevelId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
+import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
@@ -1294,6 +1295,7 @@ pub fn credits_survive_a_relog_test() -> Nil {
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
       vendors:,
+      factions: creature_faction.none(),
     )
   assert selection.refusals == [] as "the row passes the spawn checks"
   let assert Ok(spawns) = dict.get(selection.worlds, 3460)
@@ -1414,6 +1416,7 @@ pub fn objective_progress_survives_a_relog_test() -> Nil {
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
       vendors: vendor_support.stocking(creature_ids: []),
+      factions: creature_faction.none(),
     )
   assert selection.refusals == [] as "the row passes the spawn checks"
   let assert Ok(spawns) = dict.get(selection.worlds, 3460)
@@ -5934,6 +5937,7 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
       vendors:,
+      factions: creature_faction.none(),
     )
   assert selection.refusals == [] as "the row passes the spawn checks"
   let assert Ok(spawns) = dict.get(selection.worlds, 3460)
@@ -6271,6 +6275,115 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
     && item.item_id == chest.item_id
   })
     as "the chest is worn"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+// The tutorial boss, Creature2 73499 (QuestObjective 21296 and 21310, type 2, count 1,
+// marker 51744). Marker 51744 is at (429.29544, -388.88251, 253.77565) in World 3460,
+// zone 5968 (`table_rows -- WorldLocation2 51744`), and a lone target stands at the
+// marker's centre. The Creature2 row gives factionId 219, Friendly to both player
+// factions, so the server stands it with faction 233, Hostile to the parent 165 of the
+// Dominion 166 and the Exile 167 (Faction2Relationship 746, migration 0027). Quest 10520
+// (Quest2 10520, questPlayerFactionEnum 0, the Exile's) holds the kill as its fourth
+// objective, index 3 (Quest2 objective03 21296), and opens it once the objectives of
+// index 0 and 2 are done (0x140553790: the objectives of index 1 and 4 hold flag 0x21
+// and the visit's 0x3; the objective_test header gives the shape).
+
+/// The boss's marker centre.
+const marker_51744 = #(429.29544, -388.88251, 253.77565)
+
+/// An Exile Medic of level 1 holding quest 10520 with the objectives of index 0 and 2 done,
+/// played into World 3460 12 beyond the boss and facing it, and read until the
+/// boss's 0x262 has arrived: the game, the burst's frames and the bytes beyond.
+fn an_exile_medic_beside_the_boss(
+  started started: login_support.Started,
+) -> #(game_client.Game, List(Frame), BitArray) {
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 1,
+    )
+  let assert Ok(_) =
+    pog.query("update character set faction_id = 167 where character_id = $1")
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character is an Exile one (faction 167)"
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 10520, 1, 0, true, 5, '{3,0,1,0,0}', 0, '{0,0,0,0,0}')",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character holds quest 10520 with the objectives of index 0 (21294) and 2 (21295) done, so the kill of index 3 is open"
+  character_support.move_to(
+    pool:,
+    character_id: character,
+    world_id: 3460,
+    world_zone_id: 5968,
+    position: #(marker_51744.0 +. 12.0, marker_51744.1, marker_51744.2),
+  )
+  send_play(game:, character_id: character)
+  let #(frames, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(game_client.creatures_created_in(frames:), fn(creature) {
+        creature.creature_id == 73_499
+      })
+    })
+  #(game, frames, have)
+}
+
+pub fn an_exile_kills_the_boss_and_objective_21296_counts_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use tables <- on_rows_without_paralytic_surges_recharge()
+  let time = driven_time.new()
+  let started = world_with_the_markers_creatures(tables:, time:)
+  let #(game, frames, have) = an_exile_medic_beside_the_boss(started:)
+  let assert Ok(boss) =
+    list.find(game_client.creatures_created_in(frames:), fn(creature) {
+      creature.creature_id == 73_499
+    })
+    as "the boss is created for the Exile"
+  assert is_near(
+    left: game_client.creature_placed_at(unit: boss),
+    right: marker_51744,
+  )
+    as "opcode.0x262: a lone target stands at its marker's centre"
+  assert boss.tail.faction_id == 233 && boss.tail.base_faction_id == 233
+    as "opcode.0x262: the unit stands with faction 233, Hostile to the Exile's parent (Faction2Relationship 746)"
+  face(
+    game:,
+    yaw: game_client.yaw_toward(
+      from: #(marker_51744.0 +. 12.0, marker_51744.2),
+      target: #(marker_51744.0, marker_51744.2),
+    ),
+    clock: 100,
+  )
+  let #(killed, have) =
+    presses_until_the_target_dies(
+      time:,
+      game:,
+      have:,
+      target: boss.unit_id,
+      cast_id: 1,
+      seen: [],
+    )
+  // The kill's credit comes from the creature after its death is written.
+  let #(counted, _) = game_client.read_until_pong(game:, have:, number: 7)
+  assert list.filter(list.append(killed, counted), fn(frame) {
+      frame.message_id == 0x0361
+    })
+    == [
+      Frame(
+        message_id: 0x0361,
+        body: message_support.packed([#(15, 10_520), #(32, 3), #(32, 1)]),
+      ),
+    ]
+    as "opcode.0x361: the kill counts objective 21296, the fourth of quest 10520, once: 1 of 1"
   game_client.close(game:)
   login_support.stop(started)
 }

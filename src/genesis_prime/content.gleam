@@ -6,7 +6,9 @@
 //// (genesis_prime/content/game_number), `class_resource` the fourth
 //// (genesis_prime/content/class_resource), `server_proxy` the fifth
 //// (genesis_prime/content/server_proxy), and every later one follows the same
-//// pattern.
+//// pattern; `creature_faction` (genesis_prime/content/creature_faction) is read
+//// beside the kinds, and the spawns, the placed objective creatures and the summons
+//// are checked with it.
 //// The kinds are selected before the spawns, since a spawn's attack is its kind's
 //// spell.
 ////
@@ -85,6 +87,7 @@
 //// | a query fails | the start stops with the database's reason |
 
 import genesis_prime/content/class_resource as content_class_resource
+import genesis_prime/content/creature_faction as content_creature_faction
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/refusal.{type Refusal}
@@ -106,6 +109,7 @@ import genesis_prime/step/runtime
 import genesis_prime/store/worker
 import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/table/quest_objective.{type QuestObjective}
+import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/game_number
 import genesis_prime/world_map/objective_spawn
@@ -188,6 +192,15 @@ fn read(
     |> result.map_error(fn(error) {
       QueryFailed(
         table: content_creature_kind.table,
+        reason: worker.describe_query_error(error),
+      )
+    }),
+  )
+  use faction_rows <- result.try(
+    content_creature_faction.rows(db)
+    |> result.map_error(fn(error) {
+      QueryFailed(
+        table: content_creature_faction.table,
         reason: worker.describe_query_error(error),
       )
     }),
@@ -295,9 +308,21 @@ fn read(
     Ok(kinds) -> Ok(kinds)
     Error(..) -> creature_kind.taken(rows: kind_rows, tables:)
   }
+  let factions = creature_faction.select(rows: faction_rows, tables:)
+  let faction_refusals = case factions {
+    Ok(..) -> []
+    Error(refusals) -> refusals
+  }
+  // With a faction row refused, the spawns are checked with the factions the load
+  // took, so the start names a bad spawn too.
+  let factions_for_spawns = case factions {
+    Ok(factions) -> factions
+    Error(..) -> creature_faction.taken_of(rows: faction_rows, tables:)
+  }
   // A kill objective's creature with no stored spawn in its marker's world stands in
   // the marker's circle; the placed rows are checked with the stored ones.
-  let placed = objective_spawn.place(tables:, stored: rows)
+  let placed =
+    objective_spawn.place(tables:, stored: rows, factions: factions_for_spawns)
   let selection = case kinds_for_spawns {
     Ok(kinds) ->
       spawn.select(
@@ -305,6 +330,7 @@ fn read(
         tables:,
         formulas: rating.formulas(tables:),
         kinds:,
+        factions: factions_for_spawns,
         vendors: vendors_for_spawns,
       )
     Error(Nil) ->
@@ -320,6 +346,7 @@ fn read(
     list.flatten([
       objective_spawn.labelled(refusals: selection.refusals, placed:),
       kind_refusals,
+      faction_refusals,
       number_refusals,
       class_refusals,
       proxy_refusals,
@@ -349,11 +376,16 @@ fn read(
           tables:,
           formulas: rating.formulas(tables:),
           kinds: kinds_of_summons,
+          factions: factions_for_spawns,
           vendors: vendors_for_spawns,
         ),
       )
       case kinds {
         Ok(kinds) -> content_creature_kind.put(key:, kinds:)
+        Error(..) -> Nil
+      }
+      case factions {
+        Ok(factions) -> content_creature_faction.put(key:, factions:)
         Error(..) -> Nil
       }
       case numbers {

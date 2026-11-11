@@ -103,6 +103,7 @@ import genesis_prime/table/world
 import genesis_prime/world_map/checklist_index
 import genesis_prime/world_map/creature_attack
 import genesis_prime/world_map/creature_columns
+import genesis_prime/world_map/creature_faction.{type Factions}
 import genesis_prime/world_map/creature_kind.{type Kind, type Kinds}
 import genesis_prime/world_map/creature_life.{
   type Attack, type Combat, Attackable, Combat, Hostile,
@@ -466,6 +467,7 @@ pub fn select(
   tables tables: table_store.Tables,
   formulas formulas: Formulas,
   kinds kinds: Kinds,
+  factions factions: Factions,
   vendors vendors: Vendors,
 ) -> Selection {
   let catalog = catalog(tables:)
@@ -485,7 +487,14 @@ pub fn select(
       {
         True, _ ->
           case
-            load_checks(catalog:, formulas:, kinds:, vendors:, shared:, row:)
+            load_checks(
+              catalog:,
+              formulas:,
+              kinds:,
+              vendors:,
+              shared:,
+              row: with_chosen_faction(factions:, row:),
+            )
           {
             Error(error) -> #(shared, refused(row, error))
             Ok(#(checked, shared)) -> #(
@@ -620,7 +629,7 @@ fn index_of(indexes: Dict(SpawnId, Int), spawn_id: SpawnId) -> Int {
 pub const non_player = 0
 
 /// What a summon of a creature is checked with, built once at the content load
-/// from the same tables, formulas and kinds the stored spawns are checked with,
+/// from the same tables, formulas, kinds and chosen factions the stored spawns are checked with,
 /// and put in a term beside them (genesis_prime/content/spawn `put_summon_checks`):
 /// the map reads it to answer a summon and the creature's start to build the
 /// spawn again.
@@ -629,6 +638,7 @@ pub opaque type SummonChecks {
     catalog: Catalog,
     formulas: Formulas,
     kinds: Kinds,
+    factions: Factions,
     vendors: Vendors,
   )
 }
@@ -638,9 +648,16 @@ pub fn summon_checks(
   tables tables: table_store.Tables,
   formulas formulas: Formulas,
   kinds kinds: Kinds,
+  factions factions: Factions,
   vendors vendors: Vendors,
 ) -> SummonChecks {
-  SummonChecks(catalog: catalog(tables:), formulas:, kinds:, vendors:)
+  SummonChecks(
+    catalog: catalog(tables:),
+    formulas:,
+    kinds:,
+    factions:,
+    vendors:,
+  )
 }
 
 /// Why a summon makes no spawn.
@@ -680,7 +697,7 @@ pub fn summoned(
   checks checks: SummonChecks,
   summoned summoned: Summoned,
 ) -> Result(Spawn, SummonRefusal) {
-  let SummonChecks(catalog:, formulas:, kinds:, vendors:) = checks
+  let SummonChecks(catalog:, formulas:, kinds:, factions:, vendors:) = checks
   let Summoned(id:, creature_id:, level:, place:) = summoned
   use creature <- result.try(
     valid_creature(catalog:, creature_id:)
@@ -697,7 +714,14 @@ pub fn summoned(
       }
   })
   let row =
-    creature_row(looks: catalog.looks, id:, creature:, place:, level: row_level)
+    creature_row(
+      looks: catalog.looks,
+      factions:,
+      id:,
+      creature:,
+      place:,
+      level: row_level,
+    )
   use #(checked, _shared) <- result.try(
     load_checks(catalog:, formulas:, kinds:, vendors:, shared: dict.new(), row:)
     |> result.map_error(FailsTheChecks),
@@ -712,17 +736,25 @@ pub fn summoned(
 
 /// The row of a NonPlayer unit of a creature standing at a place: the world,
 /// zone, position and facing of the place, the display and the outfit that
-/// `Looks` gives the creature's groups, and `Creature2.factionId` for both
-/// factions, as the world database sends them (`opcode.0x262.creature`). The
+/// `Looks` gives the creature's groups, and for both factions the creature's chosen
+/// faction when the table has one (`creature_faction`), else `Creature2.factionId`,
+/// as the world database sends them (`opcode.0x262.creature`). The
 /// row's health is none; its level is `level`, none for the creature's `minLevel`.
 pub fn creature_row(
   looks looks: Looks,
+  factions factions: Factions,
   id id: SpawnId,
   creature creature: Creature2,
   place place: Place,
   level level: Option(Float),
 ) -> Row {
   let facing = start_place.facing(place)
+  let chosen =
+    creature_faction.faction_of(
+      factions:,
+      creature2_id: creature.id,
+      own: creature.faction_id,
+    )
   Row(
     id:,
     entity_type: non_player,
@@ -745,13 +777,31 @@ pub fn creature_row(
       creature.creature2_outfit_group_id,
     )
       |> result.unwrap(0),
-    faction_id: creature.faction_id,
-    base_faction_id: creature.faction_id,
+    faction_id: chosen,
+    base_faction_id: chosen,
     world_object_id: 0,
     world_socket_id: 0,
     health: None,
     level:,
   )
+}
+
+/// The NonPlayer row with the creature's chosen faction as both its faction and its
+/// base faction, when the creature_faction table has a row for the creature; a row of
+/// a creature without one is unchanged. It runs before `left_out_of`, so a creature
+/// whose own faction is Friendly to both player factions starts when its chosen one
+/// is not.
+fn with_chosen_faction(factions factions: Factions, row row: Row) -> Row {
+  let chosen =
+    creature_faction.faction_of(
+      factions:,
+      creature2_id: row.creature_id,
+      own: row.faction_id,
+    )
+  case chosen == row.faction_id {
+    True -> row
+    False -> Row(..row, faction_id: chosen, base_faction_id: chosen)
+  }
 }
 
 /// A sentence that says why a summon makes no spawn, which the player's system

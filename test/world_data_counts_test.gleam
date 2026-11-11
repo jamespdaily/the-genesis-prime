@@ -52,6 +52,7 @@ import genesis_prime/import_world_data
 import genesis_prime/readiness
 import genesis_prime/step/runtime
 import genesis_prime/table/world
+import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/objective_spawn
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/static_object.{type StaticObject}
@@ -116,7 +117,12 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
   // world stand at its marker (`objective_spawn.place`): the rows placed, by
   // world, are the counts named in the head of this file, and the load starts the
   // selection's share of them beside the decoded stored spawns.
-  let placed = objective_spawn.place(tables:, stored: rows).rows
+  let placed =
+    objective_spawn.place(
+      tables:,
+      stored: rows,
+      factions: creature_faction.none(),
+    ).rows
   assert list.length(placed) == 1764
     as "the rows placed in all, none of them in a world with no stored spawn"
   assert list.map(
@@ -155,6 +161,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       formulas: rating.formulas(tables:),
       kinds: spawn_support.kinds(),
       vendors: vendor.none(),
+      factions: creature_faction.none(),
     )
   let left_out_in_all = fn(reason) {
     list.flat_map(selection.coverage, fn(world) { world.left_out })
@@ -238,6 +245,7 @@ pub fn world_3460_visibility_index_is_19_41795_and_41803_test() -> Nil {
       formulas: rating.formulas(tables:),
       kinds: spawn_support.kinds(),
       vendors: vendor.none(),
+      factions: creature_faction.none(),
     )
   assert selection.refusals == [] as "every started spawn's prerequisite loads"
   let assert Ok(index) = dict.get(selection.visibility, 3460)

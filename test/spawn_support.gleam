@@ -20,6 +20,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/vendor
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/creature_life.{
   type Attack, Attack, Attackable, Combat, Hostile,
@@ -247,6 +248,7 @@ pub fn summon_checks() -> spawn.SummonChecks {
     tables: character_tables.content_tables(),
     formulas: rating_support.formulas(),
     kinds: kinds(),
+    factions: creature_faction.none(),
     vendors: vendor.none(),
   )
 }
@@ -261,6 +263,7 @@ pub fn summon_checks_over(
     tables: character_tables.content_over(tables:),
     formulas: rating_support.formulas(),
     kinds: kinds(),
+    factions: creature_faction.none(),
     vendors: vendor.none(),
   )
 }
