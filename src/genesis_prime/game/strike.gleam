@@ -104,7 +104,7 @@ const bytes_per_unit = hit.roll_bytes
 /// The caster as a selection and a strike take it: who it is, where it stands and
 /// faces, the place it stands at with the move sequence number of that place and
 /// the stay its strikes are told for, which their answers come back in
-/// (genesis_prime/game/strike_tell `PlayerStriker`), its player faction, what its
+/// (genesis_prime/game/strike_tell `PlayerStriker`), its hit radius, its player faction, what its
 /// damage formulas read (`stats`) and its properties, whose BaseCritChance,
 /// CriticalHitSeverityMultiplier and BaseAvoidReduceChance values, a modifier's
 /// included, are the bases of its hit chances (`offence_of`).
@@ -116,6 +116,7 @@ pub type Attacker {
     place: start_place.Place,
     move_seq: Int,
     stay: Stay,
+    hit_radius: Float,
     faction: PlayerFaction,
     stats: damage.Attacker,
     properties: Properties,
@@ -339,6 +340,7 @@ pub fn begin(
                       place: attacker.place,
                       seq: attacker.move_seq,
                       stay: attacker.stay,
+                      hit_radius: attacker.hit_radius,
                       rolls:,
                     ),
                     offence:,

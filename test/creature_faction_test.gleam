@@ -49,8 +49,12 @@ pub fn the_faction_rows_load_into_their_term_test() -> Nil {
   assert creature_faction.chosen_of(factions:, creature2_id: 73_464)
     == Error(Nil)
     as "a creature with no row has no chosen faction"
-  assert dict.size(factions.by_creature) == 1
-    as "the migration seeds the boss and nothing else"
+  assert creature_faction.chosen_of(factions:, creature2_id: 73_494) == Ok(1441)
+    as "the Exile Sim-Turret fights for 1441, which Faction2Relationship 2943 makes hostile to Exiles"
+  assert creature_faction.chosen_of(factions:, creature2_id: 74_862) == Ok(1442)
+    as "the Dominion Sim-Turret fights for 1442, which Faction2Relationship 2946 makes hostile to Dominion"
+  assert dict.size(factions.by_creature) == 3
+    as "the migration seeds the boss and the two Sim-Turrets and nothing else"
 }
 
 pub fn a_faction_row_of_a_creature_the_client_lacks_is_refused_test() -> Nil {

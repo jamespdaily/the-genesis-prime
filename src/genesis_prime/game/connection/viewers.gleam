@@ -372,6 +372,7 @@ pub fn viewer_takes(
     }
     client_connection.CreatureAppeared(
       unit:,
+      unit_type:,
       life:,
       place:,
       hit_radius:,
@@ -402,7 +403,7 @@ pub fn viewer_takes(
         [
           connection_state.to_client(
             session,
-            connection_frames.creature_created_frame(unit:),
+            connection_frames.creature_created_frame(unit:, unit_type:),
           ),
         ],
       )

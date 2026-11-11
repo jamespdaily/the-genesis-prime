@@ -316,6 +316,7 @@ fn typed_strike(
         ),
         seq: 1,
         stay: map_support.stay(count: 2),
+        hit_radius: place_support.player_hit_radius,
         rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
       ),
       controls: [],

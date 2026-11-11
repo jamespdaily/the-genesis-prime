@@ -63,7 +63,7 @@ import genesis_prime/message/unit_position_command.{
 }
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/store.{type Character, CharacterId}
-import genesis_prime/table/id.{type UnitProperty2Id}
+import genesis_prime/table/id.{type RaceId, type UnitProperty2Id}
 import genesis_prime/world_map/unit_fields
 import gleam/int
 import gleam/list
@@ -143,6 +143,11 @@ pub fn standing(
 /// The Faction2 id of the unit's character: Exile 167 or Dominion 166.
 pub fn faction_id(unit unit: PlayerUnit) -> Int {
   unit.character.faction_id
+}
+
+/// The race of the unit's character.
+pub fn race_id(unit unit: PlayerUnit) -> RaceId {
+  unit.character.race_id
 }
 
 /// The id of the unit's character, for a log line.

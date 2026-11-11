@@ -8131,7 +8131,12 @@ fn closed_frame(
 
 /// 0x7ff for a creature's cast of its attack spell on its target, from where it
 /// stands: the target is the cast's primary target, the spell its own root, and the
-/// lists and the safe values are a player's cast's (`started_message`).
+/// lists and the safe values are a player's cast's (`started_message`). It sends no
+/// telegraph positions for a spell that has a telegraph (Spell4Telegraph 57886 for
+/// 85469 and 57885 for 86978, each TelegraphDamage row 16212: a rectangle 3 wide
+/// and 30 long, targetTypeFlags 1): the client draws it on the caster from the
+/// caster's own place and facing (`0x140546e60`, record `0x14054b1b0.follows_caster`),
+/// which a 0x7ff yaw does not turn.
 pub fn creature_started(
   cast_id cast_id: Int,
   spell4_id spell4_id: Int,

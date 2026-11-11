@@ -2,6 +2,10 @@
 
 import genesis_prime/game/start_place.{type Place}
 
+/// The hit radius of a player: the Race row's hitRadius, 1.2 for the eight player races
+/// as the table's 32-bit float reads (genesis_prime/game/hit_radius).
+pub const player_hit_radius = 1.2000000476837158
+
 /// Where the live character of the client's 0x262 vector stands, in World 3460
 /// (vector.opcode.0x262.roxo_alive): the place a test puts a unit at.
 pub fn live_character_place() -> Place {

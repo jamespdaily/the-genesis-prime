@@ -28,8 +28,8 @@
 ////   whole count; objectives of the same creatures and markers are placed once
 ////   with the largest count.
 //// - A creature stands with what `spawn.creature_row` gives its Creature2 row:
-////   the faction, the first display and outfit of its groups, no stored health
-////   and its minLevel.
+////   the unit type (entity type 13 for a turret creature), the faction, the first
+////   display and outfit of its groups, no stored health and its minLevel.
 //// - A placed row takes an id above every stored one, counting up. No saved
 ////   table keys on a spawn id but `spawn_stat` (its own `spawn_id` column,
 ////   content that only a stored row has), so a placed row's id is the map's
@@ -37,7 +37,8 @@
 ////
 //// A pair that is not placed is reported once at the start (`Skipped`): a
 //// creature with no Creature2 row, a group that lists no creature, a marker with
-//// no WorldLocation2 row and a marker in a world with no stored spawn. Kill
+//// no WorldLocation2 row, a marker in a world with no stored spawn and a turret
+//// creature with no creature_kind row. Kill
 //// types 15 and 46 and the tutorial's other objective types name no creature to
 //// place here.
 
@@ -52,6 +53,8 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest_objective.{type QuestObjective}
 import genesis_prime/table/world_location2.{type WorldLocation2}
 import genesis_prime/world_map/creature_faction.{type Factions}
+import genesis_prime/world_map/creature_kind.{type Kinds}
+import genesis_prime/world_map/creature_unit_type.{NonPlayer, Turret}
 import genesis_prime/world_map/spawn.{type Row}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/bool
@@ -84,6 +87,9 @@ pub type Why {
   NoMarkerRow(marker_id: Int)
   /// The marker is in a world the server holds no stored spawn for.
   NoSpawnsInWorld(marker_id: Int, world_id: Int)
+  /// The creature's row makes it a turret (Creature2.creationTypeEnum 13) and the
+  /// server has no creature_kind row for it, so it would stand as a static object.
+  TurretHasNoKind(creature_id: Int)
 }
 
 /// The objective types of a kill that names a creature or a group of them, with
@@ -113,20 +119,26 @@ type Job {
 
 /// The rows to stand for the kill objectives, given the rows the stored spawn
 /// table holds: only a marker in a world one of them is in gets creatures, and a
-/// creature with a stored non-player spawn in a marker's world is left to it.
-/// A creature stands with its chosen faction when it has one (`factions`).
-/// Pure: the tables, the chosen factions and the stored rows are all it reads.
+/// creature a stored spawn of that world already stands as a creature (`held_by`)
+/// is left to it. A creature stands with its chosen faction when it has one
+/// (`factions`), and as the unit type its Creature2 row gives it; a turret creature
+/// with no kind of its own is left out (`TurretHasNoKind`), since no server fight
+/// would run it.
+/// Pure: the tables, the chosen factions, the kinds and the stored rows are all it reads.
 pub fn place(
   tables tables: table_store.Tables,
   stored stored: List(Row),
   factions factions: Factions,
+  kinds kinds: Kinds,
 ) -> Placed {
   let objectives =
     quest_objective.all(tables)
     |> list.filter(fn(objective) { is_placed_kind(objective:) })
   let worlds = set.from_list(list.map(stored, fn(row) { row.world_id }))
   let planned =
-    list.map(objectives, fn(objective) { plan(tables:, worlds:, objective:) })
+    list.map(objectives, fn(objective) {
+      plan(tables:, worlds:, kinds:, objective:)
+    })
   let skipped =
     planned
     |> list.flat_map(fn(pair) { pair.1 })
@@ -135,7 +147,7 @@ pub fn place(
     planned
     |> list.filter_map(fn(pair) { option.to_result(pair.0, Nil) })
     |> merged
-  let held = held_by(stored:)
+  let held = held_by(stored:, kinds:)
   let looks = spawn.looks(tables:)
   let rows =
     list.flat_map(jobs, fn(job) { rows_of(job:, held:, looks:, factions:) })
@@ -152,6 +164,7 @@ pub fn place(
 fn plan(
   tables tables: table_store.Tables,
   worlds worlds: Set(Int),
+  kinds kinds: Kinds,
   objective objective: QuestObjective,
 ) -> #(option.Option(Job), List(Skipped)) {
   let marker_ids = place_objective.marker_ids(objective:)
@@ -166,16 +179,25 @@ fn plan(
         [] -> [Skipped(objective.id, NamesNoCreature(group_id: objective.data))]
         _ -> []
       }
-      let #(rows, rowless) =
+      let #(found, rowless) =
         list.map(creature_ids, fn(creature_id) {
           creature2.get(tables, Creature2Id(creature_id))
           |> result.replace_error(creature_id)
         })
         |> partitioned
-      let no_rows =
-        list.map(rowless, fn(creature_id) {
-          Skipped(objective.id, NoCreatureRow(creature_id:))
+      let #(rows, kindless) =
+        list.partition(found, fn(creature) {
+          !is_unrun_turret(creature:, kinds:)
         })
+      let no_rows =
+        list.append(
+          list.map(rowless, fn(creature_id) {
+            Skipped(objective.id, NoCreatureRow(creature_id:))
+          }),
+          list.map(kindless, fn(creature) {
+            Skipped(objective.id, TurretHasNoKind(creature_id: creature.id))
+          }),
+        )
       let #(markers, marker_skips) =
         list.map(marker_ids, fn(marker_id) {
           marker_of(tables:, worlds:, marker_id:)
@@ -247,14 +269,30 @@ fn merged(jobs jobs: List(Job)) -> List(Job) {
   |> list.reverse
 }
 
-/// The (world, creature) pairs a stored non-player spawn stands.
-fn held_by(stored stored: List(Row)) -> Set(#(Int, Int)) {
-  list.filter_map(stored, fn(row) {
-    case row.entity_type == spawn.non_player {
-      True -> Ok(#(row.world_id, row.creature_id))
-      False -> Error(Nil)
-    }
+/// Whether the creature's row makes it a turret (`creature_unit_type.of_creation_type`) the
+/// server has no kind for: it would stand as a static object, not fight.
+fn is_unrun_turret(creature creature: Creature2, kinds kinds: Kinds) -> Bool {
+  case
+    creature_unit_type.of_creation_type(
+      creation_type: creature.creation_type_enum,
+    )
+  {
+    Turret -> !dict.has_key(kinds.by_creature, creature.id)
+    NonPlayer -> False
+  }
+}
+
+/// The (world, creature) pairs a stored spawn that starts as a creature stands (a
+/// non-player row, or a turret row whose creature has a kind of its own: `spawn.select`).
+/// A stored row that is a static object stands no creature, so it holds none.
+pub fn held_by(
+  stored stored: List(Row),
+  kinds kinds: Kinds,
+) -> Set(#(Int, Int)) {
+  list.filter(stored, fn(row) {
+    result.is_ok(spawn.creature_unit_type_of(kinds:, row:))
   })
+  |> list.map(fn(row) { #(row.world_id, row.creature_id) })
   |> set.from_list
 }
 
@@ -393,6 +431,11 @@ fn describe(skipped skipped: Skipped) -> String {
       <> " is in World "
       <> int.to_string(world_id)
       <> ", where the server holds no stored spawn"
+    TurretHasNoKind(creature_id:) ->
+      objective
+      <> " names Creature2 "
+      <> int.to_string(creature_id)
+      <> ", a turret the server has no creature_kind row of"
   }
 }
 

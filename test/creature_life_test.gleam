@@ -68,6 +68,7 @@ fn strike_of(
       ),
       seq: 1,
       stay: map_support.stay(count: 1),
+      hit_radius: place_support.player_hit_radius,
       rolls:,
     ),
     controls: [],
