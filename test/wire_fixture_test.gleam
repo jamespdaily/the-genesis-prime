@@ -200,7 +200,7 @@ fn insert_currencies_and_quests(pool: pog.Connection) -> Nil {
   )
   run(
     pool,
-    "insert into character_quest (character_id, quest_id, state, completed_at, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values (1, 100, 1, null, 5, true, 3, '{2,0}', 60000, '{1000,0}'), (1, 101, 3, '2026-11-08 10:00:00.123456+00', null, null, null, null, null, null), (1, 102, 4, null, null, null, null, null, null, null), (6, 100, 2, null, 0, false, 0, '{}', 0, '{}')",
+    "insert into character_quest (character_id, quest_id, state, completed_at, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values (1, 100, 1, null, 5, true, 3, '{2,0}', 60000, '{1000,0}', '{5,0,0,0,0,127}'), (1, 101, 3, '2026-11-08 10:00:00.123456+00', null, null, null, null, null, null, null), (1, 102, 4, null, null, null, null, null, null, null, null), (6, 100, 2, null, 0, false, 0, '{}', 0, '{}', '{0,0,0,0,0,0}')",
   )
 }
 
@@ -217,7 +217,7 @@ fn currency_rows(pool: pog.Connection) -> List(String) {
 fn quest_rows(pool: pog.Connection) -> List(String) {
   query_texts(
     pool,
-    "select concat_ws('|', character_id, quest_id, state, coalesce(to_char(completed_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), 'null'), coalesce(placeholder_objective_id::text, 'null'), coalesce(tracked::text, 'null'), coalesce(done_mask::text, 'null'), coalesce(progress::text, 'null'), coalesce(quest_ms_left::text, 'null'), coalesce(objective_ms_left::text, 'null')) from character_quest order by character_id, quest_id",
+    "select concat_ws('|', character_id, quest_id, state, coalesce(to_char(completed_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.US'), 'null'), coalesce(placeholder_objective_id::text, 'null'), coalesce(tracked::text, 'null'), coalesce(done_mask::text, 'null'), coalesce(progress::text, 'null'), coalesce(quest_ms_left::text, 'null'), coalesce(objective_ms_left::text, 'null'), coalesce(kill_mask::text, 'null')) from character_quest order by character_id, quest_id",
   )
 }
 
@@ -247,10 +247,10 @@ pub fn the_quests_of_the_named_accounts_characters_are_kept_test() -> Nil {
   assert fixture.apply(target, path) == Ok(Nil)
   assert quest_rows(target)
     == [
-      "1|100|1|null|5|true|3|{2,0}|60000|{1000,0}",
-      "1|101|3|2026-11-08 10:00:00.123456|null|null|null|null|null|null",
-      "1|102|4|null|null|null|null|null|null|null",
-      "6|100|2|null|0|false|0|{}|0|{}",
+      "1|100|1|null|5|true|3|{2,0}|60000|{1000,0}|{5,0,0,0,0,127}",
+      "1|101|3|2026-11-08 10:00:00.123456|null|null|null|null|null|null|null",
+      "1|102|4|null|null|null|null|null|null|null|null",
+      "6|100|2|null|0|false|0|{}|0|{}|{0,0,0,0,0,0}",
     ]
     as "an active quest with its objectives and timers, a completed quest with its time to the microsecond, a known quest with no active columns, and an active quest with empty objectives, as inserted"
 }

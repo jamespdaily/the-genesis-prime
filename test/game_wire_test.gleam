@@ -1473,7 +1473,7 @@ pub fn objective_progress_survives_a_relog_test() -> Nil {
     as "the character is of the faction Lusk's faction 171 is friendly to"
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 3668, 1, 0, true, 0, '{0,0,0}', 0, '{0,0,0}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 3668, 1, 0, true, 0, '{0,0,0}', 0, '{0,0,0}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
@@ -1541,7 +1541,7 @@ pub fn a_move_into_a_marker_sends_its_objective_progress_test() -> Nil {
     new_player(started:, number: 1, character_name: "Zed Qu")
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 10513, 1, 0, true, 0, '{0,0,0,0,0}', 0, '{0,0,0,0,0}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 10513, 1, 0, true, 0, '{0,0,0,0,0}', 0, '{0,0,0,0,0}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
@@ -1618,7 +1618,7 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
     )
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 5855, 1, 0, true, 0, '{0,0}', 0, '{0,0}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 5855, 1, 0, true, 0, '{0,0}', 0, '{0,0}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
@@ -1751,7 +1751,7 @@ fn exile_whose_mine_cast_went() -> #(
     as "the character is an Exile"
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 10518, 1, 0, true, 1, '{1,0,0,0,0,0}', 0, '{0,0,0,0,0,0}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 10518, 1, 0, true, 1, '{1,0,0,0,0,0}', 0, '{0,0,0,0,0,0}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
@@ -3931,7 +3931,7 @@ fn a_medic_at_the_marker_ring(
     as "the character is an Exile one (faction 167), which Creature2 73492 is hostile to"
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 10518, 1, 0, true, 31, '{5,1,1,1,2,0}', 0, '{0,0,0,0,0,0}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 10518, 1, 0, true, 31, '{5,1,1,1,2,0}', 0, '{0,0,0,0,0,0}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
@@ -5841,7 +5841,7 @@ pub fn a_timed_quest_is_botched_over_the_connection_test() -> Nil {
     new_player(started:, number: 1, character_name: "Zed Qu")
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 1872, 1, 0, true, 0, '{}', 60000, '{}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 1872, 1, 0, true, 0, '{}', 60000, '{}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
@@ -6662,7 +6662,7 @@ fn an_exile_medic_beside_the_boss(
     as "the character is an Exile one (faction 167)"
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 10520, 1, 0, true, 5, '{3,0,1,0,0}', 0, '{0,0,0,0,0}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 10520, 1, 0, true, 5, '{3,0,1,0,0}', 0, '{0,0,0,0,0}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)

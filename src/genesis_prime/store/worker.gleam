@@ -133,7 +133,7 @@ const character_health_is_not_negative = "character_health_is_not_negative"
 const character_experience_is_not_negative =
   "character_experience_is_not_negative"
 
-/// The checks of the character_quest table (migrations 0021 and 0026), one for each limit of
+/// The checks of the character_quest table (migrations 0021, 0026 and 0028), one for each limit of
 /// the client's a quest row can break. A save one of them refuses answers
 /// `QuestLogRefused` with the check's own name. The table's primary key and its
 /// foreign key to the character are not among them: neither is a limit of the
@@ -149,6 +149,9 @@ const quest_checks = [
   "character_quest_timers_match_progress",
   "character_quest_times_are_not_negative",
   "character_quest_placeholder_is_not_negative",
+  "character_quest_kill_mask_fits_7_bits",
+  "character_quest_active_has_its_kill_mask",
+  "character_quest_kill_mask_has_six_slots",
 ]
 
 /// Every constraint or unique index the worker answers for by name. The schema
@@ -1152,14 +1155,16 @@ fn quest_rows_of(rows: List(sql.LoadQuestLogRow)) -> List(QuestRow) {
         row.done_mask,
         row.progress,
         row.quest_ms_left,
-        row.objective_ms_left
+        row.objective_ms_left,
+        row.kill_mask
       {
         Some(placeholder_objective_id),
           Some(tracked),
           Some(done_mask),
           Some(progress),
           Some(quest_ms_left),
-          Some(objective_ms_left)
+          Some(objective_ms_left),
+          Some(kill_mask)
         ->
           Some(ActiveQuest(
             placeholder_objective_id:,
@@ -1168,9 +1173,10 @@ fn quest_rows_of(rows: List(sql.LoadQuestLogRow)) -> List(QuestRow) {
             progress:,
             quest_ms_left:,
             objective_ms_left:,
+            kill_mask:,
           ))
-        None, None, None, None, None, None -> None
-        _, _, _, _, _, _ ->
+        None, None, None, None, None, None, None -> None
+        _, _, _, _, _, _, _ ->
           panic as "character_quest_active_has_its_entry holds all the active columns or none"
       },
     )
@@ -1217,6 +1223,12 @@ fn quests_json(quests: List(QuestRow)) -> Json {
           "objective_ms_left",
           json.nullable(quest.active, fn(active) {
             json.array(active.objective_ms_left, json.int)
+          }),
+        ),
+        #(
+          "kill_mask",
+          json.nullable(quest.active, fn(active) {
+            json.array(active.kill_mask, json.int)
           }),
         ),
       ])

@@ -14,7 +14,8 @@ select
   done_mask,
   progress,
   quest_ms_left,
-  objective_ms_left
+  objective_ms_left,
+  kill_mask
 from character_quest
 where character_id = $1
 order by quest_id;

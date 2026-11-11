@@ -127,8 +127,15 @@ pub fn active(
       progress:,
       quest_ms_left: 0,
       objective_ms_left: list.map(progress, fn(_) { 0 }),
+      kill_mask: no_kills(),
     )),
   )
+}
+
+/// The kill mask of an entry that has killed no member of any group: one 0 for each of the
+/// six objective slots a quest has (`kQuestMaxObjective`, 0x1405510d0).
+pub fn no_kills() -> List(Int) {
+  list.repeat(0, 6)
 }
 
 /// An accepted quest with no placeholder, untracked, with these progress values.
@@ -144,6 +151,20 @@ pub fn accepted(
     done_mask: 0,
     progress:,
   )
+}
+
+/// An accepted quest with no placeholder, untracked, with these progress values and the
+/// members of each objective's named group already killed (`kill_mask`, one 7-bit value for
+/// each of the six objective slots).
+pub fn accepted_with_kills(
+  quest_id quest_id: Int,
+  progress progress: List(Int),
+  kill_mask kill_mask: List(Int),
+) -> QuestRow {
+  let accepted = accepted(quest_id:, progress:)
+  let assert Some(entry) = accepted.active
+    as "an accepted quest holds its entry"
+  QuestRow(..accepted, active: Some(ActiveQuest(..entry, kill_mask:)))
 }
 
 /// The number of objectives the quest's Quest2 row names.
@@ -192,6 +213,7 @@ pub fn timed(
       progress:,
       quest_ms_left:,
       objective_ms_left: list.map(progress, fn(_) { 0 }),
+      kill_mask: no_kills(),
     )),
   )
 }
@@ -216,6 +238,7 @@ pub fn with_objective_time(
       progress:,
       quest_ms_left: 0,
       objective_ms_left:,
+      kill_mask: no_kills(),
     )),
   )
 }
