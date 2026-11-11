@@ -50,6 +50,7 @@ import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/id.{Creature2Id, Spell4BaseId}
 import genesis_prime/world_map/creature
+import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
@@ -1234,6 +1235,7 @@ pub fn right_click_on_a_vendor_opens_its_window_test() -> Nil {
         creature_ids: [28_739],
         items: vendor_support.ingavaks_items,
       ),
+      factions: creature_faction.none(),
     )
   assert selection.refusals == [] as "the row passes the spawn checks"
   let assert Ok(spawns) = dict.get(selection.worlds, 3460)

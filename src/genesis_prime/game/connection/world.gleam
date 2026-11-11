@@ -73,9 +73,9 @@ import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
   type AfterLeave, type AfterSave, type EntryFrom, type Session,
   AwaitingHelloReply, Buying, Camped, ClaimingSession, EnteringWorld,
-  FromCharacterSelect, FromHolocrypt, InCharacterSelect, InWorld, JoinAt,
-  Leaving, LeavingMap, MovingItem, Playing, SavingPlace, Selling, Session,
-  Summoning, TakingSessionKey, ToCharacterSelect, TurningIn, WaitingToClaim,
+  FromCharacterSelect, FromInWorld, InCharacterSelect, InWorld, JoinAt, Leaving,
+  LeavingMap, MovingItem, Playing, SavingPlace, Selling, Session, Summoning,
+  TakingSessionKey, ToCharacterSelect, TurningIn, WaitingToClaim,
 } as connection_state
 import genesis_prime/game/innate_choice
 import genesis_prime/game/movement
@@ -94,7 +94,7 @@ import genesis_prime/store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/stay
 import gleam/list
-import gleam/option
+import gleam/option.{type Option}
 
 /// What the camp messages do, taken from inside 0x038C, in the world
 /// (genesis_prime/game/camp): the camp is kept, its effects are carried out,
@@ -519,8 +519,8 @@ pub fn leave_answered(
   case outcome {
     step.Answer(FromMap(map.Left)) | step.NotRunning | step.EndedBeforeAnswer ->
       case then {
-        JoinAt(place:) ->
-          joining_at_the_holocrypt(session:, now:, holder:, entered:, place:)
+        JoinAt(place:, health:) ->
+          joining_at(session:, now:, holder:, entered:, place:, health:)
         ToCharacterSelect ->
           in_character_select(session:, holder:, written: [
             Unwatch(watch: connection_state.map_watch),
@@ -559,22 +559,25 @@ pub fn leave_answered(
   }
 }
 
-/// The Holocrypt's second step, after the map's leave: the map of the place's
-/// world is asked to take the player at `place` for a new stay, with the earlier
-/// stay's movement (`world_entry.rejoining`), the old map's watch dropped, in
-/// `EnteringWorld` from the Holocrypt.
-fn joining_at_the_holocrypt(
+/// The second step of a move inside the game (the Holocrypt, a departures
+/// terminal), after the map's leave: the map of the place's world is asked to
+/// take the player at `place` for a new stay, with the earlier stay's movement
+/// and `health` as its saved health (`world_entry.rejoining`), the old map's watch
+/// dropped, in `EnteringWorld` from the world.
+fn joining_at(
   session session: Session,
   now now: Now,
   holder holder: Holder,
   entered entered: world_entry.Entered,
   place place: Place,
+  health health: Option(Int),
 ) -> client_connection.Handled(Session) {
   let stay = stay.next(session.last_stay)
   let #(entry, effects) =
     world_entry.rejoining(
       entered:,
       place:,
+      health:,
       connection: client_connection.connection(session.link),
       stay:,
       tables: session.settings.tables,
@@ -585,7 +588,7 @@ fn joining_at_the_holocrypt(
     now:,
     holder:,
     entry:,
-    from: FromHolocrypt,
+    from: FromInWorld,
     effects:,
     written: [Unwatch(watch: connection_state.map_watch)],
   )
@@ -699,7 +702,7 @@ pub fn entry_answered(
                 holder:,
                 step: refused_play(holder:, character_id:, warning:),
               )
-            FromHolocrypt ->
+            FromInWorld ->
               in_character_select(session:, holder:, written: [
                 connection_state.log(session:, level: LogWarning, text: warning),
               ])

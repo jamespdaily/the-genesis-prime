@@ -18,6 +18,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/spell4
 import genesis_prime/table/world
+import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
@@ -225,6 +226,7 @@ pub fn the_committed_creature_and_faction_rows_select_the_spawns_the_clients_row
       formulas:,
       kinds:,
       vendors: vendor.none(),
+      factions: creature_faction.none(),
     )
   let real =
     spawn.select(
@@ -233,6 +235,7 @@ pub fn the_committed_creature_and_faction_rows_select_the_spawns_the_clients_row
       formulas:,
       kinds:,
       vendors: vendor.none(),
+      factions: creature_faction.none(),
     )
   assert planted.refusals == [] && real.refusals == []
     as "no row is refused by either"

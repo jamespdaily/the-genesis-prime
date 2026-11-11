@@ -27,6 +27,7 @@ import genesis_prime/game/start_place.{Facing}
 import genesis_prime/game/vendor
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store
+import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -144,6 +145,7 @@ pub fn a_summon_has_what_a_stored_spawn_of_the_same_creature_and_place_has_test(
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
       vendors: vendor.none(),
+      factions: creature_faction.none(),
     )
   let assert Ok(world) = dict.get(selection.worlds, 3460)
     as "the row starts in world 3460"
@@ -277,6 +279,7 @@ pub fn commander_durek_summons_with_the_client_rows_faction_display_and_outfit_t
         formulas: rating.formulas(tables: client_tables.every_table()),
         kinds: spawn_support.kinds(),
         vendors: vendor.none(),
+        factions: creature_faction.none(),
       ),
       summoned: Summoned(
         id: SpawnId(-1),
@@ -307,6 +310,7 @@ fn real_summon_at(
       formulas: rating.formulas(tables: client_tables.every_table()),
       kinds: spawn_support.kinds(),
       vendors: vendor.none(),
+      factions: creature_faction.none(),
     ),
     summoned: Summoned(
       id: SpawnId(-1),

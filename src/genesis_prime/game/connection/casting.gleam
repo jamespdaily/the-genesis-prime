@@ -623,11 +623,7 @@ pub fn cast_effects(
           })
         {
           Ok(#(target, checklist_index)) ->
-            connection_objective.counted(
-              session:,
-              now:,
-              event: objective.Used(target:, checklist_index:),
-            )
+            connection_objective.used(session:, now:, target:, checklist_index:)
           Error(Nil) -> #(session, [])
         }
       cast.Activated(..), None -> #(session, [])

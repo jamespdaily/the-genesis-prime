@@ -4,6 +4,7 @@
 import genesis_prime/game/appearance
 import genesis_prime/game/character_state
 import genesis_prime/game/currency
+import genesis_prime/game/departures
 import genesis_prime/game/dropped
 import genesis_prime/game/hit_radius
 import genesis_prime/game/item_property
@@ -34,8 +35,11 @@ import gleam/list
 /// - GameFormula row 1026, the fraction of the buy price an item sells for
 ///   (genesis_prime/game/vendor_sale).
 /// - GameFormula row 530, the exponent of a quest's credits (genesis_prime/game/quest_turn_in).
+/// - The Creature2, QuestObjective, Quest2 and WorldLocation2 rows of the four departures
+///   terminals (genesis_prime/game/departures).
 pub fn all() -> List(store.Requirement) {
   list.flatten([
+    departures.requirements(),
     [start_place.requirement()],
     level.requirements(),
     character_state.requirements(),

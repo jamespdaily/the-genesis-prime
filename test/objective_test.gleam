@@ -89,6 +89,12 @@
 //// - 10520: objective 0 is 21294 (type 14, count 3), 1 is 21297 (type 22, flags
 ////   0x21), 2 is 21295 (type 22, flags 3), 3 is 21296 (type 2, creature 73499, flags 3)
 ////   and 4 is 21298 (type 17, zone 5998, flags 3).
+//// - `QuestObjective.type.23`: a use of any unit in the objective's TargetGroup counts
+////   one. QuestObjective 21094 (quest 10415, group 14175 of creatures 72197, 72198,
+////   72231 ..., count 8, flags 4); the Bon Voyage objectives of quest 10528 (21326
+////   talk, 21327 travel, 21328 and 21329 choices, 21342 an optional type 14) and
+////   quest 10530 (21347, 21348, 21349, 21350), whose choices (type 23, flags 33) share
+////   a group of both terminals, so the choice of each terminal is the server's.
 
 import fixture_tables
 import genesis_prime/game/objective.{
@@ -1625,4 +1631,184 @@ pub fn a_cast_counts_nothing_on_a_quest_not_in_the_active_list_test() -> Nil {
   }
   nothing(quest_support.completed(quest_id: the_first_cast_quest, at: 1000))
   nothing(quest_support.known(quest_id: the_first_cast_quest, state: 6))
+}
+
+/// Quest 10415, whose only objective is 21094 (type 23, flags 4, count 8, group 14175).
+fn group_use_log() -> quest_log.QuestLog {
+  quest_support.log_of(rows: [
+    quest_support.accepted(quest_id: 10_415, progress: [0]),
+  ])
+}
+
+/// A Bon Voyage log (quest 10528 for the Exile, 10530 for the Dominion) after the talk:
+/// the first objective done.
+fn bon_voyage_after_the_talk(quest_id quest_id: Int) -> quest_log.QuestLog {
+  quest_support.log_of(rows: [
+    quest_support.active(
+      quest_id:,
+      state: 1,
+      placeholder: 0,
+      tracked: False,
+      done_mask: 0b1,
+      progress: [1, 0, 0, 0, 0],
+    ),
+  ])
+}
+
+pub fn a_use_of_a_group_unit_counts_a_type_23_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // QuestObjective 21094 is type 23 with TargetGroup 14175 (a list of creatures, 72197
+  // first), count 8 and flags 4: a use of one of the group counts one.
+  use tables <- with_objectives(edits: [])
+  assert objective.advance(
+      log: group_use_log(),
+      tables:,
+      event: a_use(Creature2Id(72_197)),
+      now_ms: 0,
+    ).effects
+    == [SendProgress(quest_id: 10_415, objective_index: 0, progress: 1)]
+    as "a use of a unit in the group counts one toward the objective's count of 8"
+}
+
+pub fn a_use_of_a_unit_outside_the_group_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 73606 is in TargetGroup 14367, not in 14175.
+  use tables <- with_objectives(edits: [])
+  assert objective.advance(
+      log: group_use_log(),
+      tables:,
+      event: a_use(Creature2Id(73_606)),
+      now_ms: 0,
+    ).effects
+    == []
+    as "a unit outside the objective's group counts nothing"
+}
+
+pub fn each_use_counts_one_toward_a_larger_count_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  let count = fn(log, creature) {
+    objective.advance(
+      log:,
+      tables:,
+      event: a_use(Creature2Id(creature)),
+      now_ms: 0,
+    )
+  }
+  let first = count(group_use_log(), 72_197)
+  let second = count(first.log, 72_198)
+  let third = count(second.log, 72_231)
+  assert third.effects
+    == [SendProgress(quest_id: 10_415, objective_index: 0, progress: 3)]
+    as "three uses of three different units of the group are 3 of 8, and the quest is not told it is Achieved"
+  assert quest_log.stored_state(log: third.log, quest_id: 10_415) == 1
+    as "the quest stays Accepted: 3 of 8 is not done"
+}
+
+pub fn the_northern_wilds_terminal_counts_travel_and_its_own_choice_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 10528: 21326 (talk), 21327 (travel, type 23), 21328 and 21329 (the choices,
+  // type 23, flags 33), the last two with a TargetGroup that holds both terminals,
+  // 73605 and 73606.
+  use tables <- with_objectives(edits: [])
+  assert objective.advance(
+      log: bon_voyage_after_the_talk(quest_id: 10_528),
+      tables:,
+      event: a_use(Creature2Id(73_606)),
+      now_ms: 0,
+    ).effects
+    == [
+      SendProgress(quest_id: 10_528, objective_index: 1, progress: 1),
+      SendProgress(quest_id: 10_528, objective_index: 2, progress: 1),
+      SendState(quest_id: 10_528, state: 2),
+    ]
+    as "the travel (index 1) and the Northern Wilds choice (index 2) count; the Everstar Grove choice (index 3) does not; the travel was the last objective without flag 0x20, so the quest is Achieved"
+}
+
+pub fn the_everstar_terminal_counts_only_its_own_choice_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  assert objective.advance(
+      log: bon_voyage_after_the_talk(quest_id: 10_528),
+      tables:,
+      event: a_use(Creature2Id(73_605)),
+      now_ms: 0,
+    ).effects
+    == [
+      SendProgress(quest_id: 10_528, objective_index: 1, progress: 1),
+      SendProgress(quest_id: 10_528, objective_index: 3, progress: 1),
+      SendState(quest_id: 10_528, state: 2),
+    ]
+    as "the travel (index 1) and the Everstar Grove choice (index 3) count, not the Northern Wilds choice"
+}
+
+pub fn each_dominion_terminal_counts_its_own_choice_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 10530: 21347 (talk), 21348 (travel), 21349 (Levian Bay) and 21350 (Crimson
+  // Isle), the choices of type 23 with flags 33.
+  use tables <- with_objectives(edits: [])
+  assert objective.advance(
+      log: bon_voyage_after_the_talk(quest_id: 10_530),
+      tables:,
+      event: a_use(Creature2Id(74_773)),
+      now_ms: 0,
+    ).effects
+    == [
+      SendProgress(quest_id: 10_530, objective_index: 1, progress: 1),
+      SendProgress(quest_id: 10_530, objective_index: 2, progress: 1),
+      SendState(quest_id: 10_530, state: 2),
+    ]
+    as "Levian Bay counts the travel and objective 21349"
+  assert objective.advance(
+      log: bon_voyage_after_the_talk(quest_id: 10_530),
+      tables:,
+      event: a_use(Creature2Id(74_772)),
+      now_ms: 0,
+    ).effects
+    == [
+      SendProgress(quest_id: 10_530, objective_index: 1, progress: 1),
+      SendProgress(quest_id: 10_530, objective_index: 3, progress: 1),
+      SendState(quest_id: 10_530, state: 2),
+    ]
+    as "Crimson Isle counts the travel and objective 21350"
+}
+
+pub fn a_talk_to_a_terminal_counts_no_type_23_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  assert objective.advance(
+      log: bon_voyage_after_the_talk(quest_id: 10_528),
+      tables:,
+      event: a_talk(Creature2Id(73_606)),
+      now_ms: 0,
+    ).effects
+    == []
+    as "a type 23 objective counts a use, not a talk"
+}
+
+pub fn travel_done_leaves_bon_voyage_achieved_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 21342 (index 4) is type 14 with flags 41: it has flag 0x20, so the quest
+  // is Achieved without it, and it stays open in the Achieved quest.
+  use tables <- with_objectives(edits: [])
+  let used =
+    objective.advance(
+      log: bon_voyage_after_the_talk(quest_id: 10_528),
+      tables:,
+      event: a_use(Creature2Id(73_606)),
+      now_ms: 0,
+    )
+  let quest = quest_of(id: 10_528, tables:)
+  assert quest_log.stored_state(log: used.log, quest_id: 10_528) == 2
+    as "the travel done makes Bon Voyage Achieved (0x35c state 2)"
+  assert quest_log.objective_done(log: used.log, quest:, index: 1)
+    as "the travel is done"
+  assert quest_log.objective_done(log: used.log, quest:, index: 2)
+    as "the Northern Wilds choice is done"
+  assert !quest_log.objective_done(log: used.log, quest:, index: 4)
+    as "the optional objective is not"
+  assert quest_log.objective_open(log: used.log, quest:, index: 4)
+    as "the optional objective is still open in the Achieved quest"
+  assert quest_log.active_ids(log: used.log) == [10_528]
+    as "the quest is still in the active list, not completed"
 }

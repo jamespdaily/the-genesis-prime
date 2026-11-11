@@ -52,6 +52,46 @@ order by class_id, name;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `load_creature_factions` query
+/// defined in `./src/genesis_prime/content/sql/load_creature_factions.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadCreatureFactionsRow {
+  LoadCreatureFactionsRow(creature_id: Int, faction_id: Int)
+}
+
+/// Every row of the creature_faction table in creature id order: the one query the
+/// load makes of the table at start (genesis_prime/content/creature_faction). The
+/// checks run on these rows, not in SQL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_creature_factions(
+  db: pog.Connection,
+) -> Result(pog.Returned(LoadCreatureFactionsRow), pog.QueryError) {
+  let decoder = {
+    use creature_id <- decode.field(0, decode.int)
+    use faction_id <- decode.field(1, decode.int)
+    decode.success(LoadCreatureFactionsRow(creature_id:, faction_id:))
+  }
+
+  "-- Every row of the creature_faction table in creature id order: the one query the
+-- load makes of the table at start (genesis_prime/content/creature_faction). The
+-- checks run on these rows, not in SQL.
+select
+  creature_id,
+  faction_id
+from creature_faction
+order by creature_id;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_creature_kinds` query
 /// defined in `./src/genesis_prime/content/sql/load_creature_kinds.sql`.
 ///
