@@ -6837,7 +6837,7 @@ fn an_exile_medic_near_the_turrets(
     as "the character is an Exile one (faction 167), which faction 1441 is hostile to"
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 10518, 1, 0, true, 15, '{5,1,1,1,0,0}', 0, '{0,0,0,0,0,0}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 10518, 1, 0, true, 15, '{5,1,1,1,0,0}', 0, '{0,0,0,0,0,0}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
