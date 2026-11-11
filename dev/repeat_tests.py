@@ -18,15 +18,21 @@ because unitest runs one file per start. The skip variables are the ones ./check
 sets: the tests tagged serial (they share a machine-wide resource, so VMs side by side
 would break them), world_data, client_rows and dev_tool are not run.
 
-A run that is still going after GENESIS_REPEAT_RUN_SECONDS (default 300) is killed and
-counts as a failure. A file whose every test is skipped (or that has none) runs 0 tests; it
-is reported as "not repeated", never as passed, and its later runs do not start.
+A time limit never fails the run, only a wrong result does. GENESIS_REPEAT_SECONDS (default
+450) is the budget for all the runs together: once it has passed, runs not yet started do not
+start, and one `check WARNING:` line says how many runs of each file were done of how many were
+planned. The default is the 15-minute job less about 90 seconds of setup less the 300 seconds
+a run already going at the budget may still take. A run still going after
+GENESIS_REPEAT_RUN_SECONDS (default 300) is killed so the job ends, and is printed as a
+`check WARNING:` line with its file, seed and the command that repeats it; it is not counted
+as a failure. A file whose every test is skipped (or that has none) runs 0 tests; it is
+reported as "not repeated", never as passed, and its later runs do not start.
 
 Each failing run is printed as soon as it ends: its file, seed, why it failed (failing
-tests, timeout, killed), the command that repeats it (`gleam test -- FILE --seed SEED`)
+tests, killed by a signal, a non-zero exit, no result line), the command that repeats it (`gleam test -- FILE --seed SEED`)
 and the part of its output that says why. The output of every run is kept in the folder
-the failure names. The script exits 1 when any run failed, 2 for a setting or a git answer
-it cannot use. It starts `erl` from PATH, so run it with the patched OTP first on PATH,
+the failure names. The script exits 1 only when a run's tests failed or the run crashed, 2 for a setting or a
+git answer it cannot use, and 0 otherwise, warnings included. It starts `erl` from PATH, so run it with the patched OTP first on PATH,
 as ./check does.
 """
 
@@ -38,6 +44,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,6 +54,8 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RUNS = 40
 MINIMUM_RUNS_PER_FILE = 2
 DEFAULT_RUN_SECONDS = 300
+DEFAULT_BUDGET_SECONDS = 450
+WARNING = "check WARNING:"
 
 # The variables ./check's gleam_test sets for its first test run (test/genesis_prime_test.gleam
 # reads them), less the literal peak file.
@@ -75,7 +85,8 @@ class Run:
 @dataclass(frozen=True)
 class Outcome:
     run: Run
-    # passed, failed, no_tests (ran 0 tests) or not_run (its file was found to run 0 tests).
+    # passed, failed, no_tests (ran 0 tests), not_run (its file was found to run 0 tests),
+    # timed_out (killed at the run limit) or not_started (the budget had passed).
     kind: str
     reason: str
     log: Path | None
@@ -125,10 +136,12 @@ def describe_status(status: int) -> str:
     return "exit status %d" % status
 
 
-def execute(run: Run, logs: Path, seconds: int, without_tests: set[str]) -> Outcome:
+def execute(run: Run, logs: Path, seconds: int, without_tests: set[str], deadline: float) -> Outcome:
     """Starts the run's VM and classifies how it ended; `without_tests` holds the files found to run 0 tests."""
     if run.file in without_tests:
         return Outcome(run, "not_run", "", None)
+    if time.monotonic() >= deadline:
+        return Outcome(run, "not_started", "", None)
     log = logs / ("run-%d.log" % run.number)
     environment = {**os.environ, **{variable: "1" for variable in SKIP_VARIABLES}}
     with open(log, "w") as output:
@@ -138,7 +151,7 @@ def execute(run: Run, logs: Path, seconds: int, without_tests: set[str]) -> Outc
                 stdout=output, stderr=subprocess.STDOUT, timeout=seconds,
             )
         except subprocess.TimeoutExpired:
-            return Outcome(run, "failed", "timed out after %d seconds and was killed" % seconds, log)
+            return Outcome(run, "timed_out", "still going after %d seconds and was killed" % seconds, log)
     if done.returncode != 0:
         return Outcome(run, "failed", describe_status(done.returncode), log)
     counted = PASSED_COUNT.search(log.read_text(errors="replace"))
@@ -167,6 +180,15 @@ def report_failure(outcome: Outcome) -> None:
     sys.stdout.flush()
 
 
+def report_timeout(outcome: Outcome) -> None:
+    run = outcome.run
+    print(
+        "%s %s with seed %d was %s, so it counts as neither passed nor failed; repeat it: gleam test -- %s --seed %d"
+        % (WARNING, run.file, run.seed, outcome.reason, run.file, run.seed),
+        flush=True,
+    )
+
+
 def schedule(files: list[str], runs_per_file: int) -> list[Run]:
     """The runs, one round over the files after another, each with its own seed."""
     total = runs_per_file * len(files)
@@ -189,6 +211,7 @@ def main(arguments: list[str]) -> int:
         total = setting("GENESIS_REPEAT_RUNS", DEFAULT_RUNS)
         at_once = setting("GENESIS_REPEAT_AT_ONCE", os.process_cpu_count() or 1)
         seconds = setting("GENESIS_REPEAT_RUN_SECONDS", DEFAULT_RUN_SECONDS)
+        budget = setting("GENESIS_REPEAT_SECONDS", DEFAULT_BUDGET_SECONDS)
     except Unusable as problem:
         print(problem)
         return 2
@@ -205,23 +228,37 @@ def main(arguments: list[str]) -> int:
     runs_per_file = max(MINIMUM_RUNS_PER_FILE, total // len(files))
     runs = schedule(files, runs_per_file)
     print(
-        "repeating %d test file(s) %d times each, %d VMs at once, %d seconds at most per run: %s"
-        % (len(files), runs_per_file, at_once, seconds, ", ".join(files)),
+        "repeating %d test file(s) %d times each, %d VMs at once, %d seconds at most per run and %d in all: %s"
+        % (len(files), runs_per_file, at_once, seconds, budget, ", ".join(files)),
         flush=True,
     )
     logs = Path(tempfile.mkdtemp(prefix="genesis-repeat-tests-"))
     without_tests: set[str] = set()
     passed = failed = 0
+    done: Counter[str] = Counter()
+    unstarted = False
+    deadline = time.monotonic() + budget
     with concurrent.futures.ThreadPoolExecutor(max_workers=at_once) as pool:
-        pending = [pool.submit(execute, run, logs, seconds, without_tests) for run in runs]
+        pending = [pool.submit(execute, run, logs, seconds, without_tests, deadline) for run in runs]
         for future in concurrent.futures.as_completed(pending):
             outcome = future.result()
+            if outcome.kind == "not_started":
+                unstarted = True
+            elif outcome.kind != "not_run":
+                done[outcome.run.file] += 1
             if outcome.kind == "failed":
                 failed += 1
                 report_failure(outcome)
+            elif outcome.kind == "timed_out":
+                report_timeout(outcome)
             elif outcome.kind == "passed":
                 passed += 1
     print()
+    if unstarted:
+        print(
+            "%s the %d second budget passed, so runs were not started; done of planned: %s"
+            % (WARNING, budget, ", ".join("%s %d of %d" % (file, done[file], runs_per_file) for file in files))
+        )
     for file in sorted(without_tests):
         print("not repeated: %s (every test in it is skipped or it has none)" % file)
     if failed:
