@@ -403,8 +403,11 @@ fn names_the_objective(
 /// markers by the client's arrival test (`0x140485fa0`), an optional one (flag 0x20) also
 /// once the required type 22 objective of its quest that has the same data is done at a
 /// marker the player is at, and a place-counted checklist counts, at each place reached,
-/// the checklist index of the shown unit that stands there. An objective such a pass
-/// opens is settled in the same call.
+/// the checklist index of the shown unit that stands there. A type 22 objective with a
+/// count above 1 is left alone: nothing says how many visits it takes, and the server
+/// does not count them (the issue "Place objectives with no marker or a count above one
+/// complete (objective type 22)"). An objective such a pass opens is settled in the same
+/// call.
 pub fn settle(
   log log: QuestLog,
   tables tables: table_store.Tables,
@@ -476,6 +479,7 @@ fn arrivals(
     |> list.filter(fn(open) {
       let #(_, objective) = open
       objective.type_ == place_type
+      && objective.count == 1
       && place_objective.at_marker(
         tables:,
         objective_id: objective.objective_id,
@@ -496,6 +500,7 @@ fn arrivals(
     |> list.filter(fn(open) {
       let #(_, objective) = open
       objective.type_ == place_type
+      && objective.count == 1
       && int.bitwise_and(objective.flags, optional_flag) != 0
       && required_sibling_arrived(
         settling: at_markers,

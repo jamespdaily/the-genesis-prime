@@ -191,6 +191,11 @@ fn quest_objectives() -> EngineDeclaration {
     handled: Listed(ids: [2, 3, 4, 8, 12, 14, 16, 17, 18, 22, 28, 32, 33]),
     partial: [
       Missing(
+        type_number: 22,
+        reason: "an arrival at a marker completes a place objective of count 1; the 43 with no marker and the 2 with a count above 1 (14205, 14577) are not counted, which the issue \"Place objectives with no marker or a count above one complete (objective type 22)\" closes",
+        fact_key: "QuestObjective.type.22",
+      ),
+      Missing(
         type_number: 32,
         reason: "a finished activate cast of a creature whose row names the objective counts one, which is a guess; the 448 rows no table links to a creature have no source",
         fact_key: "QuestObjective.type.32.sources",

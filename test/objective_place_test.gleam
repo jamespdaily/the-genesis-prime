@@ -27,6 +27,10 @@
 ////   (1455.2638, -851.6394, 2992.7693), radius 42.6053, maxVerticalDistance 35. Quest
 ////   7413: objective 13907 (index 0, type 22, marker 44761): World 1061, centre
 ////   (1867.0724, -390.3604, 3167.8726), radius 30.0, maxVerticalDistance 8.
+//// - quest 7667: objectives 14204 (index 0, type 5, count 1), 14205 (index 1, type 22,
+////   flags 0x14, count 10, marker 30725) and 14376 (index 2, type 18). WorldLocation2
+////   30725: World 1061, centre (3124.9680, -968.2173, 720.1985), radius 9.0219, no
+////   vertical limit.
 //// - quest 10520: objective 21294 (index 0, type 14, count 3, TargetGroup 14425, which
 ////   is Creature2 73500, questDirection 2488 whose places are WorldLocation2 51698,
 ////   51699 and 51700, each of radius 1.0 in World 3460: 51699 at (482.6148, -416.2688,
@@ -473,4 +477,32 @@ pub fn a_place_with_no_unit_of_the_group_counts_nothing_test() -> Nil {
     )
     == Advanced(log:, effects: [])
     as "a unit that is not in TargetGroup 14425 (Creature2 73500) counts nothing"
+}
+
+pub fn a_place_objective_with_a_count_above_one_is_not_done_by_one_arrival_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  // Quest 7667: objective 14204 (index 0, type 5) is done, so 14205 (index 1, type 22,
+  // flags 0x14, count 10, marker 30725) is open. WorldLocation2 30725: World 1061, centre
+  // (3124.968, -968.2173, 720.1985), radius 9.0219, no vertical limit. The client sends
+  // nothing for a place (`QuestObjective.type.22`) and nothing tells how its count of 10
+  // is reached, so one arrival leaves it at 0.
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 7667,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [1, 0, 0],
+      ),
+    ])
+  assert settled_at(log:, tables:, world: 1061, zone: 2117, at: #(
+      3124.968,
+      -968.2173,
+      720.1985,
+    ))
+    == Advanced(log:, effects: [])
+    as "objective 14205 has count 10: the arrival at its marker 30725 leaves it at 0"
 }

@@ -16,19 +16,19 @@
 //// Rules over the client's tables and the units the player is shown; the tests are
 //// `objective_place_test` and `place_objective_test`.
 
+import genesis_prime/game/activate
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
-  type Creature2Id, Creature2Id, Faction2Id, QuestDirectionEntryId,
-  QuestDirectionId, QuestObjectiveId, TargetGroupId, WorldLocation2Id,
+  Faction2Id, QuestDirectionEntryId, QuestDirectionId, QuestObjectiveId,
+  WorldLocation2Id,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest_direction
 import genesis_prime/table/quest_direction_entry
 import genesis_prime/table/quest_objective.{type QuestObjective}
-import genesis_prime/table/target_group as target_group_table
 import genesis_prime/table/world_location2.{type WorldLocation2}
 import genesis_prime/world_map/spawn
 import gleam/bool
@@ -43,16 +43,15 @@ const place_type = 22
 /// The objective type of a checklist use.
 const checklist_use_type = 14
 
-/// The TargetGroup type that lists Creature2 ids.
-const creature_group_type = 1
-
 /// Whether the place the player stands at is at the WorldLocation2 row.
 ///
 /// The client's test `IsPlayerAtWorldLocation` (`0x140485fa0`): a place is reached when
 /// the height is within the row's maxVerticalDistance of the row's position1 (a limit of
 /// 0 or less tests no height) and the horizontal distance, x and z, is at most the row's
-/// radius. The client's test does not look at the row's world; the row names one, and a
-/// place of another world is not the row's place, so that is the first test here.
+/// radius. The client's test does not look at the row's world; the row names one
+/// (WorldLocation2.worldId), and a place of another world is not the row's place, so
+/// that is the first test here. The client computes in f32 and the server in f64, so
+/// the two differ only for a position at the exact edge of the radius or the limit.
 fn reached(location location: WorldLocation2, place place: Place) -> Bool {
   location.world_id == start_place.world_id(place)
   && arrival(
@@ -114,6 +113,17 @@ pub fn unmarked(tables tables: table_store.Tables) -> List(QuestObjective) {
   })
 }
 
+/// The objectives of type 22 with a marker and a count above 1 (the unmarked ones are in
+/// `unmarked`): how many visits they take is not known, so the server does not count them.
+pub fn repeated(tables tables: table_store.Tables) -> List(QuestObjective) {
+  quest_objective.all(tables)
+  |> list.filter(fn(row) {
+    row.type_ == place_type
+    && row.count > 1
+    && markers(tables:, objective: row) != []
+  })
+}
+
 /// Whether the position is at a marker of the type 22 objective of this
 /// QuestObjective id.
 pub fn at_marker(
@@ -148,7 +158,7 @@ fn is_place_counted(
     objective.type_ != checklist_use_type || objective.quest_direction_id == 0,
     False,
   )
-  case creatures_of(tables:, group: objective.data) {
+  case target_group.creatures_of(tables:, group: objective.data) {
     [] -> False
     creatures ->
       list.all(creatures, fn(creature_id) {
@@ -160,46 +170,15 @@ fn is_place_counted(
   }
 }
 
-/// The creatures a TargetGroup of the creature type names, none for another type or a
-/// group the table lacks.
-fn creatures_of(
-  tables tables: table_store.Tables,
-  group group: Int,
-) -> List(Creature2Id) {
-  case target_group_table.get(tables:, id: TargetGroupId(group)) {
-    Ok(row) if row.type_ == creature_group_type ->
-      [
-        row.data0,
-        row.data1,
-        row.data2,
-        row.data3,
-        row.data4,
-        row.data5,
-        row.data6,
-      ]
-      |> list.filter(fn(word) { word != 0 })
-      |> list.map(Creature2Id)
-    Ok(_) | Error(Nil) -> []
-  }
-}
-
 /// Whether nothing of the creature's row makes the client offer a use of it: no
 /// activate spell, no prerequisite on one, no quest animation state and no prerequisite
 /// on an animation state.
 fn never_offered(row row: creature2.Creature2) -> Bool {
-  [
-    row.spell4_id_activate00,
-    row.spell4_id_activate01,
-    row.spell4_id_activate02,
-    row.spell4_id_activate03,
-    row.prerequisite_id_activate_spell00,
-    row.prerequisite_id_activate_spell01,
-    row.prerequisite_id_activate_spell02,
-    row.prerequisite_id_activate_spell03,
-    row.quest_anim_state_id,
-    row.prerequisite_id_anim_state,
-  ]
-  |> list.all(fn(word) { word == 0 })
+  list.all(activate.creature_of(row).columns, fn(column) {
+    column.spell4_id == 0 && column.prerequisite_id == 0
+  })
+  && row.quest_anim_state_id == 0
+  && row.prerequisite_id_anim_state == 0
 }
 
 /// The places of a place-counted objective: the WorldLocation2 rows of its
@@ -277,7 +256,7 @@ pub fn indexes_counted(
 }
 
 /// The checklist index of the group's unit under each place of the objective that the
-/// player has reached.
+/// player has reached; the units are not looked at when the player is in none.
 fn counted_under_places(
   tables tables: table_store.Tables,
   row row: QuestObjective,
@@ -285,14 +264,16 @@ fn counted_under_places(
   shown shown: shown.Picture,
   now_ms now_ms: Int,
 ) -> List(Int) {
+  let reached_places =
+    places(tables:, objective: row)
+    |> list.filter(fn(location) { reached(location:, place:) })
+  use <- bool.guard(when: reached_places == [], return: [])
   let standing =
     shown.standing(tables:, picture: shown, now_ms:)
     |> list.filter(fn(stand) {
       target_group.contains(tables:, group: row.data, unit: stand.unit)
     })
-  places(tables:, objective: row)
-  |> list.filter(fn(location) { reached(location:, place:) })
-  |> list.filter_map(fn(location) { nearest(location:, standing:) })
+  list.filter_map(reached_places, fn(location) { nearest(location:, standing:) })
 }
 
 /// The checklist index of the unit nearest the centre of the place among those that

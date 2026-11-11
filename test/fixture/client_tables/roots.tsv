@@ -445,3 +445,5 @@ WorldLocation2	51736	marker of objectives 21279 and 21280 (circle 2)	objective_p
 WorldLocation2	51734	marker of the finish line objective 21323	objective_place_test
 WorldLocation2	28530	marker of objective 13674, which has a vertical limit of 35	objective_place_test
 WorldLocation2	44761	marker of objective 13907, which has a vertical limit of 8	objective_place_test
+Quest2	7667	quest whose objective 1 (14205) is a type 22 place with count 10 and marker 30725	objective_place_test
+WorldLocation2	30725	marker of objective 14205, a type 22 objective with count 10	objective_place_test

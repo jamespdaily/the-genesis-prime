@@ -54,6 +54,9 @@ pub fn every_type_22_objective_has_a_marker_or_is_reported_test() -> Nil {
     as "468 of them name a marker row"
   assert list.length(place_objective.unmarked(tables:)) == 43
     as "the other 43 are the ones the start reports"
+  assert list.map(place_objective.repeated(tables:), fn(row) { row.id })
+    == [14_205, 14_577]
+    as "two type 22 objectives have a count above 1, which the start reports with the unmarked ones"
   assert list.all(place_objective.unmarked(tables:), fn(row) {
     place_objective.markers(tables:, objective: row) == []
   })
