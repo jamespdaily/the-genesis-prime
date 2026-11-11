@@ -1393,16 +1393,9 @@ pub fn a_started_spawn_whose_visibility_prerequisite_has_no_row_fails_the_spawn_
 }
 
 /// The creature_faction rows the server seeds: the boss 73499 stands with faction 233
-/// (Faction2Relationship 746), taken through the load's own check of the client's
-/// tables.
+/// (Faction2Relationship 746).
 fn the_boss_is_given_233() -> Factions {
-  let assert Ok(factions) =
-    creature_faction.select(
-      rows: [creature_faction.Row(creature_id: 73_499, faction_id: 233)],
-      tables: character_tables.content_tables(),
-    )
-    as "Creature2 73499 and Faction2 233 are rows of the client's tables"
-  factions
+  spawn_support.the_boss_is_given_233(tables: character_tables.content_tables())
 }
 
 /// The row of Creature2 73499, the tutorial boss, as the content load builds it

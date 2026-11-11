@@ -6306,7 +6306,7 @@ fn an_exile_medic_beside_the_boss(
       number: 1,
       character_name: "Zed Qu",
       class_id: 4,
-      level: 1,
+      level: 30,
     )
   let assert Ok(_) =
     pog.query("update character set faction_id = 167 where character_id = $1")

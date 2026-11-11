@@ -268,6 +268,20 @@ pub fn summon_checks_over(
   )
 }
 
+/// The chosen factions migration 0027 leaves: the tutorial boss, Creature2 73499,
+/// stands with faction 233, taken through the load's own check against these tables.
+pub fn the_boss_is_given_233(
+  tables tables: table_store.Tables,
+) -> creature_faction.Factions {
+  let assert Ok(factions) =
+    creature_faction.select(
+      rows: [creature_faction.Row(creature_id: 73_499, faction_id: 233)],
+      tables:,
+    )
+    as "Creature2 73499 and Faction2 233 are rows of the client's tables"
+  factions
+}
+
 /// The kinds migration 0010 leaves: row 0 alone, a respawn of 60 000 ms and an
 /// attack of Spell4 5649 every 1500 ms.
 pub fn kinds() -> Kinds {
