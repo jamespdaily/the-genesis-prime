@@ -474,3 +474,18 @@ Quest2	9494	quest named by a gated type 24 objective	objective_test
 Quest2	10502	yearly quest whose objectives are type 24 naming a yearly quest	objective_test
 Quest2	10503	yearly quest named by a type 24 objective	objective_test
 WorldLocation2	46118	marker of the type 22 objective 18249	objective_test
+Quest2	3886	Northern Wilds quest: use 13630, use three 13623, turn in at 11066	game_wire_test
+Quest2	3480	Northern Wilds quest given by 11061: use three 11070, then eight kills	game_wire_test
+QuestObjective	5053	type 12 objective of quest 3886, Creature2 13630	game_wire_test
+QuestObjective	5052	type 14 objective of quest 3886, TargetGroup 1460	game_wire_test
+QuestObjective	4470	type 12 objective of quest 3480, Creature2 11070	game_wire_test
+QuestObjective	4565	type 8 objective of quest 3480, TargetGroup 1463	game_wire_test
+TargetGroup	1460	group of Creature2 13623, the checklist of objective 5052	game_wire_test
+TargetGroup	1463	kill group of objective 4565	game_wire_test
+Creature2	11061	giver of quest 3480	game_wire_test
+Creature2	13630	activate target of objective 5053	game_wire_test
+Creature2	13623	checklist target of objective 5052	game_wire_test
+Creature2	11070	activate target of objective 4470	game_wire_test
+Quest2Reward	2192	reward choice of quest 3886	game_wire_test
+Quest2Reward	2430	reward choice of quest 3886	game_wire_test
+Quest2Reward	4767	reward choice of quest 3886	game_wire_test
