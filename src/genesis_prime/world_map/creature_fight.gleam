@@ -64,6 +64,32 @@
 //// P wakes in C's ring: LifeChanged(P, True) ─Approached(P, ..)─▶ C Resting: aggro, as a walk-in
 //// ```
 ////
+//// A charge, the attack of a creature whose kind has a cast time (`Fighter.cast_ms` above 0,
+//// the Sim-Turrets 73494 and 74862 with Spell4 85469 and 86978, 8000 ms). Shape of #736: the
+//// types and these rows stand, `charges` and `charge_ended` stop with a panic until the
+//// build commit:
+////
+//// ```
+//// the attack tick, the target in reach of C's place, no round open:
+////                                                         round = Charging(CastEnds generation); no next
+////                                                         attack tick is started: the round's close starts it
+////                                                         ─0x7ff(cast id, spell, target, C's place turned
+////                                                            to the target)───────────────────────▶ the client draws the
+////                                                         StartTimer(CastEnds, cast time)           telegraph from the spell
+//// CastEnds of the round's generation, C alive and Fighting:
+////                                                         the fighters on the threat list inside the
+////                                                         rectangle (3 wide, 30 long, from C's place along
+////                                                         its facing) by their newest sightings, at this instant
+////                                                         none inside: ─0x7f4 (no unit) 0x7fe───▶ round closed; the
+////                                                            next attack tick (interval) is started
+////                                                         some inside: round = Striking, one awaiting entry
+////                                                            per fighter
+//// ◀─── Attacks(Strike(key, C, CreatureStriker, offence)) to each fighter ─ StartTimer(strike deadline, 1 s)
+//// each fighter's answer, the strike round's way (above) ───▶ the last answer or the deadline closes the round
+////                                                         (0x7f4 listing each fighter that landed, 0x7fe); the
+////                                                         next attack tick (interval) is started
+//// ```
+////
 //// - **Aggro** comes only from a viewer, by `Approached` while Resting: the map
 ////   sends it for a hostile creature (faction level 0 to 2) only. A Neutral creature
 ////   (3 to 7) enters a fight only by a player's strike (`0x1403ad540`). Any threat
@@ -106,9 +132,23 @@
 ////   the creature fell the same way.
 //// - **Reach** is the attack spell's `targetMaxRange` plus the creature's hit radius,
 ////   centre to centre (a server choice; genesis_prime/world_map/creature_life `Attack`).
-//// - **One strike round at a time.** The attack interval is never below the strike
-////   deadline (genesis_prime/world_map/creature_kind), so a tick never finds a round
-////   open.
+//// - **One round at a time.** The attack interval is never below the strike
+////   deadline (genesis_prime/world_map/creature_kind), so a tick of an attack with no cast
+////   time never finds a round open. A charge is the open round before its strike (`Charging`,
+////   then `Striking`): it starts no attack tick, the close of its round starts the next, and
+////   a tick that finds a charge open does nothing, so there is never a second round.
+//// - **The charge's rectangle** is the attack spell's telegraph, TelegraphDamage 16212 of
+////   Spell4Telegraph 57886: shape 7, 3 wide and 30 long from the caster along its facing, in
+////   the selection of the area row 335 (at most 10 targets, range 0 to 30; genesis_prime/game/
+////   spell_area, genesis_prime/game/area). The 0x7ff carries no telegraph position: the client
+////   draws the rectangle from the spell's own telegraph on the caster.
+//// - **A turret never moves** (`Fighter.stationary`; a server choice: no client column gives a
+////   creature movement or speed). It sends no 0x638 to chase or walk home, and it turns to its
+////   target by the yaw of the 0x7ff and the place it keeps. Its leash is the release of its
+////   last threat entry, never a walk.
+//// - **Reach of a charge** is the rectangle's length, not the spell's `targetMaxRange`, which
+////   is 0 for 85469 and 86978: the charge starts when the target is inside the 30 m the
+////   rectangle covers.
 //// - **The leash** is taken on an attack tick that finds the creature at the circle,
 ////   `leash_range` from its spawn, with its target out of reach, or when no threat is
 ////   left (274 section 3). Walking home it takes no strike and turns to no one; at home,
@@ -154,6 +194,13 @@
 //// | C is Returning, or dead, when `PlayerDied` reaches it | Returning: P out of `near`, nothing sent; dead: the send is dropped, and the map's `inside` holds no dead player for C's next start | `a_near_player_told_player_died_is_not_aggroed_at_the_home_timer_nor_by_the_corpse_timer_and_one_approached_again_is_test` |
 //// | P dies, wakes inside C's ring, and C's killing answer reaches C after the wake's `Approached` | the answer drops P from `near` after the wake put it there: P stands in the ring and is not aggroed until it enters again; the answer is taken only before the strike deadline (`strike_tell.deadline_ms`, 1000 ms), so the gap is a Wake Here chosen within that second of the death |  |
 //// | the home timer fires | C stands at its spawn, Resting, at full health, and aggroes the near players it sees | `at_home_the_creature_aggroes_the_near_players_test` |
+//// | Charge start: the attack tick finds the target in reach, no round open, `cast_ms` above 0 | round Charging, 0x7ff of the spell turned to the target, `StartTimer(CastEnds, cast time)`, no strike and no next attack tick | `a_charge_starts_with_its_cast_time_and_telegraph_test`, `a_charge_faces_its_target_test` |
+//// | Charge start: a second attack tick finds the charge open | nothing: no effect, no new tick | `a_second_attack_tick_during_a_charge_starts_nothing_test` |
+//// | CastEnds timer: it fires for the open charge | each fighter on the threat list inside the rectangle gets a strike, and the strike deadline starts; none inside, the go (0x7f4) names no unit and 0x7fe follows | `at_its_end_the_charge_strikes_each_fighter_inside_its_rectangle_test`, `a_charge_with_nobody_inside_goes_with_no_target_test` |
+//// | CastEnds timer: it fires for a charge that ended (a death or a leash) or of an old generation | it does nothing | `a_stale_cast_end_does_nothing_test` |
+//// | Strike to a fighter: its answer, the last one or the deadline | each answer joins the go as a round's does; the last answer or the deadline closes the round (0x7f4, 0x7fe), and the next attack tick starts | `the_struck_go_and_finish_follow_the_answers_test` |
+//// | Death or leash during the charge: C is killed, or its last threat entry is released | `CancelTimer(CastEnds)` and 0x7fe for the charge, no 0x7f4, then the death or the release as without a charge; the later CastEnds does nothing | `death_during_a_charge_ends_it_test`, `leash_during_a_charge_ends_it_test` |
+//// | a turret's target is out of reach, or the turret is past the leash circle | no 0x638: it keeps its place | `a_turret_never_chases_or_walks_home_test` |
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/cast
@@ -186,7 +233,9 @@ import gleam/set.{type Set}
 /// attack ticks and the run's game numbers, which are fixed for its life; and whether
 /// it holds a crowd-control state now, which the creature's rule gives each step
 /// (genesis_prime/world_map/creature_control `holds`). A controlled creature starts
-/// no strike, chase or walk: `ticked`, `chase` and `leash` check it.
+/// no strike, chase or walk: `ticked`, `chase` and `leash` check it. `cast_ms` is the
+/// attack's cast time (genesis_prime/world_map/creature_kind `Kind`): above 0 the attack is
+/// a charge. A `stationary` creature, a turret, never chases or walks home.
 pub type Fighter {
   Fighter(
     unit_id: Int,
@@ -196,6 +245,8 @@ pub type Fighter {
     interval_ms: Int,
     numbers: GameNumbers,
     controlled: Bool,
+    cast_ms: Int,
+    stationary: Bool,
   )
 }
 
@@ -224,10 +275,26 @@ pub type Threat {
   Threat(unit_id: Int, stay: Stay, amount: Float)
 }
 
-/// The strike round the creature waits on: its key, the player struck, and the
-/// generation of its deadline timer.
+/// The round the creature waits on: the number of its cast (`cast.cast_id`, the 0x7ff,
+/// 0x7f4 and 0x7fe of the round name it) and where it stands.
 pub type Round {
-  Round(key: Key, target: ConnectionId, deadline: Int)
+  Round(cast_id: Int, stage: Stage)
+}
+
+/// Where a round stands. An attack with no cast time starts at `Striking` with one
+/// awaiting entry; a charge is `Charging` first, then `Striking` with an entry for each
+/// fighter inside its rectangle.
+pub type Stage {
+  /// The cast is under way: the generation of its `CastEnds` timer.
+  Charging(ends: Int)
+  /// The strikes are out: the generation of the deadline timer, the key of each strike
+  /// not answered yet with the connection it went to, and what the answers struck so far
+  /// (the go lists them). The round closes when none is awaited or at the deadline.
+  Striking(
+    deadline: Int,
+    awaiting: Dict(Key, ConnectionId),
+    struck: List(cast.Struck),
+  )
 }
 
 /// The newest place the creature knows a connection's player at, with the move
@@ -307,6 +374,8 @@ pub type Timer {
   StrikeDeadline(generation: Int)
   /// The walk home is run.
   HomeArrival(generation: Int)
+  /// The charge's cast time is up (`Fighter.cast_ms` after its 0x7ff): the charge strikes.
+  CastEnds(generation: Int)
 }
 
 /// What the fight asks the creature's rule to do, in order.
@@ -398,8 +467,25 @@ pub fn step(
       }
     TimerFired(timer: StrikeDeadline(generation:)) ->
       case state.status {
-        Fighting(round: Some(round), ..) if round.deadline == generation ->
-          round_closed(state:, round:, struck: [], now_ms:)
+        Fighting(
+          round: Some(
+            Round(stage: Striking(deadline:, struck:, ..), ..) as round,
+          ),
+          ..,
+        )
+          if deadline == generation
+        -> {
+          let #(state, closed) = round_closed(state:, round:, struck:, now_ms:)
+          let #(state, ticking) = ticking_again(state:, fighter:)
+          #(state, list.append(closed, ticking))
+        }
+        Fighting(..) | Resting | Returning(..) -> #(state, [])
+      }
+    TimerFired(timer: CastEnds(generation:)) ->
+      case state.status {
+        Fighting(round: Some(Round(stage: Charging(ends:), ..) as round), ..)
+          if ends == generation
+        -> charge_ended(state:, fighter:, round:, now_ms:)
         Fighting(..) | Resting | Returning(..) -> #(state, [])
       }
     TimerFired(timer: HomeArrival(generation:)) ->
@@ -839,9 +925,11 @@ fn retargeted(
 }
 
 /// The attack tick: with the target in reach and no round open the creature
-/// strikes; out of reach at the leash circle it leashes; else it chases. The next
-/// tick starts unless it leashed. A controlled creature does none of these: the tick
-/// only starts the next.
+/// strikes, or opens its charge when its attack has a cast time; out of reach at the
+/// leash circle it leashes; else it chases. The next tick starts unless it leashed or
+/// opened a charge, whose round's close starts it; a tick that finds a charge's round
+/// open does nothing. A controlled creature does none of these: the tick only starts the
+/// next.
 fn ticked(
   state state: State,
   fighter fighter: Fighter,
@@ -861,11 +949,14 @@ fn ticked(
         creature_path.distance(from: here, to: fighter.home)
         >=. fighter.numbers.leash_range -. circle_tolerance
       case in_reach, round, at_circle {
+        True, None, _ if fighter.cast_ms > 0 ->
+          charges(state:, fighter:, target:, sighting:, here:)
         True, None, _ -> {
           let #(state, struck) =
             strikes(state:, fighter:, target:, sighting:, here:)
           next_tick(state:, fighter:, effects: struck)
         }
+        True, Some(..), _ if fighter.cast_ms > 0 -> #(state, [])
         True, Some(..), _ -> next_tick(state:, fighter:, effects: [])
         False, _, True -> leash(state:, fighter:, now_ms:)
         False, _, False -> {
@@ -911,11 +1002,13 @@ fn strikes(
   let #(state, deadline) = generation(state)
   let assert Fighting(..) as fighting = state.status
     as "a creature strikes only while Fighting"
+  let stage =
+    Striking(deadline:, awaiting: dict.from_list([#(key, target)]), struck: [])
   #(
     State(
       ..state,
       next_cast: state.next_cast + 1,
-      status: Fighting(..fighting, round: Some(Round(key:, target:, deadline:))),
+      status: Fighting(..fighting, round: Some(Round(cast_id:, stage:))),
     ),
     [
       ToViewers(
@@ -948,9 +1041,10 @@ fn strikes(
   )
 }
 
-/// The target's answer to the open round: its go names what landed, and a target
-/// the strike killed, or found dead, is released and leaves the near players, so the
-/// creature's home timer or corpse timer does not aggro the body.
+/// A fighter's answer to a strike of the open round: its go names what landed, and a
+/// fighter the strike killed, or found dead, is released and leaves the near players, so
+/// the creature's home timer or corpse timer does not aggro the body. The round closes
+/// with the last answer; a charging creature then starts its next attack tick.
 fn answered_strike(
   state state: State,
   fighter fighter: Fighter,
@@ -958,22 +1052,62 @@ fn answered_strike(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   case state.status {
-    Fighting(round: Some(round), ..) if round.key == answered.key -> {
-      let #(struck, ends_target, target_dead) = answer_of(answered:)
-      let #(state, closed) = round_closed(state:, round:, struck:, now_ms:)
-      let cancel = CancelTimer(timer: StrikeDeadline(round.deadline))
-      use <- bool.guard(
-        when: !ends_target,
-        return: #(state, [cancel, ..closed]),
-      )
-      let #(state, released) = case target_dead {
-        True -> fell(state:, fighter:, by: round.target, now_ms:)
-        False -> released(state:, fighter:, by: round.target, now_ms:)
+    Fighting(
+      round: Some(Round(stage: Striking(awaiting:, ..), ..) as round),
+      ..,
+    ) ->
+      case dict.get(awaiting, answered.key) {
+        Ok(target) ->
+          answer_taken(state:, fighter:, round:, target:, answered:, now_ms:)
+        Error(Nil) -> #(state, [])
       }
-      #(state, list.flatten([[cancel], closed, released]))
-    }
     Fighting(..) | Resting | Returning(..) -> #(state, [])
   }
+}
+
+/// The answer of the fighter of `target`, to the strike round `round`: it joins the go, the
+/// round closes when no answer is awaited, and a fighter the answer ends is released.
+fn answer_taken(
+  state state: State,
+  fighter fighter: Fighter,
+  round round: Round,
+  target target: ConnectionId,
+  answered answered: Answered,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let assert Striking(deadline:, awaiting:, struck: so_far) = round.stage
+    as "an answer is taken only in a Striking round"
+  let #(struck, ends_target, target_dead) = answer_of(answered:)
+  let struck = list.append(so_far, struck)
+  let awaiting = dict.delete(awaiting, answered.key)
+  let last = dict.is_empty(awaiting)
+  let #(state, closed) = case last {
+    True -> {
+      let #(state, closed) = round_closed(state:, round:, struck:, now_ms:)
+      #(state, [CancelTimer(timer: StrikeDeadline(deadline)), ..closed])
+    }
+    False -> {
+      let stage = Striking(deadline:, awaiting:, struck:)
+      #(with_round(state:, round: Round(..round, stage:)), [])
+    }
+  }
+  let #(state, ended) = case ends_target, target_dead {
+    False, _ -> #(state, [])
+    True, True -> fell(state:, fighter:, by: target, now_ms:)
+    True, False -> released(state:, fighter:, by: target, now_ms:)
+  }
+  let #(state, ticking) = case last {
+    True -> ticking_again(state:, fighter:)
+    False -> #(state, [])
+  }
+  #(state, list.flatten([closed, ended, ticking]))
+}
+
+/// The state with `round` as its open round.
+fn with_round(state state: State, round round: Round) -> State {
+  let assert Fighting(..) as fighting = state.status
+    as "a round is held only while Fighting"
+  State(..state, status: Fighting(..fighting, round: Some(round)))
 }
 
 /// What the target's answer was: what struck for the round's go, whether the entry
@@ -1010,7 +1144,7 @@ fn round_closed(
   let assert Fighting(..) as fighting = state.status
     as "a round closes only while Fighting"
   let here = creature_path.place_at(path: state.path, now_ms:)
-  let cast_id = round.key.cast_id
+  let cast_id = round.cast_id
   let missed = case cast.creature_missed(cast_id:, struck:) {
     Some(missed) -> [ToViewers(client_connection.CastMissed(missed:))]
     None -> []
@@ -1031,6 +1165,73 @@ fn round_closed(
       [ToViewers(client_connection.CastFinished(cast_id:))],
     ]),
   )
+}
+
+/// The creature opens its charge on its target: round `Charging` with a `CastEnds`
+/// generation, the 0x7ff of the attack spell with the creature's place turned to the
+/// target, and `StartTimer(CastEnds, cast_ms)`. No attack tick starts: the round's close
+/// starts it.
+fn charges(
+  state _state: State,
+  fighter _fighter: Fighter,
+  target _target: ConnectionId,
+  sighting _sighting: Sighting,
+  here _here: Place,
+) -> #(State, List(Effect)) {
+  panic as "shape: #736 charges opens the round Charging, sends 0x7ff faced to the target and starts CastEnds"
+}
+
+/// The charge's cast time is up: each fighter on the threat list inside the rectangle
+/// (`game/spell_area`, `game/area` select) gets a strike and the round becomes `Striking`
+/// with the deadline; with none inside, the go names no unit, the cast finishes and the next
+/// attack tick starts.
+fn charge_ended(
+  state _state: State,
+  fighter _fighter: Fighter,
+  round _round: Round,
+  now_ms _now_ms: Int,
+) -> #(State, List(Effect)) {
+  panic as "shape: #736 charge_ended strikes each fighter inside the rectangle"
+}
+
+/// A charging creature starts its next attack tick when its round closes and it still
+/// fights; the attack tick of an attack with no cast time runs through its round, and a
+/// creature that left the fight has none.
+fn ticking_again(
+  state state: State,
+  fighter fighter: Fighter,
+) -> #(State, List(Effect)) {
+  case state.status, fighter.cast_ms > 0 {
+    Fighting(..), True -> next_tick(state:, fighter:, effects: [])
+    Fighting(..), False | Resting, _ | Returning(..), _ -> #(state, [])
+  }
+}
+
+/// The round ends before its go: a strike round closes as its deadline closes it, with
+/// what was struck so far; a charge only cancels its `CastEnds` and finishes the cast
+/// (0x7fe), with no go, since nothing went.
+fn round_ended(
+  state state: State,
+  round round: Round,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case round.stage {
+    Striking(struck:, ..) -> {
+      let #(state, closed) = round_closed(state:, round:, struck:, now_ms:)
+      #(state, [cancel_of(round:), ..closed])
+    }
+    Charging(..) ->
+      panic as "shape: #736 round_ended finishes a charge with its cancel and 0x7fe"
+  }
+}
+
+/// The timer that ends the round, to cancel when the round ends first.
+fn cancel_of(round round: Round) -> Effect {
+  case round.stage {
+    Striking(deadline:, ..) -> CancelTimer(timer: StrikeDeadline(deadline))
+    Charging(..) ->
+      panic as "shape: #736 cancel_of cancels the CastEnds of a charge"
+  }
 }
 
 /// The creature runs toward its target when the target is beyond reach of where its
@@ -1115,10 +1316,7 @@ fn leash(
     Resting | Returning(..) -> #([], None)
   }
   let #(state, closed) = case round {
-    Some(round) -> {
-      let #(state, closed) = round_closed(state:, round:, struck: [], now_ms:)
-      #(state, [CancelTimer(timer: StrikeDeadline(round.deadline)), ..closed])
-    }
+    Some(round) -> round_ended(state:, round:, now_ms:)
     None -> #(state, [])
   }
   let #(state, home) = generation(state)
@@ -1207,8 +1405,8 @@ fn killed(
     Fighting(threat:, round:, ..) -> {
       let finished = case round {
         Some(round) -> [
-          CancelTimer(timer: StrikeDeadline(round.deadline)),
-          ToViewers(client_connection.CastFinished(cast_id: round.key.cast_id)),
+          cancel_of(round:),
+          ToViewers(client_connection.CastFinished(cast_id: round.cast_id)),
         ]
         None -> []
       }

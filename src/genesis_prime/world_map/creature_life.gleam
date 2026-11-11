@@ -30,6 +30,7 @@
 ////   retiring until the creature ends, so no viewer is sent a corpse the spawn's next
 ////   creature does not know.
 
+import genesis_prime/game/area.{type Inside, type Row}
 import genesis_prime/game/hit.{type Defence, type Offence}
 import genesis_prime/game/strike_tell.{
   type Answered, type Tell, Answered, CreatureStriker, Landed, PlayerStriker,
@@ -66,9 +67,26 @@ pub type Hostile {
 /// properties; the speed it runs at, in units a second
 /// (Creature2DisplayInfo.runLand times property 100, `0x1405b45e0`); and its reach,
 /// centre to centre: the spell's `targetMaxRange` plus its hit radius (a server
-/// choice, checked live).
+/// choice, checked live); and, for a spell whose cast has a time, the area it strikes at
+/// the cast's end.
 pub type Attack {
-  Attack(spell4_id: Spell4Id, offence: Offence, run_speed: Float, reach: Float)
+  Attack(
+    spell4_id: Spell4Id,
+    offence: Offence,
+    run_speed: Float,
+    reach: Float,
+    area: Option(Area),
+  )
+}
+
+/// What a charge strikes when its cast time is out, as the player's casts read it
+/// (genesis_prime/game/spell_area): the spell's area row (`Spell4AoeTargetConstraints`)
+/// and how a unit counts as inside it, by the hit shapes of its telegraph rows placed on the
+/// caster (`spell_area.hit_shapes_of`). `None` for a spell with no area row, which
+/// strikes only its target. Shape of #736: spawn gives `None` for every attack until the
+/// build commit reads the tables.
+pub type Area {
+  Area(row: Row, inside: Inside)
 }
 
 /// A creature's Interrupt Armor maximum, unit property 44

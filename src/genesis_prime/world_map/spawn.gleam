@@ -1227,6 +1227,7 @@ fn attack_of(
       ),
       run_speed: run_speed_of(run_land: display.run_land, value:),
       reach: spell.target_max_range +. hit_radius.of_creature(display:),
+      area: None,
     )
   Ok(#(attack, creature_scaling, attack_effects))
 }

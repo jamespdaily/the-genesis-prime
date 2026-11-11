@@ -139,6 +139,7 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
         respawn_ms: 60_000,
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
+        cast_ms: 0,
       ),
       by_creature: dict.from_list([
         #(
@@ -147,6 +148,7 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
             respawn_ms: 5000,
             attack_spell4_id: Spell4Id(5649),
             attack_interval_ms: 1500,
+            cast_ms: 0,
           ),
         ),
       ]),
@@ -156,6 +158,7 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
       respawn_ms: 5000,
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
+      cast_ms: 0,
     )
     as "a creature with a row of its own takes it"
   assert creature_kind.kind_of(kinds:, creature2_id: 73_465)
@@ -163,6 +166,7 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
       respawn_ms: 60_000,
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
+      cast_ms: 0,
     )
     as "any other creature takes the default row 0"
 }
@@ -393,6 +397,7 @@ pub fn kinds_put_under_a_key_are_read_back_test() -> Nil {
         respawn_ms: 60_000,
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
+        cast_ms: 0,
       ),
       by_creature: dict.from_list([
         #(
@@ -401,6 +406,7 @@ pub fn kinds_put_under_a_key_are_read_back_test() -> Nil {
             respawn_ms: 5000,
             attack_spell4_id: Spell4Id(5649),
             attack_interval_ms: 1500,
+            cast_ms: 0,
           ),
         ),
       ]),

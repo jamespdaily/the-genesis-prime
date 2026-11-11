@@ -290,6 +290,7 @@ pub fn kinds() -> Kinds {
       respawn_ms: 60_000,
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
+      cast_ms: 0,
     ),
     by_creature: dict.new(),
   )
@@ -319,6 +320,7 @@ pub fn beast_attack() -> Attack {
     ),
     run_speed: 10.0,
     reach: 8.0,
+    area: option.None,
   )
 }
 

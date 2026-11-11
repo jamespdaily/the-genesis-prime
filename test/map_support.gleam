@@ -48,6 +48,7 @@ pub fn standing(
         respawn_ms:,
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
+        cast_ms: 0,
       ),
       by_creature: dict.new(),
     ),

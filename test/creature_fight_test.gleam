@@ -123,6 +123,7 @@ fn beast_from(
         respawn_ms: 60_000,
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
+        cast_ms: 0,
       ),
       numbers: spawn_support.numbers,
     ))
@@ -2015,8 +2016,8 @@ pub fn a_struck_creature_with_no_armor_holds_the_state_its_viewers_get_the_0x87f
     ]
     as "the answer names it, with the time the creature holds it until: its arrival, 10000 + 1000, plus 166 plus 3000"
   assert creature.controlled(state:)
-  assert control_timers(taken) == [#(step.TimerId(5), 3166)]
-    as "one timer for the state, 166 + 3000 from the tell; ids 4n + 1 from 5"
+  assert control_timers(taken) == [#(step.TimerId(9), 3166)]
+    as "one timer for the state, 166 + 3000 from the tell; ids 5n + 4 from 9"
 }
 
 pub fn the_state_ends_with_a_0x880_at_arrival_plus_delay_plus_duration_and_not_before_test() -> Nil {
@@ -2041,7 +2042,7 @@ pub fn the_state_ends_with_a_0x880_at_arrival_plus_delay_plus_duration_and_not_b
   assert state_news(ended, 2) == [over] && state_news(ended, 5) == [over]
     as "0x880 names the unit's state, the strike's cast and the go's instance id"
   assert !creature.controlled(state:)
-  let #(_, again) = fire(state:, at_ms: 4200, timer: step.TimerId(5))
+  let #(_, again) = fire(state:, at_ms: 4200, timer: step.TimerId(9))
   assert support.effects_of(again) == []
     as "a timer that fires for a state already ended writes nothing"
 }
@@ -2059,13 +2060,13 @@ pub fn two_states_of_one_kind_from_one_caster_are_held_separately_and_two_ending
     )
   assert list.length(state_news(taken, 2)) == 2
     && control_timers(taken)
-    == [#(step.TimerId(5), 2500), #(step.TimerId(9), 2500)]
+    == [#(step.TimerId(9), 2500), #(step.TimerId(14), 2500)]
     as "two 0x87f and a timer for each state"
-  let #(state, first) = fire(state:, at_ms: 3500, timer: step.TimerId(5))
+  let #(state, first) = fire(state:, at_ms: 3500, timer: step.TimerId(9))
   assert list.map(state_news(first, 2), name_of) == ["0x880"]
     && creature.controlled(state:)
     as "one 0x880 for the first, and the second still holds"
-  let #(state, second) = fire(state:, at_ms: 3500, timer: step.TimerId(9))
+  let #(state, second) = fire(state:, at_ms: 3500, timer: step.TimerId(14))
   assert list.map(state_news(second, 2), name_of) == ["0x880"]
     && !creature.controlled(state:)
     as "each ends with its own 0x880, though both end in one millisecond"
@@ -2091,10 +2092,10 @@ pub fn two_players_states_have_two_0x87f_and_two_0x880_each_with_its_own_instanc
     )
   assert list.map(state_news(first, 5), name_of) == ["0x87f"]
     && list.map(state_news(second, 5), name_of) == ["0x87f"]
-  let #(state, one) = fire(state:, at_ms: 3500, timer: step.TimerId(5))
+  let #(state, one) = fire(state:, at_ms: 3500, timer: step.TimerId(9))
   assert list.map(state_news(one, 5), name_of) == ["0x880"]
     && creature.controlled(state:)
-  let #(state, two) = fire(state:, at_ms: 4000, timer: step.TimerId(9))
+  let #(state, two) = fire(state:, at_ms: 4000, timer: step.TimerId(14))
   assert list.map(state_news(two, 5), name_of) == ["0x880"]
     && !creature.controlled(state:)
     as "each state ends with its own 0x880; the creature is held until the later one"
@@ -2118,10 +2119,10 @@ pub fn a_creature_that_dies_stunned_sends_no_0x880_and_a_timer_after_death_write
     )
   assert state_news(killed, 5) == []
     as "the client clears every state at a death: no 0x880"
-  assert list.contains(timers_cancelled(killed), step.TimerId(5))
+  assert list.contains(timers_cancelled(killed), step.TimerId(9))
     as "the state's timer is cancelled"
   assert !creature.controlled(state:)
-  let #(_, late) = fire(state:, at_ms: 3500, timer: step.TimerId(5))
+  let #(_, late) = fire(state:, at_ms: 3500, timer: step.TimerId(9))
   assert support.effects_of(late) == []
     as "a timer already waiting in the mailbox writes nothing"
 }

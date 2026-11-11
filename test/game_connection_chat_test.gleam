@@ -1318,6 +1318,7 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
           respawn_ms: 60_000,
           attack_spell4_id: Spell4Id(5649),
           attack_interval_ms: 1500,
+          cast_ms: 0,
         ),
         numbers: spawn_support.numbers,
       )),
