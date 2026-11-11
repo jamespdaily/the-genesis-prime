@@ -237,7 +237,7 @@ fn click_placed(
     })
   let #(started, unstarted) =
     list.partition(unserved, fn(want) {
-      is_started(unit_type: paired_unit_type(want.creature))
+      is_started(unit_type: paired_unit_type(creature: want.creature))
     })
   let not_started =
     list.map(unstarted, fn(want) {
@@ -245,7 +245,7 @@ fn click_placed(
         want.objective_id,
         NotStarted(
           creature_id: want.creature.id,
-          unit_type: paired_unit_type(want.creature),
+          unit_type: paired_unit_type(creature: want.creature),
         ),
       )
     })
@@ -270,7 +270,7 @@ fn click_placed(
             place: slot_place(marker: want.marker, slot:, slots:),
             level: None,
           ),
-          entity_type: paired_unit_type(want.creature),
+          entity_type: paired_unit_type(creature: want.creature),
         )
       })
     })
@@ -715,10 +715,10 @@ pub fn labelled(
   let by_number =
     list.append(
       list.map(placed.rows, fn(row) {
-        #(number_of(row), #("kill objective placement", row))
+        #(number_of(row:), #("kill objective placement", row))
       }),
       list.map(placed.click_rows, fn(row) {
-        #(number_of(row), #("click target placement", row))
+        #(number_of(row:), #("click target placement", row))
       }),
     )
     |> dict.from_list

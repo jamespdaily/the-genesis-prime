@@ -934,6 +934,19 @@ fn click_of(
   })
 }
 
+/// The name of a skip's reason, matched without a catch-all so a new reason is
+/// seen here.
+fn reason_of(why: objective_spawn.Why) -> String {
+  case why {
+    objective_spawn.NoCreatureRow(..) -> "NoCreatureRow"
+    objective_spawn.NamesNoCreature(..) -> "NamesNoCreature"
+    objective_spawn.NoMarkerRow(..) -> "NoMarkerRow"
+    objective_spawn.NoSpawnsInWorld(..) -> "NoSpawnsInWorld"
+    objective_spawn.TurretHasNoKind(..) -> "TurretHasNoKind"
+    objective_spawn.NotStarted(..) -> "NotStarted"
+  }
+}
+
 /// Whether the row stands at the point.
 fn stands_at(row row: Row, x x: Float, y y: Float, z z: Float) -> Bool {
   close(row.x, x) && close(row.y, y) && close(row.z, z)
@@ -973,11 +986,11 @@ pub fn the_dominion_mines_stand_at_their_markers_when_the_exile_mines_are_stored
     as "exactly the three Dominion mines, none at the Exile markers"
   assert list.map([first, second, third], fn(row) { row.creature_id })
     == [mine, mine_medium, mine_hard]
-  assert stands_at(first, x: 72.9871, y: -872.0891, z: 357.634)
+  assert stands_at(row: first, x: 72.9871, y: -872.0891, z: 357.634)
     as "73463 at marker 52899"
-  assert stands_at(second, x: 53.515, y: -872.0891, z: 374.479)
+  assert stands_at(row: second, x: 53.515, y: -872.0891, z: 374.479)
     as "73667 at marker 52900"
-  assert stands_at(third, x: 43.1171, y: -872.0891, z: 395.189)
+  assert stands_at(row: third, x: 43.1171, y: -872.0891, z: 395.189)
     as "73668 at marker 52901"
   list.each([first, second, third], fn(row) {
     assert row.world_id == world && row.area_id == 5967
@@ -1011,7 +1024,7 @@ pub fn a_stored_row_of_a_static_unit_type_serves_its_marker_test() -> Nil {
     )
   let assert [row] = click_of(placed:, creatures: [mine])
     as "one row of the mine: the Dominion marker has none"
-  assert stands_at(row, x: 72.9871, y: -872.0891, z: 357.634)
+  assert stands_at(row:, x: 72.9871, y: -872.0891, z: 357.634)
     as "placed at 52899, not at 51662, which the stored static row serves"
 }
 
@@ -1032,7 +1045,7 @@ pub fn a_marker_a_stored_spawn_stands_nearest_gets_none_test() -> Nil {
     )
   let assert [row] = click_of(placed:, creatures: [mine])
     as "one row of the mine"
-  assert stands_at(row, x: -70.4453, y: -868.839, z: 383.553)
+  assert stands_at(row:, x: -70.4453, y: -868.839, z: 383.553)
     as "placed at 51662, the marker no stored row stands nearest in"
 }
 
@@ -1069,7 +1082,7 @@ pub fn a_stored_spawn_serves_one_marker_only_test() -> Nil {
     )
   let assert [row] = click_of(placed: near_exile, creatures: [mine])
     as "one row of the mine"
-  assert stands_at(row, x: 72.9871, y: -872.0891, z: 357.634)
+  assert stands_at(row:, x: 72.9871, y: -872.0891, z: 357.634)
     as "a row nearer 51662 serves 51662 only: placed at 52899"
   let near_dominion =
     placed_by_the_load(
@@ -1086,7 +1099,7 @@ pub fn a_stored_spawn_serves_one_marker_only_test() -> Nil {
     )
   let assert [row] = click_of(placed: near_dominion, creatures: [mine])
     as "one row of the mine"
-  assert stands_at(row, x: -70.4453, y: -868.839, z: 383.553)
+  assert stands_at(row:, x: -70.4453, y: -868.839, z: 383.553)
     as "a row nearer 52899 serves 52899 only: placed at 51662"
 }
 
@@ -1142,8 +1155,10 @@ pub fn a_stored_row_in_another_world_serves_no_marker_test() -> Nil {
     )
   let assert [first, second] = click_of(placed:, creatures: [mine])
     as "one row at each marker"
-  assert stands_at(first, x: -70.4453, y: -868.839, z: 383.553) as "51662 first"
-  assert stands_at(second, x: 72.9871, y: -872.0891, z: 357.634) as "then 52899"
+  assert stands_at(row: first, x: -70.4453, y: -868.839, z: 383.553)
+    as "51662 first"
+  assert stands_at(row: second, x: 72.9871, y: -872.0891, z: 357.634)
+    as "then 52899"
 }
 
 pub fn a_placed_target_takes_the_unit_type_of_its_creation_type_test() -> Nil {
@@ -1246,7 +1261,7 @@ pub fn two_click_objectives_on_one_creature_and_marker_place_once_test() -> Nil 
   let placed = click_placed_in_world(tables: changed)
   let assert [row] = click_of(placed:, creatures: [mine])
     as "one row of the mine, for two objectives of the same marker"
-  assert stands_at(row, x: 72.9871, y: -872.0891, z: 357.634)
+  assert stands_at(row:, x: 72.9871, y: -872.0891, z: 357.634)
 }
 
 pub fn two_creatures_at_one_marker_stand_on_its_ring_test() -> Nil {
@@ -1533,32 +1548,16 @@ pub fn every_click_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
     set.contains(worlds, row.world_id)
   })
     as "no row is placed in a world the server holds no spawns for"
-  assert list.count(placed.click_skipped, fn(skipped) {
-      case skipped.why {
-        objective_spawn.NotStarted(..) -> True
-        _ -> False
-      }
+  let skipped_as = fn(reason) {
+    list.count(placed.click_skipped, fn(skipped) {
+      reason_of(skipped.why) == reason
     })
-    == 3
-    as "the pairs whose unit type the server does not start"
-  let skipped_for = fn(is_that) {
-    list.count(placed.click_skipped, fn(skipped) { is_that(skipped.why) })
   }
-  assert skipped_for(fn(why) {
-      case why {
-        objective_spawn.NoMarkerRow(..) -> True
-        _ -> False
-      }
-    })
-    == 5
+  assert skipped_as("NotStarted") == 3
+    as "the pairs whose unit type the server does not start"
+  assert skipped_as("NoMarkerRow") == 5
     as "the markers the client has no row of"
-  assert skipped_for(fn(why) {
-      case why {
-        objective_spawn.NoSpawnsInWorld(..) -> True
-        _ -> False
-      }
-    })
-    == 162
+  assert skipped_as("NoSpawnsInWorld") == 162
     as "the (objective, marker) pairs in a world with no stored spawn"
   // Creature2 12919 is served at all three of objective 4813's markers by stored
   // rows, so none of them is placed.
