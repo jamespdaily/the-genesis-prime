@@ -10,8 +10,15 @@
 ////   are no faction 452, Friendly to both 7,400, a service link 33 and health 0
 ////   215.
 //// - The creatures of kill objectives that the load places at their markers
-////   (`objective_spawn.place`) start in addition, so each world's count is the
-////   decoded one plus the placed rows' own selection.
+////   (`objective_spawn.place`, in the worlds that hold a stored spawn) start in
+////   addition. The rows placed are a count over the client's QuestObjective,
+////   TargetGroup, WorldLocation2 and Creature2 tables and `spawn.tsv`, made
+////   apart from the server's code by a scratch Python script over the same rows:
+////   432, 608, 38, 20, 12, 623, 20 and 11 in worlds 22, 51, 426, 870, 990, 1061,
+////   1387 and 3460, and none in a world with no stored spawn. The selection
+////   starts 423, 597, 38, 20, 12, 603, 20 and 6 of them and leaves out the others
+////   as it does stored rows (no faction, Friendly to both, a service link,
+////   health 0); those counts are the ones the first hand-back of issue 602 gave.
 //// - Migration 0008: World 3460 also holds the 27 Virtual Defense Daguns, server
 ////   choices, which start (Hostile to Dominion), so 3460 has 66 + 27.
 //// The test needs the client's tables and the world database (`GENESIS_WORLD_DATA`),
@@ -93,31 +100,34 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
     content_spawn.rows(db: content_support.connect(database:))
     as "the spawn rows read back"
   // The kill objectives' creatures that have no stored spawn in their marker's
-  // world stand at its marker (`objective_spawn.place`): the ones of them that the
-  // selection starts, by world, are added to the decoded stored spawns.
-  let placed =
-    spawn.select(
-      rows: objective_spawn.place(tables:, stored: rows).rows,
-      tables:,
-      formulas: rating.formulas(tables:),
-      kinds: spawn_support.kinds(),
-      vendors: vendor.none(),
+  // world stand at its marker (`objective_spawn.place`): the rows placed, by
+  // world, are the counts named in the head of this file, and the load starts the
+  // selection's share of them beside the decoded stored spawns.
+  let placed = objective_spawn.place(tables:, stored: rows).rows
+  assert list.length(placed) == 1764
+    as "the rows placed in all, none of them in a world with no stored spawn"
+  assert list.map(
+      [22, 51, 426, 870, 990, 1061, 1387, 3460, 1535, 3022],
+      fn(world_id) { list.count(placed, fn(row) { row.world_id == world_id }) },
     )
-  let placed_in = fn(world_id) {
-    case dict.get(placed.worlds, world_id) {
-      Ok(world) -> dict.size(world.by_id)
-      Error(Nil) -> 0
-    }
-  }
+    == [432, 608, 38, 20, 12, 623, 20, 11, 0, 0]
+    as "the rows placed in each world"
   assert list.map(
       [22, 51, 426, 870, 990, 1061, 1387, 3460, 1535, 3022],
       fn(world_id) { dict.size(content_spawn.world(key:, world_id:).by_id) },
     )
-    == list.map2(
-      [11_248, 13_173, 376, 693, 739, 12_897, 851, 93, 0, 0],
-      [22, 51, 426, 870, 990, 1061, 1387, 3460, 1535, 3022],
-      fn(decoded, world_id) { decoded + placed_in(world_id) },
-    )
+    == [
+      11_248 + 423,
+      13_173 + 597,
+      376 + 38,
+      693 + 20,
+      739 + 12,
+      12_897 + 603,
+      851 + 20,
+      93 + 6,
+      0,
+      0,
+    ]
     as {
       "the spawns that start in each world; the load took "
       <> int.to_string(took)

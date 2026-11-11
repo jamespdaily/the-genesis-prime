@@ -3710,8 +3710,9 @@ fn planted_creatures_in(
 // the ring of the design (issue 602) is the circle of half that radius, the slot i of
 // 3 at the angle 2 pi i / 3 from the +x axis towards +z, the group's creatures in
 // order: 73492, 73567, 73492. Creature2 73492 has factionId 170 and no
-// prerequisite, hostile to the Dominion (Faction2Relationship 686: 167 and 170, level
-// 0), so a Dominion character (faction 167) may attack it. Paralytic Surge reaches 15
+// prerequisite, hostile to the Exile (Faction2Relationship 686: 167 and 170, level
+// 0; Faction2 167 is the Exile, 166 the Dominion), so an Exile character (faction
+// 167) may attack it. Paralytic Surge reaches 15
 // (Spell4 42352 targetMaxRange), and a creature's aggro range is 10 (migration 0010),
 // so the character stands 12 beyond the slot, away from the ring's centre.
 
@@ -3761,7 +3762,7 @@ fn world_with_the_markers_creatures(
   )
 }
 
-/// A level 1 Medic of the Dominion holding quest 10518 with objectives 0 to 4 done, played into
+/// A level 1 Medic of the Exile holding quest 10518 with objectives 0 to 4 done, played into
 /// World 3460 12 beyond ring slot 0 and facing it, and read until both of Creature2
 /// 73492's 0x262 have arrived: the game, the burst's frames and the bytes beyond.
 fn a_medic_at_the_marker_ring(
@@ -3780,7 +3781,7 @@ fn a_medic_at_the_marker_ring(
     pog.query("update character set faction_id = 167 where character_id = $1")
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
-    as "the character is a Dominion one, which Creature2 73492 is hostile to"
+    as "the character is an Exile one (faction 167), which Creature2 73492 is hostile to"
   let assert Ok(_) =
     pog.query(
       "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 10518, 1, 0, true, 31, '{5,1,1,1,2,0}', 0, '{0,0,0,0,0,0}')",

@@ -318,7 +318,7 @@ fn read(
   }
   case
     list.flatten([
-      selection.refusals,
+      objective_spawn.labelled(refusals: selection.refusals, placed:),
       kind_refusals,
       number_refusals,
       class_refusals,

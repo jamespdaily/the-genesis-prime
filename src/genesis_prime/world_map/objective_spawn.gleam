@@ -1,9 +1,10 @@
 //// The creatures a kill objective needs and the stored spawn table does not
 //// hold: for each kill objective with a marker (QuestObjective types 2, 8 and
-//// 16, whose worldLocationsIdIndicator00 to 03 name WorldLocation2 circles), a
-//// creature with no stored spawn in the marker's world stands in the circle, as
-//// many as the objective counts, so the player sees it, kills it and the
-//// objective counts. The rows are placed once at the start, beside the stored
+//// 16, whose worldLocationsIdIndicator00 to 03 name WorldLocation2 circles) in a
+//// world the server holds spawns for (a world one stored row is in), a creature
+//// with no stored spawn in the marker's world stands in the circle, as many as
+//// the objective counts, so the player sees it, kills it and the objective
+//// counts. The rows are placed once at the start, beside the stored
 //// ones, and the map starts them as it starts a stored row (`spawn.select`).
 ////
 //// - The client's tables set what is needed: type 2's data is a Creature2 id,
@@ -36,21 +37,23 @@
 ////
 //// A pair that is not placed is reported once at the start (`Skipped`): a
 //// creature with no Creature2 row, a group that lists no creature, a marker with
-//// no WorldLocation2 row and a marker in a world the server holds no map for (a
-//// World row it has none of). Kill types 15 and 46 and the tutorial's other
-//// objective types name no creature to place here.
+//// no WorldLocation2 row and a marker in a world with no stored spawn. Kill
+//// types 15 and 46 and the tutorial's other objective types name no creature to
+//// place here.
 
+import genesis_prime/content/refusal.{type Refusal}
+import genesis_prime/game/place_objective
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game/target_group
 import genesis_prime/message/float32
 import genesis_prime/table/creature2.{type Creature2}
-import genesis_prime/table/id.{Creature2Id, WorldId, WorldLocation2Id}
+import genesis_prime/table/id.{Creature2Id, WorldLocation2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest_objective.{type QuestObjective}
-import genesis_prime/table/world
 import genesis_prime/table/world_location2.{type WorldLocation2}
 import genesis_prime/world_map/spawn.{type Row}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import gleam/bool
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -78,8 +81,8 @@ pub type Why {
   NamesNoCreature(group_id: Int)
   /// The marker has no WorldLocation2 row.
   NoMarkerRow(marker_id: Int)
-  /// The marker is in a world the server holds no map for.
-  NoMap(marker_id: Int, world_id: Int)
+  /// The marker is in a world the server holds no stored spawn for.
+  NoSpawnsInWorld(marker_id: Int, world_id: Int)
 }
 
 /// The objective types of a kill that names a creature or a group of them, with
@@ -94,7 +97,8 @@ type Marker {
 }
 
 /// What one objective asks for, as far as the tables let it: the creatures with
-/// a Creature2 row, the markers with a row in a world with a map, and its count.
+/// a Creature2 row, the markers with a row in a world with a stored spawn, and its
+/// count.
 /// `key` is the creature ids and the marker ids it names, each sorted, which two
 /// objectives that ask the same thing share.
 type Job {
@@ -107,8 +111,9 @@ type Job {
 }
 
 /// The rows to stand for the kill objectives, given the rows the stored spawn
-/// table holds: a creature with a stored non-player spawn in a marker's world is
-/// left to it. Pure: the tables and the stored rows are all it reads.
+/// table holds: only a marker in a world one of them is in gets creatures, and a
+/// creature with a stored non-player spawn in a marker's world is left to it.
+/// Pure: the tables and the stored rows are all it reads.
 pub fn place(
   tables tables: table_store.Tables,
   stored stored: List(Row),
@@ -116,8 +121,9 @@ pub fn place(
   let objectives =
     quest_objective.all(tables)
     |> list.filter(fn(objective) { is_placed_kind(objective:) })
+  let worlds = set.from_list(list.map(stored, fn(row) { row.world_id }))
   let planned =
-    list.map(objectives, fn(objective) { plan(tables:, objective:) })
+    list.map(objectives, fn(objective) { plan(tables:, worlds:, objective:) })
   let skipped =
     planned
     |> list.flat_map(fn(pair) { pair.1 })
@@ -141,16 +147,10 @@ pub fn place(
 /// marker asks for nothing and is not reported: it is no pair.
 fn plan(
   tables tables: table_store.Tables,
+  worlds worlds: Set(Int),
   objective objective: QuestObjective,
 ) -> #(option.Option(Job), List(Skipped)) {
-  let marker_ids =
-    [
-      objective.world_locations_id_indicator00,
-      objective.world_locations_id_indicator01,
-      objective.world_locations_id_indicator02,
-      objective.world_locations_id_indicator03,
-    ]
-    |> list.filter(fn(marker_id) { marker_id != 0 })
+  let marker_ids = place_objective.marker_ids(objective:)
   case marker_ids {
     [] -> #(None, [])
     _ -> {
@@ -174,7 +174,7 @@ fn plan(
         })
       let #(markers, marker_skips) =
         list.map(marker_ids, fn(marker_id) {
-          marker_of(tables:, marker_id:)
+          marker_of(tables:, worlds:, marker_id:)
           |> result.map_error(fn(why) { Skipped(objective.id, why) })
         })
         |> partitioned
@@ -203,22 +203,24 @@ fn partitioned(results results: List(Result(a, e))) -> #(List(a), List(e)) {
   #(list.reverse(values), list.reverse(errors))
 }
 
-/// The marker, or why it cannot hold a creature.
+/// The marker, or why it cannot hold a creature: no row, or a world no stored
+/// spawn is in (a row in world 0 is none either, and no stored spawn is in it).
 fn marker_of(
   tables tables: table_store.Tables,
+  worlds worlds: Set(Int),
   marker_id marker_id: Int,
 ) -> Result(Marker, Why) {
   use row <- result.try(
     world_location2.get(tables:, id: WorldLocation2Id(marker_id))
     |> result.replace_error(NoMarkerRow(marker_id:)),
   )
-  let no_map = NoMap(marker_id:, world_id: row.world_id)
-  use _world <- result.try(
-    world.get(tables:, id: WorldId(row.world_id))
-    |> result.replace_error(no_map),
+  let no_spawns = NoSpawnsInWorld(marker_id:, world_id: row.world_id)
+  use <- bool.guard(
+    when: !set.contains(worlds, row.world_id),
+    return: Error(no_spawns),
   )
   use place <- result.try(
-    start_place.of_row(row:) |> result.replace_error(no_map),
+    start_place.of_row(row:) |> result.replace_error(no_spawns),
   )
   Ok(Marker(row:, place:))
 }
@@ -377,13 +379,13 @@ fn describe(skipped skipped: Skipped) -> String {
       <> "'s marker "
       <> int.to_string(marker_id)
       <> " has no WorldLocation2 row"
-    NoMap(marker_id:, world_id:) ->
+    NoSpawnsInWorld(marker_id:, world_id:) ->
       objective
       <> "'s marker "
       <> int.to_string(marker_id)
       <> " is in World "
       <> int.to_string(world_id)
-      <> ", which the server holds no map for"
+      <> ", where the server holds no stored spawn"
   }
 }
 
@@ -398,4 +400,43 @@ pub fn report(placed placed: Placed) -> List(String) {
       <> " pairs",
     ..list.map(placed.skipped, fn(skipped) { describe(skipped:) })
   ]
+}
+
+/// The selection's refusals with those of placed rows named as such: a refusal
+/// of a row whose id is one this placement gave names the table
+/// "kill objective placement" and the creature, the world and the id, since no
+/// database holds a placed row's id. The others are kept. Pass only the
+/// selection's own refusals, whose numbered rows are the spawn rows.
+pub fn labelled(
+  refusals refusals: List(Refusal),
+  placed placed: Placed,
+) -> List(Refusal) {
+  let by_number =
+    list.map(placed.rows, fn(row) {
+      let SpawnId(number) = row.id
+      #(number, row)
+    })
+    |> dict.from_list
+  list.map(refusals, fn(refused) {
+    case refused.row {
+      refusal.RowId(id:) ->
+        case dict.get(by_number, id) {
+          Ok(row) ->
+            refusal.Refusal(
+              ..refused,
+              table: "kill objective placement",
+              row: refusal.RowName(
+                name: "Creature2 "
+                <> int.to_string(row.creature_id)
+                <> " placed in World "
+                <> int.to_string(row.world_id)
+                <> " as spawn id "
+                <> int.to_string(id),
+              ),
+            )
+          Error(Nil) -> refused
+        }
+      refusal.RowName(..) -> refused
+    }
+  })
 }

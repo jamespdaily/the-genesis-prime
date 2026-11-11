@@ -64,7 +64,10 @@ fn listed(
     Ok(row) -> {
       let words = words_of(row:)
       case row.type_ {
-        1 -> list.filter(words, fn(word) { word != 0 })
+        1 ->
+          list.map(creatures_of(tables:, group:), fn(creature) {
+            creature.value
+          })
         10 | 11 ->
           list.flat_map(others(words:, row:), fn(sub) {
             listed(tables:, group: sub, path: [group, ..path])

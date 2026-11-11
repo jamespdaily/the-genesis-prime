@@ -805,7 +805,6 @@ fn created_dead(object: StaticObject) -> Bool {
   }
 }
 
-/// The tables' lookups by something other than an id, built once.
 /// The display and the outfit a creature of each group stands with: the first
 /// entry of each group, a server choice, since the client's weighted pick runs
 /// only for spawns it makes itself (`0x1404846c0`, `opcode.0x262.creature`).
@@ -841,6 +840,7 @@ pub fn looks(tables tables: table_store.Tables) -> Looks {
   )
 }
 
+/// The tables' lookups by something other than an id, built once.
 fn catalog(tables tables: table_store.Tables) -> Catalog {
   Catalog(
     tables:,
