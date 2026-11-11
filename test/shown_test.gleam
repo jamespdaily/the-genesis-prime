@@ -9,6 +9,7 @@
 ////   (`Spell4ValidTargets.targetBitmask`, `Spell4Effects.targetFlags`).
 //// - Dominion 166 and Exile 167 are the two player factions (`start_place`).
 
+import fixture_tables
 import genesis_prime/game/area.{Candidate, Point, Pose}
 import genesis_prime/game/shown.{
   Dominion, Exile, ShownCreature, ShownObject, ShownPlayer,
@@ -257,6 +258,30 @@ pub fn a_running_creatures_pose_is_where_its_path_puts_it_with_the_yaw_its_path_
   assert shown.pose_of(picture:, unit_id: 1, now_ms: 9000)
     == Ok(Pose(at: Point(x: 0.0, z: -20.0), yaw: 0.7))
     as "at its end"
+}
+
+// ---- the cast group a unit belongs to ----
+
+pub fn in_group_tests_the_shown_unit_against_the_group_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // TargetGroup 5506 is of type 1 and lists Creature2 41604, 41609, 41611 and 41613
+  // (`0x1403b4a20`: type 1 tests the unit's Creature2 id); 32668 is none of them.
+  let tables = fixture_tables.shared()
+  let assert ShownCreature(..) as from = facing_creature(x: 0.0, z: 0.0)
+  let picture =
+    dict.from_list([
+      #(900, ShownCreature(..from, creature_id: Creature2Id(41_604))),
+      #(902, ShownCreature(..from, creature_id: Creature2Id(32_668))),
+      #(904, ShownPlayer),
+    ])
+  assert shown.in_group(tables:, picture:, group: 5506, unit_id: 900)
+    as "unit 900 is of Creature2 41604, which the group lists"
+  assert !shown.in_group(tables:, picture:, group: 5506, unit_id: 902)
+    as "unit 902 is of Creature2 32668, which it does not"
+  assert !shown.in_group(tables:, picture:, group: 5506, unit_id: 903)
+    as "a unit that is not shown is in no group"
+  assert !shown.in_group(tables:, picture:, group: 5506, unit_id: 904)
+    as "another player's unit has no Creature2 row to test"
 }
 
 pub fn a_unit_that_is_not_a_shown_creature_has_no_pose_test() -> Nil {

@@ -34,13 +34,16 @@
 //// 2, keyed by the objective's id) while the objective is open and takes the button away
 //// when the objective closes (`buttons`, `button_changes`), and the server counts one
 //// for each cast of the spell at its go (`Cast`), for every open objective that names it.
-//// Gaps, each closed by the quests, zones and prerequisites issue (#334): the go is the
-//// moment a cast counts by a guess, until a retail recording of quest 3915, 4832 or 7618
-//// shows it; the place an objective names is not tested; a spell aimed at the caster whose
-//// objective sets a reward pane (rows 14187 and 14203) counts at the go, not on a unit of
-//// the pane; and the objectives with no Spell4 row (7378, 8042, 9882, 16525, 16577 and
-//// 15816) hold no button and stay uncompletable. A spell that takes a target is a later
-//// step (#728).
+//// A cast at a unit counts only for a unit of the objective's reward pane, any unit when
+//// it names none (`0x140550c50`, issue 724's decision 2c), and each unit once, as a type
+//// 23 objective does (`quest_log.used`; the client keeps no per-unit record, so the once is
+//// the server's choice); a cast of a spell aimed at the caster names no unit and counts
+//// at each go. Gaps, each closed by the quests, zones and prerequisites issue (#334): the
+//// go is the moment a cast counts by a guess, until a retail recording of quest 3915, 4832
+//// or 7618 shows it; the place an objective names is not tested; a spell aimed at the
+//// caster whose objective sets a reward pane (rows 14187 and 14203) counts at the go, not
+//// on a unit of the pane; and the objectives with no Spell4 row (7378, 8042, 9882, 16525,
+//// 16577 and 15816) hold no button and stay uncompletable.
 ////
 //// A rule: the log and the event in, the log and the effects out.
 
@@ -66,7 +69,7 @@ import genesis_prime/world_map/game_number.{type GameNumbers}
 import gleam/bool
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set.{type Set}
 
@@ -123,10 +126,11 @@ const kill_types = [2, 8, 15, 16, 46]
 
 /// What the player did to a creature: talked to it, used it or killed it (the unit as
 /// the client's group test reads it), with the unit's checklist index for the first two
-/// (the bit the unit stands for in a checklist objective's mask). A use is by an item
-/// (`by_item`) when the player's item spell hit the creature and not the creature's own
-/// activate spell: the objectives that count the creature's own activate cast (types 5 and
-/// 32) take only the latter.
+/// (the bit the unit stands for in a checklist objective's mask), or cast a spell, at a
+/// unit or, for a spell aimed at the caster, at none. A use is by an item (`by_item`) when
+/// the player's item spell hit the creature and not the creature's own activate spell: the
+/// objectives that count the creature's own activate cast (types 5 and 32) take only the
+/// latter.
 pub type Event {
   TalkedTo(target: target_group.Unit, checklist_index: Int)
   Used(
@@ -136,7 +140,13 @@ pub type Event {
     by_item: Bool,
   )
   Killed(target: target_group.Unit)
-  Cast(spell4_id: Spell4Id)
+  Cast(spell4_id: Spell4Id, target: Option(CastTarget))
+}
+
+/// The unit a cast was at: as the client's group test reads it, and as the map run's
+/// unit that a cast objective counts once.
+pub type CastTarget {
+  CastTarget(unit: target_group.Unit, ref: quest_log.UnitRef)
 }
 
 /// A spell button the client holds for an open cast objective.
@@ -262,7 +272,7 @@ fn counted_by(
 
 /// Whether the objective at `index` has counted the unit of the event already: the unit's
 /// bit is set in a checklist objective's mask (`0x140611680`: the client marks the unit
-/// only then), or a type 23 objective has counted this unit of the map run.
+/// only then), or a type 23 or type 11 objective has counted this unit of the map run.
 fn counted_already(
   log log: QuestLog,
   quest quest: quest_log.Quest,
@@ -275,7 +285,9 @@ fn counted_already(
     Used(checklist_index:, unit:, ..) ->
       quest_log.is_marked(log:, quest:, index:, bit: checklist_index)
       || quest_log.is_used(log:, quest:, index:, unit:)
-    Killed(..) | Cast(..) -> False
+    Cast(target: Some(CastTarget(ref:, ..)), ..) ->
+      quest_log.is_used(log:, quest:, index:, unit: ref)
+    Killed(..) | Cast(target: None, ..) -> False
   }
 }
 
@@ -322,8 +334,9 @@ pub fn advance(
           Killed(..) | Cast(..) -> -1
         },
         used_unit: case event {
-          Used(unit:, ..) -> Ok(unit)
-          TalkedTo(..) | Killed(..) | Cast(..) -> Error(Nil)
+          Used(unit:, ..) | Cast(target: Some(CastTarget(ref: unit, ..)), ..) ->
+            Ok(unit)
+          TalkedTo(..) | Killed(..) | Cast(target: None, ..) -> Error(Nil)
         },
       )
     },
@@ -358,7 +371,7 @@ fn counts(
         && target_group.contains(tables:, group: objective.data, unit: target)
       }
       || {
-        quest_log.counted_by_unit(objective:)
+        objective.type_ == quest_log.use_a_group_type
         && target_group.contains(tables:, group: objective.data, unit: target)
         && is_the_terminals_choice(
           objective_id: objective.objective_id,
@@ -385,9 +398,13 @@ fn counts(
           #(quest_id, index),
         )
       }
-    Cast(spell4_id:) ->
+    Cast(spell4_id:, target:) ->
       objective.type_ == shortcut_spell.cast_type
       && Spell4Id(objective.data) == spell4_id
+      && case target {
+        Some(CastTarget(unit:, ..)) -> in_pane(tables:, objective:, unit:)
+        None -> True
+      }
     Killed(target:) -> {
       let by_data = case objective.type_ {
         2 -> Creature2Id(objective.data) == target.creature_id
@@ -408,6 +425,18 @@ fn counts(
       }
     }
   }
+}
+
+/// Whether the unit is in the objective's reward pane, which counts a unit for any
+/// objective type (`0x140550c50`); an objective with no pane counts any unit (issue 724's
+/// decision 2c).
+fn in_pane(
+  tables tables: table_store.Tables,
+  objective objective: quest_log.Objective,
+  unit unit: target_group.Unit,
+) -> Bool {
+  objective.reward_pane == 0
+  || target_group.contains(tables:, group: objective.reward_pane, unit:)
 }
 
 /// The entry of the objective's named group the killed unit is, and how many creatures the
@@ -463,6 +492,7 @@ fn advance_quest(
   let #(log, progress, became_achieved) =
     list.fold(named, #(so_far.log, [], False), fn(counted, open) {
       let #(log, progress, became_achieved) = counted
+      let counted_with_no_unit = open.1.type_ == shortcut_spell.cast_type
       case group_member(open.1), { open.1 }.checklist {
         Ok(#(member, members)), _ ->
           case
@@ -533,6 +563,9 @@ fn advance_quest(
                 )
                 Ok(_) | Error(Nil) -> counted
               }
+            // A cast aimed at the caster names no unit and counts one at each go.
+            True, Error(Nil) if counted_with_no_unit ->
+              progressed_by_one(counted:, quest:, index: open.0, now_ms:)
             // A use always carries its unit, so a type 23 objective with none counts
             // nothing.
             True, Error(Nil) -> counted
