@@ -57,6 +57,7 @@ pub fn used(
   now now: Now,
   target target: target_group.Unit,
   checklist_index checklist_index: Int,
+  unit unit: quest_log.UnitRef,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   let landing = case connection_state.entered_of(session.status) {
     None -> Error(departures.NotATerminal)
@@ -68,7 +69,11 @@ pub fn used(
       )
   }
   let #(session, written) =
-    counted(session:, now:, event: objective.Used(target:, checklist_index:))
+    counted(
+      session:,
+      now:,
+      event: objective.Used(target:, checklist_index:, unit:),
+    )
   case landing {
     Ok(place) -> #(
       connection_state.with_entered(session:, change: fn(entered) {

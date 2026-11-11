@@ -190,7 +190,8 @@ fn quest_objectives() -> EngineDeclaration {
     // genesis_prime/world_map/checklist_index). A finish (type 24) objective takes the
     // completion of the quest its data names, now or earlier in its repeat period. Types
     // 10 and 13 are not counted. A use of a unit of the TargetGroup of a type 23 objective
-    // counts one (genesis_prime/game/objective).
+    // counts one for each unit, once (the once is the server's choice), and a departures
+    // choice objective counts only its own terminal (genesis_prime/game/objective).
     handled: Listed(ids: [
       2, 3, 4, 5, 8, 12, 14, 16, 17, 18, 22, 23, 24, 28, 32, 33,
     ]),
@@ -199,11 +200,6 @@ fn quest_objectives() -> EngineDeclaration {
         type_number: 22,
         reason: "an arrival at a marker completes a place objective of count 1; the 43 with no marker and the 2 with a count above 1 (14205, 14577) are not counted, which the issue \"Place objectives with no marker or a count above one complete (objective type 22)\" closes",
         fact_key: "QuestObjective.type.22",
-      ),
-      Missing(
-        type_number: 23,
-        reason: "a use of a unit of the objective's TargetGroup counts one, whichever unit and however often it is used, and a departures terminal's choice objective counts only its own terminal (the Exile pair by the objectives' worldLocationsIdIndicator00 rows beside the terminals' spawns, the Dominion pair by the texts); each creature of the set counted once is not done, and only the four departures choices and the two travel objectives are seen played, which the issue \"A use-a-creature objective counts each creature of its set once (objective type 23)\" (725) closes",
-        fact_key: "QuestObjective.type.23",
       ),
       Missing(
         type_number: 5,
