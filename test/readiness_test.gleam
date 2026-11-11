@@ -126,13 +126,38 @@ fn held_probe(
   ToWorker(pid: worker)
 }
 
+/// A stand-in for the tree that a test ends while the ask waits. Erlang orders
+/// signals only per sender, so the asker's monitor and the test's kill can
+/// reach the tree in either order, and a monitor that arrives second reports
+/// `noproc`, not the kill. The asker sends the tree a message after it
+/// monitors, and a message from the same sender arrives after the monitor; the
+/// tree then tells `watched`, and only then does the test kill it.
+fn watched_tree(
+  inboxes inboxes: Subject(Subject(Nil)),
+  watched watched: Subject(Nil),
+) -> Pid {
+  process.spawn_unlinked(fn() {
+    let inbox = process.new_subject()
+    process.send(inboxes, inbox)
+    let Nil =
+      open_wait.received(from: inbox, what: "the asker to say it monitors me")
+    process.send(watched, Nil)
+    process.sleep_forever()
+  })
+}
+
 pub fn the_ask_ends_with_the_trees_end_when_the_tree_ends_while_it_waits_test() -> Nil {
   use <- owned_test.run(30_000)
-  let tree = process.spawn_unlinked(process.sleep_forever)
+  let inboxes = process.new_subject()
+  let watched = process.new_subject()
+  let tree = watched_tree(inboxes:, watched:)
+  let inbox = open_wait.received(from: inboxes, what: "the tree's inbox")
   let asked = process.new_subject()
   let outcomes = process.new_subject()
   let _asker =
     process.spawn_unlinked(fn() {
+      let monitor = process.monitor(tree)
+      process.send(inbox, Nil)
       process.send(
         outcomes,
         readiness.await(
@@ -142,7 +167,7 @@ pub fn the_ask_ends_with_the_trees_end_when_the_tree_ends_while_it_waits_test() 
             process.send(asked, worker)
             Ok(ToWorker(pid: worker))
           },
-          tree: option.Some(process.monitor(tree)),
+          tree: option.Some(monitor),
           settings: readiness.Settings(
             within_ms: 30_000,
             attempt_ms: 30_000,
@@ -154,6 +179,11 @@ pub fn the_ask_ends_with_the_trees_end_when_the_tree_ends_while_it_waits_test() 
     })
   let worker = open_wait.received(from: asked, what: "the ask's probe")
   let worker_ended = process.monitor(worker)
+  let Nil =
+    open_wait.received(
+      from: watched,
+      what: "the tree to hold the ask's monitor",
+    )
   process.kill(tree)
   let assert readiness.TreeEnded(reason: process.Killed) =
     open_wait.received(
