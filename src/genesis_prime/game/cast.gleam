@@ -174,8 +174,9 @@
 ////   the next step adds. A Multiphase spell's phase is the phase's index and a
 ////   channel's the pulse's (`opcode.0x7f4.phase`). Each go is followed by the
 ////   spell's Proxies of that phase, and the finish, 0x7fe, comes after the last go,
-////   at once for a spell that is not Multiphase, and for a channel at its
-////   channelMaxTime from a timer of its own.
+////   at once for a spell that is not Multiphase. A channel ends at the later of its
+////   finish timer and the close of its last go's strike round, so the client has
+////   all of its gos before the 0x7fe (`cast.channel_sequence`).
 //// - **A go's gains** (`Gain`) are the spell's own gains of the phase and, once
 ////   for the go and not once per unit, the gains of each Proxy of the phase aimed
 ////   at each struck unit when the round has a Hit and the Proxy's gate passes
@@ -849,8 +850,9 @@ pub type Refusal {
 pub type Due {
   /// The go of phase `phase` of the live cast `cast_id`.
   Go(cast_id: Int, phase: Int)
-  /// The live channel `cast_id` ends at its channelMaxTime, which can come after
-  /// its last pulse.
+  /// The live channel `cast_id`'s finish timer: the channel ends at the later of
+  /// this timer and the close of its last go's strike round, since the client
+  /// expects all of a channel's gos before its 0x7fe (`cast.channel_sequence`).
   Finish(cast_id: Int)
   /// The child cast of `proxy` starts: with the pressed spell as its root and the
   /// spell whose Proxy fired as its parent, which need not be live.
