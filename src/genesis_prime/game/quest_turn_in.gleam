@@ -9,7 +9,7 @@
 //// the store's answer ─▶ answered(turn_in, items, currencies, answer)
 ////                       TurnedIn(credits, made): the log has the quest Completed, the items, the credits, the
 ////                                                experience and the level are saved; 0x111, the count changes,
-////                                                0x1ac, 0x938 with the Level news, 0x919, then 0x35C {quest, 3, 0}
+////                                                0x1ac, 0x938 with the Level news, 0x919 and 0xDD, then 0x35C {quest, 3, 0}
 ////                       ItemsNotSaved:           Warning, nothing sent, nothing changed (the quest stays Achieved)
 ////                       SaveRefused(c):          Error naming c, nothing sent, nothing changed
 //// ```
@@ -60,7 +60,7 @@
 //// - **The frames, in this order** (a server choice; the client needs only 0x35C last of the
 ////   turn-in's): 0x111 (reason 8) for each stack made, a count change for each stack grown,
 ////   0x1ac of kind 3 when the gain is above 0, 0x938 of the level and the Level news when it
-////   rose, 0x919 when the credits changed, then 0x35C with state 3, then the frames of the
+////   rose, 0x919 and the 0xDD of the credits gained when the credits changed (`currency.total_frames`), then 0x35C with state 3, then the frames of the
 ////   held-item objectives of other quests that the reward items advanced
 ////   (`connection_objective.settled`, as a pickup does).
 ////
@@ -247,7 +247,7 @@ pub type Taken {
 /// What the store's answer leaves.
 pub type Answered {
   /// Saved: the items and currencies after it, the effects before the experience's (the
-  /// items) and after it (0x919 and 0x35C).
+  /// items) and after it (0x919, 0xDD and 0x35C).
   Saved(
     items: List(HeldItem),
     currencies: Currencies,
@@ -1011,12 +1011,15 @@ pub fn answered(
         ),
         then: list.map(
           case credits_changed {
-            True -> [
-              currency.changed_frame(
+            True ->
+              currency.total_frames(
                 currency_type_id: currency.credits_type,
+                before: currency.held(
+                  currencies:,
+                  currency_type_id: currency.credits_type,
+                ),
                 total: credits,
-              ),
-            ]
+              )
             False -> []
           }
             |> list.append([
