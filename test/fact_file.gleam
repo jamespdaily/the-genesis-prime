@@ -25,18 +25,26 @@ pub type FactError {
 /// quotes: the file is TOML, a record is a `["name"]` line and the line
 /// `statement = "..."` after it, and the fact checker allows no other form.
 pub fn statement(record name: String) -> Result(String, FactError) {
-  let assert Ok(text) = simplifile.read(path)
+  let assert Ok(text) = simplifile.read_bits(path)
     as "the fact file could not be read"
-  case string.split(text, on: "[\"" <> name <> "\"]\n") {
-    [_, after_key] ->
-      case string.split_once(after_key, on: "\n") {
-        Ok(#("statement = \"" <> rest, _)) ->
-          Ok(string.drop_end(rest, up_to: 1))
+  case line_after_only(text:, key: "[\"" <> name <> "\"]\n") {
+    Ok(line) ->
+      case bit_array.to_string(line) {
+        Ok("statement = \"" <> rest) -> Ok(string.drop_end(rest, up_to: 1))
         _ -> Error(NoRecord(name:))
       }
-    _ -> Error(NoRecord(name:))
+    Error(Nil) -> Error(NoRecord(name:))
   }
 }
+
+/// The line after the one place `key` stands in `text`, without its line end:
+/// a byte-level search, so the 2.8 MB file is not split into text on each read.
+/// An error when `key` stands not exactly once or no line end follows it.
+@external(erlang, "fact_file_ffi", "line_after_only")
+fn line_after_only(
+  text text: BitArray,
+  key key: String,
+) -> Result(BitArray, Nil)
 
 /// Whether the record `name` gives `bytes` in its statement (`gives_bytes`).
 pub fn gives(
