@@ -367,8 +367,19 @@ pub fn key_in(
   spawns spawns: List(Spawn),
   respawn_ms respawn_ms: Int,
 ) -> table_store.Key {
+  key_in_with_objects(world_id: spawns_world, spawns:, objects: [], respawn_ms:)
+}
+
+/// The same with the static objects of that world as well as its spawns, as
+/// `spawn.select` keeps them.
+pub fn key_in_with_objects(
+  world_id spawns_world: Int,
+  spawns spawns: List(Spawn),
+  objects objects: List(StaticObject),
+  respawn_ms respawn_ms: Int,
+) -> table_store.Key {
   let key = owned_key.new_fixture_key()
-  put_worlds(key:, spawns_world:, spawns:, respawn_ms:)
+  put_worlds(key:, spawns_world:, spawns:, objects:, respawn_ms:)
   key
 }
 
@@ -377,7 +388,13 @@ pub fn key_in(
 pub fn key_without_spawns() -> table_store.Key {
   database_support.once("spawn_support_key_without_spawns", fn() {
     let key = owned_key.new_shared_key()
-    put_worlds(key:, spawns_world: 3460, spawns: [], respawn_ms: 60_000)
+    put_worlds(
+      key:,
+      spawns_world: 3460,
+      spawns: [],
+      objects: [],
+      respawn_ms: 60_000,
+    )
     key
   })
 }
@@ -386,6 +403,7 @@ fn put_worlds(
   key key: table_store.Key,
   spawns_world spawns_world: Int,
   spawns spawns: List(Spawn),
+  objects objects: List(StaticObject),
   respawn_ms respawn_ms: Int,
 ) -> Nil {
   content_game_number.put(key:, numbers:)
@@ -404,7 +422,7 @@ fn put_worlds(
       key:,
       world_id:,
       spawns: case world_id == spawns_world {
-        True -> spawn.world_spawns(spawns:, objects: [])
+        True -> spawn.world_spawns(spawns:, objects:)
         False -> spawn.no_spawns()
       },
     )
