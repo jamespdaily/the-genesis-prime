@@ -1522,7 +1522,7 @@ pub type UnitRef {
 
 /// The QuestObjective type of a use-a-creature objective whose data names a TargetGroup
 /// (`0x140550c50`): each unit of the group counts toward its count.
-const use_a_group_type = 23
+pub const use_a_group_type = 23
 
 /// The QuestObjective type of a cast of the spell in its data (`QuestObjective.type.11`).
 /// `shortcut_spell.cast_type` is the same number; that module reaches this one through

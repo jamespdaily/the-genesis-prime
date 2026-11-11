@@ -1340,7 +1340,8 @@ fn shortcut_pressed(
         spell4_id:,
         key: UnbuiltShortcut(spell4_id:),
         result: cast_result.IllegalSpellCast,
-        why: "cannot be planned: " <> why <> ", the issue " <> spells_issue,
+        why: "cannot be planned: " <> why,
+        issue: SpellsIssue,
       )
     Ok(shortcut_spell.Planned(spell:)) ->
       accepted_and_started(
@@ -1371,12 +1372,21 @@ fn shortcut_pressed(
   }
 }
 
-/// The issue that owns the cast conditions and prerequisites the server does not read.
-const quests_issue =
-  "Quests, zones and prerequisites work on the real client (#334)"
+/// The open issue that owns a gap the server logs as not built.
+type Issue {
+  /// The cast conditions and prerequisites the server does not read.
+  PrerequisitesIssue
+  /// The spells the server cannot plan or whose states it does not judge.
+  SpellsIssue
+}
 
-/// The issue that owns the spells the server cannot plan or whose states it does not judge.
-const spells_issue = "Spells work in depth on the real client (#336)"
+fn issue_name(issue issue: Issue) -> String {
+  case issue {
+    PrerequisitesIssue ->
+      "Quests, zones and prerequisites work on the real client (#334)"
+    SpellsIssue -> "Spells work in depth on the real client (#336)"
+  }
+}
 
 /// The plan's spell as a quest button's cast casts it: a castMethod 5 spell waits for the
 /// client's answer without a cast time of its own, any other as planned.
@@ -1397,7 +1407,8 @@ fn shortcut_spell_of(spell spell: Spell) -> Spell {
 /// any cast's with the unit as the TargetCast's first unit. Then started on
 /// the unit. A player or the caster itself reaches the client's player faction test, which
 /// the server does not build, and another player's life and combat are not held: those
-/// are refused 285 as not built.
+/// are refused 285 as not built. The target states the server does not hold yet (96
+/// invulnerable, 140 zone, 98 vital, 92 immunity, crowd control) are not checked: #336.
 fn aimed_shortcut(
   cast cast: State,
   caster caster: Caster,
@@ -1428,8 +1439,7 @@ fn aimed_shortcut(
     True, _ -> aimed_at_the_caster(press:)
     False, activate.Unseen ->
       press_refused(press:, result: cast_result.NoTarget)
-    False, activate.AnotherPlayer as target ->
-      aimed_at_a_player(press:, target:)
+    False, activate.AnotherPlayer -> aimed_at_a_player(press:)
     False,
       activate.Usable(
         creature_id: _,
@@ -1496,6 +1506,7 @@ fn press_unbuilt(
     key:,
     result: cast_result.IllegalSpellCast,
     why:,
+    issue: PrerequisitesIssue,
   )
 }
 
@@ -1506,7 +1517,7 @@ fn press_at_player_unbuilt(
   press_unbuilt(
     press:,
     key: UnbuiltPlayerTarget(spell4_id: press.spell.spell4_id.value),
-    why: why <> ", the issue " <> quests_issue,
+    why:,
   )
 }
 
@@ -1532,7 +1543,6 @@ fn aimed_at_the_caster(
 /// faction test, is not built.
 fn aimed_at_a_player(
   press press: AimedPress,
-  target target: activate.Target,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let tests_life_or_combat =
     press.spell.target_death != spell_plan.AliveOrDead
@@ -1548,27 +1558,16 @@ fn aimed_at_a_player(
         why: "names another player, whose life and combat the connection does not hold",
       )
     False, False ->
-      case
-        activate.passes_cast_group(
-          spell4_id: press.spell.spell4_id.value,
-          cast_group_id: press.aim.cast_group_id,
-          unit_id: press.unit_id,
-          target:,
-          picked: fn() { activate.NoActivateSpell },
-          in_cast_group: press.in_cast_group,
-        )
-      {
-        Error(activate.OutsideGroup) ->
-          press_refused(press:, result: cast_result.TargetGroup)
-        Error(activate.PlayerUnread) ->
-          press_at_player_unbuilt(
-            press:,
-            why: "names another player and a cast group, which tests a player by its faction and race",
-          )
-        Ok(Nil) | Error(activate.PickUnread(..)) ->
+      case press.aim.cast_group_id {
+        0 ->
           press_at_player_unbuilt(
             press:,
             why: "names another player, who reaches the client's player faction test",
+          )
+        _ ->
+          press_at_player_unbuilt(
+            press:,
+            why: "names another player and a cast group, which tests a player by its faction and race",
           )
       }
   }
@@ -1665,8 +1664,7 @@ fn aimed_in_group(
         key: UnreadShortcutPick(prerequisite_type:),
         why: "names a creature whose activate pick rests on a prerequisite of the type "
           <> int.to_string(prerequisite_type)
-          <> ", which the server does not read, the issue "
-          <> quests_issue,
+          <> ", which the server does not read",
       )
     Error(activate.PlayerUnread) ->
       press_at_player_unbuilt(
@@ -1994,6 +1992,7 @@ fn activation_pressed(
         why: "of a creature whose link to an objective rests on a prerequisite of the type "
           <> int.to_string(prerequisite_type)
           <> ", which the server does not read",
+        issue: PrerequisitesIssue,
       )
     activate.Usable(
       creature_id:,
@@ -2040,6 +2039,7 @@ fn activation_pressed(
             why: "of a creature activates through a prerequisite of the type "
               <> int.to_string(prerequisite_type)
               <> ", which the server does not read",
+            issue: PrerequisitesIssue,
           )
         activate.Picked(spell4_id:) ->
           case activate.planned_of(activations:, spell4_id:) {
@@ -2053,6 +2053,7 @@ fn activation_pressed(
                 key: UnbuiltSpell(spell4_id:),
                 result: cast_result.IllegalSpellCast,
                 why: "cannot be planned: " <> why,
+                issue: SpellsIssue,
               )
             Ok(activate.Planned(spell:, effects:, dropped_signals:, limits:)) ->
               activation_in_range(
@@ -2250,7 +2251,7 @@ fn accepted_and_started(
     Refuse(result:) -> refusal(result)
     Hold(..) -> refusal(cast_result.SpellGlobalCooldown)
     HoldForCast -> refusal(cast_result.SpellAlreadyCasting)
-    NotBuilt(result:, why:) ->
+    NotBuilt(result:, why:, issue:) ->
       not_built_refusal(
         cast:,
         client_cast_id:,
@@ -2261,15 +2262,8 @@ fn accepted_and_started(
             UnbuiltSpell(spell4_id:)
         },
         result:,
-        why: case role {
-          Shortcut(aimed: Some(_), ..) -> why <> ", the issue " <> quests_issue
-          Shortcut(aimed: None, ..)
-          | Child
-          | Base(..)
-          | Stage(..)
-          | Passive
-          | Activation(..) -> why
-        },
+        why:,
+        issue:,
       )
     Accept(paid:) -> {
       let #(taken, reserved) = case pays_at_accept(spell:) {
@@ -2361,6 +2355,7 @@ fn not_built_refusal(
   key key: Unbuilt,
   result result: cast_result.CastResult,
   why why: String,
+  issue issue: Issue,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let refusal = refused(client_cast_id:, spell4_id:, result:)
   let what = case key {
@@ -2382,6 +2377,8 @@ fn not_built_refusal(
               <> int.to_string(spell4_id)
               <> " "
               <> why
+              <> ", the issue "
+              <> issue_name(issue:)
               <> ": it is refused with "
               <> int.to_string(cast_result.to_value(result)),
           ),
@@ -3035,7 +3032,7 @@ fn press_of(
           refusal(result),
         ],
       )
-    NotBuilt(result:, why:) ->
+    NotBuilt(result:, why:, issue:) ->
       case set.contains(cast.logged, UnbuiltSpell(spell.spell4_id.value)) {
         True ->
           refused_hold(
@@ -3062,6 +3059,8 @@ fn press_of(
                   <> int.to_string(spell.spell4_id.value)
                   <> " "
                   <> why
+                  <> ", the issue "
+                  <> issue_name(issue:)
                   <> ": it is refused with "
                   <> int.to_string(cast_result.to_value(result)),
               ),
@@ -3169,8 +3168,8 @@ type Verdict {
   HoldForCast
   /// The spell waits for a later step: its method is not built, its cost needs a
   /// vital the server does not hold, or a cast condition or waiver is of a type the
-  /// server does not read. It is refused, and logged once.
-  NotBuilt(result: cast_result.CastResult, why: String)
+  /// server does not read. It is refused, and logged once with the issue that owns it.
+  NotBuilt(result: cast_result.CastResult, why: String, issue: Issue)
 }
 
 fn verdict(
@@ -3199,6 +3198,7 @@ fn verdict(
     return: NotBuilt(
       result: cast_result.IllegalSpellCast,
       why: "is not cast by a method that is built",
+      issue: SpellsIssue,
     ),
   )
   use <- bool.guard(
@@ -3231,6 +3231,7 @@ fn verdict(
       NotBuilt(
         result: cast_result.from_value(result),
         why: "has an innate cost of a vital the server does not hold",
+        issue: SpellsIssue,
       )
     None, Error(UnreadSpend(result:, emm_id:)) ->
       NotBuilt(
@@ -3238,6 +3239,7 @@ fn verdict(
         why: "has an innate cost spent by the EMM id "
           <> int.to_string(emm_id)
           <> ", which the server does not read",
+        issue: SpellsIssue,
       )
     None, Ok(paid) ->
       case lacks_the_weapon(spell:, caster:), int.max(global_left, own_left) {
@@ -3272,6 +3274,7 @@ fn requirement_refusal(
               why: "has a caster requirement whose waiver is a condition of the PrerequisiteType "
                 <> int.to_string(prerequisite_type)
                 <> ", which the server does not read",
+              issue: PrerequisitesIssue,
             ))
         }
     }
@@ -3368,6 +3371,7 @@ fn condition_verdict(
         why: "has a cast condition of the PrerequisiteType "
           <> int.to_string(prerequisite_type)
           <> ", which the server does not read",
+        issue: PrerequisitesIssue,
       ))
   }
 }

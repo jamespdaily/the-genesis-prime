@@ -769,6 +769,8 @@ pub fn a_target_condition_the_server_does_not_hold_refuses_as_not_built_test() -
   let assert [line] = warnings(effects: first)
   assert string.contains(line, "43164") && string.contains(line, "71")
     as "the log names the spell and the type"
+  assert string.contains(line, "(#334)") && !string.contains(line, "(#336)")
+    as "a prerequisite the server does not read is the issue of the prerequisites, #334"
   let #(_, second) =
     press_at(scene:, state:, spell4_id: 43_164, target: 911, at: 2000)
   assert support.refusal_results(effects: second)
@@ -794,6 +796,8 @@ pub fn a_caster_condition_of_an_unread_type_refuses_as_not_built_test() -> Nil {
     as "Spell4 32581's CasterCast is Prerequisite 28094, a type 16 the server does not read"
   let assert [line] = warnings(effects:)
   assert string.contains(line, "16") as "the log names the type"
+  assert string.contains(line, "(#334)")
+    as "a caster condition the server does not read is the issue of the prerequisites, #334"
 }
 
 pub fn a_press_of_a_targeted_spell_that_cannot_be_planned_stays_not_built_test() -> Nil {
@@ -812,9 +816,8 @@ pub fn a_press_of_a_targeted_spell_that_cannot_be_planned_stays_not_built_test()
     == [code(cast_result.IllegalSpellCast)]
     as "Spell4 30173's tree holds a state the plans cannot: refused 285"
   let assert [line] = warnings(effects:)
-  assert string.contains(line, "30173")
-    && string.contains(line, "Spells work in depth on the real client")
-    as "the log names the spell and the issue that will close the gap"
+  assert string.contains(line, "30173") && string.contains(line, "(#336)")
+    as "the log names the spell and the issue that will close the gap, #336"
 }
 
 pub fn a_press_of_a_target_type_3_spell_tests_its_faction_cast_group_test() -> Nil {

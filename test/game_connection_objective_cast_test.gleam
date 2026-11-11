@@ -1,6 +1,7 @@
 //// The cast-a-spell objective (`QuestObjective.type.11`) on a running game connection: the
-//// objective's spell is given to the client as a button, a press casts it on the caster and
-//// the go counts it. Expected values come from these places, and never from the helpers that
+//// objective's spell is given to the client as a button, a press casts it on the caster, or on
+//// the unit the press names when the spell takes a target, and the go counts it. Expected
+//// values come from these places, and never from the helpers that
 //// build the input.
 //// - `opcode.0x176`: a spell shortcut is the spell (18 bits), the kind (3 bits, 2 for an
 ////   objective), the objective's id (32) and an add bit (1 add, 0 remove), written by the

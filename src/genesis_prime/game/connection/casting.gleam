@@ -162,37 +162,15 @@ pub fn activate_message(
   entered entered: world_entry.Entered,
   inner inner: Frame,
 ) -> client_connection.Handled(Session) {
-  let tables = session.settings.tables
-  let caster = caster_of(tables:, entered:)
-  // The player's Race row is in the tables (the load fails otherwise), so a missing one
-  // crashes.
-  let assert Ok(caster_radius) =
-    hit_radius.of_player(tables:, race_id: RaceId(caster.player.race_id))
-    as "hit_radius.requirements fails the load when a playable race has no Race row"
-  let assert Ok(faction) = shown.faction_of(entered.unit.tail.faction_id)
-    as "a character's faction is Exile or Dominion (start_place)"
+  let WorldCast(caster:, caster_radius:, target_of:) =
+    world_cast(session:, now:, entered:)
   case
     cast.activate(
       cast: entered.cast,
       body: inner.body,
       caster:,
       activations: connection_state.activations_of(session:),
-      target_of: activate_target(
-        tables:,
-        picture: entered.shown,
-        player: interaction.Player(
-          race_id: entered.character.race_id,
-          faction:,
-          place: movement.place(state: entered.movement),
-        ),
-        now_ms: now.monotonic_ms,
-        link_of: link_of(
-          tables:,
-          activations: connection_state.activations_of(session:),
-          state: entered.cast,
-          caster:,
-        ),
-      ),
+      target_of:,
       caster_radius:,
       now:,
     )
@@ -216,14 +194,8 @@ pub fn shortcut_message(
   inner inner: Frame,
 ) -> client_connection.Handled(Session) {
   let tables = session.settings.tables
-  let caster = caster_of(tables:, entered:)
-  // The player's Race row is in the tables (the load fails otherwise), so a missing one
-  // crashes.
-  let assert Ok(caster_radius) =
-    hit_radius.of_player(tables:, race_id: RaceId(caster.player.race_id))
-    as "hit_radius.requirements fails the load when a playable race has no Race row"
-  let assert Ok(faction) = shown.faction_of(entered.unit.tail.faction_id)
-    as "a character's faction is Exile or Dominion (start_place)"
+  let WorldCast(caster:, caster_radius:, target_of:) =
+    world_cast(session:, now:, entered:)
   case
     cast.shortcut(
       cast: entered.cast,
@@ -232,22 +204,7 @@ pub fn shortcut_message(
       shortcuts: connection_state.shortcut_spells_of(session:),
       held: set.map(entered.buttons, fn(button) { button.spell4_id.value }),
       activations: connection_state.activations_of(session:),
-      target_of: activate_target(
-        tables:,
-        picture: entered.shown,
-        player: interaction.Player(
-          race_id: entered.character.race_id,
-          faction:,
-          place: movement.place(state: entered.movement),
-        ),
-        now_ms: now.monotonic_ms,
-        link_of: link_of(
-          tables:,
-          activations: connection_state.activations_of(session:),
-          state: entered.cast,
-          caster:,
-        ),
-      ),
+      target_of:,
       in_cast_group: fn(group, unit_id) {
         shown.in_group(tables:, picture: entered.shown, group:, unit_id:)
       },
@@ -260,6 +217,52 @@ pub fn shortcut_message(
     Error(refusal) ->
       connection_state.end_for(session:, now:, text: cast.describe(refusal))
   }
+}
+
+/// What a message that casts at a unit needs of the player's world: the caster, the
+/// radius of its body and what each unit is to the player (`activate_target`).
+type WorldCast {
+  WorldCast(
+    caster: cast.Caster,
+    caster_radius: Float,
+    target_of: fn(Int) -> activate.Target,
+  )
+}
+
+fn world_cast(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+) -> WorldCast {
+  let tables = session.settings.tables
+  let caster = caster_of(tables:, entered:)
+  // The player's Race row is in the tables (the load fails otherwise), so a missing one
+  // crashes.
+  let assert Ok(caster_radius) =
+    hit_radius.of_player(tables:, race_id: RaceId(caster.player.race_id))
+    as "hit_radius.requirements fails the load when a playable race has no Race row"
+  let assert Ok(faction) = shown.faction_of(entered.unit.tail.faction_id)
+    as "a character's faction is Exile or Dominion (start_place)"
+  WorldCast(
+    caster:,
+    caster_radius:,
+    target_of: activate_target(
+      tables:,
+      picture: entered.shown,
+      player: interaction.Player(
+        race_id: entered.character.race_id,
+        faction:,
+        place: movement.place(state: entered.movement),
+      ),
+      now_ms: now.monotonic_ms,
+      link_of: link_of(
+        tables:,
+        activations: connection_state.activations_of(session:),
+        state: entered.cast,
+        caster:,
+      ),
+    ),
+  )
 }
 
 /// The player's 0xb3, the use of a unit with no activate spell (genesis_prime/game/cast

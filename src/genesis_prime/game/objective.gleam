@@ -77,9 +77,6 @@ import gleam/set.{type Set}
 /// reward pane, each of which must be killed (`QuestObjective.type.15`).
 const named_group_type = 15
 
-/// The objective type of a use of a unit of a group, which counts each unit once.
-const use_a_group_type = 23
-
 /// The objective type of a talk.
 const talk_type = 3
 
@@ -366,7 +363,7 @@ fn counts(
         && target_group.contains(tables:, group: objective.data, unit: target)
       }
       || {
-        objective.type_ == use_a_group_type
+        objective.type_ == quest_log.use_a_group_type
         && target_group.contains(tables:, group: objective.data, unit: target)
         && is_the_terminals_choice(
           objective_id: objective.objective_id,
@@ -486,7 +483,7 @@ fn advance_quest(
   let #(log, progress, became_achieved) =
     list.fold(named, #(so_far.log, [], False), fn(counted, open) {
       let #(log, progress, became_achieved) = counted
-      let aimed_at_the_caster = open.1.type_ == shortcut_spell.cast_type
+      let counted_with_no_unit = open.1.type_ == shortcut_spell.cast_type
       case group_member(open.1), { open.1 }.checklist {
         Ok(#(member, members)), _ ->
           case
@@ -558,7 +555,7 @@ fn advance_quest(
                 Ok(_) | Error(Nil) -> counted
               }
             // A cast aimed at the caster names no unit and counts one at each go.
-            True, Error(Nil) if aimed_at_the_caster ->
+            True, Error(Nil) if counted_with_no_unit ->
               progressed_by_one(counted:, quest:, index: open.0, now_ms:)
             // A use always carries its unit, so a type 23 objective with none counts
             // nothing.
