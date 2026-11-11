@@ -725,6 +725,37 @@ pub fn a_row_friendly_to_both_player_factions_is_left_out_test() -> Nil {
   assert left_out(selection:, reason: FriendlyToBoth) == 1
 }
 
+pub fn a_linked_creature_friendly_to_both_factions_starts_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Creature2 13814 (world 51 row 262 of the world database) has faction 219,
+  // Friendly to both player factions, and links to quest 3915 through
+  // questAnimStateId (objective index 0). The client keeps and draws a unit sent
+  // in 0x262 whatever its faction (`0x140456960.faction`) and makes no faction
+  // test on its activation (`0x14039d4a0.faction`). The Dagun, also faction 219
+  // and with no link column, is left out as a Friendly creature is.
+  let selection =
+    selected(rows: [
+      spawn.Row(
+        ..spawn_support.beast_row(number: 262),
+        creature_id: 13_814,
+        world_id: 51,
+        display_info_id: 24_207,
+        faction_id: 219,
+        base_faction_id: 219,
+      ),
+      spawn.Row(
+        ..spawn_support.beast_row(number: 2),
+        creature_id: 73_465,
+        display_info_id: 26_578,
+        faction_id: 219,
+        base_faction_id: 219,
+      ),
+    ])
+  assert started(selection) == [262]
+    as "the linked creature starts and the unlinked one does not"
+  assert left_out(selection:, reason: FriendlyToBoth) == 1
+}
+
 pub fn a_row_hostile_to_one_faction_and_friendly_to_the_other_starts_test() -> Nil {
   use <- owned_test.run(5000)
   // Faction2Relationship.factionLevel rows 2943 and 2944: faction 1441 is level 0

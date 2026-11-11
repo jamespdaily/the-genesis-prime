@@ -19,11 +19,15 @@ import cast_support as support
 import fixture_tables
 import genesis_prime/game/activate
 import genesis_prime/game/cast.{type Effect}
+import genesis_prime/game/objective_link
+import genesis_prime/game/prerequisite
+import genesis_prime/game/quest_log
 import genesis_prime/message/client_activate_unit.{ClientActivateUnit}
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
 import gleam/dict
+import gleam/option.{Some}
 import gleam/string
 import owned_test
 import place_support
@@ -34,6 +38,8 @@ const the_mollusk = 26_462
 const a_manifestation = 73_500
 
 const a_market_terminal = 34_758
+
+const a_linked_creature = 10_036
 
 const market_quest = 7153
 
@@ -72,6 +78,7 @@ fn unit(
     creature_id: creature,
     creature: activate.creature_of(row:),
     checklist_index:,
+    link: activate.NoLink,
     body: activate.Body(
       place: place_support.at(
         world_id: 3460,
@@ -288,4 +295,74 @@ pub fn a_client_activate_unit_picks_with_the_checklist_bit_of_the_unit_test() ->
   assert market_terminal_used(progress: 32)
     == [cast.Activated(unit_id: its_unit, creature_id: a_market_terminal)]
     as "bit 5 is set: the condition fails and the next column, prerequisite 0 with spell 0, wins: no activate spell, so the client's use is at once (0x14046c580)"
+}
+
+/// What the 0xb3 for Creature2 10036, which has no activate spell and a questAnim link to
+/// quest 3244's objective 0, gives a caster whose quest log is this one, when the server
+/// offers the unit by another objective's count: the link is read by the rule that reads
+/// it (genesis_prime/game/objective_link `of`).
+fn linked_creature_used(quests quests: quest_log.QuestLog) -> List(Effect) {
+  let tables = fixture_tables.shared()
+  let caster = cast.Caster(..standing(), quests:)
+  let assert Ok(row) =
+    creature2.get(tables:, id: Creature2Id(a_linked_creature))
+    as "the fixture holds the creature's row"
+  let link =
+    objective_link.of(
+      tables:,
+      activations: activate.activations(tables:),
+      subject: prerequisite.Subject(
+        ..cast.subject_of(cast: cast.new(), caster:),
+        second_unit: Some(its_unit),
+        positions: prerequisite.NotPlaced,
+      ),
+      quests:,
+      row:,
+      checklist_index: 0,
+    )
+  used_by(
+    caster:,
+    seen: [
+      #(
+        its_unit,
+        cast.UsedUnit(
+          ..unit(
+            creature: a_linked_creature,
+            checklist_index: 0,
+            east: 1.0,
+            offered: True,
+          ),
+          link:,
+        ),
+      ),
+    ],
+    unit_id: its_unit,
+  )
+}
+
+pub fn a_use_of_a_creature_with_no_open_link_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert linked_creature_used(
+      quests: quest_support.log_of(rows: [
+        quest_support.accepted(quest_id: 3244, progress: [0]),
+      ]),
+    )
+    == [cast.Activated(unit_id: its_unit, creature_id: a_linked_creature)]
+    as "quest 3244 is Accepted with its objective 4242 open: the link is open, and a creature with no activate spell is used at once"
+  let text =
+    linked_creature_used(
+      quests: quest_support.log_of(rows: [
+        quest_support.active(
+          quest_id: 3244,
+          state: 2,
+          placeholder: 0,
+          tracked: False,
+          done_mask: 0b1,
+          progress: [1],
+        ),
+      ]),
+    )
+    |> refusal_text
+  assert string.contains(text, "link")
+    as "objective 4242 is done: the client offers the creature nothing, so the use is logged and counts nothing"
 }

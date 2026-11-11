@@ -28,7 +28,9 @@ import genesis_prime/game/activate.{
   Object, Planned,
 }
 import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/objective_link
 import genesis_prime/game/prerequisite
+import genesis_prime/game/quest_log
 import genesis_prime/game/spell_plan
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
@@ -48,6 +50,7 @@ import genesis_prime/table/id.{Creature2Id}
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import gleam/string
 import owned_test
 import place_support
@@ -100,13 +103,21 @@ fn object(
   east east: Float,
   up up: Float,
 ) -> Target {
-  object_of(creature_id: the_mollusk, creature:, checklist_index: 0, east:, up:)
+  object_of(
+    creature_id: the_mollusk,
+    creature:,
+    checklist_index: 0,
+    link: activate.NoLink,
+    east:,
+    up:,
+  )
 }
 
 fn object_of(
   creature_id creature_id: Int,
   creature creature: activate.Creature,
   checklist_index checklist_index: Int,
+  link link: activate.Link,
   east east: Float,
   up up: Float,
 ) -> Target {
@@ -114,6 +125,7 @@ fn object_of(
     creature_id:,
     creature:,
     checklist_index:,
+    link:,
     body: Body(
       place: place_support.at(
         world_id: 3460,
@@ -364,6 +376,7 @@ fn market_terminal_pressed(progress progress: Int) -> List(Effect) {
         creature_id: a_market_terminal,
         creature: activate.creature_of(row:),
         checklist_index: 5,
+        link: activate.NoLink,
         east: 1.0,
         up: 0.0,
       ),
@@ -701,6 +714,94 @@ pub fn activate_logs_each_unread_prerequisite_type_once_test() -> Nil {
   Nil
 }
 
+/// The Creature2 row of the quest collectible whose objective the tests open and close:
+/// questAnimStateId 3741, index 0, activate spell 1817 with cast time 2000.
+const the_collectible = 12_919
+
+/// The right-click of the collectible by a caster with this quest log, its link read by
+/// the rule that reads it (genesis_prime/game/objective_link `of`).
+fn collectible_clicked(quests quests: quest_log.QuestLog) -> List(Effect) {
+  let tables = fixture_tables.shared()
+  let caster = cast.Caster(..standing(), quests:)
+  let activations = the_activations()
+  let assert Ok(row) = creature2.get(tables:, id: Creature2Id(the_collectible))
+    as "Creature2 12919 is a root of the fixture"
+  let link =
+    objective_link.of(
+      tables:,
+      activations:,
+      subject: prerequisite.Subject(
+        ..cast.subject_of(cast: cast.new(), caster:),
+        second_unit: Some(its_unit),
+        positions: prerequisite.NotPlaced,
+      ),
+      quests:,
+      row:,
+      checklist_index: 0,
+    )
+  let assert Ok(#(_, effects)) =
+    right_click_by(
+      caster:,
+      state: cast.new(),
+      activations:,
+      unit_id: its_unit,
+      target: object_of(
+        creature_id: the_collectible,
+        creature: activate.creature_of(row:),
+        checklist_index: 0,
+        link:,
+        east: 1.0,
+        up: 0.0,
+      ),
+      at: 1000,
+    )
+    as "a right-click that fits the message is answered"
+  effects
+}
+
+pub fn an_activate_cast_on_a_creature_with_no_open_link_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 3741's one objective, 4813, is done: the client's offer of Creature2 12919
+  // waits for its objective to be open, and offers nothing at all otherwise.
+  let effects =
+    collectible_clicked(
+      quests: quest_support.log_of(rows: [
+        quest_support.active(
+          quest_id: 3741,
+          state: 2,
+          placeholder: 0,
+          tracked: False,
+          done_mask: 0b1,
+          progress: [6],
+        ),
+      ]),
+    )
+  assert support.started_timers(effects:) == [] && support.tells(effects:) == []
+    as "no cast starts"
+  assert support.refusal_results(effects:)
+    == [cast_result.to_value(cast_result.TargetIsNotUseable)]
+    as "the 0x97 is answered as a use of nothing: result 100"
+  let assert [#(LogWarning, line)] = support.logs(effects:)
+    as "the refusal is logged"
+  assert string.contains(line, "closed")
+}
+
+pub fn an_activate_cast_on_a_creature_with_an_open_link_starts_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 3741 is Accepted with objective 4813 at 2 of 6.
+  let effects =
+    collectible_clicked(
+      quests: quest_support.log_of(rows: [
+        quest_support.accepted(quest_id: 3741, progress: [2]),
+      ]),
+    )
+  assert list.map(support.started_timers(effects:), fn(started) { started.1 })
+    == [2000]
+    as "Creature2 12919's activateSpellCastTime, 2000, is the go's delay"
+  assert support.refusal_results(effects:) == [] && support.logs(effects:) == []
+    as "nothing is refused or logged"
+}
+
 pub fn activate_cancelled_raises_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
@@ -754,6 +855,7 @@ fn terminal_object(creature creature: activate.Creature) -> Target {
     creature_id: the_terminal,
     creature:,
     checklist_index: 0,
+    link: activate.NoLink,
     east: 1.0,
     up: 0.0,
   )

@@ -26,6 +26,7 @@
 ////
 //// A rule: the log and the event in, the log and the effects out.
 
+import genesis_prime/game/objective_link
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest as quest_rules
 import genesis_prime/game/quest_log.{type QuestLog}
@@ -33,7 +34,6 @@ import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
 import genesis_prime/store.{type HeldItem}
-import genesis_prime/table/creature2
 import genesis_prime/table/id.{
   type Creature2Id, type Item2Id, Creature2Id, Item2Id, PathSoldierActivateId,
   TradeskillSchematic2Id,
@@ -59,10 +59,11 @@ const checklist_talk_type = 18
 /// The objective type of a checklist use of a PathSoldierActivate creature.
 const path_soldier_type = 28
 
-/// The objective type of a quest collectible: a use of a creature whose Creature2 row
-/// names the quest and the objective's index (`0x1405a8b30`; a guess, see
-/// `names_the_objective`).
+/// The objective type of a quest collectible: a use of a creature linked to it.
 const collectible_type = 32
+
+/// The objective type of a scripted objective: a use of a creature linked to it.
+const scripted_type = 5
 
 /// The objective type of a held item: the Item2 id in its data.
 const held_type = 4
@@ -236,12 +237,13 @@ fn counts(
         )
       }
       || {
-        objective.type_ == collectible_type
-        && names_the_objective(
-          tables:,
-          creature_id: target.creature_id,
-          quest_id:,
-          index:,
+        {
+          objective.type_ == collectible_type
+          || objective.type_ == scripted_type
+        }
+        && list.contains(
+          objective_link.links(tables:, creature_id: target.creature_id),
+          #(quest_id, index),
         )
       }
     Killed(target:) -> {
@@ -357,25 +359,6 @@ fn activates_creature(
     )
   {
     Ok(row) -> Creature2Id(row.creature2_id) == creature_id
-    Error(Nil) -> False
-  }
-}
-
-/// Whether the creature's row names this objective of this quest as a collectible
-/// (`quest_anim_state_id` is the quest, `quest_anim_objective_index` the objective's
-/// index; `0x1405a8b30`). The client counts nothing for type 32 itself: the server
-/// sends the value. That a finished activate cast is the count is a guess, graded so in
-/// the client facts, which a retail recording of such a creature would settle.
-fn names_the_objective(
-  tables tables: table_store.Tables,
-  creature_id creature_id: Creature2Id,
-  quest_id quest_id: Int,
-  index index: Int,
-) -> Bool {
-  case creature2.get(tables:, id: creature_id) {
-    Ok(row) ->
-      row.quest_anim_state_id == quest_id
-      && row.quest_anim_objective_index == index
     Error(Nil) -> False
   }
 }

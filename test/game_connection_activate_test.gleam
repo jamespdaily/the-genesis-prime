@@ -35,6 +35,7 @@ import genesis_prime/world_map/static_object.{type Created, StaticObject}
 import gleam/list
 import gleam/option
 import owned_test
+import quest_support
 import spawn_support
 
 const mollusk_display = 25_703
@@ -205,9 +206,22 @@ pub fn an_interaction_answer_reaches_the_cast_rule_test() -> Nil {
     )
     == Ok(routing.Cast(message: cast.Answered))
     as "opcode.0x805: a 0x805 inside 0x038C is a cast row in the world"
+  // The terminal's Prerequisite 41793 (the objective 1 of quest 10528 open, or quest
+  // 10528 in state 2 or 3) is its anim prerequisite column, so the client offers it
+  // only to a player whose objective 1 of quest 10528 is open, and the player here holds
+  // the quest Accepted with objective 0 done.
   let #(seeing, _) =
     connection_support.feed(
-      connection_support.in_world(),
+      connection_support.in_world_as_exile_holding(quests: [
+        quest_support.active(
+          10_528,
+          state: 1,
+          placeholder: 0,
+          tracked: False,
+          done_mask: 1,
+          progress: [1, 0, 0, 0, 0],
+        ),
+      ]),
       connection_support.sent_by_the_map(ObjectsSeen(units: [terminal()])),
     )
   let #(clicked, started) =

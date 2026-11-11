@@ -35,7 +35,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/table/creature2
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
-  type Spell4EffectsId, GameFormulaId, Spell4EffectsId, Spell4Id,
+  type Spell4EffectsId, GameFormulaId, PrerequisiteId, Spell4EffectsId, Spell4Id,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
@@ -151,7 +151,9 @@ pub type Planned {
 }
 
 /// The activate spells' plans and the Prerequisite rows of the columns, as the load
-/// built them.
+/// built them. A link column's prerequisite whose row the table lacks is not held (47
+/// creatures name 33 such ids): the client fails a prerequisite it cannot find, so the
+/// link is closed (`objective_link.of`).
 pub type Activations {
   Activations(
     /// Each Prerequisite a creature's activate column names, by id.
@@ -178,6 +180,8 @@ pub fn derivation() -> table_store.Derivation {
           "the table GameFormula has no row "
           <> int.to_string(default_spell_formula)
         PrerequisiteNotLoaded(error:) -> spell_plan.describe(error:)
+        AnimPrerequisiteNotLoaded(error:) ->
+          prerequisite.describe_load_error(error:)
       }
     })
   })
@@ -187,6 +191,7 @@ pub fn derivation() -> table_store.Derivation {
 type BuildError {
   NoDefaultSpellFormula
   PrerequisiteNotLoaded(error: spell_plan.PlanError)
+  AnimPrerequisiteNotLoaded(error: prerequisite.LoadError)
 }
 
 /// The activations the tables' load built.
@@ -220,6 +225,28 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
     })
     |> result.map_error(PrerequisiteNotLoaded),
   )
+  use anim_prerequisites <- result.try(
+    list.try_fold(
+      anim_prerequisite_ids(tables:),
+      [],
+      fn(loaded, prerequisite_id) {
+        case
+          prerequisite.load(
+            id: PrerequisiteId(prerequisite_id),
+            rows:,
+            arcs:,
+            quests:,
+          )
+        {
+          Ok(held) -> Ok([#(prerequisite_id, held), ..loaded])
+          // The client fails a prerequisite it has no row for, so such a link is closed;
+          // the tables name rows they lack (see `Activations`).
+          Error(prerequisite.NoPrerequisiteRow(..)) -> Ok(loaded)
+          Error(error) -> Error(AnimPrerequisiteNotLoaded(error:))
+        }
+      },
+    ),
+  )
   let spell_ids =
     [default_spell, ..list.map(columns, fn(column) { column.spell4_id })]
     |> list.filter(fn(spell4_id) { spell4_id != 0 })
@@ -231,6 +258,7 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
       option.to_result(entry.1, Nil)
       |> result.map(fn(loaded) { #(entry.0, loaded) })
     })
+      |> list.append(anim_prerequisites)
       |> dict.from_list,
     spells: list.map(spell_ids, fn(spell4_id) {
       #(spell4_id, planned(tables:, sources:, spell4_id:))
@@ -238,6 +266,16 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
       |> dict.from_list,
     default_spell:,
   ))
+}
+
+/// The ids of the Prerequisite rows the creatures' link columns name
+/// (`Creature2.prerequisiteIdAnimState`).
+fn anim_prerequisite_ids(tables tables: table_store.Tables) -> List(Int) {
+  creature2.all(tables)
+  |> list.map(fn(row) { row.prerequisite_id_anim_state })
+  |> list.filter(fn(prerequisite_id) { prerequisite_id != 0 })
+  |> set.from_list
+  |> set.to_list
 }
 
 fn planned(
@@ -357,8 +395,32 @@ pub type Target {
   Fighter
   /// A static object: the id of its Creature2 row, what the row says of its activate
   /// cast, the checklist index its 0x262 carried (the bit a type 94 condition of its
-  /// activate pick reads) and where it stands.
-  Object(creature_id: Int, creature: Creature, checklist_index: Int, body: Body)
+  /// activate pick reads), whether the player's quest log opens the creature's link to
+  /// an objective and where it stands.
+  Object(
+    creature_id: Int,
+    creature: Creature,
+    checklist_index: Int,
+    link: Link,
+    body: Body,
+  )
+}
+
+/// Whether the player's quest log opens a creature's link to an objective, which the
+/// client's offer of the creature's activation waits for (`0x14046c4d0`).
+pub type Link {
+  /// The creature has no quest animation column and no animation prerequisite: nothing
+  /// holds its activation back.
+  NoLink
+  /// The creature's link is open: the client offers its activation.
+  OpenLink
+  /// The creature's link is closed: the client offers it nothing at all, and the server
+  /// takes no activation of it.
+  ClosedLink
+  /// The creature's animation prerequisite has a condition of this PrerequisiteType that
+  /// the server does not read, so the client's offer cannot be told: the server takes no
+  /// activation of it.
+  UnreadLink(prerequisite_type: Int)
 }
 
 /// The range of the client's use of a unit whose creature has no activate spell (0xb3):

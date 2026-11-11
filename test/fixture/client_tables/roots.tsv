@@ -447,3 +447,14 @@ WorldLocation2	28530	marker of objective 13674, which has a vertical limit of 35
 WorldLocation2	44761	marker of objective 13907, which has a vertical limit of 8	objective_place_test
 Quest2	7667	quest whose objective 1 (14205) is a type 22 place with count 10 and marker 30725	objective_place_test
 WorldLocation2	30725	marker of objective 14205, a type 22 objective with count 10	objective_place_test
+Creature2	73463	a tutorial mine whose prerequisiteIdAnimState 41818 names the exile objective of quest 10518 and the dominion one of quest 10524	objective_test, game_wire_test
+Creature2	12321	a creature whose prerequisiteIdAnimState 12379 names the type 32 objective 4722 of quest 3655	objective_test
+Creature2	4989	a creature whose questAnim columns name quest 2020 objective index 1 (type 5)	objective_test
+Creature2	7952	a creature whose questAnim columns name quest 2731 objective index 0 (type 4)	objective_test
+Creature2	13814	a creature whose questAnim columns link it, faction 219, friendly to both factions	spawn_test
+Quest2	10518	exile tutorial quest whose objective 1 is the type 5 objective of the mine 73463	objective_test, game_wire_test
+Quest2	10524	dominion tutorial quest whose objective 1 is the type 5 objective of the mine 73463	objective_test
+Quest2	3655	quest whose objective 0 is the type 32 objective 4722	objective_test
+Quest2	2731	quest whose objective 0 is the type 4 objective 3422	objective_test
+Creature2	10036	a creature with no activate spell whose questAnim columns name quest 3244 objective index 0	cast_activate_unit_test
+Quest2	3244	quest whose one objective 4242 is a type 5 objective	cast_activate_unit_test
