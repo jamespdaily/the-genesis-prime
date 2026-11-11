@@ -1773,12 +1773,16 @@ fn exile_whose_mine_cast_went() -> #(
     })
   // The Sim-Turrets of objectives 21288 and 21316 stand within sight of the mine, and
   // each writes its own 0x262 from its own process, so they may come before or after
-  // the mine's: the mine is the one object of its Creature2.
-  let assert [mine] =
-    list.filter(static_objects_created_in(frames: entry), fn(object) {
-      object.creature_id == 73_463
-    })
-    as "the mine is the one static object of Creature2 73463 shown"
+  // the mine's. The Dominion's marker 52899 holds a mine of the same Creature2, 143
+  // units away (a click target with no spawn stands at its objective's marker), so
+  // the Exile's mine is the one nearest the Exile.
+  let assert Ok(mine) =
+    nearest_object_of(
+      objects: static_objects_created_in(frames: entry),
+      creature_id: 73_463,
+      to: #(-69.4453, 383.553),
+    )
+    as "a static object of Creature2 73463 is shown"
   let assert Ok(press) =
     cast_activate.encode(CastActivate(
       client_cast_id: 1,
@@ -1859,6 +1863,114 @@ pub fn a_second_cast_on_the_mine_after_its_objective_is_done_is_refused_test() -
     }
   })
     as "no cast is confirmed or started"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// A Dominion character in World 3460 one unit east of marker 52899 (WorldLocation2
+/// 52899, x 72.98709869384766, y -872.089111328125, z 357.6340026855469), holding quest
+/// 10524 with its objective 0 done, who sees the mines the markers hold: the markers
+/// 52899, 52900 and 52901 (the click objectives 21313, 21314 and 21315, indexes 1, 2
+/// and 3 of quest 10524) have no stored spawn, the world database holds only the
+/// Exile's mines (rows 29098 to 29100) in that world, and each mine of the tutorial
+/// is a Creature2 of its own (73463, 73667 and 73668, CreationTypeEnum 20, unit type
+/// 32).
+pub fn a_dominion_player_sees_and_counts_the_mines_at_their_markers_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started =
+    start_with_world_data_by(
+      folder: "test/fixture/world_data_mine",
+      adjusted: fn(settings) { settings },
+    )
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Dax Qu",
+      class_id: 4,
+      level: 1,
+    )
+  let assert Ok(_) =
+    pog.query("update character set faction_id = 166 where character_id = $1")
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character is a Dominion"
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 10524, 1, 0, true, 1, '{1,0,0,0,0,0}', 0, '{0,0,0,0,0,0}', '{0,0,0,0,0,0}')",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character holds quest 10524 with objective 0 done"
+  character_support.move_to(
+    pool:,
+    character_id: character,
+    world_id: 3460,
+    world_zone_id: 5967,
+    position: #(73.98709869384766, -872.089111328125, 357.6340026855469),
+  )
+  send_play(game:, character_id: character)
+  // The marker of each mine: its centre (WorldLocation2 position0, 1 and 2).
+  let markers = [
+    #(73_463, #(72.98709869384766, -872.089111328125, 357.6340026855469)),
+    #(73_667, #(53.51499938964844, -872.089111328125, 374.47900390625)),
+    #(73_668, #(43.11709976196289, -872.089111328125, 395.1889953613281)),
+  ]
+  let standing_at = fn(frames, creature_id, marker: #(Float, Float, Float)) {
+    list.filter(static_objects_created_in(frames:), fn(object) {
+      let #(x, y, z) = game_client.placed_by_tail(tail: object.tail)
+      object.creature_id == creature_id
+      && float.absolute_value(x -. marker.0) <. 0.01
+      && float.absolute_value(y -. marker.1) <. 0.01
+      && float.absolute_value(z -. marker.2) <. 0.01
+    })
+  }
+  let #(entry, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+      && list.all(markers, fn(pair) {
+        standing_at(frames, pair.0, pair.1) != []
+      })
+    })
+  assert list.map(markers, fn(pair) {
+      list.length(standing_at(entry, pair.0, pair.1))
+    })
+    == [1, 1, 1]
+    as "opcode.0x262: one mine of each Creature2 stands at its marker"
+  let assert [mine, ..] =
+    standing_at(entry, 73_463, #(
+      72.98709869384766,
+      -872.089111328125,
+      357.6340026855469,
+    ))
+    as "the mine of marker 52899 is shown"
+  let assert Ok(press) =
+    cast_activate.encode(CastActivate(
+      client_cast_id: 1,
+      target_unit_id: mine.unit_id,
+    ))
+    as "the right-click fits the message"
+  game_client.send_world(
+    game:,
+    message_id: cast_activate.message_id,
+    body: press,
+  )
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 1)
+  assert list.filter(pressed, fn(frame) { frame.message_id == 0x0361 })
+    == [
+      Frame(
+        message_id: 0x0361,
+        body: message_support.packed([#(15, 10_524), #(32, 1), #(32, 1)]),
+      ),
+    ]
+    as "opcode.0x361: the go of the mine's cast counts objective 21313 of quest 10524"
+  let #(rest, _) = game_client.read_until_pong(game:, have:, number: 2)
+  assert list.filter(list.append(pressed, rest), fn(frame) {
+      frame.message_id == unit_destroyed.message_id
+    })
+    == []
+    as "opcode.0x355: the mine stays shown"
   game_client.close(game:)
   login_support.stop(started)
 }
@@ -4228,6 +4340,25 @@ fn static_objects_created_in(
   })
 }
 
+/// The static object of the Creature2 that stands nearest the position (x, z) of
+/// the world, or Error(Nil) when none of it is among the objects.
+fn nearest_object_of(
+  objects objects: List(unit_create_static.UnitCreateStatic),
+  creature_id creature_id: Int,
+  to to: #(Float, Float),
+) -> Result(unit_create_static.UnitCreateStatic, Nil) {
+  let apart = fn(object: unit_create_static.UnitCreateStatic) {
+    let #(x, _, z) = game_client.placed_by_tail(tail: object.tail)
+    let assert Ok(far) = float.power(x -. to.0, 2.0)
+    let assert Ok(deep) = float.power(z -. to.1, 2.0)
+    far +. deep
+  }
+  objects
+  |> list.filter(fn(object) { object.creature_id == creature_id })
+  |> list.sort(fn(a, b) { float.compare(apart(a), apart(b)) })
+  |> list.first
+}
+
 /// A new character of the faction at the position in World 3460, entered as the
 /// player of the account number `number`, and every message the server wrote up to
 /// the pong of a ping sent after the 0x262 of each of `anchors`, units that no
@@ -4309,9 +4440,19 @@ fn includes_each(read read: List(Int), wanted wanted: List(Int)) -> Bool {
 /// written to a character in sight of them, whatever its faction.
 const sim_turrets = [73_494, 73_494, 74_862, 74_862]
 
-/// The ids with the Sim-Turrets, sorted as `static_objects_in` sorts them.
-fn with_the_sim_turrets(ids ids: List(Int)) -> List(Int) {
-  list.append(ids, sim_turrets) |> list.sort(int.compare)
+/// The tutorial's three mines, each twice: Creature2 73463, 73667 and 73668 each link to
+/// an Exile objective (21287, 21340, 21318: markers 51662, 51663, 51664) and a Dominion
+/// objective (21313, 21314, 21315: markers 52899, 52900, 52901), and the world data of
+/// this test holds no row of them, so the load places each at both of its markers (a
+/// click target with no spawn stands at its objective's marker). Every marker is within
+/// the sight range of 1024 units of the Start Arrow's row 29054 (the farthest, 51664 at
+/// x -119.41, z 424.96, is 924 units off it), and a mine's visibility prerequisite hides
+/// none of them from an Exile with no tutorial quest.
+const tutorial_mines = [73_463, 73_463, 73_667, 73_667, 73_668, 73_668]
+
+/// The ids with the Sim-Turrets and the mines, sorted as `static_objects_in` sorts them.
+fn with_the_sim_turrets_and_mines(ids ids: List(Int)) -> List(Int) {
+  list.flatten([ids, sim_turrets, tutorial_mines]) |> list.sort(int.compare)
 }
 
 pub fn entering_world_3460_writes_no_start_arrow_and_mount_displays_only_to_an_exile_test() -> Nil {
@@ -4320,7 +4461,7 @@ pub fn entering_world_3460_writes_no_start_arrow_and_mount_displays_only_to_an_e
     start_with_world_data(folder: "test/fixture/world_data_tutorial")
   let at_the_arrows = #(71.4148, -855.3006, -479.419)
   let at_the_mounts = #(1381.03, -495.32764, 213.793)
-  let at_the_arrows_ids = with_the_sim_turrets(ids: [73_619])
+  let at_the_arrows_ids = with_the_sim_turrets_and_mines(ids: [73_619])
   let exile =
     static_objects_in(frames: entering_3460_as(
       started:,

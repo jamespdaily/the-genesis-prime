@@ -1,6 +1,6 @@
-test/fixture/world_data_mine/spawn.tsv holds the header and rows 262 and 29098 of spawn.tsv of the
+test/fixture/world_data_mine/spawn.tsv holds the header and rows 262, 29098, 29099 and 29100 of spawn.tsv of the
 wildstar-knowledge world-data (https://github.com/jamespdaily/wildstar-knowledge, path
 world-data/spawn.tsv), copied as they are, under that repository's licence, the GNU Affero General
 Public License, version 3 (the same as this project's). The tests import it as the world database's
 own rows: a chest (13814) in World 51 whose faction 219 is friendly to both factions, and the
-tutorial's mine (73463) in World 3460.
+tutorial's three Exile mines (73463, 73667 and 73668) in World 3460.

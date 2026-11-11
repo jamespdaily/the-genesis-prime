@@ -65,6 +65,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/set.{type Set}
+import gleam/string
 import gleam_community/maths
 import owned_test
 import place_support
@@ -470,7 +471,12 @@ pub fn a_refused_placed_row_is_labelled_as_a_placement_not_a_spawn_test() -> Nil
   let labelled =
     objective_spawn.labelled(
       refusals: selection.refusals,
-      placed: objective_spawn.Placed(rows: [placed_row], skipped: []),
+      placed: objective_spawn.Placed(
+        rows: [placed_row],
+        skipped: [],
+        click_rows: [],
+        click_skipped: [],
+      ),
     )
   assert list.map(labelled, fn(refusal) { refusal.row })
     == [
@@ -841,4 +847,760 @@ pub fn the_placed_boss_takes_its_chosen_faction_and_starts_test() -> Nil {
     as "the selection holds world 3460"
   assert dict.has_key(started.by_id, row.id)
     as "the boss starts: with 233 it is no longer Friendly to both"
+}
+
+// Click targets: the creatures a type 5 or 32 objective is linked to
+// (`objective_link.links`). The tutorial's three mines (Creature2 73463, 73667
+// and 73668, CreationTypeEnum 20) are each linked to an Exile objective of quest
+// 10518 and a Dominion objective of quest 10524; the markers, read from the
+// client's WorldLocation2 rows, all in World 3460, zone 5967, radius 1, facing
+// (0, 0, 0, 1) (yaw 0):
+// - 51662 at (-70.4453, -868.839, 383.553), objective 21287 (73463, Exile);
+// - 51663 at (-87.8594, -868.839, 414.038), objective 21340 (73667, Exile);
+// - 51664 at (-119.41, -868.839, 424.962), objective 21318 (73668, Exile);
+// - 52899 at (72.9871, -872.0891, 357.634), objective 21313 (73463, Dominion);
+// - 52900 at (53.515, -872.0891, 374.479), objective 21314 (73667, Dominion);
+// - 52901 at (43.1171, -872.0891, 395.189), objective 21315 (73668, Dominion).
+// The world database stores the three Exile mines as entity type 32 rows 29098
+// to 29100 (`spawn.tsv`), each 0.25 above its marker. Creature2 12919
+// (CreationTypeEnum 8) is linked to the type 32 objective 4813, whose markers
+// 9181, 9182 and 9962 are in World 426.
+
+const mine = 73_463
+
+const mine_medium = 73_667
+
+const mine_hard = 73_668
+
+const exile_marker = 51_662
+
+const dominion_marker = 52_899
+
+/// The three mines as the world database stores them, standing at the Exile markers.
+fn the_exile_mines_stored(tables tables: store.Tables) -> List(Row) {
+  [
+    stored_at(tables:, id: 29_098, creature_id: mine, place: #(
+      -70.4453,
+      -868.5904,
+      383.553,
+    )),
+    stored_at(tables:, id: 29_099, creature_id: mine_medium, place: #(
+      -87.8594,
+      -868.72217,
+      414.038,
+    )),
+    stored_at(tables:, id: 29_100, creature_id: mine_hard, place: #(
+      -119.41,
+      -868.8015,
+      424.962,
+    )),
+  ]
+}
+
+/// A stored row of the creature in World 3460 as a static object (entity type 32)
+/// standing at (x, y, z).
+fn stored_at(
+  tables tables: store.Tables,
+  id id: Int,
+  creature_id creature_id: Int,
+  place place: #(Float, Float, Float),
+) -> Row {
+  in_world_at(tables:, id:, creature_id:, world_id: world, place:)
+}
+
+fn in_world_at(
+  tables tables: store.Tables,
+  id id: Int,
+  creature_id creature_id: Int,
+  world_id world_id: Int,
+  place place: #(Float, Float, Float),
+) -> Row {
+  spawn.Row(
+    ..stored(tables:, id:, creature_id:, world_id:),
+    entity_type: 32,
+    x: place.0,
+    y: place.1,
+    z: place.2,
+  )
+}
+
+/// The click rows placed of these creatures, in the order placed.
+fn click_of(
+  placed placed: Placed,
+  creatures creatures: List(Int),
+) -> List(Row) {
+  list.filter(placed.click_rows, fn(row: Row) {
+    list.contains(creatures, row.creature_id)
+  })
+}
+
+/// Whether the row stands at the point.
+fn stands_at(row row: Row, x x: Float, y y: Float, z z: Float) -> Bool {
+  close(row.x, x) && close(row.y, y) && close(row.z, z)
+}
+
+fn the_marker_of(
+  tables tables: store.Tables,
+  marker_id marker_id: Int,
+) -> world_location2.WorldLocation2 {
+  let assert Ok(marker) =
+    world_location2.get(tables:, id: id.WorldLocation2Id(marker_id))
+    as "the fixture holds the marker"
+  marker
+}
+
+/// The click placement over the changed tables, with World 3460 held by one row
+/// of a creature no objective names.
+fn click_placed_in_world(tables tables: store.Tables) -> Placed {
+  let content = character_tables.content_over(tables:)
+  placed_by_the_load(
+    tables: content,
+    stored: the_world_holds_spawns(tables: content),
+    factions: creature_faction.none(),
+  )
+}
+
+pub fn the_dominion_mines_stand_at_their_markers_when_the_exile_mines_are_stored_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  let placed =
+    placed_by_the_load(
+      tables:,
+      stored: the_exile_mines_stored(tables:),
+      factions: creature_faction.none(),
+    )
+  let assert [first, second, third] = placed.click_rows
+    as "exactly the three Dominion mines, none at the Exile markers"
+  assert list.map([first, second, third], fn(row) { row.creature_id })
+    == [mine, mine_medium, mine_hard]
+  assert stands_at(first, x: 72.9871, y: -872.0891, z: 357.634)
+    as "73463 at marker 52899"
+  assert stands_at(second, x: 53.515, y: -872.0891, z: 374.479)
+    as "73667 at marker 52900"
+  assert stands_at(third, x: 43.1171, y: -872.0891, z: 395.189)
+    as "73668 at marker 52901"
+  list.each([first, second, third], fn(row) {
+    assert row.world_id == world && row.area_id == 5967
+      as "the marker's world and zone"
+    assert close(row.rotation_x, 0.0)
+      && close(row.rotation_y, 0.0)
+      && close(row.rotation_z, 0.0)
+      as "the marker's facing, yaw 0"
+    assert row.entity_type == 32
+      as "CreationTypeEnum 20 pairs with unit type 32"
+    assert row.health == None && row.level == None
+      as "no health or level of its own"
+  })
+}
+
+pub fn a_stored_row_of_a_static_unit_type_serves_its_marker_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  // Row 29098 alone, entity type 32, 0.25 above marker 51662.
+  let placed =
+    placed_by_the_load(
+      tables:,
+      stored: [
+        stored_at(tables:, id: 29_098, creature_id: mine, place: #(
+          -70.4453,
+          -868.5904,
+          383.553,
+        )),
+      ],
+      factions: creature_faction.none(),
+    )
+  let assert [row] = click_of(placed:, creatures: [mine])
+    as "one row of the mine: the Dominion marker has none"
+  assert stands_at(row, x: 72.9871, y: -872.0891, z: 357.634)
+    as "placed at 52899, not at 51662, which the stored static row serves"
+}
+
+pub fn a_marker_a_stored_spawn_stands_nearest_gets_none_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  let placed =
+    placed_by_the_load(
+      tables:,
+      stored: [
+        stored_at(tables:, id: 5, creature_id: mine, place: #(
+          72.9871,
+          -872.0891,
+          357.634,
+        )),
+      ],
+      factions: creature_faction.none(),
+    )
+  let assert [row] = click_of(placed:, creatures: [mine])
+    as "one row of the mine"
+  assert stands_at(row, x: -70.4453, y: -868.839, z: 383.553)
+    as "placed at 51662, the marker no stored row stands nearest in"
+}
+
+/// The point the fraction `along` of the way from marker 51662 to marker 52899 in
+/// x and z, at the height of 51662.
+fn along_the_way(
+  tables tables: store.Tables,
+  along along: Float,
+) -> #(Float, Float, Float) {
+  let from = the_marker_of(tables:, marker_id: exile_marker)
+  let to = the_marker_of(tables:, marker_id: dominion_marker)
+  #(
+    from.position0 +. along *. { to.position0 -. from.position0 },
+    from.position1,
+    from.position2 +. along *. { to.position2 -. from.position2 },
+  )
+}
+
+pub fn a_stored_spawn_serves_one_marker_only_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  let near_exile =
+    placed_by_the_load(
+      tables:,
+      stored: [
+        stored_at(
+          tables:,
+          id: 5,
+          creature_id: mine,
+          place: along_the_way(tables:, along: 0.3),
+        ),
+      ],
+      factions: creature_faction.none(),
+    )
+  let assert [row] = click_of(placed: near_exile, creatures: [mine])
+    as "one row of the mine"
+  assert stands_at(row, x: 72.9871, y: -872.0891, z: 357.634)
+    as "a row nearer 51662 serves 51662 only: placed at 52899"
+  let near_dominion =
+    placed_by_the_load(
+      tables:,
+      stored: [
+        stored_at(
+          tables:,
+          id: 5,
+          creature_id: mine,
+          place: along_the_way(tables:, along: 0.7),
+        ),
+      ],
+      factions: creature_faction.none(),
+    )
+  let assert [row] = click_of(placed: near_dominion, creatures: [mine])
+    as "one row of the mine"
+  assert stands_at(row, x: -70.4453, y: -868.839, z: 383.553)
+    as "a row nearer 52899 serves 52899 only: placed at 51662"
+}
+
+pub fn a_tie_goes_to_the_lower_marker_id_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  let exile = the_marker_of(tables:, marker_id: exile_marker)
+  // Marker 52899 moves to 2 above 51662 in z, and the row stands 1 above 51662,
+  // so both markers are exactly 1 away in (x, z).
+  use changed <- fixture_tables.changed(
+    table: "WorldLocation2",
+    id: dominion_marker,
+    with: [
+      #("position0", planted_table.Float(exile.position0)),
+      #("position2", planted_table.Float(exile.position2 +. 2.0)),
+    ],
+  )
+  let placed =
+    placed_by_the_load(
+      tables: character_tables.content_over(tables: changed),
+      stored: [
+        stored_at(tables:, id: 5, creature_id: mine, place: #(
+          exile.position0,
+          exile.position1,
+          exile.position2 +. 1.0,
+        )),
+      ],
+      factions: creature_faction.none(),
+    )
+  let assert [row] = click_of(placed:, creatures: [mine])
+    as "one row of the mine: the tie serves 51662, so 52899 is the one placed"
+  assert close(row.x, exile.position0) && close(row.z, exile.position2 +. 2.0)
+    as "placed at the moved marker 52899"
+}
+
+pub fn a_stored_row_in_another_world_serves_no_marker_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  // 73463's only stored row is in World 1387, and a row of another creature holds
+  // World 3460 (both markers' world).
+  let placed =
+    placed_by_the_load(
+      tables:,
+      stored: [
+        in_world_at(tables:, id: 5, creature_id: mine, world_id: 1387, place: #(
+          -70.4453,
+          -868.5904,
+          383.553,
+        )),
+        ..the_world_holds_spawns(tables:)
+      ],
+      factions: creature_faction.none(),
+    )
+  let assert [first, second] = click_of(placed:, creatures: [mine])
+    as "one row at each marker"
+  assert stands_at(first, x: -70.4453, y: -868.839, z: 383.553) as "51662 first"
+  assert stands_at(second, x: 72.9871, y: -872.0891, z: 357.634) as "then 52899"
+}
+
+pub fn a_placed_target_takes_the_unit_type_of_its_creation_type_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 73667 becomes a CreationTypeEnum 0 creature; 73463 stays 20 and 12919 is 8.
+  use changed <- fixture_tables.changed(
+    table: "Creature2",
+    id: mine_medium,
+    with: [#("CreationTypeEnum", Integer(0))],
+  )
+  let tables = character_tables.content_over(tables: changed)
+  let fillers = [
+    stored(tables:, id: 1, creature_id: filler, world_id: world),
+    stored(tables:, id: 2, creature_id: filler, world_id: 426),
+  ]
+  let placed =
+    placed_by_the_load(
+      tables:,
+      stored: fillers,
+      factions: creature_faction.none(),
+    )
+  let mines = click_of(placed:, creatures: [mine])
+  assert list.length(mines) == 2
+    && list.all(mines, fn(row) { row.entity_type == 32 })
+    as "CreationTypeEnum 20 is placed as unit type 32, at both its markers"
+  let collectible = click_of(placed:, creatures: [12_919])
+  assert list.length(collectible) == 3
+    && list.all(collectible, fn(row) {
+      row.entity_type == 8 && row.world_id == 426
+    })
+    as "CreationTypeEnum 8 is placed as unit type 8 at 9181, 9182 and 9962"
+  let plain = click_of(placed:, creatures: [mine_medium])
+  assert list.length(plain) == 2
+    && list.all(plain, fn(row) { row.entity_type == 0 })
+    as "CreationTypeEnum 0 is placed as unit type 0"
+}
+
+pub fn a_target_whose_unit_type_the_server_does_not_start_is_skipped_and_reported_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // CreationTypeEnum 3 and 9 are their own unit types; 18 pairs with 19, BindPoint.
+  list.each([#(3, 3), #(9, 9), #(18, 19)], fn(pair) {
+    let #(creation_type, unit_type) = pair
+    use changed <- fixture_tables.changed(table: "Creature2", id: mine, with: [
+      #("CreationTypeEnum", Integer(creation_type)),
+    ])
+    let tables = character_tables.content_over(tables: changed)
+    let placed =
+      placed_by_the_load(
+        tables:,
+        stored: the_world_holds_spawns(tables:),
+        factions: creature_faction.none(),
+      )
+    assert click_of(placed:, creatures: [mine]) == []
+      as "a unit the server does not start is not placed"
+    let not_started = fn(objective_id) {
+      objective_spawn.Skipped(
+        objective_id:,
+        why: objective_spawn.NotStarted(creature_id: mine, unit_type:),
+      )
+    }
+    assert list.contains(placed.click_skipped, not_started(21_287))
+      && list.contains(placed.click_skipped, not_started(21_313))
+      as "both of the mine's objectives are reported with its unit type"
+    assert list.any(objective_spawn.report(placed:), fn(line) {
+      string.contains(line, "click objective 21287")
+      && string.contains(line, "Creature2 73463")
+      && string.contains(line, "unit type " <> int.to_string(unit_type))
+    })
+      as "the report names the objective, the creature and the unit type"
+  })
+}
+
+pub fn an_objective_of_another_type_places_no_click_target_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use changed <- fixture_tables.changed(
+    table: "QuestObjective",
+    id: 21_313,
+    with: [#("type", Integer(12))],
+  )
+  let placed = click_placed_in_world(tables: changed)
+  let rows = click_of(placed:, creatures: [mine])
+  assert list.length(rows) == 1
+    && list.all(rows, fn(row) { close(row.x, -70.4453) })
+    as "73463 is placed at 51662 only: objective 21313 is no longer a use"
+  assert list.filter(placed.click_skipped, fn(skipped) {
+      skipped.objective_id == 21_313
+    })
+    == []
+    as "an objective of another type is no pair"
+}
+
+pub fn two_click_objectives_on_one_creature_and_marker_place_once_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 21287, the mine's Exile one, now names marker 52899 as 21313 does.
+  use changed <- fixture_tables.changed(
+    table: "QuestObjective",
+    id: 21_287,
+    with: [#("worldLocationsIdIndicator00", Integer(dominion_marker))],
+  )
+  let placed = click_placed_in_world(tables: changed)
+  let assert [row] = click_of(placed:, creatures: [mine])
+    as "one row of the mine, for two objectives of the same marker"
+  assert stands_at(row, x: 72.9871, y: -872.0891, z: 357.634)
+}
+
+pub fn two_creatures_at_one_marker_stand_on_its_ring_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 21314, 73667's Dominion objective, now names marker 52899, which
+  // is 73463's: two creatures stand at it.
+  use changed <- fixture_tables.changed(
+    table: "QuestObjective",
+    id: 21_314,
+    with: [#("worldLocationsIdIndicator00", Integer(dominion_marker))],
+  )
+  let placed = click_placed_in_world(tables: changed)
+  let assert [first, second] =
+    click_of(placed:, creatures: [mine, mine_medium])
+    |> list.filter(fn(row) { close(row.z, 357.634) })
+    as "two rows at 52899, 73463 first"
+  assert first.creature_id == mine && second.creature_id == mine_medium
+  // The ring of half the marker's radius, 0.5: slot 0 of 2 at angle 0, slot 1 at pi.
+  assert close(first.x, 72.9871 +. 0.5) as "slot 0 of 2 at angle 0"
+  assert close(second.x, 72.9871 -. 0.5) as "slot 1 of 2 at angle pi"
+  assert faces(row: first, to_x: 72.9871, to_z: 357.634)
+    && faces(row: second, to_x: 72.9871, to_z: 357.634)
+    as "each faces the centre"
+  assert close(first.y, -872.0891) && close(second.y, -872.0891)
+    as "the marker's height"
+}
+
+pub fn a_linked_objective_with_no_marker_places_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use changed <- fixture_tables.changed(
+    table: "QuestObjective",
+    id: 21_313,
+    with: [#("worldLocationsIdIndicator00", Integer(0))],
+  )
+  let placed = click_placed_in_world(tables: changed)
+  let assert [row] = click_of(placed:, creatures: [mine])
+    as "73463 is placed at its Exile marker only"
+  assert close(row.x, -70.4453)
+  assert list.filter(placed.click_skipped, fn(skipped) {
+      skipped.objective_id == 21_313
+    })
+    == []
+    as "an objective with no marker is no pair, so it is not reported"
+}
+
+pub fn a_marker_with_no_worldlocation2_row_is_skipped_and_reported_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let no_row = 9_999_999
+  use changed <- fixture_tables.changed(
+    table: "QuestObjective",
+    id: 21_313,
+    with: [#("worldLocationsIdIndicator00", Integer(no_row))],
+  )
+  let placed = click_placed_in_world(tables: changed)
+  let assert [row] = click_of(placed:, creatures: [mine])
+    as "73463 is placed at its Exile marker only"
+  assert close(row.x, -70.4453)
+  assert list.contains(
+    placed.click_skipped,
+    objective_spawn.Skipped(
+      objective_id: 21_313,
+      why: objective_spawn.NoMarkerRow(marker_id: no_row),
+    ),
+  )
+    as "skipped as having no marker row"
+  assert list.any(objective_spawn.report(placed:), fn(line) {
+    string.contains(line, "click objective 21313")
+    && string.contains(line, "9999999")
+  })
+    as "the report names the objective and the marker"
+}
+
+pub fn a_click_marker_in_a_world_with_no_stored_spawn_is_skipped_and_reported_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  let elsewhere = [stored(tables:, id: 1, creature_id: filler, world_id: 1387)]
+  let placed =
+    placed_by_the_load(
+      tables:,
+      stored: elsewhere,
+      factions: creature_faction.none(),
+    )
+  assert click_of(placed:, creatures: [mine, mine_medium, mine_hard]) == []
+    as "no marker of the mines is in a world the server holds spawns for"
+  list.each(
+    [
+      #(21_287, 51_662),
+      #(21_340, 51_663),
+      #(21_318, 51_664),
+      #(21_313, 52_899),
+      #(21_314, 52_900),
+      #(21_315, 52_901),
+    ],
+    fn(pair) {
+      assert list.contains(
+        placed.click_skipped,
+        objective_spawn.Skipped(
+          objective_id: pair.0,
+          why: objective_spawn.NoSpawnsInWorld(
+            marker_id: pair.1,
+            world_id: world,
+          ),
+        ),
+      )
+        as "each pair is skipped with the marker and its world"
+    },
+  )
+  assert list.any(objective_spawn.report(placed:), fn(line) {
+    string.contains(line, "click objective 21313")
+    && string.contains(line, "World 3460")
+  })
+    as "the report names the objective and the marker's world"
+}
+
+pub fn click_placement_ids_continue_above_stored_and_kill_placed_ids_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  let held = [
+    stored(tables:, id: 70_880, creature_id: filler, world_id: world),
+  ]
+  let placed =
+    placed_by_the_load(tables:, stored: held, factions: creature_faction.none())
+  assert of_creatures(placed:, creatures: [boss]) != []
+    as "the boss is placed by the kill path"
+  assert click_of(placed:, creatures: [mine, mine_medium, mine_hard]) != []
+    as "the mines are placed by the click path"
+  let numbers_of = fn(rows: List(Row)) {
+    list.map(rows, fn(row: Row) {
+      let SpawnId(number) = row.id
+      number
+    })
+  }
+  let highest_kill = list.fold(numbers_of(placed.rows), 70_880, int.max)
+  let clicks = numbers_of(placed.click_rows)
+  assert list.all(clicks, fn(number) { number > highest_kill })
+    as "above every stored id and every kill-placed id"
+  assert list.all(clicks, fn(number) {
+    !spawn_source.is_run_only_id(SpawnId(number))
+  })
+  assert list.length(list.unique(clicks)) == list.length(clicks)
+    as "each id is once"
+  assert clicks == list.sort(clicks, int.compare) as "counting up"
+}
+
+pub fn a_refused_click_row_is_labelled_as_a_click_placement_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  let placed =
+    placed_by_the_load(
+      tables:,
+      stored: the_world_holds_spawns(tables:),
+      factions: creature_faction.none(),
+    )
+  let assert [kill_row, ..] = of_creatures(placed:, creatures: [boss])
+    as "the boss is placed"
+  let assert [click_row, ..] = click_of(placed:, creatures: [mine])
+    as "the mine is placed"
+  let assert [held] = the_world_holds_spawns(tables:)
+  let nowhere = 9_999_999
+  let kill_row = spawn.Row(..kill_row, world_id: nowhere)
+  let click_row = spawn.Row(..click_row, world_id: nowhere)
+  let selection =
+    spawn.select(
+      rows: [spawn.Row(..held, world_id: nowhere), kill_row, click_row],
+      tables:,
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.kinds(),
+      vendors: vendor.none(),
+      factions: creature_faction.none(),
+    )
+  let SpawnId(click_number) = click_row.id
+  let labelled =
+    objective_spawn.labelled(
+      refusals: selection.refusals,
+      placed: objective_spawn.Placed(
+        rows: [kill_row],
+        skipped: [],
+        click_rows: [click_row],
+        click_skipped: [],
+      ),
+    )
+  assert list.map(labelled, fn(refusal) { refusal.table })
+    == ["spawn", "kill objective placement", "click target placement"]
+    as "each placed row's refusal names its placement; a kill-placed one keeps its name"
+  let assert Ok(last) = list.last(labelled)
+  assert last.row
+    == refusal.RowName(
+      name: "Creature2 73463 placed in World 9999999 as spawn id "
+      <> int.to_string(click_number),
+    )
+  assert list.map(labelled, fn(refusal) { refusal.rule })
+    == list.map(selection.refusals, fn(refusal) { refusal.rule })
+    as "the rule each broke is the selection's own"
+}
+
+pub fn the_report_counts_click_targets_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  let placed =
+    placed_by_the_load(
+      tables:,
+      stored: the_exile_mines_stored(tables:),
+      factions: creature_faction.none(),
+    )
+  assert list.length(placed.click_rows) == 3
+    as "the three Dominion mines are placed"
+  let skip =
+    objective_spawn.Skipped(
+      objective_id: 4813,
+      why: objective_spawn.NoMarkerRow(marker_id: 9_999_999),
+    )
+  let lines =
+    objective_spawn.report(
+      placed: objective_spawn.Placed(
+        ..placed,
+        rows: [],
+        skipped: [],
+        click_skipped: [skip],
+      ),
+    )
+  let from_click =
+    list.drop_while(lines, fn(line) {
+      !string.starts_with(line, "click objectives:")
+    })
+  let assert [click_line, skip_line] = from_click
+    as "the click line, then the skip"
+  assert click_line
+    == "click objectives: placed 3 creatures with no stored spawn at their marker, skipped 1 pairs"
+  assert string.starts_with(skip_line, "click objective 4813")
+    && string.contains(skip_line, "9999999")
+}
+
+/// With the world database's spawn rows and the client's real tables, what the
+/// placement does for the click objectives. The expected totals are counts over
+/// the same tables and rows made apart from the server's code, by a scratch
+/// Python script that reads the Creature2, Prerequisite, Quest2, QuestObjective and
+/// WorldLocation2 rows (`table_rows` dumps) and `spawn.tsv`: it follows each
+/// creature's questAnim and prerequisite links (type 43 conditions of comparison
+/// 1, nested through type 11) to an objective of type 5 or 32 with a marker, serves
+/// each stored row of the creature to the marker it stands nearest in its own
+/// world, and places the creature at each marker no row serves, in a world holding
+/// a stored row, as the unit type its CreationTypeEnum pairs with:
+/// - 831 pairs of an objective and a linked creature, over 739 creatures;
+/// - 344 rows placed, by world 22: 111, 51: 114, 426: 5, 990: 2, 1061: 106, 1387:
+///   3 and 3460: 3, and by unit type 0: 109, 8: 135, 10: 71, 11: 4, 14: 2 and 32: 23;
+/// - 3 unplaced pairs of a unit type the server does not start.
+pub fn every_click_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.tag("world_data")
+  use <- unitest.guard(client_tables.present())
+  use <- unitest.guard(envoy.get("GENESIS_WORLD_DATA") != Error(Nil))
+  let assert Ok(folder) = envoy.get("GENESIS_WORLD_DATA")
+    as "the guard saw the variable"
+  let database = database_support.new_database(on: database_support.shared())
+  let assert Ok(_) =
+    import_world_data.import_spawns(
+      db: content_support.connect(database:),
+      folder:,
+    )
+    as "the world database imports"
+  let assert Ok(stored) =
+    content_spawn.rows(db: content_support.connect(database:))
+    as "the stored spawn rows read back"
+  let tables = client_tables.with_content_tables()
+  let factions = spawn_support.the_boss_is_given_233(tables:)
+  let placed = placed_by_the_load(tables:, stored:, factions:)
+  assert list.length(placed.click_rows) == 344
+    as "the rows placed, by the count over the tables"
+  let placed_in = fn(world_id) {
+    list.count(placed.click_rows, fn(row: Row) { row.world_id == world_id })
+  }
+  assert list.map([22, 51, 426, 990, 1061, 1387, 3460], placed_in)
+    == [111, 114, 5, 2, 106, 3, 3]
+    as "the rows placed in each world"
+  let placed_as = fn(entity_type) {
+    list.count(placed.click_rows, fn(row: Row) {
+      row.entity_type == entity_type
+    })
+  }
+  assert list.map([0, 8, 10, 11, 14, 32], placed_as) == [109, 135, 71, 4, 2, 23]
+    as "the rows placed as each unit type"
+  let worlds = set.from_list(list.map(stored, fn(row: Row) { row.world_id }))
+  assert list.all(placed.click_rows, fn(row: Row) {
+    set.contains(worlds, row.world_id)
+  })
+    as "no row is placed in a world the server holds no spawns for"
+  assert list.count(placed.click_skipped, fn(skipped) {
+      case skipped.why {
+        objective_spawn.NotStarted(..) -> True
+        _ -> False
+      }
+    })
+    == 3
+    as "the pairs whose unit type the server does not start"
+  let skipped_for = fn(is_that) {
+    list.count(placed.click_skipped, fn(skipped) { is_that(skipped.why) })
+  }
+  assert skipped_for(fn(why) {
+      case why {
+        objective_spawn.NoMarkerRow(..) -> True
+        _ -> False
+      }
+    })
+    == 5
+    as "the markers the client has no row of"
+  assert skipped_for(fn(why) {
+      case why {
+        objective_spawn.NoSpawnsInWorld(..) -> True
+        _ -> False
+      }
+    })
+    == 162
+    as "the (objective, marker) pairs in a world with no stored spawn"
+  // Creature2 12919 is served at all three of objective 4813's markers by stored
+  // rows, so none of them is placed.
+  assert click_of(placed:, creatures: [12_919]) == []
+    as "a creature with stored rows near each marker places none"
+  // The load's checks refuse none of the placed rows, which would stop the start,
+  // and leave none out.
+  let selection =
+    spawn.select(
+      rows: placed.click_rows,
+      tables:,
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.turret_kinds(),
+      vendors: vendor.none(),
+      factions:,
+    )
+  assert selection.refusals == []
+    as "a placed row that the checks refuse would stop the server's start"
+  // Creature2 13133 (Protostar X-97 Gravity Defiance System, factionId 0 in the
+  // client's table, no chosen faction) is the one placed creature the checks leave
+  // out: a unit with no faction is not created (`LeftOut.NoFaction`).
+  let left_out =
+    list.flat_map(selection.coverage, fn(coverage) {
+      list.filter_map(coverage.left_out, fn(pair) {
+        case pair.1 {
+          0 -> Error(Nil)
+          count -> Ok(#(coverage.world_id, pair.0, count))
+        }
+      })
+    })
+  assert left_out == [#(22, spawn.NoFaction, 1)]
+    as "the placed creatures the checks leave out, by world and reason"
+  assert list.all(selection.coverage, fn(coverage) {
+    coverage.objects_dead == 0
+  })
+    as "no placed static object is created dead"
+  let sent =
+    list.fold(selection.coverage, 0, fn(total, coverage) {
+      total
+      + coverage.started
+      + list.fold(coverage.objects_sent, 0, fn(count, pair) { count + pair.1 })
+      + list.fold(coverage.other_types, 0, fn(count, pair) { count + pair.1 })
+    })
+  assert sent + 1 == 344 as "every placed row but the one left out starts"
 }
