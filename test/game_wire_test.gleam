@@ -7075,8 +7075,18 @@ pub fn a_charge_hits_a_player_who_stays_in_its_rectangle_test() -> Nil {
       }
     })
     as "opcode.0x7f4: one go of the charge, with one damage effect for the player"
-  assert blow.effect_id == 224_644 && blow.raw_damage == 400
-    as "Spell4Effects 224644: the charge deals the player 400"
+  // The strike's crit roll is from the connection's random seed, so the blow is a
+  // critical hit or not by chance: 400 when not, and 400 x the turret's critical
+  // severity when it is. The severity is property 127 at rating 0: CreatureLevel.101
+  // unitPropertyValue27 1.5 x Creature2Tier.1 multiplier 0.85 (Creature2 73494, tier 1;
+  // `GetCreatureProperty`, `0x1404585c0`), to which GameFormula 1232 adds nothing at
+  // rating 0 (intercept 0, `0x140463e80`): 1.275.
+  let expected_raw = case blow.critical {
+    True -> 510
+    False -> 400
+  }
+  assert blow.effect_id == 224_644 && blow.raw_damage == expected_raw
+    as "Spell4Effects 224644: the charge deals the player 400, or 510 (400 x 1.275) when the 0x7f4's combat result is a critical hit"
   // The blow after the glance and the mitigation and absorbs is `adjusted`; the shield
   // takes 0.625 of it (ShieldMitigationMax, property 175,
   // `player.level1_gear_properties`, rounded as `hit.apply` rounds), which the
