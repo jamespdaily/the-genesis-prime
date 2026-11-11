@@ -985,6 +985,10 @@ pub type Live {
     interaction: Interaction,
     /// Whether the cast is a quest button's, whose first go counts the objective.
     shortcut: Bool,
+    /// Whether a channel's finish timer fired while a go's strike round was still open:
+    /// the cast ends when its last go is written, which a round's deadline bounds
+    /// (`opcode.0x7f4`: the client counts the gos before its 0x7fe, `cast.channel_sequence`).
+    finish_due: Bool,
   )
 }
 
@@ -3509,6 +3513,35 @@ pub fn timer_fired(
   |> continued(caster:, now_ms: now.monotonic_ms)
 }
 
+/// A channel's finish timer fired: the cast ends, or, when a go's strike round is still
+/// open, waits for that round, since the go's 0x7f4 comes before the 0x7fe
+/// (`cast.channel_sequence`). The go that closes the last round ends it, and the
+/// round's deadline bounds the wait (`strike`).
+fn finish_fired(
+  cast cast: State,
+  cast_id cast_id: Int,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case dict.get(cast.casts, cast_id) {
+    Error(Nil) -> #(cast, [])
+    Ok(live) ->
+      case live.gone < spell_plan.go_count(spell: live.spell) {
+        True -> #(
+          State(
+            ..cast,
+            casts: dict.insert(
+              cast.casts,
+              cast_id,
+              Live(..live, finish_due: True),
+            ),
+          ),
+          [],
+        )
+        False -> finish_or_linger(cast:, cast_id:, live:, now_ms:)
+      }
+  }
+}
+
 fn fire(
   cast cast: State,
   timer timer: TimerId,
@@ -3522,11 +3555,7 @@ fn fire(
       let now_ms = now.monotonic_ms
       case due {
         Go(cast_id:, phase:) -> asked(cast:, caster:, now_ms:, cast_id:, phase:)
-        Finish(cast_id:) ->
-          case dict.get(cast.casts, cast_id) {
-            Error(Nil) -> #(cast, [])
-            Ok(live) -> finish_or_linger(cast:, cast_id:, live:, now_ms:)
-          }
+        Finish(cast_id:) -> finish_fired(cast:, cast_id:, now_ms:)
         StartChild(root:, parent:, proxy:, primary_target:) ->
           start(
             cast:,
@@ -4989,6 +5018,7 @@ fn start(
         Shortcut(..) -> True
         Child | Base(..) | Stage(..) | Passive | Activation(..) -> False
       },
+      finish_due: False,
     )
   let global_ends = case role, spell.global_cooldown.starts_for_ms {
     Passive, _ -> cast.global_cooldown_ends_ms
@@ -5482,7 +5512,9 @@ fn go(
         )
       let #(cast, finished) = case
         live.gone == go_count
-        && option.is_none(spell_plan.finish_after_ms(spell:))
+        && {
+          live.finish_due || option.is_none(spell_plan.finish_after_ms(spell:))
+        }
       {
         True ->
           case dict.get(cast.casts, cast_id) {
