@@ -11,9 +11,10 @@ import connection_rule_support as support
 import database_support
 import envoy
 import event_wait
+import game_connection_support
 import genesis_prime
 import genesis_prime/add_account/sql
-import genesis_prime/client_connection.{type Bucket}
+import genesis_prime/client_connection.{type Bucket, type Request}
 import genesis_prime/connection/listener
 import genesis_prime/connection/registry
 import genesis_prime/connection/script
@@ -27,6 +28,7 @@ import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
 import genesis_prime/service/shell as service_shell
+import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/creature_registry
 import gleam/dict
@@ -331,5 +333,13 @@ pub fn insert_other(
     salt: vector.salt(),
     verifier: vector.verifier(),
     game_account_id:,
+  )
+}
+
+/// The connection after 0x058F, with its ask to take the session key.
+pub fn replied() -> #(game_connection.State, ConnectionStep(Request)) {
+  game_connection_support.read(
+    game_connection_support.connected(),
+    game_connection_support.hello_reply(),
   )
 }
