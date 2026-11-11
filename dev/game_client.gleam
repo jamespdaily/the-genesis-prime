@@ -28,6 +28,7 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/chat_channel_joined
 import genesis_prime/message/chat_line
 import genesis_prime/message/chat_line_accepted.{type ChatLineAccepted}
+import genesis_prime/message/combat_result
 import genesis_prime/message/float32
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/innate_index_set
@@ -1716,10 +1717,11 @@ pub type FightEvent {
 /// One damage effect of a 0x7f4 as its description gives it (opcode.0x7f4): the
 /// Spell4Effects id, the damage before any critical hit, the part a glance took off,
 /// the part mitigation and absorbs took, the part the shield took, and the health
-/// damage with the overkill.
+/// damage with the overkill; `critical` is whether its combat result is a critical hit.
 pub type Blow {
   Blow(
     effect_id: Int,
+    critical: Bool,
     raw_damage: Int,
     glance: Int,
     absorbed: Int,
@@ -1838,6 +1840,7 @@ fn damage_of(effect: spell_effect_info.SpellEffectInfo) -> Result(Blow, Nil) {
     spell_effect_result.Damage(damage) ->
       Ok(Blow(
         effect_id: effect.spell4_effects_id,
+        critical: damage.description.combat_result == combat_result.Critical,
         raw_damage: damage.description.raw_damage,
         glance: damage.description.glance,
         absorbed: damage.description.absorbed,

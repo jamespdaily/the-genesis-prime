@@ -709,6 +709,24 @@ pub fn entered_with_quests(
   answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
 }
 
+/// The connection after the store gave the tests' character exactly these items and
+/// quest rows and the map took it.
+pub fn entered_with_items_and_quests(
+  items items: List(store.HeldItem),
+  quests quests: List(store.QuestRow),
+) -> game_connection.State {
+  let #(state, taken) =
+    joining_holding_items(
+      in_character_select: in_select(),
+      character: world_character(),
+      saved_health: None,
+      saved_experience: None,
+      quests:,
+      items:,
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken)))).0
+}
+
 /// The connection in the world, with its burst taken, for a character whose
 /// store holds these items.
 pub fn in_world_holding(

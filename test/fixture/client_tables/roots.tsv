@@ -563,6 +563,29 @@ Creature2	13623	checklist target of objective 5052	game_wire_test
 Quest2Reward	2192	reward choice of quest 3886	game_wire_test
 Quest2Reward	2430	reward choice of quest 3886	game_wire_test
 Quest2Reward	4767	reward choice of quest 3886	game_wire_test
+Item2	12444	Incendiary Grenade, the slaver-shack quest item	item_use_test
+Item2	12402	Yockum Bingberry Tonic, an item that names no quest	item_use_test
+Item2	21966	Security access codes item of the objective 14327	item_use_test
+ItemSpecial	4363	ItemSpecial of the item 12444	item_use_test
+ItemSpecial	4350	ItemSpecial of the item 12402	item_use_test
+ItemSpecial	5410	ItemSpecial of the item 21966	item_use_test
+Spell4	26663	Q4743 Incendiary Grenade Activate	item_use_test
+Spell4	1545	Generic Quest Spell Activating Instant Cast	item_use_test
+Spell4	41914	Security Access Codes, a self spell with a RavelSignal only	item_use_test
+Item2	2509	an item with maxCharges 99 whose spell has an Activate effect	item_use_test, cast_item_use_test
+ItemSpecial	2769	ItemSpecial of the item 2509	item_use_test, cast_item_use_test
+Spell4	1274	spell of the item 2509	item_use_test, cast_item_use_test
+Prerequisite	624	type 1 (the player's level), comparison 4 (at least) 20: the prerequisite a test gives the grenade	item_use_test, cast_item_use_test
+Quest2	4743	slaver-shack quest, objective 6553	item_use_test
+Quest2	4628	farmhand quest, objective 6351	item_use_test
+Quest2	7833	security codes quest, objective 14327	item_use_test
+TargetGroup	1691	cast group of spell 26663, the three slaver shacks	cast_item_use_test
+TargetGroup	2187	checklist group of objective 6553, the three slaver shacks	cast_item_use_test
+TargetGroup	1687	target group of the farmhand objective 6351	cast_item_use_test
+Creature2	17397	Cartel Slaver Shack	cast_item_use_test
+Creature2	17398	Cartel Slaver Shack	cast_item_use_test
+Creature2	17399	Cartel Slaver Shack	cast_item_use_test
+Creature2	17107	farmhand, outside the grenade's cast group	cast_item_use_test
 Quest2	6723	quest of a use-once test	objective_test, quest_log_test, game_connection_objective_test
 QuestObjective	10383	type 23 objective of quest 6723	objective_test, quest_log_test, game_connection_objective_test
 TargetGroup	3568	data group of objective 10383	objective_test, quest_log_test, game_connection_objective_test

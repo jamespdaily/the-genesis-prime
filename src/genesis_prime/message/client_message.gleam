@@ -44,6 +44,7 @@ import genesis_prime/message/interaction_request.{type InteractionRequest}
 import genesis_prime/message/item_delete.{type ItemDelete}
 import genesis_prime/message/item_move.{type ItemMove}
 import genesis_prime/message/item_split.{type ItemSplit}
+import genesis_prime/message/item_use.{type ItemUse}
 import genesis_prime/message/login_request.{type LoginRequest}
 import genesis_prime/message/move_speed_setting.{type MoveSpeedSetting}
 import genesis_prime/message/movement_send_interval_answer.{
@@ -120,6 +121,7 @@ pub type ClientMessage {
   SendWhisper(message: SendWhisper)
   CastAbility(message: CastAbility)
   CastActivate(message: CastActivate)
+  ItemUse(message: ItemUse)
   CastObjectiveAbility(message: CastObjectiveAbility)
   ClientActivateUnit(message: ClientActivateUnit)
   AbilityHold(message: AbilityHold)
@@ -232,6 +234,7 @@ pub fn decode(
     0x01D4 -> decoded(body, message_id, send_whisper.decode, SendWhisper)
     0x009A -> decoded(body, message_id, cast_ability.decode, CastAbility)
     0x0097 -> decoded(body, message_id, cast_activate.decode, CastActivate)
+    0x0943 -> decoded(body, message_id, item_use.decode, ItemUse)
     0x009D ->
       decoded(
         body,
@@ -348,6 +351,7 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     SendWhisper(message:) -> send_whisper.encode(message)
     CastAbility(message:) -> cast_ability.encode(message)
     CastActivate(message:) -> cast_activate.encode(message)
+    ItemUse(message:) -> item_use.encode(message)
     CastObjectiveAbility(message:) -> cast_objective_ability.encode(message)
     ClientActivateUnit(message:) -> client_activate_unit.encode(message)
     AbilityHold(message:) -> ability_hold.encode(message)
@@ -421,6 +425,7 @@ pub fn message_id(message: ClientMessage) -> Int {
     SendWhisper(..) -> send_whisper.message_id
     CastAbility(..) -> cast_ability.message_id
     CastActivate(..) -> cast_activate.message_id
+    ItemUse(..) -> item_use.message_id
     CastObjectiveAbility(..) -> cast_objective_ability.message_id
     ClientActivateUnit(..) -> client_activate_unit.message_id
     AbilityHold(..) -> ability_hold.message_id
@@ -492,6 +497,7 @@ pub fn name(message: ClientMessage) -> String {
     SendWhisper(..) -> "send_whisper"
     CastAbility(..) -> "cast_ability"
     CastActivate(..) -> "cast_activate"
+    ItemUse(..) -> "item_use"
     CastObjectiveAbility(..) -> "cast_objective_ability"
     ClientActivateUnit(..) -> "client_activate_unit"
     AbilityHold(..) -> "ability_hold"

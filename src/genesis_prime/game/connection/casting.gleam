@@ -92,6 +92,7 @@ import genesis_prime/game/connection/state.{type Session, Session} as connection
 import genesis_prime/game/damage
 import genesis_prime/game/hit_radius
 import genesis_prime/game/interaction
+import genesis_prime/game/item_use
 import genesis_prime/game/loadout
 import genesis_prime/game/movement
 import genesis_prime/game/objective
@@ -193,6 +194,88 @@ pub fn activate_message(
           caster:,
         ),
       ),
+      caster_radius:,
+      now:,
+    )
+  {
+    Ok(#(updated, effects)) ->
+      carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
+    Error(refusal) ->
+      connection_state.end_for(session:, now:, text: cast.describe(refusal))
+  }
+}
+
+/// The player's use of an item, its 0x943, from inside 0x038C in the world: the cast rule
+/// takes the item from the place the message names among the items the character holds,
+/// applies the client's checks of the item (genesis_prime/game/item_use) with the quest log
+/// and the level, and starts the activate cast of the item's spell at the unit, which the
+/// connection counts at its go as an activate cast's is counted. A refusal of the frame ends
+/// the connection.
+pub fn item_use_message(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+) -> client_connection.Handled(Session) {
+  let tables = session.settings.tables
+  let caster = caster_of(tables:, entered:)
+  // The player's Race row is in the tables (the load fails otherwise), so a missing one
+  // crashes.
+  let assert Ok(caster_radius) =
+    hit_radius.of_player(tables:, race_id: RaceId(caster.player.race_id))
+    as "hit_radius.requirements fails the load when a playable race has no Race row"
+  let assert Ok(faction) = shown.faction_of(entered.unit.tail.faction_id)
+    as "a character's faction is Exile or Dominion (start_place)"
+  case
+    cast.use_item(
+      cast: entered.cast,
+      body: inner.body,
+      caster:,
+      held_at: fn(place) {
+        list.find(entered.items, fn(held) {
+          held.location == place.location && held.bag_index == place.bag_index
+        })
+        |> result.map(fn(held) { held.item2_id })
+        |> option.from_result
+      },
+      check: fn(item, second_item, target_checklist_index, prerequisite) {
+        item_use.check(
+          tables:,
+          item:,
+          player_level: caster.player.level,
+          quests: caster.quests,
+          second_item:,
+          target_checklist_index:,
+          prerequisite:,
+        )
+      },
+      activations: connection_state.activations_of(session:),
+      target_of: activate_target(
+        tables:,
+        picture: entered.shown,
+        player: interaction.Player(
+          race_id: entered.character.race_id,
+          faction:,
+          place: movement.place(state: entered.movement),
+        ),
+        now_ms: now.monotonic_ms,
+        link_of: link_of(
+          tables:,
+          activations: connection_state.activations_of(session:),
+          state: entered.cast,
+          caster:,
+        ),
+      ),
+      in_cast_group: fn(group, unit_id) {
+        case dict.get(entered.shown, unit_id) {
+          Error(Nil) -> False
+          Ok(one) ->
+            case shown.target_of(tables:, shown: one) {
+              Ok(#(unit, _)) -> target_group.contains(tables:, group:, unit:)
+              Error(Nil) -> False
+            }
+        }
+      },
       caster_radius:,
       now:,
     )
@@ -740,7 +823,7 @@ pub fn cast_effects(
       cast.Strike(asked:), Some(entered) ->
         strike_begins(session:, now:, entered:, asked:)
       cast.Strike(..), None -> #(session, [])
-      cast.Activated(unit_id:, alive_at_press:, ..), Some(entered) ->
+      cast.Activated(unit_id:, alive_at_press:, by_item:, ..), Some(entered) ->
         // The go is raised even when the unit has left the picture or died, and a use
         // of a creature the player no longer sees, or that died since the press, counts
         // for no objective (`SetUnitDeathState` 0x14045e740 cancels the player's current
@@ -760,6 +843,7 @@ pub fn cast_effects(
               target:,
               checklist_index:,
               unit: unit_ref(entered:, unit_id:),
+              by_item:,
             )
           Error(Nil) -> #(session, [])
         }
