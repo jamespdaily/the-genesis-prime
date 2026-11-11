@@ -1368,6 +1368,19 @@ pub fn a_quest_anim_link_counts_a_type_5_objective_test() -> Nil {
     ).effects
     == [SendProgress(quest_id: 2020, objective_index: 1, progress: 1)]
     as "the link counts whatever the objective's type is"
+  assert objective.advance(
+      log:,
+      tables:,
+      event: Used(
+        target: plain_unit(creature: Creature2Id(4989)),
+        checklist_index: 0,
+        unit: quest_support.unit_ref(unit_id: 4989),
+        by_item: True,
+      ),
+      now_ms: 0,
+    )
+    == Advanced(log:, effects: [])
+    as "an item's spell at the same creature is not the creature's own activate cast, so the link does not count it"
 }
 
 pub fn a_prerequisite_link_counts_a_type_32_objective_test() -> Nil {

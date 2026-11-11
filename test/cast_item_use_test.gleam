@@ -38,6 +38,7 @@ import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Faction2Id, Item2Id, UnitRaceId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bit_array
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
@@ -51,6 +52,9 @@ const grenade = 12_444
 const generic_item = 12_402
 
 const objective_item = 21_966
+
+/// Item2 2509, whose maxCharges is 99 and whose spell 1274 has an Activate effect.
+const charged_item = 2509
 
 const grenade_quest = 4743
 
@@ -172,7 +176,7 @@ fn use_with(
         _, _ -> None
       }
     },
-    check: fn(item, second_item, target_checklist_index) {
+    check: fn(item, second_item, target_checklist_index, prerequisite) {
       item_use.check(
         tables:,
         item:,
@@ -180,6 +184,7 @@ fn use_with(
         quests: caster.quests,
         second_item:,
         target_checklist_index:,
+        prerequisite:,
       )
     },
     activations: activate.activations(tables:),
@@ -222,8 +227,20 @@ fn use_item_at(
   target target: Target,
   at ms: Int,
 ) -> Result(#(State, List(Effect)), cast.Refusal) {
+  use_item_in(tables: tables(), state:, caster:, item:, target:, at: ms)
+}
+
+/// The use of item `item` as `use_item_at` does, on these tables.
+fn use_item_in(
+  tables tables: table_store.Tables,
+  state state: State,
+  caster caster: cast.Caster,
+  item item: Int,
+  target target: Target,
+  at ms: Int,
+) -> Result(#(State, List(Effect)), cast.Refusal) {
   use_with(
-    tables: tables(),
+    tables:,
     state:,
     caster:,
     held: Some(item),
@@ -449,7 +466,30 @@ pub fn the_grenade_at_another_players_unit_is_refused_100_test() -> Nil {
       at: 1000,
     ))
     == #(26_663, 100)
-    as "a server choice: the activate cast's target is a creature, so another player's unit is TargetIsNotUseable (100)"
+    as "a server choice: Item2 12444 names its quest as a whole (objective -1), so StartItemUseCast (0x140398cc0) tests no unit, and the activate cast's target is a creature: another player's unit is TargetIsNotUseable (100)"
+}
+
+pub fn a_checklist_item_at_another_players_unit_is_refused_28_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- fixture_tables.changed(table: "Item2", id: grenade, with: [
+    #("quest2IdActivationRequired", Integer(1823)),
+    #("questObjectiveActivationRequired", Integer(0)),
+  ])
+  assert refusal_of(taken: use_item_in(
+      tables:,
+      state: cast.new(),
+      caster: standing(
+        level: 20,
+        quests: quest_support.log_of(rows: [
+          quest_support.accepted(quest_id: 1823, progress: [0]),
+        ]),
+      ),
+      item: grenade,
+      target: activate.AnotherPlayer,
+      at: 1000,
+    ))
+    == #(26_663, 28)
+    as "StartItemUseCast (0x140398cc0) tests the open checklist objective 0 of quest 1823 at the unit of another player, whose checklist index is -1: ItemQuestRequirementsNotMet (28)"
 }
 
 pub fn a_spell_with_no_cast_group_at_a_creature_with_flags_bit_0_is_refused_89_test() -> Nil {
@@ -570,6 +610,119 @@ pub fn an_item_check_refusal_carries_the_items_spell_test() -> Nil {
     as "quest 4743 is not in the log: ItemQuestRequirementsNotMet (28) from StartItemUseCast, with Item2 12444's spell 26663"
 }
 
+/// The grenade with the prerequisite 624 (the player's level at least 20, type 1
+/// comparison 4 value 20), run on these tables.
+fn with_prerequisite_624(
+  extra extra: List(#(String, planted_table.Cell)),
+  body body: fn(table_store.Tables) -> a,
+) -> a {
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "Item2",
+      id: grenade,
+      with: [#("prerequisiteId", Integer(624))],
+    )
+    as "Item2 12444 and its column are in the fixture"
+  let assert Ok(rows) =
+    fixture_tables.change(rows:, table: "Prerequisite", id: 624, with: extra)
+    as "Prerequisite 624 is in the fixture"
+  fixture_tables.on_rows(rows:, reaching: [], body:)
+}
+
+pub fn an_item_whose_prerequisite_fails_is_refused_17_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- with_prerequisite_624(extra: [])
+  let thrown = fn(level) {
+    use_item_in(
+      tables:,
+      state: cast.new(),
+      caster: standing(level:, quests: throwing().quests),
+      item: grenade,
+      target: shown(creature_id: a_slaver_shack, metres: 10.0),
+      at: 1000,
+    )
+  }
+  assert refusal_of(taken: thrown(19)) == #(26_663, 17)
+    as "UseItem (0x1403998e0) runs the prerequisite of Item2.prerequisiteId: Prerequisite 624 is type 1 comparison 4 value 20, the player's level at least 20, and level 19 fails it with SpellPreRequisites (17)"
+  let assert Ok(#(_, started)) = thrown(20) as "level 20 meets the prerequisite"
+  assert support.refusal_results(effects: started) == []
+    as "the use of level 20 passes it and starts"
+}
+
+pub fn an_item_whose_prerequisite_the_server_cannot_read_is_refused_285_and_logged_once_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert [unread, ..] = unread_types()
+    as "the client's Prerequisite types include some the server does not read"
+  use tables <- with_prerequisite_624(extra: [
+    #("prerequisiteTypeId0", Integer(unread)),
+  ])
+  let thrown = fn(state, at) {
+    let assert Ok(taken) =
+      use_item_in(
+        tables:,
+        state:,
+        caster: throwing(),
+        item: grenade,
+        target: shown(creature_id: a_slaver_shack, metres: 10.0),
+        at:,
+      )
+      as "the use is answered"
+    taken
+  }
+  let #(state, first) = thrown(cast.new(), 1000)
+  let #(_, second) = thrown(state, 2000)
+  assert refused_with(effects: first) == [#(clients_cast_id, 26_663, 285)]
+    && refused_with(effects: second) == [#(clients_cast_id, 26_663, 285)]
+    as "a prerequisite of a type the server does not read cannot be judged: IllegalSpellCast (285), each time"
+  let assert [#(LogWarning, line)] =
+    list.append(support.logs(effects: first), support.logs(effects: second))
+    as "the gap is logged once"
+  assert string.contains(line, "type " <> int.to_string(unread))
+    as "the log line names the type"
+}
+
+/// Condition types below 301 the server does not read, lowest first.
+fn unread_types() -> List(Int) {
+  int.range(from: 300, to: 0, with: [], run: fn(unread, type_id) {
+    case prerequisite.is_read(type_id:) {
+      True -> unread
+      False -> [type_id, ..unread]
+    }
+  })
+}
+
+pub fn an_item_with_charges_is_refused_285_and_logged_once_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let caster = standing(level: 50, quests: quest_support.log_of(rows: []))
+  let no_target = activate.Unseen
+  let assert Ok(#(state, first)) =
+    use_item_at(
+      state: cast.new(),
+      caster:,
+      item: charged_item,
+      target: no_target,
+      at: 1000,
+    )
+    as "the first use is answered"
+  let assert Ok(#(_, second)) =
+    use_item_at(
+      state:,
+      caster:,
+      item: charged_item,
+      target: no_target,
+      at: 2000,
+    )
+    as "the second use is answered"
+  assert refused_with(effects: first) == [#(clients_cast_id, 1274, 285)]
+    && refused_with(effects: second) == [#(clients_cast_id, 1274, 285)]
+    as "Item2 2509 has maxCharges 99, which StartItemUseCast (0x140398cc0) tests first with 25 and the server does not hold (#333): IllegalSpellCast (285), with the item's spell 1274"
+  let assert [#(LogWarning, line)] =
+    list.append(support.logs(effects: first), support.logs(effects: second))
+    as "the gap is logged once"
+  assert string.contains(line, "2509") as "the log line names the item"
+}
+
 pub fn the_grenade_again_within_its_2_s_cooldown_is_refused_15_test() -> Nil {
   use <- owned_test.run(10_000)
   let target = shown(creature_id: a_slaver_shack, metres: 10.0)
@@ -584,9 +737,10 @@ pub fn the_grenade_again_within_its_2_s_cooldown_is_refused_15_test() -> Nil {
     as "the first use is taken"
   assert support.refusal_results(effects: first) == [] as "the first use starts"
   // The cooldown starts at the go, which Spell4 26663's castTime 0 puts at the press. A
-  // press with 500 ms or less of a cooldown left is held by the queue window
-  // (`player.abilityQueueMax`), which an item cast refuses, so the refusal 15 is a
-  // press with more left.
+  // press of an ability with 500 ms or less of a cooldown left is queued, not refused
+  // (`player.abilityQueueMax`); a cast the client sent with a cast id is never queued, so
+  // the server refuses the press as it refuses a hold (14), and the refusal 15 is a press
+  // with more than 500 ms left.
   assert refusal_of(taken: use_item_at(
       state:,
       caster: throwing(),

@@ -50,6 +50,7 @@ import genesis_prime/table/id.{
   type Spell4EffectsId, GameFormulaId, PrerequisiteId, Spell4ConditionsId,
   Spell4EffectsId, Spell4Id,
 }
+import genesis_prime/table/item2
 import genesis_prime/table/item_special
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
@@ -230,13 +231,14 @@ pub type Planned {
   CannotBePlanned(why: String)
 }
 
-/// The activate spells' plans and the Prerequisite rows of the columns, as the load
-/// built them. A link column's prerequisite whose row the table lacks is not held (47
-/// creatures name 33 such ids): the client fails a prerequisite it cannot find
+/// The activate spells' plans and the Prerequisite rows of the columns and of the items,
+/// as the load built them. A link column's prerequisite whose row the table lacks is not
+/// held (47 creatures name 33 such ids): the client fails a prerequisite it cannot find
 /// (`Prerequisite.flags`), so the link is closed (`objective_link.of`).
 pub type Activations {
   Activations(
-    /// Each Prerequisite a creature's activate column names, by id.
+    /// Each Prerequisite a creature's activate column, a creature's link or an item names,
+    /// by id.
     prerequisites: Dict(Int, Prerequisite),
     /// Each spell an activate column names, and the default spell, by Spell4 id.
     spells: Dict(Int, Planned),
@@ -260,7 +262,7 @@ pub fn derivation() -> table_store.Derivation {
           "the table GameFormula has no row "
           <> int.to_string(default_spell_formula)
         PrerequisiteNotLoaded(error:) -> spell_plan.describe(error:)
-        AnimPrerequisiteNotLoaded(error:) ->
+        LinkOrItemPrerequisiteNotLoaded(error:) ->
           prerequisite.describe_load_error(error:)
       }
     })
@@ -271,7 +273,7 @@ pub fn derivation() -> table_store.Derivation {
 type BuildError {
   NoDefaultSpellFormula
   PrerequisiteNotLoaded(error: spell_plan.PlanError)
-  AnimPrerequisiteNotLoaded(error: prerequisite.LoadError)
+  LinkOrItemPrerequisiteNotLoaded(error: prerequisite.LoadError)
 }
 
 /// The activations the tables' load built.
@@ -306,7 +308,11 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
   )
   use anim_prerequisites <- result.try(
     list.try_fold(
-      anim_prerequisite_ids(tables:),
+      list.append(
+        anim_prerequisite_ids(tables:),
+        item_prerequisite_ids(tables:),
+      )
+        |> list.unique,
       [],
       fn(loaded, prerequisite_id) {
         case
@@ -321,7 +327,7 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
           // The client fails a prerequisite it has no row for (`Prerequisite.flags`), so
           // such a link is closed; the tables name rows they lack (see `Activations`).
           Error(prerequisite.NoPrerequisiteRow(..)) -> Ok(loaded)
-          Error(error) -> Error(AnimPrerequisiteNotLoaded(error:))
+          Error(error) -> Error(LinkOrItemPrerequisiteNotLoaded(error:))
         }
       },
     ),
@@ -376,6 +382,15 @@ fn item_spell_ids(
 fn anim_prerequisite_ids(tables tables: table_store.Tables) -> List(Int) {
   creature2.all(tables)
   |> list.map(fn(row) { row.prerequisite_id_anim_state })
+  |> list.filter(fn(prerequisite_id) { prerequisite_id != 0 })
+  |> list.unique
+}
+
+/// The ids of the Prerequisite rows the items name (`Item2.prerequisiteId`), which UseItem
+/// evaluates before it starts the item's cast (`0x1403998e0`).
+fn item_prerequisite_ids(tables tables: table_store.Tables) -> List(Int) {
+  item2.all(tables)
+  |> list.map(fn(row) { row.prerequisite_id })
   |> list.filter(fn(prerequisite_id) { prerequisite_id != 0 })
   |> list.unique
 }

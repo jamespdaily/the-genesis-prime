@@ -238,7 +238,7 @@ pub fn item_use_message(
         |> result.map(fn(held) { held.item2_id })
         |> option.from_result
       },
-      check: fn(item, second_item, target_checklist_index) {
+      check: fn(item, second_item, target_checklist_index, prerequisite) {
         item_use.check(
           tables:,
           item:,
@@ -246,6 +246,7 @@ pub fn item_use_message(
           quests: caster.quests,
           second_item:,
           target_checklist_index:,
+          prerequisite:,
         )
       },
       activations: connection_state.activations_of(session:),

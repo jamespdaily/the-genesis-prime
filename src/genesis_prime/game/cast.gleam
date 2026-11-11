@@ -1271,8 +1271,12 @@ pub fn use_item(
   body body: BitArray,
   caster caster: Caster,
   held_at held_at: fn(ItemPlace) -> Option(Item2Id),
-  check check: fn(Item2Id, ItemPlace, Option(Int)) ->
-    Result(Spell4Id, item_use.Refusal),
+  check check: fn(
+    Item2Id,
+    ItemPlace,
+    Option(Int),
+    fn(Int) -> prerequisite.Verdict,
+  ) -> Result(Spell4Id, item_use.Refusal),
   activations activations: activate.Activations,
   target_of target_of: fn(Int) -> activate.Target,
   in_cast_group in_cast_group: fn(Int, Int) -> Bool,
@@ -1303,8 +1307,12 @@ fn item_used(
   body body: BitArray,
   caster caster: Caster,
   held_at held_at: fn(ItemPlace) -> Option(Item2Id),
-  check check: fn(Item2Id, ItemPlace, Option(Int)) ->
-    Result(Spell4Id, item_use.Refusal),
+  check check: fn(
+    Item2Id,
+    ItemPlace,
+    Option(Int),
+    fn(Int) -> prerequisite.Verdict,
+  ) -> Result(Spell4Id, item_use.Refusal),
   activations activations: activate.Activations,
   target_of target_of: fn(Int) -> activate.Target,
   in_cast_group in_cast_group: fn(Int, Int) -> Bool,
@@ -1330,15 +1338,47 @@ fn item_used(
     None -> refusal(0, cast_result.ItemBad)
     Some(item) ->
       case
-        check(item, press.second_item, case target {
-          activate.Usable(checklist_index:, ..) -> Some(checklist_index)
-          activate.Unseen | activate.AnotherPlayer -> None
-        })
+        check(
+          item,
+          press.second_item,
+          // Another player's unit has no checklist index: the client's quest check reads
+          // -1 for it (`0x140398cc0`).
+          case target {
+            activate.Usable(checklist_index:, ..) -> Some(checklist_index)
+            activate.AnotherPlayer -> Some(-1)
+            activate.Unseen -> None
+          },
+          activate.checker(activations:, subject: subject_of(cast:, caster:)),
+        )
       {
         Error(item_use.NoItemSpell) -> Error(NoItemSpell)
         Error(item_use.NotSentByClient) -> Error(NotSentByClient)
         Error(item_use.Declined(spell4_id:, result:)) ->
           refusal(spell4_id.value, result)
+        Error(item_use.Charged(spell4_id:, max_charges:)) ->
+          not_built_refusal(
+            cast:,
+            client_cast_id:,
+            spell4_id: spell4_id.value,
+            key: UnbuiltItemCharges(item_id: item.value),
+            result: cast_result.IllegalSpellCast,
+            why: "(Item2 "
+              <> int.to_string(item.value)
+              <> ") has maxCharges "
+              <> int.to_string(max_charges)
+              <> ", which the server does not hold: the client refuses an item with no charges left with 25 (the issue about items, #333)",
+          )
+        Error(item_use.UnreadPrerequisite(spell4_id:, prerequisite_type:)) ->
+          not_built_refusal(
+            cast:,
+            client_cast_id:,
+            spell4_id: spell4_id.value,
+            key: UnreadItemPrerequisite(prerequisite_type:),
+            result: cast_result.IllegalSpellCast,
+            why: "is gated by a prerequisite of the type "
+              <> int.to_string(prerequisite_type)
+              <> ", which the server does not read",
+          )
         Ok(spell4_id) ->
           item_spell_cast(
             cast:,
@@ -1402,6 +1442,9 @@ fn item_spell_cast(
       limits:,
       cast_group_id:,
     )) ->
+      // A creature's `withheld` and `ClosedLink` are what the client's interact menu does
+      // not offer; an item's use never goes through that menu, and a closed link only
+      // gates the objectives `by_item` leaves uncounted.
       case target {
         activate.Unseen -> refusal(spell4_id, cast_result.NoTarget)
         activate.AnotherPlayer ->
@@ -2186,6 +2229,10 @@ pub type Unbuilt {
   UnbuiltShortcut(spell4_id: Int)
   /// The spell of an item that is used, by Spell4 id.
   UnbuiltItemSpell(spell4_id: Int)
+  /// An item with charges, by Item2 id.
+  UnbuiltItemCharges(item_id: Int)
+  /// A prerequisite type the server does not read, in the prerequisite of an item.
+  UnreadItemPrerequisite(prerequisite_type: Int)
 }
 
 /// A right-click refused because the server does not build what the cast needs: the
@@ -2201,7 +2248,9 @@ fn not_built_refusal(
   let refusal = refused(client_cast_id:, spell4_id:, result:)
   let what = case key {
     UnbuiltShortcut(..) -> "the shortcut cast of Spell4 "
-    UnbuiltItemSpell(..) -> "the use of an item whose spell is Spell4 "
+    UnbuiltItemSpell(..)
+    | UnbuiltItemCharges(..)
+    | UnreadItemPrerequisite(..) -> "the use of an item whose spell is Spell4 "
     UnbuiltSpell(..)
     | UnreadPrerequisite(..)
     | UnreadLinkPrerequisite(..)

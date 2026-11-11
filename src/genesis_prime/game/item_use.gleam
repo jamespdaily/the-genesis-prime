@@ -4,8 +4,11 @@
 ////
 //// ```
 //// item ─▶ Item2.itemSpecialId00 ─▶ ItemSpecial.spell4IdOnActivate   no spell: NoItemSpell
-////   player level below Item2.requiredLevel                         ─▶ 26
 ////   second place other than {300, 0xffffffff}, spell not type 6    ─▶ NotSentByClient
+////   Item2.prerequisiteId (UseItem) fails                           ─▶ 17
+////                                      is of a type not read       ─▶ UnreadPrerequisite
+////   Item2.maxCharges above 0 (25 in the client)                    ─▶ Charged
+////   player level below Item2.requiredLevel                         ─▶ 26
 ////   Item2.quest2IdActivationRequired set:
 ////     objective -1 (the quest): state 2 or 3                       ─▶ 29
 ////                               state other than 1                 ─▶ 28
@@ -24,15 +27,21 @@
 ////   the client does not test, and the player's target for 1, 3, 5 and 8
 ////   (`0x140551730`).
 ////
-//// Gaps, each reported as missing: the item's charges (result 25, the client's first check;
-//// no item here has `maxCharges`; #333), and the objective check of a castMethod 3 quest
-//// item, whose unit is read from the quest record's word 0x18 (#334).
+//// - **The order** is the client's (UseItem's prerequisite, then StartItemUseCast's charges,
+////   level and quest checks) except that the second place comes first: a body the client
+////   never sends ends the connection whatever else would refuse it.
+////
+//// Gaps, each reported as missing: the item's charges (result 25, StartItemUseCast's first
+//// check; the server holds none, so an item with `maxCharges` above 0 is refused as
+//// not built; #333), and the objective check of a
+//// castMethod 3 quest item, whose unit is read from the quest record's word 0x18 (#334).
 
+import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shortcut_spell
 import genesis_prime/message/cast_result.{
   type CastResult, ItemObjectiveComplete, ItemQuestRequirementsNotMet,
-  ItemTooHighLevel,
+  ItemTooHighLevel, SpellPreRequisites,
 }
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/table/id.{
@@ -55,6 +64,10 @@ pub type Refusal {
   NotSentByClient
   /// The client refuses the use with this result, naming the item's spell.
   Declined(spell4_id: Spell4Id, result: CastResult)
+  /// The item has charges (Item2.maxCharges above 0), which the server does not hold.
+  Charged(spell4_id: Spell4Id, max_charges: Int)
+  /// The item's prerequisite is of a type the server does not read.
+  UnreadPrerequisite(spell4_id: Spell4Id, prerequisite_type: Int)
 }
 
 /// The place the client sends as the second item unless the spell is an item on item
@@ -78,6 +91,7 @@ pub fn check(
   quests quests: QuestLog,
   second_item second_item: ItemPlace,
   target_checklist_index target_checklist_index: Option(Int),
+  prerequisite prerequisite: fn(Int) -> prerequisite.Verdict,
 ) -> Result(Spell4Id, Refusal) {
   use row <- result.try(
     item2.get(tables:, id: item) |> result.replace_error(NoItemSpell),
@@ -91,29 +105,40 @@ pub fn check(
       |> result.replace_error(NoItemSpell)
     }),
   )
-  let declined = fn(result) { Error(Declined(spell4_id:, result:)) }
-  case player_level < row.required_level {
-    True -> declined(ItemTooHighLevel)
-    False ->
-      case second_item == no_second_item || target_type == item_on_item {
-        False -> Error(NotSentByClient)
-        True ->
-          case
-            quest_check(
-              tables:,
-              row:,
-              quests:,
-              unit: case list.contains(targeted, target_type) {
-                True -> target_checklist_index
-                False -> None
-              },
-            )
-          {
-            Ok(Nil) -> Ok(spell4_id)
-            Error(result) -> declined(result)
-          }
+  let declined = fn(result) { Declined(spell4_id:, result:) }
+  use <- bool.guard(
+    when: second_item != no_second_item && target_type != item_on_item,
+    return: Error(NotSentByClient),
+  )
+  use Nil <- result.try(case row.prerequisite_id {
+    0 -> Ok(Nil)
+    prerequisite_id ->
+      case prerequisite(prerequisite_id) {
+        prerequisite.Passes -> Ok(Nil)
+        prerequisite.Fails -> Error(declined(SpellPreRequisites))
+        prerequisite.NotRead(prerequisite_type:) ->
+          Error(UnreadPrerequisite(spell4_id:, prerequisite_type:))
       }
-  }
+  })
+  use Nil <- result.try(case row.max_charges > 0 {
+    True -> Error(Charged(spell4_id:, max_charges: row.max_charges))
+    False -> Ok(Nil)
+  })
+  use Nil <- result.try(case player_level < row.required_level {
+    True -> Error(declined(ItemTooHighLevel))
+    False -> Ok(Nil)
+  })
+  quest_check(
+    tables:,
+    row:,
+    quests:,
+    unit: case list.contains(targeted, target_type) {
+      True -> target_checklist_index
+      False -> None
+    },
+  )
+  |> result.map(fn(_) { spell4_id })
+  |> result.map_error(declined)
 }
 
 /// ItemSpecial.spell4IdOnActivate of the item's ItemSpecial row, when it names one.

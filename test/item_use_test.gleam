@@ -2,8 +2,10 @@
 //// (`genesis_prime/game/item_use`). Expected values come from these places.
 //// - UseItem `0x1403998e0` and StartItemUseCast `0x140398cc0`: the item's spell is
 ////   ItemSpecial.spell4IdOnActivate of Item2.itemSpecialId00; the checks run in the
-////   order level (26), second place (always {300, 0xffffffff} unless the spell's
-////   targetType is 6), then the quest checks when Item2.quest2IdActivationRequired is
+////   order the prerequisite of Item2.prerequisiteId (17, UseItem), charges (25, kept as
+////   not built: #333), level (26), second place (always {300, 0xffffffff} unless the
+////   spell's targetType is 6; a second place the client never sends ends the connection
+////   first, whatever else fails), then the quest checks when Item2.quest2IdActivationRequired is
 ////   set: a whole quest (objective -1) gives 29 in state 2 or 3 and 28 unless the
 ////   state is 1; a named objective gives 29 when done and 28 when not open; a
 ////   checklist objective tested at a unit that is not the player gives 28 when the
@@ -20,10 +22,14 @@
 
 import character_tables
 import fixture_tables
-import genesis_prime/game/item_use.{Declined, NotSentByClient}
+import genesis_prime/game/item_use.{
+  Charged, Declined, NotSentByClient, UnreadPrerequisite,
+}
+import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/message/cast_result.{
   ItemObjectiveComplete, ItemQuestRequirementsNotMet, ItemTooHighLevel,
+  SpellPreRequisites,
 }
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/table/id.{Item2Id, Spell4Id}
@@ -36,6 +42,9 @@ import quest_support
 const grenade = 12_444
 
 const generic_item = 12_402
+
+/// Item2 2509: maxCharges 99, ItemSpecial 2769 -> Spell4 1274.
+const charged_item = 2509
 
 const objective_item = 21_966
 
@@ -88,7 +97,13 @@ fn used(
     quests:,
     second_item: no_second_item(),
     target_checklist_index: target,
+    prerequisite: passes,
   )
+}
+
+/// A prerequisite evaluator that passes every row.
+fn passes(_prerequisite_id: Int) -> prerequisite.Verdict {
+  prerequisite.Passes
 }
 
 pub fn an_item_casts_the_spell_its_item_special_names_test() -> Nil {
@@ -346,10 +361,109 @@ pub fn a_second_item_place_is_sent_only_for_an_item_on_item_spell_test() -> Nil 
       quests: grenade_quest_accepted(),
       second_item:,
       target_checklist_index: Some(0),
+      prerequisite: passes,
     )
   }
   assert check(no_second_item()) == Ok(Spell4Id(26_663))
     as "the client's own second place is taken"
   assert check(ItemPlace(location: 1, bag_index: 2)) == Error(NotSentByClient)
     as "spell 26663 is targetType 1, so the client never sends a second item"
+}
+
+pub fn an_item_with_charges_is_refused_before_its_level_is_tested_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- fixture_tables.changed(table: "Item2", id: charged_item, with: [
+    #("requiredLevel", Integer(50)),
+  ])
+  assert used(
+      tables:,
+      item: charged_item,
+      level: 1,
+      quests: quest_support.log_of(rows: []),
+      target: None,
+    )
+    == Error(Charged(spell4_id: Spell4Id(1274), max_charges: 99))
+    as "Item2 2509's maxCharges is 99: StartItemUseCast (0x140398cc0) tests the charges (25) before the level (26), and the server holds no charges (#333)"
+}
+
+pub fn an_item_with_no_charges_is_not_refused_for_them_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert used(
+      tables: character_tables.shared(),
+      item: generic_item,
+      level: 20,
+      quests: quest_support.log_of(rows: []),
+      target: None,
+    )
+    == Ok(Spell4Id(1545))
+    as "Item2 12402's maxCharges is 0"
+}
+
+pub fn an_item_prerequisite_is_judged_before_the_level_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- fixture_tables.changed(table: "Item2", id: grenade, with: [
+    #("prerequisiteId", Integer(624)),
+    #("requiredLevel", Integer(10)),
+  ])
+  let used_with = fn(verdict) {
+    item_use.check(
+      tables:,
+      item: Item2Id(grenade),
+      player_level: 9,
+      quests: grenade_quest_accepted(),
+      second_item: no_second_item(),
+      target_checklist_index: Some(0),
+      prerequisite: fn(prerequisite_id) {
+        case prerequisite_id {
+          624 -> verdict
+          _ -> prerequisite.Passes
+        }
+      },
+    )
+  }
+  assert used_with(prerequisite.Fails)
+    == Error(Declined(spell4_id: Spell4Id(26_663), result: SpellPreRequisites))
+    as "UseItem (0x1403998e0) judges Item2.prerequisiteId 624 first: a failed one is SpellPreRequisites (17), not the level's 26"
+  assert used_with(prerequisite.Passes)
+    == Error(Declined(spell4_id: Spell4Id(26_663), result: ItemTooHighLevel))
+    as "a passed one leaves the level check, which refuses level 9"
+  assert used_with(prerequisite.NotRead(prerequisite_type: 7))
+    == Error(UnreadPrerequisite(
+      spell4_id: Spell4Id(26_663),
+      prerequisite_type: 7,
+    ))
+    as "a prerequisite the server cannot judge is not decided"
+}
+
+pub fn an_item_with_no_prerequisite_is_not_judged_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert item_use.check(
+      tables: character_tables.shared(),
+      item: Item2Id(generic_item),
+      player_level: 20,
+      quests: quest_support.log_of(rows: []),
+      second_item: no_second_item(),
+      target_checklist_index: None,
+      prerequisite: fn(_) { prerequisite.Fails },
+    )
+    == Ok(Spell4Id(1545))
+    as "Item2 12402's prerequisiteId is 0: UseItem has nothing to evaluate"
+}
+
+pub fn a_second_item_place_the_client_never_sends_is_refused_whatever_the_level_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- fixture_tables.changed(table: "Item2", id: grenade, with: [
+    #("requiredLevel", Integer(10)),
+  ])
+  assert item_use.check(
+      tables:,
+      item: Item2Id(grenade),
+      player_level: 9,
+      quests: grenade_quest_accepted(),
+      second_item: ItemPlace(location: 1, bag_index: 2),
+      target_checklist_index: Some(0),
+      prerequisite: passes,
+    )
+    == Error(NotSentByClient)
+    as "a player below the item's level 10 is still sent no second place by the client: the body is not the client's"
 }

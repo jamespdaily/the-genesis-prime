@@ -15,6 +15,7 @@ ID	itemBudgetId	itemStatId	itemRuneInstanceId	itemQualityId	itemSpecialId00	item
 1506	0	0	0	2	0	0	1	2	9	3240	0	0	0	0	1	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0x00000000	12982	0		Icon_ItemArmorLegs_pants_0001	0
 1507	0	0	0	2	0	0	1	2	12	3241	0	0	0	0	1	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0x00000000	12983	0		Icon_ItemArmorFeet_UI_Item_Reflex_Boot_001	0
 1700	22	432	0	4	0	0	1	2	13	679	0	0	0	0	52	50	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	8	1	0	0	0	0	0	0	0	0	319	0xbf800000	14719	0		Icon_ItemArmor_Medium_Armor_Gloves_04	0
+2509	0	0	0	2	2769	0	24	85	172	0	0	0	0	0	1	0	0	0	0	1	99	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0x00000000	23137	0		Icon_SkillFire_UI_srcr_frblt	0
 4083	0	0	0	2	0	0	18	63	151	0	0	0	0	0	27	0	0	0	0	20	0	0	0	0	0	0	0	0	0	0	1	0	20	0	0	0	0	0	0	0	0	0	0x00000000	46965	46966		Icon_ItemMisc_stone_0001	0
 4084	0	0	0	3	0	0	18	63	151	0	0	0	0	0	27	0	0	0	0	20	0	0	0	0	0	0	0	0	0	0	1	0	20	0	0	0	0	0	0	0	0	0	0x00000000	46967	46968		Icon_ItemMisc_stone_0001	0
 4467	0	0	0	2	0	0	18	63	151	0	0	0	0	0	28	0	0	0	0	100	0	0	0	0	0	0	0	0	0	0	1	0	1	0	0	0	0	0	0	0	0	0	0x00000000	51711	51712		Icon_ItemMisc_UI_Item_Gears	0
