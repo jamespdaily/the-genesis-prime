@@ -35,7 +35,8 @@ import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_faction.{type Factions}
-import genesis_prime/world_map/creature_life.{Attackable, Hostile}
+import genesis_prime/world_map/creature_life.{Attackable, Charged, Hostile}
+import genesis_prime/world_map/creature_unit_type.{Turret}
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, Dead, FriendlyToBoth, NoFaction,
 }
@@ -1538,17 +1539,18 @@ pub fn a_turret_row_with_its_own_kind_starts_as_a_creature_of_type_13_test() -> 
   let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
   let assert Ok(turret) = dict.get(world.by_id, SpawnId(1))
     as "the turret starts"
-  assert turret.turret as "it is created as unit type 13"
+  assert turret.unit_type == Turret as "it is created as unit type 13"
   assert turret.faction_id == 1441 && turret.base_faction_id == 1441
     as "creature_faction 73494 -> 1441"
   assert turret.combat.attack.spell4_id == Spell4Id(85_469)
     as "its kind's charge, Spell4 85469"
-  assert turret.combat.attack.cast_ms == 8000
-    as "Spell4 85469 has castTime 8000"
+  // The charge's area, Spell4AoeTargetConstraints 335 and TelegraphDamage 16212, is read
+  // with its cast time: a `Charged` attack holds both.
+  let assert Charged(cast_ms:, ..) = turret.combat.attack.cast
+    as "the spell is a charge, which has its area"
+  assert cast_ms == 8000 as "Spell4 85469 has castTime 8000"
   assert turret.combat.attack.run_speed == 0.0
     as "a turret never moves, though a turret display may carry a run speed"
-  assert option.is_some(turret.combat.attack.area)
-    as "the charge's area, Spell4AoeTargetConstraints 335 and TelegraphDamage 16212, is read"
 }
 
 pub fn the_exile_turret_is_attackable_by_exiles_only_test() -> Nil {

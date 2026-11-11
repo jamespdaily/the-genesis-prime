@@ -44,6 +44,9 @@ import genesis_prime/message/unit_create_creature.{
 import genesis_prime/message/unit_create_static.{UnitCreateStatic}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/world_map/creature_unit_type.{
+  type CreatureUnitType, NonPlayer, Turret,
+}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/unit_fields
@@ -93,16 +96,17 @@ pub fn create(
   )
 }
 
-/// The bytes of the creature's 0x262: of type 0 as `create` built it, or of type 13
-/// (Turret) when `turret` is set, which the client reads with the same type data
-/// and the same values (`opcode.0x262.simple`), so only the type number differs.
+/// The bytes of the creature's 0x262 of the creature's unit type: of type 0 as
+/// `create` built it, or of type 13 (Turret), which the client reads with the same
+/// type data and the same values (`opcode.0x262.simple`), so only the type number
+/// differs.
 pub fn body(
   unit unit: UnitCreateCreature,
-  turret turret: Bool,
+  unit_type unit_type: CreatureUnitType,
 ) -> Result(BitArray, EncodeError) {
-  case turret {
-    False -> unit_create_creature.encode(unit)
-    True ->
+  case unit_type {
+    NonPlayer -> unit_create_creature.encode(unit)
+    Turret ->
       unit_create_static.encode(UnitCreateStatic(
         unit_id: unit.unit_id,
         unit_type: static_unit_type.Turret,

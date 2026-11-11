@@ -54,6 +54,7 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/quest_objective
 import genesis_prime/table/world_location2
 import genesis_prime/world_map/creature_faction
+import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/objective_spawn.{type Placed}
 import genesis_prime/world_map/spawn.{type Row}
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -85,6 +86,21 @@ const filler = 4064
 /// The one stored row that makes World 3460 a world with spawns.
 fn the_world_holds_spawns(tables tables: store.Tables) -> List(Row) {
   [stored(tables:, id: 1, creature_id: filler, world_id: world)]
+}
+
+/// The placement the content load makes, with the kinds migration 0028 leaves: the
+/// Sim-Turrets have kinds of their own.
+fn placed_by_the_load(
+  tables tables: store.Tables,
+  stored stored: List(Row),
+  factions factions: creature_faction.Factions,
+) -> Placed {
+  objective_spawn.place(
+    tables:,
+    stored:,
+    factions:,
+    kinds: spawn_support.turret_kinds(),
+  )
 }
 
 fn close(left: Float, right: Float) -> Bool {
@@ -144,7 +160,7 @@ pub fn a_lone_target_stands_at_the_marker_centre_with_its_facing_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.content_tables()
   let placed =
-    objective_spawn.place(
+    placed_by_the_load(
       tables:,
       stored: the_world_holds_spawns(tables:),
       factions: creature_faction.none(),
@@ -161,7 +177,8 @@ pub fn a_lone_target_stands_at_the_marker_centre_with_its_facing_test() -> Nil {
   assert close(row.rotation_x, 2.0 *. maths.atan2(-0.743145, 0.669131))
     as "the yaw of the marker's quaternion"
   assert close(row.rotation_y, 0.0) && close(row.rotation_z, 0.0)
-  assert row.entity_type == spawn.non_player
+  assert row.entity_type == 0
+    as "the boss is a NonPlayer unit, entity type 0 (`world_data.entity_type`)"
   assert row.faction_id == 219 && row.base_faction_id == 219
     as "the boss keeps the faction of its Creature2 row"
   assert row.display_info_id == 24_399 && row.outfit_info_id == 0
@@ -174,7 +191,7 @@ pub fn a_count_spread_over_two_markers_gives_one_each_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.content_tables()
   let placed =
-    objective_spawn.place(
+    placed_by_the_load(
       tables:,
       stored: the_world_holds_spawns(tables:),
       factions: creature_faction.none(),
@@ -201,7 +218,7 @@ pub fn a_group_target_alternates_its_creatures_on_the_ring_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.content_tables()
   let placed =
-    objective_spawn.place(
+    placed_by_the_load(
       tables:,
       stored: the_world_holds_spawns(tables:),
       factions: creature_faction.none(),
@@ -241,11 +258,7 @@ pub fn a_creature_with_a_stored_spawn_in_the_world_gets_none_test() -> Nil {
     ..the_world_holds_spawns(tables:)
   ]
   let placed =
-    objective_spawn.place(
-      tables:,
-      stored: held,
-      factions: creature_faction.none(),
-    )
+    placed_by_the_load(tables:, stored: held, factions: creature_faction.none())
   assert of_creatures(placed:, creatures: [boss]) == []
     as "the boss has a spawn in World 3460, where its marker is"
   assert of_creatures(placed:, creatures: [turret]) != []
@@ -273,15 +286,11 @@ pub fn a_stored_turret_row_holds_its_objective_creature_test() -> Nil {
     ..the_world_holds_spawns(tables:)
   ]
   let placed =
-    objective_spawn.place(
-      tables:,
-      stored: held,
-      factions: creature_faction.none(),
-    )
+    placed_by_the_load(tables:, stored: held, factions: creature_faction.none())
   assert of_creatures(placed:, creatures: [73_494]) == []
     as "a stored row of the turret, of any unit type, holds the objective's creature in its world"
   let placed =
-    objective_spawn.place(
+    placed_by_the_load(
       tables:,
       stored: the_world_holds_spawns(tables:),
       factions: creature_faction.none(),
@@ -299,7 +308,7 @@ pub fn the_dominion_turrets_are_placed_with_faction_1442_test() -> Nil {
   // 2946: 1442 to 166, level 0).
   let factions = spawn_support.the_turrets_are_given_their_factions(tables:)
   let placed =
-    objective_spawn.place(
+    placed_by_the_load(
       tables:,
       stored: the_world_holds_spawns(tables:),
       factions:,
@@ -323,6 +332,72 @@ pub fn the_dominion_turrets_are_placed_with_faction_1442_test() -> Nil {
   assert dict.has_key(started.by_id, first.id)
     && dict.has_key(started.by_id, second.id)
     as "both start: with 1442 they are no longer Friendly to both"
+  // Creature2 74862 has CreationTypeEnum 13 (Turret), as the training simulation's stored
+  // type 13 rows of its kind do (`world_data.entity_type`): a placed row stands as one
+  // too, so the creature starts as a Turret that never moves.
+  assert first.entity_type == 13 && second.entity_type == 13
+    as "the placed rows are entity type 13, as the creature's CreationTypeEnum says"
+  let assert Ok(spawn_of_first) = dict.get(started.by_id, first.id)
+  assert spawn_of_first.unit_type == creature_unit_type.Turret
+    as "a placed turret row starts as a Turret"
+  assert spawn_of_first.combat.attack.run_speed == 0.0 as "a turret never runs"
+}
+
+pub fn a_turret_creature_with_no_kind_is_not_placed_and_is_reported_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  // Creature2 73494 and 74862 have CreationTypeEnum 13 (Turret); with the default kinds
+  // alone (no creature_kind row of their own) no server fight would run them, and a
+  // row of type 13 with no kind is a static object (`spawn.select`).
+  let placed =
+    objective_spawn.place(
+      tables:,
+      stored: the_world_holds_spawns(tables:),
+      factions: creature_faction.none(),
+      kinds: spawn_support.kinds(),
+    )
+  assert of_creatures(placed:, creatures: [73_494, turret]) == []
+    as "neither Sim-Turret is placed"
+  assert list.contains(
+    placed.skipped,
+    objective_spawn.Skipped(
+      objective_id: 21_288,
+      why: objective_spawn.TurretHasNoKind(creature_id: 73_494),
+    ),
+  )
+    as "objective 21288 names Creature2 73494, which is reported"
+  assert list.contains(
+    placed.skipped,
+    objective_spawn.Skipped(
+      objective_id: 21_316,
+      why: objective_spawn.TurretHasNoKind(creature_id: turret),
+    ),
+  )
+    as "objective 21316 names Creature2 74862, which is reported"
+}
+
+pub fn a_stored_row_holds_its_creature_only_when_it_starts_as_a_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  let turret_row =
+    spawn.Row(
+      ..stored(tables:, id: 5, creature_id: 73_494, world_id: world),
+      entity_type: 13,
+    )
+  let non_player_row =
+    stored(tables:, id: 6, creature_id: boss, world_id: world)
+  assert objective_spawn.held_by(
+      stored: [turret_row, non_player_row],
+      kinds: spawn_support.turret_kinds(),
+    )
+    == set.from_list([#(world, 73_494), #(world, boss)])
+    as "a type 13 row whose creature has a kind starts as a creature, as a non-player row does"
+  assert objective_spawn.held_by(
+      stored: [turret_row, non_player_row],
+      kinds: spawn_support.kinds(),
+    )
+    == set.from_list([#(world, boss)])
+    as "a type 13 row with no kind of its creature is a static object, which stands no creature"
 }
 
 pub fn a_marker_in_a_world_with_no_stored_spawn_is_skipped_and_reported_test() -> Nil {
@@ -331,7 +406,7 @@ pub fn a_marker_in_a_world_with_no_stored_spawn_is_skipped_and_reported_test() -
   // Rows are stored in World 1387 only; the fixture's markers are in World 3460.
   let elsewhere = [stored(tables:, id: 1, creature_id: filler, world_id: 1387)]
   let placed =
-    objective_spawn.place(
+    placed_by_the_load(
       tables:,
       stored: elsewhere,
       factions: creature_faction.none(),
@@ -349,7 +424,7 @@ pub fn a_marker_in_a_world_with_no_stored_spawn_is_skipped_and_reported_test() -
     as "the report names the objective, the marker and its world"
   // A stored row in World 3460 makes the same marker one the creatures stand at.
   let placed =
-    objective_spawn.place(
+    placed_by_the_load(
       tables:,
       stored: the_world_holds_spawns(tables:),
       factions: creature_faction.none(),
@@ -369,7 +444,7 @@ pub fn a_refused_placed_row_is_labelled_as_a_placement_not_a_spawn_test() -> Nil
   use <- owned_test.run(60_000)
   let tables = character_tables.content_tables()
   let placed =
-    objective_spawn.place(
+    placed_by_the_load(
       tables:,
       stored: the_world_holds_spawns(tables:),
       factions: creature_faction.none(),
@@ -419,7 +494,7 @@ pub fn two_objectives_on_one_creature_and_marker_place_once_test() -> Nil {
   // Both objectives count 1: the boss is placed once, not twice.
   let tables = character_tables.content_tables()
   let placed =
-    objective_spawn.place(
+    placed_by_the_load(
       tables:,
       stored: the_world_holds_spawns(tables:),
       factions: creature_faction.none(),
@@ -432,7 +507,7 @@ pub fn two_objectives_on_one_creature_and_marker_place_once_test() -> Nil {
     with: [#("count", Integer(2))],
   )
   let placed =
-    objective_spawn.place(
+    placed_by_the_load(
       tables: character_tables.content_over(tables: changed),
       stored: the_world_holds_spawns(tables:),
       factions: creature_faction.none(),
@@ -445,7 +520,7 @@ pub fn a_target_with_no_creature2_row_is_skipped_and_reported_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.content_tables()
   let placed =
-    objective_spawn.place(
+    placed_by_the_load(
       tables:,
       stored: the_world_holds_spawns(tables:),
       factions: creature_faction.none(),
@@ -473,11 +548,7 @@ pub fn placement_ids_take_no_stored_or_run_only_id_test() -> Nil {
     stored(tables:, id: 2, creature_id: filler, world_id: world),
   ]
   let placed =
-    objective_spawn.place(
-      tables:,
-      stored: held,
-      factions: creature_faction.none(),
-    )
+    placed_by_the_load(tables:, stored: held, factions: creature_faction.none())
   assert placed.rows != []
   let numbers =
     list.map(placed.rows, fn(row: Row) {
@@ -527,11 +598,10 @@ pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
     as "the stored spawn rows read back"
   let tables = client_tables.with_content_tables()
   let factions = spawn_support.the_boss_is_given_233(tables:)
-  let placed = objective_spawn.place(tables:, stored:, factions:)
+  let placed = placed_by_the_load(tables:, stored:, factions:)
   let worlds = set.from_list(list.map(stored, fn(row: Row) { row.world_id }))
   let held =
-    list.map(stored, fn(row: Row) { #(row.world_id, row.creature_id) })
-    |> set.from_list
+    objective_spawn.held_by(stored:, kinds: spawn_support.turret_kinds())
   let kill_objectives =
     list.filter(quest_objective.all(tables), fn(objective) {
       list.contains([2, 8, 16], objective.type_)
@@ -567,7 +637,7 @@ pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
       rows: placed.rows,
       tables:,
       formulas: rating_support.formulas(),
-      kinds: spawn_support.kinds(),
+      kinds: spawn_support.turret_kinds(),
       vendors: vendor.none(),
       factions:,
     )
@@ -749,7 +819,7 @@ pub fn the_placed_boss_takes_its_chosen_faction_and_starts_test() -> Nil {
   let tables = character_tables.content_tables()
   let factions = spawn_support.the_boss_is_given_233(tables:)
   let placed =
-    objective_spawn.place(
+    placed_by_the_load(
       tables:,
       stored: the_world_holds_spawns(tables:),
       factions:,

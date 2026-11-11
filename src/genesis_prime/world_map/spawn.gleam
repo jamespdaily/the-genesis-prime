@@ -26,8 +26,8 @@
 ////   Faction2Relationship). Every other row is counted for the coverage measure.
 //// - **Turrets that fight.** A row of entity type 13 (Turret) whose creature has a
 ////   creature_kind row of its own starts as a creature as a NonPlayer row does, with
-////   its 0x262 of type 13 and no movement (`Spawn.turret`); one without such a row
-////   stays a static object.
+////   its 0x262 of type 13 and no movement (`Spawn.unit_type`); one without such a
+////   row stays a static object.
 //// - **Static objects.** A row of entity type 4, 8, 10, 11, 12, 13, 14 or 32 is a
 ////   static object (genesis_prime/world_map/static_object), checked as a
 ////   NonPlayer row is and kept whatever its faction. Types 4, 8, 10, 11, 12 and
@@ -113,6 +113,9 @@ import genesis_prime/world_map/creature_kind.{type Kind, type Kinds}
 import genesis_prime/world_map/creature_life.{
   type Attack, type Combat, Attackable, Combat, Hostile,
 }
+import genesis_prime/world_map/creature_unit_type.{
+  type CreatureUnitType, NonPlayer, Turret,
+}
 import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/spawn_source.{type Summoned, Summoned}
@@ -195,11 +198,10 @@ pub type Spawn {
     /// Whether the creature sells (`vendor` content table): its 0x262 carries the vendor
     /// create flag, which shows the client its bag icon.
     vendor: Bool,
-    /// Whether the creature's 0x262 is of unit type 13 (Turret, `world_data.entity_type`)
-    /// and not 0: a turret row with a creature_kind row of its own starts as a
-    /// creature that never moves. The client reads both types' type data alike
-    /// (`opcode.0x262.simple`), so only the type number differs.
-    turret: Bool,
+    /// The unit type the creature's 0x262 carries: a Turret row (type 13,
+    /// `world_data.entity_type`) with a creature_kind row of its own starts as a
+    /// creature that never moves.
+    unit_type: CreatureUnitType,
     /// The creature's `prerequisiteIdVisibility`, `None` for 0: the player sees the
     /// creature only while this prerequisite does not fail for them
     /// (genesis_prime/game/visibility).
@@ -498,10 +500,10 @@ pub fn select(
   let #(_shared, judged_by_checks) =
     list.map_fold(rows, dict.new(), fn(shared, row) {
       case
-        starts_as_creature(kinds:, row:),
+        creature_unit_type_of(kinds:, row:),
         static_object.unit_type_of(entity_type: row.entity_type)
       {
-        True, _ ->
+        Ok(creature_type), _ ->
           case
             load_checks(
               catalog:,
@@ -510,6 +512,7 @@ pub fn select(
               vendors:,
               shared:,
               row: with_chosen_faction(factions:, row:),
+              unit_type: creature_type,
             )
           {
             Error(error) -> #(shared, refused(row, error))
@@ -521,7 +524,7 @@ pub fn select(
               },
             )
           }
-        False, Ok(unit_type) -> #(
+        Error(Nil), Ok(unit_type) -> #(
           shared,
           case object_checks(catalog:, row:, unit_type:) {
             Error(error) -> refused(row, error)
@@ -532,7 +535,7 @@ pub fn select(
               }
           },
         )
-        False, Error(Nil) -> #(shared, Other(row:))
+        Error(Nil), Error(Nil) -> #(shared, Other(row:))
       }
     })
   let #(judged, loaded) =
@@ -641,18 +644,21 @@ fn index_of(indexes: Dict(SpawnId, Int), spawn_id: SpawnId) -> Int {
   dict.get(indexes, spawn_id) |> result.unwrap(0)
 }
 
-/// Message 0x262's unit type of a NonPlayer unit (`0x140649e20`).
-pub const non_player = 0
-
-/// Whether a row starts as a creature: a NonPlayer row, or a Turret row (type 13)
-/// whose creature has a creature_kind row of its own, which says the server fights
-/// it. Any other Turret row is a static object (genesis_prime/world_map/static_object).
-fn starts_as_creature(kinds kinds: Kinds, row row: Row) -> Bool {
-  row.entity_type == non_player
-  || {
-    row.entity_type
-    == static_object.type_number(unit_type: static_object.Turret)
-    && dict.has_key(kinds.by_creature, row.creature_id)
+/// The unit type a row starts as a creature with: a NonPlayer row as a NonPlayer,
+/// and a Turret row (type 13) as a Turret when its creature has a creature_kind row
+/// of its own, which says the server fights it. `Error` for any other row, among
+/// them a Turret row without one, which is a static object
+/// (genesis_prime/world_map/static_object).
+pub fn creature_unit_type_of(
+  kinds kinds: Kinds,
+  row row: Row,
+) -> Result(CreatureUnitType, Nil) {
+  use unit_type <- result.try(creature_unit_type.of_entity_type(
+    entity_type: row.entity_type,
+  ))
+  case unit_type, dict.has_key(kinds.by_creature, row.creature_id) {
+    NonPlayer, True | NonPlayer, False | Turret, True -> Ok(unit_type)
+    Turret, False -> Error(Nil)
   }
 }
 
@@ -710,8 +716,8 @@ pub type SummonRefusal {
   WouldNotStart(creature_id: Creature2Id, reason: LeftOut)
 }
 
-/// The run-only spawn of a summon, checked as a spawn is: a row of entity type 0
-/// (NonPlayer) for the creature at the summoned place and facing, with the
+/// The run-only spawn of a summon, checked as a spawn is: a row of the creature's
+/// unit type (`creature_row`) for the creature at the summoned place and facing, with the
 /// display, outfit and factions the creature's Creature2 row gives, through
 /// `load_checks` and `left_out_of`. The row's own health is none, and its level
 /// is the summon's when it names one (stat 10, so the health and the defence
@@ -751,7 +757,17 @@ pub fn summoned(
       level: row_level,
     )
   use #(checked, _shared) <- result.try(
-    load_checks(catalog:, formulas:, kinds:, vendors:, shared: dict.new(), row:)
+    load_checks(
+      catalog:,
+      formulas:,
+      kinds:,
+      vendors:,
+      shared: dict.new(),
+      row:,
+      unit_type: creature_unit_type.of_creation_type(
+        creation_type: creature.creation_type_enum,
+      ),
+    )
     |> result.map_error(FailsTheChecks),
   )
   case left_out_of(catalog:, checked:) {
@@ -762,7 +778,8 @@ pub fn summoned(
   }
 }
 
-/// The row of a NonPlayer unit of a creature standing at a place: the world,
+/// The row of a creature standing at a place, of the unit type its
+/// `CreationTypeEnum` gives (`creature_unit_type.of_creation_type`): the world,
 /// zone, position and facing of the place, the display and the outfit that
 /// `Looks` gives the creature's groups, and for both factions the creature's chosen
 /// faction when the table has one (`creature_faction`), else `Creature2.factionId`,
@@ -782,7 +799,11 @@ pub fn creature_row(
     |> result.unwrap(creature.faction_id)
   Row(
     id:,
-    entity_type: non_player,
+    entity_type: creature_unit_type.entity_type(
+      unit_type: creature_unit_type.of_creation_type(
+        creation_type: creature.creation_type_enum,
+      ),
+    ),
     creature_id: creature.id,
     world_id: start_place.world_id(place),
     area_id: start_place.world_zone_id(place),
@@ -979,11 +1000,11 @@ pub fn faction_levels(
 }
 
 /// The combat values and their context already worked out in a load, with the
-/// creature's bases, by creature, level, display and faction: the spawns that share
-/// them hold one term, so the load's term is small (a persistent term keeps the
-/// sharing).
+/// creature's bases, by creature, level, display, faction and unit type: the spawns
+/// that share them hold one term, so the load's term is small (a persistent term
+/// keeps the sharing).
 type SharedCombats =
-  Dict(#(Int, Int, Int, Int, Bool), #(Combat, CombatContext, Bases))
+  Dict(#(Int, Int, Int, Int, CreatureUnitType), #(Combat, CombatContext, Bases))
 
 /// A creature's base of each UnitProperty2 id, 0 to 199 in id order.
 type Bases =
@@ -1005,7 +1026,7 @@ fn combat_of(
   bases bases: Bases,
   display_info_id display_info_id: Int,
   faction_id faction_id: Int,
-  turret turret: Bool,
+  unit_type unit_type: CreatureUnitType,
 ) -> Result(#(Combat, CombatContext), SpawnError) {
   let creature_id = Creature2Id(creature.id)
   use display <- result.try(
@@ -1028,14 +1049,14 @@ fn combat_of(
     level:,
     display:,
     value:,
-    turret:,
+    unit_type:,
   ))
   let context =
     CombatContext(
       formulas:,
       scaling:,
       attack: attack_effects,
-      run_land: run_land_of(display:, turret:),
+      run_land: run_land_of(display:, unit_type:),
     )
   let combat =
     Combat(
@@ -1178,7 +1199,7 @@ fn attack_of(
   level level: Int,
   display display: creature2_display_info.Creature2DisplayInfo,
   value value: Value,
-  turret turret: Bool,
+  unit_type unit_type: CreatureUnitType,
 ) -> Result(#(Attack, damage.CreatureScaling, List(AttackEffect)), SpawnError) {
   let creature_id = Creature2Id(creature.id)
   use spell <- result.try(
@@ -1251,8 +1272,8 @@ fn attack_of(
       }
     }),
   )
-  use area <- result.try(case spell.cast_time > 0 {
-    False -> Ok(None)
+  use cast <- result.try(case spell.cast_time > 0 {
+    False -> Ok(creature_life.Instant)
     True ->
       case
         spell_area.area_of_spell(
@@ -1266,12 +1287,14 @@ fn attack_of(
             creature_id:,
             spell4_id: kind.attack_spell4_id.value,
           ))
-        Ok(Some(found)) -> Ok(Some(found))
+        Ok(Some(#(area, inside))) ->
+          Ok(creature_life.Charged(cast_ms: spell.cast_time, area:, inside:))
       }
   })
-  let reach = case area {
-    Some(#(row, _)) -> row.max_range
-    None -> spell.target_max_range +. hit_radius.of_creature(display:)
+  let reach = case cast {
+    creature_life.Charged(area:, ..) -> area.max_range
+    creature_life.Instant ->
+      spell.target_max_range +. hit_radius.of_creature(display:)
   }
   let attack =
     creature_life.Attack(
@@ -1282,10 +1305,12 @@ fn attack_of(
         blows: list.map(attack_effects, fn(effect) { effect.blow }),
         value:,
       ),
-      run_speed: run_speed_of(run_land: run_land_of(display:, turret:), value:),
+      run_speed: run_speed_of(
+        run_land: run_land_of(display:, unit_type:),
+        value:,
+      ),
       reach:,
-      cast_ms: spell.cast_time,
-      area:,
+      cast:,
     )
   Ok(#(attack, creature_scaling, attack_effects))
 }
@@ -1357,20 +1382,16 @@ fn offence_of(
   )
 }
 
-/// The run speed of the creature's display on land: its runLand, or 0 for a turret,
-/// which the server never moves (a server choice: some turret displays carry a run
-/// speed, Creature2DisplayInfo 39655, which a turret never uses).
+/// The run speed of the creature's display on land: its runLand, or 0 for a creature
+/// that cannot move (a Turret), which the server never moves (a server choice: some
+/// turret displays carry a run speed, Creature2DisplayInfo 39655, which a turret
+/// never uses).
 fn run_land_of(
   display display: creature2_display_info.Creature2DisplayInfo,
-  turret turret: Bool,
+  unit_type unit_type: CreatureUnitType,
 ) -> Float {
-  use <- bool.guard(when: turret, return: 0.0)
+  use <- bool.guard(when: !creature_unit_type.can_move(unit_type:), return: 0.0)
   display.run_land
-}
-
-/// Whether a row is a turret's (unit type 13).
-fn is_turret_row(row row: Row) -> Bool {
-  row.entity_type == static_object.type_number(unit_type: static_object.Turret)
 }
 
 /// The creature's run speed: its display's runLand times property 100
@@ -1868,6 +1889,7 @@ fn load_checks(
   vendors vendors: Vendors,
   shared shared: SharedCombats,
   row row: Row,
+  unit_type unit_type: CreatureUnitType,
 ) -> Result(#(Checked, SharedCombats), SpawnError) {
   let creature_id = Creature2Id(row.creature_id)
   use Drawn(creature:, place:) <- result.try(client_checks(catalog:, row:))
@@ -1876,13 +1898,12 @@ fn load_checks(
     creature:,
     row:,
   ))
-  let turret = is_turret_row(row:)
   let key = #(
     row.creature_id,
     level,
     row.display_info_id,
     row.faction_id,
-    turret,
+    unit_type,
   )
   use #(#(combat, context, bases), shared) <- result.try(
     case dict.get(shared, key) {
@@ -1898,7 +1919,7 @@ fn load_checks(
           bases:,
           display_info_id: row.display_info_id,
           faction_id: row.faction_id,
-          turret:,
+          unit_type:,
         )
         |> result.map(fn(worked) {
           let worked = #(worked.0, worked.1, bases)
@@ -1926,7 +1947,7 @@ fn load_checks(
         bases:,
         context:,
         vendor: vendor.is_vendor(vendors:, creature_id:),
-        turret:,
+        unit_type:,
         visibility: visibility_of(creature:),
         checklist_index: 0,
       ),

@@ -13,6 +13,7 @@ import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/creature_unit_type.{NonPlayer, Turret}
 import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/unit_fields
@@ -46,7 +47,7 @@ pub fn a_creature_is_created_as_the_clients_vector_of_a_battle_beast_is_test() -
       display_info_id: 26_565,
       outfit_info_id: 0,
       vendor: False,
-      turret: False,
+      unit_type: NonPlayer,
       visibility: option.None,
       combat: spawn_support.beast_combat(),
       bases: spawn_support.loaded_beast().bases,
@@ -73,7 +74,7 @@ pub fn a_turret_creature_is_created_as_unit_type_13_test() -> Nil {
   // turret's 0x262 is the creature's with the type number 13 (Turret).
   let beast = spawn_support.battle_beast(number: 1, x: 0.0)
   let sim_turret =
-    Spawn(..beast, creature_id: Creature2Id(73_494), turret: True)
+    Spawn(..beast, creature_id: Creature2Id(73_494), unit_type: Turret)
   let unit =
     creature_unit.create(
       spawn: sim_turret,
@@ -82,7 +83,7 @@ pub fn a_turret_creature_is_created_as_unit_type_13_test() -> Nil {
       interrupt_armor: option.None,
       server_time_estimate_start: 0,
     )
-  let assert Ok(bytes) = creature_unit.body(unit, turret: True)
+  let assert Ok(bytes) = creature_unit.body(unit, unit_type: Turret)
     as "the turret's 0x262 encodes"
   let assert Ok(decoded) = unit_create_static.decode(bytes)
     as "the bytes read as a static unit's 0x262, whose type number is the unit type"
@@ -93,7 +94,7 @@ pub fn a_turret_creature_is_created_as_unit_type_13_test() -> Nil {
     as "followed by the Creature2 id and the checklist index"
   assert decoded.tail == unit.tail
     as "and the creature's tail: health, factions, display and place are the creature's"
-  assert creature_unit.body(unit, turret: False)
+  assert creature_unit.body(unit, unit_type: NonPlayer)
     == unit_create_creature.encode(unit)
     as "a creature that is no turret's is of type 0 as before"
 }

@@ -3118,6 +3118,111 @@ pub fn a_viewer_arriving_mid_charge_gets_the_open_cast_test() -> Nil {
     as "the arriving viewer is told the go and the finish too"
 }
 
+pub fn a_viewer_arriving_mid_charge_is_told_the_current_target_in_the_open_cast_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 5 takes the top of the threat list from player 2 while the turret charges: the
+  // 0x908 a later viewer gets names player 5, and so does its 0x7ff, the target the
+  // turret's cast is on now.
+  let #(state, aggro) = fought(viewers: [2, 5])
+  let #(state, _, _) = charge_opened(state:, aggro:)
+  let #(state, struck) =
+    tell(
+      state:,
+      at_ms: 5000,
+      message: strike_of(number: 5, cast_id: 1, blows: [#(1, 10, 1.0)]),
+    )
+  assert list.contains(said(struck), "0x908(50, 10) to 2")
+    as "player 5 is the target now"
+  let #(_, watched) =
+    tell(
+      state:,
+      at_ms: 6000,
+      message: creature.Watched(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
+    )
+  let assert [_, _, targeting, _, CastStarted(start:)] = news_to(watched, 9)
+  assert name_of(targeting) == "0x908(50, 10)"
+  assert start.primary_target_unit_id == 50
+    as "the open cast is sent on the unit the fight targets now, not the one it began on"
+}
+
+pub fn a_controlled_turret_keeps_its_aim_while_its_target_moves_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `0x14046cdc0.turret_cast_aim`: the aim is held while the unit has crowd-control state
+  // flag 0x10 (Stun and Knockdown carry it). Player 2, the target, is 10 units ahead of the
+  // turret and player 5 stands in the same line, 20 units ahead. Player 5 stuns the turret
+  // at 9000 ms, which lasts 2500 ms, and the target then walks 10 units along +x, off the
+  // line. At the cast's end the turret, held, still strikes along the line it held: player
+  // 5 is struck and the target is not.
+  let #(state, aggro) = fought(viewers: [2, 5])
+  let state = with_player_5_at(state:, x: 0.0, z: -20.0)
+  let #(state, _, ends) = charge_opened(state:, aggro:)
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 9000,
+      message: controlling(number: 5, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  assert list.contains(said(stunned), "0x87f to 2")
+    as "the state took hold on the turret"
+  let #(state, back) =
+    tell(
+      state:,
+      at_ms: 9100,
+      message: moved_at(number: 5, x: 0.0, z: -20.0, seq: 3),
+    )
+  assert said(back) == []
+  let #(state, walked) =
+    tell(
+      state:,
+      at_ms: 9500,
+      message: moved_at(number: 2, x: 10.0, z: 0.0, seq: 2),
+    )
+  assert said(walked) == [] as "the turret does not move"
+  let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
+  assert said(went) == ["Attacks to 5"]
+    as "the held aim still points up the line: player 5 is struck and the target, who left it, is not"
+}
+
+pub fn a_turret_aims_at_its_target_again_when_the_state_that_held_it_ends_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The same fight, but the stun is over (it ends at 6500 ms) before the target walks off
+  // the line: the aim follows the target again, so the cast's end strikes it at its new
+  // place and not player 5, who stays in the old line.
+  let #(state, aggro) = fought(viewers: [2, 5])
+  let state = with_player_5_at(state:, x: 0.0, z: -20.0)
+  let #(state, _, ends) = charge_opened(state:, aggro:)
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 4000,
+      message: controlling(number: 5, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let state_ends = timer_for(stunned, 2500)
+  let #(state, _) = fire(state:, at_ms: 6500, timer: state_ends)
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 6600,
+      message: moved_at(number: 5, x: 0.0, z: -20.0, seq: 3),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 7000,
+      message: moved_at(number: 2, x: 10.0, z: 0.0, seq: 2),
+    )
+  let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
+  assert said(went) == ["Attacks to 2"]
+    as "the state ended before the target moved: the aim follows it, so it is struck where it stands and player 5, in the old line, is not"
+}
+
 pub fn a_controlled_turret_still_strikes_at_the_charge_end_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) = fought(viewers: [2])

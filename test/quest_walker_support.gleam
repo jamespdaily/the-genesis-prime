@@ -16,6 +16,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{Attackable, Hostile}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/spawn.{Spawn}
 import gleam/dict
 import gleam/option
@@ -126,7 +127,7 @@ pub fn walker_appears() -> Event(ConnectionEvent(Message, Answer)) {
   connection_support.sent_by_a_peer(connection_support.news_of(
     unit_id: 40,
     news: CreatureAppeared(
-      turret: False,
+      unit_type: NonPlayer,
       unit: creature_unit.create(
         spawn: spawned,
         unit_id: 40,

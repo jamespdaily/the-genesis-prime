@@ -3966,7 +3966,7 @@ fn the_target_at_slot_0(
   let assert Ok(target) =
     list.find(targets_in(frames:), fn(creature) {
       is_near(
-        left: game_client.creature_placed_at(unit: creature),
+        left: game_client.placed_by_tail(tail: creature.tail),
         right: ring_slot(index: 0),
       )
     })
@@ -4054,7 +4054,7 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
   let #(game, frames, have, _) = a_medic_at_the_marker_ring(started:)
   let shown = targets_in(frames:)
   assert list.map(shown, fn(creature) {
-      game_client.creature_placed_at(unit: creature)
+      game_client.placed_by_tail(tail: creature.tail)
     })
     |> list.all(fn(place) {
       is_near(left: place, right: ring_slot(index: 0))
@@ -4185,8 +4185,8 @@ pub fn a_placed_target_respawns_at_its_slot_test() -> Nil {
     list.find(game_client.creatures_created_in(frames: after), fn(unit) {
       unit.unit_id == target.unit_id
     })
-  assert game_client.creature_placed_at(unit: again)
-    == game_client.creature_placed_at(unit: target)
+  assert game_client.placed_by_tail(tail: again.tail)
+    == game_client.placed_by_tail(tail: target.tail)
     && again.creature_id == 73_492
     as "death.creature_respawn: 0x355, then a new 0x262 with the same unit id at the same place, ring slot 0"
   game_client.close(game:)
@@ -4638,7 +4638,7 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
   let beast_at_x = fn(frames, x) {
     let assert [beast] =
       list.filter(game_client.creatures_created_in(frames:), fn(unit) {
-        game_client.creature_placed_at(unit:).0 == x
+        game_client.placed_by_tail(tail: unit.tail).0 == x
       })
       as "one Beast stands at this x"
     beast.unit_id
@@ -6350,7 +6350,7 @@ pub fn an_exile_kills_the_boss_and_objective_21296_counts_test() -> Nil {
     })
     as "the boss is created for the Exile"
   assert is_near(
-    left: game_client.creature_placed_at(unit: boss),
+    left: game_client.placed_by_tail(tail: boss.tail),
     right: marker_51744,
   )
     as "opcode.0x262: a lone target stands at its marker's centre"
@@ -6494,7 +6494,7 @@ fn the_turret_at(
 ) -> Int {
   let assert Ok(turret) =
     list.find(turrets_in(frames:), fn(turret) {
-      is_near(left: game_client.static_placed_at(unit: turret), right: place)
+      is_near(left: game_client.placed_by_tail(tail: turret.tail), right: place)
     })
     as "a Creature2 73494 stands at the place of its stored row"
   turret.unit_id
@@ -6622,6 +6622,9 @@ pub fn a_charge_hits_a_player_who_stays_in_its_rectangle_test() -> Nil {
     game_client.Targeted(unit_id: turret, target_unit_id: own, threat: 1),
   )
     as "0x908: the turret fights the player who walked into its aggro range"
+  // The turret's frames are sent before its step's timer is started, so the tick is
+  // on the clock only once it has taken all it was sent.
+  the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
   // The attack tick, 3000 ms after the aggro, opens the charge.
   driven_time.advance(time:, ms: 3000)
   let #(opened, have) =
@@ -6641,7 +6644,9 @@ pub fn a_charge_hits_a_player_who_stays_in_its_rectangle_test() -> Nil {
   assert caster_unit_id == turret as "opcode.0x7ff: the turret casts it"
   assert game_client.go_targets_in(frames: opened) == []
     as "the 8 s cast has not gone: no 0x7f4 yet"
-  // Its cast time passes with the player in the rectangle.
+  // Its cast time passes with the player in the rectangle, once the charge's own
+  // timer is on the clock.
+  the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
   driven_time.advance(time:, ms: 8000)
   let #(went, _) =
     game_client.read_until(game:, have:, found: fn(frames) {
@@ -6649,26 +6654,55 @@ pub fn a_charge_hits_a_player_who_stays_in_its_rectangle_test() -> Nil {
         game_client.casts_in(frames:),
         game_client.CastFinished(cast_id:),
       )
+      && game_client.own_health_of(
+        events: game_client.fight_in(frames:),
+        unit: own,
+      )
+      != []
     })
   assert game_client.go_targets_in(frames: went) == [#(cast_id, [own])]
     as "opcode.0x7f4: the go names the player inside the rectangle"
-  assert list.contains(
-    game_client.fight_in(frames: went),
-    game_client.Went(cast_id:, targets: [#(own, [#(224_644, 400)])]),
-  )
+  let assert [game_client.Went(targets: [#(_, [blow])], ..)] =
+    list.filter(game_client.fight_in(frames: went), fn(event) {
+      case event {
+        game_client.Went(cast_id: went_id, ..) -> went_id == cast_id
+        game_client.Targeted(..)
+        | game_client.Threatens(..)
+        | game_client.InCombat(..)
+        | game_client.LevelIs(..)
+        | game_client.ShieldIs(..)
+        | game_client.InterruptArmorIs(..)
+        | game_client.AbsorptionIs(..)
+        | game_client.OwnHealthIs(..)
+        | game_client.Moves(..)
+        | game_client.Started(..)
+        | game_client.HealthIs(..) -> False
+      }
+    })
+    as "opcode.0x7f4: one go of the charge, with one damage effect for the player"
+  assert blow.effect_id == 224_644 && blow.raw_damage == 400
     as "Spell4Effects 224644: the charge deals the player 400"
-  // The shield takes up to 0.625 of a blow (ShieldMitigationMax, property 175,
-  // `player.level1_gear_properties`) and armor only lowers the blow, so the health
-  // loses at most 400 x (1 - 0.625) = 150 and something, and the shield falls.
-  let assert [now] =
+  // The blow after the glance and the mitigation and absorbs is `adjusted`; the shield
+  // takes 0.625 of it (ShieldMitigationMax, property 175,
+  // `player.level1_gear_properties`, rounded as `hit.apply` rounds), which the
+  // shield held (`entry_stat` 20) covers, and the health takes the rest.
+  let adjusted = blow.raw_damage - blow.glance - blow.absorbed
+  assert blow.shield_absorbed == float.round(int.to_float(adjusted) *. 0.625)
+    as "opcode.0x7f4: the shield takes 0.625 of the adjusted blow"
+  assert blow.shield_absorbed <= entry_stat(entry: frames, stat_id: 20)
+    as "the shield held what it took"
+  let assert [_, ..] as healths =
     game_client.own_health_of(
       events: game_client.fight_in(frames: went),
       unit: own,
     )
-    as "opcode.0x92f: the charge's go gives the player's health once"
-  let lost = health - now
-  assert lost > 0 && lost <= 150
-    as "opcode.0x92f: the health loses what the shield leaves of the 400"
+    as "opcode.0x92f: the charge's go gives the player's health"
+  let assert Ok(now) = list.last(healths)
+    as "the last health is the one that stands"
+  assert health - now == adjusted - blow.shield_absorbed
+    as "opcode.0x92f: the health loses the adjusted blow less the shield's share"
+  assert blow.health_damage == adjusted - blow.shield_absorbed
+    as "opcode.0x7f4: the description's health damage is the same"
   assert list.any(
     game_client.shield_of(events: game_client.fight_in(frames: went), unit: own),
     fn(shield) { shield < entry_stat(entry: frames, stat_id: 20) },

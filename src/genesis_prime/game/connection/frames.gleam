@@ -69,6 +69,7 @@ import genesis_prime/step.{type Now}
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/creature_unit_type.{type CreatureUnitType}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/static_object.{
@@ -656,13 +657,13 @@ pub fn generic_error_frame(code code: Int) -> Frame {
   Frame(message_id: generic_error.message_id, body:)
 }
 
-/// 0x262 for a creature, as its process built it, of unit type 13 when `turret`
-/// is set (genesis_prime/world_map/creature_unit `body`).
+/// 0x262 for a creature, as its process built it, of the creature's unit type
+/// (genesis_prime/world_map/creature_unit `body`).
 pub fn creature_created_frame(
   unit unit: UnitCreateCreature,
-  turret turret: Bool,
+  unit_type unit_type: CreatureUnitType,
 ) -> Frame {
-  let assert Ok(body) = creature_unit.body(unit:, turret:)
+  let assert Ok(body) = creature_unit.body(unit:, unit_type:)
     as "a creature's values fit the message's fields: the spawn's checks hold each"
   Frame(message_id: unit_create_creature.message_id, body:)
 }

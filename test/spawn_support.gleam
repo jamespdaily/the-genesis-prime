@@ -24,8 +24,9 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/creature_life.{
-  type Attack, Attack, Attackable, Combat, Hostile,
+  type Attack, Attack, Attackable, Combat, Hostile, Instant,
 }
+import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/game_number.{type GameNumbers, GameNumbers}
 import genesis_prime/world_map/spawn.{type Row, type Spawn, Row, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -84,7 +85,7 @@ pub fn battle_beast(number number: Int, x x: Float) -> Spawn {
     display_info_id: 26_565,
     outfit_info_id: 0,
     vendor: False,
-    turret: False,
+    unit_type: NonPlayer,
     visibility: option.None,
     combat: beast_combat(),
     bases: loaded_beast().bases,
@@ -400,8 +401,7 @@ pub fn beast_attack() -> Attack {
     ),
     run_speed: 10.0,
     reach: 8.0,
-    cast_ms: 0,
-    area: option.None,
+    cast: Instant,
   )
 }
 

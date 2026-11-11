@@ -66,6 +66,7 @@ import genesis_prime/store.{HeldItem}
 import genesis_prime/table/id.{Creature2Id, Item2Id}
 import genesis_prime/world_map/creature_life.{Attackable, Combat, Hostile}
 import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/map.{ObjectsSeen}
 import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/static_object.{StaticObject}
@@ -122,7 +123,7 @@ fn appears(
   connection_support.sent_by_a_peer(connection_support.news_of(
     unit_id: unit,
     news: client_connection.CreatureAppeared(
-      turret: False,
+      unit_type: NonPlayer,
       unit: creature_unit.create(
         spawn: target,
         unit_id: unit,
