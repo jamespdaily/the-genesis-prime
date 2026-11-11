@@ -17,6 +17,7 @@ import genesis_prime/content/sql
 import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/world_map/creature_kind.{type Kinds, type Row, Row}
 import gleam/list
+import gleam/option.{None}
 import gleam/result
 import pog
 
@@ -34,6 +35,9 @@ pub fn rows(db db: pog.Connection) -> Result(List(Row), pog.QueryError) {
         respawn_ms: row.respawn_ms,
         attack_spell4_id: row.attack_spell4_id,
         attack_interval_ms: row.attack_interval_ms,
+        // shape: #655 the guard and opening columns come with migration 0030 and the regenerated query
+        guard_spell4_id: None,
+        opening_spell4_id: None,
       )
     })
   })

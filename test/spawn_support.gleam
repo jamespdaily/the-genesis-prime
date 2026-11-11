@@ -293,6 +293,7 @@ pub fn kinds() -> Kinds {
       respawn_ms: 60_000,
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
+      guard: option.None,
     ),
     by_creature: dict.new(),
   )
@@ -310,6 +311,7 @@ pub fn turret_kinds() -> Kinds {
           respawn_ms: 60_000,
           attack_spell4_id: Spell4Id(85_469),
           attack_interval_ms: 3000,
+          guard: option.None,
         ),
       ),
       #(
@@ -318,6 +320,7 @@ pub fn turret_kinds() -> Kinds {
           respawn_ms: 60_000,
           attack_spell4_id: Spell4Id(86_978),
           attack_interval_ms: 3000,
+          guard: option.None,
         ),
       ),
     ]),

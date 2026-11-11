@@ -28,6 +28,7 @@ import genesis_prime/table/spell4
 import genesis_prime/world_map/creature_kind.{Kind, Kinds, Row}
 import gleam/dict
 import gleam/list
+import gleam/option
 import gleam/string
 import owned_key
 import owned_test
@@ -48,6 +49,8 @@ const default_row =
     respawn_ms: 60_000,
     attack_spell4_id: 5649,
     attack_interval_ms: 1500,
+    guard_spell4_id: option.None,
+    opening_spell4_id: option.None,
   )
 
 pub fn an_attack_interval_below_the_strike_deadline_is_refused_by_name_test() -> Nil {
@@ -133,6 +136,8 @@ pub fn an_attack_with_a_cast_time_loads_with_it_test() -> Nil {
         respawn_ms: 60_000,
         attack_spell4_id: 85_469,
         attack_interval_ms: 3000,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
     ])
     as "a spell with a cast time and a type 15 cast prerequisite loads"
@@ -141,6 +146,7 @@ pub fn an_attack_with_a_cast_time_loads_with_it_test() -> Nil {
       respawn_ms: 60_000,
       attack_spell4_id: Spell4Id(85_469),
       attack_interval_ms: 3000,
+      guard: option.None,
     )
     as "the creature takes its charge as its attack"
 }
@@ -163,6 +169,8 @@ pub fn an_attack_whose_cast_prerequisite_the_creature_cannot_answer_is_refused_t
           respawn_ms: 60_000,
           attack_spell4_id: 85_469,
           attack_interval_ms: 3000,
+          guard_spell4_id: option.None,
+          opening_spell4_id: option.None,
         ),
       ],
       tables:,
@@ -185,12 +193,16 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
         respawn_ms: 60_000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
       Row(
         creature_id: 73_464,
         respawn_ms: 5000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
     ])
   assert kinds
@@ -199,6 +211,7 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
         respawn_ms: 60_000,
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
+        guard: option.None,
       ),
       by_creature: dict.from_list([
         #(
@@ -207,6 +220,7 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
             respawn_ms: 5000,
             attack_spell4_id: Spell4Id(5649),
             attack_interval_ms: 1500,
+            guard: option.None,
           ),
         ),
       ]),
@@ -216,6 +230,7 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
       respawn_ms: 5000,
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
+      guard: option.None,
     )
     as "a creature with a row of its own takes it"
   assert creature_kind.kind_of(kinds:, creature2_id: 73_465)
@@ -223,6 +238,7 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
       respawn_ms: 60_000,
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
+      guard: option.None,
     )
     as "any other creature takes the default row 0"
 }
@@ -236,6 +252,8 @@ pub fn a_table_with_no_default_row_is_refused_test() -> Nil {
         respawn_ms: 5000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
     ])
     as "the start stops: a creature must always have a kind"
@@ -251,12 +269,16 @@ pub fn a_row_for_a_creature_the_client_does_not_hold_is_refused_by_name_test() -
         respawn_ms: 60_000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
       Row(
         creature_id: 99,
         respawn_ms: 5000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
     ])
     as "Creature2 99 has no row in the client's table"
@@ -272,12 +294,16 @@ pub fn a_respawn_time_below_one_is_refused_by_name_test() -> Nil {
         respawn_ms: 60_000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
       Row(
         creature_id: 73_464,
         respawn_ms: 0,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
     ])
     as "a creature that respawns in no time has no corpse: migration 0009 refuses it too"
@@ -293,12 +319,16 @@ pub fn a_respawn_time_below_the_strike_deadline_is_refused_by_name_and_the_deadl
         respawn_ms: 60_000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
       Row(
         creature_id: 73_464,
         respawn_ms: strike_tell.deadline_ms - 1,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
     ])
     as "a creature that stands again before the round it was struck in has closed would take the held news of its earlier unit"
@@ -311,12 +341,16 @@ pub fn a_respawn_time_below_the_strike_deadline_is_refused_by_name_and_the_deadl
         respawn_ms: 60_000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
       Row(
         creature_id: 73_464,
         respawn_ms: strike_tell.deadline_ms,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
     ])
     as "a respawn time of the deadline itself is taken"
@@ -332,12 +366,16 @@ pub fn every_refused_row_is_collected_test() -> Nil {
         respawn_ms: 5000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
       Row(
         creature_id: 73_464,
         respawn_ms: -1,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
     ])
   assert list.map(refusals, fn(refused) { refused.row })
@@ -365,18 +403,24 @@ pub fn a_migrated_database_holds_the_60_second_default_row_and_the_sim_turrets_c
         respawn_ms: 60_000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
       Row(
         creature_id: 73_494,
         respawn_ms: 60_000,
         attack_spell4_id: 85_469,
         attack_interval_ms: 3000,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
       Row(
         creature_id: 74_862,
         respawn_ms: 60_000,
         attack_spell4_id: 86_978,
         attack_interval_ms: 3000,
+        guard_spell4_id: option.None,
+        opening_spell4_id: option.None,
       ),
     ]
     as "migration 0009 seeds row 0, the server's choice of 60 000 ms, and migration 0029 the Sim-Turrets' charges, Spell4 85469 and 86978"
@@ -465,6 +509,7 @@ pub fn kinds_put_under_a_key_are_read_back_test() -> Nil {
         respawn_ms: 60_000,
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
+        guard: option.None,
       ),
       by_creature: dict.from_list([
         #(
@@ -473,6 +518,7 @@ pub fn kinds_put_under_a_key_are_read_back_test() -> Nil {
             respawn_ms: 5000,
             attack_spell4_id: Spell4Id(5649),
             attack_interval_ms: 1500,
+            guard: option.None,
           ),
         ),
       ]),

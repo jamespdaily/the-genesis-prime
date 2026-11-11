@@ -218,6 +218,11 @@ pub type News {
   /// A cast of the unit ends: 0x7fe (opcode.0x7fe), written for a cast the viewer
   /// wrote the start of, which the viewer then forgets.
   CastFinished(cast_id: Int)
+  /// A cast of the unit is interrupted: 0x7f9 with the result `cast_result.SpellInterrupted`
+  /// (11) and the unit, then the 0x7fe of `CastFinished` (opcode.0x7f9), written for a cast the
+  /// viewer wrote the start of, which the viewer then forgets. A creature's charge that a crowd-control
+  /// state broke is shown so (genesis_prime/world_map/creature_fight).
+  CastInterrupted(cast_id: Int)
   /// The unit's health after a landed hit, from the creature that owns it: 0x937
   /// (opcode.0x937), written when the viewer's client shows the unit, whatever
   /// the viewer's own casts.

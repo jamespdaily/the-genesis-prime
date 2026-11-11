@@ -1056,6 +1056,7 @@ pub fn creature_news_frames(
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)
+    | client_connection.CastInterrupted(..)
     | client_connection.CreatureMoved(..)
     | client_connection.CreaturePlaced(..)
     | client_connection.Targeting(..)

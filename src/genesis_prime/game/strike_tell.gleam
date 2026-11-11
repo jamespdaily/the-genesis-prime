@@ -119,7 +119,9 @@ pub type Refusal {
 pub type Outcome {
   /// The blows landed: a description for each (genesis_prime/game/hit), and the
   /// states the unit took of the strike's `controls` (a unit that takes none
-  /// answers `[]`).
+  /// answers `[]`). A guarded creature (genesis_prime/world_map/creature_guard) answers a
+  /// damaging strike with no descriptions: it takes no health, and the striker's connection
+  /// shows the immunity.
   Landed(descriptions: List(Description), controls: List(ControlLanded))
   /// The creature deflected the whole strike.
   Deflected

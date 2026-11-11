@@ -110,6 +110,7 @@ fn beast_from(
       respawn_ms: 60_000,
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
+      guard: option.None,
     ),
     viewers:,
     armor:,
@@ -326,6 +327,7 @@ fn name_of(news: News) -> String {
     CastWent(..) -> "0x7f4"
     client_connection.CastMissed(..) -> "0x7fb"
     CastFinished(..) -> "0x7fe"
+    client_connection.CastInterrupted(..) -> "0x7f9"
     Health(health:, ..) -> "0x937(" <> int.to_string(health) <> ")"
     client_connection.Died -> "0x88c"
     CreatureAppeared(..) -> "0x262"
@@ -2037,8 +2039,8 @@ pub fn a_struck_creature_with_no_armor_holds_the_state_its_viewers_get_the_0x87f
     ]
     as "the answer names it, with the time the creature holds it until: its arrival, 10000 + 1000, plus 166 plus 3000"
   assert creature.controlled(state:)
-  assert control_timers(taken) == [#(step.TimerId(9), 3166)]
-    as "one timer for the state, 166 + 3000 from the tell; ids 5n + 4 from 9"
+  assert control_timers(taken) == [#(step.TimerId(10), 3166)]
+    as "one timer for the state, 166 + 3000 from the tell; ids 6n + 4 from 10"
 }
 
 pub fn the_state_ends_with_a_0x880_at_arrival_plus_delay_plus_duration_and_not_before_test() -> Nil {
@@ -2063,7 +2065,7 @@ pub fn the_state_ends_with_a_0x880_at_arrival_plus_delay_plus_duration_and_not_b
   assert state_news(ended, 2) == [over] && state_news(ended, 5) == [over]
     as "0x880 names the unit's state, the strike's cast and the go's instance id"
   assert !creature.controlled(state:)
-  let #(_, again) = fire(state:, at_ms: 4200, timer: step.TimerId(9))
+  let #(_, again) = fire(state:, at_ms: 4200, timer: step.TimerId(10))
   assert support.effects_of(again) == []
     as "a timer that fires for a state already ended writes nothing"
 }
@@ -2081,13 +2083,13 @@ pub fn two_states_of_one_kind_from_one_caster_are_held_separately_and_two_ending
     )
   assert list.length(state_news(taken, 2)) == 2
     && control_timers(taken)
-    == [#(step.TimerId(9), 2500), #(step.TimerId(14), 2500)]
+    == [#(step.TimerId(10), 2500), #(step.TimerId(16), 2500)]
     as "two 0x87f and a timer for each state"
-  let #(state, first) = fire(state:, at_ms: 3500, timer: step.TimerId(9))
+  let #(state, first) = fire(state:, at_ms: 3500, timer: step.TimerId(10))
   assert list.map(state_news(first, 2), name_of) == ["0x880"]
     && creature.controlled(state:)
     as "one 0x880 for the first, and the second still holds"
-  let #(state, second) = fire(state:, at_ms: 3500, timer: step.TimerId(14))
+  let #(state, second) = fire(state:, at_ms: 3500, timer: step.TimerId(16))
   assert list.map(state_news(second, 2), name_of) == ["0x880"]
     && !creature.controlled(state:)
     as "each ends with its own 0x880, though both end in one millisecond"
@@ -2113,10 +2115,10 @@ pub fn two_players_states_have_two_0x87f_and_two_0x880_each_with_its_own_instanc
     )
   assert list.map(state_news(first, 5), name_of) == ["0x87f"]
     && list.map(state_news(second, 5), name_of) == ["0x87f"]
-  let #(state, one) = fire(state:, at_ms: 3500, timer: step.TimerId(9))
+  let #(state, one) = fire(state:, at_ms: 3500, timer: step.TimerId(10))
   assert list.map(state_news(one, 5), name_of) == ["0x880"]
     && creature.controlled(state:)
-  let #(state, two) = fire(state:, at_ms: 4000, timer: step.TimerId(14))
+  let #(state, two) = fire(state:, at_ms: 4000, timer: step.TimerId(16))
   assert list.map(state_news(two, 5), name_of) == ["0x880"]
     && !creature.controlled(state:)
     as "each state ends with its own 0x880; the creature is held until the later one"
@@ -2140,10 +2142,10 @@ pub fn a_creature_that_dies_stunned_sends_no_0x880_and_a_timer_after_death_write
     )
   assert state_news(killed, 5) == []
     as "the client clears every state at a death: no 0x880"
-  assert list.contains(timers_cancelled(killed), step.TimerId(9))
+  assert list.contains(timers_cancelled(killed), step.TimerId(10))
     as "the state's timer is cancelled"
   assert !creature.controlled(state:)
-  let #(_, late) = fire(state:, at_ms: 3500, timer: step.TimerId(9))
+  let #(_, late) = fire(state:, at_ms: 3500, timer: step.TimerId(10))
   assert support.effects_of(late) == []
     as "a timer already waiting in the mailbox writes nothing"
 }
@@ -3039,7 +3041,7 @@ pub fn a_stale_cast_end_does_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) = fought(viewers: [2])
   let #(state, _, ends) = charge_opened(state:, aggro:)
-  let #(_, old) = fire(state:, at_ms: 5000, timer: step.TimerId(5 * 99 + 3))
+  let #(_, old) = fire(state:, at_ms: 5000, timer: step.TimerId(6 * 99 + 3))
   assert said(old) == [] && timers(old) == []
     as "a cast end of another generation fires while the charge is open: it does nothing"
   let #(state, _) = fire(state:, at_ms: 11_000, timer: ends)
@@ -3047,7 +3049,7 @@ pub fn a_stale_cast_end_does_nothing_test() -> Nil {
   assert said(again) == [] && timers(again) == []
     as "the charge struck already: its cast end fires again and finds no charge"
   let #(_, unknown) =
-    fire(state:, at_ms: 11_060, timer: step.TimerId(5 * 99 + 3))
+    fire(state:, at_ms: 11_060, timer: step.TimerId(6 * 99 + 3))
   assert said(unknown) == [] && timers(unknown) == []
     as "a cast end of a generation no charge holds does nothing"
 }

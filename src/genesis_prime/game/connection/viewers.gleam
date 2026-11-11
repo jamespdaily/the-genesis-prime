@@ -330,6 +330,7 @@ pub fn viewer_takes(
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)
+    | client_connection.CastInterrupted(..)
     | client_connection.Health(..)
     | client_connection.Died
     | client_connection.CameBack
@@ -491,6 +492,8 @@ pub fn viewer_takes(
         frame: cast.stack_removed_frame(removed:),
         forgetting: False,
       )
+    client_connection.CastInterrupted(cast_id: _) ->
+      panic as "shape: #655 a viewer writes 0x7f9 (result 11) then 0x7fe for a cast of the unit it was sent the start of, and forgets it"
     client_connection.CastFinished(cast_id:) ->
       written_cast_frame(
         session:,
@@ -765,6 +768,7 @@ fn creature_news(
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)
+    | client_connection.CastInterrupted(..)
     | client_connection.CreatureMoved(..)
     | client_connection.CreaturePlaced(..)
     | client_connection.Targeting(..)
@@ -853,6 +857,7 @@ fn life_news(
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)
+    | client_connection.CastInterrupted(..)
     | client_connection.Health(..)
     | client_connection.Died
     | client_connection.CreatureMoved(..)
