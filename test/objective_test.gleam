@@ -1115,8 +1115,16 @@ pub fn a_counted_finish_objective_stays_done_when_its_quest_is_taken_again_test(
       ),
       quest_support.accepted(quest_id: 10_503, progress: [0]),
     ])
-  assert settled(log:, tables:, items: [], zones: []).effects == []
+  let after = settled(log:, tables:, items: [], zones: [])
+  assert after.effects == []
     as "10503 is Active again: the objective is not lowered and nothing is told"
+  assert quest_log.objective_progress(
+      log: after.log,
+      quest: quest_of(id: 10_502, tables:),
+      index: 0,
+    )
+    == 1
+    as "the returned log still holds the count: a silent lowering fails here"
 }
 
 pub fn a_counted_finish_objective_is_not_told_again_test() -> Nil {

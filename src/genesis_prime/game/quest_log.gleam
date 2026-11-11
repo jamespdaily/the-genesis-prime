@@ -614,11 +614,23 @@ fn completed_entry(
   tables tables: table_store.Tables,
   latest latest: Resets,
 ) -> QuestCompleted {
-  let in_current_period = case period_start_ms(quest_id:, tables:, latest:) {
-    Ok(start_ms) if at * 1000 >= start_ms -> 1
-    Ok(_) | Error(Nil) -> 0
+  let in_current_period = case in_period(quest_id:, at:, tables:, latest:) {
+    Ok(True) -> 1
+    Ok(False) | Error(Nil) -> 0
   }
   QuestCompleted(quest_id:, in_current_period:)
+}
+
+/// Whether a completion at `at` (Unix seconds) is in the quest's current repeat period,
+/// or `Error(Nil)` for a quest that does not repeat.
+fn in_period(
+  quest_id quest_id: Int,
+  at at: Int,
+  tables tables: table_store.Tables,
+  latest latest: Resets,
+) -> Result(Bool, Nil) {
+  period_start_ms(quest_id:, tables:, latest:)
+  |> result.map(fn(start_ms) { at * 1000 >= start_ms })
 }
 
 /// The start of the quest's current repeat period, or `Error(Nil)` for a quest that
@@ -653,13 +665,14 @@ pub fn finished(
   case dict.get(log.entries, quest_id) {
     Ok(Completed(at:)) ->
       case
-        period_start_ms(
+        in_period(
           quest_id:,
+          at:,
           tables:,
           latest: latest_resets(numbers:, at_ms: unix_ms),
         )
       {
-        Ok(start_ms) -> at * 1000 >= start_ms
+        Ok(in_current_period) -> in_current_period
         Error(Nil) -> True
       }
     Ok(Active(..)) | Ok(Known(..)) | Error(Nil) -> False

@@ -410,7 +410,7 @@ fn names_the_objective(
 /// the checklist index of the shown unit that stands there. A type 22 objective with a
 /// count above 1 is left alone: nothing says how many visits it takes, and the server
 /// does not count them (the issue "Place objectives with no marker or a count above one
-/// complete (objective type 22)". An objective such a pass opens is settled in the same
+/// complete (objective type 22)"). An objective such a pass opens is settled in the same
 /// call.
 ///
 /// The client sends nothing for a type 24 objective either (`QuestObjective.type.24`):
@@ -418,7 +418,8 @@ fn names_the_objective(
 /// `unix_ms`, the Unix time in milliseconds, whose repeat periods `numbers` sets). The
 /// objective counts when it is open, and an objective that this opens counts in the same
 /// call. That a completion is what sets it is read from the objective's text and title,
-/// not from client code (a gap in the fact's record).
+/// not from client code (a gap in the fact's record; the issue "Quests, zones and
+/// prerequisites work on the real client" closes it by recording quest 7540 live).
 pub fn settle(
   log log: QuestLog,
   tables tables: table_store.Tables,
