@@ -4,6 +4,7 @@
 //// is all the server wrote up to its pong, which is all it wrote before it took the
 //// ping (`game_client.read_until_pong`).
 
+import bot_frames
 import game_client.{type Game}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/message/buyback_added
@@ -60,52 +61,51 @@ pub type Answer {
 pub fn answer_in(frames frames: List(Frame)) -> Answer {
   Answer(
     frames:,
-    added: decoded(frames, item_added.message_id, fn(body) {
+    added: bot_frames.decoded(frames, item_added.message_id, fn(body) {
       item_added.decode(body) |> result.map(fn(message) { message.held_item })
     }),
-    count_changed: decoded(
+    count_changed: bot_frames.decoded(
       frames,
       item_count_changed.message_id,
       item_count_changed.decode,
     ),
-    removed: decoded(frames, item_removed.message_id, item_removed.decode),
-    moved: decoded(frames, item_moved.message_id, item_moved.decode),
-    swapped: decoded(frames, items_swapped.message_id, items_swapped.decode),
-    refused: decoded(
+    removed: bot_frames.decoded(
+      frames,
+      item_removed.message_id,
+      item_removed.decode,
+    ),
+    moved: bot_frames.decoded(frames, item_moved.message_id, item_moved.decode),
+    swapped: bot_frames.decoded(
+      frames,
+      items_swapped.message_id,
+      items_swapped.decode,
+    ),
+    refused: bot_frames.decoded(
       frames,
       item_action_failed.message_id,
       item_action_failed.decode,
     ),
-    currencies: decoded(
+    currencies: bot_frames.decoded(
       frames,
       currency_changed.message_id,
       currency_changed.decode,
     ),
-    buyback_added: decoded(frames, buyback_added.message_id, fn(body) {
-      buyback_added.decode(body) |> result.map(fn(message) { message.entry })
-    }),
-    buyback_removed: decoded(frames, buyback_removed.message_id, fn(body) {
-      buyback_removed.decode(body)
-      |> result.map(fn(message) { message.buyback_id })
-    }),
+    buyback_added: bot_frames.decoded(
+      frames,
+      buyback_added.message_id,
+      fn(body) {
+        buyback_added.decode(body) |> result.map(fn(message) { message.entry })
+      },
+    ),
+    buyback_removed: bot_frames.decoded(
+      frames,
+      buyback_removed.message_id,
+      fn(body) {
+        buyback_removed.decode(body)
+        |> result.map(fn(message) { message.buyback_id })
+      },
+    ),
   )
-}
-
-fn decoded(
-  frames: List(Frame),
-  message_id: Int,
-  decode: fn(BitArray) -> Result(a, e),
-) -> List(a) {
-  list.filter_map(frames, fn(frame) {
-    case frame.message_id == message_id {
-      True -> {
-        let assert Ok(message) = decode(frame.body)
-          as "the client's reader reads a message the server wrote"
-        Ok(message)
-      }
-      False -> Error(Nil)
-    }
-  })
 }
 
 /// The place a 0x569 gives as one 64-bit value: the bag index in bits 0 to 7 and the
@@ -137,7 +137,7 @@ pub fn open_vendor(
       list.any(frames, fn(frame) { frame.message_id == vendor_items.message_id })
     })
   let assert [window] =
-    decoded(frames, vendor_items.message_id, vendor_items.decode)
+    bot_frames.decoded(frames, vendor_items.message_id, vendor_items.decode)
     as "the server answers a vendor request with one window"
   #(window, have)
 }

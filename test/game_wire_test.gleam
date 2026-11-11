@@ -82,6 +82,8 @@ import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/player_character_state
 import genesis_prime/message/player_health
 import genesis_prime/message/quest_log as quest_message
+import genesis_prime/message/quest_objective_progress.{QuestObjectiveProgress}
+import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
@@ -142,6 +144,7 @@ import owned_test
 import place_support
 import planted_table
 import pog
+import quest_bot
 import quest_support
 import rating_support
 import socket_read
@@ -6275,6 +6278,350 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
     && item.item_id == chest.item_id
   })
     as "the chest is worn"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+// ---- a quest bot ----
+
+/// Where the Exile Human starts: WorldLocation2 42074, World 426, WorldZone 648
+/// (Northern Wilds), where the quest bot stands and never moves.
+const exile_start = #(4098.16, -665.98, -5165.1)
+
+/// A row of the spawn table for World 426 at an offset east (`dx`) and south (`dz`)
+/// of the Exile start: the row of an object (entity type 10) or a creature (entity
+/// type 0) the quest bot meets, as the planted rows of the other whole-server tests are
+/// the test's own, not recorded.
+fn northern_wilds_row(
+  number number: Int,
+  entity_type entity_type: Int,
+  creature_id creature_id: Int,
+  display_info_id display_info_id: Int,
+  outfit_info_id outfit_info_id: Int,
+  faction_id faction_id: Int,
+  dx dx: Float,
+  dz dz: Float,
+) -> spawn.Row {
+  spawn.Row(
+    ..spawn_support.beast_row(number:),
+    entity_type:,
+    creature_id:,
+    world_id: 426,
+    area_id: 648,
+    x: exile_start.0 +. dx,
+    y: exile_start.1,
+    z: exile_start.2 +. dz,
+    display_info_id:,
+    outfit_info_id:,
+    faction_id:,
+    base_faction_id: faction_id,
+  )
+}
+
+pub fn a_bot_accepts_uses_and_turns_in_a_northern_wilds_quest_takes_up_another_and_finds_both_after_a_relog_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // Northern Wilds is the Exile start zone (World 426, WorldZone 35 of Quest2 3886 and
+  // 3480). Creature2 11066 gives and receives quest 3886 (questIdGiven01, questIdReceive04),
+  // which asks for one use of Creature2 13630 (QuestObjective 5053: type 12, count 1) and
+  // three uses of the members of TargetGroup 1460, which is Creature2 13623 (5052: type 14,
+  // count 3). Creature2 11061 gives quest 3480 (questIdGiven00), whose first objective asks
+  // for three uses of Creature2 11070 (4470: type 12, count 3). Every Creature2 has the activate
+  // spell 1817 with an activateSpellCastTime of 2000 ms; the activateSpellMaxRange is 5.0 for
+  // 13630 and 11070 and 7.0 for 13623, and the reach to a giver is 6.0 between edges. Each is
+  // planted within 4.5 of the Exile start. The giver's faction 171 is friendly to the
+  // Exile's 167 (Faction2Relationship 771).
+  let time = driven_time.new()
+  let giver = 11_066
+  let other_giver = 11_061
+  let rows = [
+    northern_wilds_row(
+      number: 1,
+      entity_type: 0,
+      creature_id: giver,
+      display_info_id: 22_825,
+      outfit_info_id: 9065,
+      faction_id: 171,
+      dx: 0.0,
+      dz: 4.0,
+    ),
+    northern_wilds_row(
+      number: 2,
+      entity_type: 0,
+      creature_id: other_giver,
+      display_info_id: 22_825,
+      outfit_info_id: 9065,
+      faction_id: 171,
+      dx: 0.0,
+      dz: -4.0,
+    ),
+    northern_wilds_row(
+      number: 3,
+      entity_type: 0,
+      creature_id: 11_070,
+      display_info_id: 24_086,
+      outfit_info_id: 0,
+      faction_id: 219,
+      dx: 3.0,
+      dz: 0.0,
+    ),
+    northern_wilds_row(
+      number: 4,
+      entity_type: 10,
+      creature_id: 13_630,
+      display_info_id: 23_147,
+      outfit_info_id: 0,
+      faction_id: 219,
+      dx: -3.0,
+      dz: 0.0,
+    ),
+    northern_wilds_row(
+      number: 5,
+      entity_type: 10,
+      creature_id: 13_623,
+      display_info_id: 25_210,
+      outfit_info_id: 0,
+      faction_id: 219,
+      dx: -2.0,
+      dz: 3.0,
+    ),
+    northern_wilds_row(
+      number: 6,
+      entity_type: 10,
+      creature_id: 13_623,
+      display_info_id: 25_210,
+      outfit_info_id: 0,
+      faction_id: 219,
+      dx: -3.0,
+      dz: 3.0,
+    ),
+    northern_wilds_row(
+      number: 7,
+      entity_type: 10,
+      creature_id: 13_623,
+      display_info_id: 25_210,
+      outfit_info_id: 0,
+      faction_id: 219,
+      dx: -4.0,
+      dz: 3.0,
+    ),
+  ]
+  let selection =
+    spawn.select(
+      rows:,
+      tables: character_tables.content_tables(),
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.kinds(),
+      vendors: vendor_support.stocking(creature_ids: []),
+      factions: creature_faction.none(),
+    )
+  assert selection.refusals == [] as "the rows pass the spawn checks"
+  let assert Ok(northern_wilds) = dict.get(selection.worlds, 426)
+    as "World 426 has spawns"
+  assert dict.size(northern_wilds.by_id) == 3
+    && dict.size(northern_wilds.objects) == 4
+    as "the three creatures (11066, 11061 and 11070) start and the four objects (13630 and the three 13623) are sent"
+  let started =
+    login_support.start_with(change: fn(settings) {
+      let settings = driven_by(settings:, time:)
+      let game = settings.game
+      server.Settings(
+        ..settings,
+        game: server.Served(
+          ..game,
+          settings: connection_state.Settings(
+            ..game.settings,
+            game: GameSettings(
+              ..game.settings.game,
+              camp_countdown_ms: bot_countdown_ms,
+            ),
+          ),
+        ),
+        world: server.World(
+          ..settings.world,
+          spawns: spawn_support.key_in_with_objects(
+            world_id: 426,
+            spawns: dict.values(northern_wilds.by_id),
+            objects: dict.values(northern_wilds.objects),
+            respawn_ms: 60_000,
+          ),
+        ),
+      )
+    })
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 1,
+    )
+  let assert Ok(_) =
+    pog.query("update character set faction_id = 167 where character_id = $1")
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character is an Exile"
+  character_support.move_to(
+    pool:,
+    character_id: character,
+    world_id: 426,
+    world_zone_id: 648,
+    position: exile_start,
+  )
+  send_play(game:, character_id: character)
+  let #(entry, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+      && list.length(static_objects_created_in(frames:)) == 4
+      && list.length(game_client.creatures_created_in(frames:)) == 3
+    })
+  let shown = game_client.creatures_created_in(frames: entry)
+  let assert Ok(giving) =
+    list.find(shown, fn(unit) { unit.creature_id == giver })
+    as "the giver of 3886 is in sight"
+  let assert Ok(other_giving) =
+    list.find(shown, fn(unit) { unit.creature_id == other_giver })
+    as "the giver of 3480 is in sight"
+  let assert Ok(attacker) =
+    list.find(shown, fn(unit) { unit.creature_id == 11_070 })
+    as "Creature2 11070 is in sight"
+  let objects = static_objects_created_in(frames: entry)
+  let assert Ok(single) =
+    list.find(objects, fn(object) { object.creature_id == 13_630 })
+    as "the object of objective 5053 is in sight"
+  let group =
+    list.filter(objects, fn(object) { object.creature_id == 13_623 })
+    |> list.sort(fn(a, b) { int.compare(a.checklist_index, b.checklist_index) })
+  assert list.map(group, fn(object) { object.checklist_index }) == [0, 1, 2]
+    as "opcode.0x262: the three objects of TargetGroup 1460 take the checklist indexes 0, 1 and 2, in spawn order"
+  // 1: talks to the giver, which opens its dialog.
+  let #(talked, have) = quest_bot.talk(game:, have:, unit_id: giving.unit_id)
+  assert list.map(talked.dialogs, fn(opened) { opened.unit_id })
+    == [giving.unit_id]
+    as "opcode.0x357: the giver's dialog opens for its unit"
+  // 2: mentions quest 3886, which carries Quest2 flag 0x400 (needs a mention: the client's
+  // CanAcceptQuest refuses it with code 11 until the log holds a state of 4 to 7), then
+  // accepts it.
+  let #(_, have) = quest_bot.mention(game:, have:, quest_id: 3886)
+  let #(accepted, have) = quest_bot.accept(game:, have:, quest_id: 3886)
+  assert accepted.states
+    == [QuestState(quest_id: 3886, state: 1, objective_id: 0)]
+    as "opcode.0x35c: quest 3886 is Accepted"
+  // 3: uses the object of objective 5053: the cast is confirmed, and its go after the
+  // 2000 ms of activateSpellCastTime counts the objective.
+  let #(pressed, have) =
+    quest_bot.activate(game:, have:, client_cast_id: 1, unit_id: single.unit_id)
+  assert list.length(pressed.confirmed) == 1
+    as "opcode.0x7fd: the press is confirmed"
+  driven_time.advance(time:, ms: 2000)
+  let #(used, have) = quest_bot.went(game:, have:)
+  assert used.progress
+    == [QuestObjectiveProgress(quest_id: 3886, objective_index: 0, progress: 1)]
+    as "opcode.0x361: objective 5053 of quest 3886, index 0, counts 1"
+  assert used.states == [] as "the quest has an open objective left"
+  // 4: uses the three objects of the group, in the order of their indexes: each go
+  // counts its bit of the whole mask (opcode.0x361), and the third achieves the quest.
+  let #(have, masks, last) =
+    list.index_fold(group, #(have, [], used), fn(done, object, index) {
+      let #(have, masks, _) = done
+      let #(_, have) =
+        quest_bot.activate(
+          game:,
+          have:,
+          client_cast_id: 2 + index,
+          unit_id: object.unit_id,
+        )
+      driven_time.advance(time:, ms: 2000)
+      let #(went, have) = quest_bot.went(game:, have:)
+      #(have, list.append(masks, went.progress), went)
+    })
+  assert masks
+    == [
+      QuestObjectiveProgress(quest_id: 3886, objective_index: 1, progress: 1),
+      QuestObjectiveProgress(quest_id: 3886, objective_index: 1, progress: 3),
+      QuestObjectiveProgress(quest_id: 3886, objective_index: 1, progress: 7),
+    ]
+    as "opcode.0x361: objective 5052 of quest 3886, index 1, carries the whole mask: bits 0, 1 and 2 set one by one"
+  assert last.states == [QuestState(quest_id: 3886, state: 2, objective_id: 0)]
+    as "opcode.0x35c: the third use achieves the quest"
+  // 5: turns it in at its receiver with the choice the bot is offered. Of the three
+  // choices of Quest2 3886 (Quest2Reward 2192, 2430 and 4767), `equip_requirement.offered`
+  // allows a class 4 character with Class 4's startingItemProficiencies 260 only 2430,
+  // which gives Item2 13332. The experience is the quest's conLevel 4 XpPerLevel
+  // baseQuestXpPerLevel 152 times Quest2Difficulty 4's xpMultiplier 1.5 times the
+  // LevelDifferentialAttribute of a difference of 3, 1.0: 228, short of the 655 level 2 asks for.
+  let #(talked, have) = quest_bot.talk(game:, have:, unit_id: giving.unit_id)
+  assert list.map(talked.dialogs, fn(opened) { opened.unit_id })
+    == [giving.unit_id]
+    as "opcode.0x357: the receiver's dialog opens"
+  let #(turned, have) =
+    quest_bot.turn_in(game:, have:, quest_id: 3886, reward_id: 2430)
+  assert turned.experience
+    == [
+      experience_gained.ExperienceGained(
+        experience: 228,
+        rest_experience_used: 0,
+        bonus_experience: 0,
+        source_kind: 3,
+        source_unit_id: 0,
+      ),
+    ]
+    as "opcode.0x1ac: kind 3, a quest, for 228"
+  assert list.any(turned.added, fn(held) { held.item.item_id == 13_332 })
+    as "the chosen reward, Item2 13332, is added"
+  assert list.last(turned.states)
+    == Ok(QuestState(quest_id: 3886, state: 3, objective_id: 0))
+    as "opcode.0x35c: the quest is Completed"
+  assert list.contains(
+    list.take_while(
+      list.map(turned.frames, fn(frame) { frame.message_id }),
+      fn(id) { id != quest_state.message_id },
+    ),
+    experience_gained.message_id,
+  )
+    as "the experience comes before the quest's state"
+  // 6: takes up quest 3480 at its giver.
+  let #(talked, have) =
+    quest_bot.talk(game:, have:, unit_id: other_giving.unit_id)
+  assert list.map(talked.dialogs, fn(opened) { opened.unit_id })
+    == [other_giving.unit_id]
+    as "opcode.0x357: the second giver's dialog opens"
+  let #(accepted, have) = quest_bot.accept(game:, have:, quest_id: 3480)
+  assert accepted.states
+    == [QuestState(quest_id: 3480, state: 1, objective_id: 0)]
+    as "opcode.0x35c: quest 3480 is Accepted, its exclusion 3479 not held"
+  // 7: uses Creature2 11070 once, of the three objective 4470 asks for.
+  let #(pressed_once, have) =
+    quest_bot.activate(
+      game:,
+      have:,
+      client_cast_id: 5,
+      unit_id: attacker.unit_id,
+    )
+  assert list.length(pressed_once.confirmed) == 1
+    as "opcode.0x7fd: the press at 11070 is confirmed"
+  driven_time.advance(time:, ms: 2000)
+  let #(once, have) = quest_bot.went(game:, have:)
+  assert once.progress
+    == [QuestObjectiveProgress(quest_id: 3480, objective_index: 0, progress: 1)]
+    as "opcode.0x361: objective 4470 of quest 3480 counts 1 of 3"
+  assert once.states == [] as "opcode.0x35c: the quest stays Accepted"
+  // 8: camps and plays the same character again.
+  let #(second_entry, _) =
+    game_client.camp_and_play(game:, have:, character_id: character)
+  let assert [Frame(body: log, ..)] =
+    list.filter(second_entry, fn(frame) { frame.message_id == 0x035F })
+    as "the entry sends one 0x35f"
+  let assert Ok(quest_message.QuestLog(completed:, active:, ..)) =
+    quest_message.decode(log)
+    as "the client's reader reads the 0x35f"
+  assert list.map(completed, fn(done) { done.quest_id }) == [3886]
+    as "opcode.0x35f: quest 3886 is among the completed"
+  assert list.map(active, fn(entry) {
+      #(entry.quest_id, entry.state, entry.progress)
+    })
+    == [#(3480, 1, [1, 0])]
+    as "opcode.0x35f: only quest 3480 is active, Accepted with objective 0 at 1 and objective 1 at 0"
   game_client.close(game:)
   login_support.stop(started)
 }
