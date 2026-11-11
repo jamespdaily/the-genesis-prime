@@ -9,16 +9,29 @@
 ////   1387 851 and 3460 66, and the other worlds none. The rows left out in all
 ////   are no faction 452, Friendly to both 7,400, a service link 33 and health 0
 ////   215.
+//// - A creature with an objective link is not left out as Friendly to both
+////   (`objective_link.has_link`: the client builds it whatever its faction), so
+////   the Friendly rows with a link start. They are counted apart from
+////   `spawn.select`, by a scratch Python script over `spawn.tsv` and the client's
+////   Creature2 (questAnimStateId, prerequisiteIdAnimState, the quest and service
+////   columns, factionId), Faction2 and Faction2Relationship rows with the
+////   client's faction level walk: of the 7,400 stored rows Friendly to both with
+////   no quest, 599, 581, 31, 9, 60 and 610 in worlds 22, 51, 426, 870, 990 and
+////   1061 have a link, none of them a service link or health 0, so they start
+////   (11,847, 13,754, 407, 702, 799 and 13,507 stored spawns in those worlds)
+////   and 5,510 stay Friendly to both.
 //// - The creatures of kill objectives that the load places at their markers
 ////   (`objective_spawn.place`, in the worlds that hold a stored spawn) start in
 ////   addition. The rows placed are a count over the client's QuestObjective,
 ////   TargetGroup, WorldLocation2 and Creature2 tables and `spawn.tsv`, made
 ////   apart from the server's code by a scratch Python script over the same rows:
 ////   432, 608, 38, 20, 12, 623, 20 and 11 in worlds 22, 51, 426, 870, 990, 1061,
-////   1387 and 3460, and none in a world with no stored spawn. The selection
-////   starts 423, 597, 38, 20, 12, 603, 20 and 6 of them and leaves out the others
-////   as it does stored rows (no faction, Friendly to both, a service link,
-////   health 0); those counts are the ones the first hand-back of issue 602 gave.
+////   1387 and 3460, and none in a world with no stored spawn. The same script's
+////   rules over those rows' creatures find, of the rows placed, 9, 10, 0, 0, 0,
+////   20, 0 and 5 Friendly to both with no quest, and of them 0, 8, 0, 0, 0, 20, 0
+////   and 0 with a link, which start. The selection starts 423, 605, 38, 20, 12,
+////   623, 20 and 6 of the rows placed and leaves out the others as it does stored
+////   rows (no faction, Friendly to both, a service link, health 0).
 //// - Migration 0008: World 3460 also holds the 27 Virtual Defense Daguns, server
 ////   choices, which start (Hostile to Dominion), so 3460 has 66 + 27.
 //// The test needs the client's tables and the world database (`GENESIS_WORLD_DATA`),
@@ -117,12 +130,12 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       fn(world_id) { dict.size(content_spawn.world(key:, world_id:).by_id) },
     )
     == [
-      11_248 + 423,
-      13_173 + 597,
-      376 + 38,
-      693 + 20,
-      739 + 12,
-      12_897 + 603,
+      11_847 + 423,
+      13_754 + 605,
+      407 + 38,
+      702 + 20,
+      799 + 12,
+      13_507 + 623,
       851 + 20,
       93 + 6,
       0,
@@ -152,7 +165,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       [spawn.NoFaction, spawn.FriendlyToBoth, spawn.ServiceLink, spawn.Dead],
       left_out_in_all,
     )
-    == [452, 7400, 33, 215]
+    == [452, 5510, 33, 215]
     as "the rows left out in all worlds: no faction, Friendly to both, a service link, health 0"
   // The world database's spawn rows (`spawn.tsv`, counted by entity type): 171
   // type 4, 4,380 type 8, 17,904 type 10, 491 type 11, 101 type 12, 241 type 13,

@@ -17,6 +17,7 @@
 //// `objective_place_test` and `place_objective_test`.
 
 import genesis_prime/game/activate
+import genesis_prime/game/objective_link
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
@@ -183,8 +184,7 @@ fn never_offered(row row: creature2.Creature2) -> Bool {
   list.all(activate.creature_of(row).columns, fn(column) {
     column.spell4_id == 0 && column.prerequisite_id == 0
   })
-  && row.quest_anim_state_id == 0
-  && row.prerequisite_id_anim_state == 0
+  && !objective_link.has_link(row:)
 }
 
 /// The places of a place-counted objective: the WorldLocation2 rows of its

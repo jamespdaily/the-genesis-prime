@@ -35,7 +35,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/table/creature2
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
-  type Spell4EffectsId, GameFormulaId, Spell4EffectsId, Spell4Id,
+  type Spell4EffectsId, GameFormulaId, PrerequisiteId, Spell4EffectsId, Spell4Id,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
@@ -47,7 +47,6 @@ import gleam/int
 import gleam/list
 import gleam/option
 import gleam/result
-import gleam/set
 
 /// The GameFormula row whose dataint0 is the spell a creature casts when none of its
 /// columns passes (`0x14046c580`).
@@ -140,10 +139,16 @@ pub type Limits {
 
 /// What the plans hold of an activate spell.
 pub type Planned {
-  /// The spell's plan, its Activate effects in row order and its Spell4 limits. A spell of
-  /// a method the cast rule does not build is held too: the press is refused as an
-  /// ability's is (`cast.verdict`).
-  Planned(spell: Spell, effects: List(ActivateEffect), limits: Limits)
+  /// The spell's plan, its Activate effects in row order, the RavelSignal rows aimed at
+  /// the target that the activate cast drops, and its Spell4 limits. A spell of a method
+  /// the cast rule does not build is held too: the press is refused as an ability's is
+  /// (`cast.verdict`).
+  Planned(
+    spell: Spell,
+    effects: List(ActivateEffect),
+    dropped_signals: List(Spell4EffectsId),
+    limits: Limits,
+  )
   /// The Spell4 table has no row for the spell: result 4.
   NoSpell4Row
   /// The spell's tree cannot be planned: the reason in words.
@@ -151,7 +156,9 @@ pub type Planned {
 }
 
 /// The activate spells' plans and the Prerequisite rows of the columns, as the load
-/// built them.
+/// built them. A link column's prerequisite whose row the table lacks is not held (47
+/// creatures name 33 such ids): the client fails a prerequisite it cannot find
+/// (`Prerequisite.flags`), so the link is closed (`objective_link.of`).
 pub type Activations {
   Activations(
     /// Each Prerequisite a creature's activate column names, by id.
@@ -178,6 +185,8 @@ pub fn derivation() -> table_store.Derivation {
           "the table GameFormula has no row "
           <> int.to_string(default_spell_formula)
         PrerequisiteNotLoaded(error:) -> spell_plan.describe(error:)
+        AnimPrerequisiteNotLoaded(error:) ->
+          prerequisite.describe_load_error(error:)
       }
     })
   })
@@ -187,6 +196,7 @@ pub fn derivation() -> table_store.Derivation {
 type BuildError {
   NoDefaultSpellFormula
   PrerequisiteNotLoaded(error: spell_plan.PlanError)
+  AnimPrerequisiteNotLoaded(error: prerequisite.LoadError)
 }
 
 /// The activations the tables' load built.
@@ -208,8 +218,7 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
   let prerequisite_ids =
     list.map(columns, fn(column) { column.prerequisite_id })
     |> list.filter(fn(prerequisite_id) { prerequisite_id != 0 })
-    |> set.from_list
-    |> set.to_list
+    |> list.unique
   let rows = prerequisite.table_rows(tables:)
   let arcs = prerequisite.table_arcs(tables:)
   let quests = prerequisite.table_quests(tables:)
@@ -220,17 +229,39 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
     })
     |> result.map_error(PrerequisiteNotLoaded),
   )
+  use anim_prerequisites <- result.try(
+    list.try_fold(
+      anim_prerequisite_ids(tables:),
+      [],
+      fn(loaded, prerequisite_id) {
+        case
+          prerequisite.load(
+            id: PrerequisiteId(prerequisite_id),
+            rows:,
+            arcs:,
+            quests:,
+          )
+        {
+          Ok(held) -> Ok([#(prerequisite_id, held), ..loaded])
+          // The client fails a prerequisite it has no row for (`Prerequisite.flags`), so
+          // such a link is closed; the tables name rows they lack (see `Activations`).
+          Error(prerequisite.NoPrerequisiteRow(..)) -> Ok(loaded)
+          Error(error) -> Error(AnimPrerequisiteNotLoaded(error:))
+        }
+      },
+    ),
+  )
   let spell_ids =
     [default_spell, ..list.map(columns, fn(column) { column.spell4_id })]
     |> list.filter(fn(spell4_id) { spell4_id != 0 })
-    |> set.from_list
-    |> set.to_list
+    |> list.unique
   let sources = spell_plan.sources_of(tables:)
   Ok(Activations(
     prerequisites: list.filter_map(prerequisites, fn(entry) {
       option.to_result(entry.1, Nil)
       |> result.map(fn(loaded) { #(entry.0, loaded) })
     })
+      |> list.append(anim_prerequisites)
       |> dict.from_list,
     spells: list.map(spell_ids, fn(spell4_id) {
       #(spell4_id, planned(tables:, sources:, spell4_id:))
@@ -238,6 +269,15 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
       |> dict.from_list,
     default_spell:,
   ))
+}
+
+/// The ids of the Prerequisite rows the creatures' link columns name
+/// (`Creature2.prerequisiteIdAnimState`).
+fn anim_prerequisite_ids(tables tables: table_store.Tables) -> List(Int) {
+  creature2.all(tables)
+  |> list.map(fn(row) { row.prerequisite_id_anim_state })
+  |> list.filter(fn(prerequisite_id) { prerequisite_id != 0 })
+  |> list.unique
 }
 
 fn planned(
@@ -260,10 +300,11 @@ fn planned(
                 <> int.to_string(spell4_id)
                 <> " aims at the target or an area, and the activate cast strikes no one",
               )
-            Ok(effects) ->
+            Ok(ActivateRows(effects:, dropped_signals:)) ->
               Planned(
                 spell:,
                 effects:,
+                dropped_signals:,
                 limits: Limits(
                   min: row.target_min_range,
                   max: row.target_max_range,
@@ -281,26 +322,47 @@ type AimedAtTarget {
   AimedAtTarget(effect_id: Int)
 }
 
-/// The Activate rows of the spell, or the first effect that aims at the target or an area
-/// and that the strike would apply.
+/// What an activate spell's rows leave for the activate cast.
+type ActivateRows {
+  ActivateRows(
+    effects: List(ActivateEffect),
+    dropped_signals: List(Spell4EffectsId),
+  )
+}
+
+/// The Activate rows of the spell and the RavelSignal rows it drops, or the first effect
+/// that aims at the target or an area and that the strike would apply.
 ///
 /// Gap: the activate cast carries out the caster's effects and the Activate rows and
 /// strikes no unit, so a spell with such an effect would lose it without a word; it is
 /// refused instead, until the issue for spells in depth (#336) builds the strike of an
 /// activate cast. An effect is one the strike applies when `effect_kind.is_row_read`
-/// holds for its type and aim: the strike lists a Fluff, Scale or RavelSignal row as a
-/// life on each struck unit (genesis_prime/game/cast `aimed_at`) and starts a Proxy's
-/// spell at it. A row of a type no rule reads is dropped by every cast, so it does not
-/// refuse the spell.
+/// holds for its type and aim: the strike lists a Fluff or Scale row as a life on each
+/// struck unit (genesis_prime/game/cast `aimed_at`) and starts a Proxy's spell at it. A
+/// row of a type no rule reads is dropped by every cast, so it does not refuse the spell.
+///
+/// A RavelSignal row aimed at the target does not refuse the spell, and the activate cast
+/// drops it: the row starts a script on the server (`Spell4Effects.effectType.81`), and
+/// the server has none to start until the issue for spells in depth (#336) builds them;
+/// the client holds no script for it, so what it shows is not lost. The tutorial mine's
+/// activate spell 85452 holds two such rows. They are returned, and the cast logs them
+/// once when it drops them (`cast.activation_started`).
 fn activate_rows_of(
   sources sources: spell_plan.Sources,
   spell4_id spell4_id: Int,
-) -> Result(List(ActivateEffect), AimedAtTarget) {
+) -> Result(ActivateRows, AimedAtTarget) {
   let #(activates, others) =
     spell_plan.effects_of(sources:, spell4_id:)
     |> list.partition(fn(effect) {
       effect_kind.kind_of(effect_type: effect.effect_type)
       == effect_kind.Activate
+    })
+  let #(signals, others) =
+    list.partition(others, fn(effect) {
+      spell_plan.aim_of(target_flags: effect.target_flags)
+      != spell_plan.AimsAtCaster
+      && effect_kind.kind_of(effect_type: effect.effect_type)
+      == effect_kind.RavelSignal
     })
   case
     list.find(others, fn(effect) {
@@ -314,14 +376,17 @@ fn activate_rows_of(
   {
     Ok(effect) -> Error(AimedAtTarget(effect_id: effect.id))
     Error(Nil) ->
-      Ok(
-        list.map(activates, fn(effect) {
+      Ok(ActivateRows(
+        effects: list.map(activates, fn(effect) {
           ActivateEffect(
             effect_id: Spell4EffectsId(effect.id),
             delay_ms: effect.delay_time,
           )
         }),
-      )
+        dropped_signals: list.map(signals, fn(effect) {
+          Spell4EffectsId(effect.id)
+        }),
+      ))
   }
 }
 
@@ -357,8 +422,32 @@ pub type Target {
   Fighter
   /// A static object: the id of its Creature2 row, what the row says of its activate
   /// cast, the checklist index its 0x262 carried (the bit a type 94 condition of its
-  /// activate pick reads) and where it stands.
-  Object(creature_id: Int, creature: Creature, checklist_index: Int, body: Body)
+  /// activate pick reads), whether the player's quest log opens the creature's link to
+  /// an objective and where it stands.
+  Object(
+    creature_id: Int,
+    creature: Creature,
+    checklist_index: Int,
+    link: Link,
+    body: Body,
+  )
+}
+
+/// Whether the player's quest log opens a creature's link to an objective, which the
+/// client's offer of the creature's activation waits for (`0x14046c4d0`).
+pub type Link {
+  /// The creature has no quest animation column and no animation prerequisite: nothing
+  /// holds its activation back.
+  NoLink
+  /// The creature's link is open: the client offers its activation.
+  OpenLink
+  /// The creature's link is closed: the client offers it nothing at all, and the server
+  /// takes no activation of it.
+  ClosedLink
+  /// The creature's animation prerequisite has a condition of this PrerequisiteType that
+  /// the server does not read, so the client's offer cannot be told: the server takes no
+  /// activation of it.
+  UnreadLink(prerequisite_type: Int)
 }
 
 /// The range of the client's use of a unit whose creature has no activate spell (0xb3):

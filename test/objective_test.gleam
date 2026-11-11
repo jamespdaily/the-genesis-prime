@@ -973,6 +973,194 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
     as "and the creature now names quest 5857, so quest 3741's objective takes nothing from it"
 }
 
+/// Quest 10518 (the Exile tutorial) with its objective 0 done and the other five open.
+fn exile_mine_log() -> quest_log.QuestLog {
+  quest_support.log_of(rows: [
+    quest_support.active(
+      quest_id: 10_518,
+      state: 1,
+      placeholder: 0,
+      tracked: False,
+      done_mask: 0b1,
+      progress: [1, 0, 0, 0, 0, 0],
+    ),
+  ])
+}
+
+pub fn a_use_of_a_mine_counts_its_exile_type_5_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 73463's prerequisiteIdAnimState is Prerequisite 41818: type 43 on quest
+  // 10518 index 1 or on quest 10524 index 1. Objective 21287 is index 1 of quest 10518,
+  // type 5 with count 1 and flags 3 (it waits for objective 0).
+  use tables <- with_objectives(edits: [])
+  assert objective.advance(
+      log: exile_mine_log(),
+      tables:,
+      event: a_use(Creature2Id(73_463)),
+      now_ms: 0,
+    ).effects
+    == [SendProgress(quest_id: 10_518, objective_index: 1, progress: 1)]
+    as "the use counts the one the objective needs"
+}
+
+pub fn a_use_of_the_same_mine_counts_the_dominion_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 21313 is index 1 of quest 10524, type 5 with count 1 and flags 3.
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 10_524,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [1, 0, 0, 0, 0, 0],
+      ),
+    ])
+  assert objective.advance(
+      log:,
+      tables:,
+      event: a_use(Creature2Id(73_463)),
+      now_ms: 0,
+    ).effects
+    == [SendProgress(quest_id: 10_524, objective_index: 1, progress: 1)]
+    as "the same creature counts the Dominion quest's objective"
+}
+
+pub fn a_quest_anim_link_counts_a_type_5_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 4989's questAnim columns name quest 2020, objective index 1: objective
+  // 2744, type 5 with count 1 and flags 1.
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 2020, progress: [0, 0, 0, 0, 0, 0]),
+    ])
+  assert objective.advance(
+      log:,
+      tables:,
+      event: a_use(Creature2Id(4989)),
+      now_ms: 0,
+    ).effects
+    == [SendProgress(quest_id: 2020, objective_index: 1, progress: 1)]
+    as "the link counts whatever the objective's type is"
+}
+
+pub fn a_prerequisite_link_counts_a_type_32_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 12321 has no questAnim column and prerequisiteIdAnimState 12379: type 6 on
+  // quest 3655 and type 43 on quest 3655 index 0, whose objective 4722 is type 32 with
+  // count 8.
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 3655, progress: [0, 0]),
+    ])
+  let used =
+    objective.advance(
+      log:,
+      tables:,
+      event: a_use(Creature2Id(12_321)),
+      now_ms: 0,
+    )
+  assert used.effects
+    == [SendProgress(quest_id: 3655, objective_index: 0, progress: 1)]
+    as "one use is one of the eight"
+  assert objective.advance(
+      log: used.log,
+      tables:,
+      event: a_use(Creature2Id(12_321)),
+      now_ms: 0,
+    ).effects
+    == [SendProgress(quest_id: 3655, objective_index: 0, progress: 2)]
+    as "and each later use is one more"
+}
+
+pub fn a_use_counts_nothing_once_its_linked_objective_is_done_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 12919's questAnim columns name quest 3741, objective index 0: objective
+  // 4813, type 32 with count 6.
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 3741,
+        state: 2,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [6],
+      ),
+    ])
+  assert objective.advance(
+      log:,
+      tables:,
+      event: a_use(Creature2Id(12_919)),
+      now_ms: 0,
+    )
+    == Advanced(log:, effects: [])
+    as "a done objective counts no more uses"
+}
+
+pub fn a_link_to_an_objective_not_yet_reachable_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 10518's objective 21287 has flags 3, so it waits for objective 0 (21286).
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 10_518, progress: [0, 0, 0, 0, 0, 0]),
+    ])
+  assert objective.advance(
+      log:,
+      tables:,
+      event: a_use(Creature2Id(73_463)),
+      now_ms: 0,
+    )
+    == Advanced(log:, effects: [])
+    as "an unreachable objective takes nothing (0x140553790)"
+}
+
+pub fn a_link_to_a_type_4_objective_counts_nothing_by_the_link_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 7952's questAnim columns name quest 2731, objective index 0: objective
+  // 3422, type 4 (a held item), whose progress is what the player holds.
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 2731, progress: [0]),
+    ])
+  assert objective.advance(
+      log:,
+      tables:,
+      event: a_use(Creature2Id(7952)),
+      now_ms: 0,
+    )
+    == Advanced(log:, effects: [])
+    as "a use does not count an objective the server counts by what is held"
+}
+
+pub fn a_nested_prerequisite_link_counts_its_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 19277 has no questAnim column and prerequisiteIdAnimState 7341, whose type 11
+  // condition names Prerequisite 7340: type 6 on quest 4975 and type 43 on quest 4975
+  // index 0, whose objective 15980 is type 5 with count 3 (Prerequisite
+  // .prerequisiteTypeId.11 and .43).
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 4975, progress: [0, 0, 0, 0]),
+    ])
+  assert objective.advance(
+      log:,
+      tables:,
+      event: a_use(Creature2Id(19_277)),
+      now_ms: 0,
+    ).effects
+    == [SendProgress(quest_id: 4975, objective_index: 0, progress: 1)]
+    as "the objective the nested row names counts the use"
+}
+
 /// A quest of the finish tests' rows, completed at some time before the settles.
 fn finished_quest(quest_id quest_id: Int) -> store.QuestRow {
   quest_support.completed(quest_id:, at: 1_745_000_000)
