@@ -281,11 +281,12 @@ class RepeatTestsTest(PlantedRepeatCase):
             self.assertIn(row["file"], output)
         self.assertIn("planted_test.the_planted_rule_test", output)
         self.assertIn("killed by signal 9", output, "a run with no Failures section is still reported")
-        self.assertIn("timed out after 1 seconds", output)
+        self.assertIn("check WARNING:", output, "a run over its limit is a warning, not a failure")
+        self.assertIn("still going after 1 seconds", output)
         for row in rows:
             if row not in failing.values():
                 self.assertNotIn(row["seed"], output, "a passing run's seed is not named")
-        self.assertIn("3 of 40 runs failed", output)
+        self.assertIn("2 of 39 runs failed", output)
 
 
 if __name__ == "__main__":
