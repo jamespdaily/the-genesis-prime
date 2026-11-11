@@ -11400,7 +11400,7 @@ gap = "Only the three readers named were searched for a type 5 test; other quest
 statement = "QuestObjective type 11: cast a spell a number of times. The data is a Spell4 id in 122 of the 128 rows; 5 rows have data 0 (7378, 8042, 9882, 16525, 16577) and row 15816's data 46171 has no Spell4 row. 63 rows need 1 cast, the others 2 to 36 (11 rows 5, 11 rows 8, 17 rows 10, 2 rows 36). The texts name the spell's use: 5197 'Rebuild $(creature=13800) using his collected parts' with Spell4 25306 (Rebuilding Helix), 6761 'Use Augmented Remains to weaken constructs and augmented beings' with 30173 (Augmented Remains, count 8), 13884 'Test the Retrorocket Pack by shooting yourself out of the $(creature=37346)' with 40471 (Fire Retrorockets). The client gives the objective no rule: QuestObjectiveCountsUnit counts no unit for it and the objective text has no case for it. The player gets the spell's button only from the server's message 0x176 with kind 2 and the QuestObjective ID: its handler 0x1403b9fb0 keeps the shortcut keyed by (spell, kind, id), raises AddSpellShortcut, and for kind 2 finds the quest that holds the objective and raises QuestObjectiveUpdated (ContractObjectiveUpdated for a contract); the UI shows it as splObjective and casts it with the CastObjectiveAbility binding. The client sends nothing for the objective itself beyond that cast, and shows progress and completion only from the server's 0x361. 126 rows in a quest; 3 in the start zones, all in world 426: 5197 (quest 3915), 6761 (quest 4832), 13884 (quest 7618)."
 proof = "`gleam run -m genesis_prime/table_rows -- QuestObjective type=11` and whole-table dumps of Spell4, Spell4Base and Quest2, joined by the scratch scripts 327-qo-types/data_check.py (122 Spell4 hits, zeros and 46171) and rows3.py (Spell4Base names); texts by `client_files.py text`. Start-zone count by 327-qo-types/start_counts.py, which maps objectives to quests through Quest2 objective0..objective05 and takes the start-world quest sets from trace-zones/start_prereqs.py, as 599-decode/checklist_rows.py does. Saved C 0x140550c50.c (hash e9b6b6af37d00314) and 0x140551d40.c have no case for 11. 0x1403b9fb0.c (e9b6b6af37d00314) lines 29, 157, 179-193: the map at GameMgr+0x1480, the contract test on quest flag 0x80000, AddSpellShortcut, kind 2 searching the quest's objective rows (quest+0x18+i*8) for the ID and calling 0x140426240 (QuestObjectiveUpdated). splObjective in UnitGetRewardInfo 0x140655100; CastObjectiveAbility in UI/LuaDocData/data.xml line 4724; opcode.0x176; opcode.0x361."
 grade = "fairly sure"
-gap = "The client never ties 0x176's spell to the objective's data, and no client code reads the data: that the server sends Spell4(data) as the shortcut and counts only that spell's casts on the right targets is read from the texts, a guess until a retail recording of quest 3915, 4832 or 7618 shows the 0x176 and 0x361 it sent. The cast message the CastObjectiveAbility click sends is not traced. What rows with data 0 or 46171 count is the server's script."
+gap = "The client never ties 0x176's spell to the objective's data, and no client code reads the data: that the server sends Spell4(data) as the shortcut and counts only that spell's casts on the right targets is read from the texts, a guess until a retail recording of quest 3915, 4832 or 7618 shows the 0x176 and 0x361 it sent. The button's press sends 0x9d with the shortcut's Spell4 id (QuestObjective.type.11.button). What rows with data 0 or 46171 count is the server's script."
 
 ["QuestObjective.type.24"]
 statement = "QuestObjective type 24: complete another quest. The data is a Quest2 id in all 39 rows (37 distinct quests), and every row has count 1. The texts name that quest's work: 13654 'Help $(creature=27725) deal with Barkblight parasites' with Quest2 6305 'Queen of the Blight', 13655 'Help $(creature=28789) heal Elderoot' with Quest2 6306 'Mender Bender'. The client gives the objective no rule: QuestObjectiveCountsUnit counts no unit for it, the objective text has no case for it, and the client sends nothing for it. It shows progress and completion only from the server's 0x361. 38 rows in a quest; 2 in the start zones, both in quest 7540 in world 990 (13654, 13655)."
@@ -14245,3 +14245,106 @@ name = "MatchTargetItemLevel"
 statement = "Item2.flags bit 3 (0x8) marks an item whose properties follow the wearer's level: its curve level is the player's level, moved by mentoring, PvP and world caps, in place of Item2.powerLevel, which still stands as the power level the item shows. 476 Item2 rows set it (180 armor, 101 family 19, 73 weapons, 59 family 16, 33 shields), 228 of them with no ItemBudget; 122 have power level 1. Bit 20 (0x100000, 1142 rows) lets the scaling input override quality and power level instead."
 proof = "Builder 0xb8 = record 0x14c bit 3 in PrepareItemPropertyBuilder 0x14040c610; SetItemPowerLevelAndBudgetScale 0x14040d060 (listing 0x14040d09a cmp [rcx+0xb8], 0x14040d0b3 mov [r14+0xc]) takes the builder's level word for the curve level; BuildHeldItemProperties 0x14056a430 builds a held item with all instance fields 0 only when the bit is set. Counts from `gleam run -m genesis_prime/table_rows -- Item2` over all 72106 rows (scratch /private/tmp/claude-502/-Users-jimd-Projects-the-genesis-prime/21d9dc78-1f16-46a8-a706-b1d7891f151c/scratchpad/666-curve/item2.txt). Emulated: Item2 13394 (flags 8, power level 1) gives Armor 187.5 at player level 10 and 937.5 at 50 through BuildItemProperties 0x14040c310 (/private/tmp/claude-502/-Users-jimd-Projects-the-genesis-prime/21d9dc78-1f16-46a8-a706-b1d7891f151c/scratchpad/666-curve/scaled_fill.py)."
 grade = "sure"
+
+# Spell shortcuts from the server (message 0x176): the objective's spell button, its press and message 0x9d
+
+["opcode.0x9d"]
+statement = "Message 0x9d (157), client to world server: cast a spell the server gave as a path, quest, objective, public event or challenge shortcut (0x176). Body in wire order: the client's id for the cast (32 bits, the cast counter 0x140c1e71c), the Spell4 id (18 bits), the target unit id (32 bits, 0 for none), then a position as three 32-bit floats x, y, z. The Spell4 id is the one the server put in 0x176, kept on the shortcut (shortcut word 0x114); the client sends no Spell4Base id, bag index or shortcut index, and never reads the objective's data. The position is the target unit's, or with no target the game's placed position (game state 0x6d10..0x6d18), which is what a ground-placed spell (targeting 4) sends after its placement is confirmed. One message serves both: there is no 0x9b-like second message for a placed shortcut spell."
+proof = "Registered in 0x14006c290 (saved C line 651, hash ad8f7cc3426fd648): id 0x9d, record 0x18, writer 0x140093f80. Writer 0x140093f80 (saved C, hash 8eb22adb6de47956): WriteBitsSlow 0x20 of word 0, 0x12 of word 1, 0x20 of word 2, then 0x1400a89e0 (saved C, hash 6ba38d868f75acff) on words 3..5: three WriteFloatBits. Sender CastShortcutSpell 0x14039b340 (saved C, hash 6ba38d868f75acff) lines 95-107: word 0 = the pending cast's offset 0x60 (client cast id, record 0x140c1e71c), word 1 = its argument, the shortcut's Spell4 id; with a target unit, word 2 = unit offset 8 (unit id) and the position unit 0x11e0, 0x11e4, 0x11e8; with none, word 2 = 0 and the position game 0x6d10, 0x6d14, 0x6d18; then SendWorldMessage(game, 0x9d, record)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the bytes were not written on the emulator. What the server answers (0x7fc result, 0x7fd confirm by the client cast id, as for 0x9a) is not read for this path."
+
+["0x14039b340"]
+statement = "Casts a spell held as a server-given shortcut (0x176), by its Spell4 id, and sends 0x9d. It refuses without sending when: there is no player (30); the spell id is on no held shortcut entry (1); the spell has no record (22); the press window for its Spell4Base refuses (13). It picks the target with PickCastTarget 0x14055bdc0. For a spell whose targeting (Spell4TargetMechanics.targetType) is 4 it first runs the cast checks and enters ground placement (game 0x6ce8 = the spell, 0x6d00 = 9) and returns; once the placement is confirmed it casts at the placed position. Otherwise, unless the controlled unit's state defers it, it runs StartLocalCast (the client's cast checks: no target 91, range 105 and 183, line of sight 166, cooldowns, prerequisites 151 and 281) and on 0 or 317 Queued sends 0x9d; on 105 out of range it may retry through 0x1405597b0; any other result is returned and reported by its caller as a cast failure."
+proof = "Saved C 0x14039b340.c (hash 6ba38d868f75acff): return 0x1e with no player (line 37); return 1 when no entry of the map at game 0x1480 has entry word 0x20 equal to the argument (lines 42, 66); 0x16 when the spell lookup fails (line 70); 0xd when AbilityPressWindow on the Spell4Base fails (line 74); FUN_14055bdc0 (line 76); spell record offset 0x7c != 4 (line 88) -> StartLocalCast 0x1403988d0 (line 93) -> on 0 or 0x13d SendWorldMessage 0x9d (line 107); targeting 4 with 0x1403a1600 == 0 -> CheckCast 0x1403ae8c0 and CheckCastAndPrerequisites, then placement state 0x6ce8..0x6d00 (lines 126-133, 226-230). Record offset 0x7c is Spell4TargetMechanics.targetType (FillSpellRecord 0x140568540 saved C line 328, hash 2580df99bb1ce2aa)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not run. The defer branch (game 0x6490 + 0x1cc, mode 5) and the 105 retry 0x1405597b0 are not read through."
+name = "CastShortcutSpell"
+
+["0x14039b930"]
+statement = "The CastObjectiveAbility key (input action 48, default key T): casts the first castable spell among the server-given shortcuts of kinds 1 to 4 (quest, objective, public event, challenge; never path kind 0). A shortcut whose spell needs a target (targetType not 0 or 4) is tried at once, in map order. Self and ground spells (targetType 0 or 4) are tried after, first those whose quest (kind 1) or objective's quest (kind 2) is not yet complete, then the rest. Each try is CastShortcutSpell 0x14039b340, which sends 0x9d; it stops at the first 0 or 317. When all fail it marks every such shortcut as failed (shortcut word 0x148 = 1) and, when exactly one shortcut is held, reports that spell's cast failure."
+proof = "Saved C 0x14039b930.c (hash e9b6b6af37d00314): returns 0x1e with no player; walks the map at game 0x1480 for entries with (mask >> entry word 0x24) & 1 and a spell id; spell record offset 0x7c & 0xfffffffb == 0 (line 57) collects into the deferred lists, kind 1 with 0x14054f480 == 0 first (line 61), kind 2 through 0x1405a8ad0 (line 67); otherwise FUN_14039b340 at once (line 84); the deferred lists in order (lines 120, 128); failure marks offset 0x148 (line 138); one entry (game 0x1488 == 1) reports its spell (lines 168-227). Caller: input dispatcher 0x1404d7a10 (saved C, hash cc54e920d5411539) case 0x30 calls it with mask 0x1e on key up. UI/InputMap_Base.xml line 125-126: CastObjectiveAbility on keyboard Code 20 (the scan-code space: Code 17 W, 30 A, 31 S, 32 D, 23 Inventory I, 25 CharacterPanel P, so 20 is T)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not run. The check at DAT_140c65898 + 0x78 (lines 45, 171) is not read."
+name = "CastObjectiveAbilityKey"
+
+["0x1405c97a0"]
+statement = "Slot 0x58 of the shortcut table 0x140b6dce0, the release step of a server-given shortcut (type 9): on state 0 (the button released) it casts the shortcut's Spell4 id (word 0x114) with CastShortcutSpell 0x14039b340, which sends 0x9d. A result other than 0 or 317 marks the shortcut failed (word 0x148 = 1) and raises SpellCastFailed. So a mouse click on an objective's spell button sends on release, not on press."
+proof = "Saved C 0x1405c97a0.c (hash 2580df99bb1ce2aa). Bytes at 0x140b6dd38 (table 0x140b6dce0 + 0x58) = 0x1405c97a0. Reached from ShortcutInput 0x1405c9b90 case 9. ActionBarButtonInput 0x1406c5860 (saved C, hash 5c0332ef738ce6d5) gives state 0 on event 0x22 (button up), 2 on 0x1f (down) unless the hold setting 0x140c45e50 is on."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not run."
+name = "ShortcutSpellRelease"
+
+["0x1405c9b90"]
+statement = "Slot 0x40 of the shortcut table 0x140b6dce0: hands a button or key state to the shortcut by its type (slot 8). Type 9, a server-given spell shortcut (0x176), runs slot 0x58 (ShortcutSpellRelease 0x1405c97a0) then slot 0x50 (AbilityShortcutInput 0x1405c9900). Type 0xb sends 0x68a and type 0xc sends 0x73; types 1, 2, 6, 7 and 10 have their own cases."
+proof = "Saved C 0x1405c9b90.c (hash 49fd5a78aaad3411): switch on (*(code**)(vtable + 8))(shortcut). HandleSpellShortcut 0x1403b9fb0 makes the shortcut with 0x1405c7150(object, 9). Bytes at 0x140b6dd20 (table + 0x40) = 0x1405c9b90."
+grade = "fairly sure"
+gap = "Only case 9 was read through; the cases 1, 2, 6, 7, 10, 0xb and 0xc are named, not read."
+name = "ShortcutInput"
+
+["0x1403b9fb0"]
+statement = "Handler of 0x176 (add or remove a server-given spell shortcut). The key is (Spell4 id, kind, id), and only an exact match counts. Add (bit 1): an existing entry is left alone; otherwise it makes a type 9 shortcut, sets its Spell4 id (word 0x114) and Spell4Base id (word 0x118) from the spell, inserts the entry and raises AddSpellShortcut, and for kinds 1 and 2 TriggerTutorial 0x7e. A spell id with no Spell4 record still inserts the entry, with no shortcut object, and still raises AddSpellShortcut: Quest:GetSpell then returns that id, but the button resolves to nothing and a press does nothing. Remove (bit 0): with no exact entry it does nothing; otherwise it frees the shortcut, erases the entry, raises RemoveSpellShortcut and runs the kind's update (kind 2: QuestObjectiveUpdated 0x140426240, or ContractObjectiveUpdated). To take an objective's button away, the server sends 0x176 with the same spell id, kind 2, the objective id and bit 0."
+proof = "Saved C 0x1403b9fb0.c (hash e9b6b6af37d00314): map at game 0x1480 ordered by (word 0x20 spell, 0x24 kind, 0x28 id), object at entry 0x30; allocate 0x210, 0x1405c7150(object, 9), SetShortcutSpell 0x1405c7960 (through 0x1405c7620: object 0x114, 0x118); on its failure the object is freed and the entry inserted with null; erase 0x1403d5dd0. Reader in opcode.0x176."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not run. What Game.Spell 0x1403d3470 gives Lua for a spell id with no record is not read."
+name = "HandleSpellShortcut"
+
+["0x1403ba420"]
+statement = "Finds a server-given spell shortcut by kind and id: walks the shortcut map for the first entry whose kind and id match, and returns the entry's key (its spell id, followed by the shortcut object), or null."
+proof = "Saved C 0x1403ba420.c (hash 8eb22adb6de47956): map at game 0x1480, entry words 0x24 kind and 0x28 id, returns entry + 0x20 (spell id; object at + 0x10 from it). Callers include ResolveButtonShortcut 0x1406c5440, LuaQuestGetSpell 0x140668cc0 and UnitGetRewardInfo 0x140655100 (kind 1 splAbility, kind 2 splObjective, kind 0 splReward)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not run."
+name = "FindSpellShortcut"
+
+["0x1406c5440"]
+statement = "Finds the shortcut behind an action bar button by its content type: TSMBar is kind 0 (path), TSQBar kind 1 (quest), TSQOBar kind 2 (objective), TSPEOBar kind 3 (public event objective) and TSCBar kind 4 (challenge), each looked up with FindSpellShortcut by the button's content id (button 0x5d8); GCBar reads the static array 0x140c89d80 and BTBar calls 0x1405800e0."
+proof = "Saved C 0x1406c5440.c (hash 5c0332ef738ce6d5): content-type string compares against TSQBar 0x140b39a38, TSQOBar 0x140b39a48, TSMBar 0x140b39a28, TSPEOBar 0x140b39a10, TSCBar 0x140b399f0 and GCBar 0x140b39730, then FUN_1403ba420(_, kind, content id). Called from ActionBarButtonInput 0x1406c5860."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the string addresses were read with query string_refs, the branch-to-kind pairing from the decompile."
+name = "ResolveButtonShortcut"
+
+["0x1406ca350"]
+statement = "Lua ActionBarButton:SetContentId. With a Game.Quest and an objective index it makes the button a quest objective button (content type TSQOBar) whose content id is that objective's QuestObjective ID; with a Game.Quest alone, TSQBar with the quest id; other objects set TSMBar, TSPEOBar or TSCBar. The quest tracker's objective spell button (UI QuestTracker SpellItemObjectiveBtn) is set this way, so its press finds the shortcut of kind 2 and the objective id."
+proof = "Saved C 0x1406ca350.c (hash 8eb22adb6de47956), found from the Lua registration entry 0x140c5e4a0 naming string 0x140b3a060 SetContentId: quest + 0x18 + index * 8, word 0 = the objective id. UI/QuestTracker/QuestTracker.lua lines 1023-1038: SpellItemObjectiveBtn:SetContentId(queQuest, tObjective.nIndex); QuestTracker.xml lines 56 and 61: SpellItemBtn and SpellItemObjectiveBtn are ActionBarButton."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not run."
+name = "ActionBarButtonSetContentId"
+
+["0x140668cc0"]
+statement = "Lua Quest:GetSpell([index]). With an objective index (the quest not in state 2, the index within its objectives) it gives the Game.Spell of the shortcut of kind 2 and that objective's id; without one it gives the shortcut of kind 1 and the quest id (a quest in state 2 only with quest flag 0x2000). The spell is the Spell4 id the server sent in 0x176, never the objective's data."
+proof = "Saved C 0x140668cc0.c (hash e9b6b6af37d00314): FindSpellShortcut 0x1403ba420(_, 2, objective id) or (_, 1, quest id), then 0x1403d3470 with entry word 0x20. UI/QuestTracker/QuestTracker.lua lines 913-921 draw the quest spell from GetSpell."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not run."
+name = "LuaQuestGetSpell"
+
+["0x14055bdc0"]
+statement = "Picks the target of a cast the player starts. Under a vehicle-like control setting (game 0x7ba0 bit 1 with spell propertyFlags bits 26 and 28) it is the controlled unit's target. Otherwise castMethod 3 has none; by Spell4TargetMechanics.targetType, 0, 2, 6 and 7 target the caster, 1, 3, 5 and 8 the caster's target (unit 0x108), and others (4, ground) none. With no target and targetType 1, 3, 5 or 8 it picks the nearest fitting unit within GameFormula 325's distance and makes it the player's target."
+proof = "Saved C 0x14055bdc0.c (hash cc54e920d5411539): record offset 0x18 castMethod (Spell4Base offset 80), record offset 0x7c targetType (FillSpellRecord 0x140568540 line 328, hash 2580df99bb1ce2aa); mask 0x12a for 1, 3, 5, 8; nearest by 0x14055a5f0 with GameFormula 0x145."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not run. The nearest-unit filter 0x14055a5f0 is not read through."
+name = "PickCastTarget"
+
+["0x140093f80"]
+statement = "Writer of message 0x9d: the cast id (32 bits), the Spell4 id (18 bits), the target unit id (32 bits), then a position (WriteVector3 0x1400a89e0)."
+proof = "Saved C 0x140093f80.c (hash 8eb22adb6de47956): WriteBitsSlow widths 0x20, 0x12, 0x20, then FUN_1400a89e0(stream, record + 0xc). Registered for 0x9d in 0x14006c290 line 651."
+grade = "sure"
+name = "WriteShortcutCastMessage"
+
+["0x1400a89e0"]
+statement = "Writes a position as three 32-bit floats x, y, z, stopping at the first write that fails."
+proof = "Saved C 0x1400a89e0.c (hash 6ba38d868f75acff): WriteFloatBits of words 0, 1, 2, each only when the one before returned >= 0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the listing was not read."
+name = "WriteVector3"
+
+["opcode.0x176.kinds"]
+statement = "Message 0x176's kind field has five values the client reads: 0 path, 1 quest, 2 quest objective, 3 public event objective, 4 challenge. The CastObjectiveAbility key casts from kinds 1 to 4."
+proof = "ResolveButtonShortcut 0x1406c5440: TSMBar 0, TSQBar 1, TSQOBar 2, TSPEOBar 3, TSCBar 4. CastObjectiveAbilityKey 0x14039b930 is called with mask 0x1e (0x1404d7a10 case 0x30)."
+grade = "fairly sure"
+gap = "Kinds 3 and 4 are read from the button content types, not from a message the server sends; the ids they carry (public event objective, challenge) are named from the UI only."
+
+["QuestObjective.type.11.button"]
+statement = "What the client does for a cast-a-spell objective (type 11): it reads nothing of the objective's data. Its spell button exists only while the server holds a 0x176 shortcut of kind 2 and the objective's id; the quest tracker shows it through Quest:GetSpell(index) and an ActionBarButton of content TSQOBar. A click (on release) or the CastObjectiveAbility key casts that shortcut's Spell4 id and sends 0x9d with the cast id, the spell, the target and a position. The press needs a target only when the spell's targetType asks one (1, 3, 5, 8; the picker takes the player's target or the nearest fitting unit); 0, 2, 6, 7 cast on the player, 4 places on the ground first. Before sending, the client runs the press window and its cast checks (range, line of sight, cooldowns, prerequisites); a refusal is shown as a cast failure and nothing is sent. Rows whose data is 0 (7378, 8042, 9882, 16525, 16577) or 46171 (15816) get whatever spell the server sends; a spell id with no Spell4 record gives an entry with no button action. The start-zone spells: 25306 (Spell4Base 11896) and 40471 (24688) have targetType 0 (self), 30173 (16597) has targetType 1 (needs a target); all three castMethod 0. The server removes the button with the same 0x176 and bit 0."
+proof = "opcode.0x9d, CastShortcutSpell 0x14039b340, CastObjectiveAbilityKey 0x14039b930, ShortcutSpellRelease 0x1405c97a0, HandleSpellShortcut 0x1403b9fb0, LuaQuestGetSpell 0x140668cc0, ActionBarButtonSetContentId 0x1406ca350, PickCastTarget 0x14055bdc0. Rows: `gleam run -m genesis_prime/table_rows -- Spell4 ID=25306` (and 30173, 40471; 46171 gives none), then Spell4Base ID=11896, 16597, 24688 (spell4TargetMechanicId, castMethod) and Spell4TargetMechanics ID=1, 3 (targetType)."
+grade = "fairly sure"
+gap = "Which spell the server sends and which casts it counts stay the server's choice (QuestObjective.type.11's gap); a retail recording of quest 3915, 4832 or 7618 shows the 0x176 and 0x9d."
