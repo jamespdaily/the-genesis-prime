@@ -14,7 +14,8 @@
 
 import client_tables
 import genesis_prime/table/id.{
-  Item2Id, QuestObjectiveId, TradeskillSchematic2Id, VirtualItemId, WorldZoneId,
+  Item2Id, Quest2Id, QuestObjectiveId, TradeskillSchematic2Id, VirtualItemId,
+  WorldZoneId,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
@@ -167,4 +168,32 @@ pub fn every_quest_collect_and_visit_objective_names_a_row_test() -> Nil {
     )
     == []
     as "every type 32 objective of a quest names a VirtualItem"
+}
+
+/// The type 24 objective that no quest holds (`table_rows QuestObjective type=24`
+/// joined to the Quest2 objective slots, fact `QuestObjective.type.24`).
+const finish_objective_in_no_quest = 6704
+
+pub fn every_finish_quest_objective_names_a_quest2_row_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.every_table()
+  let finishes =
+    quest_objective.all(tables)
+    |> list.filter(fn(row) { row.type_ == 24 })
+  assert list.length(finishes) == 39
+    as "the client's QuestObjective table holds 39 rows of type 24 (fact QuestObjective.type.24)"
+  assert list.filter(finishes, fn(row) {
+      quest2.get(tables:, id: Quest2Id(row.data)) |> result.is_error
+    })
+    == []
+    as "the data of every type 24 objective is the id of a Quest2 row"
+  assert list.filter(finishes, fn(row) { row.count != 1 }) == []
+    as "every type 24 objective has count 1, so one completion finishes it"
+  assert !list.any(quest2.all(tables), fn(quest) {
+    list.any(objectives_of(tables:, quest:), fn(row) {
+      row.id == finish_objective_in_no_quest
+    })
+  })
+    as "objective 6704 is in no quest, so no log ever holds it"
 }

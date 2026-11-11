@@ -485,3 +485,53 @@ pub fn communicator_turn_in_sends_rewards_then_state_as_the_unit_dialog_test() -
     == Ok(QuestState(quest_id: 10_519, state: 3, objective_id: 0))
     as "opcode.0x35c: the quest in state 3 with objective 0, last"
 }
+
+pub fn turning_in_a_quest_completes_another_quests_objective_that_names_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 7540's objective 13654 (type 24, data 6305, count 1) waits for quest 6305 to
+  // be completed (`QuestObjective.type.24`); Dorian Walker is made to receive 6305, whose
+  // rewards are three choices (Quest2Reward 3276, 4784 and 4785), so the player picks 3276.
+  use tables <- quest_turn_in_support.with_changes(changes: [
+    quest_turn_in_support.receiving(6305),
+  ])
+  let state =
+    quest_walker_support.in_world_with_walker(tables:, quests: [
+      quest_turn_in_support.achieved(quest_id: 6305),
+      quest_support.accepted(quest_id: 7540, progress: [0, 0]),
+    ])
+  let #(state, taken) =
+    game_connection_support.read(
+      state:,
+      bytes: game_connection_support.world_message(
+        message_id: 0x035D,
+        body: quest_turn_in_support.body(
+          scene: quest_turn_in_support.Scene(
+            ..quest_turn_in_support.scene(quest_id: 6305),
+            reward_id: 3276,
+          ),
+        ),
+      ),
+    )
+  let assert TurnInQuest(quests: saved, ..) = asked_turn_in(taken:)
+    as "the accepted turn-in is the store's ask"
+  assert list.any(saved, fn(row) { row.quest_id == 6305 && row.state == 3 })
+    as "the ask saves quest 6305 completed, the quest the objective names"
+  let #(_, answered) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForItems(TurnedIn(credits: 0, made: [])))),
+    )
+  let frames = game_connection_support.written(answered)
+  let assert [state_frame, progress_frame] =
+    list.drop(frames, list.length(frames) - 2)
+    as "the turn-in's state frame is followed by the other quest's progress"
+  assert state_frame.message_id == 0x035C
+    && state_frame.body
+    == message_support.packed([#(15, 6305), #(32, 3), #(32, 0)])
+    as "opcode.0x35c: quest 6305 is completed (state 3, objective 0)"
+  assert progress_frame.message_id == 0x0361
+    && progress_frame.body
+    == message_support.packed([#(15, 7540), #(32, 0), #(32, 1)])
+    as "opcode.0x361: quest 7540's objective 0 holds 1 of 1, after the completion that names it"
+}

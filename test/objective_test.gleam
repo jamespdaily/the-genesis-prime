@@ -64,6 +64,21 @@
 ////   type 32 of count 6 and flags 4. Quest 5857's objective index 1 (8784, type 32,
 ////   flags 3) waits for index 0.
 ////
+//// The finish tests (`objective.settle`, type 24) read these places. The client gives a
+//// type 24 objective no rule and shows only the server's 0x361 value
+//// (`QuestObjective.type.24`); the objective's data is the Quest2 id it waits for.
+//// - quest 7540: objectives 13654 (type 24, data 6305, count 1) and 13655 (type 24,
+////   data 6306, count 1), both flags 0.
+//// - quest 9492: objective 18249 (type 22, flags 0, marker WorldLocation2 46118, World
+////   51, zone 2548, centre (3897.5508, -769.8461, -2380.6116), radius 1.0, no vertical
+////   limit) and 18123 (type 24, data 9494, flags 3, which waits for 18249).
+//// - quest 10502: objectives 21208 to 21211, type 24, naming quests 10503 to 10506, all
+////   of repeat period 4 (yearly, `Quest2.questRepeatPeriodEnum`); 10503 has the one
+////   objective 21212 (type 47, flags 1024, count 15).
+//// - the yearly reset is the server's choice, the first daily reset of the year
+////   (`quest_log_test`): 2025-01-01 10:00:00 UTC, 1_735_725_600 Unix seconds, for a
+////   settle at 2025-04-24 20:26:40 UTC.
+////
 //// The quests, from the client's rows in the fixture:
 //// - 1854: objective 1959, type 4, item 3993, count 3. 1855: 1957, item 3995, count
 ////   3. 1856: 1960, item 3997, count 3.
@@ -80,6 +95,7 @@ import genesis_prime/game/objective.{
   Advanced, Killed, SendProgress, SendState, TalkedTo, Used,
 }
 import genesis_prime/game/quest_log
+import genesis_prime/game/start_place
 import genesis_prime/game/target_group
 import genesis_prime/store.{HeldItem}
 import genesis_prime/table/id.{Creature2Id, Faction2Id, Item2Id, UnitRaceId}
@@ -90,6 +106,7 @@ import owned_test
 import place_support
 import planted_table.{Integer}
 import quest_support
+import spawn_support
 
 const talk_target = 12_484
 
@@ -530,20 +547,42 @@ fn held(
   )
 }
 
+/// The time the settles run at: 2025-04-24 20:26:40 UTC in Unix milliseconds, the entry
+/// time of the connection tests (`world_entry_support.filetime`).
+const settled_at_ms = 1_745_526_400_000
+
 fn settled(
   log log: quest_log.QuestLog,
   tables tables: table_store.Tables,
   items items: List(store.HeldItem),
   zones zones: List(Int),
 ) -> objective.Advanced {
-  objective.settle(
+  settled_at(
     log:,
     tables:,
     items:,
     zones:,
     place: place_support.live_character_place(),
+  )
+}
+
+fn settled_at(
+  log log: quest_log.QuestLog,
+  tables tables: table_store.Tables,
+  items items: List(store.HeldItem),
+  zones zones: List(Int),
+  place place: start_place.Place,
+) -> objective.Advanced {
+  objective.settle(
+    log:,
+    tables:,
+    items:,
+    zones:,
+    place:,
     shown: dict.new(),
     now_ms: 0,
+    numbers: spawn_support.numbers,
+    unix_ms: settled_at_ms,
   )
 }
 
@@ -932,4 +971,170 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
     )
     == Advanced(log:, effects: [])
     as "and the creature now names quest 5857, so quest 3741's objective takes nothing from it"
+}
+
+/// A quest of the finish tests' rows, completed at some time before the settles.
+fn finished_quest(quest_id quest_id: Int) -> store.QuestRow {
+  quest_support.completed(quest_id:, at: 1_745_000_000)
+}
+
+/// Quest 7540 accepted with nothing counted, and these other quests.
+fn named_by_finish_objective(
+  rows rows: List(store.QuestRow),
+) -> quest_log.QuestLog {
+  quest_support.log_of(rows: [
+    quest_support.accepted(quest_id: 7540, progress: [0, 0]),
+    ..rows
+  ])
+}
+
+pub fn a_finished_quest_completes_the_open_objective_that_names_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  let log = named_by_finish_objective(rows: [finished_quest(quest_id: 6305)])
+  assert settled(log:, tables:, items: [], zones: []).effects
+    == [SendProgress(quest_id: 7540, objective_index: 0, progress: 1)]
+    as "quest 6305 is completed, so objective 13654 (type 24, data 6305) counts; 6306 is not in the log, so 13655 waits, and the quest stays Accepted"
+}
+
+pub fn a_quest_finished_before_its_objective_opened_counts_at_once_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  let log =
+    named_by_finish_objective(rows: [
+      finished_quest(quest_id: 6305),
+      finished_quest(quest_id: 6306),
+    ])
+  assert settled(log:, tables:, items: [], zones: []).effects
+    == [
+      SendProgress(quest_id: 7540, objective_index: 0, progress: 1),
+      SendProgress(quest_id: 7540, objective_index: 1, progress: 1),
+      SendState(quest_id: 7540, state: 2),
+    ]
+    as "a quest accepted after both named quests were completed counts both objectives in its first settle and is Achieved"
+}
+
+pub fn a_place_arrival_opens_a_finish_objective_that_counts_in_the_same_pass_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 9492, progress: [0, 0]),
+      finished_quest(quest_id: 9494),
+    ])
+  let at_the_marker =
+    place_support.at(
+      world_id: 51,
+      world_zone_id: 2548,
+      x: 3897.55078125,
+      y: -769.8460693359375,
+      z: -2380.611572265625,
+    )
+  assert settled(log:, tables:, items: [], zones: []).effects == []
+    as "away from the marker the place objective is not done, so the finish objective behind it (flags 3) is not open"
+  assert settled_at(log:, tables:, items: [], zones: [], place: at_the_marker).effects
+    == [
+      SendProgress(quest_id: 9492, objective_index: 0, progress: 1),
+      SendProgress(quest_id: 9492, objective_index: 1, progress: 1),
+      SendState(quest_id: 9492, state: 2),
+    ]
+    as "the arrival completes 18249, which opens 18123, which counts in the same call"
+}
+
+pub fn an_achieved_quest_not_yet_turned_in_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  let log =
+    named_by_finish_objective(rows: [
+      quest_support.active(
+        quest_id: 6305,
+        state: 2,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b11,
+        progress: [1, 1],
+      ),
+    ])
+  assert settled(log:, tables:, items: [], zones: []).effects == []
+    as "6305 is Achieved, not completed: the objective's text reads \"Complete quest\" (text 742846)"
+}
+
+pub fn an_abandoned_quest_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  let log =
+    named_by_finish_objective(rows: [
+      quest_support.known(quest_id: 6305, state: 6),
+    ])
+  assert settled(log:, tables:, items: [], zones: []).effects == []
+    as "state 6 is Abandoned, which is not a completion"
+}
+
+pub fn a_quest_missing_from_the_log_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  let log = named_by_finish_objective(rows: [])
+  assert settled(log:, tables:, items: [], zones: []).effects == []
+    as "the settle reads one character's log, and 6305 and 6306 are not in it"
+}
+
+pub fn a_yearly_quest_finished_before_this_years_reset_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  let owner = quest_support.accepted(quest_id: 10_502, progress: [0, 0, 0, 0])
+  // The yearly reset before the settle is 2025-01-01 10:00:00 UTC, 1_735_725_600.
+  let before_reset =
+    quest_support.log_of(rows: [
+      owner,
+      quest_support.completed(quest_id: 10_503, at: 1_735_725_599),
+    ])
+  assert settled(log: before_reset, tables:, items: [], zones: []).effects == []
+    as "10503 (yearly) was completed a second before this year's reset: the client's completed bit is clear (0x1405fb350.completed_bit), so the objective does not count"
+  let after_reset =
+    quest_support.log_of(rows: [
+      owner,
+      quest_support.completed(quest_id: 10_503, at: 1_735_725_601),
+    ])
+  assert settled(log: after_reset, tables:, items: [], zones: []).effects
+    == [SendProgress(quest_id: 10_502, objective_index: 0, progress: 1)]
+    as "completed a second after the reset, the bit is set and the objective counts"
+}
+
+pub fn a_counted_finish_objective_stays_done_when_its_quest_is_taken_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 10_502,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [1, 0, 0, 0],
+      ),
+      quest_support.accepted(quest_id: 10_503, progress: [0]),
+    ])
+  let after = settled(log:, tables:, items: [], zones: [])
+  assert after.effects == []
+    as "10503 is Active again: the objective is not lowered and nothing is told"
+  assert quest_log.objective_progress(
+      log: after.log,
+      quest: quest_of(id: 10_502, tables:),
+      index: 0,
+    )
+    == 1
+    as "the returned log still holds the count: a silent lowering fails here"
+}
+
+pub fn a_counted_finish_objective_is_not_told_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  let log = named_by_finish_objective(rows: [finished_quest(quest_id: 6305)])
+  let first = settled(log:, tables:, items: [], zones: [])
+  assert first.effects
+    == [SendProgress(quest_id: 7540, objective_index: 0, progress: 1)]
+    as "the first settle tells the count"
+  assert settled(log: first.log, tables:, items: [], zones: []).effects == []
+    as "a second settle of the returned log sends nothing: one 0x361 for each change"
 }
