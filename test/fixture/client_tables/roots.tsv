@@ -530,3 +530,7 @@ Quest2	5922	What Must Be Done: objective 8908 is a type 15 kill of the pane {261
 Creature2	38117	Raken, first creature of TargetGroup 4793 (Strange Brew)	game_connection_objective_test
 Creature2	38125	Elja, second creature of TargetGroup 4793	game_connection_objective_test
 Creature2	40502	Meloth, third creature of TargetGroup 4793	game_connection_objective_test
+Creature2	11070	Trapped Survivor, a quest creature that walks a path: activate spell 1817, linked to quest 3480 by Prerequisite 2672	game_connection_objective
+QuestObjective	4470	type 12 objective of quest 3480, Creature2 11070, count 3	game_connection_objective
+Quest2	3480	quest whose objective 0 is a use of Creature2 11070	game_connection_objective
+Prerequisite	2672	anim state of Creature2 11070: type 43 on quests 3479 and 3480	game_connection_objective

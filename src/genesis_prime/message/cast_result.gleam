@@ -58,6 +58,8 @@ pub type CastResult {
   TargetRangeMax
   /// The value 106, the fact file's `Spell.CodeEnumCastResult`.
   TargetCannotBeDead
+  /// The value 107, the fact file's `Spell.CodeEnumCastResult`.
+  TargetMustBeDead
   /// The value 146, the fact file's `Spell.CodeEnumCastResult.146`.
   ClientSideInteractionFail
   /// The value 151, the fact file's `0x1405648a0`.
@@ -113,6 +115,7 @@ pub fn to_value(value: CastResult) -> Int {
     TargetRangeMin -> 104
     TargetRangeMax -> 105
     TargetCannotBeDead -> 106
+    TargetMustBeDead -> 107
     ClientSideInteractionFail -> 146
     PrereqCasterCast -> 151
     CasterNeedsLos -> 166
@@ -157,6 +160,7 @@ pub fn from_value(number: Int) -> CastResult {
     104 -> TargetRangeMin
     105 -> TargetRangeMax
     106 -> TargetCannotBeDead
+    107 -> TargetMustBeDead
     146 -> ClientSideInteractionFail
     151 -> PrereqCasterCast
     166 -> CasterNeedsLos

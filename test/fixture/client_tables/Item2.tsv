@@ -271,6 +271,9 @@ ID	itemBudgetId	itemStatId	itemRuneInstanceId	itemQualityId	itemSpecialId00	item
 29495	0	0	0	2	0	0	1	1	1	3973	0	0	0	0	49	49	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	268	0x00000000	454137	0		IconSprites:Icon_ItemArmor_Light_Armor_Chest_02	0
 29614	0	0	0	3	0	0	5	88	134	0	0	0	0	0	5	0	0	0	0	4	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0x00000000	458899	458900		Icon_ItemMisc_UI_Item_Bag_002	0
 29661	0	0	0	3	0	0	5	88	134	0	0	0	0	0	5	0	0	0	0	4	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0x00000000	459450	459451		IconSprites:Icon_ItemMisc_UI_Item_Bag_003	0
+30459	3	5	0	3	0	0	1	2	13	3846	77	0	0	0	3	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0xbf800000	465593	465594		Icon_ItemArmorHands_UI_Item_Focal_Glove_001	0
+30460	3	5	0	3	0	0	1	1	5	93	77	0	0	0	3	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0xbf800000	465595	465596		Icon_ItemArmorFeet_UI_Item_Focal_Boot_001	0
+30461	3	5	0	3	0	0	1	3	20	3706	77	0	0	0	3	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0xbf800000	465599	465600		Icon_ItemArmorHands_UI_Item_Battle_Glove_001	0
 36600	7	40	0	3	0	0	1	2	8	4051	77	0	0	0	45	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0xbf800000	512031	0		IconSprites:Icon_ItemArmor_Medium_Armor_Chest_03	0
 36601	8	40	0	3	0	0	1	1	2	3970	77	0	0	0	45	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0xbf800000	512032	0		IconSprites:Icon_ItemArmor_Light_Armor_Pants_02	0
 37683	25	443	0	4	0	0	2	108	204	3446	0	0	0	0	50	50	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	8	1	0	0	0	0	0	0	0	0	0	0xbf000000	524837	0		IconSprites:Icon_ItemWeapon_Launcher_02	0

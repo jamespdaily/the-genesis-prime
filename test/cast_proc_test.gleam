@@ -291,6 +291,7 @@ fn cast_of_proc(spell4_id spell4_id: Int) -> Spell {
   Spell(
     ..support.child(spell4_id:, base: spell4_id),
     caster_death: AliveOrDead,
+    target_death: AliveOrDead,
     stealth_change: KeepsStealth,
   )
 }

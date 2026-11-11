@@ -49,6 +49,7 @@ fn creature(
     hit_radius: 3.0,
     attackable:,
     hostile_to: Hostile(exile: False, dominion: False),
+    in_combat: False,
   )
 }
 
@@ -158,6 +159,36 @@ pub fn a_creature_marked_dead_by_its_news_is_no_longer_a_candidate_test() -> Nil
     as "a Died news sets alive false (opcode.0x88c)"
 }
 
+pub fn combat_news_marks_only_a_shown_creature_in_combat_test() -> Nil {
+  use <- owned_test.run(5000)
+  let with_object = dict.insert(picture(), 8, an_object())
+  let assert Ok(ShownCreature(in_combat: before, ..)) = dict.get(with_object, 1)
+  assert !before as "a creature is shown out of combat"
+  let fighting =
+    shown.with_in_combat(picture: with_object, unit_id: 1, in_combat: True)
+  let assert Ok(ShownCreature(in_combat: marked, ..)) = dict.get(fighting, 1)
+  assert marked
+    as "a CombatState news with in_combat sets the creature's state until the next one (0x89a; the client's unit word 0x2ac, read by 0x14047a060)"
+  assert dict.delete(fighting, 1) == dict.delete(with_object, 1)
+    as "no other unit changes"
+  let calm =
+    shown.with_in_combat(picture: fighting, unit_id: 1, in_combat: False)
+  assert calm == with_object as "the next news clears it"
+  assert shown.with_in_combat(picture: with_object, unit_id: 8, in_combat: True)
+    == with_object
+    as "a static object has no fight state"
+  assert shown.with_in_combat(picture: with_object, unit_id: 3, in_combat: True)
+    == with_object
+    as "another player's unit is left as it was"
+  assert shown.with_in_combat(
+      picture: with_object,
+      unit_id: 99,
+      in_combat: True,
+    )
+    == with_object
+    as "a unit that is not shown stays not shown"
+}
+
 // ---- a creature's pose, for a position condition ----
 
 /// A creature standing at x and z that its 0x262 gave the yaw 0.7 (the kind 14 yaw of its
@@ -184,6 +215,7 @@ fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
     hit_radius: 3.0,
     attackable: both,
     hostile_to: Hostile(exile: False, dominion: False),
+    in_combat: False,
   )
 }
 
