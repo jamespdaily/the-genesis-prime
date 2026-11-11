@@ -26,6 +26,7 @@
 ////
 //// A rule: the log and the event in, the log and the effects out.
 
+import genesis_prime/game/departures
 import genesis_prime/game/objective_link
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest as quest_rules
@@ -44,6 +45,7 @@ import genesis_prime/table/tradeskill_schematic2
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 
 /// The objective type of a talk.
 const talk_type = 3
@@ -65,6 +67,10 @@ const collectible_type = 32
 
 /// The objective type of a scripted objective: a use of a creature linked to it.
 const scripted_type = 5
+
+/// The objective type of a use of a unit of the TargetGroup in its data, one count per use
+/// (`QuestObjective.type.23`).
+const use_a_group_type = 23
 
 /// The objective type of a held item: the Item2 id in its data.
 const held_type = 4
@@ -232,6 +238,14 @@ fn counts(
         && target_group.contains(tables:, group: objective.data, unit: target)
       }
       || {
+        objective.type_ == use_a_group_type
+        && target_group.contains(tables:, group: objective.data, unit: target)
+        && is_the_terminals_choice(
+          objective_id: objective.objective_id,
+          creature_id: target.creature_id,
+        )
+      }
+      || {
         objective.type_ == path_soldier_type
         && objective.checklist
         && activates_creature(
@@ -269,6 +283,19 @@ fn counts(
         )
       }
     }
+  }
+}
+
+/// Whether a use of the creature counts for a type 23 objective: the client counts a use of
+/// any unit of the objective's group, and the server holds a departures choice objective to
+/// its own terminal (`departures.choice_terminal`).
+fn is_the_terminals_choice(
+  objective_id objective_id: Int,
+  creature_id creature_id: Creature2Id,
+) -> Bool {
+  case departures.choice_terminal(objective_id:) {
+    None -> True
+    Some(terminal) -> terminal == creature_id
   }
 }
 

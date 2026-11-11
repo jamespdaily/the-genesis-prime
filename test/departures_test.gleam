@@ -1,0 +1,361 @@
+//// The departures terminals (`genesis_prime/game/departures`): which log opens each
+//// terminal's link, where each lands the player, and which choice objective is whose.
+//// Expected values come from these places.
+//// - Quest2 10528 (Exile) and 10530 (Dominion): "Bon Voyage". Their objectives, in slot
+////   order: the talk (type 3, 21326 / 21347), the travel (type 23, flags 3, 21327 /
+////   21348), a choice per terminal (type 23, flags 33, 21328 and 21329 / 21349 and
+////   21350) and an optional type 14 (flags 41). The travel's flag 2 makes it reachable
+////   once the talk, the one earlier objective without flag 0x20, is done.
+//// - The landings are the client's WorldLocation2 rows: 42074 (world 426, zone 648),
+////   41641 (990, 1417), 42148 (1387, 1411) and 8223 (870, 1236), each matched to its
+////   terminal by the names of the terminal, its spell and the choice objective
+////   (Northern Wilds, Everstar Grove, Levian Bay, Crimson Isle).
+
+import character_tables
+import fixture_tables
+import genesis_prime/game/activate.{ClosedLink, OpenLink}
+import genesis_prime/game/departures.{NotATerminal, TravelClosed}
+import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/game/start_place.{type Place}
+import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/loader/store as table_store
+import gleam/list
+import gleam/option.{None, Some}
+import owned_test
+import planted_table.{Integer}
+import quest_support
+
+const northern_wilds = 73_606
+
+const everstar_grove = 73_605
+
+const levian_bay = 74_773
+
+const crimson_isle = 74_772
+
+/// The Exile's log after the talk (objective 0 of Quest2 10528).
+fn exile_after_the_talk() -> QuestLog {
+  quest_support.log_of(rows: [
+    quest_support.active(
+      quest_id: 10_528,
+      state: 1,
+      placeholder: 0,
+      tracked: False,
+      done_mask: 1,
+      progress: [1, 0, 0, 0, 0],
+    ),
+  ])
+}
+
+/// The Dominion's log after the talk (objective 0 of Quest2 10530).
+fn dominion_after_the_talk() -> QuestLog {
+  quest_support.log_of(rows: [
+    quest_support.active(
+      quest_id: 10_530,
+      state: 1,
+      placeholder: 0,
+      tracked: False,
+      done_mask: 1,
+      progress: [1, 0, 0, 0, 0],
+    ),
+  ])
+}
+
+fn assert_place(
+  landing landing: Result(Place, departures.Refusal),
+  world world: Int,
+  zone zone: Int,
+  x x: Float,
+  y y: Float,
+  z z: Float,
+  reason reason: String,
+) -> Nil {
+  let assert Ok(place) = landing as reason
+  assert start_place.world_id(place) == world as reason
+  assert start_place.world_zone_id(place) == zone as reason
+  assert start_place.x(place) == x as reason
+  assert start_place.y(place) == y as reason
+  assert start_place.z(place) == z as reason
+}
+
+pub fn each_terminal_lands_at_its_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let exile = exile_after_the_talk()
+  let dominion = dominion_after_the_talk()
+  assert_place(
+    landing: departures.landing(
+      tables:,
+      quests: exile,
+      creature_id: Creature2Id(northern_wilds),
+    ),
+    world: 426,
+    zone: 648,
+    x: 4098.16015625,
+    y: -665.9780883789062,
+    z: -5165.10009765625,
+    reason: "WorldLocation2 42074, the Northern Wilds landing",
+  )
+  assert_place(
+    landing: departures.landing(
+      tables:,
+      quests: exile,
+      creature_id: Creature2Id(everstar_grove),
+    ),
+    world: 990,
+    zone: 1417,
+    x: -768.36572265625,
+    y: -904.805419921875,
+    z: -2275.0791015625,
+    reason: "WorldLocation2 41641, the Everstar Grove landing",
+  )
+  assert_place(
+    landing: departures.landing(
+      tables:,
+      quests: dominion,
+      creature_id: Creature2Id(levian_bay),
+    ),
+    world: 1387,
+    zone: 1411,
+    x: -3835.7451171875,
+    y: -980.21728515625,
+    z: -6053.263671875,
+    reason: "WorldLocation2 42148, the Levian Bay landing",
+  )
+  assert_place(
+    landing: departures.landing(
+      tables:,
+      quests: dominion,
+      creature_id: Creature2Id(crimson_isle),
+    ),
+    world: 870,
+    zone: 1236,
+    x: -8260.708984375,
+    y: -995.0770263671875,
+    z: -239.0409393310547,
+    reason: "WorldLocation2 8223, the Crimson Isle landing",
+  )
+}
+
+pub fn a_terminal_with_travel_open_is_an_open_link_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  assert departures.link(
+      tables:,
+      quests: exile_after_the_talk(),
+      creature_id: Creature2Id(northern_wilds),
+    )
+    == Ok(OpenLink)
+    as "Quest2 10528's travel objective 21327 is open once the talk is done: the Northern Wilds terminal is offered"
+  assert departures.link(
+      tables:,
+      quests: exile_after_the_talk(),
+      creature_id: Creature2Id(everstar_grove),
+    )
+    == Ok(OpenLink)
+    as "either terminal of the faction is offered while its travel is open"
+  assert departures.link(
+      tables:,
+      quests: dominion_after_the_talk(),
+      creature_id: Creature2Id(crimson_isle),
+    )
+    == Ok(OpenLink)
+    as "Quest2 10530's travel objective 21348 is open once the talk is done: the Crimson Isle terminal is offered"
+}
+
+pub fn a_player_without_bon_voyage_meets_a_closed_terminal_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let log = quest_support.log_of(rows: [])
+  assert departures.link(
+      tables:,
+      quests: log,
+      creature_id: Creature2Id(northern_wilds),
+    )
+    == Ok(ClosedLink)
+    as "a log without the quest has no open travel objective"
+  assert departures.landing(
+      tables:,
+      quests: log,
+      creature_id: Creature2Id(northern_wilds),
+    )
+    == Error(TravelClosed)
+    as "no landing for a player without the quest"
+}
+
+pub fn the_talk_not_done_closes_the_terminal_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 10_528, progress: [0, 0, 0, 0, 0]),
+    ])
+  assert departures.link(
+      tables:,
+      quests: log,
+      creature_id: Creature2Id(northern_wilds),
+    )
+    == Ok(ClosedLink)
+    as "flag 2 of objective 21327: it is reachable only once the talk 21326 is done, so it is not open"
+  assert departures.landing(
+      tables:,
+      quests: log,
+      creature_id: Creature2Id(northern_wilds),
+    )
+    == Error(TravelClosed)
+    as "no landing before the talk"
+}
+
+pub fn travel_already_done_closes_the_terminal_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  // The talk, the travel and the Northern Wilds choice done: mask 0b111.
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 10_528,
+        state: 2,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 7,
+        progress: [1, 1, 1, 0, 0],
+      ),
+    ])
+  assert departures.link(
+      tables:,
+      quests: log,
+      creature_id: Creature2Id(everstar_grove),
+    )
+    == Ok(ClosedLink)
+    as "a done objective is not open: the player who has departed cannot press either terminal again"
+  assert departures.landing(
+      tables:,
+      quests: log,
+      creature_id: Creature2Id(everstar_grove),
+    )
+    == Error(TravelClosed)
+    as "no second landing"
+}
+
+pub fn the_other_factions_quest_opens_no_terminal_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  assert departures.link(
+      tables:,
+      quests: exile_after_the_talk(),
+      creature_id: Creature2Id(crimson_isle),
+    )
+    == Ok(ClosedLink)
+    as "Quest2 10528 is the Exile's: the Dominion's Crimson Isle terminal needs Quest2 10530"
+  assert departures.link(
+      tables:,
+      quests: dominion_after_the_talk(),
+      creature_id: Creature2Id(northern_wilds),
+    )
+    == Ok(ClosedLink)
+    as "Quest2 10530 is the Dominion's: the Exile's Northern Wilds terminal needs Quest2 10528"
+}
+
+pub fn a_creature_outside_the_table_keeps_its_own_link_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  // 73604 is the talk objective's creature (QuestObjective 21326 data), not a terminal.
+  assert departures.link(
+      tables:,
+      quests: exile_after_the_talk(),
+      creature_id: Creature2Id(73_604),
+    )
+    == Error(Nil)
+    as "a creature that is no terminal has the link its own columns decide"
+  assert departures.landing(
+      tables:,
+      quests: exile_after_the_talk(),
+      creature_id: Creature2Id(73_604),
+    )
+    == Error(NotATerminal)
+    as "and no landing"
+}
+
+pub fn a_landing_is_refused_once_the_quest_is_gone_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  // The window was opened with the quest open; the quest is abandoned before the yes.
+  let abandoned = quest_support.log_of(rows: [])
+  assert departures.landing(
+      tables:,
+      quests: abandoned,
+      creature_id: Creature2Id(crimson_isle),
+    )
+    == Error(TravelClosed)
+    as "the landing is asked of the log as it is at the yes, not at the press"
+}
+
+pub fn each_choice_objective_names_its_terminal_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert departures.choice_terminal(21_328) == Some(Creature2Id(northern_wilds))
+    as "QuestObjective 21328 is the Northern Wilds choice"
+  assert departures.choice_terminal(21_329) == Some(Creature2Id(everstar_grove))
+    as "QuestObjective 21329 is the Everstar Grove choice"
+  assert departures.choice_terminal(21_349) == Some(Creature2Id(levian_bay))
+    as "QuestObjective 21349 is the Levian Bay choice"
+  assert departures.choice_terminal(21_350) == Some(Creature2Id(crimson_isle))
+    as "QuestObjective 21350 is the Crimson Isle choice"
+  assert departures.choice_terminal(21_327) == None
+    as "the travel objective is counted by either terminal of the faction, so it names none"
+  assert departures.choice_terminal(21_342) == None
+    as "an objective of another type is no choice"
+}
+
+pub fn the_load_fails_without_a_landing_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert list.flat_map(departures.requirements(), fn(requirement) {
+      requirement.missing(character_tables.shared())
+    })
+    == []
+    as "the client's tables hold every landing and choice objective the terminals name"
+  let assert Ok(rows) =
+    fixture_tables.remove(
+      rows: fixture_tables.rows(),
+      table: "WorldLocation2",
+      id: 8223,
+    )
+    as "the client's table holds row 8223"
+  assert fixture_tables.load(rows:)
+    == Error(table_store.RowMissing(
+      from_table: "the server's departures terminals",
+      column: "WorldLocation2 id",
+      to_table: "WorldLocation2",
+      id: 8223,
+    ))
+    as "the Crimson Isle terminal lands at WorldLocation2 8223, so a load without it fails"
+}
+
+pub fn the_load_fails_without_a_choice_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(without) =
+    fixture_tables.remove(
+      rows: fixture_tables.rows(),
+      table: "QuestObjective",
+      id: 21_329,
+    )
+    as "the client's table holds row 21329"
+  let missing =
+    Error(table_store.RowMissing(
+      from_table: "the server's departures terminals",
+      column: "QuestObjective id",
+      to_table: "QuestObjective",
+      id: 21_329,
+    ))
+  assert fixture_tables.load(rows: without) == missing
+    as "the Everstar Grove terminal counts QuestObjective 21329, so a load without it fails"
+  let assert Ok(retyped) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "QuestObjective",
+      id: 21_329,
+      with: [#("type", Integer(2))],
+    )
+    as "the client's table holds row 21329 with a type column"
+  assert fixture_tables.load(rows: retyped) == missing
+    as "a row that is no longer a use-a-unit objective (type 23) is no choice to count: the load fails as for a missing one"
+}

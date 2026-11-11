@@ -141,6 +141,7 @@ import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
 import genesis_prime/game/class_resource
 import genesis_prime/game/currency.{type Currencies}
+import genesis_prime/game/departures
 import genesis_prime/game/experience
 import genesis_prime/game/gear.{type Gear}
 import genesis_prime/game/innate
@@ -590,7 +591,7 @@ pub fn loaded(
                   joining_a_play(
                     character:,
                     place:,
-                    movement: movement.entered(place:, session_epoch:),
+                    session_epoch:,
                     saved_health:,
                     saved_experience:,
                     items:,
@@ -608,12 +609,14 @@ pub fn loaded(
   }
 }
 
-/// The play of a character at its saved place: the map is asked to take it with
-/// its 0x25E ready, or the play is refused for a level with no XpPerLevel row.
+/// The play of a character at its saved place, or at a departures terminal's landing when
+/// the save lies between the terminal's count and its move (`departures.recovered`): the
+/// map is asked to take it with its 0x25E ready, or the play is refused for a level with no
+/// XpPerLevel row.
 fn joining_a_play(
   character character: Character,
-  place place: Place,
-  movement movement: movement.State,
+  place saved_place: Place,
+  session_epoch session_epoch: store.SessionEpoch,
   saved_health saved_health: Option(Int),
   saved_experience saved_experience: Option(Int),
   items items: List(store.HeldItem),
@@ -624,6 +627,8 @@ fn joining_a_play(
   tables tables: table_store.Tables,
   visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> Loaded {
+  let place = departures.recovered(tables:, quests:, place: saved_place)
+  let movement = movement.entered(place:, session_epoch:)
   case
     experience.entering(
       tables:,

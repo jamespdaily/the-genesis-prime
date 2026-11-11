@@ -9,13 +9,16 @@ import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/state.{type Session} as connection_state
+import genesis_prime/game/departures
 import genesis_prime/game/experience
 import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
 import genesis_prime/game/world_entry
-import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
+import genesis_prime/step.{
+  type ConnectionEffect, type Effect, type Now, OwnEffect, StartTimer,
+}
 import genesis_prime/table/creature2
 import gleam/list
 import gleam/option.{None, Some}
@@ -48,16 +51,37 @@ pub fn killed(
 /// (`departures.landing`, asked before the count, which can finish the quest), the landing
 /// is kept in `Entered.departing` and the 0 ms timer that starts the move is asked for
 /// (`connection/departures.due`). A player not in the world counts nothing.
-///
-/// Shape: it counts the use and nothing more; the terminal's landing and timer are the
-/// build commits'.
 pub fn used(
   session session: Session,
   now now: Now,
   target target: target_group.Unit,
   checklist_index checklist_index: Int,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  counted(session:, now:, event: objective.Used(target:, checklist_index:))
+  let landing = case connection_state.entered_of(session.status) {
+    None -> Error(departures.NotATerminal)
+    Some(entered) ->
+      departures.landing(
+        tables: session.settings.tables,
+        quests: entered.quests,
+        creature_id: target.creature_id,
+      )
+  }
+  let #(session, written) =
+    counted(session:, now:, event: objective.Used(target:, checklist_index:))
+  case landing {
+    Ok(place) -> #(
+      connection_state.with_entered(session:, change: fn(entered) {
+        world_entry.Entered(..entered, departing: Some(place))
+      }),
+      list.append(written, [
+        OwnEffect(StartTimer(timer: departures.timer, after_ms: 0)),
+      ]),
+    )
+    Error(departures.NotATerminal) | Error(departures.TravelClosed) -> #(
+      session,
+      written,
+    )
+  }
 }
 
 /// The session and what is written after the player did this to a creature, and then

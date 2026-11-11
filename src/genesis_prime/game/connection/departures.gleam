@@ -22,16 +22,58 @@
 //// - **The statuses that hold the shell** (a vendor purchase, a save) keep the timer waiting:
 ////   `due` acts only on `InWorld`.
 
-import genesis_prime/client_connection
-import genesis_prime/game/connection/state.{type Session}
+import genesis_prime/client_connection.{Continue}
+import genesis_prime/game/connection/effects as connection_effects
+import genesis_prime/game/connection/state.{
+  type Session, Busy, Greeting, JoinAt, Present, Selecting,
+} as connection_state
+import genesis_prime/game/connection/world as connection_world
+import genesis_prime/game/player_life
+import genesis_prime/game/world_entry
+import genesis_prime/hand_off.{type Holder}
 import genesis_prime/step.{type Now}
+import gleam/option.{None, Some}
 
 /// The departure timer fired: the leave of the tutorial map begins when the player is in
 /// the world, alive, with a landing kept in `Entered.departing`, and the landing is cleared
 /// either way.
 pub fn due(
-  session _session: Session,
-  now _now: Now,
+  session session: Session,
+  now now: Now,
 ) -> client_connection.Handled(Session) {
-  panic as "shape: departures.due starts world_left and leaving_the_map with JoinAt(place, health)"
+  case connection_state.standing(session.status) {
+    Present(holder:, entered:) -> leaving(session:, now:, holder:, entered:)
+    Greeting | Selecting(..) | Busy(..) -> Continue(session, [])
+  }
+}
+
+/// The leave of the tutorial map for a player in the world, or nothing for a player that
+/// is dead or has no landing kept.
+fn leaving(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+) -> client_connection.Handled(Session) {
+  let cleared = world_entry.Entered(..entered, departing: None)
+  let session =
+    connection_state.with_entered(session:, change: fn(_) { cleared })
+  case entered.departing, player_life.state(life: entered.life) {
+    None, _ | _, player_life.Dead -> Continue(session, [])
+    Some(place), player_life.Alive -> {
+      let #(session, left_behind) =
+        connection_effects.world_left(session:, now:, entered: cleared)
+      connection_world.leaving_the_map(
+        session:,
+        now:,
+        holder:,
+        entered: cleared,
+        before: left_behind,
+        then: JoinAt(
+          place:,
+          health: Some(player_life.saved_health(life: entered.life)),
+        ),
+      )
+    }
+  }
 }

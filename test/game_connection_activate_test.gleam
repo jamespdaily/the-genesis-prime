@@ -255,6 +255,7 @@ pub fn an_interaction_answer_reaches_the_cast_rule_test() -> Nil {
         body:,
       ),
     )
-  assert connection_support.written_ids(answered) == [0x07F4, 0x07FE]
-    as "opcode.0x805, opcode.0x7f4: the answer 1 sends the go and the finish to the player"
+  assert connection_support.written_ids(answered)
+    == [0x07F4, 0x07FE, 0x0361, 0x0361, 0x035C]
+    as "opcode.0x805, opcode.0x7f4: the answer 1 sends the go and the finish to the player, and the terminal's travel and choice objectives count (QuestObjective.type.23): two progress frames and the quest's state"
 }
