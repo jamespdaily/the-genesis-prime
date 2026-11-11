@@ -242,4 +242,14 @@ pub fn every_named_group_objective_with_a_pane_has_count_1_and_a_creature_list_p
     })
     == []
     as "each pane lists one to seven Creature2 ids, every one a row of the Creature2 table"
+  assert list.filter(with_pane, fn(row) {
+      let members =
+        target_group_rule.creatures_of(
+          tables:,
+          group: row.target_group_id_reward_pane,
+        )
+      list.unique(members) != members
+    })
+    == []
+    as "no pane lists a creature twice: a kill sets one bit for an id, so a repeat would leave the group never full"
 }

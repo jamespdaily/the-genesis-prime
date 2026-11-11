@@ -1,7 +1,8 @@
 -- The creatures of a named group an active quest's kill objective has had killed: one
 -- 7-bit value for each of the quest's six objective slots (`kQuestMaxObjective`,
--- 0x1405510d0). Bit i of a slot is set once the player's blow has killed the creature in
--- entry i of the objective's reward pane TargetGroup, whose data0 to data6 are 7 entries.
+-- 0x1405510d0). The objective's reward pane is a TargetGroup whose data0 to data6 name up to
+-- 7 creatures, the zero words skipped; bit i of a slot is set once the player's blow has
+-- killed the i-th creature counted by position among the non-zero words.
 -- The server keeps it and never sends it: the client is sent only the objective's
 -- progress, which stays 0 until every creature of the group is dead
 -- (genesis_prime/game/objective).

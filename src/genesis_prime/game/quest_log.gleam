@@ -1511,27 +1511,24 @@ pub fn is_marked(
 const group_slots = 7
 
 /// The log after the player's blow killed the creature of entry `member` of the named group
-/// the quest's kill objective at `index` is waiting for, a group of `members` creatures.
-/// The entry's bit is set in the objective's kill mask, which the client is never sent; the
-/// objective's progress stays 0 until every member's bit is set, and then takes the
-/// count's 1 as a kill does (`progressed`). The client counts nothing for a kill and
-/// takes the server's 0x361 only (`opcode.0x361`, `0x140551840`: the needed count of a
-/// count 1 kill objective is 1). `Error(Nil)` when the objective takes no progress (the
-/// quest is not in the active list, or the objective is done, is not reachable or is past
-/// the quest's objectives) or `member` is not an entry of the group. `changed` is true
-/// only for the kill that completes the group; one whose bit is set already, or one that
-/// leaves members alive, changes the progress of nothing.
+/// the quest's kill objective at `index` is waiting for, a group of `members` creatures, and
+/// whether that blow filled the group. The entry's bit is set in the objective's kill mask,
+/// which the client is never sent. The caller counts a kill for the objective (`progressed`)
+/// only when the group is full: the client counts nothing for a kill and takes the server's
+/// 0x361 only (`opcode.0x361`, `0x140551840`: the needed count of a count 1 kill objective
+/// is 1). `Error(Nil)` when the objective takes no progress (the quest is not in the active
+/// list, or the objective is done, is not reachable or is past the quest's objectives) or
+/// `member` is not an entry of the group.
 pub fn kill_marked(
   log log: QuestLog,
   quest quest: Quest,
   index index: Int,
   member member: Int,
   members members: Int,
-  now_ms now_ms: Int,
-) -> Result(Counted, Nil) {
+) -> Result(#(QuestLog, Bool), Nil) {
   let quest = as_logged(log:, quest:)
   case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
-    Ok(Active(progress:, kill_masks:, ..) as entry), [_, ..]
+    Ok(Active(kill_masks:, ..) as entry), [_, ..]
       if index >= 0 && member >= 0 && member < members && members <= group_slots
     -> {
       use <- bool.guard(
@@ -1541,59 +1538,37 @@ pub fn kill_marked(
       let before =
         list.drop(kill_masks, index) |> list.first |> result.unwrap(0)
       let mask = int.bitwise_or(before, int.bitwise_shift_left(1, member))
-      let stored = list.drop(progress, index) |> list.first |> result.unwrap(0)
       let marked =
         QuestLog(
           ..log,
           entries: dict.insert(
             log.entries,
             quest.id,
-            Active(..entry, kill_masks: with_mask(kill_masks:, index:, mask:)),
+            Active(
+              ..entry,
+              kill_masks: replaced_at(values: kill_masks, index:, with: mask),
+            ),
           ),
         )
       let group = int.bitwise_shift_left(1, members) - 1
-      case int.bitwise_and(mask, group) == group {
-        False ->
-          Ok(Counted(
-            log: marked,
-            progress: stored,
-            changed: False,
-            moved: Stayed,
-          ))
-        True ->
-          progressed(log: marked, quest:, index:, amount: 1, now_ms:)
-          |> result.map(fn(progressed) {
-            Counted(
-              log: progressed.log,
-              progress: progressed.progress,
-              changed: progressed.progress != stored,
-              moved: achieved_moved(became_achieved: progressed.became_achieved),
-            )
-          })
-      }
+      Ok(#(marked, int.bitwise_and(mask, group) == group))
     }
     _, _ -> Error(Nil)
   }
 }
 
-/// The masks with the one of objective slot `index` set to `mask`.
-fn with_mask(
-  kill_masks kill_masks: List(Int),
+/// The list with the element at `index` replaced by `value`.
+fn replaced_at(
+  values values: List(Int),
   index index: Int,
-  mask mask: Int,
+  with value: Int,
 ) -> List(Int) {
-  list.index_map(kill_masks, fn(old, at) {
+  list.index_map(values, fn(old, at) {
     case at == index {
-      True -> mask
+      True -> value
       False -> old
     }
   })
-}
-
-/// `BecameAchieved` when the count made the quest Achieved, else `Stayed`.
-fn achieved_moved(became_achieved became_achieved: Bool) -> Moved {
-  use <- bool.guard(when: became_achieved, return: BecameAchieved)
-  Stayed
 }
 
 /// How an objective's count moved its quest: it stayed as it was, an Accepted quest
@@ -1695,12 +1670,7 @@ fn store_progress(
           ..entry,
           state:,
           done_mask:,
-          progress: list.index_map(kept, fn(old, at) {
-            case at == index {
-              True -> progress
-              False -> old
-            }
-          }),
+          progress: replaced_at(values: kept, index:, with: progress),
         ),
       ),
     )

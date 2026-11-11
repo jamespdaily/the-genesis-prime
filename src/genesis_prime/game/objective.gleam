@@ -20,8 +20,8 @@
 //// killed every creature of the list, each recorded once as a bit of the objective's
 //// kill mask in the log (`group_member`, `quest_log.kill_marked`; the mask is never sent:
 //// `opcode.0x361` carries only the progress), and the last one's kill makes it 1 of its
-//// count 1 (the client's needed value is 1 for count 1, `0x140551840`). A type 5 objective (`QuestObjective.type.5`, a scripted objective) takes
-//// none of these events: nothing completes it (a gap, the issue "Quests, zones and
+//// count 1 (the client's needed value is 1 for count 1, `0x140551840`). A type 5
+//// objective (`QuestObjective.type.5`, a scripted objective) takes none of these events: nothing completes it (a gap, the issue "Quests, zones and
 //// prerequisites work on the real client"), so a timed one runs out
 //// (`quest_log.expire`). An objective takes the event only while it is open (`0x1405510d0`,
 //// `0x140553790`): its quest is in the active list, Accepted or Achieved (`0x1405510d0`
@@ -399,12 +399,7 @@ fn group_member(
     target_group.creatures_of(tables:, group: objective.reward_pane)
   use member <- result.map(
     list.index_map(creatures, fn(creature, at) { #(creature, at) })
-    |> list.find_map(fn(entry) {
-      case entry.0 == target.creature_id {
-        True -> Ok(entry.1)
-        False -> Error(Nil)
-      }
-    }),
+    |> list.key_find(target.creature_id),
   )
   #(member, list.length(creatures))
 }
@@ -447,24 +442,19 @@ fn advance_quest(
               index: open.0,
               member:,
               members:,
-              now_ms:,
             )
           {
             // A kill that leaves a member of the group alive, or kills one already
-            // dead, tells nothing: the client's progress stays 0.
-            Ok(marked) if marked.changed -> #(
-              marked.log,
-              [
-                SendProgress(
-                  quest_id: quest.id,
-                  objective_index: open.0,
-                  progress: marked.progress,
-                ),
-                ..progress
-              ],
-              became_achieved || marked.moved == quest_log.BecameAchieved,
-            )
-            Ok(marked) -> #(marked.log, progress, became_achieved)
+            // dead, tells nothing: the client's progress stays 0. The kill that
+            // fills the group counts as a kill does.
+            Ok(#(marked, True)) ->
+              progressed_by_one(
+                counted: #(marked, progress, became_achieved),
+                quest:,
+                index: open.0,
+                now_ms:,
+              )
+            Ok(#(marked, False)) -> #(marked, progress, became_achieved)
             // An open objective takes the kill, so this does not happen.
             Error(Nil) -> counted
           }
@@ -494,30 +484,7 @@ fn advance_quest(
             Ok(_) | Error(Nil) -> counted
           }
         Error(Nil), False ->
-          case
-            quest_log.progressed(
-              log:,
-              quest:,
-              index: open.0,
-              amount: 1,
-              now_ms:,
-            )
-          {
-            Ok(progressed) -> #(
-              progressed.log,
-              [
-                SendProgress(
-                  quest_id: quest.id,
-                  objective_index: open.0,
-                  progress: progressed.progress,
-                ),
-                ..progress
-              ],
-              became_achieved || progressed.became_achieved,
-            )
-            // An open objective takes progress, so this does not happen.
-            Error(Nil) -> counted
-          }
+          progressed_by_one(counted:, quest:, index: open.0, now_ms:)
       }
     })
   let state = case became_achieved {
@@ -528,6 +495,33 @@ fn advance_quest(
     log:,
     effects: list.flatten([so_far.effects, list.reverse(progress), state]),
   )
+}
+
+/// The log, progress messages and quest-achieved flag after one more kill counted for the
+/// quest's objective at `index`, added to what the quest's earlier objectives made.
+fn progressed_by_one(
+  counted counted: #(QuestLog, List(Effect), Bool),
+  quest quest: quest_log.Quest,
+  index index: Int,
+  now_ms now_ms: Int,
+) -> #(QuestLog, List(Effect), Bool) {
+  let #(log, progress, became_achieved) = counted
+  case quest_log.progressed(log:, quest:, index:, amount: 1, now_ms:) {
+    Ok(progressed) -> #(
+      progressed.log,
+      [
+        SendProgress(
+          quest_id: quest.id,
+          objective_index: index,
+          progress: progressed.progress,
+        ),
+        ..progress
+      ],
+      became_achieved || progressed.became_achieved,
+    )
+    // An open objective takes progress, so this does not happen.
+    Error(Nil) -> counted
+  }
 }
 
 /// Whether the PathSoldierActivate row is the activation of the creature.

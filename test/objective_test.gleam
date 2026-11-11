@@ -796,10 +796,14 @@ pub fn an_abandoned_quest_retaken_starts_its_group_with_no_kills_test() -> Nil {
   assert kill_masks_of(log: killed_once, quest_id: strange_brew)
     == [1, 0, 0, 0, 0, 0]
     as "Raken is marked"
-  // An abandoned quest holds no entry, only the side list's state 6
-  // (`abandon_keeps_the_quest_abandoned_and_acceptable_test`).
+  // The abandon request holds the quest in the side list as state 6
+  // (`quest_log.hold`, as `quest.gleam` does), dropping its active entry.
   let abandoned =
-    quest_support.log_of(rows: [quest_support.known(strange_brew, 6)])
+    quest_log.hold(
+      log: killed_once,
+      quest_id: strange_brew,
+      state: quest_log.Abandoned,
+    )
   let retaken =
     quest_log.accept(
       log: abandoned,
