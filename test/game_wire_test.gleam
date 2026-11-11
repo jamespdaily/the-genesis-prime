@@ -1407,26 +1407,8 @@ pub fn credits_survive_a_relog_test() -> Nil {
   assert told.kind == 0 && told.total == credits_before_the_buy - 67
     as "opcode.0x919: kind 0 sets the total, the credits less the 67 the window showed"
   // The player camps and plays the same character again.
-  game_client.send_world(game:, message_id: 0x00BF, body: <<1>>)
-  let #(_, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(frames, fn(frame) { frame.message_id == 0x0092 })
-    })
-  game_client.send_world(game:, message_id: 0x00C0, body: <<>>)
-  let #(_, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(frames, fn(frame) { frame.message_id == 0x0594 })
-    })
-  game_client.send(game:, message_id: 0x07E0, body: <<>>)
-  let #(_, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(frames, fn(frame) { frame.message_id == 0x0117 })
-    })
-  send_play(game:, character_id: character)
   let #(second_entry, _) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
-    })
+    game_client.camp_and_play(game:, have:, character_id: character)
   assert credits_in_entry(frames: second_entry) == credits_before_the_buy - 67
     as "opcode.0x25e: the first currency slot carries the credits the buy saved"
   game_client.close(game:)
@@ -1550,26 +1532,8 @@ pub fn objective_progress_survives_a_relog_test() -> Nil {
     ]
     as "opcode.0x361: the talk counts objective 0 of quest 3668"
   // The player camps and plays the same character again.
-  game_client.send_world(game:, message_id: 0x00BF, body: <<1>>)
-  let #(_, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(frames, fn(frame) { frame.message_id == 0x0092 })
-    })
-  game_client.send_world(game:, message_id: 0x00C0, body: <<>>)
-  let #(_, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(frames, fn(frame) { frame.message_id == 0x0594 })
-    })
-  game_client.send(game:, message_id: 0x07E0, body: <<>>)
-  let #(_, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(frames, fn(frame) { frame.message_id == 0x0117 })
-    })
-  send_play(game:, character_id: character)
   let #(second_entry, _) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
-    })
+    game_client.camp_and_play(game:, have:, character_id: character)
   let assert [Frame(body: log, ..)] =
     list.filter(second_entry, fn(frame) { frame.message_id == 0x035F })
     as "the entry sends one 0x35f"
@@ -5410,7 +5374,7 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
       game:,
       have:,
       item_guid: stack.item_guid,
-      to: in_bags(5),
+      to: in_bags(bag_index: 5),
       count: 1,
     )
   assert split.refused == [] as "the split is allowed"
@@ -5431,26 +5395,40 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
     as "opcode.0x17d: the split goes to the slot the bot named, with the count it named"
   // 3: moves the one to another empty slot.
   let #(moved, have) =
-    item_bot.move(game:, have:, from: in_bags(5), to: in_bags(7))
+    item_bot.move(
+      game:,
+      have:,
+      from: in_bags(bag_index: 5),
+      to: in_bags(bag_index: 7),
+    )
   assert moved.refused == [] as "the move is allowed"
   assert list.map(moved.moved, fn(moved) {
       #(moved.item_guid, item_bot.place_of(moved.place))
     })
-    == [#(single.item_guid, in_bags(7))]
+    == [#(single.item_guid, in_bags(bag_index: 7))]
     as "opcode.0x569: the item is at the new slot"
-  // 4: sells the one: the vendor pays 10, and the sale is the Buyback list's first.
+  // 4: sells the stack of 2: the vendor pays 10 for each, and the sale is the Buyback
+  // list's first.
   let #(sold, have) =
-    item_bot.sell(game:, have:, place: in_bags(7), quantity: 1)
+    item_bot.sell(
+      game:,
+      have:,
+      place: item_place.ItemPlace(
+        location: stack.location,
+        bag_index: stack.bag_index,
+      ),
+      quantity: 2,
+    )
+  let credits_after_the_sale =
+    credits_before_the_buy - 3 * stimpack_cost + 2 * stimpack_sells_for
   assert sold.refused == [] as "the sale is allowed"
   assert list.map(sold.currencies, fn(told) { #(told.kind, told.total) })
-    == [
-      #(0, credits_before_the_buy - 3 * stimpack_cost + stimpack_sells_for),
-    ]
-    as "opcode.0x919: the credits plus the 10 the vendor pays"
+    == [#(0, credits_after_the_sale)]
+    as "opcode.0x919: the credits plus the 10 the vendor pays for each of 2"
   assert list.map(sold.removed, fn(removed) {
       #(removed.item_guid, removed.reason)
     })
-    == [#(single.item_guid, 7)]
+    == [#(stack.item_guid, 7)]
     as "opcode.0x148 with the reason 7, Vendor"
   let assert [listed] = sold.buyback_added
     as "the sale is added to the Buyback list"
@@ -5460,9 +5438,10 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
       listed.amount_1,
       listed.currency_type_1,
     )
-    == #(stimpack, 1, stimpack_sells_for, 1)
+    == #(stimpack, 2, 2 * stimpack_sells_for, 1)
     as "opcode.0xba.price: the entry holds the item, its count, the credits paid and the currency type 1"
-  // 5: buys it back for what the entry holds.
+  // 5: buys it back for what the entry holds: the vendor_purchase rule fills a stack
+  // below the stack limit first, so the held stack of 1 grows to 3.
   let #(back, have) =
     item_bot.buy_back(game:, have:, buyback_id: listed.buyback_id)
   assert back.refused == [] as "the buy back is allowed"
@@ -5471,11 +5450,12 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
     as "opcode.0xba.price: a buy back costs what its entry holds, so the credits are as before the sale"
   assert back.buyback_removed == [listed.buyback_id]
     as "opcode.0xbd: the entry leaves the Buyback list"
-  let assert [back_added] = back.added as "the item comes back as a new item"
-  let bought_back = back_added.item
-  assert #(bought_back.item_id, bought_back.location, bought_back.stack_count)
-    == #(stimpack, 1, 1)
-    as "the item is back in the inventory, one of it"
+  assert back.added == [] as "the bought-back items make no new stack"
+  assert list.map(back.count_changed, fn(changed) {
+      #(changed.item_guid, changed.count, changed.reason)
+    })
+    == [#(single.item_guid, 3, 16)]
+    as "opcode.0x17f with the reason 16, Buyback: the moved stack of 1 grows to 3"
   // 6: buys a lot of bandages and deletes it.
   let assert Ok(bandage_row) =
     list.find(window.items, fn(row) { row.entry_id == bandage })
@@ -5509,15 +5489,15 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
     as "opcode.0x149: the item goes with the reason 21, Delete"
   // 7 and 8: takes the chest off into an empty slot and puts it back on.
   let #(off, have) =
-    item_bot.move(game:, have:, from: chest_slot, to: in_bags(10))
+    item_bot.move(game:, have:, from: chest_slot, to: in_bags(bag_index: 10))
   assert off.refused == [] as "the chest comes off"
   assert list.map(off.moved, fn(moved) {
       #(moved.item_guid, item_bot.place_of(moved.place))
     })
-    == [#(chest.item_guid, in_bags(10))]
+    == [#(chest.item_guid, in_bags(bag_index: 10))]
     as "opcode.0x182: the chest is in the bag slot it was moved to"
   let #(on, have) =
-    item_bot.move(game:, have:, from: in_bags(10), to: chest_slot)
+    item_bot.move(game:, have:, from: in_bags(bag_index: 10), to: chest_slot)
   assert on.refused == [] as "the chest goes on"
   assert list.map(on.moved, fn(moved) {
       #(moved.item_guid, item_bot.place_of(moved.place))
@@ -5598,12 +5578,8 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
       }
     })
     |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
-  assert in_the_bags
-    == [
-      #(stack.bag_index, stimpack, 2),
-      #(bought_back.bag_index, stimpack, 1),
-    ]
-    as "the split's stack of 2 at its slot and the bought-back one: the moved, sold and deleted items are not in the bags"
+  assert in_the_bags == [#(in_bags(bag_index: 7).bag_index, stimpack, 3)]
+    as "one stack of 3 at the moved slot: the sold stack's slot is empty and the lot is deleted"
   assert list.any(held, fn(item) {
     item.location == chest_slot.location
     && item.bag_index == chest_slot.bag_index
