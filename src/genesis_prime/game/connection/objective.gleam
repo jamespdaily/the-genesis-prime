@@ -51,12 +51,15 @@ pub fn killed(
 /// and when the unit is a departures terminal whose landing the player's log still opens
 /// (`departures.landing`, asked before the count, which can finish the quest), the landing
 /// is kept in `Entered.departing` and the 0 ms timer that starts the move is asked for
-/// (`connection/departures.due`). A player not in the world counts nothing.
+/// (`connection/departures.due`). A use `by_item` counts for no objective that waits for the
+/// creature's own activate cast (`objective.Used`). A player not in the world counts
+/// nothing.
 pub fn used(
   session session: Session,
   now now: Now,
   target target: target_group.Unit,
   checklist_index checklist_index: Int,
+  by_item by_item: Bool,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   let landing = case connection_state.entered_of(session.status) {
     None -> Error(departures.NotATerminal)
@@ -68,7 +71,11 @@ pub fn used(
       )
   }
   let #(session, written) =
-    counted(session:, now:, event: objective.Used(target:, checklist_index:))
+    counted(
+      session:,
+      now:,
+      event: objective.Used(target:, checklist_index:, by_item:),
+    )
   case landing {
     Ok(place) -> #(
       connection_state.with_entered(session:, change: fn(entered) {

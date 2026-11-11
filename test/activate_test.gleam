@@ -6,8 +6,8 @@
 import client_tables
 import fixture_tables
 import genesis_prime/game/activate.{
-  ActivateEffect, CannotBePlanned, Column, Creature, NoActivateSpell, Picked,
-  Planned, Unread,
+  ActivateEffect, CannotBePlanned, Column, Creature, Limits, NoActivateSpell,
+  Picked, Planned, Unread,
 }
 import genesis_prime/game/prerequisite.{Fails, NotRead, Passes}
 import genesis_prime/game/spell_plan
@@ -214,4 +214,30 @@ fn refusal_reason(why why: String) -> String {
     list.find(reasons, fn(reason) { string.contains(why, reason.0) })
     as { "the plan's reason is one the test names: " <> why }
   reason
+}
+
+/// Spell4 26663 (Spell4Effects 43805, effectType 7) and Spell4 1545 (Spell4Effects 2348,
+/// effectType 7) are the ItemSpecial 4363 and 4350 spells of items 12444 and 12402; each
+/// holds an Activate row. Spell4 41914 (ItemSpecial 5410's) holds only Spell4Effects
+/// 94446, a RavelSignal (effectType 81), so it has no Activate row and is not planned.
+pub fn the_activations_plan_item_spells_with_an_activate_effect_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let activations = activate.activations(tables: fixture_tables.shared())
+  let assert Ok(Planned(effects:, limits:, ..)) =
+    activate.planned_of(activations:, spell4_id: 26_663)
+    as "Spell4 26663, ItemSpecial 4363's spell, is planned"
+  assert effects
+    == [ActivateEffect(effect_id: Spell4EffectsId(43_805), delay_ms: 0)]
+    as "Spell4Effects 43805 is its Activate row, delay 0"
+  assert limits == Limits(min: 0.0, max: 30.0, vertical: -1.0)
+    as "Spell4 26663: targetMaxRange 30.0, no minimum, targetVerticalRange -1"
+  let assert Ok(Planned(effects:, limits:, ..)) =
+    activate.planned_of(activations:, spell4_id: 1545)
+    as "Spell4 1545, ItemSpecial 4350's spell, is planned"
+  assert effects
+    == [ActivateEffect(effect_id: Spell4EffectsId(2348), delay_ms: 0)]
+    as "Spell4Effects 2348 is its Activate row, delay 0"
+  assert limits.max == 5.0 as "Spell4 1545: targetMaxRange 5.0"
+  assert activate.planned_of(activations:, spell4_id: 41_914) == Error(Nil)
+    as "Spell4 41914 has no Activate row, so no plan is held"
 }

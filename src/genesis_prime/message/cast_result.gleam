@@ -26,6 +26,14 @@ pub type CastResult {
   SpellGroupCooldown
   /// The value 17, the fact file's `Spell.CodeEnumCastResult`.
   SpellPreRequisites
+  /// The value 22, the fact file's `0x1403998e0`.
+  ItemBad
+  /// The value 26, the fact file's `0x140398cc0`.
+  ItemTooHighLevel
+  /// The value 28, the fact file's `0x140398cc0`.
+  ItemQuestRequirementsNotMet
+  /// The value 29, the fact file's `0x140398cc0`.
+  ItemObjectiveComplete
   /// The value 30, the fact file's `Spell.CodeEnumCastResult`.
   CasterUnknown
   /// The value 31, the fact file's `Spell.CodeEnumCastResult`.
@@ -99,6 +107,10 @@ pub fn to_value(value: CastResult) -> Int {
     SpellCooldown -> 15
     SpellGroupCooldown -> 16
     SpellPreRequisites -> 17
+    ItemBad -> 22
+    ItemTooHighLevel -> 26
+    ItemQuestRequirementsNotMet -> 28
+    ItemObjectiveComplete -> 29
     CasterUnknown -> 30
     CasterMustHaveTarget -> 31
     CasterNotIncontrolOfSelf -> 33
@@ -144,6 +156,10 @@ pub fn from_value(number: Int) -> CastResult {
     15 -> SpellCooldown
     16 -> SpellGroupCooldown
     17 -> SpellPreRequisites
+    22 -> ItemBad
+    26 -> ItemTooHighLevel
+    28 -> ItemQuestRequirementsNotMet
+    29 -> ItemObjectiveComplete
     30 -> CasterUnknown
     31 -> CasterMustHaveTarget
     33 -> CasterNotIncontrolOfSelf

@@ -135,7 +135,7 @@ fn a_talk(creature: id.Creature2Id) -> objective.Event {
 }
 
 fn a_use(creature: id.Creature2Id) -> objective.Event {
-  Used(target: plain_unit(creature:), checklist_index: 0)
+  Used(target: plain_unit(creature:), checklist_index: 0, by_item: False)
 }
 
 const use_target = 58_487
@@ -1811,4 +1811,31 @@ pub fn travel_done_leaves_bon_voyage_achieved_test() -> Nil {
     as "the optional objective is still open in the Achieved quest"
   assert quest_log.active_ids(log: used.log) == [10_528]
     as "the quest is still in the active list, not completed"
+}
+
+pub fn an_items_use_does_not_advance_a_type_32_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 12919's questAnim columns name quest 3741, objective index 0 (objective
+  // 4813, type 32): the objective counts the creature's own activate cast.
+  use tables <- with_objectives(edits: [])
+  let collectible = Creature2Id(12_919)
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 3741, progress: [0]),
+    ])
+  assert objective.advance(
+      log:,
+      tables:,
+      event: Used(
+        target: plain_unit(creature: collectible),
+        checklist_index: 0,
+        by_item: True,
+      ),
+      now_ms: 0,
+    )
+    == Advanced(log:, effects: [])
+    as "an item's spell at the collectible is not the creature's own activate cast"
+  assert objective.advance(log:, tables:, event: a_use(collectible), now_ms: 0).effects
+    == [SendProgress(quest_id: 3741, objective_index: 0, progress: 1)]
+    as "the creature's own activate cast counts it"
 }

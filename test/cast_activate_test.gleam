@@ -375,6 +375,7 @@ pub fn activate_go_raises_activated_test() -> Nil {
         unit_id: its_unit,
         creature_id: the_mollusk,
         alive_at_press: True,
+        by_item: False,
       )
     })
     == 1
@@ -1107,6 +1108,7 @@ pub fn activate_cancelled_raises_nothing_test() -> Nil {
       unit_id: its_unit,
       creature_id: the_mollusk,
       alive_at_press: True,
+      by_item: False,
     ),
   )
     as "a cast cancelled before its go raises no Activated"
@@ -1209,6 +1211,7 @@ fn activated_by(effects effects: List(Effect)) -> Int {
       unit_id: its_unit,
       creature_id: the_terminal,
       alive_at_press: True,
+      by_item: False,
     )
   })
 }
@@ -1236,6 +1239,7 @@ fn assert_went_and_finished(effects effects: List(Effect)) -> Nil {
         unit_id: its_unit,
         creature_id: the_terminal,
         alive_at_press: True,
+        by_item: False,
       )
     })
     == 1

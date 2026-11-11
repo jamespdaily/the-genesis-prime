@@ -58,7 +58,11 @@ fn used(
   creature creature: Int,
   index index: Int,
 ) -> objective.Event {
-  Used(target: unit_of(tables:, creature:), checklist_index: index)
+  Used(
+    target: unit_of(tables:, creature:),
+    checklist_index: index,
+    by_item: False,
+  )
 }
 
 /// The log of quest 10520 accepted with nothing counted.

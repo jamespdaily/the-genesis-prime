@@ -545,6 +545,7 @@ import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
 import genesis_prime/game/cooldown
 import genesis_prime/game/damage
 import genesis_prime/game/hit
+import genesis_prime/game/item_use
 import genesis_prime/game/lasting
 import genesis_prime/game/look
 import genesis_prime/game/prerequisite
@@ -571,6 +572,8 @@ import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
 import genesis_prime/message/interaction_result
+import genesis_prime/message/item_place.{type ItemPlace}
+import genesis_prime/message/item_use as item_use_message
 import genesis_prime/message/miss_reason
 import genesis_prime/message/spell_cast_confirmed.{SpellCastConfirmed}
 import genesis_prime/message/spell_cast_refused.{SpellCastRefused}
@@ -766,8 +769,9 @@ pub type Effect {
   StealthChanged(stealthed: Bool)
   /// The go of an activate cast: the player activated the creature or static object
   /// `unit_id`, of the Creature2 row `creature_id`, which lived when the press started the
-  /// cast or did not (`alive_at_press`).
-  Activated(unit_id: Int, creature_id: Int, alive_at_press: Bool)
+  /// cast or did not (`alive_at_press`). The cast is an item's when `by_item`, the
+  /// creature's own activate cast otherwise.
+  Activated(unit_id: Int, creature_id: Int, alive_at_press: Bool, by_item: Bool)
   /// The first go of a cast of a quest button's spell (`shortcut`), by its Spell4 id.
   ShortcutCast(spell4_id: Int)
 }
@@ -843,6 +847,12 @@ pub type Refusal {
   /// A 0x805 whose third field is not the waiting cast's Spell4Base id plus 1
   /// (`opcode.0x805.fields`).
   WrongAnswerSpell(cast_id: Int, sent: Int, expected: Int)
+  /// A 0x943 for an item that has no spell: the client answers such a use itself and
+  /// sends nothing (UseItem `0x1403998e0`).
+  NoItemSpell
+  /// A 0x943 whose second item is not the one the client sends for the item's spell
+  /// (StartItemUseCast `0x140398cc0`).
+  NotSentByClient
 }
 
 /// What a timer of the rule is for, which `State` keeps by the timer's id.
@@ -932,6 +942,8 @@ pub type Activating {
     /// target dies during it (`SetUnitDeathState` 0x14045e740), not when the target was
     /// dead at the press.
     alive_at_press: Bool,
+    /// Whether the cast is an item's (`use_item`) and not the creature's own activate cast.
+    by_item: Bool,
     /// The spell's Activate rows, which the go lists on the unit.
     effects: List(activate.ActivateEffect),
   )
@@ -1244,6 +1256,184 @@ pub fn activate(
   })
 }
 
+/// The caster's 0x943, the use of an item the client sends from StartItemUseCast
+/// (`opcode.0x943`), decoded and decided: the client's cast of the item's spell at the unit
+/// it names. `held_at` says which item the caster holds at a place, `check` is the client's
+/// own checks of the item (genesis_prime/game/item_use `check`, given the target's
+/// checklist index), `target_of` says what the unit the message names is to the caster's
+/// connection, and `in_cast_group` whether the unit is in a TargetGroup (the spell's cast
+/// group, which the client does not test). A use the client would not have sent ends the
+/// connection; one it sends and refuses is refused with its result; one the server has no
+/// plan for (the item's spell has no Activate effect) is refused as not built; the others
+/// run as an activate cast does, and the go raises `Activated` for the unit.
+pub fn use_item(
+  cast cast: State,
+  body body: BitArray,
+  caster caster: Caster,
+  held_at held_at: fn(ItemPlace) -> Option(Item2Id),
+  check check: fn(Item2Id, ItemPlace, Option(Int)) ->
+    Result(Spell4Id, item_use.Refusal),
+  activations activations: activate.Activations,
+  target_of target_of: fn(Int) -> activate.Target,
+  in_cast_group in_cast_group: fn(Int, Int) -> Bool,
+  caster_radius caster_radius: Float,
+  now now: Now,
+) -> Result(#(State, List(Effect)), Refusal) {
+  let now_ms = now.monotonic_ms
+  item_used(
+    cast:,
+    body:,
+    caster:,
+    held_at:,
+    check:,
+    activations:,
+    target_of:,
+    in_cast_group:,
+    caster_radius:,
+    now_ms:,
+  )
+  |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
+  |> result.map(fn(taken) {
+    settled(cast:, caster:, now:, own: [], step: fn() { taken })
+  })
+}
+
+fn item_used(
+  cast cast: State,
+  body body: BitArray,
+  caster caster: Caster,
+  held_at held_at: fn(ItemPlace) -> Option(Item2Id),
+  check check: fn(Item2Id, ItemPlace, Option(Int)) ->
+    Result(Spell4Id, item_use.Refusal),
+  activations activations: activate.Activations,
+  target_of target_of: fn(Int) -> activate.Target,
+  in_cast_group in_cast_group: fn(Int, Int) -> Bool,
+  caster_radius caster_radius: Float,
+  now_ms now_ms: Int,
+) -> Result(#(State, List(Effect)), Refusal) {
+  use press <- result.try(
+    item_use_message.decode(body)
+    |> client_connection.decoded(message_id: item_use_message.message_id)
+    |> result.map_error(NotDecoded),
+  )
+  use <- bool.guard(
+    when: press.client_cast_id == 0,
+    return: Error(NoClientCastId),
+  )
+  let client_cast_id = press.client_cast_id
+  let unit_id = press.target_unit_id
+  let target = target_of(unit_id)
+  let refusal = fn(spell4_id, result) {
+    Ok(#(cast, [refused(client_cast_id:, spell4_id:, result:)]))
+  }
+  case held_at(press.item) {
+    None -> refusal(0, cast_result.ItemBad)
+    Some(item) ->
+      case
+        check(item, press.second_item, case target {
+          activate.Usable(checklist_index:, ..) -> Some(checklist_index)
+          activate.Unseen | activate.AnotherPlayer -> None
+        })
+      {
+        Error(item_use.NoItemSpell) -> Error(NoItemSpell)
+        Error(item_use.NotSentByClient) -> Error(NotSentByClient)
+        Error(item_use.Declined(spell4_id:, result:)) ->
+          refusal(spell4_id.value, result)
+        Ok(spell4_id) ->
+          item_spell_cast(
+            cast:,
+            caster:,
+            caster_radius:,
+            now_ms:,
+            client_cast_id:,
+            unit_id:,
+            target:,
+            activations:,
+            in_cast_group:,
+            spell4_id: spell4_id.value,
+          )
+      }
+  }
+}
+
+/// The cast of an item's spell, which the item's checks let through, at the unit the
+/// press names (`item_used`): refused as not built when the spell has no Activate effect,
+/// refused 91 for a unit not shown and 100 for another player or a unit outside the spell's
+/// cast group, else the activate cast of the unit.
+fn item_spell_cast(
+  cast cast: State,
+  caster caster: Caster,
+  caster_radius caster_radius: Float,
+  now_ms now_ms: Int,
+  client_cast_id client_cast_id: Int,
+  unit_id unit_id: Int,
+  target target: activate.Target,
+  activations activations: activate.Activations,
+  in_cast_group in_cast_group: fn(Int, Int) -> Bool,
+  spell4_id spell4_id: Int,
+) -> Result(#(State, List(Effect)), Refusal) {
+  let refusal = fn(spell4_id, result) {
+    Ok(#(cast, [refused(client_cast_id:, spell4_id:, result:)]))
+  }
+  case activate.planned_of(activations:, spell4_id:) {
+    Error(Nil) ->
+      not_built_refusal(
+        cast:,
+        client_cast_id:,
+        spell4_id:,
+        key: UnbuiltItemSpell(spell4_id:),
+        result: cast_result.IllegalSpellCast,
+        why: "has no Activate effect, which is all the server counts an item's use through, the issue about items (#333)",
+      )
+    Ok(activate.NoSpell4Row) -> refusal(spell4_id, cast_result.SpellUnknown)
+    Ok(activate.CannotBePlanned(why:)) ->
+      not_built_refusal(
+        cast:,
+        client_cast_id:,
+        spell4_id:,
+        key: UnbuiltItemSpell(spell4_id:),
+        result: cast_result.IllegalSpellCast,
+        why: "cannot be planned: " <> why,
+      )
+    Ok(activate.Planned(
+      spell:,
+      effects:,
+      dropped_signals:,
+      limits:,
+      cast_group_id:,
+    )) ->
+      case target {
+        activate.Unseen -> refusal(spell4_id, cast_result.NoTarget)
+        activate.AnotherPlayer ->
+          refusal(spell4_id, cast_result.TargetIsNotUseable)
+        activate.Usable(creature_id:, creature:, body: unit, alive:, ..) -> {
+          use <- bool.lazy_guard(
+            when: cast_group_id != 0 && !in_cast_group(cast_group_id, unit_id),
+            return: fn() { refusal(spell4_id, cast_result.TargetIsNotUseable) },
+          )
+          activation_in_range(
+            cast:,
+            caster:,
+            caster_radius:,
+            now_ms:,
+            client_cast_id:,
+            unit_id:,
+            creature_id:,
+            creature:,
+            target: unit,
+            alive:,
+            by_item: True,
+            spell:,
+            cast_time_ms: spell.cast_time_ms,
+            effects:,
+            dropped_signals:,
+            limits:,
+          )
+        }
+      }
+  }
+}
+
 /// The caster's 0x9d, the press of the button a type 11 objective gave it (`opcode.0x9d`),
 /// decoded and decided. A spell the caster holds no button for is refused with result 1
 /// (`UnableToCreateSpell`), as the client refuses a press of a shortcut it does not hold
@@ -1464,7 +1654,12 @@ pub fn activate_unit(
             )
           {
             activate.NoActivateSpell -> [
-              Activated(unit_id:, creature_id:, alive_at_press: True),
+              Activated(
+                unit_id:,
+                creature_id:,
+                alive_at_press: True,
+                by_item: False,
+              ),
             ]
             activate.Picked(spell4_id:) ->
               declined(
@@ -1625,7 +1820,7 @@ fn activation_pressed(
                 result: cast_result.IllegalSpellCast,
                 why: "cannot be planned: " <> why,
               )
-            Ok(activate.Planned(spell:, effects:, dropped_signals:, limits:)) ->
+            Ok(activate.Planned(spell:, effects:, dropped_signals:, limits:, ..)) ->
               activation_in_range(
                 cast:,
                 caster:,
@@ -1637,7 +1832,9 @@ fn activation_pressed(
                 creature:,
                 target:,
                 alive:,
+                by_item: False,
                 spell:,
+                cast_time_ms: creature.cast_time_ms,
                 effects:,
                 dropped_signals:,
                 limits:,
@@ -1648,7 +1845,8 @@ fn activation_pressed(
   }
 }
 
-/// An activate cast of a planned spell at a creature or object: refused with 106 or 107
+/// An activate cast of a planned spell at a creature or object, for the cast time given:
+/// refused with 106 or 107
 /// when the target's life is not the one its Spell4 target row allows, then with the
 /// range's result when the caster stands out of the limits the creature and the spell
 /// hold, else started (`0x1403b2240` tests the life before the range).
@@ -1663,7 +1861,9 @@ fn activation_in_range(
   creature creature: activate.Creature,
   target target: activate.Body,
   alive alive: Bool,
+  by_item by_item: Bool,
   spell spell: Spell,
+  cast_time_ms cast_time_ms: Int,
   effects effects: List(activate.ActivateEffect),
   dropped_signals dropped_signals: List(Spell4EffectsId),
   limits limits: activate.Limits,
@@ -1699,7 +1899,8 @@ fn activation_in_range(
         unit_id:,
         creature_id:,
         alive_at_press: alive,
-        spell: activation_spell(spell:, cast_time_ms: creature.cast_time_ms),
+        by_item:,
+        spell: activation_spell(spell:, cast_time_ms:),
         interaction: interaction_of(spell:),
         effects:,
         dropped_signals:,
@@ -1762,6 +1963,7 @@ fn activation_started(
   unit_id unit_id: Int,
   creature_id creature_id: Int,
   alive_at_press alive_at_press: Bool,
+  by_item by_item: Bool,
   spell spell: Spell,
   interaction interaction: Interaction,
   effects effects: List(activate.ActivateEffect),
@@ -1776,7 +1978,13 @@ fn activation_started(
     spell:,
     primary_target: unit_id,
     role: Activation(
-      activating: Activating(unit_id:, creature_id:, alive_at_press:, effects:),
+      activating: Activating(
+        unit_id:,
+        creature_id:,
+        alive_at_press:,
+        by_item:,
+        effects:,
+      ),
       interaction:,
     ),
     dropping: fn(cast) {
@@ -1898,6 +2106,8 @@ pub type Unbuilt {
   DroppedSignals(spell4_id: Int)
   /// A quest button's spell, by Spell4 id.
   UnbuiltShortcut(spell4_id: Int)
+  /// The spell of an item that is used, by Spell4 id.
+  UnbuiltItemSpell(spell4_id: Int)
 }
 
 /// A right-click refused because the server does not build what the cast needs: the
@@ -1913,6 +2123,7 @@ fn not_built_refusal(
   let refusal = refused(client_cast_id:, spell4_id:, result:)
   let what = case key {
     UnbuiltShortcut(..) -> "the shortcut cast of Spell4 "
+    UnbuiltItemSpell(..) -> "the use of an item whose spell is Spell4 "
     UnbuiltSpell(..)
     | UnreadPrerequisite(..)
     | UnreadLinkPrerequisite(..)
@@ -5500,8 +5711,8 @@ fn go(
         False -> #(cast, [])
       }
       let activated = case live.activation {
-        Some(Activating(unit_id:, creature_id:, alive_at_press:, ..)) -> [
-          Activated(unit_id:, creature_id:, alive_at_press:),
+        Some(Activating(unit_id:, creature_id:, alive_at_press:, by_item:, ..)) -> [
+          Activated(unit_id:, creature_id:, alive_at_press:, by_item:),
         ]
         None -> []
       }
@@ -8241,6 +8452,10 @@ pub fn describe(refusal refusal: Refusal) -> String {
       <> int.to_string(sent)
       <> " in place of "
       <> int.to_string(expected)
+    NoItemSpell ->
+      "0x0943 names an item that has no spell, which the client answers itself"
+    NotSentByClient ->
+      "0x0943 names a second item the client does not send for the item's spell"
   }
 }
 

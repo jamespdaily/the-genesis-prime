@@ -662,6 +662,7 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.CastActivate(..)
     | client_message.CastObjectiveAbility(..)
     | client_message.ClientActivateUnit(..)
+    | client_message.ItemUse(..)
     | client_message.AbilityHold(..)
     | client_message.ItemMove(..)
     | client_message.ItemSplit(..)

@@ -155,7 +155,7 @@ pub fn the_connection_imports_no_message_only_a_feature_decodes_test() -> Nil {
       "character_select_start", "create_character_carrier", "delete_character",
       "rename_character", "play_character", "interaction_request",
       "dialog_responses_shown", "cast_activate", "cast_objective_ability",
-      "client_activate_unit",
+      "client_activate_unit", "item_use",
     ],
     fn(name) {
       assert !list.contains(imported, "genesis_prime/message/" <> name)
@@ -187,6 +187,21 @@ pub fn the_press_the_hold_and_the_cancel_of_a_cast_are_rows_taken_inside_0x038c_
     assert routing.route(AtWorld, OnItsOwn, id) == Error(Nil)
       as { "0x" <> int.to_base16(id) <> " is not taken outside 0x038C" }
   })
+}
+
+pub fn item_use_is_taken_in_the_world_only_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert routing.route(AtWorld, InsideWorldMessage, 0x0943)
+    == Ok(routing.ItemUse)
+    as "0x0943 is the item-use row in the world (opcode.0x943: the client sends it from inside 0x038C, from StartItemUseCast 0x140398cc0)"
+  assert routing.route(AtCharacterSelect, InsideWorldMessage, 0x0943)
+    == Error(Nil)
+    as "it is not taken in character select"
+  assert routing.route(BeforeHelloReply, InsideWorldMessage, 0x0943)
+    == Error(Nil)
+    as "it is not taken before the hello reply"
+  assert routing.route(AtWorld, OnItsOwn, 0x0943) == Error(Nil)
+    as "it is not taken outside 0x038C"
 }
 
 pub fn the_press_of_an_objective_button_is_a_row_taken_inside_0x038c_with_the_player_in_the_world_test() -> Nil {

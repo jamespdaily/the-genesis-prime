@@ -21,6 +21,9 @@
 ////   the Prerequisite rows the columns name; the Creature2 rows are read from the tables
 ////   when an activation arrives (the derivation stores none of the 8,463 creatures that
 ////   have an activate column).
+//// - **An item's spell** (ItemSpecial.spell4IdOnActivate) with an Activate effect is planned
+////   too, for the cast of an item (`cast.use_item`): its use at a unit counts that unit as an
+////   activate cast does. Item spells with no Activate effect are not planned.
 //// - A spell with an effect the strike would apply, aimed at the target or an area, is
 ////   refused with result 285 and logged once, since the activate cast strikes no unit
 ////   (gap, #336).
@@ -43,8 +46,10 @@ import genesis_prime/table/id.{
   type Spell4EffectsId, GameFormulaId, PrerequisiteId, Spell4ConditionsId,
   Spell4EffectsId, Spell4Id,
 }
+import genesis_prime/table/item_special
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_conditions
 import genesis_prime/world_map/creature_path
 import gleam/bool
@@ -147,14 +152,16 @@ pub type Limits {
 /// What the plans hold of an activate spell.
 pub type Planned {
   /// The spell's plan, its Activate effects in row order, the RavelSignal rows aimed at
-  /// the target that the activate cast drops, and its Spell4 limits. A spell of a method
-  /// the cast rule does not build is held too: the press is refused as an ability's is
-  /// (`cast.verdict`).
+  /// the target that the activate cast drops, its Spell4 limits and its cast group
+  /// (Spell4Base.targetGroupIdCastGroup, 0 for none; the client does not hold a cast to
+  /// it, so the cast of an item tests it). A spell of a method the cast rule does not
+  /// build is held too: the press is refused as an ability's is (`cast.verdict`).
   Planned(
     spell: Spell,
     effects: List(ActivateEffect),
     dropped_signals: List(Spell4EffectsId),
     limits: Limits,
+    cast_group_id: Int,
   )
   /// The Spell4 table has no row for the spell: result 4.
   NoSpell4Row
@@ -258,11 +265,17 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
       },
     ),
   )
+  let sources = spell_plan.sources_of(tables:)
   let spell_ids =
-    [default_spell, ..list.map(columns, fn(column) { column.spell4_id })]
+    [
+      default_spell,
+      ..list.append(
+        list.map(columns, fn(column) { column.spell4_id }),
+        item_spell_ids(tables:, sources:),
+      )
+    ]
     |> list.filter(fn(spell4_id) { spell4_id != 0 })
     |> list.unique
-  let sources = spell_plan.sources_of(tables:)
   Ok(Activations(
     prerequisites: list.filter_map(prerequisites, fn(entry) {
       option.to_result(entry.1, Nil)
@@ -276,6 +289,25 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
       |> dict.from_list,
     default_spell:,
   ))
+}
+
+/// The spells an item casts when used (ItemSpecial.spell4IdOnActivate) that have an
+/// Activate effect: an item's use counts an objective only through that effect, and the
+/// other item spells are the cast rule's to refuse as unbuilt.
+fn item_spell_ids(
+  tables tables: table_store.Tables,
+  sources sources: spell_plan.Sources,
+) -> List(Int) {
+  item_special.all(tables)
+  |> list.map(fn(row) { row.spell4_id_on_activate })
+  |> list.filter(fn(spell4_id) {
+    spell4_id != 0
+    && list.any(spell_plan.effects_of(sources:, spell4_id:), fn(effect) {
+      effect_kind.kind_of(effect_type: effect.effect_type)
+      == effect_kind.Activate
+    })
+  })
+  |> list.unique
 }
 
 /// The ids of the Prerequisite rows the creatures' link columns name
@@ -316,7 +348,7 @@ fn planned(
                 <> int.to_string(mask)
                 <> "), which the activate cast does not read",
               )
-            None -> planned_rows(spell:, sources:, spell4_id:, row:)
+            None -> planned_rows(tables:, spell:, sources:, spell4_id:, row:)
           }
       }
   }
@@ -353,6 +385,7 @@ fn unread_target_bits(
 }
 
 fn planned_rows(
+  tables tables: table_store.Tables,
   spell spell: Spell,
   sources sources: spell_plan.Sources,
   spell4_id spell4_id: Int,
@@ -377,6 +410,12 @@ fn planned_rows(
           max: row.target_max_range,
           vertical: row.target_vertical_range,
         ),
+        cast_group_id: case
+          spell4_base.get(tables:, id: spell4.spell4_base_id_base_spell(row))
+        {
+          Ok(base) -> base.target_group_id_cast_group
+          Error(Nil) -> 0
+        },
       )
   }
 }

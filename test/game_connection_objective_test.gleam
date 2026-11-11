@@ -62,6 +62,7 @@ import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/interaction_result
 import genesis_prime/message/item_delete
 import genesis_prime/message/item_place.{ItemPlace}
+import genesis_prime/message/item_use.{ItemUse}
 import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/step.{type ConnectionEvent, type Event, OwnEvent}
@@ -1037,4 +1038,93 @@ pub fn activating_a_quest_anim_collectible_sends_its_progress_test() -> Nil {
   assert list.flat_map(go, fn(taken) { quest_frames(taken:) })
     == [progress_frame(quest: 3741, index: 0, progress: 1)]
     as "opcode.0x361: one virtual item of the six"
+}
+
+const grenade = 12_444
+
+const slaver_shack = 17_397
+
+/// Creature2DisplayGroupEntry 33992 puts Creature2 17397 (display group 32860) on
+/// Creature2DisplayInfo 30233.
+const slaver_shack_display = 30_233
+
+/// The connection of a player who holds the grenade (Item2 12444) at {1, 0} and quest
+/// 4743 accepted, and sees Creature2 17397 as unit 40, 5.0 east of the player.
+fn seeing_a_slaver_shack_holding_the_grenade() -> game_connection.State {
+  let state =
+    connection_support.entered_with_items_and_quests(
+      items: [
+        HeldItem(
+          item_guid: 4_000_001,
+          item2_id: Item2Id(grenade),
+          location: 1,
+          bag_index: 0,
+          stack_count: 1,
+          random_stats: 0,
+        ),
+      ],
+      quests: [quest_support.accepted(quest_id: 4743, progress: [0, 0, 0, 0])],
+    )
+  let place =
+    connection_support.standing_at(
+      x: 29.128599166870117 +. 5.0,
+      y: -853.87158203125,
+      z: -560.18798828125,
+    )
+  connection_support.feed(
+    state:,
+    event: connection_support.sent_by_the_map(
+      ObjectsSeen(units: [
+        static_object.create(
+          object: StaticObject(
+            ..spawn_support.holoring(number: unit, place:),
+            creature_id: Creature2Id(slaver_shack),
+            display_info_id: slaver_shack_display,
+          ),
+          unit_id: unit,
+          server_time_estimate_start: 0,
+        ),
+      ]),
+    ),
+  ).0
+}
+
+/// The client's 0x943 of the grenade at {1, 0}, at unit 40, inside the client's 0x038C.
+fn grenade_thrown() -> BitArray {
+  let assert Ok(body) =
+    item_use.encode(ItemUse(
+      client_cast_id:,
+      item: ItemPlace(location: 1, bag_index: 0),
+      target_unit_id: unit,
+      second_item: ItemPlace(location: 300, bag_index: 0xffffffff),
+      position_x: 0,
+      position_y: 0,
+      position_z: 0,
+    ))
+    as "the message fits"
+  connection_support.world_message(message_id: item_use.message_id, body:)
+}
+
+pub fn throwing_the_grenade_at_a_slaver_shack_sends_its_progress_after_the_go_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4 26663's castTime is 0, so its go is written with the start. Quest 4743 has
+  // four objectives, and the use of Creature2 17397 counts two of them: QuestObjective
+  // 6553 (type 14, TargetGroup 2187 holding the shack, 1 of 3) and QuestObjective 7616
+  // (type 12, data 17397, count 1). Two of the four are not all, so the quest stays
+  // Accepted: two 0x361 and no 0x35c.
+  let #(_, thrown) =
+    connection_support.at(
+      state: seeing_a_slaver_shack_holding_the_grenade(),
+      ms: 0,
+      event: OwnEvent(step.Read(grenade_thrown())),
+    )
+  assert list.map(frames(taken: thrown), fn(frame) { frame.message_id })
+    == [0x07FD, 0x07F4, 0x07FE, 0x0361, 0x0361]
+    as "opcode.0x7fd, then the go and the finish of the cast at its start, then the use counts: 0x361 for each of the two objectives it counts"
+  assert list.drop(as_pairs(frames: frames(taken: thrown)), 3)
+    == [
+      progress_frame(quest: 4743, index: 0, progress: 1),
+      progress_frame(quest: 4743, index: 1, progress: 1),
+    ]
+    as "opcode.0x361: objective 0 of quest 4743 (QuestObjective 6553) is at 1 of 3, and objective 1 (QuestObjective 7616) at 1 of 1"
 }
