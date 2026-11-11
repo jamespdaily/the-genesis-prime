@@ -78,8 +78,9 @@ pub type Column {
 pub type Creature {
   Creature(
     columns: List(Column),
-    /// Creature2.activateSpellCastTime: the cast time of an activate cast, whatever
-    /// the spell's own is.
+    /// Creature2.activateSpellCastTime: the cast time of an activate cast of a spell among
+    /// the creature's columns when it is not 0; any other spell casts with its own
+    /// (`0x1407a1680`, `0x14054e340`; see `cast_time_for`).
     cast_time_ms: Int,
     /// Creature2.activateSpellMinRange and activateSpellMaxRange.
     min_range: Float,
@@ -200,9 +201,10 @@ pub fn passes_cast_group(
   }
 }
 
-/// An Activate effect of a spell: its row and the delay the go lists it with.
+/// An Activate effect of a spell: its row, the delay the go lists it with and the phases
+/// it is listed in (Spell4Effects.phaseFlags: bit n is phase n, every bit for -1).
 pub type ActivateEffect {
-  ActivateEffect(effect_id: Spell4EffectsId, delay_ms: Int)
+  ActivateEffect(effect_id: Spell4EffectsId, delay_ms: Int, phase_flags: Int)
 }
 
 /// The limits of a spell cast at a unit from its Spell4 row (targetMinRange,
@@ -561,6 +563,7 @@ fn activate_rows_of(
           ActivateEffect(
             effect_id: Spell4EffectsId(effect.id),
             delay_ms: effect.delay_time,
+            phase_flags: effect.phase_flags,
           )
         }),
         dropped_signals: list.map(signals, fn(effect) {
@@ -657,6 +660,25 @@ pub type Range {
   TooHigh
 }
 
+/// Whether `spell4_id` is one of the creature's four activate columns.
+fn among_columns(
+  creature creature: Creature,
+  spell4_id spell4_id: Int,
+) -> Bool {
+  list.any(creature.columns, fn(column) { column.spell4_id == spell4_id })
+}
+
+/// The creature's own cast time for an activate cast of `spell4_id`: its
+/// `activateSpellCastTime` for a spell among its columns, 0 (the spell's own castTime)
+/// for any other, such as the default spell (`0x1407a1680`, `0x14054e340`).
+pub fn cast_time_for(
+  creature creature: Creature,
+  spell4_id spell4_id: Int,
+) -> Int {
+  use <- bool.guard(when: !among_columns(creature:, spell4_id:), return: 0)
+  creature.cast_time_ms
+}
+
 /// The limits the cast of `spell4_id` at the creature is held to: the creature's own for
 /// a spell among its columns, the spell's for any other (`0x1403ad860`, `0x1403ad8f0`).
 pub fn limits_for(
@@ -664,12 +686,7 @@ pub fn limits_for(
   spell4_id spell4_id: Int,
   spell spell: Limits,
 ) -> Limits {
-  use <- bool.guard(
-    when: !list.any(creature.columns, fn(column) {
-      column.spell4_id == spell4_id
-    }),
-    return: spell,
-  )
+  use <- bool.guard(when: !among_columns(creature:, spell4_id:), return: spell)
   Limits(
     min: creature.min_range,
     max: case creature.max_range == 0.0 {
