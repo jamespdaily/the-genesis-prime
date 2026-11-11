@@ -6586,13 +6586,15 @@ pub fn a_bot_accepts_uses_and_turns_in_a_northern_wilds_quest_takes_up_another_a
     == [QuestState(quest_id: 3480, state: 1, objective_id: 0)]
     as "opcode.0x35c: quest 3480 is Accepted, its exclusion 3479 not held"
   // 7: uses Creature2 11070 once, of the three objective 4470 asks for.
-  let #(_, have) =
+  let #(pressed_once, have) =
     quest_bot.activate(
       game:,
       have:,
       client_cast_id: 5,
       unit_id: attacker.unit_id,
     )
+  assert list.length(pressed_once.confirmed) == 1
+    as "opcode.0x7fd: the press at 11070 is confirmed (the server refuses it with result 100 while an entity_type 0 creature is a Fighter: #334)"
   driven_time.advance(time:, ms: 2000)
   let #(once, have) = quest_bot.went(game:, have:)
   assert once.progress
