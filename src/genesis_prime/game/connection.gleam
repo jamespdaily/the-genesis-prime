@@ -583,6 +583,7 @@ fn routed(
     | Ok(routing.Activation)
     | Ok(routing.Shortcut)
     | Ok(routing.UnitActivation)
+    | Ok(routing.ItemUse)
     | Ok(routing.Life(..))
     | Ok(routing.Innate(..))
     | Ok(routing.Interaction(..))
@@ -741,6 +742,13 @@ fn world_carried(
                   )
                 Ok(routing.UnitActivation) ->
                   connection_casting.activate_unit_message(
+                    session:,
+                    now:,
+                    entered:,
+                    inner: whole,
+                  )
+                Ok(routing.ItemUse) ->
+                  connection_casting.item_use_message(
                     session:,
                     now:,
                     entered:,
