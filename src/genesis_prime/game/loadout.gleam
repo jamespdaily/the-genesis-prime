@@ -151,6 +151,8 @@ type LoadoutError {
   NoHighestLevel
   /// CreatureLevel has no row for a level a character can have.
   NoCreatureLevel(level: Int)
+  /// No level is the experience a CharacterCreation row starts with.
+  NoLevelForExperience(creation_id: Int, experience: Int)
   /// A row a player can make has no Novice set for its class and faction.
   NoNoviceSet(creation_id: Int, class_id: Int, faction_id: Int)
   /// A Novice set holds no weapon.
@@ -176,6 +178,12 @@ fn describe(error error: LoadoutError) -> String {
     NoHighestLevel -> "the table GameFormula has no row 145"
     NoCreatureLevel(level:) ->
       "the table CreatureLevel has no row " <> int.to_string(level)
+    NoLevelForExperience(creation_id:, experience:) ->
+      "no level is the experience "
+      <> int.to_string(experience)
+      <> ", which CharacterCreation row "
+      <> int.to_string(creation_id)
+      <> " starts with"
     NoNoviceSet(creation_id:, class_id:, faction_id:) ->
       "the table CharacterCreation has no PreTutorial row for class "
       <> int.to_string(class_id)
@@ -270,9 +278,16 @@ fn build_set(
   innate held: Option(Innate),
 ) -> Result(Loadout, LoadoutError) {
   let items = items_of(row:)
+  use level <- result.try(
+    level.for_experience(tables:, experience: row.xp)
+    |> result.replace_error(NoLevelForExperience(
+      creation_id: row.id,
+      experience: row.xp,
+    )),
+  )
   use read <- result.try(
     list.try_map(items, fn(item) {
-      item_property.of_item(tables:, item2_id: item, random_stats: 0)
+      item_property.of_item(tables:, item2_id: item, random_stats: 0, level:)
       |> result.map(fn(properties) { #(item, properties) })
     })
     |> result.map_error(ItemFailed),

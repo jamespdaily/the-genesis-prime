@@ -208,12 +208,12 @@ pub fn regeared(
   moved moved: List(Effect(ConnectionEffect(client_connection.Request))),
 ) -> client_connection.Handled(Session) {
   let tables = session.settings.tables
-  let worn = gear.of_items(tables:, items: entered.items)
+  let level = connection_state.level_of(entered:)
+  let worn = gear.of_items(tables:, items: entered.items, level:)
   use <- bool.guard(
     when: worn == entered.gear,
     return: Continue(session, moved),
   )
-  let level = connection_state.level_of(entered:)
   case gear.bases(tables:, gear: worn, level:) {
     Error(error) ->
       lost(session:, now:, holder:, entered:, text: gear.describe(error:))

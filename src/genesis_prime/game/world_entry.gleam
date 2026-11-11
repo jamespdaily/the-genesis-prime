@@ -696,7 +696,7 @@ pub fn joined(
     ) -> {
       case answer {
         map.Joined(unit:, loadout:, incarnation:, clock_origin_ms:) -> {
-          let worn = gear.of_items(tables:, items:)
+          let worn = gear.of_items(tables:, items:, level: character.level)
           use bases <- with_bases(tables:, worn:, level: character.level)
           let assert Ok(max_health) =
             gear.max_health(tables:, gear: worn, level: character.level)
@@ -862,7 +862,7 @@ fn entering_health(
 ) -> Option(prerequisite.Vital) {
   gear.max_health(
     tables:,
-    gear: gear.of_items(tables:, items:),
+    gear: gear.of_items(tables:, items:, level: character.level),
     level: character.level,
   )
   |> result.map(fn(max_health) {

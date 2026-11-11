@@ -20,9 +20,8 @@ import game_connection_support
 import genesis_prime/game/item_property.{type ItemProperties, ItemProperties}
 import genesis_prime/message/float32
 import genesis_prime/table/game_formula
-import genesis_prime/table/id.{GameFormulaId, ItemStatId, UnitProperty2Id}
+import genesis_prime/table/id.{GameFormulaId, UnitProperty2Id}
 import genesis_prime/table/item2
-import genesis_prime/table/item_stat
 import genesis_prime/table/loader/store as table_store
 import gleam/dict
 import gleam/float
@@ -155,7 +154,7 @@ fn given_with(
   random_stats random_stats: Int,
 ) -> ItemProperties {
   let assert Ok(properties) =
-    item_property.of_item(tables:, item2_id:, random_stats:)
+    item_property.of_item(tables:, level: 1, item2_id:, random_stats:)
     as "the item's rows are in the tables and the reader follows its branches"
   properties
 }
@@ -344,7 +343,7 @@ pub fn a_shield_property_on_an_item_that_is_no_shield_is_refused_test() -> Nil {
   use tables <- fixture_tables.changed(table: "ItemStat", id: 4, with: [
     #("itemStatData00", Integer(41)),
   ])
-  assert item_property.of_item(tables:, item2_id:, random_stats: 0)
+  assert item_property.of_item(tables:, level: 1, item2_id:, random_stats: 0)
     == Error(item_property.Refused(
       item2_id:,
       property_id: 41,
@@ -363,7 +362,7 @@ pub fn a_property_without_flag_4_or_off_the_items_slot_is_refused_test() -> Nil 
     use tables <- fixture_tables.changed(table: "ItemStat", id: 4, with: [
       #("itemStatData00", Integer(30)),
     ])
-    item_property.of_item(tables:, item2_id:, random_stats: 0)
+    item_property.of_item(tables:, level: 1, item2_id:, random_stats: 0)
   }
   assert without_flag
     == Error(item_property.Refused(
@@ -375,7 +374,7 @@ pub fn a_property_without_flag_4_or_off_the_items_slot_is_refused_test() -> Nil 
   use tables <- fixture_tables.changed(table: "UnitProperty2", id: 34, with: [
     #("equippedSlotFlags", Integer(1)),
   ])
-  assert item_property.of_item(tables:, item2_id:, random_stats: 0)
+  assert item_property.of_item(tables:, level: 1, item2_id:, random_stats: 0)
     == Error(item_property.Refused(
       item2_id:,
       property_id: 34,
@@ -394,13 +393,13 @@ pub fn a_budget_id_or_a_stat_id_of_0_while_the_other_is_set_is_refused_test() ->
   use tables <- fixture_tables.changed(table: "Item2", id: item2_id, with: [
     #("itemBudgetId", Integer(0)),
   ])
-  assert item_property.of_item(tables:, item2_id:, random_stats: 0)
+  assert item_property.of_item(tables:, level: 1, item2_id:, random_stats: 0)
     == Error(item_property.NoRow(table: "ItemBudget", id: 0))
     as "0x14040ca70: a stat with no budget row is refused"
   use tables <- fixture_tables.changed(table: "Item2", id: item2_id, with: [
     #("itemStatId", Integer(0)),
   ])
-  assert item_property.of_item(tables:, item2_id:, random_stats: 0)
+  assert item_property.of_item(tables:, level: 1, item2_id:, random_stats: 0)
     == Error(item_property.NoRow(table: "ItemStat", id: 0))
     as "0x14040ca70: a budget with no stat row is refused"
   let assert Ok(rows) =
@@ -436,7 +435,7 @@ pub fn a_resource_maximum_is_one_of_the_clients_slot_properties_whatever_its_nam
       #("itemStatData00", Integer(12)),
     ])
   use tables <- fixture_tables.on_rows(rows:, reaching: [])
-  assert item_property.of_item(tables:, item2_id:, random_stats: 0)
+  assert item_property.of_item(tables:, level: 1, item2_id:, random_stats: 0)
     == Error(item_property.Unread(item2_id:, gap: item_property.ResourceMaximum))
     as "UnitProperty2 12 is slot 3's maximum by the client's map"
   assert !list.contains(
@@ -493,7 +492,8 @@ pub fn a_resource_maximum_from_a_budget_is_unread_with_its_reason_test() -> Nil 
   use tables <- fixture_tables.changed(table: "ItemStat", id: 4, with: [
     #("itemStatData00", Integer(12)),
   ])
-  let result = item_property.of_item(tables:, item2_id:, random_stats: 0)
+  let result =
+    item_property.of_item(tables:, level: 1, item2_id:, random_stats: 0)
   assert result
     == Error(item_property.Unread(item2_id:, gap: item_property.ResourceMaximum))
     as "UnitProperty2 12 is a ResourceMax property"
@@ -504,151 +504,284 @@ pub fn a_resource_maximum_from_a_budget_is_unread_with_its_reason_test() -> Nil 
     as "no open issue closes it: the class resource sets that base by design"
 }
 
-/// An item the code does not read is `Unread` with its own reason, which names the open issue
-/// that closes it. One client row of each: Item2 13394 (flags bit 3, level-scaled,
-/// 0x14040f710), 5312 (flags 0x8000, PvP), 12654 (itemImbuementId 3, imbued), 447 (an
-/// armor item of power level 52, from GameFormula 1286's 50 on) and 80982 (family 33, a
-/// rune).
-pub fn level_scaled_pvp_imbued_and_late_armor_curve_items_stay_unread_test() -> Nil {
+/// What an item gives for a wearer of `level`.
+fn given_at(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+  level level: Int,
+) -> ItemProperties {
+  let assert Ok(properties) =
+    item_property.of_item(tables:, level:, item2_id:, random_stats: 0)
+    as "the item's rows are in the tables and the reader follows its branches"
+  properties
+}
+
+/// Item2 29495 is an armor item of power level 49 with no budget, below GameFormula
+/// 1286's dataint0, 50: its armor is the 20 per level of the first curve (GameFormula 547)
+/// times the category's and the slot's armor modifiers (0x14041deb0): 49 x 20 x 0.9375 =
+/// 918.75 (0x4465b000), the client's code run on this row.
+pub fn armor_below_level_50_is_20_per_level_times_the_modifiers_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let item = given(tables:, item2_id: fixture_tables.root("Item2", 29_495))
+  assert float32.to_bits(item.armor) == 0x4465b000
+    as "0x14041deb0: Armor 918.75 below power level 50"
+}
+
+/// Item2 16078 is an armor item of power level 78: from level 50 the armor follows
+/// GameFormula 1286 (f0 1000, f02 6.8, from power level 50), every step rounded to 32 bits
+/// (0x14041deb0), times the armor modifiers. The expected bits come from the client's code
+/// run on the row.
+pub fn armor_from_level_50_follows_row_1286_in_single_precision_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let item = given(tables:, item2_id: fixture_tables.root("Item2", 16_078))
+  assert float32.to_bits(item.armor) == 0x4494cccd
+    as "0x14041deb0: Armor at power level 78 from GameFormula 1286"
+}
+
+/// Item2 1700 is an armor item of power level 52 whose armor modifier is 0.75: the curve is
+/// 1000 + 6.8 x 2 = 1013.6 in 32 bits, and the 32-bit product with 0.75 is
+/// 760.199951171875 (0x443e0ccc). The product in double precision, 760.2, rounds to
+/// 0x443e0ccd, one unit above the client's.
+pub fn armor_band_two_rounds_each_step_to_32_bits_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let item = given(tables:, item2_id: fixture_tables.root("Item2", 1700))
+  assert float32.to_bits(item.armor) == 0x443e0ccc
+    as "0x14041deb0: each step of the armor is a 32-bit float, so it is 760.1999511..., not 760.2"
+}
+
+/// Item2 69826 is an armor item of power level 120, where GameFormula 1287 takes over from
+/// 1286 (its dataint0 is 120): 2306.25 (0x45102400).
+pub fn armor_from_level_120_follows_row_1287_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let item = given(tables:, item2_id: fixture_tables.root("Item2", 69_826))
+  assert float32.to_bits(item.armor) == 0x45102400
+    as "0x14041deb0: Armor at power level 120 from GameFormula 1287"
+}
+
+/// A rune (Item2Family 33) takes its budget scale from the rune curve, GameFormula 991
+/// below power level 50, 65 from 50 and 253 from 130 (0x14041f1b0), and its slot modifier
+/// is 1. Item2 78256 (power level 20) gives property 34 as 110.0 (0x42dc0000), 78320
+/// (power level 80) as 269.97174 (0x4386fc62): the client's code run on the rows.
+pub fn a_rune_reads_its_budget_on_the_rune_curve_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let low = given(tables:, item2_id: fixture_tables.root("Item2", 78_256))
+  assert bits(properties: low, property_id: 34) == Ok(0x42dc0000)
+    as "0x14041f1b0: property 34 at the rune curve of power level 20"
+  let high = given(tables:, item2_id: fixture_tables.root("Item2", 78_320))
+  assert bits(properties: high, property_id: 34) == Ok(0x4386fc62)
+    as "0x14041f1b0: property 34 at the rune curve of power level 80"
+}
+
+/// A rune has no armor item slot, so it gives no ratings, no armor and no Base Health
+/// whatever its budget holds: only the budget property.
+pub fn a_rune_gives_no_ratings_armor_or_health_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let rune = given(tables:, item2_id: fixture_tables.root("Item2", 78_256))
+  assert rune.base_health == 0.0 as "no Base Health (property 7)"
+  assert rune.assault_rating == 0.0 as "no Assault Rating (property 35)"
+  assert rune.support_rating == 0.0 as "no Support Rating (property 36)"
+  assert rune.armor == 0.0 as "no Armor (property 42)"
+  assert budget_ids(properties: rune) == [34]
+    as "the one property the rune's budget gives"
+}
+
+/// Item2 15052 is a weapon whose itemImbuementId is 106: the client takes an item's
+/// imbuement count from the item sent, which is null for every item the server sends, so
+/// no imbuement reward applies and the item gives what it gives unimbued.
+pub fn an_imbued_item_gives_its_unimbued_properties_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let weapon = given(tables:, item2_id: fixture_tables.root("Item2", 15_052))
+  assert float32.to_bits(weapon.assault_rating) == 0x44fa9800
+    as "Assault Rating 2004.75, the weapon's own"
+  assert float32.to_bits(weapon.support_rating) == 0x44271000
+    as "Support Rating 668.25, the weapon's own"
+  assert list.filter([32, 25, 57], fn(property_id) {
+      bits(properties: weapon, property_id:) != Error(Nil)
+    })
+    == []
+    as "the properties the imbuement would reward are not given"
+}
+
+/// Item2 13394 is a level-scaled (flags bit 3) light armor of power level 1: every curve
+/// reads the wearer's level in place of the power level (0x14040f710). The expected bits
+/// come from the client's code run on the row with the level in both scaling words.
+pub fn a_level_scaled_item_reads_every_curve_at_the_wearers_level_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let item2_id = fixture_tables.root("Item2", 13_394)
+  let at = fn(level) {
+    let item = given_at(tables:, item2_id:, level:)
+    #(
+      bits(properties: item, property_id: 32),
+      float32.to_bits(item.assault_rating),
+      float32.to_bits(item.armor),
+      float32.to_bits(item.base_health),
+    )
+  }
+  assert at(1) == #(Ok(0x42c44000), 0x40900000, 0x41960000, 0x42960000)
+    as "level 1: 98.125, 4.5, 18.75 and 75.0"
+  assert at(10) == #(Ok(0x43098000), 0x42340000, 0x433b8000, 0x443b8000)
+    as "level 10: 137.5, 45.0, 187.5 and 750.0"
+  assert at(50) == #(Ok(0x439c4000), 0x43610000, 0x446a6000, 0x456a6000)
+    as "level 50: 312.5, 225.0, 937.5 and 3750.0"
+}
+
+/// Item2 13411 is a level-scaled weapon and 13410 a level-scaled shield, each of power
+/// level 1: the ratings and the shield's capacity follow the wearer's level.
+pub fn a_level_scaled_weapon_and_shield_read_their_curves_at_the_wearers_level_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let weapon = fixture_tables.root("Item2", 13_411)
+  let weapon_at = fn(level) {
+    let item = given_at(tables:, item2_id: weapon, level:)
+    #(
+      bits(properties: item, property_id: 47),
+      float32.to_bits(item.assault_rating),
+      float32.to_bits(item.support_rating),
+    )
+  }
+  assert weapon_at(10) == #(Ok(0x42a50000), 0x4450d400, 0x438b3800)
+    as "level 10: 82.5, 835.3125 and 278.4375"
+  assert weapon_at(50) == #(Ok(0x433b8000), 0x45828480, 0x44ae0600)
+    as "level 50: 187.5, 4176.5625 and 1392.1875"
+  let shield = fixture_tables.root("Item2", 13_410)
+  let shield_at = fn(level) {
+    let assert Some(item_property.Shield(
+      capacity_max:,
+      mitigation_max:,
+      regen_percent:,
+      reboot_time_ms:,
+    )) = given_at(tables:, item2_id: shield, level:).shield
+      as "the item is a shield"
+    #(
+      float32.to_bits(capacity_max),
+      float32.to_bits(mitigation_max),
+      float32.to_bits(regen_percent),
+      reboot_time_ms,
+    )
+  }
+  assert shield_at(10) == #(0x44d2f000, 0x3f200000, 0x3e4ccccd, 2687)
+    as "level 10: capacity 1687.5, mitigation 0.625, regeneration 0.2, reboot 2687"
+  assert shield_at(50) == #(0x4603d600, 0x3f200000, 0x3e4ccccd, 2687)
+    as "level 50: capacity 8437.5, the rest the same"
+}
+
+/// An item without flags bit 3 reads its own power level: Item2 29495 gives the same at
+/// the wearer's level 1 and 50.
+pub fn an_item_that_does_not_scale_ignores_the_wearers_level_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let item2_id = fixture_tables.root("Item2", 29_495)
+  assert given_at(tables:, item2_id:, level: 1)
+    == given_at(tables:, item2_id:, level: 50)
+    as "no flags bit 3, so no curve reads the level"
+}
+
+/// A PvP rune (flags 0x8000, Item2 83331) and a proxy rune (flags 0x4000, Item2 29213)
+/// keep their own gaps: the rune's budget does not answer them.
+pub fn a_pvp_or_proxy_rune_is_still_refused_with_its_gap_test() -> Nil {
   use <- owned_test.run(10_000)
   let tables = fixture_tables.shared()
   let gap_of = fn(item2_id) {
     let item2_id = fixture_tables.root("Item2", item2_id)
-    case item_property.of_item(tables:, item2_id:, random_stats: 0) {
+    case item_property.of_item(tables:, level: 1, item2_id:, random_stats: 0) {
       Error(item_property.Unread(item2_id: unread, gap:))
         if unread == item2_id
       -> Ok(gap)
       _ -> Error(Nil)
     }
   }
-  assert gap_of(13_394) == Ok(item_property.LevelScaled)
-    as "0x14040f710: flags bit 3 scales the power level with the wearer"
-  assert gap_of(5312) == Ok(item_property.PvpItem) as "flags 0x8000 is PvP"
-  assert gap_of(12_654) == Ok(item_property.Imbued)
-    as "0x1404445d0: itemImbuementId 3"
-  assert gap_of(447) == Ok(item_property.LateArmorCurve)
-    as "0x14041deb0: armor at power level 52 takes GameFormula 1286's curve"
-  assert gap_of(80_982) == Ok(item_property.Rune)
-    as "0x14041f1b0: Item2Family 33's budget curve is another"
-  assert list.map(
-      [
-        item_property.LevelScaled,
-        item_property.PvpItem,
-        item_property.Imbued,
-        item_property.LateArmorCurve,
-        item_property.Rune,
-      ],
-      fn(gap) { item_property.gap_issue(gap:) },
-    )
-    == [Some(666), Some(56), Some(666), Some(666), Some(666)]
-    as "level-scaled, imbued, late armor and rune items are open issue 666, PvP 56"
+  assert gap_of(83_331) == Ok(item_property.PvpItem)
+    as "flags 0x8000 is PvP, which issue 56 closes"
+  assert gap_of(29_213) == Ok(item_property.ProxyItem)
+    as "flags 0x4000 is a proxy, which issue 333 closes"
+  assert item_property.gap_issue(gap: item_property.PvpItem) == Some(56)
+  assert item_property.gap_issue(gap: item_property.ProxyItem) == Some(333)
 }
 
-/// Every wearable client row is given, or is `Unread` for one of the reasons its own columns
-/// hold. The reasons are worked out here from Item2's columns, not from the reader:
-/// flags bit 3, flags 0x8000, itemImbuementId not 0, Item2Family 33, and an armor
-/// item that is no shield with a power level from GameFormula 1286's dataint0. The
-/// counts are the coverage measure of this step: 46,842 wearable rows (an Item2 row with
-/// flags 0x4000 is a proxy, and one whose type has no ItemSlot row is not wearable),
-/// 12,278 given with nothing random, 22,182 given with their random entries empty,
-/// 12,382 unread.
-pub fn every_client_wearable_row_is_given_or_unread_with_a_named_reason_test() -> Nil {
+/// Every wearable client row of the four kinds this step reads (flags bit 3, an
+/// imbuement, Item2Family 33, and an armor item that is no shield with a power level from
+/// GameFormula 1286's dataint0) is given at a wearer's level of 1 and of 50, or is unread
+/// only for another gap: flags 0x8000 is PvP, and the others are the budget's own (an
+/// ItemStat kind, a support beyond its range, a resource maximum). A row is counted in its
+/// kinds from its own columns, not from the reader.
+pub fn every_client_item_of_the_four_kinds_is_read_or_refused_only_for_another_gap_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let assert Ok(late) = game_formula.get(tables:, id: GameFormulaId(1286))
     as "the client's GameFormula holds row 1286"
-  let wearable =
+  let of_the_four_kinds =
     list.filter(item2.all(tables), fn(item) {
-      item_property.equipped_slot_flags(tables:, item2_id: item.id)
-      |> result.map(fn(slot_flags) {
-        !item_property.is_proxy(item) && slot_flags != 0
-      })
-      |> result.unwrap(False)
-    })
-  let reasons = fn(item: item2.Item2) {
-    let assert Ok(slotted) =
-      item_property.is_slotted(tables:, item2_id: item.id)
-      as "every Item2 row has its type, category and family rows"
-    let assert Ok(slot_flags) =
-      item_property.equipped_slot_flags(tables:, item2_id: item.id)
-      as "every Item2 row has its type, category, family and slot rows"
-    let is_shield = slotted && int.bitwise_and(slot_flags, 0x8000) != 0
-    [
-      #(int.bitwise_and(item.flags, 8) != 0, item_property.LevelScaled),
-      #(int.bitwise_and(item.flags, 0x8000) != 0, item_property.PvpItem),
-      #(item.item_imbuement_id != 0, item_property.Imbued),
-      #(item.item2_family_id == 33, item_property.Rune),
-      #(
-        item.item2_family_id == 1
+      let slot_flags =
+        item_property.equipped_slot_flags(tables:, item2_id: item.id)
+        |> result.unwrap(0)
+      let is_shield = int.bitwise_and(slot_flags, 0x8000) != 0
+      !item_property.is_proxy(item)
+      && slot_flags != 0
+      && {
+        int.bitwise_and(item.flags, 8) != 0
+        || item.item_imbuement_id != 0
+        || item.item2_family_id == 33
+        || {
+          item.item2_family_id == 1
           && item.power_level >= late.dataint0
-          && !is_shield,
-        item_property.LateArmorCurve,
-      ),
-    ]
-    |> list.filter_map(fn(reason) {
-      case reason.0 {
-        True -> Ok(reason.1)
-        False -> Error(Nil)
+          && !is_shield
+        }
       }
     })
+  let counts = fn(level) {
+    let outcomes =
+      list.map(of_the_four_kinds, fn(item) {
+        item_property.of_item(
+          tables:,
+          level:,
+          item2_id: item.id,
+          random_stats: 0,
+        )
+      })
+    let given = list.count(outcomes, result.is_ok)
+    let pvp =
+      list.count(outcomes, fn(outcome) {
+        case outcome {
+          Error(item_property.Unread(gap: item_property.PvpItem, ..)) -> True
+          _ -> False
+        }
+      })
+    let budget_gaps =
+      list.count(outcomes, fn(outcome) {
+        case outcome {
+          Error(item_property.Unread(gap: item_property.StatKind(..), ..))
+          | Error(item_property.Unread(
+              gap: item_property.SupportBeyondRange,
+              ..,
+            ))
+          | Error(item_property.Unread(gap: item_property.ResourceMaximum, ..)) ->
+            True
+          _ -> False
+        }
+      })
+    #(list.length(outcomes), given, pvp, budget_gaps)
   }
-  let has_random_entry = fn(item: item2.Item2) {
-    item_stat.get(tables:, id: ItemStatId(item.item_stat_id))
-    |> result.map(fn(stat) {
-      list.any(
-        [
-          stat.item_stat_type_enum00,
-          stat.item_stat_type_enum01,
-          stat.item_stat_type_enum02,
-          stat.item_stat_type_enum03,
-          stat.item_stat_type_enum04,
-        ],
-        fn(kind) { kind == 2 || kind == 4 },
-      )
+  let pvp_rows =
+    list.count(of_the_four_kinds, fn(item) {
+      int.bitwise_and(item.flags, 0x8000) != 0
     })
-    |> result.unwrap(False)
-  }
-  let outcomes =
-    list.map(wearable, fn(item) {
-      #(
-        item,
-        item_property.of_item(tables:, item2_id: item.id, random_stats: 0),
-      )
-    })
-  assert list.filter(outcomes, fn(outcome) {
-      let #(item, result) = outcome
-      case result {
-        Ok(_) -> reasons(item) != []
-        Error(item_property.Unread(gap:, ..)) ->
-          !list.contains(reasons(item), gap)
-        Error(item_property.NoRow(..))
-        | Error(item_property.Refused(..))
-        | Error(item_property.NoCurveValue(..))
-        | Error(item_property.RandomStatsRefused(..))
-        | Error(item_property.TwoShields) -> True
-      }
-    })
-    == []
-    as "every row is given, or unread for one of its own reasons, and none is refused"
-  let given_rows =
-    list.filter_map(outcomes, fn(outcome) {
-      case outcome.1 {
-        Ok(_) -> Ok(outcome.0)
-        Error(_) -> Error(Nil)
-      }
-    })
-  assert list.length(wearable) == 46_842
-    as "the client holds 46,842 wearable rows that are no proxy"
-  assert list.length(
-      list.filter(given_rows, fn(item) { !has_random_entry(item) }),
-    )
-    == 12_278
-    as "12,278 rows are given with every entry read"
-  assert list.length(list.filter(given_rows, has_random_entry)) == 22_182
-    as "22,182 rows are given with their random entries empty"
-  assert list.length(wearable) - list.length(given_rows) == 12_382
-    as "12,382 rows are unread"
+  let #(total, given, pvp, budget_gaps) = counts(1)
+  assert total == given + pvp + budget_gaps
+    as "every row is given or unread for another gap: none is refused, and none is unread for a gap this step closed"
+  assert pvp == pvp_rows as "the PvP rows are exactly the flags 0x8000 rows"
+  assert counts(50) == #(total, given, pvp, budget_gaps)
+    as "the wearer's level changes no row's outcome kind"
+  assert #(total, given, pvp, budget_gaps) == #(9802, 7883, 1917, 2)
+    as "the counts of the four kinds: wearable rows, given, PvP, and the budget's own gaps"
 }
 
 /// The load fails when a row the budget reads is missing, naming it: the ItemBudget row of an
@@ -698,7 +831,7 @@ fn rolled(
   random_stats random_stats: Int,
 ) -> ItemProperties {
   let assert Ok(properties) =
-    item_property.of_item(tables:, item2_id:, random_stats:)
+    item_property.of_item(tables:, level: 1, item2_id:, random_stats:)
     as "the item's rows are in the tables and the word is one the client accepts"
   properties
 }
@@ -838,7 +971,7 @@ pub fn a_word_with_data_and_a_bad_byte_is_refused_whole_test() -> Nil {
   let bracer = fixture_tables.root("Item2", 48_169)
   let shield = fixture_tables.root("Item2", 48_170)
   let refused = fn(item2_id, random_stats) {
-    item_property.of_item(tables:, item2_id:, random_stats:)
+    item_property.of_item(tables:, level: 1, item2_id:, random_stats:)
   }
   assert refused(bracer, 0x0100000000010106)
     == Error(item_property.RandomStatsRefused(

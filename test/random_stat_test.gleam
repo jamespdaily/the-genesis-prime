@@ -147,6 +147,7 @@ pub fn a_rolled_word_is_one_the_client_accepts_test() -> Nil {
       as "a rolled word holds data, so the client reads it"
     assert result.is_ok(item_property.of_item(
       tables:,
+      level: 1,
       item2_id:,
       random_stats: word,
     ))
@@ -261,8 +262,18 @@ pub fn every_client_random_stat_row_rolls_to_a_word_the_client_accepts_or_none_w
       #(
         item.id,
         word,
-        item_property.of_item(tables:, item2_id: item.id, random_stats: word),
-        item_property.of_item(tables:, item2_id: item.id, random_stats: 0),
+        item_property.of_item(
+          tables:,
+          level: 1,
+          item2_id: item.id,
+          random_stats: word,
+        ),
+        item_property.of_item(
+          tables:,
+          level: 1,
+          item2_id: item.id,
+          random_stats: 0,
+        ),
       )
     })
   let unrolled =

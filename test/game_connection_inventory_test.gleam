@@ -396,7 +396,7 @@ pub fn an_equip_is_checked_against_the_entered_character_test() -> Nil {
       outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
     )
   let worn_chest =
-    gear.of_items(tables: fixture_tables.shared(), items: [
+    gear.of_items(tables: fixture_tables.shared(), level: 3, items: [
       HeldItem(
         item_guid: 9,
         item2_id: Item2Id(level_3_chest),
@@ -748,4 +748,56 @@ fn boots_unequipped() -> BitArray {
     from: item_place.ItemPlace(location: 0, bag_index: 4),
     to: item_place.ItemPlace(location: 1, bag_index: 1),
   )
+}
+
+/// Item2 27106 is a level-scaled heavy armor chest (flags bit 3, Item2Category 3 as the
+/// Engineer's own chest) whose power level is 1: a level 5 player (4320 experience,
+/// XpPerLevel.minXpForLevel) with the Novice set but no chest, holding it in inventory
+/// slot 0, equips it, and the 0x93a gives its properties at level 5, not at its power level:
+/// Base Health CreatureLevel row 5's 735.861 with the set's 450 and the armor's 375,
+/// rounded: 1561; property 34 is 115.625; the Assault Rating 22.5 over the set's 194.0625
+/// and the Armor 156.25 over its 187.5 (the client's code run on the row at level 5).
+pub fn equipping_a_level_scaled_item_gives_it_at_the_players_level_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let character =
+    store.Character(..game_connection_support.world_character(), level: 5)
+  let worn =
+    list.filter(world_entry_support.novice_items(character:), fn(item) {
+      item.bag_index != 0
+    })
+  let state =
+    game_connection_support.entered_with_items(
+      character:,
+      saved_experience: Some(4320),
+      items: list.append(worn, [
+        HeldItem(
+          item_guid: 9,
+          item2_id: Item2Id(fixture_tables.root(table: "Item2", id: 27_106)),
+          location: 1,
+          bag_index: 0,
+          stack_count: 1,
+          random_stats: 0,
+        ),
+      ]),
+    )
+  let #(state, taken) = game_connection_support.read(state, chest_equipped())
+  let #(_, answered) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
+    )
+  assert game_connection_support.written_ids(answered)
+    == [0x0569, 0x0933, 0x093A]
+    as "the move's frame, the look with the chest shown, and the properties the chest gives"
+  assert properties_written(taken: answered)
+    == [
+      [
+        game_connection_support.property(id: 7, number: 1561.0),
+        game_connection_support.property(id: 34, number: 115.625),
+        game_connection_support.property(id: 35, number: 216.5625),
+        game_connection_support.property(id: 42, number: 343.75),
+      ],
+    ]
+    as "the chest's properties at level 5, over the worn Novice set without a chest"
 }

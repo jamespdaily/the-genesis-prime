@@ -30,8 +30,17 @@
 ////   the middle of its range because the item has no budget (0x14040dbf0).
 //// - **A curve** is `f0 x e^(f01 x m) + f02 x m^f03` of the GameFormula row at
 ////   `m = power level - dataint0` (0x14041da70, 0x14041dc90, 0x14041e450). The
-////   armor curve is GameFormula 547's below the power level GameFormula 1286
-////   names (0x14041deb0).
+////   armor curve, the budget curve and a rune's budget curve each have three
+////   rows by power level (`Bands`), in 32-bit steps (0x14041deb0, 0x14041e670,
+////   0x14041f1b0).
+//// - **The power level a curve reads** is the item's own, except for a
+////   level-scaled item (Item2.flags bit 3), which reads the wearer's level
+////   (0x14040f710): the caller gives the level and a level up gives it again.
+////   The item's displayed power level stays its Item2.powerLevel.
+//// - **An imbued item** gives its unimbued properties: the client's imbuement
+////   count is null for every item it is sent, so nothing is added.
+//// - **A rune** (Item2Family 33) has no slot, so it gives no ratings, armor or
+////   Base Health; its budget reads the rune curve with the slot modifier 1.
 //// - **A budget** is the points an item's ItemBudget shares among the entries of
 ////   its ItemStat (AddItemBudgetProperties 0x14040ca70, which runs before the
 ////   values above). Each entry of kind 1 names a UnitProperty2 and gives
@@ -45,14 +54,17 @@
 ////   factors. An entry the client refuses (a property that is no item property,
 ////   is off the item's slot, is a shield property on a non-shield) is
 ////   `Refused`.
-//// - **What the code does not read** is a `Gap`: a level-scaled item
-////   (Item2.flags bit 3), a PvP item (flags 0x8000), an imbued item, a rune, a
-////   proxy item (flags 0x4000, whose fields FillItemInfo 0x1404445d0 takes from
-////   GameFormula 1214's item), a supportPowerPercentage beyond -1 to 1, an armor
-////   curve from power level 50 up, and a budget entry on a ResourceMax property
-////   are items whose properties the client's code gives by branches this code
-////   does not follow, so such an item is an `Unread` error, with its gap, which
-////   names the open issue that closes it.
+//// - **What the code does not read** is a `Gap`: a PvP item (flags 0x8000,
+////   open issue #56), a proxy item (flags 0x4000, whose fields FillItemInfo
+////   0x1404445d0 takes from GameFormula 1214's item, open issue #333), a
+////   supportPowerPercentage beyond -1 to 1, and a budget entry on a
+////   ResourceMax property are items whose properties the client's code gives by
+////   branches this code does not follow, so such an item is an `Unread` error,
+////   with its gap, which names the open issue that closes it. Two more gaps
+////   are in what calls this code, not in an item: a mentored player's level
+////   override (open issue #338) and the World type's +30 and the match and PvP
+////   level caps (open issue #56) change the level an item reads, and the
+////   callers give the character's own level.
 //// - **A random stat entry** (kind 2) names an ItemRandomStatGroup, and the
 ////   item's random-stat word (`genesis_prime/game/random_stat_word`) says which
 ////   row of it the entry takes, in table order: that row's property is the
@@ -123,21 +135,11 @@ pub type ItemProperties {
 /// A branch of the client's code that this code does not follow, so an item that
 /// takes it is not read. Each names the open issue that closes it, or none.
 pub type Gap {
-  /// Item2.flags bit 3: the power level scales with the wearer (0x14040f710).
-  /// Open issue #666.
-  LevelScaled
   /// Item2.flags 0x8000. Open issue #56.
   PvpItem
   /// Item2.flags 0x4000: the client takes the item's fields from GameFormula
   /// 1214's item (FillItemInfo 0x1404445d0). Open issue #333.
   ProxyItem
-  /// Item2.itemImbuementId is not 0 (FillItemInfo 0x1404445d0 copies it; what it adds is not decoded). Open issue #666.
-  Imbued
-  /// Item2Family 33: the budget curve is another (0x14041f1b0). Open issue #666.
-  Rune
-  /// An armor item from the power level GameFormula 1286 names: its armor curve
-  /// is GameFormula 1286's or 1287's. Open issue #666.
-  LateArmorCurve
   /// A budget entry on a ResourceMax property. The player's class resource sets
   /// that base (`genesis_prime/game/class_resource`), so nothing is open.
   ResourceMaximum
@@ -151,7 +153,6 @@ pub type Gap {
 /// The open issue that closes a gap, `None` when none is open.
 pub fn gap_issue(gap gap: Gap) -> Option(Int) {
   case gap {
-    LevelScaled | Imbued | Rune | LateArmorCurve -> Some(666)
     PvpItem -> Some(56)
     ProxyItem -> Some(333)
     ResourceMaximum | SupportBeyondRange | StatKind(..) -> None
@@ -230,14 +231,9 @@ pub fn describe(error error: ItemPropertyError) -> String {
 
 fn why(gap gap: Gap) -> String {
   case gap {
-    LevelScaled -> "its power level scales with the wearer"
     PvpItem -> "it is a PvP item"
     ProxyItem ->
       "its flags hold 0x4000, so the client takes its fields from a proxy item"
-    Imbued -> "it is imbued"
-    Rune -> "it is a rune, whose budget curve is another"
-    LateArmorCurve ->
-      "its armor curve is GameFormula 1286's or 1287's, which are not followed"
     ResourceMaximum ->
       "its budget gives a ResourceMax property, whose base the player's class resource sets"
     SupportBeyondRange -> "its supportPowerPercentage is beyond -1 to 1"
@@ -354,12 +350,11 @@ const pvp_flag = 0x8000
 /// of GameFormula 1214 (FillItemInfo 0x1404445d0).
 const proxy_flag = 0x4000
 
-/// The Item2Family of an item the slot is never looked up for (0x14040c610): the
-/// runes, whose budget curve is another (0x14041f1b0).
-const family_without_slot = 33
+/// The Item2Family of runes: the client never looks their slot up (0x14040c610)
+/// and reads their budget on another curve (0x14041f1b0).
+const rune_family = 33
 
-/// The Item2Family of runes.
-const rune_family = family_without_slot
+const family_without_slot = rune_family
 
 /// The Item2Category of an item the slot is never looked up for (0x14040c610).
 const category_without_slot = 143
@@ -369,7 +364,7 @@ const category_without_slot = 143
 type Builder {
   Builder(
     item: item2.Item2,
-    power_level: Int,
+    curve_level: Int,
     slot_modifier: Float,
     armor_modifier: Float,
     equipped_slot_flags: Int,
@@ -499,27 +494,19 @@ pub fn is_proxy(item: item2.Item2) -> Bool {
 fn builder(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
+  level level: Int,
 ) -> Result(Builder, ItemPropertyError) {
   use builder <- result.try(slot_builder(tables:, item2_id:))
   let item = builder.item
   use <- bool.guard(
-    int.bitwise_and(item.flags, level_scaled_flag) != 0,
-    Error(Unread(item2_id:, gap: LevelScaled)),
-  )
-  use <- bool.guard(
     int.bitwise_and(item.flags, pvp_flag) != 0,
     Error(Unread(item2_id:, gap: PvpItem)),
   )
-  use <- bool.guard(
-    item.item_imbuement_id != 0,
-    Error(Unread(item2_id:, gap: Imbued)),
-  )
-  use <- bool.guard(
-    item.item2_family_id == rune_family,
-    Error(Unread(item2_id:, gap: Rune)),
-  )
   use <- bool.guard(is_proxy(item), Error(Unread(item2_id:, gap: ProxyItem)))
-  Ok(builder)
+  Ok(case int.bitwise_and(item.flags, level_scaled_flag) != 0 {
+    True -> Builder(..builder, curve_level: level)
+    False -> builder
+  })
 }
 
 /// The builder's view of the item's slot and power level, whatever its flags: only a
@@ -531,9 +518,12 @@ fn slot_builder(
   use slotting <- result.map(slotting(tables:, item2_id:))
   Builder(
     item: slotting.item,
-    power_level: slotting.item.power_level,
+    curve_level: slotting.item.power_level,
     slot_modifier: slotting.slot_modifier,
-    armor_modifier: slotting.category_armor_modifier *. slotting.slot_modifier,
+    armor_modifier: float32.product(
+      slotting.category_armor_modifier,
+      slotting.slot_modifier,
+    ),
     equipped_slot_flags: slotting.equipped_slot_flags,
     is_shield: slotting.slotted
       && int.bitwise_and(slotting.equipped_slot_flags, shield_slot_flags) != 0,
@@ -903,8 +893,9 @@ pub fn of_item(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
   random_stats random_stats: Int,
+  level level: Int,
 ) -> Result(ItemProperties, ItemPropertyError) {
-  use builder <- result.try(builder(tables:, item2_id:))
+  use builder <- result.try(builder(tables:, item2_id:, level:))
   use given <- result.try(budget(tables:, builder:, random_stats:))
   use properties <- result.map(case builder.is_shield {
     True -> shield(tables:, builder:, shares: given.shares)
@@ -1214,7 +1205,15 @@ fn scale(
   tables tables: table_store.Tables,
   builder builder: Builder,
 ) -> Result(Float, ItemPropertyError) {
-  use curve <- result.map(budget_curve(tables:, level: builder.power_level))
+  let bands = case builder.item.item2_family_id == rune_family {
+    True -> rune_budget_bands
+    False -> budget_bands
+  }
+  use curve <- result.map(banded_curve(
+    tables:,
+    bands:,
+    level: builder.curve_level,
+  ))
   float32.product(float32.product(curve, builder.slot_modifier), 1.0)
 }
 
@@ -1327,7 +1326,7 @@ fn worn(
   use base_health <- result.try(case is_armor {
     True ->
       formula(tables:, id: base_health_formula)
-      |> result.try(fn(row) { curve(row:, level: builder.power_level) })
+      |> result.try(fn(row) { curve(row:, level: builder.curve_level) })
       |> result.map(fn(curve) { curve *. builder.slot_modifier })
     False -> Ok(0.0)
   })
@@ -1344,13 +1343,10 @@ fn worn(
 /// The GameFormula row of Base Health's curve (0x14040e3d0).
 const base_health_formula = 67
 
-/// The GameFormula row of the armor curve below the power level 1286 names
+/// The GameFormula rows of the armor curve by power level: 547 below 1286's
+/// dataint0 (50), 1286 from it, 1287 from its own dataint0 (120)
 /// (0x14041deb0).
-const armor_formula = 547
-
-/// The GameFormula row of the power level from which the armor curve is another
-/// (0x14041deb0), which this code does not follow.
-const armor_curve_change_formula = 1286
+const armor_bands = Bands(early: 547, middle: 1286, late: 1287)
 
 /// The GameFormula row of a shield's capacity curve (0x14041d850).
 const shield_capacity_formula = 548
@@ -1400,35 +1396,43 @@ pub fn curve(
   )
 }
 
-/// The GameFormula rows of the budget's curve by power level: 1255 from its
-/// dataint0 (130), 1027 from its dataint0 (50), 1028 below (0x14041e670). Each is read
-/// at the level less its own dataint0.
-const budget_curve_late_formula = 1255
+/// The three GameFormula rows of a curve that changes with the power level: the
+/// late row from its dataint0, else the middle row from its dataint0, else the
+/// early row. Each is read at the level less its own dataint0.
+type Bands {
+  Bands(early: Int, middle: Int, late: Int)
+}
 
-const budget_curve_middle_formula = 1027
+/// The budget's curve: 1255 from its dataint0 (130), 1027 from its dataint0
+/// (50), 1028 below (0x14041e670).
+const budget_bands = Bands(early: 1028, middle: 1027, late: 1255)
 
-const budget_curve_early_formula = 1028
+/// A rune's budget curve: 253 from its dataint0 (130), 65 from its dataint0
+/// (50), 991 below (0x14041f1b0).
+const rune_budget_bands = Bands(early: 991, middle: 65, late: 253)
 
 /// The 32-bit float the client's curve raises to the power f01 x m: 2.7182817
 /// (0x14041e670), whose exact value is this 64-bit float.
 const single_precision_e = 2.7182817459106445
 
-/// The budget's curve at a power level (0x14041e670): `f0 x e^(f01 x m) + f02 x
-/// m^f03` of the row the level selects, at `m = level - dataint0`, with each step
-/// rounded to 32 bits as the client's single-precision arithmetic gives. The
-/// growth term is the client's powf (0x1408fbfc0) of the 32-bit e, not the
-/// exponential function: the two differ by one or two ulps at some levels, and
-/// 0x14040db30 gives the values of item 8441 at levels 75 and 129.
-fn budget_curve(
+/// A curve of three bands at a power level (0x14041e670, 0x14041f1b0,
+/// 0x14041deb0): `f0 x e^(f01 x m) + f02 x m^f03` of the row the level selects,
+/// at `m = level - dataint0`, with each step rounded to 32 bits as the client's
+/// single-precision arithmetic gives. The growth term is the client's powf
+/// (0x1408fbfc0) of the 32-bit e, not the exponential function: the two differ
+/// by one or two ulps at some levels, and 0x14040db30 gives the values of item
+/// 8441 at levels 75 and 129.
+fn banded_curve(
   tables tables: table_store.Tables,
+  bands bands: Bands,
   level level: Int,
 ) -> Result(Float, ItemPropertyError) {
-  use late <- result.try(formula(tables:, id: budget_curve_late_formula))
-  use middle <- result.try(formula(tables:, id: budget_curve_middle_formula))
+  use late <- result.try(formula(tables:, id: bands.late))
+  use middle <- result.try(formula(tables:, id: bands.middle))
   use row <- result.try(case level >= late.dataint0, level >= middle.dataint0 {
     True, _ -> Ok(late)
     False, True -> Ok(middle)
-    False, False -> formula(tables:, id: budget_curve_early_formula)
+    False, False -> formula(tables:, id: bands.early)
   })
   let offset = int.to_float(level - row.dataint0)
   let no_value = NoCurveValue(formula: row.id, level:)
@@ -1463,7 +1467,7 @@ fn ratings(
       False -> item_rating_formula
     }),
   )
-  use curve <- result.try(curve(row: curve_row, level: builder.power_level))
+  use curve <- result.try(curve(row: curve_row, level: builder.curve_level))
   use factor_row <- result.try(formula(tables:, id: rating_factor_formula))
   let value =
     builder.slot_modifier
@@ -1476,19 +1480,17 @@ fn ratings(
 }
 
 /// The Armor of an armor item (0x14040e340): the armor curve at the power level
-/// times the category's and the slot's modifiers.
+/// times the category's and the slot's modifiers, rounded to 32 bits.
 fn armor(
   tables tables: table_store.Tables,
   builder builder: Builder,
 ) -> Result(Float, ItemPropertyError) {
-  use change <- result.try(formula(tables:, id: armor_curve_change_formula))
-  use <- bool.guard(
-    builder.power_level >= change.dataint0,
-    Error(Unread(item2_id: builder.item.id, gap: LateArmorCurve)),
-  )
-  use row <- result.try(formula(tables:, id: armor_formula))
-  use curve <- result.try(curve(row:, level: builder.power_level))
-  Ok(curve *. builder.armor_modifier)
+  use curve <- result.map(banded_curve(
+    tables:,
+    bands: armor_bands,
+    level: builder.curve_level,
+  ))
+  float32.product(curve, builder.armor_modifier)
 }
 
 /// A shield item's properties (0x14040dbf0), each factor read at the share its
@@ -1505,7 +1507,7 @@ fn shield(
   use capacity_row <- result.try(formula(tables:, id: shield_capacity_formula))
   use capacity_curve <- result.try(curve(
     row: capacity_row,
-    level: builder.power_level,
+    level: builder.curve_level,
   ))
   use factors <- result.try(formula(tables:, id: shield_factor_formula))
   use reboot <- result.try(formula(tables:, id: shield_reboot_formula))

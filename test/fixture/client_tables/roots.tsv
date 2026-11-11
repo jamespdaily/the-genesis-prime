@@ -358,10 +358,20 @@ Item2	16397	(ItemStat 54: kind-1 entries on property 29 and on Strength, which i
 Item2	9965	(ItemStat 415: one random stat entry, kind 2)	item_property_test
 Item2	8829	(a shield whose ItemBudget 47 shares 0.5, 0, 0.75 and 0.75 on the shield properties)	item_property_test
 Item2	71653	(ItemStat 226: kind-1 entries on Rating Focus Recovery and Base Health)	gear_test
-Item2	447	(armor at power level 52, from the late armor curve)	item_property_test
 Item2	5312	(a PvP weapon, flags 0x8000)	item_property_test
-Item2	12654	(an imbued weapon, itemImbuementId 3)	item_property_test
-Item2	13394	(a level-scaled armor piece, flags bit 3)	item_property_test
+Item2	13394	(a level-scaled armor piece, flags bit 3, ItemBudget 3, ItemStat 6, power level 1)	item_property_test, gear_test
+Item2	27106	(a level-scaled heavy armor chest, flags bit 3, ItemBudget 3, ItemStat 4, power level 1)	experience_flow_test, game_connection_inventory_test
+Item2	29495	(armor at power level 49, ItemBudget 0, one below the armor curve's change at level 50)	item_property_test
+Item2	16078	(armor at power level 78, from GameFormula 1286)	item_property_test
+Item2	1700	(armor at power level 52 whose band-two armor differs between single and double precision)	item_property_test
+Item2	69826	(armor at power level 120, from GameFormula 1287)	item_property_test
+Item2	78256	(a rune of power level 20, ItemBudget 26, ItemStat 140)	item_property_test
+Item2	78320	(a rune of power level 80, ItemBudget 26, ItemStat 140)	item_property_test
+Item2	83331	(a PvP rune, flags 0x8000)	item_property_test
+Item2	29213	(a proxy rune, flags 0x4000)	item_property_test
+Item2	15052	(an imbued weapon, itemImbuementId 106, power level 24)	item_property_test
+Item2	13411	(a level-scaled weapon, flags bit 3, ItemBudget 3, ItemStat 5)	item_property_test
+Item2	13410	(a level-scaled shield, flags bit 3, ItemBudget 48, ItemStat 139)	item_property_test
 Creature2	73605	a Departures Terminal whose activate spell is a castMethod 5 interaction with activateSpellCastTime 0	cast_activate_test
 Quest2	2911	quest whose one objective 3677 is type 2, flags 0, count 1, with a 60000 ms limit	quest_log_timed_objective_test, game_connection_quest_deadline_test
 QuestObjective	3677	the timed type 2 objective of quest 2911 (maxTimeAllowedMS 60000)	quest_log_timed_objective_test, game_connection_quest_deadline_test

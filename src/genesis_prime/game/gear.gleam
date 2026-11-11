@@ -69,10 +69,12 @@ pub type Gear {
   )
 }
 
-/// The gear of the items held at location 0 among `items`.
+/// The gear of the items held at location 0 among `items`, for a wearer of this level:
+/// a level-scaled item reads every curve at it.
 pub fn of_items(
   tables tables: table_store.Tables,
   items items: List(HeldItem),
+  level level: Int,
 ) -> Gear {
   let worn =
     list.filter(items, fn(item) { item.location == worn_location })
@@ -87,6 +89,7 @@ pub fn of_items(
           tables:,
           item2_id: item.item2_id.value,
           random_stats: item.random_stats,
+          level:,
         ),
       )
     })

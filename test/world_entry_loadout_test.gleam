@@ -687,7 +687,7 @@ pub fn a_connection_that_ends_after_the_save_enters_again_with_the_gear_of_the_s
     as "the chest's quarter of the 600 Base Health and of the 250 Armor is gone: 135.97 and 450 round to 586"
   assert stat(player:, id: 0) == 586 as "health at its new maximum"
   assert entered.gear
-    == gear.of_items(tables: character_tables.shared(), items: saved)
+    == gear.of_items(tables: character_tables.shared(), level: 1, items: saved)
     as "the player the connection keeps holds the gear of the saved items"
 }
 
