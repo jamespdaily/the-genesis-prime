@@ -537,7 +537,7 @@ pub fn yaw_toward(
 /// Reads game messages, waiting on the server and never for a fixed time, until the
 /// frames read so far satisfy `found`, and gives all of them in order with the bytes
 /// kept; a connection that ends stops the test. The wait has no limit of its own
-/// (`open_wait`): a message that never comes ends the test at its deadline.
+/// (`open_wait`): a message that never comes keeps the test waiting past its deadline, which warns.
 pub fn read_until(
   game game: Game,
   have have: BitArray,
@@ -725,7 +725,8 @@ fn next_outer(game game: Game, have have: BitArray) -> #(Frame, BitArray) {
 
 /// Reads `count` messages as the server wrote them, keeping the bytes beyond
 /// them. The wait has no limit of its own: a connection that ends stops the
-/// test, and a message that never comes ends it at its deadline.
+/// test, and a message that never comes keeps it waiting past its deadline,
+/// which warns.
 fn outers_kept(
   game game: Game,
   have have: BitArray,
@@ -1222,8 +1223,8 @@ pub fn read_pong(game game: Game) -> Int {
 /// and dropped, and a reset counts as a close, as does a socket no longer
 /// connected, which is what an earlier read that saw the close (`nothing_more`)
 /// leaves. The wait has no limit of its own, whatever the game's limit: only a
-/// test waits for a close, and a connection that stays open ends the test at its
-/// deadline.
+/// test waits for a close, and a connection that stays open keeps the test waiting
+/// past its deadline, which warns.
 pub fn await_closed(game game: Game) -> Nil {
   open_wait.named("the game server to close the connection", fn() {
     closing(game:)

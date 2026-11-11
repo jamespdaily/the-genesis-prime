@@ -3440,7 +3440,7 @@ fn release_earlier_save(earlier: EarlierSave) -> Nil {
 /// later save waiting for the row the earlier one holds. Postgres sends the test
 /// no event for a statement that starts to wait, so the test reads the
 /// database's own wait state every millisecond; the wait has no limit of its
-/// own, and the test's deadline ends it (`event_wait`).
+/// own, and the test's deadline only warns while it goes on (`event_wait`).
 fn await_a_statement_waiting_for_a_lock(store store: Store) -> Nil {
   event_wait.until("a statement of the database to wait for a lock", fn() {
     let assert Ok(returned) =

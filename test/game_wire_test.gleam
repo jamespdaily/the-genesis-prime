@@ -327,7 +327,7 @@ pub fn a_stop_closes_every_listener_to_new_connects_before_an_open_game_connecti
 }
 
 /// Waits until a connect to the port is refused: a wait for the listener to
-/// close, ended by the test's own deadline, which names it.
+/// close, which the test's own deadline warns of, naming it, while it goes on.
 fn await_refused(port: Int) -> Nil {
   event_wait.until("a connect to the closed listener is refused", fn() {
     login_client.refused(port)
@@ -2141,7 +2141,7 @@ pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in
 /// written all it held for this connection (pings numbered `pong` and `pong + 1`),
 /// giving the frames of the press. A refusal of the press (0x7fc) fails at once, naming
 /// its result, because no go would follow it and the Beast's own attacks would keep the
-/// wait for them alive until the test's deadline. `advance_ms` must be in [500, 1133).
+/// wait for them alive for ever, with the test's deadline only warning. `advance_ms` must be in [500, 1133).
 fn press_and_read_gos(
   game game: game_client.Game,
   have have: BitArray,

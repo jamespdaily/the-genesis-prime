@@ -1,7 +1,7 @@
 //// How long a scripted client's read of a socket may wait for the server. A
 //// test's read has no limit of its own: it goes on until the server writes or
-//// the connection ends, and the test's deadline names the read still open
-//// (`open_wait`, `owned_test.run`). A load client has no test around it, so its
+//// the connection ends, and the test's deadline warns, names the read still open
+//// and the read goes on (`open_wait`, `owned_test.run`). A load client has no test around it, so its
 //// read carries a bound, and a server that does not answer within it stops the
 //// client with the reason.
 
