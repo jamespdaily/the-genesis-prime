@@ -106,11 +106,22 @@ pub fn activate_spell_that_strikes_cannot_be_planned_test() -> Nil {
     as "Spell4 38392, Creature2 19232's activate spell, is held with a reason"
   assert string.contains(why, "82255") && string.contains(why, "38392")
     as "Spell4Effects 82255 of Spell4 38392 is a Proxy (effectType 26) aimed at the primary target (targetFlags 2) beside its Activate row 82254: the activate cast strikes no one, so the reason names that row"
-  let assert Ok(CannotBePlanned(why: signal)) =
+}
+
+pub fn activate_spell_with_a_ravel_signal_aimed_at_the_target_is_planned_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let activations = activate.activations(tables: fixture_tables.shared())
+  let assert Ok(Planned(effects:, dropped_signals:, ..)) =
     activate.planned_of(activations:, spell4_id: 39_244)
-    as "Spell4 39244 is held with a reason"
-  assert string.contains(signal, "85564")
-    as "Spell4Effects 85564 of Spell4 39244 is a RavelSignal (effectType 81) aimed at the primary target (targetFlags 2): the strike lists it as a life on each struck unit (genesis_prime/game/cast aimed_at), so an activate cast that strikes no one would lose it"
+    as "Spell4 39244 is planned: its other row, Spell4Effects 85564, is a RavelSignal (effectType 81) aimed at the primary target (targetFlags 2), which starts a script on the server (Spell4Effects.effectType.81) that the server does not have yet, so the plan holds the row as dropped (`dropped_signals`) and the cast logs it"
+  assert list.length(effects) == 1 as "Spell4 39244 has one Activate row"
+  assert dropped_signals == [Spell4EffectsId(85_564)]
+    as "the RavelSignal row 85564 is the one the plan drops"
+  assert case activate.planned_of(activations:, spell4_id: 85_452) {
+    Ok(Planned(..)) -> True
+    Ok(CannotBePlanned(..)) | Ok(activate.NoSpell4Row) | Error(Nil) -> False
+  }
+    as "Spell4 85452, the tutorial mine's activate spell, is planned: its rows are a RavelSignal aimed at the primary target (targetFlags 2) and a SetBusy (effectType 107), and nothing else strikes"
 }
 
 pub fn activate_spell_with_an_unread_target_effect_is_planned_test() -> Nil {
@@ -169,8 +180,8 @@ pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_
   let count_of = fn(reason) {
     list.count(refusals, fn(found) { found == reason })
   }
-  assert count_of("aimed at the target") == 72
-    as "72 hold a Spell4Effects row aimed at the target or an area that the strike applies, which an activate cast strikes no one with (Spell4Effects targetFlags)"
+  assert count_of("aimed at the target") == 33
+    as "33 hold a Spell4Effects row aimed at the target or an area that the strike applies, which an activate cast strikes no one with (Spell4Effects targetFlags); the other 39 of the 72 held only a RavelSignal row aimed there, which the plan drops with a log when the cast starts (Spell4Effects.effectType.81)"
   assert count_of("control state") == 11
     as "11 hold a CCStateSet effect of a state other than Stun (0) and Knockdown (8) (Unit.CodeEnumCCState). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("disguise") == 4
@@ -183,8 +194,8 @@ pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_
     as "1 holds a Spell4Conditions row whose mask tests stealth, with the refusals 65 and 114 not checked. Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("control aim") == 1
     as "1 holds a CCStateSet effect aimed by flags the server does not read (Spell4Effects.targetFlags). Gap: the issue Spells work in depth on the real client (#336) owns it"
-  assert list.length(refusals) == 93
-    as "93 of the 767 are refused, each for one of the reasons above, so 674 are planned"
+  assert list.length(refusals) == 54
+    as "54 of the 767 are refused, each for one of the reasons above, so 713 are planned"
 }
 
 /// The short name of a refusal's reason, by the text of the plan's own reason; a reason

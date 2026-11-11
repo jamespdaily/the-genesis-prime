@@ -67,6 +67,7 @@ import genesis_prime/game/damage
 import genesis_prime/game/faction_level
 import genesis_prime/game/hit
 import genesis_prime/game/hit_radius
+import genesis_prime/game/objective_link
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
@@ -329,8 +330,8 @@ pub type LeftOut {
   /// Faction 0: the client sees no faction, and a 0x262 with none fails
   /// (`opcode.0x262`).
   NoFaction
-  /// Friendly to both player factions, and the creature gives and receives no
-  /// quest.
+  /// Friendly to both player factions, and the creature gives and receives no quest and
+  /// has no link to an objective.
   FriendlyToBoth
   /// The creature's row has a trainer, station, taxi, bind or portal link and
   /// no quest.
@@ -657,7 +658,8 @@ pub type SummonRefusal {
   /// The row passes them, but a stored spawn of it would not start
   /// (`left_out_of`): a creature with no faction, one friendly to both player
   /// factions, one with only a service link, or one with no health (a creature
-  /// with a quest is none of the middle two). A summon is refused
+  /// with a quest is none of the middle two, one with an objective link is not the
+  /// first of them). A summon is refused
   /// for the same reason, a server choice, so it starts only what a spawn
   /// starts.
   WouldNotStart(creature_id: Creature2Id, reason: LeftOut)
@@ -1369,8 +1371,9 @@ fn hostile_to(
 
 /// The reason a row that passed the load checks does not start, or `Error(Nil)`
 /// for a row that does, in the order of the decode: no faction, Friendly to both
-/// player factions and no quest, a service link and no quest, health 0. A creature
-/// that gives or receives a quest passes the second and third: the client marks
+/// player factions and no quest and no objective link, a service link and no quest,
+/// health 0. A creature that gives or receives a quest passes the second and third, and
+/// one with an objective link passes the second: the client marks
 /// its quest kinds from its own Creature2 row (`0x1405a8d40`), and a Friendly
 /// giver is no target (`0x1403ad540`).
 fn left_out_of(
@@ -1384,13 +1387,14 @@ fn left_out_of(
     || attackable_by(catalog:, player: dominion_faction, unit: row.faction_id),
     list.any(quest_ids(checked.creature), fn(id) { id != 0 }),
     has_service_link(checked.creature),
-    checked.spawn.health == 0
+    checked.spawn.health == 0,
+    objective_link.has_link(row: checked.creature)
   {
-    True, _, _, _, _ -> Ok(NoFaction)
-    False, False, False, _, _ -> Ok(FriendlyToBoth)
-    False, _, False, True, _ -> Ok(ServiceLink)
-    False, _, _, _, True -> Ok(Dead)
-    False, _, _, _, False -> Error(Nil)
+    True, _, _, _, _, _ -> Ok(NoFaction)
+    False, False, False, _, _, False -> Ok(FriendlyToBoth)
+    False, _, False, True, _, _ -> Ok(ServiceLink)
+    False, _, _, _, True, _ -> Ok(Dead)
+    False, _, _, _, False, _ -> Error(Nil)
   }
 }
 

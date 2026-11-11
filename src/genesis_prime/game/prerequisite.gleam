@@ -122,12 +122,14 @@
 ////   load, so a check needs no table; a QuestObjective row a quest names and the table
 ////   lacks fails the load. A subject with no quest log gives `NotRead`
 ////   (`Prerequisite.prerequisiteTypeId.6`, `.68`, `.43`, `.22`).
-//// - **Type 125** passes, by comparison 2, when the player's challenge is not in
-////   cooldown and fails by comparison 1 and any other: a challenge the server has sent
-////   no record for is not in cooldown, and the server sends none, so comparison 2 always
-////   passes; the objectId and the value are not read
-////   (`Prerequisite.prerequisiteTypeId.125`, `0x14049fac0`). Gap: the records of
-////   challenges are issue 52's.
+//// - **Types 125, 69 and 74** read a flag of the player's challenge objectId: in
+////   cooldown (125), active (69), unlocked (74, a guess at the flag's meaning: the
+////   client's name for it is not read; the challenge records are issue 52's). Comparison 1 passes when the flag is
+////   set, comparison 2 when it is clear, any other fails: a challenge the server has sent
+////   no record for has every flag clear, and the server sends none, so comparison 2
+////   always passes and comparison 1 never; the objectId and the value are not read
+////   (`Prerequisite.prerequisiteTypeId.125`, `.69`, `.74`, `0x14049fac0`,
+////   `0x14049f990`, `0x14049fa80`). Gap: the records of challenges are issue 52's.
 //// - **Type 94** (the target is counted by a checklist objective) reads the check's
 ////   creature, the first unit unless it is a player and then the second, and the objective
 ////   `value` of the quest `objectId` (`Prerequisite.prerequisiteTypeId.94`,
@@ -353,10 +355,10 @@ type Condition {
     value: Int,
     quest: Option(Quest),
   )
-  /// Type 125: whether the player's challenge is in cooldown; the server holds no
-  /// challenge record, so it is never in cooldown
-  /// (`Prerequisite.prerequisiteTypeId.125`, `0x14049fac0`).
-  ChallengeInCooldown(comparison: Comparison)
+  /// Types 125, 69 and 74: a flag of the player's challenge record (in cooldown,
+  /// active, unlocked: a guess for 74, issue 52); the server holds no challenge record, so every flag is clear
+  /// (`Prerequisite.prerequisiteTypeId.125`, `.69`, `.74`).
+  ChallengeFlag(comparison: Comparison)
   /// Type 243: never met (`Prerequisite.prerequisiteTypeId.243`, `0x140001ba0`).
   NeverMet
   /// Type 108: whether the second unit stands in the arc around the first unit's
@@ -990,7 +992,7 @@ fn condition_of(
     52 -> PlayerPath(comparison: comparison_of(comparison), value:)
     10 -> Gender(comparison: comparison_of(comparison), value:)
     109 -> InWorld(comparison: comparison_of(comparison), world_id: object_id)
-    125 -> ChallengeInCooldown(comparison: comparison_of(comparison))
+    125 | 69 | 74 -> ChallengeFlag(comparison: comparison_of(comparison))
     243 -> NeverMet
     6 | 68 | 43 | 94 | 22 | 23 | 33 | 34 | 35 | 36 ->
       quest_condition(type_id:, comparison:, value:, quest: None)
@@ -1041,7 +1043,7 @@ pub fn is_read(type_id type_id: Int) -> Bool {
     | ObjectiveOpen(..)
     | TargetCounted(..)
     | ObjectiveProgress(..)
-    | ChallengeInCooldown(..)
+    | ChallengeFlag(..)
     | NeverMet
     | InArc(..)
     | NoCase -> True
@@ -1086,7 +1088,7 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
       | ObjectiveOpen(..)
       | TargetCounted(..)
       | ObjectiveProgress(..)
-      | ChallengeInCooldown(..)
+      | ChallengeFlag(..)
       | NeverMet
       | InArc(..)
       | NoCase
@@ -1094,6 +1096,56 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
     }
   })
   |> int.sum
+}
+
+/// The objectives the prerequisite names as open, as (Quest2 id, objective index): its
+/// type 43 conditions of comparison 1, and those of the rows its type 11 conditions of
+/// comparison 1 nest (`Prerequisite.prerequisiteTypeId.43`, `.11`). A quest the tables
+/// hold no row for names none.
+pub fn objective_links(
+  prerequisite prerequisite: Prerequisite,
+) -> List(#(Int, Int)) {
+  list.flat_map(prerequisite.conditions, fn(condition) {
+    case condition {
+      ObjectiveOpen(comparison: Found, index:, quest: Some(quest)) -> [
+        #(quest.id, index),
+      ]
+      Nested(comparison: Found, row: Some(nested), ..) ->
+        objective_links(prerequisite: nested)
+      Nested(..)
+      | ObjectiveOpen(..)
+      | TargetOfLiveCast(..)
+      | UnderCastBy(..)
+      | StackCount(..)
+      | InCombat(..)
+      | Roll(..)
+      | VitalPercent(..)
+      | VitalCurrent(..)
+      | ResourceSlot(..)
+      | UnderGroup(..)
+      | Stealthed(..)
+      | Difficulty(..)
+      | CurrentFaction(..)
+      | BaseFaction(..)
+      | UnitLevel(..)
+      | PlayerRace(..)
+      | UnitClass(..)
+      | InZone(..)
+      | IsPlayer(..)
+      | PlayerPath(..)
+      | Gender(..)
+      | InWorld(..)
+      | QuestState(..)
+      | ObjectiveDone(..)
+      | TargetCounted(..)
+      | ObjectiveProgress(..)
+      | NeverMet
+      | InArc(..)
+      | ChallengeFlag(..)
+      | NoCase
+      | Unread(..) -> []
+    }
+  })
 }
 
 /// The PrerequisiteTypes of the conditions the client decides and the server does
@@ -1132,7 +1184,7 @@ pub fn unread_types(prerequisite prerequisite: Prerequisite) -> List(Int) {
       | ObjectiveProgress(..)
       | NeverMet
       | InArc(..)
-      | ChallengeInCooldown(..)
+      | ChallengeFlag(..)
       | NoCase -> []
     }
   })
@@ -1240,7 +1292,7 @@ fn reads_held_state(condition condition: Condition) -> Option(Int) {
     | ObjectiveOpen(..)
     | TargetCounted(..)
     | ObjectiveProgress(..)
-    | ChallengeInCooldown(..)
+    | ChallengeFlag(..)
     | NeverMet
     | InArc(..)
     | NoCase
@@ -1497,12 +1549,10 @@ fn condition_decided(
       }),
     )
     // No 0xc7 is ever sent, so the client's challenge list is empty and no challenge
-    // is in cooldown (`opcode.0xc7`, `0x140c65948`). Gap: the challenge records wait
-    // for "Public events and challenges work on the real client" (issue 52).
-    ChallengeInCooldown(comparison:) -> #(
-      rolls,
-      asked(comparison:, holds: False),
-    )
+    // flag is set: not in cooldown, not active, not unlocked (`opcode.0xc7`,
+    // `0x140c65948`). Gap: the challenge records wait for "Public events and
+    // challenges work on the real client" (issue 52).
+    ChallengeFlag(comparison:) -> #(rolls, asked(comparison:, holds: False))
     NeverMet -> #(rolls, Fails)
     InArc(comparison:, arc:) -> #(
       rolls,

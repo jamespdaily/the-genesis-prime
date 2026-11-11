@@ -94,6 +94,7 @@ import genesis_prime/game/hit_radius
 import genesis_prime/game/loadout
 import genesis_prime/game/movement
 import genesis_prime/game/objective
+import genesis_prime/game/objective_link
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
@@ -172,7 +173,16 @@ pub fn activate_message(
       body: inner.body,
       caster:,
       activations: connection_state.activations_of(session:),
-      target_of: activate_target(tables:, picture: entered.shown),
+      target_of: activate_target(
+        tables:,
+        picture: entered.shown,
+        link_of: link_of(
+          tables:,
+          activations: connection_state.activations_of(session:),
+          state: entered.cast,
+          caster:,
+        ),
+      ),
       caster_radius:,
       now:,
     )
@@ -210,6 +220,12 @@ pub fn activate_unit_message(
         tables:,
         picture: entered.shown,
         quests: entered.quests,
+        link_of: link_of(
+          tables:,
+          activations: connection_state.activations_of(session:),
+          state: entered.cast,
+          caster:,
+        ),
         now_ms: now.monotonic_ms,
       ),
       caster_radius:,
@@ -230,6 +246,7 @@ fn used_unit(
   tables tables: table_store.Tables,
   picture picture: shown.Picture,
   quests quests: QuestLog,
+  link_of link_of: fn(Int, creature2.Creature2, Int) -> activate.Link,
   now_ms now_ms: Int,
 ) -> fn(Int) -> Result(cast.UsedUnit, Nil) {
   let offered_to = objective.use_targets(log: quests, tables:)
@@ -242,6 +259,7 @@ fn used_unit(
           tables:,
           one:,
           offered_to:,
+          link_of: fn(row, index) { link_of(unit_id, row, index) },
           alive: True,
           body: activate.Body(place:, radius: hit_radius),
         )
@@ -250,6 +268,7 @@ fn used_unit(
           tables:,
           one:,
           offered_to:,
+          link_of: fn(row, index) { link_of(unit_id, row, index) },
           alive:,
           body: activate.Body(
             place: creature_path.place_at(path:, now_ms:),
@@ -264,6 +283,7 @@ fn used_unit_at(
   tables tables: table_store.Tables,
   one one: shown.Shown,
   offered_to offered_to: fn(target_group.Unit, Int) -> Bool,
+  link_of link_of: fn(creature2.Creature2, Int) -> activate.Link,
   alive alive: Bool,
   body body: activate.Body,
 ) -> Result(cast.UsedUnit, Nil) {
@@ -277,10 +297,37 @@ fn used_unit_at(
     creature_id: unit.creature_id.value,
     creature: activate.creature_of(row:),
     checklist_index:,
+    link: link_of(row, checklist_index),
     body:,
     alive:,
     offered: offered_to(unit, checklist_index),
   )
+}
+
+/// Whether the caster's quest log opens a creature's link to an objective, for the unit
+/// `unit_id` that stands as the second unit of the creature's prerequisite
+/// (genesis_prime/game/objective_link `of`).
+fn link_of(
+  tables tables: table_store.Tables,
+  activations activations: activate.Activations,
+  state state: cast.State,
+  caster caster: cast.Caster,
+) -> fn(Int, creature2.Creature2, Int) -> activate.Link {
+  fn(unit_id, row, checklist_index) {
+    objective_link.of(
+      tables:,
+      activations:,
+      subject: cast.subject_for_use(
+        cast: state,
+        caster:,
+        unit_id:,
+        checklist_index:,
+      ),
+      quests: caster.quests,
+      row:,
+      checklist_index:,
+    )
+  }
 }
 
 /// What the unit a right-click names is to the player, from the units its client shows:
@@ -289,6 +336,7 @@ fn used_unit_at(
 fn activate_target(
   tables tables: table_store.Tables,
   picture picture: shown.Picture,
+  link_of link_of: fn(Int, creature2.Creature2, Int) -> activate.Link,
 ) -> fn(Int) -> activate.Target {
   fn(unit_id) {
     case dict.get(picture, unit_id) {
@@ -309,6 +357,7 @@ fn activate_target(
           creature_id: creature_id.value,
           creature: activate.creature_of(row:),
           checklist_index:,
+          link: link_of(unit_id, row, checklist_index),
           body: activate.Body(place:, radius: hit_radius),
         )
       }

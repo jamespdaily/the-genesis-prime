@@ -53,6 +53,7 @@ import genesis_prime/login/guid
 import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_countdown
 import genesis_prime/message/cast_activate.{CastActivate}
+import genesis_prime/message/cast_result.{TargetIsNotUseable}
 import genesis_prime/message/character_list
 import genesis_prime/message/character_list_entry
 import genesis_prime/message/chat_line_accepted
@@ -126,7 +127,6 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/system
 import gleam/result
-import gleam/string
 import gleam_community/maths
 import item_bot
 import log_capture
@@ -1667,9 +1667,14 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
       ),
     ]
     as "opcode.0x361: the go of the activate counts the bit of index 1, the second object's, in objective 8782 of quest 5855"
-  // The same object activated a second time: its cast goes, and the server has written
-  // all it held for this connection when its pong comes, so a 0x361 that the go would
-  // send is among those frames.
+  // The same object activated a second time: its bit is set in objective 8782. Creature2
+  // 26016 links through prerequisiteIdAnimState 11686, whose two type 11 conditions nest
+  // Prerequisite 11687 (type 43 on quest 5855's objective at index 1, and type 94
+  // comparison 2, which fails once the unit's bit is set) and 11688 (the same for quest
+  // 6780) (Prerequisite.prerequisiteTypeId.11, .94). A prerequisite that fails sets the
+  // unit's anim state 1 (0x14046c4d0), and the client offers a unit in it nothing
+  // (0x140479560.anim_state_exit), so the press is refused as not useable (100) with no
+  // cast; the server has written all it held for this connection when its pong comes.
   let assert Ok(again) =
     cast_activate.encode(CastActivate(
       client_cast_id: 2,
@@ -1683,19 +1688,14 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
   )
   let #(pressed_again, have) =
     game_client.read_until_pong(game:, have:, number: 2)
-  assert list.any(pressed_again, fn(frame) { frame.message_id == 0x07FD })
-    as "opcode.0x7fd: the second press is confirmed, so its cast is armed before the clock moves"
-  driven_time.advance(time:, ms: 1500)
-  let #(went_again, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(cast_support.cast_lines(frames:), string.starts_with(_, "went"))
-    })
-  let #(rest, have) = game_client.read_until_pong(game:, have:, number: 3)
-  assert list.filter(list.append(went_again, rest), fn(frame) {
-      frame.message_id == 0x0361
+  assert refusals(frames: pressed_again)
+    == [cast_result.to_value(TargetIsNotUseable)]
+    as "opcode.0x7fc: the second press of the marked object is refused as not useable"
+  assert list.filter(pressed_again, fn(frame) {
+      frame.message_id == 0x07FD || frame.message_id == 0x0361
     })
     == []
-    as "opcode.0x361: the second activate's go counts nothing, the bit of index 1 is set in objective 8782, so no 0x361 follows the go"
+    as "opcode.0x7fd and opcode.0x361: no cast starts and nothing is counted, the bit of index 1 is set in objective 8782"
   let #(second_entry, _) =
     game_client.camp_and_play(game:, have:, character_id: character)
   let assert [Frame(body: log, ..)] =
@@ -1706,6 +1706,147 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
     as "the client's reader reads the 0x35f, which holds the one quest"
   assert quest.quest_id == 5855 && quest.progress == [0, 2]
     as "opcode.0x35f: the progress of objective 8782 is the mask with the bit of index 1, kept over the relog"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+// ---- two players see each other ----
+
+/// An Exile in World 3460 one unit east of the tutorial's mine (Creature2 73463, world
+/// database row 29098), holding quest 10518 with its objective 0 done, who has pressed
+/// the mine's activate, an instant cast (`Creature2.activateSpellCastTime` is 0): the
+/// game, the mine's unit, what the client has read after its pong and the frames the
+/// client has read so far.
+fn exile_whose_mine_cast_went() -> #(
+  login_support.Started,
+  game_client.Game,
+  Int,
+  BitArray,
+  List(Frame),
+) {
+  let started =
+    start_with_world_data_by(
+      folder: "test/fixture/world_data_mine",
+      adjusted: fn(settings) { settings },
+    )
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 1,
+    )
+  let assert Ok(_) =
+    pog.query("update character set faction_id = 167 where character_id = $1")
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character is an Exile"
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 10518, 1, 0, true, 1, '{1,0,0,0,0,0}', 0, '{0,0,0,0,0,0}')",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character holds quest 10518 with objective 0 done"
+  // One unit east of the mine (spawn 29098 stands at x -70.4453).
+  character_support.move_to(
+    pool:,
+    character_id: character,
+    world_id: 3460,
+    world_zone_id: 6009,
+    position: #(-69.4453, -868.5904, 383.553),
+  )
+  send_play(game:, character_id: character)
+  let #(entry, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+      && static_objects_created_in(frames:) != []
+    })
+  let assert [mine] = static_objects_created_in(frames: entry)
+    as "the mine is the one static object shown"
+  assert mine.creature_id == 73_463
+  let assert Ok(press) =
+    cast_activate.encode(CastActivate(
+      client_cast_id: 1,
+      target_unit_id: mine.unit_id,
+    ))
+    as "the right-click fits the message"
+  game_client.send_world(
+    game:,
+    message_id: cast_activate.message_id,
+    body: press,
+  )
+  // The creature's activateSpellCastTime is 0, so the cast goes at the press and the
+  // server has written all it held for this connection when its pong comes.
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 1)
+  assert list.any(pressed, fn(frame) { frame.message_id == 0x07FD })
+    as "opcode.0x7fd: the press is confirmed"
+  #(started, game, mine.unit_id, have, pressed)
+}
+
+pub fn a_mine_cast_counts_the_exile_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 73463 casts activate spell 85452 (activateSpellCastTime 0, so the cast goes
+  // at the press) and links to quest 10518 through Prerequisite 41818 (type 43 on quest 10518
+  // value 1 or on quest 10524 value 1). Objective 21287 is index 1 of quest 10518
+  // (type 5, count 1, flags 3). The client sends nothing at the go, and the server
+  // tells it the progress (opcode.0x361: the quest, the objective, the value 1). The
+  // mine is not consumed: no 0x355 removes it.
+  let #(started, game, _, have, went) = exile_whose_mine_cast_went()
+  assert list.filter(went, fn(frame) { frame.message_id == 0x0361 })
+    == [
+      Frame(
+        message_id: 0x0361,
+        body: message_support.packed([#(15, 10_518), #(32, 1), #(32, 1)]),
+      ),
+    ]
+    as "opcode.0x361: the go of the mine's cast counts objective 21287 of quest 10518"
+  let #(rest, _) = game_client.read_until_pong(game:, have:, number: 2)
+  assert list.filter(list.append(went, rest), fn(frame) {
+      frame.message_id == unit_destroyed.message_id
+    })
+    == []
+    as "opcode.0x355: the mine stays shown"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_second_cast_on_the_mine_after_its_objective_is_done_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 21287 is done once the first cast has gone. The mine links through
+  // prerequisiteIdAnimState 41818, whose type 43 conditions need an open objective
+  // (Prerequisite.prerequisiteTypeId.43), so the prerequisite fails and sets the unit's
+  // anim state 1 (0x14046c4d0): the client offers it nothing
+  // (0x140479560.anim_state_exit), and the activate is refused with TargetIsNotUseable
+  // (100) at the press, with no cast started.
+  let #(started, game, mine, have, _) = exile_whose_mine_cast_went()
+  let assert Ok(again) =
+    cast_activate.encode(CastActivate(client_cast_id: 2, target_unit_id: mine))
+    as "the right-click fits the message"
+  game_client.send_world(
+    game:,
+    message_id: cast_activate.message_id,
+    body: again,
+  )
+  let #(pressed, _) = game_client.read_until_pong(game:, have:, number: 2)
+  assert refusals(frames: pressed) == [cast_result.to_value(TargetIsNotUseable)]
+    as "opcode.0x7fc: the second press is refused as not useable"
+  assert list.all(game_client.casts_in(frames: pressed), fn(event) {
+    case event {
+      game_client.CastRefused(..) -> True
+      game_client.CastConfirmed(..)
+      | game_client.CastStarted(..)
+      | game_client.CastWent(..)
+      | game_client.CastFinished(..)
+      | game_client.ThresholdOpened(..)
+      | game_client.ThresholdIndex(..)
+      | game_client.ThresholdClosed(..)
+      | game_client.ThresholdEnded(..) -> False
+    }
+  })
+    as "no cast is confirmed or started"
   game_client.close(game:)
   login_support.stop(started)
 }

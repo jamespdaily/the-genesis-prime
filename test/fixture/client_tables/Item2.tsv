@@ -110,6 +110,7 @@ ID	itemBudgetId	itemStatId	itemRuneInstanceId	itemQualityId	itemSpecialId00	item
 17545	0	0	0	3	0	0	15	7	53	0	0	0	0	0	21	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	16384	16	1	0	0	0	0	0	0	0	0	0	0x00000000	276646	276647		Icon_SkillEnergy_UI_srcr_elctrcshck	0
 17814	0	0	0	5	0	0	5	88	134	0	0	0	0	0	52	0	0	0	0	16	0	0	0	0	0	0	0	0	0	0	0	10	1	0	0	0	0	0	0	0	0	0	0x00000000	284900	284901		Icon_ItemMisc_UI_Item_Bag_001	0
 17924	3	8	0	4	0	3	2	108	204	3406	0	0	0	0	6	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0xbf000000	286585	286586		IconSprites:Icon_ItemWeapon_Launcher_05	0
+18919	0	0	0	2	7831	0	19	66	259	0	0	0	0	0	45	0	0	0	0	1	1	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0x00000000	299918	300151		ClientSprites:Icon_TradeskillMisc_CookRecipe	0
 20791	0	0	0	2	5254	0	16	47	74	0	0	0	0	0	3	0	0	0	0	99	1	0	0	0	0	0	0	0	0	0	0	0	5	0	0	0	0	0	0	0	0	0	0x00000000	342341	342342		Icon_ItemMisc_ui_item_sammich	0
 21484	0	0	0	2	0	0	20	67	155	0	0	0	0	0	10	0	0	0	0	99	0	0	0	0	0	0	0	822	0	0	1	0	1	0	0	0	0	0	0	0	0	0	0x00000000	365605	365606		Icon_ItemMisc_Fences	0
 23318	0	0	0	3	0	0	27	5	318	0	0	0	0	0	47	0	0	0	0	1	0	0	0	0	0	95	0	0	0	0	1	0	1	0	0	0	0	0	0	0	0	0	0x00000000	387867	0		ClientSprites:Icon_TradeskillAdditiveTechnology_WaterEarth_04	0
