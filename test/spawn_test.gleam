@@ -40,6 +40,7 @@ import genesis_prime/world_map/spawn.{
   type Row, type Selection, Dead, FriendlyToBoth, NoFaction,
 }
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_source.{Summoned}
 import genesis_prime/world_map/static_object.{type StaticObject, StaticObject}
 import genesis_prime/world_map/unit_fields
 import gleam/dict
@@ -1495,8 +1496,62 @@ pub fn a_creature_without_a_chosen_faction_keeps_its_own_test() -> Nil {
 
 pub fn a_summoned_creature_takes_its_chosen_faction_test() -> Nil {
   use <- owned_test.run(60_000)
-  // creature_row is the one builder of a placed row and a summoned one.
-  let row = the_boss_row(number: 1, factions: the_boss_is_given_233())
-  assert row.faction_id == 233 && row.base_faction_id == 233
+  // The summon is checked as a start is, so the boss, whose own faction 219 is
+  // Friendly to both player factions, is summoned only with its chosen 233.
+  let tables = character_tables.content_tables()
+  let checks = fn(factions) {
+    spawn.summon_checks(
+      tables:,
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.kinds(),
+      factions:,
+      vendors: vendor.none(),
+    )
+  }
+  let summon = fn(factions) {
+    spawn.summoned(
+      checks: checks(factions),
+      summoned: Summoned(
+        id: SpawnId(-1),
+        creature_id: Creature2Id(73_499),
+        level: option.None,
+        place: place_support.at(
+          world_id: 3460,
+          world_zone_id: 5968,
+          x: 0.0,
+          y: 0.0,
+          z: 0.0,
+        ),
+      ),
+    )
+  }
+  assert summon(creature_faction.none())
+    == Error(spawn.WouldNotStart(
+      creature_id: Creature2Id(73_499),
+      reason: FriendlyToBoth,
+    ))
+    as "with no chosen faction the boss is Friendly to both and would not start"
+  let assert Ok(summoned) = summon(the_boss_is_given_233())
+    as "with the chosen faction the boss is summoned"
+  assert summoned.faction_id == 233 && summoned.base_faction_id == 233
     as "Faction2Relationship 746 names 233 for the boss; its Creature2 row says 219"
+}
+
+pub fn a_chosen_faction_replaces_a_base_faction_that_differs_from_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A row whose faction is already the chosen one but whose base faction is
+  // another still takes the chosen one as both.
+  let boss =
+    spawn.Row(
+      ..the_boss_row(number: 1, factions: creature_faction.none()),
+      faction_id: 233,
+      base_faction_id: 219,
+    )
+  let selection =
+    selected_choosing(rows: [boss], factions: the_boss_is_given_233())
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(started_boss) = dict.get(world.by_id, SpawnId(1))
+    as "the boss starts"
+  assert started_boss.faction_id == 233 && started_boss.base_faction_id == 233
+    as "the chosen faction is both the faction and the base faction"
 }

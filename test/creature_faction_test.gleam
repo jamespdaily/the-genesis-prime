@@ -19,7 +19,6 @@ import genesis_prime/content/refusal.{Refusal, RowId}
 import genesis_prime/world_map/creature_faction.{Row}
 import gleam/dict
 import gleam/string
-import owned_key
 import owned_test
 
 /// The selection of the rows against the client's rows.
@@ -45,16 +44,13 @@ pub fn the_faction_rows_load_into_their_term_test() -> Nil {
   let assert Ok(factions) =
     selected(rows: rows_of_a_migrated_database(database:))
     as "the migrated rows are rows of the client's Creature2 and Faction2 tables"
-  let key = owned_key.new_key()
-  content_creature_faction.put(key:, factions:)
-  let read = content_creature_faction.factions(key:)
-  assert dict.get(read.by_creature, 73_499) == Ok(233)
+  assert creature_faction.chosen_of(factions:, creature2_id: 73_499) == Ok(233)
     as "Faction2Relationship 746 makes 233 hostile to both player factions' parent, which the boss's own 219 is not"
-  assert dict.get(read.by_creature, 73_464) == Error(Nil)
+  assert creature_faction.chosen_of(factions:, creature2_id: 73_464)
+    == Error(Nil)
     as "a creature with no row has no chosen faction"
-  assert dict.size(read.by_creature) == 1
+  assert dict.size(factions.by_creature) == 1
     as "the migration seeds the boss and nothing else"
-  owned_key.erase(key)
 }
 
 pub fn a_faction_row_of_a_creature_the_client_lacks_is_refused_test() -> Nil {

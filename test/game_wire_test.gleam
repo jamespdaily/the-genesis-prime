@@ -6293,7 +6293,7 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
 /// The boss's marker centre.
 const marker_51744 = #(429.29544, -388.88251, 253.77565)
 
-/// An Exile Medic of level 1 holding quest 10520 with the objectives of index 0 and 2 done,
+/// An Exile Medic of level 30 holding quest 10520 with the objectives of index 0 and 2 done,
 /// played into World 3460 12 beyond the boss and facing it, and read until the
 /// boss's 0x262 has arrived: the game, the burst's frames and the bytes beyond.
 fn an_exile_medic_beside_the_boss(

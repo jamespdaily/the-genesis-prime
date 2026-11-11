@@ -34,6 +34,8 @@ import genesis_prime/readiness
 import genesis_prime/table/id.{ClassId, Creature2Id}
 import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/spawn
+import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_source.{Summoned}
 import gleam/dict
 import gleam/erlang/process
 import gleam/int
@@ -43,6 +45,7 @@ import gleam/string
 import log_capture
 import mailbox_support
 import owned_test
+import place_support
 import server_proxy_support
 import unitest
 
@@ -103,6 +106,32 @@ pub fn the_boss_starts_and_74862_is_still_left_out_test() -> Nil {
     })
     as "the boss starts"
   assert boss.faction_id == 233 && boss.base_faction_id == 233
+    as "Faction2Relationship 746 makes 233 Hostile to the parent of both player factions"
+}
+
+pub fn a_summon_of_the_boss_after_the_load_takes_its_chosen_faction_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil) as "a migrated database loads"
+  let assert Ok(summoned) =
+    spawn.summoned(
+      checks: content_spawn.summon_checks(key:),
+      summoned: Summoned(
+        id: SpawnId(-1),
+        creature_id: Creature2Id(73_499),
+        level: option.None,
+        place: place_support.at(
+          world_id: 3460,
+          world_zone_id: 5968,
+          x: 0.0,
+          y: 0.0,
+          z: 0.0,
+        ),
+      ),
+    )
+    as "the summon checks the load put hold the boss's chosen faction, so the boss would start"
+  assert summoned.faction_id == 233 && summoned.base_faction_id == 233
     as "Faction2Relationship 746 makes 233 Hostile to the parent of both player factions"
 }
 

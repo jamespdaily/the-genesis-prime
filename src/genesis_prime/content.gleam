@@ -309,10 +309,7 @@ fn read(
     Error(..) -> creature_kind.taken(rows: kind_rows, tables:)
   }
   let factions = creature_faction.select(rows: faction_rows, tables:)
-  let faction_refusals = case factions {
-    Ok(..) -> []
-    Error(refusals) -> refusals
-  }
+  let faction_refusals = result.unwrap_error(factions, or: [])
   // With a faction row refused, the spawns are checked with the factions the load
   // took, so the start names a bad spawn too.
   let factions_for_spawns = case factions {
@@ -382,10 +379,6 @@ fn read(
       )
       case kinds {
         Ok(kinds) -> content_creature_kind.put(key:, kinds:)
-        Error(..) -> Nil
-      }
-      case factions {
-        Ok(factions) -> content_creature_faction.put(key:, factions:)
         Error(..) -> Nil
       }
       case numbers {

@@ -453,8 +453,8 @@ pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
     content_spawn.rows(db: content_support.connect(database:))
     as "the stored spawn rows read back"
   let tables = client_tables.with_content_tables()
-  let placed =
-    objective_spawn.place(tables:, stored:, factions: creature_faction.none())
+  let factions = spawn_support.the_boss_is_given_233(tables:)
+  let placed = objective_spawn.place(tables:, stored:, factions:)
   let worlds = set.from_list(list.map(stored, fn(row: Row) { row.world_id }))
   let held =
     list.filter_map(stored, fn(row: Row) {
@@ -501,7 +501,7 @@ pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
       vendors: vendor.none(),
-      factions: creature_faction.none(),
+      factions:,
     )
   assert selection.refusals == []
     as "a placed row that the checks refuse would stop the server's start"
@@ -679,12 +679,7 @@ pub fn the_placed_boss_takes_its_chosen_faction_and_starts_test() -> Nil {
   // gives faction 219, Friendly to both player factions, and creature_faction
   // 73499 -> 233 stands it with 233, Hostile to both (Faction2Relationship 746).
   let tables = character_tables.content_tables()
-  let assert Ok(factions) =
-    creature_faction.select(
-      rows: [creature_faction.Row(creature_id: boss, faction_id: 233)],
-      tables:,
-    )
-    as "Creature2 73499 and Faction2 233 are rows of the client's tables"
+  let factions = spawn_support.the_boss_is_given_233(tables:)
   let placed =
     objective_spawn.place(
       tables:,

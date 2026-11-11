@@ -10,7 +10,7 @@
 //// creature_faction rows (genesis_prime/content/creature_faction) ─▶ select(rows, tables)
 ////   a row of a Creature2 id the client does not hold ─▶ Refusal
 ////   a row of a Faction2 id the client does not hold  ─▶ Refusal
-////   otherwise ─▶ Factions ─▶ faction_of(factions, creature2 id, own faction)
+////   otherwise ─▶ Factions ─▶ chosen_of(factions, creature2 id)
 ////                            a spawn's start (spawn.select) and a built row (spawn.creature_row)
 //// ```
 ////
@@ -67,9 +67,7 @@ pub fn select(
   }
 }
 
-/// The factions of the rows `select` takes, leaving out the ones it refuses: the
-/// content load checks the spawns with these when it refuses a faction row, so the
-/// one start names a bad spawn too (genesis_prime/content).
+/// The factions of the rows `select` takes, leaving out the ones it refuses.
 pub fn taken_of(
   rows rows: List(Row),
   tables tables: table_store.Tables,
@@ -108,12 +106,11 @@ fn refusal_of(
   }
 }
 
-/// The faction a creature stands with: its chosen one when the table has a row for it,
-/// else `own`, the faction its Creature2 row or its spawn row gives.
-pub fn faction_of(
+/// The faction the table chooses for a creature, or `Error(Nil)` for a creature
+/// without a row, which keeps the faction of its own row.
+pub fn chosen_of(
   factions factions: Factions,
   creature2_id creature2_id: Int,
-  own own: Int,
-) -> Int {
-  dict.get(factions.by_creature, creature2_id) |> result.unwrap(own)
+) -> Result(Int, Nil) {
+  dict.get(factions.by_creature, creature2_id)
 }

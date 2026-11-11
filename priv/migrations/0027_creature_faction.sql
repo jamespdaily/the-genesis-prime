@@ -1,10 +1,7 @@
 -- Content table `creature_faction`: the faction the server chooses for a creature in
--- place of the one its Creature2 row and the world database give, loaded once at
--- start into a persistent term (genesis_prime/content) and never queried during
--- play. It follows the pattern of `creature_kind` (0009): the same two columns for
--- where a row comes from, `source` and `source_row`, and the same checks, so a
--- server choice states its reason and a row of the world database names its source
--- row.
+-- place of the one its Creature2 row and the world database give. `source` and
+-- `source_row` say where a row comes from: a server choice states its reason and a
+-- row of the world database names its source row.
 --
 -- A row is keyed by the creature's Creature2 id. A creature with no row keeps the
 -- faction of its own row. A started unit of a creature with a row stands with that

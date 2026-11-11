@@ -750,11 +750,8 @@ pub fn creature_row(
 ) -> Row {
   let facing = start_place.facing(place)
   let chosen =
-    creature_faction.faction_of(
-      factions:,
-      creature2_id: creature.id,
-      own: creature.faction_id,
-    )
+    creature_faction.chosen_of(factions:, creature2_id: creature.id)
+    |> result.unwrap(creature.faction_id)
   Row(
     id:,
     entity_type: non_player,
@@ -787,20 +784,14 @@ pub fn creature_row(
 }
 
 /// The NonPlayer row with the creature's chosen faction as both its faction and its
-/// base faction, when the creature_faction table has a row for the creature; a row of
-/// a creature without one is unchanged. It runs before `left_out_of`, so a creature
+/// base faction, when the creature_faction table has a row for the creature, whatever
+/// its row held; a row of a creature without one is unchanged. It runs before `left_out_of`, so a creature
 /// whose own faction is Friendly to both player factions starts when its chosen one
 /// is not.
 fn with_chosen_faction(factions factions: Factions, row row: Row) -> Row {
-  let chosen =
-    creature_faction.faction_of(
-      factions:,
-      creature2_id: row.creature_id,
-      own: row.faction_id,
-    )
-  case chosen == row.faction_id {
-    True -> row
-    False -> Row(..row, faction_id: chosen, base_faction_id: chosen)
+  case creature_faction.chosen_of(factions:, creature2_id: row.creature_id) {
+    Ok(chosen) -> Row(..row, faction_id: chosen, base_faction_id: chosen)
+    Error(Nil) -> row
   }
 }
 
