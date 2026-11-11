@@ -4665,11 +4665,11 @@ gap = "Read from Ghidra's decompile; what sets 0x130 otherwise is not read."
 name = "SetUnitTagger"
 
 ["0x14045ad90"]
-statement = "Sets a unit's cluster: leaves its old cluster, and for a non-zero cluster id joins that cluster in the world; 0 leaves it in none."
-proof = "Decompiled: with a cluster set, 0x1403dea10 removes the unit from the world's cluster map; a non-zero id is stored at the unit's 0x138 (with a word from the unit's 0x118 object above it) and 0x1403de8c0 adds the unit's id to that cluster in the map at world 0x6ee8; failure or 0 stores 0. GetClusterUnits 0x140652dd0 lists the cluster through 0x1403dec00."
-grade = "fairly sure"
-gap = "Read from Ghidra's decompile; the word taken from the unit's 0x118 object is not read."
+statement = "Sets a unit's cluster: leaves its old cluster, and for a non-zero cluster id stores at unit 0x138 the qword (current Faction2 id << 32) | cluster id and joins that cluster in the world; the faction half is 0 when the unit has no faction object (unit 0x118); a failed join or id 0 stores 0. Clusters are therefore kept per faction and cluster id."
+proof = "Listing: 0x14045ad9a cmp [rcx+0x138],0; 0x14045adb3 call 0x1403dea10 (leave); 0x14045adbc mov rcx,[rbx+0x118]; 0x14045adcb call [rax+0x18] (Faction2 vtable 0x140b77da0 slot 0x18 = 0x140787640, the Faction2 id); 0x14045adda shl rcx,0x20; 0x14045adde or rcx,rdi; 0x14045ade1 mov [rbx+0x138],rcx; 0x14045ade8 call 0x1403de8c0 (join); 0x14045adf1 mov qword [rbx+0x138],0."
+grade = "sure"
 name = "SetUnitCluster"
+
 
 ["0x14047a890"]
 statement = "Gives a unit's minimap marker id: the unit's own MiniMapMarker id when it has one; else, for a creature whose row names a harvesting node the player can harvest, that node's marker; else 0."
@@ -13130,10 +13130,11 @@ grade = "sure"
 name = "UnitIsQuestTarget"
 
 ["QuestObjective.type.15"]
-statement = "QuestObjective type 15: kill a unit whose cluster value equals the objective's data. The kill result is set. The data is neither a Creature2 id nor a TargetGroup. 26 rows."
-proof = "Saved C 0x140550c50.c: the compare of the unit's cluster qword with the data at 0x140550e40. SetUnitCluster 0x14045ad90 stores the qword at 0x14045adbc to 0x14045ade1. Creature2 15809 has no row; Creature2 9657 is a 'Cluster Creature'."
+statement = "QuestObjective type 15: kill a unit whose cluster qword (unit 0x138) equals the objective's data, compared on all 64 bits. The qword's high half is the unit's current Faction2 id, so only a unit that had no faction object when its cluster was set can match; a creature built by 0x262 gets its factions before its cluster. The data is a server cluster id, neither a Creature2 id nor a TargetGroup; the cluster id comes from 0x262's third tagged entry or message 0x932. 26 rows: 1518, 1890, 3156, 3776, 4085, 4570, 4782, 4785, 4786, 4796, 4797, 4802, 5276, 5564, 5914, 6069, 6133, 6182, 7396, 7409, 7750, 7949, 8354, 8908, 14233, 15167; none in a start world's quest zone."
+proof = "0x140550c50 listing 0x140550e3d mov eax,r14d (zero-extended data); 0x140550e40 cmp qword [r12+0x138],rax. SetUnitCluster 0x14045ad90 at 0x14045adbc to 0x14045ade1. InitUnitFromCreate 0x140456960: SetUnitBaseFaction 0x1404578cd and SetUnitFaction 0x1404578db before SetUnitCluster 0x140457ea9. gleam run -m genesis_prime/table_rows -- QuestObjective type=15; quest zones through Quest2.worldZoneId, WorldZone.parentZoneId and WorldLocation2 worldId/worldZoneId."
 grade = "fairly sure"
-gap = "Which message gives a unit its cluster value, and whether a non-zero faction half of the value blocks every match, are not read."
+gap = "Which creatures carry which cluster id is server data in neither the client nor the world database; whether a faction id FindFaction does not hold (leaving no faction object) is how retail made type-15 targets match is not read."
+
 
 ["QuestObjective.type.16"]
 statement = "QuestObjective type 16: kill a unit of a TargetGroup, the same as type 8. Its fallback text 'Kill' names the TargetGroup. 55 rows."
@@ -13142,10 +13143,10 @@ grade = "fairly sure"
 gap = "The decompile was read, not the listing's instruction at 0x140550e28."
 
 ["QuestObjective.type.46"]
-statement = "QuestObjective type 46: kill a unit the player is Hostile to whose rank value is at least the objective's data. It has no fallback text. 1 row, 18972, with data 6 and count 20."
-proof = "Saved C 0x140550c50.c at 0x140550e5f to 0x140550e6e. The unit's rank is the value of its function-table slot 0x10, 0x14045ba40: the unit's word 0x30 when it is below 25, else the creature info's word 0x14, or 25."
-grade = "fairly sure"
-gap = "What the unit's word 0x30 and the creature info's word 0x14 hold are not read."
+statement = "QuestObjective type 46: kill a unit the player is Hostile to whose Creature2Difficulty id is at least the objective's data (unsigned). It has no fallback text. 1 row, 18972 (quest 9940 'Prime Executioner', zone 12), data 6, count 20, whose text says 'Prime difficulty or higher' but which counts difficulty ids 6 to 24, Group Fodder (7) and every Group and Raid rank included."
+proof = "0x140550c50 listing 0x140550e5f call [rax+0x10] (GetUnitDifficulty 0x14045ba40); 0x140550e62 cmp eax,r14d; 0x140550e6c jb; 0x140550e6e test r15d (Hostile). GetUnitDifficulty 0x14045ba40 to 0x14045ba5a: unit 0x30 if < 0x19, else creature info +0x14, else 0x19. SetUnitCreature 0x140458a75 to 0x140458a78 copies creature info +0x14 to unit 0x30; FillCreatureInfoBase 0x1404852b0 fills +0x14 from Creature2 word 7 (creature2DifficultyId). gleam run -m genesis_prime/table_rows -- QuestObjective type=46; -- Creature2Difficulty; text 673895, 673893."
+grade = "sure"
+
 
 ["0x140551730"]
 statement = "Tests whether a creature's checklist index is counted in a quest's objective: it finds the quest's entry in the player's quest log and goes on to IsLogObjectiveTargetCounted 0x140611680 with the index as it is, so an index of 32 or more, or -1, is never counted. Only the checklist types (10, 13, 14, 18, 27 and 28) pass that test. Its callers are prerequisite type 94 (0x14049f5b0), IsQuestTalkTarget 0x140553110 and 0x140398cc0 (call at 0x140398e89)."
@@ -14503,10 +14504,11 @@ proof = "Registered in 0x14006c290 (saved C line 715, hash 8eb22adb6de47956): id
 grade = "sure"
 
 ["0x14007ad00"]
-statement = "Reads the body of message 0x934: a unit id (32 bits) then a Faction2 id (14 bits)."
-proof = "Saved C 0x14007ad00 (hash 8eb22adb6de47956): ReadBits32(0x20) to record +0, ReadBits32(0xe) to record +4; registered as the 0x934 reader in 0x14006c290 line 715."
+statement = "Reads a body of a unit id (32 bits) then a 14-bit value. Messages 0x934 (a Faction2 id) and 0x8d3 (a Creature2Difficulty id) use it."
+proof = "Registered in 0x14006c290 saved C lines 715 (0x934) and 748 (0x8d3) with this reader. Reader saved C (hash 8eb22adb6de47956): ReadBits32 0x20 into record +0, ReadBits32 0xe into record +4."
 grade = "sure"
 name = "ReadUnitFactionBody"
+
 
 ["Spell4Effects.effectType.79"]
 statement = "Effect type 79, SpellEffectImmunity: the target is immune to spell effects of the type in dataBits00. Spell 85474 'Turret Immune' uses it with dataBits00 8 (Damage) and flags 2, which lasts until removed."
@@ -14579,3 +14581,31 @@ statement = "The client offers the departures yes to anyone in range, quest or n
 proof = "gleam run -m genesis_prime/table_rows -- Creature2 73606 74773 (all prerequisite and quest columns 0); -- Spell4 34680 (every prerequisite column 0); records 0x14039c430.csi_guard, opcode.0x97.range, opcode.0x7fd.csi, QuestObjective.type.23, Quest2.10528 and Quest2.10530 (the receivers)."
 grade = "fairly sure"
 gap = "Only 73606, 74773 and Spell4 34680 were read column by column; 73605, 74772 and the other three spells were read for their non-zero columns. What retail did for a terminal used without the quest is not in the client."
+
+["opcode.0x932"]
+statement = "Message 0x932 (2354), game server to client: set a unit's cluster. Body in wire order: the unit id (32 bits) and the cluster id (32 bits). The handler finds the unit and calls SetUnitCluster 0x14045ad90 with the id unless the unit is the client's controlled unit, which it leaves alone; an unknown unit id does nothing."
+proof = "Registered in 0x14006c290 (saved C line 719): id 0x932, record 8, reader ReadTwoUint32Body 0x14007a040. HandleWorldMessage 0x1403ec6a0 case 0x1403ed960 (jump table 0x1403f1344, entry 2354-97): 0x1403ed965 call FindUnit 0x1403d90d0; 0x1403ed96d je default on null; 0x1403ed973 cmp [rsi+0x78],rax / 0x1403ed977 je default; 0x1403ed97d mov edx,[rdi+4]; 0x1403ed983 call 0x14045ad90."
+grade = "sure"
+
+["opcode.0x8d3"]
+statement = "Message 0x8d3 (2259), game server to client: set a creature unit's difficulty. Body in wire order: the unit id (32 bits) and a Creature2Difficulty id (14 bits). The handler acts only when the unit id is non-zero, the id is 1 to 24, the unit is found and has creature info (unit 0x18). It then sets the unit's difficulty (unit 0x30), which GetUnitDifficulty 0x14045ba40 returns, and its Creature2Difficulty row (unit 0x100). Anything else does nothing."
+proof = "Registered in 0x14006c290 (saved C line 748): id 0x8d3, record 8, reader ReadUnitFactionBody 0x14007ad00 (ReadBits32 0x20, then 0xe). HandleWorldMessage case 0x1403eda3d: 0x1403eda3f test edx / je default; 0x1403eda47 cmp [rdi+4],0x19 / jae default; 0x1403eda54 FindUnit; 0x1403eda65 cmp [rax+0x18],0 / je default; 0x1403eda73 lea edx,[rcx-1] / cmp edx,0x18 / ja default; 0x1403eda7f mov [rax+0x30],ecx; 0x1403eda82 call 0x1401f64e0 (Creature2Difficulty lookup); 0x1403eda87 mov [rbx+0x100],rax."
+grade = "sure"
+
+["0x140787640"]
+statement = "A faction object's id: the first word of the Faction2 record it points to, or 0 when it has none. It is slot 0x18 of the faction object's function table 0x140b77da0."
+proof = "Listing: 0x140787640 mov rax,[rcx+0x10]; test rax,rax; jne; rep ret (rax 0); 0x14078764b mov rax,[rax]; 0x14078764e mov eax,[rax]. The function table 0x140b77da0 slot 0x18 holds 0x140787640."
+grade = "fairly sure"
+gap = "That the record's first word is Faction2.ID is inferred from the record coming from FindFaction 0x140716fa0's Faction2 map; the map's fill is not read."
+name = "FactionObjectId"
+
+["Creature2Difficulty.ID"]
+statement = "Creature2Difficulty has 24 rows in four blocks of six ranks, each Fodder, Minion, Grunt, Challenger, Superior, Prime (rankValue -3 to 2): 1-6 solo (groupValue 0), 7-12 Group (5), 13-18 Raid 20 Man (20), 19-24 Raid 40 Man (40). A unit's difficulty (GetUnitDifficulty 0x14045ba40) is this id, from Creature2.creature2DifficultyId or message 0x8d3."
+proof = "gleam run -m genesis_prime/table_rows -- Creature2Difficulty: ID, localizedTextIdTitle (client_files.py text gives the names), rankValue, groupValue. FillCreatureInfoBase 0x1404852b0 looks the row up with 0x1401f64e0 (DB\\Creature2Difficulty.tbl, loaded by 0x1401f6280)."
+grade = "sure"
+
+["TargetGroup.type.9"]
+statement = "TargetGroup type 9 tests the 18-bit value a unit received in 0x262's third tagged entry (unit 0x140), a server creature-set id the group texts call 'CreatureSet'; it is neither a Creature2 id nor in any client table. 1,110 distinct values. 13 type-8 objectives (10 direct, 4731, 4918, 17983 through type-11 groups) and 27 type-16 objectives (25 direct, 1014 and 4650 through type-11 groups) reach a type-9 group. The one in a start world, 4918 (quest 3797, world 426), also matches by Creature2 id through group 1177's type-1 members."
+proof = "InitUnitFromCreate 0x140457ec1 mov [rdi+0x140],eax (record 0x110 when the tag is 1, else 0); TargetGroupContainsUnit 0x1403b4a20 type 9. gleam run -m genesis_prime/table_rows -- TargetGroup type=9, recursion over types 10/11 on the whole table; group 182 text 'CreatureSet Test'; group 1177 = type 11 over 1160, 1113, 1891, 6406, 7235; spawn.tsv world 426 holds 11945, 11948, 12212, 12213, 12844, 13116, 13118, 13549."
+grade = "fairly sure"
+gap = "Which creature carries which set id is server data in neither the client nor the world database; a retail 0x262 capture would settle it."
