@@ -4638,10 +4638,19 @@ fn failed_effect(
   result result: cast_result.CastResult,
   unit_id unit_id: Int,
 ) -> Effect {
+  Send(frame: failed_frame(cast_id:, result:, unit_id:))
+}
+
+/// 0x07F9 for a cast of `unit_id` that failed with `result`, the bit 0 (`opcode.0x7f9`).
+fn failed_frame(
+  cast_id cast_id: Int,
+  result result: cast_result.CastResult,
+  unit_id unit_id: Int,
+) -> Frame {
   let assert Ok(body) =
     spell_failed.encode(SpellFailed(cast_id:, result:, unit_id:, field_4: 0))
     as "a cast id of 32 bits, a result of 9, a unit id of 32 and a bit fit the message"
-  Send(frame: Frame(message_id: spell_failed.message_id, body:))
+  Frame(message_id: spell_failed.message_id, body:)
 }
 
 /// The player's innate passive, the plans' spell of this Spell4Base, starts: a cast of
@@ -8299,15 +8308,7 @@ pub fn went_frame(go go: SpellGo) -> Frame {
 /// 0x07F9 for a cast of `unit_id` that was interrupted: result 11 and the bit 0, written
 /// by each viewer's connection before the cast's 0x7fe (`opcode.0x7f9`).
 pub fn interrupted_frame(cast_id cast_id: Int, unit_id unit_id: Int) -> Frame {
-  let assert Ok(body) =
-    spell_failed.encode(SpellFailed(
-      cast_id:,
-      result: cast_result.SpellInterrupted,
-      unit_id:,
-      field_4: 0,
-    ))
-    as "a cast id of 32 bits, a result of 9, a unit id of 32 and a bit fit the message"
-  Frame(message_id: spell_failed.message_id, body:)
+  failed_frame(cast_id:, result: cast_result.SpellInterrupted, unit_id:)
 }
 
 /// 0x07FE for a cast that ends, written by the caster's rule and by each

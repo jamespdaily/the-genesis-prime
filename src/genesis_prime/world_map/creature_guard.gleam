@@ -25,9 +25,10 @@
 //// OpeningEnds of the opening's generation:
 ////                                                        ─0x880(C, 9) 0x880(C, 12) 0x7fe(85472's cast)─▶
 ////                                                        Guarded(a new cast): ─0x7ff(85474) 0x7f4─────▶
-//// C is killed (Guarded or Opened):                       CancelTimer(OpeningEnds); no frame (the death
-////                                                           clears the client's states); Dormant, which
-////                                                           shows nothing and holds no cast
+//// C is killed (Guarded or Opened):                       Guarded: no frame; Dormant, which shows nothing and
+////                                                           holds no cast. Opened: CancelTimer(OpeningEnds),
+////                                                           ─0x7fe(85472's cast)─▶ Dormant (the death clears
+////                                                           the states, not the cast)
 //// the corpse timer stands C again (`Stands`):            Dormant ─▶ Guarded(a new cast), as at a start
 //// ```
 ////
@@ -73,7 +74,7 @@
 //// | A viewer arrives | n/a | the viewer is told the guard (or the opening) by `shown`, as the 0x262 | its 0x262 comes before the casts; a 0x87f for a unit the client does not have yet is skipped (`opcode.0x87f`) |
 //// | A state lands outside a charge | nothing opens (`a_state_on_a_guarded_turret_outside_a_charge_lands_and_opens_nothing_test`) | creature_control's own rules | n/a |
 //// | A state lands during the charge (`Interrupted`) | the charge's cast is finished by the fight's death branch, and the guard is `Dormant` until `Stands` | two states for one charge: the first breaks the round, the second finds none and opens nothing (`a_second_state_in_the_same_round_opens_nothing_more_test`) | a state after the go: the round is `Striking`, so no interrupt (`an_interrupt_after_the_go_opens_nothing_test`) |
-//// | The opening is open, its timer armed | no 0x880: the death clears the states; the timer is cancelled; `Dormant` until `Stands` (`a_turret_killed_while_opened_gives_its_kill_credit_test`) | n/a | n/a |
+//// | The opening is open, its timer armed | no 0x880, the death clears the states (`SetUnitDead`); the opening's cast is finished, which the death leaves standing; the timer is cancelled; `Dormant` until `Stands` (`a_turret_killed_while_opened_gives_its_kill_credit_test`) | n/a | n/a |
 //// | The opening's timer fires | its generation is gone: nothing (`an_opening_end_after_death_does_nothing_test`) | n/a | the guard returns (`the_opening_ends_after_15_seconds_and_the_guard_returns_test`) |
 //// | The corpse timer stands the creature | n/a | n/a | `Dormant` takes `Stands`: it stands guarded with a new cast, no opening (`a_respawned_turret_stands_guarded_test`) |
 
@@ -141,8 +142,8 @@ pub type Input {
   Interrupted(charge_cast: Int)
   /// The guard's timer fired.
   TimerFired(timer: Timer)
-  /// creature_life: a strike killed the creature. The guard or the opening ends with no frame and
-  /// the guard is `Dormant`.
+  /// creature_life: a strike killed the creature. The guard ends with no frame, the opening's cast
+  /// is finished, and the guard is `Dormant`.
   Killed
 }
 
@@ -238,9 +239,13 @@ pub fn step(
         Killed ->
           case state.phase {
             Guarded(..) -> #(State(..state, phase: Dormant), [])
-            Opened(generation:, ..) -> #(State(..state, phase: Dormant), [
-              CancelTimer(timer: OpeningEnds(generation:)),
-            ])
+            Opened(generation:, cast_id:, ..) -> #(
+              State(..state, phase: Dormant),
+              [
+                CancelTimer(timer: OpeningEnds(generation:)),
+                ToViewers(client_connection.CastFinished(cast_id:)),
+              ],
+            )
             Bare | Dormant -> #(state, [])
           }
       }

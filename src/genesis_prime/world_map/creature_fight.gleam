@@ -188,10 +188,13 @@
 ////   goes on and does nothing; threat, targets and the viewers' news are kept as
 ////   usual. When the last state ends it acts again from where it stands (`Controlled`,
 ////   `ControlEnded`).
-//// - **A state breaks a charge.** A stun or a knockdown that takes hold while the round is
-////   `Charging` ends the cast: the turret's tooltip says it is protected "unless it is interrupted
-////   while charging" (Spell4 85474, text 748852) and the charge's hint says to use an interrupt on
-////   it (Spell4 85469, text 748860). The fight cancels the `CastEnds` timer, writes 0x7f9 with result
+//// - **A state breaks a charge.** Any crowd-control state that takes hold while the round is
+////   `Charging` ends the cast. The authority is Jim's decision of 2026-11-11 ("any crowd control
+////   that lands during the charge is the interrupt"); the client holds no rule for it. Spell4 85474's
+////   tooltip, text 748852 ("unless it is interrupted while charging"), and Spell4 85469's hint, text
+////   748860, are evidence for the Sim-Turrets only. Interrupt Armor already decides whether a state
+////   lands (genesis_prime/world_map/creature_control), so the fight breaks the charge only when a
+////   state took hold. The fight cancels the `CastEnds` timer, writes 0x7f9 with result
 ////   11 (SpellInterrupted) and the 0x7fe, closes the round, starts the next attack tick and asks the
 ////   creature's rule to tell the guard (`ChargeInterrupted`, with the charge's cast id), which opens the creature
 ////   (genesis_prime/world_map/creature_guard). Only the first state of a hold breaks it: a creature
@@ -1265,14 +1268,8 @@ fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
         killed,
       )
     }
-    // A player is never guarded: only a creature answers `Immune`.
-    strike_tell.Immune(controls: _) -> #(
-      [
-        cast.Hit(unit_id:, unit: cast.HitPlayer, descriptions: [], controls: []),
-      ],
-      False,
-      False,
-    )
+    strike_tell.Immune(controls: _) ->
+      panic as "a player is never guarded: only a creature answers Immune"
     strike_tell.Deflected -> #([cast.Deflected(unit_id:)], False, False)
     strike_tell.Refused(why: strike_tell.Dead) -> #([], True, True)
     strike_tell.Refused(why: strike_tell.Returning) -> #([], True, False)

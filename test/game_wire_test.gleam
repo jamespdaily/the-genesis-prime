@@ -6898,6 +6898,34 @@ fn the_turret_at(
   turret.unit_id
 }
 
+/// How many presses fit in the 15000 ms opening after the press that interrupts, each
+/// 2700 ms after the last (`paralytic_surge_lingers_ms`): the presses at 2700 to 13500 ms.
+const presses_in_the_opening = 5
+
+/// Runs the body on the client's rows with Paralytic Surge's recharge taken off (as
+/// `on_rows_without_paralytic_surges_recharge`) and the Sim-Turrets' deflect taken off: their
+/// base deflect chance is 0.016 (CreatureLevel row 101 0.05 times Creature2Difficulty 1's
+/// multiplier 101 of 0.32, as `Creature2.73464.crit_deflect_glance` has it), and the
+/// presses the opening holds are only enough to destroy a turret when none of them deflects.
+fn on_rows_with_turrets_that_never_deflect(
+  body body: fn(table_store.Tables) -> a,
+) -> a {
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "Spell4",
+      id: 42_352,
+      with: [#("spellCoolDown", planted_table.Integer(0))],
+    )
+    as "Spell4 42352 holds the column spellCoolDown"
+  let assert Ok(rows) =
+    fixture_tables.change(rows:, table: "Creature2Difficulty", id: 1, with: [
+      #("unitPropertyMultiplier101", planted_table.Float(0.0)),
+    ])
+    as "Creature2Difficulty 1, the Sim-Turret's difficulty, holds the column unitPropertyMultiplier101"
+  fixture_tables.on_rows(rows:, reaching: [], body:)
+}
+
 /// The medic walks to 8 beyond the turret at `place`, inside its aggro range, faces it and waits
 /// for its charge to open; presses Paralytic Surge once, whose stun breaks the charge, and
 /// presses on within the 15 s of the opening until the turret is destroyed. It checks the
@@ -6964,15 +6992,41 @@ fn interrupts_and_destroys(
     bag_index: 2,
     target: 0,
   )
-  let #(broken, have) =
+  // The connection's pong orders only its own input, not the creature's sends, so the
+  // read waits for every message the assertions below name: the broken charge's 0x7fe, the
+  // opening's 0x7ff, the guard's 0x811, the states' 0x87f and the press's 0x247 immunity.
+  // The turret sends its news to the connection before it answers the strike, and a process's
+  // messages to another arrive in the order sent, so a health the press took would be read
+  // before the immunity the answer makes.
+  let immunity =
+    Frame(
+      message_id: 0x0247,
+      body: message_support.packed([
+        #(6, 18),
+        #(32, own),
+        #(32, turret),
+        #(18, 42_352),
+        #(4, 2),
+      ]),
+    )
+  let #(interrupted, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
       list.contains(
         game_client.casts_in(frames:),
         game_client.CastFinished(cast_id: charge_cast),
       )
+      && game_client.starts_of(
+        events: game_client.casts_in(frames:),
+        spell4_id: 85_472,
+      )
+      != []
+      && list.contains(
+        game_client.targets_removed_in(frames:),
+        #(guard_cast, [turret]),
+      )
+      && list.any(frames, fn(frame) { frame.message_id == 0x087F })
+      && list.contains(frames, immunity)
     })
-  let #(settled, have) = game_client.read_until_pong(game:, have:, number: 1)
-  let interrupted = list.append(broken, settled)
   let events = game_client.casts_in(frames: interrupted)
   assert game_client.broken_casts_in(frames: interrupted)
     == [#(charge_cast, 11, turret)]
@@ -6989,23 +7043,16 @@ fn interrupts_and_destroys(
     health.0 == turret
   })
     as "the guarded turret took no damage from the press"
-  assert list.contains(
-    interrupted,
-    Frame(
-      message_id: 0x0247,
-      body: message_support.packed([
-        #(6, 18),
-        #(32, own),
-        #(32, turret),
-        #(18, 42_352),
-        #(4, 2),
-      ]),
-    ),
-  )
+  assert list.contains(interrupted, immunity)
     as "opcode.0x247.immunity: the press's striker is shown the turret's immunity, type 18 with Spell4 42352"
   assert list.any(interrupted, fn(frame) { frame.message_id == 0x087F })
     as "opcode.0x87f: the states of the stun and the opening are told"
-  // The opening's 15 s run on the clock; the presses after the first fit in them.
+  // The opening lasts 15000 ms on the clock from the interrupting press, and a press's hit
+  // lingers 2700 ms before the next (Spell4Effects 96126), so the presses at 2700, 5400,
+  // 8100, 10800 and 13500 ms fit in it and a sixth, at 16200, would find the guard back.
+  // The turret never deflects (`on_rows_with_turrets_that_never_deflect`), so the five presses
+  // all hit, whatever the connection's rolls are, and the kill below tells whether their
+  // damage takes the turret's health.
   the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
   driven_time.advance(time:, ms: paralytic_surge_lingers_ms)
   let #(lingered, have) = game_client.read_until_pong(game:, have:, number: 2)
@@ -7017,7 +7064,7 @@ fn interrupts_and_destroys(
       target: turret,
       cast_id: cast_id + 1,
       seen: [],
-      presses: 5,
+      presses: presses_in_the_opening,
     )
   let seen = list.flatten([aggroed, opened, interrupted, lingered, killed])
   assert list.contains(game_client.deaths_in(frames: seen), #(turret, True))
@@ -7027,7 +7074,7 @@ fn interrupts_and_destroys(
 
 pub fn an_exile_interrupts_and_destroys_both_sim_turrets_test() -> Nil {
   use <- owned_test.run(120_000)
-  use tables <- on_rows_without_paralytic_surges_recharge()
+  use tables <- on_rows_with_turrets_that_never_deflect()
   let time = driven_time.new()
   let started = world_with_the_turrets(tables:, time:)
   // Enters 14 beyond the first turret, outside its aggro range 10.

@@ -999,7 +999,7 @@ fn controls_after(
     }
     [_, ..], None, _ ->
       case reaction.answer.outcome {
-        strike_tell.Landed(descriptions:, ..) -> {
+        strike_tell.Landed(..) | strike_tell.Immune(..) -> {
           let was_held = held(state:)
           let landing =
             creature_control.land(
@@ -1018,34 +1018,10 @@ fn controls_after(
             state,
             Answered(
               key: reaction.answer.key,
-              outcome: strike_tell.Landed(
-                descriptions:,
+              outcome: with_controls(
+                outcome: reaction.answer.outcome,
                 controls: landing.landed,
               ),
-            ),
-            list.append(carried(state:, effects: landing.effects), stopped),
-          )
-        }
-        strike_tell.Immune(..) -> {
-          let was_held = held(state:)
-          let landing =
-            creature_control.land(
-              state: state.control,
-              tell:,
-              armor: state.body.combat.interrupt_armor,
-              refill_ms: state.settings.numbers.interrupt_armor_refill_ms,
-              now_ms:,
-            )
-          let state = State(..state, control: landing.state)
-          let #(state, stopped) = case !was_held && held(state:) {
-            True -> fought(state:, input: creature_fight.Controlled, now_ms:)
-            False -> #(state, [])
-          }
-          #(
-            state,
-            Answered(
-              key: reaction.answer.key,
-              outcome: strike_tell.Immune(controls: landing.landed),
             ),
             list.append(carried(state:, effects: landing.effects), stopped),
           )
@@ -1056,6 +1032,20 @@ fn controls_after(
           [],
         )
       }
+  }
+}
+
+/// The outcome of a strike that landed or met the immunity, with the states the creature
+/// took of it.
+fn with_controls(
+  outcome outcome: strike_tell.Outcome,
+  controls controls: List(strike_tell.ControlLanded),
+) -> strike_tell.Outcome {
+  case outcome {
+    strike_tell.Landed(descriptions:, ..) ->
+      strike_tell.Landed(descriptions:, controls:)
+    strike_tell.Immune(..) -> strike_tell.Immune(controls:)
+    strike_tell.Deflected | strike_tell.Refused(..) -> outcome
   }
 }
 

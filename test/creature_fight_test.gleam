@@ -3660,8 +3660,11 @@ pub fn a_turret_killed_while_opened_gives_its_kill_credit_test() -> Nil {
     tell(state:, at_ms: 5000, message: damaging(damage: 1_000_000))
   assert list.contains(said(killed), "KillCredit to 2")
     as "the turret dies of the strike, which credits its killer"
-  assert news_named(killed, 2) == []
-    as "no 0x880 and no 0x7fe: the death clears the client's states and the node"
+  let assert [_, _, CastStarted(start: opening), ..] = news_named(stunned, 2)
+    as "the opening's cast is the third news of the interrupt"
+  let assert [CastFinished(cast_id: finished)] = news_named(killed, 2)
+    as "no 0x880, the death clears the client's states; the opening's cast is finished, which the death does not do"
+  assert finished == opening.cast_id
   assert list.contains(timers_cancelled(killed), timer_for(stunned, 15_000))
     as "the opening's end is cancelled"
 }

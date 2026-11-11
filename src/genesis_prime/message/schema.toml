@@ -2301,7 +2301,7 @@ fields = [
 [[record]]
 name = "spell_effect_info"
 evidence = "0x140094890"
-summary = "one effect on a target of a go: the Spell4Effects id, the effect instance id, the delay in milliseconds, a 32-bit value and the result, which is a bit or a damage description. Gap: the 32-bit value is not read"
+summary = "one effect on a target of a go: the Spell4Effects id, the effect instance id, the delay in milliseconds, the effect's lifetime in milliseconds (0 never ends by time) and the result, which is a bit or a damage description"
 fields = [
   { name = "spell4_effects_id", kind = "unsigned", bits = 19, evidence = "0x140094890", named_by = "0x140094890" },
   { name = "instance_id", kind = "unsigned", bits = 32, evidence = "0x140094890", named_by = "0x140094890" },
