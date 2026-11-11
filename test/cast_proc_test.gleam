@@ -211,7 +211,8 @@ fn trace(
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
-      | cast.Activated(..) -> []
+      | cast.Activated(..)
+      | cast.ShortcutCast(..) -> []
     }
   })
 }
@@ -270,6 +271,7 @@ fn is_strike(effect effect: Effect) -> Bool {
     | cast.TargetChangeStarts(..)
     | cast.TargetChangeEnds(..)
     | cast.Activated(..)
+    | cast.ShortcutCast(..)
     | cast.StealthChanged(..) -> False
   }
 }
@@ -289,6 +291,7 @@ fn cast_of_proc(spell4_id spell4_id: Int) -> Spell {
   Spell(
     ..support.child(spell4_id:, base: spell4_id),
     caster_death: AliveOrDead,
+    target_death: AliveOrDead,
     stealth_change: KeepsStealth,
   )
 }

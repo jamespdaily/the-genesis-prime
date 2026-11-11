@@ -154,7 +154,8 @@ pub fn the_connection_imports_no_message_only_a_feature_decodes_test() -> Nil {
       "camp_request", "camp_finished", "camp_countdown",
       "character_select_start", "create_character_carrier", "delete_character",
       "rename_character", "play_character", "interaction_request",
-      "dialog_responses_shown", "cast_activate", "client_activate_unit",
+      "dialog_responses_shown", "cast_activate", "cast_objective_ability",
+      "client_activate_unit",
     ],
     fn(name) {
       assert !list.contains(imported, "genesis_prime/message/" <> name)
@@ -186,6 +187,18 @@ pub fn the_press_the_hold_and_the_cancel_of_a_cast_are_rows_taken_inside_0x038c_
     assert routing.route(AtWorld, OnItsOwn, id) == Error(Nil)
       as { "0x" <> int.to_base16(id) <> " is not taken outside 0x038C" }
   })
+}
+
+pub fn the_press_of_an_objective_button_is_a_row_taken_inside_0x038c_with_the_player_in_the_world_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert routing.route(AtWorld, InsideWorldMessage, 0x009D)
+    == Ok(routing.Shortcut)
+    as "0x009D is the shortcut row in the world (opcode.0x9d: the client sends it from inside 0x038C like every message of the world)"
+  assert routing.route(AtCharacterSelect, InsideWorldMessage, 0x009D)
+    == Error(Nil)
+    as "it is not taken in character select"
+  assert routing.route(AtWorld, OnItsOwn, 0x009D) == Error(Nil)
+    as "it is not taken outside 0x038C"
 }
 
 pub fn the_innate_choice_is_a_row_taken_inside_0x038c_with_the_player_in_the_world_test() -> Nil {

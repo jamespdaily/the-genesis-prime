@@ -489,18 +489,51 @@ Quest2	9494	quest named by a gated type 24 objective	objective_test
 Quest2	10502	yearly quest whose objectives are type 24 naming a yearly quest	objective_test
 Quest2	10503	yearly quest named by a type 24 objective	objective_test
 WorldLocation2	46118	marker of the type 22 objective 18249	objective_test
+Quest2	7618	quest whose one objective 13884 is a type 11 cast of Spell4 40471, count 1	objective_test, game_connection_objective_cast_test, world_entry_quest_log_test
+Quest2	7617	quest 7618 needs completed (preq_quest0), so a log can hold it completed	game_connection_objective_cast_test
+Quest2	3915	quest whose fourth objective 5197 (flags 3) is a type 11 cast of Spell4 25306 behind three objectives	objective_test, cast_shortcut_test
+Quest2	6431	quest whose objective 9882 is a type 11 cast with data 0, no Spell4	objective_test
+Quest2	6372	quest whose objectives 9768, 9770 and 9771 are type 11 casts of Spell4 33300	objective_test
+Quest2	3955	quest whose objective 5181 is a type 11 cast of Spell4 25287, count 20	objective_test
+Quest2	9161	quest whose objective 18165 is a type 11 cast of Spell4 70503, castMethod 5	cast_shortcut_test
+Quest2	6674	quest whose objective 10349 is a type 11 cast of Spell4 34448 with a caster cast prerequisite	cast_shortcut_test
+Quest2	4832	quest whose objective 6761 is a type 11 cast of Spell4 30173, a targeted spell	cast_shortcut_test
+Spell4	40471	cast objective spell of quest 7618	objective_test, game_connection_objective_cast_test
+Spell4	25306	cast objective spell of quest 3915, self-aimed, cast time 2000	cast_shortcut_test, objective_test
+Spell4	25287	cast objective spell of quest 3955	objective_test
+Spell4	33300	cast objective spell of quest 6372	objective_test
+Spell4	70503	cast objective spell of castMethod 5 (quest 9161)	cast_shortcut_test
+Spell4	34448	cast objective spell whose prerequisiteIdCasterCast is 11700	cast_shortcut_test
+Spell4	30173	cast objective spell with targetType 1	cast_shortcut_test
+Creature2	73606	the Northern Wilds departures terminal: activate spell 34680, anim prerequisite 41793	departures_test, game_connection_departures_test
+Creature2	74773	the Levian Bay departures terminal: activate spell 50279, anim prerequisite 42982	departures_test
+Creature2	74772	the Crimson Isle departures terminal: activate spell 37270, anim prerequisite 42982	departures_test, game_connection_departures_test
+Quest2	10530	the Dominion quest Bon Voyage: objectives 21347 to 21351	departures_test, objective_test
+QuestObjective	21347	talk before the Dominion travel objective	departures_test
+QuestObjective	21348	the Dominion travel objective, a type 23 of TargetGroup 14387	departures_test, objective_test
+QuestObjective	21349	the Levian Bay choice objective	departures_test, objective_test
+QuestObjective	21350	the Crimson Isle choice objective	departures_test, objective_test
+QuestObjective	21351	the Dominion quest optional objective	departures_test
+QuestObjective	21094	a type 23 objective of TargetGroup 14175, count 8	objective_test
+TargetGroup	14387	the two Dominion departures terminals	departures_test
+TargetGroup	14175	six creatures, which a type 23 objective of count 8 counts	objective_test
+Creature2	72197	first creature of TargetGroup 14175	objective_test
+Creature2	72198	second creature of TargetGroup 14175	objective_test
+Creature2	72231	third creature of TargetGroup 14175	objective_test
+Quest2	10415	the quest of objective 21094, a type 23 objective of TargetGroup 14175	objective_test
+Creature2	11070	Trapped Survivor, a quest creature that walks a path: activate spell 1817, linked to quest 3480 by Prerequisite 2672	game_connection_objective, game_wire_test
+QuestObjective	4470	type 12 objective of quest 3480, Creature2 11070, count 3	game_connection_objective, game_wire_test
+Quest2	3480	quest whose objective 0 is a use of Creature2 11070	game_connection_objective, game_wire_test
+Prerequisite	2672	anim state of Creature2 11070: type 43 on quests 3479 and 3480	game_connection_objective
 Quest2	3886	Northern Wilds quest: use 13630, use three 13623, turn in at 11066	game_wire_test
-Quest2	3480	Northern Wilds quest given by 11061: use three 11070, then eight kills	game_wire_test
 QuestObjective	5053	type 12 objective of quest 3886, Creature2 13630	game_wire_test
 QuestObjective	5052	type 14 objective of quest 3886, TargetGroup 1460	game_wire_test
-QuestObjective	4470	type 12 objective of quest 3480, Creature2 11070	game_wire_test
 QuestObjective	4565	type 8 objective of quest 3480, TargetGroup 1463	game_wire_test
 TargetGroup	1460	group of Creature2 13623, the checklist of objective 5052	game_wire_test
 TargetGroup	1463	kill group of objective 4565	game_wire_test
 Creature2	11061	giver of quest 3480	game_wire_test
 Creature2	13630	activate target of objective 5053	game_wire_test
 Creature2	13623	checklist target of objective 5052	game_wire_test
-Creature2	11070	activate target of objective 4470	game_wire_test
 Quest2Reward	2192	reward choice of quest 3886	game_wire_test
 Quest2Reward	2430	reward choice of quest 3886	game_wire_test
 Quest2Reward	4767	reward choice of quest 3886	game_wire_test

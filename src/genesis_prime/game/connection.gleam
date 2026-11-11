@@ -147,6 +147,7 @@ import genesis_prime/game/chat
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/chat as connection_chat
+import genesis_prime/game/connection/departures as connection_departures
 import genesis_prime/game/connection/dropped as connection_dropped
 import genesis_prime/game/connection/experience as connection_experience
 import genesis_prime/game/connection/interaction as connection_interaction
@@ -170,6 +171,7 @@ import genesis_prime/game/connection/vendor_sale as connection_vendor_sale
 import genesis_prime/game/connection/viewers as connection_viewers
 import genesis_prime/game/connection/visibility_check
 import genesis_prime/game/connection/world as connection_world
+import genesis_prime/game/departures
 import genesis_prime/game/player_life
 import genesis_prime/game/routing
 import genesis_prime/game/strike
@@ -579,6 +581,7 @@ fn routed(
     | Ok(routing.Chat(..))
     | Ok(routing.Cast(..))
     | Ok(routing.Activation)
+    | Ok(routing.Shortcut)
     | Ok(routing.UnitActivation)
     | Ok(routing.Life(..))
     | Ok(routing.Innate(..))
@@ -724,6 +727,13 @@ fn world_carried(
                   )
                 Ok(routing.Activation) ->
                   connection_casting.activate_message(
+                    session:,
+                    now:,
+                    entered:,
+                    inner: whole,
+                  )
+                Ok(routing.Shortcut) ->
+                  connection_casting.shortcut_message(
                     session:,
                     now:,
                     entered:,
@@ -1067,7 +1077,8 @@ fn stay_sent(
 }
 
 /// A timer fired that is not the save timer's: a cast's, a strike's, the class
-/// resource's, the player's regeneration's, or the claim's.
+/// resource's, the player's regeneration's, a departures terminal's move's, or the
+/// claim's.
 fn other_timer_fired(
   session session: Session,
   now now: Now,
@@ -1077,14 +1088,18 @@ fn other_timer_fired(
     cast.owns(timer),
     strike.owns(timer),
     class_resource.owns(timer:),
-    player_life.owns(timer:)
+    player_life.owns(timer:),
+    departures.owns(timer:)
   {
-    True, _, _, _ -> connection_casting.cast_due(session:, now:, timer:)
-    False, True, _, _ -> connection_casting.strike_due(session:, now:)
-    False, False, True, _ -> connection_resource.resource_due(session:, timer:)
-    False, False, False, True ->
+    True, _, _, _, _ -> connection_casting.cast_due(session:, now:, timer:)
+    False, True, _, _, _ -> connection_casting.strike_due(session:, now:)
+    False, False, True, _, _ ->
+      connection_resource.resource_due(session:, timer:)
+    False, False, False, True, _ ->
       connection_life.regeneration_due(session:, now:, timer:)
-    False, False, False, False ->
+    False, False, False, False, True ->
+      connection_departures.due(session:, now:)
+    False, False, False, False, False ->
       connection_login.claim_wait_over(session:, now:, timer:)
   }
 }

@@ -9,16 +9,20 @@ import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/state.{type Session} as connection_state
+import genesis_prime/game/departures
 import genesis_prime/game/experience
 import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
 import genesis_prime/game/world_entry
-import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
+import genesis_prime/step.{
+  type ConnectionEffect, type Effect, type Now, OwnEffect, StartTimer,
+}
 import genesis_prime/table/creature2
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/set
 
 /// The session and what is written after the player's blow killed the creature of
 /// the credit. The unit is the creature as the credit names it: its Creature2 row, the
@@ -40,6 +44,45 @@ pub fn killed(
       unit_race_id: creature2.unit_race_id(row),
     )),
   )
+}
+
+/// The session and what is written after the player's yes finished a cast that used the
+/// unit `target` (`checklist_index` its checklist bit): the use is counted (`counted`),
+/// and when the unit is a departures terminal whose landing the player's log still opens
+/// (`departures.landing`, asked before the count, which can finish the quest), the landing
+/// is kept in `Entered.departing` and the 0 ms timer that starts the move is asked for
+/// (`connection/departures.due`). A player not in the world counts nothing.
+pub fn used(
+  session session: Session,
+  now now: Now,
+  target target: target_group.Unit,
+  checklist_index checklist_index: Int,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let landing = case connection_state.entered_of(session.status) {
+    None -> Error(departures.NotATerminal)
+    Some(entered) ->
+      departures.landing(
+        tables: session.settings.tables,
+        quests: entered.quests,
+        creature_id: target.creature_id,
+      )
+  }
+  let #(session, written) =
+    counted(session:, now:, event: objective.Used(target:, checklist_index:))
+  case landing {
+    Ok(place) -> #(
+      connection_state.with_entered(session:, change: fn(entered) {
+        world_entry.Entered(..entered, departing: Some(place))
+      }),
+      list.append(written, [
+        OwnEffect(StartTimer(timer: departures.timer, after_ms: 0)),
+      ]),
+    )
+    Error(departures.NotATerminal) | Error(departures.TravelClosed) -> #(
+      session,
+      written,
+    )
+  }
 }
 
 /// The session and what is written after the player did this to a creature, and then
@@ -125,13 +168,19 @@ fn told(
   before before: quest_log.QuestLog,
   advanced advanced: objective.Advanced,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let held = case connection_state.entered_of(session.status) {
+    Some(entered) -> entered.buttons
+    None -> set.new()
+  }
+  let buttons =
+    objective.buttons(log: advanced.log, tables: session.settings.tables)
   let session =
     connection_state.with_entered(session:, change: fn(entered) {
-      world_entry.Entered(..entered, quests: advanced.log)
+      world_entry.Entered(..entered, quests: advanced.log, buttons:)
     })
   #(
     session,
-    list.append(
+    list.flatten([
       list.map(advanced.effects, fn(effect) {
         connection_state.to_client(session, case effect {
           objective.SendProgress(quest_id:, objective_index:, progress:) ->
@@ -148,6 +197,11 @@ fn told(
             )
         })
       }),
+      // The buttons that closed are taken away and those that opened are given, after
+      // the progress and state that closed or opened them.
+      list.map(objective.button_changes(held:, now: buttons), fn(change) {
+        connection_state.to_client(session, world_entry.button_frame(change:))
+      }),
       list.map(
         quest_log.deadline_moved(
           before: quest_log.next_deadline(log: before),
@@ -156,6 +210,6 @@ fn told(
         ),
         connection_state.quest_deadline_timer_move,
       ),
-    ),
+    ]),
   )
 }

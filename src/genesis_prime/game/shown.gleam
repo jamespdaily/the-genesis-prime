@@ -6,6 +6,7 @@
 //// the creature's 0x262 news ─▶ shown(unit, ShownCreature(creature id, Standing(place), life, alive, hit radius, attackable, hostile to))
 //// its CreatureMoved news   ─▶ path changed
 //// its Health and Died news ─▶ alive changed        its 0x355 ─▶ the unit is no longer shown
+//// its CombatState news     ─▶ in combat changed
 //// candidates(picture, faction, caster, now) ─▶ the alive foes at place_at(path, now), as geometry's
 ////                                              candidates (genesis_prime/game/area)
 //// ```
@@ -90,6 +91,10 @@ pub type Shown {
     /// Which player factions the creature is Hostile to (the client's own
     /// disposition of the creature toward the player, `0x14045a950`).
     hostile_to: Hostile,
+    /// True from the creature's CombatState news that it entered combat until the one
+    /// that it left it; the client gives a creature in combat no click
+    /// (`PickInteractionKind`, `0x14047a060`).
+    in_combat: Bool,
   )
 }
 
@@ -306,6 +311,20 @@ pub fn with_alive(
   case dict.get(picture, unit_id) {
     Ok(ShownCreature(..) as creature) ->
       dict.insert(picture, unit_id, ShownCreature(..creature, alive:))
+    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+  }
+}
+
+/// The picture with the creature marked in combat or out of it by its owner's news; a
+/// unit that is not a shown creature is as it was.
+pub fn with_in_combat(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  in_combat in_combat: Bool,
+) -> Picture {
+  case dict.get(picture, unit_id) {
+    Ok(ShownCreature(..) as creature) ->
+      dict.insert(picture, unit_id, ShownCreature(..creature, in_combat:))
     Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }

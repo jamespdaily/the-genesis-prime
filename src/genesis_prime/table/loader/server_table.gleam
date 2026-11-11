@@ -67,6 +67,7 @@ import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_group_list
 import genesis_prime/table/spell4_stack_group
+import genesis_prime/table/spell4_target_mechanics
 import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell4_valid_targets
@@ -213,6 +214,7 @@ pub fn entries() -> List(store.Entry) {
     spell4_effects.entry(),
     spell4_group_list.entry(),
     spell4_stack_group.entry(),
+    spell4_target_mechanics.entry(),
     spell4_telegraph.entry(),
     spell4_thresholds.entry(),
     spell4_valid_targets.entry(),

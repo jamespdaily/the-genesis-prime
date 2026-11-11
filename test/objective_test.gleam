@@ -89,19 +89,29 @@
 //// - 10520: objective 0 is 21294 (type 14, count 3), 1 is 21297 (type 22, flags
 ////   0x21), 2 is 21295 (type 22, flags 3), 3 is 21296 (type 2, creature 73499, flags 3)
 ////   and 4 is 21298 (type 17, zone 5998, flags 3).
+//// - `QuestObjective.type.23`: a use of any unit in the objective's TargetGroup counts
+////   one. QuestObjective 21094 (quest 10415, group 14175 of creatures 72197, 72198,
+////   72231 ..., count 8, flags 4); the Bon Voyage objectives of quest 10528 (21326
+////   talk, 21327 travel, 21328 and 21329 choices, 21342 an optional type 14) and
+////   quest 10530 (21347, 21348, 21349, 21350), whose choices (type 23, flags 33) share
+////   a group of both terminals, so the choice of each terminal is the server's.
 
 import fixture_tables
 import genesis_prime/game/objective.{
-  Advanced, Killed, SendProgress, SendState, TalkedTo, Used,
+  Add, Advanced, Button, Cast, Killed, Remove, SendProgress, SendState, TalkedTo,
+  Used,
 }
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place
 import genesis_prime/game/target_group
 import genesis_prime/store.{HeldItem}
-import genesis_prime/table/id.{Creature2Id, Faction2Id, Item2Id, UnitRaceId}
+import genesis_prime/table/id.{
+  Creature2Id, Faction2Id, Item2Id, Spell4Id, UnitRaceId,
+}
 import genesis_prime/table/loader/store as table_store
 import gleam/dict
 import gleam/list
+import gleam/set
 import owned_test
 import place_support
 import planted_table.{Integer}
@@ -1325,4 +1335,480 @@ pub fn a_counted_finish_objective_is_not_told_again_test() -> Nil {
     as "the first settle tells the count"
   assert settled(log: first.log, tables:, items: [], zones: []).effects == []
     as "a second settle of the returned log sends nothing: one 0x361 for each change"
+}
+
+// The cast objectives (`QuestObjective.type.11`) read these rows. The client counts
+// nothing for a type 11 objective; it shows the spell as a button (`0x176`, kind 2) and
+// the server's 0x361 value counts.
+// - quest 7618: objective 13884, spell 40471, count 1, flags 0.
+// - quest 3915: objectives 5101 (type 5), 5102 and 5103 (type 5, flags 3) and 5197 (type
+//   11, flags 3, spell 25306, count 1), which waits for the three before it.
+// - quest 6431: objective 9881 (type 22) and 9882 (type 11, flags 0, data 0: no spell).
+// - quest 3955: objective 5181, spell 25287, count 20.
+// - quest 6372: objectives 9771, 9767, 9768, 9769 and 9770; 9771, 9768 and 9770 are
+//   type 11 of spell 33300 (flags 3, count 1), 9767 is type 3 and 9769 type 22.
+
+const the_first_cast_quest = 7618
+
+const the_first_cast_objective = 13_884
+
+const the_first_cast_spell = 40_471
+
+const the_gated_cast_quest = 3915
+
+const the_gated_cast_objective = 5197
+
+const the_gated_cast_spell = 25_306
+
+const the_counted_cast_quest = 3955
+
+const the_counted_cast_spell = 25_287
+
+const the_shared_cast_quest = 6372
+
+const the_shared_cast_spell = 33_300
+
+fn buttons_of(log log: quest_log.QuestLog) -> List(#(Int, Int)) {
+  objective.buttons(log:, tables: fixture_tables.shared())
+  |> set.to_list
+  |> list.map(fn(button) { #({ button.spell4_id }.value, button.objective_id) })
+}
+
+pub fn an_open_cast_objective_holds_its_spell_as_a_button_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: the_first_cast_quest, progress: [0]),
+    ])
+  assert buttons_of(log:) == [#(the_first_cast_spell, the_first_cast_objective)]
+    as "QuestObjective.type.11.button: row 13884 (type 11, data 40471) is open, so its spell is a button for it"
+}
+
+pub fn a_cast_objective_opens_its_button_only_when_reachable_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let waiting =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: the_gated_cast_quest, progress: [
+        0,
+        0,
+        0,
+        0,
+      ]),
+    ])
+  assert buttons_of(log: waiting) == []
+    as "0x140553790: row 5197 has flags 3 and waits for the three objectives before it"
+  let reached =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: the_gated_cast_quest,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b111,
+        progress: [1, 1, 1, 0],
+      ),
+    ])
+  assert buttons_of(log: reached)
+    == [#(the_gated_cast_spell, the_gated_cast_objective)]
+    as "with those done the objective is reachable and open"
+}
+
+pub fn a_done_cast_objective_holds_no_button_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let open =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: the_first_cast_quest, progress: [0]),
+    ])
+  assert buttons_of(log: open)
+    == [#(the_first_cast_spell, the_first_cast_objective)]
+    as "row 13884 at progress 0 is open and holds its button, so the empty set below is the done objective's"
+  let done =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: the_first_cast_quest,
+        state: 2,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [1],
+      ),
+    ])
+  assert buttons_of(log: done) == []
+    as "0x1403b9fb0: the button is taken away once the objective is at its count of 1"
+}
+
+pub fn a_cast_objective_with_no_spell_holds_no_button_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 6431, progress: [0, 0]),
+    ])
+  assert buttons_of(log:) == []
+    as "0x14039b340 refuses a spell with no Spell4 row (22): row 9882's data 0 names none, so its button would be dead"
+}
+
+pub fn button_changes_remove_what_closed_and_add_what_opened_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let first = Button(Spell4Id(the_shared_cast_spell), 9768)
+  let second = Button(Spell4Id(the_shared_cast_spell), 9770)
+  assert objective.button_changes(
+      held: set.from_list([first]),
+      now: set.from_list([second]),
+    )
+    == [Remove(first), Add(second)]
+    as "0x1403b9fb0: an entry is keyed by spell, kind and id, so the closed objective's is removed and the opened one's added, removes first"
+  assert objective.button_changes(
+      held: set.from_list([first]),
+      now: set.from_list([first]),
+    )
+    == []
+    as "a duplicate add is ignored by the client, so what is held already is not sent again"
+}
+
+fn cast_of(spell spell: Int) -> objective.Event {
+  Cast(Spell4Id(spell))
+}
+
+pub fn a_cast_of_the_objective_spell_completes_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: the_first_cast_quest, progress: [0]),
+    ])
+  let cast =
+    objective.advance(
+      log:,
+      tables:,
+      event: cast_of(spell: the_first_cast_spell),
+      now_ms: 0,
+    )
+  assert cast.effects
+    == [
+      SendProgress(
+        quest_id: the_first_cast_quest,
+        objective_index: 0,
+        progress: 1,
+      ),
+      SendState(quest_id: the_first_cast_quest, state: 2),
+    ]
+    as "opcode.0x361: row 13884's count is 1, so one cast fills it and the quest is Achieved; the client counts nothing for type 11"
+}
+
+pub fn each_cast_counts_one_up_to_the_count_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: the_counted_cast_quest, progress: [0]),
+    ])
+  let after =
+    list.index_fold(list.repeat(Nil, 20), log, fn(log, _, at) {
+      let number = at + 1
+      let cast =
+        objective.advance(
+          log:,
+          tables:,
+          event: cast_of(spell: the_counted_cast_spell),
+          now_ms: 0,
+        )
+      let progress =
+        SendProgress(
+          quest_id: the_counted_cast_quest,
+          objective_index: 0,
+          progress: number,
+        )
+      case number {
+        20 -> {
+          assert cast.effects
+            == [
+              progress,
+              SendState(quest_id: the_counted_cast_quest, state: 2),
+            ]
+            as "row 5181's count is 20: the 20th cast changes the state"
+          Nil
+        }
+        _ -> {
+          assert cast.effects == [progress]
+            as "each cast before the count tells one more"
+          Nil
+        }
+      }
+      cast.log
+    })
+  assert objective.advance(
+      log: after,
+      tables:,
+      event: cast_of(spell: the_counted_cast_spell),
+      now_ms: 0,
+    )
+    == Advanced(log: after, effects: [])
+    as "a done objective takes nothing from a 21st cast"
+}
+
+pub fn a_cast_of_another_spell_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: the_first_cast_quest, progress: [0]),
+    ])
+  assert objective.advance(
+      log:,
+      tables:,
+      event: cast_of(spell: the_first_cast_spell),
+      now_ms: 0,
+    ).effects
+    != []
+    as "row 13884's own spell 40471 counts, so the empty answer below is the other spell's"
+  assert objective.advance(
+      log:,
+      tables:,
+      event: cast_of(spell: the_gated_cast_spell),
+      now_ms: 0,
+    )
+    == Advanced(log:, effects: [])
+    as "row 13884's data is 40471, not 25306"
+}
+
+pub fn a_cast_counts_the_open_objective_and_not_one_waiting_on_another_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objectives 9771 and 9767 are done: 9768 is open, and 9770 (index 4, flags 3) waits
+  // for 9769, which no cast counts.
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: the_shared_cast_quest,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b11,
+        progress: [1, 1, 0, 0, 0],
+      ),
+    ])
+  let cast =
+    objective.advance(
+      log:,
+      tables: fixture_tables.shared(),
+      event: cast_of(spell: the_shared_cast_spell),
+      now_ms: 0,
+    )
+  assert cast.effects
+    == [
+      SendProgress(
+        quest_id: the_shared_cast_quest,
+        objective_index: 2,
+        progress: 1,
+      ),
+    ]
+    as "rows 9768, 9770 and 9771 all name spell 33300 (flags 3); only 9768 is open (0x140553790), so only it counts, and the quest is not Achieved"
+}
+
+pub fn a_cast_counts_nothing_on_a_quest_not_in_the_active_list_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let counted =
+    objective.advance(
+      log: quest_support.log_of(rows: [
+        quest_support.accepted(quest_id: the_first_cast_quest, progress: [0]),
+      ]),
+      tables:,
+      event: cast_of(spell: the_first_cast_spell),
+      now_ms: 0,
+    )
+  assert counted.effects != []
+    as "the quest in the active list counts the cast, so the empty answers below are its state's"
+  let nothing = fn(row) {
+    let log = quest_support.log_of(rows: [row])
+    assert objective.advance(
+        log:,
+        tables:,
+        event: cast_of(spell: the_first_cast_spell),
+        now_ms: 0,
+      )
+      == Advanced(log:, effects: [])
+      as "0x1405510d0: an objective is open only for a quest in the active list"
+  }
+  nothing(quest_support.completed(quest_id: the_first_cast_quest, at: 1000))
+  nothing(quest_support.known(quest_id: the_first_cast_quest, state: 6))
+}
+
+/// Quest 10415, whose only objective is 21094 (type 23, flags 4, count 8, group 14175).
+fn group_use_log() -> quest_log.QuestLog {
+  quest_support.log_of(rows: [
+    quest_support.accepted(quest_id: 10_415, progress: [0]),
+  ])
+}
+
+/// A Bon Voyage log (quest 10528 for the Exile, 10530 for the Dominion) after the talk:
+/// the first objective done.
+fn bon_voyage_after_the_talk(quest_id quest_id: Int) -> quest_log.QuestLog {
+  quest_support.log_of(rows: [
+    quest_support.active(
+      quest_id:,
+      state: 1,
+      placeholder: 0,
+      tracked: False,
+      done_mask: 0b1,
+      progress: [1, 0, 0, 0, 0],
+    ),
+  ])
+}
+
+pub fn a_use_of_a_group_unit_counts_a_type_23_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // QuestObjective 21094 is type 23 with TargetGroup 14175 (a list of creatures, 72197
+  // first), count 8 and flags 4: a use of one of the group counts one.
+  use tables <- with_objectives(edits: [])
+  assert objective.advance(
+      log: group_use_log(),
+      tables:,
+      event: a_use(Creature2Id(72_197)),
+      now_ms: 0,
+    ).effects
+    == [SendProgress(quest_id: 10_415, objective_index: 0, progress: 1)]
+    as "a use of a unit in the group counts one toward the objective's count of 8"
+}
+
+pub fn a_use_of_a_unit_outside_the_group_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 73606 is in TargetGroup 14367, not in 14175.
+  use tables <- with_objectives(edits: [])
+  assert objective.advance(
+      log: group_use_log(),
+      tables:,
+      event: a_use(Creature2Id(73_606)),
+      now_ms: 0,
+    ).effects
+    == []
+    as "a unit outside the objective's group counts nothing"
+}
+
+pub fn each_use_counts_one_toward_a_larger_count_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  let count = fn(log, creature) {
+    objective.advance(
+      log:,
+      tables:,
+      event: a_use(Creature2Id(creature)),
+      now_ms: 0,
+    )
+  }
+  let first = count(group_use_log(), 72_197)
+  let second = count(first.log, 72_198)
+  let third = count(second.log, 72_231)
+  assert third.effects
+    == [SendProgress(quest_id: 10_415, objective_index: 0, progress: 3)]
+    as "three uses of three different units of the group are 3 of 8, and the quest is not told it is Achieved"
+  assert quest_log.stored_state(log: third.log, quest_id: 10_415) == 1
+    as "the quest stays Accepted: 3 of 8 is not done"
+}
+
+pub fn the_northern_wilds_terminal_counts_travel_and_its_own_choice_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 10528: 21326 (talk), 21327 (travel, type 23), 21328 and 21329 (the choices,
+  // type 23, flags 33), the last two with a TargetGroup that holds both terminals,
+  // 73605 and 73606.
+  use tables <- with_objectives(edits: [])
+  assert objective.advance(
+      log: bon_voyage_after_the_talk(quest_id: 10_528),
+      tables:,
+      event: a_use(Creature2Id(73_606)),
+      now_ms: 0,
+    ).effects
+    == [
+      SendProgress(quest_id: 10_528, objective_index: 1, progress: 1),
+      SendProgress(quest_id: 10_528, objective_index: 2, progress: 1),
+      SendState(quest_id: 10_528, state: 2),
+    ]
+    as "the travel (index 1) and the Northern Wilds choice (index 2) count; the Everstar Grove choice (index 3) does not; the travel was the last objective without flag 0x20, so the quest is Achieved"
+}
+
+pub fn the_everstar_terminal_counts_only_its_own_choice_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  assert objective.advance(
+      log: bon_voyage_after_the_talk(quest_id: 10_528),
+      tables:,
+      event: a_use(Creature2Id(73_605)),
+      now_ms: 0,
+    ).effects
+    == [
+      SendProgress(quest_id: 10_528, objective_index: 1, progress: 1),
+      SendProgress(quest_id: 10_528, objective_index: 3, progress: 1),
+      SendState(quest_id: 10_528, state: 2),
+    ]
+    as "the travel (index 1) and the Everstar Grove choice (index 3) count, not the Northern Wilds choice"
+}
+
+pub fn each_dominion_terminal_counts_its_own_choice_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 10530: 21347 (talk), 21348 (travel), 21349 (Levian Bay) and 21350 (Crimson
+  // Isle), the choices of type 23 with flags 33.
+  use tables <- with_objectives(edits: [])
+  assert objective.advance(
+      log: bon_voyage_after_the_talk(quest_id: 10_530),
+      tables:,
+      event: a_use(Creature2Id(74_773)),
+      now_ms: 0,
+    ).effects
+    == [
+      SendProgress(quest_id: 10_530, objective_index: 1, progress: 1),
+      SendProgress(quest_id: 10_530, objective_index: 2, progress: 1),
+      SendState(quest_id: 10_530, state: 2),
+    ]
+    as "Levian Bay counts the travel and objective 21349"
+  assert objective.advance(
+      log: bon_voyage_after_the_talk(quest_id: 10_530),
+      tables:,
+      event: a_use(Creature2Id(74_772)),
+      now_ms: 0,
+    ).effects
+    == [
+      SendProgress(quest_id: 10_530, objective_index: 1, progress: 1),
+      SendProgress(quest_id: 10_530, objective_index: 3, progress: 1),
+      SendState(quest_id: 10_530, state: 2),
+    ]
+    as "Crimson Isle counts the travel and objective 21350"
+}
+
+pub fn a_talk_to_a_terminal_counts_no_type_23_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  assert objective.advance(
+      log: bon_voyage_after_the_talk(quest_id: 10_528),
+      tables:,
+      event: a_talk(Creature2Id(73_606)),
+      now_ms: 0,
+    ).effects
+    == []
+    as "a type 23 objective counts a use, not a talk"
+}
+
+pub fn travel_done_leaves_bon_voyage_achieved_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 21342 (index 4) is type 14 with flags 41: it has flag 0x20, so the quest
+  // is Achieved without it, and it stays open in the Achieved quest.
+  use tables <- with_objectives(edits: [])
+  let used =
+    objective.advance(
+      log: bon_voyage_after_the_talk(quest_id: 10_528),
+      tables:,
+      event: a_use(Creature2Id(73_606)),
+      now_ms: 0,
+    )
+  let quest = quest_of(id: 10_528, tables:)
+  assert quest_log.stored_state(log: used.log, quest_id: 10_528) == 2
+    as "the travel done makes Bon Voyage Achieved (0x35c state 2)"
+  assert quest_log.objective_done(log: used.log, quest:, index: 1)
+    as "the travel is done"
+  assert quest_log.objective_done(log: used.log, quest:, index: 2)
+    as "the Northern Wilds choice is done"
+  assert !quest_log.objective_done(log: used.log, quest:, index: 4)
+    as "the optional objective is not"
+  assert quest_log.objective_open(log: used.log, quest:, index: 4)
+    as "the optional objective is still open in the Achieved quest"
+  assert quest_log.active_ids(log: used.log) == [10_528]
+    as "the quest is still in the active list, not completed"
 }

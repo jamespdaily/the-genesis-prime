@@ -660,6 +660,7 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.SendWhisper(..)
     | client_message.CastAbility(..)
     | client_message.CastActivate(..)
+    | client_message.CastObjectiveAbility(..)
     | client_message.ClientActivateUnit(..)
     | client_message.AbilityHold(..)
     | client_message.ItemMove(..)

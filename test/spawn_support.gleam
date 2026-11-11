@@ -20,6 +20,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/vendor
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/creature_life.{
   type Attack, Attack, Attackable, Combat, Hostile,
@@ -247,6 +248,7 @@ pub fn summon_checks() -> spawn.SummonChecks {
     tables: character_tables.content_tables(),
     formulas: rating_support.formulas(),
     kinds: kinds(),
+    factions: creature_faction.none(),
     vendors: vendor.none(),
   )
 }
@@ -261,8 +263,23 @@ pub fn summon_checks_over(
     tables: character_tables.content_over(tables:),
     formulas: rating_support.formulas(),
     kinds: kinds(),
+    factions: creature_faction.none(),
     vendors: vendor.none(),
   )
+}
+
+/// The chosen factions migration 0027 leaves: the tutorial boss, Creature2 73499,
+/// stands with faction 233, taken through the load's own check against these tables.
+pub fn the_boss_is_given_233(
+  tables tables: table_store.Tables,
+) -> creature_faction.Factions {
+  let assert Ok(factions) =
+    creature_faction.select(
+      rows: [creature_faction.Row(creature_id: 73_499, faction_id: 233)],
+      tables:,
+    )
+    as "Creature2 73499 and Faction2 233 are rows of the client's tables"
+  factions
 }
 
 /// The kinds migration 0010 leaves: row 0 alone, a respawn of 60 000 ms and an

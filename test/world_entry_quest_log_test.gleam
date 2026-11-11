@@ -21,14 +21,17 @@ import cast_support
 import character_tables
 import game_connection_support
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/objective
 import genesis_prime/game/quest_log
 import genesis_prime/message/quest_active.{QuestActive}
 import genesis_prime/message/quest_completed.{QuestCompleted}
 import genesis_prime/message/quest_known.{QuestKnown}
 import genesis_prime/message/quest_log as quest_message
 import genesis_prime/store.{HeldItem}
-import genesis_prime/table/id.{Item2Id}
+import genesis_prime/table/id.{Item2Id, Spell4Id}
 import gleam/list
+import gleam/set
+import message_support
 import owned_test
 import quest_support
 import world_entry_support
@@ -265,4 +268,100 @@ pub fn the_log_sent_at_login_counts_a_quest_finished_before_test() -> Nil {
     as "the whole log is one message, so no 0x361 follows at login"
   assert quest_log.stored_state(log: entered.quests, quest_id: 7540) == 1
     as "the log the connection keeps is the one sent, with the quest still Accepted"
+}
+
+/// The 0x176 of the client's reader for quest 7618's objective: Spell4 40471 (18 bits),
+/// kind 2 (3 bits), objective 13884 (32 bits) and the add bit (1 bit).
+fn button_body() -> BitArray {
+  message_support.packed([#(18, 40_471), #(3, 2), #(32, 13_884), #(1, 1)])
+}
+
+pub fn entering_the_world_sends_a_button_for_each_open_cast_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  // Quest 7618's only objective, 13884, is a type 11 cast of Spell4 40471 and is saved
+  // with no progress, so it is open (`QuestObjective.type.11.rows`).
+  let #(effects, entered) =
+    world_entry_support.entry_at(
+      tables:,
+      character:,
+      items: [],
+      quests: [quest_support.accepted(quest_id: 7618, progress: [0])],
+      now: world_entry_support.now(),
+    )
+  let frames = world_entry_support.frames_of(effects:)
+  assert from_the_character_state(frames:, count: 3) == [0x025E, 0x035F, 0x0176]
+    as "opcode.0x176: the button follows the quest log, so the client finds the objective in it"
+  assert world_entry_support.only_frame(frames:, message_id: 0x0176).body
+    == button_body()
+    as "opcode.0x176 {40471, kind 2, objective 13884, add 1}"
+  assert entered.buttons
+    == set.from_list([
+      objective.Button(spell4_id: Spell4Id(40_471), objective_id: 13_884),
+    ])
+    as "the entry holds the buttons the client was told, so a later close takes them away"
+}
+
+pub fn entering_the_world_sends_no_button_for_a_done_cast_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  // Quest 6372's objectives 9771 and 9767 are done (the done mask's bits 0 and 1): of its
+  // type 11 objectives of spell 33300, 9771 is done, 9768 is open and 9770 waits for 9769
+  // (flags 3), which is type 22 (`QuestObjective.type.11.rows`).
+  let #(effects, entered) =
+    world_entry_support.entry_at(
+      tables:,
+      character:,
+      items: [],
+      quests: [
+        quest_support.active(
+          quest_id: 6372,
+          state: 1,
+          placeholder: 0,
+          tracked: False,
+          done_mask: 0b11,
+          progress: [1, 1, 0, 0, 0],
+        ),
+      ],
+      now: world_entry_support.now(),
+    )
+  let frames = world_entry_support.frames_of(effects:)
+  assert world_entry_support.only_frame(frames:, message_id: 0x0176).body
+    == message_support.packed([#(18, 33_300), #(3, 2), #(32, 9768), #(1, 1)])
+    as "opcode.0x176: one button, for the open objective 9768; the done 9771 and the waiting 9770 get none"
+  assert entered.buttons
+    == set.from_list([
+      objective.Button(spell4_id: Spell4Id(33_300), objective_id: 9768),
+    ])
+    as "the entry holds only the button it sent"
+}
+
+pub fn a_holocrypt_join_sends_the_button_of_each_open_cast_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The in-world 0xAD empties the client's spell shortcuts with nothing before it that
+  // returns (`0x1403ba4a0`), so the join gives every button again. Quest 7618's
+  // objective 13884 is a type 11 cast of Spell4 40471 and is open.
+  let dead =
+    game_connection_support.killed(
+      game_connection_support.watched_by(
+        state: game_connection_support.entered_with_quests(quests: [
+          quest_support.accepted(quest_id: 7618, progress: [0]),
+        ]).0,
+        viewers: [2],
+      ),
+    ).0
+  let #(_, rejoined) = game_connection_support.at_the_holocrypt_from(dead:)
+  let frames = game_connection_support.written(taken: rejoined)
+  let ids = cast_support.ids(frames:)
+  assert list.contains(ids, 0x00AD)
+    as "the player joins the Holocrypt: the world is loaded again"
+  assert !list.contains(ids, 0x035F)
+    as "quest_log.process_wide: the quest log is kept across the join"
+  assert world_entry_support.only_frame(frames:, message_id: 0x0176).body
+    == button_body()
+    as "0x1403ba4a0: the 0xAD in the world empties the shortcuts, so the join sends {40471, kind 2, objective 13884, add 1} again"
 }

@@ -32,6 +32,7 @@ import genesis_prime/game/rating
 import genesis_prime/game/vendor
 import genesis_prime/import_world_data
 import genesis_prime/table/quest_objective
+import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/spawn
 import gleam/int
 import gleam/list
@@ -85,6 +86,7 @@ pub fn every_type_22_objective_has_a_marker_or_is_reported_test() -> Nil {
       formulas: rating.formulas(tables:),
       kinds: spawn_support.kinds(),
       vendors: vendor.none(),
+      factions: creature_faction.none(),
     )
   assert selection.refusals == [] as "every row passes the spawn checks"
   let empty =

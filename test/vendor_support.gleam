@@ -61,18 +61,26 @@ pub const walker_radius = 1.1
 /// The unit Dorian Walker is in `picture_with_walker`.
 pub const walker_unit = 40
 
+/// The place of a creature of this hit radius straight ahead of the player at the entry
+/// place, `gap` from the player's edge to its own.
+pub fn ahead_of_the_player(
+  hit_radius hit_radius: Float,
+  gap gap: Float,
+) -> start_place.Place {
+  let entry = connection_support.entry_place()
+  start_place.moved(
+    place: entry,
+    x: start_place.x(entry),
+    y: start_place.y(entry),
+    z: start_place.z(entry) -. { gap +. player_radius +. hit_radius },
+  )
+}
+
 /// Dorian Walker (Creature2 74812, alive, Hostile to neither faction) as unit 40 in a
 /// picture, `gap` from the player's edge straight ahead of the player at the entry place,
 /// with another player's unit 9: what a rule that reads the connection's picture sees.
 pub fn picture_with_walker(gap gap: Float) -> shown.Picture {
-  let entry = connection_support.entry_place()
-  let place =
-    start_place.moved(
-      place: entry,
-      x: start_place.x(entry),
-      y: start_place.y(entry),
-      z: start_place.z(entry) -. { gap +. player_radius +. walker_radius },
-    )
+  let place = ahead_of_the_player(hit_radius: walker_radius, gap:)
   let walker = spawn_support.dorian_walker(number: 1, place:)
   dict.from_list([
     #(
@@ -87,6 +95,7 @@ pub fn picture_with_walker(gap gap: Float) -> shown.Picture {
         hit_radius: walker.combat.hit_radius,
         attackable: walker.combat.attackable,
         hostile_to: Hostile(exile: False, dominion: False),
+        in_combat: False,
       ),
     ),
     #(9, shown.ShownPlayer),

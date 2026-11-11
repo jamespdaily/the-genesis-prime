@@ -66,6 +66,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     longer_of_delay_and_duration: False,
     weapon: NoWeaponNeeded,
     caster_death: spell_plan.CannotBeDead,
+    target_death: spell_plan.AliveOrDead,
     global_cooldown: GlobalCooldown(
       refused_while_running: False,
       starts_for_ms: None,
@@ -353,7 +354,31 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
+      | cast.ShortcutCast(..)
       | cast.StealthChanged(..) -> []
+    }
+  })
+}
+
+/// The `ShortcutCast` effects among the effects, each as the effect itself, in order.
+pub fn shortcut_casts(effects effects: List(Effect)) -> List(Effect) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      cast.ShortcutCast(..) -> True
+      cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.CancelTimer(..)
+      | cast.Strike(..)
+      | cast.Pay(..)
+      | cast.Gain(..)
+      | cast.Log(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
+      | cast.Activated(..)
+      | cast.StealthChanged(..) -> False
     }
   })
 }
@@ -375,6 +400,7 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
+      | cast.ShortcutCast(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -399,6 +425,7 @@ pub fn caster_change_ends(
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
+      | cast.ShortcutCast(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -423,6 +450,7 @@ pub fn caster_change_starts(
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
+      | cast.ShortcutCast(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -464,6 +492,7 @@ pub fn target_changes(effects effects: List(Effect)) -> List(Effect) {
       | cast.CasterChangeStarts(..)
       | cast.CasterChangeEnds(..)
       | cast.Activated(..)
+      | cast.ShortcutCast(..)
       | cast.StealthChanged(..) -> False
     }
   })
@@ -789,6 +818,7 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
+      | cast.ShortcutCast(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -868,6 +898,7 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
+      | cast.ShortcutCast(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -890,6 +921,7 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
+      | cast.ShortcutCast(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -912,6 +944,7 @@ pub fn goes_asked(effects effects: List(Effect)) -> List(cast.GoAsked) {
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
+      | cast.ShortcutCast(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -934,6 +967,7 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
+      | cast.ShortcutCast(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -956,6 +990,7 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
+      | cast.ShortcutCast(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -1129,6 +1164,7 @@ pub fn answered_each(
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
+      | cast.ShortcutCast(..)
       | cast.StealthChanged(..) -> #(state, list.append(done, [effect]))
     }
   })

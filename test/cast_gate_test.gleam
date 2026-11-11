@@ -264,6 +264,7 @@ fn live_go_of(spell spell: Spell) -> #(cast.State, cast.GoAsked) {
         | cast.TargetChangeStarts(..)
         | cast.TargetChangeEnds(..)
         | cast.Activated(..)
+        | cast.ShortcutCast(..)
         | cast.StealthChanged(..) -> Error(Nil)
       }
     })

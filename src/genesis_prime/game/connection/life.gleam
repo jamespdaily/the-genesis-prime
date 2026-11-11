@@ -20,7 +20,7 @@
 ////   connection writes the death's frames, ends the player's casts
 ////   (`cast.died`), and while the player is dead decodes and drops each 0x637, its
 ////   ghost's (`ghost.movement`), as it does after the Holocrypt's join until the
-////   stay's first 0xF2 (`world_entry.GhostLoading`), checks its presses as the client checks a dead
+////   stay's first 0xF2 (`world_entry.InWorldLoading`), checks its presses as the client checks a dead
 ////   caster (`caster_of`, `cast.dead_player`) and takes 0x15a from inside
 ////   0x038C. Wake Here writes the coming back where the body lies. The Holocrypt
 ////   writes the same, then leaves the map and joins again at the Holocrypt place
@@ -29,10 +29,10 @@
 ////
 ////   ```
 ////   0x15a {P, 2, 0} ─▶ the coming back's frames and news; the unit's 0x355 to each viewer
-////                    ─▶ map run: Leave(connection)                       (LeavingMap, JoinAt(place))
+////                    ─▶ map run: Leave(connection)                       (LeavingMap, JoinAt(place, None))
 ////   Left, NotRunning or EndedBeforeAnswer
 ////                    ─▶ the map's watch dropped; map of place's world: Join(connection, character, place)
-////                                                                        (EnteringWorld, FromHolocrypt)
+////                                                                        (EnteringWorld, FromInWorld)
 ////   Joined           ─▶ 0xAD, 0x262, .. 0x61, the watch, as a play's burst (the client's 0xAD
 ////                       removes every unit and loads again, 0x1403b6de0); the stay's movement
 ////                       is kept, placed there (`movement.placed`)
@@ -383,6 +383,6 @@ fn leaving_for_the_holocrypt(
     holder:,
     entered:,
     before: list.append(before, left_behind),
-    then: JoinAt(place:),
+    then: JoinAt(place:, health: None),
   )
 }
