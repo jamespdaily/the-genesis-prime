@@ -773,8 +773,20 @@ pub type Effect {
   /// cast or did not (`alive_at_press`). The cast is an item's when `by_item`, the
   /// creature's own activate cast otherwise.
   Activated(unit_id: Int, creature_id: Int, alive_at_press: Bool, by_item: Bool)
-  /// The first go of a cast of a quest button's spell (`shortcut`), by its Spell4 id.
-  ShortcutCast(spell4_id: Int)
+  /// The first go of a cast of a quest button's spell (`shortcut`), by its Spell4 id, and
+  /// the unit the press aimed it at: none for a spell that takes the caster.
+  ShortcutCast(spell4_id: Int, target: Option(PressedAt))
+}
+
+/// The unit a press of a quest button's spell aimed it at (`opcode.0x9d`).
+pub type PressedAt {
+  PressedAt(
+    unit_id: Int,
+    /// Whether the unit lived when the press started the cast. The client cancels the cast
+    /// only when its target dies during it (`SetUnitDeathState` 0x14045e740), so a cast at
+    /// a unit that died is not counted.
+    alive_at_press: Bool,
+  )
 }
 
 /// A go of a live cast that waits for its targets: which cast and phase, the spell,
@@ -930,8 +942,9 @@ type Role {
   /// The activate cast of a unit the player right-clicked: no threshold is touched.
   Activation(activating: Activating, interaction: Interaction)
   /// The cast of a quest button's spell (`opcode.0x9d`), on the caster: no threshold is
-  /// touched, and its first go counts the objective that holds the button.
-  Shortcut(interaction: Interaction)
+  /// touched, and its first go counts the objective that holds the button, with the unit
+  /// the press aimed it at when it takes one.
+  Shortcut(interaction: Interaction, aimed: Option(PressedAt))
 }
 
 /// The unit an activate cast activates and what its go names on it.
@@ -999,6 +1012,8 @@ pub type Live {
     interaction: Interaction,
     /// Whether the cast is a quest button's, whose first go counts the objective.
     shortcut: Bool,
+    /// The unit a quest button's cast was aimed at, when it takes one.
+    aimed: Option(PressedAt),
     /// Whether a channel's finish timer fired while a go's strike round was still open:
     /// the cast ends when its last go is written, which a round's deadline bounds
     /// (`opcode.0x7f4`: the client counts the gos before its 0x7fe, `cast.channel_sequence`).
@@ -1372,7 +1387,8 @@ fn item_used(
               <> int.to_string(item.value)
               <> ") has maxCharges "
               <> int.to_string(max_charges)
-              <> ", which the server does not hold: the client refuses an item with no charges left with 25 (the issue about items, #333)",
+              <> ", which the server does not hold: the client refuses an item with no charges left with 25",
+            issue: ItemsIssue,
           )
         Error(item_use.UnreadPrerequisite(spell4_id:, prerequisite_type:)) ->
           not_built_refusal(
@@ -1384,6 +1400,7 @@ fn item_used(
             why: "is gated by a prerequisite of the type "
               <> int.to_string(prerequisite_type)
               <> ", which the server does not read",
+            issue: PrerequisitesIssue,
           )
         Ok(spell4_id) ->
           item_spell_cast(
@@ -1429,7 +1446,8 @@ fn item_spell_cast(
         spell4_id:,
         key: UnbuiltItemSpell(spell4_id:),
         result: cast_result.IllegalSpellCast,
-        why: "has no Activate effect, which is all the server counts an item's use through, the issue about items (#333)",
+        why: "has no Activate effect, which is all the server counts an item's use through",
+        issue: ItemsIssue,
       )
     Ok(activate.NoSpell4Row) -> refusal(spell4_id, cast_result.SpellUnknown)
     Ok(activate.CannotBePlanned(why:)) ->
@@ -1440,6 +1458,7 @@ fn item_spell_cast(
         key: UnbuiltItemSpell(spell4_id:),
         result: cast_result.IllegalSpellCast,
         why: "cannot be planned: " <> why,
+        issue: SpellsIssue,
       )
     Ok(activate.Planned(
       spell:,
@@ -1516,22 +1535,17 @@ fn item_cast_group(
   activations activations: activate.Activations,
   in_cast_group in_cast_group: fn(Int, Int) -> Bool,
 ) -> Result(Nil, Result(#(State, List(Effect)), Refusal)) {
-  let picked =
-    activate.pick(
-      creature:,
-      default_spell: activations.default_spell,
-      check: activate.checker(
-        activations:,
-        subject: subject_for_use(cast:, caster:, unit_id:, checklist_index:),
-      ),
-    )
   case
-    activate.passes_cast_group(
+    cast_group_of(
+      cast:,
+      caster:,
+      activations:,
+      unit_id:,
       spell4_id:,
       cast_group_id:,
       creature:,
-      picked:,
-      in_cast_group: in_cast_group(_, unit_id),
+      checklist_index:,
+      in_cast_group:,
     )
   {
     activate.InCastGroup -> Ok(Nil)
@@ -1557,6 +1571,7 @@ fn item_cast_group(
         why: "of a creature activates through a prerequisite of the type "
           <> int.to_string(prerequisite_type)
           <> ", which the server does not read",
+        issue: PrerequisitesIssue,
       ))
   }
 }
@@ -1565,18 +1580,37 @@ fn item_cast_group(
 /// decoded and decided. A spell the caster holds no button for is refused with result 1
 /// (`UnableToCreateSpell`), as the client refuses a press of a shortcut it does not hold
 /// (`0x14039b340`); one of the self-aimed spells the objectives name casts on the caster
-/// as any cast does, and its first go raises `ShortcutCast`. A spell that takes the
-/// player's target is refused as not built (issue 728).
+/// as any cast does, and its first go raises `ShortcutCast`. A spell that takes a unit
+/// (targetType 1, 3, 5 or 8) is checked against the unit the press names in the order the
+/// client checks it (`aimed_shortcut`) and starts on that unit; its first go raises
+/// `ShortcutCast` with the unit. `target_of` says what a unit the press names is,
+/// `in_cast_group` whether a unit is in a TargetGroup, and `activations` hold the
+/// creatures' activate picks, which a cast group reads.
 pub fn shortcut(
   cast cast: State,
   body body: BitArray,
   caster caster: Caster,
   shortcuts shortcuts: shortcut_spell.Shortcuts,
   held held: Set(Int),
+  activations activations: activate.Activations,
+  target_of target_of: fn(Int) -> activate.Target,
+  in_cast_group in_cast_group: fn(Int, Int) -> Bool,
+  caster_radius caster_radius: Float,
   now now: Now,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let now_ms = now.monotonic_ms
-  shortcut_pressed(cast:, body:, caster:, shortcuts:, held:, now_ms:)
+  shortcut_pressed(
+    cast:,
+    body:,
+    caster:,
+    shortcuts:,
+    held:,
+    activations:,
+    target_of:,
+    in_cast_group:,
+    caster_radius:,
+    now_ms:,
+  )
   |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
   |> result.map(fn(taken) {
     settled(cast:, caster:, now:, own: [], step: fn() { taken })
@@ -1589,6 +1623,10 @@ fn shortcut_pressed(
   caster caster: Caster,
   shortcuts shortcuts: shortcut_spell.Shortcuts,
   held held: Set(Int),
+  activations activations: activate.Activations,
+  target_of target_of: fn(Int) -> activate.Target,
+  in_cast_group in_cast_group: fn(Int, Int) -> Bool,
+  caster_radius caster_radius: Float,
   now_ms now_ms: Int,
 ) -> Result(#(State, List(Effect)), Refusal) {
   use press <- result.try(
@@ -1620,35 +1658,435 @@ fn shortcut_pressed(
         key: UnbuiltShortcut(spell4_id:),
         result: cast_result.IllegalSpellCast,
         why: "cannot be planned: " <> why,
+        issue: SpellsIssue,
       )
-    Ok(shortcut_spell.Targeted(target_type:)) ->
-      not_built_refusal(
-        cast:,
-        client_cast_id:,
-        spell4_id:,
-        key: UnbuiltShortcut(spell4_id:),
-        result: cast_result.IllegalSpellCast,
-        why: "takes the player's target (targetType "
-          <> int.to_string(target_type)
-          <> "), which the server does not read from the press yet, the issue about a cast-a-spell objective's targeted spell (#728)",
-      )
-    Ok(shortcut_spell.Planned(spell:)) -> {
-      let interaction = interaction_of(spell:)
+    Ok(shortcut_spell.Planned(spell:)) ->
       accepted_and_started(
         cast:,
         caster:,
         now_ms:,
         client_cast_id:,
-        spell: case interaction {
-          AwaitingAnswer -> activation_spell(spell:, cast_time_ms: 0)
-          NoInteraction | AnswerSucceeded -> spell
-        },
+        spell: shortcut_spell_of(spell:),
         primary_target: caster.unit_id,
-        role: Shortcut(interaction:),
+        role: Shortcut(interaction: interaction_of(spell:), aimed: None),
+        target_subject: None,
         dropping: fn(cast) { #(cast, []) },
       )
-    }
+    Ok(shortcut_spell.Aimed(spell:, aim:)) ->
+      aimed_shortcut(
+        cast:,
+        caster:,
+        caster_radius:,
+        now_ms:,
+        client_cast_id:,
+        unit_id: press.target_unit_id,
+        spell:,
+        aim:,
+        activations:,
+        target_of:,
+        in_cast_group:,
+      )
   }
+}
+
+/// The open issue that owns a gap the server logs as not built.
+type Issue {
+  /// The cast conditions and prerequisites the server does not read.
+  PrerequisitesIssue
+  /// The spells the server cannot plan or whose states it does not judge.
+  SpellsIssue
+  /// The items' charges and the checks of an item's use the server does not build.
+  ItemsIssue
+}
+
+fn issue_name(issue issue: Issue) -> String {
+  case issue {
+    ItemsIssue ->
+      "Items, equipment, vendors, levels and currency work on the real client (#333)"
+    PrerequisitesIssue ->
+      "Quests, zones and prerequisites work on the real client (#334)"
+    SpellsIssue -> "Spells work in depth on the real client (#336)"
+  }
+}
+
+/// The plan's spell as a quest button's cast casts it: a castMethod 5 spell waits for the
+/// client's answer without a cast time of its own, any other as planned.
+fn shortcut_spell_of(spell spell: Spell) -> Spell {
+  case interaction_of(spell:) {
+    AwaitingAnswer -> activation_spell(spell:, cast_time_ms: 0)
+    NoInteraction | AnswerSucceeded -> spell
+  }
+}
+
+/// A press of a quest button's spell that takes a unit, at the unit the press names,
+/// refused in the order the client's checks give (`0x1403ae8c0`, `0x1403b2240`,
+/// `0x1403b44b0`): 91 for no unit or one the picture does not show; 32 for the caster
+/// itself; 106 or 107 and 108 for the unit's life and combat; 102 for a player the spell
+/// refuses (answered first for a player, whose life and combat are not held); 89 for a
+/// unit outside the spell's cast group; the range's 104, 105 or 183, measured with the
+/// spell's own limits; then the spell's CasterCast and TargetCast (151, 281), read as
+/// any cast's with the unit as the TargetCast's first unit. Then started on
+/// the unit. A player or the caster itself reaches the client's player faction test, which
+/// the server does not build, and another player's life and combat are not held: those
+/// are refused 285 as not built. The target states the server does not hold yet (96
+/// invulnerable, 140 zone, 98 vital, 92 immunity, crowd control) are not checked: #336.
+fn aimed_shortcut(
+  cast cast: State,
+  caster caster: Caster,
+  caster_radius caster_radius: Float,
+  now_ms now_ms: Int,
+  client_cast_id client_cast_id: Int,
+  unit_id unit_id: Int,
+  spell spell: Spell,
+  aim aim: shortcut_spell.Aim,
+  activations activations: activate.Activations,
+  target_of target_of: fn(Int) -> activate.Target,
+  in_cast_group in_cast_group: fn(Int, Int) -> Bool,
+) -> Result(#(State, List(Effect)), Refusal) {
+  let press =
+    AimedPress(
+      cast:,
+      caster:,
+      caster_radius:,
+      now_ms:,
+      client_cast_id:,
+      unit_id:,
+      spell:,
+      aim:,
+      activations:,
+      in_cast_group:,
+    )
+  case unit_id == caster.unit_id, target_of(unit_id) {
+    True, _ -> aimed_at_the_caster(press:)
+    False, activate.Unseen ->
+      press_refused(press:, result: cast_result.NoTarget)
+    False, activate.AnotherPlayer -> aimed_at_a_player(press:)
+    False,
+      activate.Usable(
+        creature_id: _,
+        creature:,
+        checklist_index:,
+        body:,
+        alive:,
+        in_combat:,
+        ..,
+      )
+    ->
+      aimed_at_a_creature(
+        press:,
+        creature:,
+        checklist_index:,
+        target_body: body,
+        alive:,
+        in_combat:,
+      )
+  }
+}
+
+/// What an aimed press carries through the client's checks.
+type AimedPress {
+  AimedPress(
+    cast: State,
+    caster: Caster,
+    caster_radius: Float,
+    now_ms: Int,
+    client_cast_id: Int,
+    unit_id: Int,
+    spell: Spell,
+    aim: shortcut_spell.Aim,
+    activations: activate.Activations,
+    in_cast_group: fn(Int, Int) -> Bool,
+  )
+}
+
+fn press_refused(
+  press press: AimedPress,
+  result result: cast_result.CastResult,
+) -> Result(#(State, List(Effect)), Refusal) {
+  Ok(
+    #(press.cast, [
+      refused(
+        client_cast_id: press.client_cast_id,
+        spell4_id: press.spell.spell4_id.value,
+        result:,
+      ),
+    ]),
+  )
+}
+
+fn press_unbuilt(
+  press press: AimedPress,
+  key key: Unbuilt,
+  why why: String,
+) -> Result(#(State, List(Effect)), Refusal) {
+  not_built_refusal(
+    cast: press.cast,
+    client_cast_id: press.client_cast_id,
+    spell4_id: press.spell.spell4_id.value,
+    key:,
+    result: cast_result.IllegalSpellCast,
+    why:,
+    issue: PrerequisitesIssue,
+  )
+}
+
+fn press_at_player_unbuilt(
+  press press: AimedPress,
+  why why: String,
+) -> Result(#(State, List(Effect)), Refusal) {
+  press_unbuilt(
+    press:,
+    key: UnbuiltPlayerTarget(spell4_id: press.spell.spell4_id.value),
+    why:,
+  )
+}
+
+/// The caster itself: refused 32 unless the spell's flags let it be its own primary
+/// target, and then it reaches the client's player faction test, which is not built.
+fn aimed_at_the_caster(
+  press press: AimedPress,
+) -> Result(#(State, List(Effect)), Refusal) {
+  case spell_plan.has_flag(flags: press.aim.mechanics_flags, bit: 2) {
+    False ->
+      press_refused(press:, result: cast_result.CasterCannotBePrimaryTarget)
+    True ->
+      press_at_player_unbuilt(
+        press:,
+        why: "names the caster itself, which the client's player faction test judges",
+      )
+  }
+}
+
+/// Another player's unit: a spell that refuses a player refuses every player (the
+/// client's 106, 108 and 102 all refuse, and the connection holds no player's life or
+/// combat to tell which); a spell that tests life or combat, or reaches the player
+/// faction test, is not built.
+fn aimed_at_a_player(
+  press press: AimedPress,
+) -> Result(#(State, List(Effect)), Refusal) {
+  let tests_life_or_combat =
+    press.spell.target_death != spell_plan.AliveOrDead
+    || press.aim.target_combat == shortcut_spell.OutOfCombatOnly
+  case
+    spell_plan.has_flag(flags: press.aim.valid_targets, bit: 1),
+    tests_life_or_combat
+  {
+    True, _ -> press_refused(press:, result: cast_result.TargetCannotBePlayer)
+    False, True ->
+      press_at_player_unbuilt(
+        press:,
+        why: "names another player, whose life and combat the connection does not hold",
+      )
+    False, False ->
+      case press.aim.cast_group_id {
+        0 ->
+          press_at_player_unbuilt(
+            press:,
+            why: "names another player, who reaches the client's player faction test",
+          )
+        _ ->
+          press_at_player_unbuilt(
+            press:,
+            why: "names another player and a cast group, which tests a player by its faction and race",
+          )
+      }
+  }
+}
+
+/// A creature or object: life, then combat, then cast group and range, then the spell's
+/// own conditions and the start.
+fn aimed_at_a_creature(
+  press press: AimedPress,
+  creature creature: activate.Creature,
+  checklist_index checklist_index: Int,
+  target_body target_body: activate.Body,
+  alive alive: Bool,
+  in_combat in_combat: Bool,
+) -> Result(#(State, List(Effect)), Refusal) {
+  case life_and_combat_refusal(press:, alive:, in_combat:) {
+    Some(result) -> press_refused(press:, result:)
+    None ->
+      aimed_in_group(
+        press:,
+        creature:,
+        checklist_index:,
+        target_body:,
+        alive:,
+        in_combat:,
+      )
+  }
+}
+
+/// The client's 106 and 107 for the target's life, then its 108 for combat.
+fn life_and_combat_refusal(
+  press press: AimedPress,
+  alive alive: Bool,
+  in_combat in_combat: Bool,
+) -> Option(cast_result.CastResult) {
+  case press.spell.target_death, alive {
+    spell_plan.CannotBeDead, False -> Some(cast_result.TargetCannotBeDead)
+    spell_plan.MustBeDead, True -> Some(cast_result.TargetMustBeDead)
+    spell_plan.CannotBeDead, True
+    | spell_plan.MustBeDead, False
+    | spell_plan.AliveOrDead, _
+    ->
+      case press.aim.target_combat, in_combat {
+        shortcut_spell.OutOfCombatOnly, True ->
+          Some(cast_result.TargetCannotBeInCombat)
+        shortcut_spell.OutOfCombatOnly, False
+        | shortcut_spell.CombatAllowed, _
+        -> None
+      }
+  }
+}
+
+fn aimed_in_group(
+  press press: AimedPress,
+  creature creature: activate.Creature,
+  checklist_index checklist_index: Int,
+  target_body target_body: activate.Body,
+  alive alive: Bool,
+  in_combat in_combat: Bool,
+) -> Result(#(State, List(Effect)), Refusal) {
+  case
+    cast_group_of(
+      cast: press.cast,
+      caster: press.caster,
+      activations: press.activations,
+      unit_id: press.unit_id,
+      spell4_id: press.spell.spell4_id.value,
+      cast_group_id: press.aim.cast_group_id,
+      creature:,
+      checklist_index:,
+      in_cast_group: press.in_cast_group,
+    )
+  {
+    activate.InCastGroup ->
+      aimed_in_range(press:, target_body:, alive:, in_combat:)
+    activate.OutsideCastGroup ->
+      press_refused(press:, result: cast_result.TargetGroup)
+    activate.CastGroupUnread(prerequisite_type:) ->
+      press_unbuilt(
+        press:,
+        key: UnreadShortcutPick(prerequisite_type:),
+        why: "names a creature whose activate pick rests on a prerequisite of the type "
+          <> int.to_string(prerequisite_type)
+          <> ", which the server does not read",
+      )
+  }
+}
+
+/// The client's cast-group check of a cast of `spell4_id` at the creature `unit_id`: the
+/// creature's activate pick for the caster, read as `activate.passes_cast_group` needs it.
+fn cast_group_of(
+  cast cast: State,
+  caster caster: Caster,
+  activations activations: activate.Activations,
+  unit_id unit_id: Int,
+  spell4_id spell4_id: Int,
+  cast_group_id cast_group_id: Int,
+  creature creature: activate.Creature,
+  checklist_index checklist_index: Int,
+  in_cast_group in_cast_group: fn(Int, Int) -> Bool,
+) -> activate.CastGroup {
+  activate.passes_cast_group(
+    spell4_id:,
+    cast_group_id:,
+    creature:,
+    picked: activate.pick(
+      creature:,
+      default_spell: activations.default_spell,
+      check: activate.checker(
+        activations:,
+        subject: subject_for_use(cast:, caster:, unit_id:, checklist_index:),
+      ),
+    ),
+    in_cast_group: in_cast_group(_, unit_id),
+  )
+}
+
+fn aimed_in_range(
+  press press: AimedPress,
+  target_body target_body: activate.Body,
+  alive alive: Bool,
+  in_combat in_combat: Bool,
+) -> Result(#(State, List(Effect)), Refusal) {
+  case
+    activate.range_of(
+      limits: press.aim.limits,
+      caster: activate.Body(
+        place: press.caster.place,
+        radius: press.caster_radius,
+      ),
+      target: target_body,
+    )
+  {
+    activate.TooClose ->
+      press_refused(press:, result: cast_result.TargetRangeMin)
+    activate.TooFar -> press_refused(press:, result: cast_result.TargetRangeMax)
+    activate.TooHigh ->
+      press_refused(press:, result: cast_result.TargetRangeVertical)
+    activate.Within ->
+      accepted_and_started(
+        cast: press.cast,
+        caster: press.caster,
+        now_ms: press.now_ms,
+        client_cast_id: press.client_cast_id,
+        spell: shortcut_spell_of(spell: press.spell),
+        primary_target: press.unit_id,
+        role: Shortcut(
+          interaction: interaction_of(spell: press.spell),
+          aimed: Some(PressedAt(unit_id: press.unit_id, alive_at_press: alive)),
+        ),
+        target_subject: Some(target_subject_of(
+          cast: press.cast,
+          caster: press.caster,
+          unit_id: press.unit_id,
+          in_combat:,
+          place: target_body.place,
+        )),
+        dropping: fn(cast) { #(cast, []) },
+      )
+  }
+}
+
+/// The subject of the unit a press named, for the spell's TargetCast: what the caster's
+/// live casts hold on it (a live cast whose primary target it is, and the nodes it holds
+/// there), and the caster second.
+fn target_subject_of(
+  cast cast: State,
+  caster caster: Caster,
+  unit_id unit_id: Int,
+  in_combat in_combat: Bool,
+  place place: Place,
+) -> prerequisite.Subject {
+  prerequisite.of_target(
+    under: dict.values(cast.casts)
+      |> list.filter(fn(live) { live.primary_target == unit_id })
+      |> list.map(fn(live) {
+        lasting.Held(
+          spell4_id: live.spell.spell4_id,
+          caster: caster.unit_id,
+          count: 0,
+          groups: live.spell.groups,
+        )
+      })
+      |> list.append(
+        list.map(holds_on(cast:, unit_id:), fn(hold) {
+          lasting.Held(
+            spell4_id: hold.spell4_id,
+            caster: caster.unit_id,
+            count: hold.node.count,
+            groups: hold.groups,
+          )
+        }),
+      ),
+    caster_unit: caster.unit_id,
+    in_combat:,
+    target: area.pose_of(place:),
+    caster: area.pose_of(place: caster.place),
+    quests: caster.quests,
+  )
 }
 
 /// The subject of the prerequisites a use of a creature checks: the caster, with the
@@ -1889,6 +2327,7 @@ fn activation_pressed(
         why: "of a creature whose link to an objective rests on a prerequisite of the type "
           <> int.to_string(prerequisite_type)
           <> ", which the server does not read",
+        issue: PrerequisitesIssue,
       )
     activate.Usable(
       creature_id:,
@@ -1897,6 +2336,7 @@ fn activation_pressed(
       link: activate.NoLink,
       body: target,
       alive:,
+      in_combat: _,
       withheld: None,
     )
     | activate.Usable(
@@ -1906,6 +2346,7 @@ fn activation_pressed(
         link: activate.OpenLink,
         body: target,
         alive:,
+        in_combat: _,
         withheld: None,
       ) -> {
       let subject =
@@ -1933,6 +2374,7 @@ fn activation_pressed(
             why: "of a creature activates through a prerequisite of the type "
               <> int.to_string(prerequisite_type)
               <> ", which the server does not read",
+            issue: PrerequisitesIssue,
           )
         activate.Picked(spell4_id:) ->
           case activate.planned_of(activations:, spell4_id:) {
@@ -1946,6 +2388,7 @@ fn activation_pressed(
                 key: UnbuiltSpell(spell4_id:),
                 result: cast_result.IllegalSpellCast,
                 why: "cannot be planned: " <> why,
+                issue: SpellsIssue,
               )
             Ok(activate.Planned(spell:, effects:, dropped_signals:, limits:, ..)) ->
               activation_in_range(
@@ -2142,6 +2585,7 @@ fn activation_started(
       ),
       interaction:,
     ),
+    target_subject: None,
     dropping: fn(cast) {
       signals_dropped(
         cast:,
@@ -2166,6 +2610,7 @@ fn accepted_and_started(
   spell spell: Spell,
   primary_target primary_target: Int,
   role role: Role,
+  target_subject target_subject: Option(prerequisite.Subject),
   dropping dropping: fn(State) -> #(State, List(Effect)),
 ) -> Result(#(State, List(Effect)), Refusal) {
   let spell4_id = spell.spell4_id.value
@@ -2176,18 +2621,25 @@ fn accepted_and_started(
     when: answer_is_out(cast:),
     return: refusal(cast_result.SpellAlreadyCasting),
   )
-  case verdict(cast:, caster:, spell:, now_ms:, is_release: False) {
+  case
+    verdict(cast:, caster:, spell:, now_ms:, is_release: False, target_subject:)
+  {
     Refuse(result:) -> refusal(result)
     Hold(..) -> refusal(cast_result.SpellGlobalCooldown)
     HoldForCast -> refusal(cast_result.SpellAlreadyCasting)
-    NotBuilt(result:, why:) ->
+    NotBuilt(result:, why:, issue:) ->
       not_built_refusal(
         cast:,
         client_cast_id:,
         spell4_id:,
-        key: UnbuiltSpell(spell4_id:),
+        key: case role {
+          Shortcut(..) -> UnbuiltShortcut(spell4_id:)
+          Child | Base(..) | Stage(..) | Passive | Activation(..) ->
+            UnbuiltSpell(spell4_id:)
+        },
         result:,
         why:,
+        issue:,
       )
     Accept(paid:) -> {
       let #(taken, reserved) = case pays_at_accept(spell:) {
@@ -2261,6 +2713,13 @@ pub type Unbuilt {
   DroppedSignals(spell4_id: Int)
   /// A quest button's spell, by Spell4 id.
   UnbuiltShortcut(spell4_id: Int)
+  /// A quest button's cast at a creature whose activate pick rests on a prerequisite
+  /// type the server does not read, by that type.
+  UnreadShortcutPick(prerequisite_type: Int)
+  /// A quest button's cast of a spell, by Spell4 id, at another player or at the caster
+  /// itself, whose checks (the player faction test `0x1403b4560`, a player's life and
+  /// combat, a cast group's test of a player) the server does not build.
+  UnbuiltPlayerTarget(spell4_id: Int)
   /// The spell of an item that is used, by Spell4 id.
   UnbuiltItemSpell(spell4_id: Int)
   /// An item with charges, by Item2 id.
@@ -2278,10 +2737,12 @@ fn not_built_refusal(
   key key: Unbuilt,
   result result: cast_result.CastResult,
   why why: String,
+  issue issue: Issue,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let refusal = refused(client_cast_id:, spell4_id:, result:)
   let what = case key {
-    UnbuiltShortcut(..) -> "the shortcut cast of Spell4 "
+    UnbuiltShortcut(..) | UnreadShortcutPick(..) | UnbuiltPlayerTarget(..) ->
+      "the shortcut cast of Spell4 "
     UnbuiltItemSpell(..)
     | UnbuiltItemCharges(..)
     | UnreadItemPrerequisite(..) -> "the use of an item whose spell is Spell4 "
@@ -2301,6 +2762,8 @@ fn not_built_refusal(
               <> int.to_string(spell4_id)
               <> " "
               <> why
+              <> ", the issue "
+              <> issue_name(issue:)
               <> ": it is refused with "
               <> int.to_string(cast_result.to_value(result)),
           ),
@@ -2895,7 +3358,9 @@ fn press_of(
       result:,
     )
   }
-  case verdict(cast:, caster:, spell:, now_ms:, is_release:) {
+  case
+    verdict(cast:, caster:, spell:, now_ms:, is_release:, target_subject: None)
+  {
     Accept(paid:) -> {
       let payments = paid.payments
       let cast = case client_cast_id {
@@ -2952,7 +3417,7 @@ fn press_of(
           refusal(result),
         ],
       )
-    NotBuilt(result:, why:) ->
+    NotBuilt(result:, why:, issue:) ->
       case set.contains(cast.logged, UnbuiltSpell(spell.spell4_id.value)) {
         True ->
           refused_hold(
@@ -2979,6 +3444,8 @@ fn press_of(
                   <> int.to_string(spell.spell4_id.value)
                   <> " "
                   <> why
+                  <> ", the issue "
+                  <> issue_name(issue:)
                   <> ": it is refused with "
                   <> int.to_string(cast_result.to_value(result)),
               ),
@@ -3086,8 +3553,8 @@ type Verdict {
   HoldForCast
   /// The spell waits for a later step: its method is not built, its cost needs a
   /// vital the server does not hold, or a cast condition or waiver is of a type the
-  /// server does not read. It is refused, and logged once.
-  NotBuilt(result: cast_result.CastResult, why: String)
+  /// server does not read. It is refused, and logged once with the issue that owns it.
+  NotBuilt(result: cast_result.CastResult, why: String, issue: Issue)
 }
 
 fn verdict(
@@ -3096,6 +3563,7 @@ fn verdict(
   spell spell: Spell,
   now_ms now_ms: Int,
   is_release is_release: Bool,
+  target_subject target_subject: Option(prerequisite.Subject),
 ) -> Verdict {
   let refused_life = spell_plan.refused_life(spell:, dead: caster.dead)
   use <- bool.guard(
@@ -3115,6 +3583,7 @@ fn verdict(
     return: NotBuilt(
       result: cast_result.IllegalSpellCast,
       why: "is not cast by a method that is built",
+      issue: SpellsIssue,
     ),
   )
   use <- bool.guard(
@@ -3147,6 +3616,7 @@ fn verdict(
       NotBuilt(
         result: cast_result.from_value(result),
         why: "has an innate cost of a vital the server does not hold",
+        issue: SpellsIssue,
       )
     None, Error(UnreadSpend(result:, emm_id:)) ->
       NotBuilt(
@@ -3154,11 +3624,13 @@ fn verdict(
         why: "has an innate cost spent by the EMM id "
           <> int.to_string(emm_id)
           <> ", which the server does not read",
+        issue: SpellsIssue,
       )
     None, Ok(paid) ->
       case lacks_the_weapon(spell:, caster:), int.max(global_left, own_left) {
         True, _ -> Refuse(result: cast_result.WeaponSlot)
-        False, 0 -> cast_conditions(cast:, caster:, spell:, paid:)
+        False, 0 ->
+          cast_conditions(cast:, caster:, spell:, paid:, target_subject:)
         False, wait_ms -> Hold(wait_ms:)
       }
   }
@@ -3187,6 +3659,7 @@ fn requirement_refusal(
               why: "has a caster requirement whose waiver is a condition of the PrerequisiteType "
                 <> int.to_string(prerequisite_type)
                 <> ", which the server does not read",
+              issue: PrerequisitesIssue,
             ))
         }
     }
@@ -3213,15 +3686,17 @@ fn waiver_verdict(
 
 /// The press that passed every other check, now against the spell's own cast
 /// conditions in the client's order: CasterCast, then TargetCast (`0x1403ace00`). The
-/// caster is both units of each check: the server reads no target, and the client makes
-/// the caster the target of every spell it presses (the cast module's doc, "The target").
-/// A condition the server cannot read, a type it does not read or a roll (a press draws
-/// none), refuses with the check's result as not built.
+/// caster is both units of each check unless the press names a target: the client makes
+/// the caster the target of every spell it presses that takes none (the cast module's doc,
+/// "The target"), and `target_subject` is the unit a press of an aimed spell names, which
+/// TargetCast reads as its first unit. A condition the server cannot read, a type it does
+/// not read or a roll (a press draws none), refuses with the check's result as not built.
 fn cast_conditions(
   cast cast: State,
   caster caster: Caster,
   spell spell: Spell,
   paid paid: Paid,
+  target_subject target_subject: Option(prerequisite.Subject),
 ) -> Verdict {
   let caster_gate = case spell.caster_cast {
     spell_plan.CastGate(prerequisite: gate) -> Some(gate)
@@ -3244,7 +3719,7 @@ fn cast_conditions(
       case
         condition_verdict(
           gate: spell.target_cast,
-          subject:,
+          subject: option.unwrap(target_subject, subject),
           result: cast_result.PrereqTargetCast,
         )
       {
@@ -3281,6 +3756,7 @@ fn condition_verdict(
         why: "has a cast condition of the PrerequisiteType "
           <> int.to_string(prerequisite_type)
           <> ", which the server does not read",
+        issue: PrerequisitesIssue,
       ))
   }
 }
@@ -5379,12 +5855,16 @@ fn start(
         Child | Base(..) | Stage(..) | Passive | Shortcut(..) -> None
       },
       interaction: case role {
-        Activation(interaction:, ..) | Shortcut(interaction:) -> interaction
+        Activation(interaction:, ..) | Shortcut(interaction:, ..) -> interaction
         Child | Base(..) | Stage(..) | Passive -> NoInteraction
       },
       shortcut: case role {
         Shortcut(..) -> True
         Child | Base(..) | Stage(..) | Passive | Activation(..) -> False
+      },
+      aimed: case role {
+        Shortcut(aimed:, ..) -> aimed
+        Child | Base(..) | Stage(..) | Passive | Activation(..) -> None
       },
       finish_due: False,
     )
@@ -5914,7 +6394,9 @@ fn go(
       // The first go of a quest button's cast counts the objective: a later go of the
       // same cast counts nothing more.
       let counted = case live.shortcut && live.gone == 1 {
-        True -> [ShortcutCast(spell4_id: spell.spell4_id.value)]
+        True -> [
+          ShortcutCast(spell4_id: spell.spell4_id.value, target: live.aimed),
+        ]
         False -> []
       }
       #(

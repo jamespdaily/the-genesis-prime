@@ -402,10 +402,11 @@ pub fn a_saved_and_loaded_log_remembers_no_used_unit_test() -> Nil {
     as "the loaded log holds the progress"
 }
 
-pub fn used_refuses_a_non_type_23_objective_test() -> Nil {
+pub fn used_refuses_an_objective_counted_by_no_unit_test() -> Nil {
   use <- owned_test.run(60_000)
   // QuestObjective 17932 (quest 9207) is type 12, a use of one creature, whose set the
-  // server keeps no unit for.
+  // server keeps no unit for. QuestObjective 4098 (quest 3145) is type 11, a cast of
+  // Spell4 7103 with count 10, which counts each unit it is cast at once.
   let tables = character_tables.shared()
   let assert Ok(other) = quest_log.quest_of(tables:, id: 9207)
     as "the fixture holds quest 9207's rows"
@@ -429,4 +430,16 @@ pub fn used_refuses_a_non_type_23_objective_test() -> Nil {
     )
     as "a type 23 objective does"
   assert counted.progress == 1 as "the first unit counts one"
+  let assert Ok(cast_quest) = quest_log.quest_of(tables:, id: 3145)
+    as "the fixture holds quest 3145's rows"
+  let assert Ok(cast) =
+    quest_log.used(
+      log: quest_support.log_of(rows: [quest_support.untouched(quest_id: 3145)]),
+      quest: cast_quest,
+      index: 0,
+      unit:,
+      now_ms: 0,
+    )
+    as "a type 11 objective does too"
+  assert cast.progress == 1 as "the first unit cast at counts one"
 }

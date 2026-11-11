@@ -288,6 +288,7 @@ fn pressed_with(
           link: activate.NoLink,
           body: activate.Body(place:, radius: 0.25),
           alive: True,
+          in_combat: False,
           withheld: option.None,
         )
       },

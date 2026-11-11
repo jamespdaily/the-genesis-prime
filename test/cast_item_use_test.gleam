@@ -132,6 +132,7 @@ fn shown(creature_id creature_id: Int, metres metres: Float) -> Target {
       radius: object_radius,
     ),
     alive: True,
+    in_combat: False,
     withheld: None,
   )
 }

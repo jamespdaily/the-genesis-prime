@@ -1,6 +1,7 @@
 //// The cast-a-spell objective (`QuestObjective.type.11`) on a running game connection: the
-//// objective's spell is given to the client as a button, a press casts it on the caster and
-//// the go counts it. Expected values come from these places, and never from the helpers that
+//// objective's spell is given to the client as a button, a press casts it on the caster, or on
+//// the unit the press names when the spell takes a target, and the go counts it. Expected
+//// values come from these places, and never from the helpers that
 //// build the input.
 //// - `opcode.0x176`: a spell shortcut is the spell (18 bits), the kind (3 bits, 2 for an
 ////   objective), the objective's id (32) and an add bit (1 add, 0 remove), written by the
@@ -26,20 +27,24 @@
 
 import fixture_tables
 import game_connection_support as connection_support
+import genesis_prime/client_connection.{type Answer, type Message}
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/connection as game_connection
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/quest_abandon.{QuestAbandon}
 import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/spell_cast_refused
-import genesis_prime/step.{OwnEvent}
+import genesis_prime/step.{type ConnectionEvent, type Event, OwnEvent}
 import genesis_prime/store.{Character}
+import genesis_prime/world_map/creature_life.{Hostile}
 import gleam/list
 import message_support
 import owned_test
 import planted_table.{Integer}
 import quest_support
+import vendor_support
 
 const quest = 7618
 
@@ -176,6 +181,287 @@ pub fn a_shortcut_cast_counts_and_takes_the_button_away_test() -> Nil {
     && refused.spell4_id == spell
     && cast_result.to_value(refused.result) == 1
     as "opcode.0x7fc {8, 40471, 1}: the closed objective's button is gone, and the client's own refusal of a spell it holds no button for is result 1 (0x14039b340)"
+}
+
+/// The 0x9d press of this spell at this unit, inside the client's 0x038C, at a position
+/// of 0.
+fn press_at(
+  spell4_id spell4_id: Int,
+  unit_id unit_id: Int,
+  client_cast_id client_cast_id: Int,
+) -> BitArray {
+  let assert Ok(body) =
+    cast_objective_ability.encode(CastObjectiveAbility(
+      client_cast_id:,
+      spell4_id:,
+      target_unit_id: unit_id,
+      position_x: 0,
+      position_y: 0,
+      position_z: 0,
+    ))
+    as "the message fits"
+  connection_support.world_message(
+    message_id: cast_objective_ability.message_id,
+    body:,
+  )
+}
+
+/// A creature of the tables' own display and outfit, as unit `unit_id`, 10.0 from the
+/// player's edge straight ahead, alive and hostile to nobody (the range of the spells of
+/// these tests is 15.0, 15.0 and 30.0).
+fn appears_at_ten(
+  unit_id unit_id: Int,
+  creature_id creature_id: Int,
+  display_info_id display_info_id: Int,
+  outfit_info_id outfit_info_id: Int,
+  hit_radius hit_radius: Float,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  connection_support.creature_appears(
+    unit_id:,
+    creature_id:,
+    display_info_id:,
+    outfit_info_id:,
+    hit_radius:,
+    place: vendor_support.ahead_of_the_player(hit_radius:, gap: 10.0),
+    hostile_to: Hostile(exile: False, dominion: False),
+  )
+}
+
+/// A player whose log holds this quest with its one objective at 0, shown these units.
+fn seeing(
+  quest quest: Int,
+  events events: List(Event(ConnectionEvent(Message, Answer))),
+) -> game_connection.State {
+  let #(state, _) =
+    connection_support.entered_with_quests(quests: [
+      quest_support.accepted(quest_id: quest, progress: [0]),
+    ])
+  list.fold(events, state, fn(state, event) {
+    connection_support.feed(state:, event:).0
+  })
+}
+
+/// The press at `ms` and the cast's timers up to `until_ms`: the state after and the
+/// frames written, as ids and bodies, of the messages these tests look at.
+fn pressed_and_run(
+  state state: game_connection.State,
+  ms ms: Int,
+  press press: BitArray,
+  until_ms until_ms: Int,
+) -> #(game_connection.State, List(#(Int, BitArray))) {
+  let #(state, started) =
+    connection_support.at(state:, ms:, event: OwnEvent(step.Read(press)))
+  let #(state, steps) =
+    connection_support.casts_run(
+      state:,
+      pending: connection_support.cast_timers(steps: [started], ms:),
+      until_ms:,
+      steps: [started],
+    )
+  let frames =
+    list.flat_map(steps, fn(taken) { connection_support.written(taken:) })
+    |> list.map(fn(frame) { #(frame.message_id, frame.body) })
+    |> list.filter(fn(pair) {
+      list.contains([0x07FD, 0x07F4, 0x07FE, 0x07FC, 0x0361, 0x035C], pair.0)
+    })
+  #(state, frames)
+}
+
+fn ids(frames frames: List(#(Int, BitArray))) -> List(Int) {
+  list.map(frames, fn(pair) { pair.0 })
+}
+
+/// A 0x361 of the client's reader for the objective at index 0 of this quest.
+fn progress_of(quest quest: Int, progress progress: Int) -> #(Int, BitArray) {
+  #(0x0361, message_support.packed([#(15, quest), #(32, 0), #(32, progress)]))
+}
+
+pub fn a_targeted_press_counts_at_the_go_on_the_unit_it_names_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 8184's objective 15092 is type 11 with data 42735 (castTime 0), count 10, and
+  // its reward pane is target group 25705 of Creature2 41604 (display 25705, outfit
+  // 9152, hit radius 1.0).
+  let state =
+    seeing(quest: 8184, events: [
+      appears_at_ten(
+        unit_id: 40,
+        creature_id: 41_604,
+        display_info_id: 25_705,
+        outfit_info_id: 9152,
+        hit_radius: 1.0,
+      ),
+    ])
+  let #(_, frames) =
+    pressed_and_run(
+      state:,
+      ms: 0,
+      press: press_at(spell4_id: 42_735, unit_id: 40, client_cast_id: 7),
+      until_ms: 5000,
+    )
+  assert ids(frames:) == [0x07FD, 0x07F4, 0x0361, 0x07FE]
+    as "opcode.0x7fd the press, 0x7f4 the cast's start, opcode.0x361 for the go, then 0x7fe at the end of the node Spell4Effects 97459 of the spell holds after its go (the header's order)"
+  assert list.contains(frames, progress_of(quest: 8184, progress: 1))
+    as "opcode.0x361 {8184, 0, 1}: the unit the press named counts once, of the objective's 10"
+}
+
+pub fn a_targeted_cast_whose_unit_dies_before_the_go_counts_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 8935's objective 16055 is type 11 with data 47953 (castTime 3000, target group
+  // 7083 of Creature2 49963: display 26384, hit radius 1.0).
+  let state =
+    seeing(quest: 8935, events: [
+      appears_at_ten(
+        unit_id: 40,
+        creature_id: 49_963,
+        display_info_id: 26_384,
+        outfit_info_id: 0,
+        hit_radius: 1.0,
+      ),
+    ])
+  let #(state, pressed) =
+    connection_support.at(
+      state:,
+      ms: 0,
+      event: OwnEvent(
+        step.Read(press_at(spell4_id: 47_953, unit_id: 40, client_cast_id: 7)),
+      ),
+    )
+  let #(state, pending, before) =
+    connection_support.casts_left(
+      state:,
+      pending: connection_support.cast_timers(steps: [pressed], ms: 0),
+      until_ms: 1000,
+      steps: [pressed],
+    )
+  assert list.contains(
+    list.flat_map(before, fn(taken) {
+      list.map(connection_support.written(taken:), fn(frame) {
+        frame.message_id
+      })
+    }),
+    0x07FD,
+  )
+    as "opcode.0x7fd: the press is confirmed"
+  assert pending != [] as "the cast of 3000 ms is still to go at 1000 ms"
+  let #(state, _) =
+    connection_support.at(
+      state:,
+      ms: 1000,
+      event: connection_support.news_sent_by_a_peer(
+        unit_id: 40,
+        news: client_connection.Died,
+      ),
+    )
+  let #(_, after) =
+    connection_support.casts_run(state:, pending:, until_ms: 4000, steps: [])
+  let frames =
+    list.flat_map(after, fn(taken) { connection_support.written(taken:) })
+  assert list.filter(frames, fn(frame) { frame.message_id == 0x0361 }) == []
+    as "opcode.0x361: the unit is dead at the go (SetUnitDeathState 0x14045e740), so nothing is counted"
+}
+
+pub fn a_targeted_press_outside_the_cast_group_writes_89_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Creature2 32668 (display 21557, hit radius 1.7) is not in quest 8184's cast group.
+  let state =
+    seeing(quest: 8184, events: [
+      appears_at_ten(
+        unit_id: 40,
+        creature_id: 32_668,
+        display_info_id: 21_557,
+        outfit_info_id: 0,
+        hit_radius: 1.7,
+      ),
+    ])
+  let #(_, frames) =
+    pressed_and_run(
+      state:,
+      ms: 0,
+      press: press_at(spell4_id: 42_735, unit_id: 40, client_cast_id: 7),
+      until_ms: 5000,
+    )
+  let assert [pair] = frames
+    as "a press refused by the cast group writes the one 0x7fc"
+  let assert Ok(refused) = spell_cast_refused.decode(pair.1)
+  assert pair.0 == 0x07FC
+    && refused.client_cast_id == 7
+    && refused.spell4_id == 42_735
+    && cast_result.to_value(refused.result) == 89
+    as "opcode.0x7fc {7, 42735, 89}: TargetGroup (CastResult 89), and no opcode.0x361"
+}
+
+pub fn a_cast_at_a_cast_group_unit_outside_the_pane_goes_and_counts_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 7757's objective 14295 is type 11 with data 69507; Creature2 58762 (display
+  // 22879, hit radius 1.0) is in its cast group and not in its reward pane.
+  let state =
+    seeing(quest: 7757, events: [
+      appears_at_ten(
+        unit_id: 40,
+        creature_id: 58_762,
+        display_info_id: 22_879,
+        outfit_info_id: 0,
+        hit_radius: 1.0,
+      ),
+    ])
+  let #(_, frames) =
+    pressed_and_run(
+      state:,
+      ms: 0,
+      press: press_at(spell4_id: 69_507, unit_id: 40, client_cast_id: 7),
+      until_ms: 5000,
+    )
+  assert ids(frames:) == [0x07FD, 0x07F4, 0x07FE]
+    as "opcode.0x7fd, 0x7f4 and 0x7fe: the cast goes, and no opcode.0x361, as the unit is outside the reward pane"
+}
+
+pub fn a_second_cast_at_a_counted_unit_goes_and_writes_no_progress_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state =
+    seeing(quest: 8184, events: [
+      appears_at_ten(
+        unit_id: 40,
+        creature_id: 41_604,
+        display_info_id: 25_705,
+        outfit_info_id: 9152,
+        hit_radius: 1.0,
+      ),
+      appears_at_ten(
+        unit_id: 41,
+        creature_id: 41_604,
+        display_info_id: 25_705,
+        outfit_info_id: 9152,
+        hit_radius: 1.0,
+      ),
+    ])
+  let #(state, first) =
+    pressed_and_run(
+      state:,
+      ms: 0,
+      press: press_at(spell4_id: 42_735, unit_id: 40, client_cast_id: 7),
+      until_ms: 4999,
+    )
+  assert ids(frames: first) == [0x07FD, 0x07F4, 0x0361, 0x07FE]
+    as "opcode.0x361 for the first unit, as in the first test"
+  // Spell4 42735's spellCoolDown is 5000.
+  let #(state, second) =
+    pressed_and_run(
+      state:,
+      ms: 5000,
+      press: press_at(spell4_id: 42_735, unit_id: 40, client_cast_id: 8),
+      until_ms: 9999,
+    )
+  assert ids(frames: second) == [0x07FD, 0x07F4, 0x07FE]
+    as "the cast at the counted unit goes, and writes no opcode.0x361"
+  let #(_, third) =
+    pressed_and_run(
+      state:,
+      ms: 10_000,
+      press: press_at(spell4_id: 42_735, unit_id: 41, client_cast_id: 9),
+      until_ms: 14_999,
+    )
+  assert list.contains(third, progress_of(quest: 8184, progress: 2))
+    as "opcode.0x361 {8184, 0, 2}: a different unit of the group counts"
 }
 
 pub fn abandoning_a_quest_takes_its_cast_button_away_test() -> Nil {
