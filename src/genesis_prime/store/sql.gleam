@@ -1494,7 +1494,7 @@ incoming as (
     placeholder_objective_id integer,
     tracked boolean,
     done_mask smallint,
-    progress integer[],
+    progress bigint[],
     quest_ms_left integer,
     objective_ms_left integer[]
   )
