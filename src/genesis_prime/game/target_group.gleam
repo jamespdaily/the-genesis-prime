@@ -40,6 +40,44 @@ pub fn contains(
   member(tables:, group:, unit:, path: [])
 }
 
+/// The Creature2 ids a group lists, each once, in the order of its words and
+/// depth first through the groups a type 10 or 11 group names: the words of a
+/// type 1 group. The other types hold a unit by a test of its faction or race, or
+/// the opposite of a list, so they list no creature. A listed creature may still
+/// be no member (a type 10 group needs every sub-group), so a caller that needs
+/// members asks `contains` of each.
+pub fn listed_creatures(
+  tables tables: table_store.Tables,
+  group group: Int,
+) -> List(Int) {
+  listed(tables:, group:, path: []) |> list.unique
+}
+
+fn listed(
+  tables tables: table_store.Tables,
+  group group: Int,
+  path path: List(Int),
+) -> List(Int) {
+  use <- bool.guard(when: list.contains(path, group), return: [])
+  case target_group.get(tables:, id: TargetGroupId(group)) {
+    Error(Nil) -> []
+    Ok(row) -> {
+      let words = words_of(row:)
+      case row.type_ {
+        1 ->
+          list.map(creatures_of(tables:, group:), fn(creature) {
+            creature.value
+          })
+        10 | 11 ->
+          list.flat_map(others(words:, row:), fn(sub) {
+            listed(tables:, group: sub, path: [group, ..path])
+          })
+        _ -> []
+      }
+    }
+  }
+}
+
 /// The membership of a group reached through the groups of `path`, which a group naming
 /// itself again through the others ends as no member (the client would not return).
 fn member(

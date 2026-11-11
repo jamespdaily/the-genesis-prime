@@ -90,19 +90,25 @@ fn squared(value: Float) -> Float {
   value *. value
 }
 
-/// The WorldLocation2 rows of the objective's marker, the rows its
-/// worldLocationsIdIndicator00 to 03 name that the table holds (an id of 0 names none).
-pub fn markers(
-  tables tables: table_store.Tables,
-  objective objective: QuestObjective,
-) -> List(WorldLocation2) {
+/// The WorldLocation2 ids of the objective's marker: its worldLocationsIdIndicator00
+/// to 03, in column order, an id of 0 naming none and so left out.
+pub fn marker_ids(objective objective: QuestObjective) -> List(Int) {
   [
     objective.world_locations_id_indicator00,
     objective.world_locations_id_indicator01,
     objective.world_locations_id_indicator02,
     objective.world_locations_id_indicator03,
   ]
-  |> locations(tables:)
+  |> list.filter(fn(marker_id) { marker_id != 0 })
+}
+
+/// The WorldLocation2 rows of the objective's marker, the rows `marker_ids` names
+/// that the table holds.
+pub fn markers(
+  tables tables: table_store.Tables,
+  objective objective: QuestObjective,
+) -> List(WorldLocation2) {
+  marker_ids(objective:) |> locations(tables:)
 }
 
 /// The objectives of type 22 with no marker row: nothing tells where they are done.

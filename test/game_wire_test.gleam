@@ -87,6 +87,7 @@ import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
 import genesis_prime/message/start_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
+import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_create_static
 import genesis_prime/message/unit_destroyed
@@ -119,12 +120,14 @@ import gleam/dict
 import gleam/dynamic/decode
 import gleam/erlang/atom
 import gleam/erlang/process
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/system
 import gleam/result
 import gleam/string
+import gleam_community/maths
 import item_bot
 import log_capture
 import login_client
@@ -3633,8 +3636,11 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
   )
   send_play(game: first, character_id: first_character)
   let #(_burst, have) = game_client.read_entry_kept(game: first, have: <<>>)
-  let #(frames, _) = game_client.read_kept(game: first, have:, count: 54)
-  let seen = game_client.creatures_created_in(frames:)
+  let #(frames, _) =
+    game_client.read_until(game: first, have:, found: fn(frames) {
+      list.length(planted_creatures_in(frames:)) >= 54
+    })
+  let seen = planted_creatures_in(frames:)
   assert list.length(seen) == 54
     as "one 0x262 for each of the 54 spawns: the 27 Virtual Battle Beasts and the 27 Virtual Defense Daguns, all within 1024 units of the characters in Warfare Woods"
   let units = list.map(seen, fn(creature) { creature.unit_id })
@@ -3668,17 +3674,377 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
   )
   send_play(game: second, character_id: second_character)
   let #(_burst, have) = game_client.read_entry_kept(game: second, have: <<>>)
-  let #(frames, _) = game_client.read_kept(game: second, have:, count: 54 + 1)
+  let #(frames, _) =
+    game_client.read_until(game: second, have:, found: fn(frames) {
+      list.length(planted_creatures_in(frames:)) >= 54
+    })
   assert list.sort(
-      list.map(game_client.creatures_created_in(frames:), fn(creature) {
-        creature.unit_id
-      }),
+      list.map(planted_creatures_in(frames:), fn(creature) { creature.unit_id }),
       int.compare,
     )
     == list.sort(units, int.compare)
     as "two players see one unit id for each creature"
   game_client.close(game: first)
   game_client.close(game: second)
+  login_support.stop(started)
+}
+
+/// The creatures the frames create that are the planted Virtual Battle Beasts and
+/// Virtual Defense Daguns; the creatures a kill objective's marker places in the same
+/// world arrive in the same range and are not among them.
+fn planted_creatures_in(
+  frames frames: List(Frame),
+) -> List(unit_create_creature.UnitCreateCreature) {
+  list.filter(game_client.creatures_created_in(frames:), fn(creature) {
+    creature.creature_id == 73_464 || creature.creature_id == 73_465
+  })
+}
+
+// ---- the creatures a kill objective's marker places, on the whole server ----
+//
+// Objective 21290 (QuestObjective: type 8, TargetGroup 14356 of Creature2 73492 then
+// 73567, count 3, marker 51740) is the sixth objective of quest 10518 (Quest2
+// objective05: `table_rows -- Quest2 10518`), so its progress is the 0x361 of index 5
+// (opcode.0x361). The client's marker 51740 is at (-142.06599, -860.46375, 556.80902)
+// with radius 38 in World 3460, zone 5967 (`table_rows -- WorldLocation2 51740`);
+// the ring of the design (issue 602) is the circle of half that radius, the slot i of
+// 3 at the angle 2 pi i / 3 from the +x axis towards +z, the group's creatures in
+// order: 73492, 73567, 73492. Creature2 73492 has factionId 170 and no
+// prerequisite, hostile to the Exile (Faction2Relationship 686: 167 and 170, level
+// 0; Faction2 167 is the Exile, 166 the Dominion), so an Exile character (faction
+// 167) may attack it. Paralytic Surge reaches 15
+// (Spell4 42352 targetMaxRange), and a creature's aggro range is 10 (migration 0010),
+// so the character stands 12 beyond the slot, away from the ring's centre.
+
+/// The marker's centre and the ring's radius, half the marker's 38.
+const marker_51740 = #(-142.06599, -860.46375, 556.80902)
+
+const ring_radius = 19.0
+
+/// Where slot `index` of the 3 on marker 51740's ring is: the point on the circle at
+/// 2 pi index / 3 from the +x axis towards +z, at the marker's height.
+fn ring_slot(index index: Int) -> #(Float, Float, Float) {
+  let angle = 2.0 *. maths.pi() *. int.to_float(index) /. 3.0
+  #(
+    marker_51740.0 +. ring_radius *. maths.cos(angle),
+    marker_51740.1,
+    marker_51740.2 +. ring_radius *. maths.sin(angle),
+  )
+}
+
+fn is_near(
+  left left: #(Float, Float, Float),
+  right right: #(Float, Float, Float),
+) -> Bool {
+  float.absolute_value(left.0 -. right.0) <. 0.01
+  && float.absolute_value(left.1 -. right.1) <. 0.01
+  && float.absolute_value(left.2 -. right.2) <. 0.01
+}
+
+/// A world on the planted world data and the content load, whose game connections take
+/// the tables given and, with the maps, their time from `time`.
+fn world_with_the_markers_creatures(
+  tables tables: table_store.Tables,
+  time time: driven_time.Time,
+) -> login_support.Started {
+  start_with_world_data_by(
+    folder: content_support.fixture_folder,
+    adjusted: fn(settings) {
+      let settings = driven_by(settings:, time:)
+      server.Settings(
+        ..settings,
+        game: server.Served(
+          ..settings.game,
+          settings: connection_state.Settings(..settings.game.settings, tables:),
+        ),
+      )
+    },
+  )
+}
+
+/// A level 1 Medic of the Exile holding quest 10518 with objectives 0 to 4 done, played into
+/// World 3460 12 beyond ring slot 0 and facing it, and read until both of Creature2
+/// 73492's 0x262 have arrived: the game, the burst's frames and the bytes beyond.
+fn a_medic_at_the_marker_ring(
+  started started: login_support.Started,
+) -> #(game_client.Game, List(Frame), BitArray, Int) {
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 1,
+    )
+  let assert Ok(_) =
+    pog.query("update character set faction_id = 167 where character_id = $1")
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character is an Exile one (faction 167), which Creature2 73492 is hostile to"
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 10518, 1, 0, true, 31, '{5,1,1,1,2,0}', 0, '{0,0,0,0,0,0}')",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character holds quest 10518 with its first five objectives done: the client opens an objective of flag 2 (21290's 0x603) only when every earlier one is done (0x140553790)"
+  let slot = ring_slot(index: 0)
+  character_support.move_to(
+    pool:,
+    character_id: character,
+    world_id: 3460,
+    world_zone_id: 5967,
+    position: #(slot.0 +. 12.0, slot.1, slot.2),
+  )
+  send_play(game:, character_id: character)
+  let #(frames, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.length(targets_in(frames:)) >= 2
+    })
+  #(game, frames, have, character)
+}
+
+/// The creatures the frames create that are Creature2 73492.
+fn targets_in(
+  frames frames: List(Frame),
+) -> List(unit_create_creature.UnitCreateCreature) {
+  list.filter(game_client.creatures_created_in(frames:), fn(creature) {
+    creature.creature_id == 73_492
+  })
+}
+
+/// The 73492 of the frames that stands at ring slot 0.
+fn the_target_at_slot_0(
+  frames frames: List(Frame),
+) -> unit_create_creature.UnitCreateCreature {
+  let assert Ok(target) =
+    list.find(targets_in(frames:), fn(creature) {
+      is_near(
+        left: game_client.creature_placed_at(unit: creature),
+        right: ring_slot(index: 0),
+      )
+    })
+    as "a Creature2 73492 stands at ring slot 0"
+  target
+}
+
+/// Presses Paralytic Surge at the unit, facing it, until its death is read, and
+/// gives every frame read and the bytes beyond. A press that neither struck the unit
+/// nor was shown missing it (0x7fb) ends the test; a deflected press is pressed
+/// again, since a creature of the client's rows deflects some strikes (the placed
+/// Creature2 73492's defence holds a deflect chance of 0.02, so about one run in
+/// six sees one in the nine presses its 117 health takes), each on the rolls of the
+/// connection's own random seed.
+fn presses_until_the_target_dies(
+  time time: driven_time.Time,
+  game game: game_client.Game,
+  have have: BitArray,
+  target target: Int,
+  cast_id cast_id: Int,
+  seen seen: List(Frame),
+) -> #(List(Frame), BitArray) {
+  game_client.press_ability(
+    game:,
+    client_cast_id: cast_id,
+    bag_index: 2,
+    target: 0,
+  )
+  let #(taken, have) = game_client.read_until_pong(game:, have:, number: 1)
+  driven_time.advance(time:, ms: paralytic_surge_cast_ms)
+  let #(went, have) =
+    game_client.read_until(game:, have:, found: fn(went) {
+      let heard = list.append(seen, list.append(taken, went))
+      list.any(game_client.health_in(frames: heard), fn(health) {
+        health.0 == target
+      })
+      || list.any(game_client.missed_in(frames: heard), fn(missed) {
+        list.contains(missed.1, target)
+      })
+      || list.any(game_client.go_targets_in(frames: went), fn(go) { go.1 == [] })
+    })
+  let #(settled, have) = game_client.read_until_pong(game:, have:, number: 2)
+  let seen = list.flatten([seen, taken, went, settled])
+  assert list.any(game_client.go_targets_in(frames: seen), fn(go) {
+      list.contains(go.1, target)
+    })
+    || list.any(game_client.missed_in(frames: seen), fn(missed) {
+      list.contains(missed.1, target)
+    })
+    as "a press facing the target strikes it or is shown missing it"
+  let dead = list.contains(game_client.deaths_in(frames: seen), #(target, True))
+  let at_zero =
+    list.any(game_client.health_in(frames: seen), fn(health) {
+      health == #(target, 0, True)
+    })
+  case dead, at_zero {
+    True, _ -> #(seen, have)
+    False, True -> {
+      let #(more, have) =
+        game_client.read_until(game:, have:, found: fn(more) {
+          list.contains(game_client.deaths_in(frames: more), #(target, True))
+        })
+      #(list.append(seen, more), have)
+    }
+    False, False -> {
+      driven_time.advance(time:, ms: paralytic_surge_lingers_ms)
+      let #(later, have) = game_client.read_until_pong(game:, have:, number: 3)
+      presses_until_the_target_dies(
+        time:,
+        game:,
+        have:,
+        target:,
+        cast_id: cast_id + 1,
+        seen: list.append(seen, later),
+      )
+    }
+  }
+}
+
+pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use tables <- on_rows_without_paralytic_surges_recharge()
+  let time = driven_time.new()
+  let started = world_with_the_markers_creatures(tables:, time:)
+  let #(game, frames, have, _) = a_medic_at_the_marker_ring(started:)
+  let shown = targets_in(frames:)
+  assert list.map(shown, fn(creature) {
+      game_client.creature_placed_at(unit: creature)
+    })
+    |> list.all(fn(place) {
+      is_near(left: place, right: ring_slot(index: 0))
+      || is_near(left: place, right: ring_slot(index: 2))
+    })
+    as "opcode.0x262: the two 73492 of the ring stand at its slots 0 and 2, the group's creatures taking the slots in order, 73492, 73567, 73492"
+  let target = the_target_at_slot_0(frames:)
+  assert target.tail.faction_id == 170 && target.tail.base_faction_id == 170
+    as "opcode.0x262: both factions are the Creature2 row's, 170"
+  let slot = ring_slot(index: 0)
+  face(
+    game:,
+    yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
+      slot.0,
+      slot.2,
+    )),
+    clock: 100,
+  )
+  let #(killed, have) =
+    presses_until_the_target_dies(
+      time:,
+      game:,
+      have:,
+      target: target.unit_id,
+      cast_id: 1,
+      seen: [],
+    )
+  // The kill's credit comes from the creature after its death is written.
+  let #(counted, _) = game_client.read_until_pong(game:, have:, number: 7)
+  assert list.filter(list.append(killed, counted), fn(frame) {
+      frame.message_id == 0x0361
+    })
+    == [
+      Frame(
+        message_id: 0x0361,
+        body: message_support.packed([#(15, 10_518), #(32, 5), #(32, 1)]),
+      ),
+    ]
+    as "opcode.0x361: the kill counts objective 21290, the sixth of quest 10518, once"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// Returns when the creature of World 3460, unit `unit_id`, has taken all it was
+/// sent, so a timer its last step started is on the clock (as
+/// `the_creature_has_taken_what_it_was_sent`, which looks in World 1387). The
+/// life is the number of the map's watch the creature was started under, which the
+/// map's other starts move, so it is searched for.
+fn the_marker_creature_has_taken_what_it_was_sent(
+  started started: login_support.Started,
+  unit_id unit_id: Int,
+) -> Nil {
+  let map = MapId(world_id: 3460, instance: 0)
+  let assert Ok(run) =
+    open_wait.named("Maps to answer the find", fn() {
+      world_map_registry.find_or_start(
+        started.settings.world.maps,
+        map,
+        deadline_ms: ask_support.deadline_far_beyond_the_tests_deadline(),
+      )
+    })
+    as "the map is running, started by the play"
+  let assert Ok(creature) =
+    list.find_map(
+      list.index_map(list.repeat(Nil, 200), fn(_, at) { at }),
+      fn(life) {
+        creature_registry.find(
+          started.settings.world.creatures,
+          map:,
+          incarnation: run.incarnation,
+          unit_id:,
+          life:,
+        )
+      },
+    )
+    as "the placed creature runs under its address, its life one of the map's watch numbers"
+  driven_time.settled(creature)
+}
+
+pub fn a_placed_target_respawns_at_its_slot_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use tables <- on_rows_without_paralytic_surges_recharge()
+  let time = driven_time.new()
+  let started = world_with_the_markers_creatures(tables:, time:)
+  let #(game, frames, have, _) = a_medic_at_the_marker_ring(started:)
+  let target = the_target_at_slot_0(frames:)
+  let slot = ring_slot(index: 0)
+  face(
+    game:,
+    yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
+      slot.0,
+      slot.2,
+    )),
+    clock: 100,
+  )
+  let #(_, have) =
+    presses_until_the_target_dies(
+      time:,
+      game:,
+      have:,
+      target: target.unit_id,
+      cast_id: 1,
+      seen: [],
+    )
+  // The respawn time is the row every creature without one of its own takes
+  // (death.creature_respawn): the creature kind row 0 of the content.
+  let assert Ok(kind) =
+    pog.query("select respawn_ms from creature_kind where creature_id = 0")
+    |> pog.returning(decode.at([0], decode.int))
+    |> pog.execute(pog.named_connection(started.settings.pool.pool_name))
+    as "the default creature kind is read"
+  let assert [respawn_ms] = kind.rows
+  // The creature sends its news before it starts the corpse's timer, so the clock
+  // moves on after it has taken all it was sent.
+  the_marker_creature_has_taken_what_it_was_sent(
+    started:,
+    unit_id: target.unit_id,
+  )
+  driven_time.advance(time:, ms: respawn_ms)
+  let #(after, _) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.contains(game_client.removals_in(frames:), target.unit_id)
+      && list.any(game_client.creatures_created_in(frames:), fn(unit) {
+        unit.unit_id == target.unit_id
+      })
+    })
+  let assert Ok(again) =
+    list.find(game_client.creatures_created_in(frames: after), fn(unit) {
+      unit.unit_id == target.unit_id
+    })
+  assert game_client.creature_placed_at(unit: again)
+    == game_client.creature_placed_at(unit: target)
+    && again.creature_id == 73_492
+    as "death.creature_respawn: 0x355, then a new 0x262 with the same unit id at the same place, ring slot 0"
+  game_client.close(game:)
   login_support.stop(started)
 }
 
