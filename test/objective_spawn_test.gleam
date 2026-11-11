@@ -530,12 +530,7 @@ pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
   let placed = objective_spawn.place(tables:, stored:, factions:)
   let worlds = set.from_list(list.map(stored, fn(row: Row) { row.world_id }))
   let held =
-    list.filter_map(stored, fn(row: Row) {
-      case row.entity_type == spawn.non_player {
-        True -> Ok(#(row.world_id, row.creature_id))
-        False -> Error(Nil)
-      }
-    })
+    list.map(stored, fn(row: Row) { #(row.world_id, row.creature_id) })
     |> set.from_list
   let kill_objectives =
     list.filter(quest_objective.all(tables), fn(objective) {
@@ -552,15 +547,15 @@ pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
     })
   assert list.length(pairs) == 614
     as "the pairs of a kill objective and a stored world its markers are in"
-  assert list.count(pairs, fn(pair) { pair.1 }) == 342
+  assert list.count(pairs, fn(pair) { pair.1 }) == 343
     as "the pairs whose creatures are all stored there"
-  assert list.length(placed.rows) == 1764
+  assert list.length(placed.rows) == 1762
     as "the rows placed, by the count over the tables"
   let placed_in = fn(world_id) {
     list.count(placed.rows, fn(row: Row) { row.world_id == world_id })
   }
   assert list.map([22, 51, 426, 870, 990, 1061, 1387, 3460], placed_in)
-    == [432, 608, 38, 20, 12, 623, 20, 11]
+    == [432, 608, 38, 20, 12, 623, 20, 9]
     as "the rows placed in each world with spawns that has any"
   assert list.all(placed.rows, fn(row: Row) {
     set.contains(worlds, row.world_id)

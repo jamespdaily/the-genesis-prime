@@ -26,7 +26,8 @@
 ////   TargetGroup, WorldLocation2 and Creature2 tables and `spawn.tsv`, made
 ////   apart from the server's code by a scratch Python script over the same rows:
 ////   432, 608, 38, 20, 12, 623, 20 and 11 in worlds 22, 51, 426, 870, 990, 1061,
-////   1387 and 3460, and none in a world with no stored spawn. The same script's
+////   1387 and 3460 (9 in 3460 with migration 0028's turret rows, below), and none
+////   in a world with no stored spawn. The same script's
 ////   rules over those rows' creatures find, of the rows placed, 9, 10, 0, 0, 0,
 ////   20, 0 and 5 Friendly to both with no quest, and of them 0, 8, 0, 0, 0, 20, 0
 ////   and 0 with a link, which start. The selection starts 423, 605, 38, 20, 12,
@@ -39,6 +40,11 @@
 ////   The left-out counts are over the stored rows alone, which it is not one of.
 //// - Migration 0008: World 3460 also holds the 27 Virtual Defense Daguns, server
 ////   choices, which start (Hostile to Dominion), so 3460 has 66 + 27.
+//// - Migration 0028: the Sim-Turrets start as creatures with factions 1441 (73494,
+////   Exile) and 1442 (74862, Dominion), Hostile to their own side only. The 2 stored
+////   type 13 rows of 73494 in 3460 start as creatures (so 3460 holds no static type
+////   13 and 239 of the 241 remain) and hold it, so the placed rows are 1,762 and 9
+////   in 3460; the 2 placed rows of 74862 start. 3460 starts 93 + 11.
 //// The test needs the client's tables and the world database (`GENESIS_WORLD_DATA`),
 //// so it is skipped where either is missing (a fork's CI run without the client's
 //// data); it imports the whole file into a database of its own.
@@ -127,13 +133,15 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       stored: rows,
       factions: spawn_support.the_boss_is_given_233(tables:),
     ).rows
-  assert list.length(placed) == 1764
+  assert list.length(placed) == 1762
     as "the rows placed in all, none of them in a world with no stored spawn"
+  assert list.count(placed, fn(row) { row.creature_id == 74_862 }) == 2
+    as "the Dominion Sim-Turret has no stored row, so its 2 are placed; the Exile Sim-Turret's 2 stored rows hold it"
   assert list.map(
       [22, 51, 426, 870, 990, 1061, 1387, 3460, 1535, 3022],
       fn(world_id) { list.count(placed, fn(row) { row.world_id == world_id }) },
     )
-    == [432, 608, 38, 20, 12, 623, 20, 11, 0, 0]
+    == [432, 608, 38, 20, 12, 623, 20, 9, 0, 0]
     as "the rows placed in each world"
   assert list.map(
       [22, 51, 426, 870, 990, 1061, 1387, 3460, 1535, 3022],
@@ -147,7 +155,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       799 + 12,
       13_507 + 623,
       851 + 20,
-      93 + 7,
+      93 + 11,
       0,
       0,
     ]
@@ -193,11 +201,11 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
     list.count(objects, fn(object) { object.unit_type == unit_type })
   }
   assert list.map(spawn.object_types, of_type(objects, _))
-    == [171, 4380, 17_904, 491, 101, 241, 79, 1178]
+    == [171, 4380, 17_904, 491, 101, 239, 79, 1178]
     as "every static spawn of the world database loads, by type"
   let ship = dict.values(content_spawn.world(key:, world_id: 3460).objects)
   assert list.map(spawn.object_types, of_type(ship, _))
-    == [0, 0, 302, 0, 0, 2, 0, 15]
+    == [0, 0, 302, 0, 0, 0, 0, 15]
     as "world 3460's static objects, by type"
   assert list.all(objects, fn(object) {
     case object.unit_type {
