@@ -18,6 +18,7 @@
 
 import connection_rule_support
 import experience_support as experience
+import fixture_tables
 import game_connection_support as support
 import genesis_prime/client_connection.{PropertiesChanged}
 import genesis_prime/message/experience_gained.{
@@ -28,11 +29,13 @@ import genesis_prime/message/player_character_state
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/store
+import genesis_prime/table/id.{Item2Id}
 import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{Some}
 import map_support
 import owned_test
+import world_entry_support
 
 /// The 0x1ac of a kill of 5 as the client reads it.
 fn gain_of_5() -> ExperienceGained {
@@ -155,4 +158,60 @@ pub fn a_level_up_sends_property_7_at_the_new_level_test() -> Nil {
     )
       as "each viewer is told the same entry"
   })
+}
+
+/// Item2 27106 is a level-scaled heavy armor chest (flags bit 3) worn in the chest slot, over
+/// the Novice set without its chest, by a level 3 player with 2859 experience: a kill of
+/// 5 reaches 2864, level 4 (XpPerLevel.minXpForLevel 2860). The 0x93a that follows the
+/// level holds every property the level moved: Base Health, the armor's budget property
+/// 34 and its Assault Rating and Armor, each at level 4. Base Health is CreatureLevel row
+/// 4's 569.698, the Novice set without the chest's 450 and the armor's 300, rounded:
+/// 1320. The armor's values at level 4 are the emulator run `scaled_fill.py 27106 4 4 0 0 0 0
+/// 0 0` (FillItemInfo 0x1404445d0, then BuildItemProperties 0x14040c310 with the scaling
+/// words 0 and 1 set to 4): 34 = 111.25, Assault Rating 18.0 over the set's 194.0625, Armor
+/// 125.0 over its 187.5, Base Health 300.0.
+pub fn a_level_up_resends_the_properties_of_level_scaled_gear_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let character = store.Character(..support.world_character(), level: 3)
+  let worn =
+    list.filter(world_entry_support.novice_items(character:), fn(item) {
+      item.bag_index != 0
+    })
+  let state =
+    support.entered_with_items(character:, saved_experience: Some(2859), items: [
+      store.HeldItem(
+        item_guid: 9,
+        item2_id: Item2Id(fixture_tables.root(table: "Item2", id: 27_106)),
+        location: 0,
+        bag_index: 0,
+        stack_count: 1,
+        random_stats: 0,
+      ),
+      ..worn
+    ])
+  let #(_, credit) = experience.credited(state:, creature_id: 73_464, level: 1)
+  assert experience.level_writes(taken: credit) == [#(support.own_unit_id, 4)]
+    as "the kill makes level 4"
+  let written =
+    list.map(
+      support.decoded(
+        support.written(credit),
+        0x093A,
+        unit_properties_changed.decode,
+      ),
+      fn(message) {
+        assert message.unit_id == support.own_unit_id
+        message.properties
+      },
+    )
+  assert written
+    == [
+      [
+        support.property(id: 7, number: 1320.0),
+        support.property(id: 34, number: 111.25),
+        support.property(id: 35, number: 212.0625),
+        support.property(id: 42, number: 312.5),
+      ],
+    ]
+    as "0x93a: Base Health, the budget property, the Assault Rating and the Armor of the level-scaled chest at level 4, and nothing else"
 }

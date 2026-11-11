@@ -448,6 +448,7 @@ fn warrior_in(rows rows: fixture_tables.Rows) -> #(Loadout, Int) {
   let worn =
     gear.of_items(
       tables:,
+      level: 1,
       items: list.index_map(
         [
           Equipped(item: loadout.weapon, bag_index: loadout.weapon_slot),

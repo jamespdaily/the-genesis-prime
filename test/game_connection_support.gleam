@@ -660,6 +660,25 @@ pub fn entered_holding(
   answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
 }
 
+/// The tests' connection in character select after the store gave `character`, with the
+/// experience its last save kept and these held items, and the map took it.
+pub fn entered_with_items(
+  character character: store.Character,
+  saved_experience saved_experience: Option(Int),
+  items items: List(store.HeldItem),
+) -> game_connection.State {
+  let #(state, taken) =
+    joining_holding_items(
+      in_character_select: in_select(),
+      character:,
+      saved_health: None,
+      saved_experience:,
+      quests: [],
+      items:,
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken)))).0
+}
+
 /// The connection after the store gave the tests' character these quest rows and
 /// the map took it: the burst is written.
 pub fn entered_with_quests(

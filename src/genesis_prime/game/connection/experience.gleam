@@ -13,8 +13,9 @@
 ////                            ─▶ 0x938 {self, 10, level} to the player's client
 ////                            ─▶ a Level news to each viewer, which writes 0x938 stat 10 for a
 ////                               unit it shows
-////                            ─▶ the Base Health at the new level (genesis_prime/game/gear.bases):
-////                               0x93a {7} to the player and the news to each viewer, and the life's
+////                            ─▶ the worn gear read again at the new level (genesis_prime/game/gear.of_items,
+////                               for a level-scaled item) and its bases (gear.bases): 0x93a with every base
+////                               that changed to the player and the news to each viewer, and the life's
 ////                               maximum health follows (genesis_prime/game/connection/properties)
 //// ```
 ////
@@ -67,7 +68,8 @@ pub fn credited(
 }
 
 /// What the rule made of a gain of any source, carried out: the new experience and level in
-/// `Entered`, the frames of its effects, and the Base Health the level gives.
+/// `Entered`, the frames of its effects, and the gear's properties at the new level: the Base
+/// Health the level gives and what a level-scaled worn item gives at it.
 pub fn gained(
   session session: Session,
   now now: Now,
@@ -76,7 +78,8 @@ pub fn gained(
 ) -> client_connection.Handled(Session) {
   let Credited(progress:, effects:) = credited
   let tables = session.settings.tables
-  case gear.bases(tables:, gear: entered.gear, level: progress.level) {
+  let worn = gear.of_items(tables:, items: entered.items, level: progress.level)
+  case gear.bases(tables:, gear: worn, level: progress.level) {
     Error(error) ->
       connection_state.end_for(session:, now:, text: gear.describe(error:))
     Ok(bases) -> {
@@ -96,11 +99,12 @@ pub fn gained(
                 value: progress.level,
               ),
               replacing: entered.gear.visuals,
-              item_visuals: entered.gear.visuals,
+              item_visuals: worn.visuals,
               bases:,
               defaults: unit_properties.defaults(tables:),
-              shield: gear.shield_capacity(gear: entered.gear),
+              shield: gear.shield_capacity(gear: worn),
             ),
+            gear: worn,
             properties: unit_properties.at_level(
               properties: entered.properties,
               level: progress.level,
@@ -109,13 +113,12 @@ pub fn gained(
         })
       let told =
         list.flat_map(effects, carried_out(session:, entered:, effect: _))
-      // The level's Base Health is the only gear property a level moves.
       let #(session, followed) =
         connection_properties.rebased(
           session:,
           now:,
           bases:,
-          shield: entered.gear.properties.shield,
+          shield: worn.properties.shield,
         )
       client_connection.Continue(session, list.append(told, followed))
     }
