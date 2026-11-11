@@ -20,6 +20,8 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/class_resource
 import genesis_prime/game/spell_plan.{AtFirstGo, Spell}
+import genesis_prime/game/strike
+import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_result.{
   type CastResult, CasterVitalCostResource1, CasterVitalCostResource3,
   CasterVitalCostResource5, Other, SpellCancelled,
@@ -37,6 +39,8 @@ import gleam/int
 import gleam/list
 import gleam/string
 import owned_test
+import rating_support
+import strike_support
 
 /// One step of a scenario: the time and what the rule did then.
 type Step =
@@ -379,6 +383,141 @@ pub fn discharge_pulses_3_times_each_starting_80382_and_finishes_at_1250_ms_test
   let #(_, quick_draw) = press(state:, bag_index: support.quick_draw, at: 1100)
   assert refusal_line(effects: quick_draw) == "7fc 43468 14"
     as "Spell4.58832: kind 0 with SpellCoolDown 159 (1250 ms) starts the global cooldown at the accept, so a kind 0 press 100 ms later is refused 14 (0x14046afc0)"
+}
+
+/// Discharge pressed at 1000 ms, its first two gos answered as they go, its third go
+/// (phase 2, at 2230 ms) asked and its round left open, and its finish timer (2250 ms)
+/// fired: the state, the third go as asked and the steps so far.
+fn discharge_finished_with_its_last_round_open() -> #(
+  cast.State,
+  cast.GoAsked,
+  List(Step),
+) {
+  let #(state, pressed) =
+    press(state: cast.new(), bag_index: support.discharge, at: 1000)
+  assert support.delays_of(effects: pressed) == [410, 820, 1230, 1250]
+    as "Spell4.58832: channelInitialDelay 410, channelPulseTime 410, channelMaxTime 1250: three pulses and the finish (0x14053d1f0; the times are the design's choice)"
+  let assert [_, _, last_go, finish] = timers_of(effects: pressed)
+  let #(state, early) =
+    support.run_timers_until(
+      state:,
+      effects: pressed,
+      from_ms: 1000,
+      until_ms: 2229,
+    )
+  let #(state, last) = support.fired_raw(state:, timer: last_go, at: 2230)
+  let assert [asked] = support.goes_asked(effects: last)
+    as "the third pulse asks its round and writes nothing until it closes"
+  assert asked.phase == 2
+  let #(state, ended) = support.fired_raw(state:, timer: finish, at: 2250)
+  #(state, asked, [
+    #(1000, pressed),
+    ..list.append(early, [#(2230, last), #(2250, ended)])
+  ])
+}
+
+/// The lines of a trace that name the first cast of a test, k1.
+fn of_the_first_cast(
+  trace trace: List(#(Int, String)),
+) -> List(#(Int, String)) {
+  list.filter(trace, fn(entry) {
+    list.contains(string.split(entry.1, on: " "), "k1")
+  })
+}
+
+pub fn a_channels_last_go_is_sent_when_its_strike_round_closes_after_the_finish_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, asked, steps) = discharge_finished_with_its_last_round_open()
+  assert of_the_first_cast(trace: trace(steps:))
+    == [
+      #(1000, "7fd k1"),
+      #(1410, "7f4 k1 p0"),
+      #(1820, "7f4 k1 p1"),
+    ]
+    as "the finish timer fired at 2250 ms while the third go's round was open: the cast does not end before its last go is written"
+  let #(_, closed) =
+    support.answered_with_no_targets(
+      state:,
+      effects: [cast.Strike(asked:)],
+      at: 2300,
+    )
+  assert of_the_first_cast(
+      trace: trace(steps: list.append(steps, [#(2300, closed)])),
+    )
+    == [
+      #(1000, "7fd k1"),
+      #(1410, "7f4 k1 p0"),
+      #(1820, "7f4 k1 p1"),
+      #(2300, "7f4 k1 p2"),
+      #(2300, "7fe k1"),
+    ]
+    as "cast.channel_sequence: the client counts a channel's gos and expects them all before its 0x7fe, so the round that closes at 2300 ms, after the finish timer, writes its 0x7f4 and then the 0x7fe"
+}
+
+pub fn a_strike_round_that_never_closes_does_not_hold_the_channel_open_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, asked, steps) = discharge_finished_with_its_last_round_open()
+  let chosen =
+    strike.Selection(
+      asked:,
+      units: [strike.Aimed(unit_id: 10, life: 3)],
+      area: [10],
+      blows: [strike_support.damage_effect()],
+      controls: [],
+    )
+  let #(round, begun) =
+    strike.begin(
+      strike: strike.new(),
+      selection: chosen,
+      attacker: strike_support.attacker(),
+      formulas: rating_support.formulas(),
+      entropy: <<0:size(96)>>,
+      now: support.at(ms: 2230),
+    )
+  assert closed_rounds(effects: begun) == []
+    as "strike: a round with a unit to strike waits for its answer, which the creature never gives here"
+  let deadline_ms = 2230 + strike_tell.deadline_ms
+  let #(_, timed_out) =
+    strike.timer_fired(strike: round, now: support.at(ms: deadline_ms))
+  let assert [strike.Went(asked: closed, struck:)] =
+    closed_rounds(effects: timed_out)
+    as "strike: the round closes at its deadline, 1 s after the go (strike_test), and names the unit that did not answer by leaving it out"
+  assert closed == asked
+  assert struck == []
+  let #(_, written) =
+    support.went(
+      cast: state,
+      caster: support.caster(),
+      now: support.at(ms: deadline_ms),
+      cast_id: closed.cast_id,
+      phase: closed.phase,
+      struck:,
+    )
+  assert of_the_first_cast(
+      trace: trace(steps: list.append(steps, [#(deadline_ms, written)])),
+    )
+    == [
+      #(1000, "7fd k1"),
+      #(1410, "7f4 k1 p0"),
+      #(1820, "7f4 k1 p1"),
+      #(3230, "7f4 k1 p2"),
+      #(3230, "7fe k1"),
+    ]
+    as "opcode.0x7f4 and cast.channel_sequence: the client counts a channel's gos and expects all before the 0x7fe, so the last go is written when its round closes, at the deadline, and the 0x7fe follows at once; the cast waits for nothing else"
+}
+
+/// The rounds the strike rule closed among these effects, as it tells the cast rule.
+fn closed_rounds(effects effects: List(strike.Effect)) -> List(strike.Effect) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      strike.Went(..) -> True
+      strike.TellStrike(..)
+      | strike.StartTimer(..)
+      | strike.CancelTimer(..)
+      | strike.Released(..)
+      | strike.Log(..) -> False
+    }
+  })
 }
 
 pub fn electrocute_pulses_6_times_and_finishes_with_its_last_pulse_test() -> Nil {
