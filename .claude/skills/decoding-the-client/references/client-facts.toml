@@ -10974,10 +10974,10 @@ grade = "fairly sure"
 gap = "The values 0, 1, 2, 4 and 9 are by order, not read from their constants; reading the movsd sources before those five names would make them sure."
 
 ["opcode.0x1ac.fields"]
-statement = "Message 0x1ac's five 32-bit values: experience gained in all (added to the player's experience); rest experience used (taken from the rest pool); a third amount shown as a separate gain line in the chat (the part from a group or other bonus); the source kind (CombatFloater.CodeEnumExpReason); the unit the experience came from (the target of the floating number). The base number shown is the first minus the second and third."
-proof = "Handler 0x1403c8760 (saved C): game+0x1678 += word 0; game+0x1688 -= word 1; iVar15 = word0 - word2 - word1 shown with text DAT_140aebdd4 when nonzero; word 2 nonzero sends a notice kind 6 with word 2 to 0x1404283d0; ExperienceGained('iUSii', word 3, word 4, text, 0, amount). FloatText.lua OnExperienceGained(eReason, unitTarget, strText, fDelay, nAmount)."
-grade = "guess"
-gap = "What the third value's notice kind 6 labels (group bonus or other) is not read; reading 0x1404283d0's kind 6 text would settle it. Send 0 for it."
+statement = "Message 0x1ac's five 32-bit values: experience gained in all (added to the player's experience); the rest experience part (taken from the rest pool); the Signature bonus part; the source kind (CombatFloater.CodeEnumExpReason); the unit the experience came from. Each part prints its own line on the chat's loot channel through ChannelUpdate_Progress: the base (first minus second minus third), when not 0, as Experience 'You receive $1c XP' (CombatLog_XPGain, text 453169); the third, when not 0, as SignatureExperience 'You receive $1c Bonus Signature XP' (CombatLog_SignatureXPGain, 739866); the second, when not 0, as RestExperience 'You receive $1c Rest XP' (CombatLog_RestXPGain, 453170). The chat lines are the same for every source kind; the kind only picks ExperienceGained's text (opcode.0x1ac.kinds)."
+proof = "Handler 0x1403c8760 saved C (8eb22adb6de47956): game+0x1678 += word 0; game+0x1688 -= word 1; iVar15 = word0 - word2 - word1, when nonzero local_238 = 2, local_234 = iVar15 -> FUN_1404283d0 (line 188-191); word 2 nonzero: local_238 = 6, local_234 = word 2 (263-266); word 1 nonzero: local_238 = 3, local_234 = word 1 (354-357). FUN_1404283d0 saved C: type in 1..7, nGain = word 1 of its record, RaiseUiEvent 'ChannelUpdate_Progress'. lua.GameLib.ChannelUpdateProgressType. UI/ChatLog/ChatLog.lua OnChannelUpdate_Progress (Experience, RestExperience, SignatureExperience branches). table_rows -- LocalizedEnum enumName=CombatLog_XPGain (3232 -> 453169), CombatLog_RestXPGain (3233 -> 453170), CombatLog_SignatureXPGain (9893 -> 739866); client_files.py text."
+grade = "fairly sure"
+gap = "The gates and types are read from the saved C, not from the instructions. Send 0 for the Signature part until signature bonuses are served."
 
 ["0x14050cbf0"]
 statement = "Lua GetRestXpKillCreaturePool: the kill experience the rest pool still covers, the rest experience held times (1 + 1/f), where f is GameFormula 341 datafloat0 (0.5), so three times the rest pool. This implies rest experience adds f times a kill's experience. The client does not work out kill experience itself: the server sends the amount in message 0x1ac."
@@ -13801,10 +13801,9 @@ grade = "fairly sure"
 gap = "Read from the saved C, not run."
 
 ["opcode.0xdd"]
-statement = "Message 0xdd, world server to client: a currency gain notice. Body: a 4-bit currency field, a 64-bit amount, a 64-bit value. An amount above 0 raises ChannelUpdate_Loot type Currency (2); ChatLog prints the credit loot line and LootStack adds credits to its display. This, not 0x919, puts a credit gain in chat."
-proof = "0x14006c290 line 580: 0xdd, size 0x18, reader 0x140090150. Jump table 0x1403f1344 -> 0x1403f12b0 -> FUN_1403d2550. FUN_140427fa0 types. UI/ChatLog/ChatLog.lua 743-751; UI/LootNotificationWindow/LootStack.lua 122-131."
-grade = "fairly sure"
-gap = "Whether the 4-bit field is the type id or type-1, and the third value, are not read."
+statement = "Message 0xdd (221), world server to client: a currency gain notice. Body: the CurrencyType id (4 bits; Credits 1, the same number as 0x919's credit kind 0 plus 1, not the type minus 1), the amount gained (64 bits), and the part of that amount that came from Signature (64 bits, same currency). The amount is compared signed: 0 or below does nothing. Otherwise the handler raises ChannelUpdate_Loot type Currency (2) with monNew = (amount, type), monSignatureBonus = (third value, type) and monEssenceBonus = (0, Credits); it never changes the held total (it does not call SetCurrency). ChatLog prints on the loot channel 'You receive $1n' (CombatLog_LootReceived, text 453172), or, when the Signature part is above 0, 'You receive $1n ($2n from Signature)' (ChatLog_CurrencyGainedWithSignature, 767170); the Drusera's Gift suffix (ChatLog_BonusEssence, 769904) never shows from 0xdd because its essence amount is always 0. For Credits LootStack adds the amount to its recent-gains cash display; for any other currency FloatText shows its alternate-money floater. A type of 0 makes a Money of type 0: LootStack ignores it and FloatText shows an alternate-money floater."
+proof = "Registered in 0x14006c290 (saved C line 580): 0xdd, size 0x18, reader 0x140090150 (saved C 8eb22adb6de47956: ReadBits32 4 bits to +0, ReadUint64 to +8, ReadUint64 to +0x10). Jump table 0x1403f1344 -> 0x1403f12b0 -> 0x1403d2550. query.py decode 0x1403d2558..0x1403d2632: 0x1403d257a mov rcx, [rdx+8]; 0x1403d2581 jle (signed, amount <= 0 returns); 0x1403d2587 mov eax, [rdx] (the 4-bit field, no subtraction); 0x1403d258d mov rbx, [rdx+0x10]; 0x1403d25bb mov [rsp+0x50], 2 (record type); 0x1403d25c3 call 0x14040fae0 (record init); stores to record +0x4d0 = {[rdx+8], [rdx], 0}, +0x4e8 = {rbx, the same field, 0}, +0x500 = {0, 1, 0}, +0x4c8 = 0; 0x1403d262d call 0x140427fa0 with rcx = [rdi+0x7340]. The handler's only callees are 0x14040fae0, 0x140427fa0, 0x14018b900 and the stack cookie check; SetCurrency 0x1403b5730's only caller is 0x1403c70e0 (0x919). RaiseChannelUpdateLoot 0x140427fa0 type 2 pushes record word indexes 0x134, 0x13a, 0x140 (bytes 0x4d0, 0x4e8, 0x500) as monNew, monSignatureBonus, monEssenceBonus through 0x140501210. Money getters: GetMoneyType 0x140501db0 (0x140501dfa movd xmm0, dword [rcx+8]) and GetAmount 0x140501f90 (0x140501fd5 cvtsi2sd xmm0, qword [rcx]). Types: lua.Money.CodeEnumCurrencyType. Texts: table_rows -- LocalizedEnum (3235 -> 453172, 11796 -> 767170, 11899 -> 769904) and client_files.py text. UI/ChatLog/ChatLog.lua 743-760; UI/LootNotificationWindow/LootStack.lua 121-131; UI/FloatText/FloatText.lua 603 on."
+grade = "sure"
 
 ["lua.GameLib.ChannelUpdateLootType"]
 statement = "GameLib.ChannelUpdateLootType: Item 1, Currency 2, ItemDestroy 3."
@@ -14368,3 +14367,89 @@ statement = "What the client does for a cast-a-spell objective (type 11): it rea
 proof = "opcode.0x9d, CastShortcutSpell 0x14039b340, CastObjectiveAbilityKey 0x14039b930, ShortcutSpellRelease 0x1405c97a0, HandleSpellShortcut 0x1403b9fb0, LuaQuestGetSpell 0x140668cc0, ActionBarButtonSetContentId 0x1406ca350, PickCastTarget 0x14055bdc0. Rows: `gleam run -m genesis_prime/table_rows -- Spell4 ID=25306` (and 30173, 40471; 46171 gives none), then Spell4Base ID=11896, 16597, 24688 (spell4TargetMechanicId, castMethod) and Spell4TargetMechanics ID=1, 3 (targetType)."
 grade = "fairly sure"
 gap = "Which spell the server sends and which casts it counts stay the server's choice (QuestObjective.type.11's gap); a retail recording of quest 3915, 4832 or 7618 shows the 0x176 and 0x9d."
+
+["0x1403d2550"]
+statement = "HandleMessage00DD: turns a 0xdd body into a Currency loot event (opcode.0xdd); it stores nothing in the player's currencies."
+proof = "query.py decode 0x1403d2558..0x1403d2632 (see opcode.0xdd); callees 0x14040fae0, 0x140427fa0, 0x14018b900 only."
+grade = "sure"
+name = "HandleMessage00DD"
+
+["0x140427fa0"]
+statement = "RaiseChannelUpdateLoot: builds the ChannelUpdate_Loot event's table from a loot record and raises it. Type 1 (Item): itemNew, nCount, unitLooter. Type 2 (Currency): monNew, monSignatureBonus, monEssenceBonus, each a Game.Money. Type 3 (ItemDestroy): itemDestroyed. Raised by 0xdd (0x1403d2550), the account currency message 0x967 (0x140005730, type 2), world handlers 0x1403c0d70 and 0x1403db1f0 (type 1), the combat log 0x140610a50 (type 3) and 0x140659b00 (type 1)."
+proof = "Saved C 0x140427fa0.c (2580df99bb1ce2aa): type branches; type 2 reads int indexes 0x134, 0x13a, 0x140 through FUN_140501210 (pushes a 0x18-byte Game.Money copy); RaiseUiEvent 'ChannelUpdate_Loot'. Callers by query.py callers 0x140427fa0."
+grade = "fairly sure"
+gap = "Read from the saved C; the type 1 and 3 callers' records are not read."
+name = "RaiseChannelUpdateLoot"
+
+["0x140501db0"]
+statement = "Lua Money:GetMoneyType: the Money's 32-bit type at +8."
+proof = "Name/function pair at 0x140c59800 (query.py string_refs 'GetMoneyType'); 0x140501dfa movd xmm0, dword ptr [rcx+8]."
+grade = "sure"
+name = "LuaMoneyGetMoneyType"
+
+["0x140501f90"]
+statement = "Lua Money:GetAmount: the Money's signed 64-bit amount at +0."
+proof = "Name/function pair at 0x140c598b0 (query.py string_refs 'GetAmount'); 0x140501fd5 cvtsi2sd xmm0, qword ptr [rcx]."
+grade = "sure"
+name = "LuaMoneyGetAmount"
+
+["lua.Money.CodeEnumCurrencyType"]
+statement = "Money.CodeEnumCurrencyType: Credits 1, Renown 2, ElderGems 3, CraftingVouchers 4; the same numbers as CurrencyType ids."
+proof = "Saved C 0x140500a10.c (Money registration): the four names pushed with 1.0, 2.0, 3.0, 4.0. gleam run -m genesis_prime/table_rows -- CurrencyType."
+grade = "fairly sure"
+gap = "Read from the saved C; the enum's other entries, if any, are not listed here."
+
+["opcode.0xdd.with_0x919"]
+statement = "Sending 0xdd and 0x919 for one gain does not add the amount twice, in either order: 0x919 kind 0 sets the absolute credit total and 0xdd changes no total, it only prints the chat line and adds to LootStack's recent-gains display. Two 0xdd for one gain print two lines and add twice to that display, so one gain takes one 0xdd. No other client path shows a credit gain: 0x919 prints nothing below the cap, Vendor.lua posts nothing to chat on a sale, and the PlayerCurrencyChanged listeners only redraw. The account currency message 0x967 raises its own Currency loot event for the gain (new total minus old, when above), so it needs no 0xdd."
+proof = "opcode.0xdd (no SetCurrency call); SetCurrency 0x1403b5730 called only from 0x1403c70e0. UI/LootNotificationWindow/LootStack.lua 121-131 (SetAmount of the window's amount plus monNew). grep PostOnChannel UI/Vendor (none); PlayerCurrencyChanged handlers in XPBar, Mail, Vendor, GuildBank redraw only. 0x140005730 saved C: compares the stored total per index with the new one and calls 0x140427fa0 type 2 with the difference when greater."
+grade = "fairly sure"
+gap = "Which server-side gains retail sent 0xdd for is not in the client; recordings settle it. The 0x967 gain line is read from the saved C."
+
+["lua.GameLib.ChannelUpdateProgressType"]
+statement = "GameLib.ChannelUpdateProgressType: RewardPoints 1, Experience 2, RestExperience 3, ElderPoints 4, RestElderPoints 5, SignatureExperience 6, SignatureElderPoints 7."
+proof = "Registration 0x140709460: 0x14070c70a lea r9, [0x140c318f0]; 0x14070c711 lea r8, 'ChannelUpdateProgressType' (0x140b44a68); count 7. query.py bytes 0x140c318f0 (112 bytes): pairs of a UTF-16 name pointer and a value, 0x140ac07f0 RewardPoints 1, 0x140ac0780 Experience 2, 0x140ac0798 RestExperience 3, 0x140ac0748 ElderPoints 4, 0x140ac0760 RestElderPoints 5, 0x140ac08e0 SignatureExperience 6, 0x140ac0908 SignatureElderPoints 7 (names read with query.py bytes)."
+grade = "sure"
+
+["opcode.0x1ac.kind.7"]
+statement = "0x1ac with source kind 7 (QuestEpisodeCompletion) shows exactly what any 0x1ac shows: the chat line 'You receive $1c XP' with the base amount, and FloatText's number over the controlled unit. Its text 52884 'Episode completion bonus' goes only into ExperienceGained's text argument, which FloatText (the only listener) ignores, so it is never shown. The client needs no order between it and the quest's 0x35c and 0x1ac messages; it does not check that an episode is complete."
+proof = "opcode.0x1ac.kinds (case 7 iVar8 = 0xce94, 52884); opcode.0x1ac.fields; grep 'ExperienceGained' over UI/*.lua: only FloatText/FloatText.lua registers it (CombatLog.lua matches only PathExperienceGained). The handler reads no episode or quest state (saved C 0x1403c8760.c)."
+grade = "fairly sure"
+gap = "That nothing else reads the text rests on the Lua search and the saved C."
+
+["lua.Episode.EpisodeState"]
+statement = "Episode.EpisodeState: Unknown 0, Mentioned 1, Active 2, Complete 3."
+proof = "Saved C 0x14072d2a0.c lines 55-90: EpisodeState_Unknown 0, EpisodeState_Mentioned 1.0 (0x3ff0...), EpisodeState_Active 2.0 (0x4000...), EpisodeState_Complete 3.0 (0x4008...)."
+grade = "fairly sure"
+gap = "Read from the saved C."
+
+["0x140788b50"]
+statement = "GetEpisodeState (the Episode object's method slot 0xc0): Complete (3) when every quest category entry of the episode is 3 or it has none; otherwise the largest entry that is not 3."
+proof = "Vtable 0x140b77ed0 slot 0xc0 = 0x140788b50. query.py decode 0x140788b50: walks the map at [rcx+0x50], each node's state at +0x24; 0x140788b66 cmp ecx, 3; a non-3 entry clears the all-complete flag and keeps the maximum; 0x140788bd1 returns 3 when the flag stands."
+grade = "sure"
+name = "GetEpisodeState"
+
+["0x140788be0"]
+statement = "GetEpisodeCategoryState (the Episode object's method slot 0xc8): the state the episode keeps for one quest category, or 0 when it has none."
+proof = "Vtable 0x140b77ed0 slot 0xc8 = 0x140788be0; query.py decode: a lookup by key in the map at [rcx+0x50], node +0x24, 0 when not found."
+grade = "fairly sure"
+gap = "Read from the decode summary, not each instruction named here."
+name = "GetEpisodeCategoryState"
+
+["0x140787d10"]
+statement = "UpdateEpisodeState: the client works out an episode's state itself from its quests' states; no server message carries it. Per quest category (Quest2.questCategoryId, 0 taken as 1) of the episode's EpisodeQuest rows it sets a state: Complete (3) when every quest of the category whose EpisodeQuest.flags lacks bit 1 (value 1) is Completed (quest state 3), a category of only flag-1 quests counting as complete; otherwise Active (2) when any quest is Accepted, Achieved, Completed or Botched (1-4); otherwise Mentioned (1) when any is Mentioned, Abandoned or Ignored (5-7); else Unknown (0). The episode's state is then GetEpisodeState. When it changed it raises EpisodeStateChanged(episode id, old, new). It runs on every SetQuestState for each episode of the quest (0x140553410, called by SetQuestState 0x1405fbdc0 at 0x1405fc5d8, through 0x140724340) and for all episodes on 0x25e (0x140724100 from 0x1403b5f80 and 0x1403e3350)."
+proof = "Saved C 0x140787d10.c (e9b6b6af37d00314): resets each category to 0; per quest the key from Quest2 offset 0x1a4 (questCategoryId by table_rows -- Quest2 --columns, offset 420); switch on GetQuestState: 0 clears the temporary all-done entry unless row flags & 1; 1, 2, 4 clear it unless flags & 1 and raise the category to at least 2; 3 raises it to at least 2; 5, 6, 7 clear it unless flags & 1 and raise to at least 1; categories still all-done get 3; changed categories call FUN_1405a9420 and FUN_14077d8b0; RaiseUiEvent 'EpisodeStateChanged' when GetState differs. Callers by query.py callers. Quest states: record 0x1405fbdc0 and the quest state enum."
+grade = "fairly sure"
+gap = "Read from the saved C. FUN_1405a9420 and FUN_14077d8b0 are not read."
+name = "UpdateEpisodeState"
+
+["Episode.completion"]
+statement = "An episode is complete in the client when, in each quest category it spans, every one of its quests whose EpisodeQuest.flags lacks the value-1 bit is Completed (flag-1 quests are optional). On the change to Complete the UI shows nothing new: FloatTextPanel's episode alert fires on Active only, QuestTracker drops the episode, QuestLog redraws. Rows: 300 Episode rows, 1497 EpisodeQuest rows (flags 0 on 1350, 1 on 131, 3 on 16); 288 episodes have a required (flag-0) quest, 12 have no quest rows, 6 span more than one quest category. Start zones (Episode.worldZoneId under the zone by WorldZone.parentZoneId, the same set by the quests' Quest2.worldZoneId): Northern Wilds 35 has 314 (4 quests, 2 required), 324 (5, 5) and 325 (2, 2); Everstar 1414 has 515 (7, 3), 516 (6, 6) and 517 (4, 4); the tutorial 4961 has none."
+proof = "0x140787d10, 0x140788b50. UI/FloatText/FloatTextPanel.lua 224-234; UI/QuestTracker/QuestTracker.lua 1132-1150; UI/QuestLog/QuestLog.lua 1211. Counts: gleam run -m genesis_prime/table_rows -- Episode, -- EpisodeQuest, -- Quest2, -- WorldZone, counted by scratch epcount.py (episodes by worldZoneId rolled up through parentZoneId; required = flags & 1 == 0; categories = questCategoryId, 0 as 1)."
+grade = "fairly sure"
+gap = "Rests on 0x140787d10's saved C read."
+
+["Episode.experience"]
+statement = "The client holds no amount for an episode's completion experience: Episode has no experience column, no table has an episode experience column, and no episode code reads a GameFormula row. The amount 0x1ac kind 7 carries is the server's to choose."
+proof = "table_rows -- Episode --columns: ID, localizedTextIdName, localizedTextIdBriefing, localizedTextIdEndSummary, flags, worldZoneId, percentToDisplay, questHubIdExile, questHubIdDominion. A UTF-16 column-name scan over all 384 tables: episode-named columns only in Episode, EpisodeQuest, PathEpisode, PathMission.pathEpisodeId, SoundUIContext and ZoneCompletion.episodeQuestCount. grep FUN_140200220 (GameFormula lookup) over the saved C of 0x140787*, 0x140788*, 0x14072[cde]*, 0x140724*: none; only 0x1403c8760 (the 0x1ac handler) uses it among the files searched, and 52884 / 0xce94 appear only there."
+grade = "guess"
+gap = "An absence: the server code that worked the amount out is not in the client. A retail record of an episode completion line (Jabbithole, a recording) settles the amount; until then it is a server choice for Jim."
