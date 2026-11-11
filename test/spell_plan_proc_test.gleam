@@ -383,6 +383,7 @@ pub fn a_spell_refuses_the_life_its_caster_condition_names_test() -> Nil {
     spell_plan.Spell(
       ..cast_support.child(spell4_id: 1, base: 1),
       caster_death: death,
+      target_death: spell_plan.AliveOrDead,
     )
   }
   assert spell_plan.refused_life(
