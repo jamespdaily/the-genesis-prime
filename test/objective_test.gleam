@@ -90,8 +90,10 @@
 ////   0x21), 2 is 21295 (type 22, flags 3), 3 is 21296 (type 2, creature 73499, flags 3)
 ////   and 4 is 21298 (type 17, zone 5998, flags 3).
 //// - `QuestObjective.type.23`: a use of any unit in the objective's TargetGroup counts
-////   one. QuestObjective 21094 (quest 10415, group 14175 of creatures 72197, 72198,
-////   72231 ..., count 8, flags 4); the Bon Voyage objectives of quest 10528 (21326
+////   one for each unit: a second use of the same unit counts nothing (the server's choice,
+////   Jim, 2026-11-11; the client keeps no record of the units used).
+////   QuestObjective 21094 (quest 10415, group 14175 of creatures 72197, 72198, 72231 ...,
+////   count 8, flags 4); the Bon Voyage objectives of quest 10528 (21326
 ////   talk, 21327 travel, 21328 and 21329 choices, 21342 an optional type 14) and
 ////   quest 10530 (21347, 21348, 21349, 21350), whose choices (type 23, flags 33) share
 ////   a group of both terminals, so the choice of each terminal is the server's.
@@ -135,8 +137,18 @@ fn a_talk(creature: id.Creature2Id) -> objective.Event {
   TalkedTo(target: plain_unit(creature:), checklist_index: 0)
 }
 
+/// A use of a creature as its own unit: the unit's id is the creature's, so uses of
+/// different creatures are uses of different units.
 fn a_use(creature: id.Creature2Id) -> objective.Event {
-  Used(target: plain_unit(creature:), checklist_index: 0)
+  a_use_of(creature:, unit: quest_support.unit_ref(unit_id: creature.value))
+}
+
+/// A use of a creature as this unit of a map run.
+fn a_use_of(
+  creature creature: id.Creature2Id,
+  unit unit: quest_log.UnitRef,
+) -> objective.Event {
+  Used(target: plain_unit(creature:), checklist_index: 0, unit:)
 }
 
 const use_target = 58_487
@@ -2112,4 +2124,331 @@ pub fn travel_done_leaves_bon_voyage_achieved_test() -> Nil {
     as "the optional objective is still open in the Achieved quest"
   assert quest_log.active_ids(log: used.log) == [10_528]
     as "the quest is still in the active list, not completed"
+}
+
+/// The log of one quest accepted with nothing counted.
+fn fresh(quest_id quest_id: Int) -> quest_log.QuestLog {
+  quest_support.log_of(rows: [quest_support.untouched(quest_id:)])
+}
+
+/// The log and messages after this event.
+fn used_by(
+  log log: quest_log.QuestLog,
+  tables tables: table_store.Tables,
+  event event: objective.Event,
+) -> objective.Advanced {
+  objective.advance(log:, tables:, event:, now_ms: 0)
+}
+
+pub fn a_second_use_of_the_same_unit_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 6723's only objective, 10383, is type 23 on TargetGroup 3568 (Creature2 30826
+  // and 30827), count 15. The client's `0x140550c50` (line 142) tests only the group and
+  // `0x1405517a0` makes no type 23 a checklist, so the once is the server's choice.
+  use tables <- with_objectives(edits: [])
+  let quest = quest_of(id: 6723, tables:)
+  let use_of_unit_7 =
+    a_use_of(
+      creature: Creature2Id(30_826),
+      unit: quest_support.unit_ref(unit_id: 7),
+    )
+  let first = used_by(log: fresh(quest_id: 6723), tables:, event: use_of_unit_7)
+  assert first.effects
+    == [SendProgress(quest_id: 6723, objective_index: 0, progress: 1)]
+    as "the first use of the unit counts one"
+  let second = used_by(log: first.log, tables:, event: use_of_unit_7)
+  assert second.effects == [] as "the same unit again counts nothing"
+  assert quest_log.objective_progress(log: second.log, quest:, index: 0) == 1
+    as "the progress stays 1"
+}
+
+pub fn units_of_one_creature_each_count_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 6607's objective 10278 (index 0) is type 23 on TargetGroup 3437, whose only
+  // creature is 30470, with count 4: only four units of that creature finish it.
+  use tables <- with_objectives(edits: [])
+  let quest = quest_of(id: 6607, tables:)
+  let use_unit = fn(log, unit_id) {
+    used_by(
+      log:,
+      tables:,
+      event: a_use_of(
+        creature: Creature2Id(30_470),
+        unit: quest_support.unit_ref(unit_id:),
+      ),
+    ).log
+  }
+  let progress = fn(log) {
+    quest_log.objective_progress(log:, quest:, index: 0)
+  }
+  let one = use_unit(fresh(quest_id: 6607), 7)
+  let two = use_unit(one, 8)
+  let three = use_unit(two, 9)
+  assert [progress(one), progress(two), progress(three)] == [1, 2, 3]
+    as "each unit of the creature counts one"
+  assert !quest_log.objective_done(log: three, quest:, index: 0)
+    as "3 of 4 is not done"
+  let four = use_unit(three, 10)
+  assert progress(four) == 4 as "the fourth unit counts the fourth"
+  assert quest_log.objective_done(log: four, quest:, index: 0)
+    as "the objective is done at its count of 4 (0x361)"
+}
+
+pub fn the_same_unit_id_in_another_map_run_counts_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Unit ids start at 1 again in each run of a map (`world_map/map`), so unit 7 of
+  // incarnation 2 is another unit than unit 7 of incarnation 1.
+  use tables <- with_objectives(edits: [])
+  let first_run = quest_support.unit_ref(unit_id: 7)
+  let second_run = quest_log.UnitRef(..first_run, incarnation: 2)
+  let use_in = fn(log, run) {
+    used_by(
+      log:,
+      tables:,
+      event: a_use_of(creature: Creature2Id(30_826), unit: run),
+    )
+  }
+  let first = use_in(fresh(quest_id: 6723), first_run)
+  let second = use_in(first.log, second_run)
+  assert second.effects
+    == [SendProgress(quest_id: 6723, objective_index: 0, progress: 2)]
+    as "unit 7 of the next run counts as another unit"
+}
+
+pub fn a_fake_drop_in_the_reward_pane_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 18561 (quest 9682, index 4) is type 23 with data TargetGroup 10971 (a union
+  // of 10968, 10969 and 10958: Creature2 65280, 65282 and 65281, "Real Drop") and reward
+  // pane 12216, which adds 10970 (Creature2 65279, "Fake Drop 1"). The pane only marks
+  // and shows targets; progress comes only from the server's 0x361.
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 9682,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1111,
+        progress: [0b111_1111_1111, 1, 1, 1, 0],
+      ),
+    ])
+  assert used_by(
+      log:,
+      tables:,
+      event: a_use_of(
+        creature: Creature2Id(65_279),
+        unit: quest_support.unit_ref(unit_id: 7),
+      ),
+    ).effects
+    == []
+    as "a use of the fake drop of the reward pane counts nothing"
+  assert used_by(
+      log:,
+      tables:,
+      event: a_use_of(
+        creature: Creature2Id(65_281),
+        unit: quest_support.unit_ref(unit_id: 8),
+      ),
+    ).effects
+    == [SendProgress(quest_id: 9682, objective_index: 4, progress: 1)]
+    as "a use of a real drop of the data group counts one"
+}
+
+pub fn a_type_23_objective_with_no_group_counts_no_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // QuestObjective 8323 (quest 5568) has data 0 and reward pane 0, and TargetGroup has no
+  // row 0.
+  use tables <- with_objectives(edits: [])
+  let count_use = fn(creature, unit_id) {
+    used_by(
+      log: fresh(quest_id: 5568),
+      tables:,
+      event: a_use_of(
+        creature: Creature2Id(creature),
+        unit: quest_support.unit_ref(unit_id:),
+      ),
+    ).effects
+  }
+  assert count_use(30_826, 7) == []
+    as "a creature of another group counts nothing"
+  assert count_use(65_281, 8) == []
+    as "a creature of another group counts nothing"
+}
+
+pub fn a_use_after_the_objective_is_done_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 3167's objective 4143 (index 0) is type 23 on TargetGroup 7687 (Creature2 9868
+  // and 9869), count 1, and done here.
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 3167,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [1, 0, 0, 0, 0, 0],
+      ),
+    ])
+  assert used_by(
+      log:,
+      tables:,
+      event: a_use_of(
+        creature: Creature2Id(9869),
+        unit: quest_support.unit_ref(unit_id: 12),
+      ),
+    ).effects
+    == []
+    as "an objective at its count is not open and takes no use"
+}
+
+pub fn the_use_that_reaches_the_count_achieves_the_quest_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 4522's only objective, 6167, is type 23 on TargetGroup 4314 (Creature2 16645,
+  // 16646 and 16647), count 5.
+  use tables <- with_objectives(edits: [])
+  let uses = [
+    #(16_645, 1),
+    #(16_646, 2),
+    #(16_647, 3),
+    #(16_645, 4),
+    #(16_646, 5),
+  ]
+  let #(log, effects) =
+    list.fold(uses, #(fresh(quest_id: 4522), []), fn(so_far, one) {
+      let advanced =
+        used_by(
+          log: so_far.0,
+          tables:,
+          event: a_use_of(
+            creature: Creature2Id(one.0),
+            unit: quest_support.unit_ref(unit_id: one.1),
+          ),
+        )
+      #(advanced.log, list.append(so_far.1, [advanced.effects]))
+    })
+  assert effects
+    == [
+      [SendProgress(quest_id: 4522, objective_index: 0, progress: 1)],
+      [SendProgress(quest_id: 4522, objective_index: 0, progress: 2)],
+      [SendProgress(quest_id: 4522, objective_index: 0, progress: 3)],
+      [SendProgress(quest_id: 4522, objective_index: 0, progress: 4)],
+      [
+        SendProgress(quest_id: 4522, objective_index: 0, progress: 5),
+        SendState(quest_id: 4522, state: 2),
+      ],
+    ]
+    as "five units count 1 to 5, and the fifth achieves the quest"
+  assert used_by(
+      log:,
+      tables:,
+      event: a_use_of(
+        creature: Creature2Id(16_647),
+        unit: quest_support.unit_ref(unit_id: 6),
+      ),
+    ).effects
+    == []
+    as "a sixth unit counts nothing: the objective is done"
+}
+
+pub fn one_use_counts_once_for_each_objective_of_its_set_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quests 5531 (objective 8271) and 5718 (8527) each have a type 23 objective on
+  // TargetGroup 6355 (Creature2 24308 and 24310), count 12; each remembers its own
+  // units.
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.untouched(quest_id: 5531),
+      quest_support.untouched(quest_id: 5718),
+    ])
+  let use_of_unit_7 =
+    a_use_of(
+      creature: Creature2Id(24_308),
+      unit: quest_support.unit_ref(unit_id: 7),
+    )
+  let first = used_by(log:, tables:, event: use_of_unit_7)
+  assert first.effects
+    == [
+      SendProgress(quest_id: 5531, objective_index: 0, progress: 1),
+      SendProgress(quest_id: 5718, objective_index: 0, progress: 1),
+    ]
+    as "one use counts for both quests' objectives"
+  assert used_by(log: first.log, tables:, event: use_of_unit_7).effects == []
+    as "the same use again counts for neither"
+}
+
+pub fn use_targets_leaves_out_a_used_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 9122's objective 16479 (index 2) is type 23 on TargetGroup 8374 (captives
+  // 52900 to 52905, none with an activate spell), count 9, flags 4.
+  use tables <- with_objectives(edits: [])
+  let captive = fn(creature) { plain_unit(creature: Creature2Id(creature)) }
+  let log = fresh(quest_id: 9122)
+  assert objective.use_targets(log:, tables:)(
+    captive(52_900),
+    0,
+    quest_support.unit_ref(unit_id: 7),
+  )
+    as "an unused captive of the group is offered"
+  let used =
+    used_by(
+      log:,
+      tables:,
+      event: a_use_of(
+        creature: Creature2Id(52_900),
+        unit: quest_support.unit_ref(unit_id: 7),
+      ),
+    )
+  let offered = objective.use_targets(log: used.log, tables:)
+  assert !offered(captive(52_900), 0, quest_support.unit_ref(unit_id: 7))
+    as "the unit used already is not offered again"
+  assert offered(captive(52_901), 0, quest_support.unit_ref(unit_id: 8))
+    as "another captive of the group is still offered"
+}
+
+pub fn a_type_23_use_counts_nothing_for_another_type_on_the_same_group_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 9122: 16477 (index 0, type 12, flags 4), 16478 (index 1, type 17, flags 3),
+  // 16479 (index 2, type 23), 16480 (index 3, type 8, flags 516) and 16579 (index 4,
+  // type 22, flags 3). Flags 3 wait for every earlier objective, so a fresh log has
+  // indexes 0, 2 and 3 open, and with 16477 done 1, 2 and 3 are.
+  use tables <- with_objectives(edits: [])
+  let quest = quest_of(id: 9122, tables:)
+  let after_16477 =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 9122,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [1, 0, 0, 0, 0],
+      ),
+    ])
+  let counts_only_index_2 = fn(log) {
+    let used =
+      used_by(
+        log:,
+        tables:,
+        event: a_use_of(
+          creature: Creature2Id(52_900),
+          unit: quest_support.unit_ref(unit_id: 7),
+        ),
+      )
+    assert used.effects
+      == [SendProgress(quest_id: 9122, objective_index: 2, progress: 1)]
+      as "only the type 23 objective counts the use"
+    assert list.map([0, 1, 3, 4], fn(index) {
+        quest_log.objective_progress(log: used.log, quest:, index:)
+      })
+      == list.map([0, 1, 3, 4], fn(index) {
+        quest_log.objective_progress(log:, quest:, index:)
+      })
+      as "the other objectives' progress is as it was"
+  }
+  counts_only_index_2(fresh(quest_id: 9122))
+  counts_only_index_2(after_16477)
 }
