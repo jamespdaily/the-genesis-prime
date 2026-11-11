@@ -2,18 +2,23 @@
 //// the player: the rule behind "Bon Voyage" (Quest2 10528, Exile; 10530, Dominion).
 ////
 //// ```
-//// 0x97 ─▶ link ─ closed ─▶ 0x7fc, no 0x7fd           (objective_link.of asks `link` first)
-////              └ open ───▶ 0x7fd ─▶ yes ─▶ the cast's Activated(unit, creature)
-//// Activated ─▶ landing ─ Ok(place) ─▶ objective.Used counts travel + the terminal's choice
+//// 0x97 ─▶ the terminal's prerequisite (`objective_link.of`) ─ closed ─▶ 0x7fc, no 0x7fd
+////                                                           └ open ───▶ 0x7fd ─▶ yes ─▶ the cast's Activated(unit, creature)
+//// Activated ─▶ landing ─ Ok(place) ─▶ objective.Used counts what is open
 ////                                      ─▶ Entered.departing = Some(place), 0 ms `timer`
 //// timer ─▶ connection/departures.due ─▶ leave the tutorial map, join the landing's
 //// world entry ─▶ recovered ─▶ a login between the count and the move enters at the landing
 //// ```
 ////
-//// - **The terminals** (`terminals`, "fairly sure": no client column ties a terminal to its
-////   choice objective or its landing; the match is the names and texts): each terminal's
-////   Creature2, the faction's quest and travel objective, its own choice objective and its
-////   landing's WorldLocation2 row.
+//// - **The terminals** (`terminals`): each terminal's Creature2, the faction's quest and
+////   travel objective, its own choice objective and its landing's WorldLocation2 row.
+////   Each Exile choice objective's `worldLocationsIdIndicator00` names a WorldLocation2
+////   row in world 3460 (21328 names 51696, 21329 names 51695), and the world data's
+////   spawns of the Exile terminals stand within 0.6 of those rows (73606 of 51696, 73605
+////   of 51695, source: the world database). The Dominion pair's indicators (21349 names
+////   52748, 21350 names 52747) have no spawn to compare, so their match to Levian Bay and
+////   Crimson Isle rests on the objectives' texts ("fairly sure"). No client column ties a
+////   terminal to its landing: that match is the texts too.
 ////
 ////   | Terminal | Spell4 | Choice objective | Landing | World / zone |
 ////   |---|---|---|---|---|
@@ -24,20 +29,22 @@
 ////
 ////   The travel objective is 21327 (Exile, quest 10528, after the talk 21326) or 21348
 ////   (Dominion, quest 10530, after the talk 21347); either terminal of the faction counts
-////   it. Crimson Isle lands at 8223, as `start_place` already does.
+////   it. Crimson Isle lands at 8223, as `start_place` does.
 //// - **The client's gate** (`Creature2.prerequisiteIdAnimState`): each Exile terminal has
-////   the animation prerequisite 41793 and each Dominion terminal 42982, which the client
-////   reads before it offers the yes (`objective_link`). `link` reads the faction's travel
-////   objective in the log as well, so a player without the quest, or with the talk not
-////   done, or with the travel done, is refused with 0x7fc before 0x7fd; it is stricter
-////   than the client only once the travel is done.
+////   the prerequisite 41793 and each Dominion terminal 42982, flags 1 (any of): the faction's
+////   quest has its objective 1 open, or is in state 2 or 3
+////   (`departures.no_client_gate`). The server offers the terminal exactly when the
+////   client does (`objective_link.of`), so a player without the quest or with the talk not
+////   done is refused with 0x7fc before 0x7fd, and a press with the travel done and the quest
+////   achieved or completed is offered. `landing` gives the landing in those same cases, so
+////   that yes moves the player again, and counts only what is still open.
 //// - **The count** (`QuestObjective.type.23`): the client counts a use of any unit in the
 ////   objective's TargetGroup with no mask, and the three objectives of a faction share one
 ////   group, so `choice_terminal` ties each choice objective to its terminal for
 ////   `objective.counts`.
 //// - **The move** is an in-world 0xad and the usual burst (`0x1403b6de0.resets`) with the
-////   quest log kept (`quest_log.process_wide`), which the Holocrypt's leave and join already
-////   do (`connection/departures`).
+////   quest log kept (`quest_log.process_wide`), which the Holocrypt's leave and join do
+////   (`connection/departures`).
 //// - **The recovery** (`recovered`): a save between the count and the move holds the
 ////   counted choice and a place in the tutorial, and the next login enters at the
 ////   choice's landing, so no failure between them strands the player at a terminal whose
@@ -47,35 +54,37 @@
 ////
 //// | What goes wrong | What happens | Where |
 //// |---|---|---|
-//// | A press without the quest, with the talk not done, or with travel already done | 0x7fc TargetIsNotUseable before 0x7fd; no window, nothing counted, no move | `link`, `objective_link.of`, `cast.activation_pressed` |
-//// | A press on a terminal of the other faction | Closed link, as above | `link` |
-//// | No, or the timeout | 0x7f9 146 and 0x7fe; nothing counted, no move | `cast.answered` (existing) |
-//// | A second yes, or a yes for a cast that is not live | Debug log; nothing counted, no second move | `cast.answered` (existing) |
+//// | A press without the quest, or with the talk not done | 0x7fc TargetIsNotUseable before 0x7fd; no window, nothing counted, no move | `objective_link.of`, `cast.activation_pressed` |
+//// | A press on a terminal of the other faction | Closed link, as above | `objective_link.of` |
+//// | A press, or a second yes, with the travel done (quest state 2 or 3) | Offered, as the client offers it; the yes moves the player to the landing and counts nothing | `landing` |
+//// | No, or the timeout | 0x7f9 146 and 0x7fe; nothing counted, no move | `cast.answered` |
+//// | A yes for a cast that is not live | Debug log; nothing counted, no move | `cast.answered` |
 //// | The quest is abandoned while the window is open, then yes | The cast goes and finishes; nothing counted, no move | `landing` refuses at `Activated` |
-//// | The terminal has left the player's picture by the go | Nothing counted, no move; the player may press again | `connection/casting.cast_effects` `Activated` branch (existing check) |
+//// | The terminal has left the player's picture by the go | Nothing counted, no move; the player may press again | `connection/casting.cast_effects` `Activated` branch |
 //// | The timer fires once the player is no longer in the world (camp, end) or is dead | Nothing | `connection/departures.due` |
+//// | The timer fires while the connection holds the player but is not in the world (an ask is out, the claim of the account waits) | The timer is started again, and the leave begins once the player is in the world | `connection/departures.due` |
 //// | The player logs out between the count and the timer | The camp's save holds the counted choice and the tutorial place; the next login enters at the landing | `recovered`, `world_entry.loaded` |
 //// | The client disconnects between the count and the timer | The disconnect's save holds the same; the next login enters at the landing | `recovered`, `world_entry.loaded` |
 //// | The player dies between the count and the timer | The death's save holds the same; the next login enters at the landing | `recovered`, `world_entry.loaded` |
 //// | The server stops gracefully between the count and the timer | Each connection's final save holds the same; the next login enters at the landing | `recovered`, `world_entry.loaded` |
-//// | The server stops between the count and the next save | The save before the count holds the log without it: the player logs in in the tutorial with the travel open and presses again | the save timer (existing) |
-//// | A saved log with a choice counted, saved in the tutorial after a failed move | The login enters at the landing; a press would be refused, because `link` sees the travel done | `recovered` |
+//// | The server stops between the count and the next save | The save before the count holds the log without it: the player logs in in the tutorial with the travel open and presses again | the save timer |
+//// | A saved log with a choice counted, saved in the tutorial after a failed move | The login enters at the landing | `recovered` |
 //// | A saved log with a choice counted, saved outside the tutorial | The login enters at the saved place | `recovered` |
-//// | The old map gives no answer to the leave | The connection ends (LostUserServer) | `connection/world.leave_answered` (existing) |
-//// | The landing map refuses the join | 0x594, then character select | `connection/world.entry_answered` with `FromInWorld` (existing) |
-//// | The landing map gives no answer to the join | The connection ends (LostUserServer) | `connection/world.entry_answered` (existing) |
-//// | Client frames during the leave and the join | They wait, as for the Holocrypt | existing |
-//// | The old stay's news after the leave | Dropped by the stay check | existing |
-//// | A 0x637 the client sent before the 0xad reached it | Dropped until the first 0xf2; the map is told nothing | `connection/movement`, `InWorldLoading` (existing) |
+//// | The old map gives no answer to the leave | The connection ends (LostUserServer) | `connection/world.leave_answered` |
+//// | The landing map refuses the join | 0x594, then character select, and a warning is logged; nothing is saved, so the next login enters the tutorial with the travel open, or at the landing after a save of the counted choice, and is refused the same way | `connection/world.entry_answered` with `FromInWorld`, `world_entry.joined` |
+//// | The landing map gives no answer to the join | The connection ends (LostUserServer) | `connection/world.entry_answered` |
+//// | Client frames during the leave and the join | They wait, as for the Holocrypt | `connection/world` |
+//// | The old stay's news after the leave | Dropped by the stay check | `genesis_prime/world_map/stay` |
+//// | A 0x637 the client sent before the 0xad reached it | Dropped until the first 0xf2; the map is told nothing | `connection/movement`, `InWorldLoading` |
 //// | The client lacks a terminal's Creature2, QuestObjective, Quest2 or WorldLocation2 row | The table load fails at start | `requirements` |
 
-import genesis_prime/game/activate
 import genesis_prime/game/quest_log.{type Quest, type QuestLog}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/target_group
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
-  type Creature2Id, Creature2Id, QuestObjectiveId, WorldLocation2Id,
+  type Creature2Id, Creature2Id, Faction2Id, QuestObjectiveId, WorldLocation2Id,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest_objective
@@ -134,8 +143,8 @@ const terminals: List(Terminal) = [
 pub type Refusal {
   /// The creature is not one of the terminals.
   NotATerminal
-  /// The faction's travel objective is not open: the quest is not held, its talk is
-  /// not done, or the travel is done.
+  /// The client does not offer the terminal: the quest is not held, or its talk is not
+  /// done.
   TravelClosed
 }
 
@@ -151,9 +160,15 @@ pub fn owns(timer candidate: TimerId) -> Bool {
 }
 
 /// The world of the training simulation, where a saved place holds a player that has
-/// counted a departure but has not yet been moved (the start rows of
-/// `genesis_prime/game/start_place` are in it).
+/// counted a departure but has not yet been moved (the world of WorldLocation2 rows 51697
+/// and 52747, worldId 3460; the start rows of `genesis_prime/game/start_place` are in it).
 const tutorial_world = 3460
+
+/// The states of a quest in the client's log that the terminal's prerequisite tests with
+/// its type 6 conditions (`quest_log.state`): achieved and completed.
+const achieved = 2
+
+const completed = 3
 
 /// The QuestObjective type of a use of a unit of a TargetGroup, which the travel and the
 /// choice objectives are (`QuestObjective.type.23`).
@@ -247,23 +262,9 @@ fn place_of(
   place
 }
 
-/// The link of a terminal for the player's log: open while the faction's travel
-/// objective is open, closed otherwise. `Error(Nil)` for a creature that is not a
-/// terminal, whose link its own columns decide (`objective_link.of`).
-pub fn link(
-  tables tables: table_store.Tables,
-  quests quests: QuestLog,
-  creature_id creature_id: Creature2Id,
-) -> Result(activate.Link, Nil) {
-  use terminal <- result.map(terminal_of(creature_id:))
-  case travel_open(tables:, quests:, terminal:) {
-    True -> activate.OpenLink
-    False -> activate.ClosedLink
-  }
-}
-
-/// The landing of a terminal for the player's log, while the faction's travel
-/// objective is open: the WorldLocation2 row's place.
+/// The landing of a terminal for the player's log, when the client offers the terminal
+/// (`Prerequisite` 41793 and 42982): the faction's travel objective is open, or its quest
+/// is achieved (state 2) or completed (state 3). The WorldLocation2 row's place.
 pub fn landing(
   tables tables: table_store.Tables,
   quests quests: QuestLog,
@@ -272,15 +273,22 @@ pub fn landing(
   use terminal <- result.try(
     terminal_of(creature_id:) |> result.replace_error(NotATerminal),
   )
-  case travel_open(tables:, quests:, terminal:) {
+  let quest_state =
+    quest_log.state(log: quests, quest: quest_of(tables:, terminal:))
+  case
+    travel_open(tables:, quests:, terminal:)
+    || quest_state == achieved
+    || quest_state == completed
+  {
     True -> Ok(place_of(tables:, terminal:))
     False -> Error(TravelClosed)
   }
 }
 
-/// The terminal a choice objective belongs to, by the objective's QuestObjective id;
-/// `None` for an objective that is not a terminal's choice, which any unit of its
-/// group counts (`objective.counts`).
+/// The terminal a choice objective belongs to, by the objective's QuestObjective id (its
+/// `worldLocationsIdIndicator00` row, in world 3460, is the terminal's place; see the
+/// module doc); `None` for an objective that is not a terminal's choice, which any unit
+/// of its group counts (`objective.counts`).
 pub fn choice_terminal(objective_id objective_id: Int) -> Option(Creature2Id) {
   list.find(terminals, fn(terminal) {
     terminal.choice_objective_id == objective_id
@@ -314,10 +322,36 @@ pub fn recovered(
 
 const from_table = "the server's departures terminals"
 
+/// Whether the objective of the pair is a use of a TargetGroup (type 23) whose group holds
+/// the pair's terminal, so a use of the terminal counts it (`objective.counts`).
+fn counts_its_terminal(
+  tables tables: table_store.Tables,
+  pair pair: #(Int, Terminal),
+) -> Bool {
+  let #(objective_id, terminal) = pair
+  case
+    quest_objective.get(tables:, id: QuestObjectiveId(objective_id)),
+    creature2.get(tables:, id: Creature2Id(terminal.creature_id))
+  {
+    Ok(objective), Ok(creature) ->
+      objective.type_ == use_a_group_type
+      && target_group.contains(
+        tables:,
+        group: objective.data,
+        unit: target_group.Unit(
+          creature_id: Creature2Id(terminal.creature_id),
+          faction_id: Faction2Id(creature.faction_id),
+          unit_race_id: creature2.unit_race_id(creature),
+        ),
+      )
+    _, _ -> False
+  }
+}
+
 /// The load's checks that each terminal's Creature2, its travel and choice objectives
-/// (QuestObjective rows of type 23), its quest with those objectives in its slots and its
-/// landing's WorldLocation2 row (in a world) are in the client's tables, so a client
-/// without one fails the server's start.
+/// (QuestObjective rows of type 23 whose TargetGroup holds the terminal), its quest with
+/// those objectives in its slots and its landing's WorldLocation2 row (in a world) are in
+/// the client's tables, so a client without one fails the server's start.
 pub fn requirements() -> List(table_store.Requirement) {
   [
     table_store.Requirement(
@@ -337,17 +371,14 @@ pub fn requirements() -> List(table_store.Requirement) {
       to_table: "QuestObjective",
       missing: fn(tables) {
         list.flat_map(terminals, fn(terminal) {
-          [terminal.travel_objective_id, terminal.choice_objective_id]
+          [
+            #(terminal.travel_objective_id, terminal),
+            #(terminal.choice_objective_id, terminal),
+          ]
         })
+        |> list.filter(fn(pair) { !counts_its_terminal(tables:, pair:) })
+        |> list.map(fn(pair) { pair.0 })
         |> list.unique
-        |> list.filter(fn(objective_id) {
-          case
-            quest_objective.get(tables:, id: QuestObjectiveId(objective_id))
-          {
-            Ok(row) -> row.type_ != use_a_group_type
-            Error(Nil) -> True
-          }
-        })
       },
     ),
     table_store.Requirement(

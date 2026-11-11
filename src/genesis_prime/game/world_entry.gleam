@@ -392,9 +392,9 @@ pub type Entered {
     /// (genesis_prime/game/connection/visibility_check): a change from this set is
     /// what the connection tells the map.
     hidden: Set(PrerequisiteId),
-    /// Where the player's departures terminal lands it (genesis_prime/game/departures),
-    /// set when its cast ends and taken by the 0 ms timer that starts the move; a
-    /// join of a world has none.
+    /// The place the player's departures terminal lands it at
+    /// (genesis_prime/game/departures), kept from the end of its cast until the move
+    /// begins; none otherwise.
     departing: Option(Place),
   )
 }

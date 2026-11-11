@@ -36,13 +36,16 @@ import genesis_prime/message/quest_objective_progress.{
 }
 import genesis_prime/message/quest_state.{type QuestState, QuestState}
 import genesis_prime/step
-import genesis_prime/store.{Character, SavePlace}
+import genesis_prime/store.{
+  AccountId, Character, ListCharacters, SavePlace, Select,
+}
 import genesis_prime/world_map/map.{Join, Left}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/spawn
 import gleam/list
 import gleam/option.{Some}
 import owned_test
+import quest_support
 
 const northern_wilds = 73_606
 
@@ -294,7 +297,7 @@ pub fn no_leaves_the_player_in_the_simulation_test() -> Nil {
     as "the travel is still open: the terminal offers its window again"
 }
 
-pub fn a_second_yes_moves_nothing_more_test() -> Nil {
+pub fn a_second_yes_in_state_2_moves_the_player_without_counting_test() -> Nil {
   use <- owned_test.run(60_000)
   let state = departures_support.exile_seeing(creature_id: northern_wilds)
   let #(state, pressed) = departures_support.press(state:)
@@ -308,21 +311,102 @@ pub fn a_second_yes_moves_nothing_more_test() -> Nil {
     )
   assert departures_support.started_timers(taken: first)
     == [#(departures.timer, 0)]
-  let #(state, second) =
+  let #(state, repeated) =
     departures_support.answer_cast(
       state:,
       cast_id:,
       result: interaction_result.Succeeded,
       spell4_base_id: northern_wilds_spell4_base,
     )
-  assert departures_support.started_timers(taken: second) == []
+  assert departures_support.started_timers(taken: repeated) == []
     as "the cast is over: the yes for it is dropped and starts no second move"
-  assert connection_support.written_ids(second) == []
-    && quest_news(taken: second) == #([], [])
+  assert connection_support.written_ids(repeated) == []
+    && quest_news(taken: repeated) == #([], [])
     as "and counts nothing more"
-  let #(_, pressed_again) = departures_support.press(state:)
-  assert connection_support.written_ids(pressed_again) == refused_start
-    as "the travel is done: the terminal is closed to a second press"
+  let #(state, pressed_again) = departures_support.press(state:)
+  assert connection_support.written_ids(pressed_again) == confirmed_start
+    as "Prerequisite 41793's type 6 condition with value 2: the client offers the terminal to a player whose quest is Achieved, so the press is offered the window"
+  let #(state, second) =
+    departures_support.answer(
+      state:,
+      pressed: pressed_again,
+      result: interaction_result.Succeeded,
+      spell4_base_id: northern_wilds_spell4_base,
+    )
+  assert connection_support.written_ids(second) == [0x07F4, 0x07FE]
+    && quest_news(taken: second) == #([], [])
+    as "the travel and the choice are done: the second yes sends the go and the finish and counts nothing (no 0x361, no 0x35c)"
+  assert departures_support.started_timers(taken: second)
+    == [#(departures.timer, 0)]
+    as "and asks for the move"
+  let #(state, leaving) = departures_support.timer_fires(state:)
+  assert connection_support.ask_request(leaving)
+    == connection_support.leave_asked()
+    as "the player leaves the tutorial's map"
+  let #(_, joining) =
+    connection_support.answer(
+      state:,
+      taken: leaving,
+      outcome: step.Answer(FromMap(Left)),
+    )
+  let #(map_id, place, _) = join_of(taken: joining)
+  assert map_id == MapId(world_id: 426, instance: 0)
+    as "WorldLocation2 42074 is in world 426"
+  assert_landing(
+    place:,
+    world: 426,
+    zone: 648,
+    x: 4098.16015625,
+    y: -665.9780883789062,
+    z: -5165.10009765625,
+    reason: "the second yes moves the player to the Northern Wilds landing",
+  )
+}
+
+pub fn a_completed_quest_lands_at_the_yes_without_a_count_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let state =
+    departures_support.seeing(
+      state: connection_support.in_world_as_exile_holding(quests: [
+        quest_support.completed(quest_id: 10_528, at: 7),
+      ]),
+      creature_id: northern_wilds,
+    )
+  let #(state, pressed) = departures_support.press(state:)
+  assert connection_support.written_ids(pressed) == confirmed_start
+    as "Prerequisite 41793's type 6 condition with value 3: the client offers the terminal to a player whose quest is Completed"
+  let #(state, answered) =
+    departures_support.answer(
+      state:,
+      pressed:,
+      result: interaction_result.Succeeded,
+      spell4_base_id: northern_wilds_spell4_base,
+    )
+  assert connection_support.written_ids(answered) == [0x07F4, 0x07FE]
+    && quest_news(taken: answered) == #([], [])
+    as "the quest is not in the active list: the yes counts nothing"
+  assert departures_support.started_timers(taken: answered)
+    == [#(departures.timer, 0)]
+    as "and asks for the move"
+  let #(state, leaving) = departures_support.timer_fires(state:)
+  let #(_, joining) =
+    connection_support.answer(
+      state:,
+      taken: leaving,
+      outcome: step.Answer(FromMap(Left)),
+    )
+  let #(map_id, place, _) = join_of(taken: joining)
+  assert map_id == MapId(world_id: 426, instance: 0)
+    as "WorldLocation2 42074 is in world 426"
+  assert_landing(
+    place:,
+    world: 426,
+    zone: 648,
+    x: 4098.16015625,
+    y: -665.9780883789062,
+    z: -5165.10009765625,
+    reason: "the player lands at the Northern Wilds landing",
+  )
 }
 
 pub fn a_move_sent_before_the_landing_is_dropped_test() -> Nil {
@@ -380,6 +464,137 @@ pub fn the_tutorials_viewer_sees_the_player_leave_test() -> Nil {
 }
 
 pub fn a_relog_after_the_move_enters_at_the_landing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The player says yes, is moved to the landing, loads it, and camps: the save the camp
+  // writes holds the landing, whatever the quest log says.
+  let state = departures_support.exile_seeing(creature_id: northern_wilds)
+  let #(state, _) =
+    departures_support.yes(state:, spell4_base_id: northern_wilds_spell4_base)
+  let #(state, leaving) = departures_support.timer_fires(state:)
+  let #(state, joining) =
+    connection_support.answer(
+      state:,
+      taken: leaving,
+      outcome: step.Answer(FromMap(Left)),
+    )
+  let #(state, _) = joined_at(state:, joining:, world: 426)
+  let #(state, _) =
+    connection_support.read(
+      state:,
+      bytes: connection_support.terrain_loaded_message(648),
+    )
+  let #(state, _) =
+    connection_support.read(
+      state:,
+      bytes: connection_support.camp_request_message(True),
+    )
+  let #(_, saving) =
+    connection_support.read(
+      state:,
+      bytes: connection_support.camp_finished_message(),
+    )
+  let assert AskStore(request: store.Move(SavePlace(place:, quests:, ..))) =
+    connection_support.ask_request(saving)
+    as "the camp's end saves the player"
+  assert_landing(
+    place:,
+    world: 426,
+    zone: 648,
+    x: 4098.16015625,
+    y: -665.9780883789062,
+    z: -5165.10009765625,
+    reason: "the camp's save is at the Northern Wilds landing, in world 426 and not in the tutorial",
+  )
+  // A new login of the same character, with what the save wrote.
+  let saved =
+    Character(
+      ..connection_support.world_character(),
+      faction_id: spawn.exile_faction,
+      place: Some(place),
+    )
+  let #(state, joining) =
+    connection_support.joining_holding(
+      in_character_select: connection_support.in_select(),
+      character: saved,
+      saved_health: option.None,
+      saved_experience: option.None,
+      quests:,
+    )
+  let #(map_id, landing, _) = join_of(taken: joining)
+  assert map_id == MapId(world_id: 426, instance: 0)
+    as "the new login's join is at the Northern Wilds landing's map"
+  assert_landing(
+    place: landing,
+    world: 426,
+    zone: 648,
+    x: 4098.16015625,
+    y: -665.9780883789062,
+    z: -5165.10009765625,
+    reason: "the login enters where the save was",
+  )
+  let #(_, entered) = joined_at(state:, joining:, world: 426)
+  let frames = connection_support.written(taken: entered)
+  let assert [entering] =
+    connection_support.decoded(
+      frames,
+      enter_world.message_id,
+      enter_world.decode,
+    )
+  assert entering.world_id == 426 as "opcode.0xad: the client enters world 426"
+  let assert [log] =
+    connection_support.decoded(
+      frames,
+      quest_log_message.message_id,
+      quest_log_message.decode,
+    )
+    as "a login writes 0x35F"
+  let assert [bon_voyage] =
+    list.filter(log.active, fn(active: QuestActive) {
+      active.quest_id == 10_528
+    })
+    as "the log holds Bon Voyage"
+  assert bon_voyage.state == 2 && bon_voyage.progress == [1, 1, 1, 0, 0]
+    as "opcode.0x35f: Bon Voyage is Achieved with the travel 21327 and the choice 21328 counted"
+}
+
+pub fn a_landing_map_that_refuses_the_join_returns_to_character_select_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let state = departures_support.exile_seeing(creature_id: northern_wilds)
+  let #(state, _) =
+    departures_support.yes(state:, spell4_base_id: northern_wilds_spell4_base)
+  let #(state, leaving) = departures_support.timer_fires(state:)
+  let #(state, joining) =
+    connection_support.answer(
+      state:,
+      taken: leaving,
+      outcome: step.Answer(FromMap(Left)),
+    )
+  let #(map_id, _, _) = join_of(taken: joining)
+  assert map_id == MapId(world_id: 426, instance: 0)
+    as "the leave is followed by the join at the landing's map"
+  let #(state, refused) =
+    connection_support.answer(
+      state:,
+      taken: joining,
+      outcome: step.Answer(
+        FromMap(
+          map.NotJoined(reason: map.NoLoadout(class_id: 1, faction_id: 166)),
+        ),
+      ),
+    )
+  assert connection_support.written_ids(refused) == [0x0594]
+    as "the player is in no map: 0x0594 puts the client in character select"
+  assert list.length(support.logs_of(step: refused, level: step.LogWarning))
+    == 1
+    as "the refusal is logged"
+  let #(_, listing) =
+    connection_support.read(state, connection_support.select_start())
+  assert connection_support.ask_request(listing)
+    == AskStore(Select(ListCharacters(AccountId(7))))
+    as "a new character select takes the client's 0x07E0"
+}
+
+pub fn a_relog_between_the_yes_and_the_move_enters_at_the_landing_test() -> Nil {
   use <- owned_test.run(60_000)
   // The player says yes and logs out before the 0 ms timer moves it: the save the camp
   // writes holds the quest log with the choice counted and the place in the tutorial.

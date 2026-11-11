@@ -202,7 +202,7 @@ fn quest_objectives() -> EngineDeclaration {
       ),
       Missing(
         type_number: 23,
-        reason: "a use of a unit of the objective's TargetGroup counts one, whichever unit and however often it is used, and a departures terminal's choice objective counts only its own terminal (a server choice read from the texts); each creature of the set counted once is not done, and only the four departures choices and the two travel objectives are seen played, which the issue \"A use-a-creature objective counts each creature of its set once (objective type 23)\" (725) closes",
+        reason: "a use of a unit of the objective's TargetGroup counts one, whichever unit and however often it is used, and a departures terminal's choice objective counts only its own terminal (the Exile pair by the objectives' worldLocationsIdIndicator00 rows beside the terminals' spawns, the Dominion pair by the texts); each creature of the set counted once is not done, and only the four departures choices and the two travel objectives are seen played, which the issue \"A use-a-creature objective counts each creature of its set once (objective type 23)\" (725) closes",
         fact_key: "QuestObjective.type.23",
       ),
       Missing(

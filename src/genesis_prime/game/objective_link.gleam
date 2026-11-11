@@ -26,11 +26,10 @@
 ////   (`0x140479560.anim_state_exit`).
 
 import genesis_prime/game/activate
-import genesis_prime/game/departures
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{type Creature2Id, Creature2Id}
+import genesis_prime/table/id.{type Creature2Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/dict
@@ -91,9 +90,7 @@ fn prerequisite_links(
 /// Whether the quest log opens the creature's link, as the client's offer of its
 /// activation reads it, for the subject the creature's prerequisite is checked for (the
 /// player, with the creature as the second unit). The checklist index is the creature's
-/// bit in a checklist objective's mask. A departures terminal is closed whenever its
-/// faction's travel objective is not open (`departures.link`), as well as when its own
-/// columns close it.
+/// bit in a checklist objective's mask.
 pub fn of(
   tables tables: table_store.Tables,
   activations activations: activate.Activations,
@@ -103,11 +100,6 @@ pub fn of(
   checklist_index checklist_index: Int,
 ) -> activate.Link {
   use <- bool.guard(when: !has_link(row:), return: activate.NoLink)
-  use <- bool.guard(
-    when: departures.link(tables:, quests:, creature_id: Creature2Id(row.id))
-      == Ok(activate.ClosedLink),
-    return: activate.ClosedLink,
-  )
   let quest_anim_open = case row.quest_anim_state_id {
     0 -> True
     quest_id ->
