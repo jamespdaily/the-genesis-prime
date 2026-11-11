@@ -1387,10 +1387,13 @@ fn accepted_from(
   }
 }
 
-/// Pings and reads every message the server wrote up to its pong, which is all
-/// that it wrote before it took the ping: the messages come back in order, and
-/// the bytes beyond the pong are kept. After a ping and pong of another
-/// connection that took its steps first, it holds all that they told this one.
+/// Pings and reads every message the connection wrote up to its pong, which is all
+/// that the connection itself wrote before it took the ping: the messages come back
+/// in order, and the bytes beyond the pong are kept. It holds what another
+/// connection told this one only after a ping and pong of that connection that took
+/// its steps first. A message written from any other process (a creature, a map, a
+/// cast timer) is not ordered against the pong, so a test that waits for one reads
+/// with `read_until` for that message.
 pub fn read_until_pong(
   game game: Game,
   have have: BitArray,
