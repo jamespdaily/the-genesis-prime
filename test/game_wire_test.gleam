@@ -1857,20 +1857,23 @@ pub fn a_second_cast_on_the_mine_after_its_objective_is_done_is_refused_test() -
   let #(pressed, _) = game_client.read_until_pong(game:, have:, number: 3)
   assert refusals(frames: pressed) == [cast_result.to_value(TargetIsNotUseable)]
     as "opcode.0x7fc: the second press is refused as not useable"
+  // The Sim-Turrets in sight write their own casts from their own processes, at any time
+  // relative to the pong, so the frames may hold them: a cast of this press would show as
+  // a 0x7fd (sent only to the one who pressed) and a 0x7ff of the mine's spell 85452.
   assert list.all(game_client.casts_in(frames: pressed), fn(event) {
     case event {
-      game_client.CastRefused(..) -> True
-      game_client.CastConfirmed(..)
-      | game_client.CastStarted(..)
+      game_client.CastConfirmed(..) -> False
+      game_client.CastStarted(spell4_id:, ..) -> spell4_id != 85_452
+      game_client.CastRefused(..)
       | game_client.CastWent(..)
       | game_client.CastFinished(..)
       | game_client.ThresholdOpened(..)
       | game_client.ThresholdIndex(..)
       | game_client.ThresholdClosed(..)
-      | game_client.ThresholdEnded(..) -> False
+      | game_client.ThresholdEnded(..) -> True
     }
   })
-    as "no cast is confirmed or started"
+    as "no cast of the second press is confirmed or started"
   game_client.close(game:)
   login_support.stop(started)
 }
