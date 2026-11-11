@@ -3,8 +3,9 @@
 
     python3 -I dev/test_list_check.py ISSUE BASE HEAD
 
-The test list is the newest comment on ISSUE headed "test list" (any case),
-else the issue's body when it is headed so. Headed means the first non-blank line,
+The test list is the newest comment on ISSUE headed "test list" (any case) that
+names a test, else the issue's body when it is headed so and names one; a headed
+comment naming no test, such as a note on a change to the list, is passed over. Headed means the first non-blank line,
 after its leading `#`, `*` and spaces, starts with "test list". A listed test is a
 backticked name that ends in `_test` (Gleam, optionally `module.` first) or starts
 with `test_` (Python).
@@ -14,7 +15,7 @@ A name not defined in the diff is looked up in HEAD's tree, so a listed test
 that already existed is told apart from a missing one.
 
 Exit 0 when every listed test is defined in the diff, 1 when one is not,
-2 when the issue holds no test list. It replaces the reviewers' by-hand test
+2 when no test list on the issue names a test. It replaces the reviewers' by-hand test
 list check; it gates no merge, so it has no tests of its own and is checked by
 use.
 """
@@ -42,11 +43,10 @@ def is_headed_test_list(text: str) -> bool:
 
 def test_list_text(issue: str) -> str | None:
     found = json.loads(run("gh", "issue", "view", issue, "--json", "body,comments"))
-    for comment in reversed(found["comments"]):
-        if is_headed_test_list(comment["body"]):
-            return comment["body"]
-    if is_headed_test_list(found["body"]):
-        return found["body"]
+    texts = [c["body"] for c in reversed(found["comments"])] + [found["body"]]
+    for text in texts:
+        if is_headed_test_list(text) and LISTED.search(text):
+            return text
     return None
 
 
@@ -57,7 +57,7 @@ def main() -> int:
     issue, base, head = sys.argv[1:]
     text = test_list_text(issue)
     if text is None:
-        print(f"issue {issue} holds no test list")
+        print(f"issue {issue} holds no test list naming a test")
         return 2
     files = run("git", "ls-tree", "-r", "--name-only", head).split()
     modules = {f.rsplit("/", 1)[-1].rsplit(".", 1)[0] for f in files}
