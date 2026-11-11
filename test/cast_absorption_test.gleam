@@ -390,6 +390,7 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
+      | cast.ShortcutCast(..)
       | cast.StealthChanged(..)
       | cast.Gain(..) -> False
     }

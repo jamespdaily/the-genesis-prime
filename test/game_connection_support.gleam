@@ -558,9 +558,18 @@ pub fn map_with_four_players() -> map.State {
 
 /// The same as the run `run` of the tests' map.
 pub fn map_run_with_four_players(run: Int) -> map.State {
+  map_of_world_with_four_players(map: camp_map(), run:)
+}
+
+/// A map of the tests' realm and tables, the map `map_id` running as `run`, with four
+/// other connections joined, for a join into another world than the tests' own.
+pub fn map_of_world_with_four_players(
+  map map_id: MapId,
+  run run: Int,
+) -> map.State {
   let state =
     map.new(map.Settings(
-      map: camp_map(),
+      map: map_id,
       incarnation: run,
       realm_id: settings().realm_id,
       tables: settings().tables,
@@ -1510,11 +1519,20 @@ pub fn entered_with_quests_on(
   tables tables: store_tables.Tables,
   quests quests: List(store.QuestRow),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
+  entered_as_with_quests_on(tables:, character: world_character(), quests:)
+}
+
+/// `entered_with_quests_on` for this character.
+pub fn entered_as_with_quests_on(
+  tables tables: store_tables.Tables,
+  character character: store.Character,
+  quests quests: List(store.QuestRow),
+) -> #(game_connection.State, ConnectionStep(Request)) {
   let fresh = accepted(Settings(..settings(), tables:)).0
   let #(state, taken) =
     joining_holding(
       in_character_select: in_select_from(fresh),
-      character: world_character(),
+      character:,
       saved_health: None,
       saved_experience: None,
       quests:,

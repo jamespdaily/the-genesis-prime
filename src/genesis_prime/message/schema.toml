@@ -1813,6 +1813,34 @@ fields = [
 ]
 
 [[message]]
+id = 0x009D
+name = "cast_objective_ability"
+direction = "client_to_server"
+evidence = "opcode.0x9d"
+summary = "the client casts the spell of a shortcut the server gave it in message 0x176: its own id for the cast, the Spell4 id the shortcut holds, the target unit id (0 for none) and a position, the target unit's or with none the game's placed position"
+fields = [
+  { name = "client_cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x9d", named_by = "opcode.0x9d" },
+  { name = "spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x9d", named_by = "opcode.0x9d" },
+  { name = "target_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x9d", named_by = "opcode.0x9d" },
+  { name = "position_x", kind = "float32", evidence = "opcode.0x9d", named_by = "opcode.0x9d" },
+  { name = "position_y", kind = "float32", evidence = "opcode.0x9d", named_by = "opcode.0x9d" },
+  { name = "position_z", kind = "float32", evidence = "opcode.0x9d", named_by = "opcode.0x9d" },
+]
+
+[[message]]
+id = 0x0176
+name = "quest_spell_shortcut"
+direction = "server_to_client"
+evidence = "opcode.0x176"
+summary = "the server adds or removes a spell shortcut tied to a path, quest or objective: the spell, the kind (0 path, 1 quest, 2 objective), the id of that path, quest or objective, and a bit that is 1 to add and 0 to remove"
+fields = [
+  { name = "spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x176", named_by = "opcode.0x176" },
+  { name = "kind", kind = "unsigned", bits = 3, evidence = "opcode.0x176.kinds", named_by = "opcode.0x176" },
+  { name = "id", kind = "unsigned", bits = 32, evidence = "opcode.0x176", named_by = "opcode.0x176" },
+  { name = "add", kind = "unsigned", bits = 1, evidence = "opcode.0x176", named_by = "opcode.0x176" },
+]
+
+[[message]]
 id = 0x00B3
 name = "client_activate_unit"
 direction = "client_to_server"

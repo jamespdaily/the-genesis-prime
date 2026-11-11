@@ -47,7 +47,7 @@ pub fn movement_message(
 ) -> client_connection.Handled(Session) {
   case message, player_life.state(life: entered.life), entered.readiness {
     movement.PlayerMoved, player_life.Dead, _
-    | movement.PlayerMoved, player_life.Alive, world_entry.GhostLoading
+    | movement.PlayerMoved, player_life.Alive, world_entry.InWorldLoading
     -> ghost_moving(session:, now:, entered:, body: inner.body)
     movement.PlayerMoved, player_life.Alive, world_entry.ClientLoading
     | movement.PlayerMoved, player_life.Alive, world_entry.ClientReady
@@ -78,7 +78,7 @@ fn body_moving(
       let top_zones = top_zone.top_zones(session.settings.tables)
       let #(session, ready) = case by, entered.readiness {
         movement.ReportedByTerrainReady, world_entry.ClientLoading
-        | movement.ReportedByTerrainReady, world_entry.GhostLoading
+        | movement.ReportedByTerrainReady, world_entry.InWorldLoading
         -> tells_the_map_ready(session:, entered:)
         movement.ReportedByTerrainReady, world_entry.ClientReady
         | movement.ReportedByZoneChanged(..), _

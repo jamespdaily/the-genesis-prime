@@ -66,6 +66,9 @@
 ////   (`quest_log.process_wide`). The log the connection keeps remembers the reset time
 ////   the message carried. A saved log the client would refuse fails the load, before
 ////   the map is asked.
+//// - **0x176** gives the button of each open cast objective, after the 0x35F at a play
+////   and alone at the Holocrypt's join: both the 0x25E and the in-world 0xAD empty the
+////   client's spell shortcuts (`0x1403ba4a0`).
 //// - **The held items** are the character's saved rows (`store.HeldItem`): each is
 ////   sent as a 0x111 with its own guid, item id, location, bag index and stack
 ////   count, in location then bag index order, after 0x19B, which sets the player,
@@ -141,6 +144,7 @@ import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
 import genesis_prime/game/class_resource
 import genesis_prime/game/currency.{type Currencies}
+import genesis_prime/game/departures
 import genesis_prime/game/experience
 import genesis_prime/game/gear.{type Gear}
 import genesis_prime/game/innate
@@ -171,6 +175,7 @@ import genesis_prime/message/movement_send_interval.{MovementSendInterval}
 import genesis_prime/message/play_character.{type PlayCharacter}
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
 import genesis_prime/message/player_path.{PlayerPath}
+import genesis_prime/message/quest_spell_shortcut.{QuestSpellShortcut}
 import genesis_prime/message/reward_properties
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
@@ -274,7 +279,7 @@ pub opaque type State {
 /// the same game object, which sends none.
 type Entry {
   PlayEntry(character_state: Frame)
-  HolocryptEntry
+  InWorldEntry
 }
 
 /// What the store's read of the character leads to.
@@ -361,6 +366,10 @@ pub type Entered {
     /// The quest log the character holds (genesis_prime/game/quest_log): the
     /// connection saves it with the place and, at a play, sends it after 0x25E.
     quests: QuestLog,
+    /// The spell buttons the client holds for the open cast objectives of the quest log
+    /// (genesis_prime/game/objective `buttons`): what the connection last told it with
+    /// 0x176, which the next change to the log is told against.
+    buttons: Set(objective.Button),
     /// What the worn items give (genesis_prime/game/gear): the connection works it out
     /// again after each change of a worn item and keeps it with the unit, the look and
     /// the properties it gave them.
@@ -391,6 +400,10 @@ pub type Entered {
     /// (genesis_prime/game/connection/visibility_check): a change from this set is
     /// what the connection tells the map.
     hidden: Set(PrerequisiteId),
+    /// The place the player's departures terminal lands it at
+    /// (genesis_prime/game/departures), kept from the end of its cast until the move
+    /// begins; none otherwise.
+    departing: Option(Place),
   )
 }
 
@@ -427,7 +440,7 @@ pub type Readiness {
   /// taken in this stay, and is dropped as the ghost's until the stay's first
   /// 0xF2. A body's 0x637 before that 0xF2 is dropped too; the body stands at
   /// the Holocrypt place the join gave, and its next move is taken.
-  GhostLoading
+  InWorldLoading
   ClientReady
 }
 
@@ -586,7 +599,7 @@ pub fn loaded(
                   joining_a_play(
                     character:,
                     place:,
-                    movement: movement.entered(place:, session_epoch:),
+                    session_epoch:,
                     saved_health:,
                     saved_experience:,
                     items:,
@@ -604,12 +617,14 @@ pub fn loaded(
   }
 }
 
-/// The play of a character at its saved place: the map is asked to take it with
-/// its 0x25E ready, or the play is refused for a level with no XpPerLevel row.
+/// The play of a character at its saved place, or at a departures terminal's landing when
+/// the save lies between the terminal's count and its move (`departures.recovered`): the
+/// map is asked to take it with its 0x25E ready, or the play is refused for a level with no
+/// XpPerLevel row.
 fn joining_a_play(
   character character: Character,
-  place place: Place,
-  movement movement: movement.State,
+  place saved_place: Place,
+  session_epoch session_epoch: store.SessionEpoch,
   saved_health saved_health: Option(Int),
   saved_experience saved_experience: Option(Int),
   items items: List(store.HeldItem),
@@ -620,6 +635,8 @@ fn joining_a_play(
   tables tables: table_store.Tables,
   visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> Loaded {
+  let place = departures.recovered(tables:, quests:, place: saved_place)
+  let movement = movement.entered(place:, session_epoch:)
   case
     experience.entering(
       tables:,
@@ -742,7 +759,7 @@ pub fn joined(
             |> with_shield_stat(worn:, shield: player_life.shield(life:))
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id
-          let #(quests, quest_effects) =
+          let #(quests, buttons, quest_effects) =
             quest_log_sent(
               entry:,
               quests:,
@@ -769,6 +786,7 @@ pub fn joined(
               buyback:,
               experience:,
               quests:,
+              buttons:,
               gear: worn,
               clock_origin_ms:,
               viewers: dict.new(),
@@ -797,6 +815,7 @@ pub fn joined(
                 next_whisper:,
               ),
               hidden:,
+              departing: None,
             ),
             effects: list.flatten([
               [
@@ -901,19 +920,23 @@ fn with_bases(
 
 /// What the player's client does until its stay's first 0xF2: a play loads the
 /// world as it was told to, and the Holocrypt's join leaves the ghost moving
-/// until the join's 0xAD reaches it (`GhostLoading`).
+/// until the join's 0xAD reaches it (`InWorldLoading`).
 fn readiness_of(entry entry: Entry) -> Readiness {
   case entry {
     PlayEntry(..) -> ClientLoading
-    HolocryptEntry -> GhostLoading
+    InWorldEntry -> InWorldLoading
   }
 }
 
-/// 0x35F for a play, with the log that remembers the reset time it carried, and
-/// nothing for the Holocrypt's join. The log is the saved one with each collect
+/// 0x35F for a play, with the log that remembers the reset time it carried, then 0x176
+/// for each open cast objective's button, and the buttons the client holds after them;
+/// the Holocrypt's join sends the 0x176 of each button alone, since its client keeps the
+/// quest log. The log is the saved one with each collect
 /// objective set to what the player holds now, since the player may have lost or
 /// gained the items since the save: the client takes the whole log in this one message
-/// (`objective.settle`; no zone is known yet, so no visit counts here).
+/// (`objective.settle`; no zone is known yet, so no visit counts here). Each entry's
+/// client holds no button: 0x25E empties its shortcuts (`opcode.0x25e`) and so does the
+/// in-world 0xAD (`0x1403ba4a0`).
 fn quest_log_sent(
   entry entry: Entry,
   quests quests: QuestLog,
@@ -922,7 +945,7 @@ fn quest_log_sent(
   numbers numbers: GameNumbers,
   tables tables: table_store.Tables,
   now now: Now,
-) -> #(QuestLog, List(Effect)) {
+) -> #(QuestLog, Set(objective.Button), List(Effect)) {
   case entry {
     PlayEntry(..) -> {
       let held =
@@ -938,27 +961,64 @@ fn quest_log_sent(
           now_ms: now.monotonic_ms,
         ).log
       let #(told, frame) = quest_log.login(log: held, numbers:, tables:, now:)
-      #(told, [Send(frame:)])
+      let buttons = objective.buttons(log: told, tables:)
+      #(told, buttons, [
+        Send(frame:),
+        ..list.map(
+          objective.button_changes(held: set.new(), now: buttons),
+          fn(change) { Send(frame: button_frame(change:)) },
+        )
+      ])
     }
-    HolocryptEntry -> #(quests, [])
+    InWorldEntry -> {
+      let buttons = objective.buttons(log: quests, tables:)
+      #(
+        quests,
+        buttons,
+        list.map(
+          objective.button_changes(held: set.new(), now: buttons),
+          fn(change) { Send(frame: button_frame(change:)) },
+        ),
+      )
+    }
   }
+}
+
+/// 0x176 for a change to the buttons the client holds (`opcode.0x176`): the spell, kind 2
+/// (an objective), the objective's id, and 1 to add or 0 to remove.
+pub fn button_frame(change change: objective.ButtonChange) -> Frame {
+  let #(button, add) = case change {
+    objective.Add(button:) -> #(button, 1)
+    objective.Remove(button:) -> #(button, 0)
+  }
+  let assert Ok(body) =
+    quest_spell_shortcut.encode(QuestSpellShortcut(
+      spell4_id: button.spell4_id.value,
+      kind: 2,
+      id: button.objective_id,
+      add:,
+    ))
+    as "a Spell4 id of the table's 18 bits and a QuestObjective id of 32 fit the message"
+  Frame(message_id: quest_spell_shortcut.message_id, body:)
 }
 
 /// 0x25E for a play, and nothing for the Holocrypt's join.
 fn character_state_sent(entry entry: Entry) -> List(Effect) {
   case entry {
     PlayEntry(character_state:) -> [Send(frame: character_state)]
-    HolocryptEntry -> []
+    InWorldEntry -> []
   }
 }
 
-/// The player chose the Holocrypt and has left its map: the map of `place`'s
-/// world is asked to take it there for the stay `stay`, with the earlier stay's
-/// movement placed at `place`. The map's answer comes back to `joined`, as at a
-/// play.
+/// The player has left its map for another place in the game (the Holocrypt, a
+/// departures terminal's landing): the map of `place`'s world is asked to take it
+/// there for the stay `stay`, with the earlier stay's movement placed at `place`
+/// and `health` as its saved health (`None` is a full one, as the Holocrypt's join
+/// gives). The map's answer comes back to `joined`, as at a play.
 pub fn rejoining(
   entered entered: Entered,
   place place: Place,
+  health health: Option(Int),
   connection connection: ConnectionId,
   stay stay: Stay,
   tables tables: table_store.Tables,
@@ -968,7 +1028,7 @@ pub fn rejoining(
     character: entered.character,
     place:,
     movement: movement.placed(state: entered.movement, place:),
-    saved_health: None,
+    saved_health: health,
     experience: entered.experience,
     items: entered.items,
     currencies: entered.currencies,
@@ -976,7 +1036,7 @@ pub fn rejoining(
     buyback: entered.buyback,
     connection:,
     stay:,
-    entry: HolocryptEntry,
+    entry: InWorldEntry,
     tables:,
     visibility:,
   )

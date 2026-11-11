@@ -112,7 +112,7 @@ import genesis_prime/step.{
   OwnEffect, StartTimer,
 }
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{RaceId}
+import genesis_prime/table/id.{RaceId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
 import gleam/bool
@@ -121,6 +121,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/set
 
 /// What the cast messages do, taken from inside 0x038C, in the world
 /// (genesis_prime/game/cast): the press is refused or accepted and its writes,
@@ -184,6 +185,33 @@ pub fn activate_message(
         ),
       ),
       caster_radius:,
+      now:,
+    )
+  {
+    Ok(#(updated, effects)) ->
+      carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
+    Error(refusal) ->
+      connection_state.end_for(session:, now:, text: cast.describe(refusal))
+  }
+}
+
+/// The player's 0x9d, the press of the button an open cast objective gave it, from inside
+/// 0x038C in the world: the cast rule refuses the press of a spell the client holds no
+/// button for, or starts the cast on the caster, whose first go the connection counts
+/// for the objectives (`cast.ShortcutCast`). A refusal of the frame ends the connection.
+pub fn shortcut_message(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+) -> client_connection.Handled(Session) {
+  case
+    cast.shortcut(
+      cast: entered.cast,
+      body: inner.body,
+      caster: caster_of(tables: session.settings.tables, entered:),
+      shortcuts: connection_state.shortcut_spells_of(session:),
+      held: set.map(entered.buttons, fn(button) { button.spell4_id.value }),
       now:,
     )
   {
@@ -595,14 +623,17 @@ pub fn cast_effects(
           })
         {
           Ok(#(target, checklist_index)) ->
-            connection_objective.counted(
-              session:,
-              now:,
-              event: objective.Used(target:, checklist_index:),
-            )
+            connection_objective.used(session:, now:, target:, checklist_index:)
           Error(Nil) -> #(session, [])
         }
       cast.Activated(..), None -> #(session, [])
+      cast.ShortcutCast(spell4_id:), Some(_) ->
+        connection_objective.counted(
+          session:,
+          now:,
+          event: objective.Cast(spell4_id: Spell4Id(spell4_id)),
+        )
+      cast.ShortcutCast(..), None -> #(session, [])
       cast.Pay(payments:), _ -> connection_resource.paid(session:, payments:)
       cast.Gain(gains:), _ -> connection_resource.gained(session:, gains:)
       cast.CasterChangeStarts(source:, change: cast.Property(modifier:)), _ ->
