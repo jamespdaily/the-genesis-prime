@@ -24,6 +24,7 @@ import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_ability.{CastAbility}
+import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result.{SpellCancelled, TargetRangeMax}
 import genesis_prime/message/choose_resurrection.{ChooseResurrection}
 import genesis_prime/message/client_side_interaction_result.{
@@ -46,6 +47,7 @@ import genesis_prime/message/movement_path.{MovementPath}
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/player_health.{PlayerHealth}
+import genesis_prime/message/quest_spell_shortcut.{QuestSpellShortcut}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/resurrection_window.{ResurrectionWindow}
 import genesis_prime/message/shared_item.{SharedItem}
@@ -108,6 +110,10 @@ const server_cast_id = 0x80002804
 pub fn the_message_numbers_are_the_clients_test() -> Nil {
   use <- owned_test.run(5000)
   assert cast_ability.message_id == 0x9A as "opcode.0x9a: message 0x9a (154)"
+  assert cast_objective_ability.message_id == 0x9D
+    as "opcode.0x9d: message 0x9d (157)"
+  assert quest_spell_shortcut.message_id == 0x176
+    as "opcode.0x176: message 0x176 (374)"
   assert ability_hold.message_id == 0x4DB
     as "opcode.0x4db: message 0x4db (1243)"
   assert item_added.message_id == 0x111 as "opcode.0x111.ability_bag: id 0x111"
@@ -176,6 +182,37 @@ pub fn a_press_is_a_client_cast_id_a_bag_index_a_target_and_a_press_bit_test() -
     ),
     encode: cast_ability.encode,
     decode: cast_ability.decode,
+  )
+}
+
+pub fn quest_spell_shortcut_writes_spell_kind_objective_and_add_bit_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_codec(
+    name: "opcode.0x176: spell 25306 in 18 bits, kind 2 (objective) in 3, id 5197 in 32, add 1 in 1 bit: 54 bits",
+    body: message_support.hex("da 62 a8 89 02 00 20"),
+    value: QuestSpellShortcut(spell4_id: 25_306, kind: 2, id: 5197, add: 1),
+    encode: quest_spell_shortcut.encode,
+    decode: quest_spell_shortcut.decode,
+  )
+}
+
+pub fn cast_objective_ability_reads_the_writers_fields_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_codec(
+    name: "opcode.0x9d (writer 0x140093f80): cast id 7 in 32 bits, spell 40471 in 18, target 0 in 32, then the floats 10.0, -2.5 and 1.0 as 32 bits each: 178 bits",
+    body: message_support.hex(
+      "07 00 00 00 17 9e 00 00 00 00 00 00 80 04 01 00 80 00 03 00 00 fe 00",
+    ),
+    value: CastObjectiveAbility(
+      client_cast_id: 7,
+      spell4_id: 40_471,
+      target_unit_id: 0,
+      position_x: 0x41200000,
+      position_y: 0xC0200000,
+      position_z: 0x3F800000,
+    ),
+    encode: cast_objective_ability.encode,
+    decode: cast_objective_ability.decode,
   )
 }
 

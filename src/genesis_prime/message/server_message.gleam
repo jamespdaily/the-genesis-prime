@@ -58,6 +58,7 @@ import genesis_prime/message/quest_objective_progress.{
   type QuestObjectiveProgress,
 }
 import genesis_prime/message/quest_periodic_reset.{type QuestPeriodicReset}
+import genesis_prime/message/quest_spell_shortcut.{type QuestSpellShortcut}
 import genesis_prime/message/quest_state.{type QuestState}
 import genesis_prime/message/realm_handoff.{type RealmHandoff}
 import genesis_prime/message/realm_list.{type RealmList}
@@ -149,6 +150,7 @@ pub type ServerMessage {
   WhisperFailed(message: WhisperFailed)
   ChatChannelJoined(message: ChatChannelJoined)
   ChatZoneNamed(message: ChatZoneNamed)
+  QuestSpellShortcut(message: QuestSpellShortcut)
   ItemAdded(message: ItemAdded)
   ItemCountChanged(message: ItemCountChanged)
   ItemRemoved(message: ItemRemoved)
@@ -342,6 +344,8 @@ pub fn decode(
     0x01BC ->
       decoded(body, message_id, chat_channel_joined.decode, ChatChannelJoined)
     0x01DA -> decoded(body, message_id, chat_zone_named.decode, ChatZoneNamed)
+    0x0176 ->
+      decoded(body, message_id, quest_spell_shortcut.decode, QuestSpellShortcut)
     0x0111 -> decoded(body, message_id, item_added.decode, ItemAdded)
     0x017F ->
       decoded(body, message_id, item_count_changed.decode, ItemCountChanged)
@@ -500,6 +504,7 @@ pub fn name(message: ServerMessage) -> String {
     WhisperFailed(..) -> "whisper_failed"
     ChatChannelJoined(..) -> "chat_channel_joined"
     ChatZoneNamed(..) -> "chat_zone_named"
+    QuestSpellShortcut(..) -> "quest_spell_shortcut"
     ItemAdded(..) -> "item_added"
     ItemCountChanged(..) -> "item_count_changed"
     ItemRemoved(..) -> "item_removed"

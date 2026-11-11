@@ -489,3 +489,18 @@ Quest2	9494	quest named by a gated type 24 objective	objective_test
 Quest2	10502	yearly quest whose objectives are type 24 naming a yearly quest	objective_test
 Quest2	10503	yearly quest named by a type 24 objective	objective_test
 WorldLocation2	46118	marker of the type 22 objective 18249	objective_test
+Quest2	7618	quest whose one objective 13884 is a type 11 cast of Spell4 40471, count 1	objective_test, game_connection_objective_cast_test, world_entry_quest_log_test
+Quest2	3915	quest whose fourth objective 5197 (flags 3) is a type 11 cast of Spell4 25306 behind three objectives	objective_test, cast_shortcut_test
+Quest2	6431	quest whose objective 9882 is a type 11 cast with data 0, no Spell4	objective_test
+Quest2	6372	quest whose objectives 9768, 9770 and 9771 are type 11 casts of Spell4 33300	objective_test
+Quest2	3955	quest whose objective 5181 is a type 11 cast of Spell4 25287, count 20	objective_test
+Quest2	9161	quest whose objective 18165 is a type 11 cast of Spell4 70503, castMethod 5	cast_shortcut_test
+Quest2	6674	quest whose objective 10349 is a type 11 cast of Spell4 34448 with a caster cast prerequisite	cast_shortcut_test
+Quest2	4832	quest whose objective 6761 is a type 11 cast of Spell4 30173, a targeted spell	cast_shortcut_test
+Spell4	40471	cast objective spell of quest 7618	objective_test, game_connection_objective_cast_test
+Spell4	25306	cast objective spell of quest 3915, self-aimed, cast time 2000	cast_shortcut_test, objective_test
+Spell4	25287	cast objective spell of quest 3955	objective_test
+Spell4	33300	cast objective spell of quest 6372	objective_test
+Spell4	70503	cast objective spell of castMethod 5 (quest 9161)	cast_shortcut_test
+Spell4	34448	cast objective spell whose prerequisiteIdCasterCast is 11700	cast_shortcut_test
+Spell4	30173	cast objective spell with targetType 1	cast_shortcut_test

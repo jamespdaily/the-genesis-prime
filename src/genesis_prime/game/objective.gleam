@@ -24,6 +24,19 @@
 //// open and counts the event counts once for it, so a later objective that the event
 //// unlocks waits for the next one.
 ////
+//// A type 11 objective (`QuestObjective.type.11`) is a cast of the spell in its data. The
+//// client counts nothing for it: it shows the spell as a button (a 0x176 shortcut of kind
+//// 2, keyed by the objective's id) while the objective is open and takes the button away
+//// when the objective closes (`buttons`, `button_changes`), and the server counts one
+//// for each cast of the spell at its go (`Cast`), for every open objective that names it.
+//// Gaps, each closed by the quests, zones and prerequisites issue (#334): the go is the
+//// moment a cast counts by a guess, until a retail recording of quest 3915, 4832 or 7618
+//// shows it; the place an objective names is not tested; a spell aimed at the caster whose
+//// objective sets a reward pane (rows 14187 and 14203) counts at the go, not on a unit of
+//// the pane; and the objectives with no Spell4 row (7378, 8042, 9882, 16525, 16577 and
+//// 15816) hold no button and stay uncompletable. A spell that takes a target is a later
+//// step (#728).
+////
 //// A rule: the log and the event in, the log and the effects out.
 
 import genesis_prime/game/objective_link
@@ -35,15 +48,21 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
 import genesis_prime/store.{type HeldItem}
 import genesis_prime/table/id.{
-  type Creature2Id, type Item2Id, Creature2Id, Item2Id, PathSoldierActivateId,
-  TradeskillSchematic2Id,
+  type Creature2Id, type Item2Id, type Spell4Id, Creature2Id, Item2Id,
+  PathSoldierActivateId, Spell4Id, TradeskillSchematic2Id,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_soldier_activate
+import genesis_prime/table/spell4
 import genesis_prime/table/tradeskill_schematic2
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import gleam/int
 import gleam/list
+import gleam/result
+import gleam/set.{type Set}
+
+/// The objective type of a cast of a spell.
+const cast_type = 11
 
 /// The objective type of a talk.
 const talk_type = 3
@@ -99,6 +118,65 @@ pub type Event {
   TalkedTo(target: target_group.Unit, checklist_index: Int)
   Used(target: target_group.Unit, checklist_index: Int)
   Killed(target: target_group.Unit)
+  Cast(spell4_id: Spell4Id)
+}
+
+/// A spell button the client holds for an open cast objective.
+pub type Button {
+  Button(spell4_id: Spell4Id, objective_id: Int)
+}
+
+/// A change to the buttons the client holds.
+pub type ButtonChange {
+  Remove(button: Button)
+  Add(button: Button)
+}
+
+/// The buttons of the log's open cast objectives: each open objective of type 11 whose
+/// data names a spell that has a Spell4 row (`QuestObjective.type.11.button`). The client
+/// refuses a press of a spell with no record (`0x14039b340`, 22), so such a button would
+/// be dead and is not given.
+pub fn buttons(
+  log log: QuestLog,
+  tables tables: table_store.Tables,
+) -> Set(Button) {
+  list.flat_map(quest_log.active_ids(log:), fn(quest_id) {
+    quest_log.open_objectives(log:, quest: quest_of(tables:, quest_id:))
+  })
+  |> list.filter_map(fn(open) {
+    let objective = open.1
+    case
+      objective.type_ == cast_type
+      && result.is_ok(spell4.get(tables:, id: Spell4Id(objective.data)))
+    {
+      True ->
+        Ok(Button(
+          spell4_id: Spell4Id(objective.data),
+          objective_id: objective.objective_id,
+        ))
+      False -> Error(Nil)
+    }
+  })
+  |> set.from_list
+}
+
+/// The changes that take the client from the buttons it holds to these: the removes
+/// first, then the adds, each by objective id so that the order is the same every time.
+/// The client keys an entry by spell, kind and id, ignores an add it holds and removes only
+/// an exact match (`0x1403b9fb0`), so a button held in both is not sent again.
+pub fn button_changes(
+  held held: Set(Button),
+  now now: Set(Button),
+) -> List(ButtonChange) {
+  let ordered = fn(buttons: Set(Button)) {
+    list.sort(set.to_list(buttons), fn(one: Button, other: Button) {
+      int.compare(one.objective_id, other.objective_id)
+    })
+  }
+  list.append(
+    list.map(ordered(set.difference(held, now)), Remove),
+    list.map(ordered(set.difference(now, held)), Add),
+  )
 }
 
 /// What the client is told: one objective's new progress (0x361), and a quest's new
@@ -197,7 +275,7 @@ pub fn advance(
         checklist_index: case event {
           TalkedTo(checklist_index:, ..) | Used(checklist_index:, ..) ->
             checklist_index
-          Killed(..) -> -1
+          Killed(..) | Cast(..) -> -1
         },
       )
     },
@@ -250,6 +328,8 @@ fn counts(
           #(quest_id, index),
         )
       }
+    Cast(spell4_id:) ->
+      objective.type_ == cast_type && Spell4Id(objective.data) == spell4_id
     Killed(target:) -> {
       let by_data = case objective.type_ {
         2 -> Creature2Id(objective.data) == target.creature_id

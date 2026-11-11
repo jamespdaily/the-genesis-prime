@@ -92,16 +92,20 @@
 
 import fixture_tables
 import genesis_prime/game/objective.{
-  Advanced, Killed, SendProgress, SendState, TalkedTo, Used,
+  Add, Advanced, Button, Cast, Killed, Remove, SendProgress, SendState, TalkedTo,
+  Used,
 }
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place
 import genesis_prime/game/target_group
 import genesis_prime/store.{HeldItem}
-import genesis_prime/table/id.{Creature2Id, Faction2Id, Item2Id, UnitRaceId}
+import genesis_prime/table/id.{
+  Creature2Id, Faction2Id, Item2Id, Spell4Id, UnitRaceId,
+}
 import genesis_prime/table/loader/store as table_store
 import gleam/dict
 import gleam/list
+import gleam/set
 import owned_test
 import place_support
 import planted_table.{Integer}
@@ -1325,4 +1329,274 @@ pub fn a_counted_finish_objective_is_not_told_again_test() -> Nil {
     as "the first settle tells the count"
   assert settled(log: first.log, tables:, items: [], zones: []).effects == []
     as "a second settle of the returned log sends nothing: one 0x361 for each change"
+}
+
+// The cast objectives (`QuestObjective.type.11`, step A of the issue "A cast-a-spell
+// objective gives its button and counts each cast") read these rows. The client counts
+// nothing for a type 11 objective; it shows the spell as a button (`0x176`, kind 2) and
+// the server's 0x361 value counts.
+// - quest 7618: objective 13884, spell 40471, count 1, flags 0.
+// - quest 3915: objectives 5101 (type 5), 5102 and 5103 (type 5, flags 3) and 5197 (type
+//   11, flags 3, spell 25306, count 1), which waits for the three before it.
+// - quest 6431: objective 9881 (type 22) and 9882 (type 11, flags 0, data 0: no spell).
+// - quest 3955: objective 5181, spell 25287, count 20.
+// - quest 6372: objectives 9771, 9767, 9768, 9769 and 9770; 9771, 9768 and 9770 are
+//   type 11 of spell 33300 (flags 3, count 1), 9767 is type 3 and 9769 type 22.
+
+const the_first_cast_quest = 7618
+
+const the_first_cast_objective = 13_884
+
+const the_first_cast_spell = 40_471
+
+const the_gated_cast_quest = 3915
+
+const the_gated_cast_objective = 5197
+
+const the_gated_cast_spell = 25_306
+
+const the_counted_cast_quest = 3955
+
+const the_counted_cast_spell = 25_287
+
+const the_shared_cast_quest = 6372
+
+const the_shared_cast_spell = 33_300
+
+fn buttons_of(log log: quest_log.QuestLog) -> List(#(Int, Int)) {
+  objective.buttons(log:, tables: fixture_tables.shared())
+  |> set.to_list
+  |> list.map(fn(button) { #({ button.spell4_id }.value, button.objective_id) })
+}
+
+pub fn an_open_cast_objective_holds_its_spell_as_a_button_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: the_first_cast_quest, progress: [0]),
+    ])
+  assert buttons_of(log:) == [#(the_first_cast_spell, the_first_cast_objective)]
+    as "QuestObjective.type.11.button: row 13884 (type 11, data 40471) is open, so its spell is a button for it"
+}
+
+pub fn a_cast_objective_opens_its_button_only_when_reachable_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let waiting =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: the_gated_cast_quest, progress: [
+        0,
+        0,
+        0,
+        0,
+      ]),
+    ])
+  assert buttons_of(log: waiting) == []
+    as "0x140553790: row 5197 has flags 3 and waits for the three objectives before it"
+  let reached =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: the_gated_cast_quest,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b111,
+        progress: [1, 1, 1, 0],
+      ),
+    ])
+  assert buttons_of(log: reached)
+    == [#(the_gated_cast_spell, the_gated_cast_objective)]
+    as "with those done the objective is reachable and open"
+}
+
+pub fn a_done_cast_objective_holds_no_button_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: the_first_cast_quest,
+        state: 2,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [1],
+      ),
+    ])
+  assert buttons_of(log:) == []
+    as "0x1403b9fb0: the button is taken away once the objective is at its count of 1"
+}
+
+pub fn a_cast_objective_with_no_spell_holds_no_button_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 6431, progress: [0, 0]),
+    ])
+  assert buttons_of(log:) == []
+    as "0x14039b340 refuses a spell with no Spell4 row (22): row 9882's data 0 names none, so its button would be dead"
+}
+
+pub fn button_changes_remove_what_closed_and_add_what_opened_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let first = Button(Spell4Id(the_shared_cast_spell), 9768)
+  let second = Button(Spell4Id(the_shared_cast_spell), 9770)
+  assert objective.button_changes(
+      held: set.from_list([first]),
+      now: set.from_list([second]),
+    )
+    == [Remove(first), Add(second)]
+    as "0x1403b9fb0: an entry is keyed by spell, kind and id, so the closed objective's is removed and the opened one's added, removes first"
+  assert objective.button_changes(
+      held: set.from_list([first]),
+      now: set.from_list([first]),
+    )
+    == []
+    as "a duplicate add is ignored by the client, so what is held already is not sent again"
+}
+
+fn cast_of(spell spell: Int) -> objective.Event {
+  Cast(Spell4Id(spell))
+}
+
+pub fn a_cast_of_the_objective_spell_completes_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: the_first_cast_quest, progress: [0]),
+    ])
+  let cast =
+    objective.advance(
+      log:,
+      tables:,
+      event: cast_of(spell: the_first_cast_spell),
+      now_ms: 0,
+    )
+  assert cast.effects
+    == [
+      SendProgress(
+        quest_id: the_first_cast_quest,
+        objective_index: 0,
+        progress: 1,
+      ),
+      SendState(quest_id: the_first_cast_quest, state: 2),
+    ]
+    as "opcode.0x361: row 13884's count is 1, so one cast fills it and the quest is Achieved; the client counts nothing for type 11"
+}
+
+pub fn each_cast_counts_one_up_to_the_count_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: the_counted_cast_quest, progress: [0]),
+    ])
+  let after =
+    list.index_fold(list.repeat(Nil, 20), log, fn(log, _, at) {
+      let number = at + 1
+      let cast =
+        objective.advance(
+          log:,
+          tables:,
+          event: cast_of(spell: the_counted_cast_spell),
+          now_ms: 0,
+        )
+      let progress =
+        SendProgress(
+          quest_id: the_counted_cast_quest,
+          objective_index: 0,
+          progress: number,
+        )
+      case number {
+        20 -> {
+          assert cast.effects
+            == [
+              progress,
+              SendState(quest_id: the_counted_cast_quest, state: 2),
+            ]
+            as "row 5181's count is 20: the 20th cast changes the state"
+          Nil
+        }
+        _ -> {
+          assert cast.effects == [progress]
+            as "each cast before the count tells one more"
+          Nil
+        }
+      }
+      cast.log
+    })
+  assert objective.advance(
+      log: after,
+      tables:,
+      event: cast_of(spell: the_counted_cast_spell),
+      now_ms: 0,
+    )
+    == Advanced(log: after, effects: [])
+    as "a done objective takes nothing from a 21st cast"
+}
+
+pub fn a_cast_of_another_spell_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: the_first_cast_quest, progress: [0]),
+    ])
+  assert objective.advance(
+      log:,
+      tables: fixture_tables.shared(),
+      event: cast_of(spell: the_gated_cast_spell),
+      now_ms: 0,
+    )
+    == Advanced(log:, effects: [])
+    as "row 13884's data is 40471, not 25306"
+}
+
+pub fn a_cast_counts_only_the_reachable_objective_of_a_shared_spell_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objectives 9771 and 9767 are done: 9768 is open, and 9770 (index 4, flags 3) waits
+  // for 9769, which no cast counts.
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: the_shared_cast_quest,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b11,
+        progress: [1, 1, 0, 0, 0],
+      ),
+    ])
+  let cast =
+    objective.advance(
+      log:,
+      tables: fixture_tables.shared(),
+      event: cast_of(spell: the_shared_cast_spell),
+      now_ms: 0,
+    )
+  assert cast.effects
+    == [
+      SendProgress(
+        quest_id: the_shared_cast_quest,
+        objective_index: 2,
+        progress: 1,
+      ),
+    ]
+    as "rows 9768, 9770 and 9771 all name spell 33300 (flags 3); only 9768 is open (0x140553790), so only it counts, and the quest is not Achieved"
+}
+
+pub fn a_cast_counts_nothing_on_a_quest_not_in_the_active_list_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let nothing = fn(row) {
+    let log = quest_support.log_of(rows: [row])
+    assert objective.advance(
+        log:,
+        tables:,
+        event: cast_of(spell: the_first_cast_spell),
+        now_ms: 0,
+      )
+      == Advanced(log:, effects: [])
+      as "0x1405510d0: an objective is open only for a quest in the active list"
+  }
+  nothing(quest_support.completed(quest_id: the_first_cast_quest, at: 1000))
+  nothing(quest_support.known(quest_id: the_first_cast_quest, state: 6))
 }

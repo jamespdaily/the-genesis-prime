@@ -1137,6 +1137,7 @@ fn mind_burst_go(points points: Int) -> GoAsked {
         | cast.TargetChangeStarts(..)
         | cast.TargetChangeEnds(..)
         | cast.Activated(..)
+        | cast.ShortcutCast(..)
         | cast.StealthChanged(..) -> Error(Nil)
       }
     })

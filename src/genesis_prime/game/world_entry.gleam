@@ -171,6 +171,7 @@ import genesis_prime/message/movement_send_interval.{MovementSendInterval}
 import genesis_prime/message/play_character.{type PlayCharacter}
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
 import genesis_prime/message/player_path.{PlayerPath}
+import genesis_prime/message/quest_spell_shortcut.{QuestSpellShortcut}
 import genesis_prime/message/reward_properties
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
@@ -361,6 +362,10 @@ pub type Entered {
     /// The quest log the character holds (genesis_prime/game/quest_log): the
     /// connection saves it with the place and, at a play, sends it after 0x25E.
     quests: QuestLog,
+    /// The spell buttons the client holds for the open cast objectives of the quest log
+    /// (genesis_prime/game/objective `buttons`): what the connection last told it with
+    /// 0x176, which the next change to the log is told against.
+    buttons: Set(objective.Button),
     /// What the worn items give (genesis_prime/game/gear): the connection works it out
     /// again after each change of a worn item and keeps it with the unit, the look and
     /// the properties it gave them.
@@ -742,7 +747,7 @@ pub fn joined(
             |> with_shield_stat(worn:, shield: player_life.shield(life:))
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id
-          let #(quests, quest_effects) =
+          let #(quests, buttons, quest_effects) =
             quest_log_sent(
               entry:,
               quests:,
@@ -769,6 +774,7 @@ pub fn joined(
               buyback:,
               experience:,
               quests:,
+              buttons:,
               gear: worn,
               clock_origin_ms:,
               viewers: dict.new(),
@@ -909,11 +915,14 @@ fn readiness_of(entry entry: Entry) -> Readiness {
   }
 }
 
-/// 0x35F for a play, with the log that remembers the reset time it carried, and
-/// nothing for the Holocrypt's join. The log is the saved one with each collect
+/// 0x35F for a play, with the log that remembers the reset time it carried, then 0x176
+/// for each open cast objective's button, and the buttons the client holds after them;
+/// nothing for the Holocrypt's join, whose client keeps the buttons it holds, which are
+/// those of the log. The log is the saved one with each collect
 /// objective set to what the player holds now, since the player may have lost or
 /// gained the items since the save: the client takes the whole log in this one message
-/// (`objective.settle`; no zone is known yet, so no visit counts here).
+/// (`objective.settle`; no zone is known yet, so no visit counts here). A play's client
+/// holds no button, since 0x25E empties its shortcuts (`opcode.0x25e`).
 fn quest_log_sent(
   entry entry: Entry,
   quests quests: QuestLog,
@@ -922,7 +931,7 @@ fn quest_log_sent(
   numbers numbers: GameNumbers,
   tables tables: table_store.Tables,
   now now: Now,
-) -> #(QuestLog, List(Effect)) {
+) -> #(QuestLog, Set(objective.Button), List(Effect)) {
   case entry {
     PlayEntry(..) -> {
       let held =
@@ -938,10 +947,35 @@ fn quest_log_sent(
           now_ms: now.monotonic_ms,
         ).log
       let #(told, frame) = quest_log.login(log: held, numbers:, tables:, now:)
-      #(told, [Send(frame:)])
+      let buttons = objective.buttons(log: told, tables:)
+      #(told, buttons, [
+        Send(frame:),
+        ..list.map(
+          objective.button_changes(held: set.new(), now: buttons),
+          fn(change) { Send(frame: button_frame(change:)) },
+        )
+      ])
     }
-    HolocryptEntry -> #(quests, [])
+    HolocryptEntry -> #(quests, objective.buttons(log: quests, tables:), [])
   }
+}
+
+/// 0x176 for a change to the buttons the client holds (`opcode.0x176`): the spell, kind 2
+/// (an objective), the objective's id, and 1 to add or 0 to remove.
+pub fn button_frame(change change: objective.ButtonChange) -> Frame {
+  let #(button, add) = case change {
+    objective.Add(button:) -> #(button, 1)
+    objective.Remove(button:) -> #(button, 0)
+  }
+  let assert Ok(body) =
+    quest_spell_shortcut.encode(QuestSpellShortcut(
+      spell4_id: button.spell4_id.value,
+      kind: 2,
+      id: button.objective_id,
+      add:,
+    ))
+    as "a Spell4 id of the table's 18 bits and a QuestObjective id of 32 fit the message"
+  Frame(message_id: quest_spell_shortcut.message_id, body:)
 }
 
 /// 0x25E for a play, and nothing for the Holocrypt's join.

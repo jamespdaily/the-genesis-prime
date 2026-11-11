@@ -13,6 +13,7 @@ import genesis_prime/message/camp_request.{CampRequest}
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_ability.{CastAbility}
 import genesis_prime/message/cast_activate.{CastActivate}
+import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
 import genesis_prime/message/character_select_start.{CharacterSelectStart}
 import genesis_prime/message/choose_realm.{ChooseRealm}
@@ -353,6 +354,17 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       client_message.CastActivate(message: CastActivate(
         client_cast_id: 0x80002804,
         target_unit_id: 0x12345,
+      )),
+    ),
+    #(
+      0x009D,
+      client_message.CastObjectiveAbility(message: CastObjectiveAbility(
+        client_cast_id: 0x80002805,
+        spell4_id: 40_471,
+        target_unit_id: 0,
+        position_x: 0x41200000,
+        position_y: 0xC0200000,
+        position_z: 0,
       )),
     ),
     #(
