@@ -324,3 +324,109 @@ pub fn the_login_log_marks_a_periodic_quest_done_only_when_completed_in_its_curr
   assert flags == [#(1857, 0), #(9713, 0), #(9714, 0), #(9715, 0)]
     as "a weekly quest done a second before 2025-04-22 10:00, a monthly one done 2025-03-31 and a yearly one done 2024-12-31, a daily one done the day before, are each of an earlier period"
 }
+
+/// Quest 6723 (QuestObjective 10383, type 23 on TargetGroup 3568, count 15) as the tests'
+/// tables hold it.
+fn the_use_quest() -> quest_log.Quest {
+  let assert Ok(quest) =
+    quest_log.quest_of(tables: character_tables.shared(), id: 6723)
+    as "the fixture holds quest 6723's rows"
+  quest
+}
+
+/// Quest 6723 accepted with nothing done.
+fn the_use_quest_fresh() -> quest_log.QuestLog {
+  quest_support.log_of(rows: [quest_support.untouched(quest_id: 6723)])
+}
+
+pub fn an_abandoned_and_retaken_quest_forgets_its_used_units_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The used set lives on the quest's `Active` entry, which an abandon replaces by the
+  // Known entry (`quest_log.hold`, as the abandon does) and an accept replaces by a new
+  // one. That a retaken quest starts afresh is the server's choice.
+  let quest = the_use_quest()
+  let unit = quest_support.unit_ref(unit_id: 7)
+  let assert Ok(counted) =
+    quest_log.used(
+      log: the_use_quest_fresh(),
+      quest:,
+      index: 0,
+      unit:,
+      now_ms: 0,
+    )
+    as "a use of a unit counts for the open type 23 objective"
+  assert quest_log.is_used(log: counted.log, quest:, index: 0, unit:)
+    as "the unit is used"
+  let abandoned =
+    quest_log.hold(log: counted.log, quest_id: 6723, state: quest_log.Abandoned)
+  let retaken =
+    quest_log.accept(log: abandoned, quest:, max_time_ms: 0, now_ms: 0)
+  assert !quest_log.is_used(log: retaken, quest:, index: 0, unit:)
+    as "the retaken quest remembers no used unit"
+  let assert Ok(again) =
+    quest_log.used(log: retaken, quest:, index: 0, unit:, now_ms: 0)
+    as "the unit counts again in the retaken quest"
+  assert again.progress == 1 as "the retaken quest's progress starts at 0"
+  assert again.changed as "the count is a change"
+}
+
+pub fn a_saved_and_loaded_log_remembers_no_used_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A saved quest row holds one progress number for each objective and nothing else of
+  // the used units (`quest_log.rows`); a relog may let a unit count again (Jim,
+  // 2026-11-11).
+  let quest = the_use_quest()
+  let unit = quest_support.unit_ref(unit_id: 7)
+  let assert Ok(counted) =
+    quest_log.used(
+      log: the_use_quest_fresh(),
+      quest:,
+      index: 0,
+      unit:,
+      now_ms: 0,
+    )
+    as "a use of a unit counts for the open type 23 objective"
+  let saved = quest_log.rows(log: counted.log, now_ms: 0)
+  let without_a_used_unit =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 6723, progress: [1]),
+    ])
+  assert saved == quest_log.rows(log: without_a_used_unit, now_ms: 0)
+    as "the rows are those of a log that holds progress 1 and no used unit"
+  let assert Ok(loaded) =
+    quest_log.from_rows(rows: saved, tables: character_tables.shared())
+    as "the rows the log saved are ones the client takes"
+  assert !quest_log.is_used(log: loaded, quest:, index: 0, unit:)
+    as "the loaded log remembers no used unit"
+  assert quest_log.objective_progress(log: loaded, quest:, index: 0) == 1
+    as "the loaded log holds the progress"
+}
+
+pub fn used_refuses_a_non_type_23_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // QuestObjective 17932 (quest 9207) is type 12, a use of one creature, whose set the
+  // server keeps no unit for.
+  let tables = character_tables.shared()
+  let assert Ok(other) = quest_log.quest_of(tables:, id: 9207)
+    as "the fixture holds quest 9207's rows"
+  let unit = quest_support.unit_ref(unit_id: 7)
+  assert quest_log.used(
+      log: quest_support.log_of(rows: [quest_support.untouched(quest_id: 9207)]),
+      quest: other,
+      index: 0,
+      unit:,
+      now_ms: 0,
+    )
+    == Error(Nil)
+    as "a type 12 objective keeps no used set"
+  let assert Ok(counted) =
+    quest_log.used(
+      log: the_use_quest_fresh(),
+      quest: the_use_quest(),
+      index: 0,
+      unit:,
+      now_ms: 0,
+    )
+    as "a type 23 objective does"
+  assert counted.progress == 1 as "the first unit counts one"
+}
