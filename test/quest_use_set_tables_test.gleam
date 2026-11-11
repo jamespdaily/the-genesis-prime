@@ -162,6 +162,7 @@ fn counts_once(
       ),
       checklist_index: 0,
       unit: quest_support.unit_ref(unit_id: 1),
+      by_item: False,
     )
   let first = objective.advance(log:, tables:, event:, now_ms: 0)
   let where = "objective " <> label(row.id) <> " of quest " <> label(quest_id)
