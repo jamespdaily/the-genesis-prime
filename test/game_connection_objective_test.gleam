@@ -60,6 +60,7 @@ import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/item_delete
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/quest_accept.{QuestAccept}
+import genesis_prime/message/quest_log as quest_message
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/step.{type ConnectionEvent, type Event, OwnEvent}
 import genesis_prime/store.{HeldItem}
@@ -77,6 +78,7 @@ import planted_table.{Integer}
 import quest_support
 import spawn_support
 import vendor_support
+import world_entry_support
 
 const unit = 40
 
@@ -467,6 +469,117 @@ pub fn a_kill_counts_toward_a_group_objective_by_the_credits_faction_test() -> N
       state_frame(quest: 1857, state: 2),
     ]
     as "a kill of a creature of Faction2 248, which the connection does not show, is a member of group 847 and finishes the objective"
+}
+
+/// Strange Brew's only objective, 14233 (type 15, count 1), names the reward pane
+/// TargetGroup 4793 (type 1), the Creature2 ids 38117 (Raken), 38125 (Elja) and 40502
+/// (Meloth) in that order (`table_rows -- QuestObjective type=15`, `-- TargetGroup 4793`).
+/// Its progress is 0 until the third of them is dead, then 1 of 1 (`0x140551840`).
+const strange_brew = 7908
+
+pub fn a_named_group_kill_sends_no_progress_until_its_last_member_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    connection_support.entered_with_quests(quests: [
+      quest_support.accepted(quest_id: strange_brew, progress: [0]),
+    ])
+  let #(state, first) =
+    experience_support.credited(state:, creature_id: 38_117, level: 1)
+  assert connection_support.written_ids(first) == [0x01AC]
+    as "opcode.0x361: the group's first member dead leaves the objective at 0, so only the experience (0x1ac) is written"
+  let #(state, second) =
+    experience_support.credited(state:, creature_id: 38_125, level: 1)
+  assert connection_support.written_ids(second) == [0x01AC]
+    as "the second member dead still leaves it at 0, and sends nothing for the objective"
+  let #(_, third) =
+    experience_support.credited(state:, creature_id: 40_502, level: 1)
+  assert as_pairs(frames: frames(taken: third))
+    |> list.map(fn(frame) { frame.0 })
+    == [0x01AC, 0x0361, 0x035C]
+    as "the third member completes the group: the experience, then the progress, then the state, as for any kill"
+  assert quest_frames(taken: third)
+    == [
+      progress_frame(quest: strange_brew, index: 0, progress: 1),
+      state_frame(quest: strange_brew, state: 2),
+    ]
+    as "opcode.0x361 and opcode.0x35c: objective 0 of quest 7908 is at 1 of 1 (count 1), and the quest, whose only objective is done, is Achieved"
+}
+
+pub fn a_group_member_credit_for_another_stay_counts_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    connection_support.entered_with_quests(quests: [
+      quest_support.accepted(quest_id: strange_brew, progress: [0]),
+    ])
+  // The credit for the first member is told for another stay of the player: dropped.
+  let #(state, stale) =
+    experience_support.credited_in(
+      state:,
+      stay: connection_support.viewer_stay(2),
+      creature_id: 38_117,
+      level: 1,
+    )
+  assert connection_support.written_ids(stale) == []
+    as "a credit for another stay writes nothing"
+  let #(state, second) =
+    experience_support.credited(state:, creature_id: 38_125, level: 1)
+  let #(_, third) =
+    experience_support.credited(state:, creature_id: 40_502, level: 1)
+  assert list.append(quest_frames(taken: second), quest_frames(taken: third))
+    == []
+    as "the other stay's kill of 38117 set no bit, so the player's own kills of the other two leave the group one short and no objective message is written"
+}
+
+pub fn a_relog_keeps_the_group_members_already_killed_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The saved row has killed the pane's first two members (bits 0 and 1).
+  let #(state, entry) =
+    connection_support.entered_with_quests(quests: [
+      quest_support.accepted_with_kills(
+        quest_id: strange_brew,
+        progress: [0],
+        kill_mask: [3, 0, 0, 0, 0, 0],
+      ),
+    ])
+  let log =
+    world_entry_support.only_frame(
+      frames: frames(taken: entry),
+      message_id: quest_message.message_id,
+    )
+  let assert Ok(message) = quest_message.decode(log.body)
+    as "the quest log frame decodes"
+  assert list.map(message.active, fn(active) {
+      #(active.quest_id, active.progress)
+    })
+    == [#(strange_brew, [0])]
+    as "opcode.0x35f: the log sent at entry gives the objective's progress, 0, and never the mask"
+
+  let #(_, last) =
+    experience_support.credited(state:, creature_id: 40_502, level: 1)
+  assert as_pairs(frames: frames(taken: last))
+    |> list.map(fn(frame) { frame.0 })
+    == [0x01AC, 0x0361, 0x035C]
+    as "the third member's kill after the relog completes the group, since the saved mask held the other two"
+  assert quest_frames(taken: last)
+    == [
+      progress_frame(quest: strange_brew, index: 0, progress: 1),
+      state_frame(quest: strange_brew, state: 2),
+    ]
+    as "opcode.0x361 and opcode.0x35c: the objective is at 1 of 1 and the quest Achieved"
+
+  // A saved row that killed only the first member (bit 0) is still two short.
+  let #(state, _) =
+    connection_support.entered_with_quests(quests: [
+      quest_support.accepted_with_kills(
+        quest_id: strange_brew,
+        progress: [0],
+        kill_mask: [1, 0, 0, 0, 0, 0],
+      ),
+    ])
+  let #(_, short) =
+    experience_support.credited(state:, creature_id: 40_502, level: 1)
+  assert quest_frames(taken: short) == []
+    as "a mask holding only the first member leaves the group one short after the third's kill, so the relog keeps exactly the members killed and the quest is not Achieved"
 }
 
 /// The 0x361 and 0x35c frames the step writes, in order.

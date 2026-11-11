@@ -13,14 +13,17 @@
 ////   is in no quest.
 
 import client_tables
+import genesis_prime/game/target_group as target_group_rule
+import genesis_prime/table/creature2
 import genesis_prime/table/id.{
-  Item2Id, Quest2Id, QuestObjectiveId, TradeskillSchematic2Id, VirtualItemId,
-  WorldZoneId,
+  Item2Id, Quest2Id, QuestObjectiveId, TargetGroupId, TradeskillSchematic2Id,
+  VirtualItemId, WorldZoneId,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2.{type Quest2}
 import genesis_prime/table/quest_objective
+import genesis_prime/table/target_group
 import genesis_prime/table/tradeskill_schematic2
 import genesis_prime/table/virtual_item
 import genesis_prime/table/world_zone
@@ -196,4 +199,47 @@ pub fn every_finish_quest_objective_names_a_quest2_row_test() -> Nil {
     })
   })
     as "objective 6704 is in no quest, so no log ever holds it"
+}
+
+pub fn every_named_group_objective_with_a_pane_has_count_1_and_a_creature_list_pane_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.every_table()
+  let with_pane =
+    quest_objective.all(tables)
+    |> list.filter(fn(row) {
+      row.type_ == 15 && row.target_group_id_reward_pane != 0
+    })
+  assert list.map(with_pane, fn(row) { row.id })
+    == [6182, 7396, 7750, 8354, 8908, 14_233]
+    as "the type 15 objectives with a reward pane are 6182, 7396, 7750, 8354, 8908 and 14233 (table_rows QuestObjective type=15)"
+  assert list.filter(with_pane, fn(row) { row.count != 1 }) == []
+    as "each has count 1, so the client's progress is needed 1 and the server sends 0 or 1 (0x140551840 gives a percent only when the count is above 1), and a pane of seven fits a 7-bit mask"
+  assert list.filter(with_pane, fn(row) {
+      case
+        target_group.get(
+          tables:,
+          id: TargetGroupId(row.target_group_id_reward_pane),
+        )
+      {
+        Ok(group) -> group.type_ != 1
+        Error(Nil) -> True
+      }
+    })
+    == []
+    as "each pane is a TargetGroup row of type 1, a list of Creature2 ids (fact TargetGroup.type.1)"
+  assert list.filter(with_pane, fn(row) {
+      let members =
+        target_group_rule.creatures_of(
+          tables:,
+          group: row.target_group_id_reward_pane,
+        )
+      members == []
+      || list.length(members) > 7
+      || list.any(members, fn(member) {
+        creature2.get(tables:, id: member) |> result.is_error
+      })
+    })
+    == []
+    as "each pane lists one to seven Creature2 ids, every one a row of the Creature2 table"
 }

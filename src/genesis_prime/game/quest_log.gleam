@@ -101,7 +101,10 @@ type Entry {
   /// each objective, `None` before the start and for an objective with no limit);
   /// `objective_ms_left` is what the client was last told. `optional_mask` has a bit for
   /// each objective with flag 0x20, whose time may run and show but never botches the
-  /// quest, since the quest needs no such objective to be achieved.
+  /// quest, since the quest needs no such objective to be achieved. `kill_masks` holds,
+  /// for each of the six objective slots, a bit for each creature of the objective's
+  /// named group that the player's blow has killed (`kill_marked`); the client is never
+  /// sent it.
   Active(
     state: ActiveState,
     placeholder_objective_id: Int,
@@ -114,6 +117,7 @@ type Entry {
     deadline_ms: Option(Int),
     objective_deadlines_ms: List(Option(Int)),
     optional_mask: Int,
+    kill_masks: List(Int),
   )
   /// Completed, at this many Unix seconds.
   Completed(at: Int)
@@ -215,6 +219,7 @@ fn entry_of(
         deadline_ms: None,
         objective_deadlines_ms: list.map(active.progress, fn(_) { None }),
         optional_mask: 0,
+        kill_masks: active.kill_mask,
       )
     }
     3, Some(at), None -> Ok(Completed(at:))
@@ -347,6 +352,7 @@ pub fn rows(log log: QuestLog, now_ms now_ms: Int) -> List(QuestRow) {
         objective_ms_left: told_objective_ms_left,
         deadline_ms:,
         objective_deadlines_ms:,
+        kill_masks:,
         ..,
       ) -> {
         let quest_ms_left = case deadline_ms {
@@ -370,6 +376,7 @@ pub fn rows(log log: QuestLog, now_ms now_ms: Int) -> List(QuestRow) {
             progress:,
             quest_ms_left:,
             objective_ms_left:,
+            kill_mask: kill_masks,
           )),
         )
       }
@@ -857,6 +864,10 @@ pub type QuestRowError {
 /// The QuestObjective flag the client's state and reachability skip.
 const skipped_flag = 0x20
 
+/// The objective slots of a quest, which a kill mask has one value for each of
+/// (`0x1405510d0`, kQuestMaxObjective).
+const max_objectives = 6
+
 /// The bits of a checklist's mask: the server's 0x35f and 0x361 carry 32.
 const mask_bits = 32
 
@@ -1095,6 +1106,7 @@ fn started(
         },
         objective_deadlines_ms: list.map(zeros, fn(_) { None }),
         optional_mask: 0,
+        kill_masks: list.repeat(0, max_objectives),
       ),
     ),
   )
@@ -1492,6 +1504,96 @@ pub fn is_marked(
     }
     _, _ -> False
   }
+}
+
+/// The creatures a named group lists at most: the data words of a TargetGroup row
+/// (`TargetGroup.data0` to `data6`), so the bits of one kill mask value.
+const group_slots = 7
+
+/// The log after the player's blow killed the creature of entry `member` of the named group
+/// the quest's kill objective at `index` is waiting for, a group of `members` creatures.
+/// The entry's bit is set in the objective's kill mask, which the client is never sent; the
+/// objective's progress stays 0 until every member's bit is set, and then takes the
+/// count's 1 as a kill does (`progressed`). The client counts nothing for a kill and
+/// takes the server's 0x361 only (`opcode.0x361`, `0x140551840`: the needed count of a
+/// count 1 kill objective is 1). `Error(Nil)` when the objective takes no progress (the
+/// quest is not in the active list, or the objective is done, is not reachable or is past
+/// the quest's objectives) or `member` is not an entry of the group. `changed` is true
+/// only for the kill that completes the group; one whose bit is set already, or one that
+/// leaves members alive, changes the progress of nothing.
+pub fn kill_marked(
+  log log: QuestLog,
+  quest quest: Quest,
+  index index: Int,
+  member member: Int,
+  members members: Int,
+  now_ms now_ms: Int,
+) -> Result(Counted, Nil) {
+  let quest = as_logged(log:, quest:)
+  case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
+    Ok(Active(progress:, kill_masks:, ..) as entry), [_, ..]
+      if index >= 0 && member >= 0 && member < members && members <= group_slots
+    -> {
+      use <- bool.guard(
+        when: !objective_open(log:, quest:, index:),
+        return: Error(Nil),
+      )
+      let before =
+        list.drop(kill_masks, index) |> list.first |> result.unwrap(0)
+      let mask = int.bitwise_or(before, int.bitwise_shift_left(1, member))
+      let stored = list.drop(progress, index) |> list.first |> result.unwrap(0)
+      let marked =
+        QuestLog(
+          ..log,
+          entries: dict.insert(
+            log.entries,
+            quest.id,
+            Active(..entry, kill_masks: with_mask(kill_masks:, index:, mask:)),
+          ),
+        )
+      let group = int.bitwise_shift_left(1, members) - 1
+      case int.bitwise_and(mask, group) == group {
+        False ->
+          Ok(Counted(
+            log: marked,
+            progress: stored,
+            changed: False,
+            moved: Stayed,
+          ))
+        True ->
+          progressed(log: marked, quest:, index:, amount: 1, now_ms:)
+          |> result.map(fn(progressed) {
+            Counted(
+              log: progressed.log,
+              progress: progressed.progress,
+              changed: progressed.progress != stored,
+              moved: achieved_moved(became_achieved: progressed.became_achieved),
+            )
+          })
+      }
+    }
+    _, _ -> Error(Nil)
+  }
+}
+
+/// The masks with the one of objective slot `index` set to `mask`.
+fn with_mask(
+  kill_masks kill_masks: List(Int),
+  index index: Int,
+  mask mask: Int,
+) -> List(Int) {
+  list.index_map(kill_masks, fn(old, at) {
+    case at == index {
+      True -> mask
+      False -> old
+    }
+  })
+}
+
+/// `BecameAchieved` when the count made the quest Achieved, else `Stayed`.
+fn achieved_moved(became_achieved became_achieved: Bool) -> Moved {
+  use <- bool.guard(when: became_achieved, return: BecameAchieved)
+  Stayed
 }
 
 /// How an objective's count moved its quest: it stayed as it was, an Accepted quest

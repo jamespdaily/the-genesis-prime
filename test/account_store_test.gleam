@@ -1945,6 +1945,9 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
       "character_quest_timers_match_progress",
       "character_quest_times_are_not_negative",
       "character_quest_placeholder_is_not_negative",
+      "character_quest_kill_mask_fits_7_bits",
+      "character_quest_active_has_its_kill_mask",
+      "character_quest_kill_mask_has_six_slots",
     ]
     as "the refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0, an experience below 0 and each check of a quest row"
   list.each(worker.mapped_constraints(), fn(name) {
@@ -3138,6 +3141,7 @@ fn accepted_entry() -> ActiveQuest {
     progress: [3, 0, 1],
     quest_ms_left: 90_000,
     objective_ms_left: [0, 60_000, 0],
+    kill_mask: [0, 0, 0, 0, 0, 0],
   )
 }
 
@@ -3279,6 +3283,126 @@ pub fn a_checklist_mask_with_bit_31_is_saved_and_read_back_test() -> Nil {
     as "a progress of 2147483649 is within the 32 bits a mask has"
   assert quests_of_load(store:, account:, character_id: id) == log
     as "the load reads each mask back whole, bit 31 set"
+  stop(store)
+}
+
+/// A group objective's kill mask is a server-only value the table keeps with the quest
+/// row (migration 0028): one 7-bit value for each of the six objective slots, whose bit i is
+/// the group's entry i killed (TargetGroup type 1 holds data0 to data6, seven entries).
+pub fn a_partial_group_mask_is_saved_and_read_back_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  let log = [
+    QuestRow(
+      ..accepted_quest(1003),
+      active: Some(
+        ActiveQuest(..accepted_entry(), kill_mask: [0, 3, 0, 0, 0, 127]),
+      ),
+    ),
+  ]
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      quests: log,
+    )
+    == ForMove(PlaceSaved)
+    as "a mask of 3 in slot 1 and of 127 (all seven entries) in slot 5 is within 7 bits and six slots"
+  assert quests_of_load(store:, account:, character_id: id) == log
+    as "the load reads the row back equal, each slot's mask whole"
+  stop(store)
+}
+
+pub fn a_group_mask_outside_7_bits_is_refused_by_its_named_constraint_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  let refused = fn(kill_mask: List(Int), constraint: String, why: String) {
+    assert save_log(
+        store:,
+        account:,
+        character_id: id,
+        epoch: 1,
+        sequence: 1,
+        quests: [
+          QuestRow(
+            ..accepted_quest(1003),
+            active: Some(ActiveQuest(..accepted_entry(), kill_mask:)),
+          ),
+        ],
+      )
+      == ForMove(QuestLogRefused(constraint:))
+      as why
+  }
+  refused(
+    [128, 0, 0, 0, 0, 0],
+    "character_quest_kill_mask_fits_7_bits",
+    "TargetGroup.type.1: a group has at most 7 entries (data0 to data6), so bit 7 is no entry",
+  )
+  refused(
+    [-1, 0, 0, 0, 0, 0],
+    "character_quest_kill_mask_fits_7_bits",
+    "a mask of killed entries is not negative",
+  )
+  refused(
+    [0, 0, 0, 0, 0],
+    "character_quest_kill_mask_has_six_slots",
+    "0x1405510d0: a quest has six objective slots (kQuestMaxObjective), so five masks are refused",
+  )
+  stop(store)
+}
+
+pub fn an_active_quest_row_without_a_group_mask_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  let put = fn(
+    quest_id: Int,
+    state: Int,
+    completed_at: String,
+    kill_mask: String,
+  ) {
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, completed_at, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, "
+      <> int.to_string(quest_id)
+      <> ", "
+      <> int.to_string(state)
+      <> ", "
+      <> completed_at
+      <> ", "
+      <> case state {
+        3 -> "null, null, null, null, null, null, "
+        _ -> "0, true, 0, '{0}', 0, '{0}', "
+      }
+      <> kill_mask
+      <> ")",
+    )
+    |> pog.parameter(pog.int(id))
+    |> pog.execute(store.pool)
+  }
+  // An active entry with no mask and a completed row with one cannot come from a
+  // `QuestRow` (an entry holds all its columns, and only an active row has an entry), so
+  // the rows are put into the table directly.
+  let assert Error(pog.ConstraintViolated(constraint:, ..)) =
+    put(1009, 1, "null", "null")
+    as "the table refused an active row with no kill mask"
+  assert constraint == "character_quest_active_has_its_kill_mask"
+    as "an active quest holds its kill mask (migration 0028), as it holds its whole entry (migration 0021)"
+  let assert Error(pog.ConstraintViolated(constraint:, ..)) =
+    put(1010, 3, "now()", "'{0,0,0,0,0,0}'")
+    as "the table refused a completed row that holds a kill mask"
+  assert constraint == "character_quest_active_has_its_kill_mask"
+    as "a completed quest holds no entry, so no kill mask"
+  assert result.is_ok(put(1011, 3, "now()", "null"))
+    as "a completed row with none of the active columns is accepted"
+  assert result.is_ok(put(1012, 1, "null", "'{0,0,0,0,0,0}'"))
+    as "an active row with every column is accepted"
   stop(store)
 }
 
@@ -3476,7 +3600,7 @@ pub fn a_constraint_of_the_quest_table_the_worker_does_not_map_is_refused_as_a_p
       quests: [completed_quest(1001), completed_quest(1100)],
     )
     == ForMove(PlaceRefused(constraint: "character_quest_test_refuses_1100"))
-    as "only the ten checks the client's limits name are a refused quest log: any other constraint of the table is a refused place"
+    as "only the thirteen checks the client's limits name are a refused quest log: any other constraint of the table is a refused place"
   stop(store)
 }
 
