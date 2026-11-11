@@ -6351,7 +6351,7 @@ gap = "The client holds no player health rule; a retail 0x262 or 0x93a for a new
 statement = "Reads the type data of message 0x262 for unit types 0 (NonPlayer), 8 (Collectible), 10 (Simple), 11 (Platform), 13 (Turret) and 32 (SimpleCollidable): the unit's Creature2 id (18 bits), then an 8-bit value, the quest checklist index, which the unit keeps as a signed byte."
 proof = "Entries 0, 8, 10, 11, 13 and 32 of the type reader table at 0x140c1ea30 (bytes at 0x140c1ea30 read through the query process: entry k is the 8-byte pointer at 0x140c1ea30 + 8k). Decompiled 0x140095fb0: ReadBits32(stream, record, 0x12), then 0x14006bec0, which reads 8 bits (ReadBitsFromWord 8) into one byte at record 4. InitUnitFromCreate 0x140456960: 0x140457247 movsx eax, byte ptr [rbx+0xc] / 0x14045724b mov r12d, dword ptr [rbx+0x8] (the creature id kept for the lookup) / 0x14045724f mov dword ptr [rdi+0x35f8], eax. Type names from LuaUnitGetType 0x140649e20."
 grade = "fairly sure"
-gap = "The reader is read from Ghidra's decompile, not run in the emulator; what the checklist index does for a type 0 unit (it marks a used collectable for type 32) is not read. An emulate request of ReadMessage0262Body on a planted type 0 body would settle the widths."
+gap = "The reader is read from Ghidra's decompile, not run in the emulator; what the checklist index does for a type 32 unit (a used collectable mark is suspected) is not read; for a creature see opcode.0x93b. An emulate request of ReadMessage0262Body on a planted type 0 body would settle the widths."
 name = "ReadUnitCreateCreatureData"
 
 ["0x140649e20"]
@@ -6361,7 +6361,7 @@ grade = "sure"
 name = "LuaUnitGetType"
 
 ["opcode.0x262.creature"]
-statement = "What message 0x262 must hold to show a creature (unit type 0, NonPlayer), and what the client refuses. Type data: the Creature2 id (18 bits) and the checklist index (8 bits, 0 for a creature). The id must be a creature the client loaded at start (FindCreatureInfo): an id it does not hold is reported as 'NonPlayer unit created with unknown creatureId %d' and the unit is not built; id 0 builds a unit with no creature. The client takes the creature's name, level range, race, faction id, flags, archetype, difficulty, tier and quest links from its own Creature2 row; the message carries none of them. The message must carry: stat 0 (health; a type 0 unit with health 0 is created dead) and stat 10 (the level; Creature2 minLevel to maxLevel), a kind 2 position and a kind 14 rotation, both faction fields (the client keeps the message's factions, not Creature2.factionId; the world database sends Creature2.factionId in both for every creature of world 3460), and the 17-bit Creature2DisplayInfo id: with 0 the unit gets no display and no model is described for it, so the server picks one from the creature's Creature2DisplayGroupEntry rows (73464's group 28793 holds only 26565). Properties may be left out: each starts at the creature's own value (GetCreatureProperty), so Base Health (property 7) is the client's own number unless the message sets it. Every other field is the no-value case of opcode.0x262.unit_fields: flags 0, no cast, untagged, tags 0, minimap marker 0, outfit 0."
+statement = "What message 0x262 must hold to show a creature (unit type 0, NonPlayer), and what the client refuses. Type data: the Creature2 id (18 bits) and the checklist index (8 bits, a signed byte: the creature's bit in the checklist objectives that count it, -1 for none; see opcode.0x93b). The id must be a creature the client loaded at start (FindCreatureInfo): an id it does not hold is reported as 'NonPlayer unit created with unknown creatureId %d' and the unit is not built; id 0 builds a unit with no creature. The client takes the creature's name, level range, race, faction id, flags, archetype, difficulty, tier and quest links from its own Creature2 row; the message carries none of them. The message must carry: stat 0 (health; a type 0 unit with health 0 is created dead) and stat 10 (the level; Creature2 minLevel to maxLevel), a kind 2 position and a kind 14 rotation, both faction fields (the client keeps the message's factions, not Creature2.factionId; the world database sends Creature2.factionId in both for every creature of world 3460), and the 17-bit Creature2DisplayInfo id: with 0 the unit gets no display and no model is described for it, so the server picks one from the creature's Creature2DisplayGroupEntry rows (73464's group 28793 holds only 26565). Properties may be left out: each starts at the creature's own value (GetCreatureProperty), so Base Health (property 7) is the client's own number unless the message sets it. Every other field is the no-value case of opcode.0x262.unit_fields: flags 0, no cast, untagged, tags 0, minimap marker 0, outfit 0."
 proof = "InitUnitFromCreate 0x140456960 (listing and decompile): 0x14045724b mov r12d, dword ptr [rbx+0x8] (the creature id); 0x140457928 mov rcx, qword ptr [0x140c65918] / 0x140457932 call 0x1404835c0 (FindCreatureInfo) / 0x14045793a jnz 0x1404579e2; on null 0x14045797c lea rax, [0x141e02568] (text at 0x140b07f28, read as bytes: 'NonPlayer unit created with unknown creatureId %d'), ReportError and return 0x80004005, which HandleMessage0262 0x1403d9760 treats as a build failure; found: 0x1404579ef and r14d, 0x80000 / 0x1404579fd call 0x140458a40 (SetUnitCreature). With id 0 the decompile takes the branch that builds the actor and world unit directly. Dead check: 0x140457a53 mov rcx, 0x1042ce5d12 / 0x140457a5d bt rcx, rax (type 0 is not in the set, so the 0x140457bc5 health test applies). Factions: opcode.0x262 (SetUnitBaseFaction, SetUnitFaction from the message). Display: SetUnitDisplayInfo 0x14047c210 sets nothing for 0; DescribeUnitModel 0x140466ec0 with no display info and a type other than 18 fills only the race and gender words (for a creature 0 and 2, from SetUnitCreature 0x140458a40) and sets a model path only for a unit id with the 0x40000000 bit under the world's 0x7198 object, so a creature gets no model path. Properties: SetUnitPropertiesFromCreate 0x1404584b0 calls GetCreatureProperty 0x1404585c0 for a unit with a creature. `gleam run -m genesis_prime/table_rows -- Creature2DisplayGroupEntry creature2DisplayGroupId=28793` (one row, display 26565, weight 1). World database (wildstar-knowledge world-data spawn.tsv, Jim's data): faction1 = faction2 = Creature2.factionId for every type 0 spawn of world 3460."
 grade = "fairly sure"
 gap = "Read from the decompile and the lookup's listing, not run, and not seen live. Whether anything after the build gives a creature with display 0 a model from its display group is not read (only client-side spawn paths 0x1403dab40 and 0x14047f770 call the group pick 0x1404846c0). The client does not compare stat 10 with the row's level range (opcode.0x262.creature_level_range). A live create of 73464 with display 26565, then with 0, settles it."
@@ -11233,8 +11233,8 @@ proof = "Same reader as 0x35c (0x14008f100: 15, 32, 32 bits at 0x14008f125, 0x14
 grade = "sure"
 
 ["0x140553110"]
-statement = "Whether a quest in the player's log makes a unit a talk target: true when one of the quest's six objectives is of QuestObjective type 3 whose data equals the unit's Creature2 id, is not done and is reachable (a type 18 objective also passes, by a test of its own). It is the quest-log source of the TalkTo (37) kind of UpdateUnitActivationStates. The caller skips a quest when a game flag word is set with bit 2 and the quest's Quest2 flags lack 0x40000."
-proof = "Saved C 0x140553110.c (hash 6ba38d868f75acff): `*(int *)(objective + 4) == 3` and `*(int *)(objective + 0xc) == **(int **)(unit + 0x18)` and IsQuestObjectiveDone 0x1405510d0 == 0 and IsQuestObjectiveReachable 0x140553790 != 0 return 1; the objectives are read from the quest record's 0x18 for six slots. The only caller is 0x1405fc800 (saved C hash e9b6b6af37d00314), which walks a container of quest ids, finds each by FindQuestById 0x1405a8a40 and tests `(*(longlong *)(game + 0x6c50) == 0 || (*(uint *)(*(longlong *)(game + 0x6c50) + 8) >> 1 & 1) == 0 || (Quest2 flags word & 0x40000) != 0)` before calling 0x140553110 (call at 0x1405fc86a). QuestObjective type is at offset 4 and data at offset 12 (`table_rows -- QuestObjective --columns`)."
+statement = "Whether a quest in the player's log makes a unit a talk target: true when one of the quest's six objectives is of QuestObjective type 3 whose data equals the unit's Creature2 id, is not done and is reachable; a type 18 objective passes when it is not done and reachable, its data is 0 or names a TargetGroup holding the unit, the unit's checklist index is 0 or more, and IsObjectiveTargetCounted 0x140551730 answers not counted. It is the quest-log source of the TalkTo (37) kind of UpdateUnitActivationStates. The caller skips a quest when a game flag word is set with bit 2 and the quest's Quest2 flags lack 0x40000."
+proof = "Saved C 0x140553110.c (hash 6ba38d868f75acff): `*(int *)(objective + 4) == 3` and `*(int *)(objective + 0xc) == **(int **)(unit + 0x18)` and IsQuestObjectiveDone 0x1405510d0 == 0 and IsQuestObjectiveReachable 0x140553790 != 0 return 1; the objectives are read from the quest record's 0x18 for six slots. The only caller is 0x1405fc800 (saved C hash e9b6b6af37d00314), which walks a container of quest ids, finds each by FindQuestById 0x1405a8a40 and tests `(*(longlong *)(game + 0x6c50) == 0 || (*(uint *)(*(longlong *)(game + 0x6c50) + 8) >> 1 & 1) == 0 || (Quest2 flags word & 0x40000) != 0)` before calling 0x140553110 (call at 0x1405fc86a). Type 18: 0x14055318b cmp dword [rax+0x4], 0x12; 0x1405531b5 call TargetGroupContainsUnit; 0x1405531da mov r8d, [rbp+0x35f8]; 0x1405531eb call 0x140551730. QuestObjective type is at offset 4 and data at offset 12 (`table_rows -- QuestObjective --columns`)."
 grade = "fairly sure"
 gap = "The game word at offset 0x6c50 and its bit 2 are not read, nor which container of quest ids 0x1405fc800 walks (it is taken to be the player's logged quests). A gate can only make the client send fewer clicks."
 name = "IsQuestTalkTarget"
@@ -11296,9 +11296,8 @@ name = "IsQuestInLog"
 
 ["0x1406113b0"]
 statement = "An objective's progress in a quest log entry: 0 at or past the quest's objective count; else the tracker's value (for a checklist objective, IsChecklistObjective 0x1405517a0, its bit-count value). When that value is above 1 and the objective is of type 2, 8, 15, 16 or 46 without flag 0x200, the progress is trunc(needed x (value x 0.001)) in 32-bit floats, with needed from GetObjectiveNeeded 0x140551840: a percent kill objective's value is thousandths of completion."
-proof = "Listing 0x1406113b0: 0x1406113d4 cmp ebx, [rcx+0x10] (count), at or past -> 0; 0x1406113e4 call 0x1405517a0; 0x1406113f8 call [rax+0x48] (checklist) or 0x1406113fd call [rax+0x40] on the tracker [rdi+0x10+8*index]; 0x140611403 cmp eax, 1; jbe -> raw; 0x14061141a type [obj+4] <= 0x2e and bt 0x400000018104; 0x14061143c test [obj+8], 0x200; seta -> raw when set; 0x140611451 call 0x140551840; cvtsi2ss raw and needed (64-bit, so unsigned 32-bit); mulss [0x140b79d04] (0x3a83126f, 0.001f); mulss needed; cvttss2si."
-grade = "fairly sure"
-gap = "That the tracker's slot 0x40 value is the progress message 0x35F and 0x361 carry, and that slot 0x48 is the bit count of it, are not read in the tracker class; the quests trace (334 2, lines 164 to 165) is the lead."
+proof = "Listing 0x1406113b0: 0x1406113d4 cmp ebx, [rcx+0x10] (count), at or past -> 0; 0x1406113e4 call 0x1405517a0; 0x1406113f8 call [rax+0x48] (checklist) or 0x1406113fd call [rax+0x40] on the tracker [rdi+0x10+8*index]; 0x140611403 cmp eax, 1; jbe -> raw; 0x14061141a type [obj+4] <= 0x2e and bt 0x400000018104; 0x14061143c test [obj+8], 0x200; seta -> raw when set; 0x140611451 call 0x140551840; cvtsi2ss raw and needed (64-bit, so unsigned 32-bit); mulss [0x140b79d04] (0x3a83126f, 0.001f); mulss needed; cvttss2si. The tracker class 0x140b6f9d0 (record): slot 0x40 returns the value SetObjectiveProgress 0x1406115a0 stores from message 0x361, and slot 0x48 its bit count."
+grade = "sure"
 name = "GetObjectiveProgressInLog"
 
 ["opcode.0x35f"]
@@ -11380,10 +11379,9 @@ grade = "guess"
 gap = "Which table the data names (WorldLocation2 or a trigger volume) is not read in the client."
 
 ["QuestObjective.type.14"]
-statement = "QuestObjective type 14: activate each of a set of things, counted as checklist bits. 426 rows, 37 in the start zones."
-proof = "0x1405517a0.c returns true for type 0xe, so progress is a bit count; QuestObjective.tbl."
-grade = "fairly sure"
-gap = "Which set the data names (a TargetGroup is likely) is not read."
+statement = "QuestObjective type 14: use each of a set of units, counted as checklist bits. The data names a TargetGroup (413 of 426 rows; 407 of them type 1, a list of Creature2 ids). A unit counts for the objective when the data is not 0, the unit is in that TargetGroup and its checklist index (taken modulo 32) is not yet set in the objective's mask. The target creatures link to the objective through Creature2 questAnimStateId and questAnimObjectiveIndex (Creature2 13092: quest 3740, objective 0), which offers Interact (39) while the bit is clear, or only through prerequisiteIdAnimState (13096, 13623, 24999). The progress is the bit count of the 32-bit mask the server sends in messages 0x35f and 0x361; the client never sets a bit itself. 426 rows, 418 in a quest; 33 distinct objectives in the start-zone and tutorial quests (by world: 3460 4, 426 12, 990 7, 1387 6, 870 8, some shared)."
+proof = "IsChecklistObjective 0x1405517a0 returns true for type 0xe. QuestObjectiveCountsUnit 0x140550c50: 0x140550d07 call TargetGroupContainsUnit on the data; 0x140550d72 and r15d, eax (index modulo 32); 0x140550ddb call 0x140611680. QuestAnimInteractKind 0x1405a8b30: 0x1405a8ce4 mov ebx, 0x27. The value's only writer is SetObjectiveTrackerValue 0x14079d700 (record), from the 0x35f and 0x361 handlers and path missions. Rows: checklist_rows.py (scratch) over `table_rows -- QuestObjective`, TargetGroup, Quest2, Creature2 and the start quests of start_prereqs.py."
+grade = "sure"
 
 ["QuestObjective.type.31"]
 statement = "QuestObjective type 31: a hidden objective with count 0 and no text; the client remembers its index on the quest. 260 rows, 12 in the start zones."
@@ -11729,7 +11727,7 @@ name = "PrerequisiteChallengeUnlocked"
 statement = "Prerequisite type 94 ('Quest objective requirements not met', text 160561): for a creature target: whether that creature has already been counted for objective value of quest objectId (a Quest2 id) in the player's quest log. The creature is the first unit when it is not a player, else the second unit when that is not a player. With no such creature, or the quest unknown, comparison 2 passes; otherwise comparison 1 passes when the quest is in the log and the objective's counted-targets mask has the creature's target bit, 2 when not. Start content: 18 condition(s) in 18 row(s); (comparison, value): (2, 1) 7, (1, 0) 5, (1, 1) 4, (2, 0) 2; objectIds: 3487, 3886, 5573, 5575, 5580, 5604, 5855, 5865, 6308, 6311 ...."
 proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 94 dispatches to 0x14049f5b0, slot 0x410 of the prerequisite class 0x140b67740 (bytes at 0x140b67b50). Saved C 0x14049f5b0.c (hash 8eb22adb6de47956): 0x14049f5b0: units of type 0x14 or 0x17 are skipped; 0x1405a8a40(objectId); 0x140552f50 (the quest is in the log); 0x140551730(quest, value, creature word 0x35f8): the log entry's objective tracker (slot 0x40) & 1 << that word. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 94`."
 grade = "fairly sure"
-gap = "What sets the creature's target index (unit word 0x35f8) and the tracker's mask is not read."
+gap = "Read from the saved C, not the listing. The creature's index is set by messages 0x262 and 0x93b and the mask by 0x35f and 0x361 (records opcode.0x93b and 0x1406115a0)."
 
 ["0x14049f5b0"]
 statement = "Prerequisite type 94's test. See Prerequisite.prerequisiteTypeId.94."
@@ -11755,7 +11753,7 @@ name = "PrerequisiteUnitHasSpell"
 statement = "Prerequisite type 107 ('Quest object requirement not met', text 164527): for a creature target: whether that creature has already been counted for path mission objectId; the creature is chosen as for type 94. With no such creature comparison 2 passes; otherwise comparison 1 passes when the mission's counted-targets mask has the creature's target bit, 2 when not; a missing mission or a creature with no target index counts as not counted. Start content: 1 condition(s) in 1 row(s); (comparison, value): (1, 0) 1; objectIds: 1365."
 proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 107 dispatches to 0x14049fff0, slot 0x4b8 of the prerequisite class 0x140b67740 (bytes at 0x140b67bf8). Saved C 0x14049fff0.c (hash 8eb22adb6de47956): 0x14049fff0: 0x1403d7bc0(path 0x140c65970, objectId); creature word 0x35f8 (-1 none); mission slot 0x40 & 1 << it. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 107`."
 grade = "fairly sure"
-gap = "As type 94: the target index's writer is not read."
+gap = "The path mission's counted mask (its tracker value, written by 0x14056ded0 through SetObjectiveTrackerValue 0x14079d700) is not read; the creature's index is set as for type 94 (opcode.0x93b)."
 
 ["0x14049fff0"]
 statement = "Prerequisite type 107's test. See Prerequisite.prerequisiteTypeId.107."
@@ -13002,8 +13000,8 @@ proof = "The slots are 0x1403b4a10, 0x1403b4940, 0x1403b4960, 0x1403b49a0, 0x140
 grade = "sure"
 
 ["0x140550c50"]
-statement = "Tests whether a unit counts for a quest's objective, and whether it counts as a kill. A unit with no creature never counts. Type 2 counts a unit whose Creature2 id equals the data and sets the kill result. Types 8 and 16 count a unit that is in TargetGroup(data) and set the kill result. Type 15 counts a unit whose cluster value equals the data and sets the kill result. Type 46 counts a unit the player is Hostile to whose rank value is at least the data, and sets the kill result. Without the kill result: types 3, 9 and 21 count a unit whose Creature2 id equals the data, type 12 a unit whose creature id equals the data, and type 23 a unit in TargetGroup(data); the checklist types go through the unit's checklist word. Whatever the type, a unit in the objective's targetGroupIdRewardPane TargetGroup also counts."
-proof = "Saved C 0x140550c50.c (hash e9b6b6af37d00314) at 0x140550d07, 0x140550dff, 0x140550e12, 0x140550e28 to 0x140550e36, 0x140550e40, 0x140550e5f to 0x140550e6e and the bitmask 0x200208; the reward pane at 0x140550eee to 0x140550f0a. client_trace gives its callers as 0x1405a92c0 (call at 0x1405a93c1) and 0x140655100 (call at 0x1406552da), the Lua function GetRewardInfo."
+statement = "Tests whether a unit counts for a quest's objective, and whether it counts as a kill. A unit with no creature never counts. Type 2 counts a unit whose Creature2 id equals the data and sets the kill result. Types 8 and 16 count a unit that is in TargetGroup(data) and set the kill result. Type 15 counts a unit whose cluster value equals the data and sets the kill result. Type 46 counts a unit the player is Hostile to whose rank value is at least the data, and sets the kill result. Without the kill result: types 3, 9 and 21 count a unit whose Creature2 id equals the data, type 12 a unit whose creature id equals the data, and type 23 a unit in TargetGroup(data); the checklist types (10, 13, 14, 18, 27 and 28) count a unit in TargetGroup(data), with data not 0, whose checklist index, taken modulo 32 (so -1 tests bit 31), is not yet counted in the objective's mask (IsLogObjectiveTargetCounted 0x140611680); for types 27 and 28 the data is a PathSoldierActivate id, so that TargetGroup is an unrelated one. Whatever the type, a unit in the objective's targetGroupIdRewardPane TargetGroup also counts."
+proof = "Saved C 0x140550c50.c (hash e9b6b6af37d00314) at 0x140550d07, 0x140550dff, 0x140550e12, 0x140550e28 to 0x140550e36, 0x140550e40, 0x140550e5f to 0x140550e6e and the bitmask 0x200208; the checklist index at 0x140550d1c mov r15d, [r12+0x35f8], masked at 0x140550d6d and eax, 0x20 / 0x140550d70 dec eax / 0x140550d72 and r15d, eax, then 0x140550ddb call 0x140611680; the reward pane at 0x140550eee to 0x140550f0a. client_trace gives its callers as 0x1405a92c0 (call at 0x1405a93c1) and 0x140655100 (call at 0x1406552da), the Lua function GetRewardInfo."
 grade = "sure"
 name = "QuestObjectiveCountsUnit"
 
@@ -13032,10 +13030,9 @@ grade = "fairly sure"
 gap = "What the unit's word 0x30 and the creature info's word 0x14 hold are not read."
 
 ["0x140551730"]
-statement = "Tests whether a checklist objective's target is counted. Only the checklist types (10, 13, 14, 18, 27 and 28) reach it; no kill type reads it or the unit's checklist word."
-proof = "Saved C 0x140550c50.c (hash e9b6b6af37d00314): the call sits only on the checklist types' branch."
-grade = "fairly sure"
-gap = "The decompile was read, not the listing's call instruction."
+statement = "Tests whether a creature's checklist index is counted in a quest's objective: it finds the quest's entry in the player's quest log and goes on to IsLogObjectiveTargetCounted 0x140611680 with the index as it is, so an index of 32 or more, or -1, is never counted. Only the checklist types (10, 13, 14, 18, 27 and 28) pass that test. Its callers are prerequisite type 94 (0x14049f5b0), IsQuestTalkTarget 0x140553110 and 0x140398cc0 (call at 0x140398e89)."
+proof = "Listing 0x140551730: the log entry is found, then 0x140551792 jnz 0x140611680 (a tail jump with the index unmasked). Saved C 0x140550c50.c shows it only on the checklist types' branch."
+grade = "sure"
 name = "IsObjectiveTargetCounted"
 
 ["0x140467f50.turret_aim"]
@@ -13868,3 +13865,99 @@ proof = "Saved C 0x14054f3a0.c (hash 8eb22adb6de47956): the tree at the quest lo
 grade = "fairly sure"
 gap = "That the +0x28 tree is the side list is taken from the proof of opcode.0x360, which reads the same node state word."
 name = "QuestMentionIsHeld"
+
+["0x140b6f9d0"]
+statement = "The objective tracker class. InitQuestLogEntry gives each objective of a quest log entry one tracker of this class, holding the objective's type and data, a 32-bit value, a second word and an active flag, all 0 at first. Its slots: 0x30 (0x1406110f0) is true for types 27 and 28 when the PathSoldierActivate row the data names has soldierActivateModeEnum 1 or 2; 0x38 (0x140575a70) returns the active flag; 0x40 (0x140575a80) returns the value; 0x48 (ObjectiveTrackerBitCount 0x140575a90) returns the number of bits set in the value; 0x50 (0x140575ae0) tests one bit of the value, its bit number taken modulo 32."
+proof = "Bytes at 0x140b6fa00 read as the five pointers 0x1406110f0, 0x140575a70, 0x140575a80, 0x140575a90 and 0x140575ae0 (slots 0x30 to 0x50). Saved C 0x1406111a0.c (hash cc54e920d5411539) line 40 sets the class on each new 0x40-byte tracker and copies the objective's type (record offset 4) to tracker offset 0x30 and its data (record offset 0xc) to 0x34. Saved C (hash 8eb22adb6de47956): 0x1406110f0.c (type - 0x1b) < 2, then 0x140223380 (PathSoldierActivate by id) and (row offset 0x10) - 1 < 2; 0x140575a70.c returns offset 0x24; 0x140575a80.c offset 0x1c; 0x140575ae0.c 1 << (bit & 0x1f) & offset 0x1c."
+grade = "sure"
+
+["0x140575a90"]
+statement = "The number of bits set in an objective tracker's 32-bit value. For a checklist objective this is the progress the client shows and compares to the needed count."
+proof = "Listing 0x140575a90: 0x140575a90 mov edx, [rcx+0x1c] (the value); 0x140575a9c and edx, 0x5b6db6db; 0x140575aa2 and eax, 0x9249249; 0x140575aba and r8d, 0xc71c71c7; 0x140575ad0 imul ecx, ecx, 0x3f (a population count by 3-bit fields and the remainder by 63). Saved C 0x140575a90.c (hash 8eb22adb6de47956). It is slot 0x48 of the tracker class 0x140b6f9d0, which GetObjectiveProgressInLog 0x1406113b0 calls for a checklist objective (0x1406113f8)."
+grade = "sure"
+name = "ObjectiveTrackerBitCount"
+
+["0x14079d700"]
+statement = "Sets an objective tracker's active flag, value and second word. It does nothing when all three are unchanged. When the flag goes from clear to set it raises the tracker's activation and tells each listener; otherwise it raises an update. When the value changed, each listener is told the old and the new value. Its callers are the quest log at login (message 0x35f, HandleQuestLogInit 0x1405fb350), SetObjectiveProgress 0x1406115a0 (message 0x361) and the path mission routine 0x14056ded0."
+proof = "Listing 0x14079d700: 0x14079d74a mov [rcx+0x1c], r8d (value); 0x14079d74e mov [rcx+0x20], r9d; 0x14079d757 mov [rcx+0x24], edx (active flag). Saved C 0x14079d700.c (hash 8eb22adb6de47956): the early return when the three equal the arguments; slot 0x98 and the listeners' slot 0x28 on activation, slot 0xa0 otherwise; the listeners' slot 0x30 with the old and new value. Callers from client_trace."
+grade = "sure"
+name = "SetObjectiveTrackerValue"
+
+["0x1406115a0"]
+statement = "Stores one objective's progress from message 0x361 in a quest log entry. An objective index at or past the quest's objective count does nothing. The tracker takes the value as sent, with its active flag set. For a checklist objective the value is the mask of counted targets, and its progress is the mask's bit count. Done bit (index + 2) of the entry's flag word is then set when the progress reaches the needed count and cleared when it falls below, so a smaller value undoes a done objective. The entry is then refreshed (0x140611710)."
+proof = "Listing 0x1406115a0: 0x1406115bb cmp ebp, [rax+0x10] (bound); 0x1406115ed call 0x14079d700 (tracker, 1, value, 0, 0); 0x1406115f7 call IsChecklistObjective; 0x140611607 call [rax+0x48] (bit count, result unused); 0x14061160f call GetObjectiveNeeded; 0x14061161b call GetObjectiveProgress; 0x140611620 cmp eax, ebx; 0x14061162b cmp ebp, 0x6; 0x140611633 shl edi, cl; 0x140611647 and / 0x140611654 mov [rsi+0x44] (clear or set the done bit); 0x14061165a call 0x140611710. Saved C 0x1406115a0.c (hash e9b6b6af37d00314)."
+grade = "sure"
+name = "SetObjectiveProgress"
+
+["opcode.0x93b"]
+statement = "Message 0x93b, world server to client: a unit's quest checklist index. Body: the unit id, 32 bits, then the index, 32 bits. The client finds the unit by id and ignores an unknown unit, the player's own unit and an unchanged index; otherwise it stores the index on the unit, replacing the one message 0x262 gave (an 8-bit signed value; a unit starts at -1). The index is the unit's bit in the mask of each checklist objective (QuestObjective types 10, 13, 14, 18, 27 and 28) that counts it: the client offers the objective's interact on the unit only while that bit is clear. The interact and count tests take the index modulo 32 (so -1 tests bit 31); the talk and prerequisite tests treat 32 or more, and -1, as never counted. A server keeps each target's index within 0 to 31 and distinct within one objective."
+proof = "Registered in 0x14006c290 (saved C, hash ad8f7cc3426fd648) line 721: (0x93b, 8, 0, 0, ReadTwoUint32Body 0x14007a040, 0). HandleWorldMessage's case for 0x93b is 0x1403ed9c2, which calls 0x1403dc280 at 0x1403ed9c8. Handler listing: 0x1403dc29f cmp [rbx+0x78], rax (the player's unit is skipped); 0x1403dc2a8 cmp [r8+0x35f8], eax (unchanged); 0x1403dc2b8 mov [r8+0x35f8], eax (stored). ConstructUnit 0x140454380 (saved C, hash 737aa5af0120fae9) line 405 starts the word at -1; 0x140457247 movsx eax, byte ptr [rbx+0xc] in InitUnitFromCreate takes the 0x262 byte. Readers: 0x140611680 through 0x140550c50 and 0x1405a8b30 (masked by 31) and 0x140551730 (unmasked); 0x140553110 and 0x140398cc0 test it against -1."
+grade = "sure"
+
+["0x1403dc280"]
+statement = "The handler of message 0x93b. It finds the unit; when the unit exists, is not the player's own unit and its checklist index differs from the sent one, it stores the index and sets a unit word that marks the unit changed; when the unit's id equals that of the game's current player unit it also sets a game word. It always answers 0."
+proof = "Saved C 0x1403dc280.c (hash 8eb22adb6de47956); listing 0x1403dc2b8 mov [r8+0x35f8], eax; 0x1403dc2bf mov dword [r8+0x18a8], 0x1; 0x1403dc2e3 mov dword [rdx+0x6f98], 0x1."
+grade = "fairly sure"
+gap = "What reads unit word 0x18a8 and game word 0x6f98 is not traced; a search for readers of those offsets would settle what the client refreshes."
+name = "HandleUnitChecklistIndex"
+
+["0x140611680"]
+statement = "Whether a target index is counted in one objective of a quest log entry: false when the objective index is out of range, the objective is not a checklist (IsChecklistObjective) or the target index, taken unsigned, is 32 or more (so -1 is never counted here); otherwise the target index's bit of the tracker's value (slot 0x40)."
+proof = "Listing 0x140611680: 0x1406116a8 cmp edx, eax (objective bound); 0x1406116b9 cmp qword [rcx+rbx*8+0x18], 0; 0x1406116c1 call IsChecklistObjective; 0x1406116ca cmp edi, 0x20; 0x1406116d7 call [rax+0x40]; 0x1406116e6 shl edx, cl; 0x1406116e8 and eax, edx. Saved C 0x140611680.c (hash e9b6b6af37d00314)."
+grade = "sure"
+name = "IsLogObjectiveTargetCounted"
+
+["0x140550c00"]
+statement = "Whether a quest's objective is open: not done and reachable."
+proof = "Listing 0x140550c00: 0x140550c0f call IsQuestObjectiveDone; 0x140550c1d call IsQuestObjectiveReachable. Saved C 0x140550c00.c (hash 6ba38d868f75acff)."
+grade = "sure"
+name = "IsQuestObjectiveOpen"
+
+["0x1405a8b30"]
+statement = "The quest interact kind a creature offers through its Creature2 questAnimStateId (a Quest2 id) and questAnimObjectiveIndex. None (0x65) when the creature names no quest, when the quest is not in the player's log, when a game flag word has bit 2 and the quest's flags lack 0x40000 (as for IsQuestTalkTarget), and in any state but Accepted (1). Accepted with an objective index of -1 gives Interact (39). With an objective index, the objective must be open (IsQuestObjectiveOpen) and, for a checklist objective, the unit's checklist index taken modulo 32 (so -1 tests bit 31) must not be counted in the objective's mask; then the kind is Interact (39). When asked, it marks the kind as offered on the unit. Interact (39) is handled by ActivateUnit 0x14039d4a0, which casts the unit's activate spell."
+proof = "Listing 0x1405a8b30: 0x1405a8b61 lea rdx, [rbx+0xa0] (questAnimStateId); 0x1405a8bd2 mov esi, [rbx+0xa4] (questAnimObjectiveIndex); 0x1405a8bf2 call GetQuestState; 0x1405a8c23 call 0x140550c00; 0x1405a8c35 call IsChecklistObjective; 0x1405a8c6d and eax, 0x20 / 0x1405a8c70 dec eax / 0x1405a8c72 and r14d, eax (the index modulo 32); 0x1405a8cdb call 0x140611680; 0x1405a8ce4 mov ebx, 0x27. Saved C 0x1405a8b30.c (hash e9b6b6af37d00314). Bytes at 0x140c48c88 read a0d4394001000000: kind 39's handler is 0x14039d4a0."
+grade = "sure"
+name = "QuestAnimInteractKind"
+
+["0x1404dd4c0"]
+statement = "Builds the arguments of a quest objective's text: name, questname, needed (GetObjectiveNeeded), completed (GetObjectiveProgressInLog, for a checklist objective the number of counted targets) and, for objective types 2, 3, 9, 12 and 18, creature (see 0x1404dd4c0.objective_creature)."
+proof = "Listing 0x1404dd4c0: 0x1404dd5d8 call GetObjectiveProgressInLog; 0x1404dd5ea call GetObjectiveNeeded; 0x1404dd729 call FindCreatureInfo. Saved C 0x1404dd4c0.c (hash cc54e920d5411539) names the arguments 'name', 'questname', 'needed', 'completed' and 'creature'."
+grade = "sure"
+name = "BuildObjectiveTextArgs"
+
+["0x140398cc0"]
+statement = "A check before a local cast whose record names a quest and an objective (objective -1 means the whole quest). For the whole quest it fails with 0x1d in states 2 and 3 and with 0x1c unless the quest is Accepted. For one objective it fails with 0x1d when the objective is done and 0x1c when it is not open; for a checklist objective the target unit (not the player) must have a checklist index other than -1 that is not yet counted, else 0x1c. On success it sends message 0x943 and starts the cast."
+proof = "Saved C 0x140398cc0.c (hash 02ce70b035ab663d): the quest at record offset 0x1b4 and the objective at 0x1b8; line 117 tests the target unit's checklist word against -1; StartLocalCast called at 0x140399016. Its caller 0x1403998e0 calls it at 0x140399c3b and reads the record's offset 0x154 as flags. Item2 holds quest2IdActivationRequired and questObjectiveActivationRequired at row offsets 96 and 100."
+grade = "guess"
+gap = "Which record holds the quest and objective is not read (Item2's activation-required columns are the candidate, but the caller's flag word does not match an Item2 column read so far), nor 0x943's body. Reading 0x1403998e0's callers and the record's builder would settle it."
+name = "StartItemUseCast"
+
+["QuestObjective.type.10"]
+statement = "QuestObjective type 10: a checklist objective (progress is the bit count of the mask the server sends). 52 rows, 51 in a quest, 1 in the start-zone quests (world 426). The data is 0 in 37 rows, and QuestObjectiveCountsUnit counts no unit when the data is 0, so the client offers no interact for those: their progress comes only from the server. 10 rows name a type 1 TargetGroup. Texts include 'Overload $m(creature=11251)', 'Recruit Maddie Cullen' and 'Defeat the most powerful creatures on planet Nexus'."
+proof = "IsChecklistObjective 0x1405517a0 (sure record). QuestObjectiveCountsUnit 0x140550c50: data 0 skips the TargetGroup test before 0x140550d07 call TargetGroupContainsUnit, and the checklist branch needs that test passed. Rows: checklist_rows.py and ids.py (scratch) over `table_rows -- QuestObjective`, TargetGroup and Quest2 dumps."
+grade = "fairly sure"
+gap = "Which world event the server counts for type 10 the client does not say; the texts point to scripted events. A retail recording of one of these objectives would settle it."
+
+["QuestObjective.type.18"]
+statement = "QuestObjective type 18: talk to each of a set of units, counted as checklist bits. The data names a TargetGroup (33 of 35 rows; 28 of type 1). IsQuestTalkTarget offers TalkTo (37) on a unit when the objective is open, the data is 0 or the unit is in the TargetGroup, the unit's checklist index is 0 or more, and its bit is not yet counted; the click sends message 0x7ea (unit, 37). The objective text's creature argument reads the data as a Creature2 id, which names an unrelated creature or none; the texts use inline $m(creature=...) instead ('Talk to the $m(creature=73662)', 'Get directions from a Woodhaven Guard'). 35 rows, 33 in a quest; 5 distinct objectives in the start-zone and tutorial quests (world 3460 4, world 426 1)."
+proof = "Listing 0x140553110: 0x14055318b cmp dword [rax+0x4], 0x12; 0x1405531b5 call TargetGroupContainsUnit; 0x1405531da mov r8d, [rbp+0x35f8]; 0x1405531eb call 0x140551730. TalkToUnit 0x14039d5d0 (record) sends 0x7ea with kind 37. BuildObjectiveTextArgs 0x1404dd4c0. Rows: checklist_rows.py (scratch) over table_rows dumps."
+grade = "fairly sure"
+gap = "That the server sets the unit's bit when it answers that 0x7ea is inferred from the offer; the client never sets it. Objective 7207 needs 500, which a 32-bit mask cannot reach; how it was counted is not in the client."
+
+["QuestObjective.type.27"]
+statement = "QuestObjective type 27: a checklist objective when the PathSoldierActivate row its data names has soldierActivateModeEnum 1 or 2; the client tests it as type 28. One row, objective 7192, naming PathSoldierActivate 16 (creature 19790, mode 1, count 3); it is in no quest, so no player meets it."
+proof = "IsChecklistObjective 0x1405517a0 (sure record): types 27 and 28 share one jump table entry, 0x1405517eb mov ecx, [obj+0xc]. Rows: ids.py (scratch) over table_rows dumps of QuestObjective, PathSoldierActivate and Quest2."
+grade = "fairly sure"
+gap = "How type 27 differs from 28 in play is not in the client; Creature2 19790 is not in the client's Creature2 table."
+
+["QuestObjective.type.28"]
+statement = "QuestObjective type 28: free each of a set of units (cages), counted as checklist bits. The data is a PathSoldierActivate id; a row with soldierActivateModeEnum 1 or 2 makes the objective a checklist. The row's creature2Id is the unit to use: that creature's questAnimStateId and questAnimObjectiveIndex name the same quest and objective (PathSoldierActivate 217, creature 13677: quest 4520 objective 2, objective 6181; 218, creature 20263: quest 4520 objective 3; 37, creature 35249: quest 5261 objective 0), so it offers Interact (39) while its bit is clear and the click casts its activate spell (3 s at 1 m for the cages). QuestObjectiveCountsUnit tests TargetGroup(data) on the PathSoldierActivate id, an unrelated TargetGroup. Objective 14973 names PathSoldierActivate 159, which does not exist, so it is not a checklist. 5 rows, 4 in a quest, 3 in the start-zone quests (world 426). Text: 'Rescue Kidnapped Rustics from the cages in Deadstar Ravine'."
+proof = "IsChecklistObjective 0x1405517a0 (sure record); QuestAnimInteractKind 0x1405a8b30 (0x1405a8ce4 mov ebx, 0x27). Rows: `table_rows -- PathSoldierActivate`, Creature2 13677, 20263 and 35249 (questAnimStateId, questAnimObjectiveIndex, activateSpellCastTime, activateSpellMaxRange) and the objectives of Quest2 4520 and 5261."
+grade = "fairly sure"
+gap = "That the server sets the cage's bit when the activate cast ends is inferred; the client never sets it. PathSoldierActivate 17's creature 19789 is not in the client's Creature2 table."
+
+["QuestObjective.checklist.spawns"]
+statement = "The world database's spawn checklist indexes against the checklist objectives. 37,432 spawns carry index 0 and 1,555 carry 255 (-1, none). Of the 509 checklist objectives in a quest, 226 name no spawned unit and 66 no type 1 TargetGroup member; the other 217 have every spawn index within 0 to 31. Of those, 81 of type 14, 6 of type 18 and 3 of type 10 have fewer distinct indexes than their needed count (objectives 8227 and 8229 have every spawn at 0), so the server must give each target of one objective its own index from 0 to 31 (through message 0x262 or 0x93b) rather than send the stored one. Four checklist objectives need more than 32 (40 twice, 99 for objective 7355, 500 for objective 7207), which no 32-bit mask reaches."
+proof = "checklist_rows.py (scratch) over the play database's spawn rows (creature_id, world_id, entity_type, quest_checklist_index), the TargetGroup members (type 1, with type 10 and 11 unions followed) and `table_rows -- QuestObjective`. Creature 13677's spawns in world 51 carry indexes 0 to 13."
+grade = "fairly sure"
+gap = "The spawn indexes are the world database's, not the client's; whether retail sent distinct indexes per objective is not recorded. How a count above 32 was reached is not in the client."
