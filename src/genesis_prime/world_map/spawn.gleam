@@ -434,8 +434,7 @@ type Catalog {
     tables: table_store.Tables,
     overrides: Dict(#(Int, Int), Float),
     display_groups: Dict(Int, Set(Int)),
-    first_displays: Dict(Int, Int),
-    first_outfits: Dict(Int, Int),
+    looks: Looks,
     outfits: Set(Int),
     factions: faction_level.Levels,
     worlds: Set(Int),
@@ -617,7 +616,7 @@ fn index_of(indexes: Dict(SpawnId, Int), spawn_id: SpawnId) -> Int {
 }
 
 /// Message 0x262's unit type of a NonPlayer unit (`0x140649e20`).
-const non_player = 0
+pub const non_player = 0
 
 /// What a summon of a creature is checked with, built once at the content load
 /// from the same tables, formulas and kinds the stored spawns are checked with,
@@ -696,37 +695,8 @@ pub fn summoned(
         Error(Nil) -> Error(NoCreatureLevelRow(level: number))
       }
   })
-  let facing = start_place.facing(place)
   let row =
-    Row(
-      id:,
-      entity_type: non_player,
-      creature_id: creature_id.value,
-      world_id: start_place.world_id(place),
-      area_id: start_place.world_zone_id(place),
-      x: start_place.x(place),
-      y: start_place.y(place),
-      z: start_place.z(place),
-      rotation_x: facing.yaw,
-      rotation_y: facing.pitch,
-      rotation_z: facing.roll,
-      display_info_id: dict.get(
-        catalog.first_displays,
-        creature.creature2_display_group_id,
-      )
-        |> result.unwrap(0),
-      outfit_info_id: dict.get(
-        catalog.first_outfits,
-        creature.creature2_outfit_group_id,
-      )
-        |> result.unwrap(0),
-      faction_id: creature.faction_id,
-      base_faction_id: creature.faction_id,
-      world_object_id: 0,
-      world_socket_id: 0,
-      health: None,
-      level: row_level,
-    )
+    creature_row(looks: catalog.looks, id:, creature:, place:, level: row_level)
   use #(checked, _shared) <- result.try(
     load_checks(catalog:, formulas:, kinds:, vendors:, shared: dict.new(), row:)
     |> result.map_error(FailsTheChecks),
@@ -737,6 +707,50 @@ pub fn summoned(
     // prerequisites, so it is shown to every player.
     Error(Nil) -> Ok(Spawn(..checked.spawn, visibility: None))
   }
+}
+
+/// The row of a NonPlayer unit of a creature standing at a place: the world,
+/// zone, position and facing of the place, the display and the outfit that
+/// `Looks` gives the creature's groups, and `Creature2.factionId` for both
+/// factions, as the world database sends them (`opcode.0x262.creature`). The
+/// row's health is none; its level is `level`, none for the creature's `minLevel`.
+pub fn creature_row(
+  looks looks: Looks,
+  id id: SpawnId,
+  creature creature: Creature2,
+  place place: Place,
+  level level: Option(Float),
+) -> Row {
+  let facing = start_place.facing(place)
+  Row(
+    id:,
+    entity_type: non_player,
+    creature_id: creature.id,
+    world_id: start_place.world_id(place),
+    area_id: start_place.world_zone_id(place),
+    x: start_place.x(place),
+    y: start_place.y(place),
+    z: start_place.z(place),
+    rotation_x: facing.yaw,
+    rotation_y: facing.pitch,
+    rotation_z: facing.roll,
+    display_info_id: dict.get(
+      looks.first_displays,
+      creature.creature2_display_group_id,
+    )
+      |> result.unwrap(0),
+    outfit_info_id: dict.get(
+      looks.first_outfits,
+      creature.creature2_outfit_group_id,
+    )
+      |> result.unwrap(0),
+    faction_id: creature.faction_id,
+    base_faction_id: creature.faction_id,
+    world_object_id: 0,
+    world_socket_id: 0,
+    health: None,
+    level:,
+  )
 }
 
 /// A sentence that says why a summon makes no spawn, which the player's system
@@ -792,6 +806,41 @@ fn created_dead(object: StaticObject) -> Bool {
   }
 }
 
+/// The display and the outfit a creature of each group stands with: the first
+/// entry of each group, a server choice, since the client's weighted pick runs
+/// only for spawns it makes itself (`0x1404846c0`, `opcode.0x262.creature`).
+pub opaque type Looks {
+  Looks(first_displays: Dict(Int, Int), first_outfits: Dict(Int, Int))
+}
+
+/// The looks of the groups of the tables.
+pub fn looks(tables tables: table_store.Tables) -> Looks {
+  Looks(
+    first_displays: list.fold(
+      creature2_display_group_entry.all(tables),
+      dict.new(),
+      fn(found, entry) {
+        first_kept(
+          found:,
+          group: entry.creature2_display_group_id,
+          entry: entry.creature2_display_info_id,
+        )
+      },
+    ),
+    first_outfits: list.fold(
+      creature2_outfit_group_entry.all(tables),
+      dict.new(),
+      fn(found, entry) {
+        first_kept(
+          found:,
+          group: entry.creature2_outfit_group_id,
+          entry: entry.creature2_outfit_info_id,
+        )
+      },
+    ),
+  )
+}
+
 /// The tables' lookups by something other than an id, built once.
 fn catalog(tables tables: table_store.Tables) -> Catalog {
   Catalog(
@@ -819,28 +868,7 @@ fn catalog(tables tables: table_store.Tables) -> Catalog {
         })
       },
     ),
-    first_displays: list.fold(
-      creature2_display_group_entry.all(tables),
-      dict.new(),
-      fn(found, entry) {
-        first_kept(
-          found:,
-          group: entry.creature2_display_group_id,
-          entry: entry.creature2_display_info_id,
-        )
-      },
-    ),
-    first_outfits: list.fold(
-      creature2_outfit_group_entry.all(tables),
-      dict.new(),
-      fn(found, entry) {
-        first_kept(
-          found:,
-          group: entry.creature2_outfit_group_id,
-          entry: entry.creature2_outfit_info_id,
-        )
-      },
-    ),
+    looks: looks(tables:),
     outfits: set.from_list(
       list.map(creature2_outfit_info.all(tables), fn(row) { row.id }),
     ),
@@ -2003,7 +2031,10 @@ fn valid_creature(
     ),
     #(
       row.creature2_outfit_group_id == 0
-        || dict.has_key(catalog.first_outfits, row.creature2_outfit_group_id),
+        || dict.has_key(
+        catalog.looks.first_outfits,
+        row.creature2_outfit_group_id,
+      ),
       NoOutfitEntries,
     ),
   ]
