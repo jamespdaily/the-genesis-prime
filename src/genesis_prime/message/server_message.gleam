@@ -28,6 +28,7 @@ import genesis_prime/message/client_control_granted.{type ClientControlGranted}
 import genesis_prime/message/combat_log.{type CombatLog}
 import genesis_prime/message/create_character_result.{type CreateCharacterResult}
 import genesis_prime/message/currency_changed.{type CurrencyChanged}
+import genesis_prime/message/currency_gained.{type CurrencyGained}
 import genesis_prime/message/delete_character_result.{type DeleteCharacterResult}
 import genesis_prime/message/disconnect_notice.{type DisconnectNotice}
 import genesis_prime/message/enter_world.{type EnterWorld}
@@ -201,6 +202,7 @@ pub type ServerMessage {
   RewardProperties(message: RewardProperties)
   BuybackRemoved(message: BuybackRemoved)
   CurrencyChanged(message: CurrencyChanged)
+  CurrencyGained(message: CurrencyGained)
 }
 
 /// Why a body is not a message the server sends.
@@ -454,6 +456,7 @@ pub fn decode(
     0x00BD -> decoded(body, message_id, buyback_removed.decode, BuybackRemoved)
     0x0919 ->
       decoded(body, message_id, currency_changed.decode, CurrencyChanged)
+    0x00DD -> decoded(body, message_id, currency_gained.decode, CurrencyGained)
     _ -> Error(UnknownMessage(message_id:))
   }
 }
@@ -552,6 +555,7 @@ pub fn name(message: ServerMessage) -> String {
     RewardProperties(..) -> "reward_properties"
     BuybackRemoved(..) -> "buyback_removed"
     CurrencyChanged(..) -> "currency_changed"
+    CurrencyGained(..) -> "currency_gained"
   }
 }
 

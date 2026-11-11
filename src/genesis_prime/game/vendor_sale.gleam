@@ -8,7 +8,7 @@
 ////                                       ├─ refused ─▶ Refused([Log, Refuse(code)])   nothing asked, nothing changed
 ////                                       └─ accepted ─▶ Asks(sale) ─▶ the connection asks the store (request(..))
 //// the store's answer ─▶ answered(sale, items, currencies, buyback, answer)
-////                       Sold(amount, words): items, the currency paid and buyback list updated; 0x919, then per stack 0x148 / 0x17F and 0xBA
+////                       Sold(amount, words): items, the currency paid and buyback list updated; 0x919, 0xDD, then per stack 0x148 / 0x17F and 0xBA
 ////                       ItemsNotSaved:   Warning, 0x106 5, nothing changed
 ////                       SaveRefused(c):  Error naming c, 0x106 5, nothing changed
 //// the connection then ─▶ inventory.regeared: a changed worn set sends 0x933, LookChanged and 0x93a
@@ -64,7 +64,8 @@
 ////   and answer 0x106 code 5 DbFailure. A store that is unavailable, not running or past its
 ////   deadline ends the connection with reason 8, which the connection decides.
 //// - **The answer's frames**: 0x919 with the currency's kind (type - 1) and the new total
-////   once, then for each stack sold 0x148 (whole) or 0x17F (part) with the reason 7
+////   once, then a 0xDD of the amount gained when the total rose, which prints "You receive X"
+////   (`currency.total_frames`, `opcode.0xdd.with_0x919`), then for each stack sold 0x148 (whole) or 0x17F (part) with the reason 7
 ////   (Vendor), which makes the client show "Sold <item>" (`lua.Vendor.respond_alerts`), and
 ////   a 0xBA that adds the entry to the buyback list (`opcode.0xba.price`), naming the
 ////   currency, the entry's id `buyback.next_id` and up. A worn item sold changes the worn
@@ -716,16 +717,20 @@ pub fn answered(
           next_id: buyback.next_id + list.length(stacks),
           entries: list.append(buyback.entries, entries),
         ),
-        [
-          Send(currency.changed_frame(
-            currency_type_id: sale.currency_type_id,
-            total: amount,
-          )),
-          ..list.flat_map(list.zip(stacks, entries), fn(pair) {
+        list.append(
+          list.map(
+            currency.total_frames(
+              currency_type_id: sale.currency_type_id,
+              before: sale.held,
+              total: amount,
+            ),
+            Send,
+          ),
+          list.flat_map(list.zip(stacks, entries), fn(pair) {
             let #(stack, entry) = pair
             [Send(stack_frame(stack:)), Send(buyback_frame(entry:))]
-          })
-        ],
+          }),
+        ),
       )
     }
     ItemsNotSaved -> #(

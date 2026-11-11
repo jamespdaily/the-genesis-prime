@@ -6,12 +6,17 @@
 //// store.CharacterLoaded.currencies ─▶ from_held ─▶ Currencies ─▶ bytes        (0x025E's 15 × u64, types 1 to 15)
 //// a sale's or a buy's new total    ─▶ with_amount ─▶ Currencies ─▶ changed_frame (0x0919 kind type − 1)
 //// a sale's payment                 ─▶ added(held, paid, cap(tables, type)) ─▶ the new total
+//// a gain's before and new total    ─▶ total_frames ─▶ 0x0919, then 0x00DD of the difference
 //// ```
 ////
 //// - **Credits** are currency type 1, the first of the 15 (`opcode.0x25e`).
 //// - **0x0919 carries the new total**, not a change: its kind is the currency type - 1 (0 sets
 ////   credits), and the client drops kinds 14 to 21 (`opcode.0x919`). Its two 32-bit fields
 ////   are 0.
+//// - **0x00DD carries a gain**, not a total: it prints "You receive X" for the amount and
+////   changes no total, so one 0x00DD beside the 0x0919 counts nothing twice
+////   (`opcode.0xdd`, `opcode.0xdd.with_0x919`). The server never sends an amount of 0 or
+////   less, because the client does nothing for it.
 //// - **The cap** is the client's GetCurrencyCap (`0x1403b59f0`, `GetCurrencyCap.entitlement_14`):
 ////   credits GameFormula 1115 (500,000), Renown GameFormula 1116 (5,000), any other type its
 ////   CurrencyType capAmount, where 0 or no row is no cap. The client does not clamp
@@ -20,6 +25,7 @@
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/message/currency_changed.{CurrencyChanged}
+import genesis_prime/message/currency_gained.{CurrencyGained}
 import genesis_prime/store
 import genesis_prime/table/currency_type
 import genesis_prime/table/game_formula
@@ -160,4 +166,30 @@ pub fn changed_frame(
     ))
     as "a total below 2^64 fits the message"
   Frame(message_id: currency_changed.message_id, body:)
+}
+
+/// The frames of a currency that is `before` and becomes `total`: the 0x0919 that sets the
+/// total, then, when the total is higher, the 0x00DD of the gain that prints "You receive X"
+/// (`opcode.0xdd.with_0x919`). The gain is `total - before`, so a gain a cap cut short
+/// shows what the player got, and a total that is not higher gives the 0x0919 alone, as the
+/// client does nothing for an amount of 0 or less (`opcode.0xdd`). A spend uses `changed_frame`.
+pub fn total_frames(
+  currency_type_id currency_type_id: Int,
+  before before: Int,
+  total total: Int,
+) -> List(Frame) {
+  let total_frame = changed_frame(currency_type_id:, total:)
+  case total > before {
+    False -> [total_frame]
+    True -> {
+      let assert Ok(body) =
+        currency_gained.encode(CurrencyGained(
+          currency_type_id:,
+          amount: total - before,
+          signature_amount: 0,
+        ))
+        as "a gain below 2^64 of a currency type below 16 fits the message"
+      [total_frame, Frame(message_id: currency_gained.message_id, body:)]
+    }
+  }
 }

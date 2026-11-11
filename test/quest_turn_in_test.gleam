@@ -30,8 +30,11 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/quest
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/quest_turn_in
-import genesis_prime/game/vendor_trade.{Log, Refuse, Send}
+import genesis_prime/game/vendor_trade.{type Effect, Log, Refuse, Send}
+import genesis_prime/message/currency_changed.{CurrencyChanged}
+import genesis_prime/message/currency_gained.{CurrencyGained}
 import genesis_prime/message/item_added
+import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{
   type QuestRow, HeldItem, NewStack, Placed, QuestRow, StackGrowth,
@@ -1019,4 +1022,74 @@ pub fn a_quest_reward_with_random_stats_is_made_rolled_test() -> Nil {
   let assert Ok(sent) = item_added.decode(frame.body) as "0x111 decodes"
   assert sent.held_item.item.random_stats == word
     as "opcode.0x111: the item is sent with its word"
+}
+
+/// The ids of the messages a turn-in's answer sends after its items, which are all sends.
+fn sent_ids(effects effects: List(Effect)) -> List(Int) {
+  list.map(effects, fn(effect) {
+    let assert Send(frame:) = effect
+      as "the effects after the items are all sends"
+    frame.message_id
+  })
+}
+
+/// A credit reward is sent as the new total, then the gain, then the quest's state:
+/// quest 5859 at level 4 pays trunc(4 ^ 1.93 x 10 + 0.5) = 145 credits, as
+/// `quest_credits_are_override_or_rounded_formula_test` shows from `0x1405542b0`, so a
+/// player holding 1000 holds 1145 (`opcode.0xdd.with_0x919`: the 0x919 sets the total and
+/// the 0xdd prints the line, so the credits count once).
+pub fn a_credit_reward_sends_the_gain_after_the_total_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- support.with_changes(changes: [support.receiving(5859)])
+  let #(turn_in, _) =
+    support.asked(
+      scene: support.Scene(..support.scene(quest_id: 5859), credits: 1000),
+      tables:,
+    )
+  let assert quest_turn_in.Saved(then:, ..) =
+    quest_turn_in.answered(
+      turn_in:,
+      items: [],
+      currencies: support.credits(total: 1000),
+      answer: store.TurnedIn(credits: 1145, made: []),
+    )
+    as "the store's answer is saved"
+  assert sent_ids(effects: then)
+    == [
+      currency_changed.message_id,
+      currency_gained.message_id,
+      quest_state.message_id,
+    ]
+    as "opcode.0xdd.with_0x919: the total, the gain, then 0x35C"
+  let assert [Send(total), Send(gain), Send(state)] = then as "three sends"
+  assert currency_changed.decode(total.body)
+    == Ok(CurrencyChanged(kind: 0, total: 1145, field_3: 0, field_4: 0))
+    as "opcode.0x919: kind 0 sets the credits to 1145"
+  assert currency_gained.decode(gain.body)
+    == Ok(CurrencyGained(currency_type_id: 1, amount: 145, signature_amount: 0))
+    as "opcode.0xdd: the credits given, 145, in credits (type 1)"
+  assert quest_state.decode(state.body)
+    == Ok(QuestState(quest_id: 5859, state: 3, objective_id: 0))
+    as "opcode.0x35c: the quest is in state 3"
+}
+
+/// Quest 10520's difficulty 6 has cashRewardMultiplier 0 (fixture, `0x1405542b0`), so it
+/// pays no credits and the player's total does not change.
+pub fn a_turn_in_with_no_credits_sends_no_gain_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(turn_in, _) =
+    support.asked(
+      scene: support.scene(quest_id: tutorial_quest),
+      tables: tables(),
+    )
+  let assert quest_turn_in.Saved(then:, ..) =
+    quest_turn_in.answered(
+      turn_in:,
+      items: [],
+      currencies: support.credits(total: 0),
+      answer: store.TurnedIn(credits: 0, made: []),
+    )
+    as "the store's answer is saved"
+  assert sent_ids(effects: then) == [quest_state.message_id]
+    as "opcode.0xdd: with no credits given there is no gain to show, and no total changed"
 }
