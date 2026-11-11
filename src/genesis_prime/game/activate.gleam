@@ -326,10 +326,15 @@ type AimedAtTarget {
 /// strikes no unit, so a spell with such an effect would lose it without a word; it is
 /// refused instead, until the issue for spells in depth (#336) builds the strike of an
 /// activate cast. An effect is one the strike applies when `effect_kind.is_row_read`
-/// holds for its type and aim: the strike lists a Fluff, Scale or RavelSignal row as a
-/// life on each struck unit (genesis_prime/game/cast `aimed_at`) and starts a Proxy's
-/// spell at it. A row of a type no rule reads is dropped by every cast, so it does not
-/// refuse the spell.
+/// holds for its type and aim: the strike lists a Fluff or Scale row as a life on each
+/// struck unit (genesis_prime/game/cast `aimed_at`) and starts a Proxy's spell at it. A
+/// row of a type no rule reads is dropped by every cast, so it does not refuse the spell.
+///
+/// A RavelSignal row aimed at the target does not refuse the spell: it signals a script
+/// the client does not hold and does no more than the life the go would list for it
+/// (`Spell4Effects.effectType.81`), so the activate cast drops that life and nothing the
+/// client shows is lost; the tutorial mine's activate spell 85452 is one. Gap: the life
+/// the strike lists for it waits for the issue for spells in depth (#336).
 fn activate_rows_of(
   sources sources: spell_plan.Sources,
   spell4_id spell4_id: Int,
@@ -344,6 +349,8 @@ fn activate_rows_of(
     list.find(others, fn(effect) {
       spell_plan.aim_of(target_flags: effect.target_flags)
       != spell_plan.AimsAtCaster
+      && effect_kind.kind_of(effect_type: effect.effect_type)
+      != effect_kind.RavelSignal
       && effect_kind.is_row_read(
         effect_type: effect.effect_type,
         target_flags: effect.target_flags,
