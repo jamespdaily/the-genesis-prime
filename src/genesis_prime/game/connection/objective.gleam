@@ -17,7 +17,6 @@ import genesis_prime/game/target_group
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 import genesis_prime/table/creature2
-import genesis_prime/table/loader/store as table_store
 import gleam/list
 import gleam/option.{None, Some}
 
@@ -62,7 +61,7 @@ pub fn counted(
           event:,
           now_ms: now.monotonic_ms,
         )
-      let settled = settle(tables:, entered:, log: advanced.log, now:)
+      let settled = settle(session:, entered:, log: advanced.log, now:)
       told(
         session:,
         now:,
@@ -91,23 +90,19 @@ pub fn settled(
         session:,
         now:,
         before: entered.quests,
-        advanced: settle(
-          tables: session.settings.tables,
-          entered:,
-          log: entered.quests,
-          now:,
-        ),
+        advanced: settle(session:, entered:, log: entered.quests, now:),
       )
   }
 }
 
 /// `objective.settle` for the items the player holds and the zones they stand in.
 fn settle(
-  tables tables: table_store.Tables,
+  session session: Session,
   entered entered: world_entry.Entered,
   log log: quest_log.QuestLog,
   now now: Now,
 ) -> objective.Advanced {
+  let tables = session.settings.tables
   objective.settle(
     log:,
     tables:,
@@ -115,6 +110,8 @@ fn settle(
     zones: prerequisite_player.of(tables:, entered:).zones,
     place: movement.place(state: entered.movement),
     shown: entered.shown,
+    numbers: session.settings.numbers,
+    unix_ms: step.unix_milliseconds(now:),
     now_ms: now.monotonic_ms,
   )
 }

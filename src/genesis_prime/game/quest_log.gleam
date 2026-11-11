@@ -614,20 +614,56 @@ fn completed_entry(
   tables tables: table_store.Tables,
   latest latest: Resets,
 ) -> QuestCompleted {
+  let in_current_period = case period_start_ms(quest_id:, tables:, latest:) {
+    Ok(start_ms) if at * 1000 >= start_ms -> 1
+    Ok(_) | Error(Nil) -> 0
+  }
+  QuestCompleted(quest_id:, in_current_period:)
+}
+
+/// The start of the quest's current repeat period, or `Error(Nil)` for a quest that
+/// does not repeat.
+fn period_start_ms(
+  quest_id quest_id: Int,
+  tables tables: table_store.Tables,
+  latest latest: Resets,
+) -> Result(Int, Nil) {
   let assert Ok(quest) = quest2.get(tables:, id: Quest2Id(quest_id))
     as "from_rows refused a quest the table has no row for"
-  let period_start_ms = case quest.quest_repeat_period_enum {
+  case quest.quest_repeat_period_enum {
     1 -> Ok(latest.daily)
     2 -> Ok(latest.weekly)
     3 -> Ok(latest.monthly)
     4 -> Ok(latest.yearly)
     _ -> Error(Nil)
   }
-  let in_current_period = case period_start_ms {
-    Ok(start_ms) if at * 1000 >= start_ms -> 1
-    Ok(_) | Error(Nil) -> 0
+}
+
+/// Whether the quest is completed and, for a quest with a repeat period, completed in
+/// its current period at this Unix time in milliseconds: the state a type 24 objective
+/// waits for (`QuestObjective.type.24`). A quest that is Achieved, Abandoned, Active
+/// again or not in the log is not finished.
+pub fn finished(
+  log log: QuestLog,
+  quest_id quest_id: Int,
+  tables tables: table_store.Tables,
+  numbers numbers: GameNumbers,
+  unix_ms unix_ms: Int,
+) -> Bool {
+  case dict.get(log.entries, quest_id) {
+    Ok(Completed(at:)) ->
+      case
+        period_start_ms(
+          quest_id:,
+          tables:,
+          latest: latest_resets(numbers:, at_ms: unix_ms),
+        )
+      {
+        Ok(start_ms) -> at * 1000 >= start_ms
+        Error(Nil) -> True
+      }
+    Ok(Active(..)) | Ok(Known(..)) | Error(Nil) -> False
   }
-  QuestCompleted(quest_id:, in_current_period:)
 }
 
 /// One entry of the active list. The flags word is the tracked bit shifted by 1 and
