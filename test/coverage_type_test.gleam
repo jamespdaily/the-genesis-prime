@@ -2473,3 +2473,26 @@ pub fn the_clients_358_disguise_rows_count_159_read_and_the_two_exosuit_rows_amo
   assert line.starting_abilities == 2
     as "the two ExoSuit rows 112543 and 178142 of Spell4 47860 (Spell4Effects.effectType.112)"
 }
+
+pub fn type_23_is_declared_with_its_partial_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  let assert Ok(facts) =
+    simplifile.read(
+      ".claude/skills/decoding-the-client/references/client-facts.toml",
+    )
+    as "the fact file is in the repository"
+  let declared = coverage_support.engine_named("Quest objectives")
+  let assert Listed(ids:) = declared.handled
+    as "the quest objective engine lists its handled types"
+  assert list.contains(ids, 23)
+    as "type 23 is handled: a use of a unit of the objective's group counts it (QuestObjective.type.23)"
+  let assert Ok(partial) =
+    list.find(declared.partial, fn(gap) { gap.type_number == 23 })
+    as "the type is partial: counting each creature of the set once is open"
+  assert partial.fact_key == "QuestObjective.type.23"
+  assert string.contains(partial.reason, "725")
+    as "the gap names the open issue that closes it"
+  assert string.contains(facts, "[\"" <> partial.fact_key <> "\"]")
+    as "the fact key is a record the fact file holds"
+}

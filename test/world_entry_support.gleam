@@ -6,6 +6,7 @@ import character_support
 import class_resource_support
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/prerequisite.{type Prerequisite}
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/item_added
@@ -192,6 +193,18 @@ pub fn answered_at(
   let assert #(_, world_entry.Join(state:, ..)) =
     loaded_holding(tables:, character:, items:, saved_experience: None, quests:)
     as "the store holds the character, its place and its level's row"
+  joined_state(state:, tables:, character:, place:, now:)
+}
+
+/// What the rule makes of the map's answer to the join `state` asked for, the answer
+/// the map gives a character of a created class and faction at `place`, made at `now`.
+pub fn joined_state(
+  state state: world_entry.State,
+  tables tables: table_store.Tables,
+  character character: Character,
+  place place: Place,
+  now now: Now,
+) -> world_entry.Joined {
   let unit =
     unit_support.novice_unit(tables:, character:, place:, unit_id: 1, body: [])
   let assert Ok(joined) =

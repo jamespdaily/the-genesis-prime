@@ -558,9 +558,18 @@ pub fn map_with_four_players() -> map.State {
 
 /// The same as the run `run` of the tests' map.
 pub fn map_run_with_four_players(run: Int) -> map.State {
+  map_of_world_with_four_players(map: camp_map(), run:)
+}
+
+/// A map of the tests' realm and tables, the map `map_id` running as `run`, with four
+/// other connections joined, for a join into another world than the tests' own.
+pub fn map_of_world_with_four_players(
+  map map_id: MapId,
+  run run: Int,
+) -> map.State {
   let state =
     map.new(map.Settings(
-      map: camp_map(),
+      map: map_id,
       incarnation: run,
       realm_id: settings().realm_id,
       tables: settings().tables,

@@ -141,6 +141,7 @@ import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
 import genesis_prime/game/class_resource
 import genesis_prime/game/currency.{type Currencies}
+import genesis_prime/game/departures
 import genesis_prime/game/experience
 import genesis_prime/game/gear.{type Gear}
 import genesis_prime/game/innate
@@ -274,7 +275,7 @@ pub opaque type State {
 /// the same game object, which sends none.
 type Entry {
   PlayEntry(character_state: Frame)
-  HolocryptEntry
+  InWorldEntry
 }
 
 /// What the store's read of the character leads to.
@@ -391,6 +392,10 @@ pub type Entered {
     /// (genesis_prime/game/connection/visibility_check): a change from this set is
     /// what the connection tells the map.
     hidden: Set(PrerequisiteId),
+    /// The place the player's departures terminal lands it at
+    /// (genesis_prime/game/departures), kept from the end of its cast until the move
+    /// begins; none otherwise.
+    departing: Option(Place),
   )
 }
 
@@ -427,7 +432,7 @@ pub type Readiness {
   /// taken in this stay, and is dropped as the ghost's until the stay's first
   /// 0xF2. A body's 0x637 before that 0xF2 is dropped too; the body stands at
   /// the Holocrypt place the join gave, and its next move is taken.
-  GhostLoading
+  InWorldLoading
   ClientReady
 }
 
@@ -586,7 +591,7 @@ pub fn loaded(
                   joining_a_play(
                     character:,
                     place:,
-                    movement: movement.entered(place:, session_epoch:),
+                    session_epoch:,
                     saved_health:,
                     saved_experience:,
                     items:,
@@ -604,12 +609,14 @@ pub fn loaded(
   }
 }
 
-/// The play of a character at its saved place: the map is asked to take it with
-/// its 0x25E ready, or the play is refused for a level with no XpPerLevel row.
+/// The play of a character at its saved place, or at a departures terminal's landing when
+/// the save lies between the terminal's count and its move (`departures.recovered`): the
+/// map is asked to take it with its 0x25E ready, or the play is refused for a level with no
+/// XpPerLevel row.
 fn joining_a_play(
   character character: Character,
-  place place: Place,
-  movement movement: movement.State,
+  place saved_place: Place,
+  session_epoch session_epoch: store.SessionEpoch,
   saved_health saved_health: Option(Int),
   saved_experience saved_experience: Option(Int),
   items items: List(store.HeldItem),
@@ -620,6 +627,8 @@ fn joining_a_play(
   tables tables: table_store.Tables,
   visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> Loaded {
+  let place = departures.recovered(tables:, quests:, place: saved_place)
+  let movement = movement.entered(place:, session_epoch:)
   case
     experience.entering(
       tables:,
@@ -797,6 +806,7 @@ pub fn joined(
                 next_whisper:,
               ),
               hidden:,
+              departing: None,
             ),
             effects: list.flatten([
               [
@@ -901,11 +911,11 @@ fn with_bases(
 
 /// What the player's client does until its stay's first 0xF2: a play loads the
 /// world as it was told to, and the Holocrypt's join leaves the ghost moving
-/// until the join's 0xAD reaches it (`GhostLoading`).
+/// until the join's 0xAD reaches it (`InWorldLoading`).
 fn readiness_of(entry entry: Entry) -> Readiness {
   case entry {
     PlayEntry(..) -> ClientLoading
-    HolocryptEntry -> GhostLoading
+    InWorldEntry -> InWorldLoading
   }
 }
 
@@ -940,7 +950,7 @@ fn quest_log_sent(
       let #(told, frame) = quest_log.login(log: held, numbers:, tables:, now:)
       #(told, [Send(frame:)])
     }
-    HolocryptEntry -> #(quests, [])
+    InWorldEntry -> #(quests, [])
   }
 }
 
@@ -948,17 +958,19 @@ fn quest_log_sent(
 fn character_state_sent(entry entry: Entry) -> List(Effect) {
   case entry {
     PlayEntry(character_state:) -> [Send(frame: character_state)]
-    HolocryptEntry -> []
+    InWorldEntry -> []
   }
 }
 
-/// The player chose the Holocrypt and has left its map: the map of `place`'s
-/// world is asked to take it there for the stay `stay`, with the earlier stay's
-/// movement placed at `place`. The map's answer comes back to `joined`, as at a
-/// play.
+/// The player has left its map for another place in the game (the Holocrypt, a
+/// departures terminal's landing): the map of `place`'s world is asked to take it
+/// there for the stay `stay`, with the earlier stay's movement placed at `place`
+/// and `health` as its saved health (`None` is a full one, as the Holocrypt's join
+/// gives). The map's answer comes back to `joined`, as at a play.
 pub fn rejoining(
   entered entered: Entered,
   place place: Place,
+  health health: Option(Int),
   connection connection: ConnectionId,
   stay stay: Stay,
   tables tables: table_store.Tables,
@@ -968,7 +980,7 @@ pub fn rejoining(
     character: entered.character,
     place:,
     movement: movement.placed(state: entered.movement, place:),
-    saved_health: None,
+    saved_health: health,
     experience: entered.experience,
     items: entered.items,
     currencies: entered.currencies,
@@ -976,7 +988,7 @@ pub fn rejoining(
     buyback: entered.buyback,
     connection:,
     stay:,
-    entry: HolocryptEntry,
+    entry: InWorldEntry,
     tables:,
     visibility:,
   )
