@@ -1724,7 +1724,8 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
 /// the mine's activate, a cast of Spell4 85452's castTime, 2000 ms
 /// (`Creature2.activateSpellCastTime` is 0, so `0x14054e340` takes the spell's): the
 /// game, the mine's unit, what the client has read after the cast's finish and its pong and
-/// the frames the client has read so far.
+/// the frames the client has read so far. The server runs on a driven clock, which the helper
+/// moves by the cast's 2000 ms once the server has taken the press.
 fn exile_whose_mine_cast_went() -> #(
   login_support.Started,
   game_client.Game,
@@ -1732,10 +1733,11 @@ fn exile_whose_mine_cast_went() -> #(
   BitArray,
   List(Frame),
 ) {
+  let time = driven_time.new()
   let started =
     start_with_world_data_by(
       folder: "test/fixture/world_data_mine",
-      adjusted: fn(settings) { settings },
+      adjusted: fn(settings) { driven_by(settings:, time:) },
     )
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(game, character) =
@@ -1791,16 +1793,20 @@ fn exile_whose_mine_cast_went() -> #(
     message_id: cast_activate.message_id,
     body: press,
   )
+  // The server has taken the press, and armed the go's timer, when its pong comes: the
+  // confirmation is sent before the timer starts, so the clock moves only after the pong.
   // The cast goes and finishes after its time, so the client waits for the server's 0x7fe,
-  // and the server has written all it held for this connection when its pong comes.
+  // and the server has written all it held for this connection when its second pong comes.
+  let #(confirmed, have) = game_client.read_until_pong(game:, have:, number: 1)
+  assert list.any(confirmed, fn(frame) { frame.message_id == 0x07FD })
+    as "opcode.0x7fd: the press is confirmed"
+  driven_time.advance(time:, ms: 2000)
   let #(cast, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
       list.any(frames, fn(frame) { frame.message_id == 0x07FE })
     })
-  let #(rest, have) = game_client.read_until_pong(game:, have:, number: 1)
-  let pressed = list.append(cast, rest)
-  assert list.any(pressed, fn(frame) { frame.message_id == 0x07FD })
-    as "opcode.0x7fd: the press is confirmed"
+  let #(rest, have) = game_client.read_until_pong(game:, have:, number: 2)
+  let pressed = list.flatten([confirmed, cast, rest])
   #(started, game, mine.unit_id, have, pressed)
 }
 
@@ -1821,7 +1827,7 @@ pub fn a_mine_cast_counts_the_exile_objective_test() -> Nil {
       ),
     ]
     as "opcode.0x361: the go of the mine's cast counts objective 21287 of quest 10518"
-  let #(rest, _) = game_client.read_until_pong(game:, have:, number: 2)
+  let #(rest, _) = game_client.read_until_pong(game:, have:, number: 3)
   assert list.filter(list.append(went, rest), fn(frame) {
       frame.message_id == unit_destroyed.message_id
     })
@@ -1848,7 +1854,7 @@ pub fn a_second_cast_on_the_mine_after_its_objective_is_done_is_refused_test() -
     message_id: cast_activate.message_id,
     body: again,
   )
-  let #(pressed, _) = game_client.read_until_pong(game:, have:, number: 2)
+  let #(pressed, _) = game_client.read_until_pong(game:, have:, number: 3)
   assert refusals(frames: pressed) == [cast_result.to_value(TargetIsNotUseable)]
     as "opcode.0x7fc: the second press is refused as not useable"
   assert list.all(game_client.casts_in(frames: pressed), fn(event) {

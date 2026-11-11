@@ -1699,7 +1699,13 @@ fn activation_in_range(
         unit_id:,
         creature_id:,
         alive_at_press: alive,
-        spell: activation_spell(spell:, cast_time_ms: creature.cast_time_ms),
+        spell: activation_spell(
+          spell:,
+          cast_time_ms: activate.cast_time_for(
+            creature:,
+            spell4_id: spell.spell4_id.value,
+          ),
+        ),
         interaction: interaction_of(spell:),
         effects:,
         dropped_signals:,
@@ -1718,8 +1724,9 @@ fn interaction_of(spell spell: Spell) -> Interaction {
 }
 
 /// The plan's spell as an activate cast casts it, with the cast time the client takes for
-/// it: the creature's `activateSpellCastTime` when that is not 0, else the spell's own
-/// castTime (`0x14054e340`, GetActivateCastTime). A Normal spell, and a spell of any other
+/// it: the creature's `activateSpellCastTime` when the creature lists the spell and it is
+/// not 0, else the spell's own castTime (`0x1407a1680`, `0x14054e340`, GetActivateCastTime;
+/// `activate.cast_time_for`). A Normal spell, and a spell of any other
 /// built method, goes once after that time with the cast bar shown, whatever its phases or
 /// channel are. A Channeled spell whose activate time is its channelMaxTime keeps its
 /// channel: the client replaces only the cast's duration and keeps the go count of the
@@ -5429,7 +5436,7 @@ fn go(
         )
       let #(applied, lasting_logs, _) =
         lasting_applied(spell:, phase:, spent: live.spent, subject:, rolls:)
-      let aimed = aimed_at(applied:, caster:, live:, struck:)
+      let aimed = aimed_at(applied:, caster:, live:, struck:, phase:)
       let go_message =
         go_message(
           cast_id:,
@@ -5524,7 +5531,11 @@ fn go(
         False -> #(cast, [])
       }
       // The activation is applied by the cast's last go: a channel's Activate row is
-      // delayed to it (Spell4Effects 10256, delayTime 2999 of a 3000 ms channel).
+      // delayed to it (Spell4Effects 10256, delayTime 2999 of a 3000 ms channel), though
+      // the first go lists the row (phaseFlags 1). A cast stopped before its last go
+      // activates nothing: the server's choice, since the client's own handling of the
+      // Activate effect (`Spell4Effects.effectType.7`) is not read here for a stopped
+      // channel.
       let activated = case live.activation {
         Some(Activating(unit_id:, creature_id:, alive_at_press:, ..))
           if live.gone == go_count
@@ -5918,11 +5929,30 @@ fn creature_hit(
   })
 }
 
+/// Whether a go of phase `phase` lists the activation's Activate effect. A channel lists
+/// it only at the go its phaseFlags name: Spell4Effects 10256 has phaseFlags 1, the first
+/// go (`cast.channel_sequence`). A spell cast as a Normal one goes once, so it lists every
+/// row, whatever phase the row names (an activate cast drops the phases,
+/// `activation_spell`).
+fn activation_listed_at(
+  live live: Live,
+  phase phase: Int,
+) -> fn(activate.ActivateEffect) -> Bool {
+  fn(effect: activate.ActivateEffect) {
+    live.spell.method != spell_plan.Channeled
+    || spell_plan.has_flag(
+      flags: effect.phase_flags,
+      bit: spell_plan.phase_bit(phase:),
+    )
+  }
+}
+
 fn aimed_at(
   applied applied: Applied,
   caster caster: Caster,
   live live: Live,
   struck struck: List(Struck),
+  phase phase: Int,
 ) -> Aimed {
   let lasting =
     rows_with_units(
@@ -6070,7 +6100,9 @@ fn aimed_at(
       }),
       case live.activation {
         Some(Activating(unit_id:, effects:, ..)) ->
-          list.map(effects, fn(effect) {
+          effects
+          |> list.filter(activation_listed_at(live:, phase:))
+          |> list.map(fn(effect) {
             #(
               unit_id,
               Listed(

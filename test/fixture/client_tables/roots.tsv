@@ -633,3 +633,6 @@ Creature2	52905	creature of TargetGroup 8374	objective_test, quest_log_test, gam
 TargetGroup	8008	reward pane group of objective 16479	objective_test, quest_log_test, game_connection_objective_test
 QuestObjective	16480	type 8 objective of quest 9122	objective_test, quest_log_test, game_connection_objective_test
 QuestObjective	16579	type 22 objective of quest 9122	objective_test, quest_log_test, game_connection_objective_test
+Creature2	33885	a creature whose activate time (1500) differs from its first column's spell castTime (4000)	cast_activate_test
+Spell4	46055	the ungated first activate spell of Creature2 33885 (castTime 4000)	cast_activate_test
+Creature2	46497	a creature whose four activate columns are all gated by Exile-only (base faction 166) prerequisites and whose activateSpellCastTime is 3000	cast_activate_test

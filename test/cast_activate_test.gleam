@@ -379,7 +379,9 @@ pub fn activate_go_raises_activated_test() -> Nil {
     })
     == 1
     as "the go raises Activated for the unit and its creature, once"
-  // A creature whose columns pass nobody casts the default spell, Spell4 8.
+  // A creature whose columns pass nobody casts the default spell, Spell4 8, which is not
+  // among its columns, so the creature's cast time is not its time (`0x1407a1680`): the
+  // spell's own castTime, 0, is.
   let plain =
     Creature(columns: [], cast_time_ms: 500, min_range: 0.0, max_range: 0.0)
   let assert Ok(#(state, pressed)) =
@@ -392,9 +394,9 @@ pub fn activate_go_raises_activated_test() -> Nil {
     )
     as "Spell4 8 reaches a unit its edge touches"
   let #(_, steps) = support.run_timers(state:, effects: pressed, from_ms: 1000)
-  assert list.map(steps, fn(step) { step.0 }) == [1500]
-    as "this creature's activateSpellCastTime is 500"
-  assert list.map(go_targets(effects: flattened(steps:)), fn(target) {
+  assert steps == []
+    as "Spell4 8's castTime is 0: the go is at the accept, and the creature's activateSpellCastTime of 500 does not delay it"
+  assert list.map(go_targets(effects: pressed), fn(target) {
       list.map(target.1, fn(info) { info.spell4_effects_id })
     })
     == [[3292]]
@@ -404,6 +406,10 @@ pub fn activate_go_raises_activated_test() -> Nil {
 const a_scanning_crystal = 8047
 
 const the_teleporter = 766
+
+const a_jabbit_cave = 33_885
+
+const a_gated_creature = 46_497
 
 fn creature_of_row(creature_id creature_id: Int) -> activate.Creature {
   let assert Ok(row) =
@@ -492,6 +498,11 @@ pub fn an_activate_cast_of_a_channel_stays_a_channel_test() -> Nil {
     [#(10_256, 2999)],
   )
     as "opcode.0x7f4.target_info: the first go lists the unit with the Activate row 10256 at its delay of 2999 ms"
+  assert list.flat_map(go_targets(effects: flattened(steps:)), fn(target) {
+      list.map(target.1, fn(info) { info.spell4_effects_id })
+    })
+    == []
+    as "cast.channel_sequence: the Activate row 10256 has phaseFlags 1, so it belongs to the first go alone: the second go lists no effect"
 }
 
 pub fn an_activate_cast_time_of_0_takes_the_spells_cast_time_test() -> Nil {
@@ -516,19 +527,102 @@ pub fn an_activate_cast_time_of_0_takes_the_spells_cast_time_test() -> Nil {
 pub fn a_creatures_activate_cast_time_wins_over_the_spells_test() -> Nil {
   use <- owned_test.run(10_000)
   // `0x14054e340`: a creature's activate cast time that is not 0 is the cast's time, over
-  // Spell4 1783's castTime of 2000 ms.
-  let creature =
-    Creature(
-      columns: [Column(prerequisite_id: 0, spell4_id: 1783)],
-      cast_time_ms: 700,
-      min_range: 0.0,
-      max_range: 0.0,
+  // its spell's castTime. Creature2 33885: activateSpellCastTime 1500, first activate column
+  // Spell4 46055 behind no prerequisite, whose castTime is 4000.
+  let #(clicked, steps) =
+    used(
+      creature: creature_of_row(creature_id: a_jabbit_cave),
+      creature_id: a_jabbit_cave,
     )
-  let #(clicked, steps) = used(creature:, creature_id: the_teleporter)
   assert support.written_ids(effects: clicked) == [0x07FD]
     as "no go at the accept"
-  assert list.map(steps, fn(step) { step.0 }) == [1700]
-    as "the go comes at the accept plus the creature's 700 ms"
+  assert list.map(steps, fn(step) { step.0 }) == [2500]
+    as "the go comes at the accept plus the creature's 1500 ms, not Spell4 46055's 4000 ms"
+}
+
+pub fn a_channel_activation_stopped_before_its_last_go_counts_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Creature2 8047, Spell4 5725: the Activate row 10256 (delayTime 2999) is applied by the
+  // channel's last go, at 3999 ms. What an activation does is the server's
+  // (`Spell4Effects.effectType.7`), and a use cancelled before its go counts nothing
+  // (`activate_cancelled_raises_nothing_test`): a channel cancelled after its first go and
+  // before its last counts nothing either.
+  let assert Ok(#(state, clicked)) =
+    right_click(
+      state: cast.new(),
+      activations: the_activations(),
+      unit_id: its_unit,
+      target: object_of(
+        creature_id: a_scanning_crystal,
+        creature: creature_of_row(creature_id: a_scanning_crystal),
+        checklist_index: 0,
+        link: activate.NoLink,
+        east: 1.0,
+        up: 0.0,
+      ),
+      at: 1000,
+    )
+    as "the right-click is taken"
+  assert go_phases(effects: clicked) == [0]
+    as "the first go is sent at the accept"
+  let assert Ok(#(state, stopped)) =
+    support.cancelled(
+      state:,
+      cast_id: support.pressed_id(effects: clicked),
+      reason: cast_result.SpellCancelled,
+      bit: 1,
+      at: 2000,
+    )
+    as "opcode.0x801: the client cancels the cast it is playing"
+  let #(_, steps) = support.run_timers(state:, effects: clicked, from_ms: 1000)
+  let everything = list.append(stopped, flattened(steps:))
+  assert !list.contains(
+    everything,
+    cast.Activated(
+      unit_id: its_unit,
+      creature_id: a_scanning_crystal,
+      alive_at_press: True,
+    ),
+  )
+    as "the channel's timers run after the cancel and nothing is activated"
+  assert go_phases(effects: everything) == []
+    as "no later go is sent for a cancelled cast"
+}
+
+pub fn a_creatures_activate_cast_time_does_not_time_the_default_spell_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // `0x1407a1680`, `0x14054e340`: the creature's activateSpellCastTime applies only to a spell
+  // among its activate columns. Creature2 46497: activateSpellCastTime 3000, four columns
+  // (Spell4 46191, 46202, 46204 and 46203), each behind a Prerequisite (11720, 11718, 11719,
+  // 11717) of the base faction 166 and the path 2, which the Dominion caster (base faction
+  // 167, path 0) does not meet; so it casts the default spell, Spell4 8 (GameFormula 414,
+  // `0x14046c580`), whose castTime is 0. A column with no prerequisite would end the pick
+  // at once, so only a creature whose four columns are all gated falls to the default.
+  let assert Ok(#(state, clicked)) =
+    right_click(
+      state: cast.new(),
+      activations: the_activations(),
+      unit_id: its_unit,
+      target: object_of(
+        creature_id: a_gated_creature,
+        creature: creature_of_row(creature_id: a_gated_creature),
+        checklist_index: 0,
+        link: activate.NoLink,
+        east: 0.5,
+        up: 0.0,
+      ),
+      at: 1000,
+    )
+    as "Spell4 8 reaches a unit its edge touches"
+  let #(_, steps) = support.run_timers(state:, effects: clicked, from_ms: 1000)
+  let assert [#(_, CastStarted(start: started)), ..] =
+    support.tells(effects: clicked)
+    as "the cast starts and its viewers are told"
+  assert started.spell4_id == 8
+    as "no column passes, so the pick is the default spell"
+  assert support.written_ids(effects: clicked) == [0x07FD, 0x07F4, 0x07FE]
+    as "Spell4 8's castTime is 0: the go and the finish are at the accept"
+  assert steps == [] as "no timer waits for the creature's 3000 ms"
 }
 
 /// What a right-click of the market terminal (Creature2 34758, a unit of index 5) does
