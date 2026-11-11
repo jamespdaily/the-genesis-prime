@@ -19,6 +19,7 @@ import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/quest_log
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/server_proxy.{type ServerProxies}
+import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/vendor.{type Vendors}
@@ -113,6 +114,14 @@ pub fn plans_of(session session: Session) -> spell_plan.Plans {
 /// (genesis_prime/game/activate).
 pub fn activations_of(session session: Session) -> activate.Activations {
   activate.activations(tables: session.settings.tables)
+}
+
+/// The plans of the spells the cast-a-spell objectives name
+/// (genesis_prime/game/shortcut_spell).
+pub fn shortcut_spells_of(
+  session session: Session,
+) -> shortcut_spell.Shortcuts {
+  shortcut_spell.shortcuts(tables: session.settings.tables)
 }
 
 /// What an accepted connection keeps.

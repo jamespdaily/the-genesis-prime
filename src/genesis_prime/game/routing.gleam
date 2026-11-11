@@ -8,7 +8,7 @@
 ////                                                 ─▶ Hello, CharacterSelect(message), WorldEntry or WorldMessage
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
 ////                                                 ─▶ Movement(message), Camp(message), Chat(message), Cast(message),
-////                                                    Activation, UnitActivation, Life(message), Innate(message), Interaction(message), Quest(message),
+////                                                    Activation, Shortcut, UnitActivation, Life(message), Innate(message), Interaction(message), Quest(message),
 ////                                                    QuestTurnIn, Inventory(message), VendorPurchase, VendorBuyback, VendorSale, VendorSellJunk or Dropped(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
@@ -51,6 +51,7 @@ import genesis_prime/message/camp_request
 import genesis_prime/message/cancel_cast
 import genesis_prime/message/cast_ability
 import genesis_prime/message/cast_activate
+import genesis_prime/message/cast_objective_ability
 import genesis_prime/message/character_select_start
 import genesis_prime/message/choose_resurrection
 import genesis_prime/message/client_activate_unit
@@ -119,6 +120,9 @@ pub type Feature {
   /// The right-click of a unit, the client's cast of its activate spell
   /// (genesis_prime/game/cast `activate`).
   Activation
+  /// The press of the button a cast-a-spell objective gave the player, the client's
+  /// cast of the objective's spell (genesis_prime/game/cast `shortcut`).
+  Shortcut
   /// The use of a unit whose creature has no activate spell, which the client sends at
   /// once with no cast (genesis_prime/game/cast `activate_unit`).
   UnitActivation
@@ -282,6 +286,12 @@ const table = [
     [AtWorld],
   ),
   Row(cast_activate.message_id, InsideWorldMessage, Activation, [AtWorld]),
+  Row(
+    cast_objective_ability.message_id,
+    InsideWorldMessage,
+    Shortcut,
+    [AtWorld],
+  ),
   Row(
     client_activate_unit.message_id,
     InsideWorldMessage,

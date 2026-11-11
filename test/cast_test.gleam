@@ -752,6 +752,7 @@ pub fn a_non_normal_ability_is_refused_285_and_logged_once_test() -> Nil {
         | cast.TargetChangeStarts(..)
         | cast.TargetChangeEnds(..)
         | cast.Activated(..)
+        | cast.ShortcutCast(..)
         | cast.StealthChanged(..) -> False
       }
     })

@@ -1519,11 +1519,20 @@ pub fn entered_with_quests_on(
   tables tables: store_tables.Tables,
   quests quests: List(store.QuestRow),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
+  entered_as_with_quests_on(tables:, character: world_character(), quests:)
+}
+
+/// `entered_with_quests_on` for this character.
+pub fn entered_as_with_quests_on(
+  tables tables: store_tables.Tables,
+  character character: store.Character,
+  quests quests: List(store.QuestRow),
+) -> #(game_connection.State, ConnectionStep(Request)) {
   let fresh = accepted(Settings(..settings(), tables:)).0
   let #(state, taken) =
     joining_holding(
       in_character_select: in_select_from(fresh),
-      character: world_character(),
+      character:,
       saved_health: None,
       saved_experience: None,
       quests:,

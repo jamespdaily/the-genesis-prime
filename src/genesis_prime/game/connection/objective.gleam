@@ -22,6 +22,7 @@ import genesis_prime/step.{
 import genesis_prime/table/creature2
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/set
 
 /// The session and what is written after the player's blow killed the creature of
 /// the credit. The unit is the creature as the credit names it: its Creature2 row, the
@@ -167,13 +168,19 @@ fn told(
   before before: quest_log.QuestLog,
   advanced advanced: objective.Advanced,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let held = case connection_state.entered_of(session.status) {
+    Some(entered) -> entered.buttons
+    None -> set.new()
+  }
+  let buttons =
+    objective.buttons(log: advanced.log, tables: session.settings.tables)
   let session =
     connection_state.with_entered(session:, change: fn(entered) {
-      world_entry.Entered(..entered, quests: advanced.log)
+      world_entry.Entered(..entered, quests: advanced.log, buttons:)
     })
   #(
     session,
-    list.append(
+    list.flatten([
       list.map(advanced.effects, fn(effect) {
         connection_state.to_client(session, case effect {
           objective.SendProgress(quest_id:, objective_index:, progress:) ->
@@ -190,6 +197,11 @@ fn told(
             )
         })
       }),
+      // The buttons that closed are taken away and those that opened are given, after
+      // the progress and state that closed or opened them.
+      list.map(objective.button_changes(held:, now: buttons), fn(change) {
+        connection_state.to_client(session, world_entry.button_frame(change:))
+      }),
       list.map(
         quest_log.deadline_moved(
           before: quest_log.next_deadline(log: before),
@@ -198,6 +210,6 @@ fn told(
         ),
         connection_state.quest_deadline_timer_move,
       ),
-    ),
+    ]),
   )
 }

@@ -8,6 +8,7 @@ import genesis_prime/game/faction_level
 import genesis_prime/game/loadout
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/rating
+import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/game/top_zone
@@ -28,6 +29,8 @@ import genesis_prime/table/loader/store
 /// - The activations: the spell each creature's right-click casts and the plans of those
 ///   spells, built after the ability trees' sources, whose missing GameFormula 414 row or
 ///   unreadable Prerequisite row fails the load (genesis_prime/game/activate).
+/// - The shortcut spells: the plan of each spell a cast-a-spell objective names, built
+///   after the ability trees' sources (genesis_prime/game/shortcut_spell).
 /// - The faction levels: each faction's parent and the level of each pair of factions
 ///   that has a relationship (genesis_prime/game/faction_level).
 /// - The communicator's index: the CommunicatorMessages rows of each quest they
@@ -47,6 +50,7 @@ pub fn all() -> List(store.Derivation) {
     spell_plan.derivation(),
     spell_area.derivation(),
     activate.derivation(),
+    shortcut_spell.derivation(),
     faction_level.derivation(),
     communicator.derivation(),
     quest_turn_in.derivation(),
