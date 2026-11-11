@@ -9,6 +9,9 @@
 ////   1387 851 and 3460 66, and the other worlds none. The rows left out in all
 ////   are no faction 452, Friendly to both 7,400, a service link 33 and health 0
 ////   215.
+//// - The creatures of kill objectives that the load places at their markers
+////   (`objective_spawn.place`) start in addition, so each world's count is the
+////   decoded one plus the placed rows' own selection.
 //// - Migration 0008: World 3460 also holds the 27 Virtual Defense Daguns, server
 ////   choices, which start (Hostile to Dominion), so 3460 has 66 + 27.
 //// The test needs the client's tables and the world database (`GENESIS_WORLD_DATA`),
@@ -29,6 +32,7 @@ import genesis_prime/import_world_data
 import genesis_prime/readiness
 import genesis_prime/step/runtime
 import genesis_prime/table/world
+import genesis_prime/world_map/objective_spawn
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/static_object.{type StaticObject}
 import gleam/dict
@@ -85,11 +89,35 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
     )
   let took = runtime.now().monotonic_ms - before
   assert loaded == Ok(Nil) as "the whole world database loads"
+  let assert Ok(rows) =
+    content_spawn.rows(db: content_support.connect(database:))
+    as "the spawn rows read back"
+  // The kill objectives' creatures that have no stored spawn in their marker's
+  // world stand at its marker (`objective_spawn.place`): the ones of them that the
+  // selection starts, by world, are added to the decoded stored spawns.
+  let placed =
+    spawn.select(
+      rows: objective_spawn.place(tables:, stored: rows).rows,
+      tables:,
+      formulas: rating.formulas(tables:),
+      kinds: spawn_support.kinds(),
+      vendors: vendor.none(),
+    )
+  let placed_in = fn(world_id) {
+    case dict.get(placed.worlds, world_id) {
+      Ok(world) -> dict.size(world.by_id)
+      Error(Nil) -> 0
+    }
+  }
   assert list.map(
       [22, 51, 426, 870, 990, 1061, 1387, 3460, 1535, 3022],
       fn(world_id) { dict.size(content_spawn.world(key:, world_id:).by_id) },
     )
-    == [11_248, 13_173, 376, 693, 739, 12_897, 851, 93, 0, 0]
+    == list.map2(
+      [11_248, 13_173, 376, 693, 739, 12_897, 851, 93, 0, 0],
+      [22, 51, 426, 870, 990, 1061, 1387, 3460, 1535, 3022],
+      fn(decoded, world_id) { decoded + placed_in(world_id) },
+    )
     as {
       "the spawns that start in each world; the load took "
       <> int.to_string(took)
@@ -97,9 +125,6 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
     }
   // The rows left out in all worlds are the selection's own count over the same
   // rows and tables: the load keeps the selection's spawns and logs these.
-  let assert Ok(rows) =
-    content_spawn.rows(db: content_support.connect(database:))
-    as "the spawn rows read back"
   let selection =
     spawn.select(
       rows:,
