@@ -4,8 +4,7 @@
 //// - `opcode.0x9d`: the press names the client's cast id (never 0), the Spell4 id of the
 ////   shortcut and a target.
 //// - `0x14039b340`: the client refuses a press of a spell it holds no shortcut for with result
-////   1 (`UnableToCreateSpell`); `0x1403b9fb0`: a remove of a shortcut is taken when the client
-////   reads it, so a press may cross it.
+////   1 (`UnableToCreateSpell`).
 //// - `0x14055bdc0`: a spell of targetType 0, 2, 6 or 7 takes the caster, and 1, 3, 5 or 8 the
 ////   player's target (step B, #728).
 //// - Spell4 25306 (Q3915): castTime 2000, Spell4Base 11896... the objective 5197's spell.
@@ -136,6 +135,13 @@ pub fn a_press_of_a_held_self_spell_casts_on_the_caster_test() -> Nil {
   let effects = flattened(steps:)
   assert support.ids(frames: support.writes(effects:)) == [0x07F4, 0x07FE]
     as "the go, then the finish"
+  let before_the_count =
+    list.take_while(effects, fn(effect) {
+      support.shortcut_casts(effects: [effect]) == []
+    })
+  assert support.ids(frames: support.writes(effects: before_the_count))
+    == [0x07F4, 0x07FE]
+    as "the go's finish 0x7fe is written before the count its go raises"
   assert support.shortcut_casts(effects:)
     == [cast.ShortcutCast(spell4_id: the_self_spell)]
     as "the go raises ShortcutCast for the spell, once"
@@ -165,33 +171,6 @@ pub fn a_press_of_a_spell_not_held_is_refused_with_result_1_test() -> Nil {
   assert state == cast.new() as "the state is unchanged"
 }
 
-pub fn a_press_that_crossed_the_buttons_removal_is_refused_with_result_1_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let #(state, pressed) =
-    press(state: cast.new(), spell4_id: the_self_spell, at: 1000)
-  let #(state, steps) =
-    support.run_timers(state:, effects: pressed, from_ms: 1000)
-  assert support.shortcut_casts(effects: flattened(steps:)) != []
-    as "the cast went, so its objective closed and the button is taken away"
-  // The client's next press was sent before it read the removal.
-  let assert Ok(#(_, effects)) =
-    press_holding(
-      state:,
-      spell4_id: the_self_spell,
-      held: set.new(),
-      client_cast_id: 8,
-      target: 0,
-      at: 3100,
-    )
-    as "the press is refused and the connection goes on"
-  assert support.refusal_results(effects:) == [1]
-    as "0x1403b9fb0: a press of a spell whose button is gone is result 1"
-  let assert [frame] = support.writes(effects:)
-  let assert Ok(refused) = spell_cast_refused.decode(frame.body)
-  assert refused.client_cast_id == 8 && refused.spell4_id == the_self_spell
-    as "the refusal answers the press's own cast id"
-}
-
 pub fn a_shortcut_press_with_cast_id_0_ends_the_connection_test() -> Nil {
   use <- owned_test.run(10_000)
   assert press_holding(
@@ -210,6 +189,11 @@ pub fn a_cancelled_shortcut_cast_counts_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
     press(state: cast.new(), spell4_id: the_self_spell, at: 1000)
+  let #(_, left_alone) =
+    support.run_timers(state:, effects: pressed, from_ms: 1000)
+  assert support.shortcut_casts(effects: flattened(steps: left_alone))
+    == [cast.ShortcutCast(spell4_id: the_self_spell)]
+    as "the same press left alone counts at its go, so the nothing below is the cancel's"
   let id = support.pressed_id(effects: pressed)
   let assert Ok(#(cancelled, effects)) =
     support.cancelled(

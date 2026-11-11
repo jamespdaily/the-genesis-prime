@@ -43,6 +43,7 @@ import genesis_prime/game/objective_link
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest as quest_rules
 import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/game/shortcut_spell
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
@@ -60,9 +61,6 @@ import gleam/int
 import gleam/list
 import gleam/result
 import gleam/set.{type Set}
-
-/// The objective type of a cast of a spell.
-const cast_type = 11
 
 /// The objective type of a talk.
 const talk_type = 3
@@ -146,7 +144,7 @@ pub fn buttons(
   |> list.filter_map(fn(open) {
     let objective = open.1
     case
-      objective.type_ == cast_type
+      objective.type_ == shortcut_spell.cast_type
       && result.is_ok(spell4.get(tables:, id: Spell4Id(objective.data)))
     {
       True ->
@@ -329,7 +327,8 @@ fn counts(
         )
       }
     Cast(spell4_id:) ->
-      objective.type_ == cast_type && Spell4Id(objective.data) == spell4_id
+      objective.type_ == shortcut_spell.cast_type
+      && Spell4Id(objective.data) == spell4_id
     Killed(target:) -> {
       let by_data = case objective.type_ {
         2 -> Creature2Id(objective.data) == target.creature_id

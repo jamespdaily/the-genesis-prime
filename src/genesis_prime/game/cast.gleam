@@ -765,12 +765,9 @@ pub type Effect {
   /// (`opcode.0x8f5`, genesis_prime/client_connection `Stealth`).
   StealthChanged(stealthed: Bool)
   /// The go of an activate cast: the player activated the static object `unit_id`, a
-  /// creature of the Creature2 row `creature_id`. The connection counts it for the open
-  /// type 12 objectives that name the creature (genesis_prime/game/objective); a
-  /// collectible's reward will read it too.
+  /// creature of the Creature2 row `creature_id`.
   Activated(unit_id: Int, creature_id: Int)
-  /// The first go of a cast of a quest button's spell (`shortcut`): the connection counts
-  /// it for the open type 11 objectives that name the spell (genesis_prime/game/objective).
+  /// The first go of a cast of a quest button's spell (`shortcut`), by its Spell4 id.
   ShortcutCast(spell4_id: Int)
 }
 

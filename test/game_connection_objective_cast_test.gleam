@@ -14,13 +14,15 @@
 //// - `QuestObjective.type.11.rows`: quest 7618's only objective, 13884, is type 11 with data
 ////   40471 (Spell4 40471: castTime 0, spellCoolDown 10000) and count 1, so the first go
 ////   finishes the quest. The quest names preq_level 8 and preq_quest0 7617 and has no giver in
-////   the tests' world, so the test of the accept removes both and gives it the communicator flag
-////   (0x4: `Quest2.flags`, the communicator call, with the quest held mentioned), as the tests of
-////   a communicator quest do, and lets either faction take it (`Quest2.questPlayerFactionEnum` 2,
-////   the row's 0 is Exile only and the tests' player is not an Exile); the player is level 1.
-//// - The order of the 0x176 remove after the 0x361 and 0x35c of the go is this step's design
-////   choice: the client's remove (`0x1403b9fb0`) needs only the objective's id, and the
-////   quest's own frames come first, as for any other counted objective.
+////   the tests' world, so the test of the accept sets the one flag bit it needs, 0x4 (the
+////   communicator call, `Quest2.flags`, which the row leaves 0), as the tests of a communicator
+////   quest do. The row's other requirements are met by the character: level 8, an Exile
+////   (`Quest2.questPlayerFactionEnum` 0, Faction2 167) and the quest 7617 completed.
+//// - The order of the go's frames: the quest's 0x361 and 0x35c come before the 0x176 remove, as
+////   for any other counted objective; the client's remove (`0x1403b9fb0`) needs only the
+////   objective's id. Spell 40471 holds a node with life after its go, so its 0x7fe comes at
+////   the node's end, after those frames; a spell that finishes at its go writes the 0x7fe
+////   before the count (`cast_shortcut_test`).
 
 import fixture_tables
 import game_connection_support as connection_support
@@ -32,6 +34,7 @@ import genesis_prime/message/quest_abandon.{QuestAbandon}
 import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/step.{OwnEvent}
+import genesis_prime/store.{Character}
 import gleam/list
 import message_support
 import owned_test
@@ -101,15 +104,21 @@ fn accept() -> BitArray {
 pub fn accepting_a_cast_objective_quest_sends_its_button_after_the_state_test() -> Nil {
   use <- owned_test.run(10_000)
   use tables <- fixture_tables.changed(table: "Quest2", id: quest, with: [
-    #("preq_level", Integer(0)),
-    #("preq_quest0", Integer(0)),
     #("flags", Integer(0x4)),
-    #("questPlayerFactionEnum", Integer(2)),
   ])
   let #(state, _) =
-    connection_support.entered_with_quests_on(tables:, quests: [
-      quest_support.known(quest, 5),
-    ])
+    connection_support.entered_as_with_quests_on(
+      tables:,
+      character: Character(
+        ..connection_support.world_character(),
+        level: 8,
+        faction_id: 167,
+      ),
+      quests: [
+        quest_support.completed(quest_id: 7617, at: 1000),
+        quest_support.known(quest, 5),
+      ],
+    )
   let #(_, taken) = connection_support.read(state, accept())
   assert quest_frames(frames: connection_support.written(taken:))
     == [state_frame(state: 1), shortcut_frame(add: 1)]
@@ -132,7 +141,7 @@ pub fn a_shortcut_cast_counts_and_takes_the_button_away_test() -> Nil {
     connection_support.casts_run(
       state:,
       pending: connection_support.cast_timers(steps: [started], ms: 0),
-      until_ms: 0,
+      until_ms: 20_000,
       steps: [started],
     )
   let frames =
@@ -147,10 +156,16 @@ pub fn a_shortcut_cast_counts_and_takes_the_button_away_test() -> Nil {
       shortcut_frame(add: 0),
     ]
     as "opcode.0x361 {7618, 0, 1} at the go, 0x35c 2 for the finished quest, then opcode.0x176 {40471, 2, 13884, remove}"
+  assert list.filter(frames, fn(frame) {
+      list.contains([0x07FE, 0x0361], frame.message_id)
+    })
+    |> list.map(fn(frame) { frame.message_id })
+    == [0x0361, 0x07FE]
+    as "the go counts the objective at once; the cast's finish 0x7fe waits for the node of spell 40471 to end"
   let #(_, again) =
     connection_support.at(
       state:,
-      ms: 1,
+      ms: 20_001,
       event: OwnEvent(step.Read(press(client_cast_id: 8))),
     )
   let assert [frame] = connection_support.written(taken: again)

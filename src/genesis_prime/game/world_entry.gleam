@@ -66,6 +66,9 @@
 ////   (`quest_log.process_wide`). The log the connection keeps remembers the reset time
 ////   the message carried. A saved log the client would refuse fails the load, before
 ////   the map is asked.
+//// - **0x176** gives the button of each open cast objective, after the 0x35F at a play
+////   and alone at the Holocrypt's join: both the 0x25E and the in-world 0xAD empty the
+////   client's spell shortcuts (`0x1403ba4a0`).
 //// - **The held items** are the character's saved rows (`store.HeldItem`): each is
 ////   sent as a 0x111 with its own guid, item id, location, bag index and stack
 ////   count, in location then bag index order, after 0x19B, which sets the player,
@@ -917,12 +920,13 @@ fn readiness_of(entry entry: Entry) -> Readiness {
 
 /// 0x35F for a play, with the log that remembers the reset time it carried, then 0x176
 /// for each open cast objective's button, and the buttons the client holds after them;
-/// nothing for the Holocrypt's join, whose client keeps the buttons it holds, which are
-/// those of the log. The log is the saved one with each collect
+/// the Holocrypt's join sends the 0x176 of each button alone, since its client keeps the
+/// quest log. The log is the saved one with each collect
 /// objective set to what the player holds now, since the player may have lost or
 /// gained the items since the save: the client takes the whole log in this one message
-/// (`objective.settle`; no zone is known yet, so no visit counts here). A play's client
-/// holds no button, since 0x25E empties its shortcuts (`opcode.0x25e`).
+/// (`objective.settle`; no zone is known yet, so no visit counts here). Each entry's
+/// client holds no button: 0x25E empties its shortcuts (`opcode.0x25e`) and so does the
+/// in-world 0xAD (`0x1403ba4a0`).
 fn quest_log_sent(
   entry entry: Entry,
   quests quests: QuestLog,
@@ -956,7 +960,17 @@ fn quest_log_sent(
         )
       ])
     }
-    HolocryptEntry -> #(quests, objective.buttons(log: quests, tables:), [])
+    HolocryptEntry -> {
+      let buttons = objective.buttons(log: quests, tables:)
+      #(
+        quests,
+        buttons,
+        list.map(
+          objective.button_changes(held: set.new(), now: buttons),
+          fn(change) { Send(frame: button_frame(change:)) },
+        ),
+      )
+    }
   }
 }
 
