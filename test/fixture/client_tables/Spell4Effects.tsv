@@ -1,6 +1,9 @@
 ID	spellId	targetFlags	effectType	damageType	delayTime	tickTime	durationTime	flags	dataBits00	dataBits01	dataBits02	dataBits03	dataBits04	dataBits05	dataBits06	dataBits07	dataBits08	dataBits09	innateCostPerTickType0	innateCostPerTickType1	innateCostPerTick0	innateCostPerTick1	emmComparison	emmValue	threatMultiplier	spell4EffectGroupListId	prerequisiteIdCasterApply	prerequisiteIdTargetApply	prerequisiteIdCasterPersistence	prerequisiteIdTargetPersistence	prerequisiteIdTargetSuspend	parameterType00	parameterType01	parameterType02	parameterType03	parameterValue00	parameterValue01	parameterValue02	parameterValue03	phaseFlags	orderIndex
 2821	1817	2	7	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0x3f800000	0	0	0	0	0	0	0	0	0	0	0x00000000	0x00000000	0x00000000	0x00000000	1	0
 3292	8	2	7	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0x3f800000	0	0	0	0	0	0	0	0	0	0	0x00000000	0x00000000	0x00000000	0x00000000	1	0
+5360	1783	1	34	0	0	0	0	0	2	2	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0x3f800000	0	0	0	0	0	0	0	0	0	0	0x00000000	0x00000000	0x00000000	0x00000000	1	0
+5478	1783	2	7	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0x3f800000	0	0	0	0	0	0	0	0	0	0	0x00000000	0x00000000	0x00000000	0x00000000	1	1
+10256	5725	2	7	0	2999	0	0	512	652	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0x3f800000	0	0	0	0	0	0	0	0	0	0	0x00000000	0x00000000	0x00000000	0x00000000	1	0
 12253	6772	2	7	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0x3f800000	0	0	0	0	0	0	0	0	0	0	0x00000000	0x00000000	0x00000000	0x00000000	1	0
 17801	10090	4	8	3	0	0	0	0	1065353216	50	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0x3f800000	0	0	0	0	0	0	0	0	0	0	0x00000000	0x00000000	0x00000000	0x00000000	1	0
 17802	10090	4	8	3	1000	1000	10000	512	1065353216	25	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0x3f800000	0	0	0	0	0	0	0	0	0	0	0x00000000	0x00000000	0x00000000	0x00000000	1	1

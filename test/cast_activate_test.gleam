@@ -401,6 +401,136 @@ pub fn activate_go_raises_activated_test() -> Nil {
     as "Spell4 8's Activate row is Spell4Effects 3292"
 }
 
+const a_scanning_crystal = 8047
+
+const the_teleporter = 766
+
+fn creature_of_row(creature_id creature_id: Int) -> activate.Creature {
+  let assert Ok(row) =
+    creature2.get(tables: fixture_tables.shared(), id: Creature2Id(creature_id))
+    as "the creature is a root of the fixture"
+  activate.creature_of(row:)
+}
+
+/// The right-click of a unit of this creature, `east` of the caster at 1000 ms, and the
+/// timers of the cast run from 1000 ms on the clock the test drives: the written effects of
+/// the click, and each timer's time (`from_ms` plus its delay) with its effects.
+fn used(
+  creature creature: activate.Creature,
+  creature_id creature_id: Int,
+) -> #(List(Effect), List(#(Int, List(Effect)))) {
+  let assert Ok(#(state, clicked)) =
+    right_click(
+      state: cast.new(),
+      activations: the_activations(),
+      unit_id: its_unit,
+      target: object_of(
+        creature_id:,
+        creature:,
+        checklist_index: 0,
+        link: activate.NoLink,
+        east: 1.0,
+        up: 0.0,
+      ),
+      at: 1000,
+    )
+    as "the right-click is taken"
+  let #(_, steps) = support.run_timers(state:, effects: clicked, from_ms: 1000)
+  #(clicked, steps)
+}
+
+/// The phase of each 0x7f4 the effects write.
+fn go_phases(effects effects: List(Effect)) -> List(Int) {
+  list.map(
+    support.frames_of(message_id: spell_go.message_id, effects:),
+    fn(frame) {
+      let assert Ok(go) = spell_go.decode(frame.body)
+        as "a 0x7f4 the rule wrote decodes"
+      go.phase
+    },
+  )
+}
+
+pub fn an_activate_cast_of_a_channel_stays_a_channel_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Creature2 8047: activateSpellCastTime 0, activate spell 5725 (Spell4Base 5020, castMethod
+  // 1; castTime 3000, channelInitialDelay 0, channelMaxTime 3000, channelPulseTime 2999).
+  // `0x14053d1f0.activate_channel`: an activate cast replaces only the cast's duration and keeps
+  // the channel's go count, (3000 - 0 + 2999) / 2999 = 2. `cast.channel_sequence`: the
+  // channel's gos come before its finish. The go times are the server's choice: the
+  // initial delay plus each pulse time, 0 and 2999 ms.
+  let #(clicked, steps) =
+    used(
+      creature: creature_of_row(creature_id: a_scanning_crystal),
+      creature_id: a_scanning_crystal,
+    )
+  assert support.written_ids(effects: clicked) == [0x07FD, 0x07F4]
+    as "the cast is confirmed and its first go, at 0 ms, is sent at once"
+  assert go_phases(effects: clicked) == [0]
+    as "the go at 0 ms is the channel's first"
+  assert list.map(steps, fn(step) { step.0 }) == [3999, 4000]
+    as "from the accept at 1000 ms: the second go at 2999 ms and the finish at channelMaxTime 3000 ms"
+  assert list.map(steps, fn(step) { support.written_ids(effects: step.1) })
+    == [[0x07F4], [0x07FE]]
+    as "cast.channel_sequence: the second go is sent before the finish, and nothing else is"
+  assert go_phases(effects: flattened(steps:)) == [1]
+    as "the go at 2999 ms is the channel's second"
+  assert list.count(flattened(steps:), fn(effect) {
+      effect
+      == cast.Activated(
+        unit_id: its_unit,
+        creature_id: a_scanning_crystal,
+        alive_at_press: True,
+      )
+    })
+    == 1
+    as "Spell4Effects 10256, the Activate row (delayTime 2999), is applied once, at the last go"
+  assert list.contains(
+    list.map(go_targets(effects: clicked), fn(target) {
+      list.map(target.1, fn(info) { #(info.spell4_effects_id, info.delay_ms) })
+    }),
+    [#(10_256, 2999)],
+  )
+    as "opcode.0x7f4.target_info: the first go lists the unit with the Activate row 10256 at its delay of 2999 ms"
+}
+
+pub fn an_activate_cast_time_of_0_takes_the_spells_cast_time_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Creature2 766: activateSpellCastTime 0, activate spell 1783 (Spell4Base castMethod 0;
+  // castTime 2000). `0x14054e340`: the cast time is the creature's when that is not 0, else the
+  // spell's castTime.
+  let #(clicked, steps) =
+    used(
+      creature: creature_of_row(creature_id: the_teleporter),
+      creature_id: the_teleporter,
+    )
+  assert support.written_ids(effects: clicked) == [0x07FD]
+    as "no go at the accept: the cast has a time"
+  assert list.map(steps, fn(step) { step.0 }) == [3000]
+    as "the go and the finish come at the accept plus Spell4 1783's castTime, 2000 ms"
+  assert list.map(steps, fn(step) { support.written_ids(effects: step.1) })
+    == [[0x07F4, 0x07FE]]
+    as "the go, then the finish"
+}
+
+pub fn a_creatures_activate_cast_time_wins_over_the_spells_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // `0x14054e340`: a creature's activate cast time that is not 0 is the cast's time, over
+  // Spell4 1783's castTime of 2000 ms.
+  let creature =
+    Creature(
+      columns: [Column(prerequisite_id: 0, spell4_id: 1783)],
+      cast_time_ms: 700,
+      min_range: 0.0,
+      max_range: 0.0,
+    )
+  let #(clicked, steps) = used(creature:, creature_id: the_teleporter)
+  assert support.written_ids(effects: clicked) == [0x07FD]
+    as "no go at the accept"
+  assert list.map(steps, fn(step) { step.0 }) == [1700]
+    as "the go comes at the accept plus the creature's 700 ms"
+}
+
 /// What a right-click of the market terminal (Creature2 34758, a unit of index 5) does
 /// for a caster whose quest 7153 holds this progress for its one objective.
 fn market_terminal_pressed(progress progress: Int) -> List(Effect) {
@@ -1059,12 +1189,15 @@ pub fn an_activate_cast_logs_the_ravel_signals_it_drops_once_test() -> Nil {
   // cast strikes no one, so the two aimed at the target are dropped, and the log names
   // the spell, the effects and the unit.
   let #(state, first) = mine_clicked(state: cast.new(), at: 1000)
+  assert support.refusal_results(effects: first) == []
+    as "a dropped signal refuses nothing"
+  let #(state, first_steps) =
+    support.run_timers(state:, effects: first, from_ms: 1000)
   assert list.contains(
-      support.ids(frames: support.writes(effects: first)),
-      0x07F4,
-    )
-    && support.refusal_results(effects: first) == []
-    as "the cast goes at once (the creature's activateSpellCastTime is 0): a dropped signal refuses nothing"
+    support.ids(frames: support.writes(effects: flattened(steps: first_steps))),
+    0x07F4,
+  )
+    as "the cast goes after the spell's castTime (`0x14054e340`: the creature's activateSpellCastTime is 0)"
   let assert [#(LogWarning, line)] = support.logs(effects: first)
     as "the dropped signals are logged once, as one line"
   assert string.contains(line, "85452") && string.contains(line, "5000")
@@ -1073,9 +1206,11 @@ pub fn an_activate_cast_logs_the_ravel_signals_it_drops_once_test() -> Nil {
     as "the line names the two effects aimed at the target"
   assert !string.contains(line, "227177")
     as "the effect aimed at the caster is not dropped"
-  let #(_, second) = mine_clicked(state:, at: 60_000)
+  let #(state, second) = mine_clicked(state:, at: 60_000)
+  let #(_, second_steps) =
+    support.run_timers(state:, effects: second, from_ms: 60_000)
   assert list.contains(
-    support.ids(frames: support.writes(effects: second)),
+    support.ids(frames: support.writes(effects: flattened(steps: second_steps))),
     0x07F4,
   )
     as "the second press goes too"

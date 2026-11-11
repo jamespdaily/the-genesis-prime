@@ -764,7 +764,7 @@ pub type Effect {
   /// the connection writes 0x8f5 to the caster's client and tells each viewer
   /// (`opcode.0x8f5`, genesis_prime/client_connection `Stealth`).
   StealthChanged(stealthed: Bool)
-  /// The go of an activate cast: the player activated the creature or static object
+  /// The last go of an activate cast: the player activated the creature or static object
   /// `unit_id`, of the Creature2 row `creature_id`, which lived when the press started the
   /// cast or did not (`alive_at_press`).
   Activated(unit_id: Int, creature_id: Int, alive_at_press: Bool)
@@ -1218,7 +1218,7 @@ pub fn take(
 /// hit radius of the caster's own body, which the range check takes beside the target's.
 /// The spell is the creature's pick (genesis_prime/game/activate `pick`); a cast that
 /// cannot start is refused with the result the client names, and one that can runs as any
-/// cast does, for the creature's activate cast time, and its go raises `Activated`.
+/// cast does, for the activate cast time (`activation_spell`), and its last go raises `Activated`.
 pub fn activate(
   cast cast: State,
   body body: BitArray,
@@ -1717,13 +1717,23 @@ fn interaction_of(spell spell: Spell) -> Interaction {
   NoInteraction
 }
 
-/// The plan's spell as an activate cast casts it: one go after the creature's activate
-/// cast time, with the cast bar shown, whatever the spell's own cast time, phases or
-/// channel are (`Creature2.activateSpellCastTime`). A castMethod 5 spell casts the same
-/// way, its time the creature's when that is set and else the spell's own, and its bar
+/// The plan's spell as an activate cast casts it, with the cast time the client takes for
+/// it: the creature's `activateSpellCastTime` when that is not 0, else the spell's own
+/// castTime (`0x14054e340`, GetActivateCastTime). A Normal spell, and a spell of any other
+/// built method, goes once after that time with the cast bar shown, whatever its phases or
+/// channel are. A Channeled spell whose activate time is its channelMaxTime keeps its
+/// channel: the client replaces only the cast's duration and keeps the go count of the
+/// channel (`0x14053d1f0.activate_channel`, `cast.channel_sequence`), so its gos and its
+/// finish are the channel's. A castMethod 5 spell casts the same way as a Normal one, its bar
 /// shown only when that time is not 0 (`opcode.0x7ff.csi_cast_bar`); its go also waits for
 /// the client's answer (`asked`). A spell whose method is not built is left as it is, so
 /// the verdict refuses it.
+///
+/// Gap: a Channeled spell whose activate time is not its channelMaxTime (one whose own
+/// castTime is 0 with no creature time, or a creature time other than the channel's) is
+/// cast as a Normal spell: the client keeps its go count and the times the server picks
+/// for them are not settled, the issue "Quests, zones and prerequisites work on the real
+/// client" (#334).
 fn activation_spell(
   spell spell: Spell,
   cast_time_ms cast_time_ms: Int,
@@ -1733,22 +1743,36 @@ fn activation_spell(
     when: !is_built(spell.method) && !interaction,
     return: spell,
   )
-  let cast_time_ms = case interaction && cast_time_ms == 0 {
-    True -> spell.cast_time_ms
-    False -> cast_time_ms
+  let cast_time_ms = case cast_time_ms {
+    0 -> spell.cast_time_ms
+    creature_time -> creature_time
   }
-  spell_plan.Spell(
-    ..spell,
-    method: spell_plan.Normal,
-    cast_time_ms:,
-    cast_bar: case interaction && cast_time_ms == 0 {
-      True -> spell_plan.HidesCastBar
-      False -> spell_plan.ShowsCastBar
-    },
-    phase_delays_ms: [],
-    channel: None,
-    stages: [],
-  )
+  case spell.channel {
+    Some(channel)
+      if spell.method == spell_plan.Channeled
+      && cast_time_ms == channel.max_time_ms
+    ->
+      spell_plan.Spell(
+        ..spell,
+        cast_time_ms:,
+        cast_bar: spell_plan.ShowsCastBar,
+        phase_delays_ms: [],
+        stages: [],
+      )
+    Some(_) | None ->
+      spell_plan.Spell(
+        ..spell,
+        method: spell_plan.Normal,
+        cast_time_ms:,
+        cast_bar: case interaction && cast_time_ms == 0 {
+          True -> spell_plan.HidesCastBar
+          False -> spell_plan.ShowsCastBar
+        },
+        phase_delays_ms: [],
+        channel: None,
+        stages: [],
+      )
+  }
 }
 
 /// The activate cast of `unit_id` under the same checks as a press of its spell, then
@@ -5499,11 +5523,13 @@ fn go(
         True -> rearmed(cast:, cast_id:, now_ms:)
         False -> #(cast, [])
       }
+      // The activation is applied by the cast's last go: a channel's Activate row is
+      // delayed to it (Spell4Effects 10256, delayTime 2999 of a 3000 ms channel).
       let activated = case live.activation {
-        Some(Activating(unit_id:, creature_id:, alive_at_press:, ..)) -> [
-          Activated(unit_id:, creature_id:, alive_at_press:),
-        ]
-        None -> []
+        Some(Activating(unit_id:, creature_id:, alive_at_press:, ..))
+          if live.gone == go_count
+        -> [Activated(unit_id:, creature_id:, alive_at_press:)]
+        Some(_) | None -> []
       }
       // The first go of a quest button's cast counts the objective: a later go of the
       // same cast counts nothing more.

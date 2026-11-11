@@ -1721,9 +1721,10 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
 
 /// An Exile in World 3460 one unit east of the tutorial's mine (Creature2 73463, world
 /// database row 29098), holding quest 10518 with its objective 0 done, who has pressed
-/// the mine's activate, an instant cast (`Creature2.activateSpellCastTime` is 0): the
-/// game, the mine's unit, what the client has read after its pong and the frames the
-/// client has read so far.
+/// the mine's activate, a cast of Spell4 85452's castTime, 2000 ms
+/// (`Creature2.activateSpellCastTime` is 0, so `0x14054e340` takes the spell's): the
+/// game, the mine's unit, what the client has read after the cast's finish and its pong and
+/// the frames the client has read so far.
 fn exile_whose_mine_cast_went() -> #(
   login_support.Started,
   game_client.Game,
@@ -1790,9 +1791,14 @@ fn exile_whose_mine_cast_went() -> #(
     message_id: cast_activate.message_id,
     body: press,
   )
-  // The creature's activateSpellCastTime is 0, so the cast goes at the press and the
-  // server has written all it held for this connection when its pong comes.
-  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 1)
+  // The cast goes and finishes after its time, so the client waits for the server's 0x7fe,
+  // and the server has written all it held for this connection when its pong comes.
+  let #(cast, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x07FE })
+    })
+  let #(rest, have) = game_client.read_until_pong(game:, have:, number: 1)
+  let pressed = list.append(cast, rest)
   assert list.any(pressed, fn(frame) { frame.message_id == 0x07FD })
     as "opcode.0x7fd: the press is confirmed"
   #(started, game, mine.unit_id, have, pressed)
@@ -1801,7 +1807,7 @@ fn exile_whose_mine_cast_went() -> #(
 pub fn a_mine_cast_counts_the_exile_objective_test() -> Nil {
   use <- owned_test.run(60_000)
   // Creature2 73463 casts activate spell 85452 (activateSpellCastTime 0, so the cast goes
-  // at the press) and links to quest 10518 through Prerequisite 41818 (type 43 on quest 10518
+  // after the spell's castTime, 2000 ms) and links to quest 10518 through Prerequisite 41818 (type 43 on quest 10518
   // value 1 or on quest 10524 value 1). Objective 21287 is index 1 of quest 10518
   // (type 5, count 1, flags 3). The client sends nothing at the go, and the server
   // tells it the progress (opcode.0x361: the quest, the objective, the value 1). The

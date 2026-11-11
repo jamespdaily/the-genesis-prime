@@ -68,8 +68,8 @@ pub type Column {
 pub type Creature {
   Creature(
     columns: List(Column),
-    /// Creature2.activateSpellCastTime: the cast time of an activate cast, whatever
-    /// the spell's own is.
+    /// Creature2.activateSpellCastTime: the cast time of an activate cast when it is not 0,
+    /// else the spell's own (`0x14054e340`).
     cast_time_ms: Int,
     /// Creature2.activateSpellMinRange and activateSpellMaxRange.
     min_range: Float,

@@ -561,3 +561,9 @@ Creature2	13623	checklist target of objective 5052	game_wire_test
 Quest2Reward	2192	reward choice of quest 3886	game_wire_test
 Quest2Reward	2430	reward choice of quest 3886	game_wire_test
 Quest2Reward	4767	reward choice of quest 3886	game_wire_test
+Creature2	8047	a creature whose activate spell is a channel with activateSpellCastTime 0	cast_activate_test, activate_test, game_connection_activate_test
+Spell4	5725	the channel Creature2 8047 casts (castTime 3000, channel 0, 3000, 2999)	cast_activate_test, activate_test, game_connection_activate_test
+Spell4Base	5020	the base of Spell4 5725 (castMethod 1)	cast_activate_test, activate_test, game_connection_activate_test
+Creature2	766	a creature with a Normal activate spell and activateSpellCastTime 0 (Northern Wilds Teleporter)	cast_activate_test
+Spell4	1783	the Normal spell Creature2 766 casts (castTime 2000)	cast_activate_test
+Quest2	2570	the quest whose state 1 opens the anim-state link of Creature2 8047 (Prerequisite 1276)	game_connection_activate_test
