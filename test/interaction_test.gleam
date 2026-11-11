@@ -43,6 +43,7 @@ import genesis_prime/game/vendor
 import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/buyback_removed
 import genesis_prime/message/currency_changed.{CurrencyChanged}
+import genesis_prime/message/currency_gained.{CurrencyGained}
 import genesis_prime/message/dialog_responses_shown.{DialogResponsesShown}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/generic_error.{GenericError}
@@ -760,8 +761,9 @@ pub fn a_sell_sent_while_the_store_works_is_held_and_taken_after_test() -> Nil {
         ),
       ),
     )
-  assert connection_support.written_ids(answered) == [0x0919, 0x017F, 0x00BA]
-    as "opcode.0x919 (the total), 0x17F (3 left, reason 7) and 0xBA (the buyback entry): the sale's answer goes out first, then the held line is taken"
+  assert connection_support.written_ids(answered)
+    == [0x0919, 0x00DD, 0x017F, 0x00BA]
+    as "opcode.0x919 (the total), opcode.0xdd (the gain), 0x17F (3 left, reason 7) and 0xBA (the buyback entry): the sale's answer goes out first, then the held line is taken"
   assert connection_support.ask_request(answered)
     == sale_asked(held: 3, quantity: 3, credits_held: 102)
     as "the held 0x166 is taken against the state after the first sale: 3 are left and 102 credits are held"
@@ -1045,8 +1047,8 @@ pub fn selling_a_worn_item_sends_0x148_then_0x933_and_0x93a_and_tells_each_viewe
       ),
     )
   assert connection_support.written_ids(answered)
-    == [0x0919, 0x0148, 0x00BA, 0x0933, 0x093A, 0x092F]
-    as "the sale's total, the removal, the buyback entry, then the look and the properties as the delete of a worn item sends them, then the health the lower maximum caps"
+    == [0x0919, 0x00DD, 0x0148, 0x00BA, 0x0933, 0x093A, 0x092F]
+    as "the sale's total, opcode.0xdd's gain line, the removal, the buyback entry, then the look and the properties as the delete of a worn item sends them, then the health the lower maximum caps"
   let assert [total] =
     connection_support.decoded(
       connection_support.written(answered),
@@ -1055,6 +1057,15 @@ pub fn selling_a_worn_item_sends_0x148_then_0x933_and_0x93a_and_tells_each_viewe
     )
   assert total == CurrencyChanged(kind: 0, total: 150, field_3: 0, field_4: 0)
     as "opcode.0x919: the total the store left"
+  let assert [gain] =
+    connection_support.decoded(
+      connection_support.written(answered),
+      0x00DD,
+      currency_gained.decode,
+    )
+  assert gain
+    == CurrencyGained(currency_type_id: 1, amount: 50, signature_amount: 0)
+    as "opcode.0xdd: credits are type 1, and the gain is the 150 the store left less the 100 held"
   let assert [removed] =
     connection_support.decoded(
       connection_support.written(answered),
