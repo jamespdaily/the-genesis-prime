@@ -561,6 +561,12 @@ Creature2	13623	checklist target of objective 5052	game_wire_test
 Quest2Reward	2192	reward choice of quest 3886	game_wire_test
 Quest2Reward	2430	reward choice of quest 3886	game_wire_test
 Quest2Reward	4767	reward choice of quest 3886	game_wire_test
+Creature2	8047	a creature whose activate spell is a channel with activateSpellCastTime 0	cast_activate_test, game_connection_activate_test
+Spell4	5725	the channel Creature2 8047 casts (castTime 3000, channel 0, 3000, 2999)	cast_activate_test, game_connection_activate_test
+Spell4Base	5020	the base of Spell4 5725 (castMethod 1)	cast_activate_test, game_connection_activate_test
+Creature2	766	a creature with a Normal activate spell and activateSpellCastTime 0 (Northern Wilds Teleporter)	cast_activate_test
+Spell4	1783	the Normal spell Creature2 766 casts (castTime 2000)	cast_activate_test
+Quest2	2570	the quest whose state 1 opens the anim-state link of Creature2 8047 (Prerequisite 1276)	game_connection_activate_test
 Item2	12444	Incendiary Grenade, the slaver-shack quest item	item_use_test
 Item2	12402	Yockum Bingberry Tonic, an item that names no quest	item_use_test
 Item2	21966	Security access codes item of the objective 14327	item_use_test
@@ -697,3 +703,6 @@ QuestObjective	9399	type 11 cast objective of Spell4 32581	cast_shortcut_test
 QuestObjective	8221	type 11 cast objective of Spell4 30832	cast_shortcut_test
 QuestObjective	5085	type 11 cast objective of Spell4 25207	cast_shortcut_test
 QuestObjective	3018	type 11 cast objective of Spell4 5725	cast_shortcut_test
+Creature2	33885	a creature whose activate time (1500) differs from its first column's spell castTime (4000)	cast_activate_test
+Spell4	46055	the ungated first activate spell of Creature2 33885 (castTime 4000)	cast_activate_test
+Creature2	46497	a creature whose four activate columns are all gated by Exile-only (base faction 166) prerequisites and whose activateSpellCastTime is 3000	cast_activate_test

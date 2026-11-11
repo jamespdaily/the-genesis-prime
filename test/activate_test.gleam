@@ -95,7 +95,13 @@ pub fn seaspine_mollusk_activates_with_1817_test() -> Nil {
     activate.planned_of(activations:, spell4_id: 1817)
     as "the load plans Spell4 1817"
   assert effects
-    == [ActivateEffect(effect_id: Spell4EffectsId(2821), delay_ms: 0)]
+    == [
+      ActivateEffect(
+        effect_id: Spell4EffectsId(2821),
+        delay_ms: 0,
+        phase_flags: 1,
+      ),
+    ]
     as "Spell4 1817's one Activate row is Spell4Effects 2821, delay 0"
 }
 
@@ -132,7 +138,13 @@ pub fn activate_spell_with_an_unread_target_effect_is_planned_test() -> Nil {
     activate.planned_of(activations:, spell4_id: 34_512)
     as "Spell4 34512 is planned: its only other row, Spell4Effects 179989, is effectType 107 aimed at the primary target (targetFlags 2), a type no server rule reads, which the strike drops on every path"
   assert effects
-    == [ActivateEffect(effect_id: Spell4EffectsId(68_310), delay_ms: 0)]
+    == [
+      ActivateEffect(
+        effect_id: Spell4EffectsId(68_310),
+        delay_ms: 0,
+        phase_flags: 1,
+      ),
+    ]
     as "Spell4Effects 68310 is Spell4 34512's Activate row, delay 0"
 }
 
@@ -228,16 +240,28 @@ pub fn the_activations_plan_item_spells_with_an_activate_effect_test() -> Nil {
     activate.planned_of(activations:, spell4_id: 26_663)
     as "Spell4 26663, ItemSpecial 4363's spell, is planned"
   assert effects
-    == [ActivateEffect(effect_id: Spell4EffectsId(43_805), delay_ms: 0)]
-    as "Spell4Effects 43805 is its Activate row, delay 0"
+    == [
+      ActivateEffect(
+        effect_id: Spell4EffectsId(43_805),
+        delay_ms: 0,
+        phase_flags: 1,
+      ),
+    ]
+    as "Spell4Effects 43805 is its Activate row, delay 0, phaseFlags 1"
   assert limits == Limits(min: 0.0, max: 30.0, vertical: -1.0)
     as "Spell4 26663: targetMaxRange 30.0, no minimum, targetVerticalRange -1"
   let assert Ok(Planned(effects:, limits:, ..)) =
     activate.planned_of(activations:, spell4_id: 1545)
     as "Spell4 1545, ItemSpecial 4350's spell, is planned"
   assert effects
-    == [ActivateEffect(effect_id: Spell4EffectsId(2348), delay_ms: 0)]
-    as "Spell4Effects 2348 is its Activate row, delay 0"
+    == [
+      ActivateEffect(
+        effect_id: Spell4EffectsId(2348),
+        delay_ms: 0,
+        phase_flags: 1,
+      ),
+    ]
+    as "Spell4Effects 2348 is its Activate row, delay 0, phaseFlags 1"
   assert limits.max == 5.0 as "Spell4 1545: targetMaxRange 5.0"
   assert activate.planned_of(activations:, spell4_id: 41_914) == Error(Nil)
     as "Spell4 41914 has no Activate row, so no plan is held"

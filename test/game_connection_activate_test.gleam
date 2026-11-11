@@ -14,6 +14,9 @@
 ////   Spell4Base 20651 of castMethod 5.
 //// - `opcode.0x805` and `opcode.0x7f4`: the client's answer 1 to its interaction is followed
 ////   by the server's go and finish.
+//// - Creature2 8047: activateSpellCastTime 0, activate spell 5725 (Spell4Base 5020 of castMethod 1;
+////   channelInitialDelay 0, channelMaxTime 3000, channelPulseTime 2999), `cast.channel_sequence`:
+////   the channel's last go comes before its finish.
 
 import connection_rule_support as support
 import game_connection_support as connection_support
@@ -479,4 +482,79 @@ pub fn the_picture_gives_an_activate_cast_the_creatures_life_combat_and_disposit
     ))
     == [cast_result.TargetIsNotUseable]
     as "0x14047a060 withholds the click of a unit Hostile to the player's faction (the tests' player is a Dominion one): 100"
+}
+
+/// A Scanning Crystal (Creature2 8047) as unit `nearby`, 1.0 east of the player.
+fn crystal() -> Created {
+  static_object.create(
+    object: StaticObject(
+      ..spawn_support.holoring(
+        number: nearby,
+        place: east_of_the_player(east: 1.0),
+      ),
+      creature_id: Creature2Id(8047),
+      display_info_id: mollusk_display,
+    ),
+    unit_id: nearby,
+    server_time_estimate_start: 0,
+  )
+}
+
+pub fn using_a_channel_creature_sends_both_gos_before_the_finish_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Creature2 8047 casts Spell4 5725, a channel of 3000 ms whose go count the client keeps for an
+  // activate cast (`0x14053d1f0.activate_channel`): the gos are at 0 and 2999 ms, and the
+  // cast finishes at channelMaxTime, 3000 ms (`cast.channel_sequence`). The clock is the
+  // test's: the press is at 1000 ms.
+  // The crystal's anim-state link is Prerequisite 1276 (a type 6 condition on quest 2570 in
+  // state 1), so the client offers it to a player who holds quest 2570 accepted.
+  let #(seeing, _) =
+    connection_support.feed(
+      connection_support.in_world_as_exile_holding(quests: [
+        quest_support.accepted(quest_id: 2570, progress: [0]),
+      ]),
+      connection_support.sent_by_the_map(ObjectsSeen(units: [crystal()])),
+    )
+  let #(pressed, started) =
+    connection_support.at(
+      state: seeing,
+      ms: 1000,
+      event: step.OwnEvent(
+        step.Read(right_click_bytes(
+          client_cast_id: clients_cast_id,
+          unit_id: nearby,
+        )),
+      ),
+    )
+  assert connection_support.written_ids(started) == [0x07FD, 0x07F4]
+    as "the confirmation, then the first go at 0 ms"
+  let pending = connection_support.cast_timers(steps: [started], ms: 1000)
+  let #(waiting, pending, early) =
+    connection_support.casts_left(
+      state: pressed,
+      pending:,
+      until_ms: 3998,
+      steps: [],
+    )
+  assert early == []
+    as "nothing is written before the second go: no go and no 0x7fe"
+  let #(went, pending, second) =
+    connection_support.casts_left(
+      state: waiting,
+      pending:,
+      until_ms: 3999,
+      steps: [],
+    )
+  assert list.map(second, connection_support.written_ids) == [[0x07F4]]
+    as "the second go at 2999 ms after the accept, alone"
+  let #(_, pending, last) =
+    connection_support.casts_left(
+      state: went,
+      pending:,
+      until_ms: 4000,
+      steps: [],
+    )
+  assert list.map(last, connection_support.written_ids) == [[0x07FE]]
+    as "the finish at 3000 ms after the accept"
+  assert pending == [] as "nothing is left to fire"
 }
