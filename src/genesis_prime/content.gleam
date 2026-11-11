@@ -106,6 +106,7 @@ import genesis_prime/store/worker
 import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/game_number
+import genesis_prime/world_map/objective_spawn
 import genesis_prime/world_map/sight
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id
@@ -292,10 +293,13 @@ fn read(
     Ok(kinds) -> Ok(kinds)
     Error(..) -> creature_kind.taken(rows: kind_rows, tables:)
   }
+  // A kill objective's creature with no stored spawn in its marker's world stands in
+  // the marker's circle; the placed rows are checked with the stored ones.
+  let placed = objective_spawn.place(tables:, stored: rows)
   let selection = case kinds_for_spawns {
     Ok(kinds) ->
       spawn.select(
-        rows:,
+        rows: list.append(rows, placed.rows),
         tables:,
         formulas: rating.formulas(tables:),
         kinds:,
@@ -328,6 +332,9 @@ fn read(
           spawn.describe_coverage(coverage:),
           step.no_one,
         )
+      })
+      list.each(objective_spawn.report(placed:), fn(line) {
+        runtime.log(step.LogInfo, line, step.no_one)
       })
       log_levels_out_of_range(selection)
       content_spawn.put(key:, selection:)

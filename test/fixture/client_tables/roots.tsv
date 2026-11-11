@@ -436,3 +436,21 @@ Creature2	34758	first activate column Spell4 38925 behind Prerequisite 13244, a 
 Quest2	7153	quest whose only objective is a type 14 checklist of Creature2 34758, read by Prerequisite 13244	cast_activate_test, cast_activate_unit_test
 QuestObjective	13230	type 14 objective of TargetGroup 4233, count 10	cast_activate_test, cast_activate_unit_test
 TargetGroup	4233	type 1 group of Creature2 34758	cast_activate_test, cast_activate_unit_test
+QuestObjective	21290	type 8 objective of TargetGroup 14356, count 3, marker 51740	objective_spawn_test
+QuestObjective	21296	type 2 objective of Creature2 73499, count 1, marker 51744	objective_spawn_test, game_wire_test
+QuestObjective	21310	second type 2 objective of Creature2 73499 at marker 51744, count 1	objective_spawn_test
+QuestObjective	21316	type 2 objective of Creature2 74862, count 2, markers 52902 and 52903	objective_spawn_test
+QuestObjective	21317	type 8 objective of TargetGroup 14402, count 3, marker 53015	objective_spawn_test
+WorldLocation2	51744	objective circle of radius 27 in World 3460	objective_spawn_test, game_wire_test
+WorldLocation2	51740	objective circle of radius 38 in World 3460	objective_spawn_test
+WorldLocation2	53015	objective circle of radius 38 in World 3460	objective_spawn_test
+WorldLocation2	52902	objective circle of radius 1 in World 3460	objective_spawn_test
+WorldLocation2	52903	objective circle of radius 1 in World 3460	objective_spawn_test
+TargetGroup	14356	type 1 group of Creature2 73492 and 73567	objective_spawn_test
+TargetGroup	14402	type 1 group of Creature2 73473 and 73566	objective_spawn_test
+Creature2	73499	the boss of objectives 21296 and 21310	objective_spawn_test, game_wire_test
+Creature2	73492	member of TargetGroup 14356	objective_spawn_test
+Creature2	73567	member of TargetGroup 14356	objective_spawn_test
+Creature2	73473	member of TargetGroup 14402	objective_spawn_test
+Creature2	73566	member of TargetGroup 14402	objective_spawn_test
+Creature2	74862	turret of objective 21316	objective_spawn_test

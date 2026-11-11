@@ -87,6 +87,7 @@ import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
 import genesis_prime/message/start_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
+import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_create_static
 import genesis_prime/message/unit_destroyed
@@ -3573,8 +3574,11 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
   )
   send_play(game: first, character_id: first_character)
   let #(_burst, have) = game_client.read_entry_kept(game: first, have: <<>>)
-  let #(frames, _) = game_client.read_kept(game: first, have:, count: 54)
-  let seen = game_client.creatures_created_in(frames:)
+  let #(frames, _) =
+    game_client.read_until(game: first, have:, found: fn(frames) {
+      list.length(planted_creatures_in(frames:)) >= 54
+    })
+  let seen = planted_creatures_in(frames:)
   assert list.length(seen) == 54
     as "one 0x262 for each of the 54 spawns: the 27 Virtual Battle Beasts and the 27 Virtual Defense Daguns, all within 1024 units of the characters in Warfare Woods"
   let units = list.map(seen, fn(creature) { creature.unit_id })
@@ -3608,11 +3612,12 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
   )
   send_play(game: second, character_id: second_character)
   let #(_burst, have) = game_client.read_entry_kept(game: second, have: <<>>)
-  let #(frames, _) = game_client.read_kept(game: second, have:, count: 54 + 1)
+  let #(frames, _) =
+    game_client.read_until(game: second, have:, found: fn(frames) {
+      list.length(planted_creatures_in(frames:)) >= 54
+    })
   assert list.sort(
-      list.map(game_client.creatures_created_in(frames:), fn(creature) {
-        creature.unit_id
-      }),
+      list.map(planted_creatures_in(frames:), fn(creature) { creature.unit_id }),
       int.compare,
     )
     == list.sort(units, int.compare)
@@ -3620,6 +3625,17 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
   game_client.close(game: first)
   game_client.close(game: second)
   login_support.stop(started)
+}
+
+/// The creatures the frames create that are the planted Virtual Battle Beasts and
+/// Virtual Defense Daguns; the creatures a kill objective's marker places in the same
+/// world arrive in the same range and are not among them.
+fn planted_creatures_in(
+  frames frames: List(Frame),
+) -> List(unit_create_creature.UnitCreateCreature) {
+  list.filter(game_client.creatures_created_in(frames:), fn(creature) {
+    creature.creature_id == 73_464 || creature.creature_id == 73_465
+  })
 }
 
 /// The Creature2 ids of the static objects the frames create, sorted: the 0x262 of a
