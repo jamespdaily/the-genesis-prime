@@ -3,8 +3,9 @@
 ////
 //// A union inside a message body: one entry of the combat log: the type in 6
 //// bits picks the layout of its data. Gap: the schema holds types 1, 2, 18,
-//// 22, 23 and 24, and the client's reader takes 0 to 35. Its variants are
-//// listed in `schema.toml` with the client's evidence, and the fact file's
+//// 22, 23 and 24, and the client's reader takes 0 to 35; the other types are
+//// open under issue 336, spells work in depth on the real client. Its variants
+//// are listed in `schema.toml` with the client's evidence, and the fact file's
 //// `opcode.0x247` names the union.
 
 import genesis_prime/message/bit_stream.{

@@ -2780,7 +2780,7 @@ fields = [
 [[union]]
 name = "combat_log_entry"
 evidence = "opcode.0x247"
-summary = "one entry of the combat log: the type in 6 bits picks the layout of its data. Gap: the schema holds types 1, 2, 18, 22, 23 and 24, and the client's reader takes 0 to 35"
+summary = "one entry of the combat log: the type in 6 bits picks the layout of its data. Gap: the schema holds types 1, 2, 18, 22, 23 and 24, and the client's reader takes 0 to 35; the other types are open under issue 336, spells work in depth on the real client"
 tag_bits = 6
 variants = [
   { tag = 1, name = "cc_state", record = "combat_log_cc_state", named_by = "opcode.0x247.cc_state" },
