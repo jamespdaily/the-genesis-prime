@@ -160,7 +160,10 @@ pub type QuestRow {
 /// placeholder objective's id (0 for none), whether the quest is tracked, the done
 /// mask (a bit for each of the six objectives), the progress of each objective, the
 /// quest's time left and each objective's time left, in milliseconds. There is one
-/// timer for each progress value (`character_quest_timers_match_progress`).
+/// timer for each progress value (`character_quest_timers_match_progress`). `kill_mask`
+/// is the creatures of a named group already killed, one 7-bit value for each of the
+/// six objective slots (`character_quest_kill_mask_fits_7_bits`,
+/// `character_quest_kill_mask_has_six_slots`).
 pub type ActiveQuest {
   ActiveQuest(
     placeholder_objective_id: Int,
@@ -169,6 +172,7 @@ pub type ActiveQuest {
     progress: List(Int),
     quest_ms_left: Int,
     objective_ms_left: List(Int),
+    kill_mask: List(Int),
   )
 }
 
