@@ -45,6 +45,7 @@ import genesis_prime/message/item_delete.{ItemDelete}
 import genesis_prime/message/item_move.{ItemMove}
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/item_split.{ItemSplit}
+import genesis_prime/message/item_use.{ItemUse}
 import genesis_prime/message/login_request.{LoginRequest}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
 import genesis_prime/message/movement_command
@@ -400,6 +401,18 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
         item_guid: 0x1_0000_0002,
         to: ItemPlace(location: 1, bag_index: 5),
         count: 3,
+      )),
+    ),
+    #(
+      0x0943,
+      client_message.ItemUse(message: ItemUse(
+        client_cast_id: 7,
+        item: ItemPlace(location: 1, bag_index: 4),
+        target_unit_id: 0x2001,
+        second_item: ItemPlace(location: 300, bag_index: 0xffffffff),
+        position_x: 0x3f800000,
+        position_y: 0,
+        position_z: 0x40000000,
       )),
     ),
     #(
