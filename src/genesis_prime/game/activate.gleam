@@ -74,6 +74,9 @@ pub type Creature {
     /// Creature2.activateSpellMinRange and activateSpellMaxRange.
     min_range: Float,
     max_range: Float,
+    /// Creature2.flags bit 0: with no cast group a cast may target the creature only by
+    /// its own activate spell (`CheckCastActivateSpell 0x1403b44b0`).
+    only_own_spells: Bool,
   )
 }
 
@@ -89,6 +92,7 @@ pub fn creature_of(row row: creature2.Creature2) -> Creature {
     cast_time_ms: row.activate_spell_cast_time,
     min_range: row.activate_spell_min_range,
     max_range: row.activate_spell_max_range,
+    only_own_spells: int.bitwise_and(row.flags, 1) == 1,
   )
 }
 
@@ -490,6 +494,9 @@ pub type Target {
     link: Link,
     body: Body,
     alive: Bool,
+    /// Whether the creature is in combat, which a cast's target conditions may test (bit 1
+    /// of the target row's mask).
+    in_combat: Bool,
     withheld: Option(Withheld),
   )
 }
@@ -609,4 +616,59 @@ pub fn planned_of(
   spell4_id spell4_id: Int,
 ) -> Result(Planned, Nil) {
   dict.get(activations.spells, spell4_id)
+}
+
+/// Why the cast group rule does not pass a target.
+pub type CastGroupRefusal {
+  /// Result 89 (TargetGroup).
+  OutsideGroup
+  /// The creature's activate pick holds a condition the server does not read, so whether
+  /// its activate spell is the cast spell cannot be told.
+  PickUnread(prerequisite_type: Int)
+  /// A cast group tests a player by words the server does not hold (a player's faction
+  /// and race), so the group's verdict cannot be told.
+  PlayerUnread
+}
+
+/// The client's cast group rule for a cast of `spell4_id` at a unit (`CheckCastActivateSpell
+/// 0x1403b44b0`), which runs after the target's conditions and before the faction test and
+/// the range. In order:
+/// - a creature whose activate spell is the cast spell passes;
+/// - else a cast group decides: `in_cast_group(cast_group_id, unit_id)` for a member, 89
+///   for a non-member;
+/// - else a creature whose Creature2.flags bit 0 is set is refused 89;
+/// - else the cast passes.
+///
+/// `picked` is the creature's activate pick, read only when the outcome depends on it: a
+/// group that holds the unit, and a creature with no flag bit 0 and no group, pass whatever
+/// the pick is.
+pub fn passes_cast_group(
+  spell4_id spell4_id: Int,
+  cast_group_id cast_group_id: Int,
+  unit_id unit_id: Int,
+  target target: Target,
+  picked picked: fn() -> Pick,
+  in_cast_group in_cast_group: fn(Int, Int) -> Bool,
+) -> Result(Nil, CastGroupRefusal) {
+  case target {
+    Unseen -> Error(OutsideGroup)
+    AnotherPlayer ->
+      case cast_group_id {
+        0 -> Ok(Nil)
+        _ -> Error(PlayerUnread)
+      }
+    Usable(creature:, ..) -> {
+      let holds = cast_group_id != 0 && in_cast_group(cast_group_id, unit_id)
+      let needs_pick = case cast_group_id {
+        0 -> creature.only_own_spells
+        _ -> !holds
+      }
+      use <- bool.guard(when: !needs_pick, return: Ok(Nil))
+      case picked() {
+        Picked(spell4_id: own) if own == spell4_id -> Ok(Nil)
+        Picked(..) | NoActivateSpell -> Error(OutsideGroup)
+        Unread(prerequisite_type:) -> Error(PickUnread(prerequisite_type:))
+      }
+    }
+  }
 }

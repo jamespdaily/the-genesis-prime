@@ -282,11 +282,13 @@ fn pressed_with(
             cast_time_ms: 2000,
             min_range: 0.0,
             max_range: 5.0,
+            only_own_spells: False,
           ),
           checklist_index: 0,
           link: activate.NoLink,
           body: activate.Body(place:, radius: 0.25),
           alive: True,
+          in_combat: False,
           withheld: option.None,
         )
       },

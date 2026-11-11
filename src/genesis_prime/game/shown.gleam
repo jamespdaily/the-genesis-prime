@@ -128,6 +128,24 @@ pub fn target_of(
   }
 }
 
+/// Whether the unit is a shown creature or object the TargetGroup row `group` holds
+/// (`0x1403b4a20`). A unit that is not shown, or another player, is in no group.
+pub fn in_group(
+  tables tables: table_store.Tables,
+  picture picture: Picture,
+  group group: Int,
+  unit_id unit_id: Int,
+) -> Bool {
+  case dict.get(picture, unit_id) {
+    Error(Nil) -> False
+    Ok(shown) ->
+      case target_of(tables:, shown:) {
+        Ok(#(unit, _)) -> target_group.contains(tables:, group:, unit:)
+        Error(Nil) -> False
+      }
+  }
+}
+
 /// The faction of a character, by its Faction2 id (Dominion 166, Exile 167), or
 /// `Error(Nil)` for any other.
 pub fn faction_of(faction_id faction_id: Int) -> Result(PlayerFaction, Nil) {

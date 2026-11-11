@@ -206,21 +206,52 @@ pub fn activate_message(
 
 /// The player's 0x9d, the press of the button an open cast objective gave it, from inside
 /// 0x038C in the world: the cast rule refuses the press of a spell the client holds no
-/// button for, or starts the cast on the caster, whose first go the connection counts
-/// for the objectives (`cast.ShortcutCast`). A refusal of the frame ends the connection.
+/// button for, judges the unit a targeted spell names from the picture (`activate_target`,
+/// `shown.in_group`), and starts the cast, whose first go the connection counts for the
+/// objectives (`cast.ShortcutCast`). A refusal of the frame ends the connection.
 pub fn shortcut_message(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
   inner inner: Frame,
 ) -> client_connection.Handled(Session) {
+  let tables = session.settings.tables
+  let caster = caster_of(tables:, entered:)
+  // The player's Race row is in the tables (the load fails otherwise), so a missing one
+  // crashes.
+  let assert Ok(caster_radius) =
+    hit_radius.of_player(tables:, race_id: RaceId(caster.player.race_id))
+    as "hit_radius.requirements fails the load when a playable race has no Race row"
+  let assert Ok(faction) = shown.faction_of(entered.unit.tail.faction_id)
+    as "a character's faction is Exile or Dominion (start_place)"
   case
     cast.shortcut(
       cast: entered.cast,
       body: inner.body,
-      caster: caster_of(tables: session.settings.tables, entered:),
+      caster:,
       shortcuts: connection_state.shortcut_spells_of(session:),
       held: set.map(entered.buttons, fn(button) { button.spell4_id.value }),
+      activations: connection_state.activations_of(session:),
+      target_of: activate_target(
+        tables:,
+        picture: entered.shown,
+        player: interaction.Player(
+          race_id: entered.character.race_id,
+          faction:,
+          place: movement.place(state: entered.movement),
+        ),
+        now_ms: now.monotonic_ms,
+        link_of: link_of(
+          tables:,
+          activations: connection_state.activations_of(session:),
+          state: entered.cast,
+          caster:,
+        ),
+      ),
+      in_cast_group: fn(group, unit_id) {
+        shown.in_group(tables:, picture: entered.shown, group:, unit_id:)
+      },
+      caster_radius:,
       now:,
     )
   {
@@ -439,6 +470,7 @@ fn activate_target(
             radius: hit_radius,
           ),
           alive:,
+          in_combat:,
           withheld: case in_combat {
             True -> Some(activate.InCombat)
             False ->
@@ -463,6 +495,7 @@ fn activate_target(
           link_of:,
           body: activate.Body(place:, radius: hit_radius),
           alive: True,
+          in_combat: False,
           withheld: None,
         )
     }
@@ -479,6 +512,7 @@ fn usable(
   link_of link_of: fn(Int, creature2.Creature2, Int) -> activate.Link,
   body body: activate.Body,
   alive alive: Bool,
+  in_combat in_combat: Bool,
   withheld withheld: Option(activate.Withheld),
 ) -> activate.Target {
   case
@@ -497,6 +531,7 @@ fn usable(
         link:,
         body:,
         alive:,
+        in_combat:,
         withheld:,
       )
     Error(Nil) -> activate.Unseen
@@ -764,12 +799,42 @@ pub fn cast_effects(
           Error(Nil) -> #(session, [])
         }
       cast.Activated(..), None -> #(session, [])
-      cast.ShortcutCast(spell4_id:), Some(_) ->
+      cast.ShortcutCast(spell4_id:, target: None), Some(_) ->
         connection_objective.counted(
           session:,
           now:,
-          event: objective.Cast(spell4_id: Spell4Id(spell4_id)),
+          event: objective.Cast(spell4_id: Spell4Id(spell4_id), target: None),
         )
+      cast.ShortcutCast(
+        spell4_id:,
+        target: Some(cast.PressedAt(unit_id:, alive_at_press:)),
+      ),
+        Some(entered)
+      ->
+        // A cast at a unit the player no longer sees, or that died since the press,
+        // counts for no objective, as a use does.
+        case
+          counted_target(
+            tables: session.settings.tables,
+            picture: entered.shown,
+            unit_id:,
+            alive_at_press:,
+          )
+        {
+          Ok(#(unit, _)) ->
+            connection_objective.counted(
+              session:,
+              now:,
+              event: objective.Cast(
+                spell4_id: Spell4Id(spell4_id),
+                target: Some(objective.CastTarget(
+                  unit:,
+                  ref: unit_ref(entered:, unit_id:),
+                )),
+              ),
+            )
+          Error(Nil) -> #(session, [])
+        }
       cast.ShortcutCast(..), None -> #(session, [])
       cast.Pay(payments:), _ -> connection_resource.paid(session:, payments:)
       cast.Gain(gains:), _ -> connection_resource.gained(session:, gains:)

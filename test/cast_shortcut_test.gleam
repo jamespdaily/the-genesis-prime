@@ -6,18 +6,26 @@
 //// - `0x14039b340`: the client refuses a press of a spell it holds no shortcut for with result
 ////   1 (`UnableToCreateSpell`).
 //// - `0x14055bdc0`: a spell of targetType 0, 2, 6 or 7 takes the caster, and 1, 3, 5 or 8 the
-////   player's target (step B, #728).
+////   player's target.
+//// - `opcode.0x9d.target_checks`, `CheckCast 0x1403ae8c0`, `CheckCastAndPrerequisites
+////   0x1403ace00`, `CheckCastActivateSpell 0x1403b44b0`, `CheckCastUnitTargetRange
+////   0x1403b2240`: what the client tests of a unit a press names, in its order: 91 for no
+////   unit, 32 for the caster, 106 and 107, 108, 102, 89, the range (104, 105), then the
+////   caster's and the target's cast conditions (151, 281).
 //// - Spell4 25306 (Q3915): castTime 2000, Spell4Base 11896... the objective 5197's spell.
 //// - Spell4 34448 (row 10349's spell): prerequisiteIdCasterCast 11700, `0x1403ace00`.
 //// - Spell4 70503 (row 18165's spell): Spell4Base 47487, castMethod 5 (a client-side
 ////   interaction), whose answer 0x805 carries the Spell4Base id plus 1 (`opcode.0x805.fields`).
-//// - Spell4 30173 (row 6761's spell): targetType 1.
+//// - Spell4 30173 (row 6761's spell): targetType 1, a CC state 9 the plans cannot hold.
 
 import cast_support as support
 import fixture_tables
 import genesis_prime/client_connection.{CastStarted}
+import genesis_prime/game/activate.{type Target, Body, Usable}
 import genesis_prime/game/cast.{type Effect, type State}
 import genesis_prime/game/shortcut_spell
+import genesis_prime/game/shown
+import genesis_prime/game/start_place
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
 import genesis_prime/message/client_side_interaction_result.{
@@ -27,10 +35,17 @@ import genesis_prime/message/interaction_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/step.{LogWarning}
+import genesis_prime/table/creature2
+import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/world_map/creature_life.{Attackable, Hostile}
+import genesis_prime/world_map/creature_path
+import gleam/dict
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/set.{type Set}
 import gleam/string
 import owned_test
+import place_support
 
 const the_self_spell = 25_306
 
@@ -41,9 +56,15 @@ const the_interaction_spell = 70_503
 /// Spell4Base 47487 plus 1, the word the client's 0x805 carries for spell 70503.
 const the_interaction_word = 47_488
 
-const the_targeted_spell = 30_173
-
 const clients_cast_id = 7
+
+/// The caster's own unit id (`support.caster`).
+const the_caster = 7
+
+const the_hologram_spell = 42_735
+
+/// The edge of a creature's body, whatever it is: the gap tests below are edge to edge.
+const creature_radius = 1.0
 
 fn shortcuts() -> shortcut_spell.Shortcuts {
   shortcut_spell.shortcuts(tables: fixture_tables.shared())
@@ -67,7 +88,139 @@ fn press_body(
   body
 }
 
-/// The press of the spell by the standing caster, who holds these buttons.
+/// A creature the caster's client shows: its unit id, its Creature2 row, its faction and how
+/// far its edge stands from the caster's edge, to the east.
+type Unit {
+  Unit(
+    unit_id: Int,
+    creature_id: Int,
+    faction_id: Int,
+    gap: Float,
+    alive: Bool,
+    in_combat: Bool,
+  )
+}
+
+/// What the caster's client shows: creatures and other players, by unit id.
+type Scene {
+  Scene(units: List(Unit), players: List(Int))
+}
+
+fn nothing_shown() -> Scene {
+  Scene(units: [], players: [])
+}
+
+fn unit(id unit_id: Int, of creature_id: Int, at gap: Float) -> Unit {
+  Unit(
+    unit_id:,
+    creature_id:,
+    faction_id: 0,
+    gap:,
+    alive: True,
+    in_combat: False,
+  )
+}
+
+fn place_of(unit unit: Unit) -> start_place.Place {
+  let live = place_support.live_character_place()
+  place_support.at(
+    world_id: 3460,
+    world_zone_id: 6009,
+    x: start_place.x(live)
+      +. place_support.player_hit_radius
+      +. creature_radius
+      +. unit.gap,
+    y: start_place.y(live),
+    z: start_place.z(live),
+  )
+}
+
+fn picture_of(scene scene: Scene) -> shown.Picture {
+  list.map(scene.units, fn(unit) {
+    #(
+      unit.unit_id,
+      shown.ShownCreature(
+        creature_id: Creature2Id(unit.creature_id),
+        faction_id: unit.faction_id,
+        checklist_index: 0,
+        path: creature_path.Standing(at: place_of(unit:)),
+        life: 100,
+        alive: unit.alive,
+        hit_radius: creature_radius,
+        attackable: Attackable(exile: True, dominion: True),
+        hostile_to: Hostile(exile: False, dominion: False),
+        in_combat: unit.in_combat,
+      ),
+    )
+  })
+  |> list.append(list.map(scene.players, fn(id) { #(id, shown.ShownPlayer) }))
+  |> dict.from_list
+}
+
+/// What the unit is to the caster, as the connection reads it from the picture.
+fn target_of(scene scene: Scene) -> fn(Int) -> Target {
+  fn(unit_id) {
+    case list.contains(scene.players, unit_id) {
+      True -> activate.AnotherPlayer
+      False ->
+        case list.find(scene.units, fn(unit) { unit.unit_id == unit_id }) {
+          Error(Nil) -> activate.Unseen
+          Ok(unit) -> {
+            let assert Ok(row) =
+              creature2.get(
+                tables: fixture_tables.shared(),
+                id: Creature2Id(unit.creature_id),
+              )
+              as "the creature is a root of the fixture"
+            Usable(
+              creature_id: unit.creature_id,
+              creature: activate.creature_of(row:),
+              checklist_index: 0,
+              link: activate.NoLink,
+              body: Body(place: place_of(unit:), radius: creature_radius),
+              alive: unit.alive,
+              in_combat: unit.in_combat,
+              withheld: None,
+            )
+          }
+        }
+    }
+  }
+}
+
+/// The press of the spell by the standing caster, who holds these buttons and sees this
+/// scene.
+fn press_in(
+  scene scene: Scene,
+  state state: State,
+  spell4_id spell4_id: Int,
+  held held: Set(Int),
+  client_cast_id client_cast_id: Int,
+  target target: Int,
+  at ms: Int,
+) -> Result(#(State, List(Effect)), cast.Refusal) {
+  let picture = picture_of(scene:)
+  cast.shortcut(
+    cast: state,
+    body: press_body(client_cast_id:, spell4_id:, target:),
+    caster: support.caster(),
+    shortcuts: shortcuts(),
+    held:,
+    activations: activate.activations(tables: fixture_tables.shared()),
+    target_of: target_of(scene:),
+    in_cast_group: fn(group, unit_id) {
+      shown.in_group(
+        tables: fixture_tables.shared(),
+        picture:,
+        group:,
+        unit_id:,
+      )
+    },
+    caster_radius: place_support.player_hit_radius,
+    now: support.at(ms:),
+  )
+}
+
 fn press_holding(
   state state: State,
   spell4_id spell4_id: Int,
@@ -76,13 +229,52 @@ fn press_holding(
   target target: Int,
   at ms: Int,
 ) -> Result(#(State, List(Effect)), cast.Refusal) {
-  cast.shortcut(
-    cast: state,
-    body: press_body(client_cast_id:, spell4_id:, target:),
-    caster: support.caster(),
-    shortcuts: shortcuts(),
+  press_in(
+    scene: nothing_shown(),
+    state:,
+    spell4_id:,
     held:,
-    now: support.at(ms:),
+    client_cast_id:,
+    target:,
+    at: ms,
+  )
+}
+
+/// The press, at a unit, of a held spell, which the rule must take whatever it answers.
+fn press_at(
+  scene scene: Scene,
+  state state: State,
+  spell4_id spell4_id: Int,
+  target target: Int,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  let assert Ok(taken) =
+    press_in(
+      scene:,
+      state:,
+      spell4_id:,
+      held: set.from_list([spell4_id]),
+      client_cast_id: clients_cast_id,
+      target:,
+      at: ms,
+    )
+    as "a 0x9d that fits the message is taken, started or refused"
+  taken
+}
+
+/// Every effect of a press played out on a clock the test drives: the press's, then each
+/// timer's in turn, with each go striking nobody. Returns the time each timer fired at.
+fn played(
+  state state: State,
+  pressed pressed: List(Effect),
+  at ms: Int,
+) -> #(List(Int), List(Effect)) {
+  let #(state, started) =
+    support.answered_with_no_targets(state:, effects: pressed, at: ms)
+  let #(_, steps) = support.run_timers(state:, effects: started, from_ms: ms)
+  #(
+    list.map(steps, fn(step) { step.0 }),
+    list.append(started, flattened(steps:)),
   )
 }
 
@@ -143,8 +335,8 @@ pub fn a_press_of_a_held_self_spell_casts_on_the_caster_test() -> Nil {
     == [0x07F4, 0x07FE]
     as "the go's finish 0x7fe is written before the count its go raises"
   assert support.shortcut_casts(effects:)
-    == [cast.ShortcutCast(spell4_id: the_self_spell)]
-    as "the go raises ShortcutCast for the spell, once"
+    == [cast.ShortcutCast(spell4_id: the_self_spell, target: None)]
+    as "the go raises ShortcutCast for the spell, once, with no unit: it was cast on the caster"
 }
 
 pub fn a_press_of_a_spell_not_held_is_refused_with_result_1_test() -> Nil {
@@ -192,7 +384,7 @@ pub fn a_cancelled_shortcut_cast_counts_nothing_test() -> Nil {
   let #(_, left_alone) =
     support.run_timers(state:, effects: pressed, from_ms: 1000)
   assert support.shortcut_casts(effects: flattened(steps: left_alone))
-    == [cast.ShortcutCast(spell4_id: the_self_spell)]
+    == [cast.ShortcutCast(spell4_id: the_self_spell, target: None)]
     as "the same press left alone counts at its go, so the nothing below is the cancel's"
   let id = support.pressed_id(effects: pressed)
   let assert Ok(#(cancelled, effects)) =
@@ -262,7 +454,7 @@ pub fn a_client_side_interaction_shortcut_cast_counts_after_its_answer_test() ->
     == [0x07F4, 0x07FE]
     as "the success answer sends the go, then the finish"
   assert support.shortcut_casts(effects: succeeded)
-    == [cast.ShortcutCast(spell4_id: the_interaction_spell)]
+    == [cast.ShortcutCast(spell4_id: the_interaction_spell, target: None)]
     as "the go raises ShortcutCast for the spell, once"
   let #(_, failed) = answer(interaction_result.Failed)
   assert support.shortcut_casts(effects: failed) == []
@@ -270,34 +462,429 @@ pub fn a_client_side_interaction_shortcut_cast_counts_after_its_answer_test() ->
     as "opcode.0x7fe.csi: a failed interaction fails the cast with 0x7f9 and its finish, and counts nothing"
 }
 
-pub fn a_press_of_a_held_targeted_spell_is_not_built_yet_test() -> Nil {
+/// The primary target unit of each 0x7fd the effects write.
+fn confirmed_targets(effects effects: List(Effect)) -> List(Int) {
+  list.filter_map(support.writes(effects:), fn(frame) {
+    case frame.message_id == 0x07FD {
+      True -> {
+        let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
+          as "a 0x7fd the rule wrote decodes"
+        Ok(confirmed.primary_target_unit_id)
+      }
+      False -> Error(Nil)
+    }
+  })
+}
+
+fn warnings(effects effects: List(Effect)) -> List(String) {
+  list.filter_map(support.logs(effects:), fn(line) {
+    case line {
+      #(LogWarning, text) -> Ok(text)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// What a press at `target` answers with a unit shown: the refusal results, from a fresh
+/// state.
+fn refused_at(
+  scene scene: Scene,
+  spell4_id spell4_id: Int,
+  target target: Int,
+) -> List(Int) {
+  let #(_, effects) =
+    press_at(scene:, state: cast.new(), spell4_id:, target:, at: 1000)
+  assert support.tells(effects:) == [] && support.started_timers(effects:) == []
+    as "a refused press starts no cast"
+  support.refusal_results(effects:)
+}
+
+fn code(result: cast_result.CastResult) -> Int {
+  cast_result.to_value(result)
+}
+
+pub fn a_press_of_a_targeted_spell_at_a_cast_group_unit_starts_on_it_test() -> Nil {
   use <- owned_test.run(10_000)
-  let press_targeted = fn(state) {
-    let assert Ok(taken) =
-      press_holding(
-        state:,
-        spell4_id: the_targeted_spell,
-        held: set.from_list([the_targeted_spell]),
-        client_cast_id: clients_cast_id,
-        target: 5000,
-        at: 1000,
-      )
-      as "the press is taken and refused, not an error"
-    taken
+  let scene =
+    Scene(..nothing_shown(), units: [unit(id: 900, of: 41_604, at: 10.0)])
+  let #(state, pressed) =
+    press_at(
+      scene:,
+      state: cast.new(),
+      spell4_id: the_hologram_spell,
+      target: 900,
+      at: 1000,
+    )
+  assert support.refusal_results(effects: pressed) == []
+    && support.ids(frames: support.writes(effects: pressed)) == [0x07FD]
+    as "Spell4 42735 (Spell4Base 26923: cast group 5506 holds Creature2 41604, range 15) at a unit 10 m off passes every check, and the caster is told its cast started"
+  assert confirmed_targets(effects: pressed) == [900]
+    as "0x14055bdc0: targetType 1 takes the unit the press names"
+  let assert [#(_, news), ..] = support.tells(effects: pressed)
+    as "the viewers see the start"
+  let assert CastStarted(start: started) = news
+  assert started.spell4_id == the_hologram_spell
+    && started.caster_unit_id == the_caster
+    && started.primary_target_unit_id == 900
+    as "the viewers see the cast by the caster on the unit"
+  let #(_, effects) = played(state:, pressed:, at: 1000)
+  assert support.ids(frames: support.writes(effects:))
+    == [0x07FD, 0x07F4, 0x07FE]
+    as "Spell4 42735 has castTime 0: the start, the go, then the finish"
+  assert support.shortcut_casts(effects:)
+    == [
+      cast.ShortcutCast(
+        spell4_id: the_hologram_spell,
+        target: Some(cast.PressedAt(unit_id: 900, alive_at_press: True)),
+      ),
+    ]
+    as "the go raises ShortcutCast with the unit the press named, alive"
+}
+
+pub fn a_targeted_press_with_no_target_is_refused_91_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let scene =
+    Scene(..nothing_shown(), units: [unit(id: 900, of: 41_604, at: 10.0)])
+  assert refused_at(scene:, spell4_id: the_hologram_spell, target: 0)
+    == [code(cast_result.NoTarget)]
+    as "CheckCast 0x1403ae8c0: a press that names no unit is refused 91 (CasterMustHaveTarget is 31, TargetUnknown 90)"
+}
+
+pub fn a_targeted_press_at_a_unit_not_shown_is_refused_91_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let scene =
+    Scene(..nothing_shown(), units: [unit(id: 900, of: 41_604, at: 10.0)])
+  assert refused_at(scene:, spell4_id: the_hologram_spell, target: 901)
+    == [code(cast_result.NoTarget)]
+    as "a unit the caster's client does not show is refused 91 too"
+}
+
+pub fn a_targeted_press_at_the_caster_itself_is_refused_32_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let scene =
+    Scene(..nothing_shown(), units: [unit(id: 900, of: 41_604, at: 10.0)])
+  assert refused_at(scene:, spell4_id: the_hologram_spell, target: the_caster)
+    == [code(cast_result.CasterCannotBePrimaryTarget)]
+    as "Spell4TargetMechanics 3's flags are 16, without value 2: the caster cannot be its own primary target (32)"
+}
+
+pub fn a_targeted_press_at_a_unit_outside_the_cast_group_is_refused_89_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let near =
+    Scene(..nothing_shown(), units: [unit(id: 902, of: 32_668, at: 10.0)])
+  assert refused_at(scene: near, spell4_id: the_hologram_spell, target: 902)
+    == [code(cast_result.TargetGroup)]
+    as "TargetGroup 5506 holds Creature2 41604, 41609, 41611 and 41613, not 32668"
+  let far =
+    Scene(..nothing_shown(), units: [unit(id: 902, of: 32_668, at: 40.0)])
+  assert refused_at(scene: far, spell4_id: the_hologram_spell, target: 902)
+    == [code(cast_result.TargetGroup)]
+    as "the cast group is tested before the range, so 40 m off is 89 too, not 105"
+}
+
+pub fn with_no_cast_group_a_creature_only_its_own_spells_may_target_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let own =
+    Scene(..nothing_shown(), units: [unit(id: 903, of: 39_073, at: 10.0)])
+  let #(_, started) =
+    press_at(
+      scene: own,
+      state: cast.new(),
+      spell4_id: 41_218,
+      target: 903,
+      at: 1000,
+    )
+  assert support.refusal_results(effects: started) == []
+    && confirmed_targets(effects: started) == [903]
+    as "Spell4 41218 has no cast group and is Creature2 39073's activate spell (Creature2.spell4IdActivate00): it is taken"
+  let other =
+    Scene(..nothing_shown(), units: [unit(id: 904, of: 8047, at: 10.0)])
+  assert refused_at(scene: other, spell4_id: 41_218, target: 904)
+    == [code(cast_result.TargetGroup)]
+    as "Creature2 8047's flags bit 0 allows a cast only by its own activate spell (5725): 41218 is refused 89"
+  let plain =
+    Scene(..nothing_shown(), units: [unit(id: 905, of: 30_233, at: 3.0)])
+  let #(_, free) =
+    press_at(
+      scene: plain,
+      state: cast.new(),
+      spell4_id: 30_485,
+      target: 905,
+      at: 1000,
+    )
+  assert support.refusal_results(effects: free) == []
+    && confirmed_targets(effects: free) == [905]
+    as "Spell4 30485 has no cast group and Creature2 30233's flags bit 0 is clear: any spell may target it"
+}
+
+pub fn a_targeted_press_too_close_or_too_far_is_refused_104_or_105_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let at = fn(gap) {
+    Scene(..nothing_shown(), units: [unit(id: 906, of: 32_668, at: gap)])
   }
-  let #(state, first) = press_targeted(cast.new())
+  assert refused_at(scene: at(3.0), spell4_id: 36_050, target: 906)
+    == [code(cast_result.TargetRangeMin)]
+    as "Spell4 36050's targetMinRange is 5: a unit 3 m off is too close (104)"
+  assert refused_at(scene: at(20.0), spell4_id: 36_050, target: 906)
+    == [code(cast_result.TargetRangeMax)]
+    as "Spell4 36050's targetMaxRange is 15: a unit 20 m off is too far (105)"
+  let #(_, effects) =
+    press_at(
+      scene: at(10.0),
+      state: cast.new(),
+      spell4_id: 36_050,
+      target: 906,
+      at: 1000,
+    )
+  assert support.refusal_results(effects:) == []
+    && confirmed_targets(effects:) == [906]
+    as "10 m is within 5 to 15"
+}
+
+pub fn a_targeted_press_at_a_dead_unit_is_refused_106_and_a_living_one_107_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let dead = fn(creature, gap) {
+    Scene(..nothing_shown(), units: [
+      Unit(..unit(id: 907, of: creature, at: gap), alive: False),
+    ])
+  }
+  assert refused_at(scene: dead(32_668, 10.0), spell4_id: 36_050, target: 907)
+    == [code(cast_result.TargetCannotBeDead)]
+    as "Spell4Conditions 15 tests the target's life (mask 129, value 0): a dead unit is refused 106"
+  assert refused_at(scene: dead(32_526, 10.0), spell4_id: 36_050, target: 907)
+    == [code(cast_result.TargetCannotBeDead)]
+    as "the life test comes before the cast group: a dead unit outside the group is 106, not 89"
+  let alive =
+    Scene(..nothing_shown(), units: [unit(id: 907, of: 34_081, at: 3.0)])
+  assert refused_at(scene: alive, spell4_id: 38_090, target: 907)
+    == [code(cast_result.TargetMustBeDead)]
+    as "Spell4Conditions 16 (mask 225, value 1) wants the target dead: a living unit is refused 107"
+  let #(_, effects) =
+    press_at(
+      scene: dead(34_081, 3.0),
+      state: cast.new(),
+      spell4_id: 38_090,
+      target: 907,
+      at: 1000,
+    )
+  assert support.refusal_results(effects:) == []
+    && confirmed_targets(effects:) == [907]
+    as "a dead unit of the group 4075 within 5 m is taken"
+}
+
+pub fn a_targeted_press_at_a_unit_in_combat_is_refused_108_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let fighting = fn(in_combat) {
+    Scene(..nothing_shown(), units: [
+      Unit(..unit(id: 908, of: 32_526, at: 10.0), in_combat:),
+    ])
+  }
+  assert refused_at(scene: fighting(True), spell4_id: 36_212, target: 908)
+    == [code(cast_result.TargetCannotBeInCombat)]
+    as "Spell4Conditions 17 (mask 227, value 0) tests the target's combat as well as its life: a unit in combat is refused 108"
+  let #(_, effects) =
+    press_at(
+      scene: fighting(False),
+      state: cast.new(),
+      spell4_id: 36_212,
+      target: 908,
+      at: 1000,
+    )
+  assert support.refusal_results(effects:) == []
+    && confirmed_targets(effects:) == [908]
+    as "the same unit out of combat is taken"
+}
+
+pub fn a_press_at_a_player_is_refused_102_when_the_valid_targets_forbid_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let scene = Scene(units: [], players: [909])
+  assert refused_at(scene:, spell4_id: 27_684, target: 909)
+    == [code(cast_result.TargetCannotBePlayer)]
+    as "Spell4ValidTargets 10's targetBitmask is 3: bit 0 refuses a player"
+}
+
+pub fn a_press_at_a_player_that_reaches_the_faction_test_is_not_built_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let scene = Scene(units: [], players: [909])
+  let #(_, effects) =
+    press_at(
+      scene:,
+      state: cast.new(),
+      spell4_id: 30_485,
+      target: 909,
+      at: 1000,
+    )
+  assert support.refusal_results(effects:)
+    == [code(cast_result.IllegalSpellCast)]
+    as "Spell4 30485 (valid targets bitmask 2) lets a player be its target, and a player reaches the client's player faction test (0x1403b4560), which is not built: refused 285"
+  let assert [line] = warnings(effects:)
+  assert string.contains(
+    line,
+    "Quests, zones and prerequisites work on the real client",
+  )
+    as "the log names the open issue"
+  let #(_, own) =
+    press_at(
+      scene: nothing_shown(),
+      state: cast.new(),
+      spell4_id: 77_268,
+      target: the_caster,
+      at: 1000,
+    )
+  assert support.refusal_results(effects: own)
+    == [code(cast_result.IllegalSpellCast)]
+    as "Spell4TargetMechanics 4's flags (11) have value 2: the caster may be its own target, and then the player faction test judges it: refused 285"
+  let assert [own_line] = warnings(effects: own)
+  assert string.contains(
+    own_line,
+    "Quests, zones and prerequisites work on the real client",
+  )
+    as "the log names the same issue"
+}
+
+pub fn a_target_condition_reads_the_casts_the_player_holds_on_the_unit_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let scene =
+    Scene(..nothing_shown(), units: [unit(id: 910, of: 30_233, at: 3.0)])
+  assert refused_at(scene:, spell4_id: 77_268, target: 910)
+    == [code(cast_result.PrereqTargetCast)]
+    as "Spell4 77268's prerequisiteIdTargetCast is Prerequisite 36053 (type 15, comparison 1, value 77269): the unit holds no cast of 77269, so 0x1403ace00 refuses with 281"
+}
+
+pub fn a_target_condition_the_server_does_not_hold_refuses_as_not_built_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let scene =
+    Scene(..nothing_shown(), units: [unit(id: 911, of: 41_884, at: 5.0)])
+  let #(state, first) =
+    press_at(
+      scene:,
+      state: cast.new(),
+      spell4_id: 43_164,
+      target: 911,
+      at: 1000,
+    )
   assert support.refusal_results(effects: first)
-    == [cast_result.to_value(cast_result.IllegalSpellCast)]
-    as "Spell4 30173's Spell4TargetMechanics targetType is 1: it takes the player's target (0x14055bdc0), which the server does not read from the press yet, so the cast is not built"
-  assert support.tells(effects: first) == []
-    && support.started_timers(effects: first) == []
-    as "no cast starts"
-  let assert [#(LogWarning, line)] = support.logs(effects: first)
-    as "the gap is logged once"
-  assert string.contains(line, "30173") && string.contains(line, "#728")
-    as "the line names the spell and the issue that will close the gap"
-  let #(_, second) = press_targeted(state)
-  assert support.logs(effects: second) == []
-    && support.refusal_results(effects: second) != []
+    == [code(cast_result.PrereqTargetCast)]
+    as "Spell4 43164's TargetCast is Prerequisite 17071, whose first condition is type 71, which the server does not read: refused as the cast cannot be judged"
+  let assert [line] = warnings(effects: first)
+  assert string.contains(line, "43164") && string.contains(line, "71")
+    as "the log names the spell and the type"
+  let #(_, second) =
+    press_at(scene:, state:, spell4_id: 43_164, target: 911, at: 2000)
+  assert support.refusal_results(effects: second)
+    == [code(cast_result.PrereqTargetCast)]
+    && warnings(effects: second) == []
     as "a second press is refused the same and not logged again"
+}
+
+pub fn a_caster_condition_of_an_unread_type_refuses_as_not_built_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let scene =
+    Scene(..nothing_shown(), units: [unit(id: 912, of: 27_545, at: 10.0)])
+  let #(_, effects) =
+    press_at(
+      scene:,
+      state: cast.new(),
+      spell4_id: 32_581,
+      target: 912,
+      at: 1000,
+    )
+  assert support.refusal_results(effects:)
+    == [code(cast_result.PrereqCasterCast)]
+    as "Spell4 32581's CasterCast is Prerequisite 28094, a type 16 the server does not read"
+  let assert [line] = warnings(effects:)
+  assert string.contains(line, "16") as "the log names the type"
+}
+
+pub fn a_press_of_a_targeted_spell_that_cannot_be_planned_stays_not_built_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let scene =
+    Scene(..nothing_shown(), units: [unit(id: 913, of: 32_668, at: 10.0)])
+  let #(_, effects) =
+    press_at(
+      scene:,
+      state: cast.new(),
+      spell4_id: 30_173,
+      target: 913,
+      at: 1000,
+    )
+  assert support.refusal_results(effects:)
+    == [code(cast_result.IllegalSpellCast)]
+    as "Spell4 30173's tree holds a state the plans cannot: refused 285"
+  let assert [line] = warnings(effects:)
+  assert string.contains(line, "30173")
+    && string.contains(line, "Spells work in depth on the real client")
+    as "the log names the spell and the issue that will close the gap"
+}
+
+pub fn a_press_of_a_target_type_3_spell_tests_its_faction_cast_group_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let of_faction = fn(faction_id) {
+    Scene(..nothing_shown(), units: [
+      Unit(..unit(id: 914, of: 30_233, at: 10.0), faction_id:),
+    ])
+  }
+  let #(_, effects) =
+    press_at(
+      scene: of_faction(390),
+      state: cast.new(),
+      spell4_id: 30_832,
+      target: 914,
+      at: 1000,
+    )
+  assert support.refusal_results(effects:) == []
+    && confirmed_targets(effects:) == [914]
+    as "Spell4 30832's cast group 2591 is type 3 (a faction) holding Faction2 390: a unit of faction 390 is taken"
+  assert refused_at(scene: of_faction(1017), spell4_id: 30_832, target: 914)
+    == [code(cast_result.TargetGroup)]
+    as "a unit of another faction is refused 89"
+}
+
+pub fn a_press_of_a_target_type_5_spell_starts_on_its_target_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let scene =
+    Scene(..nothing_shown(), units: [unit(id: 915, of: 26_145, at: 10.0)])
+  let #(state, pressed) =
+    press_at(
+      scene:,
+      state: cast.new(),
+      spell4_id: 25_207,
+      target: 915,
+      at: 1000,
+    )
+  assert confirmed_targets(effects: pressed) == [915]
+    && support.shortcut_casts(effects: pressed) == []
+    as "the caster is told at once, and nothing counts before the go"
+  let #(times, effects) = played(state:, pressed:, at: 1000)
+  assert times == [3000] as "Spell4 25207's castTime is 2000, pressed at 1000"
+  assert support.shortcut_casts(effects:)
+    == [
+      cast.ShortcutCast(
+        spell4_id: 25_207,
+        target: Some(cast.PressedAt(unit_id: 915, alive_at_press: True)),
+      ),
+    ]
+    as "the go at 3000 raises ShortcutCast with the unit"
+}
+
+pub fn a_channelled_objective_spell_goes_twice_and_raises_one_cast_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let scene =
+    Scene(..nothing_shown(), units: [unit(id: 916, of: 8047, at: 5.0)])
+  let #(state, pressed) =
+    press_at(scene:, state: cast.new(), spell4_id: 5725, target: 916, at: 1000)
+  let #(_, effects) = played(state:, pressed:, at: 1000)
+  assert support.ids(frames: support.writes(effects: pressed)) == [0x07FD]
+    as "the caster is told its cast started"
+  assert support.ids(frames: support.writes(effects:))
+    == [0x07FD, 0x07F4, 0x07F4, 0x07FE]
+    as "Spell4 5725 channels 3000 ms: after the start two goes within it, then the finish"
+  assert support.shortcut_casts(effects:)
+    == [
+      cast.ShortcutCast(
+        spell4_id: 5725,
+        target: Some(cast.PressedAt(unit_id: 916, alive_at_press: True)),
+      ),
+    ]
+    as "a channel counts once, at its first go"
 }

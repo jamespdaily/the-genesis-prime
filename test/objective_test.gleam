@@ -100,8 +100,8 @@
 
 import fixture_tables
 import genesis_prime/game/objective.{
-  Add, Advanced, Button, Cast, Killed, Remove, SendProgress, SendState, TalkedTo,
-  Used,
+  Add, Advanced, Button, Cast, CastTarget, Killed, Remove, SendProgress,
+  SendState, TalkedTo, Used,
 }
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place
@@ -113,7 +113,7 @@ import genesis_prime/table/id.{
 import genesis_prime/table/loader/store as table_store
 import gleam/dict
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/set
 import owned_test
 import place_support
@@ -1779,7 +1779,7 @@ pub fn button_changes_remove_what_closed_and_add_what_opened_test() -> Nil {
 }
 
 fn cast_of(spell spell: Int) -> objective.Event {
-  Cast(Spell4Id(spell))
+  Cast(spell4_id: Spell4Id(spell), target: None)
 }
 
 pub fn a_cast_of_the_objective_spell_completes_it_test() -> Nil {
@@ -2451,4 +2451,210 @@ pub fn a_type_23_use_counts_nothing_for_another_type_on_the_same_group_test() ->
   }
   counts_only_index_2(fresh(quest_id: 9122))
   counts_only_index_2(after_16477)
+}
+
+/// A cast of the spell at this unit of a map run.
+fn cast_at(
+  spell spell: Int,
+  creature creature: Int,
+  unit unit: quest_log.UnitRef,
+) -> objective.Event {
+  Cast(
+    spell4_id: Spell4Id(spell),
+    target: Some(CastTarget(
+      unit: plain_unit(creature: Creature2Id(creature)),
+      ref: unit,
+    )),
+  )
+}
+
+/// A cast of the spell at this unit of the first run.
+fn cast_at_unit(
+  spell spell: Int,
+  creature creature: Int,
+  unit_id unit_id: Int,
+) -> objective.Event {
+  cast_at(spell:, creature:, unit: quest_support.unit_ref(unit_id:))
+}
+
+pub fn a_targeted_cast_counts_only_a_unit_in_the_reward_pane_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // QuestObjective 14295 (quest 7757) is a type 11 cast of Spell4 69507 with TargetGroup
+  // 8954 as its reward pane and count 8. TargetGroup 8954 lists 38290 and not 58762,
+  // which the spell's cast group 7102 lists. The pane counts a unit for any objective
+  // type (`0x140550c50`).
+  use tables <- with_objectives(edits: [])
+  let quest = quest_of(id: 7757, tables:)
+  let outside =
+    used_by(
+      log: fresh(quest_id: 7757),
+      tables:,
+      event: cast_at_unit(spell: 69_507, creature: 58_762, unit_id: 900),
+    )
+  assert outside.effects == []
+    as "a unit of the cast group that the pane lacks counts nothing"
+  assert quest_log.objective_progress(log: outside.log, quest:, index: 0) == 0
+    as "the progress stays 0"
+  let inside =
+    used_by(
+      log: fresh(quest_id: 7757),
+      tables:,
+      event: cast_at_unit(spell: 69_507, creature: 38_290, unit_id: 901),
+    )
+  assert inside.effects
+    == [SendProgress(quest_id: 7757, objective_index: 0, progress: 1)]
+    as "a unit of the pane counts one"
+}
+
+pub fn a_targeted_cast_with_no_pane_counts_any_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // QuestObjective 4098 (quest 3145, Spell4 7103, count 10) has reward pane 0, so any
+  // unit counts (issue 724's decision 2c); TargetGroup 836, its spell's cast group, lists
+  // 9369 and not 24571.
+  use tables <- with_objectives(edits: [])
+  let first =
+    used_by(
+      log: fresh(quest_id: 3145),
+      tables:,
+      event: cast_at_unit(spell: 7103, creature: 9369, unit_id: 900),
+    )
+  assert first.effects
+    == [SendProgress(quest_id: 3145, objective_index: 0, progress: 1)]
+    as "a unit of the group counts one"
+  let second =
+    used_by(
+      log: first.log,
+      tables:,
+      event: cast_at_unit(spell: 7103, creature: 24_571, unit_id: 901),
+    )
+  assert second.effects
+    == [SendProgress(quest_id: 3145, objective_index: 0, progress: 2)]
+    as "a unit the cast group lacks counts too, as the objective names no pane"
+}
+
+pub fn a_pane_only_row_counts_its_pane_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 8539's objective index 1 is 15119 (Spell4 41218, count 1, flags 3, pane 8784
+  // of Creature2 39073), which waits for index 0.
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 8539,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [1, 0, 0, 0],
+      ),
+    ])
+  let quest = quest_of(id: 8539, tables:)
+  assert used_by(
+      log:,
+      tables:,
+      event: cast_at_unit(spell: 41_218, creature: 32_668, unit_id: 900),
+    ).effects
+    == []
+    as "a unit outside pane 8784 counts nothing"
+  let counted =
+    used_by(
+      log:,
+      tables:,
+      event: cast_at_unit(spell: 41_218, creature: 39_073, unit_id: 901),
+    )
+  assert list.contains(
+    counted.effects,
+    SendProgress(quest_id: 8539, objective_index: 1, progress: 1),
+  )
+    as "the pane's unit counts one"
+  assert quest_log.objective_done(log: counted.log, quest:, index: 1)
+    as "the objective is done at its count of 1"
+}
+
+pub fn a_self_aimed_cast_still_counts_with_no_target_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 7618's objective 13884 (Spell4 40471) is aimed at the caster, so its cast
+  // names no unit (issue 724's decision 2c).
+  use tables <- with_objectives(edits: [])
+  assert used_by(
+      log: quest_support.log_of(rows: [
+        quest_support.accepted(quest_id: the_first_cast_quest, progress: [0]),
+      ]),
+      tables:,
+      event: Cast(spell4_id: Spell4Id(the_first_cast_spell), target: None),
+    ).effects
+    == [
+      SendProgress(
+        quest_id: the_first_cast_quest,
+        objective_index: 0,
+        progress: 1,
+      ),
+      SendState(quest_id: the_first_cast_quest, state: 2),
+    ]
+    as "a cast that names no unit counts one"
+}
+
+pub fn a_second_cast_at_the_same_unit_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Jim, 2026-11-11: a targeted cast objective counts each unit once, as a type 23 does.
+  // `0x1405517a0` makes no type 11 objective a checklist, so the client keeps no
+  // per-unit record and the once is the server's choice.
+  use tables <- with_objectives(edits: [])
+  let quest = quest_of(id: 3145, tables:)
+  let cast = cast_at_unit(spell: 7103, creature: 9369, unit_id: 900)
+  let first = used_by(log: fresh(quest_id: 3145), tables:, event: cast)
+  assert first.effects
+    == [SendProgress(quest_id: 3145, objective_index: 0, progress: 1)]
+    as "the first cast at the unit counts one"
+  let second = used_by(log: first.log, tables:, event: cast)
+  assert second.effects == [] as "the same unit again counts nothing"
+  assert quest_log.objective_progress(log: second.log, quest:, index: 0) == 1
+    as "the progress stays 1"
+}
+
+pub fn casts_at_two_units_of_one_creature_each_count_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Unit ids start at 1 again in each run of a map (`world_map/map`), so unit 900 of
+  // incarnation 2 is another unit than unit 900 of incarnation 1.
+  use tables <- with_objectives(edits: [])
+  let quest = quest_of(id: 3145, tables:)
+  let first_run = quest_support.unit_ref(unit_id: 900)
+  let cast_in = fn(log, unit) {
+    used_by(log:, tables:, event: cast_at(spell: 7103, creature: 9369, unit:)).log
+  }
+  let progress = fn(log) {
+    quest_log.objective_progress(log:, quest:, index: 0)
+  }
+  let one = cast_in(fresh(quest_id: 3145), first_run)
+  let two = cast_in(one, quest_log.UnitRef(..first_run, unit_id: 901))
+  let three = cast_in(two, quest_log.UnitRef(..first_run, incarnation: 2))
+  assert [progress(one), progress(two), progress(three)] == [1, 2, 3]
+    as "each unit of the creature counts one, and unit 900 of the next run is another unit"
+}
+
+pub fn an_abandoned_and_retaken_quest_forgets_its_cast_units_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The used set lives on the quest's entry in the log, which an abandon replaces and an
+  // accept starts anew; that a retaken quest starts afresh is the server's choice.
+  use tables <- with_objectives(edits: [])
+  let quest = quest_of(id: 3145, tables:)
+  let cast = cast_at_unit(spell: 7103, creature: 9369, unit_id: 900)
+  let first = used_by(log: fresh(quest_id: 3145), tables:, event: cast)
+  assert quest_log.objective_progress(log: first.log, quest:, index: 0) == 1
+    as "the cast counts one"
+  let retaken =
+    quest_log.accept(
+      log: quest_log.hold(
+        log: first.log,
+        quest_id: 3145,
+        state: quest_log.Abandoned,
+      ),
+      quest:,
+      max_time_ms: 0,
+      now_ms: 0,
+    )
+  let again = used_by(log: retaken, tables:, event: cast)
+  assert again.effects
+    == [SendProgress(quest_id: 3145, objective_index: 0, progress: 1)]
+    as "the retaken quest counts the same unit again, from 0"
 }

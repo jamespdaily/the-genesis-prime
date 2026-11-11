@@ -106,8 +106,9 @@ type Entry {
   /// quest, since the quest needs no such objective to be achieved. `kill_masks` holds,
   /// for each of the six objective slots, a bit for each creature of the objective's
   /// named group that the player's blow has killed (`kill_marked`); the client is never
-  /// sent it. `used` holds, for each use-a-group objective (type 23) by its index, the
-  /// units whose use has counted (`used`); it is not saved and starts empty.
+  /// sent it. `used` holds, for each objective that counts each unit once (type 23, a use of
+  /// a unit of a group, and type 11, a cast at a unit) by its index, the units that have
+  /// counted (`used`); it is not saved and starts empty.
   Active(
     state: ActiveState,
     placeholder_objective_id: Int,
@@ -1523,19 +1524,24 @@ pub type UnitRef {
 /// (`0x140550c50`): each unit of the group counts toward its count.
 const use_a_group_type = 23
 
+/// The QuestObjective type of a cast of the spell in its data (`QuestObjective.type.11`).
+/// `shortcut_spell.cast_type` is the same number; that module reaches this one through
+/// `spell_plan`, so it cannot be named here.
+const cast_a_spell_type = 11
+
 /// Whether the objective counts each unit once (`used`): a use of a unit of a group
-/// (type 23).
+/// (type 23) or a cast at a unit (type 11).
 pub fn counted_by_unit(objective objective: Objective) -> Bool {
-  objective.type_ == use_a_group_type
+  objective.type_ == use_a_group_type || objective.type_ == cast_a_spell_type
 }
 
-/// The log after a use of `unit` is counted for the quest's objective at `index` that
-/// counts by unit (`counted_by_unit`):
+/// The log after a use of, or a cast at, `unit` is counted for the quest's objective at
+/// `index` that counts by unit (`counted_by_unit`):
 /// one more of its count, which `progressed` takes, and the unit remembered as used, so
 /// that a second use of the same unit counts nothing: `changed` is false and the log is as
-/// it was. The client keeps no per-unit record of a type 23 objective (`0x1405517a0`, the
-/// fact of that name, makes no type 23 a checklist), so one count for each unit is the
-/// server's choice. The set is kept only on the quest's entry in the log: it is not saved
+/// it was. The client keeps no per-unit record of a type 23 or a type 11 objective
+/// (`0x1405517a0`, the fact of that name, makes neither a checklist), so one count for each
+/// unit is the server's choice. The set is kept only on the quest's entry in the log: it is not saved
 /// (`rows`), so a relog lets a unit count again, and an abandoned quest that is retaken
 /// starts it empty. It is dropped when the objective is done. `Error(Nil)` when the
 /// objective does not count by unit or takes no progress (`progressed`).
@@ -1616,8 +1622,9 @@ fn remember_used(
   }
 }
 
-/// Whether `unit` is used already for the quest's type 23 objective at `index`: false for
-/// any other objective and for a quest not in the active list.
+/// Whether `unit` is used already for the quest's objective at `index` that counts by unit
+/// (`counted_by_unit`): false for any other objective and for a quest not in the active
+/// list.
 pub fn is_used(
   log log: QuestLog,
   quest quest: Quest,
