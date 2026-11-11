@@ -616,6 +616,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
 import gleam/set.{type Set}
+import gleam/string
 
 /// The messages of a player's casts, which the client sends inside 0x038C
 /// (genesis_prime/game/routing says which id is which).
@@ -1230,6 +1231,26 @@ pub fn activate(
   })
 }
 
+/// The subject of the prerequisites a use of a creature checks: the caster, with the
+/// creature's unit as the second unit and its checklist index as the unit's 0x262
+/// carried it, standing nowhere (type 108 reads no arc of a use). The activate pick and
+/// the creature's link to an objective check their prerequisites for it.
+pub fn subject_for_use(
+  cast cast: State,
+  caster caster: Caster,
+  unit_id unit_id: Int,
+  checklist_index checklist_index: Int,
+) -> prerequisite.Subject {
+  prerequisite.counting(
+    subject: prerequisite.Subject(
+      ..subject_of(cast:, caster:),
+      second_unit: Some(unit_id),
+      positions: prerequisite.NotPlaced,
+    ),
+    checklist_index:,
+  )
+}
+
 /// A unit the caster's 0xb3 names, as the caster's connection knows it.
 pub type UsedUnit {
   UsedUnit(
@@ -1240,6 +1261,8 @@ pub type UsedUnit {
     /// The checklist index its 0x262 carried, the bit a type 94 condition of its activate
     /// pick reads.
     checklist_index: Int,
+    /// Whether the caster's quest log opens the creature's link to an objective.
+    link: activate.Link,
     /// Where the unit stands and its hit radius.
     body: activate.Body,
     /// Whether the unit lives: a creature the caster's client shows dead is not offered its
@@ -1291,14 +1314,34 @@ pub fn activate_unit(
     Error(Nil) -> declined("names no creature or object the client shows")
     Ok(UsedUnit(alive: False, ..)) ->
       declined("names a creature that is dead: its interaction is not offered")
+    Ok(UsedUnit(link: activate.ClosedLink, ..)) ->
+      declined(
+        "names a creature whose link to an objective is closed: the client offers it nothing",
+      )
+    Ok(UsedUnit(link: activate.UnreadLink(prerequisite_type:), ..)) ->
+      declined(
+        "names a creature whose link to an objective rests on a prerequisite of the type "
+        <> int.to_string(prerequisite_type)
+        <> ", which the server does not read",
+      )
     Ok(UsedUnit(
       creature_id:,
       creature:,
       checklist_index:,
       body: unit,
       offered:,
+      link: activate.NoLink,
       ..,
-    )) ->
+    ))
+    | Ok(UsedUnit(
+        creature_id:,
+        creature:,
+        checklist_index:,
+        body: unit,
+        offered:,
+        link: activate.OpenLink,
+        ..,
+      )) ->
       case
         activate.range_of(
           limits: activate.use_limits,
@@ -1309,14 +1352,7 @@ pub fn activate_unit(
       {
         activate.Within, True -> {
           let subject =
-            prerequisite.counting(
-              subject: prerequisite.Subject(
-                ..subject_of(cast:, caster:),
-                second_unit: Some(unit_id),
-                positions: prerequisite.NotPlaced,
-              ),
-              checklist_index:,
-            )
+            subject_for_use(cast:, caster:, unit_id:, checklist_index:)
           case
             activate.pick(
               creature:,
@@ -1375,14 +1411,55 @@ fn activation_pressed(
     activate.Unseen -> refusal(0, cast_result.CasterMustHaveTarget)
     activate.AnotherPlayer -> refusal(0, cast_result.NoTarget)
     activate.Fighter -> refusal(0, cast_result.TargetIsNotUseable)
-    activate.Object(creature_id:, creature:, checklist_index:, body: target) -> {
-      let subject =
-        prerequisite.counting(
-          subject: prerequisite.Subject(
-            ..subject_of(cast:, caster:),
-            second_unit: Some(press.target_unit_id),
-            positions: prerequisite.NotPlaced,
+    activate.Object(link: activate.ClosedLink, ..) ->
+      Ok(
+        #(cast, [
+          Log(
+            level: LogWarning,
+            text: "the activate cast of unit "
+              <> int.to_string(press.target_unit_id)
+              <> " names a creature whose link to an objective is closed: the client offers it nothing, so it is refused with "
+              <> int.to_string(cast_result.to_value(
+              cast_result.TargetIsNotUseable,
+            )),
           ),
+          refused(
+            client_cast_id:,
+            spell4_id: 0,
+            result: cast_result.TargetIsNotUseable,
+          ),
+        ]),
+      )
+    activate.Object(link: activate.UnreadLink(prerequisite_type:), ..) ->
+      not_built_refusal(
+        cast:,
+        client_cast_id:,
+        spell4_id: 0,
+        key: UnreadLinkPrerequisite(prerequisite_type:),
+        result: cast_result.IllegalSpellCast,
+        why: "of a creature whose link to an objective rests on a prerequisite of the type "
+          <> int.to_string(prerequisite_type)
+          <> ", which the server does not read",
+      )
+    activate.Object(
+      creature_id:,
+      creature:,
+      checklist_index:,
+      link: activate.NoLink,
+      body: target,
+    )
+    | activate.Object(
+        creature_id:,
+        creature:,
+        checklist_index:,
+        link: activate.OpenLink,
+        body: target,
+      ) -> {
+      let subject =
+        subject_for_use(
+          cast:,
+          caster:,
+          unit_id: press.target_unit_id,
           checklist_index:,
         )
       let picked =
@@ -1417,7 +1494,7 @@ fn activation_pressed(
                 result: cast_result.IllegalSpellCast,
                 why: "cannot be planned: " <> why,
               )
-            Ok(activate.Planned(spell:, effects:, limits:)) ->
+            Ok(activate.Planned(spell:, effects:, dropped_signals:, limits:)) ->
               activation_in_range(
                 cast:,
                 caster:,
@@ -1430,6 +1507,7 @@ fn activation_pressed(
                 target:,
                 spell:,
                 effects:,
+                dropped_signals:,
                 limits:,
               )
           }
@@ -1452,6 +1530,7 @@ fn activation_in_range(
   target target: activate.Body,
   spell spell: Spell,
   effects effects: List(activate.ActivateEffect),
+  dropped_signals dropped_signals: List(Spell4EffectsId),
   limits limits: activate.Limits,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let spell4_id = spell.spell4_id.value
@@ -1482,6 +1561,7 @@ fn activation_in_range(
           False -> NoInteraction
         },
         effects:,
+        dropped_signals:,
       )
   }
 }
@@ -1533,6 +1613,7 @@ fn activation_started(
   spell spell: Spell,
   interaction interaction: Interaction,
   effects effects: List(activate.ActivateEffect),
+  dropped_signals dropped_signals: List(Spell4EffectsId),
 ) -> Result(#(State, List(Effect)), Refusal) {
   let spell4_id = spell.spell4_id.value
   let refusal = fn(result) {
@@ -1579,8 +1660,50 @@ fn activation_started(
           spent: paid.spent,
           reserved:,
         )
-      Ok(#(cast, list.append(taken, started)))
+      let #(cast, dropped) =
+        signals_dropped(
+          cast:,
+          spell4_id:,
+          unit_id:,
+          creature_id:,
+          dropped_signals:,
+        )
+      Ok(#(cast, list.flatten([taken, dropped, started])))
     }
+  }
+}
+
+/// The log of the RavelSignal rows an activate cast drops, the first time for the spell:
+/// the server has no script to start for them (`activate.activate_rows_of`).
+fn signals_dropped(
+  cast cast: State,
+  spell4_id spell4_id: Int,
+  unit_id unit_id: Int,
+  creature_id creature_id: Int,
+  dropped_signals dropped_signals: List(Spell4EffectsId),
+) -> #(State, List(Effect)) {
+  let key = DroppedSignals(spell4_id:)
+  case dropped_signals == [] || set.contains(cast.logged, key) {
+    True -> #(cast, [])
+    False -> #(State(..cast, logged: set.insert(cast.logged, key)), [
+      Log(
+        level: LogWarning,
+        text: "the activate cast of Spell4 "
+          <> int.to_string(spell4_id)
+          <> " at unit "
+          <> int.to_string(unit_id)
+          <> " (Creature2 "
+          <> int.to_string(creature_id)
+          <> ") drops the RavelSignal effects "
+          <> string.join(
+          list.map(dropped_signals, fn(effect_id) {
+            int.to_string(effect_id.value)
+          }),
+          ", ",
+        )
+          <> ": the server has no script to start for them",
+      ),
+    ])
   }
 }
 
@@ -1590,6 +1713,11 @@ pub type Unbuilt {
   UnbuiltSpell(spell4_id: Int)
   /// A prerequisite type the server does not read.
   UnreadPrerequisite(prerequisite_type: Int)
+  /// A prerequisite type the server does not read, in the prerequisite of a creature's
+  /// link to an objective.
+  UnreadLinkPrerequisite(prerequisite_type: Int)
+  /// The RavelSignal effects an activate cast drops, by the Spell4 id.
+  DroppedSignals(spell4_id: Int)
 }
 
 /// A right-click refused because the server does not build what the cast needs: the

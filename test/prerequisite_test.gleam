@@ -338,6 +338,35 @@ pub fn challenge_with_no_record_is_not_in_cooldown_test() -> Nil {
     as "Prerequisite 9358 (type 125 comparison 2 on challenge 328, or nested row 328, which has no row and fails) passes through its first condition"
 }
 
+pub fn challenge_with_no_record_is_not_active_and_not_unlocked_test() -> Nil {
+  use <- owned_test.run(5000)
+  let comparisons = fn(type_id) {
+    let row = fn(code) {
+      prerequisite_support.row(id: 903, flags: 0, conditions: [
+        #(type_id, code, 328, 0),
+      ])
+    }
+    #(
+      prerequisite_support.check(row: row(1), subject: bare()),
+      prerequisite_support.check(row: row(2), subject: bare()),
+      prerequisite_support.check(row: row(3), subject: bare()),
+    )
+  }
+  assert comparisons(69) == #(Fails, Passes, Fails)
+    as "Prerequisite.prerequisiteTypeId.69, 0x14048d530: a challenge with no record is not active, so comparison 1 fails, 2 passes and any other fails"
+  assert comparisons(74) == #(Fails, Passes, Fails)
+    as "Prerequisite.prerequisiteTypeId.74, 0x14048d5a0: a challenge with no record has its flag clear, so comparison 1 fails, 2 passes and any other fails"
+  assert prerequisite_support.check(
+      row: prerequisite_support.row(id: 18_822, flags: 1, conditions: [
+        #(74, 2, 328, 0),
+        #(69, 1, 328, 0),
+      ]),
+      subject: bare(),
+    )
+    == Passes
+    as "Prerequisite 18822 (type 74 comparison 2 on challenge 328, or type 69 comparison 1 on it) passes through its first condition"
+}
+
 pub fn type_37_compares_its_roll_with_the_value_by_the_comparison_test() -> Nil {
   use <- owned_test.run(5000)
   let chance =
@@ -574,11 +603,11 @@ pub fn the_types_the_server_decides_are_those_is_read_names_test() -> Nil {
     })
     == [
       0, 1, 2, 3, 4, 6, 10, 11, 15, 17, 21, 22, 23, 26, 28, 32, 33, 34, 35, 36,
-      37, 39, 43, 45, 50, 52, 57, 58, 59, 64, 68, 71, 72, 73, 75, 94, 108, 109,
-      116, 125, 129, 132, 144, 156, 157, 158, 161, 165, 179, 181, 202, 243, 247,
-      249, 250, 257, 258, 274, 282, 284, 296, 297, 298, 299, 300,
+      37, 39, 43, 45, 50, 52, 57, 58, 59, 64, 68, 69, 71, 72, 73, 74, 75, 94,
+      108, 109, 116, 125, 129, 132, 144, 156, 157, 158, 161, 165, 179, 181, 202,
+      243, 247, 249, 250, 257, 258, 274, 282, 284, 296, 297, 298, 299, 300,
     ]
-    as "the types the server reads (1 to 4, 6, 10, 11, 15, 22, 23, 26, 28, 33 to 37, 39, 43, 50, 52, 59, 64, 68, 71, 73, 94, 108, 109, 116, 125, 129, 179, 243, 250; Prerequisite.prerequisiteTypeId.1, .2, .3, .4, .6, .10, .11, .22, .26, .39, .43, .52, .64, .68, .94, .108, .109, .116, .129, .243, .250) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
+    as "the types the server reads (1 to 4, 6, 10, 11, 15, 22, 23, 26, 28, 33 to 37, 39, 43, 50, 52, 59, 64, 68, 69, 71, 73, 74, 94, 108, 109, 116, 125, 129, 179, 243, 250; Prerequisite.prerequisiteTypeId.1, .2, .3, .4, .6, .10, .11, .22, .26, .39, .43, .52, .64, .68, .69, .74, .94, .108, .109, .116, .129, .243, .250) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
 }
 
 fn types_up_to_300() -> List(Int) {

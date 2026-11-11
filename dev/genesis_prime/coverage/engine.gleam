@@ -182,15 +182,15 @@ fn quest_objectives() -> EngineDeclaration {
     // objectives count by cluster, rank and a unit's tagged value" closes that. Collect
     // (types 4 and 33) objectives take the held count and visit (type 17) objectives the
     // player's zone chain, both after every change of either. A use of a creature whose
-    // row names the objective counts a collectible (type 32), which the partial list
-    // states the gap of. Checklist objectives (types 14 and 18 by a TargetGroup, type 28 by
+    // row names the objective counts a scripted objective (type 5) or a collectible
+    // (type 32), which the partial list states the gaps of. Checklist objectives (types 14 and 18 by a TargetGroup, type 28 by
     // a PathSoldierActivate row) count a talk to or an activate of a target as the target's
     // bit of the objective's 32-bit mask, and the objective is done at its count of bits
     // (genesis_prime/game/objective; the index of each target is
     // genesis_prime/world_map/checklist_index). A finish (type 24) objective takes the
     // completion of the quest its data names, now or earlier in its repeat period. Types
     // 10 and 13 are not counted.
-    handled: Listed(ids: [2, 3, 4, 8, 12, 14, 16, 17, 18, 22, 24, 28, 32, 33]),
+    handled: Listed(ids: [2, 3, 4, 5, 8, 12, 14, 16, 17, 18, 22, 24, 28, 32, 33]),
     partial: [
       Missing(
         type_number: 22,
@@ -198,8 +198,13 @@ fn quest_objectives() -> EngineDeclaration {
         fact_key: "QuestObjective.type.22",
       ),
       Missing(
+        type_number: 5,
+        reason: "a use of a creature linked to the objective by its row (a finished activate cast, or a use with no activate spell) counts one, which is a guess; 250 of the 1556 rows have a linked creature, and the rest have no source; the 12 linked creatures whose Collect click sends 0x14f are not counted, and a linked creature with no stored spawn is not placed (the issue \"A click target with no spawn stands at its objective's marker\")",
+        fact_key: "QuestObjective.type.5",
+      ),
+      Missing(
         type_number: 32,
-        reason: "a finished activate cast of a creature whose row names the objective counts one, which is a guess; the 448 rows no table links to a creature have no source",
+        reason: "a use of a creature linked to the objective by its row (a finished activate cast, or a use with no activate spell) counts one, which is a guess; 293 of the 709 rows have a linked creature, and the 416 others have no source; the 12 linked creatures whose Collect click sends 0x14f are not counted, and a linked creature with no stored spawn is not placed (the issue \"A click target with no spawn stands at its objective's marker\")",
         fact_key: "QuestObjective.type.32.sources",
       ),
     ],
