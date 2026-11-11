@@ -104,6 +104,7 @@ effectful_modules = [
   { module = "genesis_prime/content", reason = "loads the content tables at start: its own database pool, the wait for the database, the log of every refusal, and the persistent terms" },
   { module = "genesis_prime/content/spawn", reason = "runs the spawn table's one query on the load's pool and puts the world's spawns in a persistent term" },
   { module = "genesis_prime/content/creature_kind", reason = "runs the creature_kind table's one query on the load's pool and puts the kinds in a persistent term" },
+  { module = "genesis_prime/content/creature_faction", reason = "runs the creature_faction table's one query on the load's pool and puts the factions in a persistent term" },
   { module = "genesis_prime/content/game_number", reason = "runs the game_number table's one query on the load's pool and puts the numbers in a persistent term" },
   { module = "genesis_prime/content/class_resource", reason = "runs the class_resource table's one query on the load's pool and puts the classes' resources in a persistent term" },
   { module = "genesis_prime/content/server_proxy", reason = "runs the server_proxy table's one query on the load's pool and puts the server's Proxies in a persistent term" },

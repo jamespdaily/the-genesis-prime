@@ -32,6 +32,11 @@
 ////   and 0 with a link, which start. The selection starts 423, 605, 38, 20, 12,
 ////   623, 20 and 6 of the rows placed and leaves out the others as it does stored
 ////   rows (no faction, Friendly to both, a service link, health 0).
+//// - Migration 0027: the boss, Creature2 73499 (one of the 5 rows placed in 3460 that
+////   are Friendly to both with no quest or link, QuestObjective 21296 and 21310),
+////   stands with faction 233, Hostile to both player factions
+////   (Faction2Relationship 746), so it starts: 3460 starts 7 of its 11 rows placed.
+////   The left-out counts are over the stored rows alone, which it is not one of.
 //// - Migration 0008: World 3460 also holds the 27 Virtual Defense Daguns, server
 ////   choices, which start (Hostile to Dominion), so 3460 has 66 + 27.
 //// The test needs the client's tables and the world database (`GENESIS_WORLD_DATA`),
@@ -116,7 +121,12 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
   // world stand at its marker (`objective_spawn.place`): the rows placed, by
   // world, are the counts named in the head of this file, and the load starts the
   // selection's share of them beside the decoded stored spawns.
-  let placed = objective_spawn.place(tables:, stored: rows).rows
+  let placed =
+    objective_spawn.place(
+      tables:,
+      stored: rows,
+      factions: spawn_support.the_boss_is_given_233(tables:),
+    ).rows
   assert list.length(placed) == 1764
     as "the rows placed in all, none of them in a world with no stored spawn"
   assert list.map(
@@ -137,7 +147,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       799 + 12,
       13_507 + 623,
       851 + 20,
-      93 + 6,
+      93 + 7,
       0,
       0,
     ]
@@ -155,6 +165,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       formulas: rating.formulas(tables:),
       kinds: spawn_support.kinds(),
       vendors: vendor.none(),
+      factions: spawn_support.the_boss_is_given_233(tables:),
     )
   let left_out_in_all = fn(reason) {
     list.flat_map(selection.coverage, fn(world) { world.left_out })
@@ -238,6 +249,7 @@ pub fn world_3460_visibility_index_is_19_41795_and_41803_test() -> Nil {
       formulas: rating.formulas(tables:),
       kinds: spawn_support.kinds(),
       vendors: vendor.none(),
+      factions: spawn_support.the_boss_is_given_233(tables:),
     )
   assert selection.refusals == [] as "every started spawn's prerequisite loads"
   let assert Ok(index) = dict.get(selection.visibility, 3460)
