@@ -58,7 +58,6 @@ import genesis_prime/message/chat_line_accepted
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
-import genesis_prime/message/currency_changed
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
 import genesis_prime/message/delete_result
@@ -99,8 +98,6 @@ import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_stealth
-import genesis_prime/message/vendor_items
-import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/whisper_failed
 import genesis_prime/readiness
 import genesis_prime/server
@@ -1364,48 +1361,18 @@ pub fn credits_survive_a_relog_test() -> Nil {
   assert shown.creature_id == 28_739
     as "the creature in sight is Supplier Ingavak"
   // The right-click opens the window; the item's unique id is the one the window shows.
-  let assert Ok(request) =
-    interaction_request.encode(InteractionRequest(
-      unit_id: shown.unit_id,
-      kind: 0x31,
-    ))
-  game_client.send_world(
-    game:,
-    message_id: interaction_request.message_id,
-    body: request,
-  )
   let #(window, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(frames, fn(frame) { frame.message_id == 0x090B })
-    })
-  let assert [Frame(body: items, ..)] =
-    list.filter(window, fn(frame) { frame.message_id == 0x090B })
-  let assert Ok(stock) = vendor_items.decode(items)
+    item_bot.open_vendor(game:, have:, unit_id: shown.unit_id)
   let assert Ok(stimpack) =
-    list.find(stock.items, fn(item) { item.entry_id == 14_838 })
+    list.find(window.items, fn(item) { item.entry_id == 14_838 })
     as "the window shows Item2 14838"
-  let assert Ok(buy) =
-    vendor_purchase.encode(VendorPurchase(
-      unique_id: stimpack.unique_id,
-      quantity: 1,
-    ))
-  game_client.send_world(
-    game:,
-    message_id: vendor_purchase.message_id,
-    body: buy,
-  )
   let #(bought, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(frames, fn(frame) { frame.message_id == 0x0919 })
-      && list.any(frames, fn(frame) {
-        frame.message_id == 0x0111 || frame.message_id == 0x017F
-      })
-    })
-  let assert [Frame(body: changed, ..)] =
-    list.filter(bought, fn(frame) { frame.message_id == 0x0919 })
-  let assert Ok(told) = currency_changed.decode(changed)
-  assert told.kind == 0 && told.total == credits_before_the_buy - 67
-    as "opcode.0x919: kind 0 sets the total, the credits less the 67 the window showed"
+    item_bot.buy(game:, have:, unique_id: stimpack.unique_id, quantity: 1)
+  assert list.map(bought.currencies, fn(told) { #(told.kind, told.total) })
+    == [#(0, credits_before_the_buy - 67)]
+    as "opcode.0x919: kind 0 sets the total, the credits less the 67 the client shows (vendor.start_zone_prices)"
+  assert list.map(bought.added, fn(held) { held.item.item_id }) == [14_838]
+    as "the bought item is added to the inventory"
   // The player camps and plays the same character again.
   let #(second_entry, _) =
     game_client.camp_and_play(game:, have:, character_id: character)
@@ -5538,6 +5505,12 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
       #(list.append(fight, more), have)
     }
   }
+  // The shell writes each effect with its own send, so the level's 0x938 can come in a
+  // later read than the 0x1AC; the pong follows all the connection wrote before it
+  // took the ping (pongs 1 and 3 are the actions' and the press loop's).
+  let #(after_the_gain, have) =
+    game_client.read_until_pong(game:, have:, number: 4)
+  let fight = list.append(fight, after_the_gain)
   let assert [Frame(body: gain, ..)] =
     list.filter(fight, fn(frame) { frame.message_id == 0x01AC })
     as "the kill sends one 0x1AC"

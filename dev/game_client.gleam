@@ -577,25 +577,16 @@ pub fn camp_and_play(
   character_id character_id: Int,
 ) -> #(List(Frame), BitArray) {
   send_world(game:, message_id: 0x00BF, body: <<1>>)
-  let #(_, have) = read_until_message(game:, have:, message_id: 0x0092)
+  let #(_, have) = read_message(game:, have:, message_id: 0x0092)
   send_world(game:, message_id: 0x00C0, body: <<>>)
-  let #(_, have) = read_until_message(game:, have:, message_id: 0x0594)
+  let #(_, have) = read_message(game:, have:, message_id: 0x0594)
   send(game:, message_id: 0x07E0, body: <<>>)
-  let #(_, have) = read_until_message(game:, have:, message_id: 0x0117)
+  let #(_, have) = read_message(game:, have:, message_id: 0x0117)
   let assert Ok(play) = play_character.encode(PlayCharacter(character_id:))
     as "0x07DD encodes"
   send(game:, message_id: 0x07DD, body: play)
-  read_until_message(game:, have:, message_id: 0x01BC)
-}
-
-/// Reads until a frame of the message has arrived, as `read_until` does.
-fn read_until_message(
-  game game: Game,
-  have have: BitArray,
-  message_id message_id: Int,
-) -> #(List(Frame), BitArray) {
   read_until(game:, have:, found: fn(frames) {
-    list.any(frames, fn(frame) { frame.message_id == message_id })
+    list.any(frames, fn(frame) { frame.message_id == 0x01BC })
   })
 }
 
