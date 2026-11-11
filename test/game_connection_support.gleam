@@ -32,6 +32,7 @@ import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, NoHolder, Taken}
 import genesis_prime/login/guid
+import genesis_prime/message/cast_result
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason
@@ -46,6 +47,7 @@ import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/relayed_movement
+import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_position
 import genesis_prime/message/spell_started
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
@@ -75,6 +77,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
+import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map.{Join, Leave, Left, SeenBy, Summon}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
@@ -1247,6 +1250,18 @@ pub fn viewer_showing_unit_9() -> game_connection.State {
   feed(state: in_world(), event: event_of(Appears)).0
 }
 
+/// The results of the cast refusals (0x7fc) the step writes, in order.
+pub fn refusal_results(
+  taken taken: ConnectionStep(Request),
+) -> List(cast_result.CastResult) {
+  decoded(
+    heard(taken:, cipher: keyed()),
+    spell_cast_refused.message_id,
+    spell_cast_refused.decode,
+  )
+  |> list.map(fn(refused) { refused.result })
+}
+
 /// The messages the step writes, as the client reads them.
 pub fn written_ids(taken: ConnectionStep(Request)) -> List(Int) {
   list.map(heard(taken:, cipher: keyed()), fn(frame) { frame.message_id })
@@ -1859,6 +1874,53 @@ pub fn beast_appears_facing(
       hit_radius: beast.combat.hit_radius,
       attackable: beast.combat.attackable,
       hostile_to: beast.combat.hostile_to,
+    ),
+  ))
+}
+
+/// The 0x262 news of the creature `creature_id` as unit `unit_id` at `place`, alive, as
+/// its process sends it. The creature's number, health and the rest of its spawn are
+/// Dorian Walker's; the identity the client's marking reads (creature id, display, outfit
+/// and hit radius) is the creature's own, and it is hostile to the factions `hostile_to`
+/// names.
+pub fn creature_appears(
+  unit_id unit_id: Int,
+  creature_id creature_id: Int,
+  display_info_id display_info_id: Int,
+  outfit_info_id outfit_info_id: Int,
+  hit_radius hit_radius: Float,
+  place place: Place,
+  hostile_to hostile_to: creature_life.Hostile,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  let walker = spawn_support.dorian_walker(number: 1, place:)
+  let target =
+    spawn.Spawn(
+      ..walker,
+      creature_id: id.Creature2Id(creature_id),
+      display_info_id:,
+      outfit_info_id:,
+      combat: creature_life.Combat(
+        ..walker.combat,
+        hit_radius:,
+        attackable: creature_life.Attackable(exile: False, dominion: False),
+        hostile_to:,
+      ),
+    )
+  sent_by_a_peer(news_of(
+    unit_id:,
+    news: CreatureAppeared(
+      unit: creature_unit.create(
+        spawn: target,
+        unit_id:,
+        health: 52,
+        interrupt_armor: option.None,
+        server_time_estimate_start: 0,
+      ),
+      life: 4,
+      place:,
+      hit_radius:,
+      attackable: target.combat.attackable,
+      hostile_to: target.combat.hostile_to,
     ),
   ))
 }

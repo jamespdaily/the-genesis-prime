@@ -24,8 +24,8 @@ import cast_support as support
 import fixture_tables
 import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/activate.{
-  type Target, Activations, Body, CannotBePlanned, Column, Creature, NoSpell4Row,
-  Object, Planned,
+  type Target, Activations, Body, CannotBePlanned, Column, Creature,
+  HostileToPlayer, InCombat, NoSpell4Row, Planned, Usable,
 }
 import genesis_prime/game/cast.{type Effect, type State}
 import genesis_prime/game/objective_link
@@ -50,9 +50,11 @@ import genesis_prime/table/id.{Creature2Id}
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/string
 import owned_test
 import place_support
+import planted_table
 import prerequisite_support
 import quest_support
 
@@ -122,7 +124,30 @@ fn object_of(
   east east: Float,
   up up: Float,
 ) -> Target {
-  Object(
+  usable_in_state(
+    creature_id:,
+    creature:,
+    checklist_index:,
+    link:,
+    east:,
+    up:,
+    alive: True,
+    withheld: None,
+  )
+}
+
+/// A creature or object this far east of the caster, in this life and combat state.
+fn usable_in_state(
+  creature_id creature_id: Int,
+  creature creature: activate.Creature,
+  checklist_index checklist_index: Int,
+  link link: activate.Link,
+  east east: Float,
+  up up: Float,
+  alive alive: Bool,
+  withheld withheld: option.Option(activate.Withheld),
+) -> Target {
+  Usable(
     creature_id:,
     creature:,
     checklist_index:,
@@ -137,6 +162,26 @@ fn object_of(
       ),
       radius: object_radius,
     ),
+    alive:,
+    withheld:,
+  )
+}
+
+/// The mollusk's creature (Spell4 1817 as its activate spell) in this state.
+fn mollusk_in_state(
+  east east: Float,
+  alive alive: Bool,
+  withheld withheld: option.Option(activate.Withheld),
+) -> Target {
+  usable_in_state(
+    creature_id: the_mollusk,
+    creature: mollusk(),
+    checklist_index: 0,
+    link: activate.NoLink,
+    east:,
+    up: 0.0,
+    alive:,
+    withheld:,
   )
 }
 
@@ -501,6 +546,140 @@ pub fn activate_refuses_a_unit_it_cannot_activate_test() -> Nil {
     )
     == 91
     as "another player's unit is NoTarget (91)"
+}
+
+pub fn an_activate_cast_on_a_dead_creature_is_refused_before_its_range_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let activations = the_activations()
+  assert refused_with(
+      activations:,
+      target: mollusk_in_state(east: 10.0, alive: True, withheld: None),
+      unit_id: its_unit,
+    )
+    == cast_result.to_value(cast_result.TargetRangeMax)
+    as "the control: a living creature 10.0 away is beyond Spell4 1817's 5.0 (105)"
+  assert refused_with(
+      activations:,
+      target: mollusk_in_state(east: 10.0, alive: False, withheld: None),
+      unit_id: its_unit,
+    )
+    == cast_result.to_value(cast_result.TargetCannotBeDead)
+    as "Spell4 1817's target row is Spell4Conditions 15 (bit 0, value 0): 0x1403b2240 gives a dead target 106 (its lines 63-77) before the range result it gives later (105)"
+}
+
+pub fn an_activate_cast_whose_spell_allows_the_dead_starts_on_a_dead_creature_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert Ok(row) =
+    creature2.get(tables: fixture_tables.shared(), id: Creature2Id(5713))
+    as "Creature2 5713 is a root of the fixture"
+  let creature = activate.creature_of(row:)
+  let assert [Column(prerequisite_id: 0, spell4_id: 6772), ..] =
+    creature.columns
+    as "its first activate spell is Spell4 6772, whose target row is Spell4Conditions 4 (mask 0)"
+  let assert Ok(#(_, effects)) =
+    right_click(
+      state: cast.new(),
+      activations: the_activations(),
+      unit_id: its_unit,
+      target: usable_in_state(
+        creature_id: 5713,
+        creature:,
+        checklist_index: 0,
+        link: activate.NoLink,
+        east: 1.0,
+        up: 0.0,
+        alive: False,
+        withheld: None,
+      ),
+      at: 1000,
+    )
+    as "a right-click is answered"
+  assert support.refusal_results(effects:) == []
+    as "0x1403b2240 tests no death for a target row with mask 0, so a dead creature is a target"
+  assert list.length(support.frames_of(
+      message_id: spell_cast_confirmed.message_id,
+      effects:,
+    ))
+    == 1
+    as "the cast starts: the caster is written the one 0x7fd"
+  assert support.writes(effects:)
+    |> list.all(fn(frame) { frame.message_id != spell_go.message_id })
+    && support.started_timers(effects:) == []
+    as "Creature2 5713's activateSpellCastTime and Spell4 6772's castTime are both 0, so the cast has no bar and its go waits for the client's interaction answer, like any activate cast"
+}
+
+pub fn an_activate_cast_that_needs_a_dead_target_is_refused_on_a_living_creature_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // No activate spell has a must-be-dead target; Spell4Conditions 16 (mask 225, value 1)
+  // is the client's own must-be-dead row.
+  let #(living, dead) =
+    fixture_tables.changed(
+      table: "Spell4",
+      id: 1817,
+      with: [#("spell4ConditionsIdTarget", planted_table.Integer(16))],
+      body: fn(tables) {
+        let activations = activate.activations(tables:)
+        #(
+          refused_with(
+            activations:,
+            target: mollusk_in_state(east: 1.0, alive: True, withheld: None),
+            unit_id: its_unit,
+          ),
+          right_click(
+            state: cast.new(),
+            activations:,
+            unit_id: its_unit,
+            target: mollusk_in_state(east: 1.0, alive: False, withheld: None),
+            at: 1000,
+          ),
+        )
+      },
+    )
+  assert living == cast_result.to_value(cast_result.TargetMustBeDead)
+    as "a living target of a spell whose target row has value bit 0 set is refused with 107 Target_MustBeDead (0x1403b2240 lines 63-77)"
+  let assert Ok(#(_, effects)) = dead as "a right-click is answered"
+  assert support.refusal_results(effects:) == []
+    as "a dead creature is a target of a must-be-dead spell"
+}
+
+/// The effects of the press of a creature withheld for this reason, in range.
+fn withheld_press(why why: activate.Withheld) -> List(Effect) {
+  let assert Ok(#(_, effects)) =
+    right_click(
+      state: cast.new(),
+      activations: the_activations(),
+      unit_id: its_unit,
+      target: mollusk_in_state(east: 1.0, alive: True, withheld: Some(why)),
+      at: 1000,
+    )
+    as "a right-click is answered"
+  effects
+}
+
+pub fn an_activate_cast_on_a_creature_hostile_to_the_player_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let effects = withheld_press(why: HostileToPlayer)
+  assert support.refusal_results(effects:)
+    == [cast_result.to_value(cast_result.TargetIsNotUseable)]
+    as "0x14047a060 skips kinds 26, 39 and 50 when the player's disposition toward the unit is Hostile, so the client sends no 0x97: the answer is the use of nothing, 100"
+  assert support.started_timers(effects:) == [] && support.tells(effects:) == []
+    as "no cast starts"
+  let assert [#(LogWarning, line)] = support.logs(effects:)
+    as "the refusal is logged: the client sends no such press"
+  assert string.contains(line, "hostile")
+}
+
+pub fn an_activate_cast_on_a_creature_in_combat_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let effects = withheld_press(why: InCombat)
+  assert support.refusal_results(effects:)
+    == [cast_result.to_value(cast_result.TargetIsNotUseable)]
+    as "0x14047a060 gives a unit in combat (unit word 0x2ac, set only by 0x89a) the kind 0, which has no handler, so the client sends no 0x97: the answer is 100"
+  assert support.started_timers(effects:) == [] && support.tells(effects:) == []
+    as "no cast starts"
+  let assert [#(LogWarning, line)] = support.logs(effects:)
+    as "the refusal is logged"
+  assert string.contains(line, "combat")
 }
 
 pub fn activate_refuses_unknown_and_unbuilt_spells_test() -> Nil {

@@ -50,6 +50,7 @@ pub fn walker(
         hit_radius: 1.1,
         attackable: creature_life.Attackable(exile: True, dominion: True),
         hostile_to: creature_life.Hostile(exile: hostile, dominion: hostile),
+        in_combat: False,
       ),
     ),
   ])

@@ -240,7 +240,8 @@
 //// - **The caster's death.** Bit 0 of the spell's caster condition row says
 ////   whether its caster must be alive, must be dead or may be either
 ////   (`Spell4.spell4ConditionsIdCaster`, `CasterDeath`); the row's other
-////   conditions are not read.
+////   conditions are not read. The target row's bit 0 is read the same way
+////   (`Spell4.spell4ConditionsIdTarget`, `Spell.target_death`), for the activate cast.
 //// - **What fails the load:** a Spell4, Spell4Base, Spell4Conditions, SpellCoolDown,
 ////   Class or Prerequisite row the tree names that the tables lack (a Prerequisite
 ////   column of a Spell4 row included), a Prerequisite row that nests itself through the
@@ -533,6 +534,9 @@ pub type Spell {
     weapon: WeaponSlot,
     /// Whether the caster must be alive or dead to cast it.
     caster_death: CasterDeath,
+    /// Whether the target must be alive or dead: bit 0 of the target condition row
+    /// (`Spell4.spell4ConditionsIdTarget`).
+    target_death: CasterDeath,
     global_cooldown: GlobalCooldown,
     /// The innate costs a press pays, in the client's order: the Spell4 row's two,
     /// then a stage's Spell4Thresholds row's two (`0x1403b3320`).
@@ -1845,6 +1849,7 @@ fn spell_of(
     id: row.spell4_conditions_id_target,
   ))
   let caster_death = caster_death_of(conditions: caster_conditions)
+  let target_death = caster_death_of(conditions: target_conditions)
   use costs <- result.try(
     costs_of(tables:, row:, base:, costs: [
       #(row.innate_cost_type0, row.innate_cost0, row.innate_cost_emm_id0),
@@ -1988,6 +1993,7 @@ fn spell_of(
       ),
       weapon: weapon_of(base.weapon_slot),
       caster_death:,
+      target_death:,
       global_cooldown:,
       costs:,
       requirements:,
@@ -4043,8 +4049,16 @@ fn global_cooldown_of(
   }
 }
 
-/// The bit 0 of the spell's caster condition row: CheckCastCaster tests it
-/// against the caster before a cast is sent (`Spell4.spell4ConditionsIdCaster`).
+/// The mask bits of a target condition row that the activate cast accounts for: bit 0
+/// (alive or dead, read as `target_death`) and bits 1, 5, 6 and 7 (108, 116, 118, 120),
+/// which a creature seated on nothing passes, in the order CheckCastUnitTargetRange tests
+/// them (`0x1403b2240`). A mask bit outside these is a condition the server does not
+/// judge.
+pub const target_mask_read = 227
+
+/// The bit 0 of a condition row of a spell: CheckCastCaster tests it against the caster
+/// and CheckCastUnitTargetRange against the target before a cast is sent
+/// (`Spell4.spell4ConditionsIdCaster`, `Spell4.spell4ConditionsIdTarget`).
 /// A row the Spell4 row names and the table lacks is a `NoRow`.
 fn caster_death_of(
   conditions conditions: Option(spell4_conditions.Spell4Conditions),

@@ -764,8 +764,8 @@ pub type Effect {
   /// the connection writes 0x8f5 to the caster's client and tells each viewer
   /// (`opcode.0x8f5`, genesis_prime/client_connection `Stealth`).
   StealthChanged(stealthed: Bool)
-  /// The go of an activate cast: the player activated the static object `unit_id`, a
-  /// creature of the Creature2 row `creature_id`.
+  /// The go of an activate cast: the player activated the creature or static object
+  /// `unit_id`, of the Creature2 row `creature_id`.
   Activated(unit_id: Int, creature_id: Int)
   /// The first go of a cast of a quest button's spell (`shortcut`), by its Spell4 id.
   ShortcutCast(spell4_id: Int)
@@ -1508,8 +1508,30 @@ fn activation_pressed(
   case target_of(press.target_unit_id) {
     activate.Unseen -> refusal(0, cast_result.CasterMustHaveTarget)
     activate.AnotherPlayer -> refusal(0, cast_result.NoTarget)
-    activate.Fighter -> refusal(0, cast_result.TargetIsNotUseable)
-    activate.Object(link: activate.ClosedLink, ..) ->
+    activate.Usable(withheld: Some(withheld), ..) ->
+      Ok(
+        #(cast, [
+          Log(
+            level: LogWarning,
+            text: "the activate cast of unit "
+              <> int.to_string(press.target_unit_id)
+              <> case withheld {
+              activate.HostileToPlayer -> " names a unit hostile to the player"
+              activate.InCombat -> " names a unit in combat"
+            }
+              <> ": the client offers it nothing, so it is refused with "
+              <> int.to_string(cast_result.to_value(
+              cast_result.TargetIsNotUseable,
+            )),
+          ),
+          refused(
+            client_cast_id:,
+            spell4_id: 0,
+            result: cast_result.TargetIsNotUseable,
+          ),
+        ]),
+      )
+    activate.Usable(link: activate.ClosedLink, ..) ->
       Ok(
         #(cast, [
           Log(
@@ -1528,7 +1550,7 @@ fn activation_pressed(
           ),
         ]),
       )
-    activate.Object(link: activate.UnreadLink(prerequisite_type:), ..) ->
+    activate.Usable(link: activate.UnreadLink(prerequisite_type:), ..) ->
       not_built_refusal(
         cast:,
         client_cast_id:,
@@ -1539,19 +1561,23 @@ fn activation_pressed(
           <> int.to_string(prerequisite_type)
           <> ", which the server does not read",
       )
-    activate.Object(
+    activate.Usable(
       creature_id:,
       creature:,
       checklist_index:,
       link: activate.NoLink,
       body: target,
+      alive:,
+      withheld: None,
     )
-    | activate.Object(
+    | activate.Usable(
         creature_id:,
         creature:,
         checklist_index:,
         link: activate.OpenLink,
         body: target,
+        alive:,
+        withheld: None,
       ) -> {
       let subject =
         subject_for_use(
@@ -1603,6 +1629,7 @@ fn activation_pressed(
                 creature_id:,
                 creature:,
                 target:,
+                alive:,
                 spell:,
                 effects:,
                 dropped_signals:,
@@ -1614,8 +1641,10 @@ fn activation_pressed(
   }
 }
 
-/// An activate cast of a planned spell at an object: refused with the range's result when
-/// the caster stands out of the limits the creature and the spell hold, else started.
+/// An activate cast of a planned spell at a creature or object: refused with 106 or 107
+/// when the target's life is not the one its Spell4 target row allows, then with the
+/// range's result when the caster stands out of the limits the creature and the spell
+/// hold, else started (`0x1403b2240` tests the life before the range).
 fn activation_in_range(
   cast cast: State,
   caster caster: Caster,
@@ -1626,6 +1655,7 @@ fn activation_in_range(
   creature_id creature_id: Int,
   creature creature: activate.Creature,
   target target: activate.Body,
+  alive alive: Bool,
   spell spell: Spell,
   effects effects: List(activate.ActivateEffect),
   dropped_signals dropped_signals: List(Spell4EffectsId),
@@ -1635,6 +1665,14 @@ fn activation_in_range(
   let refusal = fn(result) {
     Ok(#(cast, [refused(client_cast_id:, spell4_id:, result:)]))
   }
+  use <- bool.lazy_guard(
+    when: spell.target_death == spell_plan.CannotBeDead && !alive,
+    return: fn() { refusal(cast_result.TargetCannotBeDead) },
+  )
+  use <- bool.lazy_guard(
+    when: spell.target_death == spell_plan.MustBeDead && alive,
+    return: fn() { refusal(cast_result.TargetMustBeDead) },
+  )
   case
     activate.range_of(
       limits: activate.limits_for(creature:, spell4_id:, spell: limits),

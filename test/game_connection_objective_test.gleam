@@ -53,7 +53,6 @@ import genesis_prime/client_connection.{type Answer, type Message, type Request}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
-import genesis_prime/game/start_place
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
 import genesis_prime/message/experience_gained.{ExperienceGained}
@@ -64,13 +63,11 @@ import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/step.{type ConnectionEvent, type Event, OwnEvent}
 import genesis_prime/store.{HeldItem}
 import genesis_prime/table/id.{Creature2Id, Item2Id}
-import genesis_prime/world_map/creature_life.{Attackable, Combat, Hostile}
-import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/creature_life.{Hostile}
+import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{ObjectsSeen}
-import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/static_object.{StaticObject}
 import gleam/list
-import gleam/option.{None}
 import message_support
 import owned_test
 import planted_table.{Integer}
@@ -96,46 +93,15 @@ fn appears(
   outfit_info_id outfit_info_id: Int,
   hit_radius hit_radius: Float,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  let entry = connection_support.entry_place()
-  let place =
-    start_place.moved(
-      place: entry,
-      x: start_place.x(entry),
-      y: start_place.y(entry),
-      z: start_place.z(entry)
-        -. { talk_gap +. vendor_support.player_radius +. hit_radius },
-    )
-  let walker = spawn_support.dorian_walker(number: 1, place:)
-  let target =
-    Spawn(
-      ..walker,
-      creature_id: Creature2Id(creature_id),
-      display_info_id:,
-      outfit_info_id:,
-      combat: Combat(
-        ..walker.combat,
-        hit_radius:,
-        attackable: Attackable(exile: False, dominion: False),
-        hostile_to: Hostile(exile: False, dominion: False),
-      ),
-    )
-  connection_support.sent_by_a_peer(connection_support.news_of(
+  connection_support.creature_appears(
     unit_id: unit,
-    news: client_connection.CreatureAppeared(
-      unit: creature_unit.create(
-        spawn: target,
-        unit_id: unit,
-        health: 52,
-        interrupt_armor: None,
-        server_time_estimate_start: 0,
-      ),
-      life: 4,
-      place:,
-      hit_radius:,
-      attackable: target.combat.attackable,
-      hostile_to: target.combat.hostile_to,
-    ),
-  ))
+    creature_id:,
+    display_info_id:,
+    outfit_info_id:,
+    hit_radius:,
+    place: vendor_support.ahead_of_the_player(hit_radius:, gap: talk_gap),
+    hostile_to: Hostile(exile: False, dominion: False),
+  )
 }
 
 /// The ids and bodies the step writes to the client, in order.
@@ -314,6 +280,208 @@ pub fn using_a_target_sends_progress_after_the_activate_go_test() -> Nil {
       state_frame(quest: 9207, state: 2),
     ]
     as "opcode.0x361 and opcode.0x35c: objective 0 of quest 9207 is at 1 of 1, and the quest is Achieved"
+}
+
+const survivor = 11_070
+
+/// Creature2DisplayGroupEntry 24099 puts Creature2 11070 on Creature2DisplayInfo 24086,
+/// whose hitRadius is 1.4.
+const survivors_display = 24_086
+
+const survivors_radius = 1.4
+
+/// The connection of a player whose log holds quest 3480 with nothing counted (objective
+/// 4470, type 12, Creature2 11070, 3 uses; objective 4565 a second one), which sees
+/// Creature2 11070 as unit 40 on a path: it walks half a unit a second from 1.0 to 2.0
+/// from the player's edge, so it is in the creature's range of 5.0 whenever it is used.
+fn seeing_the_walking_survivor() -> game_connection.State {
+  let #(state, _) =
+    connection_support.entered_with_quests(quests: [
+      quest_support.accepted(quest_id: 3480, progress: [0, 0]),
+    ])
+  let state =
+    connection_support.feed(
+      state:,
+      event: appears(
+        creature_id: survivor,
+        display_info_id: survivors_display,
+        outfit_info_id: 0,
+        hit_radius: survivors_radius,
+      ),
+    ).0
+  connection_support.feed(
+    state:,
+    event: connection_support.news_sent_by_a_peer(
+      unit_id: unit,
+      news: client_connection.CreatureMoved(path: creature_path.Running(
+        from: vendor_support.ahead_of_the_player(
+          hit_radius: survivors_radius,
+          gap: 1.0,
+        ),
+        to: vendor_support.ahead_of_the_player(
+          hit_radius: survivors_radius,
+          gap: 2.0,
+        ),
+        started_ms: 0,
+        speed: 0.5,
+      )),
+    ),
+  ).0
+}
+
+/// The right-click at `ms`, then the cast's timers up to its go at `ms` + 2000
+/// (Creature2 11070's activateSpellCastTime): the state after, the click's step and the
+/// steps of the go.
+fn used_once(
+  state state: game_connection.State,
+  at ms: Int,
+) -> #(
+  game_connection.State,
+  step.ConnectionStep(Request),
+  List(step.ConnectionStep(Request)),
+) {
+  let #(state, started) =
+    connection_support.at(
+      state:,
+      ms:,
+      event: OwnEvent(step.Read(right_click())),
+    )
+  let #(state, go) =
+    connection_support.casts_run(
+      state:,
+      pending: connection_support.cast_timers(steps: [started], ms:),
+      until_ms: ms + 2000,
+      steps: [],
+    )
+  #(state, started, go)
+}
+
+/// The 0x361 frames the steps write.
+fn progress_frames(
+  steps steps: List(step.ConnectionStep(Request)),
+) -> List(#(Int, BitArray)) {
+  list.flat_map(steps, fn(taken) { as_pairs(frames: frames(taken:)) })
+  |> list.filter(fn(frame) { frame.0 == 0x0361 })
+}
+
+pub fn using_a_moving_quest_creature_counts_its_objective_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, started) =
+    connection_support.at(
+      state: seeing_the_walking_survivor(),
+      ms: 0,
+      event: OwnEvent(step.Read(right_click())),
+    )
+  assert connection_support.written_ids(started) == [0x07FD]
+    as "opcode.0x7fd: Creature2 11070 is in range (its activateSpellMaxRange 5.0) and alive, hostile to nobody, so the cast starts"
+  let #(state, pending, before) =
+    connection_support.casts_left(
+      state:,
+      pending: connection_support.cast_timers(steps: [started], ms: 0),
+      until_ms: 1999,
+      steps: [],
+    )
+  assert ids_of(steps: before) == []
+    as "Creature2 11070 activateSpellCastTime 2000: 1 ms before the go nothing is written, 0x361 included"
+  let #(_, go) =
+    connection_support.casts_run(state:, pending:, until_ms: 2000, steps: [])
+  assert ids_of(steps: go) == [0x07F4, 0x07FE, 0x0361]
+    as "opcode.0x7f4 and 0x7fe: the go and the finish at 2000 ms, then the use counts: 0x361, and no 0x35c because objective 4565 of quest 3480 is still open"
+  assert progress_frames(steps: go)
+    == [progress_frame(quest: 3480, index: 0, progress: 1)]
+    as "opcode.0x361: objective 0 of quest 3480 (QuestObjective 4470, type 12, Creature2 11070, count 3) is at 1 of 3"
+}
+
+pub fn a_creature_that_dies_before_the_go_counts_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, started) =
+    connection_support.at(
+      state: seeing_the_walking_survivor(),
+      ms: 0,
+      event: OwnEvent(step.Read(right_click())),
+    )
+  let #(state, _) =
+    connection_support.at(
+      state:,
+      ms: 1000,
+      event: connection_support.news_sent_by_a_peer(
+        unit_id: unit,
+        news: client_connection.Died,
+      ),
+    )
+  let #(_, go) =
+    connection_support.casts_run(
+      state:,
+      pending: connection_support.cast_timers(steps: [started], ms: 0),
+      until_ms: 2000,
+      steps: [],
+    )
+  assert list.contains(ids_of(steps: go), 0x07F4)
+    as "the cast still reaches its go at 2000 ms (the client's 0x801 result 6 has not arrived), so the 0x361 is absent because the use did not count, not because the timer was lost"
+  assert progress_frames(steps: go) == []
+    as "SetUnitDeathState 0x14045e740 cancels a cast whose target dies, so a use of a creature the picture shows dead counts nothing"
+}
+
+pub fn a_creature_that_leaves_the_picture_before_the_go_counts_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, started) =
+    connection_support.at(
+      state: seeing_the_walking_survivor(),
+      ms: 0,
+      event: OwnEvent(step.Read(right_click())),
+    )
+  let #(state, _) =
+    connection_support.at(
+      state:,
+      ms: 1000,
+      event: connection_support.news_sent_by_a_peer(
+        unit_id: unit,
+        news: client_connection.Removed,
+      ),
+    )
+  let #(_, go) =
+    connection_support.casts_run(
+      state:,
+      pending: connection_support.cast_timers(steps: [started], ms: 0),
+      until_ms: 2000,
+      steps: [],
+    )
+  assert list.contains(ids_of(steps: go), 0x07F4)
+    as "the cast still reaches its go at 2000 ms, so the 0x361 is absent because the unit is gone from the picture, not because the timer was lost"
+  assert progress_frames(steps: go) == []
+    as "a use counts only on a unit the player still sees"
+}
+
+pub fn a_quest_creature_is_refused_once_its_objective_is_done_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, counted) =
+    list.fold(
+      [0, 5000, 10_000],
+      #(seeing_the_walking_survivor(), []),
+      fn(so_far, ms) {
+        let #(state, counted) = so_far
+        let #(state, _, go) = used_once(state:, at: ms)
+        #(state, list.append(counted, progress_frames(steps: go)))
+      },
+    )
+  assert counted
+    == [
+      progress_frame(quest: 3480, index: 0, progress: 1),
+      progress_frame(quest: 3480, index: 0, progress: 2),
+      progress_frame(quest: 3480, index: 0, progress: 3),
+    ]
+    as "opcode.0x361: three uses bring objective 4470 (count 3) to 3 of 3"
+  let #(_, fourth) =
+    connection_support.at(
+      state:,
+      ms: 15_000,
+      event: OwnEvent(step.Read(right_click())),
+    )
+  assert connection_support.refusal_results(taken: fourth)
+    == [cast_result.TargetIsNotUseable]
+    as "Prerequisite 2672 (type 43 on quest 3480) fails once the objective is done, so the link is closed and the client offers nothing (0x140479560): the press is the use of nothing, 100"
+  assert connection_support.cast_timers(steps: [fourth], ms: 15_000) == []
+    as "no cast starts, so no fourth 0x361 follows"
 }
 
 pub fn an_interrupted_use_counts_nothing_test() -> Nil {

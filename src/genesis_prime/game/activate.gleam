@@ -24,9 +24,14 @@
 //// - A spell with an effect the strike would apply, aimed at the target or an area, is
 ////   refused with result 285 and logged once, since the activate cast strikes no unit
 ////   (gap, #336).
+//// - **The target's life** is judged before the range: the spell's target row says a dead
+////   creature is refused 106 or a living one 107 (`CheckCastUnitTargetRange`,
+////   `0x1403b2240`). A unit hostile to the player or in combat is offered no use at all
+////   (`Withheld`, result 100).
 //// - Gaps, each closed by the quests, zones and prerequisites issue (#334): the client's
 ////   per-unit vertical offset and the creature words 0x6c and 0x148 that make the client
-////   pick no spell are not modelled.
+////   pick no spell are not modelled; nor are the target row's crowd-control and
+////   fight-state conditions and the unit word 0xc4 that bit 5 reads (`planned`).
 
 import genesis_prime/game/effect_kind
 import genesis_prime/game/prerequisite.{type Prerequisite}
@@ -35,17 +40,19 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/table/creature2
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
-  type Spell4EffectsId, GameFormulaId, PrerequisiteId, Spell4EffectsId, Spell4Id,
+  type Spell4EffectsId, GameFormulaId, PrerequisiteId, Spell4ConditionsId,
+  Spell4EffectsId, Spell4Id,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_conditions
 import genesis_prime/world_map/creature_path
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option
+import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// The GameFormula row whose dataint0 is the spell a creature casts when none of its
@@ -291,28 +298,86 @@ fn planned(
       case spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: []) {
         Error(error) -> CannotBePlanned(why: spell_plan.describe(error:))
         Ok(spell) ->
-          case activate_rows_of(sources:, spell4_id:) {
-            Error(AimedAtTarget(effect_id:)) ->
+          case
+            unread_target_bits(
+              tables:,
+              conditions_id: row.spell4_conditions_id_target,
+            )
+          {
+            Some(#(mask, unread)) ->
               CannotBePlanned(
-                why: "the effect "
-                <> int.to_string(effect_id)
-                <> " of the spell "
+                why: "the spell "
                 <> int.to_string(spell4_id)
-                <> " aims at the target or an area, and the activate cast strikes no one",
+                <> " tests the bits "
+                <> int.to_string(unread)
+                <> " of its target conditions row "
+                <> int.to_string(row.spell4_conditions_id_target)
+                <> " (mask "
+                <> int.to_string(mask)
+                <> "), which the activate cast does not read",
               )
-            Ok(ActivateRows(effects:, dropped_signals:)) ->
-              Planned(
-                spell:,
-                effects:,
-                dropped_signals:,
-                limits: Limits(
-                  min: row.target_min_range,
-                  max: row.target_max_range,
-                  vertical: row.target_vertical_range,
-                ),
-              )
+            None -> planned_rows(spell:, sources:, spell4_id:, row:)
           }
       }
+  }
+}
+
+/// The mask of a Spell4Conditions row of a target and its bits that the activate cast
+/// does not read (`spell_plan.target_mask_read`), when it has any.
+///
+/// Gap: the client also tests the unit's crowd-control state, its fight state and the
+/// creature word 0x1e4 against such a row, and bit 5's word 0xc4 is not decoded; no
+/// activate spell of the tables tests a bit outside the ones read, so the spell that does
+/// is not planned (#334).
+fn unread_target_bits(
+  tables tables: table_store.Tables,
+  conditions_id conditions_id: Int,
+) -> Option(#(Int, Int)) {
+  case conditions_id {
+    0 -> None
+    id ->
+      case spell4_conditions.get(tables:, id: Spell4ConditionsId(id)) {
+        Error(Nil) -> None
+        Ok(row) ->
+          case
+            int.bitwise_and(
+              row.condition_mask,
+              int.bitwise_not(spell_plan.target_mask_read),
+            )
+          {
+            0 -> None
+            unread -> Some(#(row.condition_mask, unread))
+          }
+      }
+  }
+}
+
+fn planned_rows(
+  spell spell: Spell,
+  sources sources: spell_plan.Sources,
+  spell4_id spell4_id: Int,
+  row row: spell4.Spell4,
+) -> Planned {
+  case activate_rows_of(sources:, spell4_id:) {
+    Error(AimedAtTarget(effect_id:)) ->
+      CannotBePlanned(
+        why: "the effect "
+        <> int.to_string(effect_id)
+        <> " of the spell "
+        <> int.to_string(spell4_id)
+        <> " aims at the target or an area, and the activate cast strikes no one",
+      )
+    Ok(ActivateRows(effects:, dropped_signals:)) ->
+      Planned(
+        spell:,
+        effects:,
+        dropped_signals:,
+        limits: Limits(
+          min: row.target_min_range,
+          max: row.target_max_range,
+          vertical: row.target_vertical_range,
+        ),
+      )
   }
 }
 
@@ -412,25 +477,30 @@ pub type Target {
   Unseen
   /// Another player's unit.
   AnotherPlayer
-  /// A creature with a fight state, whose place moves: its activate cast is refused
-  /// with result 100 until the issue for quests, zones and prerequisites (#334) reads its
-  /// place. This includes checklist targets: of the 477 creatures with an activate spell
-  /// among the 512 that a type 14 objective's target group names (the client's
-  /// QuestObjective, TargetGroup and Creature2 tables), 60 are spawned as such creatures
-  /// (302 spawns, entity_type 0 in Jim's world database, `world-data/spawn.tsv`), so a
-  /// 0x97 at them is refused until that issue.
-  Fighter
-  /// A static object: the id of its Creature2 row, what the row says of its activate
-  /// cast, the checklist index its 0x262 carried (the bit a type 94 condition of its
-  /// activate pick reads), whether the player's quest log opens the creature's link to
-  /// an objective and where it stands.
-  Object(
+  /// A creature or static object the player can see: the id of its Creature2 row, what
+  /// the row says of its activate cast, the checklist index its 0x262 carried (the bit a
+  /// type 94 condition of its activate pick reads), whether the player's quest log opens
+  /// the creature's link to an objective, where it stands now (a creature that walks a
+  /// path stands where its path puts it at the press), whether it lives, and why the
+  /// client offers no use of it, if it does not.
+  Usable(
     creature_id: Int,
     creature: Creature,
     checklist_index: Int,
     link: Link,
     body: Body,
+    alive: Bool,
+    withheld: Option(Withheld),
   )
+}
+
+/// Why the client offers a unit no use of it (`PickInteractionKind`, `0x14047a060`): the
+/// press is refused with result 100.
+pub type Withheld {
+  /// The unit is hostile to the player: the client skips the interaction kinds of a use.
+  HostileToPlayer
+  /// The unit is in combat: the client gives it no click at all.
+  InCombat
 }
 
 /// Whether the player's quest log opens a creature's link to an objective, which the
