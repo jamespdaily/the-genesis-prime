@@ -91,7 +91,7 @@
 ////                                                         CancelTimer(CastEnds); round closed, the next attack
 ////                                                            tick (interval) started
 ////                                                         ─0x7f9(cast id, result 11) 0x7fe─────────────────▶
-////                                                         ChargeInterrupted ─▶ creature_guard `Interrupted`
+////                                                         ChargeInterrupted(cast id) ─▶ creature_guard `Interrupted`
 //// ```
 ////
 //// - **Aggro** comes only from a viewer, by `Approached` while Resting: the map
@@ -193,11 +193,12 @@
 ////   while charging" (Spell4 85474, text 748852) and the charge's hint says to use an interrupt on
 ////   it (Spell4 85469, text 748860). The fight cancels the `CastEnds` timer, writes 0x7f9 with result
 ////   11 (SpellInterrupted) and the 0x7fe, closes the round, starts the next attack tick and asks the
-////   creature's rule to tell the guard (`ChargeInterrupted`), which opens the creature
+////   creature's rule to tell the guard (`ChargeInterrupted`, with the charge's cast id), which opens the creature
 ////   (genesis_prime/world_map/creature_guard). Only the first state of a hold breaks it: a creature
 ////   already held (`Controlled` is fired only on a not-held to held change) breaks nothing, and
-////   once the go is out (`Striking`) the strikes are out and nothing breaks. No creature but a
-////   guarded one with an opening has a cast time, so no other creature is changed by it.
+////   once the go is out (`Striking`) the strikes are out and nothing breaks. The break is the fight's
+////   for any creature with a charge, guarded or not: a bare turret's charge breaks the same way
+////   and the guard, finding itself `Bare`, opens nothing.
 //// - **An opened creature is held** (`Fighter.controlled`): it starts no charge, strike, chase or
 ////   walk until its opening ends, when `ControlEnded` lets it act again.
 ////
@@ -225,7 +226,7 @@
 //// | Charge start: the guard holds the number `next_cast` offers | the round takes the next free id and `next_cast` moves past that id, so two charges in a row take different ids and a late answer to the first closes nothing of the second | `two_charges_under_a_held_guard_take_different_cast_ids_test` |
 //// | CastEnds timer: it fires for the open charge | each fighter on the threat list inside the rectangle along the bearing to the target now gets a strike, and the strike deadline starts; none inside, the go (0x7f4) names no unit and 0x7fe follows | `at_its_end_the_charge_strikes_each_fighter_inside_its_rectangle_test`, `a_charge_faces_its_target_test`, `a_charge_with_nobody_inside_goes_with_no_target_test` |
 //// | CastEnds timer: it fires for a charge that ended (a death or a leash) or of an old generation | it does nothing | `a_stale_cast_end_does_nothing_test` |
-//// | a state takes hold during the charge | `CancelTimer(CastEnds)`, 0x7f9 (cast id, 11) and 0x7fe, the round closed, the next attack tick started, `ChargeInterrupted` | `a_controlled_turret_still_strikes_at_the_charge_end_test` and `a_controlled_turret_keeps_its_aim_while_its_target_moves_test` (both now expect the interrupt), `a_stun_during_the_charge_interrupts_it_and_opens_the_turret_test` |
+//// | a state takes hold during the charge | `CancelTimer(CastEnds)`, 0x7f9 (cast id, 11) and 0x7fe, the round closed, the next attack tick started, `ChargeInterrupted` | `a_state_that_takes_hold_during_the_charge_breaks_it_so_the_cast_end_strikes_no_one_test`, `a_stun_on_the_target_during_the_charge_breaks_it_and_the_next_attack_tick_starts_test`, `a_stun_during_the_charge_interrupts_it_and_opens_the_turret_test` |
 //// | CastEnds timer: it fires after an interrupt | the round was closed and the generation moved on, so it does nothing | `a_cast_end_after_an_interrupt_is_stale_test` |
 //// | a state takes hold after the go (the round is `Striking`) | nothing breaks: the strikes are out | `an_interrupt_after_the_go_opens_nothing_test` |
 //// | a second state takes hold in the same round | the creature was held already, so no `Controlled`: nothing more | `a_second_state_in_the_same_round_opens_nothing_more_test` |
@@ -446,7 +447,7 @@ pub type Effect {
   /// A crowd-control state broke the open charge: its `CancelTimer(CastEnds)`, the 0x7f9 of
   /// result 11 and the 0x7fe are in the effects before it, and the creature's rule tells the
   /// guard (`creature_guard.Interrupted`), which opens the creature.
-  ChargeInterrupted
+  ChargeInterrupted(cast_id: Int)
   StartTimer(timer: Timer, after_ms: Int)
   CancelTimer(timer: Timer)
 }
@@ -1264,6 +1265,14 @@ fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
         killed,
       )
     }
+    // A player is never guarded: only a creature answers `Immune`.
+    strike_tell.Immune(controls: _) -> #(
+      [
+        cast.Hit(unit_id:, unit: cast.HitPlayer, descriptions: [], controls: []),
+      ],
+      False,
+      False,
+    )
     strike_tell.Deflected -> #([cast.Deflected(unit_id:)], False, False)
     strike_tell.Refused(why: strike_tell.Dead) -> #([], True, True)
     strike_tell.Refused(why: strike_tell.Returning) -> #([], True, False)
@@ -1707,18 +1716,36 @@ fn stand_still(
 
 /// A crowd-control state takes hold: the creature stands where it is. An open charge is
 /// broken: `CancelTimer(CastEnds)`, 0x7f9 of result 11 and 0x7fe of its cast, the round closed
-/// and the next attack tick started, then `ChargeInterrupted` for the guard. A charge already
+/// and the next attack tick started, then `ChargeInterrupted` with the charge's cast id for the guard. A charge already
 /// gone (the go is out, round `Striking`) is not broken, and a second state of the same round finds
 /// none.
 fn held(
   state state: State,
-  fighter _fighter: Fighter,
+  fighter fighter: Fighter,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let #(state, placed) = stand_still(state:, now_ms:)
   case state.status {
-    Fighting(round: Some(Round(stage: Charging(..), ..)), ..) ->
-      panic as "shape: #655 held breaks an open charge: CancelTimer(CastEnds), CastInterrupted(cast id), the round closed, the next attack tick started, ChargeInterrupted"
+    Fighting(round: Some(Round(cast_id:, stage: Charging(ends:, ..))), ..) as fighting -> {
+      let #(state, ticked) =
+        next_tick(
+          state: State(..state, status: Fighting(..fighting, round: None)),
+          fighter:,
+          effects: [],
+        )
+      #(
+        state,
+        list.flatten([
+          placed,
+          [
+            CancelTimer(timer: CastEnds(ends)),
+            ToViewers(client_connection.CastInterrupted(cast_id:)),
+          ],
+          ticked,
+          [ChargeInterrupted(cast_id:)],
+        ]),
+      )
+    }
     Fighting(..) | Resting | Returning(..) -> #(state, placed)
   }
 }

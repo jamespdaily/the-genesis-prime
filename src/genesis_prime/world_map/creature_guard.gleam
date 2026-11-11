@@ -17,10 +17,10 @@
 //// the fight's charge is Charging, a state of creature_control lands (`Controlled`):
 //// ◀── answer(Landed) ◀── 0x87f(state) from creature_control
 ////                          the charge breaks: CancelTimer(CastEnds), ─0x7f9(cast, 11) 0x7fe─────▶
-////                          ChargeInterrupted ─▶ Interrupted ─▶ Opened(generation):
-////                                                        ─0x811(85474's cast, C) 0x7ff(85472) 0x7f4(C: 224705,
-////                                                           225189, 224715) 0x87f(C, 9) 0x87f(C, 12)─▶
-////                                                        StartTimer(OpeningEnds, ends_after_ms)
+////                          ChargeInterrupted(charge's cast id) ─▶ Interrupted(charge_cast) ─▶ Opened(generation):
+////                                                        ─0x7ff(85472, a new id) 0x7f4(C: 224705, 224715,
+////                                                           225189) 0x811(85474's cast, C) 0x87f(C, 9)
+////                                                           0x87f(C, 12)─▶ StartTimer(OpeningEnds, ends_after_ms)
 //// damage while Opened:                                   the strike lands as on any creature
 //// OpeningEnds of the opening's generation:
 ////                                                        ─0x880(C, 9) 0x880(C, 12) 0x7fe(85472's cast)─▶
@@ -33,9 +33,9 @@
 ////
 //// - **The guard takes no damage.** The client reads no immunity: nothing reads Spell4Effects type
 ////   79, so the guard is the server's alone (`Spell4Effects.effectType.79`). A strike whose
-////   offence is damage and whose descriptions the guard emptied answers `Landed` with none, and
-////   the striker's connection writes the 0x247 of type 18, the one immunity the client shows
-////   (`opcode.0x247.immunity`). A state a strike carries still lands (creature_control).
+////   offence is damage answers `Immune` (genesis_prime/game/strike_tell), and the striker's
+////   connection writes the 0x247 of type 18, the one immunity the client shows
+////   (`opcode.0x247.immunity`); a strike with no damage answers `Landed` with none. A state a strike carries still lands (creature_control).
 //// - **The guard is shown by its cast.** The 85474 cast, 0x7ff and a 0x7f4 holding a target info
 ////   for the creature with effect 224666, a non-zero instance id and lifetime 0, never ends on the
 ////   client, and its 0x7fe is held back (a 0x7fe destroys the node and the buff: `cast.target_node_end`).
@@ -53,7 +53,9 @@
 ////   interrupt reaches `Interrupted`; one that does (two inputs in one step) opens nothing more.
 //// - **Casts take ids with the fight's.** The guard's casts are ids of the unit's id space
 ////   (`cast.cast_id`) taken with `cast.mint`, given the fight's live casts, and the fight's take
-////   the guard's (`live_casts`), so neither holds an id the other still has.
+////   the guard's (`live_casts`), so neither holds an id the other still has. The interrupted
+////   charge's id still counts as live when the opening takes its own, so the opening's id differs
+////   from the id of the 0x7f9 that was just sent.
 //// - **Which creature.** A kind with a guard and an opening (genesis_prime/world_map/creature_kind)
 ////   gives its creature one; the load refuses a spell whose effects are not the ones the creature
 ////   applies (`creature_guard_spells.guard_of`). A creature with none has no guard: `Bare`, takes damage, opens nothing.
@@ -77,8 +79,12 @@
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/cast
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
 import genesis_prime/world_map/creature_guard_spells.{type Guard}
+import gleam/int
+import gleam/list
 import gleam/option.{type Option, None, Some}
 
 /// Where the guard stands.
@@ -90,24 +96,32 @@ pub type Phase {
   /// The guard is up: the id of its cast, which the viewers were shown.
   Guarded(cast_id: Int)
   /// The creature is open to damage: the generation of its `OpeningEnds` timer, the monotonic time
-  /// it fires at, the id of the opening's cast, and each state it holds with the instance id of its
-  /// effect.
+  /// it fires at, the id of the opening's cast, and each effect it applied.
   Opened(generation: Int, ends_at_ms: Int, cast_id: Int, held: List(Held))
 }
 
-/// A state the opening holds on the creature, with the instance id of the effect that set it.
+/// An effect the opening applied to the creature: its row, the state it sets (none for Fluff),
+/// the instance id the client keeps it by and its lifetime when it was applied.
 pub type Held {
-  Held(state: CrowdControlState, instance_id: Int)
+  Held(
+    effect_id: Int,
+    state: Option(CrowdControlState),
+    instance_id: Int,
+    lifetime_ms: Int,
+  )
 }
 
-/// A creature's guard: its spells, where it stands, the generation of its next timer and the
-/// instance id of its next effect.
+/// A creature's guard: its spells, where it stands, the generation of its next timer, the
+/// instance id of its next effect, the number of its next cast and the instance id of the
+/// guard's effect while it is up.
 pub opaque type State {
   State(
     guard: Option(Guard),
     phase: Phase,
     next_generation: Int,
     next_instance: Int,
+    next_cast: Int,
+    guard_instance: Int,
   )
 }
 
@@ -123,7 +137,8 @@ pub type Input {
   /// The creature stands, at a start or when its corpse timer stood it again: the guard is up.
   Stands
   /// The fight's charge was broken by a state: the creature opens, when it has a guard that is up.
-  Interrupted
+  /// The charge's cast was just finished, and the opening's takes none of its id.
+  Interrupted(charge_cast: Int)
   /// The guard's timer fired.
   TimerFired(timer: Timer)
   /// creature_life: a strike killed the creature. The guard or the opening ends with no frame and
@@ -148,7 +163,14 @@ pub fn new(guard guard: Option(Guard), unit_id unit_id: Int) -> State {
     Some(..) -> Guarded(cast_id: cast.mint(unit_id:, number: 1, live: []))
     None -> Bare
   }
-  State(guard:, phase:, next_generation: 1, next_instance: 1)
+  State(
+    guard:,
+    phase:,
+    next_generation: 1,
+    next_instance: 2,
+    next_cast: 2,
+    guard_instance: 1,
+  )
 }
 
 /// Whether the guard is up: a strike's damage takes nothing.
@@ -182,28 +204,287 @@ pub fn live_casts(state state: State) -> List(Int) {
 /// guard takes none of it.
 pub fn step(
   state state: State,
-  unit_id _unit_id: Int,
-  live _live: List(Int),
-  input _input: Input,
-  now_ms _now_ms: Int,
+  unit_id unit_id: Int,
+  live live: List(Int),
+  place place: Place,
+  input input: Input,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case state.guard {
+    None -> #(state, [])
+    Some(guard) ->
+      case input {
+        Stands ->
+          case state.phase {
+            Dormant -> raised(state:, guard:, unit_id:, live:, place:)
+            Bare | Guarded(..) | Opened(..) -> #(state, [])
+          }
+        Interrupted(charge_cast:) ->
+          case state.phase {
+            Guarded(cast_id: guard_cast) ->
+              opens(
+                state:,
+                guard:,
+                guard_cast:,
+                unit_id:,
+                live: [charge_cast, ..live],
+                place:,
+                now_ms:,
+              )
+            Bare | Dormant | Opened(..) -> #(state, [])
+          }
+        TimerFired(timer: OpeningEnds(generation: fired)) ->
+          opening_ended(state:, guard:, unit_id:, live:, place:, fired:)
+        Killed ->
+          case state.phase {
+            Guarded(..) -> #(State(..state, phase: Dormant), [])
+            Opened(generation:, ..) -> #(State(..state, phase: Dormant), [
+              CancelTimer(timer: OpeningEnds(generation:)),
+            ])
+            Bare | Dormant -> #(state, [])
+          }
+      }
+  }
+}
+
+/// The opening's timer of generation `fired` fired: when it is the open opening's, each of its
+/// states ends, then its cast, and the guard goes up again; any other generation is gone.
+fn opening_ended(
+  state state: State,
+  guard guard: Guard,
+  unit_id unit_id: Int,
+  live live: List(Int),
+  place place: Place,
+  fired fired: Int,
 ) -> #(State, List(Effect)) {
   case state.phase {
-    Bare -> #(state, [])
-    Dormant | Guarded(..) | Opened(..) ->
-      panic as "shape: #655 step: Stands raises a Dormant guard with a new cast, Interrupted opens a guarded creature, OpeningEnds of the opening's generation puts the guard back, Killed makes Guarded or Opened Dormant with no frame"
+    Opened(generation:, cast_id:, held:, ..) if generation == fired -> {
+      let #(state, raising) =
+        raised(state:, guard:, unit_id:, live: [cast_id, ..live], place:)
+      #(
+        state,
+        list.flatten([
+          list.map(states_of(held:), fn(held) {
+            ToViewers(client_connection.CrowdControlEnded(
+              state: held.0,
+              cast_id:,
+              instance_id: held.1,
+            ))
+          }),
+          [ToViewers(client_connection.CastFinished(cast_id:))],
+          raising,
+        ]),
+      )
+    }
+    Bare | Dormant | Guarded(..) | Opened(..) -> #(state, [])
   }
+}
+
+/// The guard goes up: a new cast of the creature's id space, `live` the ids of the casts that
+/// are live, and the 0x7ff and 0x7f4 of it, with an effect of its own instance id and lifetime 0.
+fn raised(
+  state state: State,
+  guard guard: Guard,
+  unit_id unit_id: Int,
+  live live: List(Int),
+  place place: Place,
+) -> #(State, List(Effect)) {
+  let cast_id = cast.mint(unit_id:, number: state.next_cast, live:)
+  let state =
+    State(
+      ..state,
+      phase: Guarded(cast_id:),
+      next_cast: cast.number_of(cast_id:) + 1,
+      next_instance: state.next_instance + 1,
+      guard_instance: state.next_instance,
+    )
+  #(
+    state,
+    list.map(guard_cast(state:, guard:, unit_id:, place:, cast_id:), ToViewers),
+  )
+}
+
+/// The creature opens: the opening's cast, the guard's cast taken off, then the states, and the
+/// timer that ends it.
+fn opens(
+  state state: State,
+  guard guard: Guard,
+  guard_cast guard_cast: Int,
+  unit_id unit_id: Int,
+  live live: List(Int),
+  place place: Place,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let cast_id =
+    cast.mint(unit_id:, number: state.next_cast, live: [guard_cast, ..live])
+  let #(next_instance, held) =
+    list.map_fold(
+      guard.opening.effects,
+      state.next_instance,
+      fn(instance, effect) {
+        #(
+          instance + 1,
+          Held(
+            effect_id: effect.effect_id,
+            state: effect.state,
+            instance_id: instance,
+            lifetime_ms: effect.lifetime_ms,
+          ),
+        )
+      },
+    )
+  let generation = state.next_generation
+  let state =
+    State(
+      ..state,
+      phase: Opened(
+        generation:,
+        ends_at_ms: now_ms + guard.opening.ends_after_ms,
+        cast_id:,
+        held:,
+      ),
+      next_generation: generation + 1,
+      next_instance:,
+      next_cast: cast.number_of(cast_id:) + 1,
+    )
+  #(
+    state,
+    list.flatten([
+      list.map(
+        opening_cast(guard:, unit_id:, place:, cast_id:, held:, elapsed_ms: 0),
+        ToViewers,
+      ),
+      [
+        ToViewers(client_connection.CastTargetsRemoved(
+          removed: SpellTargetsRemoved(cast_id: guard_cast, unit_ids: [unit_id]),
+          destroyed: True,
+        )),
+      ],
+      list.map(states_of(held:), fn(held) {
+        ToViewers(client_connection.CrowdControlApplied(
+          state: held.0,
+          instance_id: held.1,
+        ))
+      }),
+      [
+        StartTimer(
+          timer: OpeningEnds(generation:),
+          after_ms: guard.opening.ends_after_ms,
+        ),
+      ],
+    ]),
+  )
+}
+
+/// The 0x7ff and 0x7f4 of the guard's cast on the creature: its effect with its instance id and
+/// lifetime 0, which no 0x7fe ends.
+fn guard_cast(
+  state state: State,
+  guard guard: Guard,
+  unit_id unit_id: Int,
+  place place: Place,
+  cast_id cast_id: Int,
+) -> List(News) {
+  [
+    client_connection.CastStarted(start: cast.creature_started(
+      cast_id:,
+      spell4_id: guard.spell4_id,
+      caster_unit_id: unit_id,
+      target_unit_id: unit_id,
+      place:,
+    )),
+    client_connection.CastWent(
+      go: cast.creature_applied(
+        cast_id:,
+        place:,
+        target_unit_id: unit_id,
+        effects: [
+          cast.CreatureEffect(
+            effect_id: guard.effect_id,
+            instance_id: state.guard_instance,
+            lifetime_ms: 0,
+          ),
+        ],
+      ),
+    ),
+  ]
+}
+
+/// The 0x7ff and 0x7f4 of the opening's cast on the creature: each effect applied under its
+/// instance id, for what is left of its lifetime after `elapsed_ms`.
+fn opening_cast(
+  guard guard: Guard,
+  unit_id unit_id: Int,
+  place place: Place,
+  cast_id cast_id: Int,
+  held held: List(Held),
+  elapsed_ms elapsed_ms: Int,
+) -> List(News) {
+  [
+    client_connection.CastStarted(start: cast.creature_started(
+      cast_id:,
+      spell4_id: guard.opening.spell4_id,
+      caster_unit_id: unit_id,
+      target_unit_id: unit_id,
+      place:,
+    )),
+    client_connection.CastWent(go: cast.creature_applied(
+      cast_id:,
+      place:,
+      target_unit_id: unit_id,
+      effects: list.map(held, fn(effect) {
+        cast.CreatureEffect(
+          effect_id: effect.effect_id,
+          instance_id: effect.instance_id,
+          lifetime_ms: int.max(1, effect.lifetime_ms - elapsed_ms),
+        )
+      }),
+    )),
+  ]
+}
+
+/// The states the opening holds, each with the instance id of its effect, in the effects' order.
+fn states_of(held held: List(Held)) -> List(#(CrowdControlState, Int)) {
+  list.filter_map(held, fn(effect) {
+    case effect.state {
+      Some(state) -> Ok(#(state, effect.instance_id))
+      None -> Error(Nil)
+    }
+  })
 }
 
 /// The news a viewer that arrives is sent after the creature's 0x262: the guard's cast, or the opening's
 /// with the states' 0x87f, for the viewer alone. The opening's lifetime is the time left at `now_ms`.
 pub fn shown(
   state state: State,
-  unit_id _unit_id: Int,
-  now_ms _now_ms: Int,
+  unit_id unit_id: Int,
+  place place: Place,
+  now_ms now_ms: Int,
 ) -> List(News) {
-  case state.phase {
-    Bare | Dormant -> []
-    Guarded(..) | Opened(..) ->
-      panic as "shape: #655 shown is the guard's 0x7ff and 0x7f4, or the opening's with the time left as lifetime, then the 0x87f of each held state"
+  case state.guard {
+    None -> []
+    Some(guard) ->
+      case state.phase {
+        Bare | Dormant -> []
+        Guarded(cast_id:) ->
+          guard_cast(state:, guard:, unit_id:, place:, cast_id:)
+        Opened(ends_at_ms:, cast_id:, held:, ..) ->
+          list.append(
+            opening_cast(
+              guard:,
+              unit_id:,
+              place:,
+              cast_id:,
+              held:,
+              elapsed_ms: guard.opening.ends_after_ms - { ends_at_ms - now_ms },
+            ),
+            list.map(states_of(held:), fn(held) {
+              client_connection.CrowdControlApplied(
+                state: held.0,
+                instance_id: held.1,
+              )
+            }),
+          )
+      }
   }
 }

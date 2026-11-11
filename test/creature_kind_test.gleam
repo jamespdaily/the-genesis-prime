@@ -23,8 +23,10 @@ import fixture_tables
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal, RowId}
 import genesis_prime/game/strike_tell
+import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/spell4
+import genesis_prime/world_map/creature_guard_spells as guard_spells
 import genesis_prime/world_map/creature_kind.{Kind, Kinds, Row}
 import gleam/dict
 import gleam/list
@@ -411,19 +413,19 @@ pub fn a_migrated_database_holds_the_60_second_default_row_and_the_sim_turrets_c
         respawn_ms: 60_000,
         attack_spell4_id: 85_469,
         attack_interval_ms: 3000,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard_spell4_id: option.Some(85_474),
+        opening_spell4_id: option.Some(85_472),
       ),
       Row(
         creature_id: 74_862,
         respawn_ms: 60_000,
         attack_spell4_id: 86_978,
         attack_interval_ms: 3000,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard_spell4_id: option.Some(85_474),
+        opening_spell4_id: option.Some(85_472),
       ),
     ]
-    as "migration 0009 seeds row 0, the server's choice of 60 000 ms, and migration 0029 the Sim-Turrets' charges, Spell4 85469 and 86978"
+    as "migration 0009 seeds row 0, the server's choice of 60 000 ms, migration 0029 the Sim-Turrets' charges, Spell4 85469 and 86978, and migration 0030 their guard 85474 and opening 85472"
   assert content_support.psql(
       database:,
       sql: "select source || ': ' || reason from creature_kind where creature_id = 0",
@@ -495,6 +497,164 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
         )
         as "the database refuses the row"
       assert string.contains(failed.output, bad.1)
+        as "the refusal names its constraint"
+    },
+  )
+}
+
+/// The two Sim-Turrets' guard as the client's rows give it: Spell4 85474 holds one effect, 224666
+/// (type 79, dataBits00 8: immune to Damage), and Spell4 85472 holds the rows of
+/// `Spell4Effects` 224652, 224713, 224705, 224716, 224715 and 225189, which the creature applies
+/// in the order of their orderIndex (0, 2, 3, 3, 4, 5, ties by id): the states 9 and 12 and the
+/// Fluff are listed in the go, each for 15000 ms, and the Proxy 224716 puts 85474 back after
+/// 15000 ms (`gleam run -m genesis_prime/table_rows -- Spell4Effects 224666 224705 225189 224713
+/// 224715 224716 224652`).
+fn the_turrets_guard() -> guard_spells.Guard {
+  guard_spells.Guard(
+    spell4_id: 85_474,
+    effect_id: 224_666,
+    opening: guard_spells.Opening(
+      spell4_id: 85_472,
+      effects: [
+        guard_spells.OpeningEffect(
+          effect_id: 224_705,
+          state: option.Some(crowd_control_state.Vulnerability),
+          lifetime_ms: 15_000,
+        ),
+        guard_spells.OpeningEffect(
+          effect_id: 224_715,
+          state: option.None,
+          lifetime_ms: 15_000,
+        ),
+        guard_spells.OpeningEffect(
+          effect_id: 225_189,
+          state: option.Some(crowd_control_state.Disable),
+          lifetime_ms: 15_000,
+        ),
+      ],
+      ends_after_ms: 15_000,
+    ),
+  )
+}
+
+pub fn the_guard_and_opening_columns_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let assert Ok(kinds) = selected(rows: rows_of_a_migrated_database(database:))
+    as "the migrated rows, with the guard and opening columns, are taken by the load"
+  assert creature_kind.kind_of(kinds:, creature2_id: 73_494).guard
+    == option.Some(the_turrets_guard())
+    as "the Exile's Sim-Turret takes the guard of Spell4 85474 and the opening of 85472, as the client's rows give them"
+  assert creature_kind.kind_of(kinds:, creature2_id: 74_862).guard
+    == option.Some(the_turrets_guard())
+    as "the Dominion's Sim-Turret takes the same pair: its charge Spell4 86978's caster prerequisite 41722 names 85472 too (Spell4.85469, Spell4.86978)"
+  assert creature_kind.kind_of(kinds:, creature2_id: 0).guard == option.None
+    as "a creature with no row of its own has no guard"
+  assert content_support.psql(
+      database:,
+      sql: "select reason from creature_kind where creature_id = 73494",
+    )
+    |> string.contains("Spell4.85472.trigger")
+    as "the row states why: the client links neither spell to the creature"
+}
+
+pub fn a_guard_with_an_effect_other_than_immunity_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let turret_row =
+    Row(
+      creature_id: 73_494,
+      respawn_ms: 60_000,
+      attack_spell4_id: 85_469,
+      attack_interval_ms: 3000,
+      guard_spell4_id: option.Some(85_469),
+      opening_spell4_id: option.Some(85_472),
+    )
+  // The charge Spell4 85469 holds a Fluff (17) and a Damage (8) effect and no type 79.
+  let assert Error([Refusal(table: "creature_kind", row: RowId(73_494), rule:)]) =
+    selected(rows: [default_row, turret_row])
+    as "Spell4 85469 as a guard has no effect of type 79"
+  assert string.contains(rule, "85469") && string.contains(rule, "type 79")
+    as "the refusal names the spell and the type the guard needs"
+  // Synthetic: Spell4Effects 224666 immune to another type (dataBits00 7) than Damage (8).
+  let assert Error([Refusal(table: "creature_kind", row: RowId(73_494), rule:)]) = {
+    use tables <- fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 224_666,
+      with: [#("dataBits00", Integer(7))],
+    )
+    creature_kind.select(
+      rows: [
+        default_row,
+        Row(..turret_row, guard_spell4_id: option.Some(85_474)),
+      ],
+      tables:,
+    )
+  }
+    as "an immunity to type 7 is not one to Damage: the creature would take no damage from nothing it is told"
+  assert string.contains(rule, "85474") && string.contains(rule, "Damage")
+    as "the refusal names the spell and Damage"
+}
+
+pub fn an_opening_with_an_effect_kind_the_creature_does_not_apply_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let turret_row =
+    Row(
+      creature_id: 73_494,
+      respawn_ms: 60_000,
+      attack_spell4_id: 85_469,
+      attack_interval_ms: 3000,
+      guard_spell4_id: option.Some(85_474),
+      opening_spell4_id: option.Some(85_472),
+    )
+  // Synthetic: Spell4Effects 224652 is a RavelSignal (81); type 8 is a Damage, which the
+  // creature does not apply to itself.
+  let assert Error([Refusal(table: "creature_kind", row: RowId(73_494), rule:)]) = {
+    use tables <- fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 224_652,
+      with: [#("effectType", Integer(8))],
+    )
+    creature_kind.select(rows: [default_row, turret_row], tables:)
+  }
+    as "an opening with a Damage effect would hurt the creature it opens: the load refuses it"
+  assert string.contains(rule, "85472")
+    && string.contains(rule, "224652")
+    && string.contains(rule, "type 8")
+    as "the refusal names the spell, the effect and its type"
+  // Synthetic: with the Proxy 224716 made a Fluff, nothing puts the guard back.
+  let assert Error([Refusal(table: "creature_kind", row: RowId(73_494), rule:)]) = {
+    use tables <- fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 224_716,
+      with: [#("effectType", Integer(17))],
+    )
+    creature_kind.select(rows: [default_row, turret_row], tables:)
+  }
+    as "an opening without its Proxy never ends"
+  assert string.contains(rule, "85472") && string.contains(rule, "Proxy")
+    as "the refusal names the spell and the effect it lacks"
+}
+
+pub fn a_guard_without_an_opening_is_refused_by_the_database_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  list.each(
+    [
+      "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, guard_spell4_id, source, reason) values (73464, 5000, 5649, 1500, 85474, 'server_choice', 'x')",
+      "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, opening_spell4_id, source, reason) values (73464, 5000, 5649, 1500, 85472, 'server_choice', 'x')",
+    ],
+    fn(bad) {
+      let assert Error(failed) =
+        database_support.psql(
+          with: database_support.settings(),
+          database:,
+          arguments: ["-c", bad],
+        )
+        as "the database refuses a guard without an opening and an opening without a guard"
+      assert string.contains(
+        failed.output,
+        "creature_kind_guard_and_opening_together",
+      )
         as "the refusal names its constraint"
     },
   )

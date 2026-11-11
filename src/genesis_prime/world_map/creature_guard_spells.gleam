@@ -10,10 +10,17 @@
 ////   (RavelSignal), 4 (CCStateSet), 80 (SpellForceRemove), 17 (Fluff) and 26 (Proxy). Its length is the
 ////   delay of its Proxy effect that puts the guard back (`Spell4Effects.effectType.26`).
 
+import genesis_prime/game/effect_kind
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/spell4
+import genesis_prime/table/spell4_effects.{type Spell4Effects}
 import gleam/int
-import gleam/option.{type Option}
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/order
+import gleam/result
 
 /// What a creature with a guard has of it: the Spell4 that guards and the effect of it that
 /// makes the immunity (type 79, which the creature applies to Damage only), and the opening.
@@ -57,11 +64,147 @@ pub type Unapplied {
 /// a kind with it and a spawn starts its creature with the guard (genesis_prime/world_map/creature_kind,
 /// genesis_prime/world_map/spawn).
 pub fn guard_of(
-  guard_spell4_id _guard_spell4_id: Int,
-  opening_spell4_id _opening_spell4_id: Int,
-  tables _tables: table_store.Tables,
+  guard_spell4_id guard_spell4_id: Int,
+  opening_spell4_id opening_spell4_id: Int,
+  tables tables: table_store.Tables,
 ) -> Result(Guard, Unapplied) {
-  panic as "shape: #655 guard_of reads Spell4 and Spell4Effects: type 79 immune to Damage for the guard; 81, 4, 80, 17 and 26 for the opening, its end from the Proxy's delay"
+  use Nil <- result.try(held(tables:, spell4_id: guard_spell4_id))
+  use Nil <- result.try(held(tables:, spell4_id: opening_spell4_id))
+  use immunity <- result.try(
+    effects_of(tables:, spell4_id: guard_spell4_id)
+    |> list.find(fn(effect) {
+      effect.effect_type == immunity_type
+      && effect.data_bits00 == damage_effect_type
+    })
+    |> result.replace_error(NoImmunityToDamage(spell4_id: guard_spell4_id)),
+  )
+  let rows = effects_of(tables:, spell4_id: opening_spell4_id)
+  use Nil <- result.try(
+    case
+      list.find(rows, fn(effect) {
+        !applied(kind: effect_kind.kind_of(effect.effect_type))
+      })
+    {
+      Ok(effect) ->
+        Error(EffectNotApplied(
+          spell4_id: opening_spell4_id,
+          effect_id: effect.id,
+          effect_type: effect.effect_type,
+        ))
+      Error(Nil) -> Ok(Nil)
+    },
+  )
+  use proxy <- result.try(
+    list.find(rows, fn(effect) {
+      effect_kind.kind_of(effect.effect_type) == effect_kind.Proxy
+      && effect.data_bits00 == guard_spell4_id
+    })
+    |> result.replace_error(NeverEnds(spell4_id: opening_spell4_id)),
+  )
+  Ok(Guard(
+    spell4_id: guard_spell4_id,
+    effect_id: immunity.id,
+    opening: Opening(
+      spell4_id: opening_spell4_id,
+      effects: list.filter_map(rows, listed),
+      ends_after_ms: proxy.delay_time,
+    ),
+  ))
+}
+
+/// The effect type of SpellEffectImmunity and the effect type of Damage that its dataBits00 names
+/// (`Spell4Effects.effectType.79`).
+const immunity_type = 79
+
+const damage_effect_type = 8
+
+/// Whether the creature applies an effect of this kind in an opening.
+fn applied(kind kind: effect_kind.Kind) -> Bool {
+  case kind {
+    effect_kind.RavelSignal
+    | effect_kind.CrowdControl
+    | effect_kind.ForceRemove
+    | effect_kind.Fluff
+    | effect_kind.Proxy -> True
+    effect_kind.Damage
+    | effect_kind.VitalModifier
+    | effect_kind.PropertyModifier
+    | effect_kind.ForcedMove
+    | effect_kind.CooldownModifier
+    | effect_kind.Stealth
+    | effect_kind.RemoveStealth
+    | effect_kind.ShieldHeal
+    | effect_kind.ShieldOverload
+    | effect_kind.Proc
+    | effect_kind.InterruptArmor
+    | effect_kind.Scale
+    | effect_kind.PropertyConversion
+    | effect_kind.DisguiseOutfit
+    | effect_kind.Absorption
+    | effect_kind.Activate
+    | effect_kind.Unread(..) -> False
+  }
+}
+
+/// The effect the go lists for the creature, if it is one: a CCStateSet with its state, or a Fluff.
+fn listed(effect effect: Spell4Effects) -> Result(OpeningEffect, Nil) {
+  case effect_kind.kind_of(effect.effect_type) {
+    effect_kind.CrowdControl ->
+      Ok(OpeningEffect(
+        effect_id: effect.id,
+        state: Some(crowd_control_state.from_value(effect.data_bits00)),
+        lifetime_ms: effect.duration_time,
+      ))
+    effect_kind.Fluff ->
+      Ok(OpeningEffect(
+        effect_id: effect.id,
+        state: None,
+        lifetime_ms: effect.duration_time,
+      ))
+    effect_kind.RavelSignal
+    | effect_kind.ForceRemove
+    | effect_kind.Proxy
+    | effect_kind.Damage
+    | effect_kind.VitalModifier
+    | effect_kind.PropertyModifier
+    | effect_kind.ForcedMove
+    | effect_kind.CooldownModifier
+    | effect_kind.Stealth
+    | effect_kind.RemoveStealth
+    | effect_kind.ShieldHeal
+    | effect_kind.ShieldOverload
+    | effect_kind.Proc
+    | effect_kind.InterruptArmor
+    | effect_kind.Scale
+    | effect_kind.PropertyConversion
+    | effect_kind.DisguiseOutfit
+    | effect_kind.Absorption
+    | effect_kind.Activate
+    | effect_kind.Unread(..) -> Error(Nil)
+  }
+}
+
+/// Whether the client's Spell4 holds the spell.
+fn held(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+) -> Result(Nil, Unapplied) {
+  spell4.get(tables:, id: Spell4Id(spell4_id))
+  |> result.replace(Nil)
+  |> result.replace_error(SpellMissing(spell4_id:))
+}
+
+/// The spell's effects in the order they take effect (`Spell4Effects.orderIndex`, then the row id).
+fn effects_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+) -> List(Spell4Effects) {
+  spell4_effects.all(tables)
+  |> list.filter(fn(effect) { effect.spell_id == spell4_id })
+  |> list.sort(fn(first, second) {
+    int.compare(first.order_index, second.order_index)
+    |> order.break_tie(int.compare(first.id, second.id))
+  })
 }
 
 /// The refusal's sentence: the spell and what the creature cannot do with it.

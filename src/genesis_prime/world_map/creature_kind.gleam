@@ -129,9 +129,13 @@ pub fn select(
         Refusal(table:, row: RowId(row.creature_id), rule:)
       })
     })
-  case list.append(missing_default, refused), kinds_of(rows:, tables:) {
-    [], Ok(kinds) -> Ok(kinds)
-    refusals, _ -> Error(refusals)
+  case list.append(missing_default, refused) {
+    [] -> {
+      let assert Ok(kinds) = kinds_of(rows:, tables:)
+        as "no refusal means the default row is there"
+      Ok(kinds)
+    }
+    refusals -> Error(refusals)
   }
 }
 

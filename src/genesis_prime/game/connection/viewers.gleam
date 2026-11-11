@@ -492,8 +492,17 @@ pub fn viewer_takes(
         frame: cast.stack_removed_frame(removed:),
         forgetting: False,
       )
-    client_connection.CastInterrupted(cast_id: _) ->
-      panic as "shape: #655 a viewer writes 0x7f9 (result 11) then 0x7fe for a cast of the unit it was sent the start of, and forgets it"
+    client_connection.CastInterrupted(cast_id:) ->
+      written_cast_frames(
+        session:,
+        entered:,
+        cast_id:,
+        frames: [
+          cast.interrupted_frame(cast_id:, unit_id:),
+          cast.finished_frame(cast_id:),
+        ],
+        forgetting: True,
+      )
     client_connection.CastFinished(cast_id:) ->
       written_cast_frame(
         session:,
@@ -887,6 +896,24 @@ fn written_cast_frame(
   frame frame: Frame,
   forgetting forgetting: Bool,
 ) -> client_connection.Handled(Session) {
+  written_cast_frames(
+    session:,
+    entered:,
+    cast_id:,
+    frames: [frame],
+    forgetting:,
+  )
+}
+
+/// The frames of a cast of the unit written in order, when this client was sent the cast's
+/// start; the cast is forgotten after them when `forgetting`.
+fn written_cast_frames(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  cast_id cast_id: Int,
+  frames frames: List(Frame),
+  forgetting forgetting: Bool,
+) -> client_connection.Handled(Session) {
   use <- bool.guard(
     when: !dict.has_key(entered.casts_written, cast_id),
     return: Continue(session, []),
@@ -901,7 +928,10 @@ fn written_cast_frame(
       })
     False -> session
   }
-  Continue(session, [connection_state.to_client(session, frame)])
+  Continue(
+    session,
+    list.map(frames, fn(frame) { connection_state.to_client(session, frame) }),
+  )
 }
 
 /// 0x7fe for each cast of the unit that this client was sent the start of and no

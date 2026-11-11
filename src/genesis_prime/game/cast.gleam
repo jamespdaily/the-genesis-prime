@@ -565,6 +565,7 @@ import genesis_prime/message/client_side_interaction_result
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
 import genesis_prime/message/combat_log_entry
+import genesis_prime/message/combat_log_immunity.{CombatLogImmunity}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
@@ -802,6 +803,11 @@ pub type Struck {
   /// The unit deflected the strike: an entry of the 0x7fb, no description and no
   /// child (`opcode.0x7fb`).
   Deflected(unit_id: Int)
+  /// The creature took no damage from the strike's blows because it is guarded
+  /// (genesis_prime/world_map/creature_guard): named in the 0x7f4 as a `Hit` with no
+  /// description, with the states it took, and followed by a combat log entry of type 18
+  /// for the striker (`opcode.0x247.immunity`).
+  Immune(unit_id: Int, unit: HitUnit, controls: List(strike_tell.ControlLanded))
 }
 
 /// What kind of unit a `Hit` names.
@@ -5438,6 +5444,20 @@ fn go(
             None -> []
           },
         ])
+      let immune =
+        list.filter_map(struck, fn(one) {
+          case one {
+            Immune(unit_id:, ..) ->
+              Ok(
+                Send(frame: immunity_logged_frame(
+                  caster_unit_id: caster.unit_id,
+                  unit_id:,
+                  spell4_id: spell.spell4_id,
+                )),
+              )
+            Hit(..) | Deflected(..) -> Error(Nil)
+          }
+        })
       let #(cast, removed) = removed_by_go(cast:, aimed:, now_ms:)
       let #(cast, logged) =
         states_logged(
@@ -5522,6 +5542,7 @@ fn go(
         cast,
         list.flatten([
           going,
+          immune,
           logged,
           removed,
           given,
@@ -5894,7 +5915,10 @@ fn creature_hit(
       Hit(unit_id: hit, unit: HitCreature(life:, struck_at_ms:), ..)
         if hit == unit_id
       -> Ok(#(life, struck_at_ms))
-      Hit(..) | Deflected(..) -> Error(Nil)
+      Immune(unit_id: hit, unit: HitCreature(life:, struck_at_ms:), ..)
+        if hit == unit_id
+      -> Ok(#(life, struck_at_ms))
+      Hit(..) | Immune(..) | Deflected(..) -> Error(Nil)
     }
   })
 }
@@ -6252,6 +6276,30 @@ fn control_logged_frame(
   Frame(message_id: combat_log.message_id, body:)
 }
 
+/// 0x247 of type 18: the unit took no damage from the caster's spell because it is
+/// immune to it. The client shows the 'Immune' line and floater from it alone; the
+/// combat result is a choice, Hit, which the client shows to no one
+/// (`opcode.0x247.immunity`).
+fn immunity_logged_frame(
+  caster_unit_id caster_unit_id: Int,
+  unit_id unit_id: Int,
+  spell4_id spell4_id: Spell4Id,
+) -> Frame {
+  let assert Ok(body) =
+    combat_log.encode(
+      CombatLog(
+        entry: combat_log_entry.Immunity(CombatLogImmunity(
+          caster_unit_id:,
+          target_unit_id: unit_id,
+          spell4_id: spell4_id.value,
+          combat_result: combat_result.Hit,
+        )),
+      ),
+    )
+    as "unit ids and a Spell4 id that fit their fields"
+  Frame(message_id: combat_log.message_id, body:)
+}
+
 /// The crowd-control states the units of a go took, each with its unit, in the order
 /// of the units.
 fn controls_landed(
@@ -6259,7 +6307,7 @@ fn controls_landed(
 ) -> List(#(strike_tell.ControlLanded, Int)) {
   list.flat_map(struck, fn(one) {
     case one {
-      Hit(unit_id:, controls:, ..) ->
+      Hit(unit_id:, controls:, ..) | Immune(unit_id:, controls:, ..) ->
         list.map(controls, fn(control) { #(control, unit_id) })
       Deflected(..) -> []
     }
@@ -7663,7 +7711,7 @@ fn clears_current(
 pub fn hit_units(struck struck: List(Struck)) -> List(Int) {
   list.filter_map(struck, fn(one) {
     case one {
-      Hit(unit_id:, ..) -> Ok(unit_id)
+      Hit(unit_id:, ..) | Immune(unit_id:, ..) -> Ok(unit_id)
       Deflected(..) -> Error(Nil)
     }
   })
@@ -8021,6 +8069,7 @@ fn go_message(
     list.filter_map(struck, fn(one) {
       case one {
         Hit(unit_id:, descriptions:, ..) -> Ok(#(unit_id, descriptions))
+        Immune(unit_id:, ..) -> Ok(#(unit_id, []))
         Deflected(..) -> Error(Nil)
       }
     })
@@ -8178,6 +8227,51 @@ pub fn creature_went(
   go_message(cast_id:, phase: 0, place:, struck:, listed: [])
 }
 
+/// An effect a creature's cast puts on a unit: its Spell4Effects row, the instance id the
+/// client keeps it by and how long it lasts in milliseconds (0 for one that never ends).
+pub type CreatureEffect {
+  CreatureEffect(effect_id: Int, instance_id: Int, lifetime_ms: Int)
+}
+
+/// 0x7f4 for the one go, phase 0, of a creature's cast that applies effects to one unit, as the
+/// unit's one target info lists them: each effect with its instance id, delay 0 and lifetime in
+/// `field_4` (`opcode.0x7f4.effect_time`) and no result of its own (`SpellEffectBit`), in the
+/// order given.
+pub fn creature_applied(
+  cast_id cast_id: Int,
+  place place: Place,
+  target_unit_id target_unit_id: Int,
+  effects effects: List(CreatureEffect),
+) -> SpellGo {
+  SpellGo(
+    cast_id:,
+    ignore_cooldown: 0,
+    destination: position_of(place:),
+    targets: [
+      SpellTargetInfo(
+        unit_id: target_unit_id,
+        index: 0,
+        flags: 0,
+        instance_count: 1,
+        combat_result: combat_result.Hit,
+        effects: list.map(effects, fn(effect) {
+          SpellEffectInfo(
+            spell4_effects_id: effect.effect_id,
+            instance_id: effect.instance_id,
+            delay_ms: 0,
+            field_4: effect.lifetime_ms,
+            result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
+          )
+        }),
+      ),
+    ],
+    initial_positions: [],
+    telegraph_positions: [],
+    missiles: [],
+    phase: 0,
+  )
+}
+
 /// 0x7fb for the units a creature's go missed, or none (`missed_message`).
 pub fn creature_missed(
   cast_id cast_id: Int,
@@ -8200,6 +8294,20 @@ pub fn went_frame(go go: SpellGo) -> Frame {
   let assert Ok(body) = spell_go.encode(go)
     as "a cast id of 32 bits and a phase of 8 fit the message, and the rule sends no list"
   Frame(message_id: spell_go.message_id, body:)
+}
+
+/// 0x07F9 for a cast of `unit_id` that was interrupted: result 11 and the bit 0, written
+/// by each viewer's connection before the cast's 0x7fe (`opcode.0x7f9`).
+pub fn interrupted_frame(cast_id cast_id: Int, unit_id unit_id: Int) -> Frame {
+  let assert Ok(body) =
+    spell_failed.encode(SpellFailed(
+      cast_id:,
+      result: cast_result.SpellInterrupted,
+      unit_id:,
+      field_4: 0,
+    ))
+    as "a cast id of 32 bits, a result of 9, a unit id of 32 and a bit fit the message"
+  Frame(message_id: spell_failed.message_id, body:)
 }
 
 /// 0x07FE for a cast that ends, written by the caster's rule and by each
@@ -8325,7 +8433,7 @@ fn missed_message(
       case one {
         Deflected(unit_id:) ->
           Ok(SpellMiss(unit_id:, reason: miss_reason.Dodge, time_ms: 0))
-        Hit(..) -> Error(Nil)
+        Hit(..) | Immune(..) -> Error(Nil)
       }
     })
   {

@@ -549,6 +549,12 @@ fn filled(
         descriptions:,
         controls:,
       ))
+    strike_tell.Immune(controls:) ->
+      Answered(struck: cast.Immune(
+        unit_id:,
+        unit: cast.HitCreature(life:, struck_at_ms:),
+        controls:,
+      ))
     strike_tell.Deflected -> Answered(struck: cast.Deflected(unit_id:))
     strike_tell.Refused(..) -> LeftOut(unit_id:)
   }
@@ -605,7 +611,9 @@ fn in_round(round round: Round, unit_id unit_id: Int) -> Bool {
 
 fn unit_of(struck: Struck) -> Int {
   case struck {
-    cast.Hit(unit_id:, ..) | cast.Deflected(unit_id:) -> unit_id
+    cast.Hit(unit_id:, ..)
+    | cast.Immune(unit_id:, ..)
+    | cast.Deflected(unit_id:) -> unit_id
   }
 }
 
