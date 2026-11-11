@@ -82,6 +82,7 @@ fn unit(
       ),
       radius: unit_radius,
     ),
+    alive: True,
     offered:,
   )
 }
@@ -233,6 +234,23 @@ pub fn a_client_activate_unit_on_a_unit_the_server_does_not_offer_is_refused_tes
     |> refusal_text
   assert string.contains(text, "not offered")
     as "a unit no open objective counts a use of, or whose bit is set, is not offered its interaction, so the client never sends the use"
+}
+
+pub fn a_client_activate_unit_on_a_dead_creature_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let dead =
+    cast.UsedUnit(
+      ..unit(
+        creature: a_manifestation,
+        checklist_index: 2,
+        east: 1.0,
+        offered: True,
+      ),
+      alive: False,
+    )
+  let text = used(seen: [#(its_unit, dead)], unit_id: its_unit) |> refusal_text
+  assert string.contains(text, "dead")
+    as "a creature its client shows dead is not offered its interaction (0x140c48c48), so the client never sends the use: it is logged and counts nothing, though it is within reach and offered"
 }
 
 /// What the 0xb3 for the market terminal (index 5) gives a caster whose quest 7153

@@ -242,13 +242,15 @@ fn used_unit(
           tables:,
           one:,
           offered_to:,
+          alive: True,
           body: activate.Body(place:, radius: hit_radius),
         )
-      shown.ShownCreature(path:, hit_radius:, ..) ->
+      shown.ShownCreature(path:, hit_radius:, alive:, ..) ->
         used_unit_at(
           tables:,
           one:,
           offered_to:,
+          alive:,
           body: activate.Body(
             place: creature_path.place_at(path:, now_ms:),
             radius: hit_radius,
@@ -262,6 +264,7 @@ fn used_unit_at(
   tables tables: table_store.Tables,
   one one: shown.Shown,
   offered_to offered_to: fn(target_group.Unit, Int) -> Bool,
+  alive alive: Bool,
   body body: activate.Body,
 ) -> Result(cast.UsedUnit, Nil) {
   use #(unit, checklist_index) <- result.try(shown.target_of(
@@ -275,6 +278,7 @@ fn used_unit_at(
     creature: activate.creature_of(row:),
     checklist_index:,
     body:,
+    alive:,
     offered: offered_to(unit, checklist_index),
   )
 }

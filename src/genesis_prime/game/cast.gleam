@@ -1242,6 +1242,10 @@ pub type UsedUnit {
     checklist_index: Int,
     /// Where the unit stands and its hit radius.
     body: activate.Body,
+    /// Whether the unit lives: a creature the caster's client shows dead is not offered its
+    /// interaction (`0x140c48c48`: the interaction kind 39 entry's dead-unit flag is clear).
+    /// A static object has no death and is alive.
+    alive: Bool,
     /// Whether the server offers the unit's use now: an open objective counts it and its
     /// bit is clear (`objective.use_targets`). The client sends 0xb3 only for a unit whose
     /// interaction it offers.
@@ -1255,8 +1259,8 @@ pub type UsedUnit {
 /// that is no creature or object the caster's client shows. The client sends 0xb3 only
 /// from its click of an offered interaction within reach (`0x14039d2c0`, range
 /// `activate.use_limits`) and only when the creature's pick is spell 0 (`0x14039d510`),
-/// so a unit out of reach, one the server does not offer, one whose pick is a spell and
-/// one the server cannot pick for are logged and change nothing.
+/// so a dead creature, a unit out of reach, one the server does not offer, one whose pick is
+/// a spell and one the server cannot pick for are logged and change nothing.
 pub fn activate_unit(
   cast cast: State,
   body body: BitArray,
@@ -1285,7 +1289,16 @@ pub fn activate_unit(
   }
   case unit_of(unit_id) {
     Error(Nil) -> declined("names no creature or object the client shows")
-    Ok(UsedUnit(creature_id:, creature:, checklist_index:, body: unit, offered:)) ->
+    Ok(UsedUnit(alive: False, ..)) ->
+      declined("names a creature that is dead: its interaction is not offered")
+    Ok(UsedUnit(
+      creature_id:,
+      creature:,
+      checklist_index:,
+      body: unit,
+      offered:,
+      ..,
+    )) ->
       case
         activate.range_of(
           limits: activate.use_limits,
