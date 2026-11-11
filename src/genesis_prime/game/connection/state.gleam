@@ -251,9 +251,10 @@ pub type Status {
 pub type AfterLeave {
   /// The camp: 0x0594 and a new character select.
   ToCharacterSelect
-  /// The Holocrypt: the map of `place`'s world is asked to take the player there
-  /// (`world_entry.rejoining`), and its entry burst follows.
-  JoinAt(place: Place)
+  /// The Holocrypt or a departures terminal: the map of `place`'s world is asked
+  /// to take the player there (`world_entry.rejoining`), with `health` as its
+  /// saved health (`None` is a full one), and its entry burst follows.
+  JoinAt(place: Place, health: Option(Int))
 }
 
 /// Where an entry into the world started, for what its refusal does.
@@ -262,7 +263,7 @@ pub type EntryFrom {
   FromCharacterSelect
   /// The Holocrypt, with the client still in the world: the refusal is 0x0594,
   /// as the camp's leave writes, then a new character select.
-  FromHolocrypt
+  FromInWorld
 }
 
 /// What a save of the player's place is for, so its answer knows what comes

@@ -181,7 +181,7 @@
 ////   connection decodes each with the checks of the body's moves, and drops it.
 ////   After the Holocrypt's join, a ghost's move sent before the join's 0xAD
 ////   reached the client is dropped the same way, until the stay's first 0xF2
-////   (`world_entry.GhostLoading`).
+////   (`world_entry.InWorldLoading`).
 //// - **The stay.** A threat, a release and a strike travel for P's stay, and the
 ////   connection drops one of an earlier stay: one sent before a Holocrypt or a
 ////   camp that reaches the next stay (genesis_prime/world_map/stay).

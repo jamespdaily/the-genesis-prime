@@ -42,6 +42,24 @@ pub fn killed(
   )
 }
 
+/// The session and what is written after the player's yes finished a cast that used the
+/// unit `target` (`checklist_index` its checklist bit): the use is counted (`counted`),
+/// and when the unit is a departures terminal whose landing the player's log still opens
+/// (`departures.landing`, asked before the count, which can finish the quest), the landing
+/// is kept in `Entered.departing` and the 0 ms timer that starts the move is asked for
+/// (`connection/departures.due`). A player not in the world counts nothing.
+///
+/// Shape: it counts the use and nothing more; the terminal's landing and timer are the
+/// build commits'.
+pub fn used(
+  session session: Session,
+  now now: Now,
+  target target: target_group.Unit,
+  checklist_index checklist_index: Int,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  counted(session:, now:, event: objective.Used(target:, checklist_index:))
+}
+
 /// The session and what is written after the player did this to a creature, and then
 /// after what that opened is counted as well (`settled`). A connection with no player
 /// in the world counts nothing.
