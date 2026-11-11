@@ -14156,3 +14156,17 @@ statement = "SetBusy (type 107) has no class of its own on the client: the effec
 proof = "Effect switch 0x140718120.c: its cases are 3, 4, 8, 0xc, 0x21, 0x8a, 10, 0x76, 0x12, 0x24, 0x37, 0x38, 0x40, 0x49, 0x4b, 0x4c, 0x52, 0x5a, 0x5f, 99, 0x6c and 0x8e, with no 0x6b; the default branch is read in Spell4Effects.effectType.7. Name from the enum table at 0x140c34140 (16-byte entries, 107 SetBusy). Rows: `gleam run -m genesis_prime/table_rows -- Spell4 85452`, `-- Spell4Effects 224571 224610 225139 227177`."
 grade = "fairly sure"
 gap = "No search for other client code testing type 107 was made."
+
+["0x140459330"]
+statement = "Updates one unit for a frame; UpdateGame calls it for each unit of the world in its unit loop. Among its work it refreshes the unit's interaction: for a unit that is not the player's or the controlled unit it calls RefreshUnitInteraction with refresh 1 when the game word 0x6f98 (set by 0x361, 0x93b and other changes of the player's state) or the unit's own changed word 0x18a8 is set, else with 0 (opcode.0x361.refresh_offers). It also does loot checks, scale and the stealth look (unit.stealth_look)."
+proof = "Saved C 0x140459330.c (cc54e920d5411539) lines 150-166; listing 0x140459741 cmp [rdx+0x6f98], ebx; 0x140459749 cmp [rsi+0x18a8], ebx; 0x14045975e call 0x14046c300. Its only caller is UpdateGame 0x1403e85d0, call at 0x1403e8df3 inside the unit loop (client_trace). Callees include CanLootUnit 0x1403a6440, GetUnitScale 0x14047a940 and FindCastById 0x140561c30."
+grade = "fairly sure"
+gap = "Most of the function (about 600 lines of C) is read only where other records cite it."
+name = "UpdateUnit"
+
+["0x1405fb830"]
+statement = "The handler of message 0x361 (an objective's progress): it finds the quest by id (none: nothing), stores the progress (SetObjectiveProgress), starts timers on later reachable objectives, shows the progress floater, sets the game word that makes every unit refresh its offers on the next frame, refreshes the quests that mention it, raises QuestObjectiveUpdated (or the contract event), and shows a tutorial when the quest's state is Achieved (2)."
+proof = "Saved C 0x1405fb830.c (hash 7f044938faba9287): FindQuestById 0x1405a8a40 at 0x1405fb841; SetObjectiveProgress 0x1406115a0 at 0x1405fb8c9; IsQuestObjectiveReachable 0x140553790 at 0x1405fb8f8 (lines 43-57); 0x1405512f0 at 0x1405fb93a; 0x1405fb94d mov dword [rax+0x6f98], 1; RefreshMentionedQuests 0x1405fccb0 at 0x1405fb95d; GetQuestState 0x1405fbc40 at 0x1405fb9c5 and TriggerTutorial 0x140437a10 at 0x1405fb9f5 and 0x1405fba24; RaiseUiEvent 0x1400ea3e0 at 0x1405fbacb. Called from HandleWorldMessage 0x1403ec6a0 at 0x1403eed15."
+grade = "fairly sure"
+gap = "0x14043b4e0, 0x1405f9e30, 0x140575dd0 and ShowObjectiveHintArrow 0x140553890 are not read here."
+name = "HandleObjectiveProgress"
