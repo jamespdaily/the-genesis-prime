@@ -1889,10 +1889,11 @@ pub fn a_second_cast_on_the_mine_after_its_objective_is_done_is_refused_test() -
 /// 32).
 pub fn a_dominion_player_sees_and_counts_the_mines_at_their_markers_test() -> Nil {
   use <- owned_test.run(60_000)
+  let time = driven_time.new()
   let started =
     start_with_world_data_by(
       folder: "test/fixture/world_data_mine",
-      adjusted: fn(settings) { settings },
+      adjusted: fn(settings) { driven_by(settings:, time:) },
     )
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(game, character) =
@@ -1968,7 +1969,16 @@ pub fn a_dominion_player_sees_and_counts_the_mines_at_their_markers_test() -> Ni
     message_id: cast_activate.message_id,
     body: press,
   )
-  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 1)
+  // The mine's activate is a cast of Spell4 85452's castTime, 2000 ms, as in the Exile's
+  // test: the clock moves once the server has taken the press (its first pong).
+  let #(confirmed, have) = game_client.read_until_pong(game:, have:, number: 1)
+  driven_time.advance(time:, ms: 2000)
+  let #(cast, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x07FE })
+    })
+  let #(rest, have) = game_client.read_until_pong(game:, have:, number: 2)
+  let pressed = list.flatten([confirmed, cast, rest])
   assert list.filter(pressed, fn(frame) { frame.message_id == 0x0361 })
     == [
       Frame(
@@ -1977,8 +1987,8 @@ pub fn a_dominion_player_sees_and_counts_the_mines_at_their_markers_test() -> Ni
       ),
     ]
     as "opcode.0x361: the go of the mine's cast counts objective 21313 of quest 10524"
-  let #(rest, _) = game_client.read_until_pong(game:, have:, number: 2)
-  assert list.filter(list.append(pressed, rest), fn(frame) {
+  let #(later, _) = game_client.read_until_pong(game:, have:, number: 3)
+  assert list.filter(list.append(pressed, later), fn(frame) {
       frame.message_id == unit_destroyed.message_id
     })
     == []
