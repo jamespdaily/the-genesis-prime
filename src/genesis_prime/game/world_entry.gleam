@@ -743,7 +743,15 @@ pub fn joined(
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id
           let #(quests, quest_effects) =
-            quest_log_sent(entry:, quests:, items:, numbers:, tables:, now:)
+            quest_log_sent(
+              entry:,
+              quests:,
+              items:,
+              place:,
+              numbers:,
+              tables:,
+              now:,
+            )
           Ok(InTheWorld(
             entered: Entered(
               character:,
@@ -910,6 +918,7 @@ fn quest_log_sent(
   entry entry: Entry,
   quests quests: QuestLog,
   items items: List(store.HeldItem),
+  place place: Place,
   numbers numbers: GameNumbers,
   tables tables: table_store.Tables,
   now now: Now,
@@ -922,6 +931,8 @@ fn quest_log_sent(
           tables:,
           items:,
           zones: [],
+          place:,
+          shown: dict.new(),
           now_ms: now.monotonic_ms,
         ).log
       let #(told, frame) = quest_log.login(log: held, numbers:, tables:, now:)

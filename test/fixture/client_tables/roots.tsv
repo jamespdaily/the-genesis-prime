@@ -436,3 +436,14 @@ Creature2	34758	first activate column Spell4 38925 behind Prerequisite 13244, a 
 Quest2	7153	quest whose only objective is a type 14 checklist of Creature2 34758, read by Prerequisite 13244	cast_activate_test, cast_activate_unit_test
 QuestObjective	13230	type 14 objective of TargetGroup 4233, count 10	cast_activate_test, cast_activate_unit_test
 TargetGroup	4233	type 1 group of Creature2 34758	cast_activate_test, cast_activate_unit_test
+Quest2	10513	quest of the first tutorial circle (21271), a circle pair (21279, optional 21280) and later objectives	objective_place_test, game_wire_test
+Quest2	10527	quest whose objective index 3 is the finish line (21323)	objective_place_test
+Quest2	7426	quest whose objective 0 (13674) has a marker with a vertical limit of 35	objective_place_test
+Quest2	7413	quest whose objective 0 (13907) has a marker with a vertical limit of 8	objective_place_test
+WorldLocation2	51735	marker of objective 21271 (circle 1)	objective_place_test, game_wire_test
+WorldLocation2	51736	marker of objectives 21279 and 21280 (circle 2)	objective_place_test
+WorldLocation2	51734	marker of the finish line objective 21323	objective_place_test
+WorldLocation2	28530	marker of objective 13674, which has a vertical limit of 35	objective_place_test
+WorldLocation2	44761	marker of objective 13907, which has a vertical limit of 8	objective_place_test
+Quest2	7667	quest whose objective 1 (14205) is a type 22 place with count 10 and marker 30725	objective_place_test
+WorldLocation2	30725	marker of objective 14205, a type 22 objective with count 10	objective_place_test

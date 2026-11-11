@@ -10,6 +10,7 @@ import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/experience
+import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
@@ -112,6 +113,8 @@ fn settle(
     tables:,
     items: entered.items,
     zones: prerequisite_player.of(tables:, entered:).zones,
+    place: movement.place(state: entered.movement),
+    shown: entered.shown,
     now_ms: now.monotonic_ms,
   )
 }

@@ -219,6 +219,41 @@ pub fn poses_of(
   |> dict.from_list
 }
 
+/// A creature or object the picture shows, as a place counts it: the unit as the
+/// client's group test reads it, its checklist index and where it stands.
+pub type Standing {
+  Standing(unit: Unit, checklist_index: Int, world_id: Int, x: Float, z: Float)
+}
+
+/// The creatures and objects the picture shows and where each stands at monotonic time
+/// `now_ms`, in unit id order. Another player's unit is no creature or object, and a
+/// unit with no Creature2 row in the tables is not one either (`target_of`).
+pub fn standing(
+  tables tables: table_store.Tables,
+  picture picture: Picture,
+  now_ms now_ms: Int,
+) -> List(Standing) {
+  dict.to_list(picture)
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+  |> list.filter_map(fn(entry) {
+    let shown = entry.1
+    use #(unit, checklist_index) <- result.try(target_of(tables:, shown:))
+    let place = case shown {
+      ShownCreature(path:, ..) -> Ok(creature_path.place_at(path:, now_ms:))
+      ShownObject(place:, ..) -> Ok(place)
+      ShownPlayer -> Error(Nil)
+    }
+    use place <- result.map(place)
+    Standing(
+      unit:,
+      checklist_index:,
+      world_id: start_place.world_id(place),
+      x: start_place.x(place),
+      z: start_place.z(place),
+    )
+  })
+}
+
 /// The checklist indexes the units' 0x262 carried, by unit id: the creatures and objects
 /// the picture shows among them. A type 94 condition reads the struck unit's index.
 pub fn checklist_indexes_of(

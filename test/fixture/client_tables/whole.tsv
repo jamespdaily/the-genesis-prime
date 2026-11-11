@@ -29,6 +29,8 @@ PathSoldierActivate
 PeriodicQuestGroup
 PositionalRequirement
 Quest2Difficulty
+QuestDirection
+QuestDirectionEntry
 Race
 RewardPropertyPremiumModifier
 Spell4AoeTargetConstraints

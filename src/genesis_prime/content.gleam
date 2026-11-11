@@ -93,6 +93,7 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/class_resource
+import genesis_prime/game/place_objective
 import genesis_prime/game/rating
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_plan
@@ -104,6 +105,7 @@ import genesis_prime/step
 import genesis_prime/step/runtime
 import genesis_prime/store/worker
 import genesis_prime/table/loader/store.{type Key}
+import genesis_prime/table/quest_objective.{type QuestObjective}
 import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/game_number
 import genesis_prime/world_map/sight
@@ -330,6 +332,7 @@ fn read(
         )
       })
       log_levels_out_of_range(selection)
+      log_place_objectives(tables:, selection:)
       content_spawn.put(key:, selection:)
       let assert Ok(kinds_of_summons) = kinds_for_spawns
         as "no kinds were taken, which refuses the kind rows, so the load has refusals and does not reach here"
@@ -390,6 +393,56 @@ fn log_levels_out_of_range(selection: spawn.Selection) -> Nil {
             let spawn_id.SpawnId(number) = id
             int.to_string(number)
           }),
+          ", ",
+        ),
+        step.no_one,
+      )
+  }
+}
+
+/// The info lines of the type 22 objectives with no marker or, with one, a count above 1,
+/// which an arrival does not complete, and of the place-counted checklist objectives with
+/// a place where no spawn of their group stands, where reaching the place counts nothing.
+fn log_place_objectives(
+  tables tables: store.Tables,
+  selection selection: spawn.Selection,
+) -> Nil {
+  log_objective_ids(
+    place_objective.unmarked(tables:),
+    "type 22 objectives with no marker, which nothing completes (issue 714)",
+  )
+  log_objective_ids(
+    place_objective.repeated(tables:),
+    "type 22 objectives with a count above 1, which an arrival does not complete (issue 714)",
+  )
+  list.each(
+    place_objective.places_without_unit(tables:, worlds: selection.worlds),
+    fn(empty) {
+      let #(objective_id, places) = empty
+      runtime.log(
+        step.LogInfo,
+        "objective "
+          <> int.to_string(objective_id)
+          <> " counts nothing at its places "
+          <> string.join(list.map(places, int.to_string), ", ")
+          <> ", where no spawn of its group stands",
+        step.no_one,
+      )
+    },
+  )
+}
+
+/// An info line of the objectives' ids after the text, none for no objectives.
+fn log_objective_ids(objectives: List(QuestObjective), what: String) -> Nil {
+  case objectives {
+    [] -> Nil
+    _ ->
+      runtime.log(
+        step.LogInfo,
+        what
+          <> ": "
+          <> string.join(
+          list.map(objectives, fn(objective) { int.to_string(objective.id) }),
           ", ",
         ),
         step.no_one,
