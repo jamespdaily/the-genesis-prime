@@ -375,6 +375,21 @@ pub type CastEvent {
   ThresholdEnded(spell4_id: Int)
 }
 
+/// The cast id and caster of each 0x7ff among the events that starts `spell4_id`.
+pub fn starts_of(
+  events events: List(CastEvent),
+  spell4_id spell4_id: Int,
+) -> List(#(Int, Int)) {
+  list.filter_map(events, fn(event) {
+    case event {
+      CastStarted(cast_id:, spell4_id: started, caster_unit_id:, ..)
+        if started == spell4_id
+      -> Ok(#(cast_id, caster_unit_id))
+      _ -> Error(Nil)
+    }
+  })
+}
+
 /// The cast messages among the frames, in order, each as the client's reader
 /// takes it; every other frame is skipped.
 pub fn casts_in(frames frames: List(Frame)) -> List(CastEvent) {
@@ -1072,6 +1087,13 @@ fn removed(others others: Others, body body: BitArray) -> Others {
 /// Where a creature's 0x262 places it, as `placed_at` reads a player's.
 pub fn creature_placed_at(
   unit unit: UnitCreateCreature,
+) -> #(Float, Float, Float) {
+  first_position(unit.tail)
+}
+
+/// Where a static object's 0x262 places it, as `placed_at` reads a player's.
+pub fn static_placed_at(
+  unit unit: unit_create_static.UnitCreateStatic,
 ) -> #(Float, Float, Float) {
   first_position(unit.tail)
 }
@@ -1803,6 +1825,29 @@ pub fn health_of(events events: List(FightEvent), unit unit: Int) -> List(Int) {
   list.filter_map(events, fn(event) {
     case event {
       HealthIs(unit_id:, health:) if unit_id == unit -> Ok(health)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The shield each 0x938 of stat 20 among the events gives `unit`, in order.
+pub fn shield_of(events events: List(FightEvent), unit unit: Int) -> List(Int) {
+  list.filter_map(events, fn(event) {
+    case event {
+      ShieldIs(unit_id:, shield:) if unit_id == unit -> Ok(shield)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The health each 0x92f among the events gives `unit`, in order.
+pub fn own_health_of(
+  events events: List(FightEvent),
+  unit unit: Int,
+) -> List(Int) {
+  list.filter_map(events, fn(event) {
+    case event {
+      OwnHealthIs(unit_id:, health:) if unit_id == unit -> Ok(health)
       _ -> Error(Nil)
     }
   })

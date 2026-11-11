@@ -24,6 +24,7 @@ import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal, RowId}
 import genesis_prime/game/strike_tell
 import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/spell4
 import genesis_prime/world_map/creature_kind.{Kind, Kinds, Row}
 import gleam/dict
 import gleam/list
@@ -115,6 +116,65 @@ pub fn an_attack_spell_with_an_innate_cost_emm_id_fails_the_load_test() -> Nil {
     as "the refusal names the spell and the id"
 }
 
+pub fn an_attack_with_a_cast_time_loads_with_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 73494, the Sim-Turret the Exiles fight, attacks with its charge Spell4
+  // 85469: castTime 8000 and prerequisiteIdCasterCast 41722, one condition of type 15.
+  let tables = fixture_tables.shared()
+  let assert Ok(spell) = spell4.get(tables:, id: Spell4Id(85_469))
+    as "the client's Spell4 holds the Sim-Turret's charge"
+  assert spell.cast_time == 8000
+    as "Spell4 85469 has castTime 8000: the cast time the server reads for the charge"
+  let assert Ok(kinds) =
+    selected(rows: [
+      default_row,
+      Row(
+        creature_id: 73_494,
+        respawn_ms: 60_000,
+        attack_spell4_id: 85_469,
+        attack_interval_ms: 3000,
+      ),
+    ])
+    as "a spell with a cast time and a type 15 cast prerequisite loads"
+  assert creature_kind.kind_of(kinds:, creature2_id: 73_494)
+    == Kind(
+      respawn_ms: 60_000,
+      attack_spell4_id: Spell4Id(85_469),
+      attack_interval_ms: 3000,
+    )
+    as "the creature takes its charge as its attack"
+}
+
+pub fn an_attack_whose_cast_prerequisite_the_creature_cannot_answer_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Synthetic: the client's Prerequisite 41722, Spell4 85469's cast prerequisite, is of
+  // type 15; type 180 is a state a creature does not have.
+  let assert Error([Refusal(table: "creature_kind", row: RowId(73_494), rule:)]) = {
+    use tables <- fixture_tables.changed(
+      table: "Prerequisite",
+      id: 41_722,
+      with: [#("prerequisiteTypeId0", Integer(180))],
+    )
+    creature_kind.select(
+      rows: [
+        default_row,
+        Row(
+          creature_id: 73_494,
+          respawn_ms: 60_000,
+          attack_spell4_id: 85_469,
+          attack_interval_ms: 3000,
+        ),
+      ],
+      tables:,
+    )
+  }
+    as "Spell4 85469's cast prerequisite 41722 is of type 180: a creature would cast as if it passed, so the load refuses the row"
+  assert string.contains(rule, "85469")
+    && string.contains(rule, "41722")
+    && string.contains(rule, "type 180")
+    as "the refusal names the spell, the prerequisite and the type"
+}
+
 // T3c-1 test 3
 pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
   use <- owned_test.run(60_000)
@@ -139,7 +199,6 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
         respawn_ms: 60_000,
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
-        cast_ms: 0,
       ),
       by_creature: dict.from_list([
         #(
@@ -148,7 +207,6 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
             respawn_ms: 5000,
             attack_spell4_id: Spell4Id(5649),
             attack_interval_ms: 1500,
-            cast_ms: 0,
           ),
         ),
       ]),
@@ -158,7 +216,6 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
       respawn_ms: 5000,
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
-      cast_ms: 0,
     )
     as "a creature with a row of its own takes it"
   assert creature_kind.kind_of(kinds:, creature2_id: 73_465)
@@ -166,7 +223,6 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
       respawn_ms: 60_000,
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
-      cast_ms: 0,
     )
     as "any other creature takes the default row 0"
 }
@@ -299,7 +355,7 @@ fn rows_of_a_migrated_database(
   rows
 }
 
-pub fn a_migrated_database_holds_the_60_second_default_row_and_nothing_else_test() -> Nil {
+pub fn a_migrated_database_holds_the_60_second_default_row_and_the_sim_turrets_charges_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
   assert rows_of_a_migrated_database(database:)
@@ -310,8 +366,20 @@ pub fn a_migrated_database_holds_the_60_second_default_row_and_nothing_else_test
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
       ),
+      Row(
+        creature_id: 73_494,
+        respawn_ms: 60_000,
+        attack_spell4_id: 85_469,
+        attack_interval_ms: 3000,
+      ),
+      Row(
+        creature_id: 74_862,
+        respawn_ms: 60_000,
+        attack_spell4_id: 86_978,
+        attack_interval_ms: 3000,
+      ),
     ]
-    as "migration 0009 seeds row 0, the server's choice of 60 000 ms"
+    as "migration 0009 seeds row 0, the server's choice of 60 000 ms, and migration 0028 the Sim-Turrets' charges, Spell4 85469 and 86978"
   assert content_support.psql(
       database:,
       sql: "select source || ': ' || reason from creature_kind where creature_id = 0",
@@ -397,7 +465,6 @@ pub fn kinds_put_under_a_key_are_read_back_test() -> Nil {
         respawn_ms: 60_000,
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
-        cast_ms: 0,
       ),
       by_creature: dict.from_list([
         #(
@@ -406,7 +473,6 @@ pub fn kinds_put_under_a_key_are_read_back_test() -> Nil {
             respawn_ms: 5000,
             attack_spell4_id: Spell4Id(5649),
             attack_interval_ms: 1500,
-            cast_ms: 0,
           ),
         ),
       ]),

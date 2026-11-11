@@ -34,13 +34,13 @@
 ////   unit's difficulty (`0x14049eeb0`); a spell with any other type would apply both
 ////   effects or neither, so the load refuses it.
 //// - **The cast time** is the attack spell's own (`Spell4.castTime`, in milliseconds), read
-////   when the rows load; 0 is an attack that strikes at once, as every creature's did, and
-////   above 0 the creature charges (genesis_prime/world_map/creature_fight). Shape of #736:
-////   `kind_of_row` gives 0 for every row until the build commit reads the spell.
-//// - **The cast prerequisite** (`Spell4.prerequisiteIdCasterCast`) is answered for type 15,
-////   `TargetOfLiveCast` (`prerequisite.condition_of`), which a creature that has not opened
-////   a cast on its target always passes; a creature has no state for any other type, so a
-////   spell whose prerequisite holds one is refused and not cast as if it passed.
+////   with the creature's attack when a spawn starts (genesis_prime/world_map/spawn): 0 is an
+////   attack that strikes at once, as every creature's did, and above 0 the creature charges
+////   (genesis_prime/world_map/creature_fight).
+//// - **The cast prerequisite** (`Spell4.prerequisiteIdCasterCast`) is answered for one
+////   condition of type 15, `TargetOfLiveCast`, which is the cast the charge itself is; any
+////   other prerequisite is a state a creature does not have, so a spell holding one is
+////   refused and not cast as if it passed (genesis_prime/world_map/creature_attack).
 //// - **The attack interval** is a server choice, never below the strike deadline,
 ////   so a creature has at most one strike round open (genesis_prime/world_map/creature_fight).
 //// - **Every refusal is collected**, one bad row beside its neighbours, as the
@@ -76,14 +76,7 @@ pub type Row {
 
 /// What the server chose for a kind of creature.
 pub type Kind {
-  Kind(
-    respawn_ms: Int,
-    attack_spell4_id: Spell4Id,
-    attack_interval_ms: Int,
-    /// The attack spell's cast time in milliseconds: 0 strikes at once, above 0 the
-    /// creature charges for this long and then strikes.
-    cast_ms: Int,
-  )
+  Kind(respawn_ms: Int, attack_spell4_id: Spell4Id, attack_interval_ms: Int)
 }
 
 /// The kinds the load put in its term: the default and each creature that has a
@@ -224,7 +217,6 @@ fn kind_of_row(row: Row) -> Kind {
     respawn_ms: row.respawn_ms,
     attack_spell4_id: Spell4Id(row.attack_spell4_id),
     attack_interval_ms: row.attack_interval_ms,
-    cast_ms: 0,
   )
 }
 

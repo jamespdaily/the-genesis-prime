@@ -24,6 +24,10 @@
 ////   Neutral unit and not a Friendly one (`0x1403ad540`), and a faction's level to
 ////   a player faction walks the faction's parents (`0x140787760`, `0x140717560`,
 ////   Faction2Relationship). Every other row is counted for the coverage measure.
+//// - **Turrets that fight.** A row of entity type 13 (Turret) whose creature has a
+////   creature_kind row of its own starts as a creature as a NonPlayer row does, with
+////   its 0x262 of type 13 and no movement (`Spawn.turret`); one without such a row
+////   stays a static object.
 //// - **Static objects.** A row of entity type 4, 8, 10, 11, 12, 13, 14 or 32 is a
 ////   static object (genesis_prime/world_map/static_object), checked as a
 ////   NonPlayer row is and kept whatever its faction. Types 4, 8, 10, 11, 12 and
@@ -70,6 +74,7 @@ import genesis_prime/game/hit_radius
 import genesis_prime/game/objective_link
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/rating.{type Formulas}
+import genesis_prime/game/spell_area
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
 import genesis_prime/game/unit_properties.{type Properties}
@@ -190,6 +195,11 @@ pub type Spawn {
     /// Whether the creature sells (`vendor` content table): its 0x262 carries the vendor
     /// create flag, which shows the client its bag icon.
     vendor: Bool,
+    /// Whether the creature's 0x262 is of unit type 13 (Turret, `world_data.entity_type`)
+    /// and not 0: a turret row with a creature_kind row of its own starts as a
+    /// creature that never moves. The client reads both types' type data alike
+    /// (`opcode.0x262.simple`), so only the type number differs.
+    turret: Bool,
     /// The creature's `prerequisiteIdVisibility`, `None` for 0: the player sees the
     /// creature only while this prerequisite does not fail for them
     /// (genesis_prime/game/visibility).
@@ -388,6 +398,12 @@ pub type SpawnError {
     creature_id: Creature2Id,
     unevaluated: creature_attack.Unevaluated,
   )
+  /// The creature's attack spell has a cast time and its area cannot be read from the
+  /// tables (genesis_prime/game/spell_area `area_of_spell`).
+  AttackAreaNotRead(creature_id: Creature2Id, error: spell_area.AreaError)
+  /// The creature's attack spell has a cast time and no area row, so a charge would have
+  /// nothing to strike.
+  ChargeHasNoArea(creature_id: Creature2Id, spell4_id: Int)
   /// A damage effect of the creature's attack names a parameter the creature formula
   /// does not read (genesis_prime/game/damage `creature_unread`).
   AttackFormulaNotRead(
@@ -482,7 +498,7 @@ pub fn select(
   let #(_shared, judged_by_checks) =
     list.map_fold(rows, dict.new(), fn(shared, row) {
       case
-        row.entity_type == non_player,
+        starts_as_creature(kinds:, row:),
         static_object.unit_type_of(entity_type: row.entity_type)
       {
         True, _ ->
@@ -627,6 +643,18 @@ fn index_of(indexes: Dict(SpawnId, Int), spawn_id: SpawnId) -> Int {
 
 /// Message 0x262's unit type of a NonPlayer unit (`0x140649e20`).
 pub const non_player = 0
+
+/// Whether a row starts as a creature: a NonPlayer row, or a Turret row (type 13)
+/// whose creature has a creature_kind row of its own, which says the server fights
+/// it. Any other Turret row is a static object (genesis_prime/world_map/static_object).
+fn starts_as_creature(kinds kinds: Kinds, row row: Row) -> Bool {
+  row.entity_type == non_player
+  || {
+    row.entity_type
+    == static_object.type_number(unit_type: static_object.Turret)
+    && dict.has_key(kinds.by_creature, row.creature_id)
+  }
+}
 
 /// What a summon of a creature is checked with, built once at the content load
 /// from the same tables, formulas, kinds and chosen factions the stored spawns are checked with,
@@ -955,7 +983,7 @@ pub fn faction_levels(
 /// them hold one term, so the load's term is small (a persistent term keeps the
 /// sharing).
 type SharedCombats =
-  Dict(#(Int, Int, Int, Int), #(Combat, CombatContext, Bases))
+  Dict(#(Int, Int, Int, Int, Bool), #(Combat, CombatContext, Bases))
 
 /// A creature's base of each UnitProperty2 id, 0 to 199 in id order.
 type Bases =
@@ -977,6 +1005,7 @@ fn combat_of(
   bases bases: Bases,
   display_info_id display_info_id: Int,
   faction_id faction_id: Int,
+  turret turret: Bool,
 ) -> Result(#(Combat, CombatContext), SpawnError) {
   let creature_id = Creature2Id(creature.id)
   use display <- result.try(
@@ -999,13 +1028,14 @@ fn combat_of(
     level:,
     display:,
     value:,
+    turret:,
   ))
   let context =
     CombatContext(
       formulas:,
       scaling:,
       attack: attack_effects,
-      run_land: display.run_land,
+      run_land: run_land_of(display:, turret:),
     )
   let combat =
     Combat(
@@ -1134,8 +1164,12 @@ fn defence_of(
 /// (`0x140565600`, GameFormula 712), its critical hit chance, severity and
 /// strikethrough from its properties, its run speed (Creature2DisplayInfo.runLand
 /// times property 100, `0x1405b45e0`) and its reach (the spell's `targetMaxRange`
-/// plus `hit_radius`). With it, the creature scaling and each damage effect with its
-/// formula, which work the blows out again from changed properties.
+/// plus `hit_radius`). A spell with a cast time (`Spell4.castTime` above 0) is a charge:
+/// it carries that time and its area (`spell_area.area_of_spell`), its reach is the area
+/// row's `maxRange` (85469 and 86978 have a `targetMaxRange` of 0 and a 30 m rectangle),
+/// and an area it lacks or cannot read fails the load. With it, the creature scaling and
+/// each damage effect with its formula, which work the blows out again from changed
+/// properties.
 fn attack_of(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
@@ -1144,6 +1178,7 @@ fn attack_of(
   level level: Int,
   display display: creature2_display_info.Creature2DisplayInfo,
   value value: Value,
+  turret turret: Bool,
 ) -> Result(#(Attack, damage.CreatureScaling, List(AttackEffect)), SpawnError) {
   let creature_id = Creature2Id(creature.id)
   use spell <- result.try(
@@ -1216,6 +1251,28 @@ fn attack_of(
       }
     }),
   )
+  use area <- result.try(case spell.cast_time > 0 {
+    False -> Ok(None)
+    True ->
+      case
+        spell_area.area_of_spell(
+          tables: catalog.tables,
+          spell4_id: kind.attack_spell4_id,
+        )
+      {
+        Error(error) -> Error(AttackAreaNotRead(creature_id:, error:))
+        Ok(None) ->
+          Error(ChargeHasNoArea(
+            creature_id:,
+            spell4_id: kind.attack_spell4_id.value,
+          ))
+        Ok(Some(found)) -> Ok(Some(found))
+      }
+  })
+  let reach = case area {
+    Some(#(row, _)) -> row.max_range
+    None -> spell.target_max_range +. hit_radius.of_creature(display:)
+  }
   let attack =
     creature_life.Attack(
       spell4_id: kind.attack_spell4_id,
@@ -1225,9 +1282,10 @@ fn attack_of(
         blows: list.map(attack_effects, fn(effect) { effect.blow }),
         value:,
       ),
-      run_speed: run_speed_of(run_land: display.run_land, value:),
-      reach: spell.target_max_range +. hit_radius.of_creature(display:),
-      area: None,
+      run_speed: run_speed_of(run_land: run_land_of(display:, turret:), value:),
+      reach:,
+      cast_ms: spell.cast_time,
+      area:,
     )
   Ok(#(attack, creature_scaling, attack_effects))
 }
@@ -1297,6 +1355,22 @@ fn offence_of(
       rating: 0.0,
     ),
   )
+}
+
+/// The run speed of the creature's display on land: its runLand, or 0 for a turret,
+/// which the server never moves (a server choice: some turret displays carry a run
+/// speed, Creature2DisplayInfo 39655, which a turret never uses).
+fn run_land_of(
+  display display: creature2_display_info.Creature2DisplayInfo,
+  turret turret: Bool,
+) -> Float {
+  use <- bool.guard(when: turret, return: 0.0)
+  display.run_land
+}
+
+/// Whether a row is a turret's (unit type 13).
+fn is_turret_row(row row: Row) -> Bool {
+  row.entity_type == static_object.type_number(unit_type: static_object.Turret)
 }
 
 /// The creature's run speed: its display's runLand times property 100
@@ -1802,7 +1876,14 @@ fn load_checks(
     creature:,
     row:,
   ))
-  let key = #(row.creature_id, level, row.display_info_id, row.faction_id)
+  let turret = is_turret_row(row:)
+  let key = #(
+    row.creature_id,
+    level,
+    row.display_info_id,
+    row.faction_id,
+    turret,
+  )
   use #(#(combat, context, bases), shared) <- result.try(
     case dict.get(shared, key) {
       Ok(worked) -> Ok(#(worked, shared))
@@ -1817,6 +1898,7 @@ fn load_checks(
           bases:,
           display_info_id: row.display_info_id,
           faction_id: row.faction_id,
+          turret:,
         )
         |> result.map(fn(worked) {
           let worked = #(worked.0, worked.1, bases)
@@ -1844,6 +1926,7 @@ fn load_checks(
         bases:,
         context:,
         vendor: vendor.is_vendor(vendors:, creature_id:),
+        turret:,
         visibility: visibility_of(creature:),
         checklist_index: 0,
       ),
@@ -2193,6 +2276,17 @@ fn describe(error error: SpawnError) -> String {
       <> int.to_string(creature_id)
       <> "'s attack: "
       <> creature_attack.describe(unevaluated:)
+    AttackAreaNotRead(creature_id: Creature2Id(creature_id), error:) ->
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> "'s attack area: "
+      <> spell_area.describe(error:)
+    ChargeHasNoArea(creature_id: Creature2Id(creature_id), spell4_id:) ->
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> "'s attack Spell4 "
+      <> int.to_string(spell4_id)
+      <> " has a cast time and no Spell4AoeTargetConstraints row, so a charge strikes nothing"
     AttackFormulaNotRead(
       creature_id: Creature2Id(creature_id),
       spell4_effects_id:,

@@ -247,14 +247,10 @@ fn merged(jobs jobs: List(Job)) -> List(Job) {
   |> list.reverse
 }
 
-/// The (world, creature) pairs a stored non-player spawn stands.
+/// The (world, creature) pairs a stored spawn of any unit type stands: a turret
+/// row stands its creature as a non-player row does.
 fn held_by(stored stored: List(Row)) -> Set(#(Int, Int)) {
-  list.filter_map(stored, fn(row) {
-    case row.entity_type == spawn.non_player {
-      True -> Ok(#(row.world_id, row.creature_id))
-      False -> Error(Nil)
-    }
-  })
+  list.map(stored, fn(row) { #(row.world_id, row.creature_id) })
   |> set.from_list
 }
 

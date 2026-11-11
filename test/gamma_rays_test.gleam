@@ -53,6 +53,7 @@ fn gamma_caster(x x: Float, z z: Float, yaw yaw: Float) -> Attacker {
     place: place_support.at(world_id: 3460, world_zone_id: 5967, x:, y: 0.0, z:),
     move_seq: 1,
     stay: map_support.stay(count: 1),
+    hit_radius: place_support.player_hit_radius,
     faction: Exile,
     stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
     properties: properties_support.fresh(level: 1),

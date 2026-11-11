@@ -111,6 +111,7 @@ fn walker_appears(
   connection_support.sent_by_a_peer(connection_support.news_of(
     unit_id:,
     news: CreatureAppeared(
+      turret: False,
       unit: creature_unit.create(
         spawn: walker,
         unit_id:,

@@ -515,6 +515,7 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
           place: game_connection_support.standing_at(x: 1.5, y: 2.5, z: 3.5),
           seq: 1,
           stay: game_connection_support.own_stay(),
+          hit_radius: place_support.player_hit_radius,
         ),
       ),
     ]
@@ -530,6 +531,7 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
           place: game_connection_support.standing_at(x: 2.5, y: 2.5, z: 3.5),
           seq: 2,
           stay: game_connection_support.own_stay(),
+          hit_radius: place_support.player_hit_radius,
         ),
       ),
     ]
@@ -908,7 +910,6 @@ fn a_beast_of(
         respawn_ms: 60_000,
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
-        cast_ms: 0,
       ),
       numbers: spawn_support.numbers,
     ))
@@ -938,8 +939,20 @@ fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
       OwnEffect(step.Tell(to: step.Creature(unit_id: 7, ..), request:)) ->
         case request {
           client_connection.TellStrike(tell:) -> Ok(creature.Strike(tell:))
-          client_connection.TellTargetMoved(connection:, place:, seq:, stay:) ->
-            Ok(creature.TargetMoved(by: connection, place:, seq:, stay:))
+          client_connection.TellTargetMoved(
+            connection:,
+            place:,
+            seq:,
+            stay:,
+            hit_radius:,
+          ) ->
+            Ok(creature.TargetMoved(
+              by: connection,
+              place:,
+              seq:,
+              stay:,
+              hit_radius:,
+            ))
           client_connection.TellStrikeAnswered(answered:) ->
             Ok(creature.StrikeAnswered(answered:))
           client_connection.TellTargetChange(
@@ -1069,6 +1082,7 @@ fn an_aggroed_medic() -> #(
             place: medic_place(0.0),
             seq: 1,
             stay: game_connection_support.own_stay(),
+            hit_radius: place_support.player_hit_radius,
           )),
         ),
       ),
@@ -1270,6 +1284,7 @@ fn aggroed(
             place: medic_place(0.0),
             seq: 1,
             stay: game_connection_support.own_stay(),
+            hit_radius: place_support.player_hit_radius,
           )),
         ),
       ),

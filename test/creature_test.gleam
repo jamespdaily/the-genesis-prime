@@ -99,7 +99,6 @@ fn creature_from(
       respawn_ms: 60_000,
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
-      cast_ms: 0,
     ),
     numbers: spawn_support.numbers,
   ))
@@ -317,6 +316,7 @@ fn typed_strike(
         ),
         seq: 1,
         stay: map_support.stay(count: 2),
+        hit_radius: place_support.player_hit_radius,
         rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
       ),
       controls: [],

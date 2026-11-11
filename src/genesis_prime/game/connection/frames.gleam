@@ -68,6 +68,7 @@ import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
 import genesis_prime/step.{type Now}
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/static_object.{
@@ -655,9 +656,13 @@ pub fn generic_error_frame(code code: Int) -> Frame {
   Frame(message_id: generic_error.message_id, body:)
 }
 
-/// 0x262 for a creature, as its process built it.
-pub fn creature_created_frame(unit unit: UnitCreateCreature) -> Frame {
-  let assert Ok(body) = unit_create_creature.encode(unit)
+/// 0x262 for a creature, as its process built it, of unit type 13 when `turret`
+/// is set (genesis_prime/world_map/creature_unit `body`).
+pub fn creature_created_frame(
+  unit unit: UnitCreateCreature,
+  turret turret: Bool,
+) -> Frame {
+  let assert Ok(body) = creature_unit.body(unit:, turret:)
     as "a creature's values fit the message's fields: the spawn's checks hold each"
   Frame(message_id: unit_create_creature.message_id, body:)
 }

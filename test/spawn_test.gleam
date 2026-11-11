@@ -1479,6 +1479,132 @@ pub fn the_boss_is_attackable_and_hostile_to_both_sides_test() -> Nil {
     as "it fights both sides on sight"
 }
 
+/// The row of Creature2 73494 or 74862, a Sim-Turret, as the world database stores it
+/// (entity type 13, `world_data.entity_type`): the creature's own faction, 219, and
+/// its first display.
+fn turret_row(number number: Int, creature creature: Int) -> Row {
+  let tables = character_tables.content_tables()
+  let assert Ok(row) = creature2.get(tables, Creature2Id(creature))
+    as "the client holds the Sim-Turret"
+  spawn.Row(
+    ..spawn.creature_row(
+      looks: spawn.looks(tables:),
+      id: SpawnId(number),
+      creature: row,
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 5968,
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+      ),
+      level: option.None,
+      factions: creature_faction.none(),
+    ),
+    entity_type: 13,
+  )
+}
+
+/// The selection of the rows with the Sim-Turrets' kinds and chosen factions.
+fn selected_with_the_turrets_kinds(rows rows: List(Row)) -> Selection {
+  spawn.select(
+    rows:,
+    tables: character_tables.content_tables(),
+    formulas: rating_support.formulas(),
+    kinds: spawn_support.turret_kinds(),
+    vendors: vendor.none(),
+    factions: spawn_support.the_turrets_are_given_their_factions(
+      tables: character_tables.content_tables(),
+    ),
+  )
+}
+
+pub fn a_turret_row_with_its_own_kind_starts_as_a_creature_of_type_13_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // World database rows 29178 and 29179 are type 13 rows of Creature2 73494; the
+  // creature gives faction 219, Friendly to both player factions, which leaves a
+  // row out, so creature_faction 73494 -> 1441 stands it.
+  let rows = [
+    turret_row(number: 1, creature: 73_494),
+    turret_row(number: 2, creature: 73_494),
+  ]
+  assert list.all(rows, fn(row) { row.faction_id == 219 })
+    as "Creature2 73494's own faction is 219"
+  let selection = selected_with_the_turrets_kinds(rows:)
+  assert selection.refusals == [] as "the rows pass the client's checks"
+  assert started(selection) == [1, 2]
+    as "a type 13 row with a creature_kind row of its own starts as a creature"
+  assert objects_in(selection) == [] as "and is not sent as an object"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(turret) = dict.get(world.by_id, SpawnId(1))
+    as "the turret starts"
+  assert turret.turret as "it is created as unit type 13"
+  assert turret.faction_id == 1441 && turret.base_faction_id == 1441
+    as "creature_faction 73494 -> 1441"
+  assert turret.combat.attack.spell4_id == Spell4Id(85_469)
+    as "its kind's charge, Spell4 85469"
+  assert turret.combat.attack.cast_ms == 8000
+    as "Spell4 85469 has castTime 8000"
+  assert turret.combat.attack.run_speed == 0.0
+    as "a turret never moves, though a turret display may carry a run speed"
+  assert option.is_some(turret.combat.attack.area)
+    as "the charge's area, Spell4AoeTargetConstraints 335 and TelegraphDamage 16212, is read"
+}
+
+pub fn the_exile_turret_is_attackable_by_exiles_only_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Faction2Relationship 2943 (1441 to 167, Exile) is level 0 and 2944 (1441 to 166,
+  // Dominion) level 10; `0x1403ad540` lets a player attack a unit up to level 7 and
+  // `FactionDispositionFromLevel` reads 0 to 2 as Hostile.
+  let selection =
+    selected_with_the_turrets_kinds(rows: [
+      turret_row(number: 1, creature: 73_494),
+    ])
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(turret) = dict.get(world.by_id, SpawnId(1))
+    as "the turret starts"
+  assert turret.combat.attackable == Attackable(exile: True, dominion: False)
+    as "an Exile may attack it and a Dominion player may not"
+  assert turret.combat.hostile_to == Hostile(exile: True, dominion: False)
+    as "it fights an Exile on sight and leaves a Dominion player alone"
+  // Faction2Relationship 2946 (1442 to 166) is level 0 and 2947 (1442 to 167) level 10.
+  let selection =
+    selected_with_the_turrets_kinds(rows: [
+      turret_row(number: 1, creature: 74_862),
+    ])
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(turret) = dict.get(world.by_id, SpawnId(1))
+    as "the Dominion's turret starts"
+  assert turret.combat.attackable == Attackable(exile: False, dominion: True)
+    as "the other turret is the Dominion's to attack"
+  assert turret.combat.hostile_to == Hostile(exile: False, dominion: True)
+    as "and fights a Dominion player on sight"
+}
+
+pub fn a_turret_row_without_its_own_kind_stays_an_object_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The world database holds 241 type 13 rows, 40 of faction 170; a creature with no
+  // creature_kind row keeps being sent as an object, which #336 owns.
+  let selection =
+    selected(rows: [
+      spawn.Row(
+        ..spawn_support.beast_row(number: 1),
+        entity_type: 13,
+        faction_id: 170,
+        base_faction_id: 170,
+      ),
+    ])
+  assert selection.refusals == [] as "the row passes the client's checks"
+  assert started(selection) == [] as "no creature starts"
+  assert list.map(objects_in(selection), fn(object) { object.id })
+    == [SpawnId(1)]
+    as "the row is sent as an object"
+  let assert [coverage] = selection.coverage as "one world"
+  assert coverage.objects_sent
+    == list.zip(spawn.object_types, [0, 0, 0, 0, 0, 1, 0, 0])
+    as "counted as a type 13 object"
+}
+
 pub fn a_creature_without_a_chosen_faction_keeps_its_own_test() -> Nil {
   use <- owned_test.run(60_000)
   // Creature2 73464, the Virtual Battle Beast, has factionId 1441; the only chosen

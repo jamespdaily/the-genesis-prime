@@ -122,6 +122,7 @@ fn appears(
   connection_support.sent_by_a_peer(connection_support.news_of(
     unit_id: unit,
     news: client_connection.CreatureAppeared(
+      turret: False,
       unit: creature_unit.create(
         spawn: target,
         unit_id: unit,

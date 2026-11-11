@@ -849,6 +849,7 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
     game_connection_support.sent_by_a_peer(game_connection_support.news_of(
       unit_id: 40,
       news: CreatureAppeared(
+        turret: False,
         unit: creature,
         life: 4,
         place: beast.place,
@@ -1318,7 +1319,6 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
           respawn_ms: 60_000,
           attack_spell4_id: Spell4Id(5649),
           attack_interval_ms: 1500,
-          cast_ms: 0,
         ),
         numbers: spawn_support.numbers,
       )),

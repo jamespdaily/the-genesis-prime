@@ -67,26 +67,24 @@ pub type Hostile {
 /// properties; the speed it runs at, in units a second
 /// (Creature2DisplayInfo.runLand times property 100, `0x1405b45e0`); and its reach,
 /// centre to centre: the spell's `targetMaxRange` plus its hit radius (a server
-/// choice, checked live); and, for a spell whose cast has a time, the area it strikes at
-/// the cast's end.
+/// choice, checked live); and, for a spell whose cast has a time, that time and the area
+/// it strikes at the cast's end. `cast_ms` is the spell's `castTime`: above 0 the attack is
+/// a charge, which strikes each fighter inside its `area` when the time is out, and its
+/// reach is the area row's `maxRange`, not the spell's `targetMaxRange`. A creature whose
+/// `run_speed` is 0 never moves.
+///
+/// `area` is the area row and how a unit counts as inside it
+/// (genesis_prime/game/spell_area `area_of_spell`), read only for a spell with a cast time;
+/// an attack with none strikes only its target.
 pub type Attack {
   Attack(
     spell4_id: Spell4Id,
     offence: Offence,
     run_speed: Float,
     reach: Float,
-    area: Option(Area),
+    cast_ms: Int,
+    area: Option(#(Row, Inside)),
   )
-}
-
-/// What a charge strikes when its cast time is out, as the player's casts read it
-/// (genesis_prime/game/spell_area): the spell's area row (`Spell4AoeTargetConstraints`)
-/// and how a unit counts as inside it, by the hit shapes of its telegraph rows placed on the
-/// caster (`spell_area.hit_shapes_of`). `None` for a spell with no area row, which
-/// strikes only its target. Shape of #736: spawn gives `None` for every attack until the
-/// build commit reads the tables.
-pub type Area {
-  Area(row: Row, inside: Inside)
 }
 
 /// A creature's Interrupt Armor maximum, unit property 44

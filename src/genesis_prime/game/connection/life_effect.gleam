@@ -9,6 +9,7 @@ import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/movement as connection_movement
 import genesis_prime/game/connection/state.{type Session} as connection_state
+import genesis_prime/game/hit_radius
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/world_entry
@@ -52,6 +53,10 @@ pub fn life_effects(
           fighter: #(unit_id, life),
           place: movement.place(entered.movement),
           seq: session.move_seq,
+          hit_radius: hit_radius.of_playing(
+            tables: session.settings.tables,
+            race_id: entered.character.race_id,
+          ),
         ),
       ]
       player_life.StartTimer(timer:, after_ms:) -> [

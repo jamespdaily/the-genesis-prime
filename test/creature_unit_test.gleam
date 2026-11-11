@@ -6,7 +6,9 @@
 //// both factions 1441, display 26565.
 
 import genesis_prime/game/start_place.{Facing}
+import genesis_prime/message/static_unit_type
 import genesis_prime/message/unit_create_creature.{UnitCreateCreature}
+import genesis_prime/message/unit_create_static
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/table/id.{Creature2Id}
@@ -44,6 +46,7 @@ pub fn a_creature_is_created_as_the_clients_vector_of_a_battle_beast_is_test() -
       display_info_id: 26_565,
       outfit_info_id: 0,
       vendor: False,
+      turret: False,
       visibility: option.None,
       combat: spawn_support.beast_combat(),
       bases: spawn_support.loaded_beast().bases,
@@ -61,6 +64,38 @@ pub fn a_creature_is_created_as_the_clients_vector_of_a_battle_beast_is_test() -
       "01 10 00 00 00 be 47 00 00 02 40 03 00 00 a0 08 00 00 00 00 00 00 00 10 02 00 70 60 18 00 5a 8b 18 00 d8 74 88 03 00 00 fe 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 10 5a 84 16 00 00 00 00 00 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 a0 f8 0c 00 00",
     ))
     as "opcode.0x262.creature: the creature's 0x262 is the client's vector"
+}
+
+pub fn a_turret_creature_is_created_as_unit_type_13_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `opcode.0x262.simple`: the client reads a type 0 and a type 13 unit's type data
+  // alike, the Creature2 id and the checklist index, then the common tail, so the
+  // turret's 0x262 is the creature's with the type number 13 (Turret).
+  let beast = spawn_support.battle_beast(number: 1, x: 0.0)
+  let sim_turret =
+    Spawn(..beast, creature_id: Creature2Id(73_494), turret: True)
+  let unit =
+    creature_unit.create(
+      spawn: sim_turret,
+      unit_id: 0x1001,
+      health: 52,
+      interrupt_armor: option.None,
+      server_time_estimate_start: 0,
+    )
+  let assert Ok(bytes) = creature_unit.body(unit, turret: True)
+    as "the turret's 0x262 encodes"
+  let assert Ok(decoded) = unit_create_static.decode(bytes)
+    as "the bytes read as a static unit's 0x262, whose type number is the unit type"
+  assert decoded.unit_type == static_unit_type.Turret
+    as "the unit type is 13 (Turret)"
+  assert static_unit_type.to_value(decoded.unit_type) == 13
+  assert decoded.creature_id == 73_494 && decoded.checklist_index == 0
+    as "followed by the Creature2 id and the checklist index"
+  assert decoded.tail == unit.tail
+    as "and the creature's tail: health, factions, display and place are the creature's"
+  assert creature_unit.body(unit, turret: False)
+    == unit_create_creature.encode(unit)
+    as "a creature that is no turret's is of type 0 as before"
 }
 
 pub fn a_recorded_health_is_sent_as_stat_0_and_as_base_health_test() -> Nil {

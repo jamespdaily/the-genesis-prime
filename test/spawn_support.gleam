@@ -18,6 +18,7 @@ import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/hit.{Blow, Defence, Offence}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/vendor
+import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_faction
@@ -83,6 +84,7 @@ pub fn battle_beast(number number: Int, x x: Float) -> Spawn {
     display_info_id: 26_565,
     outfit_info_id: 0,
     vendor: False,
+    turret: False,
     visibility: option.None,
     combat: beast_combat(),
     bases: loaded_beast().bases,
@@ -290,10 +292,88 @@ pub fn kinds() -> Kinds {
       respawn_ms: 60_000,
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
-      cast_ms: 0,
     ),
     by_creature: dict.new(),
   )
+}
+
+/// The kinds migration 0028 adds to migration 0010's: the Sim-Turrets' charges, Spell4
+/// 85469 for Creature2 73494 and Spell4 86978 for 74862, every 3000 ms.
+pub fn turret_kinds() -> Kinds {
+  Kinds(
+    ..kinds(),
+    by_creature: dict.from_list([
+      #(
+        73_494,
+        Kind(
+          respawn_ms: 60_000,
+          attack_spell4_id: Spell4Id(85_469),
+          attack_interval_ms: 3000,
+        ),
+      ),
+      #(
+        74_862,
+        Kind(
+          respawn_ms: 60_000,
+          attack_spell4_id: Spell4Id(86_978),
+          attack_interval_ms: 3000,
+        ),
+      ),
+    ]),
+  )
+}
+
+/// The factions migration 0028 chooses for the Sim-Turrets: 1441 for Creature2 73494
+/// and 1442 for 74862.
+pub fn the_turrets_are_given_their_factions(
+  tables tables: table_store.Tables,
+) -> creature_faction.Factions {
+  let assert Ok(factions) =
+    creature_faction.select(
+      rows: [
+        creature_faction.Row(creature_id: 73_494, faction_id: 1441),
+        creature_faction.Row(creature_id: 74_862, faction_id: 1442),
+      ],
+      tables:,
+    )
+    as "Creature2 73494 and 74862 and Faction2 1441 and 1442 are rows of the client's tables"
+  factions
+}
+
+/// The Exile Sim-Turret, Creature2 73494, as the content load starts it from a stored
+/// type 13 row at `place` in World 3460: its own health, factions 1441, its charge Spell4
+/// 85469 with the area its rows give, and a run speed of 0. The test stands it where it
+/// likes and reads what the load made of it.
+pub fn sim_turret(number number: Int, place place: Place) -> Spawn {
+  let tables = character_tables.content_tables()
+  let assert Ok(creature) = creature2.get(tables, Creature2Id(73_494))
+    as "the client holds the Exile Sim-Turret"
+  let row =
+    Row(
+      ..spawn.creature_row(
+        looks: spawn.looks(tables:),
+        id: SpawnId(number),
+        creature:,
+        place:,
+        level: option.None,
+        factions: creature_faction.none(),
+      ),
+      entity_type: 13,
+    )
+  let selection =
+    spawn.select(
+      rows: [row],
+      tables:,
+      formulas: rating_support.formulas(),
+      kinds: turret_kinds(),
+      vendors: vendor.none(),
+      factions: the_turrets_are_given_their_factions(tables:),
+    )
+  let assert Ok(world) = dict.get(selection.worlds, 3460)
+    as "the turret row starts in world 3460"
+  let assert Ok(turret) = dict.get(world.by_id, SpawnId(number))
+    as "the turret row starts as a creature"
+  turret
 }
 
 /// The Virtual Battle Beast's attack: Spell4 5649, whose effect 184741 hits for 12
@@ -320,6 +400,7 @@ pub fn beast_attack() -> Attack {
     ),
     run_speed: 10.0,
     reach: 8.0,
+    cast_ms: 0,
     area: option.None,
   )
 }

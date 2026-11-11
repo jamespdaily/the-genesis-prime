@@ -126,6 +126,7 @@ pub fn walker_appears() -> Event(ConnectionEvent(Message, Answer)) {
   connection_support.sent_by_a_peer(connection_support.news_of(
     unit_id: 40,
     news: CreatureAppeared(
+      turret: False,
       unit: creature_unit.create(
         spawn: spawned,
         unit_id: 40,

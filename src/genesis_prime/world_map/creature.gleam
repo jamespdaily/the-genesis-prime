@@ -88,11 +88,11 @@
 ////   to home and what happens at each of its deadlines; the creature carries out its
 ////   effects: news to its viewers, tells to the players in the fight
 ////   (`FightTold`), and its four timers: the attack tick, the cast end of a charge, the strike
-////   deadline and the walk home. An attack with a cast time (`Kind.cast_ms` above 0, the
+////   deadline and the walk home. An attack with a cast time (`Attack.cast_ms` above 0, the
 ////   Sim-Turrets') is a charge: the fight opens it on an attack tick and carries it out as
 ////   the 0x7ff, the `CastEnds` timer, the strikes to the fighters inside its rectangle and the
-////   go, with no movement of the unit (`Fighter.stationary`); the creature takes no message for
-////   it beyond its own timer.
+////   go; the creature takes no message for it beyond its own timer. An attack with run speed
+////   0 never moves the unit.
 //// - **A viewer that is not a connection any more** is dropped by the send (the
 ////   registry finds no process); the map's `Unwatched` follows from its end.
 //// - **A `Watched` twice from one connection** sends the 0x262 twice; the
@@ -241,8 +241,16 @@ pub type Message {
   /// A caster's connection strikes the creature (genesis_prime/game/strike_tell).
   Strike(tell: StrikeTell)
   /// The map: the ready player of connection `by`, unit `unit_id`, in its stay
-  /// `stay`, entered the creature's ring at `place`, its connection's move `seq`.
-  Approached(by: ConnectionId, unit_id: Int, place: Place, seq: Int, stay: Stay)
+  /// `stay`, with the hit radius of its race, entered the creature's ring at `place`, its
+  /// connection's move `seq`.
+  Approached(
+    by: ConnectionId,
+    unit_id: Int,
+    place: Place,
+    seq: Int,
+    stay: Stay,
+    hit_radius: Float,
+  )
   /// The map: the player of connection `by` left the creature's ring.
   Withdrew(by: ConnectionId)
   /// The map: the player of connection `by` died, so it leaves the creature's ring's
@@ -250,7 +258,13 @@ pub type Message {
   PlayerDied(by: ConnectionId)
   /// The connection of a player on the creature's threat list: its player, in its
   /// stay `stay`, stands at `place`, its move `seq`.
-  TargetMoved(by: ConnectionId, place: Place, seq: Int, stay: Stay)
+  TargetMoved(
+    by: ConnectionId,
+    place: Place,
+    seq: Int,
+    stay: Stay,
+    hit_radius: Float,
+  )
   /// The connection of a player the creature struck answers the strike.
   StrikeAnswered(answered: Answered)
   /// The connection `by` of a caster: a property modifier of its spell starts on the
@@ -422,7 +436,11 @@ pub fn step(
       Effects([
         appeared(state:, viewer: #(by, stay), now_ms:),
         ..list.map(
-          creature_fight.arrival_news(state: state.fight, now_ms:),
+          creature_fight.arrival_news(
+            state: state.fight,
+            fighter: fighter_of(state:),
+            now_ms:,
+          ),
           fn(news) { news_to(creature:, viewer: #(by, stay), news:) },
         )
       ]),
@@ -449,20 +467,34 @@ pub fn step(
         StopAtRespawn -> #(State(..state, retiring: True), Effects([]))
       }
     OwnEvent(Told(message: Strike(tell:))) -> struck(state:, tell:, now_ms:)
-    OwnEvent(Told(message: Approached(by:, unit_id:, place:, seq:, stay:))) ->
+    OwnEvent(Told(message: Approached(
+      by:,
+      unit_id:,
+      place:,
+      seq:,
+      stay:,
+      hit_radius:,
+    ))) ->
       fought_alone(
         state:,
-        input: creature_fight.Approached(by:, unit_id:, place:, seq:, stay:),
+        input: creature_fight.Approached(
+          by:,
+          unit_id:,
+          place:,
+          seq:,
+          stay:,
+          hit_radius:,
+        ),
         now_ms:,
       )
     OwnEvent(Told(message: Withdrew(by:))) ->
       fought_alone(state:, input: creature_fight.Withdrew(by:), now_ms:)
     OwnEvent(Told(message: PlayerDied(by:))) ->
       fought_alone(state:, input: creature_fight.PlayerDied(by:), now_ms:)
-    OwnEvent(Told(message: TargetMoved(by:, place:, seq:, stay:))) ->
+    OwnEvent(Told(message: TargetMoved(by:, place:, seq:, stay:, hit_radius:))) ->
       fought_alone(
         state:,
-        input: creature_fight.TargetMoved(by:, place:, seq:, stay:),
+        input: creature_fight.TargetMoved(by:, place:, seq:, stay:, hit_radius:),
         now_ms:,
       )
     OwnEvent(Told(message: StrikeAnswered(answered:))) ->
@@ -827,7 +859,7 @@ fn struck(
       {
         _, _, _, Some(..) -> Some(creature_fight.Killed)
         strike_tell.Landed(descriptions:, ..),
-          PlayerStriker(unit_id:, place:, seq:, stay:, ..),
+          PlayerStriker(unit_id:, place:, seq:, stay:, hit_radius:, ..),
           Connection(by),
           None
         ->
@@ -837,6 +869,7 @@ fn struck(
             place:,
             seq:,
             stay:,
+            hit_radius:,
             threat: creature_fight.threat_of(
               offence: tell.offence,
               descriptions:,
@@ -1075,8 +1108,7 @@ fn fought(
 }
 
 /// What the creature fights with: its unit and address, its spawn as home, its
-/// attack, its kind's interval and cast time, and the run's numbers. Whether it is a turret
-/// that stands where it is, is not read yet: shape of #736.
+/// attack, its kind's interval, and the run's numbers.
 fn fighter_of(state state: State) -> Fighter {
   let creature = state.settings.creature
   Fighter(
@@ -1092,8 +1124,6 @@ fn fighter_of(state state: State) -> Fighter {
     interval_ms: state.settings.kind.attack_interval_ms,
     numbers: state.settings.numbers,
     controlled: creature_control.holds(state: state.control),
-    cast_ms: state.settings.kind.cast_ms,
-    stationary: False,
   )
 }
 
@@ -1181,6 +1211,7 @@ fn appeared(
       ),
       life: creature.life,
       place:,
+      turret: state.settings.spawn.turret,
       hit_radius: state.body.combat.hit_radius,
       attackable: state.body.combat.attackable,
       hostile_to: state.body.combat.hostile_to,
@@ -1228,8 +1259,8 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
   case outgoing {
     map.Watched(by:, stay:) -> Ok(Watched(by:, stay:))
     map.Unwatched(by:) -> Ok(Unwatched(by:))
-    map.Approached(by:, unit_id:, place:, seq:, stay:) ->
-      Ok(Approached(by:, unit_id:, place:, seq:, stay:))
+    map.Approached(by:, unit_id:, place:, seq:, stay:, hit_radius:) ->
+      Ok(Approached(by:, unit_id:, place:, seq:, stay:, hit_radius:))
     map.Withdrew(by:) -> Ok(Withdrew(by:))
     map.PlayerDied(by:) -> Ok(PlayerDied(by:))
     map.Retire -> Ok(Retire)

@@ -571,7 +571,6 @@ pub fn map_run_with_four_players(run: Int) -> map.State {
           respawn_ms: 60_000,
           attack_spell4_id: Spell4Id(5649),
           attack_interval_ms: 1500,
-          cast_ms: 0,
         ),
         by_creature: dict.new(),
       ),
@@ -1830,6 +1829,7 @@ pub fn beast_appears_facing(
   sent_by_a_peer(news_of(
     unit_id:,
     news: CreatureAppeared(
+      turret: False,
       unit: creature_unit.create(
         spawn: beast,
         unit_id:,

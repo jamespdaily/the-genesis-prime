@@ -49,7 +49,7 @@ import genesis_prime/game/target_group
 import genesis_prime/game/vendor
 import genesis_prime/import_world_data
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/id.{Creature2Id, QuestObjectiveId}
 import genesis_prime/table/loader/store
 import genesis_prime/table/quest_objective
 import genesis_prime/table/world_location2
@@ -250,6 +250,79 @@ pub fn a_creature_with_a_stored_spawn_in_the_world_gets_none_test() -> Nil {
     as "the boss has a spawn in World 3460, where its marker is"
   assert of_creatures(placed:, creatures: [turret]) != []
     as "a creature with no stored spawn is still placed"
+}
+
+pub fn a_stored_turret_row_holds_its_objective_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  // Objective 21288 (quest 10518) is type 2 of Creature2 73494, count 2, markers
+  // 51671 and 52753, which sit at the points of world rows 29179 and 29178: the
+  // training simulation stores those two as type 13 rows.
+  let assert Ok(objective) =
+    quest_objective.get(tables:, id: QuestObjectiveId(21_288))
+    as "the fixture holds objective 21288"
+  assert objective.type_ == 2
+    && objective.data == 73_494
+    && objective.count == 2
+    as "objective 21288 counts 2 of Creature2 73494"
+  let held = [
+    spawn.Row(
+      ..stored(tables:, id: 5, creature_id: 73_494, world_id: world),
+      entity_type: 13,
+    ),
+    ..the_world_holds_spawns(tables:)
+  ]
+  let placed =
+    objective_spawn.place(
+      tables:,
+      stored: held,
+      factions: creature_faction.none(),
+    )
+  assert of_creatures(placed:, creatures: [73_494]) == []
+    as "a stored row of the turret, of any unit type, holds the objective's creature in its world"
+  let placed =
+    objective_spawn.place(
+      tables:,
+      stored: the_world_holds_spawns(tables:),
+      factions: creature_faction.none(),
+    )
+  assert list.length(of_creatures(placed:, creatures: [73_494])) == 2
+    as "with no stored row the two markers place two turrets"
+}
+
+pub fn the_dominion_turrets_are_placed_with_faction_1442_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  // Objective 21316: Creature2 74862, count 2, markers 52902 and 52903. Its Creature2
+  // row gives faction 219, Friendly to both player factions; creature_faction
+  // 74862 -> 1442 stands it with 1442, Hostile to Dominion (Faction2Relationship
+  // 2946: 1442 to 166, level 0).
+  let factions = spawn_support.the_turrets_are_given_their_factions(tables:)
+  let placed =
+    objective_spawn.place(
+      tables:,
+      stored: the_world_holds_spawns(tables:),
+      factions:,
+    )
+  let assert [first, second] = of_creatures(placed:, creatures: [turret])
+    as "one turret for each of the two markers"
+  assert first.faction_id == 1442 && first.base_faction_id == 1442
+    as "the placed row carries the chosen faction as its faction and its base faction"
+  assert second.faction_id == 1442 && second.base_faction_id == 1442
+  let selection =
+    spawn.select(
+      rows: placed.rows,
+      tables:,
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.turret_kinds(),
+      vendors: vendor.none(),
+      factions:,
+    )
+  let assert Ok(started) = dict.get(selection.worlds, world)
+    as "the selection holds world 3460"
+  assert dict.has_key(started.by_id, first.id)
+    && dict.has_key(started.by_id, second.id)
+    as "both start: with 1442 they are no longer Friendly to both"
 }
 
 pub fn a_marker_in_a_world_with_no_stored_spawn_is_skipped_and_reported_test() -> Nil {
