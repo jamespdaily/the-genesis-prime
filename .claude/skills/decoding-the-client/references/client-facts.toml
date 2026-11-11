@@ -14496,3 +14496,86 @@ statement = "The client holds no amount for an episode's completion experience: 
 proof = "table_rows -- Episode --columns: ID, localizedTextIdName, localizedTextIdBriefing, localizedTextIdEndSummary, flags, worldZoneId, percentToDisplay, questHubIdExile, questHubIdDominion. A UTF-16 column-name scan over all 384 tables: episode-named columns only in Episode, EpisodeQuest, PathEpisode, PathMission.pathEpisodeId, SoundUIContext and ZoneCompletion.episodeQuestCount. grep FUN_140200220 (GameFormula lookup) over the saved C of 0x140787*, 0x140788*, 0x14072[cde]*, 0x140724*: none; only 0x1403c8760 (the 0x1ac handler) uses it among the files searched, and 52884 / 0xce94 appear only there."
 grade = "guess"
 gap = "An absence: the server code that worked the amount out is not in the client. A retail record of an episode completion line (Jabbithole, a recording) settles the amount; until then it is a server choice for Jim."
+
+["opcode.0x934"]
+statement = "Message 0x934 (2356), game server to client: set a unit's current faction. Body in wire order: the unit id (32 bits) and a Faction2 id (14 bits). The handler finds the unit and calls SetUnitFaction 0x14045ab70 with the id; an unknown unit id does nothing. The new faction is what GetUnitDispositionTo 0x14045a950 reads (unit 0x118), so it changes whether the player's spells may target the unit. Creature2.factionId is not consulted."
+proof = "Registered in 0x14006c290 (saved C line 715, hash 8eb22adb6de47956): id 0x934, record 8, reader 0x14007ad00. Reader 0x14007ad00 (saved C, same hash): ReadBits32 0x20 into record +0, ReadBits32 0xe into record +4. HandleWorldMessage 0x1403ec6a0 case 0x1403ed88f (jump table 0x1403f1344, entry id-97): lVar16 = FindUnit(param_1, record[0]); if non-zero SetUnitFaction(lVar16, record[1]) and return 0; else the default case, which sets nothing. GetUnitDispositionTo 0x14045a950 (saved C lines 48-98, hash 49fd5a78aaad3411) reads unit +0x118 and calls its slots 0x18 and 0x30."
+grade = "sure"
+
+["0x14007ad00"]
+statement = "Reads the body of message 0x934: a unit id (32 bits) then a Faction2 id (14 bits)."
+proof = "Saved C 0x14007ad00 (hash 8eb22adb6de47956): ReadBits32(0x20) to record +0, ReadBits32(0xe) to record +4; registered as the 0x934 reader in 0x14006c290 line 715."
+grade = "sure"
+name = "ReadUnitFactionBody"
+
+["Spell4Effects.effectType.79"]
+statement = "Effect type 79, SpellEffectImmunity: the target is immune to spell effects of the type in dataBits00. Spell 85474 'Turret Immune' uses it with dataBits00 8 (Damage) and flags 2, which lasts until removed."
+proof = "Enum at 0x140c34140 (16-byte entries, UTF-16 name pointer and u32 value): 79 = SpellEffectImmunity, 8 = Damage. Spell4Effects row 224666: spellId 85474, effectType 79, flags 2, dataBits00 8."
+grade = "fairly sure"
+gap = "The client code that applies the immunity was not read; the meaning of dataBits00 as an effect type rests on the enum name and the spell's tooltip 748852 'This turret is protected from damage unless it is interrupted while charging.'"
+
+["Spell4.85474"]
+statement = "Spell 85474 'Turret Immune' (base 60621): the tutorial Sim-Turret's damage immunity. One effect, 224666, SpellEffectImmunity to Damage until removed. Its caster prerequisite 41738 (type 15, comparison 2, value 85474) refuses it while the turret already has it. Tooltip 748852: 'This turret is protected from damage unless it is interrupted while charging.'"
+proof = "Spell4 row 85474, Spell4Effects 224666, Prerequisite 41738, text 748852 (table_rows)."
+grade = "fairly sure"
+gap = "Read from the table rows; the client code that applies the immunity was not read (Spell4Effects.effectType.79)."
+
+["Spell4.85469"]
+statement = "Spells 85469 'Charging - Dominion Turret' (Exile tutorial, base 60616) and 86978 'Charging - Exile Turret' (Dominion tutorial, base 62081): the Sim-Turret's charge. castTime 8000, castBarType 1, targetMechanic 6, spellType 75, spellClass 37. Effects: Fluff (17) 2000 ms on targetFlags 2, and Damage (8) dataBits01 400 on targetFlags 4 (rows 224643/224644 and 227189/227190). Caster prerequisite 41722 (type 15, comparison 2, value 85472) refuses the charge while the turret is under Moment of Opportunity. Target text 748860 / 754420: 'While the turret charges, use an interrupt ability on it!'"
+proof = "Spell4 rows 85469 and 86978, Spell4Base 60616 and 62081, Spell4Effects 224643, 224644, 227189 and 227190, Prerequisite 41722, texts 748860 and 754420 (table_rows)."
+grade = "fairly sure"
+gap = "Read from the table rows; the client code that runs the charge cast was not read."
+
+["Spell4.85472"]
+statement = "Spell 85472 'Moment of Opportunity - NPEU - Part 2' (base 60619, validTarget 6): opens a Sim-Turret to damage for 15 s. Effects, all on targetFlags 2: 224652 RavelSignal id 29426; 224705 CCStateSet state 9 Vulnerability 15000 ms; 225189 CCStateSet state 12 Disable 15000 ms; 224713 SpellForceRemove selector 2 Spell4 85474 (the immunity comes off); 224715 Fluff 15000 ms; 224716 Proxy 85474 with delayTime 15000 (the immunity comes back). Text 748859: 'The turret is vulnerable! This is your opportunity to attack!' The target frame shows the Moment of Opportunity icon while state 9 is on (TargetFrame.lua UpdateInterruptArmor)."
+proof = "Spell4 85472, Spell4Base 60619, Spell4Effects 224652, 224705, 224713, 224715, 224716 and 225189, text 748859 (table_rows). Effect type names from the enum at 0x140c34140. TargetFrame.lua lines 957-972 (client-files UI)."
+grade = "fairly sure"
+gap = "Read from the table rows and TargetFrame.lua; the client code for each effect type was not read."
+
+["Spell4.85472.trigger"]
+statement = "The server applies 85472 to a Sim-Turret when the player interrupts its 85469 or 86978 charging cast."
+proof = "No client table links them: the charge's hint text says to interrupt it, 85472's text says the turret is now vulnerable, 85472's RavelSignal 29426 names a server script, and the charge's prerequisite 41722 excludes a turret under 85472."
+grade = "guess"
+gap = "A retail recording of the tutorial's turret fight (an interrupt followed by a 0x7ff or 0x818 for 85472) would settle it."
+
+["Creature2.73494.interrupt_armor"]
+statement = "The tutorial Sim-Turrets 73494 and 74862 (difficulty 1) and the boss 73499 (difficulty 4) have an interrupt armor maximum of 0 by the client's tables, so the target frame shows no interrupt armor for them. Their barrier is spell 85474, not interrupt armor."
+proof = "Creature2Difficulty 1 and 4: unitPropertyMultiplier044 = 0. Creature2ArcheType 12 and 13 multipliers 1. Creature2OverrideProperties for 73494 and 74862 set only properties 7 = 150, 41 = 0 and 42 = 0; for 73499 only 42 = 0; none sets 44. Record opcode.0x938.interrupt_armor (clamped to property 44 plus unit 0xc94). TargetFrame.lua UpdateInterruptArmor lines 957-1000: maximum 0 shows nothing."
+grade = "fairly sure"
+gap = "Read from the table rows; the client code that sums property 44 was read only through record opcode.0x938.interrupt_armor."
+
+["lua.TargetFrame.interrupt_armor"]
+statement = "How the target frame shows interrupt armor: while the target is in CC state 9 (Vulnerability) it shows the Moment of Opportunity sprite; when the maximum is -1 it shows the infinite sprite; when the maximum is above 0 it shows the value, only while the value is above 0; when the maximum is 0 it shows nothing. A cast bar is drawn locked and grey when the caster's maximum is -1, and orange otherwise."
+proof = "client-files UI/TargetFrame/TargetFrame.lua lines 957-1000 (UpdateInterruptArmor: GetCCStateTimeRemaining(Vulnerability), GetInterruptArmorValue, GetInterruptArmorMax) and lines 1077-1080 (bInfiniteInteruptArmor)."
+grade = "fairly sure"
+gap = "Read from the Lua alone; the native GetInterruptArmorMax and GetInterruptArmorValue were not read."
+
+["Faction2.219"]
+statement = "Faction2 219 (flags 3, no parent) is level 10, Friendly, to 165, 164 and 475, so a unit with it as its current faction cannot be the target of the player's hostile spells (cast result 99). Hostile alternatives the rows prove: 1441 (parent 164; level 0 with 167; Creature2 73464, the Exile tutorial's Dominion enemy), 1442 (on Creature2 73465, affiliation 452) and 233 (parent 232; level 0 with 165 at row 746 and with 171 at row 1510). No client table switches a 219 unit hostile: Quest2 10518, QuestObjective 21288, 21316, 21296 and 21310, and the turret spells set no faction."
+proof = "Faction2 rows 219, 233, 1441 and 1442; Faction2Relationship rows 726, 944, 1067, 746 and 1510; Creature2 73464 and 73465; records 0x1403ad540 and 0x14045a950."
+grade = "fairly sure"
+gap = "Which faction, or a threat entry instead, the retail server gave the turrets and boss is not in the client; a retail recording of 0x262 for 73494 would settle it."
+
+["0x1403b6de0.resets"]
+statement = "HandleMessage00ADInWorld, in order: raises PendingWorldRemovalCancel; removes every unit; clears the player (0x78) and the controlled unit (0x6490); clears the spell shortcuts (ClearSpellShortcuts 0x1403ba4a0); zeroes 0x74f4, the noted zone 0x7150 and the 0xf1 flag 0x6420; sets the difficulty 0x6424 to 2; calls LoadWorld, which zeroes every loading stage at 0x7b48, and returns on its failure. Unless the world handler's word at 0x28 is 4, it then shows the loading screen. Once that has started, or at once in state 4, it raises the UI events P2PCancelTrade and ChangeWorld; nothing else raises ChangeWorld. So after an in-world 0xad, CheckWorldLoaded runs every stage again: the client waits for 0x19b and the player's model, sends 0xf2 again once the terrain is ready and a new 0xf1 has come, and is loaded only on a new 0x61."
+proof = "Saved C 0x1403b6de0.c (hash 27b5bfedf49d718d): line 36 PendingWorldRemovalCancel; lines 37-43 the RemoveUnit loop and param_1[0xf] and param_1[0xc92] = 0; line 73 ClearSpellShortcuts; lines 141-145 0x74f4, param_1+0xe2a (0x7150) and param_1+0xc84 (0x6420) = 0, 0x6424 = 2; lines 148-151 LoadWorld; lines 152-156 the state-4 branch to LAB_1403b721c with P2PCancelTrade and ChangeWorld; lines 173-187 ShowWorldLoadingScreen, then goto LAB_1403b721c. LoadWorld 0x1403e7a20 mov dword ptr [r13+0x7b48], 0x0 (record 0x1403e70d0). Stage conditions: record 0x1403e8000. A grep of the saved C for ChangeWorld finds only 0x1403b6de0.c."
+grade = "fairly sure"
+gap = "What the world handler's state 4 is, which skips the loading screen, is not read. The other reset calls between lines 44 and 140 are not read one by one."
+
+["Creature2.74772"]
+statement = "The Dominion departures terminals. 74772 'Departures Terminal: Crimson Isle' casts Spell4 37270 (Spell4Base 22504, CSI 414, text 301689 'Embark for the hot and sandy Crimson Isle?'). 74773 'Departures Terminal: Levian Bay' casts Spell4 50279 (Spell4Base 32969, CSI 938, text 463957 'Embark for the green and misty Levian Bay?'). Both have castMethod 5, a YesNo CSI (interactionType 4, duration 60000, flags 1) and activate range 0 to 1.0 (the Exile terminals 73605 and 73606: 0 to 4.0). Each spell has three effects: Activate (7) on the target, RavelSignal (81) kind 1 id 10785 on the target, and Fluff (17) on the caster. Neither has a Teleport. Neither creature has a prerequisite or quest column set."
+proof = "gleam run -m genesis_prime/table_rows -- Creature2 74772 74773; -- Spell4 37270 50279; -- Spell4Base 22504 32969; -- ClientSideInteraction 414 938; -- Spell4Effects spellId=37270 (rows 78927, 78928, 220074) and spellId=50279 (rows 119656, 119657, 220073); texts 751745, 751746, 301689 and 463957 through client_files.py text."
+grade = "fairly sure"
+gap = "What Ravel script 10785 did is not in the client (Spell4Effects.effectType.81)."
+
+["departures.terminal_choice"]
+statement = "No client column ties a departures terminal to its optional Bon Voyage objective or to a landing. Each faction's three type-23 objectives share one TargetGroup, and no terminal spell has a Teleport or place data. The match comes from the names and texts. Terminal 73606 (Northern Wilds) goes to objective 21328 'Choose the Northern Wilds' (marker 51696) and landing 42074 (world 426, zone 648). 73605 (Everstar Grove) goes to 21329 'Choose Everstar Grove' (51695) and 41641 (world 990, zone 1417). 74773 (Levian Bay) goes to 21349 'Choose Levian Bay' (52748) and 42148 (world 1387, zone 1411). 74772 (Crimson Isle) goes to 21350 'Choose Crimson Isle' (52747) and 8223 (world 870, zone 1236), with the quest receiver 42150 5.5 units away. The required 21327 and 21348 'Travel to Nexus' are counted on either terminal."
+proof = "gleam run -m genesis_prime/table_rows -- QuestObjective 21327 21328 21329 21348 21349 21350 (type 23, data 14367 or 14387, short texts 749452, 749456, 749458, 751736, 751740 and 751742); -- TargetGroup 14367 14387 (type 1, 73605/73606 and 74772/74773); terminal names 749459, 749460, 751745 and 751746 and CSI texts 267450, 267451, 301689 and 463957 through client_files.py text; landings from Quest2.10528.links and Quest2.10530.links; -- WorldLocation2 42074 41641 42148 42150 8223."
+grade = "fairly sure"
+gap = "This is a match by text, not a column. Markers 51695 and 51696 (radius 1, docking bay) probably stand at the terminals, but the terminal spawns are not in the client. 8223 or 42150 for Crimson Isle is a server choice. 8223's phases 1 (the others -1) is not read."
+
+["departures.no_client_gate"]
+statement = "The client offers the departures yes to anyone in range, quest or not. The terminals have prerequisiteIdVisibility 0, prerequisiteIdActivateSpell00 to 03 0 and every questIdGiven and questIdReceive 0. Their spells have every prerequisite column 0. The only client checks are CastActivateSpell's CSI cooldown (262) and the activate range (105, 104, 183). The window then opens on the server's 0x7fd. So whether to confirm the cast for a player without Bon Voyage (10528 or 10530) is the server's decision, and the client counts neither the terminal use nor the quest itself: 0x361, 0x35c and 0x35d carry both. The quest turns in at its receiver in the landing zone, after the move."
+proof = "gleam run -m genesis_prime/table_rows -- Creature2 73606 74773 (all prerequisite and quest columns 0); -- Spell4 34680 (every prerequisite column 0); records 0x14039c430.csi_guard, opcode.0x97.range, opcode.0x7fd.csi, QuestObjective.type.23, Quest2.10528 and Quest2.10530 (the receivers)."
+grade = "fairly sure"
+gap = "Only 73606, 74773 and Spell4 34680 were read column by column; 73605, 74772 and the other three spells were read for their non-zero columns. What retail did for a terminal used without the quest is not in the client."
