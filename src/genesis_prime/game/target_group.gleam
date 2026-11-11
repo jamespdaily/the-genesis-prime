@@ -75,10 +75,6 @@ fn listed(
   }
 }
 
-fn words_of(row row: TargetGroup) -> List(Int) {
-  [row.data0, row.data1, row.data2, row.data3, row.data4, row.data5, row.data6]
-}
-
 /// The membership of a group reached through the groups of `path`, which a group naming
 /// itself again through the others ends as no member (the client would not return).
 fn member(
