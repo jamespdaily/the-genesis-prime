@@ -52,8 +52,13 @@ import gleam/string
 import owned_test
 import place_support
 import prerequisite_support
+import quest_support
 
 const the_mollusk = 26_462
+
+const a_market_terminal = 34_758
+
+const market_quest = 7153
 
 const its_unit = 5000
 
@@ -95,18 +100,20 @@ fn object(
   east east: Float,
   up up: Float,
 ) -> Target {
-  object_of(creature_id: the_mollusk, creature:, east:, up:)
+  object_of(creature_id: the_mollusk, creature:, checklist_index: 0, east:, up:)
 }
 
 fn object_of(
   creature_id creature_id: Int,
   creature creature: activate.Creature,
+  checklist_index checklist_index: Int,
   east east: Float,
   up up: Float,
 ) -> Target {
   Object(
     creature_id:,
     creature:,
+    checklist_index:,
     body: Body(
       place: place_support.at(
         world_id: 3460,
@@ -137,6 +144,25 @@ fn right_click(
   target target: Target,
   at ms: Int,
 ) -> Result(#(State, List(Effect)), cast.Refusal) {
+  right_click_by(
+    caster: standing(),
+    state:,
+    activations:,
+    unit_id:,
+    target:,
+    at: ms,
+  )
+}
+
+/// The right-click of the unit `unit_id` at the time, by this caster.
+fn right_click_by(
+  caster caster: cast.Caster,
+  state state: State,
+  activations activations: activate.Activations,
+  unit_id unit_id: Int,
+  target target: Target,
+  at ms: Int,
+) -> Result(#(State, List(Effect)), cast.Refusal) {
   let assert Ok(body) =
     cast_activate.encode(CastActivate(
       client_cast_id: clients_cast_id,
@@ -146,7 +172,7 @@ fn right_click(
   cast.activate(
     cast: state,
     body:,
-    caster: standing(),
+    caster:,
     activations:,
     target_of: sees_only(target:),
     caster_radius:,
@@ -310,6 +336,53 @@ pub fn activate_go_raises_activated_test() -> Nil {
     })
     == [[3292]]
     as "Spell4 8's Activate row is Spell4Effects 3292"
+}
+
+/// What a right-click of the market terminal (Creature2 34758, a unit of index 5) does
+/// for a caster whose quest 7153 holds this progress for its one objective.
+fn market_terminal_pressed(progress progress: Int) -> List(Effect) {
+  let assert Ok(row) =
+    creature2.get(
+      tables: fixture_tables.shared(),
+      id: Creature2Id(a_market_terminal),
+    )
+    as "Creature2 34758 is a root of the fixture"
+  let caster =
+    cast.Caster(
+      ..standing(),
+      quests: quest_support.log_of(rows: [
+        quest_support.accepted(quest_id: market_quest, progress: [progress]),
+      ]),
+    )
+  let assert Ok(#(_, effects)) =
+    right_click_by(
+      caster:,
+      state: cast.new(),
+      activations: the_activations(),
+      unit_id: its_unit,
+      target: object_of(
+        creature_id: a_market_terminal,
+        creature: activate.creature_of(row:),
+        checklist_index: 5,
+        east: 1.0,
+        up: 0.0,
+      ),
+      at: 1000,
+    )
+    as "a right-click that fits the message is taken"
+  effects
+}
+
+pub fn activate_pick_reads_the_checklist_bit_of_the_creature_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert [#(_, CastStarted(start: started)), ..] =
+    support.tells(effects: market_terminal_pressed(progress: 0))
+    as "the cast starts and its viewers are told"
+  assert started.spell4_id == 38_925
+    as "Creature2 34758's first column, Spell4 38925, behind Prerequisite 13244: type 94 comparison 2 of quest 7153's objective 0 passes while the unit's bit is clear"
+  assert support.refusal_results(effects: market_terminal_pressed(progress: 32))
+    == [cast_result.to_value(cast_result.TargetIsNotUseable)]
+    as "bit 5 of the mask is the unit's (its index 5, 0x1406113b0): the condition fails, and the next column, prerequisite 0 with spell 0, wins: no activate spell, result 100 (0x14046c580)"
 }
 
 fn range_answer(
@@ -677,7 +750,13 @@ fn timed_terminal() -> activate.Creature {
 }
 
 fn terminal_object(creature creature: activate.Creature) -> Target {
-  object_of(creature_id: the_terminal, creature:, east: 1.0, up: 0.0)
+  object_of(
+    creature_id: the_terminal,
+    creature:,
+    checklist_index: 0,
+    east: 1.0,
+    up: 0.0,
+  )
 }
 
 /// The right-click of the terminal's unit, taken by the rule.

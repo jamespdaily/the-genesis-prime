@@ -349,12 +349,23 @@ pub type Target {
   AnotherPlayer
   /// A creature with a fight state, whose place moves: its activate cast is refused
   /// with result 100 until the issue for quests, zones and prerequisites (#334) reads its
-  /// place.
+  /// place. This includes checklist targets: of the 477 creatures with an activate spell
+  /// among the 512 that a type 14 objective's target group names (the client's
+  /// QuestObjective, TargetGroup and Creature2 tables), 60 are spawned as such creatures
+  /// (302 spawns, entity_type 0 in Jim's world database, `world-data/spawn.tsv`), so a
+  /// 0x97 at them is refused until that issue.
   Fighter
   /// A static object: the id of its Creature2 row, what the row says of its activate
-  /// cast, and where it stands.
-  Object(creature_id: Int, creature: Creature, body: Body)
+  /// cast, the checklist index its 0x262 carried (the bit a type 94 condition of its
+  /// activate pick reads) and where it stands.
+  Object(creature_id: Int, creature: Creature, checklist_index: Int, body: Body)
 }
+
+/// The range of the client's use of a unit whose creature has no activate spell (0xb3):
+/// the interaction entry of kind 39 holds range 0.0, which ClickInteraction replaces by
+/// 5.0 (`0x14039d2c0`, `0x140c48c48`), tested edge to edge in three dimensions with no
+/// height limit (`0x1403ebe80`).
+pub const use_limits = Limits(min: 0.0, max: 5.0, vertical: -1.0)
 
 /// A unit's body for the range test: where it stands (y is up) and its hit radius.
 pub type Body {

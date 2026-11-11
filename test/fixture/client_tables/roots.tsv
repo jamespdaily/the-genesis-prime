@@ -432,3 +432,7 @@ TargetGroup	2766	type 1 group of Creature2 26016	checklist_index_test, game_wire
 Creature2	73500	Primal Manifestation, three spawns in World 3460, no activate spell	checklist_index_test
 Creature2	73422	creature of the type 18 objectives 21319 and 21378	checklist_index_test, objective_checklist_test
 Creature2	26016	creature of the type 14 objective 8782, activate spell 1817	game_wire_checklist_test
+Creature2	34758	first activate column Spell4 38925 behind Prerequisite 13244, a type 94 condition on quest 7153's objective 13230	cast_activate_test, cast_activate_unit_test
+Quest2	7153	quest whose only objective is a type 14 checklist of Creature2 34758, read by Prerequisite 13244	cast_activate_test, cast_activate_unit_test
+QuestObjective	13230	type 14 objective of TargetGroup 4233, count 10	cast_activate_test, cast_activate_unit_test
+TargetGroup	4233	type 1 group of Creature2 34758	cast_activate_test, cast_activate_unit_test

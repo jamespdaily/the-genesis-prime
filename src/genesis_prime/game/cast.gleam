@@ -1230,19 +1230,40 @@ pub fn activate(
   })
 }
 
+/// A unit the caster's 0xb3 names, as the caster's connection knows it.
+pub type UsedUnit {
+  UsedUnit(
+    /// The id of the unit's Creature2 row.
+    creature_id: Int,
+    /// What the row says of its activate cast.
+    creature: activate.Creature,
+    /// The checklist index its 0x262 carried, the bit a type 94 condition of its activate
+    /// pick reads.
+    checklist_index: Int,
+    /// Where the unit stands and its hit radius.
+    body: activate.Body,
+    /// Whether the server offers the unit's use now: an open objective counts it and its
+    /// bit is clear (`objective.use_targets`). The client sends 0xb3 only for a unit whose
+    /// interaction it offers.
+    offered: Bool,
+  )
+}
+
 /// The caster's 0xb3, the client's use of a unit whose creature has no activate spell
-/// (`opcode.0xb3`, `0x14039d4a0`): no cast, no delay and no range, so the use is
-/// `Activated` at once. `creature_of` says what the unit the message names is, the id of
-/// its Creature2 row and what the row says of its activate cast, or `Error(Nil)` for a
-/// unit that is no creature or object the caster's client shows. The client sends 0xb3
-/// only when the creature's pick is spell 0 (`0x14039d510`), so a unit whose pick is a
-/// spell, or one the server cannot pick for, is logged and changes nothing.
+/// (`opcode.0xb3`, `0x14039d4a0`): no cast and no delay, so the use is `Activated` at
+/// once. `unit_of` says what the unit the message names is, or `Error(Nil)` for a unit
+/// that is no creature or object the caster's client shows. The client sends 0xb3 only
+/// from its click of an offered interaction within reach (`0x14039d2c0`, range
+/// `activate.use_limits`) and only when the creature's pick is spell 0 (`0x14039d510`),
+/// so a unit out of reach, one the server does not offer, one whose pick is a spell and
+/// one the server cannot pick for are logged and change nothing.
 pub fn activate_unit(
   cast cast: State,
   body body: BitArray,
   caster caster: Caster,
   activations activations: activate.Activations,
-  creature_of creature_of: fn(Int) -> Result(#(Int, activate.Creature), Nil),
+  unit_of unit_of: fn(Int) -> Result(UsedUnit, Nil),
+  caster_radius caster_radius: Float,
 ) -> Result(List(Effect), Refusal) {
   use used <- result.map(
     client_activate_unit.decode(body)
@@ -1262,37 +1283,56 @@ pub fn activate_unit(
       ),
     ]
   }
-  case creature_of(unit_id) {
+  case unit_of(unit_id) {
     Error(Nil) -> declined("names no creature or object the client shows")
-    Ok(#(creature_id, creature)) -> {
-      let subject =
-        prerequisite.Subject(
-          ..subject_of(cast:, caster:),
-          second_unit: Some(unit_id),
-          positions: prerequisite.NotPlaced,
-        )
+    Ok(UsedUnit(creature_id:, creature:, checklist_index:, body: unit, offered:)) ->
       case
-        activate.pick(
-          creature:,
-          default_spell: activations.default_spell,
-          check: activate.checker(activations:, subject:),
-        )
+        activate.range_of(
+          limits: activate.use_limits,
+          caster: activate.Body(place: caster.place, radius: caster_radius),
+          target: unit,
+        ),
+        offered
       {
-        activate.NoActivateSpell -> [Activated(unit_id:, creature_id:)]
-        activate.Picked(spell4_id:) ->
+        activate.Within, True -> {
+          let subject =
+            prerequisite.counting(
+              subject: prerequisite.Subject(
+                ..subject_of(cast:, caster:),
+                second_unit: Some(unit_id),
+                positions: prerequisite.NotPlaced,
+              ),
+              checklist_index:,
+            )
+          case
+            activate.pick(
+              creature:,
+              default_spell: activations.default_spell,
+              check: activate.checker(activations:, subject:),
+            )
+          {
+            activate.NoActivateSpell -> [Activated(unit_id:, creature_id:)]
+            activate.Picked(spell4_id:) ->
+              declined(
+                "names a creature whose activate spell is "
+                <> int.to_string(spell4_id)
+                <> ", which the client casts with 0x97",
+              )
+            activate.Unread(prerequisite_type:) ->
+              declined(
+                "names a creature that activates through a prerequisite of the type "
+                <> int.to_string(prerequisite_type)
+                <> ", which the server does not read",
+              )
+          }
+        }
+        activate.Within, False ->
           declined(
-            "names a creature whose activate spell is "
-            <> int.to_string(spell4_id)
-            <> ", which the client casts with 0x97",
+            "names a unit that is not offered: no open objective counts a use of it, or its bit is set",
           )
-        activate.Unread(prerequisite_type:) ->
-          declined(
-            "names a creature that activates through a prerequisite of the type "
-            <> int.to_string(prerequisite_type)
-            <> ", which the server does not read",
-          )
+        activate.TooClose, _ | activate.TooFar, _ | activate.TooHigh, _ ->
+          declined("names a unit out of the interaction range")
       }
-    }
   }
 }
 
@@ -1322,12 +1362,15 @@ fn activation_pressed(
     activate.Unseen -> refusal(0, cast_result.CasterMustHaveTarget)
     activate.AnotherPlayer -> refusal(0, cast_result.NoTarget)
     activate.Fighter -> refusal(0, cast_result.TargetIsNotUseable)
-    activate.Object(creature_id:, creature:, body: target) -> {
+    activate.Object(creature_id:, creature:, checklist_index:, body: target) -> {
       let subject =
-        prerequisite.Subject(
-          ..subject_of(cast:, caster:),
-          second_unit: Some(press.target_unit_id),
-          positions: prerequisite.NotPlaced,
+        prerequisite.counting(
+          subject: prerequisite.Subject(
+            ..subject_of(cast:, caster:),
+            second_unit: Some(press.target_unit_id),
+            positions: prerequisite.NotPlaced,
+          ),
+          checklist_index:,
         )
       let picked =
         activate.pick(

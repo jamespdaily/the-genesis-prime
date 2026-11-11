@@ -109,6 +109,29 @@ pub fn talk_targets(
   log log: QuestLog,
   tables tables: table_store.Tables,
 ) -> fn(target_group.Unit, Int) -> Bool {
+  counted_by(log:, tables:, event_of: fn(unit, checklist_index) {
+    TalkedTo(target: unit, checklist_index:)
+  })
+}
+
+/// Whether a use of the unit, of the checklist index, counts for an open objective of the
+/// log: the objectives a `Used` event counts for (`counts`) while the unit's bit is not
+/// yet set, as a talk's is (`talk_targets`). A unit no open objective counts a use of is
+/// offered no use by the server.
+pub fn use_targets(
+  log log: QuestLog,
+  tables tables: table_store.Tables,
+) -> fn(target_group.Unit, Int) -> Bool {
+  counted_by(log:, tables:, event_of: fn(unit, checklist_index) {
+    Used(target: unit, checklist_index:)
+  })
+}
+
+fn counted_by(
+  log log: QuestLog,
+  tables tables: table_store.Tables,
+  event_of event_of: fn(target_group.Unit, Int) -> Event,
+) -> fn(target_group.Unit, Int) -> Bool {
   let open =
     list.flat_map(quest_log.active_ids(log:), fn(quest_id) {
       let quest = quest_of(tables:, quest_id:)
@@ -116,7 +139,7 @@ pub fn talk_targets(
       |> list.map(fn(open) { #(quest, open.0, open.1) })
     })
   fn(unit, checklist_index) {
-    let event = TalkedTo(target: unit, checklist_index:)
+    let event = event_of(unit, checklist_index)
     list.any(open, fn(found) {
       let #(quest, index, objective) = found
       counts(tables:, event:, quest_id: quest.id, index:, objective:)

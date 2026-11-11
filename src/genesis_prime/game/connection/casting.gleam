@@ -96,11 +96,13 @@ import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite
+import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/rating
 import genesis_prime/game/shown
 import genesis_prime/game/spell_area
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell.{type Answered}
+import genesis_prime/game/target_group
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/unit_health.{UnitHealth}
@@ -111,6 +113,7 @@ import genesis_prime/step.{
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{RaceId}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_path
 import gleam/bool
 import gleam/dict
 import gleam/int
@@ -191,13 +194,25 @@ pub fn activate_unit_message(
   inner inner: Frame,
 ) -> client_connection.Handled(Session) {
   let tables = session.settings.tables
+  let caster = caster_of(tables:, entered:)
+  // The player's Race row is in the tables (the load fails otherwise), so a missing one
+  // crashes.
+  let assert Ok(caster_radius) =
+    hit_radius.of_player(tables:, race_id: RaceId(caster.player.race_id))
+    as "hit_radius.requirements fails the load when a playable race has no Race row"
   case
     cast.activate_unit(
       cast: entered.cast,
       body: inner.body,
-      caster: caster_of(tables:, entered:),
+      caster:,
       activations: connection_state.activations_of(session:),
-      creature_of: creature_shown(tables:, picture: entered.shown),
+      unit_of: used_unit(
+        tables:,
+        picture: entered.shown,
+        quests: entered.quests,
+        now_ms: now.monotonic_ms,
+      ),
+      caster_radius:,
     )
   {
     Ok(effects) -> carry_cast(session:, now:, effects:)
@@ -206,25 +221,62 @@ pub fn activate_unit_message(
   }
 }
 
-/// The Creature2 id and activate columns of the creature or object a unit id names in
-/// the units the client shows, or `Error(Nil)` for another player or no unit.
-fn creature_shown(
+/// What the creature or object a 0xb3 names is to the player, from the units the client
+/// shows: its Creature2 id and activate columns, its checklist index, its body now (a
+/// creature where its path puts it) and whether the server offers its use now (an open
+/// objective of the quest log counts it, `objective.use_targets`), or `Error(Nil)` for
+/// another player or no unit.
+fn used_unit(
   tables tables: table_store.Tables,
   picture picture: shown.Picture,
-) -> fn(Int) -> Result(#(Int, activate.Creature), Nil) {
+  quests quests: QuestLog,
+  now_ms now_ms: Int,
+) -> fn(Int) -> Result(cast.UsedUnit, Nil) {
+  let offered_to = objective.use_targets(log: quests, tables:)
   fn(unit_id) {
     use one <- result.try(dict.get(picture, unit_id))
     case one {
       shown.ShownPlayer -> Error(Nil)
-      shown.ShownObject(creature_id:, ..)
-      | shown.ShownCreature(creature_id:, ..) ->
-        // The Creature2 row is in the tables, since the unit's 0x262 was made from it.
-        creature2.get(tables:, id: creature_id)
-        |> result.map(fn(row) {
-          #(creature_id.value, activate.creature_of(row:))
-        })
+      shown.ShownObject(place:, hit_radius:, ..) ->
+        used_unit_at(
+          tables:,
+          one:,
+          offered_to:,
+          body: activate.Body(place:, radius: hit_radius),
+        )
+      shown.ShownCreature(path:, hit_radius:, ..) ->
+        used_unit_at(
+          tables:,
+          one:,
+          offered_to:,
+          body: activate.Body(
+            place: creature_path.place_at(path:, now_ms:),
+            radius: hit_radius,
+          ),
+        )
     }
   }
+}
+
+fn used_unit_at(
+  tables tables: table_store.Tables,
+  one one: shown.Shown,
+  offered_to offered_to: fn(target_group.Unit, Int) -> Bool,
+  body body: activate.Body,
+) -> Result(cast.UsedUnit, Nil) {
+  use #(unit, checklist_index) <- result.try(shown.target_of(
+    tables:,
+    shown: one,
+  ))
+  // The Creature2 row is in the tables, since the unit's 0x262 was made from it.
+  use row <- result.map(creature2.get(tables:, id: unit.creature_id))
+  cast.UsedUnit(
+    creature_id: unit.creature_id.value,
+    creature: activate.creature_of(row:),
+    checklist_index:,
+    body:,
+    offered: offered_to(unit, checklist_index),
+  )
 }
 
 /// What the unit a right-click names is to the player, from the units its client shows:
@@ -239,13 +291,20 @@ fn activate_target(
       Error(Nil) -> activate.Unseen
       Ok(shown.ShownPlayer) -> activate.AnotherPlayer
       Ok(shown.ShownCreature(..)) -> activate.Fighter
-      Ok(shown.ShownObject(creature_id:, place:, hit_radius:, ..)) -> {
+      Ok(shown.ShownObject(
+        creature_id:,
+        checklist_index:,
+        place:,
+        hit_radius:,
+        ..,
+      )) -> {
         // The object's Creature2 row is in the tables, since its 0x262 was made from it.
         let assert Ok(row) = creature2.get(tables:, id: creature_id)
           as "a shown object's Creature2 row is in the tables it was made from"
         activate.Object(
           creature_id: creature_id.value,
           creature: activate.creature_of(row:),
+          checklist_index:,
           body: activate.Body(place:, radius: hit_radius),
         )
       }
