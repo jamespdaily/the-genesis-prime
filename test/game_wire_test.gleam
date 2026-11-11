@@ -3830,8 +3830,12 @@ fn the_target_at_slot_0(
 }
 
 /// Presses Paralytic Surge at the unit, facing it, until its death is read, and
-/// gives every frame read and the bytes beyond. A press that struck nobody ends the
-/// test.
+/// gives every frame read and the bytes beyond. A press that neither struck the unit
+/// nor was shown missing it (0x7fb) ends the test; a deflected press is pressed
+/// again, since a creature of the client's rows deflects some strikes (the placed
+/// Creature2 73492's defence holds a deflect chance of 0.02, so about one run in
+/// six sees one in the nine presses its 117 health takes), each on the rolls of the
+/// connection's own random seed.
 fn presses_until_the_target_dies(
   time time: driven_time.Time,
   game game: game_client.Game,
@@ -3862,9 +3866,12 @@ fn presses_until_the_target_dies(
   let #(settled, have) = game_client.read_until_pong(game:, have:, number: 2)
   let seen = list.flatten([seen, taken, went, settled])
   assert list.any(game_client.go_targets_in(frames: seen), fn(go) {
-    list.contains(go.1, target)
-  })
-    as "a press facing the target strikes it"
+      list.contains(go.1, target)
+    })
+    || list.any(game_client.missed_in(frames: seen), fn(missed) {
+      list.contains(missed.1, target)
+    })
+    as "a press facing the target strikes it or is shown missing it"
   let dead = list.contains(game_client.deaths_in(frames: seen), #(target, True))
   let at_zero =
     list.any(game_client.health_in(frames: seen), fn(health) {
