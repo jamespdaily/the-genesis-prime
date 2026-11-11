@@ -1522,6 +1522,66 @@ pub fn objective_progress_survives_a_relog_test() -> Nil {
   login_support.stop(started)
 }
 
+pub fn a_move_into_a_marker_sends_its_objective_progress_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 10513's objective 21271 (index 0, type 22, count 1) names WorldLocation2 51735
+  // as its marker: World 3460, centre (32.5895, -854.5823, -544.8400), radius 1.0 and no
+  // vertical limit. The client sends nothing for a place; its movement update (0x637) is
+  // all the server sees of the arrival (opcode.0x637), and the server tells the client the
+  // objective's progress (opcode.0x361: the quest, the objective, the value).
+  let started = start_with_creatures()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player(started:, number: 1, character_name: "Zed Qu")
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 10513, 1, 0, true, 0, '{0,0,0,0,0}', 0, '{0,0,0,0,0}')",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character holds quest 10513 with nothing done"
+  // Five units west of the marker's centre, outside its radius.
+  character_support.move_to(
+    pool:,
+    character_id: character,
+    world_id: 3460,
+    world_zone_id: 6009,
+    position: #(27.5895, -854.5823, -544.84),
+  )
+  send_play(game:, character_id: character)
+  let #(_burst, have) = game_client.read_entry_kept(game:, have: <<>>)
+  send_move(game:, position: #(33.0, -854.5823, -544.84), rotation: #(
+    0.0,
+    0.0,
+    0.0,
+  ))
+  let #(arrived, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0361 })
+    })
+  assert list.filter(arrived, fn(frame) { frame.message_id == 0x0361 })
+    == [
+      Frame(
+        message_id: 0x0361,
+        body: message_support.packed([#(15, 10_513), #(32, 0), #(32, 1)]),
+      ),
+    ]
+    as "opcode.0x361: 0.41 from the centre of 51735 completes objective 21271 of quest 10513"
+  // A later move inside the same marker: the server has written all it held for this
+  // connection when its pong comes, so a 0x361 that the move would send is among the
+  // frames.
+  send_move(game:, position: #(32.8, -854.5823, -544.9), rotation: #(
+    0.0,
+    0.0,
+    0.0,
+  ))
+  let #(later, _) = game_client.read_until_pong(game:, have:, number: 1)
+  assert list.filter(later, fn(frame) { frame.message_id == 0x0361 }) == []
+    as "opcode.0x361: the objective is done, so a second move inside the marker counts nothing"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
 pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() -> Nil {
   use <- owned_test.run(60_000)
   // Quest 5855 holds objective 8782 at its index 1 (QuestObjective: type 14, count 5, data

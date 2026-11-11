@@ -84,8 +84,10 @@ import genesis_prime/game/target_group
 import genesis_prime/store.{HeldItem}
 import genesis_prime/table/id.{Creature2Id, Faction2Id, Item2Id, UnitRaceId}
 import genesis_prime/table/loader/store as table_store
+import gleam/dict
 import gleam/list
 import owned_test
+import place_support
 import planted_table.{Integer}
 import quest_support
 
@@ -534,7 +536,15 @@ fn settled(
   items items: List(store.HeldItem),
   zones zones: List(Int),
 ) -> objective.Advanced {
-  objective.settle(log:, tables:, items:, zones:, now_ms: 0)
+  objective.settle(
+    log:,
+    tables:,
+    items:,
+    zones:,
+    place: place_support.live_character_place(),
+    shown: dict.new(),
+    now_ms: 0,
+  )
 }
 
 pub fn settle_counts_held_type_4_items_in_the_counted_locations_test() -> Nil {

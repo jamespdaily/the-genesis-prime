@@ -26,8 +26,11 @@
 ////
 //// A rule: the log and the event in, the log and the effects out.
 
+import genesis_prime/game/place_objective
 import genesis_prime/game/quest as quest_rules
 import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/game/shown
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
 import genesis_prime/store.{type HeldItem}
 import genesis_prime/table/creature2
@@ -70,6 +73,13 @@ const made_type = 33
 
 /// The objective type of a visit: a WorldZone id in its data.
 const visit_type = 17
+
+/// The objective type of a place: done where the player stands at its marker.
+const place_type = 22
+
+/// The QuestObjective flag of an optional objective, which the client's quest state and
+/// reachability skip (`quest_log`).
+const optional_flag = 0x20
 
 /// The state number of an Achieved quest in 0x035C.
 const achieved_state = 2
@@ -370,9 +380,10 @@ fn names_the_objective(
   }
 }
 
-/// The log and the messages after what the player holds and the zones they stand in
-/// changed (`zones` is the player's zone and its parents, which a visit names one of;
-/// empty when the player is nowhere yet, as at login).
+/// The log and the messages after what the player holds, the zones they stand in and
+/// the place they stand at changed (`zones` is the player's zone and its parents, which
+/// a visit names one of; empty when the player is nowhere yet, as at login; `shown` is
+/// the units they are shown, none at login).
 ///
 /// The client counts nothing for objective types 4, 33 and 17: it stores the value the
 /// server sends and the objective is done once the value reaches its count
@@ -386,11 +397,24 @@ fn names_the_objective(
 /// in the same pass. A quest at a time in id order, its progress messages in objective
 /// order for each objective that changed, then one state message when the quest's state
 /// is not what it was.
+///
+/// The client sends nothing for a type 22 objective (a place) and the position decides
+/// (`place_objective`): an open one is done once the player's place is at one of its
+/// markers by the client's arrival test (`0x140485fa0`), an optional one (flag 0x20) also
+/// once the required type 22 objective of its quest that has the same data is done at a
+/// marker the player is at, and a place-counted checklist counts, at each place reached,
+/// the checklist index of the shown unit that stands there. A type 22 objective with a
+/// count above 1 is left alone: nothing says how many visits it takes, and the server
+/// does not count them (the issue "Place objectives with no marker or a count above one
+/// complete (objective type 22)"). An objective such a pass opens is settled in the same
+/// call.
 pub fn settle(
   log log: QuestLog,
   tables tables: table_store.Tables,
   items items: List(HeldItem),
   zones zones: List(Int),
+  place place: Place,
+  shown shown: shown.Picture,
   now_ms now_ms: Int,
 ) -> Advanced {
   list.fold(
@@ -417,7 +441,10 @@ pub fn settle(
             }
           },
         )
-      let settling = visits(settling: held, quest:, zones:, now_ms:)
+      let settling =
+        visits(settling: held, quest:, zones:, now_ms:)
+        |> arrivals(quest:, tables:, place:, shown:, now_ms:)
+        |> visits(quest:, zones:, now_ms:)
       let after = quest_log.stored_state(log: settling.log, quest_id:)
       let state = case after != before {
         True -> [SendState(quest_id:, state: after)]
@@ -433,6 +460,139 @@ pub fn settle(
       )
     },
   )
+}
+
+/// The open place objectives of the quest that the place completes or counts, again
+/// while a pass opened an objective that the place reaches too: the type 22 objectives at
+/// a marker, the optional ones with their required sibling, and the place-counted
+/// checklists' units. A done objective is not counted again, which ends the loop.
+fn arrivals(
+  settling settling: Settling,
+  quest quest: quest_log.Quest,
+  tables tables: table_store.Tables,
+  place place: Place,
+  shown shown: shown.Picture,
+  now_ms now_ms: Int,
+) -> Settling {
+  let at_markers =
+    quest_log.open_objectives(log: settling.log, quest:)
+    |> list.filter(fn(open) {
+      let #(_, objective) = open
+      objective.type_ == place_type
+      && objective.count == 1
+      && place_objective.at_marker(
+        tables:,
+        objective_id: objective.objective_id,
+        place:,
+      )
+    })
+    |> list.fold(settling, fn(settling, open) {
+      set_count(
+        settling:,
+        quest:,
+        index: open.0,
+        value: { open.1 }.count,
+        now_ms:,
+      )
+    })
+  let with_siblings =
+    quest_log.open_objectives(log: at_markers.log, quest:)
+    |> list.filter(fn(open) {
+      let #(_, objective) = open
+      objective.type_ == place_type
+      && objective.count == 1
+      && int.bitwise_and(objective.flags, optional_flag) != 0
+      && required_sibling_arrived(
+        settling: at_markers,
+        quest:,
+        tables:,
+        place:,
+        optional: objective,
+      )
+    })
+    |> list.fold(at_markers, fn(settling, open) {
+      set_count(
+        settling:,
+        quest:,
+        index: open.0,
+        value: { open.1 }.count,
+        now_ms:,
+      )
+    })
+  let counted =
+    quest_log.open_objectives(log: with_siblings.log, quest:)
+    |> list.filter(fn(open) { { open.1 }.type_ == checklist_use_type })
+    |> list.fold(with_siblings, fn(settling, open) {
+      place_objective.indexes_counted(
+        tables:,
+        objective_id: { open.1 }.objective_id,
+        place:,
+        shown:,
+        now_ms:,
+      )
+      |> list.fold(settling, fn(settling, bit) {
+        mark(settling:, quest:, index: open.0, bit:, now_ms:)
+      })
+    })
+  case list.length(counted.progress) > list.length(settling.progress) {
+    True ->
+      arrivals(settling: counted, quest:, tables:, place:, shown:, now_ms:)
+    False -> counted
+  }
+}
+
+/// Whether a required type 22 objective of the quest with the optional one's non-zero
+/// data is done and its marker is where the player is. The optional objectives of the
+/// tutorial's places (rotate the camera, follow the arrow, double-jump) hint at what a
+/// position cannot show, and share the data, one server trigger, of the required
+/// objective they hint at (`QuestObjective.type.22`).
+fn required_sibling_arrived(
+  settling settling: Settling,
+  quest quest: quest_log.Quest,
+  tables tables: table_store.Tables,
+  place place: Place,
+  optional optional: quest_log.Objective,
+) -> Bool {
+  optional.data != 0
+  && list.index_map(quest.objectives, fn(objective, index) {
+    #(index, objective)
+  })
+  |> list.any(fn(sibling) {
+    let #(index, objective) = sibling
+    objective.type_ == place_type
+    && objective.data == optional.data
+    && int.bitwise_and(objective.flags, optional_flag) == 0
+    && quest_log.objective_progress(log: settling.log, quest:, index:)
+    >= objective.count
+    && place_objective.at_marker(
+      tables:,
+      objective_id: objective.objective_id,
+      place:,
+    )
+  })
+}
+
+/// The bit of a checklist objective set, with its progress message when the bit was
+/// not set. An objective that is not open takes nothing.
+fn mark(
+  settling settling: Settling,
+  quest quest: quest_log.Quest,
+  index index: Int,
+  bit bit: Int,
+  now_ms now_ms: Int,
+) -> Settling {
+  case quest_log.marked(log: settling.log, quest:, index:, bit:, now_ms:) {
+    Ok(marked) if marked.changed ->
+      Settling(log: marked.log, progress: [
+        SendProgress(
+          quest_id: quest.id,
+          objective_index: index,
+          progress: marked.progress,
+        ),
+        ..settling.progress
+      ])
+    Ok(_) | Error(Nil) -> settling
+  }
 }
 
 /// A quest's log while it is settled and the progress messages so far, latest first.

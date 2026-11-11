@@ -2,13 +2,16 @@
 //// test calls for its data and its reward pane).
 
 import genesis_prime/table/id.{
-  type Creature2Id, type Faction2Id, type UnitRaceId, TargetGroupId,
+  type Creature2Id, type Faction2Id, type UnitRaceId, Creature2Id, TargetGroupId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/target_group.{type TargetGroup}
 import gleam/bool
 import gleam/list
 import gleam/result
+
+/// The TargetGroup type whose words are Creature2 ids.
+const creature_group_type = 1
 
 /// What the client's tester reads of a unit (`0x140b66440`): the unit's Creature2 id,
 /// its current Faction2 id (the one its 0x262 gave it, which its spawn row holds) and
@@ -113,6 +116,26 @@ fn row_has(
         member(tables:, group: sub, unit:, path:)
       })
     _ -> False
+  }
+}
+
+/// The data words of a row, the zero ones included.
+fn words_of(row row: TargetGroup) -> List(Int) {
+  [row.data0, row.data1, row.data2, row.data3, row.data4, row.data5, row.data6]
+}
+
+/// The Creature2 ids a group of type 1 names (the non-zero words `contains` tests a unit's
+/// Creature2 id against), none for a group of another type or one the table lacks.
+pub fn creatures_of(
+  tables tables: table_store.Tables,
+  group group: Int,
+) -> List(Creature2Id) {
+  case target_group.get(tables:, id: TargetGroupId(group)) {
+    Ok(row) if row.type_ == creature_group_type ->
+      words_of(row:)
+      |> list.filter(fn(word) { word != 0 })
+      |> list.map(Creature2Id)
+    Ok(_) | Error(Nil) -> []
   }
 }
 

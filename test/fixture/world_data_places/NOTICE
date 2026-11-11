@@ -1,0 +1,7 @@
+test/fixture/world_data_places/spawn.tsv holds the header and rows 9719 to 9722, 29338 to 29340,
+29856 to 29859 and 30643 to 30647 of spawn.tsv of the wildstar-knowledge world-data
+(https://github.com/jamespdaily/wildstar-knowledge, path world-data/spawn.tsv), copied as they
+are, under that repository's licence, the GNU Affero General Public License, version 3 (the same
+as this project's). The tests import it as the world database's own rows: the units of the five
+checklist objectives whose places the client names (Creature2 52989, 73500, 51952 to 51957 and
+52632), which have a spawn in the world database. Creature2 67630, the unit of two more, has none.
