@@ -298,7 +298,7 @@ pub fn kinds() -> Kinds {
   )
 }
 
-/// The kinds migration 0028 adds to migration 0010's: the Sim-Turrets' charges, Spell4
+/// The kinds migration 0029 adds to migration 0010's: the Sim-Turrets' charges, Spell4
 /// 85469 for Creature2 73494 and Spell4 86978 for 74862, every 3000 ms.
 pub fn turret_kinds() -> Kinds {
   Kinds(
@@ -324,7 +324,7 @@ pub fn turret_kinds() -> Kinds {
   )
 }
 
-/// The factions migration 0028 chooses for the Sim-Turrets: 1441 for Creature2 73494
+/// The factions migration 0029 chooses for the Sim-Turrets: 1441 for Creature2 73494
 /// and 1442 for 74862.
 pub fn the_turrets_are_given_their_factions(
   tables tables: table_store.Tables,

@@ -379,7 +379,7 @@ pub fn a_migrated_database_holds_the_60_second_default_row_and_the_sim_turrets_c
         attack_interval_ms: 3000,
       ),
     ]
-    as "migration 0009 seeds row 0, the server's choice of 60 000 ms, and migration 0028 the Sim-Turrets' charges, Spell4 85469 and 86978"
+    as "migration 0009 seeds row 0, the server's choice of 60 000 ms, and migration 0029 the Sim-Turrets' charges, Spell4 85469 and 86978"
   assert content_support.psql(
       database:,
       sql: "select source || ': ' || reason from creature_kind where creature_id = 0",

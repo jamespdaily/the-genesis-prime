@@ -2731,7 +2731,7 @@ pub fn creature_blow_uses_damage_dealt_multiplier_test() -> Nil {
 //
 // The turret is Creature2 73494 as the content load starts it, at the origin facing
 // -z (yaw 0, `movement_command.kind_14.facing`), with its kind's attack every 3000 ms
-// (migration 0028). Its charge's rectangle is TelegraphDamage 16212: 3 wide and 30 long
+// (migration 0029). Its charge's rectangle is TelegraphDamage 16212: 3 wide and 30 long
 // from the caster along its facing, and a player's hit radius is 1.2, so a player is
 // struck when its centre is within 1.5 + 1.2 = 2.7 aside of the line and within 30 +
 // 1.2 ahead.
@@ -2741,7 +2741,7 @@ fn turret(viewers viewers: List(Int)) -> State {
   let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
   let assert Ok(kind) =
     dict.get(spawn_support.turret_kinds().by_creature, 73_494)
-    as "migration 0028 gives the Exile turret its kind"
+    as "migration 0029 gives the Exile turret its kind"
   started_from(
     source: spawn_source.Stored(id: SpawnId(1)),
     spawn:,

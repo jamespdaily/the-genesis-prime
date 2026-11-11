@@ -26,7 +26,7 @@
 ////   TargetGroup, WorldLocation2 and Creature2 tables and `spawn.tsv`, made
 ////   apart from the server's code by a scratch Python script over the same rows:
 ////   432, 608, 38, 20, 12, 623, 20 and 11 in worlds 22, 51, 426, 870, 990, 1061,
-////   1387 and 3460 (11 there before migration 0028's turret rows, 9 with them, below),
+////   1387 and 3460 (11 there before migration 0029's turret rows, 9 with them, below),
 ////   and none in a world with no stored spawn. The same script's
 ////   rules over those rows' creatures find, of the rows placed, 9, 10, 0, 0, 0,
 ////   20, 0 and 5 Friendly to both with no quest, and of them 0, 8, 0, 0, 0, 20, 0
@@ -40,7 +40,7 @@
 ////   stored rows alone, which it is not one of.
 //// - Migration 0008: World 3460 also holds the 27 Virtual Defense Daguns, server
 ////   choices, which start (Hostile to Dominion), so 3460 has 66 + 27.
-//// - Migration 0028: the Sim-Turrets start as creatures with factions 1441 (73494,
+//// - Migration 0029: the Sim-Turrets start as creatures with factions 1441 (73494,
 ////   Exile) and 1442 (74862, Dominion), Hostile to their own side only. The 2 stored
 ////   type 13 rows of 73494 in 3460 start as creatures (so 3460 holds no static type
 ////   13 and 239 of the 241 remain) and hold it, so 73494 has no placed row and the

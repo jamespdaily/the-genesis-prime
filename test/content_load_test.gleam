@@ -120,18 +120,18 @@ pub fn the_sim_turrets_start_with_their_chosen_factions_and_charges_test() -> Ni
     |> list.map(fn(one) { #(one.faction_id, one.base_faction_id) })
   }
   assert factions(73_494) == [#(1441, 1441), #(1441, 1441)]
-    as "objective 21288 counts 2 of Creature2 73494, which migration 0028 gives faction 1441, Hostile to Exile (Faction2Relationship 2943)"
+    as "objective 21288 counts 2 of Creature2 73494, which migration 0029 gives faction 1441, Hostile to Exile (Faction2Relationship 2943)"
   assert factions(74_862) == [#(1442, 1442), #(1442, 1442)]
-    as "objective 21316 counts 2 of Creature2 74862, which migration 0028 gives faction 1442, Hostile to Dominion (Faction2Relationship 2946)"
+    as "objective 21316 counts 2 of Creature2 74862, which migration 0029 gives faction 1442, Hostile to Dominion (Faction2Relationship 2946)"
   let kinds = content_creature_kind.kinds(key:)
   let charge = fn(creature) {
     let kind = creature_kind.kind_of(kinds:, creature2_id: creature)
     #(kind.attack_spell4_id, kind.attack_interval_ms)
   }
   assert charge(73_494) == #(Spell4Id(85_469), 3000)
-    as "migration 0028 gives the Exile turret its charge, Spell4 85469, and the interval server choice"
+    as "migration 0029 gives the Exile turret its charge, Spell4 85469, and the interval server choice"
   assert charge(74_862) == #(Spell4Id(86_978), 3000)
-    as "migration 0028 gives the Dominion turret its charge, Spell4 86978, and the interval server choice"
+    as "migration 0029 gives the Dominion turret its charge, Spell4 86978, and the interval server choice"
 }
 
 pub fn a_summon_of_the_boss_after_the_load_takes_its_chosen_faction_test() -> Nil {

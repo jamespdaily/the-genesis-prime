@@ -88,7 +88,7 @@ fn the_world_holds_spawns(tables tables: store.Tables) -> List(Row) {
   [stored(tables:, id: 1, creature_id: filler, world_id: world)]
 }
 
-/// The placement the content load makes, with the kinds migration 0028 leaves: the
+/// The placement the content load makes, with the kinds migration 0029 leaves: the
 /// Sim-Turrets have kinds of their own.
 fn placed_by_the_load(
   tables tables: store.Tables,

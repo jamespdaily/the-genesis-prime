@@ -6741,7 +6741,7 @@ pub fn an_exile_kills_the_boss_and_objective_21296_counts_test() -> Nil {
 // The world database stores the two Exile Sim-Turrets, Creature2 73494, as unit type 13
 // rows 29178 and 29179 (`test/fixture/world_data_turrets`), 31.6 apart in World 3460 at
 // (-105.661, -864.7596, 502.462) and (-112.69, -864.691, 470.817). Their stored factions
-// are not read: migration 0028 stands them with faction 1441, Hostile to the Exile 167
+// are not read: migration 0029 stands them with faction 1441, Hostile to the Exile 167
 // (Faction2Relationship 2943, level 0). Each charges Spell4 85469 (castTime 8000) every
 // 3000 ms after its attack tick: the 0x7ff when the tick opens it, the 0x7f4 and the
 // 0x7fe 8000 ms later. Objective 21288 (QuestObjective: type 2, count 2, data 73494,
