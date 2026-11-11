@@ -1,0 +1,3 @@
+id	entity_type	creature_id	world_id	area_id	x	y	z	rotation_x	rotation_y	rotation_z	display_info	outfit_info	faction1	faction2	quest_checklist_index	active_prop_id	world_socket_id	stat_ids	stat_values
+70878	10	26016	1387	1411	-3518.27	-979.4003	-6106.71	-2.559018	-0.1348998	0.2952345	24366	0	219	219	0	0	0	{}	{}
+70880	10	26016	1387	1411	-3514.5	-979.1523	-6123.66	1.870133	-0.3631492	0.1742631	24366	0	219	219	0	0	0	{}	{}

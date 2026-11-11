@@ -1,0 +1,7 @@
+test/fixture/world_data_checklist/spawn.tsv holds the header and rows 70878 and 70880 of
+spawn.tsv of the wildstar-knowledge world-data
+(https://github.com/jamespdaily/wildstar-knowledge, path world-data/spawn.tsv), copied as
+they are, under that repository's licence, the GNU Affero General Public License, version 3
+(the same as this project's). The tests import it as the world database's own rows: two of
+the Creature2 26016 objects that quest 5855's objective 8782 counts, both with the world
+data's checklist index 0.
