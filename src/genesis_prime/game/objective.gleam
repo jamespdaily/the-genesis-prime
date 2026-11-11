@@ -509,7 +509,7 @@ fn advance_quest(
             Ok(_) | Error(Nil) -> counted
           }
         Error(Nil), False ->
-          case { open.1 }.type_ == use_a_group_type, used_unit {
+          case quest_log.counted_by_unit(objective: open.1), used_unit {
             True, Ok(unit) ->
               case quest_log.used(log:, quest:, index: open.0, unit:, now_ms:) {
                 // A unit this objective counted already counts for nothing and tells

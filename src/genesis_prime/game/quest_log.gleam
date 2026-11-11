@@ -1523,15 +1523,22 @@ pub type UnitRef {
 /// (`0x140550c50`): each unit of the group counts toward its count.
 const use_a_group_type = 23
 
-/// The log after a use of `unit` is counted for the quest's type 23 objective at `index`:
+/// Whether the objective counts each unit once (`used`): a use of a unit of a group
+/// (type 23).
+pub fn counted_by_unit(objective objective: Objective) -> Bool {
+  objective.type_ == use_a_group_type
+}
+
+/// The log after a use of `unit` is counted for the quest's objective at `index` that
+/// counts by unit (`counted_by_unit`):
 /// one more of its count, which `progressed` takes, and the unit remembered as used, so
 /// that a second use of the same unit counts nothing: `changed` is false and the log is as
-/// it was. The client keeps no per-unit record of a type 23 objective (it makes only types
-/// 14, 18 and 28 checklists, `0x1405517a0`), so one count for each unit is the server's
-/// choice. The set is kept only on the quest's entry in the log: it is not saved
+/// it was. The client keeps no per-unit record of a type 23 objective (`0x1405517a0`, the
+/// fact of that name, makes no type 23 a checklist), so one count for each unit is the
+/// server's choice. The set is kept only on the quest's entry in the log: it is not saved
 /// (`rows`), so a relog lets a unit count again, and an abandoned quest that is retaken
 /// starts it empty. It is dropped when the objective is done. `Error(Nil)` when the
-/// objective is no type 23 objective or takes no progress (`progressed`).
+/// objective does not count by unit or takes no progress (`progressed`).
 pub fn used(
   log log: QuestLog,
   quest quest: Quest,
@@ -1541,11 +1548,10 @@ pub fn used(
 ) -> Result(Counted, Nil) {
   let quest = as_logged(log:, quest:)
   case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
-    Ok(Active(progress:, ..)), [objective, ..]
-      if index >= 0 && objective.type_ == use_a_group_type
-    -> {
+    Ok(Active(progress:, ..)), [objective, ..] if index >= 0 -> {
       use <- bool.guard(
-        when: !objective_open(log:, quest:, index:),
+        when: !counted_by_unit(objective:)
+          || !objective_open(log:, quest:, index:),
         return: Error(Nil),
       )
       let stored = list.drop(progress, index) |> list.first |> result.unwrap(0)

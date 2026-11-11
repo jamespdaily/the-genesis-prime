@@ -4,7 +4,7 @@
 ////   (`table_rows -- QuestObjective type=23`); rows 8323 and 9393 have data 0 and
 ////   TargetGroup has no row 0. A use of a unit in that group counts toward the objective
 ////   (`0x140550c50`, line 142), and the client holds no per-unit record of a type 23
-////   objective (`0x1405517a0` makes only types 14, 18 and 28 checklists), so one count
+////   objective (`0x1405517a0` makes no type 23 a checklist), so one count
 ////   for each unit of the group is the server's choice (Jim, 2026-11-11).
 //// - Rows 6653, 6657 and 9819 are in no quest: no Quest2 row names them as an objective
 ////   (`table_rows -- Quest2`), so no log holds them. Rows 6653 and 6657 name Creature2 ids
