@@ -3,6 +3,7 @@ ID	assetPath	flags	type	screenPath	screenModelPath	chunkBounds00	chunkBounds01	c
 51	Map\\Eastern	0	0	UI\\Screens\\UI_CRB_WorldID51_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Alizar_000.m3	986	800	1260	1236	0	0	0	0	0	0	0	0	0
 426	Map\\Eastern	0	0	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_StarterPack_000.m3	1135	833	1188	871	0	0	0	0	0	0	0	0	0
 625	Map\\QuestTestIsland	0	0			991	992	1100	1100	0	0	0	0	0	0	0	0	0
+825	Map\\DeathwoodRanchDanaTestMap	0	0			0	0	2048	2048	0	0	0	0	0	0	0	0	0
 870	Map\\Western	0	0	UI\\Screens\\UI_CRB_GenericLoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_StarterPack_000.m3	756	970	813	1034	0	0	0	0	0	0	0	0	0
 930	Map\\TheSkullsEye	0	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	1019	1013	1029	1030	0	0	0	0	0	0	0	0	0
 983	Map\\AlgorocGroupInstance	0	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Alizar_000.m3	1015	1010	1032	1037	0	0	0	0	0	0	0	0	0

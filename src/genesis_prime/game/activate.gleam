@@ -21,6 +21,13 @@
 ////   the Prerequisite rows the columns name; the Creature2 rows are read from the tables
 ////   when an activation arrives (the derivation stores none of the 8,463 creatures that
 ////   have an activate column).
+//// - **An item's spell** (ItemSpecial.spell4IdOnActivate) with an Activate effect is planned
+////   too, for the cast of an item (`cast.use_item`): its use at a unit counts that unit as an
+////   activate cast does. Item spells with no Activate effect are not planned.
+//// - **The cast group** of a spell cast at a creature is checked as the client does
+////   (`passes_cast_group`): a member of the group passes, and so does any creature when the
+////   spell has no group and Creature2.flags bit 0 is clear; otherwise only the creature's
+////   own activate spell passes, and the rest are refused 89.
 //// - A spell with an effect the strike would apply, aimed at the target or an area, is
 ////   refused with result 285 and logged once, since the activate cast strikes no unit
 ////   (gap, #336).
@@ -43,8 +50,11 @@ import genesis_prime/table/id.{
   type Spell4EffectsId, GameFormulaId, PrerequisiteId, Spell4ConditionsId,
   Spell4EffectsId, Spell4Id,
 }
+import genesis_prime/table/item2
+import genesis_prime/table/item_special
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_conditions
 import genesis_prime/world_map/creature_path
 import gleam/bool
@@ -74,13 +84,13 @@ pub type Creature {
     /// Creature2.activateSpellMinRange and activateSpellMaxRange.
     min_range: Float,
     max_range: Float,
-    /// Creature2.flags bit 0: with no cast group a cast may target the creature only by
-    /// its own activate spell (`CheckCastActivateSpell 0x1403b44b0`).
-    only_own_spells: Bool,
+    /// Creature2.flags: bit 0 marks a creature only its own activate spell, or a spell
+    /// whose cast group names it, may be cast at (`passes_cast_group`).
+    flags: Int,
   )
 }
 
-/// The creature's activate columns in order, with its cast time and range.
+/// The creature's activate columns in order, with its cast time, range and flags.
 pub fn creature_of(row row: creature2.Creature2) -> Creature {
   Creature(
     columns: [
@@ -92,7 +102,7 @@ pub fn creature_of(row row: creature2.Creature2) -> Creature {
     cast_time_ms: row.activate_spell_cast_time,
     min_range: row.activate_spell_min_range,
     max_range: row.activate_spell_max_range,
-    only_own_spells: int.bitwise_and(row.flags, 1) == 1,
+    flags: row.flags,
   )
 }
 
@@ -137,6 +147,50 @@ pub fn pick(
   }
 }
 
+/// What the client's cast check against a spell's cast group says of a creature target.
+pub type CastGroup {
+  /// The check passes.
+  InCastGroup
+  /// The check refuses the cast: result 89 (TargetGroup).
+  OutsideCastGroup
+  /// The creature's own pick rests on a prerequisite the server does not read, and one
+  /// of its columns names the spell, so whether the spell is its activate spell cannot
+  /// be told.
+  CastGroupUnread(prerequisite_type: Int)
+}
+
+/// The client's check of a spell cast at a creature against the spell's cast group
+/// (`CheckCastActivateSpell` `0x1403b44b0`, run by `CheckCastUnitTargetRange`
+/// `0x1403b2240` before a cast at a unit is sent). A spell with a cast group
+/// (`cast_group_id`, Spell4Base.targetGroupIdCastGroup, 0 for none) passes a member
+/// (`in_cast_group`), and a spell with none passes a creature whose Creature2.flags
+/// has bit 0 clear; both pass whatever the creature's pick is. Any other cast passes
+/// only when the spell is the creature's own activate spell, else it is refused 89.
+pub fn passes_cast_group(
+  spell4_id spell4_id: Int,
+  cast_group_id cast_group_id: Int,
+  creature creature: Creature,
+  picked picked: Pick,
+  in_cast_group in_cast_group: fn(Int) -> Bool,
+) -> CastGroup {
+  let passes_at_once = case cast_group_id {
+    0 -> int.bitwise_and(creature.flags, 1) == 0
+    group -> in_cast_group(group)
+  }
+  case passes_at_once, picked {
+    True, _ -> InCastGroup
+    False, Picked(spell4_id: own) if own == spell4_id -> InCastGroup
+    False, Picked(..) | False, NoActivateSpell -> OutsideCastGroup
+    False, Unread(prerequisite_type:) ->
+      case
+        list.any(creature.columns, fn(column) { column.spell4_id == spell4_id })
+      {
+        True -> CastGroupUnread(prerequisite_type:)
+        False -> OutsideCastGroup
+      }
+  }
+}
+
 /// An Activate effect of a spell: its row and the delay the go lists it with.
 pub type ActivateEffect {
   ActivateEffect(effect_id: Spell4EffectsId, delay_ms: Int)
@@ -151,14 +205,16 @@ pub type Limits {
 /// What the plans hold of an activate spell.
 pub type Planned {
   /// The spell's plan, its Activate effects in row order, the RavelSignal rows aimed at
-  /// the target that the activate cast drops, and its Spell4 limits. A spell of a method
-  /// the cast rule does not build is held too: the press is refused as an ability's is
-  /// (`cast.verdict`).
+  /// the target that the activate cast drops, its Spell4 limits and its cast group
+  /// (Spell4Base.targetGroupIdCastGroup, 0 for none; `passes_cast_group` tests it). A
+  /// spell of a method the cast rule does not
+  /// build is held too: the press is refused as an ability's is (`cast.verdict`).
   Planned(
     spell: Spell,
     effects: List(ActivateEffect),
     dropped_signals: List(Spell4EffectsId),
     limits: Limits,
+    cast_group_id: Int,
   )
   /// The Spell4 table has no row for the spell: result 4.
   NoSpell4Row
@@ -166,13 +222,14 @@ pub type Planned {
   CannotBePlanned(why: String)
 }
 
-/// The activate spells' plans and the Prerequisite rows of the columns, as the load
-/// built them. A link column's prerequisite whose row the table lacks is not held (47
-/// creatures name 33 such ids): the client fails a prerequisite it cannot find
+/// The activate spells' plans and the Prerequisite rows of the columns and of the items,
+/// as the load built them. A link column's prerequisite whose row the table lacks is not
+/// held (47 creatures name 33 such ids): the client fails a prerequisite it cannot find
 /// (`Prerequisite.flags`), so the link is closed (`objective_link.of`).
 pub type Activations {
   Activations(
-    /// Each Prerequisite a creature's activate column names, by id.
+    /// Each Prerequisite a creature's activate column, a creature's link or an item names,
+    /// by id.
     prerequisites: Dict(Int, Prerequisite),
     /// Each spell an activate column names, and the default spell, by Spell4 id.
     spells: Dict(Int, Planned),
@@ -196,7 +253,7 @@ pub fn derivation() -> table_store.Derivation {
           "the table GameFormula has no row "
           <> int.to_string(default_spell_formula)
         PrerequisiteNotLoaded(error:) -> spell_plan.describe(error:)
-        AnimPrerequisiteNotLoaded(error:) ->
+        LinkOrItemPrerequisiteNotLoaded(error:) ->
           prerequisite.describe_load_error(error:)
       }
     })
@@ -207,7 +264,7 @@ pub fn derivation() -> table_store.Derivation {
 type BuildError {
   NoDefaultSpellFormula
   PrerequisiteNotLoaded(error: spell_plan.PlanError)
-  AnimPrerequisiteNotLoaded(error: prerequisite.LoadError)
+  LinkOrItemPrerequisiteNotLoaded(error: prerequisite.LoadError)
 }
 
 /// The activations the tables' load built.
@@ -242,7 +299,11 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
   )
   use anim_prerequisites <- result.try(
     list.try_fold(
-      anim_prerequisite_ids(tables:),
+      list.append(
+        anim_prerequisite_ids(tables:),
+        item_prerequisite_ids(tables:),
+      )
+        |> list.unique,
       [],
       fn(loaded, prerequisite_id) {
         case
@@ -257,16 +318,22 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
           // The client fails a prerequisite it has no row for (`Prerequisite.flags`), so
           // such a link is closed; the tables name rows they lack (see `Activations`).
           Error(prerequisite.NoPrerequisiteRow(..)) -> Ok(loaded)
-          Error(error) -> Error(AnimPrerequisiteNotLoaded(error:))
+          Error(error) -> Error(LinkOrItemPrerequisiteNotLoaded(error:))
         }
       },
     ),
   )
+  let sources = spell_plan.sources_of(tables:)
   let spell_ids =
-    [default_spell, ..list.map(columns, fn(column) { column.spell4_id })]
+    [
+      default_spell,
+      ..list.append(
+        list.map(columns, fn(column) { column.spell4_id }),
+        item_spell_ids(tables:, sources:),
+      )
+    ]
     |> list.filter(fn(spell4_id) { spell4_id != 0 })
     |> list.unique
-  let sources = spell_plan.sources_of(tables:)
   Ok(Activations(
     prerequisites: list.filter_map(prerequisites, fn(entry) {
       option.to_result(entry.1, Nil)
@@ -282,11 +349,39 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
   ))
 }
 
+/// The spells an item casts when used (ItemSpecial.spell4IdOnActivate) that have an
+/// Activate effect: an item's use counts an objective only through that effect, and the
+/// other item spells are the cast rule's to refuse as unbuilt.
+fn item_spell_ids(
+  tables tables: table_store.Tables,
+  sources sources: spell_plan.Sources,
+) -> List(Int) {
+  item_special.all(tables)
+  |> list.map(fn(row) { row.spell4_id_on_activate })
+  |> list.filter(fn(spell4_id) {
+    spell4_id != 0
+    && list.any(spell_plan.effects_of(sources:, spell4_id:), fn(effect) {
+      effect_kind.kind_of(effect_type: effect.effect_type)
+      == effect_kind.Activate
+    })
+  })
+  |> list.unique
+}
+
 /// The ids of the Prerequisite rows the creatures' link columns name
 /// (`Creature2.prerequisiteIdAnimState`).
 fn anim_prerequisite_ids(tables tables: table_store.Tables) -> List(Int) {
   creature2.all(tables)
   |> list.map(fn(row) { row.prerequisite_id_anim_state })
+  |> list.filter(fn(prerequisite_id) { prerequisite_id != 0 })
+  |> list.unique
+}
+
+/// The ids of the Prerequisite rows the items name (`Item2.prerequisiteId`), which UseItem
+/// evaluates before it starts the item's cast (`0x1403998e0`).
+fn item_prerequisite_ids(tables tables: table_store.Tables) -> List(Int) {
+  item2.all(tables)
+  |> list.map(fn(row) { row.prerequisite_id })
   |> list.filter(fn(prerequisite_id) { prerequisite_id != 0 })
   |> list.unique
 }
@@ -320,7 +415,7 @@ fn planned(
                 <> int.to_string(mask)
                 <> "), which the activate cast does not read",
               )
-            None -> planned_rows(spell:, sources:, spell4_id:, row:)
+            None -> planned_rows(tables:, spell:, sources:, spell4_id:, row:)
           }
       }
   }
@@ -357,6 +452,7 @@ fn unread_target_bits(
 }
 
 fn planned_rows(
+  tables tables: table_store.Tables,
   spell spell: Spell,
   sources sources: spell_plan.Sources,
   spell4_id spell4_id: Int,
@@ -381,6 +477,12 @@ fn planned_rows(
           max: row.target_max_range,
           vertical: row.target_vertical_range,
         ),
+        cast_group_id: case
+          spell4_base.get(tables:, id: spell4.spell4_base_id_base_spell(row))
+        {
+          Ok(base) -> base.target_group_id_cast_group
+          Error(Nil) -> 0
+        },
       )
   }
 }
@@ -616,59 +718,4 @@ pub fn planned_of(
   spell4_id spell4_id: Int,
 ) -> Result(Planned, Nil) {
   dict.get(activations.spells, spell4_id)
-}
-
-/// Why the cast group rule does not pass a target.
-pub type CastGroupRefusal {
-  /// Result 89 (TargetGroup).
-  OutsideGroup
-  /// The creature's activate pick holds a condition the server does not read, so whether
-  /// its activate spell is the cast spell cannot be told.
-  PickUnread(prerequisite_type: Int)
-  /// A cast group tests a player by words the server does not hold (a player's faction
-  /// and race), so the group's verdict cannot be told.
-  PlayerUnread
-}
-
-/// The client's cast group rule for a cast of `spell4_id` at a unit (`CheckCastActivateSpell
-/// 0x1403b44b0`), which runs after the target's conditions and before the faction test and
-/// the range. In order:
-/// - a creature whose activate spell is the cast spell passes;
-/// - else a cast group decides: `in_cast_group(cast_group_id, unit_id)` for a member, 89
-///   for a non-member;
-/// - else a creature whose Creature2.flags bit 0 is set is refused 89;
-/// - else the cast passes.
-///
-/// `picked` is the creature's activate pick, read only when the outcome depends on it: a
-/// group that holds the unit, and a creature with no flag bit 0 and no group, pass whatever
-/// the pick is.
-pub fn passes_cast_group(
-  spell4_id spell4_id: Int,
-  cast_group_id cast_group_id: Int,
-  unit_id unit_id: Int,
-  target target: Target,
-  picked picked: fn() -> Pick,
-  in_cast_group in_cast_group: fn(Int, Int) -> Bool,
-) -> Result(Nil, CastGroupRefusal) {
-  case target {
-    Unseen -> Error(OutsideGroup)
-    AnotherPlayer ->
-      case cast_group_id {
-        0 -> Ok(Nil)
-        _ -> Error(PlayerUnread)
-      }
-    Usable(creature:, ..) -> {
-      let holds = cast_group_id != 0 && in_cast_group(cast_group_id, unit_id)
-      let needs_pick = case cast_group_id {
-        0 -> creature.only_own_spells
-        _ -> !holds
-      }
-      use <- bool.guard(when: !needs_pick, return: Ok(Nil))
-      case picked() {
-        Picked(spell4_id: own) if own == spell4_id -> Ok(Nil)
-        Picked(..) | NoActivateSpell -> Error(OutsideGroup)
-        Unread(prerequisite_type:) -> Error(PickUnread(prerequisite_type:))
-      }
-    }
-  }
 }

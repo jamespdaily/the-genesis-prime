@@ -140,6 +140,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/item_place.gleam",
       "src/genesis_prime/message/item_removed.gleam",
       "src/genesis_prime/message/item_split.gleam",
+      "src/genesis_prime/message/item_use.gleam",
       "src/genesis_prime/message/item_visual.gleam",
       "src/genesis_prime/message/items_swapped.gleam",
       "src/genesis_prime/message/leave_world.gleam",

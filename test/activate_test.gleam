@@ -6,8 +6,8 @@
 import client_tables
 import fixture_tables
 import genesis_prime/game/activate.{
-  ActivateEffect, CannotBePlanned, Column, Creature, NoActivateSpell, Picked,
-  Planned, Unread,
+  ActivateEffect, CannotBePlanned, Column, Creature, Limits, NoActivateSpell,
+  Picked, Planned, Unread,
 }
 import genesis_prime/game/prerequisite.{Fails, NotRead, Passes}
 import genesis_prime/game/spell_plan
@@ -17,11 +17,10 @@ import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{Some}
 import gleam/set
 import gleam/string
 import owned_test
-import place_support
 import prerequisite_support
 import unitest
 
@@ -34,171 +33,8 @@ fn creature_of(columns columns: List(#(Int, Int))) -> activate.Creature {
     cast_time_ms: 0,
     min_range: 0.0,
     max_range: 0.0,
-    only_own_spells: False,
+    flags: 0,
   )
-}
-
-/// The target a press names when the unit is a creature of this Creature2 row.
-fn usable_of(creature_id creature_id: Int) -> activate.Target {
-  let tables = fixture_tables.shared()
-  let assert Ok(row) = creature2.get(tables:, id: Creature2Id(creature_id))
-    as "the creature is a root of the fixture"
-  activate.Usable(
-    creature_id:,
-    creature: activate.creature_of(row:),
-    checklist_index: 0,
-    link: activate.NoLink,
-    body: activate.Body(
-      place: place_support.at(
-        world_id: 3460,
-        world_zone_id: 5967,
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-      ),
-      radius: 1.0,
-    ),
-    alive: True,
-    in_combat: False,
-    withheld: None,
-  )
-}
-
-/// The cast group test for a cast of `spell4_id`, whose group holds the unit or not, and
-/// whose creature picks `picked`; a pick the test does not expect to be read stops it.
-fn cast_group_verdict(
-  target target: activate.Target,
-  spell4_id spell4_id: Int,
-  group group: Int,
-  holds holds: Bool,
-  picked picked: Option(activate.Pick),
-) -> Result(Nil, activate.CastGroupRefusal) {
-  activate.passes_cast_group(
-    spell4_id:,
-    cast_group_id: group,
-    unit_id: 900,
-    target:,
-    picked: fn() {
-      let assert Some(pick) = picked
-        as "the cast group decides, so the creature's pick is not read"
-      pick
-    },
-    in_cast_group: fn(_, _) { holds },
-  )
-}
-
-pub fn the_cast_group_rule_follows_the_clients_three_branches_test() -> Nil {
-  use <- owned_test.run(10_000)
-  // `CheckCastActivateSpell 0x1403b44b0`: a creature whose activate spell is the cast
-  // spell passes; else a cast group decides (89 for a non-member); else a creature
-  // target whose Creature2.flags bit 0 is set is refused 89; else the cast passes.
-  // Creature2 39073 has flags 4129 (bit 0 set) and activate spell 41218; 32668 has
-  // flags 16384 (bit 0 clear) and no activate spell.
-  assert activate.creature_of(row: {
-    let assert Ok(row) =
-      creature2.get(tables: fixture_tables.shared(), id: Creature2Id(39_073))
-    row
-  }).only_own_spells
-    as "Creature2 39073's flags 4129 have bit 0 set"
-  assert !activate.creature_of(row: {
-    let assert Ok(row) =
-      creature2.get(tables: fixture_tables.shared(), id: Creature2Id(32_668))
-    row
-  }).only_own_spells
-    as "Creature2 32668's flags 16384 have bit 0 clear"
-  let own_spell = Some(Picked(spell4_id: 41_218))
-  let owner = usable_of(creature_id: 39_073)
-  let other = usable_of(creature_id: 32_668)
-  assert cast_group_verdict(
-      target: owner,
-      spell4_id: 41_218,
-      group: 5506,
-      holds: False,
-      picked: own_spell,
-    )
-    == Ok(Nil)
-    as "the creature's picked activate spell is the cast spell: it passes, whatever the group"
-  assert cast_group_verdict(
-      target: owner,
-      spell4_id: 41_218,
-      group: 0,
-      holds: False,
-      picked: own_spell,
-    )
-    == Ok(Nil)
-    as "and with no group, though flags bit 0 is set"
-  assert cast_group_verdict(
-      target: other,
-      spell4_id: 42_735,
-      group: 5506,
-      holds: True,
-      picked: None,
-    )
-    == Ok(Nil)
-    as "a group that holds the unit passes it without the pick being read"
-  assert cast_group_verdict(
-      target: other,
-      spell4_id: 42_735,
-      group: 0,
-      holds: False,
-      picked: None,
-    )
-    == Ok(Nil)
-    as "no group and flags bit 0 clear passes, without the pick being read"
-  assert cast_group_verdict(
-      target: activate.AnotherPlayer,
-      spell4_id: 30_485,
-      group: 0,
-      holds: False,
-      picked: None,
-    )
-    == Ok(Nil)
-    as "a player target with no group passes"
-  assert cast_group_verdict(
-      target: other,
-      spell4_id: 42_735,
-      group: 5506,
-      holds: False,
-      picked: Some(activate.NoActivateSpell),
-    )
-    == Error(activate.OutsideGroup)
-    as "a group that does not hold the unit refuses it (89)"
-  assert cast_group_verdict(
-      target: owner,
-      spell4_id: 5725,
-      group: 0,
-      holds: False,
-      picked: own_spell,
-    )
-    == Error(activate.OutsideGroup)
-    as "no group and flags bit 0 set refuses a spell that is not the creature's own (89)"
-  assert cast_group_verdict(
-      target: owner,
-      spell4_id: 5725,
-      group: 0,
-      holds: False,
-      picked: Some(Unread(prerequisite_type: 16)),
-    )
-    == Error(activate.PickUnread(prerequisite_type: 16))
-    as "a pick the server cannot read leaves the outcome open, so it is not built"
-  assert cast_group_verdict(
-      target: other,
-      spell4_id: 42_735,
-      group: 5506,
-      holds: True,
-      picked: Some(Unread(prerequisite_type: 16)),
-    )
-    == Ok(Nil)
-    as "an unread pick does not matter where the group holds the unit"
-  assert cast_group_verdict(
-      target: activate.AnotherPlayer,
-      spell4_id: 42_735,
-      group: 5506,
-      holds: False,
-      picked: None,
-    )
-    == Error(activate.PlayerUnread)
-    as "a group tests a player by words the server does not hold, so it is not built"
 }
 
 pub fn activate_pick_takes_first_passing_column_test() -> Nil {
@@ -379,4 +215,157 @@ fn refusal_reason(why why: String) -> String {
     list.find(reasons, fn(reason) { string.contains(why, reason.0) })
     as { "the plan's reason is one the test names: " <> why }
   reason
+}
+
+/// Spell4 26663 (Spell4Effects 43805, effectType 7) and Spell4 1545 (Spell4Effects 2348,
+/// effectType 7) are the ItemSpecial 4363 and 4350 spells of items 12444 and 12402; each
+/// holds an Activate row. Spell4 41914 (ItemSpecial 5410's) holds only Spell4Effects
+/// 94446, a RavelSignal (effectType 81), so it has no Activate row and is not planned.
+pub fn the_activations_plan_item_spells_with_an_activate_effect_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let activations = activate.activations(tables: fixture_tables.shared())
+  let assert Ok(Planned(effects:, limits:, ..)) =
+    activate.planned_of(activations:, spell4_id: 26_663)
+    as "Spell4 26663, ItemSpecial 4363's spell, is planned"
+  assert effects
+    == [ActivateEffect(effect_id: Spell4EffectsId(43_805), delay_ms: 0)]
+    as "Spell4Effects 43805 is its Activate row, delay 0"
+  assert limits == Limits(min: 0.0, max: 30.0, vertical: -1.0)
+    as "Spell4 26663: targetMaxRange 30.0, no minimum, targetVerticalRange -1"
+  let assert Ok(Planned(effects:, limits:, ..)) =
+    activate.planned_of(activations:, spell4_id: 1545)
+    as "Spell4 1545, ItemSpecial 4350's spell, is planned"
+  assert effects
+    == [ActivateEffect(effect_id: Spell4EffectsId(2348), delay_ms: 0)]
+    as "Spell4Effects 2348 is its Activate row, delay 0"
+  assert limits.max == 5.0 as "Spell4 1545: targetMaxRange 5.0"
+  assert activate.planned_of(activations:, spell4_id: 41_914) == Error(Nil)
+    as "Spell4 41914 has no Activate row, so no plan is held"
+}
+
+/// What the client's cast-group check (`CheckCastActivateSpell` `0x1403b44b0`) says of a
+/// creature, for a spell of cast group `group` (0 for none), where the creature's pick is
+/// `picked`, its flags are `flags` and the group holds it or not.
+fn cast_group_of(
+  group group: Int,
+  picked picked: activate.Pick,
+  flags flags: Int,
+  holds holds: Bool,
+) -> activate.CastGroup {
+  activate.passes_cast_group(
+    spell4_id: 26_663,
+    cast_group_id: group,
+    creature: Creature(..creature_of(columns: [#(0, 26_663)]), flags:),
+    picked:,
+    in_cast_group: fn(_) { holds },
+  )
+}
+
+pub fn a_spell_with_a_cast_group_passes_its_members_and_refuses_the_rest_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert cast_group_of(
+      group: 1691,
+      picked: NoActivateSpell,
+      flags: 0,
+      holds: True,
+    )
+    == activate.InCastGroup
+    as "a unit in the spell's group passes (TargetGroupContainsUnit answers 0)"
+  assert cast_group_of(
+      group: 1691,
+      picked: NoActivateSpell,
+      flags: 0,
+      holds: False,
+    )
+    == activate.OutsideCastGroup
+    as "a unit outside the group is refused 89 (TargetGroup)"
+  assert cast_group_of(
+      group: 1691,
+      picked: Picked(spell4_id: 99),
+      flags: 1,
+      holds: False,
+    )
+    == activate.OutsideCastGroup
+    as "the creature's activate spell being another spell does not pass it"
+}
+
+pub fn a_creature_whose_activate_spell_is_the_spell_passes_whatever_the_group_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert cast_group_of(
+      group: 1691,
+      picked: Picked(spell4_id: 26_663),
+      flags: 0,
+      holds: False,
+    )
+    == activate.InCastGroup
+    as "GetUnitActivateSpell equals the spell: the check passes before it reads the group"
+  assert cast_group_of(
+      group: 0,
+      picked: Picked(spell4_id: 26_663),
+      flags: 1,
+      holds: False,
+    )
+    == activate.InCastGroup
+    as "and before it reads the creature's flags bit 0"
+}
+
+pub fn a_spell_with_no_cast_group_refuses_a_creature_with_flags_bit_0_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert cast_group_of(
+      group: 0,
+      picked: NoActivateSpell,
+      flags: 16_385,
+      holds: True,
+    )
+    == activate.OutsideCastGroup
+    as "Creature2.flags 16385 (the Cartel Slaver Shack's) has bit 0: refused 89"
+  assert cast_group_of(
+      group: 0,
+      picked: NoActivateSpell,
+      flags: 24_576,
+      holds: False,
+    )
+    == activate.InCastGroup
+    as "Creature2.flags 24576 (the farmhand's) has bit 0 clear: passes"
+}
+
+pub fn a_pick_through_an_unread_prerequisite_is_judged_only_when_a_column_names_the_spell_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert cast_group_of(
+      group: 1691,
+      picked: Unread(prerequisite_type: 76),
+      flags: 0,
+      holds: False,
+    )
+    == activate.CastGroupUnread(prerequisite_type: 76)
+    as "a column names the spell, so whether it is the creature's activate spell is not told"
+  assert activate.passes_cast_group(
+      spell4_id: 26_663,
+      cast_group_id: 1691,
+      creature: creature_of(columns: [#(5, 41_914)]),
+      picked: Unread(prerequisite_type: 76),
+      in_cast_group: fn(_) { False },
+    )
+    == activate.OutsideCastGroup
+    as "no column names the spell, so the unread pick cannot make it the activate spell"
+}
+
+pub fn a_pick_through_an_unread_prerequisite_is_not_read_where_the_group_or_flags_pass_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert cast_group_of(
+      group: 1691,
+      picked: Unread(prerequisite_type: 76),
+      flags: 1,
+      holds: True,
+    )
+    == activate.InCastGroup
+    as "a group that holds the unit passes it, whichever spell the creature's pick is, so the unread pick does not matter"
+  assert cast_group_of(
+      group: 0,
+      picked: Unread(prerequisite_type: 76),
+      flags: 0,
+      holds: False,
+    )
+    == activate.InCastGroup
+    as "no group and flags bit 0 clear passes, whichever spell the creature's pick is"
 }

@@ -169,23 +169,44 @@ fn describe(error error: AimError) -> String {
   }
 }
 
+/// The Spell4Base and Spell4TargetMechanics rows of a spell, or the one the tables lack.
+fn mechanics_of(
+  tables tables: table_store.Tables,
+  row row: spell4.Spell4,
+) -> Result(
+  #(spell4_base.Spell4Base, spell4_target_mechanics.Spell4TargetMechanics),
+  AimError,
+) {
+  use base <- result.try(
+    spell4_base.get(tables:, id: spell4.spell4_base_id_base_spell(row))
+    |> result.replace_error(NoBaseRow),
+  )
+  spell4_target_mechanics.get(
+    tables:,
+    id: Spell4TargetMechanicsId(base.spell4_target_mechanic_id),
+  )
+  |> result.replace_error(NoTargetMechanicsRow)
+  |> result.map(fn(mechanics) { #(base, mechanics) })
+}
+
+/// The targetType of the spell's Spell4TargetMechanics row, or `Error(Nil)` when its
+/// Spell4Base or Spell4TargetMechanics row is not in the tables.
+pub fn target_type_of(
+  tables tables: table_store.Tables,
+  row row: spell4.Spell4,
+) -> Result(Int, Nil) {
+  mechanics_of(tables:, row:)
+  |> result.map(fn(rows) { { rows.1 }.target_type })
+  |> result.replace_error(Nil)
+}
+
 /// The spell's aim from its Spell4Base, Spell4TargetMechanics, Spell4ValidTargets and
 /// target Spell4Conditions rows, or what keeps one from being read.
 fn aim_of(
   tables tables: table_store.Tables,
   row row: spell4.Spell4,
 ) -> Result(Aim, AimError) {
-  use base <- result.try(
-    spell4_base.get(tables:, id: spell4.spell4_base_id_base_spell(row))
-    |> result.replace_error(NoBaseRow),
-  )
-  use mechanics <- result.try(
-    spell4_target_mechanics.get(
-      tables:,
-      id: Spell4TargetMechanicsId(base.spell4_target_mechanic_id),
-    )
-    |> result.replace_error(NoTargetMechanicsRow),
-  )
+  use #(base, mechanics) <- result.try(mechanics_of(tables:, row:))
   use valid_targets <- result.try(case base.spell4_valid_target_id {
     0 -> Ok(0)
     valid_id ->

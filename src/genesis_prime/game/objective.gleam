@@ -127,10 +127,18 @@ const kill_types = [2, 8, 15, 16, 46]
 /// What the player did to a creature: talked to it, used it or killed it (the unit as
 /// the client's group test reads it), with the unit's checklist index for the first two
 /// (the bit the unit stands for in a checklist objective's mask), or cast a spell, at a
-/// unit or, for a spell aimed at the caster, at none.
+/// unit or, for a spell aimed at the caster, at none. A use is by an item (`by_item`) when
+/// the player's item spell hit the creature and not the creature's own activate spell: the
+/// objectives that count the creature's own activate cast (types 5 and 32) take only the
+/// latter.
 pub type Event {
   TalkedTo(target: target_group.Unit, checklist_index: Int)
-  Used(target: target_group.Unit, checklist_index: Int, unit: quest_log.UnitRef)
+  Used(
+    target: target_group.Unit,
+    checklist_index: Int,
+    unit: quest_log.UnitRef,
+    by_item: Bool,
+  )
   Killed(target: target_group.Unit)
   Cast(spell4_id: Spell4Id, target: Option(CastTarget))
 }
@@ -239,7 +247,7 @@ pub fn use_targets(
 ) -> fn(target_group.Unit, Int, quest_log.UnitRef) -> Bool {
   let offered = counted_by(log:, tables:)
   fn(unit, checklist_index, ref) {
-    offered(Used(target: unit, checklist_index:, unit: ref))
+    offered(Used(target: unit, checklist_index:, unit: ref, by_item: False))
   }
 }
 
@@ -353,7 +361,7 @@ fn counts(
         objective.type_ == checklist_talk_type
         && target_group.contains(tables:, group: objective.data, unit: target)
       }
-    Used(target:, ..) ->
+    Used(target:, by_item:, ..) ->
       {
         objective.type_ == use_type
         && Creature2Id(objective.data) == target.creature_id
@@ -380,7 +388,8 @@ fn counts(
         )
       }
       || {
-        {
+        !by_item
+        && {
           objective.type_ == collectible_type
           || objective.type_ == scripted_type
         }

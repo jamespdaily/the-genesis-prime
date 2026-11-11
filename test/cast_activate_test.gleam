@@ -333,7 +333,7 @@ fn creature_with(min min: Float, max max: Float) -> activate.Creature {
     cast_time_ms: 2000,
     min_range: min,
     max_range: max,
-    only_own_spells: False,
+    flags: 0,
   )
 }
 
@@ -377,6 +377,7 @@ pub fn activate_go_raises_activated_test() -> Nil {
         unit_id: its_unit,
         creature_id: the_mollusk,
         alive_at_press: True,
+        by_item: False,
       )
     })
     == 1
@@ -388,7 +389,7 @@ pub fn activate_go_raises_activated_test() -> Nil {
       cast_time_ms: 500,
       min_range: 0.0,
       max_range: 0.0,
-      only_own_spells: False,
+      flags: 0,
     )
   let assert Ok(#(state, pressed)) =
     right_click(
@@ -534,7 +535,7 @@ pub fn activate_range_is_edge_to_edge_test() -> Nil {
       cast_time_ms: 500,
       min_range: 3.0,
       max_range: 3.0,
-      only_own_spells: False,
+      flags: 0,
     )
   assert range_answer(activations:, creature: plain, east: 0.75, up: 0.0)
     == Ok(Nil)
@@ -716,7 +717,7 @@ pub fn activate_refuses_unknown_and_unbuilt_spells_test() -> Nil {
       cast_time_ms: 2000,
       min_range: 0.0,
       max_range: 3.0,
-      only_own_spells: False,
+      flags: 0,
     )
   }
   let refused = fn(activations, creature) {
@@ -855,7 +856,7 @@ fn behind(prerequisite_id prerequisite_id: Int) -> Target {
       cast_time_ms: 2000,
       min_range: 0.0,
       max_range: 3.0,
-      only_own_spells: False,
+      flags: 0,
     ),
     east: 1.0,
     up: 0.0,
@@ -909,7 +910,7 @@ pub fn activate_logs_each_unread_prerequisite_type_once_test() -> Nil {
           cast_time_ms: 2000,
           min_range: 0.0,
           max_range: 3.0,
-          only_own_spells: False,
+          flags: 0,
         ),
         east: 1.0,
         up: 0.0,
@@ -1124,6 +1125,7 @@ pub fn activate_cancelled_raises_nothing_test() -> Nil {
       unit_id: its_unit,
       creature_id: the_mollusk,
       alive_at_press: True,
+      by_item: False,
     ),
   )
     as "a cast cancelled before its go raises no Activated"
@@ -1226,6 +1228,7 @@ fn activated_by(effects effects: List(Effect)) -> Int {
       unit_id: its_unit,
       creature_id: the_terminal,
       alive_at_press: True,
+      by_item: False,
     )
   })
 }
@@ -1253,6 +1256,7 @@ fn assert_went_and_finished(effects effects: List(Effect)) -> Nil {
         unit_id: its_unit,
         creature_id: the_terminal,
         alive_at_press: True,
+        by_item: False,
       )
     })
     == 1

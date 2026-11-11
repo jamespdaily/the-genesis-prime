@@ -9,6 +9,9 @@
 //// the safe value; each statement is read from the fact file here.
 
 import fact_file
+import genesis_prime/message/client_message
+import genesis_prime/message/item_place.{ItemPlace}
+import genesis_prime/message/item_use
 import genesis_prime/message_schema.{type Field}
 import gleam/list
 import gleam/option.{Some}
@@ -95,4 +98,37 @@ pub fn each_unnamed_field_of_the_cast_messages_names_the_fact_that_shows_its_val
     assert string.contains(statement, safe_words)
       as { key <> " states the safe value: " <> safe_words }
   })
+}
+
+/// The bytes are the client's writer's output for the body, least significant
+/// bit first (WriteMessage0943Body `0x1400937b0`, `opcode.0x943`): the cast id
+/// 7 (32 bits), the item place {1, 3} (9 bits, 32 bits), the target 0x1234
+/// (32 bits), the second place {300, 0xffffffff}, then 1.0, 2.0 and 3.0 as the
+/// bits of 32-bit floats (0x3f800000, 0x40000000, 0x40400000). The 242 bits
+/// fill 31 bytes, the last with 6 bits of padding.
+pub fn item_use_body_reads_in_the_client_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  let body = <<
+    0x07, 0x00, 0x00, 0x00, 0x01, 0x06, 0x00, 0x00, 0x00, 0x68, 0x24, 0x00, 0x00,
+    0x58, 0xfe, 0xff, 0xff, 0xff, 0x03, 0x00, 0x00, 0xfe, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x01, 0x01,
+  >>
+  let expected =
+    item_use.ItemUse(
+      client_cast_id: 7,
+      item: ItemPlace(location: 1, bag_index: 3),
+      target_unit_id: 0x1234,
+      second_item: ItemPlace(location: 300, bag_index: 0xffffffff),
+      position_x: 0x3f800000,
+      position_y: 0x40000000,
+      position_z: 0x40400000,
+    )
+  assert item_use.decode(body) == Ok(expected)
+    as "the fields are read in the order the client writes them"
+  assert client_message.decode(message_id: item_use.message_id, body:)
+    == Ok(client_message.ItemUse(message: expected))
+    as "message 0x943 is the client's use of an item"
+  let assert Error(_) = item_use.decode(<<0x07, 0x00, 0x00, 0x00, 0x01>>)
+    as "a body short of the fields is one the client's reader refuses"
+  Nil
 }
