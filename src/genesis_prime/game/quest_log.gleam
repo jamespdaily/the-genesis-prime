@@ -871,7 +871,7 @@ fn as_logged(log log: QuestLog, quest quest: Quest) -> Quest {
 /// Whether an objective counts its progress as bits (`0x1405517a0`): types 10, 13, 14
 /// and 18, and types 27 and 28 whose PathSoldierActivate row (named by the objective's
 /// data) has soldierActivateModeEnum 1 or 2; no such row means not a checklist.
-fn is_checklist(
+pub fn is_checklist(
   tables tables: table_store.Tables,
   objective objective: quest_objective.QuestObjective,
 ) -> Bool {

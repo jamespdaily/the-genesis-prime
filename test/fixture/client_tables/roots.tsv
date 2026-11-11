@@ -406,3 +406,18 @@ Creature2	12959	receiver of 3673, factionId 171	communicator_tables_test
 Creature2	16622	receiver of 3673, factionId 171	communicator_tables_test
 Creature2	30336	receiver of 6654, factionId 170	communicator_tables_test
 Creature2	11066	creature of CommunicatorMessages 1907, receiver of 3741	communicator_test
+Quest2	10523	quest whose objective 0 is the type 14 checklist 21307 for the Primal Manifestations (Creature2 73500)	checklist_index_test
+Quest2	10525	quest whose objective 1 is the type 18 checklist 21319 for Creature2 73422, after the type 17 objective 0	checklist_index_test, objective_checklist_test
+Quest2	10526	quest whose objective 1 is the type 18 checklist 21378, again for Creature2 73422	checklist_index_test
+Quest2	5855	quest whose objective 1 is the type 14 checklist 8782 for Creature2 26016, which casts an activate spell	checklist_index_test, game_wire_checklist_test
+QuestObjective	21307	type 14 checklist, TargetGroup 14425, count 3	checklist_index_test, objective_checklist_test
+QuestObjective	21319	type 18 checklist, TargetGroup 14368, count 2	checklist_index_test, objective_checklist_test
+QuestObjective	21378	type 18 checklist, TargetGroup 14368, count 2	checklist_index_test
+QuestObjective	8781	objective 0 of quest 5855	game_wire_checklist_test
+QuestObjective	8782	type 14 checklist, TargetGroup 2766, count 5	checklist_index_test, game_wire_checklist_test
+TargetGroup	14425	type 1 group of Creature2 73500	checklist_index_test
+TargetGroup	14368	type 1 group of Creature2 73422	checklist_index_test, objective_checklist_test
+TargetGroup	2766	type 1 group of Creature2 26016	checklist_index_test, game_wire_checklist_test
+Creature2	73500	Primal Manifestation, three spawns in World 3460, no activate spell	checklist_index_test
+Creature2	73422	creature of the type 18 objectives 21319 and 21378	checklist_index_test, objective_checklist_test
+Creature2	26016	creature of the type 14 objective 8782, activate spell 1817	game_wire_checklist_test
