@@ -307,7 +307,7 @@ fn currency_statement(
 const completed_quest_state = 3
 
 fn quest_statement(row: sql.QuestsOfCharactersOfAccountsNamedRow) -> String {
-  "insert into character_quest (character_id, quest_id, state, completed_at, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ("
+  "insert into character_quest (character_id, quest_id, state, completed_at, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ("
   <> string.join(
     [
       int.to_string(row.character_id),
@@ -323,6 +323,7 @@ fn quest_statement(row: sql.QuestsOfCharactersOfAccountsNamedRow) -> String {
       nullable(row.progress, integers),
       nullable(row.quest_ms_left, int.to_string),
       nullable(row.objective_ms_left, integers),
+      nullable(row.kill_mask, integers),
     ],
     ", ",
   )

@@ -79,6 +79,7 @@ import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/map.{Join, Leave, Left, SeenBy, Summon}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/spawn
@@ -1880,6 +1881,7 @@ pub fn beast_appears_facing(
   sent_by_a_peer(news_of(
     unit_id:,
     news: CreatureAppeared(
+      unit_type: NonPlayer,
       unit: creature_unit.create(
         spawn: beast,
         unit_id:,
@@ -1927,6 +1929,7 @@ pub fn creature_appears(
   sent_by_a_peer(news_of(
     unit_id:,
     news: CreatureAppeared(
+      unit_type: NonPlayer,
       unit: creature_unit.create(
         spawn: target,
         unit_id:,

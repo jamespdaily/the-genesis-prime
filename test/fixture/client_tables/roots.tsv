@@ -489,6 +489,18 @@ Quest2	9494	quest named by a gated type 24 objective	objective_test
 Quest2	10502	yearly quest whose objectives are type 24 naming a yearly quest	objective_test
 Quest2	10503	yearly quest named by a type 24 objective	objective_test
 WorldLocation2	46118	marker of the type 22 objective 18249	objective_test
+Creature2	73494	Dominion Turret - NPEU - Part 2 (the turret Exiles fight, faction 1441)	spawn_test, objective_spawn_test, tutorial_turret_test
+QuestObjective	21288	kill both Dominion Turrets (an Exile objective)	objective_spawn_test, tutorial_turret_test
+Spell4	85469	Charging - Dominion Turret, castTime 8000	spawn_test, creature_kind_test, tutorial_turret_test
+Spell4	86978	Charging - Exile Turret, castTime 8000	spawn_test, creature_kind_test
+Faction2	1441	faction of the turrets Exiles fight	spawn_test, objective_spawn_test
+Faction2	1442	faction of the turrets Dominion fight	objective_spawn_test
+Faction2Relationship	2943	1441 to 167 level 0	spawn_test
+Faction2Relationship	2944	1441 to 166 level 10	spawn_test
+Faction2Relationship	2946	1442 to 166	objective_spawn_test
+Faction2Relationship	2947	1442 to 167	objective_spawn_test
+WorldLocation2	51671	marker of the Exile objective 21288	objective_spawn_test
+WorldLocation2	52753	marker of the Exile objective 21288	objective_spawn_test
 Quest2	7618	quest whose one objective 13884 is a type 11 cast of Spell4 40471, count 1	objective_test, game_connection_objective_cast_test, world_entry_quest_log_test
 Quest2	7617	quest 7618 needs completed (preq_quest0), so a log can hold it completed	game_connection_objective_cast_test
 Quest2	3915	quest whose fourth objective 5197 (flags 3) is a type 11 cast of Spell4 25306 behind three objectives	objective_test, cast_shortcut_test
@@ -521,6 +533,18 @@ Creature2	72197	first creature of TargetGroup 14175	objective_test
 Creature2	72198	second creature of TargetGroup 14175	objective_test
 Creature2	72231	third creature of TargetGroup 14175	objective_test
 Quest2	10415	the quest of objective 21094, a type 23 objective of TargetGroup 14175	objective_test
+Quest2	4961	Double Trouble: objective 7396 is a type 15 kill of the pane {20230, 17532}	objective_test
+Quest2	4512	Power Unleashed: objective 6182 is a type 15 kill of the pane {16660}	objective_test
+Quest2	7908	Strange Brew: objective 14233 is a type 15 kill of the pane {38117, 38125, 40502}	objective_test, game_connection_objective_test
+Quest2	4851	The Eldan Augmentor: objective 7750 is a type 15 kill of the pane {19333, 23420}	objective_test
+Quest2	5578	Portside of Starboard: objective 8354 is a type 15 kill of the pane {24100, 24106}	objective_test
+Quest2	5922	What Must Be Done: objective 8908 is a type 15 kill of the pane {26124, 33577}	objective_test
+Creature2	38117	Raken, first creature of TargetGroup 4793 (Strange Brew)	game_connection_objective_test
+Creature2	38125	Elja, second creature of TargetGroup 4793	game_connection_objective_test
+Creature2	40502	Meloth, third creature of TargetGroup 4793	game_connection_objective_test
+Creature2	11070	Trapped Survivor, a quest creature that walks a path: activate spell 1817, linked to quest 3480 by Prerequisite 2672	game_connection_objective
+QuestObjective	4470	type 12 objective of quest 3480, Creature2 11070, count 3	game_connection_objective
+Quest2	3480	quest whose objective 0 is a use of Creature2 11070	game_connection_objective
 Creature2	11070	Trapped Survivor, a quest creature that walks a path: activate spell 1817, linked to quest 3480 by Prerequisite 2672	game_connection_objective, game_wire_test
 QuestObjective	4470	type 12 objective of quest 3480, Creature2 11070, count 3	game_connection_objective, game_wire_test
 Quest2	3480	quest whose objective 0 is a use of Creature2 11070	game_connection_objective, game_wire_test

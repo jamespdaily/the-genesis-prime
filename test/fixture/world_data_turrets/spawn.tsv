@@ -1,0 +1,3 @@
+id	entity_type	creature_id	world_id	area_id	x	y	z	rotation_x	rotation_y	rotation_z	display_info	outfit_info	faction1	faction2	quest_checklist_index	active_prop_id	world_socket_id	stat_ids	stat_values
+29178	13	73494	3460	0	-105.661	-864.7596	502.462	-0.052359883	0	0	23584	0	219	219	0	0	0	{}	{}
+29179	13	73494	3460	0	-112.69	-864.691	470.817	0.52359885	0	0	23584	0	219	219	0	0	0	{}	{}

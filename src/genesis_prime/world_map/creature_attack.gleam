@@ -8,6 +8,9 @@
 ////   no caster prerequisite                       ─▶ applies
 ////   a prerequisite of type 179 (the difficulty)  ─▶ applies when the creature's difficulty passes it
 ////   a prerequisite of any other type             ─▶ the load refuses the spell (`unevaluated`)
+//// the spell's cast prerequisite (Spell4.prerequisiteIdCasterCast)
+////   none, or one condition of type 15            ─▶ answered
+////   any other                                    ─▶ the load refuses the spell
 //// ```
 ////
 //// - **Type 179** compares the unit's difficulty with the condition's object id,
@@ -63,6 +66,14 @@ pub type Unevaluated {
   /// The spell's Spell4 row holds an innate cost EMM id, which would choose its
   /// damage effects by points a creature's attack does not spend.
   SpendsByEmmId(spell4_id: Int, emm_id: Int)
+  /// The spell's caster cast prerequisite (`Spell4.prerequisiteIdCasterCast`) is a row the
+  /// client's table lacks, holds a condition of a type other than 15 (a unit that is the
+  /// target of a live cast, the one the charge's own cast answers), or holds more than one.
+  CastPrerequisiteNotAnswered(
+    spell4_id: Int,
+    prerequisite_id: Int,
+    type_id: Int,
+  )
 }
 
 /// The damage effects (type 8) of the spell, in the order they take effect
@@ -80,6 +91,51 @@ fn damage_effects(
     int.compare(first.order_index, second.order_index)
     |> order.break_tie(int.compare(first.id, second.id))
   })
+}
+
+/// The prerequisite type of a unit that is the target of a live cast
+/// (`game/prerequisite`, TargetOfLiveCast): the one cast prerequisite a creature's
+/// attack answers, since a charge is itself such a cast.
+const target_of_live_cast_type = 15
+
+/// A cast prerequisite of the spell's Spell4 row that holds one condition of type 15, or
+/// none; `Ok(Nil)` for a spell with no Spell4 row.
+fn answers_its_cast_prerequisite(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+) -> Result(Nil, Unevaluated) {
+  case spell4.get(tables:, id: Spell4Id(spell4_id)) {
+    Error(Nil) -> Ok(Nil)
+    Ok(row) ->
+      case row.prerequisite_id_caster_cast {
+        0 -> Ok(Nil)
+        id ->
+          case prerequisite.get(tables, PrerequisiteId(id)) {
+            Error(Nil) ->
+              Error(CastPrerequisiteNotAnswered(
+                spell4_id:,
+                prerequisite_id: id,
+                type_id: 0,
+              ))
+            Ok(prerequisite_row) ->
+              case game_prerequisite.condition_types(row: prerequisite_row) {
+                [type_id] if type_id == target_of_live_cast_type -> Ok(Nil)
+                [type_id, ..] ->
+                  Error(CastPrerequisiteNotAnswered(
+                    spell4_id:,
+                    prerequisite_id: id,
+                    type_id:,
+                  ))
+                [] ->
+                  Error(CastPrerequisiteNotAnswered(
+                    spell4_id:,
+                    prerequisite_id: id,
+                    type_id: 0,
+                  ))
+              }
+          }
+      }
+  }
 }
 
 /// An innate cost EMM id of the spell's Spell4 row, a spend a creature's attack
@@ -111,6 +167,7 @@ pub fn evaluated(
   spell4_id spell4_id: Int,
 ) -> Result(Nil, Unevaluated) {
   use Nil <- result.try(spends_nothing(tables:, spell4_id:))
+  use Nil <- result.try(answers_its_cast_prerequisite(tables:, spell4_id:))
   damage_effects(tables:, spell4_id:)
   |> list.try_each(fn(effect) {
     condition(tables:, effect:) |> result.replace(Nil)
@@ -262,5 +319,13 @@ pub fn describe(unevaluated unevaluated: Unevaluated) -> String {
       <> " has innate cost EMM id "
       <> int.to_string(emm_id)
       <> ", which chooses its effects by points a creature's attack does not spend"
+    CastPrerequisiteNotAnswered(spell4_id:, prerequisite_id:, type_id:) ->
+      "Spell4 "
+      <> int.to_string(spell4_id)
+      <> " has cast prerequisite "
+      <> int.to_string(prerequisite_id)
+      <> " of type "
+      <> int.to_string(type_id)
+      <> ", which a creature's attack does not answer (only one condition of type 15, the target of a live cast, or none; type 0 is a row the client's table lacks or empty)"
   }
 }

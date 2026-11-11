@@ -104,13 +104,14 @@ import genesis_prime/game/objective.{
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place
 import genesis_prime/game/target_group
-import genesis_prime/store.{HeldItem}
+import genesis_prime/store.{ActiveQuest, HeldItem, QuestRow}
 import genesis_prime/table/id.{
   Creature2Id, Faction2Id, Item2Id, Spell4Id, UnitRaceId,
 }
 import genesis_prime/table/loader/store as table_store
 import gleam/dict
 import gleam/list
+import gleam/option.{Some}
 import gleam/set
 import owned_test
 import place_support
@@ -525,11 +526,10 @@ pub fn a_kill_in_an_objectives_reward_pane_counts_test() -> Nil {
       now_ms: 0,
     )
   assert slain.effects
-    == [
-      SendProgress(quest_id: 1804, objective_index: 0, progress: 333),
-      SendProgress(quest_id: 1805, objective_index: 0, progress: 500),
-    ]
-    as "5007 is not the creature of objective 1889 and no cluster of 1890, but is in their reward pane: each advances by an equal share (counts 3 and 2); the talk of 6961 and the use of 9207, whose panes hold it too, take no kill"
+    == [SendProgress(quest_id: 1804, objective_index: 0, progress: 333)]
+    as "5007 is not the creature of objective 1889, but is in its reward pane: it advances by an equal share (count 3); the talk of 6961 and the use of 9207, whose panes hold it too, take no kill"
+  assert kill_masks_of(log: slain.log, quest_id: 1805) == [2, 0, 0, 0, 0, 0]
+    as "1890 is type 15, whose reward pane is a named group (TargetGroup.type.1: every creature of the list, each once): 5007 is the group's second entry (5006 is the first), so a kill sets bit 1 of its mask and its progress, which only the server's 0x361 gives the client (opcode.0x361), stays 0 until both are dead: no SendProgress(1805, 0, 500) is sent"
   assert objective.advance(
       log:,
       tables:,
@@ -538,6 +538,307 @@ pub fn a_kill_in_an_objectives_reward_pane_counts_test() -> Nil {
     )
     == Advanced(log:, effects: [])
     as "a creature outside every pane changes nothing"
+}
+
+/// The kill masks of a quest's active entry as the log is saved: one 7-bit value for each
+/// of the six objective slots.
+fn kill_masks_of(
+  log log: quest_log.QuestLog,
+  quest_id quest_id: Int,
+) -> List(Int) {
+  let assert [QuestRow(active: Some(ActiveQuest(kill_mask:, ..)), ..)] =
+    quest_log.rows(log:, now_ms: 0)
+    |> list.filter(fn(row) { row.quest_id == quest_id })
+    as "the quest is in the active list"
+  kill_mask
+}
+
+/// The log after the player's blow kills this creature, and the effects.
+fn slain(
+  log log: quest_log.QuestLog,
+  tables tables: table_store.Tables,
+  creature creature: Int,
+) -> objective.Advanced {
+  objective.advance(
+    log:,
+    tables:,
+    event: killed(creature:, faction: unlisted_faction),
+    now_ms: 0,
+  )
+}
+
+/// Kills these creatures one after another and gives the log at the end and the effects
+/// each kill gave.
+fn slain_in_turn(
+  log log: quest_log.QuestLog,
+  tables tables: table_store.Tables,
+  creatures creatures: List(Int),
+) -> #(quest_log.QuestLog, List(List(objective.Effect))) {
+  let #(log, effects) =
+    list.fold(creatures, #(log, []), fn(so_far, creature) {
+      let advanced = slain(log: so_far.0, tables:, creature:)
+      #(advanced.log, [advanced.effects, ..so_far.1])
+    })
+  #(log, list.reverse(effects))
+}
+
+/// A quest held accepted with these objectives done and these progress values.
+fn group_quest_log(
+  quest_id quest_id: Int,
+  done_mask done_mask: Int,
+  progress progress: List(Int),
+) -> quest_log.QuestLog {
+  quest_support.log_of(rows: [
+    quest_support.active(
+      quest_id:,
+      state: 1,
+      placeholder: 0,
+      tracked: False,
+      done_mask:,
+      progress:,
+    ),
+  ])
+}
+
+/// Strange Brew, whose one objective 14233 (type 15, count 1, flags 4) names the pane
+/// TargetGroup 4793: Raken 38117, Elja 38125 and Meloth 40502.
+const strange_brew = 7908
+
+const raken = 38_117
+
+const elja = 38_125
+
+const meloth = 40_502
+
+pub fn a_named_group_objective_completes_once_every_pane_member_is_killed_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let log = quest_support.log_of(rows: [quest_support.untouched(strange_brew)])
+  let #(after, effects) =
+    slain_in_turn(log:, tables:, creatures: [raken, elja, meloth])
+  assert effects
+    == [
+      [],
+      [],
+      [
+        SendProgress(quest_id: strange_brew, objective_index: 0, progress: 1),
+        SendState(quest_id: strange_brew, state: 2),
+      ],
+    ]
+    as "the first two kills of the pane's three give no effect (progress stays 0, opcode.0x361), and the third completes objective 14233 (count 1: 0x140551840) and the quest"
+  let #(after_two, _) = slain_in_turn(log:, tables:, creatures: [raken, elja])
+  assert kill_masks_of(log: after_two, quest_id: strange_brew)
+    == [3, 0, 0, 0, 0, 0]
+    as "Raken and Elja are entries 0 and 1 of the pane (TargetGroup 4793: 38117, 38125, 40502): the mask is 0b011"
+  assert kill_masks_of(log: after, quest_id: strange_brew) == [7, 0, 0, 0, 0, 0]
+    as "all three entries are marked"
+}
+
+pub fn a_named_group_of_one_completes_on_its_one_kill_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  // Power Unleashed: objective 0 is 6902 (type 14, count 2), and objective 1 is 6182
+  // (type 15, count 1, flags 7: it waits for every earlier objective), whose pane 4672
+  // is {16660}; 8142 and 8143 follow, with flags 44.
+  let log =
+    group_quest_log(quest_id: 4512, done_mask: 1, progress: [3, 0, 0, 0])
+  assert slain(log:, tables:, creature: 16_662).effects == []
+    as "16662, the Cluster - Corrupter row, is not in pane 4672, so it counts nothing"
+  assert slain(log:, tables:, creature: 16_660).effects
+    == [
+      SendProgress(quest_id: 4512, objective_index: 1, progress: 1),
+      SendState(quest_id: 4512, state: 2),
+    ]
+    as "the group's one creature completes objective 6182 (count 1), and the quest is Achieved: objectives 8142 and 8143 have flag 0x20 (flags 44), which the client's state skips (0x1405fbc40)"
+}
+
+pub fn the_eldan_augmentor_needs_the_augmentor_and_digstone_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  // Objective 7750 (type 15, count 1, flags 7) waits for 7734 (type 17), and its pane
+  // 6353 is {19333, 23420}; objective 17769 follows.
+  let waiting =
+    group_quest_log(quest_id: 4851, done_mask: 0, progress: [0, 0, 0])
+  assert slain_in_turn(log: waiting, tables:, creatures: [19_333, 23_420]).1
+    == [[], []]
+    as "7750 waits for every earlier objective (flag 2, 0x140553790) and 7734 is open: the unreachable objective takes nothing"
+  let log = group_quest_log(quest_id: 4851, done_mask: 1, progress: [1, 0, 0])
+  let #(after, effects) =
+    slain_in_turn(log:, tables:, creatures: [19_333, 17_996, 23_420])
+  assert effects
+    == [
+      [],
+      [],
+      [SendProgress(quest_id: 4851, objective_index: 1, progress: 1)],
+    ]
+    as "19333 alone gives no effect, Digstone 17996 (faction 171) is in no pane and counts nothing, and 23420 completes objective 7750"
+  assert kill_masks_of(log: after, quest_id: 4851) == [0, 3, 0, 0, 0, 0]
+    as "both entries of pane 6353 are marked in the objective's slot 1"
+}
+
+pub fn portside_needs_darugna_and_blackbeak_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  // Objective 8354 (index 3, type 15, count 1, flags 7) waits for objectives 8224, 8226
+  // and 8232, and 8685 follows; its pane 5347 is {24100, 24106}.
+  let log =
+    group_quest_log(quest_id: 5578, done_mask: 7, progress: [1, 1, 1, 0, 0])
+  let #(after, effects) =
+    slain_in_turn(log:, tables:, creatures: [24_106, 24_100])
+  assert effects
+    == [
+      [],
+      [SendProgress(quest_id: 5578, objective_index: 3, progress: 1)],
+    ]
+    as "24106 is the pane's second entry and 24100 its first: objective 8354 completes on the second kill"
+  assert kill_masks_of(log: after, quest_id: 5578) == [0, 0, 0, 3, 0, 0]
+    as "both entries are marked in slot 3"
+}
+
+pub fn what_must_be_done_needs_venator_and_a_grimvoid_thug_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  // Objective 8908 is the quest's only one; its pane 7097 is {26124, 33577}.
+  let log = quest_support.log_of(rows: [quest_support.untouched(5922)])
+  assert slain_in_turn(log:, tables:, creatures: [26_124]).1 == [[]]
+    as "26124 alone does not complete objective 8908"
+  assert slain_in_turn(log:, tables:, creatures: [33_577]).1 == [[]]
+    as "nor does 33577 alone"
+  let done = [
+    SendProgress(quest_id: 5922, objective_index: 0, progress: 1),
+    SendState(quest_id: 5922, state: 2),
+  ]
+  assert slain_in_turn(log:, tables:, creatures: [26_124, 33_577]).1
+    == [[], done]
+    as "the two together complete it"
+  assert slain_in_turn(log:, tables:, creatures: [33_577, 26_124]).1
+    == [[], done]
+    as "in either order"
+}
+
+pub fn double_trouble_needs_both_inventors_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  // Objective 7396 (index 1, type 15, count 1, flags 4) follows 7397 (type 12), which is
+  // done; its pane 8534 is {20230, 17532}.
+  let log = group_quest_log(quest_id: 4961, done_mask: 1, progress: [1, 0])
+  assert slain_in_turn(log:, tables:, creatures: [17_532, 20_275, 20_230]).1
+    == [
+      [],
+      [],
+      [
+        SendProgress(quest_id: 4961, objective_index: 1, progress: 1),
+        SendState(quest_id: 4961, state: 2),
+      ],
+    ]
+    as "17532 then 20230 complete objective 7396, and 20275, a text-token row (Q4755 Quest Target) in no pane, counts nothing between them"
+}
+
+pub fn a_second_kill_of_the_same_group_member_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let log = quest_support.log_of(rows: [quest_support.untouched(strange_brew)])
+  let #(after, effects) =
+    slain_in_turn(log:, tables:, creatures: [raken, raken, elja])
+  assert effects == [[], [], []]
+    as "one creature counts once: the second Raken is no new member, and Elja is the second of three"
+  assert kill_masks_of(log: after, quest_id: strange_brew) == [3, 0, 0, 0, 0, 0]
+    as "the mask stays 0b011"
+  assert quest_log.objective_progress(
+      log: after,
+      quest: quest_of(id: strange_brew, tables:),
+      index: 0,
+    )
+    == 0
+    as "the objective is still open"
+}
+
+pub fn a_kill_in_the_pane_of_a_type_8_or_16_objective_still_counts_one_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 1804's objective 1889 is type 2, 1806's 1891 is type 8 and 1807's 1892 is type
+  // 16; the type 8 and 16 objectives name TargetGroup 307 as their data, and each is
+  // given it as its reward pane too.
+  use tables <- with_objectives(edits: [
+    #(1889, "targetGroupIdRewardPane", 307),
+    #(1891, "targetGroupIdRewardPane", 307),
+    #(1892, "targetGroupIdRewardPane", 307),
+  ])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 1804, progress: [0]),
+      quest_support.accepted(quest_id: 1806, progress: [0]),
+      quest_support.accepted(quest_id: 1807, progress: [0]),
+    ])
+  let advanced = slain(log:, tables:, creature: group_member)
+  assert advanced.effects
+    == [
+      SendProgress(quest_id: 1804, objective_index: 0, progress: 333),
+      SendProgress(quest_id: 1806, objective_index: 0, progress: 250),
+      SendProgress(quest_id: 1807, objective_index: 0, progress: 500),
+    ]
+    as "0x140550c50: the pane counts for every kill type, and the group rule is limited to type 15: types 2, 8 and 16 advance by an equal share of their counts (3, 4 and 2) as before"
+  assert list.map([1804, 1806, 1807], fn(quest_id) {
+      kill_masks_of(log: advanced.log, quest_id:)
+    })
+    == [
+      [0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0],
+    ]
+    as "none of them changes a kill mask"
+}
+
+pub fn an_abandoned_quest_retaken_starts_its_group_with_no_kills_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let log = quest_support.log_of(rows: [quest_support.untouched(strange_brew)])
+  let #(killed_once, _) = slain_in_turn(log:, tables:, creatures: [raken])
+  assert kill_masks_of(log: killed_once, quest_id: strange_brew)
+    == [1, 0, 0, 0, 0, 0]
+    as "Raken is marked"
+  // The abandon request holds the quest in the side list as state 6
+  // (`quest_log.hold`, as `quest.gleam` does), dropping its active entry.
+  let abandoned =
+    quest_log.hold(
+      log: killed_once,
+      quest_id: strange_brew,
+      state: quest_log.Abandoned,
+    )
+  let retaken =
+    quest_log.accept(
+      log: abandoned,
+      quest: quest_of(id: strange_brew, tables:),
+      max_time_ms: 0,
+      now_ms: 0,
+    )
+  assert kill_masks_of(log: retaken, quest_id: strange_brew)
+    == [0, 0, 0, 0, 0, 0]
+    as "the retaken quest's new entry starts with no kill"
+  let #(after, effects) =
+    slain_in_turn(log: retaken, tables:, creatures: [elja, meloth])
+  assert effects == [[], []]
+    as "Elja and Meloth alone do not complete the group: Raken died before the abandon"
+  assert kill_masks_of(log: after, quest_id: strange_brew) == [6, 0, 0, 0, 0, 0]
+    as "the mask is 0b110"
+}
+
+pub fn a_completed_quest_holds_no_group_mask_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let log = quest_support.log_of(rows: [quest_support.untouched(strange_brew)])
+  let #(achieved, _) =
+    slain_in_turn(log:, tables:, creatures: [raken, elja, meloth])
+  assert quest_log.state(
+      log: achieved,
+      quest: quest_of(id: strange_brew, tables:),
+    )
+    == 2
+    as "the third kill makes the quest Achieved"
+  let turned_in =
+    quest_log.complete(log: achieved, quest_id: strange_brew, at_seconds: 1000)
+  assert quest_log.rows(log: turned_in, now_ms: 0)
+    == [quest_support.completed(strange_brew, at: 1000)]
+    as "a turned-in quest is Completed(at:), which holds no entry and so no kill mask (migration 0021: only an active row holds its entry, so its store row has a null kill_mask)"
 }
 
 /// A held item stack. Its guid only has to differ between the stacks of one test.

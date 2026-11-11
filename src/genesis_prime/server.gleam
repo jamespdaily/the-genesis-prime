@@ -584,8 +584,8 @@ pub fn tell_creature(
 fn creature_told(request: Request) -> Result(creature.Message, Nil) {
   case request {
     TellStrike(tell:) -> Ok(creature.Strike(tell:))
-    TellTargetMoved(connection:, place:, seq:, stay:) ->
-      Ok(creature.TargetMoved(by: connection, place:, seq:, stay:))
+    TellTargetMoved(connection:, place:, seq:, stay:, hit_radius:) ->
+      Ok(creature.TargetMoved(by: connection, place:, seq:, stay:, hit_radius:))
     TellStrikeAnswered(answered:) -> Ok(creature.StrikeAnswered(answered:))
     TellTargetChange(connection:, change:) ->
       Ok(case change {

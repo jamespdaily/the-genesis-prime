@@ -31,7 +31,7 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/zone_welcome
 import genesis_prime/migration
 import genesis_prime/readiness
-import genesis_prime/table/id.{ClassId, Creature2Id}
+import genesis_prime/table/id.{ClassId, Creature2Id, Spell4Id}
 import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -75,8 +75,8 @@ pub fn the_load_puts_the_migrated_databases_spawns_in_the_worlds_term_test() -> 
   let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil) as "a migrated database loads"
   let world = content_spawn.world(key:, world_id: 3460)
-  assert dict.size(world.by_id) == 27 + 12
-    as "migration 0008's 27 Virtual Defense Daguns, and the 12 creatures that start of the ones the fixture's kill objectives with a marker in World 3460 place, the boss included"
+  assert dict.size(world.by_id) == 27 + 12 + 4
+    as "migration 0008's 27 Virtual Defense Daguns, and the 16 creatures that start of the ones the fixture's kill objectives with a marker in World 3460 place, the boss and the four Sim-Turrets included"
   assert count_of(spawns: world.by_id, creature: 73_465) == 27
     as "the 27 Virtual Defense Daguns are the stored spawns the template holds"
   assert list.map([73_492, 73_567, 73_473, 73_566], fn(creature) {
@@ -90,7 +90,7 @@ pub fn the_load_puts_the_migrated_databases_spawns_in_the_worlds_term_test() -> 
     as "a World row with no spawn that starts has an empty term"
 }
 
-pub fn the_boss_starts_and_74862_is_still_left_out_test() -> Nil {
+pub fn the_boss_starts_with_its_chosen_faction_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
   let #(loaded, key) = content_support.load(database:)
@@ -98,8 +98,6 @@ pub fn the_boss_starts_and_74862_is_still_left_out_test() -> Nil {
   let world = content_spawn.world(key:, world_id: 3460)
   assert count_of(spawns: world.by_id, creature: 73_499) == 1
     as "objectives 21296 and 21310 place one boss at marker 51744, and migration 0027 gives it faction 233 in place of its Creature2 row's 219, Friendly to both"
-  assert count_of(spawns: world.by_id, creature: 74_862) == 0
-    as "Creature2 74862 gives factionId 219, Friendly to both player factions, with no quest and no creature_faction row, so it is left out"
   let assert Ok(boss) =
     list.find(dict.values(world.by_id), fn(one) {
       one.creature_id == Creature2Id(73_499)
@@ -107,6 +105,33 @@ pub fn the_boss_starts_and_74862_is_still_left_out_test() -> Nil {
     as "the boss starts"
   assert boss.faction_id == 233 && boss.base_faction_id == 233
     as "Faction2Relationship 746 makes 233 Hostile to the parent of both player factions"
+}
+
+pub fn the_sim_turrets_start_with_their_chosen_factions_and_charges_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil) as "a migrated database loads"
+  let world = content_spawn.world(key:, world_id: 3460)
+  let factions = fn(creature) {
+    world.by_id
+    |> dict.values
+    |> list.filter(fn(one) { one.creature_id == Creature2Id(creature) })
+    |> list.map(fn(one) { #(one.faction_id, one.base_faction_id) })
+  }
+  assert factions(73_494) == [#(1441, 1441), #(1441, 1441)]
+    as "objective 21288 counts 2 of Creature2 73494, which migration 0029 gives faction 1441, Hostile to Exile (Faction2Relationship 2943)"
+  assert factions(74_862) == [#(1442, 1442), #(1442, 1442)]
+    as "objective 21316 counts 2 of Creature2 74862, which migration 0029 gives faction 1442, Hostile to Dominion (Faction2Relationship 2946)"
+  let kinds = content_creature_kind.kinds(key:)
+  let charge = fn(creature) {
+    let kind = creature_kind.kind_of(kinds:, creature2_id: creature)
+    #(kind.attack_spell4_id, kind.attack_interval_ms)
+  }
+  assert charge(73_494) == #(Spell4Id(85_469), 3000)
+    as "migration 0029 gives the Exile turret its charge, Spell4 85469, and the interval server choice"
+  assert charge(74_862) == #(Spell4Id(86_978), 3000)
+    as "migration 0029 gives the Dominion turret its charge, Spell4 86978, and the interval server choice"
 }
 
 pub fn a_summon_of_the_boss_after_the_load_takes_its_chosen_faction_test() -> Nil {
@@ -227,8 +252,9 @@ pub fn a_database_that_answers_late_is_waited_for_and_loaded_from_test() -> Nil 
   // not come, here a look at the mailbox now.
   assert process.receive(away, within: 0) == Error(Nil)
     as "it was told five times that the database was away"
-  assert dict.size(content_spawn.world(key:, world_id: 3460).by_id) == 27 + 12
-    as "the 27 stored spawns and the 12 marker-placed ones that start"
+  assert dict.size(content_spawn.world(key:, world_id: 3460).by_id)
+    == 27 + 12 + 4
+    as "the 27 stored spawns and the 16 marker-placed ones that start"
 }
 
 pub fn a_database_whose_migrations_differ_stops_the_load_with_the_difference_test() -> Nil {

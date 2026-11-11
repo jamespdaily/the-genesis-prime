@@ -90,9 +90,16 @@ pub type ControlTell {
 /// Who strikes, with what the struck unit's owner needs of it.
 pub type Striker {
   /// A player: its unit, the place it struck from and the move sequence number of
-  /// that place (genesis_prime/game/connection), and its rolls, from its
-  /// connection's seed.
-  PlayerStriker(unit_id: Int, place: Place, seq: Int, stay: Stay, rolls: Rolls)
+  /// that place (genesis_prime/game/connection), its hit radius (its race's Race row,
+  /// genesis_prime/game/hit_radius) and its rolls, from its connection's seed.
+  PlayerStriker(
+    unit_id: Int,
+    place: Place,
+    seq: Int,
+    stay: Stay,
+    hit_radius: Float,
+    rolls: Rolls,
+  )
   /// A creature, which keeps no random state: the struck player's connection
   /// draws the rolls.
   CreatureStriker

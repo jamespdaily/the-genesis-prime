@@ -1000,6 +1000,10 @@ fn attacker_of(
     place:,
     move_seq: session.move_seq,
     stay: entered.stay,
+    hit_radius: hit_radius.of_playing(
+      tables: session.settings.tables,
+      race_id: entered.character.race_id,
+    ),
     faction:,
     stats: stats_of(entered:),
     properties: entered.properties,

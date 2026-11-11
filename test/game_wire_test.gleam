@@ -89,6 +89,7 @@ import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
 import genesis_prime/message/start_movement
+import genesis_prime/message/static_unit_type
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_create_player
@@ -1473,7 +1474,7 @@ pub fn objective_progress_survives_a_relog_test() -> Nil {
     as "the character is of the faction Lusk's faction 171 is friendly to"
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 3668, 1, 0, true, 0, '{0,0,0}', 0, '{0,0,0}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 3668, 1, 0, true, 0, '{0,0,0}', 0, '{0,0,0}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
@@ -1541,7 +1542,7 @@ pub fn a_move_into_a_marker_sends_its_objective_progress_test() -> Nil {
     new_player(started:, number: 1, character_name: "Zed Qu")
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 10513, 1, 0, true, 0, '{0,0,0,0,0}', 0, '{0,0,0,0,0}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 10513, 1, 0, true, 0, '{0,0,0,0,0}', 0, '{0,0,0,0,0}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
@@ -1618,7 +1619,7 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
     )
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 5855, 1, 0, true, 0, '{0,0}', 0, '{0,0}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 5855, 1, 0, true, 0, '{0,0}', 0, '{0,0}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
@@ -1751,7 +1752,7 @@ fn exile_whose_mine_cast_went() -> #(
     as "the character is an Exile"
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 10518, 1, 0, true, 1, '{1,0,0,0,0,0}', 0, '{0,0,0,0,0,0}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 10518, 1, 0, true, 1, '{1,0,0,0,0,0}', 0, '{0,0,0,0,0,0}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
@@ -1768,11 +1769,16 @@ fn exile_whose_mine_cast_went() -> #(
   let #(entry, have) =
     game_client.read_until(game:, have: <<>>, found: fn(frames) {
       list.any(frames, fn(frame) { frame.message_id == 0x01BC })
-      && static_objects_created_in(frames:) != []
+      && list.contains(static_objects_in(frames:), 73_463)
     })
-  let assert [mine] = static_objects_created_in(frames: entry)
-    as "the mine is the one static object shown"
-  assert mine.creature_id == 73_463
+  // The Sim-Turrets of objectives 21288 and 21316 stand within sight of the mine, and
+  // each writes its own 0x262 from its own process, so they may come before or after
+  // the mine's: the mine is the one object of its Creature2.
+  let assert [mine] =
+    list.filter(static_objects_created_in(frames: entry), fn(object) {
+      object.creature_id == 73_463
+    })
+    as "the mine is the one static object of Creature2 73463 shown"
   let assert Ok(press) =
     cast_activate.encode(CastActivate(
       client_cast_id: 1,
@@ -3931,7 +3937,7 @@ fn a_medic_at_the_marker_ring(
     as "the character is an Exile one (faction 167), which Creature2 73492 is hostile to"
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 10518, 1, 0, true, 31, '{5,1,1,1,2,0}', 0, '{0,0,0,0,0,0}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 10518, 1, 0, true, 31, '{5,1,1,1,2,0}', 0, '{0,0,0,0,0,0}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
@@ -3968,7 +3974,7 @@ fn the_target_at_slot_0(
   let assert Ok(target) =
     list.find(targets_in(frames:), fn(creature) {
       is_near(
-        left: game_client.creature_placed_at(unit: creature),
+        left: game_client.placed_by_tail(tail: creature.tail),
         right: ring_slot(index: 0),
       )
     })
@@ -4056,7 +4062,7 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
   let #(game, frames, have, _) = a_medic_at_the_marker_ring(started:)
   let shown = targets_in(frames:)
   assert list.map(shown, fn(creature) {
-      game_client.creature_placed_at(unit: creature)
+      game_client.placed_by_tail(tail: creature.tail)
     })
     |> list.all(fn(place) {
       is_near(left: place, right: ring_slot(index: 0))
@@ -4187,8 +4193,8 @@ pub fn a_placed_target_respawns_at_its_slot_test() -> Nil {
     list.find(game_client.creatures_created_in(frames: after), fn(unit) {
       unit.unit_id == target.unit_id
     })
-  assert game_client.creature_placed_at(unit: again)
-    == game_client.creature_placed_at(unit: target)
+  assert game_client.placed_by_tail(tail: again.tail)
+    == game_client.placed_by_tail(tail: target.tail)
     && again.creature_id == 73_492
     as "death.creature_respawn: 0x355, then a new 0x262 with the same unit id at the same place, ring slot 0"
   game_client.close(game:)
@@ -4224,18 +4230,20 @@ fn static_objects_created_in(
 
 /// A new character of the faction at the position in World 3460, entered as the
 /// player of the account number `number`, and every message the server wrote up to
-/// the pong of a ping sent after the 0x262 of `anchor`, a unit that no
+/// the pong of a ping sent after the 0x262 of each of `anchors`, units that no
 /// prerequisite hides from the character. The map writes its objects in one tell,
 /// after its reply to the join and from another process than the connection's
-/// pong, so the pong alone does not follow them; the anchor's 0x262 shows the
-/// tell has been taken, and the connection writes all of it before it takes the ping.
+/// pong, so the pong alone does not follow them; a creature of the map writes its
+/// own 0x262 from its own process, so it too is named among the anchors to be
+/// followed. The anchors' 0x262 show the tell has been taken, and the connection
+/// writes all of it before it takes the ping.
 fn entering_3460_as(
   started started: login_support.Started,
   number number: Int,
   character_name character_name: String,
   faction_id faction_id: Int,
   at position: #(Float, Float, Float),
-  anchor anchor: Int,
+  anchors anchors: List(Int),
 ) -> List(Frame) {
   let #(game, character_id) = new_player(started:, number:, character_name:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
@@ -4255,31 +4263,55 @@ fn entering_3460_as(
   send_play(game:, character_id:)
   let #(burst, have) = game_client.read_entry_kept(game:, have: <<>>)
   let #(until_anchor, have) =
-    read_until_object(game:, have:, creature_id: anchor, read: burst)
+    read_until_objects(game:, have:, creature_ids: anchors, read: burst)
   let #(after, _) = game_client.read_until_pong(game:, have:, number: 1)
   game_client.close(game:)
   list.append(until_anchor, after)
 }
 
-/// Reads messages until the 0x262 of the static object with this Creature2 id has
-/// been read, which `read` may already hold.
-fn read_until_object(
+/// Reads messages until the 0x262 of a static object with each of these Creature2 ids
+/// has been read (an id listed twice, twice), which `read` may already hold.
+fn read_until_objects(
   game game: game_client.Game,
   have have: BitArray,
-  creature_id creature_id: Int,
+  creature_ids creature_ids: List(Int),
   read read: List(Frame),
 ) -> #(List(Frame), BitArray) {
   use <- bool.guard(
-    when: list.contains(static_objects_in(frames: read), creature_id),
+    when: includes_each(
+      read: static_objects_in(frames: read),
+      wanted: creature_ids,
+    ),
     return: #(read, have),
   )
   let #(frame, rest) = game_client.next(game:, have:)
-  read_until_object(
+  read_until_objects(
     game:,
     have: rest,
-    creature_id:,
+    creature_ids:,
     read: list.append(read, [frame]),
   )
+}
+
+/// Whether `read` holds each of `wanted`, an id listed twice twice.
+fn includes_each(read read: List(Int), wanted wanted: List(Int)) -> Bool {
+  list.all(wanted, fn(id) {
+    list.count(read, fn(seen) { seen == id })
+    >= list.count(wanted, fn(listed) { listed == id })
+  })
+}
+
+/// The tutorial's two Sim-Turrets, each twice: objectives 21288 and 21316 count 2 of
+/// Creature2 73494 and 74862, which the world data of this test holds no row of, so the
+/// load places both at their markers (WorldLocation2 51671, 52753, 52902 and 52903, all
+/// within the sight range of 1024 units of the Start Arrow's row 29054 and past it from
+/// the mounts). They start as creatures of unit type 13, and the 0x262 of each is
+/// written to a character in sight of them, whatever its faction.
+const sim_turrets = [73_494, 73_494, 74_862, 74_862]
+
+/// The ids with the Sim-Turrets, sorted as `static_objects_in` sorts them.
+fn with_the_sim_turrets(ids ids: List(Int)) -> List(Int) {
+  list.append(ids, sim_turrets) |> list.sort(int.compare)
 }
 
 pub fn entering_world_3460_writes_no_start_arrow_and_mount_displays_only_to_an_exile_test() -> Nil {
@@ -4288,6 +4320,7 @@ pub fn entering_world_3460_writes_no_start_arrow_and_mount_displays_only_to_an_e
     start_with_world_data(folder: "test/fixture/world_data_tutorial")
   let at_the_arrows = #(71.4148, -855.3006, -479.419)
   let at_the_mounts = #(1381.03, -495.32764, 213.793)
+  let at_the_arrows_ids = with_the_sim_turrets(ids: [73_619])
   let exile =
     static_objects_in(frames: entering_3460_as(
       started:,
@@ -4295,30 +4328,34 @@ pub fn entering_world_3460_writes_no_start_arrow_and_mount_displays_only_to_an_e
       character_name: "Zed Qu",
       faction_id: 167,
       at: at_the_arrows,
-      anchor: 73_619,
+      anchors: at_the_arrows_ids,
     ))
-  assert exile == [73_619]
+  assert exile == at_the_arrows_ids
     as "an Exile with no tutorial quest at the Start Arrow's row 29054: the hologram 73619 (Creature2 prerequisite 41795, which passes for a player under no cast) is written and the Start Arrow 73707 (prerequisite 41803: neither quest 10527 nor 10532 is open) is not"
   let exile_at_the_mounts =
-    static_objects_in(frames: entering_3460_as(
-      started:,
-      number: 2,
-      character_name: "Ann Qu",
-      faction_id: 167,
-      at: at_the_mounts,
-      anchor: 74_787,
-    ))
+    static_objects_in(
+      frames: entering_3460_as(
+        started:,
+        number: 2,
+        character_name: "Ann Qu",
+        faction_id: 167,
+        at: at_the_mounts,
+        anchors: [74_787],
+      ),
+    )
   assert exile_at_the_mounts == [74_781, 74_782, 74_783, 74_784, 74_787]
     as "an Exile at the mounts: the four EXILE mount displays are written (Creature2 prerequisite 19, base faction 167), and 74787, which has none"
   let dominion_at_the_mounts =
-    static_objects_in(frames: entering_3460_as(
-      started:,
-      number: 3,
-      character_name: "Cal Qu",
-      faction_id: 166,
-      at: at_the_mounts,
-      anchor: 74_787,
-    ))
+    static_objects_in(
+      frames: entering_3460_as(
+        started:,
+        number: 3,
+        character_name: "Cal Qu",
+        faction_id: 166,
+        at: at_the_mounts,
+        anchors: [74_787],
+      ),
+    )
   assert dominion_at_the_mounts == [74_787]
     as "a Dominion character at the same place is written 74787, which has no visibility prerequisite, and none of the mount displays (Faction2 166 fails prerequisite 19)"
   login_support.stop(started)
@@ -4640,7 +4677,7 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
   let beast_at_x = fn(frames, x) {
     let assert [beast] =
       list.filter(game_client.creatures_created_in(frames:), fn(unit) {
-        game_client.creature_placed_at(unit:).0 == x
+        game_client.placed_by_tail(tail: unit.tail).0 == x
       })
       as "one Beast stands at this x"
     beast.unit_id
@@ -5841,7 +5878,7 @@ pub fn a_timed_quest_is_botched_over_the_connection_test() -> Nil {
     new_player(started:, number: 1, character_name: "Zed Qu")
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 1872, 1, 0, true, 0, '{}', 60000, '{}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 1872, 1, 0, true, 0, '{}', 60000, '{}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
@@ -6662,7 +6699,7 @@ fn an_exile_medic_beside_the_boss(
     as "the character is an Exile one (faction 167)"
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 10520, 1, 0, true, 5, '{3,0,1,0,0}', 0, '{0,0,0,0,0}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 10520, 1, 0, true, 5, '{3,0,1,0,0}', 0, '{0,0,0,0,0}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
@@ -6696,7 +6733,7 @@ pub fn an_exile_kills_the_boss_and_objective_21296_counts_test() -> Nil {
     })
     as "the boss is created for the Exile"
   assert is_near(
-    left: game_client.creature_placed_at(unit: boss),
+    left: game_client.placed_by_tail(tail: boss.tail),
     right: marker_51744,
   )
     as "opcode.0x262: a lone target stands at its marker's centre"
@@ -6731,6 +6768,329 @@ pub fn an_exile_kills_the_boss_and_objective_21296_counts_test() -> Nil {
       ),
     ]
     as "opcode.0x361: the kill counts objective 21296, the fourth of quest 10520, once: 1 of 1"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+// ---- the Sim-Turrets of the Novice training simulation, on the whole server ----
+//
+// The world database stores the two Exile Sim-Turrets, Creature2 73494, as unit type 13
+// rows 29178 and 29179 (`test/fixture/world_data_turrets`), 31.6 apart in World 3460 at
+// (-105.661, -864.7596, 502.462) and (-112.69, -864.691, 470.817). Their stored factions
+// are not read: migration 0029 stands them with faction 1441, Hostile to the Exile 167
+// (Faction2Relationship 2943, level 0). Each charges Spell4 85469 (castTime 8000) every
+// 3000 ms after its attack tick: the 0x7ff when the tick opens it, the 0x7f4 and the
+// 0x7fe 8000 ms later. Objective 21288 (QuestObjective: type 2, count 2, data 73494,
+// flags 0x203) is the fifth objective of quest 10518 (Quest2 objective04), so its
+// progress is the 0x361 of index 4 (opcode.0x361), open once the four objectives
+// before it are done (0x140553790, as `a_medic_at_the_marker_ring` holds). Paralytic
+// Surge reaches 15 (Spell4 42352 targetMaxRange) and a creature's aggro range is 10
+// (migration 0010).
+
+/// The first stored turret, row 29178.
+const turret_29178 = #(-105.661, -864.7596, 502.462)
+
+/// The second stored turret, row 29179.
+const turret_29179 = #(-112.69, -864.691, 470.817)
+
+/// A world on the planted turret rows and the content load, on the clock `time`.
+fn world_with_the_turrets(
+  tables tables: table_store.Tables,
+  time time: driven_time.Time,
+) -> login_support.Started {
+  start_with_world_data_by(
+    folder: "test/fixture/world_data_turrets",
+    adjusted: fn(settings) {
+      let settings = driven_by(settings:, time:)
+      server.Settings(
+        ..settings,
+        game: server.Served(
+          ..settings.game,
+          settings: connection_state.Settings(..settings.game.settings, tables:),
+        ),
+      )
+    },
+  )
+}
+
+/// An Exile Medic of level 30 holding quest 10518 with its first four objectives done,
+/// played into World 3460 at `at`, and read until the 0x262 of both turrets has
+/// arrived (a player sees every unit within 1024, `sight.range`), and ready: the game,
+/// the burst's frames and the bytes beyond.
+fn an_exile_medic_near_the_turrets(
+  started started: login_support.Started,
+  at at: #(Float, Float, Float),
+) -> #(game_client.Game, List(Frame), BitArray) {
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 30,
+    )
+  let assert Ok(_) =
+    pog.query("update character set faction_id = 167 where character_id = $1")
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character is an Exile one (faction 167), which faction 1441 is hostile to"
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 10518, 1, 0, true, 15, '{5,1,1,1,0,0}', 0, '{0,0,0,0,0,0}', '{0,0,0,0,0,0}')",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character holds quest 10518 with the objectives of index 0 to 3 done, so the turrets' of index 4 is open"
+  character_support.move_to(
+    pool:,
+    character_id: character,
+    world_id: 3460,
+    world_zone_id: 5967,
+    position: at,
+  )
+  send_play(game:, character_id: character)
+  let #(frames, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.length(turrets_in(frames:)) >= 2
+    })
+  // Ready: the client's first 0xF2 (`terrain_loaded`), which puts the player in the rings.
+  let assert Ok(body) =
+    terrain_loaded.encode(TerrainLoaded(world_zone_id: 5967))
+  game_client.send_world(game:, message_id: terrain_loaded.message_id, body:)
+  #(game, frames, have)
+}
+
+/// The Sim-Turrets (Creature2 73494) the frames create, as the client reads them.
+fn turrets_in(
+  frames frames: List(Frame),
+) -> List(unit_create_static.UnitCreateStatic) {
+  list.filter(static_objects_created_in(frames:), fn(object) {
+    object.creature_id == 73_494
+  })
+}
+
+/// The unit of the turret the frames create at `place`.
+fn the_turret_at(
+  frames frames: List(Frame),
+  place place: #(Float, Float, Float),
+) -> Int {
+  let assert Ok(turret) =
+    list.find(turrets_in(frames:), fn(turret) {
+      is_near(left: game_client.placed_by_tail(tail: turret.tail), right: place)
+    })
+    as "a Creature2 73494 stands at the place of its stored row"
+  turret.unit_id
+}
+
+pub fn an_exile_kills_both_sim_turrets_and_objective_21288_counts_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use tables <- on_rows_without_paralytic_surges_recharge()
+  let time = driven_time.new()
+  let started = world_with_the_turrets(tables:, time:)
+  let first_stands = #(turret_29178.0 +. 12.0, turret_29178.1, turret_29178.2)
+  let #(game, frames, have) =
+    an_exile_medic_near_the_turrets(started:, at: first_stands)
+  let first = the_turret_at(frames:, place: turret_29178)
+  let second = the_turret_at(frames:, place: turret_29179)
+  assert list.map(turrets_in(frames:), fn(turret) {
+      static_unit_type.to_value(turret.unit_type)
+    })
+    == [13, 13]
+    as "opcode.0x262: the turrets are created as unit type 13"
+  face(
+    game:,
+    yaw: game_client.yaw_toward(
+      from: #(first_stands.0, first_stands.2),
+      target: #(turret_29178.0, turret_29178.2),
+    ),
+    clock: 100,
+  )
+  let #(first_killed, have) =
+    presses_until_the_target_dies(
+      time:,
+      game:,
+      have:,
+      target: first,
+      cast_id: 1,
+      seen: [],
+    )
+  // The kill's credit comes from the creature after its death is written.
+  let #(first_counted, have) =
+    game_client.read_until_pong(game:, have:, number: 7)
+  // The second turret, 12 beyond it the same way: the walk is one position command.
+  let second_stands = #(turret_29179.0 +. 12.0, turret_29179.1, turret_29179.2)
+  game_client.send_world(
+    game:,
+    message_id: 0x0637,
+    body: game_client.moves_body(client_clock: 200, commands: [
+      game_client.position_command(
+        x: second_stands.0,
+        y: second_stands.1,
+        z: second_stands.2,
+      ),
+    ]),
+  )
+  face(
+    game:,
+    yaw: game_client.yaw_toward(
+      from: #(second_stands.0, second_stands.2),
+      target: #(turret_29179.0, turret_29179.2),
+    ),
+    clock: 300,
+  )
+  let #(second_killed, have) =
+    presses_until_the_target_dies(
+      time:,
+      game:,
+      have:,
+      target: second,
+      cast_id: 100,
+      seen: [],
+    )
+  let #(second_counted, _) =
+    game_client.read_until_pong(game:, have:, number: 14)
+  assert list.filter(
+      list.flatten([first_killed, first_counted, second_killed, second_counted]),
+      fn(frame) { frame.message_id == 0x0361 },
+    )
+    == [
+      Frame(
+        message_id: 0x0361,
+        body: message_support.packed([#(15, 10_518), #(32, 4), #(32, 1)]),
+      ),
+      Frame(
+        message_id: 0x0361,
+        body: message_support.packed([#(15, 10_518), #(32, 4), #(32, 2)]),
+      ),
+    ]
+    as "opcode.0x361: each kill counts objective 21288, the fifth of quest 10518: 1 of 2, then 2 of 2"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_charge_hits_a_player_who_stays_in_its_rectangle_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use tables <- on_rows_without_paralytic_surges_recharge()
+  let time = driven_time.new()
+  let started = world_with_the_turrets(tables:, time:)
+  // Enters 14 beyond the first turret, outside its aggro range 10, then walks in to 8
+  // beyond it: inside the range and 30 ahead of its charge's start.
+  let enters = #(turret_29178.0 +. 14.0, turret_29178.1, turret_29178.2)
+  let #(game, frames, have) =
+    an_exile_medic_near_the_turrets(started:, at: enters)
+  game_client.send_world(
+    game:,
+    message_id: 0x0637,
+    body: game_client.moves_body(client_clock: 100, commands: [
+      game_client.position_command(
+        x: turret_29178.0 +. 8.0,
+        y: turret_29178.1,
+        z: turret_29178.2,
+      ),
+    ]),
+  )
+  let turret = the_turret_at(frames:, place: turret_29178)
+  let own = game_client.unit_create_player_in(frames:).unit_id
+  let health = entry_stat(entry: frames, stat_id: 0)
+  let #(aggroed, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.contains(
+        game_client.fight_in(frames:),
+        game_client.Targeted(unit_id: turret, target_unit_id: own, threat: 1),
+      )
+    })
+  assert list.contains(
+    game_client.fight_in(frames: aggroed),
+    game_client.Targeted(unit_id: turret, target_unit_id: own, threat: 1),
+  )
+    as "0x908: the turret fights the player who walked into its aggro range"
+  // The turret's frames are sent before its step's timer is started, so the tick is
+  // on the clock only once it has taken all it was sent.
+  the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
+  // The attack tick, 3000 ms after the aggro, opens the charge.
+  driven_time.advance(time:, ms: 3000)
+  let #(opened, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      game_client.starts_of(
+        events: game_client.casts_in(frames:),
+        spell4_id: 85_469,
+      )
+      != []
+    })
+  let assert [#(cast_id, caster_unit_id)] =
+    game_client.starts_of(
+      events: game_client.casts_in(frames: opened),
+      spell4_id: 85_469,
+    )
+    as "the tick opens the charge with one 0x7ff of Spell4 85469"
+  assert caster_unit_id == turret as "opcode.0x7ff: the turret casts it"
+  assert game_client.go_targets_in(frames: opened) == []
+    as "the 8 s cast has not gone: no 0x7f4 yet"
+  // Its cast time passes with the player in the rectangle, once the charge's own
+  // timer is on the clock.
+  the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
+  driven_time.advance(time:, ms: 8000)
+  let #(went, _) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.contains(
+        game_client.casts_in(frames:),
+        game_client.CastFinished(cast_id:),
+      )
+      && game_client.own_health_of(
+        events: game_client.fight_in(frames:),
+        unit: own,
+      )
+      != []
+    })
+  assert game_client.go_targets_in(frames: went) == [#(cast_id, [own])]
+    as "opcode.0x7f4: the go names the player inside the rectangle"
+  let assert [game_client.Went(targets: [#(_, [blow])], ..)] =
+    list.filter(game_client.fight_in(frames: went), fn(event) {
+      case event {
+        game_client.Went(cast_id: went_id, ..) -> went_id == cast_id
+        game_client.Targeted(..)
+        | game_client.Threatens(..)
+        | game_client.InCombat(..)
+        | game_client.LevelIs(..)
+        | game_client.ShieldIs(..)
+        | game_client.InterruptArmorIs(..)
+        | game_client.AbsorptionIs(..)
+        | game_client.OwnHealthIs(..)
+        | game_client.Moves(..)
+        | game_client.Started(..)
+        | game_client.HealthIs(..) -> False
+      }
+    })
+    as "opcode.0x7f4: one go of the charge, with one damage effect for the player"
+  assert blow.effect_id == 224_644 && blow.raw_damage == 400
+    as "Spell4Effects 224644: the charge deals the player 400"
+  // The blow after the glance and the mitigation and absorbs is `adjusted`; the shield
+  // takes 0.625 of it (ShieldMitigationMax, property 175,
+  // `player.level1_gear_properties`, rounded as `hit.apply` rounds), which the
+  // shield held (`entry_stat` 20) covers, and the health takes the rest.
+  let adjusted = blow.raw_damage - blow.glance - blow.absorbed
+  assert blow.shield_absorbed == float.round(int.to_float(adjusted) *. 0.625)
+    as "opcode.0x7f4: the shield takes 0.625 of the adjusted blow"
+  assert blow.shield_absorbed <= entry_stat(entry: frames, stat_id: 20)
+    as "the shield held what it took"
+  let assert [_, ..] as healths =
+    game_client.own_health_of(
+      events: game_client.fight_in(frames: went),
+      unit: own,
+    )
+    as "opcode.0x92f: the charge's go gives the player's health"
+  let assert Ok(now) = list.last(healths)
+    as "the last health is the one that stands"
+  assert health - now == adjusted - blow.shield_absorbed
+    as "opcode.0x92f: the health loses the adjusted blow less the shield's share"
+  assert blow.health_damage == adjusted - blow.shield_absorbed
+    as "opcode.0x7f4: the description's health damage is the same"
+  assert list.any(
+    game_client.shield_of(events: game_client.fight_in(frames: went), unit: own),
+    fn(shield) { shield < entry_stat(entry: frames, stat_id: 20) },
+  )
+    as "opcode.0x938: the shield falls with the blow"
   game_client.close(game:)
   login_support.stop(started)
 }

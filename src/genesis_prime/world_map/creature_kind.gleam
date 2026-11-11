@@ -1,8 +1,8 @@
 //// What the server chooses for each kind of creature, as the content load checks
 //// it: how long a creature that died stays dead, how long a spawn whose creature
 //// crashed waits for its next one, and the creature's own attack: the Spell4 it
-//// casts and how often. A creature has the kind of its Creature2 row when the
-//// table has one, and the default row 0 otherwise.
+//// casts and how often, and how long the cast takes. A creature has the kind of its
+//// Creature2 row when the table has one, and the default row 0 otherwise.
 ////
 //// ```
 //// creature_kind rows (genesis_prime/content/creature_kind) ─▶ select(rows, tables)
@@ -10,6 +10,8 @@
 ////   a respawn time below the strike deadline              ─▶ Refusal
 ////   an attack spell the client's Spell4 does not hold     ─▶ Refusal
 ////   an attack interval below the strike deadline          ─▶ Refusal
+////   an attack spell whose caster prerequisite (prerequisiteIdCasterCast)
+////     holds a condition of a type other than 15           ─▶ Refusal naming the row and the type
 ////   a damage effect of the attack spell whose caster
 ////     prerequisite is of a type the server does not evaluate ─▶ Refusal
 ////   no row 0                                              ─▶ Refusal
@@ -31,6 +33,14 @@
 ////   their caster prerequisite, which the server evaluates only for type 179, the
 ////   unit's difficulty (`0x14049eeb0`); a spell with any other type would apply both
 ////   effects or neither, so the load refuses it.
+//// - **The cast time** is the attack spell's own (`Spell4.castTime`, in milliseconds), read
+////   with the creature's attack when a spawn starts (genesis_prime/world_map/spawn): 0 is an
+////   attack that strikes at once, as every creature's did, and above 0 the creature charges
+////   (genesis_prime/world_map/creature_fight).
+//// - **The cast prerequisite** (`Spell4.prerequisiteIdCasterCast`) is answered for one
+////   condition of type 15, `TargetOfLiveCast`, which is the cast the charge itself is; any
+////   other prerequisite is a state a creature does not have, so a spell holding one is
+////   refused and not cast as if it passed (genesis_prime/world_map/creature_attack).
 //// - **The attack interval** is a server choice, never below the strike deadline,
 ////   so a creature has at most one strike round open (genesis_prime/world_map/creature_fight).
 //// - **Every refusal is collected**, one bad row beside its neighbours, as the
@@ -77,8 +87,9 @@ pub type Kinds {
 
 /// The kinds of the rows, or every row the load refuses: a Creature2 id that has no
 /// row in the client's table, a respawn time or an attack interval below the strike
-/// deadline (1000 ms), an attack spell the client's Spell4 does not hold or whose
-/// damage effects carry a caster prerequisite of a type other than 179, and a table
+/// deadline (1000 ms), an attack spell the client's Spell4 does not hold, whose
+/// damage effects carry a caster prerequisite of a type other than 179, or whose
+/// `prerequisiteIdCasterCast` holds a condition of a type other than 15, and a table
 /// with no default row.
 pub fn select(
   rows rows: List(Row),

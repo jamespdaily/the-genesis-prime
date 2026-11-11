@@ -936,6 +936,7 @@ pub type LoadQuestLogRow {
     progress: Option(List(Int)),
     quest_ms_left: Option(Int),
     objective_ms_left: Option(List(Int)),
+    kill_mask: Option(List(Int)),
   )
 }
 
@@ -967,6 +968,7 @@ pub fn load_quest_log(
       8,
       decode.optional(decode.list(decode.int)),
     )
+    use kill_mask <- decode.field(9, decode.optional(decode.list(decode.int)))
     decode.success(LoadQuestLogRow(
       quest_id:,
       state:,
@@ -977,6 +979,7 @@ pub fn load_quest_log(
       progress:,
       quest_ms_left:,
       objective_ms_left:,
+      kill_mask:,
     ))
   }
 
@@ -996,7 +999,8 @@ select
   done_mask,
   progress,
   quest_ms_left,
-  objective_ms_left
+  objective_ms_left,
+  kill_mask
 from character_quest
 where character_id = $1
 order by quest_id;
@@ -1496,7 +1500,8 @@ incoming as (
     done_mask smallint,
     progress bigint[],
     quest_ms_left integer,
-    objective_ms_left integer[]
+    objective_ms_left integer[],
+    kill_mask smallint[]
   )
 ),
 gone as (
@@ -1518,7 +1523,8 @@ put as (
     done_mask,
     progress,
     quest_ms_left,
-    objective_ms_left
+    objective_ms_left,
+    kill_mask
   )
   select
     saved.character_id,
@@ -1530,7 +1536,8 @@ put as (
     incoming.done_mask,
     incoming.progress,
     incoming.quest_ms_left,
-    incoming.objective_ms_left
+    incoming.objective_ms_left,
+    incoming.kill_mask
   from saved
   cross join incoming
   on conflict (character_id, quest_id) do update
@@ -1542,7 +1549,8 @@ put as (
     done_mask = excluded.done_mask,
     progress = excluded.progress,
     quest_ms_left = excluded.quest_ms_left,
-    objective_ms_left = excluded.objective_ms_left
+    objective_ms_left = excluded.objective_ms_left,
+    kill_mask = excluded.kill_mask
   where (
     character_quest.state,
     character_quest.completed_at,
@@ -1551,7 +1559,8 @@ put as (
     character_quest.done_mask,
     character_quest.progress,
     character_quest.quest_ms_left,
-    character_quest.objective_ms_left
+    character_quest.objective_ms_left,
+    character_quest.kill_mask
   ) is distinct from (
     excluded.state,
     excluded.completed_at,
@@ -1560,7 +1569,8 @@ put as (
     excluded.done_mask,
     excluded.progress,
     excluded.quest_ms_left,
-    excluded.objective_ms_left
+    excluded.objective_ms_left,
+    excluded.kill_mask
   )
 )
 select character_id from saved;

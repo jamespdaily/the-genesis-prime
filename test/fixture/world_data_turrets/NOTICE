@@ -1,0 +1,6 @@
+test/fixture/world_data_turrets/spawn.tsv holds the header and rows 29178 and 29179 of spawn.tsv of
+the wildstar-knowledge world-data (https://github.com/jamespdaily/wildstar-knowledge, path
+world-data/spawn.tsv), copied as they are, under that repository's licence, the GNU Affero General
+Public License, version 3 (the same as this project's). The tests import it as the world database's
+own rows: the two Exile Sim-Turrets (Creature2 73494, unit type 13) of the Novice training
+simulation.

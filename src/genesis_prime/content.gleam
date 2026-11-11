@@ -318,8 +318,17 @@ fn read(
   }
   // A kill objective's creature with no stored spawn in its marker's world stands in
   // the marker's circle; the placed rows are checked with the stored ones.
-  let placed =
-    objective_spawn.place(tables:, stored: rows, factions: factions_for_spawns)
+  // With no kinds taken the load has refusals and starts nothing, so nothing is placed.
+  let placed = case kinds_for_spawns {
+    Ok(kinds) ->
+      objective_spawn.place(
+        tables:,
+        stored: rows,
+        factions: factions_for_spawns,
+        kinds:,
+      )
+    Error(..) -> objective_spawn.Placed(rows: [], skipped: [])
+  }
   let selection = case kinds_for_spawns {
     Ok(kinds) ->
       spawn.select(
