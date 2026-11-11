@@ -67,6 +67,7 @@ import genesis_prime/message/disconnect_reason.{
   AccountDisconnected, LostUserServer,
 }
 import genesis_prime/message/enter_world
+import genesis_prime/message/experience_gained
 import genesis_prime/message/float32
 import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/item_move
@@ -106,7 +107,9 @@ import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/sitting_bot
 import genesis_prime/store.{type AccountId, AccountId}
+import genesis_prime/table/id.{XpPerLevelId}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/xp_per_level
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
@@ -123,6 +126,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/system
 import gleam/result
+import item_bot
 import log_capture
 import login_client
 import login_support
@@ -4249,6 +4253,31 @@ fn press_until_dead(
   beast beast: Int,
   cast_id cast_id: Int,
 ) -> #(BitArray, List(Int)) {
+  let #(have, healths, _) =
+    press_until_dead_reading(
+      time:,
+      game:,
+      have:,
+      bag_index:,
+      cast_ms:,
+      lingers_ms:,
+      beast:,
+      cast_id:,
+    )
+  #(have, healths)
+}
+
+/// As `press_until_dead`, with every frame the presses were answered with, in order.
+fn press_until_dead_reading(
+  time time: driven_time.Time,
+  game game: game_client.Game,
+  have have: BitArray,
+  bag_index bag_index: Int,
+  cast_ms cast_ms: Int,
+  lingers_ms lingers_ms: Int,
+  beast beast: Int,
+  cast_id cast_id: Int,
+) -> #(BitArray, List(Int), List(Frame)) {
   press_loop(
     time:,
     game:,
@@ -4259,6 +4288,7 @@ fn press_until_dead(
     beast:,
     cast_id:,
     healths: [],
+    seen: [],
   )
 }
 
@@ -4272,9 +4302,11 @@ fn press_loop(
   beast beast: Int,
   cast_id cast_id: Int,
   healths healths: List(Int),
-) -> #(BitArray, List(Int)) {
+  seen seen: List(Frame),
+) -> #(BitArray, List(Int), List(Frame)) {
   let #(frames, have) =
     press_and_fire(time:, game:, have:, bag_index:, cast_ms:, cast_id:)
+  let seen = list.append(seen, frames)
   assert game_client.health_in(frames:) != []
     || game_client.missed_in(frames:) != []
     as "the press's hit or miss is written once the clock has fired its timer"
@@ -4308,11 +4340,12 @@ fn press_loop(
         #(beast, True),
       )
         as "the killing hit is followed by the Beast's 0x88c"
-      #(have, healths)
+      #(have, healths, list.append(seen, more))
     }
     Ok(_) | Error(Nil) -> {
       driven_time.advance(time:, ms: lingers_ms)
       let #(later, have) = game_client.read_until_pong(game:, have:, number: 3)
+      let seen = list.append(seen, later)
       assert holds_a_finish(frames: list.append(frames, later))
         as "the cast of the press has finished when the next press comes"
       press_loop(
@@ -4325,6 +4358,7 @@ fn press_loop(
         beast:,
         cast_id: cast_id + 1,
         healths:,
+        seen:,
       )
     }
   }
@@ -5194,6 +5228,388 @@ pub fn a_timed_quest_is_botched_over_the_connection_test() -> Nil {
     as "the quest row is read"
   assert saved.rows == [#(4, None)]
     as "the botch is saved: state 4, which holds no time left"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+// ---- a bot plays the items, the vendor and the levels ----
+
+/// The Item2 the bot buys, splits, moves, sells and buys back: it stacks to 50 and a
+/// lot is 1 item (`vendor_purchase_test`'s rows), and the client shows 67 credits for it
+/// at the multiplier 1.0 (`vendor.start_zone_prices`).
+const stimpack = 14_838
+
+const stimpack_cost = 67
+
+/// What Supplier Ingavak pays for one: the sell base 10 at his multiplier 1.0
+/// (`item_price_test`).
+const stimpack_sells_for = 10
+
+/// The Item2 the bot buys a lot of and deletes: a lot is 5 items at 13 credits each
+/// (`vendor_purchase_test`: 20791 stacks to 99, buyFromVendorStackCount 5).
+const bandage = 20_791
+
+const bandage_lot_cost = 65
+
+/// A slot of the inventory (location 1).
+fn in_bags(bag_index bag_index: Int) -> item_place.ItemPlace {
+  item_place.ItemPlace(location: 1, bag_index:)
+}
+
+/// The chest's slot among the worn items: bag index 0, the lowest bit of its slot flags
+/// (`inventory_test`).
+const chest_slot = item_place.ItemPlace(location: 0, bag_index: 0)
+
+pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_finds_it_all_after_a_relog_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use tables <- on_rows_without_paralytic_surges_recharge()
+  // Supplier Ingavak (Creature2 28739) stands 3.0 from the player's edge, behind the
+  // player, within the 9.0 a vendor request is answered up to (opcode.0x7ea); the Beast
+  // stands 3 m ahead, where the fight of the medic's test strikes it. The player is an
+  // Exile (faction 167), to whom his faction 171 is friendly (Faction2Relationship 771),
+  // with 1000 credits and one experience point less than level 2 asks for
+  // (XpPerLevel row 2's minXpForLevel).
+  let time = driven_time.new()
+  let vendors =
+    vendor_support.stocking_items(
+      creature_ids: [28_739],
+      items: vendor_support.ingavaks_items,
+    )
+  let selection =
+    spawn.select(
+      rows: [
+        spawn.Row(
+          ..spawn_support.beast_row(number: 10_706),
+          creature_id: 28_739,
+          display_info_id: 29_772,
+          outfit_info_id: 9029,
+          faction_id: 171,
+          base_faction_id: 171,
+        ),
+      ],
+      tables: character_tables.content_tables(),
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.kinds(),
+      vendors:,
+    )
+  assert selection.refusals == [] as "the row passes the spawn checks"
+  let assert Ok(spawns) = dict.get(selection.worlds, 3460)
+  let assert Ok(selected) = dict.get(spawns.by_id, spawn_id.SpawnId(10_706))
+  let ingavak =
+    spawn.Spawn(
+      ..selected,
+      place: beast_place(
+        x: 1.5,
+        z: 3.5 +. { 3.0 +. 1.2 +. selected.combat.hit_radius },
+      ),
+    )
+  let started =
+    login_support.start_with(change: fn(settings) {
+      let settings = driven_by(settings:, time:)
+      server.Settings(
+        ..settings,
+        game: server.Served(
+          ..settings.game,
+          settings: connection_state.Settings(
+            ..settings.game.settings,
+            tables:,
+            vendors:,
+          ),
+        ),
+        world: server.World(
+          ..settings.world,
+          spawns: spawn_support.key_in(
+            world_id: 1387,
+            spawns: [
+              ingavak,
+              spawn_support.beast_without_deflect_at(
+                number: 1,
+                place: beast_place(x: 1.5, z: 0.5),
+              ),
+            ],
+            respawn_ms: 1000,
+          ),
+        ),
+      )
+    })
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 1,
+    )
+  let assert Ok(level_two) = xp_per_level.get(tables:, id: XpPerLevelId(2))
+    as "XpPerLevel has a row 2"
+  let experience_before = level_two.min_xp_for_level - 1
+  let assert Ok(_) =
+    pog.query(
+      "update character set faction_id = 167, experience = $2 where character_id = $1",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.parameter(pog.int(experience_before))
+    |> pog.execute(pool)
+    as "the character is of the faction Ingavak is friendly to, one point short of level 2"
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_currency (character_id, currency_type_id, amount) values ($1, 1, $2)",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.parameter(pog.int(credits_before_the_buy))
+    |> pog.execute(pool)
+    as "the character holds credits"
+  send_play(game:, character_id: character)
+  let #(entry, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+      && list.length(game_client.creatures_created_in(frames:)) >= 2
+    })
+  assert credits_in_entry(frames: entry) == credits_before_the_buy
+    as "the entry carries the credits the character holds"
+  assert entry_stat(entry:, stat_id: 10) == 1
+    as "the entry's 0x262 shows level 1"
+  let shown = game_client.creatures_created_in(frames: entry)
+  let assert Ok(vendor) =
+    list.find(shown, fn(unit) { unit.creature_id == 28_739 })
+    as "Supplier Ingavak is in sight"
+  let assert Ok(beast) =
+    list.find(shown, fn(unit) { unit.creature_id != 28_739 })
+    as "the Beast is in sight"
+  let assert Ok(chest) =
+    list.find(item_bot.answer_in(frames: entry).added, fn(held) {
+      held.item.location == chest_slot.location
+      && held.item.bag_index == chest_slot.bag_index
+    })
+    as "the creation loadout wears a chest piece"
+  let chest = chest.item
+  // 1: buys 3 of the stimpack. A lot is 1 item, so 3 lots; a new stack goes to the
+  // lowest empty slot (`vendor_purchase_test`), for the credits the window shows.
+  let #(window, have) =
+    item_bot.open_vendor(game:, have:, unit_id: vendor.unit_id)
+  let assert Ok(row) =
+    list.find(window.items, fn(row) { row.entry_id == stimpack })
+    as "the window shows the stimpack"
+  assert window.buy_multiplier == float32.to_bits(1.0)
+    as "the window's multiplier is the 1.0 at which the client shows 67 for the stimpack (vendor.start_zone_prices)"
+  let #(bought, have) =
+    item_bot.buy(game:, have:, unique_id: row.unique_id, quantity: 3)
+  assert bought.refused == [] as "the buy is allowed"
+  assert list.map(bought.currencies, fn(told) { #(told.kind, told.total) })
+    == [#(0, credits_before_the_buy - 3 * stimpack_cost)]
+    as "opcode.0x919: kind 0 sets the total, the credits less 3 stimpacks"
+  let assert [added] = bought.added as "3 lots of 1 item fill one new stack"
+  let stack = added.item
+  assert #(stack.item_id, stack.location, stack.bag_index, stack.stack_count)
+    == #(stimpack, 1, 0, 3)
+    as "vendor_purchase_test: a stack of 3 at the lowest empty slot of the inventory"
+  // 2: splits 1 off into an empty slot.
+  let #(split, have) =
+    item_bot.split(
+      game:,
+      have:,
+      item_guid: stack.item_guid,
+      to: in_bags(5),
+      count: 1,
+    )
+  assert split.refused == [] as "the split is allowed"
+  assert list.map(split.count_changed, fn(changed) {
+      #(changed.item_guid, changed.count)
+    })
+    == [#(stack.item_guid, 2)]
+    as "opcode.0x17f: the stack keeps 2"
+  let assert [split_off] = split.added as "the one split off is a new item"
+  let single = split_off.item
+  assert #(
+      single.item_id,
+      single.location,
+      single.bag_index,
+      single.stack_count,
+    )
+    == #(stimpack, 1, 5, 1)
+    as "opcode.0x17d: the split goes to the slot the bot named, with the count it named"
+  // 3: moves the one to another empty slot.
+  let #(moved, have) =
+    item_bot.move(game:, have:, from: in_bags(5), to: in_bags(7))
+  assert moved.refused == [] as "the move is allowed"
+  assert list.map(moved.moved, fn(moved) {
+      #(moved.item_guid, item_bot.place_of(moved.place))
+    })
+    == [#(single.item_guid, in_bags(7))]
+    as "opcode.0x569: the item is at the new slot"
+  // 4: sells the one: the vendor pays 10, and the sale is the Buyback list's first.
+  let #(sold, have) =
+    item_bot.sell(game:, have:, place: in_bags(7), quantity: 1)
+  assert sold.refused == [] as "the sale is allowed"
+  assert list.map(sold.currencies, fn(told) { #(told.kind, told.total) })
+    == [
+      #(0, credits_before_the_buy - 3 * stimpack_cost + stimpack_sells_for),
+    ]
+    as "opcode.0x919: the credits plus the 10 the vendor pays"
+  assert list.map(sold.removed, fn(removed) {
+      #(removed.item_guid, removed.reason)
+    })
+    == [#(single.item_guid, 7)]
+    as "opcode.0x148 with the reason 7, Vendor"
+  let assert [listed] = sold.buyback_added
+    as "the sale is added to the Buyback list"
+  assert #(
+      listed.item_id,
+      listed.quantity,
+      listed.amount_1,
+      listed.currency_type_1,
+    )
+    == #(stimpack, 1, stimpack_sells_for, 1)
+    as "opcode.0xba.price: the entry holds the item, its count, the credits paid and the currency type 1"
+  // 5: buys it back for what the entry holds.
+  let #(back, have) =
+    item_bot.buy_back(game:, have:, buyback_id: listed.buyback_id)
+  assert back.refused == [] as "the buy back is allowed"
+  assert list.map(back.currencies, fn(told) { #(told.kind, told.total) })
+    == [#(0, credits_before_the_buy - 3 * stimpack_cost)]
+    as "opcode.0xba.price: a buy back costs what its entry holds, so the credits are as before the sale"
+  assert back.buyback_removed == [listed.buyback_id]
+    as "opcode.0xbd: the entry leaves the Buyback list"
+  let assert [back_added] = back.added as "the item comes back as a new item"
+  let bought_back = back_added.item
+  assert #(bought_back.item_id, bought_back.location, bought_back.stack_count)
+    == #(stimpack, 1, 1)
+    as "the item is back in the inventory, one of it"
+  // 6: buys a lot of bandages and deletes it.
+  let assert Ok(bandage_row) =
+    list.find(window.items, fn(row) { row.entry_id == bandage })
+    as "the window shows the bandage"
+  let #(lot, have) =
+    item_bot.buy(game:, have:, unique_id: bandage_row.unique_id, quantity: 1)
+  assert lot.refused == [] as "the buy is allowed"
+  assert list.map(lot.currencies, fn(told) { #(told.kind, told.total) })
+    == [
+      #(0, credits_before_the_buy - 3 * stimpack_cost - bandage_lot_cost),
+    ]
+    as "opcode.0x919: the credits less the 65 of a lot"
+  let assert [lot_added] = lot.added as "a lot is one new stack"
+  let bandages = lot_added.item
+  assert #(bandages.item_id, bandages.stack_count) == #(bandage, 5)
+    as "a lot of 20791 is 5 items"
+  let #(deleted, have) =
+    item_bot.delete(
+      game:,
+      have:,
+      place: item_place.ItemPlace(
+        location: bandages.location,
+        bag_index: bandages.bag_index,
+      ),
+    )
+  assert deleted.refused == [] as "the delete is allowed"
+  assert list.map(deleted.removed, fn(removed) {
+      #(removed.item_guid, removed.reason)
+    })
+    == [#(bandages.item_guid, 21)]
+    as "opcode.0x149: the item goes with the reason 21, Delete"
+  // 7 and 8: takes the chest off into an empty slot and puts it back on.
+  let #(off, have) =
+    item_bot.move(game:, have:, from: chest_slot, to: in_bags(10))
+  assert off.refused == [] as "the chest comes off"
+  assert list.map(off.moved, fn(moved) {
+      #(moved.item_guid, item_bot.place_of(moved.place))
+    })
+    == [#(chest.item_guid, in_bags(10))]
+    as "opcode.0x182: the chest is in the bag slot it was moved to"
+  let #(on, have) =
+    item_bot.move(game:, have:, from: in_bags(10), to: chest_slot)
+  assert on.refused == [] as "the chest goes on"
+  assert list.map(on.moved, fn(moved) {
+      #(moved.item_guid, item_bot.place_of(moved.place))
+    })
+    == [#(chest.item_guid, chest_slot)]
+    as "opcode.0x182: the chest is in the chest slot again"
+  // 9: kills the Beast with the Medic's first ability, as the medic's test does.
+  let own = game_client.unit_create_player_in(frames: entry)
+  let own_place = game_client.placed_at(unit: own)
+  face(
+    game:,
+    yaw: game_client.yaw_toward(from: #(own_place.0, own_place.2), target: #(
+      1.5,
+      0.5,
+    )),
+    clock: 100,
+  )
+  let #(have, _, fight) =
+    press_until_dead_reading(
+      time:,
+      game:,
+      have:,
+      bag_index: 2,
+      cast_ms: paralytic_surge_cast_ms,
+      lingers_ms: paralytic_surge_lingers_ms,
+      beast: beast.unit_id,
+      cast_id: 1,
+    )
+  let #(fight, have) = case
+    list.any(fight, fn(frame) { frame.message_id == 0x01AC })
+  {
+    True -> #(fight, have)
+    False -> {
+      let #(more, have) =
+        game_client.read_until(game:, have:, found: fn(more) {
+          list.any(more, fn(frame) { frame.message_id == 0x01AC })
+        })
+      #(list.append(fight, more), have)
+    }
+  }
+  let assert [Frame(body: gain, ..)] =
+    list.filter(fight, fn(frame) { frame.message_id == 0x01AC })
+    as "the kill sends one 0x1AC"
+  let assert Ok(gained) = experience_gained.decode(gain)
+    as "the client's reader reads the 0x1AC"
+  assert gained.source_kind == 2 && gained.source_unit_id == beast.unit_id
+    as "opcode.0x1ac: kind 2, KillCreature, naming the Beast"
+  assert gained.experience > 0 as "the kill gives experience"
+  assert list.contains(
+    game_client.fight_in(frames: fight),
+    game_client.LevelIs(unit_id: own.unit_id, level: 2),
+  )
+    as "opcode.0x938: stat 10 of the player is 2, as the experience crosses level 2's minXpForLevel"
+  // 10: camps and plays the same character again.
+  let #(second_entry, _) =
+    game_client.camp_and_play(game:, have:, character_id: character)
+  assert entry_stat(entry: second_entry, stat_id: 10) == 2
+    as "opcode.0x262: the entry shows level 2"
+  let assert [Frame(body: state_body, ..)] =
+    list.filter(second_entry, fn(frame) { frame.message_id == 0x025E })
+    as "the entry sends one 0x25E"
+  let assert Ok(state) = player_character_state.decode(state_body)
+    as "the client's reader reads the 0x25E"
+  assert state.experience == experience_before + gained.experience
+    as "opcode.0x25e: the experience the character had and the kill's 0x1AC gave"
+  assert credits_in_entry(frames: second_entry)
+    == credits_before_the_buy - 3 * stimpack_cost - bandage_lot_cost
+    as "opcode.0x25e: the credits after the buy, the sale, the buy back and the lot"
+  let held =
+    list.map(item_bot.answer_in(frames: second_entry).added, fn(held) {
+      held.item
+    })
+  let in_the_bags =
+    list.filter_map(held, fn(item) {
+      case item.location == 1 {
+        True -> Ok(#(item.bag_index, item.item_id, item.stack_count))
+        False -> Error(Nil)
+      }
+    })
+    |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+  assert in_the_bags
+    == [
+      #(stack.bag_index, stimpack, 2),
+      #(bought_back.bag_index, stimpack, 1),
+    ]
+    as "the split's stack of 2 at its slot and the bought-back one: the moved, sold and deleted items are not in the bags"
+  assert list.any(held, fn(item) {
+    item.location == chest_slot.location
+    && item.bag_index == chest_slot.bag_index
+    && item.item_id == chest.item_id
+  })
+    as "the chest is worn"
   game_client.close(game:)
   login_support.stop(started)
 }
