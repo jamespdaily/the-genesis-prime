@@ -282,6 +282,7 @@ fn pressed_with(
             cast_time_ms: 2000,
             min_range: 0.0,
             max_range: 5.0,
+            flags: 0,
           ),
           checklist_index: 0,
           link: activate.NoLink,

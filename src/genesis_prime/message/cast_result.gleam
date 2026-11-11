@@ -50,6 +50,8 @@ pub type CastResult {
   CasterVitalCostResource5
   /// The value 57, the fact file's `Spell.CodeEnumCastResult`.
   CasterCannotBeDead
+  /// The value 89, the fact file's `0x1403b44b0`.
+  TargetGroup
   /// The value 90, the fact file's `Spell.CodeEnumCastResult`.
   TargetUnknown
   /// The value 91, the fact file's `Spell.CodeEnumCastResult`.
@@ -119,6 +121,7 @@ pub fn to_value(value: CastResult) -> Int {
     CasterVitalCostResource3 -> 53
     CasterVitalCostResource5 -> 55
     CasterCannotBeDead -> 57
+    TargetGroup -> 89
     TargetUnknown -> 90
     NoTarget -> 91
     TargetFaction -> 99
@@ -168,6 +171,7 @@ pub fn from_value(number: Int) -> CastResult {
     53 -> CasterVitalCostResource3
     55 -> CasterVitalCostResource5
     57 -> CasterCannotBeDead
+    89 -> TargetGroup
     90 -> TargetUnknown
     91 -> NoTarget
     99 -> TargetFaction

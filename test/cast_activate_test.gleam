@@ -332,6 +332,7 @@ fn creature_with(min min: Float, max max: Float) -> activate.Creature {
     cast_time_ms: 2000,
     min_range: min,
     max_range: max,
+    flags: 0,
   )
 }
 
@@ -382,7 +383,13 @@ pub fn activate_go_raises_activated_test() -> Nil {
     as "the go raises Activated for the unit and its creature, once"
   // A creature whose columns pass nobody casts the default spell, Spell4 8.
   let plain =
-    Creature(columns: [], cast_time_ms: 500, min_range: 0.0, max_range: 0.0)
+    Creature(
+      columns: [],
+      cast_time_ms: 500,
+      min_range: 0.0,
+      max_range: 0.0,
+      flags: 0,
+    )
   let assert Ok(#(state, pressed)) =
     right_click(
       state: cast.new(),
@@ -522,7 +529,13 @@ pub fn activate_range_is_edge_to_edge_test() -> Nil {
   // Spell 8 is no column of this creature: the Spell4 row's limits hold, and its
   // targetMaxRange is 0, so the units' edges must touch.
   let plain =
-    Creature(columns: [], cast_time_ms: 500, min_range: 3.0, max_range: 3.0)
+    Creature(
+      columns: [],
+      cast_time_ms: 500,
+      min_range: 3.0,
+      max_range: 3.0,
+      flags: 0,
+    )
   assert range_answer(activations:, creature: plain, east: 0.75, up: 0.0)
     == Ok(Nil)
     as "Spell4 8's targetMaxRange is 0: edges that touch are in range, whatever the creature's own range says of other spells"
@@ -703,6 +716,7 @@ pub fn activate_refuses_unknown_and_unbuilt_spells_test() -> Nil {
       cast_time_ms: 2000,
       min_range: 0.0,
       max_range: 3.0,
+      flags: 0,
     )
   }
   let refused = fn(activations, creature) {
@@ -841,6 +855,7 @@ fn behind(prerequisite_id prerequisite_id: Int) -> Target {
       cast_time_ms: 2000,
       min_range: 0.0,
       max_range: 3.0,
+      flags: 0,
     ),
     east: 1.0,
     up: 0.0,
@@ -894,6 +909,7 @@ pub fn activate_logs_each_unread_prerequisite_type_once_test() -> Nil {
           cast_time_ms: 2000,
           min_range: 0.0,
           max_range: 3.0,
+          flags: 0,
         ),
         east: 1.0,
         up: 0.0,

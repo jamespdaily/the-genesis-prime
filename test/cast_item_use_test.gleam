@@ -426,7 +426,7 @@ pub fn the_grenade_go_raises_activated_for_the_shack_test() -> Nil {
     as "the go raises Activated for the shack once, marked as an item's cast"
 }
 
-pub fn the_grenade_at_a_unit_outside_its_cast_group_is_refused_100_test() -> Nil {
+pub fn the_grenade_at_a_unit_outside_its_cast_group_is_refused_89_test() -> Nil {
   use <- owned_test.run(10_000)
   assert refusal_of(taken: use_item_at(
       state: cast.new(),
@@ -435,8 +435,12 @@ pub fn the_grenade_at_a_unit_outside_its_cast_group_is_refused_100_test() -> Nil
       target: shown(creature_id: a_farmhand, metres: 10.0),
       at: 1000,
     ))
-    == #(26_663, 100)
-    as "Spell4Base 13157's cast group is TargetGroup 1691, which does not hold Creature2 17107: TargetIsNotUseable (100), a server choice, with the item's spell"
+    == #(26_663, 89)
+    as "Spell4Base 13157's cast group is TargetGroup 1691, which does not hold Creature2 17107: CheckCastActivateSpell (0x1403b44b0) refuses it 89 (TargetGroup), with the item's spell"
+}
+
+pub fn the_grenade_at_another_players_unit_is_refused_100_test() -> Nil {
+  use <- owned_test.run(10_000)
   assert refusal_of(taken: use_item_at(
       state: cast.new(),
       caster: throwing(),
@@ -445,7 +449,57 @@ pub fn the_grenade_at_a_unit_outside_its_cast_group_is_refused_100_test() -> Nil
       at: 1000,
     ))
     == #(26_663, 100)
-    as "another player's unit is in no creature group"
+    as "a server choice: the activate cast's target is a creature, so another player's unit is TargetIsNotUseable (100)"
+}
+
+pub fn a_spell_with_no_cast_group_at_a_creature_with_flags_bit_0_is_refused_89_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let caster = standing(level: 20, quests: quest_support.log_of(rows: []))
+  assert refusal_of(taken: use_item_at(
+      state: cast.new(),
+      caster:,
+      item: generic_item,
+      target: shown(creature_id: a_slaver_shack, metres: 4.0),
+      at: 1000,
+    ))
+    == #(1545, 89)
+    as "Spell4 1545 has no cast group and Creature2 17397's flags (16385) has bit 0: CheckCastActivateSpell refuses it 89"
+}
+
+pub fn a_creature_whose_activate_spell_is_the_items_spell_passes_the_cast_group_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let own = fn(spell4_id, creature_id) {
+    let target = shown(creature_id:, metres: 4.0)
+    let assert Usable(creature:, ..) = target as "shown gives a creature"
+    Usable(
+      ..target,
+      creature: activate.Creature(..creature, columns: [
+        activate.Column(prerequisite_id: 0, spell4_id:),
+      ]),
+    )
+  }
+  let assert Ok(#(_, outside)) =
+    use_item_at(
+      state: cast.new(),
+      caster: throwing(),
+      item: grenade,
+      target: own(26_663, a_farmhand),
+      at: 1000,
+    )
+    as "the use is taken"
+  assert support.refusal_results(effects: outside) == []
+    as "the farmhand is outside TargetGroup 1691, but its activate spell is the grenade's: the check passes whatever the group"
+  let assert Ok(#(_, flagged)) =
+    use_item_at(
+      state: cast.new(),
+      caster: standing(level: 20, quests: quest_support.log_of(rows: [])),
+      item: generic_item,
+      target: own(1545, a_slaver_shack),
+      at: 1000,
+    )
+    as "the use is taken"
+  assert support.refusal_results(effects: flagged) == []
+    as "the shack has flags bit 0, but its activate spell is Spell4 1545: it passes whatever the flags"
 }
 
 pub fn the_grenade_with_no_target_is_refused_91_test() -> Nil {

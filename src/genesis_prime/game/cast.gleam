@@ -1358,8 +1358,8 @@ fn item_used(
 
 /// The cast of an item's spell, which the item's checks let through, at the unit the
 /// press names (`item_used`): refused as not built when the spell has no Activate effect,
-/// refused 91 for a unit not shown and 100 for another player or a unit outside the spell's
-/// cast group, else the activate cast of the unit.
+/// refused 91 for a unit not shown, 100 for another player and 89 for a unit the spell's cast group
+/// refuses (`activate.passes_cast_group`), else the activate cast of the unit.
 fn item_spell_cast(
   cast cast: State,
   caster caster: Caster,
@@ -1406,31 +1406,109 @@ fn item_spell_cast(
         activate.Unseen -> refusal(spell4_id, cast_result.NoTarget)
         activate.AnotherPlayer ->
           refusal(spell4_id, cast_result.TargetIsNotUseable)
-        activate.Usable(creature_id:, creature:, body: unit, alive:, ..) -> {
-          use <- bool.lazy_guard(
-            when: cast_group_id != 0 && !in_cast_group(cast_group_id, unit_id),
-            return: fn() { refusal(spell4_id, cast_result.TargetIsNotUseable) },
-          )
-          activation_in_range(
-            cast:,
-            caster:,
-            caster_radius:,
-            now_ms:,
-            client_cast_id:,
-            unit_id:,
-            creature_id:,
-            creature:,
-            target: unit,
-            alive:,
-            by_item: True,
-            spell:,
-            cast_time_ms: spell.cast_time_ms,
-            effects:,
-            dropped_signals:,
-            limits:,
-          )
-        }
+        activate.Usable(
+          creature_id:,
+          creature:,
+          checklist_index:,
+          body: unit,
+          alive:,
+          ..,
+        ) ->
+          case
+            item_cast_group(
+              cast:,
+              caster:,
+              client_cast_id:,
+              unit_id:,
+              spell4_id:,
+              cast_group_id:,
+              creature:,
+              checklist_index:,
+              activations:,
+              in_cast_group:,
+            )
+          {
+            Error(taken) -> taken
+            Ok(Nil) ->
+              activation_in_range(
+                cast:,
+                caster:,
+                caster_radius:,
+                now_ms:,
+                client_cast_id:,
+                unit_id:,
+                creature_id:,
+                creature:,
+                target: unit,
+                alive:,
+                by_item: True,
+                spell:,
+                cast_time_ms: spell.cast_time_ms,
+                effects:,
+                dropped_signals:,
+                limits:,
+              )
+          }
       }
+  }
+}
+
+/// The client's cast-group check of an item's spell at a creature (`activate.passes_cast_group`):
+/// `Ok` when the cast goes on, else the answer to the press.
+fn item_cast_group(
+  cast cast: State,
+  caster caster: Caster,
+  client_cast_id client_cast_id: Int,
+  unit_id unit_id: Int,
+  spell4_id spell4_id: Int,
+  cast_group_id cast_group_id: Int,
+  creature creature: activate.Creature,
+  checklist_index checklist_index: Int,
+  activations activations: activate.Activations,
+  in_cast_group in_cast_group: fn(Int, Int) -> Bool,
+) -> Result(Nil, Result(#(State, List(Effect)), Refusal)) {
+  let picked =
+    activate.pick(
+      creature:,
+      default_spell: activations.default_spell,
+      check: activate.checker(
+        activations:,
+        subject: subject_for_use(cast:, caster:, unit_id:, checklist_index:),
+      ),
+    )
+  case
+    activate.passes_cast_group(
+      spell4_id:,
+      cast_group_id:,
+      creature:,
+      picked:,
+      in_cast_group: in_cast_group(_, unit_id),
+    )
+  {
+    activate.InCastGroup -> Ok(Nil)
+    activate.OutsideCastGroup ->
+      Error(
+        Ok(
+          #(cast, [
+            refused(
+              client_cast_id:,
+              spell4_id:,
+              result: cast_result.TargetGroup,
+            ),
+          ]),
+        ),
+      )
+    activate.CastGroupUnread(prerequisite_type:) ->
+      Error(not_built_refusal(
+        cast:,
+        client_cast_id:,
+        spell4_id:,
+        key: UnreadPrerequisite(prerequisite_type:),
+        result: cast_result.IllegalSpellCast,
+        why: "of a creature activates through a prerequisite of the type "
+          <> int.to_string(prerequisite_type)
+          <> ", which the server does not read",
+      ))
   }
 }
 
