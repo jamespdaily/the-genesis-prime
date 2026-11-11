@@ -181,6 +181,52 @@ pub fn activate_message(
   }
 }
 
+/// The player's 0xb3, the use of a unit with no activate spell (genesis_prime/game/cast
+/// `activate_unit`), whose go the rule raises at once: the connection counts it for the
+/// objectives as an activate cast's go is counted.
+pub fn activate_unit_message(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+) -> client_connection.Handled(Session) {
+  let tables = session.settings.tables
+  case
+    cast.activate_unit(
+      cast: entered.cast,
+      body: inner.body,
+      caster: caster_of(tables:, entered:),
+      activations: connection_state.activations_of(session:),
+      creature_of: creature_shown(tables:, picture: entered.shown),
+    )
+  {
+    Ok(effects) -> carry_cast(session:, now:, effects:)
+    Error(refusal) ->
+      connection_state.end_for(session:, now:, text: cast.describe(refusal))
+  }
+}
+
+/// The Creature2 id and activate columns of the creature or object a unit id names in
+/// the units the client shows, or `Error(Nil)` for another player or no unit.
+fn creature_shown(
+  tables tables: table_store.Tables,
+  picture picture: shown.Picture,
+) -> fn(Int) -> Result(#(Int, activate.Creature), Nil) {
+  fn(unit_id) {
+    use one <- result.try(dict.get(picture, unit_id))
+    case one {
+      shown.ShownPlayer -> Error(Nil)
+      shown.ShownObject(creature_id:, ..)
+      | shown.ShownCreature(creature_id:, ..) ->
+        // The Creature2 row is in the tables, since the unit's 0x262 was made from it.
+        creature2.get(tables:, id: creature_id)
+        |> result.map(fn(row) {
+          #(creature_id.value, activate.creature_of(row:))
+        })
+    }
+  }
+}
+
 /// What the unit a right-click names is to the player, from the units its client shows:
 /// a static object with its creature's activate row and body, a creature that fights,
 /// another player or nothing shown.

@@ -579,6 +579,7 @@ fn routed(
     | Ok(routing.Chat(..))
     | Ok(routing.Cast(..))
     | Ok(routing.Activation)
+    | Ok(routing.UnitActivation)
     | Ok(routing.Life(..))
     | Ok(routing.Innate(..))
     | Ok(routing.Interaction(..))
@@ -723,6 +724,13 @@ fn world_carried(
                   )
                 Ok(routing.Activation) ->
                   connection_casting.activate_message(
+                    session:,
+                    now:,
+                    entered:,
+                    inner: whole,
+                  )
+                Ok(routing.UnitActivation) ->
+                  connection_casting.activate_unit_message(
                     session:,
                     now:,
                     entered:,

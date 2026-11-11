@@ -17,6 +17,7 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/character_select_start.{CharacterSelectStart}
 import genesis_prime/message/choose_realm.{ChooseRealm}
 import genesis_prime/message/choose_resurrection.{ChooseResurrection}
+import genesis_prime/message/client_activate_unit.{ClientActivateUnit}
 import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
 import genesis_prime/message/client_message
 import genesis_prime/message/client_option.{ClientOption}
@@ -352,6 +353,12 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       client_message.CastActivate(message: CastActivate(
         client_cast_id: 0x80002804,
         target_unit_id: 0x12345,
+      )),
+    ),
+    #(
+      0x00B3,
+      client_message.ClientActivateUnit(message: ClientActivateUnit(
+        unit_id: 0x12345,
       )),
     ),
     #(

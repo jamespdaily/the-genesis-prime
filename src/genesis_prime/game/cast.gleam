@@ -558,6 +558,7 @@ import genesis_prime/message/cancel_cast.{type CancelCast}
 import genesis_prime/message/cast_ability
 import genesis_prime/message/cast_activate
 import genesis_prime/message/cast_result
+import genesis_prime/message/client_activate_unit
 import genesis_prime/message/client_side_interaction_result
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
@@ -1227,6 +1228,72 @@ pub fn activate(
   |> result.map(fn(taken) {
     settled(cast:, caster:, now:, own: [], step: fn() { taken })
   })
+}
+
+/// The caster's 0xb3, the client's use of a unit whose creature has no activate spell
+/// (`opcode.0xb3`, `0x14039d4a0`): no cast, no delay and no range, so the use is
+/// `Activated` at once. `creature_of` says what the unit the message names is, the id of
+/// its Creature2 row and what the row says of its activate cast, or `Error(Nil)` for a
+/// unit that is no creature or object the caster's client shows. The client sends 0xb3
+/// only when the creature's pick is spell 0 (`0x14039d510`), so a unit whose pick is a
+/// spell, or one the server cannot pick for, is logged and changes nothing.
+pub fn activate_unit(
+  cast cast: State,
+  body body: BitArray,
+  caster caster: Caster,
+  activations activations: activate.Activations,
+  creature_of creature_of: fn(Int) -> Result(#(Int, activate.Creature), Nil),
+) -> Result(List(Effect), Refusal) {
+  use used <- result.map(
+    client_activate_unit.decode(body)
+    |> client_connection.decoded(message_id: client_activate_unit.message_id)
+    |> result.map_error(NotDecoded),
+  )
+  let unit_id = used.unit_id
+  let declined = fn(why) {
+    [
+      Log(
+        level: LogWarning,
+        text: "the use of unit "
+          <> int.to_string(unit_id)
+          <> " (0xb3) "
+          <> why
+          <> ": it counts for nothing",
+      ),
+    ]
+  }
+  case creature_of(unit_id) {
+    Error(Nil) -> declined("names no creature or object the client shows")
+    Ok(#(creature_id, creature)) -> {
+      let subject =
+        prerequisite.Subject(
+          ..subject_of(cast:, caster:),
+          second_unit: Some(unit_id),
+          positions: prerequisite.NotPlaced,
+        )
+      case
+        activate.pick(
+          creature:,
+          default_spell: activations.default_spell,
+          check: activate.checker(activations:, subject:),
+        )
+      {
+        activate.NoActivateSpell -> [Activated(unit_id:, creature_id:)]
+        activate.Picked(spell4_id:) ->
+          declined(
+            "names a creature whose activate spell is "
+            <> int.to_string(spell4_id)
+            <> ", which the client casts with 0x97",
+          )
+        activate.Unread(prerequisite_type:) ->
+          declined(
+            "names a creature that activates through a prerequisite of the type "
+            <> int.to_string(prerequisite_type)
+            <> ", which the server does not read",
+          )
+      }
+    }
+  }
 }
 
 fn activation_pressed(

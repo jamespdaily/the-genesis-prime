@@ -82,6 +82,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/chat_zone_named.gleam",
       "src/genesis_prime/message/choose_realm.gleam",
       "src/genesis_prime/message/choose_resurrection.gleam",
+      "src/genesis_prime/message/client_activate_unit.gleam",
       "src/genesis_prime/message/client_control_echoed.gleam",
       "src/genesis_prime/message/client_control_granted.gleam",
       "src/genesis_prime/message/client_message.gleam",
