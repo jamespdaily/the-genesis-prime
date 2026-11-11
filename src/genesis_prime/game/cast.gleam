@@ -765,8 +765,9 @@ pub type Effect {
   /// (`opcode.0x8f5`, genesis_prime/client_connection `Stealth`).
   StealthChanged(stealthed: Bool)
   /// The go of an activate cast: the player activated the creature or static object
-  /// `unit_id`, of the Creature2 row `creature_id`.
-  Activated(unit_id: Int, creature_id: Int)
+  /// `unit_id`, of the Creature2 row `creature_id`, which lived when the press started the
+  /// cast or did not (`alive_at_press`).
+  Activated(unit_id: Int, creature_id: Int, alive_at_press: Bool)
   /// The first go of a cast of a quest button's spell (`shortcut`), by its Spell4 id.
   ShortcutCast(spell4_id: Int)
 }
@@ -927,6 +928,10 @@ pub type Activating {
     unit_id: Int,
     /// The Creature2 row of the unit.
     creature_id: Int,
+    /// Whether the unit lived at the press. The client cancels the cast only when its
+    /// target dies during it (`SetUnitDeathState` 0x14045e740), not when the target was
+    /// dead at the press.
+    alive_at_press: Bool,
     /// The spell's Activate rows, which the go lists on the unit.
     effects: List(activate.ActivateEffect),
   )
@@ -1458,7 +1463,9 @@ pub fn activate_unit(
               check: activate.checker(activations:, subject:),
             )
           {
-            activate.NoActivateSpell -> [Activated(unit_id:, creature_id:)]
+            activate.NoActivateSpell -> [
+              Activated(unit_id:, creature_id:, alive_at_press: True),
+            ]
             activate.Picked(spell4_id:) ->
               declined(
                 "names a creature whose activate spell is "
@@ -1691,6 +1698,7 @@ fn activation_in_range(
         client_cast_id:,
         unit_id:,
         creature_id:,
+        alive_at_press: alive,
         spell: activation_spell(spell:, cast_time_ms: creature.cast_time_ms),
         interaction: interaction_of(spell:),
         effects:,
@@ -1753,6 +1761,7 @@ fn activation_started(
   client_cast_id client_cast_id: Int,
   unit_id unit_id: Int,
   creature_id creature_id: Int,
+  alive_at_press alive_at_press: Bool,
   spell spell: Spell,
   interaction interaction: Interaction,
   effects effects: List(activate.ActivateEffect),
@@ -1767,7 +1776,7 @@ fn activation_started(
     spell:,
     primary_target: unit_id,
     role: Activation(
-      activating: Activating(unit_id:, creature_id:, effects:),
+      activating: Activating(unit_id:, creature_id:, alive_at_press:, effects:),
       interaction:,
     ),
     dropping: fn(cast) {
@@ -5491,8 +5500,8 @@ fn go(
         False -> #(cast, [])
       }
       let activated = case live.activation {
-        Some(Activating(unit_id:, creature_id:, ..)) -> [
-          Activated(unit_id:, creature_id:),
+        Some(Activating(unit_id:, creature_id:, alive_at_press:, ..)) -> [
+          Activated(unit_id:, creature_id:, alive_at_press:),
         ]
         None -> []
       }

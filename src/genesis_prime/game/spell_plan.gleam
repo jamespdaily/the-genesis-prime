@@ -4049,11 +4049,16 @@ fn global_cooldown_of(
   }
 }
 
-/// The mask bits of a target condition row that the activate cast accounts for: bit 0
-/// (alive or dead, read as `target_death`) and bits 1, 5, 6 and 7 (108, 116, 118, 120),
-/// which a creature seated on nothing passes, in the order CheckCastUnitTargetRange tests
-/// them (`0x1403b2240`). A mask bit outside these is a condition the server does not
-/// judge.
+/// The mask bits of a target condition row that the activate cast accounts for, in the
+/// order CheckCastUnitTargetRange tests them (`0x1403b2240`), each by what the server
+/// checks for it:
+/// - bit 0 (106, 107): the target's death, read as `target_death`;
+/// - bit 1 (108): the target is not in combat, which is the `InCombat` withheld check of
+///   the activate target (the client sends no cast at a creature in combat);
+/// - bits 6 and 7 (118, 120): pass, because no unit the server shows is seated on another;
+/// - bit 5 (116): passes, pending the decoder question of what the client's unit word
+///   0xc4 holds (#334).
+/// A mask bit outside these is a condition the server does not judge.
 pub const target_mask_read = 227
 
 /// The bit 0 of a condition row of a spell: CheckCastCaster tests it against the caster

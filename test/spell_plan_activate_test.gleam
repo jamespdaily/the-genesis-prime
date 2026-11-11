@@ -225,8 +225,8 @@ pub fn every_activate_creatures_target_death_matches_its_conditions_row_test() -
 
 pub fn an_activate_spell_whose_target_row_tests_a_bit_the_plan_does_not_model_is_not_planned_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Spell4Conditions 2 has the mask 1773: bits 0, 2, 3, 5, 6, 8, 9 and 10; the plan reads
-  // bits 0, 1, 5, 6 and 7 of the target row.
+  // Spell4Conditions 2 has the mask 1773: bits 0, 2, 3, 5, 6, 7, 9 and 10; the plan reads
+  // bits 0, 1, 5, 6 and 7 of the target row, so bits 2, 3, 9 and 10 are not planned.
   let #(planned, pressed) =
     fixture_tables.changed(
       table: "Spell4",

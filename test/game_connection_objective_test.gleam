@@ -55,7 +55,11 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
+import genesis_prime/message/client_side_interaction_result.{
+  ClientSideInteractionResult,
+}
 import genesis_prime/message/experience_gained.{ExperienceGained}
+import genesis_prime/message/interaction_result
 import genesis_prime/message/item_delete
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/quest_accept.{QuestAccept}
@@ -63,6 +67,7 @@ import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/step.{type ConnectionEvent, type Event, OwnEvent}
 import genesis_prime/store.{HeldItem}
 import genesis_prime/table/id.{Creature2Id, Item2Id}
+import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{ObjectsSeen}
@@ -295,8 +300,15 @@ const survivors_radius = 1.4
 /// Creature2 11070 as unit 40 on a path: it walks half a unit a second from 1.0 to 2.0
 /// from the player's edge, so it is in the creature's range of 5.0 whenever it is used.
 fn seeing_the_walking_survivor() -> game_connection.State {
+  seeing_the_walking_survivor_on(tables: fixture_tables.shared())
+}
+
+/// `seeing_the_walking_survivor` on these tables.
+fn seeing_the_walking_survivor_on(
+  tables tables: store_tables.Tables,
+) -> game_connection.State {
   let #(state, _) =
-    connection_support.entered_with_quests(quests: [
+    connection_support.entered_with_quests_on(tables:, quests: [
       quest_support.accepted(quest_id: 3480, progress: [0, 0]),
     ])
   let state =
@@ -420,6 +432,73 @@ pub fn a_creature_that_dies_before_the_go_counts_nothing_test() -> Nil {
     as "the cast still reaches its go at 2000 ms (the client's 0x801 result 6 has not arrived), so the 0x361 is absent because the use did not count, not because the timer was lost"
   assert progress_frames(steps: go) == []
     as "SetUnitDeathState 0x14045e740 cancels a cast whose target dies, so a use of a creature the picture shows dead counts nothing"
+}
+
+pub fn a_creature_dead_at_the_press_counts_at_the_go_when_its_spell_allows_the_dead_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 560 creatures have an activate spell that allows the dead (the table count of
+  // `every_activate_creatures_target_death_matches_its_conditions_row_test`); Creature2
+  // 11070 is the fixture's quest creature, so its activate spell becomes Spell4 6772,
+  // whose target row 4 has mask 0.
+  use tables <- fixture_tables.changed(table: "Creature2", id: survivor, with: [
+    #("spell4IdActivate00", Integer(6772)),
+  ])
+  let #(state, _) =
+    connection_support.at(
+      state: seeing_the_walking_survivor_on(tables:),
+      ms: 0,
+      event: connection_support.news_sent_by_a_peer(
+        unit_id: unit,
+        news: client_connection.Died,
+      ),
+    )
+  let #(state, started) =
+    connection_support.at(
+      state:,
+      ms: 0,
+      event: OwnEvent(step.Read(right_click())),
+    )
+  assert connection_support.written_ids(started) == [0x07FD]
+    as "opcode.0x7fd: target row 4 tests no death (0x1403b2240 lines 63-77), so the press on a creature shown dead starts the cast"
+  let #(state, bar) =
+    connection_support.casts_run(
+      state:,
+      pending: connection_support.cast_timers(steps: [started], ms: 0),
+      until_ms: 2000,
+      steps: [],
+    )
+  assert ids_of(steps: bar) == []
+    as "Spell4 6772 is castMethod 5 (Spell4Base 6040): its go waits for the client's answer once the 2000 ms bar has run"
+  let assert [confirmed] =
+    list.filter(
+      connection_support.heard(
+        taken: started,
+        cipher: connection_support.keyed(),
+      ),
+      fn(frame) { frame.message_id == spell_cast_confirmed.message_id },
+    )
+  let assert Ok(confirmed) = spell_cast_confirmed.decode(confirmed.body)
+  let assert Ok(body) =
+    client_side_interaction_result.encode(ClientSideInteractionResult(
+      cast_id: confirmed.server_cast_id,
+      result: interaction_result.Succeeded,
+      spell4_base_id_plus_one: 6041,
+    ))
+    as "the answer fits the message"
+  let #(_, go) =
+    connection_support.at(
+      state:,
+      ms: 2000,
+      event: OwnEvent(
+        step.Read(connection_support.world_message(
+          message_id: client_side_interaction_result.message_id,
+          body:,
+        )),
+      ),
+    )
+  assert progress_frames(steps: [go])
+    == [progress_frame(quest: 3480, index: 0, progress: 1)]
+    as "opcode.0x361: SetUnitDeathState 0x14045e740 cancels a cast only when its target dies during the cast, so a target dead at the press gets no 0x801 and the use counts at the go"
 }
 
 pub fn a_creature_that_leaves_the_picture_before_the_go_counts_nothing_test() -> Nil {

@@ -315,10 +315,21 @@ fn told(
   unit_id unit_id: Int,
   news news: client_connection.News,
 ) -> game_connection.State {
-  connection_support.feed(
-    state:,
-    event: connection_support.news_sent_by_a_peer(unit_id:, news:),
-  ).0
+  told_writing(state:, unit_id:, news:).0
+}
+
+/// The connection after this news of the unit, and the ids of the frames it wrote.
+fn told_writing(
+  state state: game_connection.State,
+  unit_id unit_id: Int,
+  news news: client_connection.News,
+) -> #(game_connection.State, List(Int)) {
+  let #(state, taken) =
+    connection_support.feed(
+      state:,
+      event: connection_support.news_sent_by_a_peer(unit_id:, news:),
+    )
+  #(state, connection_support.written_ids(taken))
 }
 
 /// The step of the player's right-click of the unit at the monotonic time `ms`.
@@ -356,14 +367,14 @@ pub fn an_activate_cast_judges_a_creature_where_its_path_puts_it_now_test() -> N
     as "opcode.0x262: the creature stands 3.0 from the player's edge, within Creature2 11070's activateSpellMaxRange 5.0, so the cast starts"
   let far =
     vendor_support.ahead_of_the_player(hit_radius: survivors_radius, gap: 8.0)
-  let moved =
-    told(
+  let #(moved, placed) =
+    told_writing(
       state: standing,
       unit_id: nearby,
-      news: client_connection.CreatureMoved(path: creature_path.Standing(
-        at: far,
-      )),
+      news: client_connection.CreaturePlaced(place: far, at_ms: 0),
     )
+  assert placed == [0x0638]
+    as "opcode.0x638: the news that puts the creature at 8.0 is written to the client, which moves its unit there"
   assert connection_support.refusal_results(taken: pressed(
       state: moved,
       unit_id: nearby,
@@ -371,8 +382,8 @@ pub fn an_activate_cast_judges_a_creature_where_its_path_puts_it_now_test() -> N
     ))
     == [cast_result.TargetRangeMax]
     as "0x1403b2240 judges range against the client's unit, which the server's 0x638 moved to 8.0 from the edge: 105"
-  let running =
-    told(
+  let #(running, run_written) =
+    told_writing(
       state: moved,
       unit_id: nearby,
       news: client_connection.CreatureMoved(path: creature_path.Running(
@@ -385,6 +396,8 @@ pub fn an_activate_cast_judges_a_creature_where_its_path_puts_it_now_test() -> N
         speed: 1.0,
       )),
     )
+  assert run_written == [0x0638]
+    as "opcode.0x638: the path the creature runs is written to the client, which moves its unit along it"
   assert connection_support.refusal_results(taken: pressed(
       state: running,
       unit_id: nearby,

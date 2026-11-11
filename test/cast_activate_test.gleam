@@ -370,7 +370,12 @@ pub fn activate_go_raises_activated_test() -> Nil {
     ]
     as "opcode.0x7f4.target_info: the go names the unit with the effect info of Spell4 1817's Activate row, Spell4Effects 2821 (delay 0), never the unit with no effect info"
   assert list.count(effects, fn(effect) {
-      effect == cast.Activated(unit_id: its_unit, creature_id: the_mollusk)
+      effect
+      == cast.Activated(
+        unit_id: its_unit,
+        creature_id: the_mollusk,
+        alive_at_press: True,
+      )
     })
     == 1
     as "the go raises Activated for the unit and its creature, once"
@@ -533,19 +538,26 @@ pub fn activate_range_is_edge_to_edge_test() -> Nil {
     as "a gap of 5.01 is out of it"
 }
 
-pub fn activate_refuses_a_unit_it_cannot_activate_test() -> Nil {
+pub fn activate_refuses_a_unit_not_in_the_picture_test() -> Nil {
   use <- owned_test.run(10_000)
-  let activations = the_activations()
-  assert refused_with(activations:, target: activate.Unseen, unit_id: its_unit)
-    == 31
-    as "a unit not in the player's picture is CasterMustHaveTarget (31)"
   assert refused_with(
-      activations:,
+      activations: the_activations(),
+      target: activate.Unseen,
+      unit_id: its_unit,
+    )
+    == 31
+    as "a unit not in the player's picture is CasterMustHaveTarget (31), CastActivateSpell 0x14039c430's own refusal"
+}
+
+pub fn activate_refuses_another_players_unit_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert refused_with(
+      activations: the_activations(),
       target: activate.AnotherPlayer,
       unit_id: its_unit,
     )
     == 91
-    as "another player's unit is NoTarget (91)"
+    as "another player's unit is NoTarget (91), CastActivateSpell 0x14039c430's own refusal"
 }
 
 pub fn an_activate_cast_on_a_dead_creature_is_refused_before_its_range_test() -> Nil {
@@ -1091,7 +1103,11 @@ pub fn activate_cancelled_raises_nothing_test() -> Nil {
     as "the go's timer is cancelled"
   assert !list.contains(
     effects,
-    cast.Activated(unit_id: its_unit, creature_id: the_mollusk),
+    cast.Activated(
+      unit_id: its_unit,
+      creature_id: the_mollusk,
+      alive_at_press: True,
+    ),
   )
     as "a cast cancelled before its go raises no Activated"
 }
@@ -1188,7 +1204,12 @@ fn answered_ok(
 
 fn activated_by(effects effects: List(Effect)) -> Int {
   list.count(effects, fn(effect) {
-    effect == cast.Activated(unit_id: its_unit, creature_id: the_terminal)
+    effect
+    == cast.Activated(
+      unit_id: its_unit,
+      creature_id: the_terminal,
+      alive_at_press: True,
+    )
   })
 }
 
@@ -1210,7 +1231,12 @@ fn assert_went_and_finished(effects effects: List(Effect)) -> Nil {
     ]
     as "opcode.0x7f4.activate: the go names the unit with the effect info of Spell4 34681's Activate row, Spell4Effects 68913 (delay 0)"
   assert list.count(effects, fn(effect) {
-      effect == cast.Activated(unit_id: its_unit, creature_id: the_terminal)
+      effect
+      == cast.Activated(
+        unit_id: its_unit,
+        creature_id: the_terminal,
+        alive_at_press: True,
+      )
     })
     == 1
     as "the go raises Activated for the unit and its creature, once"

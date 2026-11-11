@@ -328,17 +328,33 @@ fn used_unit_at(
     tables:,
     shown: one,
   ))
-  // The Creature2 row is in the tables, since the unit's 0x262 was made from it.
-  use row <- result.map(creature2.get(tables:, id: unit.creature_id))
+  use #(creature, link) <- result.map(creature_and_link(
+    tables:,
+    creature_id: unit.creature_id,
+    checklist_index:,
+    link_of:,
+  ))
   cast.UsedUnit(
     creature_id: unit.creature_id.value,
-    creature: activate.creature_of(row:),
+    creature:,
     checklist_index:,
-    link: link_of(row, checklist_index),
+    link:,
     body:,
     alive:,
     offered: offered_to(unit, checklist_index),
   )
+}
+
+/// A shown unit's activate row and its link to the caster's objectives, or `Error(Nil)`
+/// when its Creature2 row is not in the tables.
+fn creature_and_link(
+  tables tables: table_store.Tables,
+  creature_id creature_id: Creature2Id,
+  checklist_index checklist_index: Int,
+  link_of link_of: fn(creature2.Creature2, Int) -> activate.Link,
+) -> Result(#(activate.Creature, activate.Link), Nil) {
+  use row <- result.map(creature2.get(tables:, id: creature_id))
+  #(activate.creature_of(row:), link_of(row, checklist_index))
 }
 
 /// Whether the caster's quest log opens a creature's link to an objective, for the unit
@@ -433,6 +449,8 @@ fn activate_target(
   }
 }
 
+/// A shown creature or object as an activate target; one whose Creature2 row is not in
+/// the tables is as good as unseen, as a use of it is (`used_unit`).
 fn usable(
   tables tables: table_store.Tables,
   creature_id creature_id: Creature2Id,
@@ -443,18 +461,26 @@ fn usable(
   alive alive: Bool,
   withheld withheld: Option(activate.Withheld),
 ) -> activate.Target {
-  // The Creature2 row is in the tables, since the unit's 0x262 was made from it.
-  let assert Ok(row) = creature2.get(tables:, id: creature_id)
-    as "a shown unit's Creature2 row is in the tables it was made from"
-  activate.Usable(
-    creature_id: creature_id.value,
-    creature: activate.creature_of(row:),
-    checklist_index:,
-    link: link_of(unit_id, row, checklist_index),
-    body:,
-    alive:,
-    withheld:,
-  )
+  case
+    creature_and_link(
+      tables:,
+      creature_id:,
+      checklist_index:,
+      link_of: fn(row, index) { link_of(unit_id, row, index) },
+    )
+  {
+    Ok(#(creature, link)) ->
+      activate.Usable(
+        creature_id: creature_id.value,
+        creature:,
+        checklist_index:,
+        link:,
+        body:,
+        alive:,
+        withheld:,
+      )
+    Error(Nil) -> activate.Unseen
+  }
 }
 
 /// A creature's answer to a strike this player told in this stay (`stay_sent`):
@@ -639,16 +665,18 @@ fn carry_cast(
   Continue(session, written)
 }
 
-/// The unit a go's use counts for: a creature or object the player still sees and that
-/// is not shown dead, or `Error(Nil)`.
+/// The unit a go's use counts for: a creature or object the player still sees, unless it
+/// lived at the press and is shown dead now (the client cancels the cast of a target that
+/// dies during it, and not one whose target was dead at the press), or `Error(Nil)`.
 fn counted_target(
   tables tables: table_store.Tables,
   picture picture: shown.Picture,
   unit_id unit_id: Int,
+  alive_at_press alive_at_press: Bool,
 ) -> Result(#(target_group.Unit, Int), Nil) {
   use one <- result.try(dict.get(picture, unit_id))
   case one {
-    shown.ShownCreature(alive: False, ..) -> Error(Nil)
+    shown.ShownCreature(alive: False, ..) if alive_at_press -> Error(Nil)
     shown.ShownCreature(..) | shown.ShownPlayer | shown.ShownObject(..) ->
       shown.target_of(tables:, shown: one)
   }
@@ -692,16 +720,17 @@ pub fn cast_effects(
       cast.Strike(asked:), Some(entered) ->
         strike_begins(session:, now:, entered:, asked:)
       cast.Strike(..), None -> #(session, [])
-      cast.Activated(unit_id:, ..), Some(entered) ->
+      cast.Activated(unit_id:, alive_at_press:, ..), Some(entered) ->
         // The go is raised even when the unit has left the picture or died, and a use
-        // of a creature the player no longer sees, or sees dead, counts for no
-        // objective (`SetUnitDeathState` 0x14045e740 cancels the player's current cast
-        // that targets a unit when the unit's death state is set).
+        // of a creature the player no longer sees, or that died since the press, counts
+        // for no objective (`SetUnitDeathState` 0x14045e740 cancels the player's current
+        // cast that targets a unit when the unit's death state is set).
         case
           counted_target(
             tables: session.settings.tables,
             picture: entered.shown,
             unit_id:,
+            alive_at_press:,
           )
         {
           Ok(#(target, checklist_index)) ->

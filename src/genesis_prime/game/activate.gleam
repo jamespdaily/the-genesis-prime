@@ -326,9 +326,9 @@ fn planned(
 /// does not read (`spell_plan.target_mask_read`), when it has any.
 ///
 /// Gap: the client also tests the unit's crowd-control state, its fight state and the
-/// creature word 0x1e4 against such a row, and bit 5's word 0xc4 is not decoded; no
-/// activate spell of the tables tests a bit outside the ones read, so the spell that does
-/// is not planned (#334).
+/// creature word 0x1e4 against such a row, and the meaning of the unit word 0xc4 that
+/// bit 5 tests is not decoded, so bit 5 passes (#334); no activate spell of the tables
+/// tests a bit outside the ones read, so the spell that does is not planned.
 fn unread_target_bits(
   tables tables: table_store.Tables,
   conditions_id conditions_id: Int,
