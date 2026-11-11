@@ -1100,3 +1100,24 @@ pub fn a_link_to_a_type_4_objective_counts_nothing_by_the_link_test() -> Nil {
     == Advanced(log:, effects: [])
     as "a use does not count an objective the server counts by what is held"
 }
+
+pub fn a_nested_prerequisite_link_counts_its_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 19277 has no questAnim column and prerequisiteIdAnimState 7341, whose type 11
+  // condition names Prerequisite 7340: type 6 on quest 4975 and type 43 on quest 4975
+  // index 0, whose objective 15980 is type 5 with count 3 (Prerequisite
+  // .prerequisiteTypeId.11 and .43).
+  use tables <- with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 4975, progress: [0, 0, 0, 0]),
+    ])
+  assert objective.advance(
+      log:,
+      tables:,
+      event: a_use(Creature2Id(19_277)),
+      now_ms: 0,
+    ).effects
+    == [SendProgress(quest_id: 4975, objective_index: 0, progress: 1)]
+    as "the objective the nested row names counts the use"
+}

@@ -123,7 +123,8 @@
 ////   lacks fails the load. A subject with no quest log gives `NotRead`
 ////   (`Prerequisite.prerequisiteTypeId.6`, `.68`, `.43`, `.22`).
 //// - **Types 125, 69 and 74** read a flag of the player's challenge objectId: in
-////   cooldown (125), active (69), unlocked (74). Comparison 1 passes when the flag is
+////   cooldown (125), active (69), unlocked (74, a guess at the flag's meaning: the
+////   client's name for it is not read; the challenge records are issue 52's). Comparison 1 passes when the flag is
 ////   set, comparison 2 when it is clear, any other fails: a challenge the server has sent
 ////   no record for has every flag clear, and the server sends none, so comparison 2
 ////   always passes and comparison 1 never; the objectId and the value are not read
@@ -355,7 +356,7 @@ type Condition {
     quest: Option(Quest),
   )
   /// Types 125, 69 and 74: a flag of the player's challenge record (in cooldown,
-  /// active, unlocked); the server holds no challenge record, so every flag is clear
+  /// active, unlocked: a guess for 74, issue 52); the server holds no challenge record, so every flag is clear
   /// (`Prerequisite.prerequisiteTypeId.125`, `.69`, `.74`).
   ChallengeFlag(comparison: Comparison)
   /// Type 243: never met (`Prerequisite.prerequisiteTypeId.243`, `0x140001ba0`).
@@ -1095,6 +1096,56 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
     }
   })
   |> int.sum
+}
+
+/// The objectives the prerequisite names as open, as (Quest2 id, objective index): its
+/// type 43 conditions of comparison 1, and those of the rows its type 11 conditions of
+/// comparison 1 nest (`Prerequisite.prerequisiteTypeId.43`, `.11`). A quest the tables
+/// hold no row for names none.
+pub fn objective_links(
+  prerequisite prerequisite: Prerequisite,
+) -> List(#(Int, Int)) {
+  list.flat_map(prerequisite.conditions, fn(condition) {
+    case condition {
+      ObjectiveOpen(comparison: Found, index:, quest: Some(quest)) -> [
+        #(quest.id, index),
+      ]
+      Nested(comparison: Found, row: Some(nested), ..) ->
+        objective_links(prerequisite: nested)
+      Nested(..)
+      | ObjectiveOpen(..)
+      | TargetOfLiveCast(..)
+      | UnderCastBy(..)
+      | StackCount(..)
+      | InCombat(..)
+      | Roll(..)
+      | VitalPercent(..)
+      | VitalCurrent(..)
+      | ResourceSlot(..)
+      | UnderGroup(..)
+      | Stealthed(..)
+      | Difficulty(..)
+      | CurrentFaction(..)
+      | BaseFaction(..)
+      | UnitLevel(..)
+      | PlayerRace(..)
+      | UnitClass(..)
+      | InZone(..)
+      | IsPlayer(..)
+      | PlayerPath(..)
+      | Gender(..)
+      | InWorld(..)
+      | QuestState(..)
+      | ObjectiveDone(..)
+      | TargetCounted(..)
+      | ObjectiveProgress(..)
+      | NeverMet
+      | InArc(..)
+      | ChallengeFlag(..)
+      | NoCase
+      | Unread(..) -> []
+    }
+  })
 }
 
 /// The PrerequisiteTypes of the conditions the client decides and the server does

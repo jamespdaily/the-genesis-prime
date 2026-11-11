@@ -111,10 +111,12 @@ pub fn activate_spell_that_strikes_cannot_be_planned_test() -> Nil {
 pub fn activate_spell_with_a_ravel_signal_aimed_at_the_target_is_planned_test() -> Nil {
   use <- owned_test.run(10_000)
   let activations = activate.activations(tables: fixture_tables.shared())
-  let assert Ok(Planned(effects:, ..)) =
+  let assert Ok(Planned(effects:, dropped_signals:, ..)) =
     activate.planned_of(activations:, spell4_id: 39_244)
-    as "Spell4 39244 is planned: its other row, Spell4Effects 85564, is a RavelSignal (effectType 81) aimed at the primary target (targetFlags 2), which signals a script the client does not hold (Spell4Effects.effectType.81), so the activate cast loses only the life the go would list for it"
+    as "Spell4 39244 is planned: its other row, Spell4Effects 85564, is a RavelSignal (effectType 81) aimed at the primary target (targetFlags 2), which starts a script on the server (Spell4Effects.effectType.81) that the server does not have yet, so the plan holds the row as dropped (`dropped_signals`) and the cast logs it"
   assert list.length(effects) == 1 as "Spell4 39244 has one Activate row"
+  assert dropped_signals == [Spell4EffectsId(85_564)]
+    as "the RavelSignal row 85564 is the one the plan drops"
   assert case activate.planned_of(activations:, spell4_id: 85_452) {
     Ok(Planned(..)) -> True
     Ok(CannotBePlanned(..)) | Ok(activate.NoSpell4Row) | Error(Nil) -> False
@@ -179,7 +181,7 @@ pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_
     list.count(refusals, fn(found) { found == reason })
   }
   assert count_of("aimed at the target") == 33
-    as "33 hold a Spell4Effects row aimed at the target or an area that the strike applies, which an activate cast strikes no one with (Spell4Effects targetFlags); the other 39 of the 72 held only a RavelSignal row aimed there, which the plan now drops (Spell4Effects.effectType.81)"
+    as "33 hold a Spell4Effects row aimed at the target or an area that the strike applies, which an activate cast strikes no one with (Spell4Effects targetFlags); the other 39 of the 72 held only a RavelSignal row aimed there, which the plan drops with a log when the cast starts (Spell4Effects.effectType.81)"
   assert count_of("control state") == 11
     as "11 hold a CCStateSet effect of a state other than Stun (0) and Knockdown (8) (Unit.CodeEnumCCState). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("disguise") == 4

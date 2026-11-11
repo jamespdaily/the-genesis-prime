@@ -67,6 +67,7 @@ import genesis_prime/game/damage
 import genesis_prime/game/faction_level
 import genesis_prime/game/hit
 import genesis_prime/game/hit_radius
+import genesis_prime/game/objective_link
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
@@ -1387,7 +1388,7 @@ fn left_out_of(
     list.any(quest_ids(checked.creature), fn(id) { id != 0 }),
     has_service_link(checked.creature),
     checked.spawn.health == 0,
-    has_objective_link(checked.creature)
+    objective_link.has_link(row: checked.creature)
   {
     True, _, _, _, _, _ -> Ok(NoFaction)
     False, False, False, _, _, False -> Ok(FriendlyToBoth)
@@ -1395,14 +1396,6 @@ fn left_out_of(
     False, _, _, _, True, _ -> Ok(Dead)
     False, _, _, _, False, _ -> Error(Nil)
   }
-}
-
-/// Whether the creature's row names a quest animation or an animation prerequisite
-/// (`Creature2.objective_link`): the client builds and offers such a creature whatever
-/// its faction, while the objective it serves is open (`0x140456960.faction`,
-/// `0x140479560.faction`, `0x14039d4a0.faction`).
-fn has_objective_link(row: Creature2) -> Bool {
-  row.quest_anim_state_id != 0 || row.prerequisite_id_anim_state != 0
 }
 
 /// The quests the creature gives and receives, by quest id, in the order of its

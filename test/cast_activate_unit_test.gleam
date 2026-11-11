@@ -20,14 +20,12 @@ import fixture_tables
 import genesis_prime/game/activate
 import genesis_prime/game/cast.{type Effect}
 import genesis_prime/game/objective_link
-import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log
 import genesis_prime/message/client_activate_unit.{ClientActivateUnit}
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
 import gleam/dict
-import gleam/option.{Some}
 import gleam/string
 import owned_test
 import place_support
@@ -311,10 +309,11 @@ fn linked_creature_used(quests quests: quest_log.QuestLog) -> List(Effect) {
     objective_link.of(
       tables:,
       activations: activate.activations(tables:),
-      subject: prerequisite.Subject(
-        ..cast.subject_of(cast: cast.new(), caster:),
-        second_unit: Some(its_unit),
-        positions: prerequisite.NotPlaced,
+      subject: cast.subject_for_use(
+        cast: cast.new(),
+        caster:,
+        unit_id: its_unit,
+        checklist_index: 0,
       ),
       quests:,
       row:,

@@ -1667,10 +1667,14 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
       ),
     ]
     as "opcode.0x361: the go of the activate counts the bit of index 1, the second object's, in objective 8782 of quest 5855"
-  // The same object activated a second time: its bit is set in objective 8782, so
-  // QuestAnimInteractKind closes its link (0x1405a8b30) and the press is refused as not
-  // useable (100) with no cast; the server has written all it held for this connection
-  // when its pong comes.
+  // The same object activated a second time: its bit is set in objective 8782. Creature2
+  // 26016 links through prerequisiteIdAnimState 11686, whose two type 11 conditions nest
+  // Prerequisite 11687 (type 43 on quest 5855's objective at index 1, and type 94
+  // comparison 2, which fails once the unit's bit is set) and 11688 (the same for quest
+  // 6780) (Prerequisite.prerequisiteTypeId.11, .94). A prerequisite that fails sets the
+  // unit's anim state 1 (0x14046c4d0), and the client offers a unit in it nothing
+  // (0x140479560.anim_state_exit), so the press is refused as not useable (100) with no
+  // cast; the server has written all it held for this connection when its pong comes.
   let assert Ok(again) =
     cast_activate.encode(CastActivate(
       client_cast_id: 2,
@@ -1811,9 +1815,12 @@ pub fn a_mine_cast_counts_the_exile_objective_test() -> Nil {
 
 pub fn a_second_cast_on_the_mine_after_its_objective_is_done_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Objective 21287 is done once the first cast has gone, so QuestAnimInteractKind
-  // closes the mine's link (0x1405a8b30) and the activate is refused with
-  // TargetIsNotUseable (100) at the press, with no cast started.
+  // Objective 21287 is done once the first cast has gone. The mine links through
+  // prerequisiteIdAnimState 41818, whose type 43 conditions need an open objective
+  // (Prerequisite.prerequisiteTypeId.43), so the prerequisite fails and sets the unit's
+  // anim state 1 (0x14046c4d0): the client offers it nothing
+  // (0x140479560.anim_state_exit), and the activate is refused with TargetIsNotUseable
+  // (100) at the press, with no cast started.
   let #(started, game, mine, have, _) = exile_whose_mine_cast_went()
   let assert Ok(again) =
     cast_activate.encode(CastActivate(client_cast_id: 2, target_unit_id: mine))

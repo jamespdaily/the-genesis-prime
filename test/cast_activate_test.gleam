@@ -50,7 +50,6 @@ import genesis_prime/table/id.{Creature2Id}
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
 import gleam/string
 import owned_test
 import place_support
@@ -60,6 +59,8 @@ import quest_support
 const the_mollusk = 26_462
 
 const a_market_terminal = 34_758
+
+const the_tutorial_mine = 73_463
 
 const market_quest = 7153
 
@@ -442,14 +443,13 @@ pub fn activate_range_is_edge_to_edge_test() -> Nil {
   assert range_answer(activations:, creature: minimum, east: 1.75, up: 0.0)
     == Ok(Nil)
     as "a gap of exactly the minimum is in range"
-  let assert Ok(Planned(spell:, effects:, limits:)) =
+  let assert Ok(Planned(limits:, ..) as planned) =
     activate.planned_of(activations:, spell4_id: 1817)
   let tall =
     with_planned(
       spell4_id: 1817,
       planned: Planned(
-        spell:,
-        effects:,
+        ..planned,
         limits: activate.Limits(..limits, vertical: 2.0),
       ),
     )
@@ -528,15 +528,14 @@ pub fn activate_refuses_unknown_and_unbuilt_spells_test() -> Nil {
     as "a spell the Spell4 table has no row for (6754) is SpellUnknown (4)"
   assert refused(the_activations(), creature_of_spell(200_000)) == 4
     as "a spell the plans do not hold is SpellUnknown (4)"
-  let assert Ok(Planned(spell:, effects:, limits:)) =
+  let assert Ok(Planned(spell:, ..) as planned) =
     activate.planned_of(activations: the_activations(), spell4_id: 1817)
   let interaction =
     with_planned(
       spell4_id: 1817,
       planned: Planned(
+        ..planned,
         spell: spell_plan.Spell(..spell, method: spell_plan.Transactional),
-        effects:,
-        limits:,
       ),
     )
   let assert Ok(#(state, first)) =
@@ -718,22 +717,36 @@ pub fn activate_logs_each_unread_prerequisite_type_once_test() -> Nil {
 /// questAnimStateId 3741, index 0, activate spell 1817 with cast time 2000.
 const the_collectible = 12_919
 
+/// A grimvault chef with both link columns: questAnimStateId 9110 with index 5, and
+/// prerequisiteIdAnimState 29873 (type 36: quest 9110's objective 5 at progress 1).
+const a_chef_with_both_links = 53_445
+
 /// The right-click of the collectible by a caster with this quest log, its link read by
 /// the rule that reads it (genesis_prime/game/objective_link `of`).
 fn collectible_clicked(quests quests: quest_log.QuestLog) -> List(Effect) {
+  clicked(creature_id: the_collectible, quests:)
+}
+
+/// The right-click of the creature's static object by a caster with this quest log, its
+/// link read by the rule that reads it.
+fn clicked(
+  creature_id creature_id: Int,
+  quests quests: quest_log.QuestLog,
+) -> List(Effect) {
   let tables = fixture_tables.shared()
   let caster = cast.Caster(..standing(), quests:)
   let activations = the_activations()
-  let assert Ok(row) = creature2.get(tables:, id: Creature2Id(the_collectible))
-    as "Creature2 12919 is a root of the fixture"
+  let assert Ok(row) = creature2.get(tables:, id: Creature2Id(creature_id))
+    as "the creature is a root of the fixture"
   let link =
     objective_link.of(
       tables:,
       activations:,
-      subject: prerequisite.Subject(
-        ..cast.subject_of(cast: cast.new(), caster:),
-        second_unit: Some(its_unit),
-        positions: prerequisite.NotPlaced,
+      subject: cast.subject_for_use(
+        cast: cast.new(),
+        caster:,
+        unit_id: its_unit,
+        checklist_index: 0,
       ),
       quests:,
       row:,
@@ -746,7 +759,7 @@ fn collectible_clicked(quests quests: quest_log.QuestLog) -> List(Effect) {
       activations:,
       unit_id: its_unit,
       target: object_of(
-        creature_id: the_collectible,
+        creature_id:,
         creature: activate.creature_of(row:),
         checklist_index: 0,
         link:,
@@ -800,6 +813,83 @@ pub fn an_activate_cast_on_a_creature_with_an_open_link_starts_test() -> Nil {
     as "Creature2 12919's activateSpellCastTime, 2000, is the go's delay"
   assert support.refusal_results(effects:) == [] && support.logs(effects:) == []
     as "nothing is refused or logged"
+}
+
+pub fn a_closed_quest_anim_link_refuses_a_creature_whose_prerequisite_link_is_open_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 9110's objective 5 (18164, flags 3) waits for the objectives before it, so the
+  // questAnim link (index 5) is closed; its progress 1 is what Prerequisite 29873 asks
+  // for, so the prerequisite link alone would be open. The client closes the link at the
+  // questAnim result and never reads the prerequisite (0x14046c4d0).
+  let quests =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 9110, progress: [0, 0, 0, 0, 0, 1]),
+    ])
+  let effects = clicked(creature_id: a_chef_with_both_links, quests:)
+  assert support.started_timers(effects:) == [] && support.tells(effects:) == []
+    as "no cast starts"
+  let assert [#(LogWarning, line)] = support.logs(effects:)
+    as "the refusal is logged"
+  assert string.contains(line, "closed")
+}
+
+/// The right-click of the tutorial mine (Creature2 73463) by the standing caster, with its
+/// link open, at this time and in this state.
+fn mine_clicked(state state: State, at ms: Int) -> #(State, List(Effect)) {
+  let assert Ok(row) =
+    creature2.get(
+      tables: fixture_tables.shared(),
+      id: Creature2Id(the_tutorial_mine),
+    )
+    as "Creature2 73463 is a root of the fixture"
+  let assert Ok(clicked) =
+    right_click(
+      state:,
+      activations: the_activations(),
+      unit_id: its_unit,
+      target: object_of(
+        creature_id: the_tutorial_mine,
+        creature: activate.creature_of(row:),
+        checklist_index: 0,
+        link: activate.OpenLink,
+        east: 1.0,
+        up: 0.0,
+      ),
+      at: ms,
+    )
+    as "a right-click that fits the message is answered"
+  clicked
+}
+
+pub fn an_activate_cast_logs_the_ravel_signals_it_drops_once_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4 85452 holds RavelSignal rows 224571 and 224610 aimed at the primary target
+  // (targetFlags 2) and a third, 227177, aimed at the caster (targetFlags 1): the activate
+  // cast strikes no one, so the two aimed at the target are dropped, and the log names
+  // the spell, the effects and the unit.
+  let #(state, first) = mine_clicked(state: cast.new(), at: 1000)
+  assert list.contains(
+      support.ids(frames: support.writes(effects: first)),
+      0x07F4,
+    )
+    && support.refusal_results(effects: first) == []
+    as "the cast goes at once (the creature's activateSpellCastTime is 0): a dropped signal refuses nothing"
+  let assert [#(LogWarning, line)] = support.logs(effects: first)
+    as "the dropped signals are logged once, as one line"
+  assert string.contains(line, "85452") && string.contains(line, "5000")
+    as "the line names the spell and the unit"
+  assert string.contains(line, "224571") && string.contains(line, "224610")
+    as "the line names the two effects aimed at the target"
+  assert !string.contains(line, "227177")
+    as "the effect aimed at the caster is not dropped"
+  let #(_, second) = mine_clicked(state:, at: 60_000)
+  assert list.contains(
+    support.ids(frames: support.writes(effects: second)),
+    0x07F4,
+  )
+    as "the second press goes too"
+  assert support.logs(effects: second) == []
+    as "the same spell's signals are not logged again"
 }
 
 pub fn activate_cancelled_raises_nothing_test() -> Nil {

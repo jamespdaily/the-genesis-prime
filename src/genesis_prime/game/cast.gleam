@@ -616,6 +616,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
 import gleam/set.{type Set}
+import gleam/string
 
 /// The messages of a player's casts, which the client sends inside 0x038C
 /// (genesis_prime/game/routing says which id is which).
@@ -1493,7 +1494,7 @@ fn activation_pressed(
                 result: cast_result.IllegalSpellCast,
                 why: "cannot be planned: " <> why,
               )
-            Ok(activate.Planned(spell:, effects:, limits:)) ->
+            Ok(activate.Planned(spell:, effects:, dropped_signals:, limits:)) ->
               activation_in_range(
                 cast:,
                 caster:,
@@ -1506,6 +1507,7 @@ fn activation_pressed(
                 target:,
                 spell:,
                 effects:,
+                dropped_signals:,
                 limits:,
               )
           }
@@ -1528,6 +1530,7 @@ fn activation_in_range(
   target target: activate.Body,
   spell spell: Spell,
   effects effects: List(activate.ActivateEffect),
+  dropped_signals dropped_signals: List(Spell4EffectsId),
   limits limits: activate.Limits,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let spell4_id = spell.spell4_id.value
@@ -1558,6 +1561,7 @@ fn activation_in_range(
           False -> NoInteraction
         },
         effects:,
+        dropped_signals:,
       )
   }
 }
@@ -1609,6 +1613,7 @@ fn activation_started(
   spell spell: Spell,
   interaction interaction: Interaction,
   effects effects: List(activate.ActivateEffect),
+  dropped_signals dropped_signals: List(Spell4EffectsId),
 ) -> Result(#(State, List(Effect)), Refusal) {
   let spell4_id = spell.spell4_id.value
   let refusal = fn(result) {
@@ -1655,8 +1660,50 @@ fn activation_started(
           spent: paid.spent,
           reserved:,
         )
-      Ok(#(cast, list.append(taken, started)))
+      let #(cast, dropped) =
+        signals_dropped(
+          cast:,
+          spell4_id:,
+          unit_id:,
+          creature_id:,
+          dropped_signals:,
+        )
+      Ok(#(cast, list.flatten([taken, dropped, started])))
     }
+  }
+}
+
+/// The log of the RavelSignal rows an activate cast drops, the first time for the spell:
+/// the server has no script to start for them (`activate.activate_rows_of`).
+fn signals_dropped(
+  cast cast: State,
+  spell4_id spell4_id: Int,
+  unit_id unit_id: Int,
+  creature_id creature_id: Int,
+  dropped_signals dropped_signals: List(Spell4EffectsId),
+) -> #(State, List(Effect)) {
+  let key = DroppedSignals(spell4_id:)
+  case dropped_signals == [] || set.contains(cast.logged, key) {
+    True -> #(cast, [])
+    False -> #(State(..cast, logged: set.insert(cast.logged, key)), [
+      Log(
+        level: LogWarning,
+        text: "the activate cast of Spell4 "
+          <> int.to_string(spell4_id)
+          <> " at unit "
+          <> int.to_string(unit_id)
+          <> " (Creature2 "
+          <> int.to_string(creature_id)
+          <> ") drops the RavelSignal effects "
+          <> string.join(
+          list.map(dropped_signals, fn(effect_id) {
+            int.to_string(effect_id.value)
+          }),
+          ", ",
+        )
+          <> ": the server has no script to start for them",
+      ),
+    ])
   }
 }
 
@@ -1669,6 +1716,8 @@ pub type Unbuilt {
   /// A prerequisite type the server does not read, in the prerequisite of a creature's
   /// link to an objective.
   UnreadLinkPrerequisite(prerequisite_type: Int)
+  /// The RavelSignal effects an activate cast drops, by the Spell4 id.
+  DroppedSignals(spell4_id: Int)
 }
 
 /// A right-click refused because the server does not build what the cast needs: the

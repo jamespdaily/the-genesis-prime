@@ -2,43 +2,39 @@
 //// opens it.
 ////
 //// ```
-//// Creature2.questAnimStateId + questAnimObjectiveIndex ─┐
-//// Creature2.prerequisiteIdAnimState (type 43 conditions) ┴▶ links ─▶ [(quest, index)]
+//// Creature2.questAnimStateId + questAnimObjectiveIndex ──────────┐
+//// Creature2.prerequisiteIdAnimState (type 43 conditions, nested) ┴▶ links ─▶ [(quest, index)]
 //// the columns + the player's log ─▶ of ─▶ NoLink | OpenLink | ClosedLink | UnreadLink
 //// ```
 ////
 //// - **The links** (`Creature2.objective_link`): `questAnimStateId` names a Quest2 and
 ////   `questAnimObjectiveIndex` the objective's index in it (-1 names the quest alone);
 ////   `prerequisiteIdAnimState` names a Prerequisite whose type 43 conditions of
-////   comparison 1 each name a Quest2 (`objectId`) and an objective index (`value`). The
-////   client reads both whatever the objective's type, and the server counts a use for
-////   the objectives of type 5 and 32 these name (`objective.counts`).
+////   comparison 1 each name a Quest2 (`objectId`) and an objective index (`value`), in
+////   the rows its type 11 conditions of comparison 1 nest too
+////   (`Prerequisite.prerequisiteTypeId.11`). The client reads both columns the same way
+////   whatever the objective's type, and the server counts a use for the objectives of
+////   type 5 and 32 these name (`objective.counts`).
 //// - **Whether the link is open** (`SetAnimStatePrerequisiteState`, `0x14046c4d0`): a
 ////   creature with neither column has no link. A questAnim column is open while its quest
 ////   is Accepted and, for an index other than -1, the objective is open and the unit's
-////   checklist bit is not marked (`QuestAnimInteractKind`, `0x1405a8b30`). A
-////   prerequisite column, when set, decides on its own, over the questAnim result: it is
-////   open when the prerequisite passes. A prerequisite the table has no row for fails in
-////   the client, so it is closed; the client's offer of a closed link is nothing at all
+////   checklist bit is not marked (`QuestAnimInteractKind`, `0x1405a8b30`); when it is
+////   closed the check ends there and the prerequisite column is not read. Otherwise a
+////   prerequisite column, when set, decides: it is open when the prerequisite passes. A
+////   prerequisite the table has no row for fails in the client (`Prerequisite.flags`), so
+////   it is closed; the client's offer of a closed link is nothing at all
 ////   (`0x140479560.anim_state_exit`).
 
 import genesis_prime/game/activate
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{type Creature2Id, PrerequisiteId}
+import genesis_prime/table/id.{type Creature2Id}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/table/prerequisite as prerequisite_table
+import gleam/bool
 import gleam/dict
 import gleam/list
 import gleam/result
-
-/// The PrerequisiteType of the condition that names an objective of a quest
-/// (`Prerequisite.prerequisiteTypeId.43`).
-const objective_open_type = 43
-
-/// The comparison of a type 43 condition that asks for the objective open.
-const objective_open_comparison = 1
 
 /// The index a questAnim column holds to name the quest alone.
 const quest_alone = -1
@@ -55,11 +51,19 @@ pub fn links(
       list.append(
         quest_anim_links(row:),
         prerequisite_links(
-          tables:,
+          activations: activate.activations(tables:),
           prerequisite_id: row.prerequisite_id_anim_state,
         ),
       )
   }
+}
+
+/// Whether the creature's row names a quest animation or an animation prerequisite
+/// (`Creature2.objective_link`): the client builds and offers such a creature whatever
+/// its faction, while the objective it serves is open (`0x140456960.faction`,
+/// `0x140479560.faction`, `0x14039d4a0.faction`).
+pub fn has_link(row row: creature2.Creature2) -> Bool {
+  row.quest_anim_state_id != 0 || row.prerequisite_id_anim_state != 0
 }
 
 fn quest_anim_links(row row: creature2.Creature2) -> List(#(Int, Int)) {
@@ -72,21 +76,14 @@ fn quest_anim_links(row row: creature2.Creature2) -> List(#(Int, Int)) {
   }
 }
 
-/// The (quest, index) pairs of the type 43 conditions of comparison 1 of a Prerequisite
-/// row; none for 0 or for an id the table has no row for.
+/// The (quest, index) pairs a Prerequisite row names as open (`prerequisite.objective_links`);
+/// none for 0 or for an id the table has no row for.
 fn prerequisite_links(
-  tables tables: table_store.Tables,
+  activations activations: activate.Activations,
   prerequisite_id prerequisite_id: Int,
 ) -> List(#(Int, Int)) {
-  prerequisite_table.get(tables:, id: PrerequisiteId(prerequisite_id))
-  |> result.map(fn(row) {
-    prerequisite.kept_conditions(row:)
-    |> list.filter(fn(condition) {
-      condition.0 == objective_open_type
-      && condition.1 == objective_open_comparison
-    })
-    |> list.map(fn(condition) { #(condition.2, condition.3) })
-  })
+  dict.get(activations.prerequisites, prerequisite_id)
+  |> result.map(fn(held) { prerequisite.objective_links(prerequisite: held) })
   |> result.unwrap([])
 }
 
@@ -102,31 +99,29 @@ pub fn of(
   row row: creature2.Creature2,
   checklist_index checklist_index: Int,
 ) -> activate.Link {
-  case row.prerequisite_id_anim_state, row.quest_anim_state_id {
-    0, 0 -> activate.NoLink
-    0, quest_id ->
-      opened(quest_anim_is_open(
+  use <- bool.guard(when: !has_link(row:), return: activate.NoLink)
+  let quest_anim_open = case row.quest_anim_state_id {
+    0 -> True
+    quest_id ->
+      quest_anim_is_open(
         tables:,
         quests:,
         quest_id:,
         index: row.quest_anim_objective_index,
         checklist_index:,
-      ))
-    prerequisite_id, _ ->
+      )
+  }
+  case quest_anim_open, row.prerequisite_id_anim_state {
+    False, _ -> activate.ClosedLink
+    True, 0 -> activate.OpenLink
+    True, prerequisite_id ->
       prerequisite_link(activations:, subject:, prerequisite_id:)
   }
 }
 
-fn opened(open: Bool) -> activate.Link {
-  case open {
-    True -> activate.OpenLink
-    False -> activate.ClosedLink
-  }
-}
-
 /// The link a prerequisite column decides: open when the prerequisite passes, closed when
-/// it fails or the table has no row for it, unread when a condition the server does not
-/// read decides it.
+/// it fails or the table has no row for it (`Prerequisite.flags`: a missing id fails),
+/// unread when a condition the server does not read decides it.
 fn prerequisite_link(
   activations activations: activate.Activations,
   subject subject: prerequisite.Subject,

@@ -477,3 +477,7 @@ Quest2	3655	quest whose objective 0 is the type 32 objective 4722	objective_test
 Quest2	2731	quest whose objective 0 is the type 4 objective 3422	objective_test
 Creature2	10036	a creature with no activate spell whose questAnim columns name quest 3244 objective index 0	cast_activate_unit_test
 Quest2	3244	quest whose one objective 4242 is a type 5 objective	cast_activate_unit_test
+Creature2	53445	a creature with both link columns: questAnim 9110 index 5 and prerequisiteIdAnimState 29873, a type 36 condition on quest 9110's objective 5	cast_activate_test
+Quest2	9110	quest whose objective 5 (18164, type 5, flags 3) is the questAnim link of Creature2 53445 and the one Prerequisite 29873 reads	cast_activate_test
+Creature2	19277	a creature whose prerequisiteIdAnimState 7341 reaches the type 5 objective 15980 of quest 4975 only through the nested Prerequisite 7340	objective_test
+Quest2	4975	quest whose objective 0 (15980) is type 5 with count 3, named by Prerequisite 7340	objective_test
