@@ -179,8 +179,9 @@
 //// - **A channel** (`Spell.CodeEnumCastMethod` 1) gets (channelMaxTime -
 ////   channelInitialDelay + channelPulseTime) / channelPulseTime gos, in whole
 ////   numbers (`0x14053d1f0`); the pulses fall at the initial delay plus each pulse
-////   time and the cast ends at channelMaxTime, which are the server's choice
-////   (`Spell4.channelPulseTime`).
+////   time and the finish timer is set at channelMaxTime, which are the server's
+////   choice (`Spell4.channelPulseTime`); the cast ends at the later of that timer
+////   and the close of the last go's strike round (`cast.channel_sequence`).
 //// - **The stages** of a RapidTap or ChargeRelease ability are the Spell4Thresholds
 ////   rows whose parent it is, by order index, each a full tree with its
 ////   thresholdDuration (`Spell4Thresholds.spell4IdToCast`). A press resolves to the
@@ -4341,9 +4342,11 @@ pub fn channel_go_times_ms(channel channel: Channel) -> List(Int) {
   })
 }
 
-/// The time a channel ends at when that is after its last pulse: the cast ends at
-/// channelMaxTime from a timer of its own. A channel whose last pulse is at
-/// channelMaxTime, and every spell that is not Channeled, ends with its last go.
+/// The time of a channel's finish timer when that is after its last pulse. The cast
+/// ends at the later of that time and the close of its last go's strike round, so
+/// the client has all the gos before the 0x7fe (`cast.channel_sequence`). A channel
+/// whose last pulse is at channelMaxTime, and every spell that is not Channeled,
+/// ends with its last go.
 pub fn finish_after_ms(spell spell: Spell) -> Option(Int) {
   case spell.channel {
     None -> None
