@@ -1154,6 +1154,13 @@ pub fn cast_id(unit_id unit_id: Int, number number: Int) -> Int {
   first_cast_id + unit_id * ids_per_unit + number % ids_per_unit
 }
 
+/// The number mod 2^11 a cast id was made from: the number after it is the next
+/// one a unit's rule offers `mint`, so a rule advances past the id it got, not past
+/// the one it asked for.
+pub fn number_of(cast_id cast_id: Int) -> Int {
+  { cast_id - first_cast_id } % ids_per_unit
+}
+
 /// The unit a cast id was made for, which is how a viewer finds the casts of a
 /// unit it stops showing.
 pub fn caster_of(cast_id cast_id: Int) -> Int {

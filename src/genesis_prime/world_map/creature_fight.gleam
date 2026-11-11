@@ -222,6 +222,7 @@
 //// | the home timer fires | C stands at its spawn, Resting, at full health, and aggroes the near players it sees | `at_home_the_creature_aggroes_the_near_players_test` |
 //// | Charge start: the attack tick finds the target in reach, no round open, the attack is `Charged` | round Charging, 0x7ff of the spell, `StartTimer(CastEnds, cast time)`, no strike and no next attack tick; the tick's generation moves on | `a_charge_starts_with_its_cast_time_and_telegraph_test` |
 //// | Charge start: a second attack tick finds the charge open | nothing: the tick it came from is of an old generation | `a_second_attack_tick_during_a_charge_starts_nothing_test` |
+//// | Charge start: the guard holds the number `next_cast` offers | the round takes the next free id and `next_cast` moves past that id, so two charges in a row take different ids and a late answer to the first closes nothing of the second | `two_charges_under_a_held_guard_take_different_cast_ids_test` |
 //// | CastEnds timer: it fires for the open charge | each fighter on the threat list inside the rectangle along the bearing to the target now gets a strike, and the strike deadline starts; none inside, the go (0x7f4) names no unit and 0x7fe follows | `at_its_end_the_charge_strikes_each_fighter_inside_its_rectangle_test`, `a_charge_faces_its_target_test`, `a_charge_with_nobody_inside_goes_with_no_target_test` |
 //// | CastEnds timer: it fires for a charge that ended (a death or a leash) or of an old generation | it does nothing | `a_stale_cast_end_does_nothing_test` |
 //// | a state takes hold during the charge | `CancelTimer(CastEnds)`, 0x7f9 (cast id, 11) and 0x7fe, the round closed, the next attack tick started, `ChargeInterrupted` | `a_controlled_turret_still_strikes_at_the_charge_end_test` and `a_controlled_turret_keeps_its_aim_while_its_target_moves_test` (both now expect the interrupt), `a_stun_during_the_charge_interrupts_it_and_opens_the_turret_test` |
@@ -1143,7 +1144,7 @@ fn strikes(
   #(
     State(
       ..state,
-      next_cast: state.next_cast + 1,
+      next_cast: cast.number_of(cast_id:) + 1,
       status: Fighting(..fighting, round: Some(Round(cast_id:, stage:))),
     ),
     [
@@ -1331,7 +1332,7 @@ fn charges(
   #(
     State(
       ..state,
-      next_cast: state.next_cast + 1,
+      next_cast: cast.number_of(cast_id:) + 1,
       status: Fighting(..fighting, round: Some(round), tick:),
     ),
     [
