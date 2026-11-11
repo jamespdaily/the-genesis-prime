@@ -985,6 +985,7 @@ fn foe_at(z z: Float) -> shown.Shown {
     hit_radius: 100.0,
     attackable: creature_life.Attackable(exile: True, dominion: True),
     hostile_to: creature_life.Hostile(exile: False, dominion: False),
+    in_combat: False,
   )
 }
 

@@ -17,12 +17,14 @@
 
 import connection_rule_support as support
 import game_connection_support as connection_support
+import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/routing
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/cast_activate.{CastActivate}
+import genesis_prime/message/cast_result
 import genesis_prime/message/client_side_interaction_result.{
   ClientSideInteractionResult,
 }
@@ -30,6 +32,8 @@ import genesis_prime/message/interaction_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/step
 import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/world_map/creature_life
+import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{ObjectsSeen}
 import genesis_prime/world_map/static_object.{type Created, StaticObject}
 import gleam/list
@@ -37,6 +41,7 @@ import gleam/option
 import owned_test
 import quest_support
 import spawn_support
+import vendor_support
 
 const mollusk_display = 25_703
 
@@ -258,4 +263,220 @@ pub fn an_interaction_answer_reaches_the_cast_rule_test() -> Nil {
   assert connection_support.written_ids(answered)
     == [0x07F4, 0x07FE, 0x0361, 0x0361, 0x035C]
     as "opcode.0x805, opcode.0x7f4: the answer 1 sends the go and the finish to the player, and the terminal's travel and choice objectives count (QuestObjective.type.23): two progress frames and the quest's state"
+}
+
+/// Creature2 11070, a Trapped Survivor: activate spell 1817 behind its quest's link,
+/// activateSpellMaxRange 5.0. Creature2DisplayGroupEntry 24099 puts it on
+/// Creature2DisplayInfo 24086, whose hitRadius is 1.4.
+const survivor = 11_070
+
+const survivors_display = 24_086
+
+const survivors_radius = 1.4
+
+/// The connection of a player whose quest 3480 is accepted with nothing counted: the link
+/// of Creature2 11070 (Prerequisite 2672) is open.
+fn holding_quest_3480() -> game_connection.State {
+  connection_support.entered_with_quests(quests: [
+    quest_support.accepted(quest_id: 3480, progress: [0, 0]),
+  ]).0
+}
+
+/// The 0x262 news of a Trapped Survivor as unit `unit_id`, standing `gap` from the
+/// player's edge straight ahead of the player and hostile to the factions `hostile_to`.
+fn survivor_appears(
+  unit_id unit_id: Int,
+  gap gap: Float,
+  hostile_to hostile_to: creature_life.Hostile,
+) -> step.Event(
+  step.ConnectionEvent(client_connection.Message, client_connection.Answer),
+) {
+  connection_support.creature_appears(
+    unit_id:,
+    creature_id: survivor,
+    display_info_id: survivors_display,
+    outfit_info_id: 0,
+    hit_radius: survivors_radius,
+    place: vendor_support.ahead_of_the_player(
+      hit_radius: survivors_radius,
+      gap:,
+    ),
+    hostile_to:,
+  )
+}
+
+fn unhostile() -> creature_life.Hostile {
+  creature_life.Hostile(exile: False, dominion: False)
+}
+
+/// The connection after this news of the unit.
+fn told(
+  state state: game_connection.State,
+  unit_id unit_id: Int,
+  news news: client_connection.News,
+) -> game_connection.State {
+  told_writing(state:, unit_id:, news:).0
+}
+
+/// The connection after this news of the unit, and the ids of the frames it wrote.
+fn told_writing(
+  state state: game_connection.State,
+  unit_id unit_id: Int,
+  news news: client_connection.News,
+) -> #(game_connection.State, List(Int)) {
+  let #(state, taken) =
+    connection_support.feed(
+      state:,
+      event: connection_support.news_sent_by_a_peer(unit_id:, news:),
+    )
+  #(state, connection_support.written_ids(taken))
+}
+
+/// The step of the player's right-click of the unit at the monotonic time `ms`.
+fn pressed(
+  state state: game_connection.State,
+  unit_id unit_id: Int,
+  at ms: Int,
+) -> step.ConnectionStep(client_connection.Request) {
+  connection_support.at(
+    state:,
+    ms:,
+    event: step.OwnEvent(
+      step.Read(right_click_bytes(client_cast_id: clients_cast_id, unit_id:)),
+    ),
+  ).1
+}
+
+pub fn an_activate_cast_judges_a_creature_where_its_path_puts_it_now_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let standing =
+    connection_support.feed(
+      state: holding_quest_3480(),
+      event: survivor_appears(
+        unit_id: nearby,
+        gap: 3.0,
+        hostile_to: unhostile(),
+      ),
+    ).0
+  assert connection_support.written_ids(pressed(
+      state: standing,
+      unit_id: nearby,
+      at: 0,
+    ))
+    == confirmed_start
+    as "opcode.0x262: the creature stands 3.0 from the player's edge, within Creature2 11070's activateSpellMaxRange 5.0, so the cast starts"
+  let far =
+    vendor_support.ahead_of_the_player(hit_radius: survivors_radius, gap: 8.0)
+  let #(moved, placed) =
+    told_writing(
+      state: standing,
+      unit_id: nearby,
+      news: client_connection.CreaturePlaced(place: far, at_ms: 0),
+    )
+  assert placed == [0x0638]
+    as "opcode.0x638: the news that puts the creature at 8.0 is written to the client, which moves its unit there"
+  assert connection_support.refusal_results(taken: pressed(
+      state: moved,
+      unit_id: nearby,
+      at: 0,
+    ))
+    == [cast_result.TargetRangeMax]
+    as "0x1403b2240 judges range against the client's unit, which the server's 0x638 moved to 8.0 from the edge: 105"
+  let #(running, run_written) =
+    told_writing(
+      state: moved,
+      unit_id: nearby,
+      news: client_connection.CreatureMoved(path: creature_path.Running(
+        from: far,
+        to: vendor_support.ahead_of_the_player(
+          hit_radius: survivors_radius,
+          gap: 1.0,
+        ),
+        started_ms: 0,
+        speed: 1.0,
+      )),
+    )
+  assert run_written == [0x0638]
+    as "opcode.0x638: the path the creature runs is written to the client, which moves its unit along it"
+  assert connection_support.refusal_results(taken: pressed(
+      state: running,
+      unit_id: nearby,
+      at: 2000,
+    ))
+    == [cast_result.TargetRangeMax]
+    as "2.0 s into a run of 1.0 a second from 8.0 the creature is 6.0 away: still out of range"
+  assert connection_support.written_ids(pressed(
+      state: running,
+      unit_id: nearby,
+      at: 4000,
+    ))
+    == confirmed_start
+    as "4.0 s into the run it is 4.0 away: the picture's path puts it within the 5.0, and the cast starts"
+}
+
+pub fn the_picture_gives_an_activate_cast_the_creatures_life_combat_and_disposition_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let dead = 41
+  let fighting = 42
+  let enemy = 43
+  let state =
+    list.fold(
+      [
+        #(dead, unhostile()),
+        #(fighting, unhostile()),
+        #(enemy, creature_life.Hostile(exile: False, dominion: True)),
+      ],
+      holding_quest_3480(),
+      fn(state, creature) {
+        connection_support.feed(
+          state:,
+          event: survivor_appears(
+            unit_id: creature.0,
+            gap: 1.0,
+            hostile_to: creature.1,
+          ),
+        ).0
+      },
+    )
+  let state = told(state:, unit_id: dead, news: client_connection.Died)
+  assert connection_support.refusal_results(taken: pressed(
+      state:,
+      unit_id: dead,
+      at: 0,
+    ))
+    == [cast_result.TargetCannotBeDead]
+    as "Spell4 1817's target row refuses a dead target: Died news reaches the cast rule as 106"
+  let state =
+    told(
+      state:,
+      unit_id: fighting,
+      news: client_connection.CombatState(in_combat: True),
+    )
+  assert connection_support.refusal_results(taken: pressed(
+      state:,
+      unit_id: fighting,
+      at: 0,
+    ))
+    == [cast_result.TargetIsNotUseable]
+    as "0x14047a060: a unit in combat offers no click: the CombatState news reaches the cast rule as 100"
+  let state =
+    told(
+      state:,
+      unit_id: fighting,
+      news: client_connection.CombatState(in_combat: False),
+    )
+  assert connection_support.written_ids(pressed(
+      state:,
+      unit_id: fighting,
+      at: 0,
+    ))
+    == confirmed_start
+    as "the combat ended with the next CombatState: the unit is usable again"
+  assert connection_support.refusal_results(taken: pressed(
+      state:,
+      unit_id: enemy,
+      at: 0,
+    ))
+    == [cast_result.TargetIsNotUseable]
+    as "0x14047a060 withholds the click of a unit Hostile to the player's faction (the tests' player is a Dominion one): 100"
 }

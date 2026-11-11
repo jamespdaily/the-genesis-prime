@@ -89,6 +89,7 @@ fn striker_at(x x: Float, z z: Float) -> shown.Shown {
     hit_radius: striker_hit_radius(),
     attackable: Attackable(exile: True, dominion: True),
     hostile_to: Hostile(exile: False, dominion: False),
+    in_combat: False,
   )
 }
 

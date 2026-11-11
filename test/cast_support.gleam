@@ -66,6 +66,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     longer_of_delay_and_duration: False,
     weapon: NoWeaponNeeded,
     caster_death: spell_plan.CannotBeDead,
+    target_death: spell_plan.AliveOrDead,
     global_cooldown: GlobalCooldown(
       refused_while_running: False,
       starts_for_ms: None,

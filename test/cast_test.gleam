@@ -953,6 +953,7 @@ pub fn a_dead_casters_press_of_a_spell_without_the_dead_bit_is_cast_as_for_the_l
       spell_plan.Spell(
         ..support.ability(base: 19_102),
         caster_death: spell_plan.AliveOrDead,
+        target_death: spell_plan.AliveOrDead,
       ),
     ])
   let dead =
@@ -986,6 +987,7 @@ pub fn a_living_casters_press_of_a_spell_that_must_be_cast_dead_is_refused_58_te
       spell_plan.Spell(
         ..support.ability(base: 19_102),
         caster_death: spell_plan.MustBeDead,
+        target_death: spell_plan.AliveOrDead,
       ),
     ])
   let #(after, effects) =

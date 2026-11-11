@@ -533,3 +533,19 @@ Creature2	72197	first creature of TargetGroup 14175	objective_test
 Creature2	72198	second creature of TargetGroup 14175	objective_test
 Creature2	72231	third creature of TargetGroup 14175	objective_test
 Quest2	10415	the quest of objective 21094, a type 23 objective of TargetGroup 14175	objective_test
+Creature2	11070	Trapped Survivor, a quest creature that walks a path: activate spell 1817, linked to quest 3480 by Prerequisite 2672	game_connection_objective, game_wire_test
+QuestObjective	4470	type 12 objective of quest 3480, Creature2 11070, count 3	game_connection_objective, game_wire_test
+Quest2	3480	quest whose objective 0 is a use of Creature2 11070	game_connection_objective, game_wire_test
+Prerequisite	2672	anim state of Creature2 11070: type 43 on quests 3479 and 3480	game_connection_objective
+Quest2	3886	Northern Wilds quest: use 13630, use three 13623, turn in at 11066	game_wire_test
+QuestObjective	5053	type 12 objective of quest 3886, Creature2 13630	game_wire_test
+QuestObjective	5052	type 14 objective of quest 3886, TargetGroup 1460	game_wire_test
+QuestObjective	4565	type 8 objective of quest 3480, TargetGroup 1463	game_wire_test
+TargetGroup	1460	group of Creature2 13623, the checklist of objective 5052	game_wire_test
+TargetGroup	1463	kill group of objective 4565	game_wire_test
+Creature2	11061	giver of quest 3480	game_wire_test
+Creature2	13630	activate target of objective 5053	game_wire_test
+Creature2	13623	checklist target of objective 5052	game_wire_test
+Quest2Reward	2192	reward choice of quest 3886	game_wire_test
+Quest2Reward	2430	reward choice of quest 3886	game_wire_test
+Quest2Reward	4767	reward choice of quest 3886	game_wire_test

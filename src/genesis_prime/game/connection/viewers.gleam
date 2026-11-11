@@ -397,6 +397,7 @@ pub fn viewer_takes(
             hit_radius:,
             attackable:,
             hostile_to:,
+            in_combat: False,
           ),
         )),
         [
@@ -568,6 +569,10 @@ pub fn viewer_takes(
     }
     client_connection.CombatState(in_combat:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
+      let session =
+        shown_changed(session:, change: fn(picture) {
+          shown.with_in_combat(picture:, unit_id:, in_combat:)
+        })
       Continue(session, [
         connection_state.to_client(
           session,

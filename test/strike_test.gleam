@@ -868,6 +868,7 @@ fn creature_at(
     hit_radius: 3.0,
     attackable:,
     hostile_to: Hostile(exile: False, dominion: False),
+    in_combat: False,
   )
 }
 
