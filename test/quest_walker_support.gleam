@@ -42,6 +42,8 @@ pub fn walker(
       40,
       shown.ShownCreature(
         creature_id: id.Creature2Id(74_812),
+        faction_id: 0,
+        checklist_index: 0,
         path: creature_path.Standing(at: place),
         life: 4,
         alive:,

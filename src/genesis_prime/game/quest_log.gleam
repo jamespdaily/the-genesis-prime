@@ -807,6 +807,9 @@ pub type QuestRowError {
 /// The QuestObjective flag the client's state and reachability skip.
 const skipped_flag = 0x20
 
+/// The bits of a checklist's mask: the server's 0x35f and 0x361 carry 32.
+const mask_bits = 32
+
 /// The QuestObjective flag that keeps a kill objective's progress a count.
 const counted_flag = 0x200
 
@@ -1369,6 +1372,74 @@ pub fn progressed(
       ))
     }
     _, _ -> Error(Nil)
+  }
+}
+
+/// The log after the unit of checklist index `bit` is counted for the quest's checklist
+/// objective at `index`: its stored progress is the mask the client reads bits from, so
+/// the unit's bit is set (`0x140611680` tests `mask & (1 << bit)`), and the objective is
+/// done once the bits set reach its count (`0x1406113b0`, `0x1406115a0`). `Error(Nil)`
+/// when the objective takes no progress (the quest is not in the active list, or the
+/// objective is no checklist, is done, is not reachable or is past the quest's
+/// objectives) or `bit` is not one of the mask's 32 (the client counts those as never
+/// counted). A bit that is set already changes nothing: `changed` is false.
+pub fn marked(
+  log log: QuestLog,
+  quest quest: Quest,
+  index index: Int,
+  bit bit: Int,
+  now_ms now_ms: Int,
+) -> Result(Counted, Nil) {
+  let quest = as_logged(log:, quest:)
+  case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
+    Ok(Active(done_mask:, progress:, ..) as entry), [objective, ..]
+      if index >= 0 && bit >= 0 && bit < mask_bits && objective.checklist
+    -> {
+      use <- bool.guard(
+        when: !objective_open(log:, quest:, index:),
+        return: Error(Nil),
+      )
+      let before = list.drop(progress, index) |> list.first |> result.unwrap(0)
+      let mask = int.bitwise_or(before, int.bitwise_shift_left(1, bit))
+      let done_mask = case set_bits(of: mask) >= needed(objective:) {
+        True -> int.bitwise_or(done_mask, int.bitwise_shift_left(1, index))
+        False -> done_mask
+      }
+      let #(log, moved) =
+        store_progress(
+          log:,
+          quest:,
+          entry:,
+          index:,
+          progress: mask,
+          done_mask:,
+          now_ms:,
+        )
+      Ok(Counted(log:, progress: mask, changed: mask != before, moved:))
+    }
+    _, _ -> Error(Nil)
+  }
+}
+
+/// Whether the unit of checklist index `bit` is counted for the quest's checklist
+/// objective at `index`: the objective's stored mask has the bit (`0x140611680`). False
+/// for an objective that is no checklist, a quest not in the active list and a `bit`
+/// the mask has none of (the client counts those as never counted).
+pub fn is_marked(
+  log log: QuestLog,
+  quest quest: Quest,
+  index index: Int,
+  bit bit: Int,
+) -> Bool {
+  let quest = as_logged(log:, quest:)
+  case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
+    Ok(Active(progress:, ..)), [objective, ..]
+      if index >= 0 && bit >= 0 && bit < mask_bits && objective.checklist
+    -> {
+      let stored = list.drop(progress, index) |> list.first |> result.unwrap(0)
+      int.bitwise_and(stored, int.bitwise_shift_left(1, bit)) != 0
+    }
+    _, _ -> False
   }
 }
 

@@ -197,6 +197,20 @@ pub fn creature_id(created created: Created) -> Creature2Id {
   }
 }
 
+/// The checklist index a 0x262 gives its unit: the one the types that read it send, 0
+/// for the others (the client's reader leaves it 0).
+pub fn checklist_index(created created: Created) -> Int {
+  case created {
+    CreatedWithChecklist(message) -> message.checklist_index
+    CreatedDoor(_) | CreatedMailbox(_) | CreatedPortal(_) -> 0
+  }
+}
+
+/// The Faction2 id a 0x262 gives its unit.
+pub fn faction_id(created created: Created) -> Int {
+  tail_of(created:).faction_id
+}
+
 /// The tail every unit type's 0x262 ends with.
 fn tail_of(created created: Created) -> UnitCreateTail {
   case created {

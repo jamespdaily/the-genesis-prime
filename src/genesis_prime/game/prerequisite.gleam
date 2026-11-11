@@ -128,9 +128,14 @@
 ////   passes; the objectId and the value are not read
 ////   (`Prerequisite.prerequisiteTypeId.125`, `0x14049fac0`). Gap: the records of
 ////   challenges are issue 52's.
-//// - **Type 94** (the target is counted by a checklist objective) passes by comparison
-////   2 and fails every other: the server holds no counted-targets mask yet, so no target
-////   is counted (`Prerequisite.prerequisiteTypeId.94`).
+//// - **Type 94** (the target is counted by a checklist objective) reads the check's
+////   creature, the first unit unless it is a player and then the second, and the objective
+////   `value` of the quest `objectId` (`Prerequisite.prerequisiteTypeId.94`,
+////   `0x14049f5b0`). With no creature, or a quest the table lacks, comparison 2 passes and
+////   any other fails. Else the creature is counted when the quest is in the log and the
+////   objective's mask holds the creature's checklist index (`0x140611680`), which
+////   comparison 1 passes and comparison 2 fails; a quest not in the log counts nothing.
+////   Only a struck unit carries a creature (`counting`).
 //// - **A vital the server does not hold** is `NotRead`, as is a type the client
 ////   decides and the server does not read.
 //// - **Type 108** passes, by comparison 1, when the check's second unit stands in the arc
@@ -336,9 +341,9 @@ type Condition {
   /// Type 43: whether the quest's objective `index` is open
   /// (`Prerequisite.prerequisiteTypeId.43`).
   ObjectiveOpen(comparison: Comparison, index: Int, quest: Option(Quest))
-  /// Type 94: whether the target is counted by a checklist objective
-  /// (`Prerequisite.prerequisiteTypeId.94`).
-  TargetCounted(comparison: Comparison)
+  /// Type 94: whether the check's creature is counted by the quest's checklist objective
+  /// `index` (`Prerequisite.prerequisiteTypeId.94`).
+  TargetCounted(comparison: Comparison, index: Int, quest: Option(Quest))
   /// Types 22, 23, 33, 34, 35 and 36: the progress of the quest's objective `index`
   /// (0 to 5) against the value (`Prerequisite.prerequisiteTypeId.22`).
   ObjectiveProgress(
@@ -503,9 +508,22 @@ pub type Subject {
     /// cast rule holds: `None` for a creature's side, so types 6, 68, 43 and 22 to 36
     /// are not read for it (`Prerequisite.prerequisiteTypeId.6`, `.68`, `.43`, `.22`).
     quests: Option(QuestLog),
+    /// The checklist index of the check's creature (`0x262`), which only a struck unit
+    /// holds: `None` when the check has no creature, as type 94 reads it
+    /// (`Prerequisite.prerequisiteTypeId.94`).
+    creature_index: Option(Int),
     /// What the check knows of the subject.
     seen: Seen,
   )
+}
+
+/// The subject with a creature in the check, whose checklist index (the one its 0x262
+/// carried) type 94 reads.
+pub fn counting(
+  subject subject: Subject,
+  checklist_index index: Int,
+) -> Subject {
+  Subject(..subject, creature_index: Some(index))
 }
 
 /// Where the check's units stand, for type 108.
@@ -556,6 +574,7 @@ pub fn of_struck(
     factions: None,
     player: Some(player),
     quests: Some(quests),
+    creature_index: None,
     seen: PlaceOnly,
   )
 }
@@ -577,6 +596,7 @@ pub fn of_difficulty(difficulty difficulty: Int) -> Subject {
     factions: None,
     player: None,
     quests: None,
+    creature_index: None,
     seen: WholeUnit,
   )
 }
@@ -602,6 +622,7 @@ pub fn of_wearer(
     factions: Some(factions),
     player: Some(player),
     quests: None,
+    creature_index: None,
     seen: WholeUnit,
   )
 }
@@ -810,7 +831,7 @@ fn condition_read(
       |> result.map(fn(arc) {
         InArc(comparison: comparison_of(comparison), arc:)
       })
-    6 | 68 | 43 | 22 | 23 | 33 | 34 | 35 | 36 ->
+    6 | 68 | 43 | 94 | 22 | 23 | 33 | 34 | 35 | 36 ->
       quest_named(object_id:, quests:)
       |> result.map(fn(quest) {
         quest_condition(type_id:, comparison:, value:, quest:)
@@ -833,7 +854,7 @@ fn quest_named(
   }
 }
 
-/// A quest condition (types 6, 68, 43, 22, 23, 33, 34, 35 and 36) of this quest.
+/// A quest condition (types 6, 68, 43, 94, 22, 23, 33, 34, 35 and 36) of this quest.
 fn quest_condition(
   type_id type_id: Int,
   comparison comparison: Int,
@@ -850,6 +871,12 @@ fn quest_condition(
       )
     43 ->
       ObjectiveOpen(
+        comparison: comparison_of(comparison),
+        index: unsigned(value),
+        quest:,
+      )
+    94 ->
+      TargetCounted(
         comparison: comparison_of(comparison),
         index: unsigned(value),
         quest:,
@@ -965,8 +992,7 @@ fn condition_of(
     109 -> InWorld(comparison: comparison_of(comparison), world_id: object_id)
     125 -> ChallengeInCooldown(comparison: comparison_of(comparison))
     243 -> NeverMet
-    94 -> TargetCounted(comparison: comparison_of(comparison))
-    6 | 68 | 43 | 22 | 23 | 33 | 34 | 35 | 36 ->
+    6 | 68 | 43 | 94 | 22 | 23 | 33 | 34 | 35 | 36 ->
       quest_condition(type_id:, comparison:, value:, quest: None)
     _ ->
       case
@@ -1436,14 +1462,30 @@ fn condition_decided(
         asked(comparison:, holds: open)
       }),
     )
-    // The gap: the server holds no counted-targets mask yet, so no target is counted,
-    // which passes comparison 2 only. The mask and what sets it belong to the issue
-    // "Checklist objectives progress (objective types 14, 18, 10, 27 and 28)" (#599).
-    TargetCounted(comparison:) -> #(rolls, case comparison {
-      Found -> Fails
-      NotFound -> Passes
-      OtherComparison(..) -> Fails
-    })
+    TargetCounted(comparison:, index:, quest:) -> #(
+      rolls,
+      case subject.creature_index, quest {
+        Some(creature_index), Some(quest) ->
+          with_quest_log(subject:, prerequisite_type: 94, decide: fn(log) {
+            asked(
+              comparison:,
+              holds: quest_log.is_marked(
+                log:,
+                quest:,
+                index:,
+                bit: creature_index,
+              ),
+            )
+          })
+        // No creature or an unknown quest: only comparison 2 passes, and the quest log
+        // is not read (`0x14049f5b0`).
+        None, _ | _, None ->
+          case comparison {
+            NotFound -> Passes
+            Found | OtherComparison(..) -> Fails
+          }
+      },
+    )
     ObjectiveProgress(prerequisite_type:, relation:, index:, value:, quest:) -> #(
       rolls,
       with_quest_log(subject:, prerequisite_type:, decide: fn(log) {

@@ -35,6 +35,8 @@ fn creature(
 ) -> shown.Shown {
   ShownCreature(
     creature_id: Creature2Id(73_464),
+    faction_id: 0,
+    checklist_index: 0,
     path: creature_path.Standing(at: place_support.at(
       world_id: 3460,
       world_zone_id: 5967,
@@ -54,6 +56,8 @@ fn creature(
 fn an_object() -> shown.Shown {
   ShownObject(
     creature_id: Creature2Id(26_462),
+    faction_id: 0,
+    checklist_index: 0,
     place: place_support.at(
       world_id: 3460,
       world_zone_id: 6009,
@@ -172,6 +176,8 @@ fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
     )
   ShownCreature(
     creature_id: Creature2Id(73_464),
+    faction_id: 0,
+    checklist_index: 0,
     path: creature_path.Standing(at: place),
     life: 4,
     alive: True,

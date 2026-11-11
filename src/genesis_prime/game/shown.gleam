@@ -29,7 +29,10 @@
 
 import genesis_prime/game/area.{type Candidate, type Pose, Candidate}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/table/id.{type Creature2Id}
+import genesis_prime/game/target_group.{type Unit, Unit}
+import genesis_prime/table/creature2
+import genesis_prime/table/id.{type Creature2Id, Faction2Id}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
 import genesis_prime/world_map/creature_path.{type Path}
 import genesis_prime/world_map/spawn
@@ -55,6 +58,10 @@ pub type Shown {
   ShownObject(
     /// The Creature2 row of its 0x262.
     creature_id: Creature2Id,
+    /// The Faction2 id its 0x262 gave it, 0 for none.
+    faction_id: Int,
+    /// The checklist index its 0x262 gave it, 0 for a type that sends none.
+    checklist_index: Int,
     /// Where its 0x262 puts it, in the world and zone of the player it was shown to.
     place: Place,
     /// Creature2DisplayInfo.hitRadius of its display, 0.0 when the display has no
@@ -65,6 +72,10 @@ pub type Shown {
   ShownCreature(
     /// The Creature2 row it was created from.
     creature_id: Creature2Id,
+    /// The Faction2 id its 0x262 gave it.
+    faction_id: Int,
+    /// The checklist index its 0x262 gave it.
+    checklist_index: Int,
     /// Where it stands or runs: standing at the place of its 0x262 until a
     /// CreatureMoved news.
     path: Path,
@@ -85,6 +96,32 @@ pub type Shown {
 /// The units the client shows, by unit id.
 pub type Picture =
   Dict(Int, Shown)
+
+/// The unit as the client's group test reads it and its checklist index, for a shown
+/// creature or object, or `Error(Nil)` for a unit that is not one (another player). The
+/// Creature2 row is in the tables the spawn was loaded from, so a missing one is no
+/// unit either.
+pub fn target_of(
+  tables tables: table_store.Tables,
+  shown shown: Shown,
+) -> Result(#(Unit, Int), Nil) {
+  case shown {
+    ShownPlayer -> Error(Nil)
+    ShownObject(creature_id:, faction_id:, checklist_index:, ..)
+    | ShownCreature(creature_id:, faction_id:, checklist_index:, ..) ->
+      creature2.get(tables, creature_id)
+      |> result.map(fn(row) {
+        #(
+          Unit(
+            creature_id:,
+            faction_id: Faction2Id(faction_id),
+            unit_race_id: creature2.unit_race_id(row),
+          ),
+          checklist_index,
+        )
+      })
+  }
+}
 
 /// The faction of a character, by its Faction2 id (Dominion 166, Exile 167), or
 /// `Error(Nil)` for any other.
@@ -178,6 +215,22 @@ pub fn poses_of(
   list.filter_map(unit_ids, fn(unit_id) {
     pose_of(picture:, unit_id:, now_ms:)
     |> result.map(fn(pose) { #(unit_id, pose) })
+  })
+  |> dict.from_list
+}
+
+/// The checklist indexes the units' 0x262 carried, by unit id: the creatures and objects
+/// the picture shows among them. A type 94 condition reads the struck unit's index.
+pub fn checklist_indexes_of(
+  picture picture: Picture,
+  unit_ids unit_ids: List(Int),
+) -> Dict(Int, Int) {
+  list.filter_map(unit_ids, fn(unit_id) {
+    case dict.get(picture, unit_id) {
+      Ok(ShownCreature(checklist_index:, ..))
+      | Ok(ShownObject(checklist_index:, ..)) -> Ok(#(unit_id, checklist_index))
+      Ok(ShownPlayer) | Error(Nil) -> Error(Nil)
+    }
   })
   |> dict.from_list
 }

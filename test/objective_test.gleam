@@ -91,6 +91,24 @@ import quest_support
 
 const talk_target = 12_484
 
+/// The unit of a creature as the group test of a type 3 or 12 objective reads it: these
+/// objectives name the Creature2 id only, so its faction and race are 0.
+fn plain_unit(creature creature: id.Creature2Id) -> target_group.Unit {
+  target_group.Unit(
+    creature_id: creature,
+    faction_id: Faction2Id(0),
+    unit_race_id: UnitRaceId(0),
+  )
+}
+
+fn a_talk(creature: id.Creature2Id) -> objective.Event {
+  TalkedTo(target: plain_unit(creature:), checklist_index: 0)
+}
+
+fn a_use(creature: id.Creature2Id) -> objective.Event {
+  Used(target: plain_unit(creature:), checklist_index: 0)
+}
+
 const use_target = 58_487
 
 const unnamed = 57_050
@@ -147,7 +165,7 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
     objective.advance(
       log:,
       tables:,
-      event: TalkedTo(Creature2Id(talk_target)),
+      event: a_talk(Creature2Id(talk_target)),
       now_ms: 0,
     )
   assert talked.effects
@@ -167,7 +185,7 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
   assert objective.advance(
       log: talked.log,
       tables:,
-      event: TalkedTo(Creature2Id(talk_target)),
+      event: a_talk(Creature2Id(talk_target)),
       now_ms: 0,
     )
     == Advanced(log: talked.log, effects: [])
@@ -175,7 +193,7 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
   assert objective.advance(
       log:,
       tables:,
-      event: TalkedTo(Creature2Id(unnamed)),
+      event: a_talk(Creature2Id(unnamed)),
       now_ms: 0,
     )
     == Advanced(log:, effects: [])
@@ -196,7 +214,7 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
     objective.advance(
       log: achieved,
       tables:,
-      event: TalkedTo(Creature2Id(talk_target)),
+      event: a_talk(Creature2Id(talk_target)),
       now_ms: 0,
     )
   assert late.effects
@@ -228,7 +246,7 @@ pub fn a_use_advances_each_open_type_12_objective_naming_the_creature_test() -> 
     objective.advance(
       log:,
       tables:,
-      event: Used(Creature2Id(use_target)),
+      event: a_use(Creature2Id(use_target)),
       now_ms: 0,
     )
   assert used.effects
@@ -253,7 +271,7 @@ pub fn a_use_advances_each_open_type_12_objective_naming_the_creature_test() -> 
   assert objective.advance(
       log: waiting,
       tables:,
-      event: Used(Creature2Id(use_target)),
+      event: a_use(Creature2Id(use_target)),
       now_ms: 0,
     )
     == Advanced(log: waiting, effects: [])
@@ -806,7 +824,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       quest_support.accepted(quest_id: 3741, progress: [0]),
     ])
   let used =
-    objective.advance(log:, tables:, event: Used(collectible), now_ms: 0)
+    objective.advance(log:, tables:, event: a_use(collectible), now_ms: 0)
   assert used.effects
     == [SendProgress(quest_id: 3741, objective_index: 0, progress: 1)]
     as "one cast of the collectible is one of the six"
@@ -814,7 +832,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
     objective.advance(
       log: used.log,
       tables:,
-      event: Used(collectible),
+      event: a_use(collectible),
       now_ms: 0,
     )
   assert again.effects
@@ -835,7 +853,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
   assert objective.advance(
       log: done,
       tables:,
-      event: Used(collectible),
+      event: a_use(collectible),
       now_ms: 0,
     )
     == Advanced(log: done, effects: [])
@@ -845,7 +863,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
   assert objective.advance(
       log: finished,
       tables:,
-      event: Used(collectible),
+      event: a_use(collectible),
       now_ms: 0,
     )
     == Advanced(log: finished, effects: [])
@@ -857,7 +875,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
   assert objective.advance(
       log: other,
       tables:,
-      event: Used(collectible),
+      event: a_use(collectible),
       now_ms: 0,
     )
     == Advanced(log: other, effects: [])
@@ -872,7 +890,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
   assert objective.advance(
       log: waiting,
       tables: named_elsewhere,
-      event: Used(collectible),
+      event: a_use(collectible),
       now_ms: 0,
     )
     == Advanced(log: waiting, effects: [])
@@ -891,7 +909,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
   assert objective.advance(
       log: reachable,
       tables: named_elsewhere,
-      event: Used(collectible),
+      event: a_use(collectible),
       now_ms: 0,
     ).effects
     == [SendProgress(quest_id: 5857, objective_index: 1, progress: 1)]
@@ -899,7 +917,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
   assert objective.advance(
       log:,
       tables: named_elsewhere,
-      event: Used(collectible),
+      event: a_use(collectible),
       now_ms: 0,
     )
     == Advanced(log:, effects: [])

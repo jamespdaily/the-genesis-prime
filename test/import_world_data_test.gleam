@@ -128,7 +128,7 @@ pub fn a_changed_row_keeps_its_id_and_a_removed_row_is_deleted_and_server_choice
   )
   content_support.psql(
     database:,
-    sql: "insert into spawn (source, source_row, entity_type, creature_id, world_id, area_id, x, y, z, rotation_x, rotation_y, rotation_z, display_info_id, outfit_info_id, faction_id, base_faction_id, quest_checklist_index, active_prop_id, world_socket_id) values ('world_database', 1, 0, 73464, 3460, 0, 0, 0, 0, 0, 0, 0, 26565, 0, 1441, 1441, 0, 0, 0)",
+    sql: "insert into spawn (source, source_row, entity_type, creature_id, world_id, area_id, x, y, z, rotation_x, rotation_y, rotation_z, display_info_id, outfit_info_id, faction_id, base_faction_id, active_prop_id, world_socket_id) values ('world_database', 1, 0, 73464, 3460, 0, 0, 0, 0, 0, 0, 0, 26565, 0, 1441, 1441, 0, 0)",
   )
   let assert Ok(counts) =
     import_into(database:, folder: content_support.fixture_folder)

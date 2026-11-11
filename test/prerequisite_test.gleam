@@ -82,6 +82,7 @@ fn bare() -> Subject {
     factions: None,
     player: None,
     quests: None,
+    creature_index: None,
     seen: prerequisite.WholeUnit,
   )
 }

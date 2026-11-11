@@ -18,8 +18,10 @@
 ////   with the value as unsigned 32-bit numbers, progress on the left; completed quests read
 ////   the needed count (0x140551840), active ones the in-log progress (0x1406113b0), any
 ////   other 0. Types 22, 23, 33, 34, 35 and 36 read objective 0 to 5.
-//// - `Prerequisite.prerequisiteTypeId.94`: the server holds no counted-targets mask (the
-////   coordinator's decision of 2026-11-08), so comparison 2 passes and any other fails.
+//// - `Prerequisite.prerequisiteTypeId.94` and `0x14049f5b0`: the creature is the first unit
+////   unless it is a player and then the second; with none, or a quest the table lacks,
+////   only comparison 2 passes; else the quest's objective `value` is read from the log:
+////   the creature is counted when its index is a bit of the objective's mask (`0x140611680`).
 //// - The client's rows, from the fixture (`table_rows -- Quest2 <id>`, `-- QuestObjective
 ////   <id>`, `-- Prerequisite 9207`): `quest_support` names each quest and its objectives.
 
@@ -550,40 +552,73 @@ pub fn an_entry_placeholder_replaces_the_quests_type_31_slot_test() -> Nil {
 
 // ---- 5: type 94 ----
 
-pub fn a_target_counted_condition_passes_only_not_counted_test() -> Nil {
+/// The struck unit as a target-side check holds it: the caster's quest log, and the
+/// checklist index its 0x262 carried when it has a creature.
+fn struck_with(log log: QuestLog, index index: option.Option(Int)) -> Subject {
+  let subject =
+    prerequisite.of_struck(
+      first: Some(prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0)),
+      second: prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0),
+      player: prerequisite_support.player(),
+      quests: log,
+    )
+  case index {
+    Some(index) -> prerequisite.counting(subject:, checklist_index: index)
+    None -> subject
+  }
+}
+
+/// Quest 10520's objective 0 is 21294, a type 14 checklist (TargetGroup 14425, count 3),
+/// so its stored progress is the mask of the indexes counted.
+pub fn prerequisite_94_passes_comparison_1_only_when_the_creature_is_counted_test() -> Nil {
   use <- owned_test.run(60_000)
-  let quest = quest_support.skipped_first
-  let origin = prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0)
-  let in_log = log_of(rows: [accepted(quest:, done_mask: 0, progress: [0, 0])])
-  let subjects = [
-    player_with(log: in_log),
-    player_with(log: log_of(rows: [])),
-    prerequisite.of_struck(
-      first: Some(origin),
-      second: origin,
-      player: prerequisite_support.player(),
-      quests: in_log,
-    ),
-    prerequisite.of_struck(
-      first: None,
-      second: origin,
-      player: prerequisite_support.player(),
-      quests: log_of(rows: []),
-    ),
-  ]
-  list.each(subjects, fn(subject) {
-    let checked = fn(comparison) {
-      prerequisite.check(
-        prerequisite: gate(condition: #(94, comparison, quest, 0)),
-        subject:,
-      )
-    }
-    assert checked(2) == Passes
-      as "the server holds no counted-targets mask, so no target is counted: comparison 2 passes (Prerequisite.prerequisiteTypeId.94, the coordinator's decision of 2026-11-08)"
-    assert checked(1) == Fails
-      as "comparison 1 needs a counted target: it fails"
-    assert checked(3) == Fails as "comparison 3 is no case: it fails"
-  })
+  let quest = 10_520
+  let counted =
+    log_of(rows: [accepted(quest:, done_mask: 0, progress: [4, 0, 0, 0, 0])])
+  let clear =
+    log_of(rows: [accepted(quest:, done_mask: 0, progress: [0, 0, 0, 0, 0])])
+  let checked = fn(subject, condition) {
+    prerequisite.check(prerequisite: gate(condition:), subject:)
+  }
+
+  let set = struck_with(log: counted, index: Some(2))
+  assert checked(set, #(94, 1, quest, 0)) == Passes
+    as "the objective's mask 0b100 holds the creature's index 2: counted, so comparison 1 passes (0x140611680)"
+  assert checked(set, #(94, 2, quest, 0)) == Fails as "and comparison 2 fails"
+  assert checked(set, #(94, 3, quest, 0)) == Fails as "comparison 3 is no case"
+
+  let other = struck_with(log: counted, index: Some(3))
+  assert checked(other, #(94, 1, quest, 0)) == Fails
+    as "index 3 has no bit in 0b100: not counted, comparison 1 fails"
+  assert checked(other, #(94, 2, quest, 0)) == Passes
+    as "and comparison 2 passes"
+
+  let none_yet = struck_with(log: clear, index: Some(2))
+  assert checked(none_yet, #(94, 1, quest, 0)) == Fails
+    as "a clear mask counts nothing"
+  assert checked(none_yet, #(94, 2, quest, 0)) == Passes
+    as "so comparison 2 passes"
+
+  let not_logged = struck_with(log: log_of(rows: []), index: Some(2))
+  assert checked(not_logged, #(94, 1, quest, 0)) == Fails
+    as "a quest not in the log counts nothing (0x140552f50)"
+  assert checked(not_logged, #(94, 2, quest, 0)) == Passes
+    as "so comparison 2 passes"
+
+  let no_creature = struck_with(log: counted, index: None)
+  assert checked(no_creature, #(94, 1, quest, 0)) == Fails
+    as "a check with no creature has no bit to read: comparison 1 fails (0x14049f5b0)"
+  assert checked(no_creature, #(94, 2, quest, 0)) == Passes
+    as "and comparison 2 passes, though the mask holds bit 2"
+
+  let unknown_quest = 999_999_999
+  assert checked(set, #(94, 1, unknown_quest, 0)) == Fails
+    as "a quest the table lacks is the client's unknown quest: comparison 1 fails"
+  assert checked(set, #(94, 2, unknown_quest, 0)) == Passes
+    as "and comparison 2 passes"
+
+  assert checked(set, #(94, 1, quest, 1)) == Fails
+    as "the condition's value is the objective: objective 1 of quest 10520 is no checklist"
 }
 
 // ---- 6: a subject with no quest log ----
@@ -606,7 +641,7 @@ pub fn a_subject_with_no_quest_log_leaves_quest_conditions_not_read_test() -> Ni
   assert checked(#(36, 1, quest, 0)) == NotRead(prerequisite_type: 36)
     as "type 36 is not read"
   assert checked(#(94, 2, quest, 0)) == Passes
-    as "type 94 needs no log: comparison 2 still passes"
+    as "type 94 has no creature here: comparison 2 passes"
   assert checked(#(94, 1, quest, 0)) == Fails as "and comparison 1 fails"
 }
 

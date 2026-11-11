@@ -109,13 +109,14 @@ import genesis_prime/step.{
   OwnEffect, StartTimer,
 }
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{Creature2Id, RaceId}
+import genesis_prime/table/id.{RaceId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 
 /// What the cast messages do, taken from inside 0x038C, in the world
 /// (genesis_prime/game/cast): the press is refused or accepted and its writes,
@@ -192,7 +193,7 @@ fn activate_target(
       Error(Nil) -> activate.Unseen
       Ok(shown.ShownPlayer) -> activate.AnotherPlayer
       Ok(shown.ShownCreature(..)) -> activate.Fighter
-      Ok(shown.ShownObject(creature_id:, place:, hit_radius:)) -> {
+      Ok(shown.ShownObject(creature_id:, place:, hit_radius:, ..)) -> {
         // The object's Creature2 row is in the tables, since its 0x262 was made from it.
         let assert Ok(row) = creature2.get(tables:, id: creature_id)
           as "a shown object's Creature2 row is in the tables it was made from"
@@ -426,17 +427,22 @@ pub fn cast_effects(
       cast.Strike(asked:), Some(entered) ->
         strike_begins(session:, now:, entered:, asked:)
       cast.Strike(..), None -> #(session, [])
-      cast.Activated(unit_id:, creature_id:), Some(entered) ->
+      cast.Activated(unit_id:, ..), Some(entered) ->
         // The go is raised even when the unit has left the picture, and a use of a
         // creature the player no longer sees counts for no objective.
-        case dict.has_key(entered.shown, unit_id) {
-          True ->
+        case
+          dict.get(entered.shown, unit_id)
+          |> result.try(fn(shown) {
+            shown.target_of(tables: session.settings.tables, shown:)
+          })
+        {
+          Ok(#(target, checklist_index)) ->
             connection_objective.counted(
               session:,
               now:,
-              event: objective.Used(creature_id: Creature2Id(creature_id)),
+              event: objective.Used(target:, checklist_index:),
             )
-          False -> #(session, [])
+          Error(Nil) -> #(session, [])
         }
       cast.Activated(..), None -> #(session, [])
       cast.Pay(payments:), _ -> connection_resource.paid(session:, payments:)
@@ -677,6 +683,10 @@ pub fn carry_strike(
               picture: entered.shown,
               unit_ids: cast.hit_units(struck:),
               now_ms: now.monotonic_ms,
+            ),
+            indexes: shown.checklist_indexes_of(
+              picture: entered.shown,
+              unit_ids: cast.hit_units(struck:),
             ),
             rolls: prerequisite.rolls_of(bytes:),
           )

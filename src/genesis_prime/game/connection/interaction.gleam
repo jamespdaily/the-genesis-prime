@@ -87,11 +87,11 @@ pub fn interaction_message(
                 connection_frames.dialog_open_frame(unit_id:),
               ),
             ])
-            interaction.TalkedTo(creature_id:) ->
+            interaction.TalkedTo(target:, checklist_index:) ->
               connection_objective.counted(
                 session:,
                 now:,
-                event: objective.TalkedTo(creature_id:),
+                event: objective.TalkedTo(target:, checklist_index:),
               )
             interaction.OpenVendor(unit_id:, vendor:) -> #(session, [
               connection_state.to_client(

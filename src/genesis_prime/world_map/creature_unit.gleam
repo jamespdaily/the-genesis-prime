@@ -63,7 +63,7 @@ pub fn create(
   UnitCreateCreature(
     unit_id:,
     creature_id:,
-    checklist_index: 0,
+    checklist_index: spawn.checklist_index,
     tail: unit_fields.spawned_tail(
       create_flags: case spawn.vendor {
         True -> vendor_flag

@@ -3407,7 +3407,9 @@ fn lifted_gains(proxy proxy: Proxy) -> List(spell_plan.Gain) {
 /// live, because the client ended it while the round was open, has no go and writes
 /// nothing: the hits stand. `poses` are the Hit units' ground points and yaws as the
 /// caster's picture holds them when the round closes, by unit id, which a Proxy's target
-/// gate reads (`children`); a Hit unit with none is not shown any more. `rolls` are the
+/// gate reads (`children`); a Hit unit with none is not shown any more. `indexes` are the
+/// checklist indexes their 0x262 carried, by unit id, which a type 94 condition of that gate
+/// reads; a unit with none has no creature in the check. `rolls` are the
 /// rolls the go's type 37 conditions take (`rolls_needed`), in the order the conditions
 /// are checked.
 pub fn went(
@@ -3418,6 +3420,7 @@ pub fn went(
   phase phase: Int,
   struck struck: List(Struck),
   poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
   use <- settled(cast:, caster:, now:, own: [])
@@ -3430,6 +3433,7 @@ pub fn went(
       phase:,
       struck:,
       poses:,
+      indexes:,
       rolls:,
     ),
     caster:,
@@ -3475,6 +3479,7 @@ fn asked(
               phase:,
               struck: [],
               poses: dict.new(),
+              indexes: dict.new(),
               rolls: [],
             )
           #(cast, list.append(paying(payments: reserved), going))
@@ -4909,6 +4914,7 @@ fn go(
   phase phase: Int,
   struck struck: List(Struck),
   poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
   case dict.get(cast.casts, cast_id) {
@@ -5022,6 +5028,7 @@ fn go(
               struck:,
               subject:,
               poses:,
+              indexes:,
             )
           #(cast, list.append(effects, more))
         })
@@ -6826,6 +6833,7 @@ pub fn subject_of(
     factions: Some(caster.factions),
     player: Some(caster.player),
     quests: Some(caster.quests),
+    creature_index: None,
     seen: prerequisite.WholeUnit,
   )
 }
@@ -6866,6 +6874,7 @@ pub fn entering_subject(
     factions: Some(factions),
     player: Some(player),
     quests: Some(quests),
+    creature_index: None,
     seen: prerequisite.WholeUnit,
   )
 }
@@ -7221,6 +7230,7 @@ fn children(
   struck struck: List(Struck),
   subject subject: prerequisite.Subject,
   poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
 ) -> #(State, List(Effect)) {
   let targets = case proxy.target {
     spell_plan.OnCaster -> [caster.unit_id]
@@ -7228,7 +7238,9 @@ fn children(
   }
   list.fold(targets, #(cast, []), fn(so_far, primary_target) {
     let #(cast, effects) = so_far
-    case target_gate(proxy:, caster:, primary_target:, subject:, poses:) {
+    case
+      target_gate(proxy:, caster:, primary_target:, subject:, poses:, indexes:)
+    {
       Starts -> {
         let #(cast, more) =
           child(cast:, caster:, now_ms:, live:, proxy:, primary_target:)
@@ -7241,6 +7253,27 @@ fn children(
       )
     }
   })
+}
+
+/// The subject of a Proxy's target gate on a struck unit: as the caster's picture shows it,
+/// with the checklist index its 0x262 carried when the picture holds one.
+fn struck_subject(
+  caster caster: Caster,
+  primary_target primary_target: Int,
+  poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
+) -> prerequisite.Subject {
+  let struck =
+    prerequisite.of_struck(
+      first: option.from_result(dict.get(poses, primary_target)),
+      second: area.pose_of(place: caster.place),
+      player: caster.player,
+      quests: caster.quests,
+    )
+  case dict.get(indexes, primary_target) {
+    Ok(index) -> prerequisite.counting(subject: struck, checklist_index: index)
+    Error(Nil) -> struck
+  }
 }
 
 /// What a Proxy's target gate gives for the unit its child would be made on. The gate's
@@ -7257,18 +7290,14 @@ fn target_gate(
   primary_target primary_target: Int,
   subject subject: prerequisite.Subject,
   poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
 ) -> ProxyGate {
   case proxy.condition {
     spell_plan.GatedOnCasterAndTarget(target:, ..) -> {
       let gate_subject = case proxy.target {
         spell_plan.OnCaster -> subject
         spell_plan.OnEachStruck ->
-          prerequisite.of_struck(
-            first: option.from_result(dict.get(poses, primary_target)),
-            second: area.pose_of(place: caster.place),
-            player: caster.player,
-            quests: caster.quests,
-          )
+          struck_subject(caster:, primary_target:, poses:, indexes:)
       }
       case prerequisite.check(prerequisite: target, subject: gate_subject) {
         prerequisite.Passes -> Starts
