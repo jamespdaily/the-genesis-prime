@@ -1813,6 +1813,16 @@ fields = [
 ]
 
 [[message]]
+id = 0x00B3
+name = "client_activate_unit"
+direction = "client_to_server"
+evidence = "opcode.0xb3"
+summary = "the client uses a unit whose creature has no activate spell, at once and with no cast: the unit id alone; a unit with an activate spell is cast at with message 0x97 instead"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0xb3", named_by = "opcode.0xb3" },
+]
+
+[[message]]
 id = 0x04DB
 name = "ability_hold"
 direction = "client_to_server"

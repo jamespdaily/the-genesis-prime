@@ -971,6 +971,8 @@ fn selected(
 fn foe_at(z z: Float) -> shown.Shown {
   shown.ShownCreature(
     creature_id: Creature2Id(73_464),
+    faction_id: 0,
+    checklist_index: 0,
     path: creature_path.Standing(at: place_support.at(
       world_id: 3460,
       world_zone_id: 5967,

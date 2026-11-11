@@ -70,6 +70,7 @@ import genesis_prime/game/hit_radius
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/target_group
 import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/message/damage_type
@@ -89,7 +90,7 @@ import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
   type Creature2Id, type PrerequisiteId, type UnitProperty2Id,
   Creature2ArcheTypeId, Creature2DifficultyId, Creature2DisplayInfoId,
-  Creature2Id, Creature2ResistId, Creature2TierId, CreatureLevelId,
+  Creature2Id, Creature2ResistId, Creature2TierId, CreatureLevelId, Faction2Id,
   InstancePortalId, PathMissionId, UnitProperty2Id,
 }
 import genesis_prime/table/instance_portal
@@ -98,6 +99,7 @@ import genesis_prime/table/path_mission
 import genesis_prime/table/spell4
 import genesis_prime/table/unit_property2
 import genesis_prime/table/world
+import genesis_prime/world_map/checklist_index
 import genesis_prime/world_map/creature_attack
 import genesis_prime/world_map/creature_columns
 import genesis_prime/world_map/creature_kind.{type Kind, type Kinds}
@@ -141,7 +143,6 @@ pub type Row {
     outfit_info_id: Int,
     faction_id: Int,
     base_faction_id: Int,
-    checklist_index: Int,
     world_object_id: Int,
     world_socket_id: Int,
     health: Option(Float),
@@ -191,6 +192,9 @@ pub type Spawn {
     /// creature only while this prerequisite does not fail for them
     /// (genesis_prime/game/visibility).
     visibility: Option(PrerequisiteId),
+    /// The unit's bit in the mask of each checklist objective that counts it, 0 to 31
+    /// (genesis_prime/world_map/checklist_index): the 0x262 sends it.
+    checklist_index: Int,
   )
 }
 
@@ -508,10 +512,20 @@ pub fn select(
     })
   let #(judged, loaded) =
     visibility_judged(tables:, judged: judged_by_checks, refused:)
+  let indexes = checklist_indexes(tables:, judged:)
   let started =
     list.filter_map(judged, fn(one) {
       case one {
-        Started(checked:) -> Ok(checked)
+        Started(checked:) ->
+          Ok(
+            Checked(
+              ..checked,
+              spawn: Spawn(
+                ..checked.spawn,
+                checklist_index: index_of(indexes, checked.spawn.id),
+              ),
+            ),
+          )
         Other(..)
         | Excluded(..)
         | Refused(..)
@@ -522,7 +536,13 @@ pub fn select(
   let objects =
     list.filter_map(judged, fn(one) {
       case one {
-        ObjectSent(object:, ..) -> Ok(object)
+        ObjectSent(object:, ..) ->
+          Ok(
+            static_object.StaticObject(
+              ..object,
+              checklist_index: index_of(indexes, object.id),
+            ),
+          )
         Started(..) | Other(..) | Excluded(..) | Refused(..) | ObjectDead(..) ->
           Error(Nil)
       }
@@ -555,6 +575,45 @@ pub fn select(
       objects:,
     ),
   )
+}
+
+/// The checklist index of each spawn and object the load keeps, in the order the
+/// rows came (`checklist_index.assign`).
+fn checklist_indexes(
+  tables tables: table_store.Tables,
+  judged judged: List(Judged),
+) -> Dict(SpawnId, Int) {
+  let candidate = fn(spawn_id, creature_id: Creature2Id, faction_id) {
+    creature2.get(tables, creature_id)
+    |> result.map(fn(creature) {
+      checklist_index.Candidate(
+        spawn: spawn_id,
+        unit: target_group.Unit(
+          creature_id:,
+          faction_id: Faction2Id(faction_id),
+          unit_race_id: creature2.unit_race_id(creature),
+        ),
+      )
+    })
+  }
+  list.filter_map(judged, fn(one) {
+    case one {
+      Started(checked:) ->
+        candidate(
+          checked.spawn.id,
+          checked.spawn.creature_id,
+          checked.spawn.faction_id,
+        )
+      ObjectSent(object:, ..) ->
+        candidate(object.id, object.creature_id, object.faction_id)
+      Other(..) | Excluded(..) | Refused(..) | ObjectDead(..) -> Error(Nil)
+    }
+  })
+  |> fn(candidates) { checklist_index.assign(tables:, candidates:) }
+}
+
+fn index_of(indexes: Dict(SpawnId, Int), spawn_id: SpawnId) -> Int {
+  dict.get(indexes, spawn_id) |> result.unwrap(0)
 }
 
 /// Message 0x262's unit type of a NonPlayer unit (`0x140649e20`).
@@ -662,7 +721,6 @@ pub fn summoned(
         |> result.unwrap(0),
       faction_id: creature.faction_id,
       base_faction_id: creature.faction_id,
-      checklist_index: 0,
       world_object_id: 0,
       world_socket_id: 0,
       health: None,
@@ -1645,7 +1703,7 @@ fn object_checks(
     base_faction_id: row.base_faction_id,
     display_info_id: row.display_info_id,
     outfit_info_id: row.outfit_info_id,
-    checklist_index: row.checklist_index,
+    checklist_index: 0,
     world_object_id: row.world_object_id,
     world_socket_id: row.world_socket_id,
     visibility: visibility_of(creature:),
@@ -1713,6 +1771,7 @@ fn load_checks(
         context:,
         vendor: vendor.is_vendor(vendors:, creature_id:),
         visibility: visibility_of(creature:),
+        checklist_index: 0,
       ),
     ),
     shared,

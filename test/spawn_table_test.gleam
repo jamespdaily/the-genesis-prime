@@ -39,7 +39,6 @@ fn good_row() -> dict.Dict(String, String) {
     #("outfit_info_id", "0"),
     #("faction_id", "1441"),
     #("base_faction_id", "1441"),
-    #("quest_checklist_index", "0"),
     #("active_prop_id", "0"),
     #("world_socket_id", "0"),
   ])
@@ -107,10 +106,6 @@ pub fn each_spawn_constraint_refuses_its_own_bad_row_under_its_own_name_test() -
       #([#("display_info_id", "131072")], "spawn_display_info_id_is_in_17_bits"),
       #([#("outfit_info_id", "-1")], "spawn_outfit_info_id_is_in_15_bits"),
       #([#("outfit_info_id", "32768")], "spawn_outfit_info_id_is_in_15_bits"),
-      #(
-        [#("quest_checklist_index", "256")],
-        "spawn_quest_checklist_index_is_in_8_bits",
-      ),
       #([#("active_prop_id", "-1")], "spawn_active_prop_id_is_not_negative"),
       #([#("world_socket_id", "16384")], "spawn_world_socket_id_is_in_14_bits"),
       #([#("world_socket_id", "-1")], "spawn_world_socket_id_is_in_14_bits"),
@@ -166,7 +161,7 @@ pub fn a_spawn_id_is_positive_test() -> Nil {
   use <- owned_test.run(120_000)
   // TimerId(0) is the map's sweep, so no spawn is numbered 0.
   assert_refused_by(
-    statement: "insert into spawn (id, source, source_row, entity_type, creature_id, world_id, area_id, x, y, z, rotation_x, rotation_y, rotation_z, display_info_id, outfit_info_id, faction_id, base_faction_id, quest_checklist_index, active_prop_id, world_socket_id) overriding system value values (0, 'world_database', 1, 0, 73464, 3460, 0, 0, 0, 0, 0, 0, 0, 26565, 0, 1441, 1441, 0, 0, 0)",
+    statement: "insert into spawn (id, source, source_row, entity_type, creature_id, world_id, area_id, x, y, z, rotation_x, rotation_y, rotation_z, display_info_id, outfit_info_id, faction_id, base_faction_id, active_prop_id, world_socket_id) overriding system value values (0, 'world_database', 1, 0, 73464, 3460, 0, 0, 0, 0, 0, 0, 0, 26565, 0, 1441, 1441, 0, 0)",
     constraint: "spawn_id_is_positive",
   )
 }

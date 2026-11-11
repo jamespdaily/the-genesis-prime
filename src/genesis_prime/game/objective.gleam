@@ -1,7 +1,13 @@
 //// What a talk to a creature, a use of one or a kill does to the open objectives of the
 //// player's quest log, and what the client is told. A type 3 objective is a talk and a
 //// type 12 objective a use, and the data of both is a Creature2 id
-//// (`QuestObjective.type.3`, `0x1404dd4c0.objective_creature`). A kill counts for the
+//// (`QuestObjective.type.3`, `0x1404dd4c0.objective_creature`). A checklist objective
+//// counts each unit once, by the unit's checklist index: type 14 is a use and type 18 a
+//// talk of a unit in the TargetGroup of its data, type 28 a use of the creature of the
+//// PathSoldierActivate row of its data (when that row makes it a checklist,
+//// `quest_log.is_checklist`); the use or talk sets the bit of the unit's index in the
+//// objective's mask, and a unit whose bit is set counts for nothing
+//// (`opcode.0x361`, `0x140611680`). A kill counts for the
 //// objectives of `0x140550c50`: type 2 for a unit of the Creature2 id in its data,
 //// types 8 and 16 for a unit in the TargetGroup of its data, and, for a kill objective
 //// of any of these types or of types 15 and 46, a unit in the objective's reward pane
@@ -26,19 +32,29 @@ import genesis_prime/game/target_group
 import genesis_prime/store.{type HeldItem}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
-  type Creature2Id, type Item2Id, Creature2Id, Item2Id, TradeskillSchematic2Id,
+  type Creature2Id, type Item2Id, Creature2Id, Item2Id, PathSoldierActivateId,
+  TradeskillSchematic2Id,
 }
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/path_soldier_activate
 import genesis_prime/table/tradeskill_schematic2
 import gleam/int
 import gleam/list
-import gleam/set.{type Set}
 
 /// The objective type of a talk.
 const talk_type = 3
 
 /// The objective type of a use.
 const use_type = 12
+
+/// The objective type of a checklist use: a unit of the TargetGroup in its data.
+const checklist_use_type = 14
+
+/// The objective type of a checklist talk: a unit of the TargetGroup in its data.
+const checklist_talk_type = 18
+
+/// The objective type of a checklist use of a PathSoldierActivate creature.
+const path_soldier_type = 28
 
 /// The objective type of a quest collectible: a use of a creature whose Creature2 row
 /// names the quest and the objective's index (`0x1405a8b30`; a guess, see
@@ -62,10 +78,11 @@ const achieved_state = 2
 const kill_types = [2, 8, 15, 16, 46]
 
 /// What the player did to a creature: talked to it, used it or killed it (the unit as
-/// the client's group test reads it).
+/// the client's group test reads it), with the unit's checklist index for the first two
+/// (the bit the unit stands for in a checklist objective's mask).
 pub type Event {
-  TalkedTo(creature_id: Creature2Id)
-  Used(creature_id: Creature2Id)
+  TalkedTo(target: target_group.Unit, checklist_index: Int)
+  Used(target: target_group.Unit, checklist_index: Int)
   Killed(target: target_group.Unit)
 }
 
@@ -84,19 +101,51 @@ pub type Advanced {
   Advanced(log: QuestLog, effects: List(Effect))
 }
 
-/// The Creature2 ids a talk counts for: those that an open type 3 objective of the log
-/// names (`0x140553110`). Every quest of the log has its rows in the tables.
+/// Whether a talk to the unit, of the checklist index, counts for an open objective of
+/// the log: a type 3 objective that names its Creature2 id (`0x140553110`), or a type 18
+/// objective whose TargetGroup holds it while its bit is not yet set (`0x140611680`: the
+/// client marks the unit only then). Every quest of the log has its rows in the tables.
 pub fn talk_targets(
   log log: QuestLog,
   tables tables: table_store.Tables,
-) -> Set(Creature2Id) {
-  list.flat_map(quest_log.active_ids(log:), fn(quest_id) {
-    let quest = quest_of(tables:, quest_id:)
-    quest_log.open_objectives(log:, quest:)
-    |> list.filter(fn(open) { { open.1 }.type_ == talk_type })
-    |> list.map(fn(open) { Creature2Id({ open.1 }.data) })
+) -> fn(target_group.Unit, Int) -> Bool {
+  counted_by(log:, tables:, event_of: fn(unit, checklist_index) {
+    TalkedTo(target: unit, checklist_index:)
   })
-  |> set.from_list
+}
+
+/// Whether a use of the unit, of the checklist index, counts for an open objective of the
+/// log: the objectives a `Used` event counts for (`counts`) while the unit's bit is not
+/// yet set, as a talk's is (`talk_targets`). A unit no open objective counts a use of is
+/// offered no use by the server.
+pub fn use_targets(
+  log log: QuestLog,
+  tables tables: table_store.Tables,
+) -> fn(target_group.Unit, Int) -> Bool {
+  counted_by(log:, tables:, event_of: fn(unit, checklist_index) {
+    Used(target: unit, checklist_index:)
+  })
+}
+
+fn counted_by(
+  log log: QuestLog,
+  tables tables: table_store.Tables,
+  event_of event_of: fn(target_group.Unit, Int) -> Event,
+) -> fn(target_group.Unit, Int) -> Bool {
+  let open =
+    list.flat_map(quest_log.active_ids(log:), fn(quest_id) {
+      let quest = quest_of(tables:, quest_id:)
+      quest_log.open_objectives(log:, quest:)
+      |> list.map(fn(open) { #(quest, open.0, open.1) })
+    })
+  fn(unit, checklist_index) {
+    let event = event_of(unit, checklist_index)
+    list.any(open, fn(found) {
+      let #(quest, index, objective) = found
+      counts(tables:, event:, quest_id: quest.id, index:, objective:)
+      && !quest_log.is_marked(log:, quest:, index:, bit: checklist_index)
+    })
+  }
 }
 
 fn quest_of(
@@ -130,6 +179,11 @@ pub fn advance(
         counts: fn(index, objective) {
           counts(tables:, event:, quest_id:, index:, objective:)
         },
+        checklist_index: case event {
+          TalkedTo(checklist_index:, ..) | Used(checklist_index:, ..) ->
+            checklist_index
+          Killed(..) -> -1
+        },
       )
     },
   )
@@ -144,16 +198,41 @@ fn counts(
   objective objective: quest_log.Objective,
 ) -> Bool {
   case event {
-    TalkedTo(creature_id:) ->
-      objective.type_ == talk_type && Creature2Id(objective.data) == creature_id
-    Used(creature_id:) ->
+    TalkedTo(target:, ..) ->
+      {
+        objective.type_ == talk_type
+        && Creature2Id(objective.data) == target.creature_id
+      }
+      || {
+        objective.type_ == checklist_talk_type
+        && target_group.contains(tables:, group: objective.data, unit: target)
+      }
+    Used(target:, ..) ->
       {
         objective.type_ == use_type
-        && Creature2Id(objective.data) == creature_id
+        && Creature2Id(objective.data) == target.creature_id
+      }
+      || {
+        objective.type_ == checklist_use_type
+        && target_group.contains(tables:, group: objective.data, unit: target)
+      }
+      || {
+        objective.type_ == path_soldier_type
+        && objective.checklist
+        && activates_creature(
+          tables:,
+          path_soldier_activate: objective.data,
+          creature_id: target.creature_id,
+        )
       }
       || {
         objective.type_ == collectible_type
-        && names_the_objective(tables:, creature_id:, quest_id:, index:)
+        && names_the_objective(
+          tables:,
+          creature_id: target.creature_id,
+          quest_id:,
+          index:,
+        )
       }
     Killed(target:) -> {
       let by_data = case objective.type_ {
@@ -184,6 +263,7 @@ fn advance_quest(
   quest quest: quest_log.Quest,
   now_ms now_ms: Int,
   counts counts: fn(Int, quest_log.Objective) -> Bool,
+  checklist_index checklist_index: Int,
 ) -> Advanced {
   let named =
     quest_log.open_objectives(log: so_far.log, quest:)
@@ -191,23 +271,57 @@ fn advance_quest(
   let #(log, progress, became_achieved) =
     list.fold(named, #(so_far.log, [], False), fn(counted, open) {
       let #(log, progress, became_achieved) = counted
-      case
-        quest_log.progressed(log:, quest:, index: open.0, amount: 1, now_ms:)
-      {
-        Ok(progressed) -> #(
-          progressed.log,
-          [
-            SendProgress(
-              quest_id: quest.id,
-              objective_index: open.0,
-              progress: progressed.progress,
-            ),
-            ..progress
-          ],
-          became_achieved || progressed.became_achieved,
-        )
-        // An open objective takes progress, so this does not happen.
-        Error(Nil) -> counted
+      case { open.1 }.checklist {
+        True ->
+          case
+            quest_log.marked(
+              log:,
+              quest:,
+              index: open.0,
+              bit: checklist_index,
+              now_ms:,
+            )
+          {
+            // A unit whose bit is set counts for nothing and tells nothing.
+            Ok(marked) if marked.changed -> #(
+              marked.log,
+              [
+                SendProgress(
+                  quest_id: quest.id,
+                  objective_index: open.0,
+                  progress: marked.progress,
+                ),
+                ..progress
+              ],
+              became_achieved || marked.moved == quest_log.BecameAchieved,
+            )
+            Ok(_) | Error(Nil) -> counted
+          }
+        False ->
+          case
+            quest_log.progressed(
+              log:,
+              quest:,
+              index: open.0,
+              amount: 1,
+              now_ms:,
+            )
+          {
+            Ok(progressed) -> #(
+              progressed.log,
+              [
+                SendProgress(
+                  quest_id: quest.id,
+                  objective_index: open.0,
+                  progress: progressed.progress,
+                ),
+                ..progress
+              ],
+              became_achieved || progressed.became_achieved,
+            )
+            // An open objective takes progress, so this does not happen.
+            Error(Nil) -> counted
+          }
       }
     })
   let state = case became_achieved {
@@ -218,6 +332,23 @@ fn advance_quest(
     log:,
     effects: list.flatten([so_far.effects, list.reverse(progress), state]),
   )
+}
+
+/// Whether the PathSoldierActivate row is the activation of the creature.
+fn activates_creature(
+  tables tables: table_store.Tables,
+  path_soldier_activate path_soldier_activate_id: Int,
+  creature_id creature_id: Creature2Id,
+) -> Bool {
+  case
+    path_soldier_activate.get(
+      tables:,
+      id: PathSoldierActivateId(path_soldier_activate_id),
+    )
+  {
+    Ok(row) -> Creature2Id(row.creature2_id) == creature_id
+    Error(Nil) -> False
+  }
 }
 
 /// Whether the creature's row names this objective of this quest as a collectible

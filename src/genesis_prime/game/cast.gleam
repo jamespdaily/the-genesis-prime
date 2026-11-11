@@ -558,6 +558,7 @@ import genesis_prime/message/cancel_cast.{type CancelCast}
 import genesis_prime/message/cast_ability
 import genesis_prime/message/cast_activate
 import genesis_prime/message/cast_result
+import genesis_prime/message/client_activate_unit
 import genesis_prime/message/client_side_interaction_result
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
@@ -1229,6 +1230,125 @@ pub fn activate(
   })
 }
 
+/// A unit the caster's 0xb3 names, as the caster's connection knows it.
+pub type UsedUnit {
+  UsedUnit(
+    /// The id of the unit's Creature2 row.
+    creature_id: Int,
+    /// What the row says of its activate cast.
+    creature: activate.Creature,
+    /// The checklist index its 0x262 carried, the bit a type 94 condition of its activate
+    /// pick reads.
+    checklist_index: Int,
+    /// Where the unit stands and its hit radius.
+    body: activate.Body,
+    /// Whether the unit lives: a creature the caster's client shows dead is not offered its
+    /// interaction (`0x140c48c48`: the interaction kind 39 entry's dead-unit flag is clear).
+    /// A static object has no death and is alive.
+    alive: Bool,
+    /// Whether the server offers the unit's use now: an open objective counts it and its
+    /// bit is clear (`objective.use_targets`). The client sends 0xb3 only for a unit whose
+    /// interaction it offers.
+    offered: Bool,
+  )
+}
+
+/// The caster's 0xb3, the client's use of a unit whose creature has no activate spell
+/// (`opcode.0xb3`, `0x14039d4a0`): no cast and no delay, so the use is `Activated` at
+/// once. `unit_of` says what the unit the message names is, or `Error(Nil)` for a unit
+/// that is no creature or object the caster's client shows. The client sends 0xb3 only
+/// from its click of an offered interaction within reach (`0x14039d2c0`, range
+/// `activate.use_limits`) and only when the creature's pick is spell 0 (`0x14039d510`),
+/// so a dead creature, a unit out of reach, one the server does not offer, one whose pick is
+/// a spell and one the server cannot pick for are logged and change nothing.
+pub fn activate_unit(
+  cast cast: State,
+  body body: BitArray,
+  caster caster: Caster,
+  activations activations: activate.Activations,
+  unit_of unit_of: fn(Int) -> Result(UsedUnit, Nil),
+  caster_radius caster_radius: Float,
+) -> Result(List(Effect), Refusal) {
+  use used <- result.map(
+    client_activate_unit.decode(body)
+    |> client_connection.decoded(message_id: client_activate_unit.message_id)
+    |> result.map_error(NotDecoded),
+  )
+  let unit_id = used.unit_id
+  let declined = fn(why) {
+    [
+      Log(
+        level: LogWarning,
+        text: "the use of unit "
+          <> int.to_string(unit_id)
+          <> " (0xb3) "
+          <> why
+          <> ": it counts for nothing",
+      ),
+    ]
+  }
+  case unit_of(unit_id) {
+    Error(Nil) -> declined("names no creature or object the client shows")
+    Ok(UsedUnit(alive: False, ..)) ->
+      declined("names a creature that is dead: its interaction is not offered")
+    Ok(UsedUnit(
+      creature_id:,
+      creature:,
+      checklist_index:,
+      body: unit,
+      offered:,
+      ..,
+    )) ->
+      case
+        activate.range_of(
+          limits: activate.use_limits,
+          caster: activate.Body(place: caster.place, radius: caster_radius),
+          target: unit,
+        ),
+        offered
+      {
+        activate.Within, True -> {
+          let subject =
+            prerequisite.counting(
+              subject: prerequisite.Subject(
+                ..subject_of(cast:, caster:),
+                second_unit: Some(unit_id),
+                positions: prerequisite.NotPlaced,
+              ),
+              checklist_index:,
+            )
+          case
+            activate.pick(
+              creature:,
+              default_spell: activations.default_spell,
+              check: activate.checker(activations:, subject:),
+            )
+          {
+            activate.NoActivateSpell -> [Activated(unit_id:, creature_id:)]
+            activate.Picked(spell4_id:) ->
+              declined(
+                "names a creature whose activate spell is "
+                <> int.to_string(spell4_id)
+                <> ", which the client casts with 0x97",
+              )
+            activate.Unread(prerequisite_type:) ->
+              declined(
+                "names a creature that activates through a prerequisite of the type "
+                <> int.to_string(prerequisite_type)
+                <> ", which the server does not read",
+              )
+          }
+        }
+        activate.Within, False ->
+          declined(
+            "names a unit that is not offered: no open objective counts a use of it, or its bit is set",
+          )
+        activate.TooClose, _ | activate.TooFar, _ | activate.TooHigh, _ ->
+          declined("names a unit out of the interaction range")
+      }
+  }
+}
+
 fn activation_pressed(
   cast cast: State,
   body body: BitArray,
@@ -1255,12 +1375,15 @@ fn activation_pressed(
     activate.Unseen -> refusal(0, cast_result.CasterMustHaveTarget)
     activate.AnotherPlayer -> refusal(0, cast_result.NoTarget)
     activate.Fighter -> refusal(0, cast_result.TargetIsNotUseable)
-    activate.Object(creature_id:, creature:, body: target) -> {
+    activate.Object(creature_id:, creature:, checklist_index:, body: target) -> {
       let subject =
-        prerequisite.Subject(
-          ..subject_of(cast:, caster:),
-          second_unit: Some(press.target_unit_id),
-          positions: prerequisite.NotPlaced,
+        prerequisite.counting(
+          subject: prerequisite.Subject(
+            ..subject_of(cast:, caster:),
+            second_unit: Some(press.target_unit_id),
+            positions: prerequisite.NotPlaced,
+          ),
+          checklist_index:,
         )
       let picked =
         activate.pick(
@@ -3407,7 +3530,9 @@ fn lifted_gains(proxy proxy: Proxy) -> List(spell_plan.Gain) {
 /// live, because the client ended it while the round was open, has no go and writes
 /// nothing: the hits stand. `poses` are the Hit units' ground points and yaws as the
 /// caster's picture holds them when the round closes, by unit id, which a Proxy's target
-/// gate reads (`children`); a Hit unit with none is not shown any more. `rolls` are the
+/// gate reads (`children`); a Hit unit with none is not shown any more. `indexes` are the
+/// checklist indexes their 0x262 carried, by unit id, which a type 94 condition of that gate
+/// reads; a unit with none has no creature in the check. `rolls` are the
 /// rolls the go's type 37 conditions take (`rolls_needed`), in the order the conditions
 /// are checked.
 pub fn went(
@@ -3418,6 +3543,7 @@ pub fn went(
   phase phase: Int,
   struck struck: List(Struck),
   poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
   use <- settled(cast:, caster:, now:, own: [])
@@ -3430,6 +3556,7 @@ pub fn went(
       phase:,
       struck:,
       poses:,
+      indexes:,
       rolls:,
     ),
     caster:,
@@ -3475,6 +3602,7 @@ fn asked(
               phase:,
               struck: [],
               poses: dict.new(),
+              indexes: dict.new(),
               rolls: [],
             )
           #(cast, list.append(paying(payments: reserved), going))
@@ -4909,6 +5037,7 @@ fn go(
   phase phase: Int,
   struck struck: List(Struck),
   poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
   case dict.get(cast.casts, cast_id) {
@@ -5022,6 +5151,7 @@ fn go(
               struck:,
               subject:,
               poses:,
+              indexes:,
             )
           #(cast, list.append(effects, more))
         })
@@ -6826,6 +6956,7 @@ pub fn subject_of(
     factions: Some(caster.factions),
     player: Some(caster.player),
     quests: Some(caster.quests),
+    creature_index: None,
     seen: prerequisite.WholeUnit,
   )
 }
@@ -6866,6 +6997,7 @@ pub fn entering_subject(
     factions: Some(factions),
     player: Some(player),
     quests: Some(quests),
+    creature_index: None,
     seen: prerequisite.WholeUnit,
   )
 }
@@ -7221,6 +7353,7 @@ fn children(
   struck struck: List(Struck),
   subject subject: prerequisite.Subject,
   poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
 ) -> #(State, List(Effect)) {
   let targets = case proxy.target {
     spell_plan.OnCaster -> [caster.unit_id]
@@ -7228,7 +7361,9 @@ fn children(
   }
   list.fold(targets, #(cast, []), fn(so_far, primary_target) {
     let #(cast, effects) = so_far
-    case target_gate(proxy:, caster:, primary_target:, subject:, poses:) {
+    case
+      target_gate(proxy:, caster:, primary_target:, subject:, poses:, indexes:)
+    {
       Starts -> {
         let #(cast, more) =
           child(cast:, caster:, now_ms:, live:, proxy:, primary_target:)
@@ -7241,6 +7376,27 @@ fn children(
       )
     }
   })
+}
+
+/// The subject of a Proxy's target gate on a struck unit: as the caster's picture shows it,
+/// with the checklist index its 0x262 carried when the picture holds one.
+fn struck_subject(
+  caster caster: Caster,
+  primary_target primary_target: Int,
+  poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
+) -> prerequisite.Subject {
+  let struck =
+    prerequisite.of_struck(
+      first: option.from_result(dict.get(poses, primary_target)),
+      second: area.pose_of(place: caster.place),
+      player: caster.player,
+      quests: caster.quests,
+    )
+  case dict.get(indexes, primary_target) {
+    Ok(index) -> prerequisite.counting(subject: struck, checklist_index: index)
+    Error(Nil) -> struck
+  }
 }
 
 /// What a Proxy's target gate gives for the unit its child would be made on. The gate's
@@ -7257,18 +7413,14 @@ fn target_gate(
   primary_target primary_target: Int,
   subject subject: prerequisite.Subject,
   poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
 ) -> ProxyGate {
   case proxy.condition {
     spell_plan.GatedOnCasterAndTarget(target:, ..) -> {
       let gate_subject = case proxy.target {
         spell_plan.OnCaster -> subject
         spell_plan.OnEachStruck ->
-          prerequisite.of_struck(
-            first: option.from_result(dict.get(poses, primary_target)),
-            second: area.pose_of(place: caster.place),
-            player: caster.player,
-            quests: caster.quests,
-          )
+          struck_subject(caster:, primary_target:, poses:, indexes:)
       }
       case prerequisite.check(prerequisite: target, subject: gate_subject) {
         prerequisite.Passes -> Starts

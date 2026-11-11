@@ -52,6 +52,7 @@ import genesis_prime/import_world_data
 import genesis_prime/login/guid
 import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_countdown
+import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/character_list
 import genesis_prime/message/character_list_entry
 import genesis_prime/message/chat_line_accepted
@@ -123,6 +124,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/system
 import gleam/result
+import gleam/string
 import item_bot
 import log_capture
 import login_client
@@ -1513,6 +1515,134 @@ pub fn objective_progress_survives_a_relog_test() -> Nil {
     as "opcode.0x35f: tracked (bit 1) and the done bit of objective 0 (bit 2)"
   assert entry.progress == [1, 0, 0]
     as "opcode.0x35f: the progress of each objective, the talk's saved"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 5855 holds objective 8782 at its index 1 (QuestObjective: type 14, count 5, data
+  // TargetGroup 2766, whose member is Creature2 26016), and objective 8781 at index 0
+  // (type 8). Creature2 26016 has activate spell 1817 behind Prerequisite 0, an
+  // activateSpellCastTime of 1500 ms and an activateSpellMaxRange of 3.0; the spell is of
+  // castMethod 0, so its go waits for no answer. Spawns 70878 and 70880 of World 1387 are
+  // two of its objects, both with the world data's checklist index 0, so the server must
+  // give them two distinct bits of the 32-bit mask (opcode.0x361, `checklist_index`): in
+  // spawn order, the lowest index no earlier target holds, 0 and 1. The 0x262 carries the
+  // index (opcode.0x262), the activate counts the bit of the object activated in the one
+  // 0x361 (opcode.0x361: the quest, the objective, the whole mask), and the 0x35f of a
+  // later entry carries the mask as the objective's progress (opcode.0x35f).
+  let time = driven_time.new()
+  let started =
+    start_with_world_data_by(
+      folder: "test/fixture/world_data_checklist",
+      adjusted: fn(settings) { driven_by(settings:, time:) },
+    )
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 1,
+    )
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left) values ($1, 5855, 1, 0, true, 0, '{0,0}', 0, '{0,0}')",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character holds quest 5855 with nothing done"
+  // One unit east of spawn 70880, the second of the two: within the 3.0 of the creature's
+  // activateSpellMaxRange, and 17.4 from spawn 70878, which is still in sight.
+  character_support.move_to(
+    pool:,
+    character_id: character,
+    world_id: 1387,
+    world_zone_id: 1100,
+    position: #(-3513.5, -979.1523, -6123.66),
+  )
+  send_play(game:, character_id: character)
+  let #(entry, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+      && list.length(static_objects_created_in(frames:)) == 2
+    })
+  let assert [_, second] as objects = static_objects_created_in(frames: entry)
+  assert list.map(objects, fn(object) {
+      #(object.creature_id, object.checklist_index)
+    })
+    == [#(26_016, 0), #(26_016, 1)]
+    as "the two objects of Creature2 26016 are shown in spawn order with the two distinct indexes of objective 8782's bits"
+  let assert Ok(press) =
+    cast_activate.encode(CastActivate(
+      client_cast_id: 1,
+      target_unit_id: second.unit_id,
+    ))
+    as "the right-click fits the message"
+  game_client.send_world(
+    game:,
+    message_id: cast_activate.message_id,
+    body: press,
+  )
+  // The server has taken the press, and armed the go's timer, when its pong comes: the
+  // confirmation is sent before the timer starts, so the clock moves only after the pong.
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 1)
+  assert list.any(pressed, fn(frame) { frame.message_id == 0x07FD })
+    as "opcode.0x7fd: the first press is confirmed"
+  driven_time.advance(time:, ms: 1500)
+  let #(went, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0361 })
+    })
+  assert list.filter(went, fn(frame) { frame.message_id == 0x0361 })
+    == [
+      Frame(
+        message_id: 0x0361,
+        body: message_support.packed([#(15, 5855), #(32, 1), #(32, 2)]),
+      ),
+    ]
+    as "opcode.0x361: the go of the activate counts the bit of index 1, the second object's, in objective 8782 of quest 5855"
+  // The same object activated a second time: its cast goes, and the server has written
+  // all it held for this connection when its pong comes, so a 0x361 that the go would
+  // send is among those frames.
+  let assert Ok(again) =
+    cast_activate.encode(CastActivate(
+      client_cast_id: 2,
+      target_unit_id: second.unit_id,
+    ))
+    as "the right-click fits the message"
+  game_client.send_world(
+    game:,
+    message_id: cast_activate.message_id,
+    body: again,
+  )
+  let #(pressed_again, have) =
+    game_client.read_until_pong(game:, have:, number: 2)
+  assert list.any(pressed_again, fn(frame) { frame.message_id == 0x07FD })
+    as "opcode.0x7fd: the second press is confirmed, so its cast is armed before the clock moves"
+  driven_time.advance(time:, ms: 1500)
+  let #(went_again, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(cast_support.cast_lines(frames:), string.starts_with(_, "went"))
+    })
+  let #(rest, have) = game_client.read_until_pong(game:, have:, number: 3)
+  assert list.filter(list.append(went_again, rest), fn(frame) {
+      frame.message_id == 0x0361
+    })
+    == []
+    as "opcode.0x361: the second activate's go counts nothing, the bit of index 1 is set in objective 8782, so no 0x361 follows the go"
+  let #(second_entry, _) =
+    game_client.camp_and_play(game:, have:, character_id: character)
+  let assert [Frame(body: log, ..)] =
+    list.filter(second_entry, fn(frame) { frame.message_id == 0x035F })
+    as "the entry sends one 0x35f"
+  let assert Ok(quest_message.QuestLog(active: [quest], ..)) =
+    quest_message.decode(log)
+    as "the client's reader reads the 0x35f, which holds the one quest"
+  assert quest.quest_id == 5855 && quest.progress == [0, 2]
+    as "opcode.0x35f: the progress of objective 8782 is the mask with the bit of index 1, kept over the relog"
   game_client.close(game:)
   login_support.stop(started)
 }
@@ -3380,6 +3510,15 @@ fn start_with_creatures() -> login_support.Started {
 /// into a key of the test's own, and the game connections holding the visibility
 /// prerequisites the load found (as the server's own start passes them).
 fn start_with_world_data(folder folder: String) -> login_support.Started {
+  start_with_world_data_by(folder:, adjusted: fn(settings) { settings })
+}
+
+/// As `start_with_world_data`, the server's settings then passed through `adjusted`:
+/// a test whose casts run on timers passes `driven_by`.
+fn start_with_world_data_by(
+  folder folder: String,
+  adjusted adjusted: fn(server.Settings) -> server.Settings,
+) -> login_support.Started {
   login_support.start_with(change: fn(settings) {
     let pool =
       pog.Config(
@@ -3415,6 +3554,7 @@ fn start_with_world_data(folder folder: String) -> login_support.Started {
       ),
       world: server.World(..settings.world, spawns: key),
     )
+    |> adjusted
   })
 }
 
@@ -3485,15 +3625,21 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
 /// The Creature2 ids of the static objects the frames create, sorted: the 0x262 of a
 /// type 8, 10, 11, 13 or 32 object (`unit_create_static`), as the client reads them.
 fn static_objects_in(frames frames: List(Frame)) -> List(Int) {
+  list.map(static_objects_created_in(frames:), fn(object) { object.creature_id })
+  |> list.sort(int.compare)
+}
+
+/// The static objects the 0x262 among the frames create, as the client reads them, in
+/// the order sent.
+fn static_objects_created_in(
+  frames frames: List(Frame),
+) -> List(unit_create_static.UnitCreateStatic) {
   list.filter_map(frames, fn(frame) {
     case frame.message_id {
       0x0262 ->
         case game_client.created_unit(body: frame.body) {
           Ok(game_client.ObjectCreated(..)) ->
-            result.map(unit_create_static.decode(frame.body), fn(object) {
-              object.creature_id
-            })
-            |> result.replace_error(Nil)
+            unit_create_static.decode(frame.body) |> result.replace_error(Nil)
           Ok(game_client.PlayerCreated(..))
           | Ok(game_client.CreatureCreated(..))
           | Error(Nil) -> Error(Nil)
@@ -3501,7 +3647,6 @@ fn static_objects_in(frames frames: List(Frame)) -> List(Int) {
       _ -> Error(Nil)
     }
   })
-  |> list.sort(int.compare)
 }
 
 /// A new character of the faction at the position in World 3460, entered as the

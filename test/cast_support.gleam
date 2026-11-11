@@ -1019,6 +1019,7 @@ pub fn went(
     phase:,
     struck:,
     poses: dict.new(),
+    indexes: dict.new(),
     rolls: [],
   )
 }
@@ -1101,6 +1102,7 @@ pub fn answered_each(
             phase: asked.phase,
             struck: struck_of(asked),
             poses:,
+            indexes: dict.new(),
             rolls:,
           )
         let #(state, more) =

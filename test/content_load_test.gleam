@@ -45,11 +45,11 @@ import unitest
 /// A spawn row of a creature the client has no row for, as the world database's
 /// row `row`.
 fn bad_row(row row: Int, creature creature: Int) -> String {
-  "insert into spawn (source, source_row, entity_type, creature_id, world_id, area_id, x, y, z, rotation_x, rotation_y, rotation_z, display_info_id, outfit_info_id, faction_id, base_faction_id, quest_checklist_index, active_prop_id, world_socket_id) values ('world_database', "
+  "insert into spawn (source, source_row, entity_type, creature_id, world_id, area_id, x, y, z, rotation_x, rotation_y, rotation_z, display_info_id, outfit_info_id, faction_id, base_faction_id, active_prop_id, world_socket_id) values ('world_database', "
   <> int.to_string(row)
   <> ", 0, "
   <> int.to_string(creature)
-  <> ", 3460, 0, 0, 0, 0, 0, 0, 0, 26565, 0, 1441, 1441, 0, 0, 0)"
+  <> ", 3460, 0, 0, 0, 0, 0, 0, 0, 26565, 0, 1441, 1441, 0, 0)"
 }
 
 pub fn the_load_puts_the_migrated_databases_spawns_in_the_worlds_term_test() -> Nil {

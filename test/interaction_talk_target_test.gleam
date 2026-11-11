@@ -24,11 +24,14 @@ import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/game/interaction.{Closes, Offered, OpenDialog, TalkedTo}
 import genesis_prime/game/objective
+import genesis_prime/game/quest_log
 import genesis_prime/game/shown
 import genesis_prime/game/start_place
+import genesis_prime/game/target_group
 import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/step.{LogWarning}
 import genesis_prime/store.{type QuestRow}
+import genesis_prime/table/creature2
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{Attackable, Hostile}
@@ -44,6 +47,21 @@ import vendor_support
 const talk_target = 12_484
 
 const unit = 40
+
+/// The unit the player talked to, as the client's group test reads it: the creature, the
+/// Faction2 its 0x262 gave it (the picture here gives 0) and the UnitRace of its row.
+fn unit_of(
+  tables tables: table_store.Tables,
+  creature creature: Int,
+) -> target_group.Unit {
+  let assert Ok(row) = creature2.get(tables, id.Creature2Id(creature))
+    as "the fixture holds the creature's row"
+  target_group.Unit(
+    creature_id: id.Creature2Id(creature),
+    faction_id: id.Faction2Id(0),
+    unit_race_id: creature2.unit_race_id(row),
+  )
+}
 
 /// The edge gap a request is answered up to (`opcode.0x7ea`).
 const reach = 9.0
@@ -68,6 +86,8 @@ fn picture_with(creature_id creature_id: Int, gap gap: Float) -> shown.Picture {
       unit,
       shown.ShownCreature(
         creature_id: id.Creature2Id(creature_id),
+        faction_id: 0,
+        checklist_index: 0,
         path: creature_path.Standing(at: place),
         life: 4,
         alive: True,
@@ -89,6 +109,21 @@ fn taken_for(
   gap gap: Float,
   offer offer: interaction.Offer,
 ) -> interaction.Taken {
+  taken_in(
+    tables:,
+    log: quest_support.log_of(rows:),
+    picture: picture_with(creature_id:, gap:),
+    offer:,
+  )
+}
+
+/// The same for a log and a picture as they are.
+fn taken_in(
+  tables tables: table_store.Tables,
+  log log: quest_log.QuestLog,
+  picture picture: shown.Picture,
+  offer offer: interaction.Offer,
+) -> interaction.Taken {
   let assert Ok(body) =
     interaction_request.encode(InteractionRequest(unit_id: unit, kind: 37))
     as "a unit id and a 7-bit kind fit the message"
@@ -101,15 +136,12 @@ fn taken_for(
         faction: shown.Exile,
         place: connection_support.entry_place(),
       ),
-      picture: picture_with(creature_id:, gap:),
+      picture:,
       tables:,
       vendors: vendor_support.stocking(creature_ids: []),
       now_ms: 0,
       offers: fn(_) { offer },
-      talk_targets: objective.talk_targets(
-        log: quest_support.log_of(rows:),
-        tables:,
-      ),
+      talk_targets: objective.talk_targets(log:, tables:),
       logged: set.new(),
     )
     as "the body is one the client's reader takes"
@@ -142,7 +174,10 @@ pub fn a_type_3_target_opens_its_dialog_and_counts_the_talk_test() -> Nil {
   assert target.effects
     == [
       OpenDialog(unit_id: unit),
-      TalkedTo(creature_id: id.Creature2Id(talk_target)),
+      TalkedTo(
+        target: unit_of(tables:, creature: talk_target),
+        checklist_index: 0,
+      ),
     ]
     as "a creature with no quest of its own, named by an open type 3 objective, gets 0x357 and then counts the talk (0x140553110, opcode.0x357)"
   assert target.window == Closes
@@ -159,7 +194,10 @@ pub fn a_type_3_target_opens_its_dialog_and_counts_the_talk_test() -> Nil {
   assert offering.effects
     == [
       OpenDialog(unit_id: unit),
-      TalkedTo(creature_id: id.Creature2Id(talk_target)),
+      TalkedTo(
+        target: unit_of(tables:, creature: talk_target),
+        checklist_index: 0,
+      ),
     ]
     as "a creature that also offers a quest opens its dialog once and counts the talk"
 
@@ -174,7 +212,10 @@ pub fn a_type_3_target_opens_its_dialog_and_counts_the_talk_test() -> Nil {
   assert edge.effects
     == [
       OpenDialog(unit_id: unit),
-      TalkedTo(creature_id: id.Creature2Id(talk_target)),
+      TalkedTo(
+        target: unit_of(tables:, creature: talk_target),
+        checklist_index: 0,
+      ),
     ]
     as "a target within 6.0 + 3.0 is answered"
 
@@ -269,7 +310,79 @@ pub fn a_type_3_target_opens_its_dialog_and_counts_the_talk_test() -> Nil {
     ).effects
     == [
       OpenDialog(unit_id: unit),
-      TalkedTo(creature_id: id.Creature2Id(58_487)),
+      TalkedTo(target: unit_of(tables:, creature: 58_487), checklist_index: 0),
     ]
     as "the same creature once the earlier objective is done"
+}
+
+/// The picture with this checklist index in the creature's 0x262.
+fn with_index(
+  picture picture: shown.Picture,
+  index index: Int,
+) -> shown.Picture {
+  dict.map_values(picture, fn(_, one) {
+    case one {
+      shown.ShownCreature(..) ->
+        shown.ShownCreature(..one, checklist_index: index)
+      shown.ShownPlayer -> shown.ShownPlayer
+      shown.ShownObject(..) -> shown.ShownObject(..one, checklist_index: index)
+    }
+  })
+}
+
+/// Quest 10525's objective 1 is 21319, a type 18 checklist of TargetGroup 14368
+/// (Creature2 73422), count 2, flags 3, which waits for objective 0 (21344, a visit).
+pub fn talking_to_a_type_18_target_sets_its_bit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let target = 73_422
+  let reached = [
+    quest_support.active(
+      quest_id: 10_525,
+      state: 1,
+      placeholder: 0,
+      tracked: False,
+      done_mask: 0b1,
+      progress: [1, 0, 0, 0, 0, 0],
+    ),
+  ]
+  let picture =
+    with_index(picture: picture_with(creature_id: target, gap: 1.0), index: 5)
+  let talked =
+    taken_in(
+      tables:,
+      log: quest_support.log_of(rows: reached),
+      picture:,
+      offer: interaction.NothingToOffer,
+    )
+  let event =
+    TalkedTo(target: unit_of(tables:, creature: target), checklist_index: 5)
+  assert talked.effects == [OpenDialog(unit_id: unit), event]
+    as "a type 18 target whose bit is clear opens its dialog and counts the talk, with the index its 0x262 carried (0x140611680)"
+
+  let counted =
+    objective.advance(
+      log: quest_support.log_of(rows: reached),
+      tables:,
+      event: objective.TalkedTo(
+        target: unit_of(tables:, creature: target),
+        checklist_index: 5,
+      ),
+      now_ms: 0,
+    )
+  assert counted.effects
+    == [
+      objective.SendProgress(quest_id: 10_525, objective_index: 1, progress: 32),
+    ]
+    as "the talk sets bit 5 of objective 1's mask"
+  assert_declined(
+    taken: taken_in(
+      tables:,
+      log: counted.log,
+      picture:,
+      offer: interaction.NothingToOffer,
+    ),
+    words: "no quest",
+    what: "a target whose bit is set (the client marks it only while the bit is clear)",
+  )
 }

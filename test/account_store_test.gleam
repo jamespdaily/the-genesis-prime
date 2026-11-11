@@ -1941,7 +1941,7 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
       "character_quest_active_has_its_entry",
       "character_quest_done_mask_fits_six_objectives",
       "character_quest_progress_fits_six_objectives",
-      "character_quest_progress_is_not_negative",
+      "character_quest_progress_fits_32_bits",
       "character_quest_timers_match_progress",
       "character_quest_times_are_not_negative",
       "character_quest_placeholder_is_not_negative",
@@ -3252,6 +3252,36 @@ pub fn a_save_writes_the_quest_log_with_the_place_and_the_next_load_reads_it_tes
   stop(store)
 }
 
+/// A checklist objective's progress is the 32-bit mask of the targets counted
+/// (opcode.0x35f, opcode.0x361), which the client reads as an unsigned value: bit 31 is a
+/// target, so 0x80000001 is a progress the table must keep.
+pub fn a_checklist_mask_with_bit_31_is_saved_and_read_back_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  let with_progress = fn(progress) {
+    QuestRow(
+      ..accepted_quest(1003),
+      active: Some(ActiveQuest(..accepted_entry(), progress:)),
+    )
+  }
+  let log = [with_progress([0x80000001, 0xffffffff, 0])]
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      quests: log,
+    )
+    == ForMove(PlaceSaved)
+    as "a progress of 2147483649 is within the 32 bits a mask has"
+  assert quests_of_load(store:, account:, character_id: id) == log
+    as "the load reads each mask back whole, bit 31 set"
+  stop(store)
+}
+
 pub fn a_quest_log_save_naming_an_older_epoch_or_sequence_changes_no_quest_row_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 4)
@@ -3493,6 +3523,16 @@ pub fn a_quest_row_the_client_would_refuse_is_refused_by_its_named_constraint_te
     ),
     "character_quest_timers_match_progress",
     "opcode.0x35f: an objective's time left is sent for each progress value, so 3 progress values with 2 timers are refused",
+  )
+  refused(
+    QuestRow(
+      ..accepted_quest(1003),
+      active: Some(
+        ActiveQuest(..accepted_entry(), progress: [4_294_967_296, 0, 0]),
+      ),
+    ),
+    "character_quest_progress_fits_32_bits",
+    "opcode.0x35f, opcode.0x361: a checklist's progress is a mask of 32 bits, so 2^32 has none",
   )
   refused(
     accepted_quest(32_768),

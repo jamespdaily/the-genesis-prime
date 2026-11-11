@@ -8,7 +8,7 @@
 ////                                                 ─▶ Hello, CharacterSelect(message), WorldEntry or WorldMessage
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
 ////                                                 ─▶ Movement(message), Camp(message), Chat(message), Cast(message),
-////                                                    Activation, Life(message), Innate(message), Interaction(message), Quest(message),
+////                                                    Activation, UnitActivation, Life(message), Innate(message), Interaction(message), Quest(message),
 ////                                                    QuestTurnIn, Inventory(message), VendorPurchase, VendorBuyback, VendorSale, VendorSellJunk or Dropped(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
@@ -53,6 +53,7 @@ import genesis_prime/message/cast_ability
 import genesis_prime/message/cast_activate
 import genesis_prime/message/character_select_start
 import genesis_prime/message/choose_resurrection
+import genesis_prime/message/client_activate_unit
 import genesis_prime/message/client_option
 import genesis_prime/message/client_side_interaction_result
 import genesis_prime/message/create_character_carrier
@@ -118,6 +119,9 @@ pub type Feature {
   /// The right-click of a unit, the client's cast of its activate spell
   /// (genesis_prime/game/cast `activate`).
   Activation
+  /// The use of a unit whose creature has no activate spell, which the client sends at
+  /// once with no cast (genesis_prime/game/cast `activate_unit`).
+  UnitActivation
   /// The player's choice of how to come back from death
   /// (genesis_prime/game/player_life).
   Life(message: player_life.Message)
@@ -278,6 +282,12 @@ const table = [
     [AtWorld],
   ),
   Row(cast_activate.message_id, InsideWorldMessage, Activation, [AtWorld]),
+  Row(
+    client_activate_unit.message_id,
+    InsideWorldMessage,
+    UnitActivation,
+    [AtWorld],
+  ),
   Row(
     ability_hold.message_id,
     InsideWorldMessage,

@@ -79,7 +79,6 @@ type SpawnRecord {
     outfit_info_id: Int,
     faction_id: Int,
     base_faction_id: Int,
-    quest_checklist_index: Int,
     active_prop_id: Int,
     world_socket_id: Int,
     stats: List(#(Int, Float)),
@@ -220,7 +219,7 @@ fn parse_line(
       outfit_info,
       faction1,
       faction2,
-      quest_checklist_index,
+      _quest_checklist_index,
       active_prop_id,
       world_socket_id,
       stat_ids,
@@ -243,10 +242,6 @@ fn parse_line(
       use outfit_info_id <- result.try(integer("outfit_info", outfit_info))
       use faction_id <- result.try(integer("faction1", faction1))
       use base_faction_id <- result.try(integer("faction2", faction2))
-      use quest_checklist_index <- result.try(integer(
-        "quest_checklist_index",
-        quest_checklist_index,
-      ))
       use active_prop_id <- result.try(integer("active_prop_id", active_prop_id))
       use world_socket_id <- result.try(integer(
         "world_socket_id",
@@ -275,7 +270,6 @@ fn parse_line(
         outfit_info_id:,
         faction_id:,
         base_faction_id:,
-        quest_checklist_index:,
         active_prop_id:,
         world_socket_id:,
         stats:,
@@ -469,7 +463,6 @@ fn write_batch(
       column(fn(r) { r.outfit_info_id }),
       column(fn(r) { r.faction_id }),
       column(fn(r) { r.base_faction_id }),
-      column(fn(r) { r.quest_checklist_index }),
       column(fn(r) { r.active_prop_id }),
       column(fn(r) { r.world_socket_id }),
     )

@@ -213,7 +213,6 @@ pub type LoadSpawnsRow {
     outfit_info_id: Int,
     faction_id: Int,
     base_faction_id: Int,
-    quest_checklist_index: Int,
     active_prop_id: Int,
     world_socket_id: Int,
     health: Option(Float),
@@ -248,11 +247,10 @@ pub fn load_spawns(
     use outfit_info_id <- decode.field(12, decode.int)
     use faction_id <- decode.field(13, decode.int)
     use base_faction_id <- decode.field(14, decode.int)
-    use quest_checklist_index <- decode.field(15, decode.int)
-    use active_prop_id <- decode.field(16, decode.int)
-    use world_socket_id <- decode.field(17, decode.int)
-    use health <- decode.field(18, decode.optional(decode.float))
-    use level <- decode.field(19, decode.optional(decode.float))
+    use active_prop_id <- decode.field(15, decode.int)
+    use world_socket_id <- decode.field(16, decode.int)
+    use health <- decode.field(17, decode.optional(decode.float))
+    use level <- decode.field(18, decode.optional(decode.float))
     decode.success(LoadSpawnsRow(
       id:,
       entity_type:,
@@ -269,7 +267,6 @@ pub fn load_spawns(
       outfit_info_id:,
       faction_id:,
       base_faction_id:,
-      quest_checklist_index:,
       active_prop_id:,
       world_socket_id:,
       health:,
@@ -297,7 +294,6 @@ select
   spawn.outfit_info_id,
   spawn.faction_id,
   spawn.base_faction_id,
-  spawn.quest_checklist_index,
   spawn.active_prop_id,
   spawn.world_socket_id,
   health.value as health,

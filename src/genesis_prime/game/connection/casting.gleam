@@ -96,11 +96,13 @@ import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite
+import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/rating
 import genesis_prime/game/shown
 import genesis_prime/game/spell_area
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell.{type Answered}
+import genesis_prime/game/target_group
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/unit_health.{UnitHealth}
@@ -109,13 +111,15 @@ import genesis_prime/step.{
   OwnEffect, StartTimer,
 }
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{Creature2Id, RaceId}
+import genesis_prime/table/id.{RaceId}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_path
 import gleam/bool
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 
 /// What the cast messages do, taken from inside 0x038C, in the world
 /// (genesis_prime/game/cast): the press is refused or accepted and its writes,
@@ -180,6 +184,105 @@ pub fn activate_message(
   }
 }
 
+/// The player's 0xb3, the use of a unit with no activate spell (genesis_prime/game/cast
+/// `activate_unit`), whose go the rule raises at once: the connection counts it for the
+/// objectives as an activate cast's go is counted.
+pub fn activate_unit_message(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+) -> client_connection.Handled(Session) {
+  let tables = session.settings.tables
+  let caster = caster_of(tables:, entered:)
+  // The player's Race row is in the tables (the load fails otherwise), so a missing one
+  // crashes.
+  let assert Ok(caster_radius) =
+    hit_radius.of_player(tables:, race_id: RaceId(caster.player.race_id))
+    as "hit_radius.requirements fails the load when a playable race has no Race row"
+  case
+    cast.activate_unit(
+      cast: entered.cast,
+      body: inner.body,
+      caster:,
+      activations: connection_state.activations_of(session:),
+      unit_of: used_unit(
+        tables:,
+        picture: entered.shown,
+        quests: entered.quests,
+        now_ms: now.monotonic_ms,
+      ),
+      caster_radius:,
+    )
+  {
+    Ok(effects) -> carry_cast(session:, now:, effects:)
+    Error(refusal) ->
+      connection_state.end_for(session:, now:, text: cast.describe(refusal))
+  }
+}
+
+/// What the creature or object a 0xb3 names is to the player, from the units the client
+/// shows: its Creature2 id and activate columns, its checklist index, its body now (a
+/// creature where its path puts it) and whether the server offers its use now (an open
+/// objective of the quest log counts it, `objective.use_targets`), or `Error(Nil)` for
+/// another player or no unit.
+fn used_unit(
+  tables tables: table_store.Tables,
+  picture picture: shown.Picture,
+  quests quests: QuestLog,
+  now_ms now_ms: Int,
+) -> fn(Int) -> Result(cast.UsedUnit, Nil) {
+  let offered_to = objective.use_targets(log: quests, tables:)
+  fn(unit_id) {
+    use one <- result.try(dict.get(picture, unit_id))
+    case one {
+      shown.ShownPlayer -> Error(Nil)
+      shown.ShownObject(place:, hit_radius:, ..) ->
+        used_unit_at(
+          tables:,
+          one:,
+          offered_to:,
+          alive: True,
+          body: activate.Body(place:, radius: hit_radius),
+        )
+      shown.ShownCreature(path:, hit_radius:, alive:, ..) ->
+        used_unit_at(
+          tables:,
+          one:,
+          offered_to:,
+          alive:,
+          body: activate.Body(
+            place: creature_path.place_at(path:, now_ms:),
+            radius: hit_radius,
+          ),
+        )
+    }
+  }
+}
+
+fn used_unit_at(
+  tables tables: table_store.Tables,
+  one one: shown.Shown,
+  offered_to offered_to: fn(target_group.Unit, Int) -> Bool,
+  alive alive: Bool,
+  body body: activate.Body,
+) -> Result(cast.UsedUnit, Nil) {
+  use #(unit, checklist_index) <- result.try(shown.target_of(
+    tables:,
+    shown: one,
+  ))
+  // The Creature2 row is in the tables, since the unit's 0x262 was made from it.
+  use row <- result.map(creature2.get(tables:, id: unit.creature_id))
+  cast.UsedUnit(
+    creature_id: unit.creature_id.value,
+    creature: activate.creature_of(row:),
+    checklist_index:,
+    body:,
+    alive:,
+    offered: offered_to(unit, checklist_index),
+  )
+}
+
 /// What the unit a right-click names is to the player, from the units its client shows:
 /// a static object with its creature's activate row and body, a creature that fights,
 /// another player or nothing shown.
@@ -192,13 +295,20 @@ fn activate_target(
       Error(Nil) -> activate.Unseen
       Ok(shown.ShownPlayer) -> activate.AnotherPlayer
       Ok(shown.ShownCreature(..)) -> activate.Fighter
-      Ok(shown.ShownObject(creature_id:, place:, hit_radius:)) -> {
+      Ok(shown.ShownObject(
+        creature_id:,
+        checklist_index:,
+        place:,
+        hit_radius:,
+        ..,
+      )) -> {
         // The object's Creature2 row is in the tables, since its 0x262 was made from it.
         let assert Ok(row) = creature2.get(tables:, id: creature_id)
           as "a shown object's Creature2 row is in the tables it was made from"
         activate.Object(
           creature_id: creature_id.value,
           creature: activate.creature_of(row:),
+          checklist_index:,
           body: activate.Body(place:, radius: hit_radius),
         )
       }
@@ -426,17 +536,22 @@ pub fn cast_effects(
       cast.Strike(asked:), Some(entered) ->
         strike_begins(session:, now:, entered:, asked:)
       cast.Strike(..), None -> #(session, [])
-      cast.Activated(unit_id:, creature_id:), Some(entered) ->
+      cast.Activated(unit_id:, ..), Some(entered) ->
         // The go is raised even when the unit has left the picture, and a use of a
         // creature the player no longer sees counts for no objective.
-        case dict.has_key(entered.shown, unit_id) {
-          True ->
+        case
+          dict.get(entered.shown, unit_id)
+          |> result.try(fn(shown) {
+            shown.target_of(tables: session.settings.tables, shown:)
+          })
+        {
+          Ok(#(target, checklist_index)) ->
             connection_objective.counted(
               session:,
               now:,
-              event: objective.Used(creature_id: Creature2Id(creature_id)),
+              event: objective.Used(target:, checklist_index:),
             )
-          False -> #(session, [])
+          Error(Nil) -> #(session, [])
         }
       cast.Activated(..), None -> #(session, [])
       cast.Pay(payments:), _ -> connection_resource.paid(session:, payments:)
@@ -677,6 +792,10 @@ pub fn carry_strike(
               picture: entered.shown,
               unit_ids: cast.hit_units(struck:),
               now_ms: now.monotonic_ms,
+            ),
+            indexes: shown.checklist_indexes_of(
+              picture: entered.shown,
+              unit_ids: cast.hit_units(struck:),
             ),
             rolls: prerequisite.rolls_of(bytes:),
           )

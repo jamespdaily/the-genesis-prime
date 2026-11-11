@@ -133,7 +133,7 @@ const character_health_is_not_negative = "character_health_is_not_negative"
 const character_experience_is_not_negative =
   "character_experience_is_not_negative"
 
-/// The checks of the character_quest table (migration 0021), one for each limit of
+/// The checks of the character_quest table (migrations 0021 and 0026), one for each limit of
 /// the client's a quest row can break. A save one of them refuses answers
 /// `QuestLogRefused` with the check's own name. The table's primary key and its
 /// foreign key to the character are not among them: neither is a limit of the
@@ -145,7 +145,7 @@ const quest_checks = [
   "character_quest_active_has_its_entry",
   "character_quest_done_mask_fits_six_objectives",
   "character_quest_progress_fits_six_objectives",
-  "character_quest_progress_is_not_negative",
+  "character_quest_progress_fits_32_bits",
   "character_quest_timers_match_progress",
   "character_quest_times_are_not_negative",
   "character_quest_placeholder_is_not_negative",

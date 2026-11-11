@@ -86,6 +86,7 @@ pub fn battle_beast(number number: Int, x x: Float) -> Spawn {
     combat: beast_combat(),
     bases: loaded_beast().bases,
     context: loaded_beast().context,
+    checklist_index: 0,
   )
 }
 
@@ -324,7 +325,6 @@ pub fn beast_row(number number: Int) -> Row {
     outfit_info_id: 0,
     faction_id: 1441,
     base_faction_id: 1441,
-    checklist_index: 0,
     world_object_id: 0,
     world_socket_id: 0,
     health: option.None,

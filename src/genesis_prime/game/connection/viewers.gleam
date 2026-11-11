@@ -388,6 +388,8 @@ pub fn viewer_takes(
           unit_id,
           ShownCreature(
             creature_id: Creature2Id(unit.creature_id),
+            faction_id: unit.tail.faction_id,
+            checklist_index: unit.checklist_index,
             path: creature_path.Standing(at: place),
             life:,
             alive: creature_unit.health_of(unit:) > 0,
@@ -701,6 +703,8 @@ fn object_shown(
     |> result.unwrap(0.0)
   ShownObject(
     creature_id: static_object.creature_id(created:),
+    faction_id: static_object.faction_id(created:),
+    checklist_index: static_object.checklist_index(created:),
     place: start_place.moved(place: world_place, x:, y:, z:),
     hit_radius:,
   )
