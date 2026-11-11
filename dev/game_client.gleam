@@ -34,6 +34,7 @@ import genesis_prime/message/innate_index_set
 import genesis_prime/message/item_added
 import genesis_prime/message/movement_command.{type MovementCommand}
 import genesis_prime/message/movement_rotation.{MovementRotation}
+import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/player_health
 import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/relayed_movement
@@ -564,6 +565,29 @@ fn read_until_from(
         <> mug.describe_error(error)
       }
   }
+}
+
+/// Camps the player and plays the same character again, as the client does: 0xBF
+/// answered by 0x92, 0xC0 answered by 0x594, 0x7E0 answered by the list's 0x117, then
+/// 0x7DD for the character. Gives the frames of the new entry, up to its 0x1BC, and
+/// the bytes beyond.
+pub fn camp_and_play(
+  game game: Game,
+  have have: BitArray,
+  character_id character_id: Int,
+) -> #(List(Frame), BitArray) {
+  send_world(game:, message_id: 0x00BF, body: <<1>>)
+  let #(_, have) = read_message(game:, have:, message_id: 0x0092)
+  send_world(game:, message_id: 0x00C0, body: <<>>)
+  let #(_, have) = read_message(game:, have:, message_id: 0x0594)
+  send(game:, message_id: 0x07E0, body: <<>>)
+  let #(_, have) = read_message(game:, have:, message_id: 0x0117)
+  let assert Ok(play) = play_character.encode(PlayCharacter(character_id:))
+    as "0x07DD encodes"
+  send(game:, message_id: 0x07DD, body: play)
+  read_until(game:, have:, found: fn(frames) {
+    list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+  })
 }
 
 /// The movement command of kind 2 that puts the player at x, y, z with its
