@@ -23,13 +23,12 @@ import class_resource_support
 import client_tables
 import crowd_control_support
 import genesis_prime/client_connection
-import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/cast.{type GoAsked, GoAsked}
 import genesis_prime/game/class_resource.{Resource}
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/hit.{type Offence, Blow, Offence, Rolls}
-import genesis_prime/game/shown.{Exile, ShownCreature, ShownPlayer}
+import genesis_prime/game/shown.{ShownCreature, ShownPlayer}
 import genesis_prime/game/spell_area.{DamageEffect}
 import genesis_prime/game/spell_plan.{AimsAtArea}
 import genesis_prime/game/spend
@@ -53,50 +52,16 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None}
-import map_support
 import owned_test
 import place_support
 import properties_support
 import rating_support
 import spell_tables
+import strike_support
 import unitest
 
 fn at(ms ms: Int) -> step.Now {
   Now(monotonic_ms: ms, filetime: 0)
-}
-
-fn attacker() -> Attacker {
-  Attacker(
-    unit_id: 7,
-    connection: ConnectionId(2),
-    pose: Pose(at: Point(x: 0.0, z: 0.0), yaw: 0.0),
-    place: place_support.at(
-      world_id: 3460,
-      world_zone_id: 5967,
-      x: 0.0,
-      y: 0.0,
-      z: 0.0,
-    ),
-    move_seq: 1,
-    stay: map_support.stay(count: 1),
-    hit_radius: place_support.player_hit_radius,
-    faction: Exile,
-    stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
-    properties: properties_support.fresh(level: 1),
-  )
-}
-
-fn damage_effect() -> spell_area.DamageEffect {
-  DamageEffect(
-    effect_id: Spell4EffectsId(1),
-    damage_type: 1,
-    delay_ms: 166,
-    phase_flags: -1,
-    aim: AimsAtArea,
-    formula: damage.Formula(multiplier: 1.0, base: 0.0, parameters: []),
-    threat_multiplier: 1.0,
-    tag: spend.always,
-  )
 }
 
 fn asked(cast_id cast_id: Int, phase phase: Int) -> GoAsked {
@@ -119,7 +84,7 @@ fn selection(
     units: list.map(units, fn(unit_id) { Aimed(unit_id:, life: 3) }),
     area: units,
     blows: case damaging {
-      True -> [damage_effect()]
+      True -> [strike_support.damage_effect()]
       False -> []
     },
     controls: [],
@@ -142,7 +107,7 @@ fn begun(
   strike.begin(
     strike: state,
     selection:,
-    attacker: attacker(),
+    attacker: strike_support.attacker(),
     formulas: rating_support.formulas(),
     entropy: entropy(rolls: list.map(selection.units, fn(_) { #(0, 0, 0) })),
     now: at(ms: now_ms),
@@ -218,7 +183,7 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
     strike.begin(
       strike: strike.new(),
       selection: chosen,
-      attacker: attacker(),
+      attacker: strike_support.attacker(),
       formulas: rating_support.formulas(),
       entropy: entropy(rolls: [
         #(0, 2_147_483_648, 0),
@@ -324,7 +289,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         blows: [paralytic_surge, telekinetic_strike],
         controls: [],
       ),
-      attacker: Attacker(..attacker(), stats: novice),
+      attacker: Attacker(..strike_support.attacker(), stats: novice),
       formulas: rating_support.formulas(),
       entropy: entropy(rolls: [#(0, 0, 0)]),
       now: at(ms: 1000),
@@ -901,7 +866,7 @@ pub fn the_caster_selects_the_foes_inside_kicks_cone_nearest_first_test() -> Nil
   let chosen =
     strike.select(
       asked: asked(cast_id: 5, phase: 0),
-      attacker: attacker(),
+      attacker: strike_support.attacker(),
       picture: picture(),
       areas:,
       now_ms: 0,
@@ -923,7 +888,7 @@ pub fn a_damage_aimed_at_the_cast_target_strikes_the_primary_target_alone_test()
         primary_target: 20,
         spent: None,
       ),
-      attacker: attacker(),
+      attacker: strike_support.attacker(),
       picture: picture(),
       areas: spell_tables.fixture_areas(),
       now_ms: 0,
@@ -944,7 +909,7 @@ pub fn a_spell_the_areas_do_not_hold_strikes_nobody_test() -> Nil {
         primary_target: 7,
         spent: None,
       ),
-      attacker: attacker(),
+      attacker: strike_support.attacker(),
       picture: picture(),
       areas:,
       now_ms: 0,
@@ -984,7 +949,7 @@ pub fn crushs_second_spell_strikes_up_to_four_within_4_m_of_the_struck_foe_and_t
         primary_target: 21,
         spent: None,
       ),
-      attacker: attacker(),
+      attacker: strike_support.attacker(),
       picture: around_the_foe,
       areas:,
       now_ms: 0,
@@ -1019,7 +984,7 @@ pub fn staggers_multiphase_spell_selects_up_to_five_within_8_m_at_each_phase_and
           primary_target: 7,
           spent: None,
         ),
-        attacker: attacker(),
+        attacker: strike_support.attacker(),
         picture: close_by,
         areas:,
         now_ms: 0,
@@ -1039,7 +1004,7 @@ pub fn staggers_multiphase_spell_selects_up_to_five_within_8_m_at_each_phase_and
         primary_target: 22,
         spent: None,
       ),
-      attacker: attacker(),
+      attacker: strike_support.attacker(),
       picture: close_by,
       areas:,
       now_ms: 0,
@@ -1074,7 +1039,7 @@ pub fn each_pulse_of_electrocutes_channel_selects_the_foes_its_area_row_names_te
           primary_target: 7,
           spent: None,
         ),
-        attacker: attacker(),
+        attacker: strike_support.attacker(),
         picture: close_by,
         areas:,
         now_ms: 0,
@@ -1154,7 +1119,7 @@ pub fn mind_burst_at_p_points_strikes_with_only_the_damage_effect_of_p_minus_1_t
     let chosen =
       strike.select(
         asked: mind_burst_go(points:),
-        attacker: attacker(),
+        attacker: strike_support.attacker(),
         picture: dict.new(),
         areas:,
         now_ms: 0,
@@ -1171,7 +1136,7 @@ pub fn a_3_point_mind_burst_tells_its_creature_only_effect_61995_test() -> Nil {
   let chosen =
     strike.select(
       asked: mind_burst_go(points: 3),
-      attacker: attacker(),
+      attacker: strike_support.attacker(),
       picture:,
       areas: mind_burst_areas(),
       now_ms: 0,
@@ -1182,7 +1147,7 @@ pub fn a_3_point_mind_burst_tells_its_creature_only_effect_61995_test() -> Nil {
     strike.begin(
       strike: strike.new(),
       selection: chosen,
-      attacker: attacker(),
+      attacker: strike_support.attacker(),
       formulas: rating_support.formulas(),
       entropy: entropy(rolls: [#(0, 0, 0)]),
       now: at(ms: 1000),
@@ -1201,7 +1166,7 @@ pub fn a_go_with_no_n_strikes_with_every_damage_effect_the_spell_holds_test() ->
   let chosen =
     strike.select(
       asked: GoAsked(..go, spent: None),
-      attacker: attacker(),
+      attacker: strike_support.attacker(),
       picture: dict.new(),
       areas: mind_burst_areas(),
       now_ms: 0,
@@ -1301,8 +1266,8 @@ pub fn two_casters_instance_ids_for_one_creature_differ_test() -> Nil {
     let assert [strike.TellStrike(tell:, ..)] = tells(effects:)
     tell.controls
   }
-  let first = told_by(attacker())
-  let second = told_by(Attacker(..attacker(), unit_id: 8))
+  let first = told_by(strike_support.attacker())
+  let second = told_by(Attacker(..strike_support.attacker(), unit_id: 8))
   assert first == [crowd_control_support.gate_stun(instance_id: 28_673)]
     && second == [crowd_control_support.gate_stun(instance_id: 32_769)]
     as "7 x 4096 + 1 and 8 x 4096 + 1: no id is shared, and none is 0"
@@ -1399,7 +1364,7 @@ fn offence_of_caster_with(
 ) -> Offence {
   let blow =
     DamageEffect(
-      ..damage_effect(),
+      ..strike_support.damage_effect(),
       formula: damage.Formula(multiplier: 1.0, base: 10.0, parameters: []),
     )
   let #(_, effects) =
@@ -1412,7 +1377,7 @@ fn offence_of_caster_with(
         blows: [blow],
         controls: [],
       ),
-      attacker: Attacker(..attacker(), properties:),
+      attacker: Attacker(..strike_support.attacker(), properties:),
       formulas: rating_support.formulas(),
       entropy: entropy(rolls: [#(0, 0, 0)]),
       now: at(ms: 1000),

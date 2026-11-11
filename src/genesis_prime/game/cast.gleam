@@ -174,8 +174,9 @@
 ////   the next step adds. A Multiphase spell's phase is the phase's index and a
 ////   channel's the pulse's (`opcode.0x7f4.phase`). Each go is followed by the
 ////   spell's Proxies of that phase, and the finish, 0x7fe, comes after the last go,
-////   at once for a spell that is not Multiphase, and for a channel at its
-////   channelMaxTime from a timer of its own.
+////   at once for a spell that is not Multiphase. A channel ends at the later of its
+////   finish timer and the close of its last go's strike round, so the client has
+////   all of its gos before the 0x7fe (`cast.channel_sequence`).
 //// - **A go's gains** (`Gain`) are the spell's own gains of the phase and, once
 ////   for the go and not once per unit, the gains of each Proxy of the phase aimed
 ////   at each struck unit when the round has a Hit and the Proxy's gate passes
@@ -871,8 +872,9 @@ pub type Refusal {
 pub type Due {
   /// The go of phase `phase` of the live cast `cast_id`.
   Go(cast_id: Int, phase: Int)
-  /// The live channel `cast_id` ends at its channelMaxTime, which can come after
-  /// its last pulse.
+  /// The live channel `cast_id`'s finish timer: the channel ends at the later of
+  /// this timer and the close of its last go's strike round, since the client
+  /// expects all of a channel's gos before its 0x7fe (`cast.channel_sequence`).
   Finish(cast_id: Int)
   /// The child cast of `proxy` starts: with the pressed spell as its root and the
   /// spell whose Proxy fired as its parent, which need not be live.
@@ -1012,6 +1014,10 @@ pub type Live {
     shortcut: Bool,
     /// The unit a quest button's cast was aimed at, when it takes one.
     aimed: Option(PressedAt),
+    /// Whether a channel's finish timer fired while a go's strike round was still open:
+    /// the cast ends when its last go is written, which a round's deadline bounds
+    /// (`opcode.0x7f4`: the client counts the gos before its 0x7fe, `cast.channel_sequence`).
+    finish_due: Bool,
   )
 }
 
@@ -4323,6 +4329,35 @@ pub fn timer_fired(
   |> continued(caster:, now_ms: now.monotonic_ms)
 }
 
+/// A channel's finish timer fired: the cast ends, or, when a go's strike round is still
+/// open, waits for that round, since the go's 0x7f4 comes before the 0x7fe
+/// (`cast.channel_sequence`). The go that closes the last round ends it, and the
+/// round's deadline bounds the wait (`strike`).
+fn finish_fired(
+  cast cast: State,
+  cast_id cast_id: Int,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case dict.get(cast.casts, cast_id) {
+    Error(Nil) -> #(cast, [])
+    Ok(live) ->
+      case live.gone < spell_plan.go_count(spell: live.spell) {
+        True -> #(
+          State(
+            ..cast,
+            casts: dict.insert(
+              cast.casts,
+              cast_id,
+              Live(..live, finish_due: True),
+            ),
+          ),
+          [],
+        )
+        False -> finish_or_linger(cast:, cast_id:, live:, now_ms:)
+      }
+  }
+}
+
 fn fire(
   cast cast: State,
   timer timer: TimerId,
@@ -4336,11 +4371,7 @@ fn fire(
       let now_ms = now.monotonic_ms
       case due {
         Go(cast_id:, phase:) -> asked(cast:, caster:, now_ms:, cast_id:, phase:)
-        Finish(cast_id:) ->
-          case dict.get(cast.casts, cast_id) {
-            Error(Nil) -> #(cast, [])
-            Ok(live) -> finish_or_linger(cast:, cast_id:, live:, now_ms:)
-          }
+        Finish(cast_id:) -> finish_fired(cast:, cast_id:, now_ms:)
         StartChild(root:, parent:, proxy:, primary_target:) ->
           start(
             cast:,
@@ -5807,6 +5838,7 @@ fn start(
         Shortcut(aimed:, ..) -> aimed
         Child | Base(..) | Stage(..) | Passive | Activation(..) -> None
       },
+      finish_due: False,
     )
   let global_ends = case role, spell.global_cooldown.starts_for_ms {
     Passive, _ -> cast.global_cooldown_ends_ms
@@ -6300,7 +6332,9 @@ fn go(
         )
       let #(cast, finished) = case
         live.gone == go_count
-        && option.is_none(spell_plan.finish_after_ms(spell:))
+        && {
+          live.finish_due || option.is_none(spell_plan.finish_after_ms(spell:))
+        }
       {
         True ->
           case dict.get(cast.casts, cast_id) {
