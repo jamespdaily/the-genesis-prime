@@ -493,6 +493,8 @@ Creature2	73494	Dominion Turret - NPEU - Part 2 (the turret Exiles fight, factio
 QuestObjective	21288	kill both Dominion Turrets (an Exile objective)	objective_spawn_test, tutorial_turret_test
 Spell4	85469	Charging - Dominion Turret, castTime 8000	spawn_test, creature_kind_test, tutorial_turret_test
 Spell4	86978	Charging - Exile Turret, castTime 8000	spawn_test, creature_kind_test
+Spell4	85474	Turret Immune, the Sim-Turret's guard (one effect of type 79)	creature_kind_test, creature_test, creature_guard_test
+Spell4	85472	Moment of Opportunity, the Sim-Turret's opening (states 9 and 12, a Proxy back to 85474)	creature_kind_test, creature_test, creature_guard_test
 Faction2	1441	faction of the turrets Exiles fight	spawn_test, objective_spawn_test
 Faction2	1442	faction of the turrets Dominion fight	objective_spawn_test
 Faction2Relationship	2943	1441 to 167 level 0	spawn_test

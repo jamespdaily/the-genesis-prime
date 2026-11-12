@@ -859,6 +859,7 @@ pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_cha
         | client_connection.CastMissed(..)
         | client_connection.CastTargetsRemoved(..)
         | client_connection.CastStackRemoved(..)
+        | client_connection.CastInterrupted(..)
         | client_connection.Health(..)
         | client_connection.Died
         | client_connection.Removed

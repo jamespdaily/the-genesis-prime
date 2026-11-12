@@ -22,6 +22,7 @@ import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_faction
+import genesis_prime/world_map/creature_guard_spells
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/creature_life.{
   type Attack, Attack, Attackable, Combat, Hostile, Instant,
@@ -293,6 +294,7 @@ pub fn kinds() -> Kinds {
       respawn_ms: 60_000,
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
+      guard: option.None,
     ),
     by_creature: dict.new(),
   )
@@ -310,6 +312,7 @@ pub fn turret_kinds() -> Kinds {
           respawn_ms: 60_000,
           attack_spell4_id: Spell4Id(85_469),
           attack_interval_ms: 3000,
+          guard: option.None,
         ),
       ),
       #(
@@ -318,9 +321,29 @@ pub fn turret_kinds() -> Kinds {
           respawn_ms: 60_000,
           attack_spell4_id: Spell4Id(86_978),
           attack_interval_ms: 3000,
+          guard: option.None,
         ),
       ),
     ]),
+  )
+}
+
+/// The same kinds as migration 0030 leaves them: both turrets guarded by Spell4 85474 and
+/// opened by Spell4 85472, read from the client's tables.
+pub fn guarded_turret_kinds() -> Kinds {
+  let assert Ok(guard) =
+    creature_guard_spells.guard_of(
+      guard_spell4_id: 85_474,
+      opening_spell4_id: 85_472,
+      tables: character_tables.content_tables(),
+    )
+    as "Spell4 85474 and 85472 are rows of the client's tables the guard applies"
+  let kinds = turret_kinds()
+  Kinds(
+    ..kinds,
+    by_creature: dict.map_values(kinds.by_creature, fn(_, kind) {
+      Kind(..kind, guard: option.Some(guard))
+    }),
   )
 }
 

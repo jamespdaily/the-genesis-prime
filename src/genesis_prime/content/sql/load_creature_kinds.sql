@@ -5,6 +5,8 @@ select
   creature_id,
   respawn_ms,
   attack_spell4_id,
-  attack_interval_ms
+  attack_interval_ms,
+  guard_spell4_id,
+  opening_spell4_id
 from creature_kind
 order by creature_id;

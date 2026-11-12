@@ -584,6 +584,7 @@ pub fn map_of_world_with_four_players(
           respawn_ms: 60_000,
           attack_spell4_id: Spell4Id(5649),
           attack_interval_ms: 1500,
+          guard: option.None,
         ),
         by_creature: dict.new(),
       ),
@@ -1787,6 +1788,7 @@ pub fn cast_starts(news: List(News)) -> List(spell_started.SpellStarted) {
       | client_connection.CastTargetsRemoved(..)
       | client_connection.CastStackRemoved(..)
       | client_connection.CastFinished(..)
+      | client_connection.CastInterrupted(..)
       | client_connection.Health(..)
       | client_connection.Died
       | client_connection.CameBack
@@ -1823,6 +1825,7 @@ pub fn is_cast_removal(news: News) -> Bool {
     | client_connection.CastMissed(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)
+    | client_connection.CastInterrupted(..)
     | client_connection.Health(..)
     | client_connection.Died
     | client_connection.CameBack

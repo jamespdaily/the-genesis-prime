@@ -330,6 +330,7 @@ pub fn viewer_takes(
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)
+    | client_connection.CastInterrupted(..)
     | client_connection.Health(..)
     | client_connection.Died
     | client_connection.CameBack
@@ -490,6 +491,17 @@ pub fn viewer_takes(
         cast_id: removed.cast_id,
         frame: cast.stack_removed_frame(removed:),
         forgetting: False,
+      )
+    client_connection.CastInterrupted(cast_id:) ->
+      written_cast_frames(
+        session:,
+        entered:,
+        cast_id:,
+        frames: [
+          cast.interrupted_frame(cast_id:, unit_id:),
+          cast.finished_frame(cast_id:),
+        ],
+        forgetting: True,
       )
     client_connection.CastFinished(cast_id:) ->
       written_cast_frame(
@@ -765,6 +777,7 @@ fn creature_news(
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)
+    | client_connection.CastInterrupted(..)
     | client_connection.CreatureMoved(..)
     | client_connection.CreaturePlaced(..)
     | client_connection.Targeting(..)
@@ -853,6 +866,7 @@ fn life_news(
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)
+    | client_connection.CastInterrupted(..)
     | client_connection.Health(..)
     | client_connection.Died
     | client_connection.CreatureMoved(..)
@@ -882,6 +896,24 @@ fn written_cast_frame(
   frame frame: Frame,
   forgetting forgetting: Bool,
 ) -> client_connection.Handled(Session) {
+  written_cast_frames(
+    session:,
+    entered:,
+    cast_id:,
+    frames: [frame],
+    forgetting:,
+  )
+}
+
+/// The frames of a cast of the unit written in order, when this client was sent the cast's
+/// start; the cast is forgotten after them when `forgetting`.
+fn written_cast_frames(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  cast_id cast_id: Int,
+  frames frames: List(Frame),
+  forgetting forgetting: Bool,
+) -> client_connection.Handled(Session) {
   use <- bool.guard(
     when: !dict.has_key(entered.casts_written, cast_id),
     return: Continue(session, []),
@@ -896,7 +928,10 @@ fn written_cast_frame(
       })
     False -> session
   }
-  Continue(session, [connection_state.to_client(session, frame)])
+  Continue(
+    session,
+    list.map(frames, fn(frame) { connection_state.to_client(session, frame) }),
+  )
 }
 
 /// 0x7fe for each cast of the unit that this client was sent the start of and no

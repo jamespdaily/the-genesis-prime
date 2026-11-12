@@ -93,6 +93,13 @@
 ////   the 0x7ff, the `CastEnds` timer, the strikes to the fighters inside its rectangle and the
 ////   go; the creature takes no message for it beyond its own timer. An attack with run speed
 ////   0 never moves the unit.
+//// - **The guard** is creature_guard's, which holds what a guard and an opening are. The creature
+////   gives it its inputs: `Stands` when its corpse timer stood it again, `Interrupted` (with the charge's cast id) when the fight
+////   broke a charge (`ChargeInterrupted`), its timer's firing and `Killed` at a kill; it carries out
+////   its effects, news to every viewer and the opening's timer (`OpeningEnds`, id 11 and 6 more for
+////   each generation). A guarded creature's strike takes no health. An opened creature counts as
+////   controlled (`held`): the fight starts no charge, and acts again when both the states and the
+////   opening are gone. A viewer that arrives is shown the guard's or the opening's cast after the 0x262.
 //// - **A viewer that is not a connection any more** is dropped by the send (the
 ////   registry finds no process); the map's `Unwatched` follows from its end.
 //// - **A `Watched` twice from one connection** sends the 0x262 twice; the
@@ -128,6 +135,10 @@
 //// | the creature crashes while it charges | the same: its `CastEnds` timer goes with the process, no 0x7fe is sent, and the map's `Gone` removes the unit from each viewer |
 //// | the creature dies while it charges | the fight cancels the `CastEnds` timer and finishes the cast (0x7fe); the corpse timer starts as for any kill (`death_during_a_charge_ends_it_test`) |
 //// | a `CastEnds` fires after its charge ended | the fight finds no charge of that generation and does nothing (`a_stale_cast_end_does_nothing_test`) |
+//// | an `OpeningEnds` fires after the creature died | the guard finds no opening of that generation and does nothing (`an_opening_end_after_death_does_nothing_test`) |
+//// | the creature dies while opened | the guard cancels the opening's timer and sends no 0x880: the death clears the states (`a_turret_killed_while_opened_gives_its_kill_credit_test`) |
+//// | the creature crashes while opened | the same as any crash: the timer goes with the process, and the spawn starts again guarded as a new unit |
+//// | a strike with damage reaches a guarded creature | it takes no health and the answer is `Landed` with no descriptions (`a_damaging_strike_on_a_guarded_turret_takes_no_health_test`) |
 //// | the creature is told `Retire` | it stops, and the map's watch ends; the map takes that as a clean stop |
 //// | the creature is told `Retire` while dead | it stops at its respawn, and the map's watch ends then |
 //// | the creature is struck while dead | the strike is answered `Refused(Dead)`; no health changes and no news is sent |
@@ -179,6 +190,7 @@ import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight.{
   type Fighter, AttackTick, CastEnds, Fighter, HomeArrival, StrikeDeadline,
 }
+import genesis_prime/world_map/creature_guard
 import genesis_prime/world_map/creature_kind.{type Kind}
 import genesis_prime/world_map/creature_life.{
   type Body, type Life, Body, Died, Ends, Health, StandsAgain, StopAtRespawn,
@@ -214,7 +226,7 @@ const first_caster_watch = 2
 const corpse_timer = TimerId(1)
 
 /// The timer of the creature's Interrupt Armor refill: 2, which no fight timer is (they
-/// start at 5) and no control's (they start at 9).
+/// start at 6), no control's (they start at 10) and no guard's (they start at 11).
 const refill_timer = TimerId(2)
 
 /// What a creature is started with: which creature of which run it is and the
@@ -320,6 +332,7 @@ pub opaque type State {
     life: Life,
     fight: creature_fight.State,
     control: creature_control.State,
+    guard: creature_guard.State,
     retiring: Bool,
     viewers: Dict(ConnectionId, Stay),
     properties: Properties,
@@ -355,6 +368,10 @@ pub fn new(settings: Settings) -> State {
     life: creature_life.new(body:),
     fight: creature_fight.new(home: settings.spawn.place),
     control: creature_control.new(),
+    guard: creature_guard.new(
+      guard: settings.kind.guard,
+      unit_id: settings.creature.unit_id,
+    ),
     retiring: False,
     viewers: dict.from_list(settings.creature.viewers),
     properties: base_properties(settings:),
@@ -426,8 +443,11 @@ pub fn step(
           watch: run_watch,
           target: step.Map(map: creature.map, incarnation: creature.incarnation),
         ),
-        ..list.map(creature.viewers, fn(viewer) {
-          appeared(state:, viewer:, now_ms:)
+        ..list.flat_map(creature.viewers, fn(viewer) {
+          [
+            appeared(state:, viewer:, now_ms:),
+            ..guard_shown(state:, viewer:, now_ms:)
+          ]
         })
       ]),
     )
@@ -435,13 +455,16 @@ pub fn step(
       State(..state, viewers: dict.insert(state.viewers, by, stay)),
       Effects([
         appeared(state:, viewer: #(by, stay), now_ms:),
-        ..list.map(
-          creature_fight.arrival_news(
-            state: state.fight,
-            fighter: fighter_of(state:),
-            now_ms:,
+        ..list.append(
+          guard_shown(state:, viewer: #(by, stay), now_ms:),
+          list.map(
+            creature_fight.arrival_news(
+              state: state.fight,
+              fighter: fighter_of(state:),
+              now_ms:,
+            ),
+            fn(news) { news_to(creature:, viewer: #(by, stay), news:) },
           ),
-          fn(news) { news_to(creature:, viewer: #(by, stay), news:) },
         )
       ]),
     )
@@ -528,6 +551,8 @@ pub fn step(
             stood_again(state: State(..state, life:), now_ms:)
           let #(state, fought) =
             fought(state:, input: creature_fight.StoodAgain, now_ms:)
+          let #(state, guarded) =
+            guard_stepped(state:, input: creature_guard.Stands, now_ms:)
           #(
             state,
             Effects(
@@ -539,6 +564,7 @@ pub fn step(
                     appeared(state:, viewer:, now_ms:),
                   ]
                 }),
+                guarded,
                 fought,
               ]),
             ),
@@ -555,16 +581,17 @@ pub fn step(
       #(state, Effects(carried(state:, effects:)))
     }
     OwnEvent(ServiceTimerFired(timer:)) ->
-      case control_of(timer:), fight_timer(timer:) {
-        Ok(number), _ -> control_ended(state:, number:, now_ms:)
-        Error(Nil), Ok(timer) ->
+      case control_of(timer:), guard_timer(timer:), fight_timer(timer:) {
+        Ok(number), _, _ -> control_ended(state:, number:, now_ms:)
+        Error(Nil), Ok(timer), _ -> guard_timer_fired(state:, timer:, now_ms:)
+        Error(Nil), Error(Nil), Ok(timer) ->
           fought_alone(
             state:,
             input: creature_fight.TimerFired(timer:),
             now_ms:,
           )
-        Error(Nil), Error(Nil) ->
-          panic as "a creature starts no timer but its corpse's, its armor refill's, its fight's and its controls'"
+        Error(Nil), Error(Nil), Error(Nil) ->
+          panic as "a creature starts no timer but its corpse's, its armor refill's, its fight's, its guard's and its controls'"
       }
     OwnEvent(Told(message: ModifierStarts(
       by:,
@@ -832,8 +859,20 @@ fn struck(
       )),
     )
     Ok(Nil) -> {
-      let reaction =
-        creature_life.struck(life: state.life, body: state.body, strike: tell)
+      let reaction = case creature_guard.guarded(state: state.guard) {
+        True ->
+          creature_life.Reaction(
+            life: state.life,
+            answer: Answered(key: tell.key, outcome: case tell.offence.blows {
+              [] -> strike_tell.Landed(descriptions: [], controls: [])
+              [_, ..] -> strike_tell.Immune(controls: [])
+            }),
+            news: [],
+            corpse_for_ms: None,
+          )
+        False ->
+          creature_life.struck(life: state.life, body: state.body, strike: tell)
+      }
       let #(state, answered, controlled) =
         controls_after(state:, tell:, reaction:, now_ms:)
       // The answer goes first: the caster's connection then knows the strike
@@ -851,14 +890,16 @@ fn struck(
       }
       let credit = credit_for(state:, tell:, reaction:)
       let state = State(..state, life: reaction.life)
-      let input = case
-        reaction.answer.outcome,
-        tell.striker,
-        tell.from,
-        reaction.corpse_for_ms
-      {
+      // A strike that landed, or that the guard took no damage from, threatens the
+      // creature by the descriptions it left (none for a guarded one).
+      let landed = case reaction.answer.outcome {
+        strike_tell.Landed(descriptions:, ..) -> Some(descriptions)
+        strike_tell.Immune(..) -> Some([])
+        strike_tell.Deflected | strike_tell.Refused(..) -> None
+      }
+      let input = case landed, tell.striker, tell.from, reaction.corpse_for_ms {
         _, _, _, Some(..) -> Some(creature_fight.Killed)
-        strike_tell.Landed(descriptions:, ..),
+        Some(descriptions),
           PlayerStriker(unit_id:, place:, seq:, stay:, hit_radius:, ..),
           Connection(by),
           None
@@ -881,10 +922,22 @@ fn struck(
         Some(input) -> fought(state:, input:, now_ms:)
         None -> #(state, [])
       }
+      let #(state, guarded) = case reaction.corpse_for_ms {
+        Some(..) -> guard_stepped(state:, input: creature_guard.Killed, now_ms:)
+        None -> #(state, [])
+      }
       #(
         state,
         Effects(
-          list.flatten([answer, credit, news, corpse, fought, controlled]),
+          list.flatten([
+            answer,
+            credit,
+            news,
+            corpse,
+            fought,
+            guarded,
+            controlled,
+          ]),
         ),
       )
     }
@@ -946,8 +999,8 @@ fn controls_after(
     }
     [_, ..], None, _ ->
       case reaction.answer.outcome {
-        strike_tell.Landed(descriptions:, ..) -> {
-          let held = creature_control.holds(state: state.control)
+        strike_tell.Landed(..) | strike_tell.Immune(..) -> {
+          let was_held = held(state:)
           let landing =
             creature_control.land(
               state: state.control,
@@ -957,9 +1010,7 @@ fn controls_after(
               now_ms:,
             )
           let state = State(..state, control: landing.state)
-          let #(state, stopped) = case
-            !held && creature_control.holds(state: state.control)
-          {
+          let #(state, stopped) = case !was_held && held(state:) {
             True -> fought(state:, input: creature_fight.Controlled, now_ms:)
             False -> #(state, [])
           }
@@ -967,8 +1018,8 @@ fn controls_after(
             state,
             Answered(
               key: reaction.answer.key,
-              outcome: strike_tell.Landed(
-                descriptions:,
+              outcome: with_controls(
+                outcome: reaction.answer.outcome,
                 controls: landing.landed,
               ),
             ),
@@ -981,6 +1032,20 @@ fn controls_after(
           [],
         )
       }
+  }
+}
+
+/// The outcome of a strike that landed or met the immunity, with the states the creature
+/// took of it.
+fn with_controls(
+  outcome outcome: strike_tell.Outcome,
+  controls controls: List(strike_tell.ControlLanded),
+) -> strike_tell.Outcome {
+  case outcome {
+    strike_tell.Landed(descriptions:, ..) ->
+      strike_tell.Landed(descriptions:, controls:)
+    strike_tell.Immune(..) -> strike_tell.Immune(controls:)
+    strike_tell.Deflected | strike_tell.Refused(..) -> outcome
   }
 }
 
@@ -1019,13 +1084,11 @@ fn control_ended(
   number number: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let held = creature_control.holds(state: state.control)
+  let was_held = held(state:)
   let #(control, effects) =
     creature_control.ended(state: state.control, number:)
   let state = State(..state, control:)
-  let #(state, resumed) = case
-    held && !creature_control.holds(state: state.control)
-  {
+  let #(state, resumed) = case was_held && !held(state:) {
     True -> fought(state:, input: creature_fight.ControlEnded, now_ms:)
     False -> #(state, [])
   }
@@ -1046,6 +1109,24 @@ fn answer_to(
     ]
     CreatureStriker -> []
   }
+}
+
+/// What a viewer is sent after the creature's 0x262 of the guard: the guard's cast, or the
+/// opening's, for that viewer alone; none for a creature with no guard.
+fn guard_shown(
+  state state: State,
+  viewer viewer: #(ConnectionId, Stay),
+  now_ms now_ms: Int,
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  list.map(
+    creature_guard.shown(
+      state: state.guard,
+      unit_id: state.settings.creature.unit_id,
+      place: creature_fight.place_at(state: state.fight, now_ms:),
+      now_ms:,
+    ),
+    fn(news) { news_to(creature: state.settings.creature, viewer:, news:) },
+  )
 }
 
 /// The creature's fight takes the input, and its effects are the creature's.
@@ -1096,6 +1177,12 @@ fn fought(
           ),
         )
       }
+      creature_fight.ChargeInterrupted(cast_id:) ->
+        guard_stepped(
+          state:,
+          input: creature_guard.Interrupted(charge_cast: cast_id),
+          now_ms:,
+        )
       creature_fight.StartTimer(timer:, after_ms:) -> #(state, [
         OwnEffect(step.StartServiceTimer(timer: timer_id(timer:), after_ms:)),
       ])
@@ -1124,50 +1211,126 @@ fn fighter_of(state state: State) -> Fighter {
     attack: state.body.combat.attack,
     interval_ms: state.settings.kind.attack_interval_ms,
     numbers: state.settings.numbers,
-    controlled: creature_control.holds(state: state.control),
+    controlled: held(state:),
+    guard_casts: creature_guard.live_casts(state: state.guard),
   )
 }
 
-/// The timer id of a fight timer: a multiple of 5 and 1, 2 and 3 above it for the attack
+/// Whether the creature holds a crowd-control state or is opened (genesis_prime/world_map/creature_guard):
+/// it starts no strike, chase or walk, and the fight acts again when it stops being held.
+fn held(state state: State) -> Bool {
+  creature_control.holds(state: state.control)
+  || creature_guard.opened(state: state.guard)
+}
+
+/// The guard takes the input: its effects carried out, news to every viewer and its timer.
+fn guard_stepped(
+  state state: State,
+  input input: creature_guard.Input,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  let #(guard, effects) =
+    creature_guard.step(
+      state: state.guard,
+      unit_id: state.settings.creature.unit_id,
+      live: creature_fight.live_casts(state: state.fight),
+      place: creature_fight.place_at(state: state.fight, now_ms:),
+      input:,
+      now_ms:,
+    )
+  let state = State(..state, guard:)
+  #(
+    state,
+    list.flat_map(effects, fn(effect) {
+      case effect {
+        creature_guard.ToViewers(news:) -> to_viewers(state:, news:)
+        creature_guard.StartTimer(timer:, after_ms:) -> [
+          OwnEffect(step.StartServiceTimer(
+            timer: guard_timer_id(timer:),
+            after_ms:,
+          )),
+        ]
+        creature_guard.CancelTimer(timer:) -> [
+          OwnEffect(step.CancelServiceTimer(timer: guard_timer_id(timer:))),
+        ]
+      }
+    }),
+  )
+}
+
+/// The opening's timer fired: the guard comes back, and the fight acts again when that was the
+/// last thing that held the creature.
+fn guard_timer_fired(
+  state state: State,
+  timer timer: creature_guard.Timer,
+  now_ms now_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  let was_held = held(state:)
+  let #(state, effects) =
+    guard_stepped(state:, input: creature_guard.TimerFired(timer:), now_ms:)
+  let #(state, resumed) = case was_held && !held(state:) {
+    True -> fought(state:, input: creature_fight.ControlEnded, now_ms:)
+    False -> #(state, [])
+  }
+  #(state, Effects(list.append(effects, resumed)))
+}
+
+/// The timer id of a fight timer: a multiple of 6 and 1, 2 and 3 above it for the attack
 /// tick, the walk home, the strike deadline and the cast end, by generation (from 1), so
 /// none is the corpse timer's 1 or the refill timer's 2 and a timer of an old generation is
-/// never the new one's. The ids 4 above a multiple of 5 are the controls' (9, 14, 19 ...:
-/// `control_timer`), so no two timers of a creature share an id.
+/// never the new one's. The ids 4 above a multiple of 6 are the controls' (10, 16, 22 ...:
+/// `control_timer`) and 5 above it the guard's (11, 17, 23 ...: `guard_timer_id`), so no two
+/// timers of a creature share an id.
 fn timer_id(timer timer: creature_fight.Timer) -> step.TimerId {
   case timer {
-    AttackTick(generation:) -> TimerId(5 * generation)
-    HomeArrival(generation:) -> TimerId(5 * generation + 1)
-    StrikeDeadline(generation:) -> TimerId(5 * generation + 2)
-    CastEnds(generation:) -> TimerId(5 * generation + 3)
+    AttackTick(generation:) -> TimerId(6 * generation)
+    HomeArrival(generation:) -> TimerId(6 * generation + 1)
+    StrikeDeadline(generation:) -> TimerId(6 * generation + 2)
+    CastEnds(generation:) -> TimerId(6 * generation + 3)
   }
 }
 
-/// The timer id of the control numbered `control`: 4 above 5 times it, from 9 (9, 14, 19
-/// ...), so none is the corpse timer's 1, the refill timer's 2 or a fight timer's.
+/// The timer id of the control numbered `control`: 4 above 6 times it, from 10 (10, 16, 22
+/// ...), so none is the corpse timer's 1, the refill timer's 2, a fight timer's or a guard's.
 fn control_timer(control control: Int) -> step.TimerId {
-  TimerId(5 * control + 4)
+  TimerId(6 * control + 4)
+}
+
+/// The timer id of a guard timer: 5 above 6 times its generation, from 11 (11, 17, 23 ...).
+fn guard_timer_id(timer timer: creature_guard.Timer) -> step.TimerId {
+  let creature_guard.OpeningEnds(generation:) = timer
+  TimerId(6 * generation + 5)
 }
 
 /// The number of the control a timer id is for, or `Error(Nil)` for one that is not a
-/// control's: the corpse timer's 1, the refill timer's 2, a fight timer or any other. For
-/// a test.
+/// control's: the corpse timer's 1, the refill timer's 2, a fight timer, a guard timer or any
+/// other. For a test.
 pub fn control_of(timer timer: step.TimerId) -> Result(Int, Nil) {
   let TimerId(number) = timer
-  case number >= 9 && number % 5 == 4 {
-    True -> Ok({ number - 4 } / 5)
+  case number >= 10 && number % 6 == 4 {
+    True -> Ok({ number - 4 } / 6)
+    False -> Error(Nil)
+  }
+}
+
+/// The guard timer of a timer id, or `Error(Nil)` for one the guard never starts.
+fn guard_timer(timer timer: step.TimerId) -> Result(creature_guard.Timer, Nil) {
+  let TimerId(number) = timer
+  case number >= 11 && number % 6 == 5 {
+    True -> Ok(creature_guard.OpeningEnds(generation: { number - 5 } / 6))
     False -> Error(Nil)
   }
 }
 
 /// The fight timer of a timer id, or `Error(Nil)` for one the fight never starts: the
-/// corpse timer's, the refill timer's, a control's, or any other.
+/// corpse timer's, the refill timer's, a control's, a guard's, or any other.
 fn fight_timer(timer timer: step.TimerId) -> Result(creature_fight.Timer, Nil) {
   let TimerId(number) = timer
-  case number >= 5, number % 5 {
-    True, 0 -> Ok(AttackTick(generation: number / 5))
-    True, 1 -> Ok(HomeArrival(generation: { number - 1 } / 5))
-    True, 2 -> Ok(StrikeDeadline(generation: { number - 2 } / 5))
-    True, 3 -> Ok(CastEnds(generation: { number - 3 } / 5))
+  case number >= 6, number % 6 {
+    True, 0 -> Ok(AttackTick(generation: number / 6))
+    True, 1 -> Ok(HomeArrival(generation: { number - 1 } / 6))
+    True, 2 -> Ok(StrikeDeadline(generation: { number - 2 } / 6))
+    True, 3 -> Ok(CastEnds(generation: { number - 3 } / 6))
     _, _ -> Error(Nil)
   }
 }

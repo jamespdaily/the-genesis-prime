@@ -484,6 +484,7 @@ fn is_cast_or_combat_news(news: client_connection.News) -> Bool {
     | client_connection.CastMissed(..)
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
+    | client_connection.CastInterrupted(..)
     | client_connection.CombatState(..) -> True
     client_connection.Appeared(..)
     | client_connection.CreatureAppeared(..)
@@ -539,6 +540,7 @@ pub fn a_viewer_of_the_engineer_is_told_42148s_cast_and_never_the_volatility_tes
       | client_connection.CastMissed(..)
       | client_connection.CastTargetsRemoved(..)
       | client_connection.CastStackRemoved(..)
+      | client_connection.CastInterrupted(..)
       | client_connection.Appeared(..)
       | client_connection.CreatureAppeared(..)
       | client_connection.Moving(..)

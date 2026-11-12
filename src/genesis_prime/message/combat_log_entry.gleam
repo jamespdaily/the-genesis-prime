@@ -2,9 +2,10 @@
 //// never edited by hand.
 ////
 //// A union inside a message body: one entry of the combat log: the type in 6
-//// bits picks the layout of its data. Gap: the schema holds types 1, 2, 22, 23
-//// and 24, and the client's reader takes 0 to 35. Its variants are listed in
-//// `schema.toml` with the client's evidence, and the fact file's
+//// bits picks the layout of its data. Gap: the schema holds types 1, 2, 18,
+//// 22, 23 and 24, and the client's reader takes 0 to 35; the other types are
+//// open under issue 336, spells work in depth on the real client. Its variants
+//// are listed in `schema.toml` with the client's evidence, and the fact file's
 //// `opcode.0x247` names the union.
 
 import genesis_prime/message/bit_stream.{
@@ -15,6 +16,7 @@ import genesis_prime/message/combat_log_cc_state_break.{
   type CombatLogCcStateBreak,
 }
 import genesis_prime/message/combat_log_death.{type CombatLogDeath}
+import genesis_prime/message/combat_log_immunity.{type CombatLogImmunity}
 import genesis_prime/message/combat_log_resurrect.{type CombatLogResurrect}
 import genesis_prime/message/combat_log_stealth.{type CombatLogStealth}
 import gleam/pair
@@ -30,6 +32,9 @@ pub type CombatLogEntry {
   /// Kind 2, read by `combat_log_cc_state_break`. The fact file's
   /// `opcode.0x247.cc_state` names the kind.
   CcStateBreak(CombatLogCcStateBreak)
+  /// Kind 18, read by `combat_log_immunity`. The fact file's
+  /// `opcode.0x247.immunity` names the kind.
+  Immunity(CombatLogImmunity)
   /// Kind 22, read by `combat_log_death`. The fact file's `opcode.0x247.death`
   /// names the kind.
   Death(CombatLogDeath)
@@ -46,6 +51,7 @@ pub fn write(writer writer: Writer, record record: CombatLogEntry) -> Writer {
   case record {
     CcState(variant) -> combat_log_cc_state.write(writer, variant)
     CcStateBreak(variant) -> combat_log_cc_state_break.write(writer, variant)
+    Immunity(variant) -> combat_log_immunity.write(writer, variant)
     Death(variant) -> combat_log_death.write(writer, variant)
     Resurrect(variant) -> combat_log_resurrect.write(writer, variant)
     Stealth(variant) -> combat_log_stealth.write(writer, variant)
@@ -64,6 +70,10 @@ pub fn read(reader: Reader) -> Result(#(CombatLogEntry, Reader), DecodeError) {
       reader
       |> combat_log_cc_state_break.read
       |> result.map(pair.map_first(_, CcStateBreak))
+    18 ->
+      reader
+      |> combat_log_immunity.read
+      |> result.map(pair.map_first(_, Immunity))
     22 ->
       reader
       |> combat_log_death.read
