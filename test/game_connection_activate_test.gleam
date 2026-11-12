@@ -24,6 +24,7 @@ import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/routing
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/cast_activate.{CastActivate}
@@ -557,4 +558,66 @@ pub fn using_a_channel_creature_sends_both_gos_before_the_finish_test() -> Nil {
   assert list.map(last, connection_support.written_ids) == [[0x07FE]]
     as "the finish at 3000 ms after the accept"
   assert pending == [] as "nothing is left to fire"
+}
+
+pub fn a_cast_go_firing_while_the_place_is_saving_is_taken_once_the_save_is_answered_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The channel of the test above: the second go and the finish are the cast's two timers,
+  // due at 3999 and 4000 ms by the test's clock. The periodic save timer (60,000 ms) fires
+  // between the press and them, so the connection waits on the store when they fire: the
+  // player is still in the world, so the cast goes on once the save is answered.
+  let #(seeing, _) =
+    connection_support.feed(
+      connection_support.in_world_as_exile_holding(quests: [
+        quest_support.accepted(quest_id: 2570, progress: [0]),
+      ]),
+      connection_support.sent_by_the_map(ObjectsSeen(units: [crystal()])),
+    )
+  let #(pressed, started) =
+    connection_support.at(
+      state: seeing,
+      ms: 1000,
+      event: step.OwnEvent(
+        step.Read(right_click_bytes(
+          client_cast_id: clients_cast_id,
+          unit_id: nearby,
+        )),
+      ),
+    )
+  let pending = connection_support.cast_timers(steps: [started], ms: 1000)
+  assert list.length(pending) == 2
+    as "the second go and the finish are the cast's timers"
+  let #(saving, saves) =
+    connection_support.at(
+      state: pressed,
+      ms: 2000,
+      event: step.OwnEvent(step.TimerFired(connection_state.save_timer)),
+    )
+  let assert option.Some(_) = support.asked(saves)
+    as "the save timer asks the store to save the place"
+  let #(saving, fired) =
+    list.fold(pending, #(saving, []), fn(so_far, due) {
+      let #(state, steps) = so_far
+      let #(state, taken) =
+        connection_support.at(
+          state:,
+          ms: due.0,
+          event: step.OwnEvent(step.TimerFired(due.1)),
+        )
+      #(state, [taken, ..steps])
+    })
+  assert list.all(fired, fn(taken) {
+    !support.stops(taken)
+    && connection_support.written_ids(taken) == []
+    && support.logs_of(step: taken, level: step.LogError) == []
+  })
+    as "the cast's timers firing while the place saves end nothing and write nothing yet"
+  let #(_, answered) =
+    connection_support.answer(
+      state: saving,
+      taken: saves,
+      outcome: connection_support.place_saved(),
+    )
+  assert connection_support.written_ids(answered) == [0x07F4, 0x07FE]
+    as "once the save is answered the second go and the finish are written, as at 2999 and 3000 ms"
 }

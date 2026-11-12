@@ -27,7 +27,7 @@ import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_properties_changed
-import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired}
+import genesis_prime/step.{type ConnectionStep, OwnEvent}
 import genesis_prime/world_map/map
 import gleam/int
 import gleam/list
@@ -67,18 +67,6 @@ fn cast_timers(taken taken: ConnectionStep(Request)) -> List(step.TimerId) {
     let step.TimerId(number) = timer
     number >= 1000
   })
-}
-
-/// A timer fired at this monotonic time.
-fn fired_at(
-  state state: game_connection.State,
-  timer timer: step.TimerId,
-  ms ms: Int,
-) -> #(game_connection.State, ConnectionStep(Request)) {
-  game_connection.step(
-    state,
-    support.input_at_ms(ms:, event: OwnEvent(TimerFired(timer))),
-  )
 }
 
 /// The properties 0x93a entries a step writes, as (property, value bits).
@@ -196,7 +184,8 @@ pub fn a_stalker_pressing_stealth_twice_gets_the_procs_casts_and_empower_for_3_s
   let #(_, ended) =
     list.fold(cast_timers(taken: leaving), #(state, []), fn(so_far, timer) {
       let #(state, steps) = so_far
-      let #(state, taken) = fired_at(state:, timer:, ms: 6001)
+      let #(state, taken) =
+        connection_support.fired_at(state:, timer:, ms: 6001)
       #(state, [taken, ..steps])
     })
   let later =
@@ -305,7 +294,7 @@ pub fn a_stalker_killed_in_combat_gets_63366_twice_and_its_stealth_press_after_t
     as "Spell4Effects.effectType.73: 63366 cut the Stealth cooldown to 250 ms, inside the queue window, so the press is held, not refused 15"
   let assert [held] = cast_timers(taken: press)
     as "the held press waits for the cooldown's end"
-  let #(_, started) = fired_at(state:, timer: held, ms: 1300)
+  let #(_, started) = connection_support.fired_at(state:, timer: held, ms: 1300)
   assert list.contains(
     cast_support.ids(frames: connection_support.written(taken: started)),
     0x07FD,

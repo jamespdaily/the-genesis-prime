@@ -167,10 +167,45 @@ pub fn innate_message(
   }
 }
 
+/// A save, quest reset or quest deadline timer fired while the player is not in the
+/// world. The three run only while the player is in the world, and a wait that returns
+/// the player there holds the firing (genesis_prime/game/connection `timer_fired`), so
+/// one that reaches here in a status of a stay that is ending is a firing that was
+/// already on its way when the leave or camp cancelled the timers, and is dropped. A
+/// firing in any other status is a bug.
+fn outside_the_world(
+  session session: Session,
+  now now: Now,
+) -> client_connection.Handled(Session) {
+  case session.status {
+    SavingPlace(then: Leaving(..), ..)
+    | SavingPlace(then: Camped, ..)
+    | LeavingMap(..) -> Continue(session, [])
+    InWorld(..)
+    | WaitingToClaim(..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | Summoning(..)
+    | MovingItem(..)
+    | Buying(..)
+    | Selling(..)
+    | TurningIn(..)
+    | SavingPlace(then: Playing, ..)
+    | AwaitingHelloReply
+    | TakingSessionKey ->
+      connection_state.end_for(
+        session:,
+        now:,
+        text: "a timer the rule did not start fired",
+      )
+  }
+}
+
 /// The save timer fired: the player's place is saved and the timer started
 /// again, and the player goes on playing once the store answers. The timer
-/// runs only while the player is in the world, so a firing in any other status
-/// is a bug.
+/// runs only while the player is in the world; a firing during a wait that returns
+/// the player there is held until the wait ends.
 pub fn save_due(
   session session: Session,
   now now: Now,
@@ -198,12 +233,7 @@ pub fn save_due(
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey ->
-      connection_state.end_for(
-        session:,
-        now:,
-        text: "a timer the rule did not start fired",
-      )
+    | TakingSessionKey -> outside_the_world(session:, now:)
   }
 }
 
@@ -234,7 +264,8 @@ fn reset_effects(
 /// The quest reset timer fired: the quest log says whether a reset passed
 /// (genesis_prime/game/quest_log `reset_due`); a reset sends 0x362, and the timer
 /// starts again for the next one. The timer runs only while the player is in the
-/// world, so a firing in any other status is a bug.
+/// world; a firing during a wait that returns the player there is held until the
+/// wait ends.
 pub fn quest_reset_due(
   session session: Session,
   now now: Now,
@@ -261,12 +292,7 @@ pub fn quest_reset_due(
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey ->
-      connection_state.end_for(
-        session:,
-        now:,
-        text: "a timer the rule did not start fired",
-      )
+    | TakingSessionKey -> outside_the_world(session:, now:)
   }
 }
 
@@ -274,8 +300,8 @@ pub fn quest_reset_due(
 /// (genesis_prime/game/quest_log `expire`), the client is told of each with 0x35C
 /// state 4, the timer starts again for the next deadline, and the log is saved so
 /// the botch outlasts the connection. A firing before the earliest deadline only
-/// starts the timer again. The timer runs only while the player is in the world, so
-/// a firing in any other status is a bug.
+/// starts the timer again. The timer runs only while the player is in the world; a
+/// firing during a wait that returns the player there is held until the wait ends.
 pub fn quest_deadline_due(
   session session: Session,
   now now: Now,
@@ -329,12 +355,7 @@ pub fn quest_deadline_due(
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey ->
-      connection_state.end_for(
-        session:,
-        now:,
-        text: "a timer the rule did not start fired",
-      )
+    | TakingSessionKey -> outside_the_world(session:, now:)
   }
 }
 
