@@ -53,9 +53,15 @@
 ////   type 0, the units that `WorldSpawns.by_id` holds (the others stand as the
 ////   static objects counted below), 111, 114, 5, 2, 106, 3 and 3 of them in worlds 22,
 ////   51, 426, 990, 1061, 1387 and 3460 (the whole-table test of `objective_spawn_test`
-////   holds the count over the client's tables and `spawn.tsv`). The selection leaves out one of the type 0 rows, Creature2 13133 in
-////   world 22 (no faction), so the creatures that start from them are 39, 27, 3 and
-////   39 in worlds 22, 51, 426 and 1061 and none in the others.
+////   holds the count over the client's tables and `spawn.tsv`). The selection leaves
+////   out one of the type 0 rows, Creature2 13133 in world 22 (no faction), so the
+////   creatures that start from them are 39, 27, 3 and 39 in worlds 22, 51, 426 and
+////   1061 and none in the others. The counts come from a scratch Python script apart
+////   from the server's code, over the client's table dumps (Creature2, Prerequisite,
+////   Quest2, QuestObjective, WorldLocation2) and the world database's typed spawn
+////   rows: it places 40, 27, 3 and 39 units (CreationTypeEnum 0) in worlds 22, 51, 426
+////   and 1061, of which Creature2 13133 (factionId 0 in the Creature2 table) is the one
+////   of world 22 that has no faction, and the play database's rows give the same.
 //// The test needs the client's tables and the world database (`GENESIS_WORLD_DATA`),
 //// so it is skipped where either is missing (a fork's CI run without the client's
 //// data); it imports the whole file into a database of its own.

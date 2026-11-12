@@ -44,12 +44,14 @@ import envoy
 import fixture_tables
 import genesis_prime/content/refusal
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/game/activate
 import genesis_prime/game/place_objective
 import genesis_prime/game/target_group
 import genesis_prime/game/vendor
 import genesis_prime/import_world_data
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, QuestObjectiveId}
+import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/quest_objective
 import genesis_prime/table/world_location2
@@ -476,6 +478,7 @@ pub fn a_refused_placed_row_is_labelled_as_a_placement_not_a_spawn_test() -> Nil
         skipped: [],
         click_rows: [],
         click_skipped: [],
+        unread_links: [],
       ),
     )
   assert list.map(labelled, fn(refusal) { refusal.row })
@@ -1196,6 +1199,39 @@ pub fn a_placed_target_takes_the_unit_type_of_its_creation_type_test() -> Nil {
     as "CreationTypeEnum 0 is placed as unit type 0"
 }
 
+pub fn the_start_test_the_placement_uses_is_the_one_select_applies_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  let row = stored(tables:, id: 1, creature_id: filler, world_id: world)
+  // Every entity type up to 40 (the client's unit types stop at 32), with the
+  // kinds that give a Turret row a creature_kind row and the kinds that do not.
+  int.range(from: 0, to: 41, with: Nil, run: fn(_, entity_type) {
+    list.each([spawn_support.kinds(), spawn_support.turret_kinds()], fn(kinds) {
+      let selection =
+        spawn.select(
+          rows: [spawn.Row(..row, entity_type:)],
+          tables:,
+          formulas: rating_support.formulas(),
+          kinds:,
+          vendors: vendor.none(),
+          factions: creature_faction.none(),
+        )
+      let is_other =
+        list.any(selection.coverage, fn(coverage) {
+          list.any(coverage.other_types, fn(counted) {
+            counted.0 == entity_type
+          })
+        })
+      assert is_other == !spawn.starts_entity_type(entity_type:)
+        as {
+          "entity type "
+          <> int.to_string(entity_type)
+          <> ": the selection counts it as Other exactly when the start test says it does not start"
+        }
+    })
+  })
+}
+
 pub fn a_target_whose_unit_type_the_server_does_not_start_is_skipped_and_reported_test() -> Nil {
   use <- owned_test.run(60_000)
   // CreationTypeEnum 3 and 9 are their own unit types; 18 pairs with 19, BindPoint.
@@ -1248,6 +1284,8 @@ pub fn an_objective_of_another_type_places_no_click_target_test() -> Nil {
     })
     == []
     as "an objective of another type is no pair"
+  assert unread_of_the_mine(placed:) == []
+    as "a link to an objective of another type is a correct drop, not an unread link"
 }
 
 pub fn two_click_objectives_on_one_creature_and_marker_place_once_test() -> Nil {
@@ -1305,6 +1343,119 @@ pub fn a_linked_objective_with_no_marker_places_nothing_test() -> Nil {
     })
     == []
     as "an objective with no marker is no pair, so it is not reported"
+}
+
+/// The unread links of the mine, whichever the tables give it.
+fn unread_of_the_mine(
+  placed placed: Placed,
+) -> List(objective_spawn.UnreadLink) {
+  list.filter(placed.unread_links, fn(link) { link.creature_id == mine })
+}
+
+pub fn a_link_to_a_quest_the_client_has_no_row_of_is_reported_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let no_row = 9_999_999
+  // The mine's questAnim pair now names a quest the client's Quest2 lacks.
+  use changed <- fixture_tables.changed(table: "Creature2", id: mine, with: [
+    #("questAnimStateId", Integer(no_row)),
+    #("questAnimObjectiveIndex", Integer(0)),
+  ])
+  let placed = click_placed_in_world(tables: changed)
+  assert list.contains(
+    unread_of_the_mine(placed:),
+    objective_spawn.UnreadLink(
+      creature_id: mine,
+      quest_id: no_row,
+      index: 0,
+      why: objective_spawn.NoQuestRow,
+    ),
+  )
+    as "the link to a quest with no row is reported with the creature, quest and index"
+  assert list.any(objective_spawn.report(placed:), fn(line) {
+    string.contains(line, "Creature2 73463")
+    && string.contains(line, "Quest2 9999999")
+    && string.contains(line, "no row")
+  })
+    as "the report names the creature and the quest"
+}
+
+pub fn a_link_to_an_index_the_quest_has_no_objective_at_is_reported_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 10518 holds six objectives: index 6 is past its last, -2 is below 0
+  // (-1 names the quest alone and is no link).
+  list.each([6, -2], fn(index) {
+    use changed <- fixture_tables.changed(table: "Creature2", id: mine, with: [
+      #("questAnimStateId", Integer(10_518)),
+      #("questAnimObjectiveIndex", Integer(index)),
+    ])
+    let placed = click_placed_in_world(tables: changed)
+    assert list.contains(
+      unread_of_the_mine(placed:),
+      objective_spawn.UnreadLink(
+        creature_id: mine,
+        quest_id: 10_518,
+        index:,
+        why: objective_spawn.NoObjectiveAtIndex,
+      ),
+    )
+      as "the link to an index the quest has no objective at is reported"
+    assert list.any(objective_spawn.report(placed:), fn(line) {
+      string.contains(line, "Creature2 73463")
+      && string.contains(line, "Quest2 10518")
+      && string.contains(line, "index " <> int.to_string(index))
+    })
+      as "the report names the creature, the quest and the index"
+  })
+}
+
+pub fn a_link_to_a_quest_whose_objective_row_is_missing_is_reported_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let no_row = 9_999_998
+  // Quest 10518's last slot now names a QuestObjective row the client lacks, so the
+  // quest cannot be read and the mine's link to it (index 1, by its prerequisite)
+  // is unread. The server's load refuses such tables (building `Activations` names the
+  // row), so the tables are edited with no requirement, and with the activations the
+  // unchanged rows build, which the link reading takes: the placement reads the quest's
+  // rows as they stand.
+  let assert Ok(loaded) = fixture_tables.load(rows: fixture_tables.rows())
+    as "the unchanged rows load"
+  let activations = activate.activations(tables: loaded)
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "Quest2",
+      id: 10_518,
+      with: [#("objective05", Integer(no_row))],
+    )
+    as "the quest's row is changed"
+  let assert Ok(changed) =
+    fixture_tables.edited(
+      rows:,
+      entries: server_table.entries(),
+      requirements: [],
+      derivations: [
+        store.derivation(key: store.DerivedKey("Activations"), build: fn(_) {
+          Ok(activations)
+        }),
+      ],
+    )
+    as "the rows are read with no requirement"
+  let placed = click_placed_in_world(tables: changed)
+  assert list.contains(
+    unread_of_the_mine(placed:),
+    objective_spawn.UnreadLink(
+      creature_id: mine,
+      quest_id: 10_518,
+      index: 1,
+      why: objective_spawn.NoObjectiveRow(objective_id: no_row),
+    ),
+  )
+    as "the link is reported with the objective row the quest lacks"
+  assert list.any(objective_spawn.report(placed:), fn(line) {
+    string.contains(line, "Creature2 73463")
+    && string.contains(line, "QuestObjective 9999998")
+  })
+    as "the report names the creature and the missing row"
 }
 
 pub fn a_marker_with_no_worldlocation2_row_is_skipped_and_reported_test() -> Nil {
@@ -1441,6 +1592,7 @@ pub fn a_refused_click_row_is_labelled_as_a_click_placement_test() -> Nil {
         skipped: [],
         click_rows: [click_row],
         click_skipped: [],
+        unread_links: [],
       ),
     )
   assert list.map(labelled, fn(refusal) { refusal.table })
@@ -1480,6 +1632,7 @@ pub fn the_report_counts_click_targets_test() -> Nil {
         rows: [],
         skipped: [],
         click_skipped: [skip],
+        unread_links: [],
       ),
     )
   let from_click =
@@ -1489,7 +1642,7 @@ pub fn the_report_counts_click_targets_test() -> Nil {
   let assert [click_line, skip_line] = from_click
     as "the click line, then the skip"
   assert click_line
-    == "click objectives: placed 3 creatures with no stored spawn at their marker, skipped 1 pairs"
+    == "click objectives: placed 3 creatures with no stored spawn at their marker, skipped 1 pairs and 0 links that name no objective"
   assert string.starts_with(skip_line, "click objective 4813")
     && string.contains(skip_line, "9999999")
 }
@@ -1507,7 +1660,21 @@ pub fn the_report_counts_click_targets_test() -> Nil {
 /// - 831 pairs of an objective and a linked creature, over 739 creatures;
 /// - 344 rows placed, by world 22: 111, 51: 114, 426: 5, 990: 2, 1061: 106, 1387:
 ///   3 and 3460: 3, and by unit type 0: 109, 8: 135, 10: 71, 11: 4, 14: 2 and 32: 23;
-/// - 3 unplaced pairs of a unit type the server does not start.
+/// - 3 unplaced pairs of a unit type the server does not start;
+/// - 5 distinct (objective, marker) pairs whose marker the client has no
+///   WorldLocation2 row of;
+/// - 162 distinct (objective, marker) pairs whose marker lies in a world holding no
+///   stored row (the script counts 236 of them per linked creature, and the server
+///   reports each pair once);
+/// - of the 3296 links the script follows from every Creature2 (questAnim pair or
+///   prerequisite), 392 name no objective, the very (creature, quest, index) triples
+///   the server reports: 80 to a quest the client has no Quest2 row of, 312 to an
+///   index whose objective slot of the quest is empty, and none to a slot whose
+///   QuestObjective row is missing;
+/// - of the units (unit type 0) placed, 40 in world 22, 27 in world 51, 3 in world
+///   426 and 39 in world 1061, of which Creature2 13133 (factionId 0) in world 22
+///   is left out below, so 39 start there. Both stored-row sources, the world
+///   database's and the play database's, give the same counts.
 pub fn every_click_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tag("world_data")
@@ -1559,6 +1726,15 @@ pub fn every_click_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
     as "the markers the client has no row of"
   assert skipped_as("NoSpawnsInWorld") == 162
     as "the (objective, marker) pairs in a world with no stored spawn"
+  let unread_as = fn(why) {
+    list.count(placed.unread_links, fn(link) { link.why == why })
+  }
+  assert unread_as(objective_spawn.NoQuestRow) == 80
+    as "the links to a quest the client has no row of"
+  assert unread_as(objective_spawn.NoObjectiveAtIndex) == 312
+    as "the links to an index past the quest's last objective"
+  assert list.length(placed.unread_links) == 392
+    as "no link names an objective whose QuestObjective row is missing"
   // Creature2 12919 is served at all three of objective 4813's markers by stored
   // rows, so none of them is placed.
   assert click_of(placed:, creatures: [12_919]) == []

@@ -333,6 +333,7 @@ fn read(
         skipped: [],
         click_rows: [],
         click_skipped: [],
+        unread_links: [],
       )
   }
   let selection = case kinds_for_spawns {

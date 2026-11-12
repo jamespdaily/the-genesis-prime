@@ -55,9 +55,14 @@
 //// order. The click rows are numbered after the kill rows. A pair is skipped and
 //// reported (`click_skipped`) for a marker with no WorldLocation2 row, a marker
 //// in a world with no stored spawn, and a creature whose unit type
-//// `spawn.select` does not start. A placed creature stays after it is used.
+//// `spawn.select` does not start (`spawn.starts_entity_type`). A link of a creature
+//// that names no objective is reported too (`unread_links`): a quest with no
+//// Quest2 row, an index the quest has no objective at, or a quest slot with no
+//// QuestObjective row; a link to an objective of another type names none to place
+//// and is not. A placed creature stays after it is used.
 
 import genesis_prime/content/refusal.{type Refusal}
+import genesis_prime/game/objective
 import genesis_prime/game/objective_link
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest_log
@@ -74,7 +79,6 @@ import genesis_prime/world_map/creature_kind.{type Kinds}
 import genesis_prime/world_map/creature_unit_type.{NonPlayer, Turret}
 import genesis_prime/world_map/spawn.{type Row}
 import genesis_prime/world_map/spawn_id.{SpawnId}
-import genesis_prime/world_map/static_object
 import gleam/bool
 import gleam/dict
 import gleam/int
@@ -93,7 +97,23 @@ pub type Placed {
     skipped: List(Skipped),
     click_rows: List(Row),
     click_skipped: List(Skipped),
+    unread_links: List(UnreadLink),
   )
+}
+
+/// A click link of a creature that names no objective the tables hold, and why.
+pub type UnreadLink {
+  UnreadLink(creature_id: Int, quest_id: Int, index: Int, why: LinkWhy)
+}
+
+/// Why a creature's link names no objective.
+pub type LinkWhy {
+  /// The client has no Quest2 row for the quest.
+  NoQuestRow
+  /// The quest has no objective at the index: past its last, or below 0.
+  NoObjectiveAtIndex
+  /// A slot of the quest names a QuestObjective row the client's table lacks.
+  NoObjectiveRow(objective_id: Int)
 }
 
 /// An objective's creature or marker that was left out, and why.
@@ -183,7 +203,7 @@ pub fn place(
     list.index_map(rows, fn(row, index) {
       spawn.Row(..row, id: SpawnId(first + index))
     })
-  let #(click_rows, click_skipped) =
+  let #(click_rows, click_skipped, unread_links) =
     click_placed(
       tables:,
       worlds:,
@@ -191,7 +211,7 @@ pub fn place(
       factions:,
       first: first + list.length(rows),
     )
-  Placed(rows:, skipped:, click_rows:, click_skipped:)
+  Placed(rows:, skipped:, click_rows:, click_skipped:, unread_links:)
 }
 
 /// An objective's marker a creature is linked to (`objective_link.links`): the
@@ -200,9 +220,11 @@ type Want {
   Want(objective_id: Int, creature: Creature2, marker_id: Int, marker: Marker)
 }
 
-/// The objective types a use counts for (`objective.counts`): 5 and 32.
-fn is_click_kind(objective objective: quest_log.Objective) -> Bool {
-  objective.type_ == 5 || objective.type_ == 32
+/// The objective types a use counts for (`objective.counts`): the scripted and the
+/// collectible objective.
+fn is_click_kind(objective held: quest_log.Objective) -> Bool {
+  held.type_ == objective.scripted_type
+  || held.type_ == objective.collectible_type
 }
 
 /// The rows to stand for the click targets, from id `first` up, and the pairs that
@@ -220,9 +242,10 @@ fn click_placed(
   stored stored: List(Row),
   factions factions: Factions,
   first first: Int,
-) -> #(List(Row), List(Skipped)) {
+) -> #(List(Row), List(Skipped), List(UnreadLink)) {
+  let #(pairs, unread_links) = click_pairs(tables:)
   let #(wants, marker_skips) =
-    list.map(click_pairs(tables:), fn(pair) {
+    list.map(pairs, fn(pair) {
       let #(objective_id, creature, marker_id) = pair
       case marker_of(tables:, worlds:, marker_id:) {
         Ok(marker) -> Ok(Want(objective_id:, creature:, marker_id:, marker:))
@@ -237,7 +260,9 @@ fn click_placed(
     })
   let #(started, unstarted) =
     list.partition(unserved, fn(want) {
-      is_started(unit_type: paired_unit_type(creature: want.creature))
+      spawn.starts_entity_type(entity_type: paired_unit_type(
+        creature: want.creature,
+      ))
     })
   let not_started =
     list.map(unstarted, fn(want) {
@@ -277,43 +302,86 @@ fn click_placed(
     |> list.index_map(fn(row, index) {
       spawn.Row(..row, id: SpawnId(first + index))
     })
-  #(rows, list.unique(list.append(marker_skips, not_started)))
+  #(rows, list.unique(list.append(marker_skips, not_started)), unread_links)
 }
 
 /// Every (objective, creature, marker) a creature's link and its objective's markers
-/// name, over the objectives of types 5 and 32, in creature order. A link whose quest
-/// the tables cannot read, or whose index names no objective, names none (the
-/// index counts the quest's filled slots, as `objective.counts` reads it).
+/// name, over the objectives of types 5 and 32, in creature order, and the links that
+/// name no objective the tables hold (the index counts the quest's filled slots, as
+/// `objective.counts` reads it). A link to an objective of another type is no pair and
+/// is not reported.
 fn click_pairs(
   tables tables: table_store.Tables,
-) -> List(#(Int, Creature2, Int)) {
-  creature2.all(tables)
-  |> list.filter(fn(creature) { objective_link.has_link(row: creature) })
-  |> list.flat_map(fn(creature) {
-    objective_link.links(tables:, creature_id: Creature2Id(creature.id))
-    |> list.filter_map(fn(link) { click_objective(tables:, link:) })
-    |> list.unique
-    |> list.flat_map(fn(objective) {
-      place_objective.marker_ids(objective:)
-      |> list.map(fn(marker_id) { #(objective.id, creature, marker_id) })
+) -> #(List(#(Int, Creature2, Int)), List(UnreadLink)) {
+  let linked =
+    creature2.all(tables)
+    |> list.filter(fn(creature) { objective_link.has_link(row: creature) })
+    |> list.map(fn(creature) {
+      let links =
+        objective_link.links(tables:, creature_id: Creature2Id(creature.id))
+        |> list.map(fn(link) { #(link, click_objective(tables:, link:)) })
+      let pairs =
+        list.filter_map(links, fn(entry) {
+          case entry.1 {
+            Ok(Ok(objective)) -> Ok(objective)
+            Ok(Error(Nil)) | Error(_) -> Error(Nil)
+          }
+        })
+        |> list.unique
+        |> list.flat_map(fn(objective) {
+          place_objective.marker_ids(objective:)
+          |> list.map(fn(marker_id) { #(objective.id, creature, marker_id) })
+        })
+      let unread =
+        list.filter_map(links, fn(entry) {
+          let #(#(quest_id, index), read) = entry
+          case read {
+            Error(why) ->
+              Ok(UnreadLink(creature_id: creature.id, quest_id:, index:, why:))
+            Ok(_) -> Error(Nil)
+          }
+        })
+      #(pairs, unread)
     })
-  })
+  #(
+    list.flat_map(linked, fn(entry) { entry.0 }),
+    list.flat_map(linked, fn(entry) { entry.1 }),
+  )
 }
 
-/// The objective at the index of the quest, when a use counts for its type.
+/// The objective at the index of the quest when a use counts for its type, `Error(Nil)`
+/// inside when the objective is of another type, and why the tables name none.
 fn click_objective(
   tables tables: table_store.Tables,
   link link: #(Int, Int),
-) -> Result(QuestObjective, Nil) {
+) -> Result(Result(QuestObjective, Nil), LinkWhy) {
   let #(quest_id, index) = link
-  // `list.drop` with a negative count keeps the whole list.
-  use <- bool.guard(when: index < 0, return: Error(Nil))
   use quest <- result.try(
-    quest_log.quest_of(tables:, id: quest_id) |> result.replace_error(Nil),
+    quest_log.quest_of(tables:, id: quest_id)
+    |> result.map_error(fn(error) {
+      case error {
+        quest_log.NoQuestRow -> NoQuestRow
+        quest_log.NoObjectiveRow(objective_id:) -> NoObjectiveRow(objective_id:)
+      }
+    }),
   )
-  use objective <- result.try(list.drop(quest.objectives, index) |> list.first)
-  use <- bool.guard(when: !is_click_kind(objective:), return: Error(Nil))
-  quest_objective.get(tables:, id: QuestObjectiveId(objective.objective_id))
+  // `list.drop` with a negative count keeps the whole list.
+  use objective <- result.try(
+    case index < 0 {
+      True -> Error(Nil)
+      False -> list.drop(quest.objectives, index) |> list.first
+    }
+    |> result.replace_error(NoObjectiveAtIndex),
+  )
+  case is_click_kind(objective:) {
+    False -> Ok(Error(Nil))
+    True ->
+      quest_objective.get(tables:, id: QuestObjectiveId(objective.objective_id))
+      |> result.replace_error(NoObjectiveRow(
+        objective_id: objective.objective_id,
+      ))
+      |> result.map(Ok)
+  }
 }
 
 /// The (creature, marker) pairs the stored rows serve: each row serves the nearest
@@ -378,13 +446,6 @@ fn paired_unit_type(creature creature: Creature2) -> Int {
     20 -> 32
     other -> other
   }
-}
-
-/// Whether `spawn.select` starts a row of the unit type: as a creature (0, 13) or as
-/// a static object (`static_object.unit_type_of`).
-fn is_started(unit_type unit_type: Int) -> Bool {
-  result.is_ok(creature_unit_type.of_entity_type(entity_type: unit_type))
-  || result.is_ok(static_object.unit_type_of(entity_type: unit_type))
 }
 
 /// What the objective asks for and what is wrong with it. An objective with no
@@ -526,10 +587,7 @@ pub fn held_by(
 
 /// The highest stored id, 0 when none is stored.
 fn highest_id(stored stored: List(Row)) -> Int {
-  list.fold(stored, 0, fn(highest, row) {
-    let SpawnId(number) = row.id
-    int.max(highest, number)
-  })
+  list.fold(stored, 0, fn(highest, row) { int.max(highest, number_of(row:)) })
 }
 
 /// The rows of one job, world by world in the order its markers first show them.
@@ -674,6 +732,26 @@ fn describe(noun noun: String, skipped skipped: Skipped) -> String {
   }
 }
 
+/// The sentence for the log that says what a creature's link to an objective lacked.
+fn describe_link(link link: UnreadLink) -> String {
+  let from =
+    "click link of Creature2 "
+    <> int.to_string(link.creature_id)
+    <> " to Quest2 "
+    <> int.to_string(link.quest_id)
+    <> " index "
+    <> int.to_string(link.index)
+  case link.why {
+    NoQuestRow -> from <> ": the client's table has no row of the quest"
+    NoObjectiveAtIndex -> from <> ": the quest has no objective at the index"
+    NoObjectiveRow(objective_id:) ->
+      from
+      <> ": the quest names QuestObjective "
+      <> int.to_string(objective_id)
+      <> ", which the client's table has no row of"
+  }
+}
+
 /// The lines the start logs of a placement: how many creatures it placed for the
 /// kill objectives, then each kill pair it skipped, then the same for the click
 /// objectives.
@@ -694,11 +772,14 @@ pub fn report(placed placed: Placed) -> List(String) {
       <> int.to_string(list.length(placed.click_rows))
       <> " creatures with no stored spawn at their marker, skipped "
       <> int.to_string(list.length(placed.click_skipped))
-      <> " pairs",
+      <> " pairs and "
+      <> int.to_string(list.length(placed.unread_links))
+      <> " links that name no objective",
     ],
     list.map(placed.click_skipped, fn(skipped) {
       describe(noun: "click objective", skipped:)
     }),
+    list.map(placed.unread_links, fn(link) { describe_link(link:) }),
   ])
 }
 

@@ -93,10 +93,10 @@ const checklist_talk_type = 18
 const path_soldier_type = 28
 
 /// The objective type of a quest collectible: a use of a creature linked to it.
-const collectible_type = 32
+pub const collectible_type = 32
 
 /// The objective type of a scripted objective: a use of a creature linked to it.
-const scripted_type = 5
+pub const scripted_type = 5
 
 /// The objective type of a held item: the Item2 id in its data.
 const held_type = 4
