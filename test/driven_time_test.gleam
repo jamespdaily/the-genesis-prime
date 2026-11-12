@@ -59,15 +59,27 @@ type Participant(message) {
   Participant(handle: Subject(message), release: Subject(Nil), pid: Pid)
 }
 
-/// Answers a `sys:get_state` request and says whether `message` was one.
-@external(erlang, "driven_time_test_ffi", "answered_get_state")
-fn answered_get_state(message: Dynamic) -> Bool
+/// What a system message asks of a process.
+type SystemRequest {
+  Suspend
+  Resume
+  Unknown
+}
+
+/// The request a system message makes.
+@external(erlang, "driven_time_test_ffi", "system_request")
+fn system_request(message: Dynamic) -> SystemRequest
+
+/// Answers a system message that asks to suspend or to resume.
+@external(erlang, "driven_time_test_ffi", "answer")
+fn answer(message: Dynamic) -> Nil
 
 /// A plain process that reads the clock when it starts, so it is a participant,
 /// and then takes from one mailbox, in order, its own inputs (`take`) and the
-/// barrier's `sys:get_state` requests, each of which it reports to `visits` as
-/// `who` and answers. An input waits for the test to let it go (`release`), and a
-/// request that arrives meanwhile waits in the mailbox.
+/// barrier's `sys:suspend` and `sys:resume` requests, each suspend of which it
+/// reports to `visits` as `who`, and answers both. An input waits for the test to
+/// let it go (`release`), and a request that arrives meanwhile waits in the
+/// mailbox.
 fn start_participant(
   who who: Who,
   time time: ServiceTime,
@@ -105,10 +117,13 @@ fn serve(
   case taken {
     Input(message) -> take(message, release)
     Other(system) -> {
-      process.send(visits, who)
-      let assert True = answered_get_state(system)
-        as "a plain participant is sent nothing but its input and sys:get_state"
-      Nil
+      case system_request(system) {
+        Suspend -> process.send(visits, who)
+        Resume -> Nil
+        Unknown ->
+          panic as "a plain participant is sent nothing but its input and the barrier's sys:suspend and sys:resume"
+      }
+      answer(system)
     }
   }
   serve(who:, visits:, handle:, release:, take:)
@@ -169,7 +184,7 @@ fn visit(visits: Subject(Who), what what: String) -> Who {
   open_wait.received(from: visits, what: what)
 }
 
-/// How many system messages (`sys:get_state` is one) wait in the process's
+/// How many system messages (`sys:suspend` is one) wait in the process's
 /// mailbox, which a process busy in an input does not take.
 fn system_messages_waiting(pid: Pid) -> Int {
   mailbox_support.tagged(pid, atom.create("system"))
