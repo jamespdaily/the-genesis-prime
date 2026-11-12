@@ -8,7 +8,7 @@
 //// test ──advance(1000)──▶ the earliest timer due within 1000 ms
 ////                           ├─ the clock reads that timer's due time
 ////                           ├─ Elapsed is sent to the process that started it
-////                           └─ barrier: passes of sys:get_state over every participant
+////                           └─ barrier: passes of sys:suspend and sys:resume over every participant
 ////                              until two passes in a row saw no change; only then
 ////                              the clock is asked for the next due timer
 //// ```
@@ -352,7 +352,7 @@ fn fire_until(time time: Time, limit_ms limit_ms: Int) -> Nil {
 /// pass's `settled`, and a local send has put M in B's queue, or in one of B's
 /// signal buffers (a receiver with its messages off the heap, as a connection shell
 /// is), before the send returns. B's next fetch moves every buffered signal into
-/// its queue, at the latest when B takes the first pass's `sys:get_state`, which may
+/// its queue, at the latest when B takes the first pass's `sys:suspend`, which may
 /// be after that request. So by the time B answers the first pass, M is in B's
 /// queue, and the second pass's request is queued behind it: B's read for M is
 /// counted in the second pass, which is then not quiet. Any input whose read is not
@@ -383,7 +383,7 @@ fn pass(
 }
 
 /// Returns when the participant has taken what was in its mailbox when this was
-/// called (`sys:get_state` is answered in the order of its mailbox), or has ended.
+/// called (`sys:suspend` is answered in the order of its mailbox), or has ended.
 /// The wait has no limit of its own (`open_wait`).
 pub fn settled(participant: Pid) -> Nil {
   open_wait.named("a driven process to take its mailbox", fn() {
@@ -391,9 +391,9 @@ pub fn settled(participant: Pid) -> Nil {
   })
 }
 
-/// `sys:get_state` of the process, which waits until the process answers or ends;
-/// the call monitors the process, so one that ends gives its exit at once and
-/// leaves no crash report. The one in `gleam/otp/system` has no way to lift its
-/// five seconds.
+/// `sys:suspend` and `sys:resume` of the process, which wait until the process
+/// answers or ends; the call monitors the process, so one that ends gives its exit
+/// at once and leaves no crash report. The ones in `gleam/otp/system` have no way
+/// to lift their five seconds, and `get_state` copies the process's whole state.
 @external(erlang, "driven_time_ffi", "taken_or_ended")
 fn taken_or_ended(participant: Pid) -> Nil

@@ -7498,8 +7498,7 @@ fn quest_rows(
 }
 
 pub fn a_bot_creates_an_exile_and_plays_the_tutorial_to_the_northern_wilds_landing_test() -> Nil {
-  // The whole path, every quest and fight, takes about 114 s of wall time on an idle machine.
-  use <- owned_test.run(300_000)
+  use <- owned_test.run(60_000)
   use tables <- on_rows_with_turrets_that_never_deflect()
   let time = driven_time.new()
   let started =
