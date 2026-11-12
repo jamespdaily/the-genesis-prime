@@ -69,7 +69,7 @@ pub fn ten_quests_the_server_completes_offer_a_reward_choice_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   // A Quest2Reward row of flags bit 0 is a choice (IsRewardChoiceOffered `0x140551c60`).
   // No dialog lets the player pick one when the server completes the quest, so the rule
-  // refuses these until the choice is decided: the count is pinned here so that a client
+  // gives these quests their fixed rows only: the list is pinned here so that a client
   // update that adds one is seen.
   let tables = client_tables.shared()
   assert completed_by_server_with_a_reward_row(tables:, of_kind: fn(reward) {

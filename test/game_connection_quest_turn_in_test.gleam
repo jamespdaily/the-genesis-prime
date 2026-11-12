@@ -36,6 +36,7 @@ import genesis_prime/store.{
 import genesis_prime/table/id.{Item2Id}
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 import message_support
 import owned_test
 import planted_table.{type Cell, Integer}
@@ -695,17 +696,22 @@ pub fn two_quests_achieved_in_one_step_are_completed_one_after_the_other_test() 
 
 pub fn a_refused_server_completion_leaves_the_quest_achieved_and_the_player_in_the_world_test() -> Nil {
   use <- owned_test.run(10_000)
-  // Quest 1857's reward row 4819 is a choice (flags bit 0, IsRewardChoiceOffered
-  // `0x140551c60`): a completion is made with reward id 0, so the rule refuses it.
+  // Quest 1857's reward row 4819 is changed to a fixed TradeSkillXp row (Quest2Reward type
+  // 4), which the rule refuses for every player (Quest2Reward 2471 of quest 5084 is the
+  // client's own such row); the client refuses it only for a player with no learned
+  // tradeskill. The tradeskill experience issue (#677) removes this refusal, and this
+  // test then needs another refusal.
   use state <- with_the_beast_quest(changes: [
-    #("Quest2Reward", 4819, [#("flags", Integer(1))]),
+    #("Quest2Reward", 4819, [#("quest2RewardTypeId", Integer(4))]),
   ])
   let #(state, killed) = the_beast_killed(state:)
   assert game_connection_support.written_ids(killed) == [0x01AC, 0x0361, 0x035C]
     as "the kill's frames, the quest Achieved last: the refusal sends nothing"
   assert support.asked(killed) == None as "nothing is asked of the store"
-  assert list.length(support.logs_of(step: killed, level: step.LogWarning)) == 1
+  let assert [warning] = support.logs_of(step: killed, level: step.LogWarning)
     as "one warning says why"
+  assert string.contains(warning.text, "tradeskill")
+    as "the warning names the tradeskill reward, so no other check made the refusal"
   // The player is in the world: the next kill is taken at once, and the place save asks
   // the store to keep the log with the quest Achieved.
   let #(state, next) = the_beast_killed(state:)

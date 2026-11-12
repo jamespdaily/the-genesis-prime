@@ -1672,10 +1672,11 @@ pub fn the_report_counts_click_targets_test() -> Nil {
 ///   index whose objective slot of the quest is empty, and none to a slot whose
 ///   QuestObjective row is missing;
 /// - of the units (unit type 0) placed, 40 in world 22, 27 in world 51, 3 in world
-///   426 and 39 in world 1061, of which Creature2 13133 (factionId 0) in world 22
-///   is left out below, so 39 start there. Both stored-row sources, the world
-///   database's and the play database's, give the same counts.
-pub fn every_click_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
+///   426 and 39 in world 1061, of which Creature2 13133 (factionId 0, Neutral to
+///   both player factions) in world 22 starts like the others, so all 109 start. Both
+///   stored-row sources, the world database's and the play database's, give the same
+///   counts.
+pub fn every_click_objective_with_a_marker_starts_or_has_a_spawn_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tag("world_data")
   use <- unitest.guard(client_tables.present())
@@ -1753,19 +1754,28 @@ pub fn every_click_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
   assert selection.refusals == []
     as "a placed row that the checks refuse would stop the server's start"
   // Creature2 13133 (Protostar X-97 Gravity Defiance System, factionId 0 in the
-  // client's table, no chosen faction) is the one placed creature the checks leave
-  // out: a unit with no faction is not created (`LeftOut.NoFaction`).
-  let left_out =
-    list.flat_map(selection.coverage, fn(coverage) {
-      list.filter_map(coverage.left_out, fn(pair) {
-        case pair.1 {
-          0 -> Error(Nil)
-          count -> Ok(#(coverage.world_id, pair.0, count))
-        }
+  // client's table, no chosen faction) is Neutral to both player factions
+  // (`0x14045a950.faction_zero`), so it starts with the rest.
+  assert list.all(selection.coverage, fn(coverage) {
+    list.all(coverage.left_out, fn(pair) { pair.1 == 0 })
+  })
+    as "no placed creature is left out, whatever the reason"
+  let started_in = fn(world_id) {
+    let assert Ok(coverage) =
+      list.find(selection.coverage, fn(coverage) {
+        coverage.world_id == world_id
       })
-    })
-  assert left_out == [#(22, spawn.NoFaction, 1)]
-    as "the placed creatures the checks leave out, by world and reason"
+      as "the world has a coverage"
+    coverage.started
+  }
+  assert list.map([22, 51, 426, 1061], started_in) == [40, 27, 3, 39]
+    as "the creatures that start from the rows placed, by world"
+  let assert Ok(world_22) = dict.get(selection.worlds, 22)
+    as "world 22 has spawns"
+  assert list.any(dict.values(world_22.by_id), fn(standing) {
+    standing.creature_id == Creature2Id(13_133)
+  })
+    as "Creature2 13133 starts in world 22"
   assert list.all(selection.coverage, fn(coverage) {
     coverage.objects_dead == 0
   })
@@ -1777,5 +1787,5 @@ pub fn every_click_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
       + list.fold(coverage.objects_sent, 0, fn(count, pair) { count + pair.1 })
       + list.fold(coverage.other_types, 0, fn(count, pair) { count + pair.1 })
     })
-  assert sent + 1 == 344 as "every placed row but the one left out starts"
+  assert sent == 344 as "every placed row starts or is sent"
 }

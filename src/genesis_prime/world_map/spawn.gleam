@@ -14,7 +14,8 @@
 //// ```
 ////
 //// - **What starts.** A row of entity type 0 (NonPlayer, the unit type of message
-////   0x262: `world_data.entity_type`, `0x140649e20`) with a faction, whose health
+////   0x262: `world_data.entity_type`, `0x140649e20`), faction 0 included (Neutral to
+////   both player factions, `0x14045a950.faction_zero`), whose health
 ////   stat is not 0, and either whose Creature2 row gives or receives a quest, or
 ////   that is not Friendly to both player factions and whose Creature2 row has no
 ////   trainer, station, taxi, bind or portal link; a row with no stats is kept. The
@@ -340,9 +341,6 @@ pub type Selection {
 
 /// Why a NonPlayer row does not start.
 pub type LeftOut {
-  /// Faction 0: the client sees no faction, and a 0x262 with none fails
-  /// (`opcode.0x262`).
-  NoFaction
   /// Friendly to both player factions, and the creature gives and receives no quest and
   /// has no link to an objective.
   FriendlyToBoth
@@ -716,10 +714,9 @@ pub type SummonRefusal {
   /// (`client_checks`) or the load's (`load_checks`).
   FailsTheChecks(error: SpawnError)
   /// The row passes them, but a stored spawn of it would not start
-  /// (`left_out_of`): a creature with no faction, one friendly to both player
-  /// factions, one with only a service link, or one with no health (a creature
-  /// with a quest is none of the middle two, one with an objective link is not the
-  /// first of them). A summon is refused
+  /// (`left_out_of`): a creature friendly to both player factions, one with
+  /// only a service link, or one with no health (a creature with a quest is
+  /// neither of the first two, one with an objective link is not the first). A summon is refused
   /// for the same reason, a server choice, so it starts only what a spawn
   /// starts.
   WouldNotStart(creature_id: Creature2Id, reason: LeftOut)
@@ -1515,19 +1512,19 @@ pub fn hostile_to_players(
 }
 
 /// The reason a row that passed the load checks does not start, or `Error(Nil)`
-/// for a row that does, in the order of the decode: no faction, Friendly to both
+/// for a row that does, in the order of the decode: Friendly to both
 /// player factions and no quest and no objective link, a service link and no quest,
-/// health 0. A creature that gives or receives a quest passes the second and third, and
-/// one with an objective link passes the second: the client marks
+/// health 0. A creature that gives or receives a quest passes the first and second, and
+/// one with an objective link passes the first: the client marks
 /// its quest kinds from its own Creature2 row (`0x1405a8d40`), and a Friendly
-/// giver is no target (`0x1403ad540`).
+/// giver is no target (`0x1403ad540`). A creature with no faction (0) is Neutral
+/// to both player factions and starts like any other (`0x14045a950.faction_zero`).
 fn left_out_of(
   catalog catalog: Catalog,
   checked checked: Checked,
 ) -> Result(LeftOut, Nil) {
   let row = checked.row
   case
-    row.faction_id == 0,
     attackable_by(catalog:, player: exile_faction, unit: row.faction_id)
     || attackable_by(catalog:, player: dominion_faction, unit: row.faction_id),
     list.any(quest_ids(checked.creature), fn(id) { id != 0 }),
@@ -1535,11 +1532,10 @@ fn left_out_of(
     checked.spawn.health == 0,
     objective_link.has_link(row: checked.creature)
   {
-    True, _, _, _, _, _ -> Ok(NoFaction)
-    False, False, False, _, _, False -> Ok(FriendlyToBoth)
-    False, _, False, True, _, _ -> Ok(ServiceLink)
-    False, _, _, _, True, _ -> Ok(Dead)
-    False, _, _, _, False, _ -> Error(Nil)
+    False, False, _, _, False -> Ok(FriendlyToBoth)
+    _, False, True, _, _ -> Ok(ServiceLink)
+    _, _, _, True, _ -> Ok(Dead)
+    _, _, _, False, _ -> Error(Nil)
   }
 }
 
@@ -1713,24 +1709,21 @@ fn coverage_of(judged: List(Judged)) -> List(WorldCoverage) {
           | ObjectDead(..) -> False
         }
       }),
-      left_out: list.map(
-        [NoFaction, FriendlyToBoth, ServiceLink, Dead],
-        fn(reason) {
-          #(
-            reason,
-            list.count(ones, fn(one) {
-              case one {
-                Excluded(reason: held, ..) -> held == reason
-                Other(..)
-                | Started(..)
-                | Refused(..)
-                | ObjectSent(..)
-                | ObjectDead(..) -> False
-              }
-            }),
-          )
-        },
-      ),
+      left_out: list.map([FriendlyToBoth, ServiceLink, Dead], fn(reason) {
+        #(
+          reason,
+          list.count(ones, fn(one) {
+            case one {
+              Excluded(reason: held, ..) -> held == reason
+              Other(..)
+              | Started(..)
+              | Refused(..)
+              | ObjectSent(..)
+              | ObjectDead(..) -> False
+            }
+          }),
+        )
+      }),
       objects_sent: list.map(object_types, fn(unit_type) {
         #(
           unit_type,
@@ -2253,7 +2246,6 @@ pub fn describe_coverage(coverage coverage: WorldCoverage) -> String {
 
 fn describe_left_out(reason: LeftOut) -> String {
   case reason {
-    NoFaction -> "no faction"
     FriendlyToBoth -> "friendly to both"
     ServiceLink -> "a service link"
     Dead -> "health 0"

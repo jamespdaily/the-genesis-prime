@@ -251,6 +251,7 @@ pub fn the_committed_creature_and_faction_rows_select_the_spawns_the_clients_row
   let assert Ok(real_world) = dict.get(real.worlds, 3460)
   assert planted_world.by_id == real_world.by_id
     as "the spawns that start carry the same values: Base Health, level, faction, display"
-  assert dict.has_key(planted_world.by_id, SpawnId(1)) == False
-    as "faction 0 is left out in both"
+  assert dict.has_key(planted_world.by_id, SpawnId(1))
+    && dict.has_key(real_world.by_id, SpawnId(1))
+    as "faction 0 starts in both: the client reads it as Neutral to both player factions (`0x14045a950.faction_zero`)"
 }
