@@ -943,17 +943,79 @@ fn answered(
   now now: Now,
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
-  case answered_by_status(session:, now:, outcome:) {
+  case
+    without_superseded_firings(handled: answered_by_status(
+      session:,
+      now:,
+      outcome:,
+    ))
+  {
     Continue(session, told) -> take_held(session:, now:, told:)
     client_connection.Asking(..) as asking -> asking
     client_connection.Done(..) as done -> done
   }
 }
 
+/// The handled step with each held timer firing dropped whose timer its effects start
+/// or cancel. A held firing is of a timer the shell already removed from its book, so
+/// a start of that timer in the effects that come after it makes the firing stale:
+/// taken, it would start the timer again while the new one runs, and the shell stops
+/// on a timer started twice. A cancel makes it stale likewise: the timer's work is not
+/// wanted.
+fn without_superseded_firings(
+  handled handled: client_connection.Handled(Session),
+) -> client_connection.Handled(Session) {
+  case handled {
+    Continue(session, effects) ->
+      Continue(superseded_dropped(session:, effects:), effects)
+    client_connection.Asking(session, effects, ask) ->
+      client_connection.Asking(
+        superseded_dropped(session:, effects:),
+        effects,
+        ask,
+      )
+    client_connection.Done(session, effects) ->
+      client_connection.Done(superseded_dropped(session:, effects:), effects)
+  }
+}
+
+fn superseded_dropped(
+  session session: Session,
+  effects effects: List(Effect(ConnectionEffect(Request))),
+) -> Session {
+  let moved =
+    list.filter_map(effects, fn(effect) {
+      case effect {
+        OwnEffect(step.StartTimer(timer:, ..))
+        | OwnEffect(step.CancelTimer(timer:)) -> Ok(timer)
+        OwnEffect(Write(..))
+        | OwnEffect(step.Tell(..))
+        | OwnEffect(step.TellWatched(..))
+        | OwnEffect(step.JoinGroup(..))
+        | OwnEffect(step.LeaveGroup(..))
+        | step.Watch(..)
+        | step.Unwatch(..)
+        | step.Log(..)
+        | step.Stop -> Error(Nil)
+      }
+    })
+  Session(
+    ..session,
+    held: list.filter(session.held, fn(held) {
+      case held {
+        connection_state.HeldTimer(timer:) -> !list.contains(moved, timer)
+        connection_state.HeldSend(..) -> True
+      }
+    }),
+  )
+}
+
 /// Takes what was held while the store worked, oldest first, each after the effects
 /// `told` that came before it: a message through `stay_sent`, a timer through
 /// `timer_due`. A held item that starts an ask leaves the rest held for that ask's
-/// answer; one that ends the connection leaves the rest to go with the session.
+/// answer; one that ends the connection leaves the rest to go with the session. A
+/// timer's firing is taken only with the player in the world; in the claim made
+/// again it stays held for the claim's answer.
 fn take_held(
   session session: Session,
   now now: Now,
@@ -974,17 +1036,27 @@ fn take_held(
         now:,
         told:,
       )
-    [connection_state.HeldTimer(timer:), ..rest], Some(_) -> {
-      let session = Session(..session, held: rest)
+    [connection_state.HeldTimer(timer:), ..rest], Some(_) ->
       case connection_state.standing(session.status) {
         connection_state.Present(..) ->
-          take_next(handled: timer_due(session:, now:, timer:), now:, told:)
-        // A claim made again starts the timers afresh (`claimed_again`).
+          take_next(
+            handled: connection_quest_turn_in.completing(
+              handled: timer_due(
+                session: Session(..session, held: rest),
+                now:,
+                timer:,
+              ),
+              now:,
+            ),
+            now:,
+            told:,
+          )
+        // The claim made again has not been answered: the player is not yet
+        // back in the world, so the firing waits for the answer that brings it.
         connection_state.Greeting
         | connection_state.Selecting(..)
-        | connection_state.Busy(..) -> take_held(session:, now:, told:)
+        | connection_state.Busy(..) -> Continue(session, told)
       }
-    }
     [], _ | _, None -> Continue(session, told)
   }
 }
@@ -996,7 +1068,7 @@ fn take_next(
   now now: Now,
   told told: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
-  case handled {
+  case without_superseded_firings(handled:) {
     Continue(session, more) ->
       take_held(session:, now:, told: list.append(told, more))
     client_connection.Asking(session, more, ask) ->
@@ -1183,7 +1255,7 @@ fn timer_fired(
   now now: Now,
   timer timer: TimerId,
 ) -> client_connection.Handled(Session) {
-  case connection_state.holds_map_messages(session.status) {
+  case connection_state.holds_timer(status: session.status, timer:) {
     False -> timer_due(session:, now:, timer:)
     True ->
       case

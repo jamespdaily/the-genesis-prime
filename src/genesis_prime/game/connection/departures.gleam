@@ -9,7 +9,11 @@
 ////                  ─▶ world_left; map run: Leave(connection)   (LeavingMap, JoinAt(place, health))
 ////           Left ─▶ the map's watch dropped; the landing's map: Join(.., health)
 ////           Joined ─▶ 0xad, 0x262, .. 0x61, with no 0x25e and no 0x35f (`InWorldEntry`)
-////      └ held but not in the world (Busy) with a landing kept ─▶ the timer again after `retry_ms`
+////      └ fired in a wait whose answer returns the player to the world (a purchase, a sale,
+////        a save of the place, a claim made again) ─▶ held by the connection and taken here
+////        once the answer is in (`connection.timer_fired`)
+////      └ fired while the player leaves, camps or waits to claim, with a landing kept
+////        ─▶ the timer again after `retry_ms`
 ////      └ otherwise ─▶ nothing
 //// ```
 ////
@@ -20,10 +24,13 @@
 //// - **A timer that finds no departure does nothing** (the failure table of
 ////   genesis_prime/game/departures): the player has camped or left the world, is dead, or
 ////   `departing` was cleared; the timer is dropped with no leave and no join.
-//// - **A connection that holds the player but is not standing in the world** (a vendor
-////   purchase, a save, the wait for the account's claim) starts the timer again
-////   after `retry_ms`, while a landing is kept, so the leave begins once the player stands in
-////   the world; `due` leaves only for a player in the world.
+//// - **A connection that holds the player but is not standing in the world, in a wait that
+////   does not return it there** (the leave or camp's save, the leave of the map, the wait
+////   for the account's claim) starts the timer again after `retry_ms`, while a landing is
+////   kept; `due` leaves only for a player in the world. A wait that does return it (a
+////   vendor purchase or sale, an item move, a summon, a quest turn-in, the place's save,
+////   the claim made again) holds the firing instead, and `due` takes it once the answer
+////   has returned the player.
 
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/game/connection/effects as connection_effects
@@ -42,8 +49,9 @@ import gleam/option.{None, Some}
 
 /// The departure timer fired: the leave of the tutorial map begins when the player is in
 /// the world, alive, with a landing kept in `Entered.departing`, and the landing is cleared
-/// either way. A busy connection that holds the player with a landing kept starts the timer
-/// again instead.
+/// either way. A connection that holds the player but is leaving the map, camping or waiting
+/// to claim its account, with a landing kept, starts the timer again instead (the other
+/// waits hold the firing before it comes here).
 pub fn due(
   session session: Session,
   now now: Now,
@@ -55,11 +63,12 @@ pub fn due(
   }
 }
 
-/// How long the timer waits before it asks again while the connection is busy.
+/// How long the timer waits before it asks again while the connection leaves, camps or
+/// waits to claim.
 const retry_ms = 100
 
-/// The timer started again for a busy connection that holds a player with a landing kept,
-/// and nothing for one that holds none.
+/// The timer started again for a connection that holds a player with a landing kept and does
+/// not stand in the world, and nothing for one that holds none.
 fn again(session session: Session) -> List(Effect(ConnectionEffect(Request))) {
   case connection_state.entered_of(session.status) {
     Some(world_entry.Entered(departing: Some(_), ..)) -> [

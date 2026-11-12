@@ -495,10 +495,11 @@ pub fn held_in_the_world(
 }
 
 /// Whether the status is one whose answer returns the connection to the world: a
-/// summon, an item move, a purchase, a sale, a quest turn-in or the periodic place
-/// save. What other processes send for a stay meanwhile, and the connection's own
-/// timers that fire, are held, not dropped. A save before leaving or camping is not
-/// one: its stay ends, and the timers of the stay were cancelled with it.
+/// summon, an item move, a purchase, a sale, a quest turn-in, the periodic place
+/// save, or the claim made again with the player in the world. What other processes
+/// send for a stay meanwhile, and the connection's own timers that fire, are held, not
+/// dropped. A save before leaving or camping is not one: its stay ends, and the timers
+/// of the stay were cancelled with it. Nor is a claim made again from character select.
 pub fn holds_map_messages(status: Status) -> Bool {
   case status {
     Summoning(..)
@@ -506,17 +507,45 @@ pub fn holds_map_messages(status: Status) -> Bool {
     | Buying(..)
     | Selling(..)
     | TurningIn(..)
+    | ClaimingSession(resume: ResumeWorld(..), ..)
     | SavingPlace(then: Playing, ..) -> True
     SavingPlace(then: Leaving(..), ..)
     | SavingPlace(then: Camped, ..)
     | InWorld(..)
     | WaitingToClaim(..)
-    | ClaimingSession(..)
+    | ClaimingSession(resume: ResumeSelect, ..)
     | InCharacterSelect(..)
     | EnteringWorld(..)
     | LeavingMap(..)
     | AwaitingHelloReply
     | TakingSessionKey -> False
+  }
+}
+
+/// Whether a firing of the connection's own `timer` is held in `status`, as a message
+/// for a stay is (`holds_map_messages`). The claim made again cancelled the save, quest
+/// reset and quest deadline timers and starts them again once answered, so a firing of
+/// one of them there is not held: it is a bug.
+pub fn holds_timer(status status: Status, timer timer: TimerId) -> Bool {
+  case status {
+    ClaimingSession(resume: ResumeWorld(..), ..) ->
+      timer != save_timer
+      && timer != quest_reset_timer
+      && timer != quest_deadline_timer
+    ClaimingSession(resume: ResumeSelect, ..)
+    | Summoning(..)
+    | MovingItem(..)
+    | Buying(..)
+    | Selling(..)
+    | TurningIn(..)
+    | SavingPlace(..)
+    | InWorld(..)
+    | WaitingToClaim(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey -> holds_map_messages(status)
   }
 }
 
