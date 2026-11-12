@@ -25,6 +25,9 @@ import genesis_prime/message/chat_line_accepted.{type ChatLineAccepted}
 import genesis_prime/message/chat_result.{type ChatResult}
 import genesis_prime/message/chat_zone_named.{type ChatZoneNamed}
 import genesis_prime/message/client_control_granted.{type ClientControlGranted}
+import genesis_prime/message/client_control_withdrawn.{
+  type ClientControlWithdrawn,
+}
 import genesis_prime/message/combat_log.{type CombatLog}
 import genesis_prime/message/create_character_result.{type CreateCharacterResult}
 import genesis_prime/message/currency_changed.{type CurrencyChanged}
@@ -108,6 +111,9 @@ import genesis_prime/message/unit_target.{type UnitTarget}
 import genesis_prime/message/unit_threat.{type UnitThreat}
 import genesis_prime/message/vendor_items.{type VendorItems}
 import genesis_prime/message/whisper_failed.{type WhisperFailed}
+import genesis_prime/message/world_loading_screen_shown.{
+  type WorldLoadingScreenShown,
+}
 import gleam/result
 
 /// A message the server sends, decoded: one variant for each message.
@@ -140,6 +146,8 @@ pub type ServerMessage {
   QuestObjectiveProgress(message: QuestObjectiveProgress)
   PlayerPath(message: PlayerPath)
   ClientControlGranted(message: ClientControlGranted)
+  WorldLoadingScreenShown(message: WorldLoadingScreenShown)
+  ClientControlWithdrawn(message: ClientControlWithdrawn)
   UnitMovement(message: UnitMovement)
   PlayerEnteredWorld(message: PlayerEnteredWorld)
   UnitDestroyed(message: UnitDestroyed)
@@ -332,6 +340,20 @@ pub fn decode(
         client_control_granted.decode,
         ClientControlGranted,
       )
+    0x083C ->
+      decoded(
+        body,
+        message_id,
+        world_loading_screen_shown.decode,
+        WorldLoadingScreenShown,
+      )
+    0x0639 ->
+      decoded(
+        body,
+        message_id,
+        client_control_withdrawn.decode,
+        ClientControlWithdrawn,
+      )
     0x0638 -> decoded(body, message_id, unit_movement.decode, UnitMovement)
     0x0061 ->
       decoded(body, message_id, player_entered_world.decode, PlayerEnteredWorld)
@@ -496,6 +518,8 @@ pub fn name(message: ServerMessage) -> String {
     QuestObjectiveProgress(..) -> "quest_objective_progress"
     PlayerPath(..) -> "player_path"
     ClientControlGranted(..) -> "client_control_granted"
+    WorldLoadingScreenShown(..) -> "world_loading_screen_shown"
+    ClientControlWithdrawn(..) -> "client_control_withdrawn"
     UnitMovement(..) -> "unit_movement"
     PlayerEnteredWorld(..) -> "player_entered_world"
     UnitDestroyed(..) -> "unit_destroyed"

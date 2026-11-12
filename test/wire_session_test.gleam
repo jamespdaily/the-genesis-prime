@@ -211,9 +211,7 @@ pub fn the_replay_logs_the_unhandled_messages_the_live_session_logged_and_nothin
     as "the auth connection logged no warning and no error"
   assert list.sort(lines_of(logged, "game.connection"), string.compare)
     == list.sort(
-      list.map(["0x082D", "0x07CC", "0x0635"], fn(id) {
-        "unhandled game message " <> id
-      }),
+      list.map(["0x082D", "0x07CC"], fn(id) { "unhandled game message " <> id }),
       string.compare,
     )
     as "each world message the game rule took and did not handle, once, by its id; the movement messages of the player (0x0637, 0x063A, 0x00D5, 0x063B and 0x00F2, which the live client sent) are handled, so none is logged, and the client's 0x07EA is taken by the interaction rule, so it is not logged as unhandled; the order the live client sent them in differs from one session to the next, so only the set is checked"

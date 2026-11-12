@@ -446,7 +446,43 @@ pub type Readiness {
   /// 0xF2. A body's 0x637 before that 0xF2 is dropped too; the body stands at
   /// the Holocrypt place the join gave, and its next move is taken.
   InWorldLoading
+  /// The server moved the player inside its world with 0x83c, 0x639, 0x638 and a 0x636
+  /// whose value is `echo_value` (`in_world_move`): the client's 0x637 sent before it has taken
+  /// the placement came from the old place and is dropped, as a ghost's is. The 0x635 that
+  /// echoes `echo_value` lifts it and returns the player to `before`, the readiness the move
+  /// replaced (`ClientLoading`, `InWorldLoading` or `ClientReady`, never `Placed`), so a
+  /// player whose terrain was not ready still has its map told when it is; the entry's 0x635
+  /// echoes 0, which does not lift it.
+  Placed(echo_value: Int, before: Readiness)
   ClientReady
+}
+
+/// The readiness a move replaces: a placed player's own `before`, any other as it is, so
+/// a move before the echo of another keeps the readiness before both.
+pub fn before_the_move(readiness readiness: Readiness) -> Readiness {
+  case readiness {
+    Placed(before:, ..) -> before
+    ClientLoading | InWorldLoading | ClientReady -> readiness
+  }
+}
+
+/// Whether the map has been told the player is ready, which the stay's first 0xF2 does.
+pub fn told_ready(readiness readiness: Readiness) -> Bool {
+  case readiness {
+    ClientReady -> True
+    ClientLoading | InWorldLoading -> False
+    Placed(before:, ..) -> told_ready(readiness: before)
+  }
+}
+
+/// The readiness once the stay's first 0xF2 is taken: ready, and a placed player is
+/// ready for when its placement is taken.
+pub fn terrain_loaded(readiness readiness: Readiness) -> Readiness {
+  case readiness {
+    Placed(echo_value:, before:) ->
+      Placed(echo_value:, before: terrain_loaded(readiness: before))
+    ClientLoading | InWorldLoading | ClientReady -> ClientReady
+  }
 }
 
 /// 0x636 for the body of a player that enters alive. A player that enters dead

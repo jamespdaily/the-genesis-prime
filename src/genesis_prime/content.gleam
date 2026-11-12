@@ -71,6 +71,11 @@
 ////   Creature2 rows (genesis_prime/game/tutorial): a row naming a quest or an objective the
 ////   tables lack, a quest a creature gives or receives, or a faction whose rows are not one
 ////   chain from one start is refused.
+//// - **The projector landings** are checked against the client's Creature2, WorldLocation2,
+////   QuestObjective, Quest2 and WorldZone rows (genesis_prime/game/projector): a creature
+////   that does not cast the projector spell, a landing outside World 3460, an objective that
+////   is not the creature's use or a zone the landing lies in, or one of the other faction's
+////   quests is refused.
 //// - **The vendors** are checked against the client's Creature2 and Item2 rows
 ////   (genesis_prime/game/vendor): a vendor naming a creature, an item naming an Item2 row
 ////   the tables lack, or an item of a creature with no vendor row is refused.
@@ -94,6 +99,7 @@ import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_faction as content_creature_faction
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
+import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
@@ -102,6 +108,7 @@ import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/class_resource
 import genesis_prime/game/place_objective
+import genesis_prime/game/projector
 import genesis_prime/game/rating
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_plan
@@ -256,6 +263,15 @@ fn read(
       )
     }),
   )
+  use projector_rows <- result.try(
+    content_projector_landing.rows(db)
+    |> result.map_error(fn(error) {
+      QueryFailed(
+        table: content_projector_landing.table,
+        reason: worker.describe_query_error(error),
+      )
+    }),
+  )
   use vendor_rows <- result.try(
     content_vendor.vendor_rows(db)
     |> result.map_error(fn(error) {
@@ -296,6 +312,8 @@ fn read(
   }
   let tutorials = tutorial.select(rows: tutorial_rows, tables:)
   let tutorial_refusals = result.unwrap_error(tutorials, or: [])
+  let projectors = projector.select(rows: projector_rows, tables:)
+  let projector_refusals = result.unwrap_error(projectors, or: [])
   let vendors =
     vendor.select(vendors: vendor_rows, items: vendor_item_rows, tables:)
   let vendor_refusals = case vendors {
@@ -382,6 +400,7 @@ fn read(
       proxy_refusals,
       welcome_refusals,
       tutorial_refusals,
+      projector_refusals,
       vendor_refusals,
     ])
   {
@@ -433,6 +452,10 @@ fn read(
       }
       case tutorials {
         Ok(chain) -> content_tutorial_quest.put(key:, chain:)
+        Error(..) -> Nil
+      }
+      case projectors {
+        Ok(landings) -> content_projector_landing.put(key:, landings:)
         Error(..) -> Nil
       }
       case vendors {

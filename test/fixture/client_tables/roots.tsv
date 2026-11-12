@@ -805,3 +805,15 @@ Creature2	74961	receiver of quest 10502, 10503, so the server does not complete 
 Quest2	10521	first Dominion tutorial quest, no giver	tutorial_test, game_connection_tutorial_test
 Quest2	10529	fourth Exile tutorial quest, no giver, objective 21341 on Creature2 73491	tutorial_test, game_connection_tutorial_test
 Quest2	10533	fourth Dominion tutorial quest, no giver	tutorial_test, game_connection_tutorial_test
+Creature2	73735	Combat Projector of the training simulation, casts Spell4 87061	projector_test, game_connection_projector_test, content_load_test
+Creature2	73741	Housing Projector of the training simulation, casts Spell4 87061	projector_test, game_connection_projector_test, content_load_test
+Creature2	73743	Mission Projector of the training simulation, casts Spell4 87061	projector_test, game_connection_projector_test, content_load_test
+Creature2	73745	Cryo Projector of the training simulation, casts Spell4 87061	projector_test, game_connection_projector_test, content_load_test
+Creature2	73606	a creature that is not a projector	projector_test, game_connection_projector_test, content_load_test
+WorldLocation2	51615	Warfare Woods landing, zone 5967	projector_test, game_connection_projector_test, content_load_test
+WorldLocation2	51617	Skyplot landing, zone 5969	projector_test, game_connection_projector_test, content_load_test
+WorldLocation2	51616	Solitude of Secrets landing, zone 5968	projector_test, game_connection_projector_test, content_load_test
+WorldLocation2	51658	Exile Docking Bay landing, zone 5998	projector_test, game_connection_projector_test, content_load_test
+WorldLocation2	51657	Dominion Docking Bay landing, zone 5999	projector_test, game_connection_projector_test, content_load_test
+Quest2	10540	Exile mission quest, objective 1 is the Mission Projector's zone objective 21373	projector_test, game_connection_projector_test, content_load_test
+Quest2	10541	Dominion mission quest, objective 1 is 21376	projector_test, game_connection_projector_test, content_load_test

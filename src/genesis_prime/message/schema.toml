@@ -716,6 +716,22 @@ fields = [
 ]
 
 [[message]]
+id = 0x083C
+name = "world_loading_screen_shown"
+direction = "server_to_client"
+evidence = "opcode.0x83c"
+summary = "shows the loading screen of the world the player is already in for about a second, without leaving the world or removing any unit; its body is empty"
+fields = []
+
+[[message]]
+id = 0x0639
+name = "client_control_withdrawn"
+direction = "server_to_client"
+evidence = "opcode.0x639"
+summary = "takes back the client's control of the controlled unit's movement, so the client stops sending message 0x637 until message 0x636 gives it back; its body is empty"
+fields = []
+
+[[message]]
 id = 0x0638
 name = "unit_movement"
 direction = "server_to_client"

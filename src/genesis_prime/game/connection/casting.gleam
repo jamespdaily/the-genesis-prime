@@ -86,6 +86,7 @@ import genesis_prime/game/connection/healing as connection_healing
 import genesis_prime/game/connection/look as connection_look
 import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/prerequisite_player
+import genesis_prime/game/connection/projector as connection_projector
 import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
@@ -492,6 +493,28 @@ fn link_of(
   }
 }
 
+/// Whether the player's quest log opens the link of the creature a go used, as the press
+/// saw it (`link_of`).
+fn projector_link(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  target target: target_group.Unit,
+  unit_id unit_id: Int,
+  checklist_index checklist_index: Int,
+) -> activate.Link {
+  let tables = session.settings.tables
+  case creature2.get(tables:, id: target.creature_id) {
+    Ok(row) ->
+      link_of(
+        tables:,
+        activations: connection_state.activations_of(session:),
+        state: entered.cast,
+        caster: caster_of(tables:, entered:),
+      )(unit_id, row, checklist_index)
+    Error(Nil) -> activate.NoLink
+  }
+}
+
 /// What the unit a right-click names is to the player, from the units its client shows:
 /// a creature or static object with its creature's activate row, its body now (a creature
 /// where its path puts it), whether it lives and whether the client offers it no use (in
@@ -846,15 +869,35 @@ pub fn cast_effects(
             alive_at_press:,
           )
         {
-          Ok(#(target, checklist_index)) ->
-            connection_objective.used(
-              session:,
-              now:,
-              target:,
-              checklist_index:,
-              unit: unit_ref(entered:, unit_id:),
-              by_item:,
-            )
+          Ok(#(target, checklist_index)) -> {
+            // The projector's link is read before the count, which can close the
+            // objective it opens; the move follows the count's writes.
+            let link =
+              projector_link(
+                session:,
+                entered:,
+                target:,
+                unit_id:,
+                checklist_index:,
+              )
+            let #(session, counted) =
+              connection_objective.used(
+                session:,
+                now:,
+                target:,
+                checklist_index:,
+                unit: unit_ref(entered:, unit_id:),
+                by_item:,
+              )
+            let #(session, moved) =
+              connection_projector.moved(
+                session:,
+                now:,
+                creature_id: target.creature_id,
+                link:,
+              )
+            #(session, list.append(counted, moved))
+          }
           Error(Nil) -> #(session, [])
         }
       cast.Activated(..), None -> #(session, [])

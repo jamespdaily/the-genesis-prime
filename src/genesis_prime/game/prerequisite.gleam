@@ -459,10 +459,7 @@ pub fn player_of(
     path: character.path,
     gender: character.gender,
     world_id:,
-    zones: case top_zone.chain(tables:, world_zone_id: zone) {
-      [] -> [zone]
-      chain -> chain
-    },
+    zones: top_zone.chain_or_zone(tables:, world_zone_id: zone),
   )
 }
 

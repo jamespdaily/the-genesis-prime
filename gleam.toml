@@ -110,6 +110,7 @@ effectful_modules = [
   { module = "genesis_prime/content/server_proxy", reason = "runs the server_proxy table's one query on the load's pool and puts the server's Proxies in a persistent term" },
   { module = "genesis_prime/content/zone_welcome", reason = "runs the zone_welcome table's one query on the load's pool and puts the zones' welcomes in a persistent term" },
   { module = "genesis_prime/content/tutorial_quest", reason = "runs the tutorial_quest table's one query on the load's pool and puts the tutorial chain in a persistent term" },
+  { module = "genesis_prime/content/projector_landing", reason = "runs the projector_landing table's one query on the load's pool and puts the projectors' landings in a persistent term" },
   { module = "genesis_prime/content/vendor", reason = "runs the vendor and vendor_item tables' queries on the load's pool and puts the vendors' stock in a persistent term" },
   { module = "genesis_prime/content/sql", reason = "the queries squirrel generates, run on pog's pool" },
 ]

@@ -27,6 +27,7 @@ import genesis_prime/connection/script
 import genesis_prime/content
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/game_number as content_game_number
+import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
@@ -624,6 +625,7 @@ fn game(
       numbers: content_game_number.numbers(key: spawns),
       visibility: content_spawn.visibility(key: spawns),
       tutorial_chain: content_tutorial_quest.chain(key: spawns),
+      projector_landings: content_projector_landing.landings(key: spawns),
     ),
     wire_recorder: None,
     scripts: script.operating_system,
