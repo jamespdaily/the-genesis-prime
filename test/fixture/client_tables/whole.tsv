@@ -34,6 +34,7 @@ QuestDirectionEntry
 Race
 RewardPropertyPremiumModifier
 Spell4AoeTargetConstraints
+Spell4CCConditions
 Spell4Conditions
 Spell4StackGroup
 Spell4TargetMechanics

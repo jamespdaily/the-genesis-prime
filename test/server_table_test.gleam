@@ -47,7 +47,7 @@ import owned_test
 import planted_table
 import simplifile
 
-pub fn the_servers_tables_are_the_seventy_two_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_the_seventy_three_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
@@ -108,6 +108,7 @@ pub fn the_servers_tables_are_the_seventy_two_its_rules_read_test() -> Nil {
       "Spell4",
       "Spell4AoeTargetConstraints",
       "Spell4Base",
+      "Spell4CCConditions",
       "Spell4Conditions",
       "Spell4Effects",
       "Spell4GroupList",

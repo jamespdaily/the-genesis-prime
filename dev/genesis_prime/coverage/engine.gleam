@@ -319,7 +319,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 4,
-        reason: "rows holding a state other than Stun and Knockdown, aimed at the caster or by a flag the plan refuses, or behind an apply prerequisite, which the plan refuses",
+        reason: "rows holding a state other than Stun, Knockdown and Ability Restriction, Stun or Knockdown aimed at the caster or by a flag the plan refuses, Ability Restriction aimed anywhere but at the caster, or behind an apply prerequisite, which the plan refuses",
         fact_key: "Spell4Effects.effectType.4",
       ),
       Missing(

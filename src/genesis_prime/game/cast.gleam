@@ -78,7 +78,10 @@
 ////   58 for a living caster's press of one whose row asks for a dead caster
 ////   (`Spell4.spell4ConditionsIdCaster`, `cast.dead_player`; the row's other
 ////   conditions are not checked); 13 while the
-////   caster's current cast is live (below); 14 while the global cooldown has more
+////   caster's current cast is live (below); 302 for a press of a spell whose
+////   Spell4CCConditions caster row masks Ability Restriction (state 27) while a cast
+////   of the caster holds it on the caster, checked after 13 and before the cooldowns
+////   (`CheckSpellCCConditions`, `0x1403b2c40`; `0x1403afb10.order`); 14 while the global cooldown has more
 ////   than 500 ms left, for kinds 0 and 2; 15 while the spell's own cooldown has
 ////   more than 500 ms left (`0x1403b14c0`); a caster requirement's result when the
 ////   caster's resource fails it and the spell's waiver does not pass (`0x1403b1780`,
@@ -488,6 +491,10 @@
 //// | two casts whose persistence fails in one input, or one that fails because the other ended | both end in that input, the lower cast id first |
 //// | a persistence check while the player is leaving or dead | nothing: `left` and `died` have already dropped every cast |
 //// | a press while one is held | 0x7fc 13 |
+//// | a press of a spell whose caster conditions mask Ability Restriction while the caster holds it | 0x7fc 302, ahead of the cooldowns; a spell whose mask lacks bit 27 passes |
+//// | a go gives the caster Ability Restriction | 0x87f to the caster and its audience, once for the effect; a `RestrictionEnd` timer at the row's delay plus duration, none for flag 2; the cast lingers until its persistence ends (the server reads no ride, so the hoverboard's ends in the go's own input: gap, #336) |
+//// | a `RestrictionEnd` fires for a state the caster holds | 0x880 with the cast and the instance id of its 0x87f, before the cast's node ends; a row of duration 0 without flag 2 ends in the go's own step |
+//// | a cast that holds Ability Restriction ends (its persistence fails, a type 80 removal takes its node off, its node ends by time) | the `RestrictionEnd` timers cancelled, and 0x880 for a state the row's end has not already ended, after the 0x7f9 or the 0x811; a death or a leave drops the state and writes nothing |
 //// | a 0x805 result 3 of an activate cast of castMethod 5 | nothing: the interaction only began |
 //// | a 0x805 result 1 before or after the cast time has run | the go and the finish at the later of the two: at the answer, or at the go's timer when the answer came first |
 //// | a 0x805 result 0 or 2 | 0x7f9 146, 0x7fe, the go's timer cancelled; no go and no `Activated` |
@@ -544,6 +551,7 @@ import genesis_prime/game/activate
 import genesis_prime/game/area
 import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
 import genesis_prime/game/cooldown
+import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/hit
 import genesis_prime/game/item_use
@@ -570,7 +578,9 @@ import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_log_immunity.{CombatLogImmunity}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_result
-import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/message/crowd_control_state.{
+  type CrowdControlState, AbilityRestriction,
+}
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
 import genesis_prime/message/interaction_result
@@ -605,6 +615,8 @@ import genesis_prime/message/spell_targets_removed.{
 import genesis_prime/message/spell_threshold_closed.{SpellThresholdClosed}
 import genesis_prime/message/spell_threshold_index.{SpellThresholdIndex}
 import genesis_prime/message/spell_threshold_opened.{SpellThresholdOpened}
+import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
+import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, LogDebug, LogInfo,
   LogWarning, TimerId,
@@ -907,6 +919,10 @@ pub type Due {
   )
   /// The property modifier `source` ends, after its duration.
   ModifierEnd(source: unit_properties.Source)
+  /// The crowd-control state the caster holds on itself from the effect `source` names
+  /// ends, after its delay and duration: the client never ends a state itself, so the
+  /// server sends the 0x880 (`restriction_ended`).
+  RestrictionEnd(source: unit_properties.Source)
   /// The cooldown effect `source` takes effect, after its delay: it changes the
   /// running cooldowns and, when `kept`, the ones that start while it lasts.
   CooldownModifierStarts(
@@ -1135,6 +1151,25 @@ pub opaque type State {
     /// death and its leaving each tell `TargetChangeEnds` for those of the cast and
     /// unit they end.
     on_creatures: Dict(Int, List(OnCreature)),
+    /// The crowd-control states the caster's casts hold on the caster itself (a CCStateSet
+    /// row aimed at the caster, `spell_plan.restrictions_in_phase`), by cast id and effect
+    /// id: a press of a spell whose caster conditions mask a held state is refused
+    /// (`restricted`), and the state ends with its row (`RestrictionEnd`) or with its
+    /// cast's node (`effects_ended`), whichever comes first.
+    restrictions: Dict(unit_properties.Source, HeldRestriction),
+    /// How many such states the caster has told, which their instance ids are made from
+    /// (genesis_prime/game/crowd_control `instance_id`).
+    restrictions_told: Int,
+  )
+}
+
+/// A crowd-control state the caster holds on itself: the state, the instance id the 0x87f
+/// named it by, and the connections that were told it, which its end is told to.
+type HeldRestriction {
+  HeldRestriction(
+    state: CrowdControlState,
+    instance_id: Int,
+    audience: Set(ConnectionId),
   )
 }
 
@@ -1171,6 +1206,8 @@ pub fn new() -> State {
     passive: None,
     persistence_logged: set.new(),
     on_creatures: dict.new(),
+    restrictions: dict.new(),
+    restrictions_told: 0,
   )
 }
 
@@ -3547,6 +3584,23 @@ fn is_release(resolution resolution: Resolution) -> Bool {
 /// whose caster row asks for a dead one (`Spell4.spell4ConditionsIdCaster`).
 const caster_must_be_dead = 58
 
+/// Bit 27 of a Spell4CCConditions mask: `Unit.CodeEnumCCState` 27, Ability Restriction.
+const ability_restriction_bit = 134_217_728
+
+/// Whether the caster holds Ability Restriction on itself and the spell's caster
+/// conditions mask it, the press's 302 (`CheckSpellCCConditions`, `0x1403b2c40`, called
+/// by `CheckCastCaster` at `0x1403affa2`). Gap (#336): the client's
+/// cast request word at 0x48 is read as 0 for every press, so the check always applies;
+/// the client sets it for the presses the ride spells make, which this server does not
+/// read.
+fn restricted(cast cast: State, spell spell: Spell) -> Bool {
+  let held =
+    list.any(dict.values(cast.restrictions), fn(restriction) {
+      restriction.state == AbilityRestriction
+    })
+  held && int.bitwise_and(spell.caster_cc_mask, ability_restriction_bit) != 0
+}
+
 /// What the client's checks make of a press, in its order: the caster's death, a
 /// press held already and the method, then CheckCastCaster's own in its order
 /// (`0x1403afb10.order`): the current cast, the cooldowns (a press within the queue
@@ -3605,6 +3659,10 @@ fn verdict(
       Some(left_ms) if left_ms <= queue_window_ms -> HoldForCast
       Some(_) | None -> Refuse(result: cast_result.SpellAlreadyCasting)
     },
+  )
+  use <- bool.guard(
+    when: restricted(cast:, spell:),
+    return: Refuse(result: cast_result.CasterCannotBeAbilityRestriction),
   )
   let #(global_left, own_left) = cooldown_left_ms(cast:, spell:, now_ms:)
   use <- bool.guard(
@@ -4320,6 +4378,7 @@ fn stop_pending(
       | ModifierStart(..)
       | TargetModifierStart(..)
       | ModifierEnd(..)
+      | RestrictionEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
       | StartHeld
@@ -4441,6 +4500,7 @@ fn fire(
           CasterChangeStarts(source:, change:),
         ])
         ModifierEnd(source:) -> #(cast, [CasterChangeEnds(source:)])
+        RestrictionEnd(source:) -> restriction_ended(cast:, source:)
         TargetModifierStart(on:, modifier:, struck_at_ms:) ->
           target_modifier_started(cast:, on:, modifier:, struck_at_ms:)
         CooldownModifierStarts(source:, modifier:, kept:) ->
@@ -5090,6 +5150,7 @@ fn cancel_nodes_end(
       | ModifierStart(..)
       | TargetModifierStart(..)
       | ModifierEnd(..)
+      | RestrictionEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
       | StartHeld
@@ -5124,6 +5185,7 @@ pub fn unit_removed(
         | ModifierStart(..)
         | TargetModifierStart(..)
         | ModifierEnd(..)
+        | RestrictionEnd(..)
         | CooldownModifierStarts(..)
         | CooldownModifierEnds(..)
         | StartHeld
@@ -5177,6 +5239,7 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
       procs: dict.new(),
       passive: None,
       on_creatures: dict.new(),
+      restrictions: dict.new(),
     ),
     list.append(
       list.map(dict.keys(cast.timers), fn(timer) { CancelTimer(timer:) }),
@@ -5247,6 +5310,12 @@ fn has_persistence(spell spell: Spell) -> Bool {
 /// the casts they start are checked in turn. A condition
 /// of a type not read, a roll (none is drawn) and a creature target keep the cast, with
 /// one debug line for the spell.
+///
+/// Gap (#336): the hoverboard's ride 85563 holds Ability Restriction under a persistence
+/// of "under 85562" (Prerequisite 41771), and 85562's SummonMount (type 36) is not read,
+/// so no node of 85562 is held and the ride ends in the input of its own go: the client
+/// is shown 0x87f, 0x7f9 and 0x880 at once, and a press is refused 302 only while the
+/// go's own input is taken. The ride closes this.
 pub fn persisted(
   cast cast: State,
   caster caster: Caster,
@@ -5693,6 +5762,7 @@ fn belongs_to_passive(
     Go(cast_id:, ..) | Finish(cast_id:) | NodesEnd(cast_id:) -> cast_id == id
     ModifierStart(source:, ..)
     | ModifierEnd(source:)
+    | RestrictionEnd(source:)
     | CooldownModifierStarts(source:, ..)
     | CooldownModifierEnds(source:) -> source.cast_id == id
     TargetModifierStart(on:, ..) -> on.source.cast_id == id
@@ -5768,6 +5838,7 @@ fn modifiers_pending(cast cast: State) -> List(Effect) {
         ModifierEnd(source:) -> Ok(source)
         ModifierStart(..)
         | TargetModifierStart(..)
+        | RestrictionEnd(..)
         | CooldownModifierStarts(..)
         | CooldownModifierEnds(..)
         | Go(..)
@@ -6162,6 +6233,7 @@ fn close_threshold(
             | ModifierStart(..)
             | TargetModifierStart(..)
             | ModifierEnd(..)
+            | RestrictionEnd(..)
             | CooldownModifierStarts(..)
             | CooldownModifierEnds(..)
             | StartHeld
@@ -6305,7 +6377,10 @@ fn go(
         )
       let #(applied, lasting_logs, _) =
         lasting_applied(spell:, phase:, spent: live.spent, subject:, rolls:)
-      let aimed = aimed_at(applied:, caster:, live:, struck:, phase:)
+      let #(cast, restricting) =
+        restrictions_numbered(cast:, caster:, cast_id:, live:, applied:)
+      let aimed =
+        aimed_at(applied:, caster:, live:, struck:, phase:, restricting:)
       let go_message =
         go_message(
           cast_id:,
@@ -6345,6 +6420,7 @@ fn go(
             Hit(..) | Deflected(..) -> Error(Nil)
           }
         })
+      let shown = restrictions_shown(restricting:, caster:, live:)
       let #(cast, removed) = removed_by_go(cast:, aimed:, now_ms:)
       let #(cast, logged) =
         states_logged(
@@ -6359,6 +6435,8 @@ fn go(
       let #(cast, modifying) =
         modifiers_armed(cast:, cast_id:, caster:, aimed:, struck:)
       let #(cast, healing) = heals_armed(cast:, cast_id:, aimed:)
+      let #(cast, restriction_timers) =
+        restrictions_armed(cast:, cast_id:, restricting:)
       let #(cast, cooldowns) =
         cooldowns_armed(
           cast:,
@@ -6440,12 +6518,14 @@ fn go(
         list.flatten([
           going,
           immune,
+          shown,
           logged,
           removed,
           given,
           never_held,
           modifying,
           healing,
+          restriction_timers,
           cooldowns,
           gains,
           gate_logs,
@@ -6540,6 +6620,7 @@ type Applied {
     remove_stealth: List(spell_plan.RemoveStealthRow),
     procs: List(spell_plan.ProcRow),
     shield_heals: List(spell_plan.ShieldHeal),
+    restrictions: List(spell_plan.CrowdControl),
   )
 }
 
@@ -6672,6 +6753,7 @@ fn lasting_applied(
       remove_stealth:,
       procs:,
       shield_heals:,
+      restrictions: spell_plan.restrictions_in_phase(spell:, phase:, spent:),
     ),
     list.flatten([
       logs,
@@ -6743,7 +6825,207 @@ type Aimed {
     procs: List(#(spell_plan.ProcRow, Int)),
     heals: List(#(Healed, Int)),
     controls: List(#(strike_tell.ControlLanded, Int)),
+    restrictions: List(#(Restricting, Int)),
   )
+}
+
+/// A CCStateSet row of a go aimed at the caster with the instance id its effect holds;
+/// `fresh` when this go gave the state, not a later go of a cast that holds it already.
+/// The plan refuses a row with an apply prerequisite (`spell_plan.control_of`), so the
+/// go gates none.
+type Restricting {
+  Restricting(row: spell_plan.CrowdControl, instance_id: Int, fresh: Bool)
+}
+
+/// The go's states on the caster, each with its instance id: the one a cast already holds
+/// for the effect, or the next of the caster's counter, held with the go's audience.
+fn restrictions_numbered(
+  cast cast: State,
+  caster caster: Caster,
+  cast_id cast_id: Int,
+  live live: Live,
+  applied applied: Applied,
+) -> #(State, List(Restricting)) {
+  list.fold(applied.restrictions, #(cast, []), fn(so_far, row) {
+    let #(cast, numbered) = so_far
+    let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+    let #(cast, restricting) = case dict.get(cast.restrictions, source) {
+      Ok(held) -> #(
+        cast,
+        Restricting(row:, instance_id: held.instance_id, fresh: False),
+      )
+      Error(Nil) -> {
+        let told = cast.restrictions_told + 1
+        let instance_id =
+          crowd_control.instance_id(caster_unit_id: caster.unit_id, count: told)
+        #(
+          State(
+            ..cast,
+            restrictions: dict.insert(
+              cast.restrictions,
+              source,
+              HeldRestriction(
+                state: row.row.state,
+                instance_id:,
+                audience: live.audience,
+              ),
+            ),
+            restrictions_told: told,
+          ),
+          Restricting(row:, instance_id:, fresh: True),
+        )
+      }
+    }
+    #(cast, list.append(numbered, [restricting]))
+  })
+}
+
+/// 0x87f to the caster and to the audience of the go, for each state the go gave
+/// (`opcode.0x87f`); a state a cast already held is not told again.
+fn restrictions_shown(
+  restricting restricting: List(Restricting),
+  caster caster: Caster,
+  live live: Live,
+) -> List(Effect) {
+  restricting
+  |> list.filter(fn(one) { one.fresh })
+  |> list.flat_map(fn(one) {
+    let state = one.row.row.state
+    [
+      Send(frame: control_applied_frame(
+        unit_id: caster.unit_id,
+        state:,
+        instance_id: one.instance_id,
+      )),
+      ..list.map(map.sorted_connections(live.audience), fn(viewer) {
+        Tell(
+          to: viewer,
+          news: client_connection.CrowdControlApplied(
+            state:,
+            instance_id: one.instance_id,
+          ),
+        )
+      })
+    ]
+  })
+}
+
+/// The end of each state a go holds on the caster, on a timer of its delay and duration
+/// unless it lasts until removed: the client's lifetime for a CCStateSet effect is
+/// `trunc(durationTime * m + 0.5)` after its delay (`0x1405d6880`, `0x1405d8770`) and the
+/// client never ends the state itself, so the server's timer does, as for a state on a
+/// creature. A row of duration 0 without flag 2 lives 0 ms and ends in the go's own
+/// step. A later go of the cast arms the state's end again from that go; the node's end
+/// or removal cancels it (`effects_ended`).
+fn restrictions_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  restricting restricting: List(Restricting),
+) -> #(State, List(Effect)) {
+  list.fold(restricting, #(cast, []), fn(so_far, one) {
+    let #(cast, effects) = so_far
+    let source = unit_properties.Source(cast_id:, effect_id: one.row.effect_id)
+    let row = one.row.row
+    let #(cast, cancels) = cancel_source_timers(cast:, source:)
+    case row.until_removed {
+      True -> #(cast, list.append(effects, cancels))
+      False -> {
+        let #(cast, _, start) =
+          armed(
+            cast:,
+            due: RestrictionEnd(source:),
+            after_ms: row.delay_ms + row.duration_ms,
+          )
+        #(cast, list.flatten([effects, cancels, [start]]))
+      }
+    }
+  })
+}
+
+/// The state the effect `source` gave the caster ends with its row, ahead of its cast's
+/// node: 0x880 to the caster and the audience told of it. A state no longer held, because
+/// the node ended or was taken off first, or the caster died or left, ends nothing.
+fn restriction_ended(
+  cast cast: State,
+  source source: unit_properties.Source,
+) -> #(State, List(Effect)) {
+  case dict.get(cast.restrictions, source) {
+    Error(Nil) -> #(cast, [])
+    Ok(held) -> #(
+      State(..cast, restrictions: dict.delete(cast.restrictions, source)),
+      restrictions_ended(held: [#(source, held)], cast_id: source.cast_id),
+    )
+  }
+}
+
+/// 0x880 to the caster and to the audience that was told the state, for each state the
+/// cast `cast_id` held, in effect id order (`opcode.0x880`).
+fn restrictions_ended(
+  held held: List(#(unit_properties.Source, HeldRestriction)),
+  cast_id cast_id: Int,
+) -> List(Effect) {
+  held
+  |> list.sort(fn(first, second) {
+    int.compare({ first.0 }.effect_id.value, { second.0 }.effect_id.value)
+  })
+  |> list.flat_map(fn(entry) {
+    let restriction = entry.1
+    [
+      Send(frame: control_ended_frame(
+        unit_id: caster_of(cast_id:),
+        state: restriction.state,
+        cast_id:,
+        instance_id: restriction.instance_id,
+      )),
+      ..list.map(map.sorted_connections(restriction.audience), fn(viewer) {
+        Tell(
+          to: viewer,
+          news: client_connection.CrowdControlEnded(
+            state: restriction.state,
+            cast_id:,
+            instance_id: restriction.instance_id,
+          ),
+        )
+      })
+    ]
+  })
+}
+
+/// 0x87f: the unit holds the crowd-control state, the effect of the go that gave it
+/// `instance_id` (`opcode.0x87f`, `cc_state.instance_id`).
+pub fn control_applied_frame(
+  unit_id unit_id: Int,
+  state state: CrowdControlState,
+  instance_id instance_id: Int,
+) -> Frame {
+  let assert Ok(body) =
+    unit_cc_state_applied.encode(UnitCcStateApplied(
+      unit_id:,
+      state:,
+      instance_id:,
+    ))
+    as "unit ids and instance ids of 32 bits and a state of 5 fit the message"
+  Frame(message_id: unit_cc_state_applied.message_id, body:)
+}
+
+/// 0x880: the unit's crowd-control state of that cast and instance ends, its last bit
+/// 0 (`opcode.0x880`, `cc_state.end`).
+pub fn control_ended_frame(
+  unit_id unit_id: Int,
+  state state: CrowdControlState,
+  cast_id cast_id: Int,
+  instance_id instance_id: Int,
+) -> Frame {
+  let assert Ok(body) =
+    unit_cc_state_ended.encode(UnitCcStateEnded(
+      unit_id:,
+      state:,
+      cast_id:,
+      instance_id:,
+      keeps_flag_4_entries: 0,
+    ))
+    as "unit ids, a cast id and an instance id of 32 bits, a state of 5 and a bit fit the message"
+  Frame(message_id: unit_cc_state_ended.message_id, body:)
 }
 
 /// A shield heal a go applies: its row, its delay and the amount worked out at the go from
@@ -6844,6 +7126,7 @@ fn aimed_at(
   live live: Live,
   struck struck: List(Struck),
   phase phase: Int,
+  restricting restricting: List(Restricting),
 ) -> Aimed {
   let lasting =
     rows_with_units(
@@ -6888,6 +7171,7 @@ fn aimed_at(
   let stealth = list.map(applied.stealth, fn(row) { #(row, caster.unit_id) })
   let procs = list.map(applied.procs, fn(row) { #(row, caster.unit_id) })
   let heals = healed_by(applied:, caster:, live:, struck:)
+  let restrictions = list.map(restricting, fn(one) { #(one, caster.unit_id) })
   let listed =
     list.flatten([
       list.map(stealth, fn(entry) {
@@ -6989,6 +7273,17 @@ fn aimed_at(
           ),
         )
       }),
+      list.map(restrictions, fn(entry) {
+        #(
+          entry.1,
+          Listed(
+            effect_id: entry.0.row.effect_id,
+            delay_ms: entry.0.row.row.delay_ms,
+            instance_id: Some(entry.0.instance_id),
+            damage: None,
+          ),
+        )
+      }),
       case live.activation {
         Some(Activating(unit_id:, effects:, ..)) ->
           effects
@@ -7025,6 +7320,7 @@ fn aimed_at(
     heals:,
     procs:,
     controls:,
+    restrictions:,
   )
 }
 
@@ -7371,6 +7667,7 @@ fn target_start_of(due due: Due) -> Result(OnCreature, Nil) {
     | StateEnd(..)
     | ModifierStart(..)
     | ModifierEnd(..)
+    | RestrictionEnd(..)
     | CooldownModifierStarts(..)
     | CooldownModifierEnds(..)
     | StartHeld
@@ -7567,12 +7864,13 @@ fn waits_rearmed(
 }
 
 /// The source an effect timer is for: a property modifier's, a shield heal's (a start is
-/// the only timer a heal has) or a cooldown effect's. Effect ids are unique, so a source
-/// names one row.
+/// the only timer a heal has), a cooldown effect's or a state the caster holds. Effect
+/// ids are unique, so a source names one row.
 fn source_of(due due: Due) -> Option(unit_properties.Source) {
   case due {
     ModifierStart(source:, ..)
     | ModifierEnd(source:)
+    | RestrictionEnd(source:)
     | CooldownModifierStarts(source:, ..)
     | CooldownModifierEnds(source:) -> Some(source)
     TargetModifierStart(on:, ..) -> Some(on.source)
@@ -7678,9 +7976,36 @@ fn effects_ended(
       }
     })
   let #(cast, heal_cancels) = pending_heals_cancelled(cast:, cast_id:)
+  let #(restrictions, others) = split_cast(held: cast.restrictions, cast_id:)
+  let cast = State(..cast, restrictions: others)
+  let #(cast, restriction_cancels) =
+    cancel_timers(cast:, matching: fn(due) {
+      case due {
+        RestrictionEnd(source:) -> source.cast_id == cast_id
+        Go(..)
+        | Finish(..)
+        | StartChild(..)
+        | NodesEnd(..)
+        | StateEnd(..)
+        | ModifierStart(..)
+        | TargetModifierStart(..)
+        | ModifierEnd(..)
+        | CooldownModifierStarts(..)
+        | CooldownModifierEnds(..)
+        | StartHeld
+        | RepeatHeld
+        | WindowEnd(..)
+        | ChargeLevel(..) -> False
+      }
+    })
   #(
     procs_dropped(cast: stealth_dropped(cast:, cast_id:), cast_id:),
-    list.append(effects, heal_cancels),
+    list.flatten([
+      effects,
+      heal_cancels,
+      restriction_cancels,
+      restrictions_ended(held: restrictions, cast_id:),
+    ]),
   )
 }
 
@@ -7698,6 +8023,7 @@ fn pending_heals(
       ModifierStart(..)
       | TargetModifierStart(..)
       | ModifierEnd(..)
+      | RestrictionEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
       | Go(..)
@@ -7729,6 +8055,7 @@ fn pending_heals_cancelled(
       | ModifierStart(change: Look(..), ..)
       | TargetModifierStart(..)
       | ModifierEnd(..)
+      | RestrictionEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
       | Go(..)
@@ -7911,6 +8238,7 @@ fn nodes_aimed(aimed aimed: Aimed) -> List(Int) {
       list.map(aimed.procs, fn(entry) { entry.1 }),
       list.map(aimed.heals, fn(entry) { entry.1 }),
       list.map(aimed.controls, fn(entry) { entry.1 }),
+      list.map(aimed.restrictions, fn(entry) { entry.1 }),
     ]),
   )
 }
@@ -7968,6 +8296,21 @@ fn node_of(
         }
       }),
     ])
+  let rows =
+    list.append(
+      rows,
+      list.filter_map(aimed.restrictions, fn(entry) {
+        case entry.1 == unit_id {
+          True ->
+            Ok(lasting.LastingRow(
+              delay_ms: entry.0.row.row.delay_ms,
+              duration_ms: entry.0.row.row.duration_ms,
+              until_removed: entry.0.row.row.until_removed,
+            ))
+          False -> Error(Nil)
+        }
+      }),
+    )
   let held_until_ms =
     list.filter_map(aimed.controls, fn(entry) {
       case entry.1 == unit_id {

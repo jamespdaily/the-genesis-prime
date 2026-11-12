@@ -96,6 +96,10 @@ pub type CastResult {
   PrereqTargetPersistence
   /// The value 285, the fact file's `Spell.CodeEnumCastResult`.
   IllegalSpellCast
+  /// The value 302, the fact file's `0x1403b2c40`.
+  CasterCannotBeAbilityRestriction
+  /// The value 303, the fact file's `0x1403b2c40`.
+  TargetCannotBeAbilityRestriction
   /// The value 317, the fact file's `Spell.CodeEnumCastResult`.
   Queued
   /// A value the schema does not name.
@@ -150,6 +154,8 @@ pub fn to_value(value: CastResult) -> Int {
     PrereqCasterPersistence -> 282
     PrereqTargetPersistence -> 283
     IllegalSpellCast -> 285
+    CasterCannotBeAbilityRestriction -> 302
+    TargetCannotBeAbilityRestriction -> 303
     Queued -> 317
     Other(number) -> number
   }
@@ -203,6 +209,8 @@ pub fn from_value(number: Int) -> CastResult {
     282 -> PrereqCasterPersistence
     283 -> PrereqTargetPersistence
     285 -> IllegalSpellCast
+    302 -> CasterCannotBeAbilityRestriction
+    303 -> TargetCannotBeAbilityRestriction
     317 -> Queued
     other -> Other(other)
   }
