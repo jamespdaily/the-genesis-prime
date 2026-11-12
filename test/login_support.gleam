@@ -37,6 +37,7 @@ import gleam/option.{None, Some}
 import login_client.{type Ports, Ports}
 import login_vectors as vector
 import pog
+import projector_support
 import readiness_support
 import server_proxy_support
 import spawn_support
@@ -143,6 +144,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
       numbers: spawn_support.numbers,
       visibility: dict.new(),
       tutorial_chain: tutorial_support.none(),
+      projector_landings: projector_support.none(),
     ),
     wire_recorder: None,
     scripts: script.operating_system,

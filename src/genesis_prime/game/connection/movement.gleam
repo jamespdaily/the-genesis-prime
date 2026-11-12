@@ -16,6 +16,7 @@ import genesis_prime/game/connection/chat as connection_chat
 import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/state.{type Session, InWorld, Session} as connection_state
 import genesis_prime/game/hit_radius
+import genesis_prime/game/in_world_move
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
@@ -48,9 +49,11 @@ pub fn movement_message(
   case message, player_life.state(life: entered.life), entered.readiness {
     movement.PlayerMoved, player_life.Dead, _
     | movement.PlayerMoved, player_life.Alive, world_entry.InWorldLoading
-    -> ghost_moving(session:, now:, entered:, body: inner.body)
+    | movement.PlayerMoved, player_life.Alive, world_entry.Placed(..)
+    -> dropped_moving(session:, now:, entered:, body: inner.body)
     movement.PlayerMoved, player_life.Alive, world_entry.ClientLoading
     | movement.PlayerMoved, player_life.Alive, world_entry.ClientReady
+    | movement.ControlEchoed, _, _
     | movement.ZoneChanged, _, _
     | movement.IntervalAnswered, _, _
     | movement.SpeedChosen, _, _
@@ -73,6 +76,22 @@ fn body_moving(
   case movement.take(entered.movement, message, inner.body) {
     Ok(movement.Kept(state:)) ->
       Continue(moving(session:, holder:, entered:, state:), [])
+    Ok(movement.Echoed(state:, echo_value:)) ->
+      Continue(
+        moving(
+          session:,
+          holder:,
+          entered: world_entry.Entered(
+            ..entered,
+            readiness: in_world_move.echoed(
+              readiness: entered.readiness,
+              echo_value:,
+            ),
+          ),
+          state:,
+        ),
+        [],
+      )
     Ok(movement.Reported(state:, world_zone_id:, by:)) -> {
       let session = moving(session:, holder:, entered:, state:)
       let top_zones = top_zone.top_zones(session.settings.tables)
@@ -81,6 +100,7 @@ fn body_moving(
         | movement.ReportedByTerrainReady, world_entry.InWorldLoading
         -> tells_the_map_ready(session:, entered:)
         movement.ReportedByTerrainReady, world_entry.ClientReady
+        | movement.ReportedByTerrainReady, world_entry.Placed(..)
         | movement.ReportedByZoneChanged(..), _
         -> #(session, [])
       }
@@ -213,18 +233,20 @@ fn changed_position(from from: Place, to to: Place) -> Bool {
   || start_place.z(from) != start_place.z(to)
 }
 
-/// A 0x637 while the player is dead moves its ghost, the client's controlled
-/// unit: it is decoded, checked as the body's and dropped (`movement.ghost_moved`),
-/// so the body's place, the map, the viewers and the fighters are told nothing and
-/// the move sequence number does not grow. A body the client's reader refuses, or
-/// a command its code never sends, ends the connection.
-fn ghost_moving(
+/// A 0x637 that is not the body's to take: while the player is dead it moves its ghost,
+/// the client's controlled unit, and before the client has taken the server's move of
+/// its player (`world_entry.Placed`) it comes from the old place. It is decoded,
+/// checked as the body's and dropped (`movement.dropped_moved`), so the body's place,
+/// the map, the viewers and the fighters are told nothing and the move sequence number
+/// does not grow. A body the client's reader refuses, or a command its code never
+/// sends, ends the connection.
+fn dropped_moving(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
   body body: BitArray,
 ) -> client_connection.Handled(Session) {
-  case movement.ghost_moved(state: entered.movement, body:) {
+  case movement.dropped_moved(state: entered.movement, body:) {
     Ok(Nil) -> Continue(session, [])
     Error(refusal) ->
       connection_state.end_for(session:, now:, text: movement.describe(refusal))

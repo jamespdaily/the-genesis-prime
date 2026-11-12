@@ -464,21 +464,21 @@ pub fn an_unhandled_message_id_is_a_warning_the_first_time_on_a_connection_and_a
   let #(state, taken) =
     game_connection_support.read(
       game_connection_support.in_world(),
-      game_connection_support.move_message(0x0635),
+      game_connection_support.move_message(0x082D),
     )
   let assert [first] = support.logs(taken)
   assert first.level == LogWarning
-    as "the first 0x635 of the connection is logged as unhandled, as a warning"
-  assert first.about.message == Some(#("unhandled", 0x0635))
+    as "the first 0x82d of the connection is logged as unhandled, as a warning"
+  assert first.about.message == Some(#("unhandled", 0x082D))
   let #(state, taken) =
     game_connection_support.read(
       state,
-      game_connection_support.move_message(0x0635),
+      game_connection_support.move_message(0x082D),
     )
   let assert [again] = support.logs(taken)
   assert again.level == step.LogDebug
     as "a repeat of an id already logged is a debug line, since the client sends some messages again and again"
-  assert again.about.message == Some(#("unhandled", 0x0635))
+  assert again.about.message == Some(#("unhandled", 0x082D))
   let #(_, taken) =
     game_connection_support.read(
       state,
@@ -637,9 +637,9 @@ pub fn the_end_of_sessions_in_the_world_claims_again_and_the_claim_puts_the_play
   let #(state, taken) =
     game_connection_support.read(
       state,
-      game_connection_support.move_message(0x0635),
+      game_connection_support.move_message(0x082D),
     )
-  assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x0635))]
+  assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x082D))]
     as "the claim kept where the client is, the player in the world"
   let #(state, taken) =
     game_connection_support.feed(state, WatchEnded(WatchId(2)))

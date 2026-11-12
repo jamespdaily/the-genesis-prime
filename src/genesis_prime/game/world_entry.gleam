@@ -446,6 +446,11 @@ pub type Readiness {
   /// 0xF2. A body's 0x637 before that 0xF2 is dropped too; the body stands at
   /// the Holocrypt place the join gave, and its next move is taken.
   InWorldLoading
+  /// The server moved the player inside its world with 0x83c, 0x639, 0x638 and a 0x636
+  /// whose value is `echo_value` (`in_world_move`): the client's 0x637 sent before it has taken
+  /// the placement came from the old place and is dropped, as a ghost's is. The 0x635 that
+  /// echoes `echo_value` lifts it; the entry's 0x635 echoes 0, which does not.
+  Placed(echo_value: Int)
   ClientReady
 }
 

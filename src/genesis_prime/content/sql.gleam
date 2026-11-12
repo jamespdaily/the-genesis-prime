@@ -196,6 +196,60 @@ order by name;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `load_projector_landings` query
+/// defined in `./src/genesis_prime/content/sql/load_projector_landings.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadProjectorLandingsRow {
+  LoadProjectorLandingsRow(
+    creature_id: Int,
+    faction_enum: Int,
+    objective_id: Int,
+    world_location2_id: Int,
+  )
+}
+
+/// Every row of the projector_landing table in key order: the one query the load makes
+/// of the table at start (genesis_prime/content/projector_landing). The checks run on
+/// these rows, not in SQL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_projector_landings(
+  db: pog.Connection,
+) -> Result(pog.Returned(LoadProjectorLandingsRow), pog.QueryError) {
+  let decoder = {
+    use creature_id <- decode.field(0, decode.int)
+    use faction_enum <- decode.field(1, decode.int)
+    use objective_id <- decode.field(2, decode.int)
+    use world_location2_id <- decode.field(3, decode.int)
+    decode.success(LoadProjectorLandingsRow(
+      creature_id:,
+      faction_enum:,
+      objective_id:,
+      world_location2_id:,
+    ))
+  }
+
+  "-- Every row of the projector_landing table in key order: the one query the load makes
+-- of the table at start (genesis_prime/content/projector_landing). The checks run on
+-- these rows, not in SQL.
+select
+  creature_id,
+  faction_enum,
+  objective_id,
+  world_location2_id
+from projector_landing
+order by creature_id, faction_enum;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_server_proxies` query
 /// defined in `./src/genesis_prime/content/sql/load_server_proxies.sql`.
 ///

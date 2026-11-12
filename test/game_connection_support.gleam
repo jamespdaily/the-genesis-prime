@@ -94,6 +94,7 @@ import map_support
 import message_support
 import place_support
 import planted_table
+import projector_support
 import server_proxy_support
 import spawn_support
 import tutorial_support
@@ -123,6 +124,7 @@ pub fn settings() -> game_connection.Settings {
     numbers: spawn_support.numbers,
     visibility: dict.new(),
     tutorial_chain: tutorial_support.none(),
+    projector_landings: projector_support.landings(),
   )
 }
 

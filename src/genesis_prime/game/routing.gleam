@@ -55,6 +55,7 @@ import genesis_prime/message/cast_objective_ability
 import genesis_prime/message/character_select_start
 import genesis_prime/message/choose_resurrection
 import genesis_prime/message/client_activate_unit
+import genesis_prime/message/client_control_echoed
 import genesis_prime/message/client_option
 import genesis_prime/message/client_side_interaction_result
 import genesis_prime/message/create_character_carrier
@@ -268,6 +269,12 @@ const table = [
     fell_below_floor.message_id,
     InsideWorldMessage,
     Movement(movement.FellBelowFloor),
+    [AtWorld],
+  ),
+  Row(
+    client_control_echoed.message_id,
+    InsideWorldMessage,
+    Movement(movement.ControlEchoed),
     [AtWorld],
   ),
   Row(

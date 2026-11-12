@@ -5,7 +5,7 @@
 //// turns its effects into the store's ask and log lines.
 ////
 //// ```
-//// 0x637, 0x63A, 0xD5, 0x63B, 0xF2, 0xFB, 0xFC, inside 0x38C
+//// 0x637, 0x63A, 0xD5, 0x63B, 0xF2, 0xFB, 0xFC, 0x635, inside 0x38C
 ////                         ─▶ take         ─▶ the new state, or a refusal that ends the connection
 //// 0x637, decoded          ─▶ moves, moved ─▶ the place kept, or a refusal that ends the connection
 //// the 60 s timer          ─▶ save         ─▶ Ask store SavePlace(account, character, epoch, sequence, place, health, quests)
@@ -50,6 +50,7 @@
 import genesis_prime/client_connection
 import genesis_prime/game/start_place.{type Facing, type Place, Facing}
 import genesis_prime/message/bit_stream
+import genesis_prime/message/client_control_echoed
 import genesis_prime/message/fall_value
 import genesis_prime/message/fell_below_floor
 import genesis_prime/message/float32.{type Bits}
@@ -95,6 +96,8 @@ pub type Message {
   Fell
   /// 0x00FC, a fall below the floor.
   FellBelowFloor
+  /// 0x0635, the client's answer to a 0x636, carrying its value back.
+  ControlEchoed
 }
 
 /// What the store's answer to a save says, for the game connection's rule to
@@ -307,6 +310,10 @@ pub type Taken {
   /// the zone's welcome compares with the new (genesis_prime/game/zone_welcome) and
   /// zone chat does not read.
   Reported(state: State, world_zone_id: Int, by: ReportedBy)
+  /// An accepted 0x0635: the state it leaves, which it does not change, and the value
+  /// the client gives back (opcode.0x635), which tells whether the client holds the
+  /// 0x636 the server's last move sent (genesis_prime/game/in_world_move `echoed`).
+  Echoed(state: State, echo_value: Int)
   /// An accepted 0x0637: the state it leaves, the place the player now stands
   /// at in the world's frame (`place`), the commands it sent that are relayed,
   /// in the order sent with their bits, and the kinds of those that are not
@@ -454,16 +461,23 @@ pub fn take(
       fell_below_floor.decode(body)
       |> undecoded(fell_below_floor.message_id)
       |> result.replace(Kept(state))
+    ControlEchoed ->
+      client_control_echoed.decode(body)
+      |> undecoded(client_control_echoed.message_id)
+      |> result.map(fn(decoded) {
+        Echoed(state:, echo_value: decoded.echo_value)
+      })
   }
 }
 
-/// A 0x637 of a dead player's client, whose controlled unit is its ghost: decoded
-/// and checked as `take` checks the body's, from the body's footing `state`, so a
-/// body the client's reader would refuse, or a command its code never sends, is
-/// the refusal; else dropped. The client writes the ghost's moves as the body's
-/// and expects no answer (`ghost.movement`, `opcode.0x637`), and the body stays
+/// A 0x637 that is dropped: a dead player's client, whose controlled unit is its
+/// ghost, or a client that has not yet taken the server's move of its player.
+/// It is decoded and checked as `take` checks the body's, from the body's footing
+/// `state`, so a body the client's reader would refuse, or a command its code never
+/// sends, is the refusal; else dropped. The client writes the ghost's moves as the
+/// body's and expects no answer (`ghost.movement`, `opcode.0x637`), and the body stays
 /// where it fell.
-pub fn ghost_moved(
+pub fn dropped_moved(
   state state: State,
   body body: BitArray,
 ) -> Result(Nil, Refusal) {

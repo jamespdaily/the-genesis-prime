@@ -22,13 +22,17 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/content
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_kind as content_creature_kind
+import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/zone_welcome as content_zone_welcome
+import genesis_prime/game/activate
 import genesis_prime/game/class_resource
+import genesis_prime/game/projector
 import genesis_prime/game/spell_plan
+import genesis_prime/game/start_place
 import genesis_prime/game/zone_welcome
 import genesis_prime/migration
 import genesis_prime/readiness
@@ -464,6 +468,37 @@ pub fn the_tutorial_chain_loads_from_the_migration_test() -> Nil {
   assert tutorial_support.order(chain:, faction_enum: 1)
     == [10_521, 10_532, 10_524, 10_533]
     as "migration 0031's Dominion rows, the same four quests of the Dominion"
+}
+
+pub fn the_projector_landings_load_from_the_migration_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil)
+  let landings = content_projector_landing.landings(key:)
+  let zone_of = fn(creature, faction) {
+    let assert Ok(place) =
+      projector.landing(
+        landings:,
+        creature_id: Creature2Id(creature),
+        faction_id: faction,
+        link: activate.OpenLink,
+      )
+      as "migration 0032 seeds a landing for each projector and faction"
+    start_place.world_zone_id(place)
+  }
+  assert [
+      zone_of(73_735, spawn.exile_faction),
+      zone_of(73_735, spawn.dominion_faction),
+      zone_of(73_741, spawn.exile_faction),
+      zone_of(73_741, spawn.dominion_faction),
+      zone_of(73_743, spawn.exile_faction),
+      zone_of(73_743, spawn.dominion_faction),
+      zone_of(73_745, spawn.exile_faction),
+      zone_of(73_745, spawn.dominion_faction),
+    ]
+    == [5967, 5967, 5969, 5969, 5968, 5968, 5998, 5999]
+    as "WorldLocation2 51615, 51617, 51616 and the Exile's 51658 and the Dominion's 51657: the Combat, Housing, Mission and Cryo projectors' zones"
 }
 
 pub fn a_server_proxy_row_that_cannot_be_planned_stops_the_load_naming_each_test() -> Nil {

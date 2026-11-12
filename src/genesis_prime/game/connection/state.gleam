@@ -16,6 +16,7 @@ import genesis_prime/game/inventory
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite.{type Prerequisite}
+import genesis_prime/game/projector
 import genesis_prime/game/quest_log
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/server_proxy.{type ServerProxies}
@@ -104,6 +105,10 @@ pub type Settings {
     /// 3460 and one whose server-completed chain quest is done is given the next
     /// (genesis_prime/game/tutorial).
     tutorial_chain: Chain,
+    /// Where each of the training simulation's projectors puts a player, from the
+    /// content load (genesis_prime/content/projector_landing): the cast's go reads it
+    /// (genesis_prime/game/projector).
+    projector_landings: projector.Landings,
   )
 }
 

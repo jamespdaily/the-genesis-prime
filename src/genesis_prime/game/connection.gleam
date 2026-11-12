@@ -30,7 +30,8 @@
 ////       Characters(rows)       ◀─ 0x0036, 0x0117, as above
 //// in the world, inside 0x038C: 0x637, 0x63A, 0xD5, 0x63B, 0xF2, 0xFB, 0xFC
 ////                              ─▶ the movement keeps the place or refuses a command
-////                                 (genesis_prime/game/movement); 0x635 is logged as unhandled
+////                                 (genesis_prime/game/movement); 0x635 lifts the fence of a move
+////                                 (genesis_prime/game/in_world_move)
 //// 0x244{0x038C{0xBF 1}}        ─▶ in the world, the camp runs  ◀─ 0x3DC{0x0092 countdown, cancel 0, bonuses 0}
 //// 0x244{0x038C{0xBF 0}}        ─▶ the camp is cleared; nothing is written
 //// 0x244{0x038C{0xC0}}          ─▶ camp finished; the save timer is cancelled  ─▶ store: SavePlace(account, character, epoch, sequence, place, health)

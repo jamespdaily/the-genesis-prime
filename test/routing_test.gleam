@@ -41,6 +41,7 @@ const movement_rows = [
   #(0x00F2, movement.TerrainReady),
   #(0x00FB, movement.Fell),
   #(0x00FC, movement.FellBelowFloor),
+  #(0x0635, movement.ControlEchoed),
 ]
 
 const camp_rows = [#(0x00BF, camp.CampAsked), #(0x00C0, camp.CampOver)]
@@ -106,9 +107,8 @@ pub fn the_messages_in_the_clients_wrapper_are_rows_with_the_stages_that_take_th
 
 pub fn a_message_with_no_row_is_taken_at_no_stage_either_way_test() -> Nil {
   use <- owned_test.run(5000)
-  // 0x0635 is the client's echo of 0x0636, and 0x082D and 0x07CC are messages the
-  // game connection's tests log as unhandled.
-  list.each([0x0635, 0x07CC, 0x082D], fn(id) {
+  // 0x082D and 0x07CC are messages the game connection's tests log as unhandled.
+  list.each([0x07CC, 0x082D], fn(id) {
     list.each(stages, fn(stage) {
       assert routing.route(stage, OnItsOwn, id) == Error(Nil)
       assert routing.route(stage, InsideWorldMessage, id) == Error(Nil)

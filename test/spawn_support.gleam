@@ -11,6 +11,7 @@ import database_support
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
+import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
@@ -40,6 +41,7 @@ import gleam/list
 import gleam/option
 import owned_key
 import place_support
+import projector_support
 import rating_support
 import server_proxy_support
 import tutorial_support
@@ -521,6 +523,7 @@ fn put_worlds(
   content_server_proxy.put(key:, proxies: server_proxy_support.none())
   content_zone_welcome.put(key:, welcomes: zone_welcome_support.none())
   content_tutorial_quest.put(key:, chain: tutorial_support.none())
+  content_projector_landing.put(key:, landings: projector_support.none())
   content_vendor.put(key:, vendors: vendor.none())
   content_creature_kind.put(
     key:,

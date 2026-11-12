@@ -15,6 +15,7 @@ import fact_file
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/character_select_start.{CharacterSelectStart}
+import genesis_prime/message/client_control_withdrawn.{ClientControlWithdrawn}
 import genesis_prime/message/client_wrapper.{ClientWrapper}
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
@@ -36,6 +37,7 @@ import genesis_prime/message/vendor_item.{VendorItem}
 import genesis_prime/message/vendor_items.{VendorItems}
 import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
 import genesis_prime/message/vendor_tab.{VendorTab}
+import genesis_prime/message/world_loading_screen_shown.{WorldLoadingScreenShown}
 import genesis_prime/message/world_message.{WorldMessage}
 import gleam/list
 import message_support
@@ -324,6 +326,32 @@ pub fn realm_select_start_has_an_empty_body_test() -> Nil {
     value: RealmSelectStart,
     encode: realm_select_start.encode,
     decode: realm_select_start.decode,
+  )
+}
+
+pub fn the_loading_screen_message_is_0x83c_with_an_empty_body_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert world_loading_screen_shown.message_id == 2108
+    as "opcode.0x83c: registered at 0x14006e24a mov edx, 0x83c (2108)"
+  message_support.assert_vector(
+    name: "opcode.0x83c",
+    body: <<>>,
+    value: WorldLoadingScreenShown,
+    encode: world_loading_screen_shown.encode,
+    decode: world_loading_screen_shown.decode,
+  )
+}
+
+pub fn the_control_withdrawn_message_is_0x639_with_an_empty_body_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert client_control_withdrawn.message_id == 1593
+    as "opcode.0x639: registered at 0x1400a86f1, the reader ReadEmptyBody (1593)"
+  message_support.assert_vector(
+    name: "opcode.0x639",
+    body: <<>>,
+    value: ClientControlWithdrawn,
+    encode: client_control_withdrawn.encode,
+    decode: client_control_withdrawn.decode,
   )
 }
 

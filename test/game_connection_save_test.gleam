@@ -307,18 +307,6 @@ pub fn a_movement_message_sent_on_its_own_and_not_inside_0x038c_is_logged_as_unh
   })
 }
 
-pub fn the_clients_0x0635_is_still_logged_as_unhandled_in_the_world_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let #(_, taken) =
-    game_connection_support.read(
-      game_connection_support.in_world(),
-      game_connection_support.world_message(0x0635, <<0, 0, 0, 0>>),
-    )
-  assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x0635))]
-    as "opcode.0x635 answers 0x636 and is no part of the move step"
-  assert !support.stops(taken)
-}
-
 // ---- every 60 s ----
 
 pub fn the_save_timer_starts_when_the_player_enters_the_world_test() -> Nil {
