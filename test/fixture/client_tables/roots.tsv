@@ -428,6 +428,7 @@ QuestObjective	8781	objective 0 of quest 5855	game_wire_checklist_test
 QuestObjective	8782	type 14 checklist, TargetGroup 2766, count 5	checklist_index_test, game_wire_checklist_test
 TargetGroup	14425	type 1 group of Creature2 73500	checklist_index_test
 TargetGroup	14368	type 1 group of Creature2 73422	checklist_index_test, objective_checklist_test
+TargetGroup	14369	type 1 group of Creature2 73662, the targets of the type 18 objective 21332 of quest 10525	game_wire_test
 TargetGroup	2766	type 1 group of Creature2 26016	checklist_index_test, game_wire_checklist_test
 Creature2	73500	Primal Manifestation, three spawns in World 3460, no activate spell	checklist_index_test
 Creature2	73422	creature of the type 18 objectives 21319 and 21378	checklist_index_test, objective_checklist_test

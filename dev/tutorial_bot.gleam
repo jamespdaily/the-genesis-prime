@@ -621,7 +621,18 @@ fn talk_for_objective(
   let bot = approach(bot:, at:)
   let #(talked, have) = quest_bot.talk(game: bot.game, have: bot.have, unit_id:)
   let bot = took(bot:, frames: talked.frames, have:)
-  Ok(Bot(..bot, spent: set.insert(bot.spent, unit_id)))
+  let bot = Bot(..bot, spent: set.insert(bot.spent, unit_id))
+  case talked.progress {
+    [] ->
+      Error(Blocked(
+        "the talk to unit "
+        <> int.to_string(unit_id)
+        <> " of Creature2 "
+        <> int.to_string(creature)
+        <> " counted for no objective",
+      ))
+    _ -> Ok(bot)
+  }
 }
 
 /// Opens the receiver's dialog and turns the quest in, with no reward chosen.

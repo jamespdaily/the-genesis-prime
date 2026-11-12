@@ -49,6 +49,7 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/game/cast
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/movement
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
@@ -7497,6 +7498,7 @@ fn quest_rows(
 }
 
 pub fn a_bot_creates_an_exile_and_plays_the_tutorial_to_the_northern_wilds_landing_test() -> Nil {
+  // The whole path, every quest and fight, takes about 114 s of wall time on an idle machine.
   use <- owned_test.run(300_000)
   use tables <- on_rows_with_turrets_that_never_deflect()
   let time = driven_time.new()
@@ -7586,6 +7588,8 @@ pub fn a_bot_creates_an_exile_and_plays_the_tutorial_to_the_northern_wilds_landi
     && entered.position_y == float32.to_bits(-665.9780883789062)
     && entered.position_z == float32.to_bits(-5165.10009765625)
     as "WorldLocation2 42074, the landing of Departures Terminal 73606: world 426 at (4098.16015625, -665.9780883789062, -5165.10009765625)"
+  // The quest log is saved with the player when the save timer fires.
+  driven_time.advance(time:, ms: movement.save_period_ms)
   event_wait.until("the store holds the quest log the bot played", fn() {
     quest_rows(pool:, character_id: created.character_id)
     == [
