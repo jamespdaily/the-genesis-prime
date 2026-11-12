@@ -14,7 +14,9 @@
 ////   counts (`departures`, tested in `objective_test`).
 
 import client_tables
-import genesis_prime/game/objective.{SendProgress, SendState, Used}
+import genesis_prime/game/objective.{
+  CompleteByServer, SendProgress, SendState, Used,
+}
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
 import genesis_prime/table/creature2
@@ -184,7 +186,7 @@ fn counts_once(
   assert list.filter(second.effects, fn(effect) {
       case effect {
         SendProgress(objective_index:, ..) -> objective_index == index
-        SendState(..) -> False
+        SendState(..) | CompleteByServer(..) -> False
       }
     })
     == []

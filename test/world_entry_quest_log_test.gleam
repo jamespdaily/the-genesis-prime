@@ -365,3 +365,68 @@ pub fn a_holocrypt_join_sends_the_button_of_each_open_cast_objective_test() -> N
     == button_body()
     as "0x1403ba4a0: the 0xAD in the world empties the shortcuts, so the join sends {40471, kind 2, objective 13884, add 1} again"
 }
+
+pub fn a_play_entry_with_an_achieved_quest_no_creature_receives_queues_its_completion_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 1857 (flags 0, no creature receives it) is saved Achieved; quest 10520 is saved
+  // Achieved too, but Dorian Walker (Creature2 74812) receives it
+  // (`table_rows -- Creature2 questIdReceive00=10520`). The client
+  // takes both in 0x035F as Achieved, and the server's queue holds the first alone.
+  let tables = character_tables.shared()
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  let #(effects, entered) =
+    world_entry_support.entry_at(
+      tables:,
+      character:,
+      items: [],
+      quests: [
+        quest_support.active(
+          quest_id: 1857,
+          state: 2,
+          placeholder: 0,
+          tracked: False,
+          done_mask: 1,
+          progress: [1],
+        ),
+        quest_support.active(
+          quest_id: 10_520,
+          state: 2,
+          placeholder: 0,
+          tracked: False,
+          done_mask: 0b11111,
+          progress: [7, 1, 1, 1, 1],
+        ),
+      ],
+      now: world_entry_support.now(),
+    )
+  assert entered.completing == [1857]
+    as "the quest the server completes is queued, the one a creature receives is not"
+  let achieved =
+    list.map(
+      quest_log_of(frames: world_entry_support.frames_of(effects:)).active,
+      fn(quest) { #(quest.quest_id, quest.state) },
+    )
+  assert achieved == [#(1857, 2), #(10_520, 2)]
+    as "the client is told both Achieved; the completion is made after the entry, so it is no part of the entry's frames"
+}
+
+pub fn a_play_entry_with_an_accepted_quest_queues_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  let #(_, entered) =
+    world_entry_support.entry_at(
+      tables:,
+      character:,
+      items: [],
+      quests: [
+        quest_support.accepted(quest_id: 1857, progress: [0]),
+        quest_support.completed(quest_id: 5859, at: 1_745_000_000),
+      ],
+      now: world_entry_support.now(),
+    )
+  assert entered.completing == []
+    as "an Accepted quest and a Completed one wait for no completion"
+}

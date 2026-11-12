@@ -182,28 +182,56 @@ fn told(
   }
   let buttons =
     objective.buttons(log: advanced.log, tables: session.settings.tables)
+  // The server's completion of a quest sends nothing here: it is queued once, and
+  // `connection/quest_turn_in.completing` takes it when the connection is back in the
+  // world.
   let session =
     connection_state.with_entered(session:, change: fn(entered) {
-      world_entry.Entered(..entered, quests: advanced.log, buttons:)
+      world_entry.Entered(
+        ..entered,
+        quests: advanced.log,
+        buttons:,
+        completing: list.fold(
+          advanced.effects,
+          entered.completing,
+          fn(queued, effect) {
+            case effect {
+              objective.CompleteByServer(quest_id:) ->
+                case list.contains(queued, quest_id) {
+                  True -> queued
+                  False -> list.append(queued, [quest_id])
+                }
+              objective.SendProgress(..) | objective.SendState(..) -> queued
+            }
+          },
+        ),
+      )
     })
   #(
     session,
     list.flatten([
-      list.map(advanced.effects, fn(effect) {
-        connection_state.to_client(session, case effect {
+      list.filter_map(advanced.effects, fn(effect) {
+        case effect {
           objective.SendProgress(quest_id:, objective_index:, progress:) ->
-            connection_frames.quest_objective_progress_frame(
-              quest_id:,
-              objective_index:,
-              progress:,
-            )
+            Ok(connection_state.to_client(
+              session,
+              connection_frames.quest_objective_progress_frame(
+                quest_id:,
+                objective_index:,
+                progress:,
+              ),
+            ))
           objective.SendState(quest_id:, state:) ->
-            connection_frames.quest_state_frame(
-              quest_id:,
-              state:,
-              objective_id: 0,
-            )
-        })
+            Ok(connection_state.to_client(
+              session,
+              connection_frames.quest_state_frame(
+                quest_id:,
+                state:,
+                objective_id: 0,
+              ),
+            ))
+          objective.CompleteByServer(..) -> Error(Nil)
+        }
       }),
       // The buttons that closed are taken away and those that opened are given, after
       // the progress and state that closed or opened them.

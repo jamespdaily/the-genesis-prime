@@ -1093,3 +1093,236 @@ pub fn a_turn_in_with_no_credits_sends_no_gain_test() -> Nil {
   assert sent_ids(effects: then) == [quest_state.message_id]
     as "opcode.0xdd: with no credits given there is no gain to show, and no total changed"
 }
+
+// The server's completion of a quest no creature receives (`quest_turn_in.completed_by_server`).
+// Evidence: `Quest2.10513.completion` says the server decides when a quest with no giver
+// ends. In the client's rows quest 2417 (flags 8) and quest 2909 (flags 8, two reward
+// choices and a fixed item) have no receiver; quest 5859 has one (Creature2 26071), which
+// `support.unreceived_5859` clears where a test needs the quest and its rewards.
+
+/// The same asserts as `assert_refused` for a server completion: one warning and nothing
+/// sent, a debug line the second time.
+fn assert_server_refused(
+  scene scene: support.Scene,
+  tables tables: table_store.Tables,
+  because because: String,
+) -> Nil {
+  let #(effects, logged) = support.server_refused(scene:, tables:)
+  let assert [Log(level: LogWarning, ..)] = effects
+    as { because <> ": a warning and nothing sent" }
+  assert set.size(logged) == 1 as { because <> ": one reason is now logged" }
+  let #(again, still) =
+    support.server_refused(support.Scene(..scene, logged:), tables:)
+  let assert [Log(level: LogDebug, ..)] = again
+    as { because <> ": the same reason is a debug line the second time" }
+  assert still == logged as { because <> ": no new reason" }
+}
+
+pub fn a_quest_no_creature_receives_is_completed_by_the_server_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 5859 (flags 0, no receiver once Creature2 26071's is cleared) has the fixed
+  // Quest2Reward rows 4819 and 4821: Item2 81917 and 29661. At level 4 it pays
+  // trunc(4 ^ 1.93 x 10 + 0.5) = 145 credits (GameFormula 530, `0x1405542b0`).
+  use tables <- support.with_changes(changes: [support.unreceived_5859()])
+  let scene = support.scene(quest_id: 5859)
+  let #(turn_in, effects) = support.server_asked(scene:, tables:)
+  assert turn_in.quest_id == 5859
+  assert rows_of(log: turn_in.log)
+    == [
+      QuestRow(
+        quest_id: 5859,
+        state: 3,
+        completed_at: Some(1_700_000_000),
+        active: None,
+      ),
+    ]
+    as "the log holds the quest Completed at the Unix second of the completion (0x1405fbdc0.state_3)"
+  assert list.map(turn_in.placed, fn(placed) { placed.item2_id })
+    == [Item2Id(81_917), Item2Id(29_661)]
+    as "the fixed items of its reward rows"
+  assert turn_in.credits_after == 145
+  assert effects == [] as "no reward kind is left out"
+}
+
+pub fn a_server_completion_gives_the_same_turn_in_as_a_0x35d_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use with_receiver <- support.with_changes(changes: [support.receiving(5859)])
+  use unreceived <- support.with_changes(changes: [support.unreceived_5859()])
+  let scene =
+    support.Scene(..support.scene(quest_id: 5859), credits: 1000, level: 4)
+  let #(by_server, server_effects) =
+    support.server_asked(scene:, tables: unreceived)
+  let #(by_walker, walker_effects) =
+    support.asked(scene:, tables: with_receiver)
+  assert by_server == by_walker
+    as "the rewards, the credits, the experience and the log are the turn-in at Dorian Walker's"
+  assert server_effects == walker_effects
+}
+
+pub fn a_contract_is_not_completed_by_the_server_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Flag 0x80000 is a quest of the contracts manager (`Contract:Complete` `0x1406a3ba0`
+  // sends its turn-in).
+  use tables <- support.with_changes(changes: [
+    support.unreceived_5859(),
+    #("Quest2", 5859, [#("flags", Integer(0x80000))]),
+  ])
+  assert_server_refused(
+    scene: support.scene(quest_id: 5859),
+    tables:,
+    because: "a contract",
+  )
+}
+
+pub fn a_quest_the_communicator_turns_in_by_row_is_not_completed_by_the_server_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Flag 0x10000 is turned in over the communicator (`0x140553030`), which the client
+  // sends 0x35D for.
+  use tables <- support.with_changes(changes: [
+    support.unreceived_5859(),
+    #("Quest2", 5859, [#("flags", Integer(0x10000))]),
+  ])
+  assert_server_refused(
+    scene: support.scene(quest_id: 5859),
+    tables:,
+    because: "a quest the communicator turns in by row",
+  )
+}
+
+pub fn a_quest_a_creature_receives_is_not_completed_by_the_server_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 10520 is Dorian Walker's (Creature2 74812's questIdReceive00): the player turns
+  // it in at him.
+  assert_server_refused(
+    scene: support.scene(quest_id: tutorial_quest),
+    tables: tables(),
+    because: "a quest a creature receives",
+  )
+}
+
+pub fn a_flag_8_quest_with_no_receiver_is_completed_by_the_server_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 2417 (flags 8) has no receiver, and the communicator's flag-8 path needs a
+  // receiver (`communicator.turn_in`), so nothing else completes it. It has no reward row.
+  let #(turn_in, _) =
+    support.server_asked(scene: support.scene(quest_id: 2417), tables: tables())
+  assert turn_in.placed == [] as "no reward row, so nothing to place"
+  assert rows_of(log: turn_in.log)
+    == [
+      QuestRow(
+        quest_id: 2417,
+        state: 3,
+        completed_at: Some(1_700_000_000),
+        active: None,
+      ),
+    ]
+}
+
+pub fn a_server_completion_of_a_quest_not_achieved_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- support.with_changes(changes: [support.unreceived_5859()])
+  let scene = support.scene(quest_id: 5859)
+  list.each(
+    [
+      #("Accepted, objectives to do", [quest_support.untouched(quest_id: 5859)]),
+      #("Completed", [quest_support.completed(quest_id: 5859, at: 1000)]),
+      #("Known (4 to 7)", [quest_support.known(5859, 5)]),
+      #("not in the log", []),
+    ],
+    fn(case_) {
+      assert_server_refused(
+        scene: support.Scene(..scene, log: case_.1),
+        tables:,
+        because: case_.0,
+      )
+    },
+  )
+}
+
+pub fn a_full_bag_refuses_a_server_completion_with_0x106_code_27_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Item2 179 holds one to a stack, so a bag of them has no room in its stacks; quest
+  // 5859 gives two stacks (Item2 81917 and 29661).
+  use tables <- support.with_changes(changes: [support.unreceived_5859()])
+  let filled = fn(slots) {
+    int.range(from: 0, to: slots, with: [], run: fn(items, index) {
+      [
+        support.in_bag(guid: 700 + index, item2_id: 179, index:, count: 1),
+        ..items
+      ]
+    })
+  }
+  let scene = fn(slots) {
+    support.Scene(
+      ..support.scene(quest_id: 5859),
+      items: filled(slots),
+      logged: set.from_list(["kept"]),
+    )
+  }
+  let #(effects, logged) = support.server_refused(scene: scene(15), tables:)
+  assert effects == [Refuse(code: 27)]
+    as "0x106 code 27, Item_InventoryFull, and nothing else"
+  assert logged == set.from_list(["kept"]) as "the log keys are as they were"
+  let #(_, _) = support.server_asked(scene: scene(14), tables:)
+  Nil
+}
+
+pub fn a_server_completion_of_a_quest_with_a_reward_choice_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 2909 (flags 8, no receiver) has two item choices (Quest2Reward 2368 and 2369,
+  // flags 1) and a fixed item (2370); no dialog lets the player pick, and a completion is
+  // made with reward id 0.
+  let #(effects, logged) =
+    support.server_refused(
+      scene: support.scene(quest_id: 2909),
+      tables: tables(),
+    )
+  let assert [Log(level: LogWarning, text:)] = effects
+    as "one log line and nothing sent"
+  assert string.contains(text, "reward id 0")
+    as "the line names the reward id the completion carries"
+  assert logged == set.from_list(["reward choice"])
+}
+
+pub fn a_server_completion_answered_saved_ends_with_0x35c_state_3_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- support.with_changes(changes: [support.unreceived_5859()])
+  let #(turn_in, _) =
+    support.server_asked(scene: support.scene(quest_id: 5859), tables:)
+  let made =
+    list.index_map(turn_in.placed, fn(one, index) {
+      let assert [
+        NewStack(location:, bag_index:, stack_count:, random_stats: 0),
+      ] = one.make
+        as "one stack of each, the Item2s' counts being 1"
+      HeldItem(
+        item_guid: 900 + index,
+        item2_id: one.item2_id,
+        location:,
+        bag_index:,
+        stack_count:,
+        random_stats: 0,
+      )
+    })
+  let assert quest_turn_in.Saved(rewards:, then:, ..) =
+    quest_turn_in.answered(
+      turn_in:,
+      items: [],
+      currencies: support.credits(total: 0),
+      answer: store.TurnedIn(credits: 145, made:),
+    )
+    as "the store's answer is saved"
+  assert sent_ids(effects: rewards) == [0x0111, 0x0111]
+    as "opcode.0x111: an item added for each stack made"
+  assert sent_ids(effects: then)
+    == [
+      currency_changed.message_id,
+      currency_gained.message_id,
+      quest_state.message_id,
+    ]
+    as "opcode.0x919 and opcode.0xdd for the credits, then opcode.0x35c last"
+  let assert Ok(Send(last)) = list.last(then)
+  assert quest_state.decode(last.body)
+    == Ok(QuestState(quest_id: 5859, state: 3, objective_id: 0))
+    as "opcode.0x35c: the quest in state 3 with objective 0"
+}

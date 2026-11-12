@@ -433,10 +433,13 @@ fn settled(
   now now: Now,
 ) -> #(State, ConnectionStep(Request)) {
   client_connection.settle(
-    handled: visibility_check.rechecked(handled: connection_casting.persisted(
-      handled:,
+    handled: connection_quest_turn_in.completing(
+      handled: visibility_check.rechecked(handled: connection_casting.persisted(
+        handled:,
+        now:,
+      )),
       now:,
-    )),
+    ),
     flow: flow(now),
     carried: [],
   )
@@ -467,14 +470,19 @@ fn flow(now: Now) -> client_connection.Flow(Session, Frame, FrameError, State) {
     pending: fn(session: Session) { session.pending },
     take: frame.take,
     taking: fn(session, whole, rest) {
-      visibility_check.rechecked(handled: connection_casting.persisted(
-        handled: handle(
-          session: Session(..session, pending: rest),
-          now:,
-          frame: whole,
+      connection_quest_turn_in.completing(
+        handled: visibility_check.rechecked(
+          handled: connection_casting.persisted(
+            handled: handle(
+              session: Session(..session, pending: rest),
+              now:,
+              frame: whole,
+            ),
+            now:,
+          ),
         ),
         now:,
-      ))
+      )
     },
     refused: fn(session, error) {
       connection_state.end_for(
@@ -965,11 +973,14 @@ fn take_held(
   case session.held_sends, connection_state.held_in_the_world(session.status) {
     [#(stay, sent), ..rest], Some(_) ->
       case
-        stay_sent(
-          session: Session(..session, held_sends: rest),
+        connection_quest_turn_in.completing(
+          handled: stay_sent(
+            session: Session(..session, held_sends: rest),
+            now:,
+            stay:,
+            sent:,
+          ),
           now:,
-          stay:,
-          sent:,
         )
       {
         Continue(session, more) ->
@@ -1087,15 +1098,16 @@ fn answered_by_status(
   }
 }
 
-/// What another process sent for a stay of the player (`ForStay`), taken at this
-/// one entry point: only while the player is in the world, and only when the stay
-/// is the player's own (genesis_prime/world_map/stay). While the connection waits
-/// an ask is out whose answer returns the connection to the world
-/// (`holds_map_messages`) it is held and taken here again once the answer has. Any other is dropped: it was
-/// sent for an earlier stay, before a camp or the Holocrypt, and reaches a later
-/// one whose client holds none of the earlier units and whose creatures and
-/// viewers are others, or it reaches no stay at all. A dropped strike finds no
-/// answer, and the creature's deadline leaves the player out.
+/// What another process sent for a stay of the player (`ForStay`), taken at
+/// this one entry point: only while the player is in the world, and only when
+/// the stay is the player's own (genesis_prime/world_map/stay). While the
+/// connection waits for an ask whose answer returns it to the world
+/// (`holds_map_messages`), the message is held and taken here again once the
+/// answer has returned the connection to the world. Any other is dropped: it
+/// was sent for an earlier stay, before a camp or the Holocrypt, and reaches a
+/// later one whose client holds none of the earlier units and whose creatures
+/// and viewers are others, or it reaches no stay at all. A dropped strike finds
+/// no answer, and the creature's deadline leaves the player out.
 fn stay_sent(
   session session: Session,
   now now: Now,

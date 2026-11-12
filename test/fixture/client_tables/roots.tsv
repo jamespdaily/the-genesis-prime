@@ -719,3 +719,86 @@ QuestObjective	3018	type 11 cast objective of Spell4 5725	cast_shortcut_test
 Creature2	33885	a creature whose activate time (1500) differs from its first column's spell castTime (4000)	cast_activate_test
 Spell4	46055	the ungated first activate spell of Creature2 33885 (castTime 4000)	cast_activate_test
 Creature2	46497	a creature whose four activate columns are all gated by Exile-only (base faction 166) prerequisites and whose activateSpellCastTime is 3000	cast_activate_test
+Creature2	5417	receiver of quest 2042, 2043, 2044, 2045, 2046, 2047, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	9611	receiver of quest 3167, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	10001	receiver of quest 3244, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	10278	receiver of quest 3297, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	12207	receiver of quest 3655, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	12737	receiver of quest 3668, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	13800	receiver of quest 3915, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	13802	receiver of quest 3918, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	13823	receiver of quest 4743, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	14391	receiver of quest 4705, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	16206	receiver of quest 4361, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	16814	receiver of quest 4512, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	17035	receiver of quest 4628, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	17364	receiver of quest 4294, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	17422	receiver of quest 4628, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	17744	receiver of quest 4791, 5259, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	17946	receiver of quest 4961, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	18028	receiver of quest 4851, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	18029	receiver of quest 4832, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	18415	receiver of quest 5261, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	18435	receiver of quest 4975, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	18476	receiver of quest 5261, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	20303	receiver of quest 4743, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	21780	receiver of quest 4975, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	21844	receiver of quest 4975, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	22453	receiver of quest 5364, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	22464	receiver of quest 5452, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	23103	receiver of quest 3297, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	24031	receiver of quest 5531, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	24064	receiver of quest 5718, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	24363	receiver of quest 5578, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	26025	receiver of quest 5857, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	26071	receiver of quest 5859, 6789, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	26119	receiver of quest 5922, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	26963	receiver of quest 7415, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	27697	receiver of quest 9682, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	27725	receiver of quest 6305, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	28005	receiver of quest 6372, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	28742	receiver of quest 6431, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	28789	receiver of quest 6306, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	29738	receiver of quest 6276, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	30343	receiver of quest 6607, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	30683	receiver of quest 6723, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	30691	receiver of quest 6674, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	32475	receiver of quest 6961, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	33929	receiver of quest 5622, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	34754	receiver of quest 7153, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	34936	receiver of quest 4294, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	36247	receiver of quest 7540, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	36309	receiver of quest 7426, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	37338	receiver of quest 7617, 7618, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	37927	receiver of quest 7908, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	37993	receiver of quest 7833, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	38363	receiver of quest 7757, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	38380	receiver of quest 8539, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	38410	receiver of quest 7667, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	43059	receiver of quest 7413, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	49595	receiver of quest 8935, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	53435	receiver of quest 9110, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	53532	receiver of quest 10528, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	53533	receiver of quest 10528, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	53619	receiver of quest 10530, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	53620	receiver of quest 10530, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	54236	receiver of quest 9122, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	54240	receiver of quest 9161, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	58369	receiver of quest 9376, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	58486	receiver of quest 9207, 9299, 9428, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	59930	receiver of quest 9494, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	62909	receiver of quest 9578, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	66068	receiver of quest 9713, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	66069	receiver of quest 9714, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	66070	receiver of quest 9715, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	66251	receiver of quest 9682, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	66253	receiver of quest 6276, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	68802	receiver of quest 9793, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	72021	receiver of quest 7540, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	72417	receiver of quest 10415, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	73057	receiver of quest 10502, 10503, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	73421	receiver of quest 10525, 10526, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	74958	receiver of quest 10502, 10503, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	74959	receiver of quest 10502, 10503, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	74960	receiver of quest 10502, 10503, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Creature2	74961	receiver of quest 10502, 10503, so the server does not complete it	quest_turn_in_test, game_connection_departures_test

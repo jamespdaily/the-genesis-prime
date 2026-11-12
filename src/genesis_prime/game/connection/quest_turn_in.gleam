@@ -1,11 +1,15 @@
 //// The player's turn-in of a quest on the game connection (genesis_prime/game/connection): the
 //// client's 0x035D, and the store's answer to the turn-in it asked for. The rule's decisions are
 //// genesis_prime/game/quest_turn_in's, which holds the checks and the rewards; this module carries
-//// them out.
+//// them out. It also completes, for the player, each quest no creature receives once its
+//// objectives are done (`completing`).
 ////
 //// ```
 //// 0x35D ─▶ quest_turn_in.take(entered, picture, body) ─▶ Refused(log once per reason, or 0x106 27)   status stays InWorld
 ////                                                     └▶ Asks(turn_in) ─▶ AskStore(Items(TurnInQuest ...))   status TurningIn(holder, entered, turn_in), frames held
+//// end of each input that goes on with the player in the world, `Entered.completing` not empty
+////    ─▶ quest_turn_in.completed_by_server(head) ─▶ Refused(logged once; the next is taken)
+////                                              └▶ Asks(turn_in) ─▶ the same ask as above; the answer is `answered`'s
 //// store worker: lock_character_for_save, save_place.sql, then turn_in_rewards.sql, one transaction
 ////    ─▶ TurnedIn(credits, made) ─▶ answered: entered.items, entered.currencies and entered.quests updated; then in order
 ////                                  0x111 reason 8 per stack made, a count change per stack grown,
@@ -45,10 +49,14 @@ import genesis_prime/game/vendor_trade as trade_rule
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
-import genesis_prime/step.{type Now, type Outcome}
+import genesis_prime/step.{
+  type ConnectionEffect, type Effect, type Now, type Outcome,
+}
 import genesis_prime/store.{ForItems}
+import genesis_prime/table/loader/store as table_store
 import gleam/list
 import gleam/option.{Some}
+import gleam/set.{type Set}
 
 /// The client's 0x035D, taken from inside 0x038C with the player in the world: a refusal is
 /// written or logged and the player stays in the world; an accepted turn-in asks the store and
@@ -74,15 +82,9 @@ pub fn turn_in_message(
         place: movement.place(state: entered.movement),
       ),
       picture: entered.shown,
-      progress: experience.Progress(
-        experience: entered.experience,
-        level: connection_state.level_of(entered:),
-      ),
+      progress: progress_of(entered:),
       currencies: entered.currencies,
-      item_proficiencies: character_state.item_proficiencies(
-        tables:,
-        class_id: entered.character.class_id,
-      ),
+      item_proficiencies: proficiencies_of(tables:, entered:),
       life: entered.life,
       tables:,
       now_ms: now.monotonic_ms,
@@ -95,46 +97,165 @@ pub fn turn_in_message(
         Session(..session, interaction_logged: logged),
         vendor_trade.effects_of(session:, effects:),
       )
-    Ok(quest_turn_in.Asks(turn_in:, effects:, logged:)) -> {
-      let tables = session.settings.tables
-      let #(link, entropy) =
-        client_connection.draw(
-          session.link,
-          quest_turn_in.entropy_needed(turn_in:, tables:),
-        )
-      let turn_in = quest_turn_in.rolled(turn_in:, tables:, entropy:)
-      let #(advanced, save_sequence) =
-        movement.next_save(state: entered.movement)
-      connection_state.ask(
-        session: Session(
-          ..session,
-          link:,
-          interaction_logged: logged,
-          status: TurningIn(
-            holder:,
-            entered: world_entry.Entered(..entered, movement: advanced),
-            turn_in:,
-          ),
-        ),
+    Ok(quest_turn_in.Asks(turn_in:, effects:, logged:)) ->
+      asking(
+        session:,
         now:,
-        request: client_connection.AskStore(quest_turn_in.request(
-          turn_in:,
-          account_id: holder.account_id,
-          character_id: entered.character_id,
-          session_epoch: movement.session_epoch(state: entered.movement),
-          save_sequence:,
-          place: movement.place(state: entered.movement),
-          health: Some(player_life.saved_health(life: entered.life)),
-          quests: quest_log.rows(log: turn_in.log, now_ms: now.monotonic_ms),
-        )),
+        holder:,
+        entered:,
+        turn_in:,
         before: vendor_trade.effects_of(session:, effects:),
+        logged:,
       )
-    }
     Error(refusal) ->
       connection_state.end_for(
         session:,
         now:,
         text: quest_rule.describe_refusal(refusal:),
+      )
+  }
+}
+
+/// The player's experience and level, as a turn-in reads them.
+fn progress_of(entered entered: world_entry.Entered) -> experience.Progress {
+  experience.Progress(
+    experience: entered.experience,
+    level: connection_state.level_of(entered:),
+  )
+}
+
+/// The item proficiencies of the player's class, as a turn-in reads them.
+fn proficiencies_of(
+  tables tables: table_store.Tables,
+  entered entered: world_entry.Entered,
+) -> Int {
+  character_state.item_proficiencies(
+    tables:,
+    class_id: entered.character.class_id,
+  )
+}
+
+/// The ask for an accepted turn-in, after the effects `before`: the entropy the rewards need is
+/// drawn, the place's save sequence taken and the connection waits in `TurningIn`.
+fn asking(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  turn_in turn_in: quest_turn_in.TurnIn,
+  before before: List(Effect(ConnectionEffect(client_connection.Request))),
+  logged logged: Set(String),
+) -> client_connection.Handled(Session) {
+  let tables = session.settings.tables
+  let #(link, entropy) =
+    client_connection.draw(
+      session.link,
+      quest_turn_in.entropy_needed(turn_in:, tables:),
+    )
+  let turn_in = quest_turn_in.rolled(turn_in:, tables:, entropy:)
+  let #(advanced, save_sequence) = movement.next_save(state: entered.movement)
+  connection_state.ask(
+    session: Session(
+      ..session,
+      link:,
+      interaction_logged: logged,
+      status: TurningIn(
+        holder:,
+        entered: world_entry.Entered(..entered, movement: advanced),
+        turn_in:,
+      ),
+    ),
+    now:,
+    request: client_connection.AskStore(quest_turn_in.request(
+      turn_in:,
+      account_id: holder.account_id,
+      character_id: entered.character_id,
+      session_epoch: movement.session_epoch(state: entered.movement),
+      save_sequence:,
+      place: movement.place(state: entered.movement),
+      health: Some(player_life.saved_health(life: entered.life)),
+      quests: quest_log.rows(log: turn_in.log, now_ms: now.monotonic_ms),
+    )),
+    before:,
+  )
+}
+
+/// What an input decided, with the next quest the server owes the player completed after it
+/// (`Entered.completing`; `quest_turn_in.completed_by_server`): only an input that goes on with
+/// the player in the world takes one, and it takes the oldest. A quest the rule refuses is logged
+/// once and left Achieved in the log, and the next one is taken; one it accepts asks the store
+/// like a turn-in, and the answer goes through `turn_in_answered`. The quests left wait for the
+/// end of that answer's input.
+pub fn completing(
+  handled handled: client_connection.Handled(Session),
+  now now: Now,
+) -> client_connection.Handled(Session) {
+  case handled {
+    Continue(session:, effects:) ->
+      case connection_state.standing(session.status) {
+        connection_state.Present(holder:, entered:) ->
+          case entered.completing {
+            [] -> handled
+            [quest_id, ..rest] -> {
+              let entered = world_entry.Entered(..entered, completing: rest)
+              completed(
+                session: Session(..session, status: InWorld(holder:, entered:)),
+                now:,
+                holder:,
+                entered:,
+                quest_id:,
+                before: effects,
+              )
+            }
+          }
+        connection_state.Greeting
+        | connection_state.Selecting(..)
+        | connection_state.Busy(..) -> handled
+      }
+    client_connection.Asking(..) | client_connection.Done(..) -> handled
+  }
+}
+
+/// The rule's completion of one quest, after the effects `before`: a refusal is logged and the
+/// next quest taken, an accepted one asks the store.
+fn completed(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  quest_id quest_id: Int,
+  before before: List(Effect(ConnectionEffect(client_connection.Request))),
+) -> client_connection.Handled(Session) {
+  let tables = session.settings.tables
+  case
+    quest_turn_in.completed_by_server(
+      quest_id:,
+      asker: connection_quest.asker(session:, entered:),
+      progress: progress_of(entered:),
+      currencies: entered.currencies,
+      item_proficiencies: proficiencies_of(tables:, entered:),
+      tables:,
+      unix_seconds: step.unix_milliseconds(now:) / 1000,
+      logged: session.interaction_logged,
+    )
+  {
+    quest_turn_in.Refused(effects:, logged:) ->
+      completing(
+        handled: Continue(
+          Session(..session, interaction_logged: logged),
+          list.append(before, vendor_trade.effects_of(session:, effects:)),
+        ),
+        now:,
+      )
+    quest_turn_in.Asks(turn_in:, effects:, logged:) ->
+      asking(
+        session:,
+        now:,
+        holder:,
+        entered:,
+        turn_in:,
+        before: list.append(before, vendor_trade.effects_of(session:, effects:)),
+        logged:,
       )
   }
 }

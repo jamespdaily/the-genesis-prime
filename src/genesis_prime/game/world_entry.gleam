@@ -279,7 +279,7 @@ pub opaque type State {
 /// the same game object, which sends none.
 type Entry {
   PlayEntry(character_state: Frame)
-  InWorldEntry
+  InWorldEntry(completing: List(Int))
 }
 
 /// What the store's read of the character leads to.
@@ -370,6 +370,10 @@ pub type Entered {
     /// (genesis_prime/game/objective `buttons`): what the connection last told it with
     /// 0x176, which the next change to the log is told against.
     buttons: Set(objective.Button),
+    /// The quests the server completes for the player once the connection is back in the
+    /// world, each once, in the order they became Achieved or were found Achieved at the
+    /// play's entry (genesis_prime/game/connection/quest_turn_in `completing`).
+    completing: List(Int),
     /// What the worn items give (genesis_prime/game/gear): the connection works it out
     /// again after each change of a worn item and keeps it with the unit, the look and
     /// the properties it gave them.
@@ -759,7 +763,7 @@ pub fn joined(
             |> with_shield_stat(worn:, shield: player_life.shield(life:))
           let unit_id = unit.unit_id
           let CharacterId(character_id_number) = character.character_id
-          let #(quests, buttons, quest_effects) =
+          let #(quests, buttons, completing, quest_effects) =
             quest_log_sent(
               entry:,
               quests:,
@@ -787,6 +791,7 @@ pub fn joined(
               experience:,
               quests:,
               buttons:,
+              completing:,
               gear: worn,
               clock_origin_ms:,
               viewers: dict.new(),
@@ -924,7 +929,7 @@ fn with_bases(
 fn readiness_of(entry entry: Entry) -> Readiness {
   case entry {
     PlayEntry(..) -> ClientLoading
-    InWorldEntry -> InWorldLoading
+    InWorldEntry(..) -> InWorldLoading
   }
 }
 
@@ -945,7 +950,7 @@ fn quest_log_sent(
   numbers numbers: GameNumbers,
   tables tables: table_store.Tables,
   now now: Now,
-) -> #(QuestLog, Set(objective.Button), List(Effect)) {
+) -> #(QuestLog, Set(objective.Button), List(Int), List(Effect)) {
   case entry {
     PlayEntry(..) -> {
       let held =
@@ -962,7 +967,7 @@ fn quest_log_sent(
         ).log
       let #(told, frame) = quest_log.login(log: held, numbers:, tables:, now:)
       let buttons = objective.buttons(log: told, tables:)
-      #(told, buttons, [
+      #(told, buttons, objective.server_completions(log: told, tables:), [
         Send(frame:),
         ..list.map(
           objective.button_changes(held: set.new(), now: buttons),
@@ -970,11 +975,12 @@ fn quest_log_sent(
         )
       ])
     }
-    InWorldEntry -> {
+    InWorldEntry(completing:) -> {
       let buttons = objective.buttons(log: quests, tables:)
       #(
         quests,
         buttons,
+        completing,
         list.map(
           objective.button_changes(held: set.new(), now: buttons),
           fn(change) { Send(frame: button_frame(change:)) },
@@ -1006,7 +1012,7 @@ pub fn button_frame(change change: objective.ButtonChange) -> Frame {
 fn character_state_sent(entry entry: Entry) -> List(Effect) {
   case entry {
     PlayEntry(character_state:) -> [Send(frame: character_state)]
-    InWorldEntry -> []
+    InWorldEntry(..) -> []
   }
 }
 
@@ -1036,7 +1042,7 @@ pub fn rejoining(
     buyback: entered.buyback,
     connection:,
     stay:,
-    entry: InWorldEntry,
+    entry: InWorldEntry(completing: entered.completing),
     tables:,
     visibility:,
   )
