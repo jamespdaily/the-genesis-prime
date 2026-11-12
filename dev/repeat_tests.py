@@ -24,8 +24,9 @@ start, and one `check WARNING:` line says how many runs of each file were done o
 planned. The default is the 15-minute job less about 90 seconds of setup less the 300 seconds
 a run already going at the budget may still take. A run still going after
 GENESIS_REPEAT_RUN_SECONDS (default 300) is killed so the job ends, and is printed as a
-`check WARNING:` line with its file, seed and the command that repeats it; it is not counted
-as a failure. A file whose every test is skipped (or that has none) runs 0 tests; it is
+`check WARNING:` line with its file, seed and the command that repeats it, then its output's
+`check WARNING:` lines (owned_test's name the waits still open) and its last lines; it is not
+counted as a failure. A file whose every test is skipped (or that has none) runs 0 tests; it is
 reported as "not repeated", never as passed, and its later runs do not start.
 
 Each failing run is printed as soon as it ends: its file, seed, why it failed (failing
@@ -175,7 +176,11 @@ def report_failure(outcome: Outcome) -> None:
     print("  output: %s" % outcome.log)
     lines = text.splitlines()
     start = lines.index(FAILURES_MARK) if FAILURES_MARK in lines else max(len(lines) - TAIL_LINES, 0)
-    for line in lines[start:start + EXCERPT_LINES]:
+    print_excerpt(lines[start:start + EXCERPT_LINES])
+
+
+def print_excerpt(lines: list[str]) -> None:
+    for line in lines:
         print("    " + line)
     sys.stdout.flush()
 
@@ -187,13 +192,13 @@ def report_timeout(outcome: Outcome) -> None:
         % (WARNING, run.file, run.seed, outcome.reason, run.file, run.seed),
     )
     # A seed orders the tests but does not replay a hang (the rolls come from the
-    # operating system), so the log's end, where owned_test lists the waits still
-    # open, is the only record of what hung.
+    # operating system), so the log is the only record of what hung: owned_test's
+    # warnings name the waits still open, and output after them can push them out
+    # of the tail.
     assert outcome.log is not None
     lines = outcome.log.read_text(errors="replace").splitlines()
-    for line in lines[-EXCERPT_LINES:]:
-        print("    " + line)
-    sys.stdout.flush()
+    warnings = [line for line in lines[:-TAIL_LINES] if line.startswith(WARNING)]
+    print_excerpt(warnings[-EXCERPT_LINES:] + lines[-TAIL_LINES:])
 
 
 def schedule(files: list[str], runs_per_file: int) -> list[Run]:

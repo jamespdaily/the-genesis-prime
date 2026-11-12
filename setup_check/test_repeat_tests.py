@@ -93,6 +93,8 @@ if [ "$ticket" = "$PLANT_KILLED_ON_START" ]; then
   kill -9 $$
 fi
 if [ "$ticket" = "$PLANT_HANGS_ON_START" ]; then
+  echo "check WARNING: test planted_test:the_hung_test passed its 60000 ms deadline while waiting for: the planted read"
+  for n in $(seq 1 30); do echo "later output $n"; done
   exec sleep 60
 fi
 case "$file" in
@@ -283,6 +285,9 @@ class RepeatTestsTest(PlantedRepeatCase):
         self.assertIn("killed by signal 9", output, "a run with no Failures section is still reported")
         self.assertIn("check WARNING:", output, "a run over its limit is a warning, not a failure")
         self.assertIn("still going after 1 seconds", output)
+        self.assertIn("    check WARNING: test planted_test:the_hung_test", output, "a killed run names its open waits")
+        self.assertIn("    later output 30", output, "a killed run prints its last lines")
+        self.assertNotIn("later output 1\n", output, "only the last lines, not the whole log")
         for row in rows:
             if row not in failing.values():
                 self.assertNotIn(row["seed"], output, "a passing run's seed is not named")
