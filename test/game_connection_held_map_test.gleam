@@ -24,14 +24,18 @@
 
 import character_tables
 import connection_rule_support as support
+import departures_support
 import experience_support
 import fixture_tables
 import game_connection_support as connection_support
+import genesis_prime/account_session.{Claimed}
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, FromMap, FromStore, SentByKill,
+  type Answer, type Message, type Request, FromMap, FromSessions, FromStore,
+  SentByKill,
 }
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/departures
 import genesis_prime/game/experience.{Credit}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/disconnect_reason.{LostUserServer}
@@ -41,11 +45,13 @@ import genesis_prime/message/quest_periodic_reset.{QuestPeriodicReset}
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/step.{
   type ConnectionEvent, type Event, OwnEffect, OwnEvent, StartTimer, TimerFired,
+  TimerId, WatchEnded, WatchId,
 }
 import genesis_prime/store.{HeldItem, ItemsSaved, NewStack}
 import genesis_prime/table/id.{Creature2Id, Faction2Id, Item2Id}
 import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/map.{Join, Left}
+import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/list
 import gleam/option.{None, Some}
@@ -495,15 +501,6 @@ fn restarts_the_save_timer(taken taken: step.ConnectionStep(Request)) -> Bool {
   )
 }
 
-/// The connection after `timer` fired at `ms`.
-fn fired_at(
-  state state: game_connection.State,
-  timer timer: step.TimerId,
-  ms ms: Int,
-) -> #(game_connection.State, step.ConnectionStep(Request)) {
-  connection_support.at(state:, ms:, event: OwnEvent(TimerFired(timer)))
-}
-
 /// The connection after the ask of `taken` was answered with `outcome` at `ms`.
 fn answered_at(
   state state: game_connection.State,
@@ -517,13 +514,6 @@ fn answered_at(
     ms:,
     event: OwnEvent(step.Answered(ask: ask.ask, outcome:)),
   )
-}
-
-/// The 0x35C bodies the step writes, in order.
-fn quest_states(taken taken: step.ConnectionStep(Request)) -> List(BitArray) {
-  connection_support.written(taken:)
-  |> list.filter(fn(frame) { frame.message_id == 0x035C })
-  |> list.map(fn(frame) { frame.body })
 }
 
 /// The Exile of `selling` with quest 1872 (time limit 60,000 ms, a full timer) in its
@@ -666,7 +656,11 @@ pub fn a_save_timer_firing_while_a_buy_waits_saves_the_place_once_the_buy_is_ans
   use <- owned_test.run(10_000)
   use state, taken <- buying
   let #(state, fired) =
-    fired_at(state:, timer: connection_state.save_timer, ms: 2000)
+    connection_support.fired_at(
+      state:,
+      timer: connection_state.save_timer,
+      ms: 2000,
+    )
   assert stays_open(taken: fired)
     as "a timer of the in-world play that fires during the buy does not end the connection"
   assert support.asked(fired) == None
@@ -684,7 +678,11 @@ pub fn a_save_timer_firing_while_a_turn_in_waits_keeps_the_connection_test() -> 
   use <- owned_test.run(10_000)
   use state, taken <- turning_in
   let #(state, fired) =
-    fired_at(state:, timer: connection_state.save_timer, ms: 2000)
+    connection_support.fired_at(
+      state:,
+      timer: connection_state.save_timer,
+      ms: 2000,
+    )
   assert stays_open(taken: fired)
     as "a save timer that fires during the turn-in does not end the connection"
   assert support.asked(fired) == None
@@ -707,14 +705,19 @@ pub fn a_quest_deadline_passing_while_a_sale_waits_botches_the_quest_once_the_sa
   use <- owned_test.run(10_000)
   use state, taken <- selling_with_a_timed_quest
   let #(state, fired) =
-    fired_at(state:, timer: connection_state.quest_deadline_timer, ms: 61_000)
+    connection_support.fired_at(
+      state:,
+      timer: connection_state.quest_deadline_timer,
+      ms: 61_000,
+    )
   assert stays_open(taken: fired)
     as "the deadline timer that fires during the sale does not end the connection"
-  assert quest_states(taken: fired) == [] && support.asked(fired) == None
+  assert connection_support.quest_states(taken: fired) == []
+    && support.asked(fired) == None
     as "the botch waits for the store's answer to the sale"
   let #(_, answered) =
     answered_at(state:, taken:, outcome: sale_saved(), ms: 61_000)
-  assert quest_states(taken: answered) == [botched_1872]
+  assert connection_support.quest_states(taken: answered) == [botched_1872]
     as "quest 1872's time ran out at 61,000 ms: the client is told Botched once"
   // The botch is saved.
   expect_the_place_save_asked(taken: answered)
@@ -764,7 +767,11 @@ pub fn a_save_timer_firing_while_a_departure_leaves_the_map_keeps_the_connection
   assert connection_support.ask_request(leaving)
     == connection_support.leave_asked()
   let #(state, fired) =
-    fired_at(state:, timer: connection_state.save_timer, ms: 2000)
+    connection_support.fired_at(
+      state:,
+      timer: connection_state.save_timer,
+      ms: 2000,
+    )
   assert stays_open(taken: fired) && support.asked(fired) == None
     as "a save timer that fires after the stay's timers were cancelled ends nothing"
   let #(_, joining) =
@@ -788,7 +795,7 @@ pub fn each_in_world_wait_takes_each_timer_without_ending_the_connection_test() 
     #("a turn-in", turning_state),
     #(
       "the periodic save",
-      fired_at(
+      connection_support.fired_at(
         state: connection_support.in_world(),
         timer: connection_state.save_timer,
         ms: 2000,
@@ -807,9 +814,272 @@ pub fn each_in_world_wait_takes_each_timer_without_ending_the_connection_test() 
         connection_state.quest_deadline_timer,
       ],
       fn(timer) {
-        let #(_, fired) = fired_at(state:, timer:, ms: 2000)
+        let #(_, fired) = connection_support.fired_at(state:, timer:, ms: 2000)
         assert stays_open(taken: fired) as name
       },
     )
   })
+}
+
+// ---- a firing held behind an effect that starts or cancels its timer ----
+
+/// The player's life rule's shield timer, as the regeneration tests name it
+/// (`game_connection_regeneration_test`: the connection's free ids 8 and 9).
+const shield_timer = TimerId(9)
+
+/// The player's life rule's health timer.
+const health_timer = TimerId(8)
+
+/// How many times the step starts `timer`.
+fn starts_of(
+  taken taken: step.ConnectionStep(Request),
+  timer timer: step.TimerId,
+) -> Int {
+  list.count(support.timers_started(taken), fn(started) { started == timer })
+}
+
+pub fn a_shield_tick_held_behind_a_blow_starts_the_shield_timer_once_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The first blow takes the shield below its maximum and starts the shield timer
+  // (`game_connection_regeneration_test`).
+  let #(state, first) =
+    connection_support.feed(
+      state: connection_support.in_world(),
+      event: connection_support.a_beast_strike(connection_support.own_unit_id),
+    )
+  assert starts_of(taken: first, timer: shield_timer) == 1
+    as "the blow starts the shield timer"
+  let #(state, saving) =
+    connection_support.fired_at(
+      state:,
+      timer: connection_state.save_timer,
+      ms: 2000,
+    )
+  expect_the_place_save_asked(taken: saving)
+  // A second blow of 1000 (156 of it on the shield, as `game_connection_regeneration_test`
+  // reads it) comes in the wait and then the shield timer, started by the first blow,
+  // fires: the blow is held first and restarts the shield timer when taken, and the
+  // tick (67 of 450, short of the maximum) would start it a second time.
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.a_creatures_blow(
+        unit_id: connection_support.own_unit_id,
+        damage_type: 1,
+        damage: 1000,
+      ),
+    )
+  let #(state, fired) =
+    connection_support.fired_at(state:, timer: shield_timer, ms: 2100)
+  assert stays_open(taken: fired) && support.timers_started(fired) == []
+    as "the firing is held, not taken, in the save's wait"
+  let #(_, answered) =
+    connection_support.answer(
+      state:,
+      taken: saving,
+      outcome: connection_support.place_saved(),
+    )
+  assert stays_open(taken: answered)
+  assert starts_of(taken: answered, timer: shield_timer) == 1
+    as "the held blow starts the shield timer again; the firing it superseded is dropped, not taken to start it a second time"
+}
+
+/// The Exile holding Bon Voyage after its talk that answered the Northern Wilds
+/// terminal's window with its yes, so the departures timer is due, and then bought at
+/// Dorian Walker: the connection waits on the store. Creature2 73606 and its activate
+/// spell's Spell4Base 20650 are `game_connection_departures_test`'s.
+fn buying_with_a_departure_due() -> #(
+  game_connection.State,
+  step.ConnectionStep(Request),
+) {
+  let fresh =
+    connection_support.accepted(
+      connection_state.Settings(
+        ..connection_support.settings(),
+        vendors: vendor_support.stocking(creature_ids: [74_812]),
+      ),
+    ).0
+  let state =
+    departures_support.seeing(
+      state: connection_support.entered_stocking_with_quests(
+        in_character_select: connection_support.in_select_from(fresh),
+        credits: 100,
+        items: [],
+        quests: [departures_support.after_the_talk(quest_id: 10_528)],
+      ),
+      creature_id: 73_606,
+    )
+  let #(state, yes) = departures_support.yes(state:, spell4_base_id: 20_650)
+  assert departures_support.started_timers(taken: yes)
+    == [#(departures.timer, 0)]
+    as "the yes starts the departures timer"
+  connection_support.purchase_requested(
+    state: at_the_vendor(state:),
+    unique_id: 2,
+    quantity: 1,
+  )
+}
+
+pub fn a_departure_due_during_a_buy_leaves_once_the_store_answers_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = buying_with_a_departure_due()
+  let #(state, fired) =
+    connection_support.fired_at(state:, timer: departures.timer, ms: 2000)
+  assert stays_open(taken: fired)
+    && support.asked(fired) == None
+    && support.timers_started(fired) == []
+    as "the departure waits for the store's answer, with no timer started to ask again"
+  let #(state, answered) =
+    connection_support.answer(state:, taken:, outcome: buy_saved())
+  assert connection_support.ask_request(answered)
+    == connection_support.leave_asked()
+    as "the buy's answer returns the player to the world and the leave of the tutorial's map begins"
+  let #(_, joining) =
+    connection_support.answer(
+      state:,
+      taken: answered,
+      outcome: step.Answer(FromMap(Left)),
+    )
+  let #(map_id, _, _) = departures_support.join_of(taken: joining)
+  assert map_id == MapId(world_id: 426, instance: 0)
+    as "the join is the Northern Wilds', not the Holocrypt's"
+}
+
+pub fn a_departure_and_a_save_held_in_a_buy_start_the_save_timer_once_after_the_join_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = buying_with_a_departure_due()
+  let #(state, _) =
+    connection_support.fired_at(state:, timer: departures.timer, ms: 2000)
+  let #(state, _) =
+    connection_support.fired_at(
+      state:,
+      timer: connection_state.save_timer,
+      ms: 2100,
+    )
+  let #(state, leaving) =
+    connection_support.answer(state:, taken:, outcome: buy_saved())
+  assert connection_support.ask_request(leaving)
+    == connection_support.leave_asked()
+  assert !list.contains(
+    support.timers_started(leaving),
+    connection_state.save_timer,
+  )
+    as "the leave stops the save timer, whose firing was held, and starts none"
+  let #(state, joining) =
+    connection_support.answer(
+      state:,
+      taken: leaving,
+      outcome: step.Answer(FromMap(Left)),
+    )
+  let #(_, joined) = departures_support.joined_at(state:, joining:, world: 426)
+  assert stays_open(taken: joined) && support.asked(joined) == None
+    as "the held save firing was of the stay that ended: no place is saved for it"
+  assert starts_of(taken: joined, timer: connection_state.save_timer) == 1
+    as "the join starts the save timer, once"
+}
+
+/// The Exile with quest 1857 (kill the Beast once, 60,000 ms) and quest 1872 (120,000 ms)
+/// both accepted with full timers, at Dorian Walker, who receives 1857 so that the server
+/// does not complete it when achieved, buying: the connection waits on the store. Entered
+/// at 1,000 ms, 1857 is due at 61,000 ms and 1872 at 121,000 ms.
+fn buying_with_two_timed_quests(
+  then then: fn(game_connection.State, step.ConnectionStep(Request)) -> Nil,
+) -> Nil {
+  use tables <- quest_turn_in_support.with_changes(changes: [
+    #("Quest2", 1857, [#("maxTimeAllowedMS", Integer(60_000))]),
+    #("Quest2", 1872, [#("maxTimeAllowedMS", Integer(120_000))]),
+    #("QuestObjective", 1961, [#("data", Integer(beast))]),
+    quest_turn_in_support.receiving(1857),
+  ])
+  let fresh =
+    connection_support.accepted(
+      connection_state.Settings(
+        ..connection_support.settings(),
+        tables:,
+        vendors: vendor_support.stocking(creature_ids: [74_812]),
+      ),
+    ).0
+  let #(state, taken) =
+    connection_support.purchase_requested(
+      state: at_the_vendor(
+        state: connection_support.entered_stocking_with_quests(
+          in_character_select: connection_support.in_select_from(fresh),
+          credits: 100,
+          items: [],
+          quests: [
+            quest_support.timed(1857, progress: [0], quest_ms_left: 0),
+            quest_support.timed(1872, progress: [], quest_ms_left: 0),
+          ],
+        ),
+      ),
+      unique_id: 2,
+      quantity: 1,
+    )
+  then(state, taken)
+}
+
+pub fn a_deadline_held_behind_a_kill_credit_starts_the_deadline_timer_once_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use state, taken <- buying_with_two_timed_quests
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: kill_of(
+        unit_id: experience_support.creature_unit_id,
+        stay: connection_support.own_stay(),
+      ),
+    )
+  let #(state, fired) =
+    connection_support.fired_at(
+      state:,
+      timer: connection_state.quest_deadline_timer,
+      ms: 61_000,
+    )
+  assert stays_open(taken: fired) && support.timers_started(fired) == []
+    as "the firing of 1857's deadline is held behind the kill's credit"
+  let #(_, answered) =
+    answered_at(state:, taken:, outcome: buy_saved(), ms: 61_000)
+  assert stays_open(taken: answered)
+  assert list.length(connection_support.quest_states(taken: answered)) == 1
+    as "the kill Achieves 1857, which is not botched: the one state is its own"
+  assert starts_of(
+      taken: answered,
+      timer: connection_state.quest_deadline_timer,
+    )
+    == 1
+    as "the kill moves the deadline to 1872's; the firing for 1857's is dropped, not taken to start the timer a second time"
+}
+
+pub fn a_regeneration_firing_while_the_session_is_claimed_again_runs_once_the_claim_is_answered_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The player enters with 700 of its 736 health, so its health timer runs
+  // (`game_connection_regeneration_test`).
+  let #(state, _) =
+    connection_support.entered_saved(
+      in_character_select: connection_support.in_select(),
+      character: connection_support.world_character(),
+      saved_health: Some(700),
+    )
+  // Sessions ends (watch 1 is the rule's watch on it) and the claim timer (timer 1)
+  // fires: the connection claims its account again with the player in the world.
+  let #(state, _) =
+    connection_support.feed(state:, event: WatchEnded(WatchId(1)))
+  let #(state, claim) =
+    connection_support.fired_at(state:, timer: TimerId(1), ms: 5100)
+  let #(state, fired) =
+    connection_support.fired_at(state:, timer: health_timer, ms: 5200)
+  assert stays_open(taken: fired)
+    && connection_support.written_ids(fired) == []
+    && support.timers_started(fired) == []
+    as "the health timer's firing is held while the claim's ask is out"
+  let #(_, claimed) =
+    connection_support.answer(
+      state:,
+      taken: claim,
+      outcome: step.Answer(FromSessions(Claimed)),
+    )
+  assert connection_support.written_ids(claimed) == [0x092F]
+    as "the held tick is taken once the claim is answered: the player's health is written"
+  assert starts_of(taken: claimed, timer: health_timer) == 1
+    as "the health timer starts again for the next tick: the regeneration is not left marked running with no timer"
 }

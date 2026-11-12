@@ -126,13 +126,6 @@ fn timer_effects(
   })
 }
 
-/// The 0x35C bodies the step writes, in order.
-fn quest_states(taken taken: ConnectionStep(Request)) -> List(BitArray) {
-  game_connection_support.written(taken:)
-  |> list.filter(fn(frame) { frame.message_id == 0x035C })
-  |> list.map(fn(frame) { frame.body })
-}
-
 /// The quest rows of the save the step asks for.
 fn saved_quests(taken taken: ConnectionStep(Request)) -> List(store.QuestRow) {
   let assert AskStore(Move(SavePlace(quests:, ..))) =
@@ -169,7 +162,7 @@ pub fn a_timed_quest_is_botched_at_its_deadline_test() -> Nil {
   // Early: the timer fires 21,000 ms before the deadline, so nothing is botched and
   // the timer is started again for what is left.
   let #(early, taken) = fire(state: entered, timer: deadline_timer, at: 40_000)
-  assert quest_states(taken:) == []
+  assert game_connection_support.quest_states(taken:) == []
     as "a quest before its deadline is not botched"
   assert timer_effects(taken:)
     == [OwnEffect(StartTimer(deadline_timer, 21_000))]
@@ -177,7 +170,7 @@ pub fn a_timed_quest_is_botched_at_its_deadline_test() -> Nil {
   assert support.asked(taken) == None as "an early firing saves nothing"
   // On time: 1872 is botched, and the timer moves to 1806, due at 91,000 ms.
   let #(_, taken) = fire(state: early, timer: deadline_timer, at: 61_000)
-  assert quest_states(taken:) == [botched_1872]
+  assert game_connection_support.quest_states(taken:) == [botched_1872]
     as "0x35C tells the client 1872 is Botched, and only 1872"
   assert timer_effects(taken:)
     == [OwnEffect(StartTimer(deadline_timer, 30_000))]
@@ -196,7 +189,8 @@ pub fn a_timed_quest_is_botched_at_its_deadline_test() -> Nil {
   // Late: both are past their deadlines when the timer fires, so one step botches both
   // in quest id order and leaves no timer.
   let #(_, taken) = fire(state: entered, timer: deadline_timer, at: 200_000)
-  assert quest_states(taken:) == [botched_1806, botched_1872]
+  assert game_connection_support.quest_states(taken:)
+    == [botched_1806, botched_1872]
     as "every entry past its deadline is botched in one step, one 0x35C each"
   assert timer_effects(taken:) == []
     as "no timed quest is left, so no timer starts"
@@ -231,7 +225,8 @@ pub fn the_deadline_timer_follows_the_earliest_timed_quest_test() -> Nil {
   // The timer fires for 1872: it is botched and the timer goes on to 1806.
   let #(saving, taken) =
     fire(state: accepted, timer: deadline_timer, at: 70_000)
-  assert quest_states(taken:) == [botched_1872] as "the botch of the earliest"
+  assert game_connection_support.quest_states(taken:) == [botched_1872]
+    as "the botch of the earliest"
   assert timer_effects(taken:)
     == [OwnEffect(StartTimer(deadline_timer, 51_000))]
     as "the timer that fired is not running, so it starts without a cancel, for 121,000 ms - 70,000 ms"
@@ -378,7 +373,7 @@ pub fn the_deadline_timer_is_cancelled_while_the_connection_waits_to_claim_and_s
   assert timer_effects(taken:) == [OwnEffect(StartTimer(deadline_timer, 0))]
     as "a deadline that passed meanwhile fires at once"
   let #(_, taken) = fire(state: back, timer: deadline_timer, at: 70_000)
-  assert quest_states(taken:) == [botched_1872]
+  assert game_connection_support.quest_states(taken:) == [botched_1872]
     as "the quest is botched as soon as the connection is back in the world"
 }
 
@@ -418,7 +413,7 @@ pub fn an_achieved_timed_quest_is_not_botched_at_its_deadline_test() -> Nil {
     as "the periodic save writes the time left of each, 61,000 ms and 91,000 ms - 21,000 ms"
   // Both are past their deadlines: only the accepted one is botched.
   let #(_, taken) = fire(state: entered, timer: deadline_timer, at: 200_000)
-  assert quest_states(taken:) == [botched_1806]
+  assert game_connection_support.quest_states(taken:) == [botched_1806]
     as "a quest that is achieved is not botched when its time runs out"
   assert saved_quests(taken:)
     == [
@@ -452,7 +447,7 @@ pub fn a_timed_objective_is_botched_over_the_connection_test() -> Nil {
   // The time runs out at 61,000 ms: the quest is Botched, saved at once, and no timer
   // is left.
   let #(_, taken) = fire(state: entered, timer: deadline_timer, at: 61_000)
-  assert quest_states(taken:) == [botched_2911]
+  assert game_connection_support.quest_states(taken:) == [botched_2911]
     as "0x35C tells the client 2911 is Botched"
   assert saved_quests(taken:)
     == [QuestRow(quest_id: 2911, state: 4, completed_at: None, active: None)]

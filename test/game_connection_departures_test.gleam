@@ -22,8 +22,7 @@ import connection_rule_support as support
 import departures_support
 import game_client
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{AskMap, AskStore, FromMap, Removed}
-import genesis_prime/game/connection as game_connection
+import genesis_prime/client_connection.{AskStore, FromMap, Removed}
 import genesis_prime/game/departures
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/enter_world
@@ -39,8 +38,8 @@ import genesis_prime/step
 import genesis_prime/store.{
   AccountId, Character, ListCharacters, SavePlace, Select,
 }
-import genesis_prime/world_map/map.{Join, Left}
-import genesis_prime/world_map/map_id.{type MapId, MapId}
+import genesis_prime/world_map/map.{Left}
+import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn
 import gleam/list
 import gleam/option.{Some}
@@ -58,16 +57,6 @@ const crimson_isle_spell4_base = 22_504
 const confirmed_start = [0x07FD]
 
 const refused_start = [0x07FC]
-
-/// The place and the map the join the step asks is for.
-fn join_of(
-  taken taken: step.ConnectionStep(client_connection.Request),
-) -> #(MapId, Place, Bool) {
-  let assert AskMap(map: map_id, message: Join(place:, alive:, ..)) =
-    connection_support.ask_request(taken)
-    as "the step asks a map to join the player"
-  #(map_id, place, alive)
-}
 
 fn assert_landing(
   place place: Place,
@@ -102,28 +91,6 @@ fn quest_news(
       quest_state.message_id,
       quest_state.decode,
     ),
-  )
-}
-
-/// The map's answer to the step's join, as a map of the landing's world gives it, and the
-/// step of the connection taking the answer.
-fn joined_at(
-  state state: game_connection.State,
-  joining joining: step.ConnectionStep(client_connection.Request),
-  world world: Int,
-) -> #(game_connection.State, step.ConnectionStep(client_connection.Request)) {
-  let #(_, answer) =
-    connection_support.mapped(
-      map_state: connection_support.map_of_world_with_four_players(
-        map: MapId(world_id: world, instance: 0),
-        run: 5,
-      ),
-      taken: joining,
-    )
-  connection_support.answer(
-    state:,
-    taken: joining,
-    outcome: step.Answer(FromMap(answer)),
   )
 }
 
@@ -179,7 +146,7 @@ pub fn the_yes_moves_the_player_to_the_northern_wilds_test() -> Nil {
       taken: leaving,
       outcome: step.Answer(FromMap(Left)),
     )
-  let #(map_id, place, alive) = join_of(taken: joining)
+  let #(map_id, place, alive) = departures_support.join_of(taken: joining)
   assert map_id == MapId(world_id: 426, instance: 0)
     as "WorldLocation2 42074 is in world 426: its map is asked"
   assert alive
@@ -192,7 +159,7 @@ pub fn the_yes_moves_the_player_to_the_northern_wilds_test() -> Nil {
     z: -5165.10009765625,
     reason: "the join is at the Northern Wilds landing",
   )
-  let #(_, burst) = joined_at(state:, joining:, world: 426)
+  let #(_, burst) = departures_support.joined_at(state:, joining:, world: 426)
   assert game_client.without_passive_cast(ids: connection_support.written_ids(
       burst,
     ))
@@ -240,7 +207,7 @@ pub fn the_yes_at_crimson_isle_lands_at_mondos_beachhead_test() -> Nil {
       taken: leaving,
       outcome: step.Answer(FromMap(Left)),
     )
-  let #(map_id, place, _) = join_of(taken: joining)
+  let #(map_id, place, _) = departures_support.join_of(taken: joining)
   assert map_id == MapId(world_id: 870, instance: 0)
     as "WorldLocation2 8223 is in world 870"
   assert_landing(
@@ -252,7 +219,7 @@ pub fn the_yes_at_crimson_isle_lands_at_mondos_beachhead_test() -> Nil {
     z: -239.0409393310547,
     reason: "the Crimson Isle terminal lands at WorldLocation2 8223",
   )
-  let #(_, burst) = joined_at(state:, joining:, world: 870)
+  let #(_, burst) = departures_support.joined_at(state:, joining:, world: 870)
   let assert [entered] =
     connection_support.decoded(
       connection_support.written(taken: burst),
@@ -349,7 +316,7 @@ pub fn a_second_yes_in_state_2_moves_the_player_without_counting_test() -> Nil {
       taken: leaving,
       outcome: step.Answer(FromMap(Left)),
     )
-  let #(map_id, place, _) = join_of(taken: joining)
+  let #(map_id, place, _) = departures_support.join_of(taken: joining)
   assert map_id == MapId(world_id: 426, instance: 0)
     as "WorldLocation2 42074 is in world 426"
   assert_landing(
@@ -395,7 +362,7 @@ pub fn a_completed_quest_lands_at_the_yes_without_a_count_test() -> Nil {
       taken: leaving,
       outcome: step.Answer(FromMap(Left)),
     )
-  let #(map_id, place, _) = join_of(taken: joining)
+  let #(map_id, place, _) = departures_support.join_of(taken: joining)
   assert map_id == MapId(world_id: 426, instance: 0)
     as "WorldLocation2 42074 is in world 426"
   assert_landing(
@@ -429,7 +396,8 @@ pub fn a_move_sent_before_the_landing_is_dropped_test() -> Nil {
       taken: leaving,
       outcome: step.Answer(FromMap(Left)),
     )
-  let #(state, burst) = joined_at(state:, joining:, world: 426)
+  let #(state, burst) =
+    departures_support.joined_at(state:, joining:, world: 426)
   assert !support.stops(burst)
     && support.logs_of(step: burst, level: step.LogError) == []
     as "a move sent before the landing does not end the connection"
@@ -477,7 +445,7 @@ pub fn a_relog_after_the_move_enters_at_the_landing_test() -> Nil {
       taken: leaving,
       outcome: step.Answer(FromMap(Left)),
     )
-  let #(state, _) = joined_at(state:, joining:, world: 426)
+  let #(state, _) = departures_support.joined_at(state:, joining:, world: 426)
   let #(state, _) =
     connection_support.read(
       state:,
@@ -520,7 +488,7 @@ pub fn a_relog_after_the_move_enters_at_the_landing_test() -> Nil {
       saved_experience: option.None,
       quests:,
     )
-  let #(map_id, landing, _) = join_of(taken: joining)
+  let #(map_id, landing, _) = departures_support.join_of(taken: joining)
   assert map_id == MapId(world_id: 426, instance: 0)
     as "the new login's join is at the Northern Wilds landing's map"
   assert_landing(
@@ -532,7 +500,7 @@ pub fn a_relog_after_the_move_enters_at_the_landing_test() -> Nil {
     z: -5165.10009765625,
     reason: "the login enters where the save was",
   )
-  let #(_, entered) = joined_at(state:, joining:, world: 426)
+  let #(_, entered) = departures_support.joined_at(state:, joining:, world: 426)
   let frames = connection_support.written(taken: entered)
   let assert [entering] =
     connection_support.decoded(
@@ -569,7 +537,7 @@ pub fn a_landing_map_that_refuses_the_join_returns_to_character_select_test() ->
       taken: leaving,
       outcome: step.Answer(FromMap(Left)),
     )
-  let #(map_id, _, _) = join_of(taken: joining)
+  let #(map_id, _, _) = departures_support.join_of(taken: joining)
   assert map_id == MapId(world_id: 426, instance: 0)
     as "the leave is followed by the join at the landing's map"
   let #(state, refused) =
@@ -631,7 +599,7 @@ pub fn a_relog_between_the_yes_and_the_move_enters_at_the_landing_test() -> Nil 
       saved_experience: option.None,
       quests:,
     )
-  let #(map_id, landing, _) = join_of(taken: joining)
+  let #(map_id, landing, _) = departures_support.join_of(taken: joining)
   assert map_id == MapId(world_id: 426, instance: 0)
     as "the new login's join is at the Northern Wilds landing's map"
   assert_landing(
@@ -643,7 +611,7 @@ pub fn a_relog_between_the_yes_and_the_move_enters_at_the_landing_test() -> Nil 
     z: -5165.10009765625,
     reason: "the choice objective 21328 is counted in the log and the saved place is in the tutorial: the login enters at the terminal's landing",
   )
-  let #(_, entered) = joined_at(state:, joining:, world: 426)
+  let #(_, entered) = departures_support.joined_at(state:, joining:, world: 426)
   let frames = connection_support.written(taken: entered)
   let assert [entering] =
     connection_support.decoded(

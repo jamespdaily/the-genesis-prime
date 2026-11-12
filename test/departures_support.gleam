@@ -5,7 +5,7 @@
 
 import connection_rule_support as support
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{type Request}
+import genesis_prime/client_connection.{type Request, AskMap, FromMap}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/departures
 import genesis_prime/game/start_place.{type Place}
@@ -20,7 +20,8 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{type QuestRow}
 import genesis_prime/table/id.{Creature2Id}
-import genesis_prime/world_map/map.{ObjectsSeen}
+import genesis_prime/world_map/map.{Join, ObjectsSeen}
+import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/static_object.{type Created, StaticObject}
 import gleam/list
 import quest_support
@@ -216,4 +217,34 @@ pub fn timer_fires(
   state state: game_connection.State,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   connection_support.feed(state:, event: OwnEvent(TimerFired(departures.timer)))
+}
+
+/// The place and the map the join the step asks is for.
+pub fn join_of(taken taken: ConnectionStep(Request)) -> #(MapId, Place, Bool) {
+  let assert AskMap(map: map_id, message: Join(place:, alive:, ..)) =
+    connection_support.ask_request(taken)
+    as "the step asks a map to join the player"
+  #(map_id, place, alive)
+}
+
+/// The map's answer to the step's join, as a map of the landing's world gives it, and the
+/// step of the connection taking the answer.
+pub fn joined_at(
+  state state: game_connection.State,
+  joining joining: ConnectionStep(Request),
+  world world: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(_, answer) =
+    connection_support.mapped(
+      map_state: connection_support.map_of_world_with_four_players(
+        map: MapId(world_id: world, instance: 0),
+        run: 5,
+      ),
+      taken: joining,
+    )
+  connection_support.answer(
+    state:,
+    taken: joining,
+    outcome: step.Answer(FromMap(answer)),
+  )
 }
