@@ -165,6 +165,11 @@ pub type Session {
     /// connection's life and a message of an earlier stay never names the
     /// current one.
     last_stay: Stay,
+    /// What other processes sent for a stay while an ask was out whose answer
+    /// returns the connection to the world (`holds_map_messages`), oldest first:
+    /// each is taken, in this order, once the answer returns it there
+    /// (genesis_prime/game/connection `stay_sent`).
+    held_sends: List(#(Stay, client_connection.StaySent)),
     status: Status,
   )
 }
@@ -471,6 +476,31 @@ pub fn held_in_the_world(
     | LeavingMap(..)
     | AwaitingHelloReply
     | TakingSessionKey -> None
+  }
+}
+
+/// Whether the status is one whose answer returns the connection to the world: a
+/// summon, an item move, a purchase, a sale, a quest turn-in or the periodic place
+/// save. What other processes send for a stay meanwhile is held, not dropped. A
+/// save before leaving or camping is not one: its stay ends.
+pub fn holds_map_messages(status: Status) -> Bool {
+  case status {
+    Summoning(..)
+    | MovingItem(..)
+    | Buying(..)
+    | Selling(..)
+    | TurningIn(..)
+    | SavingPlace(then: Playing, ..) -> True
+    SavingPlace(then: Leaving(..), ..)
+    | SavingPlace(then: Camped, ..)
+    | InWorld(..)
+    | WaitingToClaim(..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey -> False
   }
 }
 
