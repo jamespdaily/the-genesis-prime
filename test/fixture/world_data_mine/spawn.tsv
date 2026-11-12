@@ -1,3 +1,5 @@
 id	entity_type	creature_id	world_id	area_id	x	y	z	rotation_x	rotation_y	rotation_z	display_info	outfit_info	faction1	faction2	quest_checklist_index	active_prop_id	world_socket_id	stat_ids	stat_values
 262	0	13814	51	323	4277.318	-1090.139	-4361.68	-2.844647	-0.1970606	0.6654146	24207	0	219	219	0	0	0	{0,10,12,13,14,15,20,21,22}	{1598,8,0,0,3.232043e+07,0,0,0,0}
 29098	32	73463	3460	0	-70.4453	-868.5904	383.553	0	0	0	27059	0	219	219	0	0	0	{}	{}
+29099	32	73667	3460	0	-87.8594	-868.72217	414.038	0	0	0	27059	0	219	219	0	0	0	{}	{}
+29100	32	73668	3460	0	-119.41	-868.8015	424.962	0	0	0	27059	0	219	219	0	0	0	{}	{}

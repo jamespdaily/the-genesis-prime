@@ -327,12 +327,19 @@ fn read(
         factions: factions_for_spawns,
         kinds:,
       )
-    Error(..) -> objective_spawn.Placed(rows: [], skipped: [])
+    Error(..) ->
+      objective_spawn.Placed(
+        rows: [],
+        skipped: [],
+        click_rows: [],
+        click_skipped: [],
+        unread_links: [],
+      )
   }
   let selection = case kinds_for_spawns {
     Ok(kinds) ->
       spawn.select(
-        rows: list.append(rows, placed.rows),
+        rows: list.flatten([rows, placed.rows, placed.click_rows]),
         tables:,
         formulas: rating.formulas(tables:),
         kinds:,

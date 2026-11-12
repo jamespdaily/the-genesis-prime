@@ -658,6 +658,17 @@ Creature2	52905	creature of TargetGroup 8374	objective_test, quest_log_test, gam
 TargetGroup	8008	reward pane group of objective 16479	objective_test, quest_log_test, game_connection_objective_test
 QuestObjective	16480	type 8 objective of quest 9122	objective_test, quest_log_test, game_connection_objective_test
 QuestObjective	16579	type 22 objective of quest 9122	objective_test, quest_log_test, game_connection_objective_test
+Creature2	73667	a tutorial mine whose prerequisiteIdAnimState 41828 names objective index 2 of quest 10518 (21340, marker 51663) and of quest 10524 (21314, marker 52900)	objective_spawn_test, game_wire_test
+Creature2	73668	a tutorial mine whose prerequisiteIdAnimState 41829 names objective index 3 of quest 10518 (21318, marker 51664) and of quest 10524 (21315, marker 52901)	objective_spawn_test, game_wire_test
+WorldLocation2	51662	Exile marker of the mine 73463 (objective 21287) in World 3460	objective_spawn_test, game_wire_test
+WorldLocation2	51663	Exile marker of objective 21340 in World 3460	objective_spawn_test, game_wire_test
+WorldLocation2	51664	Exile marker of objective 21318 in World 3460	objective_spawn_test, game_wire_test
+WorldLocation2	52899	Dominion marker of the mine 73463 (objective 21313) in World 3460	objective_spawn_test, game_wire_test
+WorldLocation2	52900	Dominion marker of objective 21314 in World 3460	objective_spawn_test, game_wire_test
+WorldLocation2	52901	Dominion marker of objective 21315 in World 3460	objective_spawn_test, game_wire_test
+WorldLocation2	9181	marker of objective 4813 in World 426	objective_spawn_test
+WorldLocation2	9182	marker of objective 4813 in World 426	objective_spawn_test
+WorldLocation2	9962	marker of objective 4813 in World 426	objective_spawn_test
 Quest2	7757	quest whose objective 14295 is a type 11 cast of Spell4 69507 on cast group 7102, pane 8954, count 8	objective_test, game_connection_objective_cast_test
 Quest2	3145	quest whose objective 4098 is a type 11 cast of Spell4 7103 with no pane, count 10	objective_test, quest_log_test
 Quest2	8539	quest whose objective 15119 (index 1) is a type 11 cast of Spell4 41218 on pane 8784	objective_test

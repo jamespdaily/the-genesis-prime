@@ -47,6 +47,21 @@
 ////   placed rows are 1,762 in all and 9 in 3460, 2 of them 74862's, which has no
 ////   stored row. 3460 starts 66 stored + 27 Daguns (migration 0008) + 2 stored
 ////   73494 rows + 9 placed rows = 104.
+//// - The creatures of type 5 and 32 objectives (the click targets) that have no stored
+////   spawn at their objective's marker are placed there too
+////   (`objective_spawn.place`'s `click_rows`): 344 rows in all, 109 of them entity
+////   type 0, the units that `WorldSpawns.by_id` holds (the others stand as the
+////   static objects counted below), 111, 114, 5, 2, 106, 3 and 3 of them in worlds 22,
+////   51, 426, 990, 1061, 1387 and 3460 (the whole-table test of `objective_spawn_test`
+////   holds the count over the client's tables and `spawn.tsv`). The selection leaves
+////   out one of the type 0 rows, Creature2 13133 in world 22 (no faction), so the
+////   creatures that start from them are 39, 27, 3 and 39 in worlds 22, 51, 426 and
+////   1061 and none in the others. The counts come from a scratch Python script apart
+////   from the server's code, over the client's table dumps (Creature2, Prerequisite,
+////   Quest2, QuestObjective, WorldLocation2) and the world database's typed spawn
+////   rows: it places 40, 27, 3 and 39 units (CreationTypeEnum 0) in worlds 22, 51, 426
+////   and 1061, of which Creature2 13133 (factionId 0 in the Creature2 table) is the one
+////   of world 22 that has no faction, and the play database's rows give the same.
 //// The test needs the client's tables and the world database (`GENESIS_WORLD_DATA`),
 //// so it is skipped where either is missing (a fork's CI run without the client's
 //// data); it imports the whole file into a database of its own.
@@ -146,17 +161,33 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
     )
     == [432, 608, 38, 20, 12, 623, 20, 9, 0, 0]
     as "the rows placed in each world"
+  let clicked =
+    objective_spawn.place(
+      tables:,
+      stored: rows,
+      factions: spawn_support.the_boss_is_given_233(tables:),
+      kinds: spawn_support.turret_kinds(),
+    ).click_rows
+  assert list.length(clicked) == 344 as "the click targets' rows placed in all"
+  assert list.count(clicked, fn(row) { row.entity_type == 0 }) == 109
+    as "the click rows placed as units"
+  assert list.map(
+      [22, 51, 426, 870, 990, 1061, 1387, 3460, 1535, 3022],
+      fn(world_id) { list.count(clicked, fn(row) { row.world_id == world_id }) },
+    )
+    == [111, 114, 5, 0, 2, 106, 3, 3, 0, 0]
+    as "the click rows placed in each world"
   assert list.map(
       [22, 51, 426, 870, 990, 1061, 1387, 3460, 1535, 3022],
       fn(world_id) { dict.size(content_spawn.world(key:, world_id:).by_id) },
     )
     == [
-      11_847 + 423,
-      13_754 + 605,
-      407 + 38,
+      11_847 + 423 + 39,
+      13_754 + 605 + 27,
+      407 + 38 + 3,
       702 + 20,
       799 + 12,
-      13_507 + 623,
+      13_507 + 623 + 39,
       851 + 20,
       66 + 27 + 2 + 9,
       0,
@@ -204,12 +235,12 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
     list.count(objects, fn(object) { object.unit_type == unit_type })
   }
   assert list.map(spawn.object_types, of_type(objects, _))
-    == [171, 4380, 17_904, 491, 101, 239, 79, 1178]
-    as "every static spawn of the world database loads, by type"
+    == [171, 4380 + 135, 17_904 + 71, 491 + 4, 101, 239, 79 + 2, 1178 + 23]
+    as "every static spawn of the world database loads, and the click rows placed as static types (135, 71, 4, 2 and 23 of types 8, 10, 11, 14 and 32), by type"
   let ship = dict.values(content_spawn.world(key:, world_id: 3460).objects)
   assert list.map(spawn.object_types, of_type(ship, _))
-    == [0, 0, 302, 0, 0, 0, 0, 15]
-    as "world 3460's static objects, by type"
+    == [0, 0, 302, 0, 0, 0, 0, 15 + 3]
+    as "world 3460's static objects, by type: the 3 Dominion mines placed at their markers (Creature2 73463, 73667 and 73668) are type 32 beside its 15 stored"
   assert list.all(objects, fn(object) {
     case object.unit_type {
       static_object.Turret | static_object.SimpleCollidable ->

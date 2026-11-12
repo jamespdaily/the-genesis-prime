@@ -644,6 +644,15 @@ fn index_of(indexes: Dict(SpawnId, Int), spawn_id: SpawnId) -> Int {
   dict.get(indexes, spawn_id) |> result.unwrap(0)
 }
 
+/// Whether `select` starts or sends a row of the entity type, as a creature or as
+/// a static object, whatever the creature: every other type is counted as `Other`.
+/// A Turret row (13) with no creature_kind row is a static object, so the answer
+/// does not depend on the kinds.
+pub fn starts_entity_type(entity_type entity_type: Int) -> Bool {
+  result.is_ok(creature_unit_type.of_entity_type(entity_type:))
+  || result.is_ok(static_object.unit_type_of(entity_type:))
+}
+
 /// The unit type a row starts as a creature with: a NonPlayer row as a NonPlayer,
 /// and a Turret row (type 13) as a Turret when its creature has a creature_kind row
 /// of its own, which says the server fights it. `Error` for any other row, among
