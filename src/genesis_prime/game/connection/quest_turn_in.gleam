@@ -53,6 +53,7 @@ import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type Outcome,
 }
 import genesis_prime/store.{ForItems}
+import genesis_prime/table/loader/store as table_store
 import gleam/list
 import gleam/option.{Some}
 import gleam/set.{type Set}
@@ -81,15 +82,9 @@ pub fn turn_in_message(
         place: movement.place(state: entered.movement),
       ),
       picture: entered.shown,
-      progress: experience.Progress(
-        experience: entered.experience,
-        level: connection_state.level_of(entered:),
-      ),
+      progress: progress_of(entered:),
       currencies: entered.currencies,
-      item_proficiencies: character_state.item_proficiencies(
-        tables:,
-        class_id: entered.character.class_id,
-      ),
+      item_proficiencies: proficiencies_of(tables:, entered:),
       life: entered.life,
       tables:,
       now_ms: now.monotonic_ms,
@@ -119,6 +114,25 @@ pub fn turn_in_message(
         text: quest_rule.describe_refusal(refusal:),
       )
   }
+}
+
+/// The player's experience and level, as a turn-in reads them.
+fn progress_of(entered entered: world_entry.Entered) -> experience.Progress {
+  experience.Progress(
+    experience: entered.experience,
+    level: connection_state.level_of(entered:),
+  )
+}
+
+/// The item proficiencies of the player's class, as a turn-in reads them.
+fn proficiencies_of(
+  tables tables: table_store.Tables,
+  entered entered: world_entry.Entered,
+) -> Int {
+  character_state.item_proficiencies(
+    tables:,
+    class_id: entered.character.class_id,
+  )
 }
 
 /// The ask for an accepted turn-in, after the effects `before`: the entropy the rewards need is
@@ -182,21 +196,17 @@ pub fn completing(
         connection_state.Present(holder:, entered:) ->
           case entered.completing {
             [] -> handled
-            [quest_id, ..rest] ->
+            [quest_id, ..rest] -> {
+              let entered = world_entry.Entered(..entered, completing: rest)
               completed(
-                session: Session(
-                  ..session,
-                  status: InWorld(
-                    holder:,
-                    entered: world_entry.Entered(..entered, completing: rest),
-                  ),
-                ),
+                session: Session(..session, status: InWorld(holder:, entered:)),
                 now:,
                 holder:,
-                entered: world_entry.Entered(..entered, completing: rest),
+                entered:,
                 quest_id:,
                 before: effects,
               )
+            }
           }
         connection_state.Greeting
         | connection_state.Selecting(..)
@@ -221,15 +231,9 @@ fn completed(
     quest_turn_in.completed_by_server(
       quest_id:,
       asker: connection_quest.asker(session:, entered:),
-      progress: experience.Progress(
-        experience: entered.experience,
-        level: connection_state.level_of(entered:),
-      ),
+      progress: progress_of(entered:),
       currencies: entered.currencies,
-      item_proficiencies: character_state.item_proficiencies(
-        tables:,
-        class_id: entered.character.class_id,
-      ),
+      item_proficiencies: proficiencies_of(tables:, entered:),
       tables:,
       unix_seconds: step.unix_milliseconds(now:) / 1000,
       logged: session.interaction_logged,

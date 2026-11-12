@@ -1098,15 +1098,16 @@ fn answered_by_status(
   }
 }
 
-/// What another process sent for a stay of the player (`ForStay`), taken at this
-/// one entry point: only while the player is in the world, and only when the stay
-/// is the player's own (genesis_prime/world_map/stay). While the connection waits
-/// an ask is out whose answer returns the connection to the world
-/// (`holds_map_messages`) it is held and taken here again once the answer has returned the connection to the world. Any other is dropped: it was
-/// sent for an earlier stay, before a camp or the Holocrypt, and reaches a later
-/// one whose client holds none of the earlier units and whose creatures and
-/// viewers are others, or it reaches no stay at all. A dropped strike finds no
-/// answer, and the creature's deadline leaves the player out.
+/// What another process sent for a stay of the player (`ForStay`), taken at
+/// this one entry point: only while the player is in the world, and only when
+/// the stay is the player's own (genesis_prime/world_map/stay). While the
+/// connection waits for an ask whose answer returns it to the world
+/// (`holds_map_messages`), the message is held and taken here again once the
+/// answer has returned the connection to the world. Any other is dropped: it
+/// was sent for an earlier stay, before a camp or the Holocrypt, and reaches a
+/// later one whose client holds none of the earlier units and whose creatures
+/// and viewers are others, or it reaches no stay at all. A dropped strike finds
+/// no answer, and the creature's deadline leaves the player out.
 fn stay_sent(
   session session: Session,
   now now: Now,

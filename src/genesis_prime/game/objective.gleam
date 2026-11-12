@@ -1045,13 +1045,15 @@ fn completion_of(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,
 ) -> List(Effect) {
-  case quest2.get(tables:, id: Quest2Id(quest_id)) {
-    Ok(row) ->
-      case communicator.completed_by_server(tables:, quest: row) {
-        True -> [CompleteByServer(quest_id:)]
-        False -> []
-      }
-    Error(Nil) -> []
+  let assert Ok(row) = quest2.get(tables:, id: Quest2Id(quest_id))
+    as {
+      "quest "
+      <> int.to_string(quest_id)
+      <> " of the log has a Quest2 row (the load fails without one)"
+    }
+  case communicator.completed_by_server(tables:, quest: row) {
+    True -> [CompleteByServer(quest_id:)]
+    False -> []
   }
 }
 

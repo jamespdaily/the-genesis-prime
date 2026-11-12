@@ -362,7 +362,13 @@ pub fn completed_by_server(
       ))
       use <- bool.guard(
         when: state != 2,
-        return: Error(not_achieved(turning:, state:)),
+        return: Error(Declined(
+          key: "server state " <> int.to_string(state),
+          text: turning
+            <> ", whose state in the log is "
+            <> int.to_string(state)
+            <> " and not Achieved",
+        )),
       )
       use <- bool.guard(
         when: !communicator.completed_by_server(tables:, quest: row),
