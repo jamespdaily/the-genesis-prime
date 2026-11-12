@@ -910,6 +910,7 @@ fn a_beast_of(
         respawn_ms: 60_000,
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
+        guard: option.None,
       ),
       numbers: spawn_support.numbers,
     ))

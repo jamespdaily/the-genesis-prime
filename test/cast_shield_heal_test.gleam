@@ -707,6 +707,7 @@ pub fn the_viewers_go_carries_the_same_heal_description_test() -> Nil {
         CastWent(go:) -> Ok(#(tell.0, go))
         client_connection.CastStarted(..)
         | client_connection.CastFinished(..)
+        | client_connection.CastInterrupted(..)
         | client_connection.CastMissed(..)
         | client_connection.CastTargetsRemoved(..)
         | client_connection.CastStackRemoved(..)

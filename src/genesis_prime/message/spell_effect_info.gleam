@@ -2,10 +2,11 @@
 //// never edited by hand.
 ////
 //// A record inside a message body: one effect on a target of a go: the
-//// Spell4Effects id, the effect instance id, the delay in milliseconds, a
-//// 32-bit value and the result, which is a bit or a damage description. Gap:
-//// the 32-bit value is not read. Its fields are listed in `schema.toml` with
-//// the client's evidence, and the fact file's `0x140094890` names the record.
+//// Spell4Effects id, the effect instance id, the delay in milliseconds, the
+//// effect's lifetime in milliseconds (0 never ends by time) and the result,
+//// which is a bit or a damage description. Its fields are listed in
+//// `schema.toml` with the client's evidence, and the fact file's `0x140094890`
+//// names the record.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,

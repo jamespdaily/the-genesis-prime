@@ -34,6 +34,8 @@ pub fn rows(db db: pog.Connection) -> Result(List(Row), pog.QueryError) {
         respawn_ms: row.respawn_ms,
         attack_spell4_id: row.attack_spell4_id,
         attack_interval_ms: row.attack_interval_ms,
+        guard_spell4_id: row.guard_spell4_id,
+        opening_spell4_id: row.opening_spell4_id,
       )
     })
   })

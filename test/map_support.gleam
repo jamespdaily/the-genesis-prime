@@ -13,6 +13,7 @@ import genesis_prime/world_map/static_object.{type StaticObject}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
 import gleam/list
+import gleam/option
 import spawn_support
 
 /// The map's realm: not 1, so a unit built with a fixed realm fails.
@@ -48,6 +49,7 @@ pub fn standing(
         respawn_ms:,
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
+        guard: option.None,
       ),
       by_creature: dict.new(),
     ),

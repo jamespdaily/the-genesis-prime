@@ -46,10 +46,12 @@ import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_effect_info
 import genesis_prime/message/spell_effect_result
+import genesis_prime/message/spell_failed
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_missed
 import genesis_prime/message/spell_started
+import genesis_prime/message/spell_targets_removed
 import genesis_prime/message/spell_threshold_closed
 import genesis_prime/message/spell_threshold_ended
 import genesis_prime/message/spell_threshold_index
@@ -458,6 +460,41 @@ pub fn casts_in(frames frames: List(Frame)) -> List(CastEvent) {
         let assert Ok(ended) = spell_threshold_ended.decode(frame.body)
           as "0x815 decodes"
         Ok(ThresholdEnded(spell4_id: ended.spell4_id))
+      }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The casts the frames break (0x7f9), in order, each as the cast id, the result value and
+/// the unit whose cast it was.
+pub fn broken_casts_in(frames frames: List(Frame)) -> List(#(Int, Int, Int)) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x07F9 -> {
+        let assert Ok(failed) = spell_failed.decode(frame.body)
+          as "0x7f9 decodes"
+        Ok(#(
+          failed.cast_id,
+          cast_result.to_value(failed.result),
+          failed.unit_id,
+        ))
+      }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The units each 0x811 among the frames takes off a cast, in order, by cast id.
+pub fn targets_removed_in(
+  frames frames: List(Frame),
+) -> List(#(Int, List(Int))) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x0811 -> {
+        let assert Ok(removed) = spell_targets_removed.decode(frame.body)
+          as "0x811 decodes"
+        Ok(#(removed.cast_id, removed.unit_ids))
       }
       _ -> Error(Nil)
     }

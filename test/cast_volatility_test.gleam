@@ -272,6 +272,7 @@ fn started_told(
       client_connection.CastStarted(start:) -> Ok(#(tell.0, start))
       client_connection.CastWent(..)
       | client_connection.CastFinished(..)
+      | client_connection.CastInterrupted(..)
       | client_connection.CastMissed(..)
       | client_connection.CastTargetsRemoved(..)
       | client_connection.CastStackRemoved(..)

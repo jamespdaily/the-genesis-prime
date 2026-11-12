@@ -104,6 +104,8 @@ pub type LoadCreatureKindsRow {
     respawn_ms: Int,
     attack_spell4_id: Int,
     attack_interval_ms: Int,
+    guard_spell4_id: Option(Int),
+    opening_spell4_id: Option(Int),
   )
 }
 
@@ -122,11 +124,15 @@ pub fn load_creature_kinds(
     use respawn_ms <- decode.field(1, decode.int)
     use attack_spell4_id <- decode.field(2, decode.int)
     use attack_interval_ms <- decode.field(3, decode.int)
+    use guard_spell4_id <- decode.field(4, decode.optional(decode.int))
+    use opening_spell4_id <- decode.field(5, decode.optional(decode.int))
     decode.success(LoadCreatureKindsRow(
       creature_id:,
       respawn_ms:,
       attack_spell4_id:,
       attack_interval_ms:,
+      guard_spell4_id:,
+      opening_spell4_id:,
     ))
   }
 
@@ -137,7 +143,9 @@ select
   creature_id,
   respawn_ms,
   attack_spell4_id,
-  attack_interval_ms
+  attack_interval_ms,
+  guard_spell4_id,
+  opening_spell4_id
 from creature_kind
 order by creature_id;
 "

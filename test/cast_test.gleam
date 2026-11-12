@@ -422,6 +422,7 @@ pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_tes
               CastStarted(..) -> "start"
               CastWent(..) -> "go"
               CastFinished(..) -> "finish"
+              client_connection.CastInterrupted(..) -> "interrupt"
               client_connection.Appeared(..)
               | client_connection.CreatureAppeared(..)
               | client_connection.Moving(..)

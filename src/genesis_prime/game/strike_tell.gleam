@@ -121,6 +121,11 @@ pub type Outcome {
   /// states the unit took of the strike's `controls` (a unit that takes none
   /// answers `[]`).
   Landed(descriptions: List(Description), controls: List(ControlLanded))
+  /// A guarded creature (genesis_prime/world_map/creature_guard) took no damage from a
+  /// strike that had blows: it keeps its health, the states it took of the strike's
+  /// `controls` still land, and the striker's connection shows the immunity
+  /// (`opcode.0x247.immunity`).
+  Immune(controls: List(ControlLanded))
   /// The creature deflected the whole strike.
   Deflected
   /// The creature took no strike.

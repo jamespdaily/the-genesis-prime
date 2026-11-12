@@ -89,7 +89,6 @@ import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
 import genesis_prime/message/start_movement
-import genesis_prime/message/static_unit_type
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_create_player
@@ -4134,6 +4133,20 @@ fn presses_until_the_target_dies(
   cast_id cast_id: Int,
   seen seen: List(Frame),
 ) -> #(List(Frame), BitArray) {
+  presses_at_most(time:, game:, have:, target:, cast_id:, seen:, presses: 1000)
+}
+
+/// The same, at most `presses` presses: the frames read and the bytes beyond, the
+/// target's death among them or not.
+fn presses_at_most(
+  time time: driven_time.Time,
+  game game: game_client.Game,
+  have have: BitArray,
+  target target: Int,
+  cast_id cast_id: Int,
+  seen seen: List(Frame),
+  presses presses: Int,
+) -> #(List(Frame), BitArray) {
   game_client.press_ability(
     game:,
     client_cast_id: cast_id,
@@ -4176,16 +4189,18 @@ fn presses_until_the_target_dies(
         })
       #(list.append(seen, more), have)
     }
+    False, False if presses <= 1 -> #(seen, have)
     False, False -> {
       driven_time.advance(time:, ms: paralytic_surge_lingers_ms)
       let #(later, have) = game_client.read_until_pong(game:, have:, number: 3)
-      presses_until_the_target_dies(
+      presses_at_most(
         time:,
         game:,
         have:,
         target:,
         cast_id: cast_id + 1,
         seen: list.append(seen, later),
+        presses: presses - 1,
       )
     }
   }
@@ -7049,75 +7064,237 @@ fn the_turret_at(
   turret.unit_id
 }
 
-pub fn an_exile_kills_both_sim_turrets_and_objective_21288_counts_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use tables <- on_rows_without_paralytic_surges_recharge()
-  let time = driven_time.new()
-  let started = world_with_the_turrets(tables:, time:)
-  let first_stands = #(turret_29178.0 +. 12.0, turret_29178.1, turret_29178.2)
-  let #(game, frames, have) =
-    an_exile_medic_near_the_turrets(started:, at: first_stands)
-  let first = the_turret_at(frames:, place: turret_29178)
-  let second = the_turret_at(frames:, place: turret_29179)
-  assert list.map(turrets_in(frames:), fn(turret) {
-      static_unit_type.to_value(turret.unit_type)
-    })
-    == [13, 13]
-    as "opcode.0x262: the turrets are created as unit type 13"
-  face(
-    game:,
-    yaw: game_client.yaw_toward(
-      from: #(first_stands.0, first_stands.2),
-      target: #(turret_29178.0, turret_29178.2),
-    ),
-    clock: 100,
-  )
-  let #(first_killed, have) =
-    presses_until_the_target_dies(
-      time:,
-      game:,
-      have:,
-      target: first,
-      cast_id: 1,
-      seen: [],
+/// How many presses fit in the 15000 ms opening after the press that interrupts, each
+/// 2700 ms after the last (`paralytic_surge_lingers_ms`): the presses at 2700 to 13500 ms.
+const presses_in_the_opening = 5
+
+/// Runs the body on the client's rows with Paralytic Surge's recharge taken off (as
+/// `on_rows_without_paralytic_surges_recharge`) and the Sim-Turrets' deflect taken off: their
+/// base deflect chance is 0.016 (CreatureLevel row 101 0.05 times Creature2Difficulty 1's
+/// multiplier 101 of 0.32, as `Creature2.73464.crit_deflect_glance` has it), and the
+/// presses the opening holds are only enough to destroy a turret when none of them deflects.
+fn on_rows_with_turrets_that_never_deflect(
+  body body: fn(table_store.Tables) -> a,
+) -> a {
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "Spell4",
+      id: 42_352,
+      with: [#("spellCoolDown", planted_table.Integer(0))],
     )
-  // The kill's credit comes from the creature after its death is written.
-  let #(first_counted, have) =
-    game_client.read_until_pong(game:, have:, number: 7)
-  // The second turret, 12 beyond it the same way: the walk is one position command.
-  let second_stands = #(turret_29179.0 +. 12.0, turret_29179.1, turret_29179.2)
+    as "Spell4 42352 holds the column spellCoolDown"
+  let assert Ok(rows) =
+    fixture_tables.change(rows:, table: "Creature2Difficulty", id: 1, with: [
+      #("unitPropertyMultiplier101", planted_table.Float(0.0)),
+    ])
+    as "Creature2Difficulty 1, the Sim-Turret's difficulty, holds the column unitPropertyMultiplier101"
+  fixture_tables.on_rows(rows:, reaching: [], body:)
+}
+
+/// The medic walks to 8 beyond the turret at `place`, inside its aggro range, faces it and waits
+/// for its charge to open; presses Paralytic Surge once, whose stun breaks the charge, and
+/// presses on within the 15 s of the opening until the turret is destroyed. It checks the
+/// wire of the interrupt on the way and gives every frame read and the bytes beyond.
+fn interrupts_and_destroys(
+  started started: login_support.Started,
+  time time: driven_time.Time,
+  game game: game_client.Game,
+  have have: BitArray,
+  turret turret: Int,
+  own own: Int,
+  guard_cast guard_cast: Int,
+  place place: #(Float, Float, Float),
+  clock clock: Int,
+  cast_id cast_id: Int,
+) -> #(List(Frame), BitArray) {
+  let stands = #(place.0 +. 8.0, place.1, place.2)
   game_client.send_world(
     game:,
     message_id: 0x0637,
-    body: game_client.moves_body(client_clock: 200, commands: [
-      game_client.position_command(
-        x: second_stands.0,
-        y: second_stands.1,
-        z: second_stands.2,
-      ),
+    body: game_client.moves_body(client_clock: clock, commands: [
+      game_client.position_command(x: stands.0, y: stands.1, z: stands.2),
     ]),
   )
   face(
     game:,
-    yaw: game_client.yaw_toward(
-      from: #(second_stands.0, second_stands.2),
-      target: #(turret_29179.0, turret_29179.2),
-    ),
-    clock: 300,
+    yaw: game_client.yaw_toward(from: #(stands.0, stands.2), target: #(
+      place.0,
+      place.2,
+    )),
+    clock: clock + 100,
   )
-  let #(second_killed, have) =
-    presses_until_the_target_dies(
+  let #(aggroed, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.contains(
+        game_client.fight_in(frames:),
+        game_client.Targeted(unit_id: turret, target_unit_id: own, threat: 1),
+      )
+    })
+  // The attack tick, 3000 ms after the aggro, opens the charge.
+  the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
+  driven_time.advance(time:, ms: 3000)
+  let #(opened, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      game_client.starts_of(
+        events: game_client.casts_in(frames:),
+        spell4_id: 85_469,
+      )
+      != []
+    })
+  let assert [#(charge_cast, charger)] =
+    game_client.starts_of(
+      events: game_client.casts_in(frames: opened),
+      spell4_id: 85_469,
+    )
+    as "the tick opens the charge with one 0x7ff of Spell4 85469"
+  assert charger == turret
+  // The press: Paralytic Surge's damage takes nothing from the guarded turret and its stun
+  // (Spell4Effects 96126, 2700 ms) breaks the charge.
+  the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
+  game_client.press_ability(
+    game:,
+    client_cast_id: cast_id,
+    bag_index: 2,
+    target: 0,
+  )
+  // The connection's pong orders only its own input, not the creature's sends, so the
+  // read waits for every message the assertions below name: the broken charge's 0x7fe, the
+  // opening's 0x7ff, the guard's 0x811, the states' 0x87f and the press's 0x247 immunity.
+  // The turret sends its news to the connection before it answers the strike, and a process's
+  // messages to another arrive in the order sent, so a health the press took would be read
+  // before the immunity the answer makes.
+  let immunity =
+    Frame(
+      message_id: 0x0247,
+      body: message_support.packed([
+        #(6, 18),
+        #(32, own),
+        #(32, turret),
+        #(18, 42_352),
+        #(4, 2),
+      ]),
+    )
+  let #(interrupted, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.contains(
+        game_client.casts_in(frames:),
+        game_client.CastFinished(cast_id: charge_cast),
+      )
+      && game_client.starts_of(
+        events: game_client.casts_in(frames:),
+        spell4_id: 85_472,
+      )
+      != []
+      && list.contains(
+        game_client.targets_removed_in(frames:),
+        #(guard_cast, [turret]),
+      )
+      && list.any(frames, fn(frame) { frame.message_id == 0x087F })
+      && list.contains(frames, immunity)
+    })
+  let events = game_client.casts_in(frames: interrupted)
+  assert game_client.broken_casts_in(frames: interrupted)
+    == [#(charge_cast, 11, turret)]
+    as "opcode.0x7f9: the charge is broken with result 11 by the turret"
+  assert list.contains(events, game_client.CastFinished(cast_id: charge_cast))
+    as "opcode.0x7fe: the broken charge's 0x7fe follows"
+  let assert [#(_, opener)] = game_client.starts_of(events:, spell4_id: 85_472)
+    as "Spell4 85472, the opening, starts once"
+  assert opener == turret as "cast by the turret"
+  assert game_client.targets_removed_in(frames: interrupted)
+    == [#(guard_cast, [turret])]
+    as "opcode.0x811: the guard's cast comes off the turret"
+  assert !list.any(game_client.health_in(frames: interrupted), fn(health) {
+    health.0 == turret
+  })
+    as "the guarded turret took no damage from the press"
+  assert list.contains(interrupted, immunity)
+    as "opcode.0x247.immunity: the press's striker is shown the turret's immunity, type 18 with Spell4 42352"
+  assert list.any(interrupted, fn(frame) { frame.message_id == 0x087F })
+    as "opcode.0x87f: the states of the stun and the opening are told"
+  // The opening lasts 15000 ms on the clock from the interrupting press, and a press's hit
+  // lingers 2700 ms before the next (Spell4Effects 96126), so the presses at 2700, 5400,
+  // 8100, 10800 and 13500 ms fit in it and a sixth, at 16200, would find the guard back.
+  // The turret never deflects (`on_rows_with_turrets_that_never_deflect`), so the five presses
+  // all hit, whatever the connection's rolls are, and the kill below tells whether their
+  // damage takes the turret's health.
+  the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
+  driven_time.advance(time:, ms: paralytic_surge_lingers_ms)
+  let #(lingered, have) = game_client.read_until_pong(game:, have:, number: 2)
+  let #(killed, have) =
+    presses_at_most(
       time:,
       game:,
       have:,
-      target: second,
-      cast_id: 100,
+      target: turret,
+      cast_id: cast_id + 1,
       seen: [],
+      presses: presses_in_the_opening,
+    )
+  let seen = list.flatten([aggroed, opened, interrupted, lingered, killed])
+  assert list.contains(game_client.deaths_in(frames: seen), #(turret, True))
+    as "the opened turret takes the presses' damage and is destroyed within its 15 s"
+  #(seen, have)
+}
+
+pub fn an_exile_interrupts_and_destroys_both_sim_turrets_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use tables <- on_rows_with_turrets_that_never_deflect()
+  let time = driven_time.new()
+  let started = world_with_the_turrets(tables:, time:)
+  // Enters 14 beyond the first turret, outside its aggro range 10.
+  let enters = #(turret_29178.0 +. 14.0, turret_29178.1, turret_29178.2)
+  let #(game, frames, have) =
+    an_exile_medic_near_the_turrets(started:, at: enters)
+  let first = the_turret_at(frames:, place: turret_29178)
+  let second = the_turret_at(frames:, place: turret_29179)
+  let own = game_client.unit_create_player_in(frames:).unit_id
+  let #(arrived, have) = game_client.read_until_pong(game:, have:, number: 1)
+  let guards =
+    game_client.starts_of(
+      events: game_client.casts_in(frames: list.append(frames, arrived)),
+      spell4_id: 85_474,
+    )
+  let assert Ok(#(first_guard, _)) =
+    list.find(guards, fn(guard) { guard.1 == first })
+    as "Spell4 85474, the guard, is cast by each turret on arrival: the first's"
+  let assert Ok(#(second_guard, _)) =
+    list.find(guards, fn(guard) { guard.1 == second })
+    as "and the second's"
+  let #(first_seen, have) =
+    interrupts_and_destroys(
+      started:,
+      time:,
+      game:,
+      have:,
+      turret: first,
+      own:,
+      guard_cast: first_guard,
+      place: turret_29178,
+      clock: 100,
+      cast_id: 1,
+    )
+  // The kill's credit comes from the creature after its death is written.
+  let #(first_counted, have) =
+    game_client.read_until_pong(game:, have:, number: 7)
+  let #(second_seen, have) =
+    interrupts_and_destroys(
+      started:,
+      time:,
+      game:,
+      have:,
+      turret: second,
+      own:,
+      guard_cast: second_guard,
+      place: turret_29179,
+      clock: 400,
+      cast_id: 100,
     )
   let #(second_counted, _) =
     game_client.read_until_pong(game:, have:, number: 14)
   assert list.filter(
-      list.flatten([first_killed, first_counted, second_killed, second_counted]),
+      list.flatten([first_seen, first_counted, second_seen, second_counted]),
       fn(frame) { frame.message_id == 0x0361 },
     )
     == [
@@ -7130,7 +7307,7 @@ pub fn an_exile_kills_both_sim_turrets_and_objective_21288_counts_test() -> Nil 
         body: message_support.packed([#(15, 10_518), #(32, 4), #(32, 2)]),
       ),
     ]
-    as "opcode.0x361: each kill counts objective 21288, the fifth of quest 10518: 1 of 2, then 2 of 2"
+    as "opcode.0x361: each destroyed turret counts objective 21288, the fifth of quest 10518: 1 of 2, then 2 of 2"
   game_client.close(game:)
   login_support.stop(started)
 }
