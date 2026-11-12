@@ -11,9 +11,10 @@ import genesis_prime/game/cast
 import genesis_prime/game/spell_plan.{AliveOrDead, CannotBeDead, MustBeDead}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
+import genesis_prime/message/crowd_control_state
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{Spell4ConditionsId, Spell4Id}
+import genesis_prime/table/id.{Spell4ConditionsId, Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_conditions
 import gleam/dict
@@ -71,13 +72,13 @@ pub fn every_activate_spell_has_a_plan_or_a_reason_test() -> Nil {
     })
   assert list.all(reasons, fn(reason) { string.starts_with(reason.1, "the ") })
     as "each spell the plan cannot build holds the plan's own reason in words: the Spell4 row and the effect it does not read, or the table row it lacks"
-  assert list.length(reasons) == 260
-    as "260 of the activate spells cannot be planned: 103 hold an effect the plan does not read (a CCStateSet, a DisguiseOutfit, a SpellForceRemove, a VitalModifier, a Stealth or a Proxy row, or a missing Spell4Base row) and 157 more hold an effect other than Activate aimed at the target or an area of a type some rule reads for that aim (a Proxy, Damage, Fluff and so on; a RavelSignal aimed at the target alone refuses nothing: 251 of the 408 that hold one are planned), which an activate cast, striking no one, would lose: the press is refused as not built, with the reason logged once; a row of a type no rule reads is dropped by every cast and refuses nothing"
+  assert list.length(reasons) == 255
+    as "255 of the activate spells cannot be planned: 98 hold an effect the plan does not read (a CCStateSet, a DisguiseOutfit, a SpellForceRemove, a VitalModifier, a Stealth or a Proxy row, or a missing Spell4Base row) and 157 more hold an effect other than Activate aimed at the target or an area of a type some rule reads for that aim (a Proxy, Damage, Fluff and so on; a RavelSignal aimed at the target alone refuses nothing: 251 of the 408 that hold one are planned), which an activate cast, striking no one, would lose: the press is refused as not built, with the reason logged once; a row of a type no rule reads is dropped by every cast and refuses nothing"
   assert list.count(reasons, fn(reason) {
       string.contains(reason.1, "aims at the target or an area")
     })
     == 157
-    as "157 of the 260 are refused for an effect aimed at the target or an area"
+    as "157 of the 255 are refused for an effect aimed at the target or an area"
   let assert Ok(why) = list.key_find(reasons, 38_392)
     as "Spell4 38392 (Creature2 19232's spell) is among them"
   assert string.contains(why, "82255")
@@ -98,6 +99,38 @@ pub fn every_activate_spell_has_a_plan_or_a_reason_test() -> Nil {
     }
   })
     as "some activate spells are castMethod 5 (client side interaction), which the cast rule does not build: the plan holds them and the press is refused as not built"
+}
+
+pub fn the_hoverboard_activate_spell_is_planned_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let activations = activate.activations(tables: client_tables.shared())
+  let assert Ok(Planned(spell:, ..)) =
+    activate.planned_of(activations:, spell4_id: 86_744)
+    as "Spell4 86744, the tutorial hoverboard's activate spell (Creature2 73419), is planned: its Proxy chain 85562 to 85563 holds only rows the plan reads"
+  let assert [mount] = spell.proxies
+    as "Spell4Effects 226437 is the Proxy to Spell4 85562"
+  assert mount.spell.spell4_id == Spell4Id(85_562)
+  let assert [ride] = mount.spell.proxies
+    as "Spell4Effects 224969 is 85562's Proxy to Spell4 85563 (SummonMount 224965 is left out until the ride is read)"
+  assert ride.spell.spell4_id == Spell4Id(85_563)
+  assert list.map(ride.spell.controls, fn(control) { control.effect_id })
+    == [Spell4EffectsId(224_967)]
+    as "85563's CCStateSet 224967 is its one state"
+  assert list.map(
+      spell_plan.restrictions_in_phase(
+        spell: ride.spell,
+        phase: 0,
+        spent: option.None,
+      ),
+      fn(control) {
+        #(control.aim, control.row.state, control.row.until_removed)
+      },
+    )
+    == [
+      #(spell_plan.AimsAtCaster, crowd_control_state.AbilityRestriction, True),
+    ]
+    as "224967 holds Ability Restriction (dataBits00 27) on the caster until removed (targetFlags 1, flags 2)"
 }
 
 /// What the plan holds of the spell's target death, from the fixture's rows.

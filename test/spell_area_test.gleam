@@ -709,7 +709,13 @@ pub fn each_kit_crowd_control_row_decodes_as_a_stun_or_a_knockdown_with_its_time
       as "one CCStateSet row fires in the spell's first phase"
     assert control.effect_id == Spell4EffectsId(effect_id)
     assert control.row
-      == crowd_control.Row(state:, delay_ms:, duration_ms:, armor_removed: 1)
+      == crowd_control.Row(
+        state:,
+        delay_ms:,
+        duration_ms:,
+        armor_removed: 1,
+        until_removed: False,
+      )
     assert control.aim == aim
   })
 }

@@ -817,14 +817,16 @@ WorldLocation2	51658	Exile Docking Bay landing, zone 5998	projector_test, game_c
 WorldLocation2	51657	Dominion Docking Bay landing, zone 5999	projector_test, game_connection_projector_test, content_load_test
 Quest2	10540	Exile mission quest, objective 1 is the Mission Projector's zone objective 21373	projector_test, game_connection_projector_test, content_load_test
 Quest2	10541	Dominion mission quest, objective 1 is 21376	projector_test, game_connection_projector_test, content_load_test
-Creature2	73419	the hoverboard of objective 21324, a use of the training simulation's first quest after 10513	game_wire_test
+Creature2	73419	the tutorial hoverboard, whose activate spell 86744 casts the ride 85563 that restricts the caster	cast_activate_test, game_connection_tutorial_test, game_wire_test
 Creature2	73662	creature of the type 18 objective 21332 of quest 10525	game_wire_test
 Creature2	73663	creature of the type 3 objective 21333 of quest 10525	game_wire_test
 Creature2	73664	creature of the type 3 objective 21334 of quest 10525	game_wire_test
 Creature2	73498	creature of the type 12 objective 21293 of quest 10519	game_wire_test
 Creature2	74745	creature of the type 12 objective 21345 of quest 10519	game_wire_test
 Creature2	74746	creature of the type 12 objective 21346 of quest 10519	game_wire_test
-Creature2	73604	Rhoda, the creature of the type 3 objective 21326 of quest 10528	game_wire_test
+Creature2	73604	a Simple unit (type 10) that is the type 3 talk target of objective 21326 of quest 10528	interaction_talk_target_test, game_wire_test
 WorldLocation2	51737	marker of objective 21272 (circle 3) of quest 10513	game_wire_test
 WorldLocation2	51703	marker of objective 21321 of quest 10527	game_wire_test
 WorldLocation2	51674	marker of objective 21295 of quest 10520	game_wire_test
+Creature2	12545	a Simple unit (type 10) that gives and receives quest 3689, faction 219, uiFlags 559	interaction_test, quest_accept_test, quest_turn_in_test
+Quest2	3689	the quest of the Simple unit 12545, which it gives and receives	quest_accept_test, quest_turn_in_test, interaction_test

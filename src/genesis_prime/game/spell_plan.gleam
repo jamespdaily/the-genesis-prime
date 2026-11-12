@@ -72,7 +72,9 @@
 //// - **The crowd-control effects.** A CCStateSet effect (`Spell4Effects.effectType.4`)
 ////   of a tree is a `CrowdControl` row: the unit its targetFlags aim at (the primary
 ////   target, the area or both: a state on a caster is a player's, which no creature
-////   casts), and its Stun (0) or Knockdown (8) state, delay, durationTime and the
+////   casts; a row aimed at the caster holds Ability Restriction (27) on it, which
+////   `restrictions_in_phase` lists apart from the strike's), and its Stun (0),
+////   Knockdown (8) or Ability Restriction state, delay, durationTime and the
 ////   Interrupt Armor it removes (genesis_prime/game/crowd_control). The strike
 ////   tells the units it selects the row's state, even when its phase has no damage
 ////   (genesis_prime/game/spell_area `phase`); the cast rule lists the states that
@@ -255,8 +257,9 @@
 ////   effect with a dataBits00 other than 1 to 3, naming no group, Spell4 or
 ////   Spell4Base, or whose dataBits03 and dataBits04 differ; a Spell4GroupList or
 ////   Spell4StackGroup row a spell names that the tables lack; and a CCStateSet effect
-////   of a state other than Stun and Knockdown, aimed at the caster or by other flags,
-////   or behind an apply prerequisite.
+////   of a state other than Stun, Knockdown and Ability Restriction, of Stun or Knockdown
+////   aimed at the caster or by other flags, of Ability Restriction aimed anywhere but at
+////   the caster, or behind an apply prerequisite.
 
 import genesis_prime/game/cooldown
 import genesis_prime/game/crowd_control
@@ -277,8 +280,8 @@ import genesis_prime/table/class
 import genesis_prime/table/id.{
   type ItemSlotId, type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId,
   type Spell4Id, type UnitProperty2Id, ClassId, ItemDisplayId, PrerequisiteId,
-  Spell4BaseId, Spell4ConditionsId, Spell4EffectsId, Spell4Id,
-  Spell4StackGroupId, SpellCoolDownId, UnitProperty2Id,
+  Spell4BaseId, Spell4CCConditionsId, Spell4ConditionsId, Spell4EffectsId,
+  Spell4Id, Spell4StackGroupId, SpellCoolDownId, UnitProperty2Id,
 }
 import genesis_prime/table/item2_type
 import genesis_prime/table/item_display
@@ -288,6 +291,7 @@ import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite as prerequisite_table
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
+import genesis_prime/table/spell4_cc_conditions
 import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_group_list
@@ -538,6 +542,11 @@ pub type Spell {
     /// Whether the target must be alive or dead: bit 0 of the target condition row
     /// (`Spell4.spell4ConditionsIdTarget`).
     target_death: CasterDeath,
+    /// The crowd-control states that refuse a press of this spell: the ccStateMask of
+    /// the Spell4CCConditions row the Spell4's caster column names, 0 for no row;
+    /// bit n is the state n (`CheckSpellCCConditions`, `0x1403b2c40`). The row's
+    /// ccStateFlagsRequired is 0 in every row the client has, so it is not read.
+    caster_cc_mask: Int,
     global_cooldown: GlobalCooldown,
     /// The innate costs a press pays, in the client's order: the Spell4 row's two,
     /// then a stage's Spell4Thresholds row's two (`0x1403b3320`).
@@ -582,7 +591,8 @@ pub type Spell {
     lasting: List(Lasting),
     /// The SpellForceRemove effects that take casts off a unit.
     removes: List(ForceRemove),
-    /// The CCStateSet effects that hold a stun or a knockdown on a unit.
+    /// The CCStateSet effects that hold a stun or a knockdown on a unit, and those that
+    /// hold Ability Restriction on the caster (`restrictions_in_phase`).
     controls: List(CrowdControl),
     /// The UnitPropertyModifier and UnitPropertyConversion effects aimed at the caster,
     /// which change its properties for their time.
@@ -1107,12 +1117,12 @@ pub type PlanError {
   /// A Fluff, SpellForceRemove, Scale or RavelSignal effect of a tree is aimed by a flag
   /// value that is not read (`Spell4Effects.targetFlags`).
   LastingAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
-  /// A CCStateSet effect of a tree holds a state other than Stun and Knockdown,
-  /// which no rule of the server holds on a creature (`Unit.CodeEnumCCState`).
+  /// A CCStateSet effect of a tree holds a state other than Stun, Knockdown and Ability
+  /// Restriction, which no rule of the server holds (`Unit.CodeEnumCCState`).
   ControlStateNotRead(spell4_id: Int, effect_id: Int, state: Int)
-  /// A CCStateSet effect of a tree is aimed at the caster or by a flag value that is
-  /// not read: only the primary target, the area or both are
-  /// (`Spell4Effects.targetFlags`).
+  /// A CCStateSet effect of a tree is aimed by a flag value that is not read: Stun and
+  /// Knockdown only at the primary target, the area or both, Ability Restriction only at
+  /// the caster (`Spell4Effects.targetFlags`).
   ControlAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A CCStateSet effect of a tree has an apply prerequisite, which is not read.
   ControlPrerequisiteNotRead(spell4_id: Int, effect_id: Int)
@@ -1315,7 +1325,7 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(effect_id)
       <> " of state "
       <> int.to_string(state)
-      <> ", and only Stun (0) and Knockdown (8) are read"
+      <> ", and only Stun (0), Knockdown (8) and Ability Restriction (27) are read"
     ControlAimNotRead(spell4_id:, effect_id:, target_flags:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1323,7 +1333,7 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(effect_id)
       <> " aimed by flags "
       <> int.to_string(target_flags)
-      <> ", and only the primary target, the area or both are read"
+      <> ", and only the primary target, the area or both are read for Stun and Knockdown, and the caster for Ability Restriction"
     ControlPrerequisiteNotRead(spell4_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1849,6 +1859,10 @@ fn spell_of(
     tables:,
     id: row.spell4_conditions_id_target,
   ))
+  use caster_cc_mask <- result.try(cc_mask_of(
+    tables:,
+    id: row.spell4_cc_conditions_id_caster,
+  ))
   let caster_death = caster_death_of(conditions: caster_conditions)
   let target_death = caster_death_of(conditions: target_conditions)
   use costs <- result.try(
@@ -1995,6 +2009,7 @@ fn spell_of(
       weapon: weapon_of(base.weapon_slot),
       caster_death:,
       target_death:,
+      caster_cc_mask:,
       global_cooldown:,
       costs:,
       requirements:,
@@ -2212,29 +2227,38 @@ fn force_remove_counts_read(
 }
 
 /// One CCStateSet row (`Spell4Effects.effectType.4`): dataBits00 must be Stun or
-/// Knockdown, the effect must aim at the primary target, the area or both, and it must
-/// have no apply prerequisite. Its delayTime, durationTime and the armor it removes
+/// Knockdown, aimed at the primary target, the area or both, or AbilityRestriction (27),
+/// aimed at the caster alone, and it must have no apply prerequisite. Its delayTime,
+/// durationTime, flags bit 2 (a state that never times out) and the armor it removes
 /// (dataBits03) are read as they are.
 fn control_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(CrowdControl, PlanError) {
   use state <- result.try(case effect.data_bits00 {
-    0 | 8 -> Ok(crowd_control_state.from_value(effect.data_bits00))
+    0 | 8 | 27 -> Ok(crowd_control_state.from_value(effect.data_bits00))
     other ->
       Error(ControlStateNotRead(spell4_id:, effect_id: effect.id, state: other))
   })
-  use aim <- result.try(case aim_of(target_flags: effect.target_flags) {
-    AimsAtPrimaryTarget -> Ok(AimsAtPrimaryTarget)
-    AimsAtArea -> Ok(AimsAtArea)
-    AimsAtBoth -> Ok(AimsAtBoth)
-    AimsAtCaster | OtherAim(..) ->
-      Error(ControlAimNotRead(
-        spell4_id:,
-        effect_id: effect.id,
-        target_flags: effect.target_flags,
-      ))
-  })
+  let aim_not_read =
+    Error(ControlAimNotRead(
+      spell4_id:,
+      effect_id: effect.id,
+      target_flags: effect.target_flags,
+    ))
+  use aim <- result.try(
+    case
+      state == crowd_control_state.AbilityRestriction,
+      aim_of(target_flags: effect.target_flags)
+    {
+      True, AimsAtCaster -> Ok(AimsAtCaster)
+      True, _ -> aim_not_read
+      False, AimsAtPrimaryTarget -> Ok(AimsAtPrimaryTarget)
+      False, AimsAtArea -> Ok(AimsAtArea)
+      False, AimsAtBoth -> Ok(AimsAtBoth)
+      False, AimsAtCaster | False, OtherAim(..) -> aim_not_read
+    },
+  )
   use Nil <- result.map(
     case
       effect.prerequisite_id_caster_apply,
@@ -2254,6 +2278,7 @@ fn control_of(
       delay_ms: effect.delay_time,
       duration_ms: effect.duration_time,
       armor_removed: effect.data_bits03,
+      until_removed: has_flag(flags: effect.flags, bit: 2),
     ),
     tag: tag_of(effect:),
   )
@@ -4098,6 +4123,21 @@ fn conditions_row_of(
   }
 }
 
+/// The ccStateMask of the Spell4CCConditions row an id names, 0 for the id 0; a row the
+/// table lacks fails the load.
+fn cc_mask_of(
+  tables tables: table_store.Tables,
+  id id: Int,
+) -> Result(Int, PlanError) {
+  case id {
+    0 -> Ok(0)
+    id ->
+      spell4_cc_conditions.get(tables:, id: Spell4CCConditionsId(id))
+      |> result.map(fn(row) { row.cc_state_mask })
+      |> result.replace_error(NoRow(table: "Spell4CCConditions", id:))
+  }
+}
+
 /// The spell's innate costs, as (vital type, amount, EMM id): the Spell4 row's two,
 /// then the two of the Spell4Thresholds row for a stage, which hold no EMM id; a type
 /// of 0 or above 30, or an amount of 0, is none (`0x1403b3320`), unless the cost has
@@ -4588,15 +4628,36 @@ pub fn remove_stealth_in_phase(
   )
 }
 
-/// The CCStateSet effects of the spell that apply in phase `phase`, those whose tag
-/// holds for the points the cast spent.
+/// The CCStateSet effects of the spell aimed at creatures that apply in phase `phase`,
+/// those whose tag holds for the points the cast spent. The states on the caster are
+/// `restrictions_in_phase`.
 pub fn controls_in_phase(
   spell spell: Spell,
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(CrowdControl) {
   in_phase(
-    rows: spell.controls,
+    rows: list.filter(spell.controls, fn(control) {
+      control.aim != AimsAtCaster
+    }),
+    phase_flags: fn(control) { control.phase_flags },
+    tag: fn(control) { control.tag },
+    phase:,
+    spent:,
+  )
+}
+
+/// The CCStateSet effects of the spell aimed at the caster that apply in phase `phase`,
+/// those whose tag holds for the points the cast spent.
+pub fn restrictions_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(CrowdControl) {
+  in_phase(
+    rows: list.filter(spell.controls, fn(control) {
+      control.aim == AimsAtCaster
+    }),
     phase_flags: fn(control) { control.phase_flags },
     tag: fn(control) { control.tag },
     phase:,

@@ -68,6 +68,7 @@ fn an_object() -> shown.Shown {
       z: 0.0,
     ),
     hit_radius: 0.5,
+    hostile_to: Hostile(exile: False, dominion: False),
   )
 }
 

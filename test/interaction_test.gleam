@@ -70,6 +70,7 @@ import gleam/set
 import owned_test
 import planted_table.{Integer}
 import quest_support
+import simple_unit_support
 import spawn_support
 import vendor_support
 
@@ -522,6 +523,106 @@ pub fn a_vendor_open_the_client_would_refuse_is_refused_with_its_code_test() -> 
     as { what <> " is refused again" }
   assert support.logs_of(step: second, level: LogWarning) == []
     as { what <> " is a debug line the second time" }
+}
+
+/// Creature2 12545 is a Simple unit (CreationTypeEnum 10, shown as an object) that gives
+/// and receives quest 3689, and the player holds the quest, which the client's marking of
+/// the unit shows (`0x1405a8d40`); the client checks no unit type (`0x14047a060`,
+/// `0x1403add00`), so the request is answered with 0x357 alone.
+pub fn a_click_on_a_simple_quest_giver_opens_its_dialog_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state =
+    simple_unit_support.seen_by(
+      state: connection_support.entered_with_quests(quests: [
+        quest_support.accepted(3689, progress: []),
+      ]).0,
+      creature_id: 12_545,
+      faction_id: 219,
+      gap: reach -. 0.1,
+    )
+  let #(_, taken) =
+    connection_support.interaction_requested(
+      state:,
+      unit_id: simple_unit_support.unit,
+      kind: 37,
+    )
+  let assert [Frame(message_id: 0x0357, body:)] =
+    connection_support.written(taken:)
+    as "a TalkTo of a Simple giver within 6.0 + 3.0 is answered with 0x357 alone"
+  assert unit_dialog_open.decode(body)
+    == Ok(UnitDialogOpen(unit_id: simple_unit_support.unit, field_2: 0))
+    as "opcode.0x357: the answer names the unit"
+  assert support.logs_of(step: taken, level: LogWarning) == []
+}
+
+/// Creature2 73606 is a Simple unit whose row gives and receives no quest.
+pub fn a_simple_unit_with_no_quest_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state =
+    simple_unit_support.seen_by(
+      state: connection_support.in_world(),
+      creature_id: 73_606,
+      faction_id: 219,
+      gap: 1.0,
+    )
+  let #(_, taken) =
+    connection_support.interaction_requested(
+      state:,
+      unit_id: simple_unit_support.unit,
+      kind: 37,
+    )
+  assert connection_support.written_ids(taken) == []
+    as "a unit with no quest is answered with nothing"
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+    as "and logged once as a warning"
+  assert support.says(line:, words: "no quest")
+    as "the line says the row has no quest"
+  assert !support.says(line:, words: "not a creature")
+    as "a Simple unit is a unit the client's check reads"
+}
+
+/// A vendor's window is opened only for a creature: the client's refusal of a
+/// request for a unit that is not one is code 16 (`CheckInteractionTarget`, 0x1403add00),
+/// and a Simple unit with stock is not one the server opens.
+pub fn a_vendor_open_on_a_simple_unit_is_refused_with_16_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state =
+    simple_unit_support.seen_by(
+      state: connection_support.in_world_stocking(
+        vendors: vendor_support.stocking(creature_ids: [12_545]),
+      ),
+      creature_id: 12_545,
+      faction_id: 219,
+      gap: 1.0,
+    )
+  let #(_, taken) =
+    connection_support.interaction_requested(
+      state:,
+      unit_id: simple_unit_support.unit,
+      kind: 0x31,
+    )
+  let assert [
+    Frame(message_id: 0x0106, body: error),
+    Frame(message_id: 0x090B, body: refusal),
+  ] = connection_support.written(taken:)
+    as "a vendor open on a Simple unit is answered with 0x106, then the refusing 0x90b"
+  assert generic_error.decode(error) == Ok(GenericError(code: 16))
+    as "the client's code for a unit that is not a vendor creature"
+  assert vendor_items.decode(refusal)
+    == Ok(VendorItems(
+      unit_id: simple_unit_support.unit,
+      tabs: [],
+      items: [],
+      buy_multiplier: one,
+      sell_multiplier: one,
+      open: 1,
+      full_list: 0,
+      refuse: 1,
+    ))
+    as "the window closes with no stock (opcode.0x90b)"
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+    as "logged once as a warning"
+  assert support.says(line:, words: "not a creature")
 }
 
 /// What the rule says of the vendor window for a message and its body, over a picture

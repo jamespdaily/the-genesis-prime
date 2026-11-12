@@ -42,6 +42,7 @@ import genesis_prime/store.{
 import genesis_prime/table/id.{Item2Id, Quest2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
+import genesis_prime/world_map/creature_life.{Hostile}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -54,6 +55,7 @@ import player_life_support
 import quest_support
 import quest_turn_in_support as support
 import quest_walker_support
+import simple_unit_support
 
 const tutorial_quest = 10_520
 
@@ -193,6 +195,55 @@ pub fn turn_in_away_from_a_receiver_is_refused_test() -> Nil {
     tables: tables(),
     because: "Dorian Walker gives quest 10528 and does not receive it",
   )
+}
+
+/// Creature2 12545 is a Simple unit (CreationTypeEnum 10, shown as an object) that receives
+/// quest 3689 (`questIdReceive00`), which the log holds Achieved with no objective to do
+/// (the Quest2 row names none): the client's check of a receiver reads its row, life,
+/// disposition and range and not its unit type (`0x140553030`, `0x1403add00`).
+pub fn a_quest_is_turned_in_to_a_simple_receiver_in_reach_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let scene = support.scene(quest_id: 3689)
+  let receiver = fn(gap, hostile_to) {
+    support.Scene(
+      ..scene,
+      picture: simple_unit_support.picture(
+        creature_id: 12_545,
+        faction_id: 219,
+        checklist_index: 0,
+        gap:,
+        hostile_to:,
+      ),
+    )
+  }
+  let friendly = Hostile(exile: False, dominion: False)
+  let #(turn_in, _) =
+    support.asked(scene: receiver(8.9, friendly), tables: tables())
+  assert turn_in.quest_id == 3689
+  assert rows_of(log: turn_in.log)
+    == [
+      QuestRow(
+        quest_id: 3689,
+        state: 3,
+        completed_at: Some(1_700_000_000),
+        active: None,
+      ),
+    ]
+    as "the log holds the quest Completed at the Unix second of the turn-in (0x1405fbdc0.state_3)"
+  assert_refused(
+    scene: receiver(9.1, friendly),
+    tables: tables(),
+    because: "the Simple receiver is beyond 9.0, edge to edge",
+  )
+  let hostile = receiver(1.0, Hostile(exile: True, dominion: True))
+  assert_refused(
+    scene: hostile,
+    tables: tables(),
+    because: "the Simple receiver is Hostile",
+  )
+  let #(_, logged) = support.refused(scene: hostile, tables: tables())
+  assert set.contains(logged, "no receiver")
+    as "the refusal is the receiver's, not the quest's state"
 }
 
 pub fn auto_complete_quest_is_turned_in_untaken_test() -> Nil {

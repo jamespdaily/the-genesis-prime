@@ -4,9 +4,9 @@
 //// with the player in the world.
 ////
 //// ```
-//// 0x7EA {unit, 37}, inside 0x38C ─▶ take(Requested, ...) ─▶ a shown, alive creature whose row gives or
-////                                                           receives a quest the client would show, within
-////                                                           reach: OpenDialog(unit)
+//// 0x7EA {unit, 37}, inside 0x38C ─▶ take(Requested, ...) ─▶ a shown, alive creature or static object whose
+////                                                           row gives or receives a quest the client would
+////                                                           show, not Hostile, within reach: OpenDialog(unit)
 ////                                                        ─▶ any other: a log line, nothing written
 //// 0x7EA {unit, 0x31}             ─▶ a shown, alive creature of the vendor table, within reach and not
 ////                                   Hostile: OpenVendor(unit, vendor)
@@ -19,12 +19,13 @@
 ////   and nothing opens until the server answers. The client builds the responses
 ////   from its own quest state, and sends 0x0356 when there is more than one
 ////   (`opcode.0x356`), which needs no answer.
-//// - **The client sends the request** only for a creature that is alive, not Hostile
+//// - **The client sends the request** only for a unit that is alive, not Hostile
 ////   to the player and one that marks a quest interaction kind with a click handler
-////   (`0x14047a060`, `0x1405a8d40`), so a unit that is not shown, not a creature, dead,
-////   Hostile, with no quest in its row or with none the player's log shows is one the
-////   client would not have sent: it is logged and answered with nothing. The connection
-////   goes on, since the picture is one news message stale at worst
+////   (`0x14047a060`, `0x1405a8d40`), whatever its unit type: a static object (never
+////   created dead) is answered as a creature is. So a unit that is not shown, another
+////   player's, dead, Hostile, with no quest in its row or with none the player's log
+////   shows is one the client would not have sent: it is logged and answered with nothing.
+////   The connection goes on, since the picture is one news message stale at worst
 ////   (genesis_prime/game/shown).
 //// - **The reach** is 6.0 for a quest kind, measured between the two bodies' edges
 ////   (`0x1403ad690`), plus the 3.0 a request may add (`opcode.0x7ea`). The gap here
@@ -79,7 +80,7 @@ import genesis_prime/table/creature2.{type Creature2}
 import genesis_prime/table/id.{type Creature2Id, type RaceId, Faction2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{type Hostile}
-import genesis_prime/world_map/creature_path.{type Path}
+import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/spawn
 import gleam/bool
 import gleam/dict
@@ -335,12 +336,13 @@ fn dialog_effects(unit_id unit_id: Int, talked talked: Talked) -> List(Effect) {
   }
 }
 
-/// The creature whose dialog the player may open: the unit is a shown creature that is
-/// alive, not Hostile to the player and within reach, and either one an open objective
-/// names (`talk_targets`, whatever its row gives), or one whose row gives or
-/// receives a quest that `offers` says the player's log shows. A creature's Creature2 row
-/// and the player's Race row are in the tables (the load fails otherwise), so a missing
-/// one crashes.
+/// The unit whose dialog the player may open: the unit is a shown creature or static
+/// object that is alive, not Hostile to the player and within reach, and either one an
+/// open objective names (`talk_targets`, whatever its row gives), or one whose row gives
+/// or receives a quest that `offers` says the player's log shows. The client's check
+/// reads the unit's row, life, disposition and range and not its unit type
+/// (`0x14047a060`, `0x1403add00`). The unit's Creature2 row and the player's Race row
+/// are in the tables (the load fails otherwise), so a missing one crashes.
 fn talked_to(
   unit_id unit_id: Int,
   player player: Player,
@@ -353,49 +355,48 @@ fn talked_to(
   use shown <- result.try(
     dict.get(picture, unit_id) |> result.replace_error(NotShown(unit_id:)),
   )
-  case shown {
-    ShownPlayer | ShownObject(..) -> Error(NotACreature(unit_id:))
-    ShownCreature(
+  use talkable <- result.try(
+    shown.talkable(shown:, now_ms:)
+    |> result.replace_error(NotACreature(unit_id:)),
+  )
+  let shown.Talkable(
+    creature_id:,
+    faction_id:,
+    checklist_index:,
+    place:,
+    hit_radius: unit_radius,
+    alive:,
+    hostile_to:,
+  ) = talkable
+  use <- bool.guard(when: !alive, return: Error(Dead(unit_id:)))
+  use <- bool.guard(
+    when: hostile_to_player(player:, hostile_to:),
+    return: Error(HostileToPlayer(unit_id:)),
+  )
+  let assert Ok(row) = creature2.get(tables, creature_id)
+    as "a shown unit's Creature2 row is in the tables its spawn was loaded from"
+  let unit =
+    Unit(
       creature_id:,
-      faction_id:,
-      checklist_index:,
-      path:,
-      alive:,
-      hit_radius: creature_radius,
-      hostile_to:,
-      ..,
-    ) -> {
-      use <- bool.guard(when: !alive, return: Error(Dead(unit_id:)))
-      use <- bool.guard(
-        when: hostile_to_player(player:, hostile_to:),
-        return: Error(HostileToPlayer(unit_id:)),
-      )
-      let assert Ok(row) = creature2.get(tables, creature_id)
-        as "a shown creature's Creature2 row is in the tables its spawn was loaded from"
-      let unit =
-        Unit(
-          creature_id:,
-          faction_id: Faction2Id(faction_id),
-          unit_race_id: creature2.unit_race_id(row),
-        )
-      let target = talk_targets(unit, checklist_index)
-      use <- bool.guard(
-        when: !target && !list.any(spawn.quest_ids(row), fn(id) { id != 0 }),
-        return: Error(NoQuest(unit_id:, creature_id:)),
-      )
-      use <- bool.guard(
-        when: !within_reach(player:, tables:, path:, creature_radius:, now_ms:),
-        return: Error(TooFar(unit_id:)),
-      )
-      let talked = Talked(target: unit, checklist_index:, counted: target)
-      use <- bool.guard(when: target, return: Ok(talked))
-      case offers(row) {
-        Offered -> Ok(talked)
-        NothingToOffer -> Error(NothingOffered(unit_id:, creature_id:))
-        Undecided(quest_id:, cause:) ->
-          Error(OfferUndecided(unit_id:, creature_id:, quest_id:, cause:))
-      }
-    }
+      faction_id: Faction2Id(faction_id),
+      unit_race_id: creature2.unit_race_id(row),
+    )
+  let target = talk_targets(unit, checklist_index)
+  use <- bool.guard(
+    when: !target && !list.any(spawn.quest_ids(row), fn(id) { id != 0 }),
+    return: Error(NoQuest(unit_id:, creature_id:)),
+  )
+  use <- bool.guard(
+    when: !within_reach(player:, tables:, place:, unit_radius:),
+    return: Error(TooFar(unit_id:)),
+  )
+  let talked = Talked(target: unit, checklist_index:, counted: target)
+  use <- bool.guard(when: target, return: Ok(talked))
+  case offers(row) {
+    Offered -> Ok(talked)
+    NothingToOffer -> Error(NothingOffered(unit_id:, creature_id:))
+    Undecided(quest_id:, cause:) ->
+      Error(OfferUndecided(unit_id:, creature_id:, quest_id:, cause:))
   }
 }
 
@@ -411,28 +412,26 @@ pub fn hostile_to_player(
   }
 }
 
-/// Whether the creature, at its place now, is within reach of the player: the gap
+/// Whether the unit, standing at `place`, is within reach of the player: the gap
 /// between the two bodies' edges is no more than the reach. The player's Race row is
 /// in the tables (the load fails otherwise), so a missing one crashes.
 pub fn within_reach(
   player player: Player,
   tables tables: table_store.Tables,
-  path path: Path,
-  creature_radius creature_radius: Float,
-  now_ms now_ms: Int,
+  place place: Place,
+  unit_radius unit_radius: Float,
 ) -> Bool {
-  within(player:, tables:, path:, creature_radius:, now_ms:, range: reach)
+  within(player:, tables:, place:, unit_radius:, range: reach)
 }
 
-/// Whether the creature, at its place now, is within `range` of the player, the gap
+/// Whether the unit, standing at `place`, is within `range` of the player, the gap
 /// counted between the two bodies' edges. The player's Race row is in the tables (the
 /// load fails otherwise), so a missing one crashes.
 pub fn within(
   player player: Player,
   tables tables: table_store.Tables,
-  path path: Path,
-  creature_radius creature_radius: Float,
-  now_ms now_ms: Int,
+  place place: Place,
+  unit_radius unit_radius: Float,
   range range: Float,
 ) -> Bool {
   let assert Ok(player_radius) =
@@ -442,8 +441,8 @@ pub fn within(
     area.edge_gap(
       from: area.point_of(place: player.place),
       from_radius: player_radius,
-      to: area.point_of(place: creature_path.place_at(path:, now_ms:)),
-      to_radius: creature_radius,
+      to: area.point_of(place:),
+      to_radius: unit_radius,
     )
   gap <=. range
 }
@@ -483,7 +482,7 @@ pub fn vendor_opened(
       creature_id:,
       path:,
       alive:,
-      hit_radius: creature_radius,
+      hit_radius: unit_radius,
       hostile_to:,
       ..,
     ) -> {
@@ -509,7 +508,12 @@ pub fn vendor_opened(
       )
       use <- bool.guard(
         when: reach_check == CheckReach
-          && !within_reach(player:, tables:, path:, creature_radius:, now_ms:),
+          && !within_reach(
+          player:,
+          tables:,
+          place: creature_path.place_at(path:, now_ms:),
+          unit_radius:,
+        ),
         return: Error(VendorRefusal(
           unit_id:,
           code: vendor_too_far,
