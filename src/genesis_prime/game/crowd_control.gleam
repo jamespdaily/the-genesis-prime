@@ -14,7 +14,10 @@
 ////   0x87f waits for by instance id alone among every effect held on the unit, from
 ////   any caster, and 0 matches the first effect found (`cc_state.instance_id`), so an
 ////   id is non-zero and no two effects on a unit share one. It is made from the
-////   caster's unit id and the caster's own count of the states it told (`instance_id`).
+////   caster's unit id and a count of the states it told (`instance_id`). Two counters
+////   number them: `strike.controls_told` for the states on the creatures its strikes
+////   select, and `cast.restrictions_told` for the states on the caster itself. They
+////   number the states of different units, a creature's and the caster's own.
 
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 
