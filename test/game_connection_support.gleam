@@ -2396,6 +2396,22 @@ pub fn at(
   game_connection.step(state, support.input_at_ms(ms:, event:))
 }
 
+/// The connection after `timer` fired at the monotonic time `ms`.
+pub fn fired_at(
+  state state: game_connection.State,
+  timer timer: TimerId,
+  ms ms: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  at(state:, ms:, event: OwnEvent(TimerFired(timer)))
+}
+
+/// The 0x35C bodies the step writes, in order.
+pub fn quest_states(taken taken: ConnectionStep(Request)) -> List(BitArray) {
+  written(taken:)
+  |> list.filter(fn(frame) { frame.message_id == 0x035C })
+  |> list.map(fn(frame) { frame.body })
+}
+
 /// The step, and each strike it and the steps after it tell a creature answered as
 /// landed at `ms`, in order.
 pub fn landing(
