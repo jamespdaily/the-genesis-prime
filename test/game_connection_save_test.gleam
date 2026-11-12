@@ -1193,7 +1193,7 @@ pub fn a_save_timer_that_fires_while_the_connection_claims_again_is_a_bug_that_s
   })
 }
 
-pub fn the_save_timer_firing_in_character_select_is_a_bug_with_an_error_and_the_end_test() -> Nil {
+pub fn a_save_timer_firing_in_character_select_still_ends_the_connection_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) =
     game_connection_support.feed(
