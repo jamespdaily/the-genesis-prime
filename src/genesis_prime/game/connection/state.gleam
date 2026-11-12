@@ -165,6 +165,12 @@ pub type Session {
     /// connection's life and a message of an earlier stay never names the
     /// current one.
     last_stay: Stay,
+    /// What other processes sent for a stay while the connection waited on the
+    /// store for the answer to a summon, an item move, a purchase, a sale or a
+    /// quest turn-in (`waiting_on_the_store`), oldest first: each is taken, in
+    /// this order, once the answer returns the connection to the world
+    /// (genesis_prime/game/connection `stay_sent`).
+    held_sends: List(#(Stay, client_connection.StaySent)),
     status: Status,
   )
 }
@@ -471,6 +477,26 @@ pub fn held_in_the_world(
     | LeavingMap(..)
     | AwaitingHelloReply
     | TakingSessionKey -> None
+  }
+}
+
+/// Whether the status waits on the store for the answer to a flow that returns
+/// the connection to the world: a summon, an item move, a purchase, a sale or a
+/// quest turn-in. What other processes send for a stay meanwhile is held, not
+/// dropped.
+pub fn waiting_on_the_store(status: Status) -> Bool {
+  case status {
+    Summoning(..) | MovingItem(..) | Buying(..) | Selling(..) | TurningIn(..) ->
+      True
+    InWorld(..)
+    | WaitingToClaim(..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey -> False
   }
 }
 

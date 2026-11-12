@@ -270,6 +270,7 @@ pub fn step(
             next_whisper: 1,
             move_seq: 0,
             last_stay: stay.none_yet(),
+            held_sends: [],
             status: AwaitingHelloReply,
           )),
           Effects([OwnEffect(Write(hello_bytes(settings)))]),
@@ -936,8 +937,51 @@ pub fn carried_message_ids() -> List(Int) {
   routing.message_ids(arrival: routing.InsideWorldMessage)
 }
 
-/// The answer to the ask in flight.
+/// The answer to the ask in flight, then what other processes sent for a stay
+/// while it was out, once the connection is back in the world to take it.
 fn answered(
+  session session: Session,
+  now now: Now,
+  outcome outcome: Outcome(Answer),
+) -> client_connection.Handled(Session) {
+  case answered_by_status(session:, now:, outcome:) {
+    Continue(session, told) -> take_held(session:, now:, told:)
+    client_connection.Asking(..) as asking -> asking
+    client_connection.Done(..) as done -> done
+  }
+}
+
+/// Takes what was held while the store worked, oldest first, each through
+/// `stay_sent` after the effects `told` that came before it. A held message that
+/// starts an ask leaves the rest held for that ask's answer; one that ends the
+/// connection leaves the rest to go with the session.
+fn take_held(
+  session session: Session,
+  now now: Now,
+  told told: List(Effect(ConnectionEffect(Request))),
+) -> client_connection.Handled(Session) {
+  case session.held_sends, connection_state.held_in_the_world(session.status) {
+    [#(stay, sent), ..rest], Some(_) ->
+      case
+        stay_sent(
+          session: Session(..session, held_sends: rest),
+          now:,
+          stay:,
+          sent:,
+        )
+      {
+        Continue(session, more) ->
+          take_held(session:, now:, told: list.append(told, more))
+        client_connection.Asking(session, more, ask) ->
+          client_connection.Asking(session, list.append(told, more), ask)
+        client_connection.Done(session, more) ->
+          client_connection.Done(session, list.append(told, more))
+      }
+    [], _ | _, None -> Continue(session, told)
+  }
+}
+
+fn answered_by_status(
   session session: Session,
   now now: Now,
   outcome outcome: Outcome(Answer),
@@ -1043,7 +1087,9 @@ fn answered(
 
 /// What another process sent for a stay of the player (`ForStay`), taken at this
 /// one entry point: only while the player is in the world, and only when the stay
-/// is the player's own (genesis_prime/world_map/stay). Any other is dropped: it was
+/// is the player's own (genesis_prime/world_map/stay). While the connection waits
+/// on the store (`waiting_on_the_store`) it is held and taken here again once the
+/// answer returns the connection to the world. Any other is dropped: it was
 /// sent for an earlier stay, before a camp or the Holocrypt, and reaches a later
 /// one whose client holds none of the earlier units and whose creatures and
 /// viewers are others, or it reaches no stay at all. A dropped strike finds no
@@ -1080,7 +1126,18 @@ fn stay_sent(
             | client_connection.Done(..) as ended -> ended
           }
       }
-    Some(_) | None -> Continue(session, [])
+    Some(_) | None ->
+      case connection_state.waiting_on_the_store(session.status) {
+        True ->
+          Continue(
+            Session(
+              ..session,
+              held_sends: list.append(session.held_sends, [#(stay, sent)]),
+            ),
+            [],
+          )
+        False -> Continue(session, [])
+      }
   }
 }
 
