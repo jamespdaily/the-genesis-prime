@@ -664,11 +664,7 @@ pub fn viewer_takes(
       Continue(session, [
         connection_state.to_client(
           session,
-          connection_frames.control_applied_frame(
-            unit_id:,
-            state:,
-            instance_id:,
-          ),
+          cast.control_applied_frame(unit_id:, state:, instance_id:),
         ),
       ])
     }
@@ -677,12 +673,7 @@ pub fn viewer_takes(
       Continue(session, [
         connection_state.to_client(
           session,
-          connection_frames.control_ended_frame(
-            unit_id:,
-            state:,
-            cast_id:,
-            instance_id:,
-          ),
+          cast.control_ended_frame(unit_id:, state:, cast_id:, instance_id:),
         ),
       ])
     }

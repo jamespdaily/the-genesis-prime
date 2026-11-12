@@ -817,3 +817,4 @@ WorldLocation2	51658	Exile Docking Bay landing, zone 5998	projector_test, game_c
 WorldLocation2	51657	Dominion Docking Bay landing, zone 5999	projector_test, game_connection_projector_test, content_load_test
 Quest2	10540	Exile mission quest, objective 1 is the Mission Projector's zone objective 21373	projector_test, game_connection_projector_test, content_load_test
 Quest2	10541	Dominion mission quest, objective 1 is 21376	projector_test, game_connection_projector_test, content_load_test
+Creature2	73419	the tutorial hoverboard, whose activate spell 86744 casts the ride 85563 that restricts the caster	cast_activate_test, game_connection_tutorial_test

@@ -10,6 +10,13 @@
 ////   the strike gave, which the creature's 0x87f carries too.
 //// - `cc_state.end` and `cast.target_node_end`: the client ends no node on time, so the
 ////   cast's 0x7fe waits until the node's life is over.
+//// - `Unit.CodeEnumCCState` 27 (Ability Restriction) and `CheckSpellCCConditions`
+////   (`0x1403b2c40`, called by `CheckCastCaster`, `0x1403afb10`, at `0x1403affa2`): a
+////   caster that holds state 27 is refused a spell whose Spell4CCConditions mask has bit 27,
+////   with the result 302 (Caster_CannotBe_AbilityRestriction); the check comes after the
+////   test for a cast in progress (13) and before the cooldowns (15). Kick's caster row is
+////   4 (mask 218960747, bit 27 set), Crush's child 42297's is 2 (mask 0)
+////   (`Spell4.58591`, `Spell4.42297`, `Spell4CCConditions.4`, `Spell4CCConditions.2`).
 //// - `opcode.0x247.cc_state`: combat log type 1 names the state, whether it was removed,
 ////   the Interrupt Armor it hit, the result and the cast data (caster, target, Spell4,
 ////   combat result). The coordinator's decision on the issue: the caster writes it with
@@ -19,23 +26,28 @@
 import cast_support as support
 import crowd_control_support
 import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/crowd_control
 import genesis_prime/game/lasting
-import genesis_prime/game/spell_plan
+import genesis_prime/game/spell_plan.{type Spell, Spell}
 import genesis_prime/game/spend
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
 import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_result
-import genesis_prime/message/crowd_control_state.{Knockdown}
+import genesis_prime/message/crowd_control_state.{AbilityRestriction, Knockdown}
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
+import genesis_prime/message/unit_cc_state_applied
+import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/list
+import gleam/option.{Some}
 import owned_test
+import prerequisite_support
 
 /// Kick's spell, base 3, planted with no effect of its own: what a go lists comes from
 /// the creature's answer.
@@ -286,4 +298,206 @@ pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> 
     as "the node ends at the state's 4000, 2000 ms after the second go"
   assert !list.contains(afters, 3000)
     as "and not at 2000 + 3000, which re-arming the state as an effect would give"
+}
+
+// ---- Ability Restriction on the caster ----
+
+/// Kick, the real ability at bag index 3 (`cast_support.abilities`).
+const bag_of_kick = 3
+
+const bag_of_base_1 = 8
+
+/// A planted spell of base 3 whose go gives the caster Ability Restriction until its cast
+/// ends, as the hoverboard's ride 85563 does with its CCStateSet 224967 (targetFlags 1,
+/// flags 2, dataBits00 27); its caster persistence is the caster in combat.
+fn restricting() -> Spell {
+  Spell(
+    ..support.child(spell4_id: 7010, base: 3),
+    caster_persistence: Some(
+      prerequisite_support.single(id: 903, condition: #(28, 1, 0, 0)),
+    ),
+    controls: [
+      spell_plan.CrowdControl(
+        effect_id: Spell4EffectsId(224_967),
+        phase_flags: -1,
+        aim: spell_plan.AimsAtCaster,
+        row: crowd_control.Row(
+          state: AbilityRestriction,
+          delay_ms: 0,
+          duration_ms: 0,
+          armor_removed: 0,
+          until_removed: True,
+        ),
+        tag: spend.always,
+      ),
+    ],
+  )
+}
+
+/// A planted spell of base 1 with a cast bar and 1000 ms of cast time: its cast is the
+/// caster's current cast until its go.
+fn casting_for_a_second() -> Spell {
+  Spell(
+    ..support.child(spell4_id: 7011, base: 1),
+    cast_time_ms: 1000,
+    cast_bar: spell_plan.ShowsCastBar,
+  )
+}
+
+/// Crush's child 42297, caster conditions row 2 (`Spell4.42297`): its mask is 0.
+fn unmasked() -> Spell {
+  Spell(..support.child(spell4_id: 42_297, base: 1), caster_cc_mask: 0)
+}
+
+fn fighting() -> cast.Caster {
+  support.caster_in_combat(in_combat: True)
+}
+
+/// The state after the restricting spell is pressed at 1000 by a caster in combat, with
+/// its effects.
+fn restricted(plans plans: spell_plan.Plans) -> #(State, List(Effect)) {
+  support.press_by(
+    plans:,
+    state: cast.new(),
+    caster: fighting(),
+    bag: 11,
+    at: 1000,
+  )
+}
+
+pub fn a_press_while_restricted_is_refused_with_302_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans = support.plans_of([restricting(), casting_for_a_second()])
+  let #(state, first) =
+    support.press_by(
+      plans:,
+      state: cast.new(),
+      caster: fighting(),
+      bag: bag_of_kick,
+      at: 1000,
+    )
+  assert support.refusal_results(effects: first) == []
+    as "Kick passes while the caster holds no state"
+  let #(state, held) =
+    support.press_by(plans:, state:, caster: fighting(), bag: 11, at: 2000)
+  assert support.refusal_results(effects: held) == []
+    as "the restricting spell's own conditions (caster row 0, no mask) let it through"
+  let #(_, refused) =
+    support.press_by(
+      plans:,
+      state:,
+      caster: fighting(),
+      bag: bag_of_kick,
+      at: 3000,
+    )
+  assert support.refusal_results(effects: refused) == [302]
+    as "Kick's caster row 4 masks state 27 (bit 27 of 218960747): refused 302, though its cooldown of 20000 ms from the go at 1000 has 18 s left, which alone would refuse 15: CheckSpellCCConditions comes before CheckSpellCooldowns (0x1403afb10)"
+  // A cast in progress is refused first (0x1403afb10 tests it before the state).
+  let #(state, _) =
+    support.press_by(
+      plans:,
+      state: cast.new(),
+      caster: fighting(),
+      bag: 11,
+      at: 1000,
+    )
+  let #(state, _) =
+    support.press_by(
+      plans:,
+      state:,
+      caster: fighting(),
+      bag: bag_of_base_1,
+      at: 1500,
+    )
+  let #(_, casting) =
+    support.press_by(
+      plans:,
+      state:,
+      caster: fighting(),
+      bag: bag_of_kick,
+      at: 1600,
+    )
+  assert support.refusal_results(effects: casting) == [13]
+    as "a cast of 1000 ms in progress (900 ms left, outside the queue window) is refused 13 Already_Casting, ahead of 302 (0x1403afb10)"
+}
+
+pub fn a_press_of_an_unmasked_spell_passes_while_restricted_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans = support.plans_of([restricting(), unmasked()])
+  let #(state, _) = restricted(plans:)
+  let #(_, effects) =
+    support.press_by(
+      plans:,
+      state:,
+      caster: fighting(),
+      bag: bag_of_base_1,
+      at: 2000,
+    )
+  assert support.refusal_results(effects: effects) == []
+    as "Spell4.42297's caster row 2 has ccStateMask 0: state 27 does not refuse it"
+  let #(_, kick) =
+    support.press_by(
+      plans:,
+      state:,
+      caster: fighting(),
+      bag: bag_of_kick,
+      at: 2000,
+    )
+  assert support.refusal_results(effects: kick) == [302]
+    as "while Kick, whose row masks bit 27, is refused: the state is held"
+}
+
+pub fn the_restriction_ends_with_0x880_when_its_cast_ends_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans = support.plans_of([restricting()])
+  let #(state, pressed) = restricted(plans:)
+  let assert [applied] =
+    support.frames_of(
+      message_id: unit_cc_state_applied.message_id,
+      effects: pressed,
+    )
+    as "the go shows the state once (opcode.0x87f)"
+  let assert Ok(applied) = unit_cc_state_applied.decode(applied.body)
+  let #(state, refused) =
+    support.press_by(
+      plans:,
+      state:,
+      caster: fighting(),
+      bag: bag_of_kick,
+      at: 2000,
+    )
+  assert support.refusal_results(effects: refused) == [302]
+    as "the state is held until its cast ends"
+  let #(state, ended) =
+    cast.persisted(
+      cast: state,
+      caster: support.caster_in_combat(in_combat: False),
+      now: support.at(ms: 3000),
+    )
+  let assert [ending] =
+    support.frames_of(
+      message_id: unit_cc_state_ended.message_id,
+      effects: ended,
+    )
+    as "the cast ends with its persistence, and the state ends with one 0x880 (opcode.0x880)"
+  let assert Ok(ending) = unit_cc_state_ended.decode(ending.body)
+  assert ending
+    == UnitCcStateEnded(
+      unit_id: 7,
+      state: AbilityRestriction,
+      cast_id: support.pressed_id(effects: pressed),
+      instance_id: applied.instance_id,
+      keeps_flag_4_entries: 0,
+    )
+    as "the caster, state 27, the cast and the instance id the 0x87f gave (cc_state.end)"
+  let #(_, later) =
+    support.press_by(
+      plans:,
+      state:,
+      caster: support.caster_in_combat(in_combat: False),
+      bag: bag_of_kick,
+      at: 4000,
+    )
+  assert support.refusal_results(effects: later) == []
+    as "the state is gone: Kick is no longer refused 302"
 }

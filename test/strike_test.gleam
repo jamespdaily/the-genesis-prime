@@ -1194,6 +1194,7 @@ fn stun_row(aim aim: spell_plan.Aim) -> spell_plan.CrowdControl {
       delay_ms: 0,
       duration_ms: 3250,
       armor_removed: 1,
+      until_removed: False,
     ),
     tag: spend.always,
   )

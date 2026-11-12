@@ -37,6 +37,7 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/client_side_interaction_result.{
   ClientSideInteractionResult,
 }
+import genesis_prime/message/crowd_control_state
 import genesis_prime/message/interaction_result.{type InteractionResult}
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
@@ -44,6 +45,7 @@ import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_failed
 import genesis_prime/message/spell_go
+import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
 import genesis_prime/step.{ConnectionId, LogDebug, LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
@@ -1915,4 +1917,73 @@ pub fn a_press_after_the_bar_while_the_answer_is_out_is_refused_test() -> Nil {
   assert support.refusal_results(effects:)
     == [cast_result.to_value(cast_result.SpellAlreadyCasting)]
     as "cast.no_answer: the bar has run and the answer is out, so the cast has no end of its own and the press is refused 13, not held"
+}
+
+const the_tutorial_hoverboard = 73_419
+
+/// The right-click of a hoverboard of Creature2 73419 on the client's own rows (the fixture), run
+/// through its timers: the click's effects and the timers' effects.
+fn hoverboard_clicked() -> List(Effect) {
+  let tables = fixture_tables.shared()
+  let assert Ok(row) =
+    creature2.get(tables:, id: Creature2Id(the_tutorial_hoverboard))
+    as "Creature2 73419 is a root of the fixture"
+  let assert Ok(#(state, clicked)) =
+    right_click(
+      state: cast.new(),
+      activations: activate.activations(tables:),
+      unit_id: its_unit,
+      target: object_of(
+        creature_id: the_tutorial_hoverboard,
+        creature: activate.creature_of(row:),
+        checklist_index: 0,
+        link: activate.NoLink,
+        east: 1.0,
+        up: 0.0,
+      ),
+      at: 1000,
+    )
+    as "the hoverboard's activate spell 86744 is planned, so the right-click is taken"
+  let #(_, steps) = support.run_timers(state:, effects: clicked, from_ms: 1000)
+  list.append(clicked, flattened(steps:))
+}
+
+pub fn the_hoverboard_activate_shows_the_restriction_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let effects = hoverboard_clicked()
+  let instances =
+    list.flat_map(go_targets(effects:), fn(target) {
+      case target.0 == 7 {
+        True ->
+          list.filter_map(target.1, fn(info) {
+            case info.spell4_effects_id == 224_967 {
+              True -> Ok(info.instance_id)
+              False -> Error(Nil)
+            }
+          })
+        False -> []
+      }
+    })
+  let assert [instance_id] = instances
+    as "85563's go lists its CCStateSet 224967 on the caster (unit 7) once (Spell4Effects 224967: targetFlags 1)"
+  assert instance_id != 0
+    as "with an instance id of its own, which the 0x87f names (opcode.0x87f)"
+  let shown =
+    list.map(
+      support.frames_of(message_id: unit_cc_state_applied.message_id, effects:),
+      fn(frame) {
+        let assert Ok(decoded) = unit_cc_state_applied.decode(frame.body)
+          as "a 0x87f the rule wrote decodes"
+        decoded
+      },
+    )
+  assert shown
+    == [
+      UnitCcStateApplied(
+        unit_id: 7,
+        state: crowd_control_state.AbilityRestriction,
+        instance_id:,
+      ),
+    ]
+    as "the client is shown Ability Restriction (dataBits00 27) on the caster with the go's instance id"
 }

@@ -63,6 +63,7 @@ import genesis_prime/table/reward_property_premium_modifier
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
+import genesis_prime/table/spell4_cc_conditions
 import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_group_list
@@ -122,6 +123,8 @@ import genesis_prime/table/xp_per_level
 ///   SpellPhase, SpellCoolDown and Class: the tree of casts each of those abilities
 ///   starts, the stages of a RapidTap or ChargeRelease one, and whether its caster
 ///   may be dead (genesis_prime/game/spell_plan).
+/// - Spell4CCConditions: the crowd-control states that refuse a press of a spell
+///   (genesis_prime/game/spell_plan).
 /// - Spell4GroupList and Spell4StackGroup: the spell groups a Spell4Effects type 80 row
 ///   removes by and the stack group and cap of a spell that lasts on a unit
 ///   (genesis_prime/game/spell_plan).
@@ -210,6 +213,7 @@ pub fn entries() -> List(store.Entry) {
     spell4.entry(),
     spell4_aoe_target_constraints.entry(),
     spell4_base.entry(),
+    spell4_cc_conditions.entry(),
     spell4_conditions.entry(),
     spell4_effects.entry(),
     spell4_group_list.entry(),

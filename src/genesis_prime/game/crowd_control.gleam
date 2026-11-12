@@ -6,8 +6,10 @@
 //// it in the go (genesis_prime/game/cast).
 ////
 //// - **The state** is the row's dataBits00 (`Unit.CodeEnumCCState`): the plan reads
-////   Stun (0) and Knockdown (8) and fails the load for any other state
-////   (genesis_prime/game/spell_plan).
+////   Stun (0) and Knockdown (8) on creatures and Ability Restriction (27) on the caster,
+////   and fails the load for any other state (genesis_prime/game/spell_plan). The caster's
+////   own state is held by the cast rule until its cast ends (genesis_prime/game/cast
+////   `restrictions`).
 //// - **The instance id** names one effect on one unit. The client finds the effect a
 ////   0x87f waits for by instance id alone among every effect held on the unit, from
 ////   any caster, and 0 matches the first effect found (`cc_state.instance_id`), so an
@@ -27,6 +29,9 @@ pub type Row {
     delay_ms: Int,
     duration_ms: Int,
     armor_removed: Int,
+    /// The row's flags bit 2: the state never times out, it lasts until its cast's
+    /// effects end (`Spell4Effects.flags`, `cc_state.instance_id`).
+    until_removed: Bool,
   )
 }
 

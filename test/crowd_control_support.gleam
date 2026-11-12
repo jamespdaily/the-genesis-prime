@@ -16,6 +16,7 @@ pub fn kick_knockdown(instance_id instance_id: Int) -> strike_tell.ControlTell {
       delay_ms: 166,
       duration_ms: 3000,
       armor_removed: 1,
+      until_removed: False,
     ),
   )
 }
@@ -25,7 +26,13 @@ pub fn stagger_stun(instance_id instance_id: Int) -> strike_tell.ControlTell {
   ControlTell(
     effect_id: 83_827,
     instance_id:,
-    row: Row(state: Stun, delay_ms: 0, duration_ms: 2500, armor_removed: 1),
+    row: Row(
+      state: Stun,
+      delay_ms: 0,
+      duration_ms: 2500,
+      armor_removed: 1,
+      until_removed: False,
+    ),
   )
 }
 
@@ -34,7 +41,13 @@ pub fn gate_stun(instance_id instance_id: Int) -> strike_tell.ControlTell {
   ControlTell(
     effect_id: 100_836,
     instance_id:,
-    row: Row(state: Stun, delay_ms: 0, duration_ms: 3250, armor_removed: 1),
+    row: Row(
+      state: Stun,
+      delay_ms: 0,
+      duration_ms: 3250,
+      armor_removed: 1,
+      until_removed: False,
+    ),
   )
 }
 

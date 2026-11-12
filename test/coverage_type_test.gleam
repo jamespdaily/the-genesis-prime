@@ -430,7 +430,7 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
       ),
       Missing(
         type_number: 4,
-        reason: "rows holding a state other than Stun and Knockdown, aimed at the caster or by a flag the plan refuses, or behind an apply prerequisite, which the plan refuses",
+        reason: "rows holding a state other than Stun, Knockdown and Ability Restriction, Stun or Knockdown aimed at the caster or by a flag the plan refuses, Ability Restriction aimed anywhere but at the caster, or behind an apply prerequisite, which the plan refuses",
         fact_key: "Spell4Effects.effectType.4",
       ),
       Missing(

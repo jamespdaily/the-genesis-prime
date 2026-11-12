@@ -8,15 +8,25 @@
 //// - `opcode.0x35f.entry_order`: 0x35F replaces the whole log, so a grant follows it.
 //// - Quest2 10513 and 10527: giver-less quests of the Exile only (questPlayerFactionEnum 0),
 ////   10513 first, then 10527 once 10513 is completed (the objectives' text, the Client trace).
+//// - Creature2 73419 (the tutorial hoverboard): its activate spell 86744 casts for 1500 ms and
+////   its ride 85563 restricts the caster, so the press is a cast of the connection, not a
+////   refusal 285 (`opcode.0x7fc`, cast_result 285 is "not planned").
+//// - QuestObjective 21324 (type 12, data 73419): the use of the hoverboard counts; it is the
+////   third objective of Quest2 10527 in slot order (index 2). `opcode.0x361`: an objective's
+////   progress.
 //// - Failure table: a save that holds a completion and not the next grant is made right at the
 ////   next entry into World 3460.
 
+import departures_support
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{AskStore, FromMap}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/quest_log as quest_log_message
+import genesis_prime/message/quest_objective_progress.{QuestObjectiveProgress}
 import genesis_prime/message/quest_state.{type QuestState, QuestState}
+import genesis_prime/message/spell_cast_refused
 import genesis_prime/step
 import genesis_prime/store.{type QuestRow, Character}
 import genesis_prime/table/loader/store as store_tables
@@ -253,4 +263,71 @@ pub fn the_completion_of_a_quest_outside_the_chain_gives_no_tutorial_quest_test(
   assert states_written(taken: completed)
     == [QuestState(quest_id: 5859, state: 3, objective_id: 0)]
     as "opcode.0x35c: 5859 Completed, and no state 1 after it"
+}
+
+/// The Exile's Combat Simulation (Quest2 10527) with its first two objectives done: the
+/// hoverboard's Creature2 73419 links to it through Prerequisite 41799, whose condition 43010
+/// (type 68, objectId 10527, value 1) holds once the objective at index 1 is done, and the
+/// use of the hoverboard, the third (21324), is open (`Creature2.prerequisiteIdAnimState`,
+/// `Prerequisite.41799`, `Prerequisite.43010`).
+fn quest_before_the_hoverboard() -> QuestRow {
+  quest_support.active(
+    quest_id: 10_527,
+    state: 1,
+    placeholder: 0,
+    tracked: False,
+    done_mask: 3,
+    progress: [1, 1, 0, 0, 0],
+  )
+}
+
+pub fn the_tutorial_hoverboard_counts_its_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let state =
+    departures_support.seeing(
+      state: connection_support.in_world_as_exile_holding(quests: [
+        quest_before_the_hoverboard(),
+      ]),
+      creature_id: 73_419,
+    )
+  let assert Ok(body) =
+    cast_activate.encode(CastActivate(
+      client_cast_id: departures_support.clients_cast_id,
+      target_unit_id: departures_support.terminal_unit,
+    ))
+    as "the message fits"
+  let #(state, started) =
+    connection_support.at(
+      state:,
+      ms: 0,
+      event: step.OwnEvent(
+        step.Read(connection_support.world_message(
+          message_id: cast_activate.message_id,
+          body:,
+        )),
+      ),
+    )
+  assert connection_support.decoded(
+      connection_support.written(taken: started),
+      0x07FC,
+      spell_cast_refused.decode,
+    )
+    == []
+    as "the press is not refused: a 0x7fc IllegalSpellCast for 86744 says the spell cannot be planned (opcode.0x7fc)"
+  assert connection_support.written_ids(started) == [0x07FD]
+    as "the press confirms the cast (opcode.0x7fd)"
+  let pending = connection_support.cast_timers(steps: [started], ms: 0)
+  let #(_, _, steps) =
+    connection_support.casts_left(state:, pending:, until_ms: 2000, steps: [])
+  let frames =
+    list.flat_map(steps, fn(taken) { connection_support.written(taken:) })
+  assert connection_support.decoded(
+      frames,
+      0x0361,
+      quest_objective_progress.decode,
+    )
+    == [
+      QuestObjectiveProgress(quest_id: 10_527, objective_index: 2, progress: 1),
+    ]
+    as "QuestObjective 21324, type 12 data 73419: the use is the third objective of Quest2 10527"
 }
