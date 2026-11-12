@@ -120,6 +120,19 @@ pub fn chain(
   }
 }
 
+/// The zone, then its parents up to its top zone, as the walk the client's zone check
+/// makes (0x1403c92e0, `Prerequisite.prerequisiteTypeId.26`): a zone with no row has no
+/// parent to walk to, so it is the one zone it is in.
+pub fn chain_or_zone(
+  tables tables: table_store.Tables,
+  world_zone_id world_zone_id: Int,
+) -> List(Int) {
+  case chain(tables:, world_zone_id:) {
+    [] -> [world_zone_id]
+    zones -> zones
+  }
+}
+
 /// The top zone of the zone, or `Error(Nil)` when the table holds no row for
 /// it. Zone 0 is no zone and has no row.
 pub fn of(

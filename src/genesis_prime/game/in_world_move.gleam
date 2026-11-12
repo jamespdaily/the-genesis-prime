@@ -4,19 +4,20 @@
 //// player this way (`genesis_prime/game/projector`).
 ////
 //// ```
-//// begin ─▶ 0x83c, 0x639, 0x638 (place at once), 0x636 (echo)    readiness Placed(echo_value)
-//// the client ─▶ 0x635(echo), 0x637 at the new place, 0x63a       echoed ─▶ ClientReady
+//// begin ─▶ 0x83c, 0x639, 0x638 (place at once), 0x636 (echo)    readiness Placed(echo_value, before)
+//// the client ─▶ 0x635(echo), 0x637 at the new place, 0x63a       echoed ─▶ before
 //// ```
 ////
 //// - **The frames** are the loading screen's (0x83c, empty), the withdrawal of the control
 ////   (0x639, empty), the player's unit at the place (0x638 with reset 1, kept 0, a kind 2
 ////   position and a kind 14 rotation with their blend bits clear, which place the unit at
-////   once) and the control given back (0x636, reset 1, carrying `echo`)
+////   once) and the control given back (0x636, reset 1, carrying `echo_value`)
 ////   (`opcode.0x83c`, `opcode.0x639`, `opcode.0x638`, `opcode.0x636`).
-//// - **The fence** is `world_entry.Placed(echo_value)`: a 0x637 the client sent from the old
-////   place before it took the placement is decoded, checked and dropped, as a ghost's is.
-////   The client's 0x635 gives the value of the 0x636 back; the one that gives `echo` back
-////   lifts the fence, an earlier one (the entry's, 0) does not.
+//// - **The fence** is `world_entry.Placed(echo_value, before)`: a 0x637 the client sent from
+////   the old place before it took the placement is decoded, checked and dropped, as a
+////   ghost's is. The client's 0x635 gives the value of the 0x636 back; the one that gives
+////   `echo_value` back lifts the fence and returns the readiness the move replaced, an
+////   earlier one (the entry's, 0) does not.
 ////
 //// Failure table:
 ////
@@ -32,14 +33,24 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/world_entry.{type Entered, type Readiness}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/client_control_withdrawn
-import genesis_prime/message/relayed_movement.{Position, Rotation}
+import genesis_prime/message/relayed_movement.{
+  type RelayedMovement, Position, Rotation,
+}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/world_loading_screen_shown
 import genesis_prime/step.{type Now}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/player_unit
 
-/// The player placed at `place` for the 0x636 value `echo`: its movement keeps the place
+/// The movement commands that place the player's unit at `place` at once: the kind 2 at
+/// its position and the kind 14 at its facing, which the 0x638 carries and the players
+/// who see the unit are sent.
+pub fn commands(place place: Place) -> List(RelayedMovement) {
+  let #(position, rotation) = player_unit.standing(place:)
+  [Position(position), Rotation(rotation)]
+}
+
+/// The player placed at `place` for the 0x636 value `echo_value`: its movement keeps the place
 /// and its readiness is the fence, with the four frames to write, in order. `now` stamps
 /// the 0x638 from the map's clock (`map.server_time`).
 pub fn begin(
@@ -48,20 +59,17 @@ pub fn begin(
   echo_value echo_value: Int,
   now now: Now,
 ) -> #(Entered, List(Frame)) {
-  let #(position, rotation) = player_unit.standing(place:)
   let assert Ok(unit_body) =
-    unit_movement.encode(
-      UnitMovement(
-        unit_id: entered.unit_id,
-        server_time: map.server_time(
-          origin_ms: entered.clock_origin_ms,
-          monotonic_ms: now.monotonic_ms,
-        ),
-        reset_movement: 1,
-        kept: 0,
-        commands: [Position(position), Rotation(rotation)],
+    unit_movement.encode(UnitMovement(
+      unit_id: entered.unit_id,
+      server_time: map.server_time(
+        origin_ms: entered.clock_origin_ms,
+        monotonic_ms: now.monotonic_ms,
       ),
-    )
+      reset_movement: 1,
+      kept: 0,
+      commands: commands(place:),
+    ))
     as "a unit id and a time of 32 bits and two commands fit the message"
   let assert Ok(granted_body) =
     client_control_granted.encode(ClientControlGranted(
@@ -84,7 +92,10 @@ pub fn begin(
     world_entry.Entered(
       ..entered,
       movement: movement.placed(state: entered.movement, place:),
-      readiness: world_entry.Placed(echo_value:),
+      readiness: world_entry.Placed(
+        echo_value:,
+        before: world_entry.before_the_move(entered.readiness),
+      ),
     ),
     [
       Frame(message_id: world_loading_screen_shown.message_id, body: shown_body),
@@ -99,14 +110,15 @@ pub fn begin(
 }
 
 /// The readiness after the client's 0x635 gave back `echo_value`: a placed player whose
-/// move had that value holds the placement, so the fence is lifted; anything else stays.
+/// move had that value holds the placement, so the fence is lifted and it is as ready as
+/// it was before the move; anything else stays.
 pub fn echoed(
   readiness readiness: Readiness,
   echo_value echo_value: Int,
 ) -> Readiness {
   case readiness {
-    world_entry.Placed(echo_value: placed) if placed == echo_value ->
-      world_entry.ClientReady
+    world_entry.Placed(echo_value: placed, before:) if placed == echo_value ->
+      before
     world_entry.Placed(..)
     | world_entry.ClientLoading
     | world_entry.InWorldLoading

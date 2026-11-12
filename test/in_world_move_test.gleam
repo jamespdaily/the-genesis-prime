@@ -118,21 +118,52 @@ pub fn a_placement_moves_the_movement_and_fences_the_moves_test() -> Nil {
   let #(entered, _) = begun()
   assert movement.place(state: entered.movement) == warfare_woods()
     as "the movement keeps the landing, so the next save holds it"
-  assert entered.readiness == Placed(echo_value: 7)
-    as "a 0x637 sent before the client took the placement is dropped"
+  assert entered.readiness == Placed(echo_value: 7, before: ClientLoading)
+    as "a 0x637 sent before the client took the placement is dropped, and the readiness the move replaced is kept"
+}
+
+pub fn a_placement_keeps_the_readiness_it_replaced_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(ready, _) =
+    in_world_move.begin(
+      entered: world_entry.Entered(..entered(), readiness: ClientReady),
+      place: warfare_woods(),
+      echo_value: 7,
+      now: Now(monotonic_ms: 12_000, filetime: world_entry_support.filetime),
+    )
+  assert ready.readiness == Placed(echo_value: 7, before: ClientReady)
+    as "a player the map was told ready stays ready after the echo"
+  let #(again, _) =
+    in_world_move.begin(
+      entered: ready,
+      place: warfare_woods(),
+      echo_value: 8,
+      now: Now(monotonic_ms: 13_000, filetime: world_entry_support.filetime),
+    )
+  assert again.readiness == Placed(echo_value: 8, before: ClientReady)
+    as "a second move before the first echo replaces the value and keeps the readiness before both"
 }
 
 pub fn the_matching_echo_lifts_the_fence_test() -> Nil {
   use <- owned_test.run(5000)
-  assert in_world_move.echoed(readiness: Placed(echo_value: 7), echo_value: 7)
+  assert in_world_move.echoed(
+      readiness: Placed(echo_value: 7, before: ClientReady),
+      echo_value: 7,
+    )
     == ClientReady
     as "the 0x635 that echoes the move's own value says the client holds the placement"
+  assert in_world_move.echoed(
+      readiness: Placed(echo_value: 7, before: ClientLoading),
+      echo_value: 7,
+    )
+    == ClientLoading
+    as "a player whose terrain was not ready is still loading: its first 0xF2 tells the map"
 }
 
 pub fn an_earlier_echo_keeps_the_fence_test() -> Nil {
   use <- owned_test.run(5000)
-  assert in_world_move.echoed(readiness: Placed(echo_value: 7), echo_value: 0)
-    == Placed(echo_value: 7)
+  let placed = Placed(echo_value: 7, before: ClientLoading)
+  assert in_world_move.echoed(readiness: placed, echo_value: 0) == placed
     as "the entry's 0x635 echoes 0, which is not this move's"
   assert in_world_move.echoed(readiness: ClientLoading, echo_value: 7)
     == ClientLoading

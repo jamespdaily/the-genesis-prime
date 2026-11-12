@@ -6,6 +6,7 @@
 //// ```
 //// cast's go ─▶ link read (before the count) ─▶ the use counted ─▶ moved
 ////   moved ─ landing ─▶ 0x83c, 0x639, 0x638, 0x636(echo); Tell(map, TellMoved(place, seq: echo))
+////         │            0x638 to each viewer; Tell(each fighter, TellTargetMoved(place, seq: echo))
 ////         └ no landing ─▶ nothing
 //// ```
 ////
@@ -17,8 +18,11 @@
 
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/activate.{type Link}
+import genesis_prime/game/connection/movement as connection_movement
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
+import genesis_prime/game/hit_radius
 import genesis_prime/game/in_world_move
+import genesis_prime/game/player_life
 import genesis_prime/game/projector
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 import genesis_prime/table/id.{type Creature2Id}
@@ -59,9 +63,14 @@ pub fn moved(
               move_seq: echo_value,
             )
           let connection = client_connection.connection(session.link)
+          let hit_radius =
+            hit_radius.of_playing(
+              tables: session.settings.tables,
+              race_id: placed.character.race_id,
+            )
           #(
             session,
-            list.append(
+            list.flatten([
               list.map(frames, fn(inner) {
                 connection_state.to_client(session:, inner:)
               }),
@@ -75,7 +84,22 @@ pub fn moved(
                   ),
                 ),
               ],
-            ),
+              connection_movement.sends_the_move_to_the_viewers(
+                entered: placed,
+                now:,
+                commands: in_world_move.commands(place:),
+              ),
+              list.map(player_life.fighters(life: placed.life), fn(fighter) {
+                connection_movement.tells_a_fighter_the_place(
+                  connection:,
+                  entered: placed,
+                  fighter:,
+                  place:,
+                  seq: echo_value,
+                  hit_radius:,
+                )
+              }),
+            ]),
           )
         }
       }

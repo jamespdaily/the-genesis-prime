@@ -95,12 +95,13 @@ fn body_moving(
     Ok(movement.Reported(state:, world_zone_id:, by:)) -> {
       let session = moving(session:, holder:, entered:, state:)
       let top_zones = top_zone.top_zones(session.settings.tables)
-      let #(session, ready) = case by, entered.readiness {
-        movement.ReportedByTerrainReady, world_entry.ClientLoading
-        | movement.ReportedByTerrainReady, world_entry.InWorldLoading
-        -> tells_the_map_ready(session:, entered:)
-        movement.ReportedByTerrainReady, world_entry.ClientReady
-        | movement.ReportedByTerrainReady, world_entry.Placed(..)
+      let #(session, ready) = case
+        by,
+        world_entry.told_ready(readiness: entered.readiness)
+      {
+        movement.ReportedByTerrainReady, False ->
+          tells_the_map_ready(session:, entered:)
+        movement.ReportedByTerrainReady, True
         | movement.ReportedByZoneChanged(..), _
         -> #(session, [])
       }
@@ -305,7 +306,10 @@ fn tells_the_map_ready(
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   #(
     connection_state.with_entered(session:, change: fn(entered) {
-      world_entry.Entered(..entered, readiness: world_entry.ClientReady)
+      world_entry.Entered(
+        ..entered,
+        readiness: world_entry.terrain_loaded(readiness: entered.readiness),
+      )
     }),
     [
       connection_state.tells_the_map(
@@ -324,7 +328,7 @@ fn tells_the_map_ready(
 /// time of the input (`map.server_time`, from the origin `Joined` carried): a send
 /// through the registry that the shell makes with no answer. None when no
 /// player sees this one.
-fn sends_the_move_to_the_viewers(
+pub fn sends_the_move_to_the_viewers(
   entered entered: world_entry.Entered,
   now now: Now,
   commands commands: List(RelayedMovement),

@@ -44,22 +44,20 @@ import genesis_prime/game/activate.{type Link, OpenLink}
 import genesis_prime/game/quest_log
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/top_zone
 import genesis_prime/game/tutorial
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
-  type Creature2Id, Creature2Id, QuestObjectiveId, WorldLocation2Id, WorldZoneId,
+  type Creature2Id, Creature2Id, QuestObjectiveId, WorldLocation2Id,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
 import genesis_prime/table/quest_objective
 import genesis_prime/table/world_location2
-import genesis_prime/table/world_zone
-import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/result
-import gleam/set
 import gleam/string
 
 /// The table's name in the log and in a refusal.
@@ -235,7 +233,7 @@ fn objective_broken(
           type_ if type_ == reach_a_zone_type ->
             case
               list.contains(
-                zone_and_parents(tables:, world_zone_id:),
+                top_zone.chain_or_zone(tables:, world_zone_id:),
                 objective.data,
               )
             {
@@ -293,36 +291,6 @@ fn faction_broken(
           <> int.to_string(row.faction_enum),
         ]
       }
-  }
-}
-
-/// The zone and each zone above it (WorldZone `parentZoneId`), from the zone up.
-fn zone_and_parents(
-  tables tables: table_store.Tables,
-  world_zone_id world_zone_id: Int,
-) -> List(Int) {
-  walk_up(tables:, zone_id: world_zone_id, seen: set.new(), chain: [])
-}
-
-fn walk_up(
-  tables tables: table_store.Tables,
-  zone_id zone_id: Int,
-  seen seen: set.Set(Int),
-  chain chain: List(Int),
-) -> List(Int) {
-  use <- bool.guard(
-    when: zone_id == 0 || set.contains(seen, zone_id),
-    return: chain,
-  )
-  case world_zone.get(tables:, id: WorldZoneId(zone_id)) {
-    Error(Nil) -> [zone_id, ..chain]
-    Ok(zone) ->
-      walk_up(
-        tables:,
-        zone_id: zone.parent_zone_id,
-        seen: set.insert(seen, zone_id),
-        chain: [zone_id, ..chain],
-      )
   }
 }
 

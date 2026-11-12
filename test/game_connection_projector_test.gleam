@@ -26,9 +26,11 @@ import genesis_prime/client_connection.{type Request, AskStore, TellMoved}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
 import genesis_prime/message/float32
+import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/quest_abandon.{QuestAbandon}
 import genesis_prime/message/quest_objective_progress.{QuestObjectiveProgress}
 import genesis_prime/message/relayed_movement
@@ -43,6 +45,7 @@ import genesis_prime/store
 import genesis_prime/world_map/map.{ObjectsUnseen}
 import gleam/list
 import owned_test
+import place_support
 import quest_support
 
 const combat = 73_735
@@ -366,6 +369,8 @@ pub fn a_projector_gone_from_the_picture_by_the_go_moves_no_one_test() -> Nil {
     )
   let #(_, _, steps) = run_to(state:, pending:, until_ms: 1000)
   let ids = ids_of(frames: frames_of(steps:))
+  assert list.contains(ids, 0x07FE)
+    as "opcode.0x7fe: the cast ran to its end, so the absences below are the move's and not a cast that never went"
   assert !list.contains(ids, 0x0361) && !list.contains(ids, 0x083C)
     as "a use of a unit the player no longer sees counts for no objective and moves no one"
   assert told_the_map(steps:) == []
@@ -463,4 +468,107 @@ pub fn the_entrys_0x635_is_taken_without_a_warning_test() -> Nil {
   assert connection_support.written_ids(taken) == []
   assert connection_support.told_the_map(taken) == []
   assert !support.stops(taken)
+}
+
+pub fn a_move_before_the_clients_terrain_is_ready_still_tells_the_map_ready_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let expected = [
+    connection_support.map_tell(client_connection.TellReady(
+      connection: ConnectionId(1),
+      seq: 1,
+    )),
+  ]
+  // The go runs before the stay's first 0xF2, which then arrives while the placement
+  // is not yet echoed.
+  let moved = moved_to_solitude_of_secrets()
+  let #(state, terrain) =
+    connection_support.read(
+      state: moved,
+      bytes: connection_support.terrain_loaded_message(5968),
+    )
+  let #(_, echoed) =
+    connection_support.read(state:, bytes: echo_message(echo_value: 1))
+  assert told_the_map(steps: [terrain, echoed]) == expected
+    as "opcode.0xf2 and opcode.0x635 in this order: the map is told ready once, with the move's number"
+  // The client answers the placement first and loads its terrain after.
+  let #(state, echoed) =
+    connection_support.read(state: moved, bytes: echo_message(echo_value: 1))
+  let #(state, terrain) =
+    connection_support.read(
+      state:,
+      bytes: connection_support.terrain_loaded_message(5968),
+    )
+  assert told_the_map(steps: [echoed, terrain]) == expected
+    as "opcode.0x635 and opcode.0xf2 in this order: the map is told ready once, with the move's number"
+  let #(_, again) =
+    connection_support.read(
+      state:,
+      bytes: connection_support.terrain_loaded_message(5968),
+    )
+  assert told_the_map(steps: [again]) == []
+    as "a second 0xF2 tells the map nothing"
+}
+
+pub fn a_creature_fighting_the_player_is_told_the_landing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, _) =
+    connection_support.feed(
+      state: exile_before_the_mission_projector(),
+      event: connection_support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
+    )
+  let #(state, _, pending) = pressed(state:)
+  let #(_, _, steps) = run_to(state:, pending:, until_ms: 1000)
+  assert list.flat_map(steps, connection_support.told_creatures)
+    == [
+      #(
+        7,
+        client_connection.TellTargetMoved(
+          connection: ConnectionId(1),
+          place: solitude_of_secrets(),
+          seq: 1,
+          stay: connection_support.own_stay(),
+          hit_radius: place_support.player_hit_radius,
+        ),
+      ),
+    ]
+    as "the fighter holds the landing with the move's number, as it holds each 0x637's place, so it stops striking at the old place"
+}
+
+pub fn a_viewer_is_sent_the_move_to_the_landing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let state =
+    connection_support.watched_by(
+      state: exile_before_the_mission_projector(),
+      viewers: [2],
+    )
+  let #(state, _, pending) = pressed(state:)
+  let #(_, _, steps) = run_to(state:, pending:, until_ms: 1000)
+  let placement = #(
+    2,
+    connection_support.moving(
+      unit_id: connection_support.own_unit_id,
+      server_time_ms: 1000,
+      commands: [
+        relayed_movement.Position(bits_of(
+          x: 476.4630126953125,
+          y: -393.81201171875,
+          z: 254.22799682617188,
+        )),
+        // WorldLocation2 51616's identity facing converts to a pitch of -0, whose
+        // float32 bits are 0x80000000.
+        relayed_movement.Rotation(MovementRotation(
+          yaw: 0,
+          pitch: 0x80000000,
+          roll: 0,
+          blends: 0,
+        )),
+      ],
+    ),
+  )
+  assert list.count(
+      list.flat_map(steps, connection_support.peer_tells),
+      fn(tell) { tell == placement },
+    )
+    == 1
+    as "opcode.0x638 as the placement writes it, to each player who sees the unit, so it stands at the landing there too"
 }

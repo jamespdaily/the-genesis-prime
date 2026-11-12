@@ -396,3 +396,42 @@ pub fn an_objective_of_the_other_faction_fails_the_load_test() -> Nil {
   assert string.contains(rule, "10532")
     as "the rule names the quest that holds the objective"
 }
+
+pub fn the_cryo_projector_is_closed_without_its_objective_or_quest_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert link_of(quests: quest_support.log_of(rows: []), creature_id: cryo)
+    == ClosedLink
+    as "Prerequisite 43094 of Creature2 73745: neither quest 10520 nor 10523 is held, so no open objective 4 and no state 2 or 3"
+  assert link_of(
+      quests: quest_support.log_of(rows: [
+        quest_support.accepted(quest_id: 10_520, progress: [0, 0, 0, 0, 0]),
+      ]),
+      creature_id: cryo,
+    )
+    == ClosedLink
+    as "Prerequisite 41957: objective 21298 of the Exile's quest 10520 is open only once 21294, 21297 and 21295 are done"
+  assert link_of(
+      quests: quest_support.log_of(rows: [
+        quest_support.accepted(quest_id: 10_523, progress: [0, 0, 0, 0, 0]),
+      ]),
+      creature_id: cryo,
+    )
+    == ClosedLink
+    as "Prerequisite 43093: objective 21311 of the Dominion's quest 10523 is open only once 21307, 21309 and 21308 are done"
+  let before_the_use = fn(quest_id) {
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id:,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 13,
+        progress: [1, 0, 1, 1, 0],
+      ),
+    ])
+  }
+  assert link_of(quests: before_the_use(10_520), creature_id: cryo) == OpenLink
+    as "Prerequisite 41957's type 43 condition: the Exile's objective 4 is open once the others are done"
+  assert link_of(quests: before_the_use(10_523), creature_id: cryo) == OpenLink
+    as "Prerequisite 43093's type 43 condition: the Dominion's objective 4 is open once the others are done"
+}
