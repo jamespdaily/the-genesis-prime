@@ -695,10 +695,11 @@ pub fn two_quests_achieved_in_one_step_are_completed_one_after_the_other_test() 
 
 pub fn a_refused_server_completion_leaves_the_quest_achieved_and_the_player_in_the_world_test() -> Nil {
   use <- owned_test.run(10_000)
-  // Quest 1857's reward row 4819 is a choice (flags bit 0, IsRewardChoiceOffered
-  // `0x140551c60`): a completion is made with reward id 0, so the rule refuses it.
+  // Quest 1857's reward row 4819 is changed to a fixed TradeSkillXp row (Quest2Reward type
+  // 4), which the turn-in refuses for a player with no learned tradeskill (Quest2Reward
+  // 2471 of quest 5084 is the client's own such row), so the rule refuses the completion.
   use state <- with_the_beast_quest(changes: [
-    #("Quest2Reward", 4819, [#("flags", Integer(1))]),
+    #("Quest2Reward", 4819, [#("quest2RewardTypeId", Integer(4))]),
   ])
   let #(state, killed) = the_beast_killed(state:)
   assert game_connection_support.written_ids(killed) == [0x01AC, 0x0361, 0x035C]
