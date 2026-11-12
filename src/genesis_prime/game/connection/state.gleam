@@ -36,8 +36,8 @@ import genesis_prime/message/disconnect_reason.{
 }
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionId, type Effect, type Now,
-  About, CancelTimer, LogWarning, OwnEffect, StartTimer, Stop, TimerId, WatchId,
-  Write,
+  type TimerId, About, CancelTimer, LogWarning, OwnEffect, StartTimer, Stop,
+  TimerId, WatchId, Write,
 }
 import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
@@ -171,13 +171,22 @@ pub type Session {
     /// connection's life and a message of an earlier stay never names the
     /// current one.
     last_stay: Stay,
-    /// What other processes sent for a stay while an ask was out whose answer
-    /// returns the connection to the world (`holds_map_messages`), oldest first:
-    /// each is taken, in this order, once the answer returns it there
-    /// (genesis_prime/game/connection `stay_sent`).
-    held_sends: List(#(Stay, client_connection.StaySent)),
+    /// What reached the connection while an ask was out whose answer returns it
+    /// to the world (`holds_map_messages`), oldest first: what other processes
+    /// sent for a stay and the connection's own timers that fired. Each is taken,
+    /// in this order, once the answer returns the connection there
+    /// (genesis_prime/game/connection `stay_sent`, `timer_fired`).
+    held: List(Held),
     status: Status,
   )
+}
+
+/// What the connection holds until an ask returns it to the world.
+pub type Held {
+  /// What another process sent for `stay`.
+  HeldSend(stay: Stay, sent: client_connection.StaySent)
+  /// A timer of the connection that fired during the wait.
+  HeldTimer(timer: TimerId)
 }
 
 /// The connection's one status.
@@ -487,8 +496,9 @@ pub fn held_in_the_world(
 
 /// Whether the status is one whose answer returns the connection to the world: a
 /// summon, an item move, a purchase, a sale, a quest turn-in or the periodic place
-/// save. What other processes send for a stay meanwhile is held, not dropped. A
-/// save before leaving or camping is not one: its stay ends.
+/// save. What other processes send for a stay meanwhile, and the connection's own
+/// timers that fire, are held, not dropped. A save before leaving or camping is not
+/// one: its stay ends, and the timers of the stay were cancelled with it.
 pub fn holds_map_messages(status: Status) -> Bool {
   case status {
     Summoning(..)
@@ -499,6 +509,29 @@ pub fn holds_map_messages(status: Status) -> Bool {
     | SavingPlace(then: Playing, ..) -> True
     SavingPlace(then: Leaving(..), ..)
     | SavingPlace(then: Camped, ..)
+    | InWorld(..)
+    | WaitingToClaim(..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey -> False
+  }
+}
+
+/// Whether the status is one whose ask saves the player's place itself: a quest
+/// turn-in, whose request holds the place, and the periodic place save. A save
+/// timer that fires during such a wait has nothing to add.
+pub fn saves_the_place(status: Status) -> Bool {
+  case status {
+    TurningIn(..) | SavingPlace(then: Playing, ..) -> True
+    SavingPlace(then: Leaving(..), ..)
+    | SavingPlace(then: Camped, ..)
+    | Summoning(..)
+    | MovingItem(..)
+    | Buying(..)
+    | Selling(..)
     | InWorld(..)
     | WaitingToClaim(..)
     | ClaimingSession(..)

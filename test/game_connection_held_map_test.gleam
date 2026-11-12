@@ -644,20 +644,22 @@ fn turning_in(
   then(state, taken)
 }
 
-/// Whether the step ends in the store's ask to save the player's place.
-fn asks_to_save_the_place(taken taken: step.ConnectionStep(Request)) -> Bool {
-  case connection_support.ask_request(taken) {
-    client_connection.AskStore(store.Move(store.SavePlace(..))) -> True
-    _ -> False
-  }
+/// Fails unless the step ends in the store's ask to save the player's place.
+fn expect_the_place_save_asked(
+  taken taken: step.ConnectionStep(Request),
+) -> Nil {
+  let assert client_connection.AskStore(store.Move(store.SavePlace(..))) =
+    connection_support.ask_request(taken)
+    as "the step ends in the store's ask to save the place"
+  Nil
 }
 
-/// Whether the step ends in the map's ask to join.
-fn asks_to_join(taken taken: step.ConnectionStep(Request)) -> Bool {
-  case connection_support.ask_request(taken) {
-    client_connection.AskMap(message: Join(..), ..) -> True
-    _ -> False
-  }
+/// Fails unless the step ends in the map's ask to join.
+fn expect_the_join_asked(taken taken: step.ConnectionStep(Request)) -> Nil {
+  let assert client_connection.AskMap(message: Join(..), ..) =
+    connection_support.ask_request(taken)
+    as "the step ends in the map's ask to join"
+  Nil
 }
 
 pub fn a_save_timer_firing_while_a_buy_waits_saves_the_place_once_the_buy_is_answered_test() -> Nil {
@@ -672,8 +674,8 @@ pub fn a_save_timer_firing_while_a_buy_waits_saves_the_place_once_the_buy_is_ans
     as "nothing is asked or written before the store has answered the buy"
   let #(_, answered) =
     connection_support.answer(state:, taken:, outcome: buy_saved())
-  assert asks_to_save_the_place(taken: answered)
-    as "the place's save the timer was due to ask follows the buy's answer"
+  // The place's save the timer was due to ask follows the buy's answer.
+  expect_the_place_save_asked(taken: answered)
   assert restarts_the_save_timer(taken: answered)
     as "the save timer, which fired, starts again with the save"
 }
@@ -714,7 +716,8 @@ pub fn a_quest_deadline_passing_while_a_sale_waits_botches_the_quest_once_the_sa
     answered_at(state:, taken:, outcome: sale_saved(), ms: 61_000)
   assert quest_states(taken: answered) == [botched_1872]
     as "quest 1872's time ran out at 61,000 ms: the client is told Botched once"
-  assert asks_to_save_the_place(taken: answered) as "the botch is saved"
+  // The botch is saved.
+  expect_the_place_save_asked(taken: answered)
 }
 
 pub fn a_quest_reset_firing_while_an_item_move_waits_sends_the_reset_once_the_move_is_answered_test() -> Nil {
@@ -770,8 +773,8 @@ pub fn a_save_timer_firing_while_a_departure_leaves_the_map_keeps_the_connection
       taken: leaving,
       outcome: step.Answer(FromMap(Left)),
     )
-  assert asks_to_join(taken: joining)
-    as "the leave's answer goes on to the join"
+  // The leave's answer goes on to the join.
+  expect_the_join_asked(taken: joining)
 }
 
 pub fn each_in_world_wait_takes_each_timer_without_ending_the_connection_test() -> Nil {
