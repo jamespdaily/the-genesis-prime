@@ -29,6 +29,7 @@
 //// never reaches.
 
 import ask_support
+import bot_frames
 import cast_support
 import character_support
 import character_tables
@@ -36,13 +37,16 @@ import connection_rule_support as support
 import content_support
 import driven_time
 import event_wait
+import fight_bot
 import fixture_tables
 import game_client
 import genesis_prime
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/registry
 import genesis_prime/content
+import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/game/cast
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
@@ -150,6 +154,7 @@ import quest_support
 import rating_support
 import socket_read
 import spawn_support
+import tutorial_bot
 import unitest
 import vendor_support
 
@@ -4040,19 +4045,42 @@ fn world_with_the_markers_creatures(
   tables tables: table_store.Tables,
   time time: driven_time.Time,
 ) -> login_support.Started {
-  start_with_world_data_by(
+  world_on(
     folder: content_support.fixture_folder,
-    adjusted: fn(settings) {
-      let settings = driven_by(settings:, time:)
-      server.Settings(
-        ..settings,
-        game: server.Served(
-          ..settings.game,
-          settings: connection_state.Settings(..settings.game.settings, tables:),
-        ),
-      )
-    },
+    tables:,
+    time:,
+    tutorial: False,
   )
+}
+
+/// A world on the planted world data of `folder` and the content load, whose game connections
+/// take the tables given and, with the maps, their time from `time`. A world that `tutorial`
+/// is on runs the tutorial as the content load read it: the first quest a new character of
+/// World 3460 is given and the landing of each projector; the others give none.
+fn world_on(
+  folder folder: String,
+  tables tables: table_store.Tables,
+  time time: driven_time.Time,
+  tutorial tutorial: Bool,
+) -> login_support.Started {
+  start_with_world_data_by(folder:, adjusted: fn(settings) {
+    let settings = driven_by(settings:, time:)
+    let held = settings.game.settings
+    let key = settings.world.spawns
+    server.Settings(
+      ..settings,
+      game: server.Served(..settings.game, settings: case tutorial {
+        True ->
+          connection_state.Settings(
+            ..held,
+            tables:,
+            tutorial_chain: content_tutorial_quest.chain(key:),
+            projector_landings: content_projector_landing.landings(key:),
+          )
+        False -> connection_state.Settings(..held, tables:)
+      }),
+    )
+  })
 }
 
 /// A level 1 Medic of the Exile holding quest 10518 with objectives 0 to 4 done and `sixth`
@@ -4126,94 +4154,6 @@ fn the_target_at_slot_0(
   target
 }
 
-/// Presses Paralytic Surge at the unit, facing it, until its death is read, and
-/// gives every frame read and the bytes beyond. A press that neither struck the unit
-/// nor was shown missing it (0x7fb) ends the test; a deflected press is pressed
-/// again, since a creature of the client's rows deflects some strikes (the placed
-/// Creature2 73492's defence holds a deflect chance of 0.02, so about one run in
-/// six sees one in the nine presses its 117 health takes), each on the rolls of the
-/// connection's own random seed.
-fn presses_until_the_target_dies(
-  time time: driven_time.Time,
-  game game: game_client.Game,
-  have have: BitArray,
-  target target: Int,
-  cast_id cast_id: Int,
-  seen seen: List(Frame),
-) -> #(List(Frame), BitArray) {
-  presses_at_most(time:, game:, have:, target:, cast_id:, seen:, presses: 1000)
-}
-
-/// The same, at most `presses` presses: the frames read and the bytes beyond, the
-/// target's death among them or not.
-fn presses_at_most(
-  time time: driven_time.Time,
-  game game: game_client.Game,
-  have have: BitArray,
-  target target: Int,
-  cast_id cast_id: Int,
-  seen seen: List(Frame),
-  presses presses: Int,
-) -> #(List(Frame), BitArray) {
-  game_client.press_ability(
-    game:,
-    client_cast_id: cast_id,
-    bag_index: 2,
-    target: 0,
-  )
-  let #(taken, have) = game_client.read_until_pong(game:, have:, number: 1)
-  driven_time.advance(time:, ms: paralytic_surge_cast_ms)
-  let #(went, have) =
-    game_client.read_until(game:, have:, found: fn(went) {
-      let heard = list.append(seen, list.append(taken, went))
-      list.any(game_client.health_in(frames: heard), fn(health) {
-        health.0 == target
-      })
-      || list.any(game_client.missed_in(frames: heard), fn(missed) {
-        list.contains(missed.1, target)
-      })
-      || list.any(game_client.go_targets_in(frames: went), fn(go) { go.1 == [] })
-    })
-  let #(settled, have) = game_client.read_until_pong(game:, have:, number: 2)
-  let seen = list.flatten([seen, taken, went, settled])
-  assert list.any(game_client.go_targets_in(frames: seen), fn(go) {
-      list.contains(go.1, target)
-    })
-    || list.any(game_client.missed_in(frames: seen), fn(missed) {
-      list.contains(missed.1, target)
-    })
-    as "a press facing the target strikes it or is shown missing it"
-  let dead = list.contains(game_client.deaths_in(frames: seen), #(target, True))
-  let at_zero =
-    list.any(game_client.health_in(frames: seen), fn(health) {
-      health == #(target, 0, True)
-    })
-  case dead, at_zero {
-    True, _ -> #(seen, have)
-    False, True -> {
-      let #(more, have) =
-        game_client.read_until(game:, have:, found: fn(more) {
-          list.contains(game_client.deaths_in(frames: more), #(target, True))
-        })
-      #(list.append(seen, more), have)
-    }
-    False, False if presses <= 1 -> #(seen, have)
-    False, False -> {
-      driven_time.advance(time:, ms: paralytic_surge_lingers_ms)
-      let #(later, have) = game_client.read_until_pong(game:, have:, number: 3)
-      presses_at_most(
-        time:,
-        game:,
-        have:,
-        target:,
-        cast_id: cast_id + 1,
-        seen: list.append(seen, later),
-        presses: presses - 1,
-      )
-    }
-  }
-}
-
 pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
   use <- owned_test.run(120_000)
   use tables <- on_rows_without_paralytic_surges_recharge()
@@ -4233,7 +4173,7 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
   assert target.tail.faction_id == 170 && target.tail.base_faction_id == 170
     as "opcode.0x262: both factions are the Creature2 row's, 170"
   let slot = ring_slot(index: 0)
-  face(
+  game_client.face(
     game:,
     yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
       slot.0,
@@ -4242,8 +4182,8 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
     clock: 100,
   )
   let #(killed, have) =
-    presses_until_the_target_dies(
-      time:,
+    fight_bot.presses_until_the_target_dies(
+      advance: driven_time.advance(time:, ms: _),
       game:,
       have:,
       target: target.unit_id,
@@ -4287,7 +4227,7 @@ pub fn the_last_kill_of_quest_10518_is_followed_by_0x35c_state_2_its_rewards_and
   let #(game, frames, have, _) = a_medic_at_the_marker_ring(started:, sixth: 2)
   let target = the_target_at_slot_0(frames:)
   let slot = ring_slot(index: 0)
-  face(
+  game_client.face(
     game:,
     yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
       slot.0,
@@ -4296,8 +4236,8 @@ pub fn the_last_kill_of_quest_10518_is_followed_by_0x35c_state_2_its_rewards_and
     clock: 100,
   )
   let #(killed, have) =
-    presses_until_the_target_dies(
-      time:,
+    fight_bot.presses_until_the_target_dies(
+      advance: driven_time.advance(time:, ms: _),
       game:,
       have:,
       target: target.unit_id,
@@ -4383,7 +4323,7 @@ pub fn a_placed_target_respawns_at_its_slot_test() -> Nil {
   let #(game, frames, have, _) = a_medic_at_the_marker_ring(started:, sixth: 0)
   let target = the_target_at_slot_0(frames:)
   let slot = ring_slot(index: 0)
-  face(
+  game_client.face(
     game:,
     yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
       slot.0,
@@ -4392,8 +4332,8 @@ pub fn a_placed_target_respawns_at_its_slot_test() -> Nil {
     clock: 100,
   )
   let #(_, have) =
-    presses_until_the_target_dies(
-      time:,
+    fight_bot.presses_until_the_target_dies(
+      advance: driven_time.advance(time:, ms: _),
       game:,
       have:,
       target: target.unit_id,
@@ -4735,25 +4675,6 @@ fn enters_and_sees_the_beasts(
   #(game, frames, have)
 }
 
-fn face(game game: game_client.Game, yaw yaw: Float, clock clock: Int) -> Nil {
-  game_client.send_world(
-    game:,
-    message_id: 0x0637,
-    body: game_client.moves_body(client_clock: clock, commands: [
-      game_client.rotation_command(yaw:, pitch: 0.0, roll: 0.0),
-    ]),
-  )
-}
-
-/// The cast time of Paralytic Surge (Spell4 42352, castTime 0): its go is due at
-/// the press.
-const paralytic_surge_cast_ms = 0
-
-/// How long a hit of Paralytic Surge lasts after its go: the cast ends, with its 0x7fe,
-/// when the node of its second effect, Spell4Effects 96126, ends at its durationTime
-/// (`Spell4Effects.durationTime`, 2700 ms).
-const paralytic_surge_lingers_ms = 2700
-
 pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_the_same_fight_test() -> Nil {
   use <- owned_test.run(120_000)
   use tables <- on_rows_without_paralytic_surges_recharge()
@@ -4782,14 +4703,14 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
       0.5,
     ))
   // The caster turns its back on the Beast: the press strikes nothing.
-  face(game: first, yaw: toward +. 3.1415927, clock: 100)
+  game_client.face(game: first, yaw: toward +. 3.1415927, clock: 100)
   let #(away, first_have) =
     press_and_fire(
       time:,
       game: first,
       have: first_have,
       bag_index: 2,
-      cast_ms: paralytic_surge_cast_ms,
+      cast_ms: fight_bot.paralytic_surge_cast_ms,
       cast_id: 1,
     )
   assert holds_a_finish(frames: away)
@@ -4799,15 +4720,15 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
     && game_client.health_in(frames: away) == []
     as "a press with its back to the Beast strikes nobody: the go names no target and no 0x937 follows (the facing is the last kind 14 yaw)"
   // Facing the Beast, it presses until the Beast dies.
-  face(game: first, yaw: toward, clock: 200)
+  game_client.face(game: first, yaw: toward, clock: 200)
   let #(first_have, healths) =
     press_until_dead(
       time:,
       game: first,
       have: first_have,
       bag_index: 2,
-      cast_ms: paralytic_surge_cast_ms,
-      lingers_ms: paralytic_surge_lingers_ms,
+      cast_ms: fight_bot.paralytic_surge_cast_ms,
+      lingers_ms: fight_bot.paralytic_surge_lingers_ms,
       beast: beast_unit,
       cast_id: 2,
     )
@@ -4871,7 +4792,7 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
       game: first,
       have: first_have,
       bag_index: 2,
-      cast_ms: paralytic_surge_cast_ms,
+      cast_ms: fight_bot.paralytic_surge_cast_ms,
       beast: beast_unit,
       cast_id: 100,
     )
@@ -4975,7 +4896,7 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
       0.5,
     ))
   // The caster turns its back on the Beasts: the press strikes nothing.
-  face(game: first, yaw: toward +. 3.1415927, clock: 100)
+  game_client.face(game: first, yaw: toward +. 3.1415927, clock: 100)
   let #(away, first_have) =
     press_and_fire(
       time:,
@@ -5005,7 +4926,7 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
     })
     as "a press with its back to the Beasts strikes nobody: the go names no target, no 0x937 follows and Telekinetic Strike's Proxy 62204, aimed at the area (targetFlags 4), starts no child"
   // Facing the Beast ahead, it presses until that Beast dies.
-  face(game: first, yaw: toward, clock: 200)
+  game_client.face(game: first, yaw: toward, clock: 200)
   let #(first_have, healths) =
     press_until_dead(
       time:,
@@ -6508,7 +6429,7 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
   // 9: kills the Beast with the Medic's first ability, as the medic's test does.
   let own = game_client.unit_create_player_in(frames: entry)
   let own_place = game_client.placed_at(unit: own)
-  face(
+  game_client.face(
     game:,
     yaw: game_client.yaw_toward(from: #(own_place.0, own_place.2), target: #(
       1.5,
@@ -6522,8 +6443,8 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
       game:,
       have:,
       bag_index: 2,
-      cast_ms: paralytic_surge_cast_ms,
-      lingers_ms: paralytic_surge_lingers_ms,
+      cast_ms: fight_bot.paralytic_surge_cast_ms,
+      lingers_ms: fight_bot.paralytic_surge_lingers_ms,
       beast: beast.unit_id,
       cast_id: 1,
     )
@@ -7017,7 +6938,7 @@ pub fn an_exile_kills_the_boss_and_objective_21296_counts_test() -> Nil {
     as "opcode.0x262: a lone target stands at its marker's centre"
   assert boss.tail.faction_id == 233 && boss.tail.base_faction_id == 233
     as "opcode.0x262: the unit stands with faction 233, Hostile to the Exile's parent (Faction2Relationship 746)"
-  face(
+  game_client.face(
     game:,
     yaw: game_client.yaw_toward(
       from: #(marker_51744.0 +. 12.0, marker_51744.2),
@@ -7026,8 +6947,8 @@ pub fn an_exile_kills_the_boss_and_objective_21296_counts_test() -> Nil {
     clock: 100,
   )
   let #(killed, have) =
-    presses_until_the_target_dies(
-      time:,
+    fight_bot.presses_until_the_target_dies(
+      advance: driven_time.advance(time:, ms: _),
       game:,
       have:,
       target: boss.unit_id,
@@ -7076,18 +6997,11 @@ fn world_with_the_turrets(
   tables tables: table_store.Tables,
   time time: driven_time.Time,
 ) -> login_support.Started {
-  start_with_world_data_by(
+  world_on(
     folder: "test/fixture/world_data_turrets",
-    adjusted: fn(settings) {
-      let settings = driven_by(settings:, time:)
-      server.Settings(
-        ..settings,
-        game: server.Served(
-          ..settings.game,
-          settings: connection_state.Settings(..settings.game.settings, tables:),
-        ),
-      )
-    },
+    tables:,
+    time:,
+    tutorial: False,
   )
 }
 
@@ -7162,7 +7076,7 @@ fn the_turret_at(
 }
 
 /// How many presses fit in the 15000 ms opening after the press that interrupts, each
-/// 2700 ms after the last (`paralytic_surge_lingers_ms`): the presses at 2700 to 13500 ms.
+/// 2700 ms after the last (`fight_bot.paralytic_surge_lingers_ms`): the presses at 2700 to 13500 ms.
 const presses_in_the_opening = 5
 
 /// Runs the body on the client's rows with Paralytic Surge's recharge taken off (as
@@ -7213,7 +7127,7 @@ fn interrupts_and_destroys(
       game_client.position_command(x: stands.0, y: stands.1, z: stands.2),
     ]),
   )
-  face(
+  game_client.face(
     game:,
     yaw: game_client.yaw_toward(from: #(stands.0, stands.2), target: #(
       place.0,
@@ -7317,11 +7231,11 @@ fn interrupts_and_destroys(
   // all hit, whatever the connection's rolls are, and the kill below tells whether their
   // damage takes the turret's health.
   the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
-  driven_time.advance(time:, ms: paralytic_surge_lingers_ms)
+  driven_time.advance(time:, ms: fight_bot.paralytic_surge_lingers_ms)
   let #(lingered, have) = game_client.read_until_pong(game:, have:, number: 2)
   let #(killed, have) =
-    presses_at_most(
-      time:,
+    fight_bot.presses_at_most(
+      advance: driven_time.advance(time:, ms: _),
       game:,
       have:,
       target: turret,
@@ -7541,6 +7455,151 @@ pub fn a_charge_hits_a_player_who_stays_in_its_rectangle_test() -> Nil {
     fn(shield) { shield < entry_stat(entry: frames, stat_id: 20) },
   )
     as "opcode.0x938: the shield falls with the blow"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// A create request for CharacterCreation row 477, an Exile Medic (class 4, race 1, sex 1,
+/// faction 167), as the client's bytes.
+fn medic_create_request(name: String) -> BitArray {
+  let assert Ok(body) =
+    create_character.encode(
+      CreateCharacter(
+        ..character_support.create_request(name),
+        creation_id: 477,
+        path: 1,
+        customisation_labels: [2, 22],
+        customisation_values: [1, 1],
+      ),
+    )
+    as "the request encodes"
+  body
+}
+
+/// The quest rows the store holds for the character: each quest and its state, by quest.
+fn quest_rows(
+  pool pool: pog.Connection,
+  character_id character_id: Int,
+) -> List(#(Int, Int)) {
+  let assert Ok(returned) =
+    pog.query(
+      "select quest_id, state::int from character_quest where character_id = $1 order by quest_id",
+    )
+    |> pog.parameter(pog.int(character_id))
+    |> pog.returning({
+      use quest_id <- decode.field(0, decode.int)
+      use state <- decode.field(1, decode.int)
+      decode.success(#(quest_id, state))
+    })
+    |> pog.execute(pool)
+    as "the quest rows read"
+  returned.rows
+}
+
+pub fn a_bot_creates_an_exile_and_plays_the_tutorial_to_the_northern_wilds_landing_test() -> Nil {
+  use <- owned_test.run(300_000)
+  use tables <- on_rows_with_turrets_that_never_deflect()
+  let time = driven_time.new()
+  let started =
+    world_on(
+      folder: "test/fixture/world_data_tutorial_path",
+      tables:,
+      time:,
+      tutorial: True,
+    )
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let account = AccountId(login_support.insert_jim(started))
+  let game =
+    in_select(started:, port: login_support.ports(started).game_port, account:)
+  game_client.send_create(game:, body: medic_create_request("Zed Qu"))
+  let created = created_result(game)
+  assert created.result == create_result.CreateOk
+    as "opcode.0xdc: a valid request is created"
+  send_play(game:, character_id: created.character_id)
+  let #(entry, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+      && list.any(frames, fn(frame) { frame.message_id == 0x035C })
+    })
+  let entry_ids = list.map(entry, fn(frame) { frame.message_id })
+  assert list.filter(entry_ids, fn(id) { id == 0x035F || id == 0x035C })
+    == [0x035F, 0x035C]
+    as "opcode.0x35f.entry_order: the log, then the one grant after it"
+  assert bot_frames.decoded(entry, quest_state.message_id, quest_state.decode)
+    == [QuestState(quest_id: 10_513, state: 1, objective_id: 0)]
+    as "opcode.0x35c.add_unaccepted: the entry into World 3460 gives 10513 in state 1"
+  let assert Ok(played) =
+    tutorial_bot.play(
+      game:,
+      have:,
+      entry:,
+      env: tutorial_bot.Env(
+        advance: fn(ms) { driven_time.advance(time:, ms:) },
+        settled: fn(unit_id) {
+          the_marker_creature_has_taken_what_it_was_sent(started:, unit_id:)
+        },
+      ),
+    )
+    as "the bot plays every step of the tutorial's path"
+  let states =
+    bot_frames.decoded(
+      played.frames,
+      quest_state.message_id,
+      quest_state.decode,
+    )
+  assert list.filter_map(states, fn(told) {
+      case told.state {
+        3 -> Ok(told.quest_id)
+        _ -> Error(Nil)
+      }
+    })
+    == [10_513, 10_527, 10_518, 10_529, 10_525, 10_540, 10_519, 10_520]
+    as "Quest2's chain from 10513: each quest is Completed in the order the path gives it, the chain's by the server and the turn-ins at 73421, Dorian 73491 and 74812"
+  let progress =
+    bot_frames.decoded(
+      played.frames,
+      quest_objective_progress.message_id,
+      quest_objective_progress.decode,
+    )
+  assert list.contains(
+      progress,
+      QuestObjectiveProgress(quest_id: 10_528, objective_index: 1, progress: 1),
+    )
+    && list.contains(
+      progress,
+      QuestObjectiveProgress(quest_id: 10_528, objective_index: 2, progress: 1),
+    )
+    && list.contains(
+      states,
+      QuestState(quest_id: 10_528, state: 2, objective_id: 0),
+    )
+    as "Quest2 10528: the yes at Departures Terminal 73606 counts the travel (index 1) and the Northern Wilds choice (index 2), and the quest is Achieved"
+  let assert [entered, ..] =
+    list.reverse(bot_frames.decoded(
+      played.frames,
+      enter_world.message_id,
+      enter_world.decode,
+    ))
+    as "the landing's 0xAD"
+  assert entered.world_id == 426
+    && entered.position_x == float32.to_bits(4098.16015625)
+    && entered.position_y == float32.to_bits(-665.9780883789062)
+    && entered.position_z == float32.to_bits(-5165.10009765625)
+    as "WorldLocation2 42074, the landing of Departures Terminal 73606: world 426 at (4098.16015625, -665.9780883789062, -5165.10009765625)"
+  event_wait.until("the store holds the quest log the bot played", fn() {
+    quest_rows(pool:, character_id: created.character_id)
+    == [
+      #(10_513, 3),
+      #(10_518, 3),
+      #(10_519, 3),
+      #(10_520, 3),
+      #(10_525, 3),
+      #(10_527, 3),
+      #(10_528, 2),
+      #(10_529, 3),
+      #(10_540, 3),
+    ]
+  })
   game_client.close(game:)
   login_support.stop(started)
 }

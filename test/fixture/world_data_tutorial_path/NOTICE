@@ -1,0 +1,11 @@
+test/fixture/world_data_tutorial_path/spawn.tsv holds the header and rows 29010, 29078, 29098 to
+29100, 29113 to 29139, 29178 to 29182, 29184, 29186 to 29192, 29195 to 29202, 29213, 29304 to 29306,
+29338 to 29340, 29353 and 29389, 29390 and 29395 of spawn.tsv of the wildstar-knowledge world-data
+(https://github.com/jamespdaily/wildstar-knowledge, path world-data/spawn.tsv), copied as they
+are, under that repository's licence, the GNU Affero General Public License, version 3 (the same
+as this project's). The tests import it as the world database's own rows: the units an Exile meets
+on the Novice training simulation's path from its first quest to the Northern Wilds departures
+terminal, the 27 Virtual Battle Beasts, the three mines, the two Sim-Turrets, the tutorial's
+projectors, Dorian Walker at both of his places in the simulation and at the docking bay, the
+objects and creatures of the quests that ask for them, and Rhoda and the terminal in the
+docking bay.

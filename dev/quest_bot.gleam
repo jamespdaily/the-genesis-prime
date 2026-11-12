@@ -9,9 +9,14 @@ import bot_frames
 import game_client.{type Game}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/message/cast_activate.{CastActivate}
+import genesis_prime/message/client_activate_unit.{ClientActivateUnit}
+import genesis_prime/message/client_side_interaction_result.{
+  ClientSideInteractionResult,
+}
 import genesis_prime/message/experience_gained.{type ExperienceGained}
 import genesis_prime/message/held_item.{type HeldItem}
 import genesis_prime/message/interaction_request.{InteractionRequest}
+import genesis_prime/message/interaction_result.{type InteractionResult}
 import genesis_prime/message/item_added
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/quest_accept.{QuestAccept}
@@ -142,6 +147,45 @@ pub fn activate(
     cast_activate.encode(CastActivate(client_cast_id:, target_unit_id: unit_id))
     as "0x97 encodes"
   acted(game:, have:, message_id: cast_activate.message_id, body:)
+}
+
+/// Uses the unit by the client's own use of a unit whose creature has no activate
+/// spell (0xb3): the answer is all the server wrote up to its pong.
+pub fn use_unit(
+  game game: Game,
+  have have: BitArray,
+  unit_id unit_id: Int,
+) -> #(Answer, BitArray) {
+  let assert Ok(body) =
+    client_activate_unit.encode(ClientActivateUnit(unit_id:))
+    as "0xB3 encodes"
+  acted(game:, have:, message_id: client_activate_unit.message_id, body:)
+}
+
+/// Answers the server's cast of `cast_id`, whose interaction window the client shows
+/// and closes with `result` (opcode.0x805): `spell4_base_id` is the base the window was
+/// opened for, which the message holds plus one. The answer is all the server wrote up
+/// to its pong.
+pub fn answer_window(
+  game game: Game,
+  have have: BitArray,
+  cast_id cast_id: Int,
+  spell4_base_id spell4_base_id: Int,
+  result result: InteractionResult,
+) -> #(Answer, BitArray) {
+  let assert Ok(body) =
+    client_side_interaction_result.encode(ClientSideInteractionResult(
+      cast_id:,
+      result:,
+      spell4_base_id_plus_one: spell4_base_id + 1,
+    ))
+    as "0x805 encodes"
+  acted(
+    game:,
+    have:,
+    message_id: client_side_interaction_result.message_id,
+    body:,
+  )
 }
 
 /// Reads what the server writes when the cast of an `activate` goes: up to the

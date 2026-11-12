@@ -28,6 +28,7 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/chat_channel_joined
 import genesis_prime/message/chat_line
 import genesis_prime/message/chat_line_accepted.{type ChatLineAccepted}
+import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
 import genesis_prime/message/combat_result
 import genesis_prime/message/float32
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
@@ -679,6 +680,42 @@ pub fn moves_body(
     player_movement.encode(PlayerMovement(client_clock:, commands:))
     as "0x0637 encodes"
   body
+}
+
+/// Turns the player to `yaw` on the client's clock `clock` (opcode.0x637).
+pub fn face(game game: Game, yaw yaw: Float, clock clock: Int) -> Nil {
+  send_world(
+    game:,
+    message_id: 0x0637,
+    body: moves_body(client_clock: clock, commands: [
+      rotation_command(yaw:, pitch: 0.0, roll: 0.0),
+    ]),
+  )
+}
+
+/// Moves the player to x, y, z on the client's clock `clock` (opcode.0x637).
+pub fn move_to(
+  game game: Game,
+  clock clock: Int,
+  x x: Float,
+  y y: Float,
+  z z: Float,
+) -> Nil {
+  send_world(
+    game:,
+    message_id: 0x0637,
+    body: moves_body(client_clock: clock, commands: [
+      position_command(x:, y:, z:),
+    ]),
+  )
+}
+
+/// Answers the server's 0x636 as the client does (opcode.0x635): the same echo value.
+pub fn echo_control(game game: Game, echo_value echo_value: Int) -> Nil {
+  let assert Ok(body) =
+    client_control_echoed.encode(ClientControlEchoed(echo_value:))
+    as "0x0635 encodes"
+  send_world(game:, message_id: client_control_echoed.message_id, body:)
 }
 
 /// Reads until `count` messages have arrived from the server, each opened from
