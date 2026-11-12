@@ -21,6 +21,7 @@ import bot_frames
 import fight_bot
 import game_client.{type Game}
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_granted
 import genesis_prime/message/combat_log_immunity
@@ -30,6 +31,7 @@ import genesis_prime/message/quest_state
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_static
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
+import genesis_prime/world_map/sight
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -98,9 +100,6 @@ const dorian_on_the_last_island = 74_812
 /// The zone the training simulation's first area is in (WorldLocation2 of the entry,
 /// WorldZone 6009).
 const entry_zone = 6009
-
-/// The range inside which a player sees units (`sight.range`).
-const sight_range = 1024.0
 
 /// The distance from a unit at which the bot stands to use it, talk to it or turn in
 /// to it: well inside the activate range, which is measured edge to edge less both
@@ -322,12 +321,44 @@ fn the_talks(bot: Bot) -> Result(Bot, Blocked) {
     mention: False,
   ))
   use bot <- result.try(project(bot, projector: talks_projector))
-  use bot <- result.try(talk_for_objective(bot, creature: 73_422))
-  use bot <- result.try(talk_for_objective(bot, creature: 73_422))
-  use bot <- result.try(talk_for_objective(bot, creature: 73_662))
-  use bot <- result.try(talk_for_objective(bot, creature: 73_662))
-  use bot <- result.try(talk_for_objective(bot, creature: 73_663))
-  use bot <- result.try(talk_for_objective(bot, creature: 73_664))
+  // Quest2 10525's objective slots 1 to 4 are objectives 21319 (TargetGroup 14368, Creature2
+  // 73422, twice), 21332 (14369, 73662, twice), 21333 (73663) and 21334 (73664).
+  use bot <- result.try(talk_for_objective(
+    bot,
+    creature: 73_422,
+    quest_id: 10_525,
+    objective_index: 1,
+  ))
+  use bot <- result.try(talk_for_objective(
+    bot,
+    creature: 73_422,
+    quest_id: 10_525,
+    objective_index: 1,
+  ))
+  use bot <- result.try(talk_for_objective(
+    bot,
+    creature: 73_662,
+    quest_id: 10_525,
+    objective_index: 2,
+  ))
+  use bot <- result.try(talk_for_objective(
+    bot,
+    creature: 73_662,
+    quest_id: 10_525,
+    objective_index: 2,
+  ))
+  use bot <- result.try(talk_for_objective(
+    bot,
+    creature: 73_663,
+    quest_id: 10_525,
+    objective_index: 3,
+  ))
+  use bot <- result.try(talk_for_objective(
+    bot,
+    creature: 73_664,
+    quest_id: 10_525,
+    objective_index: 4,
+  ))
   // WorldLocation2 52819, the place of 10525's objective 21382, at Creature2 73421.
   use bot <- result.try(
     visit(bot:, quest_id: 10_525, place: #(1357.56, -493.6102, 166.48)),
@@ -393,7 +424,13 @@ fn the_departure(bot: Bot) -> Result(Bot, Blocked) {
     quest_id: 10_528,
     mention: False,
   ))
-  use bot <- result.try(talk_for_objective(bot, creature: 73_604))
+  // Quest2 10528's objective slot 0 is objective 21326, a talk to Creature2 73604.
+  use bot <- result.try(talk_for_objective(
+    bot,
+    creature: 73_604,
+    quest_id: 10_528,
+    objective_index: 0,
+  ))
   depart(bot)
 }
 
@@ -540,7 +577,7 @@ fn find(bot: Bot, creatures: List(Int)) -> #(Bot, Int, Point) {
           case
             list.contains(creatures, creature)
             && !set.contains(bot.spent, unit_id)
-            && squared_distance(at, bot.at) <=. sight_range *. sight_range
+            && squared_distance(at, bot.at) <=. sight.range *. sight.range
           {
             True -> Ok(#(unit_id, at))
             False -> Error(Nil)
@@ -612,26 +649,39 @@ fn accept_from(
   }
 }
 
-/// Talks to a unit of the creature the objective counts, and uses it up.
+/// Talks to a unit of the creature the objective counts, and uses it up. The talk must
+/// progress the objective in slot `objective_index` of the quest (Quest2.objective0 to
+/// objective05), else the step is blocked at once: a talk that counts for another
+/// objective leaves this one short.
 fn talk_for_objective(
   bot: Bot,
   creature creature: Int,
+  quest_id quest_id: Int,
+  objective_index objective_index: Int,
 ) -> Result(Bot, Blocked) {
   let #(bot, unit_id, at) = find(bot, [creature])
   let bot = approach(bot:, at:)
   let #(talked, have) = quest_bot.talk(game: bot.game, have: bot.have, unit_id:)
   let bot = took(bot:, frames: talked.frames, have:)
   let bot = Bot(..bot, spent: set.insert(bot.spent, unit_id))
-  case talked.progress {
-    [] ->
+  case
+    list.any(talked.progress, fn(progress) {
+      progress.quest_id == quest_id
+      && progress.objective_index == objective_index
+    })
+  {
+    True -> Ok(bot)
+    False ->
       Error(Blocked(
         "the talk to unit "
         <> int.to_string(unit_id)
         <> " of Creature2 "
         <> int.to_string(creature)
-        <> " counted for no objective",
+        <> " did not progress objective slot "
+        <> int.to_string(objective_index)
+        <> " of quest "
+        <> int.to_string(quest_id),
       ))
-    _ -> Ok(bot)
   }
 }
 
@@ -766,7 +816,7 @@ fn load_terrain(bot: Bot, zone zone: Int) -> Nil {
 }
 
 /// Presses the terminal, answers its window with yes and reads the move to the
-/// landing, up to its last message of the entry.
+/// landing, up to its last message of the entry and the pong after it.
 fn depart(bot: Bot) -> Result(Bot, Blocked) {
   use #(bot, server_cast_id) <- result.try(pressed(
     bot,
@@ -783,10 +833,14 @@ fn depart(bot: Bot) -> Result(Bot, Blocked) {
   let bot = took(bot:, frames: answered.frames, have:)
   // The yes starts the departure's timer, which fires with no delay.
   bot.env.advance(0)
+  // The settle reads the entry's writes up to the pong, so the clock moves on only after
+  // the connection has written all of them.
   Ok(
-    read_until(bot, what: "0x1bc of the landing", found: fn(frames) {
-      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
-    }),
+    settle(
+      read_until(bot, what: "0x1bc of the landing", found: fn(frames) {
+        list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+      }),
+    ),
   )
 }
 
@@ -807,7 +861,7 @@ fn slay(
   let bot = move(bot, to: stands)
   face(bot:, from: stands, target: at)
   let bot = Bot(..bot, clock: bot.clock + 100)
-  let #(seen, have) =
+  use #(seen, have) <- result.try(result.map_error(
     fight_bot.presses_until_the_target_dies(
       advance: bot.env.advance,
       game: bot.game,
@@ -815,7 +869,9 @@ fn slay(
       target: unit_id,
       cast_id: bot.cast_id,
       seen: [],
-    )
+    ),
+    refused,
+  ))
   let dead =
     list.filter_map(game_client.deaths_in(frames: seen), fn(death) {
       case death.1 {
@@ -843,6 +899,16 @@ fn slay(
   }
 }
 
+/// Why a press the server refused (0x7fc) ends the path.
+fn refused(refused: fight_bot.Refused) -> Blocked {
+  Blocked(
+    "the press with client cast id "
+    <> int.to_string(refused.client_cast_id)
+    <> " was refused with the results "
+    <> string.join(list.map(refused.results, int.to_string), " "),
+  )
+}
+
 fn face(bot bot: Bot, from from: Point, target target: Point) -> Nil {
   game_client.face(
     game: bot.game,
@@ -862,8 +928,11 @@ const opening_ms = 15_000
 /// last (Spell4Effects 96126): the presses at 2700 to 13500 ms after the interrupt.
 const presses_in_the_opening = 5
 
-/// The openings a bot of level 1 may take to destroy a turret: its presses of 14 damage
-/// take 150 health in eleven presses, three openings.
+/// The openings a bot of level 1 may take to destroy a turret: the turret's 0x937 health
+/// falls 14 a press from 150, so eleven presses destroy it, which takes three openings of
+/// five. The fourth is a spare for a deflected press: a turret deflects a strike with
+/// chance 0.016 (CreatureLevel 101's 0.05 times Creature2Difficulty 1's multiplier 0.32),
+/// and each deflect costs one of the fifteen presses of the three openings.
 const openings_to_destroy_a_turret = 4
 
 /// Walks in range of the nearest Sim-Turret and destroys it: one press interrupts each of
@@ -896,11 +965,14 @@ fn destroy_a_turret(bot: Bot) -> Result(Bot, Blocked) {
         game_client.Targeted(unit_id: turret, target_unit_id: own, threat: 1),
       )
     })
-  use bot <- result.map(open_and_press(
-    bot:,
-    turret:,
-    openings: openings_to_destroy_a_turret,
-  ))
+  use bot <- result.map(
+    open_and_press(
+      bot:,
+      turret:,
+      openings: openings_to_destroy_a_turret,
+      broken: [],
+    ),
+  )
   // The kill's credit comes from the creature after its death is written.
   settle(Bot(..bot, spent: set.insert(bot.spent, turret)))
 }
@@ -920,38 +992,63 @@ fn guards_of(
   )
 }
 
-/// Waits for the turret's charge to open, interrupts it with one press and presses on within
-/// the opening until the turret is destroyed; when the opening ends with the turret up, the
-/// guard returns and the next charge is the next opening, up to `openings` of them.
+/// The 0x7ff of Spell4 85469, the charge, that the turret cast, in the order sent: each
+/// as the cast's id and the caster.
+fn charges_of(
+  frames frames: List(Frame),
+  turret turret: Int,
+) -> List(#(Int, Int)) {
+  list.filter(
+    game_client.starts_of(
+      events: game_client.casts_in(frames:),
+      spell4_id: 85_469,
+    ),
+    fn(charge) { charge.1 == turret },
+  )
+}
+
+/// Takes the turret's charge that is not one of the `broken` ones of the earlier openings,
+/// moving the clock to the attack tick only when it has not been read, interrupts it with one
+/// press and presses on within the opening until the turret is destroyed; when the opening
+/// ends with the turret up, the guard returns and the next charge is the next opening, up to
+/// `openings` of them.
 fn open_and_press(
   bot bot: Bot,
   turret turret: Int,
   openings openings: Int,
+  broken broken: List(Int),
 ) -> Result(Bot, Blocked) {
   let assert Ok(#(guard_cast, _)) =
     list.last(guards_of(frames: list.flatten(list.reverse(bot.chunks)), turret:))
     as "the turret's guard was read"
-  // The attack tick, 3000 ms after the aggro or the guard's return, opens the charge.
-  turret_settled(bot:, turret:, when: "before the attack tick")
-  bot.env.advance(3000)
-  let charged = fn(frames) {
-    game_client.starts_of(
-      events: game_client.casts_in(frames:),
-      spell4_id: 85_469,
+  // The attack tick, within 3000 ms of the aggro or the guard's return, opens the charge. The
+  // opening's end and a tick that falls at the same instant run in no fixed order: when the
+  // guard returns first, the tick charges in the same advance, and the charge's 0x7ff was
+  // read with the guard's return, so the charge is looked for in all that was read, and the
+  // clock moves on only when it is not there.
+  let open_charges = fn(bot: Bot) {
+    list.filter(
+      charges_of(frames: list.flatten(list.reverse(bot.chunks)), turret:),
+      fn(charge) { !list.contains(broken, charge.0) },
     )
-    != []
   }
-  let #(opened, have) =
-    open_wait.named("the turret's charge (0x7ff of Spell4 85469)", fn() {
-      game_client.read_until(game: bot.game, have: bot.have, found: charged)
-    })
-  let bot = took(bot:, frames: opened, have:)
-  let assert [#(charge_cast, _), ..] =
-    game_client.starts_of(
-      events: game_client.casts_in(frames: opened),
-      spell4_id: 85_469,
-    )
-    as "the tick opens the charge with a 0x7ff of Spell4 85469"
+  let bot = case open_charges(bot) {
+    [_, ..] -> bot
+    [] -> {
+      turret_settled(bot:, turret:, when: "before the attack tick")
+      bot.env.advance(3000)
+      settle(bot)
+    }
+  }
+  use charge_cast <- result.try(case open_charges(bot) {
+    [#(charge_cast, _), ..] -> Ok(charge_cast)
+    [] ->
+      Error(Blocked(
+        "the turret "
+        <> int.to_string(turret)
+        <> " opened no charge, 0x7ff of Spell4 85469, in 3000 ms after its aggro or its guard's return",
+      ))
+  })
   // The press interrupts the charge: Paralytic Surge's stun (Spell4Effects 96126) breaks
   // it, and the turret's guard comes off. The read waits for each message of the
   // interrupt, which the turret and the connection write in no fixed order.
@@ -962,8 +1059,10 @@ fn open_and_press(
     bag_index: 2,
     target: 0,
   )
+  let interrupt_cast = bot.cast_id
   let interrupted = fn(frames) {
-    list.contains(
+    fight_bot.refusals_in(frames:, cast_id: interrupt_cast) != []
+    || list.contains(
       game_client.casts_in(frames:),
       game_client.CastFinished(cast_id: charge_cast),
     )
@@ -987,10 +1086,24 @@ fn open_and_press(
       what: "the interrupt of the turret's charge",
       found: interrupted,
     )
+  let refusals =
+    fight_bot.refusals_in(
+      frames: list.flatten(bot.chunks),
+      cast_id: interrupt_cast,
+    )
+  use <- bool.guard(
+    when: refusals != [],
+    return: Error(
+      refused(fight_bot.Refused(
+        client_cast_id: interrupt_cast,
+        results: refusals,
+      )),
+    ),
+  )
   turret_settled(bot:, turret:, when: "before the first press of the opening")
   bot.env.advance(fight_bot.paralytic_surge_lingers_ms)
   let bot = settle(bot)
-  let #(killed, have) =
+  use #(killed, have) <- result.try(result.map_error(
     fight_bot.presses_at_most(
       advance: bot.env.advance,
       game: bot.game,
@@ -999,7 +1112,9 @@ fn open_and_press(
       cast_id: bot.cast_id + 1,
       seen: [],
       presses: presses_in_the_opening,
-    )
+    ),
+    refused,
+  ))
   let bot =
     Bot(
       ..took(bot:, frames: killed, have:),
@@ -1019,14 +1134,29 @@ fn open_and_press(
         - presses_in_the_opening
         * fight_bot.paralytic_surge_lingers_ms,
       )
-      let returned = fn(frames) {
-        list.any(guards_of(frames:, turret:), fn(guard) {
-          guard.0 != guard_cast
-        })
+      // The advance has written the guard's return, which the connection's pong follows.
+      let bot = settle(bot)
+      let returned = case
+        list.last(guards_of(
+          frames: list.flatten(list.reverse(bot.chunks)),
+          turret:,
+        ))
+      {
+        Ok(#(latest, _)) -> latest != guard_cast
+        Error(Nil) -> False
       }
-      let bot =
-        read_until(bot, what: "the turret's guard back", found: returned)
-      open_and_press(bot:, turret:, openings: openings - 1)
+      use <- bool.guard(
+        when: !returned,
+        return: Error(Blocked(
+          "the turret "
+          <> int.to_string(turret)
+          <> " cast no guard anew when its opening ended",
+        )),
+      )
+      open_and_press(bot:, turret:, openings: openings - 1, broken: [
+        charge_cast,
+        ..broken
+      ])
     }
   }
 }
@@ -1059,9 +1189,24 @@ fn immunity_shown(frames frames: List(Frame), turret turret: Int) -> Bool {
 
 // Geometry
 
+/// The squared distance between two points, as the server's sight measures it
+/// (`sight.squared_distance`), which takes places: the distance reads only the
+/// positions, so the world and the zone of the places made here do not matter.
 fn squared_distance(left: Point, right: Point) -> Float {
-  let across = left.0 -. right.0
-  let up = left.1 -. right.1
-  let along = left.2 -. right.2
-  across *. across +. up *. up +. along *. along
+  sight.squared_distance(first: place_at(left), second: place_at(right))
+}
+
+/// A place at the point, for the sight's distance.
+fn place_at(point: Point) -> Place {
+  let assert Ok(place) =
+    start_place.place(
+      world_id: 1,
+      world_zone_id: 0,
+      x: point.0,
+      y: point.1,
+      z: point.2,
+      facing: start_place.unturned,
+    )
+    as "world 1 is not world 0, which has no place"
+  place
 }

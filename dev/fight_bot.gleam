@@ -5,6 +5,7 @@
 
 import game_client
 import genesis_prime/connection/frame.{type Frame}
+import gleam/bool
 import gleam/list
 
 /// The cast time of Paralytic Surge (Spell4 42352, castTime 0): its go is due at
@@ -16,8 +17,32 @@ pub const paralytic_surge_cast_ms = 0
 /// (`Spell4Effects.durationTime`, 2700 ms).
 pub const paralytic_surge_lingers_ms = 2700
 
+/// A press the server refused (0x7fc), with the result of each refusal: a caster that
+/// is dead or stunned, a target out of range or a cooldown still running gets no go, so
+/// no frame the fight waits for would ever come.
+pub type Refused {
+  Refused(client_cast_id: Int, results: List(Int))
+}
+
+/// The results of the refusals (0x7fc) of the press with this client cast id among the
+/// frames.
+pub fn refusals_in(
+  frames frames: List(Frame),
+  cast_id cast_id: Int,
+) -> List(Int) {
+  list.filter_map(game_client.casts_in(frames:), fn(event) {
+    case event {
+      game_client.CastRefused(client_cast_id:, result:, ..)
+        if client_cast_id == cast_id
+      -> Ok(result)
+      _ -> Error(Nil)
+    }
+  })
+}
+
 /// Presses Paralytic Surge at the unit, facing it, until its death is read, and
-/// gives every frame read and the bytes beyond. A press that neither struck the unit
+/// gives every frame read and the bytes beyond, or the press the server refused. A
+/// press that neither struck the unit
 /// nor was shown missing it (0x7fb) ends the test; a deflected press is pressed
 /// again, since a creature of the client's rows deflects some strikes (the placed
 /// Creature2 73492's defence holds a deflect chance of 0.02, so about one run in
@@ -30,7 +55,7 @@ pub fn presses_until_the_target_dies(
   target target: Int,
   cast_id cast_id: Int,
   seen seen: List(Frame),
-) -> #(List(Frame), BitArray) {
+) -> Result(#(List(Frame), BitArray), Refused) {
   presses_at_most(
     advance:,
     game:,
@@ -43,7 +68,7 @@ pub fn presses_until_the_target_dies(
 }
 
 /// The same, at most `presses` presses: the frames read and the bytes beyond, the
-/// target's death among them or not.
+/// target's death among them or not, or the press the server refused.
 pub fn presses_at_most(
   advance advance: fn(Int) -> Nil,
   game game: game_client.Game,
@@ -52,7 +77,7 @@ pub fn presses_at_most(
   cast_id cast_id: Int,
   seen seen: List(Frame),
   presses presses: Int,
-) -> #(List(Frame), BitArray) {
+) -> Result(#(List(Frame), BitArray), Refused) {
   game_client.press_ability(
     game:,
     client_cast_id: cast_id,
@@ -64,7 +89,8 @@ pub fn presses_at_most(
   let #(went, have) =
     game_client.read_until(game:, have:, found: fn(went) {
       let heard = list.append(seen, list.append(taken, went))
-      list.any(game_client.health_in(frames: heard), fn(health) {
+      refusals_in(frames: list.append(taken, went), cast_id:) != []
+      || list.any(game_client.health_in(frames: heard), fn(health) {
         health.0 == target
       })
       || list.any(game_client.missed_in(frames: heard), fn(missed) {
@@ -76,6 +102,12 @@ pub fn presses_at_most(
       )
     })
   let #(settled, have) = game_client.read_until_pong(game:, have:, number: 2)
+  let refused =
+    refusals_in(frames: list.flatten([taken, went, settled]), cast_id:)
+  use <- bool.guard(
+    when: refused != [],
+    return: Error(Refused(client_cast_id: cast_id, results: refused)),
+  )
   let seen = list.flatten([seen, taken, went, settled])
   assert list.any(game_client.go_targets_in(frames: seen), fn(go) {
       list.contains(go.1, target)
@@ -90,15 +122,15 @@ pub fn presses_at_most(
       health == #(target, 0, True)
     })
   case dead, at_zero {
-    True, _ -> #(seen, have)
+    True, _ -> Ok(#(seen, have))
     False, True -> {
       let #(more, have) =
         game_client.read_until(game:, have:, found: fn(more) {
           list.contains(game_client.deaths_in(frames: more), #(target, True))
         })
-      #(list.append(seen, more), have)
+      Ok(#(list.append(seen, more), have))
     }
-    False, False if presses <= 1 -> #(seen, have)
+    False, False if presses <= 1 -> Ok(#(seen, have))
     False, False -> {
       advance(paralytic_surge_lingers_ms)
       let #(later, have) = game_client.read_until_pong(game:, have:, number: 3)

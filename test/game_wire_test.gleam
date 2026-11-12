@@ -4182,7 +4182,7 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
     )),
     clock: 100,
   )
-  let #(killed, have) =
+  let assert Ok(#(killed, have)) =
     fight_bot.presses_until_the_target_dies(
       advance: driven_time.advance(time:, ms: _),
       game:,
@@ -4236,7 +4236,7 @@ pub fn the_last_kill_of_quest_10518_is_followed_by_0x35c_state_2_its_rewards_and
     )),
     clock: 100,
   )
-  let #(killed, have) =
+  let assert Ok(#(killed, have)) =
     fight_bot.presses_until_the_target_dies(
       advance: driven_time.advance(time:, ms: _),
       game:,
@@ -4332,7 +4332,7 @@ pub fn a_placed_target_respawns_at_its_slot_test() -> Nil {
     )),
     clock: 100,
   )
-  let #(_, have) =
+  let assert Ok(#(_, have)) =
     fight_bot.presses_until_the_target_dies(
       advance: driven_time.advance(time:, ms: _),
       game:,
@@ -6947,7 +6947,7 @@ pub fn an_exile_kills_the_boss_and_objective_21296_counts_test() -> Nil {
     ),
     clock: 100,
   )
-  let #(killed, have) =
+  let assert Ok(#(killed, have)) =
     fight_bot.presses_until_the_target_dies(
       advance: driven_time.advance(time:, ms: _),
       game:,
@@ -7234,7 +7234,7 @@ fn interrupts_and_destroys(
   the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
   driven_time.advance(time:, ms: fight_bot.paralytic_surge_lingers_ms)
   let #(lingered, have) = game_client.read_until_pong(game:, have:, number: 2)
-  let #(killed, have) =
+  let assert Ok(#(killed, have)) =
     fight_bot.presses_at_most(
       advance: driven_time.advance(time:, ms: _),
       game:,
