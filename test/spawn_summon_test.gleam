@@ -14,8 +14,8 @@
 ////   for spawns the client makes itself (`0x1404846c0`). First is the entry of
 ////   the lowest id, the order of the table.
 //// - A summon is refused for what the client's checks of a spawn refuse
-////   (`0x140485790`) and for what the load leaves out of a stored spawn: no
-////   faction, friendly to both player factions, only a service link, health 0
+////   (`0x140485790`) and for what the load leaves out of a stored spawn:
+////   friendly to both player factions, only a service link, health 0
 ////   (`opcode.0x262.creature`); a server choice, so a summon starts only what a
 ////   spawn starts.
 
@@ -243,16 +243,17 @@ pub fn a_creature_the_client_would_not_load_is_refused_naming_the_rule_test() ->
     )
 }
 
-pub fn a_creature_with_no_faction_or_a_service_link_would_not_start_as_a_spawn_and_is_refused_test() -> Nil {
+pub fn a_creature_with_only_a_service_link_would_not_start_as_a_spawn_and_is_refused_test() -> Nil {
   use <- owned_test.run(120_000)
-  // opcode.0x262.creature: a unit with no faction is Neutral and a stored row of
-  // it is left out; a creature with only a taxi link waits for its own system,
-  // and one that gives a quest stands as a stored spawn of it does.
-  assert summoned_beast_changed(changes: [#("factionId", Integer(0))])
-    == Error(spawn.WouldNotStart(
-      creature_id: Creature2Id(beast),
-      reason: spawn.NoFaction,
-    ))
+  // `0x14045a950.faction_zero`: a unit with no faction is Neutral and a stored row of
+  // it starts, so it summons; a creature with only a taxi link waits for its own
+  // system, and one that gives a quest stands as a stored spawn of it does.
+  let assert Ok(factionless) =
+    summoned_beast_changed(changes: [#("factionId", Integer(0))])
+    as "a creature with no faction starts as a spawn, so it summons"
+  assert factionless.creature_id == Creature2Id(beast)
+    && factionless.faction_id == 0
+    && factionless.base_faction_id == 0
   assert summoned_beast_changed(changes: [#("taxiNodeId", Integer(1))])
     == Error(spawn.WouldNotStart(
       creature_id: Creature2Id(beast),
@@ -264,9 +265,9 @@ pub fn a_creature_with_no_faction_or_a_service_link_would_not_start_as_a_spawn_a
   assert giver.creature_id == Creature2Id(beast)
   assert spawn.describe_refusal(spawn.WouldNotStart(
       creature_id: Creature2Id(beast),
-      reason: spawn.NoFaction,
+      reason: spawn.ServiceLink,
     ))
-    == "Creature2 73464 would not start as a spawn: no faction"
+    == "Creature2 73464 would not start as a spawn: a service link"
 }
 
 pub fn commander_durek_summons_with_the_client_rows_faction_display_and_outfit_test() -> Nil {
