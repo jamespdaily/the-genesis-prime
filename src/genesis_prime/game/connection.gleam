@@ -938,7 +938,9 @@ pub fn carried_message_ids() -> List(Int) {
 }
 
 /// The answer to the ask in flight, then what other processes sent for a stay
-/// while it was out, once the connection is back in the world to take it.
+/// while it was out, once the connection is back in the world to take it. The held
+/// messages come before the held client frames (`client_connection.settle`), so a
+/// held camp or leave frame cannot strand them in the old stay.
 fn answered(
   session session: Session,
   now now: Now,
@@ -1088,8 +1090,8 @@ fn answered_by_status(
 /// What another process sent for a stay of the player (`ForStay`), taken at this
 /// one entry point: only while the player is in the world, and only when the stay
 /// is the player's own (genesis_prime/world_map/stay). While the connection waits
-/// on the store (`waiting_on_the_store`) it is held and taken here again once the
-/// answer returns the connection to the world. Any other is dropped: it was
+/// an ask is out whose answer returns the connection to the world
+/// (`holds_map_messages`) it is held and taken here again once the answer has. Any other is dropped: it was
 /// sent for an earlier stay, before a camp or the Holocrypt, and reaches a later
 /// one whose client holds none of the earlier units and whose creatures and
 /// viewers are others, or it reaches no stay at all. A dropped strike finds no
@@ -1127,7 +1129,7 @@ fn stay_sent(
           }
       }
     Some(_) | None ->
-      case connection_state.waiting_on_the_store(session.status) {
+      case connection_state.holds_map_messages(session.status) {
         True ->
           Continue(
             Session(

@@ -1,6 +1,7 @@
 //// What the game connection does with a message a map sends it (a kill's credit, a
-//// creature's strike) while the connection waits on the store, in a buy, a sale or a
-//// turn-in (`genesis_prime/game/connection`). Expected values come from these places.
+//// creature's strike) while the connection waits on the store, in a buy, a sale, a
+//// turn-in or the periodic place save (`genesis_prime/game/connection`). Expected
+//// values come from these places.
 //// - The stay rule of `experience_flow_test`: a credit told for a stay other than the
 ////   connection's current one is dropped.
 //// - The frames of a buy, a sale and a turn-in are the ones their own tests state
@@ -153,11 +154,8 @@ fn sale_saved() -> step.Outcome(Answer) {
 const sale_frames = [0x0919, 0x00DD, 0x017F, 0x00BA]
 
 /// A connection with quest 1857 accepted, whose objective (type 2, count 1) names the
-/// Beast, that buys Item2 14838 at Dorian Walker for 67 of its 100 credits: the
-/// connection waits on the store.
-fn buying(
-  then then: fn(game_connection.State, step.ConnectionStep(Request)) -> Nil,
-) -> Nil {
+/// Beast, with 100 credits and no items, `then` given it in the world.
+fn with_the_beast_quest(then then: fn(game_connection.State) -> Nil) -> Nil {
   use tables <- fixture_tables.changed(table: "QuestObjective", id: 1961, with: [
     #("data", Integer(beast)),
   ])
@@ -169,17 +167,28 @@ fn buying(
         vendors: vendor_support.stocking(creature_ids: [74_812]),
       ),
     ).0
-  let state =
-    at_the_vendor(
-      state: connection_support.entered_stocking_with_quests(
-        in_character_select: connection_support.in_select_from(fresh),
-        credits: 100,
-        items: [],
-        quests: [quest_support.accepted(quest_id: 1857, progress: [0])],
-      ),
-    )
+  then(
+    connection_support.entered_stocking_with_quests(
+      in_character_select: connection_support.in_select_from(fresh),
+      credits: 100,
+      items: [],
+      quests: [quest_support.accepted(quest_id: 1857, progress: [0])],
+    ),
+  )
+}
+
+/// That connection buys Item2 14838 at Dorian Walker for 67 of its 100 credits: the
+/// connection waits on the store.
+fn buying(
+  then then: fn(game_connection.State, step.ConnectionStep(Request)) -> Nil,
+) -> Nil {
+  use state <- with_the_beast_quest
   let #(state, taken) =
-    connection_support.purchase_requested(state:, unique_id: 2, quantity: 1)
+    connection_support.purchase_requested(
+      state: at_the_vendor(state:),
+      unique_id: 2,
+      quantity: 1,
+    )
   then(state, taken)
 }
 
@@ -309,7 +318,7 @@ pub fn map_messages_held_while_the_store_works_are_taken_in_arrival_order_test()
     as "the kill of unit 8 came first, so its experience is written first"
 }
 
-pub fn a_held_message_for_an_earlier_stay_is_dropped_when_taken_test() -> Nil {
+pub fn a_held_message_for_another_stay_is_dropped_when_taken_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = selling()
   let #(state, _) =
@@ -328,7 +337,7 @@ pub fn a_held_message_for_an_earlier_stay_is_dropped_when_taken_test() -> Nil {
     as "the kill told for another stay of the player counts for nothing, the one of the present stay does"
 }
 
-pub fn a_connection_that_ends_while_holding_map_messages_saves_as_before_test() -> Nil {
+pub fn a_connection_that_ends_while_holding_map_messages_takes_none_test() -> Nil {
   use <- owned_test.run(10_000)
   let state =
     quest_walker_support.in_world_with_walker(
@@ -358,4 +367,37 @@ pub fn a_connection_that_ends_while_holding_map_messages_saves_as_before_test() 
   assert connection_support.disconnect(answered, connection_support.keyed())
     == LostUserServer
     as "0x036A reason 8"
+}
+
+pub fn a_kill_during_the_periodic_save_counts_once_the_save_is_answered_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use state <- with_the_beast_quest
+  let #(state, taken) =
+    connection_support.feed(
+      state:,
+      event: step.OwnEvent(step.TimerFired(connection_state.save_timer)),
+    )
+  let assert client_connection.AskStore(store.Move(store.SavePlace(..))) =
+    connection_support.ask_request(taken)
+    as "the save timer asks the store to save the place"
+  let #(state, held) =
+    connection_support.feed(
+      state:,
+      event: kill_of(
+        unit_id: experience_support.creature_unit_id,
+        stay: connection_support.own_stay(),
+      ),
+    )
+  assert connection_support.written_ids(held) == []
+    as "nothing is written before the store has saved the place"
+  let #(_, answered) =
+    connection_support.answer(
+      state:,
+      taken:,
+      outcome: connection_support.place_saved(),
+    )
+  assert connection_support.written_ids(answered) == [0x01AC, 0x0361, 0x035C]
+    as "the kill's experience, then objective 0 of quest 1857 at 1 of 1 and the quest Achieved"
+  assert kill_sources(taken: answered) == [experience_support.creature_unit_id]
+    as "one experience, for the unit that was killed"
 }
