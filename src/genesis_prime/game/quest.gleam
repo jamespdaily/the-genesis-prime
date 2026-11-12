@@ -21,9 +21,9 @@
 //// ```
 ////
 //// - **The source** is what the client starts a quest from. The dialog's accept sends
-////   location 300 and bag index -1 (`opcode.0x35b`): it needs a shown, alive creature,
-////   not Hostile to the player, whose Creature2 row gives the quest, within reach, or a
-////   quest of the communicator (Quest2 flags 4) the log holds a state of 4 to 7 for. Any other
+////   location 300 and bag index -1 (`opcode.0x35b`): it needs a shown, alive creature
+////   or static object, not Hostile to the player, whose Creature2 row gives the quest,
+////   within reach, or a quest of the communicator (Quest2 flags 4) the log holds a state of 4 to 7 for. Any other
 ////   place is a held item there whose Item2 `quest2IdActivation` is the quest. A retry
 ////   carries no place, so it takes any of the three.
 //// - **The checks** are the client's, in its order, and the first that does not pass
@@ -54,9 +54,7 @@ import genesis_prime/game/equip_requirement
 import genesis_prime/game/interaction
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
-import genesis_prime/game/shown.{
-  type Picture, ShownCreature, ShownObject, ShownPlayer,
-}
+import genesis_prime/game/shown.{type Picture}
 import genesis_prime/message/item_place
 import genesis_prime/message/quest_abandon
 import genesis_prime/message/quest_accept
@@ -1317,9 +1315,9 @@ fn starts(
   }
 }
 
-/// Whether a shown creature the client would open a dialog with names the quest in `quest_ids`
-/// (the quests it gives, or the quests it receives): alive, not Hostile to the player,
-/// within reach.
+/// Whether a shown creature or static object the client would open a dialog with names the
+/// quest in `quest_ids` (the quests it gives, or the quests it receives): alive, not
+/// Hostile to the player, within reach.
 pub fn in_reach(
   quest_id quest_id: Int,
   quest_ids quest_ids: fn(Creature2) -> List(Int),
@@ -1329,15 +1327,15 @@ pub fn in_reach(
   now_ms now_ms: Int,
 ) -> Bool {
   list.any(dict.values(picture), fn(unit) {
-    case unit {
-      ShownCreature(
+    case shown.talkable(shown: unit, now_ms:) {
+      Ok(shown.Talkable(
         creature_id:,
-        path:,
+        place:,
+        hit_radius: unit_radius,
         alive: True,
-        hit_radius: creature_radius,
         hostile_to:,
         ..,
-      ) ->
+      )) ->
         !interaction.hostile_to_player(player: standing, hostile_to:)
         && case creature2.get(tables, creature_id) {
           Ok(row) ->
@@ -1345,13 +1343,12 @@ pub fn in_reach(
             && interaction.within_reach(
               player: standing,
               tables:,
-              path:,
-              creature_radius:,
-              now_ms:,
+              place:,
+              unit_radius:,
             )
           Error(Nil) -> False
         }
-      ShownCreature(alive: False, ..) | ShownPlayer | ShownObject(..) -> False
+      Ok(shown.Talkable(alive: False, ..)) | Error(Nil) -> False
     }
   })
 }

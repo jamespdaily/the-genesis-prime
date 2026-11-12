@@ -34,8 +34,8 @@
 ////   3. the log's state for it is not Achieved (2), unless the quest auto-completes (Quest2
 ////      flags bit 0): it is then taken as `quest.can_accept` takes an accept with the log-full
 ////      bit masked, and goes from no entry, or a Known one, straight to Completed
-////   4. the receiver: a shown creature alive, not Hostile to the player, within reach, whose
-////      Creature2 row receives the quest (`spawn.received_quest_ids`, through `quest.in_reach`);
+////   4. the receiver: a shown creature or static object alive, not Hostile to the player, within
+////      reach, whose Creature2 row receives the quest (`spawn.received_quest_ids`, through `quest.in_reach`);
 ////      with the by-communicator bit set, the communicator's check instead, and no creature is
 ////      needed (genesis_prime/game/communicator): the quest must be Achieved, with no
 ////      auto-complete, and the dialog the client opens must offer it, which is flags 0x10000 with a

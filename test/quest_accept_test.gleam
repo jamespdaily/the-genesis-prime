@@ -46,6 +46,7 @@ import genesis_prime/store.{
 import genesis_prime/table/id.{Item2Id, Quest2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2.{type Quest2, Quest2}
+import genesis_prime/world_map/creature_life.{Hostile}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -57,6 +58,7 @@ import planted_table.{Integer}
 import prerequisite_support
 import quest_support
 import quest_walker_support
+import simple_unit_support
 
 const exile = 167
 
@@ -979,6 +981,35 @@ pub fn accept_from_the_dialog_needs_a_giver_in_reach_or_a_mentioned_call_test() 
   assert from(dict.new(), 1872, called).effects
     == [quest.SendState(quest_id: 1872, state: 1, objective_id: 0)]
     as "1872 has Quest2 flag 4, the communicator's, and the log holds it mentioned"
+}
+
+/// Creature2 12545 is a Simple unit (CreationTypeEnum 10, shown as an object) that gives
+/// quest 3689 (`questIdGiven00`): the client's marking of a giver reads its row and
+/// disposition and range and not its unit type (`0x1405a8d40`, `0x1403add00`).
+pub fn a_quest_is_accepted_from_a_simple_giver_in_reach_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let dialog =
+    accept_body(location: 300, bag_index: 0xFFFF_FFFF, quest_id: 3689)
+  let from = fn(gap, hostile_to) {
+    took_in(
+      message: quest.Accept,
+      body: dialog,
+      asker: asker(log: []),
+      picture: simple_unit_support.picture(
+        creature_id: 12_545,
+        faction_id: 219,
+        checklist_index: 0,
+        gap:,
+        hostile_to:,
+      ),
+    )
+  }
+  let friendly = Hostile(exile: False, dominion: False)
+  assert from(8.9, friendly).effects
+    == [quest.SendState(quest_id: 3689, state: 1, objective_id: 0)]
+    as "the Simple giver of quest 3689 stands within 9.0, edge to edge"
+  assert_declined(from(9.1, friendly), quest: 3689)
+  assert_declined(from(1.0, Hostile(exile: True, dominion: True)), quest: 3689)
 }
 
 pub fn retry_takes_only_a_botched_quest_test() -> Nil {

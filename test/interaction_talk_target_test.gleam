@@ -18,6 +18,13 @@
 //// unreachable type 3 objective for a creature in the fixture, so that case changes 17989
 //// to type 3 (`QuestObjective.type`), a talk to a creature that waits for the
 //// objective before it.
+////
+//// A Simple unit (world spawn type 10, shown as an object) is clicked the same way: the
+//// client's `0x14047a060` (the kinds a unit offers) and `0x1403add00` (the request's
+//// check) read the unit's life, disposition and range and never its unit type, and
+//// `opcode.0x262.simple` creates a type 10 unit alive. The rows used: Creature2 73422
+//// (faction 219) is the TargetGroup 14368 creature of quest 10525's type 18 objective 1,
+//// and Creature2 73604 (faction 171) is the creature of quest 10528's type 3 objective 21326.
 
 import character_tables
 import fixture_tables
@@ -42,6 +49,7 @@ import gleam/string
 import owned_test
 import planted_table.{Integer}
 import quest_support
+import simple_unit_support
 import vendor_support
 
 const talk_target = 12_484
@@ -316,24 +324,27 @@ pub fn a_type_3_target_opens_its_dialog_and_counts_the_talk_test() -> Nil {
     as "the same creature once the earlier objective is done"
 }
 
-/// The picture with this checklist index in the creature's 0x262.
-fn with_index(
-  picture picture: shown.Picture,
-  index index: Int,
-) -> shown.Picture {
-  dict.map_values(picture, fn(_, one) {
-    case one {
-      shown.ShownCreature(..) ->
-        shown.ShownCreature(..one, checklist_index: index)
-      shown.ShownPlayer -> shown.ShownPlayer
-      shown.ShownObject(..) -> shown.ShownObject(..one, checklist_index: index)
-    }
-  })
+/// A creature that is Hostile to neither player faction.
+const friendly = Hostile(exile: False, dominion: False)
+
+/// The unit the click's talk counts for a Simple creature: its creature, the faction its
+/// row gives (Creature2 73422's, 73604's and 12545's `factionId` are 219, 171 and 219) and the
+/// UnitRace of its row.
+fn simple_unit_of(
+  tables tables: table_store.Tables,
+  creature creature: Int,
+  faction faction: Int,
+) -> target_group.Unit {
+  target_group.Unit(
+    ..unit_of(tables:, creature:),
+    faction_id: id.Faction2Id(faction),
+  )
 }
 
 /// Quest 10525's objective 1 is 21319, a type 18 checklist of TargetGroup 14368
-/// (Creature2 73422), count 2, flags 3, which waits for objective 0 (21344, a visit).
-pub fn talking_to_a_type_18_target_sets_its_bit_test() -> Nil {
+/// (Creature2 73422, a Simple unit of faction 219), count 2, flags 3, which waits for
+/// objective 0 (21344, a visit).
+pub fn a_click_on_a_simple_type_18_target_counts_the_talk_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
   let target = 73_422
@@ -348,7 +359,13 @@ pub fn talking_to_a_type_18_target_sets_its_bit_test() -> Nil {
     ),
   ]
   let picture =
-    with_index(picture: picture_with(creature_id: target, gap: 1.0), index: 5)
+    simple_unit_support.picture(
+      creature_id: target,
+      faction_id: 219,
+      checklist_index: 5,
+      gap: 1.0,
+      hostile_to: friendly,
+    )
   let talked =
     taken_in(
       tables:,
@@ -357,16 +374,21 @@ pub fn talking_to_a_type_18_target_sets_its_bit_test() -> Nil {
       offer: interaction.NothingToOffer,
     )
   let event =
-    TalkedTo(target: unit_of(tables:, creature: target), checklist_index: 5)
+    TalkedTo(
+      target: simple_unit_of(tables:, creature: target, faction: 219),
+      checklist_index: 5,
+    )
   assert talked.effects == [OpenDialog(unit_id: unit), event]
-    as "a type 18 target whose bit is clear opens its dialog and counts the talk, with the index its 0x262 carried (0x140611680)"
+    as "a Simple type 18 target whose bit is clear opens its dialog and counts the talk, with the faction and the index its 0x262 carried (0x14047a060, 0x1403add00 and 0x140611680 check no unit type)"
+  assert talked.window == Closes
+    as "the talk closes a vendor window as any request to talk does"
 
   let counted =
     objective.advance(
       log: quest_support.log_of(rows: reached),
       tables:,
       event: objective.TalkedTo(
-        target: unit_of(tables:, creature: target),
+        target: simple_unit_of(tables:, creature: target, faction: 219),
         checklist_index: 5,
       ),
       now_ms: 0,
@@ -386,4 +408,129 @@ pub fn talking_to_a_type_18_target_sets_its_bit_test() -> Nil {
     words: "no quest",
     what: "a target whose bit is set (the client marks it only while the bit is clear)",
   )
+}
+
+/// Quest 10528's objective 0 is 21326, a type 3 talk to Creature2 73604, a Simple unit of
+/// faction 171, count 1. Faction 171 is Hostile to the Dominion and not to the Exile
+/// player, as the Faction2 rows give it.
+pub fn a_click_on_a_simple_type_3_target_counts_the_talk_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let target = 73_604
+  let open = [
+    quest_support.accepted(quest_id: 10_528, progress: [0, 0, 0, 0, 0]),
+  ]
+  let picture =
+    simple_unit_support.picture(
+      creature_id: target,
+      faction_id: 171,
+      checklist_index: 0,
+      gap: 1.0,
+      hostile_to: Hostile(exile: False, dominion: True),
+    )
+  let taken =
+    taken_in(
+      tables:,
+      log: quest_support.log_of(rows: open),
+      picture:,
+      offer: interaction.NothingToOffer,
+    )
+  assert taken.effects
+    == [
+      OpenDialog(unit_id: unit),
+      TalkedTo(
+        target: simple_unit_of(tables:, creature: target, faction: 171),
+        checklist_index: 0,
+      ),
+    ]
+    as "a Simple unit named by an open type 3 objective gets 0x357 and then counts the talk (0x140553110, opcode.0x357)"
+  assert_declined(
+    taken: taken_in(
+      tables:,
+      log: quest_support.log_of(rows: []),
+      picture:,
+      offer: interaction.NothingToOffer,
+    ),
+    words: "no quest",
+    what: "a Simple unit no logged objective names",
+  )
+}
+
+/// Creature2 73422 is a Simple unit of faction 219 whose objective is open here; 170 is
+/// the faction the Faction2 rows make Hostile to the Exile.
+pub fn a_simple_unit_hostile_to_the_player_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let reached = [
+    quest_support.active(
+      quest_id: 10_525,
+      state: 1,
+      placeholder: 0,
+      tracked: False,
+      done_mask: 0b1,
+      progress: [1, 0, 0, 0, 0, 0],
+    ),
+  ]
+  let hostile_to_exiles = Hostile(exile: True, dominion: False)
+  assert_declined(
+    taken: taken_in(
+      tables:,
+      log: quest_support.log_of(rows: reached),
+      picture: simple_unit_support.picture(
+        creature_id: 73_422,
+        faction_id: 170,
+        checklist_index: 5,
+        gap: 1.0,
+        hostile_to: hostile_to_exiles,
+      ),
+      offer: interaction.Offered,
+    ),
+    words: "Hostile",
+    what: "a Simple unit Hostile to an Exile, whose objective is open and which is in reach (0x14047a060 drops the quest kinds for it)",
+  )
+}
+
+/// The client's reach for a request to talk is 6.0 and the request adds 3.0, edge to edge
+/// (`opcode.0x7ea`, `0x1403add00`).
+pub fn a_simple_unit_beyond_reach_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let reached = [
+    quest_support.active(
+      quest_id: 10_525,
+      state: 1,
+      placeholder: 0,
+      tracked: False,
+      done_mask: 0b1,
+      progress: [1, 0, 0, 0, 0, 0],
+    ),
+  ]
+  let at = fn(gap) {
+    taken_in(
+      tables:,
+      log: quest_support.log_of(rows: reached),
+      picture: simple_unit_support.picture(
+        creature_id: 73_422,
+        faction_id: 219,
+        checklist_index: 5,
+        gap:,
+        hostile_to: friendly,
+      ),
+      offer: interaction.NothingToOffer,
+    )
+  }
+  assert_declined(
+    taken: at(9.5),
+    words: "too far",
+    what: "a Simple unit 9.5 from the player's edge",
+  )
+  assert at(8.5).effects
+    == [
+      OpenDialog(unit_id: unit),
+      TalkedTo(
+        target: simple_unit_of(tables:, creature: 73_422, faction: 219),
+        checklist_index: 5,
+      ),
+    ]
+    as "the same unit 8.5 from the player's edge"
 }

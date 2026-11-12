@@ -39,7 +39,7 @@ import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
 import genesis_prime/step.{
-  ConnectionId, LogError, LogInfo, Map, OwnEffect, OwnEvent, Woken,
+  ConnectionId, LogError, LogInfo, LogWarning, Map, OwnEffect, OwnEvent, Woken,
 }
 import genesis_prime/store.{Character, ForItems, ForSelect, ItemsSaved, Listed}
 import genesis_prime/table/id.{ClassId}
@@ -55,6 +55,8 @@ import gleam/result
 import map_support
 import owned_test
 import place_support
+import quest_support
+import simple_unit_support
 import spawn_support
 
 // ---- other players' units ----
@@ -1369,4 +1371,39 @@ pub fn a_viewer_that_leaves_between_the_save_and_the_news_is_dropped_like_other_
     as "a viewer whose client shows the unit writes 0x933 for the look and 0x93a for the properties"
   assert list.map(told, written(gone, _)) == [[], []]
     as "a viewer whose client no longer shows the unit writes nothing"
+}
+
+/// The player's picture keeps each object with its faction's disposition toward the
+/// player's faction, so a click on it is judged as the client judges a unit
+/// (`0x14045a950`): the Faction2 rows make faction 170 Hostile to the Exile and 219 not,
+/// and a Hostile unit's quest kinds are dropped (`0x14047a060`). Creature2 12545 is a
+/// Simple unit that gives and receives quest 3689, which the Exile holds.
+pub fn an_object_is_shown_with_its_factions_hostility_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let exile =
+    game_connection_support.in_world_as_exile_holding(quests: [
+      quest_support.accepted(3689, progress: []),
+    ])
+  let clicked = fn(faction_id) {
+    game_connection_support.interaction_requested(
+      state: simple_unit_support.seen_by(
+        state: exile,
+        creature_id: 12_545,
+        faction_id:,
+        gap: 1.0,
+      ),
+      unit_id: simple_unit_support.unit,
+      kind: 37,
+    ).1
+  }
+  let neutral = clicked(219)
+  assert game_connection_support.written_ids(neutral) == [0x0357]
+    as "an object of faction 219 is not Hostile to the Exile: its dialog opens"
+  let hostile = clicked(170)
+  assert game_connection_support.written_ids(hostile) == []
+    as "an object of faction 170 is Hostile to the Exile: nothing is answered"
+  let assert [line] = support.logs_of(step: hostile, level: LogWarning)
+    as "and the refusal is logged once"
+  assert support.says(line:, words: "Hostile")
+    as "the line says the unit is Hostile to the player"
 }
