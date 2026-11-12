@@ -40,6 +40,7 @@ import pog
 import readiness_support
 import server_proxy_support
 import spawn_support
+import tutorial_support
 import zone_welcome_support
 
 /// The most connections each test listener holds, a different number for each
@@ -141,6 +142,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
       vendors: vendor.none(),
       numbers: spawn_support.numbers,
       visibility: dict.new(),
+      tutorial_chain: tutorial_support.none(),
     ),
     wire_recorder: None,
     scripts: script.operating_system,

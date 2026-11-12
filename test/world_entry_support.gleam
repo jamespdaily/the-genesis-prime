@@ -27,6 +27,7 @@ import map_support
 import novice_tables
 import place_support
 import spawn_support
+import tutorial_support
 import unit_support
 
 /// The system time every entry of the tests is made at, as a FILETIME.
@@ -221,6 +222,7 @@ pub fn joined_state(
       classes: class_resource_support.classes(),
       numbers: spawn_support.numbers,
       defaults: unit_properties.defaults(tables:),
+      chain: tutorial_support.none(),
       tables:,
       now:,
     )

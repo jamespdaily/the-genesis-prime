@@ -8,7 +8,6 @@
 import genesis_prime/client_connection.{Asking, Continue, Done}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection/effects as connection_effects
-import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
@@ -93,7 +92,7 @@ pub fn quest_message(
                 quest.SendState(quest_id:, state:, objective_id:) ->
                   connection_state.to_client(
                     session,
-                    connection_frames.quest_state_frame(
+                    quest_log.quest_state_frame(
                       quest_id:,
                       state:,
                       objective_id:,

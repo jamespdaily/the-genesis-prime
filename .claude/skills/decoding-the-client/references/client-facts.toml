@@ -14837,3 +14837,148 @@ statement = "What the client expects for a Channeled cast (castMethod 1): the ca
 proof = "Records opcode.0x7ff.after_confirm (caster needs no 0x7ff), 0x14053d1f0 (go count), 0x14053e5a0 ApplySpellGo (a channel's current cast is not cleared at a go; cooldowns at the last expected go), 0x14053e1b0 FinishCast (castMethod 1 cooldowns at 0x7fe), 0x140546060 (missiles at every go but the last). Rows: Spell4 5725, Spell4Base 5020 castMethod 1, castBarType 1; Spell4Effects 10256 effectType 7, phaseFlags 1, delayTime 2999; Spell4ClientMissile 787 missileType 1, duration 3000, phaseFlags -1."
 grade = "fairly sure"
 gap = "The go times are the server's choice (initial + i * pulse); the client counts gos and does not read their timing. Whether the client ends a channel by itself when 0x7fe is late is not read."
+
+["Quest2.flags.0x800000"]
+statement = "Quest2 flag 0x800000 (bit 23) hides a quest from the quest log. Its only native reader is the Lua method Quest:ShouldHideFromQuestLog at 0x14066a250, which returns bit 23 of the row's flag word. The UI uses it twice: QuestLog.lua CheckLeftSideFilters (1546-1553) leaves the quest out of the log list, and QuestTracker.lua:1500 disables the tracker's 'open in log' right-click. It has no accept, complete, auto-start or share meaning."
+proof = "Saved C 0x14066a250.c (hash 8eb22adb6de47956): *puVar1 = *(uint*)(*(quest+8)+0xc) >> 0x17 & 1. Listing 0x14066a27e: mov eax,[rcx+0xc]; shr eax,0x17; and eax,1. Lua method table entry 0x140c5bde8 = {name 0x140b2e1e0 'ShouldHideFromQuestLog', fn 0x14066a250}. Disassembly sweep of the quest code for bit 23 (test of 0x800000, bt 0x17, byte test of 0x80 at +0xe): no other reader. 0x1403b31ed and 0x14054b7f1 test other fields. UI: ~/.genesis-prime/client-files/UI/QuestLog/QuestLog.lua:1546-1553, QuestTracker/QuestTracker.lua:1500."
+grade = "sure"
+
+["Quest2.flags.0x4000"]
+statement = "Quest2 flag 0x4000 forbids abandoning the quest unless it is Botched. Its only reader on the flag word is CanAbandonQuest 0x140552930."
+proof = "Listing sweep: the only 'test dword [reg+0xc],0x4000' on a Quest2 row is at 0x140552957, inside CanAbandonQuest 0x140552930 (existing record 0x140552930)."
+grade = "fairly sure"
+gap = "A sweep for test/and with the immediate 0x4000; a reader that copies the word first and masks it later would be missed."
+
+["Quest2.flags.0x8"]
+statement = "Quest2 flag 0x8 marks a communicator-received quest. Lua Quest:IsCommunicatorReceived (0x1406645d0) returns bit 3, and AnswerCommunicatorQuest (0x14043c700) lets an Achieved quest be answered by the communicator only with flag 8 or 0x10000."
+proof = "Saved C 0x1406645d0.c returns bit 3 of row+0xc. Method table entry 0x140c5ba18 = {name 0x140b2dcb0 'IsCommunicatorReceived', fn 0x1406645d0}. Existing record 0x14043c700."
+grade = "fairly sure"
+gap = "The method name is read from the table pair; the C was not re-listed."
+
+["Quest2.flags.0x4"]
+statement = "With Quest2 flag 0x4, Lua Quest:GetContactInfo (0x140663eb0) can name the quest's giver as its contact. It first returns contact info from the receiver list (the quest's receiver list). Otherwise, when flags has 4 and state != 0 and (CanAcceptQuest(0xffffdfff) == 0 or state == 1), it returns the giver list (the quest's giver list). Flag 4 also keeps an Abandoned quest in the side list (existing records 0x1405fbdc0, 0x1405fccb0, 0x14072ea40)."
+proof = "Saved C 0x140663eb0.c (hash cc54e920d5411539). Method table entry 0x140c5bb98 = {name 0x140b2dfd8 'GetContactInfo', fn 0x140663eb0}."
+grade = "fairly sure"
+gap = "Read from the saved C. The receiver-list and giver-list offsets are taken from the fill code, not from a live log."
+
+["Quest2.10513.flags"]
+statement = "10513, 10527, 10518, 10521, 10532 and 10524 all have flags 8404992 = 0x804000: hidden from the log (0x800000) and not abandonable (0x4000). None of 0x8, 0x400 or 0x4 is set. The rest of the chain: 10525, 10540, 10528, 10526, 10541 and 10530 = 0x4000; 10519 and 10522 = 0x4008; 10520 and 10523 = 0x4404."
+proof = "gleam run -m genesis_prime/table_rows -- Quest2 10513 10527 10518 10525 10540 10519 10520 10528 10521 10532 10524 10526 10541 10522 10523 10530"
+grade = "fairly sure"
+gap = "Table rows read with the extractor; which client code reads each flag was traced only for 0x800000, 0x4000, 0x8 and 0x4."
+
+["Quest2.start_without_giver"]
+statement = "No client table or code starts a quest that has no giver. The client sends 0x35b (accept) from only three places: DialogAcceptQuest 0x140556b20, a Game.Contract Lua method 0x1406a3760 (method table 0x140c5d6b8), and item use 0x14039c8a0. Quest2 has no next-quest or auto-start column. preq_quest0 is only a condition checked before accepting. No Creature2 gives or receives 10513, 10527, 10518, 10521, 10532 or 10524. No communicator row delivers them: the only questIdDelivered entries in the chain are 7993 → 10520 and 8062 → 10523. No Item2 starts them. Zone 4961 has no Episode. Prerequisite rows name these quests only as conditions (type 6, quest state; type 43, objective open; type 34 unread), and a condition cannot start a quest. Starting these quests is the server's job."
+proof = "Grep of the saved C for writer 0x35b (registered in 0x14006c290 → 0x14008b200): only the three senders above. Every client table was dumped with table_rows and each row with a column equal to a chain quest id was printed (scratch scan.out). The hits were Prerequisite (326), Creature2, CommunicatorMessages (quest00 only), Quest2 (preq_quest0 of 10525/10526, plus id collisions in objective columns of 6601/6668/6708/6713), and id collisions in MapZoneHex, WorldLocation2, QuestObjective (targetGroupIdRewardPane), Spline2Node, Spell4*, Challenge 685, ArchiveEntryUnlockRule and outfit tables. No Tutorial, QuestHub, Episode, WorldZone or ZoneCompletion row names them. Example Prerequisite rows: 41930 (type 6, 10518 == 2 or 3), 41950 (type 43 + type 6 on 10527), 42992/43146 (type 43 on 10513/10521), 43315 (type 34 on 10524/10518)."
+grade = "fairly sure"
+gap = "A search that found nothing settles nothing: a start trigger kept only on the server (a trigger volume or script) would not appear in client data. Prerequisite type 34 is not decoded."
+
+["Quest2.10518.preq_link"]
+statement = "No client data links 10527 to 10518. Quest2 10518's preq_quest0/01/02, prerequisiteId and questIdExclusionPreq are all 0. Quest2 10525 needs 10518, and 10526 needs 10524, but nothing points into 10518 or 10524. Starting 10518 after 10527 completes is a server rule. The client only states the order through its Prerequisite conditions (for example 43315 and 43316 name 10518/10524 together)."
+proof = "q2rows (command in Quest2.10513.flags); all-tables scan, as Quest2.start_without_giver."
+grade = "fairly sure"
+gap = "The order of each faction's four quests is the server's choice: no client table or code sets it. The client's own texts only support it. Objective 21341 of 10529 (text 749839) and 21358 of 10533 (text 751849) read 'Accept the Quest from $(creature=73491 / 74861) to continue the simulation', and those creatures give 10525 (needs 10518) and 10526 (needs 10524), so 10529 follows 10518 and 10533 follows 10524. 10529 and 10533 share the titles of 10518 and 10524 (texts 749823 and 751848 against 748098 and 749057, all 'The Face of the Enemy'),. The place of 10518 after 10527 rests on the objective texts of 10527 ('continue to the Combat Simulation', Quest2.10527.objectives). A recording of a retail character's quest log would settle the order; none is in hand."
+
+["Quest2.10529"]
+statement = "Quest2 10529 (Exile) and 10533 (Dominion): title 749823 and 751848 'The Face of the Enemy', questPlayerFactionEnum 0 and 1, worldZoneId 4961, flags 12599296 = 0xC04000 (hidden 0x800000, not abandonable 0x4000, and bit 0x400000, which is not decoded). Every prerequisite column is 0 (preq_quest0/01/02, prerequisiteId). One objective each: 21341 and 21358, type 12, flags 16, data 73491 and 74861 (the creature), count 1, text 749839 and 751849 'Accept the Quest from $(creature=73491 / 74861) to continue the simulation', marker WorldLocation2 51733 and 52904. Creature2 73491 'Dorian Walker' gives 10519, 10520, 10525 and 10528; Creature2 74861 'Artemis Zin' gives 10526, 10522, 10523 and 10530. No Creature2 gives or receives 10529 or 10533."
+proof = "`gleam run -m genesis_prime/table_rows -- Quest2 10529 10533 10526 10525`, `-- QuestObjective 21341 21358`, `-- Creature2 73491 74861`, and `-- Creature2 <column>=10529` and `=10533` for each of questIdGiven00 to 24 and questIdReceive00 to 24 (no row); client_files.py text 749839 751849 749823 751848 748098 749057."
+grade = "fairly sure"
+gap = "Table rows read with the extractor. Which client code reads flag bit 0x400000 was not traced, so what it does is not known."
+
+["opcode.0x35c.add_unaccepted"]
+statement = "The server adds a quest the player never accepted by sending 0x35c (quest id 15 bits, state 32 bits, QuestObjective id 32 bits) with state 1. Handler 0x1405fb670 runs FindQuestById (unknown id returns 0xa00b0001), GetQuestState for the old state, then SetQuestState. SetQuestState creates the log entry with flag word 2 (tracked) and never calls CanAcceptQuest. Next: floater 0x140551170 (only for states 4 and 6, so none here), then unless old and new are both 5: 0x14043c490, RefreshMentionedQuests, 0x14043b4e0, and 0x140554970 if a dialog is open. Then 0x1405f9e30. For state 1 it calls ShowObjectiveHintArrow when a setting allows. Last it raises QuestStateChanged (or ContractStateChanged for 0x80000 quests). QuestTracker draws the quest, points the hint arrow at it and plays the blue update animation. Because of 0x800000, QuestLog does not list it. The accept path differs: the client sends 0x35b only from the dialog, contract or item, and the server answers with the same 0x35c."
+proof = "Saved C 0x1405fb670.c (hash 7f044938faba9287). Existing records opcode.0x35c and 0x1405fbdc0. QuestTracker.lua:1164-1200 (OnQuestStateChanged), QuestLog.lua:1546-1553."
+grade = "fairly sure"
+gap = "Not seen in a live sitting with these quests. 0x35f (another quest-add path in eldan's notes) was not compared."
+
+["Quest2.10513.completion"]
+statement = "A quest with no receiver completes on the server. The client never sends 0x35d for 10513/10527/10518/10521/10532/10524: 0x35d has only two senders, DialogCompleteQuest 0x140557000 (which needs a receiver dialog) and Contract:Complete 0x1406a3ba0 (contracts only). These quests have no receiver, and they lack flags 8, 0x10000 and 0x80000, so the communicator cannot answer them either. When every objective without flag 0x20 is done, the client shows Achieved itself (0x1405fbc40). The tracker turns green and shows the completion text. It shows no redeem button, because GetContactInfo returns nil and the quest is queued in tQueuedCommMessages instead. The server then sends 0x35c state 3: no floater, toast or sound, and QuestTracker removes the quest."
+proof = "Saved C grep for writer 0x35d (0x14008b2f0): only 0x140557000 and 0x1406a3ba0. Existing records 0x14043c700, 0x1405fbc40, opcode.0x35c.completed and 0x1405fbdc0.state_3. QuestTracker.lua:817, 1070-1080, 1755-1779."
+grade = "fairly sure"
+gap = "When the server sends state 3 (at once on the last objective, or after a cue) is the server's choice. No client data sets it."
+
+["Quest2.tutorial_prereq_columns"]
+statement = "Prerequisite columns of 10513, 10527 and 10518: preq_level 1, and every other prerequisite 0 (preq_flags, preq_quest0/01/02, preq_race, preq_item, preq_class, prerequisiteId, questIdExclusionPreq0-2, factionIdPreq0); questPlayerFactionEnum 0; subMissionPathType -1. 10521, 10532 and 10524 are the same but with questPlayerFactionEnum 1. All six: worldZoneId 4961, WorldLocation2IdReceiver 0, quest2SubTypeId 0, questShareEnum 0, groupId 0, questCategoryId 0, maxTimeAllowedMS 0, quest2DifficultyId 6, type 0. Titles: 10513, 10527, 10521 and 10532 'Navigating Nexus'; 10518 and 10524 'The Face of the Enemy'."
+proof = "As Quest2.10513.flags; client_files.py text."
+grade = "fairly sure"
+gap = "Table rows read with the extractor; the client code that reads each prerequisite column was not re-traced here."
+
+["Quest2.10527.objectives"]
+statement = "Objectives of 10527, in order (index, id, type, flags, data, count, text, marker): 0: 21321, 22, 0, 8540, 1, 749338 'Use $keybinding=36 to jump onto the high platform', 51703. 1: 21322, 22, 33, 8540, 1, 749340 'Press ... again while in mid-air to perform a double-jump', 51703. 2: 21324, 12, 3, 73419, 1, 749345 'Right-click the $(creature=73419) ... to activate it', 51738. 3: 21323, 22, 3, 8560, 1, 749342 'Ride your hoverboard through the rings and reach the finish line', 51734. 4: 21325, 12, 3, 73735, 1, 749371 'Right-click the $(creature=73735) ... to continue to the Combat Simulation', 51734. No time limits; markers 01-03 are 0. 10532 matches it index by index: 21352, 21353, 21354, 21355, 21356, texts 751834-751842. Other objective ids: 10513: 21271, 21279, 21280, 21272, 21289. 10518: 21286, 21287, 21340, 21318, 21288, 21290. 10521: 21300-21304. 10524: 21312-21317."
+proof = "gleam run -m genesis_prime/table_rows -- QuestObjective 21321 21322 21324 21323 21325 21352 21353 21354 21355 21356; client_files.py text."
+grade = "fairly sure"
+gap = "Table rows read with the extractor; the order of the quests is read from the objective texts, which no table links."
+
+["Spell4Effects.effectType.95"]
+statement = "Effect type 95, FullScreenEffect, draws a full-screen visual over the player's view while the effect lives. dataBits00 is a FullScreenEffect row id. When the effect is made, the client reads that row and refuses the effect when there is no such row. On apply it starts the full-screen effect only when the target is the player's own unit or the unit the player controls; on any other unit it does nothing. Entries are kept in a list ordered by the row's priority. Each entry loads the row's model (modelPath) through the renderer, or, when there is no model, its texture (texturePath), and copies its alpha, hz and saturation start and end values. When the effect object is destroyed (after its delayTime plus durationTime), the matching entry (row, spell, unit) is stopped. Nothing in the class touches a quest, phase, world location or teleport, or sends a message."
+proof = "Effect switch 0x140718120.c (hash e9b6b6af37d00314) lines 221-233: case 0x5f, AllocMemory(0x158), base constructor 0x1405d65a0, class 0x140b6ddc0, then InitFullScreenEffect 0x1405da280. 0x1405da280.c (e9b6b6af37d00314): FindSpellEffect, copy word 0x40 (file offset 36, dataBits00; the copy is the row shifted by 0x1c, as CopySpellEffectRow in record 0x1404e01e0) stored at object +0x150, FindFullScreenEffect 0x1401ffde0 of it (refuse when 0), then InitSpellEffect. 0x1401ffde0.c: table lookup by name PTR_u_FullScreenEffect_140a6a3d0. Class 0x140b6ddc0, 10 slots read from the exe bytes: slot 0 0x1405da220, slot 2 0x1405da300, slot 9 0x1405da950 (lifetime, as the default class); the other slots are the default's (0x140001b70 RET and the rest). The next class, 0x140b6de10 ModifyAbilityCharges, starts right after, and its slot 2 is its Apply. Apply 0x1405da300.c: base slot 1, then when the unit id (+0x5c) equals game 0x78's id or game 0x6490's (the controlled unit), StartFullScreenEffect 0x1403eb430(game, row id, +0xbc, spell +0x5c, unit). 0x1403eb430.c: list at game 0x73c0, row words 0x20 to 0x44 copied, model string at row 0x18 through renderer 0x73b8 slot 0x28, else texture at row 0x10 through 0x140c65670 slot 0x50; insert ordered by row word 0x20. Destructor 0x1405da220.c: StopFullScreenEffect 0x1403eb690(game, +0x150, spell +0x5c, unit +0x5c). Name: enum 0x140c34140, 95 = FullScreenEffect (read from the exe)."
+grade = "fairly sure"
+gap = "Read from the saved C and the exe bytes, not run. The meaning of the row's priority and fullScreenEffectTypeEnum, and the fade inside StopFullScreenEffect past its first lines, were not read."
+
+["Spell4Effects.87061"]
+statement = "Spell 87061, the activate spell of Combat Projector 73735 (objective 4 of 10527 and 10532, 'continue to the Combat Simulation'), does nothing on the client beyond a 1-second white hologram over the player's screen. Effect 227423 is Activate (type 7, targetFlags 2, phaseFlags 1), which the client gives no behaviour. Effect 227425 is FullScreenEffect (type 95, targetFlags 1, durationTime 1000, dataBits00 14, phaseFlags -1, orderIndex 1): FullScreenEffect row 14 'Hologram - White', model Art\\FX\\Fullscreen\\Hologram\\Hologram_Effect_White.m3, priority 1, fullScreenEffectTypeEnum 1, all alpha, hz and saturation values 1.0. Moving the player to the combat simulation and starting the next quest are the server's."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4Effects 227423 227425`; `-- FullScreenEffect 14`. Records Spell4Effects.effectType.7 and Spell4Effects.effectType.95."
+grade = "fairly sure"
+gap = "As Spell4Effects.effectType.95. Whether the server moved the player at the cast's end or on the effect's expiry is not in the client; a recording would settle it."
+
+["0x1405da280"]
+statement = "Makes a FullScreenEffect effect object: stores the effect's dataBits00 as its FullScreenEffect row and refuses the effect when that row does not exist. See Spell4Effects.effectType.95."
+proof = "As Spell4Effects.effectType.95."
+grade = "fairly sure"
+gap = "Read from the saved C, not run."
+name = "InitFullScreenEffect"
+
+["0x1405da300"]
+statement = "FullScreenEffect's apply: starts the full-screen effect when the target is the player's unit or controlled unit. See Spell4Effects.effectType.95."
+proof = "As Spell4Effects.effectType.95."
+grade = "fairly sure"
+gap = "Read from the saved C and the class's slot bytes, not run."
+name = "ApplyFullScreenEffect"
+
+["0x1405da220"]
+statement = "FullScreenEffect's destructor: stops the matching full-screen effect. See Spell4Effects.effectType.95."
+proof = "As Spell4Effects.effectType.95."
+grade = "fairly sure"
+gap = "Read from the saved C and the class's slot bytes, not run."
+name = "DestroyFullScreenEffect"
+
+["0x1403eb430"]
+statement = "Starts a full-screen effect from a FullScreenEffect row for a spell and unit, ordered by the row's priority. See Spell4Effects.effectType.95."
+proof = "As Spell4Effects.effectType.95."
+grade = "fairly sure"
+gap = "Read from the saved C, not run."
+name = "StartFullScreenEffect"
+
+["0x1403eb690"]
+statement = "Stops the full-screen effect matching a FullScreenEffect row, spell and unit. See Spell4Effects.effectType.95."
+proof = "As Spell4Effects.effectType.95."
+grade = "fairly sure"
+gap = "Only the search and the state test were read."
+name = "StopFullScreenEffect"
+
+["0x1401ffde0"]
+statement = "Looks up a FullScreenEffect row by id."
+proof = "0x1401ffde0.c: lookup through DAT_140c63840 with the table name PTR_u_FullScreenEffect_140a6a3d0."
+grade = "fairly sure"
+gap = "Read from the saved C, not run."
+name = "FindFullScreenEffect"
+
+["0x14066a250"]
+statement = "Lua Quest:ShouldHideFromQuestLog. See Quest2.flags.0x800000."
+proof = "0x14066a27e mov eax, [rcx+0xc]; 0x14066a281 shr eax, 0x17; and eax, 0x1. Method table entry 0x140c5bde8 = {0x140b2e1e0 'ShouldHideFromQuestLog', 0x14066a250}. See Quest2.flags.0x800000."
+grade = "sure"
+name = "LuaQuestShouldHideFromQuestLog"
+
+["0x1406645d0"]
+statement = "Lua Quest:IsCommunicatorReceived. See Quest2.flags.0x8."
+proof = "Method table entry 0x140c5ba18 = {0x140b2dcb0 'IsCommunicatorReceived', 0x1406645d0}."
+grade = "fairly sure"
+gap = "The method name is read from the table pair; the C was not re-listed."
+name = "LuaQuestIsCommunicatorReceived"
+
+["0x140663eb0"]
+statement = "Lua Quest:GetContactInfo. See Quest2.flags.0x4."
+proof = "Method table entry 0x140c5bb98 = {0x140b2dfd8 'GetContactInfo', 0x140663eb0}."
+grade = "fairly sure"
+gap = "Read from the saved C, not run."
+name = "LuaQuestGetContactInfo"

@@ -160,6 +160,7 @@ import genesis_prime/game/reward_property
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
+import genesis_prime/game/tutorial
 import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor
 import genesis_prime/game/visibility
@@ -696,6 +697,7 @@ pub fn joined(
   classes classes: class_resource.Classes,
   numbers numbers: GameNumbers,
   defaults defaults: List(#(UnitProperty2Id, Float)),
+  chain chain: tutorial.Chain,
   tables tables: table_store.Tables,
   now now: Now,
 ) -> Result(Joined, Nil) {
@@ -766,6 +768,8 @@ pub fn joined(
           let #(quests, buttons, completing, quest_effects) =
             quest_log_sent(
               entry:,
+              chain:,
+              faction_id: character.faction_id,
               quests:,
               items:,
               place:,
@@ -944,6 +948,8 @@ fn readiness_of(entry entry: Entry) -> Readiness {
 /// in-world 0xAD (`0x1403ba4a0`).
 fn quest_log_sent(
   entry entry: Entry,
+  chain chain: tutorial.Chain,
+  faction_id faction_id: Int,
   quests quests: QuestLog,
   items items: List(store.HeldItem),
   place place: Place,
@@ -953,9 +959,9 @@ fn quest_log_sent(
 ) -> #(QuestLog, Set(objective.Button), List(Int), List(Effect)) {
   case entry {
     PlayEntry(..) -> {
-      let held =
+      let settle = fn(log) {
         objective.settle(
-          log: quests,
+          log:,
           tables:,
           items:,
           zones: [],
@@ -964,14 +970,40 @@ fn quest_log_sent(
           numbers:,
           unix_ms: step.unix_milliseconds(now:),
           now_ms: now.monotonic_ms,
-        ).log
-      let #(told, frame) = quest_log.login(log: held, numbers:, tables:, now:)
+        )
+      }
+      let #(told, frame) =
+        quest_log.login(log: settle(quests).log, numbers:, tables:, now:)
+      // The tutorial quest due is given after the log, which the client replaces whole.
+      let granted = case
+        start_place.world_id(place) == tutorial.training_world
+      {
+        True ->
+          tutorial.grant(
+            chain:,
+            log: told,
+            faction_id:,
+            tables:,
+            now_ms: now.monotonic_ms,
+          )
+        False -> None
+      }
+      let #(told, given) = case granted {
+        Some(tutorial.Granted(log:, frame:)) -> {
+          let advanced = settle(log)
+          #(advanced.log, [frame, ..objective.frames(effects: advanced.effects)])
+        }
+        None -> #(told, [])
+      }
       let buttons = objective.buttons(log: told, tables:)
       #(told, buttons, objective.server_completions(log: told, tables:), [
         Send(frame:),
-        ..list.map(
-          objective.button_changes(held: set.new(), now: buttons),
-          fn(change) { Send(frame: button_frame(change:)) },
+        ..list.append(
+          list.map(given, fn(frame) { Send(frame:) }),
+          list.map(
+            objective.button_changes(held: set.new(), now: buttons),
+            fn(change) { Send(frame: button_frame(change:)) },
+          ),
         )
       ])
     }

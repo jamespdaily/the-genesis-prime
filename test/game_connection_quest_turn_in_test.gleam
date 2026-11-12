@@ -585,36 +585,6 @@ fn the_beast_killed(
   experience_support.credited(state:, creature_id: beast, level: 1)
 }
 
-/// The stacks the store made for the items a turn-in placed, each with its own guid.
-fn made_by(placed placed: List(store.Placed)) -> List(store.HeldItem) {
-  list.index_map(placed, fn(one, index) {
-    let assert [NewStack(location:, bag_index:, stack_count:, random_stats: 0)] =
-      one.make
-      as "one stack of each, the Item2s' counts being 1"
-    HeldItem(
-      item_guid: 900 + index,
-      item2_id: one.item2_id,
-      location:,
-      bag_index:,
-      stack_count: stack_count,
-      random_stats: 0,
-    )
-  })
-}
-
-/// The store's answer to the turn-in the step asked: saved as asked.
-fn turn_in_saved(
-  taken taken: step.ConnectionStep(client_connection.Request),
-) -> step.Outcome(client_connection.Answer) {
-  let assert TurnInQuest(credits_after:, placed:, ..) = asked_turn_in(taken:)
-    as "the step asks the store for a turn-in"
-  step.Answer(
-    FromStore(
-      ForItems(TurnedIn(credits: credits_after, made: made_by(placed:))),
-    ),
-  )
-}
-
 /// The quest ids and states of the rows a turn-in saves.
 fn saved_states(rows rows: List(QuestRow)) -> List(#(Int, Int)) {
   list.map(rows, fn(row) { #(row.quest_id, row.state) })
@@ -659,7 +629,7 @@ pub fn a_server_completion_saves_the_quest_completed_and_answers_like_a_turn_in_
     game_connection_support.answer(
       state:,
       taken: killed,
-      outcome: turn_in_saved(taken: killed),
+      outcome: game_connection_support.turn_in_saved(taken: killed),
     )
   let ids = game_connection_support.written_ids(answered)
   assert list.take(ids, 2) == [0x0111, 0x0111]
@@ -699,7 +669,7 @@ pub fn two_quests_achieved_in_one_step_are_completed_one_after_the_other_test() 
     game_connection_support.answer(
       state:,
       taken: killed,
-      outcome: turn_in_saved(taken: killed),
+      outcome: game_connection_support.turn_in_saved(taken: killed),
     )
   assert last_state_written(taken: first_answered)
     == QuestState(quest_id: 1854, state: 3, objective_id: 0)
@@ -715,7 +685,7 @@ pub fn two_quests_achieved_in_one_step_are_completed_one_after_the_other_test() 
     game_connection_support.answer(
       state:,
       taken: first_answered,
-      outcome: turn_in_saved(taken: first_answered),
+      outcome: game_connection_support.turn_in_saved(taken: first_answered),
     )
   assert last_state_written(taken: second_answered)
     == QuestState(quest_id: 1857, state: 3, objective_id: 0)
@@ -827,7 +797,7 @@ pub fn a_relog_with_a_quest_achieved_completes_it_after_the_entry_test() -> Nil 
     game_connection_support.answer(
       state:,
       taken: entered,
-      outcome: turn_in_saved(taken: entered),
+      outcome: game_connection_support.turn_in_saved(taken: entered),
     )
   assert game_connection_support.written_ids(answered)
     == [0x0111, 0x0111, 0x01AC, 0x0919, 0x00DD, 0x035C]

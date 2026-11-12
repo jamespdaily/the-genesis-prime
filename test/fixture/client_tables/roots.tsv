@@ -802,3 +802,6 @@ Creature2	74958	receiver of quest 10502, 10503, so the server does not complete 
 Creature2	74959	receiver of quest 10502, 10503, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
 Creature2	74960	receiver of quest 10502, 10503, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
 Creature2	74961	receiver of quest 10502, 10503, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
+Quest2	10521	first Dominion tutorial quest, no giver	tutorial_test, game_connection_tutorial_test
+Quest2	10529	fourth Exile tutorial quest, no giver, objective 21341 on Creature2 73491	tutorial_test, game_connection_tutorial_test
+Quest2	10533	fourth Dominion tutorial quest, no giver	tutorial_test, game_connection_tutorial_test

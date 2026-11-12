@@ -22,6 +22,7 @@ import genesis_prime/game/server_proxy.{type ServerProxies}
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/tutorial.{type Chain}
 import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game/vendor_purchase
 import genesis_prime/game/vendor_sale
@@ -98,6 +99,11 @@ pub type Settings {
     /// spawns and sent objects of the world hide behind, which the connection checks
     /// for its player to tell the map what to hide (genesis_prime/game/visibility).
     visibility: dict.Dict(Int, List(Prerequisite)),
+    /// The quests no creature gives, in the order each faction is given them, from the
+    /// content load (genesis_prime/content/tutorial_quest): a character entering World
+    /// 3460 and one whose server-completed chain quest is done is given the next
+    /// (genesis_prime/game/tutorial).
+    tutorial_chain: Chain,
   )
 }
 

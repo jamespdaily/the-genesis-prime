@@ -29,8 +29,6 @@ import genesis_prime/message/movement_float_vector.{MovementFloatVector}
 import genesis_prime/message/movement_path.{MovementPath}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/player_health.{PlayerHealth}
-import genesis_prime/message/quest_objective_progress.{QuestObjectiveProgress}
-import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/resurrection_window.{ResurrectionWindow}
 import genesis_prime/message/start_movement
@@ -545,36 +543,6 @@ pub fn dialog_open_frame(unit_id unit_id: Int) -> Frame {
     unit_dialog_open.encode(UnitDialogOpen(unit_id:, field_2: 0))
     as "a unit id the player's picture holds fits the message's 32 bits"
   Frame(message_id: unit_dialog_open.message_id, body:)
-}
-
-/// 0x35c, the state a quest is now in (`opcode.0x35c`): the quest, its state and the
-/// objective the client is told of, 0 for none.
-pub fn quest_state_frame(
-  quest_id quest_id: Int,
-  state state: Int,
-  objective_id objective_id: Int,
-) -> Frame {
-  let assert Ok(body) =
-    quest_state.encode(QuestState(quest_id:, state:, objective_id:))
-    as "a Quest2 id of the table, a state of 1 to 7 and an objective id fit the message"
-  Frame(message_id: quest_state.message_id, body:)
-}
-
-/// 0x361, an objective's new progress (`opcode.0x361`): the quest, the objective's index
-/// in the quest and the count it has now.
-pub fn quest_objective_progress_frame(
-  quest_id quest_id: Int,
-  objective_index objective_index: Int,
-  progress progress: Int,
-) -> Frame {
-  let assert Ok(body) =
-    quest_objective_progress.encode(QuestObjectiveProgress(
-      quest_id:,
-      objective_index:,
-      progress:,
-    ))
-    as "a Quest2 id of the table, an objective index and a count that fits 32 bits"
-  Frame(message_id: quest_objective_progress.message_id, body:)
 }
 
 /// 0x90b that opens a vendor's window with its stock (`opcode.0x90b`): one item for each
