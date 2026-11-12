@@ -324,37 +324,37 @@ fn the_talks(bot: Bot) -> Result(Bot, Blocked) {
   // Quest2 10525's objective slots 1 to 4 are objectives 21319 (TargetGroup 14368, Creature2
   // 73422, twice), 21332 (14369, 73662, twice), 21333 (73663) and 21334 (73664).
   use bot <- result.try(talk_for_objective(
-    bot,
+    bot:,
     creature: 73_422,
     quest_id: 10_525,
     objective_index: 1,
   ))
   use bot <- result.try(talk_for_objective(
-    bot,
+    bot:,
     creature: 73_422,
     quest_id: 10_525,
     objective_index: 1,
   ))
   use bot <- result.try(talk_for_objective(
-    bot,
+    bot:,
     creature: 73_662,
     quest_id: 10_525,
     objective_index: 2,
   ))
   use bot <- result.try(talk_for_objective(
-    bot,
+    bot:,
     creature: 73_662,
     quest_id: 10_525,
     objective_index: 2,
   ))
   use bot <- result.try(talk_for_objective(
-    bot,
+    bot:,
     creature: 73_663,
     quest_id: 10_525,
     objective_index: 3,
   ))
   use bot <- result.try(talk_for_objective(
-    bot,
+    bot:,
     creature: 73_664,
     quest_id: 10_525,
     objective_index: 4,
@@ -426,7 +426,7 @@ fn the_departure(bot: Bot) -> Result(Bot, Blocked) {
   ))
   // Quest2 10528's objective slot 0 is objective 21326, a talk to Creature2 73604.
   use bot <- result.try(talk_for_objective(
-    bot,
+    bot:,
     creature: 73_604,
     quest_id: 10_528,
     objective_index: 0,
@@ -654,7 +654,7 @@ fn accept_from(
 /// objective05), else the step is blocked at once: a talk that counts for another
 /// objective leaves this one short.
 fn talk_for_objective(
-  bot: Bot,
+  bot bot: Bot,
   creature creature: Int,
   quest_id quest_id: Int,
   objective_index objective_index: Int,
