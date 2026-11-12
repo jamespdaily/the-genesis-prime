@@ -57,4 +57,4 @@ insert into tutorial_quest (quest_id, follows_quest_id, source, reason) values
   (10529, 10518, 'server_choice',
    'Exile "The Face of the Enemy" objective "Accept the Quest from Dorian Walker to continue the simulation": Creature2 73491 gives 10525, which needs 10518, so it follows 10518'),
   (10533, 10524, 'server_choice',
-   'Dominion "The Face of the Enemy" objective to talk to Artemis Zin (Creature2 74861) to continue the simulation: it follows 10524');
+   'Dominion "The Face of the Enemy" objective "Accept the Quest from Artemis Zin to continue the simulation": Creature2 74861 gives 10526, which needs 10524, so it follows 10524');

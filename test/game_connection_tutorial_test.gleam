@@ -19,6 +19,7 @@ import genesis_prime/message/quest_log as quest_log_message
 import genesis_prime/message/quest_state.{type QuestState, QuestState}
 import genesis_prime/step
 import genesis_prime/store.{type QuestRow, Character}
+import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn
 import gleam/list
@@ -43,10 +44,20 @@ fn joining(
   character character: store.Character,
   quests quests: List(QuestRow),
 ) -> #(game_connection.State, step.ConnectionStep(client_connection.Request)) {
+  joining_on(tables: connection_support.settings().tables, character:, quests:)
+}
+
+/// `joining` on these tables.
+fn joining_on(
+  tables tables: store_tables.Tables,
+  character character: store.Character,
+  quests quests: List(QuestRow),
+) -> #(game_connection.State, step.ConnectionStep(client_connection.Request)) {
   let fresh =
     connection_support.accepted(
       connection_state.Settings(
         ..connection_support.settings(),
+        tables:,
         tutorial_chain: tutorial_support.chain(),
       ),
     ).0
@@ -69,6 +80,39 @@ fn entered(
     state:,
     taken:,
     outcome: step.Answer(FromMap(connection_support.map_answer(taken))),
+  )
+}
+
+/// The connection after the map took the Exile into World 870, the Crimson Isle terminal's
+/// landing of the departures (WorldLocation2 8223): a world that is not World 3460.
+fn entered_elsewhere(
+  tables tables: store_tables.Tables,
+  quests quests: List(QuestRow),
+) -> #(game_connection.State, step.ConnectionStep(client_connection.Request)) {
+  let elsewhere =
+    Character(
+      ..exile(),
+      place: Some(place_support.at(
+        world_id: 870,
+        world_zone_id: 1236,
+        x: 1.0,
+        y: 2.0,
+        z: 3.0,
+      )),
+    )
+  let #(state, taken) = joining_on(tables:, character: elsewhere, quests:)
+  let #(_, answer) =
+    connection_support.mapped(
+      map_state: connection_support.map_of_world_with_four_players(
+        map: MapId(world_id: 870, instance: 0),
+        run: 5,
+      ),
+      taken:,
+    )
+  connection_support.answer(
+    state:,
+    taken:,
+    outcome: step.Answer(FromMap(answer)),
   )
 }
 
@@ -135,33 +179,8 @@ pub fn a_new_character_entering_world_3460_is_given_10513_after_its_quest_log_te
 
 pub fn a_character_entering_another_world_is_given_no_tutorial_quest_test() -> Nil {
   use <- owned_test.run(10_000)
-  // World 870 is the Crimson Isle terminal's landing of the departures (WorldLocation2 8223).
-  let elsewhere =
-    Character(
-      ..exile(),
-      place: Some(place_support.at(
-        world_id: 870,
-        world_zone_id: 1236,
-        x: 1.0,
-        y: 2.0,
-        z: 3.0,
-      )),
-    )
-  let #(state, taken) = joining(character: elsewhere, quests: [])
-  let #(_, answer) =
-    connection_support.mapped(
-      map_state: connection_support.map_of_world_with_four_players(
-        map: MapId(world_id: 870, instance: 0),
-        run: 5,
-      ),
-      taken:,
-    )
   let #(_, entry) =
-    connection_support.answer(
-      state:,
-      taken:,
-      outcome: step.Answer(FromMap(answer)),
-    )
+    entered_elsewhere(tables: connection_support.settings().tables, quests: [])
   assert list.contains(connection_support.written_ids(entry), 0x035F)
     as "the entry tells the client its log"
   assert states_written(taken: entry) == []
@@ -208,4 +227,30 @@ pub fn a_relog_after_a_completion_with_no_grant_gives_the_next_test() -> Nil {
   assert states_written(taken: entry)
     == [QuestState(quest_id: 10_527, state: 1, objective_id: 0)]
     as "10513 is Completed and 10527 is held by no row: it is given"
+}
+
+pub fn the_completion_of_a_quest_outside_the_chain_gives_no_tutorial_quest_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 5859 is Achieved in the saved log and no creature receives it (the edit below), so
+  // the server completes it. The Exile is outside World 3460, so the entry gave no tutorial
+  // quest: the one thing that stops the first from being due after the completion is that
+  // 5859 is not a quest of the chain.
+  use tables <- quest_turn_in_support.with_changes(changes: [
+    quest_turn_in_support.unreceived_5859(),
+  ])
+  let #(state, entry) =
+    entered_elsewhere(tables:, quests: [
+      quest_turn_in_support.achieved(quest_id: 5859),
+    ])
+  assert states_written(taken: entry) == []
+    as "the entry gives no tutorial quest outside World 3460 and asks the server's completion"
+  let #(_, completed) =
+    connection_support.answer(
+      state:,
+      taken: entry,
+      outcome: connection_support.turn_in_saved(taken: entry),
+    )
+  assert states_written(taken: completed)
+    == [QuestState(quest_id: 5859, state: 3, objective_id: 0)]
+    as "opcode.0x35c: 5859 Completed, and no state 1 after it"
 }

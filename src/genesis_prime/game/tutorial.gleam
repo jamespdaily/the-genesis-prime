@@ -60,7 +60,8 @@ import gleam/string
 /// The table's name in the log and in a refusal.
 pub const table = "tutorial_quest"
 
-/// The World row of the training simulation, where a new character starts.
+/// The world of the training simulation (World 3460, Map\NewPlayerExperience; fact
+/// `World.3460`), where a new character starts and the tutorial quests are given.
 pub const training_world = 3460
 
 /// One row of the tutorial_quest table as the load reads it: a quest and the quest
@@ -106,14 +107,10 @@ pub fn select(
 fn chained(checked checked: List(#(Int, Row))) -> Result(Chain, List(Refusal)) {
   let ordered =
     list.map([0, 1], fn(faction_enum) {
-      let own =
-        list.filter_map(checked, fn(pair) {
-          case pair.0 == faction_enum {
-            True -> Ok(pair.1)
-            False -> Error(Nil)
-          }
-        })
-      #(faction_enum, in_order(faction_enum:, rows: own))
+      #(
+        faction_enum,
+        in_order(faction_enum:, rows: list.key_filter(checked, faction_enum)),
+      )
     })
   case list.flat_map(ordered, fn(pair) { pair.1.1 }) {
     [] -> Ok(Chain(by_faction: dict.from_list(list.map(ordered, with_rows))))

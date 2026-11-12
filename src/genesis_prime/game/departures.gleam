@@ -81,6 +81,7 @@
 import genesis_prime/game/quest_log.{type Quest, type QuestLog}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
+import genesis_prime/game/tutorial
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
@@ -158,11 +159,6 @@ pub const timer = TimerId(12)
 pub fn owns(timer candidate: TimerId) -> Bool {
   candidate == timer
 }
-
-/// The world of the training simulation, where a saved place holds a player that has
-/// counted a departure but has not yet been moved (the world of WorldLocation2 rows 51697
-/// and 52747, worldId 3460; the start rows of `genesis_prime/game/start_place` are in it).
-const tutorial_world = 3460
 
 /// The states of a quest in the client's log that the terminal's prerequisite tests with
 /// its type 6 conditions (`quest_log.state`): achieved and completed.
@@ -307,7 +303,7 @@ pub fn recovered(
   place place: Place,
 ) -> Place {
   use <- bool.guard(
-    when: start_place.world_id(place) != tutorial_world,
+    when: start_place.world_id(place) != tutorial.training_world,
     return: place,
   )
   case
