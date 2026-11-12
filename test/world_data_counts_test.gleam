@@ -4,11 +4,18 @@
 //// - The decode of issue 375 (its facts `world_data.creature_disposition` and
 ////   `world_data.spawn_checks`), re-run by a scratch Python reimplementation of
 ////   the selection (a quest creature starts whatever else it links to, and
-////   whether or not a player faction may attack it) that gave 40,043: world 22
-////   starts 11,248 spawns, 51 13,173, 426 376, 870 693, 990 739, 1061 12,897,
-////   1387 851 and 3460 66, and the other worlds none. The rows left out in all
-////   are no faction 452, Friendly to both 7,400, a service link 33 and health 0
-////   215.
+////   whether or not a player faction may attack it) that gave 40,043 with the
+////   rows of faction 0 left out: world 22 starts 11,248 spawns, 51 13,173, 426 376,
+////   870 693, 990 739, 1061 12,897, 1387 851 and 3460 66, and the other worlds
+////   none. The rows left out in all are Friendly to both 7,400, a service link 33
+////   and health 0 215.
+//// - The rows of faction 0 start (`0x14045a950.faction_zero`: Neutral to both player
+////   factions). A scratch Python script apart from the server's code, over
+////   `spawn.tsv` (faction1, entity type, stat 0) and the client's Creature2 rows
+////   (the quest and service columns), counts 452 NonPlayer rows with faction 0,
+////   214, 180, 20 and 38 in worlds 22, 51, 426 and 1061, none with a service link
+////   and no quest and none with health 0, so all start, added to the stored
+////   spawns that start below.
 //// - A creature with an objective link is not left out as Friendly to both
 ////   (`objective_link.has_link`: the client builds it whatever its faction), so
 ////   the Friendly rows with a link start. They are counted apart from
@@ -18,8 +25,8 @@
 ////   client's faction level walk: of the 7,400 stored rows Friendly to both with
 ////   no quest, 599, 581, 31, 9, 60 and 610 in worlds 22, 51, 426, 870, 990 and
 ////   1061 have a link, none of them a service link or health 0, so they start
-////   (11,847, 13,754, 407, 702, 799 and 13,507 stored spawns in those worlds)
-////   and 5,510 stay Friendly to both.
+////   (11,847, 13,754, 407, 702, 799 and 13,507 stored spawns in those worlds, the
+////   faction-0 rows above not among them) and 5,510 stay Friendly to both.
 //// - The creatures of kill objectives that the load places at their markers
 ////   (`objective_spawn.place`, in the worlds that hold a stored spawn) start in
 ////   addition. The rows placed are a count over the client's QuestObjective,
@@ -32,7 +39,7 @@
 ////   20, 0 and 5 Friendly to both with no quest, and of them 0, 8, 0, 0, 0, 20, 0
 ////   and 0 with a link, which start. The selection starts 423, 605, 38, 20, 12,
 ////   623, 20 and 6 of the rows placed and leaves out the others as it does stored
-////   rows (no faction, Friendly to both, a service link, health 0).
+////   rows (Friendly to both, a service link, health 0).
 //// - Migration 0027: the boss, Creature2 73499 (one of the 5 rows placed in 3460 that
 ////   are Friendly to both with no quest or link, QuestObjective 21296 and 21310),
 ////   stands with faction 233, Hostile to both player factions
@@ -54,9 +61,9 @@
 ////   static objects counted below), 111, 114, 5, 2, 106, 3 and 3 of them in worlds 22,
 ////   51, 426, 990, 1061, 1387 and 3460 (the whole-table test of `objective_spawn_test`
 ////   holds the count over the client's tables and `spawn.tsv`). The selection leaves
-////   out one of the type 0 rows, Creature2 13133 in world 22 (no faction), so the
-////   creatures that start from them are 39, 27, 3 and 39 in worlds 22, 51, 426 and
-////   1061 and none in the others. The counts come from a scratch Python script apart
+////   out none of the type 0 rows, Creature2 13133 in world 22 (no faction) among
+////   them, so the creatures that start from them are 40, 27, 3 and 39 in worlds 22,
+////   51, 426 and 1061 and none in the others. The counts come from a scratch Python script apart
 ////   from the server's code, over the client's table dumps (Creature2, Prerequisite,
 ////   Quest2, QuestObjective, WorldLocation2) and the world database's typed spawn
 ////   rows: it places 40, 27, 3 and 39 units (CreationTypeEnum 0) in worlds 22, 51, 426
@@ -182,12 +189,12 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       fn(world_id) { dict.size(content_spawn.world(key:, world_id:).by_id) },
     )
     == [
-      11_847 + 423 + 39,
-      13_754 + 605 + 27,
-      407 + 38 + 3,
+      11_847 + 214 + 423 + 40,
+      13_754 + 180 + 605 + 27,
+      407 + 20 + 38 + 3,
       702 + 20,
       799 + 12,
-      13_507 + 623 + 39,
+      13_507 + 38 + 623 + 39,
       851 + 20,
       66 + 27 + 2 + 9,
       0,
@@ -215,11 +222,11 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
     |> list.fold(0, fn(total, entry) { total + entry.1 })
   }
   assert list.map(
-      [spawn.NoFaction, spawn.FriendlyToBoth, spawn.ServiceLink, spawn.Dead],
+      [spawn.FriendlyToBoth, spawn.ServiceLink, spawn.Dead],
       left_out_in_all,
     )
-    == [452, 5510, 33, 215]
-    as "the rows left out in all worlds: no faction, Friendly to both, a service link, health 0"
+    == [5510, 33, 215]
+    as "the rows left out in all worlds: Friendly to both, a service link, health 0"
   // The world database's spawn rows (`spawn.tsv`, counted by entity type): 171
   // type 4, 4,380 type 8, 17,904 type 10, 491 type 11, 101 type 12, 241 type 13,
   // 79 type 14 and 1,178 type 32 spawns, every one passing the client's checks,

@@ -5,10 +5,13 @@
 //// - The decode of issue 375 (its facts `world_data.entity_type`,
 ////   `world_data.creature_disposition`, `world_data.spawn_checks`, `0x140649e20`,
 ////   `0x140787760`, `0x140717560`, `0x1403ad540`): only NonPlayer rows start; a
-////   faction 0 row, a row Friendly to both player factions, a row whose creature
+////   row Friendly to both player factions, a row whose creature
 ////   has only a service link and a row whose health stat is 0 do not; a creature
 ////   that gives or receives a quest starts, Friendly to both included; a row with
 ////   no stats starts, with the creature's own level and health.
+//// - A creature with no faction (faction 0) starts and is Neutral to both player
+////   factions (`0x14045a950.faction_zero`: level 5 when no faction row is found,
+////   `0x140787760`, `0x140787830`).
 //// - The client's faction levels: faction 219 is level 10 to 165 through the
 ////   parent walk (Friendly to both), faction 1441 is level 0 to 167 and 10 to 166
 ////   (Hostile to Exile, Friendly to Dominion), faction 189 relates only to 165
@@ -27,6 +30,7 @@
 import character_tables
 import fixture_tables
 import genesis_prime/content/refusal.{Refusal}
+import genesis_prime/game/faction_level
 import genesis_prime/game/hit.{Blow}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/start_place
@@ -38,7 +42,7 @@ import genesis_prime/world_map/creature_faction.{type Factions}
 import genesis_prime/world_map/creature_life.{Attackable, Charged, Hostile}
 import genesis_prime/world_map/creature_unit_type.{Turret}
 import genesis_prime/world_map/spawn.{
-  type Row, type Selection, Dead, FriendlyToBoth, NoFaction,
+  type Row, type Selection, Dead, FriendlyToBoth,
 }
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source.{Summoned}
@@ -512,7 +516,7 @@ pub fn other_unit_types_stay_out_and_the_coverage_counts_static_objects_by_type_
     == list.zip(spawn.object_types, [0, 0, 0, 0, 0, 0, 0, 1])
     as "world 22's"
   assert spawn.describe_coverage(coverage: world_22)
-    == "world 22: 0 spawns start; left out: no faction 0, friendly to both 0, a service link 0, health 0 0; static objects sent: type 4 0, type 8 0, type 10 0, type 11 0, type 12 0, type 13 0, type 14 0, type 32 1, left out dead 0; other entity types: none"
+    == "world 22: 0 spawns start; left out: friendly to both 0, a service link 0, health 0 0; static objects sent: type 4 0, type 8 0, type 10 0, type 11 0, type 12 0, type 13 0, type 14 0, type 32 1, left out dead 0; other entity types: none"
     as "the coverage line counts the static objects by type"
 }
 
@@ -591,7 +595,7 @@ pub fn unsent_types_are_sent_and_counted_test() -> Nil {
   assert coverage.other_types == []
     as "none of these types is an other type any more"
   assert spawn.describe_coverage(coverage:)
-    == "world 426: 0 spawns start; left out: no faction 0, friendly to both 0, a service link 0, health 0 0; static objects sent: type 4 1, type 8 1, type 10 0, type 11 0, type 12 1, type 13 1, type 14 1, type 32 0, left out dead 0; other entity types: none"
+    == "world 426: 0 spawns start; left out: friendly to both 0, a service link 0, health 0 0; static objects sent: type 4 1, type 8 1, type 10 0, type 11 0, type 12 1, type 13 1, type 14 1, type 32 0, left out dead 0; other entity types: none"
     as "the coverage line counts them by type"
 }
 
@@ -692,10 +696,10 @@ pub fn a_creature_row_the_client_would_not_load_refuses_its_spawns_naming_the_ru
   )
 }
 
-pub fn a_row_with_faction_0_is_left_out_and_counted_test() -> Nil {
+pub fn a_creature_row_with_no_faction_starts_test() -> Nil {
   use <- owned_test.run(5000)
-  // `opcode.0x262`, `0x14045a950`: a unit with no faction is Neutral, and a 0x262
-  // with it fails the client's read.
+  // `opcode.0x262`: a 0x262 with base faction 0 is read, and the unit has no faction
+  // object; `0x14045a950.faction_zero`: such a unit is Neutral, so nothing leaves it out.
   let selection =
     selected(rows: [
       spawn.Row(
@@ -704,8 +708,38 @@ pub fn a_row_with_faction_0_is_left_out_and_counted_test() -> Nil {
         base_faction_id: 0,
       ),
     ])
-  assert started(selection) == [] as "faction 0 does not start"
-  assert left_out(selection:, reason: NoFaction) == 1
+  assert started(selection) == [1] as "faction 0 starts"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(standing) = dict.get(world.by_id, SpawnId(1))
+    as "the creature stands"
+  assert standing.faction_id == 0 && standing.base_faction_id == 0
+    as "the unit carries faction 0 and base faction 0, as its row gives them"
+  assert left_out(selection:, reason: FriendlyToBoth) == 0
+    && left_out(selection:, reason: spawn.ServiceLink) == 0
+    && left_out(selection:, reason: Dead) == 0
+    as "no reason leaves it out"
+}
+
+pub fn a_creature_with_no_faction_is_neutral_to_both_player_factions_test() -> Nil {
+  use <- owned_test.run(5000)
+  // GetFactionLevelTo `0x140787760` returns 5 when FindFactionEntry finds nothing
+  // for faction 0; FactionDispositionFromLevel `0x140787830` reads 5 as Neutral:
+  // attackable by both, and not Hostile on sight.
+  let tables = character_tables.content_tables()
+  assert spawn.faction_levels(tables:, faction: 0) == #(5, 5)
+    as "level 5 from the Exile faction 167 and from the Dominion faction 166"
+  assert faction_level.level(
+      levels: faction_level.build(tables:),
+      from: 166,
+      to: 0,
+    )
+    == 5
+  assert spawn.hostile_to_players(
+      levels: faction_level.build(tables:),
+      faction_id: 0,
+    )
+    == Hostile(exile: False, dominion: False)
+    as "level 5 is no Hostile level, 0 to 2"
 }
 
 pub fn a_row_friendly_to_both_player_factions_is_left_out_test() -> Nil {
@@ -866,8 +900,8 @@ pub fn a_quest_creature_starts_test() -> Nil {
   assert left_out(selection: gives, reason: spawn.ServiceLink) == 0
   assert left_out(selection: receives, reason: spawn.ServiceLink) == 0
   // A quest does not bring back a creature the client would create dead (health
-  // 0, `opcode.0x262.creature`) or one with no faction, which no faction level
-  // names: they stay out whatever the creature's quest list holds.
+  // 0, `opcode.0x262.creature`): it stays out whatever the creature's quest list
+  // holds, while a creature with no faction starts as any other does.
   let refused =
     selected_beast_changed(changes: [#("questIdGiven00", Integer(5))], rows: [
       spawn.Row(..spawn_support.beast_row(number: 1), health: Some(0.0)),
@@ -883,11 +917,10 @@ pub fn a_quest_creature_starts_test() -> Nil {
         health: Some(0.0),
       ),
     ])
-  assert started(refused) == []
-    as "a quest does not start a dead or factionless row"
+  assert started(refused) == [2]
+    as "a quest does not start a dead row, and the row with no faction starts"
   assert left_out(selection: refused, reason: Dead) == 2
     as "the dead rows, the second of them Friendly to both"
-  assert left_out(selection: refused, reason: NoFaction) == 1
 }
 
 pub fn a_quest_creature_friendly_to_both_starts_and_no_player_may_attack_it_test() -> Nil {
@@ -1357,19 +1390,15 @@ pub fn a_started_spawn_whose_visibility_prerequisite_has_no_row_fails_the_spawn_
   assert held.refusals == [] as "a prerequisite with a row loads"
   assert visibility_ids(selection: held) == [41_803]
     as "two started spawns of one prerequisite hold it once in their world's index"
-  // A row left out (faction 0, `opcode.0x262`) never starts, so its creature's
-  // prerequisite is neither loaded nor required.
-  let factionless = fn(number) {
-    spawn.Row(
-      ..spawn_support.beast_row(number:),
-      faction_id: 0,
-      base_faction_id: 0,
-    )
+  // A row left out (health 0, so it never starts) names no prerequisite: its
+  // creature's prerequisite is neither loaded nor required.
+  let dead = fn(number) {
+    spawn.Row(..spawn_support.beast_row(number:), health: Some(0.0))
   }
   let left_out_only =
     selected_beast_changed(
       changes: [#("prerequisiteIdVisibility", Integer(999_999))],
-      rows: [factionless(1)],
+      rows: [dead(1)],
     )
   assert left_out_only.refusals == []
     as "a left-out spawn whose prerequisite has no row does not fail the load"
@@ -1378,7 +1407,7 @@ pub fn a_started_spawn_whose_visibility_prerequisite_has_no_row_fails_the_spawn_
   let missing =
     selected_beast_changed(
       changes: [#("prerequisiteIdVisibility", Integer(999_999))],
-      rows: [spawn_support.beast_row(number: 1), factionless(2)],
+      rows: [spawn_support.beast_row(number: 1), dead(2)],
     )
   let assert [Refusal(table: "spawn", row: refusal.RowId(1), rule:)] =
     missing.refusals
