@@ -1318,20 +1318,55 @@ pub fn a_full_bag_refuses_a_server_completion_with_0x106_code_27_test() -> Nil {
   Nil
 }
 
-pub fn a_server_completion_of_a_quest_with_a_reward_choice_is_refused_test() -> Nil {
+pub fn a_server_completion_of_a_quest_with_a_reward_choice_gives_only_its_fixed_rewards_test() -> Nil {
   use <- owned_test.run(10_000)
-  // Quest 2909 (flags 8, no receiver) has two item choices (Quest2Reward 2368 and 2369,
-  // flags 1) and a fixed item (2370); no dialog lets the player pick, and a completion is
-  // made with reward id 0.
-  let #(effects, logged) =
-    support.server_refused(
-      scene: support.scene(quest_id: 2909),
-      tables: tables(),
+  // Quest 2909 (flags 8, no receiver) has two item choices (Quest2Reward 2368, Item2 13005,
+  // and 2369, Item2 6998, flags 1) and a fixed item (2370: Item2 179, one, flags 0). No
+  // dialog lets the player pick, so the completion gives the fixed row alone.
+  let assert quest_turn_in.Asks(turn_in:, ..) =
+    support.server_taken(scene: support.scene(quest_id: 2909), tables: tables())
+    as "the completion passes every check, so the store is asked"
+  assert turn_in.placed
+    == [
+      Placed(Item2Id(179), grow: [], make: [
+        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+      ]),
+    ]
+    as "only Quest2Reward 2370's item and count; neither choice's item (13005, 6998) is placed"
+  let assert quest_turn_in.Saved(then:, ..) =
+    quest_turn_in.answered(
+      turn_in:,
+      items: [],
+      currencies: support.credits(total: 0),
+      answer: store.TurnedIn(credits: 0, made: [
+        HeldItem(
+          item_guid: 900,
+          item2_id: Item2Id(179),
+          location: 1,
+          bag_index: 0,
+          stack_count: 1,
+          random_stats: 0,
+        ),
+      ]),
     )
+    as "the store's answer is saved"
+  let assert Ok(Send(last)) = list.last(then)
+  assert quest_state.decode(last.body)
+    == Ok(QuestState(quest_id: 2909, state: 3, objective_id: 0))
+    as "opcode.0x35c: the quest in state 3 with objective 0"
+}
+
+pub fn a_turn_in_of_a_quest_with_a_reward_choice_and_reward_id_0_is_still_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The player's 0x035D names a reward id; for a quest with choice rows, 0 is no choice
+  // (IsRewardChoiceOffered `0x140551c60`). Quest 2909 is received by Dorian Walker here.
+  use tables <- support.with_changes(changes: [support.receiving(2909)])
+  let #(effects, logged) =
+    support.refused(scene: support.scene(quest_id: 2909), tables:)
   let assert [Log(level: LogWarning, text:)] = effects
     as "one log line and nothing sent"
   assert string.contains(text, "reward id 0")
-    as "the line names the reward id the completion carries"
+    as "the line names the reward id the message carries"
   assert logged == set.from_list(["reward choice"])
 }
 

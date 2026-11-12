@@ -19,9 +19,10 @@
 //// - **The server's completion** (`completed_by_server`) is a turn-in the server makes of a quest
 ////   `communicator.completed_by_server` names, once it is Achieved, because the client offers no
 ////   turn-in for it. It takes steps 2 and 3 as they are, with the state exactly Achieved (2), no
-////   death check, no receiver or communicator check and reward id 0, then the rewards below: a
-////   quest with a choice row is refused (nothing lets the player pick), as is one with a full bag
-////   (0x106 code 27), and the quest stays Achieved.
+////   death check, no receiver or communicator check and no reward chosen, then the rewards
+////   below: a quest with a choice row gives its fixed rows only (nothing lets the player pick,
+////   and the client's rows do not say which choice the server should give), and one with a full
+////   bag is refused (0x106 code 27) and stays Achieved.
 //// - **The checks, in the order of the client's turn-in** (`opcode.0x35d`), each a log line
 ////   once per reason on the connection, because the client sends the message only from a dialog
 ////   it built from the same tables, so a refusal is a modified or stale client or a gap this
@@ -79,7 +80,7 @@
 //// | the connection ends while the store works | the store finishes or rolls back; the next login loads whichever |
 //// | the same message while the store works | held, then taken against the new log |
 //// | the server's completion of a quest not Achieved, or one a creature receives or the communicator turns in | a logged refusal |
-//// | the server's completion of a quest with a reward choice | a logged refusal, the quest stays Achieved |
+//// | the server's completion of a quest with a reward choice | the fixed rewards only, the quest Completed |
 //// | the server's completion with no room for a reward item | 0x106 code 27, the quest stays Achieved |
 
 import genesis_prime/client_connection
@@ -339,7 +340,8 @@ fn taken_of(
 /// taken as a turn-in of it with no reward chosen: the client's 0x035D is never sent for such a
 /// quest, so the checks are the ones the server's own act needs. The quest must be in the log
 /// Achieved (exactly 2: no auto-complete from another state), and the rewards are computed and
-/// placed as a turn-in's. A quest with a reward choice is refused: nothing lets the player pick.
+/// placed as a turn-in's. A quest with a reward choice gives its fixed rewards only: nothing
+/// lets the player pick.
 pub fn completed_by_server(
   quest_id quest_id: Int,
   asker asker: quest.Asker,
@@ -385,7 +387,7 @@ pub fn completed_by_server(
           quest_id:,
           at_seconds: unix_seconds,
         ),
-        reward_id: 0,
+        choosing: FixedRewardsOnly,
         asker:,
         progress:,
         currencies:,
@@ -479,7 +481,7 @@ fn checked(
     turning:,
     row:,
     log:,
-    reward_id: message.reward_id,
+    choosing: Chosen(reward_id: message.reward_id),
     asker:,
     progress:,
     currencies:,
@@ -521,15 +523,23 @@ fn row_and_state(
   Ok(#(row, quest_log.state(log: asker.log, quest: known)))
 }
 
+/// How a turn-in picks among a quest's reward choices: the player's 0x035D names a Quest2Reward
+/// id (0 when the quest has no choice rows), and the server's own completion names none, so it
+/// gives the fixed rows alone.
+type Choosing {
+  Chosen(reward_id: Int)
+  FixedRewardsOnly
+}
+
 /// The turn-in of a quest whose state allows it, with the rewards computed and placed: the
-/// reward `reward_id` chosen among the choice rows, the fixed rows, the items placed in the
+/// reward `choosing` picks among the choice rows, the fixed rows, the items placed in the
 /// bag, the credits and the experience; with the reward kinds it leaves out (each a log key
 /// and its line), or the first check that fails.
 fn rewarded(
   turning turning: String,
   row row: Quest2,
   log log: QuestLog,
-  reward_id reward_id: Int,
+  choosing choosing: Choosing,
   asker asker: quest.Asker,
   progress progress: experience.Progress,
   currencies currencies: Currencies,
@@ -542,15 +552,19 @@ fn rewarded(
     list.partition(rows, fn(reward) {
       int.bitwise_and(reward.flags, choice_flag) != 0
     })
-  use chosen <- result.try(chosen_reward(
-    turning:,
-    reward_id:,
-    choices:,
-    asker:,
-    progress:,
-    item_proficiencies:,
-    tables:,
-  ))
+  use chosen <- result.try(case choosing {
+    FixedRewardsOnly -> Ok(None)
+    Chosen(reward_id:) ->
+      chosen_reward(
+        turning:,
+        reward_id:,
+        choices:,
+        asker:,
+        progress:,
+        item_proficiencies:,
+        tables:,
+      )
+  })
   use <- bool.guard(
     when: list.any(fixed, fn(reward) {
       reward.quest2_reward_type_id == tradeskill_experience_type
