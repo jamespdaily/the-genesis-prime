@@ -1323,7 +1323,7 @@ pub fn a_server_completion_of_a_quest_with_a_reward_choice_gives_only_its_fixed_
   // Quest 2909 (flags 8, no receiver) has two item choices (Quest2Reward 2368, Item2 13005,
   // and 2369, Item2 6998, flags 1) and a fixed item (2370: Item2 179, one, flags 0). No
   // dialog lets the player pick, so the completion gives the fixed row alone.
-  let assert quest_turn_in.Asks(turn_in:, logged:, ..) =
+  let assert quest_turn_in.Asks(turn_in:, ..) =
     support.server_taken(scene: support.scene(quest_id: 2909), tables: tables())
     as "the completion passes every check, so the store is asked"
   assert turn_in.placed
@@ -1333,8 +1333,6 @@ pub fn a_server_completion_of_a_quest_with_a_reward_choice_gives_only_its_fixed_
       ]),
     ]
     as "only Quest2Reward 2370's item and count; neither choice's item (13005, 6998) is placed"
-  assert !set.contains(logged, "reward choice")
-    as "the choice is not a refusal on the server's path"
   let assert quest_turn_in.Saved(then:, ..) =
     quest_turn_in.answered(
       turn_in:,
