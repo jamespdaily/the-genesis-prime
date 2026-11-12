@@ -45,6 +45,7 @@ import genesis_prime/game/quest as quest_rule
 import genesis_prime/game/quest_log
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/shown
+import genesis_prime/game/tutorial
 import genesis_prime/game/vendor_trade as trade_rule
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
@@ -55,7 +56,7 @@ import genesis_prime/step.{
 import genesis_prime/store.{ForItems}
 import genesis_prime/table/loader/store as table_store
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/set.{type Set}
 
 /// The client's 0x035D, taken from inside 0x038C with the player in the world: a refusal is
@@ -344,15 +345,6 @@ fn saved(
   then then: List(trade_rule.Effect),
 ) -> client_connection.Handled(Session) {
   let session = Session(..session, status: InWorld(holder:, entered:))
-  let timers =
-    list.map(
-      quest_log.deadline_moved(
-        before: quest_log.next_deadline(log: before),
-        after: quest_log.next_deadline(log: entered.quests),
-        now_ms: now.monotonic_ms,
-      ),
-      connection_state.quest_deadline_timer_move,
-    )
   case
     connection_experience.gained(
       session:,
@@ -362,6 +354,20 @@ fn saved(
     )
   {
     Continue(session, told) -> {
+      let #(session, next) = next_tutorial_quest(session:, now:, turn_in:)
+      let after = case connection_state.entered_of(session.status) {
+        Some(entered) -> entered.quests
+        None -> turn_in.log
+      }
+      let timers =
+        list.map(
+          quest_log.deadline_moved(
+            before: quest_log.next_deadline(log: before),
+            after: quest_log.next_deadline(log: after),
+            now_ms: now.monotonic_ms,
+          ),
+          connection_state.quest_deadline_timer_move,
+        )
       let #(session, settled) = connection_objective.settled(session:, now:)
       Continue(
         session,
@@ -369,6 +375,7 @@ fn saved(
           vendor_trade.effects_of(session:, effects: rewards),
           told,
           vendor_trade.effects_of(session:, effects: then),
+          next,
           timers,
           settled,
         ]),
@@ -376,6 +383,42 @@ fn saved(
     }
     client_connection.Asking(..) as ended
     | client_connection.Done(..) as ended -> ended
+  }
+}
+
+/// The session with the tutorial quest the completed quest leads to, and the 0x35C that
+/// tells the client, when the completed quest is one of the tutorial chain and the log
+/// holds the quest due next (`tutorial.grant`); the session and nothing otherwise.
+fn next_tutorial_quest(
+  session session: Session,
+  now now: Now,
+  turn_in turn_in: quest_turn_in.TurnIn,
+) -> #(Session, List(Effect(ConnectionEffect(client_connection.Request)))) {
+  let chain = session.settings.tutorial_chain
+  let granted = case connection_state.entered_of(session.status) {
+    Some(entered) ->
+      case tutorial.is_chain_quest(chain:, quest_id: turn_in.quest_id) {
+        True ->
+          tutorial.grant(
+            chain:,
+            log: entered.quests,
+            faction_id: entered.character.faction_id,
+            tables: session.settings.tables,
+            now_ms: now.monotonic_ms,
+          )
+        False -> None
+      }
+    None -> None
+  }
+  case granted {
+    Some(tutorial.Granted(log:, frame:)) -> {
+      let session =
+        connection_state.with_entered(session:, change: fn(entered) {
+          world_entry.Entered(..entered, quests: log)
+        })
+      #(session, [connection_state.to_client(session, frame)])
+    }
+    None -> #(session, [])
   }
 }
 

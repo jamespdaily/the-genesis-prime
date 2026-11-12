@@ -358,6 +358,46 @@ order by spawn.world_id, spawn.id;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `load_tutorial_quests` query
+/// defined in `./src/genesis_prime/content/sql/load_tutorial_quests.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadTutorialQuestsRow {
+  LoadTutorialQuestsRow(quest_id: Int, follows_quest_id: Option(Int))
+}
+
+/// Every row of the tutorial_quest table in key order: the one query the load makes of
+/// the table at start (genesis_prime/content/tutorial_quest). The checks run on these
+/// rows, not in SQL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_tutorial_quests(
+  db: pog.Connection,
+) -> Result(pog.Returned(LoadTutorialQuestsRow), pog.QueryError) {
+  let decoder = {
+    use quest_id <- decode.field(0, decode.int)
+    use follows_quest_id <- decode.field(1, decode.optional(decode.int))
+    decode.success(LoadTutorialQuestsRow(quest_id:, follows_quest_id:))
+  }
+
+  "-- Every row of the tutorial_quest table in key order: the one query the load makes of
+-- the table at start (genesis_prime/content/tutorial_quest). The checks run on these
+-- rows, not in SQL.
+select
+  quest_id,
+  follows_quest_id
+from tutorial_quest
+order by quest_id;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_vendor_items` query
 /// defined in `./src/genesis_prime/content/sql/load_vendor_items.sql`.
 ///

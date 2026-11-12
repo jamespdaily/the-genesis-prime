@@ -6,7 +6,6 @@
 //// (genesis_prime/game/quest_log `next_deadline`, `deadline_moved`).
 
 import genesis_prime/client_connection.{type Request}
-import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/departures
@@ -210,28 +209,8 @@ fn told(
   #(
     session,
     list.flatten([
-      list.filter_map(advanced.effects, fn(effect) {
-        case effect {
-          objective.SendProgress(quest_id:, objective_index:, progress:) ->
-            Ok(connection_state.to_client(
-              session,
-              connection_frames.quest_objective_progress_frame(
-                quest_id:,
-                objective_index:,
-                progress:,
-              ),
-            ))
-          objective.SendState(quest_id:, state:) ->
-            Ok(connection_state.to_client(
-              session,
-              connection_frames.quest_state_frame(
-                quest_id:,
-                state:,
-                objective_id: 0,
-              ),
-            ))
-          objective.CompleteByServer(..) -> Error(Nil)
-        }
+      list.map(objective.frames(effects: advanced.effects), fn(frame) {
+        connection_state.to_client(session, frame)
       }),
       // The buttons that closed are taken away and those that opened are given, after
       // the progress and state that closed or opened them.

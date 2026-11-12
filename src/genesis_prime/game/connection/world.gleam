@@ -295,7 +295,7 @@ pub fn quest_deadline_due(
         now:,
         effects: list.flatten([
           list.map(botched, fn(quest_id) {
-            ToClient(frame: connection_frames.quest_state_frame(
+            ToClient(frame: quest_log.quest_state_frame(
               quest_id:,
               state: 4,
               objective_id: 0,
@@ -679,6 +679,7 @@ pub fn entry_answered(
           classes: session.settings.class_resources,
           numbers: session.settings.numbers,
           defaults: unit_properties.defaults(tables: session.settings.tables),
+          chain: session.settings.tutorial_chain,
           tables: session.settings.tables,
           now:,
         )

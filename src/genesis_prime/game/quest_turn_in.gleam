@@ -84,7 +84,6 @@
 
 import genesis_prime/client_connection
 import genesis_prime/game/communicator
-import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/equip_requirement.{Wearer}
 import genesis_prime/game/experience
@@ -1151,7 +1150,7 @@ pub fn answered(
             False -> []
           }
             |> list.append([
-              connection_frames.quest_state_frame(
+              quest_log.quest_state_frame(
                 quest_id: turn_in.quest_id,
                 state: 3,
                 objective_id: 0,

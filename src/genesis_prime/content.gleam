@@ -67,6 +67,10 @@
 ////   (genesis_prime/game/zone_welcome): a row naming a zone or a Tutorial row the tables
 ////   lack, a Tutorial row that is not of category 29, or a parent chain that is a cycle
 ////   is refused.
+//// - **The tutorial quests** are checked against the client's Quest2, QuestObjective and
+////   Creature2 rows (genesis_prime/game/tutorial): a row naming a quest or an objective the
+////   tables lack, a quest a creature gives or receives, or a faction whose rows are not one
+////   chain from one start is refused.
 //// - **The vendors** are checked against the client's Creature2 and Item2 rows
 ////   (genesis_prime/game/vendor): a vendor naming a creature, an item naming an Item2 row
 ////   the tables lack, or an item of a creature with no vendor row is refused.
@@ -93,6 +97,7 @@ import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/class_resource
@@ -100,6 +105,7 @@ import genesis_prime/game/place_objective
 import genesis_prime/game/rating
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_plan
+import genesis_prime/game/tutorial
 import genesis_prime/game/vendor
 import genesis_prime/game/zone_welcome
 import genesis_prime/migration.{type Migration}
@@ -241,6 +247,15 @@ fn read(
       )
     }),
   )
+  use tutorial_rows <- result.try(
+    content_tutorial_quest.rows(db)
+    |> result.map_error(fn(error) {
+      QueryFailed(
+        table: content_tutorial_quest.table,
+        reason: worker.describe_query_error(error),
+      )
+    }),
+  )
   use vendor_rows <- result.try(
     content_vendor.vendor_rows(db)
     |> result.map_error(fn(error) {
@@ -279,6 +294,8 @@ fn read(
     Ok(..) -> []
     Error(refusals) -> refusals
   }
+  let tutorials = tutorial.select(rows: tutorial_rows, tables:)
+  let tutorial_refusals = result.unwrap_error(tutorials, or: [])
   let vendors =
     vendor.select(vendors: vendor_rows, items: vendor_item_rows, tables:)
   let vendor_refusals = case vendors {
@@ -364,6 +381,7 @@ fn read(
       class_refusals,
       proxy_refusals,
       welcome_refusals,
+      tutorial_refusals,
       vendor_refusals,
     ])
   {
@@ -411,6 +429,10 @@ fn read(
       }
       case welcomes {
         Ok(welcomes) -> content_zone_welcome.put(key:, welcomes:)
+        Error(..) -> Nil
+      }
+      case tutorials {
+        Ok(chain) -> content_tutorial_quest.put(key:, chain:)
         Error(..) -> Nil
       }
       case vendors {

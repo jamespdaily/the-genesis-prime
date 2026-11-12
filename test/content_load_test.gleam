@@ -25,6 +25,7 @@ import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/class_resource
 import genesis_prime/game/spell_plan
@@ -47,6 +48,7 @@ import mailbox_support
 import owned_test
 import place_support
 import server_proxy_support
+import tutorial_support
 import unitest
 
 /// A spawn row of a creature the client has no row for, as the world database's
@@ -448,6 +450,20 @@ pub fn the_load_puts_the_zones_welcomes_from_the_seed_in_a_term_test() -> Nil {
   assert zone_welcome.on_terrain_loaded(welcomes:, world_zone_id: 648)
     == [Frame(message_id: 0x0179, body: <<0x4c, 0x01, 0x00, 0x00>>)]
     as "migration 0020 seeds WorldZone 35 with Tutorial 332 (the Northern Wilds welcome), and 648 Landing Site's parent is 35; 0x179 carries 332 in 32 bits, least significant byte first"
+}
+
+pub fn the_tutorial_chain_loads_from_the_migration_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil)
+  let chain = content_tutorial_quest.chain(key:)
+  assert tutorial_support.order(chain:, faction_enum: 0)
+    == [10_513, 10_527, 10_518, 10_529]
+    as "migration 0031's Exile rows, each following the one before: Navigating Nexus part 1 and 2, The Face of the Enemy, and its closing talk to Dorian Walker"
+  assert tutorial_support.order(chain:, faction_enum: 1)
+    == [10_521, 10_532, 10_524, 10_533]
+    as "migration 0031's Dominion rows, the same four quests of the Dominion"
 }
 
 pub fn a_server_proxy_row_that_cannot_be_planned_stops_the_load_naming_each_test() -> Nil {

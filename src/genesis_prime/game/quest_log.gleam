@@ -58,7 +58,9 @@ import genesis_prime/message/quest_completed.{
 }
 import genesis_prime/message/quest_known.{QuestKnown}
 import genesis_prime/message/quest_log as quest_message
+import genesis_prime/message/quest_objective_progress.{QuestObjectiveProgress}
 import genesis_prime/message/quest_periodic_reset.{QuestPeriodicReset}
+import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/step.{type Now}
 import genesis_prime/store.{type QuestRow, ActiveQuest, QuestRow}
 import genesis_prime/table/id.{PathSoldierActivateId, Quest2Id, QuestObjectiveId}
@@ -1873,4 +1875,34 @@ fn set_bits(of number: Int) -> Int {
       int.bitwise_and(number, 1)
       + set_bits(of: int.bitwise_shift_right(number, 1))
   }
+}
+
+/// 0x35c, the state a quest is now in (`opcode.0x35c`): the quest, its state and the
+/// objective the client is told of, 0 for none.
+pub fn quest_state_frame(
+  quest_id quest_id: Int,
+  state state: Int,
+  objective_id objective_id: Int,
+) -> Frame {
+  let assert Ok(body) =
+    quest_state.encode(QuestState(quest_id:, state:, objective_id:))
+    as "a Quest2 id of the table, a state of 1 to 7 and an objective id fit the message"
+  Frame(message_id: quest_state.message_id, body:)
+}
+
+/// 0x361, an objective's new progress (`opcode.0x361`): the quest, the objective's index
+/// in the quest and the count it has now.
+pub fn quest_objective_progress_frame(
+  quest_id quest_id: Int,
+  objective_index objective_index: Int,
+  progress progress: Int,
+) -> Frame {
+  let assert Ok(body) =
+    quest_objective_progress.encode(QuestObjectiveProgress(
+      quest_id:,
+      objective_index:,
+      progress:,
+    ))
+    as "a Quest2 id of the table, an objective index and a count that fits 32 bits"
+  Frame(message_id: quest_objective_progress.message_id, body:)
 }

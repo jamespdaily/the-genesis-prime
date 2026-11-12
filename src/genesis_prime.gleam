@@ -29,6 +29,7 @@ import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/digest
@@ -622,6 +623,7 @@ fn game(
       vendors: content_vendor.vendors(key: spawns),
       numbers: content_game_number.numbers(key: spawns),
       visibility: content_spawn.visibility(key: spawns),
+      tutorial_chain: content_tutorial_quest.chain(key: spawns),
     ),
     wire_recorder: None,
     scripts: script.operating_system,

@@ -51,6 +51,7 @@
 ////
 //// A rule: the log and the event in, the log and the effects out.
 
+import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/communicator
 import genesis_prime/game/departures
 import genesis_prime/game/objective_link
@@ -1067,5 +1068,23 @@ pub fn server_completions(
   |> list.filter(fn(quest_id) {
     quest_log.stored_state(log:, quest_id:) == achieved_state
     && completion_of(tables:, quest_id:) != []
+  })
+}
+
+/// The messages the effects tell the client, in the effects' order: each progress as
+/// 0x361 and each state as 0x35c. A completion by the server sends nothing.
+pub fn frames(effects effects: List(Effect)) -> List(Frame) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      SendProgress(quest_id:, objective_index:, progress:) ->
+        Ok(quest_log.quest_objective_progress_frame(
+          quest_id:,
+          objective_index:,
+          progress:,
+        ))
+      SendState(quest_id:, state:) ->
+        Ok(quest_log.quest_state_frame(quest_id:, state:, objective_id: 0))
+      CompleteByServer(..) -> Error(Nil)
+    }
   })
 }

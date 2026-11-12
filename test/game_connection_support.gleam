@@ -96,6 +96,7 @@ import place_support
 import planted_table
 import server_proxy_support
 import spawn_support
+import tutorial_support
 import world_entry_support
 import zone_welcome_support
 
@@ -121,6 +122,7 @@ pub fn settings() -> game_connection.Settings {
     vendors: vendor.none(),
     numbers: spawn_support.numbers,
     visibility: dict.new(),
+    tutorial_chain: tutorial_support.none(),
   )
 }
 
@@ -2633,5 +2635,34 @@ pub fn item_change_saved(
       ask: ask.ask,
       outcome: step.Answer(FromStore(store.ForItems(store.ItemsSaved))),
     )),
+  )
+}
+
+/// The store's answer to the turn-in the step asked: saved as asked, each stack
+/// the turn-in placed made with its own guid.
+pub fn turn_in_saved(taken taken: ConnectionStep(Request)) -> Outcome(Answer) {
+  let assert AskStore(store.Items(store.TurnInQuest(credits_after:, placed:, ..))) =
+    ask_request(taken)
+    as "the step asks the store for a turn-in"
+  step.Answer(
+    FromStore(
+      store.ForItems(store.TurnedIn(
+        credits: credits_after,
+        made: list.index_map(placed, fn(one, index) {
+          let assert [
+            store.NewStack(location:, bag_index:, stack_count:, random_stats: 0),
+          ] = one.make
+            as "one stack of each, the Item2s' counts being 1"
+          store.HeldItem(
+            item_guid: 900 + index,
+            item2_id: one.item2_id,
+            location:,
+            bag_index:,
+            stack_count:,
+            random_stats: 0,
+          )
+        }),
+      )),
+    ),
   )
 }
