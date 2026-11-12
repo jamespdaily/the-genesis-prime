@@ -19,7 +19,7 @@
 ////   player faction (worked out when the content loads, since Faction2 is a content-only
 ////   table, by genesis_prime/world_map/spawn). A Friendly creature, another player and the
 ////   caster are never struck.
-//// - **A talkable unit** (`talkable`) is a creature or a Simple object: the client's
+//// - **A talkable unit** (`talkable`) is a creature or a static object: the client's
 ////   click on a unit checks its row, life, disposition and range and not its unit type,
 ////   so an object is alive, never in combat, and Hostile to the players its faction is
 ////   (`hostile_to`, filled when the object is shown).
@@ -167,7 +167,7 @@ pub type Talkable {
     place: Place,
     /// Creature2DisplayInfo.hitRadius of its display.
     hit_radius: Float,
-    /// False for a creature that died; a Simple unit is never created dead, so an
+    /// False for a creature that died; a static object is never created dead, so an
     /// object is always alive (`opcode.0x262.simple`).
     alive: Bool,
     /// Which player factions the unit is Hostile to.

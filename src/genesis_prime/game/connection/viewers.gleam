@@ -704,9 +704,10 @@ fn names_own_unit(
 
 /// What the picture holds of a static object its 0x262 creates: the 0x262's creature,
 /// where it puts the unit and its display's hit radius, 0.0 for a display with no
-/// Creature2DisplayInfo row, and which player factions its faction is Hostile to. The object stands in the world and zone of `world_place`,
-/// the player's place. The server wrote the 0x262 with `static_object.create`, which
-/// always writes a position of finite numbers.
+/// Creature2DisplayInfo row, and which player factions its faction is Hostile to. The
+/// object stands in the world and zone of `world_place`, the player's place. The server
+/// wrote the 0x262 with `static_object.create`, which always writes a position of finite
+/// numbers.
 fn object_shown(
   tables tables: table_store.Tables,
   created created: static_object.Created,

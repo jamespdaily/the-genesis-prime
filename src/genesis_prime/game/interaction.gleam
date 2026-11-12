@@ -4,7 +4,7 @@
 //// with the player in the world.
 ////
 //// ```
-//// 0x7EA {unit, 37}, inside 0x38C ─▶ take(Requested, ...) ─▶ a shown, alive creature or Simple unit whose
+//// 0x7EA {unit, 37}, inside 0x38C ─▶ take(Requested, ...) ─▶ a shown, alive creature or static object whose
 ////                                                           row gives or receives a quest the client would
 ////                                                           show, not Hostile, within reach: OpenDialog(unit)
 ////                                                        ─▶ any other: a log line, nothing written
@@ -21,12 +21,11 @@
 ////   (`opcode.0x356`), which needs no answer.
 //// - **The client sends the request** only for a unit that is alive, not Hostile
 ////   to the player and one that marks a quest interaction kind with a click handler
-////   (`0x14047a060`, `0x1405a8d40`), whatever its unit type: a Simple unit (shown as an
-////   object, never created dead) is answered as a creature is. So a unit that is not shown,
-////   another player's, dead,
-////   Hostile, with no quest in its row or with none the player's log shows is one the
-////   client would not have sent: it is logged and answered with nothing. The connection
-////   goes on, since the picture is one news message stale at worst
+////   (`0x14047a060`, `0x1405a8d40`), whatever its unit type: a static object (never
+////   created dead) is answered as a creature is. So a unit that is not shown, another
+////   player's, dead, Hostile, with no quest in its row or with none the player's log
+////   shows is one the client would not have sent: it is logged and answered with nothing.
+////   The connection goes on, since the picture is one news message stale at worst
 ////   (genesis_prime/game/shown).
 //// - **The reach** is 6.0 for a quest kind, measured between the two bodies' edges
 ////   (`0x1403ad690`), plus the 3.0 a request may add (`opcode.0x7ea`). The gap here
@@ -337,7 +336,7 @@ fn dialog_effects(unit_id unit_id: Int, talked talked: Talked) -> List(Effect) {
   }
 }
 
-/// The unit whose dialog the player may open: the unit is a shown creature or Simple
+/// The unit whose dialog the player may open: the unit is a shown creature or static
 /// object that is alive, not Hostile to the player and within reach, and either one an
 /// open objective names (`talk_targets`, whatever its row gives), or one whose row gives
 /// or receives a quest that `offers` says the player's log shows. The client's check
@@ -365,7 +364,7 @@ fn talked_to(
     faction_id:,
     checklist_index:,
     place:,
-    hit_radius: creature_radius,
+    hit_radius: unit_radius,
     alive:,
     hostile_to:,
   ) = talkable
@@ -388,7 +387,7 @@ fn talked_to(
     return: Error(NoQuest(unit_id:, creature_id:)),
   )
   use <- bool.guard(
-    when: !within_reach(player:, tables:, place:, creature_radius:),
+    when: !within_reach(player:, tables:, place:, unit_radius:),
     return: Error(TooFar(unit_id:)),
   )
   let talked = Talked(target: unit, checklist_index:, counted: target)
@@ -420,9 +419,9 @@ pub fn within_reach(
   player player: Player,
   tables tables: table_store.Tables,
   place place: Place,
-  creature_radius creature_radius: Float,
+  unit_radius unit_radius: Float,
 ) -> Bool {
-  within(player:, tables:, place:, creature_radius:, range: reach)
+  within(player:, tables:, place:, unit_radius:, range: reach)
 }
 
 /// Whether the unit, standing at `place`, is within `range` of the player, the gap
@@ -432,7 +431,7 @@ pub fn within(
   player player: Player,
   tables tables: table_store.Tables,
   place place: Place,
-  creature_radius creature_radius: Float,
+  unit_radius unit_radius: Float,
   range range: Float,
 ) -> Bool {
   let assert Ok(player_radius) =
@@ -443,7 +442,7 @@ pub fn within(
       from: area.point_of(place: player.place),
       from_radius: player_radius,
       to: area.point_of(place:),
-      to_radius: creature_radius,
+      to_radius: unit_radius,
     )
   gap <=. range
 }
@@ -483,7 +482,7 @@ pub fn vendor_opened(
       creature_id:,
       path:,
       alive:,
-      hit_radius: creature_radius,
+      hit_radius: unit_radius,
       hostile_to:,
       ..,
     ) -> {
@@ -513,7 +512,7 @@ pub fn vendor_opened(
           player:,
           tables:,
           place: creature_path.place_at(path:, now_ms:),
-          creature_radius:,
+          unit_radius:,
         ),
         return: Error(VendorRefusal(
           unit_id:,

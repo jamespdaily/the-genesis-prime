@@ -22,8 +22,8 @@
 ////
 //// - **The source** is what the client starts a quest from. The dialog's accept sends
 ////   location 300 and bag index -1 (`opcode.0x35b`): it needs a shown, alive creature
-////   or Simple unit, not Hostile to the player, whose Creature2 row gives the quest, within reach, or a
-////   quest of the communicator (Quest2 flags 4) the log holds a state of 4 to 7 for. Any other
+////   or static object, not Hostile to the player, whose Creature2 row gives the quest,
+////   within reach, or a quest of the communicator (Quest2 flags 4) the log holds a state of 4 to 7 for. Any other
 ////   place is a held item there whose Item2 `quest2IdActivation` is the quest. A retry
 ////   carries no place, so it takes any of the three.
 //// - **The checks** are the client's, in its order, and the first that does not pass
@@ -1315,7 +1315,7 @@ fn starts(
   }
 }
 
-/// Whether a shown creature or Simple object the client would open a dialog with names the
+/// Whether a shown creature or static object the client would open a dialog with names the
 /// quest in `quest_ids` (the quests it gives, or the quests it receives): alive, not
 /// Hostile to the player, within reach.
 pub fn in_reach(
@@ -1331,7 +1331,7 @@ pub fn in_reach(
       Ok(shown.Talkable(
         creature_id:,
         place:,
-        hit_radius: creature_radius,
+        hit_radius: unit_radius,
         alive: True,
         hostile_to:,
         ..,
@@ -1344,7 +1344,7 @@ pub fn in_reach(
               player: standing,
               tables:,
               place:,
-              creature_radius:,
+              unit_radius:,
             )
           Error(Nil) -> False
         }

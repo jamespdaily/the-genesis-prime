@@ -411,7 +411,8 @@ pub fn a_click_on_a_simple_type_18_target_counts_the_talk_test() -> Nil {
 }
 
 /// Quest 10528's objective 0 is 21326, a type 3 talk to Creature2 73604, a Simple unit of
-/// faction 171, count 1.
+/// faction 171, count 1. Faction 171 is Hostile to the Dominion and not to the Exile
+/// player, as the Faction2 rows give it.
 pub fn a_click_on_a_simple_type_3_target_counts_the_talk_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
@@ -425,7 +426,7 @@ pub fn a_click_on_a_simple_type_3_target_counts_the_talk_test() -> Nil {
       faction_id: 171,
       checklist_index: 0,
       gap: 1.0,
-      hostile_to: friendly,
+      hostile_to: Hostile(exile: False, dominion: True),
     )
   let taken =
     taken_in(

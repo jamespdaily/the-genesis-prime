@@ -581,7 +581,7 @@ pub fn a_simple_unit_with_no_quest_is_refused_test() -> Nil {
     as "a Simple unit is a unit the client's check reads"
 }
 
-/// A vendor's window is opened only for a creature, as before: the client's refusal of a
+/// A vendor's window is opened only for a creature: the client's refusal of a
 /// request for a unit that is not one is code 16 (`CheckInteractionTarget`, 0x1403add00),
 /// and a Simple unit with stock is not one the server opens.
 pub fn a_vendor_open_on_a_simple_unit_is_refused_with_16_test() -> Nil {

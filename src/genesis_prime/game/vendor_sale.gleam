@@ -396,7 +396,7 @@ fn in_range(
     player:,
     tables:,
     place: creature_path.place_at(path:, now_ms:),
-    creature_radius: hit_radius,
+    unit_radius: hit_radius,
     range: sale_range,
   )
 }
