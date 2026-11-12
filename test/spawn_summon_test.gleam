@@ -14,8 +14,8 @@
 ////   for spawns the client makes itself (`0x1404846c0`). First is the entry of
 ////   the lowest id, the order of the table.
 //// - A summon is refused for what the client's checks of a spawn refuse
-////   (`0x140485790`) and for what the load leaves out of a stored spawn: no
-////   faction, friendly to both player factions, only a service link, health 0
+////   (`0x140485790`) and for what the load leaves out of a stored spawn:
+////   friendly to both player factions, only a service link, health 0
 ////   (`opcode.0x262.creature`); a server choice, so a summon starts only what a
 ////   spawn starts.
 

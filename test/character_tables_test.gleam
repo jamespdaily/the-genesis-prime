@@ -253,5 +253,5 @@ pub fn the_committed_creature_and_faction_rows_select_the_spawns_the_clients_row
     as "the spawns that start carry the same values: Base Health, level, faction, display"
   assert dict.has_key(planted_world.by_id, SpawnId(1))
     && dict.has_key(real_world.by_id, SpawnId(1))
-    as "faction 0 starts in both: the client reads it as Neutral to both player factions (GetUnitDispositionTo 0x14045a950)"
+    as "faction 0 starts in both: the client reads it as Neutral to both player factions (`0x14045a950.faction_zero`)"
 }

@@ -41,7 +41,7 @@ import genesis_prime/world_map/map.{
   CreatureRefused, Left, NoPlayerHere, NotSummoned, SeenBy, Summoned,
 }
 import genesis_prime/world_map/spawn.{
-  Dead, FailsTheChecks, NoCreatureLevelRow, NoCreatureRow, WouldNotStart,
+  FailsTheChecks, NoCreatureLevelRow, NoCreatureRow, ServiceLink, WouldNotStart,
 }
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source.{RunOnly}
@@ -1115,8 +1115,10 @@ pub fn a_refused_creature_answers_one_system_line_naming_the_reason_test() -> Ni
         "not summoned: CreatureLevel 200 has no row",
       ),
       #(
-        CreatureRefused(WouldNotStart(Creature2Id(75_048), Dead)),
-        "not summoned: Creature2 75048 would not start as a spawn: health 0",
+        // Creature2 3107 is a flight master the client's tables link to a taxi
+        // node and no quest: the real summon of it answers this refusal.
+        CreatureRefused(WouldNotStart(Creature2Id(3107), ServiceLink)),
+        "not summoned: Creature2 3107 would not start as a spawn: a service link",
       ),
       #(
         map.CreatureNotStarted(reason: "the creature supervisor is not running"),

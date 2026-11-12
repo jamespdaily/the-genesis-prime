@@ -714,6 +714,10 @@ pub fn a_creature_row_with_no_faction_starts_test() -> Nil {
     as "the creature stands"
   assert standing.faction_id == 0 && standing.base_faction_id == 0
     as "the unit carries faction 0 and base faction 0, as its row gives them"
+  assert standing.combat.attackable == Attackable(exile: True, dominion: True)
+    as "Neutral to both player factions, it is attackable by both"
+  assert standing.combat.hostile_to == Hostile(exile: False, dominion: False)
+    as "and it fights neither on sight"
   assert left_out(selection:, reason: FriendlyToBoth) == 0
     && left_out(selection:, reason: spawn.ServiceLink) == 0
     && left_out(selection:, reason: Dead) == 0
@@ -723,17 +727,11 @@ pub fn a_creature_row_with_no_faction_starts_test() -> Nil {
 pub fn a_creature_with_no_faction_is_neutral_to_both_player_factions_test() -> Nil {
   use <- owned_test.run(5000)
   // GetFactionLevelTo `0x140787760` returns 5 when FindFactionEntry finds nothing
-  // for faction 0; FactionDispositionFromLevel `0x140787830` reads 5 as Neutral:
-  // attackable by both, and not Hostile on sight.
+  // for faction 0; FactionDispositionFromLevel `0x140787830` reads 5 as Neutral,
+  // which is no Hostile level (0 to 2).
   let tables = character_tables.content_tables()
   assert spawn.faction_levels(tables:, faction: 0) == #(5, 5)
     as "level 5 from the Exile faction 167 and from the Dominion faction 166"
-  assert faction_level.level(
-      levels: faction_level.build(tables:),
-      from: 166,
-      to: 0,
-    )
-    == 5
   assert spawn.hostile_to_players(
       levels: faction_level.build(tables:),
       faction_id: 0,
@@ -902,7 +900,7 @@ pub fn a_quest_creature_starts_test() -> Nil {
   // A quest does not bring back a creature the client would create dead (health
   // 0, `opcode.0x262.creature`): it stays out whatever the creature's quest list
   // holds, while a creature with no faction starts as any other does.
-  let refused =
+  let quest_selection =
     selected_beast_changed(changes: [#("questIdGiven00", Integer(5))], rows: [
       spawn.Row(..spawn_support.beast_row(number: 1), health: Some(0.0)),
       spawn.Row(
@@ -917,9 +915,9 @@ pub fn a_quest_creature_starts_test() -> Nil {
         health: Some(0.0),
       ),
     ])
-  assert started(refused) == [2]
+  assert started(quest_selection) == [2]
     as "a quest does not start a dead row, and the row with no faction starts"
-  assert left_out(selection: refused, reason: Dead) == 2
+  assert left_out(selection: quest_selection, reason: Dead) == 2
     as "the dead rows, the second of them Friendly to both"
 }
 
@@ -1390,7 +1388,8 @@ pub fn a_started_spawn_whose_visibility_prerequisite_has_no_row_fails_the_spawn_
   assert held.refusals == [] as "a prerequisite with a row loads"
   assert visibility_ids(selection: held) == [41_803]
     as "two started spawns of one prerequisite hold it once in their world's index"
-  // A row left out (health 0, so it never starts) names no prerequisite: its
+  // A row left out (health 0, so the client creates it dead,
+  // `opcode.0x262.creature`, and it never starts) names no prerequisite: its
   // creature's prerequisite is neither loaded nor required.
   let dead = fn(number) {
     spawn.Row(..spawn_support.beast_row(number:), health: Some(0.0))
