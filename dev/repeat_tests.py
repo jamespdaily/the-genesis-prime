@@ -185,8 +185,15 @@ def report_timeout(outcome: Outcome) -> None:
     print(
         "%s %s with seed %d was %s, so it counts as neither passed nor failed; repeat it: gleam test -- %s --seed %d"
         % (WARNING, run.file, run.seed, outcome.reason, run.file, run.seed),
-        flush=True,
     )
+    # A seed orders the tests but does not replay a hang (the rolls come from the
+    # operating system), so the log's end, where owned_test lists the waits still
+    # open, is the only record of what hung.
+    assert outcome.log is not None
+    lines = outcome.log.read_text(errors="replace").splitlines()
+    for line in lines[-EXCERPT_LINES:]:
+        print("    " + line)
+    sys.stdout.flush()
 
 
 def schedule(files: list[str], runs_per_file: int) -> list[Run]:
