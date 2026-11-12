@@ -113,6 +113,7 @@ import genesis_prime/table/id.{type Item2Id, Item2Id}
 import genesis_prime/table/item2
 import genesis_prime/table/loader/formula_requirement
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_path
 import gleam/bool
 import gleam/dict
 import gleam/float
@@ -394,9 +395,8 @@ fn in_range(
   interaction.within(
     player:,
     tables:,
-    path:,
+    place: creature_path.place_at(path:, now_ms:),
     creature_radius: hit_radius,
-    now_ms:,
     range: sale_range,
   )
 }

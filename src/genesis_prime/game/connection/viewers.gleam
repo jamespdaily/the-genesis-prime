@@ -129,6 +129,7 @@ import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/state.{type Session} as connection_state
+import genesis_prime/game/faction_level
 import genesis_prime/game/hit_radius
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
@@ -152,6 +153,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
+import genesis_prime/world_map/spawn
 import genesis_prime/world_map/static_object
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
@@ -702,7 +704,7 @@ fn names_own_unit(
 
 /// What the picture holds of a static object its 0x262 creates: the 0x262's creature,
 /// where it puts the unit and its display's hit radius, 0.0 for a display with no
-/// Creature2DisplayInfo row. The object stands in the world and zone of `world_place`,
+/// Creature2DisplayInfo row, and which player factions its faction is Hostile to. The object stands in the world and zone of `world_place`,
 /// the player's place. The server wrote the 0x262 with `static_object.create`, which
 /// always writes a position of finite numbers.
 fn object_shown(
@@ -719,12 +721,17 @@ fn object_shown(
     )
     |> result.map(fn(display) { hit_radius.of_creature(display:) })
     |> result.unwrap(0.0)
+  let faction_id = static_object.faction_id(created:)
   ShownObject(
     creature_id: static_object.creature_id(created:),
-    faction_id: static_object.faction_id(created:),
+    faction_id:,
     checklist_index: static_object.checklist_index(created:),
     place: start_place.moved(place: world_place, x:, y:, z:),
     hit_radius:,
+    hostile_to: spawn.hostile_to_players(
+      levels: faction_level.of(tables:),
+      faction_id:,
+    ),
   )
 }
 

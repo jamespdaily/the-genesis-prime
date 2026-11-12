@@ -1078,14 +1078,7 @@ fn combat_of(
           unit: faction_id,
         ),
       ),
-      hostile_to: Hostile(
-        exile: hostile_to(catalog:, player: exile_faction, unit: faction_id),
-        dominion: hostile_to(
-          catalog:,
-          player: dominion_faction,
-          unit: faction_id,
-        ),
-      ),
+      hostile_to: hostile_to_players(levels: catalog.factions, faction_id:),
       defence: defence_of(formulas:, level:, value:),
       attack:,
       interrupt_armor: interrupt_armor_in(value:),
@@ -1505,14 +1498,20 @@ fn attackable_by(
   <= highest_neutral_level
 }
 
-/// Whether a unit of the faction fights a player of the other on sight: its level
-/// toward the player's faction is Hostile, 0 to 2 (`world_data.creature_disposition`).
-fn hostile_to(
-  catalog catalog: Catalog,
-  player player: Int,
-  unit unit: Int,
-) -> Bool {
-  faction_level.hostile(levels: catalog.factions, from: player, to: unit)
+/// Which player factions a unit of the faction fights on sight: its level toward the
+/// player's faction is Hostile, 0 to 2 (`world_data.creature_disposition`).
+pub fn hostile_to_players(
+  levels levels: faction_level.Levels,
+  faction_id faction_id: Int,
+) -> creature_life.Hostile {
+  Hostile(
+    exile: faction_level.hostile(levels:, from: exile_faction, to: faction_id),
+    dominion: faction_level.hostile(
+      levels:,
+      from: dominion_faction,
+      to: faction_id,
+    ),
+  )
 }
 
 /// The reason a row that passed the load checks does not start, or `Error(Nil)`

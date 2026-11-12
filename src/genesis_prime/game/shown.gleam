@@ -19,6 +19,10 @@
 ////   player faction (worked out when the content loads, since Faction2 is a content-only
 ////   table, by genesis_prime/world_map/spawn). A Friendly creature, another player and the
 ////   caster are never struck.
+//// - **A talkable unit** (`talkable`) is a creature or a Simple object: the client's
+////   click on a unit checks its row, life, disposition and range and not its unit type,
+////   so an object is alive, never in combat, and Hostile to the players its faction is
+////   (`hostile_to`, filled when the object is shown).
 //// - **A running creature** is where its last path puts it at the time of the go
 ////   (genesis_prime/world_map/creature_path `place_at`), by the same function the
 ////   creature reads its own place with.
@@ -68,6 +72,9 @@ pub type Shown {
     /// Creature2DisplayInfo.hitRadius of its display, 0.0 when the display has no
     /// row.
     hit_radius: Float,
+    /// Which player factions the object is Hostile to (the client's own disposition of
+    /// the unit toward the player, `0x14045a950`), worked out from its faction.
+    hostile_to: Hostile,
   )
   /// A creature, as its 0x262 news gave it and its 0x638 news moved it.
   ShownCreature(
@@ -143,6 +150,77 @@ pub fn in_group(
         Ok(#(unit, _)) -> target_group.contains(tables:, group:, unit:)
         Error(Nil) -> False
       }
+  }
+}
+
+/// A unit a player may talk to, as the client's click reads it: what its 0x262 gave it
+/// and the body its reach and its disposition are judged on.
+pub type Talkable {
+  Talkable(
+    /// The Creature2 row of its 0x262.
+    creature_id: Creature2Id,
+    /// The Faction2 id its 0x262 gave it.
+    faction_id: Int,
+    /// The checklist index its 0x262 gave it.
+    checklist_index: Int,
+    /// Where the unit stands at the time asked.
+    place: Place,
+    /// Creature2DisplayInfo.hitRadius of its display.
+    hit_radius: Float,
+    /// False for a creature that died; a Simple unit is never created dead, so an
+    /// object is always alive (`opcode.0x262.simple`).
+    alive: Bool,
+    /// Which player factions the unit is Hostile to.
+    hostile_to: Hostile,
+  )
+}
+
+/// The shown creature or object as a click on it reads it, at monotonic time `now_ms`,
+/// or `Error(Nil)` for another player's unit. A static object is alive and never in
+/// combat, which the client's click accepts (`0x14047a060`, `0x1403add00`): it checks
+/// the unit's life, disposition and range and not its unit type.
+pub fn talkable(
+  shown shown: Shown,
+  now_ms now_ms: Int,
+) -> Result(Talkable, Nil) {
+  case shown {
+    ShownPlayer -> Error(Nil)
+    ShownObject(
+      creature_id:,
+      faction_id:,
+      checklist_index:,
+      place:,
+      hit_radius:,
+      hostile_to:,
+    ) ->
+      Ok(Talkable(
+        creature_id:,
+        faction_id:,
+        checklist_index:,
+        place:,
+        hit_radius:,
+        alive: True,
+        hostile_to:,
+      ))
+    ShownCreature(
+      creature_id:,
+      faction_id:,
+      checklist_index:,
+      path:,
+      alive:,
+      hit_radius:,
+      hostile_to:,
+      ..,
+    ) ->
+      Ok(Talkable(
+        creature_id:,
+        faction_id:,
+        checklist_index:,
+        place: creature_path.place_at(path:, now_ms:),
+        hit_radius:,
+        alive:,
+        hostile_to:,
+      ))
   }
 }
 
