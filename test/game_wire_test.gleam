@@ -4055,11 +4055,13 @@ fn world_with_the_markers_creatures(
   )
 }
 
-/// A level 1 Medic of the Exile holding quest 10518 with objectives 0 to 4 done, played into
-/// World 3460 12 beyond ring slot 0 and facing it, and read until both of Creature2
-/// 73492's 0x262 have arrived: the game, the burst's frames and the bytes beyond.
+/// A level 1 Medic of the Exile holding quest 10518 with objectives 0 to 4 done and `sixth`
+/// of the 3 kills the sixth asks, played into World 3460 12 beyond ring slot 0 and facing
+/// it, and read until both of Creature2 73492's 0x262 have arrived: the game, the burst's
+/// frames and the bytes beyond.
 fn a_medic_at_the_marker_ring(
   started started: login_support.Started,
+  sixth sixth: Int,
 ) -> #(game_client.Game, List(Frame), BitArray, Int) {
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(game, character) =
@@ -4077,7 +4079,9 @@ fn a_medic_at_the_marker_ring(
     as "the character is an Exile one (faction 167), which Creature2 73492 is hostile to"
   let assert Ok(_) =
     pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 10518, 1, 0, true, 31, '{5,1,1,1,2,0}', 0, '{0,0,0,0,0,0}', '{0,0,0,0,0,0}')",
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 10518, 1, 0, true, 31, '{5,1,1,1,2,"
+      <> int.to_string(sixth)
+      <> "}', 0, '{0,0,0,0,0,0}', '{0,0,0,0,0,0}')",
     )
     |> pog.parameter(pog.int(character))
     |> pog.execute(pool)
@@ -4215,7 +4219,7 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
   use tables <- on_rows_without_paralytic_surges_recharge()
   let time = driven_time.new()
   let started = world_with_the_markers_creatures(tables:, time:)
-  let #(game, frames, have, _) = a_medic_at_the_marker_ring(started:)
+  let #(game, frames, have, _) = a_medic_at_the_marker_ring(started:, sixth: 0)
   let shown = targets_in(frames:)
   assert list.map(shown, fn(creature) {
       game_client.placed_by_tail(tail: creature.tail)
@@ -4262,6 +4266,79 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
   login_support.stop(started)
 }
 
+/// Whether the frames hold the 0x35c that completes quest 10518 (state 3, objective 0).
+fn quest_10518_completed_in(frames frames: List(Frame)) -> Bool {
+  list.any(frames, fn(frame) {
+    frame.message_id == 0x035C
+    && quest_state.decode(frame.body)
+    == Ok(QuestState(quest_id: 10_518, state: 3, objective_id: 0))
+  })
+}
+
+pub fn the_last_kill_of_quest_10518_is_followed_by_0x35c_state_2_its_rewards_and_0x35c_state_3_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // Quest 10518 has no creature that receives it (`table_rows -- Creature2
+  // questIdReceive00=10518` names none), so the client shows it Achieved itself and only
+  // the server's 0x35c state 3 completes it (Quest2.10513.completion). The sixth objective
+  // has 2 of its 3 kills done, so the kill of the target at ring slot 0 is the last.
+  use tables <- on_rows_without_paralytic_surges_recharge()
+  let time = driven_time.new()
+  let started = world_with_the_markers_creatures(tables:, time:)
+  let #(game, frames, have, _) = a_medic_at_the_marker_ring(started:, sixth: 2)
+  let target = the_target_at_slot_0(frames:)
+  let slot = ring_slot(index: 0)
+  face(
+    game:,
+    yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
+      slot.0,
+      slot.2,
+    )),
+    clock: 100,
+  )
+  let #(killed, have) =
+    presses_until_the_target_dies(
+      time:,
+      game:,
+      have:,
+      target: target.unit_id,
+      cast_id: 1,
+      seen: [],
+    )
+  // No wait on time: the read goes on until the frame that completes the quest arrives.
+  let #(rest, _) =
+    game_client.read_until(game:, have:, found: fn(rest) {
+      quest_10518_completed_in(frames: list.append(killed, rest))
+    })
+  let quest_frames =
+    list.filter(list.append(killed, rest), fn(frame) {
+      list.contains([0x0361, 0x035C, 0x01AC], frame.message_id)
+    })
+  assert list.map(quest_frames, fn(frame) { frame.message_id })
+    == [0x01AC, 0x0361, 0x035C, 0x01AC, 0x035C]
+    as "the kill's experience, then the progress and the state 2 the kill makes, then the completion's experience and its state 3"
+  let assert [kill_experience, progress, achieved, reward, completed] =
+    quest_frames
+  assert experience_gained.decode(kill_experience.body)
+    |> result.map(fn(gained) { gained.source_kind })
+    == Ok(2)
+    as "opcode.0x1ac: the first experience is the kill's, kind 2"
+  assert progress.body
+    == message_support.packed([#(15, 10_518), #(32, 5), #(32, 3)])
+    as "opcode.0x361: objective 5 of quest 10518 is at 3 of 3"
+  assert quest_state.decode(achieved.body)
+    == Ok(QuestState(quest_id: 10_518, state: 2, objective_id: 0))
+    as "opcode.0x35c: the quest is Achieved"
+  assert experience_gained.decode(reward.body)
+    |> result.map(fn(gained) { #(gained.experience, gained.source_kind) })
+    == Ok(#(655, 3))
+    as "opcode.0x1ac: the quest's experience override 655, kind 3 (a quest), from the completion"
+  assert quest_state.decode(completed.body)
+    == Ok(QuestState(quest_id: 10_518, state: 3, objective_id: 0))
+    as "opcode.0x35c: the server completes the quest, state 3 with objective 0, last"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
 /// Returns when the creature of World 3460, unit `unit_id`, has taken all it was
 /// sent, so a timer its last step started is on the clock (as
 /// `the_creature_has_taken_what_it_was_sent`, which looks in World 1387). The
@@ -4303,7 +4380,7 @@ pub fn a_placed_target_respawns_at_its_slot_test() -> Nil {
   use tables <- on_rows_without_paralytic_surges_recharge()
   let time = driven_time.new()
   let started = world_with_the_markers_creatures(tables:, time:)
-  let #(game, frames, have, _) = a_medic_at_the_marker_ring(started:)
+  let #(game, frames, have, _) = a_medic_at_the_marker_ring(started:, sixth: 0)
   let target = the_target_at_slot_0(frames:)
   let slot = ring_slot(index: 0)
   face(

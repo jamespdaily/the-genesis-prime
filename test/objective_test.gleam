@@ -99,9 +99,10 @@
 ////   a group of both terminals, so the choice of each terminal is the server's.
 
 import fixture_tables
+import genesis_prime/game/communicator
 import genesis_prime/game/objective.{
-  Add, Advanced, Button, Cast, CastTarget, Killed, Remove, SendProgress,
-  SendState, TalkedTo, Used,
+  Add, Advanced, Button, Cast, CastTarget, CompleteByServer, Killed, Remove,
+  SendProgress, SendState, TalkedTo, Used,
 }
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place
@@ -111,7 +112,9 @@ import genesis_prime/table/id.{
   Creature2Id, Faction2Id, Item2Id, Spell4Id, UnitRaceId,
 }
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/quest2
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
@@ -379,6 +382,7 @@ pub fn a_kill_advances_each_open_type_2_objective_naming_the_creature_test() -> 
       SendProgress(quest_id: 1804, objective_index: 0, progress: 333),
       SendProgress(quest_id: 1857, objective_index: 0, progress: 1),
       SendState(quest_id: 1857, state: 2),
+      CompleteByServer(quest_id: 1857),
       SendProgress(quest_id: 1949, objective_index: 1, progress: 83),
     ]
     as "quests in id order: 1804's percent objective (count 3) is at floor(1000 / 3), 1857's (count 1) is a count and finishes the quest, 1949's objective 1 (count 12) is at floor(1000 / 12); 1859's objective 1963 waits for 1962, and the talk of 6961 and the use of 9207 are not kills"
@@ -1027,6 +1031,7 @@ pub fn settle_sends_progress_before_the_state_both_ways_test() -> Nil {
     == [
       SendProgress(quest_id: 1854, objective_index: 0, progress: 3),
       SendState(quest_id: 1854, state: 2),
+      CompleteByServer(quest_id: 1854),
     ]
     as "the third item: 0x361 then 0x35c 2"
   let down =
@@ -1083,6 +1088,7 @@ pub fn entering_a_zone_advances_open_type_17_objectives_in_its_chain_test() -> N
     == [
       SendProgress(quest_id: 1862, objective_index: 0, progress: 1),
       SendState(quest_id: 1862, state: 2),
+      CompleteByServer(quest_id: 1862),
     ]
     as "entering the zone finishes the visit and the quest"
   assert settled(log: entered.log, tables:, items: [], zones: [12])
@@ -1095,6 +1101,7 @@ pub fn entering_a_zone_advances_open_type_17_objectives_in_its_chain_test() -> N
     == [
       SendProgress(quest_id: 1862, objective_index: 0, progress: 1),
       SendState(quest_id: 1862, state: 2),
+      CompleteByServer(quest_id: 1862),
     ]
     as "a visit naming a parent zone counts in the child zone (prerequisite 26 walks parentZoneId upward)"
   assert settled(log:, tables: parent, items: [], zones: [4000])
@@ -1157,6 +1164,7 @@ pub fn settle_counts_a_visit_once_its_objective_opens_test() -> Nil {
     == [
       SendProgress(quest_id: 1862, objective_index: 0, progress: 1),
       SendState(quest_id: 1862, state: 2),
+      CompleteByServer(quest_id: 1862),
     ]
     as "a quest accepted in the zone counts its visit at accept"
 }
@@ -1561,6 +1569,7 @@ pub fn a_place_arrival_opens_a_finish_objective_that_counts_in_the_same_pass_tes
       SendProgress(quest_id: 9492, objective_index: 0, progress: 1),
       SendProgress(quest_id: 9492, objective_index: 1, progress: 1),
       SendState(quest_id: 9492, state: 2),
+      CompleteByServer(quest_id: 9492),
     ]
     as "the arrival completes 18249, which opens 18123, which counts in the same call"
 }
@@ -1850,6 +1859,7 @@ pub fn each_cast_counts_one_up_to_the_count_test() -> Nil {
             == [
               progress,
               SendState(quest_id: the_counted_cast_quest, state: 2),
+              CompleteByServer(quest_id: the_counted_cast_quest),
             ]
             as "row 5181's count is 20: the 20th cast changes the state"
           Nil
@@ -2351,6 +2361,7 @@ pub fn the_use_that_reaches_the_count_achieves_the_quest_test() -> Nil {
       [
         SendProgress(quest_id: 4522, objective_index: 0, progress: 5),
         SendState(quest_id: 4522, state: 2),
+        CompleteByServer(quest_id: 4522),
       ],
     ]
     as "five units count 1 to 5, and the fifth achieves the quest"
@@ -2698,4 +2709,154 @@ pub fn an_items_use_does_not_advance_a_type_32_objective_test() -> Nil {
   assert objective.advance(log:, tables:, event: a_use(collectible), now_ms: 0).effects
     == [SendProgress(quest_id: 3741, objective_index: 0, progress: 1)]
     as "the creature's own activate cast counts it"
+}
+
+// The server's completion of a quest no creature receives (`objective.CompleteByServer`).
+// Evidence: quests 1854, 1857 and 1862 have flags 0 and no Creature2 row receives them
+// (`communicator.completed_by_server`, whose whole-table measure is in
+// `communicator_tables_test`), while Creature2 74812 receives quest 10520
+// (`table_rows -- Creature2 questIdReceive00=10520`).
+
+/// Asserts the premise of a test: the client's tables hold this quest as one the server
+/// completes (or does not).
+fn assert_completed_by_server(
+  tables tables: table_store.Tables,
+  quest_id quest_id: Int,
+  is is: Bool,
+) -> Nil {
+  let assert Ok(row) = quest2.get(tables:, id: id.Quest2Id(quest_id))
+    as "the fixture holds the quest's row"
+  assert communicator.completed_by_server(tables:, quest: row) == is
+    as { "quest " <> int.to_string(quest_id) <> " is a server completion" }
+}
+
+pub fn a_kill_that_achieves_a_quest_no_creature_receives_emits_its_server_completion_after_state_2_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 1961 of quest 1857 (type 2, Creature2 5006, count 1) is its only one.
+  let tables = fixture_tables.shared()
+  assert_completed_by_server(tables:, quest_id: 1857, is: True)
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 1857, progress: [0]),
+    ])
+  let slain =
+    objective.advance(
+      log:,
+      tables:,
+      event: killed(creature: kill_target, faction: unlisted_faction),
+      now_ms: 0,
+    )
+  assert slain.effects
+    == [
+      SendProgress(quest_id: 1857, objective_index: 0, progress: 1),
+      SendState(quest_id: 1857, state: 2),
+      CompleteByServer(quest_id: 1857),
+    ]
+    as "the kill's 0x361, then 0x35c 2, then the server's completion of the quest"
+  assert quest_log.stored_state(log: slain.log, quest_id: 1857) == 2
+    as "the log holds the quest Achieved until the completion's answer"
+}
+
+pub fn a_settle_that_achieves_a_quest_no_creature_receives_emits_its_server_completion_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  assert_completed_by_server(tables:, quest_id: 1854, is: True)
+  assert_completed_by_server(tables:, quest_id: 1862, is: True)
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 1854, progress: [0]),
+      quest_support.accepted(quest_id: 1862, progress: [0]),
+    ])
+  let up =
+    settled(
+      log:,
+      tables:,
+      items: [held(item: 3993, at: 1, slot: 0, stack: 3)],
+      zones: [263],
+    )
+  assert up.effects
+    == [
+      SendProgress(quest_id: 1854, objective_index: 0, progress: 3),
+      SendState(quest_id: 1854, state: 2),
+      CompleteByServer(quest_id: 1854),
+      SendProgress(quest_id: 1862, objective_index: 0, progress: 1),
+      SendState(quest_id: 1862, state: 2),
+      CompleteByServer(quest_id: 1862),
+    ]
+    as "an item objective and a zone objective, each followed by the completion, in quest id order"
+  let down =
+    settled(
+      log: up.log,
+      tables:,
+      items: [held(item: 3993, at: 1, slot: 0, stack: 2)],
+      zones: [263],
+    )
+  assert down.effects
+    == [
+      SendProgress(quest_id: 1854, objective_index: 0, progress: 2),
+      SendState(quest_id: 1854, state: 1),
+    ]
+    as "a quest falling back to Accepted is not completed"
+}
+
+pub fn a_quest_a_creature_receives_achieved_emits_no_server_completion_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_objectives(edits: [])
+  assert_completed_by_server(tables:, quest_id: 10_520, is: False)
+  // Quest 10520's visit (objective index 4, zone 5998) is its last open objective; Dorian
+  // Walker (Creature2 74812) receives the quest.
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 10_520,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b01111,
+        progress: [7, 1, 1, 1, 0],
+      ),
+    ])
+  assert settled(log:, tables:, items: [], zones: [5998, 5997, 4961]).effects
+    == [
+      SendProgress(quest_id: 10_520, objective_index: 4, progress: 1),
+      SendState(quest_id: 10_520, state: 2),
+    ]
+    as "the player turns it in at the creature that receives it"
+}
+
+pub fn server_completions_lists_the_achieved_qualifying_quests_of_a_log_in_id_order_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: 10_520,
+        state: 2,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b11111,
+        progress: [7, 1, 1, 1, 1],
+      ),
+      quest_support.active(
+        quest_id: 1857,
+        state: 2,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 1,
+        progress: [1],
+      ),
+      quest_support.active(
+        quest_id: 1854,
+        state: 2,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 1,
+        progress: [3],
+      ),
+      quest_support.accepted(quest_id: 1862, progress: [0]),
+      quest_support.completed(quest_id: 5859, at: 1000),
+      quest_support.known(quest_id: 1806, state: 5),
+    ])
+  assert objective.server_completions(log:, tables:) == [1854, 1857]
+    as "the Achieved quests no creature receives, by quest id: not 10520 (received), 1862 (Accepted), 5859 (Completed) or 1806 (known only by its state)"
 }

@@ -12,8 +12,16 @@
 ////                                                0x1ac, 0x938 with the Level news, 0x919 and 0xDD, then 0x35C {quest, 3, 0}
 ////                       ItemsNotSaved:           Warning, nothing sent, nothing changed (the quest stays Achieved)
 ////                       SaveRefused(c):          Error naming c, nothing sent, nothing changed
+//// a quest Achieved that no creature receives ─▶ completed_by_server(quest, asker, progress, currencies, ...)
+////                                               the same refusals and Asks(turn_in), and the same answer, as a 0x35D with reward 0
 //// ```
 ////
+//// - **The server's completion** (`completed_by_server`) is a turn-in the server makes of a quest
+////   `communicator.completed_by_server` names, once it is Achieved, because the client offers no
+////   turn-in for it. It takes steps 2 and 3 as they are, with the state exactly Achieved (2), no
+////   death check, no receiver or communicator check and reward id 0, then the rewards below: a
+////   quest with a choice row is refused (nothing lets the player pick), as is one with a full bag
+////   (0x106 code 27), and the quest stays Achieved.
 //// - **The checks, in the order of the client's turn-in** (`opcode.0x35d`), each a log line
 ////   once per reason on the connection, because the client sends the message only from a dialog
 ////   it built from the same tables, so a refusal is a modified or stale client or a gap this
@@ -70,6 +78,9 @@
 //// | the store changes nothing or refuses a place | a warning, nothing sent, the quest stays Achieved |
 //// | the connection ends while the store works | the store finishes or rolls back; the next login loads whichever |
 //// | the same message while the store works | held, then taken against the new log |
+//// | the server's completion of a quest not Achieved, or one a creature receives or the communicator turns in | a logged refusal |
+//// | the server's completion of a quest with a reward choice | a logged refusal, the quest stays Achieved |
+//// | the server's completion with no room for a reward item | 0x106 code 27, the quest stays Achieved |
 
 import genesis_prime/client_connection
 import genesis_prime/game/communicator
@@ -185,9 +196,6 @@ const communicable_flag = 8
 /// Quest2 flags bits 0 and 2: a quest the client completes through a call from the server.
 const completes_by_call_flags = 5
 
-/// Quest2 flags bit 19: a quest of the contracts manager.
-const contract_flag = 0x80000
-
 /// Quest2Reward flags bit 0: the row is a choice.
 const choice_flag = 1
 
@@ -287,8 +295,8 @@ pub fn take(
     |> result.map_error(quest.NotDecoded),
   )
   use <- refused_when_dead(message:, life:, logged:)
-  case
-    checked(
+  taken_of(
+    checked: checked(
       message:,
       asker:,
       standing:,
@@ -299,8 +307,18 @@ pub fn take(
       tables:,
       now_ms:,
       unix_seconds:,
-    )
-  {
+    ),
+    logged:,
+  )
+}
+
+/// What the checks' outcome is taken as: a logged refusal, the one refusal the player is
+/// told of, or the turn-in to ask the store to save.
+fn taken_of(
+  checked checked: Result(#(TurnIn, List(#(String, String))), Stop),
+  logged logged: Set(String),
+) -> Taken {
+  case checked {
     Error(Declined(key:, text:)) -> {
       let #(level, logged) = interaction.log_level(key:, logged:)
       Refused(effects: [Log(level:, text:)], logged:)
@@ -316,6 +334,62 @@ pub fn take(
       Asks(turn_in:, effects: list.reverse(lines), logged:)
     }
   }
+}
+
+/// The server's completion of a quest no creature receives (`communicator.completed_by_server`),
+/// taken as a turn-in of it with no reward chosen: the client's 0x035D is never sent for such a
+/// quest, so the checks are the ones the server's own act needs. The quest must be in the log
+/// Achieved (exactly 2: no auto-complete from another state), and the rewards are computed and
+/// placed as a turn-in's. A quest with a reward choice is refused: nothing lets the player pick.
+pub fn completed_by_server(
+  quest_id quest_id: Int,
+  asker asker: quest.Asker,
+  progress progress: experience.Progress,
+  currencies currencies: Currencies,
+  item_proficiencies item_proficiencies: Int,
+  tables tables: table_store.Tables,
+  unix_seconds unix_seconds: Int,
+  logged logged: Set(String),
+) -> Taken {
+  let turning = "the server completes quest " <> int.to_string(quest_id)
+  taken_of(
+    checked: {
+      use #(row, state) <- result.try(row_and_state(
+        turning:,
+        quest_id:,
+        asker:,
+        tables:,
+      ))
+      use <- bool.guard(
+        when: state != 2,
+        return: Error(not_achieved(turning:, state:)),
+      )
+      use <- bool.guard(
+        when: !communicator.completed_by_server(tables:, quest: row),
+        return: Error(Declined(
+          key: "server completion",
+          text: turning
+            <> ", which a creature receives or the communicator turns in",
+        )),
+      )
+      rewarded(
+        turning:,
+        row:,
+        log: quest_log.complete(
+          log: asker.log,
+          quest_id:,
+          at_seconds: unix_seconds,
+        ),
+        reward_id: 0,
+        asker:,
+        progress:,
+        currencies:,
+        item_proficiencies:,
+        tables:,
+      )
+    },
+    logged:,
+  )
 }
 
 /// The refusal of a dead player's turn-in, which the client never sends: its dialog closes
@@ -361,29 +435,12 @@ fn checked(
 ) -> Result(#(TurnIn, List(#(String, String))), Stop) {
   let quest_id = message.quest_id
   let turning = "0x035D turns in quest " <> int.to_string(quest_id)
-  use known <- result.try(
-    quest_log.quest_of(tables:, id: quest_id)
-    |> result.map_error(fn(error) {
-      case error {
-        quest_log.NoQuestRow ->
-          Declined(
-            key: "unknown quest",
-            text: turning <> ", which has no Quest2 row",
-          )
-        quest_log.NoObjectiveRow(objective_id:) ->
-          Declined(
-            key: "quest row",
-            text: turning
-              <> ", whose QuestObjective row "
-              <> int.to_string(objective_id)
-              <> " is missing",
-          )
-      }
-    }),
-  )
-  let assert Ok(row) = quest2.get(tables:, id: Quest2Id(quest_id))
-    as "a quest the client's rows read has its Quest2 row"
-  let state = quest_log.state(log: asker.log, quest: known)
+  use #(row, state) <- result.try(row_and_state(
+    turning:,
+    quest_id:,
+    asker:,
+    tables:,
+  ))
   use log <- result.try(case message.by_communicator != 0 {
     True ->
       by_communicator_allows(
@@ -413,6 +470,68 @@ fn checked(
         <> " with no shown creature that receives it alive, not Hostile and within reach",
     )),
   )
+  rewarded(
+    turning:,
+    row:,
+    log:,
+    reward_id: message.reward_id,
+    asker:,
+    progress:,
+    currencies:,
+    item_proficiencies:,
+    tables:,
+  )
+}
+
+/// The quest's Quest2 row and the state the log holds for it, or the check of a quest the
+/// client's reader refuses.
+fn row_and_state(
+  turning turning: String,
+  quest_id quest_id: Int,
+  asker asker: quest.Asker,
+  tables tables: table_store.Tables,
+) -> Result(#(Quest2, Int), Stop) {
+  use known <- result.try(
+    quest_log.quest_of(tables:, id: quest_id)
+    |> result.map_error(fn(error) {
+      case error {
+        quest_log.NoQuestRow ->
+          Declined(
+            key: "unknown quest",
+            text: turning <> ", which has no Quest2 row",
+          )
+        quest_log.NoObjectiveRow(objective_id:) ->
+          Declined(
+            key: "quest row",
+            text: turning
+              <> ", whose QuestObjective row "
+              <> int.to_string(objective_id)
+              <> " is missing",
+          )
+      }
+    }),
+  )
+  let assert Ok(row) = quest2.get(tables:, id: Quest2Id(quest_id))
+    as "a quest the client's rows read has its Quest2 row"
+  Ok(#(row, quest_log.state(log: asker.log, quest: known)))
+}
+
+/// The turn-in of a quest whose state allows it, with the rewards computed and placed: the
+/// reward `reward_id` chosen among the choice rows, the fixed rows, the items placed in the
+/// bag, the credits and the experience; with the reward kinds it leaves out (each a log key
+/// and its line), or the first check that fails.
+fn rewarded(
+  turning turning: String,
+  row row: Quest2,
+  log log: QuestLog,
+  reward_id reward_id: Int,
+  asker asker: quest.Asker,
+  progress progress: experience.Progress,
+  currencies currencies: Currencies,
+  item_proficiencies item_proficiencies: Int,
+  tables tables: table_store.Tables,
+) -> Result(#(TurnIn, List(#(String, String))), Stop) {
+  let quest_id = row.id
   let rows = rewards_of(tables:, quest_id:)
   let #(choices, fixed) =
     list.partition(rows, fn(reward) {
@@ -420,7 +539,7 @@ fn checked(
     })
   use chosen <- result.try(chosen_reward(
     turning:,
-    reward_id: message.reward_id,
+    reward_id:,
     choices:,
     asker:,
     progress:,
@@ -462,6 +581,17 @@ fn checked(
   ))
 }
 
+/// The check of a quest the log holds in a state other than Achieved.
+fn not_achieved(turning turning: String, state state: Int) -> Stop {
+  Declined(
+    key: "state " <> int.to_string(state),
+    text: turning
+      <> ", whose state in the log is "
+      <> int.to_string(state)
+      <> " and not Achieved",
+  )
+}
+
 /// The log with the quest Completed, when its state allows a turn-in: Achieved (2), or, for
 /// a quest that completes without being taken (Quest2 flags bit 0), no entry, a Known one or
 /// a Completed one (the quest repeats) that passes the accept's checks but the one for a full
@@ -480,21 +610,13 @@ fn state_allows(
       quest_id: row.id,
       at_seconds: unix_seconds,
     )
-  let not_achieved =
-    Declined(
-      key: "state " <> int.to_string(state),
-      text: turning
-        <> ", whose state in the log is "
-        <> int.to_string(state)
-        <> " and not Achieved",
-    )
   let declined = fn(why) {
     Declined(key: "auto-complete", text: turning <> ", which " <> why)
   }
   case state, int.bitwise_and(row.flags, auto_complete_flag) != 0 {
     2, _ -> Ok(completed)
-    1, _ -> Error(not_achieved)
-    _, False -> Error(not_achieved)
+    1, _ -> Error(not_achieved(turning:, state:))
+    _, False -> Error(not_achieved(turning:, state:))
     _, True ->
       case
         quest.can_accept(
@@ -860,7 +982,7 @@ fn left_out(
       #("tradeskill reward kind", line("a tradeskill reward", "#677")),
     ),
     #(
-      int.bitwise_and(row.flags, contract_flag) != 0,
+      int.bitwise_and(row.flags, quest.contract_flag) != 0,
       #("contract reward", line("a contract reward", "#678")),
     ),
   ]

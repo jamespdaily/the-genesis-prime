@@ -28,6 +28,8 @@
 //// - **Built once**, when the tables load (genesis_prime/table/loader/derivation): the rows of
 ////   each quest they deliver (`0x14043add0`'s index by questIdDelivered) and the creatures that
 ////   receive each quest.
+//// - **A quest nobody can turn in** (`completed_by_server`): no receiver, no flag 0x10000 and
+////   no flag 0x80000. The client offers its player no turn-in, so the server completes it.
 
 import genesis_prime/game/faction_level
 import genesis_prime/game/quest
@@ -480,4 +482,18 @@ pub fn describe(refusal refusal: Refusal) -> String {
     Broken(error:) ->
       "whose delivering row's checks cannot be read: " <> quest.describe(error:)
   }
+}
+
+/// Whether the server completes the quest itself once it is Achieved: no creature
+/// receives it (no Creature2 row's questIdReceive names it), the communicator does not turn
+/// it in by a row (flag 0x10000), and it is no contract (flag 0x80000, whose completion is
+/// the contract's own). The client shows such a quest no turn-in at all, so without the
+/// server's completion it stays Achieved for ever.
+pub fn completed_by_server(
+  tables tables: table_store.Tables,
+  quest quest: Quest2,
+) -> Bool {
+  receivers_of(tables:, quest_id: quest.id) == []
+  && int.bitwise_and(quest.flags, by_row_flag) == 0
+  && int.bitwise_and(quest.flags, quest.contract_flag) == 0
 }

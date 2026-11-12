@@ -34,11 +34,22 @@ import genesis_prime/store.{Move, QuestRow, SavePlace}
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
+import planted_table.{Integer}
 import quest_support
+import quest_turn_in_support
 
 const deadline_timer = TimerId(11)
 
 const limits = [#(1872, 60_000), #(1806, 120_000)]
+
+/// The edits of the test that holds quest 1872 Achieved: the limits of `limits`, and Dorian
+/// Walker (Creature2 74812) receiving 1872 (`questIdReceive01`), because the server completes
+/// at once a quest that no creature receives, as the client's rows hold 1872.
+const achieved_changes = [
+  #("Quest2", 1872, [#("maxTimeAllowedMS", Integer(60_000))]),
+  #("Quest2", 1806, [#("maxTimeAllowedMS", Integer(120_000))]),
+  #("Creature2", 74_812, [#("questIdReceive01", Integer(1872))]),
+]
 
 /// 0x35C {quest 1872, state 4, objective 0} and the same for 1806.
 const botched_1872 = <<0x50, 0x07, 0x02, 0, 0, 0, 0, 0, 0, 0>>
@@ -384,7 +395,7 @@ fn achieved(
 
 pub fn an_achieved_timed_quest_is_not_botched_at_its_deadline_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- quest_support.with_time_limits(limits:)
+  use tables <- quest_turn_in_support.with_changes(changes: achieved_changes)
   // 1872 is achieved with a full timer (due at 61,000 ms) and 1806 accepted with
   // 90,000 ms left (due at 91,000 ms).
   let #(entered, entry) =

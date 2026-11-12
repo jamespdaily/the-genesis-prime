@@ -258,3 +258,51 @@ pub fn receiving_in(
     #("questIdReceive0" <> int.to_string(slot), Integer(quest_id)),
   ])
 }
+
+/// The change that leaves no creature receiving quest 5859. The client's Creature2 26071
+/// receives it in `questIdReceive00` (and the quest it needs, 6789, in `questIdReceive04`),
+/// so this is a quest the server would not complete as the client holds it: a test that has
+/// the server complete 5859 states this edit, and takes the quest's rewards from its rows.
+pub fn unreceived_5859() -> #(String, Int, List(#(String, Cell))) {
+  #("Creature2", 26_071, [#("questIdReceive00", Integer(0))])
+}
+
+/// What the server's completion of the scene's quest is taken as, with the shared tables.
+pub fn server_taken(
+  scene scene: Scene,
+  tables tables: table_store.Tables,
+) -> Taken {
+  quest_turn_in.completed_by_server(
+    quest_id: scene.quest_id,
+    asker: asker(scene:),
+    progress: Progress(experience: scene.experience, level: scene.level),
+    currencies: credits(total: scene.credits),
+    item_proficiencies: scene.proficiencies,
+    tables:,
+    unix_seconds:,
+    logged: scene.logged,
+  )
+}
+
+/// The turn-in the rule asks the store to save for the server's completion, which it must
+/// have accepted.
+pub fn server_asked(
+  scene scene: Scene,
+  tables tables: table_store.Tables,
+) -> #(quest_turn_in.TurnIn, List(Effect)) {
+  let assert quest_turn_in.Asks(turn_in:, effects:, ..) =
+    server_taken(scene:, tables:)
+    as "the completion passes every check, so the store is asked"
+  #(turn_in, effects)
+}
+
+/// The effects and log keys of a server completion the rule refused.
+pub fn server_refused(
+  scene scene: Scene,
+  tables tables: table_store.Tables,
+) -> #(List(Effect), Set(String)) {
+  let assert quest_turn_in.Refused(effects:, logged:) =
+    server_taken(scene:, tables:)
+    as "the completion breaks a check, so nothing is asked"
+  #(effects, logged)
+}

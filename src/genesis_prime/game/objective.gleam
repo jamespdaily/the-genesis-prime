@@ -45,8 +45,13 @@
 //// on a unit of the pane; and the objectives with no Spell4 row (7378, 8042, 9882, 16525,
 //// 16577 and 15816) hold no button and stay uncompletable.
 ////
+//// A quest that no creature receives (`communicator.completed_by_server`) is completed by
+//// the server once it is Achieved: the effect `CompleteByServer` follows the 0x35c that makes
+//// it Achieved, and `server_completions` lists the quests a log already holds Achieved.
+////
 //// A rule: the log and the event in, the log and the effects out.
 
+import genesis_prime/game/communicator
 import genesis_prime/game/departures
 import genesis_prime/game/objective_link
 import genesis_prime/game/place_objective
@@ -59,10 +64,11 @@ import genesis_prime/game/target_group
 import genesis_prime/store.{type HeldItem}
 import genesis_prime/table/id.{
   type Creature2Id, type Item2Id, type Spell4Id, Creature2Id, Item2Id,
-  PathSoldierActivateId, Spell4Id, TradeskillSchematic2Id,
+  PathSoldierActivateId, Quest2Id, Spell4Id, TradeskillSchematic2Id,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_soldier_activate
+import genesis_prime/table/quest2
 import genesis_prime/table/spell4
 import genesis_prime/table/tradeskill_schematic2
 import genesis_prime/world_map/game_number.{type GameNumbers}
@@ -213,6 +219,9 @@ pub fn button_changes(
 pub type Effect {
   SendProgress(quest_id: Int, objective_index: Int, progress: Int)
   SendState(quest_id: Int, state: Int)
+  /// The quest just became Achieved and no creature receives it: the server completes it
+  /// (genesis_prime/game/quest_turn_in `completed_by_server`). It sends nothing itself.
+  CompleteByServer(quest_id: Int)
 }
 
 /// The log after the event and the effects in order: a quest at a time in quest id
@@ -317,6 +326,7 @@ pub fn advance(
     fn(so_far, quest_id) {
       advance_quest(
         so_far:,
+        tables:,
         quest: quest_of(tables:, quest_id:),
         now_ms:,
         counts: fn(index, objective) {
@@ -479,6 +489,7 @@ fn is_the_terminals_choice(
 /// once. An Achieved quest still has its objectives with flag 0x20 open.
 fn advance_quest(
   so_far so_far: Advanced,
+  tables tables: table_store.Tables,
   quest quest: quest_log.Quest,
   now_ms now_ms: Int,
   counts counts: fn(Int, quest_log.Objective) -> Bool,
@@ -575,7 +586,10 @@ fn advance_quest(
       }
     })
   let state = case became_achieved {
-    True -> [SendState(quest_id: quest.id, state: achieved_state)]
+    True -> [
+      SendState(quest_id: quest.id, state: achieved_state),
+      ..completion_of(tables:, quest_id: quest.id)
+    ]
     False -> []
   }
   Advanced(
@@ -713,7 +727,13 @@ pub fn settle(
         )
       let after = quest_log.stored_state(log: settling.log, quest_id:)
       let state = case after != before {
-        True -> [SendState(quest_id:, state: after)]
+        True -> [
+          SendState(quest_id:, state: after),
+          ..case after == achieved_state {
+            True -> completion_of(tables:, quest_id:)
+            False -> []
+          }
+        ]
         False -> []
       }
       Advanced(
@@ -1016,4 +1036,34 @@ fn visits(
       })
       |> visits(quest:, zones:, now_ms:)
   }
+}
+
+/// The server's completion of the quest, when no creature receives it and the client's
+/// turn-in does not take it (`communicator.completed_by_server`): the effect that follows
+/// the 0x35c that makes it Achieved.
+fn completion_of(
+  tables tables: table_store.Tables,
+  quest_id quest_id: Int,
+) -> List(Effect) {
+  case quest2.get(tables:, id: Quest2Id(quest_id)) {
+    Ok(row) ->
+      case communicator.completed_by_server(tables:, quest: row) {
+        True -> [CompleteByServer(quest_id:)]
+        False -> []
+      }
+    Error(Nil) -> []
+  }
+}
+
+/// The quests of the log that are Achieved and that the server completes, in quest id
+/// order: what a login or an entry owes the player when the log already holds them.
+pub fn server_completions(
+  log log: QuestLog,
+  tables tables: table_store.Tables,
+) -> List(Int) {
+  quest_log.active_ids(log:)
+  |> list.filter(fn(quest_id) {
+    quest_log.stored_state(log:, quest_id:) == achieved_state
+    && completion_of(tables:, quest_id:) != []
+  })
 }

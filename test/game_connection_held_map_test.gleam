@@ -401,3 +401,59 @@ pub fn a_kill_during_the_periodic_save_counts_once_the_save_is_answered_test() -
   assert kill_sources(taken: answered) == [experience_support.creature_unit_id]
     as "one experience, for the unit that was killed"
 }
+
+pub fn a_held_kill_that_achieves_a_quest_leaves_the_next_held_message_for_the_completion_answer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 1857 (no creature receives it) is Achieved by the kill of unit 7, held during the
+  // buy; the kill of unit 8 is held behind it. The server completes the quest right after
+  // the first kill is taken, so the second waits for the completion's answer.
+  use state, taken <- buying
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: kill_of(
+        unit_id: experience_support.creature_unit_id,
+        stay: connection_support.own_stay(),
+      ),
+    )
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: kill_of(unit_id: 8, stay: connection_support.own_stay()),
+    )
+  let #(state, bought) =
+    connection_support.answer(state:, taken:, outcome: buy_saved())
+  assert list.drop_while(connection_support.written_ids(bought), fn(id) {
+      id != 0x0111
+    })
+    == [0x0111, 0x01AC, 0x0361, 0x035C]
+    as "the buy's frames and the first kill's; the second kill is not taken while the completion waits"
+  assert kill_sources(taken: bought) == [experience_support.creature_unit_id]
+  let assert client_connection.AskStore(store.Items(store.TurnInQuest(
+    quests:,
+    credits_held:,
+    credits_after:,
+    ..,
+  ))) = connection_support.ask_request(bought)
+    as "the quest no creature receives is completed by the server: the store is asked"
+  assert list.map(quests, fn(row) { #(row.quest_id, row.state) })
+    == [#(1857, 3)]
+    as "the log is saved with the quest Completed"
+  assert credits_held == 33
+    as "the credits the buy left, which the completion's answer adds to"
+  let #(_, completed) =
+    connection_support.answer(
+      state:,
+      taken: bought,
+      outcome: step.Answer(
+        FromStore(
+          store.ForItems(store.TurnedIn(credits: credits_after, made: [])),
+        ),
+      ),
+    )
+  let ids = connection_support.written_ids(completed)
+  assert list.drop(ids, list.length(ids) - 2) == [0x035C, 0x01AC]
+    as "the completion's frames end with the quest's state, then the held kill is taken"
+  assert list.last(kill_sources(taken: completed)) == Ok(8)
+    as "the experience of the second kill is the last frame"
+}

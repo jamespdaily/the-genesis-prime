@@ -242,11 +242,14 @@ pub fn the_content_tables_are_committed_and_each_root_reaches_a_committed_row_te
     as "the Worlds the tests' maps run in"
   assert fixture_tables.committed_ids(creature2_outfit_info.schema)
     == [
-      7475, 7909, 7912, 8009, 8201, 8563, 8599, 8612, 8632, 8775, 8952, 8979,
-      9003, 9024, 9029, 9052, 9064, 9065, 9074, 9080, 9152, 9350, 9351, 9659,
-      9739, 9777, 9796, 9824,
+      7475, 7480, 7491, 7909, 7912, 7915, 7943, 8009, 8078, 8155, 8201, 8563,
+      8599, 8612, 8632, 8775, 8952, 8978, 8979, 8991, 8998, 9003, 9004, 9016,
+      9018, 9024, 9027, 9029, 9052, 9058, 9063, 9064, 9065, 9066, 9068, 9073,
+      9074, 9075, 9080, 9094, 9103, 9107, 9152, 9160, 9179, 9184, 9194, 9195,
+      9204, 9350, 9351, 9430, 9488, 9497, 9527, 9659, 9700, 9739, 9777, 9796,
+      9804, 9806, 9824, 10_329, 10_342, 10_372,
     ]
-    as "Creature2OutfitInfo holds the rows the outfit group roots 8170, 10355 and 10359 point to, the one Creature2 11467's group 9675 points to, the one Creature2 12909's group 8607 points to, the one Creature2 74812's group points to, the one Creature2 28739's group 9725 points to, the one the vendors 24491, 27039, 27230 and 50889's group 10505 points to, the one Creature2 57050's group 9766 points to, the one Creature2 11063, 12959 and 16622's group 9756 points to, the one Creature2 11066's group 9757 points to, the one Creature2 74861's group 9772 points to, the two Creature2 73492 and 73567's group 10539 points to (9739 and 9824), the one Creature2 73473 and 73566's group 10572 points to (9796), the one Creature2 53445's group 8704 points to (8009), and none for 8181's 7486, which the client lacks, and the one each creature of the type 23 objectives' groups points to: Creature2 52900 to 52905 (9258, 9470, 9307, 9327, 8896 and 9294, the captives of quest 9122's group 8374), 16645 to 16647 (9024, group 9720), 24310 (9003, group 9699), and 30826 and 30827 (9659, group 10408), and the one each creature of the cast objectives' groups points to: Creature2 34081 (9052, group 9747) and 41604 (9152, group 9839), and the one Creature2 17107's group 8604 points to (7909)"
+    as "Creature2OutfitInfo holds the rows the outfit group roots 8170, 10355 and 10359 point to, the one Creature2 11467's group 9675 points to, the one Creature2 12909's group 8607 points to, the one Creature2 74812's group points to, the one Creature2 28739's group 9725 points to, the one the vendors 24491, 27039, 27230 and 50889's group 10505 points to, the one Creature2 57050's group 9766 points to, the one Creature2 11063, 12959 and 16622's group 9756 points to, the one Creature2 11066's group 9757 points to, the one Creature2 74861's group 9772 points to, the two Creature2 73492 and 73567's group 10539 points to (9739 and 9824), the one Creature2 73473 and 73566's group 10572 points to (9796), the one Creature2 53445's group 8704 points to (8009), and none for 8181's 7486, which the client lacks, and the one each creature of the type 23 objectives' groups points to: Creature2 52900 to 52905 (9258, 9470, 9307, 9327, 8896 and 9294, the captives of quest 9122's group 8374), 16645 to 16647 (9024, group 9720), 24310 (9003, group 9699), and 30826 and 30827 (9659, group 10408), and the one each creature of the cast objectives' groups points to: Creature2 34081 (9052, group 9747) and 41604 (9152, group 9839), and the one Creature2 17107's group 8604 points to (7909), and the ones the groups of the creatures that receive the fixture's quests point to"
   list.each(
     [
       #(creature2.schema, 73_464),

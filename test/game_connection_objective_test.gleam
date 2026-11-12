@@ -81,6 +81,7 @@ import message_support
 import owned_test
 import planted_table.{Integer}
 import quest_support
+import quest_turn_in_support
 import spawn_support
 import vendor_support
 import world_entry_support
@@ -920,19 +921,13 @@ pub fn destroying_a_collected_item_lowers_its_progress_test() -> Nil {
   use <- owned_test.run(10_000)
   // The player holds 1 + 2 of item 14838, so quest 1854 is Achieved, as the log saved
   // it. Objective 1959 names item 3993, which the Item2 table lacks, so its data is
-  // changed to 14838, a row the destroy can look up.
-  let rows = case
-    fixture_tables.change(
-      rows: fixture_tables.rows(),
-      table: "QuestObjective",
-      id: 1959,
-      with: [#("data", Integer(14_838))],
-    )
-  {
-    Ok(changed) -> changed
-    Error(refusal) -> panic as fixture_tables.describe(refusal)
-  }
-  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  // changed to 14838, a row the destroy can look up. No creature receives quest 1854 in
+  // the client's rows, so the server would complete it on entry; Dorian Walker is given it
+  // (`questIdReceive01`) so the player holds it Achieved, as this test is about.
+  use tables <- quest_turn_in_support.with_changes(changes: [
+    #("QuestObjective", 1959, [#("data", Integer(14_838))]),
+    #("Creature2", 74_812, [#("questIdReceive01", Integer(1854))]),
+  ])
   let #(state, _) =
     connection_support.entered_with_quests_and_items_on(
       tables:,

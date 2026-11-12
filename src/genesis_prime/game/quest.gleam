@@ -186,7 +186,7 @@ const communicator_flag = 0x4
 const repeats_flag = 0x20
 
 /// The Quest2 flag of a contract.
-const contract_flag = 0x80000
+pub const contract_flag = 0x80000
 
 /// The Episode flag that lets any of its quests be taken.
 const episode_open_flag = 0x10
