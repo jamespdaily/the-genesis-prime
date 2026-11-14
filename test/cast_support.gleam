@@ -8,6 +8,7 @@
 //// with a cooldown of its own, or a cast method the rule does not cast:
 //// `blocked_only` (kind 2), `exempt`, `slow` and `unbuilt` (PressHold).
 
+import attacker_support
 import class_resource_support
 import client_tables
 import game_client
@@ -264,7 +265,7 @@ pub fn caster() -> Caster {
     in_combat: False,
     life_vitals: dict.new(),
     factions: prerequisite.Factions(current: 167, base: 167),
-    stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
+    stats: attacker_support.fresh(),
     vitals: damage.Vitals(health: 0, max_health: 0, shield: 0, max_shield: 0),
     quests: quest_support.log_of(rows: []),
     player: prerequisite.Player(

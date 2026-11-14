@@ -7,17 +7,21 @@
 //// Spell4Effects row ─▶ Formula (once, in genesis_prime/game/spell_area)
 //// Formula + Attacker ─▶ value = M x (S + R)
 //// Formula + OnCaster ─▶ the same, F also reading the caster's vitals
-////   S = sum of each parameter value x the caster's stat for types 12 and 13, rounded
+////   S = sum of each parameter value x the caster's stat for types 1 to 5, 11, 12 and 13, rounded
 ////   R = (dataBits01 + F) x dataBits00 as a float, F = sum of each parameter value x the caster's level for type 10
 //// ```
 ////
-//// - **The stat part** S uses the caster's Assault Power (parameter type 12) and
-////   Support Power (13), which are its Assault Rating and Support Rating times 0.25
-////   (`0x140462930`, `0x140462980`, GameFormula 1266), and rounds half away from
-////   zero (`0x140566d40`).
+//// - **The stat part** S uses the caster's Strength, Dexterity, Technology, Magic and
+////   Wisdom (parameter types 1 to 5, UnitProperty2 0 to 4) and Stamina (11, property
+////   40), each its live property value, and its Assault Power (12) and Support Power
+////   (13), which are its Assault Rating and Support Rating times 0.25 (`0x140462930`,
+////   `0x140462980`, GameFormula 1266). The sum is rounded half away from zero once
+////   (`0x140566d40`).
 //// - **The flat part** F reads the caster's level (type 10) (`0x140566ad0`).
-//// - **What is not built:** every other parameter type, which reads an attribute the
-////   level-1 abilities' rows never name or a health or shield of the target; a
+//// - **Types 6 and 9** add nothing: both parts' switches send them to their default
+////   (`Spell4Effects.parameterType.6_9`).
+//// - **What is not built:** the target's and the caster's health and shield (types 7,
+////   8, 14 to 17, 19, 21 to 23, 25 and 26, #791) and the passed-in value (18, #336); a
 ////   formula that names one is refused at load (genesis_prime/game/spell_area,
 ////   `unread`).
 //// - **The multiplier** M is the caster's DamageDealtMultiplier for the damage type,
@@ -33,6 +37,7 @@
 ////   reads Strength and Assault Power and is held under a cap that grows with the
 ////   level by GameFormula 712 (`0x140565600`).
 
+import genesis_prime/game/unit_properties
 import genesis_prime/message/float32
 import genesis_prime/table/spell4_effects
 import gleam/float
@@ -93,24 +98,68 @@ fn parameters_of(
   ]
 }
 
-/// Whether the formula gives 0 to every caster: no stat parameter (kind 12 or 13) has a
-/// value, and the multiplier is 0.0 or the base is 0.0 with no flat parameter (any other
-/// kind) that has a value. Such a row has no amount the server can read, whatever the
-/// caster's stats.
+/// Whether the formula gives 0 to every caster: no stat parameter (kind 1 to 5, 11, 12 or
+/// 13) has a value, and the multiplier is 0.0 or the base is 0.0 with no flat parameter
+/// (any kind but these, 0, 6 and 9) that has a value. Such a row has no amount the server
+/// can read, whatever the caster's stats.
 pub fn gives_nothing(formula formula: Formula) -> Bool {
   let has_value = fn(is_kind) {
     list.any(formula.parameters, fn(parameter) {
       parameter.value != 0.0 && is_kind(parameter.kind)
     })
   }
-  let stat = has_value(fn(kind) { kind == 12 || kind == 13 })
-  let flat = has_value(fn(kind) { kind != 0 && kind != 12 && kind != 13 })
+  let stat = has_value(is_stat)
+  let flat = has_value(fn(kind) { !is_stat(kind) && !adds_nothing(kind) })
   !stat && { formula.multiplier == 0.0 || { formula.base == 0.0 && !flat } }
 }
 
-/// What the formula reads of the caster: its level and its two ratings.
+/// What the formula reads of the caster: its level, its two ratings and its six
+/// attributes.
 pub type Attacker {
-  Attacker(level: Int, assault_rating: Float, support_rating: Float)
+  Attacker(
+    level: Int,
+    assault_rating: Float,
+    support_rating: Float,
+    attributes: Attributes,
+  )
+}
+
+/// A caster's six attributes, which parameter types 1 to 5 and 11 read (`0x140566d40`):
+/// UnitProperty2 Strength (0), Dexterity (1), Technology (2), Magic (3), Wisdom (4) and
+/// Stamina (40).
+pub type Attributes {
+  Attributes(
+    strength: Float,
+    dexterity: Float,
+    technology: Float,
+    magic: Float,
+    wisdom: Float,
+    stamina: Float,
+  )
+}
+
+/// What the formula reads of a player caster at `level` with `properties`: the live
+/// value of each rating and attribute, as the client reads each of its unit
+/// (`0x140466a70`). A player starts each at its UnitProperty2 defaultValue
+/// (`0x1404584b0`), the attributes at 1.0.
+pub fn attacker_of(
+  properties properties: unit_properties.Properties,
+  level level: Int,
+) -> Attacker {
+  let read = fn(property) { unit_properties.value(properties:, property:) }
+  Attacker(
+    level:,
+    assault_rating: read(unit_properties.assault_rating),
+    support_rating: read(unit_properties.support_rating),
+    attributes: Attributes(
+      strength: read(unit_properties.strength),
+      dexterity: read(unit_properties.dexterity),
+      technology: read(unit_properties.technology),
+      magic: read(unit_properties.magic),
+      wisdom: read(unit_properties.wisdom),
+      stamina: read(unit_properties.stamina),
+    ),
+  )
 }
 
 /// A parameter type the formula does not read for a player caster, which fails
@@ -129,7 +178,8 @@ pub fn power_of(rating rating: Float) -> Float {
 }
 
 /// The first parameter type of the formula that is not built, or `None` when the
-/// formula reads only what a player caster holds: the level and the two powers.
+/// formula reads only what a player caster holds: the level, the six attributes and the
+/// two powers, besides types 6 and 9, which add nothing.
 pub fn unread(formula formula: Formula) -> Option(Unread) {
   first_unread(formula:, is_read:)
 }
@@ -147,7 +197,7 @@ fn first_unread(
 }
 
 fn is_read(kind: Int) -> Bool {
-  kind == 10 || kind == 12 || kind == 13 || kind == 0
+  kind == 10 || is_stat(kind) || adds_nothing(kind)
 }
 
 /// The effect's value for a player caster, before any rounding to a whole number
@@ -171,13 +221,7 @@ fn value_with(
 ) -> Float {
   let stat_part =
     list.fold(formula.parameters, 0.0, fn(sum, parameter) {
-      case parameter.kind {
-        12 ->
-          sum +. parameter.value *. power_of(rating: attacker.assault_rating)
-        13 ->
-          sum +. parameter.value *. power_of(rating: attacker.support_rating)
-        _ -> sum
-      }
+      sum +. parameter.value *. stat_of(attacker:, kind: parameter.kind)
     })
   let flat_part =
     list.fold(formula.parameters, 0.0, fn(sum, parameter) {
@@ -185,6 +229,40 @@ fn value_with(
     })
   let row_part = { formula.base +. flat_part } *. formula.multiplier
   int.to_float(float.round(stat_part)) +. row_part
+}
+
+/// The caster's stat that a parameter type names in the stat part (`0x140566d40`): 1 to
+/// 5 Strength, Dexterity, Technology, Magic and Wisdom, 11 Stamina, 12 the Assault Power
+/// and 13 the Support Power; 0.0 for any other type, which the stat part skips.
+fn stat_of(attacker attacker: Attacker, kind kind: Int) -> Float {
+  let attributes = attacker.attributes
+  case kind {
+    1 -> attributes.strength
+    2 -> attributes.dexterity
+    3 -> attributes.technology
+    4 -> attributes.magic
+    5 -> attributes.wisdom
+    11 -> attributes.stamina
+    12 -> power_of(rating: attacker.assault_rating)
+    13 -> power_of(rating: attacker.support_rating)
+    _ -> 0.0
+  }
+}
+
+/// Whether the stat part reads the parameter type (`0x140566d40`): the six attributes
+/// and the two powers.
+fn is_stat(kind: Int) -> Bool {
+  case kind {
+    1 | 2 | 3 | 4 | 5 | 11 | 12 | 13 -> True
+    _ -> False
+  }
+}
+
+/// Whether the parameter type adds nothing to either part: 0 names no parameter, and 6
+/// and 9 fall to the default case of both `0x140566d40` and `0x140566ad0`
+/// (`Spell4Effects.parameterType.6_9`).
+fn adds_nothing(kind: Int) -> Bool {
+  kind == 0 || kind == 6 || kind == 9
 }
 
 /// What the formula reads of a caster that is also the target of its effect: its
@@ -199,31 +277,22 @@ pub type Vitals {
 }
 
 /// The first parameter type of the formula that an effect on its caster does not read,
-/// or `None`: it reads the stat kinds 12 and 13 and the flat kinds 7, 8, 10, 14 to 17,
-/// 19, 21 to 23, 25 and 26 (`0x140565600`, `0x140566ad0`); the attributes (1 to 5 and
-/// 11) and the passed-in value (18) are not read.
+/// or `None`: it reads the stat kinds 1 to 5 and 11 to 13 and the flat kinds 7, 8, 10, 14
+/// to 17, 19, 21 to 23, 25 and 26 (`0x140565600`, `0x140566d40`, `0x140566ad0`), and 6
+/// and 9 add nothing; the passed-in value (18, #336) is not read.
 pub fn caster_unread(formula formula: Formula) -> Option(Unread) {
   first_unread(formula:, is_read: is_read_on_caster)
 }
 
 fn is_read_on_caster(kind: Int) -> Bool {
+  is_stat(kind) || adds_nothing(kind) || is_vital_on_caster(kind)
+}
+
+/// Whether the flat part reads the parameter type of an effect on its caster
+/// (`0x140566ad0`): the level and the caster's own health and shield.
+fn is_vital_on_caster(kind: Int) -> Bool {
   case kind {
-    0
-    | 7
-    | 8
-    | 10
-    | 12
-    | 13
-    | 14
-    | 15
-    | 16
-    | 17
-    | 19
-    | 21
-    | 22
-    | 23
-    | 25
-    | 26 -> True
+    7 | 8 | 10 | 14 | 15 | 16 | 17 | 19 | 21 | 22 | 23 | 25 | 26 -> True
     _ -> False
   }
 }

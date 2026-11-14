@@ -107,7 +107,6 @@ import genesis_prime/game/spell_area
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell.{type Answered}
 import genesis_prime/game/target_group
-import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/step.{
@@ -768,19 +767,12 @@ pub fn caster_of(
   )
 }
 
-/// What the player's damage and heals read of it: its level and its Assault and Support
-/// Rating.
+/// What the player's damage and heals read of it: its level, its Assault and Support
+/// Rating and its attributes.
 fn stats_of(entered entered: world_entry.Entered) -> damage.Attacker {
-  damage.Attacker(
+  damage.attacker_of(
+    properties: entered.properties,
     level: connection_state.level_of(entered:),
-    assault_rating: unit_properties.value(
-      properties: entered.properties,
-      property: unit_properties.assault_rating,
-    ),
-    support_rating: unit_properties.value(
-      properties: entered.properties,
-      property: unit_properties.support_rating,
-    ),
   )
 }
 

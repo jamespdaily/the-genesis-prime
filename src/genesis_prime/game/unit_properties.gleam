@@ -98,6 +98,21 @@ import gleam/list
 import gleam/option.{Some}
 import gleam/result
 
+/// Strength (0): the attribute a formula's parameter type 1 reads (`0x140566d40`).
+pub const strength = UnitProperty2Id(0)
+
+/// Dexterity (1): the attribute a formula's parameter type 2 reads (`0x140566d40`).
+pub const dexterity = UnitProperty2Id(1)
+
+/// Technology (2): the attribute a formula's parameter type 3 reads (`0x140566d40`).
+pub const technology = UnitProperty2Id(2)
+
+/// Magic (3): the attribute a formula's parameter type 4 reads (`0x140566d40`).
+pub const magic = UnitProperty2Id(3)
+
+/// Wisdom (4): the attribute a formula's parameter type 5 reads (`0x140566d40`).
+pub const wisdom = UnitProperty2Id(4)
+
 /// BaseHealth (7): the maximum health `Unit:GetMaxHealth` reads
 /// (`Unit.GetMaxHealth`).
 pub const base_health = UnitProperty2Id(7)
@@ -110,6 +125,9 @@ pub const assault_rating = UnitProperty2Id(35)
 
 /// SupportRating (36): the rating the damage formulas read.
 pub const support_rating = UnitProperty2Id(36)
+
+/// Stamina (40): the attribute a formula's parameter type 11 reads (`0x140566d40`).
+pub const stamina = UnitProperty2Id(40)
 
 /// ShieldCapacityMax (41): the most shield a unit holds.
 pub const shield_capacity_max = UnitProperty2Id(41)

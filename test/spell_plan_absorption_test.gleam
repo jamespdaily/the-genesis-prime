@@ -17,8 +17,10 @@
 ////   lifetime and an absorb on a struck unit are not known, so the load fails for them.
 //// - `opcode.0x7f4.effect_time`: a row whose Spell4Effects flags have bit 2 never ends; 33
 ////   rows of duration 0 hold flags bit 2.
-//// - `0x140565600`: the formula's parameter kinds the caster's value reads; 3 (an
-////   attribute) and 18 (the passed-in value) are not read.
+//// - `0x140565600`: the formula's parameter kinds the caster's value reads; 18 (the
+////   passed-in value) is not read. Row 68969 (Water Shield - Pell Water, Spell4 34700):
+////   targetFlags 1, delayTime 0, durationTime 10000, flags 0, dataBits00 1.0, dataBits01
+////   0, parameterType00 4 (Magic, `0x140566d40` case 4) with value 5.0.
 //// - `Spell4Effects.targetFlags`: bit 1 the caster, 2 the primary target, 4 the area. The
 ////   primary target of a cast on the caster is the caster; a child a Proxy starts on each
 ////   struck unit has that unit as its primary target.
@@ -286,10 +288,20 @@ pub fn an_absorption_row_with_no_lifetime_fails_the_load_and_one_with_flags_bit_
     as "the client gives an effect whose flags have bit 2 no end timer"
 }
 
+pub fn the_water_shield_row_68969_loads_as_an_absorb_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(absorb) =
+    modifier_of(spell4_id: 34_700, effect: client_effect(id: 68_969))
+    as "Water Shield - Pell Water: Magic (kind 4) x 5.0 is read for an effect on its caster (0x140566d40 case 4)"
+  assert absorb.row
+    == LastingRow(delay_ms: 0, duration_ms: 10_000, until_removed: False)
+    as "row 68969: delayTime 0, durationTime 10000, flags 0"
+}
+
 pub fn an_absorption_row_with_a_formula_kind_not_read_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Kind 3 is an attribute and 18 the passed-in value: `damage.caster_unread` refuses
-  // both for an effect on its caster (0x140565600).
+  // Kind 18 is the passed-in value: `damage.caster_unread` refuses it for an effect on its
+  // caster (0x140565600).
   let with_kind = fn(kind) {
     plan_error(
       row: absorption_row(id: 99_064, target_flags: 1, columns: [
@@ -299,12 +311,6 @@ pub fn an_absorption_row_with_a_formula_kind_not_read_fails_the_load_test() -> N
       ]),
     )
   }
-  assert with_kind(3)
-    == spell_plan.AbsorptionParameterNotRead(
-      spell4_id: strike,
-      effect_id: 99_064,
-      parameter_kind: 3,
-    )
   assert with_kind(18)
     == spell_plan.AbsorptionParameterNotRead(
       spell4_id: strike,
@@ -404,10 +410,10 @@ pub fn effect_kind_reads_absorption_aimed_at_the_caster_and_the_measure_counts_t
   )
     as "and one with flags bit 2 is read"
   assert !counted(
-    Spell4Effects(..spectral_form_row(), parameter_type01: 3),
+    Spell4Effects(..spectral_form_row(), parameter_type01: 18),
     none,
   )
-    as "a formula kind not read is refused"
+    as "a formula kind not read (18, the passed-in value) is refused"
   assert !counted(
     Spell4Effects(..spectral_form_row(), data_bits01: 2_139_095_040),
     none,
