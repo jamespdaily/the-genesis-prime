@@ -17,6 +17,7 @@ import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/class_resource
 import genesis_prime/game/damage
+import genesis_prime/game/heal_split
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
@@ -95,7 +96,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     controls: [],
     stealth: [],
     remove_stealth: [],
-    shield_heals: [],
+    heals: [],
     stealth_change: spell_plan.EndsStealthAtEachGo,
     procs: [],
     cooldown_start: AtFirstGo,
@@ -266,6 +267,7 @@ pub fn caster() -> Caster {
     factions: prerequisite.Factions(current: 167, base: 167),
     stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
     vitals: damage.Vitals(health: 0, max_health: 0, shield: 0, max_shield: 0),
+    heal_scaling: heal_split.unscaled,
     quests: quest_support.log_of(rows: []),
     player: prerequisite.Player(
       race_id: 1,
@@ -473,7 +475,7 @@ pub fn property_starts(
   list.filter_map(caster_change_starts(effects:), fn(start) {
     case start.1 {
       cast.Property(modifier:) -> Ok(#(start.0, modifier))
-      cast.ShieldHeal(..) | cast.Look(..) | cast.Absorb(..) -> Error(Nil)
+      cast.Heal(..) | cast.Look(..) | cast.Absorb(..) -> Error(Nil)
     }
   })
 }

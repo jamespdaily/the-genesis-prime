@@ -18,7 +18,7 @@
 ////   starts at the go plus its delay and ends after its duration by a timer of its own; a
 ////   node taken off the caster, a persistence that stops holding and the caster's death
 ////   end it and cancel its timers.
-//// - The gates' rule (`cast_shield_heal_test`): a go's effects read the caster as it
+//// - The gates' rule (`cast_heal_test`): a go's effects read the caster as it
 ////   stood before the go's own effects.
 
 import attacker_support
@@ -92,7 +92,7 @@ fn starts(effects effects: List(Effect)) -> List(#(Source, Int, Int)) {
   list.filter_map(support.caster_change_starts(effects:), fn(start) {
     case start.1 {
       cast.Absorb(amount:, mask:) -> Ok(#(start.0, amount, mask))
-      cast.Property(..) | cast.ShieldHeal(..) | cast.Look(..) -> Error(Nil)
+      cast.Property(..) | cast.Heal(..) | cast.Look(..) -> Error(Nil)
     }
   })
 }
@@ -377,7 +377,7 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
     case effect {
       cast.CasterChangeStarts(change: cast.Property(..), ..) -> True
       cast.CasterChangeStarts(change: cast.Absorb(..), ..)
-      | cast.CasterChangeStarts(change: cast.ShieldHeal(..), ..)
+      | cast.CasterChangeStarts(change: cast.Heal(..), ..)
       | cast.CasterChangeStarts(change: cast.Look(..), ..)
       | cast.CasterChangeEnds(..)
       | cast.Send(..)

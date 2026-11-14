@@ -6080,6 +6080,12 @@ grade = "fairly sure"
 gap = "Read from the decompile."
 name = "LogEffectResult"
 
+["spell.heal_result_log"]
+statement = "A spell result of effect type 10 (Heal) or 118 (HealShields) makes the client log the heal itself, as CombatLogHeal: nHealAmount is the description's health damage including overkill, nOverheal its overkill, nAbsorption its absorbed amount, with the combat result, the effect type, the caster, the target and the spell. The log line's text (CombatLog.lua OnCombatLogHeal) is the HealShields wording for type 118, adds the overheal for a non-zero nOverheal, the absorption for a non-zero nAbsorption and the critical wording for a Critical result. A server that also sends combat log type 12 for the heal logs it twice."
+proof = "0x140563dc0 (saved C 49fd5a78aaad3411): effect type 10 or 0x76 (jump to LAB_1405641c8) fills a CombatLogHeal object (class table 0x140b6f880, event 0xc) with the target, the caster, the spell (event word 0x12), the combat result (event word 0xc), event word 8 as the amount (the description's fifth value), event word 9 as the overheal (its sixth), event word 6 as the absorption (its third) and the effect type, then 0x14060b2b0 logs it through the player's combat log filter; the same function's case 3 subtracts word 9 from word 8 only for damage. The amount's name: 0x14060dd20 (saved C 2580df99bb1ce2aa) reads the object's amount into 'nHealAmount' and raises 'CombatLogHeal'. The other names and the line's text: UI/CombatLog/CombatLog.lua (`client_files.py`'s UI folder) OnCombatLogHeal, which tests tEventArgs.nOverheal, nAbsorption, eCombatResult and eEffectType == HealShields. Combat log type 12's object is the same class (0x1403c3190 case 0xc), so a type 12 entry would raise the event again."
+grade = "fairly sure"
+gap = "The object's remaining field names (nOverheal, nAbsorption) are read from the Lua that uses them, not from the raiser, whose later string arguments the decompile drops. Not run against a recording of a heal."
+
 ["0x14045e9e0"]
 statement = "Plays a unit's hit reaction for damage taken: its size is the raw damage over (maximum health x GameFormula 954's first value / 100), scaled by its second value / 100 and raised to at least its third value / 100 when below 1, and capped at 1."
 proof = "Decompiled: GameFormula 0x3ba (row 954: 6, 100, 40) each times 0.01 (bytes at 0x140b79d3c); raw damage from the result's first field (0x1405643c0 passes event 4)."
@@ -15197,3 +15203,15 @@ proof = "Saved C 0x14068c2c0.c: each value is pushed before its name."
 grade = "fairly sure"
 gap = "none"
 name = "RegisterPublicEventObjectiveLua"
+["0x1405d8350"]
+statement = "Shows a Heal effect's result (Spell4Effects.effectType.10, slot 1 of class 0x140b73d90): sends the heal event to the floater (only when the player or the unit the game object holds at offset 0x6490 is the caster or target, the caster is in the player's list at offset 0x2b8, or 0x14047c1e0 holds) and always to the combat log. For effect type 10 on a target with property 111 HealToShieldConversion (a unit property) not 0, it takes converted = min(int(amount x p), max shield - shield) from the description's amount and shows a second event of type 0x76 (HealShields) for it. The amount is the description's word at 0x10. It writes no health or shield."
+proof = "Saved C 0x1405d8350.c (hash 8eb22adb6de47956): lines 70-98 the show test, 133-150 the type 10 conversion (unit slots 0x78 and 0x70), 151-173 the type 0x76 cap, 174-202 the calls to 0x140563930 and 0x140563a00. Class 0x140b73d90 slots read with query.py bytes: as 0x140b6e240 but slot 1."
+grade = "fairly sure"
+gap = "Which shield slot 0x70 and 0x78 are (current and max) is read from their use only; reading the unit vtable at those slots settles it."
+name = "ShowHealResult"
+
+["Spell4Effects.effectType.10"]
+statement = "A Heal effect (type 10) is the server's: the client works out no amount and writes no health. The server sends the result as a spell_damage_description with damage type 4 (Heal) in spell_go 0x7f4, or by 0x7f8 for a tick, and the new health by player_health 0x92f and unit_health 0x937. The client shows it through ShowHealResult 0x1405d8350, which splits a part into a HealShields event when the target has property 111 HealToShieldConversion. 3,098 rows; 160 in class spells (Spellslinger 64, Medic 59, Esper 32, Stalker 5), of which 19 tick; class rows use parameter kinds 13, 10, 12 and 8 only."
+proof = "Class: effect object switch 0x140718120 gives 0x140b73d90 [0x1405d8350]. Damage type 4: DamageOrHealingDone [0x140429630] and GameLib.CodeEnumDamageType. Amount from parameters [0x140565600]. Rows: `gleam run -m genesis_prime/table_rows -- Spell4Effects effectType=10`."
+grade = "fairly sure"
+gap = "Flags 1, 512 and 524288 are not read; that nothing else on the client writes health for a heal rests on the class's slots only. A retail heal recording settles both."

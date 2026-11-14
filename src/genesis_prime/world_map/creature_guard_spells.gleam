@@ -133,7 +133,7 @@ fn applied(kind kind: effect_kind.Kind) -> Bool {
     | effect_kind.CooldownModifier
     | effect_kind.Stealth
     | effect_kind.RemoveStealth
-    | effect_kind.ShieldHeal
+    | effect_kind.Heal(..)
     | effect_kind.ShieldOverload
     | effect_kind.Proc
     | effect_kind.InterruptArmor
@@ -171,7 +171,7 @@ fn listed(effect effect: Spell4Effects) -> Result(OpeningEffect, Nil) {
     | effect_kind.CooldownModifier
     | effect_kind.Stealth
     | effect_kind.RemoveStealth
-    | effect_kind.ShieldHeal
+    | effect_kind.Heal(..)
     | effect_kind.ShieldOverload
     | effect_kind.Proc
     | effect_kind.InterruptArmor

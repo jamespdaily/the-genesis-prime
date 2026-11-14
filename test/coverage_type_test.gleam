@@ -166,7 +166,7 @@ fn handled_over(
   |> list.sort(int.compare)
 }
 
-pub fn the_effect_types_the_measure_handles_are_1_3_4_7_8_11_14_17_18_26_29_52_64_73_80_81_83_84_112_118_and_145_test() -> Nil {
+pub fn the_effect_types_the_measure_handles_are_1_3_4_7_8_10_11_14_17_18_26_29_52_64_73_80_81_83_84_112_118_and_145_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   assert handled_over(
@@ -179,6 +179,7 @@ pub fn the_effect_types_the_measure_handles_are_1_3_4_7_8_11_14_17_18_26_29_52_6
       4,
       7,
       8,
+      10,
       11,
       14,
       17,
@@ -196,7 +197,7 @@ pub fn the_effect_types_the_measure_handles_are_1_3_4_7_8_11_14_17_18_26_29_52_6
       118,
       145,
     ]
-    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Activate 7 (Spell4Effects.effectType.7, the activate spell of a creature the player right-clicked), Damage 8, UnitPropertyModifier 11 for the rows aimed at the caster or at struck units (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Scale 18 (Spell4Effects.effectType.18), Proxy 26 (Spell4Effects.effectType.26), ShieldOverload 64 for the rows aimed at the area (Spell4Effects.effectType.64), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), RavelSignal 81 (Spell4Effects.effectType.81), Stealth 83 (Spell4Effects.effectType.83), RemoveStealth 84 (Spell4Effects.effectType.84), DisguiseOutfit 112 for the rows aimed at the caster (Spell4Effects.effectType.112), UnitPropertyConversion 145 for the rows aimed at the caster (Spell4Effects.effectType.145) and Proc 14 (Spell4Effects.effectType.14) for the rows aimed at the caster, HealShields 118 (Spell4Effects.effectType.118) for the rows that reach the caster, and ModifyInterruptArmor 52 (Spell4Effects.effectType.52) and Absorption 29 (Spell4Effects.effectType.29) for the rows that reach the caster; every other type is unread"
+    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Activate 7 (Spell4Effects.effectType.7, the activate spell of a creature the player right-clicked), Damage 8, Heal 10 for the rows that reach the caster (Spell4Effects.effectType.10), UnitPropertyModifier 11 for the rows aimed at the caster or at struck units (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Scale 18 (Spell4Effects.effectType.18), Proxy 26 (Spell4Effects.effectType.26), ShieldOverload 64 for the rows aimed at the area (Spell4Effects.effectType.64), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73) SpellForceRemove 80 (Spell4Effects.effectType.80), RavelSignal 81 (Spell4Effects.effectType.81), Stealth 83 (Spell4Effects.effectType.83), RemoveStealth 84 (Spell4Effects.effectType.84), DisguiseOutfit 112 for the rows aimed at the caster (Spell4Effects.effectType.112), UnitPropertyConversion 145 for the rows aimed at the caster (Spell4Effects.effectType.145) and Proc 14 (Spell4Effects.effectType.14) for the rows aimed at the caster, HealShields 118 (Spell4Effects.effectType.118) for the rows that reach the caster, and ModifyInterruptArmor 52 (Spell4Effects.effectType.52) and Absorption 29 (Spell4Effects.effectType.29) for the rows that reach the caster; every other type is unread"
 }
 
 pub fn the_prerequisite_types_the_measure_handles_are_the_thirty_five_read_and_those_with_no_case_test() -> Nil {
@@ -408,7 +409,7 @@ const signal_gap =
 const conversion_gap =
   "the share is added to the source's value after the type 11 changes, in start order; whether the source is its base or its total and when the share is recomputed are not read"
 
-pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
+pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let assert Ok(facts) =
@@ -438,6 +439,11 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
         type_number: 8,
         reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; rows with a tickTime (periodic), which the area load leaves out (#336)",
         fact_key: "0x140566ad0",
+      ),
+      Missing(
+        type_number: 10,
+        reason: "rows aimed only at other units, periodic (tickTime, #336) or behind a target apply prerequisite, which no go applies; rows with a formula parameter the plan refuses; rows of a spell a Proxy starts on each struck unit, whose heal on that unit is not built (#570)",
+        fact_key: "spell.heal_result_log",
       ),
       Missing(
         type_number: 11,
@@ -527,6 +533,7 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
     facts:,
     key: "Spell4Effects.effectType.118",
   )
+  assert coverage_support.has_record(facts:, key: "spell.heal_result_log")
   assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.3")
   assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.11")
   assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.14")
@@ -1996,9 +2003,9 @@ pub fn the_starting_abilities_totals_hold_184_of_196_effect_rows_and_79_of_79_co
     )
   assert string.contains(
     totals,
-    "| Spell effects (#49) | 133 | 131200 | 18 | 21 | 184 of 196 |",
+    "| Spell effects (#49) | 133 | 131200 | 18 | 22 | 184 of 196 |",
   )
-    as "196 effect rows are left, 12 of them not handled (the two Proc rows the plan skips, 90 x4, 118 once (the Warrior's periodic row 210834, held and not applied), 24 once, the Stalker's 91018 of type 81, behind target apply prerequisite 11311, the two Proxies 121345 and 178429 whose dataBits00 is 0, and the Medic's gain 228918, which ticks every 2000 ms (scratch count over the 196 rows the coverage walk reaches); the five other Proc rows, the Medic's row 228914, 109482 of type 18, 229304 of type 145, the Esper's type 52 row 199192 and its type 29 row 178144, aimed at the caster with a durationTime, are read, and the two ExoSuit rows of type 112, 112543 and 178142, aimed at the caster with a durationTime and a display, are read too); the whole-game columns are the walk's of 2026-11-05, with types 14, 18, 29, 52, 64, 81, 83, 84, 112, 118 and 145 handled beside the nine"
+    as "196 effect rows are left, 12 of them not handled (the two Proc rows the plan skips, 90 x4, 118 once (the Warrior's periodic row 210834, held and not applied), 24 once, the Stalker's 91018 of type 81, behind target apply prerequisite 11311, the two Proxies 121345 and 178429 whose dataBits00 is 0, and the Medic's gain 228918, which ticks every 2000 ms (scratch count over the 196 rows the coverage walk reaches); the five other Proc rows, the Medic's row 228914, 109482 of type 18, 229304 of type 145, the Esper's type 52 row 199192 and its type 29 row 178144, aimed at the caster with a durationTime, are read, and the two ExoSuit rows of type 112, 112543 and 178142, aimed at the caster with a durationTime and a display, are read too); the whole-game columns are the walk's of 2026-11-05, with types 10, 14, 18, 29, 52, 64, 81, 83, 84, 112, 118 and 145 handled beside the nine; no starting ability's row is of type 10, so the rows handled stay 184"
   assert string.contains(
     totals,
     "| Prerequisites (#47) | 232 | 49184 | 47209 | 47 | 79 of 79 |",

@@ -28,8 +28,9 @@
 ////   **RemoveStealth** (84) ends the stealth its unit holds; the client has no case
 ////   for either, so the server tells it with 0x8f5; the server reads the rows aimed at
 ////   the caster (`Spell4Effects.effectType.83`, `Spell4Effects.effectType.84`).
-//// - **ShieldHeal** (118) restores the shield of the unit it aims at; the server reads
-////   the rows whose aim reaches the caster (`Spell4Effects.effectType.118`).
+//// - **Heal** restores a vital of the unit it aims at: health for a Heal (10), shield
+////   for a HealShields (118); the server reads the rows whose aim reaches the caster
+////   (`Spell4Effects.effectType.10`, `Spell4Effects.effectType.118`).
 //// - **ShieldOverload** (64) overloads the shield of the units it aims at for its time;
 ////   the client marks and clears the overload itself, so the server lists the rows aimed
 ////   at the area on each struck unit (`Spell4Effects.effectType.64`).
@@ -108,12 +109,12 @@ pub type Kind {
   /// A RemoveStealth effect (84): ends the stealth of the unit it aims at
   /// (`Spell4Effects.effectType.84`). Read as Stealth is.
   RemoveStealth
-  /// A HealShields effect (118): restores shield to the unit it aims at
-  /// (`Spell4Effects.effectType.118`). A row is read when its targetFlags include the
-  /// caster (bit 1) or name the primary target alone (2), which a spell cast on the
-  /// caster makes the caster; a row aimed only at the area or at the primary target and
-  /// the area is not read (`is_row_read`).
-  ShieldHeal
+  /// A Heal (10) or HealShields (118) effect: restores `vital` of the unit it aims at
+  /// (`Spell4Effects.effectType.10`, `Spell4Effects.effectType.118`). A row is read when
+  /// its targetFlags include the caster (bit 1) or name the primary target alone (2),
+  /// which a spell cast on the caster makes the caster; a row aimed only at the area or
+  /// at the primary target and the area is not read (`is_row_read`).
+  Heal(vital: Vital)
   /// A ShieldOverload effect (64): the units it aims at are overloaded while it lasts
   /// (`Spell4Effects.effectType.64`). A row is read when it aims at the area alone
   /// (`is_row_read`).
@@ -157,6 +158,12 @@ pub type Kind {
   Unread(effect_type: Int)
 }
 
+/// What a heal restores: the health of type 10, the shield of type 118.
+pub type Vital {
+  Health
+  Shield
+}
+
 /// The kind of the effect type `effect_type` (`Spell4Effects.effectType`).
 pub fn kind_of(effect_type effect_type: Int) -> Kind {
   case effect_type {
@@ -171,7 +178,8 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     73 -> CooldownModifier
     83 -> Stealth
     84 -> RemoveStealth
-    118 -> ShieldHeal
+    10 -> Heal(vital: Health)
+    118 -> Heal(vital: Shield)
     64 -> ShieldOverload
     14 -> Proc
     52 -> InterruptArmor
@@ -206,7 +214,7 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | Scale
     | RavelSignal
     | PropertyConversion
-    | ShieldHeal
+    | Heal(..)
     | ShieldOverload
     | InterruptArmor
     | DisguiseOutfit
@@ -220,7 +228,7 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
 /// type `is_read` for, except that a PropertyConversion, ForcedMove, CooldownModifier,
 /// Stealth, RemoveStealth, Proc or DisguiseOutfit row is read only when its flags
 /// include the caster (bit 1, `Spell4Effects.targetFlags`), a PropertyModifier row when
-/// they include the caster or are 2, 4 or 6 (the units a strike hits), a ShieldHeal,
+/// they include the caster or are 2, 4 or 6 (the units a strike hits), a Heal,
 /// InterruptArmor or Absorption row when they include the caster or are the primary
 /// target alone (2), and a ShieldOverload row only when they are the area alone (4); a
 /// row aimed at other units is left out. A plan of
@@ -243,7 +251,7 @@ pub fn is_row_read(
     | RemoveStealth
     | Proc
     | DisguiseOutfit -> int.bitwise_and(target_flags, 1) == 1
-    ShieldHeal | InterruptArmor | Absorption ->
+    Heal(..) | InterruptArmor | Absorption ->
       int.bitwise_and(target_flags, 1) == 1 || target_flags == 2
     ShieldOverload -> target_flags == 4
     Proxy
