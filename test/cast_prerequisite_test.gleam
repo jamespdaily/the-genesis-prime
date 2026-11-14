@@ -778,6 +778,73 @@ pub fn a_type_37_roll_in_a_cast_condition_is_not_read_test() -> Nil {
   )
 }
 
+// ---- 47 and 118: conditions that read nothing the server holds ----
+
+/// The client's Prerequisite row of this id, loaded as the plan loads it.
+fn real_prerequisite(row row: Int) -> Prerequisite {
+  let tables = client_tables.shared()
+  let assert Ok(loaded) =
+    prerequisite.load(
+      id: id.PrerequisiteId(row),
+      rows: prerequisite.table_rows(tables:),
+      arcs: prerequisite.table_arcs(tables:),
+      quests: prerequisite.table_quests(tables:),
+    )
+    as "the client's rows hold the prerequisite and what it reads"
+  loaded
+}
+
+pub fn casts_behind_type_47_or_an_inactive_objective_are_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  // Spell4 27312 (Watchtower-Signal World Tier 1) holds prerequisiteIdCasterCast 5744, type
+  // 47 comparison 2, and Spell4 51502 (PvP Warplot Blue Teleport North Warplot Tier 1) holds
+  // 29089, type 118 comparison 1 on objective 2431 against 1 (`table_rows -- Prerequisite
+  // 5744 29089`). The client fails type 47 for every check (slot 0x140001ba0, comparison or
+  // not) and reads an objective the server does not hold as status 0 (`Prerequisite.
+  // prerequisiteTypeId.118`), so the press is refused with the CasterCast result, 151.
+  list.each([5744, 29_089], fn(prerequisite_id) {
+    let #(_, effects) =
+      support.press_by(
+        plans: support.plans_with(spell: gated(
+          caster_cast: CastGate(prerequisite: real_prerequisite(
+            row: prerequisite_id,
+          )),
+          target_cast: None,
+        )),
+        state: cast.new(),
+        caster: support.caster_in_combat(in_combat: True),
+        bag: gated_bag,
+        at: 1000,
+      )
+    assert refusals(effects:) == [151]
+      as "the press behind a condition that cannot pass is refused 151"
+    assert support.logs(effects:) == []
+      as "both types are read, so no warning about an unread condition is written"
+  })
+  // The same objective condition with the comparison the other way round passes.
+  let #(_, accepted) =
+    support.press_by(
+      plans: support.plans_with(spell: gated(
+        caster_cast: CastGate(
+          prerequisite: prerequisites.single(id: 77_002, condition: #(
+            118,
+            2,
+            2431,
+            1,
+          )),
+        ),
+        target_cast: None,
+      )),
+      state: cast.new(),
+      caster: support.caster_in_combat(in_combat: True),
+      bag: gated_bag,
+      at: 1000,
+    )
+  assert refusals(effects: accepted) == []
+    as "an inactive objective is not 1, so comparison 2 passes and the press is accepted"
+}
+
 // ---- 129: which casts the caster is under ----
 
 /// A planted spell of base 3 with no cast time whose go holds a node of its cast on the

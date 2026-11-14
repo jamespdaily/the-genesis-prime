@@ -33,6 +33,9 @@
 ////   which is part of its address (genesis_prime/step `Creature`).
 
 import genesis_prime/game/area.{type Candidate, type Pose, Candidate}
+import genesis_prime/game/prerequisite.{
+  type FirstUnit, NonPlayer, OtherPlayer, TheChecker,
+}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group.{type Unit, Unit}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
@@ -375,6 +378,28 @@ pub fn checklist_indexes_of(
       Ok(ShownCreature(checklist_index:, ..))
       | Ok(ShownObject(checklist_index:, ..)) -> Ok(#(unit_id, checklist_index))
       Ok(ShownPlayer) | Error(Nil) -> Error(Nil)
+    }
+  })
+  |> dict.from_list
+}
+
+/// What each of the units is to a prerequisite that names its first unit, by unit id: the
+/// caster's own unit is the checker, a creature or object the picture shows is that
+/// Creature2 row, another player is a player. A unit the picture does not hold has no
+/// entry, which the check reads as unknown. A type 38 condition reads the Creature2 id.
+pub fn first_units_of(
+  picture picture: Picture,
+  unit_ids unit_ids: List(Int),
+  caster_unit caster_unit: Int,
+) -> Dict(Int, FirstUnit) {
+  list.filter_map(unit_ids, fn(unit_id) {
+    case unit_id == caster_unit, dict.get(picture, unit_id) {
+      True, _ -> Ok(#(unit_id, TheChecker))
+      False, Ok(ShownCreature(creature_id:, ..))
+      | False, Ok(ShownObject(creature_id:, ..))
+      -> Ok(#(unit_id, NonPlayer(creature2_id: creature_id.value)))
+      False, Ok(ShownPlayer) -> Ok(#(unit_id, OtherPlayer))
+      False, Error(Nil) -> Error(Nil)
     }
   })
   |> dict.from_list

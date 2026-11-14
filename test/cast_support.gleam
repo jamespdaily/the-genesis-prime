@@ -8,6 +8,7 @@
 //// with a cooldown of its own, or a cast method the rule does not cast:
 //// `blocked_only` (kind 2), `exempt`, `slow` and `unbuilt` (PressHold).
 
+import attacker_support
 import class_resource_support
 import client_tables
 import game_client
@@ -266,7 +267,7 @@ pub fn caster() -> Caster {
     in_combat: False,
     life_vitals: dict.new(),
     factions: prerequisite.Factions(current: 167, base: 167),
-    stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
+    stats: attacker_support.fresh(),
     vitals: damage.Vitals(health: 0, max_health: 0, shield: 0, max_shield: 0),
     heal_scaling: heal_split.unscaled,
     quests: quest_support.log_of(rows: []),
@@ -279,6 +280,7 @@ pub fn caster() -> Caster {
       world_id: 3460,
       zones: [],
     ),
+    checker: prerequisite.Checker(items: [], book: [], world_difficulty: 0),
   )
 }
 
@@ -1065,6 +1067,7 @@ pub fn went(
     struck:,
     poses: dict.new(),
     indexes: dict.new(),
+    units: dict.new(),
     rolls: [],
   )
 }
@@ -1134,6 +1137,31 @@ pub fn answered_each(
   rolls rolls: List(Int),
   poses poses: dict.Dict(Int, Pose),
 ) -> #(State, List(Effect)) {
+  answered_known(
+    caster:,
+    state:,
+    effects:,
+    at: ms,
+    struck_of:,
+    rolls:,
+    poses:,
+    units: dict.new(),
+  )
+}
+
+/// The same, with what the caster's picture knows each Hit unit to be (a creature of a
+/// Creature2 row, another player, or the caster itself), by unit id; a unit it does not
+/// name is unknown to the check.
+pub fn answered_known(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  at ms: Int,
+  struck_of struck_of: fn(cast.GoAsked) -> List(cast.Struck),
+  rolls rolls: List(Int),
+  poses poses: dict.Dict(Int, Pose),
+  units units: dict.Dict(Int, prerequisite.FirstUnit),
+) -> #(State, List(Effect)) {
   list.fold(effects, #(state, []), fn(so_far, effect) {
     let #(state, done) = so_far
     case effect {
@@ -1148,10 +1176,11 @@ pub fn answered_each(
             struck: struck_of(asked),
             poses:,
             indexes: dict.new(),
+            units:,
             rolls:,
           )
         let #(state, more) =
-          answered_each(
+          answered_known(
             caster:,
             state:,
             effects: going,
@@ -1159,6 +1188,7 @@ pub fn answered_each(
             struck_of:,
             rolls:,
             poses:,
+            units:,
           )
         #(state, list.append(done, more))
       }

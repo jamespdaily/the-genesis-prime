@@ -12,6 +12,7 @@
 ////   `Spell4.32812`, `Spell4.58591`, `Spell4.42352`, `Spell4.38791`: each effect row's
 ////   level parameter).
 
+import attacker_support
 import client_tables
 import genesis_prime/game/damage
 import genesis_prime/game/hit.{type Blow, Blow, Offence, Rolls}
@@ -55,11 +56,7 @@ fn casts_to_kill(
             damage_type: effect.damage_type,
             damage: float.round(damage.value(
               formula: effect.formula,
-              attacker: damage.Attacker(
-                level: 1,
-                assault_rating: 0.0,
-                support_rating: 0.0,
-              ),
+              attacker: attacker_support.fresh(),
             )),
             delay_ms: effect.delay_ms,
             threat_multiplier: effect.threat_multiplier,

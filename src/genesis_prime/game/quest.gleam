@@ -130,13 +130,14 @@ pub type Verdict {
 }
 
 /// What the checks read of the player: the player the conditions read, the factions,
-/// the log and the held items.
+/// the log and what the player holds of its own: the checker's items (which the quest
+/// and item checks read too), ability book and world difficulty.
 pub type Asker {
   Asker(
     player: prerequisite.Player,
     factions: prerequisite.Factions,
     log: QuestLog,
-    items: List(HeldItem),
+    checker: prerequisite.Checker,
   )
 }
 
@@ -709,7 +710,10 @@ fn prerequisite_item(
   asker asker: Asker,
 ) -> Result(Nil, Stop) {
   use <- bool.guard(when: quest.preq_item == 0, return: Ok(Nil))
-  case held_count(items: asker.items, item2_id: Item2Id(quest.preq_item)) > 0 {
+  case
+    held_count(items: asker.checker.items, item2_id: Item2Id(quest.preq_item))
+    > 0
+  {
     True -> Ok(Nil)
     False -> Error(Unread(PrerequisiteItemCounter))
   }
@@ -764,6 +768,7 @@ pub fn prerequisite_holds(
           ..prerequisite.of_wearer(
             factions: asker.factions,
             player: asker.player,
+            checker: asker.checker,
           ),
           quests: Some(asker.log),
         )
@@ -1282,12 +1287,12 @@ fn has_source(
   }
   let item = fn(held: HeldItem) { starts(item: held, quest:, tables:) }
   case place {
-    option.None -> dialog() || list.any(asker.items, item)
+    option.None -> dialog() || list.any(asker.checker.items, item)
     Some(item_place.ItemPlace(location:, bag_index:)) ->
       case location == dialog_location && bag_index == dialog_bag_index {
         True -> dialog()
         False ->
-          list.any(asker.items, fn(held) {
+          list.any(asker.checker.items, fn(held) {
             held.location == location
             && held.bag_index == bag_index
             && item(held)

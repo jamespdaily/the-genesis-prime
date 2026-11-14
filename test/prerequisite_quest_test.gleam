@@ -556,7 +556,7 @@ pub fn an_entry_placeholder_replaces_the_quests_type_31_slot_test() -> Nil {
 /// checklist index its 0x262 carried when it has a creature.
 fn struck_with(log log: QuestLog, index index: option.Option(Int)) -> Subject {
   let subject =
-    prerequisite.of_struck(
+    prerequisite_support.struck(
       first: Some(prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0)),
       second: prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0),
       player: prerequisite_support.player(),

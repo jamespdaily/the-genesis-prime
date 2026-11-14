@@ -22,6 +22,7 @@ import genesis_prime/game/area.{
   Box, Circle, Cone, InsideRow, InsideShapes, Placement, Rectangle, Row,
 }
 import genesis_prime/game/crowd_control
+import genesis_prime/game/damage
 import genesis_prime/game/spell_area.{
   AimNotRead, FormulaNotRead, MultiplierNotFinite, PeriodicNotRead,
   SelectionNotClosest, ShapeNotBuilt, TelegraphNotOnCaster, ValidTargetsNotAlive,
@@ -454,6 +455,43 @@ pub fn a_damage_row_with_no_tick_time_is_read_as_one_strike_test() -> Nil {
     as "Spell4Effects 61198: damageType 3, delayTime 1500, phaseFlags 1, targetFlags 2 (the cast's target)"
 }
 
+/// The client's Spell4Effects row `id` from the fixture.
+fn fixture_effect(id id: Int) -> spell4_effects.Spell4Effects {
+  let assert Ok(row) =
+    spell4_effects.get(tables: fixture_tables.shared(), id: Spell4EffectsId(id))
+    as "the fixture holds the row"
+  row
+}
+
+pub fn the_area_load_builds_a_damage_row_that_names_an_attribute_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(effect) =
+    spell_area.damage_row_of(
+      spell4_id: 42_355,
+      effect: fixture_effect(id: 96_307),
+    )
+    as "Spellslinger - Insight - Tier 1 - Damage: a player's value reads Wisdom (type 5) (Spell4Effects.effectType.8.attribute_kinds)"
+  assert list.contains(
+    effect.formula.parameters,
+    damage.Parameter(kind: 5, value: 1.5),
+  )
+    as "row 96307's parameterType00 5 and parameterValue00 0x3fc00000 (1.5)"
+}
+
+pub fn a_ticking_row_that_names_an_attribute_is_refused_as_periodic_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert spell_area.damage_row_of(
+      spell4_id: 29_550,
+      effect: fixture_effect(id: 52_057),
+    )
+    == Error(PeriodicNotRead(
+      spell4_id: 29_550,
+      effect_id: 52_057,
+      tick_ms: 1000,
+    ))
+    as "row 52057 names Magic (type 4), which is read, and tickTime 1000, which is not"
+}
+
 pub fn a_periodic_damage_row_is_left_out_of_its_spells_area_and_the_load_goes_on_test() -> Nil {
   use <- owned_test.run(60_000)
   // No spell of a level-1 tree holds a damage row with a tickTime (the fixture's seven, 17802,
@@ -497,7 +535,7 @@ pub fn a_damage_row_the_area_load_refuses_is_not_read_test() -> Nil {
       #(
         area_tables.Kick(..area_tables.kick(), parameters: [#(7, 0.5)]),
         FormulaNotRead(spell4_id: 58_591, effect_id: 140_383, parameter_kind: 7),
-        "0x140565600: a player's value reads the parameter types 0, 10, 12 and 13, so a non-zero type 7 is refused",
+        "0x140565600: a player's value reads the level (type 10), the attributes and powers (1 to 5 and 11 to 13), and 6 and 9 add nothing, so a non-zero type 7, the target's maximum health, is refused",
       ),
     ],
     fn(planted) {

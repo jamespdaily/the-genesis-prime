@@ -21,6 +21,7 @@
 ////   later go of a cast heals again; the description is written the same for every
 ////   viewer.
 
+import attacker_support
 import cast_support as support
 import genesis_prime/client_connection.{CastWent}
 import genesis_prime/game/cast.{type Caster, type Effect}
@@ -132,7 +133,12 @@ fn health_heal(
 fn healing_caster(health health: Int) -> Caster {
   cast.Caster(
     ..struck_caster(),
-    stats: damage.Attacker(level: 5, assault_rating: 0.0, support_rating: 400.0),
+    stats: damage.Attacker(
+      ..attacker_support.fresh(),
+      level: 5,
+      assault_rating: 0.0,
+      support_rating: 400.0,
+    ),
     vitals: damage.Vitals(
       health:,
       max_health: 736,

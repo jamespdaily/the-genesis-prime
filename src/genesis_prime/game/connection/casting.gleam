@@ -108,7 +108,6 @@ import genesis_prime/game/spell_area
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell.{type Answered}
 import genesis_prime/game/target_group
-import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/unit_health.{UnitHealth}
@@ -773,22 +772,16 @@ pub fn caster_of(
     heal_scaling: heal_split.scaling_of(properties: entered.properties),
     quests: entered.quests,
     player: prerequisite_player.of(tables:, entered:),
+    checker: prerequisite_player.checker_of(entered:),
   )
 }
 
-/// What the player's damage and heals read of it: its level and its Assault and Support
-/// Rating.
+/// What the player's damage and heals read of it: its level, its Assault and Support
+/// Rating and its attributes.
 fn stats_of(entered entered: world_entry.Entered) -> damage.Attacker {
-  damage.Attacker(
+  damage.attacker_of(
+    properties: entered.properties,
     level: connection_state.level_of(entered:),
-    assault_rating: unit_properties.value(
-      properties: entered.properties,
-      property: unit_properties.assault_rating,
-    ),
-    support_rating: unit_properties.value(
-      properties: entered.properties,
-      property: unit_properties.support_rating,
-    ),
   )
 }
 
@@ -1192,6 +1185,11 @@ pub fn carry_strike(
             indexes: shown.checklist_indexes_of(
               picture: entered.shown,
               unit_ids: cast.hit_units(struck:),
+            ),
+            units: shown.first_units_of(
+              picture: entered.shown,
+              unit_ids: cast.hit_units(struck:),
+              caster_unit: entered.unit_id,
             ),
             rolls: prerequisite.rolls_of(bytes:),
           )

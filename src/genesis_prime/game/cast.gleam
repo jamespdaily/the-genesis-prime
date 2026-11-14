@@ -710,6 +710,9 @@ pub type Caster {
     /// The player's race, class, path, gender, level, World and zones, which the
     /// prerequisite types on the player (1, 2, 3, 10, 26, 39, 52 and 109) read.
     player: prerequisite.Player,
+    /// What the player holds of its own, which the prerequisite types on the player's
+    /// items (13, 14 and 246), ability book (214) and world difficulty (143) read.
+    checker: prerequisite.Checker,
   )
 }
 
@@ -1837,7 +1840,7 @@ fn aimed_shortcut(
     False, activate.AnotherPlayer -> aimed_at_a_player(press:)
     False,
       activate.Usable(
-        creature_id: _,
+        creature_id:,
         creature:,
         checklist_index:,
         body:,
@@ -1849,6 +1852,7 @@ fn aimed_shortcut(
     ->
       aimed_at_a_creature(
         press: AimedPress(..press, held:),
+        creature_id:,
         creature:,
         checklist_index:,
         target_body: body,
@@ -1973,6 +1977,7 @@ fn aimed_at_a_player(
 /// own conditions and the start.
 fn aimed_at_a_creature(
   press press: AimedPress,
+  creature_id creature_id: Int,
   creature creature: activate.Creature,
   checklist_index checklist_index: Int,
   target_body target_body: activate.Body,
@@ -1984,6 +1989,7 @@ fn aimed_at_a_creature(
     None ->
       aimed_in_group(
         press:,
+        creature_id:,
         creature:,
         checklist_index:,
         target_body:,
@@ -2018,6 +2024,7 @@ fn life_and_combat_refusal(
 
 fn aimed_in_group(
   press press: AimedPress,
+  creature_id creature_id: Int,
   creature creature: activate.Creature,
   checklist_index checklist_index: Int,
   target_body target_body: activate.Body,
@@ -2038,7 +2045,7 @@ fn aimed_in_group(
     )
   {
     activate.InCastGroup ->
-      aimed_in_range(press:, target_body:, alive:, in_combat:)
+      aimed_in_range(press:, creature_id:, target_body:, alive:, in_combat:)
     activate.OutsideCastGroup ->
       press_refused(press:, result: cast_result.TargetGroup)
     activate.CastGroupUnread(prerequisite_type:) ->
@@ -2105,6 +2112,7 @@ fn target_held(
 
 fn aimed_in_range(
   press press: AimedPress,
+  creature_id creature_id: Int,
   target_body target_body: activate.Body,
   alive alive: Bool,
   in_combat in_combat: Bool,
@@ -2141,6 +2149,7 @@ fn aimed_in_range(
           cast: press.cast,
           caster: press.caster,
           unit_id: press.unit_id,
+          creature_id:,
           in_combat:,
           place: target_body.place,
         )),
@@ -2151,40 +2160,54 @@ fn aimed_in_range(
 
 /// The subject of the unit a press named, for the spell's TargetCast: what the caster's
 /// live casts hold on it (a live cast whose primary target it is, and the nodes it holds
-/// there), and the caster second.
+/// there), and the caster second. The unit is the creature of Creature2 row `creature_id`,
+/// the first unit a type 38 condition of the TargetCast compares.
 fn target_subject_of(
   cast cast: State,
   caster caster: Caster,
   unit_id unit_id: Int,
+  creature_id creature_id: Int,
   in_combat in_combat: Bool,
   place place: Place,
 ) -> prerequisite.Subject {
   prerequisite.of_target(
-    under: dict.values(cast.casts)
-      |> list.filter(fn(live) { live.primary_target == unit_id })
-      |> list.map(fn(live) {
-        lasting.Held(
-          spell4_id: live.spell.spell4_id,
-          caster: caster.unit_id,
-          count: 0,
-          groups: live.spell.groups,
-        )
-      })
-      |> list.append(
-        list.map(holds_on(cast:, unit_id:), fn(hold) {
-          lasting.Held(
-            spell4_id: hold.spell4_id,
-            caster: caster.unit_id,
-            count: hold.node.count,
-            groups: hold.groups,
-          )
-        }),
-      ),
+    under: held_by_caster_on(cast:, caster:, unit_id:),
     caster_unit: caster.unit_id,
     in_combat:,
     target: area.pose_of(place:),
     caster: area.pose_of(place: caster.place),
     quests: caster.quests,
+    creature_id:,
+    checker: caster.checker,
+  )
+}
+
+/// What the caster's casts hold on the unit `unit_id`: a live cast whose primary target it
+/// is, and the nodes the caster's casts hold there, each with the caster as its caster.
+fn held_by_caster_on(
+  cast cast: State,
+  caster caster: Caster,
+  unit_id unit_id: Int,
+) -> List(lasting.Held) {
+  dict.values(cast.casts)
+  |> list.filter(fn(live) { live.primary_target == unit_id })
+  |> list.map(fn(live) {
+    lasting.Held(
+      spell4_id: live.spell.spell4_id,
+      caster: caster.unit_id,
+      count: 0,
+      groups: live.spell.groups,
+    )
+  })
+  |> list.append(
+    list.map(holds_on(cast:, unit_id:), fn(hold) {
+      lasting.Held(
+        spell4_id: hold.spell4_id,
+        caster: caster.unit_id,
+        count: hold.node.count,
+        groups: hold.groups,
+      )
+    }),
   )
 }
 
@@ -4843,7 +4866,9 @@ fn lifted_gains(proxy proxy: Proxy) -> List(spell_plan.Gain) {
 /// caster's picture holds them when the round closes, by unit id, which a Proxy's target
 /// gate reads (`children`); a Hit unit with none is not shown any more. `indexes` are the
 /// checklist indexes their 0x262 carried, by unit id, which a type 94 condition of that gate
-/// reads; a unit with none has no creature in the check. `rolls` are the
+/// reads; a unit with none has no creature in the check. `units` are what each unit is, by
+/// unit id (`prerequisite.FirstUnit`), which a type 38 condition of that gate reads; a unit
+/// with none is unknown to the check. `rolls` are the
 /// rolls the go's type 37 conditions take (`rolls_needed`), in the order the conditions
 /// are checked.
 pub fn went(
@@ -4855,6 +4880,7 @@ pub fn went(
   struck struck: List(Struck),
   poses poses: Dict(Int, area.Pose),
   indexes indexes: Dict(Int, Int),
+  units units: Dict(Int, prerequisite.FirstUnit),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
   use <- settled(cast:, caster:, now:, own: [])
@@ -4868,6 +4894,7 @@ pub fn went(
       struck:,
       poses:,
       indexes:,
+      units:,
       rolls:,
     ),
     caster:,
@@ -4911,6 +4938,7 @@ fn asked(
               struck: [],
               poses: dict.new(),
               indexes: dict.new(),
+              units: dict.new(),
               rolls: [],
             )
           #(cast, list.append(paying(payments: reserved), going))
@@ -6386,6 +6414,7 @@ fn go(
   struck struck: List(Struck),
   poses poses: Dict(Int, area.Pose),
   indexes indexes: Dict(Int, Int),
+  units units: Dict(Int, prerequisite.FirstUnit),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
   case dict.get(cast.casts, cast_id) {
@@ -6538,6 +6567,7 @@ fn go(
               subject:,
               poses:,
               indexes:,
+              units:,
             )
           #(cast, list.append(effects, more))
         })
@@ -8787,6 +8817,8 @@ pub fn subject_of(
     quests: Some(caster.quests),
     creature_index: None,
     seen: prerequisite.WholeUnit,
+    checker: Some(caster.checker),
+    first_unit: prerequisite.TheChecker,
   )
 }
 
@@ -8802,7 +8834,9 @@ pub fn subject_of(
 /// 108, the only type that reads a position, so no unit's visibility depends on them;
 /// types 71 and 73, which read a vital, are not among them either, but the health is
 /// held for a prerequisite the tables may add. The first step's check decides it all
-/// with the real values.
+/// with the real values. The player's items and abilities arrive with the Joined message,
+/// after this check, so the subject holds no checker: types 13, 14, 246, 143 and 214 are
+/// `NotRead` and the creatures they gate stay shown until that first step's check.
 pub fn entering_subject(
   player player: prerequisite.Player,
   factions factions: prerequisite.Factions,
@@ -8828,6 +8862,8 @@ pub fn entering_subject(
     quests: Some(quests),
     creature_index: None,
     seen: prerequisite.WholeUnit,
+    checker: None,
+    first_unit: prerequisite.TheChecker,
   )
 }
 
@@ -9183,6 +9219,7 @@ fn children(
   subject subject: prerequisite.Subject,
   poses poses: Dict(Int, area.Pose),
   indexes indexes: Dict(Int, Int),
+  units units: Dict(Int, prerequisite.FirstUnit),
 ) -> #(State, List(Effect)) {
   let targets = case proxy.target {
     spell_plan.OnCaster -> [caster.unit_id]
@@ -9191,7 +9228,16 @@ fn children(
   list.fold(targets, #(cast, []), fn(so_far, primary_target) {
     let #(cast, effects) = so_far
     case
-      target_gate(proxy:, caster:, primary_target:, subject:, poses:, indexes:)
+      target_gate(
+        cast:,
+        proxy:,
+        caster:,
+        primary_target:,
+        subject:,
+        poses:,
+        indexes:,
+        units:,
+      )
     {
       Starts -> {
         let #(cast, more) =
@@ -9208,12 +9254,16 @@ fn children(
 }
 
 /// The subject of a Proxy's target gate on a struck unit: as the caster's picture shows it,
-/// with the checklist index its 0x262 carried when the picture holds one.
+/// with the checklist index its 0x262 carried when the picture holds one, what the unit is
+/// (a unit the picture does not hold is unknown to a type 38 or 214 condition), and what
+/// the caster's own casts hold on it (a type 130 condition's group).
 fn struck_subject(
+  cast cast: State,
   caster caster: Caster,
   primary_target primary_target: Int,
   poses poses: Dict(Int, area.Pose),
   indexes indexes: Dict(Int, Int),
+  units units: Dict(Int, prerequisite.FirstUnit),
 ) -> prerequisite.Subject {
   let struck =
     prerequisite.of_struck(
@@ -9221,6 +9271,13 @@ fn struck_subject(
       second: area.pose_of(place: caster.place),
       player: caster.player,
       quests: caster.quests,
+      unit: result.unwrap(
+        dict.get(units, primary_target),
+        or: prerequisite.UnknownUnit,
+      ),
+      caster_unit: caster.unit_id,
+      under: held_by_caster_on(cast:, caster:, unit_id: primary_target),
+      checker: caster.checker,
     )
   case dict.get(indexes, primary_target) {
     Ok(index) -> prerequisite.counting(subject: struck, checklist_index: index)
@@ -9237,19 +9294,28 @@ fn struck_subject(
 /// `GatedOnCaster` and `GatedOnCasterAndTarget`; a Proxy that holds `GatedOnTarget`, which
 /// it never builds for one, is refused, as a gate nothing reads.
 fn target_gate(
+  cast cast: State,
   proxy proxy: Proxy,
   caster caster: Caster,
   primary_target primary_target: Int,
   subject subject: prerequisite.Subject,
   poses poses: Dict(Int, area.Pose),
   indexes indexes: Dict(Int, Int),
+  units units: Dict(Int, prerequisite.FirstUnit),
 ) -> ProxyGate {
   case proxy.condition {
     spell_plan.GatedOnCasterAndTarget(target:, ..) -> {
       let gate_subject = case proxy.target {
         spell_plan.OnCaster -> subject
         spell_plan.OnEachStruck ->
-          struck_subject(caster:, primary_target:, poses:, indexes:)
+          struck_subject(
+            cast:,
+            caster:,
+            primary_target:,
+            poses:,
+            indexes:,
+            units:,
+          )
       }
       case prerequisite.check(prerequisite: target, subject: gate_subject) {
         prerequisite.Passes -> Starts

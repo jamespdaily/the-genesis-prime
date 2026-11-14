@@ -119,6 +119,7 @@ fn wearer_of(
     faction_id: character.faction_id,
     level: connection_state.level_of(entered:),
     player: prerequisite_player.of(tables:, entered:),
+    checker: prerequisite_player.checker_of(entered:),
     item_proficiencies: character_state.item_proficiencies(
       tables:,
       class_id: character.class_id,

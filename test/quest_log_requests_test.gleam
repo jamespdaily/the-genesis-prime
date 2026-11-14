@@ -80,7 +80,7 @@ fn asker(log log: List(QuestRow)) -> Asker {
     player: prerequisite_support.player(),
     factions: Factions(current: exile, base: exile),
     log: quest_support.log_of(rows: log),
-    items: [],
+    checker: prerequisite_support.empty_checker(),
   )
 }
 
@@ -318,7 +318,10 @@ pub fn abandon_follows_the_client_rule_test() -> Nil {
 pub fn abandon_keeps_the_quest_abandoned_and_acceptable_test() -> Nil {
   use <- owned_test.run(10_000)
   let started = quest_support.accepted(quest_id: 2417, progress: [])
-  let held = Asker(..asker(log: [started]), items: [item(location: 1)])
+  let held =
+    quest_support.with_items(asker(log: [started]), items: [
+      item(location: 1),
+    ])
   let target = fn(asker: Asker) {
     let assert Ok(row) = quest2.get(tables: tables(), id: Quest2Id(2417))
       as "the fixture holds quest 2417"
