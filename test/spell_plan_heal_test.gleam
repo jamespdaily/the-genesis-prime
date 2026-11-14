@@ -15,8 +15,9 @@
 ////   0.5368 and 10 x 23.36), 89598 (spell 38507, targetFlags 4), 80077 (spell 32821,
 ////   targetFlags 2, tickTime 1000) and 69917 (spell 34985, parameter 18 x 200).
 //// - `0x140566ad0` and `0x140566d40`: the parameter types the formula reads; the
-////   passed-in value (18) the server does not read for an effect on its caster, and 6 and
-////   9 add 0 (`Spell4Effects.parameterType.6_9`). Row 94299 (Esper - Tech - Rank 3 -
+////   passed-in value (18) and the caster's Weapon and Weapon DPS (6 and 9,
+////   `Spell4Effects.parameterType.6_9`) the server does not read for an effect on its
+////   caster. Row 94299 (Esper - Tech - Rank 3 -
 ////   Shield Heal Proc, Spell4 41868): targetFlags 2, dataBits00 1.0, parameterType00 3
 ////   (Technology, `0x140566d40` case 3) with value 1.5, no tickTime
 ////   (`table_rows -- Spell4Effects 94299`).
@@ -245,7 +246,7 @@ pub fn the_esper_shield_heal_proc_row_94299_loads_as_a_shield_heal_test() -> Nil
 
 pub fn a_heal_shields_row_with_a_parameter_the_caster_formula_does_not_read_fails_the_load_test() -> Nil {
   use <- owned_test.run(5000)
-  list.each([18], fn(kind) {
+  list.each([6, 9, 18], fn(kind) {
     let row =
       Spell4Effects(..energize_row(), id: 99_118, parameter_type00: kind)
     assert spell_plan.heal_of(spell4_id: 69_450, effect: row, condition: Always)
@@ -255,26 +256,22 @@ pub fn a_heal_shields_row_with_a_parameter_the_caster_formula_does_not_read_fail
         parameter_kind: kind,
       ))
       as {
-        "0x140565600: type "
+        "type "
         <> int.to_string(kind)
-        <> " is the passed-in value, which an effect on its caster does not read"
+        <> " is the caster's Weapon or Weapon DPS (0x140b0b580) or the passed-in value (0x140565600), which an effect on its caster does not read"
       }
   })
   list.each(
     [
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 21, 22, 23,
-      25, 26,
+      1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 19, 21, 22, 23, 25,
+      26,
     ],
     fn(kind) {
       let row =
         Spell4Effects(..energize_row(), id: 99_119, parameter_type00: kind)
       let assert Ok(Heal(..)) =
         spell_plan.heal_of(spell4_id: 69_450, effect: row, condition: Always)
-        as {
-          "0x140566ad0 or 0x140566d40 reads type "
-          <> int.to_string(kind)
-          <> ", or its default adds 0 for 6 and 9"
-        }
+        as { "0x140566ad0 or 0x140566d40 reads type " <> int.to_string(kind) }
     },
   )
   let not_a_number =

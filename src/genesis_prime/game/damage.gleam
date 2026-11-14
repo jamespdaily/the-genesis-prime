@@ -15,14 +15,15 @@
 ////   Wisdom (parameter types 1 to 5, UnitProperty2 0 to 4) and Stamina (11, property
 ////   40), each its live property value, and its Assault Power (12) and Support Power
 ////   (13), which are its Assault Rating and Support Rating times 0.25 (`0x140462930`,
-////   `0x140462980`, GameFormula 1266). The sum is rounded half away from zero once
-////   (`0x140566d40`).
+////   `0x140462980`, GameFormula 1266). The products are summed in 32-bit floats, and 0.5
+////   is added to the sum (taken away when it is below 0) in 32-bit floats before it is
+////   cut to a whole number (`0x140566d40`).
 //// - **The flat part** F reads the caster's level (type 10) (`0x140566ad0`).
-//// - **Types 6 and 9** add nothing: both parts' switches send them to their default
-////   (`Spell4Effects.parameterType.6_9`).
-//// - **What is not built:** the target's and the caster's health and shield (types 7,
-////   8, 14 to 17, 19, 21 to 23, 25 and 26, #791) and the passed-in value (18, #336); a
-////   formula that names one is refused at load (genesis_prime/game/spell_area,
+//// - **What is not built:** the caster's Weapon and Weapon DPS (types 6 and 9,
+////   `Spell4Effects.parameterType.6_9`, #807), the target's and the caster's health and
+////   shield (types 7, 8, 14 to 17, 19, 21 to 23, 25 and 26, #791), the passed-in value
+////   (18, #336), and types 20, 24 and any above 26, which neither part reads; a formula
+////   that names one with a factor is refused at load (genesis_prime/game/spell_area,
 ////   `unread`).
 //// - **The multiplier** M is the caster's DamageDealtMultiplier for the damage type,
 ////   1.0 for a player (UnitProperty2 140 to 143: the multiplier's default).
@@ -100,7 +101,7 @@ fn parameters_of(
 
 /// Whether the formula gives 0 to every caster: no stat parameter (kind 1 to 5, 11, 12 or
 /// 13) has a value, and the multiplier is 0.0 or the base is 0.0 with no flat parameter
-/// (any kind but these, 0, 6 and 9) that has a value. Such a row has no amount the server
+/// (any kind but these and 0) that has a value. Such a row has no amount the server
 /// can read, whatever the caster's stats.
 pub fn gives_nothing(formula formula: Formula) -> Bool {
   let has_value = fn(is_kind) {
@@ -109,7 +110,7 @@ pub fn gives_nothing(formula formula: Formula) -> Bool {
     })
   }
   let stat = has_value(is_stat)
-  let flat = has_value(fn(kind) { !is_stat(kind) && !adds_nothing(kind) })
+  let flat = has_value(fn(kind) { kind != 0 && !is_stat(kind) })
   !stat && { formula.multiplier == 0.0 || { formula.base == 0.0 && !flat } }
 }
 
@@ -174,12 +175,12 @@ const power_per_rating = 0.25
 
 /// The Assault Power or Support Power of a rating (GameFormula 1266).
 pub fn power_of(rating rating: Float) -> Float {
-  rating *. power_per_rating
+  float32.product(left: rating, right: power_per_rating)
 }
 
 /// The first parameter type of the formula that is not built, or `None` when the
 /// formula reads only what a player caster holds: the level, the six attributes and the
-/// two powers, besides types 6 and 9, which add nothing.
+/// two powers.
 pub fn unread(formula formula: Formula) -> Option(Unread) {
   first_unread(formula:, is_read:)
 }
@@ -197,7 +198,7 @@ fn first_unread(
 }
 
 fn is_read(kind: Int) -> Bool {
-  kind == 10 || is_stat(kind) || adds_nothing(kind)
+  kind == 0 || kind == 10 || is_stat(kind)
 }
 
 /// The effect's value for a player caster, before any rounding to a whole number
@@ -221,14 +222,30 @@ fn value_with(
 ) -> Float {
   let stat_part =
     list.fold(formula.parameters, 0.0, fn(sum, parameter) {
-      sum +. parameter.value *. stat_of(attacker:, kind: parameter.kind)
+      float32.sum(
+        left: sum,
+        right: float32.product(
+          left: float32.rounded(stat_of(attacker:, kind: parameter.kind)),
+          right: parameter.value,
+        ),
+      )
     })
   let flat_part =
     list.fold(formula.parameters, 0.0, fn(sum, parameter) {
       sum +. parameter.value *. flat_of(parameter.kind)
     })
   let row_part = { formula.base +. flat_part } *. formula.multiplier
-  int.to_float(float.round(stat_part)) +. row_part
+  int.to_float(whole_stat_part(stat_part)) +. row_part
+}
+
+/// The stat part as the client cuts it to a whole number (`0x140566d40`): 0.5 added, or
+/// taken away below 0, in 32-bit floats, then the fraction dropped.
+fn whole_stat_part(stat_part: Float) -> Int {
+  case stat_part >=. 0.0 {
+    True -> float32.sum(left: stat_part, right: 0.5)
+    False -> float32.difference(left: stat_part, right: 0.5)
+  }
+  |> float.truncate
 }
 
 /// The caster's stat that a parameter type names in the stat part (`0x140566d40`): 1 to
@@ -258,13 +275,6 @@ fn is_stat(kind: Int) -> Bool {
   }
 }
 
-/// Whether the parameter type adds nothing to either part: 0 names no parameter, and 6
-/// and 9 fall to the default case of both `0x140566d40` and `0x140566ad0`
-/// (`Spell4Effects.parameterType.6_9`).
-fn adds_nothing(kind: Int) -> Bool {
-  kind == 0 || kind == 6 || kind == 9
-}
-
 /// What the formula reads of a caster that is also the target of its effect: its
 /// stats and its own health and shield, each with its maximum.
 pub type OnCaster {
@@ -278,14 +288,15 @@ pub type Vitals {
 
 /// The first parameter type of the formula that an effect on its caster does not read,
 /// or `None`: it reads the stat kinds 1 to 5 and 11 to 13 and the flat kinds 7, 8, 10, 14
-/// to 17, 19, 21 to 23, 25 and 26 (`0x140565600`, `0x140566d40`, `0x140566ad0`), and 6
-/// and 9 add nothing; the passed-in value (18, #336) is not read.
+/// to 17, 19, 21 to 23, 25 and 26 (`0x140565600`, `0x140566d40`, `0x140566ad0`); the
+/// caster's Weapon and Weapon DPS (6 and 9, #807) and the passed-in value (18, #336) are
+/// not read.
 pub fn caster_unread(formula formula: Formula) -> Option(Unread) {
   first_unread(formula:, is_read: is_read_on_caster)
 }
 
 fn is_read_on_caster(kind: Int) -> Bool {
-  is_stat(kind) || adds_nothing(kind) || is_vital_on_caster(kind)
+  kind == 0 || is_stat(kind) || is_vital_on_caster(kind)
 }
 
 /// Whether the flat part reads the parameter type of an effect on its caster

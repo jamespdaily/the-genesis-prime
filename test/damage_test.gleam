@@ -16,8 +16,10 @@
 ////   into the one stat part before it is rounded (`0x140566d40` cases 1 to 5 and 0xb,
 ////   which read the live value at unit + 0x5c4 + 8 x id, `0x140466a70`). A player starts
 ////   each at its UnitProperty2 defaultValue, 1.0 for all six (`0x1404584b0`).
-//// - Types 6 and 9 add nothing: both of the client's sums send them to their default
-////   branch (`Spell4Effects.parameterType.6_9`).
+//// - Types 6 and 9 are the caster's Weapon and Weapon DPS, which the server does not
+////   read yet (`Spell4Effects.parameterType.6_9`).
+//// - The stat part is summed, and 0.5 added or taken away, in 32-bit floats before it
+////   is cut to a whole number (`0x140566d40`).
 //// - The client rows: `table_rows -- Spell4Effects <id>`; each row's dataBits00 1065353216
 ////   is the float 1.0 and 0 is 0.0.
 
@@ -271,38 +273,47 @@ pub fn the_attribute_and_power_products_are_summed_before_rounding_test() -> Nil
     as "0.5 x 1.0 + 0.5 x 3.0 = 2.0; rounding each part apart would give 1 + 2 = 3, and leaving Strength out 1"
 }
 
-pub fn kinds_6_and_9_add_nothing_to_the_value_test() -> Nil {
+pub fn the_stat_part_is_summed_and_rounded_in_32_bit_floats_test() -> Nil {
   use <- owned_test.run(5000)
-  let fresh = attacker_support.fresh()
-  let formula = client_formula(id: 49_028)
-  assert damage.value(formula:, attacker: fresh)
-    == damage.value(
-      formula: Formula(
-        ..formula,
-        parameters: list.filter(formula.parameters, fn(parameter) {
-          parameter.kind != 6
-        }),
-      ),
-      attacker: fresh,
+  // Row 108207 (e395- [Datascape] Earth Elemental - Knockout Combo, Spell4 46220):
+  // Strength (1) x 3.6 and Assault Power (12) x 3.6, both 0x40666666, dataBits00 1.0 and
+  // dataBits01 0. An Assault Rating (35) of 1.0 is an Assault Power of 0.25.
+  // 0x140566d40 keeps the sum in a 32-bit float: 3.6f + 0.9f = 4.5f exactly, and
+  // 4.5f + 0.5f = 5.0f, which it cuts to 5.
+  assert damage.value(
+      formula: client_formula(id: 108_207),
+      attacker: player_listing(listed: [#(35, 1.0)]),
     )
-    as "row 49028's kind 6 x 2.25 adds nothing to its Strength x 1.0"
-  assert damage.value(formula:, attacker: fresh) == 1.0
-    as "row 49028: Strength 1.0 x 1.0 rounds to 1, and dataBits00 0 makes the row part 0"
-  assert damage.value(formula: client_formula(id: 77_124), attacker: fresh)
-    == 0.0
-    as "Explorer - Offensive Path Ability - Eldan Relic: kind 9 x 7.0 adds nothing, and dataBits01 is 0"
+    == 5.0
+    as "in 64-bit floats the sum is 4.49999988, which rounds to 4"
+}
+
+pub fn the_weapon_kinds_6_and_9_are_not_read_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The client's labels for the parameter kinds (0x140b0b580, printed by 0x1404de8d0 as
+  // "[%.*f%% %s]") name 6 "Weapon" (text 184461) and 9 "Weapon DPS" (text 209247): the
+  // caster's weapon damage, which the server does not read yet (#807).
+  assert damage.unread(formula: client_formula(id: 49_028))
+    == Some(Unread(parameter_kind: 6))
+    as "row 49028: kind 6 x 2.25 beside its Strength x 1.0"
+  assert damage.unread(formula: client_formula(id: 1369))
+    == Some(Unread(parameter_kind: 6))
+    as "Engineer Melee Auto Attack: kind 6 x 1.0"
+  assert damage.unread(formula: client_formula(id: 77_124))
+    == Some(Unread(parameter_kind: 9))
+    as "Explorer - Offensive Path Ability - Eldan Relic: kind 9 x 7.0"
 }
 
 pub fn unread_reads_the_attribute_kinds_and_still_names_each_vital_kind_and_18_test() -> Nil {
   use <- owned_test.run(5000)
-  list.each([1, 2, 3, 4, 5, 6, 9, 11], fn(kind) {
+  list.each([1, 2, 3, 4, 5, 11], fn(kind) {
     assert damage.unread(formula: one_parameter(kind:, factor: 0.5)) == None
-      as "a player's value reads the attribute kinds and adds 0 for 6 and 9"
+      as "a player's value reads the attribute kinds"
   })
-  list.each([7, 8, 14, 15, 18, 19, 21], fn(kind) {
+  list.each([6, 7, 8, 9, 14, 15, 18, 19, 21], fn(kind) {
     assert damage.unread(formula: one_parameter(kind:, factor: 0.5))
       == Some(Unread(parameter_kind: kind))
-      as "a vital of a unit or a passed-in value, which the area load does not read"
+      as "the caster's weapon damage, a vital of a unit or a passed-in value, which the area load does not read"
   })
 }
 
@@ -360,19 +371,21 @@ pub fn a_modifier_on_strength_reaches_the_formula_test() -> Nil {
     as "the formula reads the live value of Strength, not its base"
 }
 
-pub fn caster_unread_reads_the_attribute_kinds_and_6_and_9_and_still_names_18_test() -> Nil {
+pub fn caster_unread_reads_the_attribute_kinds_and_still_names_6_9_and_18_test() -> Nil {
   use <- owned_test.run(5000)
-  list.each([1, 2, 3, 4, 5, 6, 9, 11], fn(kind) {
+  list.each([1, 2, 3, 4, 5, 11], fn(kind) {
     assert damage.caster_unread(formula: one_parameter(kind:, factor: 0.5))
       == None
-      as "an effect on its caster reads the attribute kinds and adds 0 for 6 and 9"
+      as "an effect on its caster reads the attribute kinds"
   })
-  assert damage.caster_unread(formula: one_parameter(kind: 18, factor: 0.5))
-    == Some(Unread(parameter_kind: 18))
-    as "18 is a value passed in, which the server does not read"
+  list.each([6, 9, 18], fn(kind) {
+    assert damage.caster_unread(formula: one_parameter(kind:, factor: 0.5))
+      == Some(Unread(parameter_kind: kind))
+      as "6 and 9 are the caster's weapon damage (0x140b0b580) and 18 a value passed in, which the server does not read"
+  })
 }
 
-pub fn an_attribute_factor_counts_as_a_stat_part_and_6_and_9_as_nothing_for_gives_nothing_test() -> Nil {
+pub fn an_attribute_factor_counts_as_a_stat_part_and_a_weapon_factor_as_an_amount_for_gives_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let magic_absorb = client_absorption(id: 46_275)
   assert !damage.gives_nothing(formula: magic_absorb)
@@ -386,10 +399,10 @@ pub fn an_attribute_factor_counts_as_a_stat_part_and_6_and_9_as_nothing_for_give
     )
     == 10.0
     as "Magic 1.0 x 10.0, plus (0.0 + 0) x 0.0"
-  assert damage.gives_nothing(formula: client_formula(id: 77_124))
-    as "Eldan Relic: kind 9 x 7.0 adds nothing, dataBits01 is 0 and no stat kind has a factor"
-  assert damage.gives_nothing(formula: client_formula(id: 1369))
-    as "Engineer Melee Auto Attack: kind 6 x 1.0 adds nothing, dataBits01 is 0 and no stat kind has a factor"
+  assert !damage.gives_nothing(formula: client_formula(id: 77_124))
+    as "Eldan Relic: kind 9 x 7.0 is the caster's Weapon DPS (text 209247), an amount the client lacks, not nothing"
+  assert !damage.gives_nothing(formula: client_formula(id: 1369))
+    as "Engineer Melee Auto Attack: kind 6 x 1.0 is the caster's Weapon (text 184461), an amount the client lacks, not nothing"
 }
 
 pub fn the_value_on_its_caster_reads_the_casters_attributes_test() -> Nil {
