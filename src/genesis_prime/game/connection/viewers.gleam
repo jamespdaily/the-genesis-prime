@@ -346,6 +346,7 @@ pub fn viewer_takes(
     | client_connection.Shield(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
+    | client_connection.CrowdControlTethered(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
     | client_connection.Level(..)
@@ -401,6 +402,7 @@ pub fn viewer_takes(
             attackable:,
             hostile_to:,
             in_combat: False,
+            held: [],
           ),
         )),
         [
@@ -679,6 +681,9 @@ pub fn viewer_takes(
         ),
       ])
     }
+    // Shape only (issue 786): the 0x881 frame is written by the build.
+    client_connection.CrowdControlTethered(anchor_unit_id: _) ->
+      Continue(session, [])
   }
 }
 
@@ -785,6 +790,7 @@ fn creature_news(
     | client_connection.Shield(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
+    | client_connection.CrowdControlTethered(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
     | client_connection.Level(..)
@@ -876,6 +882,7 @@ fn life_news(
     | client_connection.Shield(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
+    | client_connection.CrowdControlTethered(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
     | client_connection.Level(..)

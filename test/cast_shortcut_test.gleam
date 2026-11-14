@@ -150,6 +150,7 @@ fn picture_of(scene scene: Scene) -> shown.Picture {
         attackable: Attackable(exile: True, dominion: True),
         hostile_to: Hostile(exile: False, dominion: False),
         in_combat: unit.in_combat,
+        held: [],
       ),
     )
   })
@@ -180,6 +181,7 @@ fn target_of(scene scene: Scene) -> fn(Int) -> Target {
               body: Body(place: place_of(unit:), radius: creature_radius),
               alive: unit.alive,
               in_combat: unit.in_combat,
+              held: [],
               withheld: None,
             )
           }

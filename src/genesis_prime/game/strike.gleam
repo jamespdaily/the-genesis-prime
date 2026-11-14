@@ -542,7 +542,7 @@ fn filled(
   outcome outcome: strike_tell.Outcome,
 ) -> Place {
   case outcome {
-    strike_tell.Landed(descriptions:, controls:) ->
+    strike_tell.Landed(descriptions:, controls:, ..) ->
       Answered(struck: cast.Hit(
         unit_id:,
         unit: cast.HitCreature(life:, struck_at_ms:),

@@ -2398,6 +2398,7 @@ fn activation_pressed(
       body: target,
       alive:,
       in_combat: _,
+      held: _,
       withheld: None,
     )
     | activate.Usable(
@@ -2408,6 +2409,7 @@ fn activation_pressed(
         body: target,
         alive:,
         in_combat: _,
+        held: _,
         withheld: None,
       ) -> {
       let subject =

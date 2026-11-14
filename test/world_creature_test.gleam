@@ -454,7 +454,8 @@ pub fn a_dead_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
     cast_id: 1,
   )
   let #(_, outcome) = answer_to_strike(received:, cast_id: 1)
-  let assert Landed(descriptions: [description], controls: []) = outcome
+  let assert Landed(descriptions: [description], controls: [], armor_removed: 0) =
+    outcome
   assert description.damage.killed == 1
     as "the 60 damage takes the Beast's 52 health to 0"
   // The answer is sent before the corpse timer starts: the clock moves only after
@@ -734,7 +735,8 @@ pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_
       }
     })
   let assert Answered(key: Key(cast_id: 1, ..), outcome:) = answer
-  let assert Landed(descriptions: [description], controls: []) = outcome
+  let assert Landed(descriptions: [description], controls: [], armor_removed: 0) =
+    outcome
   assert description.damage.killed == 1
     as "the 60 damage takes the Beast's 52 health to 0"
   let again =
@@ -1029,7 +1031,7 @@ fn health_taken(
         | client_connection.SentByChat(..) -> Error(Nil)
       }
     })
-  let assert Landed(descriptions: [description], controls: []) =
+  let assert Landed(descriptions: [description], controls: [], armor_removed: 0) =
     answered.outcome
   description.damage.health_damage_with_overkill
 }

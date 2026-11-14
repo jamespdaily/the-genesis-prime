@@ -429,6 +429,7 @@ pub fn beast_attack() -> Attack {
     run_speed: 10.0,
     reach: 8.0,
     cast: Instant,
+    caster_cc_mask: 0,
   )
 }
 

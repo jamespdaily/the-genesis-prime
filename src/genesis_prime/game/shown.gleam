@@ -35,6 +35,7 @@
 import genesis_prime/game/area.{type Candidate, type Pose, Candidate}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group.{type Unit, Unit}
+import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Creature2Id, Faction2Id}
 import genesis_prime/table/loader/store as table_store
@@ -102,7 +103,15 @@ pub type Shown {
     /// that it left it; the client gives a creature in combat no click
     /// (`PickInteractionKind`, `0x14047a060`).
     in_combat: Bool,
+    /// The crowd-control states the creature holds as its viewer's client was told
+    /// (0x87f without a later 0x880), which the target gate of a press reads.
+    held: List(HeldState),
   )
+}
+
+/// A crowd-control state a shown creature holds, with the instance id its 0x87f gave.
+pub type HeldState {
+  HeldState(state: CrowdControlState, instance_id: Int)
 }
 
 /// The units the client shows, by unit id.

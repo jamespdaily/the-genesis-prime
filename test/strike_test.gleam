@@ -128,7 +128,7 @@ fn answer(
 }
 
 fn landed() -> strike_tell.Outcome {
-  Landed(descriptions: [], controls: [])
+  Landed(descriptions: [], controls: [], armor_removed: 0)
 }
 
 fn tells(effects effects: List(Effect)) -> List(strike.Effect) {
@@ -834,6 +834,7 @@ fn creature_at(
     attackable:,
     hostile_to: Hostile(exile: False, dominion: False),
     in_combat: False,
+    held: [],
   )
 }
 
@@ -1299,7 +1300,7 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
     answer(
       state:,
       key: Key(cast_id: 5, phase: 0, unit_id: 11),
-      outcome: Landed(descriptions: [], controls: [landed]),
+      outcome: Landed(descriptions: [], controls: [landed], armor_removed: 0),
       now_ms: 1050,
     )
   assert went(effects: closed)

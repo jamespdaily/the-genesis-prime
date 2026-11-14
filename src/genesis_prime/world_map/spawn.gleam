@@ -1310,6 +1310,8 @@ fn attack_of(
       ),
       reach:,
       cast:,
+      // Shape only (issue 786): the build reads the Spell4CCConditions row.
+      caster_cc_mask: 0,
     )
   Ok(#(attack, creature_scaling, attack_effects))
 }

@@ -182,6 +182,7 @@ fn activated(spell4_id spell4_id: Int) -> List(#(Int, List(cast.Effect))) {
           body: activate.Body(place:, radius: 0.25),
           alive: True,
           in_combat: False,
+          held: [],
           withheld: option.None,
         )
       },
@@ -492,6 +493,7 @@ fn pressed_with(
           body: activate.Body(place:, radius: 0.25),
           alive: True,
           in_combat: False,
+          held: [],
           withheld: option.None,
         )
       },

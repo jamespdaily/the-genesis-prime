@@ -864,7 +864,12 @@ fn struck(
           creature_life.Reaction(
             life: state.life,
             answer: Answered(key: tell.key, outcome: case tell.offence.blows {
-              [] -> strike_tell.Landed(descriptions: [], controls: [])
+              [] ->
+                strike_tell.Landed(
+                  descriptions: [],
+                  controls: [],
+                  armor_removed: 0,
+                )
               [_, ..] -> strike_tell.Immune(controls: [])
             }),
             news: [],
@@ -1042,8 +1047,8 @@ fn with_controls(
   controls controls: List(strike_tell.ControlLanded),
 ) -> strike_tell.Outcome {
   case outcome {
-    strike_tell.Landed(descriptions:, ..) ->
-      strike_tell.Landed(descriptions:, controls:)
+    strike_tell.Landed(descriptions:, armor_removed:, ..) ->
+      strike_tell.Landed(descriptions:, controls:, armor_removed:)
     strike_tell.Immune(..) -> strike_tell.Immune(controls:)
     strike_tell.Deflected | strike_tell.Refused(..) -> outcome
   }

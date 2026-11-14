@@ -110,6 +110,7 @@ import genesis_prime/game/strike_tell.{type Answered}
 import genesis_prime/game/target_group
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
+import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type TimerId, CancelTimer,
@@ -539,6 +540,7 @@ fn activate_target(
         hit_radius:,
         hostile_to:,
         in_combat:,
+        held:,
         ..,
       )) ->
         usable(
@@ -553,6 +555,7 @@ fn activate_target(
           ),
           alive:,
           in_combat:,
+          held: list.map(held, fn(held) { held.state }),
           withheld: case in_combat {
             True -> Some(activate.InCombat)
             False ->
@@ -578,6 +581,7 @@ fn activate_target(
           body: activate.Body(place:, radius: hit_radius),
           alive: True,
           in_combat: False,
+          held: [],
           withheld: None,
         )
     }
@@ -595,6 +599,7 @@ fn usable(
   body body: activate.Body,
   alive alive: Bool,
   in_combat in_combat: Bool,
+  held held: List(CrowdControlState),
   withheld withheld: Option(activate.Withheld),
 ) -> activate.Target {
   case
@@ -614,6 +619,7 @@ fn usable(
         body:,
         alive:,
         in_combat:,
+        held:,
         withheld:,
       )
     Error(Nil) -> activate.Unseen
@@ -1260,6 +1266,7 @@ pub fn creature_news_frames(
     | client_connection.Shield(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
+    | client_connection.CrowdControlTethered(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
     | client_connection.Level(..)

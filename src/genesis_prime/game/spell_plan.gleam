@@ -548,6 +548,10 @@ pub type Spell {
     /// bit n is the state n (`CheckSpellCCConditions`, `0x1403b2c40`). The row's
     /// ccStateFlagsRequired is 0 in every row the client has, so it is not read.
     caster_cc_mask: Int,
+    /// The crowd-control states that refuse a press of this spell at a target: the
+    /// ccStateMask of the Spell4CCConditions row the Spell4's target column names, 0 for
+    /// no row; bit n is the state n.
+    target_cc_mask: Int,
     global_cooldown: GlobalCooldown,
     /// The innate costs a press pays, in the client's order: the Spell4 row's two,
     /// then a stage's Spell4Thresholds row's two (`0x1403b3320`).
@@ -1129,6 +1133,12 @@ pub type PlanError {
   ControlAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A CCStateSet effect of a tree has an apply prerequisite, which is not read.
   ControlPrerequisiteNotRead(spell4_id: Int, effect_id: Int)
+  /// A CCStateSet effect of a tree holds a state until it is removed, which no rule of the
+  /// server ends yet (issue 786).
+  ControlUntilRemovedNotRead(spell4_id: Int, effect_id: Int)
+  /// A CCStateSet effect of a tree keeps its state through a death or a leave, which no
+  /// rule of the server holds yet (issue 786).
+  ControlPersistenceNotRead(spell4_id: Int, effect_id: Int)
   /// A UnitPropertyModifier or UnitPropertyConversion effect of a tree names a property
   /// that UnitProperty2 has no row for, which the client's 0x93a refuses from id 197
   /// (`opcode.0x93a`).
@@ -1333,6 +1343,18 @@ pub fn describe(error error: PlanError) -> String {
       <> " aimed by flags "
       <> int.to_string(target_flags)
       <> ", and only the primary target, the area or both are read for Stun and Knockdown, and the caster for Ability Restriction"
+    ControlUntilRemovedNotRead(spell4_id:, effect_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a CCStateSet effect "
+      <> int.to_string(effect_id)
+      <> " held until removed, which the server does not read"
+    ControlPersistenceNotRead(spell4_id:, effect_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a CCStateSet effect "
+      <> int.to_string(effect_id)
+      <> " kept through death or leaving, which the server does not read"
     ControlPrerequisiteNotRead(spell4_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1862,6 +1884,10 @@ fn spell_of(
     tables:,
     id: row.spell4_cc_conditions_id_caster,
   ))
+  use target_cc_mask <- result.try(cc_mask_of(
+    tables:,
+    id: row.spell4_cc_conditions_id_target,
+  ))
   let caster_death = caster_death_of(conditions: caster_conditions)
   let target_death = caster_death_of(conditions: target_conditions)
   use costs <- result.try(
@@ -2012,6 +2038,7 @@ fn spell_of(
       caster_death:,
       target_death:,
       caster_cc_mask:,
+      target_cc_mask:,
       global_cooldown:,
       costs:,
       requirements:,

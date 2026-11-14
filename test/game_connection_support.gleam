@@ -1809,6 +1809,7 @@ pub fn cast_starts(news: List(News)) -> List(spell_started.SpellStarted) {
       | client_connection.Level(..)
       | client_connection.CrowdControlApplied(..)
       | client_connection.CrowdControlEnded(..)
+      | client_connection.CrowdControlTethered(..)
       | client_connection.PropertiesChanged(..)
       | client_connection.Stealth(..)
       | client_connection.LookChanged(..) -> Error(Nil)
@@ -1846,6 +1847,7 @@ pub fn is_cast_removal(news: News) -> Bool {
     | client_connection.Level(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
+    | client_connection.CrowdControlTethered(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..) -> False
@@ -2023,7 +2025,11 @@ pub fn landed(
     stay: own_stay(),
     sent: client_connection.SentByTarget(answered: strike_tell.Answered(
       key:,
-      outcome: strike_tell.Landed(descriptions: [], controls: []),
+      outcome: strike_tell.Landed(
+        descriptions: [],
+        controls: [],
+        armor_removed: 0,
+      ),
     )),
   )
 }

@@ -359,6 +359,7 @@ fn name_of(news: News) -> String {
     | client_connection.LookChanged(..) -> "other"
     client_connection.CrowdControlApplied(..) -> "0x87f"
     client_connection.CrowdControlEnded(..) -> "0x880"
+    client_connection.CrowdControlTethered(..) -> "0x881"
     client_connection.InterruptArmor(armor:) ->
       "0x938(21, " <> int.to_string(armor) <> ")"
     client_connection.Absorption(absorption:) ->
@@ -693,6 +694,7 @@ pub fn a_target_in_reach_is_struck_with_5649_every_1500_ms_and_the_answer_is_wri
             ),
           ],
           controls: [],
+          armor_removed: 0,
         ),
       )),
     )
@@ -726,7 +728,7 @@ pub fn an_answer_after_the_deadline_is_left_out_of_the_go_test() -> Nil {
       at_ms: 2600,
       message: creature.StrikeAnswered(answered: Answered(
         key:,
-        outcome: Landed(descriptions: [], controls: []),
+        outcome: Landed(descriptions: [], controls: [], armor_removed: 0),
       )),
     )
   assert said(answer) == [] as "the round is closed: the late answer is dropped"
@@ -750,7 +752,7 @@ pub fn a_deadline_timer_already_fired_for_a_closed_round_does_nothing_test() -> 
       at_ms: 1600,
       message: creature.StrikeAnswered(answered: Answered(
         key:,
-        outcome: Landed(descriptions: [], controls: []),
+        outcome: Landed(descriptions: [], controls: [], armor_removed: 0),
       )),
     )
   // The deadline's timer was cancelled with the answer, but had already fired and
@@ -1618,6 +1620,7 @@ fn killing_answer(key key: strike_tell.Key) -> creature.Message {
         ),
       ],
       controls: [],
+      armor_removed: 0,
     ),
   ))
 }
@@ -2901,6 +2904,7 @@ fn landed(key key: Key) -> creature.Message {
         ),
       ],
       controls: [],
+      armor_removed: 0,
     ),
   ))
 }

@@ -51,6 +51,7 @@ fn creature(
     attackable:,
     hostile_to: Hostile(exile: False, dominion: False),
     in_combat: False,
+    held: [],
   )
 }
 
@@ -218,6 +219,7 @@ fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
     attackable: both,
     hostile_to: Hostile(exile: False, dominion: False),
     in_combat: False,
+    held: [],
   )
 }
 
