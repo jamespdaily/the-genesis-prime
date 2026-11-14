@@ -81,9 +81,8 @@ pub type Kind {
   /// A SpellForceRemove effect (80): takes casts off the unit it aims at
   /// (`Spell4Effects.effectType.80`).
   ForceRemove
-  /// A CCStateSet effect (4): holds a crowd-control state, a stun or a knockdown on a
-  /// creature or Ability Restriction on the caster, on the unit it aims at
-  /// (`Spell4Effects.effectType.4`).
+  /// A CCStateSet effect (4): holds any of the 28 crowd-control states on the unit it
+  /// aims at, a creature or the caster (`Spell4Effects.effectType.4`).
   CrowdControl
   /// A UnitPropertyModifier effect (11): changes a property of the unit it aims at
   /// for its time (`Spell4Effects.effectType.11.change`). A row is read when its

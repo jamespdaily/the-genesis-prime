@@ -59,14 +59,16 @@ fn counted(type_number type_number: Int) -> #(Int, Int, Int, Int) {
 
 // ---- the counts on the client's tables ----
 
-pub fn the_measure_counts_the_crowd_control_rows_the_plan_refuses_as_not_read_test() -> Nil {
+pub fn coverage_counts_the_crowd_control_rows_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let #(rows, unread, _, _) = counted(type_number: 4)
   assert rows == 7185 as "scratch count: effectType=4 holds 7,185 rows"
-  assert unread == 3849
-    as "scratch count: 3,319 rows hold a dataBits00 other than 0, 8 or 27 (Spell4Effects 609 holds 1), the aim is other than 2, 4 or 6 for Stun or Knockdown in 141 more, other than the caster for Ability Restriction in 69 more, and 320 more hold an apply prerequisite (`control_of`): 3,849 of 7,185"
+  assert rows - unread == 6330
+    as "6,330 of 7,185 rows are read, 2,994 more than the 3,336 read before the 28 states"
+  assert unread == 855
+    as "scratch count over `table_rows -- Spell4Effects effectType=4`: no dataBits00 is outside 0 to 27; 618 rows hold an apply prerequisite (#787); of the rest, 9 aim by the union flags 3, 5 and 7 (#794) and 1 by 9 (#336); of the rest, 179 aimed at another unit last until removed (flags bit 2, #803) and 41 more hold a persistence or suspend prerequisite there (#787): 848; and 7 more, otherwise read, hold a phaseFlags of 0, which no phase selects (`in_phase`, rows 90868, 90869, 90870, 101384, 102242, 108117 and 113426): 855 of 7,185"
 }
 
 pub fn the_measure_counts_the_gains_the_plan_refuses_as_not_read_test() -> Nil {
@@ -134,8 +136,8 @@ pub fn the_measure_totals_match_the_plan_test() -> Nil {
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let text = checklist.render([measured()])
-  assert string.contains(text, "30200 rows of the handled types not read")
-    as "the sum of the types' scratch counts: 1 1,368, 3 2,562, 4 3,849, 8 12,293, 10 1,623, 11 685, 26 1,986, 73 35, 80 535 and 118 110 (the tests above), 17 455 and 81 658 (the 375 and 634 of before and 80 and 24 rows, otherwise read, with phaseFlags 0), and the counts this step leaves as they were: 14 3,455, 18 14, 29 281, 52 2, 64 35, 83 51, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values, which the step does not move)"
+  assert string.contains(text, "27206 rows of the handled types not read")
+    as "the sum of the types' scratch counts: 1 1,368, 3 2,562, 4 855, 8 12,293, 10 1,623, 11 685, 26 1,986, 73 35, 80 535 and 118 110 (the tests above), 17 455 and 81 658 (the 375 and 634 of before and 80 and 24 rows, otherwise read, with phaseFlags 0), and the counts this step leaves as they were: 14 3,455, 18 14, 29 281, 52 2, 64 35, 83 51, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values, which the step does not move)"
   assert string.contains(text, "starting abilities: 184 of 196 rows handled")
     as "scratch count over the 196 starting rows: 9 were not read before (the two Proc rows the plan skips, 90 four times, 24, the Warrior's 210834 and 91018) and 3 are not read now: Proxies 121345 and 178429 (dataBits00 0) and the Medic's ticking gain 228918"
 }

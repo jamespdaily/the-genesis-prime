@@ -68,6 +68,7 @@
 ////   genesis_prime/world_map/creature_life `Attack`).
 
 import genesis_prime/content/refusal.{type Refusal}
+import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/faction_level
 import genesis_prime/game/hit
@@ -1209,6 +1210,17 @@ fn attack_of(
       id: kind.attack_spell4_id.value,
     )),
   )
+  use caster_cc_mask <- result.try(
+    crowd_control.mask_of(
+      tables: catalog.tables,
+      id: spell.spell4_cc_conditions_id_caster,
+    )
+    |> result.replace_error(NoPropertyRow(
+      creature_id:,
+      table: "Spell4CCConditions",
+      id: spell.spell4_cc_conditions_id_caster,
+    )),
+  )
   use scaling <- result.try(
     game_formula.get(catalog.tables, id.GameFormulaId(creature_scaling_formula))
     |> result.replace_error(NoPropertyRow(
@@ -1310,8 +1322,7 @@ fn attack_of(
       ),
       reach:,
       cast:,
-      // Shape only (issue 786): the build reads the Spell4CCConditions row.
-      caster_cc_mask: 0,
+      caster_cc_mask:,
     )
   Ok(#(attack, creature_scaling, attack_effects))
 }

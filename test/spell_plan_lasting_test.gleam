@@ -27,8 +27,10 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_group_list
+import gleam/int
 import gleam/list
 import gleam/option
+import gleam/string
 import owned_test
 import planted_table.{type Cell, Integer}
 import spell_tables
@@ -541,70 +543,173 @@ pub fn a_caster_ability_restriction_row_is_read_until_removed_test() -> Nil {
     as "a row without flags bit 2 is not held until removed"
 }
 
-pub fn a_crowd_control_row_of_a_state_the_plan_does_not_read_fails_the_load_test() -> Nil {
+pub fn a_crowd_control_row_of_a_value_that_is_no_state_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert plan_error(
-      rows: spell_tables.rows_with_effect(
-        effect: knockdown_row(state: 21, target_flags: 4, columns: []),
-      ),
-    )
-    == spell_plan.ControlStateNotRead(
-      spell4_id: strike,
-      effect_id: 99_040,
-      state: 21,
-    )
-    as "Snare (21) has no rule on a creature"
-  assert plan_error(
-      rows: spell_tables.rows_with_effect(
-        effect: restriction_row(
-          state: 9,
-          flags: 2,
-          target_flags: 1,
-          columns: [],
+  list.each([28, 99, -1], fn(state) {
+    assert plan_error(
+        rows: spell_tables.rows_with_effect(
+          effect: knockdown_row(state:, target_flags: 4, columns: []),
         ),
-      ),
-    )
-    == spell_plan.ControlStateNotRead(
-      spell4_id: strike,
-      effect_id: 99_041,
-      state: 9,
-    )
-    as "a state other than Stun, Knockdown and AbilityRestriction on the caster has no rule yet, whichever its aim"
+      )
+      == spell_plan.ControlStateNotRead(
+        spell4_id: strike,
+        effect_id: 99_040,
+        state:,
+      )
+      as "Unit.CodeEnumCCState names the values 0 to 27; the client's CCStates table holds no other row"
+  })
 }
 
-pub fn a_crowd_control_row_aimed_at_the_caster_or_by_other_flags_fails_the_load_test() -> Nil {
-  use <- owned_test.run(60_000)
-  list.each([2, 3, 4], fn(flags) {
-    assert plan_error(
-        rows: spell_tables.rows_with_effect(
-          effect: restriction_row(
-            state: 27,
-            flags: 2,
-            target_flags: flags,
-            columns: [],
-          ),
-        ),
-      )
-      == spell_plan.ControlAimNotRead(
-        spell4_id: strike,
-        effect_id: 99_041,
-        target_flags: flags,
-      )
-      as "an AbilityRestriction is read on the caster alone"
+/// `Unit.CodeEnumCCState`: the 28 states, 0 to 27.
+fn every_state() -> List(Int) {
+  int.range(from: 0, to: 28, with: [], run: fn(states, state) {
+    [state, ..states]
   })
-  list.each([1, 3], fn(flags) {
-    assert plan_error(
+  |> list.reverse
+}
+
+pub fn every_state_is_read_on_every_simple_aim_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let aims = [
+    #(1, spell_plan.AimsAtCaster),
+    #(2, spell_plan.AimsAtPrimaryTarget),
+    #(4, spell_plan.AimsAtArea),
+    #(6, spell_plan.AimsAtBoth),
+  ]
+  list.each(aims, fn(aim) {
+    let #(flags, expected_aim) = aim
+    list.each(every_state(), fn(state) {
+      let assert Ok(spell) =
+        spell_tables.planned_strike(
+          rows: spell_tables.rows_with_effect(
+            effect: knockdown_row(state:, target_flags: flags, columns: []),
+          ),
+        )
+        as {
+          "Spell4Effects.effectType.4: state "
+          <> int.to_string(state)
+          <> " aimed by flags "
+          <> int.to_string(flags)
+          <> " is read"
+        }
+      assert spell.controls
+        == [
+          spell_plan.CrowdControl(
+            effect_id: Spell4EffectsId(99_040),
+            phase_flags: -1,
+            aim: expected_aim,
+            row: crowd_control.Row(
+              state: crowd_control_state.from_value(state),
+              delay_ms: 166,
+              duration_ms: 3000,
+              armor_removed: 1,
+              until_removed: False,
+            ),
+            tag: spend.EqualTo(0),
+          ),
+        ]
+        as "dataBits00 the state, delayTime and durationTime the time, dataBits03 the armor, targetFlags 1, 2, 4 and 6 the caster, the primary target, the area and both"
+    })
+  })
+}
+
+pub fn union_and_bit_eight_aims_stay_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each([3, 5, 7, 9], fn(flags) {
+    let error =
+      plan_error(
         rows: spell_tables.rows_with_effect(
-          effect: knockdown_row(state: 8, target_flags: flags, columns: []),
+          effect: knockdown_row(state: 0, target_flags: flags, columns: []),
         ),
       )
+    assert error
       == spell_plan.ControlAimNotRead(
         spell4_id: strike,
         effect_id: 99_040,
         target_flags: flags,
       )
-      as "a state on the caster is a player's, which no creature casts"
+      as "aim_of reads targetFlags 1, 2, 4 and 6 only"
+    let named = case flags {
+      9 -> "#336"
+      _ -> "#794"
+    }
+    assert string.contains(spell_plan.describe(error:), named)
+      as "the refusal names the issue that will read the aim: the union aims 3, 5 and 7 are #794, bit eight (9) is #336"
   })
+}
+
+pub fn a_state_until_removed_on_another_unit_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each([2, 4, 6], fn(flags) {
+    let error =
+      plan_error(
+        rows: spell_tables.rows_with_effect(
+          effect: knockdown_row(state: 0, target_flags: flags, columns: [
+            #("flags", Integer(2)),
+            #("durationTime", Integer(0)),
+          ]),
+        ),
+      )
+    assert error
+      == spell_plan.ControlUntilRemovedNotRead(
+        spell4_id: strike,
+        effect_id: 99_040,
+      )
+      as "cc_state.instance_id: flags bit 2 never times out, and no rule of the server ends a creature's state when its cast's node ends"
+    assert string.contains(spell_plan.describe(error:), "#803")
+      as "the refusal names the issue that will end it"
+  })
+  let assert Ok(on_caster) =
+    spell_tables.planned_strike(
+      rows: spell_tables.rows_with_effect(
+        effect: knockdown_row(state: 0, target_flags: 1, columns: [
+          #("flags", Integer(2)),
+          #("durationTime", Integer(0)),
+        ]),
+      ),
+    )
+    as "a state on the caster ends with its cast's node (cast.restrictions)"
+  assert list.map(on_caster.controls, fn(control) { control.row.until_removed })
+    == [True]
+}
+
+pub fn a_persistence_prerequisite_on_another_unit_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      "prerequisiteIdTargetPersistence",
+      "prerequisiteIdCasterPersistence",
+      "prerequisiteIdTargetSuspend",
+    ],
+    fn(column) {
+      let error =
+        plan_error(
+          rows: spell_tables.rows_with_effect(
+            effect: knockdown_row(state: 0, target_flags: 2, columns: [
+              #(column, Integer(17_302)),
+            ]),
+          ),
+        )
+      assert error
+        == spell_plan.ControlPersistenceNotRead(
+          spell4_id: strike,
+          effect_id: 99_040,
+        )
+        as "Spell4Effects.prerequisiteIdTargetPersistence and its two siblings keep a state through a death or a leave, which no creature rule holds"
+      assert string.contains(spell_plan.describe(error:), "#787")
+        as "the refusal names the issue that will read persistence"
+    },
+  )
+  let assert Ok(on_caster) =
+    spell_tables.planned_strike(
+      rows: spell_tables.rows_with_effect(
+        effect: knockdown_row(state: 0, target_flags: 1, columns: [
+          #("prerequisiteIdTargetPersistence", Integer(17_302)),
+        ]),
+      ),
+    )
+    as "a row aimed at the caster still plans: the caster's own state is held by the cast"
+  assert list.length(on_caster.controls) == 1
 }
 
 pub fn a_crowd_control_row_behind_an_apply_prerequisite_fails_the_load_test() -> Nil {
