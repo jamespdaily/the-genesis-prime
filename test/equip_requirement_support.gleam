@@ -3,7 +3,7 @@
 //// builds them.
 
 import genesis_prime/game/equip_requirement.{type Wearer, Wearer}
-import genesis_prime/game/prerequisite.{Player}
+import genesis_prime/game/prerequisite.{Checker, Player}
 
 /// The Engineer of the tests: race Human (1), class Engineer (2), faction 166,
 /// level 1, gender 0 (male), in world 870, with the item proficiencies 66 (bits
@@ -22,6 +22,7 @@ pub fn engineer() -> Wearer {
       zones: [],
     ),
     item_proficiencies: 66,
+    checker: Checker(items: [], book: [], world_difficulty: 0),
   )
 }
 

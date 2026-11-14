@@ -31,7 +31,8 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/spell_failed
 import genesis_prime/message/spell_started
 import genesis_prime/step.{ConnectionId, LogDebug}
-import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
+import genesis_prime/table/id.{PrerequisiteId, Spell4BaseId, Spell4EffectsId}
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -543,6 +544,109 @@ pub fn a_cast_whose_type_15_persistence_names_another_casts_spell_ends_in_the_sa
     as "B fails first; with B gone A's condition fails too, and both end in the same input"
   let #(_, after) = persisted(state: ended, caster: fighting, at: 1300)
   assert after == []
+}
+
+// ---- type 130 in a target persistence ----
+
+/// Prerequisite 43156 (`table_rows -- Prerequisite 43156`) is the TargetPersistence of
+/// Spell4 83174, Empowering Probes T4/T8 Buff: one type 130 condition, comparison 1,
+/// objectId 704 (a cast of spell group 704, Empowering Probes Buff's group 704 through
+/// Spell4GroupList 979, held by the second unit). The planted spell holds that row as its
+/// TargetPersistence, and the planted spell B has the group.
+///
+/// Spell4 83174 itself is not pressed: only Proxy 219576 of the tier 5 Spell4 60423 (base
+/// 25729) starts it, and the plans hold the level-1 abilities only, so no cast can
+/// hold group 704 yet
+/// (`no_level_1_ability_casts_empowering_probes_or_holds_a_group_704_cast_test`). The
+/// tiers above 1 are `#336`'s ("each class's spells to level 50").
+pub fn an_empowering_probes_buff_persists_while_its_caster_holds_a_group_704_cast_and_ends_without_one_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let assert Ok(row) =
+    prerequisite.load(
+      id: PrerequisiteId(43_156),
+      rows: prerequisite.table_rows(tables:),
+      arcs: prerequisite.table_arcs(tables:),
+      quests: prerequisite.table_quests(tables:),
+    )
+    as "the client's rows hold Prerequisite 43156"
+  let buff =
+    Spell(
+      ..support.child(spell4_id: 7020, base: 1),
+      cast_time_ms: 1000,
+      target_persistence: Some(row),
+    )
+  let base_buff =
+    Spell(
+      ..support.child(spell4_id: 7021, base: 3),
+      cast_time_ms: 1000,
+      groups: [704],
+    )
+  let plans = support.plans_of([buff, base_buff])
+  let caster = support.caster_in_combat(in_combat: True)
+  let #(state, pressed_base) =
+    support.press_by(
+      plans:,
+      state: cast.new(),
+      caster:,
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  let #(with_base, pressed_buff) =
+    support.press_by(plans:, state:, caster:, bag: bag_of_base_1, at: 1100)
+  let id_buff = support.pressed_id(effects: pressed_buff)
+  let id_base = support.pressed_id(effects: pressed_base)
+  let #(_, held) = persisted(state: with_base, caster:, at: 1150)
+  assert held == []
+    as "the caster holds a cast of group 704, so condition 130 (comparison 1) holds"
+  let #(alone, _) =
+    support.press_by(
+      plans:,
+      state: cast.new(),
+      caster:,
+      bag: bag_of_base_1,
+      at: 1000,
+    )
+  let #(_, effects) = persisted(state: alone, caster:, at: 1150)
+  assert list.map(failed(effects:), fn(failure) { failure.1 }) == [283]
+    as "with no cast of group 704 the condition fails: the buff ends with 283 (Prereq_TargetPersistence)"
+  let assert Ok(#(without_base, _)) =
+    support.cancelled_in(
+      plans:,
+      state: with_base,
+      cast_id: id_base,
+      reason: cast_result.from_value(11),
+      bit: 1,
+      at: 1200,
+    )
+    as "the client cancels the base cast"
+  let #(_, effects) = persisted(state: without_base, caster:, at: 1250)
+  assert failed(effects:) == [#(id_buff, 283, 7, 0)]
+    as "the base cast gone, the buff's persistence fails at the next step"
+}
+
+pub fn no_level_1_ability_casts_empowering_probes_or_holds_a_group_704_cast_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  // Spell4Effects 219576 (a Proxy, effectType 26) of Spell4 60423 (Empowering Probes Base,
+  // tierIndex 5, base 25729) starts 83174, and Spell4 41534 (Empowering Probes Buff, base
+  // 25730, spellDuration 0, spell4GroupListId 979, whose spellGroupId06 is 704) is the
+  // buff of group 704. The plans hold each class's level-1 abilities, and base 25729 is not
+  // one of them, so the tiers above 1 and the abilities of levels above 1 are `#336`'s
+  // ("each class's spells to level 50").
+  let plans = spell_plan.plans(client_tables.shared())
+  assert spell_plan.in_plans(plans:, base: Spell4BaseId(25_729)) == Error(Nil)
+    as "Empowering Probes is no class's level-1 ability"
+  let castable =
+    dict.values(plans)
+    |> list.flat_map(fn(ability) {
+      spell_plan.tree(spell: ability, started: fn(_) { True })
+    })
+  assert !list.any(castable, fn(spell) { spell.spell4_id.value == 83_174 })
+    as "no tree, with every gate open, casts Empowering Probes T4/T8 Buff"
+  assert !list.any(castable, fn(spell) { list.contains(spell.groups, 704) })
+    as "no tree holds a cast of spell group 704, so type 130 on group 704 has no cast to find yet"
 }
 
 // ---- stealth ----

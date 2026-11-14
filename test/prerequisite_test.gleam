@@ -84,6 +84,8 @@ fn bare() -> Subject {
     quests: None,
     creature_index: None,
     seen: prerequisite.WholeUnit,
+    checker: None,
+    first_unit: prerequisite.UnknownUnit,
   )
 }
 
@@ -602,12 +604,13 @@ pub fn the_types_the_server_decides_are_those_is_read_names_test() -> Nil {
       prerequisite.is_read(type_id:)
     })
     == [
-      0, 1, 2, 3, 4, 6, 10, 11, 15, 17, 21, 22, 23, 26, 28, 32, 33, 34, 35, 36,
-      37, 39, 43, 45, 50, 52, 57, 58, 59, 64, 68, 69, 71, 72, 73, 74, 75, 94,
-      108, 109, 116, 125, 129, 132, 144, 156, 157, 158, 161, 165, 179, 181, 202,
-      243, 247, 249, 250, 257, 258, 274, 282, 284, 296, 297, 298, 299, 300,
+      0, 1, 2, 3, 4, 6, 10, 11, 13, 14, 15, 17, 21, 22, 23, 26, 28, 32, 33, 34,
+      35, 36, 37, 38, 39, 43, 45, 47, 50, 52, 57, 58, 59, 64, 68, 69, 71, 72, 73,
+      74, 75, 94, 108, 109, 116, 118, 125, 129, 130, 132, 143, 144, 156, 157,
+      158, 161, 165, 179, 181, 202, 214, 243, 246, 247, 249, 250, 257, 258, 274,
+      282, 284, 296, 297, 298, 299, 300,
     ]
-    as "the types the server reads (1 to 4, 6, 10, 11, 15, 22, 23, 26, 28, 33 to 37, 39, 43, 50, 52, 59, 64, 68, 69, 71, 73, 74, 94, 108, 109, 116, 125, 129, 179, 243, 250; Prerequisite.prerequisiteTypeId.1, .2, .3, .4, .6, .10, .11, .22, .26, .39, .43, .52, .64, .68, .69, .74, .94, .108, .109, .116, .129, .243, .250) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
+    as "the types the server reads (1 to 4, 6, 10, 11, 13, 14, 15, 22, 23, 26, 28, 33 to 39, 43, 47, 50, 52, 59, 64, 68, 69, 71, 73, 74, 94, 108, 109, 116, 118, 125, 129, 130, 143, 179, 214, 243, 246, 250; Prerequisite.prerequisiteTypeId.1, .2, .3, .4, .6, .10, .11, .13, .14, .22, .26, .38, .39, .43, .47, .52, .64, .68, .69, .74, .94, .108, .109, .116, .118, .129, .130, .143, .214, .243, .246, .250) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
 }
 
 fn types_up_to_300() -> List(Int) {

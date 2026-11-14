@@ -4,10 +4,12 @@
 import genesis_prime/game/area.{type Pose, Point, Pose}
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite.{
-  type Player, type Prerequisite, type Subject, Player, Subject,
+  type Checker, type FirstUnit, type Player, type Prerequisite, type Subject,
+  Checker, Player, Subject,
 }
 import genesis_prime/game/quest_log.{type Quest, type QuestRowError}
-import genesis_prime/table/id.{PrerequisiteId, Spell4Id}
+import genesis_prime/store.{type HeldItem, HeldItem}
+import genesis_prime/table/id.{Item2Id, PrerequisiteId, Spell4BaseId, Spell4Id}
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/dict
@@ -204,6 +206,78 @@ pub fn holding(
     quests: None,
     creature_index: None,
     seen: prerequisite.WholeUnit,
+    checker: None,
+    first_unit: prerequisite.TheChecker,
+  )
+}
+
+/// The subject with the checker's own game object these hold: the Item2 ids held
+/// at a location, as (item2 id, location), the Spell4Base ids of the ability book
+/// and the world difficulty.
+pub fn checked_by(
+  subject subject: Subject,
+  items items: List(#(Int, Int)),
+  book book: List(Int),
+  world_difficulty world_difficulty: Int,
+) -> Subject {
+  Subject(
+    ..subject,
+    checker: option.Some(checker(items:, book:, world_difficulty:)),
+  )
+}
+
+/// The same subject with this first unit.
+pub fn of_unit(subject subject: Subject, unit unit: FirstUnit) -> Subject {
+  Subject(..subject, first_unit: unit)
+}
+
+/// A checker holding these items (Item2 id, location), this ability book and this
+/// world difficulty.
+pub fn checker(
+  items items: List(#(Int, Int)),
+  book book: List(Int),
+  world_difficulty world_difficulty: Int,
+) -> Checker {
+  Checker(
+    items: list.index_map(items, fn(item, index) { held(item:, index:) }),
+    book: list.map(book, Spell4BaseId),
+    world_difficulty:,
+  )
+}
+
+fn held(item item: #(Int, Int), index index: Int) -> HeldItem {
+  HeldItem(
+    item_guid: index + 1,
+    item2_id: Item2Id(item.0),
+    location: item.1,
+    bag_index: index,
+    stack_count: 1,
+    random_stats: 0,
+  )
+}
+
+/// A checker that holds nothing, on world difficulty 0.
+pub fn empty_checker() -> Checker {
+  checker(items: [], book: [], world_difficulty: 0)
+}
+
+/// The subject of a unit the caster struck, known by its place alone, which the
+/// caster's casts do not hold anything on.
+pub fn struck(
+  first first: option.Option(Pose),
+  second second: Pose,
+  player player: Player,
+  quests quests: quest_log.QuestLog,
+) -> Subject {
+  prerequisite.of_struck(
+    first:,
+    second:,
+    player:,
+    quests:,
+    unit: prerequisite.UnknownUnit,
+    caster_unit: 1,
+    under: [],
+    checker: empty_checker(),
   )
 }
 

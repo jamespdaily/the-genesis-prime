@@ -1270,12 +1270,17 @@ pub fn control_granted_frame(unit_id unit_id: Int) -> Frame {
   Frame(message_id: client_control_granted.message_id, body:)
 }
 
-/// 0xF1 with difficulty 0, prime level 0, flags 0 and the client's own
+/// The world difficulty the server tells every player and a type 143 condition reads: 0,
+/// Normal. The server holds one world difficulty for all: instances, matching and PvP
+/// work on the real client (issue 56).
+pub const world_difficulty = 0
+
+/// 0xF1 with the world difficulty, prime level 0, flags 0 and the client's own
 /// movement send interval (opcode.0xf1.fields).
 fn movement_interval() -> Effect {
   let assert Ok(body) =
     movement_send_interval.encode(MovementSendInterval(
-      world_difficulty: 0,
+      world_difficulty:,
       world_prime_level: 0,
       world_flags: 0,
       interval_milliseconds: movement_send_interval_ms,
