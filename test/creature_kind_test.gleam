@@ -121,6 +121,24 @@ pub fn an_attack_spell_with_an_innate_cost_emm_id_fails_the_load_test() -> Nil {
     as "the refusal names the spell and the id"
 }
 
+pub fn a_creature_attack_with_a_periodic_damage_row_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Synthetic: the client's Spell4Effects 184741 has tickTime 0; a tickTime makes it
+  // strike every tick for its duration (`Spell4Effects.tickTime`), where a creature's
+  // attack applies one blow for each damage effect.
+  let assert Error([Refusal(table: "creature_kind", row: RowId(0), rule:)]) = {
+    use tables <- fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 184_741,
+      with: [#("tickTime", Integer(1500))],
+    )
+    creature_kind.select(rows: [default_row], tables:)
+  }
+    as "a creature's blow strikes once at delayTime, so a periodic damage row would strike once instead of every tick and the start stops"
+  assert string.contains(rule, "184741") && string.contains(rule, "1500")
+    as "the refusal names the effect and the tick"
+}
+
 pub fn an_attack_with_a_cast_time_loads_with_it_test() -> Nil {
   use <- owned_test.run(60_000)
   // Creature2 73494, the Sim-Turret the Exiles fight, attacks with its charge Spell4

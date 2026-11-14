@@ -8,6 +8,7 @@
 ////   no caster prerequisite                       ─▶ applies
 ////   a prerequisite of type 179 (the difficulty)  ─▶ applies when the creature's difficulty passes it
 ////   a prerequisite of any other type             ─▶ the load refuses the spell (`unevaluated`)
+////   a tickTime other than 0 (a periodic effect)  ─▶ the load refuses the spell (`unevaluated`)
 //// the spell's cast prerequisite (Spell4.prerequisiteIdCasterCast)
 ////   none, or one condition of type 15            ─▶ answered
 ////   any other                                    ─▶ the load refuses the spell
@@ -63,6 +64,10 @@ pub type Unevaluated {
   /// whose quest has an objective slot naming a QuestObjective row the client's table
   /// lacks.
   NoQuestObjectiveRow(spell4_effects_id: Int, objective_id: Int)
+  /// The damage effect holds a tickTime, so it strikes every tick for its duration
+  /// (`Spell4Effects.tickTime`), which a creature's attack, one blow per effect, does
+  /// not do.
+  PeriodicDamage(spell4_effects_id: Int, tick_ms: Int)
   /// The spell's Spell4 row holds an innate cost EMM id, which would choose its
   /// damage effects by points a creature's attack does not spend.
   SpendsByEmmId(spell4_id: Int, emm_id: Int)
@@ -170,6 +175,7 @@ pub fn evaluated(
   use Nil <- result.try(answers_its_cast_prerequisite(tables:, spell4_id:))
   damage_effects(tables:, spell4_id:)
   |> list.try_each(fn(effect) {
+    use Nil <- result.try(strikes_once(effect:))
     condition(tables:, effect:) |> result.replace(Nil)
   })
 }
@@ -182,6 +188,7 @@ pub fn applying(
 ) -> Result(List(Spell4Effects), Unevaluated) {
   damage_effects(tables:, spell4_id:)
   |> list.try_fold([], fn(applying, effect) {
+    use Nil <- result.try(strikes_once(effect:))
     use found <- result.try(condition(tables:, effect:))
     case found {
       Unconditional -> Ok([effect, ..applying])
@@ -204,6 +211,15 @@ pub fn applying(
     }
   })
   |> result.map(list.reverse)
+}
+
+/// A damage effect with no tickTime, which strikes once; a tickTime is a periodic
+/// effect, which one blow per effect would strike once instead of every tick.
+fn strikes_once(effect effect: Spell4Effects) -> Result(Nil, Unevaluated) {
+  case effect.tick_time {
+    0 -> Ok(Nil)
+    tick_ms -> Error(PeriodicDamage(spell4_effects_id: effect.id, tick_ms:))
+  }
 }
 
 /// An effect's caster prerequisite as the server evaluates it.
@@ -313,6 +329,12 @@ pub fn describe(unevaluated unevaluated: Unevaluated) -> String {
       <> " has a caster prerequisite with a quest condition whose quest names QuestObjective "
       <> int.to_string(objective_id)
       <> ", which the client's table does not hold"
+    PeriodicDamage(spell4_effects_id:, tick_ms:) ->
+      "Spell4Effects "
+      <> int.to_string(spell4_effects_id)
+      <> " has tickTime "
+      <> int.to_string(tick_ms)
+      <> ", a periodic damage effect, which a creature's attack does not strike every tick"
     SpendsByEmmId(spell4_id:, emm_id:) ->
       "Spell4 "
       <> int.to_string(spell4_id)
