@@ -125,16 +125,17 @@
 ////   child a Proxy starts on each struck unit (`AbsorptionPeriodic`,
 ////   `AbsorptionHasNoLifetime`, `AbsorptionNumberNotFinite`, `AbsorptionParameterNotRead`,
 ////   `AbsorptionOnStruckUnit`); a row aimed only at other units is not read.
-//// - **The shield heals.** A HealShields effect (`Spell4Effects.effectType.118`) whose
-////   targetFlags include the caster (bit 1), or are the primary target alone (2) in a spell
-////   cast on the caster, is a `ShieldHeal` row: its formula (dataBits00 as a float,
+//// - **The heals.** A Heal effect (`Spell4Effects.effectType.10`) or a HealShields effect
+////   (`.118`) whose targetFlags include the caster (bit 1), or are the primary target
+////   alone (2) in a spell cast on the caster, is a `Heal` row carrying the vital it
+////   restores (health or shield): its formula (dataBits00 as a float,
 ////   dataBits01 and the four parameters, which must be kinds the caster's value reads,
 ////   genesis_prime/game/damage `caster_unread`), its delay, aim and caster apply
 ////   prerequisite, which the cast rule checks and which a target apply prerequisite
-////   leaves not applied; a row with a tickTime is a `TickingShieldHeal`, held and not
-////   applied, since each tick needs a 0x7f8. A row aimed only at other units (4 and 6) is
-////   not read. A child a Proxy starts on each struck unit that holds a heal aimed at its
-////   primary target fails the load: a shield heal on a struck unit is not built.
+////   leaves not applied; a row with a tickTime is a `TickingHeal`, held and not
+////   applied, since each tick needs a 0x7f8 (#336). A row aimed only at other units (4 and
+////   6) is not read. A child a Proxy starts on each struck unit that holds a heal aimed at
+////   its primary target fails the load: a heal on a struck unit is not built.
 //// - **The shield overloads.** A ShieldOverload effect (`Spell4Effects.effectType.64`)
 ////   aimed at the area (targetFlags 4) is a `Lasting` row, listed on each struck unit for
 ////   its durationTime as a Fluff effect is: the client marks the unit overloaded and
@@ -610,8 +611,8 @@ pub type Spell {
     stealth: List(StealthRow),
     /// The RemoveStealth effects aimed at the caster, which end every stealth it holds.
     remove_stealth: List(RemoveStealthRow),
-    /// The HealShields effects that reach the caster, which refill its shield.
-    shield_heals: List(ShieldHeal),
+    /// The Heal and HealShields effects that reach the caster, which refill its health or shield.
+    heals: List(Heal),
     /// What the spell does to the caster's stealth, and at which go (`StealthChange`).
     stealth_change: StealthChange,
     /// The Proc effects aimed at the caster, whose kind is one of the holder's own
@@ -860,18 +861,19 @@ pub type Lasting {
   )
 }
 
-/// A HealShields effect (`Spell4Effects.effectType.118`) of a spell whose targetFlags
-/// reach the caster (`effect_kind.is_row_read`): the unit it heals (`aim`: the caster,
+/// A Heal (`Spell4Effects.effectType.10`) or HealShields (`.118`) effect of a spell whose
+/// targetFlags reach the caster (`effect_kind.is_row_read`): the unit it heals (`aim`: the caster,
 /// or the primary target of a spell cast on the caster), the phases of `phase_flags` it
 /// applies in, when its `condition` holds (its caster apply prerequisite against the
 /// caster; one behind a target apply prerequisite is not applied), and when its `tag`
 /// holds for the points the cast spent (genesis_prime/game/spend). The part of a row's
 /// aim that is not the caster is not applied (`effect_kind.is_row_read`).
-pub type ShieldHeal {
+pub type Heal {
   /// A heal that lands once, `delay_ms` after its go, by `formula` read for the caster
   /// (genesis_prime/game/damage `value_on_caster`).
-  ShieldHeal(
+  Heal(
     effect_id: Spell4EffectsId,
+    vital: effect_kind.Vital,
     phase_flags: Int,
     aim: Aim,
     condition: Condition,
@@ -881,9 +883,10 @@ pub type ShieldHeal {
   )
   /// A heal each `tick_ms` for `duration_ms` (Spell4Effects.tickTime and durationTime),
   /// which the cast rule does not apply: each tick needs its own 0x7f8
-  /// (`Spell4Effects.effectType.118`).
-  TickingShieldHeal(
+  /// (`Spell4Effects.effectType.10`, `.118`).
+  TickingHeal(
     effect_id: Spell4EffectsId,
+    vital: effect_kind.Vital,
     phase_flags: Int,
     aim: Aim,
     condition: Condition,
@@ -1013,7 +1016,7 @@ pub type RowReading {
   /// it read.
   Applied(row: PlannedRow)
   /// The row is in a list of its spell and no go applies it: a periodic gain or heal
-  /// (`TickingGain`, `TickingShieldHeal`), a row behind a target apply prerequisite
+  /// (`TickingGain`, `TickingHeal`), a row behind a target apply prerequisite
   /// (`cast.condition_gate`), a property change or disguise with no life
   /// (`lasting.has_life`) and a row whose phaseFlags is 0, which no phase selects
   /// (`in_phase`). The measure counts it not read.
@@ -1056,7 +1059,7 @@ pub type PlannedRow {
   PlannedCooldownModifier(modifier: CooldownModifier)
   PlannedStealth(stealth: StealthRow)
   PlannedRemoveStealth(remove: RemoveStealthRow)
-  PlannedShieldHeal(heal: ShieldHeal)
+  PlannedHeal(heal: Heal)
   PlannedProc(reading: ProcReading, condition: Condition)
   PlannedProxy(target: ProxyTarget, condition: Condition)
 }
@@ -1156,19 +1159,15 @@ pub type PlanError {
   /// A spell of a tree has a spellCastStealthChange that is not 0, 1 or 2
   /// (`Spell4.spellCastStealthChange`).
   StealthChangeNotRead(spell4_id: Int, value: Int)
-  /// A HealShields effect of a tree has a parameter type the formula for an effect on
+  /// A Heal or HealShields effect of a tree has a parameter type the formula for an effect on
   /// its caster does not read (`damage.caster_unread`).
-  ShieldHealParameterNotRead(
-    spell4_id: Int,
-    effect_id: Int,
-    parameter_kind: Int,
-  )
-  /// A HealShields effect of a tree has a dataBits00 that is not a finite 32-bit float.
-  ShieldHealNumberNotFinite(spell4_id: Int, effect_id: Int)
+  HealParameterNotRead(spell4_id: Int, effect_id: Int, parameter_kind: Int)
+  /// A Heal or HealShields effect of a tree has a dataBits00 that is not a finite 32-bit float.
+  HealNumberNotFinite(spell4_id: Int, effect_id: Int)
   /// A Proxy of a tree starts a child on each unit its area strikes, and the child holds
-  /// a HealShields effect aimed at its primary target, a struck unit: `spell4_id` is the
+  /// a Heal or HealShields effect aimed at its primary target, a struck unit: `spell4_id` is the
   /// spell with the Proxy `proxy_effect_id`, and `effect_id` the heal's row.
-  ShieldHealOnStruckUnit(spell4_id: Int, proxy_effect_id: Int, effect_id: Int)
+  HealOnStruckUnit(spell4_id: Int, proxy_effect_id: Int, effect_id: Int)
   /// A ModifyInterruptArmor effect of a tree has a dataBits01 that is not 0 or 1, the two
   /// values that say whether the armor is taken back when it ends
   /// (`Spell4Effects.effectType.52`).
@@ -1402,28 +1401,28 @@ pub fn describe(error error: PlanError) -> String {
       <> " has a spellCastStealthChange of "
       <> int.to_string(value)
       <> ", and only 0, 1 and 2 are read"
-    ShieldHealParameterNotRead(spell4_id:, effect_id:, parameter_kind:) ->
+    HealParameterNotRead(spell4_id:, effect_id:, parameter_kind:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
-      <> " has a HealShields effect "
+      <> " has a Heal or HealShields effect "
       <> int.to_string(effect_id)
       <> " with a parameter of type "
       <> int.to_string(parameter_kind)
       <> ", which the caster's formula does not read"
-    ShieldHealNumberNotFinite(spell4_id:, effect_id:) ->
+    HealNumberNotFinite(spell4_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
-      <> " has a HealShields effect "
+      <> " has a Heal or HealShields effect "
       <> int.to_string(effect_id)
       <> " whose dataBits00 is not a finite number"
-    ShieldHealOnStruckUnit(spell4_id:, proxy_effect_id:, effect_id:) ->
+    HealOnStruckUnit(spell4_id:, proxy_effect_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
       <> " has a Proxy effect "
       <> int.to_string(proxy_effect_id)
-      <> " that starts a child on each struck unit, which holds the HealShields effect "
+      <> " that starts a child on each struck unit, which holds the Heal or HealShields effect "
       <> int.to_string(effect_id)
-      <> " aimed at that unit, and a shield heal on a struck unit is not built"
+      <> " aimed at that unit, and a heal on a struck unit is not built"
     InterruptArmorTakeBackNotRead(spell4_id:, effect_id:, value:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1923,7 +1922,10 @@ fn spell_of(
         [effect_kind.CooldownModifier],
         [effect_kind.Stealth],
         [effect_kind.RemoveStealth],
-        [effect_kind.ShieldHeal],
+        [
+          effect_kind.Heal(vital: effect_kind.Health),
+          effect_kind.Heal(vital: effect_kind.Shield),
+        ],
       ],
       fn(kinds) { rows_read(readings:, kinds:) },
     ),
@@ -2034,7 +2036,7 @@ fn spell_of(
       cooldown_modifiers: lists.cooldown_modifiers,
       stealth: lists.stealth,
       remove_stealth: lists.remove_stealth,
-      shield_heals: lists.shield_heals,
+      heals: lists.heals,
       stealth_change:,
       procs:,
     )
@@ -2088,37 +2090,39 @@ fn gain_row_of(
   })
 }
 
-/// One HealShields row that reaches the caster as a heal, or the error that fails the
-/// load: its dataBits00 must be a finite 32-bit float and its formula must read only the
+/// One Heal (type 10) or HealShields (type 118) row that reaches the caster as a heal of
+/// the vital its type names, or the error that fails the load: its dataBits00 must be a finite 32-bit float and its formula must read only the
 /// parameter types an effect on its caster reads (genesis_prime/game/damage
 /// `caster_unread`). It aims at the caster when its targetFlags include it and else at
-/// the primary target. A row with a tickTime is periodic, a `TickingShieldHeal`.
-pub fn shield_heal_of(
+/// the primary target. A row with a tickTime is periodic, a `TickingHeal`.
+pub fn heal_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
   condition condition: Condition,
-) -> Result(ShieldHeal, PlanError) {
+) -> Result(Heal, PlanError) {
   use formula <- result.try(
     caster_formula_read(
       formula: damage.formula_of(effect:),
-      not_finite: ShieldHealNumberNotFinite(spell4_id:, effect_id: effect.id),
+      not_finite: HealNumberNotFinite(spell4_id:, effect_id: effect.id),
       not_read: fn(parameter_kind) {
-        ShieldHealParameterNotRead(
-          spell4_id:,
-          effect_id: effect.id,
-          parameter_kind:,
-        )
+        HealParameterNotRead(spell4_id:, effect_id: effect.id, parameter_kind:)
       },
     ),
   )
   let effect_id = Spell4EffectsId(effect.id)
+  // The row is a Heal (10) or a HealShields (118) row: only the shield's type heals it.
+  let vital = case effect.effect_type == 118 {
+    True -> effect_kind.Shield
+    False -> effect_kind.Health
+  }
   let aim = reached_aim_of(effect:)
   let phase_flags = effect.phase_flags
   let tag = tag_of(effect:)
   Ok(case effect.tick_time {
     0 ->
-      ShieldHeal(
+      Heal(
         effect_id:,
+        vital:,
         phase_flags:,
         aim:,
         condition:,
@@ -2127,8 +2131,9 @@ pub fn shield_heal_of(
         delay_ms: effect.delay_time,
       )
     tick_ms ->
-      TickingShieldHeal(
+      TickingHeal(
         effect_id:,
+        vital:,
         phase_flags:,
         aim:,
         condition:,
@@ -2329,7 +2334,7 @@ pub fn modifier_of(
     | effect_kind.CooldownModifier
     | effect_kind.Stealth
     | effect_kind.RemoveStealth
-    | effect_kind.ShieldHeal
+    | effect_kind.Heal(..)
     | effect_kind.ShieldOverload
     | effect_kind.InterruptArmor
     | effect_kind.Proc
@@ -2558,7 +2563,7 @@ fn absorption_read(
 }
 
 /// A spell a Proxy starts on each unit its area strikes has that unit as its primary
-/// target, so a shield heal, an Interrupt Armor row or an absorb of the spell aimed at it
+/// target, so a heal, an Interrupt Armor row or an absorb of the spell aimed at it
 /// fails the load: none is built on a struck unit. A spell started on the caster, and a row
 /// that includes the caster, are read (`place`).
 fn not_on_a_struck_unit(
@@ -3110,7 +3115,7 @@ type RowLists {
     cooldown_modifiers: List(CooldownModifier),
     stealth: List(StealthRow),
     remove_stealth: List(RemoveStealthRow),
-    shield_heals: List(ShieldHeal),
+    heals: List(Heal),
   )
 }
 
@@ -3154,8 +3159,8 @@ fn lists_of(
               RowLists(..lists, stealth: [stealth, ..lists.stealth])
             PlannedRemoveStealth(remove:) ->
               RowLists(..lists, remove_stealth: [remove, ..lists.remove_stealth])
-            PlannedShieldHeal(heal:) ->
-              RowLists(..lists, shield_heals: [heal, ..lists.shield_heals])
+            PlannedHeal(heal:) ->
+              RowLists(..lists, heals: [heal, ..lists.heals])
             PlannedProc(..) | PlannedProxy(..) -> lists
           }
         Ok(LeftOut(..)) | Ok(ReadByArea) | Ok(ReadByActivation) | Error(..) ->
@@ -3173,7 +3178,7 @@ fn lists_of(
     cooldown_modifiers: list.reverse(lists.cooldown_modifiers),
     stealth: list.reverse(lists.stealth),
     remove_stealth: list.reverse(lists.remove_stealth),
-    shield_heals: list.reverse(lists.shield_heals),
+    heals: list.reverse(lists.heals),
   )
 }
 
@@ -3219,7 +3224,7 @@ fn by_condition(
 ///   each struck unit (`place`).
 /// - Each row is read by the rule of its type: `gain_row_of`, `lasting_of`, `remove_of`,
 ///   `control_of`, `modifier_of`, `interrupt_armor_of`, `forced_move_of`,
-///   `cooldown_modifier_of`, `stealth_row_of`, `remove_stealth_row_of`, `shield_heal_of`,
+///   `cooldown_modifier_of`, `stealth_row_of`, `remove_stealth_row_of`, `heal_of`,
 ///   `proc_read`, and for a Proxy `target_of` and `proxy_condition_of`.
 ///
 /// A Proxy's child and a Proc's spell are planned by the spell that holds the row; a
@@ -3338,9 +3343,9 @@ fn kind_reading(
           condition: remove.condition,
         )
       })
-    effect_kind.ShieldHeal -> {
+    effect_kind.Heal(..) -> {
       use <- when_reached(reaches:)
-      shield_heal_reading(tables:, place:, spell4_id:, effect:)
+      heal_reading(tables:, place:, spell4_id:, effect:)
     }
     effect_kind.Proc -> proc_reading(tables:, spell4_id:, effect:)
     effect_kind.Proxy ->
@@ -3434,9 +3439,9 @@ fn interrupt_armor_reading(
   by_condition_with_life(modifier:, condition:)
 }
 
-/// A HealShields row that reaches the caster or the primary target: a periodic heal is
+/// A Heal or HealShields row that reaches the caster or the primary target: a periodic heal is
 /// held.
-fn shield_heal_reading(
+fn heal_reading(
   tables tables: table_store.Tables,
   place place: RowPlace,
   spell4_id spell4_id: Int,
@@ -3447,10 +3452,10 @@ fn shield_heal_reading(
     effect:,
     data_bits06_names_a_gate: False,
   ))
-  use heal <- result.try(shield_heal_of(spell4_id:, effect:, condition:))
+  use heal <- result.try(heal_of(spell4_id:, effect:, condition:))
   use Nil <- result.map(
     not_on_a_struck_unit(place:, aim: heal.aim, refused: fn(by) {
-      ShieldHealOnStruckUnit(
+      HealOnStruckUnit(
         spell4_id: by.spell4_id,
         proxy_effect_id: by.proxy_effect_id,
         effect_id: effect.id,
@@ -3458,8 +3463,8 @@ fn shield_heal_reading(
     }),
   )
   case heal {
-    ShieldHeal(..) -> by_condition(row: PlannedShieldHeal(heal:), condition:)
-    TickingShieldHeal(..) -> Held(PlannedShieldHeal(heal:))
+    Heal(..) -> by_condition(row: PlannedHeal(heal:), condition:)
+    TickingHeal(..) -> Held(PlannedHeal(heal:))
   }
 }
 
@@ -4516,15 +4521,15 @@ pub fn lasting_in_phase(
   )
 }
 
-/// The HealShields effects of the spell that apply in phase `phase`, those whose tag
+/// The Heal and HealShields effects of the spell that apply in phase `phase`, those whose tag
 /// holds for the points the cast spent.
-pub fn shield_heals_in_phase(
+pub fn heals_in_phase(
   spell spell: Spell,
   phase phase: Int,
   spent spent: Option(Int),
-) -> List(ShieldHeal) {
+) -> List(Heal) {
   in_phase(
-    rows: spell.shield_heals,
+    rows: spell.heals,
     phase_flags: fn(heal) { heal.phase_flags },
     tag: fn(heal) { heal.tag },
     phase:,

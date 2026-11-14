@@ -113,6 +113,8 @@ pub fn the_measure_counts_rows_behind_a_target_prerequisite_as_not_read_for_ever
     as "scratch count: 2,543 rows aim only at other units, 14 more, the first 48817, aim at the caster behind a target apply prerequisite (the cast applies no `GatedOnTarget` row, `cast.condition_gate`) and 5 more hold a phaseFlags of 0, which no phase selects (`in_phase`): 2,562 of 4,645"
   assert counted(type_number: 11).1 == 685
     as "scratch count over `table_rows -- Spell4Effects effectType=11` and `-- UnitProperty2`: every row aimed at the caster, the target or the area is read (targetFlags with bit 1 set 12,603: 1 12,154, 3 92, 5 339, 7 18; 2 6,025, 4 951, 6 526), except 679 behind a target apply prerequisite (136 aimed at the caster, 466 at the target, 73 at the area and 4 at both, the first 38480, aimed at the area, the first aimed at the caster 42729) and 6 aimed at the area with a phaseFlags of 0, which no phase selects (`in_phase`): 685 of 20,105"
+  assert counted(type_number: 10).1 == 1556
+    as "scratch count over `table_rows -- Spell4Effects effectType=10`: 1,623 of 3,098 rows were not read while the caster formula refused the types 1 to 6, 9 and 11 (783 aimed only at other units, 574 periodic or behind a target apply prerequisite, 136 aimed at a struck unit and 130 for a formula parameter); 168 rows name one of those types, and 67 of them are read now, while 43 aim only at other units (targetFlags without bit 1 and other than 2, 41315, 61047, 71750, 75235 and 78822 aimed at the target and the area), 37 tick, 20 sit behind a target apply prerequisite and 56242 aims at the primary target of a struck child: 1,556 of 3,098"
   assert counted(type_number: 73).1 == 35
     as "scratch count: 34 aimed at other units and 1 more, 73611, behind a target apply prerequisite: 35 of 522"
   assert counted(type_number: 29).1 == 262
@@ -134,8 +136,8 @@ pub fn the_measure_totals_match_the_plan_test() -> Nil {
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let text = checklist.render([measured()])
-  assert string.contains(text, "20511 rows of the handled types not read")
-    as "the sum of the types' scratch counts: 1 1,368, 3 2,562, 4 3,849, 8 4,255, 11 685, 26 1,986, 29 262, 73 35, 80 535 and 118 101 (the tests above), 17 455 and 81 658 (the 375 and 634 of before and 80 and 24 rows, otherwise read, with phaseFlags 0), and the counts that stay as they were: 14 3,455, 18 14, 52 2, 64 35, 83 51, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values)"
+  assert string.contains(text, "22067 rows of the handled types not read")
+    as "the sum of the types' scratch counts: 1 1,368, 3 2,562, 4 3,849, 8 4,255, 10 1,556, 11 685, 26 1,986, 29 262, 73 35, 80 535 and 118 101 (the tests above), 17 455 and 81 658 (the 375 and 634 of before and 80 and 24 rows, otherwise read, with phaseFlags 0), and the counts that stay as they were: 14 3,455, 18 14, 52 2, 64 35, 83 51, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values)"
   assert string.contains(text, "starting abilities: 184 of 196 rows handled")
     as "scratch count over the 196 starting rows: 9 were not read before (the two Proc rows the plan skips, 90 four times, 24, the Warrior's 210834 and 91018) and 3 are not read now: Proxies 121345 and 178429 (dataBits00 0) and the Medic's ticking gain 228918"
 }

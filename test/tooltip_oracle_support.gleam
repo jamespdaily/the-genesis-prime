@@ -664,10 +664,7 @@ pub fn held_in(
       "cooldown modifier",
       list.any(spell.cooldown_modifiers, fn(row) { is(row.effect_id) }),
     ),
-    #(
-      "shield heal",
-      list.any(spell.shield_heals, fn(row) { is(row.effect_id) }),
-    ),
+    #("shield heal", list.any(spell.heals, fn(row) { is(row.effect_id) })),
     #("gain", list.any(spell.gains, fn(row) { is(row.effect_id) })),
     #(
       "forced move",

@@ -23,8 +23,8 @@
 ////   picture at that moment (`shown.poses_of`) for its Proxies' target gates. A viewer
 ////   writes a creature's health and
 ////   death (`Health`, `Died`) for a creature it shows, whatever its own casts.
-//// - **Heals** are the cast rule's: a `CasterChangeStarts` whose change is a `ShieldHeal`
-////   raises the player's shield by its amount and tells the player's client and its viewers
+//// - **Heals** are the cast rule's: a `CasterChangeStarts` whose change is a `Heal`
+////   raises the player's health or shield by its amount and tells the player's client and its viewers
 ////   (genesis_prime/game/connection/healing), where one whose change is a `Property` is
 ////   applied to the player's properties (genesis_prime/game/connection/properties).
 //// - **Absorbs** are the cast rule's too: a `CasterChangeStarts` whose change is an `Absorb`
@@ -91,6 +91,7 @@ import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/damage
+import genesis_prime/game/heal_split
 import genesis_prime/game/hit_radius
 import genesis_prime/game/interaction
 import genesis_prime/game/item_use
@@ -762,6 +763,7 @@ pub fn caster_of(
       shield: player_life.shield(life:),
       max_shield: player_life.max_shield(life:),
     ),
+    heal_scaling: heal_split.scaling_of(properties: entered.properties),
     quests: entered.quests,
     player: prerequisite_player.of(tables:, entered:),
   )
@@ -934,8 +936,8 @@ pub fn cast_effects(
       cast.Gain(gains:), _ -> connection_resource.gained(session:, gains:)
       cast.CasterChangeStarts(source:, change: cast.Property(modifier:)), _ ->
         connection_properties.started(session:, now:, source:, modifier:)
-      cast.CasterChangeStarts(change: cast.ShieldHeal(amount:), ..), _ ->
-        connection_healing.shield_healed(session:, now:, amount:)
+      cast.CasterChangeStarts(change: cast.Heal(vital:, amount:), ..), _ ->
+        connection_healing.healed(session:, now:, vital:, amount:)
       cast.CasterChangeStarts(source:, change: cast.Absorb(amount:, mask:)), _
       -> connection_absorption.started(session:, now:, source:, amount:, mask:)
       cast.CasterChangeStarts(source:, change: cast.Look(disguise:)), _ ->
