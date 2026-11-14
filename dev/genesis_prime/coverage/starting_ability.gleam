@@ -571,7 +571,7 @@ fn counted_namings(
         | effect_kind.CooldownModifier
         | effect_kind.Stealth
         | effect_kind.RemoveStealth
-        | effect_kind.ShieldHeal
+        | effect_kind.Heal(..)
         | effect_kind.ShieldOverload
         | effect_kind.Proc
         | effect_kind.InterruptArmor

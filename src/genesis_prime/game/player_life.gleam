@@ -42,8 +42,10 @@
 ////                ─▶ 0x938(P, 20, shield) to P and to its viewers
 ////                below the max still ─▶ StartTimer(shield_timer, ShieldTickTime)
 //// death ─▶ both cancelled;  coming back is full: nothing started
-//// a heal of the shield (genesis_prime/game/cast `ShieldHeal`) ─▶ + amount, capped
+//// a heal of the shield (genesis_prime/game/cast `Heal`) ─▶ + amount, capped
 ////                ─▶ 0x938(P, 20, shield) to P and to its viewers; the clocks as they were
+//// a heal of the health ─▶ + amount, capped (HealToShieldConversion, property 111, first
+////                gives that share of it to the shield) ─▶ 0x92f to P, 0x937 to its viewers
 //// property 44 (InterruptArmor_Threshold) rises or falls (a type 11 or a type 52 row)
 ////                ─▶ the armor follows it: 0x938(P, 21, armor) to P and to its viewers,
 ////                after the 0x93a that raised the maximum and before the one that lowers it
@@ -216,6 +218,7 @@
 //// | the map's notice, a peer's news or a creature's threat, release or strike sent for P's earlier stay arrives after the Holocrypt's join, a camp and a new entry, or a join to a restarted run that gives the same unit id | dropped: it names the earlier stay | `messages_of_the_stay_before_the_holocrypt_are_dropped_after_its_join_test`, `messages_of_the_stay_before_a_camp_are_dropped_after_the_next_entry_test`, `messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the_same_unit_id_test` |
 
 import genesis_prime/client_connection.{type News}
+import genesis_prime/game/effect_kind
 import genesis_prime/game/hit.{type Defence, type Rolls}
 import genesis_prime/game/item_property
 import genesis_prime/game/rating.{type Formulas}
@@ -1263,17 +1266,23 @@ fn shield_gained(
   #(life, list.append(shield_told(shield:), timers))
 }
 
-/// A heal of the player's own shield by `amount` (genesis_prime/game/cast `ShieldHeal`),
+/// A heal of the player's own `vital` by `amount` (genesis_prime/game/cast `Heal`),
 /// times its HealingMultiplierOutgoing (162) and HealingMultiplierIncoming (163), the
 /// two the player's own `properties` hold because it heals only itself, rounded half
 /// away from zero (`UnitProperty2.damage_heal_multipliers`; a heal of another unit
-/// takes the healer's outgoing value and the target's incoming one, which #570 builds):
-/// the shield rises by it, capped at its maximum (`Spell4Effects.effectType.118`), and
-/// is written to the player's client and told to its viewers as a tick's is. A heal
-/// that moves nothing, on a full shield or a dead player, is not told, and the shield's
+/// takes the healer's outgoing value and the target's incoming one, which #570 builds).
+/// The vital rises by it, capped at its maximum (`Spell4Effects.effectType.10`, `.118`),
+/// and is written to the player's client and told to its viewers as a tick's is. A heal
+/// that moves nothing, on a full vital or a dead player, is not told, and the shield's
 /// clock is left as it was: only a blow restarts the reboot (text 531855).
-pub fn shield_healed(
+///
+/// A health heal of a player whose HealToShieldConversion (111) is not 0 gives the shield
+/// the share int(amount x property) of it, up to the shield's room, and the health the
+/// rest, the client's own split (`spell.heal_to_shield_conversion`); the shield is told
+/// first.
+pub fn healed(
   life life: Life,
+  vital vital: effect_kind.Vital,
   amount amount: Int,
   properties properties: Properties,
 ) -> #(Life, List(Effect)) {
@@ -1289,12 +1298,46 @@ pub fn shield_healed(
         property: unit_properties.healing_multiplier_incoming,
       ),
     )
-  let shield = int.min(life.shield + amount, life.max_shield)
   use <- bool.guard(
-    when: life.state == Dead || amount <= 0 || shield <= life.shield,
+    when: life.state == Dead || amount <= 0,
     return: #(life, []),
   )
+  case vital {
+    effect_kind.Shield -> shield_raised(life:, amount:)
+    effect_kind.Health -> {
+      let share =
+        unit_properties.value(
+          properties:,
+          property: unit_properties.heal_to_shield_conversion,
+        )
+      let converted =
+        int.min(
+          float.truncate(int.to_float(amount) *. share),
+          life.max_shield - life.shield,
+        )
+        |> int.max(0)
+      let #(life, shield_effects) = shield_raised(life:, amount: converted)
+      let #(life, health_effects) =
+        health_raised(life:, amount: amount - converted)
+      #(life, list.append(shield_effects, health_effects))
+    }
+  }
+}
+
+/// The shield raised by `amount`, capped at its maximum, and told; nothing when it moves
+/// nothing.
+fn shield_raised(life life: Life, amount amount: Int) -> #(Life, List(Effect)) {
+  let shield = int.min(life.shield + amount, life.max_shield)
+  use <- bool.guard(when: shield <= life.shield, return: #(life, []))
   #(Life(..life, shield:), shield_told(shield:))
+}
+
+/// The health raised by `amount`, capped at its maximum, and told; nothing when it moves
+/// nothing.
+fn health_raised(life life: Life, amount amount: Int) -> #(Life, List(Effect)) {
+  let health = int.min(life.health + amount, life.max_health)
+  use <- bool.guard(when: health <= life.health, return: #(life, []))
+  #(Life(..life, health:), health_told(health:, dead: False))
 }
 
 /// The player's Interrupt Armor as its client was last told it: stat 21.

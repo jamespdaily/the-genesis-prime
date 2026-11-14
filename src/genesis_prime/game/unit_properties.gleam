@@ -155,6 +155,10 @@ pub const healing_multiplier_outgoing = UnitProperty2Id(162)
 /// HealingMultiplierIncoming (163): what the healed unit's heal is multiplied by.
 pub const healing_multiplier_incoming = UnitProperty2Id(163)
 
+/// HealToShieldConversion (111): the share of a health heal that goes to the unit's shield
+/// instead, 0 by default.
+pub const heal_to_shield_conversion = UnitProperty2Id(111)
+
 /// ShieldMitigationMax (175): the most of a blow the shield takes.
 pub const shield_mitigation_max = UnitProperty2Id(175)
 
@@ -256,6 +260,7 @@ const named = [
   damage_taken_multiplier_physical,
   healing_multiplier_outgoing,
   healing_multiplier_incoming,
+  heal_to_shield_conversion,
   shield_mitigation_max,
   shield_regen_percent,
   shield_tick_time,

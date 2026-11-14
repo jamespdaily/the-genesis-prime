@@ -95,7 +95,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     controls: [],
     stealth: [],
     remove_stealth: [],
-    shield_heals: [],
+    heals: [],
     stealth_change: spell_plan.EndsStealthAtEachGo,
     procs: [],
     cooldown_start: AtFirstGo,
@@ -472,7 +472,7 @@ pub fn property_starts(
   list.filter_map(caster_change_starts(effects:), fn(start) {
     case start.1 {
       cast.Property(modifier:) -> Ok(#(start.0, modifier))
-      cast.ShieldHeal(..) | cast.Look(..) | cast.Absorb(..) -> Error(Nil)
+      cast.Heal(..) | cast.Look(..) | cast.Absorb(..) -> Error(Nil)
     }
   })
 }

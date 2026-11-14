@@ -6080,6 +6080,12 @@ grade = "fairly sure"
 gap = "Read from the decompile."
 name = "LogEffectResult"
 
+["spell.heal_result_log"]
+statement = "A spell result of effect type 10 (Heal) or 118 (HealShields) makes the client log the heal itself, as CombatLogHeal: nHealAmount is the description's health damage including overkill, nOverheal its overkill, nAbsorption its absorbed amount, with the combat result, the effect type, the caster, the target and the spell. The log line's text (CombatLog.lua OnCombatLogHeal) is the HealShields wording for type 118, adds the overheal for a non-zero nOverheal, the absorption for a non-zero nAbsorption and the critical wording for a Critical result. A server that also sends combat log type 12 for the heal logs it twice."
+proof = "0x140563dc0 (saved C 49fd5a78aaad3411): effect type 10 or 0x76 (jump to LAB_1405641c8) fills a CombatLogHeal object (class table 0x140b6f880, event 0xc) with the target, the caster, the spell (event word 0x12), the combat result (event word 0xc), event word 8 as the amount (the description's fifth value), event word 9 as the overheal (its sixth), event word 6 as the absorption (its third) and the effect type, then 0x14060b2b0 logs it through the player's combat log filter; the same function's case 3 subtracts word 9 from word 8 only for damage. The amount's name: 0x14060dd20 (saved C 2580df99bb1ce2aa) reads the object's amount into 'nHealAmount' and raises 'CombatLogHeal'. The other names and the line's text: UI/CombatLog/CombatLog.lua (`client_files.py`'s UI folder) OnCombatLogHeal, which tests tEventArgs.nOverheal, nAbsorption, eCombatResult and eEffectType == HealShields. Combat log type 12's object is the same class (0x1403c3190 case 0xc), so a type 12 entry would raise the event again."
+grade = "fairly sure"
+gap = "The object's remaining field names (nOverheal, nAbsorption) are read from the Lua that uses them, not from the raiser, whose later string arguments the decompile drops. Not run against a recording of a heal."
+
 ["0x14045e9e0"]
 statement = "Plays a unit's hit reaction for damage taken: its size is the raw damage over (maximum health x GameFormula 954's first value / 100), scaled by its second value / 100 and raised to at least its third value / 100 when below 1, and capped at 1."
 proof = "Decompiled: GameFormula 0x3ba (row 954: 6, 100, 40) each times 0.01 (bytes at 0x140b79d3c); raw damage from the result's first field (0x1405643c0 passes event 4)."
