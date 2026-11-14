@@ -194,8 +194,10 @@
 ////   - A charge starts only while no state is held (`Fighter.holds_a_state`); that is a gap,
 ////     since the client's conditions for the charge spells mask nothing (issue 801).
 ////   - The attack tick goes on and does nothing else; threat, targets and the viewers' news are
-////     kept as usual, and a creature out of reach at its leash circle leashes, in place while
-////     it stands still.
+////     kept as usual, and a creature that stands still (`Fighter.still`) does not leash from its
+////     tick: out of reach at its leash circle it stays in the fight, with its threat and its health,
+////     and leashes at the first tick after the state ends. It leashes in place only when its
+////     last threat entry goes while it is held (`Released`), when the walk home waits for `ControlEnded`.
 //// - **A state breaks a charge.** Any crowd-control state that takes hold while the round is
 ////   `Charging` ends the cast. The authority is Jim's decision of 2026-11-11 ("any crowd control
 ////   that lands during the charge is the interrupt"); the client holds no rule for it. Spell4 85474's
@@ -1059,9 +1061,11 @@ fn retargeted(
 /// strikes, or opens its charge when its attack has a cast time; out of reach at the
 /// leash circle it leashes; else it chases. The next tick starts unless it leashed or
 /// opened a charge, whose round's close starts it. A creature whose states refuse its
-/// attack starts none (`attacks`), one whose states stop its run starts no path (`chase`,
-/// `leash`), and each does the rest. A creature that cannot move is at its leash
-/// when its target is beyond the leash range from home, since it never walks to the circle.
+/// attack starts none (`attacks`), and one whose states stop its run starts no path
+/// (`chase`) and does not leash while they hold: out of reach at its circle it only
+/// starts the next tick, and the first tick after they end leashes or chases. A creature
+/// that cannot move is at its leash when its target is beyond the leash range from home,
+/// since it never walks to the circle.
 fn ticked(
   state state: State,
   fighter fighter: Fighter,
@@ -1087,6 +1091,8 @@ fn ticked(
       case in_reach, round, at_circle {
         True, None, _ -> attacks(state:, fighter:, target:, sighting:, here:)
         True, Some(..), _ -> next_tick(state:, fighter:, effects: [])
+        False, _, True if fighter.still ->
+          next_tick(state:, fighter:, effects: [])
         False, _, True -> leash(state:, fighter:, now_ms:)
         False, _, False -> {
           let #(state, chased) = chase(state:, fighter:, now_ms:)

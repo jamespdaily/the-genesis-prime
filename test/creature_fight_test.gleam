@@ -805,6 +805,47 @@ pub fn at_the_leash_circle_with_the_target_out_of_reach_the_creature_leashes_and
     as "walking home the creature takes no strike"
 }
 
+/// A creature that a state holds at its leash circle, its target out of reach, stays in the
+/// fight: it keeps its threat and its health, starts no walk, and its attack tick goes on.
+/// It leashes at the first tick after the state ended.
+pub fn a_held_creature_at_the_leash_circle_with_its_target_out_of_reach_does_not_leash_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, _) =
+    tell(state:, at_ms: 0, message: moved(number: 2, x: 100.0, seq: 2))
+  let #(state, t1) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  let #(state, t2) = fire(state:, at_ms: 3000, timer: timer_for(t1, 1500))
+  let #(state, t3) = fire(state:, at_ms: 4500, timer: timer_for(t2, 1500))
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 5600,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let #(state, held_tick) =
+    fire(state:, at_ms: 6000, timer: timer_for(t3, 1500))
+  assert said(held_tick) == [] && fights_told_for(held_tick) == []
+    as "held at the circle the creature clears no threat, leaves no combat, restores no health and tells no release"
+  let #(state, held_again) =
+    fire(state:, at_ms: 7500, timer: timer_for(held_tick, 1500))
+  assert said(held_again) == [] as "its attack tick goes on and does nothing"
+  let #(state, ended) =
+    fire(state:, at_ms: 8100, timer: timer_for(stunned, 2500))
+  assert list.contains(said(ended), "0x880 to 2")
+  let #(_, leashed) =
+    fire(state:, at_ms: 9000, timer: timer_for(held_again, 1500))
+  assert list.contains(said(leashed), "0x89a(0) to 2")
+    && fights_told(leashed) == [#(2, Released(unit_id: unit))]
+    as "free again, the tick that finds the target out of reach leashes"
+}
+
 /// The leash's path home is the client's only way to stop a creature it was told
 /// to run: a 0x638 replaces the unit's position movement (`movement_command.kind_4`).
 /// A leash in the millisecond the chase began finds the creature still at home, with
