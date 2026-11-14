@@ -863,6 +863,7 @@ pub fn a_live_cast_whose_primary_target_is_another_unit_does_not_stop_stealth_te
           unit: cast.HitCreature(life: 1, struck_at_ms: 0),
           descriptions: [],
           controls: [],
+          armor_removed: 0,
         ),
       ],
       rolls: [],

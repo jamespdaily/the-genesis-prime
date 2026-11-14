@@ -516,6 +516,7 @@ pub fn telekinetic_strike_goes_1250_ms_after_the_accept_then_finishes_and_its_ch
       unit: cast.HitCreature(life: 1, struck_at_ms: 0),
       descriptions: [],
       controls: [],
+      armor_removed: 0,
     ),
   ]
   let #(state, effects) =
@@ -560,6 +561,7 @@ pub fn crush_starts_42297_100_ms_after_its_go_with_root_crush_and_parent_crush_t
       unit: cast.HitCreature(life: 1, struck_at_ms: 0),
       descriptions: [],
       controls: [],
+      armor_removed: 0,
     ),
   ]
   let #(state, effects) =
@@ -594,6 +596,7 @@ pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_3879
       unit: cast.HitCreature(life: 1, struck_at_ms: 0),
       descriptions: [],
       controls: [],
+      armor_removed: 0,
     ),
   ]
   let #(state, effects) =

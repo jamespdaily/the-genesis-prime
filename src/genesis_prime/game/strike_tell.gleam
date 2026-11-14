@@ -129,8 +129,9 @@ pub type Outcome {
   /// A guarded creature (genesis_prime/world_map/creature_guard) took no damage from a
   /// strike that had blows: it keeps its health, the states it took of the strike's
   /// `controls` still land, and the striker's connection shows the immunity
-  /// (`opcode.0x247.immunity`).
-  Immune(controls: List(ControlLanded))
+  /// (`opcode.0x247.immunity`). Its states can still wear down the creature's interrupt armor, so
+  /// it carries `armor_removed` as `Landed` does.
+  Immune(controls: List(ControlLanded), armor_removed: Int)
   /// The creature deflected the whole strike.
   Deflected
   /// The creature took no strike.

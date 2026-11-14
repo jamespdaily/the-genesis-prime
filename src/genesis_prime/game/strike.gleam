@@ -305,17 +305,16 @@ pub fn begin(
       case selection.blows, controls {
         [], [] -> #(
           [
-            Answered(
-              cast.Hit(
-                unit_id: aimed.unit_id,
-                unit: cast.HitCreature(
-                  life: aimed.life,
-                  struck_at_ms: now.monotonic_ms,
-                ),
-                descriptions: [],
-                controls: [],
+            Answered(cast.Hit(
+              unit_id: aimed.unit_id,
+              unit: cast.HitCreature(
+                life: aimed.life,
+                struck_at_ms: now.monotonic_ms,
               ),
-            ),
+              descriptions: [],
+              controls: [],
+              armor_removed: 0,
+            )),
             ..places
           ],
           tells,
@@ -542,18 +541,20 @@ fn filled(
   outcome outcome: strike_tell.Outcome,
 ) -> Place {
   case outcome {
-    strike_tell.Landed(descriptions:, controls:, ..) ->
+    strike_tell.Landed(descriptions:, controls:, armor_removed:) ->
       Answered(struck: cast.Hit(
         unit_id:,
         unit: cast.HitCreature(life:, struck_at_ms:),
         descriptions:,
         controls:,
+        armor_removed:,
       ))
-    strike_tell.Immune(controls:) ->
+    strike_tell.Immune(controls:, armor_removed:) ->
       Answered(struck: cast.Immune(
         unit_id:,
         unit: cast.HitCreature(life:, struck_at_ms:),
         controls:,
+        armor_removed:,
       ))
     strike_tell.Deflected -> Answered(struck: cast.Deflected(unit_id:))
     strike_tell.Refused(..) -> LeftOut(unit_id:)

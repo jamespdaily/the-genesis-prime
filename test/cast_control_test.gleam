@@ -88,6 +88,7 @@ fn kicked(
       controls: [
         crowd_control_support.kick_landed(ends_at_ms:),
       ],
+      armor_removed: 0,
     ),
   ])
 }
@@ -157,6 +158,7 @@ pub fn a_creature_that_took_no_state_has_no_effect_listed_for_it_test() -> Nil {
         unit: cast.HitCreature(life: 1, struck_at_ms: 0),
         descriptions: [],
         controls: [],
+        armor_removed: 0,
       ),
     ])
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
@@ -281,6 +283,7 @@ pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> 
         controls: [
           crowd_control_support.kick_landed(ends_at_ms: 4000),
         ],
+        armor_removed: 0,
       ),
     ])
   let assert [#(go, 1000)] =
@@ -296,6 +299,7 @@ pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> 
         unit: cast.HitCreature(life: 1, struck_at_ms: 0),
         descriptions: [],
         controls: [],
+        armor_removed: 0,
       ),
     ])
   let afters =

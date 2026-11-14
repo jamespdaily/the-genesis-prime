@@ -1053,6 +1053,7 @@ pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
       unit: cast.HitCreature(life: 2, struck_at_ms: 1000),
       descriptions: [],
       controls: [],
+      armor_removed: 0,
     ),
   ]
   let #(state, pressed) =

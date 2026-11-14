@@ -1263,12 +1263,20 @@ fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
           description.damage.killed == 1
         })
       #(
-        [cast.Hit(unit_id:, unit: cast.HitPlayer, descriptions:, controls: [])],
+        [
+          cast.Hit(
+            unit_id:,
+            unit: cast.HitPlayer,
+            descriptions:,
+            controls: [],
+            armor_removed: 0,
+          ),
+        ],
         killed,
         killed,
       )
     }
-    strike_tell.Immune(controls: _) ->
+    strike_tell.Immune(..) ->
       panic as "a player is never guarded: only a creature answers Immune"
     strike_tell.Deflected -> #([cast.Deflected(unit_id:)], False, False)
     strike_tell.Refused(why: strike_tell.Dead) -> #([], True, True)

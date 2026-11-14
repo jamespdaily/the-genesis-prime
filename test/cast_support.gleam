@@ -715,7 +715,13 @@ pub fn caster_in_combat(in_combat in_combat: Bool) -> Caster {
 /// descriptions and no controls.
 pub fn hits(units: List(Int)) -> List(cast.Struck) {
   list.map(units, fn(unit_id) {
-    cast.Hit(unit_id:, unit: first_life, descriptions: [], controls: [])
+    cast.Hit(
+      unit_id:,
+      unit: first_life,
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+    )
   })
 }
 

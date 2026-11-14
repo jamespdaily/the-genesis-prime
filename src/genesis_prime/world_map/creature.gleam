@@ -870,7 +870,7 @@ fn struck(
                   controls: [],
                   armor_removed: 0,
                 )
-              [_, ..] -> strike_tell.Immune(controls: [])
+              [_, ..] -> strike_tell.Immune(controls: [], armor_removed: 0)
             }),
             news: [],
             corpse_for_ms: None,
@@ -1049,7 +1049,8 @@ fn with_controls(
   case outcome {
     strike_tell.Landed(descriptions:, armor_removed:, ..) ->
       strike_tell.Landed(descriptions:, controls:, armor_removed:)
-    strike_tell.Immune(..) -> strike_tell.Immune(controls:)
+    strike_tell.Immune(armor_removed:, ..) ->
+      strike_tell.Immune(controls:, armor_removed:)
     strike_tell.Deflected | strike_tell.Refused(..) -> outcome
   }
 }

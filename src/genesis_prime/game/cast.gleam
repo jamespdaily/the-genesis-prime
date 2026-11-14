@@ -839,6 +839,9 @@ pub type Struck {
     unit: HitUnit,
     descriptions: List(hit.Description),
     controls: List(strike_tell.ControlLanded),
+    /// The interrupt armor the strike took off the unit, which the go's combat log
+    /// shows (genesis_prime/game/strike_tell `Landed`).
+    armor_removed: Int,
   )
   /// The unit deflected the strike: an entry of the 0x7fb, no description and no
   /// child (`opcode.0x7fb`).
@@ -847,7 +850,12 @@ pub type Struck {
   /// (genesis_prime/world_map/creature_guard): named in the 0x7f4 as a `Hit` with no
   /// description, with the states it took, and followed by a combat log entry of type 18
   /// for the striker (`opcode.0x247.immunity`).
-  Immune(unit_id: Int, unit: HitUnit, controls: List(strike_tell.ControlLanded))
+  Immune(
+    unit_id: Int,
+    unit: HitUnit,
+    controls: List(strike_tell.ControlLanded),
+    armor_removed: Int,
+  )
 }
 
 /// What kind of unit a `Hit` names.

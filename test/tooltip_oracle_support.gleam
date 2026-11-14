@@ -454,6 +454,7 @@ pub fn striking_with_states(root root: Spell) -> Strikes {
         unit: cast.HitCreature(life: 1, struck_at_ms: 0),
         descriptions: [],
         controls:,
+        armor_removed: 0,
       ),
     ]
   }
