@@ -19,6 +19,7 @@
 //// - Spell4 30173 (row 6761's spell): targetType 1, a CC state 9 the plans cannot hold.
 
 import cast_support as support
+import client_tables
 import fixture_tables
 import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/activate.{type Target, Body, Usable}
@@ -37,6 +38,11 @@ import genesis_prime/message/spell_cast_refused
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/item_special
+import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/prerequisite
+import genesis_prime/table/quest_objective
+import genesis_prime/table/spell4
 import genesis_prime/world_map/creature_life.{Attackable, Hostile}
 import genesis_prime/world_map/creature_path
 import gleam/dict
@@ -47,6 +53,7 @@ import gleam/string
 import owned_test
 import place_support
 import planted_table.{Integer}
+import unitest
 
 const the_self_spell = 25_306
 
@@ -774,16 +781,79 @@ pub fn a_target_condition_reads_the_casts_the_player_holds_on_the_unit_test() ->
     as "Spell4 77268's prerequisiteIdTargetCast is Prerequisite 36053 (type 15, comparison 1, value 77269): the unit holds no cast of 77269, so 0x1403ace00 refuses with 281"
 }
 
+/// A press that names a unit reaches a TargetCast of type 38 only through a spell that an
+/// objective, a creature's activate column or an item names. The 16 Spell4 rows whose
+/// TargetCast holds a type 38 condition (Spell4 31373, 31532, 33392 and 13 more) are none of
+/// them, so a real row cannot be pressed at a creature; the test below plants the shape of
+/// the client's Prerequisite 8895 on a spell an objective names, and this one fails when a
+/// real row of that kind appears.
+pub fn no_real_spell_a_press_reaches_has_a_creature_id_target_cast_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let with_type_38 =
+    prerequisite.all(tables)
+    |> list.filter(fn(row) {
+      list.contains(
+        [
+          row.prerequisite_type_id0,
+          row.prerequisite_type_id1,
+          row.prerequisite_type_id2,
+        ],
+        38,
+      )
+    })
+    |> list.map(fn(row) { row.id })
+  let pressed_at_a_unit =
+    list.flatten([
+      objective_spells(tables:),
+      creature2.all(tables)
+        |> list.flat_map(fn(row) {
+          [
+            row.spell4_id_activate00,
+            row.spell4_id_activate01,
+            row.spell4_id_activate02,
+            row.spell4_id_activate03,
+          ]
+        }),
+      item_special.all(tables)
+        |> list.map(fn(row) { row.spell4_id_on_activate }),
+    ])
+  let reaching =
+    spell4.all(tables)
+    |> list.filter(fn(row) {
+      list.contains(with_type_38, row.prerequisite_id_target_cast)
+      && list.contains(pressed_at_a_unit, row.id)
+    })
+    |> list.map(fn(row) { row.id })
+  assert reaching == []
+    as "no spell an objective, a creature's activate column or an item names has a TargetCast with a type 38 condition, so a test of the creature id reaching that check plants the row"
+}
+
+fn objective_spells(tables tables: table_store.Tables) -> List(Int) {
+  quest_objective.all(tables)
+  |> list.filter(fn(row) {
+    row.type_ == shortcut_spell.cast_type && row.data != 0
+  })
+  |> list.map(fn(row) { row.data })
+}
+
 pub fn a_pressed_creatures_id_reaches_its_target_check_test() -> Nil {
   use <- owned_test.run(10_000)
-  // Spell4 77268's TargetCast is Prerequisite 36053; the plant gives that row the shape of
-  // the client's type 38 rows (`table_rows -- Prerequisite 8895 13215`): flags 0, type 38
-  // comparison 1 on a Creature2 id. The type compares the first unit's Creature2 id with
-  // the value (0x14049ecc0), and a pressed creature's id is `Usable.creature_id`.
+  // No real row can be pressed at a creature with a type 38 TargetCast (the test above), so
+  // Spell4 77268's TargetCast, Prerequisite 36053, takes the shape of the client's
+  // Prerequisite 8895 (`table_rows -- Prerequisite 8895`, of Spell4 31532): flags 1 (any of)
+  // and two conditions of type 38 comparison 1, on Creature2 ids. The type compares the
+  // first unit's Creature2 id with the value (0x14049ecc0), and a pressed creature's id is
+  // `Usable.creature_id`.
   use tables <- fixture_tables.changed(table: "Prerequisite", id: 36_053, with: [
+    #("flags", Integer(1)),
     #("prerequisiteTypeId0", Integer(38)),
+    #("prerequisiteTypeId1", Integer(38)),
     #("prerequisiteComparisonId0", Integer(1)),
-    #("value0", Integer(30_233)),
+    #("prerequisiteComparisonId1", Integer(1)),
+    #("value0", Integer(52_428)),
+    #("value1", Integer(30_233)),
   ])
   let shortcuts = shortcut_spell.shortcuts(tables:)
   let scene =
@@ -802,7 +872,7 @@ pub fn a_pressed_creatures_id_reaches_its_target_check_test() -> Nil {
     )
   assert support.refusal_results(effects: at_the_creature) == []
     && confirmed_targets(effects: at_the_creature) == [910]
-    as "a press at the creature of Creature2 30233 meets type 38 on 30233: the cast starts"
+    as "a press at the creature of Creature2 30233 meets the second condition, and flags 1 takes either: the cast starts"
   let #(_, at_another) =
     press_at_with(
       shortcuts:,
@@ -814,7 +884,7 @@ pub fn a_pressed_creatures_id_reaches_its_target_check_test() -> Nil {
     )
   assert support.refusal_results(effects: at_another)
     == [code(cast_result.PrereqTargetCast)]
-    as "a press at a creature of Creature2 41884 (flags 16388, bit 0 clear, so it passes the cast group of Spell4Base 53267, which has none) fails type 38 on 30233: refused 281"
+    as "a press at a creature of Creature2 41884 (flags 16388, bit 0 clear, so it passes the cast group of Spell4Base 53267, which has none) meets neither condition (52428, 30233): refused 281"
   assert warnings(effects: at_another) == []
     as "the condition is read, so no warning about an unread condition is written"
 }

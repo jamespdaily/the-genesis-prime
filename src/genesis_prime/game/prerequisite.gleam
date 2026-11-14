@@ -121,8 +121,11 @@
 //// - **Types 13, 14 and 246** pass, by comparison 1, when the checker holds the Item2 the
 ////   value names in the inventory locations of a mask (1, 0x303 and 0x707), and by comparison
 ////   2 when it does not; any other fails (`Prerequisite.prerequisiteTypeId.13`, `.14`,
-////   `.246`, `0x1403ac590`). Bit n of the mask is location n. Gap: the checker's satchel
-////   is not held, so an item there reads as not held (issue 53).
+////   `.246`, `0x1403ac590`). Bit n of the mask selects the client's location n, whose list
+////   the constructor `0x1403faa60` tags with that location; the store saves items only in
+////   locations 0, 1 and 2, so bits 5, 8, 9 and 10 read as holding nothing. Gap: the
+////   checker's satchel is not held, so an item there reads as not held, and the issue that
+////   saves items in locations 5, 8, 9 and 10 keeps bit n as location n (issue 53).
 //// - **Type 143** compares the checker's world difficulty with the value: comparison 1
 ////   equal, 2 different, any other fails (`Prerequisite.prerequisiteTypeId.143`,
 ////   `0x14049ef70`).
@@ -405,8 +408,9 @@ type Condition {
   /// (`Prerequisite.prerequisiteTypeId.214`, `0x14049d680`).
   SpellKnown(comparison: Comparison, spell4_base_id: Int)
   /// Types 13, 14 and 246: whether the checker holds the Item2 in the inventory locations
-  /// of the mask, bit n for location n (`Prerequisite.prerequisiteTypeId.13`, `.14`,
-  /// `.246`, `0x1403ac590`).
+  /// of the mask, bit n for the client's location n (`Prerequisite.prerequisiteTypeId.13`,
+  /// `.14`, `.246`, `0x1403ac590`, `0x1403faa60`). The store saves items only in
+  /// locations 0, 1 and 2, so the other bits read as holding nothing.
   ItemHeld(
     prerequisite_type: Int,
     comparison: Comparison,
@@ -1844,7 +1848,7 @@ fn condition_decided(
       Some(checker) ->
         equality_verdict(comparison:, equal: checker.world_difficulty == value)
     })
-    // The client holds no public event, so every objective has status 0
+    // The server holds no public event, so every objective has status 0
     // (`Prerequisite.prerequisiteTypeId.118`). Gap: public events wait for issue 52.
     ObjectiveStatus(comparison:, value:, ..) -> #(
       rolls,

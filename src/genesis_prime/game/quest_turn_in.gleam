@@ -889,7 +889,7 @@ fn place_items(
       }
     })
   use size <- result.try(
-    inventory.size(items: asker.items, tables:)
+    inventory.size(items: asker.checker.items, tables:)
     |> result.map_error(fn(refusal) {
       Declined(
         key: "bags",
@@ -899,7 +899,7 @@ fn place_items(
       )
     }),
   )
-  list.try_fold(wanted, #(asker.items, []), fn(so_far, want) {
+  list.try_fold(wanted, #(asker.checker.items, []), fn(so_far, want) {
     let #(working, placed) = so_far
     let #(item2_id, amount) = want
     use limit <- result.try(
