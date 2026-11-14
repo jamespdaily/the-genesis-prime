@@ -2,7 +2,7 @@
 //// decision its lists and the coverage measure are both made from. Expected values come
 //// from these places.
 //// - `cast.condition_gate` (`genesis_prime/game/cast`): a row behind a target apply
-////   prerequisite is applied by no go, and a `TickingShieldHeal` is held, since each tick
+////   prerequisite is applied by no go, and a `TickingHeal` is held, since each tick
 ////   needs a 0x7f8 the server does not send (`Spell4Effects.effectType.118`).
 //// - `proc_read`: a Proc of a kind other than 217, 218, 44 and 0 is in no list and the load
 ////   goes on (`Spell4Effects.effectType.14`).
@@ -165,7 +165,7 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
       90_001, 90_002, 90_003, 90_004, 90_005, 90_006, 90_007, 90_008, 90_009,
       90_010, 90_011, 90_012, 90_013, 90_014,
     ]
-    as "the lists hold the twelve read rows, the row behind a target apply prerequisite (90013, held and applied by no go, `cast.condition_gate`) and the periodic heal (90014, a `TickingShieldHeal`); the Proc of kind 12 (`proc_read`) and the Proxy that names no spell are in no list"
+    as "the lists hold the twelve read rows, the row behind a target apply prerequisite (90013, held and applied by no go, `cast.condition_gate`) and the periodic heal (90014, a `TickingHeal`); the Proc of kind 12 (`proc_read`) and the Proxy that names no spell are in no list"
   spell_tables.with_loaded(
     reaching: [#("SpellLevel", 647)],
     rows:,

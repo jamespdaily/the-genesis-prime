@@ -480,7 +480,7 @@ pub fn listed_effect_ids(spell spell: spell_plan.Spell) -> List(Int) {
     list.map(spell.cooldown_modifiers, fn(modifier) { modifier.effect_id.value }),
     list.map(spell.stealth, fn(stealth) { stealth.effect_id.value }),
     list.map(spell.remove_stealth, fn(remove) { remove.effect_id.value }),
-    list.map(spell.shield_heals, fn(heal) { heal.effect_id.value }),
+    list.map(spell.heals, fn(heal) { heal.effect_id.value }),
     list.map(spell.procs, fn(proc) { proc.effect_id.value }),
     list.map(spell.proxies, fn(proxy) { proxy.effect_id.value }),
   ])

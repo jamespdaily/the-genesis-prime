@@ -93,7 +93,7 @@ fn effect_row_of(error: PlanError) -> Refusal {
     spell_plan.InnateFailed(..) -> NamesNoRow("an innate")
     spell_plan.PrerequisiteCycle(..) ->
       MayNameARow(kind: "a cycle of prerequisites", only_rows_read_it: False)
-    spell_plan.ShieldHealOnStruckUnit(effect_id:, ..) ->
+    spell_plan.HealOnStruckUnit(effect_id:, ..) ->
       NamesAStruckRow(effect_id:, kind: "a heal")
     spell_plan.InterruptArmorOnStruckUnit(effect_id:, ..) ->
       NamesAStruckRow(effect_id:, kind: "Interrupt Armor")
@@ -117,8 +117,8 @@ fn effect_row_of(error: PlanError) -> Refusal {
     | spell_plan.StealthTargetPrerequisiteNotRead(effect_id:, ..)
     | spell_plan.StealthTimedNotRead(effect_id:, ..)
     | spell_plan.StealthBreaksNotRead(effect_id:, ..)
-    | spell_plan.ShieldHealParameterNotRead(effect_id:, ..)
-    | spell_plan.ShieldHealNumberNotFinite(effect_id:, ..)
+    | spell_plan.HealParameterNotRead(effect_id:, ..)
+    | spell_plan.HealNumberNotFinite(effect_id:, ..)
     | spell_plan.InterruptArmorTakeBackNotRead(effect_id:, ..)
     | spell_plan.AbsorptionParameterNotRead(effect_id:, ..)
     | spell_plan.AbsorptionNumberNotFinite(effect_id:, ..)
@@ -389,7 +389,7 @@ fn children_of(
           | effect_kind.CooldownModifier
           | effect_kind.Stealth
           | effect_kind.RemoveStealth
-          | effect_kind.ShieldHeal
+          | effect_kind.Heal(..)
           | effect_kind.ShieldOverload
           | effect_kind.InterruptArmor
           | effect_kind.Scale

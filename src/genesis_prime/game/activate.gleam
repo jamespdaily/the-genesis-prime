@@ -30,7 +30,7 @@
 ////   own activate spell passes, and the rest are refused 89.
 //// - A spell with an effect the strike would apply, aimed at the target or an area, is
 ////   refused with result 285 and logged once, since the activate cast strikes no unit
-////   (gap, #336).
+////   (gap, #336); a heal row aimed there is dropped instead (`activate_rows_of`).
 //// - **The target's life** is judged before the range: the spell's target row says a dead
 ////   creature is refused 106 or a living one 107 (`CheckCastUnitTargetRange`,
 ////   `0x1403b2240`). A unit hostile to the player or in combat is offered no use at all
@@ -514,6 +514,13 @@ type ActivateRows {
 /// struck unit (genesis_prime/game/cast `aimed_at`) and starts a Proxy's spell at it. A
 /// row of a type no rule reads is dropped by every cast, so it does not refuse the spell.
 ///
+/// A Heal row aimed at the target or an area does not refuse the spell either, and the
+/// activate cast drops it: the server restores only the caster's own vitals, so a heal
+/// aimed at a creature lands nothing in any cast (`cast.healed_by`), and the activate
+/// cast strikes no one. Six activate spells of the tables hold one (Spell4 34519, 39299,
+/// 39536, 54204, 66484 and 66599); refusing them would make a creature's use, which a
+/// quest objective counts, unreachable.
+///
 /// A RavelSignal row aimed at the target does not refuse the spell, and the activate cast
 /// drops it: the row starts a script on the server (`Spell4Effects.effectType.81`), and
 /// the server has none to start until the issue for spells in depth (#336) builds them;
@@ -541,6 +548,7 @@ fn activate_rows_of(
     list.find(others, fn(effect) {
       spell_plan.aim_of(target_flags: effect.target_flags)
       != spell_plan.AimsAtCaster
+      && !is_heal(effect_type: effect.effect_type)
       && effect_kind.is_row_read(
         effect_type: effect.effect_type,
         target_flags: effect.target_flags,
@@ -562,6 +570,13 @@ fn activate_rows_of(
         }),
       ))
   }
+}
+
+/// Whether the effect type is a heal of health or of shield.
+fn is_heal(effect_type effect_type: Int) -> Bool {
+  let kind = effect_kind.kind_of(effect_type:)
+  kind == effect_kind.Heal(vital: effect_kind.Health)
+  || kind == effect_kind.Heal(vital: effect_kind.Shield)
 }
 
 /// The prerequisite check of the pick for one subject: a column's prerequisite, by id,

@@ -114,7 +114,7 @@ fn starts(effects effects: List(Effect)) -> List(#(Source, Disguise)) {
   list.filter_map(support.caster_change_starts(effects:), fn(start) {
     case start.1 {
       cast.Look(disguise:) -> Ok(#(start.0, disguise))
-      cast.Property(..) | cast.ShieldHeal(..) | cast.Absorb(..) -> Error(Nil)
+      cast.Property(..) | cast.Heal(..) | cast.Absorb(..) -> Error(Nil)
     }
   })
 }
