@@ -221,14 +221,8 @@ fn value_with(
   flat_of flat_of: fn(Int) -> Float,
 ) -> Float {
   let stat_part =
-    list.fold(formula.parameters, 0.0, fn(sum, parameter) {
-      float32.sum(
-        left: sum,
-        right: float32.product(
-          left: float32.rounded(stat_of(attacker:, kind: parameter.kind)),
-          right: parameter.value,
-        ),
-      )
+    stat_part_of(parameters: formula.parameters, stat_of: fn(kind) {
+      stat_of(attacker:, kind:)
     })
   let flat_part =
     list.fold(formula.parameters, 0.0, fn(sum, parameter) {
@@ -236,6 +230,25 @@ fn value_with(
     })
   let row_part = { formula.base +. flat_part } *. formula.multiplier
   int.to_float(whole_stat_part(stat_part)) +. row_part
+}
+
+/// The sum of each parameter's value times the caster's stat it names, `stat_of` giving
+/// the stat of a parameter type (0.0 for a type that is no stat), each stat held as a
+/// 32-bit float and each product and the running sum in 32-bit floats (`0x140566d40`).
+/// Player and creature casters share it.
+fn stat_part_of(
+  parameters parameters: List(Parameter),
+  stat_of stat_of: fn(Int) -> Float,
+) -> Float {
+  list.fold(parameters, 0.0, fn(sum, parameter) {
+    float32.sum(
+      left: sum,
+      right: float32.product(
+        left: float32.rounded(stat_of(parameter.kind)),
+        right: parameter.value,
+      ),
+    )
+  })
 }
 
 /// The stat part as the client cuts it to a whole number (`0x140566d40`): 0.5 added, or
@@ -386,7 +399,7 @@ fn is_read_for_a_creature(kind: Int) -> Bool {
 }
 
 /// The effect's value for a creature caster, before any rounding to a whole number
-/// (`0x140565600`): the stat part rounded half away from zero, held under the
+/// (`0x140565600`): the stat part cut as a player's is (`0x140566d40`), held under the
 /// creature's cap, plus the row part, both divided by GameFormula 712's fourth
 /// value, times `multiplier`, the creature's DamageDealtMultiplier of the effect's
 /// damage type (UnitProperty2 140 + damage type, 1.0 for a type with none).
@@ -403,13 +416,14 @@ pub fn creature_value(
       parameter.kind == 1 || parameter.kind == 12
     })
   let stat_part =
-    list.fold(stat_parameters, 0.0, fn(sum, parameter) {
-      case parameter.kind {
-        1 -> sum +. parameter.value *. creature.strength
-        _ -> sum +. parameter.value *. creature.assault_power
+    stat_part_of(parameters: formula.parameters, stat_of: fn(kind) {
+      case kind {
+        1 -> creature.strength
+        12 -> creature.assault_power
+        _ -> 0.0
       }
     })
-    |> float.round
+    |> whole_stat_part
     |> int.to_float
   let mean = case stat_parameters {
     [] -> 0.0

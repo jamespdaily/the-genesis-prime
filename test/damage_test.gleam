@@ -288,6 +288,41 @@ pub fn the_stat_part_is_summed_and_rounded_in_32_bit_floats_test() -> Nil {
     as "in 64-bit floats the sum is 4.49999988, which rounds to 4"
 }
 
+pub fn a_creatures_stat_part_is_summed_and_cut_in_32_bit_floats_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Creature2 50700 (Eldan Defense Probe, archetype 13, difficulty 5, tier 1) at level 25,
+  // as the content load works its properties out (each product held as a 32-bit float):
+  // CreatureLevel 25's value 0 is 0x43a8af4c and its value 35 is 0x44a8af4c; archetype 13
+  // and difficulty 5 multiply both by 0x3f8ccccd and 0x3fe00000, tier 1 by 1.0. Strength
+  // is 649.4363403320312 and the Assault Rating 2597.745361328125, whose Assault Power
+  // (0.25 of it) is 649.4363403320312.
+  // Row 115620 (Spell4Effects, spell 48982): dataBits00 1.0, dataBits01 0, Assault Power
+  // (12) x 0x3f7c154d (0.9847000241279602) and the level (10) x 0x41ef3333
+  // (29.899999618530273). 0x140566d40 multiplies in a 32-bit float: 649.43634 x 0.9847
+  // is 639.49998 exactly, which a 32-bit float holds as 639.5; 639.5f + 0.5f = 640.0f,
+  // cut to 640. GameFormula 712 is 70, 100, 1, 1 (0x428c0000, 0x42c80000, 0x3f800000,
+  // 0x3f800000): the cap is (25 x 70 + 100) x 0.9847 = 1821.7, above 640. The row part
+  // is 25 x 29.9 = 747.5, so the value is 640 + 747.5.
+  let value =
+    damage.creature_value(
+      formula: client_formula(id: 115_620),
+      creature: damage.Creature(
+        level: 25,
+        strength: 649.4363403320312,
+        assault_power: 649.4363403320312,
+      ),
+      scaling: damage.CreatureScaling(
+        per_level: 70.0,
+        base: 100.0,
+        overflow: 1.0,
+        divisor: 1.0,
+      ),
+      multiplier: 1.0,
+    )
+  assert float.loosely_equals(value, with: 1387.5, tolerating: 0.0001)
+    as "a 64-bit sum is 639.49998, which rounds to 639 and gives 1386.5"
+}
+
 pub fn the_weapon_kinds_6_and_9_are_not_read_test() -> Nil {
   use <- owned_test.run(5000)
   // The client's labels for the parameter kinds (0x140b0b580, printed by 0x1404de8d0 as
