@@ -328,6 +328,11 @@ fn spell_effects() -> EngineDeclaration {
         fact_key: "0x140566ad0",
       ),
       Missing(
+        type_number: 10,
+        reason: "rows aimed only at other units, periodic (tickTime, #336) or behind a target apply prerequisite, which no go applies; rows with a formula parameter the plan refuses; rows of a spell a Proxy starts on each struck unit, whose heal on that unit is not built (#570)",
+        fact_key: "spell.heal_result_log",
+      ),
+      Missing(
         type_number: 11,
         reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite, which no go applies (#336)",
         fact_key: "Spell4Effects.effectType.11",

@@ -408,7 +408,7 @@ const signal_gap =
 const conversion_gap =
   "the share is added to the source's value after the type 11 changes, in start order; whether the source is its base or its total and when the share is recomputed are not read"
 
-pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
+pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let assert Ok(facts) =
@@ -438,6 +438,11 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
         type_number: 8,
         reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses",
         fact_key: "0x140566ad0",
+      ),
+      Missing(
+        type_number: 10,
+        reason: "rows aimed only at other units, periodic (tickTime, #336) or behind a target apply prerequisite, which no go applies; rows with a formula parameter the plan refuses; rows of a spell a Proxy starts on each struck unit, whose heal on that unit is not built (#570)",
+        fact_key: "spell.heal_result_log",
       ),
       Missing(
         type_number: 11,
@@ -527,6 +532,7 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
     facts:,
     key: "Spell4Effects.effectType.118",
   )
+  assert coverage_support.has_record(facts:, key: "spell.heal_result_log")
   assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.3")
   assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.11")
   assert coverage_support.has_record(facts:, key: "Spell4Effects.effectType.14")
