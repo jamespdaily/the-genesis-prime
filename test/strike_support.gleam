@@ -1,6 +1,7 @@
 //// The player striker the strike rule's tests and the cast rule's tests that compose it
 //// begin a round with.
 
+import attacker_support
 import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/damage
 import genesis_prime/game/shown.{Exile}
@@ -31,7 +32,7 @@ pub fn attacker() -> Attacker {
     stay: map_support.stay(count: 1),
     hit_radius: place_support.player_hit_radius,
     faction: Exile,
-    stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
+    stats: attacker_support.fresh(),
     properties: properties_support.fresh(level: 1),
   )
 }

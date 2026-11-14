@@ -831,3 +831,13 @@ WorldLocation2	51703	marker of objective 21321 of quest 10527	game_wire_test
 WorldLocation2	51674	marker of objective 21295 of quest 10520	game_wire_test
 Creature2	12545	a Simple unit (type 10) that gives and receives quest 3689, faction 219, uiFlags 559	interaction_test, quest_accept_test, quest_turn_in_test
 Quest2	3689	the quest of the Simple unit 12545, which it gives and receives	quest_accept_test, quest_turn_in_test, interaction_test
+Spell4Effects	96307	Spellslinger - Insight - Tier 1 - Damage (Spell4 42355): Wisdom x 1.5	damage_test, spell_area_test
+Spell4Effects	93496	a damage row of Assault Power x 0.5 and Strength x 0.5	damage_test
+Spell4Effects	49028	a damage row of kind 6 x 2.25 and Strength x 1.0	damage_test
+Spell4Effects	77124	Explorer - Offensive Path Ability - Eldan Relic: kind 9 x 7.0	damage_test
+Spell4Effects	1369	Engineer Melee Auto Attack (Spell4 962): kind 6 x 1.0	damage_test
+Spell4Effects	52057	a ticking damage row (Spell4 29550) of Magic x 0.8	spell_area_test
+Spell4Effects	46275	an Absorption row (Spell4 27577) of Magic x 10.0 with dataBits00 0	damage_test
+Spell4Effects	68969	Water Shield - Pell Water (Spell4 34700): an Absorption of Magic x 5.0	damage_test, spell_plan_absorption_test
+Spell4Effects	94299	Esper - Tech - Rank 3 - Shield Heal Proc (Spell4 41868): Technology x 1.5	damage_test, spell_plan_heal_test
+Spell4Effects	108207	e395- [Datascape] Earth Elemental - Knockout Combo (Spell4 46220): Strength x 3.6 and Assault Power x 3.6	damage_test

@@ -20,6 +20,7 @@
 //// - The whole-number amount rounds half away from zero: the server's choice, as each
 ////   damage step rounds.
 
+import attacker_support
 import genesis_prime/game/damage.{
   type Formula, Attacker, Formula, OnCaster, Parameter, Vitals,
 }
@@ -30,7 +31,7 @@ import owned_test
 /// A level-1 Medic with 500 of 736 health and 250 of 450 shield, and no rating.
 fn medic() -> damage.OnCaster {
   OnCaster(
-    attacker: Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
+    attacker: attacker_support.fresh(),
     vitals: Vitals(health: 500, max_health: 736, shield: 250, max_shield: 450),
   )
 }
@@ -94,7 +95,7 @@ pub fn the_stat_part_reads_the_powers_and_rounds_half_away_from_zero_test() -> N
   let caster =
     OnCaster(
       ..medic(),
-      attacker: Attacker(level: 1, assault_rating: 0.0, support_rating: 55.6875),
+      attacker: Attacker(..attacker_support.fresh(), support_rating: 55.6875),
     )
   assert damage.value_on_caster(
       formula: formula(kind: 13, factor: 0.51),
@@ -110,7 +111,7 @@ pub fn the_stat_part_reads_the_powers_and_rounds_half_away_from_zero_test() -> N
   let assault =
     OnCaster(
       ..medic(),
-      attacker: Attacker(level: 1, assault_rating: 10.0, support_rating: 0.0),
+      attacker: Attacker(..attacker_support.fresh(), assault_rating: 10.0),
     )
   assert damage.value_on_caster(
       formula: formula(kind: 12, factor: 1.0),
@@ -137,13 +138,13 @@ pub fn the_amount_rounds_half_away_from_zero_test() -> Nil {
 
 pub fn a_parameter_the_formula_does_not_read_is_named_by_its_type_test() -> Nil {
   use <- owned_test.run(5000)
-  // 0x140565600 sums types 1 to 5 and 11 into the stat part and 18 is a value passed in:
-  // the server reads neither for an effect on its caster.
-  list.each([1, 3, 5, 11, 18], fn(kind) {
+  // 18 is a value passed in (0x140565600): the server does not read it for an effect on
+  // its caster.
+  list.each([18], fn(kind) {
     assert damage.caster_unread(formula: formula(kind:, factor: 0.5))
       == Some(damage.Unread(parameter_kind: kind))
   })
-  assert damage.caster_unread(formula: formula(kind: 3, factor: 0.0)) == None
+  assert damage.caster_unread(formula: formula(kind: 18, factor: 0.0)) == None
     as "a parameter with a factor of 0 adds nothing, whatever its type"
 }
 

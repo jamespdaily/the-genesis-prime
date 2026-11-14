@@ -18,10 +18,10 @@
 ////   lie 1.2 m either side of the centre one, so a creature 1.528 m aside is 0.328 m
 ////   from one side strip and 2.728 m from the other: both within 3.25 m.
 
+import attacker_support
 import client_tables
 import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/cast.{GoAsked}
-import genesis_prime/game/damage
 import genesis_prime/game/shown.{Exile, ShownCreature}
 import genesis_prime/game/spell_area
 import genesis_prime/game/strike.{type Attacker, Attacker}
@@ -55,7 +55,7 @@ fn gamma_caster(x x: Float, z z: Float, yaw yaw: Float) -> Attacker {
     stay: map_support.stay(count: 1),
     hit_radius: place_support.player_hit_radius,
     faction: Exile,
-    stats: damage.Attacker(level: 1, assault_rating: 0.0, support_rating: 0.0),
+    stats: attacker_support.fresh(),
     properties: properties_support.fresh(level: 1),
   )
 }

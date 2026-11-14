@@ -15,8 +15,12 @@
 ////   0.5368 and 10 x 23.36), 89598 (spell 38507, targetFlags 4), 80077 (spell 32821,
 ////   targetFlags 2, tickTime 1000) and 69917 (spell 34985, parameter 18 x 200).
 //// - `0x140566ad0` and `0x140566d40`: the parameter types the formula reads; the
-////   attributes (1 to 5, 11) and the passed-in value (18) the server does not read for an
-////   effect on its caster.
+////   passed-in value (18) and the caster's Weapon and Weapon DPS (6 and 9,
+////   `Spell4Effects.parameterType.6_9`) the server does not read for an effect on its
+////   caster. Row 94299 (Esper - Tech - Rank 3 -
+////   Shield Heal Proc, Spell4 41868): targetFlags 2, dataBits00 1.0, parameterType00 3
+////   (Technology, `0x140566d40` case 3) with value 1.5, no tickTime
+////   (`table_rows -- Spell4Effects 94299`).
 //// - `Spell4Effects.targetFlags`: bit 1 the caster, 2 the primary target, 4 the area. The
 ////   target of every cast is the caster (`cast`'s doc), so a flags-2 row of a spell cast
 ////   on the caster heals the caster; a child started on each struck unit has that unit
@@ -32,6 +36,7 @@
 
 import cast_support
 import client_tables
+import fixture_tables
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
@@ -225,9 +230,23 @@ pub fn a_periodic_heal_shields_row_is_held_as_ticking_and_not_applied_test() -> 
     as "row 210834: tickTime 1000 and durationTime 8000; the cast rule does not apply it, as a TickingGain"
 }
 
+pub fn the_esper_shield_heal_proc_row_94299_loads_as_a_shield_heal_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(row) =
+    spell4_effects.get(
+      tables: fixture_tables.shared(),
+      id: Spell4EffectsId(94_299),
+    )
+    as "the fixture holds the row"
+  let assert Ok(Heal(vital: effect_kind.Shield, ..)) =
+    spell_plan.heal_of(spell4_id: 41_868, effect: row, condition: Always)
+    as "Esper - Tech - Rank 3 - Shield Heal Proc: Technology (kind 3) x 1.5 is read for an effect on its caster"
+  Nil
+}
+
 pub fn a_heal_shields_row_with_a_parameter_the_caster_formula_does_not_read_fails_the_load_test() -> Nil {
   use <- owned_test.run(5000)
-  list.each([3, 11, 18], fn(kind) {
+  list.each([6, 9, 18], fn(kind) {
     let row =
       Spell4Effects(..energize_row(), id: 99_118, parameter_type00: kind)
     assert spell_plan.heal_of(spell4_id: 69_450, effect: row, condition: Always)
@@ -237,19 +256,22 @@ pub fn a_heal_shields_row_with_a_parameter_the_caster_formula_does_not_read_fail
         parameter_kind: kind,
       ))
       as {
-        "0x140565600: type "
+        "type "
         <> int.to_string(kind)
-        <> " is an attribute or the passed-in value, which an effect on its caster does not read"
+        <> " is the caster's Weapon or Weapon DPS (0x140b0b580) or the passed-in value (0x140565600), which an effect on its caster does not read"
       }
   })
   list.each(
-    [7, 8, 10, 12, 13, 14, 15, 16, 17, 19, 21, 22, 23, 25, 26],
+    [
+      1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 19, 21, 22, 23, 25,
+      26,
+    ],
     fn(kind) {
       let row =
         Spell4Effects(..energize_row(), id: 99_119, parameter_type00: kind)
       let assert Ok(Heal(..)) =
         spell_plan.heal_of(spell4_id: 69_450, effect: row, condition: Always)
-        as { "0x140566ad0 reads type " <> int.to_string(kind) }
+        as { "0x140566ad0 or 0x140566d40 reads type " <> int.to_string(kind) }
     },
   )
   let not_a_number =
