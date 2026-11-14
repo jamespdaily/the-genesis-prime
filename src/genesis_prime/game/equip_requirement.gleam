@@ -72,6 +72,7 @@ pub type Wearer {
     level: Int,
     player: prerequisite.Player,
     item_proficiencies: Int,
+    checker: prerequisite.Checker,
   )
 }
 
@@ -145,6 +146,7 @@ pub fn check(
         base: wearer.faction_id,
       ),
       player: wearer.player,
+      checker: wearer.checker,
     )
   let verdicts =
     list.map(prerequisites, fn(prerequisite) {

@@ -15065,6 +15065,144 @@ proof = "Saved C 0x1405a8b30.c (hash 5c7a982a369b504f): returns 0x65 when creatu
 grade = "fairly sure"
 gap = "Read from the decompile. The game-mode branches of 0x140479560 (lines 98 to 160) were not read for a mark that ignores word 0x1900. Not run live: standing by Creature2 52425 with quest 7013 accepted would show no click cursor."
 
+
+["Prerequisite.prerequisiteTypeId.118"]
+statement = "Prerequisite type 118 ('Public event objective requirement not met', text 175855): the status of public event objective objectId (a PublicEventObjective id) compared with value: comparison 1 equal, 2 different, any other fails. Status values: 0 Inactive, 1 Active, 2 Succeeded, 3 Failed. An objective the client does not hold has status 0, and a missing manager gives false. The units are not read. Rows: 2,422 conditions in 2,065 rows; comparison 1 on 2,139, 2 on 283; value 1 on 1,689, 2 on 658, 0 on 43, 3 on 32. Users: Creature2 AnimState 619, GossipEntry 319, Creature2 Visibility 253, Creature2 Priority00 250, Spell4 CasterPersistence 104, Spell4 CasterCast 93, Creature2 ActivateSpell00 81, Quest2 51, Spell4Effects target apply 49, caster apply 34."
+proof = "Saved C 0x1404a0590.c (hash 8eb22adb6de47956): the manager DAT_140c65980 (vtable 0x140b67420, made by 0x140496660), slot 0x40 = 0x140498bd0 -> slot 0x30 = 0x140498af0 (map at +0x10 keyed 0, event map at +0x70 keyed by objective id, node +0x28); the status is objective slot +0x38 when slot +0x68 is nonzero, else 0. The Lua registration 0x14068c2c0 pushes Inactive 0, Active 1, Succeeded 2, Failed 3; Lua GetStatus 0x14068dd50 (name from table 0x140c5cc80) returns slot +0x38. Counts: Prerequisite and user table dumps (scratch pq.py, users.py); 2,392 of 2,418 nonzero objectIds are PublicEventObjective ids. The server holds no public event, so every objective is Inactive: the tests an_objective_condition_reads_every_objective_as_inactive_test and casts_behind_type_47_or_an_inactive_objective_are_refused_test."
+grade = "fairly sure"
+gap = "The public event messages that fill the manager are not decoded and the meaning of slot +0x68 is not read. The server's public event state waits for the issue 'Public events and challenges work on the real client'."
+
+["Prerequisite.prerequisiteTypeId.47"]
+statement = "Prerequisite type 47 ('You cannot do that right now', text 97969) always fails on the client whatever the comparison. Rows: 1,788 conditions; comparison 2 on 941, 1 on 847; objectId 0 on 1,650; value 1,315 distinct numbers 2-29,808 that match no client table by meaning. Users: Spell4Effects target apply 202, Spell4 CasterCast 122, Spell4Effects caster apply 118, GossipEntry 43, Spell4 TargetCast 41, AoeTarget 23. The server fails it in a cast, an effect or a gossip entry, and leaves a creature it gates by visibility shown."
+proof = "Saved C 0x1404a2100.c: case 47 calls slot 0x2f8 of class 0x140b67740; the slot is 0x140001ba0, disassembly `xor eax,eax; ret`. Counts: Prerequisite and user table dumps (scratch pq.py, users.py); value compared with the gated spells' ids and bases and with Creature2 names. Tests: casts_behind_type_47_or_an_inactive_objective_are_refused_test (Prerequisite rows 5744 and 29089, refused 151) and a_type_47_visibility_condition_is_not_decided_test."
+grade = "fairly sure"
+gap = "What value names is a guess (a server-side id); only server data or a retail capture settles it. A creature behind type 47 stays shown in visibility until the issue 'Quests, zones and prerequisites work on the real client' says what hides it."
+
+["Prerequisite.prerequisiteTypeId.38"]
+statement = "Prerequisite type 38 (IsCreature, text 78884): the first unit's Creature2 id compared with value: comparison 1 equal, 2 different, any other fails. A unit with no creature record has id 0, so a player is id 0. objectId is unused. Rows: 1,182 conditions in 919 rows; comparison 1 on 1,020, 2 on 162; value is a Creature2 id on 1,154 of 1,175. Users: Spell4Effects target apply 940, AoeTarget 90, VisualEffect 57, Spell4Effects caster apply 52."
+proof = "Saved C 0x1404a2100.c case 38 calls slot 0x350 = 0x14049ecc0; saved C 0x14049ecc0.c (hash 8eb22adb6de47956) reads word 0 of the unit's +0x18 record and does not check the unit for null. LocalizedEnum name IsCreature. Counts: Prerequisite and user table dumps (scratch pq.py, users.py). Tests: an_is_creature_condition_compares_the_first_units_creature_test and a_player_first_unit_has_creature_id_zero_test."
+grade = "fairly sure"
+gap = "none"
+
+["Prerequisite.prerequisiteTypeId.246"]
+statement = "Prerequisite type 246 ('Inventory requirement not met', text 620955): whether the player holds Item2 value in the inventory locations of mask 0x707 (bits 0, 1, 2, 8, 9 and 10), compared by comparison: 1 holds, 2 does not hold, any other fails. All 793 conditions use comparison 2; value is an Item2 id on 791. Users: AccountItem 1,066, Creature2 1."
+proof = "Saved C 0x14049d240.c: calls 0x1403ac590 with mask 0x707 and the value. 0x1403ac590 (saved C, hash 8eb22adb6de47956) walks one item list per mask bit and returns 1 on the first item whose Item2 id equals the value; bits 1 and 2 also read the crafting satchel counts at +0xa8. Each list it walks carries its location id in the word before its count (the lists at +0x0, +0x18, +0x30, +0x48, +0x60, +0x78 and +0x90 hold ids 0, 1, 2, 10, 5, 8 and 9, set by 0x1403faa60, saved C hash e9b6b6af37d00314), and bit n selects the list of location id n. The server saves items in locations 0 equipped, 1 inventory and 2 bank only. Counts: Prerequisite and user table dumps (scratch pq.py, users.py). Tests: an_item_condition_reads_the_locations_of_its_mask_test and an_item_change_rechecks_the_creatures_it_gates_test."
+grade = "fairly sure"
+gap = "What fills the client's locations 5, 8, 9 and 10 is not read, and the server saves no item there; the issue that saves them must keep bit n as location n. The crafting satchel is not held: the server holds no satchel until the issue 'Crafting and gathering work on the real client'."
+
+["Prerequisite.prerequisiteTypeId.13"]
+statement = "Prerequisite type 13 (ItemEquipped): as type 246 with location mask 1, the equipped items. 27 conditions."
+proof = "Saved C 0x14049d1c0.c: calls 0x1403ac590 with mask 1. LocalizedEnum name ItemEquipped. Test: an_item_condition_reads_the_locations_of_its_mask_test."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.246."
+
+["Prerequisite.prerequisiteTypeId.14"]
+statement = "Prerequisite type 14 (ItemOnCharacter): as type 246 with location mask 0x303 (bits 0, 1, 8 and 9). 493 conditions."
+proof = "Saved C 0x14049d200.c: calls 0x1403ac590 with mask 0x303. LocalizedEnum name ItemOnCharacter. Test: an_item_condition_reads_the_locations_of_its_mask_test."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.246."
+
+["Prerequisite.prerequisiteTypeId.214"]
+statement = "Prerequisite type 214 ('Spell requirement not met', text 451045): the first unit must be a player, else it fails; then whether the player's ability book holds Spell4Base objectId in its active action set: comparison 1 known, 2 not known, any other fails. Rows: 642 conditions; comparison 2 on 637, 1 on 5; objectId a Spell4Base id on 641; value 0 except on 5. Users: ItemSpecial 491, AccountItem 234, Creature2 AnimState 19."
+proof = "Saved C 0x14049d680.c: unit type 0x14 or 0x17 only; saved C 0x1403bb170.c: book at game +0xaa8, active set byte 0x6dec clamped, entry byte 8 nonzero. The book is filled by opcode.0x1a0. Counts: Prerequisite and user table dumps (scratch pq.py, users.py). Tests: a_spell_condition_reads_the_checkers_ability_book_test and a_spell_condition_fails_for_a_creature_test."
+grade = "fairly sure"
+gap = "none"
+
+["Prerequisite.prerequisiteTypeId.143"]
+statement = "Prerequisite type 143 ('Difficulty requirement not met', text 206225): the world difficulty the client was told compared with value: comparison 1 equal, 2 different, any other fails. 113 conditions: (1, 1) Veteran on 74, (1, 0) Normal on 39. It gates 391 target-apply rows of handled effect types, all creature and dungeon spells."
+proof = "Saved C 0x14049ef70.c reads game +0x6424, which opcode.0xf1.fields sets. Counts: Prerequisite and Spell4Effects dumps (scratch ta.py). Test: a_world_difficulty_condition_compares_the_checkers_difficulty_test."
+grade = "fairly sure"
+gap = "Comparisons other than 1 are used by no row; the server's equal and different reading of 2 is from the shared comparison tail and was not read in this function."
+
+["Prerequisite.prerequisiteTypeId.130"]
+statement = "Prerequisite type 130: whether the first unit carries a cast by the second unit whose spell is in spell group objectId: comparison 1 has, 2 has not, any other fails. A missing second unit makes comparison 2 pass and 1 fail; a missing first unit fails. Group 0 matches no spell. 55 conditions. It gates 132 type 80 target-apply rows, 114 of them in class spells; objectId is not the row's dataBits01."
+proof = "Saved C 0x1404a2100.c case 0x82 calls 0x140469a70 with the first unit, the second unit's id and objectId; saved C 0x140469a70.c walks the unit's list at +0x15c8, node +0x38 the cast, cast +0x154 the caster id, then IsSpellInGroup 0x140561d80. Counts: scratch ta.py. Tests: a_carried_group_condition_reads_only_the_second_units_casts_test, a_carried_group_condition_with_no_second_unit_test and cripples_second_hit_needs_the_casters_own_group_464_cast_test."
+grade = "fairly sure"
+gap = "That the list at +0x15c8 is the unit's applied buffs is inferred from the cast and caster fields, not from its writer."
+
+["0x14049ecc0"]
+statement = "Prerequisite type 38's test. See Prerequisite.prerequisiteTypeId.38."
+proof = "As Prerequisite.prerequisiteTypeId.38."
+grade = "fairly sure"
+gap = "none"
+name = "PrerequisiteIsCreature"
+
+["0x1404a0590"]
+statement = "Prerequisite type 118's test. See Prerequisite.prerequisiteTypeId.118."
+proof = "As Prerequisite.prerequisiteTypeId.118."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.118."
+name = "PrerequisitePublicEventObjectiveStatus"
+
+["0x14049d680"]
+statement = "Prerequisite type 214's test. See Prerequisite.prerequisiteTypeId.214."
+proof = "As Prerequisite.prerequisiteTypeId.214."
+grade = "fairly sure"
+gap = "none"
+name = "PrerequisiteAbilityKnown"
+
+["0x14049d240"]
+statement = "Prerequisite type 246's test. See Prerequisite.prerequisiteTypeId.246."
+proof = "As Prerequisite.prerequisiteTypeId.246."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.246."
+name = "PrerequisiteItemHeld"
+
+["0x14049d1c0"]
+statement = "Prerequisite type 13's test. See Prerequisite.prerequisiteTypeId.13."
+proof = "As Prerequisite.prerequisiteTypeId.13."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.246."
+name = "PrerequisiteItemEquipped"
+
+["0x14049d200"]
+statement = "Prerequisite type 14's test. See Prerequisite.prerequisiteTypeId.14."
+proof = "As Prerequisite.prerequisiteTypeId.14."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.246."
+name = "PrerequisiteItemOnCharacter"
+
+["0x1403ac590"]
+statement = "Whether the player holds an Item2 id in any inventory location of a mask, bit n of the mask for location list n. Called by prerequisite types 13 (mask 1), 14 (0x303) and 246 (0x707)."
+proof = "Saved C 0x14049d1c0.c, 0x14049d200.c, 0x14049d240.c, and 0x1403ac590.c (hash 8eb22adb6de47956), which walks the lists for bits 0, 1, 2, 5, 8, 9 and 10 and reads the satchel counts for bits 1 and 2."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.246."
+name = "HoldsItemInLocations"
+
+["0x1403bb170"]
+statement = "Whether the ability book entry for a Spell4Base id in the active action set holds a nonzero value."
+proof = "Saved C 0x1403bb170.c (hash 8eb22adb6de47956): book at game +0xaa8, active set byte 0x6dec clamped, entry byte 8."
+grade = "fairly sure"
+gap = "What byte 8 holds beyond nonzero is not read; a tier is fairly sure."
+name = "HasAbilityBookTier"
+
+["0x14049ef70"]
+statement = "Prerequisite type 143's test. See Prerequisite.prerequisiteTypeId.143."
+proof = "As Prerequisite.prerequisiteTypeId.143."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.143."
+name = "PrerequisiteWorldDifficulty"
+
+["0x140469a70"]
+statement = "Whether a unit carries a cast by a given caster id whose spell is in a spell group. Prerequisite type 130's test. See Prerequisite.prerequisiteTypeId.130."
+proof = "As Prerequisite.prerequisiteTypeId.130."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.130."
+name = "UnitHasCasterSpellInGroup"
+
+["0x14068dd50"]
+statement = "Lua PublicEventObjective:GetStatus: the objective's status, gated on its event."
+proof = "Saved C 0x14068dd50.c: returns objective slot +0x38 gated on its event (slot +0x28) and slot +0x68; name from the Lua method table 0x140c5cc80."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.118."
+name = "LuaPublicEventObjectiveGetStatus"
+
+["0x14068c2c0"]
+statement = "Registers the PublicEventObjective Lua methods and its status enum: Inactive 0, Active 1, Succeeded 2, Failed 3."
+proof = "Saved C 0x14068c2c0.c: each value is pushed before its name."
+grade = "fairly sure"
+gap = "none"
+name = "RegisterPublicEventObjectiveLua"
 ["0x1405d8350"]
 statement = "Shows a Heal effect's result (Spell4Effects.effectType.10, slot 1 of class 0x140b73d90): sends the heal event to the floater (only when the player or the unit the game object holds at offset 0x6490 is the caster or target, the caster is in the player's list at offset 0x2b8, or 0x14047c1e0 holds) and always to the combat log. For effect type 10 on a target with property 111 HealToShieldConversion (a unit property) not 0, it takes converted = min(int(amount x p), max shield - shield) from the description's amount and shows a second event of type 0x76 (HealShields) for it. The amount is the description's word at 0x10. It writes no health or shield."
 proof = "Saved C 0x1405d8350.c (hash 8eb22adb6de47956): lines 70-98 the show test, 133-150 the type 10 conversion (unit slots 0x78 and 0x70), 151-173 the type 0x76 cap, 174-202 the calls to 0x140563930 and 0x140563a00. Class 0x140b73d90 slots read with query.py bytes: as 0x140b6e240 but slot 1."

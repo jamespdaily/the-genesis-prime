@@ -183,7 +183,10 @@ pub fn asker(scene scene: Scene) -> Asker {
     ),
     factions: scene.factions,
     log: quest_support.log_of(rows: scene.log),
-    items: scene.items,
+    checker: prerequisite.Checker(
+      ..prerequisite_support.empty_checker(),
+      items: scene.items,
+    ),
   )
 }
 

@@ -33,7 +33,7 @@ pub fn asker(
       base: entered.unit.tail.base_faction_id,
     ),
     log: entered.quests,
-    items: entered.items,
+    checker: prerequisite_player.checker_of(entered:),
   )
 }
 

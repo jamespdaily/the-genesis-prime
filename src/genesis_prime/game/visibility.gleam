@@ -10,16 +10,20 @@
 ////
 //// - **What hides a unit** is a verdict of `Fails` for the prerequisite named by
 ////   its Creature2 row's `prerequisiteIdVisibility`. A prerequisite the server does
-////   not read (`NotRead`) and a unit with none (0) are shown. The client never tests
+////   not read (`NotRead`) and a unit with none (0) are shown; a type 47 condition is
+////   one of those, though a cast it gates is refused. The client never tests
 ////   this column itself: it only removes a unit on the server's 0x355 or 0x262 flag
 ////   128 (`Creature2.prerequisiteIdVisibility`), so the server decides.
 //// - **At entry** the connection holds no cast and no unit yet, so the subject is the
 ////   player as the character and its place give it, with the quest log, the health it
 ////   enters at and no casts (`cast.entering_subject`); every started spawn's
 ////   visibility prerequisite of the world reads only the faction, the quest log and
-////   the casts on the player.
+////   the casts on the player. It holds no checker, so a condition on the player's
+////   items, ability book or world difficulty is not read there, and the first
+////   end-of-step check decides it.
 //// - **At a step** the subject is the one the cast rule holds for the player
-////   (`cast.subject_of`).
+////   (`cast.subject_of`), with the checker: the items, the ability book and the
+////   world difficulty.
 
 import genesis_prime/game/cast
 import genesis_prime/game/prerequisite.{type Prerequisite, type Subject}
@@ -40,7 +44,7 @@ pub fn hidden(
 ) -> Set(PrerequisiteId) {
   prerequisites
   |> list.filter(fn(found) {
-    case prerequisite.check(prerequisite: found, subject:) {
+    case prerequisite.check_for_visibility(prerequisite: found, subject:) {
       prerequisite.Fails -> True
       prerequisite.Passes | prerequisite.NotRead(..) -> False
     }

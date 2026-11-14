@@ -86,7 +86,7 @@ fn asker(log log: List(QuestRow)) -> Asker {
     player: prerequisite_support.player(),
     factions: Factions(current: exile, base: exile),
     log: quest_support.log_of(rows: log),
-    items: [],
+    checker: prerequisite_support.empty_checker(),
   )
 }
 
@@ -107,7 +107,7 @@ fn holding(
   item item2_id: Int,
   location location: Int,
 ) -> Asker {
-  Asker(..asker, items: [
+  quest_support.with_items(asker, items: [
     item(item2_id:, location:, bag_index: 0),
   ])
 }
@@ -146,7 +146,7 @@ fn verdict_of(quest_id: Int, asker: Asker) -> Verdict {
 pub fn accept_answers_accepted_and_adds_a_tracked_entry_test() -> Nil {
   use <- owned_test.run(10_000)
   let held =
-    Asker(..asker(log: []), items: [
+    quest_support.with_items(asker(log: []), items: [
       item(item2_id: 4861, location: 1, bag_index: 0),
     ])
   let taken =
@@ -208,9 +208,10 @@ pub fn accept_takes_a_quest_held_in_the_side_list_test() -> Nil {
   // accept: the client sends it as a retry (see the would-not-send test).
   list.each([5, 6, 7], fn(state) {
     let held =
-      Asker(..asker(log: [quest_support.known(2417, state)]), items: [
-        item(item2_id: 4861, location: 1, bag_index: 0),
-      ])
+      quest_support.with_items(
+        asker(log: [quest_support.known(2417, state)]),
+        items: [item(item2_id: 4861, location: 1, bag_index: 0)],
+      )
     let taken =
       took(
         message: quest.Accept,
@@ -891,7 +892,7 @@ pub fn accept_from_an_item_needs_the_item_that_starts_the_quest_test() -> Nil {
   let started = fn(asker) { took(message: quest.Accept, body:, asker:) }
   let sent = [quest.SendState(quest_id: 2417, state: 1, objective_id: 0)]
   assert started(
-      Asker(..asker(log: []), items: [
+      quest_support.with_items(asker(log: []), items: [
         item(item2_id: 4861, location: 1, bag_index: 0),
       ]),
     ).effects
@@ -901,7 +902,7 @@ pub fn accept_from_an_item_needs_the_item_that_starts_the_quest_test() -> Nil {
   // Item2 1039 starts no quest.
   assert_declined(
     started(
-      Asker(..asker(log: []), items: [
+      quest_support.with_items(asker(log: []), items: [
         item(item2_id: 1039, location: 1, bag_index: 0),
       ]),
     ),
@@ -909,7 +910,7 @@ pub fn accept_from_an_item_needs_the_item_that_starts_the_quest_test() -> Nil {
   )
   assert_declined(
     started(
-      Asker(..asker(log: []), items: [
+      quest_support.with_items(asker(log: []), items: [
         item(item2_id: 4861, location: 1, bag_index: 1),
       ]),
     ),
@@ -1022,7 +1023,7 @@ pub fn retry_takes_only_a_botched_quest_test() -> Nil {
     quest.take(
       message: quest.Retry,
       body: retry_body(quest_id: 2417),
-      asker: Asker(..asker(log:), items: [
+      asker: quest_support.with_items(asker(log:), items: [
         item(item2_id: 4861, location: 1, bag_index: 0),
       ]),
       standing: standing(),
@@ -1112,7 +1113,9 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
   // client sends a Botched quest as 0x0365 only (`opcode.0x35b`, `opcode.0x365`).
   let botched = asker(log: [quest_support.known(2417, 4)])
   let from_item =
-    Asker(..botched, items: [item(item2_id: 4861, location: 1, bag_index: 0)])
+    quest_support.with_items(botched, items: [
+      item(item2_id: 4861, location: 1, bag_index: 0),
+    ])
   let assert Ok(accepted_botched) =
     quest.take(
       message: quest.Accept,

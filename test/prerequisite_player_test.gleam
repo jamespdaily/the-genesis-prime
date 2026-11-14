@@ -183,7 +183,7 @@ pub fn a_subject_with_no_player_does_not_decide_these_types_test() -> Nil {
   // A subject known by its place alone holds the player's facts but not the
   // first unit's, so only the types that read the unit are left undecided.
   let place_only =
-    prerequisite.of_struck(
+    prerequisite_support.struck(
       first: None,
       second: prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0),
       player: prerequisite_support.player(),
@@ -211,7 +211,7 @@ pub fn a_struck_units_condition_reads_the_casters_player_test() -> Nil {
   // player, whoever the unit is that the check is about.
   let caster = prerequisite_support.player()
   let struck_by = fn(player) {
-    prerequisite.of_struck(
+    prerequisite_support.struck(
       first: None,
       second: prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0),
       player:,

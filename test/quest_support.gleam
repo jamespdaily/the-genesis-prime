@@ -11,8 +11,10 @@
 
 import character_tables
 import fixture_tables
+import genesis_prime/game/prerequisite
+import genesis_prime/game/quest.{type Asker, Asker}
 import genesis_prime/game/quest_log.{type QuestLog, type UnitRef, UnitRef}
-import genesis_prime/store.{type QuestRow, ActiveQuest, QuestRow}
+import genesis_prime/store.{type HeldItem, type QuestRow, ActiveQuest, QuestRow}
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
@@ -270,4 +272,10 @@ pub fn with_time_limits(
       }
     })
   fixture_tables.on_rows(rows:, reaching: [], body:)
+}
+
+/// The asker holding these items, which the checker carries for the quest checks and the
+/// item prerequisites alike.
+pub fn with_items(asker asker: Asker, items items: List(HeldItem)) -> Asker {
+  Asker(..asker, checker: prerequisite.Checker(..asker.checker, items:))
 }
