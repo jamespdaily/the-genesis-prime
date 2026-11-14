@@ -193,10 +193,8 @@ pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_
   let count_of = fn(reason) {
     list.count(refusals, fn(found) { found == reason })
   }
-  assert count_of("aimed at the target") == 33
-    as "33 hold a Spell4Effects row aimed at the target or an area that the strike applies, which an activate cast strikes no one with (Spell4Effects targetFlags); the other 39 of the 72 held only a RavelSignal row aimed there, which the plan drops with a log when the cast starts (Spell4Effects.effectType.81)"
-  assert count_of("control state") == 11
-    as "11 hold a CCStateSet effect of a state other than Stun (0) and Knockdown (8) (Unit.CodeEnumCCState). Gap: the issue Spells work in depth on the real client (#336) owns it"
+  assert count_of("aimed at the target") == 32
+    as "32 hold a Spell4Effects row aimed at the target or an area that the strike applies, which an activate cast strikes no one with (Spell4Effects targetFlags); Spell4 87571 holds one too (effect 229208), but its Knockdown row is named first; the other 39 of the 72 held only a RavelSignal row aimed there, which the plan drops with a log when the cast starts (Spell4Effects.effectType.81)"
   assert count_of("disguise") == 4
     as "4 hold a DisguiseOutfit effect the server does not read (Spell4Effects.effectType.112). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("force remove counts") == 2
@@ -205,10 +203,10 @@ pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_
     as "2 hold a Fluff, SpellForceRemove, Scale or RavelSignal effect aimed by flags the server does not read (Spell4Effects.targetFlags). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("stealth condition") == 1
     as "1 holds a Spell4Conditions row whose mask tests stealth, with the refusals 65 and 114 not checked. Gap: the issue Spells work in depth on the real client (#336) owns it"
-  assert count_of("control aim") == 1
-    as "1 holds a CCStateSet effect aimed by flags the server does not read (Spell4Effects.targetFlags). Gap: the issue Spells work in depth on the real client (#336) owns it"
-  assert list.length(refusals) == 54
-    as "54 of the 767 are refused, each for one of the reasons above, so 713 are planned"
+  assert count_of("control aim") == 3
+    as "3 hold a CCStateSet effect the server does not read: Spell4 33716 and 33966 (effects 191135 and 191167, state 11) behind an apply prerequisite, and Spell4 87571 (effect 229281, Knockdown, targetFlags 2, until removed) on another unit (scratch count over `table_rows -- Spell4Effects effectType=4`). Gap: the issues that read apply prerequisites and until-removed rows on another unit own them"
+  assert list.length(refusals) == 44
+    as "44 of the 767 are refused, each for one of the reasons above, so 723 are planned, among them Spell4 33742, 33743, 33967 and 33968 (state 11), 47274, 47396, 47446, 47509 and 47541 (state 26) and 82086 (a state aimed at the caster), which each hold a CCStateSet row of a state the server reads"
 }
 
 /// The short name of a refusal's reason, by the text of the plan's own reason; a reason
@@ -216,7 +214,6 @@ pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_
 fn refusal_reason(why why: String) -> String {
   let reasons = [
     #("aims at the target or an area", "aimed at the target"),
-    #("of state", "control state"),
     #("DisguiseOutfit", "disguise"),
     #("differs from its dataBits04", "force remove counts"),
     #("Fluff, SpellForceRemove, Scale or RavelSignal", "lasting aim"),

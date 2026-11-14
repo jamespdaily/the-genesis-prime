@@ -147,11 +147,10 @@ pub fn the_targeted_objective_spells_plan_test() -> Nil {
       }
     })
     |> list.sort(by: int.compare)
-  assert list.length(aimed_ids(shortcuts:)) == 52
-    as "52 of the 59 distinct spells the 73 targeted type 11 rows name plan as Aimed (`spell_plan.spell_alone`, measured over the client's table)"
-  assert cannot_be_planned
-    == [23_229, 30_173, 34_470, 34_471, 34_474, 34_684, 42_891]
-    as "the other 7 spells cannot be planned (`spell_plan.spell_alone`), so their presses are refused 285 as not built"
+  assert list.length(aimed_ids(shortcuts:)) == 55
+    as "55 of the 59 distinct spells the 73 targeted type 11 rows name plan as Aimed (`spell_plan.spell_alone`, measured over the client's table)"
+  assert cannot_be_planned == [34_470, 34_471, 34_474, 35_436]
+    as "the other 4 spells cannot be planned (`spell_plan.spell_alone`), so their presses are refused 285 as not built"
 }
 
 /// The rows whose Aimed spell has a CasterCast the server reads none of, or a TargetCast
@@ -207,11 +206,13 @@ fn target_cast_unread(
   }
 }
 
-pub fn every_targeted_rows_cast_conditions_are_read_but_the_known_nine_test() -> Nil {
+pub fn every_targeted_rows_cast_conditions_are_read_but_the_known_eleven_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   assert unjudgeable_rows(tables:)
-    == [8389, 9399, 9401, 9768, 9770, 9771, 15_363, 17_880, 17_933]
-    as "the targeted type 11 rows whose spell has a CasterCast of a PrerequisiteType the server does not read (16, 102) or a TargetCast of type 4 or 71, which the connection cannot judge on a creature (measured over the client's table), besides rows 14966 and 15332, whose spells cannot be planned"
+    == [
+      8389, 9399, 9401, 9768, 9770, 9771, 14_966, 15_332, 15_363, 17_880, 17_933,
+    ]
+    as "the targeted type 11 rows whose spell has a CasterCast of a PrerequisiteType the server does not read (16, 102) or a TargetCast of type 4, 71 or 102, which the connection cannot judge on a creature (measured over the client's table); rows 14966 and 15332 name Spell4 42891, whose TargetCast is Prerequisite 16955, of type 102"
 }
