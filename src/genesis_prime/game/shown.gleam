@@ -406,8 +406,8 @@ pub fn with_path(
   }
 }
 
-/// The picture with the creature marked alive or dead by its owner's news; a unit
-/// that is not a shown creature is as it was.
+/// The picture with the creature marked alive or dead by its owner's news, a dead
+/// creature holding no state; a unit that is not a shown creature is as it was.
 pub fn with_alive(
   picture picture: Picture,
   unit_id unit_id: Int,
@@ -415,7 +415,58 @@ pub fn with_alive(
 ) -> Picture {
   case dict.get(picture, unit_id) {
     Ok(ShownCreature(..) as creature) ->
-      dict.insert(picture, unit_id, ShownCreature(..creature, alive:))
+      dict.insert(
+        picture,
+        unit_id,
+        ShownCreature(..creature, alive:, held: case alive {
+          True -> creature.held
+          False -> []
+        }),
+      )
+    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+  }
+}
+
+/// The picture with the creature holding the state its owner's news gave, under the
+/// 0x87f's instance id; a unit that is not a shown creature is as it was.
+pub fn with_held_applied(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  state state: CrowdControlState,
+  instance_id instance_id: Int,
+) -> Picture {
+  case dict.get(picture, unit_id) {
+    Ok(ShownCreature(held:, ..) as creature) ->
+      dict.insert(
+        picture,
+        unit_id,
+        ShownCreature(
+          ..creature,
+          held: list.append(held, [HeldState(state:, instance_id:)]),
+        ),
+      )
+    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+  }
+}
+
+/// The picture with the creature no longer holding the state of that instance id (the
+/// 0x880 names one instance), the creature's other instances kept; a unit that is not a
+/// shown creature is as it was.
+pub fn with_held_ended(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  instance_id instance_id: Int,
+) -> Picture {
+  case dict.get(picture, unit_id) {
+    Ok(ShownCreature(held:, ..) as creature) ->
+      dict.insert(
+        picture,
+        unit_id,
+        ShownCreature(
+          ..creature,
+          held: list.filter(held, fn(one) { one.instance_id != instance_id }),
+        ),
+      )
     Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }

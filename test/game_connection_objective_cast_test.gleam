@@ -32,6 +32,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
+import genesis_prime/message/crowd_control_state
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/quest_abandon.{QuestAbandon}
 import genesis_prime/message/quest_accept.{QuestAccept}
@@ -486,4 +487,146 @@ pub fn abandoning_a_quest_takes_its_cast_button_away_test() -> Nil {
     )
     == [shortcut_frame(add: 0)]
     as "opcode.0x176 {40471, 2, 13884, remove}: an abandoned quest's objective is no longer open, so its button goes, and no add is written"
+}
+
+/// Spell4 64944 of quest 9373's objective 17880 names Spell4CCConditions row 1 for its
+/// target, whose ccStateMask 218960739 has bits 0 (Stun), 1 (Sleep) and 5 (Polymorph); its
+/// target cast Prerequisite 28001 is of a type the server does not read, so a creature
+/// holding no masked state is refused 281 (PrereqTargetCast) and not 122.
+const a_masking_spell = 64_944
+
+/// A shown creature of that spell's cast group (Creature2 57226, display 36511).
+fn a_masked_target() -> game_connection.State {
+  let #(state, _) =
+    connection_support.entered_with_quests(quests: [
+      quest_support.accepted(quest_id: 9373, progress: [0, 0]),
+    ])
+  connection_support.feed(
+    state:,
+    event: appears_at_ten(
+      unit_id: 40,
+      creature_id: 57_226,
+      display_info_id: 36_511,
+      outfit_info_id: 0,
+      hit_radius: 1.5,
+    ),
+  ).0
+}
+
+/// The state after the unit's news, and the results of the 0x7fc a press of the spell at
+/// unit 40 then writes at the monotonic time `ms`.
+fn pressed_after(
+  state state: game_connection.State,
+  news news: List(#(Int, client_connection.News)),
+  ms ms: Int,
+) -> #(game_connection.State, List(Int)) {
+  let state =
+    list.fold(news, state, fn(state, told) {
+      connection_support.feed(
+        state:,
+        event: connection_support.news_sent_by_a_peer(
+          unit_id: told.0,
+          news: told.1,
+        ),
+      ).0
+    })
+  let #(state, taken) =
+    connection_support.at(
+      state:,
+      ms:,
+      event: OwnEvent(
+        step.Read(press_at(
+          spell4_id: a_masking_spell,
+          unit_id: 40,
+          client_cast_id: 7,
+        )),
+      ),
+    )
+  #(
+    state,
+    list.map(connection_support.refusal_results(taken:), cast_result.to_value),
+  )
+}
+
+pub fn the_picture_keeps_a_shown_creatures_held_states_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let stun = fn(instance_id) {
+    #(
+      40,
+      client_connection.CrowdControlApplied(
+        state: crowd_control_state.Stun,
+        instance_id:,
+      ),
+    )
+  }
+  let stun_ended = fn(instance_id) {
+    #(
+      40,
+      client_connection.CrowdControlEnded(
+        state: crowd_control_state.Stun,
+        cast_id: 2_147_500_000,
+        instance_id:,
+      ),
+    )
+  }
+  let #(state, results) =
+    pressed_after(state: a_masked_target(), news: [], ms: 0)
+  assert results == [281]
+    as "no state held: the press passes the state test and meets the unread target prerequisite, 281"
+  let #(state, results) =
+    pressed_after(state:, news: [stun(28_673), stun(28_674)], ms: 1000)
+  assert results == [122]
+    as "0x87f of Stun reaches the cast rule's target test: Target_CannotBe_Stunned (0x1403b2240)"
+  let #(state, results) =
+    pressed_after(state:, news: [stun_ended(28_673)], ms: 2000)
+  assert results == [122]
+    as "0x880 names one instance: the creature still holds the other Stun"
+  let #(state, results) =
+    pressed_after(state:, news: [stun_ended(28_674)], ms: 3000)
+  assert results == [281] as "the last instance ended: no state is held"
+  let #(state, results) =
+    pressed_after(
+      state:,
+      news: [
+        #(
+          40,
+          client_connection.CrowdControlApplied(
+            state: crowd_control_state.Sleep,
+            instance_id: 28_675,
+          ),
+        ),
+      ],
+      ms: 4000,
+    )
+  assert results == [124]
+    as "a held Sleep gives its own target result (Target_CannotBe_Slept, 124)"
+  let #(state, _) =
+    pressed_after(
+      state:,
+      news: [
+        #(
+          77,
+          client_connection.CrowdControlApplied(
+            state: crowd_control_state.Stun,
+            instance_id: 28_676,
+          ),
+        ),
+        #(40, client_connection.Removed),
+      ],
+      ms: 5000,
+    )
+  let state =
+    connection_support.feed(
+      state:,
+      event: appears_at_ten(
+        unit_id: 40,
+        creature_id: 57_226,
+        display_info_id: 36_511,
+        outfit_info_id: 0,
+        hit_radius: 1.5,
+      ),
+    ).0
+  let #(_, results) = pressed_after(state:, news: [], ms: 6000)
+  assert results == [281]
+    as "news of unit 77, which the client does not show, changed nothing; the 0x355 of unit 40 forgot it with its Sleep, so the creature shown again holds no state"
 }

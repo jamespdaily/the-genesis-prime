@@ -15,6 +15,7 @@ import genesis_prime/game/shown.{
   Dominion, Exile, ShownCreature, ShownObject, ShownPlayer,
 }
 import genesis_prime/game/start_place
+import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_life.{
   type Attackable, Attackable, Hostile,
@@ -301,4 +302,30 @@ pub fn a_unit_that_is_not_a_shown_creature_has_no_pose_test() -> Nil {
   assert shown.poses_of(picture:, unit_ids: [1, 2, 3, 99], now_ms: 0)
     == dict.from_list([#(1, Pose(at: Point(x: 10.0, z: -20.0), yaw: 0.7))])
     as "the poses of the units asked for that are shown creatures, and no other"
+}
+
+pub fn a_died_news_clears_a_creatures_held_states_and_only_its_own_test() -> Nil {
+  use <- owned_test.run(5000)
+  let holding =
+    shown.with_held_applied(
+      picture: picture(),
+      unit_id: 1,
+      state: crowd_control_state.Stun,
+      instance_id: 28_673,
+    )
+  let assert Ok(ShownCreature(held:, ..)) = dict.get(holding, 1)
+  assert held == [shown.HeldState(crowd_control_state.Stun, 28_673)]
+    as "a 0x87f gives the creature the state under its instance id"
+  let dead = shown.with_alive(picture: holding, unit_id: 1, alive: False)
+  let assert Ok(ShownCreature(held: after, ..)) = dict.get(dead, 1)
+  assert after == []
+    as "a Died news (opcode.0x88c, SetUnitDead) ends the creature's states with its life"
+  assert shown.with_held_applied(
+      picture: picture(),
+      unit_id: 3,
+      state: crowd_control_state.Stun,
+      instance_id: 1,
+    )
+    == picture()
+    as "another player's unit holds no state in the picture"
 }
