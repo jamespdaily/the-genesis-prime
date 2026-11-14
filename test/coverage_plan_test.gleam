@@ -87,8 +87,8 @@ pub fn the_measure_counts_the_damage_rows_the_area_load_refuses_as_not_read_test
   use <- unitest.guard(client_tables.present())
   let #(rows, unread, _, starting_unread) = counted(type_number: 8)
   assert rows == 29_445 as "scratch count: effectType=8 holds 29,445 rows"
-  assert unread == 10_136
-    as "scratch count: 9,995 rows hold a formula parameter whose value is not 0 and whose type is not 0, 10, 12 or 13 (`damage.unread`) and 136 more aim other than 1, 2, 4 or 6; no multiplier is infinite or not a number; and 5 more, otherwise read, hold a phaseFlags of 0, which no phase selects (`in_phase`): 10,136 of 29,445"
+  assert unread == 12_293
+    as "scratch count: 9,995 rows hold a formula parameter whose value is not 0 and whose type is not 0, 10, 12 or 13 (`damage.unread`) and 136 more aim other than 1, 2, 4 or 6; no multiplier is infinite or not a number; and 5 more, otherwise read, hold a phaseFlags of 0, which no phase selects (`in_phase`): 10,136; and 2,157 more, otherwise read, hold a tickTime, which the area load leaves out (`table_rows -- Spell4Effects effectType=8`, 2,854 rows hold one, counted by a scratch script over the dump): 12,293 of 29,445"
   assert starting_unread == 0
     as "the area load builds every damage row of the starting abilities' spells"
 }
@@ -134,8 +134,8 @@ pub fn the_measure_totals_match_the_plan_test() -> Nil {
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let text = checklist.render([measured()])
-  assert string.contains(text, "28043 rows of the handled types not read")
-    as "the sum of the types' scratch counts: 1 1,368, 3 2,562, 4 3,849, 8 10,136, 10 1,623, 11 685, 26 1,986, 73 35, 80 535 and 118 110 (the tests above and the type 10 count in `coverage_type_test`), 17 455 and 81 658 (the 375 and 634 of before and 80 and 24 rows, otherwise read, with phaseFlags 0), and the counts this step leaves as they were: 14 3,455, 18 14, 29 281, 52 2, 64 35, 83 51, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values, which the step does not move)"
+  assert string.contains(text, "30200 rows of the handled types not read")
+    as "the sum of the types' scratch counts: 1 1,368, 3 2,562, 4 3,849, 8 12,293, 10 1,623, 11 685, 26 1,986, 73 35, 80 535 and 118 110 (the tests above), 17 455 and 81 658 (the 375 and 634 of before and 80 and 24 rows, otherwise read, with phaseFlags 0), and the counts this step leaves as they were: 14 3,455, 18 14, 29 281, 52 2, 64 35, 83 51, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values, which the step does not move)"
   assert string.contains(text, "starting abilities: 184 of 196 rows handled")
     as "scratch count over the 196 starting rows: 9 were not read before (the two Proc rows the plan skips, 90 four times, 24, the Warrior's 210834 and 91018) and 3 are not read now: Proxies 121345 and 178429 (dataBits00 0) and the Medic's ticking gain 228918"
 }
