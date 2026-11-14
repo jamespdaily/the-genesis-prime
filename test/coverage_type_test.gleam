@@ -435,7 +435,7 @@ pub fn the_effect_types_3_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145_ar
       ),
       Missing(
         type_number: 8,
-        reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses",
+        reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; rows with a tickTime (periodic), which the area load leaves out (#336)",
         fact_key: "0x140566ad0",
       ),
       Missing(
@@ -811,6 +811,24 @@ pub fn the_measure_counts_ticking_and_refused_heal_shields_rows_as_not_read_test
       unread_rows: 1,
     )
     as "the row aimed at the primary target is not read; the one aimed at the area is"
+}
+
+pub fn the_measure_counts_a_periodic_damage_row_as_not_read_and_names_it_in_the_gap_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  // Planted: two type 8 rows aimed at the area, one with a tickTime of 1000 and one
+  // without, and the type 8 row of the helper, aimed at the area with no tickTime.
+  let assert Measured(types:, ..) =
+    measured_shield_rows(type_: 8, rows: [#(4, 1000, 0), #(4, 0, 0)])
+  let assert Ok(line) = list.find(types, fn(line) { line.type_number == 8 })
+  assert line.rows == 3
+  assert line.status
+    == HandledWithGap(
+      reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; rows with a tickTime (periodic), which the area load leaves out (#336)",
+      fact_key: "0x140566ad0",
+      unread_rows: 1,
+    )
+    as "the periodic row strikes once for each tick and the area strikes once, so it is not read; the two rows without a tickTime are"
 }
 
 pub fn the_type_83_rows_aimed_at_other_units_or_timed_are_counted_as_not_handled_test() -> Nil {

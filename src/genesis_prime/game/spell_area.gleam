@@ -39,6 +39,9 @@
 ////   only the effects and Proxies whose tag holds for the points the cast spent above
 ////   its base cost, then works out `selects_area` and `strikes_primary_target` from
 ////   what is left. A cast with no spend keeps every effect.
+//// - **A periodic damage row** (a tickTime) is left out of the area and the load goes on:
+////   the client never times ticks, each is its own 0x7f8 from the server, and the area
+////   strikes once. The coverage measure counts it as not read.
 //// - **Closest first.** Every area row of the level-1 abilities has `targetSelection`
 ////   1, and none strikes a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
 ////   `Spell4ValidTargets.targetBitmask`).
@@ -164,6 +167,9 @@ pub type AreaError {
   AimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A damage effect's formula reads a parameter a player's value does not.
   FormulaNotRead(spell4_id: Int, effect_id: Int, parameter_kind: Int)
+  /// A damage effect has a tickTime: it strikes once for each tick, and the area does not
+  /// tick, so the load leaves the row out and the coverage measure counts it as not read.
+  PeriodicNotRead(spell4_id: Int, effect_id: Int, tick_ms: Int)
   /// A damage effect's multiplier (`dataBits00`, read as 32 bits) is an infinity or a
   /// number that is not one.
   MultiplierNotFinite(spell4_id: Int, effect_id: Int, bits: Int)
@@ -227,6 +233,14 @@ pub fn describe(error error: AreaError) -> String {
       <> " whose formula reads parameter type "
       <> int.to_string(parameter_kind)
       <> ", which a player's value does not"
+    PeriodicNotRead(spell4_id:, effect_id:, tick_ms:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a damage effect "
+      <> int.to_string(effect_id)
+      <> " with a tickTime of "
+      <> int.to_string(tick_ms)
+      <> ", and a periodic damage effect is not read"
     MultiplierNotFinite(spell4_id:, effect_id:, bits:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -497,7 +511,8 @@ fn placement_of(
 }
 
 /// The damage effects of the spell (effect type 8), each with the unit it aims at and
-/// its formula.
+/// its formula. A periodic row (`PeriodicNotRead`) is left out and the load goes on; any
+/// other refusal fails it.
 fn damage_effects_of(
   effects effects: Dict(Int, List(spell4_effects.Spell4Effects)),
   id id: Int,
@@ -507,14 +522,22 @@ fn damage_effects_of(
   |> list.filter(fn(effect) {
     effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
   })
-  |> list.try_map(fn(effect) { damage_row_of(spell4_id: id, effect:) })
+  |> list.try_fold([], fn(kept, effect) {
+    case damage_row_of(spell4_id: id, effect:) {
+      Ok(row) -> Ok([row, ..kept])
+      Error(PeriodicNotRead(..)) -> Ok(kept)
+      Error(error) -> Error(error)
+    }
+  })
+  |> result.map(list.reverse)
 }
 
 /// One damage row (effect type 8) of the spell `spell4_id` as a damage effect, or the error
 /// that fails the area load: its dataBits00 must be a finite 32-bit float, its targetFlags
-/// one the rule aims by (1, 2, 4 or 6) and its formula must read only the parameter types a
-/// player's value reads (genesis_prime/game/damage `unread`). The area load and the coverage
-/// measure both read a row through it.
+/// one the rule aims by (1, 2, 4 or 6), its formula must read only the parameter types a
+/// player's value reads (genesis_prime/game/damage `unread`) and its tickTime must be 0: a
+/// periodic row strikes once for each tick, and the area strikes once. The area load and the
+/// coverage measure both read a row through it.
 pub fn damage_row_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
@@ -536,10 +559,15 @@ pub fn damage_row_of(
     | AimsAtArea
     | AimsAtBoth -> Ok(Nil)
   })
-  use Nil <- result.map(case damage.unread(formula:) {
+  use Nil <- result.try(case damage.unread(formula:) {
     Some(damage.Unread(parameter_kind:)) ->
       Error(FormulaNotRead(spell4_id:, effect_id: effect.id, parameter_kind:))
     None -> Ok(Nil)
+  })
+  use Nil <- result.map(case effect.tick_time {
+    0 -> Ok(Nil)
+    tick_ms ->
+      Error(PeriodicNotRead(spell4_id:, effect_id: effect.id, tick_ms:))
   })
   DamageEffect(
     effect_id: Spell4EffectsId(effect.id),

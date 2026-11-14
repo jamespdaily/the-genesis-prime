@@ -23,8 +23,8 @@ import genesis_prime/game/area.{
 }
 import genesis_prime/game/crowd_control
 import genesis_prime/game/spell_area.{
-  AimNotRead, FormulaNotRead, MultiplierNotFinite, SelectionNotClosest,
-  ShapeNotBuilt, TelegraphNotOnCaster, ValidTargetsNotAlive,
+  AimNotRead, FormulaNotRead, MultiplierNotFinite, PeriodicNotRead,
+  SelectionNotClosest, ShapeNotBuilt, TelegraphNotOnCaster, ValidTargetsNotAlive,
 }
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spend.{EqualTo}
@@ -398,6 +398,79 @@ pub fn a_damage_effect_aimed_by_a_flag_value_not_read_fails_the_load_test() -> N
     )
     == Error(AimNotRead(spell4_id: 58_591, effect_id: 140_383, target_flags: 3))
     as "Spell4Effects.targetFlags: 1, 2, 4 and 6 are the values the rows hold"
+}
+
+/// Spell4Effects 61198 as the client holds it, with a formula the player's value reads
+/// (the row itself holds parameter type 4, which the area load refuses as a formula):
+/// spell 32475, aimed at the cast's target (targetFlags 2), damage type 3, delayTime 1500,
+/// durationTime 6000 and phaseFlags 1. The test sets its tickTime.
+fn periodic_damage_row(tick_ms tick_ms: Int) -> spell4_effects.Spell4Effects {
+  spell4_effects.Spell4Effects(
+    ..spell_tables.blank_effect(
+      id: 61_198,
+      spell: 32_475,
+      effect_type: 8,
+      target_flags: 2,
+    ),
+    damage_type: 3,
+    delay_time: 1500,
+    tick_time: tick_ms,
+    duration_time: 6000,
+    phase_flags: 1,
+    threat_multiplier: 1.0,
+  )
+}
+
+pub fn a_damage_row_with_a_tick_time_is_not_read_naming_the_tick_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert spell_area.damage_row_of(
+      spell4_id: 32_475,
+      effect: periodic_damage_row(tick_ms: 1500),
+    )
+    == Error(PeriodicNotRead(
+      spell4_id: 32_475,
+      effect_id: 61_198,
+      tick_ms: 1500,
+    ))
+    as "Spell4Effects 61198 holds tickTime 1500: the client never times ticks, each is its own 0x7f8 from the server, so one strike at delayTime is not the row"
+}
+
+pub fn a_damage_row_with_no_tick_time_is_read_as_one_strike_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(effect) =
+    spell_area.damage_row_of(
+      spell4_id: 32_475,
+      effect: periodic_damage_row(tick_ms: 0),
+    )
+    as "the refusal keys on tickTime alone"
+  assert #(
+      effect.effect_id,
+      effect.damage_type,
+      effect.delay_ms,
+      effect.phase_flags,
+      effect.aim,
+    )
+    == #(Spell4EffectsId(61_198), 3, 1500, 1, spell_plan.AimsAtPrimaryTarget)
+    as "Spell4Effects 61198: damageType 3, delayTime 1500, phaseFlags 1, targetFlags 2 (the cast's target)"
+}
+
+pub fn a_periodic_damage_row_is_left_out_of_its_spells_area_and_the_load_goes_on_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // No spell of a level-1 tree holds a damage row with a tickTime (the fixture's seven, 17802,
+  // 40408, 58591, 58592, 70305, 92585 and 200707, belong to spells outside the trees), so
+  // Mind Burst's second damage row (61994, tickTime 0 in the client) is given one.
+  let area =
+    mind_burst_with(table: "Spell4Effects", id: 61_994, with: [
+      #("tickTime", Integer(1000)),
+    ])
+  assert list.map(damage_of(area:, spent: None), fn(effect) { effect.effect_id })
+    == [
+      Spell4EffectsId(61_993),
+      Spell4EffectsId(61_995),
+      Spell4EffectsId(61_996),
+      Spell4EffectsId(61_997),
+    ]
+    as "Spell4.32809 holds damage rows 61993 to 61997: the periodic row is left out, the other four stay, and the load does not fail"
 }
 
 pub fn a_damage_row_the_area_load_refuses_is_not_read_test() -> Nil {

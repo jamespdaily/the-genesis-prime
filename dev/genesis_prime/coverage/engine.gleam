@@ -324,7 +324,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 8,
-        reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses",
+        reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; rows with a tickTime (periodic), which the area load leaves out (#336)",
         fact_key: "0x140566ad0",
       ),
       Missing(
