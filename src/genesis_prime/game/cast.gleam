@@ -1496,8 +1496,10 @@ fn item_used(
 
 /// The cast of an item's spell, which the item's checks let through, at the unit the
 /// press names (`item_used`): refused as not built when the spell has no Activate effect,
-/// refused 91 for a unit not shown, 100 for another player and 89 for a unit the spell's cast group
-/// refuses (`activate.passes_cast_group`), else the activate cast of the unit.
+/// refused 91 for a unit not shown and 100 for another player. At a creature the target's
+/// life and states come first (`target_state_refusal`), then 89 for a unit the spell's cast
+/// group refuses (`activate.passes_cast_group`), else the activate cast of the unit, which
+/// refuses by range (`0x1403b2240` tests in that order).
 fn item_spell_cast(
   cast cast: State,
   caster caster: Caster,
@@ -1558,41 +1560,44 @@ fn item_spell_cast(
           held:,
           ..,
         ) ->
-          case
-            item_cast_group(
-              cast:,
-              caster:,
-              client_cast_id:,
-              unit_id:,
-              spell4_id:,
-              cast_group_id:,
-              creature:,
-              checklist_index:,
-              activations:,
-              in_cast_group:,
-            )
-          {
-            Error(taken) -> taken
-            Ok(Nil) ->
-              activation_in_range(
-                cast:,
-                caster:,
-                caster_radius:,
-                now_ms:,
-                client_cast_id:,
-                unit_id:,
-                creature_id:,
-                creature:,
-                target: unit,
-                alive:,
-                held:,
-                by_item: True,
-                spell:,
-                cast_time_ms: spell.cast_time_ms,
-                effects:,
-                dropped_signals:,
-                limits:,
-              )
+          case target_state_refusal(spell:, alive:, held:) {
+            Some(result) -> refusal(spell4_id, result)
+            None ->
+              case
+                item_cast_group(
+                  cast:,
+                  caster:,
+                  client_cast_id:,
+                  unit_id:,
+                  spell4_id:,
+                  cast_group_id:,
+                  creature:,
+                  checklist_index:,
+                  activations:,
+                  in_cast_group:,
+                )
+              {
+                Error(taken) -> taken
+                Ok(Nil) ->
+                  activation_reached(
+                    cast:,
+                    caster:,
+                    caster_radius:,
+                    now_ms:,
+                    client_cast_id:,
+                    unit_id:,
+                    creature_id:,
+                    creature:,
+                    target: unit,
+                    alive:,
+                    by_item: True,
+                    spell:,
+                    cast_time_ms: spell.cast_time_ms,
+                    effects:,
+                    dropped_signals:,
+                    limits:,
+                  )
+              }
           }
       }
   }
@@ -2548,12 +2553,34 @@ fn activation_pressed(
   }
 }
 
+/// The result `0x1403b2240` gives first for an activate cast at a creature: 106 or 107 when
+/// the target's life is not the one its Spell4 target row allows, then the target result of
+/// the first state the creature holds that the spell's target mask names. `None` when the
+/// target's life and states let the cast go on to its cast group and range.
+fn target_state_refusal(
+  spell spell: Spell,
+  alive alive: Bool,
+  held held: List(CrowdControlState),
+) -> Option(cast_result.CastResult) {
+  case spell.target_death, alive {
+    spell_plan.CannotBeDead, False -> Some(cast_result.TargetCannotBeDead)
+    spell_plan.MustBeDead, True -> Some(cast_result.TargetMustBeDead)
+    spell_plan.CannotBeDead, True
+    | spell_plan.MustBeDead, False
+    | spell_plan.AliveOrDead, _
+    ->
+      crowd_control.first_masked(mask: spell.target_cc_mask, held:)
+      |> result.map(fn(state) {
+        cast_result.from_value(crowd_control.target_result(state:))
+      })
+      |> option.from_result
+  }
+}
+
 /// An activate cast of a planned spell at a creature or object, for the cast time given:
-/// refused with 106 or 107 when the target's life is not the one its Spell4 target row
-/// allows, then with the target result of the first state the creature holds that the
-/// spell's target mask names, then with the range's result when the caster stands out of
-/// the limits the creature and the spell hold, else started (`0x1403b2240` tests the life
-/// and the states before the range).
+/// refused by the target's life and states (`target_state_refusal`), then with the range's
+/// result when the caster stands out of the limits the creature and the spell hold, else
+/// started (`0x1403b2240` tests the life and the states before the range).
 fn activation_in_range(
   cast cast: State,
   caster caster: Caster,
@@ -2573,48 +2600,85 @@ fn activation_in_range(
   dropped_signals dropped_signals: List(Spell4EffectsId),
   limits limits: activate.Limits,
 ) -> Result(#(State, List(Effect)), Refusal) {
+  case target_state_refusal(spell:, alive:, held:) {
+    Some(result) ->
+      Ok(
+        #(cast, [
+          refused(client_cast_id:, spell4_id: spell.spell4_id.value, result:),
+        ]),
+      )
+    None ->
+      activation_reached(
+        cast:,
+        caster:,
+        caster_radius:,
+        now_ms:,
+        client_cast_id:,
+        unit_id:,
+        creature_id:,
+        creature:,
+        target:,
+        alive:,
+        by_item:,
+        spell:,
+        cast_time_ms:,
+        effects:,
+        dropped_signals:,
+        limits:,
+      )
+  }
+}
+
+/// An activate cast whose target's life and states, and cast group, let it through: refused
+/// with the range's result when the caster stands out of the limits the creature and the
+/// spell hold, else started.
+fn activation_reached(
+  cast cast: State,
+  caster caster: Caster,
+  caster_radius caster_radius: Float,
+  now_ms now_ms: Int,
+  client_cast_id client_cast_id: Int,
+  unit_id unit_id: Int,
+  creature_id creature_id: Int,
+  creature creature: activate.Creature,
+  target target: activate.Body,
+  alive alive: Bool,
+  by_item by_item: Bool,
+  spell spell: Spell,
+  cast_time_ms cast_time_ms: Int,
+  effects effects: List(activate.ActivateEffect),
+  dropped_signals dropped_signals: List(Spell4EffectsId),
+  limits limits: activate.Limits,
+) -> Result(#(State, List(Effect)), Refusal) {
   let spell4_id = spell.spell4_id.value
   let refusal = fn(result) {
     Ok(#(cast, [refused(client_cast_id:, spell4_id:, result:)]))
   }
-  use <- bool.lazy_guard(
-    when: spell.target_death == spell_plan.CannotBeDead && !alive,
-    return: fn() { refusal(cast_result.TargetCannotBeDead) },
-  )
-  use <- bool.lazy_guard(
-    when: spell.target_death == spell_plan.MustBeDead && alive,
-    return: fn() { refusal(cast_result.TargetMustBeDead) },
-  )
-  case crowd_control.first_masked(mask: spell.target_cc_mask, held:) {
-    Ok(state) ->
-      refusal(cast_result.from_value(crowd_control.target_result(state:)))
-    Error(Nil) ->
-      case
-        activate.range_of(
-          limits: activate.limits_for(creature:, spell4_id:, spell: limits),
-          caster: activate.Body(place: caster.place, radius: caster_radius),
-          target:,
-        )
-      {
-        activate.TooClose -> refusal(cast_result.TargetRangeMin)
-        activate.TooFar -> refusal(cast_result.TargetRangeMax)
-        activate.TooHigh -> refusal(cast_result.TargetRangeVertical)
-        activate.Within ->
-          activation_started(
-            cast:,
-            caster:,
-            now_ms:,
-            client_cast_id:,
-            unit_id:,
-            creature_id:,
-            alive_at_press: alive,
-            by_item:,
-            spell: activation_spell(spell:, cast_time_ms:),
-            interaction: interaction_of(spell:),
-            effects:,
-            dropped_signals:,
-          )
-      }
+  case
+    activate.range_of(
+      limits: activate.limits_for(creature:, spell4_id:, spell: limits),
+      caster: activate.Body(place: caster.place, radius: caster_radius),
+      target:,
+    )
+  {
+    activate.TooClose -> refusal(cast_result.TargetRangeMin)
+    activate.TooFar -> refusal(cast_result.TargetRangeMax)
+    activate.TooHigh -> refusal(cast_result.TargetRangeVertical)
+    activate.Within ->
+      activation_started(
+        cast:,
+        caster:,
+        now_ms:,
+        client_cast_id:,
+        unit_id:,
+        creature_id:,
+        alive_at_press: alive,
+        by_item:,
+        spell: activation_spell(spell:, cast_time_ms:),
+        interaction: interaction_of(spell:),
+        effects:,
+        dropped_signals:,
+      )
   }
 }
 
