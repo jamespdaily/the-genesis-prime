@@ -1555,6 +1555,7 @@ fn item_spell_cast(
           checklist_index:,
           body: unit,
           alive:,
+          held:,
           ..,
         ) ->
           case
@@ -1584,6 +1585,7 @@ fn item_spell_cast(
                 creature:,
                 target: unit,
                 alive:,
+                held:,
                 by_item: True,
                 spell:,
                 cast_time_ms: spell.cast_time_ms,
@@ -1804,8 +1806,10 @@ fn shortcut_spell_of(spell spell: Spell) -> Spell {
 /// any cast's with the unit as the TargetCast's first unit. Then started on
 /// the unit. A player or the caster itself reaches the client's player faction test, which
 /// the server does not build, and another player's life and combat are not held: those
-/// are refused 285 as not built. The target states the server does not hold yet (96
-/// invulnerable, 140 zone, 98 vital, 92 immunity) are not checked: #336.
+/// are refused 285 as not built. The target states the server does not hold (96
+/// invulnerable, 140 zone, 98 vital, 92 immunity) are not checked: a gap in the issue
+/// "Spells work in depth on the real client: cast times, telegraphs, buffs, crowd control
+/// and ticking effects".
 fn aimed_shortcut(
   cast cast: State,
   caster caster: Caster,
@@ -1973,8 +1977,8 @@ fn aimed_at_a_player(
   }
 }
 
-/// A creature or object: life, then combat, then cast group and range, then the spell's
-/// own conditions and the start.
+/// A creature or object: life, then combat, then the states it holds, then cast group and
+/// range, then the spell's own conditions and the start.
 fn aimed_at_a_creature(
   press press: AimedPress,
   creature_id creature_id: Int,
@@ -1986,7 +1990,8 @@ fn aimed_at_a_creature(
 ) -> Result(#(State, List(Effect)), Refusal) {
   case life_and_combat_refusal(press:, alive:, in_combat:) {
     Some(result) -> press_refused(press:, result:)
-    None ->
+    None -> {
+      use <- target_held(press:)
       aimed_in_group(
         press:,
         creature_id:,
@@ -1996,6 +2001,7 @@ fn aimed_at_a_creature(
         alive:,
         in_combat:,
       )
+    }
   }
 }
 
@@ -2090,7 +2096,7 @@ fn cast_group_of(
 
 /// The client's crowd-control check of the target (`0x1403b2240`): a state the unit holds
 /// that the spell's target mask names refuses the press with that state's target result,
-/// after the cast group and before the range.
+/// after the target's life and combat and before the cast group and the range.
 fn target_held(
   press press: AimedPress,
   otherwise otherwise: fn() -> Result(#(State, List(Effect)), Refusal),
@@ -2117,7 +2123,6 @@ fn aimed_in_range(
   alive alive: Bool,
   in_combat in_combat: Bool,
 ) -> Result(#(State, List(Effect)), Refusal) {
-  use <- target_held(press:)
   case
     activate.range_of(
       limits: press.aim.limits,
@@ -2459,7 +2464,7 @@ fn activation_pressed(
       body: target,
       alive:,
       in_combat: _,
-      held: _,
+      held:,
       withheld: None,
     )
     | activate.Usable(
@@ -2470,7 +2475,7 @@ fn activation_pressed(
         body: target,
         alive:,
         in_combat: _,
-        held: _,
+        held:,
         withheld: None,
       ) -> {
       let subject =
@@ -2526,6 +2531,7 @@ fn activation_pressed(
                 creature:,
                 target:,
                 alive:,
+                held:,
                 by_item: False,
                 spell:,
                 cast_time_ms: activate.cast_time_for(
@@ -2543,10 +2549,11 @@ fn activation_pressed(
 }
 
 /// An activate cast of a planned spell at a creature or object, for the cast time given:
-/// refused with 106 or 107
-/// when the target's life is not the one its Spell4 target row allows, then with the
-/// range's result when the caster stands out of the limits the creature and the spell
-/// hold, else started (`0x1403b2240` tests the life before the range).
+/// refused with 106 or 107 when the target's life is not the one its Spell4 target row
+/// allows, then with the target result of the first state the creature holds that the
+/// spell's target mask names, then with the range's result when the caster stands out of
+/// the limits the creature and the spell hold, else started (`0x1403b2240` tests the life
+/// and the states before the range).
 fn activation_in_range(
   cast cast: State,
   caster caster: Caster,
@@ -2558,6 +2565,7 @@ fn activation_in_range(
   creature creature: activate.Creature,
   target target: activate.Body,
   alive alive: Bool,
+  held held: List(CrowdControlState),
   by_item by_item: Bool,
   spell spell: Spell,
   cast_time_ms cast_time_ms: Int,
@@ -2577,31 +2585,36 @@ fn activation_in_range(
     when: spell.target_death == spell_plan.MustBeDead && alive,
     return: fn() { refusal(cast_result.TargetMustBeDead) },
   )
-  case
-    activate.range_of(
-      limits: activate.limits_for(creature:, spell4_id:, spell: limits),
-      caster: activate.Body(place: caster.place, radius: caster_radius),
-      target:,
-    )
-  {
-    activate.TooClose -> refusal(cast_result.TargetRangeMin)
-    activate.TooFar -> refusal(cast_result.TargetRangeMax)
-    activate.TooHigh -> refusal(cast_result.TargetRangeVertical)
-    activate.Within ->
-      activation_started(
-        cast:,
-        caster:,
-        now_ms:,
-        client_cast_id:,
-        unit_id:,
-        creature_id:,
-        alive_at_press: alive,
-        by_item:,
-        spell: activation_spell(spell:, cast_time_ms:),
-        interaction: interaction_of(spell:),
-        effects:,
-        dropped_signals:,
-      )
+  case crowd_control.first_masked(mask: spell.target_cc_mask, held:) {
+    Ok(state) ->
+      refusal(cast_result.from_value(crowd_control.target_result(state:)))
+    Error(Nil) ->
+      case
+        activate.range_of(
+          limits: activate.limits_for(creature:, spell4_id:, spell: limits),
+          caster: activate.Body(place: caster.place, radius: caster_radius),
+          target:,
+        )
+      {
+        activate.TooClose -> refusal(cast_result.TargetRangeMin)
+        activate.TooFar -> refusal(cast_result.TargetRangeMax)
+        activate.TooHigh -> refusal(cast_result.TargetRangeVertical)
+        activate.Within ->
+          activation_started(
+            cast:,
+            caster:,
+            now_ms:,
+            client_cast_id:,
+            unit_id:,
+            creature_id:,
+            alive_at_press: alive,
+            by_item:,
+            spell: activation_spell(spell:, cast_time_ms:),
+            interaction: interaction_of(spell:),
+            effects:,
+            dropped_signals:,
+          )
+      }
   }
 }
 
@@ -3661,9 +3674,9 @@ const caster_must_be_dead = 58
 /// The result the caster's own held states give a press whose caster conditions mask one
 /// of them: the lowest masked state's Caster_CannotBe result (`CheckSpellCCConditions`,
 /// `0x1403b2c40`, called by `CheckCastCaster` at `0x1403affa2`), none when the mask holds
-/// none of them. Gap (#336): the client's cast request word at 0x48 is read as 0 for
-/// every press, so the check always applies; the client sets it for the presses the ride
-/// spells make, which this server does not read.
+/// none of them. Gap: the client's cast request word at 0x48 is read as 0 for every
+/// press, so the check always applies; the client sets it for the presses the ride spells
+/// make, which this server does not read.
 fn restricted(
   cast cast: State,
   spell spell: Spell,
@@ -4145,8 +4158,8 @@ fn cooldown_left_ms(
 /// the activate cast runs one (`activation_spell`). Gap: the client opens its interaction
 /// on the 0x7fd of any pending cast of the player, an ability's or an item's as well
 /// (`opcode.0x7fd.csi`), so a pressed castMethod 5 spell is a cast the client would run;
-/// the server does not build it yet, the issue "Spells work in depth on the real client:
-/// cast times, telegraphs, buffs, crowd control and ticking effects" (#336).
+/// the server does not build it, a gap in the issue "Spells work in depth on the real
+/// client: cast times, telegraphs, buffs, crowd control and ticking effects".
 fn is_built(method: spell_plan.CastMethod) -> Bool {
   case method {
     spell_plan.Normal

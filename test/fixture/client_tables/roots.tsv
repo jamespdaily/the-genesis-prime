@@ -719,6 +719,8 @@ QuestObjective	5085	type 11 cast objective of Spell4 25207	cast_shortcut_test
 QuestObjective	3018	type 11 cast objective of Spell4 5725	cast_shortcut_test
 Creature2	33885	a creature whose activate time (1500) differs from its first column's spell castTime (4000)	cast_activate_test
 Spell4	46055	the ungated first activate spell of Creature2 33885 (castTime 4000)	cast_activate_test
+Creature2	48113	a Fuel Canister whose first activate spell is Spell4 47134, whose target Spell4CCConditions row 1 masks Stun and Sleep	cast_activate_test
+Spell4	47134	the activate spell of Creature2 48113 (castTime 2000), whose target Spell4CCConditions row 1 masks Stun and Sleep	cast_activate_test
 Creature2	46497	a creature whose four activate columns are all gated by Exile-only (base faction 166) prerequisites and whose activateSpellCastTime is 3000	cast_activate_test
 Creature2	5417	receiver of quest 2042, 2043, 2044, 2045, 2046, 2047, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
 Creature2	9611	receiver of quest 3167, so the server does not complete it	quest_turn_in_test, game_connection_departures_test
@@ -831,7 +833,7 @@ WorldLocation2	51703	marker of objective 21321 of quest 10527	game_wire_test
 WorldLocation2	51674	marker of objective 21295 of quest 10520	game_wire_test
 Creature2	12545	a Simple unit (type 10) that gives and receives quest 3689, faction 219, uiFlags 559	interaction_test, quest_accept_test, quest_turn_in_test
 Quest2	3689	the quest of the Simple unit 12545, which it gives and receives	quest_accept_test, quest_turn_in_test, interaction_test
-Quest2	6647	quest whose objective 11555 is a type 11 cast of Spell4 35436, a Vulnerability row on another unit held until removed	cast_shortcut_test
+Quest2	6647	quest whose objective 11555 is a type 11 cast of Spell4 35436, whose Spell4Effects 212028 is a Knockdown (dataBits00 8) on another unit held until removed, with no prerequisite; the plans refuse it until held states are read, the issue "A crowd-control state that lasts until removed ends when its spell ends" (#803)	cast_shortcut_test
 Spell4	64944	cast objective spell of quest 9373, targeted, whose target Spell4CCConditions row 1 masks Stun and Sleep	cast_shortcut_test
 Creature2	57226	creature of the cast group 8755 that Spell4 64944 names	cast_shortcut_test
 Quest2	9373	quest whose objective 17880 is a type 11 cast of Spell4 64944, targeted at cast group 8755	cast_shortcut_test
