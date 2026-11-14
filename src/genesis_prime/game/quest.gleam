@@ -130,13 +130,15 @@ pub type Verdict {
 }
 
 /// What the checks read of the player: the player the conditions read, the factions,
-/// the log and the held items.
+/// the log, the held items and what the player holds of its own (the items, ability book
+/// and world difficulty the prerequisite types 13, 14, 246, 214 and 143 read).
 pub type Asker {
   Asker(
     player: prerequisite.Player,
     factions: prerequisite.Factions,
     log: QuestLog,
     items: List(HeldItem),
+    checker: prerequisite.Checker,
   )
 }
 
@@ -764,6 +766,7 @@ pub fn prerequisite_holds(
           ..prerequisite.of_wearer(
             factions: asker.factions,
             player: asker.player,
+            checker: asker.checker,
           ),
           quests: Some(asker.log),
         )

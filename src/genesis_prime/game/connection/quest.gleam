@@ -34,6 +34,7 @@ pub fn asker(
     ),
     log: entered.quests,
     items: entered.items,
+    checker: prerequisite_player.checker_of(entered:),
   )
 }
 

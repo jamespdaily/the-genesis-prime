@@ -85,7 +85,7 @@ pub fn type_243_fails_for_every_subject_comparison_and_value_test() -> Nil {
     with_factions(current: dominion, base: dominion),
     with_factions(current: 0, base: 0),
     without_factions(),
-    prerequisite.of_struck(
+    prerequisite_support.struck(
       first: None,
       second: origin,
       player: prerequisite_support.player(),
@@ -208,7 +208,7 @@ pub fn a_subject_that_holds_no_factions_leaves_types_4_and_250_not_read_test() -
   use <- owned_test.run(5000)
   let origin = Pose(at: Point(x: 0.0, z: 0.0), yaw: 0.0)
   let struck =
-    prerequisite.of_struck(
+    prerequisite_support.struck(
       first: Some(origin),
       second: origin,
       player: prerequisite_support.player(),

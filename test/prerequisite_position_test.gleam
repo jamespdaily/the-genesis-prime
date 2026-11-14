@@ -349,7 +349,7 @@ pub fn a_unit_the_picture_no_longer_shows_leaves_type_108_not_read_test() -> Nil
   list.each([1, 2], fn(comparison) {
     assert prerequisite.check(
         prerequisite: gate_of(comparison:, arc:, value: 0),
-        subject: prerequisite.of_struck(
+        subject: prerequisite_support.struck(
           first: None,
           second: prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0),
           player: prerequisite_support.player(),
@@ -366,7 +366,7 @@ pub fn a_struck_creature_is_placed_and_checked_with_the_caster_as_the_second_uni
   let arc = prerequisite_support.behind_arc()
   let creature = first_at_origin(yaw: 0.0)
   let subject_with = fn(caster) {
-    prerequisite.of_struck(
+    prerequisite_support.struck(
       first: Some(creature),
       second: caster,
       player: prerequisite_support.player(),
@@ -391,7 +391,7 @@ pub fn a_struck_creature_gives_not_read_for_every_type_that_reads_what_it_holds_
   use <- owned_test.run(5000)
   let creature =
     Subject(
-      ..prerequisite.of_struck(
+      ..prerequisite_support.struck(
         first: Some(first_at_origin(yaw: 0.0)),
         second: prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0),
         player: prerequisite_support.player(),

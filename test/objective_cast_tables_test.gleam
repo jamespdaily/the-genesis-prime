@@ -21,6 +21,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
 import owned_test
+import prerequisite_support
 import unitest
 
 fn cast_rows(tables tables: Tables) -> List(quest_objective.QuestObjective) {
@@ -168,6 +169,8 @@ fn unjudgeable_rows(tables tables: Tables) -> List(Int) {
       target: pose,
       caster: pose,
       quests:,
+      creature_id: 0,
+      checker: prerequisite_support.empty_checker(),
     )
   cast_rows(tables:)
   |> list.filter(fn(row) {
@@ -204,13 +207,11 @@ fn target_cast_unread(
   }
 }
 
-pub fn every_targeted_rows_cast_conditions_are_read_but_the_known_eleven_test() -> Nil {
+pub fn every_targeted_rows_cast_conditions_are_read_but_the_known_nine_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   assert unjudgeable_rows(tables:)
-    == [
-      8389, 9399, 9401, 9768, 9770, 9771, 15_193, 15_340, 15_363, 17_880, 17_933,
-    ]
-    as "the targeted type 11 rows whose spell has a CasterCast of a PrerequisiteType the server does not read (16, 47, 102) or a TargetCast of type 4 or 71, which the connection cannot judge on a creature (measured over the client's table), besides rows 14966 and 15332, whose spells cannot be planned"
+    == [8389, 9399, 9401, 9768, 9770, 9771, 15_363, 17_880, 17_933]
+    as "the targeted type 11 rows whose spell has a CasterCast of a PrerequisiteType the server does not read (16, 102) or a TargetCast of type 4 or 71, which the connection cannot judge on a creature (measured over the client's table), besides rows 14966 and 15332, whose spells cannot be planned"
 }

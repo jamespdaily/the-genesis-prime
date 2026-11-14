@@ -765,6 +765,7 @@ pub fn caster_of(
     ),
     quests: entered.quests,
     player: prerequisite_player.of(tables:, entered:),
+    checker: prerequisite_player.checker_of(entered:),
   )
 }
 
@@ -1184,6 +1185,11 @@ pub fn carry_strike(
             indexes: shown.checklist_indexes_of(
               picture: entered.shown,
               unit_ids: cast.hit_units(struck:),
+            ),
+            units: shown.first_units_of(
+              picture: entered.shown,
+              unit_ids: cast.hit_units(struck:),
+              caster_unit: entered.unit_id,
             ),
             rolls: prerequisite.rolls_of(bytes:),
           )

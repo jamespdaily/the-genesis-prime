@@ -14,8 +14,11 @@ import game_connection_support as support
 import genesis_prime/client_connection.{TellVisibilityChanged}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/message/item_delete
+import genesis_prime/message/item_place
 import genesis_prime/step.{type ConnectionStep, OwnEffect}
-import genesis_prime/table/id.{PrerequisiteId}
+import genesis_prime/store.{Character}
+import genesis_prime/table/id.{ClassId, PrerequisiteId}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -23,6 +26,7 @@ import gleam/option.{None}
 import gleam/set.{type Set}
 import owned_test
 import prerequisite_support
+import world_entry_support
 
 /// The number of the planted prerequisite, which no Prerequisite row of the client has.
 const planted = 900_001
@@ -63,6 +67,53 @@ fn numbers(hidden hidden: Set(id.PrerequisiteId)) -> List(Int) {
     number
   })
   |> list.sort(by: int.compare)
+}
+
+/// The number of the planted prerequisite on a held item.
+const planted_on_item = 900_002
+
+pub fn an_item_change_rechecks_the_creatures_it_gates_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The Stalker's first novice item is held at location 0 from the entry.
+  let character = Character(..support.world_character(), class_id: ClassId(5))
+  let assert [item, ..] = world_entry_support.novice_items(character:)
+    as "the Stalker's novice set holds an item"
+  // Type 246, comparison 2, passes while the checker does not hold the Item2 in locations
+  // 0, 1, 2, 8, 9 or 10 (`Prerequisite.prerequisiteTypeId.246`).
+  let settings =
+    connection_state.Settings(
+      ..support.settings(),
+      visibility: dict.from_list([
+        #(3460, [
+          prerequisite_support.single(id: planted_on_item, condition: #(
+            246,
+            2,
+            0,
+            item.item2_id.value,
+          )),
+        ]),
+      ]),
+    )
+  let #(state, entered) =
+    support.entered_with(settings:, class_id: 5, saved_health: None)
+  assert visibility_told(taken: entered) == [[planted_on_item]]
+    as "the Join's set came from the world-entry check, which holds no checker and reads the condition as not decided, so the creature was shown; the entry's end-of-step check holds the checker, finds the item at location 0 and hides the creature: one tell"
+  let assert Ok(body) =
+    item_delete.encode(
+      item_delete.ItemDelete(place: item_place.ItemPlace(
+        location: item.location,
+        bag_index: item.bag_index,
+      )),
+    )
+    as "a delete fits the message"
+  let #(_, deleted) =
+    support.item_change_saved(
+      state:,
+      ms: 2000,
+      message: support.world_message(message_id: item_delete.message_id, body:),
+    )
+  assert visibility_told(taken: deleted) == [[]]
+    as "the delete's answer leaves the player not holding the item, so the condition passes again: one tell of the empty set"
 }
 
 pub fn a_step_that_changes_the_hidden_set_tells_the_map_once_and_a_move_tells_nothing_test() -> Nil {

@@ -46,6 +46,7 @@ import gleam/set.{type Set}
 import gleam/string
 import owned_test
 import place_support
+import planted_table.{Integer}
 
 const the_self_spell = 25_306
 
@@ -191,6 +192,7 @@ fn target_of(scene scene: Scene) -> fn(Int) -> Target {
 /// The press of the spell by the standing caster, who holds these buttons and sees this
 /// scene.
 fn press_in(
+  shortcuts shortcuts: shortcut_spell.Shortcuts,
   scene scene: Scene,
   state state: State,
   spell4_id spell4_id: Int,
@@ -204,7 +206,7 @@ fn press_in(
     cast: state,
     body: press_body(client_cast_id:, spell4_id:, target:),
     caster: support.caster(),
-    shortcuts: shortcuts(),
+    shortcuts:,
     held:,
     activations: activate.activations(tables: fixture_tables.shared()),
     target_of: target_of(scene:),
@@ -230,6 +232,7 @@ fn press_holding(
   at ms: Int,
 ) -> Result(#(State, List(Effect)), cast.Refusal) {
   press_in(
+    shortcuts: shortcuts(),
     scene: nothing_shown(),
     state:,
     spell4_id:,
@@ -248,8 +251,28 @@ fn press_at(
   target target: Int,
   at ms: Int,
 ) -> #(State, List(Effect)) {
+  press_at_with(
+    shortcuts: shortcuts(),
+    scene:,
+    state:,
+    spell4_id:,
+    target:,
+    at: ms,
+  )
+}
+
+/// The same, for the shortcuts of these tables.
+fn press_at_with(
+  shortcuts shortcuts: shortcut_spell.Shortcuts,
+  scene scene: Scene,
+  state state: State,
+  spell4_id spell4_id: Int,
+  target target: Int,
+  at ms: Int,
+) -> #(State, List(Effect)) {
   let assert Ok(taken) =
     press_in(
+      shortcuts:,
       scene:,
       state:,
       spell4_id:,
@@ -749,6 +772,51 @@ pub fn a_target_condition_reads_the_casts_the_player_holds_on_the_unit_test() ->
   assert refused_at(scene:, spell4_id: 77_268, target: 910)
     == [code(cast_result.PrereqTargetCast)]
     as "Spell4 77268's prerequisiteIdTargetCast is Prerequisite 36053 (type 15, comparison 1, value 77269): the unit holds no cast of 77269, so 0x1403ace00 refuses with 281"
+}
+
+pub fn a_pressed_creatures_id_reaches_its_target_check_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4 77268's TargetCast is Prerequisite 36053; the plant gives that row the shape of
+  // the client's type 38 rows (`table_rows -- Prerequisite 8895 13215`): flags 0, type 38
+  // comparison 1 on a Creature2 id. The type compares the first unit's Creature2 id with
+  // the value (0x14049ecc0), and a pressed creature's id is `Usable.creature_id`.
+  use tables <- fixture_tables.changed(table: "Prerequisite", id: 36_053, with: [
+    #("prerequisiteTypeId0", Integer(38)),
+    #("prerequisiteComparisonId0", Integer(1)),
+    #("value0", Integer(30_233)),
+  ])
+  let shortcuts = shortcut_spell.shortcuts(tables:)
+  let scene =
+    Scene(..nothing_shown(), units: [
+      unit(id: 910, of: 30_233, at: 3.0),
+      unit(id: 911, of: 41_884, at: 3.0),
+    ])
+  let #(_, at_the_creature) =
+    press_at_with(
+      shortcuts:,
+      scene:,
+      state: cast.new(),
+      spell4_id: 77_268,
+      target: 910,
+      at: 1000,
+    )
+  assert support.refusal_results(effects: at_the_creature) == []
+    && confirmed_targets(effects: at_the_creature) == [910]
+    as "a press at the creature of Creature2 30233 meets type 38 on 30233: the cast starts"
+  let #(_, at_another) =
+    press_at_with(
+      shortcuts:,
+      scene:,
+      state: cast.new(),
+      spell4_id: 77_268,
+      target: 911,
+      at: 1000,
+    )
+  assert support.refusal_results(effects: at_another)
+    == [code(cast_result.PrereqTargetCast)]
+    as "a press at a creature of Creature2 41884 (flags 16388, bit 0 clear, so it passes the cast group of Spell4Base 53267, which has none) fails type 38 on 30233: refused 281"
+  assert warnings(effects: at_another) == []
+    as "the condition is read, so no warning about an unread condition is written"
 }
 
 pub fn a_target_condition_the_server_does_not_hold_refuses_as_not_built_test() -> Nil {

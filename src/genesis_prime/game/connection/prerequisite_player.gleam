@@ -2,6 +2,8 @@
 //// entered character. Each part comes from here.
 //// - The character's own row: its race, class, path and gender, and the World
 ////   it entered (`Prerequisite.prerequisiteTypeId.2`, `.3`, `.52`, `.10`, `.109`).
+//// - What the character holds (`checker_of`): its items, its ability bag and the world
+////   difficulty, which types 13, 14, 246, 214 and 143 read.
 //// - The level is the one the client's formulas read, which `GetUnitFormulaLevel`
 ////   (0x1403b5030) takes from the unit's stat 11 when that is not 0, else from
 ////   its stat 10; a unit created with neither is level 1 (0x1404543c1).
@@ -11,6 +13,7 @@
 ////   no parent to walk to, so it is the one zone the player is in.
 
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/loadout
 import genesis_prime/game/movement
 import genesis_prime/game/prerequisite.{type Player}
 import genesis_prime/game/start_place
@@ -29,6 +32,19 @@ pub fn of(
     world_id: entered.map.world_id,
     zone: start_place.world_zone_id(movement.place(state: entered.movement)),
     level: formula_level(entered:),
+  )
+}
+
+/// What the entered character holds of its own: the items it holds, the abilities of its
+/// bag (the ability book the client's type 214 reads) and the world difficulty the
+/// server tells it.
+pub fn checker_of(
+  entered entered: world_entry.Entered,
+) -> prerequisite.Checker {
+  prerequisite.Checker(
+    items: entered.items,
+    book: loadout.bag(loadout: entered.loadout),
+    world_difficulty: world_entry.world_difficulty,
   )
 }
 

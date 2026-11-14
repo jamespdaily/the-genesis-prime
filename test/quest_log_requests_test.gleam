@@ -81,6 +81,7 @@ fn asker(log log: List(QuestRow)) -> Asker {
     factions: Factions(current: exile, base: exile),
     log: quest_support.log_of(rows: log),
     items: [],
+    checker: prerequisite_support.empty_checker(),
   )
 }
 

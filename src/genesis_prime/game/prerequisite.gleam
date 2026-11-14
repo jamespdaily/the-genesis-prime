@@ -103,6 +103,39 @@
 ////   these types.
 //// - **Type 243** always fails: the client's check reads nothing from the unit
 ////   (`Prerequisite.prerequisiteTypeId.243`, `0x140001ba0`).
+//// - **Type 47** never passes on the client, whatever the comparison (its slot is the same
+////   `0x140001ba0` as type 243's), so a cast, an effect or a gossip entry behind it fails
+////   (`Prerequisite.prerequisiteTypeId.47`). The visibility check leaves it `NotRead`
+////   instead (`check_for_visibility`): the creature stays shown. Gap: the 1,788 conditions
+////   of the type name server-only ids the client never reads, so which creatures it hides
+////   is open (Creature2 30305 and 34586 are the spawns of the world database that
+////   carry it; issue 334).
+//// - **Type 38** compares the first unit's Creature2 id, 0 for a player, with the value:
+////   comparison 1 equal, 2 different, any other fails, and its objectId is not read
+////   (`Prerequisite.prerequisiteTypeId.38`, `0x14049ecc0`). A first unit the check cannot
+////   name (`UnknownUnit`) gives `NotRead`.
+//// - **Type 214** fails when the first unit is a creature; else, by comparison 1, the
+////   checker's ability book holds the Spell4Base the objectId names and by comparison 2 it
+////   does not, any other fails (`Prerequisite.prerequisiteTypeId.214`, `0x14049d680`,
+////   `0x1403bb170`). A subject with no checker gives `NotRead`.
+//// - **Types 13, 14 and 246** pass, by comparison 1, when the checker holds the Item2 the
+////   value names in the inventory locations of a mask (1, 0x303 and 0x707), and by comparison
+////   2 when it does not; any other fails (`Prerequisite.prerequisiteTypeId.13`, `.14`,
+////   `.246`, `0x1403ac590`). Bit n of the mask is location n. Gap: the checker's satchel
+////   is not held, so an item there reads as not held (issue 53).
+//// - **Type 143** compares the checker's world difficulty with the value: comparison 1
+////   equal, 2 different, any other fails (`Prerequisite.prerequisiteTypeId.143`,
+////   `0x14049ef70`).
+//// - **Type 118** compares the status of the public event objective the objectId names with
+////   the value: comparison 1 equal, 2 different, any other fails. The server holds no
+////   public event, so every objective has status 0 (inactive)
+////   (`Prerequisite.prerequisiteTypeId.118`, `0x1404a0590`). Gap: "Public events and
+////   challenges work on the real client" (issue 52).
+//// - **Type 130** passes, by comparison 1, when the first unit carries a cast of a spell
+////   in the spell group the objectId names whose caster is the check's second unit, and by
+////   comparison 2 when it does not; any other fails, group 0 matches no spell and the value
+////   is not read. With no second unit, comparison 2 passes and any other fails
+////   (`Prerequisite.prerequisiteTypeId.130`, `0x140469a70`).
 //// - **Type 179** compares the unit's difficulty with the condition's objectId, not
 ////   its value, by comparisons 1 to 6; only a creature's side holds a difficulty,
 ////   so a subject with none gives `NotRead` (`0x14049eeb0`, `of_difficulty`).
@@ -169,9 +202,10 @@ import genesis_prime/game/quest_log.{
 }
 import genesis_prime/game/top_zone
 import genesis_prime/message/float32
-import genesis_prime/store.{type Character}
+import genesis_prime/store.{type Character, type HeldItem}
 import genesis_prime/table/id.{
-  type PrerequisiteId, type Spell4Id, PrerequisiteId, Spell4Id,
+  type PrerequisiteId, type Spell4BaseId, type Spell4Id, PrerequisiteId,
+  Spell4BaseId, Spell4Id,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/positional_requirement
@@ -361,6 +395,34 @@ type Condition {
   ChallengeFlag(comparison: Comparison)
   /// Type 243: never met (`Prerequisite.prerequisiteTypeId.243`, `0x140001ba0`).
   NeverMet
+  /// Type 47: never met by a cast, an effect or a gossip entry, as type 243, but
+  /// the visibility check does not decide it (`Prerequisite.prerequisiteTypeId.47`).
+  ServerGated
+  /// Type 38: the first unit's Creature2 id against the value
+  /// (`Prerequisite.prerequisiteTypeId.38`, `0x14049ecc0`).
+  IsCreature(comparison: Comparison, value: Int)
+  /// Type 214: whether the checker's ability book holds the Spell4Base
+  /// (`Prerequisite.prerequisiteTypeId.214`, `0x14049d680`).
+  SpellKnown(comparison: Comparison, spell4_base_id: Int)
+  /// Types 13, 14 and 246: whether the checker holds the Item2 in the inventory locations
+  /// of the mask, bit n for location n (`Prerequisite.prerequisiteTypeId.13`, `.14`,
+  /// `.246`, `0x1403ac590`).
+  ItemHeld(
+    prerequisite_type: Int,
+    comparison: Comparison,
+    item2_id: Int,
+    locations: Int,
+  )
+  /// Type 143: the checker's world difficulty against the value
+  /// (`Prerequisite.prerequisiteTypeId.143`, `0x14049ef70`).
+  WorldDifficulty(comparison: Comparison, value: Int)
+  /// Type 118: the status of a public event objective against the value
+  /// (`Prerequisite.prerequisiteTypeId.118`, `0x1404a0590`). The objective is kept for
+  /// the day the server holds public events.
+  ObjectiveStatus(comparison: Comparison, objective: Int, value: Int)
+  /// Type 130: whether the first unit carries a cast by the second unit whose spell is
+  /// in the spell group (`Prerequisite.prerequisiteTypeId.130`, `0x140469a70`).
+  CarriesCasterGroup(comparison: Comparison, group: Int)
   /// Type 108: whether the second unit stands in the arc around the first unit's
   /// facing, `None` for the objectId 0 that names no arc
   /// (`Prerequisite.prerequisiteTypeId.108`, `0x14049d940`).
@@ -463,6 +525,29 @@ pub fn player_of(
   )
 }
 
+/// What the player whose client runs the check holds of its own, apart from the check's
+/// units: its items as the store saved them, its ability book (the abilities in bar
+/// order, then its innate) and the world difficulty the client was told.
+pub type Checker {
+  Checker(
+    items: List(HeldItem),
+    book: List(Spell4BaseId),
+    world_difficulty: Int,
+  )
+}
+
+/// What the check's first unit is, for the types that read its identity.
+pub type FirstUnit {
+  /// The player whose client runs the check.
+  TheChecker
+  /// Another player.
+  OtherPlayer
+  /// A creature of this Creature2 row.
+  NonPlayer(creature2_id: Int)
+  /// A unit the check cannot name: types 38 and 214 are `NotRead`.
+  UnknownUnit
+}
+
 /// What a check may read about its subject, the check's first unit.
 pub type Subject {
   Subject(
@@ -513,6 +598,12 @@ pub type Subject {
     creature_index: Option(Int),
     /// What the check knows of the subject.
     seen: Seen,
+    /// What the checking player holds of its own: `None` when the check runs before
+    /// the player's items and abilities are known, so types 13, 14, 246, 143 and 214 are
+    /// not read.
+    checker: Option(Checker),
+    /// Who the check's first unit is, for types 38 and 214.
+    first_unit: FirstUnit,
   )
 }
 
@@ -550,16 +641,23 @@ pub type Seen {
 /// The connection holds none of a creature's casts, combat state or vitals, so the subject
 /// holds none of them either: a condition that reads what else it holds is `NotRead`
 /// (`PlaceOnly`), where an empty `under` would read as "under no cast" and pass a
-/// condition that asks for the absence of one.
+/// condition that asks for the absence of one. The exception is type 130, which reads
+/// the second unit's casts alone: `under` holds the caster's casts on the struck unit and
+/// the caster is the second unit. `unit` is who the struck unit is, and `checker` is what
+/// the caster holds of its own.
 pub fn of_struck(
   first first: Option(Pose),
   second second: Pose,
   player player: Player,
   quests quests: QuestLog,
+  unit unit: FirstUnit,
+  caster_unit caster_unit: Int,
+  under under: List(lasting.Held),
+  checker checker: Checker,
 ) -> Subject {
   Subject(
-    under: [],
-    second_unit: None,
+    under:,
+    second_unit: Some(caster_unit),
     in_combat: False,
     vitals: dict.new(),
     difficulty: None,
@@ -575,6 +673,8 @@ pub fn of_struck(
     quests: Some(quests),
     creature_index: None,
     seen: PlaceOnly,
+    checker: Some(checker),
+    first_unit: unit,
   )
 }
 
@@ -585,7 +685,8 @@ pub fn of_struck(
 /// vital, faction or flag of a creature, so the subject holds none of them either: a
 /// condition that reads what else it holds is `NotRead`. Another player's casts on the
 /// creature are not in `under` (gap: Quests, zones and prerequisites work on the real
-/// client, #334).
+/// client, #334). `creature_id` is the Creature2 row of the pressed creature, which type 38
+/// reads, and `checker` is what the caster holds of its own.
 pub fn of_target(
   under under: List(lasting.Held),
   caster_unit caster_unit: Int,
@@ -593,6 +694,8 @@ pub fn of_target(
   target target: Pose,
   caster caster: Pose,
   quests quests: QuestLog,
+  creature_id creature_id: Int,
+  checker checker: Checker,
 ) -> Subject {
   Subject(
     under:,
@@ -609,6 +712,8 @@ pub fn of_target(
     quests: Some(quests),
     creature_index: None,
     seen: WholeUnit,
+    checker: Some(checker),
+    first_unit: NonPlayer(creature2_id: creature_id),
   )
 }
 
@@ -631,16 +736,19 @@ pub fn of_difficulty(difficulty difficulty: Int) -> Subject {
     quests: None,
     creature_index: None,
     seen: WholeUnit,
+    checker: None,
+    first_unit: UnknownUnit,
   )
 }
 
 /// A subject that is a player about to wear an item: its factions and the player's
 /// facts, under no cast, out of combat, with no vital and no roll. The equip
 /// check's prerequisites (genesis_prime/game/equip_requirement) are checked
-/// against it.
+/// against it. `checker` is what the wearer holds of its own.
 pub fn of_wearer(
   factions factions: Factions,
   player player: Player,
+  checker checker: Checker,
 ) -> Subject {
   Subject(
     under: [],
@@ -657,6 +765,8 @@ pub fn of_wearer(
     quests: None,
     creature_index: None,
     seen: WholeUnit,
+    checker: Some(checker),
+    first_unit: TheChecker,
   )
 }
 
@@ -1025,6 +1135,28 @@ fn condition_of(
     109 -> InWorld(comparison: comparison_of(comparison), world_id: object_id)
     125 | 69 | 74 -> ChallengeFlag(comparison: comparison_of(comparison))
     243 -> NeverMet
+    47 -> ServerGated
+    38 -> IsCreature(comparison: comparison_of(comparison), value:)
+    214 ->
+      SpellKnown(
+        comparison: comparison_of(comparison),
+        spell4_base_id: object_id,
+      )
+    13 -> item_held(type_id:, comparison:, value:, locations: 0x1)
+    14 -> item_held(type_id:, comparison:, value:, locations: 0x303)
+    246 -> item_held(type_id:, comparison:, value:, locations: 0x707)
+    143 -> WorldDifficulty(comparison: comparison_of(comparison), value:)
+    118 ->
+      ObjectiveStatus(
+        comparison: comparison_of(comparison),
+        objective: object_id,
+        value:,
+      )
+    130 ->
+      CarriesCasterGroup(
+        comparison: comparison_of(comparison),
+        group: object_id,
+      )
     6 | 68 | 43 | 94 | 22 | 23 | 33 | 34 | 35 | 36 ->
       quest_condition(type_id:, comparison:, value:, quest: None)
     _ ->
@@ -1037,6 +1169,22 @@ fn condition_of(
         False -> Unread(prerequisite_type: type_id)
       }
   }
+}
+
+/// A condition on an item held in the inventory locations of a mask: the value is the
+/// Item2 id (`0x1403ac590`).
+fn item_held(
+  type_id type_id: Int,
+  comparison comparison: Int,
+  value value: Int,
+  locations locations: Int,
+) -> Condition {
+  ItemHeld(
+    prerequisite_type: type_id,
+    comparison: comparison_of(comparison),
+    item2_id: value,
+    locations:,
+  )
 }
 
 /// Whether the server decides a condition of this PrerequisiteType: the types it
@@ -1076,6 +1224,13 @@ pub fn is_read(type_id type_id: Int) -> Bool {
     | ObjectiveProgress(..)
     | ChallengeFlag(..)
     | NeverMet
+    | ServerGated
+    | IsCreature(..)
+    | SpellKnown(..)
+    | ItemHeld(..)
+    | WorldDifficulty(..)
+    | ObjectiveStatus(..)
+    | CarriesCasterGroup(..)
     | InArc(..)
     | NoCase -> True
   }
@@ -1121,6 +1276,13 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
       | ObjectiveProgress(..)
       | ChallengeFlag(..)
       | NeverMet
+      | ServerGated
+      | IsCreature(..)
+      | SpellKnown(..)
+      | ItemHeld(..)
+      | WorldDifficulty(..)
+      | ObjectiveStatus(..)
+      | CarriesCasterGroup(..)
       | InArc(..)
       | NoCase
       | Unread(..) -> 0
@@ -1171,6 +1333,13 @@ pub fn objective_links(
       | TargetCounted(..)
       | ObjectiveProgress(..)
       | NeverMet
+      | ServerGated
+      | IsCreature(..)
+      | SpellKnown(..)
+      | ItemHeld(..)
+      | WorldDifficulty(..)
+      | ObjectiveStatus(..)
+      | CarriesCasterGroup(..)
       | InArc(..)
       | ChallengeFlag(..)
       | NoCase
@@ -1214,6 +1383,13 @@ pub fn unread_types(prerequisite prerequisite: Prerequisite) -> List(Int) {
       | TargetCounted(..)
       | ObjectiveProgress(..)
       | NeverMet
+      | ServerGated
+      | IsCreature(..)
+      | SpellKnown(..)
+      | ItemHeld(..)
+      | WorldDifficulty(..)
+      | ObjectiveStatus(..)
+      | CarriesCasterGroup(..)
       | InArc(..)
       | ChallengeFlag(..)
       | NoCase -> []
@@ -1244,8 +1420,29 @@ pub fn check(
   prerequisite prerequisite: Prerequisite,
   subject subject: Subject,
 ) -> Verdict {
-  let #(verdict, _) = evaluated(prerequisite:, subject:, rolls: subject.rolls)
+  let #(verdict, _) =
+    evaluated(prerequisite:, subject:, rolls: subject.rolls, purpose: Gating)
   verdict
+}
+
+/// The prerequisite checked for what a unit's visibility prerequisite decides: as `check`,
+/// except that type 47, which fails every cast, effect and gossip entry, is `NotRead`, so
+/// a creature behind it stays shown (gap: issue 334).
+pub fn check_for_visibility(
+  prerequisite prerequisite: Prerequisite,
+  subject subject: Subject,
+) -> Verdict {
+  let #(verdict, _) =
+    evaluated(prerequisite:, subject:, rolls: subject.rolls, purpose: Showing)
+  verdict
+}
+
+/// What a check decides.
+type Purpose {
+  /// Whether a cast, an effect or a gossip entry goes ahead.
+  Gating
+  /// Whether a unit is shown.
+  Showing
 }
 
 /// The prerequisite's verdict and the rolls left after the conditions took theirs, in
@@ -1254,10 +1451,11 @@ fn evaluated(
   prerequisite prerequisite: Prerequisite,
   subject subject: Subject,
   rolls rolls: List(Int),
+  purpose purpose: Purpose,
 ) -> #(Verdict, List(Int)) {
   let #(left, verdicts) =
     list.map_fold(prerequisite.conditions, rolls, fn(rolls, condition) {
-      condition_check(condition:, subject:, rolls:)
+      condition_check(condition:, subject:, rolls:, purpose:)
     })
   let #(decides, otherwise) = case prerequisite.any {
     True -> #(Passes, Fails)
@@ -1282,11 +1480,12 @@ fn condition_check(
   condition condition: Condition,
   subject subject: Subject,
   rolls rolls: List(Int),
+  purpose purpose: Purpose,
 ) -> #(List(Int), Verdict) {
   case subject.seen, reads_held_state(condition:) {
     PlaceOnly, Some(prerequisite_type) -> #(rolls, NotRead(prerequisite_type:))
     PlaceOnly, None | WholeUnit, _ ->
-      condition_decided(condition:, subject:, rolls:)
+      condition_decided(condition:, subject:, rolls:, purpose:)
   }
 }
 
@@ -1325,6 +1524,13 @@ fn reads_held_state(condition condition: Condition) -> Option(Int) {
     | ObjectiveProgress(..)
     | ChallengeFlag(..)
     | NeverMet
+    | ServerGated
+    | IsCreature(..)
+    | SpellKnown(..)
+    | ItemHeld(..)
+    | WorldDifficulty(..)
+    | ObjectiveStatus(..)
+    | CarriesCasterGroup(..)
     | InArc(..)
     | NoCase
     | Unread(..) -> None
@@ -1335,6 +1541,7 @@ fn condition_decided(
   condition condition: Condition,
   subject subject: Subject,
   rolls rolls: List(Int),
+  purpose purpose: Purpose,
 ) -> #(List(Int), Verdict) {
   case condition {
     TargetOfLiveCast(comparison:, spell4_id:) -> #(rolls, case comparison {
@@ -1396,7 +1603,8 @@ fn condition_decided(
     )
     Nested(comparison:, row:, ..) -> {
       let #(nested, rolls) = case row {
-        Some(nested) -> evaluated(prerequisite: nested, subject:, rolls:)
+        Some(nested) ->
+          evaluated(prerequisite: nested, subject:, rolls:, purpose:)
         None -> #(Fails, rolls)
       }
       #(rolls, case comparison {
@@ -1585,6 +1793,77 @@ fn condition_decided(
     // challenges work on the real client" (issue 52).
     ChallengeFlag(comparison:) -> #(rolls, asked(comparison:, holds: False))
     NeverMet -> #(rolls, Fails)
+    // Type 47 is never met by a cast, an effect or a gossip entry; the visibility
+    // check does not decide it, so the creature stays shown. Gap: the condition's real
+    // test waits for "Quests, zones and prerequisites work on the real client" (issue 334).
+    ServerGated ->
+      case purpose {
+        Gating -> #(rolls, Fails)
+        Showing -> #(rolls, NotRead(prerequisite_type: 47))
+      }
+    IsCreature(comparison:, value:) -> #(rolls, case subject.first_unit {
+      UnknownUnit -> NotRead(prerequisite_type: 38)
+      TheChecker | OtherPlayer ->
+        equality_verdict(comparison:, equal: value == 0)
+      NonPlayer(creature2_id:) ->
+        equality_verdict(comparison:, equal: creature2_id == value)
+    })
+    SpellKnown(comparison:, spell4_base_id:) -> #(
+      rolls,
+      case subject.first_unit, subject.checker {
+        UnknownUnit, _ -> NotRead(prerequisite_type: 214)
+        NonPlayer(..), _ -> Fails
+        TheChecker, None | OtherPlayer, None -> NotRead(prerequisite_type: 214)
+        TheChecker, Some(checker) | OtherPlayer, Some(checker) ->
+          equality_verdict(
+            comparison:,
+            equal: list.contains(checker.book, Spell4BaseId(spell4_base_id)),
+          )
+      },
+    )
+    ItemHeld(prerequisite_type:, comparison:, item2_id:, locations:) -> #(
+      rolls,
+      case subject.checker {
+        None -> NotRead(prerequisite_type:)
+        Some(checker) ->
+          asked(
+            comparison:,
+            holds: list.any(checker.items, fn(item) {
+              item.item2_id.value == item2_id
+              && int.bitwise_and(
+                locations,
+                int.bitwise_shift_left(1, item.location),
+              )
+              != 0
+            }),
+          )
+      },
+    )
+    WorldDifficulty(comparison:, value:) -> #(rolls, case subject.checker {
+      None -> NotRead(prerequisite_type: 143)
+      Some(checker) ->
+        equality_verdict(comparison:, equal: checker.world_difficulty == value)
+    })
+    // The client holds no public event, so every objective has status 0
+    // (`Prerequisite.prerequisiteTypeId.118`). Gap: public events wait for issue 52.
+    ObjectiveStatus(comparison:, value:, ..) -> #(
+      rolls,
+      equality_verdict(comparison:, equal: value == 0),
+    )
+    CarriesCasterGroup(comparison:, group:) -> #(
+      rolls,
+      case subject.second_unit {
+        None -> equality_verdict(comparison:, equal: False)
+        Some(second_unit) ->
+          asked(
+            comparison:,
+            holds: group != 0
+              && list.any(subject.under, fn(held) {
+              held.caster == second_unit && list.contains(held.groups, group)
+            }),
+          )
+      },
+    )
     InArc(comparison:, arc:) -> #(
       rolls,
       arc_verdict(comparison:, arc:, positions: subject.positions),

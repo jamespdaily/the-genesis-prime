@@ -748,6 +748,7 @@ fn chosen_reward(
           level: progress.level,
           player: asker.player,
           item_proficiencies:,
+          checker: asker.checker,
         )
       let offered = case
         list.filter(choices, fn(reward) {

@@ -42,6 +42,25 @@ fn player_with(log log: QuestLog) -> prerequisite.Subject {
   )
 }
 
+pub fn a_type_47_visibility_condition_is_not_decided_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Prerequisite 13046 (Creature2 34586's) is type 47 comparison 2. Type 47 fails every
+  // cast, effect and gossip entry (`Prerequisite.prerequisiteTypeId.47`, slot 0x140001ba0
+  // returns false), but the client never tests Creature2's visibility column, so a
+  // creature behind it stays shown until the server's reading of that gate is settled
+  // (issue 334).
+  let gated =
+    prerequisite_support.single(id: 13_046, condition: #(47, 2, 0, 12_156))
+  let subject = player_with(log: quest_support.log_of(rows: []))
+  assert prerequisite.check(prerequisite: gated, subject:) == prerequisite.Fails
+    as "a cast behind type 47 fails"
+  assert prerequisite.check_for_visibility(prerequisite: gated, subject:)
+    == prerequisite.NotRead(prerequisite_type: 47)
+    as "a visibility prerequisite behind type 47 is not decided"
+  assert visibility.hidden([gated], subject) == set.new()
+    as "so the creature stays shown"
+}
+
 pub fn visibility_hides_a_failing_prerequisite_and_shows_a_passing_or_unread_one_test() -> Nil {
   use <- owned_test.run(60_000)
   let arrow = start_arrow()

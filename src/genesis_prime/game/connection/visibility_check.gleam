@@ -1,6 +1,7 @@
 //// The end-of-step check of the visibility prerequisites that fail for the
 //// connection's player (genesis_prime/game/visibility): after a step that may have
-//// changed the quest log, a cast on the player or its faction, the hidden set is
+//// changed the quest log, a cast on the player or its faction, or the items the player
+//// holds (a type 13, 14 or 246 condition reads them), the hidden set is
 //// worked out again from the cast rule's subject (`cast.subject_of`), and a set
 //// that differs from the one the entered player holds (`Entered.hidden`) is kept
 //// there and told to the map once (`TellVisibilityChanged`, the map's

@@ -43,6 +43,7 @@ fn verdict_of(tables: table_store.Tables, target: Quest2) -> Verdict {
       factions: Factions(current: exile, base: exile),
       log: quest_support.log_of(rows: []),
       items: [],
+      checker: prerequisite_support.empty_checker(),
     )
   let assert Ok(verdict) =
     quest.can_accept(tables:, quest: target, asker:, mask: quest.every_check)

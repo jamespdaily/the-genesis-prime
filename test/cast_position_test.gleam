@@ -19,8 +19,10 @@
 ////   debug line.
 
 import cast_support as support
+import character_tables
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, GatedOnCasterAndTarget, Proxy, Spell,
@@ -29,7 +31,7 @@ import genesis_prime/game/spend
 import genesis_prime/game/start_place
 import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
-import genesis_prime/table/id.{Spell4EffectsId}
+import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -213,6 +215,27 @@ fn press_closing(
   units units: List(#(Int, Pose)),
   hit_units hit_units: List(Int),
 ) -> List(Effect) {
+  press_closing_known(
+    spell:,
+    stealthed:,
+    pressed_by:,
+    closed_by:,
+    units:,
+    known: dict.new(),
+    hit_units:,
+  )
+}
+
+/// The same, whose picture also names what each of these units is.
+fn press_closing_known(
+  spell spell: Spell,
+  stealthed stealthed: Bool,
+  pressed_by pressed_by: Caster,
+  closed_by closed_by: Caster,
+  units units: List(#(Int, Pose)),
+  known known: dict.Dict(Int, prerequisite.FirstUnit),
+  hit_units hit_units: List(Int),
+) -> List(Effect) {
   let plans = plans_with(spell:)
   let #(state, raw) =
     support.pressed_raw_in(
@@ -223,14 +246,16 @@ fn press_closing(
       target: 0,
       at: 2000,
     )
-  support.answered_posed(
+  let struck = list.map(hit_units, fn(unit_id) { hit(unit_id:) })
+  support.answered_known(
     caster: closed_by,
     state:,
     effects: raw,
     at: 2000,
-    struck: list.map(hit_units, fn(unit_id) { hit(unit_id:) }),
+    struck_of: fn(_) { struck },
     rolls: [],
     poses: dict.from_list(units),
+    units: known,
   ).1
 }
 
@@ -532,6 +557,149 @@ pub fn a_proxy_on_the_caster_reads_the_casters_own_yaw_test() -> Nil {
   }
   assert started(1) == [] as "behind: -pi is outside the arc at yaw 3.0"
   assert started(2) == [#(100, 7)] as "not behind"
+}
+
+pub fn a_proxy_target_gate_names_the_struck_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A target gate of one type 38 condition, comparison 1, on Creature2 15727
+  // (`Prerequisite.prerequisiteTypeId.38`, 0x14049ecc0: the first unit's Creature2 id,
+  // which is the struck unit). The picture names each struck unit: 20 is a creature of
+  // 15727, 21 one of 5768, 22 another player; unit 23 is shown but not named.
+  let gate = prerequisite_support.single(id: 1, condition: #(38, 1, 0, 15_727))
+  let at_origin = prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0)
+  let effects =
+    press_closing_known(
+      spell: spell_with(proxies: [
+        proxy(effect: 1, child: 100, caster_gates: [], target_gate: gate),
+      ]),
+      stealthed: False,
+      pressed_by: caster_at(x: 0.0, z: 5.0),
+      closed_by: caster_at(x: 0.0, z: 5.0),
+      units: [
+        #(20, at_origin),
+        #(21, at_origin),
+        #(22, at_origin),
+        #(23, at_origin),
+      ],
+      known: dict.from_list([
+        #(20, prerequisite.NonPlayer(creature2_id: 15_727)),
+        #(21, prerequisite.NonPlayer(creature2_id: 5768)),
+        #(22, prerequisite.OtherPlayer),
+      ]),
+      hit_units: [20, 21, 22, 23],
+    )
+  assert children_started(effects:) == [#(100, 20)]
+    as "only the creature of Creature2 15727 starts the child: a creature of 5768 and a player have another Creature2 id"
+  let lines =
+    list.filter(support.logs(effects:), fn(line) {
+      string.contains(line.1, "unit 23")
+    })
+  assert lines != [] as "a debug line names the unit the picture does not name"
+  list.each(lines, fn(line) {
+    assert line.0 == LogDebug
+    assert string.contains(line.1, "type 38")
+      as "and the type the server could not read"
+  })
+  assert list.all(support.logs(effects:), fn(line) {
+    !string.contains(line.1, "unit 20")
+  })
+    as "a unit the picture names decides, so it is not logged"
+}
+
+pub fn cripples_second_hit_needs_the_casters_own_group_464_cast_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Prerequisite 13148 (`table_rows -- Prerequisite 13148`) is one type 130 condition,
+  // comparison 1, objectId 464: the struck unit carries a cast of spell group 464 made by
+  // the caster (`Prerequisite.prerequisiteTypeId.130`, 0x140469a70). It is the target gate of
+  // Spell4Effects 144336 (Stalker Whiplash Slash 2 Proxy Tier 7, 59955), the one Proxy of
+  // the client's rows behind it that is not a test or deprecated spell, which starts
+  // Spell4 39060; Cripple's second hit holds it on a row of effect type 80, which the plan
+  // does not hold as a Proxy. The planted spell holds that Proxy; the row is the client's.
+  let tables = character_tables.shared()
+  let assert Ok(gate) =
+    prerequisite.load(
+      id: PrerequisiteId(13_148),
+      rows: prerequisite.table_rows(tables:),
+      arcs: prerequisite.table_arcs(tables:),
+      quests: prerequisite.table_quests(tables:),
+    )
+    as "the client's rows hold Prerequisite 13148"
+  let whiplash =
+    spell_with(proxies: [
+      proxy(effect: 144_336, child: 39_060, caster_gates: [], target_gate: gate),
+    ])
+  let at_origin = prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0)
+  let caster = caster_at(x: 0.0, z: 5.0)
+  // The caster's first spell has these spell groups and a lasting row aimed at the units its
+  // go strikes: its go strikes unit 20, so a node of its cast lingers on unit 20 for a
+  // minute. Then the Whiplash press closes a round that struck units 20 and 21.
+  let started_on = fn(groups) {
+    let marking =
+      Spell(..support.child(spell4_id: 38_784, base: 1), groups:, lasting: [
+        spell_plan.Lasting(
+          effect_id: Spell4EffectsId(1),
+          phase_flags: -1,
+          aim: spell_plan.AimsAtArea,
+          row: lasting.LastingRow(
+            delay_ms: 0,
+            duration_ms: 60_000,
+            until_removed: False,
+          ),
+          condition: spell_plan.Always,
+          tag: spend.always,
+        ),
+      ])
+    let plans =
+      support.with_spells(plans: support.plans(), spells: [whiplash, marking])
+    let poses = dict.from_list([#(20, at_origin), #(21, at_origin)])
+    let #(state, first) =
+      support.pressed_raw_in(
+        plans:,
+        state: cast.new(),
+        caster:,
+        bag_index: bag_of_base_1,
+        target: 0,
+        at: 1000,
+      )
+    let #(state, _) =
+      support.answered_known(
+        caster:,
+        state:,
+        effects: first,
+        at: 1000,
+        struck_of: fn(_) { [hit(unit_id: 20)] },
+        rolls: [],
+        poses:,
+        units: dict.new(),
+      )
+    let #(state, raw) =
+      support.pressed_raw_in(
+        plans:,
+        state:,
+        caster:,
+        bag_index: bag_of_base_2,
+        target: 0,
+        at: 1100,
+      )
+    children_started(
+      effects: support.answered_known(
+        caster:,
+        state:,
+        effects: raw,
+        at: 1100,
+        struck_of: fn(_) { [hit(unit_id: 20), hit(unit_id: 21)] },
+        rolls: [],
+        poses:,
+        units: dict.new(),
+      ).1,
+    )
+  }
+  assert started_on([464]) == [#(39_060, 20)]
+    as "unit 20 carries the caster's cast of group 464 and unit 21 carries none, so only unit 20 starts the child"
+  assert started_on([464, 5]) == [#(39_060, 20)]
+    as "the group is one among the cast's groups"
+  assert started_on([463]) == [] as "a cast of another group opens neither unit"
+  assert started_on([]) == [] as "a cast of no group opens neither unit"
 }
 
 pub fn the_caster_gates_of_a_target_gated_proxy_take_their_rolls_in_order_and_the_target_gate_none_test() -> Nil {
