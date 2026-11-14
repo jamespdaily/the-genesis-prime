@@ -29,7 +29,7 @@ import genesis_prime/client_connection
 import genesis_prime/game/cast.{type Effect, type State}
 import genesis_prime/game/crowd_control
 import genesis_prime/game/lasting
-import genesis_prime/game/spell_plan.{type Spell, Spell}
+import genesis_prime/game/spell_plan.{type Spell, GlobalCooldown, Spell}
 import genesis_prime/game/spend
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
@@ -325,6 +325,10 @@ pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> 
 const bag_of_kick = 3
 
 const bag_of_base_1 = 8
+
+/// The planted spell of global cooldown kind 2 (`cast_support.blocked_only`), at bag index
+/// 10: refused while a global cooldown runs, starting none.
+const bag_of_the_blocked = 10
 
 /// A planted spell of base 3 whose go gives the caster Ability Restriction until its cast
 /// ends, as the hoverboard's ride 85563 does with its CCStateSet 224967 (targetFlags 1,
@@ -830,6 +834,56 @@ pub fn a_caster_holding_a_masked_state_is_refused_its_result_test() -> Nil {
     )
   assert support.refusal_results(effects: kick) == []
     as "Kick's caster row 4 (mask 218960747) has no bit 4: a held Silence does not refuse it"
+  // The same spell as a kind 0 one, which starts a 1000 ms global cooldown when it goes and
+  // which the kind 2 spell waits for.
+  let gated =
+    Spell(
+      ..masking(mask: row_5_mask),
+      global_cooldown: GlobalCooldown(
+        refused_while_running: True,
+        starts_for_ms: Some(1000),
+      ),
+    )
+  let gated_plans = support.plans_of([holding(states: [Silence]), gated])
+  let #(started, _) =
+    support.press_by(
+      plans: gated_plans,
+      state: cast.new(),
+      caster: fighting(),
+      bag: bag_of_base_1,
+      at: 1000,
+    )
+  let #(_, behind) =
+    support.press_by(
+      plans: gated_plans,
+      state: started,
+      caster: fighting(),
+      bag: bag_of_the_blocked,
+      at: 1100,
+    )
+  assert support.refusal_results(effects: behind) == [14]
+    as "the control: the spell that went started its global cooldown, so the kind 2 spell 100 ms later is refused 14"
+  let #(silenced, _) = restricted(plans: gated_plans)
+  let #(after, gated_refusal) =
+    support.press_by(
+      plans: gated_plans,
+      state: silenced,
+      caster: fighting(),
+      bag: bag_of_base_1,
+      at: 2000,
+    )
+  assert support.refusal_results(effects: gated_refusal) == [81]
+    as "the kind 0 spell is refused 81 as the other is"
+  let #(_, after_refusal) =
+    support.press_by(
+      plans: gated_plans,
+      state: after,
+      caster: fighting(),
+      bag: bag_of_the_blocked,
+      at: 2100,
+    )
+  assert support.refusal_results(effects: after_refusal) == []
+    as "0x1403b2c40's result clears the client's global cooldown, and the refused press started none on the server: the kind 2 spell 100 ms after it is not refused 14"
 }
 
 pub fn the_lowest_held_state_gives_the_result_test() -> Nil {

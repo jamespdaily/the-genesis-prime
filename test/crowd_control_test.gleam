@@ -9,6 +9,7 @@ import fixture_tables
 import genesis_prime/game/cast
 import genesis_prime/game/crowd_control
 import genesis_prime/message/crowd_control_state
+import genesis_prime/table/cc_states
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4_cc_conditions
 import gleam/int
@@ -159,8 +160,27 @@ pub fn a_condition_row_asking_for_a_state_fails_the_load_test() -> Nil {
     as "the failure names the row, 1"
   assert string.contains(column, "ccStateFlagsRequired")
     as "the failure names the column"
-  assert string.contains(store.describe(error), "#336")
-    as "the failure names the issue that will read the MustBe results"
+  assert string.contains(store.describe(error), "MustBe")
+    as "the failure says what the server does not read"
+}
+
+pub fn a_missing_state_row_fails_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(rows) =
+    fixture_tables.remove(rows: fixture_tables.rows(), table: "CCStates", id: 5)
+    as "the client's table holds CCStates row 5, Polymorph"
+  let assert Error(error) =
+    fixture_tables.edited(
+      rows:,
+      entries: [cc_states.entry()],
+      requirements: crowd_control.requirements(),
+      derivations: [],
+    )
+    as "the server names states 0 to 27 and reads each one's row (stopping_mask, hard_held), so a table without one fails the load"
+  let assert store.RowMissing(to_table:, id:, ..) = error
+    as "the load's failure is a missing row"
+  assert to_table == "CCStates" && id == 5
+    as "the failure names the table and the missing row, 5"
 }
 
 pub fn the_clients_condition_rows_all_ask_for_no_state_test() -> Nil {
@@ -170,5 +190,5 @@ pub fn the_clients_condition_rows_all_ask_for_no_state_test() -> Nil {
       requirement.missing(tables)
     })
     == []
-    as "all 12 Spell4CCConditions rows hold ccStateFlagsRequired 0"
+    as "all 12 Spell4CCConditions rows hold ccStateFlagsRequired 0, and the client's CCStates holds a row for each state 0 to 27"
 }

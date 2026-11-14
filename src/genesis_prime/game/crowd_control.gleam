@@ -24,7 +24,7 @@
 
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/table/cc_states
-import genesis_prime/table/id.{Spell4CCConditionsId}
+import genesis_prime/table/id.{CCStatesId, Spell4CCConditionsId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4_cc_conditions
 import gleam/int
@@ -184,20 +184,45 @@ pub fn stopping_mask(tables tables: table_store.Tables) -> Int {
   })
 }
 
-/// The load's check that no Spell4CCConditions row asks for a held state
-/// (`ccStateFlagsRequired`, the column that makes `CheckSpellCCConditions` give a
-/// Caster_MustBe or Target_MustBe result): the client's 12 rows hold 0, and the server
-/// reads no MustBe result, so a row that asks fails the load naming its id (issue 336).
+/// The load's checks on the crowd-control tables.
+///
+/// No Spell4CCConditions row asks for a held state (`ccStateFlagsRequired`, the column
+/// that makes `CheckSpellCCConditions` give a Caster_MustBe or Target_MustBe result): the
+/// client's 12 rows hold 0, and the server reads no MustBe result, so a row that asks
+/// fails the load naming its id.
+///
+/// Every state the server names has its CCStates row (0 to 27): `stopping_mask` reads
+/// those rows, and a missing row would leave its state out of the mask without a word.
 pub fn requirements() -> List(table_store.Requirement) {
   [
     table_store.Requirement(
       from_table: "Spell4CCConditions",
-      column: "ccStateFlagsRequired, which asks for a held state and gives a MustBe result that the server does not read (#336)",
+      column: "ccStateFlagsRequired, which asks for a held state and gives a MustBe result that the server does not read",
       to_table: "a Spell4CCConditions row whose ccStateFlagsRequired is 0",
       missing: fn(tables) {
         spell4_cc_conditions.all(tables)
         |> list.filter(fn(row) { row.cc_state_flags_required != 0 })
         |> list.map(fn(row) { row.id })
+      },
+    ),
+    table_store.Requirement(
+      from_table: "crowd_control_state",
+      column: "the number of each state the server names",
+      to_table: "CCStates",
+      missing: fn(tables) {
+        int.range(
+          from: crowd_control_state.to_value(
+            crowd_control_state.AbilityRestriction,
+          ),
+          to: -1,
+          with: [],
+          run: fn(missing, number) {
+            case cc_states.get(tables:, id: CCStatesId(number)) {
+              Ok(_) -> missing
+              Error(Nil) -> [number, ..missing]
+            }
+          },
+        )
       },
     ),
   ]
