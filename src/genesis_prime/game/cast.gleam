@@ -7011,7 +7011,8 @@ fn restrictions_numbered(
 /// alone: the message sets the anchor of the unit the receiving client controls and
 /// names no unit, so the audience, whose clients control other units, gets none
 /// (`opcode.0x881`). That the anchor is the caster's own unit is a guess; no client
-/// value names it, and issue 336 (spells in depth on the real client) will settle it.
+/// value names it, and the issue "Spells work in depth on the real client: cast times, telegraphs, buffs,
+/// crowd control and ticking effects" will settle it.
 fn restrictions_shown(
   restricting restricting: List(Restricting),
   caster caster: Caster,

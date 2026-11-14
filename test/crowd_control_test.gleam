@@ -176,7 +176,7 @@ pub fn a_missing_state_row_fails_the_load_test() -> Nil {
       requirements: crowd_control.requirements(),
       derivations: [],
     )
-    as "the server names states 0 to 27 and reads each one's row (stopping_mask, hard_held), so a table without one fails the load"
+    as "the server names states 0 to 27 and reads each one's row (stopping_mask), so a table without one fails the load"
   let assert store.RowMissing(to_table:, id:, ..) = error
     as "the load's failure is a missing row"
   assert to_table == "CCStates" && id == 5

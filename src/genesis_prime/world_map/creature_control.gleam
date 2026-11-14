@@ -64,7 +64,8 @@
 ////   - `hard_held`: a Stun, Knockdown or Knockback refuses every cast. The client's rows hold
 ////     no such rule; it is a retail record (WildStar wiki, Combat, "Moment of Opportunity").
 ////   A charge starts only while no state at all is held (`holds`), which is a gap: the
-////   client's conditions for the charge spells mask nothing, and issue 801 closes it.
+////   client's conditions for the charge spells mask nothing, and the issue "Creatures cast
+////   spells, and the effect types only creature spells use work" closes it.
 //// - **Each landed state is its own control**, with its own timer and its own 0x880: two
 ////   players' states, or one caster's two states of a kind, are held side by side, and
 ////   the creature runs again when no state that stops its run is held (`cc_state.instance_id`).
@@ -175,28 +176,21 @@ pub fn stops_moving(state state: State, stopped_by stopped_by: Int) -> Bool {
   refuses(state:, mask: stopped_by)
 }
 
-/// Whether the creature holds a Stun, a Knockdown or a Knockback, which let it cast
-/// nothing of any kind. The client's rows say only what each spell's own conditions mask;
-/// that these three stop every cast is a retail record (WildStar wiki, Combat, "Moment of
-/// Opportunity").
+/// The states that let a creature cast nothing of any kind, as a mask (bit n is state n):
+/// Stun 0, Knockdown 8 and Knockback 16.
+///
+/// A server choice from a retail record (WildStar wiki, Combat, "Moment of Opportunity"):
+/// the client's rows say only what each spell's own conditions mask. CCStates flag 0x10,
+/// set on Stun, Sleep, Knockdown, Knockback, Pull, Pushback, Hold, Disable and
+/// DisableCinematic, is the likely client signal and is not decoded (fact
+/// `CCStates.flags.hard_held`), so the choice stands until the issue "Spells work in depth on the
+/// real client: cast times, telegraphs, buffs, crowd control and ticking effects"
+/// reads it.
+const hard_held_mask = 0x10101
+
+/// Whether the creature holds a state of `hard_held_mask`.
 pub fn hard_held(state state: State) -> Bool {
-  refuses(
-    state:,
-    mask: list.fold(
-      [
-        crowd_control_state.Stun,
-        crowd_control_state.Knockdown,
-        crowd_control_state.Knockback,
-      ],
-      0,
-      fn(mask, held) {
-        int.bitwise_or(
-          mask,
-          int.bitwise_shift_left(1, crowd_control_state.to_value(held)),
-        )
-      },
-    ),
-  )
+  refuses(state:, mask: hard_held_mask)
 }
 
 /// Whether the creature holds anything a death must drop: a state, or armor worn below its

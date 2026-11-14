@@ -936,13 +936,11 @@ pub fn an_activate_cast_at_a_held_creature_is_refused_its_state_test() -> Nil {
       unit_id: its_unit,
     )
   }
-  assert refused([crowd_control_state.Stun], 0.5)
-    == 122
+  assert refused([crowd_control_state.Stun], 0.5) == 122
     as "0x1403b2240: the target's Spell4CCConditions mask has bit 0 and the unit holds Stun: Target_CannotBe_Stunned (122), whatever way the cast was pressed"
   assert refused([crowd_control_state.Sleep], 0.5) == 124
     as "bit 1 gives its own result, Target_CannotBe_Slept (124)"
-  assert refused([crowd_control_state.Stun], 20.0)
-    == 122
+  assert refused([crowd_control_state.Stun], 20.0) == 122
     as "0x1403b2240 tests the state before the range: a held canister 20 away is refused 122, not 105"
   let started = fn(states) {
     let assert Ok(#(_, effects)) =

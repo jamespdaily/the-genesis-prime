@@ -1128,17 +1128,20 @@ pub type PlanError {
   ControlStateNotRead(spell4_id: Int, effect_id: Int, state: Int)
   /// A CCStateSet effect of a tree is aimed by a flag value that is not one of the
   /// four `aim_of` reads (`Spell4Effects.targetFlags` 1, 2, 4 and 6): the union aims 3, 5
-  /// and 7 wait for #794, and any other value for #336.
+  /// and 7 are not read (the issue "An effect aimed by a combined flag reaches every unit
+  /// each of its bits names" closes them), and neither is any other value.
   ControlAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A CCStateSet effect of a tree has an apply prerequisite, which is not read.
   ControlPrerequisiteNotRead(spell4_id: Int, effect_id: Int)
   /// A CCStateSet effect of a tree aimed at another unit holds its state until it is
   /// removed (`Spell4Effects.flags` bit 2), which no rule of the server ends with its
-  /// cast's node yet (#803).
+  /// cast's node (the issue "A crowd-control state that lasts until removed ends when its
+  /// spell ends" closes it).
   ControlUntilRemovedNotRead(spell4_id: Int, effect_id: Int)
   /// A CCStateSet effect of a tree aimed at another unit keeps its state through a death
   /// or a leave by a caster persistence, target persistence or target suspend
-  /// prerequisite, which no rule of the server holds yet (#787).
+  /// prerequisite, which no rule of the server holds (the issue "An effect behind an
+  /// apply prerequisite lands only on the units that pass it" closes it).
   ControlPersistenceNotRead(spell4_id: Int, effect_id: Int)
   /// A UnitPropertyModifier or UnitPropertyConversion effect of a tree names a property
   /// that UnitProperty2 has no row for, which the client's 0x93a refuses from id 197
@@ -2268,10 +2271,10 @@ fn force_remove_counts_read(
 /// caster, the primary target, the area or both (`aim_of`). Its delayTime, durationTime,
 /// flags bit 2 (a state that never times out) and the armor it removes (dataBits03) are
 /// read as they are. A row aimed at another unit is refused when it holds its state
-/// until removed (no rule ends a creature's state with its cast's node, #803) or keeps
-/// it through a death or a leave by a caster persistence, target persistence or target
-/// suspend prerequisite (no creature rule holds that, #787); on the caster both are the
-/// cast's own (`cast.restrictions`).
+/// until removed (no rule ends a creature's state with its cast's node) or keeps it
+/// through a death or a leave by a caster persistence, target persistence or target
+/// suspend prerequisite (no creature rule holds that); on the caster both are the cast's
+/// own (`cast.restrictions`).
 fn control_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,

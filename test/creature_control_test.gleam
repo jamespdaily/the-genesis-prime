@@ -117,3 +117,24 @@ pub fn only_a_flag_two_state_stops_a_creature_moving_test() -> Nil {
   )
     as "one state with the value among others stops it"
 }
+
+pub fn only_a_stun_a_knockdown_or_a_knockback_lets_a_creature_cast_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let hard =
+    int.range(from: 27, to: -1, with: [], run: fn(found, number) {
+      case
+        creature_control.hard_held(
+          state: holding(states: [crowd_control_state.from_value(number)]),
+        )
+      {
+        True -> [number, ..found]
+        False -> found
+      }
+    })
+  assert hard == [0, 8, 16]
+    as "the retail record (WildStar wiki, Combat, Moment of Opportunity) names Stun 0, Knockdown 8 and Knockback 16, and no other of the 28 states"
+  assert !creature_control.hard_held(state: creature_control.new())
+    as "a creature holding nothing casts"
+  assert creature_control.hard_held(state: holding(states: [Snare, Fear, Stun]))
+    as "one of the three among others refuses every cast"
+}

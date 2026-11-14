@@ -444,10 +444,10 @@ type Checked {
 /// each of the 77,794 rows: each creature's override of Base Health, the display
 /// ids of each display group, the first display and the first outfit of each
 /// group, the ids of the outfits that have a Creature2OutfitInfo row, the
-/// factions' levels (genesis_prime/game/faction_level) and each
-/// UnitProperty2 row's default and flags. Creature2OutfitInfo
-/// is a table only the content load reads, so the checks of a summon read the ids
-/// and not the table.
+/// factions' levels (genesis_prime/game/faction_level), each
+/// UnitProperty2 row's default and flags and the states that stop a creature's run.
+/// Creature2OutfitInfo is a table only the content load reads, so the checks of a
+/// summon read the ids and not the table.
 type Catalog {
   Catalog(
     tables: table_store.Tables,
@@ -458,6 +458,7 @@ type Catalog {
     factions: faction_level.Levels,
     worlds: Set(Int),
     property_rows: Dict(Int, #(Float, Int)),
+    run_stopped_by: Int,
   )
 }
 
@@ -979,6 +980,7 @@ fn catalog(tables tables: table_store.Tables) -> Catalog {
         dict.insert(found, row.id, #(row.default_value, row.flags))
       },
     ),
+    run_stopped_by: crowd_control.stopping_mask(tables:),
   )
 }
 
@@ -1323,7 +1325,7 @@ fn attack_of(
       reach:,
       cast:,
       caster_cc_mask:,
-      run_stopped_by: crowd_control.stopping_mask(tables: catalog.tables),
+      run_stopped_by: catalog.run_stopped_by,
     )
   Ok(#(attack, creature_scaling, attack_effects))
 }
