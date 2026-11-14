@@ -3828,3 +3828,231 @@ pub fn a_viewer_arriving_while_the_turret_is_opened_is_told_the_opening_with_the
     && second_state == crowd_control_state.Disable
     && second_id == id_c
 }
+
+// What a held state lets a creature do. Expected values come from the client's rows, read
+// with `table_rows`. The states that stop a creature moving are the ones whose
+// `CCStates.flags` hold the value 2: Stun (30) and Root (195) do; Snare (129), Polymorph (0)
+// and Fear (4) do not (`UnitHasCCStateFlag02`, 0x14045e630). The states that refuse the
+// Beast's attack are the ones in the ccStateMask of Spell4CCConditions 1, the row Spell4
+// 5649 names for its caster: 0 Stun, 1 Sleep, 5 Polymorph, 6 Fear, 8 Knockdown, 9
+// Vulnerability, 12 Disable, 16 Knockback, 18 Pull, 19 PositionSwitch, 24 Subdue, 26
+// DisableCinematic and 27 AbilityRestriction, so not Root (2) and not Snare (21). The
+// Sim-Turret's charge, Spell4 85469, names row 2, which masks nothing. That a creature
+// holding Stun, Knockdown or Knockback casts nothing is a retail record (WildStar wiki,
+// Combat, "Moment of Opportunity"). Jim decided on 2026-11-11 that a state of any kind
+// landing during a charge breaks it. A Sim-Turret starts no charge while it holds any
+// other state either, as before: a gap, issue 801.
+
+/// The Beast fought by player 2 standing `x` units off from 0 ms and struck by player 2 at
+/// 500 ms with this state for 2500 ms: the state, the step of the aggro and the step of the
+/// landing.
+fn beast_holding(
+  held held: crowd_control_state.CrowdControlState,
+  x x: Float,
+) -> #(State, ServiceStep(creature.Outgoing), ServiceStep(creature.Outgoing)) {
+  let #(state, aggro) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x:, seq: 1),
+    )
+  let #(state, landed) =
+    tell(
+      state:,
+      at_ms: 500,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.holding(
+          state: held,
+          duration_ms: 2500,
+          instance_id: 28_673,
+        ),
+      ]),
+    )
+  #(state, aggro, landed)
+}
+
+pub fn a_creature_attacks_or_chases_as_its_states_allow_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Root, in reach: no mask of the attack's row has it, so the 1500 ms tick strikes.
+  let #(state, aggro, landed) =
+    beast_holding(held: crowd_control_state.Root, x: 5.0)
+  assert list.contains(said(landed), "0x87f to 2")
+  let #(_, ticked) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  assert list.contains(said(ticked), "0x7ff to 2")
+    as "Root is in no mask of the attack's row: the creature strikes in reach"
+  // Root, out of reach: its flags hold the value 2, so the run stops where it stands and
+  // no chase starts.
+  let #(state, _, rooted) =
+    beast_holding(held: crowd_control_state.Root, x: 30.0)
+  let assert [CreaturePlaced(place:, ..)] =
+    list.filter(news_to(rooted, 2), fn(news) {
+      name_of(news) == "0x638(placed)"
+    })
+    as "the running path stops with 0x638 of kind 2"
+  assert x_of(place) == 5.0 as "10 units a second for 500 ms from x = 0"
+  let #(_, moved_away) =
+    tell(state:, at_ms: 700, message: moved(number: 2, x: 35.0, seq: 2))
+  assert said(moved_away) == []
+    as "the player moves and the rooted creature starts no chase"
+  // Polymorph, in reach: the row masks it, so the tick strikes nothing, and the next one
+  // strikes once the state is over.
+  let #(state, aggro, landed) =
+    beast_holding(held: crowd_control_state.Polymorph, x: 5.0)
+  let #(state, ticked) =
+    fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  assert !list.contains(said(ticked), "0x7ff to 2") && fights_told(ticked) == []
+    as "Polymorph is in the attack's row: no strike"
+  let #(state, ended) =
+    fire(state:, at_ms: 3000, timer: timer_for(landed, 2500))
+  assert list.contains(said(ended), "0x880 to 2")
+  let #(_, struck) = fire(state:, at_ms: 3000, timer: timer_for(ticked, 1500))
+  assert list.contains(said(struck), "0x7ff to 2")
+    as "the tick after the state strikes again"
+  // Polymorph, out of reach: its flags hold no 2, so the run goes on and the creature
+  // chases the target that moves.
+  let #(state, _, polymorphed) =
+    beast_holding(held: crowd_control_state.Polymorph, x: 30.0)
+  assert !list.contains(said(polymorphed), "0x638(placed) to 2")
+    as "the run is not stopped"
+  let #(_, moved_away) =
+    tell(state:, at_ms: 700, message: moved(number: 2, x: 35.0, seq: 2))
+  assert x_of(creature_path.end(path: path_sent(moved_away))) == 31.0
+    as "it runs toward 35, 0.5 x reach 8 short"
+  // Snare, in reach: neither the mask nor the flags have it, so the strike and the chase
+  // both go on.
+  let #(state, aggro, _) =
+    beast_holding(held: crowd_control_state.Snare, x: 5.0)
+  let #(_, ticked) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  assert list.contains(said(ticked), "0x7ff to 2")
+    as "Snare is in no mask of the attack's row: the creature strikes"
+  let #(state, _, snared) =
+    beast_holding(held: crowd_control_state.Snare, x: 30.0)
+  assert !list.contains(said(snared), "0x638(placed) to 2")
+    as "Snare stops no run"
+  let #(_, moved_away) =
+    tell(state:, at_ms: 700, message: moved(number: 2, x: 35.0, seq: 2))
+  assert x_of(creature_path.end(path: path_sent(moved_away))) == 31.0
+    as "and the creature chases"
+}
+
+pub fn any_state_landing_breaks_a_charge_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Snare is in neither the turret's caster row (2, which masks nothing) nor the flags that
+  // stop movement.
+  list.each(
+    [
+      crowd_control_state.Snare,
+      crowd_control_state.Fear,
+      crowd_control_state.Polymorph,
+    ],
+    fn(held) {
+      let #(state, aggro) = fought(viewers: [2])
+      let #(state, _, ends) = charge_opened(state:, aggro:)
+      let #(state, landed) =
+        tell(
+          state:,
+          at_ms: 4000,
+          message: controlling(number: 2, cast_id: 1, controls: [
+            crowd_control_support.holding(
+              state: held,
+              duration_ms: 2500,
+              instance_id: 28_673,
+            ),
+          ]),
+        )
+      assert list.contains(said(landed), "0x87f to 2")
+        && list.contains(said(landed), "0x7f9 to 2")
+        as "the state took hold and broke the charge"
+      assert list.contains(timers_cancelled(landed), ends)
+        as "the charge's cast end is cancelled"
+      let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
+      assert said(went) == [] && timers(went) == []
+        as "the cast end that fires all the same strikes nobody"
+    },
+  )
+}
+
+/// A Beast whose attack's caster row masks nothing, fought by player 2 from 5 units off.
+fn unmasked_beast() -> State {
+  let spawn = spawn_support.battle_beast(number: 1, x: 0.0)
+  beast_from(
+    source: spawn_source.Stored(id: SpawnId(1)),
+    spawn: Spawn(
+      ..spawn,
+      combat: creature_life.Combat(
+        ..spawn.combat,
+        attack: creature_life.Attack(..spawn.combat.attack, caster_cc_mask: 0),
+      ),
+    ),
+    viewers: [2],
+    armor: creature_life.NoArmor,
+  )
+}
+
+pub fn a_creature_holding_hard_crowd_control_starts_no_cast_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      crowd_control_state.Stun,
+      crowd_control_state.Knockdown,
+      crowd_control_state.Knockback,
+    ],
+    fn(held) {
+      let holding =
+        controlling(number: 2, cast_id: 1, controls: [
+          crowd_control_support.holding(
+            state: held,
+            duration_ms: 5000,
+            instance_id: 28_673,
+          ),
+        ])
+      // A turret, whose charge's row masks nothing: no charge at its 3000 ms tick.
+      let #(state, aggro) = fought(viewers: [2])
+      let #(state, _) = tell(state:, at_ms: 100, message: holding)
+      let #(_, ticked) =
+        fire(state:, at_ms: 3000, timer: timer_for(aggro, 3000))
+      assert said(ticked) == [] && fights_told(ticked) == []
+        as "the turret holding the state opens no charge"
+      // A Beast whose strike's row masks nothing: no strike at its 1500 ms tick.
+      let #(state, aggro) =
+        tell(
+          state: unmasked_beast(),
+          at_ms: 0,
+          message: approached(number: 2, x: 5.0, seq: 1),
+        )
+      let #(state, _) = tell(state:, at_ms: 100, message: holding)
+      let #(_, ticked) =
+        fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+      assert !list.contains(said(ticked), "0x7ff to 2")
+        && fights_told(ticked) == []
+        as "and the creature holding the state strikes nothing"
+    },
+  )
+}
+
+pub fn a_turret_holding_any_other_state_starts_no_charge_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = fought(viewers: [2])
+  let #(state, landed) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.holding(
+          state: crowd_control_state.Snare,
+          duration_ms: 4000,
+          instance_id: 28_673,
+        ),
+      ]),
+    )
+  let #(state, ticked) =
+    fire(state:, at_ms: 3000, timer: timer_for(aggro, 3000))
+  assert said(ticked) == [] && fights_told(ticked) == []
+    as "the turret holding Snare starts no charge at its charge time"
+  let #(state, ended) =
+    fire(state:, at_ms: 4100, timer: timer_for(landed, 4000))
+  assert list.contains(said(ended), "0x880 to 2")
+  let #(_, opened) = fire(state:, at_ms: 6000, timer: timer_for(ticked, 3000))
+  assert list.contains(said(opened), "0x7ff to 2")
+    as "once the Snare has ended the next tick charges"
+}

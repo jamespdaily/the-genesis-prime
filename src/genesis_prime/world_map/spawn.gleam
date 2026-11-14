@@ -1323,6 +1323,7 @@ fn attack_of(
       reach:,
       cast:,
       caster_cc_mask:,
+      run_stopped_by: crowd_control.stopping_mask(tables: catalog.tables),
     )
   Ok(#(attack, creature_scaling, attack_effects))
 }

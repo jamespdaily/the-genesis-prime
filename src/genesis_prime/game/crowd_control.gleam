@@ -23,6 +23,7 @@
 ////   number the states of different units, a creature's and the caster's own.
 
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/table/cc_states
 import genesis_prime/table/id.{Spell4CCConditionsId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4_cc_conditions
@@ -168,6 +169,19 @@ pub fn mask_of(
       spell4_cc_conditions.get(tables:, id: Spell4CCConditionsId(id))
       |> result.map(fn(row) { row.cc_state_mask })
   }
+}
+
+/// The states that stop a creature moving, as a mask (bit n is state n): the CCStates rows
+/// whose `flags` hold the value 2. The client's helper `UnitHasCCStateFlag02`
+/// (`0x14045e630`) tests that value and drops the player's own movement input while a unit
+/// holds such a state; a creature's run is its own movement, so it stops under the same
+/// states and runs on under the others.
+pub fn stopping_mask(tables tables: table_store.Tables) -> Int {
+  cc_states.all(tables)
+  |> list.filter(fn(row) { int.bitwise_and(row.flags, 2) != 0 })
+  |> list.fold(0, fn(mask, row) {
+    int.bitwise_or(mask, int.bitwise_shift_left(1, row.id))
+  })
 }
 
 /// The load's check that no Spell4CCConditions row asks for a held state

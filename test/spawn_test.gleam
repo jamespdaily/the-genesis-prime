@@ -1340,6 +1340,8 @@ pub fn an_attack_reads_its_caster_condition_mask_test() -> Nil {
     { attack_beast_over(tables: fixture_tables.shared()) }.combat.attack
   assert attack.caster_cc_mask == 218_960_739
     as "Spell4 5649's caster row, Spell4CCConditions 1, holds ccStateMask 218960739"
+  assert attack.run_stopped_by == 68_096_391
+    as "the states whose CCStates flags hold the value 2: 0, 1, 2, 7, 8, 12, 16, 17, 18, 19 and 26"
   // Synthetic: the mask is the row's own, not a constant of the server.
   let changed = {
     use tables <- fixture_tables.changed(

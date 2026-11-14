@@ -9622,17 +9622,41 @@ proof = "The CCStates cache loader 0x1404cc4b0 (hash 8eb22adb6de47956) copies, f
 grade = "fairly sure"
 gap = "What animation mode 0x27 plays, what flags 0x10 and 0x40 stop, and whether a creature holding a flag 2 state still follows 0x638's movement (its handler is not gated on the flag; its spline code was not read). Messages 0x166, 0xbe, 0xbb and 0x1b0 are not named. Flags 1, 8, 0x20 and 0x80 may be tested in a form the grep's pattern misses."
 
+["CCStates.flags.creature_run"]
+statement = "The server stands a creature still while it holds a state whose CCStates flags have 2 (Stun, Sleep, Root, Hold, Knockdown, Disable, Knockback, Pushback, Pull, PositionSwitch, DisableCinematic): no chase, no walk. The client's own use of flag 2 is for the controlled player's movement input and for putting any unit that holds one into animation mode 0x27 (CCStates.flags); it does not say that a creature stops moving."
+proof = "CCStates.flags (this file): UpdatePlayerMovement 0x1403a25c0 reads flag 2 for the controlled unit, and 0x14046cdc0 sets unit 0x1344 to 0x27 for any unit holding it. The stop is the server's choice, written in creature_control.stops_moving. Rows: `gleam run -m genesis_prime/table_rows -- CCStates`."
+grade = "guess"
+gap = "Whether a creature that holds a flag 2 state follows a 0x638 movement the client is sent is not read (see CCStates.flags), and no retail record of a creature held by a Root or a Pull was read; the stop is a guess until #336 sees one on the real client."
+
 ["Spell4CCConditions"]
 statement = "A spell's CC requirements on its caster (Spell4.spell4CCConditionsIdCaster) and on its target (spell4CCConditionsIdTarget). ccStateMask names the states checked (bit n is state n); ccStateFlagsRequired says for each whether it must be held (bit set) or must not be (bit clear). Before sending a cast the client checks the player against the caster row and the target against the target row: a masked state with its required bit clear that the unit holds refuses the cast, and so does a masked state with its bit set that it lacks. So the client already stops a stunned or knocked-down player from casting a spell whose caster row masks those states. Rows: 1 masks Stun, Sleep, Polymorph, Fear, Knockdown, Vulnerability, Disable, Knockback, Pull, PositionSwitch, Subdue, DisableCinematic and AbilityRestriction, none required; 4 is row 1 with Disarm; 2 masks nothing. The kit's CC spells: 30436, 41438 and 38780 have caster row 1, 42352 and 58591 row 4, 42297 row 2 (castable while stunned); all have target row 0."
 proof = "FillSpellRecord 0x140568540 (hash 737aa5af0120fae9) lines 28, 29 and 284 to 292: the accessor 0x140237f00 (hash 8eb22adb6de47956, table name 'Spell4CCConditions') of Spell4 row words 0x48 and 0x49 (offsets 288 and 292), the caster row's three words to the spell record's 0x148 to 0x150 and the target row's to 0x154 to 0x15c. CheckSpellCCConditions 0x1403b2c40 (hash 8eb22adb6de47956): param_3 picks the caster pair (0x14c, 0x150) or the target's (0x158, 0x15c); for each of the 28 bits, required clear and the unit's count (0x2d8 + 0x10 x state) non-zero, unless param_4, gives one result, required set and the count 0 another. Callers: CheckCastCaster 0x1403afb10 (site 0x1403affa2, the caster, param_4 the cast request's word 0x48) and 0x1403b2240 (site 0x1403b25db, the target, param_4 0). The state 27 branch (saved C, last block): the unit's count at 0x488 (0x2d8 + 0x10 x 27); bit 27 required clear and the count non-zero (unless param_4) returns 0x12f - (param_3 != 0), so 0x12e (302) on the caster and 0x12f (303) on the target; bit 27 required set and the count 0 returns 0x12d - (param_3 != 0), 0x12c (300) on the caster and 0x12d (301) on the target. Rows: `gleam run -m genesis_prime/table_rows -- Spell4CCConditions` and `-- Spell4 30436 41438 38780 42352 58591 42297`."
 grade = "fairly sure"
-gap = "What the cast request's word 0x48 is (it skips the must-not-hold test) is not read, and the server reads it as 0 for every client press. The names of the results other than state 27's are not read."
+gap = "What the cast request's word 0x48 is (it skips the must-not-hold test) is not read, and the server reads it as 0 for every client press."
+
+["Spell4CCConditions.results"]
+statement = "The cast result CheckSpellCCConditions gives for a held state a row masks and requires clear, as the caster (Caster_CannotBe...) and as the target (Target_CannotBe...); the Spell4CastResult values: 0 Stun 73 and 122; 1 Sleep 75 and 124; 2 Root 77 and 126; 3 Disarm 79 and 128; 4 Silence 81 and 130; 5 Polymorph 200 and 201; 6 Fear 85 and 134; 7 Hold 204 and 205; 8 Knockdown 158 and 161; 9 Vulnerability 159 and 160 and 10 VulnerabilityWithAct 159 and 160; 11 Disorient 208 and 209; 12 Disable 212 and 213; 13 Taunt 216 and 217; 14 Detaunt 220 and 221; 15 Blind 224 and 225; 16 Knockback 228 and 229; 17 Pushback 232 and 233; 18 Pull 236 and 237; 19 PositionSwitch 240 and 241; 20 Tether 244 and 245; 21 Snare 248 and 249; 22 Interrupt 260 and 261; 23 Daze 266 and 267; 24 Subdue 271 and 272; 25 Grounded 292 and 293; 26 DisableCinematic 297 and 298; 27 AbilityRestriction 302 and 303. A held Silence therefore gives 81 to its caster, not 302. The check takes the bits from 0 to 27 in order and returns the first masked held state's result."
+proof = "CheckSpellCCConditions 0x1403b2c40 (saved C, hash 8eb22adb6de47956; `client_trace.py 0x1403b2c40`): param_3 non-zero is the caster. State 0 held and masked: `iVar4 = 0x7a; if (param_3 != 0) iVar4 = 0x49`, so 122 for the target and 73 for the caster; required and missing: 0x7b and 0x4a. State 8 held and masked: 0xa1 for the target and 0x9e for the caster (required and missing: 0x9a and 0x9d). States 9 and 10 held and masked: `0xa0 - (param_3 != 0)`. The other held-and-masked branches return `constant - (param_3 != 0)`: 0xc9 for state 5, 0xcd for 7, then 0xd1, 0xd5, 0xd9, 0xdd, 0xe1, 0xe5, 0xe9, 0xed, 0xf1, 0xf5, 0xf9, 0x105, 0x10b, 0x110, 0x125, 0x12a and 0x12f for the states 11 to 27 in order. Call sites: CheckCastCaster 0x1403afb10 (param_3 1) and CheckCastUnitTargetRange 0x1403b2240 (param_3 0)."
+grade = "fairly sure"
+gap = "The names of the result values are the table's at 0x140c2f290, which the server does not read; the values are those the check returns."
+
+["Spell4CCConditions.flags_required"]
+statement = "ccStateFlagsRequired holds 0 in all 12 Spell4CCConditions rows. A non-zero bit n makes the check give a MustBe result for state n when the unit does not hold it (Caster_MustBe... or Target_MustBe..., 74 and 123 for Stun, each state has its own MustBe pair; Knockdown's are 154 and 157), where a clear bit gives the CannotBe result when it does. The server reads no MustBe result, so a row that asks for a held state fails the table load naming its id."
+proof = "CheckSpellCCConditions 0x1403b2c40 (saved C): the `(uVar3 & 1) == 0` test of the required word, then `*(unit + 0x2d8) != 0` for the held case and `== 0` for the required case, with 0x7b or 0x4a for state 0's MustBe result. `gleam run -m genesis_prime/table_rows -- Spell4CCConditions` lists the 12 rows, each with ccStateFlagsRequired 0."
+grade = "fairly sure"
+gap = "none"
+
+["0x1403b2240.cc_conditions"]
+statement = "The target's CC conditions are the first check CheckCastUnitTargetRange makes after the target's Spell4Conditions bit tests (results 0x13b and 0x13c). Its result returns at once unless it is 0 or 0x13d: the checks that follow (the target's unit kind, 0x66 and 0x67, the activate checks and range) are not reached by a target that holds a masked state. A target that holds a masked state and is also out of range therefore gives the CC result, not the range result."
+proof = "Saved C 0x1403b2240.c (hash cc54e920d5411539; `client_trace.py 0x1403b2240`): `uVar7 = CheckSpellCCConditions(param_2, lVar8, 0, 0)`, reached after the 0x13b and 0x13c tests; at LAB_1403b25e0 `if (uVar7 != 0 && uVar7 != 0x13d) return uVar7`, before the `iVar3 == 0x14` branch (0x66, 0x67) and the CheckCastActivateSpell call."
+grade = "fairly sure"
+gap = "The range block's own results (after this check) were not read here."
 
 ["0x1403b2c40"]
 statement = "Checks a unit's CC states against a spell's caster or target CC conditions (Spell4CCConditions) and gives the cast result that refuses it, or 0."
 proof = "Saved C 0x1403b2c40.c (hash 8eb22adb6de47956); see Spell4CCConditions."
 grade = "fairly sure"
-gap = "The result numbers per state are not named."
+gap = "none"
 name = "CheckSpellCCConditions"
 
 ["GameFormula.614"]

@@ -80,6 +80,10 @@ pub type Attack {
     /// Spell4CCConditions row the attack spell's caster column names, 0 for no row; bit n
     /// is the state n (`CheckSpellCCConditions`, `0x1403b2c40`).
     caster_cc_mask: Int,
+    /// The crowd-control states that stop the creature's run, as a mask: the states whose
+    /// CCStates flags hold the value 2, the states under which the client drops a unit's
+    /// own movement (genesis_prime/game/crowd_control `stopping_mask`).
+    run_stopped_by: Int,
   )
 }
 

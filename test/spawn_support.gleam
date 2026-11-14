@@ -170,7 +170,7 @@ pub fn dagun(number number: Int, x x: Float) -> Spawn {
       hit_radius: 2.0,
       attackable: Attackable(exile: False, dominion: True),
       hostile_to: Hostile(exile: False, dominion: True),
-      attack: Attack(..beast_attack(), reach: 7.0),
+      attack: Attack(..beast.combat.attack, reach: 7.0),
     ),
   )
 }
@@ -225,7 +225,9 @@ pub fn beast_without_deflect_at(
 /// Exiles, at level 0 to faction 167, and not the Dominion, at level 10 to 166
 /// (Faction2Relationship 2943 and 2944, `Creature2.73464`); a deflect chance of 0.016,
 /// no critical deflect, glance or mitigation (`Creature2.73464.crit_deflect_glance`,
-/// `Creature2.73464.mitigation`); and its attack (`beast_attack`).
+/// `Creature2.73464.mitigation`); and its attack (`beast_attack`), with the crowd-control
+/// masks the load reads for it (`loaded_beast`), so a test of what a held state refuses
+/// takes the client's rows and not a number made up here.
 pub fn beast_combat() -> creature_life.Combat {
   Combat(
     hit_radius: 3.0,
@@ -244,8 +246,19 @@ pub fn beast_combat() -> creature_life.Combat {
       tech_taken: hit.as_dealt,
       magic_taken: hit.as_dealt,
     ),
-    attack: beast_attack(),
+    attack: loaded_attack(),
     interrupt_armor: creature_life.NoArmor,
+  )
+}
+
+/// The attack of `beast_attack` with the crowd-control masks of the attack the load builds
+/// from the client's rows.
+fn loaded_attack() -> Attack {
+  let loaded = loaded_beast().combat.attack
+  Attack(
+    ..beast_attack(),
+    caster_cc_mask: loaded.caster_cc_mask,
+    run_stopped_by: loaded.run_stopped_by,
   )
 }
 
@@ -430,6 +443,7 @@ pub fn beast_attack() -> Attack {
     reach: 8.0,
     cast: Instant,
     caster_cc_mask: 0,
+    run_stopped_by: 0,
   )
 }
 
