@@ -91,6 +91,7 @@ import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/damage
+import genesis_prime/game/heal_split
 import genesis_prime/game/hit_radius
 import genesis_prime/game/interaction
 import genesis_prime/game/item_use
@@ -763,6 +764,7 @@ pub fn caster_of(
       shield: player_life.shield(life:),
       max_shield: player_life.max_shield(life:),
     ),
+    heal_scaling: heal_split.scaling_of(properties: entered.properties),
     quests: entered.quests,
     player: prerequisite_player.of(tables:, entered:),
   )

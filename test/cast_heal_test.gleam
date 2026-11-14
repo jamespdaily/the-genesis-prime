@@ -26,6 +26,7 @@ import genesis_prime/client_connection.{CastWent}
 import genesis_prime/game/cast.{type Caster, type Effect}
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
+import genesis_prime/game/heal_split
 import genesis_prime/game/lasting
 import genesis_prime/game/spell_plan.{
   type Spell, AimsAtCaster, AimsAtPrimaryTarget, Always, GatedOnCaster,
@@ -896,6 +897,96 @@ pub fn a_heal_past_full_health_reports_the_overheal_test() -> Nil {
       heal_description(amount: 121, kind: damage_type.Heal, overkill: 121),
     ]
     as "at full health the overheal is the whole amount, and the health change is still 121"
+}
+
+/// A Health heal of a flat `amount` (a formula of base `amount` alone), aimed at the caster.
+fn flat_health_heal(amount amount: Float) -> spell_plan.Heal {
+  heal_row(
+    id: 62_019,
+    vital: effect_kind.Health,
+    aim: AimsAtCaster,
+    delay_ms: 0,
+    condition: Always,
+    formula: Formula(multiplier: 1.0, base: amount, parameters: [
+      Parameter(kind: 0, value: 0.0),
+      Parameter(kind: 0, value: 0.0),
+      Parameter(kind: 0, value: 0.0),
+      Parameter(kind: 0, value: 0.0),
+    ]),
+  )
+}
+
+pub fn a_heal_multiplier_changes_the_amount_and_overheal_the_go_tells_the_client_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The health rises by the heal after the unit's outgoing and incoming heal multipliers
+  // (properties 162 and 163, `UnitProperty2.damage_heal_multipliers`) and the client only
+  // shows what the server tells it (`0x1405d8350`), so a 1.5x outgoing multiplier makes a
+  // heal of 40 a heal of 60, and with the health 30 below its maximum, 60 - 30 = 30 of it
+  // is the overheal (nOverheal of `spell.heal_result_log`).
+  let plans =
+    support.plans_of([healer(heals: [flat_health_heal(amount: 40.0)])])
+  let caster =
+    cast.Caster(
+      ..struck_caster(),
+      vitals: damage.Vitals(
+        health: 706,
+        max_health: 736,
+        shield: 250,
+        max_shield: 450,
+      ),
+      heal_scaling: heal_split.Scaling(
+        outgoing: 1.5,
+        incoming: 1.0,
+        to_shield: 0.0,
+      ),
+    )
+  let #(_, effects) =
+    support.press_as(
+      plans:,
+      state: cast.new(),
+      caster:,
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  assert list.map(listed(effects:), fn(info) { info.result })
+    == [heal_description(amount: 60, kind: damage_type.Heal, overkill: 30)]
+    as "40 x 1.5 = 60 is the amount the client is shown, and 60 - 30 of health room = 30 is the overheal"
+}
+
+pub fn a_shield_conversion_leaves_the_health_less_room_and_the_go_tells_the_overheal_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `0x1405d8350` (the client's own split, which the server reproduces): with
+  // HealToShieldConversion (property 111) of 0.5, a health heal of
+  // 100 gives the shield int(100 x 0.5) = 50 up to the shield's room of 20 and the
+  // health the other 80 up to its room of 10, so 100 - 20 - 10 = 70 is the overheal.
+  let plans =
+    support.plans_of([healer(heals: [flat_health_heal(amount: 100.0)])])
+  let caster =
+    cast.Caster(
+      ..struck_caster(),
+      vitals: damage.Vitals(
+        health: 726,
+        max_health: 736,
+        shield: 430,
+        max_shield: 450,
+      ),
+      heal_scaling: heal_split.Scaling(
+        outgoing: 1.0,
+        incoming: 1.0,
+        to_shield: 0.5,
+      ),
+    )
+  let #(_, effects) =
+    support.press_as(
+      plans:,
+      state: cast.new(),
+      caster:,
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  assert list.map(listed(effects:), fn(info) { info.result })
+    == [heal_description(amount: 100, kind: damage_type.Heal, overkill: 70)]
+    as "the shield takes 20 and the health 10 of the 100, so 70 is over"
 }
 
 pub fn a_shield_heal_at_full_shield_reports_the_overshield_test() -> Nil {

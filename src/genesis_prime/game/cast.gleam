@@ -557,6 +557,7 @@ import genesis_prime/game/cooldown
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
+import genesis_prime/game/heal_split
 import genesis_prime/game/hit
 import genesis_prime/game/item_use
 import genesis_prime/game/lasting
@@ -696,6 +697,10 @@ pub type Caster {
     /// The player's health and shield with their maxima, which a heal's formula reads
     /// (genesis_prime/game/damage `value_on_caster`).
     vitals: damage.Vitals,
+    /// The two heal multipliers and the shield conversion a heal of the player's own
+    /// vital reads of it, with which the go works out the amount and overheal it tells
+    /// the client (genesis_prime/game/heal_split).
+    heal_scaling: heal_split.Scaling,
     /// The player's quest log, which the quest conditions of a prerequisite (types 6,
     /// 68, 43 and 22 to 36) read: the client reads the checking player's own log.
     quests: QuestLog,
@@ -725,9 +730,11 @@ pub type CasterChange {
   /// (genesis_prime/game/look `start`). It ends with the modifiers' own end,
   /// `CasterChangeEnds`.
   Look(disguise: look.Disguise)
-  /// A heal (a Heal or HealShields effect): the connection raises the player's `vital` by
-  /// `amount`, capped at its maximum (genesis_prime/game/player_life `healed`).
-  /// The amount is worked out at the go, the amount the go's 0x7f4 shows.
+  /// A heal (a Heal or HealShields effect): the connection raises the player's `vital`
+  /// by `amount`, the formula's value worked out at the go, and the life applies the heal
+  /// multipliers and the shield conversion to it and caps each vital at its maximum
+  /// (genesis_prime/game/player_life `healed`); the go's 0x7f4 shows the result of the
+  /// same split (genesis_prime/game/heal_split).
   Heal(vital: effect_kind.Vital, amount: Int)
 }
 
@@ -7034,16 +7041,19 @@ pub fn control_ended_frame(
   Frame(message_id: unit_cc_state_ended.message_id, body:)
 }
 
-/// A heal a go applies: its row, the vital it restores, its delay, the amount worked out at
-/// the go from the caster as it stood before the go's own effects (genesis_prime/game/damage
-/// `amount_on_caster`) and the part of it the vital had no room for.
+/// A heal a go applies: its row, the vital it restores, its delay, the formula's `amount`
+/// worked out at the go from the caster as it stood before the go's own effects
+/// (genesis_prime/game/damage `amount_on_caster`), which the change carries, and the
+/// `split` of it the go tells the client: the amount after the heal multipliers and the
+/// shield conversion, and the part the vitals had no room for
+/// (genesis_prime/game/heal_split).
 type Healed {
   Healed(
     effect_id: Spell4EffectsId,
     vital: effect_kind.Vital,
     delay_ms: Int,
     amount: Int,
-    overkill: Int,
+    split: heal_split.Split,
   )
 }
 
@@ -7371,7 +7381,7 @@ fn healed_by(
               vital:,
               delay_ms:,
               amount:,
-              overkill: overkill_of(vital:, amount:, vitals: caster.vitals),
+              split: split_of(vital:, amount:, caster:),
             ),
             caster.unit_id,
           ))
@@ -7397,19 +7407,26 @@ fn healed_by(
   #(healed, left)
 }
 
-/// What a heal of `amount` leaves over when the caster's `vital` has room for only part of
-/// it: the amount less the room, never below 0. The client logs it as the heal's overheal
-/// (`spell.heal_result_log`).
-fn overkill_of(
+/// What a heal of the formula's `amount` comes to for the caster's `vital`: the amount
+/// after its heal multipliers, what the shield and the health each take and the overheal
+/// the vitals' room leaves, by the very function the life raises the vital by
+/// (genesis_prime/game/player_life `healed`), so the 0x7f4 tells what the health does,
+/// which the client's heal log reads as nHealAmount and nOverheal
+/// (`spell.heal_result_log`). The room is that of the vitals before the go, so two heal
+/// rows of one go, or a heal that lands after a delay, each measure it from there and not
+/// from what the other rows or the time in between changed.
+fn split_of(
   vital vital: effect_kind.Vital,
   amount amount: Int,
-  vitals vitals: damage.Vitals,
-) -> Int {
-  let room = case vital {
-    effect_kind.Health -> vitals.max_health - vitals.health
-    effect_kind.Shield -> vitals.max_shield - vitals.shield
-  }
-  int.max(amount - int.max(room, 0), 0)
+  caster caster: Caster,
+) -> heal_split.Split {
+  heal_split.split(
+    vital:,
+    amount:,
+    scaling: caster.heal_scaling,
+    health_room: caster.vitals.max_health - caster.vitals.health,
+    shield_room: caster.vitals.max_shield - caster.vitals.shield,
+  )
 }
 
 /// What a formula reads of the caster when it is also the target of its effect: the stats
@@ -7418,8 +7435,8 @@ fn on_caster_of(caster caster: Caster) -> damage.OnCaster {
   damage.OnCaster(attacker: caster.stats, vitals: caster.vitals)
 }
 
-/// The damage description of a heal: the amount as the raw, the scaled raw and the health
-/// change, the part the vital had no room for as the overkill, a Hit of damage type Heal
+/// The damage description of a heal: the split's amount as the raw, the scaled raw and the
+/// health change, the part the vitals had no room for as the overkill, a Hit of damage type Heal
 /// (4) or HealShields (5), nothing absorbed or killed and no hit entries
 /// (`Spell4Effects.effectType.10`, `.118`, `GameLib.CodeEnumDamageType`,
 /// `GameLib.CodeEnumCombatResult`). The client builds the heal's combat log line from the
@@ -7427,12 +7444,12 @@ fn on_caster_of(caster caster: Caster) -> damage.OnCaster {
 /// server's choice.
 fn heal_description(healed healed: Healed) -> SpellDamageDescription {
   SpellDamageDescription(
-    raw_damage: healed.amount,
-    scaled_raw_damage: healed.amount,
+    raw_damage: healed.split.amount,
+    scaled_raw_damage: healed.split.amount,
     absorbed: 0,
     shield_absorbed: 0,
-    health_damage_with_overkill: healed.amount,
-    overkill: healed.overkill,
+    health_damage_with_overkill: healed.split.amount,
+    overkill: healed.split.overheal,
     glance: 0,
     killed: 0,
     combat_result: combat_result.Hit,

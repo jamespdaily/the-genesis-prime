@@ -8,11 +8,16 @@ import client_tables
 import fixture_tables
 import genesis_prime/game/activate.{CannotBePlanned, NoSpell4Row, Planned}
 import genesis_prime/game/cast
+import genesis_prime/game/damage
+import genesis_prime/game/effect_kind
 import genesis_prime/game/spell_plan.{AliveOrDead, CannotBeDead, MustBeDead}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state
-import genesis_prime/step.{LogWarning}
+import genesis_prime/message/damage_type
+import genesis_prime/message/spell_effect_result
+import genesis_prime/message/spell_go
+import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Spell4ConditionsId, Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4
@@ -110,6 +115,15 @@ pub fn an_activate_spell_whose_target_row_is_a_heal_is_planned_test() -> Nil {
     as "Spell4 34519 (a Creature2 activate spell) is planned: its one row, Spell4Effects 68328, is a Heal (effectType 10) aimed at the primary target (targetFlags 2), and the activate cast strikes no one, so the heal lands nothing at the creature, as before the heal rows were read"
   assert effects == [] as "Spell4 34519 holds no Activate row"
   assert dropped_signals == [] as "and no RavelSignal row"
+  let effects = list.flat_map(activated(spell4_id: 34_519), fn(step) { step.1 })
+  assert cast_support.caster_change_starts(effects:) == []
+    as "an activate cast of Spell4 34519 changes nothing of the caster, its health included: its one row is a heal aimed at the creature"
+  assert list.any(cast_support.logs(effects:), fn(line) {
+    line.0 == LogDebug
+    && string.contains(line.1, "68328")
+    && string.contains(line.1, "is aimed at the unit 5000, not the caster")
+  })
+    as "and the go logs, at debug, that Spell4Effects 68328 is aimed at the creature, not the caster, so it lands nothing"
   list.each([39_299, 39_536, 54_204, 66_484, 66_599], fn(spell4_id) {
     assert case activate.planned_of(activations:, spell4_id:) {
       Ok(Planned(..)) -> True
@@ -117,6 +131,144 @@ pub fn an_activate_spell_whose_target_row_is_a_heal_is_planned_test() -> Nil {
     }
       as "Spells 39299, 39536, 54204, 66484 and 66599 each hold a Heal row aimed at the primary target (targetFlags 2: Spell4Effects 85838, 86708, 128152, 167059 and 167201) beside Activate rows (effectType 7) and rows of types no rule reads for that aim (82, 107 and 112), so the heal is the only row that refused them"
   })
+}
+
+/// The press of an activate cast of `spell4_id` on a creature at the caster's own place,
+/// whose caster holds 500 of its 736 health and 250 of its 450 shield, with the timed steps
+/// that follow it: the first step is the press itself, at 1000 ms. The spell is named by
+/// the creature's one column behind no prerequisite, and a cast time of 2000 ms.
+fn activated(spell4_id spell4_id: Int) -> List(#(Int, List(cast.Effect))) {
+  let activations = activate.activations(tables: client_tables.shared())
+  let place =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 4096.0,
+      y: 0.0,
+      z: 512.0,
+    )
+  let caster =
+    cast.Caster(
+      ..cast_support.caster(),
+      place:,
+      vitals: damage.Vitals(
+        health: 500,
+        max_health: 736,
+        shield: 250,
+        max_shield: 450,
+      ),
+    )
+  let assert Ok(body) =
+    cast_activate.encode(CastActivate(client_cast_id: 9, target_unit_id: 5000))
+    as "the message fits"
+  let assert Ok(#(state, pressed)) =
+    cast.activate(
+      cast: cast.new(),
+      body:,
+      caster:,
+      activations:,
+      target_of: fn(_) {
+        activate.Usable(
+          creature_id: 26_462,
+          creature: activate.Creature(
+            columns: [activate.Column(prerequisite_id: 0, spell4_id:)],
+            cast_time_ms: 2000,
+            min_range: 0.0,
+            max_range: 5.0,
+            flags: 0,
+          ),
+          checklist_index: 0,
+          link: activate.NoLink,
+          body: activate.Body(place:, radius: 0.25),
+          alive: True,
+          in_combat: False,
+          withheld: option.None,
+        )
+      },
+      caster_radius: 0.5,
+      now: cast_support.at(ms: 1000),
+    )
+    as "the press of a spell the plan reads is taken"
+  let #(_, fired) =
+    cast_support.run_timers_each(
+      caster:,
+      state:,
+      effects: pressed,
+      from_ms: 1000,
+      struck_of: fn(_) { [] },
+    )
+  [#(1000, pressed), ..fired]
+}
+
+/// The go of the cast, decoded, and the time of the step that wrote it.
+fn go_of(
+  steps steps: List(#(Int, List(cast.Effect))),
+) -> #(Int, spell_go.SpellGo) {
+  let assert [#(at_ms, go)] =
+    list.flat_map(steps, fn(step) {
+      list.map(
+        cast_support.frames_of(message_id: spell_go.message_id, effects: step.1),
+        fn(frame) { #(step.0, frame) },
+      )
+    })
+    as "the cast goes once"
+  let assert Ok(decoded) = spell_go.decode(go.body)
+    as "a 0x7f4 the rule wrote decodes"
+  #(at_ms, decoded)
+}
+
+/// The time of each step that starts this heal of the caster.
+fn heals_started(
+  steps steps: List(#(Int, List(cast.Effect))),
+  cast_id cast_id: Int,
+  effect_id effect_id: Int,
+  amount amount: Int,
+) -> List(Int) {
+  list.filter_map(steps, fn(step) {
+    case
+      list.contains(
+        step.1,
+        cast.CasterChangeStarts(
+          source: cast_support.source_of(cast_id:, effect_id:),
+          change: cast.Heal(vital: effect_kind.Health, amount:),
+        ),
+      )
+    {
+      True -> Ok(step.0)
+      False -> Error(Nil)
+    }
+  })
+}
+
+pub fn an_activate_cast_of_spell_37605_lands_its_delayed_heal_on_the_player_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  // Spell4Effects 80113 (Spell4 37605, effectType 10, targetFlags 1: the caster, delay 500)
+  // holds multiplier 1.5, flat part 0 and no parameter, so its value is 0 (`0x140565600`):
+  // the heal is read, the go lists it on the caster with a Heal description of 0 and it
+  // lands on the caster 500 ms after the go, healing nothing.
+  let steps = activated(spell4_id: 37_605)
+  let #(go_at, go) = go_of(steps:)
+  assert heals_started(
+      steps:,
+      cast_id: go.cast_id,
+      effect_id: 80_113,
+      amount: 0,
+    )
+    == [go_at + 500]
+    as "the heal row is read: it lands on the caster at the go plus its delay of 500, with 1.5 x 0"
+  let assert [heal] =
+    list.flat_map(go.targets, fn(target) { target.effects })
+    |> list.filter(fn(info) { info.spell4_effects_id == 80_113 })
+    as "the go lists row 80113 once"
+  assert heal.delay_ms == 500
+    as "opcode.0x7f4.target_info: the go lists the heal at its delay of 500"
+  let assert spell_effect_result.Damage(shown) = heal.result
+    as "listed with a damage description"
+  assert shown.description.health_damage_with_overkill == 0
+    && shown.description.overkill == 0
+    && shown.description.damage_type == damage_type.Heal
+    as "spell.heal_result_log: the description is a Heal of 0 with no overheal"
 }
 
 pub fn the_hoverboard_activate_spell_is_planned_test() -> Nil {
