@@ -78,8 +78,9 @@
 ////   58 for a living caster's press of one whose row asks for a dead caster
 ////   (`Spell4.spell4ConditionsIdCaster`, `cast.dead_player`; the row's other
 ////   conditions are not checked); 13 while the
-////   caster's current cast is live (below); 302 for a press of a spell whose
-////   Spell4CCConditions caster row masks Ability Restriction (state 27) while a cast
+////   caster's current cast is live (below); the caster result of the lowest state the
+////   caster holds that the spell's Spell4CCConditions caster row masks (73 for Stun,
+////   302 for Ability Restriction, and so on, `crowd_control.caster_result`) while a cast
 ////   of the caster holds it on the caster, checked after 13 and before the cooldowns
 ////   (`CheckSpellCCConditions`, `0x1403b2c40`; `0x1403afb10.order`); 14 while the global cooldown has more
 ////   than 500 ms left, for kinds 0 and 2; 15 while the spell's own cooldown has
@@ -581,11 +582,12 @@ import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
 import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_log_immunity.{CombatLogImmunity}
+import genesis_prime/message/combat_log_modify_interrupt_armor.{
+  CombatLogModifyInterruptArmor,
+}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_result
-import genesis_prime/message/crowd_control_state.{
-  type CrowdControlState, AbilityRestriction,
-}
+import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
 import genesis_prime/message/interaction_result
@@ -622,6 +624,7 @@ import genesis_prime/message/spell_threshold_index.{SpellThresholdIndex}
 import genesis_prime/message/spell_threshold_opened.{SpellThresholdOpened}
 import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
 import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
+import genesis_prime/message/unit_tether_anchor.{UnitTetherAnchor}
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, LogDebug, LogInfo,
   LogWarning, TimerId,
@@ -1792,13 +1795,14 @@ fn shortcut_spell_of(spell spell: Spell) -> Spell {
 /// `0x1403b44b0`): 91 for no unit or one the picture does not show; 32 for the caster
 /// itself; 106 or 107 and 108 for the unit's life and combat; 102 for a player the spell
 /// refuses (answered first for a player, whose life and combat are not held); 89 for a
-/// unit outside the spell's cast group; the range's 104, 105 or 183, measured with the
-/// spell's own limits; then the spell's CasterCast and TargetCast (151, 281), read as
+/// unit outside the spell's cast group; the result of the first crowd-control state the
+/// unit holds that the spell's target row masks (122 for Stun, and so on); the range's
+/// 104, 105 or 183, measured with the spell's own limits; then the spell's CasterCast and TargetCast (151, 281), read as
 /// any cast's with the unit as the TargetCast's first unit. Then started on
 /// the unit. A player or the caster itself reaches the client's player faction test, which
 /// the server does not build, and another player's life and combat are not held: those
 /// are refused 285 as not built. The target states the server does not hold yet (96
-/// invulnerable, 140 zone, 98 vital, 92 immunity, crowd control) are not checked: #336.
+/// invulnerable, 140 zone, 98 vital, 92 immunity) are not checked: #336.
 fn aimed_shortcut(
   cast cast: State,
   caster caster: Caster,
@@ -1824,6 +1828,7 @@ fn aimed_shortcut(
       aim:,
       activations:,
       in_cast_group:,
+      held: [],
     )
   case unit_id == caster.unit_id, target_of(unit_id) {
     True, _ -> aimed_at_the_caster(press:)
@@ -1838,11 +1843,12 @@ fn aimed_shortcut(
         body:,
         alive:,
         in_combat:,
+        held:,
         ..,
       )
     ->
       aimed_at_a_creature(
-        press:,
+        press: AimedPress(..press, held:),
         creature:,
         checklist_index:,
         target_body: body,
@@ -1865,6 +1871,7 @@ type AimedPress {
     aim: shortcut_spell.Aim,
     activations: activate.Activations,
     in_cast_group: fn(Int, Int) -> Bool,
+    held: List(CrowdControlState),
   )
 }
 
@@ -2074,12 +2081,35 @@ fn cast_group_of(
   )
 }
 
+/// The client's crowd-control check of the target (`0x1403b2240`): a state the unit holds
+/// that the spell's target mask names refuses the press with that state's target result,
+/// after the cast group and before the range.
+fn target_held(
+  press press: AimedPress,
+  otherwise otherwise: fn() -> Result(#(State, List(Effect)), Refusal),
+) -> Result(#(State, List(Effect)), Refusal) {
+  case
+    crowd_control.first_masked(
+      mask: press.spell.target_cc_mask,
+      held: press.held,
+    )
+  {
+    Ok(state) ->
+      press_refused(
+        press:,
+        result: cast_result.from_value(crowd_control.target_result(state:)),
+      )
+    Error(Nil) -> otherwise()
+  }
+}
+
 fn aimed_in_range(
   press press: AimedPress,
   target_body target_body: activate.Body,
   alive alive: Bool,
   in_combat in_combat: Bool,
 ) -> Result(#(State, List(Effect)), Refusal) {
+  use <- target_held(press:)
   case
     activate.range_of(
       limits: press.aim.limits,
@@ -3605,21 +3635,34 @@ fn is_release(resolution resolution: Resolution) -> Bool {
 /// whose caster row asks for a dead one (`Spell4.spell4ConditionsIdCaster`).
 const caster_must_be_dead = 58
 
-/// Bit 27 of a Spell4CCConditions mask: `Unit.CodeEnumCCState` 27, Ability Restriction.
-const ability_restriction_bit = 134_217_728
+/// The result the caster's own held states give a press whose caster conditions mask one
+/// of them: the lowest masked state's Caster_CannotBe result (`CheckSpellCCConditions`,
+/// `0x1403b2c40`, called by `CheckCastCaster` at `0x1403affa2`), none when the mask holds
+/// none of them. Gap (#336): the client's cast request word at 0x48 is read as 0 for
+/// every press, so the check always applies; the client sets it for the presses the ride
+/// spells make, which this server does not read.
+fn restricted(
+  cast cast: State,
+  spell spell: Spell,
+) -> Option(cast_result.CastResult) {
+  dict.values(cast.restrictions)
+  |> list.map(fn(restriction) { restriction.state })
+  |> crowd_control.first_masked(mask: spell.caster_cc_mask, held: _)
+  |> result.map(fn(state) {
+    cast_result.from_value(crowd_control.caster_result(state:))
+  })
+  |> option.from_result
+}
 
-/// Whether the caster holds Ability Restriction on itself and the spell's caster
-/// conditions mask it, the press's 302 (`CheckSpellCCConditions`, `0x1403b2c40`, called
-/// by `CheckCastCaster` at `0x1403affa2`). Gap (#336): the client's
-/// cast request word at 0x48 is read as 0 for every press, so the check always applies;
-/// the client sets it for the presses the ride spells make, which this server does not
-/// read.
-fn restricted(cast cast: State, spell spell: Spell) -> Bool {
-  let held =
-    list.any(dict.values(cast.restrictions), fn(restriction) {
-      restriction.state == AbilityRestriction
-    })
-  held && int.bitwise_and(spell.caster_cc_mask, ability_restriction_bit) != 0
+/// Ends a verdict with the refusal `refusal` names, or goes on when it names none.
+fn refuse_when(
+  refusal refusal: Option(cast_result.CastResult),
+  otherwise otherwise: fn() -> Verdict,
+) -> Verdict {
+  case refusal {
+    Some(result) -> Refuse(result:)
+    None -> otherwise()
+  }
 }
 
 /// What the client's checks make of a press, in its order: the caster's death, a
@@ -3681,10 +3724,7 @@ fn verdict(
       Some(_) | None -> Refuse(result: cast_result.SpellAlreadyCasting)
     },
   )
-  use <- bool.guard(
-    when: restricted(cast:, spell:),
-    return: Refuse(result: cast_result.CasterCannotBeAbilityRestriction),
-  )
+  use <- refuse_when(restricted(cast:, spell:))
   let #(global_left, own_left) = cooldown_left_ms(cast:, spell:, now_ms:)
   use <- bool.guard(
     when: global_left > queue_window_ms,
@@ -6441,6 +6481,24 @@ fn go(
             Hit(..) | Deflected(..) -> Error(Nil)
           }
         })
+      let armor_logged =
+        list.filter_map(struck, fn(one) {
+          case one {
+            Hit(unit_id:, armor_removed:, ..)
+              | Immune(unit_id:, armor_removed:, ..)
+              if armor_removed > 0
+            ->
+              Ok(
+                Send(frame: armor_logged_frame(
+                  caster_unit_id: caster.unit_id,
+                  unit_id:,
+                  spell4_id: spell.spell4_id,
+                  amount: armor_removed,
+                )),
+              )
+            Hit(..) | Immune(..) | Deflected(..) -> Error(Nil)
+          }
+        })
       let shown = restrictions_shown(restricting:, caster:, live:)
       let #(cast, removed) = removed_by_go(cast:, aimed:, now_ms:)
       let #(cast, logged) =
@@ -6539,6 +6597,7 @@ fn go(
         list.flatten([
           going,
           immune,
+          armor_logged,
           shown,
           logged,
           removed,
@@ -6904,7 +6963,12 @@ fn restrictions_numbered(
 }
 
 /// 0x87f to the caster and to the audience of the go, for each state the go gave
-/// (`opcode.0x87f`); a state a cast already held is not told again.
+/// (`opcode.0x87f`); a state a cast already held is not told again. A Tether on the
+/// caster is told its anchor first, the caster's own unit, by a 0x881 to the caster
+/// alone: the message sets the anchor of the unit the receiving client controls and
+/// names no unit, so the audience, whose clients control other units, gets none
+/// (`opcode.0x881`). That the anchor is the caster's own unit is a guess; no client
+/// value names it, and issue 336 (spells in depth on the real client) will settle it.
 fn restrictions_shown(
   restricting restricting: List(Restricting),
   caster caster: Caster,
@@ -6914,23 +6978,40 @@ fn restrictions_shown(
   |> list.filter(fn(one) { one.fresh })
   |> list.flat_map(fn(one) {
     let state = one.row.row.state
-    [
-      Send(frame: control_applied_frame(
-        unit_id: caster.unit_id,
-        state:,
-        instance_id: one.instance_id,
-      )),
-      ..list.map(map.sorted_connections(live.audience), fn(viewer) {
-        Tell(
-          to: viewer,
-          news: client_connection.CrowdControlApplied(
-            state:,
-            instance_id: one.instance_id,
-          ),
-        )
-      })
-    ]
+    list.flatten([
+      case state == crowd_control_state.Tether {
+        True -> [
+          Send(frame: tether_anchor_frame(anchor_unit_id: caster.unit_id)),
+        ]
+        False -> []
+      },
+      [
+        Send(frame: control_applied_frame(
+          unit_id: caster.unit_id,
+          state:,
+          instance_id: one.instance_id,
+        )),
+        ..list.map(map.sorted_connections(live.audience), fn(viewer) {
+          Tell(
+            to: viewer,
+            news: client_connection.CrowdControlApplied(
+              state:,
+              instance_id: one.instance_id,
+            ),
+          )
+        })
+      ],
+    ])
   })
+}
+
+/// 0x881: the tether anchor of the unit the receiving client controls is this unit
+/// (`opcode.0x881`).
+fn tether_anchor_frame(anchor_unit_id anchor_unit_id: Int) -> Frame {
+  let assert Ok(body) =
+    unit_tether_anchor.encode(UnitTetherAnchor(anchor_unit_id:))
+    as "a unit id of 32 bits fits the message"
+  Frame(message_id: unit_tether_anchor.message_id, body:)
 }
 
 /// The end of each state a go holds on the caster, on a timer of its delay and duration
@@ -7590,6 +7671,32 @@ fn immunity_logged_frame(
           spell4_id: spell4_id.value,
           combat_result: combat_result.Hit,
         )),
+      ),
+    )
+    as "unit ids and a Spell4 id that fit their fields"
+  Frame(message_id: combat_log.message_id, body:)
+}
+
+/// 0x247 of type 14: the unit lost `amount` of its Interrupt Armor to the caster's
+/// spell; the combat result is a choice, Hit (`opcode.0x247.modify_interrupt_armor`).
+fn armor_logged_frame(
+  caster_unit_id caster_unit_id: Int,
+  unit_id unit_id: Int,
+  spell4_id spell4_id: Spell4Id,
+  amount amount: Int,
+) -> Frame {
+  let assert Ok(body) =
+    combat_log.encode(
+      CombatLog(
+        entry: combat_log_entry.ModifyInterruptArmor(
+          CombatLogModifyInterruptArmor(
+            amount:,
+            caster_unit_id:,
+            target_unit_id: unit_id,
+            spell4_id: spell4_id.value,
+            combat_result: combat_result.Hit,
+          ),
+        ),
       ),
     )
     as "unit ids and a Spell4 id that fit their fields"

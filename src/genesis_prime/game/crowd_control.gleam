@@ -11,7 +11,8 @@
 ////   until its cast ends (genesis_prime/game/cast `restrictions`), a creature's by the
 ////   creature (genesis_prime/world_map/creature_control).
 //// - **The results** a held state gives a press are the client's own, per state
-////   (`caster_result`, `target_result`).
+////   (`caster_result`, `target_result`). The state a mask refuses first is the lowest
+////   masked state held (`first_masked`), as the client's check takes its bits in order.
 //// - **The instance id** names one effect on one unit. The client finds the effect a
 ////   0x87f waits for by instance id alone among every effect held on the unit, from
 ////   any caster, and 0 matches the first effect found (`cc_state.instance_id`), so an
@@ -84,6 +85,30 @@ pub fn caster_result(state state: CrowdControlState) -> Int {
 /// (`Spell4CCConditions.results`).
 pub fn target_result(state state: CrowdControlState) -> Int {
   results_of(state).1
+}
+
+/// The held state a ccStateMask refuses first: the lowest masked state of `held` (bit n of
+/// the mask is state n, `CheckSpellCCConditions`, `0x1403b2c40`, which takes the bits in
+/// order), or `Error(Nil)` when it masks none of them.
+pub fn first_masked(
+  mask mask: Int,
+  held held: List(CrowdControlState),
+) -> Result(CrowdControlState, Nil) {
+  held
+  |> list.filter(fn(state) {
+    int.bitwise_and(
+      mask,
+      int.bitwise_shift_left(1, crowd_control_state.to_value(state)),
+    )
+    != 0
+  })
+  |> list.sort(by: fn(first, second) {
+    int.compare(
+      crowd_control_state.to_value(first),
+      crowd_control_state.to_value(second),
+    )
+  })
+  |> list.first
 }
 
 /// The caster and target results of a state, `Spell.CodeEnumCastResult` (`0x140c2f290`).

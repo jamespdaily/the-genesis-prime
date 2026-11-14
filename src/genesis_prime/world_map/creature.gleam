@@ -1026,6 +1026,7 @@ fn controls_after(
               outcome: with_controls(
                 outcome: reaction.answer.outcome,
                 controls: landing.landed,
+                armor_removed: landing.armor_removed,
               ),
             ),
             list.append(carried(state:, effects: landing.effects), stopped),
@@ -1041,16 +1042,16 @@ fn controls_after(
 }
 
 /// The outcome of a strike that landed or met the immunity, with the states the creature
-/// took of it.
+/// took of it and the armor it lost to it.
 fn with_controls(
   outcome outcome: strike_tell.Outcome,
   controls controls: List(strike_tell.ControlLanded),
+  armor_removed armor_removed: Int,
 ) -> strike_tell.Outcome {
   case outcome {
-    strike_tell.Landed(descriptions:, armor_removed:, ..) ->
+    strike_tell.Landed(descriptions:, ..) ->
       strike_tell.Landed(descriptions:, controls:, armor_removed:)
-    strike_tell.Immune(armor_removed:, ..) ->
-      strike_tell.Immune(controls:, armor_removed:)
+    strike_tell.Immune(..) -> strike_tell.Immune(controls:, armor_removed:)
     strike_tell.Deflected | strike_tell.Refused(..) -> outcome
   }
 }

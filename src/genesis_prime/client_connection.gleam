@@ -277,9 +277,6 @@ pub type News {
   /// instance id, with its last bit 0 (opcode.0x880), written when the viewer's client
   /// shows the unit.
   CrowdControlEnded(state: CrowdControlState, cast_id: Int, instance_id: Int)
-  /// The unit is tethered to the unit `anchor_unit_id`: 0x881 (opcode.0x881), written
-  /// when the viewer's client shows the unit, after the 0x87f of a Tether state.
-  CrowdControlTethered(anchor_unit_id: Int)
   /// Some of the unit's properties changed, each with its base and its value as the
   /// client holds them: 0x93a (opcode.0x93a), written when the viewer's client shows
   /// the unit. A player's connection sends it for a property a lasting modifier of

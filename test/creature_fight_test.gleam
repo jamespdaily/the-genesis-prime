@@ -359,7 +359,6 @@ fn name_of(news: News) -> String {
     | client_connection.LookChanged(..) -> "other"
     client_connection.CrowdControlApplied(..) -> "0x87f"
     client_connection.CrowdControlEnded(..) -> "0x880"
-    client_connection.CrowdControlTethered(..) -> "0x881"
     client_connection.InterruptArmor(armor:) ->
       "0x938(21, " <> int.to_string(armor) <> ")"
     client_connection.Absorption(absorption:) ->
@@ -2349,6 +2348,44 @@ pub fn armor_is_never_destroyed_below_0_test() -> Nil {
   assert armor_news(taken, 2) == [client_connection.InterruptArmor(armor: 0)]
     && landed_in(taken) == []
     as "2 points of rows on 1 point of armor leave 0, and none of the strike's states lands"
+}
+
+/// The armor the strike's answer says it took off the creature.
+fn armor_taken(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
+  list.flat_map(support.sends(taken), fn(sent) {
+    case sent.1 {
+      creature.Struck(
+        answered: Answered(outcome: Landed(armor_removed:, ..), ..),
+        ..,
+      ) -> [armor_removed]
+      creature.Struck(..)
+      | creature.News(..)
+      | creature.FightTold(..)
+      | creature.KillCredit(..) -> []
+    }
+  })
+}
+
+pub fn the_answer_names_the_armor_the_strike_took_never_more_than_it_had_test() -> Nil {
+  use <- owned_test.run(5000)
+  let stun = crowd_control_support.stagger_stun(instance_id: 28_673)
+  let strike = fn(armor) {
+    let #(_, taken) =
+      tell(
+        state: armored(armor:),
+        at_ms: 1000,
+        message: controlling(number: 2, cast_id: 1, controls: [stun, stun, stun]),
+      )
+    armor_taken(taken)
+  }
+  assert strike(creature_life.Armor(points: 2)) == [2]
+    as "rows destroying 3 on armor 2: the answer names the 2 it had (the 0x938 shows 0 left)"
+  assert strike(creature_life.Armor(points: 5)) == [3]
+    as "rows destroying 3 on armor 5: the 3 the rows name"
+  assert strike(creature_life.NoArmor) == [0]
+    as "a creature with no armor lost none"
+  assert strike(creature_life.InfiniteArmor) == [0]
+    as "infinite armor loses none"
 }
 
 pub fn infinite_armor_takes_no_state_and_loses_nothing_test() -> Nil {

@@ -25,6 +25,7 @@
 
 import cast_support as support
 import crowd_control_support
+import genesis_prime/client_connection
 import genesis_prime/game/cast.{type Effect, type State}
 import genesis_prime/game/crowd_control
 import genesis_prime/game/lasting
@@ -34,9 +35,15 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
 import genesis_prime/message/combat_log_entry
+import genesis_prime/message/combat_log_modify_interrupt_armor.{
+  CombatLogModifyInterruptArmor,
+}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_result
-import genesis_prime/message/crowd_control_state.{AbilityRestriction, Knockdown}
+import genesis_prime/message/crowd_control_state.{
+  type CrowdControlState, AbilityRestriction, Knockdown, Root, Silence, Stun,
+  Tether,
+}
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
@@ -48,6 +55,8 @@ import genesis_prime/message/unit_cc_state_applied
 import genesis_prime/message/unit_cc_state_ended.{
   type UnitCcStateEnded, UnitCcStateEnded,
 }
+import genesis_prime/message/unit_tether_anchor
+import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/int
 import gleam/list
@@ -739,4 +748,301 @@ pub fn a_removal_that_ends_the_node_sends_one_0x880_after_its_0x811_and_cancels_
     support.fired_raw_as(caster: fighting(), state:, timer: row_end, at: 7000)
   assert support.writes(effects: stale) == []
     as "a delivery of the row's timer after the removal finds no state and writes nothing"
+}
+
+// ---- Every state on the caster ----
+
+/// A planted spell of base 3 whose go gives the caster each state of `states` until its
+/// cast ends: one CCStateSet row aimed at the caster for each, its own effect id.
+fn holding(states states: List(CrowdControlState)) -> Spell {
+  Spell(
+    ..restricting(),
+    controls: list.index_map(states, fn(state, index) {
+      spell_plan.CrowdControl(
+        effect_id: Spell4EffectsId(224_967 + index),
+        phase_flags: -1,
+        aim: spell_plan.AimsAtCaster,
+        row: crowd_control.Row(
+          state:,
+          delay_ms: 0,
+          duration_ms: 0,
+          armor_removed: 0,
+          until_removed: True,
+        ),
+        tag: spend.always,
+      )
+    }),
+  )
+}
+
+/// A planted spell of base 1 whose caster conditions row has the mask `mask`.
+fn masking(mask mask: Int) -> Spell {
+  Spell(..support.child(spell4_id: 7012, base: 1), caster_cc_mask: mask)
+}
+
+/// Spell4CCConditions row 5's ccStateMask: bit 4 (Silence) among its bits.
+const row_5_mask = 218_960_755
+
+/// Spell4CCConditions row 6's ccStateMask: bits 2 (Root) and 27 (Ability Restriction)
+/// among its bits.
+const row_6_mask = 219_943_903
+
+pub fn a_caster_holding_a_masked_state_is_refused_its_result_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans =
+    support.plans_of([holding(states: [Silence]), masking(mask: row_5_mask)])
+  let #(held, _) =
+    support.press_by(
+      plans: support.plans_of([masking(mask: row_5_mask)]),
+      state: cast.new(),
+      caster: fighting(),
+      bag: bag_of_base_1,
+      at: 1000,
+    )
+  let #(_, free) =
+    support.press_by(
+      plans: support.plans_of([masking(mask: row_5_mask)]),
+      state: held,
+      caster: fighting(),
+      bag: bag_of_base_1,
+      at: 3000,
+    )
+  assert support.refusal_results(effects: free) == []
+    as "a caster holding no state is not refused by row 5"
+  let #(state, _) = restricted(plans:)
+  let #(_, refused) =
+    support.press_by(
+      plans:,
+      state:,
+      caster: fighting(),
+      bag: bag_of_base_1,
+      at: 2000,
+    )
+  assert support.refusal_results(effects: refused) == [81]
+    as "Silence is held and row 5's mask 218960755 has bit 4: Caster_CannotBe_Silenced (81), whose 0x7fc clears the client's global cooldown (CheckSpellCCConditions 0x1403b2c40, Spell4CCConditions.results)"
+  let #(_, kick) =
+    support.press_by(
+      plans:,
+      state:,
+      caster: fighting(),
+      bag: bag_of_kick,
+      at: 2000,
+    )
+  assert support.refusal_results(effects: kick) == []
+    as "Kick's caster row 4 (mask 218960747) has no bit 4: a held Silence does not refuse it"
+}
+
+pub fn the_lowest_held_state_gives_the_result_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans =
+    support.plans_of([
+      holding(states: [AbilityRestriction, Root]),
+      masking(mask: row_6_mask),
+    ])
+  let #(state, _) = restricted(plans:)
+  let #(_, refused) =
+    support.press_by(
+      plans:,
+      state:,
+      caster: fighting(),
+      bag: bag_of_base_1,
+      at: 2000,
+    )
+  assert support.refusal_results(effects: refused) == [77]
+    as "row 6's mask has bits 2 and 27 and the caster holds Root (2) and Ability Restriction (27): the check takes the lowest bit first, Caster_CannotBe_Rooted (77), not 302 (0x1403b2c40's order)"
+  let alone =
+    support.plans_of([
+      holding(states: [AbilityRestriction]),
+      masking(mask: row_6_mask),
+    ])
+  let #(state, _) = restricted(plans: alone)
+  let #(_, only) =
+    support.press_by(
+      plans: alone,
+      state:,
+      caster: fighting(),
+      bag: bag_of_base_1,
+      at: 2000,
+    )
+  assert support.refusal_results(effects: only) == [302]
+    as "Ability Restriction alone gives its own result, 302"
+}
+
+pub fn a_caster_aimed_state_of_any_kind_is_told_and_ends_test() -> Nil {
+  use <- owned_test.run(5000)
+  let timed =
+    Spell(
+      ..restricting_by(row: crowd_control.Row(
+        state: Stun,
+        delay_ms: 500,
+        duration_ms: 2000,
+        armor_removed: 0,
+        until_removed: False,
+      )),
+      lasting: restricting_shorter_than_its_node(row_ms: 0, node_ms: 4000).lasting,
+    )
+  let plans = support.plans_of([timed])
+  let #(state, pressed) = restricted(plans:)
+  let applied = unit_cc_state_applied.decode
+  let assert [frame] =
+    support.frames_of(
+      message_id: unit_cc_state_applied.message_id,
+      effects: pressed,
+    )
+    as "the caster is told the state once (opcode.0x87f)"
+  let assert Ok(told) = applied(frame.body)
+  assert told.unit_id == 7 && told.state == Stun
+    as "the caster's own unit holds a Stun"
+  assert list.contains(support.tells(effects: pressed), #(
+      ConnectionId(2),
+      client_connection.CrowdControlApplied(
+        state: Stun,
+        instance_id: told.instance_id,
+      ),
+    ))
+    && list.contains(support.tells(effects: pressed), #(
+      ConnectionId(3),
+      client_connection.CrowdControlApplied(
+        state: Stun,
+        instance_id: told.instance_id,
+      ),
+    ))
+    as "and so is each connection of the go's audience, with the same instance id"
+  let assert [go] =
+    support.frames_of(message_id: spell_go.message_id, effects: pressed)
+  let assert Ok(go) = spell_go.decode(go.body)
+  assert list.any(go.targets, fn(info) {
+    info.unit_id == 7
+    && list.any(info.effects, fn(effect) {
+      effect.spell4_effects_id == 224_967
+      && effect.instance_id == told.instance_id
+      && effect.delay_ms == 500
+    })
+  })
+    as "the go lists the state on the caster with its delay and the instance id"
+  let assert [#(row_end, 2500)] =
+    list.filter(support.started_timers(effects: pressed), fn(started) {
+      started.1 == 2500
+    })
+    as "the state ends at its delay 500 plus its duration 2000 (0x1405d6880)"
+  let #(_, ended) =
+    support.fired_raw_as(caster: fighting(), state:, timer: row_end, at: 3500)
+  assert ended_state(effects: ended).state == Stun
+    as "the end is a 0x880 of the Stun (opcode.0x880)"
+  assert list.map(support.tells(effects: ended), fn(tell) { tell.0 })
+    == [ConnectionId(2), ConnectionId(3)]
+    as "and the audience is told it ends"
+  let until_removed = support.plans_of([holding(states: [Stun])])
+  let #(state, _) = restricted(plans: until_removed)
+  let #(_, ended) =
+    cast.persisted(
+      cast: state,
+      caster: support.caster_in_combat(in_combat: False),
+      now: support.at(ms: 3000),
+    )
+  assert ended_state(effects: ended).state == Stun
+    as "a row with flag 2 lasts until its cast's node ends, which the end of its persistence brings"
+}
+
+/// Kick pressed at 1000 whose round closed at 1000 having struck unit 20 for no
+/// description and no state, taking `armor_removed` interrupt armor off it.
+fn struck_for_armor(
+  armor_removed armor_removed: Int,
+  immune immune: Bool,
+) -> List(combat_log_entry.CombatLogEntry) {
+  let #(state, effects) =
+    support.pressed_raw_in(
+      plans: kick_plans(),
+      state: cast.new(),
+      caster: support.caster(),
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1000,
+    )
+  let unit = cast.HitCreature(life: 1, struck_at_ms: 0)
+  let #(_, effects) =
+    support.answered_by(state:, effects:, at: 1000, struck: [
+      case immune {
+        True -> cast.Immune(unit_id: 20, unit:, controls: [], armor_removed:)
+        False ->
+          cast.Hit(
+            unit_id: 20,
+            unit:,
+            descriptions: [],
+            controls: [],
+            armor_removed:,
+          )
+      },
+    ])
+  logged(effects:)
+}
+
+fn armor_entry(amount amount: Int) -> combat_log_entry.CombatLogEntry {
+  combat_log_entry.ModifyInterruptArmor(CombatLogModifyInterruptArmor(
+    amount:,
+    caster_unit_id: 7,
+    target_unit_id: 20,
+    spell4_id: 58_591,
+    combat_result: combat_result.Hit,
+  ))
+}
+
+pub fn armor_destroyed_is_logged_to_the_caster_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert struck_for_armor(armor_removed: 2, immune: False)
+    == [armor_entry(amount: 2)]
+    as "a strike that took 2 armor logs type 14 with the amount, the caster, the unit and the spell (opcode.0x247.modify_interrupt_armor)"
+  assert struck_for_armor(armor_removed: 0, immune: False) == []
+    as "a strike that took none logs nothing"
+  assert list.contains(
+    struck_for_armor(armor_removed: 2, immune: True),
+    armor_entry(amount: 2),
+  )
+    as "a guarded creature's armor change is logged as well"
+}
+
+pub fn a_tether_tells_its_anchor_before_its_state_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, pressed) =
+    restricted(plans: support.plans_of([holding(states: [Tether])]))
+  let ids =
+    list.map(support.writes(effects: pressed), fn(frame) { frame.message_id })
+  let #(_, from_anchor) =
+    list.split_while(ids, fn(id) { id != unit_tether_anchor.message_id })
+  assert list.take(from_anchor, 2)
+    == [unit_tether_anchor.message_id, unit_cc_state_applied.message_id]
+    as "a Tether aimed at the caster sends the 0x881 to the caster right before the 0x87f of the state (opcode.0x881)"
+  let assert [frame] =
+    support.frames_of(
+      message_id: unit_tether_anchor.message_id,
+      effects: pressed,
+    )
+  let assert Ok(anchor) = unit_tether_anchor.decode(frame.body)
+  assert anchor.anchor_unit_id == 7
+    as "the anchor is the caster's own unit: the message sets the anchor of the unit the client controls and names no other unit"
+  assert list.contains(support.tells(effects: pressed), #(
+    ConnectionId(2),
+    client_connection.CrowdControlApplied(
+      state: Tether,
+      instance_id: applied_instance(effects: pressed),
+    ),
+  ))
+    as "the audience is told the state as for any other, and no news of an anchor exists: a 0x881 names no unit, so only the caster gets one"
+  let #(_, stunned) =
+    restricted(plans: support.plans_of([holding(states: [Stun])]))
+  assert support.frames_of(
+      message_id: unit_tether_anchor.message_id,
+      effects: stunned,
+    )
+    == []
+    as "a state other than Tether sends none"
+}
+
+/// The instance id of the 0x87f the effects write.
+fn applied_instance(effects effects: List(Effect)) -> Int {
+  let assert [frame] =
+    support.frames_of(message_id: unit_cc_state_applied.message_id, effects:)
+    as "one 0x87f"
+  let assert Ok(told) = unit_cc_state_applied.decode(frame.body)
+  told.instance_id
 }

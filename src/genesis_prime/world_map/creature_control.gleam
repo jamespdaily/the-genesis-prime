@@ -122,9 +122,16 @@ pub type Effect {
 }
 
 /// What a strike's states came to: the new state, the states that landed, each with the
-/// time it ends at, for the answer's `Landed`, and the effects to carry out.
+/// time it ends at, for the answer's `Landed`, the armor the strike took off the creature
+/// (at most the armor it had; the caster's combat log shows it), and the effects to carry
+/// out.
 pub type Landing {
-  Landing(state: State, landed: List(ControlLanded), effects: List(Effect))
+  Landing(
+    state: State,
+    landed: List(ControlLanded),
+    armor_removed: Int,
+    effects: List(Effect),
+  )
 }
 
 /// A creature that holds no state.
@@ -159,7 +166,8 @@ pub fn land(
   now_ms now_ms: Int,
 ) -> Landing {
   case armor {
-    creature_life.InfiniteArmor -> Landing(state:, landed: [], effects: [])
+    creature_life.InfiniteArmor ->
+      Landing(state:, landed: [], armor_removed: 0, effects: [])
     creature_life.NoArmor -> held(state:, tell:, now_ms:)
     creature_life.Armor(points: maximum) ->
       armored(state:, tell:, maximum:, refill_ms:, now_ms:)
@@ -185,13 +193,18 @@ fn armored(
     int.sum(list.map(tell.controls, fn(told) { told.row.armor_removed }))
   case current, destroyed {
     0, _ -> held(state:, tell:, now_ms:)
-    _, 0 -> Landing(state:, landed: [], effects: [])
+    _, 0 -> Landing(state:, landed: [], armor_removed: 0, effects: [])
     _, _ -> {
       let left = int.max(0, current - destroyed)
-      Landing(state: State(..state, armor: Some(left)), landed: [], effects: [
-        ToViewers(client_connection.InterruptArmor(armor: left)),
-        ..restarted
-      ])
+      Landing(
+        state: State(..state, armor: Some(left)),
+        landed: [],
+        armor_removed: current - left,
+        effects: [
+          ToViewers(client_connection.InterruptArmor(armor: left)),
+          ..restarted
+        ],
+      )
     }
   }
 }
@@ -228,6 +241,7 @@ fn held(state state: State, tell tell: Tell, now_ms now_ms: Int) -> Landing {
   Landing(
     state:,
     landed: list.map(held, fn(one) { one.0 }),
+    armor_removed: 0,
     effects: list.flat_map(held, fn(one) { one.1 }),
   )
 }

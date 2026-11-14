@@ -1809,7 +1809,6 @@ pub fn cast_starts(news: List(News)) -> List(spell_started.SpellStarted) {
       | client_connection.Level(..)
       | client_connection.CrowdControlApplied(..)
       | client_connection.CrowdControlEnded(..)
-      | client_connection.CrowdControlTethered(..)
       | client_connection.PropertiesChanged(..)
       | client_connection.Stealth(..)
       | client_connection.LookChanged(..) -> Error(Nil)
@@ -1847,7 +1846,6 @@ pub fn is_cast_removal(news: News) -> Bool {
     | client_connection.Level(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
-    | client_connection.CrowdControlTethered(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..) -> False

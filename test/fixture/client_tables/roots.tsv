@@ -831,3 +831,8 @@ WorldLocation2	51703	marker of objective 21321 of quest 10527	game_wire_test
 WorldLocation2	51674	marker of objective 21295 of quest 10520	game_wire_test
 Creature2	12545	a Simple unit (type 10) that gives and receives quest 3689, faction 219, uiFlags 559	interaction_test, quest_accept_test, quest_turn_in_test
 Quest2	3689	the quest of the Simple unit 12545, which it gives and receives	quest_accept_test, quest_turn_in_test, interaction_test
+Quest2	6647	quest whose objective 11555 is a type 11 cast of Spell4 35436, a Vulnerability row on another unit held until removed	cast_shortcut_test
+Spell4	64944	cast objective spell of quest 9373, targeted, whose target Spell4CCConditions row 1 masks Stun and Sleep	cast_shortcut_test
+Creature2	57226	creature of the cast group 8755 that Spell4 64944 names	cast_shortcut_test
+Quest2	9373	quest whose objective 17880 is a type 11 cast of Spell4 64944, targeted at cast group 8755	cast_shortcut_test
+Spell4	35436	cast objective spell of quest 6647 whose CCStateSet row on the target lasts until removed	cast_shortcut_test

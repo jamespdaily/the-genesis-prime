@@ -31,6 +31,7 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/client_side_interaction_result.{
   ClientSideInteractionResult,
 }
+import genesis_prime/message/crowd_control_state.{type CrowdControlState, Stun}
 import genesis_prime/message/interaction_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
@@ -98,6 +99,8 @@ type Unit {
     gap: Float,
     alive: Bool,
     in_combat: Bool,
+    /// The crowd-control states the caster's client was told the creature holds.
+    held: List(CrowdControlState),
   )
 }
 
@@ -118,6 +121,7 @@ fn unit(id unit_id: Int, of creature_id: Int, at gap: Float) -> Unit {
     gap:,
     alive: True,
     in_combat: False,
+    held: [],
   )
 }
 
@@ -150,7 +154,9 @@ fn picture_of(scene scene: Scene) -> shown.Picture {
         attackable: Attackable(exile: True, dominion: True),
         hostile_to: Hostile(exile: False, dominion: False),
         in_combat: unit.in_combat,
-        held: [],
+        held: list.map(unit.held, fn(state) {
+          shown.HeldState(state:, instance_id: 1)
+        }),
       ),
     )
   })
@@ -181,7 +187,7 @@ fn target_of(scene scene: Scene) -> fn(Int) -> Target {
               body: Body(place: place_of(unit:), radius: creature_radius),
               alive: unit.alive,
               in_combat: unit.in_combat,
-              held: [],
+              held: unit.held,
               withheld: None,
             )
           }
@@ -810,15 +816,15 @@ pub fn a_press_of_a_targeted_spell_that_cannot_be_planned_stays_not_built_test()
     press_at(
       scene:,
       state: cast.new(),
-      spell4_id: 30_173,
+      spell4_id: 35_436,
       target: 913,
       at: 1000,
     )
   assert support.refusal_results(effects:)
     == [code(cast_result.IllegalSpellCast)]
-    as "Spell4 30173's tree holds a state the plans cannot: refused 285"
+    as "Spell4 35436's Vulnerability row on another unit lasts until removed or by a persistence prerequisite, which the plans do not read yet (#803, #787): refused 285"
   let assert [line] = warnings(effects:)
-  assert string.contains(line, "30173") && string.contains(line, "(#336)")
+  assert string.contains(line, "35436") && string.contains(line, "(#336)")
     as "the log names the spell and the issue that will close the gap, #336"
 }
 
@@ -892,4 +898,55 @@ pub fn a_channelled_objective_spell_goes_twice_and_raises_one_cast_test() -> Nil
       ),
     ]
     as "a channel counts once, at its first go"
+}
+
+/// Spell4 64944 (the spell of quest 9373's objective 17880, Spell4Base 42972: cast group 8755,
+/// which holds Creature2 57226 through its first target group) names Spell4CCConditions row 1 for its
+/// target: row 1's ccStateMask 218960739 has bit 0, Stun.
+const the_stun_refusing_spell = 64_944
+
+const a_creature_of_its_group = 57_226
+
+pub fn an_aimed_press_at_a_held_creature_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let stunned = fn(held, gap) {
+    Scene(..nothing_shown(), units: [
+      Unit(..unit(id: 920, of: a_creature_of_its_group, at: gap), held:),
+    ])
+  }
+  assert refused_at(
+      scene: stunned([Stun], 10.0),
+      spell4_id: the_stun_refusing_spell,
+      target: 920,
+    )
+    == [122]
+    as "0x1403b2240: the target's Spell4CCConditions mask has bit 0 and the unit holds Stun: Target_CannotBe_Stunned (122)"
+  assert refused_at(
+      scene: stunned([], 10.0),
+      spell4_id: the_stun_refusing_spell,
+      target: 920,
+    )
+    == [code(cast_result.PrereqTargetCast)]
+    as "the same creature holding no state passes the state test and meets the next, the spell's target cast Prerequisite 28001 of a type the server does not read (281)"
+  assert refused_at(
+      scene: stunned([crowd_control_state.Sleep], 10.0),
+      spell4_id: the_stun_refusing_spell,
+      target: 920,
+    )
+    == [124]
+    as "row 1's mask has bit 1 too: Sleep gives its own Target_CannotBe result (124)"
+  assert refused_at(
+      scene: stunned([crowd_control_state.Snare], 10.0),
+      spell4_id: the_stun_refusing_spell,
+      target: 920,
+    )
+    == [code(cast_result.PrereqTargetCast)]
+    as "row 1's mask 218960739 has no bit 21: a held Snare passes the state test"
+  assert refused_at(
+      scene: stunned([Stun], 400.0),
+      spell4_id: the_stun_refusing_spell,
+      target: 920,
+    )
+    == [122]
+    as "0x1403b2240 tests the state before the range: a held unit out of range is refused 122, not 105"
 }

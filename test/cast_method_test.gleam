@@ -874,7 +874,6 @@ pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_cha
         | client_connection.Shield(..)
         | client_connection.CrowdControlApplied(..)
         | client_connection.CrowdControlEnded(..)
-        | client_connection.CrowdControlTethered(..)
         | client_connection.InterruptArmor(..)
         | client_connection.Absorption(..)
         | client_connection.Level(..)

@@ -2520,6 +2520,16 @@ fields = [
 ]
 
 [[message]]
+id = 0x0881
+name = "unit_tether_anchor"
+direction = "server_to_client"
+evidence = "opcode.0x881"
+summary = "sets the tether anchor of the unit the receiving client controls: one unit id; the message names no unit, so it never tells a client about another unit's tether"
+fields = [
+  { name = "anchor_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x881", named_by = "opcode.0x881" },
+]
+
+[[message]]
 id = 0x0814
 name = "spell_threshold_closed"
 direction = "server_to_client"
@@ -2788,7 +2798,7 @@ id = 0x0247
 name = "combat_log"
 direction = "server_to_client"
 evidence = "opcode.0x247"
-summary = "a combat log entry: the type in 6 bits picks the entry's layout, and the client's reader fails a type above 35; the schema holds types 1 (crowd-control state), 2 (state break), 18 (immunity), 22 (death), 23 (resurrect) and 24 (stealth), and a spell hit's line is made by the client from its damage description"
+summary = "a combat log entry: the type in 6 bits picks the entry's layout, and the client's reader fails a type above 35; the schema holds types 1 (crowd-control state), 2 (state break), 14 (Interrupt Armor change), 18 (immunity), 22 (death), 23 (resurrect) and 24 (stealth), and a spell hit's line is made by the client from its damage description"
 fields = [
   { name = "entry", kind = "record", record = "combat_log_entry", evidence = "opcode.0x247", named_by = "opcode.0x247" },
 ]
@@ -2796,11 +2806,12 @@ fields = [
 [[union]]
 name = "combat_log_entry"
 evidence = "opcode.0x247"
-summary = "one entry of the combat log: the type in 6 bits picks the layout of its data. Gap: the schema holds types 1, 2, 18, 22, 23 and 24, and the client's reader takes 0 to 35; the other types are open under issue 336, spells work in depth on the real client"
+summary = "one entry of the combat log: the type in 6 bits picks the layout of its data. Gap: the schema holds types 1, 2, 14, 18, 22, 23 and 24, and the client's reader takes 0 to 35; the other types are open under issue 336, spells work in depth on the real client"
 tag_bits = 6
 variants = [
   { tag = 1, name = "cc_state", record = "combat_log_cc_state", named_by = "opcode.0x247.cc_state" },
   { tag = 2, name = "cc_state_break", record = "combat_log_cc_state_break", named_by = "opcode.0x247.cc_state" },
+  { tag = 14, name = "modify_interrupt_armor", record = "combat_log_modify_interrupt_armor", named_by = "opcode.0x247.modify_interrupt_armor" },
   { tag = 18, name = "immunity", record = "combat_log_immunity", named_by = "opcode.0x247.immunity" },
   { tag = 22, name = "death", record = "combat_log_death", named_by = "opcode.0x247.death" },
   { tag = 23, name = "resurrect", record = "combat_log_resurrect", named_by = "opcode.0x247.death" },
@@ -2832,6 +2843,19 @@ fields = [
   { name = "kind", kind = "constant", bits = 6, value = 2, evidence = "opcode.0x247.cc_state", named_by = "opcode.0x247.cc_state" },
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x247.cc_state", named_by = "opcode.0x247.cc_state" },
   { name = "state", kind = "unsigned", bits = 5, evidence = "opcode.0x247.cc_state", named_by = "opcode.0x247.cc_state", values_type = "CrowdControlState", values = [ { value = 0, name = "stun", evidence = "Unit.CodeEnumCCState" }, { value = 1, name = "sleep", evidence = "Unit.CodeEnumCCState" }, { value = 2, name = "root", evidence = "Unit.CodeEnumCCState" }, { value = 3, name = "disarm", evidence = "Unit.CodeEnumCCState" }, { value = 4, name = "silence", evidence = "Unit.CodeEnumCCState" }, { value = 5, name = "polymorph", evidence = "Unit.CodeEnumCCState" }, { value = 6, name = "fear", evidence = "Unit.CodeEnumCCState" }, { value = 7, name = "hold", evidence = "Unit.CodeEnumCCState" }, { value = 8, name = "knockdown", evidence = "Unit.CodeEnumCCState" }, { value = 9, name = "vulnerability", evidence = "Unit.CodeEnumCCState" }, { value = 10, name = "vulnerability_with_act", evidence = "Unit.CodeEnumCCState" }, { value = 11, name = "disorient", evidence = "Unit.CodeEnumCCState" }, { value = 12, name = "disable", evidence = "Unit.CodeEnumCCState" }, { value = 13, name = "taunt", evidence = "Unit.CodeEnumCCState" }, { value = 14, name = "detaunt", evidence = "Unit.CodeEnumCCState" }, { value = 15, name = "blind", evidence = "Unit.CodeEnumCCState" }, { value = 16, name = "knockback", evidence = "Unit.CodeEnumCCState" }, { value = 17, name = "pushback", evidence = "Unit.CodeEnumCCState" }, { value = 18, name = "pull", evidence = "Unit.CodeEnumCCState" }, { value = 19, name = "position_switch", evidence = "Unit.CodeEnumCCState" }, { value = 20, name = "tether", evidence = "Unit.CodeEnumCCState" }, { value = 21, name = "snare", evidence = "Unit.CodeEnumCCState" }, { value = 22, name = "interrupt", evidence = "Unit.CodeEnumCCState" }, { value = 23, name = "daze", evidence = "Unit.CodeEnumCCState" }, { value = 24, name = "subdue", evidence = "Unit.CodeEnumCCState" }, { value = 25, name = "grounded", evidence = "Unit.CodeEnumCCState" }, { value = 26, name = "disable_cinematic", evidence = "Unit.CodeEnumCCState" }, { value = 27, name = "ability_restriction", evidence = "Unit.CodeEnumCCState" } ] },
+]
+
+[[record]]
+name = "combat_log_modify_interrupt_armor"
+evidence = "opcode.0x247.modify_interrupt_armor"
+summary = "a combat log entry of type 14: the change in a unit's Interrupt Armor, then the cast data, the caster, the target, the Spell4 and the combat result; the client shows it as a line and keeps no armor from it"
+fields = [
+  { name = "kind", kind = "constant", bits = 6, value = 14, evidence = "opcode.0x247.modify_interrupt_armor", named_by = "opcode.0x247.modify_interrupt_armor" },
+  { name = "amount", kind = "unsigned", bits = 32, evidence = "opcode.0x247.modify_interrupt_armor", named_by = "opcode.0x247.modify_interrupt_armor" },
+  { name = "caster_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x247.modify_interrupt_armor", named_by = "opcode.0x247.modify_interrupt_armor" },
+  { name = "target_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x247.modify_interrupt_armor", named_by = "opcode.0x247.modify_interrupt_armor" },
+  { name = "spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x247.modify_interrupt_armor", named_by = "opcode.0x247.modify_interrupt_armor" },
+  { name = "combat_result", kind = "unsigned", bits = 4, evidence = "opcode.0x247.modify_interrupt_armor", named_by = "opcode.0x247.modify_interrupt_armor", values_type = "CombatResult", values = [ { value = 0, name = "avoid", evidence = "GameLib.CodeEnumCombatResult" }, { value = 1, name = "critical", evidence = "GameLib.CodeEnumCombatResult" }, { value = 2, name = "hit", evidence = "GameLib.CodeEnumCombatResult" }, { value = 3, name = "needs_telegraph_evaluation", evidence = "GameLib.CodeEnumCombatResult" }, { value = 4, name = "outside_telegraph", evidence = "GameLib.CodeEnumCombatResult" }, { value = 5, name = "outside_telegraph_invalid", evidence = "GameLib.CodeEnumCombatResult" }, { value = 6, name = "inside_telegraph", evidence = "GameLib.CodeEnumCombatResult" }, { value = 7, name = "needs_hit_result_calc", evidence = "GameLib.CodeEnumCombatResult" } ] },
 ]
 
 [[record]]
