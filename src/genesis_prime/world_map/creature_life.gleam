@@ -76,6 +76,14 @@ pub type Attack {
     run_speed: Float,
     reach: Float,
     cast: Cast,
+    /// The crowd-control states that refuse the attack's cast: the ccStateMask of the
+    /// Spell4CCConditions row the attack spell's caster column names, 0 for no row; bit n
+    /// is the state n (`CheckSpellCCConditions`, `0x1403b2c40`).
+    caster_cc_mask: Int,
+    /// The crowd-control states that stop the creature's run, as a mask: the states whose
+    /// CCStates flags hold the value 2, the states under which the client drops a unit's
+    /// own movement (genesis_prime/game/crowd_control `stopping_mask`).
+    run_stopped_by: Int,
   )
 }
 
@@ -236,7 +244,7 @@ pub fn struck(
             life: Dead,
             answer: Answered(
               key: strike.key,
-              outcome: Landed(descriptions:, controls: []),
+              outcome: Landed(descriptions:, controls: [], armor_removed: 0),
             ),
             news: [Health(health: left, dead: True), Died],
             corpse_for_ms: Some(body.respawn_ms),
@@ -246,7 +254,7 @@ pub fn struck(
             life: Alive(health: left),
             answer: Answered(
               key: strike.key,
-              outcome: Landed(descriptions:, controls: []),
+              outcome: Landed(descriptions:, controls: [], armor_removed: 0),
             ),
             news: [Health(health: left, dead: False)],
             corpse_for_ms: None,

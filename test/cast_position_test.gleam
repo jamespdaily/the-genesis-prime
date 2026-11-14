@@ -170,6 +170,7 @@ fn hit(unit_id unit_id: Int) -> cast.Struck {
     unit: cast.HitCreature(life: 1, struck_at_ms: 0),
     descriptions: [],
     controls: [],
+    armor_removed: 0,
   )
 }
 

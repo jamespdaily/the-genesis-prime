@@ -166,6 +166,7 @@ fn usable_in_state(
     ),
     alive:,
     in_combat: False,
+    held: [],
     withheld:,
   )
 }
@@ -895,6 +896,75 @@ pub fn an_activate_cast_that_needs_a_dead_target_is_refused_on_a_living_creature
   let assert Ok(#(_, effects)) = dead as "a right-click is answered"
   assert support.refusal_results(effects:) == []
     as "a dead creature is a target of a must-be-dead spell"
+}
+
+/// Creature2 48113 (a Fuel Canister): its activate spell Spell4 47134 (castTime 2000, no cast
+/// group) names Spell4CCConditions row 1 for its target, whose ccStateMask 218960739 has
+/// bits 0 (Stun), 1 (Sleep) and 5 (Polymorph) and no bit 21 (Snare); the creature's
+/// activateSpellMaxRange is 1.0.
+const a_fuel_canister = 48_113
+
+/// The canister `east` of the caster, holding these states.
+fn canister_holding(
+  states states: List(crowd_control_state.CrowdControlState),
+  east east: Float,
+) -> Target {
+  let target =
+    usable_in_state(
+      creature_id: a_fuel_canister,
+      creature: creature_of_row(creature_id: a_fuel_canister),
+      checklist_index: 0,
+      link: activate.NoLink,
+      east:,
+      up: 0.0,
+      alive: True,
+      withheld: None,
+    )
+  case target {
+    Usable(..) as usable -> Usable(..usable, held: states)
+    activate.Unseen | activate.AnotherPlayer -> target
+  }
+}
+
+pub fn an_activate_cast_at_a_held_creature_is_refused_its_state_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let activations = the_activations()
+  let refused = fn(states, east) {
+    refused_with(
+      activations:,
+      target: canister_holding(states:, east:),
+      unit_id: its_unit,
+    )
+  }
+  assert refused([crowd_control_state.Stun], 0.5) == 122
+    as "0x1403b2240: the target's Spell4CCConditions mask has bit 0 and the unit holds Stun: Target_CannotBe_Stunned (122), whatever way the cast was pressed"
+  assert refused([crowd_control_state.Sleep], 0.5) == 124
+    as "bit 1 gives its own result, Target_CannotBe_Slept (124)"
+  assert refused([crowd_control_state.Stun], 20.0) == 122
+    as "0x1403b2240 tests the state before the range: a held canister 20 away is refused 122, not 105"
+  let started = fn(states) {
+    let assert Ok(#(_, effects)) =
+      right_click(
+        state: cast.new(),
+        activations:,
+        unit_id: its_unit,
+        target: canister_holding(states:, east: 0.5),
+        at: 1000,
+      )
+      as "a right-click is answered"
+    effects
+  }
+  let none = started([])
+  assert support.refusal_results(effects: none) == []
+    && list.length(support.frames_of(
+      message_id: spell_cast_confirmed.message_id,
+      effects: none,
+    ))
+    == 1
+    as "the control: the canister holding no state is taken, and the caster is written the one 0x7fd"
+  let snared = started([crowd_control_state.Snare])
+  assert support.refusal_results(effects: snared) == []
+    as "the mask has no bit 21: a held Snare passes the state test"
 }
 
 /// The effects of the press of a creature withheld for this reason, in range.

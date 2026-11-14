@@ -52,6 +52,7 @@ pub fn walker(
         attackable: creature_life.Attackable(exile: True, dominion: True),
         hostile_to: creature_life.Hostile(exile: hostile, dominion: hostile),
         in_combat: False,
+        held: [],
       ),
     ),
   ])

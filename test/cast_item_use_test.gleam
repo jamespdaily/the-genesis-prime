@@ -28,6 +28,7 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/target_group
 import genesis_prime/message/cast_result
+import genesis_prime/message/crowd_control_state
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/message/item_use.{ItemUse} as use_message
 import genesis_prime/message/spell_cast_confirmed
@@ -133,6 +134,7 @@ fn shown(creature_id creature_id: Int, metres metres: Float) -> Target {
     ),
     alive: True,
     in_combat: False,
+    held: [],
     withheld: None,
   )
 }
@@ -455,6 +457,69 @@ pub fn the_grenade_at_a_unit_outside_its_cast_group_is_refused_89_test() -> Nil 
     ))
     == #(26_663, 89)
     as "Spell4Base 13157's cast group is TargetGroup 1691, which does not hold Creature2 17107: CheckCastActivateSpell (0x1403b44b0) refuses it 89 (TargetGroup), with the item's spell"
+}
+
+/// The grenade thrown at the farmhand, which its cast group does not hold, on tables where
+/// the grenade's spell (Spell4 26663) names Spell4CCConditions row 1 for its target: that
+/// row's ccStateMask 218960739 has bits 0 (Stun), 1 (Sleep) and 5 (Polymorph) and no bit
+/// 21 (Snare). Spell4Conditions row 15 (mask 129, value 0) says the target must be alive.
+fn grenade_at_a_farmhand_in_a_state(
+  held held: List(crowd_control_state.CrowdControlState),
+  alive alive: Bool,
+) -> #(Int, Int) {
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "Spell4",
+      id: 26_663,
+      with: [#("spell4CCConditionsIdTarget", Integer(1))],
+    )
+    as "Spell4 26663 and its column are in the fixture"
+  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  let assert Usable(..) as farmhand =
+    shown(creature_id: a_farmhand, metres: 10.0)
+    as "shown gives a usable target"
+  refusal_of(taken: use_item_in(
+    tables:,
+    state: cast.new(),
+    caster: throwing(),
+    item: grenade,
+    target: Usable(..farmhand, held:, alive:),
+    at: 1000,
+  ))
+}
+
+/// An item's spell takes the same road as a press: `0x1403998e0` (UseItem) reaches
+/// CheckCastUnitTargetRange (0x1403b2240) through StartItemUseCast (0x140398cc0),
+/// StartLocalCast (0x1403988d0), 0x140398800, CheckCastAndPrerequisites (0x1403ace00),
+/// 0x1403ae8c0 and CheckCastTarget (0x1403b0880), and that function tests the target's
+/// life and states before the cast group (CheckCastActivateSpell, 0x1403b44b0).
+pub fn an_item_spell_at_a_held_creature_outside_its_cast_group_is_refused_its_state_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert grenade_at_a_farmhand_in_a_state(
+      held: [crowd_control_state.Stun],
+      alive: True,
+    )
+    == #(26_663, 122)
+    as "0x1403b2240 tests the target's states before its cast group: a Stunned farmhand is refused Target_CannotBe_Stunned (122), not 89"
+  assert grenade_at_a_farmhand_in_a_state(
+      held: [crowd_control_state.Sleep],
+      alive: True,
+    )
+    == #(26_663, 124)
+    as "bit 1 gives its own result, Target_CannotBe_Slept (124)"
+  assert grenade_at_a_farmhand_in_a_state(
+      held: [crowd_control_state.Snare],
+      alive: True,
+    )
+    == #(26_663, 89)
+    as "a state the mask does not name (Snare, bit 21) leaves the cast group's 89"
+  assert grenade_at_a_farmhand_in_a_state(held: [], alive: True)
+    == #(26_663, 89)
+    as "a creature that holds nothing meets the cast group's 89"
+  assert grenade_at_a_farmhand_in_a_state(held: [], alive: False)
+    == #(26_663, 106)
+    as "0x1403b2240 tests the target's life first: a dead target of a spell that needs it alive is refused Target_CannotBe_Dead (106), not 89"
 }
 
 pub fn the_grenade_at_another_players_unit_is_refused_100_test() -> Nil {

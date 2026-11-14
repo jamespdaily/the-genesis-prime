@@ -793,7 +793,11 @@ pub fn struck(
                   to: strike.from,
                   answered: Answered(
                     key: strike.key,
-                    outcome: strike_tell.Landed(descriptions:, controls: []),
+                    outcome: strike_tell.Landed(
+                      descriptions:,
+                      controls: [],
+                      armor_removed: 0,
+                    ),
                   ),
                 ),
               ],

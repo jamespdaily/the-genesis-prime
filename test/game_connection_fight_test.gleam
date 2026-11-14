@@ -654,7 +654,7 @@ pub fn a_creatures_strike_writes_the_shield_and_the_health_and_is_answered_to_th
       7,
       client_connection.TellStrikeAnswered(answered: strike_tell.Answered(
         key: answered,
-        outcome: strike_tell.Landed(descriptions: [_], controls: []),
+        outcome: strike_tell.Landed(descriptions: [_], ..),
       )),
     ),
   ] = game_connection_support.told_creatures(struck)

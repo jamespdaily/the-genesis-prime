@@ -53,9 +53,22 @@
 ////   state at a death (`SetUnitDead`).
 //// - **Knockdown is a stun for a creature**: the same flags, and its only difference is
 ////   a player's dash (`GameFormula.614`, `CCStates.flags`).
+//// - **What a held state stops** is the fight's to carry out (genesis_prime/world_map/creature_fight
+////   `Fighter`), by three queries here:
+////   - `stops_moving`: a state whose CCStates flags hold the value 2 stops the creature's run,
+////     the value the client's `UnitHasCCStateFlag02` (`0x14045e630`) drops a unit's own movement
+////     for; the others let it run on.
+////   - `refuses`: a state the attack spell's caster conditions mask (Spell4CCConditions
+////     ccStateMask, read when the content loads) refuses the attack, as the client refuses
+////     that spell to a caster holding it.
+////   - `hard_held`: a Stun, Knockdown or Knockback refuses every cast. The client's rows hold
+////     no such rule; it is a retail record (WildStar wiki, Combat, "Moment of Opportunity").
+////   A charge starts only while no state at all is held (`holds`), which is a gap: the
+////   client's conditions for the charge spells mask nothing, and the issue "Creatures cast
+////   spells, and the effect types only creature spells use work" closes it.
 //// - **Each landed state is its own control**, with its own timer and its own 0x880: two
 ////   players' states, or one caster's two states of a kind, are held side by side, and
-////   the creature acts again when none is held (`cc_state.instance_id`).
+////   the creature runs again when no state that stops its run is held (`cc_state.instance_id`).
 //// - **A control's timer** is the creature's rule's to number (genesis_prime/world_map/creature
 ////   `control_timer`): one for each control's number, which is never used twice in a
 ////   creature's life. A timer that fires for a control already gone finds none and writes
@@ -75,6 +88,7 @@
 //// | The caster's cast lingers past the state's end | the node's life is the effect's, and the cast rule's timer ends it (genesis_prime/game/lasting) | | |
 
 import genesis_prime/client_connection.{type News}
+import genesis_prime/game/crowd_control
 import genesis_prime/game/strike_tell.{
   type ControlLanded, type Tell, ControlLanded,
 }
@@ -84,6 +98,7 @@ import genesis_prime/world_map/creature_life.{type InterruptArmor}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 
 /// One state a creature holds: the state, the cast it came from (the strike's cast id,
 /// which its 0x880 names), the instance id the caster's go gave it, the address of the
@@ -122,9 +137,16 @@ pub type Effect {
 }
 
 /// What a strike's states came to: the new state, the states that landed, each with the
-/// time it ends at, for the answer's `Landed`, and the effects to carry out.
+/// time it ends at, for the answer's `Landed`, the armor the strike took off the creature
+/// (at most the armor it had; the caster's combat log shows it), and the effects to carry
+/// out.
 pub type Landing {
-  Landing(state: State, landed: List(ControlLanded), effects: List(Effect))
+  Landing(
+    state: State,
+    landed: List(ControlLanded),
+    armor_removed: Int,
+    effects: List(Effect),
+  )
 }
 
 /// A creature that holds no state.
@@ -132,10 +154,43 @@ pub fn new() -> State {
   State(controls: [], next_number: 1, armor: None)
 }
 
-/// Whether the creature holds a state, which stops it acting: the fight's gate
-/// (genesis_prime/world_map/creature_fight `Fighter.controlled`).
+/// Whether the creature holds any state: the fight starts no charge while it does
+/// (genesis_prime/world_map/creature_fight `Fighter.holds_a_state`).
 pub fn holds(state state: State) -> Bool {
   state.controls != []
+}
+
+/// Whether the creature holds a state a mask names (bit n is state n): the check the
+/// client makes of a caster's states against a spell's caster conditions
+/// (`CheckSpellCCConditions`, `0x1403b2c40`), here for the creature's attack.
+pub fn refuses(state state: State, mask mask: Int) -> Bool {
+  list.map(state.controls, fn(control) { control.state })
+  |> crowd_control.first_masked(mask:, held: _)
+  |> result.is_ok
+}
+
+/// Whether the creature holds a state that stops it moving: one of the states in
+/// `stopped_by`, the states whose CCStates flags hold the value 2
+/// (genesis_prime/game/crowd_control `stopping_mask`).
+pub fn stops_moving(state state: State, stopped_by stopped_by: Int) -> Bool {
+  refuses(state:, mask: stopped_by)
+}
+
+/// The states that let a creature cast nothing of any kind, as a mask (bit n is state n):
+/// Stun 0, Knockdown 8 and Knockback 16.
+///
+/// A server choice from a retail record (WildStar wiki, Combat, "Moment of Opportunity"):
+/// the client's rows say only what each spell's own conditions mask. CCStates flag 0x10,
+/// set on Stun, Sleep, Knockdown, Knockback, Pull, Pushback, Hold, Disable and
+/// DisableCinematic, is the likely client signal and is not decoded (fact
+/// `CCStates.flags.hard_held`), so the choice stands until the issue "Spells work in depth on the
+/// real client: cast times, telegraphs, buffs, crowd control and ticking effects"
+/// reads it.
+const hard_held_mask = 0x10101
+
+/// Whether the creature holds a state of `hard_held_mask`.
+pub fn hard_held(state state: State) -> Bool {
+  refuses(state:, mask: hard_held_mask)
 }
 
 /// Whether the creature holds anything a death must drop: a state, or armor worn below its
@@ -159,7 +214,8 @@ pub fn land(
   now_ms now_ms: Int,
 ) -> Landing {
   case armor {
-    creature_life.InfiniteArmor -> Landing(state:, landed: [], effects: [])
+    creature_life.InfiniteArmor ->
+      Landing(state:, landed: [], armor_removed: 0, effects: [])
     creature_life.NoArmor -> held(state:, tell:, now_ms:)
     creature_life.Armor(points: maximum) ->
       armored(state:, tell:, maximum:, refill_ms:, now_ms:)
@@ -185,13 +241,18 @@ fn armored(
     int.sum(list.map(tell.controls, fn(told) { told.row.armor_removed }))
   case current, destroyed {
     0, _ -> held(state:, tell:, now_ms:)
-    _, 0 -> Landing(state:, landed: [], effects: [])
+    _, 0 -> Landing(state:, landed: [], armor_removed: 0, effects: [])
     _, _ -> {
       let left = int.max(0, current - destroyed)
-      Landing(state: State(..state, armor: Some(left)), landed: [], effects: [
-        ToViewers(client_connection.InterruptArmor(armor: left)),
-        ..restarted
-      ])
+      Landing(
+        state: State(..state, armor: Some(left)),
+        landed: [],
+        armor_removed: current - left,
+        effects: [
+          ToViewers(client_connection.InterruptArmor(armor: left)),
+          ..restarted
+        ],
+      )
     }
   }
 }
@@ -228,6 +289,7 @@ fn held(state state: State, tell tell: Tell, now_ms now_ms: Int) -> Landing {
   Landing(
     state:,
     landed: list.map(held, fn(one) { one.0 }),
+    armor_removed: 0,
     effects: list.flat_map(held, fn(one) { one.1 }),
   )
 }

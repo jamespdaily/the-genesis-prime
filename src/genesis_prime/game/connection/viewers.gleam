@@ -401,6 +401,7 @@ pub fn viewer_takes(
             attackable:,
             hostile_to:,
             in_combat: False,
+            held: [],
           ),
         )),
         [
@@ -663,6 +664,10 @@ pub fn viewer_takes(
     }
     client_connection.CrowdControlApplied(state:, instance_id:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
+      let session =
+        shown_changed(session:, change: fn(picture) {
+          shown.with_held_applied(picture:, unit_id:, state:, instance_id:)
+        })
       Continue(session, [
         connection_state.to_client(
           session,
@@ -672,6 +677,10 @@ pub fn viewer_takes(
     }
     client_connection.CrowdControlEnded(state:, cast_id:, instance_id:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
+      let session =
+        shown_changed(session:, change: fn(picture) {
+          shown.with_held_ended(picture:, unit_id:, instance_id:)
+        })
       Continue(session, [
         connection_state.to_client(
           session,

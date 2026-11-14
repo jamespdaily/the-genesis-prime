@@ -2023,7 +2023,11 @@ pub fn landed(
     stay: own_stay(),
     sent: client_connection.SentByTarget(answered: strike_tell.Answered(
       key:,
-      outcome: strike_tell.Landed(descriptions: [], controls: []),
+      outcome: strike_tell.Landed(
+        descriptions: [],
+        controls: [],
+        armor_removed: 0,
+      ),
     )),
   )
 }

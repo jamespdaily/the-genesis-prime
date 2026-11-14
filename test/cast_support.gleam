@@ -70,6 +70,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     caster_death: spell_plan.CannotBeDead,
     target_death: spell_plan.AliveOrDead,
     caster_cc_mask: 0,
+    target_cc_mask: 0,
     global_cooldown: GlobalCooldown(
       refused_while_running: False,
       starts_for_ms: None,
@@ -716,7 +717,13 @@ pub fn caster_in_combat(in_combat in_combat: Bool) -> Caster {
 /// descriptions and no controls.
 pub fn hits(units: List(Int)) -> List(cast.Struck) {
   list.map(units, fn(unit_id) {
-    cast.Hit(unit_id:, unit: first_life, descriptions: [], controls: [])
+    cast.Hit(
+      unit_id:,
+      unit: first_life,
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+    )
   })
 }
 
