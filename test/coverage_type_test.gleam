@@ -748,11 +748,11 @@ fn measured_stealth_rows(
   )
 }
 
-/// The measure of planted type 118 or 64 rows beside a type 8 row, for the line of the
+/// The measure of planted type 118, 64 or 8 rows beside a type 8 row, for the line of the
 /// type given, each row as (targetFlags, tickTime, parameterType00): Spell4Effects.targetFlags
 /// bit 1 is the caster, 2 the primary target and 4 the area; the plan reads a type 118 row
-/// that reaches the caster, is not periodic and has a formula the caster's value reads, and
-/// a type 64 row aimed at the area alone.
+/// that reaches the caster, is not periodic and has a formula the caster's value reads, a
+/// type 64 row aimed at the area alone, and a type 8 row that is not periodic.
 fn measured_shield_rows(
   type_ type_: Int,
   rows rows: List(#(Int, Int, Int)),

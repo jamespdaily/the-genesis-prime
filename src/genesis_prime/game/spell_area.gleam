@@ -137,7 +137,8 @@ pub type SpellArea {
     /// rows without bit 0x20 (all of them when each has it). Empty for a spell with no
     /// telegraph row.
     shapes: List(Placement),
-    /// Every damage effect of the spell, each with its tag.
+    /// Every damage effect of the spell that strikes once, each with its tag; a periodic
+    /// row (`PeriodicNotRead`) is not among them.
     damage: List(DamageEffect),
     /// The spell as the plan holds it, whose Proxies aimed at each struck unit
     /// make a phase select the area.
@@ -145,7 +146,8 @@ pub type SpellArea {
   )
 }
 
-/// Why the areas cannot be built from the tables.
+/// Why the areas cannot be built from the tables. Every error but `PeriodicNotRead` fails
+/// the area load; a periodic row is left out of its spell's area.
 pub type AreaError {
   /// A table row the tree names is missing: the table, and the id.
   NoRow(table: String, id: Int)
@@ -176,7 +178,7 @@ pub type AreaError {
 }
 
 /// A sentence that says why the areas cannot be built, naming the table, the
-/// spell and the row, for the message the server stops with.
+/// spell and the row, for the message a failed area load stops the server with.
 pub fn describe(error error: AreaError) -> String {
   case error {
     NoRow(table:, id:) ->
@@ -262,7 +264,8 @@ const areas_key: table_store.DerivedKey(Areas) =
 
 /// The areas as a value the tables' load builds once, under the tables' key
 /// (genesis_prime/table/loader/store `derived`), after the ability trees: a
-/// missing row or an area the rule does not build fails the load.
+/// missing row or an area the rule does not build fails the load, and a periodic damage
+/// row is left out of its spell's area.
 pub fn derivation() -> table_store.Derivation {
   table_store.derivation(key: areas_key, build: fn(tables) {
     build(tables:) |> result.map_error(fn(error) { describe(error:) })
@@ -522,22 +525,23 @@ fn damage_effects_of(
   |> list.filter(fn(effect) {
     effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
   })
-  |> list.try_fold([], fn(kept, effect) {
+  |> list.try_map(fn(effect) {
     case damage_row_of(spell4_id: id, effect:) {
-      Ok(row) -> Ok([row, ..kept])
-      Error(PeriodicNotRead(..)) -> Ok(kept)
+      Ok(row) -> Ok(Some(row))
+      Error(PeriodicNotRead(..)) -> Ok(None)
       Error(error) -> Error(error)
     }
   })
-  |> result.map(list.reverse)
+  |> result.map(option.values)
 }
 
 /// One damage row (effect type 8) of the spell `spell4_id` as a damage effect, or the error
-/// that fails the area load: its dataBits00 must be a finite 32-bit float, its targetFlags
-/// one the rule aims by (1, 2, 4 or 6), its formula must read only the parameter types a
-/// player's value reads (genesis_prime/game/damage `unread`) and its tickTime must be 0: a
-/// periodic row strikes once for each tick, and the area strikes once. The area load and the
-/// coverage measure both read a row through it.
+/// that refuses it: its dataBits00 must be a finite 32-bit float, its targetFlags one the
+/// rule aims by (1, 2, 4 or 6), its formula must read only the parameter types a player's
+/// value reads (genesis_prime/game/damage `unread`) and its tickTime must be 0: a periodic
+/// row strikes once for each tick, and the area strikes once. Every refusal but
+/// `PeriodicNotRead` fails the area load, and `PeriodicNotRead` leaves the row out. The area
+/// load and the coverage measure both read a row through it.
 pub fn damage_row_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
