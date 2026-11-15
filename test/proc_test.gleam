@@ -421,6 +421,36 @@ pub fn each_proc_takes_its_draw_and_rolls_even_when_an_earlier_check_stops_it_te
     as "the count does not depend on what stopped it"
 }
 
+pub fn the_holder_gate_takes_the_first_roll_and_the_event_gate_the_second_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Both gates are one type 37 condition, roll 50 or less (row 4585,
+  // `Prerequisite.prerequisiteTypeId.37`), so a roll of 10 passes it and one of 95 fails it,
+  // and the order of the two rolls decides which gate fails.
+  let two_gates =
+    ProcRow(
+      ..row(),
+      holder_gate: roll_gate(count: 1),
+      event_gate: roll_gate(count: 1),
+    )
+  let with_rolls = fn(rolls: List(Int)) {
+    proc.decide(
+      row: two_gates,
+      fires_ms: [],
+      now_ms: 100,
+      event: event(spell: None),
+      holder_unit: holder,
+      holder_subject: subject(in_combat: True),
+      event_subject: subject(in_combat: True),
+      draw: None,
+      rolls:,
+    )
+  }
+  assert with_rolls([10, 95]) == EventGateFails
+    as "the holder gate takes 10 and passes, the event gate takes 95 and fails"
+  assert with_rolls([95, 10]) == HolderGateFails
+    as "the holder gate takes 95 and fails before the event gate is checked"
+}
+
 pub fn the_checks_run_limit_filter_holder_gate_event_gate_then_chance_test() -> Nil {
   use <- owned_test.run(5000)
   // A proc that fails every check, then each check mended in order.

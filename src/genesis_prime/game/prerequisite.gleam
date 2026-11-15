@@ -206,6 +206,7 @@ import genesis_prime/game/quest_log.{
 }
 import genesis_prime/game/top_zone
 import genesis_prime/message/float32
+import genesis_prime/random
 import genesis_prime/store.{type Character, type HeldItem}
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4BaseId, type Spell4Id, PrerequisiteId,
@@ -1464,13 +1465,7 @@ pub const roll_bytes = 4
 /// (`Prerequisite.prerequisiteTypeId.37`). Bytes left over after the last whole
 /// roll are dropped.
 pub fn rolls_of(bytes bytes: BitArray) -> List(Int) {
-  case bytes {
-    <<word:size(32), rest:bytes>> -> [
-      1 + word * 100 / 4_294_967_296,
-      ..rolls_of(bytes: rest)
-    ]
-    _ -> []
-  }
+  list.map(random.words(bytes:), fn(word) { 1 + word * 100 / 4_294_967_296 })
 }
 
 /// The prerequisite checked against its subject (`0x1404a1ca0`).

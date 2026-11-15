@@ -2514,6 +2514,115 @@ pub fn a_delayed_fire_is_dropped_when_the_holder_dies_test() -> Nil {
     as "a timer already on its way casts nothing"
 }
 
+pub fn a_delayed_fire_of_the_innate_passives_proc_is_dropped_when_its_holder_dies_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The passive's cast stays through a death with its other timers, but a fire that waits on
+  // its delay is dropped: the holder is gone, so nothing is cast for its hit.
+  let delayed =
+    ProcRow(
+      ..firing(
+        id: 1,
+        trigger: spell_plan.LandsHit,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+      delay_ms: 1000,
+    )
+  let #(plans, state) = holder_and_hitter(procs: [delayed], school: 2)
+  let #(state, hit) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 1000)
+  let assert [#(fire_timer, _)] =
+    list.filter(support.started_timers(effects: hit), fn(started) {
+      started.1 == 1000
+    })
+    as "the hit arms the delayed fire, due at 2000"
+  let caster = planted_caster()
+  let #(state, death) = died(cast: state, caster:, now: support.at(ms: 1500))
+  assert list.contains(support.cancelled_timers(effects: death), fire_timer)
+    as "the holder's death cancels the timer"
+  let #(_, stale) =
+    support.fired_raw_as(
+      caster: dead(caster:),
+      state:,
+      timer: fire_timer,
+      at: 2000,
+    )
+  assert starts_of(spell4_id: 250_201, effects: stale) == 0
+    as "a timer already on its way casts nothing"
+}
+
+pub fn a_hit_answered_after_the_client_ended_the_cast_still_fires_the_procs_the_cast_lingers_to_hold_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The hitter holds a Proc until removed, so its cast lingers when the client cancels it
+  // (0x801) while its second round is open; the hit then answered is the holder's hit all
+  // the same, and the cast's spell is still known (`holder_of`).
+  let lasting =
+    Spell(
+      ..hitter(school: 2),
+      method: spell_plan.Multiphase,
+      phase_delays_ms: [0, 500],
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.LandsHit,
+          casts: 250_201,
+          aim: spell_plan.AtHolder,
+        ),
+      ],
+    )
+  let plans = support.plans_of([lasting])
+  let caster = planted_caster()
+  let #(state, pressed) =
+    support.pressed_raw_in(
+      plans:,
+      state: cast.new(),
+      caster:,
+      bag_index: bag_of_base_2,
+      target: 0,
+      at: 1000,
+    )
+  let cast_id = support.pressed_id(effects: pressed)
+  let #(state, first) = answered(caster:, state:, effects: pressed, at: 1000)
+  let assert [#(second_go, _)] =
+    list.filter(support.started_timers(effects: first), fn(started) {
+      started.1 == 500
+    })
+    as "the first go arms the second, due at 1500"
+  let #(state, asking) =
+    support.fired_raw_as(caster:, state:, timer: second_go, at: 1500)
+  let assert [cast.Strike(asked)] = list.filter(asking, is_strike)
+    as "the second go asks for its targets"
+  let assert Ok(#(state, _)) =
+    cast.take(
+      cast: state,
+      message: cast.Cancelled,
+      body: support.cancel_body(
+        cast_id:,
+        reason: cast_result.SpellCancelled,
+        bit: 1,
+      ),
+      caster:,
+      plans:,
+      now: support.at(ms: 1600),
+    )
+    as "the client ends the cast with reason 6 (opcode.0x801)"
+  let #(_, late) =
+    support.then_procs(
+      step: support.went(
+        cast: state,
+        caster:,
+        now: support.at(ms: 1700),
+        cast_id: asked.cast_id,
+        phase: asked.phase,
+        struck: [plain_hit(unit_id: 31)],
+      ),
+      caster:,
+      at: 1700,
+    )
+  assert starts_of(spell4_id: 250_201, effects: late) == 1
+    as "the lingering cast's own proc fires for the hit it landed"
+}
+
 // ---- no cascade, the draws, the order ----
 
 pub fn a_fired_spells_own_hits_fire_procs_only_at_its_own_go_test() -> Nil {

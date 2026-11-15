@@ -73,15 +73,6 @@ fn gate_rolls(gate gate: Option(prerequisite.Prerequisite)) -> Int {
   }
 }
 
-/// The 32-bit words the bytes make, big-endian, one for each 4 bytes; bytes left over
-/// after the last whole word are dropped.
-pub fn words_of(bytes bytes: BitArray) -> List(Int) {
-  case bytes {
-    <<word:size(32), rest:bytes>> -> [word, ..words_of(bytes: rest)]
-    _ -> []
-  }
-}
-
 /// The fires of a proc that still count at `now_ms`: for a window, those made less than
 /// `window_ms` ago (a fire exactly `window_ms` ago is outside the window); for a proc's
 /// life, all of them.

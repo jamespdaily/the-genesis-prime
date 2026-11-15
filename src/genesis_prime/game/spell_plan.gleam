@@ -786,9 +786,13 @@ pub type ProcAim {
 /// other unit (`aim`), `delay_ms` later, when the event's spell passes `filter`, the
 /// `holder_gate` passes against the holder and the `event_gate` against the event's unit
 /// (`Spell4Effects.effectType.14.prerequisites`), within `limit`, and a draw falls below
-/// `chance` (dataBits02, float bits). Its `row` gives the caster's node of the holding
-/// cast its life (a Proc with no durationTime and flags bit 2 lasts until removed,
-/// `Spell4Effects.effectType.14.lifetime`), in the phases of `phase_flags`, when its
+/// `chance` (dataBits02, float bits). The client reads no Proc row
+/// (`Spell4Effects.effectType.14`, graded guess), so two readings are guesses: that the
+/// chance is the fraction a draw must fall below, and that the row's delayTime
+/// (`delay_ms`) is the wait between the event and the cast; the client's tooltips show
+/// both numbers to the player and say no more. Its `row` gives the caster's node of the
+/// holding cast its life (a Proc with no durationTime and flags bit 2 lasts until
+/// removed, `Spell4Effects.effectType.14.lifetime`), in the phases of `phase_flags`, when
 /// `condition` holds (its caster apply prerequisite against the caster) and its `tag`
 /// holds for the points the cast spent (genesis_prime/game/spend). The proc's `spell` is
 /// planned as a Proxy's child is.

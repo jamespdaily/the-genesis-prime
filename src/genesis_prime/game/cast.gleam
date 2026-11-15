@@ -3196,10 +3196,13 @@ fn settled(
 }
 
 /// The events of the heals an input's effects start on the caster, one for each `Heal`
-/// change in order (a heal that moves nothing is one as well, a guess); the event's spell
-/// is the spell of the cast whose row healed, as `after` holds it or, for a cast the input
-/// ended, `before`. `LandsCriticalHeal` is never raised: no heal is rolled a critical
-/// yet, and issue 830 closes that gap.
+/// change in order. Two readings are guesses: a heal that moves nothing is one as well,
+/// and a heal of the shields or of any other vital counts as `LandsHeal` as a health heal
+/// does (the client reads no Proc row to say what a heal is,
+/// `Spell4Effects.effectType.14.dataBits00`). The event's spell is the spell of the cast
+/// whose row healed, as `after` holds it or, for a cast the input ended, `before`.
+/// `LandsCriticalHeal` is never raised: no heal is rolled a critical yet, and issue 830
+/// closes that gap.
 fn heals_landed(
   before before: State,
   after after: State,
@@ -5615,10 +5618,13 @@ pub fn went(
   units units: Dict(Int, prerequisite.FirstUnit),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
-  let own = case dict.get(cast.casts, cast_id) {
-    Ok(live) -> hit_events(spell: live.spell, struck:)
-    Error(Nil) -> []
-  }
+  // A hit answered after the client ended the cast raises its events when the cast
+  // still holds a node (it lingers, `holder_of`). A cast that ended with no node left
+  // is gone with its spell, so its late hit raises none: a gap, issue 789.
+  let own =
+    holder_of(cast:, cast_id:)
+    |> result.map(fn(holder) { hit_events(spell: holder.spell, struck:) })
+    |> result.unwrap([])
   use <- settled(cast:, own:)
   released(
     taken: go(
@@ -6741,7 +6747,8 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
 /// then those for the stealth it ended. The innate passive's cast is the one cast it
 /// leaves: it stays live or lingering with its nodes, its modifiers, its pending timers,
 /// its stealth sources and its procs, and nothing is written for it
-/// (`passive_set_aside`).
+/// (`passive_set_aside`); the delayed fires of its procs are the exception, dropped with
+/// their timers cancelled, since the holder they wait for is gone (`proc_fires_dropped`).
 pub fn died(
   cast cast: State,
   caster _caster: Caster,
@@ -7126,6 +7133,7 @@ pub fn passive_started(
 /// The caster's casts, press, hold, thresholds and timers ended by its death.
 fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   let #(cast, aside) = passive_set_aside(cast:)
+  let #(aside, fires_dropped) = proc_fires_dropped(aside:)
   let #(cast, ended) =
     dict.to_list(cast.casts)
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
@@ -7149,8 +7157,54 @@ fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   let #(cast, cancelled) = left(cast:)
   #(
     passive_restored(cast:, aside:),
-    list.flatten([ended, lingering_ended, modifiers_ended, cancelled]),
+    list.flatten([
+      fires_dropped,
+      ended,
+      lingering_ended,
+      modifiers_ended,
+      cancelled,
+    ]),
   )
+}
+
+/// The passive's delayed proc fires dropped with the timers of what a death set aside, and
+/// their timers cancelled: the holder is gone, so no cast follows for its hit (a fire the
+/// death itself makes is armed after this, by the proc pass).
+fn proc_fires_dropped(
+  aside aside: Option(Aside),
+) -> #(Option(Aside), List(Effect)) {
+  case aside {
+    None -> #(None, [])
+    Some(set_aside) -> {
+      let #(fires, kept) =
+        list.partition(set_aside.timers, fn(entry) {
+          case entry.1 {
+            ProcDue(..) -> True
+            Go(..)
+            | Finish(..)
+            | NodesEnd(..)
+            | Tick(..)
+            | ModifierStart(..)
+            | ModifierEnd(..)
+            | RestrictionEnd(..)
+            | CooldownModifierStarts(..)
+            | CooldownModifierEnds(..)
+            | TargetModifierStart(..)
+            | ForcedMoveStart(..)
+            | StartChild(..)
+            | StateEnd(..)
+            | StartHeld
+            | RepeatHeld
+            | WindowEnd(..)
+            | ChargeLevel(..) -> False
+          }
+        })
+      #(
+        Some(Aside(..set_aside, timers: kept)),
+        list.map(fires, fn(entry) { CancelTimer(timer: entry.0) }),
+      )
+    }
+  }
 }
 
 /// What a death leaves of the innate passive: its live or lingering cast, the timers

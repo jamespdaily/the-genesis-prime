@@ -102,7 +102,6 @@ import genesis_prime/game/objective
 import genesis_prime/game/objective_link
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite
-import genesis_prime/game/proc
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/rating
 import genesis_prime/game/shown
@@ -115,6 +114,7 @@ import genesis_prime/game/target_group
 import genesis_prime/game/world_entry
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/unit_health.{UnitHealth}
+import genesis_prime/random
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type TimerId, CancelTimer,
   OwnEffect, StartTimer,
@@ -1123,7 +1123,7 @@ fn procs_fired(
             unit_ids:,
             caster_unit: entered.unit_id,
           ),
-          draws: proc.words_of(bytes: word_bytes),
+          draws: random.words(bytes: word_bytes),
           rolls: prerequisite.rolls_of(bytes: roll_bytes),
         )
       let #(session, more) =
@@ -1138,7 +1138,7 @@ fn procs_fired(
   }
 }
 
-/// The bytes of a chance draw: one 32-bit word (`proc.words_of`).
+/// The bytes of a chance draw: one 32-bit word (`random.words`).
 const proc_word_bytes = 4
 
 /// The tell of a property modifier's start or end to the creature `unit_id` of

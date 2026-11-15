@@ -588,7 +588,7 @@ pub fn a_go_with_a_chance_proc_draws_exactly_the_draws_the_pending_events_need_t
   // gate rows of its go: blocks 0 and 1 of the seed. The landing of the first strike is
   // one pending event and the proc one chance word: a draw of 4 bytes, which takes
   // block 2. The word's fraction is 1438334843 / 2^32 = 0.3349 (`random.fraction`,
-  // `proc.words_of`): below a chance of 0.5 and not below 0.25. A draw takes whole
+  // `random.words`): below a chance of 0.5 and not below 0.25. A draw takes whole
   // 32-byte blocks (`random.bytes`), so the second strike's rolls are block 3 whatever
   // the proc's outcome, and a landing that drew more or less than the word would shift
   // them.

@@ -656,6 +656,22 @@ pub fn the_starting_abilities_plan_with_178239_and_208200_and_leave_out_123744_t
   assert stalker_damage.holder_gate == None
   assert spell_named(spell4_id: 52_371).procs == []
     as "52371's 123744 is behind caster persistence 28926: it is left out and the load passes"
+  let tables = client_tables.shared()
+  let assert Ok(stealth_on) =
+    list.find(spell4_effects.all(tables), fn(effect) { effect.id == 178_239 })
+    as "the client's Spell4Effects holds 178239"
+  assert stealth_on.spell_id == 38_784 && stealth_on.data_bits00 == 16
+    as "Spell4 38784 'Stealth - On' holds 178239, kind 16 (takes damage)"
+  assert spell_plan.read_row(
+      tables:,
+      spell_groups: spell_plan.spell_groups(tables:),
+      place: spell_tables.pressed,
+      effect: stealth_on,
+    )
+    == Ok(spell_plan.LeftOut(why: spell_plan.ProcOfAnotherKind(kind: 16)))
+    as "the plan leaves 178239 out as a Proc of another kind, a gap issue 828 closes"
+  assert spell_named(spell4_id: 38_784).procs == []
+    as "so 38784 holds no Proc until issue 828"
 }
 
 pub fn the_proc_rows_read_count_1643_of_the_ten_kinds_and_51_of_the_old_kinds_test() -> Nil {
