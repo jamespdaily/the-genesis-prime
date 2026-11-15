@@ -1893,18 +1893,27 @@ pub fn server_proxy(child child: Spell, phase_flags phase_flags: Int) -> Proxy {
 /// own, gated on the caster, can be cast instead (`ResolveProxyByCasterApply`
 /// `0x1403d3520`).
 fn has_threshold_time(spell spell: Spell) -> Result(Nil, PlanError) {
-  case lacks_threshold_time(spell:), spell.press_proxies {
+  case
+    lacks_threshold_time(method: spell.method, threshold_ms: spell.threshold_ms),
+    spell.press_proxies
+  {
     True, [] -> Error(NoThresholdTime(spell4_id: spell.spell4_id.value))
     True, [_, ..] | False, _ -> Ok(Nil)
   }
 }
 
-/// Whether the spell is a RapidTap or ChargeRelease spell with no threshold time: no
-/// threshold opens for it, so a press of it casts a Proxy or is refused 285
-/// (`0x1403bfd60`).
-pub fn lacks_threshold_time(spell spell: Spell) -> Bool {
-  case spell.method {
-    RapidTap | ChargeRelease -> spell.threshold_ms == 0
+/// Whether a spell of this cast method and thresholdTime is a RapidTap or ChargeRelease
+/// spell with no threshold time: no threshold opens for it, so a press of it casts the
+/// first Proxy its caster passes, which its own Proxy rows are walked for and never run as
+/// its go, or is refused 285 (`0x1403bfd60`, `ResolveProxyByCasterApply` `0x1403d3520`).
+/// Only a spell planned as a pressed ability is walked so: a stage or a Proxy's child runs
+/// its own Proxy rows as its go.
+pub fn lacks_threshold_time(
+  method method: CastMethod,
+  threshold_ms threshold_ms: Int,
+) -> Bool {
+  case method {
+    RapidTap | ChargeRelease -> threshold_ms == 0
     Normal
     | Channeled
     | PressHold
@@ -2200,7 +2209,8 @@ fn spell_of(
   use groups <- result.try(groups_of(sources:, row:))
   use stack <- result.try(stack_of(tables:, row:))
   let method = method_of(base.cast_method)
-  let presses = pressed && is_proxy_press(method:, row:)
+  let presses =
+    pressed && lacks_threshold_time(method:, threshold_ms: row.threshold_time)
   use proxies <- result.try(case presses {
     True -> Ok([])
     False ->
@@ -2378,32 +2388,16 @@ pub fn press_spell_ids(
       spell4_base.get(tables:, id: Spell4BaseId(row.spell4_base_id_base_spell))
     {
       Ok(base) ->
-        is_proxy_press(method: method_of(base.cast_method), row:)
+        lacks_threshold_time(
+          method: method_of(base.cast_method),
+          threshold_ms: row.threshold_time,
+        )
         && list.any(effects_of(sources:, spell4_id: row.id), is_gated_proxy)
       Error(..) -> False
     }
   })
   |> list.map(fn(row) { row.id })
   |> list.sort(int.compare)
-}
-
-/// Whether a press of the spell resolves a Proxy by the caster's gate: a RapidTap or
-/// ChargeRelease spell with no threshold time (ResolveProxyByCasterApply `0x1403d3520`).
-/// Its own Proxy rows are then walked by that resolve and never run as the spell's go.
-/// Only a spell planned as a pressed ability is walked so: a stage or a Proxy's child
-/// runs its own Proxy rows as its go.
-fn is_proxy_press(method method: CastMethod, row row: spell4.Spell4) -> Bool {
-  case method {
-    RapidTap | ChargeRelease -> row.threshold_time == 0
-    Normal
-    | Channeled
-    | PressHold
-    | ChanneledField
-    | ClientSideInteraction
-    | Multiphase
-    | Transactional
-    | OtherMethod(..) -> False
-  }
 }
 
 /// One VitalModifier row as a gain, which must aim at the caster and change vital 6 or 8;

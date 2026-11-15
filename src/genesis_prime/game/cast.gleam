@@ -3910,7 +3910,11 @@ fn press_resolved(
     )
   }
   let judged = case
-    resolution.stage == None && spell_plan.lacks_threshold_time(spell:)
+    resolution.stage == None
+    && spell_plan.lacks_threshold_time(
+      method: spell.method,
+      threshold_ms: spell.threshold_ms,
+    )
   {
     True -> Refuse(result: cast_result.IllegalSpellCast)
     False ->

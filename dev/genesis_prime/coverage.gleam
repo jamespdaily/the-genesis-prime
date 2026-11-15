@@ -19,7 +19,9 @@
 ////
 //// It then counts the press spells apart (genesis_prime/coverage/starting_ability.press_spells):
 //// the threshold spells with no threshold time whose Proxies the caster's gate picks, which no
-//// level tree holds, with the rows their trees reach and each one the plan refuses.
+//// level tree holds, with the rows a press applies (its gated Proxies and the rows of the
+//// spells they reach), a line for the press spells' other rows, which are never applied,
+//// by effect type, and each press spell the plan refuses.
 ////
 //// It then lists the spells the reached spells' tooltips name that no row reaches, with the
 //// server's Proxies (the play database's server_proxy table) planted into the trees, and a
@@ -151,28 +153,50 @@ pub fn left_out_report(tables tables: store.Tables) -> String {
 
 /// The press spells (threshold spells with no threshold time that press a Proxy by the
 /// caster's gate), which no level tree holds and the starting abilities' column does not
-/// count: how many the tables hold, how many the plan takes, the spells of their trees,
-/// their Spell4Effects rows and how many of those the plan does not read, and each press
-/// spell the plan refuses with why.
+/// count: how many the tables hold, how many the plan takes, the spells their Proxies
+/// reach, the Spell4Effects rows a press applies (its gated Proxies and the rows of the
+/// reached spells) and how many of those the plan does not read, the press spells' other
+/// rows, which are never applied, by effect type, and each press spell the plan refuses
+/// with why.
 fn press_report(tables tables: store.Tables) -> String {
   let sources = spell_plan.sources_of(tables:)
   let held = list.length(spell_plan.press_spell_ids(tables:, sources:))
-  let #(spells, refused) = starting_ability.press_spells(tables:)
-  let #(rows, unread) = starting_ability.effect_rows_of(tables:, spells:)
+  let spells = starting_ability.press_spells(tables:)
+  let rows = starting_ability.press_rows_of(tables:, spells:)
+  let reached_ids =
+    list.map(spells.reached, fn(spell) { spell.spell4_id.value })
+  let started_by_press =
+    list.count(spells.presses, fn(press) {
+      list.contains(reached_ids, press.spell4_id.value)
+    })
+  let never_applied =
+    list.fold(rows.never_applied, 0, fn(sum, entry) { sum + entry.1 })
   string.join(
     [
       "Press spells, counted apart from the starting abilities: "
         <> int.to_string(held)
         <> " hold a gated Proxy, "
-        <> int.to_string(held - list.length(refused))
+        <> int.to_string(list.length(spells.presses))
         <> " are planned, reaching "
-        <> int.to_string(list.length(spells))
-        <> " spells with "
-        <> int.to_string(rows)
-        <> " Spell4Effects rows ("
-        <> int.to_string(unread)
+        <> int.to_string(list.length(spells.reached))
+        <> " spells; "
+        <> int.to_string(rows.applied)
+        <> " Spell4Effects rows apply (the gated Proxies and the reached spells' rows; "
+        <> int.to_string(rows.unread)
         <> " not read)",
-      ..list.map(refused, fn(refusal) {
+      "Press spells, on a press spell, never applied: "
+        <> int.to_string(never_applied)
+        <> " rows of the "
+        <> int.to_string(list.length(spells.presses) - started_by_press)
+        <> " planned press spells no other press starts ("
+        <> string.join(
+        list.map(rows.never_applied, fn(entry) {
+          "type " <> int.to_string(entry.0) <> ": " <> int.to_string(entry.1)
+        }),
+        ", ",
+      )
+        <> ")",
+      ..list.map(spells.refused, fn(refusal) {
         "- Spell4 " <> int.to_string(refusal.0) <> " is refused: " <> refusal.1
       })
     ],

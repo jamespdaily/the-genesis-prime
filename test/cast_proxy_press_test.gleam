@@ -37,6 +37,7 @@
 
 import cast_support as support
 import fixture_tables
+import game_client
 import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/spell_plan.{type Plans, type Spell}
@@ -329,7 +330,76 @@ fn held_press(
       poses: dict.new(),
       until_ms: Some(until_ms),
     )
-  [down, ..list.map(repeats, fn(repeat) { repeat.effects })]
+  [down, answered, ..list.map(repeats, fn(repeat) { repeat.effects })]
+}
+
+/// The casts of the stack spell (Spell4 42607) whose nodes the caster holds after a step:
+/// the ones held before it and the ones it starts, less the casts its 0x811 frames take
+/// the caster off.
+fn live_stack_casts(
+  live live: List(Int),
+  effects effects: List(Effect),
+) -> List(Int) {
+  let frames = support.writes(effects:)
+  let started =
+    list.filter_map(game_client.casts_in(frames:), fn(event) {
+      case event {
+        game_client.CastStarted(cast_id:, spell4_id: 42_607, ..) -> Ok(cast_id)
+        game_client.CastStarted(..)
+        | game_client.CastConfirmed(..)
+        | game_client.CastWent(..)
+        | game_client.CastFinished(..)
+        | game_client.CastRefused(..)
+        | game_client.ThresholdOpened(..)
+        | game_client.ThresholdIndex(..)
+        | game_client.ThresholdClosed(..)
+        | game_client.ThresholdEnded(..) -> Error(Nil)
+      }
+    })
+  let removed =
+    list.map(support.removed_targets(frames), fn(removal) { removal.0 })
+  list.append(live, started)
+  |> list.filter(fn(cast_id) { !list.contains(removed, cast_id) })
+}
+
+/// The spell of the first Proxy of Spell4 42603, in row order, that passes a caster
+/// holding this many nodes of Spell4 42607: each gate (Prerequisite 16450, 16451, 16452) is
+/// one type 59 condition, equal to 0, 1 and 2 nodes, and the rows come first, second and third
+/// (`table_rows -- Prerequisite 16450 16451 16452`). `reach` is the node count the third
+/// gate asks for.
+fn first_proxy_passing(
+  stacks stacks: Int,
+  reach reach: Int,
+) -> Result(Int, Nil) {
+  case stacks {
+    0 -> Ok(42_604)
+    1 -> Ok(42_605)
+    count if count == reach -> Ok(42_606)
+    _ -> Error(Nil)
+  }
+}
+
+/// Checks that every press of the held key, the first and each repeat, casts the first
+/// Proxy whose gate passes on the nodes the caster held when it fell: a step that casts
+/// names that spell, and the step that is refused is one no gate passes for. The nodes
+/// held are those the steps before it started and had not ended.
+fn assert_each_press_casts_the_first_passing_proxy(
+  steps steps: List(List(Effect)),
+  reach reach: Int,
+) -> Nil {
+  list.fold(steps, [], fn(live, effects) {
+    let stacks = list.length(live)
+    let casts = list.map(root_casts(steps: [effects]), Ok)
+    let refused =
+      support.cast_lines(frames: support.writes(effects:))
+      |> list.filter(string.starts_with(_, "refused"))
+    assert casts == [] || casts == [first_proxy_passing(stacks:, reach:)]
+      as "a press casts the spell of the first Proxy whose gate passes on the nodes held when it fell (0x1403d3520)"
+    assert refused == [] || first_proxy_passing(stacks:, reach:) == Error(Nil)
+      as "a press is refused only when no gate passes for the nodes held"
+    live_stack_casts(live:, effects:)
+  })
+  Nil
 }
 
 pub fn held_rapid_tap_repeat_resolves_the_proxy_again_test() -> Nil {
@@ -341,8 +411,9 @@ pub fn held_rapid_tap_repeat_resolves_the_proxy_again_test() -> Nil {
     ))
   let steps =
     held_press(plans:, caster: caster_of(in_combat: False), until_ms: 4500)
-  assert root_casts(steps:) == [42_604, 42_604, 42_605, 42_606]
-    as "each repeat of the held press resolves again (0x1403d3520) from the nodes the caster holds then: the first repeat falls at the instant of the first cast's go, before the stack that cast adds is placed, so 16450 (no stack) passes again (42604); one stack passes 16451 (42605); two stacks pass 16452 (42606). Each cast of 42604 and 42605 adds one 42607 stack through its Proxy row 97018 or 97000"
+  assert_each_press_casts_the_first_passing_proxy(steps:, reach: 2)
+  assert list.unique(root_casts(steps:)) == [42_604, 42_605, 42_606]
+    as "the held key's presses reach each of the three Proxies as the nodes of 42607 grow, each cast of 42604 and 42605 adding one through its Proxy row 97018 or 97000"
   // Kept edit: the value of Prerequisite 16452, the gate of Proxy row 96993 (orderIndex 2),
   // made unreachable, so that two stacks pass no gate.
   fixture_tables.changed(
@@ -353,14 +424,13 @@ pub fn held_rapid_tap_repeat_resolves_the_proxy_again_test() -> Nil {
       let plans = plans_of_press(press: ability_of(tables:, spell4_id: 42_603))
       let steps =
         held_press(plans:, caster: caster_of(in_combat: False), until_ms: 6500)
-      assert root_casts(steps:) == [42_604, 42_604, 42_605]
-        as "the repeat at 4000 ms finds no passing Proxy and the press is refused 285 (0x1403c0144): the hold ends with it, so nothing repeats after"
+      assert_each_press_casts_the_first_passing_proxy(steps:, reach: 9)
       assert list.flat_map(steps, fn(effects) {
           support.cast_lines(frames: support.writes(effects:))
         })
         |> list.filter(string.starts_with(_, "refused"))
         == ["refused 42603 285"]
-        as "the refusal names the press's own spell, once"
+        as "once two nodes are held no gate passes, so the press is refused 285 (0x1403c0144) naming the press's own spell, once: the hold ends with it"
     },
   )
 }

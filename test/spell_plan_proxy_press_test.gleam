@@ -21,15 +21,18 @@
 ////   as an undecoded gate is (`Prerequisite.prerequisiteTypeId`, the issue "The
 ////   prerequisite types effects use that the server does not read yet are read" (#818)).
 
+import client_tables
 import fixture_tables
 import genesis_prime/game/spell_plan.{type PlanError, type Spell}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/store
 import gleam/int
 import gleam/list
+import gleam/result
 import gleam/string
 import owned_test
 import planted_table
+import unitest
 
 /// The client's spell `spell4_id` as the plan loads an ability.
 fn ability_of(
@@ -84,6 +87,27 @@ pub fn proxy_press_whose_proxy_spell_cannot_be_planned_fails_the_load_test() -> 
   )
 }
 
+pub fn proxy_press_gate_holding_a_condition_type_the_server_does_not_read_is_refused_at_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kept edit: Prerequisite 16451, the caster apply gate of Proxy row 96992, made a
+  // condition of type 102, the type of Prerequisite 11196 and 11197 (Spell4Effects 69198
+  // and 69199), which `Prerequisite.prerequisiteTypeId0` names and no decoder reads.
+  fixture_tables.changed(
+    table: "Prerequisite",
+    id: 16_451,
+    with: [#("prerequisiteTypeId0", planted_table.Integer(102))],
+    body: fn(tables) {
+      assert ability_of(tables:, spell4_id: 42_603)
+        == Error(spell_plan.ApplyPrerequisiteNotRead(
+          spell4_id: 42_603,
+          effect_id: 96_992,
+          prerequisite_type: 102,
+        ))
+        as "a gate holding a type no decoder reads is refused at load, as every apply gate is, not skipped at run time"
+    },
+  )
+}
+
 pub fn proxy_press_gate_that_needs_a_roll_or_the_second_unit_is_refused_at_load_test() -> Nil {
   use <- owned_test.run(60_000)
   [37, 130]
@@ -111,4 +135,36 @@ pub fn proxy_press_gate_that_needs_a_roll_or_the_second_unit_is_refused_at_load_
       },
     )
   })
+}
+
+// Reads the client's own tables, so the test runs alone in the client-suite part of
+// `./check` (tag `client_rows`).
+pub fn every_press_spell_of_the_client_plans_but_the_two_the_plan_cannot_read_test() -> Nil {
+  use <- owned_test.run(300_000)
+  use <- unitest.tag("client_rows")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  let #(planned, refused) =
+    spell_plan.press_spell_ids(tables:, sources:)
+    |> list.map(fn(spell4_id) {
+      ability_of(tables:, spell4_id:)
+      |> result.map_error(fn(error) { #(spell4_id, error) })
+    })
+    |> result.partition
+  assert list.length(planned) == 38
+    as "38 of the client's press spells (a RapidTap or ChargeRelease spell with thresholdTime 0 and a gated Proxy row) plan as an ability"
+  assert list.sort(refused, fn(a, b) { int.compare(a.0, b.0) })
+    == [
+      #(
+        34_759,
+        spell_plan.ApplyPrerequisiteNotRead(
+          spell4_id: 34_759,
+          effect_id: 69_198,
+          prerequisite_type: 102,
+        ),
+      ),
+      #(76_511, spell_plan.NoRow(table: "Spell4Base", id: 76_506)),
+    ]
+    as "Spell4 34759 is refused for the type 102 gate (Prerequisite 11196) of its Proxy row 69198, which no decoder reads (the issue \"The prerequisite types effects use that the server does not read yet are read\", #818); once that is read its child 34760 is refused for row 69200, aimed by flag 5 (the issue \"An effect aimed by a combined flag reaches every unit each of its bits names\"). Spell4 76511 is refused for the Spell4Base row 76506 its tree names, which the client's table does not hold"
 }

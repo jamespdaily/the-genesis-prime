@@ -1354,8 +1354,9 @@ pub fn objective_links(
 }
 
 /// The PrerequisiteTypes, in the prerequisite and the rows it nests, that a press cannot
-/// check a gate of a Proxy with, each once: type 37 draws a roll, and types 50, 108 and 130
-/// read the second unit, which the client sets to the target of the unit that presses
+/// check a gate of a Proxy with, each once: a type the server has not decoded
+/// (`unread_types`), type 37, which draws a roll, and types 50, 108 and 130, which read the
+/// second unit, which the client sets to the target of the unit that presses
 /// (`ResolveProxyByCasterApply` `0x1403d3520`) while the subject here holds the caster.
 pub fn press_unread_types(
   prerequisite prerequisite: Prerequisite,
@@ -1363,6 +1364,7 @@ pub fn press_unread_types(
   list.flat_map(prerequisite.conditions, fn(condition) {
     case condition {
       Nested(row: Some(nested), ..) -> press_unread_types(prerequisite: nested)
+      Unread(prerequisite_type:) -> [prerequisite_type]
       Roll(..) -> [37]
       UnderCastBy(..) -> [50]
       InArc(..) -> [108]
@@ -1400,8 +1402,7 @@ pub fn press_unread_types(
       | ItemHeld(..)
       | WorldDifficulty(..)
       | ObjectiveStatus(..)
-      | NoCase
-      | Unread(..) -> []
+      | NoCase -> []
     }
   })
   |> list.unique
