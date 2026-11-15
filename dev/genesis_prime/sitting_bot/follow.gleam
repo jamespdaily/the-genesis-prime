@@ -31,6 +31,7 @@
 //// - A unit that stands still sends no 0x0638, so the bot stands still.
 
 import genesis_prime/message/movement_command.{type MovementCommand}
+import genesis_prime/message/movement_kind_3.{MovementKind3}
 import genesis_prime/message/movement_kind_4.{MovementKind4}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
@@ -159,6 +160,14 @@ pub fn replayed(commands: List(RelayedMovement)) -> List(MovementCommand) {
       relayed_movement.Time(data) -> movement_command.Time(data)
       relayed_movement.Platform(data) -> movement_command.Platform(data)
       relayed_movement.Position(data) -> movement_command.Position(data)
+      relayed_movement.TimedPath(data) ->
+        movement_command.Kind3(MovementKind3(
+          field_2: data.times,
+          field_3: data.points,
+          field_4: 0,
+          field_5: 0,
+          field_6: 0,
+        ))
       relayed_movement.Path(data) ->
         movement_command.Kind4(MovementKind4(
           points: data.points,

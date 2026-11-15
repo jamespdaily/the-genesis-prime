@@ -251,10 +251,21 @@
 //// | a viewer arrives while the charge is open | its news holds the charge's 0x7ff, with its cast id, so its client takes the later 0x7f4 | `a_viewer_arriving_mid_charge_gets_the_open_cast_test` |
 //// | a viewer arrives while the charge is open and the threat list's top entry changed since it began | its 0x7ff names the top entry, the target its 0x908 names | `a_viewer_arriving_mid_charge_is_told_the_current_target_in_the_open_cast_test` |
 //// | a creature that cannot move: its target is out of reach, or beyond the leash range from home | out of reach: no 0x638, it keeps its place; beyond the leash range: the release as the leash does, with no walk, to Resting | `a_turret_never_chases_or_walks_home_test`, `a_turret_leashes_in_place_when_its_target_is_beyond_its_leash_range_test` |
+//// | `Thrown` reaches a creature that is dead, Returning or does not run (run speed 0) | the fight drops it: no path, no timer, no news | `a_turret_is_not_thrown_test`, `a_throw_at_a_dead_or_returning_creature_is_dropped_test` |
+//// | `Thrown` reaches a creature that runs, Fighting or Resting | the path is `Timed` from where it is, `FlightEnds` starts, the viewers are sent one 0x638; an open charge breaks as `held` does | `a_thrown_creature_sends_its_viewers_the_flight_once_test`, `a_throw_breaks_an_open_charge_test` |
+//// | `Thrown` reaches a creature already in flight | the new path starts from where the first had reached, the old `FlightEnds` is cancelled and a new one starts | `a_second_throw_mid_flight_starts_from_where_the_first_had_reached_test` |
+//// | an attack tick fires in flight | no round starts: the creature does not attack or chase until it lands | `a_thrown_creature_does_not_chase_or_attack_until_it_lands_test` |
+//// | `FlightEnds` fires of the flight's generation | the creature stands at the last point with no news and chases again from there, unless a state holds it | `a_bare_throw_resumes_the_chase_from_the_landing_test`, `a_flight_ending_while_a_state_holds_does_not_resume_test` |
+//// | `FlightEnds` fires of an older generation | nothing | `a_stale_flight_end_does_nothing_test` |
+//// | a state takes hold in flight | the run stops only for a path that is `Running`; a `Timed` flight is kept and finishes | `a_state_landing_mid_flight_lets_the_flight_finish_test` |
+//// | the last state ends in flight | the creature acts again at `FlightEnds`, not before | `a_state_ending_mid_flight_does_not_resume_until_the_landing_test` |
+//// | the creature dies in flight | `CancelTimer(FlightEnds)`, the path is kept and no kind 2 is sent: the corpse lies at the landing | `a_creature_killed_mid_flight_lies_at_the_landing_test` |
+//// | a viewer arrives in flight | it is sent the rest of the path from where the creature is now | `an_arriving_viewer_mid_flight_is_sent_the_rest_of_the_path_test` |
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Inside, type Row}
 import genesis_prime/game/cast
+import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{type Offence}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
@@ -264,7 +275,7 @@ import genesis_prime/game/strike_tell.{
 import genesis_prime/step.{type Address, type ConnectionId}
 import genesis_prime/world_map/creature_life.{type Attack, Charged, Instant}
 import genesis_prime/world_map/creature_path.{
-  type Path, Circle, Running, Standing,
+  type Path, Circle, Running, Standing, Timed,
 }
 import genesis_prime/world_map/creature_unit_type.{type CreatureUnitType}
 import genesis_prime/world_map/game_number.{type GameNumbers}
@@ -309,6 +320,7 @@ pub type Fighter {
     attack_refused: Bool,
     holds_a_state: Bool,
     guard_casts: List(Int),
+    hit_radius: Float,
   )
 }
 
@@ -380,7 +392,14 @@ pub opaque type State {
     sightings: Dict(ConnectionId, Sighting),
     next_cast: Int,
     next_generation: Int,
+    flight: Option(Flight),
   )
+}
+
+/// A throw the creature is in (genesis_prime/game/forced_move): the generation of its
+/// `FlightEnds` timer and the monotonic time the path's last point is reached.
+pub type Flight {
+  Flight(ends: Int, until_ms: Int)
 }
 
 /// What the creature's rule turns its messages and timers into for the fight.
@@ -441,6 +460,17 @@ pub type Input {
   /// (`fighter.attack.run_speed`). A path it runs at another speed is run on from where
   /// the creature stands at the new speed, to the same end.
   SpeedChanged
+  /// creature: a ForcedMove effect of a player's cast reaches the creature
+  /// (genesis_prime/game/forced_move): the move the row asks for, the two fractions the
+  /// caster's connection drew, and the unit it is measured from. A creature that is
+  /// walking home, or does not run, takes no throw. Else it takes the path the move
+  /// builds from where it is, the viewers are sent it, and `FlightEnds` ends the flight.
+  /// A throw breaks an open charge as a held state does.
+  Thrown(
+    move: forced_move.Move,
+    draws: forced_move.Draws,
+    reference: forced_move.Reference,
+  )
 }
 
 /// The fight's timers, each of the generation it was started with: a timer of a
@@ -456,6 +486,9 @@ pub type Timer {
   HomeArrival(generation: Int)
   /// The charge's cast time is up (`Attack.cast_ms` after its 0x7ff): the charge strikes.
   CastEnds(generation: Int)
+  /// The thrown creature's path is run: it stands at the path's last point, and acts
+  /// again unless a state holds it.
+  FlightEnds(generation: Int)
 }
 
 /// What the fight asks the creature's rule to do, in order.
@@ -485,6 +518,7 @@ pub fn new(home home: Place) -> State {
     sightings: dict.new(),
     next_cast: 1,
     next_generation: 1,
+    flight: None,
   )
 }
 
@@ -605,6 +639,10 @@ pub fn step(
     Controlled -> held(state:, fighter:, now_ms:)
     ControlEnded -> resumed(state:, fighter:, now_ms:)
     SpeedChanged -> speed_changed(state:, fighter:, now_ms:)
+    Thrown(move:, draws:, reference:) ->
+      thrown(state:, fighter:, alive:, move:, draws:, reference:, now_ms:)
+    TimerFired(timer: FlightEnds(generation:)) ->
+      flight_ended(state:, fighter:, generation:, now_ms:)
     StoodAgain -> {
       let state =
         State(..state, status: Resting, path: Standing(at: fighter.home))
@@ -617,6 +655,36 @@ pub fn step(
       )
     }
   }
+}
+
+/// A throw reaches the creature: dropped when it is dead, walking home or does not run
+/// (`Fighter.attack.run_speed` 0); else its path is built from where it is
+/// (`forced_move.path`, clipped at the leash circle), kept as `Timed` with a `Flight`
+/// and its `FlightEnds` timer, an open charge is broken as `held` does, and the viewers
+/// are sent the path.
+fn thrown(
+  state _state: State,
+  fighter _fighter: Fighter,
+  alive _alive: Bool,
+  move _move: forced_move.Move,
+  draws _draws: forced_move.Draws,
+  reference _reference: forced_move.Reference,
+  now_ms _now_ms: Int,
+) -> #(State, List(Effect)) {
+  panic as "shape: a throw is taken in the step's code commit"
+}
+
+/// `FlightEnds` fires: of the generation of the flight the fight holds, the creature
+/// stands at the path's last point with no news for its viewers (a client holds a kind 3
+/// path's last point), and chases again unless a state holds it; of any other generation
+/// it does nothing.
+fn flight_ended(
+  state _state: State,
+  fighter _fighter: Fighter,
+  generation _generation: Int,
+  now_ms _now_ms: Int,
+) -> #(State, List(Effect)) {
+  panic as "shape: the end of a flight is built in the step's code commit"
 }
 
 /// Whether the creature takes a strike: a creature walking home refuses it.
@@ -713,6 +781,8 @@ pub fn arrival_news(
       }
     }
     Standing(..) -> []
+    Timed(..) ->
+      panic as "shape: a viewer's rest of a timed path is built in the step's code commit"
   }
   list.flatten([fight, charge, path])
 }
@@ -1655,6 +1725,8 @@ fn path_news(was was: Path, now now: Path, now_ms now_ms: Int) -> List(Effect) {
         False -> []
       }
     Standing(..), Standing(..) -> []
+    Timed(..), _ | Standing(..), Timed(..) ->
+      panic as "shape: the news of a timed path is built in the step's code commit"
   }
 }
 
@@ -1891,7 +1963,7 @@ fn speed_changed(
         Fighting(..) | Resting -> #(state, moved)
       }
     }
-    Running(..) | Standing(..) -> #(state, [])
+    Running(..) | Standing(..) | Timed(..) -> #(state, [])
   }
 }
 

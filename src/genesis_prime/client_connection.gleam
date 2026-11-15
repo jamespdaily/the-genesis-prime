@@ -26,6 +26,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
 import genesis_prime/game/chat_tell.{type Tell as ChatTell}
 import genesis_prime/game/experience.{type Credit}
+import genesis_prime/game/forced_move
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   type Answered, type Fight, type Tell as StrikeTell,
@@ -150,6 +151,17 @@ pub type Request {
   /// `ModifierStarts`, `ModifierEnds`), for the life the go struck. Told through the
   /// creature registry with no watch, and never asked.
   TellTargetChange(connection: ConnectionId, change: TargetChange)
+  /// What a `Tell` effect sends a creature a ForcedMove effect of this connection's
+  /// player's cast throws (genesis_prime/world_map/creature `Thrown`): the move, the two
+  /// fractions this connection drew from its seed and the unit it is measured from
+  /// (genesis_prime/game/forced_move), for the life the go struck: the monotonic time of
+  /// the effect's go. Told through the creature registry with no watch, and never asked.
+  TellThrown(
+    move: forced_move.Move,
+    draws: forced_move.Draws,
+    reference: forced_move.Reference,
+    struck_at_ms: Int,
+  )
 }
 
 /// A property modifier of a cast on a creature, as `TellTargetChange` carries it.

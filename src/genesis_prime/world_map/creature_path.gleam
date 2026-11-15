@@ -1,17 +1,24 @@
-//// Where a creature that runs is at any moment: the one straight path it was last
-//// sent as a 0x638 of kind 4, and its place along it. The creature keeps it
+//// Where a creature that runs or is thrown is at any moment: the one path it was last
+//// sent as a 0x638 (a straight one of kind 4, or a timed one of kind 3), and its place along it. The creature keeps it
 //// (genesis_prime/world_map/creature_fight), and so does each viewer's connection
 //// from the creature's own news (genesis_prime/game/shown), so a player's cast and
 //// the creature find the creature at the same place by one function.
 ////
 //// ```
 //// creature_fight: chase or home ─▶ toward(from, to, ..) ─▶ Path ─▶ 0x638 [kind 0, kind 4] to its viewers
+//// creature_fight: a throw ─▶ forced_move.path(..) ─▶ Timed ─▶ 0x638 [kind 0, kind 3 (+ kind 14)] to its viewers
 //// creature and viewer: place_at(path, now) ─▶ the place along it, the end once it is run
 //// ```
 ////
 //// - **One straight path of two points**, kind 4 type 0 (straight lines), at the
 ////   creature's run speed in units a second (`movement_command.kind_4`). The client
 ////   runs it from the time of the 0x638's kind 0 (`movement_command.kind_0`).
+//// - **A timed path** (`Timed`) is the points of a throw (genesis_prime/game/forced_move) with the
+////   monotonic time of each, kind 3 type 0 (`movement_command.kind_3`): the client draws straight
+////   lines between the points, holds the first before the first time and the last after the last
+////   (`0x140783e10`). A path of one point is a creature set at once at that point at that time,
+////   which is kind 2 and has no flight; it is the form of a move that turns the creature
+////   (`turned_to`, kind 14).
 //// - **A path is clipped at the leash circle**: no point of it lies farther from the
 ////   spawn than the circle's radius, so a creature never runs past the circle it
 ////   leashes at. Distances are in three dimensions, as sight's are
@@ -19,18 +26,23 @@
 //// - **Time** is the monotonic time of the node in milliseconds, the clock both the
 ////   creature and its viewers' connections read their inputs at.
 
-import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/start_place.{type Facing, type Place}
 import genesis_prime/world_map/sight
 import gleam/bool
 import gleam/float
 import gleam/int
+import gleam/option.{type Option}
 
-/// A creature's movement: standing at a place, or running a straight path from
+/// A creature's movement: standing at a place, running a straight path from
 /// `from` to `to`, started at monotonic time `started_ms`, at `speed` units a
-/// second.
+/// second, or thrown along timed points.
 pub type Path {
   Standing(at: Place)
   Running(from: Place, to: Place, started_ms: Int, speed: Float)
+  /// The points a throw passes, each at its monotonic time in milliseconds, the
+  /// times rising and at least one point; the creature turns to `turned_to` when it
+  /// has one.
+  Timed(points: List(#(Int, Place)), turned_to: Option(Facing))
 }
 
 /// The circle a creature's paths stay inside: its spawn's place and the leash
@@ -44,6 +56,8 @@ pub type Circle {
 pub fn place_at(path path: Path, now_ms now_ms: Int) -> Place {
   case path {
     Standing(at:) -> at
+    Timed(..) ->
+      panic as "shape: a timed path's place is built in the step's code commit"
     Running(from:, to:, started_ms:, speed:) -> {
       let length = distance(from: from, to: to)
       let run = speed *. int.to_float(int.max(0, now_ms - started_ms)) /. 1000.0
@@ -60,6 +74,8 @@ pub fn end(path path: Path) -> Place {
   case path {
     Standing(at:) -> at
     Running(to:, ..) -> to
+    Timed(..) ->
+      panic as "shape: a timed path's end is built in the step's code commit"
   }
 }
 
@@ -106,11 +122,39 @@ pub fn straight(
 pub fn arrives_ms(path path: Path, now_ms now_ms: Int) -> Int {
   case path {
     Standing(..) -> now_ms
+    Timed(..) ->
+      panic as "shape: a timed path's arrival is built in the step's code commit"
     Running(from:, to:, started_ms:, speed:) ->
       started_ms
       + float.truncate(float.ceiling(
         distance(from: from, to: to) /. speed *. 1000.0,
       ))
+  }
+}
+
+/// The rest of the path from `now_ms` on, as a path of its own: a running path from
+/// where the creature is now to the same end at the same speed, a timed path from
+/// its place now and the points still ahead of it, and a standing one itself. What a
+/// viewer that arrives mid-path is sent.
+pub fn rest_of(path path: Path, now_ms _now_ms: Int) -> Path {
+  case path {
+    Standing(..) | Running(..) -> path
+    Timed(..) ->
+      panic as "shape: the rest of a timed path is built in the step's code commit"
+  }
+}
+
+/// The creature's velocity along the path at `now_ms` in units a second, the
+/// direction of the path's segment now times its speed; zero when it stands, or
+/// when the path is run.
+pub fn velocity(
+  path path: Path,
+  now_ms _now_ms: Int,
+) -> #(Float, Float, Float) {
+  case path {
+    Standing(..) -> #(0.0, 0.0, 0.0)
+    Running(..) | Timed(..) ->
+      panic as "shape: a path's velocity is built in the step's code commit"
   }
 }
 

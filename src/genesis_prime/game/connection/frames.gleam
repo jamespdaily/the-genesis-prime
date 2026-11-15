@@ -441,6 +441,8 @@ pub fn path_frame(
 ) -> Option(Frame) {
   case path {
     creature_path.Standing(..) -> None
+    creature_path.Timed(..) ->
+      panic as "shape: the frame of a timed path is built in the step's code commit"
     creature_path.Running(from:, to:, started_ms:, speed:) ->
       case half_float.to_bits(value: speed) {
         Error(Nil) -> None

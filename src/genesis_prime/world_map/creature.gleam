@@ -60,6 +60,14 @@
 ////                                    c0's first modifier: Watch(c0's watch, Connection(c0))
 //// ModifierEnds(source) ─────────▶ remove(source)          Send(each viewer, PropertiesChanged(changed entries))
 //// c0's watch ends (WatchEnded) ─▶ remove every source of c0, each as ModifierEnds does
+////
+//// caster's connection c0, a ForcedMove effect of its spell, for the life the go struck
+//// Thrown(move, draws, reference, struck_at_ms)
+////                         dead, or struck_at_ms < stood_again_ms: dropped
+////                         else ─▶ the fight takes Thrown (genesis_prime/world_map/creature_fight)
+////                                    walking home or run speed 0: dropped
+////                                    else Send(each viewer, News(0x638)), and the fight's `FlightEnds`
+////                                    timer starts (`timer_id`), which stands the creature at the landing
 //// ```
 ////
 //// - **The unit** is `creature_unit.create(spawn, unit_id, time)`, stamped with
@@ -96,7 +104,7 @@
 //// - **The guard** is creature_guard's, which holds what a guard and an opening are. The creature
 ////   gives it its inputs: `Stands` when its corpse timer stood it again, `Interrupted` (with the charge's cast id) when the fight
 ////   broke a charge (`ChargeInterrupted`), its timer's firing and `Killed` at a kill; it carries out
-////   its effects, news to every viewer and the opening's timer (`OpeningEnds`, id 11 and 6 more for
+////   its effects, news to every viewer and the opening's timer (`OpeningEnds`, id 12 and 7 more for
 ////   each generation). A guarded creature's strike takes no health. An opened creature counts as
 ////   still, refused and holding (`still`, `attack_refused`, `holds_a_state`): the fight starts no
 ////   charge, strike or path, and acts again when both the states that stop its run and the
@@ -121,6 +129,14 @@
 ////   drops a start struck before it last stood again, or one that reaches it
 ////   dead. An end needs no fence, since a respawn clears every source. A modifier on
 ////   another player, and stacking across casters, are not handled here.
+//// - **A throw** is told by the caster's connection through the creature registry with no
+////   watch, as a strike and a modifier are (`TellThrown`). The connection draws the two
+////   fractions the move needs from its seed (genesis_prime/game/forced_move), so the
+////   creature keeps no random state, and names the unit the move is measured from. The
+////   creature owns the path and the flight's timer. A throw carries the time of the go that
+////   struck, as a modifier does, and a creature that stood again since drops it. The timers
+////   are numbered in 7 slots by generation: the fight's 0 to 3 above a multiple of 7, a
+////   control's 4, the guard's 5 and the flight's end 6 (`timer_id`).
 //// - **Only the run's watch stops the creature.** Each caster's connection whose
 ////   modifier the creature holds is watched under its own id, from 2 on, and its end
 ////   takes that caster's modifiers off.
@@ -167,10 +183,18 @@
 //// | a modifier lowers the interrupt armor maximum below the armor the creature wears | the worn armor is clamped to the new maximum and the viewers are sent 0x938 of it |
 //// | a modifier raises or lowers the interrupt armor maximum of a creature at full armor | the armor stays full at the new maximum and the viewers are sent 0x938 of it |
 //// | a modifier raises the interrupt armor maximum of a creature that wears armor down | the armor it wears stays, and no 0x938 is sent |
+//// | a `Thrown` struck before the creature last stood again reaches it | dropped: it was struck on the life before (`a_throw_from_an_older_life_is_dropped_test`) |
+//// | a `Thrown` reaches a creature that is dead, or walks home | dropped (`a_throw_at_a_dead_or_returning_creature_is_dropped_test`) |
+//// | a `Thrown` reaches a creature that has ended | dropped: the registry finds no process |
+//// | the caster's connection ends before its throw's tell | the tell is never sent; a throw already told runs to its landing, since it needs no caster |
+//// | the creature crashes in flight | its `FlightEnds` timer goes with the process; the map's `Gone` removes the unit from each viewer and the spawn starts again at home |
+//// | the creature respawns after a throw | the corpse timer stands it at home (`a_creature_respawned_after_a_throw_stands_at_home_test`) |
+//// | a `FlightEnds` timer fires | the fight takes it (`the_flight_end_timer_has_its_own_id_test` for its id); one of an older generation does nothing |
 
 import genesis_prime/client_connection.{
   type PeerNews, CreatureAppeared, PeerNews, Removed,
 }
+import genesis_prime/game/forced_move
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   type Answered, type Fight, type Tell as StrikeTell, Answered, CreatureStriker,
@@ -189,7 +213,8 @@ import genesis_prime/step.{
 import genesis_prime/table/id.{type Creature2Id, type Faction2Id, Faction2Id}
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight.{
-  type Fighter, AttackTick, CastEnds, Fighter, HomeArrival, StrikeDeadline,
+  type Fighter, AttackTick, CastEnds, Fighter, FlightEnds, HomeArrival,
+  StrikeDeadline,
 }
 import genesis_prime/world_map/creature_guard
 import genesis_prime/world_map/creature_kind.{type Kind}
@@ -227,7 +252,7 @@ const first_caster_watch = 2
 const corpse_timer = TimerId(1)
 
 /// The timer of the creature's Interrupt Armor refill: 2, which no fight timer is (they
-/// start at 6), no control's (they start at 10) and no guard's (they start at 11).
+/// start at 7), no control's (they start at 11) and no guard's (they start at 12).
 const refill_timer = TimerId(2)
 
 /// What a creature is started with: which creature of which run it is and the
@@ -292,6 +317,17 @@ pub type Message {
   )
   /// A caster's connection: the property modifier of `source` ends on the creature.
   ModifierEnds(source: Source)
+  /// A caster's connection: a ForcedMove effect of its spell throws the creature
+  /// (genesis_prime/game/forced_move), for the life the go struck. It is dropped when the
+  /// creature has stood again since the monotonic time `struck_at_ms`, or lies dead; else
+  /// the fight takes it (`creature_fight.Thrown`), which drops it for a creature that walks
+  /// home or does not run.
+  Thrown(
+    move: forced_move.Move,
+    draws: forced_move.Draws,
+    reference: forced_move.Reference,
+    struck_at_ms: Int,
+  )
 }
 
 /// What a creature sends a connection without waiting.
@@ -603,11 +639,27 @@ pub fn step(
       modifier_started(state:, by:, source:, modifier:, struck_at_ms:, now_ms:)
     OwnEvent(Told(message: ModifierEnds(source:))) ->
       modifier_ended(state:, source:, now_ms:)
+    OwnEvent(Told(message: Thrown(move:, draws:, reference:, struck_at_ms:))) ->
+      thrown(state:, move:, draws:, reference:, struck_at_ms:, now_ms:)
     WatchEnded(watch:) if watch == run_watch -> #(state, Effects([Stop]))
     WatchEnded(watch:) -> caster_gone(state:, watch:, now_ms:)
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
       panic as "a creature is told, and starts no creature"
   }
+}
+
+/// A ForcedMove effect throws the creature: the fight takes it as `Thrown`, unless the
+/// creature lies dead or has stood again since `struck_at_ms`, the time of the go that
+/// struck its earlier life, which the registry address does not tell apart.
+fn thrown(
+  state _state: State,
+  move _move: forced_move.Move,
+  draws _draws: forced_move.Draws,
+  reference _reference: forced_move.Reference,
+  struck_at_ms _struck_at_ms: Int,
+  now_ms _now_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  panic as "shape: a throw is taken in the step's code commit"
 }
 
 /// A property modifier of the caster of connection `by` starts on the creature: it is
@@ -1222,6 +1274,7 @@ fn fighter_of(state state: State) -> Fighter {
     attack_refused: attack_refused(state:),
     holds_a_state: holds_a_state(state:),
     guard_casts: creature_guard.live_casts(state: state.guard),
+    hit_radius: state.body.combat.hit_radius,
   )
 }
 
@@ -1305,31 +1358,32 @@ fn guard_timer_fired(
   #(state, Effects(list.append(effects, resumed)))
 }
 
-/// The timer id of a fight timer: a multiple of 6 and 1, 2 and 3 above it for the attack
-/// tick, the walk home, the strike deadline and the cast end, by generation (from 1), so
-/// none is the corpse timer's 1 or the refill timer's 2 and a timer of an old generation is
-/// never the new one's. The ids 4 above a multiple of 6 are the controls' (10, 16, 22 ...:
-/// `control_timer`) and 5 above it the guard's (11, 17, 23 ...: `guard_timer_id`), so no two
-/// timers of a creature share an id.
+/// The timer id of a fight timer: a multiple of 7 and 1, 2, 3 and 6 above it for the attack
+/// tick, the walk home, the strike deadline, the cast end and the flight's end, by
+/// generation (from 1), so none is the corpse timer's 1 or the refill timer's 2 and a timer of
+/// an old generation is never the new one's. The ids 4 above a multiple of 7 are the controls'
+/// (11, 18, 25 ...: `control_timer`) and 5 above it the guard's (12, 19, 26 ...:
+/// `guard_timer_id`), so no two timers of a creature share an id.
 fn timer_id(timer timer: creature_fight.Timer) -> step.TimerId {
   case timer {
-    AttackTick(generation:) -> TimerId(6 * generation)
-    HomeArrival(generation:) -> TimerId(6 * generation + 1)
-    StrikeDeadline(generation:) -> TimerId(6 * generation + 2)
-    CastEnds(generation:) -> TimerId(6 * generation + 3)
+    AttackTick(generation:) -> TimerId(7 * generation)
+    HomeArrival(generation:) -> TimerId(7 * generation + 1)
+    StrikeDeadline(generation:) -> TimerId(7 * generation + 2)
+    CastEnds(generation:) -> TimerId(7 * generation + 3)
+    FlightEnds(generation:) -> TimerId(7 * generation + 6)
   }
 }
 
-/// The timer id of the control numbered `control`: 4 above 6 times it, from 10 (10, 16, 22
+/// The timer id of the control numbered `control`: 4 above 7 times it, from 11 (11, 18, 25
 /// ...), so none is the corpse timer's 1, the refill timer's 2, a fight timer's or a guard's.
 fn control_timer(control control: Int) -> step.TimerId {
-  TimerId(6 * control + 4)
+  TimerId(7 * control + 4)
 }
 
-/// The timer id of a guard timer: 5 above 6 times its generation, from 11 (11, 17, 23 ...).
+/// The timer id of a guard timer: 5 above 7 times its generation, from 12 (12, 19, 26 ...).
 fn guard_timer_id(timer timer: creature_guard.Timer) -> step.TimerId {
   let creature_guard.OpeningEnds(generation:) = timer
-  TimerId(6 * generation + 5)
+  TimerId(7 * generation + 5)
 }
 
 /// The number of the control a timer id is for, or `Error(Nil)` for one that is not a
@@ -1337,8 +1391,8 @@ fn guard_timer_id(timer timer: creature_guard.Timer) -> step.TimerId {
 /// other. For a test.
 pub fn control_of(timer timer: step.TimerId) -> Result(Int, Nil) {
   let TimerId(number) = timer
-  case number >= 10 && number % 6 == 4 {
-    True -> Ok({ number - 4 } / 6)
+  case number >= 11 && number % 7 == 4 {
+    True -> Ok({ number - 4 } / 7)
     False -> Error(Nil)
   }
 }
@@ -1346,8 +1400,8 @@ pub fn control_of(timer timer: step.TimerId) -> Result(Int, Nil) {
 /// The guard timer of a timer id, or `Error(Nil)` for one the guard never starts.
 fn guard_timer(timer timer: step.TimerId) -> Result(creature_guard.Timer, Nil) {
   let TimerId(number) = timer
-  case number >= 11 && number % 6 == 5 {
-    True -> Ok(creature_guard.OpeningEnds(generation: { number - 5 } / 6))
+  case number >= 12 && number % 7 == 5 {
+    True -> Ok(creature_guard.OpeningEnds(generation: { number - 5 } / 7))
     False -> Error(Nil)
   }
 }
@@ -1356,11 +1410,12 @@ fn guard_timer(timer timer: step.TimerId) -> Result(creature_guard.Timer, Nil) {
 /// corpse timer's, the refill timer's, a control's, a guard's, or any other.
 fn fight_timer(timer timer: step.TimerId) -> Result(creature_fight.Timer, Nil) {
   let TimerId(number) = timer
-  case number >= 6, number % 6 {
-    True, 0 -> Ok(AttackTick(generation: number / 6))
-    True, 1 -> Ok(HomeArrival(generation: { number - 1 } / 6))
-    True, 2 -> Ok(StrikeDeadline(generation: { number - 2 } / 6))
-    True, 3 -> Ok(CastEnds(generation: { number - 3 } / 6))
+  case number >= 7, number % 7 {
+    True, 0 -> Ok(AttackTick(generation: number / 7))
+    True, 1 -> Ok(HomeArrival(generation: { number - 1 } / 7))
+    True, 2 -> Ok(StrikeDeadline(generation: { number - 2 } / 7))
+    True, 3 -> Ok(CastEnds(generation: { number - 3 } / 7))
+    True, 6 -> Ok(FlightEnds(generation: { number - 6 } / 7))
     _, _ -> Error(Nil)
   }
 }
