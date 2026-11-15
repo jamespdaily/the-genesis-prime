@@ -472,6 +472,7 @@ pub fn a_crowd_control_row_is_read_with_its_state_time_armor_and_aim_test() -> N
           armor_removed: 1,
           until_removed: False,
         ),
+        condition: spell_plan.Always,
         tag: spend.EqualTo(0),
       ),
     ]
@@ -520,6 +521,7 @@ pub fn a_caster_ability_restriction_row_is_read_until_removed_test() -> Nil {
           armor_removed: 0,
           until_removed: True,
         ),
+        condition: spell_plan.Always,
         tag: spend.EqualTo(0),
       ),
     ]
@@ -608,6 +610,7 @@ pub fn every_state_is_read_on_every_simple_aim_test() -> Nil {
               armor_removed: 1,
               until_removed: False,
             ),
+            condition: spell_plan.Always,
             tag: spend.EqualTo(0),
           ),
         ]
@@ -769,26 +772,6 @@ pub fn a_persistence_prerequisite_on_another_unit_is_refused_test() -> Nil {
   assert list.length(on_caster.controls) == 1
 }
 
-pub fn a_crowd_control_row_behind_an_apply_prerequisite_fails_the_load_test() -> Nil {
-  use <- owned_test.run(60_000)
-  list.each(
-    ["prerequisiteIdCasterApply", "prerequisiteIdTargetApply"],
-    fn(column) {
-      assert plan_error(
-          rows: spell_tables.rows_with_effect(
-            effect: knockdown_row(state: 8, target_flags: 4, columns: [
-              #(column, Integer(17_302)),
-            ]),
-          ),
-        )
-        == spell_plan.ControlPrerequisiteNotRead(
-          spell4_id: strike,
-          effect_id: 99_040,
-        )
-    },
-  )
-}
-
 pub fn every_ability_restriction_row_on_the_caster_is_read_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
@@ -818,17 +801,23 @@ pub fn every_ability_restriction_row_on_the_caster_is_read_test() -> Nil {
         _ -> False
       }
     })
-    == 23
-    as "23 of them are read: a state on the caster that no apply prerequisite gates"
-  let refused =
+    == 24
+    as "all 24 are read: a state on the caster, one of them behind an apply prerequisite"
+  let gated =
     list.zip(rows, readings)
     |> list.filter_map(fn(pair) {
       case pair.1 {
-        Error(spell_plan.ControlPrerequisiteNotRead(effect_id:, ..)) ->
-          Ok(#(effect_id, pair.0.prerequisite_id_target_apply))
+        Ok(spell_plan.Applied(spell_plan.PlannedControl(control:))) ->
+          case control.condition {
+            spell_plan.Always -> Error(Nil)
+            spell_plan.GatedOnCaster(..)
+            | spell_plan.GatedOnCasterAndTarget(..)
+            | spell_plan.GatedOnTarget(..) ->
+              Ok(#(pair.0.id, pair.0.prerequisite_id_target_apply))
+          }
         _ -> Error(Nil)
       }
     })
-  assert refused == [#(226_585, 903)]
-    as "the one other is Spell4Effects 226585, behind the target apply prerequisite 903, which the plan refuses"
+  assert gated == [#(226_585, 903)]
+    as "the one that is gated is Spell4Effects 226585, behind the target apply prerequisite 903, which the plan keeps as its condition"
 }

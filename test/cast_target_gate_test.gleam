@@ -30,8 +30,7 @@
 ////   prerequisiteTypeId0=37`, then `-- Spell4Effects prerequisiteIdTargetApply=<id>` for
 ////   each): one type 80 remove, 173068 (Spell4 41193, targetFlags 2, past the caster, gate
 ////   650: comparison 6 on 50), and two type 4 crowd control rows, 115034 and 176214, which
-////   a plan refuses behind any apply prerequisite (`ControlPrerequisiteNotRead`). The
-////   remove is the one row a plan now reads that it refused before.
+////   a plan reads behind their gates and a go's strike checks (`strike_gate_test`).
 //// - `Prerequisite.prerequisiteTypeId.108`: a unit the caster's picture holds no place for
 ////   leaves a positional condition unread.
 

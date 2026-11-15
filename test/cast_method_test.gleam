@@ -473,6 +473,7 @@ pub fn a_strike_round_that_never_closes_does_not_hold_the_channel_open_test() ->
       attacker: strike_support.attacker(),
       formulas: rating_support.formulas(),
       entropy: <<0:size(96)>>,
+      gate: strike_support.passes_all(),
       now: support.at(ms: 2230),
     )
   assert closed_rounds(effects: begun) == []

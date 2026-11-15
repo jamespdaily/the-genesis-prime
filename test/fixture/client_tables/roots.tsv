@@ -863,6 +863,10 @@ Spell4	38784	lasting row 91018 behind a caster apply and a target apply prerequi
 Spell4	47328	lasting row 111129 behind caster apply 903 (type 28) and target apply 20271 (type 38)	spell_plan_target_gate_test
 Spell4	70611	lasting row 179592 behind target prerequisite 20210, three type 38 conditions on creatures	cast_target_gate_test
 Spell4	62637	lasting row 177849 aimed at the caster behind target prerequisite 903, a type 28 condition	cast_target_gate_test
+Spell4	23980	damage row 38307 aimed at the area behind target apply 3476, a type 38 condition on a creature	strike_gate_test
+Spell4	51989	control row 122821 (Paralytic Surge) behind target apply 24214, a type 130 condition	strike_gate_test
+Spell4	43131	control row 99347 behind caster apply 3286, a type 37 chance condition	strike_gate_test
+Spell4	48757	control row 115034 behind target apply 860, a type 37 chance condition	strike_gate_test
 Spell4	45726	Hazmat Suit (the Hazmat Suit Locker's activate spell): one ItemVisualSwap row 106570 aimed at the caster, flags 2	spell_plan_listed_effect_test, cast_listed_effect_test
 Spell4	26567	six ItemVisualSwap rows (43533 to 43538) aimed at the primary target, delay 333, duration 10000	spell_plan_listed_effect_test, cast_listed_effect_test
 Spell4	48373	Blessing of Dominus: six caster-aimed ItemVisualSwap rows (122321 to 122326), delays 1000 to 6000	spell_plan_listed_effect_test, game_connection_activate_test

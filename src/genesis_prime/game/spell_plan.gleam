@@ -794,8 +794,8 @@ pub type ForcedMove {
 /// (genesis_prime/game/forced_move), the units it strikes (`aim`: the primary target,
 /// the area or both), the `delay_ms` after the go the creature is thrown at, the phases
 /// of `phase_flags` it applies in, when its `condition` holds (its caster apply
-/// prerequisite against the caster; a target apply prerequisite fails the load with
-/// issue 815's reading of it still to come), and when its `tag` holds for the points
+/// prerequisite against the caster, its target apply prerequisite against each struck
+/// unit it throws), and when its `tag` holds for the points
 /// the cast spent (genesis_prime/game/spend). The cast throws each creature the go
 /// `Hit` (genesis_prime/game/cast `struck_moves_armed`); a unit that is the caster or
 /// another player is not thrown until a move of another player is built (issue 570).
@@ -885,6 +885,7 @@ pub type CrowdControl {
     phase_flags: Int,
     aim: Aim,
     row: crowd_control.Row,
+    condition: Condition,
     tag: spend.Tag,
   )
 }
@@ -1183,10 +1184,6 @@ pub type PlanError {
     effect_id: Int,
     prerequisite_type: Int,
   )
-  /// A ForcedMove effect aimed at the units a strike hits is behind a target apply
-  /// prerequisite: the cast would throw units that fail it, so the row is refused until
-  /// issue 815 reads the gate of a struck unit for it.
-  StruckMoveBehindTargetPrerequisite(spell4_id: Int, effect_id: Int)
   /// A ForcedMove effect aimed at the units a strike hits holds columns that are no move
   /// (`forced_move.of_row`).
   StruckMoveNotRead(spell4_id: Int, effect_id: Int, error: forced_move.RowError)
@@ -1217,8 +1214,6 @@ pub type PlanError {
   /// and 7 are not read (the issue "An effect aimed by a combined flag reaches every unit
   /// each of its bits names" closes them), and neither is any other value.
   ControlAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
-  /// A CCStateSet effect of a tree has an apply prerequisite, which is not read.
-  ControlPrerequisiteNotRead(spell4_id: Int, effect_id: Int)
   /// A CCStateSet effect of a tree aimed at another unit keeps its state through a death
   /// or a leave by a caster persistence, target persistence or target suspend
   /// prerequisite, which no rule of the server holds (the issue "An effect behind an
@@ -1395,12 +1390,6 @@ pub fn describe(error error: PlanError) -> String {
       <> " aimed past the caster behind a target apply prerequisite with a condition of type "
       <> int.to_string(prerequisite_type)
       <> ", which reads the state of the creature it strikes (#817)"
-    StruckMoveBehindTargetPrerequisite(spell4_id:, effect_id:) ->
-      "the Spell4 row "
-      <> int.to_string(spell4_id)
-      <> " has a ForcedMove effect "
-      <> int.to_string(effect_id)
-      <> " aimed at the units a strike hits behind a target apply prerequisite, which is not read until issue 815 reads the gate of a struck unit"
     StruckMoveNotRead(spell4_id:, effect_id:, error:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1475,12 +1464,6 @@ pub fn describe(error error: PlanError) -> String {
       <> " has a CCStateSet effect "
       <> int.to_string(effect_id)
       <> " on another unit kept through death or leaving by a persistence prerequisite, which the server does not read (#787)"
-    ControlPrerequisiteNotRead(spell4_id:, effect_id:) ->
-      "the Spell4 row "
-      <> int.to_string(spell4_id)
-      <> " has a CCStateSet effect "
-      <> int.to_string(effect_id)
-      <> " behind an apply prerequisite, which is not read"
     ModifierPropertyHasNoRow(spell4_id:, effect_id:, property:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2484,8 +2467,9 @@ fn force_remove_counts_read(
 }
 
 /// One CCStateSet row (`Spell4Effects.effectType.4`): dataBits00 is one of the 28
-/// states (`Unit.CodeEnumCCState`, 0 to 27), with no apply prerequisite, aimed at the
-/// caster, the primary target, the area or both (`aim_of`). Its delayTime, durationTime,
+/// states (`Unit.CodeEnumCCState`, 0 to 27), aimed at the
+/// caster, the primary target, the area or both (`aim_of`), behind the apply
+/// prerequisites `row_condition_of` reads. Its delayTime, durationTime,
 /// flags bit 2 (a state that never times out) and the armor it removes (dataBits03) are
 /// read as they are. A row aimed at another unit that holds its state until removed (no
 /// rule ends a creature's state with its cast's node) is `None`, a row the plan drops,
@@ -2493,6 +2477,7 @@ fn force_remove_counts_read(
 /// target persistence or target suspend prerequisite is refused (no creature rule holds
 /// that); on the caster both are the cast's own (`cast.restrictions`).
 fn control_of(
+  tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Option(CrowdControl), PlanError) {
@@ -2502,16 +2487,6 @@ fn control_of(
     other ->
       Error(ControlStateNotRead(spell4_id:, effect_id: effect.id, state: other))
   })
-  use Nil <- result.try(
-    case
-      effect.prerequisite_id_caster_apply,
-      effect.prerequisite_id_target_apply
-    {
-      0, 0 -> Ok(Nil)
-      _, _ ->
-        Error(ControlPrerequisiteNotRead(spell4_id:, effect_id: effect.id))
-    },
-  )
   use aim <- result.try(case aim_of(target_flags: effect.target_flags) {
     OtherAim(..) ->
       Error(ControlAimNotRead(
@@ -2533,11 +2508,12 @@ fn control_of(
     when: until_removed && aim != AimsAtCaster,
     return: Ok(None),
   )
-  use Nil <- result.map(case aim, persists {
+  use Nil <- result.try(case aim, persists {
     AimsAtCaster, _ | _, False -> Ok(Nil)
     _, True ->
       Error(ControlPersistenceNotRead(spell4_id:, effect_id: effect.id))
   })
+  use condition <- result.map(row_condition_of(tables:, effect:, aim:))
   Some(CrowdControl(
     effect_id: Spell4EffectsId(effect.id),
     phase_flags: effect.phase_flags,
@@ -2549,6 +2525,7 @@ fn control_of(
       armor_removed: effect.data_bits03,
       until_removed:,
     ),
+    condition:,
     tag: tag_of(effect:),
   ))
 }
@@ -2995,20 +2972,12 @@ fn forced_move_of(
 /// One ForcedMove row aimed only at the units a strike hits (targetFlags 2, 4 or 6;
 /// `effect_kind.is_row_read`): its columns as a `forced_move.Move` (`forced_move.of_row`; a
 /// dataBits00 above 15 or a float column that is no number fails the load), its aim, and its
-/// caster apply prerequisite as a Fluff effect's is (`condition_of`). A row behind a target
-/// apply prerequisite fails the load, since the cast would throw units that fail it; issue
-/// 815 reads that gate of a struck unit.
+/// apply prerequisites as a Fluff effect's are (`condition_of`), the target one read for
+/// each struck unit it throws.
 fn struck_move_of(
   tables tables: table_store.Tables,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(StruckMove, PlanError) {
-  use <- bool.guard(
-    when: effect.prerequisite_id_target_apply != 0,
-    return: Error(StruckMoveBehindTargetPrerequisite(
-      spell4_id: effect.spell_id,
-      effect_id: effect.id,
-    )),
-  )
   use move <- result.try(
     forced_move.of_row(row: effect)
     |> result.map_error(fn(error) {
@@ -3022,7 +2991,7 @@ fn struck_move_of(
   use condition <- result.map(condition_of(
     tables:,
     effect:,
-    reach: OnlyTheCaster,
+    reach: PastTheCaster,
     data_bits06_names_a_gate: False,
   ))
   StruckMove(
@@ -3613,7 +3582,7 @@ fn kind_reading(
       remove_of(tables:, spell_groups:, spell4_id:, effect:)
       |> result.map(fn(remove) { Applied(PlannedRemove(remove:)) })
     effect_kind.CrowdControl ->
-      control_of(spell4_id:, effect:)
+      control_of(tables:, spell4_id:, effect:)
       |> result.map(fn(control) {
         case control {
           Some(control) -> Applied(PlannedControl(control:))
@@ -4332,6 +4301,17 @@ fn applied_condition_of(
       ))
     [] -> Ok(condition)
   }
+}
+
+/// The condition of a damage or CCStateSet row of this aim, which a go's strike checks for
+/// each unit the row reaches (`applied_condition_of`): a row whose gate the server cannot
+/// read fails the load (`ApplyPrerequisiteNotRead`, `TargetPrerequisiteReadsStruckUnit`).
+pub fn row_condition_of(
+  tables tables: table_store.Tables,
+  effect effect: spell4_effects.Spell4Effects,
+  aim aim: Aim,
+) -> Result(Condition, PlanError) {
+  applied_condition_of(tables:, effect:, reach: reach_of_aim(aim:))
 }
 
 /// Whether the cast rule can check a target apply prerequisite for the units a row

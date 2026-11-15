@@ -429,6 +429,7 @@ pub fn a_damage_row_with_a_tick_time_ticks_on_its_schedule_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Ok(Periodic(effect: row)) =
     spell_area.damage_row_of(
+      tables: fixture_tables.shared(),
       spell4_id: 32_475,
       effect: periodic_damage_row(tick_ms: 1500),
     )
@@ -450,6 +451,7 @@ pub fn a_damage_row_with_no_tick_time_is_read_as_one_strike_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Ok(Once(effect:)) =
     spell_area.damage_row_of(
+      tables: fixture_tables.shared(),
       spell4_id: 32_475,
       effect: periodic_damage_row(tick_ms: 0),
     )
@@ -477,6 +479,7 @@ pub fn the_area_load_builds_a_damage_row_that_names_an_attribute_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Ok(Once(effect:)) =
     spell_area.damage_row_of(
+      tables: fixture_tables.shared(),
       spell4_id: 42_355,
       effect: fixture_effect(id: 96_307),
     )
@@ -492,6 +495,7 @@ pub fn a_ticking_row_that_names_an_attribute_ticks_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Ok(Periodic(effect: row)) =
     spell_area.damage_row_of(
+      tables: fixture_tables.shared(),
       spell4_id: 29_550,
       effect: fixture_effect(id: 52_057),
     )
@@ -529,6 +533,7 @@ pub fn until_removed_periodic_rows_are_left_out_test() -> Nil {
     )
     as "Spell4.32809 holds damage rows 61993 to 61997: the until-removed row is left out, the other four stay, and the load goes on"
   assert spell_area.damage_row_of(
+      tables: fixture_tables.shared(),
       spell4_id: 32_809,
       effect: spell4_effects.Spell4Effects(
         ..fixture_effect(id: 61_994),
@@ -1049,7 +1054,11 @@ pub fn a_periodic_damage_row_strikes_with_its_schedule_test() -> Nil {
     )
     as "the client's tables hold row 82888"
   let assert Ok(Periodic(effect: read)) =
-    spell_area.damage_row_of(spell4_id: 38_514, effect: row)
+    spell_area.damage_row_of(
+      tables: client_tables.shared(),
+      spell4_id: 38_514,
+      effect: row,
+    )
     as "a damage row with a tickTime and a life of whole ticks is read"
   assert #(read.damage.effect_id, read.damage.aim, read.schedule)
     == #(
