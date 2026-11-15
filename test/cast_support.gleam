@@ -1210,7 +1210,8 @@ pub fn answered_with_no_targets(
   answered_by(state:, effects:, at: ms, struck: [])
 }
 
-/// `cast.went` for a round whose go checks no type 37 condition, so it takes no roll.
+/// `cast.went` for a round whose go checks no type 37 condition, so it takes no roll, and
+/// whose spell the areas do not name: a cast the rule no longer holds raises no event.
 pub fn went(
   cast cast: State,
   caster caster: Caster,
@@ -1219,12 +1220,34 @@ pub fn went(
   phase phase: Int,
   struck struck: List(cast.Struck),
 ) -> #(State, List(Effect)) {
+  went_of_spell(
+    cast:,
+    caster:,
+    now:,
+    cast_id:,
+    phase:,
+    spell: Error(Nil),
+    struck:,
+  )
+}
+
+/// The same for a go of `spell`, as the areas name it by the go's Spell4 id.
+pub fn went_of_spell(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+  cast_id cast_id: Int,
+  phase phase: Int,
+  spell spell: Result(Spell, Nil),
+  struck struck: List(cast.Struck),
+) -> #(State, List(Effect)) {
   cast.went(
     cast:,
     caster:,
     now:,
     cast_id:,
     phase:,
+    spell:,
     struck:,
     poses: dict.new(),
     indexes: dict.new(),
@@ -1334,6 +1357,7 @@ pub fn answered_known(
             now: at(ms:),
             cast_id: asked.cast_id,
             phase: asked.phase,
+            spell: Error(Nil),
             struck: struck_of(asked),
             poses:,
             indexes: dict.new(),

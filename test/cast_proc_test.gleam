@@ -2623,6 +2623,68 @@ pub fn a_hit_answered_after_the_client_ended_the_cast_still_fires_the_procs_the_
     as "the lingering cast's own proc fires for the hit it landed"
 }
 
+pub fn a_hit_answered_after_the_client_ended_a_cast_that_holds_no_node_still_fires_the_holders_proc_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The hitter is a one-phase spell with no lasting row, so its cast is gone from the
+  // rule once the client cancels it (0x801) while its round is open; the hit the round
+  // then answers is still the holder's hit, and the go names its spell (`GoAsked`).
+  let #(plans, state) =
+    holder_and_hitter(
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.LandsHit,
+          casts: 250_201,
+          aim: spell_plan.AtOtherUnit,
+        ),
+      ],
+      school: 2,
+    )
+  let caster = planted_caster()
+  let #(state, pressed) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: bag_of_base_2,
+      target: 0,
+      at: 1000,
+    )
+  let cast_id = support.pressed_id(effects: pressed)
+  let assert [cast.Strike(asked)] = list.filter(pressed, is_strike)
+    as "the press asks for the targets of its one go"
+  let assert Ok(#(state, _)) =
+    cast.take(
+      cast: state,
+      message: cast.Cancelled,
+      body: support.cancel_body(
+        cast_id:,
+        reason: cast_result.SpellCancelled,
+        bit: 1,
+      ),
+      caster:,
+      plans:,
+      now: support.at(ms: 1100),
+    )
+    as "the client ends the cast with reason 6 (opcode.0x801)"
+  let #(_, late) =
+    support.then_procs(
+      step: support.went_of_spell(
+        cast: state,
+        caster:,
+        now: support.at(ms: 1200),
+        cast_id: asked.cast_id,
+        phase: asked.phase,
+        spell: Ok(hitter(school: 2)),
+        struck: [plain_hit(unit_id: 31)],
+      ),
+      caster:,
+      at: 1200,
+    )
+  assert starts_at(spell4_id: 250_201, effects: late) == [31]
+    as "the holder's proc fires at the creature the late hit struck"
+}
+
 // ---- no cascade, the draws, the order ----
 
 pub fn a_fired_spells_own_hits_fire_procs_only_at_its_own_go_test() -> Nil {

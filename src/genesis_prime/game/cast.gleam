@@ -5597,9 +5597,11 @@ fn lifted_gains(proxy proxy: Proxy) -> List(spell_plan.Gain) {
 /// Hit unit and none for a deflect, and none for a Proxy whose gate against the
 /// caster does not pass) and the finish after the last go. A cast that is no longer
 /// live, because the client ended it while the round was open, has no go and writes
-/// nothing: the hits stand. `poses` are the Hit units' ground points and yaws as the
-/// caster's picture holds them when the round closes, by unit id, which a Proxy's target
-/// gate reads (`children`); a Hit unit with none is not shown any more. `indexes` are the
+/// nothing: the hits stand, and they raise their events (`hit_events`) for the spell of the
+/// cast while it is held, else for `spell`, the go's spell as the areas name it by its
+/// Spell4 id (`GoAsked.spell4_id`); a go the areas do not name strikes nobody. `poses` are
+/// the Hit units' ground points and yaws as the caster's picture holds them when the round
+/// closes, by unit id, which a Proxy's target gate reads (`children`); a Hit unit with none is not shown any more. `indexes` are the
 /// checklist indexes their 0x262 carried, by unit id, which a type 94 condition of that gate
 /// reads; a unit with none has no creature in the check. `units` are what each unit is, by
 /// unit id (`prerequisite.FirstUnit`), which a type 38 condition of that gate reads; a unit
@@ -5612,18 +5614,18 @@ pub fn went(
   now now: Now,
   cast_id cast_id: Int,
   phase phase: Int,
+  spell asked_spell: Result(Spell, Nil),
   struck struck: List(Struck),
   poses poses: Dict(Int, area.Pose),
   indexes indexes: Dict(Int, Int),
   units units: Dict(Int, prerequisite.FirstUnit),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
-  // A hit answered after the client ended the cast raises its events when the cast
-  // still holds a node (it lingers, `holder_of`). A cast that ended with no node left
-  // is gone with its spell, so its late hit raises none: a gap, issue 789.
   let own =
     holder_of(cast:, cast_id:)
-    |> result.map(fn(holder) { hit_events(spell: holder.spell, struck:) })
+    |> result.map(fn(holder) { holder.spell })
+    |> result.lazy_or(fn() { asked_spell })
+    |> result.map(fn(spell) { hit_events(spell:, struck:) })
     |> result.unwrap([])
   use <- settled(cast:, own:)
   released(

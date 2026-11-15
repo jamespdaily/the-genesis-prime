@@ -1391,6 +1391,13 @@ fn strike_carried_out(
             now:,
             cast_id: asked.cast_id,
             phase: asked.phase,
+            spell: result.map(
+              spell_area.of_spell(
+                areas: spell_area.areas(tables: session.settings.tables),
+                spell4_id: asked.spell4_id,
+              ),
+              fn(area) { area.spell },
+            ),
             struck:,
             poses: shown.poses_of(
               picture: entered.shown,
