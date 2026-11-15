@@ -25,6 +25,7 @@ import genesis_prime/table/id.{Creature2Id, Faction2Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/list
 import gleam/option.{Some}
+import gleam/set
 import owned_test
 import quest_support
 
@@ -98,6 +99,7 @@ pub fn activating_a_checklist_target_sets_its_bit_test() -> Nil {
   let tables = character_tables.shared()
   let counted =
     objective.advance(
+      reused: set.new(),
       log: fresh_log(),
       tables:,
       event: used(tables:, creature: checklist_creature, index: 2),
@@ -121,6 +123,7 @@ pub fn a_checklist_is_done_when_its_bit_count_reaches_its_count_test() -> Nil {
     as "the fixture holds the quest"
   let count = fn(log, index) {
     objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: used(tables:, creature: checklist_creature, index:),
@@ -151,8 +154,22 @@ pub fn a_target_already_counted_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
   let event = used(tables:, creature: checklist_creature, index: 2)
-  let first = objective.advance(log: fresh_log(), tables:, event:, now_ms: 0)
-  let again = objective.advance(log: first.log, tables:, event:, now_ms: 0)
+  let first =
+    objective.advance(
+      reused: set.new(),
+      log: fresh_log(),
+      tables:,
+      event:,
+      now_ms: 0,
+    )
+  let again =
+    objective.advance(
+      reused: set.new(),
+      log: first.log,
+      tables:,
+      event:,
+      now_ms: 0,
+    )
   assert again == Advanced(log: first.log, effects: [])
     as "the bit is set already: no second 0x361 and the log is as it was"
   assert stored(log: again.log, quest_id: checklist_quest) == [4, 0, 0, 0, 0]
@@ -168,6 +185,7 @@ pub fn activating_a_path_soldier_target_sets_its_bit_test() -> Nil {
     ])
   let counted =
     objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: used(tables:, creature: path_creature, index: 1),
@@ -185,6 +203,7 @@ pub fn a_unit_outside_the_target_group_changes_nothing_test() -> Nil {
   let tables = character_tables.shared()
   let log = fresh_log()
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: used(tables:, creature: outsider, index: 1),
@@ -193,6 +212,7 @@ pub fn a_unit_outside_the_target_group_changes_nothing_test() -> Nil {
     == Advanced(log:, effects: [])
     as "a unit TargetGroup 14425 does not hold takes no bit"
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: used(tables:, creature: checklist_creature, index: 32),
@@ -225,6 +245,7 @@ pub fn a_checklist_target_whose_bit_is_set_is_not_used_test() -> Nil {
   let tables = character_tables.shared()
   let counted =
     objective.advance(
+      reused: set.new(),
       log: fresh_log(),
       tables:,
       event: used(tables:, creature: checklist_creature, index: 2),
@@ -243,6 +264,7 @@ pub fn a_checklist_target_of_a_done_objective_is_not_used_test() -> Nil {
   let tables = character_tables.shared()
   let count = fn(log, index) {
     objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: used(tables:, creature: checklist_creature, index:),

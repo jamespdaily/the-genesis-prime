@@ -45,6 +45,7 @@ import genesis_prime/store
 import genesis_prime/table/id.{Creature2Id, Faction2Id, UnitRaceId}
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/set
 import owned_test
 import quest_support
 import spawn_support
@@ -414,7 +415,13 @@ pub fn the_deadline_timer_follows_the_earliest_objective_deadline_test() -> Nil 
   let log =
     accepted(log: nothing(), quest_id: chain, max_time_ms: 120_000, at: 1000)
   let advanced =
-    objective.advance(log:, tables:, event: killed_5006(), now_ms: 10_000)
+    objective.advance(
+      reused: set.new(),
+      log:,
+      tables:,
+      event: killed_5006(),
+      now_ms: 10_000,
+    )
   assert quest_log.deadline_moved(
       before: quest_log.next_deadline(log:),
       after: quest_log.next_deadline(log: advanced.log),
@@ -444,7 +451,13 @@ pub fn the_deadline_timer_follows_the_earliest_objective_deadline_test() -> Nil 
   let log =
     accepted(log: nothing(), quest_id: one_kill, max_time_ms: 0, at: 1000)
   let advanced =
-    objective.advance(log:, tables:, event: killed_5006(), now_ms: 20_000)
+    objective.advance(
+      reused: set.new(),
+      log:,
+      tables:,
+      event: killed_5006(),
+      now_ms: 20_000,
+    )
   assert quest_log.deadline_moved(
       before: quest_log.next_deadline(log:),
       after: quest_log.next_deadline(log: advanced.log),
