@@ -598,6 +598,11 @@ pub type Spell {
     /// The CCStateSet effects that hold a stun or a knockdown on a unit, and those that
     /// hold Ability Restriction on the caster (`restrictions_in_phase`).
     controls: List(CrowdControl),
+    /// The CCStateSet effects the plan drops: those aimed at another unit that hold their
+    /// state until removed, which no rule of the server ends when the spell ends (the
+    /// issue "A crowd-control state that lasts until removed ends when its spell ends").
+    /// The rest of the spell plans without them, and the cast logs each as a gap.
+    dropped_controls: List(Spell4EffectsId),
     /// The UnitPropertyModifier and UnitPropertyConversion effects aimed at the caster,
     /// which change its properties for their time.
     modifiers: List(PropertyModifier),
@@ -1048,6 +1053,12 @@ pub type LeftOutReason {
   ProxyNamesNoSpell
   /// A damage row whose phaseFlags is 0: no phase selects it (`spell_area` `phase`).
   InNoPhase
+  /// A CCStateSet row aimed at another unit that holds its state until removed
+  /// (`Spell4Effects.flags` bit 2), which no rule of the server ends when its spell ends
+  /// (the issue "A crowd-control state that lasts until removed ends when its spell
+  /// ends"): the plan drops the row, the rest of the spell plans, and the cast logs the
+  /// gap (`Spell.dropped_controls`).
+  StateUntilRemovedNotRead
 }
 
 /// A row as the list of its spell holds it. A Proxy's child and a Proc's spell are planned
@@ -1133,11 +1144,6 @@ pub type PlanError {
   ControlAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A CCStateSet effect of a tree has an apply prerequisite, which is not read.
   ControlPrerequisiteNotRead(spell4_id: Int, effect_id: Int)
-  /// A CCStateSet effect of a tree aimed at another unit holds its state until it is
-  /// removed (`Spell4Effects.flags` bit 2), which no rule of the server ends with its
-  /// cast's node (the issue "A crowd-control state that lasts until removed ends when its
-  /// spell ends" closes it).
-  ControlUntilRemovedNotRead(spell4_id: Int, effect_id: Int)
   /// A CCStateSet effect of a tree aimed at another unit keeps its state through a death
   /// or a leave by a caster persistence, target persistence or target suspend
   /// prerequisite, which no rule of the server holds (the issue "An effect behind an
@@ -1351,12 +1357,6 @@ pub fn describe(error error: PlanError) -> String {
         3 | 5 | 7 -> "a union aim waits for #794"
         _ -> "this aim waits for #336"
       }
-    ControlUntilRemovedNotRead(spell4_id:, effect_id:) ->
-      "the Spell4 row "
-      <> int.to_string(spell4_id)
-      <> " has a CCStateSet effect "
-      <> int.to_string(effect_id)
-      <> " on another unit held until removed, which the server does not read (#803)"
     ControlPersistenceNotRead(spell4_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2065,6 +2065,7 @@ fn spell_of(
       lasting: lists.lasting,
       removes: lists.removes,
       controls: lists.controls,
+      dropped_controls: dropped_controls_of(readings:),
       modifiers: list.append(lists.modifiers, lists.armors),
       forced_moves: lists.forced_moves,
       cooldown_groups:,
@@ -2270,15 +2271,15 @@ fn force_remove_counts_read(
 /// states (`Unit.CodeEnumCCState`, 0 to 27), with no apply prerequisite, aimed at the
 /// caster, the primary target, the area or both (`aim_of`). Its delayTime, durationTime,
 /// flags bit 2 (a state that never times out) and the armor it removes (dataBits03) are
-/// read as they are. A row aimed at another unit is refused when it holds its state
-/// until removed (no rule ends a creature's state with its cast's node) or keeps it
-/// through a death or a leave by a caster persistence, target persistence or target
-/// suspend prerequisite (no creature rule holds that); on the caster both are the cast's
-/// own (`cast.restrictions`).
+/// read as they are. A row aimed at another unit that holds its state until removed (no
+/// rule ends a creature's state with its cast's node) is `None`, a row the plan drops,
+/// and one that keeps its state through a death or a leave by a caster persistence,
+/// target persistence or target suspend prerequisite is refused (no creature rule holds
+/// that); on the caster both are the cast's own (`cast.restrictions`).
 fn control_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
-) -> Result(CrowdControl, PlanError) {
+) -> Result(Option(CrowdControl), PlanError) {
   use state <- result.try(case effect.data_bits00 {
     state if state >= 0 && state < 28 ->
       Ok(crowd_control_state.from_value(state))
@@ -2312,17 +2313,16 @@ fn control_of(
     effect.prerequisite_id_caster_persistence != 0
     || effect.prerequisite_id_target_persistence != 0
     || effect.prerequisite_id_target_suspend != 0
-  use Nil <- result.try(case aim, until_removed {
-    AimsAtCaster, _ | _, False -> Ok(Nil)
-    _, True ->
-      Error(ControlUntilRemovedNotRead(spell4_id:, effect_id: effect.id))
-  })
+  use <- bool.guard(
+    when: until_removed && aim != AimsAtCaster,
+    return: Ok(None),
+  )
   use Nil <- result.map(case aim, persists {
     AimsAtCaster, _ | _, False -> Ok(Nil)
     _, True ->
       Error(ControlPersistenceNotRead(spell4_id:, effect_id: effect.id))
   })
-  CrowdControl(
+  Some(CrowdControl(
     effect_id: Spell4EffectsId(effect.id),
     phase_flags: effect.phase_flags,
     aim:,
@@ -2334,7 +2334,7 @@ fn control_of(
       until_removed:,
     ),
     tag: tag_of(effect:),
-  )
+  ))
 }
 
 /// One UnitPropertyModifier, UnitPropertyConversion, DisguiseOutfit or Absorption row as a
@@ -3230,6 +3230,24 @@ fn lists_of(
   )
 }
 
+/// The CCStateSet rows the plan drops (`StateUntilRemovedNotRead`), in row order.
+fn dropped_controls_of(
+  readings readings: List(#(spell4_effects.Spell4Effects, Reading)),
+) -> List(Spell4EffectsId) {
+  list.filter_map(readings, fn(row) {
+    case row.1 {
+      Ok(LeftOut(why: StateUntilRemovedNotRead)) ->
+        Ok(Spell4EffectsId({ row.0 }.id))
+      Ok(Applied(..))
+      | Ok(Held(..))
+      | Ok(LeftOut(..))
+      | Ok(ReadByArea)
+      | Ok(ReadByActivation)
+      | Error(..) -> Error(Nil)
+    }
+  })
+}
+
 /// An effect of a spell that spends every point held must hold an emmComparison the rule
 /// reads (0 or 1), since each effect's tag chooses by the points spent; a spell with no
 /// such cost chooses nothing and its tags are not looked at.
@@ -3343,7 +3361,12 @@ fn kind_reading(
       })
     effect_kind.CrowdControl ->
       control_of(spell4_id:, effect:)
-      |> result.map(fn(control) { Applied(PlannedControl(control:)) })
+      |> result.map(fn(control) {
+        case control {
+          Some(control) -> Applied(PlannedControl(control:))
+          None -> LeftOut(why: StateUntilRemovedNotRead)
+        }
+      })
     effect_kind.PropertyModifier
     | effect_kind.PropertyConversion
     | effect_kind.DisguiseOutfit

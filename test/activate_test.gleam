@@ -115,6 +115,16 @@ pub fn activate_spell_that_strikes_cannot_be_planned_test() -> Nil {
     as "Spell4Effects 82255 of Spell4 38392 is a Proxy (effectType 26) aimed at the primary target (targetFlags 2) beside its Activate row 82254: the activate cast strikes no one, so the reason names that row"
 }
 
+pub fn activate_spell_with_a_state_on_the_target_stays_refused_though_its_plan_drops_the_row_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let activations = activate.activations(tables: fixture_tables.shared())
+  let assert Ok(CannotBePlanned(why:)) =
+    activate.planned_of(activations:, spell4_id: 29_217)
+    as "Spell4 29217, Creature2 22105's activate spell, is held with a reason"
+  assert string.contains(why, "163681") && string.contains(why, "29217")
+    as "Spell4Effects 163681 of Spell4 29217 is a CCStateSet (effectType 4) aimed at the primary target (targetFlags 2); its other rows (effectTypes 97, 51 and 107) are of types no rule reads. The spell plan drops that row because it lasts until removed, but the activate cast strikes no one, so it still lands no state on the creature and the spell stays refused for the row's aim, as for every state on the target"
+}
+
 pub fn activate_spell_with_a_ravel_signal_aimed_at_the_target_is_planned_test() -> Nil {
   use <- owned_test.run(10_000)
   let activations = activate.activations(tables: fixture_tables.shared())
@@ -193,8 +203,8 @@ pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_
   let count_of = fn(reason) {
     list.count(refusals, fn(found) { found == reason })
   }
-  assert count_of("aimed at the target") == 32
-    as "32 hold a Spell4Effects row aimed at the target or an area that the strike applies, which an activate cast strikes no one with (Spell4Effects targetFlags); Spell4 87571 holds one too (effect 229208), but its Knockdown row is named first; the other 39 of the 72 held only a RavelSignal row aimed there, which the plan drops with a log when the cast starts (Spell4Effects.effectType.81)"
+  assert count_of("aimed at the target") == 33
+    as "33 hold a Spell4Effects row aimed at the target or an area that the strike applies, which an activate cast strikes no one with (Spell4Effects targetFlags), among them Spell4 87571 (effect 229208, a Fluff row, which comes before its until-removed Knockdown row 229281 that the plan drops) and Spell4 29217 (its CCStateSet row 163681); the other 39 of the 72 held only a RavelSignal row aimed there, which the plan drops with a log when the cast starts (Spell4Effects.effectType.81)"
   assert count_of("disguise") == 4
     as "4 hold a DisguiseOutfit effect the server does not read (Spell4Effects.effectType.112). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("force remove counts") == 2
@@ -203,8 +213,8 @@ pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_
     as "2 hold a Fluff, SpellForceRemove, Scale or RavelSignal effect aimed by flags the server does not read (Spell4Effects.targetFlags). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("stealth condition") == 1
     as "1 holds a Spell4Conditions row whose mask tests stealth, with the refusals 65 and 114 not checked. Gap: the issue Spells work in depth on the real client (#336) owns it"
-  assert count_of("control aim") == 3
-    as "3 hold a CCStateSet effect the server does not read: Spell4 33716 and 33966 (effects 191135 and 191167, state 11) behind an apply prerequisite, and Spell4 87571 (effect 229281, Knockdown, targetFlags 2, until removed) on another unit (scratch count over `table_rows -- Spell4Effects effectType=4`). Gap: the issues that read apply prerequisites and until-removed rows on another unit own them"
+  assert count_of("control aim") == 2
+    as "2 hold a CCStateSet effect the server does not read: Spell4 33716 and 33966 (effects 191135 and 191167, state 11) behind an apply prerequisite (scratch count over `table_rows -- Spell4Effects effectType=4`). Gap: the issue that reads apply prerequisites owns it"
   assert list.length(refusals) == 44
     as "44 of the 767 are refused, each for one of the reasons above, so 723 are planned, among them Spell4 33742, 33743, 33967 and 33968 (state 11), 47274, 47396, 47446, 47509 and 47541 (state 26) and 82086 (a state aimed at the caster), which each hold a CCStateSet row of a state the server reads"
 }

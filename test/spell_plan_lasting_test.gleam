@@ -17,6 +17,7 @@
 ////   Fluff or type 80 row with an aim that is not read, fail the load.
 
 import client_tables
+import fixture_tables
 import genesis_prime/game/crowd_control
 import genesis_prime/game/lasting.{Group, LastingRow, Spell, Stack}
 import genesis_prime/game/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
@@ -638,11 +639,11 @@ pub fn union_and_bit_eight_aims_stay_refused_test() -> Nil {
   })
 }
 
-pub fn a_state_until_removed_on_another_unit_is_refused_test() -> Nil {
+pub fn a_state_until_removed_on_another_unit_is_dropped_and_the_spell_plans_test() -> Nil {
   use <- owned_test.run(60_000)
   list.each([2, 4, 6], fn(flags) {
-    let error =
-      plan_error(
+    let assert Ok(spell) =
+      spell_tables.planned_strike(
         rows: spell_tables.rows_with_effect(
           effect: knockdown_row(state: 0, target_flags: flags, columns: [
             #("flags", Integer(2)),
@@ -650,14 +651,11 @@ pub fn a_state_until_removed_on_another_unit_is_refused_test() -> Nil {
           ]),
         ),
       )
-    assert error
-      == spell_plan.ControlUntilRemovedNotRead(
-        spell4_id: strike,
-        effect_id: 99_040,
-      )
-      as "cc_state.instance_id: flags bit 2 never times out, and no rule of the server ends a creature's state when its cast's node ends"
-    assert string.contains(spell_plan.describe(error:), "#803")
-      as "the refusal names the issue that will end it"
+      as "the spell plans without the row: the server ends no creature's state when its cast's node ends, and the issue that will end it is open"
+    assert spell.controls == []
+      as "cc_state.instance_id: flags bit 2 never times out, so the row lands nothing until the issue that ends it is built"
+    assert spell.dropped_controls == [Spell4EffectsId(99_040)]
+      as "the plan names the row it drops, which the cast logs as a gap"
   })
   let assert Ok(on_caster) =
     spell_tables.planned_strike(
@@ -671,6 +669,63 @@ pub fn a_state_until_removed_on_another_unit_is_refused_test() -> Nil {
     as "a state on the caster ends with its cast's node (cast.restrictions)"
   assert list.map(on_caster.controls, fn(control) { control.row.until_removed })
     == [True]
+  assert on_caster.dropped_controls == []
+    as "a row on the caster is read, not dropped"
+}
+
+pub fn the_six_spells_held_only_by_an_until_removed_state_plan_as_they_did_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  // Each spell and its one CCStateSet row on another unit held until removed
+  // (`table_rows -- Spell4Effects <id>`: flags bit 2, no prerequisite); the plan before the
+  // held states were read held that row as a control and nothing else refused the spell.
+  list.each(
+    [
+      #(35_436, 212_028),
+      #(39_059, 84_841),
+      #(41_514, 93_296),
+      #(29_217, 163_681),
+      #(34_212, 191_134),
+      #(76_102, 197_063),
+    ],
+    fn(spell) {
+      let #(spell4_id, effect_id) = spell
+      let assert Ok(planned) =
+        spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: [])
+        as {
+          "Spell4 "
+          <> int.to_string(spell4_id)
+          <> " plans: its only refusal was the until-removed row, which the plan drops"
+        }
+      assert planned.dropped_controls == [Spell4EffectsId(effect_id)]
+        as {
+          "Spell4Effects "
+          <> int.to_string(effect_id)
+          <> " is the row Spell4 "
+          <> int.to_string(spell4_id)
+          <> " drops"
+        }
+      assert list.filter(planned.controls, fn(control) {
+          control.effect_id == Spell4EffectsId(effect_id)
+        })
+        == []
+        as "and no control of the plan holds it"
+    },
+  )
+}
+
+pub fn a_state_that_times_out_is_not_dropped_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(spell) =
+    spell_tables.planned_strike(
+      rows: spell_tables.rows_with_effect(
+        effect: knockdown_row(state: 0, target_flags: 2, columns: []),
+      ),
+    )
+    as "a timed state on another unit plans"
+  assert list.length(spell.controls) == 1 && spell.dropped_controls == []
+    as "flags bit 2 clear: the row is read as before"
 }
 
 pub fn a_persistence_prerequisite_on_another_unit_is_refused_test() -> Nil {

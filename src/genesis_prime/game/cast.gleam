@@ -1779,6 +1779,8 @@ type Issue {
   SpellsIssue
   /// The items' charges and the checks of an item's use the server does not build.
   ItemsIssue
+  /// The crowd-control states that last until removed, which no rule ends with their spell.
+  UntilRemovedIssue
 }
 
 fn issue_name(issue issue: Issue) -> String {
@@ -1788,6 +1790,8 @@ fn issue_name(issue issue: Issue) -> String {
     PrerequisitesIssue ->
       "Quests, zones and prerequisites work on the real client (#334)"
     SpellsIssue -> "Spells work in depth on the real client (#336)"
+    UntilRemovedIssue ->
+      "A crowd-control state that lasts until removed ends when its spell ends (#803)"
   }
 }
 
@@ -2901,6 +2905,36 @@ fn signals_dropped(
   }
 }
 
+/// The log of the crowd-control rows the plan drops from a spell (`Spell.dropped_controls`),
+/// the first time a cast of the spell starts: each holds a state on another unit until
+/// removed, which no rule of the server ends when the spell ends, so the cast lands none
+/// of them.
+fn controls_dropped(
+  cast cast: State,
+  spell spell: Spell,
+) -> #(State, List(Effect)) {
+  let key = DroppedControls(spell4_id: spell.spell4_id.value)
+  case spell.dropped_controls == [] || set.contains(cast.logged, key) {
+    True -> #(cast, [])
+    False -> #(State(..cast, logged: set.insert(cast.logged, key)), [
+      Log(
+        level: LogWarning,
+        text: "the cast of Spell4 "
+          <> int.to_string(spell.spell4_id.value)
+          <> " drops the crowd-control effects "
+          <> string.join(
+          list.map(spell.dropped_controls, fn(effect_id) {
+            int.to_string(effect_id.value)
+          }),
+          ", ",
+        )
+          <> ", each a state on another unit held until removed, which the server does not end with its spell yet, the issue "
+          <> issue_name(issue: UntilRemovedIssue),
+      ),
+    ])
+  }
+}
+
 /// What a log of a cast the server does not build is kept once for.
 pub type Unbuilt {
   /// A spell, by Spell4 id.
@@ -2912,6 +2946,8 @@ pub type Unbuilt {
   UnreadLinkPrerequisite(prerequisite_type: Int)
   /// The RavelSignal effects an activate cast drops, by the Spell4 id.
   DroppedSignals(spell4_id: Int)
+  /// The crowd-control effects the plan drops from a spell, by the Spell4 id.
+  DroppedControls(spell4_id: Int)
   /// A quest button's spell, by Spell4 id.
   UnbuiltShortcut(spell4_id: Int)
   /// A quest button's cast at a creature whose activate pick rests on a prerequisite
@@ -2950,7 +2986,8 @@ fn not_built_refusal(
     UnbuiltSpell(..)
     | UnreadPrerequisite(..)
     | UnreadLinkPrerequisite(..)
-    | DroppedSignals(..) -> "the activate cast of Spell4 "
+    | DroppedSignals(..)
+    | DroppedControls(..) -> "the activate cast of Spell4 "
   }
   case set.contains(cast.logged, key) {
     True -> Ok(#(cast, [refusal]))
@@ -6174,8 +6211,10 @@ fn start(
       )
     })
   let #(cast, threshold_effects) = threshold_step(cast:, role:, cast_id: id)
+  let #(cast, dropped_effects) = controls_dropped(cast:, spell:)
   let opening =
     list.flatten([
+      dropped_effects,
       [Send(frame: to_caster)],
       told,
       threshold_effects,

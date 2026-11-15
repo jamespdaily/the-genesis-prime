@@ -96,6 +96,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     cooldown_groups: [],
     cooldown_modifiers: [],
     controls: [],
+    dropped_controls: [],
     stealth: [],
     remove_stealth: [],
     heals: [],

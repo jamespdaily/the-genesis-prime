@@ -16,7 +16,8 @@
 //// - Spell4 34448 (row 10349's spell): prerequisiteIdCasterCast 11700, `0x1403ace00`.
 //// - Spell4 70503 (row 18165's spell): Spell4Base 47487, castMethod 5 (a client-side
 ////   interaction), whose answer 0x805 carries the Spell4Base id plus 1 (`opcode.0x805.fields`).
-//// - Spell4 30173 (row 6761's spell): targetType 1, a CC state 9 the plans cannot hold.
+//// - Spell4 35436 (row 11555's spell): targetType 1, a Knockdown on the target that lasts
+////   until removed, which the plan drops.
 
 import cast_support as support
 import client_tables
@@ -38,7 +39,7 @@ import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
 import genesis_prime/table/item_special
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite
@@ -965,10 +966,18 @@ pub fn a_caster_condition_of_an_unread_type_refuses_as_not_built_test() -> Nil {
 
 pub fn a_press_of_a_targeted_spell_that_cannot_be_planned_stays_not_built_test() -> Nil {
   use <- owned_test.run(10_000)
+  // Spell4 35436's Spell4Effects 212028 aimed by a union flag (targetFlags 3), which
+  // `spell_plan.aim_of` does not read, so the spell cannot be planned.
+  use tables <- fixture_tables.changed(
+    table: "Spell4Effects",
+    id: 212_028,
+    with: [#("targetFlags", Integer(3))],
+  )
   let scene =
     Scene(..nothing_shown(), units: [unit(id: 913, of: 32_668, at: 10.0)])
   let #(_, effects) =
-    press_at(
+    press_at_with(
+      shortcuts: shortcut_spell.shortcuts(tables:),
       scene:,
       state: cast.new(),
       spell4_id: 35_436,
@@ -977,10 +986,46 @@ pub fn a_press_of_a_targeted_spell_that_cannot_be_planned_stays_not_built_test()
     )
   assert support.refusal_results(effects:)
     == [code(cast_result.IllegalSpellCast)]
-    as "Spell4 35436's Spell4Effects 212028 is a Knockdown (dataBits00 8) on another unit that is held until removed, with no prerequisite; the plans do not end a state with its spell (the issue \"A crowd-control state that lasts until removed ends when its spell ends\"): refused 285"
+    as "a union aim is not read, so the plan refuses the spell and its press is refused 285"
   let assert [line] = warnings(effects:)
   assert string.contains(line, "35436") && string.contains(line, "(#336)")
     as "the log names the spell and the issue that will close the gap, #336"
+}
+
+pub fn a_press_of_a_spell_whose_state_lasts_until_removed_starts_and_logs_the_dropped_row_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4 35436's Spell4Effects 212028 is a Knockdown (dataBits00 8) aimed at the primary
+  // target (targetFlags 2) that lasts until removed (flags bit 2), with no prerequisite.
+  // No rule of the server ends a creature's state with its spell, so the plan drops the
+  // row and the rest of the spell plans: the press starts, and the cast logs the gap.
+  let scene =
+    Scene(..nothing_shown(), units: [unit(id: 913, of: 31_474, at: 10.0)])
+  let #(state, pressed) =
+    press_at(
+      scene:,
+      state: cast.new(),
+      spell4_id: 35_436,
+      target: 913,
+      at: 1000,
+    )
+  assert support.refusal_results(effects: pressed) == []
+    && confirmed_targets(effects: pressed) == [913]
+    as "the press is taken and the caster is told at once, as for any planned spell"
+  let assert [line] = warnings(effects: pressed)
+  assert string.contains(line, "35436")
+    && string.contains(line, "212028")
+    && string.contains(line, "#803")
+    as "the log names the spell, the dropped row and the issue that will end the state"
+  let #(_, again) =
+    press_at(scene:, state:, spell4_id: 35_436, target: 913, at: 20_000)
+  assert warnings(effects: again) == []
+    as "a second press does not log the gap again"
+  let assert Ok(shortcut_spell.Aimed(spell:, ..)) =
+    shortcut_spell.planned_of(shortcuts: shortcuts(), spell4_id: 35_436)
+    as "the spell plans as an aimed one"
+  assert spell.controls == []
+    && spell.dropped_controls == [Spell4EffectsId(212_028)]
+    as "Spell4Effects 212028 lands nothing: it is the one row dropped"
 }
 
 pub fn a_press_of_a_target_type_3_spell_tests_its_faction_cast_group_test() -> Nil {

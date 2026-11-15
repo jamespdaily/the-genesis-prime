@@ -110,7 +110,6 @@ fn effect_row_of(error: PlanError) -> Refusal {
     | spell_plan.ControlStateNotRead(effect_id:, ..)
     | spell_plan.ControlAimNotRead(effect_id:, ..)
     | spell_plan.ControlPrerequisiteNotRead(effect_id:, ..)
-    | spell_plan.ControlUntilRemovedNotRead(effect_id:, ..)
     | spell_plan.ControlPersistenceNotRead(effect_id:, ..)
     | spell_plan.ModifierPropertyHasNoRow(effect_id:, ..)
     | spell_plan.ModifierNumberNotFinite(effect_id:, ..)
