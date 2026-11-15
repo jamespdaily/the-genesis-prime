@@ -652,25 +652,29 @@ pub fn using_the_same_survivor_again_counts_nothing_test() -> Nil {
     as "opcode.0x7f4 and 0x7fe: the cast of the second use reaches its go and its finish, and the use counts nothing, so no 0x361 follows (0x1405517a0.type12: the client keeps no unit record, so the once is the server's)"
 }
 
+/// Survivors 40, 41 and 42 used at 0, 5000 and 10000 ms, with a fourth, unit 43, in view:
+/// the state after, and the 0x361 progress frames the three uses sent.
+fn three_survivors_used() -> #(game_connection.State, List(#(Int, BitArray))) {
+  list.fold(
+    [#(40, 0), #(41, 5000), #(42, 10_000)],
+    #(
+      seeing_the_walking_survivors(
+        settings: connection_support.settings(),
+        units: [40, 41, 42, 43],
+      ),
+      [],
+    ),
+    fn(so_far, press) {
+      let #(state, counted) = so_far
+      let #(state, _, go) = used_once_on(state:, unit_id: press.0, at: press.1)
+      #(state, list.append(counted, progress_frames(steps: go)))
+    },
+  )
+}
+
 pub fn three_survivors_bring_the_objective_to_its_count_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(state, counted) =
-    list.fold(
-      [#(40, 0), #(41, 5000), #(42, 10_000)],
-      #(
-        seeing_the_walking_survivors(
-          settings: connection_support.settings(),
-          units: [40, 41, 42, 43],
-        ),
-        [],
-      ),
-      fn(so_far, press) {
-        let #(state, counted) = so_far
-        let #(state, _, go) =
-          used_once_on(state:, unit_id: press.0, at: press.1)
-        #(state, list.append(counted, progress_frames(steps: go)))
-      },
-    )
+  let #(_, counted) = three_survivors_used()
   assert counted
     == [
       progress_frame(quest: 3480, index: 0, progress: 1),
@@ -678,6 +682,11 @@ pub fn three_survivors_bring_the_objective_to_its_count_test() -> Nil {
       progress_frame(quest: 3480, index: 0, progress: 3),
     ]
     as "opcode.0x361: three different survivors bring objective 4470 (count 3) to 3 of 3"
+}
+
+pub fn a_quest_creature_is_refused_once_its_objective_is_done_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = three_survivors_used()
   let #(_, fourth) =
     connection_support.at(
       state:,

@@ -471,6 +471,14 @@ pub fn used_keeps_a_type_12_objectives_units_unless_it_reuses_them_test() -> Nil
     )
     == Error(Nil)
     as "a type 3 objective counts by no unit"
+}
+
+pub fn used_refuses_an_objective_counted_by_no_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // QuestObjective 4098 (quest 3145) is type 11, a cast of Spell4 7103 with count 10, and
+  // the objective of quest 6723 is type 23: each counts each unit once.
+  let tables = character_tables.shared()
+  let unit = quest_support.unit_ref(unit_id: 7)
   let assert Ok(counted) =
     quest_log.used(
       reused: set.new(),
