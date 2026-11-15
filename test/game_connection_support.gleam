@@ -33,7 +33,9 @@ import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, NoHolder, Taken}
 import genesis_prime/login/guid
 import genesis_prime/message/cast_result
+import genesis_prime/message/combat_result
 import genesis_prime/message/create_character.{CreateCharacter}
+import genesis_prime/message/damage_type
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason
 import genesis_prime/message/float32
@@ -48,6 +50,8 @@ import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/spell_cast_refused
+import genesis_prime/message/spell_damage_description
+import genesis_prime/message/spell_go
 import genesis_prime/message/spell_position
 import genesis_prime/message/spell_started
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
@@ -125,6 +129,7 @@ pub fn settings() -> game_connection.Settings {
     visibility: dict.new(),
     tutorial_chain: tutorial_support.none(),
     projector_landings: projector_support.landings(),
+    reused_unit_objectives: set.new(),
   )
 }
 
@@ -1312,6 +1317,7 @@ pub fn mapped(
     | client_connection.TellTargetMoved(..)
     | client_connection.TellStrikeAnswered(..)
     | client_connection.TellTargetChange(..)
+    | client_connection.TellThrown(..)
     | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }
@@ -1567,10 +1573,29 @@ pub fn entered_as_with_quests_on(
   character character: store.Character,
   quests quests: List(store.QuestRow),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  let fresh = accepted(Settings(..settings(), tables:)).0
+  entered_as_with_quests_in(
+    settings: Settings(..settings(), tables:),
+    character:,
+    quests:,
+  )
+}
+
+/// `entered_with_quests_on` with these settings.
+pub fn entered_with_quests_in(
+  settings settings: game_connection.Settings,
+  quests quests: List(store.QuestRow),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  entered_as_with_quests_in(settings:, character: world_character(), quests:)
+}
+
+fn entered_as_with_quests_in(
+  settings settings: game_connection.Settings,
+  character character: store.Character,
+  quests quests: List(store.QuestRow),
+) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) =
     joining_holding(
-      in_character_select: in_select_from(fresh),
+      in_character_select: in_select_from(accepted(settings).0),
       character:,
       saved_health: None,
       saved_experience: None,
@@ -2040,6 +2065,51 @@ pub fn strikes_told(
   })
 }
 
+/// The strikes a step tells the creatures, as the creature's unit and the Spell4Effects id of
+/// each damage row the strike carries.
+pub fn strike_blows_told(
+  taken: ConnectionStep(Request),
+) -> List(#(Int, List(Int))) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(
+        to: step.Creature(unit_id:, ..),
+        request: client_connection.TellStrike(tell:),
+      )) ->
+        Ok(#(
+          unit_id,
+          list.map(tell.offence.blows, fn(blow) { blow.spell4_effects_id }),
+        ))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// The Spell4Effects ids each unit's entry of the steps' gos lists, by unit, in unit order.
+pub fn listed_by_unit(
+  steps steps: List(ConnectionStep(Request)),
+) -> List(#(Int, List(Int))) {
+  list.flat_map(steps, fn(taken) { heard(taken:, cipher: keyed()) })
+  |> decoded(spell_go.message_id, spell_go.decode)
+  |> list.flat_map(fn(go) { go.targets })
+  |> list.map(fn(info) {
+    #(
+      info.unit_id,
+      list.map(info.effects, fn(effect) { effect.spell4_effects_id }),
+    )
+  })
+  |> list.filter(fn(entry) { entry.1 != [] })
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+}
+
+/// The units the steps' gos name as struck, whether or not an effect is listed on them.
+pub fn struck_units(steps steps: List(ConnectionStep(Request))) -> List(Int) {
+  list.flat_map(steps, fn(taken) { heard(taken:, cipher: keyed()) })
+  |> decoded(spell_go.message_id, spell_go.decode)
+  |> list.flat_map(fn(go) { list.map(go.targets, fn(info) { info.unit_id }) })
+}
+
 /// A creature's answer that the strike of `key` ended as `outcome`, for the tests' player's
 /// first stay.
 pub fn answered(
@@ -2491,6 +2561,64 @@ pub fn landing_but_deflected(
   })
 }
 
+/// The step, and each strike it and the steps after it tell a creature answered as
+/// landed at `ms` with a description of each blow the strike carries, in order.
+pub fn landing_with_its_blows(
+  state state: game_connection.State,
+  ms ms: Int,
+  taken taken: ConnectionStep(Request),
+) -> #(game_connection.State, List(ConnectionStep(Request))) {
+  let told =
+    list.filter_map(support.effects_of(taken), fn(effect) {
+      case effect {
+        OwnEffect(step.Tell(
+          to: step.Creature(..),
+          request: client_connection.TellStrike(tell:),
+        )) -> Ok(tell)
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          Error(Nil)
+      }
+    })
+  list.fold(told, #(state, [taken]), fn(so_far, tell) {
+    let #(state, steps) = so_far
+    let described =
+      list.map(tell.offence.blows, fn(blow) {
+        hit.Description(
+          spell4_effects_id: blow.spell4_effects_id,
+          delay_ms: blow.delay_ms,
+          damage: spell_damage_description.SpellDamageDescription(
+            raw_damage: blow.damage,
+            scaled_raw_damage: blow.damage,
+            absorbed: 0,
+            shield_absorbed: 0,
+            health_damage_with_overkill: blow.damage,
+            overkill: 0,
+            glance: 0,
+            killed: 0,
+            combat_result: combat_result.Hit,
+            damage_type: damage_type.Magic,
+            hits: [],
+          ),
+        )
+      })
+    let #(state, after) =
+      at(
+        state:,
+        ms:,
+        event: answered(
+          key: tell.key,
+          outcome: strike_tell.Landed(
+            descriptions: described,
+            controls: [],
+            armor_removed: 0,
+          ),
+        ),
+      )
+    let #(state, more) = landing_with_its_blows(state:, ms:, taken: after)
+    #(state, list.append(steps, more))
+  })
+}
+
 /// The cast rule's timers the steps start, due from `ms`, less those they cancel.
 pub fn cast_timers(
   steps steps: List(ConnectionStep(Request)),
@@ -2533,6 +2661,18 @@ fn landed_at_once(
   taken taken: ConnectionStep(Request),
 ) -> #(Nil, game_connection.State, List(ConnectionStep(Request))) {
   let #(state, steps) = landing(state:, ms:, taken:)
+  #(world, state, steps)
+}
+
+/// The answer where every strike told lands at once with a description of each of its
+/// blows (`landing_with_its_blows`).
+pub fn landed_with_its_blows(
+  world world: Nil,
+  state state: game_connection.State,
+  ms ms: Int,
+  taken taken: ConnectionStep(Request),
+) -> #(Nil, game_connection.State, List(ConnectionStep(Request))) {
+  let #(state, steps) = landing_with_its_blows(state:, ms:, taken:)
   #(world, state, steps)
 }
 

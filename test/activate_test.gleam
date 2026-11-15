@@ -112,7 +112,7 @@ pub fn activate_spell_that_strikes_cannot_be_planned_test() -> Nil {
     activate.planned_of(activations:, spell4_id: 38_392)
     as "Spell4 38392, Creature2 19232's activate spell, is held with a reason"
   assert string.contains(why, "82255") && string.contains(why, "38392")
-    as "Spell4Effects 82255 of Spell4 38392 is a Proxy (effectType 26) aimed at the primary target (targetFlags 2) beside its Activate row 82254: the activate cast strikes no one, so the reason names that row"
+    as "Spell4 38392's tree holds the Proxy 82255 (effectType 26) aimed at the primary target (targetFlags 2) beside its Activate row 82254, which the activate cast, striking no one, would lose; its ForcedMove 58586 of Spell4 31489 behind a target apply prerequisite is planned"
 }
 
 pub fn activate_spell_with_a_state_on_the_target_stays_refused_though_its_plan_drops_the_row_test() -> Nil {
@@ -210,15 +210,20 @@ pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_
   assert count_of("force remove counts") == 2
     as "2 hold a SpellForceRemove effect whose dataBits03 differs from its dataBits04 (Spell4Effects.effectType.80). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("lasting aim") == 2
-    as "2 hold a Fluff, SpellForceRemove, Scale or RavelSignal effect aimed by flags the server does not read (Spell4Effects.targetFlags). Gap: the issue Spells work in depth on the real client (#336) owns it"
+    as "2 hold a Fluff, SpellForceRemove, Scale, ItemVisualSwap or RavelSignal effect aimed by flags the server does not read (Spell4Effects.targetFlags). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("stealth condition") == 1
     as "1 holds a Spell4Conditions row whose mask tests stealth, with the refusals 65 and 114 not checked. Gap: the issue Spells work in depth on the real client (#336) owns it"
-  assert count_of("control aim") == 2
-    as "2 hold a CCStateSet effect the server does not read: Spell4 33716 and 33966 (effects 191135 and 191167, state 11) behind an apply prerequisite (scratch count over `table_rows -- Spell4Effects effectType=4`). Gap: the issue that reads apply prerequisites owns it"
+  assert list.all([33_716, 33_966], fn(spell4_id) {
+    case activate.planned_of(activations:, spell4_id:) {
+      Ok(Planned(..)) -> True
+      Ok(CannotBePlanned(..)) | Ok(activate.NoSpell4Row) | Error(Nil) -> False
+    }
+  })
+    as "Spell4 33716 and 33966 are planned: each holds one CCStateSet row of state 11 (effects 191135 and 191167, read with `table_rows -- Spell4Effects`; 191135 behind caster apply 10128) and the plan reads a control row behind an apply prerequisite"
   assert count_of("target gate") == 1
     as "1 holds a RavelSignal row aimed at the target behind target apply prerequisite 38432, one condition of type 76, which the server does not decode: Spell4 82228 (effect 216305; its Fluff row 216478, aimed at the target, would also refuse it). Gap: the issue that reads the prerequisite types effects use owns it (#818)"
-  assert list.length(refusals) == 44
-    as "44 of the 767 are refused, each for one of the reasons above, so 723 are planned, among them Spell4 33742, 33743, 33967 and 33968 (state 11), 47274, 47396, 47446, 47509 and 47541 (state 26) and 82086 (a state aimed at the caster), which each hold a CCStateSet row of a state the server reads"
+  assert list.length(refusals) == 42
+    as "42 of the 767 are refused, each for one of the reasons above, so 725 are planned, among them Spell4 33716, 33966, 33742, 33743, 33967 and 33968 (state 11), 47274, 47396, 47446, 47509 and 47541 (state 26) and 82086 (a state aimed at the caster), which each hold a CCStateSet row of a state the server reads"
 }
 
 /// The short name of a refusal's reason, by the text of the plan's own reason; a reason
@@ -228,9 +233,11 @@ fn refusal_reason(why why: String) -> String {
     #("aims at the target or an area", "aimed at the target"),
     #("DisguiseOutfit", "disguise"),
     #("differs from its dataBits04", "force remove counts"),
-    #("Fluff, SpellForceRemove, Scale or RavelSignal", "lasting aim"),
+    #(
+      "Fluff, SpellForceRemove, Scale, ItemVisualSwap or RavelSignal",
+      "lasting aim",
+    ),
     #("whose mask tests stealth", "stealth condition"),
-    #("CCStateSet effect", "control aim"),
     #("with a condition of type 76", "target gate"),
   ]
   let assert Ok(#(_, reason)) =

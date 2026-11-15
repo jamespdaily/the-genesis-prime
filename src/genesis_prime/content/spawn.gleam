@@ -10,6 +10,8 @@
 //// a map's start, a creature's start ─▶ summon_checks(key): what a run-only spawn is checked with
 //// the same load  ─▶ selection.visibility ─▶ put (with the worlds)
 //// the connection's settings ─▶ visibility(key): each world's visibility prerequisites, loaded
+//// the same load  ─▶ counts(rows) ─▶ quest_log.reused_unit_objectives ─▶ put_reused_unit_objectives(key)
+//// the connection's settings ─▶ reused_unit_objectives(key): the type 12 objectives whose unit counts again
 //// ```
 ////
 //// - **The term** of a world is `WorldSpawns(by_id, objects, cells)`, put once for every
@@ -23,6 +25,11 @@
 ////   put with the worlds' terms: for each world with any, the loaded prerequisites
 ////   its started spawns and sent objects hide behind, so the connection works out
 ////   what a player sees with no table read during play.
+//// - **The reused unit objectives** are one term (id 0 of table `spawn_reused_unit_objectives`),
+////   put with the worlds' terms: the type 12 objectives whose creature has fewer spawn rows
+////   than the objective's count (genesis_prime/game/quest_log `reused_unit_objectives`), so
+////   the connection counts each other type 12 objective's unit once with no table read
+////   during play.
 //// - **The query** is `sql/load_spawns.sql`, run by the load's own pool before
 ////   the tree starts; nothing queries the table during play.
 
@@ -35,7 +42,9 @@ import genesis_prime/world_map/spawn.{
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict.{type Dict}
 import gleam/list
+import gleam/option
 import gleam/result
+import gleam/set.{type Set}
 import pog
 
 /// The table's name in the log and in a term.
@@ -97,6 +106,39 @@ pub fn put_visibility(
 /// so a reader that finds none is a bug and crashes.
 pub fn visibility(key key: Key) -> Dict(Int, List(Prerequisite)) {
   store.content(key:, table: visibility_table, id: 0)
+}
+
+/// The number of spawn rows of each Creature2 id, in every world: a creature with no row
+/// has no entry.
+pub fn counts(rows rows: List(Row)) -> Dict(Int, Int) {
+  list.fold(rows, dict.new(), fn(counts, row) {
+    dict.upsert(counts, row.creature_id, fn(counted) {
+      option.unwrap(counted, 0) + 1
+    })
+  })
+}
+
+/// The table name of the reused unit objectives in a term.
+const reused_unit_objectives_table = "spawn_reused_unit_objectives"
+
+/// Writes the QuestObjective ids of the type 12 objectives whose unit counts again
+/// (`quest_log.reused_unit_objectives`) under the key, once.
+pub fn put_reused_unit_objectives(
+  key key: Key,
+  objectives objectives: Set(Int),
+) -> Nil {
+  store.put_content(
+    key:,
+    table: reused_unit_objectives_table,
+    id: 0,
+    value: objectives,
+  )
+}
+
+/// The reused unit objectives the load put under the key. The load puts the term before
+/// the tree starts, so a reader that finds none is a bug and crashes.
+pub fn reused_unit_objectives(key key: Key) -> Set(Int) {
+  store.content(key:, table: reused_unit_objectives_table, id: 0)
 }
 
 /// Writes one world's spawns under the key, once.

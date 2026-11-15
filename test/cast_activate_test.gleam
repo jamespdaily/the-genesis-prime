@@ -1092,11 +1092,11 @@ pub fn activate_refuses_unknown_and_unbuilt_spells_test() -> Nil {
   assert support.refusal_results(effects: struck)
     == [cast_result.to_value(cast_result.IllegalSpellCast)]
     && support.started_timers(effects: struck) == []
-    as "Spell4 38392 (Creature2 19232's spell) has Spell4Effects 82255, a Proxy aimed at the primary target (targetFlags 2): the activate cast strikes no one, so the press is refused as not built, never run with the effect lost"
+    as "Spell4 38392 (Creature2 19232's spell) holds the Proxy 82255 aimed at the primary target (targetFlags 2) that the activate cast, striking no one, would lose: the press is refused as not built, never run with the effect lost"
   let assert [#(LogWarning, struck_line)] = support.logs(effects: struck)
     as "the refusal is logged"
   assert string.contains(struck_line, "82255")
-    as "the log names the effect that would be lost"
+    as "the log names the effect the plan refuses"
   // A castMethod 5 spell pressed from the bag has no activated unit to interact with.
   let interaction_spell =
     spell_plan.Spell(

@@ -251,10 +251,22 @@
 //// | a viewer arrives while the charge is open | its news holds the charge's 0x7ff, with its cast id, so its client takes the later 0x7f4 | `a_viewer_arriving_mid_charge_gets_the_open_cast_test` |
 //// | a viewer arrives while the charge is open and the threat list's top entry changed since it began | its 0x7ff names the top entry, the target its 0x908 names | `a_viewer_arriving_mid_charge_is_told_the_current_target_in_the_open_cast_test` |
 //// | a creature that cannot move: its target is out of reach, or beyond the leash range from home | out of reach: no 0x638, it keeps its place; beyond the leash range: the release as the leash does, with no walk, to Resting | `a_turret_never_chases_or_walks_home_test`, `a_turret_leashes_in_place_when_its_target_is_beyond_its_leash_range_test` |
+//// | `Thrown` reaches a creature that is dead, Returning or does not run (run speed 0) | the fight drops it: no path, no timer, no news | `a_turret_is_not_thrown_test`, `a_throw_at_a_dead_or_returning_creature_is_dropped_test` |
+//// | `Thrown` reaches a creature that runs, Fighting or Resting | the path is `Timed` from where it is, `FlightEnds` starts, the viewers are sent one 0x638; an open charge breaks as `held` does, unless the throw moves the creature nowhere | `a_thrown_creature_sends_its_viewers_the_flight_once_test`, `a_throw_breaks_an_open_charge_test`, `a_throw_that_moves_the_creature_nowhere_leaves_an_open_charge_test` |
+//// | `Thrown` reaches a creature already in flight | the new path starts from where the first had reached, the old `FlightEnds` is cancelled and a new one starts | `a_second_throw_mid_flight_starts_from_where_the_first_had_reached_test` |
+//// | an attack tick fires in flight | no round starts: the creature does not attack or chase until it lands | `a_thrown_creature_does_not_chase_or_attack_until_it_lands_test` |
+//// | `FlightEnds` fires of the flight's generation | the creature stands at the last point with no news and chases again from there, unless a state holds it | `a_bare_throw_resumes_the_chase_from_the_landing_test`, `a_flight_ending_while_a_state_holds_does_not_resume_test` |
+//// | `FlightEnds` fires of an older generation | nothing | `a_stale_flight_end_does_nothing_test` |
+//// | a state takes hold in flight | the run stops only for a path that is `Running`; a `Timed` flight is kept and finishes | `a_state_landing_mid_flight_lets_the_flight_finish_test` |
+//// | the last state ends in flight | the creature acts again at `FlightEnds`, not before | `a_state_ending_mid_flight_does_not_resume_until_the_landing_test` |
+//// | the leash fires in flight | the creature is `Returning` and sends no walk: the flight finishes and `FlightEnds` starts the walk home from the landing | `a_leash_in_flight_walks_home_from_the_landing_test` |
+//// | the creature dies in flight | `CancelTimer(FlightEnds)`, the path is kept and no kind 2 is sent: the corpse lies at the landing | `a_creature_killed_mid_flight_lies_at_the_landing_test` |
+//// | a viewer arrives in flight | it is sent the rest of the path from where the creature is now | `an_arriving_viewer_mid_flight_is_sent_the_rest_of_the_path_test` |
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Inside, type Row}
 import genesis_prime/game/cast
+import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{type Offence}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
@@ -264,7 +276,7 @@ import genesis_prime/game/strike_tell.{
 import genesis_prime/step.{type Address, type ConnectionId}
 import genesis_prime/world_map/creature_life.{type Attack, Charged, Instant}
 import genesis_prime/world_map/creature_path.{
-  type Path, Circle, Running, Standing,
+  type Path, Circle, Running, Standing, Timed,
 }
 import genesis_prime/world_map/creature_unit_type.{type CreatureUnitType}
 import genesis_prime/world_map/game_number.{type GameNumbers}
@@ -309,6 +321,7 @@ pub type Fighter {
     attack_refused: Bool,
     holds_a_state: Bool,
     guard_casts: List(Int),
+    hit_radius: Float,
   )
 }
 
@@ -380,7 +393,14 @@ pub opaque type State {
     sightings: Dict(ConnectionId, Sighting),
     next_cast: Int,
     next_generation: Int,
+    flight: Option(Flight),
   )
+}
+
+/// A throw the creature is in (genesis_prime/game/forced_move): the generation of its
+/// `FlightEnds` timer and the monotonic time the path's last point is reached.
+pub type Flight {
+  Flight(ends: Int, until_ms: Int)
 }
 
 /// What the creature's rule turns its messages and timers into for the fight.
@@ -441,6 +461,17 @@ pub type Input {
   /// (`fighter.attack.run_speed`). A path it runs at another speed is run on from where
   /// the creature stands at the new speed, to the same end.
   SpeedChanged
+  /// creature: a ForcedMove effect of a player's cast reaches the creature
+  /// (genesis_prime/game/forced_move): the move the row asks for, the two fractions the
+  /// caster's connection drew, and the unit it is measured from. A creature that is
+  /// walking home, or does not run, takes no throw. Else it takes the path the move
+  /// builds from where it is, the viewers are sent it, and `FlightEnds` ends the flight.
+  /// A throw breaks an open charge as a held state does.
+  Thrown(
+    move: forced_move.Move,
+    draws: forced_move.Draws,
+    reference: forced_move.Reference,
+  )
 }
 
 /// The fight's timers, each of the generation it was started with: a timer of a
@@ -456,6 +487,9 @@ pub type Timer {
   HomeArrival(generation: Int)
   /// The charge's cast time is up (`Attack.cast_ms` after its 0x7ff): the charge strikes.
   CastEnds(generation: Int)
+  /// The thrown creature's path is run: it stands at the path's last point, and acts
+  /// again unless a state holds it.
+  FlightEnds(generation: Int)
 }
 
 /// What the fight asks the creature's rule to do, in order.
@@ -485,6 +519,7 @@ pub fn new(home home: Place) -> State {
     sightings: dict.new(),
     next_cast: 1,
     next_generation: 1,
+    flight: None,
   )
 }
 
@@ -605,6 +640,10 @@ pub fn step(
     Controlled -> held(state:, fighter:, now_ms:)
     ControlEnded -> resumed(state:, fighter:, now_ms:)
     SpeedChanged -> speed_changed(state:, fighter:, now_ms:)
+    Thrown(move:, draws:, reference:) ->
+      thrown(state:, fighter:, alive:, move:, draws:, reference:, now_ms:)
+    TimerFired(timer: FlightEnds(generation:)) ->
+      flight_ended(state:, fighter:, generation:, now_ms:)
     StoodAgain -> {
       let state =
         State(..state, status: Resting, path: Standing(at: fighter.home))
@@ -616,6 +655,122 @@ pub fn step(
         now_ms:,
       )
     }
+  }
+}
+
+/// A throw reaches the creature: dropped when it is dead, walking home or does not run
+/// (`Fighter.attack.run_speed` 0); else its path is built from where it is
+/// (`forced_move.path`, clipped at the leash circle), kept as `Timed` with a `Flight`
+/// and its `FlightEnds` timer, an open charge is broken as `held` does, and the viewers
+/// are sent the path.
+fn thrown(
+  state state: State,
+  fighter fighter: Fighter,
+  alive alive: Bool,
+  move move: forced_move.Move,
+  draws draws: forced_move.Draws,
+  reference reference: forced_move.Reference,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let walking_home = case state.status {
+    Returning(..) -> True
+    Resting | Fighting(..) -> False
+  }
+  use <- bool.guard(
+    when: !alive
+      || walking_home
+      || cannot_move(fighter:)
+      || fighter.attack.run_speed <=. 0.0,
+    return: #(state, []),
+  )
+  let here = creature_path.place_at(path: state.path, now_ms:)
+  let was_run = creature_path.arrives_ms(path: state.path, now_ms:) > now_ms
+  let path =
+    forced_move.path(
+      move:,
+      draws:,
+      from: here,
+      velocity: creature_path.velocity(path: state.path, now_ms:),
+      radius: fighter.hit_radius,
+      reference:,
+      circle: Circle(centre: fighter.home, radius: fighter.numbers.leash_range),
+      now_ms:,
+    )
+  let displaced = case path {
+    Timed(..) -> True
+    Standing(at:) -> at != here || was_run
+    Running(..) -> panic as "a throw's path is Standing or Timed"
+  }
+  let #(state, broken) = case displaced {
+    True -> charge_broken(state:, fighter:)
+    False -> #(state, [])
+  }
+  let #(state, left) = flight_cleared(state:)
+  let state = State(..state, path:)
+  let #(state, moved) = case path {
+    Timed(..) -> {
+      let until_ms = creature_path.arrives_ms(path:, now_ms:)
+      let news = [ToViewers(client_connection.CreatureMoved(path:))]
+      case until_ms > now_ms {
+        False -> #(state, news)
+        True -> {
+          let #(state, ends) = generation(state)
+          #(
+            State(..state, flight: Some(Flight(ends:, until_ms:))),
+            list.append(news, [
+              StartTimer(timer: FlightEnds(ends), after_ms: until_ms - now_ms),
+            ]),
+          )
+        }
+      }
+    }
+    Standing(at:) ->
+      case displaced {
+        True -> #(state, [
+          ToViewers(client_connection.CreaturePlaced(place: at, at_ms: now_ms)),
+        ])
+        False -> #(state, [])
+      }
+    Running(..) -> panic as "a throw's path is Standing or Timed"
+  }
+  #(state, list.flatten([broken, left, moved]))
+}
+
+/// The flight the creature is in ends without its `FlightEnds`: the flight is cleared and
+/// its timer cancelled. A creature in no flight is as it was.
+fn flight_cleared(state state: State) -> #(State, List(Effect)) {
+  case state.flight {
+    Some(Flight(ends:, ..)) -> #(State(..state, flight: None), [
+      CancelTimer(timer: FlightEnds(ends)),
+    ])
+    None -> #(state, [])
+  }
+}
+
+/// `FlightEnds` fires: of the generation of the flight the fight holds, the creature
+/// stands at the path's last point with no news for its viewers (a client holds a kind 3
+/// path's last point), and chases again unless a state holds it; of any other generation
+/// it does nothing.
+fn flight_ended(
+  state state: State,
+  fighter fighter: Fighter,
+  generation generation: Int,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  case state.flight {
+    Some(Flight(ends:, ..)) if ends == generation -> {
+      let state =
+        State(
+          ..state,
+          flight: None,
+          path: Standing(at: creature_path.end(path: state.path)),
+        )
+      case fighter.still {
+        True -> #(state, [])
+        False -> resumed(state:, fighter:, now_ms:)
+      }
+    }
+    Some(..) | None -> #(state, [])
   }
 }
 
@@ -713,6 +868,16 @@ pub fn arrival_news(
       }
     }
     Standing(..) -> []
+    Timed(..) ->
+      case creature_path.arrives_ms(path: state.path, now_ms:) > now_ms {
+        True -> [
+          client_connection.CreatureMoved(path: creature_path.rest_of(
+            path: state.path,
+            now_ms:,
+          )),
+        ]
+        False -> []
+      }
   }
   list.flatten([fight, charge, path])
 }
@@ -1074,6 +1239,9 @@ fn ticked(
 ) -> #(State, List(Effect)) {
   let assert Fighting(target:, round:, ..) = state.status
     as "a tick is taken only while Fighting"
+  use <- bool.lazy_guard(when: option.is_some(state.flight), return: fn() {
+    next_tick(state:, fighter:, effects: [])
+  })
   let here = creature_path.place_at(path: state.path, now_ms:)
   case dict.get(state.sightings, target) {
     Error(Nil) -> next_tick(state:, fighter:, effects: [])
@@ -1597,7 +1765,7 @@ fn chase(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   use <- bool.guard(
-    when: fighter.still || cannot_move(fighter:),
+    when: fighter.still || cannot_move(fighter:) || option.is_some(state.flight),
     return: #(state, []),
   )
   let target_place = case state.status {
@@ -1646,8 +1814,10 @@ fn chase_to(
 /// creature that stands. A creature that has stood since its path ended says nothing.
 fn path_news(was was: Path, now now: Path, now_ms now_ms: Int) -> List(Effect) {
   case now, was {
-    Running(..), _ -> [ToViewers(client_connection.CreatureMoved(path: now))]
-    Standing(at:), Running(..) ->
+    Running(..), _ | Timed(..), _ -> [
+      ToViewers(client_connection.CreatureMoved(path: now)),
+    ]
+    Standing(at:), Running(..) | Standing(at:), Timed(..) ->
       case creature_path.arrives_ms(path: was, now_ms:) > now_ms {
         True -> [
           ToViewers(client_connection.CreaturePlaced(place: at, at_ms: now_ms)),
@@ -1662,7 +1832,8 @@ fn path_news(was was: Path, now now: Path, now_ms now_ms: Int) -> List(Effect) {
 /// health (0x937), the path home (0x638), each threatened player told `Released`,
 /// an open round closed, and the home timer started. The creature takes no strike
 /// until it is home. A creature whose states stop its run leashes in everything but the walk
-/// and its timer, which `ControlEnded` starts. A creature that cannot move has no walk:
+/// and its timer, which `ControlEnded` starts, and so does a creature in flight, whose
+/// walk starts at the landing (`FlightEnds`). A creature that cannot move has no walk:
 /// it rests where it stands.
 fn leash(
   state state: State,
@@ -1682,7 +1853,7 @@ fn leash(
     False -> {
       let #(state, home) = generation(state)
       let state = State(..state, status: Returning(home:))
-      case fighter.still {
+      case fighter.still || option.is_some(state.flight) {
         True -> #(state, [])
         False -> walk_home(state:, fighter:, home:, now_ms:)
       }
@@ -1750,6 +1921,11 @@ fn stand_still(
   state state: State,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
+  let in_flight = case state.path {
+    Timed(..) -> creature_path.arrives_ms(path: state.path, now_ms:) > now_ms
+    Running(..) | Standing(..) -> False
+  }
+  use <- bool.guard(when: in_flight, return: #(state, []))
   let here = creature_path.place_at(path: state.path, now_ms:)
   let placed = path_news(was: state.path, now: Standing(at: here), now_ms:)
   #(State(..state, path: Standing(at: here)), placed)
@@ -1770,6 +1946,17 @@ fn held(
     True -> stand_still(state:, now_ms:)
     False -> #(state, [])
   }
+  let #(state, broken) = charge_broken(state:, fighter:)
+  #(state, list.append(placed, broken))
+}
+
+/// An open charge is broken, by a state or a throw: `CancelTimer(CastEnds)`, 0x7f9 of
+/// result 11 and 0x7fe of its cast, the round closed, the next attack tick started and
+/// `ChargeInterrupted`. A creature with no charge open is as it was.
+fn charge_broken(
+  state state: State,
+  fighter fighter: Fighter,
+) -> #(State, List(Effect)) {
   case state.status {
     Fighting(round: Some(Round(cast_id:, stage: Charging(ends:, ..))), ..) as fighting -> {
       let #(state, ticked) =
@@ -1781,7 +1968,6 @@ fn held(
       #(
         state,
         list.flatten([
-          placed,
           [
             CancelTimer(timer: CastEnds(ends)),
             ToViewers(client_connection.CastInterrupted(cast_id:)),
@@ -1791,7 +1977,7 @@ fn held(
         ]),
       )
     }
-    Fighting(..) | Resting | Returning(..) -> #(state, placed)
+    Fighting(..) | Resting | Returning(..) -> #(state, [])
   }
 }
 
@@ -1804,6 +1990,8 @@ fn killed(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let #(state, placed) = stand_still(state:, now_ms:)
+  let #(state, landed) = flight_cleared(state:)
+  let placed = list.append(landed, placed)
   case state.status {
     Fighting(threat:, round:, ..) -> {
       let finished = case round {
@@ -1841,6 +2029,7 @@ fn resumed(
   fighter fighter: Fighter,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
+  use <- bool.guard(when: option.is_some(state.flight), return: #(state, []))
   case state.status {
     Fighting(..) -> chase(state:, fighter:, now_ms:)
     Returning(home:) -> walk_home(state:, fighter:, home:, now_ms:)
@@ -1891,7 +2080,7 @@ fn speed_changed(
         Fighting(..) | Resting -> #(state, moved)
       }
     }
-    Running(..) | Standing(..) -> #(state, [])
+    Running(..) | Standing(..) | Timed(..) -> #(state, [])
   }
 }
 

@@ -66,6 +66,7 @@ fn surge_blow() -> spell_area.DamageEffect {
       Parameter(kind: 10, value: 8.14),
     ]),
     threat_multiplier: 1.0,
+    condition: spell_plan.Always,
     tag: spend.always,
   )
 }
@@ -308,6 +309,7 @@ fn tick_strikes(effects effects: List(Effect)) -> List(cast.TickAsked) {
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
       | cast.StealthChanged(..) -> Error(Nil)

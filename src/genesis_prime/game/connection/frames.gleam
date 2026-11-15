@@ -26,7 +26,9 @@ import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/message/leave_world.{LeaveWorld}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
 import genesis_prime/message/movement_path.{MovementPath}
+import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_time.{MovementTime}
+import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/resurrection_window.{ResurrectionWindow}
@@ -432,8 +434,10 @@ pub fn unit_moved_frame(
 
 /// 0x638 for a creature that runs a path: kind 0, the map's time the path starts at
 /// (`movement_command.kind_0`), and kind 4, its two points at its speed as a half
-/// float, type 0 (straight lines) and mode 0 (`movement_command.kind_4`). None for a
-/// creature that stands, or a speed no half float holds.
+/// float, type 0 (straight lines) and mode 0 (`movement_command.kind_4`). A thrown
+/// creature's timed path is kind 0 and kind 3, each point with its own map time
+/// (`movement_command.kind_3`), or kind 2 for a path of one point, and a kind 14 when
+/// the throw turns it. None for a creature that stands, or a speed no half float holds.
 pub fn path_frame(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
@@ -441,6 +445,41 @@ pub fn path_frame(
 ) -> Option(Frame) {
   case path {
     creature_path.Standing(..) -> None
+    creature_path.Timed(first:, rest:, turned_to:) -> {
+      let server_time = fn(monotonic_ms) {
+        map.server_time(origin_ms: entered.clock_origin_ms, monotonic_ms:)
+      }
+      let move = case rest {
+        [] -> relayed_movement.Position(player_unit.standing(place: first.1).0)
+        [_, ..] ->
+          relayed_movement.TimedPath(MovementTimedPath(
+            times: [first, ..rest]
+              |> list.map(fn(point) { server_time(point.0) }),
+            points: [first, ..rest]
+              |> list.map(fn(point) { vector_of(point.1) }),
+          ))
+      }
+      let turn = case turned_to {
+        None -> []
+        Some(facing) -> [
+          relayed_movement.Rotation(MovementRotation(
+            yaw: float32.to_bits(facing.yaw),
+            pitch: float32.to_bits(facing.pitch),
+            roll: float32.to_bits(facing.roll),
+            blends: 0,
+          )),
+        ]
+      }
+      Some(unit_moved_frame(
+        unit_id:,
+        server_time_ms: server_time(first.0),
+        commands: list.flatten([
+          [relayed_movement.Time(MovementTime(time: server_time(first.0)))],
+          [move],
+          turn,
+        ]),
+      ))
+    }
     creature_path.Running(from:, to:, started_ms:, speed:) ->
       case half_float.to_bits(value: speed) {
         Error(Nil) -> None

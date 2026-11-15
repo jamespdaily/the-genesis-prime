@@ -17,8 +17,8 @@
 //// - **One decision for each effect row.** `read_row` says what the plan makes of a
 ////   Spell4Effects row in the place its spell is planned (`RowPlace`): in a list of its
 ////   spell and applied by a go (`Applied`), in a list and applied by none (`Held`: a
-////   periodic gain, a property change or disguise with no life, a row whose phaseFlags is
-////   0), in no list (`LeftOut`), a damage row the area
+////   periodic gain, a property change or disguise with no life, an ItemVisualSwap row
+////   with a delayTime, a row whose phaseFlags is 0), in no list (`LeftOut`), a damage row the area
 ////   load reads (`ReadByArea`), or an error that fails the load. The lists of a spell are
 ////   made from these readings, and the coverage measure counts a row read exactly when it
 ////   is `Applied` (genesis_prime/coverage/effect_row), so the two cannot disagree. A spell
@@ -57,7 +57,7 @@
 ////   delayTime is not waited for (the server's choice: 10 ms in each kit row, under
 ////   a client frame).
 //// - **The lasting effects.** A Fluff effect (`Spell4Effects.effectType.17`), a Scale
-////   effect (18) and a RavelSignal effect (81) of a tree are each a `Lasting` row: the unit
+////   effect (18), an ItemVisualSwap effect (76) and a RavelSignal effect (81) of a tree are each a `Lasting` row: the unit
 ////   its targetFlags aim at, its delay, durationTime and flags bit 2, which give its spell a life there (genesis_prime/game/lasting). A
 ////   SpellForceRemove effect (`Spell4Effects.effectType.80`) is a `ForceRemove` row:
 ////   dataBits00 picks a spell group (1), a Spell4 (2) or a Spell4Base (3) by
@@ -271,6 +271,7 @@ import genesis_prime/game/cooldown
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
+import genesis_prime/game/forced_move
 import genesis_prime/game/innate
 import genesis_prime/game/lasting
 import genesis_prime/game/loadout
@@ -598,7 +599,7 @@ pub type Spell {
     /// The spell's stack group and its cap (`Spell4.spell4StackGroupId`,
     /// `Spell4StackGroup.stackCap`).
     stack: lasting.Stack,
-    /// The Fluff, Scale, RavelSignal and area ShieldOverload effects that give the spell a
+    /// The Fluff, Scale, ItemVisualSwap, RavelSignal and area ShieldOverload effects that give the spell a
     /// life on a unit.
     lasting: List(Lasting),
     /// The SpellForceRemove effects that take casts off a unit.
@@ -617,6 +618,9 @@ pub type Spell {
     /// The ForcedMove effects aimed at the caster, which the go lists and the caster's
     /// client carries out.
     forced_moves: List(ForcedMove),
+    /// The ForcedMove effects aimed at other units, which the go throws the creatures it
+    /// hit with (`StruckMove`).
+    struck_moves: List(StruckMove),
     /// The non-zero cooldown groups of the Spell4 row (`spellCoolDownId00` to `02`),
     /// each a SpellCoolDown row, which a selector 3 of a cooldown effect tests.
     cooldown_groups: List(Int),
@@ -784,6 +788,29 @@ pub type ForcedMove {
   )
 }
 
+/// A ForcedMove effect (`Spell4Effects.effectType.3`) of a spell whose targetFlags are 2,
+/// 4 or 6, the units a strike hits (a row that includes the caster is a `ForcedMove`
+/// and moves the caster only): the `move` its columns decode to
+/// (genesis_prime/game/forced_move), the units it strikes (`aim`: the primary target,
+/// the area or both), the `delay_ms` after the go the creature is thrown at, the phases
+/// of `phase_flags` it applies in, when its `condition` holds (its caster apply
+/// prerequisite against the caster, its target apply prerequisite against each struck
+/// unit it throws), and when its `tag` holds for the points
+/// the cast spent (genesis_prime/game/spend). The cast throws each creature the go
+/// `Hit` (genesis_prime/game/cast `struck_moves_armed`); a unit that is the caster or
+/// another player is not thrown until a move of another player is built (issue 570).
+pub type StruckMove {
+  StruckMove(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    delay_ms: Int,
+    move: forced_move.Move,
+    aim: Aim,
+    condition: Condition,
+    tag: spend.Tag,
+  )
+}
+
 /// What a timed row of a spell changes on its caster: a property of the unit
 /// (`unit_properties`), the unit's look (`look`) or the pool of damage the unit absorbs;
 /// or, for a UnitPropertyModifier row aimed at other units, a property of the creatures
@@ -858,18 +885,20 @@ pub type CrowdControl {
     phase_flags: Int,
     aim: Aim,
     row: crowd_control.Row,
+    condition: Condition,
     tag: spend.Tag,
   )
 }
 
-/// A Fluff effect (`Spell4Effects.effectType.17`), Scale effect (18), RavelSignal effect
-/// (81) or area ShieldOverload effect (64) of a spell: it names the unit it aims at in the go's target info and gives the
+/// A Fluff effect (`Spell4Effects.effectType.17`), Scale effect (18), ItemVisualSwap effect
+/// (76), RavelSignal effect (81) or area ShieldOverload effect (64) of a spell: it names the unit it aims at in the go's target info and gives the
 /// spell a life there, from its `row`, in the phases of `phase_flags`, when its
 /// `condition` holds (its caster apply prerequisite against the caster, its target
 /// apply prerequisite against each unit the row reaches), and when its `tag` holds for the points
 /// the cast spent (genesis_prime/game/spend). Its dataBits need no handling: the client
-/// resizes the unit of a Scale effect itself (`Spell4Effects.effectType.18`), and a
-/// RavelSignal effect is only a life (`Spell4Effects.effectType.81`); the client marks a
+/// resizes the unit of a Scale effect itself (`Spell4Effects.effectType.18`), swaps and
+/// restores the visual of an ItemVisualSwap effect itself (`Spell4Effects.effectType.76`),
+/// and a RavelSignal effect is only a life (`Spell4Effects.effectType.81`); the client marks a
 /// ShieldOverload unit itself (`Spell4Effects.effectType.64`).
 pub type Lasting {
   Lasting(
@@ -1045,8 +1074,9 @@ pub type RowReading {
   Applied(row: PlannedRow)
   /// The row is in a list of its spell and no go applies it: a periodic gain
   /// (`TickingGain`), a property change or disguise with no life
-  /// (`lasting.has_life`) and a row whose phaseFlags is 0, which no phase selects
-  /// (`in_phase`). The measure counts it not read.
+  /// (`lasting.has_life`), an ItemVisualSwap row with a delayTime (the go lists it, the
+  /// client applies an effect from the go only when its delay is 0; the gap is #827) and a row whose
+  /// phaseFlags is 0, which no phase selects (`in_phase`). The measure counts it not read.
   Held(row: PlannedRow)
   /// The row is in no list of its spell and the load goes on.
   LeftOut(why: LeftOutReason)
@@ -1092,6 +1122,7 @@ pub type PlannedRow {
   PlannedControl(control: CrowdControl)
   PlannedModifier(modifier: PropertyModifier)
   PlannedForcedMove(forced_move: ForcedMove)
+  PlannedStruckMove(struck_move: StruckMove)
   PlannedCooldownModifier(modifier: CooldownModifier)
   PlannedStealth(stealth: StealthRow)
   PlannedRemoveStealth(remove: RemoveStealthRow)
@@ -1153,6 +1184,9 @@ pub type PlanError {
     effect_id: Int,
     prerequisite_type: Int,
   )
+  /// A ForcedMove effect aimed at the units a strike hits holds columns that are no move
+  /// (`forced_move.of_row`).
+  StruckMoveNotRead(spell4_id: Int, effect_id: Int, error: forced_move.RowError)
   /// An effect of a spell that spends every point held holds an emmComparison other
   /// than 0 or 1, which chooses nothing (`Spell4Effects.emmComparison`).
   SpendComparisonNotRead(spell4_id: Int, effect_id: Int, comparison: Int)
@@ -1169,7 +1203,7 @@ pub type PlanError {
     data_bits03: Int,
     data_bits04: Int,
   )
-  /// A Fluff, SpellForceRemove, Scale or RavelSignal effect of a tree is aimed by a flag
+  /// A Fluff, SpellForceRemove, Scale, ItemVisualSwap or RavelSignal effect of a tree is aimed by a flag
   /// value that is not read (`Spell4Effects.targetFlags`).
   LastingAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A CCStateSet effect of a tree holds a value that is no state of
@@ -1180,8 +1214,6 @@ pub type PlanError {
   /// and 7 are not read (the issue "An effect aimed by a combined flag reaches every unit
   /// each of its bits names" closes them), and neither is any other value.
   ControlAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
-  /// A CCStateSet effect of a tree has an apply prerequisite, which is not read.
-  ControlPrerequisiteNotRead(spell4_id: Int, effect_id: Int)
   /// A CCStateSet effect of a tree aimed at another unit keeps its state through a death
   /// or a leave by a caster persistence, target persistence or target suspend
   /// prerequisite, which no rule of the server holds (the issue "An effect behind an
@@ -1358,6 +1390,20 @@ pub fn describe(error error: PlanError) -> String {
       <> " aimed past the caster behind a target apply prerequisite with a condition of type "
       <> int.to_string(prerequisite_type)
       <> ", which reads the state of the creature it strikes (#817)"
+    StruckMoveNotRead(spell4_id:, effect_id:, error:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a ForcedMove effect "
+      <> int.to_string(effect_id)
+      <> " aimed at the units a strike hits that is no move: "
+      <> case error {
+        forced_move.UnknownKind(kind:, ..) ->
+          "its dataBits00 is "
+          <> int.to_string(kind)
+          <> ", which is no kind from 0 to 15"
+        forced_move.NotAFloat(column:, ..) ->
+          "it holds no finite number in " <> column
+      }
     SpendComparisonNotRead(spell4_id:, effect_id:, comparison:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1387,7 +1433,7 @@ pub fn describe(error error: PlanError) -> String {
     LastingAimNotRead(spell4_id:, effect_id:, target_flags:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
-      <> " has a Fluff, SpellForceRemove, Scale or RavelSignal effect "
+      <> " has a Fluff, SpellForceRemove, Scale, ItemVisualSwap or RavelSignal effect "
       <> int.to_string(effect_id)
       <> " aimed by flags "
       <> int.to_string(target_flags)
@@ -1418,12 +1464,6 @@ pub fn describe(error error: PlanError) -> String {
       <> " has a CCStateSet effect "
       <> int.to_string(effect_id)
       <> " on another unit kept through death or leaving by a persistence prerequisite, which the server does not read (#787)"
-    ControlPrerequisiteNotRead(spell4_id:, effect_id:) ->
-      "the Spell4 row "
-      <> int.to_string(spell4_id)
-      <> " has a CCStateSet effect "
-      <> int.to_string(effect_id)
-      <> " behind an apply prerequisite, which is not read"
     ModifierPropertyHasNoRow(spell4_id:, effect_id:, property:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2086,6 +2126,7 @@ fn spell_of(
         [
           effect_kind.Fluff,
           effect_kind.Scale,
+          effect_kind.ItemVisualSwap,
           effect_kind.RavelSignal,
           effect_kind.ShieldOverload,
         ],
@@ -2214,6 +2255,7 @@ fn spell_of(
       dropped_controls: dropped_controls_of(readings:),
       modifiers: list.append(lists.modifiers, lists.armors),
       forced_moves: lists.forced_moves,
+      struck_moves: lists.struck_moves,
       cooldown_groups:,
       cooldown_modifiers: lists.cooldown_modifiers,
       stealth: lists.stealth,
@@ -2337,9 +2379,9 @@ pub fn heal_of(
   }
 }
 
-/// One Fluff, Scale, RavelSignal or area ShieldOverload row as a lasting row: aimed at a
+/// One Fluff, Scale, ItemVisualSwap, RavelSignal or area ShieldOverload row as a lasting row: aimed at a
 /// unit the plan reads, with the columns that give its node a life (`Spell4Effects.effectType.17`,
-/// `.18` and `.81`).
+/// `.18`, `.76` and `.81`).
 fn lasting_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -2425,8 +2467,9 @@ fn force_remove_counts_read(
 }
 
 /// One CCStateSet row (`Spell4Effects.effectType.4`): dataBits00 is one of the 28
-/// states (`Unit.CodeEnumCCState`, 0 to 27), with no apply prerequisite, aimed at the
-/// caster, the primary target, the area or both (`aim_of`). Its delayTime, durationTime,
+/// states (`Unit.CodeEnumCCState`, 0 to 27), aimed at the
+/// caster, the primary target, the area or both (`aim_of`), behind the apply
+/// prerequisites `row_condition_of` reads. Its delayTime, durationTime,
 /// flags bit 2 (a state that never times out) and the armor it removes (dataBits03) are
 /// read as they are. A row aimed at another unit that holds its state until removed (no
 /// rule ends a creature's state with its cast's node) is `None`, a row the plan drops,
@@ -2434,6 +2477,7 @@ fn force_remove_counts_read(
 /// target persistence or target suspend prerequisite is refused (no creature rule holds
 /// that); on the caster both are the cast's own (`cast.restrictions`).
 fn control_of(
+  tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Option(CrowdControl), PlanError) {
@@ -2443,16 +2487,6 @@ fn control_of(
     other ->
       Error(ControlStateNotRead(spell4_id:, effect_id: effect.id, state: other))
   })
-  use Nil <- result.try(
-    case
-      effect.prerequisite_id_caster_apply,
-      effect.prerequisite_id_target_apply
-    {
-      0, 0 -> Ok(Nil)
-      _, _ ->
-        Error(ControlPrerequisiteNotRead(spell4_id:, effect_id: effect.id))
-    },
-  )
   use aim <- result.try(case aim_of(target_flags: effect.target_flags) {
     OtherAim(..) ->
       Error(ControlAimNotRead(
@@ -2474,11 +2508,12 @@ fn control_of(
     when: until_removed && aim != AimsAtCaster,
     return: Ok(None),
   )
-  use Nil <- result.map(case aim, persists {
+  use Nil <- result.try(case aim, persists {
     AimsAtCaster, _ | _, False -> Ok(Nil)
     _, True ->
       Error(ControlPersistenceNotRead(spell4_id:, effect_id: effect.id))
   })
+  use condition <- result.map(row_condition_of(tables:, effect:, aim:))
   Some(CrowdControl(
     effect_id: Spell4EffectsId(effect.id),
     phase_flags: effect.phase_flags,
@@ -2490,6 +2525,7 @@ fn control_of(
       armor_removed: effect.data_bits03,
       until_removed:,
     ),
+    condition:,
     tag: tag_of(effect:),
   ))
 }
@@ -2544,6 +2580,7 @@ pub fn modifier_of(
     | effect_kind.InterruptArmor
     | effect_kind.Proc
     | effect_kind.Scale
+    | effect_kind.ItemVisualSwap
     | effect_kind.RavelSignal
     | effect_kind.Activate
     | effect_kind.Unread(..) ->
@@ -2932,6 +2969,42 @@ fn forced_move_of(
   )
 }
 
+/// One ForcedMove row aimed only at the units a strike hits (targetFlags 2, 4 or 6;
+/// `effect_kind.is_row_read`): its columns as a `forced_move.Move` (`forced_move.of_row`; a
+/// dataBits00 above 15 or a float column that is no number fails the load), its aim, and its
+/// apply prerequisites as a Fluff effect's are (`condition_of`), the target one read for
+/// each struck unit it throws.
+fn struck_move_of(
+  tables tables: table_store.Tables,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(StruckMove, PlanError) {
+  use move <- result.try(
+    forced_move.of_row(row: effect)
+    |> result.map_error(fn(error) {
+      StruckMoveNotRead(
+        spell4_id: effect.spell_id,
+        effect_id: effect.id,
+        error:,
+      )
+    }),
+  )
+  use condition <- result.map(condition_of(
+    tables:,
+    effect:,
+    reach: PastTheCaster,
+    data_bits06_names_a_gate: False,
+  ))
+  StruckMove(
+    effect_id: Spell4EffectsId(effect.id),
+    phase_flags: effect.phase_flags,
+    delay_ms: effect.delay_time,
+    move:,
+    aim: aim_of(target_flags: effect.target_flags),
+    condition:,
+    tag: tag_of(effect:),
+  )
+}
+
 /// One ModifySpellCooldown row whose targetFlags include the caster
 /// (`effect_kind.is_row_read`; `Spell4Effects.effectType.73`): dataBits00 picks the
 /// spells (0 a Spell4Base, 1 a Spell4, 2 a spell group, 3 a cooldown group, any other
@@ -3313,6 +3386,7 @@ type RowLists {
     modifiers: List(PropertyModifier),
     armors: List(PropertyModifier),
     forced_moves: List(ForcedMove),
+    struck_moves: List(StruckMove),
     cooldown_modifiers: List(CooldownModifier),
     stealth: List(StealthRow),
     remove_stealth: List(RemoveStealthRow),
@@ -3325,7 +3399,7 @@ type RowLists {
 fn lists_of(
   readings readings: List(#(spell4_effects.Spell4Effects, Reading)),
 ) -> RowLists {
-  let empty = RowLists([], [], [], [], [], [], [], [], [], [], [])
+  let empty = RowLists([], [], [], [], [], [], [], [], [], [], [], [])
   let lists =
     list.fold(readings, empty, fn(lists, row) {
       case row.1 {
@@ -3350,6 +3424,11 @@ fn lists_of(
               RowLists(..lists, forced_moves: [
                 forced_move,
                 ..lists.forced_moves
+              ])
+            PlannedStruckMove(struck_move:) ->
+              RowLists(..lists, struck_moves: [
+                struck_move,
+                ..lists.struck_moves
               ])
             PlannedCooldownModifier(modifier:) ->
               RowLists(..lists, cooldown_modifiers: [
@@ -3376,6 +3455,7 @@ fn lists_of(
     modifiers: list.reverse(lists.modifiers),
     armors: list.reverse(lists.armors),
     forced_moves: list.reverse(lists.forced_moves),
+    struck_moves: list.reverse(lists.struck_moves),
     cooldown_modifiers: list.reverse(lists.cooldown_modifiers),
     stealth: list.reverse(lists.stealth),
     remove_stealth: list.reverse(lists.remove_stealth),
@@ -3491,6 +3571,9 @@ fn kind_reading(
       })
     effect_kind.Fluff | effect_kind.Scale | effect_kind.RavelSignal ->
       lasting_reading(tables:, spell4_id:, effect:)
+    effect_kind.ItemVisualSwap ->
+      lasting_reading(tables:, spell4_id:, effect:)
+      |> result.map(held_while_delayed(reading: _, effect:))
     effect_kind.ShieldOverload -> {
       use <- when_reached(reaches:)
       lasting_reading(tables:, spell4_id:, effect:)
@@ -3499,7 +3582,7 @@ fn kind_reading(
       remove_of(tables:, spell_groups:, spell4_id:, effect:)
       |> result.map(fn(remove) { Applied(PlannedRemove(remove:)) })
     effect_kind.CrowdControl ->
-      control_of(spell4_id:, effect:)
+      control_of(tables:, spell4_id:, effect:)
       |> result.map(fn(control) {
         case control {
           Some(control) -> Applied(PlannedControl(control:))
@@ -3519,8 +3602,18 @@ fn kind_reading(
     }
     effect_kind.ForcedMove -> {
       use <- when_reached(reaches:)
-      forced_move_of(tables:, effect:)
-      |> result.map(fn(forced_move) { Applied(PlannedForcedMove(forced_move:)) })
+      case has_flag(flags: effect.target_flags, bit: 1) {
+        True ->
+          forced_move_of(tables:, effect:)
+          |> result.map(fn(forced_move) {
+            Applied(PlannedForcedMove(forced_move:))
+          })
+        False ->
+          struck_move_of(tables:, effect:)
+          |> result.map(fn(struck_move) {
+            Applied(PlannedStruckMove(struck_move:))
+          })
+      }
     }
     effect_kind.CooldownModifier -> {
       use <- when_reached(reaches:)
@@ -3563,7 +3656,22 @@ fn when_reached(
   then()
 }
 
-/// A Fluff, Scale, RavelSignal or area ShieldOverload row as a lasting row.
+/// An ItemVisualSwap row with a delayTime as `Held`: the client applies an effect from
+/// the go only when its delay is 0 (`0x1405d6880.delayed_apply`), so the go lists the row
+/// with its delay and the visual does not change (the gap is #827). A row with no delay
+/// stays `Applied`.
+fn held_while_delayed(
+  reading reading: RowReading,
+  effect effect: spell4_effects.Spell4Effects,
+) -> RowReading {
+  use <- bool.guard(when: effect.delay_time == 0, return: reading)
+  case reading {
+    Applied(row) -> Held(row)
+    Held(..) | LeftOut(..) | ReadByArea | ReadByActivation -> reading
+  }
+}
+
+/// A Fluff, Scale, ItemVisualSwap, RavelSignal or area ShieldOverload row as a lasting row.
 fn lasting_reading(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -3779,7 +3887,7 @@ fn modifier_number(
   ))
 }
 
-/// The aim of a Fluff, SpellForceRemove, Scale or RavelSignal effect: the caster, the
+/// The aim of a Fluff, SpellForceRemove, Scale, ItemVisualSwap or RavelSignal effect: the caster, the
 /// primary target, the area or both of those; any other flag value fails the load.
 fn lasting_aim_of(
   spell4_id spell4_id: Int,
@@ -4193,6 +4301,17 @@ fn applied_condition_of(
       ))
     [] -> Ok(condition)
   }
+}
+
+/// The condition of a damage or CCStateSet row of this aim, which a go's strike checks for
+/// each unit the row reaches (`applied_condition_of`): a row whose gate the server cannot
+/// read fails the load (`ApplyPrerequisiteNotRead`, `TargetPrerequisiteReadsStruckUnit`).
+pub fn row_condition_of(
+  tables tables: table_store.Tables,
+  effect effect: spell4_effects.Spell4Effects,
+  aim aim: Aim,
+) -> Result(Condition, PlanError) {
+  applied_condition_of(tables:, effect:, reach: reach_of_aim(aim:))
 }
 
 /// Whether the cast rule can check a target apply prerequisite for the units a row
@@ -4861,6 +4980,22 @@ pub fn forced_moves_in_phase(
     rows: spell.forced_moves,
     phase_flags: fn(forced_move) { forced_move.phase_flags },
     tag: fn(forced_move) { forced_move.tag },
+    phase:,
+    spent:,
+  )
+}
+
+/// The ForcedMove effects aimed at other units of the spell that apply in phase `phase`,
+/// those whose tag holds for the points the cast spent.
+pub fn struck_moves_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(StruckMove) {
+  in_phase(
+    rows: spell.struck_moves,
+    phase_flags: fn(struck_move) { struck_move.phase_flags },
+    tag: fn(struck_move) { struck_move.tag },
     phase:,
     spent:,
   )

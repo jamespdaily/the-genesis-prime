@@ -369,6 +369,7 @@ fn restricting_by(row row: crowd_control.Row) -> Spell {
         phase_flags: -1,
         aim: spell_plan.AimsAtCaster,
         row:,
+        condition: spell_plan.Always,
         tag: spend.always,
       ),
     ],
@@ -432,6 +433,65 @@ fn restricted(plans plans: spell_plan.Plans) -> #(State, List(Effect)) {
     bag: 11,
     at: 1000,
   )
+}
+
+/// `restricting()` with its state row behind a type 37 caster gate of Prerequisite 792's
+/// shape (comparison 6 on 24, as `cast_forced_move_test` has it): the row takes one roll.
+fn restricting_by_chance() -> Spell {
+  let spell = restricting()
+  Spell(
+    ..spell,
+    controls: list.map(spell.controls, fn(control) {
+      spell_plan.CrowdControl(
+        ..control,
+        condition: spell_plan.GatedOnCaster(gates: [
+          prerequisite_support.single(id: 792, condition: #(37, 6, 0, 24)),
+        ]),
+      )
+    }),
+  )
+}
+
+pub fn a_restriction_behind_a_type_37_caster_gate_takes_one_roll_and_is_applied_when_it_passes_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans = support.plans_of([restricting_by_chance()])
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state: cast.new(),
+      caster: fighting(),
+      bag_index: 11,
+      target: 0,
+      at: 1000,
+    )
+  let assert [asked] = support.goes_asked(effects: raw)
+  assert cast.rolls_needed(
+      cast: state,
+      cast_id: asked.cast_id,
+      phase: asked.phase,
+      struck: [],
+    )
+    == 1
+    as "the restriction row's caster gate has one type 37 condition: the go draws one roll for it"
+  let went = fn(roll) {
+    let #(_, effects) =
+      support.answered_as(
+        caster: fighting(),
+        state:,
+        effects: raw,
+        at: 1000,
+        struck: [],
+        rolls: [roll],
+      )
+    list.length(support.frames_of(
+      message_id: unit_cc_state_applied.message_id,
+      effects:,
+    ))
+  }
+  assert went(24) == 1
+    as "a roll of 24 passes comparison 6 on 24: the caster is given the state"
+  assert went(25) == 0
+    as "a roll of 25 fails the caster gate: the state is not applied"
 }
 
 pub fn a_press_while_restricted_is_refused_with_302_test() -> Nil {
@@ -777,6 +837,7 @@ fn holding(states states: List(CrowdControlState)) -> Spell {
           armor_removed: 0,
           until_removed: True,
         ),
+        condition: spell_plan.Always,
         tag: spend.always,
       )
     }),

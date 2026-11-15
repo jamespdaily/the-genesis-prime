@@ -89,6 +89,7 @@ import genesis_prime/game/cast.{type GoAsked, type Struck, type TickAsked}
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/hit
+import genesis_prime/game/prerequisite
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/shown.{type Picture, type PlayerFaction}
 import genesis_prime/game/spell_area.{type Areas}
@@ -302,44 +303,64 @@ fn area_selection(
   )
 }
 
-/// The seed bytes the selection's strikes take.
+/// The seed bytes the selection's strikes take: 12 for each unit, then 4 for each roll
+/// the gates of its rows may take (`cast.strike_rolls_needed`), counted for every selected
+/// unit a row may reach.
 pub fn entropy_needed(selection selection: Selection) -> Int {
   case selection.blows, selection.ticking, selection.controls {
     [], [], [] -> 0
-    _, _, _ -> list.length(selection.units) * bytes_per_unit
+    _, _, _ -> {
+      let units = list.length(selection.units)
+      let conditions =
+        list.flatten([
+          list.map(selection.blows, fn(row) { row.condition }),
+          list.map(selection.ticking, fn(row) { row.damage.condition }),
+          list.map(selection.controls, fn(row) { row.condition }),
+        ])
+      let rolls =
+        int.sum(
+          list.map(conditions, fn(condition) {
+            cast.strike_rolls_needed(condition:, units:)
+          }),
+        )
+      units * bytes_per_unit + rolls * prerequisite.roll_bytes
+    }
   }
 }
 
 /// The seed bytes a tick's strike takes: one unit's rolls.
 pub const tick_entropy_needed = bytes_per_unit
 
-/// A selection begins its round: a strike told to each unit with `entropy`'s rolls
-/// when the phase has damage, a periodic row or a state for that unit, the strike
-/// timer set to the
-/// earliest deadline when it is not set, and the round closed at once when nothing
-/// waits for it and no earlier round of its cast is open.
+/// A selection begins its round: the rows of the phase that reach each unit past their
+/// apply prerequisites (`gate`), a strike told to each unit one of them reaches with
+/// `entropy`'s rolls, the strike timer set to the earliest deadline when it is not set,
+/// and the round closed at once when nothing waits for it and no earlier round of its
+/// cast is open. A unit no row reaches is a place of the round already answered.
 pub fn begin(
   strike strike: State,
   selection selection: Selection,
   attacker attacker: Attacker,
   formulas formulas: Formulas,
   entropy entropy: BitArray,
+  gate gate: cast.StrikeGate,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  let offence = offence_of(blows: selection.blows, attacker:, formulas:)
-  let #(strike, told) = controls_told(strike:, selection:, attacker:)
+  let reach = reach_of(selection:, attacker:, entropy:, gate:)
+  let #(strike, told) =
+    controls_told(strike:, selection:, attacker:, reached: reach.controls)
   let #(places, tells) =
     list.index_fold(selection.units, #([], []), fn(so_far, aimed, index) {
       let #(places, tells) = so_far
-      let controls = list.key_find(told, aimed.unit_id) |> result.unwrap([])
-      let ticking =
-        ticking_reaching(selection:, attacker:, unit_id: aimed.unit_id)
-      case selection.blows, ticking, controls {
+      let unit_id = aimed.unit_id
+      let blows = rows_reaching_unit(rows: reach.blows, unit_id:)
+      let ticking = rows_reaching_unit(rows: reach.ticking, unit_id:)
+      let controls = list.key_find(told, unit_id) |> result.unwrap([])
+      case blows, ticking, controls {
         [], [], [] -> #(
           [
             Answered(
               cast.Hit(
-                unit_id: aimed.unit_id,
+                unit_id:,
                 unit: cast.HitCreature(
                   life: aimed.life,
                   struck_at_ms: now.monotonic_ms,
@@ -357,30 +378,27 @@ pub fn begin(
         _, _, _ ->
           case rolls_at(entropy:, index:) {
             Ok(rolls) -> #(
-              [
-                Waiting(unit_id: aimed.unit_id, life: aimed.life, ticking:),
-                ..places
-              ],
+              [Waiting(unit_id:, life: aimed.life, ticking:), ..places],
               [
                 TellStrike(
-                  unit_id: aimed.unit_id,
+                  unit_id:,
                   life: aimed.life,
                   tell: tell_of(
                     key: strike_tell.Key(
                       cast_id: selection.asked.cast_id,
                       occasion: strike_tell.AtGo(phase: selection.asked.phase),
-                      unit_id: aimed.unit_id,
+                      unit_id:,
                     ),
                     attacker:,
                     rolls:,
-                    offence:,
+                    offence: offence_of(blows:, attacker:, formulas:),
                     controls:,
                   ),
                 ),
                 ..tells
               ],
             )
-            Error(Nil) -> #([LeftOut(unit_id: aimed.unit_id), ..places], [
+            Error(Nil) -> #([LeftOut(unit_id:), ..places], [
               no_seed_bytes,
               ..tells
             ])
@@ -391,9 +409,168 @@ pub fn begin(
     strike:,
     asked: ForGo(asked: selection.asked),
     places: list.reverse(places),
-    tells: list.reverse(tells),
+    tells: list.append(reach.logs, list.reverse(tells)),
     now:,
   )
+}
+
+/// The rows of a go that reach units, each with the units that pass its apply
+/// prerequisites, and a debug line for each check the server cannot tell.
+type Reach {
+  Reach(
+    blows: List(#(spell_area.DamageEffect, List(Int))),
+    ticking: List(#(spell_area.TickingDamage, List(Int))),
+    controls: List(#(spell_plan.CrowdControl, List(Int))),
+    logs: List(Effect),
+  )
+}
+
+/// The units each row of the go reaches past its gates, checked row by row (the damage
+/// rows, the periodic rows, then the states) and for each row its caster side once, then
+/// each unit its aim names in selection order; each check takes the rolls of its type 37
+/// conditions in turn from the seed bytes after the units' own (`cast.strike_rolls_needed`).
+/// A damage row names every selected unit, as its blow is told to each; a periodic row and
+/// a state name the units their aim names.
+fn reach_of(
+  selection selection: Selection,
+  attacker attacker: Attacker,
+  entropy entropy: BitArray,
+  gate gate: cast.StrikeGate,
+) -> Reach {
+  let own = list.length(selection.units) * bytes_per_unit
+  let rolls =
+    bit_array.slice(entropy, own, bit_array.byte_size(entropy) - own)
+    |> result.map(fn(bytes) { prerequisite.rolls_of(bytes:) })
+    |> result.unwrap([])
+  let everyone = list.map(selection.units, fn(aimed) { aimed.unit_id })
+  let aimed_at = fn(aim) {
+    let named =
+      spell_plan.units_aimed_at(
+        aim:,
+        caster: attacker.unit_id,
+        primary_target: selection.asked.primary_target,
+        area: selection.area,
+      )
+    list.filter(everyone, fn(unit_id) { list.contains(named, unit_id) })
+  }
+  let #(blows, blow_logs, rolls) =
+    gated(
+      rows: selection.blows,
+      condition: fn(row: spell_area.DamageEffect) { row.condition },
+      what: fn(row: spell_area.DamageEffect) {
+        "damage effect " <> int.to_string(row.effect_id.value)
+      },
+      units: fn(_) { everyone },
+      gate:,
+      rolls:,
+    )
+  let #(ticking, ticking_logs, rolls) =
+    gated(
+      rows: selection.ticking,
+      condition: fn(row: spell_area.TickingDamage) { row.damage.condition },
+      what: fn(row: spell_area.TickingDamage) {
+        "periodic damage effect " <> int.to_string(row.damage.effect_id.value)
+      },
+      units: fn(row: spell_area.TickingDamage) { aimed_at(row.damage.aim) },
+      gate:,
+      rolls:,
+    )
+  let #(controls, control_logs, _) =
+    gated(
+      rows: selection.controls,
+      condition: fn(row: spell_plan.CrowdControl) { row.condition },
+      what: fn(row: spell_plan.CrowdControl) {
+        "crowd-control effect " <> int.to_string(row.effect_id.value)
+      },
+      units: fn(row: spell_plan.CrowdControl) { aimed_at(row.aim) },
+      gate:,
+      rolls:,
+    )
+  Reach(
+    blows:,
+    ticking:,
+    controls:,
+    logs: list.flatten([blow_logs, ticking_logs, control_logs]),
+  )
+}
+
+/// Each row with the units of its candidates that pass its gates, the debug lines of the
+/// checks the server cannot tell, and the rolls left. A row whose caster side fails or
+/// cannot be told reaches none of them. Not `cast.gated`: a strike draws the rolls of the
+/// caster, then of each unit, row by row, where a cast draws every caster gate first.
+fn gated(
+  rows rows: List(row),
+  condition condition: fn(row) -> spell_plan.Condition,
+  what what: fn(row) -> String,
+  units units: fn(row) -> List(Int),
+  gate gate: cast.StrikeGate,
+  rolls rolls: List(Int),
+) -> #(List(#(row, List(Int))), List(Effect), List(Int)) {
+  let #(reached, logs, rolls) =
+    list.fold(rows, #([], [], rolls), fn(so_far, row) {
+      let #(reached, logs, rolls) = so_far
+      let condition = condition(row)
+      let what = what(row)
+      let #(caster_side, rolls) = gate(condition, cast.CasterSide, what, rolls)
+      case caster_side {
+        cast.Starts -> {
+          let #(passing, unit_logs, rolls) =
+            passing_units(units: units(row), condition:, what:, gate:, rolls:)
+          #(
+            [#(row, passing), ..reached],
+            list.append(list.reverse(unit_logs), logs),
+            rolls,
+          )
+        }
+        cast.GateFails -> #([#(row, []), ..reached], logs, rolls)
+        cast.CannotTell(why:) -> #(
+          [#(row, []), ..reached],
+          [debug(why), ..logs],
+          rolls,
+        )
+      }
+    })
+  #(list.reverse(reached), list.reverse(logs), rolls)
+}
+
+/// The units of a row that pass its target gate, in order, a debug line for each the server
+/// cannot tell, and the rolls left. Not `cast.reaching`, for the same roll order as `gated`.
+fn passing_units(
+  units units: List(Int),
+  condition condition: spell_plan.Condition,
+  what what: String,
+  gate gate: cast.StrikeGate,
+  rolls rolls: List(Int),
+) -> #(List(Int), List(Effect), List(Int)) {
+  let #(passing, logs, rolls) =
+    list.fold(units, #([], [], rolls), fn(so_far, unit_id) {
+      let #(passing, logs, rolls) = so_far
+      let #(verdict, rolls) =
+        gate(condition, cast.UnitSide(unit_id:), what, rolls)
+      case verdict {
+        cast.Starts -> #([unit_id, ..passing], logs, rolls)
+        cast.GateFails -> #(passing, logs, rolls)
+        cast.CannotTell(why:) -> #(passing, [debug(why), ..logs], rolls)
+      }
+    })
+  #(list.reverse(passing), list.reverse(logs), rolls)
+}
+
+fn debug(text: String) -> Effect {
+  Log(level: step.LogDebug, text:)
+}
+
+/// The rows that reach a unit, in the rows' order.
+fn rows_reaching_unit(
+  rows rows: List(#(row, List(Int))),
+  unit_id unit_id: Int,
+) -> List(row) {
+  list.filter_map(rows, fn(entry) {
+    case list.contains(entry.1, unit_id) {
+      True -> Ok(entry.0)
+      False -> Error(Nil)
+    }
+  })
 }
 
 /// The log of a unit left out for want of seed bytes, which the connection always draws.
@@ -449,26 +626,6 @@ fn tell_of(
   )
 }
 
-/// The periodic damage rows of the go that reach a unit: each row whose aim names it
-/// (the primary target, the units the area selected, or both), as a state's does.
-fn ticking_reaching(
-  selection selection: Selection,
-  attacker attacker: Attacker,
-  unit_id unit_id: Int,
-) -> List(spell_area.TickingDamage) {
-  list.filter(selection.ticking, fn(row) {
-    list.contains(
-      spell_plan.units_aimed_at(
-        aim: row.damage.aim,
-        caster: attacker.unit_id,
-        primary_target: selection.asked.primary_target,
-        area: selection.area,
-      ),
-      unit_id,
-    )
-  })
-}
-
 /// A tick of a periodic row begins its round of one unit: a strike told to the unit
 /// with `entropy`'s rolls and the row's damage alone, keyed by the tick and the go whose
 /// schedule it is (`strike_tell.AtTick`), its deadline 1 second on, and the round closed in order
@@ -513,31 +670,21 @@ pub fn begin_tick(
   opened(strike:, asked: ForTick(asked:), places: [place], tells:, now:)
 }
 
-/// The crowd-control states each selected unit is told: each row of the phase to
-/// the units its aim names (the primary target, the units the area selected, or both:
-/// a primary target outside the area is told only by a row aimed at it), each with
-/// the next instance id of the caster's own count
+/// The crowd-control states each selected unit is told: each row of the phase to the
+/// units that pass its gates and its aim names (`reached`: the primary target, the units
+/// the area selected, or both: a primary target outside the area is told only by a row
+/// aimed at it), each with the next instance id of the caster's own count
 /// (genesis_prime/game/crowd_control `instance_id`, `controls_told`), the delay,
 /// duration and armor of its row, and the state. A phase with no state tells none.
 fn controls_told(
   strike strike: State,
   selection selection: Selection,
   attacker attacker: Attacker,
+  reached reached: List(#(spell_plan.CrowdControl, List(Int))),
 ) -> #(State, List(#(Int, List(strike_tell.ControlTell)))) {
   let #(strike, told) =
     list.map_fold(over: selection.units, from: strike, with: fn(strike, aimed) {
-      let rows =
-        list.filter(selection.controls, fn(row) {
-          list.contains(
-            spell_plan.units_aimed_at(
-              aim: row.aim,
-              caster: attacker.unit_id,
-              primary_target: selection.asked.primary_target,
-              area: selection.area,
-            ),
-            aimed.unit_id,
-          )
-        })
+      let rows = rows_reaching_unit(rows: reached, unit_id: aimed.unit_id)
       let #(strike, controls) =
         list.map_fold(over: rows, from: strike, with: fn(strike, row) {
           let count = strike.controls_told + 1

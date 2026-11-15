@@ -429,6 +429,7 @@ pub fn a_damage_row_with_a_tick_time_ticks_on_its_schedule_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Ok(Periodic(effect: row)) =
     spell_area.damage_row_of(
+      tables: fixture_tables.shared(),
       spell4_id: 32_475,
       effect: periodic_damage_row(tick_ms: 1500),
     )
@@ -450,6 +451,7 @@ pub fn a_damage_row_with_no_tick_time_is_read_as_one_strike_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Ok(Once(effect:)) =
     spell_area.damage_row_of(
+      tables: fixture_tables.shared(),
       spell4_id: 32_475,
       effect: periodic_damage_row(tick_ms: 0),
     )
@@ -477,6 +479,7 @@ pub fn the_area_load_builds_a_damage_row_that_names_an_attribute_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Ok(Once(effect:)) =
     spell_area.damage_row_of(
+      tables: fixture_tables.shared(),
       spell4_id: 42_355,
       effect: fixture_effect(id: 96_307),
     )
@@ -492,6 +495,7 @@ pub fn a_ticking_row_that_names_an_attribute_ticks_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Ok(Periodic(effect: row)) =
     spell_area.damage_row_of(
+      tables: fixture_tables.shared(),
       spell4_id: 29_550,
       effect: fixture_effect(id: 52_057),
     )
@@ -529,6 +533,7 @@ pub fn until_removed_periodic_rows_are_left_out_test() -> Nil {
     )
     as "Spell4.32809 holds damage rows 61993 to 61997: the until-removed row is left out, the other four stay, and the load goes on"
   assert spell_area.damage_row_of(
+      tables: fixture_tables.shared(),
       spell4_id: 32_809,
       effect: spell4_effects.Spell4Effects(
         ..fixture_effect(id: 61_994),
@@ -1049,7 +1054,11 @@ pub fn a_periodic_damage_row_strikes_with_its_schedule_test() -> Nil {
     )
     as "the client's tables hold row 82888"
   let assert Ok(Periodic(effect: read)) =
-    spell_area.damage_row_of(spell4_id: 38_514, effect: row)
+    spell_area.damage_row_of(
+      tables: client_tables.shared(),
+      spell4_id: 38_514,
+      effect: row,
+    )
     as "a damage row with a tickTime and a life of whole ticks is read"
   assert #(read.damage.effect_id, read.damage.aim, read.schedule)
     == #(
@@ -1094,4 +1103,47 @@ pub fn a_periodic_damage_row_strikes_with_its_schedule_test() -> Nil {
     as "Mind Burst's row 61994 (targetFlags 4 in the client) given 82888's aim and timing: its phase ticks it on the cast's target"
   assert phase.strikes_primary_target
     as "a ticking row aimed at the cast's target makes the phase strike it"
+}
+
+pub fn a_throw_only_spell_aimed_at_the_target_strikes_the_primary_target_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Generic Knockback - 10 m 36010 holds one row, 73826 (`table_rows -- Spell4Effects
+  // 73826`): a ForcedMove of targetFlags 2 and phaseFlags -1, no damage, crowd control
+  // or property row. Only a throw asks for the unit it moves.
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let assert Ok(spell) =
+    spell_plan.spell_alone(
+      tables:,
+      sources: spell_plan.sources_of(tables:),
+      spell4_id: 36_010,
+      chain: [],
+    )
+    as "the spell plans on its own from the client's rows"
+  let knockback =
+    spell_area.SpellArea(
+      spell4_id: Spell4Id(36_010),
+      row: None,
+      shapes: [],
+      damage: [],
+      ticking: [],
+      spell:,
+    )
+  let assert Ok(phase) =
+    spell_area.phase(spell: knockback, phase: 0, spent: None)
+  assert list.map(
+      spell_plan.struck_moves_in_phase(
+        spell: knockback.spell,
+        phase: 0,
+        spent: None,
+      ),
+      fn(row) { row.effect_id.value },
+    )
+    == [73_826]
+    as "Spell4Effects 73826 is the spell's one throw"
+  assert phase.strikes_primary_target
+    as "Spell4Effects 73826: targetFlags 2 aims at the cast's target, so the phase strikes the primary target"
+  assert !phase.selects_area as "targetFlags 2 does not aim at the area"
+  assert phase.damage == [] && phase.controls == []
+    as "the spell holds no damage and no crowd control, so only the throw asks for the unit"
 }

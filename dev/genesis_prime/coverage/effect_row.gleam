@@ -76,7 +76,11 @@ pub fn is_read(
   case spell_plan.read_row(tables:, spell_groups:, place:, effect:) {
     Ok(spell_plan.Applied(..)) | Ok(spell_plan.ReadByActivation) -> True
     Ok(spell_plan.ReadByArea) ->
-      result.is_ok(spell_area.damage_row_of(spell4_id: effect.spell_id, effect:))
+      result.is_ok(spell_area.damage_row_of(
+        tables:,
+        spell4_id: effect.spell_id,
+        effect:,
+      ))
     Ok(spell_plan.Held(..)) | Ok(spell_plan.LeftOut(..)) | Error(..) -> False
   }
 }

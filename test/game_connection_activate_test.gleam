@@ -17,6 +17,10 @@
 //// - Creature2 8047: activateSpellCastTime 0, activate spell 5725 (Spell4Base 5020 of castMethod 1;
 ////   channelInitialDelay 0, channelMaxTime 3000, channelPulseTime 2999), `cast.channel_sequence`:
 ////   the channel's last go comes before its finish.
+//// - Creature2 32852, Varonia Cazalon: activateSpellCastTime 0, activate spell 48373 whose six
+////   type 76 rows 122321 to 122326 aim at the caster, each with a delayTime;
+////   `Spell4Effects.effectType.76`: the client swaps and restores the visual itself, so the
+////   server writes no 0x933.
 
 import connection_rule_support as support
 import game_connection_support as connection_support
@@ -34,6 +38,7 @@ import genesis_prime/message/client_side_interaction_result.{
 }
 import genesis_prime/message/interaction_result
 import genesis_prime/message/spell_cast_confirmed
+import genesis_prime/message/spell_go
 import genesis_prime/step
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_life
@@ -620,4 +625,112 @@ pub fn a_cast_go_firing_while_the_place_is_saving_is_taken_once_the_save_is_answ
     )
   assert connection_support.written_ids(answered) == [0x07F4, 0x07FE]
     as "once the save is answered the second go and the finish are written, as at 2999 and 3000 ms"
+}
+
+/// Varonia Cazalon (Creature2 32852) as unit `nearby`, 1.0 east of the player.
+fn varonia_cazalon() -> Created {
+  static_object.create(
+    object: StaticObject(
+      ..spawn_support.holoring(
+        number: nearby,
+        place: east_of_the_player(east: 1.0),
+      ),
+      creature_id: Creature2Id(32_852),
+      display_info_id: mollusk_display,
+    ),
+    unit_id: nearby,
+    server_time_estimate_start: 0,
+  )
+}
+
+pub fn activating_varonia_cazalon_writes_48373s_go_with_its_delayed_item_visual_swaps_on_the_player_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Creature2 32852 (`table_rows -- Creature2 32852`): activate spell 48373, activateSpellCastTime
+  // 0, anim state quest 7007 objective index 1, which is QuestObjective 16063 (`table_rows --
+  // Quest2 7007`, flags 3: flag 2 makes it reachable once every earlier objective is done);
+  // the link is open while quest 7007 is Accepted and that objective is open, so the player
+  // holds the quest with objective 16062 (index 0, count 1) done. Spell4Effects 122321 to 122326 are the
+  // spell's six type 76 rows, aimed at the caster (targetFlags 1), delayTime 4000, 6000, 2000,
+  // 1000, 3000 and 5000 in id order (`table_rows -- Spell4Effects spellId=48373`).
+  // The Hazmat Suit Locker (47024, spell 45726, flags 2, delayTime 0) is behind Prerequisite
+  // 19116, a type 118 condition the server cannot open (no public events), and the one other
+  // creature with a type 76 spell and a link the player can open, 72437, has a spell with a
+  // type 112 row the plan refuses; neither can be activated yet.
+  let rows = [
+    quest_support.active(
+      7007,
+      state: 1,
+      placeholder: 0,
+      tracked: False,
+      done_mask: 1,
+      progress: [1, 0],
+    ),
+  ]
+  let #(in_the_world, _) = connection_support.entered_with_quests(quests: rows)
+  let watched = connection_support.watched_by(state: in_the_world, viewers: [2])
+  let #(seeing, _) =
+    connection_support.feed(
+      state: watched,
+      event: connection_support.sent_by_the_map(
+        ObjectsSeen(units: [varonia_cazalon()]),
+      ),
+    )
+  let #(_, started) =
+    connection_support.at(
+      state: seeing,
+      ms: 1000,
+      event: step.OwnEvent(
+        step.Read(right_click_bytes(
+          client_cast_id: clients_cast_id,
+          unit_id: nearby,
+        )),
+      ),
+    )
+  let frames = connection_support.written(taken: started)
+  let ids = list.map(frames, fn(frame) { frame.message_id })
+  assert list.take(ids, 2) == [0x07FD, 0x07F4]
+    as "the press with no cast time confirms the start and writes the go"
+  assert !list.contains(ids, 0x07FE) && !list.contains(ids, 0x0933)
+    as "no finish, since the cast's six nodes last for their rows, and no 0x933, since the client swaps and restores the visual itself (Spell4Effects.effectType.76)"
+  let gos =
+    connection_support.decoded(frames, spell_go.message_id, spell_go.decode)
+  let swaps = [122_321, 122_322, 122_323, 122_324, 122_325, 122_326]
+  let listed =
+    list.flat_map(gos, fn(go) {
+      list.flat_map(go.targets, fn(target) {
+        list.filter_map(target.effects, fn(effect) {
+          case list.contains(swaps, effect.spell4_effects_id) {
+            True ->
+              Ok(#(
+                target.unit_id,
+                effect.spell4_effects_id,
+                effect.delay_ms,
+                effect.field_4,
+              ))
+            False -> Error(Nil)
+          }
+        })
+      })
+    })
+  let own = connection_support.own_unit_id
+  assert listed
+    == [
+      #(own, 122_321, 4000, 0),
+      #(own, 122_322, 6000, 0),
+      #(own, 122_323, 2000, 0),
+      #(own, 122_324, 1000, 0),
+      #(own, 122_325, 3000, 0),
+      #(own, 122_326, 5000, 0),
+    ]
+    as "the go lists each type 76 row on the player's unit, the caster, with its own delayTime and the lifetime 0 that leaves the swap to the client (opcode.0x7f4.effect_time); the client applies none of them from this go (0x1405d6880.delayed_apply)"
+  let told =
+    list.filter_map(connection_support.peer_tells(started), fn(tell) {
+      case tell.0 == 2 {
+        True -> Ok({ tell.1 }.news)
+        False -> Error(Nil)
+      }
+    })
+  let assert [go, ..] = gos
+  assert list.contains(told, client_connection.CastWent(go:))
+    as "a viewer is told the same go (each row is delayed, so it shows nothing yet: the client applies a delayed effect only when its delay ends)"
 }

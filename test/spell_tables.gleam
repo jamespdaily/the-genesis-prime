@@ -477,6 +477,7 @@ pub fn listed_effect_ids(spell spell: spell_plan.Spell) -> List(Int) {
     list.map(spell.controls, fn(control) { control.effect_id.value }),
     list.map(spell.modifiers, fn(modifier) { modifier.effect_id.value }),
     list.map(spell.forced_moves, fn(move) { move.effect_id.value }),
+    list.map(spell.struck_moves, fn(move) { move.effect_id.value }),
     list.map(spell.cooldown_modifiers, fn(modifier) { modifier.effect_id.value }),
     list.map(spell.stealth, fn(stealth) { stealth.effect_id.value }),
     list.map(spell.remove_stealth, fn(remove) { remove.effect_id.value }),
@@ -717,6 +718,20 @@ pub fn fixture_plans() -> spell_plan.Plans {
       as "the fixture's spell rows build"
     plans
   })
+}
+
+/// The plan of one client spell, alone, on the fixture's rows.
+pub fn client_spell(spell4_id spell4_id: Int) -> spell_plan.Spell {
+  let tables = fixture_tables.shared()
+  let assert Ok(spell) =
+    spell_plan.spell_alone(
+      tables:,
+      sources: spell_plan.sources_of(tables:),
+      spell4_id:,
+      chain: [],
+    )
+    as "the client's spell plans alone"
+  spell
 }
 
 /// Telekinetic Strike's plan from the client's rows, built once.

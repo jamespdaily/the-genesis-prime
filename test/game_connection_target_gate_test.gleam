@@ -27,7 +27,6 @@ import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/loadout
-import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/table/id.{ClassId, Spell4BaseId}
@@ -113,30 +112,6 @@ pub fn failed_target_gate_sends_nothing_for_that_unit_test() -> Nil {
     as "the Beast the Stalker stands behind fails 83818's gate: it is sent no start of 39426"
 }
 
-/// The Spell4Effects ids each unit's entry of the steps' gos lists, by unit, in unit order.
-fn listed_by_unit(
-  steps steps: List(ConnectionStep(Request)),
-) -> List(#(Int, List(Int))) {
-  list.flat_map(steps, fn(taken) { support.heard(taken, support.keyed()) })
-  |> support.decoded(spell_go.message_id, spell_go.decode)
-  |> list.flat_map(fn(go) { go.targets })
-  |> list.map(fn(info) {
-    #(
-      info.unit_id,
-      list.map(info.effects, fn(effect) { effect.spell4_effects_id }),
-    )
-  })
-  |> list.filter(fn(entry) { entry.1 != [] })
-  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
-}
-
-/// The units the steps' gos name as struck, whether or not an effect is listed on them.
-fn struck_units(steps steps: List(ConnectionStep(Request))) -> List(Int) {
-  list.flat_map(steps, fn(taken) { support.heard(taken, support.keyed()) })
-  |> support.decoded(spell_go.message_id, spell_go.decode)
-  |> list.flat_map(fn(go) { list.map(go.targets, fn(info) { info.unit_id }) })
-}
-
 const named_creature = 48_404
 
 const unnamed_creature = 1
@@ -188,10 +163,10 @@ pub fn a_creature_gate_on_an_area_row_lists_the_effect_only_on_the_named_creatur
       ms: 1000,
       until_ms: 3000,
     )
-  let listed = listed_by_unit(steps:)
+  let listed = support.listed_by_unit(steps:)
   assert list.contains(listed, #(42, [area_marker]))
     as "unit 42 is the creature 48404 that gate 20210 names: the go lists the Fluff row on it"
-  assert list.contains(struck_units(steps:), 43)
+  assert list.contains(support.struck_units(steps:), 43)
     as "unit 43 is among the units the child's go strikes, so its having no entry below is the gate's, not the layout's"
   assert !list.any(listed, fn(entry) { entry.0 == 43 })
     as "unit 43 is creature 1, none of the three the gate names: the go lists no effect on it"
@@ -259,7 +234,7 @@ pub fn a_creature_gate_on_a_primary_target_row_reads_the_primary_target_it_defle
       until_ms: 3000,
       answer: deflected_by_unit_42,
     )
-  let listed = listed_by_unit(steps:)
+  let listed = support.listed_by_unit(steps:)
   assert list.contains(listed, #(42, [area_marker]))
     as "unit 42 is the primary target of its child and the creature 48404 that gate 20210 names: the row lands on it though it deflected the strike"
   assert !list.any(listed, fn(entry) { entry.0 == 43 })

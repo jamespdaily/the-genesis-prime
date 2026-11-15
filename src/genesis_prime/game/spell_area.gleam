@@ -104,6 +104,7 @@ pub type DamageEffect {
     aim: Aim,
     formula: Formula,
     threat_multiplier: Float,
+    condition: spell_plan.Condition,
     tag: spend.Tag,
   )
 }
@@ -200,6 +201,9 @@ pub type AreaError {
   /// A damage effect's multiplier (`dataBits00`, read as 32 bits) is an infinity or a
   /// number that is not one.
   MultiplierNotFinite(spell4_id: Int, effect_id: Int, bits: Int)
+  /// A damage effect is behind an apply prerequisite the strike cannot check for the units
+  /// it reaches (`spell_plan.row_condition_of`).
+  ApplyGateNotRead(error: spell_plan.PlanError)
 }
 
 /// A sentence that says why the areas cannot be built, naming the table, the
@@ -276,6 +280,7 @@ pub fn describe(error error: AreaError) -> String {
       <> " and a durationTime of "
       <> int.to_string(duration_ms)
       <> ", shorter than one tick"
+    ApplyGateNotRead(error:) -> spell_plan.describe(error:)
     MultiplierNotFinite(spell4_id:, effect_id:, bits:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -371,7 +376,7 @@ fn area_of(
     None -> Ok(Nil)
   })
   use shapes <- result.try(hit_shapes_of(tables:, links:, id:))
-  use #(damage, ticking) <- result.try(damage_effects_of(effects:, id:))
+  use #(damage, ticking) <- result.try(damage_effects_of(tables:, effects:, id:))
   let area =
     SpellArea(
       spell4_id: spell.spell4_id,
@@ -552,6 +557,7 @@ fn placement_of(
 /// periodic row that lasts until removed (`TickingUntilRemoved`) is left out and the
 /// load goes on; any other refusal fails it.
 fn damage_effects_of(
+  tables tables: table_store.Tables,
   effects effects: Dict(Int, List(spell4_effects.Spell4Effects)),
   id id: Int,
 ) -> Result(#(List(DamageEffect), List(TickingDamage)), AreaError) {
@@ -561,7 +567,7 @@ fn damage_effects_of(
     effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
   })
   |> list.try_map(fn(effect) {
-    case damage_row_of(spell4_id: id, effect:) {
+    case damage_row_of(tables:, spell4_id: id, effect:) {
       Ok(row) -> Ok(Some(row))
       Error(TickingUntilRemoved(..)) -> Ok(None)
       Error(error) -> Error(error)
@@ -590,10 +596,12 @@ fn damage_effects_of(
 /// that refuses it: its dataBits00 must be a finite 32-bit float, its targetFlags one the
 /// rule aims by (1, 2, 4 or 6), its formula must read only the parameter types a player's
 /// value reads (genesis_prime/game/damage `unread`). A row with a tickTime is periodic,
-/// with the schedule of its ticks (genesis_prime/game/ticking `schedule_of`). Every
+/// with the schedule of its ticks (genesis_prime/game/ticking `schedule_of`), read before
+/// its apply gates so that an until-removed row is left out whatever its gates are. Every
 /// refusal but `TickingUntilRemoved` fails the area load, and `TickingUntilRemoved`
 /// leaves the row out. The area load and the coverage measure both read a row through it.
 pub fn damage_row_of(
+  tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowDamage, AreaError) {
@@ -619,24 +627,11 @@ pub fn damage_row_of(
       Error(FormulaNotRead(spell4_id:, effect_id: effect.id, parameter_kind:))
     None -> Ok(Nil)
   })
-  let damage =
-    DamageEffect(
-      effect_id: Spell4EffectsId(effect.id),
-      damage_type: effect.damage_type,
-      delay_ms: effect.delay_time,
-      phase_flags: effect.phase_flags,
-      aim:,
-      formula:,
-      threat_multiplier: effect.threat_multiplier,
-      tag: spell_plan.tag_of(effect:),
-    )
-  case effect.tick_time {
-    0 -> Ok(Once(effect: damage))
+  use schedule <- result.try(case effect.tick_time {
+    0 -> Ok(None)
     tick_ms ->
       ticking.schedule_of(row: spell_plan.lasting_row_of(effect:), tick_ms:)
-      |> result.map(fn(schedule) {
-        Periodic(effect: TickingDamage(damage:, schedule:))
-      })
+      |> result.map(Some)
       |> result.map_error(fn(error) {
         case error {
           ticking.UntilRemoved ->
@@ -650,13 +645,33 @@ pub fn damage_row_of(
             )
         }
       })
+  })
+  use condition <- result.map(
+    spell_plan.row_condition_of(tables:, effect:, aim:)
+    |> result.map_error(ApplyGateNotRead),
+  )
+  let damage =
+    DamageEffect(
+      effect_id: Spell4EffectsId(effect.id),
+      damage_type: effect.damage_type,
+      delay_ms: effect.delay_time,
+      phase_flags: effect.phase_flags,
+      aim:,
+      formula:,
+      threat_multiplier: effect.threat_multiplier,
+      condition:,
+      tag: spell_plan.tag_of(effect:),
+    )
+  case schedule {
+    None -> Once(effect: damage)
+    Some(schedule) -> Periodic(effect: TickingDamage(damage:, schedule:))
   }
 }
 
 /// What the spell's phase strikes with the effects a cast that spent `spent` points
 /// chooses (genesis_prime/game/spend `applies`); the flags are worked out from the
-/// effects, crowd-control states, property changes of struck units and Proxies that
-/// are left.
+/// effects, crowd-control states, property changes and throws of struck units and
+/// Proxies that are left.
 fn phase_of(
   spell spell: SpellArea,
   phase phase: Int,
@@ -683,8 +698,14 @@ fn phase_of(
         }
       },
     )
+  let throws =
+    list.map(
+      spell_plan.struck_moves_in_phase(spell: spell.spell, phase:, spent:),
+      fn(move) { move.aim },
+    )
   let strikes = fn(aims) {
     list.any(firing, fn(effect) { list.contains(aims, effect.aim) })
+    || list.any(throws, fn(aim) { list.contains(aims, aim) })
     || list.any(ticking_firing, fn(row) { list.contains(aims, row.damage.aim) })
     || list.any(controls, fn(control) { list.contains(aims, control.aim) })
     || list.any(changes, fn(aim) { list.contains(aims, aim) })

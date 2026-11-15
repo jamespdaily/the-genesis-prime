@@ -46,6 +46,7 @@ import genesis_prime/message/movement_float_vector.{MovementFloatVector}
 import genesis_prime/message/movement_path.{MovementPath}
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_time.{MovementTime}
+import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/quest_spell_shortcut.{QuestSpellShortcut}
 import genesis_prime/message/relayed_movement
@@ -1024,6 +1025,33 @@ pub fn a_creatures_move_is_a_time_command_then_a_path_command_test() -> Nil {
           path_type: 1,
           mode: 5,
         )),
+      ],
+    ),
+    encode: unit_movement.encode,
+    decode: unit_movement.decode,
+  )
+}
+
+pub fn kind_3_bit_layout_is_count_then_times_then_points_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_codec(
+    name: "movement_command.kind_3 after a kind 0 time 0xFF00: kind 3 in 5 bits, the count 2 in 10 bits, the times 0xFF00 and 0x10077 in 32 bits each, then the six floats of the two points, 32 bits each, then path type 0 in 2 bits, the value 0 in 32 and the blend bit 0",
+    body: message_support.hex(
+      "01 20 00 00 00 ff 00 00 08 00 f0 0f 00 30 04 00 f8 07 00 b8 03 08 00 00 00 00 fc 01 00 00 00 02 00 00 02 02 00 00 04 02 00 00 05 02 00 00 06 02 00 00 00 00",
+    ),
+    value: UnitMovement(
+      unit_id: 0x2001,
+      server_time: 0xFF00,
+      reset_movement: 0,
+      kept: 0,
+      commands: [
+        relayed_movement.Time(MovementTime(time: 0xFF00)),
+        relayed_movement.TimedPath(
+          MovementTimedPath(times: [0xFF00, 0x10077], points: [
+            MovementFloatVector(x: 0x3F800000, y: 0x40000000, z: 0x40400000),
+            MovementFloatVector(x: 0x40800000, y: 0x40A00000, z: 0x40C00000),
+          ]),
+        ),
       ],
     ),
     encode: unit_movement.encode,

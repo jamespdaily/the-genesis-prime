@@ -106,7 +106,7 @@ import genesis_prime/client_connection.{
   FromHandOff, FromMap, FromSessions, FromStore, SentByChat, SentByFoe,
   SentByKill, SentByMap, SentByPeer, SentBySessions, SentByTarget, TellChat,
   TellLifeChanged, TellMoved, TellPeer, TellReady, TellStealthChanged,
-  TellStrike, TellStrikeAnswered, TellTargetChange, TellTargetMoved,
+  TellStrike, TellStrikeAnswered, TellTargetChange, TellTargetMoved, TellThrown,
   TellVisibilityChanged,
 }
 import genesis_prime/connection/closer
@@ -367,7 +367,8 @@ fn directory(settings: Settings) -> Directory {
       | TellStrike(..)
       | TellTargetMoved(..)
       | TellStrikeAnswered(..)
-      | TellTargetChange(..) -> Error(Nil)
+      | TellTargetChange(..)
+      | TellThrown(..) -> Error(Nil)
     }
   }
 }
@@ -475,6 +476,7 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     | TellTargetMoved(..)
     | TellStrikeAnswered(..)
     | TellTargetChange(..)
+    | TellThrown(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -532,6 +534,7 @@ pub fn tell_the_run(
     | TellTargetMoved(..)
     | TellStrikeAnswered(..)
     | TellTargetChange(..)
+    | TellThrown(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -549,7 +552,8 @@ pub fn tell_the_run(
 /// watch: a strike (`TellStrike`) as the creature's `Strike`, a fighter's move
 /// (`TellTargetMoved`) as `TargetMoved`, the answer to its strike
 /// (`TellStrikeAnswered`) as `StrikeAnswered`, and a modifier's start or end
-/// (`TellTargetChange`) as `ModifierStarts` or `ModifierEnds`. Any other request,
+/// (`TellTargetChange`) as `ModifierStarts` or `ModifierEnds`, and a throw (`TellThrown`) as
+/// `Thrown`. Any other request,
 /// or an address that is no creature, is an error and nothing is sent.
 pub fn tell_creature(
   creatures creatures: CreatureRegistry,
@@ -579,7 +583,7 @@ pub fn tell_creature(
   }
 }
 
-/// The message a creature takes a connection's request as, for the four requests a
+/// The message a creature takes a connection's request as, for the five requests a
 /// creature is told.
 fn creature_told(request: Request) -> Result(creature.Message, Nil) {
   case request {
@@ -598,6 +602,8 @@ fn creature_told(request: Request) -> Result(creature.Message, Nil) {
           )
         ChangeEnds(source:) -> creature.ModifierEnds(source:)
       })
+    TellThrown(move:, draws:, reference:, struck_at_ms:) ->
+      Ok(creature.Thrown(move:, draws:, reference:, struck_at_ms:))
     TellPeer(..)
     | TellChat(..)
     | TellMoved(..)
@@ -621,9 +627,9 @@ fn creature_told(request: Request) -> Result(creature.Message, Nil) {
 /// same reach the services' sends take (`connection_reach`). A strike
 /// (`TellStrike`), a fighter's move (`TellTargetMoved`), the answer to a
 /// creature's strike (`TellStrikeAnswered`) and a modifier's start or end
-/// (`TellTargetChange`) told to a `Creature` go through the creature registry with
-/// no watch, as the creature's `Strike`, `TargetMoved`, `StrikeAnswered`,
-/// `ModifierStarts` and `ModifierEnds` messages. Any other request is no tell to a
+/// (`TellTargetChange`) and a throw (`TellThrown`) told to a `Creature` go through the
+/// creature registry with no watch, as the creature's `Strike`, `TargetMoved`,
+/// `StrikeAnswered`, `ModifierStarts`, `ModifierEnds` and `Thrown` messages. Any other request is no tell to a
 /// connection or a creature: a rule that sends one has a bug, logged as an error,
 /// and nothing is sent.
 fn connection_deliver(
@@ -642,11 +648,13 @@ fn connection_deliver(
       | TellTargetMoved(..) as request, step.Creature(..)
       | TellStrikeAnswered(..) as request, step.Creature(..)
       | TellTargetChange(..) as request, step.Creature(..)
+      | TellThrown(..) as request, step.Creature(..)
       -> tell_creature(creatures: settings.world.creatures, to:, request:)
       TellStrike(..), _
       | TellTargetMoved(..), _
       | TellStrikeAnswered(..), _
       | TellTargetChange(..), _
+      | TellThrown(..), _
       | TellMoved(..), _
       | TellReady(..), _
       | TellStealthChanged(..), _

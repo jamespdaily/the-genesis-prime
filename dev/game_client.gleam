@@ -586,6 +586,17 @@ pub fn deaths_in(frames frames: List(Frame)) -> List(#(Int, Bool)) {
   })
 }
 
+/// The units each 0x88c among the frames marks dead, in order: the dead ones of
+/// `deaths_in` (opcode.0x88c).
+pub fn dead_in(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(deaths_in(frames:), fn(death) {
+    case death.1 {
+      True -> Ok(death.0)
+      False -> Error(Nil)
+    }
+  })
+}
+
 /// The units each 0x355 among the frames removes, in order (opcode.0x355).
 pub fn removals_in(frames frames: List(Frame)) -> List(Int) {
   list.filter_map(frames, fn(frame) {
@@ -1171,6 +1182,7 @@ fn last_position(
     relayed_movement.Position(placed) -> standing(placed)
     relayed_movement.Time(_)
     | relayed_movement.Platform(_)
+    | relayed_movement.TimedPath(_)
     | relayed_movement.Path(_)
     | relayed_movement.Velocity(_)
     | relayed_movement.MoveAsked(_)
@@ -1922,6 +1934,7 @@ fn relayed_kind(command: relayed_movement.RelayedMovement) -> Int {
     relayed_movement.Time(..) -> 0
     relayed_movement.Platform(..) -> 1
     relayed_movement.Position(..) -> 2
+    relayed_movement.TimedPath(..) -> 3
     relayed_movement.Path(..) -> 4
     relayed_movement.Velocity(..) -> 8
     relayed_movement.MoveAsked(..) -> 11

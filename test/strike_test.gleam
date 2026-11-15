@@ -111,6 +111,7 @@ fn begun(
     attacker: strike_support.attacker(),
     formulas: rating_support.formulas(),
     entropy: entropy(rolls: list.map(selection.units, fn(_) { #(0, 0, 0) })),
+    gate: strike_support.passes_all(),
     now: at(ms: now_ms),
   )
 }
@@ -194,6 +195,7 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
         #(1_073_741_824, 3_221_225_472, 2_147_483_648),
         #(0, 0, 0),
       ]),
+      gate: strike_support.passes_all(),
       now: at(ms: 1000),
     )
   let told =
@@ -268,6 +270,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         damage.Parameter(kind: 10, value: 8.14),
       ]),
       threat_multiplier: 1.0,
+      condition: spell_plan.Always,
       tag: spend.always,
     )
   let telekinetic_strike =
@@ -282,6 +285,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         damage.Parameter(kind: 10, value: 18.0),
       ]),
       threat_multiplier: 2.0,
+      condition: spell_plan.Always,
       tag: spend.always,
     )
   let #(_, effects) =
@@ -298,6 +302,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
       attacker: Attacker(..strike_support.attacker(), stats: novice),
       formulas: rating_support.formulas(),
       entropy: entropy(rolls: [#(0, 0, 0)]),
+      gate: strike_support.passes_all(),
       now: at(ms: 1000),
     )
   let assert [strike.TellStrike(tell: strike_tell.Strike(offence:, ..), ..)] =
@@ -1129,6 +1134,7 @@ fn mind_burst_go(points points: Int) -> GoAsked {
         | cast.CasterChangeEnds(..)
         | cast.TargetChangeStarts(..)
         | cast.TargetChangeEnds(..)
+        | cast.ForcedMoveStarts(..)
         | cast.Activated(..)
         | cast.ShortcutCast(..)
         | cast.TickStrike(..)
@@ -1177,6 +1183,7 @@ pub fn a_3_point_mind_burst_tells_its_creature_only_effect_61995_test() -> Nil {
       attacker: strike_support.attacker(),
       formulas: rating_support.formulas(),
       entropy: entropy(rolls: [#(0, 0, 0)]),
+      gate: strike_support.passes_all(),
       now: at(ms: 1000),
     )
   let assert [strike.TellStrike(tell: strike_tell.Strike(offence:, ..), ..)] =
@@ -1223,6 +1230,7 @@ fn stun_row(aim aim: spell_plan.Aim) -> spell_plan.CrowdControl {
       armor_removed: 1,
       until_removed: False,
     ),
+    condition: spell_plan.Always,
     tag: spend.always,
   )
 }
@@ -1289,6 +1297,7 @@ pub fn two_casters_instance_ids_for_one_creature_differ_test() -> Nil {
         attacker:,
         formulas: rating_support.formulas(),
         entropy: entropy(rolls: [#(0, 0, 0)]),
+        gate: strike_support.passes_all(),
         now: at(ms: 1000),
       )
     let assert [strike.TellStrike(tell:, ..)] = tells(effects:)
@@ -1414,6 +1423,7 @@ fn offence_of_caster_with(
       attacker: Attacker(..strike_support.attacker(), properties:),
       formulas: rating_support.formulas(),
       entropy: entropy(rolls: [#(0, 0, 0)]),
+      gate: strike_support.passes_all(),
       now: at(ms: 1000),
     )
   let assert [strike.TellStrike(tell: strike_tell.Strike(offence:, ..), ..)] =
@@ -1496,6 +1506,7 @@ fn surge_blow() -> spell_area.DamageEffect {
       damage.Parameter(kind: 10, value: 8.14),
     ]),
     threat_multiplier: 1.0,
+    condition: spell_plan.Always,
     tag: spend.always,
   )
 }

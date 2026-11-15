@@ -109,6 +109,7 @@ pub fn counted(
           log: entered.quests,
           tables:,
           event:,
+          reused: session.settings.reused_unit_objectives,
           now_ms: now.monotonic_ms,
         )
       let settled = settle(session:, entered:, log: advanced.log, now:)
