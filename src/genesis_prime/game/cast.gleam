@@ -269,8 +269,8 @@
 ////   a pending heal are due in the same millisecond the end lands the heal first. A node
 ////   taken off the caster, a persistence that stops holding and the caster's death drop a
 ////   pending heal with its timer; a later go of the cast heals again and cancels no
-////   earlier heal. A periodic heal (a tickTime) is not applied, and a debug line says so:
-////   each tick needs a 0x7f8 (#336). A heal on a unit other than the caster (a child on a
+////   earlier heal. A periodic heal (a tickTime) heals the caster at each tick, after
+////   the tick's 0x7f8 (`ticking_heals`). A heal on a unit other than the caster (a child on a
 ////   struck unit) lands nothing and a debug line says so (#570). The server rolls no
 ////   critical for a heal: the description is always a Hit, so the seed draws nothing for
 ////   it (the server's choice; the crit of a heal is #336).
@@ -5324,7 +5324,10 @@ fn tick_timers_cancelled(
 /// The earliest node of the cast `cast_id` has ended, live or lingering: the nodes
 /// whose life is over are dropped and written 0x811, and the timer starts again for the
 /// next end. A lingering cast left with no node ends with its 0x7fe instead. A cast
-/// that holds nothing any more has no frame.
+/// that holds nothing any more has no frame. The ticks of an ended node stop with it, so
+/// a tick due after the node's life is never sent, as for a spell whose life is the longer
+/// of delay and durationTime (`0x140568540`) and a row whose last tick falls past that;
+/// whether the client would show a 0x7f8 after its node ends is not read (gap, #336).
 fn nodes_ended(
   cast cast: State,
   cast_id cast_id: Int,
@@ -7580,8 +7583,7 @@ type Applied {
 
 /// The Fluff, SpellForceRemove, property modifier, forced move, cooldown, Stealth,
 /// RemoveStealth and HealShields effects of the phase whose gates pass against the caster,
-/// a debug line for each that cannot be decided, and for each periodic heal that passes,
-/// and the rolls left. Their gates are checked after the Proxies' and the gains', in that
+/// a debug line for each that cannot be decided, and the rolls left. Their gates are checked after the Proxies' and the gains', in that
 /// order, the HealShields effects' last (`rolls_needed`).
 fn lasting_applied(
   spell spell: Spell,

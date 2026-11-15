@@ -538,6 +538,62 @@ pub fn the_finish_follows_the_last_tick_test() -> Nil {
   no_tick_after_finish(run: closed)
 }
 
+pub fn ticks_stop_at_the_node_life_of_a_spell_whose_life_is_its_longer_time_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell4Effects 82888 (table_rows -- Spell4Effects spellId=38514): delayTime 1000,
+  // tickTime 1000, durationTime 4000, four whole ticks; spell 38514's propertyFlags hold
+  // 0x2000, so its node lasts max(delay, durationTime) = 4000 ms (`0x140568540`).
+  let row =
+    TickingDamage(
+      damage: DamageEffect(
+        ..surge_blow(),
+        effect_id: Spell4EffectsId(82_888),
+        delay_ms: 1000,
+      ),
+      schedule: Schedule(
+        delay_ms: 1000,
+        tick_ms: 1000,
+        duration_ms: 4000,
+        count: 4,
+      ),
+    )
+  let struck = [hit_ticking(unit_id: 10, ticking: [row])]
+  let spell = spell_plan.Spell(..surge(), longer_of_delay_and_duration: True)
+  let run =
+    pressed(
+      plans: support.plans_of([spell]),
+      caster: support.caster(),
+      struck:,
+      answer: landed(killed: 0),
+    )
+    |> fn(run) {
+      ran(
+        caster: support.caster(),
+        run:,
+        until_ms: 20_000,
+        struck:,
+        answer: landed(killed: 0),
+      )
+    }
+  assert list.map(all_ticks(run:), fn(tick) { tick.0 }) == [3000, 4000, 5000]
+    as "ticks 1 to 3 land 2000, 3000 and 4000 ms after the go (delay 1000 plus each 1000 ms tick)"
+  assert list.map(strikes_of(run:), fn(strike) { strike.2 }) == [1, 2, 3]
+    as "tick 4, due 5000 ms after the go, is past the node's 4000 ms life and is never asked"
+  let finishes =
+    list.filter(run.steps, fn(step) {
+      list.contains(ids(effects: step.1), spell_finished.message_id)
+    })
+  let assert [#(finished_at, effects)] = finishes as "the cast finishes once"
+  assert finished_at == 5000
+    as "the 0x7fe goes when the node's life ends, 4000 ms after the go"
+  assert list.filter(ids(effects:), fn(id) {
+      id == spell_effect_tick.message_id || id == spell_finished.message_id
+    })
+    == [spell_effect_tick.message_id, spell_finished.message_id]
+    as "tick 3's 0x7f8 comes before the 0x7fe in the step the node ends"
+  no_tick_after_finish(run:)
+}
+
 pub fn only_a_hit_or_immune_unit_gets_ticks_test() -> Nil {
   use <- owned_test.run(5000)
   let struck = [
