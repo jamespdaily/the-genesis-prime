@@ -1225,22 +1225,31 @@ fn paying_casters(
 
 /// What the whole cast of the ability pays (a cast with a cast time pays when it finishes, so
 /// the payments are those of every step of the drive), by the first caster that is not refused:
-/// each playable class holding exactly the token's amount, since a cost that takes every point
-/// held takes the amount only from a caster that holds no more, and then the plain caster.
+/// the ability's own player class holding exactly the token's amount, then each playable class
+/// so, since a cost that takes every point held takes the amount only from a caster that holds
+/// no more, and then the plain caster. The ability's own class goes first because a class
+/// cost passes and pays nothing for a class none of whose slots name the vital
+/// (`CheckClassResourceCost`, `0x1405e7980`), so another class could pass without paying.
 fn payments_of(
   rows rows: Rows,
   base base: Int,
   amount amount: Int,
 ) -> Result(List(class_resource.Payment), Unread) {
   let plain = oracle.caster_of(base:)
+  let assert Ok(base_row) =
+    spell4_base.get(tables: rows.tables, id: Spell4BaseId(base))
+    as "a planned ability has a Spell4Base row"
   let casters =
     list.append(
-      list.map(class_resource.playable_class_ids(), fn(class_id) {
-        cast.Caster(
-          ..plain,
-          resources: support.holding(class_id:, value: int.to_float(amount)),
-        )
-      }),
+      list.map(
+        [base_row.class_id_player, ..class_resource.playable_class_ids()],
+        fn(class_id) {
+          cast.Caster(
+            ..plain,
+            resources: support.holding(class_id:, value: int.to_float(amount)),
+          )
+        },
+      ),
       [plain],
     )
   first_taken(casters:, attempt: fn(caster) {
