@@ -102,6 +102,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     heals: [],
     stealth_change: spell_plan.EndsStealthAtEachGo,
     procs: [],
+    alternate: None,
     cooldown_start: AtFirstGo,
     cooldown_phase: None,
   )
@@ -261,6 +262,8 @@ pub fn caster() -> Caster {
     unit_id: 7,
     place:,
     abilities: abilities(),
+    book: list.append(abilities(), [Spell4BaseId(52_215), Spell4BaseId(20_685)]),
+    surge_spell: Spell4Id(47_439),
     weapon: Some(Item2Id(81_351)),
     audience: set.from_list([ConnectionId(2), ConnectionId(3)]),
     dead: False,
