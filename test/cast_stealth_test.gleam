@@ -1023,3 +1023,43 @@ pub fn leaving_while_stealthed_writes_nothing_and_the_next_stay_starts_unstealth
   assert !cast.stealthed(cast: left)
   assert !cast.stealthed(cast: cast.new())
 }
+
+// ---- a Stealth row behind a target apply prerequisite ----
+
+pub fn a_stealth_row_behind_a_target_gate_is_applied_only_when_the_caster_passes_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Prerequisite 903 is type 28, comparison 1: in combat (`table_rows -- Prerequisite 903`);
+  // the client's caster-aimed Stealth row 57886 holds it as its target apply. A row aimed
+  // at the caster reaches no other unit, so the gate reads the caster.
+  let gate = prerequisite_support.single(id: 903, condition: #(28, 1, 0, 0))
+  let gated =
+    support.stealthing(spell4_id: 38_784, base: 1, rows: [
+      StealthRow(
+        ..support.stealth_row(id: 57_886, breaks: BrokenByDamage),
+        condition: spell_plan.GatedOnTarget(prerequisite: gate),
+      ),
+    ])
+  let plans = plans_of([gated])
+  let #(state, out_of_combat) =
+    support.press_as(
+      caster: support.caster_in_combat(in_combat: False),
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_1,
+      at: 1000,
+    )
+  assert changes(effects: out_of_combat) == []
+    as "not in combat: the target gate fails on the caster, so no stealth starts"
+  assert !cast.stealthed(cast: state)
+  let #(state, in_combat) =
+    support.press_as(
+      caster: support.caster_in_combat(in_combat: True),
+      plans:,
+      state: cast.new(),
+      bag: bag_of_base_1,
+      at: 1000,
+    )
+  assert changes(effects: in_combat) == [True]
+    as "in combat: the gate passes on the caster, so the stealth starts"
+  assert cast.stealthed(cast: state)
+}

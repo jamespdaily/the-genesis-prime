@@ -20,6 +20,7 @@ import client_tables
 import fixture_tables
 import genesis_prime/game/crowd_control
 import genesis_prime/game/lasting.{Group, LastingRow, Spell, Stack}
+import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
 import genesis_prime/game/spend
 import genesis_prime/message/crowd_control_state
@@ -173,7 +174,8 @@ pub fn a_fluff_row_behind_a_caster_prerequisite_is_gated_on_the_caster_and_behin
       rows: with_gate([#("prerequisiteIdTargetApply", Integer(5))]),
     )
   let assert [row] = target.lasting
-  assert row.condition == GatedOnTarget(prerequisite_id: PrerequisiteId(5))
+  let assert GatedOnTarget(prerequisite: gate) = row.condition
+  assert prerequisite.id(prerequisite: gate) == PrerequisiteId(5)
 }
 
 // ---- the type 80 rows ----

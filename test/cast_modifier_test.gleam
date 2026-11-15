@@ -26,6 +26,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None}
 import owned_test
+import prerequisite_support
 
 /// 135954 as the client holds it: BaseCritChance, multiplier 1.0, flat 0.08, 8000 ms.
 fn crit_row() -> spell_plan.PropertyModifier {
@@ -196,7 +197,14 @@ pub fn a_modifier_behind_a_target_prerequisite_is_not_applied_test() -> Nil {
   let gated =
     spell_plan.PropertyModifier(
       ..crit_row(),
-      condition: spell_plan.GatedOnTarget(prerequisite_id: id.PrerequisiteId(5)),
+      condition: spell_plan.GatedOnTarget(
+        prerequisite: prerequisite_support.single(id: 5, condition: #(
+          38,
+          1,
+          0,
+          5,
+        )),
+      ),
     )
   let plans =
     support.plans_of([

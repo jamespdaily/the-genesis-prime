@@ -24,6 +24,7 @@
 import client_tables
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{Change}
@@ -353,7 +354,8 @@ pub fn a_row_behind_a_caster_prerequisite_is_gated_on_the_caster_and_behind_a_ta
         #("prerequisiteIdTargetApply", Integer(5)),
       ]),
     )
-  assert target.condition == GatedOnTarget(prerequisite_id: PrerequisiteId(5))
+  let assert GatedOnTarget(prerequisite: gate) = target.condition
+  assert prerequisite.id(prerequisite: gate) == PrerequisiteId(5)
 }
 
 pub fn the_rows_of_a_phase_are_those_whose_phase_flags_name_it_test() -> Nil {

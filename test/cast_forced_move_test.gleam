@@ -20,7 +20,7 @@ import genesis_prime/game/cast.{type State}
 import genesis_prime/game/spell_plan.{type Spell, Always}
 import genesis_prime/game/spend
 import genesis_prime/message/spell_go
-import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}
+import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/int
 import gleam/list
 import owned_test
@@ -135,7 +135,14 @@ pub fn a_forced_move_behind_a_target_prerequisite_is_not_listed_test() -> Nil {
   let gated =
     spell_plan.ForcedMove(
       ..blink_row(),
-      condition: spell_plan.GatedOnTarget(prerequisite_id: PrerequisiteId(5)),
+      condition: spell_plan.GatedOnTarget(
+        prerequisite: prerequisite_support.single(id: 5, condition: #(
+          38,
+          1,
+          0,
+          5,
+        )),
+      ),
     )
   let #(_, effects) = press(spell: holder(forced_moves: [gated], modifiers: []))
   assert listed(effects:) == []

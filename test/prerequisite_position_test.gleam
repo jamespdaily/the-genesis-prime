@@ -19,6 +19,9 @@
 ////   the first unit is never tested for none.
 //// - The server's choice (the `shown` doc): a struck creature is known by its place alone, so
 ////   every condition that reads what it holds besides its place is `NotRead`.
+//// - `Prerequisite.prerequisiteTypeId.37`: "The units and the objectId are not read", so a
+////   roll is no state of the unit and a creature known by its place alone is given its roll
+////   like any unit.
 
 import client_tables
 import genesis_prime/game/area.{type Pose}
@@ -400,13 +403,12 @@ pub fn a_struck_creature_gives_not_read_for_every_type_that_reads_what_it_holds_
       rolls: [50],
     )
   assert creature.seen == PlaceOnly
-  // Types 15, 28, 37, 50, 59, 71 and 73, each with a comparison and value that a unit
+  // Types 15, 28, 50, 59, 71 and 73, each with a comparison and value that a unit
   // holding what the condition asks would pass.
   list.each(
     [
       #(15, 2, 0, 1000),
       #(28, 2, 0, 0),
-      #(37, 4, 0, 1),
       #(50, 2, 0, 39_407),
       #(59, 1, 42_569, 0),
       #(71, 4, 1, 0),
@@ -418,9 +420,35 @@ pub fn a_struck_creature_gives_not_read_for_every_type_that_reads_what_it_holds_
           subject: creature,
         )
         == NotRead(prerequisite_type: condition.0)
-        as "the connection holds none of a creature's casts, combat state, vitals or rolls"
+        as "the connection holds none of a creature's casts, combat state or vitals"
     },
   )
+}
+
+pub fn a_struck_creature_takes_the_roll_a_type_37_condition_asks_for_test() -> Nil {
+  use <- owned_test.run(5000)
+  let chance = prerequisite_support.single(id: 4585, condition: #(37, 6, 0, 50))
+  let creature = fn(rolls) {
+    Subject(
+      ..prerequisite_support.struck(
+        first: Some(first_at_origin(yaw: 0.0)),
+        second: prerequisite_support.pose(x: 0.0, z: 5.0, yaw: 0.0),
+        player: prerequisite_support.player(),
+        quests: quest_support.log_of(rows: []),
+      ),
+      rolls:,
+    )
+  }
+  assert { creature([]) }.seen == PlaceOnly
+  assert prerequisite.check(prerequisite: chance, subject: creature([50]))
+    == Passes
+    as "row 4585 is comparison 6 on 50: a roll of 50 passes for a unit known by its place alone"
+  assert prerequisite.check(prerequisite: chance, subject: creature([51]))
+    == Fails
+    as "a roll of 51 fails it"
+  assert prerequisite.check(prerequisite: chance, subject: creature([]))
+    == NotRead(prerequisite_type: 37)
+    as "no roll given is a roll the server does not have"
 }
 
 // ---- item 6: the rows of the client ----
