@@ -123,6 +123,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     stealth_change: spell_plan.EndsStealthAtEachGo,
     procs: [],
     alternate: None,
+    press_proxies: [],
     cooldown_start: AtFirstGo,
     cooldown_phase: None,
   )

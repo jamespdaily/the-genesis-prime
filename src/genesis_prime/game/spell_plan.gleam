@@ -653,7 +653,20 @@ pub type Spell {
     /// `0x14039a040` through `0x1405e7e50`): planned only for the ability a class's bag holds,
     /// and never for the alternate itself, since the client swaps once.
     alternate: Option(Spell),
+    /// A RapidTap or ChargeRelease ability with no threshold time: its Proxy rows with a
+    /// caster apply prerequisite, in row order, which the press walks to cast the first
+    /// whose gate the caster passes (`ResolveProxyByCasterApply` `0x1403d3520`); empty
+    /// for every other spell.
+    press_proxies: List(PressProxy),
   )
+}
+
+/// One Proxy row a threshold-less press may cast: the row, the prerequisite on the
+/// caster that lets it through (`Spell4Effects.prerequisiteIdCasterApply`, the only gate
+/// the client's walk reads) and the spell its dataBits00 names, planned as a child of the
+/// ability.
+pub type PressProxy {
+  PressProxy(effect_id: Spell4EffectsId, gate: Prerequisite, spell: Spell)
 }
 
 /// What a spell's prerequisiteIdCasterCast is to a press (`0x1403ace00`,
@@ -1864,8 +1877,7 @@ pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
     list.append(abilities, innates),
     dict.new(),
     fn(plans, spell4_id) {
-      use spell <- result.try(planned(tables:, sources:, spell4_id:))
-      use spell <- result.try(with_alternate(tables:, sources:, spell:))
+      use spell <- result.try(ability_alone(tables:, sources:, spell4_id:))
       let plans = case spell.alternate {
         Some(alternate) ->
           dict.insert(plans, alternate.spell4_base_id.value, alternate)
@@ -1874,6 +1886,17 @@ pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
       Ok(dict.insert(plans, spell.spell4_base_id.value, spell))
     },
   )
+}
+
+/// One ability or innate spell as `build` plans it, its alternate included: the plan of a
+/// spell outside a level tree, which a test plants.
+pub fn ability_alone(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+  spell4_id spell4_id: Int,
+) -> Result(Spell, PlanError) {
+  use spell <- result.try(planned(tables:, sources:, spell4_id:))
+  with_alternate(tables:, sources:, spell:)
 }
 
 /// One ability or innate spell as the plan holds it: its tree, a ChargeRelease
@@ -1890,6 +1913,7 @@ fn planned(
     chain: [],
     threshold_costs: [],
     struck_by: None,
+    pressed: True,
   ))
   use Nil <- result.map(has_threshold_time(spell:))
   opening_costs_lifted(spell:)
@@ -1976,21 +2000,39 @@ pub fn server_proxy(child child: Spell, phase_flags phase_flags: Int) -> Proxy {
 }
 
 /// A RapidTap or ChargeRelease ability opens a threshold of its thresholdTime, so
-/// a press of one with none is refused by the client (`0x1403bfd60`).
+/// a press of one with none is refused by the client (`0x1403bfd60`) unless a Proxy of its
+/// own, gated on the caster, can be cast instead (`ResolveProxyByCasterApply`
+/// `0x1403d3520`).
 fn has_threshold_time(spell spell: Spell) -> Result(Nil, PlanError) {
-  case spell.method {
-    RapidTap | ChargeRelease if spell.threshold_ms == 0 ->
-      Error(NoThresholdTime(spell4_id: spell.spell4_id.value))
-    RapidTap
-    | ChargeRelease
-    | Normal
+  case
+    lacks_threshold_time(method: spell.method, threshold_ms: spell.threshold_ms),
+    spell.press_proxies
+  {
+    True, [] -> Error(NoThresholdTime(spell4_id: spell.spell4_id.value))
+    True, [_, ..] | False, _ -> Ok(Nil)
+  }
+}
+
+/// Whether a spell of this cast method and thresholdTime is a RapidTap or ChargeRelease
+/// spell with no threshold time: no threshold opens for it, so a press of it casts the
+/// first Proxy its caster passes, which its own Proxy rows are walked for and never run as
+/// its go, or is refused 285 (`0x1403bfd60`, `ResolveProxyByCasterApply` `0x1403d3520`).
+/// Only a spell planned as a pressed ability is walked so: a stage or a Proxy's child runs
+/// its own Proxy rows as its go.
+pub fn lacks_threshold_time(
+  method method: CastMethod,
+  threshold_ms threshold_ms: Int,
+) -> Bool {
+  case method {
+    RapidTap | ChargeRelease -> threshold_ms == 0
+    Normal
     | Channeled
     | PressHold
     | ChanneledField
     | ClientSideInteraction
     | Multiphase
     | Transactional
-    | OtherMethod(..) -> Ok(Nil)
+    | OtherMethod(..) -> False
   }
 }
 
@@ -2087,19 +2129,18 @@ fn proxy_of(
   target target: ProxyTarget,
   condition condition: Condition,
 ) -> Result(Proxy, PlanError) {
-  use child <- result.map(
-    spell_of(
-      tables:,
-      sources:,
-      spell4_id: effect.data_bits00,
-      chain:,
-      threshold_costs: [],
-      struck_by: case target {
-        OnEachStruck -> Some(StruckBy(spell4_id:, proxy_effect_id: effect.id))
-        OnCaster -> None
-      },
-    ),
-  )
+  use child <- result.map(spell_of(
+    tables:,
+    sources:,
+    spell4_id: effect.data_bits00,
+    chain:,
+    threshold_costs: [],
+    struck_by: case target {
+      OnEachStruck -> Some(StruckBy(spell4_id:, proxy_effect_id: effect.id))
+      OnCaster -> None
+    },
+    pressed: False,
+  ))
   // Every gain under a Proxy aimed at each struck unit in the client's level-1 trees fires
   // in phase 0 only (`spell_plan_gain_test` reads them all), so lifting by phase 0 loses
   // none to a later phase.
@@ -2129,6 +2170,7 @@ fn spell_of(
   chain chain: List(Int),
   threshold_costs threshold_costs: List(#(Int, Int)),
   struck_by struck_by: Option(StruckBy),
+  pressed pressed: Bool,
 ) -> Result(Spell, PlanError) {
   use chain <- result.try(chain_extended(chain:, spell4_id:))
   use row <- result.try(
@@ -2277,30 +2319,38 @@ fn spell_of(
   use cooldown_groups <- result.try(cooldown_groups_of(tables:, row:))
   use groups <- result.try(groups_of(sources:, row:))
   use stack <- result.try(stack_of(tables:, row:))
-  use proxies <- result.try(
-    rows_of_kind(readings:, kind: effect_kind.Proxy)
-    |> list.try_map(fn(row) {
-      let #(effect, reading) = row
-      use reading <- result.try(reading)
-      case reading {
-        Applied(PlannedProxy(target:, condition:))
-        | Held(PlannedProxy(target:, condition:)) ->
-          proxy_of(
-            tables:,
-            sources:,
-            spell4_id:,
-            chain:,
-            effect:,
-            target:,
-            condition:,
-          )
-          |> result.map(fn(proxy) { [proxy] })
-        Applied(..) | Held(..) | LeftOut(..) | ReadByArea | ReadByActivation ->
-          Ok([])
-      }
-    })
-    |> result.map(list.flatten),
-  )
+  let method = method_of(base.cast_method)
+  let presses =
+    pressed && lacks_threshold_time(method:, threshold_ms: row.threshold_time)
+  use proxies <- result.try(case presses {
+    True -> Ok([])
+    False ->
+      rows_of_kind(readings:, kind: effect_kind.Proxy)
+      |> list.try_map(fn(row) {
+        let #(effect, reading) = row
+        use reading <- result.try(reading)
+        case reading {
+          Applied(PlannedProxy(target:, condition:))
+          | Held(PlannedProxy(target:, condition:)) ->
+            proxy_of(
+              tables:,
+              sources:,
+              spell4_id:,
+              chain:,
+              effect:,
+              target:,
+              condition:,
+            )
+            |> result.map(fn(proxy) { [proxy] })
+          Applied(..)
+          | Held(..)
+          | LeftOut(..)
+          | ReadByArea
+          | ReadByActivation -> Ok([])
+        }
+      })
+      |> result.map(list.flatten)
+  })
   use stages <- result.try(
     dict.get(sources.thresholds, spell4_id)
     |> result.unwrap([])
@@ -2315,11 +2365,19 @@ fn spell_of(
           #(threshold.vital_enum_cost_type01, threshold.vital_cost_value01),
         ],
         struck_by: None,
+        pressed: False,
       ))
       Ok(Stage(duration_ms: threshold.threshold_duration, spell: stage))
     }),
   )
-  let method = method_of(base.cast_method)
+  use press_proxies <- result.try(press_proxies_of(
+    tables:,
+    sources:,
+    spell4_id:,
+    chain:,
+    effects:,
+    presses:,
+  ))
   let phases = dict.get(sources.phases, spell4_id) |> result.unwrap([])
   use delays <- result.try(phase_delays(phases:, method:, spell4_id:))
   use channel <- result.try(channel_of(row:, method:))
@@ -2376,8 +2434,82 @@ fn spell_of(
       stealth_change:,
       procs:,
       alternate: None,
+      press_proxies:,
     )
   Ok(spell)
+}
+
+/// The Proxy rows of a RapidTap or ChargeRelease spell with no threshold time that the
+/// press walks, each with the gate the client reads and its child planned; none for any
+/// other spell. A gate the press cannot check (`prerequisite.press_unread_types`) fails
+/// the load, as an undecoded gate does.
+fn press_proxies_of(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+  spell4_id spell4_id: Int,
+  chain chain: List(Int),
+  effects effects: List(spell4_effects.Spell4Effects),
+  presses presses: Bool,
+) -> Result(List(PressProxy), PlanError) {
+  use <- bool.guard(when: !presses, return: Ok([]))
+  effects
+  |> list.filter(is_gated_proxy)
+  |> list.try_map(fn(effect) {
+    use gate <- result.try(prerequisite_of(
+      tables:,
+      id: effect.prerequisite_id_caster_apply,
+    ))
+    use Nil <- result.try(case prerequisite.press_unread_types(gate) {
+      [prerequisite_type, ..] ->
+        Error(ApplyPrerequisiteNotRead(
+          spell4_id:,
+          effect_id: effect.id,
+          prerequisite_type:,
+        ))
+      [] -> Ok(Nil)
+    })
+    use proxy <- result.map(proxy_of(
+      tables:,
+      sources:,
+      spell4_id:,
+      chain:,
+      effect:,
+      target: OnCaster,
+      condition: Always,
+    ))
+    PressProxy(effect_id: proxy.effect_id, gate:, spell: proxy.spell)
+  })
+}
+
+/// Whether a row is a Proxy with a caster apply prerequisite, the rows a press walks.
+fn is_gated_proxy(effect effect: spell4_effects.Spell4Effects) -> Bool {
+  effect_kind.kind_of(effect.effect_type) == effect_kind.Proxy
+  && effect.prerequisite_id_caster_apply != 0
+}
+
+/// The Spell4 ids of the spells a press resolves by a Proxy's caster gate: a spell of a
+/// RapidTap or ChargeRelease method with no threshold time and a gated Proxy row, in id
+/// order. They hold no SpellLevel row, so `build` plans none of them.
+pub fn press_spell_ids(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+) -> List(Int) {
+  spell4.all(tables)
+  |> list.filter(fn(row) {
+    case
+      spell4_base.get(tables:, id: Spell4BaseId(row.spell4_base_id_base_spell))
+    {
+      Ok(base) ->
+        lacks_threshold_time(
+          method: method_of(base.cast_method),
+          threshold_ms: row.threshold_time,
+        )
+        && list.any(effects_of(sources:, spell4_id: row.id), is_gated_proxy)
+      Error(..) -> False
+    }
+  })
+  |> list.map(fn(row) { row.id })
+  |> list.sort(int.compare)
 }
 
 /// One VitalModifier row as a gain, which must aim at the caster and change vital 6 or 8;
@@ -3273,6 +3405,7 @@ fn procs_of(
           chain:,
           threshold_costs: [],
           struck_by: None,
+          pressed: False,
         ))
         Ok([
           ProcRow(
@@ -3501,6 +3634,7 @@ pub fn spell_alone(
     chain:,
     threshold_costs: [],
     struck_by: None,
+    pressed: False,
   )
 }
 
@@ -5062,11 +5196,13 @@ pub fn tree(
     list.filter(spell.proxies, started)
     |> list.map(fn(proxy) { proxy.spell })
   let procced = list.map(spell.procs, fn(proc) { proc.spell })
+  let pressed = list.map(spell.press_proxies, fn(proxy) { proxy.spell })
   [
     spell,
-    ..list.flat_map(list.flatten([stages, proxied, procced]), fn(below) {
-      tree(spell: below, started:)
-    })
+    ..list.flat_map(
+      list.flatten([stages, proxied, procced, pressed]),
+      fn(below) { tree(spell: below, started:) },
+    )
   ]
 }
 
