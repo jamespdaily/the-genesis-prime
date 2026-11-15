@@ -3,8 +3,14 @@
     is_skip/1,
     run_unless_skipped/1,
     monotonic_milliseconds/0,
-    body_name/1
+    body_name/1,
+    written_term/1
 ]).
+
+%% Any term written out as Erlang prints it, cut below 30 levels so a crash
+%% that holds a large state stays readable.
+written_term(Term) ->
+    unicode:characters_to_binary(io_lib:format("~tP", [Term, 30])).
 
 %% unitest marks a skipped test by throwing {gleam_unitest, skip}
 %% (unitest_ffi:skip/0); a process that does not catch it exits with

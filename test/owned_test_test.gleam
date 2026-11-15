@@ -3,6 +3,7 @@
 //// 0 ms is passed by any body, so each result is the same on any machine.
 
 import ask_support
+import gleam/string
 import open_wait
 import owned_test
 
@@ -27,8 +28,10 @@ pub fn a_crashed_body_still_fails_test() -> Nil {
     ask_support.ended_running(fn() {
       owned_test.run(0, fn() { panic as "the planted crash of the body" })
     })
-  assert ask_support.panic_message(ask_support.raised(ended))
-    == "the test body crashed"
+  assert string.starts_with(
+    ask_support.panic_message(ask_support.raised(ended)),
+    "the test body crashed: ",
+  )
 }
 
 pub fn the_deadline_warning_names_the_open_waits_innermost_first_test() -> Nil {
