@@ -72,6 +72,7 @@ type Pending {
   Pending(
     due_ms: Int,
     number: Int,
+    owner: Pid,
     subject: Subject(Elapsed),
     timer: TimerId,
     reference: Reference,
@@ -114,6 +115,8 @@ type Message {
     reply: Subject(Int),
   )
   Cancel(number: Int, reply: Subject(Nil))
+  /// The timers the process has started that have neither fired nor been cancelled.
+  PendingOf(owner: Pid, reply: Subject(List(TimerId)))
   TakeDue(limit_ms: Int, reply: Subject(Option(Pending)))
 }
 
@@ -170,6 +173,7 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
         Pending(
           due_ms: state.now_ms + after_ms,
           number: state.next_number,
+          owner:,
           subject:,
           timer:,
           reference:,
@@ -193,6 +197,18 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
           }),
         ),
       )
+    }
+    PendingOf(owner:, reply:) -> {
+      process.send(
+        reply,
+        list.filter_map(state.pending, fn(pending) {
+          case pending.owner == owner {
+            True -> Ok(pending.timer)
+            False -> Error(Nil)
+          }
+        }),
+      )
+      actor.continue(state)
     }
     TakeDue(limit_ms:, reply:) -> take_due(state:, limit_ms:, reply:)
   }
@@ -312,6 +328,12 @@ fn asked(time time: Time, make make: fn(Subject(reply)) -> Message) -> reply {
   open_wait.named("the driven clock to answer", fn() {
     process.call_forever(time.driver, make)
   })
+}
+
+/// The timers the process `owner` started on this clock that have neither fired nor
+/// been cancelled, in the order they were started.
+pub fn pending_of(time time: Time, owner owner: Pid) -> List(TimerId) {
+  asked(time:, make: PendingOf(owner, _))
 }
 
 /// Moves the clock on by `ms`, firing each timer due within it, one at a time in

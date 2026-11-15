@@ -14,6 +14,7 @@ import genesis_prime/coverage/engine.{type EngineDeclaration}
 import genesis_prime/coverage/measurement.{
   type Measurement, type TypeLine, HandledWithGap, Measured,
 }
+import genesis_prime/table/spell4_effects
 import gleam/int
 import gleam/list
 import gleam/string
@@ -130,16 +131,34 @@ pub fn coverage_counts_the_periodic_rows_test() -> Nil {
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let #(rows, unread, starting, starting_unread) = counted(type_number: 8)
-  assert rows - unread == 26_793
-    as "scratch count over `table_rows -- Spell4Effects effectType=8`, by the area load's doc comments (`spell_area.damage_row_of`, `ticking.schedule_of`): 2,854 rows hold a tickTime, and 2,003 of them aim by 1, 2, 4 or 6, read only the formula's types, do not last until removed (flags bit 2), tick at least once in their durationTime and hold a phaseFlags other than 0; 531 last until removed (#803), 315 hold a formula parameter the formula does not read, 4 hold a phaseFlags of 0 and 1 aims by 10. 26,793 read, 2,003 more than the 24,790 read while no periodic row was"
+  let #(ticking, until_removed, no_tick) = periodic_rows(type_number: 8)
+  assert rows - unread == 24_790 + ticking - until_removed - no_tick - 145
+    as "the 24,790 rows read while no periodic row was, and the rows holding a tickTime (2,854) but those that last until removed (flags bit 2, #803) and those with no whole tick in their durationTime (`ticking.schedule_of`), counted from the table here; less the 145 periodic rows the area load refuses on its other gates (scratch count over `table_rows -- Spell4Effects effectType=8`, by `spell_area.damage_row_of`: of the 851 periodic rows not read, those that do not last until removed and hold a formula parameter the formula does not read, a phaseFlags of 0 or an aim by 10): 26,793 read"
   assert #(starting, starting_unread) == #(36, 0)
     as "the area load builds every damage row of the starting abilities' spells, the periodic ones among them"
   let #(rows, unread, _, _) = counted(type_number: 10)
-  assert rows - unread == 2032
-    as "scratch count over `table_rows -- Spell4Effects effectType=10`, by the heal rule's doc comments (`spell_plan` heals, `damage.caster_unread`): 770 rows hold a tickTime, and 512 of them have no target apply prerequisite, aim with bit 1 or by 2, read only what the caster's formula reads and do not last until removed; the plan leaves out 18 of those 512 that are made on a struck unit (`HealOnStruckUnit`, #570), so 494 are read; of the rest 210 aim only at other units (36 by 4, 174 by 6), 29 last until removed (12 aimed by 1, 17 by 2, `HealUntilRemoved`, #803), 10 hold a formula parameter the caster's formula does not read and 9 sit behind a target apply prerequisite. 2,032 read, 494 more than the 1,538 read while no periodic heal was"
+  let #(ticking, until_removed, no_tick) = periodic_rows(type_number: 10)
+  assert rows - unread == 1538 + ticking - until_removed - no_tick - 221
+    as "the 1,538 rows read while no periodic heal was, and the rows holding a tickTime (770) but those that last until removed and those with no whole tick, counted from the table here; less the 221 periodic heals the plan refuses on the heal rule's other gates (scratch count over `table_rows -- Spell4Effects effectType=10`, by `spell_plan` heals and `damage.caster_unread`: 18 are made on a struck unit, `HealOnStruckUnit`, #570, and 203 that do not last until removed aim only at other units, #570, hold a formula parameter the caster's formula does not read or sit behind a target apply prerequisite): 2,032 read"
   let #(rows, unread, _, _) = counted(type_number: 118)
-  assert rows - unread == 178
-    as "the same scratch count over `table_rows -- Spell4Effects effectType=118`: 41 rows hold a tickTime, and 22 of them pass the heal rule; the plan leaves out 5 of those that are made on a struck unit (`HealOnStruckUnit`, #570), so 17 are read; of the rest 10 last until removed (aimed by 1, #803), 7 hold a formula parameter the caster's formula does not read and 2 aim by 4. 178 read, 17 more than the 161 read while no periodic heal was"
+  let #(ticking, until_removed, no_tick) = periodic_rows(type_number: 118)
+  assert rows - unread == 161 + ticking - until_removed - no_tick - 12
+    as "the same over `table_rows -- Spell4Effects effectType=118`: the 161 read before, and the 41 rows holding a tickTime but those that last until removed and those with no whole tick, counted here; less 12 refused on the other gates (5 made on a struck unit, #570, and 7 that do not last until removed and hold a formula parameter the caster's formula does not read or aim by 4): 178 read"
+}
+
+/// The client's rows of the type that hold a tickTime, those of them that last until
+/// removed (flags bit 2) and those of the rest with no whole tick in their durationTime.
+fn periodic_rows(type_number type_number: Int) -> #(Int, Int, Int) {
+  let ticking =
+    spell4_effects.all(client_tables.shared())
+    |> list.filter(fn(row) {
+      row.effect_type == type_number && row.tick_time > 0
+    })
+  let #(until_removed, lasting) =
+    list.partition(ticking, fn(row) { int.bitwise_and(row.flags, 2) != 0 })
+  let no_tick =
+    list.count(lasting, fn(row) { row.duration_time / row.tick_time < 1 })
+  #(list.length(ticking), list.length(until_removed), no_tick)
 }
 
 pub fn the_measure_counts_a_force_remove_whose_selector_names_no_row_as_not_read_test() -> Nil {

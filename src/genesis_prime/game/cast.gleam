@@ -5262,9 +5262,8 @@ fn tick_round_open(
   ticking ticking: Dict(TickKey, Ticking),
   unit_id unit_id: Int,
 ) -> Bool {
-  dict.to_list(ticking)
-  |> list.any(fn(entry) {
-    { entry.0 }.unit_id == unit_id && { entry.1 }.open > 0
+  dict.fold(ticking, False, fn(open, key, row) {
+    open || { key.unit_id == unit_id && row.open > 0 }
   })
 }
 
@@ -5394,149 +5393,220 @@ fn nodes_ended(
   }
 }
 
-/// The ticks of the cast `cast_id` due at the time fire, in unit and row id order: a
-/// damage row asks its unit for the tick (`TickStrike`), whose 0x7f8 waits for
+/// The ticks of the cast `cast_id` due at the time fire, each due tick of each row, a
+/// connection fallen behind included, earliest first and at one time in unit and row id
+/// order: a damage row asks its unit for the tick (`TickStrike`), whose 0x7f8 waits for
 /// `ticked`; a heal row writes its 0x7f8 to the caster, tells the audience
 /// (genesis_prime/client_connection `CastTicked`) and heals the caster
-/// (`CasterChangeStarts`), and heals nothing on a dead caster. Each row's next tick is
-/// armed, or none after its last (genesis_prime/game/ticking `next_tick`). Any tick timer
-/// of the cast fires every tick due with it, so ticks due together keep that order
-/// whichever timer fires first.
+/// (`CasterChangeStarts`), reading the vitals the heal ticks before it in the step left,
+/// and heals nothing on a dead caster. Then each row that fired has its next tick armed,
+/// or none after its last (genesis_prime/game/ticking `next_tick`). Any tick timer of the
+/// cast fires every tick due with it, so ticks due together keep that order whichever
+/// timer fires first.
 fn ticks_due(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
   cast_id cast_id: Int,
 ) -> #(State, List(Effect)) {
-  case holder_of(cast:, cast_id:) {
-    Error(Nil) -> #(cast, [])
-    Ok(holder) ->
-      dict.to_list(holder.ticking)
-      |> list.filter_map(fn(entry) {
-        let #(key, row) = entry
-        case ticking.next_tick(schedule: row.schedule, tick: row.tick) {
-          Some(next) ->
-            case
-              ticking.tick_at_ms(
-                schedule: row.schedule,
-                from_ms: row.from_ms,
-                tick: next,
-              )
-              <= now_ms
-            {
-              True -> Ok(#(key, next))
-              False -> Error(Nil)
-            }
-          None -> Error(Nil)
-        }
-      })
-      |> list.sort(fn(first, second) {
-        int.compare({ first.0 }.unit_id, { second.0 }.unit_id)
-        |> order.break_tie(int.compare(
-          { first.0 }.effect_id.value,
-          { second.0 }.effect_id.value,
-        ))
-      })
-      |> list.fold(#(cast, []), fn(so_far, due) {
-        let #(cast, effects) = so_far
-        let #(cast, more) =
-          tick_landed(
-            cast:,
-            caster:,
-            now_ms:,
-            cast_id:,
-            holder:,
-            key: due.0,
-            tick: due.1,
-          )
-        #(cast, list.append(effects, more))
-      })
-  }
+  let #(cast, landed, fired) =
+    due_ticks_landed(
+      cast:,
+      caster:,
+      now_ms:,
+      cast_id:,
+      landed: [],
+      fired: set.new(),
+    )
+  let #(cast, armed) =
+    set.to_list(fired)
+    |> list.sort(by_tick_key)
+    |> list.fold(#(cast, []), fn(so_far, key) {
+      let #(cast, effects) = so_far
+      let #(cast, more) = next_tick_armed(cast:, now_ms:, cast_id:, key:)
+      #(cast, list.append(effects, more))
+    })
+  #(cast, list.append(landed, armed))
 }
 
-/// Tick `tick` of the row `key` of the cast fires (`ticks_due`).
-fn tick_landed(
+/// The earliest due tick of the cast fires, again until none is due, with the caster's
+/// vitals as each heal tick leaves them; the rows that fired are gathered.
+fn due_ticks_landed(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
   cast_id cast_id: Int,
+  landed landed: List(Effect),
+  fired fired: Set(TickKey),
+) -> #(State, List(Effect), Set(TickKey)) {
+  let due = case holder_of(cast:, cast_id:) {
+    Ok(holder) ->
+      earliest_due(ticking: holder.ticking, now_ms:)
+      |> result.map(fn(due) { #(holder, due) })
+    Error(Nil) -> Error(Nil)
+  }
+  case due {
+    Error(Nil) -> #(cast, landed, fired)
+    Ok(#(holder, #(key, tick))) -> {
+      let #(cast, caster, more) =
+        tick_landed(cast:, caster:, cast_id:, holder:, key:, tick:)
+      due_ticks_landed(
+        cast:,
+        caster:,
+        now_ms:,
+        cast_id:,
+        landed: list.append(landed, more),
+        fired: set.insert(fired, key),
+      )
+    }
+  }
+}
+
+/// The row and the tick due earliest at the time, at one time the lowest unit id and
+/// then row id; none when no tick is due.
+fn earliest_due(
+  ticking rows: Dict(TickKey, Ticking),
+  now_ms now_ms: Int,
+) -> Result(#(TickKey, Int), Nil) {
+  dict.to_list(rows)
+  |> list.filter_map(fn(entry) {
+    let #(key, row) = entry
+    use next <- result.try(option.to_result(
+      ticking.next_tick(schedule: row.schedule, tick: row.tick),
+      Nil,
+    ))
+    let at_ms =
+      ticking.tick_at_ms(
+        schedule: row.schedule,
+        from_ms: row.from_ms,
+        tick: next,
+      )
+    case at_ms <= now_ms {
+      True -> Ok(#(at_ms, key, next))
+      False -> Error(Nil)
+    }
+  })
+  |> list.sort(fn(first, second) {
+    int.compare(first.0, second.0)
+    |> order.break_tie(by_tick_key(first.1, second.1))
+  })
+  |> list.first
+  |> result.map(fn(due) { #(due.1, due.2) })
+}
+
+/// Rows in unit id order, then row id order.
+fn by_tick_key(first: TickKey, second: TickKey) -> order.Order {
+  int.compare(first.unit_id, second.unit_id)
+  |> order.break_tie(int.compare(first.effect_id.value, second.effect_id.value))
+}
+
+/// Tick `tick` of the row `key` of the cast fires (`ticks_due`), with the caster as the
+/// heal ticks before it left it.
+fn tick_landed(
+  cast cast: State,
+  caster caster: Caster,
+  cast_id cast_id: Int,
   holder holder: Holder,
   key key: TickKey,
   tick tick: Int,
+) -> #(State, Caster, List(Effect)) {
+  case dict.get(holder.ticking, key) {
+    Error(Nil) -> #(cast, caster, [])
+    Ok(row) -> {
+      let #(row, caster, landed) = case row.kind {
+        DamageTick(blow:) -> #(
+          Ticking(..row, tick:, open: row.open + 1),
+          caster,
+          [
+            TickStrike(asked: TickAsked(
+              cast_id:,
+              spell4_id: holder.spell.spell4_id,
+              effect_id: key.effect_id,
+              unit_id: key.unit_id,
+              life: row.life,
+              go: row.go,
+              tick:,
+              blow:,
+            )),
+          ],
+        )
+        HealTick(vital:, formula:) -> {
+          let #(caster, healed) =
+            healed_by_tick(
+              caster:,
+              cast_id:,
+              effect_id: key.effect_id,
+              audience: holder.audience,
+              vital:,
+              formula:,
+            )
+          #(Ticking(..row, tick:), caster, healed)
+        }
+      }
+      #(
+        with_ticking(
+          cast:,
+          cast_id:,
+          ticking: dict.insert(holder.ticking, key, row),
+        ),
+        caster,
+        landed,
+      )
+    }
+  }
+}
+
+/// The row `key`'s tick timer cancelled and its next tick armed, none after its last.
+fn next_tick_armed(
+  cast cast: State,
+  now_ms now_ms: Int,
+  cast_id cast_id: Int,
+  key key: TickKey,
 ) -> #(State, List(Effect)) {
   let #(cast, cancels) =
     tick_timers_cancelled(cast:, cast_id:, matching: fn(other) { other == key })
-  let rows = case holder_of(cast:, cast_id:) {
-    Ok(current) -> current.ticking
-    Error(Nil) -> holder.ticking
-  }
-  case dict.get(rows, key) {
-    Error(Nil) -> #(cast, cancels)
-    Ok(row) -> {
-      let #(cast, next) = case
-        ticking.next_tick(schedule: row.schedule, tick:)
-      {
-        Some(after) -> {
-          let #(cast, _, start) =
-            armed(
-              cast:,
-              due: Tick(
-                cast_id:,
-                effect_id: key.effect_id,
-                unit_id: key.unit_id,
-                tick: after,
-              ),
-              after_ms: int.max(
-                0,
-                ticking.tick_at_ms(
-                  schedule: row.schedule,
-                  from_ms: row.from_ms,
-                  tick: after,
-                )
-                  - now_ms,
-              ),
-            )
-          #(cast, [start])
-        }
-        None -> #(cast, [])
+  let next = case holder_of(cast:, cast_id:) {
+    Ok(holder) ->
+      case dict.get(holder.ticking, key) {
+        Ok(row) ->
+          ticking.next_tick(schedule: row.schedule, tick: row.tick)
+          |> option.map(fn(after) { #(row, after) })
+        Error(Nil) -> None
       }
-      let #(row, landed) = case row.kind {
-        DamageTick(blow:) -> #(Ticking(..row, tick:, open: row.open + 1), [
-          TickStrike(asked: TickAsked(
+    Error(Nil) -> None
+  }
+  case next {
+    None -> #(cast, cancels)
+    Some(#(row, after)) -> {
+      let #(cast, _, start) =
+        armed(
+          cast:,
+          due: Tick(
             cast_id:,
-            spell4_id: holder.spell.spell4_id,
             effect_id: key.effect_id,
             unit_id: key.unit_id,
-            life: row.life,
-            go: row.go,
-            tick:,
-            blow:,
-          )),
-        ])
-        HealTick(vital:, formula:) -> #(
-          Ticking(..row, tick:),
-          healed_by_tick(
-            caster:,
-            cast_id:,
-            effect_id: key.effect_id,
-            audience: holder.audience,
-            vital:,
-            formula:,
+            tick: after,
+          ),
+          after_ms: int.max(
+            0,
+            ticking.tick_at_ms(
+              schedule: row.schedule,
+              from_ms: row.from_ms,
+              tick: after,
+            )
+              - now_ms,
           ),
         )
-      }
-      #(
-        with_ticking(cast:, cast_id:, ticking: dict.insert(rows, key, row)),
-        list.flatten([cancels, next, landed]),
-      )
+      #(cast, list.append(cancels, [start]))
     }
   }
 }
 
 /// A heal tick on the caster: its 0x7f8 with the heal's description, told to the
 /// audience, then the heal, the formula read for the caster as it is at the tick and
-/// split by the room its vitals have then (`split_of`). A dead caster is healed nothing
-/// and shown nothing.
+/// split by the room its vitals have then (`split_of`); the caster comes back with the
+/// heal's split added to its vitals, for a heal tick due with it. A dead caster is healed
+/// nothing and shown nothing.
 fn healed_by_tick(
   caster caster: Caster,
   cast_id cast_id: Int,
@@ -5544,34 +5614,38 @@ fn healed_by_tick(
   audience audience: Set(ConnectionId),
   vital vital: effect_kind.Vital,
   formula formula: damage.Formula,
-) -> List(Effect) {
-  use <- bool.guard(when: caster.dead, return: [])
+) -> #(Caster, List(Effect)) {
+  use <- bool.guard(when: caster.dead, return: #(caster, []))
   let amount = damage.amount_on_caster(formula:, caster: on_caster_of(caster:))
-  let healed =
-    Healed(
-      effect_id:,
-      vital:,
-      delay_ms: 0,
-      amount:,
-      split: split_of(vital:, amount:, caster:),
-    )
-  list.flatten([
-    tick_effects(
-      tick: SpellEffectTick(
-        cast_id:,
-        spell4_effects_id: effect_id.value,
-        unit_id: caster.unit_id,
-        descriptions: [heal_description(healed:)],
+  let split = split_of(vital:, amount:, caster:)
+  let healed = Healed(effect_id:, vital:, delay_ms: 0, amount:, split:)
+  #(
+    Caster(
+      ..caster,
+      vitals: damage.Vitals(
+        ..caster.vitals,
+        health: caster.vitals.health + split.health,
+        shield: caster.vitals.shield + split.shield,
       ),
-      audience:,
     ),
-    [
-      CasterChangeStarts(
-        source: unit_properties.Source(cast_id:, effect_id:),
-        change: Heal(vital:, amount:),
+    list.flatten([
+      tick_effects(
+        tick: SpellEffectTick(
+          cast_id:,
+          spell4_effects_id: effect_id.value,
+          unit_id: caster.unit_id,
+          descriptions: [heal_description(healed:)],
+        ),
+        audience:,
       ),
-    ],
-  ])
+      [
+        CasterChangeStarts(
+          source: unit_properties.Source(cast_id:, effect_id:),
+          change: Heal(vital:, amount:),
+        ),
+      ],
+    ]),
+  )
 }
 
 /// 0x7f8 to the caster and told to the audience.
@@ -5641,6 +5715,7 @@ fn tick_closed(
               row:,
               asked:,
               struck:,
+              now_ms:,
             )
           let #(cast, ended) = nodes_ended(cast:, cast_id:, now_ms:)
           #(cast, list.append(landed, ended))
@@ -5649,21 +5724,25 @@ fn tick_closed(
   }
 }
 
-/// What a closed tick round of the row's current schedule does: a hit writes its 0x7f8
-/// to the audience, and one that kills drops the unit's ticks; a deflect or an immunity
-/// writes nothing; no answer (the unit is gone) drops the unit's ticks. A round of an
-/// earlier schedule does nothing.
+/// What a closed tick round of the row does: a hit writes its 0x7f8 to the audience,
+/// whichever go's schedule asked it, since the unit took the damage and its health news
+/// goes out, and one that kills drops the unit's ticks; a deflect or an immunity writes
+/// nothing; no answer for a round of the row's current schedule (the unit is gone, or
+/// refused the tick for a life it no longer has) drops the unit's ticks and ends its node
+/// now (`node_ended_now`), so the cast's 0x811 or 0x7fe goes when the round closes. No
+/// answer for a round of an earlier schedule does nothing: the later go's own ticks ask
+/// the unit again.
 fn tick_outcome(
   cast cast: State,
   audience audience: Set(ConnectionId),
   row row: Ticking,
   asked asked: TickAsked,
   struck struck: Option(Struck),
+  now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let cast_id = asked.cast_id
-  case row.go == asked.go, struck {
-    False, _ -> #(cast, [])
-    True, Some(Hit(descriptions:, ..)) -> {
+  case struck, row.go == asked.go {
+    Some(Hit(descriptions:, ..)), _ -> {
       let written =
         tick_effects(
           tick: SpellEffectTick(
@@ -5685,8 +5764,42 @@ fn tick_outcome(
         ticks_dropped(cast:, cast_id:, unit_id: asked.unit_id)
       #(cast, list.append(written, dropped))
     }
-    True, Some(Deflected(..)) | True, Some(Immune(..)) -> #(cast, [])
-    True, None -> ticks_dropped(cast:, cast_id:, unit_id: asked.unit_id)
+    Some(Deflected(..)), _ | Some(Immune(..)), _ | None, False -> #(cast, [])
+    None, True -> {
+      let #(cast, dropped) =
+        ticks_dropped(cast:, cast_id:, unit_id: asked.unit_id)
+      #(
+        node_ended_now(cast:, cast_id:, unit_id: asked.unit_id, now_ms:),
+        dropped,
+      )
+    }
+  }
+}
+
+/// The cast's node on the unit ends at the time, so the node end that follows
+/// (`nodes_ended`) drops it with its frames.
+fn node_ended_now(
+  cast cast: State,
+  cast_id cast_id: Int,
+  unit_id unit_id: Int,
+  now_ms now_ms: Int,
+) -> State {
+  case holder_of(cast:, cast_id:) {
+    Error(Nil) -> cast
+    Ok(holder) ->
+      case dict.get(holder.nodes, unit_id) {
+        Error(Nil) -> cast
+        Ok(node) ->
+          with_nodes(
+            cast:,
+            cast_id:,
+            nodes: dict.insert(
+              holder.nodes,
+              unit_id,
+              lasting.Node(..node, life: lasting.EndsAt(ms: now_ms)),
+            ),
+          )
+      }
   }
 }
 
@@ -9249,8 +9362,10 @@ fn nodes_aimed(aimed aimed: Aimed) -> List(Int) {
 }
 
 /// The node a go gives one unit from the node its cast holds there and the Fluff rows
-/// the go lists for it (`lasting.given`), a periodic row living until its last tick;
-/// none when no effect has a life.
+/// the go lists for it (`lasting.given`), a periodic row living its own delay and
+/// durationTime as the client's node does (`opcode.0x7f4.effect_time`), held past that
+/// only while a tick round on the unit is open (`ended_and_kept`); none when no effect has
+/// a life.
 fn node_of(
   spell spell: Spell,
   held held: Option(lasting.Node),
@@ -9322,12 +9437,8 @@ fn node_of(
         case row.unit_id == unit_id {
           True ->
             Ok(lasting.LastingRow(
-              delay_ms: 0,
-              duration_ms: ticking.tick_at_ms(
-                schedule: row.schedule,
-                from_ms: 0,
-                tick: row.schedule.count,
-              ),
+              delay_ms: row.schedule.delay_ms,
+              duration_ms: row.schedule.duration_ms,
               until_removed: False,
             ))
           False -> Error(Nil)

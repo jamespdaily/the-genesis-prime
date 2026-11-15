@@ -230,7 +230,12 @@ pub fn a_periodic_heal_shields_row_is_held_as_ticking_and_not_applied_test() -> 
           Parameter(kind: 0, value: 0.0),
           Parameter(kind: 0, value: 0.0),
         ]),
-        schedule: ticking.Schedule(delay_ms: 0, tick_ms: 1000, count: 8),
+        schedule: ticking.Schedule(
+          delay_ms: 0,
+          tick_ms: 1000,
+          duration_ms: 8000,
+          count: 8,
+        ),
       ),
     ]
     as "row 210834: tickTime 1000 and durationTime 8000; the cast rule does not apply it, as a TickingGain"

@@ -17,9 +17,11 @@ import gleam/bool
 import gleam/option.{type Option, None, Some}
 
 /// When a periodic row's ticks land: tick k of `count` lands `delay_ms + k * tick_ms`
-/// after the go.
+/// after the go. `duration_ms` is the row's durationTime, which with its delay gives the
+/// life of the row's node on the unit, as the client's own end timer for the effect counts
+/// it (`opcode.0x7f4.effect_time`).
 pub type Schedule {
-  Schedule(delay_ms: Int, tick_ms: Int, count: Int)
+  Schedule(delay_ms: Int, tick_ms: Int, duration_ms: Int, count: Int)
 }
 
 /// Why a periodic row has no schedule.
@@ -44,7 +46,12 @@ pub fn schedule_of(
     when: count < 1,
     return: Error(NoTick(tick_ms:, duration_ms: row.duration_ms)),
   )
-  Ok(Schedule(delay_ms: row.delay_ms, tick_ms:, count:))
+  Ok(Schedule(
+    delay_ms: row.delay_ms,
+    tick_ms:,
+    duration_ms: row.duration_ms,
+    count:,
+  ))
 }
 
 /// The monotonic time tick `tick` lands at, for a go at `from_ms`.

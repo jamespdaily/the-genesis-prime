@@ -73,7 +73,7 @@ fn surge_blow() -> spell_area.DamageEffect {
 /// The row ticking with no delay, every 2000 ms for 6000 ms: three ticks, at 2000, 4000
 /// and 6000 after the go.
 fn every_two_seconds() -> ticking.Schedule {
-  Schedule(delay_ms: 0, tick_ms: 2000, count: 3)
+  Schedule(delay_ms: 0, tick_ms: 2000, duration_ms: 6000, count: 3)
 }
 
 fn surge_ticking() -> List(spell_area.TickingDamage) {
@@ -438,7 +438,30 @@ pub fn the_go_arms_its_ticks_in_its_own_step_test() -> Nil {
     as "the go writes its 0x7f4 and the cast lingers on its node: no 0x7fe yet"
   assert list.map(support.started_timers(effects:), fn(started) { started.1 })
     == [2000, 6000]
-    as "the step that writes the 0x7f4 starts the first tick's timer, 2000 ms on (delay 0 plus one tick), and the node's end at the last tick, 6000 ms on, so no state holds the go without its ticks"
+    as "the step that writes the 0x7f4 starts the first tick's timer, 2000 ms on (delay 0 plus one tick), and the node's end at its durationTime, 6000 ms on, so no state holds the go without its ticks"
+  let longer =
+    pressed(
+      plans: support.plans_of([surge()]),
+      caster: support.caster(),
+      struck: [
+        hit_ticking(unit_id: 10, ticking: [
+          TickingDamage(
+            damage: surge_blow(),
+            schedule: Schedule(
+              delay_ms: 0,
+              tick_ms: 2000,
+              duration_ms: 7000,
+              count: 3,
+            ),
+          ),
+        ]),
+      ],
+      answer: held,
+    )
+  let assert [#(_, effects)] = longer.steps
+  assert list.map(support.started_timers(effects:), fn(started) { started.1 })
+    == [2000, 7000]
+    as "a durationTime of 7000 with a tickTime of 2000 gives three ticks, and the node lives the row's own 7000 ms, as the client's end timer for the effect counts delay plus durationTime (`opcode.0x7f4.effect_time`), not to the last tick at 6000"
 }
 
 pub fn the_go_lists_ticking_rows_and_no_tick_is_logged_test() -> Nil {
@@ -561,6 +584,54 @@ pub fn a_later_go_restarts_the_schedule_test() -> Nil {
   assert strikes_of(run:) == [#(4000, 2, 1), #(6000, 2, 2), #(8000, 2, 3)]
     as "the second go at 2000 cancels the first go's tick and counts the schedule again from itself, as the client sets its node again (`opcode.0x7f4.effect_time`)"
   no_tick_after_finish(run:)
+  // The first go's tick 1, at 3000, is held open past the second go at 4000.
+  let later = spell_plan.Spell(..surge(), phase_delays_ms: [0, 3000])
+  let answer = fn(at, asked) {
+    case at {
+      3000 -> Held
+      _ -> landed(killed: 0)(at, asked)
+    }
+  }
+  let open =
+    pressed(
+      plans: support.plans_of([later]),
+      caster: support.caster(),
+      struck:,
+      answer:,
+    )
+    |> fn(run) {
+      ran(caster: support.caster(), run:, until_ms: 4500, struck:, answer:)
+    }
+  let assert [first_round] = open.held
+  assert #(first_round.go, first_round.tick) == #(1, 1)
+  let assert Ok(#(4000, second_go)) = list.last(open.steps)
+  let assert [#(second_tick, 2000), ..] =
+    support.started_timers(effects: second_go)
+    as "the second go arms its own tick 1, 2000 ms on"
+  let #(_, shown) =
+    cast.ticked(
+      cast: open.state,
+      caster: support.caster(),
+      now: support.at(ms: 4500),
+      asked: first_round,
+      struck: Some(tick_hit(asked: first_round, killed: 0)),
+    )
+  assert list.map(ticks_of(effects: shown), fn(tick) {
+      #(tick.spell4_effects_id, tick.unit_id)
+    })
+    == [#(96_125, 10)]
+    as "the first go's round closing after the second go still writes its 0x7f8: the creature took the damage and its health news goes out"
+  let #(_, killing) =
+    cast.ticked(
+      cast: open.state,
+      caster: support.caster(),
+      now: support.at(ms: 4500),
+      asked: first_round,
+      struck: Some(tick_hit(asked: first_round, killed: 1)),
+    )
+  assert list.length(ticks_of(effects: killing)) == 1
+  assert list.contains(support.cancelled_timers(effects: killing), second_tick)
+    as "and a killing one drops the unit's ticks, the second go's among them"
 }
 
 pub fn a_dropped_node_stops_its_ticks_test() -> Nil {
@@ -671,6 +742,48 @@ pub fn ticks_due_together_go_in_key_order_test() -> Nil {
     == [spell_effect_tick.message_id, spell_finished.message_id]
     as "a tick due with the node's end fires first in the same step, and the 0x7fe follows it"
   no_tick_after_finish(run: healing)
+  // A connection fallen behind: only the node's end fires, at 7000, with all three
+  // ticks overdue.
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans: support.plans_of([
+        spell_plan.Spell(..surge(), heals: [
+          health_heal(schedule: every_two_seconds()),
+        ]),
+      ]),
+      state: cast.new(),
+      caster: healing_caster(),
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: press_ms,
+    )
+  let #(state, go, _) =
+    settled(
+      caster: healing_caster(),
+      state:,
+      effects: raw,
+      at: press_ms,
+      struck: [],
+      answer: held,
+    )
+  let assert [_, #(nodes_end, 6000)] = support.started_timers(effects: go)
+  let #(_, late) =
+    support.fired_raw_as(
+      caster: healing_caster(),
+      state:,
+      timer: nodes_end,
+      at: 7000,
+    )
+  assert ids(effects: late)
+    == [
+      spell_effect_tick.message_id,
+      spell_effect_tick.message_id,
+      spell_effect_tick.message_id,
+      spell_finished.message_id,
+    ]
+    as "every tick due at the node's end fires before it, each of the row's three overdue ticks, then the 0x7fe"
+  assert support.started_timers(effects: late) == []
+    as "and no tick is armed after the last"
 }
 
 pub fn a_tick_left_out_at_the_deadline_test() -> Nil {
@@ -708,6 +821,35 @@ pub fn a_tick_left_out_at_the_deadline_test() -> Nil {
   let assert Ok(#(_, effects)) = list.last(closed.steps)
   assert ids(effects:) == [spell_finished.message_id]
     as "the round left out at its deadline writes no 0x7f8, and the node it held ends with the cast's 0x7fe"
+  let first =
+    pressed(
+      plans: support.plans_of([surge()]),
+      caster: support.caster(),
+      struck:,
+      answer: held,
+    )
+    |> fn(run) {
+      ran(caster: support.caster(), run:, until_ms: 3000, struck:, answer: held)
+    }
+  let assert [round] = first.held
+  assert round.tick == 1
+  let left_out =
+    stepped(
+      run: first,
+      at: 4000,
+      taken: cast.ticked(
+        cast: first.state,
+        caster: support.caster(),
+        now: support.at(ms: 4000),
+        asked: round,
+        struck: None,
+      ),
+    )
+  let assert Ok(#(_, effects)) = list.last(left_out.steps)
+  assert ids(effects:) == [spell_finished.message_id]
+    as "tick 1 of 3 left out at its deadline stops the unit's ticks and releases its node at once: the cast's 0x7fe goes then, not at the node's end at 7000"
+  assert left_out.pending == []
+    as "with the next tick's timer and the node's end cancelled"
 }
 
 pub fn a_removed_unit_writes_no_tick_test() -> Nil {
@@ -759,6 +901,19 @@ pub fn a_restarted_creature_refuses_the_old_lifes_tick_test() -> Nil {
   assert list.map(strikes_of(run:), fn(strike) { strike.0 }) == [3000, 5000]
     as "the refused tick at 5000 is the unit's last"
   assert list.map(all_ticks(run:), fn(tick) { tick.0 }) == [3000]
+  assert list.filter_map(run.steps, fn(step) {
+      case
+        support.frames_of(
+          message_id: spell_finished.message_id,
+          effects: step.1,
+        )
+      {
+        [] -> Error(Nil)
+        [_, ..] -> Ok(step.0)
+      }
+    })
+    == [5000]
+    as "the refused tick releases the unit's node at once: the cast's 0x7fe goes at 5000, not at the node's end at 7000"
 }
 
 pub fn a_dead_caster_ends_its_ticks_test() -> Nil {
@@ -782,7 +937,12 @@ pub fn a_dead_caster_ends_its_ticks_test() -> Nil {
   // that fires on the dead caster heals nothing.
   let passive =
     spell_plan.Spell(..support.child(spell4_id: 250_020, base: 250_020), heals: [
-      health_heal(schedule: Schedule(delay_ms: 0, tick_ms: 1000, count: 3)),
+      health_heal(schedule: Schedule(
+        delay_ms: 0,
+        tick_ms: 1000,
+        duration_ms: 3000,
+        count: 3,
+      )),
     ])
   let plans = support.plans_of([passive])
   let #(state, raw) =
@@ -831,7 +991,8 @@ pub fn a_dead_caster_ends_its_ticks_test() -> Nil {
 
 pub fn a_heal_tick_heals_the_caster_each_tick_test() -> Nil {
   use <- owned_test.run(5000)
-  let schedule = Schedule(delay_ms: 0, tick_ms: 1000, count: 3)
+  let schedule =
+    Schedule(delay_ms: 0, tick_ms: 1000, duration_ms: 3000, count: 3)
   let run = heal_run(rows: [health_heal(schedule:)])
   let assert [#(_, go), ..ticks] = run.steps
   assert heals(effects: go) == [] as "the go heals nothing itself"
@@ -880,6 +1041,26 @@ pub fn a_heal_tick_heals_the_caster_each_tick_test() -> Nil {
   assert list.map(heals(effects: first_both), fn(heal) { heal.0 })
     == [62_019, 210_834]
     as "and each heals once"
+  // A second row of Mind Over Body's formula, planted beside it on the same vital.
+  let twice =
+    heal_run(rows: [
+      health_heal(schedule:),
+      health_heal_of(effect_id: 62_020, schedule:),
+    ])
+  let assert [_, #(_, first_twice), ..] = twice.steps
+  assert list.map(ticks_of(effects: first_twice), fn(tick) {
+      #(tick.spell4_effects_id, tick.descriptions)
+    })
+    == [
+      #(62_019, [heal_description(amount: 121, kind: damage_type.Heal)]),
+      #(62_020, [
+        SpellDamageDescription(
+          ..heal_description(amount: 121, kind: damage_type.Heal),
+          overkill: 6,
+        ),
+      ]),
+    ]
+    as "two health ticks due at once: the first takes 121 of the 236 room (736 - 500), and the second reads the 115 left, so 6 of its 121 is overheal"
 }
 
 pub fn a_cancel_keeps_ticks_and_an_interrupt_ends_them_test() -> Nil {
@@ -947,8 +1128,16 @@ pub fn a_cancel_keeps_ticks_and_an_interrupt_ends_them_test() -> Nil {
 /// A heal row of Mind Over Body's formula (Spell4Effects 62019: 0.3281 of Support Power
 /// and 17.51 a level), planted as periodic on the caster with this schedule.
 fn health_heal(schedule schedule: ticking.Schedule) -> spell_plan.Heal {
+  health_heal_of(effect_id: 62_019, schedule:)
+}
+
+/// Mind Over Body's heal row under the id `effect_id`.
+fn health_heal_of(
+  effect_id effect_id: Int,
+  schedule schedule: ticking.Schedule,
+) -> spell_plan.Heal {
   spell_plan.TickingHeal(
-    effect_id: Spell4EffectsId(62_019),
+    effect_id: Spell4EffectsId(effect_id),
     vital: effect_kind.Health,
     phase_flags: -1,
     aim: AimsAtCaster,
