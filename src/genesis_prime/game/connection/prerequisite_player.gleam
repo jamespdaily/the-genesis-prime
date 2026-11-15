@@ -36,8 +36,8 @@ pub fn of(
 }
 
 /// What the entered character holds of its own: the items it holds, the abilities of its
-/// bag (the ability book the client's type 214 reads) and the world difficulty the
-/// server tells it.
+/// bag (all the ability book of the client's type 214 holds: the alternates the loadout
+/// lists after the bag are not in it) and the world difficulty the server tells it.
 pub fn checker_of(
   entered entered: world_entry.Entered,
 ) -> prerequisite.Checker {

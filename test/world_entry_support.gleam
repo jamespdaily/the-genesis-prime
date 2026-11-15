@@ -33,6 +33,17 @@ import unit_support
 /// The system time every entry of the tests is made at, as a FILETIME.
 pub const filetime = 133_900_000_000_000_000
 
+/// The Spell4Base of each alternate spell the class's abilities name, in bag order: the
+/// ability book holds them (GetAbilityBookSpell `0x1403bad30`), after the bag. Spell4.43468
+/// (Quick Draw) names 76002 of base 52215 and Spell4.34718 (Charged Shot) names 34719 of base
+/// 20685 in `spell4IdMechanicAlternateSpell`; no other class's level-1 spell names one.
+pub fn alternate_bases(class_id class_id: Int) -> List(Int) {
+  case class_id {
+    7 -> [52_215, 20_685]
+    _ -> []
+  }
+}
+
 /// The time every entry of the tests is made at.
 pub fn now() -> Now {
   Now(monotonic_ms: 0, filetime:)

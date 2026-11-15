@@ -1064,10 +1064,16 @@ type TickingOn {
 }
 
 /// What a press resolved to when it came: the spell it casts, the ability that
-/// was pressed, and which stage of the ability's open threshold it casts (none for
-/// the ability's own spell).
+/// was pressed, the bag ability the key names (the second spell of the 0x816 a first
+/// press opens), and which stage of the ability's open threshold it casts (none for the
+/// ability's own spell).
 pub type Resolution {
-  Resolution(spell: Spell, ability: Spell, stage: Option(Int))
+  Resolution(
+    spell: Spell,
+    ability: Spell,
+    bag_spell: Spell4Id,
+    stage: Option(Int),
+  )
 }
 
 /// What a cast is to its ability's threshold.
@@ -1075,7 +1081,7 @@ type Role {
   /// A child a Proxy started: no threshold is touched.
   Child
   /// The ability's own spell, which opens a threshold when its method has one.
-  Base(ability: Spell)
+  Base(ability: Spell, bag_spell: Spell4Id)
   /// The stage at `index` of the ability's open threshold.
   Stage(ability: Spell, index: Int)
   /// A class's innate passive, which no press made: no threshold is touched, no
@@ -1187,10 +1193,11 @@ pub type Lingering {
 }
 
 /// An open threshold of one ability: the stage or charge level the next press
-/// casts, and the id of the base cast, which the client sends back in a 0x801
-/// (`opcode.0x816`).
+/// casts, the bag ability whose press opened it (the second spell of its 0x816, which a
+/// press is matched against first), and the id of the base cast, which the client sends
+/// back in a 0x801 (`opcode.0x816`).
 pub type Threshold {
-  Threshold(ability: Spell, index: Int, cast_id: Int)
+  Threshold(ability: Spell, bag_spell: Spell4Id, index: Int, cast_id: Int)
 }
 
 /// A press the client queued within 500 ms of a cooldown's end, or the server
@@ -3376,7 +3383,7 @@ fn pressed(
       )
     Ok(plain) -> {
       let ability = surged(cast:, caster:, ability: plain)
-      case resolved(cast:, ability:) {
+      case resolved(cast:, bag_spell: plain.spell4_id, ability:) {
         Error(Nil) ->
           Ok(
             #(cast, [
@@ -3511,24 +3518,30 @@ fn key_down(
 
 /// The ability's key comes up: its repeats stop, and the cast under way is left to
 /// end. A ChargeRelease ability with its threshold open fires its charged stage, as
-/// a 0x9a release does.
+/// a 0x9a release does: the bag ability is swapped as a press swaps it, and the open
+/// threshold is found by the swapped spell as a press finds it.
 fn key_up(
   cast cast: State,
   caster caster: Caster,
-  ability ability: Spell,
+  ability plain: Spell,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let #(cast, cancels) = case cast.holding {
-    Some(Holding(ability: held, ..)) if held.spell4_id == ability.spell4_id ->
+    Some(Holding(ability: held, ..)) if held.spell4_id == plain.spell4_id ->
       stop_holding(cast:)
     Some(_) | None -> #(cast, [])
   }
-  case charging_ability(cast:, ability:) {
-    Error(Nil) -> #(cast, cancels)
-    Ok(ability) ->
-      case resolved(cast:, ability:) {
+  let ability = surged(cast:, caster:, ability: plain)
+  case threshold_of(cast:, ability:) {
+    Ok(Threshold(ability: charging, ..))
+      if charging.method == spell_plan.ChargeRelease
+    ->
+      case resolved(cast:, bag_spell: plain.spell4_id, ability:) {
         Error(Nil) -> #(cast, [
-          refused_unknown(client_cast_id: 0, spell4_id: ability.spell4_id.value),
+          refused_unknown(
+            client_cast_id: 0,
+            spell4_id: charging.spell4_id.value,
+          ),
           ..cancels
         ])
         Ok(resolution) -> {
@@ -3537,23 +3550,8 @@ fn key_up(
           #(cast, list.append(cancels, released))
         }
       }
+    Ok(_) | Error(Nil) -> #(cast, cancels)
   }
-}
-
-/// The ChargeRelease spell of the key whose threshold is open: the ability itself, or the
-/// alternate it was swapped for when the charge opened, whether or not Spell Surge holds
-/// now (the server's choice: a key up fires the charge of the spell the key last cast, and
-/// the client sends no more than the bag index).
-fn charging_ability(
-  cast cast: State,
-  ability ability: Spell,
-) -> Result(Spell, Nil) {
-  [Some(ability), ability.alternate]
-  |> list.filter_map(option.to_result(_, Nil))
-  |> list.find(fn(candidate) {
-    candidate.method == spell_plan.ChargeRelease
-    && dict.has_key(cast.thresholds, candidate.spell4_id.value)
-  })
 }
 
 /// No ability is held: the timer that waits to repeat is cancelled.
@@ -3618,7 +3616,7 @@ fn repeated(
   last_cast last_cast: Option(Int),
 ) -> #(State, List(Effect)) {
   let ability = surged(cast:, caster:, ability: plain)
-  case resolved(cast:, ability:) {
+  case resolved(cast:, bag_spell: plain.spell4_id, ability:) {
     Error(Nil) -> no_stage_left(cast:, ability:)
     Ok(resolution) ->
       next_cast(cast:, caster:, now_ms:, resolution:, last_cast:)
@@ -3703,22 +3701,48 @@ fn repeat_after(
   )
 }
 
+/// The open threshold a press finds, as the client finds it: the one whose second spell
+/// is the swapped ability, else the one keyed by the swapped ability
+/// (`ResolveThresholdSpell` `0x1403bfd60`, `FindThresholdBySecondSpell` `0x1403c0190`).
+/// A charge opened under Spell Surge is found when Surge has ended by its second spell,
+/// the bag ability the 0x816 named.
+fn threshold_of(
+  cast cast: State,
+  ability ability: Spell,
+) -> Result(Threshold, Nil) {
+  case
+    list.find(dict.values(cast.thresholds), fn(threshold) {
+      threshold.bag_spell == ability.spell4_id
+    })
+  {
+    Ok(threshold) -> Ok(threshold)
+    Error(Nil) -> dict.get(cast.thresholds, ability.spell4_id.value)
+  }
+}
+
 /// What a press of the ability casts: through its open threshold the stage at the
 /// threshold's index, the ability's own spell at -1, and none past the last stage
 /// (`0x1403bfd60`); with no threshold open, the ability's own spell.
 fn resolved(
   cast cast: State,
+  bag_spell bag_spell: Spell4Id,
   ability ability: Spell,
 ) -> Result(Resolution, Nil) {
-  case dict.get(cast.thresholds, ability.spell4_id.value) {
-    Error(Nil) -> Ok(Resolution(spell: ability, ability:, stage: None))
+  case threshold_of(cast:, ability:) {
+    Error(Nil) ->
+      Ok(Resolution(spell: ability, ability:, bag_spell:, stage: None))
     Ok(threshold) ->
-      spell_plan.stage_at(spell: ability, index: threshold.index)
+      spell_plan.stage_at(spell: threshold.ability, index: threshold.index)
       |> result.map(fn(spell) {
-        Resolution(spell:, ability:, stage: case threshold.index < 0 {
-          True -> None
-          False -> Some(threshold.index)
-        })
+        Resolution(
+          spell:,
+          ability: threshold.ability,
+          bag_spell:,
+          stage: case threshold.index < 0 {
+            True -> None
+            False -> Some(threshold.index)
+          },
+        )
       })
   }
 }
@@ -3773,7 +3797,10 @@ fn press_of(
             parent: None,
             primary_target: caster.unit_id,
             client_cast_id:,
-            role: Base(ability: resolution.ability),
+            role: Base(
+              ability: resolution.ability,
+              bag_spell: resolution.bag_spell,
+            ),
             spent: paid.spent,
             reserved:,
           )
@@ -7081,9 +7108,9 @@ fn threshold_step(
 ) -> #(State, List(Effect)) {
   case role {
     Child | Passive | Activation(..) | Shortcut(..) -> #(cast, [])
-    Base(ability:) ->
+    Base(ability:, bag_spell:) ->
       case spell_plan.opens_threshold(spell: ability) {
-        True -> open_threshold(cast:, ability:, cast_id:)
+        True -> open_threshold(cast:, ability:, bag_spell:, cast_id:)
         False -> #(cast, [])
       }
     Stage(ability:, index:) ->
@@ -7124,6 +7151,7 @@ fn threshold_step(
 fn open_threshold(
   cast cast: State,
   ability ability: Spell,
+  bag_spell bag_spell: Spell4Id,
   cast_id cast_id: Int,
 ) -> #(State, List(Effect)) {
   let cast =
@@ -7132,10 +7160,11 @@ fn open_threshold(
       thresholds: dict.insert(
         cast.thresholds,
         ability.spell4_id.value,
-        Threshold(ability:, index: 0, cast_id:),
+        Threshold(ability:, bag_spell:, index: 0, cast_id:),
       ),
     )
-  let opened = Send(frame: opened_frame(spell4_id: ability.spell4_id, cast_id:))
+  let opened =
+    Send(frame: opened_frame(spell4_id: ability.spell4_id, bag_spell:, cast_id:))
   case ability.method {
     spell_plan.RapidTap -> {
       let #(cast, _, start) =
@@ -9059,7 +9088,7 @@ fn waits_rearmed(
   }
   let #(cast, repeating) = case cast.holding {
     Some(Holding(ability:, repeat_timer: Some(_), ..)) ->
-      case resolved(cast:, ability:) {
+      case resolved(cast:, bag_spell: ability.spell4_id, ability:) {
         Ok(resolution) -> {
           let #(cast, cancels) =
             cancel_timers(cast:, matching: fn(due) { due == RepeatHeld })
@@ -10691,14 +10720,20 @@ fn confirmed_frame(
   Frame(message_id: spell_cast_confirmed.message_id, body:)
 }
 
-/// 0x0816 for a threshold that opens: the ability's spell as the opened and the
-/// resolving spell, 0 for the third (the opened spell's own cooldowns), and the
-/// base cast's id as the value the client sends back (`opcode.0x816`).
-fn opened_frame(spell4_id spell4_id: Spell4Id, cast_id cast_id: Int) -> Frame {
+/// 0x0816 for a threshold that opens: the ability's spell as the opened spell, the bag
+/// ability that was pressed as the second spell the client matches a press against (the
+/// same spell unless Spell Surge swapped it), 0 for the third (the opened spell's own
+/// cooldowns), and the base cast's id as the value the client sends back
+/// (`opcode.0x816`).
+fn opened_frame(
+  spell4_id spell4_id: Spell4Id,
+  bag_spell bag_spell: Spell4Id,
+  cast_id cast_id: Int,
+) -> Frame {
   let assert Ok(body) =
     spell_threshold_opened.encode(SpellThresholdOpened(
       spell4_id: spell4_id.value,
-      resolving_spell4_id: spell4_id.value,
+      resolving_spell4_id: bag_spell.value,
       cooldown_spell4_id: 0,
       cancel_cast_id: cast_id,
     ))

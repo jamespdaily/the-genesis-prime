@@ -40,7 +40,6 @@ import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/cast_result
 import genesis_prime/message/float32
-import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_failed
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
@@ -203,14 +202,15 @@ fn ids(frames frames: List(Frame)) -> List(Int) {
   list.map(frames, fn(frame) { frame.message_id })
 }
 
-/// The threshold opens the frames write, as the spell each names.
-fn opened(frames frames: List(Frame)) -> List(Int) {
+/// The threshold opens the frames write, as the opened spell and the second spell each
+/// names.
+fn opened(frames frames: List(Frame)) -> List(#(Int, Int)) {
   connection_support.decoded(
     frames,
     spell_threshold_opened.message_id,
     spell_threshold_opened.decode,
   )
-  |> list.map(fn(opened) { opened.spell4_id })
+  |> list.map(fn(opened) { #(opened.spell4_id, opened.resolving_spell4_id) })
 }
 
 /// The Spellslinger's `count` surged Quick Draws, each pressed 3000 ms after the last
@@ -361,8 +361,8 @@ pub fn a_surged_charged_shot_pays_25_at_the_opening_press_and_nothing_at_release
   let #(state, _, _) = surging()
   let #(state, opening) = charged_to_level_1(state:, ms: 4000, after_ms: 600)
   let opened_frames = connection_support.written(taken: opening)
-  assert opened(frames: opened_frames) == [34_719]
-    as "the press resolves to 34719 before the threshold step: 0x816 names it"
+  assert opened(frames: opened_frames) == [#(34_719, 34_718)]
+    as "the press resolves to 34719 before the threshold step: 0x816 opens 34719 and names the bag ability 34718 as its second spell, which a later press is matched against (`FindThresholdBySecondSpell` 0x1403c0190)"
   assert spell_power(frames: opened_frames) == bits(values: [75.0])
     as "Spell4Thresholds 129's cost (19, 25) is paid at the opening press: 100 less 25"
   let #(_, released) = press_once(state:, bag_index: charged_shot, ms: 4700)
@@ -380,7 +380,7 @@ pub fn a_surged_charged_shot_at_25_ends_surge_and_its_key_up_fires_the_surged_st
   let #(state, _) = quick_draws(state:, count: 3)
   let #(state, opening) = charged_to_level_1(state:, ms: 13_000, after_ms: 600)
   let written = connection_support.written(taken: opening)
-  assert opened(frames: written) == [34_719]
+  assert opened(frames: written) == [#(34_719, 34_718)]
   let written_ids = ids(frames: written)
   assert list.drop(written_ids, list.length(written_ids) - 2)
     == [0x07F9, 0x07FE]
@@ -403,7 +403,7 @@ pub fn a_surged_charged_shot_at_25_ends_surge_and_its_key_up_fires_the_surged_st
   let #(_, up) = key(state:, bag_index: charged_shot, held: 0, ms: 13_700)
   assert connection_support.refusal_results(taken: up) == []
   assert go_effects(frames: connection_support.written(taken: up)) == [80_980]
-    as "the key up fires the stage of the spell the charge was opened as, 34719's 34766, though Surge is gone (the server's choice: the client sends only the bag index)"
+    as "the key up swaps nothing now that Surge is gone, so the swapped 34718 is the open threshold's second spell: it fires 34719's stage 34766, as the client's press does (`ResolveThresholdSpell` 0x1403bfd60)"
 }
 
 pub fn after_surge_ends_mid_charge_a_bag_press_casts_plain_charged_shot_test() -> Nil {
@@ -412,19 +412,15 @@ pub fn after_surge_ends_mid_charge_a_bag_press_casts_plain_charged_shot_test() -
   let #(state, _) = quick_draws(state:, count: 3)
   let #(state, _) = charged_to_level_1(state:, ms: 13_000, after_ms: 600)
   let #(_, again) = press_once(state:, bag_index: charged_shot, ms: 16_000)
+  assert connection_support.refusal_results(taken: again) == []
+    as "Surge ended: the swap leaves 34718, which is the second spell of the open 34719 threshold, so the client finds that threshold (`FindThresholdBySecondSpell` 0x1403c0190) and the press is its own, never a refusal"
   let written = connection_support.written(taken: again)
   assert opened(frames: written) == []
-    as "the press is not a press of the open 34719 threshold, which a surged press would be"
-  let assert [refused] =
-    connection_support.decoded(
-      written,
-      spell_cast_refused.message_id,
-      spell_cast_refused.decode,
-    )
-  assert refused.spell4_id == 34_718
-    as "Surge ended: the swap of 0x14039a040 finds no node of 47439, so the press is plain Charged Shot 34718, and the 34719 charge is still the live cast"
-  assert cast_result.to_value(refused.result) == 13
-    as "SpellAlreadyCasting: a live cast refuses a press that is not of its own threshold (the cast rule's casting check)"
+    as "the press goes to the open threshold and opens no new one"
+  assert go_effects(frames: written) == [80_980]
+    as "the open threshold is at level 1: the press fires 34766 (Spell4Thresholds 192), whose go lists Spell4Effects 80980"
+  assert spell_power(frames: written) == []
+    as "the opening press paid, so the release pays nothing more"
 }
 
 pub fn a_surged_charged_shot_press_under_its_open_threshold_pays_nothing_more_test() -> Nil {

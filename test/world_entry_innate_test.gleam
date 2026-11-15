@@ -47,17 +47,6 @@ fn classes() -> List(#(Int, List(Int), Int, option.Option(Int))) {
   ]
 }
 
-/// The Spell4Base of each alternate spell the class's abilities name, in bag order: the
-/// ability book holds them (GetAbilityBookSpell `0x1403bad30`), after the bag. Spell4.43468
-/// (Quick Draw) names 76002 of base 52215 and Spell4.34718 (Charged Shot) names 34719 of base
-/// 20685 in `spell4IdMechanicAlternateSpell`; no other class's level-1 spell names one.
-fn alternate_bases(class_id class_id: Int) -> List(Int) {
-  case class_id {
-    7 -> [52_215, 20_685]
-    _ -> []
-  }
-}
-
 pub fn the_entry_sends_the_innate_after_the_abilities_and_0x19f_after_0x19d_for_each_class_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
@@ -167,7 +156,7 @@ pub fn one_0x1a0_sets_tier_1_of_the_abilities_and_the_innate_in_action_sets_0_to
       == list.flat_map(
         list.append(
           list.append(abilities, [innate_base]),
-          alternate_bases(class_id:),
+          world_entry_support.alternate_bases(class_id:),
         ),
         fn(base) {
           list.map([0, 1, 2, 3], fn(action_set_index) {
