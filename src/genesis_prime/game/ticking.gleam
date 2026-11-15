@@ -13,7 +13,8 @@
 ////   has the bit.
 
 import genesis_prime/game/lasting
-import gleam/option.{type Option}
+import gleam/bool
+import gleam/option.{type Option, None, Some}
 
 /// When a periodic row's ticks land: tick k of `count` lands `delay_ms + k * tick_ms`
 /// after the go.
@@ -34,7 +35,16 @@ pub fn schedule_of(
   row row: lasting.LastingRow,
   tick_ms tick_ms: Int,
 ) -> Result(Schedule, ScheduleError) {
-  todo as "#785: the schedule of a periodic row"
+  use <- bool.guard(when: row.until_removed, return: Error(UntilRemoved))
+  let count = case tick_ms > 0 {
+    True -> row.duration_ms / tick_ms
+    False -> 0
+  }
+  use <- bool.guard(
+    when: count < 1,
+    return: Error(NoTick(tick_ms:, duration_ms: row.duration_ms)),
+  )
+  Ok(Schedule(delay_ms: row.delay_ms, tick_ms:, count:))
 }
 
 /// The monotonic time tick `tick` lands at, for a go at `from_ms`.
@@ -43,10 +53,13 @@ pub fn tick_at_ms(
   from_ms from_ms: Int,
   tick tick: Int,
 ) -> Int {
-  todo as "#785: the time of a tick"
+  from_ms + schedule.delay_ms + tick * schedule.tick_ms
 }
 
 /// The tick after `tick` (0 before the first), or `None` after the last.
 pub fn next_tick(schedule schedule: Schedule, tick tick: Int) -> Option(Int) {
-  todo as "#785: the tick after a tick"
+  case tick < schedule.count {
+    True -> Some(tick + 1)
+    False -> None
+  }
 }
