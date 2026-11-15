@@ -35,7 +35,7 @@ A step's working detail goes in Markdown artifacts on its issue, named "Client t
 
 A step is labelled `ready` when an agent can finish it without inventing requirements: its issue states the outcome, the acceptance checks, the evidence, the scope and what is left out, and the steps it depends on; its trace and design artifacts are written and its test list is posted. Until then it is labelled `investigation`.
 
-Steps that share no files run at once, each with its own builder. At most two test runs share the machine: full checks, targeted tests, recordings and load runs all count, and a hook refuses a third.
+Steps that change no function in common run at once, each with its own builder, even when they share a file; the second to merge merges main first. (Steps sharing cast and spell_plan waited one after another, 2026-11-15.) At most two test runs share the machine: full checks, targeted tests, recordings and load runs all count, and a hook refuses a third.
 
 ## The shape
 
