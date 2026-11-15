@@ -77,13 +77,13 @@ pub fn every_activate_spell_has_a_plan_or_a_reason_test() -> Nil {
     })
   assert list.all(reasons, fn(reason) { string.starts_with(reason.1, "the ") })
     as "each spell the plan cannot build holds the plan's own reason in words: the Spell4 row and the effect it does not read, or the table row it lacks"
-  assert list.length(reasons) == 222
-    as "222 of the activate spells cannot be planned: 61 hold an effect the plan does not read (6 a CCStateSet row the server does not read: 5 behind an apply prerequisite and 1 aimed by a union flag; a state held until removed on another unit is dropped by the plan and refuses nothing there; then a DisguiseOutfit, a SpellForceRemove, a VitalModifier, a Stealth or a Proxy row, or a missing Spell4Base row) and 161 more hold an effect other than Activate aimed at the target or an area of a type some rule reads for that aim (a Proxy, Damage, Fluff and so on), which an activate cast, striking no one, would lose: the press is refused as not built, with the reason logged once; a row of a type no rule reads is dropped by every cast and refuses nothing, and so are a RavelSignal aimed at the target alone (251 of the 408 spells that hold one are planned) and a Heal aimed at the target (the six spells that hold one are planned, see an_activate_spell_whose_target_row_is_a_heal_is_planned_test)"
+  assert list.length(reasons) == 225
+    as "225 of the activate spells cannot be planned: 65 hold an effect the plan does not read (4 an effect behind a target apply prerequisite of a type the server does not decode: Spell4 32593 (effect 61526, gate 22, type 12), 48619 (effect 114668, gate 20647, type 76), 72622 (effect 187557, gate 31022, type 44) and 82228 (effect 216305, gate 38432, type 76), the table's rows read with `table_rows -- Spell4Effects` and `-- Prerequisite`; 6 a CCStateSet row the server does not read: 5 behind an apply prerequisite and 1 aimed by a union flag; a state held until removed on another unit is dropped by the plan and refuses nothing there; then a DisguiseOutfit, a SpellForceRemove, a VitalModifier, a Stealth or a Proxy row, or a missing Spell4Base row) and 160 more hold an effect other than Activate aimed at the target or an area of a type some rule reads for that aim (a Proxy, Damage, Fluff and so on), which an activate cast, striking no one, would lose: the press is refused as not built, with the reason logged once; a row of a type no rule reads is dropped by every cast and refuses nothing, and so are a RavelSignal aimed at the target alone, behind no gate the server cannot read, and a Heal aimed at the target (the six spells that hold one are planned, see an_activate_spell_whose_target_row_is_a_heal_is_planned_test)"
   assert list.count(reasons, fn(reason) {
       string.contains(reason.1, "aims at the target or an area")
     })
-    == 161
-    as "161 of the 222 are refused for an effect aimed at the target or an area"
+    == 160
+    as "160 of the 225 are refused for an effect aimed at the target or an area"
   let assert Ok(why) = list.key_find(reasons, 38_392)
     as "Spell4 38392 (Creature2 19232's spell) is among them"
   assert string.contains(why, "82255")

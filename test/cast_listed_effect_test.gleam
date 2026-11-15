@@ -10,14 +10,16 @@
 ////   0x7fe of a cast with a node that has life left; an early 0x7fe would undo the scale.
 //// - `Spell4Effects.effectType.18`: the client resizes any unit the go names the effect on,
 ////   so a Scale row aimed at the area is listed on each struck unit.
-//// - `Spell4Effects.effectType.81`: the plan's rule that an effect behind a target apply
-////   prerequisite is not applied, with one debug line, as a forced move behind one is.
+//// - `Spell4Effects.effectType.81` and `Spell4Effects.prerequisiteIdTargetApply`: an effect
+////   lands only on the units that pass its gate; 11311 is two type 109 conditions, the
+////   worlds 1535 and 3022, of which one is enough (`table_rows -- Prerequisite 11311`).
 //// - `Spell4Effects.effectType.145` and the modifiers' rule "until removed": row 229304 of
 ////   the Engineer passive 45000 is flags 2, so its conversion starts at the go and has no
 ////   end timer; `cast.died` ends every modifier but the innate passive's.
 
 import cast_support as support
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Spell}
 import genesis_prime/game/unit_properties
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
@@ -25,7 +27,6 @@ import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_target_info.{type SpellTargetInfo}
-import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, UnitProperty2Id}
 import gleam/list
 import gleam/string
@@ -230,9 +231,10 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
 
 // ---- a RavelSignal row ----
 
-pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_not_listed_and_says_so_test() -> Nil {
+pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_listed_only_for_a_caster_that_passes_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  // 91018 as the client holds it: the caster, behind target apply prerequisite 11311.
+  // 91018 as the client holds it: the caster, behind target apply prerequisite 11311, one
+  // type 109 condition on each of the worlds 1535 and 3022 (any one of them is enough).
   let spell =
     spell_of(
       row: spell_tables.effect_row_with(
@@ -250,21 +252,38 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_not_listed_and_says_so
       spell4_id: 38_784,
       base: 3,
     )
-  let #(_, effects) =
-    support.press(
+  let in_world = fn(world_id) {
+    let caster = support.caster()
+    cast.Caster(
+      ..caster,
+      player: prerequisite.Player(..caster.player, world_id:),
+    )
+  }
+  let #(_, in_a_listed_world) =
+    support.press_as(
       plans: support.plans_of([spell]),
       state: cast.new(),
+      caster: in_world(1535),
       bag: bag_of_base_3,
       at: 1000,
     )
-  assert listed(effects:) == []
-    as "a row behind a target prerequisite is not applied, as a forced move behind one is not listed"
-  let lines =
-    list.filter(support.logs(effects:), fn(line) {
+  assert listed(effects: in_a_listed_world) == [99_073]
+    as "Prerequisite.prerequisiteTypeId.109: the caster is in world 1535, which gate 11311 names, so the row lands on it"
+  let #(_, in_another_world) =
+    support.press_as(
+      plans: support.plans_of([spell]),
+      state: cast.new(),
+      caster: in_world(3460),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  assert listed(effects: in_another_world) == []
+    as "the caster is in world 3460, which gate 11311 does not name, so the row is not applied"
+  assert list.filter(support.logs(effects: in_another_world), fn(line) {
       string.contains(line.1, "99073")
     })
-  assert list.map(lines, fn(line) { line.0 }) == [LogDebug]
-    as "one debug line names the row that is not applied"
+    == []
+    as "a gate the caster fails writes no line: the gate is read, and the row is not an unread one"
 }
 
 // ---- a PropertyConversion row ----
