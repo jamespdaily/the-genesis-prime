@@ -1353,6 +1353,61 @@ pub fn objective_links(
   })
 }
 
+/// The PrerequisiteTypes, in the prerequisite and the rows it nests, that a press cannot
+/// check a gate of a Proxy with, each once: a type the server has not decoded
+/// (`unread_types`), type 37, which draws a roll, and types 50, 108 and 130, which read the
+/// second unit, which the client sets to the target of the unit that presses
+/// (`ResolveProxyByCasterApply` `0x1403d3520`) while the subject here holds the caster.
+pub fn press_unread_types(
+  prerequisite prerequisite: Prerequisite,
+) -> List(Int) {
+  list.flat_map(prerequisite.conditions, fn(condition) {
+    case condition {
+      Nested(row: Some(nested), ..) -> press_unread_types(prerequisite: nested)
+      Unread(prerequisite_type:) -> [prerequisite_type]
+      Roll(..) -> [37]
+      UnderCastBy(..) -> [50]
+      InArc(..) -> [108]
+      CarriesCasterGroup(..) -> [130]
+      Nested(row: None, ..)
+      | TargetOfLiveCast(..)
+      | StackCount(..)
+      | InCombat(..)
+      | VitalPercent(..)
+      | VitalCurrent(..)
+      | ResourceSlot(..)
+      | UnderGroup(..)
+      | Stealthed(..)
+      | Difficulty(..)
+      | CurrentFaction(..)
+      | BaseFaction(..)
+      | UnitLevel(..)
+      | PlayerRace(..)
+      | UnitClass(..)
+      | InZone(..)
+      | IsPlayer(..)
+      | PlayerPath(..)
+      | Gender(..)
+      | InWorld(..)
+      | QuestState(..)
+      | ObjectiveDone(..)
+      | ObjectiveOpen(..)
+      | TargetCounted(..)
+      | ObjectiveProgress(..)
+      | ChallengeFlag(..)
+      | NeverMet
+      | ServerGated
+      | IsCreature(..)
+      | SpellKnown(..)
+      | ItemHeld(..)
+      | WorldDifficulty(..)
+      | ObjectiveStatus(..)
+      | NoCase -> []
+    }
+  })
+  |> list.unique
+}
+
 /// The PrerequisiteTypes, in the prerequisite and the rows it nests, that a unit the
 /// caster struck cannot be checked against, each once: the types its subject, known by its
 /// place alone (`Seen`), reads as `NotRead`, and the factions and difficulty it holds none of.

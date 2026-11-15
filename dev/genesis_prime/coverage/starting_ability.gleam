@@ -51,6 +51,7 @@ import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
+import gleam/option
 import gleam/result
 import gleam/set
 import gleam/string
@@ -680,6 +681,95 @@ fn reached_spells(
     dict.insert(found, spell.spell4_id.value, spell)
   })
   |> dict.values
+}
+
+/// The press spells the plan takes, the spells their trees reach, and the press spells the
+/// plan refuses.
+pub type PressSpells {
+  PressSpells(
+    /// The press spells the plan takes.
+    presses: List(Spell),
+    /// The spells the presses' Proxies start and the spells those start, each once, with a
+    /// Proxy's child counted whatever its gate. A press is here only when another press's
+    /// tree starts it.
+    reached: List(Spell),
+    /// Each press spell the plan refuses, with why.
+    refused: List(#(Int, String)),
+  )
+}
+
+/// The press spells, which no level tree holds and the starting abilities' column does
+/// not count: the threshold spells with no threshold time that press a Proxy by the
+/// caster's gate (`spell_plan.press_spell_ids`).
+pub fn press_spells(tables tables: store.Tables) -> PressSpells {
+  let sources = spell_plan.sources_of(tables:)
+  let #(presses, refused) =
+    spell_plan.press_spell_ids(tables:, sources:)
+    |> list.map(fn(spell4_id) {
+      spell_plan.ability_alone(tables:, sources:, spell4_id:)
+      |> result.map_error(fn(error) {
+        #(spell4_id, spell_plan.describe(error:))
+      })
+    })
+    |> result.partition
+  let reached =
+    list.flat_map(presses, fn(press) {
+      spell_plan.tree(spell: press, started: fn(_) { True })
+      |> list.filter(fn(spell) { spell_id(spell) != spell_id(press) })
+    })
+    |> list.fold(dict.new(), fn(found, spell) {
+      dict.insert(found, spell.spell4_id.value, spell)
+    })
+    |> dict.values
+  PressSpells(presses:, reached:, refused:)
+}
+
+/// The Spell4Effects rows of the press spells, as a press applies them: a press casts only
+/// the spell its first passing Proxy names, so of its own rows only the gated Proxies apply.
+pub type PressRows {
+  PressRows(
+    /// The rows that apply: the presses' gated Proxies and the rows of the reached spells.
+    applied: Int,
+    /// How many of the applied rows the plan does not read
+    /// (genesis_prime/coverage/effect_row).
+    unread: Int,
+    /// The rows of a press spell that are not gated Proxies, by effect type, in type order.
+    never_applied: List(#(Int, Int)),
+  )
+}
+
+/// The rows of these press spells split by whether a press applies them.
+pub fn press_rows_of(
+  tables tables: store.Tables,
+  spells spells: PressSpells,
+) -> PressRows {
+  let reached_ids = list.map(spells.reached, spell_id)
+  let own =
+    list.filter(spells.presses, fn(press) {
+      !list.contains(reached_ids, spell_id(press))
+    })
+  let gated =
+    list.flat_map(own, fn(press) {
+      list.map(press.press_proxies, fn(proxy) { proxy.effect_id.value })
+    })
+  let #(gated_rows, never_rows) =
+    effects_of(tables:, spells: own)
+    |> list.partition(fn(effect) { list.contains(gated, effect.id) })
+  let applied =
+    list.append(gated_rows, effects_of(tables:, spells: spells.reached))
+  let unread =
+    effect_row.unread_by_type(tables:, effects: applied)
+    |> dict.values
+    |> int.sum
+  let never_applied =
+    list.fold(never_rows, dict.new(), fn(counts, effect) {
+      dict.upsert(counts, effect.effect_type, fn(found) {
+        option.unwrap(found, 0) + 1
+      })
+    })
+    |> dict.to_list
+    |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+  PressRows(applied: list.length(applied), unread:, never_applied:)
 }
 
 fn spell_id(spell: Spell) -> Int {
