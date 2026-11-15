@@ -1094,14 +1094,18 @@ type TickingOn {
 
 /// What a press resolved to when it came: the spell it casts, the ability that
 /// was pressed, the bag ability the key names (the second spell of the 0x816 a first
-/// press opens), and which stage of the ability's open threshold it casts (none for the
-/// ability's own spell).
+/// press opens), which stage of the ability's open threshold it casts (none for the
+/// ability's own spell), whether the spell is a Proxy of a press that has no threshold
+/// time (cast as the press itself, so its own threshold opens), and the debug lines the
+/// resolve gave.
 pub type Resolution {
   Resolution(
     spell: Spell,
     ability: Spell,
     bag_spell: Spell4Id,
     stage: Option(Int),
+    proxied: Bool,
+    logs: List(Effect),
   )
 }
 
@@ -3412,7 +3416,7 @@ fn pressed(
       )
     Ok(plain) -> {
       let ability = surged(cast:, caster:, ability: plain)
-      case resolved(cast:, bag_spell: plain.spell4_id, ability:) {
+      case resolved(cast:, caster:, bag_spell: plain.spell4_id, ability:) {
         Error(Nil) ->
           Ok(
             #(cast, [
@@ -3565,7 +3569,7 @@ fn key_up(
     Ok(Threshold(ability: charging, ..))
       if charging.method == spell_plan.ChargeRelease
     ->
-      case resolved(cast:, bag_spell: plain.spell4_id, ability:) {
+      case resolved(cast:, caster:, bag_spell: plain.spell4_id, ability:) {
         Error(Nil) -> #(cast, [
           refused_unknown(
             client_cast_id: 0,
@@ -3645,7 +3649,7 @@ fn repeated(
   last_cast last_cast: Option(Int),
 ) -> #(State, List(Effect)) {
   let ability = surged(cast:, caster:, ability: plain)
-  case resolved(cast:, bag_spell: plain.spell4_id, ability:) {
+  case resolved(cast:, caster:, bag_spell: plain.spell4_id, ability:) {
     Error(Nil) -> no_stage_left(cast:, ability:)
     Ok(resolution) ->
       next_cast(cast:, caster:, now_ms:, resolution:, last_cast:)
@@ -3751,15 +3755,99 @@ fn threshold_of(
 
 /// What a press of the ability casts: through its open threshold the stage at the
 /// threshold's index, the ability's own spell at -1, and none past the last stage
-/// (`0x1403bfd60`); with no threshold open, the ability's own spell.
+/// (`0x1403bfd60`); with no threshold open, the ability's own spell, or for an ability
+/// with no threshold time the spell of the first Proxy its caster passes
+/// (`ResolveProxyByCasterApply` `0x1403d3520`, fact `cast.proxy_press`).
 fn resolved(
+  cast cast: State,
+  caster caster: Caster,
+  bag_spell bag_spell: Spell4Id,
+  ability ability: Spell,
+) -> Result(Resolution, Nil) {
+  case threshold_of(cast:, ability:), ability.press_proxies {
+    Error(Nil), [_, ..] -> {
+      let #(proxy, logs) =
+        first_passing(
+          proxies: ability.press_proxies,
+          subject: subject_of(cast:, caster:),
+          logs: [],
+        )
+      Ok(case proxy {
+        Some(spell) ->
+          Resolution(
+            spell:,
+            ability:,
+            bag_spell:,
+            stage: None,
+            proxied: True,
+            logs:,
+          )
+        None ->
+          Resolution(
+            spell: ability,
+            ability:,
+            bag_spell:,
+            stage: None,
+            proxied: False,
+            logs:,
+          )
+      })
+    }
+    Error(Nil), [] | Ok(_), _ ->
+      resolved_by_threshold(cast:, bag_spell:, ability:)
+  }
+}
+
+/// The spell of the first Proxy of a press, in row order, whose caster apply prerequisite
+/// the subject passes, and a debug line for each gate the server cannot decide, which
+/// does not pass. A press draws no roll: a gate that needs one is refused at load.
+fn first_passing(
+  proxies proxies: List(spell_plan.PressProxy),
+  subject subject: prerequisite.Subject,
+  logs logs: List(Effect),
+) -> #(Option(Spell), List(Effect)) {
+  case proxies {
+    [] -> #(None, list.reverse(logs))
+    [proxy, ..rest] ->
+      case
+        gates_gate(
+          gates: [proxy.gate],
+          subject:,
+          rolls: [],
+          what: "the Proxy effect " <> int.to_string(proxy.effect_id.value),
+          outcome: "so a press does not cast it",
+        )
+      {
+        #(Starts, _) -> #(Some(proxy.spell), list.reverse(logs))
+        #(GateFails, _) -> first_passing(proxies: rest, subject:, logs:)
+        #(CannotTell(why:), _) ->
+          first_passing(proxies: rest, subject:, logs: [
+            Log(level: LogDebug, text: why),
+            ..logs
+          ])
+      }
+  }
+}
+
+/// What a press of the ability casts when only its threshold decides: the stage of its
+/// open threshold, else its own spell.
+fn resolved_by_threshold(
   cast cast: State,
   bag_spell bag_spell: Spell4Id,
   ability ability: Spell,
 ) -> Result(Resolution, Nil) {
   case threshold_of(cast:, ability:) {
     Error(Nil) ->
-      Ok(Resolution(spell: ability, ability:, bag_spell:, stage: None))
+      Ok(
+        Resolution(
+          spell: ability,
+          ability:,
+          bag_spell:,
+          stage: None,
+          proxied: False,
+          logs: [],
+        ),
+      )
     Ok(threshold) ->
       spell_plan.stage_at(spell: threshold.ability, index: threshold.index)
       |> result.map(fn(spell) {
@@ -3771,6 +3859,8 @@ fn resolved(
             True -> None
             False -> Some(threshold.index)
           },
+          proxied: False,
+          logs: [],
         )
       })
   }
@@ -3787,6 +3877,28 @@ fn press_of(
   client_cast_id client_cast_id: Option(Int),
   resolution resolution: Resolution,
 ) -> #(State, List(Effect)) {
+  let #(cast, effects) =
+    press_resolved(
+      cast:,
+      caster:,
+      now_ms:,
+      client_cast_id:,
+      resolution: Resolution(..resolution, logs: []),
+    )
+  #(cast, list.append(resolution.logs, effects))
+}
+
+/// A resolved press: the 285 refusal of a spell with no threshold time that no Proxy
+/// replaced (the client tests the resolved spell, `0x1403c0144`, fact `cast.proxy_press`),
+/// else the verdict on the spell. A Proxy of such a press is cast as the press itself
+/// (`Base` of the Proxy's spell), so a Proxy with a threshold of its own opens it.
+fn press_resolved(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  client_cast_id client_cast_id: Option(Int),
+  resolution resolution: Resolution,
+) -> #(State, List(Effect)) {
   let spell = resolution.spell
   let is_release = is_release(resolution:)
   let held = option.is_some(cast.held)
@@ -3797,9 +3909,21 @@ fn press_of(
       result:,
     )
   }
-  case
-    verdict(cast:, caster:, spell:, now_ms:, is_release:, target_subject: None)
+  let judged = case
+    resolution.stage == None && spell_plan.lacks_threshold_time(spell:)
   {
+    True -> Refuse(result: cast_result.IllegalSpellCast)
+    False ->
+      verdict(
+        cast:,
+        caster:,
+        spell:,
+        now_ms:,
+        is_release:,
+        target_subject: None,
+      )
+  }
+  case judged {
     Accept(paid:) -> {
       let payments = paid.payments
       let cast = case client_cast_id {
@@ -3827,7 +3951,10 @@ fn press_of(
             primary_target: caster.unit_id,
             client_cast_id:,
             role: Base(
-              ability: resolution.ability,
+              ability: case resolution.proxied {
+                True -> spell
+                False -> resolution.ability
+              },
               bag_spell: resolution.bag_spell,
             ),
             spent: paid.spent,
@@ -9622,7 +9749,9 @@ fn waits_rearmed(
   }
   let #(cast, repeating) = case cast.holding {
     Some(Holding(ability:, repeat_timer: Some(_), ..)) ->
-      case resolved(cast:, bag_spell: ability.spell4_id, ability:) {
+      case
+        resolved_by_threshold(cast:, bag_spell: ability.spell4_id, ability:)
+      {
         Ok(resolution) -> {
           let #(cast, cancels) =
             cancel_timers(cast:, matching: fn(due) { due == RepeatHeld })

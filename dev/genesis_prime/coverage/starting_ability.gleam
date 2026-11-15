@@ -682,6 +682,49 @@ fn reached_spells(
   |> dict.values
 }
 
+/// The press spells, which no level tree holds and the starting abilities' column does
+/// not count: the threshold spells with no threshold time that press a Proxy by the
+/// caster's gate (`spell_plan.press_spell_ids`). The spells of their trees, each once,
+/// with a Proxy's child counted whatever its gate, and the press spells the plan
+/// refuses, each with why.
+pub fn press_spells(
+  tables tables: store.Tables,
+) -> #(List(Spell), List(#(Int, String))) {
+  let sources = spell_plan.sources_of(tables:)
+  let #(planned, refused) =
+    spell_plan.press_spell_ids(tables:, sources:)
+    |> list.map(fn(spell4_id) {
+      spell_plan.ability_alone(tables:, sources:, spell4_id:)
+      |> result.map_error(fn(error) {
+        #(spell4_id, spell_plan.describe(error:))
+      })
+    })
+    |> result.partition
+  let reached =
+    list.flat_map(planned, fn(press) {
+      spell_plan.tree(spell: press, started: fn(_) { True })
+    })
+    |> list.fold(dict.new(), fn(found, spell) {
+      dict.insert(found, spell.spell4_id.value, spell)
+    })
+    |> dict.values
+  #(reached, refused)
+}
+
+/// The Spell4Effects rows of these spells and how many of them the plan does not read
+/// (genesis_prime/coverage/effect_row), as a total.
+pub fn effect_rows_of(
+  tables tables: store.Tables,
+  spells spells: List(Spell),
+) -> #(Int, Int) {
+  let effects = effects_of(tables:, spells:)
+  let unread =
+    effect_row.unread_by_type(tables:, effects:)
+    |> dict.values
+    |> int.sum
+  #(list.length(effects), unread)
+}
+
 fn spell_id(spell: Spell) -> Int {
   spell.spell4_id.value
 }

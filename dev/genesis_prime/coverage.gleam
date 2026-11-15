@@ -17,6 +17,10 @@
 //// a Proxy's child behind a gate a level-1 character cannot open
 //// (genesis_prime/coverage/starting_ability).
 ////
+//// It then counts the press spells apart (genesis_prime/coverage/starting_ability.press_spells):
+//// the threshold spells with no threshold time whose Proxies the caster's gate picks, which no
+//// level tree holds, with the rows their trees reach and each one the plan refuses.
+////
 //// It then lists the spells the reached spells' tooltips name that no row reaches, with the
 //// server's Proxies (the play database's server_proxy table) planted into the trees, and a
 //// count line under the totals (genesis_prime/coverage/named_unreached). A play database,
@@ -101,6 +105,8 @@ pub fn main() -> Nil {
       io.println("")
       io.println(left_out)
       io.println("")
+      io.println(press_report(tables:))
+      io.println("")
       io.println(case named {
         Ok(#(_, named_list)) -> named_list
         Error(why) -> describe_named_failure(why)
@@ -141,6 +147,37 @@ pub fn left_out_report(tables tables: store.Tables) -> String {
         "\n",
       )
   }
+}
+
+/// The press spells (threshold spells with no threshold time that press a Proxy by the
+/// caster's gate), which no level tree holds and the starting abilities' column does not
+/// count: how many the tables hold, how many the plan takes, the spells of their trees,
+/// their Spell4Effects rows and how many of those the plan does not read, and each press
+/// spell the plan refuses with why.
+fn press_report(tables tables: store.Tables) -> String {
+  let sources = spell_plan.sources_of(tables:)
+  let held = list.length(spell_plan.press_spell_ids(tables:, sources:))
+  let #(spells, refused) = starting_ability.press_spells(tables:)
+  let #(rows, unread) = starting_ability.effect_rows_of(tables:, spells:)
+  string.join(
+    [
+      "Press spells, counted apart from the starting abilities: "
+        <> int.to_string(held)
+        <> " hold a gated Proxy, "
+        <> int.to_string(held - list.length(refused))
+        <> " are planned, reaching "
+        <> int.to_string(list.length(spells))
+        <> " spells with "
+        <> int.to_string(rows)
+        <> " Spell4Effects rows ("
+        <> int.to_string(unread)
+        <> " not read)",
+      ..list.map(refused, fn(refusal) {
+        "- Spell4 " <> int.to_string(refusal.0) <> " is refused: " <> refusal.1
+      })
+    ],
+    "\n",
+  )
 }
 
 /// Why the list of tooltip-named spells cannot be made.
