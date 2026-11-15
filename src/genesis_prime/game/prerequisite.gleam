@@ -95,12 +95,13 @@
 ////   (`Prerequisite.prerequisiteTypeId.26`, `0x14049e680`).
 //// - **Type 39** passes, by comparison 1, when the first unit is a player and by
 ////   comparison 2 when it is another; any other comparison fails, and the objectId
-////   and the value are not read (`Prerequisite.prerequisiteTypeId.39`). A subject
-////   that holds a player has the player as its first unit.
+////   and the value are not read (`Prerequisite.prerequisiteTypeId.39`). The first
+////   unit is read from the subject's `first_unit`: a player is `TheChecker` or
+////   `OtherPlayer`, a creature `NonPlayer`, and a unit the check cannot name
+////   (`UnknownUnit`) gives `NotRead`.
 //// - **A subject known by its place alone** (`Seen`) holds the player's facts but
-////   not the first unit's, so types 1, 3 and 39, which read that unit, give
-////   `NotRead` for it; a subject that holds no player gives `NotRead` for all of
-////   these types.
+////   not the first unit's, so types 1 and 3, which read that unit, give `NotRead` for
+////   it; a subject that holds no player gives `NotRead` for all of these types.
 //// - **Type 243** always fails: the client's check reads nothing from the unit
 ////   (`Prerequisite.prerequisiteTypeId.243`, `0x140001ba0`).
 //// - **Type 47** never passes on the client, whatever the comparison (its slot is the same
@@ -1352,6 +1353,59 @@ pub fn objective_links(
   })
 }
 
+/// The PrerequisiteTypes, in the prerequisite and the rows it nests, that a unit the
+/// caster struck cannot be checked against, each once: the types its subject, known by its
+/// place alone (`Seen`), reads as `NotRead`, and the factions and difficulty it holds none of.
+pub fn struck_unread_types(
+  prerequisite prerequisite: Prerequisite,
+) -> List(Int) {
+  list.flat_map(prerequisite.conditions, fn(condition) {
+    case condition {
+      Nested(row: Some(nested), ..) -> struck_unread_types(prerequisite: nested)
+      Difficulty(..) -> [179]
+      CurrentFaction(..) -> [4]
+      BaseFaction(..) -> [250]
+      TargetOfLiveCast(..)
+      | UnderCastBy(..)
+      | StackCount(..)
+      | InCombat(..)
+      | Roll(..)
+      | VitalPercent(..)
+      | VitalCurrent(..)
+      | UnderGroup(..)
+      | UnitLevel(..)
+      | UnitClass(..) -> option.values([reads_held_state(condition:)])
+      Nested(row: None, ..)
+      | ResourceSlot(..)
+      | Stealthed(..)
+      | PlayerRace(..)
+      | InZone(..)
+      | IsPlayer(..)
+      | PlayerPath(..)
+      | Gender(..)
+      | InWorld(..)
+      | QuestState(..)
+      | ObjectiveDone(..)
+      | ObjectiveOpen(..)
+      | TargetCounted(..)
+      | ObjectiveProgress(..)
+      | NeverMet
+      | ServerGated
+      | IsCreature(..)
+      | SpellKnown(..)
+      | ItemHeld(..)
+      | WorldDifficulty(..)
+      | ObjectiveStatus(..)
+      | CarriesCasterGroup(..)
+      | InArc(..)
+      | ChallengeFlag(..)
+      | NoCase
+      | Unread(..) -> []
+    }
+  })
+  |> list.unique
+}
+
 /// The PrerequisiteTypes of the conditions the client decides and the server does
 /// not read, in the prerequisite and the rows it nests, each once.
 pub fn unread_types(prerequisite prerequisite: Prerequisite) -> List(Int) {
@@ -1509,8 +1563,8 @@ fn reads_held_state(condition condition: Condition) -> Option(Int) {
     UnderGroup(..) -> Some(129)
     UnitLevel(..) -> Some(1)
     UnitClass(..) -> Some(3)
-    IsPlayer(..) -> Some(39)
     Nested(..)
+    | IsPlayer(..)
     | ResourceSlot(..)
     | Stealthed(..)
     | Difficulty(..)
@@ -1685,10 +1739,10 @@ fn condition_decided(
         equality_verdict(comparison:, equal: list.contains(player.zones, value))
       None -> NotRead(prerequisite_type: 26)
     })
-    IsPlayer(comparison:) -> #(rolls, case subject.player {
-      // The first unit of a subject that holds a player is that player.
-      Some(_) -> equality_verdict(comparison:, equal: True)
-      None -> NotRead(prerequisite_type: 39)
+    IsPlayer(comparison:) -> #(rolls, case subject.first_unit {
+      TheChecker | OtherPlayer -> equality_verdict(comparison:, equal: True)
+      NonPlayer(..) -> equality_verdict(comparison:, equal: False)
+      UnknownUnit -> NotRead(prerequisite_type: 39)
     })
     PlayerPath(comparison:, value:) -> #(rolls, case subject.player {
       Some(player) ->

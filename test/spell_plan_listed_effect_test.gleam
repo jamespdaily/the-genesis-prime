@@ -22,9 +22,10 @@
 import client_tables
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
   AimsAtArea, AimsAtBoth, AimsAtCaster, AimsAtPrimaryTarget, Always,
-  GatedOnCaster, GatedOnTarget,
+  GatedOnCaster, GatedOnCasterAndTarget, GatedOnTarget,
 }
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties
@@ -183,7 +184,7 @@ pub fn a_scale_or_ravel_signal_row_is_held_for_each_aim_the_plan_reads_test() ->
   })
 }
 
-pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_held_gated_on_the_target_test() -> Nil {
+pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_gated_on_the_target_test() -> Nil {
   use <- owned_test.run(60_000)
   // 91018: caster and target 11311 (Spell4Effects.effectType.81).
   let spell =
@@ -200,8 +201,9 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_held_gated_on_the_targ
       ),
     )
   let assert Ok(row) = lasting_row(spell:, id: 99_073)
-  assert row.condition == GatedOnTarget(prerequisite_id: PrerequisiteId(11_311))
-    as "an effect behind a target apply prerequisite is not applied"
+  let assert GatedOnTarget(prerequisite: gate) = row.condition
+  assert prerequisite.id(prerequisite: gate) == PrerequisiteId(11_311)
+    as "an effect behind a target apply prerequisite is checked for each unit it reaches"
 }
 
 pub fn a_scale_row_aimed_by_3_and_a_ravel_signal_row_aimed_by_7_fail_the_load_test() -> Nil {
@@ -359,13 +361,16 @@ pub fn onslaughts_42908_lists_109482_on_the_caster_for_8_seconds_test() -> Nil {
     as "`table_rows -- Spell4Effects spellId=42908`: targetFlags 1, delayTime 0, durationTime 8000, flags 0"
 }
 
-pub fn the_stalkers_stealth_child_holds_91018_gated_on_target_prerequisite_11311_test() -> Nil {
+pub fn the_stalkers_stealth_child_holds_91018_gated_on_caster_and_target_prerequisite_11311_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   // Spell4Base 30075 is the Stalker's innate active (Class 5); 46073 starts 38784.
   let spell = in_tree(base: 30_075, spell4_id: 38_784)
   let assert Ok(row) = lasting_row(spell:, id: 91_018)
-  assert row.condition == GatedOnTarget(prerequisite_id: PrerequisiteId(11_311))
+  let assert GatedOnCasterAndTarget(caster: [caster], target:) = row.condition
+  assert prerequisite.id(prerequisite: caster) == PrerequisiteId(11_311)
+    as "`table_rows -- Spell4Effects spellId=38784`: prerequisiteIdCasterApply 11311"
+  assert prerequisite.id(prerequisite: target) == PrerequisiteId(11_311)
     as "`table_rows -- Spell4Effects spellId=38784`: prerequisiteIdTargetApply 11311"
 }
 

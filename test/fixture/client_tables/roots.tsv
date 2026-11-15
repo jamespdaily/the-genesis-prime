@@ -855,3 +855,11 @@ Spell4Effects	46275	an Absorption row (Spell4 27577) of Magic x 10.0 with dataBi
 Spell4Effects	68969	Water Shield - Pell Water (Spell4 34700): an Absorption of Magic x 5.0	damage_test, spell_plan_absorption_test
 Spell4Effects	94299	Esper - Tech - Rank 3 - Shield Heal Proc (Spell4 41868): Technology x 1.5	damage_test, spell_plan_heal_test
 Spell4Effects	108207	e395- [Datascape] Earth Elemental - Knockout Combo (Spell4 46220): Strength x 3.6 and Assault Power x 3.6	damage_test
+Spell4	38841	Ruin: its remove row 144869 sits behind target prerequisite 13148	spell_plan_target_gate_test, cast_target_gate_test
+Spell4	45273	lasting row 105270 behind a target prerequisite of two type 40 conditions	spell_plan_target_gate_test
+Spell4	71280	lasting row 182739 aimed past the caster behind a type 15 target prerequisite	spell_plan_target_gate_test
+Spell4	30458	lasting row 55576 aimed at the caster behind a type 15 target prerequisite	spell_plan_target_gate_test
+Spell4	38784	lasting row 91018 behind a caster apply and a target apply prerequisite	spell_plan_target_gate_test
+Spell4	47328	lasting row 111129 behind caster apply 903 (type 28) and target apply 20271 (type 38)	spell_plan_target_gate_test
+Spell4	70611	lasting row 179592 behind target prerequisite 20210, three type 38 conditions on creatures	cast_target_gate_test
+Spell4	62637	lasting row 177849 aimed at the caster behind target prerequisite 903, a type 28 condition	cast_target_gate_test

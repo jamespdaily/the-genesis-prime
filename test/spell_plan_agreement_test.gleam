@@ -103,6 +103,8 @@ fn effect_row_of(error: PlanError) -> Refusal {
     | spell_plan.GainAimNotRead(effect_id:, ..)
     | spell_plan.GainVitalNotRead(effect_id:, ..)
     | spell_plan.GainTargetPrerequisiteNotRead(effect_id:, ..)
+    | spell_plan.TargetPrerequisiteNotRead(effect_id:, ..)
+    | spell_plan.TargetPrerequisiteReadsStruckUnit(effect_id:, ..)
     | spell_plan.SpendComparisonNotRead(effect_id:, ..)
     | spell_plan.ForceRemoveSelectorNotRead(effect_id:, ..)
     | spell_plan.ForceRemoveCountsDiffer(effect_id:, ..)

@@ -4961,7 +4961,7 @@ pub fn rolls_needed(
       int.sum(
         list.flatten([
           list.map(proxies, fn(proxy) {
-            condition_rolls_needed(caster_side(condition: proxy.condition))
+            gates_rolls_needed(caster_gates(condition: proxy.condition))
           }),
           list.map(
             gains_of(spell:, phase:, proxies:, spent: live.spent),
@@ -4969,19 +4969,27 @@ pub fn rolls_needed(
           ),
           list.map(
             spell_plan.lasting_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) { condition_rolls_needed(row.condition) },
+            fn(row) {
+              gates_rolls_needed(caster_gates(condition: row.condition))
+            },
           ),
           list.map(
             spell_plan.removes_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) { condition_rolls_needed(row.condition) },
+            fn(row) {
+              gates_rolls_needed(caster_gates(condition: row.condition))
+            },
           ),
           list.map(
             spell_plan.modifiers_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) { condition_rolls_needed(row.condition) },
+            fn(row) {
+              gates_rolls_needed(caster_gates(condition: row.condition))
+            },
           ),
           list.map(
             spell_plan.forced_moves_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) { condition_rolls_needed(row.condition) },
+            fn(row) {
+              gates_rolls_needed(only_on_caster_gates(condition: row.condition))
+            },
           ),
           list.map(
             spell_plan.cooldown_modifiers_in_phase(
@@ -4989,11 +4997,15 @@ pub fn rolls_needed(
               phase:,
               spent: live.spent,
             ),
-            fn(row) { condition_rolls_needed(row.condition) },
+            fn(row) {
+              gates_rolls_needed(only_on_caster_gates(condition: row.condition))
+            },
           ),
           list.map(
             spell_plan.stealth_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) { condition_rolls_needed(row.condition) },
+            fn(row) {
+              gates_rolls_needed(only_on_caster_gates(condition: row.condition))
+            },
           ),
           list.map(
             spell_plan.remove_stealth_in_phase(
@@ -5001,15 +5013,21 @@ pub fn rolls_needed(
               phase:,
               spent: live.spent,
             ),
-            fn(row) { condition_rolls_needed(row.condition) },
+            fn(row) {
+              gates_rolls_needed(only_on_caster_gates(condition: row.condition))
+            },
           ),
           list.map(
             spell_plan.procs_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) { condition_rolls_needed(row.condition) },
+            fn(row) {
+              gates_rolls_needed(only_on_caster_gates(condition: row.condition))
+            },
           ),
           list.map(
             spell_plan.heals_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) { condition_rolls_needed(row.condition) },
+            fn(row) {
+              gates_rolls_needed(caster_gates(condition: row.condition))
+            },
           ),
         ]),
       )
@@ -5017,20 +5035,11 @@ pub fn rolls_needed(
   }
 }
 
-/// The rolls the check of a condition's gates takes: one for each type 37 condition
-/// among them.
-fn condition_rolls_needed(condition: spell_plan.Condition) -> Int {
-  case condition {
-    spell_plan.GatedOnCaster(gates:) ->
-      int.sum(
-        list.map(gates, fn(gate) {
-          prerequisite.rolls_needed(prerequisite: gate)
-        }),
-      )
-    spell_plan.Always
-    | spell_plan.GatedOnTarget(..)
-    | spell_plan.GatedOnCasterAndTarget(..) -> 0
-  }
+/// The rolls the check of these gates takes: one for each type 37 condition among them.
+fn gates_rolls_needed(gates: List(prerequisite.Prerequisite)) -> Int {
+  int.sum(
+    list.map(gates, fn(gate) { prerequisite.rolls_needed(prerequisite: gate) }),
+  )
 }
 
 /// The gains of a go, in the order `gains_given` checks them: the spell's own of
@@ -7346,7 +7355,22 @@ fn go(
       let #(cast, restricting) =
         restrictions_numbered(cast:, caster:, cast_id:, live:, applied:)
       let aimed =
-        aimed_at(applied:, caster:, live:, struck:, phase:, restricting:)
+        aimed_at(
+          applied:,
+          caster:,
+          live:,
+          struck:,
+          phase:,
+          restricting:,
+          target_verdict: target_verdict_on(
+            cast:,
+            caster:,
+            subject:,
+            poses:,
+            indexes:,
+            units:,
+          ),
+        )
       let go_message =
         go_message(
           cast_id:,
@@ -7525,7 +7549,7 @@ fn go(
           gains,
           gate_logs,
           lasting_logs,
-          aimed.heal_logs,
+          aimed.reach_logs,
           children,
           stealth,
           finished,
@@ -7634,7 +7658,9 @@ fn lasting_applied(
   let #(lasting, logs, rolls) =
     gated(
       rows: spell_plan.lasting_in_phase(spell:, phase:, spent:),
-      condition: fn(row: spell_plan.Lasting) { row.condition },
+      gates: fn(row: spell_plan.Lasting) {
+        caster_gates(condition: row.condition)
+      },
       what: fn(row: spell_plan.Lasting) {
         "the lasting effect " <> int.to_string(row.effect_id.value)
       },
@@ -7645,7 +7671,9 @@ fn lasting_applied(
   let #(removes, more_logs, rolls) =
     gated(
       rows: spell_plan.removes_in_phase(spell:, phase:, spent:),
-      condition: fn(row: spell_plan.ForceRemove) { row.condition },
+      gates: fn(row: spell_plan.ForceRemove) {
+        caster_gates(condition: row.condition)
+      },
       what: fn(row: spell_plan.ForceRemove) {
         "the SpellForceRemove effect " <> int.to_string(row.effect_id.value)
       },
@@ -7659,7 +7687,9 @@ fn lasting_applied(
         spell_plan.modifiers_in_phase(spell:, phase:, spent:),
         modifier_has_life,
       ),
-      condition: fn(row: spell_plan.PropertyModifier) { row.condition },
+      gates: fn(row: spell_plan.PropertyModifier) {
+        caster_gates(condition: row.condition)
+      },
       what: fn(row: spell_plan.PropertyModifier) {
         "the "
         <> modifier_kind_named(row:)
@@ -7673,7 +7703,9 @@ fn lasting_applied(
   let #(forced_moves, forced_move_logs, rolls) =
     gated(
       rows: spell_plan.forced_moves_in_phase(spell:, phase:, spent:),
-      condition: fn(row: spell_plan.ForcedMove) { row.condition },
+      gates: fn(row: spell_plan.ForcedMove) {
+        only_on_caster_gates(condition: row.condition)
+      },
       what: fn(row: spell_plan.ForcedMove) {
         "the ForcedMove effect " <> int.to_string(row.effect_id.value)
       },
@@ -7684,7 +7716,9 @@ fn lasting_applied(
   let #(cooldowns, cooldown_logs, rolls) =
     gated(
       rows: spell_plan.cooldown_modifiers_in_phase(spell:, phase:, spent:),
-      condition: fn(row: spell_plan.CooldownModifier) { row.condition },
+      gates: fn(row: spell_plan.CooldownModifier) {
+        only_on_caster_gates(condition: row.condition)
+      },
       what: fn(row: spell_plan.CooldownModifier) {
         "the ModifySpellCooldown effect " <> int.to_string(row.effect_id.value)
       },
@@ -7695,7 +7729,9 @@ fn lasting_applied(
   let #(stealth, stealth_logs, rolls) =
     gated(
       rows: spell_plan.stealth_in_phase(spell:, phase:, spent:),
-      condition: fn(row: spell_plan.StealthRow) { row.condition },
+      gates: fn(row: spell_plan.StealthRow) {
+        only_on_caster_gates(condition: row.condition)
+      },
       what: fn(row: spell_plan.StealthRow) {
         "the Stealth effect " <> int.to_string(row.effect_id.value)
       },
@@ -7706,7 +7742,9 @@ fn lasting_applied(
   let #(remove_stealth, remove_stealth_logs, rolls) =
     gated(
       rows: spell_plan.remove_stealth_in_phase(spell:, phase:, spent:),
-      condition: fn(row: spell_plan.RemoveStealthRow) { row.condition },
+      gates: fn(row: spell_plan.RemoveStealthRow) {
+        only_on_caster_gates(condition: row.condition)
+      },
       what: fn(row: spell_plan.RemoveStealthRow) {
         "the RemoveStealth effect " <> int.to_string(row.effect_id.value)
       },
@@ -7717,7 +7755,9 @@ fn lasting_applied(
   let #(procs, proc_logs, rolls) =
     gated(
       rows: spell_plan.procs_in_phase(spell:, phase:, spent:),
-      condition: fn(row: spell_plan.ProcRow) { row.condition },
+      gates: fn(row: spell_plan.ProcRow) {
+        only_on_caster_gates(condition: row.condition)
+      },
       what: fn(row: spell_plan.ProcRow) {
         "the Proc effect " <> int.to_string(row.effect_id.value)
       },
@@ -7728,7 +7768,7 @@ fn lasting_applied(
   let #(heals, heal_logs, rolls) =
     gated(
       rows: spell_plan.heals_in_phase(spell:, phase:, spent:),
-      condition: fn(row: spell_plan.Heal) { row.condition },
+      gates: fn(row: spell_plan.Heal) { caster_gates(condition: row.condition) },
       what: fn(row: spell_plan.Heal) {
         "the Heal or HealShields effect " <> int.to_string(row.effect_id.value)
       },
@@ -7791,7 +7831,7 @@ type Aimed {
     stealth: List(#(spell_plan.StealthRow, Int)),
     procs: List(#(spell_plan.ProcRow, Int)),
     heals: List(#(Healed, Int)),
-    heal_logs: List(Effect),
+    reach_logs: List(Effect),
     controls: List(#(strike_tell.ControlLanded, Int)),
     restrictions: List(#(Restricting, Int)),
     ticking: List(TickingOn),
@@ -8121,6 +8161,116 @@ fn activation_listed_at(
   }
 }
 
+/// What a target apply prerequisite gives for a unit a row reaches: the check of the
+/// prerequisite with that unit first and the caster second, in the caster's picture.
+type TargetVerdict =
+  fn(prerequisite.Prerequisite, Int) -> prerequisite.Verdict
+
+/// The check of a target apply prerequisite for the unit it would reach. The first unit
+/// is the unit the effect reaches and the second the caster
+/// (`Spell4Effects.prerequisiteIdTargetApply`): the caster's whole unit as `subject` has
+/// it for the caster, and another unit as the caster's picture shows it (`struck_subject`).
+fn target_verdict_on(
+  cast cast: State,
+  caster caster: Caster,
+  subject subject: prerequisite.Subject,
+  poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
+  units units: Dict(Int, prerequisite.FirstUnit),
+) -> TargetVerdict {
+  fn(gate, unit_id) {
+    let on_unit = case unit_id == caster.unit_id {
+      True -> subject
+      False ->
+        struck_subject(
+          cast:,
+          caster:,
+          primary_target: unit_id,
+          poses:,
+          indexes:,
+          units:,
+        )
+    }
+    prerequisite.check(prerequisite: gate, subject: on_unit)
+  }
+}
+
+/// The target apply prerequisite of a condition.
+fn target_gate_of(
+  condition condition: spell_plan.Condition,
+) -> Option(prerequisite.Prerequisite) {
+  case condition {
+    spell_plan.GatedOnTarget(prerequisite: target)
+    | spell_plan.GatedOnCasterAndTarget(target:, ..) -> Some(target)
+    spell_plan.Always | spell_plan.GatedOnCaster(..) -> None
+  }
+}
+
+/// What a target apply prerequisite gives for the unit `unit_id` its row would reach, as
+/// the decision of a gate: a unit that fails it is left alone, and one the server cannot
+/// tell is left alone with a line saying so. `what` names the row and `outcome` what
+/// follows.
+fn unit_gate(
+  target target: prerequisite.Prerequisite,
+  unit_id unit_id: Int,
+  target_verdict target_verdict: TargetVerdict,
+  what what: String,
+  outcome outcome: String,
+) -> ProxyGate {
+  case target_verdict(target, unit_id) {
+    prerequisite.Passes -> Starts
+    prerequisite.Fails -> GateFails
+    prerequisite.NotRead(prerequisite_type:) ->
+      CannotTell(
+        why: what
+        <> " on unit "
+        <> int.to_string(unit_id)
+        <> " is behind target prerequisite "
+        <> int.to_string(prerequisite.id(prerequisite: target).value)
+        <> " of type "
+        <> int.to_string(prerequisite_type)
+        <> ", which is not read, "
+        <> outcome,
+      )
+  }
+}
+
+/// The rows with units that pass their row's target apply prerequisite for that unit,
+/// and a debug line for each the server cannot tell. A row with no target gate reaches
+/// every unit its aim names.
+fn reaching(
+  entries entries: List(#(row, Int)),
+  condition condition: fn(row) -> spell_plan.Condition,
+  what what: fn(row) -> String,
+  target_verdict target_verdict: TargetVerdict,
+) -> #(List(#(row, Int)), List(Effect)) {
+  let #(reached, logs) =
+    list.fold(entries, #([], []), fn(so_far, entry) {
+      let #(reached, logs) = so_far
+      case target_gate_of(condition: condition(entry.0)) {
+        None -> #([entry, ..reached], logs)
+        Some(target) ->
+          case
+            unit_gate(
+              target:,
+              unit_id: entry.1,
+              target_verdict:,
+              what: what(entry.0),
+              outcome: "so it is not applied",
+            )
+          {
+            Starts -> #([entry, ..reached], logs)
+            GateFails -> #(reached, logs)
+            CannotTell(why:) -> #(reached, [
+              Log(level: LogDebug, text: why),
+              ..logs
+            ])
+          }
+      }
+    })
+  #(list.reverse(reached), list.reverse(logs))
+}
+
 fn aimed_at(
   applied applied: Applied,
   caster caster: Caster,
@@ -8128,8 +8278,9 @@ fn aimed_at(
   struck struck: List(Struck),
   phase phase: Int,
   restricting restricting: List(Restricting),
+  target_verdict target_verdict: TargetVerdict,
 ) -> Aimed {
-  let lasting =
+  let #(lasting, lasting_logs) =
     rows_with_units(
       rows: applied.lasting,
       aim: fn(row) { row.aim },
@@ -8137,7 +8288,14 @@ fn aimed_at(
       primary_target: live.primary_target,
       struck:,
     )
-  let removes =
+    |> reaching(
+      condition: fn(row: spell_plan.Lasting) { row.condition },
+      what: fn(row: spell_plan.Lasting) {
+        "the lasting effect " <> int.to_string(row.effect_id.value)
+      },
+      target_verdict:,
+    )
+  let #(removes, remove_logs) =
     rows_with_units(
       rows: applied.removes,
       aim: fn(row) { row.aim },
@@ -8145,8 +8303,15 @@ fn aimed_at(
       primary_target: live.primary_target,
       struck:,
     )
+    |> reaching(
+      condition: fn(row: spell_plan.ForceRemove) { row.condition },
+      what: fn(row: spell_plan.ForceRemove) {
+        "the SpellForceRemove effect " <> int.to_string(row.effect_id.value)
+      },
+      target_verdict:,
+    )
   let controls = controls_landed(struck:)
-  let modifiers =
+  let #(modifiers, modifier_logs) =
     rows_with_units(
       rows: applied.modifiers,
       aim: fn(row) { spell_plan.modifier_aim(modifier: row) },
@@ -8157,6 +8322,16 @@ fn aimed_at(
     |> list.filter(fn(entry) {
       modifier_applies(row: entry.0, unit_id: entry.1, caster:, struck:)
     })
+    |> reaching(
+      condition: fn(row: spell_plan.PropertyModifier) { row.condition },
+      what: fn(row: spell_plan.PropertyModifier) {
+        "the "
+        <> modifier_kind_named(row:)
+        <> " effect "
+        <> int.to_string(row.effect_id.value)
+      },
+      target_verdict:,
+    )
   let forced_moves = applied.forced_moves
   let cooldowns =
     list.map(applied.cooldowns, fn(row) {
@@ -8171,12 +8346,27 @@ fn aimed_at(
     })
   let stealth = list.map(applied.stealth, fn(row) { #(row, caster.unit_id) })
   let procs = list.map(applied.procs, fn(row) { #(row, caster.unit_id) })
-  let #(heals, heal_logs) = healed_by(applied:, caster:, live:, struck:)
+  let #(reached_heals, heal_reach_logs) =
+    rows_with_units(
+      rows: applied.heals,
+      aim: fn(heal: spell_plan.Heal) { heal.aim },
+      caster:,
+      primary_target: live.primary_target,
+      struck:,
+    )
+    |> reaching(
+      condition: fn(heal: spell_plan.Heal) { heal.condition },
+      what: fn(heal: spell_plan.Heal) {
+        "the Heal or HealShields effect " <> int.to_string(heal.effect_id.value)
+      },
+      target_verdict:,
+    )
+  let #(heals, heal_logs) = healed_by(entries: reached_heals, caster:)
   let restrictions = list.map(restricting, fn(one) { #(one, caster.unit_id) })
   let ticking =
     list.append(
       ticking_struck(struck:),
-      ticking_heals(applied:, caster:, live:, struck:),
+      ticking_heals(entries: reached_heals, caster:),
     )
   let listed =
     list.flatten([
@@ -8335,7 +8525,13 @@ fn aimed_at(
     cooldowns:,
     stealth:,
     heals:,
-    heal_logs:,
+    reach_logs: list.flatten([
+      lasting_logs,
+      remove_logs,
+      modifier_logs,
+      heal_reach_logs,
+      heal_logs,
+    ]),
     procs:,
     controls:,
     restrictions:,
@@ -8368,18 +8564,10 @@ fn ticking_struck(struck struck: List(Struck)) -> List(TickingOn) {
 /// The periodic heal rows of the go aimed at the caster, each ticking on it; one aimed
 /// at another unit is left with the debug line of `healed_by`.
 fn ticking_heals(
-  applied applied: Applied,
+  entries entries: List(#(spell_plan.Heal, Int)),
   caster caster: Caster,
-  live live: Live,
-  struck struck: List(Struck),
 ) -> List(TickingOn) {
-  rows_with_units(
-    rows: applied.heals,
-    aim: fn(heal: spell_plan.Heal) { heal.aim },
-    caster:,
-    primary_target: live.primary_target,
-    struck:,
-  )
+  entries
   |> list.filter_map(fn(entry) {
     case entry.0, entry.1 == caster.unit_id {
       spell_plan.TickingHeal(effect_id:, vital:, formula:, schedule:, ..), True
@@ -8406,20 +8594,10 @@ fn ticking_heals(
 /// heal; a heal aimed at another unit is left, with a debug line naming its row (other
 /// players come with #570).
 fn healed_by(
-  applied applied: Applied,
+  entries entries: List(#(spell_plan.Heal, Int)),
   caster caster: Caster,
-  live live: Live,
-  struck struck: List(Struck),
 ) -> #(List(#(Healed, Int)), List(Effect)) {
   let on_caster = on_caster_of(caster:)
-  let entries =
-    rows_with_units(
-      rows: applied.heals,
-      aim: fn(heal: spell_plan.Heal) { heal.aim },
-      caster:,
-      primary_target: live.primary_target,
-      struck:,
-    )
   let healed =
     list.filter_map(entries, fn(entry) {
       case entry.0, entry.1 == caster.unit_id {
@@ -9866,18 +10044,32 @@ type ProxyGate {
   CannotTell(why: String)
 }
 
-/// A Proxy's condition as its go checks it against the caster: a Proxy behind a target gate
-/// as well passes here on its caster gates alone, and `children` checks its target gate
-/// for each unit its child would be made on.
-fn caster_side(
+/// The gates a go checks against the caster's own unit for a row that may reach other
+/// units: its caster apply prerequisites. The row's target apply prerequisite is checked
+/// for each unit the row reaches, whose first unit is that unit and whose second the
+/// caster (`target_verdict`, `Spell4Effects.prerequisiteIdTargetApply`).
+fn caster_gates(
   condition condition: spell_plan.Condition,
-) -> spell_plan.Condition {
+) -> List(prerequisite.Prerequisite) {
   case condition {
-    spell_plan.GatedOnCasterAndTarget(caster:, ..) ->
-      spell_plan.GatedOnCaster(gates: caster)
-    spell_plan.Always
-    | spell_plan.GatedOnCaster(..)
-    | spell_plan.GatedOnTarget(..) -> condition
+    spell_plan.Always | spell_plan.GatedOnTarget(..) -> []
+    spell_plan.GatedOnCaster(gates:)
+    | spell_plan.GatedOnCasterAndTarget(caster: gates, ..) -> gates
+  }
+}
+
+/// The gates a go checks against the caster's own unit for a row that reaches only the
+/// caster: its caster apply prerequisites, then its target apply prerequisite, whose first
+/// unit is that unit, the caster's whole unit (`subject_of`).
+fn only_on_caster_gates(
+  condition condition: spell_plan.Condition,
+) -> List(prerequisite.Prerequisite) {
+  case condition {
+    spell_plan.Always -> []
+    spell_plan.GatedOnTarget(prerequisite: target) -> [target]
+    spell_plan.GatedOnCaster(gates:) -> gates
+    spell_plan.GatedOnCasterAndTarget(caster:, target:) ->
+      list.append(caster, [target])
   }
 }
 
@@ -9890,7 +10082,7 @@ fn proxy_gates(
 ) -> #(List(Proxy), List(Effect), List(Int)) {
   gated(
     rows: proxies,
-    condition: fn(proxy: Proxy) { caster_side(condition: proxy.condition) },
+    gates: fn(proxy: Proxy) { caster_gates(condition: proxy.condition) },
     what: fn(proxy: Proxy) {
       "the Proxy to Spell4 " <> int.to_string(proxy.spell.spell4_id.value)
     },
@@ -9900,13 +10092,12 @@ fn proxy_gates(
   )
 }
 
-/// The rows whose condition lets them apply, in order, with a debug line for each the
-/// server cannot decide, and the rolls left: a row with no gate applies, one gated on the
-/// caster applies when every gate passes against the caster, and one behind a target apply
-/// prerequisite does not (`condition_gate`).
+/// The rows whose gates let them apply, in order, with a debug line for each the
+/// server cannot decide, and the rolls left: a row with no gate applies, one with gates
+/// applies when every gate passes against the caster (`gates_gate`).
 fn gated(
   rows rows: List(row),
-  condition condition: fn(row) -> spell_plan.Condition,
+  gates gates: fn(row) -> List(prerequisite.Prerequisite),
   what what: fn(row) -> String,
   outcome outcome: String,
   subject subject: prerequisite.Subject,
@@ -9916,8 +10107,8 @@ fn gated(
     list.fold(rows, #([], [], rolls), fn(so_far, row) {
       let #(applying, logs, rolls) = so_far
       let #(gate, rolls) =
-        condition_gate(
-          condition: condition(row),
+        gates_gate(
+          gates: gates(row),
           subject:,
           rolls:,
           what: what(row),
@@ -9936,73 +10127,45 @@ fn gated(
   #(list.reverse(applying), list.reverse(logs), rolls)
 }
 
-/// What a condition gives at a go: `what` names the effect in a debug line and
-/// `outcome` says what follows when the server cannot decide.
-fn condition_gate(
-  condition condition: spell_plan.Condition,
+/// What gates give at a go: `what` names the effect in a debug line and `outcome` says
+/// what follows when the server cannot decide. No gate lets the row apply.
+fn gates_gate(
+  gates gates: List(prerequisite.Prerequisite),
   subject subject: prerequisite.Subject,
   rolls rolls: List(Int),
   what what: String,
   outcome outcome: String,
 ) -> #(ProxyGate, List(Int)) {
-  case condition {
-    spell_plan.Always -> #(Starts, rolls)
-    spell_plan.GatedOnTarget(prerequisite_id:) -> #(
-      CannotTell(
-        why: what
-        <> " applies only behind target prerequisite "
-        <> int.to_string(prerequisite_id.value)
-        <> ", which is not checked, "
-        <> outcome,
-      ),
-      rolls,
-    )
-    // The plan gives only a Proxy a target gate it reads, and `proxy_gates` turns that
-    // into its caster gates (`caster_side`) before this: a row of another kind that holds
-    // one is refused, as a gate nothing here reads.
-    spell_plan.GatedOnCasterAndTarget(target:, ..) -> #(
-      CannotTell(
-        why: what
-        <> " applies only behind target prerequisite "
-        <> int.to_string(prerequisite.id(prerequisite: target).value)
-        <> ", which is not checked, "
-        <> outcome,
-      ),
-      rolls,
-    )
-    spell_plan.GatedOnCaster(gates:) -> {
-      let #(left, verdicts) =
-        list.map_fold(gates, rolls, fn(rolls, gate) {
-          let #(verdict, left) = checked(prerequisite: gate, subject:, rolls:)
-          #(left, #(gate, verdict))
-        })
-      let not_read =
-        list.find_map(verdicts, fn(decided) {
-          case decided.1 {
-            prerequisite.NotRead(prerequisite_type:) ->
-              Ok(#(decided.0, prerequisite_type))
-            prerequisite.Passes | prerequisite.Fails -> Error(Nil)
-          }
-        })
-      let failed =
-        list.any(verdicts, fn(decided) { decided.1 == prerequisite.Fails })
-      case failed, not_read {
-        True, _ -> #(GateFails, left)
-        False, Error(Nil) -> #(Starts, left)
-        False, Ok(#(gate, prerequisite_type)) -> #(
-          CannotTell(
-            why: what
-            <> " is behind prerequisite "
-            <> int.to_string(prerequisite.id(prerequisite: gate).value)
-            <> " of type "
-            <> int.to_string(prerequisite_type)
-            <> ", which is not read, "
-            <> outcome,
-          ),
-          left,
-        )
+  let #(left, verdicts) =
+    list.map_fold(gates, rolls, fn(rolls, gate) {
+      let #(verdict, left) = checked(prerequisite: gate, subject:, rolls:)
+      #(left, #(gate, verdict))
+    })
+  let not_read =
+    list.find_map(verdicts, fn(decided) {
+      case decided.1 {
+        prerequisite.NotRead(prerequisite_type:) ->
+          Ok(#(decided.0, prerequisite_type))
+        prerequisite.Passes | prerequisite.Fails -> Error(Nil)
       }
-    }
+    })
+  let failed =
+    list.any(verdicts, fn(decided) { decided.1 == prerequisite.Fails })
+  case failed, not_read {
+    True, _ -> #(GateFails, left)
+    False, Error(Nil) -> #(Starts, left)
+    False, Ok(#(gate, prerequisite_type)) -> #(
+      CannotTell(
+        why: what
+        <> " is behind prerequisite "
+        <> int.to_string(prerequisite.id(prerequisite: gate).value)
+        <> " of type "
+        <> int.to_string(prerequisite_type)
+        <> ", which is not read, "
+        <> outcome,
+      ),
+      left,
+    )
   }
 }
 
@@ -10262,7 +10425,8 @@ fn target_gate(
   units units: Dict(Int, prerequisite.FirstUnit),
 ) -> ProxyGate {
   case proxy.condition {
-    spell_plan.GatedOnCasterAndTarget(target:, ..) -> {
+    spell_plan.GatedOnTarget(prerequisite: target)
+    | spell_plan.GatedOnCasterAndTarget(target:, ..) -> {
       let gate_subject = case proxy.target {
         spell_plan.OnCaster -> subject
         spell_plan.OnEachStruck ->
@@ -10275,31 +10439,17 @@ fn target_gate(
             units:,
           )
       }
-      case prerequisite.check(prerequisite: target, subject: gate_subject) {
-        prerequisite.Passes -> Starts
-        prerequisite.Fails -> GateFails
-        prerequisite.NotRead(prerequisite_type:) ->
-          CannotTell(
-            why: "the Proxy to Spell4 "
-            <> int.to_string(proxy.spell.spell4_id.value)
-            <> " on unit "
-            <> int.to_string(primary_target)
-            <> " is behind target prerequisite "
-            <> int.to_string(prerequisite.id(prerequisite: target).value)
-            <> " of type "
-            <> int.to_string(prerequisite_type)
-            <> ", which is not read, so it is not started",
-          )
-      }
-    }
-    spell_plan.GatedOnTarget(prerequisite_id:) ->
-      CannotTell(
-        why: "the Proxy to Spell4 "
-        <> int.to_string(proxy.spell.spell4_id.value)
-        <> " is behind target prerequisite "
-        <> int.to_string(prerequisite_id.value)
-        <> ", which the plan keeps unchecked, so it is not started",
+      unit_gate(
+        target:,
+        unit_id: primary_target,
+        target_verdict: fn(gate, _) {
+          prerequisite.check(prerequisite: gate, subject: gate_subject)
+        },
+        what: "the Proxy to Spell4 "
+          <> int.to_string(proxy.spell.spell4_id.value),
+        outcome: "so it is not started",
       )
+    }
     spell_plan.Always | spell_plan.GatedOnCaster(..) -> Starts
   }
 }

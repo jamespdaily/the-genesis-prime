@@ -365,7 +365,9 @@ pub fn a_disguise_behind_a_target_prerequisite_is_not_applied_test() -> Nil {
       id: 112_543,
       display: 4807,
       delay: 0,
-      condition: spell_plan.GatedOnTarget(prerequisite_id: id.PrerequisiteId(5)),
+      condition: spell_plan.GatedOnTarget(
+        prerequisite: prerequisites.single(id: 5, condition: #(38, 1, 0, 5)),
+      ),
     )
   let plans = support.plans_of([holder(modifiers: [gated])])
   let #(_, effects) =
@@ -383,5 +385,5 @@ pub fn a_disguise_behind_a_target_prerequisite_is_not_applied_test() -> Nil {
     == 1
     as "the press went: its go was written"
   assert starts(effects:) == []
-    as "a row behind a target apply prerequisite is not applied"
+    as "a row behind a target apply prerequisite the caster fails is not applied"
 }
