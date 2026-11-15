@@ -35,7 +35,6 @@
 ////   leaves a positional condition unread.
 
 import cast_support as support
-import fixture_tables
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast.{type Caster, type Effect, type Struck}
 import genesis_prime/game/damage.{Formula, Parameter}
@@ -58,6 +57,7 @@ import gleam/option.{None}
 import gleam/string
 import owned_test
 import prerequisite_support
+import spell_tables
 
 // The planted bases 1, 2 and 3 are the bag indices 8, 10 and 11
 // (`cast_support.abilities`).
@@ -66,36 +66,6 @@ const bag_of_base_1 = 8
 const bag_of_base_2 = 10
 
 const bag_of_base_3 = 11
-
-/// The plan of one client spell, alone.
-fn plan_of(spell4_id spell4_id: Int) -> Spell {
-  let tables = fixture_tables.shared()
-  let assert Ok(spell) =
-    spell_plan.spell_alone(
-      tables:,
-      sources: spell_plan.sources_of(tables:),
-      spell4_id:,
-      chain: [],
-    )
-    as "the client's spell plans alone"
-  spell
-}
-
-/// A planted spell of the Spell4 and base given, holding the one lasting row of the
-/// client's spell of that Spell4 that has this effect id: the cast rule reads the row, the
-/// planted spell only gives it a base the bag holds.
-fn lasting_of(
-  spell4_id spell4_id: Int,
-  base base: Int,
-  effect_id effect_id: Int,
-) -> Spell {
-  let assert [row] =
-    list.filter(plan_of(spell4_id:).lasting, fn(row) {
-      row.effect_id == Spell4EffectsId(effect_id)
-    })
-    as "the client's spell holds the row"
-  spell_plan.Spell(..support.child(spell4_id:, base:), lasting: [row])
-}
 
 /// The effect ids each unit's entry of the go lists, by unit, in unit order. A struck
 /// unit is an entry of the go whatever the rows do, so a unit that lists no effect is left out.
@@ -133,7 +103,7 @@ pub fn remove_lands_only_on_the_unit_carrying_the_casters_group_test() -> Nil {
   // gate 13148 reads); Ruin's remove takes the group's casts off the units it reaches.
   // The remove is the client's row 144869 with its selector a group the planted markers
   // hold, since a planted spell takes the Spell4Base of an ability of the bag.
-  let real = plan_of(spell4_id: 38_841)
+  let real = spell_tables.client_spell(spell4_id: 38_841)
   let assert [row] = real.removes as "Ruin's tree holds the one remove 144869"
   assert row.effect_id == Spell4EffectsId(144_869)
   let assert GatedOnTarget(..) = row.condition
@@ -185,7 +155,8 @@ pub fn remove_lands_only_on_the_unit_carrying_the_casters_group_test() -> Nil {
 fn listed_for_units(
   units units: List(#(Int, prerequisite.FirstUnit)),
 ) -> List(#(Int, List(Int))) {
-  let spell = lasting_of(spell4_id: 70_611, base: 3, effect_id: 179_592)
+  let spell =
+    support.client_lasting(spell4_id: 70_611, base: 3, effect_ids: [179_592])
   let plans = support.plans_of([spell])
   let #(state, raw) =
     support.pressed_raw_in(
@@ -291,7 +262,7 @@ pub fn self_aimed_row_gate_reads_the_casters_whole_unit_test() -> Nil {
   use <- owned_test.run(60_000)
   let plans =
     support.plans_of([
-      lasting_of(spell4_id: 62_637, base: 3, effect_id: 177_849),
+      support.client_lasting(spell4_id: 62_637, base: 3, effect_ids: [177_849]),
     ])
   let #(_, in_combat) =
     support.press_as(

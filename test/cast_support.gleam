@@ -51,6 +51,23 @@ import place_support
 import quest_support
 import spell_tables
 
+/// A planted spell of the Spell4 and base given, holding the lasting rows of the client's
+/// spell of that Spell4 that have these effect ids: the cast rule reads the rows, the
+/// planted spell only gives them a base the bag holds.
+pub fn client_lasting(
+  spell4_id spell4_id: Int,
+  base base: Int,
+  effect_ids effect_ids: List(Int),
+) -> Spell {
+  let rows =
+    list.filter(spell_tables.client_spell(spell4_id:).lasting, fn(row) {
+      list.contains(effect_ids, row.effect_id.value)
+    })
+  assert list.length(rows) == list.length(effect_ids)
+    as "the client's spell holds each of the rows"
+  Spell(..child(spell4_id:, base:), lasting: rows)
+}
+
 /// A child spell the client's row gives these ids: no cast time, no cooldown, no
 /// range, kind 3 (`opcode.0x7ff.root_parent`: the global cooldown kind of every
 /// child of the nine abilities), and the dead bit of caster condition row 1, which

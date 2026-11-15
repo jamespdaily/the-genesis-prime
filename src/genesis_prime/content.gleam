@@ -109,6 +109,7 @@ import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/class_resource
 import genesis_prime/game/place_objective
 import genesis_prime/game/projector
+import genesis_prime/game/quest_log
 import genesis_prime/game/rating
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_plan
@@ -418,6 +419,13 @@ fn read(
       log_levels_out_of_range(selection)
       log_place_objectives(tables:, selection:)
       content_spawn.put(key:, selection:)
+      content_spawn.put_reused_unit_objectives(
+        key:,
+        objectives: quest_log.reused_unit_objectives(
+          tables:,
+          spawn_counts: content_spawn.counts(rows),
+        ),
+      )
       let assert Ok(kinds_of_summons) = kinds_for_spawns
         as "no kinds were taken, which refuses the kind rows, so the load has refusals and does not reach here"
       content_spawn.put_summon_checks(
