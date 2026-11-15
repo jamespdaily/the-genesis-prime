@@ -39,8 +39,8 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
-  AimsAtArea, AimsAtBoth, AimsAtCaster, AimsAtPrimaryTarget, Always,
-  GatedOnCaster, GatedOnCasterAndTarget, GatedOnTarget,
+  AimsAtArea, AimsAtCaster, AimsAtPrimaryTarget, AimsAtPrimaryTargetAndArea,
+  Always, GatedOnCaster, GatedOnCasterAndTarget, GatedOnTarget,
 }
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties
@@ -180,7 +180,7 @@ pub fn a_scale_or_ravel_signal_row_is_held_for_each_aim_the_plan_reads_test() ->
     #(1, AimsAtCaster),
     #(2, AimsAtPrimaryTarget),
     #(4, AimsAtArea),
-    #(6, AimsAtBoth),
+    #(6, AimsAtPrimaryTargetAndArea),
   ]
   list.each([18, 81], fn(effect_type) {
     list.each(aims, fn(aim) {

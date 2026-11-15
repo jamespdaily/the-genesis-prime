@@ -68,9 +68,7 @@ import genesis_prime/game/area.{
 }
 import genesis_prime/game/damage.{type Formula}
 import genesis_prime/game/effect_kind
-import genesis_prime/game/spell_plan.{
-  type Aim, type Spell, AimsAtArea, AimsAtBoth, AimsAtPrimaryTarget,
-}
+import genesis_prime/game/spell_plan.{type Aim, type Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/ticking
 import genesis_prime/table/id.{
@@ -255,7 +253,8 @@ pub fn describe(error error: AreaError) -> String {
       <> int.to_string(effect_id)
       <> " aimed by flags "
       <> int.to_string(target_flags)
-      <> ", which are not read"
+      <> ", "
+      <> spell_plan.aim_values_read_text(target_flags:)
     FormulaNotRead(spell4_id:, effect_id:, parameter_kind:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -594,7 +593,7 @@ fn damage_effects_of(
 
 /// One damage row (effect type 8) of the spell `spell4_id` as a damage effect, or the error
 /// that refuses it: its dataBits00 must be a finite 32-bit float, its targetFlags one the
-/// rule aims by (1, 2, 4 or 6), its formula must read only the parameter types a player's
+/// rule aims by (1 to 7), its formula must read only the parameter types a player's
 /// value reads (genesis_prime/game/damage `unread`). A row with a tickTime is periodic,
 /// with the schedule of its ticks (genesis_prime/game/ticking `schedule_of`), read before
 /// its apply gates so that an until-removed row is left out whatever its gates are. Every
@@ -613,15 +612,14 @@ pub fn damage_row_of(
       bits: effect.data_bits00,
     )),
   )
-  let aim = spell_plan.aim_of(target_flags: effect.target_flags)
-  use Nil <- result.try(case aim {
-    spell_plan.OtherAim(flags:) ->
-      Error(AimNotRead(spell4_id:, effect_id: effect.id, target_flags: flags))
-    spell_plan.AimsAtCaster
-    | spell_plan.AimsAtPrimaryTarget
-    | AimsAtArea
-    | AimsAtBoth -> Ok(Nil)
-  })
+  use aim <- result.try(
+    spell_plan.aim_of(target_flags: effect.target_flags)
+    |> result.replace_error(AimNotRead(
+      spell4_id:,
+      effect_id: effect.id,
+      target_flags: effect.target_flags,
+    )),
+  )
   use Nil <- result.try(case damage.unread(formula:) {
     Some(damage.Unread(parameter_kind:)) ->
       Error(FormulaNotRead(spell4_id:, effect_id: effect.id, parameter_kind:))
@@ -703,30 +701,29 @@ fn phase_of(
       spell_plan.struck_moves_in_phase(spell: spell.spell, phase:, spent:),
       fn(move) { move.aim },
     )
-  let strikes = fn(aims) {
-    list.any(firing, fn(effect) { list.contains(aims, effect.aim) })
-    || list.any(throws, fn(aim) { list.contains(aims, aim) })
-    || list.any(ticking_firing, fn(row) { list.contains(aims, row.damage.aim) })
-    || list.any(controls, fn(control) { list.contains(aims, control.aim) })
-    || list.any(changes, fn(aim) { list.contains(aims, aim) })
+  let strikes = fn(reaches: fn(Aim) -> Bool) {
+    list.any(firing, fn(effect) { reaches(effect.aim) })
+    || list.any(throws, reaches)
+    || list.any(ticking_firing, fn(row) { reaches(row.damage.aim) })
+    || list.any(controls, fn(control) { reaches(control.aim) })
+    || list.any(changes, reaches)
   }
   PhaseStrike(
     damage: list.filter(firing, fn(effect) {
-      list.contains([AimsAtPrimaryTarget, AimsAtArea, AimsAtBoth], effect.aim)
+      spell_plan.reaches_past_caster(aim: effect.aim)
     }),
     ticking: list.filter(ticking_firing, fn(row) {
-      list.contains(
-        [AimsAtPrimaryTarget, AimsAtArea, AimsAtBoth],
-        row.damage.aim,
-      )
+      spell_plan.reaches_past_caster(aim: row.damage.aim)
     }),
     controls:,
-    selects_area: strikes([AimsAtArea, AimsAtBoth])
+    selects_area: strikes(fn(aim) { spell_plan.reaches_area(aim:) })
       || list.any(
       spell_plan.proxies_in_phase(spell: spell.spell, phase:, spent:),
       fn(proxy) { proxy.target == spell_plan.OnEachStruck },
     ),
-    strikes_primary_target: strikes([AimsAtPrimaryTarget, AimsAtBoth]),
+    strikes_primary_target: strikes(fn(aim) {
+      spell_plan.reaches_primary_target(aim:)
+    }),
   )
 }
 

@@ -100,6 +100,7 @@ fn effect_row_of(error: PlanError) -> Refusal {
     spell_plan.AbsorptionOnStruckUnit(effect_id:, ..) ->
       NamesAStruckRow(effect_id:, kind: "an absorb")
     spell_plan.ProxyAimNotRead(effect_id:, ..)
+    | spell_plan.FriendlyAreaNotRead(effect_id:, ..)
     | spell_plan.GainAimNotRead(effect_id:, ..)
     | spell_plan.GainVitalNotRead(effect_id:, ..)
     | spell_plan.ApplyPrerequisiteNotRead(effect_id:, ..)

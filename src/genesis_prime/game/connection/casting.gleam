@@ -1276,6 +1276,7 @@ pub fn carry_strike(
         let needed =
           cast.rolls_needed(
             cast: entered.cast,
+            caster: entered.unit_id,
             cast_id: asked.cast_id,
             phase: asked.phase,
             struck:,

@@ -258,7 +258,8 @@ pub fn a_spend_all_spell_refuses_an_effect_tag_the_rule_does_not_read_test() -> 
     Spell4Effects(..effect_of(61_993), emm_comparison: 2, emm_value: 0)
   let read = Spell4Effects(..effect_of(61_994), emm_comparison: 1, emm_value: 0)
   let effects = [refused, read]
-  let spends = spell_plan.RowPlace(struck_by: None, spends_all: True)
+  let spends =
+    spell_plan.RowPlace(struck_by: None, spends_all: True, hits_foes: False)
   assert spell_plan.read_row(
       tables:,
       spell_groups: spell_plan.spell_groups(tables:),

@@ -32,6 +32,7 @@ import genesis_prime/message/cast_result.{type CastResult}
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_finished
+import genesis_prime/message/spell_go
 import genesis_prime/message/spell_stack_removed
 import genesis_prime/message/spell_targets_removed
 import genesis_prime/step.{
@@ -247,6 +248,56 @@ pub fn plans_of(spells: List(Spell)) -> Plans {
 /// The plans with this spell in place of the ability of the same Spell4Base id.
 pub fn plans_with(spell spell: Spell) -> Plans {
   plans_of([spell])
+}
+
+/// The Spell4 id of the planted base 3 ability of `plans_starting_on_each_struck`.
+pub const parent_spell4_id = 90_001
+
+/// The plans in which the base 3 ability starts `started` on each unit its go struck,
+/// through a Proxy aimed at each struck unit (`ProxyTarget.OnEachStruck`). A press gives a
+/// cast no primary target but the caster (`Spell4TargetMechanics.targetType`), so a cast
+/// whose primary target is another unit is a child a Proxy starts: its primary target is
+/// the struck unit.
+pub fn plans_starting_on_each_struck(started started: Spell) -> Plans {
+  plans_with(
+    spell: Spell(..child(spell4_id: parent_spell4_id, base: 3), proxies: [
+      spell_plan.Proxy(
+        effect_id: Spell4EffectsId(90_002),
+        delay_ms: 0,
+        phase_flags: -1,
+        condition: Always,
+        tag: spend.always,
+        target: spell_plan.OnEachStruck,
+        spell: started,
+        gains: [],
+      ),
+    ]),
+  )
+}
+
+/// The effect ids each unit's entry lists in the go of the child that
+/// `plans_starting_on_each_struck` started, by unit, in unit order: the one go of the effects
+/// that is not the press's own.
+pub fn child_go_listing(
+  effects effects: List(Effect),
+) -> List(#(Int, List(Int))) {
+  let press = pressed_id(effects:)
+  let decoded =
+    list.map(frames_of(message_id: spell_go.message_id, effects:), fn(frame) {
+      let assert Ok(go) = spell_go.decode(frame.body)
+        as "a 0x7f4 the rule wrote decodes"
+      go
+    })
+  let assert [child] = list.filter(decoded, fn(go) { go.cast_id != press })
+    as "one go is the started child's"
+  list.map(child.targets, fn(info) {
+    #(
+      info.unit_id,
+      list.map(info.effects, fn(effect) { effect.spell4_effects_id })
+        |> list.sort(int.compare),
+    )
+  })
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
 }
 
 /// The plans the client's own tables build.

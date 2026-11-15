@@ -739,6 +739,7 @@ pub fn the_caster_gates_of_a_target_gated_proxy_take_their_rolls_in_order_and_th
     as "the press asks for its go"
   assert cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck: [hit(unit_id: 20)],

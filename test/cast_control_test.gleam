@@ -467,6 +467,7 @@ pub fn a_restriction_behind_a_type_37_caster_gate_takes_one_roll_and_is_applied_
   let assert [asked] = support.goes_asked(effects: raw)
   assert cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck: [],

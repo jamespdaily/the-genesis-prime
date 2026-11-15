@@ -111,7 +111,7 @@ pub fn a_row_aimed_at_the_primary_target_or_the_area_is_read_test() -> Nil {
     [
       #(2, spell_plan.AimsAtPrimaryTarget),
       #(4, spell_plan.AimsAtArea),
-      #(6, spell_plan.AimsAtBoth),
+      #(6, spell_plan.AimsAtPrimaryTargetAndArea),
     ],
     fn(aimed) {
       let assert Ok(spell) =

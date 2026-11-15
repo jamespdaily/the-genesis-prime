@@ -5069,8 +5069,10 @@ fn creatures_ended(
 /// for each type 37 condition of that prerequisite for each unit the row's aim names
 /// (`target_rolls_needed`). The connection draws that many from its seed and no others,
 /// so a go with no type 37 condition moves no roll. A cast that is not live takes none.
+/// `caster` is the casting unit, which a row aimed at it and past it reaches once.
 pub fn rolls_needed(
   cast cast: State,
+  caster caster: Int,
   cast_id cast_id: Int,
   phase phase: Int,
   struck struck: List(Struck),
@@ -5103,6 +5105,7 @@ pub fn rolls_needed(
                 condition: row.condition,
                 units: units_reached(
                   aim: row.aim,
+                  caster:,
                   primary_target: live.primary_target,
                   struck:,
                 ),
@@ -5116,6 +5119,7 @@ pub fn rolls_needed(
                 condition: row.condition,
                 units: units_reached(
                   aim: row.aim,
+                  caster:,
                   primary_target: live.primary_target,
                   struck:,
                 ),
@@ -5129,6 +5133,7 @@ pub fn rolls_needed(
                 condition: row.condition,
                 units: units_reached(
                   aim: spell_plan.modifier_aim(modifier: row),
+                  caster:,
                   primary_target: live.primary_target,
                   struck:,
                 ),
@@ -5148,6 +5153,7 @@ pub fn rolls_needed(
                 condition: row.condition,
                 units: units_reached(
                   aim: row.aim,
+                  caster:,
                   primary_target: live.primary_target,
                   struck:,
                 ),
@@ -5193,6 +5199,7 @@ pub fn rolls_needed(
                 condition: row.condition,
                 units: units_reached(
                   aim: row.aim,
+                  caster:,
                   primary_target: live.primary_target,
                   struck:,
                 ),
@@ -5229,15 +5236,16 @@ fn target_rolls_needed(
 }
 
 /// How many units a row aimed by `aim` reaches in a round that closed with `struck`
-/// (`units_aimed_at`; which unit the caster is does not change the count).
+/// (`units_aimed_at`: a caster that is its own primary target, or struck, is one unit).
 fn units_reached(
   aim aim: spell_plan.Aim,
+  caster caster: Int,
   primary_target primary_target: Int,
   struck struck: List(Struck),
 ) -> Int {
   list.length(spell_plan.units_aimed_at(
     aim:,
-    caster: primary_target,
+    caster:,
     primary_target:,
     area: hit_units(struck:),
   ))

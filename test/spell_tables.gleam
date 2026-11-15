@@ -487,8 +487,15 @@ pub fn listed_effect_ids(spell spell: spell_plan.Spell) -> List(Int) {
   ])
 }
 
-/// The place of a spell no Proxy starts on each struck unit and that spends nothing.
-pub const pressed = spell_plan.RowPlace(struck_by: None, spends_all: False)
+/// The place of a spell no Proxy starts on each struck unit, that spends nothing and whose
+/// rows hit no foes.
+pub const pressed =
+  spell_plan.RowPlace(struck_by: None, spends_all: False, hits_foes: False)
+
+/// The place of a spell no Proxy starts on each struck unit, that spends nothing and that
+/// hits foes (`spell_plan.spell_hits_foes`).
+pub const pressed_hitting_foes =
+  spell_plan.RowPlace(struck_by: None, spends_all: False, hits_foes: True)
 
 /// The place of a spell the Proxy effect `proxy_effect_id` of Spell4 `spell4_id` starts on
 /// each unit its area strikes.
@@ -499,6 +506,7 @@ pub fn started_on_each_struck(
   spell_plan.RowPlace(
     struck_by: Some(spell_plan.StruckBy(spell4_id:, proxy_effect_id:)),
     spends_all: False,
+    hits_foes: False,
   )
 }
 

@@ -579,7 +579,7 @@ pub fn every_state_is_read_on_every_simple_aim_test() -> Nil {
     #(1, spell_plan.AimsAtCaster),
     #(2, spell_plan.AimsAtPrimaryTarget),
     #(4, spell_plan.AimsAtArea),
-    #(6, spell_plan.AimsAtBoth),
+    #(6, spell_plan.AimsAtPrimaryTargetAndArea),
   ]
   list.each(aims, fn(aim) {
     let #(flags, expected_aim) = aim

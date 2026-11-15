@@ -269,7 +269,7 @@ pub fn row_aimed_at_struck_units_is_planned_test() -> Nil {
     #(
       99_063,
       6,
-      spell_plan.AimsAtBoth,
+      spell_plan.AimsAtPrimaryTargetAndArea,
       [
         #("dataBits00", Integer(130)),
         #("dataBits01", Integer(1)),

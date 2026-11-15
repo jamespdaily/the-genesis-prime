@@ -253,6 +253,7 @@ pub fn a_type_37_target_gate_of_a_proxy_on_the_caster_takes_one_roll_test() -> N
   let #(state, asked) = live_go_of(spell:)
   assert cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck: [],
@@ -314,6 +315,7 @@ pub fn a_go_takes_a_roll_for_each_type_37_condition_it_may_check_and_none_otherw
   let #(state, asked) = live_go_of(spell: needing)
   assert cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck: [],
@@ -332,6 +334,7 @@ pub fn a_go_takes_a_roll_for_each_type_37_condition_it_may_check_and_none_otherw
   let #(state, asked) = live_go_of(spell: none)
   assert cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck: [],
@@ -344,6 +347,7 @@ pub fn a_go_takes_a_roll_for_each_type_37_condition_it_may_check_and_none_otherw
     )
   assert cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck: [],
@@ -353,6 +357,7 @@ pub fn a_go_takes_a_roll_for_each_type_37_condition_it_may_check_and_none_otherw
   let not_there =
     cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id + 1000,
       phase: 0,
       struck: [],
@@ -427,6 +432,7 @@ pub fn a_gain_needs_both_its_gates_and_takes_a_roll_for_a_type_37_target_gate_te
   let #(state, asked) = live_go_of(spell:)
   assert cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck: [],

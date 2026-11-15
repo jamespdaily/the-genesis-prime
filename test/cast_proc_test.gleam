@@ -808,6 +808,7 @@ pub fn a_fire_draws_no_roll_and_a_held_proc_changes_no_go_rolls_test() -> Nil {
   let assert [cast.Strike(passive_go)] = list.filter(started, is_strike)
   assert cast.rolls_needed(
       cast: held,
+      caster: support.caster().unit_id,
       cast_id: passive_go.cast_id,
       phase: passive_go.phase,
       struck: [],
@@ -837,6 +838,7 @@ pub fn a_fire_draws_no_roll_and_a_held_proc_changes_no_go_rolls_test() -> Nil {
   let assert [cast.Strike(stealth_go)] = list.filter(going, is_strike)
   assert cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: stealth_go.cast_id,
       phase: stealth_go.phase,
       struck: [],

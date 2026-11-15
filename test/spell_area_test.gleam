@@ -894,7 +894,7 @@ fn kit_controls() -> List(
       crowd_control_state.Knockdown,
       0,
       4000,
-      spell_plan.AimsAtBoth,
+      spell_plan.AimsAtPrimaryTargetAndArea,
     ),
   ]
 }
@@ -975,6 +975,29 @@ fn planned_alone(spell4_id spell4_id: Int) -> spell_area.SpellArea {
     ticking: [],
     spell:,
   )
+}
+
+pub fn phase_with_a_union_damage_row_selects_the_area_and_strikes_the_target_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects 11846 (`table_rows -- Spell4Effects 11846`): spell 6518, effectType 8,
+  // targetFlags 7 (the caster, the primary target and the area), phaseFlags 1.
+  let tables = fixture_tables.shared()
+  let assert Ok(row) = spell4_effects.get(tables:, id: Spell4EffectsId(11_846))
+    as "the fixture holds the client's row"
+  let assert Ok(Once(effect: damage)) =
+    spell_area.damage_row_of(tables:, spell4_id: 6518, effect: row)
+    as "a damage row aimed by flags 7 is read, and it strikes once"
+  assert damage.aim == spell_plan.AimsAtCasterPrimaryTargetAndArea
+    as "targetFlags 7 hold all three bits"
+  let planned = planned_alone(spell4_id: 6518)
+  let area = spell_area.SpellArea(..planned, damage: [damage])
+  let assert Ok(phase) = spell_area.phase(spell: area, phase: 0, spent: None)
+  assert phase.selects_area
+    as "bit 4 aims at the area, so the phase selects its units"
+  assert phase.strikes_primary_target
+    as "bit 2 aims at the cast's target, so the phase strikes it"
+  assert phase.damage == [damage]
+    as "the row is in the phase's damage: its blow lands on the selected units, which are never the caster"
 }
 
 pub fn a_modifier_only_child_aimed_at_the_target_strikes_the_primary_target_test() -> Nil {
