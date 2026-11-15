@@ -29,6 +29,7 @@ import gleam/bool
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/set
 import owned_test
 import quest_support
 import unitest
@@ -166,7 +167,8 @@ fn counts_once(
       unit: quest_support.unit_ref(unit_id: 1),
       by_item: False,
     )
-  let first = objective.advance(log:, tables:, event:, now_ms: 0)
+  let first =
+    objective.advance(reused: set.new(), log:, tables:, event:, now_ms: 0)
   let where = "objective " <> label(row.id) <> " of quest " <> label(quest_id)
   assert list.contains(
     first.effects,
@@ -179,7 +181,14 @@ fn counts_once(
       <> where
     }
   use <- bool.guard(when: row.count < 2, return: False)
-  let second = objective.advance(log: first.log, tables:, event:, now_ms: 0)
+  let second =
+    objective.advance(
+      reused: set.new(),
+      log: first.log,
+      tables:,
+      event:,
+      now_ms: 0,
+    )
   // A later objective the first use opened may count the unit itself: quest 6251's
   // objective 9944 follows 9943 with a group (3260) that lists the same creature, so the
   // second use is that objective's first.

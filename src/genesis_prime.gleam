@@ -626,6 +626,7 @@ fn game(
       visibility: content_spawn.visibility(key: spawns),
       tutorial_chain: content_tutorial_quest.chain(key: spawns),
       projector_landings: content_projector_landing.landings(key: spawns),
+      reused_unit_objectives: content_spawn.reused_unit_objectives(key: spawns),
     ),
     wire_recorder: None,
     scripts: script.operating_system,

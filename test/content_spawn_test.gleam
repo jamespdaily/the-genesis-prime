@@ -84,3 +84,22 @@ pub fn a_selections_worlds_are_put_once_and_read_back_by_world_test() -> Nil {
   assert content_spawn.world(key:, world_id: 22) == spawn.no_spawns()
     as "a world of the World table with no spawn that starts has an empty term"
 }
+
+pub fn spawn_counts_count_rows_per_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The `spawn` table holds one row for each spawn, with its creature_id and world_id
+  // (`content/sql/load_spawns.sql`): a creature in two worlds has two rows.
+  let in_world = fn(row: spawn.Row, world_id) { spawn.Row(..row, world_id:) }
+  let survivor = fn(number) {
+    spawn.Row(..spawn_support.beast_row(number:), creature_id: 11_070)
+  }
+  let other =
+    spawn.Row(..spawn_support.beast_row(number: 3), creature_id: 23_568)
+  assert content_spawn.counts(rows: [
+      in_world(survivor(1), 22),
+      in_world(survivor(2), 51),
+      other,
+    ])
+    == dict.from_list([#(11_070, 2), #(23_568, 1)])
+    as "two rows of creature 11070 in two worlds and one of 23568"
+}

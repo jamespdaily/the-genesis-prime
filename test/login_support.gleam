@@ -34,6 +34,7 @@ import genesis_prime/world_map/creature_registry
 import gleam/dict
 import gleam/erlang/process.{type Pid}
 import gleam/option.{None, Some}
+import gleam/set
 import login_client.{type Ports, Ports}
 import login_vectors as vector
 import pog
@@ -145,6 +146,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
       visibility: dict.new(),
       tutorial_chain: tutorial_support.none(),
       projector_landings: projector_support.none(),
+      reused_unit_objectives: set.new(),
     ),
     wire_recorder: None,
     scripts: script.operating_system,

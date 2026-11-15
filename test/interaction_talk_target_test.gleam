@@ -386,6 +386,7 @@ pub fn a_click_on_a_simple_type_18_target_counts_the_talk_test() -> Nil {
 
   let counted =
     objective.advance(
+      reused: set.new(),
       log: quest_support.log_of(rows: reached),
       tables:,
       event: objective.TalkedTo(
