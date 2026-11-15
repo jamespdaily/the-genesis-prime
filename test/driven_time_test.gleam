@@ -76,10 +76,11 @@ fn answer(message: Dynamic) -> Nil
 
 /// A plain process that reads the clock when it starts, so it is a participant,
 /// and then takes from one mailbox, in order, its own inputs (`take`) and the
-/// barrier's `sys:suspend` and `sys:resume` requests, each suspend of which it
-/// reports to `visits` as `who`, and answers both. An input waits for the test to
-/// let it go (`release`), and a request that arrives meanwhile waits in the
-/// mailbox.
+/// barrier's `sys:suspend` and `sys:resume` requests, answers both, and reports to
+/// `visits` as `who` once it has answered a resume, which is when the barrier is
+/// done with it, so nothing the test releases on that report can reach it ahead of
+/// the resume. An input waits for the test to let it go (`release`), and a request
+/// that arrives meanwhile waits in the mailbox.
 fn start_participant(
   who who: Who,
   time time: ServiceTime,
@@ -117,13 +118,14 @@ fn serve(
   case taken {
     Input(message) -> take(message, release)
     Other(system) -> {
-      case system_request(system) {
-        Suspend -> process.send(visits, who)
-        Resume -> Nil
+      let request = system_request(system)
+      answer(system)
+      case request {
+        Suspend -> Nil
+        Resume -> process.send(visits, who)
         Unknown ->
           panic as "a plain participant is sent nothing but its input and the barrier's sys:suspend and sys:resume"
       }
-      answer(system)
     }
   }
   serve(who:, visits:, handle:, release:, take:)
@@ -208,8 +210,9 @@ pub fn a_message_sent_late_in_a_pass_is_taken_before_advance_returns_test() -> N
   let advancing = process.spawn(fn() { driven_time.advance(time:, ms: 10) })
   let advanced = process.monitor(advancing)
   // The case needs the barrier to settle the holder, which is idle, before it
-  // reaches the sender, which is busy: the first look the barrier makes is the
-  // holder's, and the sender's waits behind its input.
+  // reaches the sender, which is busy: the first look reported, which is after the
+  // barrier's resume of the participant, is the holder's, and the sender's waits
+  // behind its input.
   assert visit(visits, what: "the barrier's first look at a participant")
     == Holder
   // The sender now sends the holder a message and answers; the holder takes the
