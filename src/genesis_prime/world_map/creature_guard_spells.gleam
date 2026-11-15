@@ -138,6 +138,7 @@ fn applied(kind kind: effect_kind.Kind) -> Bool {
     | effect_kind.Proc
     | effect_kind.InterruptArmor
     | effect_kind.Scale
+    | effect_kind.ItemVisualSwap
     | effect_kind.PropertyConversion
     | effect_kind.DisguiseOutfit
     | effect_kind.Absorption
@@ -176,6 +177,7 @@ fn listed(effect effect: Spell4Effects) -> Result(OpeningEffect, Nil) {
     | effect_kind.Proc
     | effect_kind.InterruptArmor
     | effect_kind.Scale
+    | effect_kind.ItemVisualSwap
     | effect_kind.PropertyConversion
     | effect_kind.DisguiseOutfit
     | effect_kind.Absorption
