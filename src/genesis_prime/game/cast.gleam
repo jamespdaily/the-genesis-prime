@@ -269,8 +269,8 @@
 ////   a pending heal are due in the same millisecond the end lands the heal first. A node
 ////   taken off the caster, a persistence that stops holding and the caster's death drop a
 ////   pending heal with its timer; a later go of the cast heals again and cancels no
-////   earlier heal. A periodic heal (a tickTime) is not applied, and a debug line says so:
-////   each tick needs a 0x7f8 (#336). A heal on a unit other than the caster (a child on a
+////   earlier heal. A periodic heal (a tickTime) heals the caster at each tick, after
+////   the tick's 0x7f8 (`ticking_heals`). A heal on a unit other than the caster (a child on a
 ////   struck unit) lands nothing and a debug line says so (#570). The server rolls no
 ////   critical for a heal: the description is always a Hit, so the seed draws nothing for
 ////   it (the server's choice; the crit of a heal is #336).
@@ -566,9 +566,11 @@ import genesis_prime/game/look
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shortcut_spell
+import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
+import genesis_prime/game/ticking
 import genesis_prime/game/unit_properties
 import genesis_prime/message/ability_hold
 import genesis_prime/message/cancel_cast.{type CancelCast}
@@ -603,6 +605,9 @@ import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_damage.{SpellEffectDamage}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
+import genesis_prime/message/spell_effect_tick.{
+  type SpellEffectTick, SpellEffectTick,
+}
 import genesis_prime/message/spell_failed.{SpellFailed}
 import genesis_prime/message/spell_finished.{SpellFinished}
 import genesis_prime/message/spell_go.{type SpellGo, SpellGo}
@@ -757,6 +762,10 @@ pub type Effect {
   /// (genesis_prime/game/strike) and, when the round closes, answers with `went`.
   /// The go's 0x7f4 waits for that answer.
   Strike(asked: GoAsked)
+  /// A tick of a periodic damage row is due on a unit: the connection strikes it
+  /// (genesis_prime/game/strike `begin_tick`) and, when the round closes, answers with
+  /// `ticked`. The tick's 0x7f8 waits for that answer.
+  TickStrike(asked: TickAsked)
   /// A cast's costs are taken from the caster's class resource, at its first go, or
   /// at the accept of a spell that goes at once (genesis_prime/game/class_resource
   /// `pay`).
@@ -834,6 +843,23 @@ pub type GoAsked {
   )
 }
 
+/// A tick of a periodic damage row that waits for its unit's answer: which cast, spell
+/// and row, the unit in the life the go struck, which go of the cast on the unit started
+/// the schedule (counted from 1: a later go starts it again), which tick of that
+/// schedule, and the row's damage, which the tick strikes with alone.
+pub type TickAsked {
+  TickAsked(
+    cast_id: Int,
+    spell4_id: Spell4Id,
+    effect_id: Spell4EffectsId,
+    unit_id: Int,
+    life: Int,
+    go: Int,
+    tick: Int,
+    blow: spell_area.DamageEffect,
+  )
+}
+
 /// A unit a go names, from the round that closed (genesis_prime/game/strike).
 pub type Struck {
   /// The unit is named in the 0x7f4 with the damage that landed on it, which is
@@ -848,6 +874,9 @@ pub type Struck {
     /// The interrupt armor the strike took off the unit, which the go's combat log
     /// shows (genesis_prime/game/strike_tell `Landed`).
     armor_removed: Int,
+    /// The periodic damage rows of the go whose aim reaches the unit: the go lists each
+    /// with a bit result, and each ticks on the unit (`ticked`).
+    ticking: List(spell_area.TickingDamage),
   )
   /// The unit deflected the strike: an entry of the 0x7fb, no description and no
   /// child (`opcode.0x7fb`).
@@ -861,6 +890,9 @@ pub type Struck {
     unit: HitUnit,
     controls: List(strike_tell.ControlLanded),
     armor_removed: Int,
+    /// The periodic damage rows of the go whose aim reaches the unit, as on a `Hit`:
+    /// an immune unit is still ticked, since the guard may end.
+    ticking: List(spell_area.TickingDamage),
   )
 }
 
@@ -966,6 +998,52 @@ pub type Due {
   /// The ChargeRelease threshold of the ability `spell4_id` reaches the charge
   /// level `level`.
   ChargeLevel(spell4_id: Int, level: Int)
+  /// Tick `tick` of the periodic row `effect_id` of the cast `cast_id` on the unit
+  /// `unit_id` lands (genesis_prime/game/ticking `tick_at_ms`); only the next tick of a
+  /// row on a unit is armed.
+  Tick(cast_id: Int, effect_id: Spell4EffectsId, unit_id: Int, tick: Int)
+}
+
+/// A periodic row of a cast on one unit: the unit, and the Spell4Effects row.
+pub opaque type TickKey {
+  TickKey(unit_id: Int, effect_id: Spell4EffectsId)
+}
+
+/// The ticks of a periodic row on one unit: what each tick does, the row's schedule,
+/// which go of the cast started it (counted from 1) and the monotonic time of that go,
+/// which the schedule counts from, the last tick that fired (0 before the first), how
+/// many damage tick rounds of the row on the unit are open, an earlier schedule's
+/// included, and the life of the unit the go struck. A node whose unit has an open
+/// round is held past its end, so the cast's 0x811 or 0x7fe follows the tick's 0x7f8.
+pub opaque type Ticking {
+  Ticking(
+    kind: TickKind,
+    schedule: ticking.Schedule,
+    go: Int,
+    from_ms: Int,
+    tick: Int,
+    open: Int,
+    life: Int,
+  )
+}
+
+/// What a tick does: a damage row strikes its unit with its blow; a heal row heals the
+/// caster's vital by its formula, read for the caster at the tick.
+pub opaque type TickKind {
+  DamageTick(blow: spell_area.DamageEffect)
+  HealTick(vital: effect_kind.Vital, formula: damage.Formula)
+}
+
+/// A periodic row a go starts ticking on one unit: the unit and the life the go struck
+/// (0 for the caster), the row, its schedule and what each tick does.
+type TickingOn {
+  TickingOn(
+    unit_id: Int,
+    life: Int,
+    effect_id: Spell4EffectsId,
+    schedule: ticking.Schedule,
+    kind: TickKind,
+  )
 }
 
 /// What a press resolved to when it came: the spell it casts, the ability that
@@ -1065,6 +1143,9 @@ pub type Live {
     /// the cast ends when its last go is written, which a round's deadline bounds
     /// (`opcode.0x7f4`: the client counts the gos before its 0x7fe, `cast.channel_sequence`).
     finish_due: Bool,
+    /// The periodic rows the cast's gos armed, by unit and row: each lasts while its
+    /// unit's node does (`ticks_dropped`).
+    ticking: Dict(TickKey, Ticking),
   )
 }
 
@@ -1083,6 +1164,8 @@ pub type Lingering {
     /// The unit the cast was aimed at when it started, which its persistence reads.
     primary_target: Int,
     nodes: Dict(Int, lasting.Node),
+    /// The periodic rows still ticking, as on its `Live` cast.
+    ticking: Dict(TickKey, Ticking),
   )
 }
 
@@ -4220,6 +4303,7 @@ pub fn after_payments(
         | CancelTimer(..)
         | Log(..)
         | Strike(..)
+        | TickStrike(..)
         | CasterChangeStarts(..)
         | CasterChangeEnds(..)
         | TargetChangeStarts(..)
@@ -4582,7 +4666,8 @@ fn stop_pending(
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
-      | ChargeLevel(..) -> False
+      | ChargeLevel(..)
+      | Tick(..) -> False
     }
   })
 }
@@ -4669,6 +4754,7 @@ fn fire(
       let now_ms = now.monotonic_ms
       case due {
         Go(cast_id:, phase:) -> asked(cast:, caster:, now_ms:, cast_id:, phase:)
+        Tick(cast_id:, ..) -> ticks_due(cast:, caster:, now_ms:, cast_id:)
         Finish(cast_id:) -> finish_fired(cast:, cast_id:, now_ms:)
         StartChild(root:, parent:, proxy:, primary_target:) ->
           start(
@@ -4684,7 +4770,11 @@ fn fire(
             spent: None,
             reserved: [],
           )
-        NodesEnd(cast_id:) -> nodes_ended(cast:, cast_id:, now_ms:)
+        NodesEnd(cast_id:) -> {
+          let #(cast, ticks) = ticks_due(cast:, caster:, now_ms:, cast_id:)
+          let #(cast, ended) = nodes_ended(cast:, cast_id:, now_ms:)
+          #(cast, list.append(ticks, ended))
+        }
         StateEnd(spell4_id:, unit_id:, state:) -> #(cast, [
           Send(frame: control_logged_frame(
             caster_unit_id: caster.unit_id,
@@ -5083,6 +5173,8 @@ type Holder {
     started_ms: Int,
     primary_target: Int,
     nodes: Dict(Int, lasting.Node),
+    /// The periodic rows the cast's gos armed, whose open rounds hold their nodes.
+    ticking: Dict(TickKey, Ticking),
     /// Whether the cast has gone for the last time and waits for its nodes to end.
     lingering: Bool,
   )
@@ -5098,6 +5190,7 @@ fn holder_of(cast cast: State, cast_id cast_id: Int) -> Result(Holder, Nil) {
         started_ms: live.started_ms,
         primary_target: live.primary_target,
         nodes: live.nodes,
+        ticking: live.ticking,
         lingering: False,
       ))
     Error(Nil), Ok(lingering) ->
@@ -5107,6 +5200,7 @@ fn holder_of(cast cast: State, cast_id cast_id: Int) -> Result(Holder, Nil) {
         started_ms: lingering.started_ms,
         primary_target: lingering.primary_target,
         nodes: lingering.nodes,
+        ticking: lingering.ticking,
         lingering: True,
       ))
     Error(Nil), Error(Nil) -> Error(Nil)
@@ -5148,19 +5242,89 @@ fn with_nodes(
   }
 }
 
-/// The nodes whose life is over at the time, and the others, each with its unit id.
+/// The nodes whose life is over at the time, and the others, each with its unit id. A
+/// node whose unit has a tick round open is kept past its end until the round closes
+/// (`ticked`), so its 0x811 or the cast's 0x7fe follows the tick's 0x7f8.
 fn ended_and_kept(
   nodes nodes: Dict(Int, lasting.Node),
+  ticking ticking: Dict(TickKey, Ticking),
   now_ms now_ms: Int,
 ) -> #(List(#(Int, lasting.Node)), List(#(Int, lasting.Node))) {
   dict.to_list(nodes)
-  |> list.partition(fn(entry) { life_over(life: { entry.1 }.life, now_ms:) })
+  |> list.partition(fn(entry) {
+    life_over(life: { entry.1 }.life, now_ms:)
+    && !tick_round_open(ticking:, unit_id: entry.0)
+  })
+}
+
+/// Whether a tick round of the cast on the unit is open.
+fn tick_round_open(
+  ticking ticking: Dict(TickKey, Ticking),
+  unit_id unit_id: Int,
+) -> Bool {
+  dict.fold(ticking, False, fn(open, key, row) {
+    open || { key.unit_id == unit_id && row.open > 0 }
+  })
+}
+
+/// The periodic rows of the cast set, wherever the cast is.
+fn with_ticking(
+  cast cast: State,
+  cast_id cast_id: Int,
+  ticking ticking: Dict(TickKey, Ticking),
+) -> State {
+  case dict.get(cast.casts, cast_id), dict.get(cast.lingering, cast_id) {
+    Ok(live), _ ->
+      State(
+        ..cast,
+        casts: dict.insert(cast.casts, cast_id, Live(..live, ticking:)),
+      )
+    Error(Nil), Ok(lingering) ->
+      State(
+        ..cast,
+        lingering: dict.insert(
+          cast.lingering,
+          cast_id,
+          Lingering(..lingering, ticking:),
+        ),
+      )
+    Error(Nil), Error(Nil) -> cast
+  }
+}
+
+/// The `Tick` timers of the cast whose row on its unit `matching` accepts, cancelled.
+fn tick_timers_cancelled(
+  cast cast: State,
+  cast_id cast_id: Int,
+  matching matching: fn(TickKey) -> Bool,
+) -> #(State, List(Effect)) {
+  cancel_timers(cast:, matching: fn(due) {
+    case due {
+      Tick(cast_id: waiting, effect_id:, unit_id:, ..) ->
+        waiting == cast_id && matching(TickKey(unit_id:, effect_id:))
+      Go(..)
+      | Finish(..)
+      | StartChild(..)
+      | NodesEnd(..)
+      | StateEnd(..)
+      | ModifierStart(..)
+      | TargetModifierStart(..)
+      | ModifierEnd(..)
+      | RestrictionEnd(..)
+      | CooldownModifierStarts(..)
+      | CooldownModifierEnds(..)
+      | StartHeld
+      | RepeatHeld
+      | WindowEnd(..)
+      | ChargeLevel(..) -> False
+    }
+  })
 }
 
 /// The earliest node of the cast `cast_id` has ended, live or lingering: the nodes
 /// whose life is over are dropped and written 0x811, and the timer starts again for the
 /// next end. A lingering cast left with no node ends with its 0x7fe instead. A cast
-/// that holds nothing any more has no frame.
+/// that holds nothing any more has no frame. The ticks of an ended node stop with it.
 fn nodes_ended(
   cast cast: State,
   cast_id cast_id: Int,
@@ -5169,10 +5333,13 @@ fn nodes_ended(
   case holder_of(cast:, cast_id:) {
     Error(Nil) -> #(cast, [])
     Ok(holder) -> {
-      let #(ended, kept) = ended_and_kept(nodes: holder.nodes, now_ms:)
+      let #(ended, kept) =
+        ended_and_kept(nodes: holder.nodes, ticking: holder.ticking, now_ms:)
       case ended {
         [] -> rearmed(cast:, cast_id:, now_ms:)
         [_, ..] -> {
+          let #(cast, ticks) =
+            ticks_dropped_on(cast:, cast_id:, unit_ids: sorted_units(ended))
           let #(cast, started) =
             cooldowns_started_at_node_end(
               cast:,
@@ -5211,6 +5378,7 @@ fn nodes_ended(
           #(
             cast,
             list.flatten([
+              ticks,
               nodes_ended_frames(cast_id:, holder:, ended:, kept:),
               started,
               healed,
@@ -5223,6 +5391,547 @@ fn nodes_ended(
       }
     }
   }
+}
+
+/// The ticks of the cast `cast_id` due at the time fire, each due tick of each row, a
+/// connection fallen behind included, earliest first and at one time in unit and row id
+/// order: a damage row asks its unit for the tick (`TickStrike`), whose 0x7f8 waits for
+/// `ticked`; a heal row writes its 0x7f8 to the caster, tells the audience
+/// (genesis_prime/client_connection `CastTicked`) and heals the caster
+/// (`CasterChangeStarts`), reading the vitals the heal ticks before it in the step left,
+/// and heals nothing on a dead caster. Then each row that fired has its next tick armed,
+/// or none after its last (genesis_prime/game/ticking `next_tick`). Any tick timer of the
+/// cast fires every tick due with it, so ticks due together keep that order whichever
+/// timer fires first.
+fn ticks_due(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  cast_id cast_id: Int,
+) -> #(State, List(Effect)) {
+  let #(cast, landed, fired) =
+    due_ticks_landed(
+      cast:,
+      caster:,
+      now_ms:,
+      cast_id:,
+      landed: [],
+      fired: set.new(),
+    )
+  let #(cast, armed) =
+    set.to_list(fired)
+    |> list.sort(by_tick_key)
+    |> list.fold(#(cast, []), fn(so_far, key) {
+      let #(cast, effects) = so_far
+      let #(cast, more) = next_tick_armed(cast:, now_ms:, cast_id:, key:)
+      #(cast, list.append(effects, more))
+    })
+  #(cast, list.append(landed, armed))
+}
+
+/// The earliest due tick of the cast fires, again until none is due, with the caster's
+/// vitals as each heal tick leaves them; the rows that fired are gathered.
+fn due_ticks_landed(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  cast_id cast_id: Int,
+  landed landed: List(Effect),
+  fired fired: Set(TickKey),
+) -> #(State, List(Effect), Set(TickKey)) {
+  let due = case holder_of(cast:, cast_id:) {
+    Ok(holder) ->
+      earliest_due(ticking: holder.ticking, now_ms:)
+      |> result.map(fn(due) { #(holder, due) })
+    Error(Nil) -> Error(Nil)
+  }
+  case due {
+    Error(Nil) -> #(cast, landed, fired)
+    Ok(#(holder, #(key, tick))) -> {
+      let #(cast, caster, more) =
+        tick_landed(cast:, caster:, cast_id:, holder:, key:, tick:)
+      due_ticks_landed(
+        cast:,
+        caster:,
+        now_ms:,
+        cast_id:,
+        landed: list.append(landed, more),
+        fired: set.insert(fired, key),
+      )
+    }
+  }
+}
+
+/// The row and the tick due earliest at the time, at one time the lowest unit id and
+/// then row id; none when no tick is due.
+fn earliest_due(
+  ticking rows: Dict(TickKey, Ticking),
+  now_ms now_ms: Int,
+) -> Result(#(TickKey, Int), Nil) {
+  dict.to_list(rows)
+  |> list.filter_map(fn(entry) {
+    let #(key, row) = entry
+    use next <- result.try(option.to_result(
+      ticking.next_tick(schedule: row.schedule, tick: row.tick),
+      Nil,
+    ))
+    let at_ms =
+      ticking.tick_at_ms(
+        schedule: row.schedule,
+        from_ms: row.from_ms,
+        tick: next,
+      )
+    case at_ms <= now_ms {
+      True -> Ok(#(at_ms, key, next))
+      False -> Error(Nil)
+    }
+  })
+  |> list.sort(fn(first, second) {
+    int.compare(first.0, second.0)
+    |> order.break_tie(by_tick_key(first.1, second.1))
+  })
+  |> list.first
+  |> result.map(fn(due) { #(due.1, due.2) })
+}
+
+/// Rows in unit id order, then row id order.
+fn by_tick_key(first: TickKey, second: TickKey) -> order.Order {
+  int.compare(first.unit_id, second.unit_id)
+  |> order.break_tie(int.compare(first.effect_id.value, second.effect_id.value))
+}
+
+/// Tick `tick` of the row `key` of the cast fires (`ticks_due`), with the caster as the
+/// heal ticks before it left it.
+fn tick_landed(
+  cast cast: State,
+  caster caster: Caster,
+  cast_id cast_id: Int,
+  holder holder: Holder,
+  key key: TickKey,
+  tick tick: Int,
+) -> #(State, Caster, List(Effect)) {
+  case dict.get(holder.ticking, key) {
+    Error(Nil) -> #(cast, caster, [])
+    Ok(row) -> {
+      let #(row, caster, landed) = case row.kind {
+        DamageTick(blow:) -> #(
+          Ticking(..row, tick:, open: row.open + 1),
+          caster,
+          [
+            TickStrike(asked: TickAsked(
+              cast_id:,
+              spell4_id: holder.spell.spell4_id,
+              effect_id: key.effect_id,
+              unit_id: key.unit_id,
+              life: row.life,
+              go: row.go,
+              tick:,
+              blow:,
+            )),
+          ],
+        )
+        HealTick(vital:, formula:) -> {
+          let #(caster, healed) =
+            healed_by_tick(
+              caster:,
+              cast_id:,
+              effect_id: key.effect_id,
+              audience: holder.audience,
+              vital:,
+              formula:,
+            )
+          #(Ticking(..row, tick:), caster, healed)
+        }
+      }
+      #(
+        with_ticking(
+          cast:,
+          cast_id:,
+          ticking: dict.insert(holder.ticking, key, row),
+        ),
+        caster,
+        landed,
+      )
+    }
+  }
+}
+
+/// The row `key`'s tick timer cancelled and its next tick armed, none after its last.
+fn next_tick_armed(
+  cast cast: State,
+  now_ms now_ms: Int,
+  cast_id cast_id: Int,
+  key key: TickKey,
+) -> #(State, List(Effect)) {
+  let #(cast, cancels) =
+    tick_timers_cancelled(cast:, cast_id:, matching: fn(other) { other == key })
+  let next = case holder_of(cast:, cast_id:) {
+    Ok(holder) ->
+      case dict.get(holder.ticking, key) {
+        Ok(row) ->
+          ticking.next_tick(schedule: row.schedule, tick: row.tick)
+          |> option.map(fn(after) { #(row, after) })
+        Error(Nil) -> None
+      }
+    Error(Nil) -> None
+  }
+  case next {
+    None -> #(cast, cancels)
+    Some(#(row, after)) -> {
+      let #(cast, _, start) =
+        armed(
+          cast:,
+          due: Tick(
+            cast_id:,
+            effect_id: key.effect_id,
+            unit_id: key.unit_id,
+            tick: after,
+          ),
+          after_ms: int.max(
+            0,
+            ticking.tick_at_ms(
+              schedule: row.schedule,
+              from_ms: row.from_ms,
+              tick: after,
+            )
+              - now_ms,
+          ),
+        )
+      #(cast, list.append(cancels, [start]))
+    }
+  }
+}
+
+/// A heal tick on the caster: its 0x7f8 with the heal's description, told to the
+/// audience, then the heal, the formula read for the caster as it is at the tick and
+/// split by the room its vitals have then (`split_of`); the caster comes back with the
+/// heal's split added to its vitals, for a heal tick due with it. A dead caster is healed
+/// nothing and shown nothing.
+fn healed_by_tick(
+  caster caster: Caster,
+  cast_id cast_id: Int,
+  effect_id effect_id: Spell4EffectsId,
+  audience audience: Set(ConnectionId),
+  vital vital: effect_kind.Vital,
+  formula formula: damage.Formula,
+) -> #(Caster, List(Effect)) {
+  use <- bool.guard(when: caster.dead, return: #(caster, []))
+  let amount = damage.amount_on_caster(formula:, caster: on_caster_of(caster:))
+  let split = split_of(vital:, amount:, caster:)
+  let healed = Healed(effect_id:, vital:, delay_ms: 0, amount:, split:)
+  #(
+    Caster(
+      ..caster,
+      vitals: damage.Vitals(
+        ..caster.vitals,
+        health: caster.vitals.health + split.health,
+        shield: caster.vitals.shield + split.shield,
+      ),
+    ),
+    list.flatten([
+      tick_effects(
+        tick: SpellEffectTick(
+          cast_id:,
+          spell4_effects_id: effect_id.value,
+          unit_id: caster.unit_id,
+          descriptions: [heal_description(healed:)],
+        ),
+        audience:,
+      ),
+      [
+        CasterChangeStarts(
+          source: unit_properties.Source(cast_id:, effect_id:),
+          change: Heal(vital:, amount:),
+        ),
+      ],
+    ]),
+  )
+}
+
+/// 0x7f8 to the caster and told to the audience.
+fn tick_effects(
+  tick tick: SpellEffectTick,
+  audience audience: Set(ConnectionId),
+) -> List(Effect) {
+  [
+    Send(frame: ticked_frame(tick:)),
+    ..list.map(map.sorted_connections(audience), fn(viewer) {
+      Tell(to: viewer, news: client_connection.CastTicked(tick:))
+    })
+  ]
+}
+
+/// A tick's strike round closed (genesis_prime/game/strike `Ticked`): a landed tick
+/// writes the 0x7f8 to the caster and tells the audience `CastTicked`, and a killing one
+/// then drops the unit's ticks; a deflected or immune tick writes nothing and the ticks
+/// go on; a refused tick or one left out at the deadline (`None`) writes nothing and
+/// drops the unit's ticks. A tick whose row was dropped while its round was open, or
+/// whose schedule a later go started again, writes nothing. A node end that waited for
+/// the round goes on (`nodes_ended`).
+pub fn ticked(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+  asked asked: TickAsked,
+  struck struck: Option(Struck),
+) -> #(State, List(Effect)) {
+  use <- settled(cast:, caster:, now:, own: [])
+  released(
+    taken: tick_closed(cast:, now_ms: now.monotonic_ms, asked:, struck:),
+    caster:,
+    now_ms: now.monotonic_ms,
+  )
+  |> continued(caster:, now_ms: now.monotonic_ms)
+}
+
+fn tick_closed(
+  cast cast: State,
+  now_ms now_ms: Int,
+  asked asked: TickAsked,
+  struck struck: Option(Struck),
+) -> #(State, List(Effect)) {
+  let cast_id = asked.cast_id
+  let key = TickKey(unit_id: asked.unit_id, effect_id: asked.effect_id)
+  case holder_of(cast:, cast_id:) {
+    Error(Nil) -> #(cast, [])
+    Ok(holder) ->
+      case dict.get(holder.ticking, key) {
+        Error(Nil) -> #(cast, [])
+        Ok(row) -> {
+          let cast =
+            with_ticking(
+              cast:,
+              cast_id:,
+              ticking: dict.insert(
+                holder.ticking,
+                key,
+                Ticking(..row, open: int.max(0, row.open - 1)),
+              ),
+            )
+          let #(cast, landed) =
+            tick_outcome(
+              cast:,
+              audience: holder.audience,
+              row:,
+              asked:,
+              struck:,
+              now_ms:,
+            )
+          let #(cast, ended) = nodes_ended(cast:, cast_id:, now_ms:)
+          #(cast, list.append(landed, ended))
+        }
+      }
+  }
+}
+
+/// What a closed tick round of the row does: a hit writes its 0x7f8 to the audience,
+/// whichever go's schedule asked it, since the unit took the damage and its health news
+/// goes out, and one that kills drops the unit's ticks; a deflect or an immunity writes
+/// nothing; no answer for a round of the row's current schedule (the unit is gone, or
+/// refused the tick for a life it no longer has) drops the unit's ticks and ends its node
+/// now (`node_ended_now`), so the cast's 0x811 or 0x7fe goes when the round closes. No
+/// answer for a round of an earlier schedule does nothing: the later go's own ticks ask
+/// the unit again.
+fn tick_outcome(
+  cast cast: State,
+  audience audience: Set(ConnectionId),
+  row row: Ticking,
+  asked asked: TickAsked,
+  struck struck: Option(Struck),
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let cast_id = asked.cast_id
+  case struck, row.go == asked.go {
+    Some(Hit(descriptions:, ..)), _ -> {
+      let written =
+        tick_effects(
+          tick: SpellEffectTick(
+            cast_id:,
+            spell4_effects_id: asked.effect_id.value,
+            unit_id: asked.unit_id,
+            descriptions: list.map(descriptions, fn(description) {
+              description.damage
+            }),
+          ),
+          audience:,
+        )
+      let killed =
+        list.any(descriptions, fn(description) {
+          description.damage.killed != 0
+        })
+      use <- bool.guard(when: !killed, return: #(cast, written))
+      let #(cast, dropped) =
+        ticks_dropped(cast:, cast_id:, unit_id: asked.unit_id)
+      #(cast, list.append(written, dropped))
+    }
+    Some(Deflected(..)), _ | Some(Immune(..)), _ | None, False -> #(cast, [])
+    None, True -> {
+      let #(cast, dropped) =
+        ticks_dropped(cast:, cast_id:, unit_id: asked.unit_id)
+      #(
+        node_ended_now(cast:, cast_id:, unit_id: asked.unit_id, now_ms:),
+        dropped,
+      )
+    }
+  }
+}
+
+/// The cast's node on the unit ends at the time, so the node end that follows
+/// (`nodes_ended`) drops it with its frames.
+fn node_ended_now(
+  cast cast: State,
+  cast_id cast_id: Int,
+  unit_id unit_id: Int,
+  now_ms now_ms: Int,
+) -> State {
+  case holder_of(cast:, cast_id:) {
+    Error(Nil) -> cast
+    Ok(holder) ->
+      case dict.get(holder.nodes, unit_id) {
+        Error(Nil) -> cast
+        Ok(node) ->
+          with_nodes(
+            cast:,
+            cast_id:,
+            nodes: dict.insert(
+              holder.nodes,
+              unit_id,
+              lasting.Node(..node, life: lasting.EndsAt(ms: now_ms)),
+            ),
+          )
+      }
+  }
+}
+
+/// A go arms the first tick of each periodic row on each unit it reached (`TickingOn`),
+/// counted from the go's monotonic time `from_ms`; `go` is which go of the cast it is. A
+/// row already ticking on the unit for this cast is armed again from this go, as the
+/// client sets its node again, and its earlier schedule's tick timer is cancelled; a
+/// round of that schedule still open writes nothing when it closes (`ticked`).
+fn ticks_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  go go: Int,
+  from_ms from_ms: Int,
+  rows rows: List(TickingOn),
+) -> #(State, List(Effect)) {
+  list.fold(rows, #(cast, []), fn(so_far, on) {
+    let #(cast, effects) = so_far
+    let key = TickKey(unit_id: on.unit_id, effect_id: on.effect_id)
+    let #(cast, cancels) =
+      tick_timers_cancelled(cast:, cast_id:, matching: fn(other) {
+        other == key
+      })
+    case holder_of(cast:, cast_id:) {
+      Error(Nil) -> #(cast, list.append(effects, cancels))
+      Ok(holder) -> {
+        let open = case dict.get(holder.ticking, key) {
+          Ok(earlier) -> earlier.open
+          Error(Nil) -> 0
+        }
+        let schedule =
+          ticking.within_life(
+            schedule: on.schedule,
+            longer_of_delay_and_duration: holder.spell.longer_of_delay_and_duration,
+          )
+        let row =
+          Ticking(
+            kind: on.kind,
+            schedule:,
+            go:,
+            from_ms:,
+            tick: 0,
+            open:,
+            life: on.life,
+          )
+        let cast =
+          with_ticking(
+            cast:,
+            cast_id:,
+            ticking: dict.insert(holder.ticking, key, row),
+          )
+        let #(cast, start) = first_tick_armed(cast:, cast_id:, key:, schedule:)
+        #(cast, list.flatten([effects, cancels, start]))
+      }
+    }
+  })
+}
+
+/// The timer of the row `key`'s first tick, none when no tick lands within its life.
+fn first_tick_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  key key: TickKey,
+  schedule schedule: ticking.Schedule,
+) -> #(State, List(Effect)) {
+  case ticking.next_tick(schedule:, tick: 0) {
+    None -> #(cast, [])
+    Some(first) -> {
+      let #(cast, _, start) =
+        armed(
+          cast:,
+          due: Tick(
+            cast_id:,
+            effect_id: key.effect_id,
+            unit_id: key.unit_id,
+            tick: first,
+          ),
+          after_ms: ticking.tick_at_ms(schedule:, from_ms: 0, tick: first),
+        )
+      #(cast, [start])
+    }
+  }
+}
+
+/// The ticks of the cast on the unit stop with its node: their timers are cancelled
+/// and their rows forgotten. Every path that drops a node calls it: a removal of the
+/// unit, a type 80 removal, the stack cap and a node's end; a finish, a persistence
+/// end, a death and leaving cancel every tick of the cast.
+fn ticks_dropped(
+  cast cast: State,
+  cast_id cast_id: Int,
+  unit_id unit_id: Int,
+) -> #(State, List(Effect)) {
+  let #(cast, cancels) =
+    tick_timers_cancelled(cast:, cast_id:, matching: fn(key) {
+      key.unit_id == unit_id
+    })
+  case holder_of(cast:, cast_id:) {
+    Error(Nil) -> #(cast, cancels)
+    Ok(holder) -> #(
+      with_ticking(
+        cast:,
+        cast_id:,
+        ticking: dict.filter(holder.ticking, fn(key, _) {
+          key.unit_id != unit_id
+        }),
+      ),
+      cancels,
+    )
+  }
+}
+
+/// The ticks of the cast on each of the units stop (`ticks_dropped`).
+fn ticks_dropped_on(
+  cast cast: State,
+  cast_id cast_id: Int,
+  unit_ids unit_ids: List(Int),
+) -> #(State, List(Effect)) {
+  list.fold(unit_ids, #(cast, []), fn(so_far, unit_id) {
+    let #(cast, effects) = so_far
+    let #(cast, more) = ticks_dropped(cast:, cast_id:, unit_id:)
+    #(cast, list.append(effects, more))
+  })
+}
+
+/// Every tick of the cast stops: a finish or a persistence end ends all its nodes.
+fn ticks_all_dropped(
+  cast cast: State,
+  cast_id cast_id: Int,
+) -> #(State, List(Effect)) {
+  let #(cast, cancels) =
+    tick_timers_cancelled(cast:, cast_id:, matching: fn(_) { True })
+  #(with_ticking(cast:, cast_id:, ticking: dict.new()), cancels)
 }
 
 /// What the end of some of a cast's nodes writes: the 0x7fe of a lingering cast left with
@@ -5286,12 +5995,18 @@ fn sorted_units(nodes: List(#(Int, lasting.Node))) -> List(Int) {
   list.map(nodes, fn(entry) { entry.0 }) |> list.sort(int.compare)
 }
 
-/// The earliest time a node ends at, none when every node lasts until it is removed.
-fn earliest_end(nodes nodes: Dict(Int, lasting.Node)) -> Option(Int) {
-  list.filter_map(dict.values(nodes), fn(node) {
-    case node.life {
-      lasting.EndsAt(ms:) -> Ok(ms)
-      lasting.NoLife | lasting.UntilRemoved -> Error(Nil)
+/// The earliest time a node ends at, none when every node lasts until it is removed
+/// or is held by an open tick round on its unit, whose close ends it (`ticked`).
+fn earliest_end(
+  nodes nodes: Dict(Int, lasting.Node),
+  ticking ticking: Dict(TickKey, Ticking),
+) -> Option(Int) {
+  list.filter_map(dict.to_list(nodes), fn(entry) {
+    let #(unit_id, node) = entry
+    case node.life, tick_round_open(ticking:, unit_id:) {
+      _, True -> Error(Nil)
+      lasting.EndsAt(ms:), False -> Ok(ms)
+      lasting.NoLife, False | lasting.UntilRemoved, False -> Error(Nil)
     }
   })
   |> list.reduce(int.min)
@@ -5304,9 +6019,10 @@ fn arm_nodes_end(
   cast cast: State,
   cast_id cast_id: Int,
   nodes nodes: Dict(Int, lasting.Node),
+  ticking ticking: Dict(TickKey, Ticking),
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  case earliest_end(nodes:) {
+  case earliest_end(nodes:, ticking:) {
     None -> #(cast, [])
     Some(ends_ms) -> {
       let #(cast, _, start) =
@@ -5332,7 +6048,13 @@ fn rearmed(
     Error(Nil) -> #(cast, cancels)
     Ok(holder) -> {
       let #(cast, armed) =
-        arm_nodes_end(cast:, cast_id:, nodes: holder.nodes, now_ms:)
+        arm_nodes_end(
+          cast:,
+          cast_id:,
+          nodes: holder.nodes,
+          ticking: holder.ticking,
+          now_ms:,
+        )
       #(cast, list.append(cancels, armed))
     }
   }
@@ -5359,7 +6081,8 @@ fn cancel_nodes_end(
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
-      | ChargeLevel(..) -> False
+      | ChargeLevel(..)
+      | Tick(..) -> False
     }
   })
 }
@@ -5394,7 +6117,8 @@ pub fn unit_removed(
         | StartHeld
         | RepeatHeld
         | WindowEnd(..)
-        | ChargeLevel(..) -> False
+        | ChargeLevel(..)
+        | Tick(..) -> False
       }
     })
   list.filter(holders(cast:), fn(entry) {
@@ -5404,6 +6128,7 @@ pub fn unit_removed(
     let #(cast, effects) = so_far
     let #(cast_id, holder) = entry
     let nodes = dict.delete(holder.nodes, unit_id)
+    let #(cast, ticks) = ticks_dropped(cast:, cast_id:, unit_id:)
     let #(cast, on_creatures) =
       creature_modifiers_ended(cast:, cast_id:, unit_ids: [unit_id])
     let #(cast, left) = nodes_left(cast:, cast_id:, holder:, nodes:, now_ms:)
@@ -5411,7 +6136,7 @@ pub fn unit_removed(
       True -> finished_effects(cast_id:, audience: holder.audience)
       False -> []
     }
-    #(cast, list.flatten([effects, on_creatures, left, ends]))
+    #(cast, list.flatten([effects, ticks, on_creatures, left, ends]))
   })
 }
 
@@ -5715,7 +6440,7 @@ fn logged_once(
 }
 
 /// A cast whose persistence failed ends as a death ends one cast: 0x7f9 with the
-/// result, its go, finish and NodesEnd timers cancelled, its property modifiers and
+/// result, its go, finish, tick and NodesEnd timers cancelled, its property modifiers and
 /// cooldown effects ended, the current cast cleared when it was this one, an open
 /// threshold it is the base cast of closed as a 0x801 closes it, and its 0x7fe to the
 /// caster and the audience.
@@ -5730,6 +6455,7 @@ fn persistence_end(
   case dict.get(cast.casts, cast_id), dict.get(cast.lingering, cast_id) {
     Ok(live), _ -> {
       let #(cast, cancels) = stop_pending(cast:, cast_id:)
+      let #(cast, ticks) = ticks_all_dropped(cast:, cast_id:)
       let #(cast, nodes) = cancel_nodes_end(cast:, cast_id:)
       let #(cast, ended) = effects_ended(cast:, cast_id:, spell: live.spell)
       let #(cast, on_creatures) = creature_modifiers_all_ended(cast:, cast_id:)
@@ -5743,6 +6469,7 @@ fn persistence_end(
         list.flatten([
           [failure],
           cancels,
+          ticks,
           nodes,
           ended,
           on_creatures,
@@ -5751,6 +6478,7 @@ fn persistence_end(
       )
     }
     Error(Nil), Ok(lingering) -> {
+      let #(cast, ticks) = ticks_all_dropped(cast:, cast_id:)
       let cast = State(..cast, lingering: dict.delete(cast.lingering, cast_id))
       let #(cast, nodes) = cancel_nodes_end(cast:, cast_id:)
       let #(cast, ended) =
@@ -5760,6 +6488,7 @@ fn persistence_end(
         passive_cleared(cast:, cast_id:),
         list.flatten([
           [failure],
+          ticks,
           nodes,
           ended,
           on_creatures,
@@ -5962,7 +6691,10 @@ fn belongs_to_passive(
   spell4_id spell4_id: Option(Spell4Id),
 ) -> Bool {
   case due {
-    Go(cast_id:, ..) | Finish(cast_id:) | NodesEnd(cast_id:) -> cast_id == id
+    Go(cast_id:, ..)
+    | Finish(cast_id:)
+    | NodesEnd(cast_id:)
+    | Tick(cast_id:, ..) -> cast_id == id
     ModifierStart(source:, ..)
     | ModifierEnd(source:)
     | RestrictionEnd(source:)
@@ -6052,7 +6784,8 @@ fn modifiers_pending(cast cast: State) -> List(Effect) {
         | StartHeld
         | RepeatHeld
         | WindowEnd(..)
-        | ChargeLevel(..) -> Error(Nil)
+        | ChargeLevel(..)
+        | Tick(..) -> Error(Nil)
       }
     })
   list.unique(list.append(held, waiting))
@@ -6146,6 +6879,7 @@ fn start(
       },
       closes_threshold: closes_threshold(role:),
       nodes: dict.new(),
+      ticking: dict.new(),
       activation: case role {
         Activation(activating:, ..) -> Some(activating)
         Child | Base(..) | Stage(..) | Passive | Shortcut(..) -> None
@@ -6442,7 +7176,8 @@ fn close_threshold(
             | CooldownModifierStarts(..)
             | CooldownModifierEnds(..)
             | StartHeld
-            | RepeatHeld -> False
+            | RepeatHeld
+            | Tick(..) -> False
           }
         })
       let cast = State(..cast, thresholds: dict.delete(cast.thresholds, key))
@@ -6655,6 +7390,14 @@ fn go(
           now_ms:,
         )
       let #(cast, given) = nodes_given(cast:, cast_id:, aimed:, now_ms:)
+      let #(cast, ticks) =
+        ticks_armed(
+          cast:,
+          cast_id:,
+          go: live.gone,
+          from_ms: now_ms,
+          rows: aimed.ticking,
+        )
       let #(cast, never_held) = procs_held(cast:, cast_id:, applied:)
       let #(cast, modifying) =
         modifiers_armed(cast:, cast_id:, caster:, aimed:, struck:)
@@ -6748,6 +7491,7 @@ fn go(
           logged,
           removed,
           given,
+          ticks,
           never_held,
           modifying,
           healing,
@@ -6853,8 +7597,7 @@ type Applied {
 
 /// The Fluff, SpellForceRemove, property modifier, forced move, cooldown, Stealth,
 /// RemoveStealth and HealShields effects of the phase whose gates pass against the caster,
-/// a debug line for each that cannot be decided, and for each periodic heal that passes,
-/// and the rolls left. Their gates are checked after the Proxies' and the gains', in that
+/// a debug line for each that cannot be decided, and the rolls left. Their gates are checked after the Proxies' and the gains', in that
 /// order, the HealShields effects' last (`rolls_needed`).
 fn lasting_applied(
   spell spell: Spell,
@@ -6968,7 +7711,6 @@ fn lasting_applied(
       subject:,
       rolls:,
     )
-  let #(heals, ticking_logs) = ticking_heals_logged(heals:)
   #(
     Applied(
       lasting:,
@@ -6992,35 +7734,8 @@ fn lasting_applied(
       remove_stealth_logs,
       proc_logs,
       heal_logs,
-      ticking_logs,
     ]),
     rolls,
-  )
-}
-
-/// The heals of a go that apply, and a debug line for each periodic heal whose gate
-/// passed: a periodic heal needs a 0x7f8 for each tick, which the server does not send, so
-/// it is not applied.
-fn ticking_heals_logged(
-  heals heals: List(spell_plan.Heal),
-) -> #(List(spell_plan.Heal), List(Effect)) {
-  let #(applying, ticking) =
-    list.partition(heals, fn(heal) {
-      case heal {
-        spell_plan.Heal(..) -> True
-        spell_plan.TickingHeal(..) -> False
-      }
-    })
-  #(
-    applying,
-    list.map(ticking, fn(heal) {
-      Log(
-        level: LogDebug,
-        text: "the Heal or HealShields effect "
-          <> int.to_string(heal.effect_id.value)
-          <> " is periodic, and a periodic heal needs a 0x7f8 for each tick, which is not sent, so it is not applied",
-      )
-    }),
   )
 }
 
@@ -7054,6 +7769,7 @@ type Aimed {
     heal_logs: List(Effect),
     controls: List(#(strike_tell.ControlLanded, Int)),
     restrictions: List(#(Restricting, Int)),
+    ticking: List(TickingOn),
   )
 }
 
@@ -7432,6 +8148,11 @@ fn aimed_at(
   let procs = list.map(applied.procs, fn(row) { #(row, caster.unit_id) })
   let #(heals, heal_logs) = healed_by(applied:, caster:, live:, struck:)
   let restrictions = list.map(restricting, fn(one) { #(one, caster.unit_id) })
+  let ticking =
+    list.append(
+      ticking_struck(struck:),
+      ticking_heals(applied:, caster:, live:, struck:),
+    )
   let listed =
     list.flatten([
       list.map(stealth, fn(entry) {
@@ -7522,6 +8243,17 @@ fn aimed_at(
           ),
         )
       }),
+      list.map(ticking, fn(row) {
+        #(
+          row.unit_id,
+          Listed(
+            effect_id: row.effect_id,
+            delay_ms: row.schedule.delay_ms,
+            instance_id: None,
+            damage: None,
+          ),
+        )
+      }),
       list.map(controls, fn(entry) {
         #(
           entry.1,
@@ -7582,10 +8314,65 @@ fn aimed_at(
     procs:,
     controls:,
     restrictions:,
+    ticking:,
   )
 }
 
-/// The heals a go applies, each on the caster, with the amount the caster's own
+/// The periodic damage rows of the go on each creature the round hit or found immune,
+/// in the life it struck (`Hit.ticking`, `Immune.ticking`); a deflected unit takes none,
+/// and a player's attacks carry none.
+fn ticking_struck(struck struck: List(Struck)) -> List(TickingOn) {
+  list.flat_map(struck, fn(one) {
+    case one {
+      Hit(unit_id:, unit: HitCreature(life:, ..), ticking:, ..)
+      | Immune(unit_id:, unit: HitCreature(life:, ..), ticking:, ..) ->
+        list.map(ticking, fn(row: spell_area.TickingDamage) {
+          TickingOn(
+            unit_id:,
+            life:,
+            effect_id: row.damage.effect_id,
+            schedule: row.schedule,
+            kind: DamageTick(blow: row.damage),
+          )
+        })
+      Hit(unit: HitPlayer, ..) | Immune(unit: HitPlayer, ..) | Deflected(..) -> []
+    }
+  })
+}
+
+/// The periodic heal rows of the go aimed at the caster, each ticking on it; one aimed
+/// at another unit is left with the debug line of `healed_by`.
+fn ticking_heals(
+  applied applied: Applied,
+  caster caster: Caster,
+  live live: Live,
+  struck struck: List(Struck),
+) -> List(TickingOn) {
+  rows_with_units(
+    rows: applied.heals,
+    aim: fn(heal: spell_plan.Heal) { heal.aim },
+    caster:,
+    primary_target: live.primary_target,
+    struck:,
+  )
+  |> list.filter_map(fn(entry) {
+    case entry.0, entry.1 == caster.unit_id {
+      spell_plan.TickingHeal(effect_id:, vital:, formula:, schedule:, ..), True
+      ->
+        Ok(TickingOn(
+          unit_id: caster.unit_id,
+          life: 0,
+          effect_id:,
+          schedule:,
+          kind: HealTick(vital:, formula:),
+        ))
+      spell_plan.TickingHeal(..), False | spell_plan.Heal(..), _ -> Error(Nil)
+    }
+  })
+}
+
+/// The heals a go applies at once (a periodic one ticks, `ticking_heals`), each on the
+/// caster, with the amount the caster's own
 /// vitals and stats give: the caster as it stood before the go's own effects, the rule of
 /// every gate of the go (`subject_of`), and the overheal the vital's room leaves. A row's
 /// units are those its aim names (`units_aimed_at`) and only the caster is healed: the
@@ -7630,7 +8417,9 @@ fn healed_by(
   let left =
     list.filter_map(entries, fn(entry) {
       case entry.0, entry.1 == caster.unit_id {
-        spell_plan.Heal(effect_id:, ..), False ->
+        spell_plan.Heal(effect_id:, ..), False
+        | spell_plan.TickingHeal(effect_id:, ..), False
+        ->
           Ok(Log(
             level: LogDebug,
             text: "the Heal or HealShields effect "
@@ -7639,7 +8428,8 @@ fn healed_by(
               <> int.to_string(entry.1)
               <> ", not the caster, and heals on other units are not built (#570), so it lands nothing",
           ))
-        spell_plan.Heal(..), True | spell_plan.TickingHeal(..), _ -> Error(Nil)
+        spell_plan.Heal(..), True | spell_plan.TickingHeal(..), True ->
+          Error(Nil)
       }
     })
   #(healed, left)
@@ -8009,7 +8799,8 @@ fn target_start_of(due due: Due) -> Result(OnCreature, Nil) {
     | StartHeld
     | RepeatHeld
     | WindowEnd(..)
-    | ChargeLevel(..) -> Error(Nil)
+    | ChargeLevel(..)
+    | Tick(..) -> Error(Nil)
   }
 }
 
@@ -8218,7 +9009,8 @@ fn source_of(due due: Due) -> Option(unit_properties.Source) {
     | StartHeld
     | RepeatHeld
     | WindowEnd(..)
-    | ChargeLevel(..) -> None
+    | ChargeLevel(..)
+    | Tick(..) -> None
   }
 }
 
@@ -8331,7 +9123,8 @@ fn effects_ended(
         | StartHeld
         | RepeatHeld
         | WindowEnd(..)
-        | ChargeLevel(..) -> False
+        | ChargeLevel(..)
+        | Tick(..) -> False
       }
     })
   #(
@@ -8370,7 +9163,8 @@ fn pending_heals(
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
-      | ChargeLevel(..) -> Error(Nil)
+      | ChargeLevel(..)
+      | Tick(..) -> Error(Nil)
     }
   })
 }
@@ -8401,7 +9195,8 @@ fn pending_heals_cancelled(
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
-      | ChargeLevel(..) -> False
+      | ChargeLevel(..)
+      | Tick(..) -> False
     }
   })
 }
@@ -8562,8 +9357,8 @@ fn nodes_given(
   }
 }
 
-/// The units a go gives a node: those a Fluff row aims at and those that took a
-/// crowd-control state, each once, in that order. The state's life is its delay plus
+/// The units a go gives a node: those a Fluff row aims at, those that took a
+/// crowd-control state and those a periodic row ticks on, each once, in that order. The state's life is its delay plus
 /// its duration, so the caster's cast lingers until the state's effect is over and its
 /// time readout stays right (`cc_state.end`).
 fn nodes_aimed(aimed aimed: Aimed) -> List(Int) {
@@ -8577,12 +9372,16 @@ fn nodes_aimed(aimed aimed: Aimed) -> List(Int) {
       list.map(aimed.heals, fn(entry) { entry.1 }),
       list.map(aimed.controls, fn(entry) { entry.1 }),
       list.map(aimed.restrictions, fn(entry) { entry.1 }),
+      list.map(aimed.ticking, fn(row) { row.unit_id }),
     ]),
   )
 }
 
 /// The node a go gives one unit from the node its cast holds there and the Fluff rows
-/// the go lists for it (`lasting.given`); none when no effect has a life.
+/// the go lists for it (`lasting.given`), a periodic row living its own delay and
+/// durationTime as the client's node does (`opcode.0x7f4.effect_time`), held past that
+/// only while a tick round on the unit is open (`ended_and_kept`); none when no effect has
+/// a life.
 fn node_of(
   spell spell: Spell,
   held held: Option(lasting.Node),
@@ -8644,6 +9443,19 @@ fn node_of(
               delay_ms: entry.0.row.row.delay_ms,
               duration_ms: entry.0.row.row.duration_ms,
               until_removed: entry.0.row.row.until_removed,
+            ))
+          False -> Error(Nil)
+        }
+      }),
+    )
+    |> list.append(
+      list.filter_map(aimed.ticking, fn(row) {
+        case row.unit_id == unit_id {
+          True ->
+            Ok(lasting.LastingRow(
+              delay_ms: row.schedule.delay_ms,
+              duration_ms: row.schedule.duration_ms,
+              until_removed: False,
             ))
           False -> Error(Nil)
         }
@@ -8752,6 +9564,7 @@ fn node_off(
   case holder_of(cast:, cast_id:) {
     Error(Nil) -> #(cast, [])
     Ok(holder) -> {
+      let #(cast, ticks) = ticks_dropped(cast:, cast_id:, unit_id:)
       let nodes = dict.delete(holder.nodes, unit_id)
       let emptied = dict.is_empty(nodes)
       let kept = keeps_without_target(method: holder.spell.method)
@@ -8773,7 +9586,10 @@ fn node_off(
         True -> finished_effects(cast_id:, audience: holder.audience)
         False -> []
       }
-      #(cast, list.flatten([removed, modifiers, on_creatures, left, ends]))
+      #(
+        cast,
+        list.flatten([ticks, removed, modifiers, on_creatures, left, ends]),
+      )
     }
   }
 }
@@ -9515,10 +10331,15 @@ fn finish(
   live live: Live,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
+  let #(cast, ticks) = ticks_all_dropped(cast:, cast_id:)
   let #(cast, closed) = finish_steps(cast:, cast_id:, live:, now_ms:)
   #(
     passive_cleared(cast:, cast_id:),
-    list.append(finished_effects(cast_id:, audience: live.audience), closed),
+    list.flatten([
+      ticks,
+      finished_effects(cast_id:, audience: live.audience),
+      closed,
+    ]),
   )
 }
 
@@ -9581,7 +10402,8 @@ fn finish_or_linger(
   live live: Live,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  let #(ended, kept) = ended_and_kept(nodes: live.nodes, now_ms:)
+  let #(ended, kept) =
+    ended_and_kept(nodes: live.nodes, ticking: live.ticking, now_ms:)
   case kept, cast.passive == Some(cast_id) {
     [], False -> finish(cast:, cast_id:, live:, now_ms:)
     [], True | [_, ..], _ -> {
@@ -9598,9 +10420,12 @@ fn finish_or_linger(
               started_ms: live.started_ms,
               primary_target: live.primary_target,
               nodes: dict.from_list(kept),
+              ticking: live.ticking,
             ),
           ),
         )
+      let #(cast, ticks) =
+        ticks_dropped_on(cast:, cast_id:, unit_ids: sorted_units(ended))
       let #(cast, armed) = rearmed(cast:, cast_id:, now_ms:)
       let expired = case ended {
         [] -> []
@@ -9612,7 +10437,7 @@ fn finish_or_linger(
             destroyed: False,
           )
       }
-      #(cast, list.flatten([expired, armed, closed]))
+      #(cast, list.flatten([ticks, expired, armed, closed]))
     }
   }
 }
@@ -9929,6 +10754,14 @@ pub fn went_frame(go go: SpellGo) -> Frame {
   let assert Ok(body) = spell_go.encode(go)
     as "a cast id of 32 bits and a phase of 8 fit the message, and the rule sends no list"
   Frame(message_id: spell_go.message_id, body:)
+}
+
+/// 0x07F8 for one tick of a periodic row of a cast on a unit, written by the caster's
+/// rule and by each viewer's connection the same way (`opcode.0x7f8`).
+pub fn ticked_frame(tick tick: SpellEffectTick) -> Frame {
+  let assert Ok(body) = spell_effect_tick.encode(tick)
+    as "a cast id of 32 bits, a Spell4Effects id of 19 and a tick's few descriptions fit the message"
+  Frame(message_id: spell_effect_tick.message_id, body:)
 }
 
 /// 0x07F9 for a cast of `unit_id` that was interrupted: result 11 and the bit 0, written

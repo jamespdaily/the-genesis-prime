@@ -857,6 +857,9 @@ pub fn cast_effects(
       cast.Strike(asked:), Some(entered) ->
         strike_begins(session:, now:, entered:, asked:)
       cast.Strike(..), None -> #(session, [])
+      cast.TickStrike(asked:), Some(entered) ->
+        tick_strike_begins(session:, now:, entered:, asked:)
+      cast.TickStrike(..), None -> #(session, [])
       cast.Activated(unit_id:, alive_at_press:, by_item:, ..), Some(entered) ->
         // The go is raised even when the unit has left the picture or died, and a use
         // of a creature the player no longer sees, or that died since the press, counts
@@ -1089,6 +1092,32 @@ fn strike_begins(
   )
 }
 
+/// A tick asked: the strike rule begins its round of the one unit the tick lands on,
+/// with the caster's rolls drawn from the connection's seed as a go's are.
+fn tick_strike_begins(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  asked asked: cast.TickAsked,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let #(link, entropy) =
+    client_connection.draw(session.link, strike.tick_entropy_needed)
+  let #(updated, effects) =
+    strike.begin_tick(
+      strike: entered.strike,
+      asked:,
+      attacker: attacker_of(session:, entered:),
+      formulas: rating.formulas(tables: session.settings.tables),
+      entropy:,
+      now:,
+    )
+  carry_strike(
+    session: with_strike(session: Session(..session, link:), strike: updated),
+    now:,
+    effects:,
+  )
+}
+
 /// The player as its strikes take it: who it is, where it stands and faces, which
 /// player faction it is of, what its damage reads of it (its level and its Assault and
 /// Support Rating) and its properties.
@@ -1199,6 +1228,21 @@ pub fn carry_strike(
           effects: cast_effects_out,
         )
       }
+      strike.Ticked(asked:, struck:), Some(entered) -> {
+        let #(updated, cast_effects_out) =
+          cast.ticked(
+            cast: entered.cast,
+            caster: caster_of(tables: session.settings.tables, entered:),
+            now:,
+            asked:,
+            struck:,
+          )
+        cast_effects(
+          session: with_cast(session:, cast: updated),
+          now:,
+          effects: cast_effects_out,
+        )
+      }
       strike.Released(unit_id:, news:), Some(entered) -> #(
         session,
         creature_news_frames(session:, entered:, unit_id:, news:),
@@ -1252,6 +1296,7 @@ pub fn creature_news_frames(
     | client_connection.CastStarted(..)
     | client_connection.CastWent(..)
     | client_connection.CastMissed(..)
+    | client_connection.CastTicked(..)
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)

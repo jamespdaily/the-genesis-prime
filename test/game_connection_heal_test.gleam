@@ -48,7 +48,7 @@ fn a_strike_of(
       tell: strike_tell.Strike(
         key: strike_tell.Key(
           cast_id: 2_147_500_000,
-          phase: 0,
+          occasion: strike_tell.AtGo(phase: 0),
           unit_id: connection_support.own_unit_id,
         ),
         from: connection_support.fighter(),

@@ -204,6 +204,7 @@ fn trace(
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
       | cast.Strike(..)
+      | cast.TickStrike(..)
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
@@ -272,6 +273,7 @@ fn is_strike(effect effect: Effect) -> Bool {
     | cast.TargetChangeEnds(..)
     | cast.Activated(..)
     | cast.ShortcutCast(..)
+    | cast.TickStrike(..)
     | cast.StealthChanged(..) -> False
   }
 }

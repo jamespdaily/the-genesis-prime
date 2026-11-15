@@ -24,13 +24,16 @@ import genesis_prime/game/area.{
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/spell_area.{
-  AimNotRead, FormulaNotRead, MultiplierNotFinite, PeriodicNotRead,
-  SelectionNotClosest, ShapeNotBuilt, TelegraphNotOnCaster, ValidTargetsNotAlive,
+  AimNotRead, FormulaNotRead, MultiplierNotFinite, Once, Periodic,
+  SelectionNotClosest, ShapeNotBuilt, TelegraphNotOnCaster, TickingNoTick,
+  TickingUntilRemoved, ValidTargetsNotAlive,
 }
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spend.{EqualTo}
+import genesis_prime/game/ticking
 import genesis_prime/message/crowd_control_state
-import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
+import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4_effects
 import gleam/dict
 import gleam/int
@@ -422,23 +425,30 @@ fn periodic_damage_row(tick_ms tick_ms: Int) -> spell4_effects.Spell4Effects {
   )
 }
 
-pub fn a_damage_row_with_a_tick_time_is_not_read_naming_the_tick_test() -> Nil {
+pub fn a_damage_row_with_a_tick_time_ticks_on_its_schedule_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert spell_area.damage_row_of(
+  let assert Ok(Periodic(effect: row)) =
+    spell_area.damage_row_of(
       spell4_id: 32_475,
       effect: periodic_damage_row(tick_ms: 1500),
     )
-    == Error(PeriodicNotRead(
-      spell4_id: 32_475,
-      effect_id: 61_198,
-      tick_ms: 1500,
-    ))
-    as "Spell4Effects 61198 holds tickTime 1500: the client never times ticks, each is its own 0x7f8 from the server, so one strike at delayTime is not the row"
+    as "Spell4Effects 61198 holds tickTime 1500: the client never times ticks, each is its own 0x7f8 from the server (spell.tick_timing)"
+  assert #(row.damage.effect_id, row.schedule)
+    == #(
+      Spell4EffectsId(61_198),
+      ticking.Schedule(
+        delay_ms: 1500,
+        tick_ms: 1500,
+        duration_ms: 6000,
+        count: 4,
+      ),
+    )
+    as "delayTime 1500, tickTime 1500 and durationTime 6000: four ticks, the first a tick after the delay"
 }
 
 pub fn a_damage_row_with_no_tick_time_is_read_as_one_strike_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(effect) =
+  let assert Ok(Once(effect:)) =
     spell_area.damage_row_of(
       spell4_id: 32_475,
       effect: periodic_damage_row(tick_ms: 0),
@@ -465,7 +475,7 @@ fn fixture_effect(id id: Int) -> spell4_effects.Spell4Effects {
 
 pub fn the_area_load_builds_a_damage_row_that_names_an_attribute_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(effect) =
+  let assert Ok(Once(effect:)) =
     spell_area.damage_row_of(
       spell4_id: 42_355,
       effect: fixture_effect(id: 96_307),
@@ -478,37 +488,115 @@ pub fn the_area_load_builds_a_damage_row_that_names_an_attribute_test() -> Nil {
     as "row 96307's parameterType00 5 and parameterValue00 0x3fc00000 (1.5)"
 }
 
-pub fn a_ticking_row_that_names_an_attribute_is_refused_as_periodic_test() -> Nil {
+pub fn a_ticking_row_that_names_an_attribute_ticks_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert spell_area.damage_row_of(
+  let assert Ok(Periodic(effect: row)) =
+    spell_area.damage_row_of(
       spell4_id: 29_550,
       effect: fixture_effect(id: 52_057),
     )
-    == Error(PeriodicNotRead(
-      spell4_id: 29_550,
-      effect_id: 52_057,
-      tick_ms: 1000,
-    ))
-    as "row 52057 names Magic (type 4), which is read, and tickTime 1000, which is not"
+    as "row 52057 names Magic (type 4), which is read, and tickTime 1000"
+  assert #(row.damage.effect_id, row.schedule.tick_ms)
+    == #(Spell4EffectsId(52_057), 1000)
+    as "row 52057's tickTime 1000"
 }
 
-pub fn a_periodic_damage_row_is_left_out_of_its_spells_area_and_the_load_goes_on_test() -> Nil {
+pub fn until_removed_periodic_rows_are_left_out_test() -> Nil {
   use <- owned_test.run(60_000)
-  // No spell of a level-1 tree holds a damage row with a tickTime (the fixture's seven, 17802,
-  // 40408, 58591, 58592, 70305, 92585 and 200707, belong to spells outside the trees), so
-  // Mind Burst's second damage row (61994, tickTime 0 in the client) is given one.
+  // No spell of a level-1 tree holds a damage row with a tickTime, so Mind Burst's second
+  // damage row (61994, tickTime 0 in the client) is given one, with flags bit 2: the row
+  // lasts until removed, which no schedule ends (issue 803).
   let area =
     mind_burst_with(table: "Spell4Effects", id: 61_994, with: [
       #("tickTime", Integer(1000)),
+      #("durationTime", Integer(0)),
+      #("flags", Integer(2)),
     ])
-  assert list.map(damage_of(area:, spent: None), fn(effect) { effect.effect_id })
-    == [
-      Spell4EffectsId(61_993),
-      Spell4EffectsId(61_995),
-      Spell4EffectsId(61_996),
-      Spell4EffectsId(61_997),
-    ]
-    as "Spell4.32809 holds damage rows 61993 to 61997: the periodic row is left out, the other four stay, and the load does not fail"
+  let assert Ok(phase) = spell_area.phase(spell: area, phase: 0, spent: None)
+    as "Mind Burst has one phase"
+  assert #(
+      list.map(phase.damage, fn(effect) { effect.effect_id }),
+      phase.ticking,
+    )
+    == #(
+      [
+        Spell4EffectsId(61_993),
+        Spell4EffectsId(61_995),
+        Spell4EffectsId(61_996),
+        Spell4EffectsId(61_997),
+      ],
+      [],
+    )
+    as "Spell4.32809 holds damage rows 61993 to 61997: the until-removed row is left out, the other four stay, and the load goes on"
+  assert spell_area.damage_row_of(
+      spell4_id: 32_809,
+      effect: spell4_effects.Spell4Effects(
+        ..fixture_effect(id: 61_994),
+        tick_time: 1000,
+        duration_time: 0,
+        flags: 2,
+      ),
+    )
+    == Error(TickingUntilRemoved(spell4_id: 32_809, effect_id: 61_994))
+    as "the area load's reader names why it leaves the row out"
+  // Energize's row 228914 (a HealShields row on the caster, tickTime 0 in the client) is
+  // given a tickTime and flags bit 2.
+  let assert Ok(plans) =
+    fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 228_914,
+      with: [
+        #("tickTime", Integer(1000)),
+        #("durationTime", Integer(0)),
+        #("flags", Integer(2)),
+      ],
+      body: fn(tables) { spell_plan.build(tables:) },
+    )
+    as "the plan load goes on past an until-removed heal row"
+  let assert Ok(medic) = spell_plan.in_plans(plans:, base: Spell4BaseId(46_615))
+    as "the plans hold the Medic's innate"
+  let assert Ok(energize) =
+    list.find(spell_plan.tree(spell: medic, started: fn(_) { True }), fn(spell) {
+      spell.spell4_id == Spell4Id(69_450)
+    })
+    as "its tree holds Energize, spell 69450"
+  assert energize.heals == []
+    as "Energize's one heal row lasts until removed, so the plan leaves it out"
+  assert spell_plan.heal_of(
+      spell4_id: 69_450,
+      effect: spell4_effects.Spell4Effects(
+        ..fixture_effect(id: 228_914),
+        tick_time: 1000,
+        duration_time: 0,
+        flags: 2,
+      ),
+      condition: spell_plan.Always,
+    )
+    == Error(spell_plan.HealUntilRemovedNotRead(
+      spell4_id: 69_450,
+      effect_id: 228_914,
+    ))
+    as "the plan's heal reader names why it leaves the row out (HealUntilRemoved)"
+  // A life shorter than one tick has no tick, and the load fails.
+  let assert Ok(short) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "Spell4Effects",
+      id: 61_994,
+      with: [#("tickTime", Integer(1000)), #("durationTime", Integer(500))],
+    )
+    as "the fixture holds row 61994"
+  let assert Error(table_store.DerivationFailed(name: "SpellAreas", reason:)) =
+    fixture_tables.load(rows: short)
+    as "durationTime 500 under tickTime 1000 fails the area load"
+  assert reason
+    == spell_area.describe(TickingNoTick(
+      spell4_id: 32_809,
+      effect_id: 61_994,
+      tick_ms: 1000,
+      duration_ms: 500,
+    ))
+    as "the load names the spell, the row, its tickTime and its durationTime"
 }
 
 pub fn a_damage_row_the_area_load_refuses_is_not_read_test() -> Nil {
@@ -879,6 +967,7 @@ fn planned_alone(spell4_id spell4_id: Int) -> spell_area.SpellArea {
     row: None,
     shapes: [],
     damage: [],
+    ticking: [],
     spell:,
   )
 }
@@ -945,4 +1034,64 @@ pub fn an_absorb_and_an_armor_row_aimed_at_the_target_strike_nobody_test() -> Ni
     as "the plan holds both rows, aimed at the cast's target"
   assert !phase.strikes_primary_target && !phase.selects_area
     as "an absorb or an armor row aimed at the target is no property change of a struck unit, so the phase strikes nobody"
+}
+
+pub fn a_periodic_damage_row_strikes_with_its_schedule_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  // Spell 38514 (Atomic Surge) is no level-1 ability, and no level-1 tree spell holds a
+  // periodic damage row, so the area load never holds it: its row goes through the load's
+  // own reader, and the phase is shown on Mind Burst given the row's timing.
+  let assert Ok(row) =
+    spell4_effects.get(
+      tables: client_tables.shared(),
+      id: Spell4EffectsId(82_888),
+    )
+    as "the client's tables hold row 82888"
+  let assert Ok(Periodic(effect: read)) =
+    spell_area.damage_row_of(spell4_id: 38_514, effect: row)
+    as "a damage row with a tickTime and a life of whole ticks is read"
+  assert #(read.damage.effect_id, read.damage.aim, read.schedule)
+    == #(
+      Spell4EffectsId(82_888),
+      spell_plan.AimsAtPrimaryTarget,
+      ticking.Schedule(
+        delay_ms: 1000,
+        tick_ms: 1000,
+        duration_ms: 4000,
+        count: 4,
+      ),
+    )
+    as "Spell4Effects 82888 (table_rows -- Spell4Effects spellId=38514): effectType 8, targetFlags 2, delayTime 1000, tickTime 1000, durationTime 4000; tick k lands 1000 + k * 1000 ms after the go (spell.tick_timing, a guess)"
+  let area =
+    mind_burst_with(table: "Spell4Effects", id: 61_994, with: [
+      #("delayTime", Integer(1000)),
+      #("tickTime", Integer(1000)),
+      #("durationTime", Integer(4000)),
+      #("targetFlags", Integer(2)),
+    ])
+  let assert Ok(phase) = spell_area.phase(spell: area, phase: 0, spent: None)
+    as "Mind Burst has one phase"
+  assert list.map(phase.ticking, fn(ticking_row) {
+      #(
+        ticking_row.damage.effect_id,
+        ticking_row.damage.aim,
+        ticking_row.schedule,
+      )
+    })
+    == [
+      #(
+        Spell4EffectsId(61_994),
+        spell_plan.AimsAtPrimaryTarget,
+        ticking.Schedule(
+          delay_ms: 1000,
+          tick_ms: 1000,
+          duration_ms: 4000,
+          count: 4,
+        ),
+      ),
+    ]
+    as "Mind Burst's row 61994 (targetFlags 4 in the client) given 82888's aim and timing: its phase ticks it on the cast's target"
+  assert phase.strikes_primary_target
+    as "a ticking row aimed at the cast's target makes the phase strike it"
 }

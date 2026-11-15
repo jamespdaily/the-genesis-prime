@@ -48,7 +48,7 @@ import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{type Character, Character}
-import genesis_prime/table/id.{Creature2Id, Spell4BaseId}
+import genesis_prime/table/id.{Creature2Id, Spell4BaseId, Spell4EffectsId}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_registry
@@ -667,44 +667,62 @@ fn strike_with(
       incarnation: run.incarnation,
       unit_id:,
       life:,
-      message: creature.Strike(
-        tell: Strike(
-          key: Key(cast_id:, phase: 0, unit_id:),
-          from: step.Connection(ConnectionId(1)),
-          offence: Offence(
-            blows: [
-              Blow(
-                spell4_effects_id: 1,
-                damage_type:,
-                damage:,
-                delay_ms: 0,
-                threat_multiplier: 1.0,
-              ),
-            ],
-            crit_chance: 0.0,
-            crit_severity: 1.5,
-            strikethrough: 0.0,
-          ),
-          striker: strike_tell.PlayerStriker(
-            unit_id: 1,
-            place: place_support.at(
-              world_id: 3460,
-              world_zone_id: 5967,
-              x: 0.0,
-              y: 0.0,
-              z: 0.0,
-            ),
-            seq: 1,
-            stay: map_support.stay(count: 1),
-            hit_radius: place_support.player_hit_radius,
-            rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
-          ),
-          controls: [],
-        ),
+      message: strike_message(
+        unit_id:,
+        damage_type:,
+        damage:,
+        cast_id:,
+        occasion: strike_tell.AtGo(phase: 0),
       ),
     )
     as "the creature is found by its address and told"
   Nil
+}
+
+/// The strike of connection 1 on the Beast `unit_id` for `occasion`, with one blow of
+/// `damage` of `damage_type` and no luck.
+fn strike_message(
+  unit_id unit_id: Int,
+  damage_type damage_type: Int,
+  damage damage: Int,
+  cast_id cast_id: Int,
+  occasion occasion: strike_tell.Occasion,
+) -> creature.Message {
+  creature.Strike(
+    tell: Strike(
+      key: Key(cast_id:, occasion:, unit_id:),
+      from: step.Connection(ConnectionId(1)),
+      offence: Offence(
+        blows: [
+          Blow(
+            spell4_effects_id: 1,
+            damage_type:,
+            damage:,
+            delay_ms: 0,
+            threat_multiplier: 1.0,
+          ),
+        ],
+        crit_chance: 0.0,
+        crit_severity: 1.5,
+        strikethrough: 0.0,
+      ),
+      striker: strike_tell.PlayerStriker(
+        unit_id: 1,
+        place: place_support.at(
+          world_id: 3460,
+          world_zone_id: 5967,
+          x: 0.0,
+          y: 0.0,
+          z: 0.0,
+        ),
+        seq: 1,
+        stay: map_support.stay(count: 1),
+        hit_radius: place_support.player_hit_radius,
+        rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+      ),
+      controls: [],
+    ),
+  )
 }
 
 pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_kinds_respawn_time_test() -> Nil {
@@ -806,6 +824,65 @@ pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn
     )
   assert second.unit_id == first.unit_id
     as "a clean stop keeps the spawn's unit id, and the creature that starts is at full health (the corpse died with its process)"
+  world_support.stop(world:)
+}
+
+pub fn a_restarted_creature_refuses_the_old_lifes_tick_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let respawn_ms = 1000
+  let time = driven_time.new()
+  let world = one_beast_timed(time:, respawn_ms:, idle_stop_ms:)
+  let run = started(world)
+  let received = world_support.connection(world:, id: 1)
+  let _player = join(run:, connection: 1)
+  let first = next(received:, what: "the creature's 0x262", wanted: appearance)
+  let pid = creature_pid(world:, run:, unit_id: first.unit_id, life: 2)
+  strike_with(
+    world:,
+    run:,
+    unit_id: first.unit_id,
+    life: 2,
+    damage_type: 3,
+    damage: 60,
+    cast_id: 1,
+  )
+  driven_time.settled(pid)
+  move_to(run:, connection: 1, x: far)
+  left_sight(received:, what: "the corpse's 0x355 when the player left sight")
+  driven_time.advance(time:, ms: respawn_ms)
+  assert !process.is_alive(pid) as "the dead creature stopped at its respawn"
+  move_to(run:, connection: 1, x: 0.0)
+  let second =
+    next(
+      received:,
+      what: "the 0x262 of the creature started again",
+      wanted: appearance,
+    )
+  assert second.unit_id == first.unit_id
+  // A cast that struck life 2 ticks on with that life's address: the creature that
+  // stands in its place under the same unit id is never told it (step `Creature`: the
+  // life tells the two apart), so the cast's round runs to its deadline and the cast
+  // stops the unit's ticks (`cast_tick_test`).
+  assert creature_registry.tell(
+      world.creatures,
+      map: ship,
+      incarnation: run.incarnation,
+      unit_id: first.unit_id,
+      life: 2,
+      message: strike_message(
+        unit_id: first.unit_id,
+        damage_type: 3,
+        damage: 18,
+        cast_id: 1,
+        occasion: strike_tell.AtTick(
+          effect_id: Spell4EffectsId(96_125),
+          go: 1,
+          tick: 2,
+        ),
+      ),
+    )
+    == Error(Nil)
+    as "no creature of life 2 is left to take the tick"
   world_support.stop(world:)
 }
 
@@ -960,6 +1037,7 @@ fn tell_change(
     | cast.CasterChangeEnds(..)
     | cast.Activated(..)
     | cast.ShortcutCast(..)
+    | cast.TickStrike(..)
     | cast.StealthChanged(..) -> panic as "not a change of a creature's property"
   }
   let assert Ok(Nil) =
@@ -1054,6 +1132,7 @@ pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
       descriptions: [],
       controls: [],
       armor_removed: 0,
+      ticking: [],
     ),
   ]
   let #(state, pressed) =

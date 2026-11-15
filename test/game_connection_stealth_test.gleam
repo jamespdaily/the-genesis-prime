@@ -250,7 +250,7 @@ fn harmless_strike() -> step.Event(
       tell: strike_tell.Strike(
         key: strike_tell.Key(
           cast_id: 2_147_500_002,
-          phase: 0,
+          occasion: strike_tell.AtGo(phase: 0),
           unit_id: support.own_unit_id,
         ),
         from: support.fighter(),

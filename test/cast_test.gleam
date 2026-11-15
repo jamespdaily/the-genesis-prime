@@ -429,6 +429,7 @@ pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_tes
               | client_connection.Health(..)
               | client_connection.Died
               | client_connection.CastMissed(..)
+              | client_connection.CastTicked(..)
               | client_connection.CastTargetsRemoved(..)
               | client_connection.CastStackRemoved(..)
               | client_connection.Removed
@@ -516,6 +517,7 @@ pub fn telekinetic_strike_goes_1250_ms_after_the_accept_then_finishes_and_its_ch
       descriptions: [],
       controls: [],
       armor_removed: 0,
+      ticking: [],
     ),
   ]
   let #(state, effects) =
@@ -561,6 +563,7 @@ pub fn crush_starts_42297_100_ms_after_its_go_with_root_crush_and_parent_crush_t
       descriptions: [],
       controls: [],
       armor_removed: 0,
+      ticking: [],
     ),
   ]
   let #(state, effects) =
@@ -596,6 +599,7 @@ pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_3879
       descriptions: [],
       controls: [],
       armor_removed: 0,
+      ticking: [],
     ),
   ]
   let #(state, effects) =
@@ -757,6 +761,7 @@ pub fn a_non_normal_ability_is_refused_285_and_logged_once_test() -> Nil {
         | cast.TargetChangeEnds(..)
         | cast.Activated(..)
         | cast.ShortcutCast(..)
+        | cast.TickStrike(..)
         | cast.StealthChanged(..) -> False
       }
     })

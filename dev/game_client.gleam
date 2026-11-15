@@ -47,6 +47,7 @@ import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_effect_info
 import genesis_prime/message/spell_effect_result
+import genesis_prime/message/spell_effect_tick
 import genesis_prime/message/spell_failed
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
@@ -525,6 +526,30 @@ pub fn missed_in(frames frames: List(Frame)) -> List(#(Int, List(Int))) {
         let assert Ok(missed) = spell_missed.decode(frame.body)
           as "0x7fb decodes"
         Ok(#(missed.cast_id, list.map(missed.misses, fn(miss) { miss.unit_id })))
+      }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// Each 0x7f8 among the frames, in order: the cast, the row, the unit and the health
+/// damage of each of its descriptions, less the overkill (opcode.0x7f8).
+pub fn ticks_in(
+  frames frames: List(Frame),
+) -> List(#(Int, Int, Int, List(Int))) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x07F8 -> {
+        let assert Ok(tick) = spell_effect_tick.decode(frame.body)
+          as "0x7f8 decodes"
+        Ok(#(
+          tick.cast_id,
+          tick.spell4_effects_id,
+          tick.unit_id,
+          list.map(tick.descriptions, fn(description) {
+            description.health_damage_with_overkill - description.overkill
+          }),
+        ))
       }
       _ -> Error(Nil)
     }

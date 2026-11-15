@@ -621,7 +621,12 @@ pub fn a_creatures_strike_writes_the_shield_and_the_health_and_is_answered_to_th
   // mitigated to 3; the shield takes round(1.875) = 2, the health 1 of 736.
   let state =
     game_connection_support.watched_by(game_connection_support.in_world(), [5])
-  let key = strike_tell.Key(cast_id: 2_147_500_000, phase: 0, unit_id: 5)
+  let key =
+    strike_tell.Key(
+      cast_id: 2_147_500_000,
+      occasion: strike_tell.AtGo(phase: 0),
+      unit_id: 5,
+    )
   let #(_, struck) =
     game_connection_support.feed(
       state,

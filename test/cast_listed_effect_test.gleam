@@ -207,6 +207,7 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
         descriptions: [],
         controls: [],
         armor_removed: 0,
+        ticking: [],
       ),
       cast.Hit(
         unit_id: 21,
@@ -214,6 +215,7 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
         descriptions: [],
         controls: [],
         armor_removed: 0,
+        ticking: [],
       ),
     ])
   assert list.map(targets_of(effects:), fn(info) {

@@ -36,6 +36,7 @@ import genesis_prime/message/bit_stream
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
+import genesis_prime/message/spell_effect_tick.{type SpellEffectTick}
 import genesis_prime/message/spell_go.{type SpellGo}
 import genesis_prime/message/spell_missed.{type SpellMissed}
 import genesis_prime/message/spell_stack_removed.{type SpellStackRemoved}
@@ -207,6 +208,9 @@ pub type News {
   /// Some targets of a cast of the unit were missed: 0x7fb (opcode.0x7fb), written for
   /// a cast the viewer wrote the start of, after its 0x7f4.
   CastMissed(missed: SpellMissed)
+  /// A periodic row of a cast of the unit ticks on a unit: 0x7f8 (opcode.0x7f8),
+  /// written for a cast the viewer wrote the start of.
+  CastTicked(tick: SpellEffectTick)
   /// A cast of the unit is taken off some units, which ends its effects there:
   /// 0x811 (opcode.0x811), written for a cast the viewer wrote the start of. With
   /// `destroyed`, the client destroys the cast with it (no target left and a cast

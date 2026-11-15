@@ -72,6 +72,7 @@ type Pending {
   Pending(
     due_ms: Int,
     number: Int,
+    owner: Pid,
     subject: Subject(Elapsed),
     timer: TimerId,
     reference: Reference,
@@ -114,6 +115,8 @@ type Message {
     reply: Subject(Int),
   )
   Cancel(number: Int, reply: Subject(Nil))
+  /// The timers the process has started that have neither fired nor been cancelled.
+  PendingOf(owner: Pid, reply: Subject(List(TimerId)))
   TakeDue(limit_ms: Int, reply: Subject(Option(Pending)))
 }
 
@@ -170,6 +173,7 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
         Pending(
           due_ms: state.now_ms + after_ms,
           number: state.next_number,
+          owner:,
           subject:,
           timer:,
           reference:,
@@ -193,6 +197,18 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
           }),
         ),
       )
+    }
+    PendingOf(owner:, reply:) -> {
+      process.send(
+        reply,
+        list.filter_map(state.pending, fn(pending) {
+          case pending.owner == owner {
+            True -> Ok(pending.timer)
+            False -> Error(Nil)
+          }
+        }),
+      )
+      actor.continue(state)
     }
     TakeDue(limit_ms:, reply:) -> take_due(state:, limit_ms:, reply:)
   }
@@ -314,6 +330,12 @@ fn asked(time time: Time, make make: fn(Subject(reply)) -> Message) -> reply {
   })
 }
 
+/// The timers the process `owner` started on this clock that have neither fired nor
+/// been cancelled, in the order they were started.
+pub fn pending_of(time time: Time, owner owner: Pid) -> List(TimerId) {
+  asked(time:, make: PendingOf(owner, _))
+}
+
 /// Moves the clock on by `ms`, firing each timer due within it, one at a time in
 /// the order of their due times. Each fires at its own due time; then the barrier
 /// (`wait_until_quiet`) runs, and only after it is the next due timer chosen, so a
@@ -361,7 +383,12 @@ fn fire_until(time time: Time, limit_ms limit_ms: Int) -> Nil {
 ///
 /// A participant that ends during a pass is dropped by the next look, which counts
 /// it as a change, so the last signals of an ended participant get one more pass.
-fn wait_until_quiet(time: Time) -> Nil {
+///
+/// `advance` runs it only after a timer fires. A test runs it itself after an input
+/// of its own whose chain goes through another participant with no timer on the
+/// way (a press whose go strikes a creature at once), once the connection has taken
+/// that input (`game_client.read_until_pong`).
+pub fn wait_until_quiet(time: Time) -> Nil {
   let opening = asked(time:, make: Observe)
   pass(time:, opening:, after_a_quiet_pass: False)
 }

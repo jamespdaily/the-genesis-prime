@@ -1,0 +1,96 @@
+//// When a periodic row's ticks land, worked out once from its row when the tables
+//// load (genesis_prime/game/spell_area for damage, genesis_prime/game/spell_plan for
+//// heals). The cast rule (genesis_prime/game/cast) arms one tick at a time from it.
+////
+//// - **The client has no tick timer** (`spell.tick_timing`): it reads tickTime only
+////   for the tooltip and the periodic flag of a result, so the schedule is the
+////   server's own. A guess, until a retail recording of one damage-over-time spell
+////   gives the go and each 0x7f8 with its time (issue 336): tick k of `count` lands
+////   `delay_ms + k * tick_ms` after the go, for k from 1 to durationTime / tickTime
+////   rounded down, and only within the row's life (`within_life`).
+//// - **A row with flags bit 2 lasts until removed** (`Spell4Effects.effectType.8.periodic`),
+////   which no schedule ends (issue 803); every periodic row with a durationTime of 0
+////   has the bit.
+
+import genesis_prime/game/lasting
+import gleam/bool
+import gleam/int
+import gleam/option.{type Option, None, Some}
+
+/// When a periodic row's ticks land: tick k of `count` lands `delay_ms + k * tick_ms`
+/// after the go. `duration_ms` is the row's durationTime, which with its delay gives the
+/// life of the row's node on the unit, as the client's own end timer for the effect counts
+/// it (`opcode.0x7f4.effect_time`).
+pub type Schedule {
+  Schedule(delay_ms: Int, tick_ms: Int, duration_ms: Int, count: Int)
+}
+
+/// Why a periodic row has no schedule.
+pub type ScheduleError {
+  /// Flags bit 2: the row lasts until removed (issue 803).
+  UntilRemoved
+  /// A life shorter than one tick; no row has one, so the load fails.
+  NoTick(tick_ms: Int, duration_ms: Int)
+}
+
+/// The schedule of a row whose tickTime is `tick_ms`, from its delay and durationTime.
+pub fn schedule_of(
+  row row: lasting.LastingRow,
+  tick_ms tick_ms: Int,
+) -> Result(Schedule, ScheduleError) {
+  use <- bool.guard(when: row.until_removed, return: Error(UntilRemoved))
+  let count = case tick_ms > 0 {
+    True -> row.duration_ms / tick_ms
+    False -> 0
+  }
+  use <- bool.guard(
+    when: count < 1,
+    return: Error(NoTick(tick_ms:, duration_ms: row.duration_ms)),
+  )
+  Ok(Schedule(
+    delay_ms: row.delay_ms,
+    tick_ms:,
+    duration_ms: row.duration_ms,
+    count:,
+  ))
+}
+
+/// The schedule cut to the ticks that land within the row's own life from the go, the
+/// life its node on the unit takes from it (`lasting.lifetime_of`). For a spell whose
+/// life is the longer of delay and durationTime (`0x140568540`) that drops the ticks past
+/// it, so no tick is due after its node's life however late it is looked at; whether the
+/// client would show a 0x7f8 after its node ends is not read (gap, #336).
+pub fn within_life(
+  schedule schedule: Schedule,
+  longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
+) -> Schedule {
+  let life_ms =
+    lasting.lifetime_of(
+      row: lasting.LastingRow(
+        delay_ms: schedule.delay_ms,
+        duration_ms: schedule.duration_ms,
+        until_removed: False,
+      ),
+      longer_of_delay_and_duration:,
+    )
+  let within = case schedule.tick_ms > 0 {
+    True -> { life_ms - schedule.delay_ms } / schedule.tick_ms
+    False -> 0
+  }
+  Schedule(..schedule, count: int.clamp(within, min: 0, max: schedule.count))
+}
+
+/// The monotonic time tick `tick` lands at, for a go at `from_ms`.
+pub fn tick_at_ms(
+  schedule schedule: Schedule,
+  from_ms from_ms: Int,
+  tick tick: Int,
+) -> Int {
+  from_ms + schedule.delay_ms + tick * schedule.tick_ms
+}
+
+/// The tick after `tick` (0 before the first), or `None` after the last.
+pub fn next_tick(schedule schedule: Schedule, tick tick: Int) -> Option(Int) {
+  use <- bool.guard(when: tick >= schedule.count, return: None)
+  Some(tick + 1)
+}

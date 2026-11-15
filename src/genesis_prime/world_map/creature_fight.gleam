@@ -1169,7 +1169,12 @@ fn strikes(
       number: state.next_cast,
       live: fighter.guard_casts,
     )
-  let key = strike_tell.Key(cast_id:, phase: 0, unit_id: sighting.unit_id)
+  let key =
+    strike_tell.Key(
+      cast_id:,
+      occasion: strike_tell.AtGo(phase: 0),
+      unit_id: sighting.unit_id,
+    )
   let #(state, deadline) = generation(state)
   let assert Fighting(..) as fighting = state.status
     as "a creature strikes only while Fighting"
@@ -1300,6 +1305,7 @@ fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
             descriptions:,
             controls: [],
             armor_removed: 0,
+            ticking: [],
           ),
         ],
         killed,
@@ -1437,7 +1443,7 @@ fn charge_ended(
             threat,
             strike_tell.Key(
               cast_id: round.cast_id,
-              phase: 0,
+              occasion: strike_tell.AtGo(phase: 0),
               unit_id: sighting.unit_id,
             ),
           )

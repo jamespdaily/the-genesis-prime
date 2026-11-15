@@ -362,6 +362,7 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> []
     }
   })
@@ -385,6 +386,7 @@ pub fn shortcut_casts(effects effects: List(Effect)) -> List(Effect) {
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> False
     }
   })
@@ -408,6 +410,7 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -433,6 +436,7 @@ pub fn caster_change_ends(
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -458,6 +462,7 @@ pub fn caster_change_starts(
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -500,6 +505,7 @@ pub fn target_changes(effects effects: List(Effect)) -> List(Effect) {
       | cast.CasterChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> False
     }
   })
@@ -724,6 +730,7 @@ pub fn hits(units: List(Int)) -> List(cast.Struck) {
       descriptions: [],
       controls: [],
       armor_removed: 0,
+      ticking: [],
     )
   })
 }
@@ -832,6 +839,7 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -912,6 +920,7 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -935,6 +944,7 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -958,6 +968,7 @@ pub fn goes_asked(effects effects: List(Effect)) -> List(cast.GoAsked) {
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -981,6 +992,7 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -1004,6 +1016,7 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -1206,6 +1219,7 @@ pub fn answered_known(
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> #(state, list.append(done, [effect]))
     }
   })

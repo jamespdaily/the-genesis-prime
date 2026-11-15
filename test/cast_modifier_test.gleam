@@ -402,6 +402,7 @@ fn creature_struck() -> List(cast.Struck) {
       descriptions: [],
       controls: [],
       armor_removed: 0,
+      ticking: [],
     ),
   ]
 }
@@ -745,6 +746,7 @@ pub fn modifier_on_another_player_is_left_out_test() -> Nil {
       descriptions: [],
       controls: [],
       armor_removed: 0,
+      ticking: [],
     ),
   ]
   let #(_, effects) =

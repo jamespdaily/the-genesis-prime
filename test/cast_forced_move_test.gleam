@@ -90,6 +90,7 @@ fn changes_a_property(effect effect: cast.Effect) -> Bool {
     | cast.CancelTimer(..)
     | cast.Log(..)
     | cast.Strike(..)
+    | cast.TickStrike(..)
     | cast.Pay(..)
     | cast.TargetChangeStarts(..)
     | cast.TargetChangeEnds(..)
@@ -192,6 +193,7 @@ pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_
         | cast.TargetChangeEnds(..)
         | cast.Activated(..)
         | cast.ShortcutCast(..)
+        | cast.TickStrike(..)
         | cast.StealthChanged(..) -> Error(Nil)
       }
     })

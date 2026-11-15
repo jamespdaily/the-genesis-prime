@@ -2425,6 +2425,19 @@ fields = [
 ]
 
 [[message]]
+id = 0x07F8
+name = "spell_effect_tick"
+direction = "server_to_client"
+evidence = "opcode.0x7f8"
+summary = "results of an effect already sent in a cast, as one tick of a periodic effect: the cast id, the Spell4Effects id, the target unit id and its damage descriptions; the client finds the cast, the target in it and the effect, and applies each description as a 0x7f4 effect info's (floater, hit reaction, combat log). Any of the three not found drops the message without a word, and it never changes health"
+fields = [
+  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7f8", named_by = "opcode.0x7f8" },
+  { name = "spell4_effects_id", kind = "unsigned", bits = 19, evidence = "opcode.0x7f8", named_by = "opcode.0x7f8" },
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7f8", named_by = "opcode.0x7f8" },
+  { name = "descriptions", kind = "array", count_bits = 8, element = "spell_damage_description", evidence = "opcode.0x7f8", named_by = "opcode.0x7f8" },
+]
+
+[[message]]
 id = 0x07FE
 name = "spell_finished"
 direction = "server_to_client"

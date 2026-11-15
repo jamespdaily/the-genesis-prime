@@ -78,7 +78,11 @@ pub fn struck(
     life:,
     defence:,
     strike: strike_tell.Strike(
-      key: strike_tell.Key(cast_id:, phase: 0, unit_id: own_unit),
+      key: strike_tell.Key(
+        cast_id:,
+        occasion: strike_tell.AtGo(phase: 0),
+        unit_id: own_unit,
+      ),
       from: beast(),
       striker: strike_tell.CreatureStriker,
       offence:,

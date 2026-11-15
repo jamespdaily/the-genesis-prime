@@ -196,6 +196,7 @@ fn healed(
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -313,6 +314,7 @@ pub fn a_shield_heal_with_no_delay_lands_in_the_steps_of_the_go_after_its_0x7f4_
         | cast.TargetChangeEnds(..)
         | cast.Activated(..)
         | cast.ShortcutCast(..)
+        | cast.TickStrike(..)
         | cast.StealthChanged(..) -> False
       }
     })
@@ -407,6 +409,7 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> False
     }
   })
@@ -643,38 +646,6 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
 
 // ---- rows the rule does not apply ----
 
-pub fn a_ticking_shield_heal_whose_gate_passes_is_not_applied_and_writes_one_debug_line_test() -> Nil {
-  use <- owned_test.run(5000)
-  // Row 210834: 0.125 of the maximum shield each 1000 ms for 8000 ms; a periodic heal
-  // needs a 0x7f8 for each tick, which no rule of the server sends.
-  let ticking =
-    spell_plan.TickingHeal(
-      effect_id: Spell4EffectsId(210_834),
-      vital: effect_kind.Shield,
-      phase_flags: -1,
-      aim: AimsAtCaster,
-      condition: Always,
-      tag: spend.always,
-      tick_ms: 1000,
-      duration_ms: 8000,
-    )
-  let plans = support.plans_of([healer(heals: [ticking])])
-  let #(_, effects) =
-    support.press_as(
-      plans:,
-      state: cast.new(),
-      caster: struck_caster(),
-      bag: bag_of_base_3,
-      at: 1000,
-    )
-  assert heals(effects:) == [] as "nothing lands"
-  assert listed(effects:) == [] as "and the go lists nothing"
-  let assert [#(LogDebug, line)] = support.logs(effects:)
-    as "one debug line says why"
-  assert string.contains(line, "210834") && string.contains(line, "0x7f8")
-    as "it names the row and the missing tick message"
-}
-
 pub fn two_shield_heal_rows_of_one_go_each_land_and_a_later_go_heals_again_test() -> Nil {
   use <- owned_test.run(5000)
   let second = heal_of(id: 228_999, delay_ms: 0, condition: Always)
@@ -787,6 +758,7 @@ pub fn the_viewers_go_carries_the_same_heal_description_test() -> Nil {
         | client_connection.CastFinished(..)
         | client_connection.CastInterrupted(..)
         | client_connection.CastMissed(..)
+        | client_connection.CastTicked(..)
         | client_connection.CastTargetsRemoved(..)
         | client_connection.CastStackRemoved(..)
         | client_connection.Appeared(..)

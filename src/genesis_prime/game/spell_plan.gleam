@@ -132,9 +132,10 @@
 ////   dataBits01 and the four parameters, which must be kinds the caster's value reads,
 ////   genesis_prime/game/damage `caster_unread`), its delay, aim and caster apply
 ////   prerequisite, which the cast rule checks and which a target apply prerequisite
-////   leaves not applied; a row with a tickTime is a `TickingHeal`, held and not
-////   applied, since each tick needs a 0x7f8 (#336). A row aimed only at other units (4 and
-////   6) is not read. A child a Proxy starts on each struck unit that holds a heal aimed at
+////   leaves not applied; a row with a tickTime is a `TickingHeal`, with the schedule of
+////   its ticks (genesis_prime/game/ticking), each tick its own 0x7f8. A periodic row that
+////   lasts until removed (flags bit 2) is left out (`HealUntilRemoved`, issue 803). A row
+////   aimed only at other units (4 and 6) is not read. A child a Proxy starts on each struck unit that holds a heal aimed at
 ////   its primary target fails the load: a heal on a struck unit is not built.
 //// - **The shield overloads.** A ShieldOverload effect (`Spell4Effects.effectType.64`)
 ////   aimed at the area (targetFlags 4) is a `Lasting` row, listed on each struck unit for
@@ -273,6 +274,7 @@ import genesis_prime/game/look
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/quest_log.{type Quest, type QuestRowError}
 import genesis_prime/game/spend
+import genesis_prime/game/ticking
 import genesis_prime/game/unit_properties
 import genesis_prime/game/worn_visual
 import genesis_prime/message/crowd_control_state
@@ -889,9 +891,9 @@ pub type Heal {
     formula: damage.Formula,
     delay_ms: Int,
   )
-  /// A heal each `tick_ms` for `duration_ms` (Spell4Effects.tickTime and durationTime),
-  /// which the cast rule does not apply: each tick needs its own 0x7f8
-  /// (`Spell4Effects.effectType.10`, `.118`).
+  /// A heal at each tick of `schedule` (Spell4Effects.tickTime, delayTime and
+  /// durationTime), by `formula` read for the caster as it is at the tick, each tick its
+  /// own 0x7f8 (`Spell4Effects.effectType.10`, `.118`).
   TickingHeal(
     effect_id: Spell4EffectsId,
     vital: effect_kind.Vital,
@@ -899,8 +901,8 @@ pub type Heal {
     aim: Aim,
     condition: Condition,
     tag: spend.Tag,
-    tick_ms: Int,
-    duration_ms: Int,
+    formula: damage.Formula,
+    schedule: ticking.Schedule,
   )
 }
 
@@ -1023,8 +1025,8 @@ pub type RowReading {
   /// The row is in a list of its spell and a go applies it: the coverage measure counts
   /// it read.
   Applied(row: PlannedRow)
-  /// The row is in a list of its spell and no go applies it: a periodic gain or heal
-  /// (`TickingGain`, `TickingHeal`), a row behind a target apply prerequisite
+  /// The row is in a list of its spell and no go applies it: a periodic gain
+  /// (`TickingGain`), a row behind a target apply prerequisite
   /// (`cast.condition_gate`), a property change or disguise with no life
   /// (`lasting.has_life`) and a row whose phaseFlags is 0, which no phase selects
   /// (`in_phase`). The measure counts it not read.
@@ -1059,6 +1061,9 @@ pub type LeftOutReason {
   /// ends"): the plan drops the row, the rest of the spell plans, and the cast logs the
   /// gap (`Spell.dropped_controls`).
   StateUntilRemovedNotRead
+  /// A periodic Heal or HealShields row that lasts until removed (`Spell4Effects.flags`
+  /// bit 2), which no schedule ends (issue 803).
+  HealUntilRemoved
 }
 
 /// A row as the list of its spell holds it. A Proxy's child and a Proc's spell are planned
@@ -1184,6 +1189,12 @@ pub type PlanError {
   HealParameterNotRead(spell4_id: Int, effect_id: Int, parameter_kind: Int)
   /// A Heal or HealShields effect of a tree has a dataBits00 that is not a finite 32-bit float.
   HealNumberNotFinite(spell4_id: Int, effect_id: Int)
+  /// A periodic Heal or HealShields effect lasts until removed (flags bit 2): its reading
+  /// leaves it out (`HealUntilRemoved`, issue 803).
+  HealUntilRemovedNotRead(spell4_id: Int, effect_id: Int)
+  /// A periodic Heal or HealShields effect lives shorter than one tick
+  /// (genesis_prime/game/ticking `NoTick`).
+  HealNoTick(spell4_id: Int, effect_id: Int, tick_ms: Int, duration_ms: Int)
   /// A Proxy of a tree starts a child on each unit its area strikes, and the child holds
   /// a Heal or HealShields effect aimed at its primary target, a struck unit: `spell4_id` is the
   /// spell with the Proxy `proxy_effect_id`, and `effect_id` the heal's row.
@@ -1445,6 +1456,22 @@ pub fn describe(error error: PlanError) -> String {
       <> " has a Heal or HealShields effect "
       <> int.to_string(effect_id)
       <> " whose dataBits00 is not a finite number"
+    HealUntilRemovedNotRead(spell4_id:, effect_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a periodic Heal or HealShields effect "
+      <> int.to_string(effect_id)
+      <> " that lasts until removed, which is not read"
+    HealNoTick(spell4_id:, effect_id:, tick_ms:, duration_ms:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a periodic Heal or HealShields effect "
+      <> int.to_string(effect_id)
+      <> " with a tickTime of "
+      <> int.to_string(tick_ms)
+      <> " and a durationTime of "
+      <> int.to_string(duration_ms)
+      <> ", shorter than one tick"
     HealOnStruckUnit(spell4_id:, proxy_effect_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2130,7 +2157,9 @@ fn gain_row_of(
 /// the vital its type names, or the error that fails the load: its dataBits00 must be a finite 32-bit float and its formula must read only the
 /// parameter types an effect on its caster reads (genesis_prime/game/damage
 /// `caster_unread`). It aims at the caster when its targetFlags include it and else at
-/// the primary target. A row with a tickTime is periodic, a `TickingHeal`.
+/// the primary target. A row with a tickTime is periodic, a `TickingHeal` with its
+/// schedule (genesis_prime/game/ticking `schedule_of`), or `HealUntilRemovedNotRead` for
+/// one that lasts until removed.
 pub fn heal_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
@@ -2154,9 +2183,9 @@ pub fn heal_of(
   let aim = reached_aim_of(effect:)
   let phase_flags = effect.phase_flags
   let tag = tag_of(effect:)
-  Ok(case effect.tick_time {
+  case effect.tick_time {
     0 ->
-      Heal(
+      Ok(Heal(
         effect_id:,
         vital:,
         phase_flags:,
@@ -2165,19 +2194,30 @@ pub fn heal_of(
         tag:,
         formula:,
         delay_ms: effect.delay_time,
-      )
+      ))
     tick_ms ->
-      TickingHeal(
-        effect_id:,
-        vital:,
-        phase_flags:,
-        aim:,
-        condition:,
-        tag:,
-        tick_ms:,
-        duration_ms: effect.duration_time,
-      )
-  })
+      ticking.schedule_of(row: lasting_row_of(effect:), tick_ms:)
+      |> result.map(fn(schedule) {
+        TickingHeal(
+          effect_id:,
+          vital:,
+          phase_flags:,
+          aim:,
+          condition:,
+          tag:,
+          formula:,
+          schedule:,
+        )
+      })
+      |> result.map_error(fn(error) {
+        case error {
+          ticking.UntilRemoved ->
+            HealUntilRemovedNotRead(spell4_id:, effect_id: effect.id)
+          ticking.NoTick(tick_ms:, duration_ms:) ->
+            HealNoTick(spell4_id:, effect_id: effect.id, tick_ms:, duration_ms:)
+        }
+      })
+  }
 }
 
 /// One Fluff, Scale, RavelSignal or area ShieldOverload row as a lasting row: aimed at a
@@ -2206,7 +2246,7 @@ fn lasting_of(
 
 /// The columns of a row that give its node a life: its delay and durationTime and whether
 /// its flags have bit 2, until removed (`Spell4Effects.effectType.17`).
-fn lasting_row_of(
+pub fn lasting_row_of(
   effect effect: spell4_effects.Spell4Effects,
 ) -> lasting.LastingRow {
   lasting.LastingRow(
@@ -3510,8 +3550,8 @@ fn interrupt_armor_reading(
   by_condition_with_life(modifier:, condition:)
 }
 
-/// A Heal or HealShields row that reaches the caster or the primary target: a periodic heal is
-/// held.
+/// A Heal or HealShields row that reaches the caster or the primary target: a periodic heal
+/// that lasts until removed is left out (`HealUntilRemoved`).
 fn heal_reading(
   tables tables: table_store.Tables,
   place place: RowPlace,
@@ -3523,7 +3563,7 @@ fn heal_reading(
     effect:,
     data_bits06_names_a_gate: False,
   ))
-  use heal <- result.try(heal_of(spell4_id:, effect:, condition:))
+  use heal <- try_heal(heal_of(spell4_id:, effect:, condition:))
   use Nil <- result.map(
     not_on_a_struck_unit(place:, aim: heal.aim, refused: fn(by) {
       HealOnStruckUnit(
@@ -3533,9 +3573,18 @@ fn heal_reading(
       )
     }),
   )
+  by_condition(row: PlannedHeal(heal:), condition:)
+}
+
+/// Goes on with a heal, or leaves out a periodic heal that lasts until removed.
+fn try_heal(
+  heal heal: Result(Heal, PlanError),
+  then then: fn(Heal) -> Result(RowReading, PlanError),
+) -> Result(RowReading, PlanError) {
   case heal {
-    Heal(..) -> by_condition(row: PlannedHeal(heal:), condition:)
-    TickingHeal(..) -> Held(PlannedHeal(heal:))
+    Ok(heal) -> then(heal)
+    Error(HealUntilRemovedNotRead(..)) -> Ok(LeftOut(why: HealUntilRemoved))
+    Error(error) -> Error(error)
   }
 }
 

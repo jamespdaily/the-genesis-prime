@@ -51,7 +51,7 @@ import genesis_prime/world_map/creature_path
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{type Option, None, Some}
 import owned_test
 import place_support
 import properties_support
@@ -88,6 +88,7 @@ fn selection(
       False -> []
     },
     controls: [],
+    ticking: [],
   )
 }
 
@@ -138,6 +139,7 @@ fn tells(effects effects: List(Effect)) -> List(strike.Effect) {
       strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Went(..)
+      | strike.Ticked(..)
       | strike.Released(..)
       | strike.Log(..) -> False
     }
@@ -153,6 +155,7 @@ fn went(effects effects: List(Effect)) -> List(#(Int, Int, List(cast.Struck))) {
       strike.TellStrike(..)
       | strike.StartTimer(..)
       | strike.CancelTimer(..)
+      | strike.Ticked(..)
       | strike.Released(..)
       | strike.Log(..) -> Error(Nil)
     }
@@ -165,6 +168,7 @@ fn timers(effects effects: List(Effect)) -> List(strike.Effect) {
       strike.StartTimer(..) | strike.CancelTimer(..) -> True
       strike.TellStrike(..)
       | strike.Went(..)
+      | strike.Ticked(..)
       | strike.Released(..)
       | strike.Log(..) -> False
     }
@@ -212,6 +216,7 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
         strike.StartTimer(..)
         | strike.CancelTimer(..)
         | strike.Went(..)
+        | strike.Ticked(..)
         | strike.Released(..)
         | strike.Log(..) -> Error(Nil)
       }
@@ -221,21 +226,21 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
       #(
         10,
         3,
-        Key(cast_id: 5, phase: 0, unit_id: 10),
+        Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
         step.Connection(ConnectionId(2)),
         Rolls(crit: 0.0, deflect: 0.5, glance: 0.0),
       ),
       #(
         11,
         3,
-        Key(cast_id: 5, phase: 0, unit_id: 11),
+        Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 11),
         step.Connection(ConnectionId(2)),
         Rolls(crit: 0.25, deflect: 0.75, glance: 0.5),
       ),
       #(
         12,
         3,
-        Key(cast_id: 5, phase: 0, unit_id: 12),
+        Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 12),
         step.Connection(ConnectionId(2)),
         Rolls(crit: 0.0, deflect: 0.0, glance: 0.0),
       ),
@@ -288,6 +293,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         area: [10],
         blows: [paralytic_surge, telekinetic_strike],
         controls: [],
+        ticking: [],
       ),
       attacker: Attacker(..strike_support.attacker(), stats: novice),
       formulas: rating_support.formulas(),
@@ -331,7 +337,9 @@ pub fn answers_out_of_order_are_listed_in_selection_order_when_the_round_closes_
       selection: selection(asked: go, units: [10, 11, 12], damaging: True),
       now_ms: 1000,
     )
-  let key = fn(unit_id) { Key(cast_id: 5, phase: 0, unit_id:) }
+  let key = fn(unit_id) {
+    Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id:)
+  }
   let #(state, first) =
     answer(state:, key: key(12), outcome: landed(), now_ms: 1100)
   let #(state, second) =
@@ -350,6 +358,7 @@ pub fn answers_out_of_order_are_listed_in_selection_order_when_the_round_closes_
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
         cast.Hit(
           unit_id: 12,
@@ -357,6 +366,7 @@ pub fn answers_out_of_order_are_listed_in_selection_order_when_the_round_closes_
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ]),
     ]
@@ -372,7 +382,9 @@ pub fn a_creature_that_died_in_flight_is_left_out_and_the_count_is_not_refilled_
       selection: selection(asked: go, units: [10, 11, 12], damaging: True),
       now_ms: 1000,
     )
-  let key = fn(unit_id) { Key(cast_id: 5, phase: 0, unit_id:) }
+  let key = fn(unit_id) {
+    Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id:)
+  }
   let #(state, _) =
     answer(state:, key: key(10), outcome: Refused(why: Dead), now_ms: 1100)
   let #(state, _) =
@@ -388,6 +400,7 @@ pub fn a_creature_that_died_in_flight_is_left_out_and_the_count_is_not_refilled_
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
         cast.Hit(
           unit_id: 12,
@@ -395,6 +408,7 @@ pub fn a_creature_that_died_in_flight_is_left_out_and_the_count_is_not_refilled_
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ]),
     ]
@@ -413,7 +427,7 @@ pub fn a_silent_creature_is_left_out_at_the_deadline_on_a_driven_timer_test() ->
   let #(state, _) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 1100,
     )
@@ -430,6 +444,7 @@ pub fn a_silent_creature_is_left_out_at_the_deadline_on_a_driven_timer_test() ->
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ]),
     ]
@@ -469,7 +484,7 @@ pub fn an_answer_for_a_closed_round_is_dropped_test() -> Nil {
   let #(_, late) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 2500,
     )
@@ -502,7 +517,7 @@ pub fn a_later_phase_is_never_written_before_an_earlier_one_test() -> Nil {
   let #(state, later) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 1, unit_id: 11),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 1), unit_id: 11),
       outcome: landed(),
       now_ms: 1300,
     )
@@ -511,7 +526,7 @@ pub fn a_later_phase_is_never_written_before_an_earlier_one_test() -> Nil {
   let #(_, earlier) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 1400,
     )
@@ -579,7 +594,7 @@ pub fn the_one_strike_timer_moves_to_the_next_open_deadline_test() -> Nil {
   let #(_, closed) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 1600,
     )
@@ -629,6 +644,7 @@ pub fn a_spell_that_only_selects_names_each_unit_at_once_without_a_tell_test() -
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ]),
     ]
@@ -654,7 +670,7 @@ pub fn the_player_leaving_cancels_the_timer_and_drops_later_answers_test() -> Ni
   let #(_, late) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 1100,
     )
@@ -681,7 +697,7 @@ pub fn health_news_of_a_unit_of_an_open_round_is_held_until_the_rounds_go_test()
   let #(state, first) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 1100,
     )
@@ -690,13 +706,14 @@ pub fn health_news_of_a_unit_of_an_open_round_is_held_until_the_rounds_go_test()
   let #(state, closing) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 11),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 11),
       outcome: landed(),
       now_ms: 1200,
     )
   assert list.map(closing, fn(effect) {
       case effect {
         strike.Went(..) -> "went"
+        strike.Ticked(..) -> "ticked"
         strike.Released(unit_id:, ..) -> "released " <> unit_label(unit_id)
         strike.CancelTimer(..) -> "cancel"
         strike.TellStrike(..) | strike.StartTimer(..) | strike.Log(..) ->
@@ -723,7 +740,7 @@ pub fn a_closing_rounds_timer_effects_come_before_its_go_so_the_rounds_the_go_be
   let #(state, closing) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 1100,
     )
@@ -751,6 +768,7 @@ pub fn a_closing_rounds_timer_effects_come_before_its_go_so_the_rounds_the_go_be
 fn effect_label(effect: Effect) -> String {
   case effect {
     strike.Went(..) -> "went"
+    strike.Ticked(..) -> "ticked"
     strike.Released(..) -> "released"
     strike.CancelTimer(..) -> "cancel"
     strike.StartTimer(..) -> "start"
@@ -785,14 +803,14 @@ pub fn the_news_held_for_a_unit_is_dropped_when_the_unit_is_forgotten_test() -> 
   let #(state, _) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 1100,
     )
   let #(_, closing) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 11),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 11),
       outcome: landed(),
       now_ms: 1200,
     )
@@ -803,6 +821,7 @@ pub fn the_news_held_for_a_unit_is_dropped_when_the_unit_is_forgotten_test() -> 
         | strike.StartTimer(..)
         | strike.CancelTimer(..)
         | strike.Went(..)
+        | strike.Ticked(..)
         | strike.Log(..) -> Error(Nil)
       }
     })
@@ -1112,6 +1131,7 @@ fn mind_burst_go(points points: Int) -> GoAsked {
         | cast.TargetChangeEnds(..)
         | cast.Activated(..)
         | cast.ShortcutCast(..)
+        | cast.TickStrike(..)
         | cast.StealthChanged(..) -> Error(Nil)
       }
     })
@@ -1305,7 +1325,7 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
   let #(_, closed) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 11),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 11),
       outcome: Landed(descriptions: [], controls: [landed], armor_removed: 0),
       now_ms: 1050,
     )
@@ -1318,6 +1338,7 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
         cast.Hit(
           unit_id: 11,
@@ -1325,6 +1346,7 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
           descriptions: [],
           controls: [landed],
           armor_removed: 0,
+          ticking: [],
         ),
       ]),
     ]
@@ -1352,6 +1374,7 @@ pub fn a_state_aimed_at_the_area_does_not_reach_a_primary_target_outside_it_but_
         strike.StartTimer(..)
         | strike.CancelTimer(..)
         | strike.Went(..)
+        | strike.Ticked(..)
         | strike.Released(..)
         | strike.Log(..) -> Error(Nil)
       }
@@ -1386,6 +1409,7 @@ fn offence_of_caster_with(
         area: [10],
         blows: [blow],
         controls: [],
+        ticking: [],
       ),
       attacker: Attacker(..strike_support.attacker(), properties:),
       formulas: rating_support.formulas(),
@@ -1455,4 +1479,258 @@ pub fn a_planted_100_percent_crit_modifier_makes_every_blow_crit_test() -> Nil {
     as "the modified chance is 1.0, so the roll 0.99 crits"
   assert critical.damage.raw_damage == 15
     as "at the player's severity, 1.5 (UnitProperty2 127's default)"
+}
+
+/// Paralytic Surge's damage row (Spell4Effects 96125), as a periodic row of the tick
+/// tests: the row's own formula, so a tick's value follows the caster's ratings.
+fn surge_blow() -> spell_area.DamageEffect {
+  DamageEffect(
+    effect_id: Spell4EffectsId(96_125),
+    damage_type: 2,
+    delay_ms: 0,
+    phase_flags: -1,
+    aim: AimsAtArea,
+    formula: damage.Formula(multiplier: 1.0, base: 0.0, parameters: [
+      damage.Parameter(kind: 12, value: 0.0935),
+      damage.Parameter(kind: 13, value: 0.0935),
+      damage.Parameter(kind: 10, value: 8.14),
+    ]),
+    threat_multiplier: 1.0,
+    tag: spend.always,
+  )
+}
+
+fn tick_asked(go go: Int, tick tick: Int) -> cast.TickAsked {
+  cast.TickAsked(
+    cast_id: 5,
+    spell4_id: Spell4Id(58_591),
+    effect_id: Spell4EffectsId(96_125),
+    unit_id: 10,
+    life: 3,
+    go:,
+    tick:,
+    blow: surge_blow(),
+  )
+}
+
+fn tick_key(go go: Int, tick tick: Int) -> strike_tell.Key {
+  Key(
+    cast_id: 5,
+    occasion: strike_tell.AtTick(effect_id: Spell4EffectsId(96_125), go:, tick:),
+    unit_id: 10,
+  )
+}
+
+fn tick_begun(
+  state state: State,
+  asked asked: cast.TickAsked,
+  stats stats: damage.Attacker,
+  rolls rolls: #(Int, Int, Int),
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  strike.begin_tick(
+    strike: state,
+    asked:,
+    attacker: Attacker(..strike_support.attacker(), stats:),
+    formulas: rating_support.formulas(),
+    entropy: entropy(rolls: [rolls]),
+    now: at(ms: now_ms),
+  )
+}
+
+/// Each strike told, as its unit, life, key, rolls and blows; a strike that tells a
+/// state is not a tick's.
+fn tick_tells(
+  effects effects: List(Effect),
+) -> List(#(Int, Int, strike_tell.Key, hit.Rolls, List(hit.Blow))) {
+  list.filter_map(tells(effects:), fn(effect) {
+    case effect {
+      strike.TellStrike(
+        unit_id:,
+        life:,
+        tell: strike_tell.Strike(
+          key:,
+          striker: strike_tell.PlayerStriker(rolls:, ..),
+          offence:,
+          controls: [],
+          ..,
+        ),
+      ) -> Ok(#(unit_id, life, key, rolls, offence.blows))
+      strike.TellStrike(..)
+      | strike.StartTimer(..)
+      | strike.CancelTimer(..)
+      | strike.Went(..)
+      | strike.Ticked(..)
+      | strike.Released(..)
+      | strike.Log(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The tick rounds that closed in these effects, in order.
+fn ticked(
+  effects effects: List(Effect),
+) -> List(#(cast.TickAsked, Option(cast.Struck))) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      strike.Ticked(asked:, struck:) -> Ok(#(asked, struck))
+      strike.TellStrike(..)
+      | strike.StartTimer(..)
+      | strike.CancelTimer(..)
+      | strike.Went(..)
+      | strike.Released(..)
+      | strike.Log(..) -> Error(Nil)
+    }
+  })
+}
+
+fn surge_tick_blow(damage damage: Int) -> hit.Blow {
+  Blow(
+    spell4_effects_id: 96_125,
+    damage_type: 2,
+    damage:,
+    delay_ms: 0,
+    threat_multiplier: 1.0,
+  )
+}
+
+pub fn each_tick_rolls_the_hit_rule_on_the_value_of_its_time_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, first) =
+    tick_begun(
+      state: strike.new(),
+      asked: tick_asked(go: 1, tick: 1),
+      stats: attacker_support.fresh(),
+      rolls: #(0, 2_147_483_648, 0),
+      now_ms: 2000,
+    )
+  assert tick_tells(effects: first)
+    == [
+      #(
+        10,
+        3,
+        tick_key(go: 1, tick: 1),
+        Rolls(crit: 0.0, deflect: 0.5, glance: 0.0),
+        [surge_tick_blow(damage: 8)],
+      ),
+    ]
+    as "the tick strikes its one unit in the life the go struck, keyed by the go and the tick, with its own 12 seed bytes and the row's damage alone: with no rating, Paralytic Surge is 8.14 for the level, rounded to 8 (Spell4Effects 96125, 0x140565600), and no state"
+  assert timers(effects: first)
+    == [strike.StartTimer(timer: strike.strike_timer, after_ms: 1000)]
+    as "the tick's round has the strike's 1 s deadline"
+  let #(state, landed_first) =
+    answer(
+      state:,
+      key: tick_key(go: 1, tick: 1),
+      outcome: landed(),
+      now_ms: 2100,
+    )
+  assert ticked(effects: landed_first)
+    == [
+      #(
+        tick_asked(go: 1, tick: 1),
+        Some(
+          cast.Hit(
+            unit_id: 10,
+            unit: cast.HitCreature(life: 3, struck_at_ms: 2000),
+            descriptions: [],
+            controls: [],
+            armor_removed: 0,
+            ticking: [],
+          ),
+        ),
+      ),
+    ]
+    as "the landed tick closes its round as a hit on the life it was told to, struck at the tick"
+  let #(state, second) =
+    tick_begun(
+      state:,
+      asked: tick_asked(go: 1, tick: 2),
+      stats: attacker_support.novice(),
+      rolls: #(1_073_741_824, 3_221_225_472, 2_147_483_648),
+      now_ms: 3000,
+    )
+  assert tick_tells(effects: second)
+    == [
+      #(
+        10,
+        3,
+        tick_key(go: 1, tick: 2),
+        Rolls(crit: 0.25, deflect: 0.75, glance: 0.5),
+        [surge_tick_blow(damage: 14)],
+      ),
+    ]
+    as "the next tick rolls its own seed bytes and reads the caster as it is now: with the Novice's gear, Assault Power 50.77 and Support Power 13.92, Paralytic Surge is 0.0935 x 50.77 + 0.0935 x 13.92 = 6.05, rounded to 6, plus 8.14, 14.14, rounded to 14 (0x14064c960)"
+  let #(_, deflected) =
+    answer(
+      state:,
+      key: tick_key(go: 1, tick: 2),
+      outcome: Deflected,
+      now_ms: 3100,
+    )
+  assert ticked(effects: deflected)
+    == [#(tick_asked(go: 1, tick: 2), Some(cast.Deflected(unit_id: 10)))]
+    as "a deflected tick closes with no description"
+}
+
+pub fn a_tick_while_the_last_is_open_closes_in_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tick_begun(
+      state: strike.new(),
+      asked: tick_asked(go: 1, tick: 1),
+      stats: attacker_support.fresh(),
+      rolls: #(0, 0, 0),
+      now_ms: 2000,
+    )
+  let #(state, _) =
+    tick_begun(
+      state:,
+      asked: tick_asked(go: 1, tick: 2),
+      stats: attacker_support.fresh(),
+      rolls: #(0, 0, 0),
+      now_ms: 2250,
+    )
+  let #(state, later) =
+    answer(
+      state:,
+      key: tick_key(go: 1, tick: 2),
+      outcome: landed(),
+      now_ms: 2300,
+    )
+  assert ticked(effects: later) == []
+    as "tick 2 has its answer but waits for tick 1, as a cast's rounds close in the order they began"
+  let #(_, earlier) =
+    answer(
+      state:,
+      key: tick_key(go: 1, tick: 1),
+      outcome: landed(),
+      now_ms: 2400,
+    )
+  assert list.map(ticked(effects: earlier), fn(closed) { { closed.0 }.tick })
+    == [1, 2]
+    as "both close at once, tick 1 first"
+}
+
+pub fn a_tick_left_out_at_the_deadline_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tick_begun(
+      state: strike.new(),
+      asked: tick_asked(go: 1, tick: 1),
+      stats: attacker_support.fresh(),
+      rolls: #(0, 0, 0),
+      now_ms: 2000,
+    )
+  let #(state, due) = strike.timer_fired(strike: state, now: at(ms: 3000))
+  assert ticked(effects: due) == [#(tick_asked(go: 1, tick: 1), None)]
+    as "no answer by the 1 s deadline: the tick closes with its unit left out"
+  let #(_, late) =
+    answer(
+      state:,
+      key: tick_key(go: 1, tick: 1),
+      outcome: landed(),
+      now_ms: 3100,
+    )
+  assert late == [] as "a later answer finds no round and is dropped"
 }

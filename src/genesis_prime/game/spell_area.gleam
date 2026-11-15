@@ -39,9 +39,11 @@
 ////   only the effects and Proxies whose tag holds for the points the cast spent above
 ////   its base cost, then works out `selects_area` and `strikes_primary_target` from
 ////   what is left. A cast with no spend keeps every effect.
-//// - **A periodic damage row** (a tickTime) is left out of the area and the load goes on:
-////   the client never times ticks, each is its own 0x7f8 from the server, and the area
-////   strikes once. The coverage measure counts it as not read.
+//// - **A periodic damage row** (a tickTime) strikes the units of its go once for each
+////   tick of its schedule (genesis_prime/game/ticking), each tick its own 0x7f8 from the
+////   server: the go selects with it as with any row, and `PhaseStrike.ticking` holds it
+////   apart from the rows that strike once. A row that lasts until removed (flags bit 2)
+////   is left out and the load goes on (`TickingUntilRemoved`, issue 803).
 //// - **Closest first.** Every area row of the level-1 abilities has `targetSelection`
 ////   1, and none strikes a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
 ////   `Spell4ValidTargets.targetBitmask`).
@@ -70,6 +72,7 @@ import genesis_prime/game/spell_plan.{
   type Aim, type Spell, AimsAtArea, AimsAtBoth, AimsAtPrimaryTarget,
 }
 import genesis_prime/game/spend
+import genesis_prime/game/ticking
 import genesis_prime/table/id.{
   type Spell4EffectsId, type Spell4Id, Spell4AoeTargetConstraintsId,
   Spell4EffectsId, Spell4ValidTargetsId, TelegraphDamageId,
@@ -105,23 +108,38 @@ pub type DamageEffect {
   )
 }
 
+/// A periodic damage row (a tickTime): the damage of each tick and when the ticks land.
+pub type TickingDamage {
+  TickingDamage(damage: DamageEffect, schedule: ticking.Schedule)
+}
+
+/// A damage row as the area reads it: one that strikes once at its go, or one that
+/// strikes once for each tick.
+pub type RowDamage {
+  Once(effect: DamageEffect)
+  Periodic(effect: TickingDamage)
+}
+
 /// What one phase of a spell strikes, for a cast that spent a given number of
 /// points (`phase`).
 pub type PhaseStrike {
   PhaseStrike(
-    /// The damage effects that fire in the phase and aim at the area or the cast's
-    /// target.
+    /// The damage effects that fire once in the phase and aim at the area or the
+    /// cast's target.
     damage: List(DamageEffect),
+    /// The periodic damage effects that fire in the phase and aim at the area or the
+    /// cast's target: each strikes the units of the go at each of its ticks.
+    ticking: List(TickingDamage),
     /// The crowd-control states that fire in the phase, which aim at the area, the
     /// cast's target or both.
     controls: List(spell_plan.CrowdControl),
-    /// Whether the phase selects units from the area: a damage effect, a
-    /// crowd-control state or a property change of struck units aimed at the area, or a
+    /// Whether the phase selects units from the area: a damage effect (periodic or
+    /// not), a crowd-control state or a property change of struck units aimed at the area, or a
     /// Proxy that starts its spell on each struck unit (genesis_prime/game/spell_plan
     /// `OnEachStruck`).
     selects_area: Bool,
-    /// Whether the phase strikes the cast's own target: a damage effect, a
-    /// crowd-control state or a property change of struck units aimed at it.
+    /// Whether the phase strikes the cast's own target: a damage effect (periodic or
+    /// not), a crowd-control state or a property change of struck units aimed at it.
     strikes_primary_target: Bool,
   )
 }
@@ -137,17 +155,20 @@ pub type SpellArea {
     /// rows without bit 0x20 (all of them when each has it). Empty for a spell with no
     /// telegraph row.
     shapes: List(Placement),
-    /// Every damage effect of the spell that strikes once, each with its tag; a periodic
-    /// row (`PeriodicNotRead`) is not among them.
+    /// Every damage effect of the spell that strikes once, each with its tag.
     damage: List(DamageEffect),
+    /// Every periodic damage effect of the spell, each with its schedule; a row that
+    /// lasts until removed (`TickingUntilRemoved`) is not among them.
+    ticking: List(TickingDamage),
     /// The spell as the plan holds it, whose Proxies aimed at each struck unit
     /// make a phase select the area.
     spell: Spell,
   )
 }
 
-/// Why the areas cannot be built from the tables. Every error but `PeriodicNotRead` fails
-/// the area load; a periodic row is left out of its spell's area.
+/// Why the areas cannot be built from the tables. Every error but `TickingUntilRemoved`
+/// fails the area load; a periodic row that lasts until removed is left out of its
+/// spell's area.
 pub type AreaError {
   /// A table row the tree names is missing: the table, and the id.
   NoRow(table: String, id: Int)
@@ -169,9 +190,13 @@ pub type AreaError {
   AimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A damage effect's formula reads a parameter a player's value does not.
   FormulaNotRead(spell4_id: Int, effect_id: Int, parameter_kind: Int)
-  /// A damage effect has a tickTime: it strikes once for each tick, and the area does not
-  /// tick, so the load leaves the row out and the coverage measure counts it as not read.
-  PeriodicNotRead(spell4_id: Int, effect_id: Int, tick_ms: Int)
+  /// A periodic damage effect lasts until removed (flags bit 2), which no schedule
+  /// ends: the load leaves the row out and the coverage measure counts it as not read
+  /// (issue 803).
+  TickingUntilRemoved(spell4_id: Int, effect_id: Int)
+  /// A periodic damage effect lives shorter than one tick (genesis_prime/game/ticking
+  /// `NoTick`).
+  TickingNoTick(spell4_id: Int, effect_id: Int, tick_ms: Int, duration_ms: Int)
   /// A damage effect's multiplier (`dataBits00`, read as 32 bits) is an infinity or a
   /// number that is not one.
   MultiplierNotFinite(spell4_id: Int, effect_id: Int, bits: Int)
@@ -235,14 +260,22 @@ pub fn describe(error error: AreaError) -> String {
       <> " whose formula reads parameter type "
       <> int.to_string(parameter_kind)
       <> ", which a player's value does not"
-    PeriodicNotRead(spell4_id:, effect_id:, tick_ms:) ->
+    TickingUntilRemoved(spell4_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
-      <> " has a damage effect "
+      <> " has a periodic damage effect "
+      <> int.to_string(effect_id)
+      <> " that lasts until removed, which is not read"
+    TickingNoTick(spell4_id:, effect_id:, tick_ms:, duration_ms:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a periodic damage effect "
       <> int.to_string(effect_id)
       <> " with a tickTime of "
       <> int.to_string(tick_ms)
-      <> ", and a periodic damage effect is not read"
+      <> " and a durationTime of "
+      <> int.to_string(duration_ms)
+      <> ", shorter than one tick"
     MultiplierNotFinite(spell4_id:, effect_id:, bits:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -338,13 +371,14 @@ fn area_of(
     None -> Ok(Nil)
   })
   use shapes <- result.try(hit_shapes_of(tables:, links:, id:))
-  use damage <- result.try(damage_effects_of(effects:, id:))
+  use #(damage, ticking) <- result.try(damage_effects_of(effects:, id:))
   let area =
     SpellArea(
       spell4_id: spell.spell4_id,
       row: area_row,
       shapes:,
       damage:,
+      ticking:,
       spell:,
     )
   // A phase that selects units at some n, every effect chosen being the widest, must
@@ -514,12 +548,13 @@ fn placement_of(
 }
 
 /// The damage effects of the spell (effect type 8), each with the unit it aims at and
-/// its formula. A periodic row (`PeriodicNotRead`) is left out and the load goes on; any
-/// other refusal fails it.
+/// its formula: those that strike once, and the periodic ones with their schedules. A
+/// periodic row that lasts until removed (`TickingUntilRemoved`) is left out and the
+/// load goes on; any other refusal fails it.
 fn damage_effects_of(
   effects effects: Dict(Int, List(spell4_effects.Spell4Effects)),
   id id: Int,
-) -> Result(List(DamageEffect), AreaError) {
+) -> Result(#(List(DamageEffect), List(TickingDamage)), AreaError) {
   dict.get(effects, id)
   |> result.unwrap([])
   |> list.filter(fn(effect) {
@@ -528,24 +563,40 @@ fn damage_effects_of(
   |> list.try_map(fn(effect) {
     case damage_row_of(spell4_id: id, effect:) {
       Ok(row) -> Ok(Some(row))
-      Error(PeriodicNotRead(..)) -> Ok(None)
+      Error(TickingUntilRemoved(..)) -> Ok(None)
       Error(error) -> Error(error)
     }
   })
-  |> result.map(option.values)
+  |> result.map(fn(rows) {
+    let rows = option.values(rows)
+    #(
+      list.filter_map(rows, fn(row) {
+        case row {
+          Once(effect:) -> Ok(effect)
+          Periodic(..) -> Error(Nil)
+        }
+      }),
+      list.filter_map(rows, fn(row) {
+        case row {
+          Periodic(effect:) -> Ok(effect)
+          Once(..) -> Error(Nil)
+        }
+      }),
+    )
+  })
 }
 
 /// One damage row (effect type 8) of the spell `spell4_id` as a damage effect, or the error
 /// that refuses it: its dataBits00 must be a finite 32-bit float, its targetFlags one the
 /// rule aims by (1, 2, 4 or 6), its formula must read only the parameter types a player's
-/// value reads (genesis_prime/game/damage `unread`) and its tickTime must be 0: a periodic
-/// row strikes once for each tick, and the area strikes once. Every refusal but
-/// `PeriodicNotRead` fails the area load, and `PeriodicNotRead` leaves the row out. The area
-/// load and the coverage measure both read a row through it.
+/// value reads (genesis_prime/game/damage `unread`). A row with a tickTime is periodic,
+/// with the schedule of its ticks (genesis_prime/game/ticking `schedule_of`). Every
+/// refusal but `TickingUntilRemoved` fails the area load, and `TickingUntilRemoved`
+/// leaves the row out. The area load and the coverage measure both read a row through it.
 pub fn damage_row_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
-) -> Result(DamageEffect, AreaError) {
+) -> Result(RowDamage, AreaError) {
   use formula <- result.try(
     damage.formula_of(effect:)
     |> result.replace_error(MultiplierNotFinite(
@@ -568,21 +619,38 @@ pub fn damage_row_of(
       Error(FormulaNotRead(spell4_id:, effect_id: effect.id, parameter_kind:))
     None -> Ok(Nil)
   })
-  use Nil <- result.map(case effect.tick_time {
-    0 -> Ok(Nil)
+  let damage =
+    DamageEffect(
+      effect_id: Spell4EffectsId(effect.id),
+      damage_type: effect.damage_type,
+      delay_ms: effect.delay_time,
+      phase_flags: effect.phase_flags,
+      aim:,
+      formula:,
+      threat_multiplier: effect.threat_multiplier,
+      tag: spell_plan.tag_of(effect:),
+    )
+  case effect.tick_time {
+    0 -> Ok(Once(effect: damage))
     tick_ms ->
-      Error(PeriodicNotRead(spell4_id:, effect_id: effect.id, tick_ms:))
-  })
-  DamageEffect(
-    effect_id: Spell4EffectsId(effect.id),
-    damage_type: effect.damage_type,
-    delay_ms: effect.delay_time,
-    phase_flags: effect.phase_flags,
-    aim:,
-    formula:,
-    threat_multiplier: effect.threat_multiplier,
-    tag: spell_plan.tag_of(effect:),
-  )
+      ticking.schedule_of(row: spell_plan.lasting_row_of(effect:), tick_ms:)
+      |> result.map(fn(schedule) {
+        Periodic(effect: TickingDamage(damage:, schedule:))
+      })
+      |> result.map_error(fn(error) {
+        case error {
+          ticking.UntilRemoved ->
+            TickingUntilRemoved(spell4_id:, effect_id: effect.id)
+          ticking.NoTick(tick_ms:, duration_ms:) ->
+            TickingNoTick(
+              spell4_id:,
+              effect_id: effect.id,
+              tick_ms:,
+              duration_ms:,
+            )
+        }
+      })
+  }
 }
 
 /// What the spell's phase strikes with the effects a cast that spent `spent` points
@@ -595,11 +663,12 @@ fn phase_of(
   spent spent: Option(Int),
 ) -> PhaseStrike {
   let bit = spell_plan.phase_bit(phase:)
-  let firing =
-    list.filter(spell.damage, fn(effect) {
-      spell_plan.has_flag(flags: effect.phase_flags, bit:)
-      && spend.applies(tag: effect.tag, spent:)
-    })
+  let fires = fn(effect: DamageEffect) {
+    spell_plan.has_flag(flags: effect.phase_flags, bit:)
+    && spend.applies(tag: effect.tag, spent:)
+  }
+  let firing = list.filter(spell.damage, fires)
+  let ticking_firing = list.filter(spell.ticking, fn(row) { fires(row.damage) })
   let controls =
     spell_plan.controls_in_phase(spell: spell.spell, phase:, spent:)
   let changes =
@@ -616,12 +685,19 @@ fn phase_of(
     )
   let strikes = fn(aims) {
     list.any(firing, fn(effect) { list.contains(aims, effect.aim) })
+    || list.any(ticking_firing, fn(row) { list.contains(aims, row.damage.aim) })
     || list.any(controls, fn(control) { list.contains(aims, control.aim) })
     || list.any(changes, fn(aim) { list.contains(aims, aim) })
   }
   PhaseStrike(
     damage: list.filter(firing, fn(effect) {
       list.contains([AimsAtPrimaryTarget, AimsAtArea, AimsAtBoth], effect.aim)
+    }),
+    ticking: list.filter(ticking_firing, fn(row) {
+      list.contains(
+        [AimsAtPrimaryTarget, AimsAtArea, AimsAtBoth],
+        row.damage.aim,
+      )
     }),
     controls:,
     selects_area: strikes([AimsAtArea, AimsAtBoth])

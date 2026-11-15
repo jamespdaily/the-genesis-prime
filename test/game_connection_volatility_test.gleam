@@ -440,7 +440,12 @@ pub fn three_open_rounds_closed_by_answer_1_the_threat_then_answers_2_and_3_give
       steps: [pressed],
       keys: [],
     )
-  assert list.map(keys, fn(key) { key.phase }) == [1, 2, 3]
+  assert list.map(keys, fn(key) { key.occasion })
+    == [
+      strike_tell.AtGo(phase: 1),
+      strike_tell.AtGo(phase: 2),
+      strike_tell.AtGo(phase: 3),
+    ]
     as "the damage spell strikes in its goes 1 to 3 (Spell4Effects 79090, 79092, 79093: phaseFlags 2, 4, 8): three rounds are open"
   assert changes(steps) == [] as "nothing is given while the rounds are open"
   let assert [first, second, third] = keys
@@ -482,6 +487,7 @@ fn is_cast_or_combat_news(news: client_connection.News) -> Bool {
     | client_connection.CastWent(..)
     | client_connection.CastFinished(..)
     | client_connection.CastMissed(..)
+    | client_connection.CastTicked(..)
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastInterrupted(..)
@@ -538,6 +544,7 @@ pub fn a_viewer_of_the_engineer_is_told_42148s_cast_and_never_the_volatility_tes
       client_connection.CastWent(..)
       | client_connection.CastFinished(..)
       | client_connection.CastMissed(..)
+      | client_connection.CastTicked(..)
       | client_connection.CastTargetsRemoved(..)
       | client_connection.CastStackRemoved(..)
       | client_connection.CastInterrupted(..)

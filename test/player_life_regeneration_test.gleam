@@ -47,7 +47,7 @@ fn blow(cast_id cast_id: Int, damage damage: Int) -> strike_tell.Tell {
   strike_tell.Strike(
     key: strike_tell.Key(
       cast_id:,
-      phase: 0,
+      occasion: strike_tell.AtGo(phase: 0),
       unit_id: player_life_support.own_unit,
     ),
     from: player_life_support.beast(),

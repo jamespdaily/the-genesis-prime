@@ -2,6 +2,7 @@
 //// with it. A test's time limits only warn. Every test body runs inside `run`.
 
 import gleam/bool
+import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process
 import gleam/int
 import gleam/io
@@ -15,7 +16,9 @@ import unitest
 pub type Outcome(a) {
   Returned(a)
   Skipped
-  Crashed
+  /// The body's process ended without returning; `reason` is its exit reason
+  /// written out, so a failed assertion or error names itself.
+  Crashed(reason: String)
 }
 
 /// What the waiting caller hears: the body's end, a one-time build the body
@@ -23,7 +26,7 @@ pub type Outcome(a) {
 /// ended (`open_wait.named`).
 type Event(a) {
   Finished(Outcome(a))
-  Down
+  Down(reason: String)
   BuildOpened(key: String)
   BuildClosed
   WaitOpened(what: String)
@@ -125,7 +128,7 @@ pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
       }
     Skipped ->
       unitest.guard(False, fn() { panic as "a skipped body does not run" })
-    Crashed -> panic as "the test body crashed"
+    Crashed(reason:) -> panic as { "the test body crashed: " <> reason }
   }
 }
 
@@ -192,7 +195,9 @@ fn wait(
   let selector =
     process.new_selector()
     |> process.select(reply)
-    |> process.select_specific_monitor(monitor, fn(_down) { Down })
+    |> process.select_specific_monitor(monitor, fn(down) {
+      Down(reason: exit_reason_text(down.reason))
+    })
   let received = case within {
     Some(milliseconds) ->
       process.selector_receive(selector, within: milliseconds)
@@ -240,7 +245,7 @@ fn wait(
         }
       }
     Ok(Finished(outcome)) -> #(outcome, own_left)
-    Ok(Down) -> #(Crashed, own_left)
+    Ok(Down(reason:)) -> #(Crashed(reason:), own_left)
     Ok(BuildOpened(key)) ->
       wait(
         reply:,
@@ -321,6 +326,20 @@ fn warn_when_near_deadline(
     <> " ms deadline",
   )
 }
+
+/// A process's exit reason as text: for a crashed body, its panic or failed
+/// assertion with the expression's values, its module, function and line, and
+/// the stack.
+fn exit_reason_text(reason: process.ExitReason) -> String {
+  case reason {
+    process.Normal -> "it ended normally without returning"
+    process.Killed -> "it was killed"
+    process.Abnormal(reason:) -> written_term(reason)
+  }
+}
+
+@external(erlang, "owned_test_ffi", "written_term")
+fn written_term(term: Dynamic) -> String
 
 /// Runs the body, returning Error when it throws unitest's skip
 /// (`{gleam_unitest, skip}`, unitest_ffi:skip/0).

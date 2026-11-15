@@ -22,8 +22,9 @@
 ////   (each SentByFoe travels for the player's stay: ForStay(stay, SentByFoe(..)))
 //// ```
 ////
-//// - **The key** names one strike: the cast, the go's phase and the struck unit, so
-////   an answer finds its round and a late one finds none.
+//// - **The key** names one strike: the cast, the occasion (a go's phase, or a tick of
+////   one of its periodic rows) and the struck unit, so an answer finds its round and a
+////   late one finds none.
 //// - **No process waits.** The strike and the answer are tells; the striker keeps a
 ////   deadline for each round (genesis_prime/game/strike,
 ////   genesis_prime/world_map/creature_fight).
@@ -44,6 +45,7 @@ import genesis_prime/game/crowd_control
 import genesis_prime/game/hit.{type Description, type Offence, type Rolls}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/step.{type Address}
+import genesis_prime/table/id.{type Spell4EffectsId}
 import genesis_prime/world_map/stay.{type Stay}
 
 /// How long a round waits for its answers, in milliseconds. A creature's respawn time
@@ -51,9 +53,18 @@ import genesis_prime/world_map/stay.{type Stay}
 /// again while a round it was struck in is open.
 pub const deadline_ms = 1000
 
-/// One strike: the cast, the go's phase and the struck unit.
+/// One strike: the cast, the occasion and the struck unit.
 pub type Key {
-  Key(cast_id: Int, phase: Int, unit_id: Int)
+  Key(cast_id: Int, occasion: Occasion, unit_id: Int)
+}
+
+/// What a strike of a cast is for: a go of the phase `phase`, or the tick `tick` of the
+/// periodic damage row `effect_id` in the schedule its `go`th go on the unit started
+/// (genesis_prime/game/ticking): a later go starts the schedule again, and a round of
+/// the earlier schedule may still be open with the same tick number.
+pub type Occasion {
+  AtGo(phase: Int)
+  AtTick(effect_id: Spell4EffectsId, go: Int, tick: Int)
 }
 
 /// What a striker tells the unit it strikes: the strike's key, the striker's

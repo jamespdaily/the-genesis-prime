@@ -4804,6 +4804,158 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
   login_support.stop(started)
 }
 
+pub fn three_ticks_reach_the_client_and_health_falls_three_times_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // No level-1 ability holds a periodic damage row (the client's level-1 tree spells),
+  // so Paralytic Surge's damage row 96125 (targetFlags 4, the Medic's bag index 2) is
+  // given a tickTime of 2000 and a durationTime of 6000: three ticks, 2000, 4000 and
+  // 6000 ms after the go (`Spell4Effects.effectType.8.periodic`).
+  use tables <- fixture_tables.changed(
+    table: "Spell4Effects",
+    id: 96_125,
+    with: [
+      #("tickTime", planted_table.Integer(2000)),
+      #("durationTime", planted_table.Integer(6000)),
+    ],
+  )
+  let time = driven_time.new()
+  let started = world_with_a_beast_ahead(tables:, time:)
+  let #(game, frames, have) =
+    enters_and_sees_the_beast(started:, number: 1, character_name: "Zed Qu")
+  let assert Ok(connection) =
+    registry.find_named(started.settings.registry, "zed qu")
+  let assert [beast] = game_client.creatures_created_in(frames:)
+  let beast_unit = beast.unit_id
+  let own_place =
+    game_client.placed_at(unit: game_client.unit_create_player_in(frames:))
+  game_client.face(
+    game:,
+    yaw: game_client.yaw_toward(from: #(own_place.0, own_place.2), target: #(
+      1.5,
+      0.5,
+    )),
+    clock: 100,
+  )
+  game_client.press_ability(game:, client_cast_id: 1, bag_index: 2, target: 0)
+  let #(taken, have) = game_client.read_until_pong(game:, have:, number: 1)
+  driven_time.advance(time:, ms: fight_bot.paralytic_surge_cast_ms)
+  // The go strikes the Beast as the press is taken, with no timer on the way, so the
+  // advance fires none and runs no barrier: the barrier is run here, and the Beast's
+  // answer, the 0x7f4 it lets out and the Beast's 0x937 are written before the pong.
+  driven_time.wait_until_quiet(time)
+  let #(went, have) = game_client.read_until_pong(game:, have:, number: 2)
+  let at_go = list.append(taken, went)
+  let assert Ok(cast_id) = confirmed_cast_of(frames: at_go, client_cast_id: 1)
+    as "opcode.0x7fd: the press is answered with its server cast id"
+  assert list.contains(
+      game_client.casts_in(frames: at_go),
+      game_client.CastWent(cast_id:, phase: 0),
+    )
+    && !finishes(frames: at_go, cast_id:)
+    as "opcode.0x7f4: the press goes off at once (Spell4.42352: no cast time), and its cast does not end with the go"
+  assert game_client.ticks_in(frames: at_go) == []
+    && list.all(beast_health_in(frames: at_go, beast: beast_unit), fn(health) {
+      health == 52
+    })
+    as "the go strikes no description of the ticking row (the issue's first acceptance check): no 0x7f8, and the Beast keeps its 52 health"
+  // The clock fires each tick's timer; the Beast answers the tick's strike on its own
+  // process, and the barrier holds the advance until each frame it caused is written.
+  let #(rounds, have) =
+    list.fold([3, 4, 5], #([], have), fn(so_far, number) {
+      let #(rounds, have) = so_far
+      driven_time.advance(time:, ms: 2000)
+      let #(round, have) = game_client.read_until_pong(game:, have:, number:)
+      #(list.append(rounds, [round]), have)
+    })
+  list.each(rounds, fn(round) {
+    assert game_client.ticks_in(frames: round)
+      == [#(cast_id, 96_125, beast_unit, [14])]
+      as "opcode.0x7f8: one tick each 2000 ms, naming the go's cast, the row 96125 and the Beast, with one damage description; a hit of Paralytic Surge by a Medic of level 1 with the Novice gear is 14 (Spell4Effects 96125, 0x140565600), worked out from the caster at the tick, and the Beast never deflects"
+  })
+  assert list.map(rounds, beast_health_in(frames: _, beast: beast_unit))
+    == [[38], [24], [10]]
+    as "opcode.0x937 after each 0x7f8, from the creature itself: the Beast's 52 health falls by its tick's 14, three times"
+  let assert [first_round, second_round, last_round] = rounds
+  assert !finishes(frames: first_round, cast_id:)
+    && !finishes(frames: second_round, cast_id:)
+    as "the cast is held past Paralytic Surge's own end, 2700 ms after the go, while its row still ticks"
+  let tick_at =
+    index_where(frames: last_round, found: fn(frame) {
+      game_client.ticks_in(frames: [frame]) != []
+    })
+  let finish_at =
+    index_where(frames: last_round, found: fn(frame) {
+      finishes(frames: [frame], cast_id:)
+    })
+  assert tick_at >= 0 && finish_at > tick_at
+    as "opcode.0x7fe: the cast ends after its last tick's 0x7f8 (cast.miss_after_finish)"
+  assert list.filter(
+      driven_time.pending_of(time:, owner: connection),
+      cast.owns,
+    )
+    == []
+    as "no tick timer and no timer of a cast is left on the connection once the cast has ended"
+  driven_time.advance(time:, ms: 2000)
+  let #(after, _) = game_client.read_until_pong(game:, have:, number: 6)
+  assert game_client.ticks_in(frames: after) == []
+    && beast_health_in(frames: after, beast: beast_unit) == []
+    as "the ticks stop with the row's three: no 0x7f8 and no fall of the Beast's health 2000 ms later"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// The server cast id the 0x7fd among the frames gives the press `client_cast_id`.
+fn confirmed_cast_of(
+  frames frames: List(Frame),
+  client_cast_id client_cast_id: Int,
+) -> Result(Int, Nil) {
+  list.find_map(game_client.casts_in(frames:), fn(event) {
+    case event {
+      game_client.CastConfirmed(client_cast_id: pressed, server_cast_id:)
+        if pressed == client_cast_id
+      -> Ok(server_cast_id)
+      game_client.CastConfirmed(..)
+      | game_client.CastRefused(..)
+      | game_client.CastStarted(..)
+      | game_client.CastWent(..)
+      | game_client.CastFinished(..)
+      | game_client.ThresholdOpened(..)
+      | game_client.ThresholdIndex(..)
+      | game_client.ThresholdClosed(..)
+      | game_client.ThresholdEnded(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The health of each 0x937 among the frames for the unit, in order.
+fn beast_health_in(frames frames: List(Frame), beast beast: Int) -> List(Int) {
+  list.filter_map(game_client.health_in(frames:), fn(health) {
+    case health.0 == beast {
+      True -> Ok(health.1)
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// Whether the frames hold the 0x7fe of the cast.
+fn finishes(frames frames: List(Frame), cast_id cast_id: Int) -> Bool {
+  list.contains(
+    game_client.casts_in(frames:),
+    game_client.CastFinished(cast_id:),
+  )
+}
+
+/// The place among the frames of the first one `found` holds for, or -1.
+fn index_where(
+  frames frames: List(Frame),
+  found found: fn(Frame) -> Bool,
+) -> Int {
+  list.index_map(frames, fn(frame, index) { #(frame, index) })
+  |> list.find(fn(entry) { found(entry.0) })
+  |> result.map(fn(entry) { entry.1 })
+  |> result.unwrap(-1)
+}
+
 /// Whether the frames hold the finish of a cast (0x7fe).
 fn holds_a_finish(frames frames: List(Frame)) -> Bool {
   list.any(game_client.casts_in(frames:), fn(event) {

@@ -73,6 +73,7 @@ import genesis_prime/message/server_hello.{type ServerHello}
 import genesis_prime/message/server_tutorial.{type ServerTutorial}
 import genesis_prime/message/spell_cast_confirmed.{type SpellCastConfirmed}
 import genesis_prime/message/spell_cast_refused.{type SpellCastRefused}
+import genesis_prime/message/spell_effect_tick.{type SpellEffectTick}
 import genesis_prime/message/spell_failed.{type SpellFailed}
 import genesis_prime/message/spell_finished.{type SpellFinished}
 import genesis_prime/message/spell_go.{type SpellGo}
@@ -181,6 +182,7 @@ pub type ServerMessage {
   SpellStarted(message: SpellStarted)
   SpellGo(message: SpellGo)
   SpellMissed(message: SpellMissed)
+  SpellEffectTick(message: SpellEffectTick)
   SpellFinished(message: SpellFinished)
   SpellFailed(message: SpellFailed)
   SpellTargetsRemoved(message: SpellTargetsRemoved)
@@ -390,6 +392,8 @@ pub fn decode(
     0x07FF -> decoded(body, message_id, spell_started.decode, SpellStarted)
     0x07F4 -> decoded(body, message_id, spell_go.decode, SpellGo)
     0x07FB -> decoded(body, message_id, spell_missed.decode, SpellMissed)
+    0x07F8 ->
+      decoded(body, message_id, spell_effect_tick.decode, SpellEffectTick)
     0x07FE -> decoded(body, message_id, spell_finished.decode, SpellFinished)
     0x07F9 -> decoded(body, message_id, spell_failed.decode, SpellFailed)
     0x0811 ->
@@ -556,6 +560,7 @@ pub fn name(message: ServerMessage) -> String {
     SpellStarted(..) -> "spell_started"
     SpellGo(..) -> "spell_go"
     SpellMissed(..) -> "spell_missed"
+    SpellEffectTick(..) -> "spell_effect_tick"
     SpellFinished(..) -> "spell_finished"
     SpellFailed(..) -> "spell_failed"
     SpellTargetsRemoved(..) -> "spell_targets_removed"
