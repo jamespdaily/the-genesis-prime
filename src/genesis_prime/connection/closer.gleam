@@ -23,6 +23,13 @@
 //// - **The order of the listeners** is the order the tree gives them: the
 ////   login's two, then the game server's, so a game listener that refuses new
 ////   sockets says that every listener does.
+//// - **Refusal follows the close.** `stop_accepting` returns once the
+////   acceptors have ended, which is when the listening socket's owner is
+////   gone; the operating system can keep answering connects for a moment after
+////   that for a socket that had just accepted one, so a connect that still
+////   succeeds right after a close is not a listener the closer missed. What
+////   the order guarantees is that every listener's owner has ended before any
+////   connection is told to stop.
 //// - **It decides nothing.** It holds no state but the listeners' names: the
 ////   parent's exit is its one message, and what it does on it is the same
 ////   every time.
