@@ -57,7 +57,7 @@
 ////   delayTime is not waited for (the server's choice: 10 ms in each kit row, under
 ////   a client frame).
 //// - **The lasting effects.** A Fluff effect (`Spell4Effects.effectType.17`), a Scale
-////   effect (18) and a RavelSignal effect (81) of a tree are each a `Lasting` row: the unit
+////   effect (18), an ItemVisualSwap effect (76) and a RavelSignal effect (81) of a tree are each a `Lasting` row: the unit
 ////   its targetFlags aim at, its delay, durationTime and flags bit 2, which give its spell a life there (genesis_prime/game/lasting). A
 ////   SpellForceRemove effect (`Spell4Effects.effectType.80`) is a `ForceRemove` row:
 ////   dataBits00 picks a spell group (1), a Spell4 (2) or a Spell4Base (3) by
@@ -598,7 +598,7 @@ pub type Spell {
     /// The spell's stack group and its cap (`Spell4.spell4StackGroupId`,
     /// `Spell4StackGroup.stackCap`).
     stack: lasting.Stack,
-    /// The Fluff, Scale, RavelSignal and area ShieldOverload effects that give the spell a
+    /// The Fluff, Scale, ItemVisualSwap, RavelSignal and area ShieldOverload effects that give the spell a
     /// life on a unit.
     lasting: List(Lasting),
     /// The SpellForceRemove effects that take casts off a unit.
@@ -862,14 +862,15 @@ pub type CrowdControl {
   )
 }
 
-/// A Fluff effect (`Spell4Effects.effectType.17`), Scale effect (18), RavelSignal effect
-/// (81) or area ShieldOverload effect (64) of a spell: it names the unit it aims at in the go's target info and gives the
+/// A Fluff effect (`Spell4Effects.effectType.17`), Scale effect (18), ItemVisualSwap effect
+/// (76), RavelSignal effect (81) or area ShieldOverload effect (64) of a spell: it names the unit it aims at in the go's target info and gives the
 /// spell a life there, from its `row`, in the phases of `phase_flags`, when its
 /// `condition` holds (its caster apply prerequisite against the caster, its target
 /// apply prerequisite against each unit the row reaches), and when its `tag` holds for the points
 /// the cast spent (genesis_prime/game/spend). Its dataBits need no handling: the client
-/// resizes the unit of a Scale effect itself (`Spell4Effects.effectType.18`), and a
-/// RavelSignal effect is only a life (`Spell4Effects.effectType.81`); the client marks a
+/// resizes the unit of a Scale effect itself (`Spell4Effects.effectType.18`), swaps and
+/// restores the visual of an ItemVisualSwap effect itself (`Spell4Effects.effectType.76`),
+/// and a RavelSignal effect is only a life (`Spell4Effects.effectType.81`); the client marks a
 /// ShieldOverload unit itself (`Spell4Effects.effectType.64`).
 pub type Lasting {
   Lasting(
@@ -1169,7 +1170,7 @@ pub type PlanError {
     data_bits03: Int,
     data_bits04: Int,
   )
-  /// A Fluff, SpellForceRemove, Scale or RavelSignal effect of a tree is aimed by a flag
+  /// A Fluff, SpellForceRemove, Scale, ItemVisualSwap or RavelSignal effect of a tree is aimed by a flag
   /// value that is not read (`Spell4Effects.targetFlags`).
   LastingAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A CCStateSet effect of a tree holds a value that is no state of
@@ -1387,7 +1388,7 @@ pub fn describe(error error: PlanError) -> String {
     LastingAimNotRead(spell4_id:, effect_id:, target_flags:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
-      <> " has a Fluff, SpellForceRemove, Scale or RavelSignal effect "
+      <> " has a Fluff, SpellForceRemove, Scale, ItemVisualSwap or RavelSignal effect "
       <> int.to_string(effect_id)
       <> " aimed by flags "
       <> int.to_string(target_flags)
@@ -2086,6 +2087,7 @@ fn spell_of(
         [
           effect_kind.Fluff,
           effect_kind.Scale,
+          effect_kind.ItemVisualSwap,
           effect_kind.RavelSignal,
           effect_kind.ShieldOverload,
         ],
@@ -2337,9 +2339,9 @@ pub fn heal_of(
   }
 }
 
-/// One Fluff, Scale, RavelSignal or area ShieldOverload row as a lasting row: aimed at a
+/// One Fluff, Scale, ItemVisualSwap, RavelSignal or area ShieldOverload row as a lasting row: aimed at a
 /// unit the plan reads, with the columns that give its node a life (`Spell4Effects.effectType.17`,
-/// `.18` and `.81`).
+/// `.18`, `.76` and `.81`).
 fn lasting_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -2544,6 +2546,7 @@ pub fn modifier_of(
     | effect_kind.InterruptArmor
     | effect_kind.Proc
     | effect_kind.Scale
+    | effect_kind.ItemVisualSwap
     | effect_kind.RavelSignal
     | effect_kind.Activate
     | effect_kind.Unread(..) ->
@@ -3489,8 +3492,10 @@ fn kind_reading(
           TickingGain(..) -> Held(PlannedGain(gain:))
         }
       })
-    effect_kind.Fluff | effect_kind.Scale | effect_kind.RavelSignal ->
-      lasting_reading(tables:, spell4_id:, effect:)
+    effect_kind.Fluff
+    | effect_kind.Scale
+    | effect_kind.ItemVisualSwap
+    | effect_kind.RavelSignal -> lasting_reading(tables:, spell4_id:, effect:)
     effect_kind.ShieldOverload -> {
       use <- when_reached(reaches:)
       lasting_reading(tables:, spell4_id:, effect:)
@@ -3563,7 +3568,7 @@ fn when_reached(
   then()
 }
 
-/// A Fluff, Scale, RavelSignal or area ShieldOverload row as a lasting row.
+/// A Fluff, Scale, ItemVisualSwap, RavelSignal or area ShieldOverload row as a lasting row.
 fn lasting_reading(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -3779,7 +3784,7 @@ fn modifier_number(
   ))
 }
 
-/// The aim of a Fluff, SpellForceRemove, Scale or RavelSignal effect: the caster, the
+/// The aim of a Fluff, SpellForceRemove, Scale, ItemVisualSwap or RavelSignal effect: the caster, the
 /// primary target, the area or both of those; any other flag value fails the load.
 fn lasting_aim_of(
   spell4_id spell4_id: Int,

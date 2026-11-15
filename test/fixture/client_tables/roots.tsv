@@ -863,3 +863,9 @@ Spell4	38784	lasting row 91018 behind a caster apply and a target apply prerequi
 Spell4	47328	lasting row 111129 behind caster apply 903 (type 28) and target apply 20271 (type 38)	spell_plan_target_gate_test
 Spell4	70611	lasting row 179592 behind target prerequisite 20210, three type 38 conditions on creatures	cast_target_gate_test
 Spell4	62637	lasting row 177849 aimed at the caster behind target prerequisite 903, a type 28 condition	cast_target_gate_test
+Spell4	45726	Hazmat Suit (the Hazmat Suit Locker's activate spell): one ItemVisualSwap row 106570 aimed at the caster, flags 2	spell_plan_listed_effect_test, cast_listed_effect_test
+Spell4	26567	six ItemVisualSwap rows (43533 to 43538) aimed at the primary target, delay 333, duration 10000	spell_plan_listed_effect_test, cast_listed_effect_test
+Spell4	48373	Blessing of Dominus: six caster-aimed ItemVisualSwap rows (122321 to 122326), delays 1000 to 6000	spell_plan_listed_effect_test, game_connection_activate_test
+Spell4	36149	one ItemVisualSwap row 74394 with no delay, no duration and no flags	cast_listed_effect_test
+Creature2	32852	Varonia Cazalon (Dominion Arkship Tutorial): activate spell 48373, cast time 0, anim state quest 7007 objective index 1	game_connection_activate_test
+Quest2	7007	the quest whose objective index 1 (QuestObjective 16063) opens Varonia Cazalon's link	game_connection_activate_test

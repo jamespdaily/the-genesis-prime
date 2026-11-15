@@ -272,6 +272,11 @@ fn unread_effect_rows(tables: store.Tables) -> Dict(Int, Int) {
 const lasting_gap =
   "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses"
 
+/// The same for type 76, whose rows with a delayTime the client never applies from the
+/// go, so the server lists them and the visual stays as it was.
+const item_visual_swap_gap =
+  "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; rows with a delayTime, which the client never applies from the go (0x1405d6880.delayed_apply)"
+
 /// The same for type 80, whose rows the plan also refuses where the two columns that hold
 /// the count of stacks differ or a selector names no row.
 const force_remove_gap =
@@ -377,6 +382,11 @@ fn spell_effects() -> EngineDeclaration {
         type_number: 73,
         reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
         fact_key: "Spell4Effects.effectType.73",
+      ),
+      Missing(
+        type_number: 76,
+        reason: item_visual_swap_gap,
+        fact_key: "Spell4Effects.effectType.76",
       ),
       Missing(
         type_number: 80,

@@ -576,6 +576,7 @@ fn counted_namings(
         | effect_kind.Proc
         | effect_kind.InterruptArmor
         | effect_kind.Scale
+        | effect_kind.ItemVisualSwap
         | effect_kind.RavelSignal
         | effect_kind.PropertyConversion
         | effect_kind.DisguiseOutfit
