@@ -5084,10 +5084,9 @@ pub fn rolls_needed(
       int.sum(
         list.flatten([
           list.map(proxies, fn(proxy) {
-            gates_rolls_needed(caster_gates(condition: proxy.condition))
-            + target_rolls_needed(
+            strike_rolls_needed(
               condition: proxy.condition,
-              units_reached: case proxy.target {
+              units: case proxy.target {
                 spell_plan.OnCaster -> 1
                 spell_plan.OnEachStruck -> list.length(hit_units(struck:))
               },
@@ -5100,10 +5099,9 @@ pub fn rolls_needed(
           list.map(
             spell_plan.lasting_in_phase(spell:, phase:, spent: live.spent),
             fn(row) {
-              gates_rolls_needed(caster_gates(condition: row.condition))
-              + target_rolls_needed(
+              strike_rolls_needed(
                 condition: row.condition,
-                units_reached: units_reached(
+                units: units_reached(
                   aim: row.aim,
                   primary_target: live.primary_target,
                   struck:,
@@ -5114,10 +5112,9 @@ pub fn rolls_needed(
           list.map(
             spell_plan.removes_in_phase(spell:, phase:, spent: live.spent),
             fn(row) {
-              gates_rolls_needed(caster_gates(condition: row.condition))
-              + target_rolls_needed(
+              strike_rolls_needed(
                 condition: row.condition,
-                units_reached: units_reached(
+                units: units_reached(
                   aim: row.aim,
                   primary_target: live.primary_target,
                   struck:,
@@ -5128,10 +5125,9 @@ pub fn rolls_needed(
           list.map(
             spell_plan.modifiers_in_phase(spell:, phase:, spent: live.spent),
             fn(row) {
-              gates_rolls_needed(caster_gates(condition: row.condition))
-              + target_rolls_needed(
+              strike_rolls_needed(
                 condition: row.condition,
-                units_reached: units_reached(
+                units: units_reached(
                   aim: spell_plan.modifier_aim(modifier: row),
                   primary_target: live.primary_target,
                   struck:,
@@ -5148,10 +5144,9 @@ pub fn rolls_needed(
           list.map(
             spell_plan.struck_moves_in_phase(spell:, phase:, spent: live.spent),
             fn(row) {
-              gates_rolls_needed(caster_gates(condition: row.condition))
-              + target_rolls_needed(
+              strike_rolls_needed(
                 condition: row.condition,
-                units_reached: units_reached(
+                units: units_reached(
                   aim: row.aim,
                   primary_target: live.primary_target,
                   struck:,
@@ -5194,10 +5189,9 @@ pub fn rolls_needed(
           list.map(
             spell_plan.heals_in_phase(spell:, phase:, spent: live.spent),
             fn(row) {
-              gates_rolls_needed(caster_gates(condition: row.condition))
-              + target_rolls_needed(
+              strike_rolls_needed(
                 condition: row.condition,
-                units_reached: units_reached(
+                units: units_reached(
                   aim: row.aim,
                   primary_target: live.primary_target,
                   struck:,
@@ -8483,7 +8477,7 @@ fn unit_gate(
   what what: String,
   outcome outcome: String,
   rolls rolls: List(Int),
-) -> #(ProxyGate, List(Int)) {
+) -> #(GateDecision, List(Int)) {
   let #(verdict, rolls) = target_verdict(target, unit_id, rolls)
   #(
     case verdict {
@@ -8517,7 +8511,8 @@ pub type Side {
 /// what names the row in a debug line and the rolls its type 37 conditions take off the
 /// front; the decision and the rolls left follow (`strike_gate`).
 pub type StrikeGate =
-  fn(spell_plan.Condition, Side, String, List(Int)) -> #(ProxyGate, List(Int))
+  fn(spell_plan.Condition, Side, String, List(Int)) ->
+    #(GateDecision, List(Int))
 
 /// The rolls a go's strike takes for a row behind `condition` that reaches at most `units`
 /// units: one for each type 37 condition of its caster apply prerequisites, taken once, and
@@ -10490,7 +10485,7 @@ fn checked(
 }
 
 /// What a gate gives at a go: a Proxy's, or a row's.
-pub type ProxyGate {
+pub type GateDecision {
   /// Its child starts.
   Starts
   /// A gate fails: the client's answer, nothing to say.
@@ -10590,7 +10585,7 @@ fn gates_gate(
   rolls rolls: List(Int),
   what what: String,
   outcome outcome: String,
-) -> #(ProxyGate, List(Int)) {
+) -> #(GateDecision, List(Int)) {
   let #(left, verdicts) =
     list.map_fold(gates, rolls, fn(rolls, gate) {
       let #(verdict, left) = checked(prerequisite: gate, subject:, rolls:)
@@ -10864,7 +10859,7 @@ fn target_gate(
   indexes indexes: Dict(Int, Int),
   units units: Dict(Int, prerequisite.FirstUnit),
   rolls rolls: List(Int),
-) -> #(ProxyGate, List(Int)) {
+) -> #(GateDecision, List(Int)) {
   case proxy.condition {
     spell_plan.GatedOnTarget(prerequisite: target)
     | spell_plan.GatedOnCasterAndTarget(target:, ..) -> {

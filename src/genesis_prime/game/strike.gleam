@@ -352,8 +352,8 @@ pub fn begin(
     list.index_fold(selection.units, #([], []), fn(so_far, aimed, index) {
       let #(places, tells) = so_far
       let unit_id = aimed.unit_id
-      let blows = reaching(rows: reach.blows, unit_id:)
-      let ticking = reaching(rows: reach.ticking, unit_id:)
+      let blows = rows_reaching_unit(rows: reach.blows, unit_id:)
+      let ticking = rows_reaching_unit(rows: reach.ticking, unit_id:)
       let controls = list.key_find(told, unit_id) |> result.unwrap([])
       case blows, ticking, controls {
         [], [], [] -> #(
@@ -496,7 +496,8 @@ fn reach_of(
 
 /// Each row with the units of its candidates that pass its gates, the debug lines of the
 /// checks the server cannot tell, and the rolls left. A row whose caster side fails or
-/// cannot be told reaches none of them.
+/// cannot be told reaches none of them. Not `cast.gated`: a strike draws the rolls of the
+/// caster, then of each unit, row by row, where a cast draws every caster gate first.
 fn gated(
   rows rows: List(row),
   condition condition: fn(row) -> spell_plan.Condition,
@@ -533,7 +534,7 @@ fn gated(
 }
 
 /// The units of a row that pass its target gate, in order, a debug line for each the server
-/// cannot tell, and the rolls left.
+/// cannot tell, and the rolls left. Not `cast.reaching`, for the same roll order as `gated`.
 fn passing_units(
   units units: List(Int),
   condition condition: spell_plan.Condition,
@@ -560,7 +561,7 @@ fn debug(text: String) -> Effect {
 }
 
 /// The rows that reach a unit, in the rows' order.
-fn reaching(
+fn rows_reaching_unit(
   rows rows: List(#(row, List(Int))),
   unit_id unit_id: Int,
 ) -> List(row) {
@@ -683,7 +684,7 @@ fn controls_told(
 ) -> #(State, List(#(Int, List(strike_tell.ControlTell)))) {
   let #(strike, told) =
     list.map_fold(over: selection.units, from: strike, with: fn(strike, aimed) {
-      let rows = reaching(rows: reached, unit_id: aimed.unit_id)
+      let rows = rows_reaching_unit(rows: reached, unit_id: aimed.unit_id)
       let #(strike, controls) =
         list.map_fold(over: rows, from: strike, with: fn(strike, row) {
           let count = strike.controls_told + 1

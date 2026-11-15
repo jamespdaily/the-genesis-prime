@@ -20,6 +20,7 @@
 
 import client_tables
 import fixture_tables
+import genesis_prime/coverage/effect_row
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{
@@ -30,6 +31,7 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/spell4_effects
 import gleam/dict
 import gleam/list
+import gleam/option.{None}
 import gleam/string
 import owned_test
 import planted_table
@@ -44,19 +46,40 @@ fn effect_row_in(
   row
 }
 
+/// The place of a spell no Proxy starts on each struck unit, whose costs spend nothing.
+fn no_proxy_place() -> spell_plan.RowPlace {
+  spell_plan.RowPlace(struck_by: None, spends_all: False)
+}
+
+/// Whether the coverage measure counts the client's row `id` as read in `tables`.
+fn is_read_by_the_measure(tables tables: store.Tables, id id: Int) -> Bool {
+  effect_row.is_read(
+    tables:,
+    spell_groups: spell_plan.spell_groups(tables:),
+    place: no_proxy_place(),
+    effect: effect_row_in(tables:, id:),
+  )
+}
+
+/// The client's spell `spell4_id` planned alone from `tables`.
+fn plan_of(
+  tables tables: store.Tables,
+  spell4_id spell4_id: Int,
+) -> Result(spell_plan.Spell, spell_plan.PlanError) {
+  spell_plan.spell_alone(
+    tables:,
+    sources: spell_plan.sources_of(tables:),
+    spell4_id:,
+    chain: [],
+  )
+}
+
 /// The CCStateSet row `effect_id` of the client's spell `spell4_id`, planned alone.
 fn control_of(
   spell4_id spell4_id: Int,
   effect_id effect_id: Int,
 ) -> CrowdControl {
-  let tables = fixture_tables.shared()
-  let assert Ok(spell) =
-    spell_plan.spell_alone(
-      tables:,
-      sources: spell_plan.sources_of(tables:),
-      spell4_id:,
-      chain: [],
-    )
+  let assert Ok(spell) = plan_of(tables: fixture_tables.shared(), spell4_id:)
     as "the client's spell plans"
   let assert Ok(row) =
     list.find(spell.controls, fn(row) {
@@ -68,20 +91,50 @@ fn control_of(
 
 pub fn damage_row_with_undecoded_gate_is_refused_at_load_naming_its_issue_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Kept edit: Prerequisite 3476, the target gate of damage row 38307, made a condition of
-  // type 12, which the server has not decoded.
-  use tables <- fixture_tables.changed(table: "Prerequisite", id: 3476, with: [
-    #("prerequisiteTypeId0", planted_table.Integer(12)),
-  ])
   assert !prerequisite.is_read(type_id: 12)
     as "the server has not decoded type 12"
-  let result =
-    spell_area.damage_row_of(
-      tables:,
-      spell4_id: 23_980,
-      effect: effect_row_in(tables:, id: 38_307),
+  // Kept edit: Prerequisite 3476, the target gate of damage row 38307, made a condition of
+  // type 12, which the server has not decoded.
+  fixture_tables.changed(
+    table: "Prerequisite",
+    id: 3476,
+    with: [#("prerequisiteTypeId0", planted_table.Integer(12))],
+    body: fn(tables) {
+      let result =
+        spell_area.damage_row_of(
+          tables:,
+          spell4_id: 23_980,
+          effect: effect_row_in(tables:, id: 38_307),
+        )
+      assert result
+        == Error(
+          spell_area.ApplyGateNotRead(spell_plan.ApplyPrerequisiteNotRead(
+            spell4_id: 23_980,
+            effect_id: 38_307,
+            prerequisite_type: 12,
+          )),
+        )
+      let assert Error(error) = result
+      let text = spell_area.describe(error:)
+      assert string.contains(text, "12") && string.contains(text, "#818")
+        as "the refusal names the type and the issue that will read it"
+      assert !is_read_by_the_measure(tables:, id: 38_307)
+        as "the coverage measure counts the row as not read"
+      assert is_read_by_the_measure(tables: fixture_tables.shared(), id: 38_307)
+        as "the client's row, with its gate decoded, is read"
+    },
+  )
+  // Kept edit: Prerequisite 3286, the caster gate of row 99347, made a condition of type 12;
+  // damage row 38307 is given it as its caster apply.
+  use tables <- fixture_tables.changed(table: "Prerequisite", id: 3286, with: [
+    #("prerequisiteTypeId0", planted_table.Integer(12)),
+  ])
+  let by_caster =
+    spell4_effects.Spell4Effects(
+      ..effect_row_in(tables:, id: 38_307),
+      prerequisite_id_caster_apply: 3286,
     )
-  assert result
+  assert spell_area.damage_row_of(tables:, spell4_id: 23_980, effect: by_caster)
     == Error(
       spell_area.ApplyGateNotRead(spell_plan.ApplyPrerequisiteNotRead(
         spell4_id: 23_980,
@@ -89,10 +142,37 @@ pub fn damage_row_with_undecoded_gate_is_refused_at_load_naming_its_issue_test()
         prerequisite_type: 12,
       )),
     )
-  let assert Error(error) = result
-  let text = spell_area.describe(error:)
-  assert string.contains(text, "12") && string.contains(text, "#818")
-    as "the refusal names the type and the issue that will read it"
+    as "a row behind a caster gate the server cannot read is refused too"
+  assert !effect_row.is_read(
+    tables:,
+    spell_groups: spell_plan.spell_groups(tables:),
+    place: no_proxy_place(),
+    effect: by_caster,
+  )
+    as "the coverage measure counts the caster-gated row as not read"
+}
+
+pub fn until_removed_periodic_damage_row_behind_an_unread_gate_is_left_out_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kept edit: Prerequisite 3476, the target gate of damage row 38307, made a condition of
+  // type 12, which the server has not decoded; the row is given a tickTime and flags bit 2
+  // (until removed), as the area load's reader is given it.
+  use tables <- fixture_tables.changed(table: "Prerequisite", id: 3476, with: [
+    #("prerequisiteTypeId0", planted_table.Integer(12)),
+  ])
+  let row =
+    spell4_effects.Spell4Effects(
+      ..effect_row_in(tables:, id: 38_307),
+      tick_time: 1000,
+      duration_time: 0,
+      flags: 2,
+    )
+  assert spell_area.damage_row_of(tables:, spell4_id: 23_980, effect: row)
+    == Error(spell_area.TickingUntilRemoved(
+      spell4_id: 23_980,
+      effect_id: 38_307,
+    ))
+    as "an until-removed row is left out before its gate is read, as it was before the gates were read, so the load goes on"
 }
 
 pub fn damage_row_past_the_caster_reading_struck_state_is_refused_at_load_test() -> Nil {
@@ -142,6 +222,57 @@ pub fn ccstateset_row_behind_an_apply_prerequisite_is_read_with_its_gates_test()
     as "Spell4Effects.115034: prerequisiteIdTargetApply 860"
   assert prerequisite.rolls_needed(prerequisite: roll_gate) == 1
     as "its one type 37 condition takes one roll for each unit"
+  // Kept edit: Prerequisite 24214, the target gate of CCStateSet row 122821 (targetFlags 4),
+  // made a condition of type 12, which the server has not decoded.
+  let unread_target =
+    fixture_tables.changed(
+      table: "Prerequisite",
+      id: 24_214,
+      with: [#("prerequisiteTypeId0", planted_table.Integer(12))],
+      body: fn(tables) { plan_of(tables:, spell4_id: 51_989) },
+    )
+  assert unread_target
+    == Error(spell_plan.ApplyPrerequisiteNotRead(
+      spell4_id: 51_989,
+      effect_id: 122_821,
+      prerequisite_type: 12,
+    ))
+    as "a state behind a target gate the server cannot read fails the plan, naming the type"
+  // Kept edit: the same prerequisite made a condition of type 15, which reads the state of
+  // the creature it is tested on; the row is aimed at the area, past the caster.
+  let struck_state =
+    fixture_tables.changed(
+      table: "Prerequisite",
+      id: 24_214,
+      with: [
+        #("prerequisiteTypeId0", planted_table.Integer(15)),
+        #("prerequisiteComparisonId0", planted_table.Integer(1)),
+      ],
+      body: fn(tables) { plan_of(tables:, spell4_id: 51_989) },
+    )
+  assert struck_state
+    == Error(spell_plan.TargetPrerequisiteReadsStruckUnit(
+      spell4_id: 51_989,
+      effect_id: 122_821,
+      prerequisite_type: 15,
+    ))
+    as "a state behind a type 15 gate past the caster fails the plan"
+  // Kept edit: Prerequisite 3286, the caster gate of CCStateSet row 99347, made a condition
+  // of type 12.
+  let unread_caster =
+    fixture_tables.changed(
+      table: "Prerequisite",
+      id: 3286,
+      with: [#("prerequisiteTypeId0", planted_table.Integer(12))],
+      body: fn(tables) { plan_of(tables:, spell4_id: 43_131) },
+    )
+  assert unread_caster
+    == Error(spell_plan.ApplyPrerequisiteNotRead(
+      spell4_id: 43_131,
+      effect_id: 99_347,
+      prerequisite_type: 12,
+    ))
+    as "a state behind a caster gate the server cannot read fails the plan"
 }
 
 pub fn no_planned_spell_holds_a_refused_damage_or_control_row_test() -> Nil {

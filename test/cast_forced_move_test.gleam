@@ -496,6 +496,66 @@ pub fn each_go_of_a_cast_keeps_the_delayed_throw_it_armed_test() -> Nil {
     as "the first go's throw starts at 1000 + 500 and the second go's at 1300 + 500: a later go does not cancel an earlier throw that waits"
 }
 
+pub fn a_throw_behind_a_type_37_target_gate_takes_one_roll_for_each_creature_it_reaches_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Prerequisite.prerequisiteTypeId.37: a target gate's test draws a roll for each unit the
+  // row reaches, in unit order; comparison 6 on 24 passes a roll of 24 (as for the caster
+  // gate above).
+  let spell =
+    thrower(rows: [
+      spell_plan.StruckMove(
+        ..throwing_row(delay_ms: 0),
+        condition: spell_plan.GatedOnTarget(
+          prerequisite: prerequisite_support.single(id: 792, condition: #(
+            37,
+            6,
+            0,
+            24,
+          )),
+        ),
+      ),
+    ])
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans: support.plans_with(spell:),
+      state: cast.new(),
+      caster: support.caster(),
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1000,
+    )
+  let assert [asked] = support.goes_asked(effects: raw)
+  let rolls_for = fn(struck) {
+    cast.rolls_needed(
+      cast: state,
+      cast_id: asked.cast_id,
+      phase: asked.phase,
+      struck:,
+    )
+  }
+  assert rolls_for([hit(unit_id: 21, life: 3)]) == 1
+    as "one creature struck: one roll for the target gate"
+  let struck = [hit(unit_id: 21, life: 3), hit(unit_id: 23, life: 5)]
+  assert rolls_for(struck) == 2
+    as "two creatures struck: the gate is tested for each, a roll of its own for each"
+  let #(_, answered) =
+    support.answered_known(
+      caster: support.caster(),
+      state:,
+      effects: raw,
+      at: 1000,
+      struck_of: fn(_) { struck },
+      rolls: [24, 25],
+      poses: dict.new(),
+      units: dict.from_list([
+        #(21, prerequisite.NonPlayer(1)),
+        #(23, prerequisite.NonPlayer(1)),
+      ]),
+    )
+  assert support.throws(effects: answered) == [thrown(21, 3)]
+    as "unit 21 takes the roll of 24 and passes, unit 23 takes 25 and fails: only 21 is thrown"
+}
+
 /// A type 38 target gate of Prerequisite 20210's shape (`table_rows -- Prerequisite 20210`):
 /// comparison 1 on Creature2 row 48404, which passes the unit that is that creature.
 fn named_creature_gate() -> spell_plan.Condition {

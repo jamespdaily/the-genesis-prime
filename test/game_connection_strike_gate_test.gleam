@@ -96,13 +96,15 @@ pub fn strike_tell_carries_only_the_passing_rows_test() -> Nil {
         yaw: 0.0,
       ),
     )
-  let #(_, steps) =
-    support.pressed_until(
+  let #(_, _, steps) =
+    support.pressed_until_answered(
       state:,
+      world: Nil,
       bag_index: bag_index_of(base: impale_base),
       client_cast_id: 1,
       ms: 1000,
       until_ms: 3000,
+      answer: support.landed_with_its_blows,
     )
   let told =
     list.flat_map(steps, fn(taken) { support.strike_blows_told(taken) })
@@ -114,5 +116,16 @@ pub fn strike_tell_carries_only_the_passing_rows_test() -> Nil {
     as "unit 42 is the creature 48404 that gate 20210 names and is told the gated row; unit 43 is creature 1, none of the three, and is told a strike without it"
   assert list.all(told, fn(entry) { list.contains(entry.1, ungated_damage) })
     as "Spell4Effects 86308 of the same child is behind no gate and strikes both"
-  Nil
+  let listed =
+    support.listed_by_unit(steps:)
+    |> list.filter(fn(entry) {
+      entry.0 == named_unit || entry.0 == unnamed_unit
+    })
+  assert list.map(listed, fn(entry) { entry.0 }) == [named_unit, unnamed_unit]
+    as "the go lists effects on both creatures, each with the child's ungated row"
+  assert list.map(listed, fn(entry) { list.contains(entry.1, gated_damage) })
+    == [True, False]
+    as "the go lists the gated damage row only on unit 42, the creature the gate names"
+  assert list.all(listed, fn(entry) { list.contains(entry.1, ungated_damage) })
+    as "the go lists the ungated damage row on both creatures"
 }

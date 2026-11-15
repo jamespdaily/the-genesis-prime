@@ -596,7 +596,8 @@ fn damage_effects_of(
 /// that refuses it: its dataBits00 must be a finite 32-bit float, its targetFlags one the
 /// rule aims by (1, 2, 4 or 6), its formula must read only the parameter types a player's
 /// value reads (genesis_prime/game/damage `unread`). A row with a tickTime is periodic,
-/// with the schedule of its ticks (genesis_prime/game/ticking `schedule_of`). Every
+/// with the schedule of its ticks (genesis_prime/game/ticking `schedule_of`), read before
+/// its apply gates so that an until-removed row is left out whatever its gates are. Every
 /// refusal but `TickingUntilRemoved` fails the area load, and `TickingUntilRemoved`
 /// leaves the row out. The area load and the coverage measure both read a row through it.
 pub fn damage_row_of(
@@ -626,7 +627,26 @@ pub fn damage_row_of(
       Error(FormulaNotRead(spell4_id:, effect_id: effect.id, parameter_kind:))
     None -> Ok(Nil)
   })
-  use condition <- result.try(
+  use schedule <- result.try(case effect.tick_time {
+    0 -> Ok(None)
+    tick_ms ->
+      ticking.schedule_of(row: spell_plan.lasting_row_of(effect:), tick_ms:)
+      |> result.map(Some)
+      |> result.map_error(fn(error) {
+        case error {
+          ticking.UntilRemoved ->
+            TickingUntilRemoved(spell4_id:, effect_id: effect.id)
+          ticking.NoTick(tick_ms:, duration_ms:) ->
+            TickingNoTick(
+              spell4_id:,
+              effect_id: effect.id,
+              tick_ms:,
+              duration_ms:,
+            )
+        }
+      })
+  })
+  use condition <- result.map(
     spell_plan.row_condition_of(tables:, effect:, aim:)
     |> result.map_error(ApplyGateNotRead),
   )
@@ -642,26 +662,9 @@ pub fn damage_row_of(
       condition:,
       tag: spell_plan.tag_of(effect:),
     )
-  case effect.tick_time {
-    0 -> Ok(Once(effect: damage))
-    tick_ms ->
-      ticking.schedule_of(row: spell_plan.lasting_row_of(effect:), tick_ms:)
-      |> result.map(fn(schedule) {
-        Periodic(effect: TickingDamage(damage:, schedule:))
-      })
-      |> result.map_error(fn(error) {
-        case error {
-          ticking.UntilRemoved ->
-            TickingUntilRemoved(spell4_id:, effect_id: effect.id)
-          ticking.NoTick(tick_ms:, duration_ms:) ->
-            TickingNoTick(
-              spell4_id:,
-              effect_id: effect.id,
-              tick_ms:,
-              duration_ms:,
-            )
-        }
-      })
+  case schedule {
+    None -> Once(effect: damage)
+    Some(schedule) -> Periodic(effect: TickingDamage(damage:, schedule:))
   }
 }
 
