@@ -27,7 +27,11 @@ import genesis_prime/message/movement_time
 import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/spell_cast_refused
+import genesis_prime/message/spell_damage_description.{
+  type SpellDamageDescription,
+}
 import genesis_prime/message/spell_effect_result
+import genesis_prime/message/spell_effect_tick
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_position
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
@@ -63,6 +67,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import owned_test
 import place_support
+import planted_table.{Integer}
 import spawn_support
 import spell_tables
 
@@ -1662,4 +1667,85 @@ pub fn each_of_electrocutes_six_pulses_strikes_the_beast_and_lowers_its_health_t
     == healths
     && list.unique(healths) == healths
     as "each pulse's damage lowers the Beast's health: six strictly falling values"
+}
+
+pub fn three_ticks_reach_the_client_and_health_falls_three_times_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // No level-1 ability holds a periodic damage row (the client's level-1 tree spells),
+  // so Paralytic Surge's damage row 96125 (targetFlags 4, the Medic's bag index 2) is
+  // given a tickTime of 2000 and a durationTime of 6000: three ticks, 2000, 4000 and
+  // 6000 ms after the go (`Spell4Effects.effectType.8.periodic`).
+  use tables <- fixture_tables.changed(
+    table: "Spell4Effects",
+    id: 96_125,
+    with: [#("tickTime", Integer(2000)), #("durationTime", Integer(6000))],
+  )
+  let medic = game_connection_support.medic_in(tables:)
+  let #(beast, started) =
+    a_beast_of(
+      spawn.Spawn(
+        ..spawn_support.beast_at(number: 1, place: beast_spawn_place()),
+        health: 5000,
+      ),
+    )
+  let #(medic, shown, _) = medic_takes(medic, to_the_medic(started))
+  assert shown != [] as "the client is shown the Beast"
+  let #(_, _, steps) =
+    game_connection_support.pressed_until_answered(
+      state: medic,
+      world: beast,
+      bag_index: 2,
+      client_cast_id: 1,
+      ms: 1000,
+      until_ms: 20_000,
+      answer: answered_by_the_beast,
+    )
+  let frames =
+    list.flat_map(steps, game_connection_support.heard(
+      _,
+      game_connection_support.keyed(),
+    ))
+  assert list.filter(cast_support.ids(frames:), fn(id) {
+      id == 0x07F4 || id == 0x07F8 || id == 0x07FE
+    })
+    == [0x07F4, 0x07F8, 0x07F8, 0x07F8, 0x07FE]
+    as "opcode.0x7f8: the go, then one 0x7f8 for each of the row's three ticks, then the cast's 0x7fe after its last tick (cast.miss_after_finish)"
+  let ticks =
+    game_connection_support.decoded(frames, 0x07F8, spell_effect_tick.decode)
+  let assert [go] =
+    game_connection_support.decoded(frames, 0x07F4, spell_go.decode)
+  list.each(ticks, fn(tick) {
+    assert #(tick.cast_id, tick.spell4_effects_id, tick.unit_id)
+      == #(go.cast_id, 96_125, 7)
+      as "opcode.0x7f8: each tick names the go's cast, the row 96125 and the Beast"
+    assert list.length(tick.descriptions) == 1
+      as "opcode.0x7f8: one damage description for the one unit the tick strikes"
+  })
+  let damages =
+    list.flat_map(ticks, fn(tick) {
+      list.map(tick.descriptions, fn(description: SpellDamageDescription) {
+        description.health_damage_with_overkill - description.overkill
+      })
+    })
+  let healths =
+    list.filter_map(
+      game_connection_support.decoded(frames, 0x0937, unit_health.decode),
+      fn(health) {
+        case health.unit_id == 7 {
+          True -> Ok(health.health)
+          False -> Error(Nil)
+        }
+      },
+    )
+  let assert [at_go, ..after_ticks] = healths
+    as "opcode.0x937: the Beast's health is sent for the go's strike"
+  assert at_go == 5000
+    as "the go strikes with no description of the ticking row (the issue's first acceptance check), so the Beast's 5000 health is unchanged"
+  let #(_, falls) =
+    list.fold(after_ticks, #(at_go, []), fn(held, health) {
+      let #(before, falls) = held
+      #(health, list.append(falls, [before - health]))
+    })
+  assert falls == damages && list.all(damages, fn(damage) { damage > 0 })
+    as "opcode.0x937 after each 0x7f8: the Beast's health falls three times, each by its tick's health damage"
 }

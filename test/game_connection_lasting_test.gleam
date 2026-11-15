@@ -7,6 +7,10 @@
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{Appeared, CastStarted}
+import genesis_prime/message/combat_result
+import genesis_prime/message/damage_type
+import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
+import genesis_prime/message/spell_effect_tick.{SpellEffectTick}
 import genesis_prime/message/spell_stack_removed.{SpellStackRemoved}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
 import genesis_prime/step
@@ -195,4 +199,75 @@ pub fn a_creatures_0x355_drops_its_nodes_and_the_lingering_cast_left_with_none_f
     client_connection.CastFinished(cast_id: start.cast_id),
   )
     as "the viewer told the cast's start is told its finish"
+}
+
+pub fn a_viewer_gets_a_tick_only_for_a_cast_it_was_shown_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // `0x140561c30` (opcode.0x7f8): the client looks the tick's cast up among those it
+  // holds and drops the message when it holds none, so a viewer writes a tick only
+  // for a cast whose start it wrote.
+  let start =
+    game_connection_support.spell_started_of(cast_id: 2_147_497_985, caster: 9)
+  let tick =
+    SpellEffectTick(
+      cast_id: start.cast_id,
+      spell4_effects_id: 96_125,
+      unit_id: 9,
+      descriptions: [
+        SpellDamageDescription(
+          raw_damage: 6,
+          scaled_raw_damage: 6,
+          absorbed: 0,
+          shield_absorbed: 0,
+          health_damage_with_overkill: 6,
+          overkill: 0,
+          glance: 0,
+          killed: 0,
+          combat_result: combat_result.Hit,
+          damage_type: damage_type.Magic,
+          hits: [],
+        ),
+      ],
+    )
+  let ticked =
+    game_connection_support.news_of(
+      unit_id: 9,
+      news: client_connection.CastTicked(tick:),
+    )
+  let #(state, _) =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      game_connection_support.sent_by_a_peer(game_connection_support.news_of(
+        unit_id: 9,
+        news: Appeared(game_connection_support.another_unit()),
+      )),
+    )
+  let #(state, taken) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_a_peer(ticked),
+    )
+  assert game_connection_support.written_ids(taken) == []
+    as "the viewer did not write the cast's start: the client would drop a 0x7f8 for a cast it does not hold"
+  let #(state, _) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_a_peer(game_connection_support.news_of(
+        unit_id: 9,
+        news: CastStarted(start:),
+      )),
+    )
+  let #(_, taken) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_a_peer(ticked),
+    )
+  assert game_connection_support.written_ids(taken) == [0x07F8]
+    as "a cast it wrote the start of shows each tick on the viewer's client too"
+  assert game_connection_support.decoded(
+      game_connection_support.heard(taken, game_connection_support.keyed()),
+      0x07F8,
+      spell_effect_tick.decode,
+    )
+    == [tick]
 }

@@ -19,6 +19,7 @@ import genesis_prime/game/strike_tell.{
   Answered, Dead, Deflected, Key, Landed, Refused, Strike,
 }
 import genesis_prime/step.{ConnectionId}
+import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/world_map/creature_life.{
   type Life, Body, Died, Health, StandsAgain, StopAtRespawn, StopNow,
 }
@@ -185,6 +186,39 @@ pub fn two_strikes_that_cross_are_answered_in_turn_and_the_second_finds_a_corpse
     && second.corpse_for_ms == None
     && creature_life.is_dead(second.life)
     as "a refused strike changes nothing and sends no news"
+}
+
+pub fn two_casters_ticks_on_one_creature_are_their_own_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Two casts tick the same row on one Beast in the same go and tick: each tell keeps
+  // its own cast's key (`strike_tell.Key`), so each answer reaches its own round.
+  let tick = fn(cast_id) {
+    Strike(
+      ..strike_of(damage: 18, rolls: no_luck, cast_id:),
+      key: Key(
+        cast_id:,
+        occasion: strike_tell.AtTick(
+          effect_id: Spell4EffectsId(96_125),
+          go: 1,
+          tick: 1,
+        ),
+        unit_id: 20,
+      ),
+    )
+  }
+  let first =
+    creature_life.struck(
+      life: creature_life.new(body: beast()),
+      body: beast(),
+      strike: tick(1),
+    )
+  let second =
+    creature_life.struck(life: first.life, body: beast(), strike: tick(2))
+  assert first.answer.key == tick(1).key && second.answer.key == tick(2).key
+    as "each tick is answered with its own cast's key"
+  assert #(first.news, second.news)
+    == #([Health(health: 34, dead: False)], [Health(health: 16, dead: False)])
+    as "each tick is applied: 52 - 18, then 34 - 18"
 }
 
 pub fn a_deflected_strike_changes_no_health_and_sends_no_news_test() -> Nil {

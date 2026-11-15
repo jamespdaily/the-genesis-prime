@@ -324,12 +324,12 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 8,
-        reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; rows with a tickTime (periodic), which the area load leaves out (#336)",
+        reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; periodic rows that last until removed (flags bit 2, #803), which the area load leaves out",
         fact_key: "0x140566ad0",
       ),
       Missing(
         type_number: 10,
-        reason: "rows aimed only at other units, periodic (tickTime, #336) or behind a target apply prerequisite, which no go applies; rows with a formula parameter the plan refuses; rows of a spell a Proxy starts on each struck unit, whose heal on that unit is not built (#570)",
+        reason: "rows aimed only at other units or behind a target apply prerequisite, which no go applies; periodic rows that last until removed (flags bit 2, #803), which the plan leaves out; rows with a formula parameter the plan refuses; rows of a spell a Proxy starts on each struck unit, whose heal on that unit is not built (#570)",
         fact_key: "spell.heal_result_log",
       ),
       Missing(
@@ -404,7 +404,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 118,
-        reason: "rows aimed at another unit, periodic (tickTime), behind a target apply prerequisite or with a formula parameter the plan refuses",
+        reason: "rows aimed at another unit, periodic rows that last until removed (flags bit 2, #803), rows behind a target apply prerequisite or with a formula parameter the plan refuses",
         fact_key: "Spell4Effects.effectType.118",
       ),
       Missing(

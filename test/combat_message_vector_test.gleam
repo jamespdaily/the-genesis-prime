@@ -3,7 +3,7 @@
 //// `opcode.0x19d`, `opcode.0x262.creature` with `0x140095fb0`, `0x140096970`
 //// for the ghost, `opcode.0x262.simple` for a static object, `opcode.0x7fc`, `opcode.0x7fd`, `opcode.0x7ff`,
 //// `opcode.0x7f4` with `0x140094890`, `0x1400946c0` and `0x1400945e0`,
-//// `opcode.0x7fe`, `opcode.0x801`, `opcode.0x937`, `opcode.0x92f`,
+//// `opcode.0x7f8`, `opcode.0x7fe`, `opcode.0x801`, `opcode.0x937`, `opcode.0x92f`,
 //// `opcode.0x938`, `opcode.0x88c`, `opcode.0x908`, `opcode.0x90a`,
 //// `opcode.0x89a`, `opcode.0x1b3`, `opcode.0x15a`, `opcode.0x247.death`,
 //// `opcode.0x8f5`, `opcode.0x247.type24` and `movement_command.kind_4` with `movement_command.kind_0`. Each vector was
@@ -58,6 +58,7 @@ import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_damage.{SpellEffectDamage}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
+import genesis_prime/message/spell_effect_tick.{SpellEffectTick}
 import genesis_prime/message/spell_finished.{SpellFinished}
 import genesis_prime/message/spell_go.{type SpellGo, SpellGo}
 import genesis_prime/message/spell_hit_entry.{SpellHitEntry}
@@ -674,6 +675,40 @@ pub fn a_finished_cast_is_its_id_test() -> Nil {
     value: SpellFinished(cast_id: server_cast_id),
     encode: spell_finished.encode,
     decode: spell_finished.decode,
+  )
+}
+
+pub fn spell_effect_tick_matches_its_client_vector_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert spell_effect_tick.message_id == 0x7F8
+    as "opcode.0x7f8: message 0x7f8 (2040)"
+  message_support.assert_codec(
+    name: "opcode.0x7f8: cast id in 32 bits, Spell4Effects id 96125 in 19, unit id in 32, a count of 1 in 8, then one damage description (0x1400946c0): 18 raw, 18 scaled, nothing absorbed, 18 health damage, no overkill or glance, not killed, Hit, Magic, no hit entries",
+    body: message_support.hex(
+      "04 28 00 80 7d 77 09 00 01 00 08 90 00 00 00 90 00 00 00 00 00 00 00 00 00 00 00 90 00 00 00 00 00 00 00 00 00 00 00 20 03 00",
+    ),
+    value: SpellEffectTick(
+      cast_id: server_cast_id,
+      spell4_effects_id: 96_125,
+      unit_id: 0x2001,
+      descriptions: [
+        SpellDamageDescription(
+          raw_damage: 18,
+          scaled_raw_damage: 18,
+          absorbed: 0,
+          shield_absorbed: 0,
+          health_damage_with_overkill: 18,
+          overkill: 0,
+          glance: 0,
+          killed: 0,
+          combat_result: combat_result.Hit,
+          damage_type: damage_type.Magic,
+          hits: [],
+        ),
+      ],
+    ),
+    encode: spell_effect_tick.encode,
+    decode: spell_effect_tick.decode,
   )
 }
 

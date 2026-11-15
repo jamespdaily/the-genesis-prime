@@ -437,12 +437,12 @@ pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145
       ),
       Missing(
         type_number: 8,
-        reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; rows with a tickTime (periodic), which the area load leaves out (#336)",
+        reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; periodic rows that last until removed (flags bit 2, #803), which the area load leaves out",
         fact_key: "0x140566ad0",
       ),
       Missing(
         type_number: 10,
-        reason: "rows aimed only at other units, periodic (tickTime, #336) or behind a target apply prerequisite, which no go applies; rows with a formula parameter the plan refuses; rows of a spell a Proxy starts on each struck unit, whose heal on that unit is not built (#570)",
+        reason: "rows aimed only at other units or behind a target apply prerequisite, which no go applies; periodic rows that last until removed (flags bit 2, #803), which the plan leaves out; rows with a formula parameter the plan refuses; rows of a spell a Proxy starts on each struck unit, whose heal on that unit is not built (#570)",
         fact_key: "spell.heal_result_log",
       ),
       Missing(
@@ -517,7 +517,7 @@ pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145
       ),
       Missing(
         type_number: 118,
-        reason: "rows aimed at another unit, periodic (tickTime), behind a target apply prerequisite or with a formula parameter the plan refuses",
+        reason: "rows aimed at another unit, periodic rows that last until removed (flags bit 2, #803), rows behind a target apply prerequisite or with a formula parameter the plan refuses",
         fact_key: "Spell4Effects.effectType.118",
       ),
       Missing(
@@ -756,31 +756,49 @@ fn measured_stealth_rows(
   )
 }
 
+/// One planted row for `measured_shield_rows`, by the columns the plan and the area load
+/// read: targetFlags (Spell4Effects.targetFlags bit 1 is the caster, 2 the primary target
+/// and 4 the area), tickTime, durationTime, flags (bit 2: until removed) and
+/// parameterType00.
+type PlantedRow {
+  PlantedRow(
+    aim: Int,
+    tick_ms: Int,
+    duration_ms: Int,
+    flags: Int,
+    parameter: Int,
+  )
+}
+
+/// A planted row that is not periodic.
+fn once(aim aim: Int, parameter parameter: Int) -> PlantedRow {
+  PlantedRow(aim:, tick_ms: 0, duration_ms: 0, flags: 0, parameter:)
+}
+
 /// The measure of planted type 118, 64 or 8 rows beside a type 8 row, for the line of the
-/// type given, each row as (targetFlags, tickTime, parameterType00): Spell4Effects.targetFlags
-/// bit 1 is the caster, 2 the primary target and 4 the area; the plan reads a type 118 row
-/// that reaches the caster, is not periodic and has a formula the caster's value reads, a
-/// type 64 row aimed at the area alone, and a type 8 row that is not periodic.
+/// type given: the plan reads a type 118 row that reaches the caster, has a formula the
+/// caster's value reads and, when periodic, a life of whole ticks; a type 64 row aimed at
+/// the area alone; and a type 8 row that is not periodic or has a life of whole ticks.
 fn measured_shield_rows(
   type_ type_: Int,
-  rows rows: List(#(Int, Int, Int)),
+  rows rows: List(PlantedRow),
 ) -> measurement.Measurement {
-  let row = fn(id, type_, flags, tick, parameter) {
+  let row = fn(id, type_, planted: PlantedRow) {
     planted_table.row(spell4_effects.schema, [
       #("ID", planted_table.Integer(id)),
       #("effectType", planted_table.Integer(type_)),
-      #("targetFlags", planted_table.Integer(flags)),
-      #("tickTime", planted_table.Integer(tick)),
-      #("parameterType00", planted_table.Integer(parameter)),
+      #("targetFlags", planted_table.Integer(planted.aim)),
+      #("tickTime", planted_table.Integer(planted.tick_ms)),
+      #("durationTime", planted_table.Integer(planted.duration_ms)),
+      #("flags", planted_table.Integer(planted.flags)),
+      #("parameterType00", planted_table.Integer(planted.parameter)),
       #("parameterValue00", planted_table.Float(0.3)),
     ])
   }
   measure_planted(
     rows: list.append(
-      list.index_map(rows, fn(planted, index) {
-        row(index + 1, type_, planted.0, planted.1, planted.2)
-      }),
-      [row(99, 8, 4, 0, 0)],
+      list.index_map(rows, fn(planted, index) { row(index + 1, type_, planted) }),
+      [row(99, 8, once(aim: 4, parameter: 0))],
     ),
   )
 }
@@ -788,28 +806,40 @@ fn measured_shield_rows(
 pub fn the_measure_counts_ticking_and_refused_heal_shields_rows_as_not_read_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
-  // Planted: four type 118 rows, one for each case the plan leaves out or refuses and
-  // one it reads: flags 4 (aimed at the area), flags 1 with a tickTime of 1000
-  // (periodic), flags 1 with parameter type 18 (a passed-in value) and flags 1 with
-  // parameter type 22 (target missing shield); and a type 64 pair, flags 4 and 2.
+  // Planted: five type 118 rows, one for each case the plan leaves out or refuses and two
+  // it reads: flags 4 (aimed at the area); flags 1 with a tickTime of 1000 and a
+  // durationTime of 3000 (three ticks); flags 1 with a tickTime of 1000, no durationTime
+  // and flags bit 2 (until removed); flags 1 with parameter type 18 (a passed-in value);
+  // and flags 1 with parameter type 22 (target missing shield). And a type 64 pair, flags
+  // 4 and 2.
   let assert Measured(types:, ..) =
     measured_shield_rows(type_: 118, rows: [
-      #(4, 0, 22),
-      #(1, 1000, 16),
-      #(1, 0, 18),
-      #(1, 0, 22),
+      once(aim: 4, parameter: 22),
+      PlantedRow(
+        aim: 1,
+        tick_ms: 1000,
+        duration_ms: 3000,
+        flags: 0,
+        parameter: 16,
+      ),
+      PlantedRow(aim: 1, tick_ms: 1000, duration_ms: 0, flags: 2, parameter: 16),
+      once(aim: 1, parameter: 18),
+      once(aim: 1, parameter: 22),
     ])
   let assert Ok(line) = list.find(types, fn(line) { line.type_number == 118 })
-  assert line.rows == 4
+  assert line.rows == 5
   assert line.status
     == HandledWithGap(
-      reason: "rows aimed at another unit, periodic (tickTime), behind a target apply prerequisite or with a formula parameter the plan refuses",
+      reason: "rows aimed at another unit, periodic rows that last until removed (flags bit 2, #803), rows behind a target apply prerequisite or with a formula parameter the plan refuses",
       fact_key: "Spell4Effects.effectType.118",
       unread_rows: 3,
     )
-    as "the area row is aimed at others, the periodic row is held and not applied, and the kind 18 row fails the plan's formula: three of four are not read"
+    as "the area row is aimed at others, the periodic row that lasts until removed is left out, and the kind 18 row fails the plan's formula: three of five are not read; the periodic row of three ticks is read"
   let assert Measured(types:, ..) =
-    measured_shield_rows(type_: 64, rows: [#(4, 0, 0), #(2, 0, 0)])
+    measured_shield_rows(type_: 64, rows: [
+      once(aim: 4, parameter: 0),
+      once(aim: 2, parameter: 0),
+    ])
   let assert Ok(overload) =
     list.find(types, fn(line) { line.type_number == 64 })
   assert overload.status
@@ -821,22 +851,34 @@ pub fn the_measure_counts_ticking_and_refused_heal_shields_rows_as_not_read_test
     as "the row aimed at the primary target is not read; the one aimed at the area is"
 }
 
-pub fn the_measure_counts_a_periodic_damage_row_as_not_read_and_names_it_in_the_gap_test() -> Nil {
+pub fn the_measure_counts_a_periodic_damage_row_that_lasts_until_removed_as_not_read_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
-  // Planted: two type 8 rows aimed at the area, one with a tickTime of 1000 and one
-  // without, and the type 8 row of the helper, aimed at the area with no tickTime.
+  // Planted: three type 8 rows aimed at the area, one with a tickTime of 1000 and a
+  // durationTime of 3000, one with a tickTime of 1000 and flags bit 2 (until removed) and
+  // one with no tickTime, and the type 8 row of the helper, aimed at the area with no
+  // tickTime.
   let assert Measured(types:, ..) =
-    measured_shield_rows(type_: 8, rows: [#(4, 1000, 0), #(4, 0, 0)])
+    measured_shield_rows(type_: 8, rows: [
+      PlantedRow(
+        aim: 4,
+        tick_ms: 1000,
+        duration_ms: 3000,
+        flags: 0,
+        parameter: 0,
+      ),
+      PlantedRow(aim: 4, tick_ms: 1000, duration_ms: 0, flags: 2, parameter: 0),
+      once(aim: 4, parameter: 0),
+    ])
   let assert Ok(line) = list.find(types, fn(line) { line.type_number == 8 })
-  assert line.rows == 3
+  assert line.rows == 4
   assert line.status
     == HandledWithGap(
-      reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; rows with a tickTime (periodic), which the area load leaves out (#336)",
+      reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; periodic rows that last until removed (flags bit 2, #803), which the area load leaves out",
       fact_key: "0x140566ad0",
       unread_rows: 1,
     )
-    as "the periodic row strikes once for each tick and the area strikes once, so it is not read; the two rows without a tickTime are"
+    as "the periodic row of three ticks strikes once for each tick and is read; the one that lasts until removed has no schedule and is left out"
 }
 
 pub fn the_type_83_rows_aimed_at_other_units_or_timed_are_counted_as_not_handled_test() -> Nil {
@@ -1986,7 +2028,7 @@ pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
     as "no EldanAugmentation row names 87333 or 87334, so neither is an AMP spell with a level to wait for"
 }
 
-pub fn the_starting_abilities_totals_hold_184_of_196_effect_rows_and_79_of_79_conditions_handled_test() -> Nil {
+pub fn the_starting_abilities_totals_hold_185_of_196_effect_rows_and_79_of_79_conditions_handled_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
@@ -2003,9 +2045,9 @@ pub fn the_starting_abilities_totals_hold_184_of_196_effect_rows_and_79_of_79_co
     )
   assert string.contains(
     totals,
-    "| Spell effects (#49) | 133 | 131200 | 18 | 22 | 184 of 196 |",
+    "| Spell effects (#49) | 133 | 131200 | 18 | 22 | 185 of 196 |",
   )
-    as "196 effect rows are left, 12 of them not handled (the two Proc rows the plan skips, 90 x4, 118 once (the Warrior's periodic row 210834, held and not applied), 24 once, the Stalker's 91018 of type 81, behind target apply prerequisite 11311, the two Proxies 121345 and 178429 whose dataBits00 is 0, and the Medic's gain 228918, which ticks every 2000 ms (scratch count over the 196 rows the coverage walk reaches); the five other Proc rows, the Medic's row 228914, 109482 of type 18, 229304 of type 145, the Esper's type 52 row 199192 and its type 29 row 178144, aimed at the caster with a durationTime, are read, and the two ExoSuit rows of type 112, 112543 and 178142, aimed at the caster with a durationTime and a display, are read too); the whole-game columns are the walk's of 2026-11-05, with types 10, 14, 18, 29, 52, 64, 81, 83, 84, 112, 118 and 145 handled beside the nine; no starting ability's row is of type 10, so the rows handled stay 184"
+    as "196 effect rows are left, 11 of them not handled (the two Proc rows the plan skips, 90 x4, 24 once, the Stalker's 91018 of type 81, behind target apply prerequisite 11311, the two Proxies 121345 and 178429 whose dataBits00 is 0, and the Medic's gain 228918, which ticks every 2000 ms (scratch count over the 196 rows the coverage walk reaches); the five other Proc rows, the Medic's row 228914, 109482 of type 18, 229304 of type 145, the Esper's type 52 row 199192 and its type 29 row 178144, aimed at the caster with a durationTime, are read, and the two ExoSuit rows of type 112, 112543 and 178142, aimed at the caster with a durationTime and a display, are read too); the whole-game columns are the walk's of 2026-11-05, with types 10, 14, 18, 29, 52, 64, 81, 83, 84, 112, 118 and 145 handled beside the nine; no starting ability's row is of type 10, and the Warrior's periodic row 210834 of type 118, aimed at the caster and ticking every 1000 ms for 8000 ms, is read, so 185 rows are handled"
   assert string.contains(
     totals,
     "| Prerequisites (#47) | 232 | 49184 | 47209 | 47 | 79 of 79 |",

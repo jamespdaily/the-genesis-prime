@@ -58,8 +58,6 @@ pub fn tick_at_ms(
 
 /// The tick after `tick` (0 before the first), or `None` after the last.
 pub fn next_tick(schedule schedule: Schedule, tick tick: Int) -> Option(Int) {
-  case tick < schedule.count {
-    True -> Some(tick + 1)
-    False -> None
-  }
+  use <- bool.guard(when: tick >= schedule.count, return: None)
+  Some(tick + 1)
 }
