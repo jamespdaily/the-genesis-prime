@@ -1,0 +1,89 @@
+//// A timed path of a thrown creature (`genesis_prime/world_map/creature_path`). Expected
+//// values come from the client's reading of kind 3 type 0 (`0x140783e10`, the sampler
+//// `SampleTimedPathKeys`): straight lines between the points, the first point held before
+//// the first time and the last held after the last time (`cc_state.forced_move_end`: the
+//// unit keeps the path's last point).
+
+import genesis_prime/game/start_place.{type Place}
+import genesis_prime/world_map/creature_path.{Standing, Timed}
+import gleam/option.{None}
+import owned_test
+import place_support
+
+fn at(x x: Float, y y: Float, z z: Float) -> Place {
+  place_support.at(world_id: 3460, world_zone_id: 6009, x:, y:, z:)
+}
+
+/// (0, 0, 0) at 1000 ms, (10, 0, 0) at 1100 and (10, 0, 20) at 1300.
+fn path() -> creature_path.Path {
+  Timed(
+    first: #(1000, at(x: 0.0, y: 0.0, z: 0.0)),
+    rest: [
+      #(1100, at(x: 10.0, y: 0.0, z: 0.0)),
+      #(1300, at(x: 10.0, y: 0.0, z: 20.0)),
+    ],
+    turned_to: None,
+  )
+}
+
+pub fn a_timed_path_is_linear_between_its_points_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Halfway through the first, 100 ms, segment (at 1050) it has gone 5 of 10 m along x;
+  // halfway through the second, 200 ms, segment (at 1200) it has gone 10 of 20 m along z.
+  assert creature_path.place_at(path: path(), now_ms: 1050)
+    == at(x: 5.0, y: 0.0, z: 0.0)
+  assert creature_path.place_at(path: path(), now_ms: 1100)
+    == at(x: 10.0, y: 0.0, z: 0.0)
+  assert creature_path.place_at(path: path(), now_ms: 1200)
+    == at(x: 10.0, y: 0.0, z: 10.0)
+}
+
+pub fn a_timed_path_holds_its_last_point_after_its_last_time_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert creature_path.place_at(path: path(), now_ms: 1300)
+    == at(x: 10.0, y: 0.0, z: 20.0)
+  assert creature_path.place_at(path: path(), now_ms: 90_000)
+    == at(x: 10.0, y: 0.0, z: 20.0)
+  assert creature_path.place_at(path: path(), now_ms: 400)
+    == at(x: 0.0, y: 0.0, z: 0.0)
+    as "before its first time the unit is at the first point"
+}
+
+pub fn a_timed_path_ends_at_its_last_point_and_last_time_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert creature_path.end(path: path()) == at(x: 10.0, y: 0.0, z: 20.0)
+  assert creature_path.arrives_ms(path: path(), now_ms: 1050) == 1300
+}
+
+pub fn a_timed_path_has_the_velocity_of_its_segment_and_none_outside_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 10 m in 100 ms is 100 m a second along x; 20 m in 200 ms is 100 m a second along z.
+  assert creature_path.velocity(path: path(), now_ms: 1050)
+    == #(100.0, 0.0, 0.0)
+  assert creature_path.velocity(path: path(), now_ms: 1200)
+    == #(0.0, 0.0, 100.0)
+  assert creature_path.velocity(path: path(), now_ms: 1300) == #(0.0, 0.0, 0.0)
+  assert creature_path.velocity(path: path(), now_ms: 500) == #(0.0, 0.0, 0.0)
+}
+
+pub fn the_rest_of_a_timed_path_starts_at_its_place_now_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert creature_path.rest_of(path: path(), now_ms: 1050)
+    == Timed(
+      first: #(1050, at(x: 5.0, y: 0.0, z: 0.0)),
+      rest: [
+        #(1100, at(x: 10.0, y: 0.0, z: 0.0)),
+        #(1300, at(x: 10.0, y: 0.0, z: 20.0)),
+      ],
+      turned_to: None,
+    )
+  assert creature_path.rest_of(path: path(), now_ms: 1200)
+    == Timed(
+      first: #(1200, at(x: 10.0, y: 0.0, z: 10.0)),
+      rest: [#(1300, at(x: 10.0, y: 0.0, z: 20.0))],
+      turned_to: None,
+    )
+  assert creature_path.rest_of(path: path(), now_ms: 1300)
+    == Standing(at: at(x: 10.0, y: 0.0, z: 20.0))
+    as "a path that is run has no rest"
+}

@@ -31,6 +31,7 @@ import genesis_prime/world_map/sight
 import gleam/bool
 import gleam/float
 import gleam/int
+import gleam/list
 import gleam/option.{type Option}
 
 /// A creature's movement: standing at a place, running a straight path from
@@ -60,8 +61,7 @@ pub type Circle {
 pub fn place_at(path path: Path, now_ms now_ms: Int) -> Place {
   case path {
     Standing(at:) -> at
-    Timed(..) ->
-      panic as "shape: a timed path's place is built in the step's code commit"
+    Timed(first:, rest:, ..) -> timed_place_at(first:, rest:, now_ms:)
     Running(from:, to:, started_ms:, speed:) -> {
       let length = distance(from: from, to: to)
       let run = speed *. int.to_float(int.max(0, now_ms - started_ms)) /. 1000.0
@@ -78,8 +78,7 @@ pub fn end(path path: Path) -> Place {
   case path {
     Standing(at:) -> at
     Running(to:, ..) -> to
-    Timed(..) ->
-      panic as "shape: a timed path's end is built in the step's code commit"
+    Timed(first:, rest:, ..) -> last_of(first:, rest:).1
   }
 }
 
@@ -126,8 +125,7 @@ pub fn straight(
 pub fn arrives_ms(path path: Path, now_ms now_ms: Int) -> Int {
   case path {
     Standing(..) -> now_ms
-    Timed(..) ->
-      panic as "shape: a timed path's arrival is built in the step's code commit"
+    Timed(first:, rest:, ..) -> last_of(first:, rest:).0
     Running(from:, to:, started_ms:, speed:) ->
       started_ms
       + float.truncate(float.ceiling(
@@ -140,25 +138,116 @@ pub fn arrives_ms(path path: Path, now_ms now_ms: Int) -> Int {
 /// where the creature is now to the same end at the same speed, a timed path from
 /// its place now and the points still ahead of it, and a standing one itself. What a
 /// viewer that arrives mid-path is sent.
-pub fn rest_of(path path: Path, now_ms _now_ms: Int) -> Path {
+pub fn rest_of(path path: Path, now_ms now_ms: Int) -> Path {
   case path {
     Standing(..) | Running(..) -> path
-    Timed(..) ->
-      panic as "shape: the rest of a timed path is built in the step's code commit"
+    Timed(first:, rest:, turned_to:) ->
+      case list.filter([first, ..rest], fn(point) { point.0 > now_ms }) {
+        [] -> Standing(at: last_of(first:, rest:).1)
+        ahead ->
+          Timed(
+            first: #(now_ms, timed_place_at(first:, rest:, now_ms:)),
+            rest: ahead,
+            turned_to:,
+          )
+      }
   }
 }
 
 /// The creature's velocity along the path at `now_ms` in units a second, the
 /// direction of the path's segment now times its speed; zero when it stands, or
 /// when the path is run.
-pub fn velocity(
-  path path: Path,
-  now_ms _now_ms: Int,
-) -> #(Float, Float, Float) {
+pub fn velocity(path path: Path, now_ms now_ms: Int) -> #(Float, Float, Float) {
   case path {
     Standing(..) -> #(0.0, 0.0, 0.0)
-    Running(..) | Timed(..) ->
-      panic as "shape: a path's velocity is built in the step's code commit"
+    Running(from:, to:, started_ms:, speed:) -> {
+      let length = distance(from:, to:)
+      let run = speed *. int.to_float(int.max(0, now_ms - started_ms)) /. 1000.0
+      case length <=. 0.0 || run >=. length {
+        True -> #(0.0, 0.0, 0.0)
+        False -> {
+          let scale = speed /. length
+          #(
+            { start_place.x(to) -. start_place.x(from) } *. scale,
+            { start_place.y(to) -. start_place.y(from) } *. scale,
+            { start_place.z(to) -. start_place.z(from) } *. scale,
+          )
+        }
+      }
+    }
+    Timed(first:, rest:, ..) -> timed_velocity(first:, rest:, now_ms:)
+  }
+}
+
+/// The last point of a timed path.
+fn last_of(
+  first first: #(Int, Place),
+  rest rest: List(#(Int, Place)),
+) -> #(Int, Place) {
+  case list.last(rest) {
+    Ok(last) -> last
+    Error(Nil) -> first
+  }
+}
+
+/// The two points of the segment a timed path is on at `now_ms`: the last point not
+/// after it and the first point after it. `Error(Nil)` before the first time and after
+/// the last, where the path holds a point.
+fn segment_at(
+  first first: #(Int, Place),
+  rest rest: List(#(Int, Place)),
+  now_ms now_ms: Int,
+) -> Result(#(#(Int, Place), #(Int, Place)), Nil) {
+  case rest {
+    [] -> Error(Nil)
+    [next, ..later] ->
+      case now_ms < first.0 {
+        True -> Error(Nil)
+        False ->
+          case now_ms < next.0 {
+            True -> Ok(#(first, next))
+            False -> segment_at(first: next, rest: later, now_ms:)
+          }
+      }
+  }
+}
+
+fn timed_place_at(
+  first first: #(Int, Place),
+  rest rest: List(#(Int, Place)),
+  now_ms now_ms: Int,
+) -> Place {
+  case segment_at(first:, rest:, now_ms:) {
+    Ok(#(before, after)) ->
+      along(
+        from: before.1,
+        to: after.1,
+        fraction: int.to_float(now_ms - before.0)
+          /. int.to_float(after.0 - before.0),
+      )
+    Error(Nil) ->
+      case now_ms < first.0 {
+        True -> first.1
+        False -> last_of(first:, rest:).1
+      }
+  }
+}
+
+fn timed_velocity(
+  first first: #(Int, Place),
+  rest rest: List(#(Int, Place)),
+  now_ms now_ms: Int,
+) -> #(Float, Float, Float) {
+  case segment_at(first:, rest:, now_ms:) {
+    Ok(#(before, after)) -> {
+      let seconds = int.to_float(after.0 - before.0) /. 1000.0
+      #(
+        { start_place.x(after.1) -. start_place.x(before.1) } /. seconds,
+        { start_place.y(after.1) -. start_place.y(before.1) } /. seconds,
+        { start_place.z(after.1) -. start_place.z(before.1) } /. seconds,
+      )
+    }
+    Error(Nil) -> #(0.0, 0.0, 0.0)
   }
 }
 
@@ -171,7 +260,11 @@ pub fn distance(from first: Place, to second: Place) -> Float {
 }
 
 /// The point `fraction` of the way from `from` to `to`, facing as `from` does.
-fn along(from from: Place, to to: Place, fraction fraction: Float) -> Place {
+pub fn along(
+  from from: Place,
+  to to: Place,
+  fraction fraction: Float,
+) -> Place {
   start_place.moved(
     place: from,
     x: start_place.x(from)
@@ -188,7 +281,7 @@ fn along(from from: Place, to to: Place, fraction fraction: Float) -> Place {
 
 /// `to`, or the point where the segment from `from` to it leaves the circle when
 /// `to` lies outside it. A `from` outside the circle stays where it is.
-fn clipped(from from: Place, to to: Place, circle circle: Circle) -> Place {
+pub fn clipped(from from: Place, to to: Place, circle circle: Circle) -> Place {
   use <- bool.guard(
     when: distance(from: circle.centre, to: to) <=. circle.radius,
     return: to,

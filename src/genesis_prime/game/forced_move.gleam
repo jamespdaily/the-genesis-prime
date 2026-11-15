@@ -63,7 +63,7 @@
 //// | the connection is gone before the timer fires | the timers of the cast go with the connection: nothing is drawn, told or thrown |
 //// | the go struck a creature that is then dead or has stood again | the creature drops the tell (`struck_at_ms`) |
 //// | the tell is in flight and the creature ended | the creature registry finds no process and drops the tell |
-//// //// | the tell reaches a creature that walks home | the fight drops it: a leashed creature takes no strike either |
+//// | the tell reaches a creature that walks home | the fight drops it: a leashed creature takes no strike either |
 //// | the tell reaches a creature that does not run (run speed 0) | the fight drops it |
 //// | the creature crashes in flight | its map's watch ends, every viewer is sent `Gone` and the spawn starts again at home |
 //// | `FlightEnds` fires of an older generation | the fight finds no flight of that generation and does nothing |
@@ -72,9 +72,18 @@
 //// | the creature dies in flight | `FlightEnds` is cancelled, the path is kept and the corpse lies at the landing |
 //// | a viewer arrives in flight, or after it | it is sent the rest of the path, or the 0x262 at the landing |
 
-import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/start_place.{type Facing, type Place}
+import genesis_prime/message/float32
+import genesis_prime/random
 import genesis_prime/table/spell4_effects
 import genesis_prime/world_map/creature_path.{type Circle, type Path}
+import gleam/bool
+import gleam/float
+import gleam/int
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/result
+import gleam_community/maths
 
 /// Where the move goes relative to the reference unit (`Spell4Effects.effectType.3.direction`).
 pub type Way {
@@ -101,7 +110,8 @@ pub type Mover {
   Launch
 }
 
-/// A type 3 row's move, decoded when the plan loads.
+/// A type 3 row's move, decoded when the plan loads. Kind 10 always arcs, which `of_row`
+/// writes as flag 0x10 in `flags`.
 pub type Move {
   Move(
     way: Way,
@@ -130,8 +140,10 @@ pub type Reference {
 
 /// Why a row is no move.
 pub type RowError {
-  /// dataBits00 is not a kind from 0 to 15, or a float column holds no finite float.
+  /// dataBits00 is not a kind from 0 to 15.
   UnknownKind(effect_id: Int, kind: Int)
+  /// A float column (dataBits01, 02, 04, 06) holds infinity or no number.
+  NotAFloat(effect_id: Int, column: String)
 }
 
 /// The bytes a throw draws from the caster's connection seed: two 32-bit words, one for
@@ -139,17 +151,77 @@ pub type RowError {
 /// out, so a delayed throw draws at its own time and no rule keeps random state.
 pub const draw_bytes = 8
 
+/// The flag of dataBits05 that arcs the flight (`0x1405d6e12`).
+const arc_flag = 0x10
+
+/// The flag that stops the move short by no radius.
+const no_radius_flag = 2
+
+/// The flag that faces the creature toward the reference unit.
+const face_reference_flag = 4
+
+/// The flag that faces the creature along its move.
+const face_move_flag = 8
+
 /// The two fractions of the `draw_bytes` bytes drawn: each big-endian 32-bit word as the
 /// fraction below 1 it is (genesis_prime/random `fraction`), the distance's first.
-pub fn draws_of(bytes _bytes: BitArray) -> Draws {
-  panic as "shape: the fractions of a draw are built in the step's code commit"
+pub fn draws_of(bytes bytes: BitArray) -> Draws {
+  let assert <<distance:size(32), angle:size(32), _:bits>> = bytes
+    as "the connection draws draw_bytes bytes"
+  Draws(distance: random.fraction(distance), angle: random.fraction(angle))
 }
 
 /// The move a type 3 row asks for.
-pub fn of_row(
-  row _row: spell4_effects.Spell4Effects,
-) -> Result(Move, RowError) {
-  panic as "shape: decoding a row is built in the step's code commit"
+pub fn of_row(row row: spell4_effects.Spell4Effects) -> Result(Move, RowError) {
+  use #(way, mover) <- result.try(case row.data_bits00 {
+    0 | 7 | 8 -> Ok(#(kind_way(row.data_bits00), AtOnce))
+    1 | 2 -> Ok(#(kind_way(row.data_bits00), AtOnce))
+    3 | 4 | 5 | 6 | 9 | 10 -> Ok(#(kind_way(row.data_bits00), Flight))
+    11 | 12 | 13 | 14 | 15 -> Ok(#(kind_way(row.data_bits00), Launch))
+    kind -> Error(UnknownKind(effect_id: row.id, kind:))
+  })
+  use min_distance <- result.try(float_of(row:, column: "dataBits01"))
+  use max_distance <- result.try(float_of(row:, column: "dataBits02"))
+  use gravity <- result.try(float_of(row:, column: "dataBits04"))
+  use height <- result.try(float_of(row:, column: "dataBits06"))
+  let flags = case row.data_bits00 {
+    10 -> int.bitwise_or(row.data_bits05, arc_flag)
+    _ -> row.data_bits05
+  }
+  Ok(Move(
+    way:,
+    mover:,
+    min_distance:,
+    max_distance:,
+    flight_ms: row.data_bits03,
+    gravity:,
+    flags:,
+    height:,
+  ))
+}
+
+fn kind_way(kind kind: Int) -> Way {
+  case kind {
+    0 | 3 | 11 -> Toward
+    1 | 4 | 12 -> Away
+    2 | 5 | 13 -> Random
+    6 | 7 | 14 -> AlongVelocity
+    _ -> ToUnit
+  }
+}
+
+fn float_of(
+  row row: spell4_effects.Spell4Effects,
+  column column: String,
+) -> Result(Float, RowError) {
+  let number = case column {
+    "dataBits01" -> row.data_bits01
+    "dataBits02" -> row.data_bits02
+    "dataBits04" -> row.data_bits04
+    _ -> row.data_bits06
+  }
+  float32.of_column(number:)
+  |> result.replace_error(NotAFloat(effect_id: row.id, column:))
 }
 
 /// The path the creature takes from `from` at `now_ms`, running at `velocity` (units a
@@ -160,14 +232,216 @@ pub fn of_row(
 /// (a velocity way of a creature that stands, an away way from its own place) gets
 /// `Standing(from)`.
 pub fn path(
-  move _move: Move,
-  draws _draws: Draws,
-  from _from: Place,
-  velocity _velocity: #(Float, Float, Float),
-  radius _radius: Float,
-  reference _reference: Reference,
-  circle _circle: Circle,
-  now_ms _now_ms: Int,
+  move move: Move,
+  draws draws: Draws,
+  from from: Place,
+  velocity velocity: #(Float, Float, Float),
+  radius radius: Float,
+  reference reference: Reference,
+  circle circle: Circle,
+  now_ms now_ms: Int,
 ) -> Path {
-  panic as "shape: the path of a move is built in the step's code commit"
+  let distance =
+    move.min_distance
+    +. draws.distance
+    *. { move.max_distance -. move.min_distance }
+  let wanted =
+    destination(move:, draws:, distance:, from:, velocity:, radius:, reference:)
+  let end = creature_path.clipped(from:, to: wanted, circle:)
+  use <- bool.guard(
+    when: creature_path.distance(from:, to: end) <=. 0.0,
+    return: creature_path.Standing(at: from),
+  )
+  let turn = turn_of(move:, from:, end:, reference:)
+  let arcs = arc_on(move:)
+  let lift = case arcs {
+    True -> arc_height(move:)
+    False -> 0.0
+  }
+  let span = case move.mover, arcs {
+    AtOnce, _ -> 0
+    Launch, True ->
+      float.round(2000.0 *. result.unwrap(float.square_root(lift /. 16.0), 0.0))
+    _, _ -> move.flight_ms
+  }
+  case span < 1 {
+    True ->
+      case turn {
+        None -> creature_path.Standing(at: end)
+        Some(_) ->
+          creature_path.Timed(first: #(now_ms, end), rest: [], turned_to: turn)
+      }
+    False ->
+      creature_path.Timed(
+        first: #(now_ms, from),
+        rest: points(from:, end:, lift:, span:, now_ms:),
+        turned_to: turn,
+      )
+  }
+}
+
+/// Whether the flight arcs: gravity, flag 0x10 (which `of_row` also sets for kind 10).
+fn arc_on(move move: Move) -> Bool {
+  move.gravity != 0.0 || int.bitwise_and(move.flags, arc_flag) != 0
+}
+
+/// The apex height of the arc: dataBits06, or the gravity's `g t^2 / 8` over the flight,
+/// and at least 2 metres.
+fn arc_height(move move: Move) -> Float {
+  let wanted = case move.height >. 0.0 {
+    True -> move.height
+    False -> {
+      let seconds = int.to_float(move.flight_ms) /. 1000.0
+      move.gravity *. seconds *. seconds /. 8.0
+    }
+  }
+  float.max(wanted, 2.0)
+}
+
+/// The points after the first: the end alone for a flight with no arc, else the arc's
+/// nine points of eight segments, spread evenly in time, whose height above the straight
+/// line is `4 h s (1 - s)` for the fraction `s` of the way.
+fn points(
+  from from: Place,
+  end end: Place,
+  lift lift: Float,
+  span span: Int,
+  now_ms now_ms: Int,
+) -> List(#(Int, Place)) {
+  case lift <=. 0.0 {
+    True -> [#(now_ms + span, end)]
+    False ->
+      list.index_map(list.repeat(Nil, arc_segments), fn(_, index) { index + 1 })
+      |> list.map(fn(index) {
+        let fraction = int.to_float(index) /. int.to_float(arc_segments)
+        let line = creature_path.along(from:, to: end, fraction:)
+        #(
+          now_ms + span * index / arc_segments,
+          start_place.moved(
+            place: line,
+            x: start_place.x(line),
+            y: start_place.y(line)
+              +. 4.0
+              *. lift
+              *. fraction
+              *. { 1.0 -. fraction },
+            z: start_place.z(line),
+          ),
+        )
+      })
+  }
+}
+
+const arc_segments = 8
+
+/// Where the move ends before the leash circle clips it, in three dimensions.
+fn destination(
+  move move: Move,
+  draws draws: Draws,
+  distance distance: Float,
+  from from: Place,
+  velocity velocity: #(Float, Float, Float),
+  radius radius: Float,
+  reference reference: Reference,
+) -> Place {
+  let radii = case int.bitwise_and(move.flags, no_radius_flag) {
+    0 -> radius +. reference.radius
+    _ -> 0.0
+  }
+  let gap = creature_path.distance(from:, to: reference.place)
+  case move.way {
+    Toward ->
+      toward_reference(
+        from:,
+        reference:,
+        gap:,
+        travel: float.max(0.0, float.min(distance, gap) -. radii),
+      )
+    ToUnit ->
+      toward_reference(
+        from:,
+        reference:,
+        gap:,
+        travel: float.max(0.0, gap -. radii -. distance),
+      )
+    Away ->
+      case gap <=. 0.0 {
+        True -> from
+        False -> {
+          let scale = distance /. gap
+          start_place.moved(
+            place: from,
+            x: start_place.x(from)
+              +. { start_place.x(from) -. start_place.x(reference.place) }
+              *. scale,
+            y: start_place.y(from)
+              +. { start_place.y(from) -. start_place.y(reference.place) }
+              *. scale,
+            z: start_place.z(from)
+              +. { start_place.z(from) -. start_place.z(reference.place) }
+              *. scale,
+          )
+        }
+      }
+    Random -> {
+      let turn = draws.angle *. 2.0 *. maths.pi()
+      start_place.moved(
+        place: from,
+        x: start_place.x(from) +. distance *. maths.cos(turn),
+        y: start_place.y(from),
+        z: start_place.z(from) +. distance *. maths.sin(turn),
+      )
+    }
+    AlongVelocity ->
+      start_place.moved(
+        place: from,
+        x: start_place.x(from) +. velocity.0 *. distance,
+        y: start_place.y(from) +. velocity.1 *. distance,
+        z: start_place.z(from) +. velocity.2 *. distance,
+      )
+  }
+}
+
+/// The point `travel` along the line from `from` to the reference unit's place.
+fn toward_reference(
+  from from: Place,
+  reference reference: Reference,
+  gap gap: Float,
+  travel travel: Float,
+) -> Place {
+  case gap <=. 0.0 {
+    True -> from
+    False ->
+      creature_path.along(from:, to: reference.place, fraction: travel /. gap)
+  }
+}
+
+/// The way the creature faces at its end: toward the reference unit for flag 4, else
+/// along its move for flag 8, a yaw of `atan2(-dx, -dz)` as the client's facing is read
+/// (genesis_prime/game/area).
+fn turn_of(
+  move move: Move,
+  from from: Place,
+  end end: Place,
+  reference reference: Reference,
+) -> Option(Facing) {
+  case
+    int.bitwise_and(move.flags, face_reference_flag),
+    int.bitwise_and(move.flags, face_move_flag)
+  {
+    0, 0 -> None
+    0, _ -> Some(facing_along(from:, to: end))
+    _, _ -> Some(facing_along(from: end, to: reference.place))
+  }
+}
+
+fn facing_along(from from: Place, to to: Place) -> Facing {
+  start_place.Facing(
+    yaw: float32.rounded(maths.atan2(
+      float.negate(start_place.x(to) -. start_place.x(from)),
+      float.negate(start_place.z(to) -. start_place.z(from)),
+    )),
+    pitch: 0.0,
+    roll: 0.0,
+  )
 }

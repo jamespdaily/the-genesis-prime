@@ -652,14 +652,26 @@ pub fn step(
 /// creature lies dead or has stood again since `struck_at_ms`, the time of the go that
 /// struck its earlier life, which the registry address does not tell apart.
 fn thrown(
-  state _state: State,
-  move _move: forced_move.Move,
-  draws _draws: forced_move.Draws,
-  reference _reference: forced_move.Reference,
-  struck_at_ms _struck_at_ms: Int,
-  now_ms _now_ms: Int,
+  state state: State,
+  move move: forced_move.Move,
+  draws draws: forced_move.Draws,
+  reference reference: forced_move.Reference,
+  struck_at_ms struck_at_ms: Int,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  panic as "shape: a throw is taken in the step's code commit"
+  let struck_before_this_life = case state.stood_again_ms {
+    Some(stood_ms) -> struck_at_ms < stood_ms
+    None -> False
+  }
+  case creature_life.is_dead(life: state.life) || struck_before_this_life {
+    True -> #(state, Effects([]))
+    False ->
+      fought_alone(
+        state:,
+        input: creature_fight.Thrown(move:, draws:, reference:),
+        now_ms:,
+      )
+  }
 }
 
 /// A property modifier of the caster of connection `by` starts on the creature: it is
