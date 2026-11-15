@@ -143,6 +143,7 @@ fn trace(effects effects: List(Effect)) -> List(String) {
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..) -> Error(Nil)
     }
@@ -167,6 +168,7 @@ fn changes(effects effects: List(Effect)) -> List(Bool) {
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..) -> Error(Nil)
     }
@@ -306,6 +308,7 @@ fn goes_apart(
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
       | cast.TickStrike(..)

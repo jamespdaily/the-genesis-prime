@@ -39,10 +39,14 @@ import gleam/option.{type Option}
 pub type Path {
   Standing(at: Place)
   Running(from: Place, to: Place, started_ms: Int, speed: Float)
-  /// The points a throw passes, each at its monotonic time in milliseconds, the
-  /// times rising and at least one point; the creature turns to `turned_to` when it
-  /// has one.
-  Timed(points: List(#(Int, Place)), turned_to: Option(Facing))
+  /// The points a throw passes, each at its monotonic time in milliseconds: `first`
+  /// and then `rest`, so a timed path always has a point, and the times rise along
+  /// them; the creature turns to `turned_to` when it has one.
+  Timed(
+    first: #(Int, Place),
+    rest: List(#(Int, Place)),
+    turned_to: Option(Facing),
+  )
 }
 
 /// The circle a creature's paths stay inside: its spawn's place and the leash

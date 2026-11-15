@@ -1025,7 +1025,8 @@ fn tell_change(
       life,
       client_connection.ChangeEnds(source:),
     )
-    cast.Send(..)
+    cast.ForcedMoveStarts(..)
+    | cast.Send(..)
     | cast.Tell(..)
     | cast.StartTimer(..)
     | cast.CancelTimer(..)

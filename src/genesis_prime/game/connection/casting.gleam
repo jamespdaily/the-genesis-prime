@@ -91,6 +91,7 @@ import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/damage
+import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
 import genesis_prime/game/hit_radius
 import genesis_prime/game/interaction
@@ -1033,6 +1034,21 @@ pub fn cast_effects(
         ],
       )
       cast.TargetChangeEnds(..), None -> #(session, [])
+      cast.ForcedMoveStarts(unit_id:, life:, struck_at_ms:, move:),
+        Some(entered)
+      -> {
+        let #(session, tell) =
+          creature_thrown(
+            session:,
+            entered:,
+            unit_id:,
+            life:,
+            struck_at_ms:,
+            move:,
+          )
+        #(session, [tell])
+      }
+      cast.ForcedMoveStarts(..), None -> #(session, [])
     }
     #(session, list.append(done, more))
   })
@@ -1060,6 +1076,23 @@ fn tells_the_creature(
       change:,
     ),
   ))
+}
+
+/// The throw of the creature `unit_id` of `life`, in the run of the player's map,
+/// through the creature registry with no watch, as a strike's tell goes: the
+/// connection draws `forced_move.draw_bytes` from its seed (`client_connection.draw`),
+/// reads the two fractions (`forced_move.draws_of`), takes the player's place now and
+/// race radius as the `Reference` and tells the creature `TellThrown` with
+/// `struck_at_ms`. The session it returns holds the link after the draw.
+fn creature_thrown(
+  session _session: Session,
+  entered _entered: world_entry.Entered,
+  unit_id _unit_id: Int,
+  life _life: Int,
+  struck_at_ms _struck_at_ms: Int,
+  move _move: forced_move.Move,
+) -> #(Session, Effect(ConnectionEffect(Request))) {
+  panic as "shape: the draw and the tell of a throw are built in the step's code commit"
 }
 
 /// A go asked: its targets are selected from the units the client shows, the
