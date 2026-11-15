@@ -1369,13 +1369,13 @@ pub fn struck_unread_types(
       | UnderCastBy(..)
       | StackCount(..)
       | InCombat(..)
-      | Roll(..)
       | VitalPercent(..)
       | VitalCurrent(..)
       | UnderGroup(..)
       | UnitLevel(..)
       | UnitClass(..) -> option.values([reads_held_state(condition:)])
       Nested(row: None, ..)
+      | Roll(..)
       | ResourceSlot(..)
       | Stealthed(..)
       | PlayerRace(..)
@@ -1547,8 +1547,10 @@ fn condition_check(
   }
 }
 
-/// The type of a condition that reads the casts, combat state, vitals or rolls of its
-/// unit, which a subject known by its place alone does not hold. A nested row decides by
+/// The type of a condition that reads the casts, combat state or vitals of its unit,
+/// which a subject known by its place alone does not hold. A roll is no state of the unit
+/// (`Prerequisite.prerequisiteTypeId.37`: the units are not read), so a type 37 condition
+/// is given its roll for any subject. A nested row decides by
 /// its own conditions, and a resource slot, a stealth and a difficulty that the subject
 /// holds none of are not read by their own check.
 fn reads_held_state(condition condition: Condition) -> Option(Int) {
@@ -1557,13 +1559,13 @@ fn reads_held_state(condition condition: Condition) -> Option(Int) {
     UnderCastBy(..) -> Some(50)
     StackCount(..) -> Some(59)
     InCombat(..) -> Some(28)
-    Roll(..) -> Some(37)
     VitalPercent(..) -> Some(71)
     VitalCurrent(..) -> Some(73)
     UnderGroup(..) -> Some(129)
     UnitLevel(..) -> Some(1)
     UnitClass(..) -> Some(3)
     Nested(..)
+    | Roll(..)
     | IsPlayer(..)
     | ResourceSlot(..)
     | Stealthed(..)

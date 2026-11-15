@@ -5,9 +5,10 @@
 ////   20): comparison 1 passes for a player, comparison 2 for any other unit, any other
 ////   comparison fails.
 //// - The struck unit's subject holds its place and the caster's casts on it, so the types
-////   that read what else a unit holds are `NotRead` for it: 15, 50, 59, 28, 37, 71, 73,
-////   129, 1 and 3 (`condition_check`), and 4, 250 and 179, which read factions and a
-////   difficulty the subject does not hold.
+////   that read what else a unit holds are `NotRead` for it: 15, 50, 59, 28, 71, 73, 129, 1
+////   and 3 (`condition_check`), and 4, 250 and 179, which read factions and a difficulty
+////   the subject does not hold. Type 37 is no such type: it draws a roll for each test and
+////   reads none of the unit's state (`Prerequisite.prerequisiteTypeId.37`).
 
 import genesis_prime/game/prerequisite.{
   type Subject, Fails, NonPlayer, NotRead, OtherPlayer, Passes, TheChecker,
@@ -64,7 +65,7 @@ pub fn is_player_reads_the_first_unit_test() -> Nil {
 
 pub fn struck_unread_types_follow_nested_rows_test() -> Nil {
   use <- owned_test.run(5000)
-  let listed = [15, 50, 59, 28, 37, 71, 73, 129, 1, 3, 4, 250, 179]
+  let listed = [15, 50, 59, 28, 71, 73, 129, 1, 3, 4, 250, 179]
   list.each(listed, fn(type_id) {
     let direct =
       support.single(id: 1, condition: #(type_id, 1, 1, 1))
@@ -84,7 +85,7 @@ pub fn struck_unread_types_follow_nested_rows_test() -> Nil {
         <> " is unread on a struck unit through a nested row"
       }
   })
-  let read = [130, 38, 108, 143, 118, 47, 39]
+  let read = [130, 38, 108, 143, 118, 47, 39, 37]
   list.each(read, fn(type_id) {
     let row = support.row(id: 1, flags: 0, conditions: [#(type_id, 1, 53, 1)])
     let prerequisite =

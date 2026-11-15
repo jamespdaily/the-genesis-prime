@@ -1139,7 +1139,7 @@ pub type PlanError {
   /// modifier or heal row, a caster apply prerequisite, with a condition of a type the
   /// server has not decoded (`prerequisite.unread_types`): the issue "The prerequisite
   /// types effects use that the server does not read yet are read" (#818) reads them.
-  TargetPrerequisiteNotRead(
+  ApplyPrerequisiteNotRead(
     spell4_id: Int,
     effect_id: Int,
     prerequisite_type: Int,
@@ -1338,7 +1338,7 @@ pub fn describe(error error: PlanError) -> String {
       <> " of vital "
       <> int.to_string(vital)
       <> ", and only vitals 6 and 8 are read"
-    TargetPrerequisiteNotRead(spell4_id:, effect_id:, prerequisite_type:) ->
+    ApplyPrerequisiteNotRead(spell4_id:, effect_id:, prerequisite_type:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
       <> " has an effect "
@@ -4186,7 +4186,7 @@ fn applied_condition_of(
   }
   case list.flat_map(caster, prerequisite.unread_types) {
     [prerequisite_type, ..] ->
-      Error(TargetPrerequisiteNotRead(
+      Error(ApplyPrerequisiteNotRead(
         spell4_id: effect.spell_id,
         effect_id: effect.id,
         prerequisite_type:,
@@ -4206,7 +4206,7 @@ fn target_gate_read(
 ) -> Result(Nil, PlanError) {
   case prerequisite.unread_types(prerequisite: target), reach {
     [prerequisite_type, ..], _ ->
-      Error(TargetPrerequisiteNotRead(
+      Error(ApplyPrerequisiteNotRead(
         spell4_id: effect.spell_id,
         effect_id: effect.id,
         prerequisite_type:,

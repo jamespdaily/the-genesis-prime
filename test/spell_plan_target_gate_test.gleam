@@ -20,6 +20,9 @@
 ////   decoded (`prerequisite.is_read`) and the types that read a struck creature's own state
 ////   have no check, so a row behind either is refused at load, naming the issue that will
 ////   read it.
+//// - `Prerequisite.prerequisiteTypeId.37` draws a roll for each test and reads none of the
+////   unit's own state, so a row past the caster behind a type 37 condition plans: the
+////   client's own type 80 remove 173068 (Spell4 41193, target apply 650) is one.
 
 import fixture_tables
 import genesis_prime/game/prerequisite
@@ -94,7 +97,7 @@ pub fn target_gate_with_undecoded_type_is_refused_naming_its_issue_test() -> Nil
   let assert Error(error) = plan_of(spell4_id: 45_273)
     as "a lasting row behind an undecoded target prerequisite is refused at load"
   assert error
-    == spell_plan.TargetPrerequisiteNotRead(
+    == spell_plan.ApplyPrerequisiteNotRead(
       spell4_id: 45_273,
       effect_id: 105_266,
       prerequisite_type: 12,
@@ -124,6 +127,37 @@ pub fn target_gate_reading_struck_state_is_refused_past_the_caster_test() -> Nil
     as "the row keeps its gate"
   assert prerequisite.id(prerequisite) == PrerequisiteId(15_912)
     as "Spell4Effects.55576: prerequisiteIdTargetApply 15912"
+}
+
+pub fn remove_past_the_caster_behind_a_roll_gate_reads_with_its_gate_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kept edit: Prerequisite 13148, the gate of Ruin's remove 144869 (aimed at the area),
+  // made a type 37 condition (comparison 6, value 50: at most 50 of 100,
+  // `Prerequisite.prerequisiteTypeId.37`). That is what the client's own remove 173068
+  // (Spell4 41193, target apply 650) is: a type 80 row past the caster behind a roll
+  // (`table_rows -- Spell4Effects 173068 -- Prerequisite 650`).
+  use tables <- fixture_tables.changed(table: "Prerequisite", id: 13_148, with: [
+    #("prerequisiteTypeId0", planted_table.Integer(37)),
+    #("prerequisiteComparisonId0", planted_table.Integer(6)),
+    #("objectId0", planted_table.Integer(0)),
+    #("value0", planted_table.Integer(50)),
+  ])
+  let assert Ok(row) = spell4_effects.get(tables:, id: Spell4EffectsId(144_869))
+    as "the client's rows hold Ruin's remove"
+  let assert Ok(spell_plan.Applied(spell_plan.PlannedRemove(remove:))) =
+    spell_plan.read_row(
+      tables:,
+      spell_groups: spell_plan.spell_groups(tables:),
+      place: spell_tables.pressed,
+      effect: row,
+    )
+    as "a remove past the caster behind a roll plans: the roll reads no state of the unit it reaches"
+  assert remove.aim == spell_plan.AimsAtArea
+  let assert GatedOnTarget(prerequisite:) = remove.condition
+    as "the remove keeps its roll gate as its target gate"
+  assert prerequisite.id(prerequisite) == PrerequisiteId(13_148)
+  assert prerequisite.rolls_needed(prerequisite:) == 1
+    as "the gate draws one roll for each unit the remove reaches"
 }
 
 pub fn row_with_caster_and_target_gates_keeps_both_test() -> Nil {
@@ -167,7 +201,7 @@ pub fn caster_gate_with_undecoded_type_is_refused_on_a_lasting_row_test() -> Nil
   let assert Error(error) = plan_in(tables:, spell4_id: 30_458)
     as "a lasting row behind an undecoded caster apply prerequisite is refused at load: no go can check it, and a go that cannot tell applies nothing"
   assert error
-    == spell_plan.TargetPrerequisiteNotRead(
+    == spell_plan.ApplyPrerequisiteNotRead(
       spell4_id: 30_458,
       effect_id: caster_gated_row,
       prerequisite_type: 12,

@@ -5034,8 +5034,8 @@ fn creatures_ended(
 /// How many rolls the go of `phase` of the live cast `cast_id` may take once its
 /// round closed with `struck`: one for each type 37 condition among the gates of
 /// the Proxies that start a child and of the gains that may be given
-/// (`prerequisite.rolls_needed`), and, for a row behind a target apply prerequisite that
-/// reaches the caster, one for each type 37 condition of that prerequisite
+/// (`prerequisite.rolls_needed`), and, for a row behind a target apply prerequisite, one
+/// for each type 37 condition of that prerequisite for each unit the row's aim names
 /// (`target_rolls_needed`). The connection draws that many from its seed and no others,
 /// so a go with no type 37 condition moves no roll. A cast that is not live takes none.
 pub fn rolls_needed(
@@ -5056,7 +5056,10 @@ pub fn rolls_needed(
             gates_rolls_needed(caster_gates(condition: proxy.condition))
             + target_rolls_needed(
               condition: proxy.condition,
-              reaches_caster: proxy.target == spell_plan.OnCaster,
+              units_reached: case proxy.target {
+                spell_plan.OnCaster -> 1
+                spell_plan.OnEachStruck -> list.length(hit_units(struck:))
+              },
             )
           }),
           list.map(
@@ -5069,7 +5072,11 @@ pub fn rolls_needed(
               gates_rolls_needed(caster_gates(condition: row.condition))
               + target_rolls_needed(
                 condition: row.condition,
-                reaches_caster: row.aim == spell_plan.AimsAtCaster,
+                units_reached: units_reached(
+                  aim: row.aim,
+                  primary_target: live.primary_target,
+                  struck:,
+                ),
               )
             },
           ),
@@ -5079,7 +5086,11 @@ pub fn rolls_needed(
               gates_rolls_needed(caster_gates(condition: row.condition))
               + target_rolls_needed(
                 condition: row.condition,
-                reaches_caster: row.aim == spell_plan.AimsAtCaster,
+                units_reached: units_reached(
+                  aim: row.aim,
+                  primary_target: live.primary_target,
+                  struck:,
+                ),
               )
             },
           ),
@@ -5089,8 +5100,11 @@ pub fn rolls_needed(
               gates_rolls_needed(caster_gates(condition: row.condition))
               + target_rolls_needed(
                 condition: row.condition,
-                reaches_caster: spell_plan.modifier_aim(modifier: row)
-                  == spell_plan.AimsAtCaster,
+                units_reached: units_reached(
+                  aim: spell_plan.modifier_aim(modifier: row),
+                  primary_target: live.primary_target,
+                  struck:,
+                ),
               )
             },
           ),
@@ -5138,7 +5152,11 @@ pub fn rolls_needed(
               gates_rolls_needed(caster_gates(condition: row.condition))
               + target_rolls_needed(
                 condition: row.condition,
-                reaches_caster: row.aim == spell_plan.AimsAtCaster,
+                units_reached: units_reached(
+                  aim: row.aim,
+                  primary_target: live.primary_target,
+                  struck:,
+                ),
               )
             },
           ),
@@ -5149,18 +5167,35 @@ pub fn rolls_needed(
 }
 
 /// The rolls the target apply prerequisite of a row takes: one for each type 37 condition
-/// of its check on the caster. The check of any other unit takes none, since the caster's
-/// picture holds no roll for it (`prerequisite.check` reads a roll of a unit it knows by
-/// its place alone as not read), and the plan refuses such a gate on a row that reaches a
-/// unit past the caster (`spell_plan.target_gate_read`).
+/// of its check, for each of the `units_reached` its aim names, since the gate is checked
+/// once for each unit in the order of the units and each test draws a roll of its own
+/// (`Prerequisite.prerequisiteTypeId.37`). The count may exceed what a go takes, for a
+/// modifier row left out for a unit it does not apply to takes none; the go leaves the
+/// rolls it did not take.
 fn target_rolls_needed(
   condition condition: spell_plan.Condition,
-  reaches_caster reaches_caster: Bool,
+  units_reached units_reached: Int,
 ) -> Int {
-  case target_gate_of(condition:), reaches_caster {
-    Some(target), True -> prerequisite.rolls_needed(prerequisite: target)
-    Some(_), False | None, _ -> 0
+  case target_gate_of(condition:) {
+    Some(target) ->
+      units_reached * prerequisite.rolls_needed(prerequisite: target)
+    None -> 0
   }
+}
+
+/// How many units a row aimed by `aim` reaches in a round that closed with `struck`
+/// (`units_aimed_at`; which unit the caster is does not change the count).
+fn units_reached(
+  aim aim: spell_plan.Aim,
+  primary_target primary_target: Int,
+  struck struck: List(Struck),
+) -> Int {
+  list.length(spell_plan.units_aimed_at(
+    aim:,
+    caster: primary_target,
+    primary_target:,
+    area: hit_units(struck:),
+  ))
 }
 
 /// The rolls the check of these gates takes: one for each type 37 condition among them.

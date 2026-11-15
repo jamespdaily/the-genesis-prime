@@ -130,6 +130,13 @@ fn listed_by_unit(
   |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
 }
 
+/// The units the steps' gos name as struck, whether or not an effect is listed on them.
+fn struck_units(steps steps: List(ConnectionStep(Request))) -> List(Int) {
+  list.flat_map(steps, fn(taken) { support.heard(taken, support.keyed()) })
+  |> support.decoded(spell_go.message_id, spell_go.decode)
+  |> list.flat_map(fn(go) { list.map(go.targets, fn(info) { info.unit_id }) })
+}
+
 const named_creature = 48_404
 
 const unnamed_creature = 1
@@ -184,6 +191,8 @@ pub fn a_creature_gate_on_an_area_row_lists_the_effect_only_on_the_named_creatur
   let listed = listed_by_unit(steps:)
   assert list.contains(listed, #(42, [area_marker]))
     as "unit 42 is the creature 48404 that gate 20210 names: the go lists the Fluff row on it"
+  assert list.contains(struck_units(steps:), 43)
+    as "unit 43 is among the units the child's go strikes, so its having no entry below is the gate's, not the layout's"
   assert !list.any(listed, fn(entry) { entry.0 == 43 })
     as "unit 43 is creature 1, none of the three the gate names: the go lists no effect on it"
 }

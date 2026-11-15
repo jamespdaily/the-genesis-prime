@@ -22,10 +22,16 @@
 ////   the first unit is the creature of its Creature2 row, and one of comparison 2 when it
 ////   is not; the caster is a player, so comparison 1 fails it and comparison 2 passes it.
 //// - `Prerequisite.prerequisiteTypeId.37`: a type 37 condition takes one roll from 1 to 100
-////   for each check, and Prerequisite 4585 (comparison 6 on 50) passes a roll of at most
-////   50. The server's own rule (not the client's): a unit the caster's picture knows by its
-////   place alone leaves a type 37 unread (`prerequisite.condition_check`), so only a
-////   check of the caster takes a roll.
+////   each time it is tested ("the units and the objectId are not read"), and Prerequisite
+////   4585 (comparison 6 on 50) passes a roll of at most 50. A row behind it is tested once
+////   for each unit it reaches, so each unit takes a roll of its own, in the order of the
+////   units. The client's rows hold 117 type 37 conditions, and 3 rows of Spell4Effects are
+////   behind a target gate that holds one (`table_rows -- Prerequisite
+////   prerequisiteTypeId0=37`, then `-- Spell4Effects prerequisiteIdTargetApply=<id>` for
+////   each): one type 80 remove, 173068 (Spell4 41193, targetFlags 2, past the caster, gate
+////   650: comparison 6 on 50), and two type 4 crowd control rows, 115034 and 176214, which
+////   a plan refuses behind any apply prerequisite (`ControlPrerequisiteNotRead`). The
+////   remove is the one row a plan now reads that it refused before.
 //// - `Prerequisite.prerequisiteTypeId.108`: a unit the caster's picture holds no place for
 ////   leaves a positional condition unread.
 
@@ -175,10 +181,10 @@ pub fn remove_lands_only_on_the_unit_carrying_the_casters_group_test() -> Nil {
 
 // ---- a lasting row aimed at the primary target and the area ----
 
-/// What a go lists when unit 20 and unit 21 are the given creatures, behind gate 20210.
-fn listed_for_creatures(
-  creature_20 creature_20: Int,
-  creature_21 creature_21: Int,
+/// What a go lists when the units given are these creatures, behind gate 20210; the
+/// round strikes unit 20 and unit 21.
+fn listed_for_units(
+  units units: List(#(Int, prerequisite.FirstUnit)),
 ) -> List(#(Int, List(Int))) {
   let spell = lasting_of(spell4_id: 70_611, base: 3, effect_id: 179_592)
   let plans = support.plans_of([spell])
@@ -200,12 +206,20 @@ fn listed_for_creatures(
       struck_of: fn(_) { support.hits([20, 21]) },
       rolls: [],
       poses: dict.new(),
-      units: dict.from_list([
-        #(20, NonPlayer(creature_20)),
-        #(21, NonPlayer(creature_21)),
-      ]),
+      units: dict.from_list(units),
     )
   listed(effects:)
+}
+
+/// What a go lists when unit 20 and unit 21 are the given creatures, behind gate 20210.
+fn listed_for_creatures(
+  creature_20 creature_20: Int,
+  creature_21 creature_21: Int,
+) -> List(#(Int, List(Int))) {
+  listed_for_units(units: [
+    #(20, NonPlayer(creature_20)),
+    #(21, NonPlayer(creature_21)),
+  ])
 }
 
 pub fn is_creature_gate_lands_only_on_the_named_creature_test() -> Nil {
@@ -216,6 +230,60 @@ pub fn is_creature_gate_lands_only_on_the_named_creature_test() -> Nil {
   assert listed_for_creatures(creature_20: 1, creature_21: 48_404)
     == [#(21, [179_592])]
     as "with the creatures swapped the row lands on unit 21 and not on unit 20: the gate reads each unit's own creature, not the first unit or the primary target"
+  assert listed_for_units(units: [
+      #(7, NonPlayer(48_404)),
+      #(20, NonPlayer(1)),
+      #(21, NonPlayer(1)),
+    ])
+    == []
+    as "the caster, unit 7, is the creature 48404 and the units struck are not: the gate reads the units the row reaches, so the row lists nothing"
+}
+
+pub fn a_gate_that_asks_for_another_creature_passes_the_casters_own_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A type 38 condition of comparison 2 passes a first unit that is not the creature; the
+  // caster is a player, so the gate fails a unit that is the creature and would pass the
+  // caster if it were read as the first unit.
+  let spell =
+    spell_plan.Spell(..support.child(spell4_id: 101, base: 3), lasting: [
+      spell_plan.Lasting(
+        ..marker_row(id: 7),
+        condition: GatedOnTarget(
+          prerequisite: prerequisite_support.single(id: 5001, condition: #(
+            38,
+            2,
+            0,
+            48_404,
+          )),
+        ),
+      ),
+    ])
+  let plans = support.plans_of([spell])
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state: cast.new(),
+      caster: support.caster(),
+      bag_index: bag_of_base_3,
+      target: 20,
+      at: 1000,
+    )
+  let #(_, effects) =
+    support.answered_known(
+      caster: support.caster(),
+      state:,
+      effects: raw,
+      at: 1000,
+      struck_of: fn(_) { support.hits([20, 21]) },
+      rolls: [],
+      poses: dict.new(),
+      units: dict.from_list([
+        #(20, NonPlayer(48_404)),
+        #(21, NonPlayer(1)),
+      ]),
+    )
+  assert listed(effects:) == [#(21, [7])]
+    as "unit 20 is the creature 48404 and fails comparison 2, unit 21 is not and passes it: with the caster, a player, as the first unit both would pass"
 }
 
 // ---- a row aimed at the caster ----
@@ -304,7 +372,7 @@ pub fn a_caster_row_behind_a_type_37_target_gate_takes_one_roll_and_lands_when_i
   assert went(51) == [] as "a roll of 51 fails the gate: the row is not applied"
 }
 
-pub fn a_row_past_the_caster_behind_a_type_37_target_gate_takes_no_roll_and_lands_nowhere_test() -> Nil {
+pub fn each_unit_a_row_past_the_caster_reaches_takes_a_roll_of_its_own_in_unit_order_test() -> Nil {
   use <- owned_test.run(60_000)
   let plans = support.plans_of([chance_spell(aim: AimsAtArea)])
   let #(state, raw) =
@@ -317,32 +385,51 @@ pub fn a_row_past_the_caster_behind_a_type_37_target_gate_takes_no_roll_and_land
       at: 1000,
     )
   let assert [asked] = support.goes_asked(effects: raw)
-  let struck = support.hits([20, 21])
+  let struck = support.hits([20, 21, 22])
   assert cast.rolls_needed(
       cast: state,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck:,
     )
-    == 0
-    as "the caster's picture holds no roll for a struck unit, so its check takes none"
-  let #(_, effects) =
-    support.answered_as(
-      caster: support.caster(),
-      state:,
-      effects: raw,
-      at: 1000,
-      struck:,
-      rolls: [],
+    == 3
+    as "Prerequisite 4585 is type 37 and the row reaches three units, each tested once: three rolls"
+  assert cast.rolls_needed(
+      cast: state,
+      cast_id: asked.cast_id,
+      phase: asked.phase,
+      struck: support.hits([20]),
     )
-  assert listed(effects:) == []
-    as "a type 37 condition on a struck unit is not read: the row lands on neither"
+    == 1
+    as "one unit, one roll"
+  let went = fn(rolls) {
+    let #(_, effects) =
+      support.answered_as(
+        caster: support.caster(),
+        state:,
+        effects: raw,
+        at: 1000,
+        struck:,
+        rolls:,
+      )
+    effects
+  }
+  assert listed(effects: went([50, 51, 1])) == [#(20, [7]), #(22, [7])]
+    as "unit 20 takes the first roll 50, which passes comparison 6 on 50, unit 21 the second, 51, which fails, and unit 22 the third, 1, which passes"
+  assert listed(effects: went([51, 50, 100])) == [#(21, [7])]
+    as "the rolls in another order land the row on the other unit: each roll is the next unit's, in the order of the units"
+  assert listed(effects: went([1, 1, 1]))
+    == [#(20, [7]), #(21, [7]), #(22, [7])]
+    as "every roll passes: the row lands on every unit"
+  let none_given = went([50])
+  assert listed(effects: none_given) == [#(20, [7])]
+    as "a unit left without a roll leaves the gate unread, and the row lands only on the unit that had one"
   let lines =
-    list.filter(support.logs(effects:), fn(line) {
+    list.filter(support.logs(effects: none_given), fn(line) {
       line.0 == LogDebug && string.contains(line.1, "type 37")
     })
   assert list.length(lines) == 2
-    as "one debug line for each of the two units says the row is behind a prerequisite of type 37, which is not read"
+    as "one debug line for each of units 21 and 22 says the row is behind a prerequisite of type 37, which is not read"
 }
 
 // ---- a positional gate ----
