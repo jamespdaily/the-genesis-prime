@@ -326,7 +326,7 @@ pub fn begin(
   entropy entropy: BitArray,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  let offence = offence_of(selection:, attacker:, formulas:)
+  let offence = offence_of(blows: selection.blows, attacker:, formulas:)
   let #(strike, told) = controls_told(strike:, selection:, attacker:)
   let #(places, tells) =
     list.index_fold(selection.units, #([], []), fn(so_far, aimed, index) {
@@ -365,21 +365,14 @@ pub fn begin(
                 TellStrike(
                   unit_id: aimed.unit_id,
                   life: aimed.life,
-                  tell: strike_tell.Strike(
+                  tell: tell_of(
                     key: strike_tell.Key(
                       cast_id: selection.asked.cast_id,
                       occasion: strike_tell.AtGo(phase: selection.asked.phase),
                       unit_id: aimed.unit_id,
                     ),
-                    from: step.Connection(attacker.connection),
-                    striker: strike_tell.PlayerStriker(
-                      unit_id: attacker.unit_id,
-                      place: attacker.place,
-                      seq: attacker.move_seq,
-                      stay: attacker.stay,
-                      hit_radius: attacker.hit_radius,
-                      rolls:,
-                    ),
+                    attacker:,
+                    rolls:,
                     offence:,
                     controls:,
                   ),
@@ -388,25 +381,72 @@ pub fn begin(
               ],
             )
             Error(Nil) -> #([LeftOut(unit_id: aimed.unit_id), ..places], [
-              Log(
-                level: step.LogError,
-                text: "a strike had no seed bytes for its unit, which is left out",
-              ),
+              no_seed_bytes,
               ..tells
             ])
           }
       }
     })
+  opened(
+    strike:,
+    asked: ForGo(asked: selection.asked),
+    places: list.reverse(places),
+    tells: list.reverse(tells),
+    now:,
+  )
+}
+
+/// The log of a unit left out for want of seed bytes, which the connection always draws.
+const no_seed_bytes =
+  Log(
+    level: step.LogError,
+    text: "a strike had no seed bytes for its unit, which is left out",
+  )
+
+/// A round begins after the cast's open rounds, its deadline 1 second on, and every
+/// round that is ready closes.
+fn opened(
+  strike strike: State,
+  asked asked: Asked,
+  places places: List(Place),
+  tells tells: List(Effect),
+  now now: Now,
+) -> #(State, List(Effect)) {
   let round =
     Round(
-      asked: ForGo(asked: selection.asked),
-      places: list.reverse(places),
+      asked:,
+      places:,
       struck_at_ms: now.monotonic_ms,
       deadline_ms: now.monotonic_ms + strike_tell.deadline_ms,
     )
   let state = State(..strike, rounds: list.append(strike.rounds, [round]))
   let #(state, settled) = settle(state:, now:)
-  #(state, list.append(list.reverse(tells), settled))
+  #(state, list.append(tells, settled))
+}
+
+/// The strike the player tells a unit: answered to the player's connection, from where it
+/// stands, with its rolls, its offence and the states it tells.
+fn tell_of(
+  key key: strike_tell.Key,
+  attacker attacker: Attacker,
+  rolls rolls: hit.Rolls,
+  offence offence: hit.Offence,
+  controls controls: List(strike_tell.ControlTell),
+) -> Tell {
+  strike_tell.Strike(
+    key:,
+    from: step.Connection(attacker.connection),
+    striker: strike_tell.PlayerStriker(
+      unit_id: attacker.unit_id,
+      place: attacker.place,
+      seq: attacker.move_seq,
+      stay: attacker.stay,
+      hit_radius: attacker.hit_radius,
+      rolls:,
+    ),
+    offence:,
+    controls:,
+  )
 }
 
 /// The periodic damage rows of the go that reach a unit: each row whose aim names it
@@ -441,7 +481,36 @@ pub fn begin_tick(
   entropy entropy: BitArray,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  todo as "#785: a tick's round of one unit"
+  let key =
+    strike_tell.Key(
+      cast_id: asked.cast_id,
+      occasion: strike_tell.AtTick(
+        effect_id: asked.effect_id,
+        go: asked.go,
+        tick: asked.tick,
+      ),
+      unit_id: asked.unit_id,
+    )
+  let #(place, tells) = case rolls_at(entropy:, index: 0) {
+    Ok(rolls) -> #(
+      Waiting(unit_id: asked.unit_id, life: asked.life, ticking: []),
+      [
+        TellStrike(
+          unit_id: asked.unit_id,
+          life: asked.life,
+          tell: tell_of(
+            key:,
+            attacker:,
+            rolls:,
+            offence: offence_of(blows: [asked.blow], attacker:, formulas:),
+            controls: [],
+          ),
+        ),
+      ],
+    )
+    Error(Nil) -> #(LeftOut(unit_id: asked.unit_id), [no_seed_bytes])
+  }
+  opened(strike:, asked: ForTick(asked:), places: [place], tells:, now:)
 }
 
 /// The crowd-control states each selected unit is told: each row of the phase to
@@ -489,14 +558,15 @@ fn controls_told(
   #(strike, list.filter(told, fn(entry) { entry.1 != [] }))
 }
 
+/// The player's offence with these blows, each worked out from the player as it is now.
 fn offence_of(
-  selection selection: Selection,
+  blows blows: List(spell_area.DamageEffect),
   attacker attacker: Attacker,
   formulas formulas: Formulas,
 ) -> hit.Offence {
   let level = attacker.stats.level
   hit.Offence(
-    blows: list.map(selection.blows, fn(effect) {
+    blows: list.map(blows, fn(effect) {
       hit.Blow(
         spell4_effects_id: effect.effect_id.value,
         damage_type: effect.damage_type,
