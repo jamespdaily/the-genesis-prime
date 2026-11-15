@@ -25,7 +25,6 @@ import genesis_prime/table/id.{
 import genesis_prime/table/spell4_effects
 import gleam/list
 import gleam/option.{None}
-import gleam/string
 import owned_test
 import planted_table.{type Cell, Integer}
 import spell_tables
@@ -163,32 +162,32 @@ pub fn a_row_aimed_at_the_primary_target_or_the_area_is_read_test() -> Nil {
   })
 }
 
-pub fn a_row_behind_a_target_apply_prerequisite_is_not_read_test() -> Nil {
+pub fn a_row_behind_a_target_apply_prerequisite_keeps_it_as_its_condition_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Prerequisite 5 as the planted tables hold it: a row aimed at the units a strike hits
-  // behind it would throw units that fail it, so the plan refuses the row until issue 815
-  // reads the gate of a struck unit.
-  assert spell_tables.planned_strike(
-      rows: spell_tables.rows_with_effect(
-        effect: forced_move_row(id: 99_064, target_flags: 2, columns: [
-          #("prerequisiteIdTargetApply", Integer(5)),
-        ]),
-      ),
+  // A planted Prerequisite 99907 of one type 38 condition (comparison 1, Creature2 48404),
+  // which a struck creature can be checked against: the cast checks it for each unit the
+  // row would throw (`cast.strike_gate`).
+  let rows =
+    spell_tables.rows_with_effect(
+      effect: forced_move_row(id: 99_064, target_flags: 2, columns: [
+        #("prerequisiteIdTargetApply", Integer(99_907)),
+      ]),
     )
-    == Error(spell_plan.StruckMoveBehindTargetPrerequisite(
-      spell4_id: strike,
-      effect_id: 99_064,
-    ))
-  let assert Error(error) =
-    spell_tables.planned_strike(
-      rows: spell_tables.rows_with_effect(
-        effect: forced_move_row(id: 99_064, target_flags: 2, columns: [
-          #("prerequisiteIdTargetApply", Integer(5)),
+  let rows =
+    spell_tables.Rows(
+      ..rows,
+      prerequisites: spell_tables.sorted_by_id([
+        spell_tables.prerequisite_row(id: 99_907, flags: 0, conditions: [
+          #(38, 1, 0, 48_404),
         ]),
-      ),
+        ..rows.prerequisites
+      ]),
     )
-  assert string.contains(spell_plan.describe(error:), "issue 815")
-    as "the refusal names the issue that will read it"
+  let assert Ok(spell) = spell_tables.planned_strike(rows:)
+  let assert [row] = spell.struck_moves
+  let assert spell_plan.GatedOnTarget(prerequisite: gate) = row.condition
+  assert prerequisite.id(gate).value == 99_907
+    as "the row is read with the gate it names, not refused"
 }
 
 pub fn a_row_aimed_at_the_caster_and_others_is_read_for_the_caster_test() -> Nil {

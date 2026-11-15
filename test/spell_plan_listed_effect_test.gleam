@@ -17,9 +17,24 @@
 ////   and 7 (11) exist in the game and the plan refuses them, as it does a Fluff row.
 //// - The plan's rule that an effect behind a target apply prerequisite is not applied,
 ////   and CLAUDE.md's "a missing row fails the load".
+//// - `Spell4Effects.effectType.76`: the client swaps and restores the visual itself, so the
+////   server only lists the row in the go with its delay and a lifetime of 0, and the row
+////   is a lasting row, as a Scale row is. The rows read from `table_rows -- Spell4Effects
+////   spellId=<spell>`, kept in the fixture:
+////   - 106570 (Spell4 45726, the Hazmat Suit Locker's activate spell): targetFlags 1, no
+////     delay, no durationTime, flags 2 (until removed), phaseFlags 1, emmComparison 0 and
+////     emmValue 0, no apply prerequisite.
+////   - 43533 to 43538 (Spell4 26567): targetFlags 2, delayTime 333, durationTime 10000,
+////     flags 0, phaseFlags 1; the spell's propertyFlags are 0, so a row's lifetime is its
+////     delay plus its duration, 10333.
+////   - 122321 to 122326 (Spell4 48373, Blessing of Dominus): targetFlags 1, flags 0,
+////     phaseFlags 1, delay and duration 4000/5000, 6000/3000, 2000/7000, 1000/8000,
+////     3000/6000 and 5000/4000 in the order of the ids; propertyFlags 1.
 //// The tests on the client's tables are skipped where it is not on the machine.
 
 import client_tables
+import fixture_tables
+import genesis_prime/coverage/effect_row
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
@@ -38,6 +53,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/set
+import gleam/string
 import owned_test
 import planted_table.{type Cell, Integer}
 import spell_tables
@@ -427,4 +443,177 @@ pub fn the_plans_hold_every_type_18_81_and_145_row_of_the_trees_test() -> Nil {
     assert list.contains(held, id)
       as { "the plan holds the row " <> int.to_string(id) }
   })
+}
+
+// ---- ItemVisualSwap (76) ----
+
+/// The lasting row of this id in the spell's plan.
+fn held_row(spell spell: spell_plan.Spell, id id: Int) -> spell_plan.Lasting {
+  let assert Ok(row) = lasting_row(spell:, id:)
+    as "the plan lists the row among the spell's lasting rows"
+  row
+}
+
+pub fn kind_of_gives_item_visual_swap_for_76_and_it_is_read_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert effect_kind.kind_of(effect_type: 76) == effect_kind.ItemVisualSwap
+    as "Spell.CodeEnumSpellEffectType value 76 'ItemVisualSwap' (Spell4Effects.effectType.76)"
+  assert effect_kind.is_read(effect_type: 76)
+    as "the coverage measure counts the type as handled once the decode names it"
+}
+
+pub fn an_item_visual_swap_row_is_read_for_the_caster_and_for_the_primary_target_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each([1, 2, 4, 6], fn(flags) {
+    assert effect_kind.is_row_read(effect_type: 76, target_flags: flags)
+      as "the client swaps the visual of any unit the effect lands on (Spell4Effects.effectType.76): the caster for 106570 (targetFlags 1), the primary target for 43533 (targetFlags 2)"
+  })
+}
+
+pub fn an_item_visual_swap_row_aimed_at_the_caster_with_flags_2_is_a_lasting_row_held_until_removed_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let spell = spell_tables.client_spell(spell4_id: 45_726)
+  assert lasting_row(spell:, id: 106_570)
+    == Ok(spell_plan.Lasting(
+      effect_id: Spell4EffectsId(106_570),
+      phase_flags: 1,
+      aim: AimsAtCaster,
+      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      condition: Always,
+      tag: spend.EqualTo(value: 0),
+    ))
+    as "`table_rows -- Spell4Effects 106570`: targetFlags 1, delayTime 0, durationTime 0, flags 2, phaseFlags 1, emmComparison 0, emmValue 0, no apply prerequisite"
+}
+
+pub fn an_item_visual_swap_row_aimed_at_the_primary_target_keeps_its_delay_and_duration_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let spell = spell_tables.client_spell(spell4_id: 26_567)
+  list.each([43_533, 43_534, 43_535, 43_536, 43_537, 43_538], fn(id) {
+    let row = held_row(spell:, id:)
+    assert row.aim == AimsAtPrimaryTarget
+      as "`table_rows -- Spell4Effects spellId=26567`: targetFlags 2"
+    assert row.row
+      == LastingRow(delay_ms: 333, duration_ms: 10_000, until_removed: False)
+      as "delayTime 333, durationTime 10000, flags 0"
+    assert lasting.lifetime_of(
+        row: row.row,
+        longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
+      )
+      == 10_333
+      as "the lifetime is the delay plus the duration, 333 + 10000: Spell4 26567 has propertyFlags 0, no 0x2000"
+  })
+}
+
+pub fn the_six_delayed_item_visual_swap_rows_of_48373_are_each_a_lasting_row_ending_at_9000_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let spell = spell_tables.client_spell(spell4_id: 48_373)
+  list.each(
+    [
+      #(122_321, 4000, 5000),
+      #(122_322, 6000, 3000),
+      #(122_323, 2000, 7000),
+      #(122_324, 1000, 8000),
+      #(122_325, 3000, 6000),
+      #(122_326, 5000, 4000),
+    ],
+    fn(client_row) {
+      let #(id, delay_ms, duration_ms) = client_row
+      let row = held_row(spell:, id:)
+      assert row.aim == AimsAtCaster
+        as "`table_rows -- Spell4Effects spellId=48373`: targetFlags 1"
+      assert row.row
+        == LastingRow(delay_ms:, duration_ms:, until_removed: False)
+        as "the row's delayTime and durationTime, flags 0"
+      assert lasting.lifetime_of(
+          row: row.row,
+          longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
+        )
+        == 9000
+        as "each of the six ends 9000 ms after the go: Spell4 48373 has propertyFlags 1, no 0x2000"
+    },
+  )
+}
+
+pub fn the_measure_counts_an_item_visual_swap_row_with_a_delay_not_read_and_one_without_read_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let spell_groups = spell_plan.spell_groups(tables:)
+  let read_of = fn(id) {
+    let assert Ok(effect) = spell4_effects.get(tables:, id: Spell4EffectsId(id))
+      as "the fixture holds the client's row"
+    effect_row.is_read(
+      tables:,
+      spell_groups:,
+      place: spell_tables.pressed,
+      effect:,
+    )
+  }
+  assert read_of(106_570)
+    as "`table_rows -- Spell4Effects 106570`: delayTime 0, so the client applies the swap from the go (InitSpellEffect 0x1405d6880 applies an effect only when its delay is 0, `0x1405d6880.delayed_apply`)"
+  list.each([43_533, 122_321, 122_326], fn(id) {
+    assert !read_of(id)
+      as "delayTime 333 (43533) and 4000 and 5000 (122321, 122326): the client does not apply a delayed row from the go (`0x1405d6880.delayed_apply`), so the measure does not count it read"
+  })
+  let assert Ok(delayed) =
+    spell4_effects.get(tables:, id: Spell4EffectsId(122_321))
+    as "the fixture holds the client's row"
+  assert spell_plan.read_row(
+      tables:,
+      spell_groups:,
+      place: spell_tables.pressed,
+      effect: delayed,
+    )
+    == Ok(
+      spell_plan.Held(
+        spell_plan.PlannedLasting(lasting: held_row(
+          spell: spell_tables.client_spell(spell4_id: 48_373),
+          id: 122_321,
+        )),
+      ),
+    )
+    as "a delayed row stays in the spell's lasting list with its delay, which the go lists, and is Held: no go applies it on the client"
+}
+
+pub fn an_item_visual_swap_row_aimed_by_3_fails_the_load_with_lasting_aim_not_read_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let error =
+    plan_error(
+      row: spell_tables.effect_row_with(
+        id: 99_108,
+        effect_type: 76,
+        target_flags: 3,
+        columns: [],
+      ),
+    )
+  assert error
+    == spell_plan.LastingAimNotRead(
+      spell4_id: strike,
+      effect_id: 99_108,
+      target_flags: 3,
+    )
+    as "targetFlags 3 is not an aim the plan reads (1, 2, 4 or 6), as for a Scale row"
+  assert string.contains(spell_plan.describe(error:), "ItemVisualSwap")
+    as "the refusal's sentence names the kind it refuses"
+}
+
+pub fn an_item_visual_swap_row_behind_a_target_class_prerequisite_is_gated_on_the_target_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Prerequisite 3 is one condition of type 3, comparison 1, value 1
+  // (`table_rows -- Prerequisite 3`).
+  let spell =
+    planned(
+      row: spell_tables.effect_row_with(
+        id: 99_109,
+        effect_type: 76,
+        target_flags: 1,
+        columns: [
+          #("durationTime", Integer(1000)),
+          #("prerequisiteIdTargetApply", Integer(3)),
+        ],
+      ),
+    )
+  let assert GatedOnTarget(prerequisite: gate) =
+    held_row(spell:, id: 99_109).condition
+  assert prerequisite.id(prerequisite: gate) == PrerequisiteId(3)
+    as "an effect behind a target apply prerequisite is checked for each unit it reaches"
 }

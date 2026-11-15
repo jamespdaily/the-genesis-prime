@@ -1229,6 +1229,23 @@ fn strike_begins(
     )
   let #(link, entropy) =
     client_connection.draw(session.link, strike.entropy_needed(selection:))
+  let unit_ids = list.map(selection.units, fn(aimed) { aimed.unit_id })
+  let gate =
+    cast.strike_gate(
+      cast: entered.cast,
+      caster: caster_of(tables:, entered:),
+      poses: shown.poses_of(
+        picture: entered.shown,
+        unit_ids:,
+        now_ms: now.monotonic_ms,
+      ),
+      indexes: shown.checklist_indexes_of(picture: entered.shown, unit_ids:),
+      units: shown.first_units_of(
+        picture: entered.shown,
+        unit_ids:,
+        caster_unit: entered.unit_id,
+      ),
+    )
   let #(updated, effects) =
     strike.begin(
       strike: entered.strike,
@@ -1236,6 +1253,7 @@ fn strike_begins(
       attacker:,
       formulas: rating.formulas(tables:),
       entropy:,
+      gate:,
       now:,
     )
   strike_carried_out(

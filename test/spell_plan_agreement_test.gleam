@@ -110,7 +110,6 @@ fn effect_row_of(error: PlanError) -> Refusal {
     | spell_plan.LastingAimNotRead(effect_id:, ..)
     | spell_plan.ControlStateNotRead(effect_id:, ..)
     | spell_plan.ControlAimNotRead(effect_id:, ..)
-    | spell_plan.ControlPrerequisiteNotRead(effect_id:, ..)
     | spell_plan.ControlPersistenceNotRead(effect_id:, ..)
     | spell_plan.ModifierPropertyHasNoRow(effect_id:, ..)
     | spell_plan.ModifierNumberNotFinite(effect_id:, ..)
@@ -131,7 +130,6 @@ fn effect_row_of(error: PlanError) -> Refusal {
     | spell_plan.ProcKindNotRead(effect_id:, ..)
     | spell_plan.ProcNotRead(effect_id:, ..)
     | spell_plan.DisguiseNotRead(effect_id:, ..)
-    | spell_plan.StruckMoveBehindTargetPrerequisite(effect_id:, ..)
     | spell_plan.StruckMoveNotRead(effect_id:, ..) -> NamesARow(effect_id:)
   }
 }
@@ -398,6 +396,7 @@ fn children_of(
           | effect_kind.ShieldOverload
           | effect_kind.InterruptArmor
           | effect_kind.Scale
+          | effect_kind.ItemVisualSwap
           | effect_kind.RavelSignal
           | effect_kind.PropertyConversion
           | effect_kind.DisguiseOutfit

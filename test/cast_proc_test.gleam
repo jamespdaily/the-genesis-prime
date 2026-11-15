@@ -1911,6 +1911,7 @@ fn periodic() -> List(spell_area.TickingDamage) {
           damage.Parameter(kind: 10, value: 8.14),
         ]),
         threat_multiplier: 1.0,
+        condition: Always,
         tag: spend.always,
       ),
       schedule: ticking.Schedule(

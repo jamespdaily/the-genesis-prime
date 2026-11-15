@@ -586,6 +586,17 @@ pub fn deaths_in(frames frames: List(Frame)) -> List(#(Int, Bool)) {
   })
 }
 
+/// The units each 0x88c among the frames marks dead, in order: the dead ones of
+/// `deaths_in` (opcode.0x88c).
+pub fn dead_in(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(deaths_in(frames:), fn(death) {
+    case death.1 {
+      True -> Ok(death.0)
+      False -> Error(Nil)
+    }
+  })
+}
+
 /// The units each 0x355 among the frames removes, in order (opcode.0x355).
 pub fn removals_in(frames frames: List(Frame)) -> List(Int) {
   list.filter_map(frames, fn(frame) {

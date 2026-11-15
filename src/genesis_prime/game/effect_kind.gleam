@@ -46,6 +46,10 @@
 //// - **Scale** (18) resizes the unit it lands on; the client does all of it, so the
 ////   server lists the row in the go with its life, as a Fluff row is
 ////   (`Spell4Effects.effectType.18`).
+//// - **ItemVisualSwap** (76) swaps the visual of the unit it lands on for its time and
+////   restores it when its node ends; the client does all of it, so the server lists the
+////   row in the go with its delay and no lifetime, sends no 0x933 and keeps no look
+////   (`Spell4Effects.effectType.76`).
 //// - **RavelSignal** (81) signals a script the client does not hold; the client gives
 ////   it no class, so the server lists the row with its life and does no more
 ////   (`Spell4Effects.effectType.81`).
@@ -133,6 +137,9 @@ pub type Kind {
   /// A Scale effect (18): resizes the unit it lands on, any unit
   /// (`Spell4Effects.effectType.18`).
   Scale
+  /// An ItemVisualSwap effect (76): swaps the visual of the unit it lands on and restores
+  /// it when the node ends, all in the client (`Spell4Effects.effectType.76`).
+  ItemVisualSwap
   /// A RavelSignal effect (81): signals a script the client does not hold
   /// (`Spell4Effects.effectType.81`).
   RavelSignal
@@ -184,6 +191,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     14 -> Proc
     52 -> InterruptArmor
     18 -> Scale
+    76 -> ItemVisualSwap
     81 -> RavelSignal
     145 -> PropertyConversion
     112 -> DisguiseOutfit
@@ -212,6 +220,7 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | RemoveStealth
     | Proc
     | Scale
+    | ItemVisualSwap
     | RavelSignal
     | PropertyConversion
     | Heal(..)
@@ -261,6 +270,7 @@ pub fn is_row_read(
     | ForceRemove
     | CrowdControl
     | Scale
+    | ItemVisualSwap
     | RavelSignal
     | Activate -> True
     Unread(..) -> False

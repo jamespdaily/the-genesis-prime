@@ -208,6 +208,7 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
     ])
   let talked =
     objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: a_talk(Creature2Id(talk_target)),
@@ -228,6 +229,7 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
     as "9207 is untouched"
 
   assert objective.advance(
+      reused: set.new(),
       log: talked.log,
       tables:,
       event: a_talk(Creature2Id(talk_target)),
@@ -236,6 +238,7 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
     == Advanced(log: talked.log, effects: [])
     as "a done objective and gated objectives take nothing from a second talk"
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: a_talk(Creature2Id(unnamed)),
@@ -257,6 +260,7 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
     ])
   let late =
     objective.advance(
+      reused: set.new(),
       log: achieved,
       tables:,
       event: a_talk(Creature2Id(talk_target)),
@@ -289,6 +293,7 @@ pub fn a_use_advances_each_open_type_12_objective_naming_the_creature_test() -> 
     ])
   let used =
     objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: a_use(Creature2Id(use_target)),
@@ -314,6 +319,7 @@ pub fn a_use_advances_each_open_type_12_objective_naming_the_creature_test() -> 
       quest_support.accepted(quest_id: 9428, progress: [0, 0]),
     ])
   assert objective.advance(
+      reused: set.new(),
       log: waiting,
       tables:,
       event: a_use(Creature2Id(use_target)),
@@ -372,6 +378,7 @@ pub fn a_kill_advances_each_open_type_2_objective_naming_the_creature_test() -> 
     ])
   let slain =
     objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: killed(creature: kill_target, faction: unlisted_faction),
@@ -394,6 +401,7 @@ pub fn a_kill_advances_each_open_type_2_objective_naming_the_creature_test() -> 
     as "6961 is untouched"
 
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: killed(creature: stranger, faction: unlisted_faction),
@@ -417,6 +425,7 @@ pub fn a_kill_advances_each_open_type_2_objective_naming_the_creature_test() -> 
       ),
     ])
   assert objective.advance(
+      reused: set.new(),
       log: closed,
       tables:,
       event: killed(creature: kill_target, faction: unlisted_faction),
@@ -438,6 +447,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
   use tables <- with_objectives(edits: [])
   let slain =
     objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: killed(creature: group_member, faction: unlisted_faction),
@@ -450,6 +460,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
     ]
     as "a creature in TargetGroup 307 advances the type 8 objective (count 4) and the type 16 one (count 2) alike"
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: killed(creature: stranger, faction: unlisted_faction),
@@ -473,6 +484,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
     ])
   let by_faction =
     objective.advance(
+      reused: set.new(),
       log: factions,
       tables:,
       event: killed(creature: stranger, faction: 248),
@@ -482,6 +494,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
     == [SendProgress(quest_id: 3204, objective_index: 1, progress: 28)]
     as "a unit of Faction2 248 is in the type 3 group: floor(1000 / 35)"
   assert objective.advance(
+      reused: set.new(),
       log: factions,
       tables:,
       event: killed(creature: stranger, faction: 249),
@@ -498,6 +511,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
       quest_support.accepted(quest_id: 1805, progress: [0, 0]),
     ])
   assert objective.advance(
+      reused: set.new(),
       log: clustered,
       tables:,
       event: killed(creature: 4976, faction: unlisted_faction),
@@ -507,6 +521,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
     as "a type 15 objective takes no kill by its data"
   use ranked <- with_objectives(edits: [#(1890, "type", 46)])
   assert objective.advance(
+      reused: set.new(),
       log: clustered,
       tables: ranked,
       event: killed(creature: 4976, faction: unlisted_faction),
@@ -536,6 +551,7 @@ pub fn a_kill_in_an_objectives_reward_pane_counts_test() -> Nil {
     ])
   let slain =
     objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: killed(creature: group_member, faction: unlisted_faction),
@@ -547,6 +563,7 @@ pub fn a_kill_in_an_objectives_reward_pane_counts_test() -> Nil {
   assert kill_masks_of(log: slain.log, quest_id: 1805) == [2, 0, 0, 0, 0, 0]
     as "1890 is type 15, whose reward pane is a named group (TargetGroup.type.1: every creature of the list, each once): 5007 is the group's second entry (5006 is the first), so a kill sets bit 1 of its mask and its progress, which only the server's 0x361 gives the client (opcode.0x361), stays 0 until both are dead: no SendProgress(1805, 0, 500) is sent"
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: killed(creature: stranger, faction: unlisted_faction),
@@ -576,6 +593,7 @@ fn slain(
   creature creature: Int,
 ) -> objective.Advanced {
   objective.advance(
+    reused: set.new(),
     log:,
     tables:,
     event: killed(creature:, faction: unlisted_faction),
@@ -1139,6 +1157,7 @@ pub fn settle_counts_a_visit_once_its_objective_opens_test() -> Nil {
     as "standing in the zone counts nothing while the visit waits for an earlier objective"
   let slain =
     objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: killed(creature: 73_499, faction: unlisted_faction),
@@ -1204,12 +1223,19 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       quest_support.accepted(quest_id: 3741, progress: [0]),
     ])
   let used =
-    objective.advance(log:, tables:, event: a_use(collectible), now_ms: 0)
+    objective.advance(
+      reused: set.new(),
+      log:,
+      tables:,
+      event: a_use(collectible),
+      now_ms: 0,
+    )
   assert used.effects
     == [SendProgress(quest_id: 3741, objective_index: 0, progress: 1)]
     as "one cast of the collectible is one of the six"
   let again =
     objective.advance(
+      reused: set.new(),
       log: used.log,
       tables:,
       event: a_use(collectible),
@@ -1231,6 +1257,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       ),
     ])
   assert objective.advance(
+      reused: set.new(),
       log: done,
       tables:,
       event: a_use(collectible),
@@ -1241,6 +1268,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
   let finished =
     quest_support.log_of(rows: [quest_support.completed(quest_id: 3741, at: 1)])
   assert objective.advance(
+      reused: set.new(),
       log: finished,
       tables:,
       event: a_use(collectible),
@@ -1253,6 +1281,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       quest_support.accepted(quest_id: 1805, progress: [0, 0]),
     ])
   assert objective.advance(
+      reused: set.new(),
       log: other,
       tables:,
       event: a_use(collectible),
@@ -1268,6 +1297,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       quest_support.accepted(quest_id: 5857, progress: [0, 0]),
     ])
   assert objective.advance(
+      reused: set.new(),
       log: waiting,
       tables: named_elsewhere,
       event: a_use(collectible),
@@ -1287,6 +1317,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       ),
     ])
   assert objective.advance(
+      reused: set.new(),
       log: reachable,
       tables: named_elsewhere,
       event: a_use(collectible),
@@ -1295,6 +1326,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
     == [SendProgress(quest_id: 5857, objective_index: 1, progress: 1)]
     as "the same objective counts once the one before it is done"
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables: named_elsewhere,
       event: a_use(collectible),
@@ -1325,6 +1357,7 @@ pub fn a_use_of_a_mine_counts_its_exile_type_5_objective_test() -> Nil {
   // type 5 with count 1 and flags 3 (it waits for objective 0).
   use tables <- with_objectives(edits: [])
   assert objective.advance(
+      reused: set.new(),
       log: exile_mine_log(),
       tables:,
       event: a_use(Creature2Id(73_463)),
@@ -1350,6 +1383,7 @@ pub fn a_use_of_the_same_mine_counts_the_dominion_objective_test() -> Nil {
       ),
     ])
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: a_use(Creature2Id(73_463)),
@@ -1369,6 +1403,7 @@ pub fn a_quest_anim_link_counts_a_type_5_objective_test() -> Nil {
       quest_support.accepted(quest_id: 2020, progress: [0, 0, 0, 0, 0, 0]),
     ])
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: a_use(Creature2Id(4989)),
@@ -1377,6 +1412,7 @@ pub fn a_quest_anim_link_counts_a_type_5_objective_test() -> Nil {
     == [SendProgress(quest_id: 2020, objective_index: 1, progress: 1)]
     as "the link counts whatever the objective's type is"
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: Used(
@@ -1403,6 +1439,7 @@ pub fn a_prerequisite_link_counts_a_type_32_objective_test() -> Nil {
     ])
   let used =
     objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: a_use(Creature2Id(12_321)),
@@ -1412,6 +1449,7 @@ pub fn a_prerequisite_link_counts_a_type_32_objective_test() -> Nil {
     == [SendProgress(quest_id: 3655, objective_index: 0, progress: 1)]
     as "one use is one of the eight"
   assert objective.advance(
+      reused: set.new(),
       log: used.log,
       tables:,
       event: a_use(Creature2Id(12_321)),
@@ -1438,6 +1476,7 @@ pub fn a_use_counts_nothing_once_its_linked_objective_is_done_test() -> Nil {
       ),
     ])
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: a_use(Creature2Id(12_919)),
@@ -1456,6 +1495,7 @@ pub fn a_link_to_an_objective_not_yet_reachable_counts_nothing_test() -> Nil {
       quest_support.accepted(quest_id: 10_518, progress: [0, 0, 0, 0, 0, 0]),
     ])
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: a_use(Creature2Id(73_463)),
@@ -1475,6 +1515,7 @@ pub fn a_link_to_a_type_4_objective_counts_nothing_by_the_link_test() -> Nil {
       quest_support.accepted(quest_id: 2731, progress: [0]),
     ])
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: a_use(Creature2Id(7952)),
@@ -1496,6 +1537,7 @@ pub fn a_nested_prerequisite_link_counts_its_objective_test() -> Nil {
       quest_support.accepted(quest_id: 4975, progress: [0, 0, 0, 0]),
     ])
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: a_use(Creature2Id(19_277)),
@@ -1813,6 +1855,7 @@ pub fn a_cast_of_the_objective_spell_completes_it_test() -> Nil {
     ])
   let cast =
     objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: cast_of(spell: the_first_cast_spell),
@@ -1842,6 +1885,7 @@ pub fn each_cast_counts_one_up_to_the_count_test() -> Nil {
       let number = at + 1
       let cast =
         objective.advance(
+          reused: set.new(),
           log:,
           tables:,
           event: cast_of(spell: the_counted_cast_spell),
@@ -1873,6 +1917,7 @@ pub fn each_cast_counts_one_up_to_the_count_test() -> Nil {
       cast.log
     })
   assert objective.advance(
+      reused: set.new(),
       log: after,
       tables:,
       event: cast_of(spell: the_counted_cast_spell),
@@ -1890,6 +1935,7 @@ pub fn a_cast_of_another_spell_counts_nothing_test() -> Nil {
       quest_support.accepted(quest_id: the_first_cast_quest, progress: [0]),
     ])
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: cast_of(spell: the_first_cast_spell),
@@ -1898,6 +1944,7 @@ pub fn a_cast_of_another_spell_counts_nothing_test() -> Nil {
     != []
     as "row 13884's own spell 40471 counts, so the empty answer below is the other spell's"
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: cast_of(spell: the_gated_cast_spell),
@@ -1924,6 +1971,7 @@ pub fn a_cast_counts_the_open_objective_and_not_one_waiting_on_another_test() ->
     ])
   let cast =
     objective.advance(
+      reused: set.new(),
       log:,
       tables: fixture_tables.shared(),
       event: cast_of(spell: the_shared_cast_spell),
@@ -1945,6 +1993,7 @@ pub fn a_cast_counts_nothing_on_a_quest_not_in_the_active_list_test() -> Nil {
   let tables = fixture_tables.shared()
   let counted =
     objective.advance(
+      reused: set.new(),
       log: quest_support.log_of(rows: [
         quest_support.accepted(quest_id: the_first_cast_quest, progress: [0]),
       ]),
@@ -1957,6 +2006,7 @@ pub fn a_cast_counts_nothing_on_a_quest_not_in_the_active_list_test() -> Nil {
   let nothing = fn(row) {
     let log = quest_support.log_of(rows: [row])
     assert objective.advance(
+        reused: set.new(),
         log:,
         tables:,
         event: cast_of(spell: the_first_cast_spell),
@@ -1997,6 +2047,7 @@ pub fn a_use_of_a_group_unit_counts_a_type_23_objective_test() -> Nil {
   // first), count 8 and flags 4: a use of one of the group counts one.
   use tables <- with_objectives(edits: [])
   assert objective.advance(
+      reused: set.new(),
       log: group_use_log(),
       tables:,
       event: a_use(Creature2Id(72_197)),
@@ -2011,6 +2062,7 @@ pub fn a_use_of_a_unit_outside_the_group_counts_nothing_test() -> Nil {
   // Creature2 73606 is in TargetGroup 14367, not in 14175.
   use tables <- with_objectives(edits: [])
   assert objective.advance(
+      reused: set.new(),
       log: group_use_log(),
       tables:,
       event: a_use(Creature2Id(73_606)),
@@ -2025,6 +2077,7 @@ pub fn each_use_counts_one_toward_a_larger_count_test() -> Nil {
   use tables <- with_objectives(edits: [])
   let count = fn(log, creature) {
     objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: a_use(Creature2Id(creature)),
@@ -2048,6 +2101,7 @@ pub fn the_northern_wilds_terminal_counts_travel_and_its_own_choice_test() -> Ni
   // 73605 and 73606.
   use tables <- with_objectives(edits: [])
   assert objective.advance(
+      reused: set.new(),
       log: bon_voyage_after_the_talk(quest_id: 10_528),
       tables:,
       event: a_use(Creature2Id(73_606)),
@@ -2065,6 +2119,7 @@ pub fn the_everstar_terminal_counts_only_its_own_choice_test() -> Nil {
   use <- owned_test.run(60_000)
   use tables <- with_objectives(edits: [])
   assert objective.advance(
+      reused: set.new(),
       log: bon_voyage_after_the_talk(quest_id: 10_528),
       tables:,
       event: a_use(Creature2Id(73_605)),
@@ -2084,6 +2139,7 @@ pub fn each_dominion_terminal_counts_its_own_choice_test() -> Nil {
   // Isle), the choices of type 23 with flags 33.
   use tables <- with_objectives(edits: [])
   assert objective.advance(
+      reused: set.new(),
       log: bon_voyage_after_the_talk(quest_id: 10_530),
       tables:,
       event: a_use(Creature2Id(74_773)),
@@ -2096,6 +2152,7 @@ pub fn each_dominion_terminal_counts_its_own_choice_test() -> Nil {
     ]
     as "Levian Bay counts the travel and objective 21349"
   assert objective.advance(
+      reused: set.new(),
       log: bon_voyage_after_the_talk(quest_id: 10_530),
       tables:,
       event: a_use(Creature2Id(74_772)),
@@ -2113,6 +2170,7 @@ pub fn a_talk_to_a_terminal_counts_no_type_23_test() -> Nil {
   use <- owned_test.run(60_000)
   use tables <- with_objectives(edits: [])
   assert objective.advance(
+      reused: set.new(),
       log: bon_voyage_after_the_talk(quest_id: 10_528),
       tables:,
       event: a_talk(Creature2Id(73_606)),
@@ -2129,6 +2187,7 @@ pub fn travel_done_leaves_bon_voyage_achieved_test() -> Nil {
   use tables <- with_objectives(edits: [])
   let used =
     objective.advance(
+      reused: set.new(),
       log: bon_voyage_after_the_talk(quest_id: 10_528),
       tables:,
       event: a_use(Creature2Id(73_606)),
@@ -2160,7 +2219,7 @@ fn used_by(
   tables tables: table_store.Tables,
   event event: objective.Event,
 ) -> objective.Advanced {
-  objective.advance(log:, tables:, event:, now_ms: 0)
+  objective.advance(reused: set.new(), log:, tables:, event:, now_ms: 0)
 }
 
 pub fn a_second_use_of_the_same_unit_counts_nothing_test() -> Nil {
@@ -2402,6 +2461,90 @@ pub fn one_use_counts_once_for_each_objective_of_its_set_test() -> Nil {
     as "one use counts for both quests' objectives"
   assert used_by(log: first.log, tables:, event: use_of_unit_7).effects == []
     as "the same use again counts for neither"
+}
+
+pub fn a_second_use_of_the_same_unit_counts_nothing_for_type_12_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 3480's objective 4470 is type 12 on Creature2 11070, count 3
+  // (`table_rows -- QuestObjective 4470`). `0x140550c50` tests the creature id only and
+  // `0x1405517a0` makes no type 12 a checklist, so the once is the server's choice.
+  use tables <- with_objectives(edits: [])
+  let quest = quest_of(id: 3480, tables:)
+  let survivor = Creature2Id(11_070)
+  let ref = fn(unit_id) { quest_support.unit_ref(unit_id:) }
+  let first =
+    used_by(
+      log: fresh(quest_id: 3480),
+      tables:,
+      event: a_use_of(creature: survivor, unit: ref(224)),
+    )
+  assert first.effects
+    == [SendProgress(quest_id: 3480, objective_index: 0, progress: 1)]
+    as "the first use of unit 224 counts one"
+  let again =
+    used_by(
+      log: first.log,
+      tables:,
+      event: a_use_of(creature: survivor, unit: ref(224)),
+    )
+  assert again.effects == [] as "the same unit again counts nothing"
+  assert quest_log.objective_progress(log: again.log, quest:, index: 0) == 1
+    as "and the progress stays 1"
+  let other =
+    used_by(
+      log: again.log,
+      tables:,
+      event: a_use_of(creature: survivor, unit: ref(225)),
+    )
+  assert other.effects
+    == [SendProgress(quest_id: 3480, objective_index: 0, progress: 2)]
+    as "another unit counts the second"
+}
+
+pub fn a_reused_type_12_objective_counts_the_same_unit_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // As above, with objective 4470 in the reuse set, as an objective is whose creature has
+  // fewer spawns than its count (the Design, option C; a server choice).
+  use tables <- with_objectives(edits: [])
+  let survivor = Creature2Id(11_070)
+  let event =
+    a_use_of(creature: survivor, unit: quest_support.unit_ref(unit_id: 224))
+  let reused = set.from_list([4470])
+  let first =
+    objective.advance(
+      reused:,
+      log: fresh(quest_id: 3480),
+      tables:,
+      event:,
+      now_ms: 0,
+    )
+  let again =
+    objective.advance(reused:, log: first.log, tables:, event:, now_ms: 0)
+  assert again.effects
+    == [SendProgress(quest_id: 3480, objective_index: 0, progress: 2)]
+    as "the second use of unit 224 counts the second"
+}
+
+pub fn use_targets_leaves_out_a_used_type_12_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 3480's objective 4470 is type 12 on Creature2 11070; an offered unit is one the
+  // `0xb3` path may start a use of (`cast.activate_unit` refuses an unoffered one).
+  use tables <- with_objectives(edits: [])
+  let survivor = plain_unit(creature: Creature2Id(11_070))
+  let ref = fn(unit_id) { quest_support.unit_ref(unit_id:) }
+  let log = fresh(quest_id: 3480)
+  assert objective.use_targets(log:, tables:)(survivor, 0, ref(7))
+    as "an unused survivor is offered"
+  let used =
+    used_by(
+      log:,
+      tables:,
+      event: a_use_of(creature: Creature2Id(11_070), unit: ref(7)),
+    )
+  let offered = objective.use_targets(log: used.log, tables:)
+  assert !offered(survivor, 0, ref(7))
+    as "the survivor used already is not offered again"
+  assert offered(survivor, 0, ref(8)) as "another survivor is still offered"
 }
 
 pub fn use_targets_leaves_out_a_used_unit_test() -> Nil {
@@ -2694,6 +2837,7 @@ pub fn an_items_use_does_not_advance_a_type_32_objective_test() -> Nil {
       quest_support.accepted(quest_id: 3741, progress: [0]),
     ])
   assert objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: Used(
@@ -2706,7 +2850,13 @@ pub fn an_items_use_does_not_advance_a_type_32_objective_test() -> Nil {
     )
     == Advanced(log:, effects: [])
     as "an item's spell at the collectible is not the creature's own activate cast"
-  assert objective.advance(log:, tables:, event: a_use(collectible), now_ms: 0).effects
+  assert objective.advance(
+      reused: set.new(),
+      log:,
+      tables:,
+      event: a_use(collectible),
+      now_ms: 0,
+    ).effects
     == [SendProgress(quest_id: 3741, objective_index: 0, progress: 1)]
     as "the creature's own activate cast counts it"
 }
@@ -2741,6 +2891,7 @@ pub fn a_kill_that_achieves_a_quest_no_creature_receives_emits_its_server_comple
     ])
   let slain =
     objective.advance(
+      reused: set.new(),
       log:,
       tables:,
       event: killed(creature: kill_target, faction: unlisted_faction),

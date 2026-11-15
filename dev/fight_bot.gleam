@@ -6,7 +6,9 @@
 import game_client
 import genesis_prime/connection/frame.{type Frame}
 import gleam/bool
+import gleam/int
 import gleam/list
+import gleam/string
 
 /// The cast time of Paralytic Surge (Spell4 42352, castTime 0): its go is due at
 /// the press.
@@ -67,6 +69,58 @@ pub fn presses_until_the_target_dies(
   )
 }
 
+/// What the test shows when a press neither struck its target nor was shown missing it:
+/// the gos of the press, the deaths read in the fight and the target's last health, so a
+/// target that was already dead, or a go that selected no unit, names itself.
+fn unstruck_message(
+  target target: Int,
+  cast_id cast_id: Int,
+  pressed pressed: List(Frame),
+  seen seen: List(Frame),
+) -> String {
+  let gos =
+    list.map(game_client.go_targets_in(frames: pressed), fn(go) {
+      "go of cast "
+      <> int.to_string(go.0)
+      <> " on units ["
+      <> string.join(list.map(go.1, int.to_string), " ")
+      <> "]"
+    })
+  let deaths =
+    list.map(game_client.deaths_in(frames: seen), fn(death) {
+      "unit "
+      <> int.to_string(death.0)
+      <> case death.1 {
+        True -> " dead"
+        False -> " alive"
+      }
+    })
+  let health =
+    list.filter(game_client.health_in(frames: seen), fn(health) {
+      health.0 == target
+    })
+    |> list.last
+  let health = case health {
+    Ok(#(_, health, dead)) ->
+      int.to_string(health)
+      <> case dead {
+        True -> " (dead)"
+        False -> ""
+      }
+    Error(Nil) -> "none read"
+  }
+  "a press facing the target strikes it or is shown missing it: the press with client cast id "
+  <> int.to_string(cast_id)
+  <> " at unit "
+  <> int.to_string(target)
+  <> " had the gos ["
+  <> string.join(gos, ", ")
+  <> "], the fight read the deaths ["
+  <> string.join(deaths, ", ")
+  <> "], and the target's last health read is "
+  <> health
+}
+
 /// The same, at most `presses` presses: the frames read and the bytes beyond, the
 /// target's death among them or not, or the press the server refused.
 pub fn presses_at_most(
@@ -108,14 +162,15 @@ pub fn presses_at_most(
     when: refused != [],
     return: Error(Refused(client_cast_id: cast_id, results: refused)),
   )
-  let seen = list.flatten([seen, taken, went, settled])
+  let pressed = list.flatten([taken, went, settled])
+  let seen = list.append(seen, pressed)
   assert list.any(game_client.go_targets_in(frames: seen), fn(go) {
       list.contains(go.1, target)
     })
     || list.any(game_client.missed_in(frames: seen), fn(missed) {
       list.contains(missed.1, target)
     })
-    as "a press facing the target strikes it or is shown missing it"
+    as unstruck_message(target:, cast_id:, pressed:, seen:)
   let dead = list.contains(game_client.deaths_in(frames: seen), #(target, True))
   let at_zero =
     list.any(game_client.health_in(frames: seen), fn(health) {

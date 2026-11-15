@@ -1,6 +1,7 @@
 ID	spellGroupId00	spellGroupId01	spellGroupId02	spellGroupId03	spellGroupId04	spellGroupId05	spellGroupId06	spellGroupId07	spellGroupId08	spellGroupId09	spellGroupId10	spellGroupId11	spellGroupId12	spellGroupId13	spellGroupId14	spellGroupId15	spellGroupId16	spellGroupId17	spellGroupId18	spellGroupId19	spellGroupId20	spellGroupId21	spellGroupId22	spellGroupId23	spellGroupId24	spellGroupId25	spellGroupId26	spellGroupId27	spellGroupId28	spellGroupId29	spellGroupId30	spellGroupId31
 3	26	46	50	6	9	17	20	22	92	134	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
 4	26	46	51	6	9	17	20	22	92	134	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+87	26	46	50	6	9	17	20	23	92	98	34	33	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
 101	6	8	17	20	22	26	46	92	176	184	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
 102	67	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
 103	68	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
@@ -10,6 +11,7 @@ ID	spellGroupId00	spellGroupId01	spellGroupId02	spellGroupId03	spellGroupId04	sp
 318	6	8	19	21	22	26	46	51	94	176	333	247	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
 320	6	8	19	21	22	26	94	47	236	179	237	252	333	345	450	608	715	718	0	0	0	0	0	0	0	0	0	0	0	0	0	0
 321	6	8	19	21	23	26	94	47	235	179	237	246	333	337	609	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+322	7	8	17	94	22	28	32	179	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
 354	26	46	50	6	9	17	20	22	92	33	34	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
 553	6	8	17	20	22	26	365	93	58	176	333	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
 599	26	46	9	6	10	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
