@@ -29,6 +29,7 @@ import genesis_prime/client_connection.{
   CreatureMoved, CreaturePlaced, Health, PeerNews, Targeting, Threat,
 }
 import genesis_prime/game/crowd_control
+import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{
@@ -52,7 +53,8 @@ import genesis_prime/world_map/creature.{type State, Settings}
 import genesis_prime/world_map/creature_fight
 import genesis_prime/world_map/creature_kind.{type Kind, type Kinds, Kind}
 import genesis_prime/world_map/creature_life
-import genesis_prime/world_map/creature_path.{Running}
+import genesis_prime/world_map/creature_path.{Running, Timed}
+import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -60,6 +62,7 @@ import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/dict
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None}
@@ -2097,7 +2100,7 @@ pub fn a_struck_creature_with_no_armor_holds_the_state_its_viewers_get_the_0x87f
     ]
     as "the answer names it, with the time the creature holds it until: its arrival, 10000 + 1000, plus 166 plus 3000"
   assert creature.controlled(state:)
-  assert control_timers(taken) == [#(step.TimerId(10), 3166)]
+  assert control_timers(taken) == [#(step.TimerId(11), 3166)]
     as "one timer for the state, 166 + 3000 from the tell; ids 6n + 4 from 10"
 }
 
@@ -2123,7 +2126,7 @@ pub fn the_state_ends_with_a_0x880_at_arrival_plus_delay_plus_duration_and_not_b
   assert state_news(ended, 2) == [over] && state_news(ended, 5) == [over]
     as "0x880 names the unit's state, the strike's cast and the go's instance id"
   assert !creature.controlled(state:)
-  let #(_, again) = fire(state:, at_ms: 4200, timer: step.TimerId(10))
+  let #(_, again) = fire(state:, at_ms: 4200, timer: step.TimerId(11))
   assert support.effects_of(again) == []
     as "a timer that fires for a state already ended writes nothing"
 }
@@ -2141,13 +2144,13 @@ pub fn two_states_of_one_kind_from_one_caster_are_held_separately_and_two_ending
     )
   assert list.length(state_news(taken, 2)) == 2
     && control_timers(taken)
-    == [#(step.TimerId(10), 2500), #(step.TimerId(16), 2500)]
+    == [#(step.TimerId(11), 2500), #(step.TimerId(18), 2500)]
     as "two 0x87f and a timer for each state"
-  let #(state, first) = fire(state:, at_ms: 3500, timer: step.TimerId(10))
+  let #(state, first) = fire(state:, at_ms: 3500, timer: step.TimerId(11))
   assert list.map(state_news(first, 2), name_of) == ["0x880"]
     && creature.controlled(state:)
     as "one 0x880 for the first, and the second still holds"
-  let #(state, second) = fire(state:, at_ms: 3500, timer: step.TimerId(16))
+  let #(state, second) = fire(state:, at_ms: 3500, timer: step.TimerId(18))
   assert list.map(state_news(second, 2), name_of) == ["0x880"]
     && !creature.controlled(state:)
     as "each ends with its own 0x880, though both end in one millisecond"
@@ -2173,10 +2176,10 @@ pub fn two_players_states_have_two_0x87f_and_two_0x880_each_with_its_own_instanc
     )
   assert list.map(state_news(first, 5), name_of) == ["0x87f"]
     && list.map(state_news(second, 5), name_of) == ["0x87f"]
-  let #(state, one) = fire(state:, at_ms: 3500, timer: step.TimerId(10))
+  let #(state, one) = fire(state:, at_ms: 3500, timer: step.TimerId(11))
   assert list.map(state_news(one, 5), name_of) == ["0x880"]
     && creature.controlled(state:)
-  let #(state, two) = fire(state:, at_ms: 4000, timer: step.TimerId(16))
+  let #(state, two) = fire(state:, at_ms: 4000, timer: step.TimerId(18))
   assert list.map(state_news(two, 5), name_of) == ["0x880"]
     && !creature.controlled(state:)
     as "each state ends with its own 0x880; the creature is held until the later one"
@@ -2200,10 +2203,10 @@ pub fn a_creature_that_dies_stunned_sends_no_0x880_and_a_timer_after_death_write
     )
   assert state_news(killed, 5) == []
     as "the client clears every state at a death: no 0x880"
-  assert list.contains(timers_cancelled(killed), step.TimerId(10))
+  assert list.contains(timers_cancelled(killed), step.TimerId(11))
     as "the state's timer is cancelled"
   assert !creature.controlled(state:)
-  let #(_, late) = fire(state:, at_ms: 3500, timer: step.TimerId(10))
+  let #(_, late) = fire(state:, at_ms: 3500, timer: step.TimerId(11))
   assert support.effects_of(late) == []
     as "a timer already waiting in the mailbox writes nothing"
 }
@@ -3166,7 +3169,7 @@ pub fn a_stale_cast_end_does_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) = fought(viewers: [2])
   let #(state, _, ends) = charge_opened(state:, aggro:)
-  let #(_, old) = fire(state:, at_ms: 5000, timer: step.TimerId(6 * 99 + 3))
+  let #(_, old) = fire(state:, at_ms: 5000, timer: step.TimerId(7 * 99 + 3))
   assert said(old) == [] && timers(old) == []
     as "a cast end of another generation fires while the charge is open: it does nothing"
   let #(state, _) = fire(state:, at_ms: 11_000, timer: ends)
@@ -3174,7 +3177,7 @@ pub fn a_stale_cast_end_does_nothing_test() -> Nil {
   assert said(again) == [] && timers(again) == []
     as "the charge struck already: its cast end fires again and finds no charge"
   let #(_, unknown) =
-    fire(state:, at_ms: 11_060, timer: step.TimerId(6 * 99 + 3))
+    fire(state:, at_ms: 11_060, timer: step.TimerId(7 * 99 + 3))
   assert said(unknown) == [] && timers(unknown) == []
     as "a cast end of a generation no charge holds does nothing"
 }
@@ -4097,4 +4100,401 @@ pub fn a_turret_holding_any_other_state_starts_no_charge_test() -> Nil {
   let #(_, opened) = fire(state:, at_ms: 6000, timer: timer_for(ticked, 3000))
   assert list.contains(said(opened), "0x7ff to 2")
     as "once the Snare has ended the next tick charges"
+}
+
+// ---- a thrown creature (issue 788) ----
+//
+// The throws below are one row's worth: kind 4 (away from the reference unit), 10 m, a
+// flight of 375 ms, flags 0 (the columns of Spell4Effects 73826), the reference unit 5
+// behind the creature along x. The creature at x runs to x + 10 in 375 ms. Player 2 stands
+// 30 off at x = 30, so a chasing beast runs from its spawn toward 30 - 0.5 x 8 = 26 at
+// 10 units a second (`Spell4.5649`'s reach 8, runLand 10.0), and is at x = 10 a second in.
+
+/// The throw of Spell4Effects 73826: 10 m away from a unit at x = -5, over 375 ms.
+fn knockback(at_ms at_ms: Int) -> creature.Message {
+  knockback_from(at_ms:, unit_at: at(-5.0))
+}
+
+/// The same throw away from a unit at `unit_at`.
+fn knockback_from(
+  at_ms at_ms: Int,
+  unit_at unit_at: start_place.Place,
+) -> creature.Message {
+  creature.Thrown(
+    move: forced_move.Move(
+      way: forced_move.Away,
+      mover: forced_move.Flight,
+      min_distance: 10.0,
+      max_distance: 10.0,
+      flight_ms: 375,
+      gravity: 0.0,
+      flags: 0,
+      height: 0.0,
+    ),
+    draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+    reference: forced_move.Reference(place: unit_at, radius: 0.0),
+    struck_at_ms: start_ms + at_ms,
+  )
+}
+
+fn near(left: Float, right: Float) -> Bool {
+  float.absolute_value(left -. right) <. 0.000_001
+}
+
+/// The beast chasing player 2, 30 off, for these viewers, and the step of the aggro.
+fn chasing(
+  viewers viewers: List(Int),
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  tell(
+    state: beast(viewers:),
+    at_ms: 0,
+    message: approached(number: 2, x: 30.0, seq: 1),
+  )
+}
+
+/// The chasing beast thrown 1 s into its run, at x = 10: the state, the step of the throw
+/// and the timer of the flight's end, 375 ms on.
+fn thrown_chasing(
+  viewers viewers: List(Int),
+) -> #(State, ServiceStep(creature.Outgoing), step.TimerId) {
+  let #(state, _) = chasing(viewers:)
+  let #(state, thrown) =
+    tell(state:, at_ms: 1000, message: knockback(at_ms: 1000))
+  #(state, thrown, timer_for(thrown, 375))
+}
+
+/// The path's points as (time, x) pairs.
+fn timed_xs(path path: creature_path.Path) -> List(#(Int, Float)) {
+  let assert Timed(first:, rest:, ..) = path as "the path is a timed path"
+  list.map([first, ..rest], fn(point) { #(point.0, x_of(point.1)) })
+}
+
+pub fn a_thrown_creature_sends_its_viewers_the_flight_once_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, thrown, _) = thrown_chasing(viewers: [2, 5])
+  assert said(thrown) == ["0x638 to 2", "0x638 to 5"]
+    as "one 0x638 for each viewer, and no other news"
+  let assert [CreatureMoved(path:)] = news_to(thrown, 2)
+  let assert [#(first_ms, first_x), #(last_ms, last_x)] = timed_xs(path:)
+  assert first_ms == start_ms + 1000
+    && near(first_x, 10.0)
+    && last_ms == start_ms + 1375
+    && near(last_x, 20.0)
+    as "from where the creature is, 1 s into its run at x = 10, to 10 further away from the unit behind it, 375 ms later"
+  assert news_to(thrown, 5) == news_to(thrown, 2)
+    as "both viewers read the same path"
+  assert list.map(timers(thrown), fn(timer) { timer.1 }) == [375]
+    as "the flight's end is the one timer started"
+  let #(_, moved_on) =
+    tell(state:, at_ms: 1100, message: moved(number: 2, x: 35.0, seq: 2))
+  assert said(moved_on) == []
+    as "the target moving in flight plans no path: the flight is the viewers' only 0x638"
+}
+
+pub fn a_thrown_creature_does_not_chase_or_attack_until_it_lands_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 2 stands 5 off, in reach 8: the tick at 1500 ms would strike. The creature is
+  // thrown at 1400 ms to x = 10, landing at 1775 ms.
+  let #(state, aggro) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, thrown) =
+    tell(state:, at_ms: 1400, message: knockback(at_ms: 1400))
+  let lands = timer_for(thrown, 375)
+  let #(state, ticked) =
+    fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  assert said(ticked) == [] && fights_told(ticked) == []
+    as "the tick in flight starts no round: no 0x7ff and no strike"
+  assert list.map(timers(ticked), fn(timer) { timer.1 }) == [1500]
+    as "the attack tick goes on at its interval"
+  let #(state, moved_off) =
+    tell(state:, at_ms: 1600, message: moved(number: 2, x: 15.0, seq: 2))
+  assert said(moved_off) == []
+    as "the target moving 5 from where the creature will land starts no chase"
+  let #(state, landed) = fire(state:, at_ms: 1775, timer: lands)
+  assert said(landed) == []
+    as "landing in reach of the target sends nothing: a client keeps a timed path's last point"
+  let #(_, struck) = fire(state:, at_ms: 3000, timer: timer_for(ticked, 1500))
+  assert list.contains(said(struck), "0x7ff to 2")
+    as "the next tick after the landing strikes again"
+}
+
+pub fn a_bare_throw_resumes_the_chase_from_the_landing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _, lands) = thrown_chasing(viewers: [2])
+  let #(_, landed) = fire(state:, at_ms: 1375, timer: lands)
+  assert said(landed) == ["0x638 to 2"]
+    as "the landing sends no kind 2: the one 0x638 is the new chase"
+  let assert Running(from:, to:, started_ms:, speed:) = path_sent(landed)
+  assert near(x_of(from), 20.0)
+    && x_of(to) == 26.0
+    && started_ms == start_ms + 1375
+    && speed == 10.0
+    as "from the landing at x = 20 toward 30 - 0.5 x 8, at run speed 10"
+}
+
+/// The creature the sim turret is, but running at 10 and of an ordinary unit type, so
+/// that a throw moves it: Spell4 85469's charge, opened at 3000 ms, ending 8000 ms later.
+fn charger(viewers viewers: List(Int)) -> State {
+  let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
+  let assert Ok(kind) =
+    dict.get(spawn_support.turret_kinds().by_creature, 73_494)
+    as "migrations 0029 gives the Exile turret its kind"
+  started_from(
+    source: spawn_source.Stored(id: SpawnId(1)),
+    spawn: Spawn(
+      ..spawn,
+      unit_type: creature_unit_type.NonPlayer,
+      combat: creature_life.Combat(
+        ..spawn.combat,
+        attack: creature_life.Attack(..spawn.combat.attack, run_speed: 10.0),
+      ),
+    ),
+    kind:,
+    viewers:,
+    armor: creature_life.NoArmor,
+  )
+}
+
+pub fn a_throw_breaks_an_open_charge_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    tell(
+      state: charger(viewers: [2]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: 0.0, z: -10.0, seq: 1),
+    )
+  let #(state, opened, ends) = charge_opened(state:, aggro:)
+  let #(state, thrown) =
+    tell(state:, at_ms: 4000, message: knockback(at_ms: 4000))
+  assert said(thrown) == ["0x7f9 to 2", "0x638 to 2"]
+    as "the charge is broken as a state breaks it, then the flight is sent"
+  let assert [client_connection.CastInterrupted(cast_id:)] =
+    list.filter(news_to(thrown, 2), fn(news) { name_of(news) == "0x7f9" })
+  assert cast_id == cast_id_sent(opened, 2)
+    as "of the cast the viewer was told the start of"
+  assert timers_cancelled(thrown) == [ends]
+    as "the charge's cast end is cancelled"
+  assert list.map(timers(thrown), fn(timer) { timer.1 })
+    |> list.sort(int.compare)
+    == [375, 3000]
+    as "the flight's end and the next attack tick, the kind's interval"
+  let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
+  assert said(went) == [] && timers(went) == []
+    as "the cast end that fires all the same strikes nobody"
+}
+
+pub fn a_throw_that_moves_the_creature_nowhere_leaves_an_open_charge_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    tell(
+      state: charger(viewers: [2]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: 0.0, z: -10.0, seq: 1),
+    )
+  let #(state, _, ends) = charge_opened(state:, aggro:)
+  // Away from a unit at the creature's own place has no way to go: the creature is not moved.
+  let #(_, thrown) =
+    tell(
+      state:,
+      at_ms: 4000,
+      message: knockback_from(at_ms: 4000, unit_at: at(0.0)),
+    )
+  assert said(thrown) == [] && timers(thrown) == []
+    as "no path, no timer and no 0x7f9: the creature moved nowhere"
+  assert !list.contains(timers_cancelled(thrown), ends)
+    as "the charge's cast end stays"
+}
+
+pub fn a_state_landing_mid_flight_lets_the_flight_finish_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _, lands) = thrown_chasing(viewers: [2])
+  let #(_, stunned) =
+    tell(
+      state:,
+      at_ms: 1100,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  assert list.contains(said(stunned), "0x87f to 2")
+    as "the state took hold on the flying creature"
+  assert !list.contains(said(stunned), "0x638(placed) to 2")
+    as "its flight is not stopped: no kind 2 where it is"
+  assert !list.contains(timers_cancelled(stunned), lands)
+    as "and its landing stays timed"
+}
+
+pub fn a_flight_ending_while_a_state_holds_does_not_resume_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _, lands) = thrown_chasing(viewers: [2])
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 1100,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let #(state, landed) = fire(state:, at_ms: 1375, timer: lands)
+  assert said(landed) == [] && timers(landed) == []
+    as "the stunned creature lands and starts no chase"
+  let #(_, ended) = fire(state:, at_ms: 3700, timer: timer_for(stunned, 2500))
+  let assert Running(from:, ..) = path_sent(ended)
+    as "when the state ends it chases again"
+  assert near(x_of(from), 20.0) as "from where it landed"
+}
+
+pub fn a_state_ending_mid_flight_does_not_resume_until_the_landing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _, lands) = thrown_chasing(viewers: [2])
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 1050,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.holding(
+          state: crowd_control_state.Stun,
+          duration_ms: 100,
+          instance_id: 28_673,
+        ),
+      ]),
+    )
+  let #(state, ended) =
+    fire(state:, at_ms: 1150, timer: timer_for(stunned, 100))
+  assert list.contains(said(ended), "0x880 to 2") as "the state ends in flight"
+  assert !list.contains(said(ended), "0x638 to 2")
+    as "and the creature starts no chase before it lands"
+  let #(_, landed) = fire(state:, at_ms: 1375, timer: lands)
+  assert said(landed) == ["0x638 to 2"] as "it chases at the landing"
+}
+
+pub fn a_leash_in_flight_walks_home_from_the_landing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _, lands) = thrown_chasing(viewers: [2, 5])
+  let #(state, leashed) =
+    tell(state:, at_ms: 1100, message: creature.Unwatched(by: ConnectionId(2)))
+  assert list.contains(said(leashed), "0x89a(0) to 5")
+    as "the only player on the threat list is gone: the creature leashes"
+  assert !list.contains(said(leashed), "0x638 to 5")
+    && !list.contains(said(leashed), "0x638(placed) to 5")
+    as "the flight is not replaced by a walk from where the arc is"
+  assert !list.contains(timers_cancelled(leashed), lands)
+    && timers(leashed) == []
+    as "the landing stays timed and no walk or home timer starts in flight"
+  let #(_, landed) = fire(state:, at_ms: 1375, timer: lands)
+  let assert [CreatureMoved(path: Running(from:, to:, started_ms:, ..))] =
+    news_to(landed, 5)
+    as "at the landing the creature walks home, and the one watcher left is sent it"
+  assert near(x_of(from), 20.0)
+    && x_of(to) == 0.0
+    && started_ms == start_ms + 1375
+    as "from the landing at x = 20 to its spawn"
+  assert list.length(timers(landed)) == 1 as "with the home timer of that walk"
+}
+
+pub fn a_second_throw_mid_flight_starts_from_where_the_first_had_reached_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _, first_lands) = thrown_chasing(viewers: [2])
+  // 150 ms into the 375 ms flight from x = 10 to 20: 0.4 of the way, at x = 14.
+  let #(_, second) = tell(state:, at_ms: 1150, message: knockback(at_ms: 1150))
+  assert said(second) == ["0x638 to 2"]
+  let assert [CreatureMoved(path:)] = news_to(second, 2)
+  let assert [#(first_ms, first_x), #(last_ms, last_x)] = timed_xs(path:)
+  assert first_ms == start_ms + 1150
+    && near(first_x, 14.0)
+    && last_ms == start_ms + 1525
+    && near(last_x, 24.0)
+    as "from x = 14 to 10 further, over 375 ms from the second throw"
+  assert timers_cancelled(second) == [first_lands]
+    as "the first flight's end is cancelled"
+  assert list.map(timers(second), fn(timer) { timer.1 }) == [375]
+}
+
+pub fn a_stale_flight_end_does_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _, first_lands) = thrown_chasing(viewers: [2])
+  let #(state, second) =
+    tell(state:, at_ms: 1150, message: knockback(at_ms: 1150))
+  let #(state, _) =
+    tell(state:, at_ms: 1300, message: moved(number: 2, x: 50.0, seq: 2))
+  let #(state, stale) = fire(state:, at_ms: 1375, timer: first_lands)
+  assert said(stale) == [] && timers(stale) == []
+    as "the first flight's end, of an older generation, does nothing"
+  let #(state, still_flying) =
+    tell(state:, at_ms: 1400, message: moved(number: 2, x: 51.0, seq: 3))
+  assert said(still_flying) == []
+    as "the creature is still in its second flight: the stale end did not land it"
+  let #(_, landed) = fire(state:, at_ms: 1525, timer: timer_for(second, 375))
+  assert said(landed) == ["0x638 to 2"]
+    as "the second flight's own end lands the creature, and it chases the target at 51"
+}
+
+pub fn a_creature_killed_mid_flight_lies_at_the_landing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _, lands) = thrown_chasing(viewers: [2, 5])
+  let #(state, killed) =
+    tell(
+      state:,
+      at_ms: 1100,
+      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 60, 1.0)]),
+    )
+  assert !list.contains(said(killed), "0x638(placed) to 5")
+    as "no kind 2: the viewers' kind 3 path holds its last point"
+  assert timers_cancelled(killed) == [lands] as "the flight's end is cancelled"
+  let #(_, watched) =
+    tell(
+      state:,
+      at_ms: 3000,
+      message: creature.Watched(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
+    )
+  let assert [CreatureAppeared(place:, ..), ..] = news_to(watched, 9)
+  assert near(x_of(place), 20.0)
+    as "a viewer arriving later finds the corpse at the landing"
+}
+
+pub fn an_arriving_viewer_mid_flight_is_sent_the_rest_of_the_path_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _, _) = thrown_chasing(viewers: [2])
+  // 100 ms into the flight from x = 10 to 20: x = 10 + 10 x 100 / 375.
+  let #(_, watched) =
+    tell(
+      state:,
+      at_ms: 1100,
+      message: creature.Watched(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
+    )
+  assert list.map(news_to(watched, 9), name_of)
+    == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x638"]
+    as "the creature in combat, its target, and its flight"
+  let assert [CreatureAppeared(place:, ..), _, _, CreatureMoved(path:)] =
+    news_to(watched, 9)
+  assert near(x_of(place), 10.0 +. 10.0 *. 100.0 /. 375.0)
+    as "it appears where it is in the flight"
+  let assert [#(first_ms, first_x), #(last_ms, last_x)] = timed_xs(path:)
+  assert first_ms == start_ms + 1100
+    && near(first_x, 10.0 +. 10.0 *. 100.0 /. 375.0)
+    && last_ms == start_ms + 1375
+    && near(last_x, 20.0)
+    as "the rest of the path: from there, now, to the landing"
+}
+
+pub fn a_turret_is_not_thrown_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The sim turret's run speed is 0: a creature that never moves ignores a throw.
+  let #(state, aggro) = fought(viewers: [2])
+  let #(state, thrown) =
+    tell(state:, at_ms: 100, message: knockback(at_ms: 100))
+  assert said(thrown) == [] && timers(thrown) == []
+    as "no path, no timer, no news"
+  let #(_, opened) = fire(state:, at_ms: 3000, timer: timer_for(aggro, 3000))
+  assert said(opened) == ["0x7ff to 2"] as "and the fight goes on as it was"
 }

@@ -110,6 +110,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     removes: [],
     modifiers: [],
     forced_moves: [],
+    struck_moves: [],
     cooldown_groups: [],
     cooldown_modifiers: [],
     controls: [],
@@ -382,6 +383,7 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
       | cast.TickStrike(..)
@@ -407,6 +409,7 @@ pub fn shortcut_casts(effects effects: List(Effect)) -> List(Effect) {
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.TickStrike(..)
       | cast.StealthChanged(..) -> False
@@ -430,6 +433,7 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
       | cast.TickStrike(..)
@@ -456,6 +460,7 @@ pub fn caster_change_ends(
       | cast.CasterChangeStarts(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
       | cast.TickStrike(..)
@@ -482,6 +487,7 @@ pub fn caster_change_starts(
       | cast.Log(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
       | cast.TickStrike(..)
@@ -515,7 +521,8 @@ pub fn target_changes(effects effects: List(Effect)) -> List(Effect) {
   list.filter(effects, fn(effect) {
     case effect {
       cast.TargetChangeStarts(..) | cast.TargetChangeEnds(..) -> True
-      cast.Send(..)
+      cast.ForcedMoveStarts(..)
+      | cast.Send(..)
       | cast.Tell(..)
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
@@ -540,6 +547,40 @@ pub fn target_timeline(
 ) -> List(#(Int, Effect)) {
   list.flat_map(fired, fn(step) {
     list.map(target_changes(effects: step.1), fn(change) { #(step.0, change) })
+  })
+}
+
+/// The throws the effects tell creatures, in order.
+pub fn throws(effects effects: List(Effect)) -> List(Effect) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      cast.ForcedMoveStarts(..) -> True
+      cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
+      | cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.CancelTimer(..)
+      | cast.Strike(..)
+      | cast.Pay(..)
+      | cast.Gain(..)
+      | cast.Log(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
+      | cast.Activated(..)
+      | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
+      | cast.StealthChanged(..) -> False
+    }
+  })
+}
+
+/// The time each step's effects were taken at, with each throw they tell, in order.
+pub fn throw_timeline(
+  fired fired: List(#(Int, List(Effect))),
+) -> List(#(Int, Effect)) {
+  list.flat_map(fired, fn(step) {
+    list.map(throws(effects: step.1), fn(throw) { #(step.0, throw) })
   })
 }
 
@@ -859,6 +900,7 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
       | cast.TickStrike(..)
@@ -940,6 +982,7 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
       | cast.TickStrike(..)
@@ -964,6 +1007,7 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
       | cast.TickStrike(..)
@@ -988,6 +1032,7 @@ pub fn goes_asked(effects effects: List(Effect)) -> List(cast.GoAsked) {
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
       | cast.TickStrike(..)
@@ -1012,6 +1057,7 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
       | cast.TickStrike(..)
@@ -1036,6 +1082,7 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
       | cast.TickStrike(..)
@@ -1239,6 +1286,7 @@ pub fn answered_known(
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
       | cast.TickStrike(..)

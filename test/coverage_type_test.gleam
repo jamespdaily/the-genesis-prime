@@ -198,7 +198,7 @@ pub fn the_effect_types_the_measure_handles_are_1_3_4_7_8_10_11_14_17_18_26_29_5
       118,
       145,
     ]
-    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster (Spell4Effects.effectType.3.player), CCStateSet 4 (Spell4Effects.effectType.4), Activate 7 (Spell4Effects.effectType.7, the activate spell of a creature the player right-clicked), Damage 8, Heal 10 for the rows that reach the caster (Spell4Effects.effectType.10), UnitPropertyModifier 11 for the rows aimed at the caster or at struck units (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Scale 18 (Spell4Effects.effectType.18), Proxy 26 (Spell4Effects.effectType.26), ShieldOverload 64 for the rows aimed at the area (Spell4Effects.effectType.64), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73), ItemVisualSwap 76 (Spell4Effects.effectType.76), SpellForceRemove 80 (Spell4Effects.effectType.80), RavelSignal 81 (Spell4Effects.effectType.81), Stealth 83 (Spell4Effects.effectType.83), RemoveStealth 84 (Spell4Effects.effectType.84), DisguiseOutfit 112 for the rows aimed at the caster (Spell4Effects.effectType.112), UnitPropertyConversion 145 for the rows aimed at the caster (Spell4Effects.effectType.145) and Proc 14 (Spell4Effects.effectType.14) for the rows aimed at the caster, HealShields 118 (Spell4Effects.effectType.118) for the rows that reach the caster, and ModifyInterruptArmor 52 (Spell4Effects.effectType.52) and Absorption 29 (Spell4Effects.effectType.29) for the rows that reach the caster; every other type is unread"
+    as "the server reads VitalModifier 1 (Spell4Effects.effectType.1), ForcedMove 3 for the rows aimed at the caster, the target or the area (Spell4Effects.effectType.3.player, Spell4Effects.effectType.3.other_unit), CCStateSet 4 (Spell4Effects.effectType.4), Activate 7 (Spell4Effects.effectType.7, the activate spell of a creature the player right-clicked), Damage 8, Heal 10 for the rows that reach the caster (Spell4Effects.effectType.10), UnitPropertyModifier 11 for the rows aimed at the caster or at struck units (Spell4Effects.effectType.11.change), Fluff 17 (Spell4Effects.effectType.17), Scale 18 (Spell4Effects.effectType.18), Proxy 26 (Spell4Effects.effectType.26), ShieldOverload 64 for the rows aimed at the area (Spell4Effects.effectType.64), ModifySpellCooldown 73 for the rows aimed at the caster (Spell4Effects.effectType.73), ItemVisualSwap 76 (Spell4Effects.effectType.76), SpellForceRemove 80 (Spell4Effects.effectType.80), RavelSignal 81 (Spell4Effects.effectType.81), Stealth 83 (Spell4Effects.effectType.83), RemoveStealth 84 (Spell4Effects.effectType.84), DisguiseOutfit 112 for the rows aimed at the caster (Spell4Effects.effectType.112), UnitPropertyConversion 145 for the rows aimed at the caster (Spell4Effects.effectType.145) and Proc 14 (Spell4Effects.effectType.14) for the rows aimed at the caster, HealShields 118 (Spell4Effects.effectType.118) for the rows that reach the caster, and ModifyInterruptArmor 52 (Spell4Effects.effectType.52) and Absorption 29 (Spell4Effects.effectType.29) for the rows that reach the caster; every other type is unread"
 }
 
 pub fn the_prerequisite_types_the_measure_handles_are_the_thirty_five_read_and_those_with_no_case_test() -> Nil {
@@ -337,7 +337,7 @@ pub fn each_decoded_type_not_handled_is_listed_with_its_reason_and_a_fact_key_th
     |> list.sort(int.compare)
   }
   assert missing_of("Spell effects") == [90]
-    as "the trace's effect type of the starting abilities that no rule reads: charges 90; proc 14 is read for the kinds the holder's own events make and listed as partial; forced move 3, property modifier 11 and cooldown change 73 are read for the rows aimed at the caster and listed as partial"
+    as "the trace's effect type of the starting abilities that no rule reads: charges 90; proc 14 is read for the kinds the holder's own events make and listed as partial; forced move 3 and property modifier 11 are read for the rows aimed at the caster or at struck units, cooldown change 73 for the rows aimed at the caster, and all three are listed as partial"
   assert missing_of("Spend-scaled costs") == [2, 5, 9, 10, 11]
     as "the innate cost EMM ids besides 4 and 7 that the rows hold"
   assert missing_of("Prerequisites") == []
@@ -431,7 +431,7 @@ pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_76_80_81_83_84_112_118_and_
       ),
       Missing(
         type_number: 3,
-        reason: "rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
+        reason: "rows aimed at another unit behind a target apply prerequisite, which the plan refuses (#815); rows aimed by a union flag, 3, 5 or 7, whose part aimed at others is left out (#794); rows behind a prerequisite whose conditions the plan cannot check (#817, #818)",
         fact_key: "Spell4Effects.effectType.3",
       ),
       Missing(
@@ -606,48 +606,54 @@ pub fn the_spell_effect_engine_reads_type_76_and_names_its_gap_test() -> Nil {
     as "InitSpellEffect 0x1405d6880 calls the apply slot only when the delay is 0"
 }
 
-pub fn the_type_3_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
+pub fn the_type_3_rows_aimed_at_other_units_behind_a_target_prerequisite_are_counted_as_not_handled_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
-  // Spell4Effects.targetFlags: bit 1 is the caster; the plan reads a type 3 row that
-  // includes it (flags 1, 3, 5 and 7) and leaves out one aimed only at others (2, 4 and
-  // 6), which the server's 0x638 would move (Spell4Effects.effectType.3.other_unit).
-  // Planted: five type 3 rows, flags 1, 5, 2, 4 and 6, and one type 8 row.
-  let row = fn(id, type_, flags) {
+  // Spell4Effects.targetFlags: bit 1 is the caster, 2 the cast's target, 4 the units the
+  // area struck and 6 both. The plan reads a type 3 row aimed at the caster or at those
+  // units (Spell4Effects.effectType.3.other_unit) and refuses one aimed at them behind a
+  // target apply prerequisite (#815). Planted: type 3 rows with flags 1, 5, 2, 4 and 6,
+  // two more with flags 2 and 4 behind target apply prerequisite 11311, and one type 8 row.
+  let row = fn(id, type_, flags, prerequisite) {
     planted_table.row(spell4_effects.schema, [
       #("ID", planted_table.Integer(id)),
       #("effectType", planted_table.Integer(type_)),
       #("targetFlags", planted_table.Integer(flags)),
+      #("prerequisiteIdTargetApply", planted_table.Integer(prerequisite)),
     ])
   }
   let measured =
-    measure_planted(rows: [
-      row(1, 3, 1),
-      row(2, 3, 5),
-      row(3, 3, 2),
-      row(4, 3, 4),
-      row(5, 3, 6),
-      row(6, 8, 4),
-    ])
+    measure_planted_over(
+      files: planted_files_naming(rows: [
+        row(1, 3, 1, 0),
+        row(2, 3, 5, 0),
+        row(3, 3, 2, 0),
+        row(4, 3, 4, 0),
+        row(5, 3, 6, 0),
+        row(6, 3, 2, 11_311),
+        row(7, 3, 4, 11_311),
+        row(8, 8, 4, 0),
+      ]),
+    )
   let assert Measured(types:, ..) = measured as "the planted table is measured"
   let assert Ok(three) = list.find(types, fn(line) { line.type_number == 3 })
-  assert three.rows == 5
+  assert three.rows == 7
   assert three.status
     == HandledWithGap(
-      reason: "rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
+      reason: "rows aimed at another unit behind a target apply prerequisite, which the plan refuses (#815); rows aimed by a union flag, 3, 5 or 7, whose part aimed at others is left out (#794); rows behind a prerequisite whose conditions the plan cannot check (#817, #818)",
       fact_key: "Spell4Effects.effectType.3",
-      unread_rows: 3,
+      unread_rows: 2,
     )
-    as "three of the five rows aim only at others and are not read: only the caster rows count as handled"
+    as "only the two rows behind the target prerequisite are not read; the rows aimed at the caster, the target and the area are"
   let text = checklist.render([measured])
   assert string.contains(
     text,
-    "- [x] type 3: 5 rows (83.33%); handled with a gap, 3 of its 5 rows not read: rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses (Spell4Effects.effectType.3)",
+    "- [x] type 3: 7 rows (87.5%); handled with a gap, 2 of its 7 rows not read: rows aimed at another unit behind a target apply prerequisite, which the plan refuses (#815); rows aimed by a union flag, 3, 5 or 7, whose part aimed at others is left out (#794); rows behind a prerequisite whose conditions the plan cannot check (#817, #818) (Spell4Effects.effectType.3)",
   )
     as "the line lists the rows left out with the gap's reason"
-  assert string.contains(text, "2 of 2 types handled (50.0% of rows)")
-    as "the handled rows are the type 8 row and the two type 3 rows the plan reads: 3 of 6"
-  assert string.contains(text, "3 rows of the handled types not read")
+  assert string.contains(text, "2 of 2 types handled (75.0% of rows)")
+    as "the handled rows are the type 8 row and the five type 3 rows the plan reads: 6 of 8"
+  assert string.contains(text, "2 rows of the handled types not read")
 }
 
 pub fn the_type_11_rows_behind_a_target_prerequisite_are_counted_as_not_handled_test() -> Nil {

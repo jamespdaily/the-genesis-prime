@@ -212,6 +212,7 @@ fn trace(
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..) -> []
     }
@@ -271,6 +272,7 @@ fn is_strike(effect effect: Effect) -> Bool {
     | cast.CasterChangeEnds(..)
     | cast.TargetChangeStarts(..)
     | cast.TargetChangeEnds(..)
+    | cast.ForcedMoveStarts(..)
     | cast.Activated(..)
     | cast.ShortcutCast(..)
     | cast.TickStrike(..)

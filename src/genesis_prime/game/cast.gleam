@@ -246,6 +246,16 @@
 ////   again from that go. A row aimed at another player is left out until a modifier on
 ////   another player is built (#570), and the stacking of casters' modifiers on one
 ////   creature is not built (#569).
+//// - **A go's throws of creatures** (type 3 rows with targetFlags 2, 4 or 6, a
+////   `StruckMove`, genesis_prime/game/forced_move): each is aimed at the creatures the go
+////   hit, in the life and at the time the go struck them. The rule tells
+////   `ForcedMoveStarts` at the go's own step when the row has no delay, and else arms a
+////   `ForcedMoveStart` timer for the go plus the row's delay; the end of the cast's node
+////   on that creature cancels a timer still waiting (`creatures_ended`), as it cancels a
+////   modifier's start. The connection carries `ForcedMoveStarts` out
+////   (genesis_prime/game/connection/casting): it draws the throw's two fractions from its
+////   seed then, so a delayed throw draws at its own time, and tells the creature. A
+////   connection that is gone has no timers, so nothing is thrown.
 //// - **A go's disguises** (genesis_prime/game/look): each type 112 effect of the phase
 ////   that has a life and whose gate against the caster passes is a modifier row whose change is a
 ////   `Look`, so it is listed, started, ended, cancelled with the node and ended at death
@@ -570,6 +580,7 @@ import genesis_prime/game/cooldown
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
+import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
 import genesis_prime/game/hit
 import genesis_prime/game/item_use
@@ -818,6 +829,18 @@ pub type Effect {
     source: unit_properties.Source,
     modifier: unit_properties.Modifier,
   )
+  /// The ForcedMove row of the caster's spell throws the creature `unit_id` whose life the
+  /// go struck, at the monotonic time `struck_at_ms` the go struck it (`HitCreature`): the
+  /// connection draws the two fractions of `forced_move.Draws` from its seed, takes the
+  /// player's place now and race radius as the `forced_move.Reference` and tells the
+  /// creature (genesis_prime/client_connection `TellThrown`). A creature of another life
+  /// drops it, and so does one that lies dead or has stood again since the go struck.
+  ForcedMoveStarts(
+    unit_id: Int,
+    life: Int,
+    struck_at_ms: Int,
+    move: forced_move.Move,
+  )
   /// A property modifier the caster's spell started on the creature `unit_id` ends: the
   /// node's end, a removal of the cast, its push off or the caster's death. A creature
   /// that holds nothing for the source changes nothing.
@@ -993,6 +1016,10 @@ pub type Due {
     modifier: unit_properties.Modifier,
     struck_at_ms: Int,
   )
+  /// The ForcedMove row `on` names throws its creature, after its delay, for the go that
+  /// struck at `struck_at_ms`: it becomes `ForcedMoveStarts`. The end of the cast's node on
+  /// the creature cancels it.
+  ForcedMoveStart(on: OnCreature, move: forced_move.Move, struck_at_ms: Int)
   /// The property modifier `source` ends, after its duration.
   ModifierEnd(source: unit_properties.Source)
   /// The crowd-control state the caster holds on itself from the effect `source` names
@@ -4424,6 +4451,7 @@ pub fn after_payments(
         | CasterChangeEnds(..)
         | TargetChangeStarts(..)
         | TargetChangeEnds(..)
+        | ForcedMoveStarts(..)
         | StealthChanged(..)
         | Activated(..)
         | ShortcutCast(..) -> resources
@@ -4775,6 +4803,7 @@ fn stop_pending(
       | StateEnd(..)
       | ModifierStart(..)
       | TargetModifierStart(..)
+      | ForcedMoveStart(..)
       | ModifierEnd(..)
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)
@@ -4907,6 +4936,8 @@ fn fire(
         RestrictionEnd(source:) -> restriction_ended(cast:, source:)
         TargetModifierStart(on:, modifier:, struck_at_ms:) ->
           target_modifier_started(cast:, on:, modifier:, struck_at_ms:)
+        ForcedMoveStart(on:, move:, struck_at_ms:) ->
+          throw_started(cast:, on:, move:, struck_at_ms:)
         CooldownModifierStarts(source:, modifier:, kept:) ->
           cooldown_applied(cast:, source:, modifier:, kept:, now_ms:)
         CooldownModifierEnds(source:) -> #(
@@ -5112,6 +5143,12 @@ pub fn rolls_needed(
             spell_plan.forced_moves_in_phase(spell:, phase:, spent: live.spent),
             fn(row) {
               gates_rolls_needed(only_on_caster_gates(condition: row.condition))
+            },
+          ),
+          list.map(
+            spell_plan.struck_moves_in_phase(spell:, phase:, spent: live.spent),
+            fn(row) {
+              gates_rolls_needed(caster_gates(condition: row.condition))
             },
           ),
           list.map(
@@ -5506,6 +5543,7 @@ fn tick_timers_cancelled(
       | StateEnd(..)
       | ModifierStart(..)
       | TargetModifierStart(..)
+      | ForcedMoveStart(..)
       | ModifierEnd(..)
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)
@@ -6271,6 +6309,7 @@ fn cancel_nodes_end(
       | StateEnd(..)
       | ModifierStart(..)
       | TargetModifierStart(..)
+      | ForcedMoveStart(..)
       | ModifierEnd(..)
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)
@@ -6307,6 +6346,7 @@ pub fn unit_removed(
         | NodesEnd(..)
         | ModifierStart(..)
         | TargetModifierStart(..)
+        | ForcedMoveStart(..)
         | ModifierEnd(..)
         | RestrictionEnd(..)
         | CooldownModifierStarts(..)
@@ -6897,7 +6937,8 @@ fn belongs_to_passive(
     | RestrictionEnd(source:)
     | CooldownModifierStarts(source:, ..)
     | CooldownModifierEnds(source:) -> source.cast_id == id
-    TargetModifierStart(on:, ..) -> on.source.cast_id == id
+    TargetModifierStart(on:, ..) | ForcedMoveStart(on:, ..) ->
+      on.source.cast_id == id
     StartChild(root:, ..) -> Some(root) == spell4_id
     StateEnd(..) | StartHeld | RepeatHeld | WindowEnd(..) | ChargeLevel(..) ->
       False
@@ -6970,6 +7011,7 @@ fn modifiers_pending(cast cast: State) -> List(Effect) {
         ModifierEnd(source:) -> Ok(source)
         ModifierStart(..)
         | TargetModifierStart(..)
+        | ForcedMoveStart(..)
         | RestrictionEnd(..)
         | CooldownModifierStarts(..)
         | CooldownModifierEnds(..)
@@ -7370,6 +7412,7 @@ fn close_threshold(
             | StateEnd(..)
             | ModifierStart(..)
             | TargetModifierStart(..)
+            | ForcedMoveStart(..)
             | ModifierEnd(..)
             | RestrictionEnd(..)
             | CooldownModifierStarts(..)
@@ -7616,6 +7659,15 @@ fn go(
       let #(cast, never_held) = procs_held(cast:, cast_id:, applied:)
       let #(cast, modifying) =
         modifiers_armed(cast:, cast_id:, caster:, aimed:, struck:)
+      let #(cast, throwing) =
+        struck_moves_armed(
+          cast:,
+          cast_id:,
+          caster:,
+          primary_target: live.primary_target,
+          moves: applied.struck_moves,
+          struck:,
+        )
       let #(cast, healing) = heals_armed(cast:, cast_id:, aimed:)
       let #(cast, restriction_timers) =
         restrictions_armed(cast:, cast_id:, restricting:)
@@ -7710,6 +7762,7 @@ fn go(
           ticks,
           never_held,
           modifying,
+          throwing,
           healing,
           restriction_timers,
           cooldowns,
@@ -7802,6 +7855,7 @@ type Applied {
     removes: List(spell_plan.ForceRemove),
     modifiers: List(spell_plan.PropertyModifier),
     forced_moves: List(spell_plan.ForcedMove),
+    struck_moves: List(spell_plan.StruckMove),
     cooldowns: List(spell_plan.CooldownModifier),
     stealth: List(spell_plan.StealthRow),
     remove_stealth: List(spell_plan.RemoveStealthRow),
@@ -7880,6 +7934,19 @@ fn lasting_applied(
       subject:,
       rolls:,
     )
+  let #(struck_moves, struck_move_logs, rolls) =
+    gated(
+      rows: spell_plan.struck_moves_in_phase(spell:, phase:, spent:),
+      gates: fn(row: spell_plan.StruckMove) {
+        caster_gates(condition: row.condition)
+      },
+      what: fn(row: spell_plan.StruckMove) {
+        "the ForcedMove effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
   let #(cooldowns, cooldown_logs, rolls) =
     gated(
       rows: spell_plan.cooldown_modifiers_in_phase(spell:, phase:, spent:),
@@ -7949,6 +8016,7 @@ fn lasting_applied(
       removes:,
       modifiers:,
       forced_moves:,
+      struck_moves:,
       cooldowns:,
       stealth:,
       remove_stealth:,
@@ -7961,6 +8029,7 @@ fn lasting_applied(
       more_logs,
       modifier_logs,
       forced_move_logs,
+      struck_move_logs,
       cooldown_logs,
       stealth_logs,
       remove_stealth_logs,
@@ -8520,6 +8589,17 @@ fn aimed_at(
       rolls:,
     )
   let forced_moves = applied.forced_moves
+  let thrown =
+    rows_with_units(
+      rows: applied.struck_moves,
+      aim: fn(row: spell_plan.StruckMove) { row.aim },
+      caster:,
+      primary_target: live.primary_target,
+      struck:,
+    )
+    |> list.filter(fn(entry) {
+      result.is_ok(creature_hit(struck:, unit_id: entry.1))
+    })
   let cooldowns =
     list.map(applied.cooldowns, fn(row) {
       #(
@@ -8608,6 +8688,17 @@ fn aimed_at(
           Listed(
             effect_id: row.effect_id,
             delay_ms: row.delay_ms,
+            instance_id: None,
+            damage: None,
+          ),
+        )
+      }),
+      list.map(thrown, fn(entry) {
+        #(
+          entry.1,
+          Listed(
+            effect_id: entry.0.effect_id,
+            delay_ms: entry.0.delay_ms,
             instance_id: None,
             damage: None,
           ),
@@ -9160,6 +9251,86 @@ fn creature_modifier_armed(
   }
 }
 
+/// The creatures a go throws: each row of `moves` (the struck moves of the phase whose
+/// caster gates passed) with each creature its aim names that the round `Hit`, in the row
+/// then the unit order of `units_aimed_at`. A row with no delay tells the creature
+/// `ForcedMoveStarts` in this step; any other arms a `ForcedMoveStart` timer for the go
+/// plus its delay; each go's throw is its own, so a later go of the cast leaves an
+/// earlier go's waiting throw to start. A unit that is not a `HitCreature` of the
+/// round is not thrown (a deflected one included, as for a property modifier), and neither
+/// is the caster or another player (a move of another player is issue 570).
+fn struck_moves_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  caster caster: Caster,
+  primary_target primary_target: Int,
+  moves moves: List(spell_plan.StruckMove),
+  struck struck: List(Struck),
+) -> #(State, List(Effect)) {
+  rows_with_units(
+    rows: moves,
+    aim: fn(row: spell_plan.StruckMove) { row.aim },
+    caster:,
+    primary_target:,
+    struck:,
+  )
+  |> list.fold(#(cast, []), fn(so_far, entry) {
+    let #(cast, effects) = so_far
+    let #(row, unit_id) = entry
+    let #(cast, more) =
+      struck_move_armed(cast:, cast_id:, row:, unit_id:, struck:)
+    #(cast, list.append(effects, more))
+  })
+}
+
+/// The throw of one row on one unit its aim names: nothing unless the round `Hit` the
+/// unit as a creature, then the start its delay makes.
+fn struck_move_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  row row: spell_plan.StruckMove,
+  unit_id unit_id: Int,
+  struck struck: List(Struck),
+) -> #(State, List(Effect)) {
+  case creature_hit(struck:, unit_id:) {
+    Error(Nil) -> #(cast, [])
+    Ok(#(life, struck_at_ms)) -> {
+      let on =
+        OnCreature(
+          unit_id:,
+          life:,
+          source: unit_properties.Source(cast_id:, effect_id: row.effect_id),
+        )
+      case row.delay_ms > 0 {
+        True -> {
+          let #(cast, _, start) =
+            armed(
+              cast:,
+              due: ForcedMoveStart(on:, move: row.move, struck_at_ms:),
+              after_ms: row.delay_ms,
+            )
+          #(cast, [start])
+        }
+        False -> throw_started(cast:, on:, move: row.move, struck_at_ms:)
+      }
+    }
+  }
+}
+
+/// The delay of a throw ran out, or it has none: the cast tells the creature `on` names,
+/// of the life the go struck, `ForcedMoveStarts`. A node of the cast that ended first has
+/// cancelled the timer, so nothing is asked of the node here.
+fn throw_started(
+  cast cast: State,
+  on on: OnCreature,
+  move move: forced_move.Move,
+  struck_at_ms struck_at_ms: Int,
+) -> #(State, List(Effect)) {
+  #(cast, [
+    ForcedMoveStarts(unit_id: on.unit_id, life: on.life, struck_at_ms:, move:),
+  ])
+}
+
 /// The start timer of the modifier `on` names cancelled, whichever go armed it.
 fn target_start_cancelled(
   cast cast: State,
@@ -9174,10 +9345,10 @@ fn target_start_cancelled(
   })
 }
 
-/// The modifier on a creature a timer waits to start, none for any other timer.
+/// The modifier or throw on a creature a timer waits to start, none for any other timer.
 fn target_start_of(due due: Due) -> Result(OnCreature, Nil) {
   case due {
-    TargetModifierStart(on:, ..) -> Ok(on)
+    TargetModifierStart(on:, ..) | ForcedMoveStart(on:, ..) -> Ok(on)
     Go(..)
     | Finish(..)
     | StartChild(..)
@@ -9392,7 +9563,7 @@ fn source_of(due due: Due) -> Option(unit_properties.Source) {
     | RestrictionEnd(source:)
     | CooldownModifierStarts(source:, ..)
     | CooldownModifierEnds(source:) -> Some(source)
-    TargetModifierStart(on:, ..) -> Some(on.source)
+    TargetModifierStart(on:, ..) | ForcedMoveStart(on:, ..) -> Some(on.source)
     Go(..)
     | Finish(..)
     | StartChild(..)
@@ -9509,6 +9680,7 @@ fn effects_ended(
         | StateEnd(..)
         | ModifierStart(..)
         | TargetModifierStart(..)
+        | ForcedMoveStart(..)
         | ModifierEnd(..)
         | CooldownModifierStarts(..)
         | CooldownModifierEnds(..)
@@ -9543,6 +9715,7 @@ fn pending_heals(
       -> Ok(#(entry.0, source, vital, amount))
       ModifierStart(..)
       | TargetModifierStart(..)
+      | ForcedMoveStart(..)
       | ModifierEnd(..)
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)
@@ -9575,6 +9748,7 @@ fn pending_heals_cancelled(
       | ModifierStart(change: Absorb(..), ..)
       | ModifierStart(change: Look(..), ..)
       | TargetModifierStart(..)
+      | ForcedMoveStart(..)
       | ModifierEnd(..)
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)

@@ -320,7 +320,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 3,
-        reason: "rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
+        reason: "rows aimed at another unit behind a target apply prerequisite, which the plan refuses (#815); rows aimed by a union flag, 3, 5 or 7, whose part aimed at others is left out (#794); rows behind a prerequisite whose conditions the plan cannot check (#817, #818)",
         fact_key: "Spell4Effects.effectType.3",
       ),
       Missing(
