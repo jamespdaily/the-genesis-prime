@@ -93,6 +93,7 @@ import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
+import genesis_prime/message/spell_started
 import genesis_prime/message/start_movement
 import genesis_prime/message/static_unit_type
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
@@ -100,6 +101,7 @@ import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_create_static
 import genesis_prime/message/unit_destroyed
+import genesis_prime/message/unit_float_stat_changed
 import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
@@ -303,26 +305,12 @@ pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_
   login_support.stop(started)
 }
 
-pub fn a_stop_closes_every_listener_to_new_connects_before_an_open_game_connection_drains_and_it_still_gets_0x036a_reason_8_test() -> Nil {
+pub fn an_open_game_connection_gets_0x036a_reason_8_when_the_server_stops_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(started, ports, account_id) = login_support.start_with_jim()
-  let account = AccountId(account_id)
-  let game = in_select(started:, port: ports.game_port, account:)
-  let assert [connection] =
-    ask_support.connections_of(started.settings.game.listener)
-    as "the game listener holds the one connection"
-  // The connection is held back, so the game listener's stop waits for it
-  // while the connects below are tried.
-  let stopping =
-    ask_support.while_suspended(process: connection, body: fn() {
-      let stopping = ask_support.begin_stop_tree(started.tree)
-      await_refused(ports.game_port)
-      assert login_client.refused(ports.sts_port)
-        as "the STS listener no longer takes a socket by the time the game listener's is closed: the stop closes the listeners before it drains any connection"
-      assert login_client.refused(ports.auth_port)
-        as "nor does the auth listener"
-      stopping
-    })
+  let game =
+    in_select(started:, port: ports.game_port, account: AccountId(account_id))
+  let stopping = ask_support.begin_stop_tree(started.tree)
   let assert [notice] = game_client.read(game:, count: 1)
   game_client.nothing_more(game:)
   assert notice.message_id == 0x036A as "opcode.0x36a"
@@ -340,12 +328,54 @@ pub fn a_stop_closes_every_listener_to_new_connects_before_an_open_game_connecti
   Nil
 }
 
-/// Waits until a connect to the port is refused: a wait for the listener to
-/// close, which the test's own deadline warns of, naming it, while it goes on.
-fn await_refused(port: Int) -> Nil {
-  event_wait.until("a connect to the closed listener is refused", fn() {
-    login_client.refused(port)
-  })
+/// The stop closes the STS, auth and game listeners to new sockets before it
+/// stops any connection (`genesis_prime/connection/closer`). The game
+/// connection is held, so it takes no exit until the test lets it. The held
+/// connection's own listener stops it only after that listener's socket is
+/// closed and after the closer has ended, so the exit reaching it means the
+/// stop has begun draining. Each port is then waited on until it refuses: the
+/// operating system can take a moment past the owner's exit to close a socket
+/// it had just accepted on, and the connection is still held, so every refusal
+/// is seen before any connection drained.
+pub fn the_stop_closes_every_listener_before_any_connection_drains_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started =
+    login_support.start_with(change: fn(settings) {
+      server.Settings(
+        ..settings,
+        connection_shutdown_ms: ask_support.beyond_the_test_ms,
+      )
+    })
+  let account = AccountId(login_support.insert_jim(started))
+  let ports = login_support.ports(started)
+  let _game = in_select(started:, port: ports.game_port, account:)
+  let assert [connection] =
+    ask_support.connections_of(started.settings.game.listener)
+    as "the game listener holds the one connection"
+  let stopping =
+    ask_support.while_suspended(process: connection, body: fn() {
+      let stopping = ask_support.begin_stop_tree(started.tree)
+      event_wait.until("the stop's exit reaches the held game connection", fn() {
+        mailbox_support.tagged(connection, atom.create("EXIT")) > 0
+      })
+      event_wait.until(
+        "the STS listener takes no socket once the stop is draining connections",
+        fn() { login_client.refused(ports.sts_port) },
+      )
+      event_wait.until("the auth listener takes no socket either", fn() {
+        login_client.refused(ports.auth_port)
+      })
+      event_wait.until("the game listener takes no socket either", fn() {
+        login_client.refused(ports.game_port)
+      })
+      stopping
+    })
+  let _reason =
+    ask_support.ended(
+      watched: stopping,
+      what: "the server's tree to end once the held connection takes its exit",
+    )
+  Nil
 }
 
 /// A create request for CharacterCreation row 466 with a path of 1 and the
@@ -4956,6 +4986,27 @@ fn index_where(
   |> result.unwrap(-1)
 }
 
+/// Whether the frames hold the 0x7fd that accepts the press with this client cast id.
+fn confirms(
+  frames frames: List(Frame),
+  client_cast_id client_cast_id: Int,
+) -> Bool {
+  list.any(game_client.casts_in(frames:), fn(event) {
+    case event {
+      game_client.CastConfirmed(client_cast_id: confirmed, ..) ->
+        confirmed == client_cast_id
+      game_client.CastRefused(..)
+      | game_client.CastStarted(..)
+      | game_client.CastWent(..)
+      | game_client.CastFinished(..)
+      | game_client.ThresholdOpened(..)
+      | game_client.ThresholdIndex(..)
+      | game_client.ThresholdClosed(..)
+      | game_client.ThresholdEnded(..) -> False
+    }
+  })
+}
+
 /// Whether the frames hold the finish of a cast (0x7fe).
 fn holds_a_finish(frames frames: List(Frame)) -> Bool {
   list.any(game_client.casts_in(frames:), fn(event) {
@@ -7755,6 +7806,66 @@ pub fn a_bot_creates_an_exile_and_plays_the_tutorial_to_the_northern_wilds_landi
       #(10_540, 3),
     ]
   })
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_spellslinger_over_a_socket_casts_surged_quick_draw_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let started =
+    login_support.start_with(change: fn(settings) {
+      driven_by(settings:, time:)
+    })
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 7,
+      level: 1,
+    )
+  send_play(game:, character_id: character)
+  let #(_, have) = game_client.read_entry_kept(game:, have: <<>>)
+  // Spell Surge is the Spellslinger's innate, the bag's index 3 after the three level-1
+  // abilities, and Quick Draw its first, index 0 (SpellLevel rows of class 7).
+  game_client.press_ability(game:, client_cast_id: 1, bag_index: 3, target: 0)
+  let #(surge, have) = game_client.read_until_pong(game:, have:, number: 1)
+  assert confirms(frames: surge, client_cast_id: 1)
+    as "opcode.0x7fd: the press of Spell Surge is accepted"
+  driven_time.advance(time:, ms: 3000)
+  game_client.press_ability(game:, client_cast_id: 2, bag_index: 0, target: 0)
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 2)
+  driven_time.advance(time:, ms: 1500)
+  let #(later, _) = game_client.read_until_pong(game:, have:, number: 3)
+  let frames = list.append(pressed, later)
+  assert confirms(frames:, client_cast_id: 2)
+    as "opcode.0x7fd: the Quick Draw press is accepted"
+  let roots =
+    list.map(
+      bot_frames.decoded(frames, spell_started.message_id, spell_started.decode),
+      fn(started) { started.root_spell4_id },
+    )
+  assert list.contains(roots, 76_002) && !list.contains(roots, 43_468)
+    as "CastAbilityBagSpell 0x14039a040 under a node of 47439: the child casts name Quick Draw's alternate 76002 as their root, and none name 43468 (opcode.0x7ff.root_spell4_id)"
+  assert list.take(
+      list.filter_map(
+        bot_frames.decoded(
+          frames,
+          unit_float_stat_changed.message_id,
+          unit_float_stat_changed.decode,
+        ),
+        fn(changed) {
+          case changed.stat_id == 6 {
+            True -> Ok(changed.value)
+            False -> Error(Nil)
+          }
+        },
+      ),
+      1,
+    )
+    == [float32.to_bits(75.0)]
+    as "opcode.0x935: 76002's innate cost (19, 25) takes 25 from the Spellslinger's 100 Spell Power (stat 6, slot 4); the writes after it are the slot refilling over time (class_resource, `Over time`)"
   game_client.close(game:)
   login_support.stop(started)
 }

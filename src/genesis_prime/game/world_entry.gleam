@@ -158,6 +158,7 @@ import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/reward_property
 import genesis_prime/game/shown
+import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
 import genesis_prime/game/tutorial
@@ -877,7 +878,14 @@ pub fn joined(
               character_state_sent(entry:),
               quest_effects,
               items_sent(items:),
-              loadout_sent(character_number: character_id_number, loadout:),
+              loadout_sent(
+                character_number: character_id_number,
+                loadout:,
+                book: spell_plan.book(
+                  plans: spell_plan.plans(tables:),
+                  bag: loadout.bag(loadout:),
+                ),
+              ),
               [player_path(character:)],
               control_at_entry(life:, unit_id:),
               [
@@ -1349,11 +1357,13 @@ fn items_sent(items items: List(store.HeldItem)) -> List(Effect) {
   })
 }
 
-/// The loadout's messages, in order: each ability and the innate, the tiers,
+/// The loadout's messages, in order: each ability and the innate, the tiers of the
+/// ability book (the bag and the alternates a surged press casts, `spell_plan.book`),
 /// action set 0 and the innate's index.
 fn loadout_sent(
   character_number character_number: Int,
   loadout loadout: Loadout,
+  book book: List(Spell4BaseId),
 ) -> List(Effect) {
   let abilities =
     list.index_map(loadout.bag(loadout:), fn(ability, bag_index) {
@@ -1377,7 +1387,7 @@ fn loadout_sent(
   list.flatten([
     abilities,
     [
-      ability_tiers_frame(abilities: loadout.bag(loadout:)),
+      ability_tiers_frame(abilities: book),
       action_set_frame(abilities: loadout.abilities),
     ],
     innate,

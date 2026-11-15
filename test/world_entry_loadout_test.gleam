@@ -206,13 +206,19 @@ pub fn one_0x1a0_sets_tier_1_of_each_ability_in_action_sets_0_to_3_test() -> Nil
       )
       as "0x1a0 decodes"
     let expected =
-      list.flat_map(list.append(class.abilities, [class.innate]), fn(base) {
-        list.map([0, 1, 2, 3], fn(action_set_index) {
-          AbilityTier(spell4_base_id: base, tier: 1, action_set_index:)
-        })
-      })
+      list.flat_map(
+        list.append(
+          list.append(class.abilities, [class.innate]),
+          world_entry_support.alternate_bases(class_id: class.id),
+        ),
+        fn(base) {
+          list.map([0, 1, 2, 3], fn(action_set_index) {
+            AbilityTier(spell4_base_id: base, tier: 1, action_set_index:)
+          })
+        },
+      )
     assert tiers.tiers == expected
-      as "opcode.0x1a0: an entry holds four action sets, and tier 1 is each ability's and the innate's first"
+      as "opcode.0x1a0: an entry holds four action sets, and tier 1 is each ability's and the innate's first, then the first of each alternate spell's base the ability book holds"
   })
 }
 

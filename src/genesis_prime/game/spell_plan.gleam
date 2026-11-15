@@ -634,6 +634,11 @@ pub type Spell {
     /// The Proc effects aimed at the caster, whose kind is one of the holder's own
     /// events, each with the spell it casts (`ProcRow`).
     procs: List(ProcRow),
+    /// The spell the ability's press casts instead while the caster is under Spell Surge
+    /// (`Spell4.spell4IdMechanicAlternateSpell`, swapped in by `CastAbilityBagSpell`
+    /// `0x14039a040` through `0x1405e7e50`): planned only for the ability a class's bag holds,
+    /// and never for the alternate itself, since the client swaps once.
+    alternate: Option(Spell),
   )
 }
 
@@ -1708,18 +1713,98 @@ pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
     list.append(abilities, innates),
     dict.new(),
     fn(plans, spell4_id) {
-      use spell <- result.try(spell_of(
-        tables:,
-        sources:,
-        spell4_id:,
-        chain: [],
-        threshold_costs: [],
-        struck_by: None,
-      ))
-      use Nil <- result.try(has_threshold_time(spell:))
+      use spell <- result.try(planned(tables:, sources:, spell4_id:))
+      use spell <- result.try(with_alternate(tables:, sources:, spell:))
+      let plans = case spell.alternate {
+        Some(alternate) ->
+          dict.insert(plans, alternate.spell4_base_id.value, alternate)
+        None -> plans
+      }
       Ok(dict.insert(plans, spell.spell4_base_id.value, spell))
     },
   )
+}
+
+/// One ability or innate spell as the plan holds it: its tree, a ChargeRelease
+/// ability's opening cost lifted, and a threshold time where its method needs one.
+fn planned(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+  spell4_id spell4_id: Int,
+) -> Result(Spell, PlanError) {
+  use spell <- result.try(spell_of(
+    tables:,
+    sources:,
+    spell4_id:,
+    chain: [],
+    threshold_costs: [],
+    struck_by: None,
+  ))
+  use Nil <- result.map(has_threshold_time(spell:))
+  opening_costs_lifted(spell:)
+}
+
+/// The spell with the spell its Spell4 row names as its alternate
+/// (`Spell4.spell4IdMechanicAlternateSpell`, which `SpellslingerSurgedSpell`
+/// `0x1405e7e50` swaps a press to under Spell Surge); a row naming one the table lacks is a
+/// `NoRow`. The alternate names none of its own: the client swaps once.
+fn with_alternate(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+  spell spell: Spell,
+) -> Result(Spell, PlanError) {
+  use row <- result.try(
+    spell4.get(tables:, id: spell.spell4_id)
+    |> result.replace_error(NoRow(table: "Spell4", id: spell.spell4_id.value)),
+  )
+  case row.spell4_id_mechanic_alternate_spell {
+    0 -> Ok(spell)
+    named -> {
+      use alternate <- result.map(planned(tables:, sources:, spell4_id: named))
+      Spell(..spell, alternate: Some(alternate))
+    }
+  }
+}
+
+/// A ChargeRelease ability pays the row cost of its first stage at the press that opens
+/// the charge, and the stage it casts at release pays nothing more: the class costs
+/// of stage 0 move to the front of the ability's own costs (a decision of the project, not a
+/// client fact: the client checks a threshold row's cost with the row's press).
+fn opening_costs_lifted(spell spell: Spell) -> Spell {
+  case spell.method, spell.stages {
+    ChargeRelease, [first, ..rest] -> {
+      let #(lifted, kept) =
+        list.partition(first.spell.costs, fn(cost) {
+          case cost {
+            RowClassCost(..) -> True
+            SlotCost(..)
+            | ClassVitalCost(..)
+            | UnheldCost(..)
+            | SpendAllCost(..)
+            | UnreadSpendCost(..) -> False
+          }
+        })
+      case lifted {
+        [] -> spell
+        _ ->
+          Spell(..spell, costs: list.append(lifted, spell.costs), stages: [
+            Stage(..first, spell: Spell(..first.spell, costs: kept)),
+            ..rest
+          ])
+      }
+    }
+    ChargeRelease, [] -> spell
+    Normal, _
+    | Channeled, _
+    | PressHold, _
+    | ChanneledField, _
+    | ClientSideInteraction, _
+    | RapidTap, _
+    | Multiphase, _
+    | Transactional, _
+    | OtherMethod(..), _
+    -> spell
+  }
 }
 
 /// A Proxy the server adds to a tree, which starts `child` on the caster at once at
@@ -2136,6 +2221,7 @@ fn spell_of(
       heals: lists.heals,
       stealth_change:,
       procs:,
+      alternate: None,
     )
   Ok(spell)
 }
@@ -4533,6 +4619,23 @@ pub fn has_flag(flags flags: Int, bit bit: Int) -> Bool {
 /// The plans the tables' load built, which a rule reads by `in_plans`.
 pub fn plans(tables tables: table_store.Tables) -> Plans {
   table_store.derived(tables:, key: plans_key)
+}
+
+/// The ability book as the client holds it: the bag, then the alternate each bag
+/// ability names, in bag order.
+pub fn book(
+  plans plans: Plans,
+  bag bag: List(Spell4BaseId),
+) -> List(Spell4BaseId) {
+  let alternates =
+    list.filter_map(bag, fn(base) {
+      use spell <- result.try(in_plans(plans:, base:))
+      case spell.alternate {
+        Some(alternate) -> Ok(alternate.spell4_base_id)
+        None -> Error(Nil)
+      }
+    })
+  list.append(bag, alternates)
 }
 
 /// The tree of the ability held as this Spell4BaseId among the plans, or
