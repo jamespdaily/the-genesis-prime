@@ -1557,7 +1557,7 @@ pub fn counted_by_unit(
 /// (the number of spawn rows of each Creature2 id) than the count. The client keeps no
 /// unit record for a type 12 objective (`0x1405517a0`), so counting each unit once is the
 /// server's choice, and an objective that one-spawn stations or panels would never finish
-/// that way (QuestObjective 8093, 16373, 16557 and 6692 today) is left out of it. A spawn
+/// that way (QuestObjective 8093, 16373, 16557 and 6692) is left out of it. A spawn
 /// import that adds units takes an objective out of the set.
 pub fn reused_unit_objectives(
   tables tables: table_store.Tables,

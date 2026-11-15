@@ -93,9 +93,6 @@ const named_group_type = 15
 /// The objective type of a talk.
 const talk_type = 3
 
-/// The objective type of a use.
-const use_type = 12
-
 /// The objective type of a checklist use: a unit of the TargetGroup in its data.
 const checklist_use_type = 14
 
@@ -384,7 +381,7 @@ fn counts(
       }
     Used(target:, by_item:, ..) ->
       {
-        objective.type_ == use_type
+        objective.type_ == quest_log.use_a_creature_type
         && Creature2Id(objective.data) == target.creature_id
       }
       || {
