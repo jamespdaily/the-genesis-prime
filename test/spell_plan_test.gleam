@@ -852,7 +852,8 @@ pub fn a_stage_checks_its_row_cost_before_the_spells_innate_costs_test() -> Nil 
   // CastAbilityBagSpell 0x14039a040 resolves the threshold step first
   // (ResolveThresholdSpell 0x1403bfd60 calls CheckThresholdRowCosts 0x1403c0620 at
   // 0x1403c012e, and a refusal returns); the cast check, whose innate costs
-  // (CheckInnateCosts 0x1403b1de0) come later, is called at 0x14039a60a.
+  // (CheckInnateCosts 0x1403b1de0) come later, is CheckCast 0x1403ae8c0, called
+  // after the threshold step.
   // Gamma Rays 29874 (Spell4.innateCostType0 18, innateCost0 2) as a stage.
   assert stage_costs(to_cast: 29_874, cost: #(19, 25))
     == [

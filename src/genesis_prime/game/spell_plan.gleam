@@ -4267,7 +4267,7 @@ fn cc_mask_of(
 /// Spell4Thresholds row for a stage first, which hold no EMM id (the threshold step,
 /// `0x1403bfd60` calls `0x1403c0620` at `0x1403c012e` and returns on a refusal), then
 /// the Spell4 row's two innate costs as (vital type, amount, EMM id) (the cast check,
-/// `0x14039a60a`); a type of 0 or above 30, or an amount of 0, is none
+/// `0x1403ae8c0`, called after the threshold step); a type of 0 or above 30, or an amount of 0, is none
 /// (`0x1403b3320`), unless the cost has an EMM id (`spent_by`).
 fn costs_of(
   row row: spell4.Spell4,
