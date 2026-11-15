@@ -16,9 +16,12 @@ import cast_support
 import connection_rule_support as support
 import crowd_control_support
 import genesis_prime/client_connection.{
-  type PeerNews, CreatureAppeared, PeerNews, PropertiesChanged, Removed,
+  type PeerNews, CreatureAppeared, CreatureMoved, PeerNews, PropertiesChanged,
+  Removed,
 }
+import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
+import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Refused, Strike}
 import genesis_prime/game/unit_properties.{type Modifier, type Source, Change}
 import genesis_prime/message/float32
@@ -1459,4 +1462,201 @@ pub fn armor_modifier_changes_creature_mitigation_test() -> Nil {
     )
   assert health_news(armored) == [#(2, 32, False), #(5, 32, False)]
     as "Armor 150 mitigates the strike: 50 becomes 20"
+}
+
+// ---- a thrown creature (issue 788) ----
+//
+// The throw of Spell4Effects 73826: kind 4 (away from a unit), 10 m, a flight of 375 ms,
+// flags 0 (the row's columns), the reference unit 5 behind the creature along x.
+
+fn at(x: Float) -> start_place.Place {
+  place_support.at(world_id: 3460, world_zone_id: 5967, x:, y: 0.0, z: 0.0)
+}
+
+/// A throw of that row, struck at `struck_at_ms`.
+fn thrown_at(struck_at_ms struck_at_ms: Int) -> creature.Message {
+  creature.Thrown(
+    move: forced_move.Move(
+      way: forced_move.Away,
+      mover: forced_move.Flight,
+      min_distance: 10.0,
+      max_distance: 10.0,
+      flight_ms: 375,
+      gravity: 0.0,
+      flags: 0,
+      height: 0.0,
+    ),
+    draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+    reference: forced_move.Reference(place: at(-5.0), radius: 0.0),
+    struck_at_ms:,
+  )
+}
+
+/// The numbers of the viewers the step sends a 0x638 flight, in order.
+fn flown_to(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
+  list.filter_map(outgoing(taken), fn(one) {
+    case one.1 {
+      creature.News(stay: _, news: PeerNews(news: CreatureMoved(..), ..)) ->
+        Ok(one.0)
+      creature.News(..)
+      | creature.Struck(..)
+      | creature.KillCredit(..)
+      | creature.FightTold(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The timers the step starts, as the timer and its time.
+fn timers_started(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(#(step.TimerId, Int)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(StartServiceTimer(timer:, after_ms:)) -> Ok(#(timer, after_ms))
+      OwnEffect(Send(..))
+      | OwnEffect(Reply(..))
+      | OwnEffect(StartCreature(..))
+      | OwnEffect(step.CancelServiceTimer(..))
+      | step.Watch(..)
+      | step.Unwatch(..)
+      | step.Log(..)
+      | Stop -> Error(Nil)
+    }
+  })
+}
+
+fn fired(
+  state state: State,
+  at_ms at_ms: Int,
+  timer timer: step.TimerId,
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  feed(state:, at_ms:, event: OwnEvent(step.ServiceTimerFired(timer)))
+}
+
+pub fn a_thrown_creature_sends_one_0x638_to_each_viewer_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, taken) =
+    told(state: watched_by_two(), at_ms: 6000, message: thrown_at(6000))
+  assert flown_to(taken) == [2, 5]
+    as "opcode.0x638: one flight to each viewer, in the order they began to watch"
+  assert list.length(outgoing(taken)) == 2
+    as "and no other send: the flight carries the whole news"
+}
+
+pub fn a_throw_from_an_older_life_is_dropped_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: strike_of(damage: 60, cast_id: 1),
+    )
+  let #(state, _) = fired(state:, at_ms: 66_000, timer: TimerId(1))
+  let #(_, late) = told(state:, at_ms: 66_500, message: thrown_at(65_000))
+  assert support.effects_of(late) == []
+    as "struck at 65000, before the creature stood again at 66000: a throw of the life before"
+  let #(_, now) = told(state:, at_ms: 66_500, message: thrown_at(66_000))
+  assert flown_to(now) == [2, 5]
+    as "struck at the moment it stood again: the new life's"
+}
+
+pub fn a_throw_at_a_dead_or_returning_creature_is_dropped_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(dead, _) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: strike_of(damage: 60, cast_id: 1),
+    )
+  let #(_, to_dead) = told(state: dead, at_ms: 6500, message: thrown_at(6500))
+  assert support.effects_of(to_dead) == []
+    as "a creature that lies dead is not thrown"
+  // Player 2 draws the creature into a fight and runs out of its ring: after the leash
+  // it walks home (1500 ms ticks, the fourth, at 12000, leashes it).
+  let #(state, aggro) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: creature.Approached(
+        by: ConnectionId(2),
+        unit_id: 20,
+        place: at(5.0),
+        seq: 1,
+        stay: map_support.stay(count: 2),
+        hit_radius: place_support.player_hit_radius,
+      ),
+    )
+  let #(state, _) =
+    told(
+      state:,
+      at_ms: 6000,
+      message: creature.TargetMoved(
+        by: ConnectionId(2),
+        place: at(100.0),
+        seq: 2,
+        stay: map_support.stay(count: 2),
+        hit_radius: place_support.player_hit_radius,
+      ),
+    )
+  let #(state, _) =
+    told(state:, at_ms: 6000, message: creature.Withdrew(by: ConnectionId(2)))
+  let assert [#(t1, 1500)] = timers_started(aggro)
+    as "the aggro starts the attack tick, 1500 ms on"
+  let #(state, tick1) = fired(state:, at_ms: 7500, timer: t1)
+  let assert [#(t2, 1500), ..] = timers_started(tick1)
+  let #(state, tick2) = fired(state:, at_ms: 9000, timer: t2)
+  let assert [#(t3, 1500), ..] = timers_started(tick2)
+  let #(state, tick3) = fired(state:, at_ms: 10_500, timer: t3)
+  let assert [#(t4, 1500), ..] = timers_started(tick3)
+  let #(state, leashed) = fired(state:, at_ms: 12_000, timer: t4)
+  assert list.any(timers_started(leashed), fn(started) { started.1 == 5500 })
+    as "the leash starts the walk home, 55 m at 10 m a second: 5500 ms"
+  let #(_, to_returning) =
+    told(state:, at_ms: 12_100, message: thrown_at(12_100))
+  assert support.effects_of(to_returning) == []
+    as "a creature that walks home is not thrown"
+}
+
+pub fn a_creature_respawned_after_a_throw_stands_at_home_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, thrown) =
+    told(state: watched_by_two(), at_ms: 6000, message: thrown_at(6000))
+  let assert [#(landing, 375)] = timers_started(thrown)
+    as "the throw starts one timer, for the landing 375 ms on"
+  let #(state, _) =
+    told(state:, at_ms: 6100, message: strike_of(damage: 60, cast_id: 1))
+  let #(state, respawned) = fired(state:, at_ms: 66_000, timer: TimerId(1))
+  let assert [
+    #(2, creature.News(stay: _, news: PeerNews(news: Removed, ..))),
+    #(
+      2,
+      creature.News(
+        stay: _,
+        news: PeerNews(news: CreatureAppeared(place:, ..), ..),
+      ),
+    ),
+    ..
+  ] = outgoing(respawned)
+    as "death.creature_respawn: the removal, then the creation, as for a creature never thrown"
+  assert start_place.x(place) == 0.0
+    as "the spawn's x, where the creature stood before the throw moved it to x = 10"
+  let #(_, late) = fired(state:, at_ms: 66_100, timer: landing)
+  assert support.effects_of(late) == []
+    as "the landing of the life before is no landing of this one"
+}
+
+pub fn the_flight_end_timer_has_its_own_id_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, thrown) =
+    told(state: watched_by_two(), at_ms: 6000, message: thrown_at(6000))
+  let assert [#(landing, 375)] = timers_started(thrown)
+    as "the throw starts one timer, 375 ms on"
+  let TimerId(number) = landing
+  assert number % 7 == 6 && number > 6
+    as "the 7-slot numbering of a generation g: attack tick 7g, home 7g + 1, deadline 7g + 2, cast 7g + 3, control 7g + 4, guard 7g + 5, flight 7g + 6"
+  assert creature.control_of(timer: landing) == Error(Nil)
+    as "it is no control's"
+  let #(_, landed) = fired(state:, at_ms: 6375, timer: landing)
+  assert timers_started(landed) == []
+    as "firing it lands the creature, which, with no player near, starts nothing"
 }
