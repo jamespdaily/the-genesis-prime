@@ -1501,7 +1501,10 @@ pub fn every_sc_and_cost_token_matches_the_stack_count_after_cap_plus_one_casts_
   let differences = oracle.differences(outcomes: stacks)
   assert list.filter(differences, is_differs) == []
   assert stacks_that_kept_the_oldest(rows:) == []
-  assert oracle.compared_count(outcomes: stacks) == 22
+  // One more than before the alternates were planned: Spell4.43500 (stack group 844, cap 1),
+  // Quick Draw's child, is now also read under base 52215, whose plan is the surged Quick
+  // Draw 76002 (Spell4.43468's spell4IdMechanicAlternateSpell), which casts 43500 as well.
+  assert oracle.compared_count(outcomes: stacks) == 23
   // The spells the drive reads nothing for: twelve whose cast leaves no hold of their group on
   // the caster (some hold another spell's, such as 41869's, which holds 77116's casts of group
   // 1770), and Spell Surge 47273, whose press the plain caster is refused 151 for (Prerequisite
@@ -1564,8 +1567,8 @@ pub fn every_sc_and_cost_token_matches_the_stack_count_after_cap_plus_one_casts_
       gaps: [],
     )
     == Verdict(unlisted: [], stale: [])
-  assert oracle.compared_count(outcomes: costs) == 8
-    as "the four costs of the planned abilities, each by its amount and its slot"
+  assert oracle.compared_count(outcomes: costs) == 10
+    as "the five costs of the planned abilities, each by its amount and its slot: the four before and Spell4.76002's innate cost (19, 25), the plan of Quick Draw's alternate (base 52215)"
 }
 
 fn is_differs(difference: Difference) -> Bool {

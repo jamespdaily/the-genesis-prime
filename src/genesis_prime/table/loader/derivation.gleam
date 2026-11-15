@@ -11,6 +11,7 @@ import genesis_prime/game/rating
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
+import genesis_prime/game/spell_surge
 import genesis_prime/game/top_zone
 import genesis_prime/game/unit_properties
 import genesis_prime/table/loader/store
@@ -23,6 +24,8 @@ import genesis_prime/table/loader/store
 ///   properties, whose missing rows fail the load (genesis_prime/game/loadout).
 /// - The spell plans: the tree of casts each class's level-1 ability starts, whose
 ///   missing rows, unread costs and cycles fail the load (genesis_prime/game/spell_plan).
+/// - Spell Surge's spell, GameFormula 913's dataint0, whose missing row fails the load
+///   (genesis_prime/game/spell_surge).
 /// - The spell areas: what each spell of those trees strikes (genesis_prime/game/spell_area),
 ///   built after the trees, which it reads from the built value: the list is in
 ///   build order, and an edit rebuilds the derivations it is given in that order.
@@ -48,6 +51,7 @@ pub fn all() -> List(store.Derivation) {
     appearance.derivation(),
     loadout.derivation(),
     spell_plan.derivation(),
+    spell_surge.derivation(),
     spell_area.derivation(),
     activate.derivation(),
     shortcut_spell.derivation(),

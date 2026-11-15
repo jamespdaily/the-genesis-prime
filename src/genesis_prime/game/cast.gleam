@@ -689,6 +689,13 @@ pub type Caster {
     /// The abilities the player holds, as Spell4Base ids in bag order
     /// (genesis_prime/game/loadout).
     abilities: List(Spell4BaseId),
+    /// The ability book as the client holds it once its 0x1a0 is read: the bag, then the
+    /// alternate each bag ability names (`spell_plan.book`). A swap under Spell Surge needs
+    /// the alternate's base in it (`GetAbilityBookSpell`, `0x1403bad30`).
+    book: List(Spell4BaseId),
+    /// Spell Surge's spell, GameFormula 913's dataint0 (`spell_surge.spell`): a node of it on
+    /// the player's unit is the surge (`IsSpellSurgeActive`, `0x1405e7d10`).
+    surge_spell: Spell4Id,
     /// The item in the equipped slot 16, when there is one.
     weapon: Option(Item2Id),
     /// The connections whose players see this one.
@@ -3367,7 +3374,8 @@ fn pressed(
           refused_unknown(client_cast_id: press.client_cast_id, spell4_id: 0),
         ]),
       )
-    Ok(ability) ->
+    Ok(plain) -> {
+      let ability = surged(cast:, caster:, ability: plain)
       case resolved(cast:, ability:) {
         Error(Nil) ->
           Ok(
@@ -3387,7 +3395,40 @@ fn pressed(
             resolution:,
           ))
       }
+    }
   }
+}
+
+/// The spell a press of the ability casts: under Spell Surge, the alternate the ability
+/// names when the player's book holds it, else the ability itself. The client makes the
+/// swap inside the press, before the threshold step, so an open threshold is looked for
+/// under the swapped ability (`CastAbilityBagSpell` `0x14039a040`, `SpellslingerSurgedSpell`
+/// `0x1405e7e50`, `IsSpellSurgeActive` `0x1405e7d10`, `GetAbilityBookSpell` `0x1403bad30`).
+fn surged(
+  cast cast: State,
+  caster caster: Caster,
+  ability ability: Spell,
+) -> Spell {
+  case ability.alternate {
+    Some(alternate) ->
+      case
+        list.contains(caster.book, alternate.spell4_base_id)
+        && list.any(holds_on(cast:, unit_id: caster.unit_id), fn(hold) {
+          hold.spell4_id == caster.surge_spell
+        })
+      {
+        True -> alternate
+        False -> ability
+      }
+    None -> ability
+  }
+}
+
+/// Whether the held key is the ability's own or the alternate it is swapped for.
+fn is_held(held held: Spell, ability ability: Spell) -> Bool {
+  held.spell4_id == ability.spell4_id
+  || option.map(held.alternate, fn(alternate) { alternate.spell4_id })
+  == Some(ability.spell4_id)
 }
 
 /// The ability the player holds at the bag index, as the plans have it.
@@ -3482,12 +3523,9 @@ fn key_up(
       stop_holding(cast:)
     Some(_) | None -> #(cast, [])
   }
-  case
-    ability.method == spell_plan.ChargeRelease
-    && dict.has_key(cast.thresholds, ability.spell4_id.value)
-  {
-    False -> #(cast, cancels)
-    True ->
+  case charging_ability(cast:, ability:) {
+    Error(Nil) -> #(cast, cancels)
+    Ok(ability) ->
       case resolved(cast:, ability:) {
         Error(Nil) -> #(cast, [
           refused_unknown(client_cast_id: 0, spell4_id: ability.spell4_id.value),
@@ -3500,6 +3538,22 @@ fn key_up(
         }
       }
   }
+}
+
+/// The ChargeRelease spell of the key whose threshold is open: the ability itself, or the
+/// alternate it was swapped for when the charge opened, whether or not Spell Surge holds
+/// now (the server's choice: a key up fires the charge of the spell the key last cast, and
+/// the client sends no more than the bag index).
+fn charging_ability(
+  cast cast: State,
+  ability ability: Spell,
+) -> Result(Spell, Nil) {
+  [Some(ability), ability.alternate]
+  |> list.filter_map(option.to_result(_, Nil))
+  |> list.find(fn(candidate) {
+    candidate.method == spell_plan.ChargeRelease
+    && dict.has_key(cast.thresholds, candidate.spell4_id.value)
+  })
 }
 
 /// No ability is held: the timer that waits to repeat is cancelled.
@@ -3560,9 +3614,10 @@ fn repeated(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
-  ability ability: Spell,
+  ability plain: Spell,
   last_cast last_cast: Option(Int),
 ) -> #(State, List(Effect)) {
+  let ability = surged(cast:, caster:, ability: plain)
   case resolved(cast:, ability:) {
     Error(Nil) -> no_stage_left(cast:, ability:)
     Ok(resolution) ->
@@ -3824,11 +3879,16 @@ fn hold_started(
   cast_id cast_id: Int,
 ) -> State {
   case cast.holding {
-    Some(Holding(ability: held, ..) as holding)
-      if held.spell4_id == ability.spell4_id
-    ->
-      State(..cast, holding: Some(Holding(..holding, last_cast: Some(cast_id))))
-    Some(_) | None -> cast
+    Some(Holding(ability: held, ..) as holding) ->
+      case is_held(held:, ability:) {
+        True ->
+          State(
+            ..cast,
+            holding: Some(Holding(..holding, last_cast: Some(cast_id))),
+          )
+        False -> cast
+      }
+    None -> cast
   }
 }
 
@@ -3841,13 +3901,15 @@ fn refused_hold(
   effects effects: List(Effect),
 ) -> #(State, List(Effect)) {
   case client_cast_id, cast.holding {
-    None, Some(Holding(ability: held, ..))
-      if held.spell4_id == ability.spell4_id
-    -> {
-      let #(cast, cancels) = stop_holding(cast:)
-      #(cast, list.append(cancels, effects))
-    }
-    Some(_), _ | None, Some(_) | None, None -> #(cast, effects)
+    None, Some(Holding(ability: held, ..)) ->
+      case is_held(held:, ability:) {
+        True -> {
+          let #(cast, cancels) = stop_holding(cast:)
+          #(cast, list.append(cancels, effects))
+        }
+        False -> #(cast, effects)
+      }
+    Some(_), _ | None, None -> #(cast, effects)
   }
 }
 

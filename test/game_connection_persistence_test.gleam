@@ -11,10 +11,11 @@
 ////   0x935, and `opcode.0x7f9` then `opcode.0x7fe` end the cast (`cast.target_node_end`).
 //// - The server's choices (the cast module's doc): the check runs at the end of each input
 ////   in the world, so its writes follow the input's own, and none runs with no player in
-////   the world. At level 1 no Spellslinger spell lowers Spell Power (every cost is 0), so
-////   the tests give the Spellslinger the Esper's wait: its slot goes to 0 ten seconds after
-////   combat ends (`class_resource_support`, migration 0012's row of the Esper; the wait is
-////   test data, `empty_after_combat_ms`).
+////   the world. The spend path (a surged press that pays 25 Spell Power and ends the buff
+////   below 25) is in `game_connection_surge_test`; the tests here keep the emptying-timer
+////   path, so they give the Spellslinger the Esper's wait: its slot goes to 0 ten seconds
+////   after combat ends (`class_resource_support`, migration 0012's row of the Esper; the
+////   wait is test data, `empty_after_combat_ms`).
 //// Skipped where the client's tables are not on the machine.
 
 import cast_support
