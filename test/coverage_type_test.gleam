@@ -411,7 +411,7 @@ const conversion_gap =
   "the share is added to the source's value after the type 11 changes, in start order; whether the source is its base or its total and when the share is recomputed are not read"
 
 const item_visual_swap_gap =
-  "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; rows with a delayTime, which the go lists and the measure counts not read: an effect with a start delay shows on the client when its delay ends (0x1405d6880.delayed_apply)"
+  "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; rows with a delayTime, which the go lists and the measure counts not read: an effect with a start delay shows on the client when its delay ends (#827, 0x1405d6880.delayed_apply)"
 
 pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_76_80_81_83_84_112_118_and_145_are_partial_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
   use <- owned_test.run(10_000)

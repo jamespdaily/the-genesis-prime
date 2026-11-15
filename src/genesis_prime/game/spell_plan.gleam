@@ -1074,7 +1074,7 @@ pub type RowReading {
   /// The row is in a list of its spell and no go applies it: a periodic gain
   /// (`TickingGain`), a property change or disguise with no life
   /// (`lasting.has_life`), an ItemVisualSwap row with a delayTime (the go lists it, the
-  /// client applies an effect from the go only when its delay is 0) and a row whose
+  /// client applies an effect from the go only when its delay is 0; the gap is #827) and a row whose
   /// phaseFlags is 0, which no phase selects (`in_phase`). The measure counts it not read.
   Held(row: PlannedRow)
   /// The row is in no list of its spell and the load goes on.
@@ -3689,7 +3689,8 @@ fn when_reached(
 
 /// An ItemVisualSwap row with a delayTime as `Held`: the client applies an effect from
 /// the go only when its delay is 0 (`0x1405d6880.delayed_apply`), so the go lists the row
-/// with its delay and the visual does not change. A row with no delay stays `Applied`.
+/// with its delay and the visual does not change (the gap is #827). A row with no delay
+/// stays `Applied`.
 fn held_while_delayed(
   reading reading: RowReading,
   effect effect: spell4_effects.Spell4Effects,
