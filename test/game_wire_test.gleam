@@ -4839,6 +4839,10 @@ pub fn three_ticks_reach_the_client_and_health_falls_three_times_test() -> Nil {
   game_client.press_ability(game:, client_cast_id: 1, bag_index: 2, target: 0)
   let #(taken, have) = game_client.read_until_pong(game:, have:, number: 1)
   driven_time.advance(time:, ms: fight_bot.paralytic_surge_cast_ms)
+  // The go strikes the Beast as the press is taken, with no timer on the way, so the
+  // advance fires none and runs no barrier: the barrier is run here, and the Beast's
+  // answer, the 0x7f4 it lets out and the Beast's 0x937 are written before the pong.
+  driven_time.wait_until_quiet(time)
   let #(went, have) = game_client.read_until_pong(game:, have:, number: 2)
   let at_go = list.append(taken, went)
   let assert Ok(cast_id) = confirmed_cast_of(frames: at_go, client_cast_id: 1)
