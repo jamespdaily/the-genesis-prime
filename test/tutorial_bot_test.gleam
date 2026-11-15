@@ -5,6 +5,9 @@
 ////   in the first 32 bits. The second unit is the same bytes under another id.
 //// - 0x88c marks a unit dead (`opcode.0x88c`: the unit id, then the dead bit); the server
 ////   writes it for a unit killed by a strike that is no part of the fight that reads it.
+//// - The quest counts each unit of its creature that dies while it is open, whichever
+////   press killed it: the count the bot keeps is the units marked dead since its slay
+////   began.
 //// - A dead unit is never struck: a press at it selects no unit, so its go is empty.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -42,7 +45,12 @@ fn death(unit_id unit_id: Int, dead dead: Int) -> Frame {
 
 fn heard(frames: List(Frame)) -> tutorial_bot.Units {
   tutorial_bot.hear(
-    units: Units(creatures: dict.new(), others: dict.new(), spent: set.new()),
+    units: Units(
+      creatures: dict.new(),
+      others: dict.new(),
+      spent: set.new(),
+      dead: set.new(),
+    ),
     frames:,
   )
 }
@@ -70,4 +78,33 @@ pub fn a_unit_marked_alive_is_not_a_death_test() -> Nil {
   assert tutorial_bot.nearest(units:, from: beast_at, creatures: [battle_beast])
     == Ok(#(0x1001, beast_at))
     as "a 0x88c with the dead bit clear marks the unit alive"
+}
+
+pub fn a_wanted_death_heard_outside_the_slays_own_reads_counts_toward_its_kills_test() -> Nil {
+  use <- owned_test.run(5000)
+  let units =
+    heard([
+      created_beast(unit_id: 0x1001),
+      created_beast(unit_id: 0x1002),
+      created_beast(unit_id: 0x1003),
+    ])
+  let before = units.dead
+  let units =
+    tutorial_bot.hear(units:, frames: [death(unit_id: 0x1001, dead: 1)])
+  assert tutorial_bot.kills_since(units:, creatures: [battle_beast], before:)
+    == 1
+    as "a collateral kill heard between two presses is a kill"
+  assert tutorial_bot.kills_since(
+      units:,
+      creatures: [battle_beast + 1],
+      before:,
+    )
+    == 0
+    as "a death of another creature is none"
+  let before = units.dead
+  let units =
+    tutorial_bot.hear(units:, frames: [death(unit_id: 0x1002, dead: 1)])
+  assert tutorial_bot.kills_since(units:, creatures: [battle_beast], before:)
+    == 1
+    as "a death from before the slay began is not counted again"
 }

@@ -167,9 +167,10 @@ pub type Units {
     creatures: Dict(Int, Int),
     /// Where each unit the client holds stands.
     others: game_client.Others,
-    /// The units the bot has used up: a unit counts once for an objective, and a unit
-    /// the server marked dead (0x88c) is used up wherever its news came.
+    /// The units the bot has used up: a unit counts once for an objective.
     spent: Set(Int),
+    /// The units the server marked dead (0x88c), whichever read the news came in.
+    dead: Set(Int),
   )
 }
 
@@ -211,6 +212,7 @@ pub fn play(
           creatures: dict.new(),
           others: dict.new(),
           spent: set.new(),
+          dead: set.new(),
         ),
         at: game_client.placed_at(unit: own),
         zone: entry_zone,
@@ -459,20 +461,31 @@ fn took(bot bot: Bot, frames frames: List(Frame), have have: BitArray) -> Bot {
 /// What the units hold after the frames the bot read: each creature created, where each
 /// unit stands, and every unit a 0x88c marks dead, whichever read it came in.
 pub fn hear(units units: Units, frames frames: List(Frame)) -> Units {
-  let dead =
-    list.filter_map(game_client.deaths_in(frames:), fn(death) {
-      case death.1 {
-        True -> Ok(death.0)
-        False -> Error(Nil)
-      }
-    })
   Units(
+    ..units,
     creatures: list.fold(frames, units.creatures, learn),
     others: list.fold(frames, units.others, fn(others, frame) {
       game_client.observe(others:, frame:)
     }),
-    spent: set.union(units.spent, set.from_list(dead)),
+    dead: set.union(units.dead, set.from_list(game_client.dead_in(frames:))),
   )
+}
+
+/// How many units of the creatures the server has marked dead since `before`, the dead
+/// the bot held then: the quest counts each such unit, whichever fight read its death.
+pub fn kills_since(
+  units units: Units,
+  creatures creatures: List(Int),
+  before before: Set(Int),
+) -> Int {
+  set.difference(units.dead, before)
+  |> set.filter(fn(unit) {
+    case dict.get(units.creatures, unit) {
+      Ok(creature) -> list.contains(creatures, creature)
+      Error(Nil) -> False
+    }
+  })
+  |> set.size
 }
 
 /// The bot with the unit used up.
@@ -620,7 +633,7 @@ fn find(bot: Bot, creatures: List(Int)) -> #(Bot, Int, Point) {
   }
 }
 
-/// The nearest unit of one of the creatures that is not spent and stands within sight of
+/// The nearest unit of one of the creatures that is neither spent nor dead and stands within sight of
 /// the point, with where it stands.
 pub fn nearest(
   units units: Units,
@@ -635,6 +648,7 @@ pub fn nearest(
           case
             list.contains(creatures, creature)
             && !set.contains(units.spent, unit_id)
+            && !set.contains(units.dead, unit_id)
             && squared_distance(at, from) <=. sight.range *. sight.range
           {
             True -> Ok(#(unit_id, at))
@@ -893,13 +907,27 @@ fn depart(bot: Bot) -> Result(Bot, Blocked) {
 /// Kills at least `kills` units of the creatures: for the nearest unit the bot has not
 /// killed it stands beyond it, faces it and presses Paralytic Surge until it dies. The
 /// press strikes every unit inside its cone and its box, so each unit of the creatures
-/// read dead in the fight is a kill, as the quest counts it.
+/// marked dead since the slay began is a kill, as the quest counts it, whichever read
+/// brought the news.
 fn slay(
   bot bot: Bot,
   creatures creatures: List(Int),
   kills kills: Int,
 ) -> Result(Bot, Blocked) {
-  use <- bool.guard(when: kills <= 0, return: Ok(bot))
+  slay_since(bot:, creatures:, kills:, before: bot.units.dead)
+}
+
+/// The slay of `kills` units from the dead the bot held when it began.
+fn slay_since(
+  bot bot: Bot,
+  creatures creatures: List(Int),
+  kills kills: Int,
+  before before: Set(Int),
+) -> Result(Bot, Blocked) {
+  use <- bool.guard(
+    when: kills_since(units: bot.units, creatures:, before:) >= kills,
+    return: Ok(bot),
+  )
   let #(bot, unit_id, at) = find(bot, creatures)
   let stands = #(at.0 +. fight_distance, at.1, at.2)
   let bot = move(bot, to: stands)
@@ -916,23 +944,9 @@ fn slay(
     ),
     refused,
   ))
-  let dead =
-    list.filter_map(game_client.deaths_in(frames: seen), fn(death) {
-      case death.1 {
-        True -> Ok(death.0)
-        False -> Error(Nil)
-      }
-    })
   let bot = Bot(..took(bot:, frames: seen, have:), cast_id: bot.cast_id + 100)
-  let killed =
-    list.count(dead, fn(unit) {
-      case dict.get(bot.units.creatures, unit) {
-        Ok(creature) -> list.contains(creatures, creature)
-        Error(Nil) -> False
-      }
-    })
-  case list.contains(dead, unit_id) {
-    True -> slay(bot: settle(bot), creatures:, kills: kills - killed)
+  case set.contains(bot.units.dead, unit_id) {
+    True -> slay_since(bot: settle(bot), creatures:, kills:, before:)
     False ->
       Error(Blocked("the unit " <> int.to_string(unit_id) <> " did not die"))
   }
