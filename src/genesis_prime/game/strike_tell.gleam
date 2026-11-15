@@ -59,10 +59,12 @@ pub type Key {
 }
 
 /// What a strike of a cast is for: a go of the phase `phase`, or the tick `tick` of the
-/// periodic damage row `effect_id` (genesis_prime/game/ticking).
+/// periodic damage row `effect_id` in the schedule its `go`th go on the unit started
+/// (genesis_prime/game/ticking): a later go starts the schedule again, and a round of
+/// the earlier schedule may still be open with the same tick number.
 pub type Occasion {
   AtGo(phase: Int)
-  AtTick(effect_id: Spell4EffectsId, tick: Int)
+  AtTick(effect_id: Spell4EffectsId, go: Int, tick: Int)
 }
 
 /// What a striker tells the unit it strikes: the strike's key, the striker's

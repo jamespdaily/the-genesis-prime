@@ -430,8 +430,8 @@ fn ticking_reaching(
 }
 
 /// A tick of a periodic row begins its round of one unit: a strike told to the unit
-/// with `entropy`'s rolls and the row's damage alone, keyed by the tick
-/// (`strike_tell.AtTick`), its deadline 1 second on, and the round closed in order
+/// with `entropy`'s rolls and the row's damage alone, keyed by the tick and the go whose
+/// schedule it is (`strike_tell.AtTick`), its deadline 1 second on, and the round closed in order
 /// with the cast's other rounds as a go's is.
 pub fn begin_tick(
   strike strike: State,
@@ -583,8 +583,9 @@ fn is_round_of(round round: Round, key key: strike_tell.Key) -> Bool {
   cast_id_of(round.asked) == key.cast_id
   && case round.asked, key.occasion {
     ForGo(asked:), strike_tell.AtGo(phase:) -> asked.phase == phase
-    ForTick(asked:), strike_tell.AtTick(effect_id:, tick:) ->
+    ForTick(asked:), strike_tell.AtTick(effect_id:, go:, tick:) ->
       asked.effect_id == effect_id
+      && asked.go == go
       && asked.tick == tick
       && asked.unit_id == key.unit_id
     ForGo(..), strike_tell.AtTick(..) | ForTick(..), strike_tell.AtGo(..) ->

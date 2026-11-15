@@ -844,8 +844,9 @@ pub type GoAsked {
 }
 
 /// A tick of a periodic damage row that waits for its unit's answer: which cast, spell
-/// and row, the unit in the life the go struck, which tick of the row's schedule, and
-/// the row's damage, which the tick strikes with alone.
+/// and row, the unit in the life the go struck, which go of the cast on the unit started
+/// the schedule (counted from 1: a later go starts it again), which tick of that
+/// schedule, and the row's damage, which the tick strikes with alone.
 pub type TickAsked {
   TickAsked(
     cast_id: Int,
@@ -853,6 +854,7 @@ pub type TickAsked {
     effect_id: Spell4EffectsId,
     unit_id: Int,
     life: Int,
+    go: Int,
     tick: Int,
     blow: spell_area.DamageEffect,
   )
@@ -1008,17 +1010,21 @@ pub opaque type TickKey {
 }
 
 /// The ticks of a periodic row on one unit: what each tick does, the row's schedule,
-/// the monotonic time of the go its schedule counts from, the last tick that fired (0
-/// before the first), the timer armed for the next, whether a damage tick's round is
-/// open, and the life of the unit the go struck.
+/// which go of the cast on the unit started it (counted from 1) and the monotonic time
+/// of that go, which the schedule counts from, the last tick that fired (0 before the
+/// first), the timer armed for the next, how many damage tick rounds of the row on the
+/// unit are open, an earlier schedule's included, and the life of the unit the go
+/// struck. A node whose unit has an open round is held past its end, so the cast's
+/// 0x811 or 0x7fe follows the tick's 0x7f8.
 pub opaque type Ticking {
   Ticking(
     kind: TickKind,
     schedule: ticking.Schedule,
+    go: Int,
     from_ms: Int,
     tick: Int,
     timer: TimerId,
-    open: Bool,
+    open: Int,
     life: Int,
   )
 }
@@ -5162,6 +5168,8 @@ type Holder {
     started_ms: Int,
     primary_target: Int,
     nodes: Dict(Int, lasting.Node),
+    /// The periodic rows the cast's gos armed, whose open rounds hold their nodes.
+    ticking: Dict(TickKey, Ticking),
     /// Whether the cast has gone for the last time and waits for its nodes to end.
     lingering: Bool,
   )
@@ -5177,6 +5185,7 @@ fn holder_of(cast cast: State, cast_id cast_id: Int) -> Result(Holder, Nil) {
         started_ms: live.started_ms,
         primary_target: live.primary_target,
         nodes: live.nodes,
+        ticking: live.ticking,
         lingering: False,
       ))
     Error(Nil), Ok(lingering) ->
@@ -5186,6 +5195,7 @@ fn holder_of(cast cast: State, cast_id cast_id: Int) -> Result(Holder, Nil) {
         started_ms: lingering.started_ms,
         primary_target: lingering.primary_target,
         nodes: lingering.nodes,
+        ticking: lingering.ticking,
         lingering: True,
       ))
     Error(Nil), Error(Nil) -> Error(Nil)
@@ -5227,13 +5237,27 @@ fn with_nodes(
   }
 }
 
-/// The nodes whose life is over at the time, and the others, each with its unit id.
+/// The nodes whose life is over at the time, and the others, each with its unit id. A
+/// node whose unit has a tick round open is kept past its end until the round closes
+/// (`ticked`), so its 0x811 or the cast's 0x7fe follows the tick's 0x7f8.
 fn ended_and_kept(
   nodes nodes: Dict(Int, lasting.Node),
+  ticking ticking: Dict(TickKey, Ticking),
   now_ms now_ms: Int,
 ) -> #(List(#(Int, lasting.Node)), List(#(Int, lasting.Node))) {
   dict.to_list(nodes)
-  |> list.partition(fn(entry) { life_over(life: { entry.1 }.life, now_ms:) })
+  |> list.partition(fn(entry) {
+    life_over(life: { entry.1 }.life, now_ms:)
+    && !tick_round_open(ticking:, unit_id: entry.0)
+  })
+}
+
+/// Whether a tick round of the cast on the unit is open.
+fn tick_round_open(
+  ticking ticking: Dict(TickKey, Ticking),
+  unit_id unit_id: Int,
+) -> Bool {
+  todo as "#785: a node end waits for its unit's open tick round"
 }
 
 /// The earliest node of the cast `cast_id` has ended, live or lingering: the nodes
@@ -5248,7 +5272,8 @@ fn nodes_ended(
   case holder_of(cast:, cast_id:) {
     Error(Nil) -> #(cast, [])
     Ok(holder) -> {
-      let #(ended, kept) = ended_and_kept(nodes: holder.nodes, now_ms:)
+      let #(ended, kept) =
+        ended_and_kept(nodes: holder.nodes, ticking: holder.ticking, now_ms:)
       case ended {
         [] -> rearmed(cast:, cast_id:, now_ms:)
         [_, ..] -> {
@@ -5423,12 +5448,18 @@ fn sorted_units(nodes: List(#(Int, lasting.Node))) -> List(Int) {
   list.map(nodes, fn(entry) { entry.0 }) |> list.sort(int.compare)
 }
 
-/// The earliest time a node ends at, none when every node lasts until it is removed.
-fn earliest_end(nodes nodes: Dict(Int, lasting.Node)) -> Option(Int) {
-  list.filter_map(dict.values(nodes), fn(node) {
-    case node.life {
-      lasting.EndsAt(ms:) -> Ok(ms)
-      lasting.NoLife | lasting.UntilRemoved -> Error(Nil)
+/// The earliest time a node ends at, none when every node lasts until it is removed
+/// or is held by an open tick round on its unit, whose close ends it (`ticked`).
+fn earliest_end(
+  nodes nodes: Dict(Int, lasting.Node),
+  ticking ticking: Dict(TickKey, Ticking),
+) -> Option(Int) {
+  list.filter_map(dict.to_list(nodes), fn(entry) {
+    let #(unit_id, node) = entry
+    case node.life, tick_round_open(ticking:, unit_id:) {
+      _, True -> Error(Nil)
+      lasting.EndsAt(ms:), False -> Ok(ms)
+      lasting.NoLife, False | lasting.UntilRemoved, False -> Error(Nil)
     }
   })
   |> list.reduce(int.min)
@@ -5441,9 +5472,10 @@ fn arm_nodes_end(
   cast cast: State,
   cast_id cast_id: Int,
   nodes nodes: Dict(Int, lasting.Node),
+  ticking ticking: Dict(TickKey, Ticking),
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  case earliest_end(nodes:) {
+  case earliest_end(nodes:, ticking:) {
     None -> #(cast, [])
     Some(ends_ms) -> {
       let #(cast, _, start) =
@@ -5469,7 +5501,13 @@ fn rearmed(
     Error(Nil) -> #(cast, cancels)
     Ok(holder) -> {
       let #(cast, armed) =
-        arm_nodes_end(cast:, cast_id:, nodes: holder.nodes, now_ms:)
+        arm_nodes_end(
+          cast:,
+          cast_id:,
+          nodes: holder.nodes,
+          ticking: holder.ticking,
+          now_ms:,
+        )
       #(cast, list.append(cancels, armed))
     }
   }
@@ -9731,7 +9769,8 @@ fn finish_or_linger(
   live live: Live,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  let #(ended, kept) = ended_and_kept(nodes: live.nodes, now_ms:)
+  let #(ended, kept) =
+    ended_and_kept(nodes: live.nodes, ticking: live.ticking, now_ms:)
   case kept, cast.passive == Some(cast_id) {
     [], False -> finish(cast:, cast_id:, live:, now_ms:)
     [], True | [_, ..], _ -> {
