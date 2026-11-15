@@ -2,8 +2,9 @@
 //// decision its lists and the coverage measure are both made from. Expected values come
 //// from these places.
 //// - `cast.condition_gate` (`genesis_prime/game/cast`): a row behind a target apply
-////   prerequisite is applied by no go, and a `TickingHeal` is held, since each tick
-////   needs a 0x7f8 the server does not send (`Spell4Effects.effectType.118`).
+////   prerequisite is applied by no go.
+//// - `genesis_prime/game/ticking`: a `TickingHeal` with a tickTime and a life of at least
+////   one tick is applied, each tick its own 0x7f8 (`Spell4Effects.effectType.118`).
 //// - `proc_read`: a Proc of a kind other than 217, 218, 44 and 0 is in no list and the load
 ////   goes on (`Spell4Effects.effectType.14`).
 //// - The plan's Proxy rule: a Proxy whose dataBits00 names no spell makes no child, so the
@@ -43,9 +44,9 @@ fn row(
   spell_tables.effect_row_with(id:, effect_type:, target_flags:, columns:)
 }
 
-/// The rows of the planted spell, one for each kind the plan lists, and the five the plan
-/// holds or leaves out: ids 90001 to 90012 are read, 90013 is behind a target apply
-/// prerequisite, 90014 is a periodic heal, 90015 is a Proc of kind 12 and 90016 a Proxy
+/// The rows of the planted spell, one for each kind the plan lists, the periodic heal, and
+/// the three the plan holds or leaves out: ids 90001 to 90012 are read, 90013 is behind a
+/// target apply prerequisite, 90014 is a periodic heal, 90015 is a Proc of kind 12 and 90016 a Proxy
 /// with dataBits00 0.
 fn planted() -> List(List(Cell)) {
   [
@@ -165,7 +166,7 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
       90_001, 90_002, 90_003, 90_004, 90_005, 90_006, 90_007, 90_008, 90_009,
       90_010, 90_011, 90_012, 90_013, 90_014,
     ]
-    as "the lists hold the twelve read rows, the row behind a target apply prerequisite (90013, held and applied by no go, `cast.condition_gate`) and the periodic heal (90014, a `TickingHeal`); the Proc of kind 12 (`proc_read`) and the Proxy that names no spell are in no list"
+    as "the lists hold the twelve read rows, the row behind a target apply prerequisite (90013, held and applied by no go, `cast.condition_gate`) and the periodic heal (90014, a `TickingHeal` that ticks every 1000 ms for 8000 ms); the Proc of kind 12 (`proc_read`) and the Proxy that names no spell are in no list"
   spell_tables.with_loaded(
     reaching: [#("SpellLevel", 647)],
     rows:,
@@ -207,12 +208,12 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
           ),
           [
             #(90_013, "held"),
-            #(90_014, "held"),
+            #(90_014, "applied"),
             #(90_015, "left out"),
             #(90_016, "left out"),
           ],
         )
-        as "the rule each row checks: a gate behind a target apply prerequisite, a periodic heal, a Proc of a kind not read and a Proxy that names no spell"
+        as "the rule each row checks: a gate behind a target apply prerequisite is held, a periodic heal with a tickTime is applied, a Proc of a kind not read and a Proxy that names no spell"
       let assert Ok(Applied(PlannedProc(..))) =
         read(first_of(effects:, id: 90_011))
         as "the Proc of kind 217 is read and its spell is planned from the reading"
@@ -224,8 +225,8 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
         read(first_of(effects:, id: 90_012))
         as "the Proxy that names a spell is read"
       assert effect_row.unread_by_type(tables:, effects:)
-        == dict.from_list([#(17, 1), #(118, 1), #(14, 1), #(26, 1)])
-        as "the measure counts only the rows a go applies as read: one Fluff behind a target prerequisite, the periodic heal, the Proc of kind 12 and the Proxy with dataBits00 0 are not"
+        == dict.from_list([#(17, 1), #(14, 1), #(26, 1)])
+        as "the measure counts only the rows a go applies as read: one Fluff behind a target prerequisite, the Proc of kind 12 and the Proxy with dataBits00 0 are not, and the periodic heal is read"
     },
   )
 }
