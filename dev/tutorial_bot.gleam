@@ -160,6 +160,19 @@ const last_projector =
     zone: 5998,
   )
 
+/// What the bot has heard of the units around it, kept for the whole session.
+pub type Units {
+  Units(
+    /// The Creature2 of each unit the bot has seen created.
+    creatures: Dict(Int, Int),
+    /// Where each unit the client holds stands.
+    others: game_client.Others,
+    /// The units the bot has used up: a unit counts once for an objective, and a unit
+    /// the server marked dead (0x88c) is used up wherever its news came.
+    spent: Set(Int),
+  )
+}
+
 /// Everything the bot keeps between steps.
 type Bot {
   Bot(
@@ -168,12 +181,7 @@ type Bot {
     have: BitArray,
     /// The frames read, the latest chunk first.
     chunks: List(List(Frame)),
-    /// The Creature2 of each unit the bot has seen created.
-    creatures: Dict(Int, Int),
-    /// Where each unit the client holds stands.
-    others: game_client.Others,
-    /// The units the bot has used up: a unit counts once for an objective.
-    spent: Set(Int),
+    units: Units,
     at: Point,
     zone: Int,
     clock: Int,
@@ -199,9 +207,11 @@ pub fn play(
         env:,
         have:,
         chunks: [],
-        creatures: dict.new(),
-        others: dict.new(),
-        spent: set.new(),
+        units: Units(
+          creatures: dict.new(),
+          others: dict.new(),
+          spent: set.new(),
+        ),
         at: game_client.placed_at(unit: own),
         zone: entry_zone,
         clock: 100,
@@ -442,10 +452,34 @@ fn took(bot bot: Bot, frames frames: List(Frame), have have: BitArray) -> Bot {
     ..bot,
     have:,
     chunks: [frames, ..bot.chunks],
-    others: list.fold(frames, bot.others, fn(others, frame) {
+    units: hear(units: bot.units, frames:),
+  )
+}
+
+/// What the units hold after the frames the bot read: each creature created, where each
+/// unit stands, and every unit a 0x88c marks dead, whichever read it came in.
+pub fn hear(units units: Units, frames frames: List(Frame)) -> Units {
+  let dead =
+    list.filter_map(game_client.deaths_in(frames:), fn(death) {
+      case death.1 {
+        True -> Ok(death.0)
+        False -> Error(Nil)
+      }
+    })
+  Units(
+    creatures: list.fold(frames, units.creatures, learn),
+    others: list.fold(frames, units.others, fn(others, frame) {
       game_client.observe(others:, frame:)
     }),
-    creatures: list.fold(frames, bot.creatures, learn),
+    spent: set.union(units.spent, set.from_list(dead)),
+  )
+}
+
+/// The bot with the unit used up.
+fn spend(bot: Bot, unit_id: Int) -> Bot {
+  Bot(
+    ..bot,
+    units: Units(..bot.units, spent: set.insert(bot.units.spent, unit_id)),
   )
 }
 
@@ -569,36 +603,9 @@ fn visit(
 /// The nearest unit of one of the creatures that the bot has not used and that stands
 /// within sight, waiting for its creation when none is known yet.
 fn find(bot: Bot, creatures: List(Int)) -> #(Bot, Int, Point) {
-  let candidates =
-    list.filter_map(dict.to_list(bot.others), fn(held) {
-      let #(unit_id, at) = held
-      case dict.get(bot.creatures, unit_id) {
-        Ok(creature) ->
-          case
-            list.contains(creatures, creature)
-            && !set.contains(bot.spent, unit_id)
-            && squared_distance(at, bot.at) <=. sight.range *. sight.range
-          {
-            True -> Ok(#(unit_id, at))
-            False -> Error(Nil)
-          }
-        Error(Nil) -> Error(Nil)
-      }
-    })
-    |> list.sort(fn(left, right) {
-      case
-        float.compare(
-          squared_distance(left.1, bot.at),
-          squared_distance(right.1, bot.at),
-        )
-      {
-        order.Eq -> int.compare(left.0, right.0)
-        other -> other
-      }
-    })
-  case candidates {
-    [#(unit_id, at), ..] -> #(bot, unit_id, at)
-    [] ->
+  case nearest(units: bot.units, from: bot.at, creatures:) {
+    Ok(#(unit_id, at)) -> #(bot, unit_id, at)
+    Error(Nil) ->
       find(
         read_until(
           bot,
@@ -610,6 +617,46 @@ fn find(bot: Bot, creatures: List(Int)) -> #(Bot, Int, Point) {
         ),
         creatures,
       )
+  }
+}
+
+/// The nearest unit of one of the creatures that is not spent and stands within sight of
+/// the point, with where it stands.
+pub fn nearest(
+  units units: Units,
+  from from: Point,
+  creatures creatures: List(Int),
+) -> Result(#(Int, Point), Nil) {
+  let candidates =
+    list.filter_map(dict.to_list(units.others), fn(held) {
+      let #(unit_id, at) = held
+      case dict.get(units.creatures, unit_id) {
+        Ok(creature) ->
+          case
+            list.contains(creatures, creature)
+            && !set.contains(units.spent, unit_id)
+            && squared_distance(at, from) <=. sight.range *. sight.range
+          {
+            True -> Ok(#(unit_id, at))
+            False -> Error(Nil)
+          }
+        Error(Nil) -> Error(Nil)
+      }
+    })
+    |> list.sort(fn(left, right) {
+      case
+        float.compare(
+          squared_distance(left.1, from),
+          squared_distance(right.1, from),
+        )
+      {
+        order.Eq -> int.compare(left.0, right.0)
+        other -> other
+      }
+    })
+  case candidates {
+    [first, ..] -> Ok(first)
+    [] -> Error(Nil)
   }
 }
 
@@ -663,7 +710,7 @@ fn talk_for_objective(
   let bot = approach(bot:, at:)
   let #(talked, have) = quest_bot.talk(game: bot.game, have: bot.have, unit_id:)
   let bot = took(bot:, frames: talked.frames, have:)
-  let bot = Bot(..bot, spent: set.insert(bot.spent, unit_id))
+  let bot = spend(bot, unit_id)
   case
     list.any(talked.progress, fn(progress) {
       progress.quest_id == quest_id
@@ -729,11 +776,8 @@ fn pressed(bot: Bot, creature creature: Int) -> Result(#(Bot, Int), Blocked) {
       unit_id:,
     )
   let bot =
-    Bot(
-      ..took(bot:, frames: answer.frames, have:),
-      cast_id: bot.cast_id + 1,
-      spent: set.insert(bot.spent, unit_id),
-    )
+    Bot(..took(bot:, frames: answer.frames, have:), cast_id: bot.cast_id + 1)
+    |> spend(unit_id)
   case answer.confirmed {
     [confirmed, ..] -> Ok(#(bot, confirmed.server_cast_id))
     [] ->
@@ -879,15 +923,10 @@ fn slay(
         False -> Error(Nil)
       }
     })
-  let bot =
-    Bot(
-      ..took(bot:, frames: seen, have:),
-      cast_id: bot.cast_id + 100,
-      spent: set.union(bot.spent, set.from_list(dead)),
-    )
+  let bot = Bot(..took(bot:, frames: seen, have:), cast_id: bot.cast_id + 100)
   let killed =
     list.count(dead, fn(unit) {
-      case dict.get(bot.creatures, unit) {
+      case dict.get(bot.units.creatures, unit) {
         Ok(creature) -> list.contains(creatures, creature)
         Error(Nil) -> False
       }
@@ -974,7 +1013,7 @@ fn destroy_a_turret(bot: Bot) -> Result(Bot, Blocked) {
     ),
   )
   // The kill's credit comes from the creature after its death is written.
-  settle(Bot(..bot, spent: set.insert(bot.spent, turret)))
+  settle(spend(bot, turret))
 }
 
 /// The 0x7ff of Spell4 85474, the guard, that the turret cast, in the order sent: each
