@@ -477,6 +477,7 @@ pub fn listed_effect_ids(spell spell: spell_plan.Spell) -> List(Int) {
     list.map(spell.controls, fn(control) { control.effect_id.value }),
     list.map(spell.modifiers, fn(modifier) { modifier.effect_id.value }),
     list.map(spell.forced_moves, fn(move) { move.effect_id.value }),
+    list.map(spell.struck_moves, fn(move) { move.effect_id.value }),
     list.map(spell.cooldown_modifiers, fn(modifier) { modifier.effect_id.value }),
     list.map(spell.stealth, fn(stealth) { stealth.effect_id.value }),
     list.map(spell.remove_stealth, fn(remove) { remove.effect_id.value }),

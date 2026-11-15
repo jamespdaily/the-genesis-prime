@@ -82,7 +82,7 @@ fn end_of(
   )
 }
 
-fn close(left left: Float, right right: Float) -> Bool {
+fn close(left: Float, right: Float) -> Bool {
   float.absolute_value(left -. right) <. 0.000_001
 }
 

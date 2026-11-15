@@ -4129,7 +4129,7 @@ fn knockback(at_ms at_ms: Int) -> creature.Message {
   )
 }
 
-fn near(left left: Float, right right: Float) -> Bool {
+fn near(left: Float, right: Float) -> Bool {
   float.absolute_value(left -. right) <. 0.000_001
 }
 
@@ -4346,8 +4346,7 @@ pub fn a_second_throw_mid_flight_starts_from_where_the_first_had_reached_test() 
   use <- owned_test.run(5000)
   let #(state, _, first_lands) = thrown_chasing(viewers: [2])
   // 150 ms into the 375 ms flight from x = 10 to 20: 0.4 of the way, at x = 14.
-  let #(state, second) =
-    tell(state:, at_ms: 1150, message: knockback(at_ms: 1150))
+  let #(_, second) = tell(state:, at_ms: 1150, message: knockback(at_ms: 1150))
   assert said(second) == ["0x638 to 2"]
   let assert [CreatureMoved(path:)] = news_to(second, 2)
   let assert [#(first_ms, first_x), #(last_ms, last_x)] = timed_xs(path:)

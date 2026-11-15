@@ -1474,7 +1474,7 @@ fn at(x: Float) -> start_place.Place {
 }
 
 /// A throw of that row, struck at `struck_at_ms`.
-fn thrown_at(struck_at_ms struck_at_ms: Int) -> creature.Message {
+fn thrown_at(struck_at_ms: Int) -> creature.Message {
   creature.Thrown(
     move: forced_move.Move(
       way: forced_move.Away,

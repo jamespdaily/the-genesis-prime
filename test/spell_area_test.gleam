@@ -1095,3 +1095,46 @@ pub fn a_periodic_damage_row_strikes_with_its_schedule_test() -> Nil {
   assert phase.strikes_primary_target
     as "a ticking row aimed at the cast's target makes the phase strike it"
 }
+
+pub fn a_throw_only_spell_aimed_at_the_target_strikes_the_primary_target_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Generic Knockback - 10 m 36010 holds one row, 73826 (`table_rows -- Spell4Effects
+  // 73826`): a ForcedMove of targetFlags 2 and phaseFlags -1, no damage, crowd control
+  // or property row. Only a throw asks for the unit it moves.
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let assert Ok(spell) =
+    spell_plan.spell_alone(
+      tables:,
+      sources: spell_plan.sources_of(tables:),
+      spell4_id: 36_010,
+      chain: [],
+    )
+    as "the spell plans on its own from the client's rows"
+  let knockback =
+    spell_area.SpellArea(
+      spell4_id: Spell4Id(36_010),
+      row: None,
+      shapes: [],
+      damage: [],
+      ticking: [],
+      spell:,
+    )
+  let assert Ok(phase) =
+    spell_area.phase(spell: knockback, phase: 0, spent: None)
+  assert list.map(
+      spell_plan.struck_moves_in_phase(
+        spell: knockback.spell,
+        phase: 0,
+        spent: None,
+      ),
+      fn(row) { row.effect_id.value },
+    )
+    == [73_826]
+    as "Spell4Effects 73826 is the spell's one throw"
+  assert phase.strikes_primary_target
+    as "Spell4Effects 73826: targetFlags 2 aims at the cast's target, so the phase strikes the primary target"
+  assert !phase.selects_area as "targetFlags 2 does not aim at the area"
+  assert phase.damage == [] && phase.controls == []
+    as "the spell holds no damage and no crowd control, so only the throw asks for the unit"
+}

@@ -533,6 +533,40 @@ pub fn target_timeline(
   })
 }
 
+/// The throws the effects tell creatures, in order.
+pub fn throws(effects effects: List(Effect)) -> List(Effect) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      cast.ForcedMoveStarts(..) -> True
+      cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
+      | cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.CancelTimer(..)
+      | cast.Strike(..)
+      | cast.Pay(..)
+      | cast.Gain(..)
+      | cast.Log(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
+      | cast.Activated(..)
+      | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
+      | cast.StealthChanged(..) -> False
+    }
+  })
+}
+
+/// The time each step's effects were taken at, with each throw they tell, in order.
+pub fn throw_timeline(
+  fired fired: List(#(Int, List(Effect))),
+) -> List(#(Int, Effect)) {
+  list.flat_map(fired, fn(step) {
+    list.map(throws(effects: step.1), fn(throw) { #(step.0, throw) })
+  })
+}
+
 /// The delay of each timer the effects start, in order.
 pub fn delays_of(effects effects: List(Effect)) -> List(Int) {
   list.map(started_timers(effects:), fn(started) { started.1 })

@@ -1085,14 +1085,40 @@ fn tells_the_creature(
 /// race radius as the `Reference` and tells the creature `TellThrown` with
 /// `struck_at_ms`. The session it returns holds the link after the draw.
 fn creature_thrown(
-  session _session: Session,
-  entered _entered: world_entry.Entered,
-  unit_id _unit_id: Int,
-  life _life: Int,
-  struck_at_ms _struck_at_ms: Int,
-  move _move: forced_move.Move,
+  session session: Session,
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  life life: Int,
+  struck_at_ms struck_at_ms: Int,
+  move move: forced_move.Move,
 ) -> #(Session, Effect(ConnectionEffect(Request))) {
-  panic as "shape: the draw and the tell of a throw are built in the step's code commit"
+  let #(link, bytes) =
+    client_connection.draw(session.link, forced_move.draw_bytes)
+  let reference =
+    forced_move.Reference(
+      place: movement.place(entered.movement),
+      radius: hit_radius.of_playing(
+        tables: session.settings.tables,
+        race_id: entered.character.race_id,
+      ),
+    )
+  #(
+    Session(..session, link:),
+    OwnEffect(step.Tell(
+      to: step.Creature(
+        map: entered.map,
+        incarnation: entered.incarnation,
+        unit_id:,
+        life:,
+      ),
+      request: client_connection.TellThrown(
+        move:,
+        draws: forced_move.draws_of(bytes:),
+        reference:,
+        struck_at_ms:,
+      ),
+    )),
+  )
 }
 
 /// A go asked: its targets are selected from the units the client shows, the

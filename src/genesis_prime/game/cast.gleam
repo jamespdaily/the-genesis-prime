@@ -9228,34 +9228,81 @@ fn creature_modifier_armed(
 /// then the unit order of `units_aimed_at`. A row with no delay tells the creature
 /// `ForcedMoveStarts` in this step; any other arms a `ForcedMoveStart` timer for the go
 /// plus its delay, after cancelling the one an earlier go of the cast armed for the same
-/// creature and row (`target_start_cancelled`). A unit that is not a `HitCreature` is not
-/// thrown (a deflected one included, an immune one hit nothing), and neither is the caster
-/// or another player (a move of another player is issue 570).
+/// creature and row (`target_start_cancelled`). A unit that is not a `HitCreature` of the
+/// round is not thrown (a deflected one included, as for a property modifier), and neither
+/// is the caster or another player (a move of another player is issue 570).
 fn struck_moves_armed(
   cast cast: State,
-  cast_id _cast_id: Int,
-  caster _caster: Caster,
-  primary_target _primary_target: Int,
+  cast_id cast_id: Int,
+  caster caster: Caster,
+  primary_target primary_target: Int,
   moves moves: List(spell_plan.StruckMove),
-  struck _struck: List(Struck),
+  struck struck: List(Struck),
 ) -> #(State, List(Effect)) {
-  case moves {
-    [] -> #(cast, [])
-    [_, ..] ->
-      panic as "shape: arming a go's throws is built in the step's code commit"
+  rows_with_units(
+    rows: moves,
+    aim: fn(row: spell_plan.StruckMove) { row.aim },
+    caster:,
+    primary_target:,
+    struck:,
+  )
+  |> list.fold(#(cast, []), fn(so_far, entry) {
+    let #(cast, effects) = so_far
+    let #(row, unit_id) = entry
+    let #(cast, more) =
+      struck_move_armed(cast:, cast_id:, row:, unit_id:, struck:)
+    #(cast, list.append(effects, more))
+  })
+}
+
+/// The throw of one row on one unit its aim names: nothing unless the round `Hit` the
+/// unit as a creature, then the start its delay makes.
+fn struck_move_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  row row: spell_plan.StruckMove,
+  unit_id unit_id: Int,
+  struck struck: List(Struck),
+) -> #(State, List(Effect)) {
+  case creature_hit(struck:, unit_id:) {
+    Error(Nil) -> #(cast, [])
+    Ok(#(life, struck_at_ms)) -> {
+      let on =
+        OnCreature(
+          unit_id:,
+          life:,
+          source: unit_properties.Source(cast_id:, effect_id: row.effect_id),
+        )
+      let #(cast, cancels) = target_start_cancelled(cast:, on:)
+      let #(cast, starting) = case row.delay_ms > 0 {
+        True -> {
+          let #(cast, _, start) =
+            armed(
+              cast:,
+              due: ForcedMoveStart(on:, move: row.move, struck_at_ms:),
+              after_ms: row.delay_ms,
+            )
+          #(cast, [start])
+        }
+        False -> throw_started(cast:, on:, move: row.move, struck_at_ms:)
+      }
+      #(cast, list.append(cancels, starting))
+    }
   }
 }
 
-/// The delay of a throw ran out: the cast tells the creature `on` names, of the life the
-/// go struck, `ForcedMoveStarts`. A node of the cast that ended first has cancelled the
-/// timer, so nothing is asked of the node here.
+/// The delay of a throw ran out, or it has none: the cast tells the creature `on` names,
+/// of the life the go struck, `ForcedMoveStarts`. A node of the cast that ended first has
+/// cancelled the timer, so nothing is asked of the node here.
 fn throw_started(
-  cast _cast: State,
-  on _on: OnCreature,
-  move _move: forced_move.Move,
-  struck_at_ms _struck_at_ms: Int,
+  cast cast: State,
+  on on: OnCreature,
+  move move: forced_move.Move,
+  struck_at_ms struck_at_ms: Int,
 ) -> #(State, List(Effect)) {
-  panic as "shape: a delayed throw's start is built in the step's code commit"
+  #(cast, [
+    ForcedMoveStarts(unit_id: on.unit_id, life: on.life, struck_at_ms:, move:),
+  ])
 }
 
 /// The start timer of the modifier `on` names cancelled, whichever go armed it.

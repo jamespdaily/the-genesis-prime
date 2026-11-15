@@ -160,23 +160,34 @@ pub fn rest_of(path path: Path, now_ms now_ms: Int) -> Path {
 pub fn velocity(path path: Path, now_ms now_ms: Int) -> #(Float, Float, Float) {
   case path {
     Standing(..) -> #(0.0, 0.0, 0.0)
-    Running(from:, to:, started_ms:, speed:) -> {
-      let length = distance(from:, to:)
-      let run = speed *. int.to_float(int.max(0, now_ms - started_ms)) /. 1000.0
-      case length <=. 0.0 || run >=. length {
-        True -> #(0.0, 0.0, 0.0)
-        False -> {
-          let scale = speed /. length
-          #(
-            { start_place.x(to) -. start_place.x(from) } *. scale,
-            { start_place.y(to) -. start_place.y(from) } *. scale,
-            { start_place.z(to) -. start_place.z(from) } *. scale,
-          )
-        }
-      }
-    }
+    Running(from:, to:, started_ms:, speed:) ->
+      running_velocity(from:, to:, started_ms:, speed:, now_ms:)
     Timed(first:, rest:, ..) -> timed_velocity(first:, rest:, now_ms:)
   }
+}
+
+/// The velocity of a run from `from` to `to` that began at `started_ms`: its speed along
+/// the line, zero once it has arrived.
+fn running_velocity(
+  from from: Place,
+  to to: Place,
+  started_ms started_ms: Int,
+  speed speed: Float,
+  now_ms now_ms: Int,
+) -> #(Float, Float, Float) {
+  let length = distance(from:, to:)
+  let run = speed *. int.to_float(int.max(0, now_ms - started_ms)) /. 1000.0
+  use <- bool.guard(when: length <=. 0.0 || run >=. length, return: #(
+    0.0,
+    0.0,
+    0.0,
+  ))
+  let scale = speed /. length
+  #(
+    { start_place.x(to) -. start_place.x(from) } *. scale,
+    { start_place.y(to) -. start_place.y(from) } *. scale,
+    { start_place.z(to) -. start_place.z(from) } *. scale,
+  )
 }
 
 /// The last point of a timed path.

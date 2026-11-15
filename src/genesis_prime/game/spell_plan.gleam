@@ -1181,6 +1181,13 @@ pub type PlanError {
     effect_id: Int,
     prerequisite_type: Int,
   )
+  /// A ForcedMove effect aimed at the units a strike hits is behind a target apply
+  /// prerequisite: the cast would throw units that fail it, so the row is refused until
+  /// issue 815 reads the gate of a struck unit for it.
+  StruckMoveBehindTargetPrerequisite(spell4_id: Int, effect_id: Int)
+  /// A ForcedMove effect aimed at the units a strike hits holds columns that are no move
+  /// (`forced_move.of_row`).
+  StruckMoveNotRead(spell4_id: Int, effect_id: Int, error: forced_move.RowError)
   /// An effect of a spell that spends every point held holds an emmComparison other
   /// than 0 or 1, which chooses nothing (`Spell4Effects.emmComparison`).
   SpendComparisonNotRead(spell4_id: Int, effect_id: Int, comparison: Int)
@@ -1386,6 +1393,26 @@ pub fn describe(error error: PlanError) -> String {
       <> " aimed past the caster behind a target apply prerequisite with a condition of type "
       <> int.to_string(prerequisite_type)
       <> ", which reads the state of the creature it strikes (#817)"
+    StruckMoveBehindTargetPrerequisite(spell4_id:, effect_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a ForcedMove effect "
+      <> int.to_string(effect_id)
+      <> " aimed at the units a strike hits behind a target apply prerequisite, which is not read until issue 815 reads the gate of a struck unit"
+    StruckMoveNotRead(spell4_id:, effect_id:, error:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a ForcedMove effect "
+      <> int.to_string(effect_id)
+      <> " aimed at the units a strike hits that is no move: "
+      <> case error {
+        forced_move.UnknownKind(kind:, ..) ->
+          "its dataBits00 is "
+          <> int.to_string(kind)
+          <> ", which is no kind from 0 to 15"
+        forced_move.NotAFloat(column:, ..) ->
+          "it holds no finite number in " <> column
+      }
     SpendComparisonNotRead(spell4_id:, effect_id:, comparison:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2961,16 +2988,48 @@ fn forced_move_of(
   )
 }
 
-/// One ForcedMove row whose targetFlags are 2, 4 or 6 (`effect_kind.is_row_read`): its
-/// columns as a `forced_move.Move` (`forced_move.of_row`, whose `UnknownKind` fails the
-/// load), its aim and its caster apply prerequisite as a Fluff effect's is
-/// (`condition_of`). A row with a target apply prerequisite fails the load, which a
-/// later step reads (issue 815).
-pub fn struck_move_of(
-  tables _tables: table_store.Tables,
-  effect _effect: spell4_effects.Spell4Effects,
+/// One ForcedMove row aimed only at the units a strike hits (targetFlags 2, 4 or 6;
+/// `effect_kind.is_row_read`): its columns as a `forced_move.Move` (`forced_move.of_row`; a
+/// dataBits00 above 15 or a float column that is no number fails the load), its aim, and its
+/// caster apply prerequisite as a Fluff effect's is (`condition_of`). A row behind a target
+/// apply prerequisite fails the load, since the cast would throw units that fail it; issue
+/// 815 reads that gate of a struck unit.
+fn struck_move_of(
+  tables tables: table_store.Tables,
+  effect effect: spell4_effects.Spell4Effects,
 ) -> Result(StruckMove, PlanError) {
-  panic as "shape: reading a struck move is built in the step's code commit"
+  use <- bool.guard(
+    when: effect.prerequisite_id_target_apply != 0,
+    return: Error(StruckMoveBehindTargetPrerequisite(
+      spell4_id: effect.spell_id,
+      effect_id: effect.id,
+    )),
+  )
+  use move <- result.try(
+    forced_move.of_row(row: effect)
+    |> result.map_error(fn(error) {
+      StruckMoveNotRead(
+        spell4_id: effect.spell_id,
+        effect_id: effect.id,
+        error:,
+      )
+    }),
+  )
+  use condition <- result.map(condition_of(
+    tables:,
+    effect:,
+    reach: OnlyTheCaster,
+    data_bits06_names_a_gate: False,
+  ))
+  StruckMove(
+    effect_id: Spell4EffectsId(effect.id),
+    phase_flags: effect.phase_flags,
+    delay_ms: effect.delay_time,
+    move:,
+    aim: aim_of(target_flags: effect.target_flags),
+    condition:,
+    tag: tag_of(effect:),
+  )
 }
 
 /// One ModifySpellCooldown row whose targetFlags include the caster
@@ -3567,8 +3626,18 @@ fn kind_reading(
     }
     effect_kind.ForcedMove -> {
       use <- when_reached(reaches:)
-      forced_move_of(tables:, effect:)
-      |> result.map(fn(forced_move) { Applied(PlannedForcedMove(forced_move:)) })
+      case has_flag(flags: effect.target_flags, bit: 1) {
+        True ->
+          forced_move_of(tables:, effect:)
+          |> result.map(fn(forced_move) {
+            Applied(PlannedForcedMove(forced_move:))
+          })
+        False ->
+          struck_move_of(tables:, effect:)
+          |> result.map(fn(struck_move) {
+            Applied(PlannedStruckMove(struck_move:))
+          })
+      }
     }
     effect_kind.CooldownModifier -> {
       use <- when_reached(reaches:)

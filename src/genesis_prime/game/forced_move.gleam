@@ -174,10 +174,10 @@ pub fn draws_of(bytes bytes: BitArray) -> Draws {
 /// The move a type 3 row asks for.
 pub fn of_row(row row: spell4_effects.Spell4Effects) -> Result(Move, RowError) {
   use #(way, mover) <- result.try(case row.data_bits00 {
-    0 | 7 | 8 -> Ok(#(kind_way(row.data_bits00), AtOnce))
-    1 | 2 -> Ok(#(kind_way(row.data_bits00), AtOnce))
-    3 | 4 | 5 | 6 | 9 | 10 -> Ok(#(kind_way(row.data_bits00), Flight))
-    11 | 12 | 13 | 14 | 15 -> Ok(#(kind_way(row.data_bits00), Launch))
+    0 | 7 | 8 -> Ok(#(kind_way(kind: row.data_bits00), AtOnce))
+    1 | 2 -> Ok(#(kind_way(kind: row.data_bits00), AtOnce))
+    3 | 4 | 5 | 6 | 9 | 10 -> Ok(#(kind_way(kind: row.data_bits00), Flight))
+    11 | 12 | 13 | 14 | 15 -> Ok(#(kind_way(kind: row.data_bits00), Launch))
     kind -> Error(UnknownKind(effect_id: row.id, kind:))
   })
   use min_distance <- result.try(float_of(row:, column: "dataBits01"))
@@ -262,7 +262,7 @@ pub fn path(
     AtOnce, _ -> 0
     Launch, True ->
       float.round(2000.0 *. result.unwrap(float.square_root(lift /. 16.0), 0.0))
-    _, _ -> move.flight_ms
+    Flight, _ | Launch, False -> move.flight_ms
   }
   case span < 1 {
     True ->
@@ -409,11 +409,8 @@ fn toward_reference(
   gap gap: Float,
   travel travel: Float,
 ) -> Place {
-  case gap <=. 0.0 {
-    True -> from
-    False ->
-      creature_path.along(from:, to: reference.place, fraction: travel /. gap)
-  }
+  use <- bool.guard(when: gap <=. 0.0, return: from)
+  creature_path.along(from:, to: reference.place, fraction: travel /. gap)
 }
 
 /// The way the creature faces at its end: toward the reference unit for flag 4, else

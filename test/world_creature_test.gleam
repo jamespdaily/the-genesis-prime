@@ -32,25 +32,36 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/cast
+import genesis_prime/game/connection/frames
+import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{Blow, Offence, Rolls}
+import genesis_prime/game/hit_radius
 import genesis_prime/game/spell_plan
+import genesis_prime/game/spend
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Strike}
+import genesis_prime/game/world_entry
 import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/float32
+import genesis_prime/message/movement_time.{MovementTime}
+import genesis_prime/message/movement_timed_path.{MovementTimedPath}
+import genesis_prime/message/relayed_movement
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
+import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/vendor_items
 import genesis_prime/server
 import genesis_prime/service
+import genesis_prime/service/shell
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/id.{Creature2Id, Spell4BaseId, Spell4EffectsId}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_faction
+import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
@@ -63,17 +74,20 @@ import gleam/erlang/process.{type Pid, type Subject}
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/result
 import gleam/set
 import map_support
 import open_wait
 import owned_test
 import place_support
+import planted_table.{Integer}
 import quest_support
 import rating_support
 import spawn_support
+import spell_tables
 import vendor_support
+import world_entry_support
 import world_support.{type World}
 
 const ship = MapId(world_id: 3460, instance: 0)
@@ -122,13 +136,18 @@ fn join(run run: MapProcess, connection connection: Int) -> Int {
     run:,
     connection:,
     character: map_support.character(number: 100 + connection),
-    place: place_support.at(
-      world_id: 3460,
-      world_zone_id: spawn_support.warfare_woods,
-      x: 100.0,
-      y: 0.0,
-      z: 0.0,
-    ),
+    place: sight_place(),
+  )
+}
+
+/// Where `join` stands the player.
+fn sight_place() -> Place {
+  place_support.at(
+    world_id: 3460,
+    world_zone_id: spawn_support.warfare_woods,
+    x: 100.0,
+    y: 0.0,
+    z: 0.0,
   )
 }
 
@@ -1399,4 +1418,203 @@ pub fn right_click_on_a_vendor_opens_its_window_test() -> Nil {
     as "opcode.0x90b: the window opens with the full list"
   assert buyback_list.decode(buyback) == Ok(BuybackList(entries: []))
     as "opcode.0xbc: nothing has been sold to the vendor"
+}
+
+// ---- a thrown creature, seen by a watching client (issue 788) ----
+
+/// The row of Spell4Effects 73826 (spell 36010, "Generic Knockback - 10 m",
+/// `table_rows -- Spell4Effects 73826`): targetFlags 2 (the primary target), delayTime 0,
+/// kind 4 (away from a unit) in dataBits00, 10.0 m (the bits 1092616192) in dataBits01 and
+/// dataBits02, a flight of 375 ms in dataBits03, flags 1 and an apex of 2.0.
+fn knockback_row() -> List(planted_table.Cell) {
+  spell_tables.effect_row_with(
+    id: 99_061,
+    effect_type: 3,
+    target_flags: 2,
+    columns: [
+      #("delayTime", Integer(0)),
+      #("dataBits00", Integer(4)),
+      #("dataBits01", Integer(1_092_616_192)),
+      #("dataBits02", Integer(1_092_616_192)),
+      #("dataBits03", Integer(375)),
+      #("dataBits04", Integer(0)),
+      #("dataBits05", Integer(1)),
+      #("dataBits06", Integer(1_073_741_824)),
+    ],
+  )
+}
+
+/// The plans where the planted base 3, at bag index 11, throws what the plan reads from
+/// that row (`spell_plan.read_row`).
+fn knockback_plans() -> spell_plan.Plans {
+  let assert Ok(planned) =
+    spell_tables.planned_strike(
+      rows: spell_tables.rows_with_effect(effect: knockback_row()),
+    )
+  let assert [_] = planned.struck_moves
+    as "the plan reads the row as one move of the units a strike hits"
+  // A spell cast on the caster has the caster as its primary target, so the throw
+  // aimed at the primary target (targetFlags 2) runs in a child a Proxy starts on each
+  // unit the parent struck (`ProxyTarget.OnEachStruck`), whose primary target is that unit.
+  let knockback =
+    spell_plan.Spell(
+      ..cast_support.child(spell4_id: 36_010, base: 21_614),
+      struck_moves: planned.struck_moves,
+    )
+  cast_support.plans_with(
+    spell: spell_plan.Spell(
+      ..cast_support.child(spell4_id: 34_355, base: 3),
+      proxies: [
+        spell_plan.Proxy(
+          effect_id: Spell4EffectsId(99_060),
+          delay_ms: 0,
+          phase_flags: -1,
+          condition: spell_plan.Always,
+          tag: spend.always,
+          target: spell_plan.OnEachStruck,
+          spell: knockback,
+          gains: [],
+        ),
+      ],
+    ),
+  )
+}
+
+/// The path of a creature's flight as the connection was sent it.
+fn flight(message: Message) -> Result(creature_path.Path, Nil) {
+  case message {
+    ForStay(
+      sent: SentByPeer(PeerNews(
+        news: client_connection.CreatureMoved(path:),
+        ..,
+      )),
+      ..,
+    ) -> Ok(path)
+    ForStay(..)
+    | client_connection.SentBySessions(..)
+    | client_connection.SentByChat(..) -> Error(Nil)
+  }
+}
+
+fn float_of(bits bits: Int) -> Float {
+  let assert Ok(value) = float32.bits(number: bits) |> result.try(float32.value)
+  value
+}
+
+pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let world = one_beast_timed(time:, respawn_ms: 60_000, idle_stop_ms:)
+  let run = started(world)
+  let caster = world_support.connection(world:, id: 1)
+  let watcher = world_support.connection(world:, id: 2)
+  let _caster_unit = join(run:, connection: 1)
+  let _watcher_unit = join(run:, connection: 2)
+  let first =
+    next(received: caster, what: "the creature's 0x262", wanted: appearance)
+  let _shown =
+    next(received: watcher, what: "the creature's 0x262", wanted: appearance)
+  let unit_id = first.unit_id
+  let _found = creature_pid(world:, run:, unit_id:, life: 2)
+  // The go that strikes the creature at the clock's time, and what the cast rule tells
+  // the creature for it.
+  let shell.ServiceTime(clock:, ..) = driven_time.service_time(time)
+  let step.Now(monotonic_ms: go_ms, ..) = clock()
+  let struck = [
+    cast.Hit(
+      unit_id:,
+      unit: cast.HitCreature(life: 2, struck_at_ms: go_ms),
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    ),
+  ]
+  let #(state, pressed) =
+    cast_support.pressed_raw_in(
+      plans: knockback_plans(),
+      state: cast.new(),
+      caster: cast_support.caster(),
+      bag_index: 11,
+      target: unit_id,
+      at: go_ms,
+    )
+  let #(_, answered) =
+    cast_support.answered_each(
+      caster: cast_support.caster(),
+      state:,
+      effects: pressed,
+      at: go_ms,
+      struck_of: fn(_) { struck },
+      rolls: [],
+      poses: dict.new(),
+    )
+  let assert [
+    cast.ForcedMoveStarts(unit_id: thrown, life:, struck_at_ms:, move:),
+  ] = cast_support.throws(effects: list.append(pressed, answered))
+    as "the row's delayTime is 0, so the go tells the one creature it hit its throw at once"
+  // The connection's tell, through the server's own `tell_creature`: the draws are
+  // the two fractions at 0, and the reference is the caster's place.
+  let race_id = map_support.character(number: 101).race_id
+  let assert Ok(Nil) =
+    server.tell_creature(
+      creatures: world.creatures,
+      to: step.Creature(
+        map: ship,
+        incarnation: run.incarnation,
+        unit_id: thrown,
+        life:,
+      ),
+      request: client_connection.TellThrown(
+        move:,
+        draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+        reference: forced_move.Reference(
+          place: sight_place(),
+          radius: hit_radius.of_playing(
+            tables: character_tables.shared(),
+            race_id:,
+          ),
+        ),
+        struck_at_ms:,
+      ),
+    )
+    as "the creature is found by its address and told"
+  let path =
+    next(received: watcher, what: "the creature's flight", wanted: flight)
+  // The watcher's connection writes it as one 0x638 on the map's clock, which started
+  // 5000 ms before the go.
+  let #(_, entered) =
+    world_entry_support.entry(
+      tables: character_tables.shared(),
+      character: world_entry_support.character(class: 4, faction: 167, level: 1),
+    )
+  let entered = world_entry.Entered(..entered, clock_origin_ms: go_ms - 5000)
+  let assert Some(Frame(message_id: 0x0638, body:)) =
+    frames.path_frame(entered:, unit_id: thrown, path:)
+    as "the flight is one 0x638"
+  let assert Ok(movement) = unit_movement.decode(body)
+  let assert [
+    relayed_movement.Time(MovementTime(time: started)),
+    relayed_movement.TimedPath(MovementTimedPath(times:, points:)),
+  ] = movement.commands
+    as "opcode.0x638: kind 0, then kind 3"
+  assert started == 5000
+    as "the flight starts at the go's time on the map's clock"
+  assert times == [5000, 5375]
+    as "and its last point is the go plus the row's delay 0 plus its dataBits03 375 ms"
+  let assert [from, to] = points as "a flight with no arc has its two points"
+  let squared = fn(start, end) {
+    let gap = float_of(bits: end) -. float_of(bits: start)
+    gap *. gap
+  }
+  let moved =
+    float.square_root(
+      squared(from.x, to.x) +. squared(from.y, to.y) +. squared(from.z, to.z),
+    )
+    |> result.unwrap(0.0)
+  assert float.loosely_equals(moved, 10.0, tolerating: 0.001)
+    as "it ends 10.0 m (dataBits01 and dataBits02) from where it started"
+  assert float_of(bits: to.x) <. float_of(bits: from.x)
+    as "away from the caster, who stands at x 100 while the creature stands at x 0"
+  world_support.stop(world:)
 }

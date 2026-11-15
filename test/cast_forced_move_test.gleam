@@ -14,15 +14,24 @@
 //// - `Spell4Effects.phaseFlags`: bit n is phase n; a row applies in the phases it names.
 //// - `Prerequisite.prerequisiteTypeId.37` (comparison 6, value 50, row 4585): a type 37
 ////   condition takes one roll, drawn by the connection from `rolls_needed`.
+//// - `Spell4Effects.effectType.3.other_unit`: a row aimed at the units a strike hits throws
+////   each creature the go hit, at the go plus the row's delayTime; its columns are 73826's
+////   (kind 4, 10.0 m, 375 ms, flags 1, apex 2.0, `table_rows -- Spell4Effects 73826`).
+//// - The server's choices, in the cast rule's doc: a throw's start is a timer of the
+////   cast's node on the creature, so the node's end cancels one still waiting.
 
 import cast_support as support
 import genesis_prime/game/cast.{type State}
+import genesis_prime/game/forced_move
+import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{type Spell, Always}
 import genesis_prime/game/spend
+import genesis_prime/game/unit_properties.{Change}
 import genesis_prime/message/spell_go
-import genesis_prime/table/id.{Spell4EffectsId}
+import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import owned_test
 import prerequisite_support
 
@@ -229,4 +238,170 @@ pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_
   assert went(50) == [#(7, [#(67_776, 200)])]
     as "a roll of 50 passes comparison 6 on 50"
   assert went(51) == [] as "a roll of 51 fails and the row is not applied"
+}
+
+// ---- the creatures a go throws ----
+
+/// The move of Spell4Effects 73826: kind 4 (away from a unit), 10.0 m, 375 ms, flags 1,
+/// apex 2.0.
+fn knockback() -> forced_move.Move {
+  forced_move.Move(
+    way: forced_move.Away,
+    mover: forced_move.Flight,
+    min_distance: 10.0,
+    max_distance: 10.0,
+    flight_ms: 375,
+    gravity: 0.0,
+    flags: 1,
+    height: 2.0,
+  )
+}
+
+/// A row of that move aimed at the units the go hit, with its delay.
+fn throwing_row(delay_ms delay_ms: Int) -> spell_plan.StruckMove {
+  spell_plan.StruckMove(
+    effect_id: Spell4EffectsId(73_826),
+    phase_flags: 1,
+    delay_ms:,
+    move: knockback(),
+    aim: spell_plan.AimsAtArea,
+    condition: Always,
+    tag: spend.always,
+  )
+}
+
+/// A creature the round hit in `life` at the monotonic time 1000.
+fn hit(unit_id unit_id: Int, life life: Int) -> cast.Struck {
+  cast.Hit(
+    unit_id:,
+    unit: cast.HitCreature(life:, struck_at_ms: 1000),
+    descriptions: [],
+    controls: [],
+    armor_removed: 0,
+    ticking: [],
+  )
+}
+
+/// The effects of the press and of the go that the round `struck` answers.
+fn thrown_by(
+  spell spell: Spell,
+  struck struck: List(cast.Struck),
+) -> #(State, List(cast.Effect)) {
+  let #(state, effects) =
+    support.pressed_raw_in(
+      plans: support.plans_with(spell:),
+      state: cast.new(),
+      caster: support.caster(),
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1000,
+    )
+  let #(state, answered) =
+    support.answered_by(state:, effects:, at: 1000, struck:)
+  #(state, list.append(effects, answered))
+}
+
+fn thrower(rows rows: List(spell_plan.StruckMove)) -> Spell {
+  spell_plan.Spell(
+    ..support.child(spell4_id: 34_355, base: 3),
+    struck_moves: rows,
+  )
+}
+
+fn thrown(unit_id: Int, life: Int) -> cast.Effect {
+  cast.ForcedMoveStarts(unit_id:, life:, struck_at_ms: 1000, move: knockback())
+}
+
+pub fn a_go_tells_each_hit_creature_its_throw_in_the_same_step_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, effects) =
+    thrown_by(spell: thrower(rows: [throwing_row(delay_ms: 0)]), struck: [
+      hit(unit_id: 21, life: 3),
+      hit(unit_id: 23, life: 5),
+    ])
+  assert support.throws(effects:) == [thrown(21, 3), thrown(23, 5)]
+    as "each creature the go hit is thrown in the lives the go struck, at the go's own time 1000, in the order the go hit them"
+}
+
+pub fn a_delayed_throw_is_told_at_the_go_plus_its_delay_test() -> Nil {
+  use <- owned_test.run(5000)
+  let creatures = [hit(unit_id: 21, life: 3)]
+  let #(state, effects) =
+    thrown_by(
+      spell: thrower(rows: [throwing_row(delay_ms: 200)]),
+      struck: creatures,
+    )
+  assert support.throws(effects:) == []
+    as "the row waits its delayTime of 200 ms: nothing is told at the go"
+  let #(_, fired) =
+    support.run_timers_striking(
+      state:,
+      effects:,
+      from_ms: 1000,
+      struck: creatures,
+    )
+  assert support.throw_timeline(fired:) == [#(1200, thrown(21, 3))]
+    as "the throw is told at go 1000 + 200, still for the strike time 1000 of the hit"
+}
+
+pub fn a_deflected_creature_is_not_thrown_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, effects) =
+    thrown_by(spell: thrower(rows: [throwing_row(delay_ms: 0)]), struck: [
+      cast.Deflected(unit_id: 21),
+      hit(unit_id: 23, life: 5),
+    ])
+  assert support.throws(effects:) == [thrown(23, 5)]
+    as "opcode.0x7fb: the creature that deflected the strike took no effect of it; only the one the go hit is thrown"
+}
+
+pub fn a_delayed_throw_is_cancelled_with_its_cast_node_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A lasting row of 5000 ms on the same creature gives the cast a node there that ends
+  // at 6000 (`Spell4Effects.effectType.17`).
+  let lasting_row =
+    spell_plan.PropertyModifier(
+      effect_id: Spell4EffectsId(7711),
+      phase_flags: 1,
+      change: spell_plan.StruckChange(
+        modifier: Change(
+          property: UnitProperty2Id(100),
+          mode: 2,
+          multiplier: 0.5,
+          flat: 0.0,
+          per_level: 0.0,
+        ),
+        aim: spell_plan.AimsAtArea,
+      ),
+      row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
+      condition: Always,
+      tag: spend.always,
+      armor: None,
+    )
+  let creatures = [hit(unit_id: 21, life: 3)]
+  let holding = fn(delay_ms) {
+    spell_plan.Spell(..thrower(rows: [throwing_row(delay_ms:)]), modifiers: [
+      lasting_row,
+    ])
+  }
+  let #(state, effects) = thrown_by(spell: holding(7000), struck: creatures)
+  let #(_, fired) =
+    support.run_timers_striking(
+      state:,
+      effects:,
+      from_ms: 1000,
+      struck: creatures,
+    )
+  assert support.throw_timeline(fired:) == []
+    as "the node ends at 6000, before the throw's start at 8000, and takes its timer with it"
+  let #(state, effects) = thrown_by(spell: holding(4000), struck: creatures)
+  let #(_, fired) =
+    support.run_timers_striking(
+      state:,
+      effects:,
+      from_ms: 1000,
+      struck: creatures,
+    )
+  assert support.throw_timeline(fired:) == [#(5000, thrown(21, 3))]
+    as "and a throw that starts before the node ends, at 1000 + 4000, is told"
 }
