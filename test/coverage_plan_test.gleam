@@ -3,7 +3,7 @@
 //// printed by `gleam run -m genesis_prime/table_rows -- Spell4Effects effectType=N`, written
 //// apart from the plan's code from the rules each row is held to (the plan's doc comments
 //// and `genesis_prime/game/cast`'s gates), and the same rows for the starting abilities'
-//// column, whose 196 rows are the ids the coverage walk reaches
+//// column, whose 215 rows are the ids the coverage walk reaches
 //// (`genesis_prime/coverage/starting_ability`).
 
 import client_tables
@@ -104,8 +104,8 @@ pub fn the_measure_counts_a_proxy_that_names_no_spell_or_aims_elsewhere_as_not_r
   assert rows == 16_929 as "scratch count: effectType=26 holds 16,929 rows"
   assert unread == 1986
     as "scratch count: 1,808 rows hold a dataBits00 of 0, which names no spell (`Spell4Effects.effectType.26` counts the same 1,808), 170 more aim by a flag other than 1, 2, 4 and 6 and 8 more, otherwise read, hold a phaseFlags of 0, which no phase selects: 1,986 of 16,929"
-  assert #(starting, starting_unread) == #(72, 2)
-    as "scratch count over the starting rows: 72 of type 26, and 121345 and 178429 hold a dataBits00 of 0"
+  assert #(starting, starting_unread) == #(81, 2)
+    as "scratch count over the starting rows: 72 of type 26 and the 9 Proxy rows of 76002, the alternate Spell Surge swaps 43468 for (Spell4.spell4IdMechanicAlternateSpell), and 121345 and 178429 hold a dataBits00 of 0"
 }
 
 pub fn the_measure_reads_a_row_behind_a_target_prerequisite_only_when_its_gate_is_read_for_every_kind_test() -> Nil {
@@ -134,8 +134,8 @@ pub fn coverage_counts_the_periodic_rows_test() -> Nil {
   let #(ticking, until_removed, no_tick) = periodic_rows(type_number: 8)
   assert rows - unread == 24_790 + ticking - until_removed - no_tick - 145
     as "the 24,790 rows read while no periodic row was, and the rows holding a tickTime (2,854) but those that last until removed (flags bit 2, #803) and those with no whole tick in their durationTime (`ticking.schedule_of`), counted from the table here; less the 145 periodic rows the area load refuses on its other gates (scratch count over `table_rows -- Spell4Effects effectType=8`, by `spell_area.damage_row_of`: of the 851 periodic rows not read, those that do not last until removed and hold a formula parameter the formula does not read, a phaseFlags of 0 or an aim by 10): 26,793 read"
-  assert #(starting, starting_unread) == #(36, 0)
-    as "the area load builds every damage row of the starting abilities' spells, the periodic ones among them"
+  assert #(starting, starting_unread) == #(41, 0)
+    as "the area load builds every damage row of the starting abilities' spells, the periodic ones among them: the 36 of before and the 5 of the trees Spell Surge's alternates 34719 and 76002 reach (79679, 34766, 34767, 76003 and 76004, one damage row each)"
   let #(rows, unread, _, _) = counted(type_number: 10)
   let #(ticking, until_removed, no_tick) = periodic_rows(type_number: 10)
   assert rows - unread == 1546 + ticking - until_removed - no_tick - 219
@@ -176,8 +176,8 @@ pub fn the_measure_totals_match_the_plan_test() -> Nil {
   let text = checklist.render([measured()])
   assert string.contains(text, "16087 rows of the handled types not read")
     as "the sum of the types' scratch counts: 1 1,367, 3 2,553, 4 855, 8 2,652, 10 1,056, 11 309, 26 1,986, 29 257, 73 34, 80 399 and 118 83 (the tests above), 17 400 and 81 384 (`coverage_type_test`), 18 8, 83 49, and the counts that stay as they were: 14 3,455, 52 2, 64 35, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values)"
-  assert string.contains(text, "starting abilities: 186 of 196 rows handled")
-    as "scratch count over the 196 starting rows: 7 are not read for lack of a handled type or row (the two Proc rows the plan skips, 90 four times and 24; the Stalker's 91018, behind a target apply prerequisite the plan reads, is read) and 3 more are not read (the Warrior's 210834, which ticks on the caster, is read): Proxies 121345 and 178429 (dataBits00 0) and the Medic's ticking gain 228918"
+  assert string.contains(text, "starting abilities: 205 of 215 rows handled")
+    as "scratch count over the 215 starting rows (the 196 of before and the 19 rows of the trees Spell Surge's alternates reach, all of handled types and read): 7 are not read for lack of a handled type or row (the two Proc rows the plan skips, 90 four times and 24; the Stalker's 91018, behind a target apply prerequisite the plan reads, is read) and 3 more are not read (the Warrior's 210834, which ticks on the caster, is read): Proxies 121345 and 178429 (dataBits00 0) and the Medic's ticking gain 228918"
 }
 
 // ---- the gaps the engine states ----
