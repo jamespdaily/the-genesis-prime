@@ -210,7 +210,7 @@ pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_
   assert count_of("force remove counts") == 2
     as "2 hold a SpellForceRemove effect whose dataBits03 differs from its dataBits04 (Spell4Effects.effectType.80). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("lasting aim") == 2
-    as "2 hold a Fluff, SpellForceRemove, Scale or RavelSignal effect aimed by flags the server does not read (Spell4Effects.targetFlags). Gap: the issue Spells work in depth on the real client (#336) owns it"
+    as "2 hold a Fluff, SpellForceRemove, Scale, ItemVisualSwap or RavelSignal effect aimed by flags the server does not read (Spell4Effects.targetFlags). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("stealth condition") == 1
     as "1 holds a Spell4Conditions row whose mask tests stealth, with the refusals 65 and 114 not checked. Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("control aim") == 2
@@ -228,7 +228,10 @@ fn refusal_reason(why why: String) -> String {
     #("aims at the target or an area", "aimed at the target"),
     #("DisguiseOutfit", "disguise"),
     #("differs from its dataBits04", "force remove counts"),
-    #("Fluff, SpellForceRemove, Scale or RavelSignal", "lasting aim"),
+    #(
+      "Fluff, SpellForceRemove, Scale, ItemVisualSwap or RavelSignal",
+      "lasting aim",
+    ),
     #("whose mask tests stealth", "stealth condition"),
     #("CCStateSet effect", "control aim"),
     #("with a condition of type 76", "target gate"),

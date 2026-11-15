@@ -398,6 +398,7 @@ fn children_of(
           | effect_kind.ShieldOverload
           | effect_kind.InterruptArmor
           | effect_kind.Scale
+          | effect_kind.ItemVisualSwap
           | effect_kind.RavelSignal
           | effect_kind.PropertyConversion
           | effect_kind.DisguiseOutfit
