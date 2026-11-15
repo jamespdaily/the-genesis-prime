@@ -1096,6 +1096,19 @@ fields = [
 ]
 
 [[record]]
+name = "movement_timed_path"
+evidence = "movement_command.kind_3"
+summary = "a movement command of kind 3 as the server writes it, a timed path: the times of its points (32 bits each, a count in 10 bits) and the points (three floats each, one for each time), which the client draws as straight lines between the points, holding the first before the first time and the last after the last. The path type is 0 (straight lines; 1 is a curve), and the server writes 0 in the value that shifts the sampling time and 0 in the blend bit. Gap: the codec does not check that the times rise or that there is a point"
+fields = [
+  { name = "kind", kind = "constant", bits = 5, value = 3, evidence = "0x140c1f070", named_by = "0x140c1f070" },
+  { name = "times", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "movement_command.kind_3", named_by = "movement_command.kind_3" },
+  { name = "points", kind = "array", counted_by = "times", element = "movement_float_vector", evidence = "movement_command.kind_3", named_by = "movement_command.kind_3" },
+  { name = "path_type", kind = "constant", bits = 2, value = 0, evidence = "movement_command.kind_3", named_by = "movement_command.kind_3" },
+  { name = "value", kind = "constant", bits = 32, value = 0, evidence = "movement_command.kind_3", named_by = "movement_command.kind_3" },
+  { name = "blend", kind = "constant", bits = 1, value = 0, evidence = "movement_command.kind_3", named_by = "movement_command.kind_3" },
+]
+
+[[record]]
 name = "movement_kind_4"
 evidence = "0x140c1f070"
 summary = "a movement command of kind 4, a path: the points (three floats each), the speed in units a second as a half float, which the client's apply fails below 0.00001, the path type (0 is straight lines through at least one point, 1 a curve through at least three, and the client's apply fails 2 and 3), a 4-bit mode, a 32-bit value and one bit. Gap: the mode, the 32-bit value and the last bit are not read, and the codec does not check the point count each type needs"
@@ -1494,12 +1507,13 @@ variants = [
 [[union]]
 name = "relayed_movement"
 evidence = "opcode.0x637"
-summary = "one movement command of a message about a unit's movement: the kinds of the per-frame batch the client's writer builds after the time command (1 platform, 2 position, 8 velocity, 11 move asked, 14 rotation, 24 state flags, 27 mode), which the server relays to the players who see a unit, every field named, and the two a server that moves a unit writes itself, 0 (the time its later commands apply at) and 4 (a path). Gap: the other kinds, which game moves queue and the client's writer may send, are not relayed, since opcode.0x637 does not say which queuers exist or what they mean"
+summary = "one movement command of a message about a unit's movement: the kinds of the per-frame batch the client's writer builds after the time command (1 platform, 2 position, 8 velocity, 11 move asked, 14 rotation, 24 state flags, 27 mode), which the server relays to the players who see a unit, every field named, and the three a server that moves a unit writes itself, 0 (the time its later commands apply at), 3 (a timed path) and 4 (a path). Gap: the other kinds, which game moves queue and the client's writer may send, are not relayed, since opcode.0x637 does not say which queuers exist or what they mean"
 tag_bits = 5
 variants = [
   { tag = 0, name = "time", record = "movement_time", named_by = "movement_command.kind_0" },
   { tag = 1, name = "platform", record = "movement_platform", named_by = "opcode.0x637" },
   { tag = 2, name = "position", record = "unit_position_command", named_by = "0x1400ad350" },
+  { tag = 3, name = "timed_path", record = "movement_timed_path", named_by = "movement_command.kind_3" },
   { tag = 4, name = "path", record = "movement_path", named_by = "movement_command.kind_4" },
   { tag = 8, name = "velocity", record = "movement_velocity", named_by = "movement_command.kind_8" },
   { tag = 11, name = "move_asked", record = "movement_move_asked", named_by = "movement_command.kind_11" },

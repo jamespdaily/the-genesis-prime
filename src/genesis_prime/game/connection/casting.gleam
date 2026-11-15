@@ -91,6 +91,7 @@ import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/damage
+import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
 import genesis_prime/game/hit_radius
 import genesis_prime/game/interaction
@@ -1033,6 +1034,21 @@ pub fn cast_effects(
         ],
       )
       cast.TargetChangeEnds(..), None -> #(session, [])
+      cast.ForcedMoveStarts(unit_id:, life:, struck_at_ms:, move:),
+        Some(entered)
+      -> {
+        let #(session, tell) =
+          creature_thrown(
+            session:,
+            entered:,
+            unit_id:,
+            life:,
+            struck_at_ms:,
+            move:,
+          )
+        #(session, [tell])
+      }
+      cast.ForcedMoveStarts(..), None -> #(session, [])
     }
     #(session, list.append(done, more))
   })
@@ -1060,6 +1076,49 @@ fn tells_the_creature(
       change:,
     ),
   ))
+}
+
+/// The throw of the creature `unit_id` of `life`, in the run of the player's map,
+/// through the creature registry with no watch, as a strike's tell goes: the
+/// connection draws `forced_move.draw_bytes` from its seed (`client_connection.draw`),
+/// reads the two fractions (`forced_move.draws_of`), takes the player's place now and
+/// race radius as the `Reference` and tells the creature `TellThrown` with
+/// `struck_at_ms`. The session it returns holds the link after the draw.
+fn creature_thrown(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  life life: Int,
+  struck_at_ms struck_at_ms: Int,
+  move move: forced_move.Move,
+) -> #(Session, Effect(ConnectionEffect(Request))) {
+  let #(link, bytes) =
+    client_connection.draw(session.link, forced_move.draw_bytes)
+  let reference =
+    forced_move.Reference(
+      place: movement.place(entered.movement),
+      radius: hit_radius.of_playing(
+        tables: session.settings.tables,
+        race_id: entered.character.race_id,
+      ),
+    )
+  #(
+    Session(..session, link:),
+    OwnEffect(step.Tell(
+      to: step.Creature(
+        map: entered.map,
+        incarnation: entered.incarnation,
+        unit_id:,
+        life:,
+      ),
+      request: client_connection.TellThrown(
+        move:,
+        draws: forced_move.draws_of(bytes:),
+        reference:,
+        struck_at_ms:,
+      ),
+    )),
+  )
 }
 
 /// A go asked: its targets are selected from the units the client shows, the

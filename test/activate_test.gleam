@@ -111,8 +111,8 @@ pub fn activate_spell_that_strikes_cannot_be_planned_test() -> Nil {
   let assert Ok(CannotBePlanned(why:)) =
     activate.planned_of(activations:, spell4_id: 38_392)
     as "Spell4 38392, Creature2 19232's activate spell, is held with a reason"
-  assert string.contains(why, "82255") && string.contains(why, "38392")
-    as "Spell4Effects 82255 of Spell4 38392 is a Proxy (effectType 26) aimed at the primary target (targetFlags 2) beside its Activate row 82254: the activate cast strikes no one, so the reason names that row"
+  assert string.contains(why, "58586") && string.contains(why, "31489")
+    as "Spell4 38392's tree holds the ForcedMove 58586 of Spell4 31489 aimed at the units a strike hits behind a target apply prerequisite, which the plan refuses before the activate rows are read until issue 815 reads that gate; the tree also holds the Proxy 82255 (effectType 26) aimed at the primary target (targetFlags 2) beside its Activate row 82254, which the activate cast, striking no one, would refuse as well"
 }
 
 pub fn activate_spell_with_a_state_on_the_target_stays_refused_though_its_plan_drops_the_row_test() -> Nil {

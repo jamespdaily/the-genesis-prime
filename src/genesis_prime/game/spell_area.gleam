@@ -655,8 +655,8 @@ pub fn damage_row_of(
 
 /// What the spell's phase strikes with the effects a cast that spent `spent` points
 /// chooses (genesis_prime/game/spend `applies`); the flags are worked out from the
-/// effects, crowd-control states, property changes of struck units and Proxies that
-/// are left.
+/// effects, crowd-control states, property changes and throws of struck units and
+/// Proxies that are left.
 fn phase_of(
   spell spell: SpellArea,
   phase phase: Int,
@@ -683,8 +683,14 @@ fn phase_of(
         }
       },
     )
+  let throws =
+    list.map(
+      spell_plan.struck_moves_in_phase(spell: spell.spell, phase:, spent:),
+      fn(move) { move.aim },
+    )
   let strikes = fn(aims) {
     list.any(firing, fn(effect) { list.contains(aims, effect.aim) })
+    || list.any(throws, fn(aim) { list.contains(aims, aim) })
     || list.any(ticking_firing, fn(row) { list.contains(aims, row.damage.aim) })
     || list.any(controls, fn(control) { list.contains(aims, control.aim) })
     || list.any(changes, fn(aim) { list.contains(aims, aim) })

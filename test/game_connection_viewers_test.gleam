@@ -19,9 +19,11 @@ import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
 import genesis_prime/message/item_place
 import genesis_prime/message/movement_command
+import genesis_prime/message/movement_float_vector.{MovementFloatVector}
 import genesis_prime/message/movement_kind_26.{MovementKind26}
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_time.{MovementTime}
+import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
@@ -43,6 +45,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{Character, ForItems, ForSelect, ItemsSaved, Listed}
 import genesis_prime/table/id.{ClassId}
+import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{
   Left, ObjectsSeen, ObjectsUnseen, SeenBy, UnseenBy,
 }
@@ -51,6 +54,7 @@ import genesis_prime/world_map/static_object.{type Created}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
 import gleam/list
+import gleam/option
 import gleam/result
 import map_support
 import owned_test
@@ -1406,4 +1410,72 @@ pub fn an_object_is_shown_with_its_factions_hostility_test() -> Nil {
     as "and the refusal is logged once"
   assert support.says(line:, words: "Hostile")
     as "the line says the unit is Hostile to the player"
+}
+
+/// A thrown creature's flight is a 0x638 of kind 0 then kind 3 (`movement_command.kind_0`,
+/// `movement_command.kind_3`): the map's time (the monotonic time less the map's start,
+/// 600 ms here) at each of the path's times and the path's points as float bits (IEEE 754
+/// binary32: 1.0 is 0x3F800000, 2.0 0x40000000, -3.0 0xC0400000, 4.0 0x40800000, 5.0
+/// 0x40A00000 and 6.0 0x40C00000).
+pub fn a_viewer_writes_the_creatures_kind_3_flight_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = game_connection_support.joining()
+  let assert map.Joined(unit:, loadout:, incarnation:, clock_origin_ms: _) =
+    game_connection_support.map_answer(taken)
+  let #(state, _) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromMap(map.Joined(unit:, loadout:, incarnation:, clock_origin_ms: 600)),
+      ),
+    )
+  let #(state, _) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.creature_of_beast_appears_facing(
+        unit_id: 40,
+        creature_id: 11_070,
+        yaw: 0.7,
+      ),
+    )
+  let at = fn(x, y, z) {
+    place_support.at(world_id: 3460, world_zone_id: 6009, x:, y:, z:)
+  }
+  let flight =
+    creature_path.Timed(
+      first: #(1000, at(1.0, 2.0, -3.0)),
+      rest: [#(1375, at(4.0, 5.0, 6.0))],
+      turned_to: option.None,
+    )
+  let #(_, taken) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.news_sent_by_a_peer(
+        unit_id: 40,
+        news: client_connection.CreatureMoved(path: flight),
+      ),
+    )
+  let assert [Frame(message_id: 0x0638, body:)] =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+    as "opcode.0x638: one message for the flight"
+  assert unit_movement.decode(body)
+    == Ok(
+      UnitMovement(
+        unit_id: 40,
+        server_time: 400,
+        reset_movement: 0,
+        kept: 0,
+        commands: [
+          relayed_movement.Time(MovementTime(time: 400)),
+          relayed_movement.TimedPath(
+            MovementTimedPath(times: [400, 775], points: [
+              MovementFloatVector(x: 0x3F800000, y: 0x40000000, z: 0xC0400000),
+              MovementFloatVector(x: 0x40800000, y: 0x40A00000, z: 0x40C00000),
+            ]),
+          ),
+        ],
+      ),
+    )
+    as "kind 0 at 1000 - 600, then kind 3 with the times 400 and 775 and the two points"
 }

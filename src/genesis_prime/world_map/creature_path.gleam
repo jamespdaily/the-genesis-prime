@@ -1,17 +1,24 @@
-//// Where a creature that runs is at any moment: the one straight path it was last
-//// sent as a 0x638 of kind 4, and its place along it. The creature keeps it
+//// Where a creature that runs or is thrown is at any moment: the one path it was last
+//// sent as a 0x638 (a straight one of kind 4, or a timed one of kind 3), and its place along it. The creature keeps it
 //// (genesis_prime/world_map/creature_fight), and so does each viewer's connection
 //// from the creature's own news (genesis_prime/game/shown), so a player's cast and
 //// the creature find the creature at the same place by one function.
 ////
 //// ```
 //// creature_fight: chase or home ─▶ toward(from, to, ..) ─▶ Path ─▶ 0x638 [kind 0, kind 4] to its viewers
+//// creature_fight: a throw ─▶ forced_move.path(..) ─▶ Timed ─▶ 0x638 [kind 0, kind 3 (+ kind 14)] to its viewers
 //// creature and viewer: place_at(path, now) ─▶ the place along it, the end once it is run
 //// ```
 ////
 //// - **One straight path of two points**, kind 4 type 0 (straight lines), at the
 ////   creature's run speed in units a second (`movement_command.kind_4`). The client
 ////   runs it from the time of the 0x638's kind 0 (`movement_command.kind_0`).
+//// - **A timed path** (`Timed`) is the points of a throw (genesis_prime/game/forced_move) with the
+////   monotonic time of each, kind 3 type 0 (`movement_command.kind_3`): the client draws straight
+////   lines between the points, holds the first before the first time and the last after the last
+////   (`0x140783e10`). A path of one point is a creature set at once at that point at that time,
+////   which is kind 2 and has no flight; it is the form of a move that turns the creature
+////   (`turned_to`, kind 14).
 //// - **A path is clipped at the leash circle**: no point of it lies farther from the
 ////   spawn than the circle's radius, so a creature never runs past the circle it
 ////   leashes at. Distances are in three dimensions, as sight's are
@@ -19,18 +26,28 @@
 //// - **Time** is the monotonic time of the node in milliseconds, the clock both the
 ////   creature and its viewers' connections read their inputs at.
 
-import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/start_place.{type Facing, type Place}
 import genesis_prime/world_map/sight
 import gleam/bool
 import gleam/float
 import gleam/int
+import gleam/list
+import gleam/option.{type Option}
 
-/// A creature's movement: standing at a place, or running a straight path from
+/// A creature's movement: standing at a place, running a straight path from
 /// `from` to `to`, started at monotonic time `started_ms`, at `speed` units a
-/// second.
+/// second, or thrown along timed points.
 pub type Path {
   Standing(at: Place)
   Running(from: Place, to: Place, started_ms: Int, speed: Float)
+  /// The points a throw passes, each at its monotonic time in milliseconds: `first`
+  /// and then `rest`, so a timed path always has a point, and the times rise along
+  /// them; the creature turns to `turned_to` when it has one.
+  Timed(
+    first: #(Int, Place),
+    rest: List(#(Int, Place)),
+    turned_to: Option(Facing),
+  )
 }
 
 /// The circle a creature's paths stay inside: its spawn's place and the leash
@@ -44,6 +61,8 @@ pub type Circle {
 pub fn place_at(path path: Path, now_ms now_ms: Int) -> Place {
   case path {
     Standing(at:) -> at
+    Timed(first:, rest:, turned_to:) ->
+      facing_of_turn(place: timed_place_at(first:, rest:, now_ms:), turned_to:)
     Running(from:, to:, started_ms:, speed:) -> {
       let length = distance(from: from, to: to)
       let run = speed *. int.to_float(int.max(0, now_ms - started_ms)) /. 1000.0
@@ -60,6 +79,21 @@ pub fn end(path path: Path) -> Place {
   case path {
     Standing(at:) -> at
     Running(to:, ..) -> to
+    Timed(first:, rest:, turned_to:) ->
+      facing_of_turn(place: last_of(first:, rest:).1, turned_to:)
+  }
+}
+
+/// The place with the facing a throw turns the creature to (kind 14 sets the unit's
+/// rotation and the path moves its position only), the place itself when the throw does
+/// not turn it.
+fn facing_of_turn(
+  place place: Place,
+  turned_to turned_to: Option(Facing),
+) -> Place {
+  case turned_to {
+    option.Some(facing) -> start_place.turned(place:, facing:)
+    option.None -> place
   }
 }
 
@@ -106,11 +140,144 @@ pub fn straight(
 pub fn arrives_ms(path path: Path, now_ms now_ms: Int) -> Int {
   case path {
     Standing(..) -> now_ms
+    Timed(first:, rest:, ..) -> last_of(first:, rest:).0
     Running(from:, to:, started_ms:, speed:) ->
       started_ms
       + float.truncate(float.ceiling(
         distance(from: from, to: to) /. speed *. 1000.0,
       ))
+  }
+}
+
+/// The rest of the path from `now_ms` on, as a path of its own: a running path from
+/// where the creature is now to the same end at the same speed, a timed path from
+/// its place now and the points still ahead of it, and a standing one itself. What a
+/// viewer that arrives mid-path is sent.
+pub fn rest_of(path path: Path, now_ms now_ms: Int) -> Path {
+  case path {
+    Standing(..) | Running(..) -> path
+    Timed(first:, rest:, turned_to:) ->
+      case list.filter([first, ..rest], fn(point) { point.0 > now_ms }) {
+        [] ->
+          Standing(at: facing_of_turn(
+            place: last_of(first:, rest:).1,
+            turned_to:,
+          ))
+        ahead ->
+          Timed(
+            first: #(now_ms, timed_place_at(first:, rest:, now_ms:)),
+            rest: ahead,
+            turned_to:,
+          )
+      }
+  }
+}
+
+/// The creature's velocity along the path at `now_ms` in units a second, the
+/// direction of the path's segment now times its speed; zero when it stands, or
+/// when the path is run.
+pub fn velocity(path path: Path, now_ms now_ms: Int) -> #(Float, Float, Float) {
+  case path {
+    Standing(..) -> #(0.0, 0.0, 0.0)
+    Running(from:, to:, started_ms:, speed:) ->
+      running_velocity(from:, to:, started_ms:, speed:, now_ms:)
+    Timed(first:, rest:, ..) -> timed_velocity(first:, rest:, now_ms:)
+  }
+}
+
+/// The velocity of a run from `from` to `to` that began at `started_ms`: its speed along
+/// the line, zero once it has arrived.
+fn running_velocity(
+  from from: Place,
+  to to: Place,
+  started_ms started_ms: Int,
+  speed speed: Float,
+  now_ms now_ms: Int,
+) -> #(Float, Float, Float) {
+  let length = distance(from:, to:)
+  let run = speed *. int.to_float(int.max(0, now_ms - started_ms)) /. 1000.0
+  use <- bool.guard(when: length <=. 0.0 || run >=. length, return: #(
+    0.0,
+    0.0,
+    0.0,
+  ))
+  let scale = speed /. length
+  #(
+    { start_place.x(to) -. start_place.x(from) } *. scale,
+    { start_place.y(to) -. start_place.y(from) } *. scale,
+    { start_place.z(to) -. start_place.z(from) } *. scale,
+  )
+}
+
+/// The last point of a timed path.
+fn last_of(
+  first first: #(Int, Place),
+  rest rest: List(#(Int, Place)),
+) -> #(Int, Place) {
+  case list.last(rest) {
+    Ok(last) -> last
+    Error(Nil) -> first
+  }
+}
+
+/// The two points of the segment a timed path is on at `now_ms`: the last point not
+/// after it and the first point after it. `Error(Nil)` before the first time and after
+/// the last, where the path holds a point.
+fn segment_at(
+  first first: #(Int, Place),
+  rest rest: List(#(Int, Place)),
+  now_ms now_ms: Int,
+) -> Result(#(#(Int, Place), #(Int, Place)), Nil) {
+  case rest {
+    [] -> Error(Nil)
+    [next, ..later] ->
+      case now_ms < first.0 {
+        True -> Error(Nil)
+        False ->
+          case now_ms < next.0 {
+            True -> Ok(#(first, next))
+            False -> segment_at(first: next, rest: later, now_ms:)
+          }
+      }
+  }
+}
+
+fn timed_place_at(
+  first first: #(Int, Place),
+  rest rest: List(#(Int, Place)),
+  now_ms now_ms: Int,
+) -> Place {
+  case segment_at(first:, rest:, now_ms:) {
+    Ok(#(before, after)) ->
+      along(
+        from: before.1,
+        to: after.1,
+        fraction: int.to_float(now_ms - before.0)
+          /. int.to_float(after.0 - before.0),
+      )
+    Error(Nil) ->
+      case now_ms < first.0 {
+        True -> first.1
+        False -> last_of(first:, rest:).1
+      }
+  }
+}
+
+fn timed_velocity(
+  first first: #(Int, Place),
+  rest rest: List(#(Int, Place)),
+  now_ms now_ms: Int,
+) -> #(Float, Float, Float) {
+  case segment_at(first:, rest:, now_ms:) {
+    Ok(#(before, after)) -> {
+      let seconds = int.to_float(after.0 - before.0) /. 1000.0
+      #(
+        { start_place.x(after.1) -. start_place.x(before.1) } /. seconds,
+        { start_place.y(after.1) -. start_place.y(before.1) } /. seconds,
+        { start_place.z(after.1) -. start_place.z(before.1) } /. seconds,
+      )
+    }
+    Error(Nil) -> #(0.0, 0.0, 0.0)
   }
 }
 
@@ -123,7 +290,11 @@ pub fn distance(from first: Place, to second: Place) -> Float {
 }
 
 /// The point `fraction` of the way from `from` to `to`, facing as `from` does.
-fn along(from from: Place, to to: Place, fraction fraction: Float) -> Place {
+pub fn along(
+  from from: Place,
+  to to: Place,
+  fraction fraction: Float,
+) -> Place {
   start_place.moved(
     place: from,
     x: start_place.x(from)
@@ -140,7 +311,7 @@ fn along(from from: Place, to to: Place, fraction fraction: Float) -> Place {
 
 /// `to`, or the point where the segment from `from` to it leaves the circle when
 /// `to` lies outside it. A `from` outside the circle stays where it is.
-fn clipped(from from: Place, to to: Place, circle circle: Circle) -> Place {
+pub fn clipped(from from: Place, to to: Place, circle circle: Circle) -> Place {
   use <- bool.guard(
     when: distance(from: circle.centre, to: to) <=. circle.radius,
     return: to,

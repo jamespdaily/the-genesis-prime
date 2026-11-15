@@ -377,8 +377,9 @@ pub fn type_73_is_read_for_the_rows_that_include_the_caster_only_test() -> Nil {
       as "a row aimed only at other units changes their cooldowns, which no rule keeps"
   })
   assert effect_kind.is_row_read(effect_type: 3, target_flags: 1)
-    && !effect_kind.is_row_read(effect_type: 3, target_flags: 2)
-    as "type 3 keeps its own reading"
+    && effect_kind.is_row_read(effect_type: 3, target_flags: 2)
+    && !effect_kind.is_row_read(effect_type: 3, target_flags: 8)
+    as "type 3 keeps its own reading: a ForcedMove row aimed at the caster or at the units a strike hits (2, 4, 6) is read, one aimed at neither is not"
 }
 
 // ---- the client's own rows ----
