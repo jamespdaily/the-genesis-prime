@@ -92,11 +92,7 @@ fn spends_all_by_spell(
       False ->
         case spell4.get(tables:, id: Spell4Id(effect.spell_id)) {
           Ok(row) ->
-            dict.insert(
-              found,
-              effect.spell_id,
-              spell_plan.spends_all(tables:, row:),
-            )
+            dict.insert(found, effect.spell_id, spell_plan.spends_all(row:))
           Error(Nil) -> found
         }
     }

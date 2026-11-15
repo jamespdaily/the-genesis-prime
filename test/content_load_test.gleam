@@ -387,6 +387,7 @@ pub fn the_load_puts_each_playable_classs_resource_in_a_term_test() -> Nil {
   assert stalker
     == class_resource.Resource(
       slot: 3,
+      vitals: [5, 13, 13, 12, 9, 10, 11, 16],
       max: 100.0,
       start: 100.0,
       regen: option.Some(class_resource.Regen(per_tick: 7.0, tick_ms: 1000)),

@@ -294,10 +294,12 @@ pub fn dead_caster() -> Caster {
 /// A planted resource of 1000 points in slot 1, full: it meets every level-1 cost
 /// and requirement of slot 1 (Mind Burst's 1, Electrocute's 8, Gamma Rays' 2,
 /// Rampage's at least 250), so a test that is not about resources is not refused
-/// for one, and holds nothing in slot 3 (Impale's 35).
+/// for one, and holds nothing in slot 3 (Impale's 35). Its slots name the Medic's
+/// vitals (Class 4), so a type 18 cost such as Gamma Rays' reads the same slots.
 pub fn full_slot_1() -> class_resource.Resource {
   class_resource.Resource(
     slot: 1,
+    vitals: class_resource_support.resource_of(4).vitals,
     max: 1000.0,
     start: 1000.0,
     regen: None,

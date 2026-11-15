@@ -97,7 +97,16 @@
 ////   (`Spell.CodeEnumCastMethod`). A cost in a vital the server does not hold, a cast
 ////   condition it cannot read and a method not built are each logged once on the
 ////   connection for the coverage measure. The caster's checks run in the client's
-////   order (`Verdict`).
+////   order (`Verdict`). A class vital cost (types 4, 12, 13, 14, 18 and 19 on a Spell4
+////   row, 18 and 19 on a threshold row) is looked up in the casting class's own slots
+////   (`Class.vitalEnumResource00` to `07`, `class_resource.class_cost` and
+////   `row_class_cost`): the innate cost passes at the first slot naming the vital whose
+////   value less the cost lies in [0, that slot's maximum] and pays from it, and is
+////   refused with the last such slot's 50 + slot (177 for slot 7); a class with no slot
+////   naming the vital passes and pays nothing (`0x1405e7980`). A threshold row's cost
+////   passes at most the whole points of the first slot holding above 0, with no maximum,
+////   and is refused with that slot's result, or 175 when the vital's slots hold nothing
+////   (`0x1403c0620`, `0x1405e78c0`, `0x1403d3650`).
 //// - **The cast conditions** are the spell's prerequisiteIdCasterCast and
 ////   prerequisiteIdTargetCast, which the client checks after every other check of the
 ////   press, CasterCast first (`0x1403ace00`, `Spell4.prerequisiteIdCasterCast`), so a press
@@ -483,6 +492,7 @@
 //// | a spell whose cost has an EMM id the server does not read | 0x7fc with the cost's result, a warning once for the spell on the connection; nothing is paid |
 //// | a cast with a cost ends before its first go: a 0x801, the caster's death or leaving | nothing is paid and nothing is sent for the cost; its reservation ends with the cast |
 //// | a press needs points that a live cast has reserved | 0x7fc with the cost's result, as for a slot that holds too little |
+//// | a threshold row's class cost of a vital the class's slots hold nothing of (a Charged Shot release at 0 Spell Power) | 0x7fc with 175; nothing is paid |
 //// | the slot holds less than a live cast reserved when its first go comes (the Esper's empty, the Warrior's drain) | the go pays what the slot holds, down to 0 |
 //// | a 0x801 ends a cast while the round of its first go is open | the cost was paid as the strike began; the round's answer finds no live cast: no go is written, the hits stand |
 //// | a press whose CasterCast or TargetCast fails | 0x7fc {client id, spell, 151 or 281}, after every other check; nothing else changes |
@@ -4211,18 +4221,33 @@ fn cost_taken(
       }
     spell_plan.SpendAllCost(slot:, amount:, result:) ->
       spend_all(paid:, slot:, amount:, result:, resources:)
-    spell_plan.ClassVitalCost(slots: [], ..) -> Ok(paid)
-    spell_plan.ClassVitalCost(slots:, amount:, result:) ->
-      case
-        list.find(slots, fn(slot) {
-          let left =
-            class_resource.value(resources:, slot:) -. int.to_float(amount)
-          left >=. 0.0 && left <=. class_resource.max(resources:, slot:)
-        })
-      {
-        Ok(slot) -> Ok(adding(paid:, payment: Payment(slot:, amount:)))
-        Error(Nil) -> Error(Unpaid(result:))
-      }
+    spell_plan.ClassVitalCost(vital:, amount:) ->
+      class_cost_taken(
+        paid:,
+        amount:,
+        checked: class_resource.class_cost(resources:, vital:, amount:),
+      )
+    spell_plan.RowClassCost(vital:, amount:) ->
+      class_cost_taken(
+        paid:,
+        amount:,
+        checked: class_resource.row_class_cost(resources:, vital:, amount:),
+      )
+  }
+}
+
+/// A class cost's check added to what the press pays: paid from the slot that passed,
+/// nothing paid when the class has no slot for the vital, refused with the check's
+/// result otherwise.
+fn class_cost_taken(
+  paid paid: Paid,
+  amount amount: Int,
+  checked checked: Result(Option(Int), Int),
+) -> Result(Paid, CostRefusal) {
+  case checked {
+    Ok(Some(slot)) -> Ok(adding(paid:, payment: Payment(slot:, amount:)))
+    Ok(None) -> Ok(paid)
+    Error(result) -> Error(Unpaid(result:))
   }
 }
 
