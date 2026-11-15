@@ -794,8 +794,8 @@ pub type ForcedMove {
 /// (genesis_prime/game/forced_move), the units it strikes (`aim`: the primary target,
 /// the area or both), the `delay_ms` after the go the creature is thrown at, the phases
 /// of `phase_flags` it applies in, when its `condition` holds (its caster apply
-/// prerequisite against the caster; a target apply prerequisite fails the load with
-/// issue 815's reading of it still to come), and when its `tag` holds for the points
+/// prerequisite against the caster, its target apply prerequisite against each struck
+/// unit it throws), and when its `tag` holds for the points
 /// the cast spent (genesis_prime/game/spend). The cast throws each creature the go
 /// `Hit` (genesis_prime/game/cast `struck_moves_armed`); a unit that is the caster or
 /// another player is not thrown until a move of another player is built (issue 570).
