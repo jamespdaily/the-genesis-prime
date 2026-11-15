@@ -538,12 +538,11 @@ pub fn the_finish_follows_the_last_tick_test() -> Nil {
   no_tick_after_finish(run: closed)
 }
 
-pub fn ticks_stop_at_the_node_life_of_a_spell_whose_life_is_its_longer_time_test() -> Nil {
-  use <- owned_test.run(5000)
-  // Spell4Effects 82888 (table_rows -- Spell4Effects spellId=38514): delayTime 1000,
-  // tickTime 1000, durationTime 4000, four whole ticks; spell 38514's propertyFlags hold
-  // 0x2000, so its node lasts max(delay, durationTime) = 4000 ms (`0x140568540`).
-  let row =
+/// Spell4Effects 82888 (table_rows -- Spell4Effects spellId=38514): delayTime 1000,
+/// tickTime 1000, durationTime 4000, four whole ticks, at 2000, 3000, 4000 and 5000 ms
+/// after the go.
+fn atomic_surge_ticking() -> List(spell_area.TickingDamage) {
+  [
     TickingDamage(
       damage: DamageEffect(
         ..surge_blow(),
@@ -556,42 +555,138 @@ pub fn ticks_stop_at_the_node_life_of_a_spell_whose_life_is_its_longer_time_test
         duration_ms: 4000,
         count: 4,
       ),
-    )
-  let struck = [hit_ticking(unit_id: 10, ticking: [row])]
-  let spell = spell_plan.Spell(..surge(), longer_of_delay_and_duration: True)
-  let run =
-    pressed(
-      plans: support.plans_of([spell]),
-      caster: support.caster(),
-      struck:,
-      answer: landed(killed: 0),
-    )
-    |> fn(run) {
-      ran(
-        caster: support.caster(),
-        run:,
-        until_ms: 20_000,
-        struck:,
-        answer: landed(killed: 0),
-      )
-    }
+    ),
+  ]
+}
+
+/// The planted spell with spell 38514's propertyFlags bit 0x2000, so its node lasts
+/// max(delay, durationTime): 4000 ms for row 82888 (`0x140568540`).
+fn longer_time_spell() -> Spell {
+  spell_plan.Spell(..surge(), longer_of_delay_and_duration: True)
+}
+
+/// A press of the 0x2000 spell whose go hits creature 10 with row 82888, its tick
+/// strikes answered by `answer`, run to `until_ms`.
+fn atomic_surge_run(
+  answer answer: fn(Int, cast.TickAsked) -> Answer,
+  until_ms until_ms: Int,
+) -> Run {
+  let struck = [hit_ticking(unit_id: 10, ticking: atomic_surge_ticking())]
+  pressed(
+    plans: support.plans_of([longer_time_spell()]),
+    caster: support.caster(),
+    struck:,
+    answer:,
+  )
+  |> fn(run) {
+    ran(caster: support.caster(), run:, until_ms:, struck:, answer:)
+  }
+}
+
+/// The step that writes the cast's 0x7fe, which there is one of.
+fn finish_step(run run: Run) -> #(Int, List(Effect)) {
+  let assert [finish] =
+    list.filter(run.steps, fn(step) {
+      list.contains(ids(effects: step.1), spell_finished.message_id)
+    })
+    as "the cast finishes once"
+  finish
+}
+
+fn ticks_and_finish(effects effects: List(Effect)) -> List(Int) {
+  list.filter(ids(effects:), fn(id) {
+    id == spell_effect_tick.message_id || id == spell_finished.message_id
+  })
+}
+
+pub fn ticks_stop_at_the_node_life_of_a_spell_whose_life_is_its_longer_time_test() -> Nil {
+  use <- owned_test.run(5000)
+  let run = atomic_surge_run(answer: landed(killed: 0), until_ms: 20_000)
   assert list.map(all_ticks(run:), fn(tick) { tick.0 }) == [3000, 4000, 5000]
     as "ticks 1 to 3 land 2000, 3000 and 4000 ms after the go (delay 1000 plus each 1000 ms tick)"
   assert list.map(strikes_of(run:), fn(strike) { strike.2 }) == [1, 2, 3]
     as "tick 4, due 5000 ms after the go, is past the node's 4000 ms life and is never asked"
-  let finishes =
-    list.filter(run.steps, fn(step) {
-      list.contains(ids(effects: step.1), spell_finished.message_id)
-    })
-  let assert [#(finished_at, effects)] = finishes as "the cast finishes once"
+  let #(finished_at, effects) = finish_step(run:)
   assert finished_at == 5000
     as "the 0x7fe goes when the node's life ends, 4000 ms after the go"
-  assert list.filter(ids(effects:), fn(id) {
-      id == spell_effect_tick.message_id || id == spell_finished.message_id
-    })
+  assert ticks_and_finish(effects:)
     == [spell_effect_tick.message_id, spell_finished.message_id]
     as "tick 3's 0x7f8 comes before the 0x7fe in the step the node ends"
   no_tick_after_finish(run:)
+}
+
+pub fn a_late_node_end_sends_no_tick_past_the_node_life_test() -> Nil {
+  use <- owned_test.run(5000)
+  let run = atomic_surge_run(answer: landed(killed: 0), until_ms: 4999)
+  let assert Ok(#(4000, tick_2_effects)) = list.last(run.steps)
+  let assert [#(_, 1000), #(node_end, 1000)] =
+    support.started_timers(effects: tick_2_effects)
+    as "tick 2, 3000 ms after the go, arms tick 3 and starts the node's end again, both 1000 ms on"
+  let #(state, raw) =
+    support.fired_raw_as(
+      caster: support.caster(),
+      state: run.state,
+      timer: node_end,
+      at: 6000,
+    )
+  let #(state, effects, _) =
+    settled(
+      caster: support.caster(),
+      state:,
+      effects: raw,
+      at: 6000,
+      struck: [hit_ticking(unit_id: 10, ticking: atomic_surge_ticking())],
+      answer: landed(killed: 0),
+    )
+  let late =
+    Run(..run, state:, steps: list.append(run.steps, [#(6000, effects)]))
+  assert list.map(strikes_of(run: late), fn(strike) { strike.2 }) == [1, 2, 3]
+    as "the node's end, due 4000 ms after the go and handled 1000 ms late, fires tick 3, which was due within the node's life, and not tick 4, due 5000 ms after the go, past it"
+  assert list.map(all_ticks(run: late), fn(tick) { tick.0 })
+    == [3000, 4000, 6000]
+  assert ticks_and_finish(effects:)
+    == [spell_effect_tick.message_id, spell_finished.message_id]
+    as "tick 3's 0x7f8, then the 0x7fe, and no fourth tick"
+  no_tick_after_finish(run: late)
+}
+
+pub fn a_node_kept_by_an_open_strike_round_sends_no_tick_past_its_life_test() -> Nil {
+  use <- owned_test.run(5000)
+  let answer = fn(at, asked) {
+    case at < 5000 {
+      True -> landed(killed: 0)(at, asked)
+      False -> Held
+    }
+  }
+  let run = atomic_surge_run(answer:, until_ms: 20_000)
+  assert list.map(strikes_of(run:), fn(strike) { strike.2 }) == [1, 2, 3]
+    as "while the open round keeps the node, tick 4, due 5000 ms after the go, is past the node's life and is never asked"
+  let assert [last] = run.held
+    as "tick 3's strike, asked when the node's life ends 4000 ms after the go, is held open"
+  assert last.tick == 3
+  assert list.flat_map(run.steps, fn(step) {
+      support.due_of(effects: step.1, now_ms: step.0)
+    })
+    |> list.all(fn(due) { due.0 <= 5000 })
+    as "no timer is armed past the node's life, 4000 ms after the go"
+  let closed =
+    stepped(
+      run:,
+      at: 5100,
+      taken: cast.ticked(
+        cast: run.state,
+        caster: support.caster(),
+        now: support.at(ms: 5100),
+        asked: last,
+        struck: Some(tick_hit(asked: last, killed: 0)),
+      ),
+    )
+  let #(finished_at, effects) = finish_step(run: closed)
+  assert finished_at == 5100
+  assert ticks_and_finish(effects:)
+    == [spell_effect_tick.message_id, spell_finished.message_id]
+    as "tick 3's close writes its 0x7f8, then the cast's 0x7fe"
+  no_tick_after_finish(run: closed)
 }
 
 pub fn only_a_hit_or_immune_unit_gets_ticks_test() -> Nil {

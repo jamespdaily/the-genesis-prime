@@ -67,3 +67,46 @@ pub fn ticks_land_at_delay_plus_each_whole_tick_test() -> Nil {
     == Error(NoTick(tick_ms: 1000, duration_ms: 500))
     as "a life shorter than one tick has no tick, which fails the load"
 }
+
+pub fn ticks_past_the_rows_life_are_cut_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4Effects 82888 (table_rows -- Spell4Effects spellId=38514): delayTime 1000,
+  // tickTime 1000, durationTime 4000.
+  let assert Ok(atomic_surge) =
+    ticking.schedule_of(
+      row: LastingRow(delay_ms: 1000, duration_ms: 4000, until_removed: False),
+      tick_ms: 1000,
+    )
+  assert tick_times(
+      schedule: ticking.within_life(
+        schedule: atomic_surge,
+        longer_of_delay_and_duration: False,
+      ),
+      from_ms: 0,
+    )
+    == [2000, 3000, 4000, 5000]
+    as "a life of delay plus durationTime, 5000 ms, holds every tick"
+  assert tick_times(
+      schedule: ticking.within_life(
+        schedule: atomic_surge,
+        longer_of_delay_and_duration: True,
+      ),
+      from_ms: 0,
+    )
+    == [2000, 3000, 4000]
+    as "a life of the longer of the two, 4000 ms (`0x140568540`), drops the tick due at 5000 ms"
+  let assert Ok(late) =
+    ticking.schedule_of(
+      row: LastingRow(delay_ms: 3000, duration_ms: 2000, until_removed: False),
+      tick_ms: 1000,
+    )
+  assert tick_times(
+      schedule: ticking.within_life(
+        schedule: late,
+        longer_of_delay_and_duration: True,
+      ),
+      from_ms: 0,
+    )
+    == []
+    as "a delay longer than durationTime is the whole life, 3000 ms, and the first tick lands after it"
+}

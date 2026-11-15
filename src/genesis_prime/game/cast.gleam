@@ -5324,10 +5324,7 @@ fn tick_timers_cancelled(
 /// The earliest node of the cast `cast_id` has ended, live or lingering: the nodes
 /// whose life is over are dropped and written 0x811, and the timer starts again for the
 /// next end. A lingering cast left with no node ends with its 0x7fe instead. A cast
-/// that holds nothing any more has no frame. The ticks of an ended node stop with it, so
-/// a tick due after the node's life is never sent, as for a spell whose life is the longer
-/// of delay and durationTime (`0x140568540`) and a row whose last tick falls past that;
-/// whether the client would show a 0x7f8 after its node ends is not read (gap, #336).
+/// that holds nothing any more has no frame. The ticks of an ended node stop with it.
 fn nodes_ended(
   cast cast: State,
   cast_id cast_id: Int,
@@ -5832,10 +5829,15 @@ fn ticks_armed(
           Ok(earlier) -> earlier.open
           Error(Nil) -> 0
         }
+        let schedule =
+          ticking.within_life(
+            schedule: on.schedule,
+            longer_of_delay_and_duration: holder.spell.longer_of_delay_and_duration,
+          )
         let row =
           Ticking(
             kind: on.kind,
-            schedule: on.schedule,
+            schedule:,
             go:,
             from_ms:,
             tick: 0,
@@ -5848,25 +5850,37 @@ fn ticks_armed(
             cast_id:,
             ticking: dict.insert(holder.ticking, key, row),
           )
-        let #(cast, _, start) =
-          armed(
-            cast:,
-            due: Tick(
-              cast_id:,
-              effect_id: on.effect_id,
-              unit_id: on.unit_id,
-              tick: 1,
-            ),
-            after_ms: ticking.tick_at_ms(
-              schedule: on.schedule,
-              from_ms: 0,
-              tick: 1,
-            ),
-          )
-        #(cast, list.flatten([effects, cancels, [start]]))
+        let #(cast, start) = first_tick_armed(cast:, cast_id:, key:, schedule:)
+        #(cast, list.flatten([effects, cancels, start]))
       }
     }
   })
+}
+
+/// The timer of the row `key`'s first tick, none when no tick lands within its life.
+fn first_tick_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  key key: TickKey,
+  schedule schedule: ticking.Schedule,
+) -> #(State, List(Effect)) {
+  case ticking.next_tick(schedule:, tick: 0) {
+    None -> #(cast, [])
+    Some(first) -> {
+      let #(cast, _, start) =
+        armed(
+          cast:,
+          due: Tick(
+            cast_id:,
+            effect_id: key.effect_id,
+            unit_id: key.unit_id,
+            tick: first,
+          ),
+          after_ms: ticking.tick_at_ms(schedule:, from_ms: 0, tick: first),
+        )
+      #(cast, [start])
+    }
+  }
 }
 
 /// The ticks of the cast on the unit stop with its node: their timers are cancelled
