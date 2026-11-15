@@ -187,6 +187,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/movement_send_interval_answer.gleam",
       "src/genesis_prime/message/movement_state_flags.gleam",
       "src/genesis_prime/message/movement_time.gleam",
+      "src/genesis_prime/message/movement_timed_path.gleam",
       "src/genesis_prime/message/movement_velocity.gleam",
       "src/genesis_prime/message/network_report.gleam",
       "src/genesis_prime/message/own_auctions_request.gleam",
