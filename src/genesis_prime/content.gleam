@@ -290,7 +290,7 @@ fn read(
       )
     }),
   )
-  let classes = class_resource.select(rows: class_rows)
+  let classes = class_resource.select(rows: class_rows, tables:)
   let class_refusals = case classes {
     Ok(..) -> []
     Error(refusals) -> refusals

@@ -23,6 +23,7 @@
 import class_resource_support
 import content_support
 import database_support
+import fixture_tables
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
 import genesis_prime/game/class_resource.{
@@ -30,6 +31,8 @@ import genesis_prime/game/class_resource.{
   Payment, Resource, Row, StartTimer,
 }
 import genesis_prime/step
+import genesis_prime/table/class
+import genesis_prime/table/loader/store as table_store
 import gleam/float
 import gleam/list
 import gleam/string
@@ -547,7 +550,8 @@ pub fn an_engineer_without_its_empty_wait_is_refused_by_name_test() -> Nil {
     list.filter(design_rows(), fn(row) {
       !{ row.class_id == 2 && row.name == "empty_after_combat_ms" }
     })
-  let assert Error(refusals) = class_resource.select(rows:)
+  let assert Error(refusals) =
+    class_resource.select(rows:, tables: fixture_tables.shared())
   assert names_of(refusals) == ["2 empty_after_combat_ms"]
     as "the Engineer empties after combat as the Esper does, so it needs its wait (issue 419)"
 }
@@ -567,9 +571,37 @@ pub fn a_class_with_no_max_row_is_refused_by_name_test() -> Nil {
     list.filter(design_rows(), fn(row) {
       !{ row.class_id == 5 && row.name == "max" }
     })
-  let assert Error(refusals) = class_resource.select(rows:)
+  let assert Error(refusals) =
+    class_resource.select(rows:, tables: fixture_tables.shared())
   assert names_of(refusals) == ["5 max"]
     as "every playable class needs its maximum"
+}
+
+pub fn a_playable_class_with_no_class_row_fails_the_load_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The tables as a load with no requirement on Class would leave them: the
+  // Spellslinger's Class row (7) removed. The client's Class table holds rows 1, 2,
+  // 3, 4, 5 and 7, the playable classes, and a class the server plays on needs its
+  // row for its vitals (`Class.vitalEnumResource00`).
+  let assert Ok(tables) =
+    table_store.edit(
+      tables: fixture_tables.shared(),
+      with: [table_store.remove_rows(entry: class.entry(), ids: [7])],
+      requirements: [],
+      derivations: [],
+    )
+    as "the shared tables edit without the Class row"
+  let assert Error(refusals) =
+    class_resource.select(rows: design_rows(), tables:)
+  assert refusals
+    == [
+      Refusal(
+        table: "Class",
+        row: RowName("7"),
+        rule: "the client's table has no row of this playable class",
+      ),
+    ]
+    as "the load names the class whose Class row is missing"
 }
 
 pub fn an_unknown_class_or_name_is_refused_by_name_test() -> Nil {
@@ -579,7 +611,8 @@ pub fn an_unknown_class_or_name_is_refused_by_name_test() -> Nil {
       Row(class_id: 6, name: "max", value: 10.0, unit: "points"),
       Row(class_id: 1, name: "decay", value: 10.0, unit: "points"),
     ])
-  let assert Error(refusals) = class_resource.select(rows:)
+  let assert Error(refusals) =
+    class_resource.select(rows:, tables: fixture_tables.shared())
   assert list.sort(names_of(refusals), string.compare) == ["1 decay", "6 max"]
 }
 
@@ -590,7 +623,8 @@ pub fn a_regen_missing_a_part_is_refused_test() -> Nil {
     |> list.filter(fn(row) {
       !{ row.class_id == 5 && row.name == "regen_tick_ms" }
     })
-  let assert Error(refusals) = class_resource.select(rows:)
+  let assert Error(refusals) =
+    class_resource.select(rows:, tables: fixture_tables.shared())
   assert names_of(refusals) == ["5 regen_tick_ms"]
 }
 
@@ -601,7 +635,8 @@ pub fn a_warrior_with_a_drain_row_missing_and_an_esper_without_its_empty_wait_ar
       !{ row.class_id == 1 && row.name == "drain_after_ms" }
       && !{ row.class_id == 3 && row.name == "empty_after_combat_ms" }
     })
-  let assert Error(refusals) = class_resource.select(rows:)
+  let assert Error(refusals) =
+    class_resource.select(rows:, tables: fixture_tables.shared())
   assert list.sort(names_of(refusals), string.compare)
     == ["1 drain_after_ms", "3 empty_after_combat_ms"]
     as "the Warrior's drain needs its amount, period, tick and wait, and the Esper its wait after combat (issue 418)"

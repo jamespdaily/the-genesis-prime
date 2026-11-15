@@ -66,7 +66,9 @@
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
 import genesis_prime/message/float32
 import genesis_prime/step.{type TimerId, TimerId}
+import genesis_prime/table/class
 import genesis_prime/table/id.{type ClassId, ClassId}
+import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -82,11 +84,14 @@ type Start {
   Full
 }
 
-/// What a class's resource is: the slot it lives in, its maximum, its start, and
-/// how it refills over time.
+/// What a class's resource is: the slot it lives in, the vital each of the class's
+/// eight slots names, its maximum, its start, and how it refills over time.
 pub type Resource {
   Resource(
     slot: Int,
+    /// The vital each slot names, slot 0 first (`Class.vitalEnumResource00` to
+    /// `07`): what a cost of a class vital is looked up by (`class_cost`).
+    vitals: List(Int),
     max: Float,
     start: Float,
     /// The refill each tick, in and out of combat; none for a class whose
@@ -204,7 +209,10 @@ fn needed(refill refill: Refill) -> List(String) {
 /// (its maximum, and the amount, period and tick of a refill over time, the wait
 /// of a refill after combat, the amount, period, tick and wait of a drain, and the
 /// wait of an empty after combat).
-pub fn select(rows rows: List(Row)) -> Result(Classes, List(Refusal)) {
+pub fn select(
+  rows rows: List(Row),
+  tables tables: table_store.Tables,
+) -> Result(Classes, List(Refusal)) {
   let unknown =
     list.filter_map(rows, fn(row) {
       case
@@ -243,23 +251,55 @@ pub fn select(rows rows: List(Row)) -> Result(Classes, List(Refusal)) {
         }
       })
     })
-  case list.append(unknown, missing) {
+  let vitals =
+    list.map(playable, fn(class) {
+      let class_id = class.0
+      case class.get(tables:, id: ClassId(class_id)) {
+        Ok(row) -> Ok(#(class_id, vitals_of(row:)))
+        Error(Nil) ->
+          Error(Refusal(
+            table: "Class",
+            row: RowName(int.to_string(class_id)),
+            rule: "the client's table has no row of this playable class",
+          ))
+      }
+    })
+  let no_class_row = result.partition(vitals).1
+  case list.flatten([unknown, missing, no_class_row]) {
     [_, ..] as refusals -> Error(refusals)
-    [] ->
+    [] -> {
+      let vitals = dict.from_list(result.values(vitals))
       Ok(Classes(
         by_class: list.map(playable, fn(class) {
           let #(class_id, #(slot, start, _)) = class
           let named = dict.get(by_class, class_id) |> result.unwrap([])
-          #(class_id, resource_of(named:, slot:, start:))
+          let held = dict.get(vitals, class_id) |> result.unwrap([])
+          #(class_id, resource_of(named:, slot:, vitals: held, start:))
         })
         |> dict.from_list,
       ))
+    }
   }
+}
+
+/// The vital each of the class's eight slots names, slot 0 first.
+fn vitals_of(row row: class.Class) -> List(Int) {
+  [
+    row.vital_enum_resource00,
+    row.vital_enum_resource01,
+    row.vital_enum_resource02,
+    row.vital_enum_resource03,
+    row.vital_enum_resource04,
+    row.vital_enum_resource05,
+    row.vital_enum_resource06,
+    row.vital_enum_resource07,
+  ]
 }
 
 fn resource_of(
   named named: List(Row),
   slot slot: Int,
+  vitals vitals: List(Int),
   start start: Start,
 ) -> Resource {
   let value = fn(name) {
@@ -295,6 +335,7 @@ fn resource_of(
   }
   Resource(
     slot:,
+    vitals:,
     max:,
     start: case start {
       Empty -> 0.0
@@ -410,6 +451,80 @@ pub fn value(resources resources: Resources, slot slot: Int) -> Float {
 pub fn max(resources resources: Resources, slot slot: Int) -> Float {
   use <- bool.guard(when: slot != resources.resource.slot, return: 0.0)
   resources.resource.max
+}
+
+/// The slots of the class that name the vital, in slot order
+/// (`Class.vitalEnumResource00` to `07`).
+fn slots_of(resources resources: Resources, vital vital: Int) -> List(Int) {
+  list.index_map(resources.resource.vitals, fn(named, slot) { #(slot, named) })
+  |> list.filter_map(fn(slot) {
+    case slot.1 == vital {
+      True -> Ok(slot.0)
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The result of a class cost refused at a slot: 50 + the slot, and 177 for slot 7
+/// (`VitalCostResult` 0x1403d3650).
+fn refused_at(slot slot: Int) -> Int {
+  case slot {
+    7 -> 177
+    _ -> 50 + slot
+  }
+}
+
+/// A class vital's innate cost checked as the client checks it
+/// (`CheckClassResourceCost` 0x1405e7980): it passes at the first of the class's
+/// slots naming the vital where the slot's value less the amount lies in [0, that
+/// slot's maximum], and is paid from it. With none passing it is refused with the
+/// last such slot's result. A class with no slot naming the vital passes and pays
+/// nothing.
+pub fn class_cost(
+  resources resources: Resources,
+  vital vital: Int,
+  amount amount: Int,
+) -> Result(Option(Int), Int) {
+  case slots_of(resources:, vital:) {
+    [] -> Ok(None)
+    [_, ..] as slots ->
+      case
+        list.find(slots, fn(slot) {
+          let left = value(resources:, slot:) -. int.to_float(amount)
+          left >=. 0.0 && left <=. max(resources:, slot:)
+        })
+      {
+        Ok(slot) -> Ok(Some(slot))
+        Error(Nil) ->
+          Error(refused_at(slot: list.last(slots) |> result.unwrap(0)))
+      }
+  }
+}
+
+/// A class vital's cost on a threshold row checked as the client checks it
+/// (`CheckThresholdRowCosts` 0x1403c0620): a cost of 0 passes and pays nothing,
+/// else the cost must be at most the whole points of the vital's slot, with no
+/// maximum test. The slot is the first naming the vital that holds above 0
+/// (`ClassVitalSlot` 0x1405e78c0); a refusal is that slot's result, or 175 when
+/// there is none (`VitalCostResult`).
+pub fn row_class_cost(
+  resources resources: Resources,
+  vital vital: Int,
+  amount amount: Int,
+) -> Result(Option(Int), Int) {
+  use <- bool.guard(when: amount == 0, return: Ok(None))
+  let held =
+    list.find(slots_of(resources:, vital:), fn(slot) {
+      value(resources:, slot:) >. 0.0
+    })
+  case held {
+    Ok(slot) ->
+      case float.truncate(value(resources:, slot:)) >= amount {
+        True -> Ok(Some(slot))
+        False -> Error(refused_at(slot:))
+      }
+    Error(Nil) -> Error(175)
+  }
 }
 
 /// The resources with the payments taken, and nothing else: what the cast rule

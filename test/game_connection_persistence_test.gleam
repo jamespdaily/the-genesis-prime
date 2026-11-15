@@ -25,7 +25,7 @@ import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/cast
-import genesis_prime/game/class_resource.{Row}
+import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/strike_tell
@@ -39,23 +39,6 @@ import planted_table.{Integer}
 import server_proxy_support
 import unitest
 
-/// The Spellslinger's class resource with the wait after combat that empties its slot.
-fn emptying_after_combat() -> class_resource.Classes {
-  let assert Ok(classes) =
-    class_resource.select(
-      rows: list.append(class_resource_support.rows(), [
-        Row(
-          class_id: 7,
-          name: "empty_after_combat_ms",
-          value: 10_000.0,
-          unit: "ms",
-        ),
-      ]),
-    )
-    as "the planted rows and the wait select"
-  classes
-}
-
 /// The Spellslinger in the world on the client's tables, its unit id, and the bag
 /// index of Spell Surge (the innate, after the three level-1 abilities).
 fn spellslinger() -> #(game_connection.State, Int) {
@@ -64,7 +47,7 @@ fn spellslinger() -> #(game_connection.State, Int) {
       settings: Settings(
         ..connection_support.settings(),
         tables: client_tables.shared(),
-        class_resources: emptying_after_combat(),
+        class_resources: class_resource_support.spellslinger_emptying_after_combat(),
         server_proxies: server_proxy_support.none(),
       ),
       class_id: 7,

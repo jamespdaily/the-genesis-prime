@@ -247,7 +247,7 @@ pub fn a_spend_all_spell_refuses_an_effect_tag_the_rule_does_not_read_test() -> 
   let tables = fixture_tables.shared()
   let assert Ok(mind_burst) = spell4.get(tables:, id: Spell4Id(32_809))
     as "Mind Burst is in the client's rows"
-  assert spell_plan.spends_all(tables:, row: mind_burst)
+  assert spell_plan.spends_all(row: mind_burst)
     as "innateCostEMMId0 4 on a slot cost is a spend of every point held"
   let effect_of = fn(id) {
     let assert Ok(found) =

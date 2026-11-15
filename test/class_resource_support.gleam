@@ -3,8 +3,10 @@
 //// and 419, their Design artifacts' values), selected as the content load selects
 //// them. A test's expected values name the design or the client, never this module.
 
+import fixture_tables
 import genesis_prime/game/class_resource.{type Classes, type Resource, Row}
 import genesis_prime/table/id.{ClassId}
+import gleam/list
 
 /// The rows of migrations 0011, 0012 and 0018, in class and name order.
 pub fn rows() -> List(class_resource.Row) {
@@ -33,8 +35,29 @@ pub fn rows() -> List(class_resource.Row) {
 
 /// The rows selected.
 pub fn classes() -> Classes {
-  let assert Ok(classes) = class_resource.select(rows: rows())
+  let assert Ok(classes) =
+    class_resource.select(rows: rows(), tables: fixture_tables.shared())
     as "the migrations' rows select"
+  classes
+}
+
+/// The rows selected with the Spellslinger's slot emptied `empty_after_combat_ms`
+/// after combat ends (10 000 ms, as the Esper's): test data, since the Spellslinger
+/// has no such wait, that gives a test a way to empty Spell Power through its timer.
+pub fn spellslinger_emptying_after_combat() -> Classes {
+  let assert Ok(classes) =
+    class_resource.select(
+      rows: list.append(rows(), [
+        Row(
+          class_id: 7,
+          name: "empty_after_combat_ms",
+          value: 10_000.0,
+          unit: "ms",
+        ),
+      ]),
+      tables: fixture_tables.shared(),
+    )
+    as "the planted rows and the wait select"
   classes
 }
 

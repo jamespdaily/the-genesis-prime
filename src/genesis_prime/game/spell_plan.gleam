@@ -279,10 +279,9 @@ import genesis_prime/game/unit_properties
 import genesis_prime/game/worn_visual
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
-import genesis_prime/table/class
 import genesis_prime/table/id.{
   type ItemSlotId, type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId,
-  type Spell4Id, type UnitProperty2Id, ClassId, ItemDisplayId, PrerequisiteId,
+  type Spell4Id, type UnitProperty2Id, ItemDisplayId, PrerequisiteId,
   Spell4BaseId, Spell4ConditionsId, Spell4EffectsId, Spell4Id,
   Spell4StackGroupId, SpellCoolDownId, UnitProperty2Id,
 }
@@ -928,11 +927,18 @@ pub type Cost {
   /// `amount` points of resource slot `slot`: refused with `result` when the slot,
   /// as a whole number, holds less (both as absolute values).
   SlotCost(slot: Int, amount: Int, result: Int)
-  /// `amount` points of a vital the class mechanic finds among the class's slots,
-  /// `slots` in order: it passes at the first slot whose value less `amount` lies
-  /// between 0 and the slot's maximum, else is refused with `result`, the last such
-  /// slot's; with no such slot it passes and pays nothing (`0x1405e7980`).
-  ClassVitalCost(slots: List(Int), amount: Int, result: Int)
+  /// `amount` points of the class vital `vital`, found among the casting class's
+  /// slots when the press is checked (genesis_prime/game/class_resource
+  /// `class_cost`, `0x1405e7980`): it passes at the first slot naming the vital
+  /// whose value less `amount` lies between 0 and the slot's maximum, else is refused
+  /// with the last such slot's result; a class with no such slot passes and pays
+  /// nothing.
+  ClassVitalCost(vital: Int, amount: Int)
+  /// `amount` points of the class vital `vital` on a stage's threshold row, checked
+  /// as the client checks a row's cost (genesis_prime/game/class_resource
+  /// `row_class_cost`, `0x1403c0620`): the points held must be at least `amount`,
+  /// with no maximum, and a refusal is the vital slot's result or 175.
+  RowClassCost(vital: Int, amount: Int)
   /// A cost in a vital no rule of the server holds (health, shield or focus):
   /// refused with `result`, and logged once.
   UnheldCost(result: Int)
@@ -1925,13 +1931,14 @@ fn spell_of(
   ))
   let caster_death = caster_death_of(conditions: caster_conditions)
   let target_death = caster_death_of(conditions: target_conditions)
-  use costs <- result.try(
-    costs_of(tables:, row:, base:, costs: [
+  use costs <- result.try(costs_of(
+    row:,
+    innate: [
       #(row.innate_cost_type0, row.innate_cost0, row.innate_cost_emm_id0),
       #(row.innate_cost_type1, row.innate_cost1, row.innate_cost_emm_id1),
-      ..list.map(threshold_costs, fn(cost) { #(cost.0, cost.1, 0) })
-    ]),
-  )
+    ],
+    threshold: threshold_costs,
+  ))
   use requirements <- result.try(
     requirements_of(spell4_id:, requirements: [
       #(
@@ -3110,6 +3117,7 @@ fn spends_all_of(costs costs: List(Cost)) -> Bool {
       SpendAllCost(..) -> True
       SlotCost(..)
       | ClassVitalCost(..)
+      | RowClassCost(..)
       | UnheldCost(..)
       | UnreadSpendCost(..) -> False
     }
@@ -3120,24 +3128,19 @@ fn spends_all_of(costs costs: List(Cost)) -> Bool {
 /// the spell reads them; false when a cost or its class row is not one the plan reads, since
 /// that spell fails its own plan. A stage's threshold costs carry no EMM id, so they never
 /// make a spell spend every point.
-pub fn spends_all(
-  tables tables: table_store.Tables,
-  row row: spell4.Spell4,
-) -> Bool {
+pub fn spends_all(row row: spell4.Spell4) -> Bool {
   case
-    spell4_base.get(tables:, id: Spell4BaseId(row.spell4_base_id_base_spell))
+    costs_of(
+      row:,
+      innate: [
+        #(row.innate_cost_type0, row.innate_cost0, row.innate_cost_emm_id0),
+        #(row.innate_cost_type1, row.innate_cost1, row.innate_cost_emm_id1),
+      ],
+      threshold: [],
+    )
   {
-    Error(Nil) -> False
-    Ok(base) ->
-      case
-        costs_of(tables:, row:, base:, costs: [
-          #(row.innate_cost_type0, row.innate_cost0, row.innate_cost_emm_id0),
-          #(row.innate_cost_type1, row.innate_cost1, row.innate_cost_emm_id1),
-        ])
-      {
-        Ok(costs) -> spends_all_of(costs:)
-        Error(..) -> False
-      }
+    Ok(costs) -> spends_all_of(costs:)
+    Error(..) -> False
   }
 }
 
@@ -4263,22 +4266,33 @@ fn cc_mask_of(
 /// of 0 or above 30, or an amount of 0, is none (`0x1403b3320`), unless the cost has
 /// an EMM id (`spent_by`).
 fn costs_of(
-  tables tables: table_store.Tables,
   row row: spell4.Spell4,
-  base base: spell4_base.Spell4Base,
-  costs costs: List(#(Int, Int, Int)),
+  innate innate: List(#(Int, Int, Int)),
+  threshold threshold: List(#(Int, Int)),
 ) -> Result(List(Cost), PlanError) {
-  list.try_map(costs, fn(cost) {
-    use fixed <- result.map(cost_of(
-      tables:,
-      row:,
-      base:,
-      cost_type: cost.0,
-      amount: cost.1,
-    ))
-    spent_by(cost: fixed, emm_id: cost.2)
-  })
-  |> result.map(option.values)
+  use innate <- result.try(
+    list.try_map(innate, fn(cost) {
+      use fixed <- result.map(cost_of(
+        row:,
+        cost_type: cost.0,
+        amount: cost.1,
+        on_row: False,
+      ))
+      spent_by(cost: fixed, emm_id: cost.2)
+    }),
+  )
+  use threshold <- result.map(
+    list.try_map(threshold, fn(cost) {
+      use fixed <- result.map(cost_of(
+        row:,
+        cost_type: cost.0,
+        amount: cost.1,
+        on_row: True,
+      ))
+      spent_by(cost: fixed, emm_id: 0)
+    }),
+  )
+  option.values(list.append(innate, threshold))
 }
 
 /// The cost as its Spell4 EMM id spends it (genesis_prime/game/spend): a slot cost
@@ -4301,9 +4315,9 @@ fn unread_spend(cost cost: Option(Cost), emm_id emm_id: Int) -> Cost {
   let result = case cost {
     Some(SlotCost(result:, ..))
     | Some(SpendAllCost(result:, ..))
-    | Some(ClassVitalCost(result:, ..))
     | Some(UnheldCost(result:))
     | Some(UnreadSpendCost(result:, ..)) -> result
+    Some(ClassVitalCost(..)) | Some(RowClassCost(..)) -> 175
     None -> 285
   }
   UnreadSpendCost(result:, emm_id:)
@@ -4331,12 +4345,16 @@ fn has_cost(cost_type cost_type: Int, amount amount: Int) -> Bool {
   cost_type != 0 && amount != 0 && cost_type <= 30
 }
 
+/// One cost column pair as a cost. The client sends a type to its own check when it has
+/// a case for it (`0x1403b3320`) and every other type to the class mechanic's
+/// (`0x1405e7980`): on a Spell4 row those are the class vitals 4, 12, 13, 14, 18 and
+/// 19; on a threshold row (`on_row`, `0x1403c0620`) the class vitals the server reads
+/// are 18 and 19.
 fn cost_of(
-  tables tables: table_store.Tables,
   row row: spell4.Spell4,
-  base base: spell4_base.Spell4Base,
   cost_type cost_type: Int,
   amount amount: Int,
+  on_row on_row: Bool,
 ) -> Result(Option(Cost), PlanError) {
   use <- bool.guard(when: !has_cost(cost_type:, amount:), return: Ok(None))
   case cost_type, slot_of(vital_type: cost_type) {
@@ -4345,9 +4363,15 @@ fn cost_of(
     15, _ -> Ok(Some(UnheldCost(result: 167)))
     16, _ -> Ok(Some(UnheldCost(result: 177)))
     _, Ok(#(slot, result)) -> Ok(Some(SlotCost(slot:, amount:, result:)))
-    18, Error(Nil) ->
-      class_cost_of(tables:, base:, vital: cost_type, amount:)
-      |> result.map(Some)
+    18, _ | 19, _ ->
+      Ok(
+        Some(case on_row {
+          True -> RowClassCost(vital: cost_type, amount:)
+          False -> ClassVitalCost(vital: cost_type, amount:)
+        }),
+      )
+    4, _ | 12, _ | 13, _ | 14, _ if !on_row ->
+      Ok(Some(ClassVitalCost(vital: cost_type, amount:)))
     _, Error(Nil) -> Error(UnreadCost(spell4_id: row.id, cost_type:))
   }
 }
@@ -4362,42 +4386,6 @@ fn slot_of(vital_type vital_type: Int) -> Result(#(Int, Int), Nil) {
       Ok(#(vital_type - 5, 50 + vital_type - 5))
     _ -> Error(Nil)
   }
-}
-
-/// The class mechanic's cost in a vital that has no fixed slot: the class's slots
-/// holding the vital, in order, and the last one's result, 50 + its number (177
-/// for slot 7) (`0x1405e7980`).
-fn class_cost_of(
-  tables tables: table_store.Tables,
-  base base: spell4_base.Spell4Base,
-  vital vital: Int,
-  amount amount: Int,
-) -> Result(Cost, PlanError) {
-  use class_row <- result.try(
-    class.get(tables:, id: ClassId(base.class_id_player))
-    |> result.replace_error(NoRow(table: "Class", id: base.class_id_player)),
-  )
-  let slots =
-    [
-      class_row.vital_enum_resource00,
-      class_row.vital_enum_resource01,
-      class_row.vital_enum_resource02,
-      class_row.vital_enum_resource03,
-      class_row.vital_enum_resource04,
-      class_row.vital_enum_resource05,
-      class_row.vital_enum_resource06,
-      class_row.vital_enum_resource07,
-    ]
-    |> list.index_map(fn(slot_vital, slot) { #(slot, slot_vital) })
-    |> list.filter(fn(pair) { pair.1 == vital })
-    |> list.map(fn(pair) { pair.0 })
-  Ok(
-    ClassVitalCost(slots:, amount:, result: case list.last(slots) {
-      Ok(7) -> 177
-      Ok(slot) -> 50 + slot
-      Error(Nil) -> 0
-    }),
-  )
 }
 
 /// The spell's caster vital requirements, as (type, eval, value): type 0 is none

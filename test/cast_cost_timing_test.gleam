@@ -452,7 +452,7 @@ pub fn a_spend_of_every_point_takes_what_is_held_less_what_a_live_cast_has_reser
       free_gamma_rays(),
       free_burst(),
     ])
-  let caster = esper_holding(points: 4)
+  let caster = medic_holding(points: 4)
   let #(state, rays) =
     support.pressed_raw_in(
       plans:,
@@ -463,7 +463,7 @@ pub fn a_spend_of_every_point_takes_what_is_held_less_what_a_live_cast_has_reser
       at: 1000,
     )
   assert support.refusal_results(effects: rays) == []
-    as "Gamma Rays costs 2 (class vital 18, the Esper's slot 1 passes at 4 - 2 = 2): reserved, not paid"
+    as "Gamma Rays costs 2 (class vital 18, which only the Medic's slots name; slot 1 passes at 4 - 2 = 2): reserved, not paid"
   let #(state, burst) =
     support.pressed_raw_in(
       plans:,

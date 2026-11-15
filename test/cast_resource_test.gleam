@@ -138,6 +138,162 @@ pub fn gamma_rays_passes_at_2_actuators_is_refused_55_at_1_and_at_3_with_a_max_o
     as "0x1405e7980: 3 - 2 = 1 is above a maximum of 0, so the maximum bounds it: 55"
 }
 
+// ---- 5b: a class cost is the caster's class's ----
+
+/// Kick with these innate costs in place of its own none: a press of it is checked
+/// against and pays them.
+fn press_costing(
+  costs costs: List(spell_plan.Cost),
+  resources resources: Resources,
+) -> #(List(Int), List(class_resource.Payment)) {
+  let plans =
+    support.with_spells(plans: support.plans(), spells: [
+      Spell(..support.ability(base: 38_017), costs:),
+    ])
+  press_in(plans:, resources:, bag_index: kick)
+}
+
+pub fn a_spellslinger_spell_power_cost_passes_at_its_amount_and_is_refused_54_below_test() -> Nil {
+  use <- owned_test.run(5000)
+  let cost = [spell_plan.ClassVitalCost(vital: 19, amount: 25)]
+  assert press_costing(costs: cost, resources: support.holding(7, 25.0))
+    == #([], [Payment(slot: 4, amount: 25)])
+    as "Class 7 vitalEnumResource04 is 19, so 0x1405e7980 reads slot 4: 25 - 25 = 0 lies in [0, 100] and slot 4 pays"
+  assert press_costing(costs: cost, resources: support.holding(7, 24.0))
+    == #([54], [])
+    as "24 - 25 < 0 in slot 4, the only slot naming 19: refused 50 + 4"
+  assert press_costing(costs: cost, resources: support.holding(7, 100.0))
+    == #([], [Payment(slot: 4, amount: 25)])
+    as "a full slot pays too: 75 lies in [0, 100]"
+}
+
+pub fn a_class_cost_is_checked_against_the_casters_class_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert press_costing(
+      costs: [spell_plan.ClassVitalCost(vital: 19, amount: 25)],
+      resources: support.holding(1, 1000.0),
+    )
+    == #([], [])
+    as "Class 1's slots name no vital 19 (vitalEnumResource00 to 07 are 5, 4, 6, 6, 4, 4, 4, 16): 0x1405e7980 passes and pays nothing"
+  let medic_cost = [spell_plan.ClassVitalCost(vital: 18, amount: 2)]
+  assert press_costing(costs: medic_cost, resources: support.holding(4, 2.0))
+    == #([], [Payment(slot: 1, amount: 2)])
+    as "Class 4's slots 1 to 5 name 18: slot 1 holds 2, 2 - 2 = 0 lies in [0, 4]"
+  assert press_costing(costs: medic_cost, resources: support.holding(4, 1.0))
+    == #([55], [])
+    as "none of slots 1 to 5 passes at 1; the last, slot 5, gives 55"
+  assert press_costing(costs: medic_cost, resources: support.holding(7, 100.0))
+    == #([], [])
+    as "Class 7's slots name no vital 18: it passes and pays nothing"
+}
+
+pub fn a_warrior_kinetic_energy_cost_above_its_value_is_refused_56_test() -> Nil {
+  use <- owned_test.run(5000)
+  let cost = [spell_plan.ClassVitalCost(vital: 4, amount: 150)]
+  assert press_costing(costs: cost, resources: support.holding(1, 100.0))
+    == #([56], [])
+    as "Class 1's slots 1, 4, 5 and 6 name 4; none passes at 100, and the last, slot 6, gives 50 + 6"
+  assert press_costing(costs: cost, resources: support.holding(1, 150.0))
+    == #([], [Payment(slot: 1, amount: 150)])
+    as "slot 1 holds 150 and 150 - 150 = 0 lies in [0, 1000]"
+}
+
+pub fn a_stalker_suit_power_cost_is_refused_53_and_type_13_is_refused_52_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert press_costing(
+      costs: [spell_plan.ClassVitalCost(vital: 12, amount: 101)],
+      resources: support.holding(5, 100.0),
+    )
+    == #([53], [])
+    as "Class 5's slot 3 alone names 12: 100 - 101 < 0, refused 50 + 3"
+  assert press_costing(
+      costs: [spell_plan.ClassVitalCost(vital: 12, amount: 100)],
+      resources: support.holding(5, 100.0),
+    )
+    == #([], [Payment(slot: 3, amount: 100)])
+    as "slot 3 holds 100 and 100 - 100 = 0 lies in [0, 100]"
+  assert press_costing(
+      costs: [spell_plan.ClassVitalCost(vital: 13, amount: 1)],
+      resources: support.holding(5, 100.0),
+    )
+    == #([52], [])
+    as "Class 5's slots 1 and 2 name 13 and hold 0 with a maximum of 0: neither passes, and the last, slot 2, gives 50 + 2"
+}
+
+pub fn a_type_14_cost_passes_for_every_class_and_pays_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each([1, 2, 3, 4, 5, 7], fn(class_id) {
+    assert press_costing(
+        costs: [spell_plan.ClassVitalCost(vital: 14, amount: 3)],
+        resources: support.holding(class_id, 1.0),
+      )
+      == #([], [])
+      as "no Class row's vitalEnumResource00 to 07 names 14, so 0x1405e7980 passes and pays nothing"
+  })
+}
+
+// ---- 5c: a threshold row's class cost ----
+
+pub fn a_row_class_cost_passes_at_its_amount_is_refused_54_below_and_175_at_0_test() -> Nil {
+  use <- owned_test.run(5000)
+  let cost = [spell_plan.RowClassCost(vital: 19, amount: 25)]
+  assert press_costing(costs: cost, resources: support.holding(7, 25.0))
+    == #([], [Payment(slot: 4, amount: 25)])
+    as "0x1403c0620: 25 is at most the 25 the slot holds"
+  assert press_costing(costs: cost, resources: support.holding(7, 24.0))
+    == #([54], [])
+    as "24 < 25; ClassVitalSlot 0x1405e78c0 is slot 4, the first naming 19 above 0, and VitalCostResult 0x1403d3650 gives 50 + 4"
+  assert press_costing(costs: cost, resources: support.holding(7, 0.0))
+    == #([175], [])
+    as "no slot naming 19 holds above 0: VitalCostResult gives 175"
+}
+
+pub fn a_medic_row_cost_at_empty_actuators_is_refused_175_where_the_innate_cost_is_refused_55_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert press_costing(
+      costs: [spell_plan.RowClassCost(vital: 18, amount: 1)],
+      resources: support.holding(4, 0.0),
+    )
+    == #([175], [])
+    as "0x1403c0620 with every actuator at 0: ClassVitalSlot finds no slot above 0, 175"
+  assert press_costing(
+      costs: [spell_plan.ClassVitalCost(vital: 18, amount: 1)],
+      resources: support.holding(4, 0.0),
+    )
+    == #([55], [])
+    as "0x1405e7980 on the same state: no slot passes, the last, slot 5, gives 55"
+}
+
+pub fn a_row_cost_has_no_maximum_and_a_vital_the_class_lacks_is_refused_175_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert press_costing(
+      costs: [spell_plan.RowClassCost(vital: 19, amount: 0)],
+      resources: support.holding(7, 0.0),
+    )
+    == #([], [])
+    as "0x1403c0620: a cost of 0 passes, and takes nothing"
+  let above_its_max =
+    class_resource.new(
+      resource: Resource(
+        ..class_resource_support.resource_of(4),
+        max: 0.0,
+        start: 3.0,
+      ),
+    )
+  assert press_costing(
+      costs: [spell_plan.RowClassCost(vital: 18, amount: 2)],
+      resources: above_its_max,
+    )
+    == #([], [Payment(slot: 1, amount: 2)])
+    as "0x1403c0620 has no maximum test: 3 holds 2, where the innate cost 3 - 2 = 1 above a maximum of 0 is refused 55"
+  assert press_costing(
+      costs: [spell_plan.RowClassCost(vital: 14, amount: 1)],
+      resources: support.holding(7, 100.0),
+    )
+    == #([175], [])
+    as "Class 7 has no slot naming 14, so the vital holds 0 and VitalCostResult gives 175"
+}
+
 // ---- 6: the caster requirement ----
 
 pub fn rampage_is_refused_51_at_249_kinetic_energy_and_accepted_at_250_test() -> Nil {

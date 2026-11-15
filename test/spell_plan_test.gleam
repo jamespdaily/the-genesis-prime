@@ -22,6 +22,7 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/spell4
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -134,11 +135,8 @@ pub fn a_cost_reads_its_resource_slot_and_the_result_of_that_slot_test() -> Nil 
     == [spell_plan.SpendAllCost(slot: 1, amount: 1, result: 51)]
     as "Spell4CastResult.vital_cost: Mind Burst, type 6 (Resource1) of 1, slot 1, gives 51 (0x1403b3320); Spell4 32809 has innateCostEMMId0 4, which takes every point"
   let gamma_rays = planted(base: 16_322)
-  assert gamma_rays.costs
-    == [
-      spell_plan.ClassVitalCost(slots: [1, 2, 3, 4, 5], amount: 2, result: 55),
-    ]
-    as "Spell4CastResult.vital_cost: Gamma Rays, type 18 of 2, with Class 4's slots 1 to 5 holding vital 18, gives 50 + the last, 55 (0x1405e7980)"
+  assert gamma_rays.costs == [spell_plan.ClassVitalCost(vital: 18, amount: 2)]
+    as "Spell4.16322's innateCostType0 is 18 and innateCost0 2: no case of its own in 0x1403b3320, so the class mechanic's check (0x1405e7980) finds the slots of the caster's class when the press is checked"
   assert gamma_rays.weapon == PrimaryWeapon
   assert list.length(gamma_rays.proxies) == 2
     as "Spell4.29874: Proxies to 34775 and 35886"
@@ -691,6 +689,146 @@ pub fn a_cost_of_a_slot_the_step_does_not_hold_fails_the_load_each_named_test() 
       == Error(spell_plan.UnreadCost(spell4_id: 58_524, cost_type:))
       as { "cost type " <> int.to_string(cost_type) }
   })
+}
+
+pub fn class_vital_cost_types_read_as_class_costs_on_every_row_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  // 0x1403b3320 has a case of its own for the other types; 4, 12, 13, 14, 18 and 19
+  // go to the class mechanic's check (0x1405e7980), which looks the vital up in the
+  // caster's class when the press is checked.
+  let class_types = [4, 12, 13, 14, 18, 19]
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  let uses =
+    list.flat_map(spell4.all(tables), fn(row) {
+      [
+        #(
+          row.id,
+          row.innate_cost_type0,
+          row.innate_cost0,
+          row.innate_cost_emm_id0,
+        ),
+        #(
+          row.id,
+          row.innate_cost_type1,
+          row.innate_cost1,
+          row.innate_cost_emm_id1,
+        ),
+      ]
+    })
+    |> list.filter(fn(cost) {
+      list.contains(class_types, cost.1) && cost.2 != 0
+    })
+  let planned =
+    list.map(uses, fn(cost) {
+      #(
+        cost,
+        spell_plan.spell_alone(tables:, sources:, spell4_id: cost.0, chain: []),
+      )
+    })
+  assert list.filter(planned, fn(plan) {
+      case plan.1 {
+        Error(spell_plan.UnreadCost(cost_type:, ..)) ->
+          list.contains(class_types, cost_type)
+        _ -> False
+      }
+    })
+    == []
+    as "no Spell4 row with a cost of these types gives UnreadCost"
+  let read =
+    list.filter_map(planned, fn(plan) {
+      result.map(plan.1, fn(spell) { #(plan.0, spell) })
+    })
+  assert list.all(read, fn(plan) {
+    let #(#(_, cost_type, amount, emm_id), spell) = plan
+    emm_id != 0
+    || list.contains(
+      spell.costs,
+      spell_plan.ClassVitalCost(vital: cost_type, amount:),
+    )
+  })
+    as "a row that plans holds the cost as a class vital cost naming its vital and amount"
+  list.each(class_types, fn(cost_type) {
+    assert list.any(planned, fn(plan) {
+      plan.0.1 == cost_type && result.is_ok(plan.1)
+    })
+      as {
+        "the client's rows hold a spell with a cost of type "
+        <> int.to_string(cost_type)
+        <> " that plans"
+      }
+  })
+  let assert Ok(surged) =
+    spell_plan.spell_alone(tables:, sources:, spell4_id: 76_002, chain: [])
+    as "Spell4 76002 plans: its cost of type 19 is read"
+  assert surged.costs == [spell_plan.ClassVitalCost(vital: 19, amount: 25)]
+    as "Spell4.76002: innateCostType0 19, innateCost0 25"
+}
+
+pub fn a_type_23_cost_stays_unread_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert spell_tables.with_loaded(
+      reaching: [#("SpellLevel", 920)],
+      rows: rampage_rows_costing(requirement_type: 0, eval: 0, cost: #(23, 5)),
+      body: fn(tables) { spell_plan.build(tables:) },
+    )
+    == Error(spell_plan.UnreadCost(spell4_id: 58_524, cost_type: 23))
+    as "0x1403b3320 has a case of its own for type 23, which the server does not read yet: it does not go to the class mechanic's check"
+}
+
+/// The costs of Charged Shot's third stage (Spell4Thresholds 124) with its first cost
+/// column set to this type and amount; the client's row holds a cost of 0.
+fn last_stage_costs(cost cost: #(Int, Int)) -> List(spell_plan.Cost) {
+  let rows = spell_tables.fixture_rows()
+  let costly =
+    list.map(rows.spell4_thresholds, fn(row) {
+      case row {
+        [planted_table.Integer(124), ..] ->
+          spell_tables.threshold_row(
+            id: 124,
+            parent: 34_718,
+            to_cast: 36_691,
+            order: 2,
+            duration: 1400,
+            cost:,
+          )
+        _ -> row
+      }
+    })
+  let assert Ok(plans) =
+    spell_tables.with_loaded(
+      reaching: [#("SpellLevel", 1036)],
+      rows: spell_tables.Rows(..rows, spell4_thresholds: costly),
+      body: fn(tables) { spell_plan.build(tables:) },
+    )
+    as "the planted rows build"
+  let assert Ok(charged_shot) =
+    spell_plan.in_plans(plans:, base: Spell4BaseId(20_684))
+  let assert Ok(last) = spell_plan.stage_at(spell: charged_shot, index: 2)
+  last.costs
+}
+
+pub fn threshold_row_class_costs_read_as_row_class_costs_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert last_stage_costs(cost: #(19, 25))
+    == [spell_plan.RowClassCost(vital: 19, amount: 25)]
+    as "0x1403c0620: a row cost of type 19 is checked against the class's vital, as a row cost"
+  assert last_stage_costs(cost: #(18, 2))
+    == [spell_plan.RowClassCost(vital: 18, amount: 2)]
+  assert last_stage_costs(cost: #(5, 3))
+    == [spell_plan.SlotCost(slot: 0, amount: 3, result: 50)]
+    as "types 5 to 11 on a row stay the slot costs of 0x1403b3320"
+  assert list.map([1, 3, 15, 16], fn(cost_type) {
+      last_stage_costs(cost: #(cost_type, 3))
+    })
+    == [
+      [spell_plan.UnheldCost(result: 44)],
+      [spell_plan.UnheldCost(result: 176)],
+      [spell_plan.UnheldCost(result: 167)],
+      [spell_plan.UnheldCost(result: 177)],
+    ]
+    as "1, 3, 15 and 16 stay the vitals no rule of the server holds"
 }
 
 pub fn a_cost_of_type_16_is_refused_177_as_a_vital_no_rule_of_the_server_holds_test() -> Nil {

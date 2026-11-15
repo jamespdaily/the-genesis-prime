@@ -1007,24 +1007,28 @@ pub fn a_0x801_naming_no_open_threshold_is_a_debug_line_and_no_change_test() -> 
 
 pub fn the_four_costed_abilities_are_refused_with_their_slots_by_a_caster_that_holds_none_and_nothing_is_logged_test() -> Nil {
   use <- owned_test.run(10_000)
-  let costed = [
-    #(support.impale, "7fc 38779 ", CasterVitalCostResource3),
-    #(7, "7fc 41276 ", CasterVitalCostResource1),
-    #(2, "7fc 32809 ", CasterVitalCostResource1),
-    #(6, "7fc 29874 ", CasterVitalCostResource5),
-  ]
-  // A Warrior at its start: 0 Kinetic Energy in slot 1, and nothing in slot 3.
-  let empty =
+  // A Warrior at its start: 0 Kinetic Energy in slot 1, and nothing in slot 3. Gamma
+  // Rays' cost is a class vital (type 18) the Warrior's slots do not name, so it is
+  // pressed by a Medic with its Actuators empty: slots 1 to 5 of the Medic name 18,
+  // none holds 2, and the last, slot 5, gives the result (0x1405e7980).
+  let warrior =
     support.caster_holding(
       resources: class_resource.new(
         resource: class_resource_support.resource_of(1),
       ),
     )
+  let medic = support.caster_holding(resources: support.holding(4, 0.0))
+  let costed = [
+    #(support.impale, "7fc 38779 ", CasterVitalCostResource3, warrior),
+    #(7, "7fc 41276 ", CasterVitalCostResource1, warrior),
+    #(2, "7fc 32809 ", CasterVitalCostResource1, warrior),
+    #(6, "7fc 29874 ", CasterVitalCostResource5, medic),
+  ]
   list.each(costed, fn(ability) {
     let #(_, first) =
       support.pressed_by(
         state: cast.new(),
-        caster: empty,
+        caster: ability.3,
         bag_index: ability.0,
         target: 0,
         at: 1000,
