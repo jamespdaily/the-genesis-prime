@@ -61,7 +61,8 @@ pub type Circle {
 pub fn place_at(path path: Path, now_ms now_ms: Int) -> Place {
   case path {
     Standing(at:) -> at
-    Timed(first:, rest:, ..) -> timed_place_at(first:, rest:, now_ms:)
+    Timed(first:, rest:, turned_to:) ->
+      facing_of_turn(place: timed_place_at(first:, rest:, now_ms:), turned_to:)
     Running(from:, to:, started_ms:, speed:) -> {
       let length = distance(from: from, to: to)
       let run = speed *. int.to_float(int.max(0, now_ms - started_ms)) /. 1000.0
@@ -78,7 +79,21 @@ pub fn end(path path: Path) -> Place {
   case path {
     Standing(at:) -> at
     Running(to:, ..) -> to
-    Timed(first:, rest:, ..) -> last_of(first:, rest:).1
+    Timed(first:, rest:, turned_to:) ->
+      facing_of_turn(place: last_of(first:, rest:).1, turned_to:)
+  }
+}
+
+/// The place with the facing a throw turns the creature to (kind 14 sets the unit's
+/// rotation and the path moves its position only), the place itself when the throw does
+/// not turn it.
+fn facing_of_turn(
+  place place: Place,
+  turned_to turned_to: Option(Facing),
+) -> Place {
+  case turned_to {
+    option.Some(facing) -> start_place.turned(place:, facing:)
+    option.None -> place
   }
 }
 
@@ -143,7 +158,11 @@ pub fn rest_of(path path: Path, now_ms now_ms: Int) -> Path {
     Standing(..) | Running(..) -> path
     Timed(first:, rest:, turned_to:) ->
       case list.filter([first, ..rest], fn(point) { point.0 > now_ms }) {
-        [] -> Standing(at: last_of(first:, rest:).1)
+        [] ->
+          Standing(at: facing_of_turn(
+            place: last_of(first:, rest:).1,
+            turned_to:,
+          ))
         ahead ->
           Timed(
             first: #(now_ms, timed_place_at(first:, rest:, now_ms:)),

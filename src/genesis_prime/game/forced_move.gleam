@@ -174,8 +174,7 @@ pub fn draws_of(bytes bytes: BitArray) -> Draws {
 /// The move a type 3 row asks for.
 pub fn of_row(row row: spell4_effects.Spell4Effects) -> Result(Move, RowError) {
   use #(way, mover) <- result.try(case row.data_bits00 {
-    0 | 7 | 8 -> Ok(#(kind_way(kind: row.data_bits00), AtOnce))
-    1 | 2 -> Ok(#(kind_way(kind: row.data_bits00), AtOnce))
+    0 | 1 | 2 | 7 | 8 -> Ok(#(kind_way(kind: row.data_bits00), AtOnce))
     3 | 4 | 5 | 6 | 9 | 10 -> Ok(#(kind_way(kind: row.data_bits00), Flight))
     11 | 12 | 13 | 14 | 15 -> Ok(#(kind_way(kind: row.data_bits00), Launch))
     kind -> Error(UnknownKind(effect_id: row.id, kind:))

@@ -4,9 +4,9 @@
 //// the first time and the last held after the last time (`cc_state.forced_move_end`: the
 //// unit keeps the path's last point).
 
-import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/world_map/creature_path.{Standing, Timed}
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import owned_test
 import place_support
 
@@ -86,4 +86,39 @@ pub fn the_rest_of_a_timed_path_starts_at_its_place_now_test() -> Nil {
   assert creature_path.rest_of(path: path(), now_ms: 1300)
     == Standing(at: at(x: 10.0, y: 0.0, z: 20.0))
     as "a path that is run has no rest"
+}
+
+/// The same flight turning the creature to yaw 1.5 (kind 14, `turned_to`).
+fn turning_path() -> creature_path.Path {
+  let assert Timed(first:, rest:, ..) = path()
+  Timed(first:, rest:, turned_to: Some(turned()))
+}
+
+fn turned() -> start_place.Facing {
+  Facing(yaw: 1.5, pitch: 0.0, roll: 0.0)
+}
+
+pub fn a_throw_that_turns_the_creature_faces_it_during_and_after_the_flight_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Kind 14 sets the unit's rotation and the path moves its position only
+  // (`movement_command.kind_14`), so every place along the path and its end have the
+  // turned yaw.
+  assert start_place.facing(creature_path.place_at(
+      path: turning_path(),
+      now_ms: 1050,
+    ))
+    == turned()
+    as "during the flight"
+  assert start_place.facing(creature_path.place_at(
+      path: turning_path(),
+      now_ms: 5000,
+    ))
+    == turned()
+    as "after the flight"
+  assert creature_path.end(path: turning_path())
+    == start_place.turned(place: at(x: 10.0, y: 0.0, z: 20.0), facing: turned())
+    as "the creature ends at the last point, turned"
+  assert creature_path.rest_of(path: turning_path(), now_ms: 1300)
+    == Standing(at: creature_path.end(path: turning_path()))
+    as "a viewer arriving once it is run is sent the turned end"
 }

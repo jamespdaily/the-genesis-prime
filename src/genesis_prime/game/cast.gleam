@@ -5146,6 +5146,12 @@ pub fn rolls_needed(
             },
           ),
           list.map(
+            spell_plan.struck_moves_in_phase(spell:, phase:, spent: live.spent),
+            fn(row) {
+              gates_rolls_needed(caster_gates(condition: row.condition))
+            },
+          ),
+          list.map(
             spell_plan.cooldown_modifiers_in_phase(
               spell:,
               phase:,
@@ -8583,6 +8589,17 @@ fn aimed_at(
       rolls:,
     )
   let forced_moves = applied.forced_moves
+  let thrown =
+    rows_with_units(
+      rows: applied.struck_moves,
+      aim: fn(row: spell_plan.StruckMove) { row.aim },
+      caster:,
+      primary_target: live.primary_target,
+      struck:,
+    )
+    |> list.filter(fn(entry) {
+      result.is_ok(creature_hit(struck:, unit_id: entry.1))
+    })
   let cooldowns =
     list.map(applied.cooldowns, fn(row) {
       #(
@@ -8671,6 +8688,17 @@ fn aimed_at(
           Listed(
             effect_id: row.effect_id,
             delay_ms: row.delay_ms,
+            instance_id: None,
+            damage: None,
+          ),
+        )
+      }),
+      list.map(thrown, fn(entry) {
+        #(
+          entry.1,
+          Listed(
+            effect_id: entry.0.effect_id,
+            delay_ms: entry.0.delay_ms,
             instance_id: None,
             damage: None,
           ),
@@ -9227,8 +9255,8 @@ fn creature_modifier_armed(
 /// caster gates passed) with each creature its aim names that the round `Hit`, in the row
 /// then the unit order of `units_aimed_at`. A row with no delay tells the creature
 /// `ForcedMoveStarts` in this step; any other arms a `ForcedMoveStart` timer for the go
-/// plus its delay, after cancelling the one an earlier go of the cast armed for the same
-/// creature and row (`target_start_cancelled`). A unit that is not a `HitCreature` of the
+/// plus its delay; each go's throw is its own, so a later go of the cast leaves an
+/// earlier go's waiting throw to start. A unit that is not a `HitCreature` of the
 /// round is not thrown (a deflected one included, as for a property modifier), and neither
 /// is the caster or another player (a move of another player is issue 570).
 fn struck_moves_armed(
@@ -9273,8 +9301,7 @@ fn struck_move_armed(
           life:,
           source: unit_properties.Source(cast_id:, effect_id: row.effect_id),
         )
-      let #(cast, cancels) = target_start_cancelled(cast:, on:)
-      let #(cast, starting) = case row.delay_ms > 0 {
+      case row.delay_ms > 0 {
         True -> {
           let #(cast, _, start) =
             armed(
@@ -9286,7 +9313,6 @@ fn struck_move_armed(
         }
         False -> throw_started(cast:, on:, move: row.move, struck_at_ms:)
       }
-      #(cast, list.append(cancels, starting))
     }
   }
 }

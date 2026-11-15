@@ -252,13 +252,14 @@
 //// | a viewer arrives while the charge is open and the threat list's top entry changed since it began | its 0x7ff names the top entry, the target its 0x908 names | `a_viewer_arriving_mid_charge_is_told_the_current_target_in_the_open_cast_test` |
 //// | a creature that cannot move: its target is out of reach, or beyond the leash range from home | out of reach: no 0x638, it keeps its place; beyond the leash range: the release as the leash does, with no walk, to Resting | `a_turret_never_chases_or_walks_home_test`, `a_turret_leashes_in_place_when_its_target_is_beyond_its_leash_range_test` |
 //// | `Thrown` reaches a creature that is dead, Returning or does not run (run speed 0) | the fight drops it: no path, no timer, no news | `a_turret_is_not_thrown_test`, `a_throw_at_a_dead_or_returning_creature_is_dropped_test` |
-//// | `Thrown` reaches a creature that runs, Fighting or Resting | the path is `Timed` from where it is, `FlightEnds` starts, the viewers are sent one 0x638; an open charge breaks as `held` does | `a_thrown_creature_sends_its_viewers_the_flight_once_test`, `a_throw_breaks_an_open_charge_test` |
+//// | `Thrown` reaches a creature that runs, Fighting or Resting | the path is `Timed` from where it is, `FlightEnds` starts, the viewers are sent one 0x638; an open charge breaks as `held` does, unless the throw moves the creature nowhere | `a_thrown_creature_sends_its_viewers_the_flight_once_test`, `a_throw_breaks_an_open_charge_test`, `a_throw_that_moves_the_creature_nowhere_leaves_an_open_charge_test` |
 //// | `Thrown` reaches a creature already in flight | the new path starts from where the first had reached, the old `FlightEnds` is cancelled and a new one starts | `a_second_throw_mid_flight_starts_from_where_the_first_had_reached_test` |
 //// | an attack tick fires in flight | no round starts: the creature does not attack or chase until it lands | `a_thrown_creature_does_not_chase_or_attack_until_it_lands_test` |
 //// | `FlightEnds` fires of the flight's generation | the creature stands at the last point with no news and chases again from there, unless a state holds it | `a_bare_throw_resumes_the_chase_from_the_landing_test`, `a_flight_ending_while_a_state_holds_does_not_resume_test` |
 //// | `FlightEnds` fires of an older generation | nothing | `a_stale_flight_end_does_nothing_test` |
 //// | a state takes hold in flight | the run stops only for a path that is `Running`; a `Timed` flight is kept and finishes | `a_state_landing_mid_flight_lets_the_flight_finish_test` |
 //// | the last state ends in flight | the creature acts again at `FlightEnds`, not before | `a_state_ending_mid_flight_does_not_resume_until_the_landing_test` |
+//// | the leash fires in flight | the creature is `Returning` and sends no walk: the flight finishes and `FlightEnds` starts the walk home from the landing | `a_leash_in_flight_walks_home_from_the_landing_test` |
 //// | the creature dies in flight | `CancelTimer(FlightEnds)`, the path is kept and no kind 2 is sent: the corpse lies at the landing | `a_creature_killed_mid_flight_lies_at_the_landing_test` |
 //// | a viewer arrives in flight | it is sent the rest of the path from where the creature is now | `an_arriving_viewer_mid_flight_is_sent_the_rest_of_the_path_test` |
 
@@ -695,7 +696,15 @@ fn thrown(
       circle: Circle(centre: fighter.home, radius: fighter.numbers.leash_range),
       now_ms:,
     )
-  let #(state, broken) = charge_broken(state:, fighter:)
+  let displaced = case path {
+    Timed(..) -> True
+    Standing(at:) -> at != here || was_run
+    Running(..) -> panic as "a throw's path is Standing or Timed"
+  }
+  let #(state, broken) = case displaced {
+    True -> charge_broken(state:, fighter:)
+    False -> #(state, [])
+  }
   let #(state, left) = flight_cleared(state:)
   let state = State(..state, path:)
   let #(state, moved) = case path {
@@ -716,7 +725,7 @@ fn thrown(
       }
     }
     Standing(at:) ->
-      case at != here || was_run {
+      case displaced {
         True -> #(state, [
           ToViewers(client_connection.CreaturePlaced(place: at, at_ms: now_ms)),
         ])
@@ -1823,7 +1832,8 @@ fn path_news(was was: Path, now now: Path, now_ms now_ms: Int) -> List(Effect) {
 /// health (0x937), the path home (0x638), each threatened player told `Released`,
 /// an open round closed, and the home timer started. The creature takes no strike
 /// until it is home. A creature whose states stop its run leashes in everything but the walk
-/// and its timer, which `ControlEnded` starts. A creature that cannot move has no walk:
+/// and its timer, which `ControlEnded` starts, and so does a creature in flight, whose
+/// walk starts at the landing (`FlightEnds`). A creature that cannot move has no walk:
 /// it rests where it stands.
 fn leash(
   state state: State,
@@ -1843,13 +1853,9 @@ fn leash(
     False -> {
       let #(state, home) = generation(state)
       let state = State(..state, status: Returning(home:))
-      case fighter.still {
+      case fighter.still || option.is_some(state.flight) {
         True -> #(state, [])
-        False -> {
-          let #(state, landed) = flight_cleared(state:)
-          let #(state, walking) = walk_home(state:, fighter:, home:, now_ms:)
-          #(state, list.append(landed, walking))
-        }
+        False -> walk_home(state:, fighter:, home:, now_ms:)
       }
     }
   }

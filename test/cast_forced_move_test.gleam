@@ -405,3 +405,88 @@ pub fn a_delayed_throw_is_cancelled_with_its_cast_node_test() -> Nil {
   assert support.throw_timeline(fired:) == [#(5000, thrown(21, 3))]
     as "and a throw that starts before the node ends, at 1000 + 4000, is told"
 }
+
+// ---- what the go lists and rolls for a throw ----
+
+pub fn a_go_lists_each_throw_on_the_creature_it_throws_with_its_delay_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, effects) =
+    thrown_by(spell: thrower(rows: [throwing_row(delay_ms: 200)]), struck: [
+      cast.Deflected(unit_id: 21),
+      hit(unit_id: 23, life: 5),
+    ])
+  assert listed(effects:) == [#(23, [#(73_826, 200)])]
+    as "Spell4Effects.effectType.3.other_unit: the go lists the ForcedMove row with its delay of 200 ms on the creature it throws, 23, and on none that deflected the strike"
+}
+
+/// The throw row of 73826 behind the chance gate of Prerequisite 792 on the caster
+/// (`table_rows -- Prerequisite 792`: type 37, comparison 6, value 24).
+fn chance_throw() -> Spell {
+  thrower(rows: [
+    spell_plan.StruckMove(
+      ..throwing_row(delay_ms: 0),
+      condition: spell_plan.GatedOnCaster(gates: [
+        prerequisite_support.single(id: 792, condition: #(37, 6, 0, 24)),
+      ]),
+    ),
+  ])
+}
+
+pub fn a_throw_behind_a_type_37_gate_takes_one_roll_and_is_thrown_when_it_passes_test() -> Nil {
+  use <- owned_test.run(5000)
+  let creatures = [hit(unit_id: 21, life: 3)]
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans: support.plans_with(spell: chance_throw()),
+      state: cast.new(),
+      caster: support.caster(),
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1000,
+    )
+  let assert [asked] = support.goes_asked(effects: raw)
+  assert cast.rolls_needed(
+      cast: state,
+      cast_id: asked.cast_id,
+      phase: asked.phase,
+      struck: creatures,
+    )
+    == 1
+    as "Prerequisite 792 is type 37: the go draws one roll for the throw row's gate, as for every other row"
+  let went = fn(roll) {
+    let #(_, effects) =
+      support.answered_as(
+        caster: support.caster(),
+        state:,
+        effects: raw,
+        at: 1000,
+        struck: creatures,
+        rolls: [roll],
+      )
+    support.throws(effects:)
+  }
+  assert went(24) == [thrown(21, 3)] as "a roll of 24 passes comparison 6 on 24"
+  assert went(25) == [] as "a roll of 25 fails and the creature is not thrown"
+}
+
+pub fn each_go_of_a_cast_keeps_the_delayed_throw_it_armed_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Phase flags 3: the row applies in both gos, at 1000 and 1300; its delay of 500 ms
+  // outlasts the second go, so the first go's throw is still waiting when the second
+  // go arms its own.
+  let row = spell_plan.StruckMove(..throwing_row(delay_ms: 500), phase_flags: 3)
+  let spell =
+    spell_plan.Spell(..thrower(rows: [row]), phase_delays_ms: [0, 300])
+  let creatures = [hit(unit_id: 21, life: 3)]
+  let #(state, effects) = thrown_by(spell:, struck: creatures)
+  let #(_, fired) =
+    support.run_timers_striking(
+      state:,
+      effects:,
+      from_ms: 1000,
+      struck: creatures,
+    )
+  assert list.map(support.throw_timeline(fired:), fn(entry) { entry.0 })
+    == [1500, 1800]
+    as "the first go's throw starts at 1000 + 500 and the second go's at 1300 + 500: a later go does not cancel an earlier throw that waits"
+}

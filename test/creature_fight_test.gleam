@@ -4112,6 +4112,14 @@ pub fn a_turret_holding_any_other_state_starts_no_charge_test() -> Nil {
 
 /// The throw of Spell4Effects 73826: 10 m away from a unit at x = -5, over 375 ms.
 fn knockback(at_ms at_ms: Int) -> creature.Message {
+  knockback_from(at_ms:, unit_at: at(-5.0))
+}
+
+/// The same throw away from a unit at `unit_at`.
+fn knockback_from(
+  at_ms at_ms: Int,
+  unit_at unit_at: start_place.Place,
+) -> creature.Message {
   creature.Thrown(
     move: forced_move.Move(
       way: forced_move.Away,
@@ -4124,7 +4132,7 @@ fn knockback(at_ms at_ms: Int) -> creature.Message {
       height: 0.0,
     ),
     draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-    reference: forced_move.Reference(place: at(-5.0), radius: 0.0),
+    reference: forced_move.Reference(place: unit_at, radius: 0.0),
     struck_at_ms: start_ms + at_ms,
   )
 }
@@ -4279,6 +4287,28 @@ pub fn a_throw_breaks_an_open_charge_test() -> Nil {
     as "the cast end that fires all the same strikes nobody"
 }
 
+pub fn a_throw_that_moves_the_creature_nowhere_leaves_an_open_charge_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    tell(
+      state: charger(viewers: [2]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: 0.0, z: -10.0, seq: 1),
+    )
+  let #(state, _, ends) = charge_opened(state:, aggro:)
+  // Away from a unit at the creature's own place has no way to go: the creature is not moved.
+  let #(_, thrown) =
+    tell(
+      state:,
+      at_ms: 4000,
+      message: knockback_from(at_ms: 4000, unit_at: at(0.0)),
+    )
+  assert said(thrown) == [] && timers(thrown) == []
+    as "no path, no timer and no 0x7f9: the creature moved nowhere"
+  assert !list.contains(timers_cancelled(thrown), ends)
+    as "the charge's cast end stays"
+}
+
 pub fn a_state_landing_mid_flight_lets_the_flight_finish_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _, lands) = thrown_chasing(viewers: [2])
@@ -4340,6 +4370,30 @@ pub fn a_state_ending_mid_flight_does_not_resume_until_the_landing_test() -> Nil
     as "and the creature starts no chase before it lands"
   let #(_, landed) = fire(state:, at_ms: 1375, timer: lands)
   assert said(landed) == ["0x638 to 2"] as "it chases at the landing"
+}
+
+pub fn a_leash_in_flight_walks_home_from_the_landing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _, lands) = thrown_chasing(viewers: [2, 5])
+  let #(state, leashed) =
+    tell(state:, at_ms: 1100, message: creature.Unwatched(by: ConnectionId(2)))
+  assert list.contains(said(leashed), "0x89a(0) to 5")
+    as "the only player on the threat list is gone: the creature leashes"
+  assert !list.contains(said(leashed), "0x638 to 5")
+    && !list.contains(said(leashed), "0x638(placed) to 5")
+    as "the flight is not replaced by a walk from where the arc is"
+  assert !list.contains(timers_cancelled(leashed), lands)
+    && timers(leashed) == []
+    as "the landing stays timed and no walk or home timer starts in flight"
+  let #(_, landed) = fire(state:, at_ms: 1375, timer: lands)
+  let assert [CreatureMoved(path: Running(from:, to:, started_ms:, ..))] =
+    news_to(landed, 5)
+    as "at the landing the creature walks home, and the one watcher left is sent it"
+  assert near(x_of(from), 20.0)
+    && x_of(to) == 0.0
+    && started_ms == start_ms + 1375
+    as "from the landing at x = 20 to its spawn"
+  assert list.length(timers(landed)) == 1 as "with the home timer of that walk"
 }
 
 pub fn a_second_throw_mid_flight_starts_from_where_the_first_had_reached_test() -> Nil {

@@ -46,6 +46,7 @@ import genesis_prime/message/float32
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
+import genesis_prime/message/spell_go
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
@@ -1553,6 +1554,23 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
     cast.ForcedMoveStarts(unit_id: thrown, life:, struck_at_ms:, move:),
   ] = cast_support.throws(effects: list.append(pressed, answered))
     as "the row's delayTime is 0, so the go tells the one creature it hit its throw at once"
+  // The client reads the throw's ForcedMove effect from the 0x7f4's target info of the
+  // creature it throws (`Spell4Effects.effectType.3`), with the row's delayTime.
+  let listed =
+    cast_support.frames_of(
+      message_id: spell_go.message_id,
+      effects: list.append(pressed, answered),
+    )
+    |> list.flat_map(fn(frame) {
+      let assert Ok(decoded) = spell_go.decode(frame.body)
+      list.flat_map(decoded.targets, fn(info) {
+        list.map(info.effects, fn(effect) {
+          #(info.unit_id, effect.spell4_effects_id, effect.delay_ms)
+        })
+      })
+    })
+  assert list.contains(listed, #(unit_id, 99_061, 0))
+    as "a 0x7f4 lists the throw's row on the creature it throws"
   // The connection's tell, through the server's own `tell_creature`: the draws are
   // the two fractions at 0, and the reference is the caster's place.
   let race_id = map_support.character(number: 101).race_id
