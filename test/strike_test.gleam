@@ -1129,6 +1129,7 @@ fn mind_burst_go(points points: Int) -> GoAsked {
         | cast.CasterChangeEnds(..)
         | cast.TargetChangeStarts(..)
         | cast.TargetChangeEnds(..)
+        | cast.ForcedMoveStarts(..)
         | cast.Activated(..)
         | cast.ShortcutCast(..)
         | cast.TickStrike(..)

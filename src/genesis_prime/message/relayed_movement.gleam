@@ -5,13 +5,13 @@
 //// unit's movement: the kinds of the per-frame batch the client's writer
 //// builds after the time command (1 platform, 2 position, 8 velocity, 11 move
 //// asked, 14 rotation, 24 state flags, 27 mode), which the server relays to
-//// the players who see a unit, every field named, and the two a server that
-//// moves a unit writes itself, 0 (the time its later commands apply at) and 4
-//// (a path). Gap: the other kinds, which game moves queue and the client's
-//// writer may send, are not relayed, since opcode.0x637 does not say which
-//// queuers exist or what they mean. Its variants are listed in `schema.toml`
-//// with the client's evidence, and the fact file's `opcode.0x637` names the
-//// union.
+//// the players who see a unit, every field named, and the three a server that
+//// moves a unit writes itself, 0 (the time its later commands apply at), 3 (a
+//// timed path) and 4 (a path). Gap: the other kinds, which game moves queue
+//// and the client's writer may send, are not relayed, since opcode.0x637 does
+//// not say which queuers exist or what they mean. Its variants are listed in
+//// `schema.toml` with the client's evidence, and the fact file's
+//// `opcode.0x637` names the union.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
@@ -23,6 +23,7 @@ import genesis_prime/message/movement_platform.{type MovementPlatform}
 import genesis_prime/message/movement_rotation.{type MovementRotation}
 import genesis_prime/message/movement_state_flags.{type MovementStateFlags}
 import genesis_prime/message/movement_time.{type MovementTime}
+import genesis_prime/message/movement_timed_path.{type MovementTimedPath}
 import genesis_prime/message/movement_velocity.{type MovementVelocity}
 import genesis_prime/message/unit_position_command.{type UnitPositionCommand}
 import gleam/pair
@@ -41,6 +42,9 @@ pub type RelayedMovement {
   /// Kind 2, read by `unit_position_command`. The fact file's `0x1400ad350`
   /// names the kind.
   Position(UnitPositionCommand)
+  /// Kind 3, read by `movement_timed_path`. The fact file's
+  /// `movement_command.kind_3` names the kind.
+  TimedPath(MovementTimedPath)
   /// Kind 4, read by `movement_path`. The fact file's `movement_command.kind_4`
   /// names the kind.
   Path(MovementPath)
@@ -67,6 +71,7 @@ pub fn write(writer writer: Writer, record record: RelayedMovement) -> Writer {
     Time(variant) -> movement_time.write(writer, variant)
     Platform(variant) -> movement_platform.write(writer, variant)
     Position(variant) -> unit_position_command.write(writer, variant)
+    TimedPath(variant) -> movement_timed_path.write(writer, variant)
     Path(variant) -> movement_path.write(writer, variant)
     Velocity(variant) -> movement_velocity.write(writer, variant)
     MoveAsked(variant) -> movement_move_asked.write(writer, variant)
@@ -89,6 +94,10 @@ pub fn read(reader: Reader) -> Result(#(RelayedMovement, Reader), DecodeError) {
       reader
       |> unit_position_command.read
       |> result.map(pair.map_first(_, Position))
+    3 ->
+      reader
+      |> movement_timed_path.read
+      |> result.map(pair.map_first(_, TimedPath))
     4 -> reader |> movement_path.read |> result.map(pair.map_first(_, Path))
     8 ->
       reader

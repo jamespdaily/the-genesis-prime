@@ -112,8 +112,8 @@ pub fn the_measure_reads_a_row_behind_a_target_prerequisite_only_when_its_gate_i
   use <- owned_test.run(600_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
-  assert counted(type_number: 3).1 == 2553
-    as "scratch count: 2,543 rows aim only at other units, 5 more aim at the caster behind a target apply prerequisite of type 95 or 56, which the plan does not read (56101, 56102, 56104, 56107 and 119554; the other 9 of the 14 rows aimed at the caster behind one, the first 48817, hold types it reads and are read) and 5 more hold a phaseFlags of 0, which no phase selects (`in_phase`): 2,553 of 4,645"
+  assert counted(type_number: 3).1 == 289
+    as "scratch count: 276 rows aim only at other units behind a target apply prerequisite, which the plan refuses (#815), 3 more aim at them with a phaseFlags of 0, which no phase selects (`in_phase`: 98983, 99149 and 101212), and 10 aim at the caster only, 5 behind a target apply prerequisite of type 95 or 56, which the plan does not read (56101, 56102, 56104, 56107 and 119554; the other 9 of the 14 rows aimed at the caster behind one, the first 48817, hold types it reads and are read) and 5 with a phaseFlags of 0: 289 of 4,645 (2,553 while a row aimed at others was refused, and the 2,264 of the 2,267 that hold no target apply prerequisite are read now)"
   assert counted(type_number: 11).1 == 309
     as "scratch count over `table_rows -- Spell4Effects effectType=11` and `-- UnitProperty2`: every row aimed at the caster, the target or the area is read (targetFlags with bit 1 set 12,603: 1 12,154, 3 92, 5 339, 7 18; 2 6,025, 4 951, 6 526), except 258 of the 679 behind a target apply prerequisite (the other 421, the first 38480, hold only types the plan reads, and a row aimed past the caster none that reads a struck unit's own state; the 258 hold a type it does not read or, aimed past the caster, one that does), 6 aimed at the area with a phaseFlags of 0, which no phase selects (`in_phase`), and 45 more, aimed by a flag it reads with a phase and no target apply prerequisite, behind a caster apply prerequisite that holds a type the plan does not read (a go cannot tell whether the caster passes it; the 2 other rows with such a caster apply, 180971 and 220435, hold a target apply of an unread type and are among the 258): 309 of 20,105"
   assert counted(type_number: 10).1 == 1056
@@ -174,10 +174,32 @@ pub fn the_measure_totals_match_the_plan_test() -> Nil {
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let text = checklist.render([measured()])
-  assert string.contains(text, "16087 rows of the handled types not read")
-    as "the sum of the types' scratch counts: 1 1,367, 3 2,553, 4 855, 8 2,652, 10 1,056, 11 309, 26 1,986, 29 257, 73 34, 80 399 and 118 83 (the tests above), 17 400 and 81 384 (`coverage_type_test`), 18 8, 83 49, and the counts that stay as they were: 14 3,455, 52 2, 64 35, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values)"
+  assert string.contains(text, "13823 rows of the handled types not read")
+    as "the sum of the types' scratch counts: 1 1,367, 3 289, 4 855, 8 2,652, 10 1,056, 11 309, 26 1,986, 29 257, 73 34, 80 399 and 118 83 (the tests above), 17 400 and 81 384 (`coverage_type_test`), 18 8, 83 49, and the counts that stay as they were: 14 3,455, 52 2, 64 35, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values)"
   assert string.contains(text, "starting abilities: 205 of 215 rows handled")
     as "scratch count over the 215 starting rows (the 196 of before and the 19 rows of the trees Spell Surge's alternates reach, all of handled types and read): 7 are not read for lack of a handled type or row (the two Proc rows the plan skips, 90 four times and 24; the Stalker's 91018, behind a target apply prerequisite the plan reads, is read) and 3 more are not read (the Warrior's 210834, which ticks on the caster, is read): Proxies 121345 and 178429 (dataBits00 0) and the Medic's ticking gain 228918"
+}
+
+pub fn the_coverage_measure_leaves_295_type_3_rows_unread_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.guard(client_tables.present())
+  let #(rows, unread, _, _) = counted(type_number: 3)
+  assert rows == 4645
+    as "`table_rows -- Spell4Effects effectType=3`: 4,645 rows"
+  assert unread == 289
+    as "the brief counted 295 (276 behind a target apply prerequisite, 10 union rows, 9 caster rows behind one); a scratch count of the rows the plan refuses gives 276 aimed at others behind a target apply prerequisite, 3 aimed at others with a phaseFlags of 0 (98983, 99149, 101212) and 10 aimed at the caster only, and no union row, since each reads its caster part"
+  let assert HandledWithGap(reason:, fact_key:, ..) =
+    line_of(type_number: 3).status
+  assert fact_key == "Spell4Effects.effectType.3"
+  assert string.contains(
+      reason,
+      "aimed at another unit behind a target apply prerequisite",
+    )
+    && string.contains(reason, "(#815)")
+    as "the gap names the rows still unread and the issue that will read them"
+  assert !string.contains(reason, "(#336)")
+    as "the rows aimed at other units are no longer the gap"
 }
 
 // ---- the gaps the engine states ----

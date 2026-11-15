@@ -23,6 +23,7 @@ import genesis_prime/world_map/creature_life.{
 import genesis_prime/world_map/creature_path
 import gleam/dict
 import gleam/list
+import gleam/option
 import owned_test
 import place_support
 
@@ -262,6 +263,41 @@ pub fn a_running_creatures_pose_is_where_its_path_puts_it_with_the_yaw_its_path_
   assert shown.pose_of(picture:, unit_id: 1, now_ms: 9000)
     == Ok(Pose(at: Point(x: 0.0, z: -20.0), yaw: 0.7))
     as "at its end"
+}
+
+pub fn a_thrown_creature_that_turns_has_the_yaw_of_its_turn_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A throw's kind 14 turns the creature: its pose has that yaw during the flight and
+  // after it, not the yaw of its 0x262.
+  let assert ShownCreature(path: standing, ..) as from =
+    facing_creature(x: 0.0, z: 0.0)
+  let start = creature_path.end(path: standing)
+  let picture =
+    dict.from_list([
+      #(
+        1,
+        ShownCreature(
+          ..from,
+          path: creature_path.Timed(
+            first: #(1000, start),
+            rest: [
+              #(1400, start_place.moved(place: start, x: 0.0, y: 0.0, z: -20.0)),
+            ],
+            turned_to: option.Some(start_place.Facing(
+              yaw: 2.0,
+              pitch: 0.0,
+              roll: 0.0,
+            )),
+          ),
+        ),
+      ),
+    ])
+  assert shown.pose_of(picture:, unit_id: 1, now_ms: 1200)
+    == Ok(Pose(at: Point(x: 0.0, z: -10.0), yaw: 2.0))
+    as "during the flight"
+  assert shown.pose_of(picture:, unit_id: 1, now_ms: 9000)
+    == Ok(Pose(at: Point(x: 0.0, z: -20.0), yaw: 2.0))
+    as "after it"
 }
 
 // ---- the cast group a unit belongs to ----

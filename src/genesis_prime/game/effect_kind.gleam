@@ -20,7 +20,8 @@
 ////   (`Spell4Effects.effectType.11.change`).
 //// - **ForcedMove** (3) moves the unit it aims at; the server lists the rows aimed at
 ////   the caster in the go, and the client moves its own unit and reports the move
-////   (`Spell4Effects.effectType.3.player`).
+////   (`Spell4Effects.effectType.3.player`), and throws the creatures a row aimed at the
+////   primary target, the area or both strikes (`Spell4Effects.effectType.3.other_unit`).
 //// - **CooldownModifier** (73) changes the spell cooldowns of the unit it aims at; the
 ////   server reads the rows whose aim includes the caster
 ////   (`Spell4Effects.effectType.73`).
@@ -92,9 +93,9 @@ pub type Kind {
   PropertyModifier
   /// A ForcedMove effect (3): moves the unit it aims at. A row is read when its
   /// targetFlags include the caster, whose client moves itself
-  /// (`Spell4Effects.effectType.3.player`); a row aimed only at other units, which the
-  /// server would move itself (`Spell4Effects.effectType.3.other_unit`), is not read
-  /// (`is_row_read`).
+  /// (`Spell4Effects.effectType.3.player`), or are 2, 4 or 6, the creatures a strike
+  /// hits, which the server moves itself (`Spell4Effects.effectType.3.other_unit`); any
+  /// other aim is not read (`is_row_read`).
   ForcedMove
   /// A ModifySpellCooldown effect (73): changes the spell cooldowns of the unit it aims
   /// at. A row is read when its targetFlags include the caster
@@ -224,10 +225,11 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
 }
 
 /// Whether a row of the effect type with these `targetFlags` is read: every row of a
-/// type `is_read` for, except that a PropertyConversion, ForcedMove, CooldownModifier,
+/// type `is_read` for, except that a PropertyConversion, CooldownModifier,
 /// Stealth, RemoveStealth, Proc or DisguiseOutfit row is read only when its flags
-/// include the caster (bit 1, `Spell4Effects.targetFlags`), a PropertyModifier row when
-/// they include the caster or are 2, 4 or 6 (the units a strike hits), a Heal,
+/// include the caster (bit 1, `Spell4Effects.targetFlags`), a PropertyModifier or
+/// ForcedMove row when they include the caster or are 2, 4 or 6 (the units a strike
+/// hits), a Heal,
 /// InterruptArmor or Absorption row when they include the caster or are the primary
 /// target alone (2), and a ShieldOverload row only when they are the area alone (4); a
 /// row aimed at other units is left out. A plan of
@@ -238,13 +240,12 @@ pub fn is_row_read(
   target_flags target_flags: Int,
 ) -> Bool {
   case kind_of(effect_type:) {
-    PropertyModifier ->
+    PropertyModifier | ForcedMove ->
       int.bitwise_and(target_flags, 1) == 1
       || target_flags == 2
       || target_flags == 4
       || target_flags == 6
     PropertyConversion
-    | ForcedMove
     | CooldownModifier
     | Stealth
     | RemoveStealth

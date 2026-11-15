@@ -271,6 +271,7 @@ import genesis_prime/game/cooldown
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
+import genesis_prime/game/forced_move
 import genesis_prime/game/innate
 import genesis_prime/game/lasting
 import genesis_prime/game/loadout
@@ -617,6 +618,9 @@ pub type Spell {
     /// The ForcedMove effects aimed at the caster, which the go lists and the caster's
     /// client carries out.
     forced_moves: List(ForcedMove),
+    /// The ForcedMove effects aimed at other units, which the go throws the creatures it
+    /// hit with (`StruckMove`).
+    struck_moves: List(StruckMove),
     /// The non-zero cooldown groups of the Spell4 row (`spellCoolDownId00` to `02`),
     /// each a SpellCoolDown row, which a selector 3 of a cooldown effect tests.
     cooldown_groups: List(Int),
@@ -779,6 +783,29 @@ pub type ForcedMove {
     effect_id: Spell4EffectsId,
     phase_flags: Int,
     delay_ms: Int,
+    condition: Condition,
+    tag: spend.Tag,
+  )
+}
+
+/// A ForcedMove effect (`Spell4Effects.effectType.3`) of a spell whose targetFlags are 2,
+/// 4 or 6, the units a strike hits (a row that includes the caster is a `ForcedMove`
+/// and moves the caster only): the `move` its columns decode to
+/// (genesis_prime/game/forced_move), the units it strikes (`aim`: the primary target,
+/// the area or both), the `delay_ms` after the go the creature is thrown at, the phases
+/// of `phase_flags` it applies in, when its `condition` holds (its caster apply
+/// prerequisite against the caster; a target apply prerequisite fails the load with
+/// issue 815's reading of it still to come), and when its `tag` holds for the points
+/// the cast spent (genesis_prime/game/spend). The cast throws each creature the go
+/// `Hit` (genesis_prime/game/cast `struck_moves_armed`); a unit that is the caster or
+/// another player is not thrown until a move of another player is built (issue 570).
+pub type StruckMove {
+  StruckMove(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    delay_ms: Int,
+    move: forced_move.Move,
+    aim: Aim,
     condition: Condition,
     tag: spend.Tag,
   )
@@ -1092,6 +1119,7 @@ pub type PlannedRow {
   PlannedControl(control: CrowdControl)
   PlannedModifier(modifier: PropertyModifier)
   PlannedForcedMove(forced_move: ForcedMove)
+  PlannedStruckMove(struck_move: StruckMove)
   PlannedCooldownModifier(modifier: CooldownModifier)
   PlannedStealth(stealth: StealthRow)
   PlannedRemoveStealth(remove: RemoveStealthRow)
@@ -1153,6 +1181,13 @@ pub type PlanError {
     effect_id: Int,
     prerequisite_type: Int,
   )
+  /// A ForcedMove effect aimed at the units a strike hits is behind a target apply
+  /// prerequisite: the cast would throw units that fail it, so the row is refused until
+  /// issue 815 reads the gate of a struck unit for it.
+  StruckMoveBehindTargetPrerequisite(spell4_id: Int, effect_id: Int)
+  /// A ForcedMove effect aimed at the units a strike hits holds columns that are no move
+  /// (`forced_move.of_row`).
+  StruckMoveNotRead(spell4_id: Int, effect_id: Int, error: forced_move.RowError)
   /// An effect of a spell that spends every point held holds an emmComparison other
   /// than 0 or 1, which chooses nothing (`Spell4Effects.emmComparison`).
   SpendComparisonNotRead(spell4_id: Int, effect_id: Int, comparison: Int)
@@ -1358,6 +1393,26 @@ pub fn describe(error error: PlanError) -> String {
       <> " aimed past the caster behind a target apply prerequisite with a condition of type "
       <> int.to_string(prerequisite_type)
       <> ", which reads the state of the creature it strikes (#817)"
+    StruckMoveBehindTargetPrerequisite(spell4_id:, effect_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a ForcedMove effect "
+      <> int.to_string(effect_id)
+      <> " aimed at the units a strike hits behind a target apply prerequisite, which is not read until issue 815 reads the gate of a struck unit"
+    StruckMoveNotRead(spell4_id:, effect_id:, error:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a ForcedMove effect "
+      <> int.to_string(effect_id)
+      <> " aimed at the units a strike hits that is no move: "
+      <> case error {
+        forced_move.UnknownKind(kind:, ..) ->
+          "its dataBits00 is "
+          <> int.to_string(kind)
+          <> ", which is no kind from 0 to 15"
+        forced_move.NotAFloat(column:, ..) ->
+          "it holds no finite number in " <> column
+      }
     SpendComparisonNotRead(spell4_id:, effect_id:, comparison:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2214,6 +2269,7 @@ fn spell_of(
       dropped_controls: dropped_controls_of(readings:),
       modifiers: list.append(lists.modifiers, lists.armors),
       forced_moves: lists.forced_moves,
+      struck_moves: lists.struck_moves,
       cooldown_groups:,
       cooldown_modifiers: lists.cooldown_modifiers,
       stealth: lists.stealth,
@@ -2932,6 +2988,50 @@ fn forced_move_of(
   )
 }
 
+/// One ForcedMove row aimed only at the units a strike hits (targetFlags 2, 4 or 6;
+/// `effect_kind.is_row_read`): its columns as a `forced_move.Move` (`forced_move.of_row`; a
+/// dataBits00 above 15 or a float column that is no number fails the load), its aim, and its
+/// caster apply prerequisite as a Fluff effect's is (`condition_of`). A row behind a target
+/// apply prerequisite fails the load, since the cast would throw units that fail it; issue
+/// 815 reads that gate of a struck unit.
+fn struck_move_of(
+  tables tables: table_store.Tables,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(StruckMove, PlanError) {
+  use <- bool.guard(
+    when: effect.prerequisite_id_target_apply != 0,
+    return: Error(StruckMoveBehindTargetPrerequisite(
+      spell4_id: effect.spell_id,
+      effect_id: effect.id,
+    )),
+  )
+  use move <- result.try(
+    forced_move.of_row(row: effect)
+    |> result.map_error(fn(error) {
+      StruckMoveNotRead(
+        spell4_id: effect.spell_id,
+        effect_id: effect.id,
+        error:,
+      )
+    }),
+  )
+  use condition <- result.map(condition_of(
+    tables:,
+    effect:,
+    reach: OnlyTheCaster,
+    data_bits06_names_a_gate: False,
+  ))
+  StruckMove(
+    effect_id: Spell4EffectsId(effect.id),
+    phase_flags: effect.phase_flags,
+    delay_ms: effect.delay_time,
+    move:,
+    aim: aim_of(target_flags: effect.target_flags),
+    condition:,
+    tag: tag_of(effect:),
+  )
+}
+
 /// One ModifySpellCooldown row whose targetFlags include the caster
 /// (`effect_kind.is_row_read`; `Spell4Effects.effectType.73`): dataBits00 picks the
 /// spells (0 a Spell4Base, 1 a Spell4, 2 a spell group, 3 a cooldown group, any other
@@ -3313,6 +3413,7 @@ type RowLists {
     modifiers: List(PropertyModifier),
     armors: List(PropertyModifier),
     forced_moves: List(ForcedMove),
+    struck_moves: List(StruckMove),
     cooldown_modifiers: List(CooldownModifier),
     stealth: List(StealthRow),
     remove_stealth: List(RemoveStealthRow),
@@ -3325,7 +3426,7 @@ type RowLists {
 fn lists_of(
   readings readings: List(#(spell4_effects.Spell4Effects, Reading)),
 ) -> RowLists {
-  let empty = RowLists([], [], [], [], [], [], [], [], [], [], [])
+  let empty = RowLists([], [], [], [], [], [], [], [], [], [], [], [])
   let lists =
     list.fold(readings, empty, fn(lists, row) {
       case row.1 {
@@ -3350,6 +3451,11 @@ fn lists_of(
               RowLists(..lists, forced_moves: [
                 forced_move,
                 ..lists.forced_moves
+              ])
+            PlannedStruckMove(struck_move:) ->
+              RowLists(..lists, struck_moves: [
+                struck_move,
+                ..lists.struck_moves
               ])
             PlannedCooldownModifier(modifier:) ->
               RowLists(..lists, cooldown_modifiers: [
@@ -3376,6 +3482,7 @@ fn lists_of(
     modifiers: list.reverse(lists.modifiers),
     armors: list.reverse(lists.armors),
     forced_moves: list.reverse(lists.forced_moves),
+    struck_moves: list.reverse(lists.struck_moves),
     cooldown_modifiers: list.reverse(lists.cooldown_modifiers),
     stealth: list.reverse(lists.stealth),
     remove_stealth: list.reverse(lists.remove_stealth),
@@ -3519,8 +3626,18 @@ fn kind_reading(
     }
     effect_kind.ForcedMove -> {
       use <- when_reached(reaches:)
-      forced_move_of(tables:, effect:)
-      |> result.map(fn(forced_move) { Applied(PlannedForcedMove(forced_move:)) })
+      case has_flag(flags: effect.target_flags, bit: 1) {
+        True ->
+          forced_move_of(tables:, effect:)
+          |> result.map(fn(forced_move) {
+            Applied(PlannedForcedMove(forced_move:))
+          })
+        False ->
+          struck_move_of(tables:, effect:)
+          |> result.map(fn(struck_move) {
+            Applied(PlannedStruckMove(struck_move:))
+          })
+      }
     }
     effect_kind.CooldownModifier -> {
       use <- when_reached(reaches:)
@@ -4861,6 +4978,22 @@ pub fn forced_moves_in_phase(
     rows: spell.forced_moves,
     phase_flags: fn(forced_move) { forced_move.phase_flags },
     tag: fn(forced_move) { forced_move.tag },
+    phase:,
+    spent:,
+  )
+}
+
+/// The ForcedMove effects aimed at other units of the spell that apply in phase `phase`,
+/// those whose tag holds for the points the cast spent.
+pub fn struck_moves_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(StruckMove) {
+  in_phase(
+    rows: spell.struck_moves,
+    phase_flags: fn(struck_move) { struck_move.phase_flags },
+    tag: fn(struck_move) { struck_move.tag },
     phase:,
     spent:,
   )

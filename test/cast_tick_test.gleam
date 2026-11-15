@@ -308,6 +308,7 @@ fn tick_strikes(effects effects: List(Effect)) -> List(cast.TickAsked) {
       | cast.CasterChangeEnds(..)
       | cast.TargetChangeStarts(..)
       | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
       | cast.StealthChanged(..) -> Error(Nil)
