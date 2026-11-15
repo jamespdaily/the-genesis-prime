@@ -29,6 +29,12 @@
 //// open and counts the event counts once for it, so a later objective that the event
 //// unlocks waits for the next one.
 ////
+//// A type 12 objective counts each unit once, as a type 23 objective does
+//// (`quest_log.used`), except an objective whose creature has fewer units in the world
+//// than its count (`quest_log.reused_unit_objectives`), which counts the same unit again;
+//// the client keeps no per-unit record for it (`0x1405517a0`), so both are the server's
+//// choice.
+////
 //// A type 11 objective (`QuestObjective.type.11`) is a cast of the spell in its data. The
 //// client counts nothing for it: it shows the spell as a button (a 0x176 shortcut of kind
 //// 2, keyed by the objective's id) while the objective is open and takes the button away
@@ -86,9 +92,6 @@ const named_group_type = 15
 
 /// The objective type of a talk.
 const talk_type = 3
-
-/// The objective type of a use.
-const use_type = 12
 
 /// The objective type of a checklist use: a unit of the TargetGroup in its data.
 const checklist_use_type = 14
@@ -248,8 +251,8 @@ pub fn talk_targets(
 
 /// Whether a use of the unit, of the checklist index, counts for an open objective of the
 /// log: the objectives a `Used` event counts for (`counts`) while the unit's bit is not
-/// yet set, as a talk's is (`talk_targets`), and while a type 23 objective has not counted
-/// this unit (`quest_log.is_used`). A unit no open objective counts a use of is offered no
+/// yet set, as a talk's is (`talk_targets`), and while an objective that counts each unit once
+/// (`quest_log.counted_by_unit`) has not counted this unit (`quest_log.is_used`). A unit no open objective counts a use of is offered no
 /// use by the server.
 pub fn use_targets(
   log log: QuestLog,
@@ -282,7 +285,8 @@ fn counted_by(
 
 /// Whether the objective at `index` has counted the unit of the event already: the unit's
 /// bit is set in a checklist objective's mask (`0x140611680`: the client marks the unit
-/// only then), or a type 23 or type 11 objective has counted this unit of the map run.
+/// only then), or an objective that counts each unit once (`quest_log.counted_by_unit`) has counted this
+/// unit of the map run.
 fn counted_already(
   log log: QuestLog,
   quest quest: quest_log.Quest,
@@ -314,11 +318,13 @@ fn quest_of(
   quest
 }
 
-/// The log and the messages after the player talked to or used a creature.
+/// The log and the messages after the player talked to or used a creature. `reused` is the
+/// type 12 objectives whose unit may count again (`quest_log.reused_unit_objectives`).
 pub fn advance(
   log log: QuestLog,
   tables tables: table_store.Tables,
   event event: Event,
+  reused reused: Set(Int),
   now_ms now_ms: Int,
 ) -> Advanced {
   list.fold(
@@ -330,6 +336,7 @@ pub fn advance(
         tables:,
         quest: quest_of(tables:, quest_id:),
         now_ms:,
+        reused:,
         counts: fn(index, objective) {
           counts(tables:, event:, quest_id:, index:, objective:)
         },
@@ -374,7 +381,7 @@ fn counts(
       }
     Used(target:, by_item:, ..) ->
       {
-        objective.type_ == use_type
+        objective.type_ == quest_log.use_a_creature_type
         && Creature2Id(objective.data) == target.creature_id
       }
       || {
@@ -493,6 +500,7 @@ fn advance_quest(
   tables tables: table_store.Tables,
   quest quest: quest_log.Quest,
   now_ms now_ms: Int,
+  reused reused: Set(Int),
   counts counts: fn(Int, quest_log.Objective) -> Bool,
   group_member group_member: fn(quest_log.Objective) -> Result(#(Int, Int), Nil),
   checklist_index checklist_index: Int,
@@ -556,9 +564,21 @@ fn advance_quest(
             Ok(_) | Error(Nil) -> counted
           }
         Error(Nil), False ->
-          case quest_log.counted_by_unit(objective: open.1), used_unit {
+          case
+            quest_log.counted_by_unit(objective: open.1, reused:),
+            used_unit
+          {
             True, Ok(unit) ->
-              case quest_log.used(log:, quest:, index: open.0, unit:, now_ms:) {
+              case
+                quest_log.used(
+                  log:,
+                  quest:,
+                  index: open.0,
+                  unit:,
+                  reused:,
+                  now_ms:,
+                )
+              {
                 // A unit this objective counted already counts for nothing and tells
                 // nothing.
                 Ok(used) if used.changed -> #(
@@ -578,7 +598,7 @@ fn advance_quest(
             // A cast aimed at the caster names no unit and counts one at each go.
             True, Error(Nil) if counted_with_no_unit ->
               progressed_by_one(counted:, quest:, index: open.0, now_ms:)
-            // A use always carries its unit, so a type 23 objective with none counts
+            // A use always carries its unit, so an objective that counts by unit with none counts
             // nothing.
             True, Error(Nil) -> counted
             False, _ ->

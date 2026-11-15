@@ -125,6 +125,7 @@ pub fn settings() -> game_connection.Settings {
     visibility: dict.new(),
     tutorial_chain: tutorial_support.none(),
     projector_landings: projector_support.landings(),
+    reused_unit_objectives: set.new(),
   )
 }
 
@@ -1568,10 +1569,29 @@ pub fn entered_as_with_quests_on(
   character character: store.Character,
   quests quests: List(store.QuestRow),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  let fresh = accepted(Settings(..settings(), tables:)).0
+  entered_as_with_quests_in(
+    settings: Settings(..settings(), tables:),
+    character:,
+    quests:,
+  )
+}
+
+/// `entered_with_quests_on` with these settings.
+pub fn entered_with_quests_in(
+  settings settings: game_connection.Settings,
+  quests quests: List(store.QuestRow),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  entered_as_with_quests_in(settings:, character: world_character(), quests:)
+}
+
+fn entered_as_with_quests_in(
+  settings settings: game_connection.Settings,
+  character character: store.Character,
+  quests quests: List(store.QuestRow),
+) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) =
     joining_holding(
-      in_character_select: in_select_from(fresh),
+      in_character_select: in_select_from(accepted(settings).0),
       character:,
       saved_health: None,
       saved_experience: None,
