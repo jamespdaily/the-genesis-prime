@@ -416,26 +416,6 @@ pub fn a_refill_timer_that_fires_after_the_player_left_sends_nothing_test() -> N
     as "a timer of a player no longer in the world is dropped"
 }
 
-/// The rolls of the strikes the steps tell creatures, in order.
-fn strike_rolls(steps: List(ConnectionStep(Request))) -> List(hit.Rolls) {
-  list.flat_map(steps, fn(taken) {
-    list.filter_map(support.effects_of(taken), fn(effect) {
-      case effect {
-        OwnEffect(step.Tell(
-          to: step.Creature(..),
-          request: client_connection.TellStrike(tell:),
-        )) ->
-          case tell.striker {
-            strike_tell.PlayerStriker(rolls:, ..) -> Ok(rolls)
-            strike_tell.CreatureStriker -> Error(Nil)
-          }
-        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-          Error(Nil)
-      }
-    })
-  })
-}
-
 /// The rolls of `count` strikes that each take `hit.roll_bytes` of the seed in turn:
 /// a connection that draws nothing else (`random.bytes` of the connection's seed,
 /// which the tests give 1: `game_connection_support.accepted`).
@@ -507,7 +487,8 @@ pub fn a_go_with_no_type_37_condition_draws_no_bytes_so_the_next_strikes_rolls_f
     )
   assert game_connection_support.strikes_told(second) != []
     as "the second press strikes the Beast too"
-  assert strike_rolls([first, second]) == rolls_of_the_seed(count: 2)
+  assert game_connection_support.strike_rolls([first, second])
+    == rolls_of_the_seed(count: 2)
     as "each strike takes the next 12 bytes of the seed: the go between them drew none, which a draw of a roll (4 bytes, a block of the seed) would shift"
 }
 

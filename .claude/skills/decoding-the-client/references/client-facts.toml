@@ -15428,3 +15428,34 @@ statement = "When a Knockback, Pushback, Pull or PositionSwitch state ends (mess
 proof = "EndUnitCCStateBehaviour 0x14045e1d0 (its record): the switch index at 0x14045e3a8 sends 16 to 19 to case 5, which returns. cc_state.end: only 0x880, SetUnitDead and RemoveUnit remove entries. SampleTimedPathKeys 0x140783e10: past the last time, the last point."
 grade = "fairly sure"
 gap = "Read, not run. Whether the 0x880 should come when the flight lands or at the state's own duration is the server's choice; the client accepts either."
+
+["Spell.CodeEnumSchool"]
+statement = "The Lua enum of a spell's school (Spell4Base.school): 0 Spell, 1 Melee, 2 Ranged, 3 Unarmed. The client accepts schools 0 to 5 in a spell record (CheckSpellRecord refuses a school above 5 with 0x35); 4 and 5 have no name."
+proof = "Saved C 0x1405e8230.c (hash 8eb22adb6de47956) lines 275-318: 'CodeEnumSchool', then 'Spell' = 0.0, 'Melee' = 1.0, 'Ranged' = 2.0, 'Unarmed' = 3.0. CheckSpellRecord 0x140568260.c (hash cabfc399c345589f) line 49: record 0xf4 > 5 -> 0x35. Spell4Base (45,046 rows): school 0 33,946; 1 8,063; 2 2,742; 3 74; 4 215; 5 6."
+grade = "fairly sure"
+gap = "Read from the saved C and table counts, not the instructions; no run."
+
+["Spell4Base.school"]
+statement = "Spell4Base.school is the spell's school (Spell.CodeEnumSchool), the only thing in the client that marks a spell melee or ranged. CheckCastCaster refuses a Melee or Ranged spell (1, 2) for a disarmed caster with 39 CCDisarm, a Spell-school spell (0) for a silenced one with 40 CCSilence, and all but Unarmed (3) for a subdued one with 268 CCSubdue, each when the spell's caster ccStateMask holds that state. Lua Spell:GetSchool returns it."
+proof = "FillSpellRecord 0x140568540.c (hash 2580df99bb1ce2aa) line 75: record 0xf4 = Spell4Base row offset 84 (school). CheckCastCaster 0x1403afb10.c lines 307-356 (bit 24 / school != 3 -> 0x10c; bit 3 / school - 1 < 2 -> 0x27; bit 4 / school == 0 -> 0x28). Result names from CodeEnumCastResult at 0x140c2f290. Grep of the saved C for reads of record +0xf4: only CheckCastCaster, FillSpellRecord, CheckSpellRecord and 0x1405ec110."
+grade = "fairly sure"
+gap = "A reader through an alias or a class-table slot would not be found by the grep."
+
+["0x1405ec110"]
+statement = "Lua Spell:GetSchool: returns the spell's school (Spell4Base.school) as an integer."
+proof = "Saved C 0x1405ec110.c (hash 6ba38d868f75acff) lines 17-24; name pair at 0x140c5a660 ('GetSchool' at 0x140b230f8)."
+grade = "fairly sure"
+gap = "Read from the saved C, not the instructions; no run."
+name = "LuaSpellGetSchool"
+
+["Spell4Effects.effectType.14.dataBits00.13_school"]
+statement = "Not in the client; read from rows and texts. Every kind-13 Proc row that names a spell group (14 of 38) names one whose spells are all school 1 (670, 668, 724, 730), or group 333 with item texts saying 'with a Melee attack'. So a melee hit reads as a landed hit by a school-1 spell."
+proof = "Spell4Effects kind-13 rows (dataBits07 2, dataBits08 333/668/670/724/730); Spell4GroupList lists 767, 835, 1454, 934, 936, 817; their Spell4Base rows all school 1. Texts 303021, 759856, 759933, 547403."
+grade = "guess"
+gap = "A retail recording of a kind-13 proc on a school-2 hit settles it."
+
+["Spell4Base.school.level_one"]
+statement = "The 90 Spell4 rows the level-1 abilities' trees and class innates reach: 41 school 0, 31 school 1, 16 school 2, 2 school 3. targetMaxRange: school 1 spans 0 to 20 m, school 2 10 to 35 m, school 0 0 to 99 m."
+proof = "coverage starting_ability:spells/1 on the built beams; Spell4 and Spell4Base rows of those ids."
+grade = "fairly sure"
+gap = "Counted from rows by the coverage tool, not from client instructions."

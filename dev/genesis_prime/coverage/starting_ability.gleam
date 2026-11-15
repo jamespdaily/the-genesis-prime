@@ -83,6 +83,15 @@ pub type LeftOut {
   /// (genesis_prime/game/spell_plan `proc_read`): the row is not handled, and the spell
   /// it casts is not counted.
   ProcKindNotRead(spell4_id: Int, effect_id: Int, kind: Int, casts: Int)
+  /// A Proc effect of a reached spell whose kind the plan reads but whose row it leaves
+  /// out (`ProcIsLeftOut`, genesis_prime/game/spell_plan `proc_read`): the row is not
+  /// handled, and the spell it casts is not counted.
+  ProcLeftOut(
+    spell4_id: Int,
+    effect_id: Int,
+    why: spell_plan.LeftOutReason,
+    casts: Int,
+  )
   /// A class innate slot (1 or 2) behind a gate a level-1 character cannot open: the
   /// slot's active and passive spells are not counted.
   InnateSlotClosed(
@@ -128,8 +137,8 @@ pub fn left_out(
   ])
 }
 
-/// The Proc effects of the reached spells whose kind the plan does not read, in effect id
-/// order, each with the spell it would cast.
+/// The Proc effects of the reached spells whose kind the plan does not read or whose row it
+/// leaves out, in effect id order, each with the spell it would cast.
 fn procs_not_read(
   tables tables: store.Tables,
   spells spells: List(Spell),
@@ -153,7 +162,17 @@ fn procs_not_read(
               casts: effect.data_bits01,
             ),
           ))
-        Ok(_) | Error(_) -> Error(Nil)
+        Ok(spell_plan.ProcIsLeftOut(why:)) ->
+          Ok(#(
+            effect.id,
+            ProcLeftOut(
+              spell4_id: spell_id(spell),
+              effect_id: effect.id,
+              why:,
+              casts: effect.data_bits01,
+            ),
+          ))
+        Ok(spell_plan.ProcIsRead(_)) | Error(_) -> Error(Nil)
       }
     })
   })
@@ -289,13 +308,13 @@ fn runner_columns_only(
 }
 
 /// The spells a part left out does not count: the spell a Proc of a kind the plan does
-/// not read would cast, those below a Proxy's closed gate, an innate slot's active and
+/// not read, or whose row it leaves out, would cast, those below a Proxy's closed gate, an innate slot's active and
 /// passive spell; none for a Prerequisite only a runner column names.
 pub fn left_out_spells(left_out left_out: LeftOut) -> List(Int) {
   case left_out {
     RunnerColumnsOnly(..) -> []
     ProxyGateClosed(spells:, ..) -> spells
-    ProcKindNotRead(casts:, ..) -> [casts]
+    ProcKindNotRead(casts:, ..) | ProcLeftOut(casts:, ..) -> [casts]
     InnateSlotClosed(active:, passive:, ..) -> [active, passive]
   }
 }
@@ -351,6 +370,16 @@ pub fn describe_left_out(left_out left_out: LeftOut) -> String {
       <> ", which the plan does not read, so the Spell4 "
       <> int.to_string(casts)
       <> " it casts is not counted"
+    ProcLeftOut(spell4_id:, effect_id:, why:, casts:) ->
+      "Proc effect "
+      <> int.to_string(effect_id)
+      <> " of Spell4 "
+      <> int.to_string(spell4_id)
+      <> " is left out by the plan ("
+      <> describe_proc_left_out(why:)
+      <> "), so the Spell4 "
+      <> int.to_string(casts)
+      <> " it casts is not counted"
     InnateSlotClosed(class_id:, slot:, active:, passive:, gate:, why:) ->
       "Class "
       <> int.to_string(class_id)
@@ -362,6 +391,30 @@ pub fn describe_left_out(left_out left_out: LeftOut) -> String {
       <> int.to_string(passive)
       <> ") is not counted: "
       <> level_one_gate.describe(gate:, closed: why)
+  }
+}
+
+/// The words for why the plan leaves a Proc row out.
+fn describe_proc_left_out(why why: spell_plan.LeftOutReason) -> String {
+  case why {
+    spell_plan.ProcHeldByAnotherUnit(target_flags:) ->
+      "a unit other than the caster holds it, targetFlags "
+      <> int.to_string(target_flags)
+    spell_plan.ProcBehindPersistence ->
+      "it sits behind a persistence prerequisite"
+    spell_plan.ProcBehindTargetApply ->
+      "it sits behind a target apply prerequisite"
+    spell_plan.ProcGroupWithoutFilter -> "it names a group with no filter kind"
+    spell_plan.ProcAimNotRead(data_bits03:) ->
+      "its aim bits are " <> int.to_string(data_bits03)
+    spell_plan.ProcWithoutLife -> "it has no duration and no flags bit 2"
+    spell_plan.TypeNotRead
+    | spell_plan.AimedAtOtherUnits
+    | spell_plan.ProcOfAnotherKind(_)
+    | spell_plan.ProxyNamesNoSpell
+    | spell_plan.InNoPhase
+    | spell_plan.StateUntilRemovedNotRead
+    | spell_plan.HealUntilRemoved -> "a reason no Proc row has"
   }
 }
 

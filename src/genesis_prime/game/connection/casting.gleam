@@ -102,6 +102,7 @@ import genesis_prime/game/objective
 import genesis_prime/game/objective_link
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite
+import genesis_prime/game/proc
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/rating
 import genesis_prime/game/shown
@@ -122,6 +123,7 @@ import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Creature2Id, RaceId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
+import gleam/bit_array
 import gleam/bool
 import gleam/dict
 import gleam/int
@@ -839,6 +841,18 @@ pub fn cast_effects(
   now now: Now,
   effects effects: List(cast.Effect),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  carried_out(session:, now:, effects:)
+  |> procs_fired(now:)
+}
+
+/// The effects carried out in order, with no proc fired: a strike's own results are carried
+/// out inside the effect that asked for them, and the pending events wait for the input's
+/// effects to end (`cast_effects`).
+fn carried_out(
+  session session: Session,
+  now now: Now,
+  effects effects: List(cast.Effect),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   list.fold(effects, #(session, []), fn(so_far, effect) {
     let #(session, done) = so_far
     let #(session, more) = case
@@ -1054,6 +1068,79 @@ pub fn cast_effects(
   })
 }
 
+/// The held procs fire for the events the input raised (genesis_prime/game/cast
+/// `State.pending`), after the input's own effects: the connection draws what the pending
+/// events need from its seed (`cast.proc_draws_needed`: the chance words first, then the
+/// gate rolls) and gives the rule the poses, checklist indexes and kinds of the units the
+/// events name that its picture holds, then carries out the effects of the fires, which end
+/// in the same pass for what they raise. A fire's own go is a later input, so the passes end:
+/// an input with nothing pending draws nothing and makes no second call.
+fn procs_fired(
+  done done: #(Session, List(Effect(ConnectionEffect(Request)))),
+  now now: Now,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let #(session, written) = done
+  let pending = case connection_state.entered_of(session.status) {
+    Some(entered) ->
+      case cast.has_pending(cast: entered.cast) {
+        True -> Some(entered)
+        False -> None
+      }
+    None -> None
+  }
+  case pending {
+    Some(entered) -> {
+      let #(words, rolls) = cast.proc_draws_needed(cast: entered.cast)
+      let #(link, bytes) =
+        client_connection.draw(
+          session.link,
+          words * proc_word_bytes + rolls * prerequisite.roll_bytes,
+        )
+      let assert Ok(word_bytes) =
+        bit_array.slice(bytes, 0, words * proc_word_bytes)
+        as "the draw is as long as the words it is to give"
+      let assert Ok(roll_bytes) =
+        bit_array.slice(
+          bytes,
+          words * proc_word_bytes,
+          rolls * prerequisite.roll_bytes,
+        )
+        as "the draw is as long as the rolls it is to give"
+      let unit_ids = cast.pending_units(cast: entered.cast)
+      let #(updated, fired) =
+        cast.procs_fire(
+          cast: entered.cast,
+          caster: caster_of(tables: session.settings.tables, entered:),
+          now:,
+          poses: shown.poses_of(
+            picture: entered.shown,
+            unit_ids:,
+            now_ms: now.monotonic_ms,
+          ),
+          indexes: shown.checklist_indexes_of(picture: entered.shown, unit_ids:),
+          units: shown.first_units_of(
+            picture: entered.shown,
+            unit_ids:,
+            caster_unit: entered.unit_id,
+          ),
+          draws: proc.words_of(bytes: word_bytes),
+          rolls: prerequisite.rolls_of(bytes: roll_bytes),
+        )
+      let #(session, more) =
+        cast_effects(
+          session: with_cast(session: Session(..session, link:), cast: updated),
+          now:,
+          effects: fired,
+        )
+      #(session, list.append(written, more))
+    }
+    None -> done
+  }
+}
+
+/// The bytes of a chance draw: one 32-bit word (`proc.words_of`).
+const proc_word_bytes = 4
+
 /// The tell of a property modifier's start or end to the creature `unit_id` of
 /// `life`, in the run of the player's map, through the creature registry with no
 /// watch, as a strike's tell goes.
@@ -1151,7 +1238,7 @@ fn strike_begins(
       entropy:,
       now:,
     )
-  carry_strike(
+  strike_carried_out(
     session: with_strike(session: Session(..session, link:), strike: updated),
     now:,
     effects:,
@@ -1177,7 +1264,7 @@ fn tick_strike_begins(
       entropy:,
       now:,
     )
-  carry_strike(
+  strike_carried_out(
     session: with_strike(session: Session(..session, link:), strike: updated),
     now:,
     effects:,
@@ -1226,6 +1313,17 @@ pub fn with_strike(
 /// round's go (the cast rule's `went`), the news held for the round's units, or a log
 /// line.
 pub fn carry_strike(
+  session session: Session,
+  now now: Now,
+  effects effects: List(strike.Effect),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  strike_carried_out(session:, now:, effects:)
+  |> procs_fired(now:)
+}
+
+/// The strike's effects carried out in order, with no proc fired: a strike begun inside the
+/// effect that asked for it leaves the pending events to the input's end (`cast_effects`).
+fn strike_carried_out(
   session session: Session,
   now now: Now,
   effects effects: List(strike.Effect),
@@ -1292,7 +1390,7 @@ pub fn carry_strike(
             ),
             rolls: prerequisite.rolls_of(bytes:),
           )
-        cast_effects(
+        carried_out(
           session: with_cast(session: Session(..session, link:), cast: updated),
           now:,
           effects: cast_effects_out,
@@ -1307,7 +1405,7 @@ pub fn carry_strike(
             asked:,
             struck:,
           )
-        cast_effects(
+        carried_out(
           session: with_cast(session:, cast: updated),
           now:,
           effects: cast_effects_out,

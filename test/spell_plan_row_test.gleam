@@ -46,7 +46,7 @@ fn row(
 
 /// The rows of the planted spell, one for each kind the plan lists, the periodic heal, and
 /// the two the plan leaves out: ids 90001 to 90012 are read, 90013 is behind a target apply
-/// prerequisite the cast rule reads, 90014 is a periodic heal, 90015 is a Proc of kind 12
+/// prerequisite the cast rule reads, 90014 is a periodic heal, 90015 is a Proc of kind 16
 /// and 90016 a Proxy with dataBits00 0.
 fn planted() -> List(List(Cell)) {
   [
@@ -103,7 +103,7 @@ fn planted() -> List(List(Cell)) {
       id: 90_015,
       effect_type: 14,
       target_flags: 1,
-      columns: proc_columns(kind: 12),
+      columns: proc_columns(kind: 16),
     ),
     row(id: 90_016, effect_type: 26, target_flags: 1, columns: [
       #("dataBits00", Integer(0)),
@@ -166,7 +166,7 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
       90_001, 90_002, 90_003, 90_004, 90_005, 90_006, 90_007, 90_008, 90_009,
       90_010, 90_011, 90_012, 90_013, 90_014,
     ]
-    as "the lists hold the twelve read rows, the row behind a target apply prerequisite (90013, which a go applies to the units that pass it) and the periodic heal (90014, a `TickingHeal` that ticks every 1000 ms for 8000 ms); the Proc of kind 12 (`proc_read`) and the Proxy that names no spell are in no list"
+    as "the lists hold the twelve read rows, the row behind a target apply prerequisite (90013, which a go applies to the units that pass it) and the periodic heal (90014, a `TickingHeal` that ticks every 1000 ms for 8000 ms); the Proc of kind 16 (`proc_read`, a kind not read) and the Proxy that names no spell are in no list"
   spell_tables.with_loaded(
     reaching: [#("SpellLevel", 647)],
     rows:,
@@ -217,7 +217,7 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
         read(first_of(effects:, id: 90_011))
         as "the Proc of kind 217 is read and its spell is planned from the reading"
       assert read(first_of(effects:, id: 90_015))
-        == Ok(LeftOut(why: ProcOfAnotherKind(kind: 12)))
+        == Ok(LeftOut(why: ProcOfAnotherKind(kind: 16)))
       assert read(first_of(effects:, id: 90_016))
         == Ok(LeftOut(why: ProxyNamesNoSpell))
       let assert Ok(Applied(PlannedProxy(..))) =
@@ -225,7 +225,7 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
         as "the Proxy that names a spell is read"
       assert effect_row.unread_by_type(tables:, effects:)
         == dict.from_list([#(14, 1), #(26, 1)])
-        as "the measure counts only the rows a go applies as read: the Proc of kind 12 and the Proxy with dataBits00 0 are not, and the Fluff behind a target prerequisite and the periodic heal are read"
+        as "the measure counts only the rows a go applies as read: the Proc of kind 16 and the Proxy with dataBits00 0 are not, and the Fluff behind a target prerequisite and the periodic heal are read"
     },
   )
 }

@@ -16,7 +16,8 @@
 ////   counted as unreached. Nano Skin: Lethal 60769 holds text 519096, whose `eff 97462` and
 ////   `cc 97462` are in 42736 (Cripple). Eradication ExoSuit 47860 holds text 466631,
 ////   whose `eff 123743` and `spell 52370` name 52370, which only the Proc 123744 of
-////   52371 casts, a kind of 12 the plan does not read (`ProcKindNotRead`). Spell Surge
+////   52371 casts, a kind of 12 the plan reads but leaves out behind a caster persistence
+////   prerequisite (Prerequisite 28926, `table_rows Spell4Effects 123744`, `ProcLeftOut`). Spell Surge
 ////   47273 holds text 445006, with the link `spell 72652`; Impale 38779 holds text
 ////   311077, with the link `spell 48584`. The same text 445006 also holds
 ////   `eff 187681 durationms` and `ticktimems`, and Spell4Effects 187681 has spellId 72652
@@ -27,7 +28,7 @@
 
 import client_tables
 import genesis_prime/coverage/named_unreached.{Entry, Naming, NoRow}
-import genesis_prime/coverage/starting_ability.{ProcKindNotRead}
+import genesis_prime/coverage/starting_ability.{ProcKindNotRead, ProcLeftOut}
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_plan
 import genesis_prime/table/loader/store
@@ -416,10 +417,10 @@ pub fn the_real_tables_give_52370_its_reason_test() -> Nil {
           named_by: [47_860, 47_866],
         ),
       ],
-      reason: Some(ProcKindNotRead(
+      reason: Some(ProcLeftOut(
         spell4_id: 52_371,
         effect_id: 123_744,
-        kind: 12,
+        why: spell_plan.ProcBehindPersistence,
         casts: 52_370,
       )),
     )

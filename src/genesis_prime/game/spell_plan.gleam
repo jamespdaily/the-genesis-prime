@@ -145,17 +145,24 @@
 //// - **The procs.** A Proc effect (`Spell4Effects.effectType.14`) whose targetFlags are the
 ////   caster's and whose trigger kind (dataBits00) is one of the holder's own events is a
 ////   `ProcRow`: 217 entering stealth, 218 leaving it, 44 leaving combat and 0 dying
-////   (`Spell4Effects.effectType.14.dataBits00.217_218`, `.0_44`), the spell it casts
-////   (dataBits01), planned as a Proxy's child is and on the same chain, so a proc that leads
-////   back to a spell on the way fails as a cycle, and its limit, dataBits05 fires in
-////   dataBits04 ms (`Spell4Effects.effectType.14.limits`). Its chance is 1.0 and draws no
-////   roll. Its delay, durationTime and flags bit 2 give the holder's node its life
-////   (`Spell4Effects.effectType.14.lifetime`), and its caster apply prerequisite is a Fluff
-////   effect's. A Proc row of another kind is in no list and the load goes on
-////   (`proc_read`); a row of these kinds with a chance other than 1.0, a unit bit of the
-////   event's other unit, a window or count at or below 0, a gate or filter column, a target
-////   apply or persistence prerequisite or a delayTime fails the load naming the column
-////   (`ProcNotRead`). The spells the procs cast are in the tree (`tree`).
+////   (`Spell4Effects.effectType.14.dataBits00.217_218`, `.0_44`), and the strikes and heals
+////   it lands, 12 a hit, 13 a melee hit, 145 a critical, 1 a kill, 20 a heal and 147 a
+////   critical heal (`Spell4Effects.effectType.14.dataBits00`, `.13_school`). It holds the
+////   spell it casts (dataBits01), planned as a Proxy's child is and on the same chain, so a
+////   proc that leads back to a spell on the way fails as a cycle, its chance (dataBits02,
+////   a float32: above 0 and at most 1.0), its limit, dataBits05 fires in dataBits04 ms or
+////   for the proc's life when that is -1 (`.limits`), its filter on the event's spell
+////   (dataBits07 and dataBits08), its holder and event gates (dataBits09 and dataBits06,
+////   `.prerequisites`), its aim (dataBits03 bit 4 is the event's other unit) and its delay.
+////   The delay, durationTime and flags bit 2 give the holder's node its life
+////   (`.lifetime`), and its caster apply prerequisite is a Fluff effect's. A Proc row of
+////   another kind is in no list and the load goes on (`proc_read`, `ProcKindNotRead`), as
+////   does a row held by another unit, behind a persistence or target apply prerequisite,
+////   with a group and no filter kind, with an aim of 32 or above, or with no life
+////   (`ProcIsLeftOut`); a row of these kinds with a chance outside 0 to 1.0, a window or
+////   count at or below 0 (a window of -1 excepted), a filter kind other than 0, 1 and 2 or a
+////   negative delay fails the load naming the column (`ProcNotRead`). The spells the procs
+////   cast are in the tree (`tree`).
 //// - **The forced moves.** A ForcedMove effect (`Spell4Effects.effectType.3`) whose
 ////   targetFlags include the caster is a `ForcedMove` row: its delay. The go lists it
 ////   on the caster and the caster's client moves itself and reports the move
@@ -521,6 +528,9 @@ pub type Spell {
   Spell(
     spell4_id: Spell4Id,
     spell4_base_id: Spell4BaseId,
+    /// The spell's school (`Spell4Base.school`, `Spell.CodeEnumSchool`): 0 Spell, 1 Melee,
+    /// 2 Ranged, 3 Unarmed.
+    school: Int,
     method: CastMethod,
     /// Spell4.castTime; 0 goes at once.
     cast_time_ms: Int,
@@ -710,7 +720,9 @@ pub type RemoveStealthRow {
 
 /// The event of its holder that fires a Proc effect (`Spell4Effects.effectType.14`,
 /// dataBits00; the readings are `Spell4Effects.effectType.14.dataBits00.217_218` and
-/// `Spell4Effects.effectType.14.dataBits00.0_44`, none of them in the client's code).
+/// `Spell4Effects.effectType.14.dataBits00.0_44`, none of them in the client's code, and
+/// `Spell4Effects.effectType.14.dataBits00` for the kinds of a hit, a critical, a kill and
+/// a heal).
 pub type Trigger {
   /// 217: the holder enters stealth.
   EnteredStealth
@@ -720,34 +732,107 @@ pub type Trigger {
   LeftCombat
   /// 0: the holder dies.
   Died
+  /// 12: a strike of the holder's lands a hit on a creature.
+  LandsHit
+  /// 13: a strike of the holder's by a spell of school 1 (Melee, `Spell4Base.school`)
+  /// lands a hit. A guess: no client code reads a Proc row, and the row groups and the
+  /// texts say melee (`Spell4Effects.effectType.14.dataBits00.13_school`).
+  LandsMeleeHit
+  /// 145: a strike of the holder's lands a critical hit.
+  LandsCritical
+  /// 1: a strike of the holder's kills the creature it hits.
+  Kills
+  /// 20: a heal of the holder's lands.
+  LandsHeal
+  /// 147: a heal of the holder's lands as a critical. No heal is rolled a critical yet,
+  /// so a row of this kind is held and never fires; the gap is issue 830.
+  LandsCriticalHeal
+}
+
+/// How often a Proc fires (dataBits04 and dataBits05,
+/// `Spell4Effects.effectType.14.limits`).
+pub type ProcLimit {
+  /// At most `count` fires in any `window_ms` (dataBits04 above 0); a fire exactly
+  /// `window_ms` ago is outside the window.
+  InWindow(window_ms: Int, count: Int)
+  /// At most `count` fires while the holder holds the proc (dataBits04 -1). A guess: the
+  /// rows say -1 holds no window, and the count is read as fires for the proc's life.
+  ForLife(count: Int)
+}
+
+/// Which spells of an event a Proc fires for (dataBits07 and dataBits08,
+/// `Spell4Effects.effectType.14.dataBits07`).
+pub type ProcFilter {
+  /// dataBits07 0: every event, including those that have no spell.
+  AnySpell
+  /// dataBits07 2: a spell in the spell group `group_id` (Spell4GroupList, which is how
+  /// `0x140561d80` reads a spell's groups).
+  InGroup(group_id: Int)
+  /// dataBits07 1: the one Spell4.
+  OneSpell(spell4_id: Spell4Id)
+}
+
+/// Where a fired Proc's spell is aimed (dataBits03, `Spell4Effects.effectType.14.dataBits03`).
+pub type ProcAim {
+  /// At the holder: bits 1, 2, 8 and 16 and none (a guess for bits 1, 2, 8 and 16).
+  AtHolder
+  /// Bit 4: at the other unit of the event, the creature a hit struck, or the holder when
+  /// the event has none.
+  AtOtherUnit
 }
 
 /// A Proc effect (`Spell4Effects.effectType.14`) of a spell, aimed at the caster: when
-/// the holder's `trigger` happens, the holder casts `spell` at itself. At most `count`
-/// fires in any `window_ms` (dataBits05 in dataBits04 milliseconds,
-/// `Spell4Effects.effectType.14.limits`); the chance is 1.0 and draws no roll. Its `row`
-/// gives the caster's node of the holding cast its life (a Proc with no durationTime and
-/// flags bit 2 lasts until removed, `Spell4Effects.effectType.14.lifetime`), in the
-/// phases of `phase_flags`, when its `condition` holds (its caster apply prerequisite
-/// against the caster) and its `tag` holds for the points the cast spent
-/// (genesis_prime/game/spend). The proc's `spell` is planned as a Proxy's child is.
+/// the holder's `trigger` happens, the holder casts `spell` at itself or at the event's
+/// other unit (`aim`), `delay_ms` later, when the event's spell passes `filter`, the
+/// `holder_gate` passes against the holder and the `event_gate` against the event's unit
+/// (`Spell4Effects.effectType.14.prerequisites`), within `limit`, and a draw falls below
+/// `chance` (dataBits02, float bits). Its `row` gives the caster's node of the holding
+/// cast its life (a Proc with no durationTime and flags bit 2 lasts until removed,
+/// `Spell4Effects.effectType.14.lifetime`), in the phases of `phase_flags`, when its
+/// `condition` holds (its caster apply prerequisite against the caster) and its `tag`
+/// holds for the points the cast spent (genesis_prime/game/spend). The proc's `spell` is
+/// planned as a Proxy's child is.
 pub type ProcRow {
   ProcRow(
     effect_id: Spell4EffectsId,
     phase_flags: Int,
     trigger: Trigger,
     spell: Spell,
-    window_ms: Int,
-    count: Int,
+    chance: Float,
+    limit: ProcLimit,
+    filter: ProcFilter,
+    aim: ProcAim,
+    event_gate: Option(Prerequisite),
+    holder_gate: Option(Prerequisite),
+    delay_ms: Int,
     row: lasting.LastingRow,
     condition: Condition,
     tag: spend.Tag,
   )
 }
 
-/// What a Proc row's columns say without a table: its trigger and its limit.
+/// What a Proc row's columns say without a table: everything but the Prerequisite rows
+/// its gates name (`event_gate` is dataBits06 and `holder_gate` dataBits09, 0 for none)
+/// and whether the Spell4 a `OneSpell` filter names exists.
 pub type ProcReading {
-  ProcReading(trigger: Trigger, window_ms: Int, count: Int)
+  ProcReading(
+    trigger: Trigger,
+    chance: Float,
+    limit: ProcLimit,
+    filter: ProcFilter,
+    aim: ProcAim,
+    event_gate: Int,
+    holder_gate: Int,
+    delay_ms: Int,
+  )
+}
+
+/// What `proc_read` makes of a Proc row of a kind the server reads.
+pub type ProcRead {
+  /// The row is read.
+  ProcIsRead(reading: ProcReading)
+  /// The row is in no list of its spell, and the load goes on.
+  ProcIsLeftOut(why: LeftOutReason)
 }
 
 /// A ModifySpellCooldown effect (`Spell4Effects.effectType.73`) of a spell whose
@@ -1095,6 +1180,23 @@ pub type LeftOutReason {
   AimedAtOtherUnits
   /// A Proc of a kind the holder's own events do not make (`proc_read`).
   ProcOfAnotherKind(kind: Int)
+  /// A Proc whose targetFlags are not the caster's alone: it lands on the spell's target
+  /// or a struck unit, so a unit other than the caster holds it, which no rule of the
+  /// server holds yet (issue 829).
+  ProcHeldByAnotherUnit(target_flags: Int)
+  /// A Proc behind a caster or target persistence prerequisite, which no rule checks
+  /// while a proc is held (`Spell4Effects.effectType.14.prerequisites`).
+  ProcBehindPersistence
+  /// A Proc behind a target apply prerequisite, which no rule checks for a proc.
+  ProcBehindTargetApply
+  /// A Proc that names a group (dataBits08) with no filter kind (dataBits07 0), which
+  /// nothing explains (`Spell4Effects.effectType.14.dataBits07`).
+  ProcGroupWithoutFilter
+  /// A Proc whose dataBits03 holds a bit of 32 or above, which the texts do not name.
+  ProcAimNotRead(data_bits03: Int)
+  /// A Proc with no durationTime and no flags bit 2, which gives its holder's node no
+  /// life (`Spell4Effects.effectType.14.lifetime`).
+  ProcWithoutLife
   /// A Proxy whose dataBits00 names no spell.
   ProxyNamesNoSpell
   /// A damage row whose phaseFlags is 0: no phase selects it (`spell_area` `phase`).
@@ -1124,7 +1226,12 @@ pub type PlannedRow {
   PlannedStealth(stealth: StealthRow)
   PlannedRemoveStealth(remove: RemoveStealthRow)
   PlannedHeal(heal: Heal)
-  PlannedProc(reading: ProcReading, condition: Condition)
+  PlannedProc(
+    reading: ProcReading,
+    condition: Condition,
+    event_gate: Option(Prerequisite),
+    holder_gate: Option(Prerequisite),
+  )
   PlannedProxy(target: ProxyTarget, condition: Condition)
 }
 
@@ -2230,6 +2337,7 @@ fn spell_of(
     Spell(
       spell4_id: Spell4Id(spell4_id),
       spell4_base_id: Spell4BaseId(row.spell4_base_id_base_spell),
+      school: base.school,
       method:,
       cast_time_ms: row.cast_time,
       cooldown_ms: row.spell_cool_down,
@@ -3179,8 +3287,8 @@ fn procs_of(
     let #(effect, reading) = row
     use reading <- result.try(reading)
     case reading {
-      Applied(PlannedProc(reading: proc, condition:))
-      | Held(PlannedProc(reading: proc, condition:)) -> {
+      Applied(PlannedProc(reading: proc, condition:, event_gate:, holder_gate:))
+      | Held(PlannedProc(reading: proc, condition:, event_gate:, holder_gate:)) -> {
         use spell <- result.try(spell_of(
           tables:,
           sources:,
@@ -3195,8 +3303,13 @@ fn procs_of(
             phase_flags: effect.phase_flags,
             trigger: proc.trigger,
             spell:,
-            window_ms: proc.window_ms,
-            count: proc.count,
+            chance: proc.chance,
+            limit: proc.limit,
+            filter: proc.filter,
+            aim: proc.aim,
+            event_gate:,
+            holder_gate:,
+            delay_ms: proc.delay_ms,
             row: lasting_row_of(effect:),
             condition:,
             tag: tag_of(effect:),
@@ -3210,79 +3323,118 @@ fn procs_of(
   |> result.map(list.flatten)
 }
 
-/// 1.0 as the 32 float bits a Proc row's chance column (dataBits02) holds.
-const chance_of_one_bits = 1_065_353_216
-
-/// What a Proc row says without a table: its trigger and its limit, or why it is not
-/// read. A row of a kind the server does not read is `ProcKindNotRead`, which the load
-/// skips; any other error fails the load, naming the first column the plan does not read:
-/// targetFlags other than the caster, a chance other than 1.0 (no roll is drawn), a unit
-/// bit of the event's other unit (4) or beyond the five the texts name, a window or count
-/// that is not above 0, a gate, a filter, a target apply or persistence prerequisite and
-/// a delay, and a row with no durationTime and no flags bit 2, which gives its holder's
-/// node no life (`Spell4Effects.effectType.14.dataBits03`, `.limits`, `.prerequisites`,
-/// `.dataBits07`, `.lifetime`).
+/// What a Proc row says without a table: its reading, or why the row is left out. A row
+/// of a kind the server does not read is `ProcKindNotRead`, which the load skips, as is
+/// any row `ProcIsLeftOut` names, in this order: targetFlags other than the caster's
+/// alone, a persistence prerequisite, a target apply prerequisite, a group (dataBits08)
+/// with no filter kind, a dataBits03 of 32 or above, and a row with no durationTime and
+/// no flags bit 2, which gives its holder's node no life. Any other value outside the
+/// readings fails the load, naming the first column: a chance not above 0 and at most
+/// 1.0, a window or a count that is not above 0 (a window of -1 is `ForLife`), a filter
+/// kind other than 0, 1 and 2, and a negative delay
+/// (`Spell4Effects.effectType.14.dataBits03`, `.limits`, `.prerequisites`, `.dataBits07`,
+/// `.lifetime`).
 pub fn proc_read(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
-) -> Result(ProcReading, PlanError) {
+) -> Result(ProcRead, PlanError) {
   use trigger <- result.try(case effect.data_bits00 {
     217 -> Ok(EnteredStealth)
     218 -> Ok(LeftStealth)
     44 -> Ok(LeftCombat)
     0 -> Ok(Died)
+    12 -> Ok(LandsHit)
+    13 -> Ok(LandsMeleeHit)
+    145 -> Ok(LandsCritical)
+    1 -> Ok(Kills)
+    20 -> Ok(LandsHeal)
+    147 -> Ok(LandsCriticalHeal)
     kind -> Error(ProcKindNotRead(spell4_id:, effect_id: effect.id, kind:))
   })
   let unit_bits = effect.data_bits03
-  let refusals = [
-    #("targetFlags", effect.target_flags, effect.target_flags != 1),
+  let left_out = [
     #(
-      "dataBits02",
-      effect.data_bits02,
-      effect.data_bits02 != chance_of_one_bits,
+      effect.target_flags != 1,
+      ProcHeldByAnotherUnit(target_flags: effect.target_flags),
     ),
     #(
-      "dataBits03",
-      unit_bits,
-      int.bitwise_and(unit_bits, 4) != 0 || unit_bits >= 32 || unit_bits < 0,
+      effect.prerequisite_id_caster_persistence != 0
+        || effect.prerequisite_id_target_persistence != 0,
+      ProcBehindPersistence,
     ),
-    #("dataBits04", effect.data_bits04, effect.data_bits04 <= 0),
-    #("dataBits05", effect.data_bits05, effect.data_bits05 <= 0),
-    #("dataBits06", effect.data_bits06, effect.data_bits06 != 0),
-    #("dataBits07", effect.data_bits07, effect.data_bits07 != 0),
-    #("dataBits08", effect.data_bits08, effect.data_bits08 != 0),
-    #("dataBits09", effect.data_bits09, effect.data_bits09 != 0),
+    #(effect.prerequisite_id_target_apply != 0, ProcBehindTargetApply),
     #(
-      "prerequisiteIdTargetApply",
-      effect.prerequisite_id_target_apply,
-      effect.prerequisite_id_target_apply != 0,
+      effect.data_bits07 == 0 && effect.data_bits08 != 0,
+      ProcGroupWithoutFilter,
     ),
+    #(unit_bits >= 32 || unit_bits < 0, ProcAimNotRead(data_bits03: unit_bits)),
     #(
-      "prerequisiteIdCasterPersistence",
-      effect.prerequisite_id_caster_persistence,
-      effect.prerequisite_id_caster_persistence != 0,
-    ),
-    #(
-      "prerequisiteIdTargetPersistence",
-      effect.prerequisite_id_target_persistence,
-      effect.prerequisite_id_target_persistence != 0,
-    ),
-    #("delayTime", effect.delay_time, effect.delay_time != 0),
-    #(
-      "flags",
-      effect.flags,
       effect.duration_time <= 0 && !has_flag(flags: effect.flags, bit: 2),
+      ProcWithoutLife,
     ),
   ]
-  case list.find(refusals, fn(refusal) { refusal.2 }) {
-    Ok(#(column, value, _)) ->
-      Error(ProcNotRead(spell4_id:, effect_id: effect.id, column:, value:))
-    Error(Nil) ->
-      Ok(ProcReading(
-        trigger:,
-        window_ms: effect.data_bits04,
-        count: effect.data_bits05,
-      ))
+  case list.find(left_out, fn(reason) { reason.0 }) {
+    Ok(#(_, why)) -> Ok(ProcIsLeftOut(why:))
+    Error(Nil) -> {
+      let not_read = fn(column: String, value: Int) {
+        Error(ProcNotRead(spell4_id:, effect_id: effect.id, column:, value:))
+      }
+      case
+        float32.of_column(number: effect.data_bits02),
+        proc_limit_of(effect:),
+        proc_filter_of(effect:)
+      {
+        Error(Nil), _, _ -> not_read("dataBits02", effect.data_bits02)
+        Ok(chance), _, _ if chance <=. 0.0 || chance >. 1.0 ->
+          not_read("dataBits02", effect.data_bits02)
+        _, Error(#(column, value)), _ | _, _, Error(#(column, value)) ->
+          not_read(column, value)
+        _, _, _ if effect.delay_time < 0 ->
+          not_read("delayTime", effect.delay_time)
+        Ok(chance), Ok(limit), Ok(filter) ->
+          Ok(
+            ProcIsRead(ProcReading(
+              trigger:,
+              chance:,
+              limit:,
+              filter:,
+              aim: case int.bitwise_and(unit_bits, 4) {
+                0 -> AtHolder
+                _ -> AtOtherUnit
+              },
+              event_gate: effect.data_bits06,
+              holder_gate: effect.data_bits09,
+              delay_ms: effect.delay_time,
+            )),
+          )
+      }
+    }
+  }
+}
+
+/// A Proc row's limit: a window above 0 is `InWindow`, a window of -1 is `ForLife`; any
+/// other window or a count not above 0 is the column and value the plan does not read.
+fn proc_limit_of(
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(ProcLimit, #(String, Int)) {
+  case effect.data_bits04, effect.data_bits05 {
+    _, count if count <= 0 -> Error(#("dataBits05", count))
+    -1, count -> Ok(ForLife(count:))
+    window, count if window > 0 -> Ok(InWindow(window_ms: window, count:))
+    window, _ -> Error(#("dataBits04", window))
+  }
+}
+
+/// A Proc row's filter: kind 0 is every spell, 1 the Spell4 and 2 the group dataBits08
+/// names; any other kind is the column and value the plan does not read.
+fn proc_filter_of(
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(ProcFilter, #(String, Int)) {
+  case effect.data_bits07 {
+    0 -> Ok(AnySpell)
+    1 -> Ok(OneSpell(spell4_id: Spell4Id(effect.data_bits08)))
+    2 -> Ok(InGroup(group_id: effect.data_bits08))
+    kind -> Error(#("dataBits07", kind))
   }
 }
 
@@ -3779,8 +3931,10 @@ fn try_heal(
   }
 }
 
-/// A Proc row: left out when its kind is one the holder's own events do not make
-/// (`proc_read`), else its reading with its caster condition.
+/// A Proc row: left out when its kind is one the holder's own events do not make or its
+/// shape is one a rule does not hold (`proc_read`), else its reading with its caster
+/// condition and its two gates, the Prerequisite rows its dataBits06 and dataBits09 name; a
+/// gate or a one-spell filter naming a row the tables lack fails the load.
 fn proc_reading(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -3790,15 +3944,40 @@ fn proc_reading(
     Error(ProcKindNotRead(kind:, ..)) ->
       Ok(LeftOut(why: ProcOfAnotherKind(kind:)))
     Error(error) -> Error(error)
-    Ok(reading) -> {
-      use condition <- result.map(condition_of(
+    Ok(ProcIsLeftOut(why:)) -> Ok(LeftOut(why:))
+    Ok(ProcIsRead(reading:)) -> {
+      use condition <- result.try(condition_of(
         tables:,
         effect:,
         reach: OnlyTheCaster,
         data_bits06_names_a_gate: False,
       ))
-      Applied(PlannedProc(reading:, condition:))
+      use event_gate <- result.try(proc_gate_of(tables:, id: reading.event_gate))
+      use holder_gate <- result.try(proc_gate_of(
+        tables:,
+        id: reading.holder_gate,
+      ))
+      use Nil <- result.map(case reading.filter {
+        OneSpell(spell4_id: named) ->
+          spell4.get(tables:, id: named)
+          |> result.replace(Nil)
+          |> result.replace_error(NoRow(table: "Spell4", id: named.value))
+        AnySpell | InGroup(..) -> Ok(Nil)
+      })
+      Applied(PlannedProc(reading:, condition:, event_gate:, holder_gate:))
     }
+  }
+}
+
+/// The Prerequisite a Proc gate column names: none for 0, else its row, which the tables
+/// must hold.
+fn proc_gate_of(
+  tables tables: table_store.Tables,
+  id id: Int,
+) -> Result(Option(Prerequisite), PlanError) {
+  case id {
+    0 -> Ok(None)
+    id -> prerequisite_of(tables:, id:) |> result.map(Some)
   }
 }
 
