@@ -5149,6 +5149,14 @@ pub fn rolls_needed(
             spell_plan.struck_moves_in_phase(spell:, phase:, spent: live.spent),
             fn(row) {
               gates_rolls_needed(caster_gates(condition: row.condition))
+              + target_rolls_needed(
+                condition: row.condition,
+                units_reached: units_reached(
+                  aim: row.aim,
+                  primary_target: live.primary_target,
+                  struck:,
+                ),
+              )
             },
           ),
           list.map(
@@ -5195,6 +5203,12 @@ pub fn rolls_needed(
                   struck:,
                 ),
               )
+            },
+          ),
+          list.map(
+            spell_plan.restrictions_in_phase(spell:, phase:, spent: live.spent),
+            fn(row) {
+              gates_rolls_needed(only_on_caster_gates(condition: row.condition))
             },
           ),
         ]),
@@ -7660,14 +7674,7 @@ fn go(
       let #(cast, modifying) =
         modifiers_armed(cast:, cast_id:, caster:, aimed:, struck:)
       let #(cast, throwing) =
-        struck_moves_armed(
-          cast:,
-          cast_id:,
-          caster:,
-          primary_target: live.primary_target,
-          moves: applied.struck_moves,
-          struck:,
-        )
+        struck_moves_armed(cast:, cast_id:, thrown: aimed.thrown, struck:)
       let #(cast, healing) = heals_armed(cast:, cast_id:, aimed:)
       let #(cast, restriction_timers) =
         restrictions_armed(cast:, cast_id:, restricting:)
@@ -8010,6 +8017,19 @@ fn lasting_applied(
       subject:,
       rolls:,
     )
+  let #(restrictions, restriction_logs, rolls) =
+    gated(
+      rows: spell_plan.restrictions_in_phase(spell:, phase:, spent:),
+      gates: fn(row: spell_plan.CrowdControl) {
+        only_on_caster_gates(condition: row.condition)
+      },
+      what: fn(row: spell_plan.CrowdControl) {
+        "the ability restriction effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
   #(
     Applied(
       lasting:,
@@ -8022,7 +8042,7 @@ fn lasting_applied(
       remove_stealth:,
       procs:,
       heals:,
-      restrictions: spell_plan.restrictions_in_phase(spell:, phase:, spent:),
+      restrictions:,
     ),
     list.flatten([
       logs,
@@ -8035,6 +8055,7 @@ fn lasting_applied(
       remove_stealth_logs,
       proc_logs,
       heal_logs,
+      restriction_logs,
     ]),
     rolls,
   )
@@ -8063,6 +8084,9 @@ type Aimed {
     lasting: List(#(spell_plan.Lasting, Int)),
     removes: List(#(spell_plan.ForceRemove, Int)),
     modifiers: List(#(spell_plan.PropertyModifier, Int)),
+    /// The creatures a struck move throws: each row with each creature it reaches past
+    /// its target gate.
+    thrown: List(#(spell_plan.StruckMove, Int)),
     cooldowns: List(#(spell_plan.CooldownModifier, Int, Bool)),
     stealth: List(#(spell_plan.StealthRow, Int)),
     procs: List(#(spell_plan.ProcRow, Int)),
@@ -8482,6 +8506,73 @@ fn unit_gate(
   )
 }
 
+/// Which gate of a row's condition a strike checks: the caster apply prerequisites, with
+/// the caster as both units, or the target apply prerequisite for one unit the row reaches.
+pub type Side {
+  CasterSide
+  UnitSide(unit_id: Int)
+}
+
+/// The decision of one side of a row's condition at a strike: the condition, the side,
+/// what names the row in a debug line and the rolls its type 37 conditions take off the
+/// front; the decision and the rolls left follow (`strike_gate`).
+pub type StrikeGate =
+  fn(spell_plan.Condition, Side, String, List(Int)) -> #(ProxyGate, List(Int))
+
+/// The rolls a go's strike takes for a row behind `condition` that reaches at most `units`
+/// units: one for each type 37 condition of its caster apply prerequisites, taken once, and
+/// one for each type 37 condition of its target apply prerequisite for each unit, since each
+/// test draws a roll of its own (`Prerequisite.prerequisiteTypeId.37`).
+pub fn strike_rolls_needed(
+  condition condition: spell_plan.Condition,
+  units units: Int,
+) -> Int {
+  gates_rolls_needed(caster_gates(condition:))
+  + target_rolls_needed(condition:, units_reached: units)
+}
+
+/// The gate a go's strike checks its damage, periodic damage and crowd-control rows by,
+/// in the caster's picture: the caster side against the caster's unit as both units
+/// (`gates_gate`), the target side for a unit by its first unit and the caster second
+/// (`unit_gate`), so a row behind no target gate starts for every unit. A row the server
+/// cannot tell is not applied and a debug line says so.
+pub fn strike_gate(
+  cast cast: State,
+  caster caster: Caster,
+  poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
+  units units: Dict(Int, prerequisite.FirstUnit),
+) -> StrikeGate {
+  let subject = subject_of(cast:, caster:)
+  let target_verdict =
+    target_verdict_on(cast:, caster:, subject:, poses:, indexes:, units:)
+  fn(condition, side, what, rolls) {
+    case side {
+      CasterSide ->
+        gates_gate(
+          gates: caster_gates(condition:),
+          subject:,
+          rolls:,
+          what:,
+          outcome: "so it is not applied",
+        )
+      UnitSide(unit_id:) ->
+        case target_gate_of(condition:) {
+          None -> #(Starts, rolls)
+          Some(target) ->
+            unit_gate(
+              target:,
+              unit_id:,
+              target_verdict:,
+              what:,
+              outcome: "so it is not applied",
+              rolls:,
+            )
+        }
+    }
+  }
+}
+
 /// The rows with units that pass their row's target apply prerequisite for that unit,
 /// and a debug line for each the server cannot tell, and the rolls left. A row with no
 /// target gate reaches every unit its aim names; the others are checked in the order of
@@ -8589,7 +8680,7 @@ fn aimed_at(
       rolls:,
     )
   let forced_moves = applied.forced_moves
-  let thrown =
+  let #(thrown, thrown_logs, rolls) =
     rows_with_units(
       rows: applied.struck_moves,
       aim: fn(row: spell_plan.StruckMove) { row.aim },
@@ -8600,6 +8691,14 @@ fn aimed_at(
     |> list.filter(fn(entry) {
       result.is_ok(creature_hit(struck:, unit_id: entry.1))
     })
+    |> reaching(
+      condition: fn(row: spell_plan.StruckMove) { row.condition },
+      what: fn(row: spell_plan.StruckMove) {
+        "the ForcedMove effect " <> int.to_string(row.effect_id.value)
+      },
+      target_verdict:,
+      rolls:,
+    )
   let cooldowns =
     list.map(applied.cooldowns, fn(row) {
       #(
@@ -8808,9 +8907,11 @@ fn aimed_at(
       lasting_logs,
       remove_logs,
       modifier_logs,
+      thrown_logs,
       heal_reach_logs,
       heal_logs,
     ]),
+    thrown:,
     procs:,
     controls:,
     restrictions:,
@@ -9251,9 +9352,9 @@ fn creature_modifier_armed(
   }
 }
 
-/// The creatures a go throws: each row of `moves` (the struck moves of the phase whose
-/// caster gates passed) with each creature its aim names that the round `Hit`, in the row
-/// then the unit order of `units_aimed_at`. A row with no delay tells the creature
+/// The creatures a go throws: each entry of `thrown` (a struck move of the phase whose
+/// caster gates passed with a creature its aim names that the round `Hit` and that passes
+/// its target gate, `aimed_at`), in the row then the unit order of `units_aimed_at`. A row with no delay tells the creature
 /// `ForcedMoveStarts` in this step; any other arms a `ForcedMoveStart` timer for the go
 /// plus its delay; each go's throw is its own, so a later go of the cast leaves an
 /// earlier go's waiting throw to start. A unit that is not a `HitCreature` of the
@@ -9262,19 +9363,10 @@ fn creature_modifier_armed(
 fn struck_moves_armed(
   cast cast: State,
   cast_id cast_id: Int,
-  caster caster: Caster,
-  primary_target primary_target: Int,
-  moves moves: List(spell_plan.StruckMove),
+  thrown thrown: List(#(spell_plan.StruckMove, Int)),
   struck struck: List(Struck),
 ) -> #(State, List(Effect)) {
-  rows_with_units(
-    rows: moves,
-    aim: fn(row: spell_plan.StruckMove) { row.aim },
-    caster:,
-    primary_target:,
-    struck:,
-  )
-  |> list.fold(#(cast, []), fn(so_far, entry) {
+  list.fold(thrown, #(cast, []), fn(so_far, entry) {
     let #(cast, effects) = so_far
     let #(row, unit_id) = entry
     let #(cast, more) =
@@ -10397,8 +10489,8 @@ fn checked(
   )
 }
 
-/// What a Proxy's gate gives at a go.
-type ProxyGate {
+/// What a gate gives at a go: a Proxy's, or a row's.
+pub type ProxyGate {
   /// Its child starts.
   Starts
   /// A gate fails: the client's answer, nothing to say.

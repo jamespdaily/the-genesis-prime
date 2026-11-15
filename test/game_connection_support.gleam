@@ -2041,6 +2041,27 @@ pub fn strikes_told(
   })
 }
 
+/// The strikes a step tells the creatures, as the creature's unit and the Spell4Effects id of
+/// each damage row the strike carries.
+pub fn strike_blows_told(
+  taken: ConnectionStep(Request),
+) -> List(#(Int, List(Int))) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(
+        to: step.Creature(unit_id:, ..),
+        request: client_connection.TellStrike(tell:),
+      )) ->
+        Ok(#(
+          unit_id,
+          list.map(tell.offence.blows, fn(blow) { blow.spell4_effects_id }),
+        ))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
 /// A creature's answer that the strike of `key` ended as `outcome`, for the tests' player's
 /// first stay.
 pub fn answered(

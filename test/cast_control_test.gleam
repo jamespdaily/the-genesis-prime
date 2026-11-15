@@ -369,6 +369,7 @@ fn restricting_by(row row: crowd_control.Row) -> Spell {
         phase_flags: -1,
         aim: spell_plan.AimsAtCaster,
         row:,
+        condition: spell_plan.Always,
         tag: spend.always,
       ),
     ],
@@ -777,6 +778,7 @@ fn holding(states states: List(CrowdControlState)) -> Spell {
           armor_removed: 0,
           until_removed: True,
         ),
+        condition: spell_plan.Always,
         tag: spend.always,
       )
     }),

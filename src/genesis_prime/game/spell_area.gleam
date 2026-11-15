@@ -104,6 +104,7 @@ pub type DamageEffect {
     aim: Aim,
     formula: Formula,
     threat_multiplier: Float,
+    condition: spell_plan.Condition,
     tag: spend.Tag,
   )
 }
@@ -200,6 +201,9 @@ pub type AreaError {
   /// A damage effect's multiplier (`dataBits00`, read as 32 bits) is an infinity or a
   /// number that is not one.
   MultiplierNotFinite(spell4_id: Int, effect_id: Int, bits: Int)
+  /// A damage effect is behind an apply prerequisite the strike cannot check for the units
+  /// it reaches (`spell_plan.row_condition_of`).
+  ApplyGateNotRead(error: spell_plan.PlanError)
 }
 
 /// A sentence that says why the areas cannot be built, naming the table, the
@@ -276,6 +280,7 @@ pub fn describe(error error: AreaError) -> String {
       <> " and a durationTime of "
       <> int.to_string(duration_ms)
       <> ", shorter than one tick"
+    ApplyGateNotRead(error:) -> spell_plan.describe(error:)
     MultiplierNotFinite(spell4_id:, effect_id:, bits:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -371,7 +376,7 @@ fn area_of(
     None -> Ok(Nil)
   })
   use shapes <- result.try(hit_shapes_of(tables:, links:, id:))
-  use #(damage, ticking) <- result.try(damage_effects_of(effects:, id:))
+  use #(damage, ticking) <- result.try(damage_effects_of(tables:, effects:, id:))
   let area =
     SpellArea(
       spell4_id: spell.spell4_id,
@@ -552,6 +557,7 @@ fn placement_of(
 /// periodic row that lasts until removed (`TickingUntilRemoved`) is left out and the
 /// load goes on; any other refusal fails it.
 fn damage_effects_of(
+  tables tables: table_store.Tables,
   effects effects: Dict(Int, List(spell4_effects.Spell4Effects)),
   id id: Int,
 ) -> Result(#(List(DamageEffect), List(TickingDamage)), AreaError) {
@@ -561,7 +567,7 @@ fn damage_effects_of(
     effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
   })
   |> list.try_map(fn(effect) {
-    case damage_row_of(spell4_id: id, effect:) {
+    case damage_row_of(tables:, spell4_id: id, effect:) {
       Ok(row) -> Ok(Some(row))
       Error(TickingUntilRemoved(..)) -> Ok(None)
       Error(error) -> Error(error)
@@ -594,6 +600,7 @@ fn damage_effects_of(
 /// refusal but `TickingUntilRemoved` fails the area load, and `TickingUntilRemoved`
 /// leaves the row out. The area load and the coverage measure both read a row through it.
 pub fn damage_row_of(
+  tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowDamage, AreaError) {
@@ -619,6 +626,10 @@ pub fn damage_row_of(
       Error(FormulaNotRead(spell4_id:, effect_id: effect.id, parameter_kind:))
     None -> Ok(Nil)
   })
+  use condition <- result.try(
+    spell_plan.row_condition_of(tables:, effect:, aim:)
+    |> result.map_error(ApplyGateNotRead),
+  )
   let damage =
     DamageEffect(
       effect_id: Spell4EffectsId(effect.id),
@@ -628,6 +639,7 @@ pub fn damage_row_of(
       aim:,
       formula:,
       threat_multiplier: effect.threat_multiplier,
+      condition:,
       tag: spell_plan.tag_of(effect:),
     )
   case effect.tick_time {
