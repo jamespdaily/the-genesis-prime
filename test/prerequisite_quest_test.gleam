@@ -820,6 +820,7 @@ fn struck_children(caster caster: Caster) -> List(#(Int, Int)) {
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ],
       rolls: [],

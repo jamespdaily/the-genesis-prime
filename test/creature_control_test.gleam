@@ -55,7 +55,7 @@ fn strike_for(
   cast_id cast_id: Int,
 ) -> strike_tell.Tell {
   Strike(
-    key: Key(cast_id:, phase: 0, unit_id: 7),
+    key: Key(cast_id:, occasion: strike_tell.AtGo(phase: 0), unit_id: 7),
     from: step.Connection(step.ConnectionId(2)),
     striker: CreatureStriker,
     offence: Offence(

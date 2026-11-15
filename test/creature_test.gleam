@@ -290,7 +290,7 @@ fn typed_strike(
 ) -> creature.Message {
   creature.Strike(
     tell: Strike(
-      key: Key(cast_id:, phase: 0, unit_id: 7),
+      key: Key(cast_id:, occasion: strike_tell.AtGo(phase: 0), unit_id: 7),
       from: step.Connection(ConnectionId(2)),
       offence: Offence(
         blows: [
@@ -459,7 +459,11 @@ pub fn a_creature_struck_while_it_lies_dead_refuses_without_news_test() -> Nil {
         creature.Struck(
           stay: map_support.stay(count: 2),
           answered: Answered(
-            key: Key(cast_id: 2, phase: 0, unit_id: 7),
+            key: Key(
+              cast_id: 2,
+              occasion: strike_tell.AtGo(phase: 0),
+              unit_id: 7,
+            ),
             outcome: Refused(why: strike_tell.Dead),
           ),
         ),

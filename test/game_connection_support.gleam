@@ -1789,6 +1789,7 @@ pub fn cast_starts(news: List(News)) -> List(spell_started.SpellStarted) {
       | client_connection.Removed
       | client_connection.CastWent(..)
       | client_connection.CastMissed(..)
+      | client_connection.CastTicked(..)
       | client_connection.CastTargetsRemoved(..)
       | client_connection.CastStackRemoved(..)
       | client_connection.CastFinished(..)
@@ -1827,6 +1828,7 @@ pub fn is_cast_removal(news: News) -> Bool {
     | client_connection.CastStarted(..)
     | client_connection.CastWent(..)
     | client_connection.CastMissed(..)
+    | client_connection.CastTicked(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)
     | client_connection.CastInterrupted(..)
@@ -2074,7 +2076,11 @@ pub fn a_beast_strike(unit_id: Int) -> Event(ConnectionEvent(Message, Answer)) {
   foe(
     strike_tell.Attacks(
       tell: strike_tell.Strike(
-        key: strike_tell.Key(cast_id: 2_147_500_000, phase: 0, unit_id:),
+        key: strike_tell.Key(
+          cast_id: 2_147_500_000,
+          occasion: strike_tell.AtGo(phase: 0),
+          unit_id:,
+        ),
         from: fighter(),
         striker: strike_tell.CreatureStriker,
         offence: spawn_support.beast_attack().offence,
@@ -2094,7 +2100,11 @@ pub fn a_creatures_blow(
   foe(
     strike_tell.Attacks(
       tell: strike_tell.Strike(
-        key: strike_tell.Key(cast_id: 2_147_500_000, phase: 0, unit_id:),
+        key: strike_tell.Key(
+          cast_id: 2_147_500_000,
+          occasion: strike_tell.AtGo(phase: 0),
+          unit_id:,
+        ),
         from: fighter(),
         striker: strike_tell.CreatureStriker,
         offence: Offence(
@@ -2151,7 +2161,7 @@ pub fn a_killing_strike() -> Event(ConnectionEvent(Message, Answer)) {
       tell: strike_tell.Strike(
         key: strike_tell.Key(
           cast_id: 2_147_500_001,
-          phase: 0,
+          occasion: strike_tell.AtGo(phase: 0),
           unit_id: own_unit_id,
         ),
         from: fighter(),

@@ -370,6 +370,7 @@ pub fn a_target_persistence_on_a_cast_whose_primary_target_is_a_creature_is_not_
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ],
       rolls: [],

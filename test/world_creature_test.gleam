@@ -669,7 +669,7 @@ fn strike_with(
       life:,
       message: creature.Strike(
         tell: Strike(
-          key: Key(cast_id:, phase: 0, unit_id:),
+          key: Key(cast_id:, occasion: strike_tell.AtGo(phase: 0), unit_id:),
           from: step.Connection(ConnectionId(1)),
           offence: Offence(
             blows: [
@@ -960,6 +960,7 @@ fn tell_change(
     | cast.CasterChangeEnds(..)
     | cast.Activated(..)
     | cast.ShortcutCast(..)
+    | cast.TickStrike(..)
     | cast.StealthChanged(..) -> panic as "not a change of a creature's property"
   }
   let assert Ok(Nil) =
@@ -1054,6 +1055,7 @@ pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
       descriptions: [],
       controls: [],
       armor_removed: 0,
+      ticking: [],
     ),
   ]
   let #(state, pressed) =

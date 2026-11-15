@@ -135,6 +135,7 @@ fn trace(effects effects: List(Effect)) -> List(String) {
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
       | cast.Strike(..)
+      | cast.TickStrike(..)
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
@@ -158,6 +159,7 @@ fn changes(effects effects: List(Effect)) -> List(Bool) {
       | cast.StartTimer(..)
       | cast.CancelTimer(..)
       | cast.Strike(..)
+      | cast.TickStrike(..)
       | cast.Log(..)
       | cast.Pay(..)
       | cast.Gain(..)
@@ -306,6 +308,7 @@ fn goes_apart(
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> so_far
     }
   })

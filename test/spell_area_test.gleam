@@ -24,11 +24,12 @@ import genesis_prime/game/area.{
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/spell_area.{
-  AimNotRead, FormulaNotRead, MultiplierNotFinite, PeriodicNotRead,
+  AimNotRead, FormulaNotRead, MultiplierNotFinite, Once, Periodic,
   SelectionNotClosest, ShapeNotBuilt, TelegraphNotOnCaster, ValidTargetsNotAlive,
 }
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spend.{EqualTo}
+import genesis_prime/game/ticking
 import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4_effects
@@ -422,23 +423,25 @@ fn periodic_damage_row(tick_ms tick_ms: Int) -> spell4_effects.Spell4Effects {
   )
 }
 
-pub fn a_damage_row_with_a_tick_time_is_not_read_naming_the_tick_test() -> Nil {
+pub fn a_damage_row_with_a_tick_time_ticks_on_its_schedule_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert spell_area.damage_row_of(
+  let assert Ok(Periodic(effect: row)) =
+    spell_area.damage_row_of(
       spell4_id: 32_475,
       effect: periodic_damage_row(tick_ms: 1500),
     )
-    == Error(PeriodicNotRead(
-      spell4_id: 32_475,
-      effect_id: 61_198,
-      tick_ms: 1500,
-    ))
-    as "Spell4Effects 61198 holds tickTime 1500: the client never times ticks, each is its own 0x7f8 from the server, so one strike at delayTime is not the row"
+    as "Spell4Effects 61198 holds tickTime 1500: the client never times ticks, each is its own 0x7f8 from the server (spell.tick_timing)"
+  assert #(row.damage.effect_id, row.schedule)
+    == #(
+      Spell4EffectsId(61_198),
+      ticking.Schedule(delay_ms: 1500, tick_ms: 1500, count: 4),
+    )
+    as "delayTime 1500, tickTime 1500 and durationTime 6000: four ticks, the first a tick after the delay"
 }
 
 pub fn a_damage_row_with_no_tick_time_is_read_as_one_strike_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(effect) =
+  let assert Ok(Once(effect:)) =
     spell_area.damage_row_of(
       spell4_id: 32_475,
       effect: periodic_damage_row(tick_ms: 0),
@@ -465,7 +468,7 @@ fn fixture_effect(id id: Int) -> spell4_effects.Spell4Effects {
 
 pub fn the_area_load_builds_a_damage_row_that_names_an_attribute_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(effect) =
+  let assert Ok(Once(effect:)) =
     spell_area.damage_row_of(
       spell4_id: 42_355,
       effect: fixture_effect(id: 96_307),
@@ -478,18 +481,17 @@ pub fn the_area_load_builds_a_damage_row_that_names_an_attribute_test() -> Nil {
     as "row 96307's parameterType00 5 and parameterValue00 0x3fc00000 (1.5)"
 }
 
-pub fn a_ticking_row_that_names_an_attribute_is_refused_as_periodic_test() -> Nil {
+pub fn a_ticking_row_that_names_an_attribute_ticks_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert spell_area.damage_row_of(
+  let assert Ok(Periodic(effect: row)) =
+    spell_area.damage_row_of(
       spell4_id: 29_550,
       effect: fixture_effect(id: 52_057),
     )
-    == Error(PeriodicNotRead(
-      spell4_id: 29_550,
-      effect_id: 52_057,
-      tick_ms: 1000,
-    ))
-    as "row 52057 names Magic (type 4), which is read, and tickTime 1000, which is not"
+    as "row 52057 names Magic (type 4), which is read, and tickTime 1000"
+  assert #(row.damage.effect_id, row.schedule.tick_ms)
+    == #(Spell4EffectsId(52_057), 1000)
+    as "row 52057's tickTime 1000"
 }
 
 pub fn a_periodic_damage_row_is_left_out_of_its_spells_area_and_the_load_goes_on_test() -> Nil {
@@ -879,6 +881,7 @@ fn planned_alone(spell4_id spell4_id: Int) -> spell_area.SpellArea {
     row: None,
     shapes: [],
     damage: [],
+    ticking: [],
     spell:,
   )
 }

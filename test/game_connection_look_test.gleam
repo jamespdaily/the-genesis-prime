@@ -174,6 +174,7 @@ fn look_visuals(news news: News) -> Result(List(ItemVisual), Nil) {
     | client_connection.CastStarted(..)
     | client_connection.CastWent(..)
     | client_connection.CastMissed(..)
+    | client_connection.CastTicked(..)
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastInterrupted(..)

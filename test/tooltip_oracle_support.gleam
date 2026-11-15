@@ -455,6 +455,7 @@ pub fn striking_with_states(root root: Spell) -> Strikes {
         descriptions: [],
         controls:,
         armor_removed: 0,
+        ticking: [],
       ),
     ]
   }
@@ -477,7 +478,11 @@ pub fn landing_of(
 ) -> creature_control.Landing {
   let tell =
     strike_tell.Strike(
-      key: strike_tell.Key(cast_id: 1, phase: 0, unit_id: struck_unit),
+      key: strike_tell.Key(
+        cast_id: 1,
+        occasion: strike_tell.AtGo(phase: 0),
+        unit_id: struck_unit,
+      ),
       from: step.Sessions,
       striker: strike_tell.CreatureStriker,
       offence: hit_offence(),

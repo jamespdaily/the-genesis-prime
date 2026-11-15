@@ -240,7 +240,7 @@ fn strike_of(
 ) -> creature.Message {
   creature.Strike(
     tell: Strike(
-      key: Key(cast_id:, phase: 0, unit_id: unit),
+      key: Key(cast_id:, occasion: strike_tell.AtGo(phase: 0), unit_id: unit),
       from: Connection(ConnectionId(number)),
       striker: PlayerStriker(
         unit_id: unit_of(number),
@@ -340,6 +340,7 @@ fn name_of(news: News) -> String {
     CastStarted(..) -> "0x7ff"
     CastWent(..) -> "0x7f4"
     client_connection.CastMissed(..) -> "0x7fb"
+    client_connection.CastTicked(..) -> "0x7f8"
     CastFinished(..) -> "0x7fe"
     client_connection.CastInterrupted(..) -> "0x7f9"
     client_connection.CastTargetsRemoved(..) -> "0x811"

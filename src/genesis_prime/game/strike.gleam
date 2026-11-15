@@ -21,6 +21,14 @@
 ////     Went(asked, struck) ─▶ the connection calls cast.went(k, phase, struck)
 ////     Released(unit, news) for the health news held for the round's units
 ////   forget(unit): the client's 0x355 for a unit drops the news held for it
+//// cast rule tick timer ─▶ Effect TickStrike(TickAsked k, row, unit, tick)
+////   the connection draws 12 bytes of its seed for the unit
+////   begin_tick: a round of one unit for (k, row, tick), its deadline now + 1 s
+////       TellStrike(Ci, Strike(key AtTick, from, offence, rolls)) ──────────────────────▶ hit rule
+////   ◀──────────────────────────── Answered(key, Landed | Deflected | Refused) ◀─────────┘
+////   the round closes as a go's does
+////     Ticked(asked, struck) ─▶ the connection calls cast.ticked(asked, struck)
+////     Released(unit, news) for the health news held for the unit
 //// ```
 ////
 //// - **Selection** reads the picture of the units the client shows
@@ -38,15 +46,22 @@
 ////   the caster's own count of the states it told (genesis_prime/game/crowd_control
 ////   `instance_id`), and the creature that takes the state answers with it, so the
 ////   go lists only the states that landed (genesis_prime/world_map/creature_control).
-//// - **One round for each go.** The key of a strike is (cast, phase, unit). A round
-////   holds a place for each selected unit, filled in the order of the selection
-////   whatever order the answers arrive in; the go lists them in that order.
+//// - **One round for each go and for each tick.** The key of a strike is (cast,
+////   occasion, unit): the occasion is the go's phase or the tick's row and number
+////   (genesis_prime/game/strike_tell `Occasion`). A go's round holds a place for each
+////   selected unit, filled in the order of the selection whatever order the answers
+////   arrive in; the go lists them in that order. A tick's round holds its one unit.
+//// - **A periodic damage row** (genesis_prime/game/spell_area `TickingDamage`) is told
+////   with the go to the units its aim names, as a crowd-control state is, and a unit it
+////   reaches is struck even when the phase has no other damage: a deflected unit gets
+////   no ticks, so the go needs its answer. The hit that lands carries the rows
+////   (`cast.Hit.ticking`), and the cast rule arms their ticks.
 //// - **A selected creature that refuses** (it died after the picture was taken) or
 ////   never answers is left out of the go, and the count is not refilled from the
 ////   candidates that were not selected.
-//// - **Rounds of one cast close in phase order.** A round waits for every earlier round
-////   of its cast, empty ones included, so a later phase is never written first (Stagger's
-////   gos).
+//// - **Rounds of one cast close in the order they began**, gos and ticks alike. A round
+////   waits for every earlier round of its cast, empty ones included, so a later phase is
+////   never written first (Stagger's gos), nor a tick before the go that armed it.
 //// - **The deadline** is 1 second for each round. One strike timer for the connection
 ////   is set to the earliest open deadline and set again only after it fired or the round
 ////   it waited for closed: the shell refuses to start a timer that is running.
@@ -70,7 +85,7 @@
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Pose, Pose}
-import genesis_prime/game/cast.{type GoAsked, type Struck}
+import genesis_prime/game/cast.{type GoAsked, type Struck, type TickAsked}
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/hit
@@ -129,17 +144,26 @@ pub type Aimed {
 }
 
 /// What a go strikes: the units, nearest first with the primary target after the
-/// area's, which of them the area selected, the damage each is struck with and the
-/// crowd-control states each is told by the aim of its row. A spell with no damage effect and no state in the phase
-/// selects units and tells none of them.
+/// area's, which of them the area selected, the damage each is struck with, the
+/// periodic damage rows each is reached by and the crowd-control states each is told,
+/// both by the aim of their row. A spell with no damage effect and no state in the
+/// phase selects units and tells none of them.
 pub type Selection {
   Selection(
     asked: GoAsked,
     units: List(Aimed),
     area: List(Int),
     blows: List(spell_area.DamageEffect),
+    ticking: List(spell_area.TickingDamage),
     controls: List(spell_plan.CrowdControl),
   )
+}
+
+/// What a round strikes for: a go of the cast, or one tick of a periodic row on one
+/// unit.
+pub type Asked {
+  ForGo(asked: GoAsked)
+  ForTick(asked: TickAsked)
 }
 
 /// What the rule asks the connection to do, in order.
@@ -152,6 +176,9 @@ pub type Effect {
   CancelTimer(timer: TimerId)
   /// A round closed: the connection answers the cast rule with `cast.went`.
   Went(asked: GoAsked, struck: List(Struck))
+  /// A tick's round closed: the connection answers the cast rule with `cast.ticked`.
+  /// `None` when the unit refused or never answered.
+  Ticked(asked: TickAsked, struck: Option(Struck))
   /// A news of a unit of a round that closed, held until now: the connection takes it
   /// as it would have when it came.
   Released(unit_id: Int, news: News)
@@ -171,21 +198,18 @@ pub opaque type State {
   )
 }
 
-/// One go's open round: the go, a place for each selected unit in the order of the
-/// selection, the monotonic time of the go and the time its deadline passes.
+/// One open round: the go or the tick it strikes for, a place for each selected unit
+/// in the order of the selection, the monotonic time of the go or tick and the time
+/// its deadline passes.
 pub type Round {
-  Round(
-    asked: GoAsked,
-    places: List(Place),
-    struck_at_ms: Int,
-    deadline_ms: Int,
-  )
+  Round(asked: Asked, places: List(Place), struck_at_ms: Int, deadline_ms: Int)
 }
 
 /// A selected unit's place in a round.
 pub type Place {
-  /// The creature, in its life `life`, has not answered.
-  Waiting(unit_id: Int, life: Int)
+  /// The creature, in its life `life`, has not answered; a hit that lands carries the
+  /// periodic rows that reach it (`ticking`).
+  Waiting(unit_id: Int, life: Int, ticking: List(spell_area.TickingDamage))
   /// The creature answered, or the unit needed no strike.
   Answered(struck: Struck)
   /// The creature refused, or the deadline passed: the unit is left out of the go.
@@ -212,7 +236,8 @@ pub fn select(
   areas areas: Areas,
   now_ms now_ms: Int,
 ) -> Selection {
-  let empty = Selection(asked:, units: [], area: [], blows: [], controls: [])
+  let empty =
+    Selection(asked:, units: [], area: [], blows: [], ticking: [], controls: [])
   case
     spell_area.of_spell(areas:, spell4_id: asked.spell4_id)
     |> result.try(fn(area) {
@@ -249,6 +274,7 @@ pub fn select(
         }),
         area: from_area,
         blows: phase.damage,
+        ticking: phase.ticking,
         controls: phase.controls,
       )
     }
@@ -278,14 +304,18 @@ fn area_selection(
 
 /// The seed bytes the selection's strikes take.
 pub fn entropy_needed(selection selection: Selection) -> Int {
-  case selection.blows, selection.controls {
-    [], [] -> 0
-    _, _ -> list.length(selection.units) * bytes_per_unit
+  case selection.blows, selection.ticking, selection.controls {
+    [], [], [] -> 0
+    _, _, _ -> list.length(selection.units) * bytes_per_unit
   }
 }
 
+/// The seed bytes a tick's strike takes: one unit's rolls.
+pub const tick_entropy_needed = bytes_per_unit
+
 /// A selection begins its round: a strike told to each unit with `entropy`'s rolls
-/// when the phase has damage or a state for that unit, the strike timer set to the
+/// when the phase has damage, a periodic row or a state for that unit, the strike
+/// timer set to the
 /// earliest deadline when it is not set, and the round closed at once when nothing
 /// waits for it and no earlier round of its cast is open.
 pub fn begin(
@@ -302,27 +332,35 @@ pub fn begin(
     list.index_fold(selection.units, #([], []), fn(so_far, aimed, index) {
       let #(places, tells) = so_far
       let controls = list.key_find(told, aimed.unit_id) |> result.unwrap([])
-      case selection.blows, controls {
-        [], [] -> #(
+      let ticking =
+        ticking_reaching(selection:, attacker:, unit_id: aimed.unit_id)
+      case selection.blows, ticking, controls {
+        [], [], [] -> #(
           [
-            Answered(cast.Hit(
-              unit_id: aimed.unit_id,
-              unit: cast.HitCreature(
-                life: aimed.life,
-                struck_at_ms: now.monotonic_ms,
+            Answered(
+              cast.Hit(
+                unit_id: aimed.unit_id,
+                unit: cast.HitCreature(
+                  life: aimed.life,
+                  struck_at_ms: now.monotonic_ms,
+                ),
+                descriptions: [],
+                controls: [],
+                armor_removed: 0,
+                ticking: [],
               ),
-              descriptions: [],
-              controls: [],
-              armor_removed: 0,
-            )),
+            ),
             ..places
           ],
           tells,
         )
-        _, _ ->
+        _, _, _ ->
           case rolls_at(entropy:, index:) {
             Ok(rolls) -> #(
-              [Waiting(unit_id: aimed.unit_id, life: aimed.life), ..places],
+              [
+                Waiting(unit_id: aimed.unit_id, life: aimed.life, ticking:),
+                ..places
+              ],
               [
                 TellStrike(
                   unit_id: aimed.unit_id,
@@ -330,7 +368,7 @@ pub fn begin(
                   tell: strike_tell.Strike(
                     key: strike_tell.Key(
                       cast_id: selection.asked.cast_id,
-                      phase: selection.asked.phase,
+                      occasion: strike_tell.AtGo(phase: selection.asked.phase),
                       unit_id: aimed.unit_id,
                     ),
                     from: step.Connection(attacker.connection),
@@ -361,7 +399,7 @@ pub fn begin(
     })
   let round =
     Round(
-      asked: selection.asked,
+      asked: ForGo(asked: selection.asked),
       places: list.reverse(places),
       struck_at_ms: now.monotonic_ms,
       deadline_ms: now.monotonic_ms + strike_tell.deadline_ms,
@@ -369,6 +407,41 @@ pub fn begin(
   let state = State(..strike, rounds: list.append(strike.rounds, [round]))
   let #(state, settled) = settle(state:, now:)
   #(state, list.append(list.reverse(tells), settled))
+}
+
+/// The periodic damage rows of the go that reach a unit: each row whose aim names it
+/// (the primary target, the units the area selected, or both), as a state's does.
+fn ticking_reaching(
+  selection selection: Selection,
+  attacker attacker: Attacker,
+  unit_id unit_id: Int,
+) -> List(spell_area.TickingDamage) {
+  list.filter(selection.ticking, fn(row) {
+    list.contains(
+      spell_plan.units_aimed_at(
+        aim: row.damage.aim,
+        caster: attacker.unit_id,
+        primary_target: selection.asked.primary_target,
+        area: selection.area,
+      ),
+      unit_id,
+    )
+  })
+}
+
+/// A tick of a periodic row begins its round of one unit: a strike told to the unit
+/// with `entropy`'s rolls and the row's damage alone, keyed by the tick
+/// (`strike_tell.AtTick`), its deadline 1 second on, and the round closed in order
+/// with the cast's other rounds as a go's is.
+pub fn begin_tick(
+  strike strike: State,
+  asked asked: TickAsked,
+  attacker attacker: Attacker,
+  formulas formulas: Formulas,
+  entropy entropy: BitArray,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  todo as "#785: a tick's round of one unit"
 }
 
 /// The crowd-control states each selected unit is told: each row of the phase to
@@ -505,9 +578,26 @@ pub fn answered(
   settle(state: State(..strike, rounds:), now:)
 }
 
-/// Whether the round is the go the strike's key names.
+/// Whether the round is the go or the tick the strike's key names.
 fn is_round_of(round round: Round, key key: strike_tell.Key) -> Bool {
-  round.asked.cast_id == key.cast_id && round.asked.phase == key.phase
+  cast_id_of(round.asked) == key.cast_id
+  && case round.asked, key.occasion {
+    ForGo(asked:), strike_tell.AtGo(phase:) -> asked.phase == phase
+    ForTick(asked:), strike_tell.AtTick(effect_id:, tick:) ->
+      asked.effect_id == effect_id
+      && asked.tick == tick
+      && asked.unit_id == key.unit_id
+    ForGo(..), strike_tell.AtTick(..) | ForTick(..), strike_tell.AtGo(..) ->
+      False
+  }
+}
+
+/// The cast a round strikes for.
+fn cast_id_of(asked: Asked) -> Int {
+  case asked {
+    ForGo(asked:) -> asked.cast_id
+    ForTick(asked:) -> asked.cast_id
+  }
 }
 
 /// Whether the place waits for this unit's answer.
@@ -526,17 +616,18 @@ fn fill(
   outcome outcome: strike_tell.Outcome,
 ) -> Place {
   case place {
-    Waiting(unit_id: waiting, life:) if waiting == unit_id ->
-      filled(unit_id:, life:, struck_at_ms:, outcome:)
+    Waiting(unit_id: waiting, life:, ticking:) if waiting == unit_id ->
+      filled(unit_id:, life:, ticking:, struck_at_ms:, outcome:)
     Waiting(..) | Answered(..) | LeftOut(..) -> place
   }
 }
 
 /// A creature's answer as the unit's place: a landed strike is a hit on the life the
-/// strike was told to, struck at the go.
+/// strike was told to, struck at the go, with the periodic rows that reach it.
 fn filled(
   unit_id unit_id: Int,
   life life: Int,
+  ticking ticking: List(spell_area.TickingDamage),
   struck_at_ms struck_at_ms: Int,
   outcome outcome: strike_tell.Outcome,
 ) -> Place {
@@ -548,6 +639,7 @@ fn filled(
         descriptions:,
         controls:,
         armor_removed:,
+        ticking:,
       ))
     strike_tell.Immune(controls:, armor_removed:) ->
       Answered(struck: cast.Immune(
@@ -555,6 +647,7 @@ fn filled(
         unit: cast.HitCreature(life:, struck_at_ms:),
         controls:,
         armor_removed:,
+        ticking:,
       ))
     strike_tell.Deflected -> Answered(struck: cast.Deflected(unit_id:))
     strike_tell.Refused(..) -> LeftOut(unit_id:)
@@ -648,15 +741,18 @@ fn settle(state state: State, now now: Now) -> #(State, List(Effect)) {
   let state = State(..state, rounds: open)
   let went =
     list.map(closed, fn(round) {
-      Went(
-        asked: round.asked,
-        struck: list.filter_map(round.places, fn(place) {
+      let struck =
+        list.filter_map(round.places, fn(place) {
           case place {
             Answered(struck:) -> Ok(struck)
             Waiting(..) | LeftOut(..) -> Error(Nil)
           }
-        }),
-      )
+        })
+      case round.asked {
+        ForGo(asked:) -> Went(asked:, struck:)
+        ForTick(asked:) ->
+          Ticked(asked:, struck: list.first(struck) |> option.from_result)
+      }
     })
   let units =
     list.flat_map(closed, fn(round) {
@@ -699,7 +795,9 @@ fn close_ready(
           }
         })
       let earlier_open =
-        list.any(open, fn(other) { other.asked.cast_id == round.asked.cast_id })
+        list.any(open, fn(other) {
+          cast_id_of(other.asked) == cast_id_of(round.asked)
+        })
       case complete && !earlier_open {
         True -> close_ready(rounds: rest, open:, closed: [round, ..closed])
         False -> close_ready(rounds: rest, open: [round, ..open], closed:)

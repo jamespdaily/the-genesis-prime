@@ -95,7 +95,7 @@ fn blow(damage damage: Int) -> Event(ConnectionEvent(Message, Answer)) {
       tell: strike_tell.Strike(
         key: strike_tell.Key(
           cast_id: 2_147_500_100,
-          phase: 0,
+          occasion: strike_tell.AtGo(phase: 0),
           unit_id: game_connection_support.own_unit_id,
         ),
         from: game_connection_support.fighter(),

@@ -364,7 +364,7 @@ pub fn a_deflected_strike_leaves_the_absorbs_and_writes_no_stat_22_test() -> Nil
       strike: strike_tell.Strike(
         key: strike_tell.Key(
           cast_id: 1,
-          phase: 0,
+          occasion: strike_tell.AtGo(phase: 0),
           unit_id: player_life_support.own_unit,
         ),
         from: player_life_support.beast(),

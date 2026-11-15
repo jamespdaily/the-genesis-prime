@@ -85,6 +85,7 @@ pub fn a_closed_round_writes_the_go_with_a_target_info_for_each_hit_unit_and_a_0
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
         Deflected(unit_id: 11),
       ],
@@ -147,6 +148,7 @@ pub fn a_hit_unit_is_listed_with_the_answers_description_and_a_critical_one_is_a
           ],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
         Hit(
           unit_id: 11,
@@ -156,6 +158,7 @@ pub fn a_hit_unit_is_listed_with_the_answers_description_and_a_critical_one_is_a
           ],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ],
     )
@@ -216,6 +219,7 @@ pub fn another_casters_0x801_with_reason_6_ends_only_its_own_cast_and_the_first_
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ],
     )
@@ -234,6 +238,7 @@ pub fn another_casters_0x801_with_reason_6_ends_only_its_own_cast_and_the_first_
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ],
     )
@@ -259,6 +264,7 @@ pub fn a_struck_unit_the_client_no_longer_shows_is_still_named_in_the_go_test() 
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ],
     )
@@ -299,6 +305,7 @@ pub fn a_0x801_while_a_round_is_open_leaves_the_close_with_nothing_to_write_test
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ],
     )
@@ -323,6 +330,7 @@ pub fn a_proxy_aimed_at_the_area_starts_one_child_for_each_hit_unit_and_none_for
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
         Deflected(unit_id: 11),
         Hit(
@@ -331,6 +339,7 @@ pub fn a_proxy_aimed_at_the_area_starts_one_child_for_each_hit_unit_and_none_for
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ],
     )

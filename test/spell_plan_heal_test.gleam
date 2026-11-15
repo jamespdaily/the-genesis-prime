@@ -46,6 +46,7 @@ import genesis_prime/game/spell_plan.{
   ReadByActivation, ReadByArea, TickingHeal,
 }
 import genesis_prime/game/spend
+import genesis_prime/game/ticking
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import gleam/dict
@@ -223,8 +224,13 @@ pub fn a_periodic_heal_shields_row_is_held_as_ticking_and_not_applied_test() -> 
         aim: AimsAtCaster,
         condition: Always,
         tag: spend.EqualTo(value: 0),
-        tick_ms: 1000,
-        duration_ms: 8000,
+        formula: Formula(multiplier: 1.0, base: 0.0, parameters: [
+          Parameter(kind: 16, value: 0.125),
+          Parameter(kind: 0, value: 0.0),
+          Parameter(kind: 0, value: 0.0),
+          Parameter(kind: 0, value: 0.0),
+        ]),
+        schedule: ticking.Schedule(delay_ms: 0, tick_ms: 1000, count: 8),
       ),
     ]
     as "row 210834: tickTime 1000 and durationTime 8000; the cast rule does not apply it, as a TickingGain"
@@ -507,7 +513,7 @@ pub fn a_heal_row_aimed_at_other_units_is_left_out_test() -> Nil {
     as "row 89598: targetFlags 4 is the area alone, the units a strike hits"
 }
 
-pub fn a_heal_row_with_a_tick_time_is_held_test() -> Nil {
+pub fn a_heal_row_that_lives_shorter_than_a_tick_fails_the_load_test() -> Nil {
   use <- owned_test.run(5000)
   let row =
     Spell4Effects(
@@ -518,21 +524,13 @@ pub fn a_heal_row_with_a_tick_time_is_held_test() -> Nil {
       flags: 512,
     )
   assert spell_tables.read_row(effect: row, place: spell_tables.pressed)
-    == Ok(
-      Held(
-        PlannedHeal(TickingHeal(
-          effect_id: Spell4EffectsId(80_077),
-          vital: effect_kind.Health,
-          phase_flags: -1,
-          aim: AimsAtPrimaryTarget,
-          condition: Always,
-          tag: spend.EqualTo(value: 0),
-          tick_ms: 1000,
-          duration_ms: 0,
-        )),
-      ),
-    )
-    as "row 80077: tickTime 1000 makes it a periodic heal, held and not applied (a later step ticks it)"
+    == Error(spell_plan.HealNoTick(
+      spell4_id: 32_821,
+      effect_id: 80_077,
+      tick_ms: 1000,
+      duration_ms: 0,
+    ))
+    as "row 80077 as edited: tickTime 1000, durationTime 0 and no flags bit 2, so no tick lands within its life (genesis_prime/game/ticking `NoTick`)"
 }
 
 pub fn a_heal_row_with_an_unread_parameter_or_number_is_refused_test() -> Nil {
@@ -610,8 +608,7 @@ pub fn the_plans_hold_energizes_shield_heal_the_warriors_ticking_row_and_meltdow
   let assert [
     TickingHeal(
       effect_id: Spell4EffectsId(210_834),
-      tick_ms: 1000,
-      duration_ms: 8000,
+      schedule: ticking.Schedule(tick_ms: 1000, count: 8, ..),
       ..,
     ),
   ] = cast_support.planned_spell(base: 30_828, spell4_id: 46_867).heals

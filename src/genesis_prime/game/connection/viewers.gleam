@@ -329,6 +329,7 @@ pub fn viewer_takes(
     | client_connection.CastStarted(..)
     | client_connection.CastWent(..)
     | client_connection.CastMissed(..)
+    | client_connection.CastTicked(..)
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)
@@ -477,6 +478,14 @@ pub fn viewer_takes(
         entered:,
         cast_id: missed.cast_id,
         frame: cast.missed_frame(missed:),
+        forgetting: False,
+      )
+    client_connection.CastTicked(tick:) ->
+      written_cast_frame(
+        session:,
+        entered:,
+        cast_id: tick.cast_id,
+        frame: cast.ticked_frame(tick:),
         forgetting: False,
       )
     client_connection.CastTargetsRemoved(removed:, destroyed:) ->
@@ -782,6 +791,7 @@ fn creature_news(
     | client_connection.CastStarted(..)
     | client_connection.CastWent(..)
     | client_connection.CastMissed(..)
+    | client_connection.CastTicked(..)
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)
@@ -871,6 +881,7 @@ fn life_news(
     | client_connection.CastStarted(..)
     | client_connection.CastWent(..)
     | client_connection.CastMissed(..)
+    | client_connection.CastTicked(..)
     | client_connection.CastTargetsRemoved(..)
     | client_connection.CastStackRemoved(..)
     | client_connection.CastFinished(..)

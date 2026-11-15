@@ -171,6 +171,7 @@ fn hit(unit_id unit_id: Int) -> cast.Struck {
     descriptions: [],
     controls: [],
     armor_removed: 0,
+    ticking: [],
   )
 }
 

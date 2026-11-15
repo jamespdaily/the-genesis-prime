@@ -52,7 +52,7 @@ import spawn_support
 
 fn attack(cast_id: Int) -> strike_tell.Tell {
   Strike(
-    key: Key(cast_id:, phase: 0, unit_id: 20),
+    key: Key(cast_id:, occasion: strike_tell.AtGo(phase: 0), unit_id: 20),
     from: player_life_support.beast(),
     striker: CreatureStriker,
     offence: spawn_support.beast_attack().offence,
@@ -202,7 +202,11 @@ pub fn health_is_floored_at_0_the_answer_is_landed_and_killed_and_a_later_strike
       Answer(
         to: player_life_support.beast(),
         answered: Answered(
-          key: Key(cast_id: 2, phase: 0, unit_id: 20),
+          key: Key(
+            cast_id: 2,
+            occasion: strike_tell.AtGo(phase: 0),
+            unit_id: 20,
+          ),
           outcome: Refused(why: strike_tell.Dead),
         ),
       ),
@@ -460,7 +464,7 @@ pub fn a_strike_on_a_dead_player_is_refused_dead_test() -> Nil {
         answered: Answered(
           key: Key(
             cast_id: 9999,
-            phase: 0,
+            occasion: strike_tell.AtGo(phase: 0),
             unit_id: player_life_support.own_unit,
           ),
           outcome: Refused(why: strike_tell.Dead),
@@ -739,7 +743,11 @@ pub fn a_player_that_entered_dead_refuses_a_strike_takes_no_threat_and_comes_bac
       Answer(
         to: player_life_support.beast(),
         answered: Answered(
-          key: Key(cast_id: 1, phase: 0, unit_id: 20),
+          key: Key(
+            cast_id: 1,
+            occasion: strike_tell.AtGo(phase: 0),
+            unit_id: 20,
+          ),
           outcome: Refused(why: strike_tell.Dead),
         ),
       ),

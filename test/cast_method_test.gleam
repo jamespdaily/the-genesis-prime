@@ -464,6 +464,7 @@ pub fn a_strike_round_that_never_closes_does_not_hold_the_channel_open_test() ->
       area: [10],
       blows: [strike_support.damage_effect()],
       controls: [],
+      ticking: [],
     )
   let #(round, begun) =
     strike.begin(
@@ -514,6 +515,7 @@ fn closed_rounds(effects effects: List(strike.Effect)) -> List(strike.Effect) {
       strike.TellStrike(..)
       | strike.StartTimer(..)
       | strike.CancelTimer(..)
+      | strike.Ticked(..)
       | strike.Released(..)
       | strike.Log(..) -> False
     }
@@ -857,6 +859,7 @@ pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_cha
         | client_connection.CreatureAppeared(..)
         | client_connection.Moving(..)
         | client_connection.CastMissed(..)
+        | client_connection.CastTicked(..)
         | client_connection.CastTargetsRemoved(..)
         | client_connection.CastStackRemoved(..)
         | client_connection.CastInterrupted(..)
@@ -1051,6 +1054,7 @@ fn count_logs(effects effects: List(cast.Effect)) -> Int {
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> False
     }
   })

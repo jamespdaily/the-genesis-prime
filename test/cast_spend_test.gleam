@@ -97,6 +97,7 @@ fn asked_goes(effects effects: List(cast.Effect)) -> List(GoAsked) {
       | cast.TargetChangeEnds(..)
       | cast.Activated(..)
       | cast.ShortcutCast(..)
+      | cast.TickStrike(..)
       | cast.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -597,6 +598,7 @@ pub fn crush_keeps_every_effect_at_any_points_held_test() -> Nil {
             descriptions: [],
             controls: [],
             armor_removed: 0,
+            ticking: [],
           ),
         ],
       )

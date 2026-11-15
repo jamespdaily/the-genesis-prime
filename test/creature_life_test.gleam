@@ -41,7 +41,7 @@ fn strike_of(
   cast_id cast_id: Int,
 ) -> strike_tell.Tell {
   Strike(
-    key: Key(cast_id:, phase: 0, unit_id: 20),
+    key: Key(cast_id:, occasion: strike_tell.AtGo(phase: 0), unit_id: 20),
     from: step.Connection(ConnectionId(2)),
     offence: Offence(
       blows: [
@@ -177,7 +177,7 @@ pub fn two_strikes_that_cross_are_answered_in_turn_and_the_second_finds_a_corpse
     )
   assert second.answer
     == Answered(
-      key: Key(cast_id: 2, phase: 0, unit_id: 20),
+      key: Key(cast_id: 2, occasion: strike_tell.AtGo(phase: 0), unit_id: 20),
       outcome: Refused(why: Dead),
     )
     as "Spell4ValidTargets.targetBitmask: a dead unit is never struck"

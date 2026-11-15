@@ -88,6 +88,7 @@ fn selection(
       False -> []
     },
     controls: [],
+    ticking: [],
   )
 }
 
@@ -138,6 +139,7 @@ fn tells(effects effects: List(Effect)) -> List(strike.Effect) {
       strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Went(..)
+      | strike.Ticked(..)
       | strike.Released(..)
       | strike.Log(..) -> False
     }
@@ -153,6 +155,7 @@ fn went(effects effects: List(Effect)) -> List(#(Int, Int, List(cast.Struck))) {
       strike.TellStrike(..)
       | strike.StartTimer(..)
       | strike.CancelTimer(..)
+      | strike.Ticked(..)
       | strike.Released(..)
       | strike.Log(..) -> Error(Nil)
     }
@@ -165,6 +168,7 @@ fn timers(effects effects: List(Effect)) -> List(strike.Effect) {
       strike.StartTimer(..) | strike.CancelTimer(..) -> True
       strike.TellStrike(..)
       | strike.Went(..)
+      | strike.Ticked(..)
       | strike.Released(..)
       | strike.Log(..) -> False
     }
@@ -212,6 +216,7 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
         strike.StartTimer(..)
         | strike.CancelTimer(..)
         | strike.Went(..)
+        | strike.Ticked(..)
         | strike.Released(..)
         | strike.Log(..) -> Error(Nil)
       }
@@ -221,21 +226,21 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
       #(
         10,
         3,
-        Key(cast_id: 5, phase: 0, unit_id: 10),
+        Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
         step.Connection(ConnectionId(2)),
         Rolls(crit: 0.0, deflect: 0.5, glance: 0.0),
       ),
       #(
         11,
         3,
-        Key(cast_id: 5, phase: 0, unit_id: 11),
+        Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 11),
         step.Connection(ConnectionId(2)),
         Rolls(crit: 0.25, deflect: 0.75, glance: 0.5),
       ),
       #(
         12,
         3,
-        Key(cast_id: 5, phase: 0, unit_id: 12),
+        Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 12),
         step.Connection(ConnectionId(2)),
         Rolls(crit: 0.0, deflect: 0.0, glance: 0.0),
       ),
@@ -288,6 +293,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         area: [10],
         blows: [paralytic_surge, telekinetic_strike],
         controls: [],
+        ticking: [],
       ),
       attacker: Attacker(..strike_support.attacker(), stats: novice),
       formulas: rating_support.formulas(),
@@ -331,7 +337,9 @@ pub fn answers_out_of_order_are_listed_in_selection_order_when_the_round_closes_
       selection: selection(asked: go, units: [10, 11, 12], damaging: True),
       now_ms: 1000,
     )
-  let key = fn(unit_id) { Key(cast_id: 5, phase: 0, unit_id:) }
+  let key = fn(unit_id) {
+    Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id:)
+  }
   let #(state, first) =
     answer(state:, key: key(12), outcome: landed(), now_ms: 1100)
   let #(state, second) =
@@ -350,6 +358,7 @@ pub fn answers_out_of_order_are_listed_in_selection_order_when_the_round_closes_
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
         cast.Hit(
           unit_id: 12,
@@ -357,6 +366,7 @@ pub fn answers_out_of_order_are_listed_in_selection_order_when_the_round_closes_
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ]),
     ]
@@ -372,7 +382,9 @@ pub fn a_creature_that_died_in_flight_is_left_out_and_the_count_is_not_refilled_
       selection: selection(asked: go, units: [10, 11, 12], damaging: True),
       now_ms: 1000,
     )
-  let key = fn(unit_id) { Key(cast_id: 5, phase: 0, unit_id:) }
+  let key = fn(unit_id) {
+    Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id:)
+  }
   let #(state, _) =
     answer(state:, key: key(10), outcome: Refused(why: Dead), now_ms: 1100)
   let #(state, _) =
@@ -388,6 +400,7 @@ pub fn a_creature_that_died_in_flight_is_left_out_and_the_count_is_not_refilled_
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
         cast.Hit(
           unit_id: 12,
@@ -395,6 +408,7 @@ pub fn a_creature_that_died_in_flight_is_left_out_and_the_count_is_not_refilled_
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ]),
     ]
@@ -413,7 +427,7 @@ pub fn a_silent_creature_is_left_out_at_the_deadline_on_a_driven_timer_test() ->
   let #(state, _) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 1100,
     )
@@ -430,6 +444,7 @@ pub fn a_silent_creature_is_left_out_at_the_deadline_on_a_driven_timer_test() ->
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ]),
     ]
@@ -469,7 +484,7 @@ pub fn an_answer_for_a_closed_round_is_dropped_test() -> Nil {
   let #(_, late) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 2500,
     )
@@ -502,7 +517,7 @@ pub fn a_later_phase_is_never_written_before_an_earlier_one_test() -> Nil {
   let #(state, later) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 1, unit_id: 11),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 1), unit_id: 11),
       outcome: landed(),
       now_ms: 1300,
     )
@@ -511,7 +526,7 @@ pub fn a_later_phase_is_never_written_before_an_earlier_one_test() -> Nil {
   let #(_, earlier) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 1400,
     )
@@ -579,7 +594,7 @@ pub fn the_one_strike_timer_moves_to_the_next_open_deadline_test() -> Nil {
   let #(_, closed) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 1600,
     )
@@ -629,6 +644,7 @@ pub fn a_spell_that_only_selects_names_each_unit_at_once_without_a_tell_test() -
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
       ]),
     ]
@@ -654,7 +670,7 @@ pub fn the_player_leaving_cancels_the_timer_and_drops_later_answers_test() -> Ni
   let #(_, late) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 1100,
     )
@@ -681,7 +697,7 @@ pub fn health_news_of_a_unit_of_an_open_round_is_held_until_the_rounds_go_test()
   let #(state, first) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 1100,
     )
@@ -690,13 +706,14 @@ pub fn health_news_of_a_unit_of_an_open_round_is_held_until_the_rounds_go_test()
   let #(state, closing) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 11),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 11),
       outcome: landed(),
       now_ms: 1200,
     )
   assert list.map(closing, fn(effect) {
       case effect {
         strike.Went(..) -> "went"
+        strike.Ticked(..) -> "ticked"
         strike.Released(unit_id:, ..) -> "released " <> unit_label(unit_id)
         strike.CancelTimer(..) -> "cancel"
         strike.TellStrike(..) | strike.StartTimer(..) | strike.Log(..) ->
@@ -723,7 +740,7 @@ pub fn a_closing_rounds_timer_effects_come_before_its_go_so_the_rounds_the_go_be
   let #(state, closing) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 1100,
     )
@@ -751,6 +768,7 @@ pub fn a_closing_rounds_timer_effects_come_before_its_go_so_the_rounds_the_go_be
 fn effect_label(effect: Effect) -> String {
   case effect {
     strike.Went(..) -> "went"
+    strike.Ticked(..) -> "ticked"
     strike.Released(..) -> "released"
     strike.CancelTimer(..) -> "cancel"
     strike.StartTimer(..) -> "start"
@@ -785,14 +803,14 @@ pub fn the_news_held_for_a_unit_is_dropped_when_the_unit_is_forgotten_test() -> 
   let #(state, _) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 10),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
       outcome: landed(),
       now_ms: 1100,
     )
   let #(_, closing) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 11),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 11),
       outcome: landed(),
       now_ms: 1200,
     )
@@ -803,6 +821,7 @@ pub fn the_news_held_for_a_unit_is_dropped_when_the_unit_is_forgotten_test() -> 
         | strike.StartTimer(..)
         | strike.CancelTimer(..)
         | strike.Went(..)
+        | strike.Ticked(..)
         | strike.Log(..) -> Error(Nil)
       }
     })
@@ -1112,6 +1131,7 @@ fn mind_burst_go(points points: Int) -> GoAsked {
         | cast.TargetChangeEnds(..)
         | cast.Activated(..)
         | cast.ShortcutCast(..)
+        | cast.TickStrike(..)
         | cast.StealthChanged(..) -> Error(Nil)
       }
     })
@@ -1305,7 +1325,7 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
   let #(_, closed) =
     answer(
       state:,
-      key: Key(cast_id: 5, phase: 0, unit_id: 11),
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 11),
       outcome: Landed(descriptions: [], controls: [landed], armor_removed: 0),
       now_ms: 1050,
     )
@@ -1318,6 +1338,7 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
           descriptions: [],
           controls: [],
           armor_removed: 0,
+          ticking: [],
         ),
         cast.Hit(
           unit_id: 11,
@@ -1325,6 +1346,7 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
           descriptions: [],
           controls: [landed],
           armor_removed: 0,
+          ticking: [],
         ),
       ]),
     ]
@@ -1352,6 +1374,7 @@ pub fn a_state_aimed_at_the_area_does_not_reach_a_primary_target_outside_it_but_
         strike.StartTimer(..)
         | strike.CancelTimer(..)
         | strike.Went(..)
+        | strike.Ticked(..)
         | strike.Released(..)
         | strike.Log(..) -> Error(Nil)
       }
@@ -1386,6 +1409,7 @@ fn offence_of_caster_with(
         area: [10],
         blows: [blow],
         controls: [],
+        ticking: [],
       ),
       attacker: Attacker(..strike_support.attacker(), properties:),
       formulas: rating_support.formulas(),

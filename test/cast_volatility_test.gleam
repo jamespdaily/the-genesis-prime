@@ -274,6 +274,7 @@ fn started_told(
       | client_connection.CastFinished(..)
       | client_connection.CastInterrupted(..)
       | client_connection.CastMissed(..)
+      | client_connection.CastTicked(..)
       | client_connection.CastTargetsRemoved(..)
       | client_connection.CastStackRemoved(..)
       | client_connection.Appeared(..)
