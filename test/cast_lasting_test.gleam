@@ -29,10 +29,11 @@ import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
-import genesis_prime/step.{ConnectionId, LogDebug}
-import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId, Spell4Id}
+import genesis_prime/step.{ConnectionId}
+import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/list
 import gleam/option
+import gleam/string
 import owned_test
 import prerequisite_support
 
@@ -528,7 +529,14 @@ pub fn a_removal_behind_a_target_prerequisite_is_not_applied_with_a_debug_line_t
         base: 1,
         selector: lasting.Spell(Spell4Id(101)),
         count: 1,
-        condition: GatedOnTarget(prerequisite_id: PrerequisiteId(5)),
+        condition: GatedOnTarget(
+          prerequisite: prerequisite_support.single(id: 5, condition: #(
+            38,
+            1,
+            0,
+            5,
+          )),
+        ),
       ),
     ])
   let #(state, _) =
@@ -536,11 +544,10 @@ pub fn a_removal_behind_a_target_prerequisite_is_not_applied_with_a_debug_line_t
   let #(_, removal) =
     support.press(plans:, state:, bag: bag_of_base_1, at: 1100)
   assert support.removed_targets(support.writes(effects: removal)) == []
-  assert list.any(support.logs(effects: removal), fn(line) {
-    line.0 == LogDebug
-    && line.1
-    == "the SpellForceRemove effect 196521 applies only behind target prerequisite 5, which is not checked, so it is not applied"
+  assert list.all(support.logs(effects: removal), fn(line) {
+    !string.contains(line.1, "prerequisite")
   })
+    as "the gate is read and the caster fails it: no line about it"
 }
 
 // ---- stacking ----

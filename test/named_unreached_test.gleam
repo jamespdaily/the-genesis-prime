@@ -12,7 +12,8 @@
 //// - The real tables (coverage tag, skipped where the client's files are absent): the
 ////   rows of the measured table of the step's design, each from the list and the
 ////   tables. Quick Draw 43468 holds text 404550, whose `eff 196652` is in 76003 (Quick
-////   Draw surged). Nano Skin: Lethal 60769 holds text 519096, whose `eff 97462` and
+////   Draw surged), which the walk reaches through the alternate 76002, so it is not
+////   counted as unreached. Nano Skin: Lethal 60769 holds text 519096, whose `eff 97462` and
 ////   `cc 97462` are in 42736 (Cripple). Eradication ExoSuit 47860 holds text 466631,
 ////   whose `eff 123743` and `spell 52370` name 52370, which only the Proc 123744 of
 ////   52371 casts, a kind of 12 the plan does not read (`ProcKindNotRead`). Spell Surge
@@ -372,23 +373,11 @@ fn entry_of(
   entry
 }
 
-pub fn the_real_tables_count_76003_and_42736_with_no_reason_test() -> Nil {
+pub fn the_real_tables_count_42736_with_no_reason_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let named = real_named()
-  assert entry_of(named.counted, 76_003)
-    == Entry(
-      spell: 76_003,
-      namings: [
-        Naming(
-          token: Token(tooltip_token.Eff, 196_652, "input0pct"),
-          text_id: 404_550,
-          named_by: [43_468],
-        ),
-      ],
-      reason: None,
-    )
   assert entry_of(named.counted, 42_736)
     == Entry(
       spell: 42_736,
@@ -484,12 +473,12 @@ pub fn the_real_tables_count_72652_by_the_effect_of_its_tooltip_and_list_it_as_a
     )
 }
 
-pub fn the_real_tables_hold_exactly_four_counted_and_no_missing_row_with_volatility_planted_test() -> Nil {
+pub fn the_real_tables_hold_exactly_three_counted_and_no_missing_row_with_volatility_planted_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let named = real_named()
-  assert spells_of(named.counted) == [42_736, 52_370, 72_652, 76_003]
-    as "42148 is absent: the Proxy row of migration 0018 casts it"
+  assert spells_of(named.counted) == [42_736, 52_370, 72_652]
+    as "42148 is absent: the Proxy row of migration 0018 casts it, and 76003 is absent: the walk reaches it through the alternate 76002 of Quick Draw 43468 (`Spell4.spell4IdMechanicAlternateSpell`), so no unreached spell is named for it"
   assert named.no_row == []
 }

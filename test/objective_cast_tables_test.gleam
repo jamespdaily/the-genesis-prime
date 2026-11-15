@@ -147,10 +147,10 @@ pub fn the_targeted_objective_spells_plan_test() -> Nil {
       }
     })
     |> list.sort(by: int.compare)
-  assert list.length(aimed_ids(shortcuts:)) == 56
-    as "56 of the 59 distinct spells the 73 targeted type 11 rows name plan as Aimed (`spell_plan.spell_alone`, measured over the client's table), Spell4 35436 among them without its until-removed Knockdown row"
-  assert cannot_be_planned == [34_470, 34_471, 34_474]
-    as "the other 3 spells cannot be planned (`spell_plan.spell_alone`), so their presses are refused 285 as not built"
+  assert list.length(aimed_ids(shortcuts:)) == 55
+    as "55 of the 59 distinct spells the 73 targeted type 11 rows name plan as Aimed (`spell_plan.spell_alone`, measured over the client's table), Spell4 35436 among them without its until-removed Knockdown row"
+  assert cannot_be_planned == [34_470, 34_471, 34_474, 43_461]
+    as "the other 4 spells cannot be planned (`spell_plan.spell_alone`), so their presses are refused 285 as not built; Spell4 43461's effect 99378 (type 17, aimed at the primary target) is behind target gate Prerequisite 21, whose condition is of type 12, which the server does not read (#818)"
 }
 
 /// The rows whose Aimed spell has a CasterCast the server reads none of, or a TargetCast

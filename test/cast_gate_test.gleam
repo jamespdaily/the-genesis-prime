@@ -32,7 +32,6 @@ import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
 import gleam/string
 import owned_test
 import prerequisite_support
@@ -237,6 +236,41 @@ pub fn a_type_37_gate_starts_the_child_when_its_roll_is_at_most_the_value_test()
     as "a roll of 51 fails"
 }
 
+pub fn a_type_37_target_gate_of_a_proxy_on_the_caster_takes_one_roll_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The Proxy's target gate is checked on the caster, its first unit, with a roll off the
+  // front of the go's rolls (Prerequisite 4585, comparison 6 on 50).
+  let spell =
+    spell_with(
+      proxies: [
+        proxy(spell_plan.GatedOnCasterAndTarget(
+          caster: [],
+          target: chance_gate(),
+        )),
+      ],
+      gains: [],
+    )
+  let #(state, asked) = live_go_of(spell:)
+  assert cast.rolls_needed(
+      cast: state,
+      cast_id: asked.cast_id,
+      phase: asked.phase,
+      struck: [],
+    )
+    == 1
+    as "the one type 37 condition of the target gate, checked on the caster"
+  assert children_started(
+      pressed(spell:, caster: support.caster(), rolls: [50]),
+    )
+    == 1
+    as "a roll of 50 passes comparison 6 on 50"
+  assert children_started(
+      pressed(spell:, caster: support.caster(), rolls: [51]),
+    )
+    == 0
+    as "a roll of 51 fails"
+}
+
 fn live_go_of(spell spell: Spell) -> #(cast.State, cast.GoAsked) {
   let plans = support.with_spells(plans: support.plans(), spells: [spell])
   let #(state, raw) =
@@ -335,9 +369,84 @@ fn gain_behind(
     slot: 1,
     amount: 5,
     phase_flags: 1,
-    prerequisite: Some(prerequisite),
+    condition: spell_plan.GatedOnCaster(gates: [prerequisite]),
     tag: spend.always,
   )
+}
+
+fn gain_under(condition condition: spell_plan.Condition) -> spell_plan.Gain {
+  spell_plan.Gain(
+    effect_id: Spell4EffectsId(2),
+    slot: 1,
+    amount: 5,
+    phase_flags: 1,
+    condition:,
+    tag: spend.always,
+  )
+}
+
+pub fn a_gain_behind_a_target_gate_reads_the_caster_as_the_unit_it_reaches_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Prerequisite 903 is type 28, comparison 1: in combat. A gain aims at the caster alone,
+  // so the unit its target apply prerequisite is checked on is the caster's own.
+  let spell =
+    spell_with(proxies: [], gains: [
+      gain_under(
+        condition: spell_plan.GatedOnTarget(
+          prerequisite: prerequisite_support.single(id: 903, condition: #(
+            28,
+            1,
+            0,
+            0,
+          )),
+        ),
+      ),
+    ])
+  assert support.gains(effects: pressed(spell:, caster: in_combat(), rolls: []))
+    == [[Gain(slot: 1, amount: 5)]]
+    as "the caster is in combat: the target gate passes on the caster, so the gain is given"
+  assert support.gains(
+      effects: pressed(spell:, caster: support.caster(), rolls: []),
+    )
+    == []
+    as "the caster is not in combat: the target gate fails on the caster, so the gain is not given"
+}
+
+pub fn a_gain_needs_both_its_gates_and_takes_a_roll_for_a_type_37_target_gate_test() -> Nil {
+  use <- owned_test.run(5000)
+  let spell =
+    spell_with(proxies: [], gains: [
+      gain_under(condition: spell_plan.GatedOnCasterAndTarget(
+        caster: [
+          prerequisite_support.single(id: 903, condition: #(28, 1, 0, 0)),
+        ],
+        target: chance_gate(),
+      )),
+    ])
+  let #(state, asked) = live_go_of(spell:)
+  assert cast.rolls_needed(
+      cast: state,
+      cast_id: asked.cast_id,
+      phase: asked.phase,
+      struck: [],
+    )
+    == 1
+    as "the one type 37 condition of the target gate, 4585 (comparison 6 on 50)"
+  assert support.gains(
+      effects: pressed(spell:, caster: in_combat(), rolls: [50]),
+    )
+    == [[Gain(slot: 1, amount: 5)]]
+    as "both gates pass: in combat, and a roll of 50 is at most 50"
+  assert support.gains(
+      effects: pressed(spell:, caster: in_combat(), rolls: [51]),
+    )
+    == []
+    as "a roll of 51 fails the target gate"
+  assert support.gains(
+      effects: pressed(spell:, caster: support.caster(), rolls: [50]),
+    )
+    == []
+    as "the caster gate fails out of combat though the roll passes"
 }
 
 pub fn a_gain_behind_a_type_73_prerequisite_reads_the_class_resource_slot_of_the_vital_test() -> Nil {

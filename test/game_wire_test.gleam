@@ -305,26 +305,12 @@ pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_
   login_support.stop(started)
 }
 
-pub fn a_stop_closes_every_listener_to_new_connects_before_an_open_game_connection_drains_and_it_still_gets_0x036a_reason_8_test() -> Nil {
+pub fn an_open_game_connection_gets_0x036a_reason_8_when_the_server_stops_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(started, ports, account_id) = login_support.start_with_jim()
-  let account = AccountId(account_id)
-  let game = in_select(started:, port: ports.game_port, account:)
-  let assert [connection] =
-    ask_support.connections_of(started.settings.game.listener)
-    as "the game listener holds the one connection"
-  // The connection is held back, so the game listener's stop waits for it
-  // while the connects below are tried.
-  let stopping =
-    ask_support.while_suspended(process: connection, body: fn() {
-      let stopping = ask_support.begin_stop_tree(started.tree)
-      await_refused(ports.game_port)
-      assert login_client.refused(ports.sts_port)
-        as "the STS listener no longer takes a socket by the time the game listener's is closed: the stop closes the listeners before it drains any connection"
-      assert login_client.refused(ports.auth_port)
-        as "nor does the auth listener"
-      stopping
-    })
+  let game =
+    in_select(started:, port: ports.game_port, account: AccountId(account_id))
+  let stopping = ask_support.begin_stop_tree(started.tree)
   let assert [notice] = game_client.read(game:, count: 1)
   game_client.nothing_more(game:)
   assert notice.message_id == 0x036A as "opcode.0x36a"
@@ -342,12 +328,54 @@ pub fn a_stop_closes_every_listener_to_new_connects_before_an_open_game_connecti
   Nil
 }
 
-/// Waits until a connect to the port is refused: a wait for the listener to
-/// close, which the test's own deadline warns of, naming it, while it goes on.
-fn await_refused(port: Int) -> Nil {
-  event_wait.until("a connect to the closed listener is refused", fn() {
-    login_client.refused(port)
-  })
+/// The stop closes the STS, auth and game listeners to new sockets before it
+/// stops any connection (`genesis_prime/connection/closer`). The game
+/// connection is held, so it takes no exit until the test lets it. The held
+/// connection's own listener stops it only after that listener's socket is
+/// closed and after the closer has ended, so the exit reaching it means the
+/// stop has begun draining. Each port is then waited on until it refuses: the
+/// operating system can take a moment past the owner's exit to close a socket
+/// it had just accepted on, and the connection is still held, so every refusal
+/// is seen before any connection drained.
+pub fn the_stop_closes_every_listener_before_any_connection_drains_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started =
+    login_support.start_with(change: fn(settings) {
+      server.Settings(
+        ..settings,
+        connection_shutdown_ms: ask_support.beyond_the_test_ms,
+      )
+    })
+  let account = AccountId(login_support.insert_jim(started))
+  let ports = login_support.ports(started)
+  let _game = in_select(started:, port: ports.game_port, account:)
+  let assert [connection] =
+    ask_support.connections_of(started.settings.game.listener)
+    as "the game listener holds the one connection"
+  let stopping =
+    ask_support.while_suspended(process: connection, body: fn() {
+      let stopping = ask_support.begin_stop_tree(started.tree)
+      event_wait.until("the stop's exit reaches the held game connection", fn() {
+        mailbox_support.tagged(connection, atom.create("EXIT")) > 0
+      })
+      event_wait.until(
+        "the STS listener takes no socket once the stop is draining connections",
+        fn() { login_client.refused(ports.sts_port) },
+      )
+      event_wait.until("the auth listener takes no socket either", fn() {
+        login_client.refused(ports.auth_port)
+      })
+      event_wait.until("the game listener takes no socket either", fn() {
+        login_client.refused(ports.game_port)
+      })
+      stopping
+    })
+  let _reason =
+    ask_support.ended(
+      watched: stopping,
+      what: "the server's tree to end once the held connection takes its exit",
+    )
+  Nil
 }
 
 /// A create request for CharacterCreation row 466 with a path of 1 and the

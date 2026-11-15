@@ -267,18 +267,19 @@ fn unread_effect_rows(tables: store.Tables) -> Dict(Int, Int) {
 }
 
 /// What a type 17 or 18 row the plan does not read leaves out: its go lists no row aimed
-/// by flags the plan refuses, and applies none behind a target apply prerequisite.
+/// by flags the plan refuses, and none behind a target apply prerequisite the plan cannot
+/// check.
 const lasting_gap =
-  "rows aimed by flags the plan refuses or behind a target prerequisite (#336), which no go applies"
+  "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses"
 
 /// The same for type 80, whose rows the plan also refuses where the two columns that hold
 /// the count of stacks differ or a selector names no row.
 const force_remove_gap =
-  "rows aimed by flags the plan refuses, behind a target prerequisite (#336), with differing stack counts (dataBits03 and dataBits04) or a selector that names no spell group, Spell4 or Spell4Base, which no go applies or the plan refuses"
+  "rows aimed by flags the plan refuses, behind an apply prerequisite whose conditions the plan cannot check (#817, #818), with differing stack counts (dataBits03 and dataBits04) or a selector that names no spell group, Spell4 or Spell4Base, which the plan refuses"
 
 /// The same for type 81, whose script the client does not hold either.
 const signal_gap =
-  "rows aimed by flags the plan refuses or behind a target prerequisite (#336), which no go applies; the script a signal stands for is not in the client"
+  "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; the script a signal stands for is not in the client"
 
 /// What type 145 reads of a row, whose computation is the server's choice.
 const conversion_gap =
@@ -314,7 +315,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 3,
-        reason: "rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite, which no go applies (#336)",
+        reason: "rows, or parts of rows, aimed at another unit (#336); rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
         fact_key: "Spell4Effects.effectType.3",
       ),
       Missing(
@@ -329,12 +330,12 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 10,
-        reason: "rows aimed only at other units or behind a target apply prerequisite, which no go applies; periodic rows that last until removed (flags bit 2, #803), which the plan leaves out; rows with a formula parameter the plan refuses; rows of a spell a Proxy starts on each struck unit, whose heal on that unit is not built (#570)",
+        reason: "rows aimed only at other units or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; periodic rows that last until removed (flags bit 2, #803), which the plan leaves out; rows with a formula parameter the plan refuses; rows of a spell a Proxy starts on each struck unit, whose heal on that unit is not built (#570)",
         fact_key: "spell.heal_result_log",
       ),
       Missing(
         type_number: 11,
-        reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite, which no go applies (#336)",
+        reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
         fact_key: "Spell4Effects.effectType.11",
       ),
       Missing(
@@ -359,7 +360,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 29,
-        reason: "rows aimed only at other units, periodic (tickTime), with no lifetime, with a formula parameter the plan refuses, whose amount is 0 for every caster (which of dataBits00 and dataBits01 is the amount when the other is 0 is not read), behind a target apply prerequisite, or aimed at the primary target of a spell a Proxy starts on each struck unit, whose pool the server does not hold",
+        reason: "rows aimed only at other units, periodic (tickTime), with no lifetime, with a formula parameter the plan refuses, whose amount is 0 for every caster (which of dataBits00 and dataBits01 is the amount when the other is 0 is not read), behind an apply prerequisite whose conditions the plan cannot check (#817, #818), or aimed at the primary target of a spell a Proxy starts on each struck unit, whose pool the server does not hold",
         fact_key: "Spell4Effects.effectType.29",
       ),
       Missing(
@@ -374,7 +375,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 73,
-        reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite, which no go applies (#336)",
+        reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
         fact_key: "Spell4Effects.effectType.73",
       ),
       Missing(
@@ -389,12 +390,12 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 83,
-        reason: "rows aimed at another unit, behind a target prerequisite or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
+        reason: "rows aimed at another unit, behind a target prerequisite whose conditions the plan cannot check (#818) or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
         fact_key: "Spell4Effects.effectType.83",
       ),
       Missing(
         type_number: 84,
-        reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
+        reason: "rows aimed at another unit or behind a target prerequisite whose conditions the plan cannot check (#818), which the plan refuses",
         fact_key: "Spell4Effects.effectType.84",
       ),
       Missing(
@@ -404,7 +405,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 118,
-        reason: "rows aimed at another unit, periodic rows that last until removed (flags bit 2, #803), rows behind a target apply prerequisite or with a formula parameter the plan refuses",
+        reason: "rows aimed at another unit, periodic rows that last until removed (flags bit 2, #803), rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818) or with a formula parameter the plan refuses",
         fact_key: "Spell4Effects.effectType.118",
       ),
       Missing(

@@ -17,8 +17,8 @@
 //// - **One decision for each effect row.** `read_row` says what the plan makes of a
 ////   Spell4Effects row in the place its spell is planned (`RowPlace`): in a list of its
 ////   spell and applied by a go (`Applied`), in a list and applied by none (`Held`: a
-////   periodic gain or heal, a row behind a target apply prerequisite, which the cast rule
-////   does not check, `cast.condition_gate`), in no list (`LeftOut`), a damage row the area
+////   periodic gain, a property change or disguise with no life, a row whose phaseFlags is
+////   0), in no list (`LeftOut`), a damage row the area
 ////   load reads (`ReadByArea`), or an error that fails the load. The lists of a spell are
 ////   made from these readings, and the coverage measure counts a row read exactly when it
 ////   is `Applied` (genesis_prime/coverage/effect_row), so the two cannot disagree. A spell
@@ -64,8 +64,8 @@
 ////   dataBits01, which must name a row, and the count of stacks is read only where
 ////   dataBits03 and dataBits04 agree. Each is applied when its caster apply
 ////   prerequisite passes against the caster, and one behind a target apply
-////   prerequisite is not applied. Unlike a Proxy's, their dataBits06 is no
-////   prerequisite. A `Spell` also holds its spell groups (`Spell4.spell4GroupListId`)
+////   prerequisite is applied only to the units that pass it (`GatedOnTarget`). Unlike
+////   a Proxy's, their dataBits06 is no prerequisite. A `Spell` also holds its spell groups (`Spell4.spell4GroupListId`)
 ////   and its stack group with the group's cap (`Spell4.spell4StackGroupId`,
 ////   `Spell4StackGroup.stackCap`), and whether its lifetimes take the larger of delay
 ////   and duration (`Spell4.propertyFlags` 0x2000).
@@ -131,8 +131,8 @@
 ////   restores (health or shield): its formula (dataBits00 as a float,
 ////   dataBits01 and the four parameters, which must be kinds the caster's value reads,
 ////   genesis_prime/game/damage `caster_unread`), its delay, aim and caster apply
-////   prerequisite, which the cast rule checks and which a target apply prerequisite
-////   leaves not applied; a row with a tickTime is a `TickingHeal`, with the schedule of
+////   prerequisite, which the cast rule checks, and target apply prerequisite, which it
+////   checks for the unit the row heals; a row with a tickTime is a `TickingHeal`, with the schedule of
 ////   its ticks (genesis_prime/game/ticking), each tick its own 0x7f8. A periodic row that
 ////   lasts until removed (flags bit 2) is left out (`HealUntilRemoved`, issue 803). A row
 ////   aimed only at other units (4 and 6) is not read. A child a Proxy starts on each struck unit that holds a heal aimed at
@@ -255,8 +255,10 @@
 ////   rows it nests, a cost of a type
 ////   not read, a cycle of Proxy effects, a channel with no pulse time, a gain
 ////   aimed other than at the caster, of a vital other than 6 or 8, or behind a
-////   target apply prerequisite, and an effect of a spell that spends every point
-////   held with an emmComparison other than 0 or 1; a Fluff or SpellForceRemove effect
+////   target apply prerequisite, an effect behind a target apply prerequisite with a
+////   condition of a type not read (issue 818) or, past the caster, of a type that reads
+////   a struck creature's own state (issue 817), and an effect of a spell that spends
+////   every point held with an emmComparison other than 0 or 1; a Fluff or SpellForceRemove effect
 ////   aimed other than at the caster, the primary target or the area; a type 80
 ////   effect with a dataBits00 other than 1 to 3, naming no group, Spell4 or
 ////   Spell4Base, or whose dataBits03 and dataBits04 differ; a Spell4GroupList or
@@ -386,9 +388,12 @@ pub type Condition {
   /// passes against the caster: its caster apply prerequisite, then the one its
   /// dataBits06 names (`Spell4Effects.effectType.26.dataBits06`).
   GatedOnCaster(gates: List(Prerequisite))
-  /// The effect applies only behind this target apply prerequisite, which is not
-  /// checked: the effect is not applied. Only an effect that is not a Proxy has it.
-  GatedOnTarget(prerequisite_id: PrerequisiteId)
+  /// The effect applies only to the units that pass this target apply prerequisite, the
+  /// struck unit first and the caster second (`Spell4Effects.prerequisiteIdTargetApply`);
+  /// the cast rule checks it for each unit the row reaches, in the caster's picture of the
+  /// world. The plan holds it only where the cast can read it for those units
+  /// (`target_gate_read`). Only an effect that is not a Proxy has it.
+  GatedOnTarget(prerequisite: Prerequisite)
   /// Only a Proxy has it. The Proxy starts its child on a unit when every one of these caster gates passes
   /// against the caster and the target gate passes against that unit, the struck unit for
   /// a Proxy aimed at the area and the caster for one aimed at the caster
@@ -399,16 +404,16 @@ pub type Condition {
 
 /// A resource gain of a spell: a VitalModifier aimed at the caster
 /// (`Spell4Effects.effectType.1`), `amount` points of resource slot `slot`, in the
-/// phases of `phase_flags`, given when its caster apply prerequisite passes or it
-/// has none, and when its `tag` holds for the points the cast spent
-/// (genesis_prime/game/spend).
+/// phases of `phase_flags`, given when its `condition` passes against the caster, whose
+/// own unit is the unit the row reaches, and when its `tag` holds for the points the cast
+/// spent (genesis_prime/game/spend).
 pub type Gain {
   Gain(
     effect_id: Spell4EffectsId,
     slot: Int,
     amount: Int,
     phase_flags: Int,
-    prerequisite: Option(Prerequisite),
+    condition: Condition,
     tag: spend.Tag,
   )
   /// A gain each `tick_ms` for `duration_ms` (Spell4Effects.tickTime and
@@ -418,7 +423,7 @@ pub type Gain {
     slot: Int,
     amount: Int,
     phase_flags: Int,
-    prerequisite: Option(Prerequisite),
+    condition: Condition,
     tag: spend.Tag,
     tick_ms: Int,
     duration_ms: Int,
@@ -746,8 +751,8 @@ pub type ProcReading {
 /// cooldowns (`modifier`), its delay, durationTime and flags bit 2 (`row`, which also
 /// give the caster's node of the cast its life, as a Fluff effect's do), the phases of
 /// `phase_flags` it applies in, when its `condition` holds (its caster apply
-/// prerequisite against the caster; one behind a target apply prerequisite is not
-/// applied), and when its `tag` holds for the points the cast spent
+/// prerequisite against the caster, its target apply prerequisite against the caster
+/// as the only unit it reaches), and when its `tag` holds for the points the cast spent
 /// (genesis_prime/game/spend). A row aimed only at other units is not read, and the
 /// part of a row's aim that is not the caster is not applied (`effect_kind.is_row_read`).
 pub type CooldownModifier {
@@ -765,8 +770,8 @@ pub type CooldownModifier {
 /// include the caster: the `delay_ms` the go lists it with (the move itself, its kind
 /// and distance, the caster's client works out and carries out
 /// (`Spell4Effects.effectType.3.player`) and no rule of the server reads), the phases of `phase_flags` it applies in, when its `condition`
-/// holds (its caster apply prerequisite against the caster; one behind a target apply
-/// prerequisite is not applied), and when its `tag` holds for the points the cast spent
+/// holds (its caster apply prerequisite against the caster, its target apply
+/// prerequisite against the caster as the only unit it reaches), and when its `tag` holds for the points the cast spent
 /// (genesis_prime/game/spend). A row aimed only at other units is not read, and the part
 /// of a row's aim that is not the caster is not applied (`effect_kind.is_row_read`).
 pub type ForcedMove {
@@ -813,8 +818,8 @@ pub type Absorption {
 /// targetFlags include the caster: the change it makes to the caster (`change`), its delay, durationTime and flags bit 2 (`row`, which also give the
 /// caster's node of the cast its life, as a Fluff effect's do), the phases of
 /// `phase_flags` it applies in, when its `condition` holds (its caster apply
-/// prerequisite against the caster; one behind a target apply prerequisite is not
-/// applied), and when its `tag` holds for the points the cast spent
+/// prerequisite against the caster, its target apply prerequisite against the caster
+/// as the only unit it reaches), and when its `tag` holds for the points the cast spent
 /// (genesis_prime/game/spend). A type 11 row aimed only at other units (2, 4, 6) is a
 /// `StruckChange` on the creatures a strike hits; any other row aimed only at other
 /// units is not read, and the part of a row's aim that is not the caster is not applied
@@ -860,8 +865,8 @@ pub type CrowdControl {
 /// A Fluff effect (`Spell4Effects.effectType.17`), Scale effect (18), RavelSignal effect
 /// (81) or area ShieldOverload effect (64) of a spell: it names the unit it aims at in the go's target info and gives the
 /// spell a life there, from its `row`, in the phases of `phase_flags`, when its
-/// `condition` holds (its caster apply prerequisite against the caster; one behind a
-/// target apply prerequisite is not applied), and when its `tag` holds for the points
+/// `condition` holds (its caster apply prerequisite against the caster, its target
+/// apply prerequisite against each unit the row reaches), and when its `tag` holds for the points
 /// the cast spent (genesis_prime/game/spend). Its dataBits need no handling: the client
 /// resizes the unit of a Scale effect itself (`Spell4Effects.effectType.18`), and a
 /// RavelSignal effect is only a life (`Spell4Effects.effectType.81`); the client marks a
@@ -881,7 +886,7 @@ pub type Lasting {
 /// targetFlags reach the caster (`effect_kind.is_row_read`): the unit it heals (`aim`: the caster,
 /// or the primary target of a spell cast on the caster), the phases of `phase_flags` it
 /// applies in, when its `condition` holds (its caster apply prerequisite against the
-/// caster; one behind a target apply prerequisite is not applied), and when its `tag`
+/// caster, its target apply prerequisite against the unit it heals), and when its `tag`
 /// holds for the points the cast spent (genesis_prime/game/spend). The part of a row's
 /// aim that is not the caster is not applied (`effect_kind.is_row_read`).
 pub type Heal {
@@ -1039,8 +1044,7 @@ pub type RowReading {
   /// it read.
   Applied(row: PlannedRow)
   /// The row is in a list of its spell and no go applies it: a periodic gain
-  /// (`TickingGain`), a row behind a target apply prerequisite
-  /// (`cast.condition_gate`), a property change or disguise with no life
+  /// (`TickingGain`), a property change or disguise with no life
   /// (`lasting.has_life`) and a row whose phaseFlags is 0, which no phase selects
   /// (`in_phase`). The measure counts it not read.
   Held(row: PlannedRow)
@@ -1131,8 +1135,24 @@ pub type PlanError {
   GainAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A VitalModifier of a tree changes a vital other than 6 or 8, which is not read.
   GainVitalNotRead(spell4_id: Int, effect_id: Int, vital: Int)
-  /// A VitalModifier of a tree has a target apply prerequisite, which is not read.
-  GainTargetPrerequisiteNotRead(spell4_id: Int, effect_id: Int)
+  /// An effect of a tree is behind a target apply prerequisite, or, for a lasting, remove,
+  /// modifier or heal row, a caster apply prerequisite, with a condition of a type the
+  /// server has not decoded (`prerequisite.unread_types`): the issue "The prerequisite
+  /// types effects use that the server does not read yet are read" (#818) reads them.
+  ApplyPrerequisiteNotRead(
+    spell4_id: Int,
+    effect_id: Int,
+    prerequisite_type: Int,
+  )
+  /// An effect of a tree aimed past the caster is behind a target apply prerequisite with a
+  /// condition that reads a struck creature's own state (`prerequisite.struck_unread_types`):
+  /// the issue "A target prerequisite that reads a struck creature's own state is checked
+  /// against that creature" (#817) reads it.
+  TargetPrerequisiteReadsStruckUnit(
+    spell4_id: Int,
+    effect_id: Int,
+    prerequisite_type: Int,
+  )
   /// An effect of a spell that spends every point held holds an emmComparison other
   /// than 0 or 1, which chooses nothing (`Spell4Effects.emmComparison`).
   SpendComparisonNotRead(spell4_id: Int, effect_id: Int, comparison: Int)
@@ -1181,9 +1201,6 @@ pub type PlanError {
   /// A Stealth or RemoveStealth effect of a tree is aimed other than at the caster
   /// alone, which is not read (`Spell4Effects.targetFlags`).
   StealthAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
-  /// A Stealth or RemoveStealth effect of a tree has a target apply prerequisite, which
-  /// is not read.
-  StealthTargetPrerequisiteNotRead(spell4_id: Int, effect_id: Int)
   /// A Stealth effect of a tree has a delayTime or durationTime: timed stealth is not
   /// built (`Spell4Effects.effectType.83`).
   StealthTimedNotRead(spell4_id: Int, effect_id: Int)
@@ -1321,12 +1338,26 @@ pub fn describe(error error: PlanError) -> String {
       <> " of vital "
       <> int.to_string(vital)
       <> ", and only vitals 6 and 8 are read"
-    GainTargetPrerequisiteNotRead(spell4_id:, effect_id:) ->
+    ApplyPrerequisiteNotRead(spell4_id:, effect_id:, prerequisite_type:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
-      <> " has a VitalModifier effect "
+      <> " has an effect "
       <> int.to_string(effect_id)
-      <> " behind a target prerequisite, which is not read"
+      <> " behind an apply prerequisite with a condition of type "
+      <> int.to_string(prerequisite_type)
+      <> ", which is not decoded (#818)"
+    TargetPrerequisiteReadsStruckUnit(
+      spell4_id:,
+      effect_id:,
+      prerequisite_type:,
+    ) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has an effect "
+      <> int.to_string(effect_id)
+      <> " aimed past the caster behind a target apply prerequisite with a condition of type "
+      <> int.to_string(prerequisite_type)
+      <> ", which reads the state of the creature it strikes (#817)"
     SpendComparisonNotRead(spell4_id:, effect_id:, comparison:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1423,12 +1454,6 @@ pub fn describe(error error: PlanError) -> String {
       <> " aimed by flags "
       <> int.to_string(target_flags)
       <> ", and only the caster alone is read"
-    StealthTargetPrerequisiteNotRead(spell4_id:, effect_id:) ->
-      "the Spell4 row "
-      <> int.to_string(spell4_id)
-      <> " has a Stealth or RemoveStealth effect "
-      <> int.to_string(effect_id)
-      <> " behind a target apply prerequisite, which is not read"
     StealthTimedNotRead(spell4_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2201,9 +2226,10 @@ fn spell_of(
   Ok(spell)
 }
 
-/// One VitalModifier row as a gain, which must aim at the caster, change vital 6 or 8, and
-/// have no target apply prerequisite; its caster apply prerequisite is read from its row.
-/// A row with a tickTime is a `TickingGain`, which the cast rule does not apply.
+/// One VitalModifier row as a gain, which must aim at the caster and change vital 6 or 8;
+/// its condition is its caster apply and target apply prerequisites (`condition_of`), the
+/// target one checked against the caster, the only unit the row reaches. A row with a
+/// tickTime is a `TickingGain`, which the cast rule does not apply.
 fn gain_row_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -2218,29 +2244,25 @@ fn gain_row_of(
         target_flags: effect.target_flags,
       ))
   })
-  use Nil <- result.try(case effect.prerequisite_id_target_apply {
-    0 -> Ok(Nil)
-    _ -> Error(GainTargetPrerequisiteNotRead(spell4_id:, effect_id: effect.id))
-  })
-  use prerequisite <- result.try(case effect.prerequisite_id_caster_apply {
-    0 -> Ok(None)
-    id ->
-      prerequisite_of(tables:, id:)
-      |> result.map(Some)
-  })
+  use condition <- result.try(condition_of(
+    tables:,
+    effect:,
+    reach: OnlyTheCaster,
+    data_bits06_names_a_gate: False,
+  ))
   let effect_id = Spell4EffectsId(effect.id)
   let amount = effect.data_bits02
   let phase_flags = effect.phase_flags
   let tag = tag_of(effect:)
   Ok(case effect.tick_time {
-    0 -> Gain(effect_id:, slot:, amount:, phase_flags:, prerequisite:, tag:)
+    0 -> Gain(effect_id:, slot:, amount:, phase_flags:, condition:, tag:)
     tick_ms ->
       TickingGain(
         effect_id:,
         slot:,
         amount:,
         phase_flags:,
-        prerequisite:,
+        condition:,
         tag:,
         tick_ms:,
         duration_ms: effect.duration_time,
@@ -2324,10 +2346,10 @@ fn lasting_of(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Lasting, PlanError) {
   use aim <- result.try(lasting_aim_of(spell4_id:, effect:))
-  use condition <- result.map(condition_of(
+  use condition <- result.map(applied_condition_of(
     tables:,
     effect:,
-    data_bits06_names_a_gate: False,
+    reach: reach_of_aim(aim:),
   ))
   Lasting(
     effect_id: Spell4EffectsId(effect.id),
@@ -2368,10 +2390,10 @@ fn remove_of(
     effect:,
   ))
   use Nil <- result.try(force_remove_counts_read(spell4_id:, effect:))
-  use condition <- result.map(condition_of(
+  use condition <- result.map(applied_condition_of(
     tables:,
     effect:,
-    data_bits06_names_a_gate: False,
+    reach: reach_of_aim(aim:),
   ))
   ForceRemove(
     effect_id: Spell4EffectsId(effect.id),
@@ -2898,6 +2920,7 @@ fn forced_move_of(
   use condition <- result.map(condition_of(
     tables:,
     effect:,
+    reach: OnlyTheCaster,
     data_bits06_names_a_gate: False,
   ))
   ForcedMove(
@@ -2927,6 +2950,7 @@ fn cooldown_modifier_of(
   use condition <- result.map(condition_of(
     tables:,
     effect:,
+    reach: OnlyTheCaster,
     data_bits06_names_a_gate: False,
   ))
   CooldownModifier(
@@ -2949,10 +2973,10 @@ fn cooldown_modifier_of(
 }
 
 /// One Stealth effect (`Spell4Effects.effectType.83`) as a row, or the error that fails the
-/// load. It must aim at the caster alone (`Spell4Effects.targetFlags` 1), have no target
-/// apply prerequisite and no delayTime or durationTime; its dataBits02 is whether damage
-/// ends it (`Breaks`), and its caster apply prerequisite is read as a Fluff effect's is
-/// (`condition_of`). With no durationTime the stealth lasts until it is removed whatever
+/// load. It must aim at the caster alone (`Spell4Effects.targetFlags` 1) and have no
+/// delayTime or durationTime; its dataBits02 is whether damage ends it (`Breaks`), and its
+/// apply prerequisites are read as a Fluff effect's are (`condition_of`), the target one on
+/// the caster. With no durationTime the stealth lasts until it is removed whatever
 /// the row's flags say (`Spell4Effects.effectType.83`), so the row's node never ends by
 /// time.
 fn stealth_row_of(
@@ -2964,6 +2988,7 @@ fn stealth_row_of(
   use condition <- result.try(condition_of(
     tables:,
     effect:,
+    reach: OnlyTheCaster,
     data_bits06_names_a_gate: False,
   ))
   Ok(StealthRow(
@@ -2977,8 +3002,8 @@ fn stealth_row_of(
 }
 
 /// What a Stealth row says without a table: whether damage ends it, or the error that
-/// fails the load: it must aim at the caster alone, have no target apply prerequisite
-/// and no delayTime or durationTime, and hold a dataBits02 of 0 or 1.
+/// fails the load: it must aim at the caster alone, have no delayTime or durationTime, and
+/// hold a dataBits02 of 0 or 1.
 pub fn stealth_read(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
@@ -2998,20 +3023,16 @@ pub fn stealth_read(
   }
 }
 
-/// A Stealth or RemoveStealth effect must aim at the caster alone and have no target
-/// apply prerequisite, or the load fails (`Spell4Effects.targetFlags`).
+/// A Stealth or RemoveStealth effect must aim at the caster alone, or the load fails
+/// (`Spell4Effects.targetFlags`). Its target apply prerequisite, if any, is checked on the
+/// caster (`condition_of`).
 pub fn stealth_on_the_caster(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Nil, PlanError) {
-  case
-    aim_of(target_flags: effect.target_flags),
-    effect.prerequisite_id_target_apply
-  {
-    AimsAtCaster, 0 -> Ok(Nil)
-    AimsAtCaster, _ ->
-      Error(StealthTargetPrerequisiteNotRead(spell4_id:, effect_id: effect.id))
-    AimsAtPrimaryTarget, _ | AimsAtArea, _ | AimsAtBoth, _ | OtherAim(..), _ ->
+  case aim_of(target_flags: effect.target_flags) {
+    AimsAtCaster -> Ok(Nil)
+    AimsAtPrimaryTarget | AimsAtArea | AimsAtBoth | OtherAim(..) ->
       Error(StealthAimNotRead(
         spell4_id:,
         effect_id: effect.id,
@@ -3021,7 +3042,7 @@ pub fn stealth_on_the_caster(
 }
 
 /// One RemoveStealth effect (`Spell4Effects.effectType.84`) as a row, or the error that fails
-/// the load: it must aim at the caster alone and have no target apply prerequisite.
+/// the load: it must aim at the caster alone.
 fn remove_stealth_row_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -3031,6 +3052,7 @@ fn remove_stealth_row_of(
   use condition <- result.try(condition_of(
     tables:,
     effect:,
+    reach: OnlyTheCaster,
     data_bits06_names_a_gate: False,
   ))
   Ok(RemoveStealthRow(
@@ -3397,18 +3419,6 @@ fn spend_tag_read(
   ))
 }
 
-/// The row as `Held` when its condition is behind a target apply prerequisite, which no go
-/// applies (`cast.condition_gate`), and else `Applied`.
-fn by_condition(
-  row row: PlannedRow,
-  condition condition: Condition,
-) -> RowReading {
-  case condition {
-    GatedOnTarget(..) -> Held(row)
-    Always | GatedOnCaster(..) | GatedOnCasterAndTarget(..) -> Applied(row)
-  }
-}
-
 /// What the plan makes of one Spell4Effects row, in the place its spell is planned: the
 /// one decision the plan's lists are made from and the coverage measure counts by.
 ///
@@ -3487,9 +3497,7 @@ fn kind_reading(
     }
     effect_kind.ForceRemove ->
       remove_of(tables:, spell_groups:, spell4_id:, effect:)
-      |> result.map(fn(remove) {
-        by_condition(row: PlannedRemove(remove:), condition: remove.condition)
-      })
+      |> result.map(fn(remove) { Applied(PlannedRemove(remove:)) })
     effect_kind.CrowdControl ->
       control_of(spell4_id:, effect:)
       |> result.map(fn(control) {
@@ -3512,39 +3520,19 @@ fn kind_reading(
     effect_kind.ForcedMove -> {
       use <- when_reached(reaches:)
       forced_move_of(tables:, effect:)
-      |> result.map(fn(forced_move) {
-        by_condition(
-          row: PlannedForcedMove(forced_move:),
-          condition: forced_move.condition,
-        )
-      })
+      |> result.map(fn(forced_move) { Applied(PlannedForcedMove(forced_move:)) })
     }
     effect_kind.CooldownModifier -> {
       use <- when_reached(reaches:)
       cooldown_modifier_of(tables:, spell4_id:, effect:)
-      |> result.map(fn(modifier) {
-        by_condition(
-          row: PlannedCooldownModifier(modifier:),
-          condition: modifier.condition,
-        )
-      })
+      |> result.map(fn(modifier) { Applied(PlannedCooldownModifier(modifier:)) })
     }
     effect_kind.Stealth ->
       stealth_row_of(tables:, spell4_id:, effect:)
-      |> result.map(fn(stealth) {
-        by_condition(
-          row: PlannedStealth(stealth:),
-          condition: stealth.condition,
-        )
-      })
+      |> result.map(fn(stealth) { Applied(PlannedStealth(stealth:)) })
     effect_kind.RemoveStealth ->
       remove_stealth_row_of(tables:, spell4_id:, effect:)
-      |> result.map(fn(remove) {
-        by_condition(
-          row: PlannedRemoveStealth(remove:),
-          condition: remove.condition,
-        )
-      })
+      |> result.map(fn(remove) { Applied(PlannedRemoveStealth(remove:)) })
     effect_kind.Heal(..) -> {
       use <- when_reached(reaches:)
       heal_reading(tables:, place:, spell4_id:, effect:)
@@ -3582,24 +3570,22 @@ fn lasting_reading(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowReading, PlanError) {
   lasting_of(tables:, spell4_id:, effect:)
-  |> result.map(fn(lasting) {
-    by_condition(row: PlannedLasting(lasting:), condition: lasting.condition)
-  })
+  |> result.map(fn(lasting) { Applied(PlannedLasting(lasting:)) })
 }
 
 /// A UnitPropertyModifier, UnitPropertyConversion, DisguiseOutfit or Absorption row that
-/// reaches the caster, or a UnitPropertyModifier row that reaches the units a strike hits: held when it stands behind a target apply prerequisite or, for a
-/// disguise, has no life, which no go applies (`lasting.has_life`).
+/// reaches the caster, or a UnitPropertyModifier row that reaches the units a strike hits:
+/// held when, for a disguise, it has no life, which no go applies (`lasting.has_life`).
 fn modifier_reading(
   tables tables: table_store.Tables,
   place place: RowPlace,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowReading, PlanError) {
-  use condition <- result.try(condition_of(
+  use condition <- result.try(applied_condition_of(
     tables:,
     effect:,
-    data_bits06_names_a_gate: False,
+    reach: reach_of_flags(target_flags: effect.target_flags),
   ))
   use modifier <- result.try(modifier_of(
     tables:,
@@ -3608,18 +3594,15 @@ fn modifier_reading(
     condition:,
   ))
   use Nil <- result.map(modifier_not_on_a_struck_unit(place:, modifier:))
-  by_condition_with_life(modifier:, condition:)
+  by_life(modifier:)
 }
 
 /// A property row as `Held` when it has no life (`lasting.has_life`), which the cast rule
-/// drops, and else by its condition.
-fn by_condition_with_life(
-  modifier modifier: PropertyModifier,
-  condition condition: Condition,
-) -> RowReading {
+/// drops, and else `Applied`.
+fn by_life(modifier modifier: PropertyModifier) -> RowReading {
   let planned = PlannedModifier(modifier:)
   case lasting.has_life(row: modifier.row) {
-    True -> by_condition(row: planned, condition:)
+    True -> Applied(planned)
     False -> Held(planned)
   }
 }
@@ -3631,14 +3614,14 @@ fn interrupt_armor_reading(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowReading, PlanError) {
-  use condition <- result.try(condition_of(
+  use condition <- result.try(applied_condition_of(
     tables:,
     effect:,
-    data_bits06_names_a_gate: False,
+    reach: reach_of_flags(target_flags: effect.target_flags),
   ))
   use modifier <- result.try(interrupt_armor_of(spell4_id:, effect:, condition:))
   use Nil <- result.map(modifier_not_on_a_struck_unit(place:, modifier:))
-  by_condition_with_life(modifier:, condition:)
+  by_life(modifier:)
 }
 
 /// A Heal or HealShields row that reaches the caster or the primary target: a periodic heal
@@ -3649,10 +3632,10 @@ fn heal_reading(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowReading, PlanError) {
-  use condition <- result.try(condition_of(
+  use condition <- result.try(applied_condition_of(
     tables:,
     effect:,
-    data_bits06_names_a_gate: False,
+    reach: reach_of_flags(target_flags: effect.target_flags),
   ))
   use heal <- try_heal(heal_of(spell4_id:, effect:, condition:))
   use Nil <- result.map(
@@ -3664,7 +3647,7 @@ fn heal_reading(
       )
     }),
   )
-  by_condition(row: PlannedHeal(heal:), condition:)
+  Applied(PlannedHeal(heal:))
 }
 
 /// Goes on with a heal, or leaves out a periodic heal that lasts until removed.
@@ -3694,6 +3677,7 @@ fn proc_reading(
       use condition <- result.map(condition_of(
         tables:,
         effect:,
+        reach: OnlyTheCaster,
         data_bits06_names_a_gate: False,
       ))
       Applied(PlannedProc(reading:, condition:))
@@ -4119,30 +4103,125 @@ fn target_of(
   }
 }
 
-/// An effect's condition: a target apply prerequisite, which the server does not
-/// check, else its caster apply prerequisite and, for a Proxy (`names_a_gate`), the one
-/// its dataBits06 names (`Spell4Effects.effectType.26.dataBits06`: a reading of the
-/// rows, since the client applies no Proxy itself), checked against the caster. The
-/// dataBits06 of a Fluff or SpellForceRemove effect is no prerequisite. A prerequisite
-/// the table lacks fails the load.
+/// Which units a row lands on, for what its target apply prerequisite may read.
+type Reach {
+  /// Only the caster, whose whole unit the prerequisite reads.
+  OnlyTheCaster
+  /// Units other than the caster too: creatures the go struck.
+  PastTheCaster
+}
+
+/// The reach of a row of this aim.
+fn reach_of_aim(aim aim: Aim) -> Reach {
+  case aim {
+    AimsAtCaster -> OnlyTheCaster
+    AimsAtPrimaryTarget | AimsAtArea | AimsAtBoth -> PastTheCaster
+    OtherAim(..) -> PastTheCaster
+  }
+}
+
+/// The reach of a row of a kind the plan reads for the caster when its targetFlags
+/// include it (bit 1) and for the primary target or the struck units otherwise
+/// (`effect_kind.is_row_read`).
+fn reach_of_flags(target_flags target_flags: Int) -> Reach {
+  use <- bool.guard(
+    when: has_flag(flags: target_flags, bit: 1),
+    return: OnlyTheCaster,
+  )
+  PastTheCaster
+}
+
+/// An effect's condition: its caster apply prerequisite and, for a Proxy
+/// (`names_a_gate`), the one its dataBits06 names (`Spell4Effects.effectType.26.dataBits06`:
+/// a reading of the rows, since the client applies no Proxy itself), checked against the
+/// caster, and its target apply prerequisite, which the cast rule checks for each unit the
+/// row lands on, the unit first and the caster second
+/// (`Spell4Effects.prerequisiteIdTargetApply`). The dataBits06 of a Fluff or SpellForceRemove
+/// effect is no prerequisite. A prerequisite the table lacks fails the load, and so does a
+/// target prerequisite the cast rule cannot read for the units the row reaches
+/// (`target_gate_read`).
 fn condition_of(
   tables tables: table_store.Tables,
   effect effect: spell4_effects.Spell4Effects,
+  reach reach: Reach,
   data_bits06_names_a_gate names_a_gate: Bool,
 ) -> Result(Condition, PlanError) {
-  case effect.prerequisite_id_target_apply {
-    0 -> {
-      use gates <- result.try(caster_gates_of(
-        tables:,
-        effect:,
-        data_bits06_names_a_gate: names_a_gate,
-      ))
-      Ok(case gates {
-        [] -> Always
-        [_, ..] -> GatedOnCaster(gates:)
-      })
+  use caster <- result.try(caster_gates_of(
+    tables:,
+    effect:,
+    data_bits06_names_a_gate: names_a_gate,
+  ))
+  case effect.prerequisite_id_target_apply, caster {
+    0, [] -> Ok(Always)
+    0, [_, ..] -> Ok(GatedOnCaster(gates: caster))
+    target, _ -> {
+      use target <- result.try(prerequisite_of(tables:, id: target))
+      use Nil <- result.map(target_gate_read(target:, effect:, reach:))
+      case caster {
+        [] -> GatedOnTarget(prerequisite: target)
+        [_, ..] -> GatedOnCasterAndTarget(caster:, target:)
+      }
     }
-    target -> Ok(GatedOnTarget(prerequisite_id: PrerequisiteId(target)))
+  }
+}
+
+/// The condition of a row a go applies to the units it reaches (a lasting, remove, modifier
+/// or heal row): `condition_of`, and a caster apply prerequisite with a condition of a type
+/// the server has not decoded fails the load too, since a go that cannot tell whether the
+/// caster passes applies nothing (`prerequisite.unread_types`).
+fn applied_condition_of(
+  tables tables: table_store.Tables,
+  effect effect: spell4_effects.Spell4Effects,
+  reach reach: Reach,
+) -> Result(Condition, PlanError) {
+  use condition <- result.try(condition_of(
+    tables:,
+    effect:,
+    reach:,
+    data_bits06_names_a_gate: False,
+  ))
+  let caster = case condition {
+    Always | GatedOnTarget(..) -> []
+    GatedOnCaster(gates:) | GatedOnCasterAndTarget(caster: gates, ..) -> gates
+  }
+  case list.flat_map(caster, prerequisite.unread_types) {
+    [prerequisite_type, ..] ->
+      Error(ApplyPrerequisiteNotRead(
+        spell4_id: effect.spell_id,
+        effect_id: effect.id,
+        prerequisite_type:,
+      ))
+    [] -> Ok(condition)
+  }
+}
+
+/// Whether the cast rule can check a target apply prerequisite for the units a row
+/// reaches: a condition type the server has not decoded is refused, and so is one that
+/// reads the state of the creature it strikes, for a row that lands past the caster
+/// (`prerequisite.unread_types`, `prerequisite.struck_unread_types`).
+fn target_gate_read(
+  target target: Prerequisite,
+  effect effect: spell4_effects.Spell4Effects,
+  reach reach: Reach,
+) -> Result(Nil, PlanError) {
+  case prerequisite.unread_types(prerequisite: target), reach {
+    [prerequisite_type, ..], _ ->
+      Error(ApplyPrerequisiteNotRead(
+        spell4_id: effect.spell_id,
+        effect_id: effect.id,
+        prerequisite_type:,
+      ))
+    [], OnlyTheCaster -> Ok(Nil)
+    [], PastTheCaster ->
+      case prerequisite.struck_unread_types(prerequisite: target) {
+        [prerequisite_type, ..] ->
+          Error(TargetPrerequisiteReadsStruckUnit(
+            spell4_id: effect.spell_id,
+            effect_id: effect.id,
+            prerequisite_type:,
+          ))
+        [] -> Ok(Nil)
+      }
   }
 }
 
@@ -4154,7 +4233,13 @@ fn proxy_condition_of(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Condition, PlanError) {
   case effect.prerequisite_id_target_apply {
-    0 -> condition_of(tables:, effect:, data_bits06_names_a_gate: True)
+    0 ->
+      condition_of(
+        tables:,
+        effect:,
+        reach: OnlyTheCaster,
+        data_bits06_names_a_gate: True,
+      )
     target -> {
       use caster <- result.try(caster_gates_of(
         tables:,

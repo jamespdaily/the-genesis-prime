@@ -1875,6 +1875,27 @@ pub fn beast_appears_facing(
   unit_id unit_id: Int,
   yaw yaw: Float,
 ) -> Event(ConnectionEvent(Message, Answer)) {
+  let Creature2Id(creature_id) =
+    spawn_support.beast_at(
+      number: 1,
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 6009,
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+      ),
+    ).creature_id
+  creature_of_beast_appears_facing(unit_id:, creature_id:, yaw:)
+}
+
+/// The news `beast_appears_facing` gives, of a Beast whose Creature2 row is `creature_id`:
+/// it stays attackable and hostile as the Beast is.
+pub fn creature_of_beast_appears_facing(
+  unit_id unit_id: Int,
+  creature_id creature_id: Int,
+  yaw yaw: Float,
+) -> Event(ConnectionEvent(Message, Answer)) {
   let place =
     start_place.turned(
       place: place_support.at(
@@ -1886,7 +1907,11 @@ pub fn beast_appears_facing(
       ),
       facing: start_place.Facing(yaw:, pitch: 0.0, roll: 0.0),
     )
-  let beast = spawn_support.beast_at(number: 1, place:)
+  let beast =
+    spawn.Spawn(
+      ..spawn_support.beast_at(number: 1, place:),
+      creature_id: Creature2Id(creature_id),
+    )
   sent_by_a_peer(news_of(
     unit_id:,
     news: CreatureAppeared(
@@ -2015,22 +2040,32 @@ pub fn strikes_told(
   })
 }
 
-/// The creature's answer that a strike landed, as the connection is sent it.
-/// A creature's answer that the strike of `key` landed, for the tests' player's
+/// A creature's answer that the strike of `key` ended as `outcome`, for the tests' player's
 /// first stay.
-pub fn landed(
+pub fn answered(
   key key: strike_tell.Key,
+  outcome outcome: strike_tell.Outcome,
 ) -> Event(ConnectionEvent(Message, Answer)) {
   for_stay(
     stay: own_stay(),
     sent: client_connection.SentByTarget(answered: strike_tell.Answered(
       key:,
-      outcome: strike_tell.Landed(
-        descriptions: [],
-        controls: [],
-        armor_removed: 0,
-      ),
+      outcome:,
     )),
+  )
+}
+
+/// The creature's answer that a strike landed, as the connection is sent it.
+pub fn landed(
+  key key: strike_tell.Key,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  answered(
+    key:,
+    outcome: strike_tell.Landed(
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+    ),
   )
 }
 
@@ -2433,10 +2468,25 @@ pub fn landing(
   ms ms: Int,
   taken taken: ConnectionStep(Request),
 ) -> #(game_connection.State, List(ConnectionStep(Request))) {
+  landing_but_deflected(state:, ms:, taken:, deflecting: [])
+}
+
+/// `landing`, with the strikes told to the units `deflecting` answered as deflected.
+pub fn landing_but_deflected(
+  state state: game_connection.State,
+  ms ms: Int,
+  taken taken: ConnectionStep(Request),
+  deflecting deflecting: List(Int),
+) -> #(game_connection.State, List(ConnectionStep(Request))) {
   list.fold(strikes_told(taken), #(state, [taken]), fn(so_far, strike) {
     let #(state, steps) = so_far
-    let #(state, answered) = at(state:, ms:, event: landed(key: strike.1))
-    let #(state, more) = landing(state:, ms:, taken: answered)
+    let event = case list.contains(deflecting, strike.0) {
+      True -> answered(key: strike.1, outcome: strike_tell.Deflected)
+      False -> landed(key: strike.1)
+    }
+    let #(state, after) = at(state:, ms:, event:)
+    let #(state, more) =
+      landing_but_deflected(state:, ms:, taken: after, deflecting:)
     #(state, list.append(steps, more))
   })
 }
