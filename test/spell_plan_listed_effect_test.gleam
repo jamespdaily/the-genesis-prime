@@ -34,6 +34,7 @@
 
 import client_tables
 import fixture_tables
+import genesis_prime/coverage/effect_row
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
@@ -446,20 +447,6 @@ pub fn the_plans_hold_every_type_18_81_and_145_row_of_the_trees_test() -> Nil {
 
 // ---- ItemVisualSwap (76) ----
 
-/// The plan of one client spell, alone, on the fixture's rows.
-fn plan_of(spell4_id spell4_id: Int) -> spell_plan.Spell {
-  let tables = fixture_tables.shared()
-  let assert Ok(spell) =
-    spell_plan.spell_alone(
-      tables:,
-      sources: spell_plan.sources_of(tables:),
-      spell4_id:,
-      chain: [],
-    )
-    as "the plan of the client's spell builds"
-  spell
-}
-
 /// The lasting row of this id in the spell's plan.
 fn held_row(spell spell: spell_plan.Spell, id id: Int) -> spell_plan.Lasting {
   let assert Ok(row) = lasting_row(spell:, id:)
@@ -485,7 +472,7 @@ pub fn an_item_visual_swap_row_is_read_for_the_caster_and_for_the_primary_target
 
 pub fn an_item_visual_swap_row_aimed_at_the_caster_with_flags_2_is_a_lasting_row_held_until_removed_test() -> Nil {
   use <- owned_test.run(60_000)
-  let spell = plan_of(spell4_id: 45_726)
+  let spell = spell_tables.client_spell(spell4_id: 45_726)
   assert lasting_row(spell:, id: 106_570)
     == Ok(spell_plan.Lasting(
       effect_id: Spell4EffectsId(106_570),
@@ -500,7 +487,7 @@ pub fn an_item_visual_swap_row_aimed_at_the_caster_with_flags_2_is_a_lasting_row
 
 pub fn an_item_visual_swap_row_aimed_at_the_primary_target_keeps_its_delay_and_duration_test() -> Nil {
   use <- owned_test.run(60_000)
-  let spell = plan_of(spell4_id: 26_567)
+  let spell = spell_tables.client_spell(spell4_id: 26_567)
   list.each([43_533, 43_534, 43_535, 43_536, 43_537, 43_538], fn(id) {
     let row = held_row(spell:, id:)
     assert row.aim == AimsAtPrimaryTarget
@@ -510,16 +497,16 @@ pub fn an_item_visual_swap_row_aimed_at_the_primary_target_keeps_its_delay_and_d
       as "delayTime 333, durationTime 10000, flags 0"
     assert lasting.lifetime_of(
         row: row.row,
-        longer_of_delay_and_duration: False,
+        longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
       )
       == 10_333
-      as "Spell4 26567 has propertyFlags 0, so the lifetime is the delay plus the duration"
+      as "the lifetime is the delay plus the duration, 333 + 10000: Spell4 26567 has propertyFlags 0, no 0x2000"
   })
 }
 
 pub fn the_six_delayed_item_visual_swap_rows_of_48373_are_each_a_lasting_row_ending_at_9000_test() -> Nil {
   use <- owned_test.run(60_000)
-  let spell = plan_of(spell4_id: 48_373)
+  let spell = spell_tables.client_spell(spell4_id: 48_373)
   list.each(
     [
       #(122_321, 4000, 5000),
@@ -539,12 +526,52 @@ pub fn the_six_delayed_item_visual_swap_rows_of_48373_are_each_a_lasting_row_end
         as "the row's delayTime and durationTime, flags 0"
       assert lasting.lifetime_of(
           row: row.row,
-          longer_of_delay_and_duration: False,
+          longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
         )
         == 9000
         as "each of the six ends 9000 ms after the go: Spell4 48373 has propertyFlags 1, no 0x2000"
     },
   )
+}
+
+pub fn the_measure_counts_an_item_visual_swap_row_with_a_delay_not_read_and_one_without_read_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let spell_groups = spell_plan.spell_groups(tables:)
+  let read_of = fn(id) {
+    let assert Ok(effect) = spell4_effects.get(tables:, id: Spell4EffectsId(id))
+      as "the fixture holds the client's row"
+    effect_row.is_read(
+      tables:,
+      spell_groups:,
+      place: spell_tables.pressed,
+      effect:,
+    )
+  }
+  assert read_of(106_570)
+    as "`table_rows -- Spell4Effects 106570`: delayTime 0, so the client applies the swap from the go (InitSpellEffect 0x1405d6880 applies an effect only when its delay is 0, `0x1405d6880.delayed_apply`)"
+  list.each([43_533, 122_321, 122_326], fn(id) {
+    assert !read_of(id)
+      as "delayTime 333 (43533) and 4000 and 5000 (122321, 122326): the client does not apply a delayed row from the go (`0x1405d6880.delayed_apply`), so the measure does not count it read"
+  })
+  let assert Ok(delayed) =
+    spell4_effects.get(tables:, id: Spell4EffectsId(122_321))
+    as "the fixture holds the client's row"
+  assert spell_plan.read_row(
+      tables:,
+      spell_groups:,
+      place: spell_tables.pressed,
+      effect: delayed,
+    )
+    == Ok(
+      spell_plan.Held(
+        spell_plan.PlannedLasting(lasting: held_row(
+          spell: spell_tables.client_spell(spell4_id: 48_373),
+          id: 122_321,
+        )),
+      ),
+    )
+    as "a delayed row stays in the spell's lasting list with its delay, which the go lists, and is Held: no go applies it on the client"
 }
 
 pub fn an_item_visual_swap_row_aimed_by_3_fails_the_load_with_lasting_aim_not_read_test() -> Nil {

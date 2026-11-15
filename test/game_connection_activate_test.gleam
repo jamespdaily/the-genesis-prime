@@ -732,5 +732,5 @@ pub fn activating_varonia_cazalon_writes_48373s_go_with_its_delayed_item_visual_
     })
   let assert [go, ..] = gos
   assert list.contains(told, client_connection.CastWent(go:))
-    as "a viewer is told the same go, so it sees the suit on the player"
+    as "a viewer is told the same go (each row is delayed, so it shows nothing yet: the client applies a delayed effect only when its delay ends)"
 }

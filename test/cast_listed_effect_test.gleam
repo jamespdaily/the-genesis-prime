@@ -18,7 +18,6 @@
 ////   end timer; `cast.died` ends every modifier but the innate passive's.
 
 import cast_support as support
-import fixture_tables
 import genesis_prime/client_connection.{CastFinished}
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
 import genesis_prime/game/lasting.{LastingRow}
@@ -398,41 +397,10 @@ pub fn the_casters_death_leaves_the_innate_passives_conversion_live_test() -> Ni
 
 // ---- an ItemVisualSwap row ----
 
-/// The plan of one client spell, alone, on the fixture's rows.
-fn plan_of(spell4_id spell4_id: Int) -> Spell {
-  let tables = fixture_tables.shared()
-  let assert Ok(spell) =
-    spell_plan.spell_alone(
-      tables:,
-      sources: spell_plan.sources_of(tables:),
-      spell4_id:,
-      chain: [],
-    )
-    as "the client's spell plans alone"
-  spell
-}
-
-/// A planted spell of the Spell4 and base given, holding the lasting rows of the client's
-/// spell of that Spell4 that have these effect ids: the cast rule reads the rows, the
-/// planted spell only gives them a base the bag holds.
-fn swap_spell(
-  spell4_id spell4_id: Int,
-  base base: Int,
-  effect_ids effect_ids: List(Int),
-) -> Spell {
-  let rows =
-    list.filter(plan_of(spell4_id:).lasting, fn(row) {
-      list.contains(effect_ids, row.effect_id.value)
-    })
-  assert list.length(rows) == list.length(effect_ids)
-    as "the client's spell holds each of the rows"
-  Spell(..support.child(spell4_id:, base:), lasting: rows)
-}
-
 /// The Hazmat Suit Locker's activate spell 45726 with its one type 76 row 106570.
 fn hazmat_suit() -> Plans {
   support.plans_of([
-    swap_spell(spell4_id: 45_726, base: 3, effect_ids: [106_570]),
+    support.client_lasting(spell4_id: 45_726, base: 3, effect_ids: [106_570]),
   ])
 }
 
@@ -456,7 +424,7 @@ pub fn a_go_lists_an_item_visual_swap_row_on_the_caster_with_its_delay_and_lifet
   // and a durationTime of 5000 (`table_rows -- Spell4Effects 122321`).
   let plans =
     support.plans_of([
-      swap_spell(spell4_id: 48_373, base: 3, effect_ids: [122_321]),
+      support.client_lasting(spell4_id: 48_373, base: 3, effect_ids: [122_321]),
     ])
   let #(_, effects) =
     support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
@@ -572,7 +540,7 @@ pub fn a_timed_item_visual_swap_row_ends_its_node_with_the_finish_at_its_end_tes
   // makes the caster its primary target (`cast.press_of`), so the row lands on the caster.
   let plans =
     support.plans_of([
-      swap_spell(spell4_id: 26_567, base: 3, effect_ids: [43_533]),
+      support.client_lasting(spell4_id: 26_567, base: 3, effect_ids: [43_533]),
     ])
   let #(state, effects) =
     support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
@@ -604,7 +572,8 @@ pub fn a_timed_item_visual_swap_node_ends_with_targets_removed_while_another_nod
       condition: spell_plan.Always,
       tag: spend.always,
     )
-  let swap = swap_spell(spell4_id: 26_567, base: 3, effect_ids: [43_533])
+  let swap =
+    support.client_lasting(spell4_id: 26_567, base: 3, effect_ids: [43_533])
   let plans =
     support.plans_of([
       Spell(..swap, lasting: list.append(swap.lasting, [longer_buff])),
@@ -652,7 +621,7 @@ pub fn a_force_remove_takes_off_a_flags_2_item_visual_swap_node_test() -> Nil {
   // `cast.node_off`), so the removal writes no 0x7fe.
   let plans =
     support.plans_of([
-      swap_spell(spell4_id: 45_726, base: 3, effect_ids: [106_570]),
+      support.client_lasting(spell4_id: 45_726, base: 3, effect_ids: [106_570]),
       remover(
         spell4_id: 301,
         base: 1,
@@ -680,7 +649,7 @@ pub fn an_item_visual_swap_row_with_no_delay_duration_or_flags_2_ends_with_the_c
   // (`table_rows -- Spell4Effects 74394`): the row has no life of its own.
   let plans =
     support.plans_of([
-      swap_spell(spell4_id: 36_149, base: 3, effect_ids: [74_394]),
+      support.client_lasting(spell4_id: 36_149, base: 3, effect_ids: [74_394]),
     ])
   let #(_, effects) =
     support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)

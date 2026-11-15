@@ -719,6 +719,20 @@ pub fn fixture_plans() -> spell_plan.Plans {
   })
 }
 
+/// The plan of one client spell, alone, on the fixture's rows.
+pub fn client_spell(spell4_id spell4_id: Int) -> spell_plan.Spell {
+  let tables = fixture_tables.shared()
+  let assert Ok(spell) =
+    spell_plan.spell_alone(
+      tables:,
+      sources: spell_plan.sources_of(tables:),
+      spell4_id:,
+      chain: [],
+    )
+    as "the client's spell plans alone"
+  spell
+}
+
 /// Telekinetic Strike's plan from the client's rows, built once.
 pub fn fixture_strike() -> spell_plan.Spell {
   let assert Ok(spell) =

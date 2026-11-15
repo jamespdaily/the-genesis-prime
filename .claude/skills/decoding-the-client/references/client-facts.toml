@@ -10300,7 +10300,7 @@ gap = "A row with a delayTime is not applied by the go (0x1405d6880.delayed_appl
 
 ["0x1405d6880.delayed_apply"]
 statement = "InitSpellEffect applies an effect (calls its class's apply slot 0x10) only when the effect's delay is 0. An effect with a delay gets only its end timer, whose end slot (0x40) does nothing for an ItemVisualSwap effect (type 76), and its applied flag is never set, so when its object goes the destructor 0x1405d9b60 puts nothing back. So the server lists a type 76 row in the go with its delay and lifetime 0, and its node lives for the row's life; a row with a delay shows nothing from that go."
-proof = "Saved C 0x1405d6880.c (hash 8eb22adb6de47956): the apply-slot call at 0x1405d6aa9 is on the branch for a delay of 0. A listing scan of the whole executable finds no other call of an effect class's slot 0x10 for this class, and the applied flag 0x158 is written only by 0x1405d9be0 (Spell4Effects.effectType.76)."
+proof = "Saved C 0x1405d6880.c (hash e9b6b6af37d00314): the apply-slot call at 0x1405d6aa9 is on the branch for a delay of 0. A listing scan of the whole executable finds no other call of an effect class's slot 0x10 for this class, and the applied flag 0x158 is written only by 0x1405d9be0 (Spell4Effects.effectType.76)."
 grade = "fairly sure"
 gap = "No live go with a delayed type 76 row was seen: the one candidate, spell 48373 (creature 32852), has no spawn in the world database."
 

@@ -17,8 +17,8 @@
 //// - **One decision for each effect row.** `read_row` says what the plan makes of a
 ////   Spell4Effects row in the place its spell is planned (`RowPlace`): in a list of its
 ////   spell and applied by a go (`Applied`), in a list and applied by none (`Held`: a
-////   periodic gain, a property change or disguise with no life, a row whose phaseFlags is
-////   0), in no list (`LeftOut`), a damage row the area
+////   periodic gain, a property change or disguise with no life, an ItemVisualSwap row
+////   with a delayTime, a row whose phaseFlags is 0), in no list (`LeftOut`), a damage row the area
 ////   load reads (`ReadByArea`), or an error that fails the load. The lists of a spell are
 ////   made from these readings, and the coverage measure counts a row read exactly when it
 ////   is `Applied` (genesis_prime/coverage/effect_row), so the two cannot disagree. A spell
@@ -1046,8 +1046,9 @@ pub type RowReading {
   Applied(row: PlannedRow)
   /// The row is in a list of its spell and no go applies it: a periodic gain
   /// (`TickingGain`), a property change or disguise with no life
-  /// (`lasting.has_life`) and a row whose phaseFlags is 0, which no phase selects
-  /// (`in_phase`). The measure counts it not read.
+  /// (`lasting.has_life`), an ItemVisualSwap row with a delayTime (the go lists it, the
+  /// client applies an effect from the go only when its delay is 0) and a row whose
+  /// phaseFlags is 0, which no phase selects (`in_phase`). The measure counts it not read.
   Held(row: PlannedRow)
   /// The row is in no list of its spell and the load goes on.
   LeftOut(why: LeftOutReason)
@@ -3492,10 +3493,11 @@ fn kind_reading(
           TickingGain(..) -> Held(PlannedGain(gain:))
         }
       })
-    effect_kind.Fluff
-    | effect_kind.Scale
-    | effect_kind.ItemVisualSwap
-    | effect_kind.RavelSignal -> lasting_reading(tables:, spell4_id:, effect:)
+    effect_kind.Fluff | effect_kind.Scale | effect_kind.RavelSignal ->
+      lasting_reading(tables:, spell4_id:, effect:)
+    effect_kind.ItemVisualSwap ->
+      lasting_reading(tables:, spell4_id:, effect:)
+      |> result.map(held_while_delayed(reading: _, effect:))
     effect_kind.ShieldOverload -> {
       use <- when_reached(reaches:)
       lasting_reading(tables:, spell4_id:, effect:)
@@ -3566,6 +3568,20 @@ fn when_reached(
 ) -> Result(RowReading, PlanError) {
   use <- bool.guard(when: !reaches, return: Ok(LeftOut(why: AimedAtOtherUnits)))
   then()
+}
+
+/// An ItemVisualSwap row with a delayTime as `Held`: the client applies an effect from
+/// the go only when its delay is 0 (`0x1405d6880.delayed_apply`), so the go lists the row
+/// with its delay and the visual does not change. A row with no delay stays `Applied`.
+fn held_while_delayed(
+  reading reading: RowReading,
+  effect effect: spell4_effects.Spell4Effects,
+) -> RowReading {
+  use <- bool.guard(when: effect.delay_time == 0, return: reading)
+  case reading {
+    Applied(row) -> Held(row)
+    Held(..) | LeftOut(..) | ReadByArea | ReadByActivation -> reading
+  }
 }
 
 /// A Fluff, Scale, ItemVisualSwap, RavelSignal or area ShieldOverload row as a lasting row.

@@ -272,10 +272,10 @@ fn unread_effect_rows(tables: store.Tables) -> Dict(Int, Int) {
 const lasting_gap =
   "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses"
 
-/// The same for type 76, whose rows with a delayTime the client never applies from the
-/// go, so the server lists them and the visual stays as it was.
+/// The same for type 76, whose rows with a delayTime the client does not apply from the
+/// go: the server lists them with their delay and the measure counts them not read.
 const item_visual_swap_gap =
-  "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; rows with a delayTime, which the client never applies from the go (0x1405d6880.delayed_apply)"
+  "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; rows with a delayTime, which the go lists and the measure counts not read: an effect with a start delay shows on the client when its delay ends (0x1405d6880.delayed_apply)"
 
 /// The same for type 80, whose rows the plan also refuses where the two columns that hold
 /// the count of stacks differ or a selector names no row.
