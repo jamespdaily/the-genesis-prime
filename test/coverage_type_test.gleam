@@ -398,13 +398,13 @@ pub fn a_partial_type_no_rule_reads_is_a_conflict_and_an_unused_one_a_breach_tes
 }
 
 const lasting_gap =
-  "rows aimed by flags the plan refuses or behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses"
+  "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses"
 
 const force_remove_gap =
-  "rows aimed by flags the plan refuses, behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), with differing stack counts (dataBits03 and dataBits04) or a selector that names no spell group, Spell4 or Spell4Base, which the plan refuses"
+  "rows aimed by flags the plan refuses, behind an apply prerequisite whose conditions the plan cannot check (#817, #818), with differing stack counts (dataBits03 and dataBits04) or a selector that names no spell group, Spell4 or Spell4Base, which the plan refuses"
 
 const signal_gap =
-  "rows aimed by flags the plan refuses or behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; the script a signal stands for is not in the client"
+  "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; the script a signal stands for is not in the client"
 
 const conversion_gap =
   "the share is added to the source's value after the type 11 changes, in start order; whether the source is its base or its total and when the share is recomputed are not read"
@@ -442,12 +442,12 @@ pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145
       ),
       Missing(
         type_number: 10,
-        reason: "rows aimed only at other units or behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; periodic rows that last until removed (flags bit 2, #803), which the plan leaves out; rows with a formula parameter the plan refuses; rows of a spell a Proxy starts on each struck unit, whose heal on that unit is not built (#570)",
+        reason: "rows aimed only at other units or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; periodic rows that last until removed (flags bit 2, #803), which the plan leaves out; rows with a formula parameter the plan refuses; rows of a spell a Proxy starts on each struck unit, whose heal on that unit is not built (#570)",
         fact_key: "spell.heal_result_log",
       ),
       Missing(
         type_number: 11,
-        reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
+        reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
         fact_key: "Spell4Effects.effectType.11",
       ),
       Missing(
@@ -472,7 +472,7 @@ pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145
       ),
       Missing(
         type_number: 29,
-        reason: "rows aimed only at other units, periodic (tickTime), with no lifetime, with a formula parameter the plan refuses, whose amount is 0 for every caster (which of dataBits00 and dataBits01 is the amount when the other is 0 is not read), behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), or aimed at the primary target of a spell a Proxy starts on each struck unit, whose pool the server does not hold",
+        reason: "rows aimed only at other units, periodic (tickTime), with no lifetime, with a formula parameter the plan refuses, whose amount is 0 for every caster (which of dataBits00 and dataBits01 is the amount when the other is 0 is not read), behind an apply prerequisite whose conditions the plan cannot check (#817, #818), or aimed at the primary target of a spell a Proxy starts on each struck unit, whose pool the server does not hold",
         fact_key: "Spell4Effects.effectType.29",
       ),
       Missing(
@@ -502,12 +502,12 @@ pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145
       ),
       Missing(
         type_number: 83,
-        reason: "rows aimed at another unit, behind a target prerequisite or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
+        reason: "rows aimed at another unit, behind a target prerequisite whose conditions the plan cannot check (#818) or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
         fact_key: "Spell4Effects.effectType.83",
       ),
       Missing(
         type_number: 84,
-        reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
+        reason: "rows aimed at another unit or behind a target prerequisite whose conditions the plan cannot check (#818), which the plan refuses",
         fact_key: "Spell4Effects.effectType.84",
       ),
       Missing(
@@ -517,7 +517,7 @@ pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145
       ),
       Missing(
         type_number: 118,
-        reason: "rows aimed at another unit, periodic rows that last until removed (flags bit 2, #803), rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818) or with a formula parameter the plan refuses",
+        reason: "rows aimed at another unit, periodic rows that last until removed (flags bit 2, #803), rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818) or with a formula parameter the plan refuses",
         fact_key: "Spell4Effects.effectType.118",
       ),
       Missing(
@@ -650,7 +650,7 @@ pub fn the_type_11_rows_behind_a_target_prerequisite_are_counted_as_not_handled_
   assert eleven.rows == 5
   assert eleven.status
     == HandledWithGap(
-      reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
+      reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
       fact_key: "Spell4Effects.effectType.11",
       unread_rows: 1,
     )
@@ -658,7 +658,7 @@ pub fn the_type_11_rows_behind_a_target_prerequisite_are_counted_as_not_handled_
   let text = checklist.render([measured])
   assert string.contains(
     text,
-    "- [x] type 11: 5 rows (83.33%); handled with a gap, 1 of its 5 rows not read: rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses (Spell4Effects.effectType.11)",
+    "- [x] type 11: 5 rows (83.33%); handled with a gap, 1 of its 5 rows not read: rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses (Spell4Effects.effectType.11)",
   )
     as "the line lists the rows left out with the gap's reason"
   assert string.contains(text, "2 of 2 types handled (83.33% of rows)")
@@ -830,7 +830,7 @@ pub fn the_measure_counts_ticking_and_refused_heal_shields_rows_as_not_read_test
   assert line.rows == 5
   assert line.status
     == HandledWithGap(
-      reason: "rows aimed at another unit, periodic rows that last until removed (flags bit 2, #803), rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818) or with a formula parameter the plan refuses",
+      reason: "rows aimed at another unit, periodic rows that last until removed (flags bit 2, #803), rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818) or with a formula parameter the plan refuses",
       fact_key: "Spell4Effects.effectType.118",
       unread_rows: 3,
     )
@@ -897,7 +897,7 @@ pub fn the_type_83_rows_aimed_at_other_units_or_timed_are_counted_as_not_handled
   assert line.rows == 4
   assert line.status
     == HandledWithGap(
-      reason: "rows aimed at another unit, behind a target prerequisite or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
+      reason: "rows aimed at another unit, behind a target prerequisite whose conditions the plan cannot check (#818) or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
       fact_key: "Spell4Effects.effectType.83",
       unread_rows: 3,
     )
@@ -915,14 +915,14 @@ pub fn the_type_84_rows_aimed_only_at_other_units_are_counted_as_not_handled_tes
   assert line.rows == 2
   assert line.status
     == HandledWithGap(
-      reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
+      reason: "rows aimed at another unit or behind a target prerequisite whose conditions the plan cannot check (#818), which the plan refuses",
       fact_key: "Spell4Effects.effectType.84",
       unread_rows: 1,
     )
     as "one of the two rows aims only at others and is not read"
 }
 
-pub fn the_clients_74_type_83_rows_count_51_not_read_and_its_9_type_84_rows_4_test() -> Nil {
+pub fn the_clients_74_type_83_rows_count_49_not_read_and_its_9_type_84_rows_4_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
@@ -937,16 +937,16 @@ pub fn the_clients_74_type_83_rows_count_51_not_read_and_its_9_type_84_rows_4_te
     as "table_rows -- Spell4Effects effectType=83: 74 rows"
   assert stealth.status
     == HandledWithGap(
-      reason: "rows aimed at another unit, behind a target prerequisite or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
+      reason: "rows aimed at another unit, behind a target prerequisite whose conditions the plan cannot check (#818) or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
       fact_key: "Spell4Effects.effectType.83",
-      unread_rows: 51,
+      unread_rows: 49,
     )
-    as "23 of the 74 rows are read: targetFlags 1 is the caster in 63 rows, 2 in 7 and 4 in 4 aim only at others (11), 38 of the caster rows hold a durationTime or delayTime, and 2 more of the untimed ones hold a target apply prerequisite (`table_rows -- Spell4Effects effectType=83`, columns targetFlags, delayTime, durationTime and prerequisiteIdTargetApply): 11 + 38 + 2 = 51"
+    as "25 of the 74 rows are read: targetFlags 1 is the caster in 63 rows, 2 in 7 and 4 in 4 aim only at others (11), and 38 of the caster rows hold a durationTime or delayTime (`table_rows -- Spell4Effects effectType=83`, columns targetFlags, delayTime, durationTime and prerequisiteIdTargetApply): 11 + 38 = 49. A caster row behind a target apply prerequisite is read, the gate checked on the caster: 60531 and 115010 (untimed, target apply 403, one condition of type 28) were counted unread before, and 57886 and 115009 (target apply 903, type 28) hold a durationTime of 30000, so are among the 38"
   let assert Ok(remove) = list.find(types, fn(line) { line.type_number == 84 })
   assert remove.rows == 9 as "table_rows -- Spell4Effects effectType=84: 9 rows"
   assert remove.status
     == HandledWithGap(
-      reason: "rows aimed at another unit or behind a target prerequisite, which the plan refuses",
+      reason: "rows aimed at another unit or behind a target prerequisite whose conditions the plan cannot check (#818), which the plan refuses",
       fact_key: "Spell4Effects.effectType.84",
       unread_rows: 4,
     )
@@ -2391,7 +2391,7 @@ pub fn a_conversion_row_aimed_only_at_another_unit_is_counted_as_not_read_test()
     as "Spell4Effects.effectType.145: a row aimed at the caster is read, one aimed only at another unit is not"
 }
 
-pub fn the_clients_rows_of_types_18_81_and_145_count_8_304_and_0_not_read_and_17_and_80_390_and_390_test() -> Nil {
+pub fn the_clients_rows_of_types_18_81_and_145_count_8_384_and_0_not_read_and_17_and_80_400_and_399_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
@@ -2411,14 +2411,14 @@ pub fn the_clients_rows_of_types_18_81_and_145_count_8_304_and_0_not_read_and_17
   }
   assert counted(18) == #(531, 8, 1, 0)
     as "table_rows -- Spell4Effects effectType=18: 531 rows, 5 aimed by flags 3 or 7, 1 more aimed by flag 1, 2, 4 or 6 behind a target apply prerequisite the plan cannot check and 2 more, otherwise read, with a phaseFlags of 0, which no phase selects (scratch count); 109482 is the one starting row, aimed at the caster with no prerequisite"
-  assert counted(81) == #(5262, 304, 1, 0)
-    as "effectType=81: 5,262 rows, 84 aimed by flags other than 1, 2, 4 and 6, 195 more behind a target apply prerequisite the plan cannot check (5 of the 84 sit behind one as well) and 25 more, otherwise read, with a phaseFlags of 0, which no phase selects (scratch count); 91018 is the one starting row, behind prerequisite 11311, a condition the plan reads, so it is read"
+  assert counted(81) == #(5262, 384, 1, 0)
+    as "effectType=81: 5,262 rows, 84 aimed by flags other than 1, 2, 4 and 6, 195 more behind a target apply prerequisite the plan cannot check (5 of the 84 sit behind one as well), 25 more, otherwise read, with a phaseFlags of 0, which no phase selects, and 80 more, otherwise read, behind a caster apply prerequisite that holds a type the plan does not read (scratch count over the rows with such a caster apply: 79 aimed by flags 1, 2, 4 or 6 with a phase and no target apply, and 194525, whose target apply 33967 holds only type 38; of the other 11 rows with one, 6 are aimed by other flags, 1 holds a phaseFlags of 0 and 4 hold a target apply the plan already refuses); 91018 is the one starting row, behind prerequisite 11311, a condition the plan reads, so it is read"
   assert counted(145) == #(6, 0, 1, 0)
     as "effectType=145: 6 rows, all aimed at the caster; 229304 is the one starting row"
-  assert counted(17).0 == 10_790 && counted(17).1 == 390
-    as "effectType=17: 10,790 rows, 253 aimed by other flags, 57 more behind a target apply prerequisite the plan cannot check and 80 more, otherwise read, with a phaseFlags of 0, which no phase selects (scratch count)"
-  assert counted(80).0 == 2294 && counted(80).1 == 390
-    as "effectType=80: 2,294 rows, in the order the plan checks a row 58 aimed by other flags, 35 whose selector names no spell group, Spell4 or Spell4Base (scratch count against the Spell4GroupList, Spell4 and Spell4Base ids), 220 whose dataBits03 and dataBits04 differ and 77 behind a target apply prerequisite the plan cannot check"
+  assert counted(17).0 == 10_790 && counted(17).1 == 400
+    as "effectType=17: 10,790 rows, 253 aimed by other flags, 57 more behind a target apply prerequisite the plan cannot check, 80 more, otherwise read, with a phaseFlags of 0, which no phase selects, and 10 more, otherwise read, behind a caster apply prerequisite that holds a type the plan does not read (scratch count over the 17 rows with such a caster apply: 9 with no target apply, and 220078, whose target apply 1050 holds only type 39; the other 7 hold a target apply of type 76, which the plan already refuses)"
+  assert counted(80).0 == 2294 && counted(80).1 == 399
+    as "effectType=80: 2,294 rows, in the order the plan checks a row 58 aimed by other flags, 35 whose selector names no spell group, Spell4 or Spell4Base (scratch count against the Spell4GroupList, Spell4 and Spell4Base ids), 220 whose dataBits03 and dataBits04 differ and 77 behind a target apply prerequisite the plan cannot check and 9 more, otherwise read, behind a caster apply prerequisite that holds a type the plan does not read (scratch count)"
 }
 
 // ---- the disguises (type 112) ----

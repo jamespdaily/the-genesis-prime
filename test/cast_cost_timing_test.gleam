@@ -637,7 +637,7 @@ pub fn a_go_pays_its_cost_before_it_gives_its_gains_test() -> Nil {
         slot: 1,
         amount: 1,
         phase_flags: 1,
-        prerequisite: None,
+        condition: spell_plan.Always,
         tag: spend.always,
       ),
     ])

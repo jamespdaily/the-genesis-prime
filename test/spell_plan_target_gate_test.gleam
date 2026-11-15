@@ -27,15 +27,24 @@ import genesis_prime/game/spell_plan.{
   type Condition, type Spell, GatedOnCasterAndTarget, GatedOnTarget,
 }
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}
+import genesis_prime/table/loader/store
 import genesis_prime/table/spell4_effects
 import gleam/list
 import gleam/string
 import owned_test
+import planted_table
 import spell_tables
 
 /// The plan of one client spell, alone.
 fn plan_of(spell4_id spell4_id: Int) -> Result(Spell, spell_plan.PlanError) {
-  let tables = fixture_tables.shared()
+  plan_in(tables: fixture_tables.shared(), spell4_id:)
+}
+
+/// The plan of one spell, alone, on these tables.
+fn plan_in(
+  tables tables: store.Tables,
+  spell4_id spell4_id: Int,
+) -> Result(Spell, spell_plan.PlanError) {
   spell_plan.spell_alone(
     tables:,
     sources: spell_plan.sources_of(tables:),
@@ -135,4 +144,98 @@ pub fn row_with_caster_and_target_gates_keeps_both_test() -> Nil {
     as "Spell4Effects.111129: prerequisiteIdCasterApply 903"
   assert prerequisite.id(target) == PrerequisiteId(20_271)
     as "Spell4Effects.111129: prerequisiteIdTargetApply 20271"
+}
+
+const caster_gated_row = 99_914
+
+pub fn caster_gate_with_undecoded_type_is_refused_on_a_lasting_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kept edit: row 55576 (Spell4 30458, lasting, aimed at the caster, plans) with its target
+  // apply 15912 cleared and its caster apply set to 18863, whose type 12 the server has not
+  // decoded (`table_rows -- Prerequisite 18863`).
+  use tables <- fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 55_576,
+    id: caster_gated_row,
+    with: [
+      #("prerequisiteIdTargetApply", planted_table.Integer(0)),
+      #("prerequisiteIdCasterApply", planted_table.Integer(18_863)),
+    ],
+  )
+  assert !prerequisite.is_read(type_id: 12)
+    as "Prerequisite 18863 holds types 47 and 12, and the server has not decoded 12"
+  let assert Error(error) = plan_in(tables:, spell4_id: 30_458)
+    as "a lasting row behind an undecoded caster apply prerequisite is refused at load: no go can check it, and a go that cannot tell applies nothing"
+  assert error
+    == spell_plan.TargetPrerequisiteNotRead(
+      spell4_id: 30_458,
+      effect_id: caster_gated_row,
+      prerequisite_type: 12,
+    )
+}
+
+const stealth_row = 99_915
+
+const gain_row = 99_916
+
+pub fn stealth_on_the_caster_behind_a_target_gate_reads_with_its_gate_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kept edit: row 55576 (Spell4 30458, aimed at the caster, plans) made a Stealth row
+  // (effectType 83, no delayTime or durationTime, dataBits02 0) behind target apply 903, the
+  // gate the client's own caster-aimed Stealth rows 57886 and 115009 hold
+  // (`table_rows -- Spell4Effects 57886 115009`). Such a row reaches no other unit, so the
+  // gate is checked on the caster.
+  use tables <- fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 55_576,
+    id: stealth_row,
+    with: [
+      #("effectType", planted_table.Integer(83)),
+      #("prerequisiteIdTargetApply", planted_table.Integer(903)),
+      #("delayTime", planted_table.Integer(0)),
+      #("durationTime", planted_table.Integer(0)),
+      #("dataBits02", planted_table.Integer(0)),
+    ],
+  )
+  let assert Ok(spell) = plan_in(tables:, spell4_id: 30_458)
+    as "a stealth row aimed at the caster behind a decoded target prerequisite plans"
+  let assert Ok(row) =
+    list.find(spell.stealth, fn(row) {
+      row.effect_id == Spell4EffectsId(stealth_row)
+    })
+    as "the plan lists the row"
+  let assert GatedOnTarget(prerequisite:) = row.condition
+    as "the row keeps its target apply prerequisite as its gate"
+  assert prerequisite.id(prerequisite) == PrerequisiteId(903)
+}
+
+pub fn gain_on_the_caster_behind_a_target_gate_reads_with_its_gate_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kept edit: row 55576 made a VitalModifier row (effectType 1, vital 6, dataBits02 180,
+  // phase flags 1, as Spell4Effects 127603 holds) behind target apply 390, the gate the
+  // client's caster-aimed gain 69113 holds (`table_rows -- Spell4Effects 69113`).
+  use tables <- fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 55_576,
+    id: gain_row,
+    with: [
+      #("effectType", planted_table.Integer(1)),
+      #("prerequisiteIdTargetApply", planted_table.Integer(390)),
+      #("dataBits00", planted_table.Integer(6)),
+      #("dataBits02", planted_table.Integer(180)),
+      #("phaseFlags", planted_table.Integer(1)),
+      #("delayTime", planted_table.Integer(0)),
+      #("durationTime", planted_table.Integer(0)),
+    ],
+  )
+  let assert Ok(spell) = plan_in(tables:, spell4_id: 30_458)
+    as "a gain aimed at the caster behind a decoded target prerequisite plans"
+  let assert Ok(gain) =
+    list.find(spell.gains, fn(gain) {
+      gain.effect_id == Spell4EffectsId(gain_row)
+    })
+    as "the plan lists the gain"
+  let assert GatedOnTarget(prerequisite:) = gain.condition
+    as "the gain keeps its target apply prerequisite as its gate"
+  assert prerequisite.id(prerequisite) == PrerequisiteId(390)
 }

@@ -17,7 +17,6 @@ import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/table/loader/store
 import gleam/dict
 import gleam/list
-import gleam/option.{Some}
 import gleam/result
 import gleam/string
 import owned_test
@@ -83,8 +82,12 @@ pub fn the_seed_row_plants_42148_into_the_damage_spell_at_its_last_go_test() -> 
     as "42148 is cast on the caster: 95337 aims at it (targetFlags 1)"
   let assert [gain] = planted.spell.gains
     as "42148's one effect 95337 is a gain"
-  let assert spell_plan.Gain(slot: 1, amount: 15, prerequisite: Some(..), ..) =
-    gain
+  let assert spell_plan.Gain(
+    slot: 1,
+    amount: 15,
+    condition: spell_plan.GatedOnCaster(..),
+    ..,
+  ) = gain
     as "+15 of vital 6, which is slot 1, behind prerequisite 903 (Spell4Effects 95337)"
   Nil
 }

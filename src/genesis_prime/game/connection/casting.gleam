@@ -1198,6 +1198,10 @@ pub fn carry_strike(
           )
         let #(link, bytes) =
           client_connection.draw(session.link, needed * prerequisite.roll_bytes)
+        // A row aimed at the primary target reaches it though no hit names it (it
+        // deflected the strike), and its target apply prerequisite reads that unit too.
+        let unit_ids =
+          list.unique([asked.primary_target, ..cast.hit_units(struck:)])
         let #(updated, cast_effects_out) =
           cast.went(
             cast: entered.cast,
@@ -1208,16 +1212,16 @@ pub fn carry_strike(
             struck:,
             poses: shown.poses_of(
               picture: entered.shown,
-              unit_ids: cast.hit_units(struck:),
+              unit_ids:,
               now_ms: now.monotonic_ms,
             ),
             indexes: shown.checklist_indexes_of(
               picture: entered.shown,
-              unit_ids: cast.hit_units(struck:),
+              unit_ids:,
             ),
             units: shown.first_units_of(
               picture: entered.shown,
-              unit_ids: cast.hit_units(struck:),
+              unit_ids:,
               caster_unit: entered.unit_id,
             ),
             rolls: prerequisite.rolls_of(bytes:),

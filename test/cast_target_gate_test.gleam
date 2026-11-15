@@ -21,6 +21,11 @@
 //// - `Prerequisite.prerequisiteTypeId.38`: a type 38 condition of comparison 1 passes when
 ////   the first unit is the creature of its Creature2 row, and one of comparison 2 when it
 ////   is not; the caster is a player, so comparison 1 fails it and comparison 2 passes it.
+//// - `Prerequisite.prerequisiteTypeId.37`: a type 37 condition takes one roll from 1 to 100
+////   for each check, and Prerequisite 4585 (comparison 6 on 50) passes a roll of at most
+////   50. The server's own rule (not the client's): a unit the caster's picture knows by its
+////   place alone leaves a type 37 unread (`prerequisite.condition_check`), so only a
+////   check of the caster takes a roll.
 //// - `Prerequisite.prerequisiteTypeId.108`: a unit the caster's picture holds no place for
 ////   leaves a positional condition unread.
 
@@ -170,8 +175,11 @@ pub fn remove_lands_only_on_the_unit_carrying_the_casters_group_test() -> Nil {
 
 // ---- a lasting row aimed at the primary target and the area ----
 
-pub fn is_creature_gate_lands_only_on_the_named_creature_test() -> Nil {
-  use <- owned_test.run(60_000)
+/// What a go lists when unit 20 and unit 21 are the given creatures, behind gate 20210.
+fn listed_for_creatures(
+  creature_20 creature_20: Int,
+  creature_21 creature_21: Int,
+) -> List(#(Int, List(Int))) {
   let spell = lasting_of(spell4_id: 70_611, base: 3, effect_id: 179_592)
   let plans = support.plans_of([spell])
   let #(state, raw) =
@@ -183,20 +191,31 @@ pub fn is_creature_gate_lands_only_on_the_named_creature_test() -> Nil {
       target: 20,
       at: 1000,
     )
-  let struck = support.hits([20, 21])
   let #(_, effects) =
     support.answered_known(
       caster: support.caster(),
       state:,
       effects: raw,
       at: 1000,
-      struck_of: fn(_) { struck },
+      struck_of: fn(_) { support.hits([20, 21]) },
       rolls: [],
       poses: dict.new(),
-      units: dict.from_list([#(20, NonPlayer(48_404)), #(21, NonPlayer(1))]),
+      units: dict.from_list([
+        #(20, NonPlayer(creature_20)),
+        #(21, NonPlayer(creature_21)),
+      ]),
     )
-  assert listed(effects:) == [#(20, [179_592])]
+  listed(effects:)
+}
+
+pub fn is_creature_gate_lands_only_on_the_named_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert listed_for_creatures(creature_20: 48_404, creature_21: 1)
+    == [#(20, [179_592])]
     as "unit 20 is the creature 48404, one of the three 20210 names, so the row lands there; unit 21 is creature 1, none of them"
+  assert listed_for_creatures(creature_20: 1, creature_21: 48_404)
+    == [#(21, [179_592])]
+    as "with the creatures swapped the row lands on unit 21 and not on unit 20: the gate reads each unit's own creature, not the first unit or the primary target"
 }
 
 // ---- a row aimed at the caster ----
@@ -227,6 +246,103 @@ pub fn self_aimed_row_gate_reads_the_casters_whole_unit_test() -> Nil {
     )
   assert listed(effects: out_of_combat) == []
     as "out of combat the same gate fails the caster and the row is not applied"
+}
+
+// ---- type 37: the roll ----
+
+/// Prerequisite 4585: one type 37 condition, comparison 6 on 50.
+fn chance_gate() -> prerequisite.Prerequisite {
+  prerequisite_support.single(id: 4585, condition: #(37, 6, 0, 50))
+}
+
+/// A planted spell holding one marker row with this aim behind the chance gate as its
+/// target apply prerequisite.
+fn chance_spell(aim aim: spell_plan.Aim) -> Spell {
+  spell_plan.Spell(..support.child(spell4_id: 101, base: 3), lasting: [
+    spell_plan.Lasting(
+      ..marker_row(id: 7),
+      aim:,
+      condition: GatedOnTarget(prerequisite: chance_gate()),
+    ),
+  ])
+}
+
+pub fn a_caster_row_behind_a_type_37_target_gate_takes_one_roll_and_lands_when_it_passes_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let plans = support.plans_of([chance_spell(aim: AimsAtCaster)])
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state: cast.new(),
+      caster: support.caster(),
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1000,
+    )
+  let assert [asked] = support.goes_asked(effects: raw)
+  assert cast.rolls_needed(
+      cast: state,
+      cast_id: asked.cast_id,
+      phase: asked.phase,
+      struck: [],
+    )
+    == 1
+    as "Prerequisite 4585 is type 37: the target gate of the row takes one roll for the caster"
+  let went = fn(roll) {
+    let #(_, effects) =
+      support.answered_as(
+        caster: support.caster(),
+        state:,
+        effects: raw,
+        at: 1000,
+        struck: [],
+        rolls: [roll],
+      )
+    listed(effects:)
+  }
+  assert went(50) == [#(7, [7])] as "a roll of 50 passes comparison 6 on 50"
+  assert went(51) == [] as "a roll of 51 fails the gate: the row is not applied"
+}
+
+pub fn a_row_past_the_caster_behind_a_type_37_target_gate_takes_no_roll_and_lands_nowhere_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let plans = support.plans_of([chance_spell(aim: AimsAtArea)])
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state: cast.new(),
+      caster: support.caster(),
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1000,
+    )
+  let assert [asked] = support.goes_asked(effects: raw)
+  let struck = support.hits([20, 21])
+  assert cast.rolls_needed(
+      cast: state,
+      cast_id: asked.cast_id,
+      phase: asked.phase,
+      struck:,
+    )
+    == 0
+    as "the caster's picture holds no roll for a struck unit, so its check takes none"
+  let #(_, effects) =
+    support.answered_as(
+      caster: support.caster(),
+      state:,
+      effects: raw,
+      at: 1000,
+      struck:,
+      rolls: [],
+    )
+  assert listed(effects:) == []
+    as "a type 37 condition on a struck unit is not read: the row lands on neither"
+  let lines =
+    list.filter(support.logs(effects:), fn(line) {
+      line.0 == LogDebug && string.contains(line.1, "type 37")
+    })
+  assert list.length(lines) == 2
+    as "one debug line for each of the two units says the row is behind a prerequisite of type 37, which is not read"
 }
 
 // ---- a positional gate ----

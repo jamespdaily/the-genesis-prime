@@ -34,10 +34,14 @@ import unitest
 /// A gain as (effect id, slot, amount, phase flags, prerequisite id), with the tick
 /// and duration of a ticking one.
 fn read(gain: Gain) -> #(Int, Int, Int, Int, Option(Int), Option(#(Int, Int))) {
-  let prerequisite_id =
-    option.map(gain.prerequisite, fn(prerequisite) {
-      prerequisite.id(prerequisite:).value
-    })
+  let prerequisite_id = case gain.condition {
+    spell_plan.GatedOnCaster(gates: [prerequisite, ..]) ->
+      Some(prerequisite.id(prerequisite:).value)
+    spell_plan.GatedOnCaster(gates: [])
+    | spell_plan.Always
+    | spell_plan.GatedOnTarget(..)
+    | spell_plan.GatedOnCasterAndTarget(..) -> None
+  }
   let ticking = case gain {
     Gain(..) -> None
     TickingGain(tick_ms:, duration_ms:, ..) -> Some(#(tick_ms, duration_ms))
@@ -222,23 +226,29 @@ pub fn a_gain_aimed_other_than_at_the_caster_or_of_an_unread_vital_fails_the_loa
     ))
   assert string.contains(vital, "99419") && string.contains(vital, "vital 7")
     as "vital 7 is neither 6 (slot 1) nor 8 (slot 3): the load names it"
-  let target =
-    load_reason(
-      spell_tables.vital_modifier_row_with(
-        id: 99_420,
-        spell: 30_900,
-        vital: 6,
-        amount: 1,
-        delay: 0,
-        phases: 1,
-        prerequisite: 0,
-        order: 5,
-        more: [#("prerequisiteIdTargetApply", 24_581)],
+  let rows = spell_tables.fixture_rows()
+  let assert Ok(_) =
+    spell_tables.derivation_result(
+      reaching: [#("SpellLevel", 647)],
+      rows: spell_tables.Rows(
+        ..rows,
+        spell4_effects: spell_tables.sorted_by_id([
+          spell_tables.vital_modifier_row_with(
+            id: 99_420,
+            spell: 30_900,
+            vital: 6,
+            amount: 1,
+            delay: 0,
+            phases: 1,
+            prerequisite: 0,
+            order: 5,
+            more: [#("prerequisiteIdTargetApply", 24_581)],
+          ),
+          ..rows.spell4_effects
+        ]),
       ),
     )
-  assert string.contains(target, "99420")
-    && string.contains(target, "target prerequisite")
-    as "a target apply prerequisite on a gain is not read: the load names the effect"
+    as "a gain aimed at the caster behind a target apply prerequisite loads: its gate is read on the caster"
   let missing =
     load_reason(spell_tables.vital_modifier_row(
       id: 99_421,

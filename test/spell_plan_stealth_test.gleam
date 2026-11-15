@@ -15,9 +15,9 @@
 ////   conditions row; the server does not check results 65 and 114, so a planned spell
 ////   that names such a row fails the load.
 //// - The server's load rules (the plan's doc): a Stealth or RemoveStealth row aimed other
-////   than at the caster alone, behind a target apply prerequisite, or (a Stealth row) with
-////   a delayTime or durationTime, fails the load, and so does a stealth change or a
-////   dataBits02 the plan has no case for.
+////   than at the caster alone, or (a Stealth row) with a delayTime or durationTime, fails
+////   the load, and so does a stealth change or a dataBits02 the plan has no case for. A
+////   target apply prerequisite is the row's gate, checked on the caster.
 
 import client_tables
 import genesis_prime/game/lasting.{LastingRow}
@@ -229,20 +229,27 @@ pub fn a_stealth_or_remove_stealth_row_not_aimed_at_the_caster_alone_fails_the_l
     as "targetFlags 1 is the caster"
 }
 
-pub fn a_stealth_or_remove_stealth_row_behind_a_target_prerequisite_fails_the_load_naming_itself_test() -> Nil {
+pub fn a_stealth_or_remove_stealth_row_behind_a_target_prerequisite_is_read_test() -> Nil {
   use <- owned_test.run(5000)
-  // 33144 is a target apply prerequisite three of the client's type 83 rows hold
-  // (`table_rows -- Spell4Effects prerequisiteIdTargetApply=33144`).
+  // A row aimed at the caster alone reaches no other unit, so its target apply prerequisite
+  // is checked on the caster and the plan keeps it as the row's gate (`Condition`). The
+  // client's caster-aimed Stealth rows hold 403 and 903 (`table_rows -- Spell4Effects
+  // spellId=31285`).
   let effect =
-    Spell4Effects(..blank(id: 99_834), prerequisite_id_target_apply: 33_144)
-  let refusal =
-    spell_plan.StealthTargetPrerequisiteNotRead(
+    Spell4Effects(..blank(id: 99_834), prerequisite_id_target_apply: 403)
+  assert spell_plan.stealth_read(spell4_id: strike, effect:)
+    == Ok(BrokenByDamage)
+  assert spell_plan.stealth_on_the_caster(spell4_id: strike, effect:) == Ok(Nil)
+  assert spell_plan.stealth_on_the_caster(
+      spell4_id: strike,
+      effect: Spell4Effects(..effect, target_flags: 2),
+    )
+    == Error(spell_plan.StealthAimNotRead(
       spell4_id: strike,
       effect_id: 99_834,
-    )
-  assert spell_plan.stealth_read(spell4_id: strike, effect:) == Error(refusal)
-  assert spell_plan.stealth_on_the_caster(spell4_id: strike, effect:)
-    == Error(refusal)
+      target_flags: 2,
+    ))
+    as "a row aimed past the caster is still refused by its aim"
 }
 
 pub fn a_stealth_row_with_a_databits02_that_is_not_0_or_1_fails_the_load_naming_itself_test() -> Nil {
