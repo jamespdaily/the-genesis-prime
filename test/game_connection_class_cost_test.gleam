@@ -12,7 +12,6 @@
 ////   cost of 0 in every column, so the test plants (19, 25) in it, the amount the
 ////   client's Spell4.76002 holds as an innate cost of type 19. The Spellslinger's
 ////   100 Spell Power is the class's own maximum (migration 0018).
-//// Skipped where the test's tables are not on the machine.
 
 import cast_support
 import class_resource_support
@@ -28,6 +27,7 @@ import genesis_prime/game/loadout
 import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_result
 import genesis_prime/message/float32
+import genesis_prime/message/spell_go
 import genesis_prime/message/unit_float_stat_changed.{
   type UnitFloatStatChanged, UnitFloatStatChanged,
 }
@@ -150,6 +150,21 @@ pub fn a_charged_shot_release_pays_its_planted_row_cost_from_spell_power_test() 
     press_at(state:, bag_index:, client_cast_id: 10, ms: 2100)
   assert connection_support.refusal_results(taken: released) == []
     as "the release is not refused"
+  let frames = connection_support.written(taken: released)
+  let gos =
+    connection_support.decoded(frames, spell_go.message_id, spell_go.decode)
+  assert list.map(gos, fn(go) {
+      list.flat_map(go.targets, fn(target) {
+        list.map(target.effects, fn(effect) { effect.spell4_effects_id })
+      })
+    })
+    == [[80_979]]
+    as "the release's go is stage 34722's (Spell4Thresholds 123's to_cast): it lists Spell4Effects 80979, whose spellId is 34722"
+  assert list.filter(list.map(frames, fn(frame) { frame.message_id }), fn(id) {
+      id == spell_go.message_id || id == unit_float_stat_changed.message_id
+    })
+    == [unit_float_stat_changed.message_id, spell_go.message_id]
+    as "the payment is written before the go it is paid for: a go that is at once pays as its strike begins, so the go's own gates read the paid caster (`cast` module doc, 'A cost is checked at the accept and paid at the cast's first go'; the server's choice, the client shows only what 0x935 says)"
   assert resource_changes(taken: released)
     == [
       UnitFloatStatChanged(unit_id:, stat_id: 6, value: float32.to_bits(75.0)),

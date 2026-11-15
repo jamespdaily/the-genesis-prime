@@ -204,16 +204,18 @@
 ////   read once into a `Cost` the cast rule checks against the caster's resources
 ////   (`0x1403b3320`, `0x1405e7980`, `Spell4CastResult.vital_cost`): types 5 to 11
 ////   are resource slots 0 to 6 (result 50 + the slot; Mind Burst, type 6, is 51);
-////   type 18 goes to the class's slots that hold that vital, the last one's result
-////   given when none passes (Gamma Rays is 55). Health (1), shield (3), focus (15)
+////   types 4, 12, 13, 14, 18 and 19 go to the class's slots that hold that vital, the
+////   last one's result given when none passes (Gamma Rays is 55); on a threshold
+////   row's cost the same types go to the first such slot that holds a point
+////   (`RowClassCost`). Health (1), shield (3), focus (15)
 ////   and 16 (slot 7) give their own results (44, 176, 167, 177) and are held by no
 ////   rule of the server; any other type, the client's slots 8 to 10 (types 27 to 29)
 ////   among them, is an `UnreadCost`.
 //// - **The spend.** A cost's Spell4 EMM id (`Spell4.innateCostEMMId0`, genesis_prime/game/spend)
 ////   of 4 or 7 on a slot cost makes it a `SpendAllCost`, which takes every point the
-////   slot holds; any other id, one on a cost that is not a slot cost and one on no
-////   cost are an `UnreadSpendCost`. Each gain, Proxy and (in genesis_prime/game/spell_area)
-////   damage effect keeps its row's tag (`Spell4Effects.emmComparison`), and the cast
+////   slot holds; any other id, one on a slot or unheld cost and one on no cost are an
+////   `UnreadSpendCost`; a class cost keeps its check whatever its id. Each gain, Proxy
+////   and (in genesis_prime/game/spell_area) damage effect keeps its row's tag (`Spell4Effects.emmComparison`), and the cast
 ////   rule chooses by it with the points spent.
 //// - **The caster requirements.** A spell's two caster vital requirements
 ////   (`0x1403b1780`): types 5 to 11 read the same slots with the same results,
@@ -4261,10 +4263,12 @@ fn cc_mask_of(
   |> result.replace_error(NoRow(table: "Spell4CCConditions", id:))
 }
 
-/// The spell's innate costs, as (vital type, amount, EMM id): the Spell4 row's two,
-/// then the two of the Spell4Thresholds row for a stage, which hold no EMM id; a type
-/// of 0 or above 30, or an amount of 0, is none (`0x1403b3320`), unless the cost has
-/// an EMM id (`spent_by`).
+/// The spell's costs in the order the client checks them: the two of the
+/// Spell4Thresholds row for a stage first, which hold no EMM id (the threshold step,
+/// `0x1403bfd60` calls `0x1403c0620` at `0x1403c012e` and returns on a refusal), then
+/// the Spell4 row's two innate costs as (vital type, amount, EMM id) (the cast check,
+/// `0x14039a60a`); a type of 0 or above 30, or an amount of 0, is none
+/// (`0x1403b3320`), unless the cost has an EMM id (`spent_by`).
 fn costs_of(
   row row: spell4.Spell4,
   innate innate: List(#(Int, Int, Int)),
@@ -4292,21 +4296,24 @@ fn costs_of(
       spent_by(cost: fixed, emm_id: 0)
     }),
   )
-  option.values(list.append(innate, threshold))
+  option.values(list.append(threshold, innate))
 }
 
 /// The cost as its Spell4 EMM id spends it (genesis_prime/game/spend): a slot cost
 /// with an id read as a spend of every point held becomes a `SpendAllCost`; any other
-/// cost with an id, or no cost with one, is an `UnreadSpendCost` with the result the
-/// cost gives, or 285 when there is none (`Spell4.innateCostEMMId0`: three rows hold
-/// an id with no cost, and a cost has no result of its own to give).
+/// slot or unheld cost with an id, or no cost with one, is an `UnreadSpendCost` with
+/// the result the cost gives, or 285 when there is none (`Spell4.innateCostEMMId0`:
+/// three rows hold an id with no cost, and a cost has no result of its own to give).
+/// A class cost keeps its check whatever its id: the client's class check
+/// (`0x1405e7980`) reads no EMM id.
 fn spent_by(cost cost: Option(Cost), emm_id emm_id: Int) -> Option(Cost) {
-  case spend.spend_of(emm_id:), cost {
-    None, cost -> cost
-    Some(spend.AllHeld), Some(SlotCost(slot:, amount:, result:)) ->
+  case cost, spend.spend_of(emm_id:) {
+    Some(ClassVitalCost(..)), _ | Some(RowClassCost(..)), _ -> cost
+    cost, None -> cost
+    Some(SlotCost(slot:, amount:, result:)), Some(spend.AllHeld) ->
       Some(SpendAllCost(slot:, amount:, result:))
-    Some(spend.AllHeld), other -> Some(unread_spend(cost: other, emm_id:))
-    Some(spend.Unread(emm_id:)), other ->
+    other, Some(spend.AllHeld) -> Some(unread_spend(cost: other, emm_id:))
+    other, Some(spend.Unread(emm_id:)) ->
       Some(unread_spend(cost: other, emm_id:))
   }
 }
@@ -4317,7 +4324,8 @@ fn unread_spend(cost cost: Option(Cost), emm_id emm_id: Int) -> Cost {
     | Some(SpendAllCost(result:, ..))
     | Some(UnheldCost(result:))
     | Some(UnreadSpendCost(result:, ..)) -> result
-    Some(ClassVitalCost(..)) | Some(RowClassCost(..)) -> 175
+    Some(ClassVitalCost(..)) | Some(RowClassCost(..)) ->
+      panic as "a class cost is never read as a spend"
     None -> 285
   }
   UnreadSpendCost(result:, emm_id:)
@@ -4347,9 +4355,9 @@ fn has_cost(cost_type cost_type: Int, amount amount: Int) -> Bool {
 
 /// One cost column pair as a cost. The client sends a type to its own check when it has
 /// a case for it (`0x1403b3320`) and every other type to the class mechanic's
-/// (`0x1405e7980`): on a Spell4 row those are the class vitals 4, 12, 13, 14, 18 and
-/// 19; on a threshold row (`on_row`, `0x1403c0620`) the class vitals the server reads
-/// are 18 and 19.
+/// (`0x1405e7980`): those are the class vitals 4, 12, 13, 14, 18 and 19, which a
+/// threshold row's cost (`on_row`, `0x1403c0620`) reads through the class's slots too
+/// (`UnitVitalValue` `0x140466520`, `ClassVitalSlot` `0x1405e78c0`).
 fn cost_of(
   row row: spell4.Spell4,
   cost_type cost_type: Int,
@@ -4363,15 +4371,13 @@ fn cost_of(
     15, _ -> Ok(Some(UnheldCost(result: 167)))
     16, _ -> Ok(Some(UnheldCost(result: 177)))
     _, Ok(#(slot, result)) -> Ok(Some(SlotCost(slot:, amount:, result:)))
-    18, _ | 19, _ ->
+    4, _ | 12, _ | 13, _ | 14, _ | 18, _ | 19, _ ->
       Ok(
         Some(case on_row {
           True -> RowClassCost(vital: cost_type, amount:)
           False -> ClassVitalCost(vital: cost_type, amount:)
         }),
       )
-    4, _ | 12, _ | 13, _ | 14, _ if !on_row ->
-      Ok(Some(ClassVitalCost(vital: cost_type, amount:)))
     _, Error(Nil) -> Error(UnreadCost(spell4_id: row.id, cost_type:))
   }
 }

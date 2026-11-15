@@ -780,6 +780,15 @@ pub fn a_type_23_cost_stays_unread_test() -> Nil {
 /// The costs of Charged Shot's third stage (Spell4Thresholds 124) with its first cost
 /// column set to this type and amount; the client's row holds a cost of 0.
 fn last_stage_costs(cost cost: #(Int, Int)) -> List(spell_plan.Cost) {
+  stage_costs(to_cast: 36_691, cost:)
+}
+
+/// The same stage casting this spell: its costs are the spell's own innate costs and
+/// the row's.
+fn stage_costs(
+  to_cast to_cast: Int,
+  cost cost: #(Int, Int),
+) -> List(spell_plan.Cost) {
   let rows = spell_tables.fixture_rows()
   let costly =
     list.map(rows.spell4_thresholds, fn(row) {
@@ -788,7 +797,7 @@ fn last_stage_costs(cost cost: #(Int, Int)) -> List(spell_plan.Cost) {
           spell_tables.threshold_row(
             id: 124,
             parent: 34_718,
-            to_cast: 36_691,
+            to_cast:,
             order: 2,
             duration: 1400,
             cost:,
@@ -816,6 +825,13 @@ pub fn threshold_row_class_costs_read_as_row_class_costs_test() -> Nil {
     as "0x1403c0620: a row cost of type 19 is checked against the class's vital, as a row cost"
   assert last_stage_costs(cost: #(18, 2))
     == [spell_plan.RowClassCost(vital: 18, amount: 2)]
+  assert list.map([4, 12, 13, 14], fn(cost_type) {
+      last_stage_costs(cost: #(cost_type, 3))
+    })
+    == list.map([4, 12, 13, 14], fn(cost_type) {
+      [spell_plan.RowClassCost(vital: cost_type, amount: 3)]
+    })
+    as "0x1403c0620 reads every class vital of a row through the class's slots, as it reads 18 and 19"
   assert last_stage_costs(cost: #(5, 3))
     == [spell_plan.SlotCost(slot: 0, amount: 3, result: 50)]
     as "types 5 to 11 on a row stay the slot costs of 0x1403b3320"
@@ -829,6 +845,21 @@ pub fn threshold_row_class_costs_read_as_row_class_costs_test() -> Nil {
       [spell_plan.UnheldCost(result: 177)],
     ]
     as "1, 3, 15 and 16 stay the vitals no rule of the server holds"
+}
+
+pub fn a_stage_checks_its_row_cost_before_the_spells_innate_costs_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // CastAbilityBagSpell 0x14039a040 resolves the threshold step first
+  // (ResolveThresholdSpell 0x1403bfd60 calls CheckThresholdRowCosts 0x1403c0620 at
+  // 0x1403c012e, and a refusal returns); the cast check, whose innate costs
+  // (CheckInnateCosts 0x1403b1de0) come later, is called at 0x14039a60a.
+  // Gamma Rays 29874 (Spell4.innateCostType0 18, innateCost0 2) as a stage.
+  assert stage_costs(to_cast: 29_874, cost: #(19, 25))
+    == [
+      spell_plan.RowClassCost(vital: 19, amount: 25),
+      spell_plan.ClassVitalCost(vital: 18, amount: 2),
+    ]
+    as "the row's cost is checked first, so its refusal is the one given"
 }
 
 pub fn a_cost_of_type_16_is_refused_177_as_a_vital_no_rule_of_the_server_holds_test() -> Nil {

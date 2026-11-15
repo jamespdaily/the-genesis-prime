@@ -206,7 +206,7 @@ fn whole_drives(
 ) -> Result(List(Drive), Unread) {
   let root = oracle.plan_of(rows:, base: entry.base)
   let strikes = oracle.striking_with_states(root:)
-  let casters = paying_casters(base: entry.base, amounts: [100])
+  let casters = paying_casters(rows:, base: entry.base, amounts: [100])
   let charged = root.method == spell_plan.ChargeRelease && root.stages != []
   let attempts = case charged {
     True ->
@@ -1203,55 +1203,64 @@ fn stacks_that_kept_the_oldest(rows rows: Rows) -> List(Asked) {
   })
 }
 
-/// The casters that may pay a press of the ability: the plain one, then each playable class
-/// holding each of the amounts, so the first press that is not refused pays.
+/// The caster of an ability as the ability's own player class (`Spell4Base.classIdPlayer`)
+/// holding this much of its resource, or none when that class is not one the server plays:
+/// a class cost is checked against the caster's own class (`CheckClassResourceCost`,
+/// `0x1405e7980`), and passes and pays nothing for a class none of whose slots name the
+/// vital, so only the ability's own class shows what the ability pays.
+fn own_class_holding(
+  rows rows: Rows,
+  base base: Int,
+  value value: Int,
+) -> List(cast.Caster) {
+  let assert Ok(base_row) =
+    spell4_base.get(tables: rows.tables, id: Spell4BaseId(base))
+    as "a planned ability has a Spell4Base row"
+  case
+    list.contains(class_resource.playable_class_ids(), base_row.class_id_player)
+  {
+    True -> [
+      cast.Caster(
+        ..oracle.caster_of(base:),
+        resources: support.holding(
+          class_id: base_row.class_id_player,
+          value: int.to_float(value),
+        ),
+      ),
+    ]
+    False -> []
+  }
+}
+
+/// The casters that may pay a press of the ability: the plain one, then the ability's own
+/// class holding each of the amounts, so the first press that is not refused pays.
 fn paying_casters(
+  rows rows: Rows,
   base base: Int,
   amounts amounts: List(Int),
 ) -> List(cast.Caster) {
-  let plain = oracle.caster_of(base:)
   [
-    plain,
-    ..list.flat_map(class_resource.playable_class_ids(), fn(class_id) {
-      list.map(amounts, fn(value) {
-        cast.Caster(
-          ..plain,
-          resources: support.holding(class_id:, value: int.to_float(value)),
-        )
-      })
+    oracle.caster_of(base:),
+    ..list.flat_map(amounts, fn(value) {
+      own_class_holding(rows:, base:, value:)
     })
   ]
 }
 
 /// What the whole cast of the ability pays (a cast with a cast time pays when it finishes, so
 /// the payments are those of every step of the drive), by the first caster that is not refused:
-/// the ability's own player class holding exactly the token's amount, then each playable class
-/// so, since a cost that takes every point held takes the amount only from a caster that holds
-/// no more, and then the plain caster. The ability's own class goes first because a class
-/// cost passes and pays nothing for a class none of whose slots name the vital
-/// (`CheckClassResourceCost`, `0x1405e7980`), so another class could pass without paying.
+/// the ability's own player class holding exactly the token's amount, since a cost that takes
+/// every point held takes the amount only from a caster that holds no more, and then the plain
+/// caster.
 fn payments_of(
   rows rows: Rows,
   base base: Int,
   amount amount: Int,
 ) -> Result(List(class_resource.Payment), Unread) {
-  let plain = oracle.caster_of(base:)
-  let assert Ok(base_row) =
-    spell4_base.get(tables: rows.tables, id: Spell4BaseId(base))
-    as "a planned ability has a Spell4Base row"
   let casters =
-    list.append(
-      list.map(
-        [base_row.class_id_player, ..class_resource.playable_class_ids()],
-        fn(class_id) {
-          cast.Caster(
-            ..plain,
-            resources: support.holding(class_id:, value: int.to_float(amount)),
-          )
-        },
-      ),
-      [plain],
-    )
+    list.append(own_class_holding(rows:, base:, value: amount), [
+      oracle.caster_of(base:),
+    ])
   first_taken(casters:, attempt: fn(caster) {
     oracle.drive_as(caster:, plans: rows.plans, strikes: oracle.striking_none)
   })

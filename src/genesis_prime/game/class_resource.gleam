@@ -251,34 +251,22 @@ pub fn select(
         }
       })
     })
-  let vitals =
-    list.map(playable, fn(class) {
-      let class_id = class.0
-      case class.get(tables:, id: ClassId(class_id)) {
-        Ok(row) -> Ok(#(class_id, vitals_of(row:)))
-        Error(Nil) ->
-          Error(Refusal(
-            table: "Class",
-            row: RowName(int.to_string(class_id)),
-            rule: "the client's table has no row of this playable class",
-          ))
-      }
-    })
-  let no_class_row = result.partition(vitals).1
-  case list.flatten([unknown, missing, no_class_row]) {
+  case list.flatten([unknown, missing]) {
     [_, ..] as refusals -> Error(refusals)
-    [] -> {
-      let vitals = dict.from_list(result.values(vitals))
+    [] ->
       Ok(Classes(
         by_class: list.map(playable, fn(class) {
           let #(class_id, #(slot, start, _)) = class
           let named = dict.get(by_class, class_id) |> result.unwrap([])
-          let held = dict.get(vitals, class_id) |> result.unwrap([])
-          #(class_id, resource_of(named:, slot:, vitals: held, start:))
+          let assert Ok(row) = class.get(tables:, id: ClassId(class_id))
+            as "the load requires a Class row for each playable class (character_state.requirements)"
+          #(
+            class_id,
+            resource_of(named:, slot:, vitals: vitals_of(row:), start:),
+          )
         })
         |> dict.from_list,
       ))
-    }
   }
 }
 
@@ -495,8 +483,11 @@ pub fn class_cost(
         })
       {
         Ok(slot) -> Ok(Some(slot))
-        Error(Nil) ->
-          Error(refused_at(slot: list.last(slots) |> result.unwrap(0)))
+        Error(Nil) -> {
+          let assert Ok(last) = list.last(slots)
+            as "a class cost with no passing slot has slots"
+          Error(refused_at(slot: last))
+        }
       }
   }
 }

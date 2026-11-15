@@ -31,8 +31,6 @@ import genesis_prime/game/class_resource.{
   Payment, Resource, Row, StartTimer,
 }
 import genesis_prime/step
-import genesis_prime/table/class
-import genesis_prime/table/loader/store as table_store
 import gleam/float
 import gleam/list
 import gleam/string
@@ -575,33 +573,6 @@ pub fn a_class_with_no_max_row_is_refused_by_name_test() -> Nil {
     class_resource.select(rows:, tables: fixture_tables.shared())
   assert names_of(refusals) == ["5 max"]
     as "every playable class needs its maximum"
-}
-
-pub fn a_playable_class_with_no_class_row_fails_the_load_test() -> Nil {
-  use <- owned_test.run(5000)
-  // The tables as a load with no requirement on Class would leave them: the
-  // Spellslinger's Class row (7) removed. The client's Class table holds rows 1, 2,
-  // 3, 4, 5 and 7, the playable classes, and a class the server plays on needs its
-  // row for its vitals (`Class.vitalEnumResource00`).
-  let assert Ok(tables) =
-    table_store.edit(
-      tables: fixture_tables.shared(),
-      with: [table_store.remove_rows(entry: class.entry(), ids: [7])],
-      requirements: [],
-      derivations: [],
-    )
-    as "the shared tables edit without the Class row"
-  let assert Error(refusals) =
-    class_resource.select(rows: design_rows(), tables:)
-  assert refusals
-    == [
-      Refusal(
-        table: "Class",
-        row: RowName("7"),
-        rule: "the client's table has no row of this playable class",
-      ),
-    ]
-    as "the load names the class whose Class row is missing"
 }
 
 pub fn an_unknown_class_or_name_is_refused_by_name_test() -> Nil {
