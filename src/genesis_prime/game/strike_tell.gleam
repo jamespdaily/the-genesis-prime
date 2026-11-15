@@ -119,13 +119,19 @@ pub type Refusal {
 pub type Outcome {
   /// The blows landed: a description for each (genesis_prime/game/hit), and the
   /// states the unit took of the strike's `controls` (a unit that takes none
-  /// answers `[]`).
-  Landed(descriptions: List(Description), controls: List(ControlLanded))
+  /// answers `[]`), and the interrupt armor the strike took off it (`armor_removed`, 0
+  /// when none), which the striker's connection shows as a ModifyInterruptArmor line.
+  Landed(
+    descriptions: List(Description),
+    controls: List(ControlLanded),
+    armor_removed: Int,
+  )
   /// A guarded creature (genesis_prime/world_map/creature_guard) took no damage from a
   /// strike that had blows: it keeps its health, the states it took of the strike's
   /// `controls` still land, and the striker's connection shows the immunity
-  /// (`opcode.0x247.immunity`).
-  Immune(controls: List(ControlLanded))
+  /// (`opcode.0x247.immunity`). Its states can still wear down the creature's interrupt armor, so
+  /// it carries `armor_removed` as `Landed` does.
+  Immune(controls: List(ControlLanded), armor_removed: Int)
   /// The creature deflected the whole strike.
   Deflected
   /// The creature took no strike.

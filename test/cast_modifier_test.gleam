@@ -401,6 +401,7 @@ fn creature_struck() -> List(cast.Struck) {
       unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
       descriptions: [],
       controls: [],
+      armor_removed: 0,
     ),
   ]
 }
@@ -743,6 +744,7 @@ pub fn modifier_on_another_player_is_left_out_test() -> Nil {
       unit: cast.HitPlayer,
       descriptions: [],
       controls: [],
+      armor_removed: 0,
     ),
   ]
   let #(_, effects) =

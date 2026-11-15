@@ -98,7 +98,8 @@
 ////   broke a charge (`ChargeInterrupted`), its timer's firing and `Killed` at a kill; it carries out
 ////   its effects, news to every viewer and the opening's timer (`OpeningEnds`, id 11 and 6 more for
 ////   each generation). A guarded creature's strike takes no health. An opened creature counts as
-////   controlled (`held`): the fight starts no charge, and acts again when both the states and the
+////   still, refused and holding (`still`, `attack_refused`, `holds_a_state`): the fight starts no
+////   charge, strike or path, and acts again when both the states that stop its run and the
 ////   opening are gone. A viewer that arrives is shown the guard's or the opening's cast after the 0x262.
 //// - **A viewer that is not a connection any more** is dropped by the send (the
 ////   registry finds no process); the map's `Unwatched` follows from its end.
@@ -864,8 +865,13 @@ fn struck(
           creature_life.Reaction(
             life: state.life,
             answer: Answered(key: tell.key, outcome: case tell.offence.blows {
-              [] -> strike_tell.Landed(descriptions: [], controls: [])
-              [_, ..] -> strike_tell.Immune(controls: [])
+              [] ->
+                strike_tell.Landed(
+                  descriptions: [],
+                  controls: [],
+                  armor_removed: 0,
+                )
+              [_, ..] -> strike_tell.Immune(controls: [], armor_removed: 0)
             }),
             news: [],
             corpse_for_ms: None,
@@ -973,7 +979,7 @@ fn credit_for(
 /// The creature's controls after a strike and its damage: a strike with states asks
 /// the controls to take them (`creature_control.land`), which land on a creature
 /// the strike left alive and name the ones that did in the answer, and the fight
-/// stops the creature's path when it held no state before; a strike that kills a
+/// stops the creature's path when a state that stops its run lands; a strike that kills a
 /// creature that holds states or worn armor drops them with no 0x880
 /// (`creature_control.died`). A strike with no state that kills no such creature touches
 /// no control, and its answer stands.
@@ -1000,7 +1006,6 @@ fn controls_after(
     [_, ..], None, _ ->
       case reaction.answer.outcome {
         strike_tell.Landed(..) | strike_tell.Immune(..) -> {
-          let was_held = held(state:)
           let landing =
             creature_control.land(
               state: state.control,
@@ -1010,9 +1015,9 @@ fn controls_after(
               now_ms:,
             )
           let state = State(..state, control: landing.state)
-          let #(state, stopped) = case !was_held && held(state:) {
-            True -> fought(state:, input: creature_fight.Controlled, now_ms:)
-            False -> #(state, [])
+          let #(state, stopped) = case landing.landed {
+            [_, ..] -> fought(state:, input: creature_fight.Controlled, now_ms:)
+            [] -> #(state, [])
           }
           #(
             state,
@@ -1021,6 +1026,7 @@ fn controls_after(
               outcome: with_controls(
                 outcome: reaction.answer.outcome,
                 controls: landing.landed,
+                armor_removed: landing.armor_removed,
               ),
             ),
             list.append(carried(state:, effects: landing.effects), stopped),
@@ -1036,15 +1042,16 @@ fn controls_after(
 }
 
 /// The outcome of a strike that landed or met the immunity, with the states the creature
-/// took of it.
+/// took of it and the armor it lost to it.
 fn with_controls(
   outcome outcome: strike_tell.Outcome,
   controls controls: List(strike_tell.ControlLanded),
+  armor_removed armor_removed: Int,
 ) -> strike_tell.Outcome {
   case outcome {
     strike_tell.Landed(descriptions:, ..) ->
-      strike_tell.Landed(descriptions:, controls:)
-    strike_tell.Immune(..) -> strike_tell.Immune(controls:)
+      strike_tell.Landed(descriptions:, controls:, armor_removed:)
+    strike_tell.Immune(..) -> strike_tell.Immune(controls:, armor_removed:)
     strike_tell.Deflected | strike_tell.Refused(..) -> outcome
   }
 }
@@ -1078,17 +1085,17 @@ fn carried(
 }
 
 /// A control's timer fired: its state ends with a 0x880, and the fight acts again
-/// when it was the last one held.
+/// when it was the last one that stopped the creature's run.
 fn control_ended(
   state state: State,
   number number: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let was_held = held(state:)
+  let was_still = still(state:)
   let #(control, effects) =
     creature_control.ended(state: state.control, number:)
   let state = State(..state, control:)
-  let #(state, resumed) = case was_held && !held(state:) {
+  let #(state, resumed) = case was_still && !still(state:) {
     True -> fought(state:, input: creature_fight.ControlEnded, now_ms:)
     False -> #(state, [])
   }
@@ -1211,14 +1218,37 @@ fn fighter_of(state state: State) -> Fighter {
     attack: state.body.combat.attack,
     interval_ms: state.settings.kind.attack_interval_ms,
     numbers: state.settings.numbers,
-    controlled: held(state:),
+    still: still(state:),
+    attack_refused: attack_refused(state:),
+    holds_a_state: holds_a_state(state:),
     guard_casts: creature_guard.live_casts(state: state.guard),
   )
 }
 
-/// Whether the creature holds a crowd-control state or is opened (genesis_prime/world_map/creature_guard):
-/// it starts no strike, chase or walk, and the fight acts again when it stops being held.
-fn held(state state: State) -> Bool {
+/// Whether the creature holds a state that stops its run, or is opened
+/// (genesis_prime/world_map/creature_guard): it starts no chase or walk, and the fight
+/// acts again when it stops being still.
+fn still(state state: State) -> Bool {
+  creature_control.stops_moving(
+    state: state.control,
+    stopped_by: state.body.combat.attack.run_stopped_by,
+  )
+  || creature_guard.opened(state: state.guard)
+}
+
+/// Whether the creature holds a state that refuses its attack's strike, or is opened: the
+/// attack spell's caster conditions, and a Stun, Knockdown or Knockback whatever they say.
+fn attack_refused(state state: State) -> Bool {
+  creature_control.refuses(
+    state: state.control,
+    mask: state.body.combat.attack.caster_cc_mask,
+  )
+  || creature_control.hard_held(state: state.control)
+  || creature_guard.opened(state: state.guard)
+}
+
+/// Whether the creature holds any state, or is opened: it starts no charge.
+fn holds_a_state(state state: State) -> Bool {
   creature_control.holds(state: state.control)
   || creature_guard.opened(state: state.guard)
 }
@@ -1259,16 +1289,16 @@ fn guard_stepped(
 }
 
 /// The opening's timer fired: the guard comes back, and the fight acts again when that was the
-/// last thing that held the creature.
+/// last thing that kept the creature still.
 fn guard_timer_fired(
   state state: State,
   timer timer: creature_guard.Timer,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let was_held = held(state:)
+  let was_still = still(state:)
   let #(state, effects) =
     guard_stepped(state:, input: creature_guard.TimerFired(timer:), now_ms:)
-  let #(state, resumed) = case was_held && !held(state:) {
+  let #(state, resumed) = case was_still && !still(state:) {
     True -> fought(state:, input: creature_fight.ControlEnded, now_ms:)
     False -> #(state, [])
   }

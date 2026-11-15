@@ -38,6 +38,7 @@ import genesis_prime/game/prerequisite.{
 }
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group.{type Unit, Unit}
+import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Creature2Id, Faction2Id}
 import genesis_prime/table/loader/store as table_store
@@ -105,7 +106,15 @@ pub type Shown {
     /// that it left it; the client gives a creature in combat no click
     /// (`PickInteractionKind`, `0x14047a060`).
     in_combat: Bool,
+    /// The crowd-control states the creature holds as its viewer's client was told
+    /// (0x87f without a later 0x880), which the target gate of a press reads.
+    held: List(HeldState),
   )
+}
+
+/// A crowd-control state a shown creature holds, with the instance id its 0x87f gave.
+pub type HeldState {
+  HeldState(state: CrowdControlState, instance_id: Int)
 }
 
 /// The units the client shows, by unit id.
@@ -422,8 +431,8 @@ pub fn with_path(
   }
 }
 
-/// The picture with the creature marked alive or dead by its owner's news; a unit
-/// that is not a shown creature is as it was.
+/// The picture with the creature marked alive or dead by its owner's news, a dead
+/// creature holding no state; a unit that is not a shown creature is as it was.
 pub fn with_alive(
   picture picture: Picture,
   unit_id unit_id: Int,
@@ -431,7 +440,58 @@ pub fn with_alive(
 ) -> Picture {
   case dict.get(picture, unit_id) {
     Ok(ShownCreature(..) as creature) ->
-      dict.insert(picture, unit_id, ShownCreature(..creature, alive:))
+      dict.insert(
+        picture,
+        unit_id,
+        ShownCreature(..creature, alive:, held: case alive {
+          True -> creature.held
+          False -> []
+        }),
+      )
+    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+  }
+}
+
+/// The picture with the creature holding the state its owner's news gave, under the
+/// 0x87f's instance id; a unit that is not a shown creature is as it was.
+pub fn with_held_applied(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  state state: CrowdControlState,
+  instance_id instance_id: Int,
+) -> Picture {
+  case dict.get(picture, unit_id) {
+    Ok(ShownCreature(held:, ..) as creature) ->
+      dict.insert(
+        picture,
+        unit_id,
+        ShownCreature(
+          ..creature,
+          held: list.append(held, [HeldState(state:, instance_id:)]),
+        ),
+      )
+    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+  }
+}
+
+/// The picture with the creature no longer holding the state of that instance id (the
+/// 0x880 names one instance), the creature's other instances kept; a unit that is not a
+/// shown creature is as it was.
+pub fn with_held_ended(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  instance_id instance_id: Int,
+) -> Picture {
+  case dict.get(picture, unit_id) {
+    Ok(ShownCreature(held:, ..) as creature) ->
+      dict.insert(
+        picture,
+        unit_id,
+        ShownCreature(
+          ..creature,
+          held: list.filter(held, fn(one) { one.instance_id != instance_id }),
+        ),
+      )
     Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }

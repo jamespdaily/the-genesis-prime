@@ -133,7 +133,11 @@ pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_
     Answer(
       to:,
       answered: Answered(
-        outcome: Landed(descriptions: [description], controls: []),
+        outcome: Landed(
+          descriptions: [description],
+          controls: [],
+          armor_removed: 0,
+        ),
         ..,
       ),
     ),
@@ -171,7 +175,11 @@ pub fn health_is_floored_at_0_the_answer_is_landed_and_killed_and_a_later_strike
     player_life.DamageTaken,
     Answer(
       answered: Answered(
-        outcome: Landed(descriptions: [description], controls: []),
+        outcome: Landed(
+          descriptions: [description],
+          controls: [],
+          armor_removed: 0,
+        ),
         ..,
       ),
       ..,

@@ -5,6 +5,7 @@
 //// entry is read by none. The coverage tool and the tests of the client's
 //// tables load every table (`genesis_prime/table.load`).
 
+import genesis_prime/table/cc_states
 import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
@@ -125,6 +126,8 @@ import genesis_prime/table/xp_per_level
 ///   may be dead (genesis_prime/game/spell_plan).
 /// - Spell4CCConditions: the crowd-control states that refuse a press of a spell
 ///   (genesis_prime/game/spell_plan).
+/// - CCStates: the states whose flags stop a creature moving
+///   (genesis_prime/game/crowd_control `stopping_mask`).
 /// - Spell4GroupList and Spell4StackGroup: the spell groups a Spell4Effects type 80 row
 ///   removes by and the stack group and cap of a spell that lasts on a unit
 ///   (genesis_prime/game/spell_plan).
@@ -159,6 +162,7 @@ import genesis_prime/table/xp_per_level
 /// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
   [
+    cc_states.entry(),
     character_creation.entry(),
     chat_channel.entry(),
     class.entry(),

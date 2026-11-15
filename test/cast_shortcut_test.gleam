@@ -16,7 +16,8 @@
 //// - Spell4 34448 (row 10349's spell): prerequisiteIdCasterCast 11700, `0x1403ace00`.
 //// - Spell4 70503 (row 18165's spell): Spell4Base 47487, castMethod 5 (a client-side
 ////   interaction), whose answer 0x805 carries the Spell4Base id plus 1 (`opcode.0x805.fields`).
-//// - Spell4 30173 (row 6761's spell): targetType 1, a CC state 9 the plans cannot hold.
+//// - Spell4 35436 (row 11555's spell): targetType 1, a Knockdown on the target that lasts
+////   until removed, which the plan drops.
 
 import cast_support as support
 import client_tables
@@ -32,12 +33,13 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/client_side_interaction_result.{
   ClientSideInteractionResult,
 }
+import genesis_prime/message/crowd_control_state.{type CrowdControlState, Stun}
 import genesis_prime/message/interaction_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
 import genesis_prime/table/item_special
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite
@@ -106,6 +108,8 @@ type Unit {
     gap: Float,
     alive: Bool,
     in_combat: Bool,
+    /// The crowd-control states the caster's client was told the creature holds.
+    held: List(CrowdControlState),
   )
 }
 
@@ -126,6 +130,7 @@ fn unit(id unit_id: Int, of creature_id: Int, at gap: Float) -> Unit {
     gap:,
     alive: True,
     in_combat: False,
+    held: [],
   )
 }
 
@@ -158,6 +163,9 @@ fn picture_of(scene scene: Scene) -> shown.Picture {
         attackable: Attackable(exile: True, dominion: True),
         hostile_to: Hostile(exile: False, dominion: False),
         in_combat: unit.in_combat,
+        held: list.map(unit.held, fn(state) {
+          shown.HeldState(state:, instance_id: 1)
+        }),
       ),
     )
   })
@@ -188,6 +196,7 @@ fn target_of(scene scene: Scene) -> fn(Int) -> Target {
               body: Body(place: place_of(unit:), radius: creature_radius),
               alive: unit.alive,
               in_combat: unit.in_combat,
+              held: unit.held,
               withheld: None,
             )
           }
@@ -522,8 +531,25 @@ fn refused_at(
   spell4_id spell4_id: Int,
   target target: Int,
 ) -> List(Int) {
+  refused_with(shortcuts: shortcuts(), scene:, spell4_id:, target:)
+}
+
+/// The same, for the shortcuts of these tables.
+fn refused_with(
+  shortcuts shortcuts: shortcut_spell.Shortcuts,
+  scene scene: Scene,
+  spell4_id spell4_id: Int,
+  target target: Int,
+) -> List(Int) {
   let #(_, effects) =
-    press_at(scene:, state: cast.new(), spell4_id:, target:, at: 1000)
+    press_at_with(
+      shortcuts:,
+      scene:,
+      state: cast.new(),
+      spell4_id:,
+      target:,
+      at: 1000,
+    )
   assert support.tells(effects:) == [] && support.started_timers(effects:) == []
     as "a refused press starts no cast"
   support.refusal_results(effects:)
@@ -940,22 +966,66 @@ pub fn a_caster_condition_of_an_unread_type_refuses_as_not_built_test() -> Nil {
 
 pub fn a_press_of_a_targeted_spell_that_cannot_be_planned_stays_not_built_test() -> Nil {
   use <- owned_test.run(10_000)
+  // Spell4 35436's Spell4Effects 212028 aimed by a union flag (targetFlags 3), which
+  // `spell_plan.aim_of` does not read, so the spell cannot be planned.
+  use tables <- fixture_tables.changed(
+    table: "Spell4Effects",
+    id: 212_028,
+    with: [#("targetFlags", Integer(3))],
+  )
   let scene =
     Scene(..nothing_shown(), units: [unit(id: 913, of: 32_668, at: 10.0)])
   let #(_, effects) =
-    press_at(
+    press_at_with(
+      shortcuts: shortcut_spell.shortcuts(tables:),
       scene:,
       state: cast.new(),
-      spell4_id: 30_173,
+      spell4_id: 35_436,
       target: 913,
       at: 1000,
     )
   assert support.refusal_results(effects:)
     == [code(cast_result.IllegalSpellCast)]
-    as "Spell4 30173's tree holds a state the plans cannot: refused 285"
+    as "a union aim is not read, so the plan refuses the spell and its press is refused 285"
   let assert [line] = warnings(effects:)
-  assert string.contains(line, "30173") && string.contains(line, "(#336)")
+  assert string.contains(line, "35436") && string.contains(line, "(#336)")
     as "the log names the spell and the issue that will close the gap, #336"
+}
+
+pub fn a_press_of_a_spell_whose_state_lasts_until_removed_starts_and_logs_the_dropped_row_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4 35436's Spell4Effects 212028 is a Knockdown (dataBits00 8) aimed at the primary
+  // target (targetFlags 2) that lasts until removed (flags bit 2), with no prerequisite.
+  // No rule of the server ends a creature's state with its spell, so the plan drops the
+  // row and the rest of the spell plans: the press starts, and the cast logs the gap.
+  let scene =
+    Scene(..nothing_shown(), units: [unit(id: 913, of: 31_474, at: 10.0)])
+  let #(state, pressed) =
+    press_at(
+      scene:,
+      state: cast.new(),
+      spell4_id: 35_436,
+      target: 913,
+      at: 1000,
+    )
+  assert support.refusal_results(effects: pressed) == []
+    && confirmed_targets(effects: pressed) == [913]
+    as "the press is taken and the caster is told at once, as for any planned spell"
+  let assert [line] = warnings(effects: pressed)
+  assert string.contains(line, "35436")
+    && string.contains(line, "212028")
+    && string.contains(line, "#803")
+    as "the log names the spell, the dropped row and the issue that will end the state"
+  let #(_, again) =
+    press_at(scene:, state:, spell4_id: 35_436, target: 913, at: 20_000)
+  assert warnings(effects: again) == []
+    as "a second press does not log the gap again"
+  let assert Ok(shortcut_spell.Aimed(spell:, ..)) =
+    shortcut_spell.planned_of(shortcuts: shortcuts(), spell4_id: 35_436)
+    as "the spell plans as an aimed one"
+  assert spell.controls == []
+    && spell.dropped_controls == [Spell4EffectsId(212_028)]
+    as "Spell4Effects 212028 lands nothing: it is the one row dropped"
 }
 
 pub fn a_press_of_a_target_type_3_spell_tests_its_faction_cast_group_test() -> Nil {
@@ -1028,4 +1098,101 @@ pub fn a_channelled_objective_spell_goes_twice_and_raises_one_cast_test() -> Nil
       ),
     ]
     as "a channel counts once, at its first go"
+}
+
+/// Spell4 64944 (the spell of quest 9373's objective 17880, Spell4Base 42972: cast group 8755,
+/// which holds Creature2 57226 through its first target group) names Spell4CCConditions row 1 for its
+/// target: row 1's ccStateMask 218960739 has bit 0, Stun.
+const the_stun_refusing_spell = 64_944
+
+const a_creature_of_its_group = 57_226
+
+pub fn an_aimed_press_at_a_held_creature_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The spell's own target cast, Prerequisite 28001, is of a type the server does not read
+  // and refuses 281 whatever the creature holds. No real shortcut spell whose target row
+  // masks a state lacks such a prerequisite (64944 and 66447 both hold a type 102 one), so
+  // the row is planted without it, and the arms below meet the state test alone.
+  use tables <- fixture_tables.changed(
+    table: "Spell4",
+    id: the_stun_refusing_spell,
+    with: [#("prerequisiteIdTargetCast", Integer(0))],
+  )
+  let shortcuts = shortcut_spell.shortcuts(tables:)
+  let stunned = fn(held, gap) {
+    Scene(..nothing_shown(), units: [
+      Unit(..unit(id: 920, of: a_creature_of_its_group, at: gap), held:),
+    ])
+  }
+  assert refused_with(
+      shortcuts:,
+      scene: stunned([Stun], 10.0),
+      spell4_id: the_stun_refusing_spell,
+      target: 920,
+    )
+    == [122]
+    as "0x1403b2240: the target's Spell4CCConditions mask has bit 0 and the unit holds Stun: Target_CannotBe_Stunned (122)"
+  let #(_, unheld) =
+    press_at_with(
+      shortcuts:,
+      scene: stunned([], 10.0),
+      state: cast.new(),
+      spell4_id: the_stun_refusing_spell,
+      target: 920,
+      at: 1000,
+    )
+  assert support.refusal_results(effects: unheld) == []
+    && confirmed_targets(effects: unheld) == [920]
+    as "the same creature holding no state passes the state test, and with no prerequisite left the cast starts on it"
+  assert refused_with(
+      shortcuts:,
+      scene: stunned([crowd_control_state.Sleep], 10.0),
+      spell4_id: the_stun_refusing_spell,
+      target: 920,
+    )
+    == [124]
+    as "row 1's mask has bit 1 too: Sleep gives its own Target_CannotBe result (124)"
+  let #(_, snared) =
+    press_at_with(
+      shortcuts:,
+      scene: stunned([crowd_control_state.Snare], 10.0),
+      state: cast.new(),
+      spell4_id: the_stun_refusing_spell,
+      target: 920,
+      at: 1000,
+    )
+  assert support.refusal_results(effects: snared) == []
+    && confirmed_targets(effects: snared) == [920]
+    as "row 1's mask 218960739 has no bit 21: a held Snare passes the state test and the cast starts"
+  assert refused_with(
+      shortcuts:,
+      scene: stunned([Stun], 400.0),
+      spell4_id: the_stun_refusing_spell,
+      target: 920,
+    )
+    == [122]
+    as "0x1403b2240 tests the state before the range: a held unit out of range is refused 122, not 105"
+}
+
+pub fn a_held_creature_outside_the_cast_group_is_refused_its_state_before_the_group_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let outside = fn(held) {
+    Scene(..nothing_shown(), units: [
+      Unit(..unit(id: 921, of: 32_668, at: 10.0), held:),
+    ])
+  }
+  assert refused_at(
+      scene: outside([]),
+      spell4_id: the_stun_refusing_spell,
+      target: 921,
+    )
+    == [code(cast_result.TargetGroup)]
+    as "Spell4Base 42972's cast group 8755 holds Creature2 57226 and not 32668: a creature holding no state is refused 89"
+  assert refused_at(
+      scene: outside([Stun]),
+      spell4_id: the_stun_refusing_spell,
+      target: 921,
+    )
+    == [122]
+    as "0x1403b2240 tests the target's crowd-control states before CheckCastActivateSpell's cast group: a stunned creature outside the group is refused 122, not 89"
 }

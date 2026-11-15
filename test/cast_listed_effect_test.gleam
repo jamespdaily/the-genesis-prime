@@ -206,12 +206,14 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
         unit: cast.HitCreature(life: 1, struck_at_ms: 0),
         descriptions: [],
         controls: [],
+        armor_removed: 0,
       ),
       cast.Hit(
         unit_id: 21,
         unit: cast.HitCreature(life: 1, struck_at_ms: 0),
         descriptions: [],
         controls: [],
+        armor_removed: 0,
       ),
     ])
   assert list.map(targets_of(effects:), fn(info) {

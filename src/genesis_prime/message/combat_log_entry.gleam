@@ -2,9 +2,10 @@
 //// never edited by hand.
 ////
 //// A union inside a message body: one entry of the combat log: the type in 6
-//// bits picks the layout of its data. Gap: the schema holds types 1, 2, 18,
-//// 22, 23 and 24, and the client's reader takes 0 to 35; the other types are
-//// open under issue 336, spells work in depth on the real client. Its variants
+//// bits picks the layout of its data. Gap: the schema holds types 1, 2, 14,
+//// 18, 22, 23 and 24, and the client's reader takes 0 to 35; the other types
+//// are open under the issue "Spells work in depth on the real client: cast
+//// times, telegraphs, buffs, crowd control and ticking effects". Its variants
 //// are listed in `schema.toml` with the client's evidence, and the fact file's
 //// `opcode.0x247` names the union.
 
@@ -17,6 +18,9 @@ import genesis_prime/message/combat_log_cc_state_break.{
 }
 import genesis_prime/message/combat_log_death.{type CombatLogDeath}
 import genesis_prime/message/combat_log_immunity.{type CombatLogImmunity}
+import genesis_prime/message/combat_log_modify_interrupt_armor.{
+  type CombatLogModifyInterruptArmor,
+}
 import genesis_prime/message/combat_log_resurrect.{type CombatLogResurrect}
 import genesis_prime/message/combat_log_stealth.{type CombatLogStealth}
 import gleam/pair
@@ -32,6 +36,9 @@ pub type CombatLogEntry {
   /// Kind 2, read by `combat_log_cc_state_break`. The fact file's
   /// `opcode.0x247.cc_state` names the kind.
   CcStateBreak(CombatLogCcStateBreak)
+  /// Kind 14, read by `combat_log_modify_interrupt_armor`. The fact file's
+  /// `opcode.0x247.modify_interrupt_armor` names the kind.
+  ModifyInterruptArmor(CombatLogModifyInterruptArmor)
   /// Kind 18, read by `combat_log_immunity`. The fact file's
   /// `opcode.0x247.immunity` names the kind.
   Immunity(CombatLogImmunity)
@@ -51,6 +58,8 @@ pub fn write(writer writer: Writer, record record: CombatLogEntry) -> Writer {
   case record {
     CcState(variant) -> combat_log_cc_state.write(writer, variant)
     CcStateBreak(variant) -> combat_log_cc_state_break.write(writer, variant)
+    ModifyInterruptArmor(variant) ->
+      combat_log_modify_interrupt_armor.write(writer, variant)
     Immunity(variant) -> combat_log_immunity.write(writer, variant)
     Death(variant) -> combat_log_death.write(writer, variant)
     Resurrect(variant) -> combat_log_resurrect.write(writer, variant)
@@ -70,6 +79,10 @@ pub fn read(reader: Reader) -> Result(#(CombatLogEntry, Reader), DecodeError) {
       reader
       |> combat_log_cc_state_break.read
       |> result.map(pair.map_first(_, CcStateBreak))
+    14 ->
+      reader
+      |> combat_log_modify_interrupt_armor.read
+      |> result.map(pair.map_first(_, ModifyInterruptArmor))
     18 ->
       reader
       |> combat_log_immunity.read

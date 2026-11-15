@@ -103,6 +103,7 @@ fn picture_with(creature_id creature_id: Int, gap gap: Float) -> shown.Picture {
         attackable: Attackable(exile: False, dominion: False),
         hostile_to: Hostile(exile: False, dominion: False),
         in_combat: False,
+        held: [],
       ),
     ),
   ])

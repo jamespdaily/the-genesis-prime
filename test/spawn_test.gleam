@@ -1330,6 +1330,46 @@ pub fn a_creature_of_difficulty_7_strikes_with_effect_184777_for_17_test() -> Ni
     as "difficulty 7 (Creature2Difficulty 7, multipliers 0.7) fails 30526 and passes 30527: effect 184777 alone, 17"
 }
 
+pub fn an_attack_reads_its_caster_condition_mask_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The client's Spell4 5649 names Spell4CCConditions row 1 for its caster
+  // (spell4CCConditionsIdCaster), whose ccStateMask is 218960739: Stun, Sleep,
+  // Polymorph, Fear, Knockdown, Vulnerability, Disable, Knockback, Pull, PositionSwitch,
+  // Subdue, DisableCinematic and AbilityRestriction (`Spell4CCConditions` in the fact file).
+  let attack =
+    { attack_beast_over(tables: fixture_tables.shared()) }.combat.attack
+  assert attack.caster_cc_mask == 218_960_739
+    as "Spell4 5649's caster row, Spell4CCConditions 1, holds ccStateMask 218960739"
+  assert attack.run_stopped_by == 68_096_391
+    as "the states whose CCStates flags hold the value 2: 0, 1, 2, 7, 8, 12, 16, 17, 18, 19 and 26"
+  // Synthetic: the mask is the row's own, not a constant of the server.
+  let changed = {
+    use tables <- fixture_tables.changed(
+      table: "Spell4CCConditions",
+      id: 1,
+      with: [#("ccStateMask", Integer(5))],
+    )
+    { attack_beast_over(tables:) }.combat.attack
+  }
+  assert changed.caster_cc_mask == 5
+    as "the load reads the mask from the row the spell names"
+  let selection = {
+    use tables <- fixture_tables.changed(table: "Spell4", id: 5649, with: [
+      #("spell4CCConditionsIdCaster", Integer(999_999)),
+    ])
+    beast_selection_over(tables:)
+  }
+  assert selection.refusals
+    == [
+      Refusal(
+        table: "spawn",
+        row: refusal.RowId(1),
+        rule: "Creature2 73464 has no Spell4CCConditions row 999999 for its properties",
+      ),
+    ]
+    as "a conditions id with no row fails the spawn, never a mask of 0 that would let a held creature attack"
+}
+
 pub fn a_spawn_is_a_vendor_when_its_creature_has_stock_test() -> Nil {
   use <- owned_test.run(5000)
   // The client has no vendor column (`vendor.stock_gap`), so the server marks the

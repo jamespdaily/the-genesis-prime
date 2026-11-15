@@ -182,12 +182,23 @@
 ////   timer, which can fire 0 ms after a kill at its spawn, does not aggro the body before the
 ////   map's `PlayerDied` arrives. `PlayerDied` does the same for a creature whose strike did not
 ////   kill it, and for one that holds the player only in `near` or on its list.
-//// - **While the creature is controlled** (a stun or a knockdown held,
-////   genesis_prime/world_map/creature_control) it starts no strike, chase or walk
-////   home, and a path it runs stops where it stands, as at a death. Its attack tick
-////   goes on and does nothing; threat, targets and the viewers' news are kept as
-////   usual. When the last state ends it acts again from where it stands (`Controlled`,
-////   `ControlEnded`).
+//// - **What a held state stops** (genesis_prime/world_map/creature_control), by the state:
+////   - A state whose CCStates flags hold the value 2 (Stun, Sleep, Root, Hold, Knockdown, Disable,
+////     Knockback, Pushback, Pull, PositionSwitch, DisableCinematic) starts no chase or walk
+////     home, and a path the creature runs stops where it stands, as at a death
+////     (`Fighter.still`). When the last such state ends it acts again from where it stands
+////     (`Controlled`, `ControlEnded`).
+////   - A state the attack spell's caster conditions mask (Spell4CCConditions) starts no strike
+////     of an instant attack, and a Stun, Knockdown or Knockback starts none whatever the mask
+////     (`Fighter.attack_refused`).
+////   - A charge starts only while no state is held (`Fighter.holds_a_state`); that is a gap,
+////     since the client's conditions for the charge spells mask nothing (the issue "Creatures
+////     cast spells, and the effect types only creature spells use work" closes it).
+////   - The attack tick goes on and does nothing else; threat, targets and the viewers' news are
+////     kept as usual, and a creature that stands still (`Fighter.still`) does not leash from its
+////     tick: out of reach at its leash circle it stays in the fight, with its threat and its health,
+////     and leashes at the first tick after the state ends. It leashes in place only when its
+////     last threat entry goes while it is held (`Released`), when the walk home waits for `ControlEnded`.
 //// - **A state breaks a charge.** Any crowd-control state that takes hold while the round is
 ////   `Charging` ends the cast. The authority is Jim's decision of 2026-11-11 ("any crowd control
 ////   that lands during the charge is the interrupt"); the client holds no rule for it. Spell4 85474's
@@ -197,13 +208,14 @@
 ////   state took hold. The fight cancels the `CastEnds` timer, writes 0x7f9 with result
 ////   11 (SpellInterrupted) and the 0x7fe, closes the round, starts the next attack tick and asks the
 ////   creature's rule to tell the guard (`ChargeInterrupted`, with the charge's cast id), which opens the creature
-////   (genesis_prime/world_map/creature_guard). Only the first state of a hold breaks it: a creature
-////   already held (`Controlled` is fired only on a not-held to held change) breaks nothing, and
-////   once the go is out (`Striking`) the strikes are out and nothing breaks. The break is the fight's
+////   (genesis_prime/world_map/creature_guard). A creature holding a state starts no charge, so a state
+////   that lands in a charge is the first; once the go is out (`Striking`) the strikes are out and
+////   nothing breaks. The break is the fight's
 ////   for any creature with a charge, guarded or not: a bare turret's charge breaks the same way
 ////   and the guard, finding itself `Bare`, opens nothing.
-//// - **An opened creature is held** (`Fighter.controlled`): it starts no charge, strike, chase or
-////   walk until its opening ends, when `ControlEnded` lets it act again.
+//// - **An opened creature is held** (`Fighter.still`, `attack_refused` and `holds_a_state`): it
+////   starts no charge, strike, chase or walk until its opening ends, when `ControlEnded` lets it
+////   act again.
 ////
 //// What happens at each deadline and process death:
 ////
@@ -232,7 +244,7 @@
 //// | a state takes hold during the charge | `CancelTimer(CastEnds)`, 0x7f9 (cast id, 11) and 0x7fe, the round closed, the next attack tick started, `ChargeInterrupted` | `a_state_that_takes_hold_during_the_charge_breaks_it_so_the_cast_end_strikes_no_one_test`, `a_stun_on_the_target_during_the_charge_breaks_it_and_the_next_attack_tick_starts_test`, `a_stun_during_the_charge_interrupts_it_and_opens_the_turret_test` |
 //// | CastEnds timer: it fires after an interrupt | the round was closed and the generation moved on, so it does nothing | `a_cast_end_after_an_interrupt_is_stale_test` |
 //// | a state takes hold after the go (the round is `Striking`) | nothing breaks: the strikes are out | `an_interrupt_after_the_go_opens_nothing_test` |
-//// | a second state takes hold in the same round | the creature was held already, so no `Controlled`: nothing more | `a_second_state_in_the_same_round_opens_nothing_more_test` |
+//// | a second state takes hold in the same round | the first state closed the round, so the second finds no charge: nothing more | `a_second_state_in_the_same_round_opens_nothing_more_test` |
 //// | CastEnds timer: a fighter was released during the charge | it is off the threat list, so it is not struck | `a_fighter_released_mid_charge_is_not_struck_test` |
 //// | Strike to a fighter: its answer, the last one or the deadline | each answer joins the go as a round's does; the last answer or the deadline closes the round (0x7f4, 0x7fe), and the next attack tick starts | `the_struck_go_and_finish_follow_the_answers_test` |
 //// | Death or leash during the charge: C is killed, or its last threat entry is released | `CancelTimer(CastEnds)` and 0x7fe for the charge, no 0x7f4, then the death or the release as without a charge; the later CastEnds does nothing | `death_during_a_charge_ends_it_test`, `leash_during_a_charge_ends_it_test` |
@@ -270,14 +282,20 @@ import gleam/set.{type Set}
 
 /// What the creature fights with: its unit and address, the place of its spawn,
 /// which is home and the leash circle's centre, its attack, the time between its
-/// attack ticks and the run's game numbers, which are fixed for its life; and whether
-/// it holds a crowd-control state now, which the creature's rule gives each step
-/// (genesis_prime/world_map/creature_control `holds`) or is opened
-/// (genesis_prime/world_map/creature_guard `opened`), and the ids of the guard's live casts
-/// (`creature_guard.live_casts`), which its casts take no id of (`cast.mint`). A controlled creature
-/// starts no strike, chase or walk: `ticked`, `chase` and `leash` check it; a state that takes hold
-/// during a charge breaks it. An attack that is `Charged` is a charge, and a creature whose unit
-/// type cannot move never chases or walks home.
+/// attack ticks and the run's game numbers, which are fixed for its life; what its held
+/// crowd-control states stop it doing now, which the creature's rule gives each step
+/// (genesis_prime/world_map/creature_control); and the ids of the guard's live casts
+/// (`creature_guard.live_casts`), which its casts take no id of (`cast.mint`). An opened
+/// creature (genesis_prime/world_map/creature_guard `opened`) is stopped in all three.
+/// - `still`: it holds a state that stops its run (genesis_prime/game/crowd_control
+///   `stopping_mask`), so `chase` starts no path, `leash` starts no walk and a state that
+///   takes hold stands it where it is.
+/// - `attack_refused`: it holds a state its attack spell's caster conditions mask, or a
+///   Stun, Knockdown or Knockback, so `ticked` starts no strike of an instant attack.
+/// - `holds_a_state`: it holds any state, so `ticked` starts no charge (a gap that the issue
+///   "Creatures cast spells, and the effect types only creature spells use work" closes) and a state that takes hold during a charge breaks it.
+/// An attack that is `Charged` is a charge, and a creature whose unit type cannot move never
+/// chases or walks home.
 pub type Fighter {
   Fighter(
     unit_id: Int,
@@ -287,7 +305,9 @@ pub type Fighter {
     attack: Attack,
     interval_ms: Int,
     numbers: GameNumbers,
-    controlled: Bool,
+    still: Bool,
+    attack_refused: Bool,
+    holds_a_state: Bool,
     guard_casts: List(Int),
   )
 }
@@ -409,11 +429,12 @@ pub type Input {
   Killed
   /// creature_life: the corpse timer stood the creature again at its spawn.
   StoodAgain
-  /// creature_control: the creature took a state while it lives. A path it runs
-  /// stops where it stands (0x638 of kind 2 for its viewers, as at a death).
+  /// creature_control: a state took hold of the creature while it lives. An open charge
+  /// breaks; a path it runs stops where it stands (0x638 of kind 2 for its viewers, as at a
+  /// death) when its states stop its run (`Fighter.still`).
   Controlled
-  /// creature_control: the last state ended. The creature acts again from where it
-  /// stands: a fight chases its target and goes on; a creature that was to walk home
+  /// creature_control: the last state that stopped the creature's run ended. It acts again
+  /// from where it stands: a fight chases its target and goes on; a creature that was to walk home
   /// when a state held it starts the walk.
   ControlEnded
   /// creature: a property modifier changed the creature's run speed
@@ -1040,9 +1061,12 @@ fn retargeted(
 /// The attack tick: with the target in reach and no round open the creature
 /// strikes, or opens its charge when its attack has a cast time; out of reach at the
 /// leash circle it leashes; else it chases. The next tick starts unless it leashed or
-/// opened a charge, whose round's close starts it. A controlled creature does none of
-/// these: the tick only starts the next. A creature that cannot move is at its leash
-/// when its target is beyond the leash range from home, since it never walks to the circle.
+/// opened a charge, whose round's close starts it. A creature whose states refuse its
+/// attack starts none (`attacks`), and one whose states stop its run starts no path
+/// (`chase`) and does not leash while they hold: out of reach at its circle it only
+/// starts the next tick, and the first tick after they end leashes or chases. A creature
+/// that cannot move is at its leash when its target is beyond the leash range from home,
+/// since it never walks to the circle.
 fn ticked(
   state state: State,
   fighter fighter: Fighter,
@@ -1052,7 +1076,6 @@ fn ticked(
     as "a tick is taken only while Fighting"
   let here = creature_path.place_at(path: state.path, now_ms:)
   case dict.get(state.sightings, target) {
-    _ if fighter.controlled -> next_tick(state:, fighter:, effects: [])
     Error(Nil) -> next_tick(state:, fighter:, effects: [])
     Ok(sighting) -> {
       let in_reach =
@@ -1069,6 +1092,8 @@ fn ticked(
       case in_reach, round, at_circle {
         True, None, _ -> attacks(state:, fighter:, target:, sighting:, here:)
         True, Some(..), _ -> next_tick(state:, fighter:, effects: [])
+        False, _, True if fighter.still ->
+          next_tick(state:, fighter:, effects: [])
         False, _, True -> leash(state:, fighter:, now_ms:)
         False, _, False -> {
           let #(state, chased) = chase(state:, fighter:, now_ms:)
@@ -1080,7 +1105,9 @@ fn ticked(
 }
 
 /// The attack on a target in reach with no round open: the charge when the attack has
-/// a cast time, else the strike, and the next tick for a strike.
+/// a cast time, else the strike, and the next tick for a strike. A charge starts only
+/// while the creature holds no state, and a strike while none refuses the attack
+/// (`Fighter`); otherwise the tick only starts the next.
 fn attacks(
   state state: State,
   fighter fighter: Fighter,
@@ -1089,6 +1116,9 @@ fn attacks(
   here here: Place,
 ) -> #(State, List(Effect)) {
   case fighter.attack.cast {
+    Charged(..) if fighter.holds_a_state ->
+      next_tick(state:, fighter:, effects: [])
+    Instant if fighter.attack_refused -> next_tick(state:, fighter:, effects: [])
     Charged(cast_ms:, area:, inside:) ->
       charges(state:, fighter:, sighting:, here:, cast_ms:, area:, inside:)
     Instant -> {
@@ -1263,12 +1293,20 @@ fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
           description.damage.killed == 1
         })
       #(
-        [cast.Hit(unit_id:, unit: cast.HitPlayer, descriptions:, controls: [])],
+        [
+          cast.Hit(
+            unit_id:,
+            unit: cast.HitPlayer,
+            descriptions:,
+            controls: [],
+            armor_removed: 0,
+          ),
+        ],
         killed,
         killed,
       )
     }
-    strike_tell.Immune(controls: _) ->
+    strike_tell.Immune(..) ->
       panic as "a player is never guarded: only a creature answers Immune"
     strike_tell.Deflected -> #([cast.Deflected(unit_id:)], False, False)
     strike_tell.Refused(why: strike_tell.Dead) -> #([], True, True)
@@ -1545,15 +1583,15 @@ fn cancel_of(round round: Round) -> Effect {
 
 /// The creature runs toward its target when the target is beyond reach of where its
 /// path ends: a new path from where it is, stopping short of the target and clipped
-/// at the leash circle, sent as 0x638. A controlled creature starts no path, and one that
-/// cannot move never does.
+/// at the leash circle, sent as 0x638. A creature whose states stop its run starts no path,
+/// and one that cannot move never does.
 fn chase(
   state state: State,
   fighter fighter: Fighter,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   use <- bool.guard(
-    when: fighter.controlled || cannot_move(fighter:),
+    when: fighter.still || cannot_move(fighter:),
     return: #(state, []),
   )
   let target_place = case state.status {
@@ -1617,7 +1655,7 @@ fn path_news(was was: Path, now now: Path, now_ms now_ms: Int) -> List(Effect) {
 /// The leash: every threat entry erased (0x90a 0), out of combat (0x89a 0), full
 /// health (0x937), the path home (0x638), each threatened player told `Released`,
 /// an open round closed, and the home timer started. The creature takes no strike
-/// until it is home. A controlled creature leashes in everything but the walk
+/// until it is home. A creature whose states stop its run leashes in everything but the walk
 /// and its timer, which `ControlEnded` starts. A creature that cannot move has no walk:
 /// it rests where it stands.
 fn leash(
@@ -1638,7 +1676,7 @@ fn leash(
     False -> {
       let #(state, home) = generation(state)
       let state = State(..state, status: Returning(home:))
-      case fighter.controlled {
+      case fighter.still {
         True -> #(state, [])
         False -> walk_home(state:, fighter:, home:, now_ms:)
       }
@@ -1711,8 +1749,9 @@ fn stand_still(
   #(State(..state, path: Standing(at: here)), placed)
 }
 
-/// A crowd-control state takes hold: the creature stands where it is. An open charge is
-/// broken: `CancelTimer(CastEnds)`, 0x7f9 of result 11 and 0x7fe of its cast, the round closed
+/// A crowd-control state takes hold: the creature stands where it is when its states stop
+/// its run (`Fighter.still`), and runs on under the others. An open charge is
+/// broken whatever the state: `CancelTimer(CastEnds)`, 0x7f9 of result 11 and 0x7fe of its cast, the round closed
 /// and the next attack tick started, then `ChargeInterrupted` with the charge's cast id for the guard. A charge already
 /// gone (the go is out, round `Striking`) is not broken, and a second state of the same round finds
 /// none.
@@ -1721,7 +1760,10 @@ fn held(
   fighter fighter: Fighter,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  let #(state, placed) = stand_still(state:, now_ms:)
+  let #(state, placed) = case fighter.still {
+    True -> stand_still(state:, now_ms:)
+    False -> #(state, [])
+  }
   case state.status {
     Fighting(round: Some(Round(cast_id:, stage: Charging(ends:, ..))), ..) as fighting -> {
       let #(state, ticked) =
@@ -1785,7 +1827,7 @@ fn killed(
   }
 }
 
-/// The last state ended: a Fighting creature chases its target again from where it
+/// The last state that stopped its run ended: a Fighting creature chases its target again from where it
 /// stands (its attack tick went on), and a Returning one that stands away from home
 /// starts the walk its leash could not, with its home timer.
 fn resumed(

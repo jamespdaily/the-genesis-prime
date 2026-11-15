@@ -3,6 +3,7 @@
 
 import genesis_prime/game/appearance
 import genesis_prime/game/character_state
+import genesis_prime/game/crowd_control
 import genesis_prime/game/currency
 import genesis_prime/game/departures
 import genesis_prime/game/dropped
@@ -37,9 +38,12 @@ import gleam/list
 /// - GameFormula row 530, the exponent of a quest's credits (genesis_prime/game/quest_turn_in).
 /// - The Creature2, QuestObjective, Quest2 and WorldLocation2 rows of the four departures
 ///   terminals (genesis_prime/game/departures).
+/// - No Spell4CCConditions row asks for a held state: ccStateFlagsRequired is 0
+///   (genesis_prime/game/crowd_control).
 pub fn all() -> List(store.Requirement) {
   list.flatten([
     departures.requirements(),
+    crowd_control.requirements(),
     [start_place.requirement()],
     level.requirements(),
     character_state.requirements(),

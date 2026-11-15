@@ -432,7 +432,7 @@ pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_80_81_83_84_112_118_and_145
       ),
       Missing(
         type_number: 4,
-        reason: "rows holding a state other than Stun, Knockdown and Ability Restriction, Stun or Knockdown aimed at the caster or by a flag the plan refuses, Ability Restriction aimed anywhere but at the caster, or behind an apply prerequisite, which the plan refuses",
+        reason: "rows behind an apply prerequisite (#787); rows aimed at another unit that last until removed (#803) or hold a persistence prerequisite (#787); rows aimed by a union flag, 3, 5 or 7 (#794), or by 9 (#336); rows with a phaseFlags of 0, which no phase selects",
         fact_key: "Spell4Effects.effectType.4",
       ),
       Missing(

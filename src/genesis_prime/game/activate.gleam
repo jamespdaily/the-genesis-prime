@@ -44,6 +44,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/table/creature2
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
@@ -617,6 +618,9 @@ pub type Target {
     /// Whether the creature is in combat, which a cast's target conditions may test (bit 1
     /// of the target row's mask).
     in_combat: Bool,
+    /// The crowd-control states the creature holds as the player's client was told, which
+    /// the cast's target conditions refuse (Spell4CCConditions `ccStateMask`).
+    held: List(CrowdControlState),
     withheld: Option(Withheld),
   )
 }

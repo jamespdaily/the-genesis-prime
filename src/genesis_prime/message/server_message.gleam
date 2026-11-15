@@ -108,6 +108,7 @@ import genesis_prime/message/unit_properties_changed.{type UnitPropertiesChanged
 import genesis_prime/message/unit_stat_changed.{type UnitStatChanged}
 import genesis_prime/message/unit_stealth.{type UnitStealth}
 import genesis_prime/message/unit_target.{type UnitTarget}
+import genesis_prime/message/unit_tether_anchor.{type UnitTetherAnchor}
 import genesis_prime/message/unit_threat.{type UnitThreat}
 import genesis_prime/message/vendor_items.{type VendorItems}
 import genesis_prime/message/whisper_failed.{type WhisperFailed}
@@ -186,6 +187,7 @@ pub type ServerMessage {
   SpellStackRemoved(message: SpellStackRemoved)
   UnitCcStateApplied(message: UnitCcStateApplied)
   UnitCcStateEnded(message: UnitCcStateEnded)
+  UnitTetherAnchor(message: UnitTetherAnchor)
   SpellThresholdClosed(message: SpellThresholdClosed)
   SpellThresholdEnded(message: SpellThresholdEnded)
   SpellThresholdOpened(message: SpellThresholdOpened)
@@ -408,6 +410,8 @@ pub fn decode(
       )
     0x0880 ->
       decoded(body, message_id, unit_cc_state_ended.decode, UnitCcStateEnded)
+    0x0881 ->
+      decoded(body, message_id, unit_tether_anchor.decode, UnitTetherAnchor)
     0x0814 ->
       decoded(
         body,
@@ -558,6 +562,7 @@ pub fn name(message: ServerMessage) -> String {
     SpellStackRemoved(..) -> "spell_stack_removed"
     UnitCcStateApplied(..) -> "unit_cc_state_applied"
     UnitCcStateEnded(..) -> "unit_cc_state_ended"
+    UnitTetherAnchor(..) -> "unit_tether_anchor"
     SpellThresholdClosed(..) -> "spell_threshold_closed"
     SpellThresholdEnded(..) -> "spell_threshold_ended"
     SpellThresholdOpened(..) -> "spell_threshold_opened"
