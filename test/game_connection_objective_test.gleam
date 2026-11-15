@@ -77,6 +77,7 @@ import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{ObjectsSeen}
 import genesis_prime/world_map/static_object.{StaticObject}
 import gleam/list
+import gleam/set
 import message_support
 import owned_test
 import planted_table.{Integer}
@@ -104,8 +105,25 @@ fn appears(
   outfit_info_id outfit_info_id: Int,
   hit_radius hit_radius: Float,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  connection_support.creature_appears(
+  appears_as(
     unit_id: unit,
+    creature_id:,
+    display_info_id:,
+    outfit_info_id:,
+    hit_radius:,
+  )
+}
+
+/// `appears` as this unit.
+fn appears_as(
+  unit_id unit_id: Int,
+  creature_id creature_id: Int,
+  display_info_id display_info_id: Int,
+  outfit_info_id outfit_info_id: Int,
+  hit_radius hit_radius: Float,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  connection_support.creature_appears(
+    unit_id:,
     creature_id:,
     display_info_id:,
     outfit_info_id:,
@@ -365,38 +383,56 @@ fn seeing_the_walking_survivor() -> game_connection.State {
 fn seeing_the_walking_survivor_on(
   tables tables: store_tables.Tables,
 ) -> game_connection.State {
+  seeing_the_walking_survivors(
+    settings: connection_state.Settings(
+      ..connection_support.settings(),
+      tables:,
+    ),
+    units: [unit],
+  )
+}
+
+/// The connection of `seeing_the_walking_survivor` with these settings, which sees a
+/// Creature2 11070 as each of these units, all walking as unit 40 does.
+fn seeing_the_walking_survivors(
+  settings settings: connection_state.Settings,
+  units units: List(Int),
+) -> game_connection.State {
   let #(state, _) =
-    connection_support.entered_with_quests_on(tables:, quests: [
+    connection_support.entered_with_quests_in(settings:, quests: [
       quest_support.accepted(quest_id: 3480, progress: [0, 0]),
     ])
-  let state =
+  list.fold(units, state, fn(state, unit_id) {
+    let state =
+      connection_support.feed(
+        state:,
+        event: appears_as(
+          unit_id:,
+          creature_id: survivor,
+          display_info_id: survivors_display,
+          outfit_info_id: 0,
+          hit_radius: survivors_radius,
+        ),
+      ).0
     connection_support.feed(
       state:,
-      event: appears(
-        creature_id: survivor,
-        display_info_id: survivors_display,
-        outfit_info_id: 0,
-        hit_radius: survivors_radius,
+      event: connection_support.news_sent_by_a_peer(
+        unit_id:,
+        news: client_connection.CreatureMoved(path: creature_path.Running(
+          from: vendor_support.ahead_of_the_player(
+            hit_radius: survivors_radius,
+            gap: 1.0,
+          ),
+          to: vendor_support.ahead_of_the_player(
+            hit_radius: survivors_radius,
+            gap: 2.0,
+          ),
+          started_ms: 0,
+          speed: 0.5,
+        )),
       ),
     ).0
-  connection_support.feed(
-    state:,
-    event: connection_support.news_sent_by_a_peer(
-      unit_id: unit,
-      news: client_connection.CreatureMoved(path: creature_path.Running(
-        from: vendor_support.ahead_of_the_player(
-          hit_radius: survivors_radius,
-          gap: 1.0,
-        ),
-        to: vendor_support.ahead_of_the_player(
-          hit_radius: survivors_radius,
-          gap: 2.0,
-        ),
-        started_ms: 0,
-        speed: 0.5,
-      )),
-    ),
-  ).0
+  })
 }
 
 /// The right-click at `ms`, then the cast's timers up to its go at `ms` + 2000
@@ -410,11 +446,24 @@ fn used_once(
   step.ConnectionStep(Request),
   List(step.ConnectionStep(Request)),
 ) {
+  used_once_on(state:, unit_id: unit, at: ms)
+}
+
+/// `used_once` for this unit.
+fn used_once_on(
+  state state: game_connection.State,
+  unit_id unit_id: Int,
+  at ms: Int,
+) -> #(
+  game_connection.State,
+  step.ConnectionStep(Request),
+  List(step.ConnectionStep(Request)),
+) {
   let #(state, started) =
     connection_support.at(
       state:,
       ms:,
-      event: OwnEvent(step.Read(right_click())),
+      event: OwnEvent(step.Read(right_click_on(unit_id:))),
     )
   let #(state, go) =
     connection_support.casts_run(
@@ -589,36 +638,89 @@ pub fn a_creature_that_leaves_the_picture_before_the_go_counts_nothing_test() ->
     as "a use counts only on a unit the player still sees"
 }
 
-pub fn a_quest_creature_is_refused_once_its_objective_is_done_test() -> Nil {
+pub fn using_the_same_survivor_again_counts_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(state, counted) =
-    list.fold(
-      [0, 5000, 10_000],
-      #(seeing_the_walking_survivor(), []),
-      fn(so_far, ms) {
-        let #(state, counted) = so_far
-        let #(state, _, go) = used_once(state:, at: ms)
-        #(state, list.append(counted, progress_frames(steps: go)))
-      },
-    )
+  let #(state, _, first) =
+    used_once(state: seeing_the_walking_survivor(), at: 0)
+  assert progress_frames(steps: first)
+    == [progress_frame(quest: 3480, index: 0, progress: 1)]
+    as "opcode.0x361: the first use of the survivor counts one of objective 4470's 3"
+  let #(_, again, go) = used_once(state:, at: 5000)
+  assert connection_support.written_ids(again) == [0x07FD]
+    as "QuestObjective.type.32.repeat_use: the client sends a second 0x97 and the cast still starts"
+  assert ids_of(steps: go) == [0x07F4, 0x07FE]
+    as "opcode.0x7f4 and 0x7fe: the cast of the second use reaches its go and its finish, and the use counts nothing, so no 0x361 follows (0x1405517a0.type12: the client keeps no unit record, so the once is the server's)"
+}
+
+/// Survivors 40, 41 and 42 used at 0, 5000 and 10000 ms, with a fourth, unit 43, in view:
+/// the state after, and the 0x361 progress frames the three uses sent.
+fn three_survivors_used() -> #(game_connection.State, List(#(Int, BitArray))) {
+  list.fold(
+    [#(40, 0), #(41, 5000), #(42, 10_000)],
+    #(
+      seeing_the_walking_survivors(
+        settings: connection_support.settings(),
+        units: [40, 41, 42, 43],
+      ),
+      [],
+    ),
+    fn(so_far, press) {
+      let #(state, counted) = so_far
+      let #(state, _, go) = used_once_on(state:, unit_id: press.0, at: press.1)
+      #(state, list.append(counted, progress_frames(steps: go)))
+    },
+  )
+}
+
+pub fn three_survivors_bring_the_objective_to_its_count_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, counted) = three_survivors_used()
   assert counted
     == [
       progress_frame(quest: 3480, index: 0, progress: 1),
       progress_frame(quest: 3480, index: 0, progress: 2),
       progress_frame(quest: 3480, index: 0, progress: 3),
     ]
-    as "opcode.0x361: three uses bring objective 4470 (count 3) to 3 of 3"
+    as "opcode.0x361: three different survivors bring objective 4470 (count 3) to 3 of 3"
+}
+
+pub fn a_quest_creature_is_refused_once_its_objective_is_done_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = three_survivors_used()
   let #(_, fourth) =
     connection_support.at(
       state:,
       ms: 15_000,
-      event: OwnEvent(step.Read(right_click())),
+      event: OwnEvent(step.Read(right_click_on(unit_id: 43))),
     )
   assert connection_support.refusal_results(taken: fourth)
     == [cast_result.TargetIsNotUseable]
-    as "Prerequisite 2672 (type 43 on quest 3480) fails once the objective is done, so the link is closed and the client offers nothing (0x140479560): the press is the use of nothing, 100"
+    as "Prerequisite 2672 (type 43 on quest 3480) fails once the objective is done, so the link is closed and the client offers nothing (0x140479560): the press on a fourth survivor is the use of nothing, 100"
   assert connection_support.cast_timers(steps: [fourth], ms: 15_000) == []
     as "no cast starts, so no fourth 0x361 follows"
+}
+
+pub fn a_station_its_objective_reuses_counts_again_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The server's reuse set holds objective 4470 here, as it holds the objectives of a
+  // creature the world has fewer units of than the count (QuestObjective 8093, 16373,
+  // 16557 and 6692: one spawn each, and 6 for count 10).
+  let state =
+    seeing_the_walking_survivors(
+      settings: connection_state.Settings(
+        ..connection_support.settings(),
+        reused_unit_objectives: set.from_list([4470]),
+      ),
+      units: [unit],
+    )
+  let #(state, _, first) = used_once(state:, at: 0)
+  assert progress_frames(steps: first)
+    == [progress_frame(quest: 3480, index: 0, progress: 1)]
+    as "opcode.0x361: the first use counts one"
+  let #(_, _, again) = used_once(state:, at: 5000)
+  assert progress_frames(steps: again)
+    == [progress_frame(quest: 3480, index: 0, progress: 2)]
+    as "opcode.0x361: the same unit used again counts again for an objective in the reuse set"
 }
 
 pub fn an_interrupted_use_counts_nothing_test() -> Nil {

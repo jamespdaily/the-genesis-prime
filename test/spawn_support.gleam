@@ -39,6 +39,7 @@ import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/list
 import gleam/option
+import gleam/set
 import owned_key
 import place_support
 import projector_support
@@ -534,6 +535,7 @@ fn put_worlds(
   content_game_number.put(key:, numbers:)
   content_spawn.put_summon_checks(key:, checks: summon_checks())
   content_spawn.put_visibility(key:, visibility: dict.new())
+  content_spawn.put_reused_unit_objectives(key:, objectives: set.new())
   content_class_resource.put(key:, classes: class_resource_support.classes())
   content_server_proxy.put(key:, proxies: server_proxy_support.none())
   content_zone_welcome.put(key:, welcomes: zone_welcome_support.none())

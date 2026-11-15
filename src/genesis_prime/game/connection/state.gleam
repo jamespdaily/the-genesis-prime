@@ -109,6 +109,10 @@ pub type Settings {
     /// content load (genesis_prime/content/projector_landing): the cast's go reads it
     /// (genesis_prime/game/projector).
     projector_landings: projector.Landings,
+    /// The type 12 objectives whose unit counts again when it is used again, from the content
+    /// load (genesis_prime/content/spawn `reused_unit_objectives`): the other type 12
+    /// objectives count each unit once (genesis_prime/game/quest_log `used`).
+    reused_unit_objectives: Set(Int),
   )
 }
 
