@@ -403,13 +403,13 @@ pub fn a_struck_creature_gives_not_read_for_every_type_that_reads_what_it_holds_
       rolls: [50],
     )
   assert creature.seen == PlaceOnly
-  // Types 15, 28, 50, 59, 71 and 73, each with a comparison and value that a unit
-  // holding what the condition asks would pass.
+  // Types 15, 28, 59, 71 and 73, each with a comparison and value that a unit
+  // holding what the condition asks would pass. Type 50 reads the second unit's casts
+  // alone, which the struck subject holds (`prerequisite_struck_test`).
   list.each(
     [
       #(15, 2, 0, 1000),
       #(28, 2, 0, 0),
-      #(50, 2, 0, 39_407),
       #(59, 1, 42_569, 0),
       #(71, 4, 1, 0),
       #(73, 4, 1, 0),

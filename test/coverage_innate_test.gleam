@@ -104,6 +104,7 @@ pub fn the_innate_slots_behind_a_level_gate_are_listed_as_left_out_and_none_is_o
         InnateSlotClosed(..) -> Ok(part)
         starting_ability.ProxyGateClosed(..)
         | starting_ability.ProcKindNotRead(..)
+        | starting_ability.ProcLeftOut(..)
         | starting_ability.RunnerColumnsOnly(..) -> Error(Nil)
       }
     })

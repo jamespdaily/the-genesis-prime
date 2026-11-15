@@ -46,6 +46,7 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/set
 import place_support
 import quest_support
@@ -76,6 +77,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
   Spell(
     spell4_id: Spell4Id(spell4_id),
     spell4_base_id: Spell4BaseId(base),
+    school: 0,
     method: Normal,
     cast_time_ms: 0,
     cooldown_ms: 0,
@@ -621,6 +623,79 @@ pub fn at(ms ms: Int) -> Now {
   Now(monotonic_ms: ms, filetime: 0)
 }
 
+/// What the connection does after each input: the held procs fire for the events the input
+/// raised (`cast.procs_fire`), every chance draw and gate roll the word 0, so a chance is
+/// met and a roll is its lowest. The pass's effects follow the input's; a fire's own go is
+/// the caller's to answer.
+pub fn then_procs(
+  step step: #(State, List(Effect)),
+  caster caster: Caster,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  then_procs_known(
+    step:,
+    caster:,
+    at: ms,
+    poses: dict.new(),
+    units: dict.new(),
+    drawn: None,
+  )
+}
+
+/// The same, each chance draw and gate roll taken from these lists in the order the
+/// procs are matched (`cast.proc_draws_needed`).
+pub fn then_procs_drawn(
+  step step: #(State, List(Effect)),
+  caster caster: Caster,
+  at ms: Int,
+  draws draws: List(Int),
+  rolls rolls: List(Int),
+) -> #(State, List(Effect)) {
+  then_procs_known(
+    step:,
+    caster:,
+    at: ms,
+    poses: dict.new(),
+    units: dict.new(),
+    drawn: Some(#(draws, rolls)),
+  )
+}
+
+/// The same, with the poses and the kinds the caster's picture knows the event units to
+/// be; `drawn` is none for words of 0.
+pub fn then_procs_known(
+  step step: #(State, List(Effect)),
+  caster caster: Caster,
+  at ms: Int,
+  poses poses: dict.Dict(Int, Pose),
+  units units: dict.Dict(Int, prerequisite.FirstUnit),
+  drawn drawn: Option(#(List(Int), List(Int))),
+) -> #(State, List(Effect)) {
+  let #(state, effects) = step
+  case cast.has_pending(cast: state) {
+    False -> step
+    True -> {
+      let #(words, rolls) = cast.proc_draws_needed(cast: state)
+      let #(draws, rolls) = case drawn {
+        Some(given) -> given
+        None -> #(list.repeat(0, words), list.repeat(0, rolls))
+      }
+      let #(state, fired) =
+        cast.procs_fire(
+          cast: state,
+          caster:,
+          now: at(ms:),
+          poses:,
+          indexes: dict.new(),
+          units:,
+          draws:,
+          rolls:,
+        )
+      #(state, list.append(effects, fired))
+    }
+  }
+}
+
 /// The body of the client's 0x9a (opcode.0x9a): its cast id, the bag index, the
 /// target and the press bit.
 pub fn press_body(
@@ -845,7 +920,7 @@ pub fn pressed_raw_in(
       now: at(ms:),
     )
     as "the press is taken: a refusal of the client's own checks is a 0x7fc, never an error"
-  taken
+  then_procs(step: taken, caster:, at: ms)
 }
 
 /// The client's 0x801 at the time, taken by the rule.
@@ -864,6 +939,7 @@ pub fn cancelled(
     plans: plans(),
     now: at(ms:),
   )
+  |> result.map(fn(step) { then_procs(step:, caster: caster(), at: ms) })
 }
 
 /// The client's 0x801 at the time, taken by the rule with these plans.
@@ -883,6 +959,7 @@ pub fn cancelled_in(
     plans:,
     now: at(ms:),
   )
+  |> result.map(fn(step) { then_procs(step:, caster: caster(), at: ms) })
 }
 
 /// What the client is written, in order.
@@ -1121,6 +1198,7 @@ pub fn fired_raw_as(
   at ms: Int,
 ) -> #(State, List(Effect)) {
   cast.timer_fired(cast: state, timer:, caster:, now: at(ms:))
+  |> then_procs(caster:, at: ms)
 }
 
 /// Each `Strike` effect replaced, in place, by what `went` gives for a round that struck
@@ -1133,7 +1211,8 @@ pub fn answered_with_no_targets(
   answered_by(state:, effects:, at: ms, struck: [])
 }
 
-/// `cast.went` for a round whose go checks no type 37 condition, so it takes no roll.
+/// `cast.went` for a round whose go checks no type 37 condition, so it takes no roll, and
+/// whose spell the areas do not name: a cast the rule no longer holds raises no event.
 pub fn went(
   cast cast: State,
   caster caster: Caster,
@@ -1142,12 +1221,34 @@ pub fn went(
   phase phase: Int,
   struck struck: List(cast.Struck),
 ) -> #(State, List(Effect)) {
+  went_of_spell(
+    cast:,
+    caster:,
+    now:,
+    cast_id:,
+    phase:,
+    spell: Error(Nil),
+    struck:,
+  )
+}
+
+/// The same for a go of `spell`, as the areas name it by the go's Spell4 id.
+pub fn went_of_spell(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+  cast_id cast_id: Int,
+  phase phase: Int,
+  spell spell: Result(Spell, Nil),
+  struck struck: List(cast.Struck),
+) -> #(State, List(Effect)) {
   cast.went(
     cast:,
     caster:,
     now:,
     cast_id:,
     phase:,
+    spell:,
     struck:,
     poses: dict.new(),
     indexes: dict.new(),
@@ -1257,12 +1358,14 @@ pub fn answered_known(
             now: at(ms:),
             cast_id: asked.cast_id,
             phase: asked.phase,
+            spell: Error(Nil),
             struck: struck_of(asked),
             poses:,
             indexes: dict.new(),
             units:,
             rolls:,
           )
+          |> then_procs_known(caster:, at: ms, poses:, units:, drawn: None)
         let #(state, more) =
           answered_known(
             caster:,
@@ -1626,4 +1729,29 @@ pub fn raising_interrupt_armor_threshold(
     flat: points,
     per_level: 0.0,
   )
+}
+
+/// The tick strikes among `effects`, in order.
+pub fn tick_strikes(effects effects: List(Effect)) -> List(cast.TickAsked) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      cast.TickStrike(asked:) -> Ok(asked)
+      cast.Send(..)
+      | cast.Tell(..)
+      | cast.StartTimer(..)
+      | cast.CancelTimer(..)
+      | cast.Log(..)
+      | cast.Strike(..)
+      | cast.Pay(..)
+      | cast.Gain(..)
+      | cast.CasterChangeStarts(..)
+      | cast.CasterChangeEnds(..)
+      | cast.TargetChangeStarts(..)
+      | cast.TargetChangeEnds(..)
+      | cast.ForcedMoveStarts(..)
+      | cast.Activated(..)
+      | cast.ShortcutCast(..)
+      | cast.StealthChanged(..) -> Error(Nil)
+    }
+  })
 }

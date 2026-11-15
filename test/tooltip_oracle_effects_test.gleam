@@ -1504,8 +1504,11 @@ pub fn every_sc_and_cost_token_matches_the_stack_count_after_cap_plus_one_casts_
   // One more than before the alternates were planned: Spell4.43500 (stack group 844, cap 1),
   // Quick Draw's child, is now also read under base 52215, whose plan is the surged Quick
   // Draw 76002 (Spell4.43468's spell4IdMechanicAlternateSpell), which casts 43500 as well.
-  assert oracle.compared_count(outcomes: stacks) == 23
-  // The spells the drive reads nothing for: twelve whose cast leaves no hold of their group on
+  // One more again: Spell4.79229 (stack group 1866), the Stalker's "Proc Damage - Tier 1",
+  // holds the one Proc row 208200 (kind 12), which the plan now reads, so its cast leaves a
+  // hold of its group on the caster and the token is compared instead of left out.
+  assert oracle.compared_count(outcomes: stacks) == 24
+  // The spells the drive reads nothing for: eleven whose cast leaves no hold of their group on
   // the caster (some hold another spell's, such as 41869's, which holds 77116's casts of group
   // 1770), and Spell Surge 47273, whose press the plain caster is refused 151 for (Prerequisite
   // 29484 wants 25 Spell Power).
@@ -1533,10 +1536,6 @@ pub fn every_sc_and_cost_token_matches_the_stack_count_after_cap_plus_one_casts_
       ),
       #(
         "spell=38791.sc",
-        "the spell's cast leaves no hold of its stack group on the caster",
-      ),
-      #(
-        "spell=79229.sc",
         "the spell's cast leaves no hold of its stack group on the caster",
       ),
       #(

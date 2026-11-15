@@ -228,23 +228,27 @@ fn settled(
 ) -> #(State, List(Effect), List(cast.TickAsked)) {
   let #(state, effects) =
     support.answered_as(caster:, state:, effects:, at:, struck:, rolls: [])
-  list.fold(tick_strikes(effects:), #(state, effects, []), fn(so_far, asked) {
-    let #(state, effects, held) = so_far
-    case answer(at, asked) {
-      Held -> #(state, effects, list.append(held, [asked]))
-      Answered(struck:) -> {
-        let #(state, more) =
-          cast.ticked(
-            cast: state,
-            caster:,
-            now: support.at(ms: at),
-            asked:,
-            struck:,
-          )
-        #(state, list.append(effects, more), held)
+  list.fold(
+    support.tick_strikes(effects:),
+    #(state, effects, []),
+    fn(so_far, asked) {
+      let #(state, effects, held) = so_far
+      case answer(at, asked) {
+        Held -> #(state, effects, list.append(held, [asked]))
+        Answered(struck:) -> {
+          let #(state, more) =
+            cast.ticked(
+              cast: state,
+              caster:,
+              now: support.at(ms: at),
+              asked:,
+              struck:,
+            )
+          #(state, list.append(effects, more), held)
+        }
       }
-    }
-  })
+    },
+  )
 }
 
 /// Every tick lands on its unit for 8 health, killing it when `killed` is 1.
@@ -293,34 +297,10 @@ fn held(_: Int, _: cast.TickAsked) -> Answer {
 
 // ---- what the steps hold ----
 
-fn tick_strikes(effects effects: List(Effect)) -> List(cast.TickAsked) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      cast.TickStrike(asked:) -> Ok(asked)
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Log(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.StealthChanged(..) -> Error(Nil)
-    }
-  })
-}
-
 /// Each tick strike of the run as its time, the go of its schedule and its tick.
 fn strikes_of(run run: Run) -> List(#(Int, Int, Int)) {
   list.flat_map(run.steps, fn(step) {
-    list.map(tick_strikes(effects: step.1), fn(asked) {
+    list.map(support.tick_strikes(effects: step.1), fn(asked) {
       #(step.0, asked.go, asked.tick)
     })
   })
@@ -886,7 +866,9 @@ pub fn ticks_due_together_go_in_key_order_test() -> Nil {
     }
   let assert [_, #(3000, effects)] = run.steps
     as "both rows' first ticks fire in one step"
-  assert list.map(tick_strikes(effects:), fn(asked) { asked.effect_id.value })
+  assert list.map(support.tick_strikes(effects:), fn(asked) {
+      asked.effect_id.value
+    })
     == [96_125, 96_126]
     as "in row id order"
   let healing = heal_run(rows: [health_heal(schedule: every_two_seconds())])

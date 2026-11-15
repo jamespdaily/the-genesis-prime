@@ -345,7 +345,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 14,
-        reason: "kinds other than entering and leaving stealth, leaving combat and dying, and rows with a chance, a filter, a gate, another unit or a delay, which the plan refuses",
+        reason: "kinds other than entering and leaving stealth, leaving combat, dying, and the hits, criticals, kills and heals the holder lands, and rows held by another unit, behind a persistence or target apply prerequisite, with a group and no filter kind, with an aim of 32 or above, with no life or naming a Spell4 the tables lack, which the plan leaves out or refuses",
         fact_key: "Spell4Effects.effectType.14",
       ),
       Missing(

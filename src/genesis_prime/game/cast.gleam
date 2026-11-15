@@ -33,7 +33,7 @@
 ////                            ends ──▶ 0x7f9 {k, 282 or 283, caster, 0}, then 0x7fe {k}; Tell(each viewer, CastFinished)
 ////
 //// each input ─────────────▶ `settled`: the stealth change ──▶ StealthChanged (0x8f5), then the procs held for the
-////                            input's events (Died or LeftCombat, then EnteredStealth or LeftStealth) cast
+////                            input's events (its own: Died, LeftCombat or a hit's; then EnteredStealth or LeftStealth) cast
 ////                            their spells ──▶ 0x7ff {k, root and parent the holder's spell}, no 0x7fd
 ////
 //// 0x4db held 1 ────────────▶ the ability is held: the same press, with the id k minted and no 0x7fd
@@ -373,24 +373,33 @@
 ////   until the row's life ends, as a Stealth row does (`Spell4Effects.effectType.14.lifetime`), and
 ////   adds its source; a source leaves where a stealth source leaves (`effects_ended`), at the
 ////   caster's death but for the innate passive's, and at leaving. Each input ends in `settled`,
-////   which lists its events, the input's own (`Died` for `died`, `LeftCombat` for `combat_left`)
-////   and then its stealth change (`EnteredStealth` or `LeftStealth`), and, after the
-////   `StealthChanged` it emits, casts the spell of each proc held when the input's own work was
-////   done whose trigger is among them, in event order and then source order (the server's choice,
-////   `Spell4Effects.effectType.14.dataBits00.217_218`, `.0_44`): a proc whose node the same input
-////   took off does not fire, and one the input applied does. The cast starts as a child's does,
-////   from the caster at itself (dataBits03 1 and 9 alike, `Spell4Effects.effectType.14.dataBits03`):
-////   a 0x7ff with the holder's spell as root and parent and no 0x7fd (`opcode.0x7ff.root_parent`).
-////   Its go and finish are inputs of their own, so its own stealth change fires procs too. A proc
-////   fires at most `count` times in any `window_ms`, counted from the fires the rule keeps, and a
-////   fire exactly `window_ms` after the last is allowed (`Spell4Effects.effectType.14.limits`; the
-////   server's choice of the edge). A spell whose caster condition refuses the caster's life (row 1,
-////   mask 225, refuses a dead caster: `Spell4.spell4ConditionsIdCaster`, `cast.dead_player`) does
-////   not fire and records no fire, with a debug line. The chance is 1.0 and draws no roll. A death
-////   leaves the passive's procs with the passive and ends every other cast before the procs are
-////   matched, so a `Died` proc of any other cast is never held: its go writes a debug line (the
-////   plan cannot tell the passive, so the rule enforces it, `procs_held`); a camp drops the procs
-////   and their fire times.
+////   which records its events as pending (`State.pending`), in order: the input's own (`Died` for
+////   `died`, `LeftCombat` for `combat_left`, and the hits of the strike round a go or a tick
+////   settles, `hit_events`), a `LandsHeal` for each Heal change its effects start on the caster,
+////   and its stealth change (`EnteredStealth` or `LeftStealth`). A hit is an event for each
+////   damage description that landed on a creature: `LandsHit`, `LandsMeleeHit` when the spell is of
+////   school 1, `LandsCritical` for a critical and `Kills` for a kill (a guess:
+////   `Spell4Effects.effectType.14.client_evaluation`); a spell that only selects a unit raises none.
+////   The rule decides nothing about a draw: the connection asks `proc_draws_needed` how many
+////   chance words and gate rolls the pending events need, one draw for all, and hands them to
+////   `procs_fire`, which matches each event, in order and then source order, against the proc rows
+////   held when the input's own work was done (the server's choice, `.dataBits00.217_218`, `.0_44`):
+////   a proc whose node the same input took off does not fire, and one the input applied does.
+////   `proc.decide` checks, in this order, the limit (at most `count` fires in any `window_ms`, a
+////   fire exactly `window_ms` after the last allowed, the server's choice of the edge,
+////   `Spell4Effects.effectType.14.limits`), the filter, the holder gate, the event gate and the
+////   chance (a word's fraction below the chance fires; a chance of 1.0 takes no word). A fire is
+////   counted at the event; a proc with a delay starts a timer (`Due.ProcDue`) that casts the
+////   spell when it fires, and the holder's cast ending cancels the timers of its procs. The cast
+////   starts as a child's does, from the caster at its aim (`.dataBits03`): a 0x7ff with the holder's
+////   spell as root and parent and no 0x7fd (`opcode.0x7ff.root_parent`). Its go and finish are
+////   inputs of their own, so a fire's events are matched in a later step and no proc cascades inside
+////   one. A spell whose caster condition refuses the caster's life (row 1, mask 225, refuses a dead
+////   caster: `Spell4.spell4ConditionsIdCaster`, `cast.dead_player`) does not fire and records no
+////   fire, with a debug line. A death leaves the passive's procs with the passive and ends every
+////   other cast before the procs are matched, so a `Died` proc of any other cast is never held: its
+////   go writes a debug line (the plan cannot tell the passive, so the rule enforces it,
+////   `procs_held`); a camp drops the procs and their fire times.
 //// - **A cast that lingers** is one whose last go has gone while a node of it still
 ////   has life: every step of its end runs (the current cast cleared, a channel's
 ////   cooldown, a stage's threshold closed) and only its 0x7fe waits, since the client
@@ -541,6 +550,9 @@
 //// | the caster dies stealthed | every cast ends, the sources drop, `StealthChanged` last |
 //// | the player leaves stealthed | the sources drop, nothing is written |
 //// | a proc's trigger happens inside its window | nothing is cast, no fire is recorded |
+//// | a proc's chance word is not below its chance | nothing is cast, no fire is recorded |
+//// | a go's hit names a creature with no damage description | no event, no proc fires |
+//// | a hit's trigger is matched while its proc's delay runs | the fire is counted at the event; the cast starts when its `ProcDue` timer fires, and is cancelled with the holder's cast |
 //// | a proc's trigger and the removal of its holder's node in one input | the removed proc does not fire: procs are matched after the input's work |
 //// | a proc's trigger happens for a caster its spell's condition refuses (a dead caster) | a debug line naming the row and the spell, no cast and no fire recorded |
 //// | a go of a cast that is not the innate passive applies a `Died` proc | the proc is not held, with a debug line: a death ends the cast before it could fire |
@@ -587,6 +599,7 @@ import genesis_prime/game/item_use
 import genesis_prime/game/lasting
 import genesis_prime/game/look
 import genesis_prime/game/prerequisite
+import genesis_prime/game/proc
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_area
@@ -1035,6 +1048,10 @@ pub type Due {
   )
   /// The cooldown effect `source` is no longer kept, after its lifetime.
   CooldownModifierEnds(source: unit_properties.Source)
+  /// The Proc row `row`, held by `source`, fired for an event of its holder `delay_ms`
+  /// ago (`proc.Fires`): its spell is cast at the unit `at`. The fire was counted at the
+  /// event. The end of the holder's node cancels it.
+  ProcDue(source: unit_properties.Source, row: spell_plan.ProcRow, at: Int)
   /// The held press starts.
   StartHeld
   /// The ability the player holds down casts again: its cooldowns have ended.
@@ -1262,8 +1279,8 @@ pub type HeldUntil {
   CastClears
 }
 
-/// A Proc row a cast holds on the caster, with the times it fired at that are still inside
-/// its window (`ProcRow.window_ms`).
+/// A Proc row a cast holds on the caster, with the monotonic times of its fires, which
+/// its limit counts (`proc.counted`).
 type HeldProc {
   HeldProc(row: spell_plan.ProcRow, fires_ms: List(Int))
 }
@@ -1301,9 +1318,13 @@ pub opaque type State {
     /// with whether damage ends it; the caster is stealthed while this is not empty.
     stealth: Dict(unit_properties.Source, spell_plan.Breaks),
     /// The Proc rows the caster's casts hold on it, by cast id and effect id, each with the
-    /// monotonic times of its fires still inside its window; a proc leaves where a stealth
-    /// source does (`procs_dropped`).
+    /// monotonic times of its fires; a proc leaves where a stealth source does
+    /// (`procs_dropped`).
     procs: Dict(unit_properties.Source, HeldProc),
+    /// The events of the caster that no proc has been matched against yet, in the order
+    /// they happened: each input records its own (`settled`), and the connection draws what
+    /// they need (`proc_draws_needed`) and has them matched (`procs_fire`).
+    pending: List(proc.Event),
     /// The id of the cast of the player's innate passive, once `passive_started` has
     /// started it: the one cast a death leaves.
     passive: Option(Int),
@@ -1368,6 +1389,7 @@ pub fn new() -> State {
     logged: set.new(),
     stealth: dict.new(),
     procs: dict.new(),
+    pending: [],
     passive: None,
     persistence_logged: set.new(),
     on_creatures: dict.new(),
@@ -1455,9 +1477,7 @@ pub fn take(
       |> result.map(fn(taken) { released(taken:, caster:, now_ms:) })
   }
   |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
-  |> result.map(fn(taken) {
-    settled(cast:, caster:, now:, own: [], step: fn() { taken })
-  })
+  |> result.map(fn(taken) { settled(cast:, own: [], step: fn() { taken }) })
 }
 
 /// The caster's 0x97, the right-click of a unit, decoded and decided: the client's cast
@@ -1487,9 +1507,7 @@ pub fn activate(
     now_ms:,
   )
   |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
-  |> result.map(fn(taken) {
-    settled(cast:, caster:, now:, own: [], step: fn() { taken })
-  })
+  |> result.map(fn(taken) { settled(cast:, own: [], step: fn() { taken }) })
 }
 
 /// The caster's 0x943, the use of an item the client sends from StartItemUseCast
@@ -1533,9 +1551,7 @@ pub fn use_item(
     now_ms:,
   )
   |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
-  |> result.map(fn(taken) {
-    settled(cast:, caster:, now:, own: [], step: fn() { taken })
-  })
+  |> result.map(fn(taken) { settled(cast:, own: [], step: fn() { taken }) })
 }
 
 fn item_used(
@@ -1834,9 +1850,7 @@ pub fn shortcut(
     now_ms:,
   )
   |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
-  |> result.map(fn(taken) {
-    settled(cast:, caster:, now:, own: [], step: fn() { taken })
-  })
+  |> result.map(fn(taken) { settled(cast:, own: [], step: fn() { taken }) })
 }
 
 fn shortcut_pressed(
@@ -3153,57 +3167,206 @@ fn not_built_refusal(
 
 /// What an input did, with `StealthChanged` after its own effects when the caster's stealth
 /// is not what it was in `cast`, the state before the input: one per input, however many
-/// Stealth rows came and went; then the casts of the procs the input's events fire
-/// (`procs_fired`): `own` are the input's own events, and the stealth change follows them.
-/// `step` is the input's own work.
+/// Stealth rows came and went. The input's events are recorded as pending, to be matched
+/// against the held procs once the connection has drawn what they need
+/// (`proc_draws_needed`, `procs_fire`): `own` are the input's own events, then a
+/// heal for each `Heal` change the input's effects start on the caster, then the stealth
+/// change. `step` is the input's own work.
 fn settled(
   cast cast: State,
-  caster caster: Caster,
-  now now: Now,
-  own own: List(spell_plan.Trigger),
+  own own: List(proc.Event),
   step step: fn() -> #(State, List(Effect)),
 ) -> #(State, List(Effect)) {
   let #(after, effects) = step()
-  let #(after, moved, fired) = case stealthed(cast: after) == stealthed(cast:) {
-    True -> {
-      let #(after, fired) =
-        procs_fired(cast: after, caster:, now:, triggers: own)
-      #(after, [], fired)
-    }
+  let #(stealth, moved) = case stealthed(cast: after) == stealthed(cast:) {
+    True -> #([], [])
     False -> {
       let stealthed = stealthed(cast: after)
       let change = case stealthed {
         True -> spell_plan.EnteredStealth
         False -> spell_plan.LeftStealth
       }
-      let #(after, fired) =
-        procs_fired(
-          cast: after,
-          caster:,
-          now:,
-          triggers: list.append(own, [change]),
-        )
-      #(after, [StealthChanged(stealthed:)], fired)
+      #([proc.Event(trigger: change, other_unit: None, spell: None)], [
+        StealthChanged(stealthed:),
+      ])
     }
   }
-  #(after, list.flatten([effects, moved, fired]))
+  let events =
+    list.flatten([own, heals_landed(before: cast, after:, effects:), stealth])
+  #(
+    State(..after, pending: list.append(after.pending, events)),
+    list.append(effects, moved),
+  )
 }
 
-/// The procs held when an input's own work is done fire for each of the input's events,
-/// in the order given (the input's own event, then its stealth change); within an event, in
-/// source order, the cast id and then the effect id, which is row order for one holder. A
-/// proc whose node the input took off is not held, and one the input applied is.
-fn procs_fired(
+/// The events of the heals an input's effects start on the caster, one for each `Heal`
+/// change in order. Two readings are guesses: a heal that moves nothing is one as well,
+/// and a heal of the shields or of any other vital counts as `LandsHeal` as a health heal
+/// does (the client reads no Proc row to say what a heal is,
+/// `Spell4Effects.effectType.14.dataBits00`). The event's spell is the spell of the cast
+/// whose row healed, as `after` holds it or, for a cast the input ended, `before`.
+/// `LandsCriticalHeal` is never raised: no heal is rolled a critical yet, and issue 830
+/// closes that gap.
+fn heals_landed(
+  before before: State,
+  after after: State,
+  effects effects: List(Effect),
+) -> List(proc.Event) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      CasterChangeStarts(source:, change: Heal(..)) ->
+        Ok(proc.Event(
+          trigger: spell_plan.LandsHeal,
+          other_unit: None,
+          spell: option.map(
+            option.from_result(
+              result.lazy_or(
+                holder_of(cast: after, cast_id: source.cast_id),
+                fn() { holder_of(cast: before, cast_id: source.cast_id) },
+              ),
+            ),
+            fn(holder) { event_spell(spell: holder.spell) },
+          ),
+        ))
+      CasterChangeStarts(change: Property(..), ..)
+      | CasterChangeStarts(change: Absorb(..), ..)
+      | CasterChangeStarts(change: Look(..), ..) -> Error(Nil)
+      Send(..)
+      | Tell(..)
+      | StartTimer(..)
+      | CancelTimer(..)
+      | Log(..)
+      | Strike(..)
+      | TickStrike(..)
+      | Pay(..)
+      | Gain(..)
+      | CasterChangeEnds(..)
+      | TargetChangeStarts(..)
+      | TargetChangeEnds(..)
+      | ForcedMoveStarts(..)
+      | Activated(..)
+      | ShortcutCast(..)
+      | StealthChanged(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The spell of an event as a proc's filter reads it.
+fn event_spell(spell spell: Spell) -> proc.EventSpell {
+  proc.EventSpell(
+    spell4_id: spell.spell4_id,
+    groups: spell.groups,
+    school: spell.school,
+  )
+}
+
+/// The events a strike round's units give the holder, in the round's order: for each
+/// description of the damage that landed on a creature, a hit, a melee hit when the spell is
+/// of school 1, a critical when the description's combat result is a critical and a kill
+/// when it killed the creature, so a go with two damage rows on one creature raises two
+/// hits and a spell that only selects a unit (no description) raises none. A deflected
+/// unit and an immune one raise none, and a player a creature's attack hit is not the
+/// holder's strike (a guess for each description counting and for a deflect and an
+/// immunity: no client code reads a Proc row,
+/// `Spell4Effects.effectType.14.client_evaluation`).
+fn hit_events(
+  spell spell: Spell,
+  struck struck: List(Struck),
+) -> List(proc.Event) {
+  list.flat_map(struck, fn(one) {
+    case one {
+      Hit(unit_id:, unit: HitCreature(..), descriptions:, ..) ->
+        list.flat_map(descriptions, fn(description) {
+          list.map(hit_triggers(spell:, description:), fn(trigger) {
+            proc.Event(
+              trigger:,
+              other_unit: Some(unit_id),
+              spell: Some(event_spell(spell:)),
+            )
+          })
+        })
+      Hit(unit: HitPlayer, ..) | Deflected(..) | Immune(..) -> []
+    }
+  })
+}
+
+/// The triggers one damage description of a strike on a creature raises.
+fn hit_triggers(
+  spell spell: Spell,
+  description description: hit.Description,
+) -> List(spell_plan.Trigger) {
+  list.flatten([
+    [spell_plan.LandsHit],
+    case spell.school {
+      1 -> [spell_plan.LandsMeleeHit]
+      _ -> []
+    },
+    case description.damage.combat_result == combat_result.Critical {
+      True -> [spell_plan.LandsCritical]
+      False -> []
+    },
+    case description.damage.killed != 0 {
+      True -> [spell_plan.Kills]
+      False -> []
+    },
+  ])
+}
+
+/// Whether an input raised events the held procs have not been matched against yet.
+pub fn has_pending(cast cast: State) -> Bool {
+  cast.pending != []
+}
+
+/// The words and the gate rolls the connection draws before the pending events are matched
+/// (`procs_fire`): for each pending event, each held proc of its trigger takes what
+/// `proc.draws_needed` gives, whether or not an earlier check stops it, so the count is
+/// exact. A state with nothing pending needs none.
+pub fn proc_draws_needed(cast cast: State) -> #(Int, Int) {
+  list.fold(cast.pending, #(0, 0), fn(total, event) {
+    list.fold(dict.values(cast.procs), total, fn(total, held) {
+      case held.row.trigger == event.trigger {
+        True -> {
+          let #(words, rolls) = proc.draws_needed(row: held.row)
+          #(total.0 + words, total.1 + rolls)
+        }
+        False -> total
+      }
+    })
+  })
+}
+
+/// The units the pending events concern besides the caster, which the event gates read:
+/// the connection takes their poses, checklist indexes and kinds from its picture of the
+/// caster's world for `procs_fire`.
+pub fn pending_units(cast cast: State) -> List(Int) {
+  list.filter_map(cast.pending, fn(event) {
+    option.to_result(event.other_unit, Nil)
+  })
+  |> list.unique
+}
+
+/// The held procs fire for the pending events, in the order they happened; within an event,
+/// in source order, the cast id and then the effect id, which is row order for one holder. The
+/// events are cleared. A proc whose node the input took off is not held, and one the input
+/// applied is. `draws` are the 32-bit words and `rolls` the gate rolls drawn for
+/// `proc_draws_needed`, taken in the order the procs are matched; `poses`, `indexes` and
+/// `units` are those of `pending_units` as `went` takes them, which an event gate against the
+/// event's unit reads. A fire's own go is an input of its own, so it raises its own events then
+/// and no event raised here is matched in this pass.
+pub fn procs_fire(
   cast cast: State,
   caster caster: Caster,
   now now: Now,
-  triggers triggers: List(spell_plan.Trigger),
+  poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
+  units units: Dict(Int, prerequisite.FirstUnit),
+  draws draws: List(Int),
+  rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
-  use <- bool.guard(when: dict.is_empty(cast.procs), return: #(cast, []))
-  list.fold(triggers, #(cast, []), fn(so_far, trigger) {
-    let #(cast, effects) = so_far
+  let events = cast.pending
+  let cast = State(..cast, pending: [])
+  let ordered =
     dict.to_list(cast.procs)
-    |> list.filter(fn(entry) { { entry.1 }.row.trigger == trigger })
     |> list.sort(fn(first, second) {
       int.compare({ first.0 }.cast_id, { second.0 }.cast_id)
       |> order.break_tie(int.compare(
@@ -3211,40 +3374,60 @@ fn procs_fired(
         { second.0 }.effect_id.value,
       ))
     })
-    |> list.fold(#(cast, effects), fn(so_far, entry) {
-      let #(cast, effects) = so_far
-      let #(cast, more) =
-        proc_fired(
-          cast:,
-          caster:,
-          now_ms: now.monotonic_ms,
-          source: entry.0,
-          held: entry.1,
-        )
-      #(cast, list.append(effects, more))
+  let #(cast, effects, _, _) =
+    list.fold(events, #(cast, [], draws, rolls), fn(so_far, event) {
+      let #(cast, effects, draws, rolls) = so_far
+      list.filter(ordered, fn(entry) {
+        { entry.1 }.row.trigger == event.trigger
+      })
+      |> list.fold(#(cast, effects, draws, rolls), fn(so_far, entry) {
+        let #(cast, effects, draws, rolls) = so_far
+        let source = entry.0
+        let row = { entry.1 }.row
+        let #(words, roll_count) = proc.draws_needed(row:)
+        let #(taken, draws) = list.split(draws, words)
+        let #(own_rolls, rolls) = list.split(rolls, roll_count)
+        let #(cast, more) = case dict.get(cast.procs, source) {
+          Error(Nil) -> #(cast, [])
+          Ok(held) ->
+            proc_matched(
+              cast:,
+              caster:,
+              now_ms: now.monotonic_ms,
+              event:,
+              source:,
+              held:,
+              draw: option.from_result(list.first(taken)),
+              rolls: own_rolls,
+              poses:,
+              indexes:,
+              units:,
+            )
+        }
+        #(cast, list.append(effects, more), draws, rolls)
+      })
     })
-  })
+  #(cast, effects)
 }
 
-/// One held proc's trigger happened: it casts its spell at the caster unless it fired
-/// `count` times already in the last `window_ms` (a fire exactly `window_ms` ago is
-/// outside the window), or the spell's caster condition refuses the caster's life
-/// (`Spell4.spell4ConditionsIdCaster`, `cast.dead_player`), which writes a debug line
-/// and records no fire. The cast starts as a child of the holder's spell does: the
-/// holder's spell is its root and parent, no 0x7fd, and the caster is its primary target.
-fn proc_fired(
+/// One held proc against one event of its trigger: what `proc.decide` gives, carried out. The
+/// holder's subject is the caster as `subject_of` has it, and the event's the struck unit as
+/// a Proxy's target gate reads it (`struck_subject`), or the caster again for an event with
+/// no other unit.
+fn proc_matched(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
+  event event: proc.Event,
   source source: unit_properties.Source,
   held held: HeldProc,
+  draw draw: Option(Int),
+  rolls rolls: List(Int),
+  poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
+  units units: Dict(Int, prerequisite.FirstUnit),
 ) -> #(State, List(Effect)) {
   let row = held.row
-  let recent =
-    list.filter(held.fires_ms, fn(fired_ms) {
-      fired_ms > now_ms - row.window_ms
-    })
-  use <- bool.guard(when: list.length(recent) >= row.count, return: #(cast, []))
   case holder_of(cast:, cast_id: source.cast_id) {
     Error(Nil) -> #(cast, [
       Log(
@@ -3256,64 +3439,167 @@ fn proc_fired(
           <> ", which is neither live nor lingering, so it does not fire",
       ),
     ])
-    Ok(holder) ->
-      proc_cast(cast:, caster:, now_ms:, source:, row:, recent:, holder:)
+    Ok(holder) -> {
+      let holder_subject = subject_of(cast:, caster:)
+      let event_subject = case event.other_unit {
+        Some(unit) ->
+          struck_subject(
+            cast:,
+            caster:,
+            primary_target: unit,
+            poses:,
+            indexes:,
+            units:,
+          )
+        None -> holder_subject
+      }
+      case
+        proc.decide(
+          row:,
+          fires_ms: held.fires_ms,
+          now_ms:,
+          event:,
+          holder_unit: caster.unit_id,
+          holder_subject:,
+          event_subject:,
+          draw:,
+          rolls:,
+        )
+      {
+        proc.Fires(at:, delay_ms:) ->
+          proc_fires(
+            cast:,
+            caster:,
+            now_ms:,
+            source:,
+            held:,
+            holder:,
+            at:,
+            delay_ms:,
+          )
+        proc.CannotTell(why:) -> #(cast, [Log(level: LogDebug, text: why)])
+        proc.OutOfLimit
+        | proc.FilteredOut
+        | proc.HolderGateFails
+        | proc.EventGateFails
+        | proc.MissedChance -> #(cast, [])
+      }
+    }
   }
 }
 
-/// The cast of a proc that fires: refused for a caster of a life its spell's caster
-/// condition does not allow, else recorded as a fire and started.
-fn proc_cast(
+/// A proc that fires: refused for a caster of a life its spell's caster condition does not
+/// allow (`Spell4.spell4ConditionsIdCaster`, `cast.dead_player`), which writes a debug line
+/// and records no fire; else recorded as a fire at the event, and its spell cast at `at` at
+/// once or, with a delay, when `ProcDue` runs out. The cast starts as a child of the holder's
+/// spell does: the holder's spell is its root and parent, no 0x7fd.
+fn proc_fires(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
   source source: unit_properties.Source,
-  row row: spell_plan.ProcRow,
-  recent recent: List(Int),
+  held held: HeldProc,
   holder holder: Holder,
+  at at: Int,
+  delay_ms delay_ms: Int,
 ) -> #(State, List(Effect)) {
-  let spell = row.spell
-  use <- bool.guard(
-    when: option.is_some(spell_plan.refused_life(spell:, dead: caster.dead)),
-    return: #(cast, [
-      Log(
+  let row = held.row
+  case proc_refusal(caster:, row:, holder:) {
+    Some(refusal) -> #(cast, [refusal])
+    None -> {
+      let cast =
+        State(
+          ..cast,
+          procs: dict.insert(
+            cast.procs,
+            source,
+            HeldProc(row:, fires_ms: [
+              now_ms,
+              ..proc.counted(limit: row.limit, fires_ms: held.fires_ms, now_ms:)
+            ]),
+          ),
+        )
+      case delay_ms {
+        0 -> proc_started(cast:, caster:, now_ms:, row:, holder:, at:)
+        _ -> {
+          let #(cast, _, start) =
+            armed(cast:, due: ProcDue(source:, row:, at:), after_ms: delay_ms)
+          #(cast, [start])
+        }
+      }
+    }
+  }
+}
+
+/// The debug line that says a proc's spell is not cast because its caster condition refuses a
+/// caster of the life the caster has, or none.
+fn proc_refusal(
+  caster caster: Caster,
+  row row: spell_plan.ProcRow,
+  holder holder: Holder,
+) -> Option(Effect) {
+  case spell_plan.refused_life(spell: row.spell, dead: caster.dead) {
+    None -> None
+    Some(_) ->
+      Some(Log(
         level: LogDebug,
         text: "the Proc effect "
           <> int.to_string(row.effect_id.value)
           <> " of Spell4 "
           <> int.to_string(holder.spell.spell4_id.value)
           <> " does not cast Spell4 "
-          <> int.to_string(spell.spell4_id.value)
+          <> int.to_string(row.spell.spell4_id.value)
           <> ", whose caster condition refuses a caster that is "
           <> case caster.dead {
           True -> "dead"
           False -> "alive"
         },
-      ),
-    ]),
-  )
-  let cast =
-    State(
-      ..cast,
-      procs: dict.insert(
-        cast.procs,
-        source,
-        HeldProc(row:, fires_ms: [now_ms, ..recent]),
-      ),
-    )
+      ))
+  }
+}
+
+/// The cast of a proc's spell at the unit `at`, started as a child of the holder's spell.
+fn proc_started(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  row row: spell_plan.ProcRow,
+  holder holder: Holder,
+  at at: Int,
+) -> #(State, List(Effect)) {
   start(
     cast:,
     caster:,
     now_ms:,
-    spell:,
+    spell: row.spell,
     root: holder.spell.spell4_id,
     parent: Some(holder.spell.spell4_id),
-    primary_target: caster.unit_id,
+    primary_target: at,
     client_cast_id: None,
     role: Child,
     spent: None,
     reserved: [],
   )
+}
+
+/// A fire's delay ran out: its spell is cast, unless its holder's cast has ended since or the
+/// caster's life is one the spell refuses now.
+fn proc_due(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  source source: unit_properties.Source,
+  row row: spell_plan.ProcRow,
+  at at: Int,
+) -> #(State, List(Effect)) {
+  case holder_of(cast:, cast_id: source.cast_id) {
+    Error(Nil) -> #(cast, [])
+    Ok(holder) ->
+      case proc_refusal(caster:, row:, holder:) {
+        Some(refusal) -> #(cast, [refusal])
+        None -> proc_started(cast:, caster:, now_ms:, row:, holder:, at:)
+      }
+  }
 }
 
 /// The Proc rows of a go that applied, each held by the cast `cast_id` from this go on;
@@ -4939,6 +5225,7 @@ fn stop_pending(
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
+      | ProcDue(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -4979,7 +5266,7 @@ pub fn timer_fired(
   caster caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, caster:, now:, own: [])
+  use <- settled(cast:, own: [])
   released(
     taken: fire(cast:, timer:, caster:, now:),
     caster:,
@@ -5075,6 +5362,8 @@ fn fire(
           State(..cast, cooldowns: cooldown.drop(book: cast.cooldowns, source:)),
           [],
         )
+        ProcDue(source:, row:, at:) ->
+          proc_due(cast:, caster:, now_ms:, source:, row:, at:)
         RepeatHeld -> #(repeat_fired(cast:, timer:), [])
         StartHeld ->
           case cast.held {
@@ -5439,9 +5728,11 @@ fn lifted_gains(proxy proxy: Proxy) -> List(spell_plan.Gain) {
 /// Hit unit and none for a deflect, and none for a Proxy whose gate against the
 /// caster does not pass) and the finish after the last go. A cast that is no longer
 /// live, because the client ended it while the round was open, has no go and writes
-/// nothing: the hits stand. `poses` are the Hit units' ground points and yaws as the
-/// caster's picture holds them when the round closes, by unit id, which a Proxy's target
-/// gate reads (`children`); a Hit unit with none is not shown any more. `indexes` are the
+/// nothing: the hits stand, and they raise their events (`hit_events`) for the spell of the
+/// cast while it is held, else for `spell`, the go's spell as the areas name it by its
+/// Spell4 id (`GoAsked.spell4_id`); a go the areas do not name strikes nobody. `poses` are
+/// the Hit units' ground points and yaws as the caster's picture holds them when the round
+/// closes, by unit id, which a Proxy's target gate reads (`children`); a Hit unit with none is not shown any more. `indexes` are the
 /// checklist indexes their 0x262 carried, by unit id, which a type 94 condition of that gate
 /// reads; a unit with none has no creature in the check. `units` are what each unit is, by
 /// unit id (`prerequisite.FirstUnit`), which a type 38 condition of that gate reads; a unit
@@ -5454,13 +5745,20 @@ pub fn went(
   now now: Now,
   cast_id cast_id: Int,
   phase phase: Int,
+  spell asked_spell: Result(Spell, Nil),
   struck struck: List(Struck),
   poses poses: Dict(Int, area.Pose),
   indexes indexes: Dict(Int, Int),
   units units: Dict(Int, prerequisite.FirstUnit),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, caster:, now:, own: [])
+  let own =
+    holder_of(cast:, cast_id:)
+    |> result.map(fn(holder) { holder.spell })
+    |> result.lazy_or(fn() { asked_spell })
+    |> result.map(fn(spell) { hit_events(spell:, struck:) })
+    |> result.unwrap([])
+  use <- settled(cast:, own:)
   released(
     taken: go(
       cast:,
@@ -5687,6 +5985,7 @@ fn tick_timers_cancelled(
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
+      | ProcDue(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -6049,7 +6348,23 @@ pub fn ticked(
   asked asked: TickAsked,
   struck struck: Option(Struck),
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, caster:, now:, own: [])
+  // A landed tick of a row the cast still holds raises the events of a hit (a guess: no
+  // source says a periodic damage tick is a hit for a Proc).
+  let own = case
+    struck,
+    holder_of(cast:, cast_id: asked.cast_id)
+    |> result.try(fn(holder) {
+      dict.get(
+        holder.ticking,
+        TickKey(unit_id: asked.unit_id, effect_id: asked.effect_id),
+      )
+      |> result.map(fn(_) { holder })
+    })
+  {
+    Some(one), Ok(holder) -> hit_events(spell: holder.spell, struck: [one])
+    _, _ -> []
+  }
+  use <- settled(cast:, own:)
   released(
     taken: tick_closed(cast:, now_ms: now.monotonic_ms, asked:, struck:),
     caster:,
@@ -6453,6 +6768,7 @@ fn cancel_nodes_end(
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
+      | ProcDue(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -6490,6 +6806,7 @@ pub fn unit_removed(
         | RestrictionEnd(..)
         | CooldownModifierStarts(..)
         | CooldownModifierEnds(..)
+        | ProcDue(..)
         | StartHeld
         | RepeatHeld
         | WindowEnd(..)
@@ -6563,13 +6880,16 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
 /// then those for the stealth it ended. The innate passive's cast is the one cast it
 /// leaves: it stays live or lingering with its nodes, its modifiers, its pending timers,
 /// its stealth sources and its procs, and nothing is written for it
-/// (`passive_set_aside`).
+/// (`passive_set_aside`); the delayed fires of its procs are the exception, dropped with
+/// their timers cancelled, since the holder they wait for is gone (`proc_fires_dropped`).
 pub fn died(
   cast cast: State,
-  caster caster: Caster,
+  caster _caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, caster:, now:, own: [spell_plan.Died])
+  use <- settled(cast:, own: [
+    proc.Event(trigger: spell_plan.Died, other_unit: None, spell: None),
+  ])
   all_ended(cast:, now:)
 }
 
@@ -6577,10 +6897,12 @@ pub fn died(
 /// `CombatLeft`) went off. The only effects are the casts of the procs held for it.
 pub fn combat_left(
   cast cast: State,
-  caster caster: Caster,
-  now now: Now,
+  caster _caster: Caster,
+  now _now: Now,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, caster:, now:, own: [spell_plan.LeftCombat])
+  use <- settled(cast:, own: [
+    proc.Event(trigger: spell_plan.LeftCombat, other_unit: None, spell: None),
+  ])
   #(cast, [])
 }
 
@@ -6625,7 +6947,7 @@ pub fn persisted(
   caster caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, caster:, now:, own: [])
+  use <- settled(cast:, own: [])
   let now_ms = now.monotonic_ms
   let #(cast, ended) = persistence_ended(cast:, caster:, now_ms:, done: [])
   let #(cast, effects) =
@@ -6944,6 +7266,7 @@ pub fn passive_started(
 /// The caster's casts, press, hold, thresholds and timers ended by its death.
 fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   let #(cast, aside) = passive_set_aside(cast:)
+  let #(aside, fires_dropped) = proc_fires_dropped(aside:)
   let #(cast, ended) =
     dict.to_list(cast.casts)
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
@@ -6967,8 +7290,54 @@ fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   let #(cast, cancelled) = left(cast:)
   #(
     passive_restored(cast:, aside:),
-    list.flatten([ended, lingering_ended, modifiers_ended, cancelled]),
+    list.flatten([
+      fires_dropped,
+      ended,
+      lingering_ended,
+      modifiers_ended,
+      cancelled,
+    ]),
   )
+}
+
+/// The passive's delayed proc fires dropped with the timers of what a death set aside, and
+/// their timers cancelled: the holder is gone, so no cast follows for its hit (a fire the
+/// death itself makes is armed after this, by the proc pass).
+fn proc_fires_dropped(
+  aside aside: Option(Aside),
+) -> #(Option(Aside), List(Effect)) {
+  case aside {
+    None -> #(None, [])
+    Some(set_aside) -> {
+      let #(fires, kept) =
+        list.partition(set_aside.timers, fn(entry) {
+          case entry.1 {
+            ProcDue(..) -> True
+            Go(..)
+            | Finish(..)
+            | NodesEnd(..)
+            | Tick(..)
+            | ModifierStart(..)
+            | ModifierEnd(..)
+            | RestrictionEnd(..)
+            | CooldownModifierStarts(..)
+            | CooldownModifierEnds(..)
+            | TargetModifierStart(..)
+            | ForcedMoveStart(..)
+            | StartChild(..)
+            | StateEnd(..)
+            | StartHeld
+            | RepeatHeld
+            | WindowEnd(..)
+            | ChargeLevel(..) -> False
+          }
+        })
+      #(
+        Some(Aside(..set_aside, timers: kept)),
+        list.map(fires, fn(entry) { CancelTimer(timer: entry.0) }),
+      )
+    }
+  }
 }
 
 /// What a death leaves of the innate passive: its live or lingering cast, the timers
@@ -7074,6 +7443,7 @@ fn belongs_to_passive(
     ModifierStart(source:, ..)
     | ModifierEnd(source:)
     | RestrictionEnd(source:)
+    | ProcDue(source:, ..)
     | CooldownModifierStarts(source:, ..)
     | CooldownModifierEnds(source:) -> source.cast_id == id
     TargetModifierStart(on:, ..) | ForcedMoveStart(on:, ..) ->
@@ -7094,7 +7464,7 @@ pub fn damage_taken(
   caster caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, caster:, now:, own: [])
+  use <- settled(cast:, own: [])
   broken_by_damage(cast:, caster:, now_ms: now.monotonic_ms)
 }
 
@@ -7151,6 +7521,7 @@ fn modifiers_pending(cast cast: State) -> List(Effect) {
         ModifierStart(..)
         | TargetModifierStart(..)
         | ForcedMoveStart(..)
+        | ProcDue(..)
         | RestrictionEnd(..)
         | CooldownModifierStarts(..)
         | CooldownModifierEnds(..)
@@ -7556,6 +7927,7 @@ fn close_threshold(
             | RestrictionEnd(..)
             | CooldownModifierStarts(..)
             | CooldownModifierEnds(..)
+            | ProcDue(..)
             | StartHeld
             | RepeatHeld
             | Tick(..) -> False
@@ -9577,6 +9949,7 @@ fn target_start_of(due due: Due) -> Result(OnCreature, Nil) {
     | RestrictionEnd(..)
     | CooldownModifierStarts(..)
     | CooldownModifierEnds(..)
+    | ProcDue(..)
     | StartHeld
     | RepeatHeld
     | WindowEnd(..)
@@ -9789,6 +10162,7 @@ fn source_of(due due: Due) -> Option(unit_properties.Source) {
     | StartChild(..)
     | NodesEnd(..)
     | StateEnd(..)
+    | ProcDue(..)
     | StartHeld
     | RepeatHeld
     | WindowEnd(..)
@@ -9892,7 +10266,8 @@ fn effects_ended(
   let #(cast, restriction_cancels) =
     cancel_timers(cast:, matching: fn(due) {
       case due {
-        RestrictionEnd(source:) -> source.cast_id == cast_id
+        RestrictionEnd(source:) | ProcDue(source:, ..) ->
+          source.cast_id == cast_id
         Go(..)
         | Finish(..)
         | StartChild(..)
@@ -9940,6 +10315,7 @@ fn pending_heals(
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
+      | ProcDue(..)
       | Go(..)
       | Finish(..)
       | StartChild(..)
@@ -9973,6 +10349,7 @@ fn pending_heals_cancelled(
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
+      | ProcDue(..)
       | Go(..)
       | Finish(..)
       | StartChild(..)
