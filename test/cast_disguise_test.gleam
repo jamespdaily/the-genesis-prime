@@ -19,6 +19,7 @@
 import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/look.{type Disguise, Disguise}
 import genesis_prime/game/prerequisite
@@ -353,7 +354,7 @@ pub fn a_node_that_ends_by_time_ends_the_disguise_and_the_player_leaving_ends_no
   assert support.timeline(fired:)
     == [#(1500, "start", source), #(11_250, "end", source)]
     as "the disguise ends with its node at go + 10,250; its own end at go + 10,750 never fires"
-  let #(_, left) = cast.left(cast: state)
+  let #(_, left) = cast_tick.left(cast: state)
   assert support.caster_change_ends(effects: left) == []
     as "the connection's look goes with the player's Entered"
 }

@@ -12,6 +12,7 @@ import cast_support as support
 import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_started
@@ -553,7 +554,7 @@ pub fn the_player_leaving_the_world_mid_hold_ends_the_hold_and_every_timer_test(
   let #(state, down) =
     key(state: cast_state.new(), bag_index: mind_burst, held: 1, at: 1000)
   let assert [#(timer, 1250)] = support.started_timers(effects: down)
-  let #(state, effects) = cast.left(cast: state)
+  let #(state, effects) = cast_tick.left(cast: state)
   assert support.cancelled_timers(effects:) == [timer]
     as "the timer that waits to repeat is cancelled with the others"
   let #(_, fired) = support.fired_raw(state:, timer:, at: 2250)

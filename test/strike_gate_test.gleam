@@ -34,8 +34,8 @@
 import cast_support as support
 import fixture_tables
 import genesis_prime/game/area.{type Pose}
-import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, GoAsked} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/crowd_control
 import genesis_prime/game/hit.{Rolls}
 import genesis_prime/game/lasting.{LastingRow}
@@ -313,7 +313,7 @@ fn gate_in(
   poses poses: dict.Dict(Int, Pose),
   creatures creatures: List(#(Int, Int)),
 ) -> cast_state.StrikeGate {
-  cast.strike_gate(
+  cast_tick.strike_gate(
     cast:,
     caster:,
     poses:,

@@ -23,6 +23,7 @@ import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/state.{type Effect} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Resources, Payment}
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{type Spell, Spell}
@@ -246,7 +247,7 @@ pub fn a_caster_that_leaves_before_the_go_pays_nothing_test() -> Nil {
       target: 0,
       at: 1000,
     )
-  let #(state, left) = cast.left(cast: state)
+  let #(state, left) = cast_tick.left(cast: state)
   assert support.payments(effects: list.append(pressed, left)) == []
   let #(timer, _) = go_timer(effects: pressed)
   let #(_, going) = went(state:, caster:, timer:, at: 2250)

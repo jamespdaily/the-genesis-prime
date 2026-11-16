@@ -21,6 +21,7 @@ import cast_support as support
 import fixture_tables
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{
   type Spell, AimsAtArea, AimsAtCaster, AimsAtPrimaryTarget,
@@ -164,7 +165,7 @@ fn begun(
     attacker: strike_support.attacker(),
     formulas: rating_support.formulas(),
     entropy: <<0:size({ strike.entropy_needed(selection:) * 8 })>>,
-    gate: cast.strike_gate(
+    gate: cast_tick.strike_gate(
       cast: cast_state.new(),
       caster: support.caster(),
       poses: dict.new(),
@@ -577,7 +578,7 @@ pub fn two_gos_of_one_cast_are_two_rounds_each_with_its_own_gates_test() -> Nil 
       attacker: strike_support.attacker(),
       formulas: rating_support.formulas(),
       entropy: <<0:size(96)>>,
-      gate: cast.strike_gate(
+      gate: cast_tick.strike_gate(
         cast: cast_state.new(),
         caster: support.caster(),
         poses: dict.new(),

@@ -19,6 +19,7 @@ import cast_support as support
 import genesis_prime/client_connection.{CastFinished}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting.{LastingRow, Stack}
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, Always, ForceRemove, GatedOnCaster, GatedOnTarget,
@@ -651,7 +652,7 @@ pub fn a_caster_that_leaves_writes_nothing_for_its_lingering_casts_test() -> Nil
       at: 1000,
     )
   let assert [#(timer, 8000)] = support.started_timers(effects:)
-  let #(state, left) = cast.left(cast: state)
+  let #(state, left) = cast_tick.left(cast: state)
   assert support.writes(effects: left) == []
   assert support.cancelled_timers(effects: left) == [timer]
   let #(_, late) = support.fired(state:, timer:, at: 9000)

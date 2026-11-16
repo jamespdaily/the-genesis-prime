@@ -19,6 +19,7 @@ import genesis_prime/client_connection.{CastFinished, CastStarted, CastWent}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/connection/casting
 import genesis_prime/game/spell_plan
 import genesis_prime/message/cast_result.{
@@ -881,7 +882,7 @@ pub fn the_player_leaving_the_world_cancels_every_timer_and_writes_nothing_test(
   let #(state, pressed) =
     support.pressed(state: cast_state.new(), bag_index: 0, target: 0, at: 1000)
   let assert [#(go_timer, _)] = support.started_timers(effects: pressed)
-  let #(_, effects) = cast.left(cast: state)
+  let #(_, effects) = cast_tick.left(cast: state)
   assert support.cancelled_timers(effects:) == [go_timer]
   assert support.writes(effects:) == [] && support.tells(effects:) == []
     as "the viewers' connections write each cast's 0x7fe before the unit's 0x355 (genesis_prime/game/connection)"

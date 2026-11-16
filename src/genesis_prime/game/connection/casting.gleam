@@ -84,6 +84,7 @@ import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/persist as cast_persist
 import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/connection/absorption as connection_absorption
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/healing as connection_healing
@@ -1307,7 +1308,7 @@ fn strike_begins(
     client_connection.draw(session.link, strike.entropy_needed(selection:))
   let unit_ids = list.map(selection.units, fn(aimed) { aimed.unit_id })
   let gate =
-    cast.strike_gate(
+    cast_tick.strike_gate(
       cast: entered.cast,
       caster: caster_of(tables:, entered:),
       poses: shown.poses_of(

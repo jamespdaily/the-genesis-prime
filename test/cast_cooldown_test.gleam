@@ -35,6 +35,7 @@ import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/cooldown.{
   type Operation, AddMs, Base, Modifier, NoLonger, SetMs,
 }
@@ -663,7 +664,7 @@ pub fn a_caster_that_leaves_drops_every_lasting_row_test() -> Nil {
     ])
   let #(state, _) =
     support.press(plans:, state: cast_state.new(), bag: bag_of_holder, at: 1000)
-  let #(state, _) = cast.left(cast: state)
+  let #(state, _) = cast_tick.left(cast: state)
   let after = slow_cast(plans:, state:, at: 3000)
   assert meets(plans:, state: after, at: 8600) == Held(wait_ms: 400)
 }

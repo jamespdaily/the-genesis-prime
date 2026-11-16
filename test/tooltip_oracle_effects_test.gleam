@@ -50,6 +50,7 @@ import fixture_tables
 import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
 import genesis_prime/game/lasting
@@ -1105,7 +1106,7 @@ fn group_holds(
   caster caster: cast_state.Caster,
   stacked stacked: Stacked,
 ) -> List(lasting.Hold) {
-  cast.holds_on(cast: state, unit_id: caster.unit_id)
+  cast_tick.holds_on(cast: state, unit_id: caster.unit_id)
   |> list.filter(fn(hold: lasting.Hold) {
     hold.stack.group_id == stacked.group_id
     || hold.spell4_id == stacked.spell.spell4_id

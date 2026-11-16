@@ -35,6 +35,7 @@ import cast_support as support
 import client_tables
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, GlobalCooldown, ShowsCastBar, Spell,
 }
@@ -309,7 +310,7 @@ pub fn a_camp_or_the_holocrypt_drops_the_passive_writing_nothing_and_the_next_jo
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let #(passive, _) = started(base: 29_035)
-  let #(dropped, effects) = cast.left(cast: passive)
+  let #(dropped, effects) = cast_tick.left(cast: passive)
   assert support.writes(effects:) == []
     as "a camp writes nothing for any cast (cast.left)"
   let #(_, again) =

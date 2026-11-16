@@ -23,6 +23,7 @@ import genesis_prime/client_connection.{CastFinished}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/persist as cast_persist
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/spell_plan.{
@@ -766,7 +767,7 @@ pub fn a_caster_that_left_or_died_has_no_cast_left_for_the_check_to_end_test() -
       at: 1000,
     )
   let out = support.caster_in_combat(in_combat: False)
-  let #(left, _) = cast.left(cast: state)
+  let #(left, _) = cast_tick.left(cast: state)
   assert persisted(state: left, caster: out, at: 1100).1 == []
     as "`left` dropped every cast"
   let #(dead, _) =

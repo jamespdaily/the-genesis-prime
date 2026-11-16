@@ -17,8 +17,8 @@ import cast_support as support
 import class_resource_support
 import genesis_prime/client_connection.{CastFinished, CastStarted}
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource
 import genesis_prime/game/spell_plan.{AtFirstGo, Spell}
 import genesis_prime/game/strike
@@ -1086,7 +1086,7 @@ pub fn leaving_the_world_with_a_threshold_open_cancels_every_timer_and_writes_no
   use <- owned_test.run(10_000)
   let #(state, shred) =
     press(state: cast_state.new(), bag_index: support.shred, at: 1000)
-  let #(state, left) = cast.left(cast: state)
+  let #(state, left) = cast_tick.left(cast: state)
   assert list.sort(support.cancelled_timers(effects: left), fn(first, second) {
       int.compare(timer_number(first), timer_number(second))
     })
@@ -1102,7 +1102,7 @@ pub fn leaving_the_world_with_a_threshold_open_cancels_every_timer_and_writes_no
     as "the threshold is gone with the world"
   let #(state, charged) =
     press(state: cast_state.new(), bag_index: support.charged_shot, at: 1000)
-  let #(_, left) = cast.left(cast: state)
+  let #(_, left) = cast_tick.left(cast: state)
   assert support.cancelled_timers(effects: left) == timers_of(effects: charged)
     && support.writes(effects: left) == []
     as "a charge's timer is cancelled and nothing is written"

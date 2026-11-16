@@ -19,7 +19,7 @@
 //// ```
 
 import genesis_prime/client_connection.{Continue, Done}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/visibility
@@ -66,7 +66,7 @@ fn checked(
   let hidden =
     visibility.hidden(
       prerequisites:,
-      subject: cast.subject_of(
+      subject: cast_tick.subject_of(
         cast: entered.cast,
         caster: connection_casting.caster_of(
           tables: session.settings.tables,

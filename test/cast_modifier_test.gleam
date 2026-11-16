@@ -16,6 +16,7 @@
 import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{type Plans, Always}
 import genesis_prime/game/spend
@@ -348,7 +349,7 @@ pub fn a_caster_that_leaves_ends_no_modifier_test() -> Nil {
     ])
   let #(state, _) =
     support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
-  let #(_, left) = cast.left(cast: state)
+  let #(_, left) = cast_tick.left(cast: state)
   assert support.caster_change_ends(effects: left) == []
     as "the connection's properties go with the player's Entered"
 }
@@ -539,7 +540,7 @@ pub fn node_end_ends_creature_modifier_test() -> Nil {
     })
   assert support.finished_ids(support.writes(effects: ending)) == [id]
     as "the lingering cast left with no node ends with its 0x7fe, as for any lasting node"
-  assert support.target_changes(effects: cast.left(cast: state).1) == []
+  assert support.target_changes(effects: cast_tick.left(cast: state).1) == []
     as "and nothing is told again when the caster leaves"
 }
 
@@ -596,7 +597,7 @@ pub fn removal_ends_creature_modifier_test() -> Nil {
     )
   assert support.target_timeline(fired:) == []
     as "its node's end timer was cancelled with the node, so nothing ends it twice"
-  assert support.target_changes(effects: cast.left(cast: state).1) == []
+  assert support.target_changes(effects: cast_tick.left(cast: state).1) == []
 }
 
 pub fn removal_before_the_delay_ran_out_starts_nothing_on_the_creature_test() -> Nil {
@@ -668,7 +669,7 @@ pub fn caster_death_ends_creature_modifier_test() -> Nil {
     )
   assert support.target_changes(effects: died) == [ended_on_creature(source)]
     as "the cast's modifier on the creature is told ended, once"
-  assert support.target_changes(effects: cast.left(cast: state).1) == []
+  assert support.target_changes(effects: cast_tick.left(cast: state).1) == []
     as "and the caster's leaving tells nothing more"
 }
 
@@ -689,7 +690,7 @@ pub fn creature_leaving_sight_ends_its_modifier_test() -> Nil {
     cast.unit_removed(cast: state, unit_id: creature, now_ms: 1100)
   assert support.target_changes(effects: removed) == [ended_on_creature(source)]
     as "the cast drops its node on a creature that left the caster's sight, so the modifier it holds there ends with it"
-  assert support.target_changes(effects: cast.left(cast: state).1) == []
+  assert support.target_changes(effects: cast_tick.left(cast: state).1) == []
     as "and is not told again"
 }
 

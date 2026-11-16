@@ -27,6 +27,7 @@
 import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
@@ -1021,7 +1022,7 @@ pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_ch
 pub fn leaving_while_stealthed_writes_nothing_and_the_next_stay_starts_unstealthed_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(_, state, _) = stealthed_by_base_1(others: [])
-  let #(left, effects) = cast.left(cast: state)
+  let #(left, effects) = cast_tick.left(cast: state)
   assert support.writes(effects:) == []
   assert changes(effects:) == []
   assert !cast_state.stealthed(cast: left)

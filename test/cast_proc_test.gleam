@@ -35,6 +35,7 @@ import genesis_prime/client_connection
 import genesis_prime/game/cast
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
@@ -1309,7 +1310,7 @@ pub fn a_camp_drops_the_procs_fires_nothing_and_the_next_passive_holds_them_with
   let caster = stalker(in_combat: False)
   let #(state, _) = joined(caster:, at: 1000)
   let #(state, _) = toggled(state:, caster:, at: 2000)
-  let #(state, left) = cast.left(cast: state)
+  let #(state, left) = cast_tick.left(cast: state)
   assert support.writes(effects: left) == []
     as "a camp writes nothing, and leaving stealth is no event"
   assert list.filter(left, is_strike) == []
@@ -1416,7 +1417,7 @@ pub fn a_camp_ends_a_procs_fire_history_with_the_proc_test() -> Nil {
   let #(state, first) =
     planted_press(plans:, state:, bag: bag_of_base_1, at: 2000)
   assert starts_of(spell4_id: 250_201, effects: first) == 1
-  let #(state, _) = cast.left(cast: state)
+  let #(state, _) = cast_tick.left(cast: state)
   let #(state, started) =
     passive_started(
       cast: state,
@@ -2364,7 +2365,7 @@ pub fn the_208200_gate_passes_only_while_the_holders_79220_holds_a_node_on_the_c
     )
   assert starts_at(spell4_id: 79_221, effects: marked) == []
     as "79220 is not in group 463, so its own hit fires nothing"
-  assert list.map(cast.holds_on(cast: state, unit_id: 31), fn(hold) {
+  assert list.map(cast_tick.holds_on(cast: state, unit_id: 31), fn(hold) {
       hold.spell4_id.value
     })
     == [79_220]
