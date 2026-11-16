@@ -92,12 +92,8 @@ pub fn base(
     |> result.replace_error(MissingRow(table: "Item2", id: raw_id)),
   )
   use <- bool.guard(
-    currency_kind.names_a_currency(currency_kind.kind_of(
-      number: item.currency_type_id0,
-    ))
-      || currency_kind.names_a_currency(currency_kind.kind_of(
-      number: item.currency_type_id1,
-    )),
+    names_currency(number: item.currency_type_id0)
+      || names_currency(number: item.currency_type_id1),
     Error(OtherCurrency(item2_id:)),
   )
   use <- bool.guard(
@@ -221,12 +217,10 @@ pub fn sell_price(
       currency_type_id: item.currency_type_id1_sell_to_vendor,
       amount: item.currency_amount1_sell_to_vendor,
     )
-  let named = fn(price: SellPrice) {
-    currency_kind.names_a_currency(currency_kind.kind_of(
-      number: price.currency_type_id,
-    ))
-  }
-  case named(first) || named(second) {
+  case
+    names_currency(number: first.currency_type_id)
+    || names_currency(number: second.currency_type_id)
+  {
     False -> computed_sell(tables:, item:)
     True if first.amount > 0 && second.amount > 0 ->
       Error(TwoSellCurrencies(item2_id:))
@@ -258,13 +252,19 @@ fn computed_sell(
 /// `shown(amount, multiplier)`, a price in another currency is unchanged
 /// (`0x14041bcc0.formula`).
 pub fn paid(price price: SellPrice, multiplier multiplier: Float) -> SellPrice {
-  use <- bool.guard(
-    !currency_kind.is_credits(currency_kind.kind_of(
-      number: price.currency_type_id,
-    )),
-    price,
-  )
+  use <- bool.guard(!is_credit_price(price:), price)
   SellPrice(..price, amount: shown(base: price.amount, multiplier:))
+}
+
+/// Whether the price is in credits, the only currency a vendor's multiplier scales
+/// (`0x14041bcc0.formula`).
+pub fn is_credit_price(price price: SellPrice) -> Bool {
+  currency_kind.is_credits(currency_kind.kind_of(number: price.currency_type_id))
+}
+
+/// Whether a currency type number names a currency: a slot of 0 is unused.
+fn names_currency(number number: Int) -> Bool {
+  currency_kind.names_a_currency(currency_kind.kind_of(number:))
 }
 
 /// The price the vendor's window shows and the vendor pays or charges for a base price: the

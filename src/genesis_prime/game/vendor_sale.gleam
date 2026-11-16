@@ -86,7 +86,6 @@
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/currency.{type Currencies}
-import genesis_prime/game/currency_kind
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
 import genesis_prime/game/item_price
@@ -620,10 +619,7 @@ fn junk_stack(
   use <- bool.guard(!sellable, Ok(None))
   use price <- result.try(each_pays(item:, vendor: stock, tables:))
   use <- bool.guard(
-    !currency_kind.is_credits(currency_kind.kind_of(
-      number: price.currency_type_id,
-    ))
-      || price.amount == 0,
+    !item_price.is_credit_price(price:) || price.amount == 0,
     Ok(None),
   )
   let count = int.max(1, item.stack_count)

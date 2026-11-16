@@ -9,8 +9,7 @@
 ////
 //// - Currency 1 is the credits and 2 is Renown (`lua.Money.CodeEnumCurrencyType`); the
 ////   client's rows are 1 to 7 and 9 to 14, with no row 8 (`CurrencyType.capAmount`). The
-////   server names only what a rule reads: a variant splits when a rule first needs the
-////   number.
+////   server names only what a rule reads.
 //// - A price slot of currency 0 is unused: with both buy slots 0 the client computes the
 ////   price (`0x14040bee0`), and with both SellToVendor slots 0 the sell price
 ////   (`0x14040bfb0`).
@@ -18,8 +17,9 @@
 ////   the row gives it (`0x14041bcc0.formula`).
 //// - This module imports nothing, so any game module can name a kind.
 
-/// The CurrencyType number of the credits (`lua.Money.CodeEnumCurrencyType`), the one place
-/// the number 1 is named: `kind_of` decodes it to `Credits`.
+/// The CurrencyType number of the credits (`lua.Money.CodeEnumCurrencyType`). The number 1
+/// is written twice, here and as the `1 ->` pattern of `kind_of` (a pattern cannot name a
+/// constant); a test pins that `kind_of(credits_type)` is `Credits`.
 pub const credits_type = 1
 
 /// What a rule reads a currency type number as.
