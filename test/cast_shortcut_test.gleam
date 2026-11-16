@@ -26,6 +26,7 @@ import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/activate.{type Target, Body, Usable}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
+import genesis_prime/game/objective_kind
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/shown
 import genesis_prime/game/start_place
@@ -888,10 +889,12 @@ pub fn no_real_spell_a_press_reaches_has_a_creature_id_target_cast_test() -> Nil
 
 fn objective_spells(tables tables: table_store.Tables) -> List(Int) {
   quest_objective.all(tables)
-  |> list.filter(fn(row) {
-    row.type_ == shortcut_spell.cast_type && row.data != 0
+  |> list.filter_map(fn(row) {
+    case objective_kind.cast_spell(objective_kind.of_row(row)) {
+      Ok(spell4_id) if spell4_id.value != 0 -> Ok(spell4_id.value)
+      Ok(_) | Error(Nil) -> Error(Nil)
+    }
   })
-  |> list.map(fn(row) { row.data })
 }
 
 pub fn a_pressed_creatures_id_reaches_its_target_check_test() -> Nil {

@@ -62,7 +62,6 @@
 //// and is not. A placed creature stays after it is used.
 
 import genesis_prime/content/refusal.{type Refusal}
-import genesis_prime/game/objective
 import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
 import genesis_prime/game/place_objective
@@ -223,8 +222,7 @@ type Want {
 /// The objective types a use counts for (`objective.counts`): the scripted and the
 /// collectible objective.
 fn is_click_kind(objective held: quest_log.Objective) -> Bool {
-  held.type_ == objective.scripted_type
-  || held.type_ == objective.collectible_type
+  objective_kind.is_linked_use(held.kind)
 }
 
 /// The rows to stand for the click targets, from id `first` up, and the pairs that

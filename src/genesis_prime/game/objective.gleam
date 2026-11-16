@@ -64,18 +64,18 @@
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/communicator
 import genesis_prime/game/departures
+import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest as quest_rules
 import genesis_prime/game/quest_log.{type QuestLog}
-import genesis_prime/game/shortcut_spell
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
 import genesis_prime/store.{type HeldItem}
 import genesis_prime/table/id.{
-  type Creature2Id, type Item2Id, type Spell4Id, Creature2Id, Item2Id,
-  PathSoldierActivateId, Quest2Id, Spell4Id, TradeskillSchematic2Id,
+  type Creature2Id, type Item2Id, type PathSoldierActivateId, type Spell4Id,
+  Creature2Id, Quest2Id,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_soldier_activate
@@ -90,53 +90,12 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set.{type Set}
 
-/// The objective type of a kill of a named group of creatures: the Creature2 ids of its
-/// reward pane, each of which must be killed (`QuestObjective.type.15`).
-const named_group_type = 15
-
-/// The objective type of a talk.
-const talk_type = 3
-
-/// The objective type of a checklist use: a unit of the TargetGroup in its data.
-const checklist_use_type = 14
-
-/// The objective type of a checklist talk: a unit of the TargetGroup in its data.
-const checklist_talk_type = 18
-
-/// The objective type of a checklist use of a PathSoldierActivate creature.
-const path_soldier_type = 28
-
-/// The objective type of a quest collectible: a use of a creature linked to it.
-pub const collectible_type = 32
-
-/// The objective type of a scripted objective: a use of a creature linked to it.
-pub const scripted_type = 5
-
-/// The objective type of a held item: the Item2 id in its data.
-const held_type = 4
-
-/// The objective type of a made item: a TradeskillSchematic2 id in its data, counted
-/// by the schematic's output item.
-const made_type = 33
-
-/// The objective type of a visit: a WorldZone id in its data.
-const visit_type = 17
-
-/// The objective type of a place: done where the player stands at its marker.
-const place_type = 22
-
-/// The objective type of a finished quest: a Quest2 id in its data.
-const finish_type = 24
-
 /// The QuestObjective flag that hides an objective from the player
 /// (`QuestObjective.flags.8`); it does not change whether the objective is done.
 const hidden_flag = 8
 
 /// The state number of an Achieved quest in 0x035C.
 const achieved_state = 2
-
-/// The objective types of a kill (`0x140550c50` sets its kill result for these).
-const kill_types = [2, 8, 15, 16, 46]
 
 /// What the player did to a creature: talked to it, used it or killed it (the unit as
 /// the client's group test reads it), with the unit's checklist index for the first two
@@ -187,16 +146,13 @@ pub fn buttons(
   })
   |> list.filter_map(fn(open) {
     let objective = open.1
-    case
-      objective.type_ == shortcut_spell.cast_type
-      && result.is_ok(spell4.get(tables:, id: Spell4Id(objective.data)))
-    {
-      True ->
-        Ok(Button(
-          spell4_id: Spell4Id(objective.data),
-          objective_id: objective.objective_id,
-        ))
-      False -> Error(Nil)
+    case objective_kind.cast_spell(objective.kind) {
+      Ok(spell4_id) ->
+        case spell4.get(tables:, id: spell4_id) {
+          Ok(_) -> Ok(Button(spell4_id:, objective_id: objective.objective_id))
+          Error(Nil) -> Error(Nil)
+        }
+      Error(Nil) -> Error(Nil)
     }
   })
   |> set.from_list
@@ -288,7 +244,7 @@ pub fn credits_a_used_unit(
         quest_log.open_objectives(log:, quest:)
         |> list.any(fn(open) {
           let #(index, objective) = open
-          objective.type_ == quest_log.use_a_creature_type
+          result.is_ok(objective_kind.used_creature(objective.kind))
           && quest_log.counted_by_unit(objective, reused)
           && counts(tables:, event:, quest_id: quest.id, index:, objective:)
           && !counted_already(log:, quest:, index:, event:)
@@ -406,68 +362,76 @@ fn counts(
   case event {
     TalkedTo(target:, ..) ->
       {
-        objective.type_ == talk_type
-        && Creature2Id(objective.data) == target.creature_id
+        objective_kind.talked_creature(objective.kind) == Ok(target.creature_id)
       }
       || {
-        objective.type_ == checklist_talk_type
-        && target_group.contains(tables:, group: objective.data, unit: target)
+        case objective_kind.talked_checklist_group(objective.kind) {
+          Ok(group) ->
+            target_group.contains(tables:, group: group.value, unit: target)
+          Error(Nil) -> False
+        }
       }
     Used(target:, by_item:, ..) ->
-      {
-        objective.type_ == quest_log.use_a_creature_type
-        && Creature2Id(objective.data) == target.creature_id
+      { objective_kind.used_creature(objective.kind) == Ok(target.creature_id) }
+      || {
+        case objective_kind.used_checklist_group(objective.kind) {
+          Ok(group) ->
+            target_group.contains(tables:, group: group.value, unit: target)
+          Error(Nil) -> False
+        }
       }
       || {
-        objective.type_ == checklist_use_type
-        && target_group.contains(tables:, group: objective.data, unit: target)
+        case objective_kind.used_group(objective.kind) {
+          Ok(group) ->
+            target_group.contains(tables:, group: group.value, unit: target)
+            && is_the_terminals_choice(
+              objective_id: objective.objective_id,
+              creature_id: target.creature_id,
+            )
+          Error(Nil) -> False
+        }
       }
       || {
-        objective.type_ == quest_log.use_a_group_type
-        && target_group.contains(tables:, group: objective.data, unit: target)
-        && is_the_terminals_choice(
-          objective_id: objective.objective_id,
-          creature_id: target.creature_id,
-        )
-      }
-      || {
-        objective.type_ == path_soldier_type
-        && objective.checklist
-        && activates_creature(
-          tables:,
-          path_soldier_activate: objective.data,
-          creature_id: target.creature_id,
-        )
+        case objective_kind.checklist_target(objective.kind) {
+          Ok(objective_kind.UnitOfSoldier(path_soldier_activate_id:)) ->
+            objective.checklist
+            && activates_creature(
+              tables:,
+              path_soldier_activate: path_soldier_activate_id,
+              creature_id: target.creature_id,
+            )
+          Ok(objective_kind.UnitsOfGroup(_)) | Error(Nil) -> False
+        }
       }
       || {
         !by_item
-        && {
-          objective.type_ == collectible_type
-          || objective.type_ == scripted_type
-        }
+        && objective_kind.is_linked_use(objective.kind)
         && list.contains(
           objective_link.links(tables:, creature_id: target.creature_id),
           #(quest_id, index),
         )
       }
     Cast(spell4_id:, target:) ->
-      objective.type_ == shortcut_spell.cast_type
-      && Spell4Id(objective.data) == spell4_id
+      objective_kind.cast_spell(objective.kind) == Ok(spell4_id)
       && case target {
         Some(CastTarget(unit:, ..)) -> in_pane(tables:, objective:, unit:)
         None -> True
       }
     Killed(target:) -> {
-      let by_data = case objective.type_ {
-        2 -> Creature2Id(objective.data) == target.creature_id
-        8 | 16 ->
-          target_group.contains(tables:, group: objective.data, unit: target)
-        _ -> False
+      let by_data = case objective_kind.placed_target(objective.kind) {
+        Ok(objective_kind.OneCreature(creature2_id:)) ->
+          creature2_id == target.creature_id
+        Ok(objective_kind.GroupOf(target_group_id:)) ->
+          target_group.contains(
+            tables:,
+            group: target_group_id.value,
+            unit: target,
+          )
+        Error(Nil) -> False
       }
-      let is_kill = list.contains(kill_types, objective.type_)
       by_data
       || {
-        is_kill
+        objective_kind.is_kill(objective.kind)
         && objective.reward_pane != 0
         && target_group.contains(
           tables:,
@@ -502,7 +466,8 @@ fn group_member(
   target target: target_group.Unit,
 ) -> Result(#(Int, Int), Nil) {
   use <- bool.guard(
-    when: objective.type_ != named_group_type || objective.reward_pane == 0,
+    when: !objective_kind.kills_by_cluster(objective.kind)
+      || objective.reward_pane == 0,
     return: Error(Nil),
   )
   let creatures =
@@ -546,7 +511,8 @@ fn advance_quest(
   let #(log, progress, became_achieved) =
     list.fold(named, #(so_far.log, [], False), fn(counted, open) {
       let #(log, progress, became_achieved) = counted
-      let counted_with_no_unit = open.1.type_ == shortcut_spell.cast_type
+      let counted_with_no_unit =
+        result.is_ok(objective_kind.cast_spell({ open.1 }.kind))
       case group_member(open.1), { open.1 }.checklist {
         Ok(#(member, members)), _ ->
           case
@@ -683,15 +649,10 @@ fn progressed_by_one(
 /// Whether the PathSoldierActivate row is the activation of the creature.
 fn activates_creature(
   tables tables: table_store.Tables,
-  path_soldier_activate path_soldier_activate_id: Int,
+  path_soldier_activate path_soldier_activate_id: PathSoldierActivateId,
   creature_id creature_id: Creature2Id,
 ) -> Bool {
-  case
-    path_soldier_activate.get(
-      tables:,
-      id: PathSoldierActivateId(path_soldier_activate_id),
-    )
-  {
+  case path_soldier_activate.get(tables:, id: path_soldier_activate_id) {
     Ok(row) -> Creature2Id(row.creature2_id) == creature_id
     Error(Nil) -> False
   }
@@ -910,7 +871,7 @@ fn hidden_script(
   index index: Int,
   objective objective: quest_log.Objective,
 ) -> Bool {
-  objective.type_ == scripted_type
+  objective.kind == objective_kind.Scripted
   && int.bitwise_and(objective.flags, hidden_flag) != 0
   && objective.data == 0
   && !objective_link.is_linked(tables:, quest_id:, index:)
@@ -930,12 +891,12 @@ pub fn visible_script_broken(
   objective objective: quest_log.Objective,
 ) -> List(String) {
   list.flatten([
-    case objective.type_ == scripted_type {
+    case objective.kind == objective_kind.Scripted {
       True -> []
       False -> [
-        "QuestObjective type is "
-        <> int.to_string(objective.type_)
-        <> ", not 5 (a scripted objective)",
+        "QuestObjective "
+        <> int.to_string(objective.objective_id)
+        <> " is not 5 (a scripted objective)",
       ]
     },
     case int.bitwise_and(objective.flags, hidden_flag) != 0 {
@@ -993,14 +954,17 @@ fn finishes(
   quest_log.open_objectives(log: settling.log, quest:)
   |> list.filter(fn(open) {
     let #(_, objective) = open
-    objective.type_ == finish_type
-    && quest_log.finished(
-      log: settling.log,
-      quest_id: objective.data,
-      tables:,
-      numbers:,
-      unix_ms:,
-    )
+    case objective_kind.finished_quest(objective.kind) {
+      Ok(quest2_id) ->
+        quest_log.finished(
+          log: settling.log,
+          quest_id: quest2_id.value,
+          tables:,
+          numbers:,
+          unix_ms:,
+        )
+      Error(Nil) -> False
+    }
   })
   |> list.fold(settling, fn(settling, open) {
     set_count(
@@ -1029,7 +993,7 @@ fn arrivals(
     quest_log.open_objectives(log: settling.log, quest:)
     |> list.filter(fn(open) {
       let #(_, objective) = open
-      objective.type_ == place_type
+      objective.kind == objective_kind.ReachPlace
       && objective.count == 1
       && place_objective.at_marker(
         tables:,
@@ -1050,7 +1014,7 @@ fn arrivals(
     quest_log.open_objectives(log: at_markers.log, quest:)
     |> list.filter(fn(open) {
       let #(_, objective) = open
-      objective.type_ == place_type
+      objective.kind == objective_kind.ReachPlace
       && objective.count == 1
       && int.bitwise_and(objective.flags, quest_log.optional_flag) != 0
       && required_sibling_arrived(
@@ -1072,7 +1036,9 @@ fn arrivals(
     })
   let counted =
     quest_log.open_objectives(log: with_siblings.log, quest:)
-    |> list.filter(fn(open) { { open.1 }.type_ == checklist_use_type })
+    |> list.filter(fn(open) {
+      result.is_ok(objective_kind.used_checklist_group({ open.1 }.kind))
+    })
     |> list.fold(with_siblings, fn(settling, open) {
       place_objective.indexes_counted(
         tables:,
@@ -1110,7 +1076,7 @@ fn required_sibling_arrived(
   })
   |> list.any(fn(sibling) {
     let #(index, objective) = sibling
-    objective.type_ == place_type
+    objective.kind == objective_kind.ReachPlace
     && objective.data == optional.data
     && int.bitwise_and(objective.flags, quest_log.optional_flag) == 0
     && quest_log.objective_progress(log: settling.log, quest:, index:)
@@ -1159,18 +1125,18 @@ fn held_item(
   tables tables: table_store.Tables,
   objective objective: quest_log.Objective,
 ) -> Result(Item2Id, Nil) {
-  case objective.type_ == held_type, objective.type_ == made_type {
-    True, _ -> Ok(Item2Id(objective.data))
-    _, True -> {
+  case
+    objective_kind.collected_item(objective.kind),
+    objective_kind.crafted_schematic(objective.kind)
+  {
+    Ok(item2_id), _ -> Ok(item2_id)
+    Error(Nil), Ok(schematic_id) -> {
       let assert Ok(schematic) =
-        tradeskill_schematic2.get(
-          tables:,
-          id: TradeskillSchematic2Id(objective.data),
-        )
+        tradeskill_schematic2.get(tables:, id: schematic_id)
         as "a type 33 objective names a TradeskillSchematic2 row"
       Ok(tradeskill_schematic2.item2_id_output(schematic))
     }
-    _, _ -> Error(Nil)
+    Error(Nil), Error(Nil) -> Error(Nil)
   }
 }
 
@@ -1213,11 +1179,14 @@ fn visits(
     quest_log.open_objectives(log: settling.log, quest:)
     |> list.filter(fn(open) {
       let #(index, objective) = open
-      objective.type_ == visit_type
-      && objective.data != 0
-      && list.contains(zones, objective.data)
-      && quest_log.objective_progress(log: settling.log, quest:, index:)
-      < objective.count
+      case objective_kind.visited_zone(objective.kind) {
+        Ok(zone) ->
+          zone.value != 0
+          && list.contains(zones, zone.value)
+          && quest_log.objective_progress(log: settling.log, quest:, index:)
+          < objective.count
+        Error(Nil) -> False
+      }
     })
   case waiting {
     [] -> settling

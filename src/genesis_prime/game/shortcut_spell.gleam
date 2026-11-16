@@ -32,9 +32,6 @@ import gleam/dict.{type Dict}
 import gleam/list
 import gleam/result
 
-/// QuestObjective.type of a cast-a-spell objective.
-pub const cast_type = 11
-
 /// What the plans hold of an objective's spell.
 pub type Planned {
   /// A spell aimed at the caster, with its plan.
