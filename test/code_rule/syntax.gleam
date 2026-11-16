@@ -118,6 +118,22 @@ pub fn location_of(reference: Reference) -> glance.Span {
   }
 }
 
+/// The name a module's qualified references go by in the file that imports
+/// it: its alias, or the last segment of its path. A module imported `as _`
+/// goes by no name, since nothing can refer to it.
+pub fn import_name(import_: glance.Import) -> Option(String) {
+  case import_.alias {
+    Some(glance.Named(alias)) -> Some(alias)
+    Some(glance.Discarded(_)) -> None
+    None ->
+      import_.module
+      |> string.split("/")
+      |> list.last
+      |> result.unwrap(import_.module)
+      |> Some
+  }
+}
+
 /// Every reference in the module's functions to one of the named functions of
 /// the named modules, however the module imports them: through the module's
 /// last segment or its alias, or by an unqualified import (under its alias if
@@ -136,17 +152,7 @@ pub fn references_to(
     })
   let qualifiers =
     list.filter_map(imports, fn(import_) {
-      case import_.alias {
-        None ->
-          Ok(
-            import_.module
-            |> string.split("/")
-            |> list.last
-            |> result.unwrap(import_.module),
-          )
-        Some(glance.Named(name)) -> Ok(name)
-        Some(glance.Discarded(_)) -> Error(Nil)
-      }
+      option.to_result(import_name(import_), Nil)
     })
   let unqualified =
     imports
@@ -160,6 +166,108 @@ pub fn references_to(
       Unqualified(name:, ..) -> list.contains(unqualified, name)
     }
   })
+}
+
+/// Every name the function binds anywhere in it: its parameters, `let` and
+/// `use` patterns, closure parameters and `case` clause patterns. A name
+/// bound anywhere in the function is a local for the whole function, so a
+/// local named like an imported module is not read as the module.
+pub fn bound_names(function: glance.Function) -> List(String) {
+  let parameters =
+    list.filter_map(function.parameters, fn(parameter) {
+      assigned_name(parameter.name)
+    })
+  let nested =
+    list.flat_map(from_statements(function.body), fn(expression) {
+      case expression {
+        glance.Block(statements:, ..) -> statement_names(statements)
+        glance.Fn(arguments:, body:, ..) ->
+          list.append(
+            list.filter_map(arguments, fn(argument) {
+              assigned_name(argument.name)
+            }),
+            statement_names(body),
+          )
+        glance.Case(clauses:, ..) ->
+          clauses
+          |> list.flat_map(fn(clause) { list.flatten(clause.patterns) })
+          |> list.flat_map(pattern_names)
+        glance.Int(..)
+        | glance.Float(..)
+        | glance.String(..)
+        | glance.Variable(..)
+        | glance.NegateInt(..)
+        | glance.NegateBool(..)
+        | glance.Panic(..)
+        | glance.Todo(..)
+        | glance.Tuple(..)
+        | glance.List(..)
+        | glance.RecordUpdate(..)
+        | glance.FieldAccess(..)
+        | glance.Call(..)
+        | glance.TupleIndex(..)
+        | glance.FnCapture(..)
+        | glance.BitString(..)
+        | glance.BinaryOperator(..)
+        | glance.Echo(..) -> []
+      }
+    })
+  list.flatten([parameters, statement_names(function.body), nested])
+}
+
+fn assigned_name(name: glance.AssignmentName) -> Result(String, Nil) {
+  case name {
+    glance.Named(name) -> Ok(name)
+    glance.Discarded(_) -> Error(Nil)
+  }
+}
+
+fn statement_names(statements: List(Statement)) -> List(String) {
+  list.flat_map(statements, fn(statement) {
+    case statement {
+      glance.Use(patterns:, ..) ->
+        list.flat_map(patterns, fn(use_pattern) {
+          pattern_names(use_pattern.pattern)
+        })
+      glance.Assignment(pattern:, ..) -> pattern_names(pattern)
+      glance.Assert(..) | glance.Expression(..) -> []
+    }
+  })
+}
+
+fn pattern_names(pattern: glance.Pattern) -> List(String) {
+  case pattern {
+    glance.PatternVariable(name:, ..) -> [name]
+    glance.PatternAssignment(pattern: inner, name:, ..) -> [
+      name,
+      ..pattern_names(inner)
+    ]
+    glance.PatternTuple(elements:, ..) -> list.flat_map(elements, pattern_names)
+    glance.PatternList(elements:, tail:, ..) ->
+      list.append(
+        list.flat_map(elements, pattern_names),
+        option.map(tail, pattern_names) |> option.unwrap([]),
+      )
+    glance.PatternConcatenate(prefix_name:, rest_name:, ..) ->
+      list.filter_map(
+        [rest_name, ..option.values([prefix_name])],
+        assigned_name,
+      )
+    glance.PatternBitString(segments:, ..) ->
+      list.flat_map(segments, fn(segment) { pattern_names(segment.0) })
+    glance.PatternVariant(arguments:, ..) ->
+      list.flat_map(arguments, fn(argument) {
+        case argument {
+          glance.LabelledField(item:, ..) | glance.UnlabelledField(item) ->
+            pattern_names(item)
+          glance.ShorthandField(label:, ..) -> [label]
+        }
+      })
+    glance.PatternInt(..)
+    | glance.PatternFloat(..)
+    | glance.PatternString(..)
+    | glance.PatternDiscard(..) -> []
+  }
 }
 
 /// Every string literal in the module's functions, each with the byte offset

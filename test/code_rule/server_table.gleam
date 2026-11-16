@@ -6,10 +6,8 @@
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
-import glance
 import gleam/list
 import gleam/option
-import gleam/result
 import gleam/set
 import gleam/string
 
@@ -89,7 +87,7 @@ fn is_table_module(module: String) -> Bool {
 }
 
 /// The table modules whose `entry()` the file calls, each through the name its
-/// import gives the module (the last segment of its path, or its alias).
+/// import gives the module (`syntax.import_name`).
 fn called_entries(file: SourceFile) -> List(String) {
   let parsed = syntax.parse(file)
   let called =
@@ -101,12 +99,11 @@ fn called_entries(file: SourceFile) -> List(String) {
     })
   list.filter_map(parsed.imports, fn(definition) {
     let import_ = definition.definition
-    let name = case import_.alias {
-      option.Some(glance.Named(alias)) -> alias
-      option.Some(glance.Discarded(_)) | option.None ->
-        import_.module |> string.split("/") |> list.last |> result.unwrap("")
-    }
-    case is_table_module(import_.module) && list.contains(called, name) {
+    let name = syntax.import_name(import_)
+    case
+      is_table_module(import_.module)
+      && option.map(name, list.contains(called, _)) == option.Some(True)
+    {
       True -> Ok(import_.module)
       False -> Error(Nil)
     }
