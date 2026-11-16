@@ -196,6 +196,44 @@ order by name;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `load_held_objectives` query
+/// defined in `./src/genesis_prime/content/sql/load_held_objectives.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadHeldObjectivesRow {
+  LoadHeldObjectivesRow(objective_id: Int)
+}
+
+/// Every row of the held_objective table in key order: the one query the load makes of
+/// the table at start (genesis_prime/content/held_objective). The checks run on these
+/// rows, not in SQL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_held_objectives(
+  db: pog.Connection,
+) -> Result(pog.Returned(LoadHeldObjectivesRow), pog.QueryError) {
+  let decoder = {
+    use objective_id <- decode.field(0, decode.int)
+    decode.success(LoadHeldObjectivesRow(objective_id:))
+  }
+
+  "-- Every row of the held_objective table in key order: the one query the load makes of
+-- the table at start (genesis_prime/content/held_objective). The checks run on these
+-- rows, not in SQL.
+select
+  objective_id
+from held_objective
+order by objective_id;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_projector_landings` query
 /// defined in `./src/genesis_prime/content/sql/load_projector_landings.sql`.
 ///

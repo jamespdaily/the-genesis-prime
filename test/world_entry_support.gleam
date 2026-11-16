@@ -23,6 +23,7 @@ import genesis_prime/world_map/player_unit
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/set
 import map_support
 import novice_tables
 import place_support
@@ -234,6 +235,7 @@ pub fn joined_state(
       numbers: spawn_support.numbers,
       defaults: unit_properties.defaults(tables:),
       chain: tutorial_support.none(),
+      held_objectives: set.new(),
       tables:,
       now:,
     )

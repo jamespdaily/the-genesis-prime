@@ -40,7 +40,6 @@
 ////   -429.19, 293.90) (wildstar-knowledge `world-data/spawn.tsv`); they hold the checklist
 ////   indexes 0, 1 and 2 (`checklist_index_test`).
 
-import fixture_tables
 import genesis_prime/game/objective.{Advanced, SendProgress}
 import genesis_prime/game/quest_log
 import genesis_prime/game/shown.{ShownObject}
@@ -49,31 +48,11 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{Hostile}
 import gleam/dict
 import gleam/list
+import gleam/set
 import owned_test
 import place_support
-import planted_table.{Integer}
 import quest_support
 import spawn_support
-
-/// Runs the body on the fixture's tables with these QuestObjective cells changed (the
-/// objective's id, the column and its new value), built on the body's heap.
-fn with_objectives(
-  edits edits: List(#(Int, String, Int)),
-  body body: fn(table_store.Tables) -> a,
-) -> a {
-  let rows =
-    list.fold(edits, fixture_tables.rows(), fn(rows, edit) {
-      case
-        fixture_tables.change(rows:, table: "QuestObjective", id: edit.0, with: [
-          #(edit.1, Integer(edit.2)),
-        ])
-      {
-        Ok(changed) -> changed
-        Error(refusal) -> panic as fixture_tables.describe(refusal)
-      }
-    })
-  fixture_tables.on_rows(rows:, reaching: [], body:)
-}
 
 /// The log settled for a player standing at the position of a world and zone, with no
 /// unit in sight.
@@ -143,6 +122,7 @@ fn settled_among(
     ),
     now_ms: 0,
     numbers: spawn_support.numbers,
+    held_objectives: set.new(),
     unix_ms: 0,
   )
 }
@@ -156,7 +136,7 @@ fn first_ring() -> quest_log.QuestLog {
 
 pub fn a_position_inside_the_marker_completes_a_type_22_objective_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   // 0.4 east of WorldLocation2 51735's centre and 40 above it: inside the radius 1.0, and
   // its maxVerticalDistance of 0 tests no height (0x140485fa0).
   let log = first_ring()
@@ -182,7 +162,7 @@ pub fn a_position_inside_the_marker_completes_a_type_22_objective_test() -> Nil 
 
 pub fn a_position_just_outside_the_marker_completes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   // 1.01 east of 51735's centre, at its height: outside the radius 1.0.
   let log = first_ring()
   assert settled_at(log:, tables:, world: 3460, zone: 6009, at: #(
@@ -203,7 +183,7 @@ pub fn a_position_just_outside_the_marker_completes_nothing_test() -> Nil {
 
 pub fn a_marker_in_another_world_is_not_reached_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   // The client's test names no world, so the server holds the player to the marker's
   // World row: a position in another world with the same numbers is no arrival.
   let log = first_ring()
@@ -218,7 +198,7 @@ pub fn a_marker_in_another_world_is_not_reached_test() -> Nil {
 
 pub fn a_marker_with_a_vertical_limit_refuses_a_far_height_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   // 13674's marker 28530 has maxVerticalDistance 35: a height difference above it is not
   // at the place, whatever the horizontal distance; 13907's marker 44761 has 8.
   let broken = quest_support.accepted(quest_id: 7426, progress: [0, 0, 0, 0])
@@ -269,7 +249,7 @@ pub fn a_marker_with_a_vertical_limit_refuses_a_far_height_test() -> Nil {
 
 pub fn a_type_22_objective_not_yet_open_does_not_complete_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   // The finish line, objective 21323 (index 3 of quest 10527, flags 3): it waits for every
   // earlier objective that is not optional (0x140553790), and 21321 and 21324 are not done.
   let log =
@@ -301,7 +281,7 @@ pub fn an_optional_objective_completes_with_its_required_sibling_test() -> Nil {
       ),
     ])
   let at_51736 = #(54.0913, -854.5638, -540.177)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   assert settled_at(log:, tables:, world: 3460, zone: 6009, at: at_51736).effects
     == [
       SendProgress(quest_id: 10_513, objective_index: 1, progress: 1),
@@ -311,7 +291,7 @@ pub fn an_optional_objective_completes_with_its_required_sibling_test() -> Nil {
 
   // The optional objective with no marker of its own still completes with its sibling:
   // the two share data 8542, the server's trigger for the place.
-  use unmarked <- with_objectives(edits: [
+  use unmarked <- quest_support.with_objectives(edits: [
     #(21_280, "worldLocationsIdIndicator00", 0),
   ])
   assert settled_at(
@@ -328,7 +308,7 @@ pub fn an_optional_objective_completes_with_its_required_sibling_test() -> Nil {
     as "the optional objective follows its required sibling of the same data, with or without a marker"
 
   // And it completes alone when only its own marker is reached.
-  use sibling_unmarked <- with_objectives(edits: [
+  use sibling_unmarked <- quest_support.with_objectives(edits: [
     #(21_279, "worldLocationsIdIndicator00", 0),
   ])
   assert settled_at(
@@ -344,7 +324,7 @@ pub fn an_optional_objective_completes_with_its_required_sibling_test() -> Nil {
 
 pub fn the_finish_line_completes_on_entering_its_marker_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   // Quest 10527's objectives 0 to 2 are done; objective 21323 is index 3, type 22, marker
   // 51734. No ring unit is in sight: the arrival alone counts.
   let log =
@@ -386,7 +366,7 @@ fn the_three() -> List(shown.Shown) {
 
 pub fn a_manifestation_place_reached_sets_the_bit_of_the_unit_under_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   // 0.3 from 51699's centre: spawn 29339 (index 1) stands 0.23 from the centre, the other
   // two stand elsewhere.
   let first =
@@ -444,7 +424,7 @@ pub fn a_manifestation_place_reached_sets_the_bit_of_the_unit_under_it_test() ->
 
 pub fn a_place_with_no_unit_of_the_group_counts_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log = manifestations()
   let at_51699 = #(482.6148, -416.2688, 296.1966)
   assert settled_among(
@@ -486,7 +466,7 @@ pub fn a_place_with_no_unit_of_the_group_counts_nothing_test() -> Nil {
 
 pub fn a_place_objective_with_a_count_above_one_is_not_done_by_one_arrival_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   // Quest 7667: objective 14204 (index 0, type 5) is done, so 14205 (index 1, type 22,
   // flags 0x14, count 10, marker 30725) is open. WorldLocation2 30725: World 1061, centre
   // (3124.968, -968.2173, 720.1985), radius 9.0219, no vertical limit. The client sends

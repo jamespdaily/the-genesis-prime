@@ -113,6 +113,10 @@ pub type Settings {
     /// load (genesis_prime/content/spawn `reused_unit_objectives`): the other type 12
     /// objectives count each unit once (genesis_prime/game/quest_log `used`).
     reused_unit_objectives: Set(Int),
+    /// The scripted objectives that only an instance run or a PvP match can complete, from
+    /// the content load (genesis_prime/content/held_objective): the settle leaves them
+    /// open (genesis_prime/game/objective `stand_in_scripts`).
+    held_objectives: Set(Int),
   )
 }
 

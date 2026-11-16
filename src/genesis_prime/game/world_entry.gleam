@@ -735,6 +735,7 @@ pub fn joined(
   numbers numbers: GameNumbers,
   defaults defaults: List(#(UnitProperty2Id, Float)),
   chain chain: tutorial.Chain,
+  held_objectives held_objectives: Set(Int),
   tables tables: table_store.Tables,
   now now: Now,
 ) -> Result(Joined, Nil) {
@@ -811,6 +812,7 @@ pub fn joined(
               items:,
               place:,
               numbers:,
+              held_objectives:,
               tables:,
               now:,
             )
@@ -998,6 +1000,7 @@ fn quest_log_sent(
   items items: List(store.HeldItem),
   place place: Place,
   numbers numbers: GameNumbers,
+  held_objectives held_objectives: Set(Int),
   tables tables: table_store.Tables,
   now now: Now,
 ) -> #(QuestLog, Set(objective.Button), List(Int), List(Effect)) {
@@ -1012,6 +1015,7 @@ fn quest_log_sent(
           place:,
           shown: dict.new(),
           numbers:,
+          held_objectives:,
           unix_ms: step.unix_milliseconds(now:),
           now_ms: now.monotonic_ms,
         )

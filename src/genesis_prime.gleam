@@ -27,6 +27,7 @@ import genesis_prime/connection/script
 import genesis_prime/content
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/game_number as content_game_number
+import genesis_prime/content/held_objective as content_held_objective
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
@@ -627,6 +628,7 @@ fn game(
       tutorial_chain: content_tutorial_quest.chain(key: spawns),
       projector_landings: content_projector_landing.landings(key: spawns),
       reused_unit_objectives: content_spawn.reused_unit_objectives(key: spawns),
+      held_objectives: content_held_objective.held(key: spawns),
     ),
     wire_recorder: None,
     scripts: script.operating_system,

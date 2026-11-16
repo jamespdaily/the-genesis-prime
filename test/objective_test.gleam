@@ -164,30 +164,10 @@ fn pointed_at(
   data data: List(#(Int, Int)),
   body body: fn(table_store.Tables) -> a,
 ) -> a {
-  with_objectives(
+  quest_support.with_objectives(
     edits: list.map(data, fn(objective) { #(objective.0, "data", objective.1) }),
     body:,
   )
-}
-
-/// Runs the body on the fixture's tables with these QuestObjective cells changed (the
-/// objective's id, the column and its new value), built on the body's heap.
-fn with_objectives(
-  edits edits: List(#(Int, String, Int)),
-  body body: fn(table_store.Tables) -> a,
-) -> a {
-  let rows =
-    list.fold(edits, fixture_tables.rows(), fn(rows, edit) {
-      case
-        fixture_tables.change(rows:, table: "QuestObjective", id: edit.0, with: [
-          #(edit.1, Integer(edit.2)),
-        ])
-      {
-        Ok(changed) -> changed
-        Error(refusal) -> panic as fixture_tables.describe(refusal)
-      }
-    })
-  fixture_tables.on_rows(rows:, reaching: [], body:)
 }
 
 pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> Nil {
@@ -444,7 +424,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
       quest_support.accepted(quest_id: 1807, progress: [0]),
       quest_support.accepted(quest_id: 1806, progress: [0]),
     ])
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let slain =
     objective.advance(
       reused: set.new(),
@@ -519,7 +499,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
     )
     == Advanced(log: clustered, effects: [])
     as "a type 15 objective takes no kill by its data"
-  use ranked <- with_objectives(edits: [#(1890, "type", 46)])
+  use ranked <- quest_support.with_objectives(edits: [#(1890, "type", 46)])
   assert objective.advance(
       reused: set.new(),
       log: clustered,
@@ -536,7 +516,7 @@ pub fn a_kill_in_an_objectives_reward_pane_counts_test() -> Nil {
   // The reward pane of objectives 1889 (type 2, for 5006) and 1890 (type 15, for 4976)
   // is TargetGroup 307, which holds 5006 and 5007, and so is that of objective 12889
   // (type 3) and 17932 (type 12).
-  use tables <- with_objectives(edits: [
+  use tables <- quest_support.with_objectives(edits: [
     #(1889, "targetGroupIdRewardPane", 307),
     #(1890, "targetGroupIdRewardPane", 307),
     #(12_889, "targetGroupIdRewardPane", 307),
@@ -792,7 +772,7 @@ pub fn a_kill_in_the_pane_of_a_type_8_or_16_objective_still_counts_one_test() ->
   // Quest 1804's objective 1889 is type 2, 1806's 1891 is type 8 and 1807's 1892 is type
   // 16; the type 8 and 16 objectives name TargetGroup 307 as their data, and each is
   // given it as its reward pane too.
-  use tables <- with_objectives(edits: [
+  use tables <- quest_support.with_objectives(edits: [
     #(1889, "targetGroupIdRewardPane", 307),
     #(1891, "targetGroupIdRewardPane", 307),
     #(1892, "targetGroupIdRewardPane", 307),
@@ -927,6 +907,7 @@ fn settled_at(
     shown: dict.new(),
     now_ms: 0,
     numbers: spawn_support.numbers,
+    held_objectives: set.new(),
     unix_ms: settled_at_ms,
   )
 }
@@ -935,7 +916,7 @@ pub fn settle_counts_held_type_4_items_in_the_counted_locations_test() -> Nil {
   use <- owned_test.run(60_000)
   // Objective 2710 of quest 2347 waits for objective 2709 (flags 2), which the
   // player holds no item for: the count does not wait with it.
-  use tables <- with_objectives(edits: [#(2710, "flags", 2)])
+  use tables <- quest_support.with_objectives(edits: [#(2710, "flags", 2)])
   let log =
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: 1854, progress: [0]),
@@ -999,7 +980,7 @@ pub fn settle_counts_held_type_4_items_in_the_counted_locations_test() -> Nil {
 
 pub fn settle_counts_type_33_through_the_schematic_output_item_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: 7415, progress: [0]),
@@ -1033,7 +1014,7 @@ pub fn settle_counts_type_33_through_the_schematic_output_item_test() -> Nil {
 
 pub fn settle_sends_progress_before_the_state_both_ways_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: 1854, progress: [0]),
@@ -1092,7 +1073,7 @@ pub fn settle_sends_progress_before_the_state_both_ways_test() -> Nil {
 
 pub fn entering_a_zone_advances_open_type_17_objectives_in_its_chain_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   // Objective 1965 of quest 1862 names zone 263.
   let log =
     quest_support.log_of(rows: [
@@ -1114,7 +1095,7 @@ pub fn entering_a_zone_advances_open_type_17_objectives_in_its_chain_test() -> N
     as "a done visit stays done when the player leaves"
 
   // Zone 5998 is inside 5997, which is inside 4961 (WorldZone parentZoneId).
-  use parent <- with_objectives(edits: [#(1965, "data", 5997)])
+  use parent <- quest_support.with_objectives(edits: [#(1965, "data", 5997)])
   assert settled(log:, tables: parent, items: [], zones: [5998, 5997, 4961]).effects
     == [
       SendProgress(quest_id: 1862, objective_index: 0, progress: 1),
@@ -1125,11 +1106,11 @@ pub fn entering_a_zone_advances_open_type_17_objectives_in_its_chain_test() -> N
   assert settled(log:, tables: parent, items: [], zones: [4000])
     == Advanced(log:, effects: [])
     as "a zone outside the chain does not"
-  use child <- with_objectives(edits: [#(1965, "data", 5998)])
+  use child <- quest_support.with_objectives(edits: [#(1965, "data", 5998)])
   assert settled(log:, tables: child, items: [], zones: [5997, 4961])
     == Advanced(log:, effects: [])
     as "a visit naming the child zone does not count in the parent"
-  use none <- with_objectives(edits: [#(1965, "data", 0)])
+  use none <- quest_support.with_objectives(edits: [#(1965, "data", 0)])
   assert settled(log:, tables: none, items: [], zones: [0])
     == Advanced(log:, effects: [])
     as "data 0 names no zone (row 6375's shape), though the chain of zone 0 is [0]"
@@ -1137,7 +1118,7 @@ pub fn entering_a_zone_advances_open_type_17_objectives_in_its_chain_test() -> N
 
 pub fn settle_counts_a_visit_once_its_objective_opens_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let standing_in = [5998, 5997, 4961]
   // Quest 10520's visit (objective index 4, zone 5998, flags 3) waits for the
   // objectives of index 0, 2 and 3; index 3 is a kill of creature 73499.
@@ -1216,7 +1197,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
   use <- owned_test.run(60_000)
   // Creature2 12919's questAnim columns name quest 3741, objective index 0
   // (objective 4813, type 32, count 6).
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let collectible = Creature2Id(12_919)
   let log =
     quest_support.log_of(rows: [
@@ -1355,7 +1336,7 @@ pub fn a_use_of_a_mine_counts_its_exile_type_5_objective_test() -> Nil {
   // Creature2 73463's prerequisiteIdAnimState is Prerequisite 41818: type 43 on quest
   // 10518 index 1 or on quest 10524 index 1. Objective 21287 is index 1 of quest 10518,
   // type 5 with count 1 and flags 3 (it waits for objective 0).
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   assert objective.advance(
       reused: set.new(),
       log: exile_mine_log(),
@@ -1370,7 +1351,7 @@ pub fn a_use_of_a_mine_counts_its_exile_type_5_objective_test() -> Nil {
 pub fn a_use_of_the_same_mine_counts_the_dominion_objective_test() -> Nil {
   use <- owned_test.run(60_000)
   // Objective 21313 is index 1 of quest 10524, type 5 with count 1 and flags 3.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.active(
@@ -1397,7 +1378,7 @@ pub fn a_quest_anim_link_counts_a_type_5_objective_test() -> Nil {
   use <- owned_test.run(60_000)
   // Creature2 4989's questAnim columns name quest 2020, objective index 1: objective
   // 2744, type 5 with count 1 and flags 1.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: 2020, progress: [0, 0, 0, 0, 0, 0]),
@@ -1432,7 +1413,7 @@ pub fn a_prerequisite_link_counts_a_type_32_objective_test() -> Nil {
   // Creature2 12321 has no questAnim column and prerequisiteIdAnimState 12379: type 6 on
   // quest 3655 and type 43 on quest 3655 index 0, whose objective 4722 is type 32 with
   // count 8.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: 3655, progress: [0, 0]),
@@ -1463,7 +1444,7 @@ pub fn a_use_counts_nothing_once_its_linked_objective_is_done_test() -> Nil {
   use <- owned_test.run(60_000)
   // Creature2 12919's questAnim columns name quest 3741, objective index 0: objective
   // 4813, type 32 with count 6.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.active(
@@ -1489,7 +1470,7 @@ pub fn a_use_counts_nothing_once_its_linked_objective_is_done_test() -> Nil {
 pub fn a_link_to_an_objective_not_yet_reachable_counts_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
   // Quest 10518's objective 21287 has flags 3, so it waits for objective 0 (21286).
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: 10_518, progress: [0, 0, 0, 0, 0, 0]),
@@ -1509,7 +1490,7 @@ pub fn a_link_to_a_type_4_objective_counts_nothing_by_the_link_test() -> Nil {
   use <- owned_test.run(60_000)
   // Creature2 7952's questAnim columns name quest 2731, objective index 0: objective
   // 3422, type 4 (a held item), whose progress is what the player holds.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: 2731, progress: [0]),
@@ -1531,7 +1512,7 @@ pub fn a_nested_prerequisite_link_counts_its_objective_test() -> Nil {
   // condition names Prerequisite 7340: type 6 on quest 4975 and type 43 on quest 4975
   // index 0, whose objective 15980 is type 5 with count 3 (Prerequisite
   // .prerequisiteTypeId.11 and .43).
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: 4975, progress: [0, 0, 0, 0]),
@@ -1564,7 +1545,7 @@ fn named_by_finish_objective(
 
 pub fn a_finished_quest_completes_the_open_objective_that_names_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log = named_by_finish_objective(rows: [finished_quest(quest_id: 6305)])
   assert settled(log:, tables:, items: [], zones: []).effects
     == [SendProgress(quest_id: 7540, objective_index: 0, progress: 1)]
@@ -1573,7 +1554,7 @@ pub fn a_finished_quest_completes_the_open_objective_that_names_it_test() -> Nil
 
 pub fn a_quest_finished_before_its_objective_opened_counts_at_once_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     named_by_finish_objective(rows: [
       finished_quest(quest_id: 6305),
@@ -1590,7 +1571,7 @@ pub fn a_quest_finished_before_its_objective_opened_counts_at_once_test() -> Nil
 
 pub fn a_place_arrival_opens_a_finish_objective_that_counts_in_the_same_pass_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: 9492, progress: [0, 0]),
@@ -1618,7 +1599,7 @@ pub fn a_place_arrival_opens_a_finish_objective_that_counts_in_the_same_pass_tes
 
 pub fn an_achieved_quest_not_yet_turned_in_counts_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     named_by_finish_objective(rows: [
       quest_support.active(
@@ -1636,7 +1617,7 @@ pub fn an_achieved_quest_not_yet_turned_in_counts_nothing_test() -> Nil {
 
 pub fn an_abandoned_quest_counts_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     named_by_finish_objective(rows: [
       quest_support.known(quest_id: 6305, state: 6),
@@ -1647,7 +1628,7 @@ pub fn an_abandoned_quest_counts_nothing_test() -> Nil {
 
 pub fn a_quest_missing_from_the_log_counts_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log = named_by_finish_objective(rows: [])
   assert settled(log:, tables:, items: [], zones: []).effects == []
     as "the settle reads one character's log, and 6305 and 6306 are not in it"
@@ -1655,7 +1636,7 @@ pub fn a_quest_missing_from_the_log_counts_nothing_test() -> Nil {
 
 pub fn a_yearly_quest_finished_before_this_years_reset_counts_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let owner = quest_support.accepted(quest_id: 10_502, progress: [0, 0, 0, 0])
   // The yearly reset before the settle is 2025-01-01 10:00:00 UTC, 1_735_725_600.
   let before_reset =
@@ -1677,7 +1658,7 @@ pub fn a_yearly_quest_finished_before_this_years_reset_counts_nothing_test() -> 
 
 pub fn a_counted_finish_objective_stays_done_when_its_quest_is_taken_again_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.active(
@@ -1704,7 +1685,7 @@ pub fn a_counted_finish_objective_stays_done_when_its_quest_is_taken_again_test(
 
 pub fn a_counted_finish_objective_is_not_told_again_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log = named_by_finish_objective(rows: [finished_quest(quest_id: 6305)])
   let first = settled(log:, tables:, items: [], zones: [])
   assert first.effects
@@ -2045,7 +2026,7 @@ pub fn a_use_of_a_group_unit_counts_a_type_23_objective_test() -> Nil {
   use <- owned_test.run(60_000)
   // QuestObjective 21094 is type 23 with TargetGroup 14175 (a list of creatures, 72197
   // first), count 8 and flags 4: a use of one of the group counts one.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   assert objective.advance(
       reused: set.new(),
       log: group_use_log(),
@@ -2060,7 +2041,7 @@ pub fn a_use_of_a_group_unit_counts_a_type_23_objective_test() -> Nil {
 pub fn a_use_of_a_unit_outside_the_group_counts_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
   // Creature2 73606 is in TargetGroup 14367, not in 14175.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   assert objective.advance(
       reused: set.new(),
       log: group_use_log(),
@@ -2074,7 +2055,7 @@ pub fn a_use_of_a_unit_outside_the_group_counts_nothing_test() -> Nil {
 
 pub fn each_use_counts_one_toward_a_larger_count_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let count = fn(log, creature) {
     objective.advance(
       reused: set.new(),
@@ -2099,7 +2080,7 @@ pub fn the_northern_wilds_terminal_counts_travel_and_its_own_choice_test() -> Ni
   // Quest 10528: 21326 (talk), 21327 (travel, type 23), 21328 and 21329 (the choices,
   // type 23, flags 33), the last two with a TargetGroup that holds both terminals,
   // 73605 and 73606.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   assert objective.advance(
       reused: set.new(),
       log: bon_voyage_after_the_talk(quest_id: 10_528),
@@ -2117,7 +2098,7 @@ pub fn the_northern_wilds_terminal_counts_travel_and_its_own_choice_test() -> Ni
 
 pub fn the_everstar_terminal_counts_only_its_own_choice_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   assert objective.advance(
       reused: set.new(),
       log: bon_voyage_after_the_talk(quest_id: 10_528),
@@ -2137,7 +2118,7 @@ pub fn each_dominion_terminal_counts_its_own_choice_test() -> Nil {
   use <- owned_test.run(60_000)
   // Quest 10530: 21347 (talk), 21348 (travel), 21349 (Levian Bay) and 21350 (Crimson
   // Isle), the choices of type 23 with flags 33.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   assert objective.advance(
       reused: set.new(),
       log: bon_voyage_after_the_talk(quest_id: 10_530),
@@ -2168,7 +2149,7 @@ pub fn each_dominion_terminal_counts_its_own_choice_test() -> Nil {
 
 pub fn a_talk_to_a_terminal_counts_no_type_23_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   assert objective.advance(
       reused: set.new(),
       log: bon_voyage_after_the_talk(quest_id: 10_528),
@@ -2184,7 +2165,7 @@ pub fn travel_done_leaves_bon_voyage_achieved_test() -> Nil {
   use <- owned_test.run(60_000)
   // Objective 21342 (index 4) is type 14 with flags 41: it has flag 0x20, so the quest
   // is Achieved without it, and it stays open in the Achieved quest.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let used =
     objective.advance(
       reused: set.new(),
@@ -2227,7 +2208,7 @@ pub fn a_second_use_of_the_same_unit_counts_nothing_test() -> Nil {
   // Quest 6723's only objective, 10383, is type 23 on TargetGroup 3568 (Creature2 30826
   // and 30827), count 15. The client's `0x140550c50` (line 142) tests only the group and
   // `0x1405517a0` makes no type 23 a checklist, so the once is the server's choice.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let quest = quest_of(id: 6723, tables:)
   let use_of_unit_7 =
     a_use_of(
@@ -2248,7 +2229,7 @@ pub fn units_of_one_creature_each_count_test() -> Nil {
   use <- owned_test.run(60_000)
   // Quest 6607's objective 10278 (index 0) is type 23 on TargetGroup 3437, whose only
   // creature is 30470, with count 4: only four units of that creature finish it.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let quest = quest_of(id: 6607, tables:)
   let use_unit = fn(log, unit_id) {
     used_by(
@@ -2280,7 +2261,7 @@ pub fn the_same_unit_id_in_another_map_run_counts_test() -> Nil {
   use <- owned_test.run(60_000)
   // Unit ids start at 1 again in each run of a map (`world_map/map`), so unit 7 of
   // incarnation 2 is another unit than unit 7 of incarnation 1.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let first_run = quest_support.unit_ref(unit_id: 7)
   let second_run = quest_log.UnitRef(..first_run, incarnation: 2)
   let use_in = fn(log, run) {
@@ -2303,7 +2284,7 @@ pub fn a_fake_drop_in_the_reward_pane_counts_nothing_test() -> Nil {
   // of 10968, 10969 and 10958: Creature2 65280, 65282 and 65281, "Real Drop") and reward
   // pane 12216, which adds 10970 (Creature2 65279, "Fake Drop 1"). The pane only marks
   // and shows targets; progress comes only from the server's 0x361.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.active(
@@ -2341,7 +2322,7 @@ pub fn a_type_23_objective_with_no_group_counts_no_unit_test() -> Nil {
   use <- owned_test.run(60_000)
   // QuestObjective 8323 (quest 5568) has data 0 and reward pane 0, and TargetGroup has no
   // row 0.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let count_use = fn(creature, unit_id) {
     used_by(
       log: fresh(quest_id: 5568),
@@ -2362,7 +2343,7 @@ pub fn a_use_after_the_objective_is_done_counts_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
   // Quest 3167's objective 4143 (index 0) is type 23 on TargetGroup 7687 (Creature2 9868
   // and 9869), count 1, and done here.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.active(
@@ -2390,7 +2371,7 @@ pub fn the_use_that_reaches_the_count_achieves_the_quest_test() -> Nil {
   use <- owned_test.run(60_000)
   // Quest 4522's only objective, 6167, is type 23 on TargetGroup 4314 (Creature2 16645,
   // 16646 and 16647), count 5.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let uses = [
     #(16_645, 1),
     #(16_646, 2),
@@ -2441,7 +2422,7 @@ pub fn one_use_counts_once_for_each_objective_of_its_set_test() -> Nil {
   // Quests 5531 (objective 8271) and 5718 (8527) each have a type 23 objective on
   // TargetGroup 6355 (Creature2 24308 and 24310), count 12; each remembers its own
   // units.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.untouched(quest_id: 5531),
@@ -2468,7 +2449,7 @@ pub fn a_second_use_of_the_same_unit_counts_nothing_for_type_12_test() -> Nil {
   // Quest 3480's objective 4470 is type 12 on Creature2 11070, count 3
   // (`table_rows -- QuestObjective 4470`). `0x140550c50` tests the creature id only and
   // `0x1405517a0` makes no type 12 a checklist, so the once is the server's choice.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let quest = quest_of(id: 3480, tables:)
   let survivor = Creature2Id(11_070)
   let ref = fn(unit_id) { quest_support.unit_ref(unit_id:) }
@@ -2505,7 +2486,7 @@ pub fn a_reused_type_12_objective_counts_the_same_unit_again_test() -> Nil {
   use <- owned_test.run(60_000)
   // As above, with objective 4470 in the reuse set, as an objective is whose creature has
   // fewer spawns than its count (the Design, option C; a server choice).
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let survivor = Creature2Id(11_070)
   let event =
     a_use_of(creature: survivor, unit: quest_support.unit_ref(unit_id: 224))
@@ -2529,7 +2510,7 @@ pub fn use_targets_leaves_out_a_used_type_12_unit_test() -> Nil {
   use <- owned_test.run(60_000)
   // Quest 3480's objective 4470 is type 12 on Creature2 11070; an offered unit is one the
   // `0xb3` path may start a use of (`cast.activate_unit` refuses an unoffered one).
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let survivor = plain_unit(creature: Creature2Id(11_070))
   let ref = fn(unit_id) { quest_support.unit_ref(unit_id:) }
   let log = fresh(quest_id: 3480)
@@ -2551,7 +2532,7 @@ pub fn use_targets_leaves_out_a_used_unit_test() -> Nil {
   use <- owned_test.run(60_000)
   // Quest 9122's objective 16479 (index 2) is type 23 on TargetGroup 8374 (captives
   // 52900 to 52905, none with an activate spell), count 9, flags 4.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let captive = fn(creature) { plain_unit(creature: Creature2Id(creature)) }
   let log = fresh(quest_id: 9122)
   assert objective.use_targets(log:, tables:)(
@@ -2582,7 +2563,7 @@ pub fn a_type_23_use_counts_nothing_for_another_type_on_the_same_group_test() ->
   // 16479 (index 2, type 23), 16480 (index 3, type 8, flags 516) and 16579 (index 4,
   // type 22, flags 3). Flags 3 wait for every earlier objective, so a fresh log has
   // indexes 0, 2 and 3 open, and with 16477 done 1, 2 and 3 are.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let quest = quest_of(id: 9122, tables:)
   let after_16477 =
     quest_support.log_of(rows: [
@@ -2650,7 +2631,7 @@ pub fn a_targeted_cast_counts_only_a_unit_in_the_reward_pane_test() -> Nil {
   // 8954 as its reward pane and count 8. TargetGroup 8954 lists 38290 and not 58762,
   // which the spell's cast group 7102 lists. The pane counts a unit for any objective
   // type (`0x140550c50`).
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let quest = quest_of(id: 7757, tables:)
   let outside =
     used_by(
@@ -2678,7 +2659,7 @@ pub fn a_targeted_cast_with_no_pane_counts_any_unit_test() -> Nil {
   // QuestObjective 4098 (quest 3145, Spell4 7103, count 10) has reward pane 0, so any
   // unit counts (issue 724's decision 2c); TargetGroup 836, its spell's cast group, lists
   // 9369 and not 24571.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let first =
     used_by(
       log: fresh(quest_id: 3145),
@@ -2703,7 +2684,7 @@ pub fn a_pane_only_row_counts_its_pane_unit_test() -> Nil {
   use <- owned_test.run(60_000)
   // Quest 8539's objective index 1 is 15119 (Spell4 41218, count 1, flags 3, pane 8784
   // of Creature2 39073), which waits for index 0.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let log =
     quest_support.log_of(rows: [
       quest_support.active(
@@ -2742,7 +2723,7 @@ pub fn a_self_aimed_cast_still_counts_with_no_target_test() -> Nil {
   use <- owned_test.run(60_000)
   // Quest 7618's objective 13884 (Spell4 40471) is aimed at the caster, so its cast
   // names no unit (issue 724's decision 2c).
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   assert used_by(
       log: quest_support.log_of(rows: [
         quest_support.accepted(quest_id: the_first_cast_quest, progress: [0]),
@@ -2766,7 +2747,7 @@ pub fn a_second_cast_at_the_same_unit_counts_nothing_test() -> Nil {
   // Jim, 2026-11-11: a targeted cast objective counts each unit once, as a type 23 does.
   // `0x1405517a0` makes no type 11 objective a checklist, so the client keeps no
   // per-unit record and the once is the server's choice.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let quest = quest_of(id: 3145, tables:)
   let cast = cast_at_unit(spell: 7103, creature: 9369, unit_id: 900)
   let first = used_by(log: fresh(quest_id: 3145), tables:, event: cast)
@@ -2783,7 +2764,7 @@ pub fn casts_at_two_units_of_one_creature_each_count_test() -> Nil {
   use <- owned_test.run(60_000)
   // Unit ids start at 1 again in each run of a map (`world_map/map`), so unit 900 of
   // incarnation 2 is another unit than unit 900 of incarnation 1.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let quest = quest_of(id: 3145, tables:)
   let first_run = quest_support.unit_ref(unit_id: 900)
   let cast_in = fn(log, unit) {
@@ -2803,7 +2784,7 @@ pub fn an_abandoned_and_retaken_quest_forgets_its_cast_units_test() -> Nil {
   use <- owned_test.run(60_000)
   // The used set lives on the quest's entry in the log, which an abandon replaces and an
   // accept starts anew; that a retaken quest starts afresh is the server's choice.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let quest = quest_of(id: 3145, tables:)
   let cast = cast_at_unit(spell: 7103, creature: 9369, unit_id: 900)
   let first = used_by(log: fresh(quest_id: 3145), tables:, event: cast)
@@ -2830,7 +2811,7 @@ pub fn an_items_use_does_not_advance_a_type_32_objective_test() -> Nil {
   use <- owned_test.run(60_000)
   // Creature2 12919's questAnim columns name quest 3741, objective index 0 (objective
   // 4813, type 32): the objective counts the creature's own activate cast.
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   let collectible = Creature2Id(12_919)
   let log =
     quest_support.log_of(rows: [
@@ -2910,7 +2891,7 @@ pub fn a_kill_that_achieves_a_quest_no_creature_receives_emits_its_server_comple
 
 pub fn a_settle_that_achieves_a_quest_no_creature_receives_emits_its_server_completion_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   assert_completed_by_server(tables:, quest_id: 1854, is: True)
   assert_completed_by_server(tables:, quest_id: 1862, is: True)
   let log =
@@ -2952,7 +2933,7 @@ pub fn a_settle_that_achieves_a_quest_no_creature_receives_emits_its_server_comp
 
 pub fn a_quest_a_creature_receives_achieved_emits_no_server_completion_test() -> Nil {
   use <- owned_test.run(60_000)
-  use tables <- with_objectives(edits: [])
+  use tables <- quest_support.with_objectives(edits: [])
   assert_completed_by_server(tables:, quest_id: 10_520, is: False)
   // Quest 10520's visit (objective index 4, zone 5998) is its last open objective; Dorian
   // Walker (Creature2 74812) receives the quest.
