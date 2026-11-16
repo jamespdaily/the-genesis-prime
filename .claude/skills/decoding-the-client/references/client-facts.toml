@@ -6102,11 +6102,25 @@ grade = "fairly sure"
 gap = "Not emulated as a whole; the creature path's c uses the unit's level from 0x1403b5030. Whether the server's retail damage used this value as the base of a hit is not in the client."
 name = "ComputeEffectValue"
 
+["0x140565782"]
+statement = "ComputeEffectValue's row part R = (base + flat part) x row multiplier, in 32-bit floats: the base (dataBits01, or dataBits03 for type 5; 0 for types with no row part) is read as an unsigned 32-bit integer and made a 32-bit float, the flat part (a 32-bit float from SumFlatEffectParameters) is added to it, and the sum is multiplied by the row multiplier (dataBits00, or dataBits02 for type 5, read as a 32-bit float; 1.0 for types with no row part)."
+proof = "Ghidra disassemble of 0x140565600: 0x140565667 movaps xmm6, xmm0 (F from 0x140566ad0); 0x14056566f xor r9d, r9d (base 0); 0x140565738 movss xmm11, [0x140b79ed0] (1.0); 0x140565744 movaps xmm0, xmm11; type 5: 0x14056576e movss xmm0, [rbx+0x48]; mov r9d, [rbx+0x4c]; types 8, 10, ...: 0x140565779 movss xmm0, [rbx+0x40]; 0x14056577e mov r9d, [rbx+0x44]; then 0x140565782 xorps xmm10, xmm10; 0x140565786 mov eax, r9d (zero-extend); 0x140565789 cvtsi2ss xmm10, rax; 0x140565792 addss xmm10, xmm6; 0x14056579b mulss xmm10, xmm0."
+grade = "sure"
+
+["0x14056578e"]
+statement = "ComputeEffectValue keeps the stat part's whole number (from SumStatEffectParameters, a 32-bit integer) as a signed 16-bit value before making it a 32-bit float: a stat part above 32,767 or below -32,768 wraps (32,768 becomes -32,768)."
+proof = "Ghidra disassemble of 0x140565600: 0x14056566a call 0x140566d40, which returns 0x140566e67 cvttss2si eax, xmm6; 0x140565676 mov r10d, eax (r10 is not written again before 0x14056578e); 0x14056578e movsx eax, r10w; 0x140565797 movd xmm6, eax; 0x1405657a0 cvtdq2ps xmm6, xmm6. The saved C agrees: short sVar4 = SumStatEffectParameters(...); fVar9 = (float)(int)sVar4."
+grade = "sure"
+
+["0x1405659f5"]
+statement = "ComputeEffectValue's last steps are 32-bit floats: the stat part S (a 32-bit float) plus the row part R, then times M (the larger of the floor and the caster's damage-dealt multiplier), returned as a 32-bit float with no rounding. For a creature caster the cap on S, and the division of S and R by GameFormula 712's fourth value, are 32-bit floats as well."
+proof = "Ghidra disassemble of 0x140565600: 0x140565990 addss xmm6, xmm10 (S + R; xmm10 is R from 0x14056579b, or R / 712's fourth value from 0x14056597c divss xmm10, xmm9 on the creature path); 0x1405659c9 movss xmm7, [rdi+rax*8+0x5c4]; 0x1405659e3 maxss xmm0, xmm7; 0x1405659f5 mulss xmm0, xmm6; 0x140565a02 ret with no conversion between. Creature path: 0x1405658ef cvtsi2ss xmm0, rax (level); mulss/addss/mulss; 0x14056592d subss; divss; 0x14056593f call ExpF; subss; mulss; addss; mulss; 0x14056596b divss xmm6, xmm9. No sd or double instruction in the function."
+grade = "sure"
+
 ["0x140566ad0"]
-statement = "The flat part of an effect's value: the sum of each parameter value times the unit value its type names (see ComputeEffectValue)."
-proof = "Decompiled switch on each of the four parameter types: 7 target slot 0x48, 8 caster slot 0x48, 10 caster level 0x1403b5030, 0xe caster slot 0x70, 0xf target slot 0x70, 0x10 caster slot 0x78, 0x11 target slot 0x78, 0x12 the float argument, 0x13 target slot 0x40, 0x15 target slot 0x48 - 0x40, 0x16 target slot 0x78 - 0x70, 0x17 caster slot 0x40, 0x19 caster 0x48 - 0x40, 0x1a caster 0x78 - 0x70."
-grade = "fairly sure"
-gap = "Read from the decompile."
+statement = "The flat part of an effect's value: the sum of each parameter value times the unit value its type names (see ComputeEffectValue), all in 32-bit floats. Each unit value (health, maximum health, shield, maximum shield, level) and each difference (maximum health less health, maximum shield less shield, taken as 32-bit integers) is read as an unsigned 32-bit integer and made a 32-bit float, so a negative difference (health above its maximum) counts as about 4.29 billion and a value above 2^24 loses its low bits. Each product with the parameter value (a 32-bit float) and the running sum over the four parameters, in order from 0.0, are 32-bit floats; type 18 multiplies the float passed in. The sum is returned as a 32-bit float."
+proof = "Switch on each of the four parameter types: 7 target slot 0x48, 8 caster slot 0x48, 10 caster level 0x1403b5030, 0xe caster slot 0x70, 0xf target slot 0x70, 0x10 caster slot 0x78, 0x11 target slot 0x78, 0x12 the float argument, 0x13 target slot 0x40, 0x15 target slot 0x48 - 0x40, 0x16 target slot 0x78 - 0x70, 0x17 caster slot 0x40, 0x19 caster 0x48 - 0x40, 0x1a caster 0x78 - 0x70. Ghidra disassemble of 0x140566ad0: 0x140566b04 xorps xmm6, xmm6 (sum 0.0); every getter and 0x1403b5030 returns to 0x140566b51 mov eax, eax (zero-extend), 0x140566b56 cvtsi2ss xmm0, rax, 0x140566b5b mulss xmm0, [rdi] (parameter value), 0x140566b5f addss xmm6, xmm0; differences: 0x140566c23 sub ebx, eax; mov eax, ebx; jmp 0x140566b53 (same cvtsi2ss from rax), and type 0x1a inline at 0x140566c9c sub ebx, eax; 0x140566ca1 mov eax, ebx; 0x140566ca3 cvtsi2ss xmm1, rax; mulss; addss xmm6, xmm1; type 0x12: 0x140566bdf movaps xmm0, xmm7 (the float argument); mulss xmm0, [rdi]; addss xmm6, xmm0; 0x140566cd1 movaps xmm0, xmm6; ret. No sd or double instruction in the function."
+grade = "sure"
 name = "SumFlatEffectParameters"
 
 ["0x140566d40"]

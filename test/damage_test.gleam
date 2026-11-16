@@ -20,6 +20,9 @@
 ////   read yet (`Spell4Effects.parameterType.6_9`).
 //// - The stat part is summed, and 0.5 added or taken away, in 32-bit floats before it
 ////   is cut to a whole number (`0x140566d40`).
+//// - The flat part is summed in 32-bit floats from unit values read as unsigned 32-bit
+////   integers, and the stat part's whole number is kept as signed 16-bit (`0x140566ad0`,
+////   `0x140565782`, `0x14056578e`, `0x1405659f5`).
 //// - The client rows: `table_rows -- Spell4Effects <id>`; each row's dataBits00 1065353216
 ////   is the float 1.0 and 0 is 0.0.
 
@@ -326,6 +329,125 @@ pub fn a_creatures_stat_part_is_summed_and_cut_in_32_bit_floats_test() -> Nil {
     as "a 64-bit sum is 639.49998, which rounds to 639 and gives 1386.5"
 }
 
+pub fn the_flat_part_is_summed_in_32_bit_floats_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Row 45661 (Spell4Effects, damage): dataBits00 1.0, dataBits01 0, type 7 (the
+  // target's maximum health) x 0x3d75c28f. 0x140566ad0 makes the 25 a 32-bit float,
+  // multiplies it by the parameter in a 32-bit float and sums from 0.0 in a 32-bit
+  // float: 25 x 0.0600000023841858 is 1.50000005960464 exactly, which a 32-bit float
+  // holds as 1.5.
+  let formula = client_formula(id: 45_661)
+  let unit = Vitals(health: 25, max_health: 25, shield: 0, max_shield: 0)
+  assert damage.finish(
+      partial: damage.partial(formula:, caster: caster()),
+      target: unit,
+    )
+    == 1.5
+    as "in 64-bit floats the product is 1.4999999665 for the same 0x3d75c28f"
+  assert damage.value_on_caster(
+      formula:,
+      caster: OnCaster(..caster(), vitals: unit),
+    )
+    == 1.5
+    as "an effect on its caster sums the same way"
+}
+
+pub fn a_unit_value_is_read_as_an_unsigned_32_bit_integer_and_held_in_32_bits_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140566ad0 zero-extends each unit value and each difference (mov eax, eax;
+  // cvtsi2ss xmm0, rax), so a difference below 0 counts as 2^32 less its size, and
+  // a 32-bit float keeps 24 bits.
+  let health_above_the_maximum =
+    Vitals(health: 5001, max_health: 5000, shield: 0, max_shield: 0)
+  assert damage.finish(
+      partial: damage.partial(
+        formula: one_parameter(kind: 21, factor: 0.5),
+        caster: caster(),
+      ),
+      target: health_above_the_maximum,
+    )
+    == 2_147_483_648.0
+    as "the target's maximum health less its health is -1, which is 4294967295 and 2^32 as a 32-bit float; half of it"
+  assert damage.value_on_caster(
+      formula: one_parameter(kind: 22, factor: 0.5),
+      caster: OnCaster(
+        ..caster(),
+        vitals: Vitals(health: 1, max_health: 1, shield: 601, max_shield: 600),
+      ),
+    )
+    == 2_147_483_648.0
+    as "the maximum shield less the shield of the caster that is also the target"
+  assert damage.finish(
+      partial: damage.partial(
+        formula: one_parameter(kind: 19, factor: 1.0),
+        caster: caster(),
+      ),
+      target: Vitals(
+        health: 16_777_217,
+        max_health: 16_777_217,
+        shield: 0,
+        max_shield: 0,
+      ),
+    )
+    == 16_777_216.0
+    as "2^24 + 1 needs 25 bits, which a 32-bit float rounds to even"
+}
+
+pub fn a_stat_part_beyond_16_bits_wraps_as_a_signed_16_bit_number_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x14056578e (movsx eax, r10w) keeps the stat part's whole number as a signed 16-bit
+  // value before it becomes a float, for a player and for a creature (the stat part is
+  // the one fVar9 before ComputeEffectValue's creature branch).
+  let strength = one_parameter(kind: 1, factor: 1.0)
+  let with_strength = fn(strength_value) {
+    Attacker(
+      ..attacker_support.fresh(),
+      attributes: Attributes(
+        ..attacker_support.fresh().attributes,
+        strength: strength_value,
+      ),
+    )
+  }
+  assert damage.value(formula: strength, attacker: with_strength(32_767.0))
+    == 32_767.0
+    as "the largest signed 16-bit number is kept"
+  assert damage.value(formula: strength, attacker: with_strength(32_768.0))
+    == -32_768.0
+    as "32768 is -32768 as a signed 16-bit number"
+  assert damage.value(formula: strength, attacker: with_strength(65_541.0))
+    == 5.0
+    as "65541 is 5"
+  assert damage.value(formula: strength, attacker: with_strength(-32_769.0))
+    == 32_767.0
+    as "-32769 is 32767"
+  assert damage.finish(
+      partial: damage.partial(
+        formula: strength,
+        caster: OnCaster(..caster(), attacker: with_strength(32_768.0)),
+      ),
+      target: target(),
+    )
+    == -32_768.0
+    as "the caster's side keeps the same whole number"
+  assert damage.creature_value(
+      formula: strength,
+      creature: damage.Creature(
+        level: 1,
+        strength: 32_768.0,
+        assault_power: 0.0,
+      ),
+      scaling: damage.CreatureScaling(
+        per_level: 70.0,
+        base: 100.0,
+        overflow: 1.0,
+        divisor: 1.0,
+      ),
+      multiplier: 1.0,
+    )
+    == -32_768.0
+    as "a creature's stat part is cut the same way"
+}
+
 pub fn the_weapon_kinds_6_and_9_are_not_read_test() -> Nil {
   use <- owned_test.run(5000)
   // The client's labels for the parameter kinds (0x140b0b580, printed by 0x1404de8d0 as
@@ -410,20 +532,6 @@ pub fn a_modifier_on_strength_reaches_the_formula_test() -> Nil {
     )
     == 2.0
     as "the formula reads the live value of Strength, not its base"
-}
-
-pub fn caster_unread_reads_the_attribute_kinds_and_still_names_6_9_and_18_test() -> Nil {
-  use <- owned_test.run(5000)
-  list.each([1, 2, 3, 4, 5, 11], fn(kind) {
-    assert damage.caster_unread(formula: one_parameter(kind:, factor: 0.5))
-      == None
-      as "an effect on its caster reads the attribute kinds"
-  })
-  list.each([6, 9, 18], fn(kind) {
-    assert damage.caster_unread(formula: one_parameter(kind:, factor: 0.5))
-      == Some(Unread(parameter_kind: kind))
-      as "6 and 9 are the caster's weapon damage (0x140b0b580) and 18 a value passed in, which the server does not read"
-  })
 }
 
 pub fn an_attribute_factor_counts_as_a_stat_part_and_a_weapon_factor_as_an_amount_for_gives_nothing_test() -> Nil {
@@ -617,8 +725,8 @@ pub fn a_formula_with_no_target_kind_finishes_to_the_value_it_has_today_test() -
 
 pub fn the_flat_terms_are_summed_in_parameter_order_test() -> Nil {
   use <- owned_test.run(5000)
-  // 0x140566ad0 adds each parameter's term to a running sum in parameter order. In 64-bit
-  // floats 1e16 + 1 is 1e16 (a tie to even) and 1 + 1 + 1e16 is 1e16 + 2.
+  // 0x140566ad0 adds each parameter's term to a running sum in parameter order, in
+  // 32-bit floats. 2^24 + 1 is 2^24 (a tie to even) and 1 + 1 + 2^24 is 2^24 + 2.
   let formula = fn(first_kind) {
     Formula(multiplier: 1.0, base: 0.0, parameters: [
       Parameter(kind: first_kind, value: 1.0),
@@ -627,24 +735,37 @@ pub fn the_flat_terms_are_summed_in_parameter_order_test() -> Nil {
       Parameter(kind: 0, value: 0.0),
     ])
   }
-  let huge = 10_000_000_000_000_000
-  let huge_unit =
-    Vitals(health: huge, max_health: huge, shield: 0, max_shield: 0)
+  let big = 16_777_216
+  let big_unit = Vitals(health: big, max_health: big, shield: 0, max_shield: 0)
   assert damage.finish(
       partial: damage.partial(
         formula: formula(23),
-        caster: OnCaster(..caster(), vitals: huge_unit),
+        caster: OnCaster(..caster(), vitals: big_unit),
       ),
       target: target(),
     )
-    == 1.0e16
-    as "the caster's health first: 1e16, plus 1, plus 1"
+    == 16_777_216.0
+    as "the caster's health first: 2^24, plus 1, plus 1"
   assert damage.finish(
       partial: damage.partial(formula: formula(19), caster: caster()),
-      target: huge_unit,
+      target: big_unit,
     )
-    == 1.0e16
+    == 16_777_216.0
     as "the target's health first: the same order, the same sum"
+  assert damage.finish(
+      partial: damage.partial(
+        formula: Formula(multiplier: 1.0, base: 0.0, parameters: [
+          Parameter(kind: 10, value: 1.0),
+          Parameter(kind: 10, value: 1.0),
+          Parameter(kind: 19, value: 1.0),
+          Parameter(kind: 0, value: 0.0),
+        ]),
+        caster: caster(),
+      ),
+      target: big_unit,
+    )
+    == 16_777_218.0
+    as "the health last: 1 + 1 + 2^24"
 }
 
 /// A parameter kind the formula reads: none, a stat, the level or a vital.
@@ -712,7 +833,7 @@ pub fn finishing_on_the_caster_equals_the_casters_own_value_property_test() -> N
       target: caster.vitals,
     )
     == damage.value_on_caster(formula:, caster:)
-    as "a unit that is both caster and target reads each kind from the one unit, in the same 64-bit order"
+    as "a unit that is both caster and target reads each kind from the one unit, in the same 32-bit order"
 }
 
 pub fn a_creatures_formula_still_refuses_a_vital_kind_test() -> Nil {

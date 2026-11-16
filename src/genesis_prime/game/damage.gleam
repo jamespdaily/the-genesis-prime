@@ -8,6 +8,7 @@
 //// Formula + Attacker ─▶ value = M x (S + R)
 //// Formula + OnCaster ─▶ the same, F also reading the caster's vitals
 //// Formula + OnCaster ─▶ Partial (the caster's side) ─ finish with the target's vitals ─▶ value
+////
 ////   S = sum of each parameter value x the caster's stat for types 1 to 5, 11, 12 and 13, rounded
 ////   R = (dataBits01 + F) x dataBits00 as a float, F = sum of each parameter value x the caster's level for type 10
 //// ```
@@ -18,8 +19,15 @@
 ////   (13), which are its Assault Rating and Support Rating times 0.25 (`0x140462930`,
 ////   `0x140462980`, GameFormula 1266). The products are summed in 32-bit floats, and 0.5
 ////   is added to the sum (taken away when it is below 0) in 32-bit floats before it is
-////   cut to a whole number (`0x140566d40`).
-//// - **The flat part** F reads the caster's level (type 10) (`0x140566ad0`).
+////   cut to a whole number (`0x140566d40`), which the client keeps as a signed 16-bit
+////   number (`0x14056578e`).
+//// - **The row part** R is (the base as an unsigned 32-bit integer made a float + F) x
+////   dataBits00, and S + R is added, all in 32-bit floats and returned without rounding
+////   (`0x140565782`, `0x1405659f5`).
+//// - **The flat part** F reads the caster's level (type 10) (`0x140566ad0`). Each unit
+////   value and difference is read as an unsigned 32-bit integer, so a negative
+////   difference counts as about 4.29 billion; each product and the running sum are
+////   32-bit floats.
 //// - **The vital kinds** of the flat part read the caster's health and shield (8, 14, 16,
 ////   23, 25, 26) or the target's (7, 15, 17, 19, 21, 22) (`0x140566ad0`). The caster's
 ////   connection works the stat part and the caster's kinds out at the go (`partial`) and
@@ -199,9 +207,10 @@ pub fn power_of(rating rating: Float) -> Float {
 }
 
 /// The first parameter type of the formula that is not built, or `None` when the
-/// formula reads only what a player caster and its target hold: the level, the six
-/// attributes, the two powers and the vital kinds (`0x140566ad0`). The caster's Weapon
-/// and Weapon DPS (6 and 9, #807) and the passed-in value (18, #336) are not read.
+/// formula reads only what a player caster and its target hold, or a caster that is also
+/// its target: the stat kinds 1 to 5 and 11 to 13 and the flat kinds 7, 8, 10, 14 to 17,
+/// 19, 21 to 23, 25 and 26 (`0x140565600`, `0x140566d40`, `0x140566ad0`). The caster's
+/// Weapon and Weapon DPS (6 and 9, #807) and the passed-in value (18, #336) are not read.
 pub fn unread(formula formula: Formula) -> Option(Unread) {
   first_unread(formula:, is_read:)
 }
@@ -224,7 +233,7 @@ fn first_unread(
 pub fn value(formula formula: Formula, attacker attacker: Attacker) -> Float {
   value_with(formula:, attacker:, flat_of: fn(kind) {
     case kind {
-      10 -> int.to_float(attacker.level)
+      10 -> unsigned_unit_value(number: attacker.level)
       _ -> 0.0
     }
   })
@@ -241,12 +250,42 @@ fn value_with(
     stat_part_of(parameters: formula.parameters, stat_of: fn(kind) {
       stat_of(attacker:, kind:)
     })
+  value_of_parts(
+    stat_part: whole_stat_part(stat_part),
+    base: formula.base,
+    multiplier: formula.multiplier,
+    flat_terms: list.map(formula.parameters, fn(parameter) {
+      float32.product(left: parameter.value, right: flat_of(parameter.kind))
+    }),
+  )
+}
+
+/// The value from its parts, in 32-bit floats (`0x140565600`): the flat terms summed in
+/// order from 0.0 (`0x140566ad0`), the row part (the base as a float + the flat sum) x
+/// the multiplier, and the stat part added. The player's M is 1.0, so it changes nothing.
+fn value_of_parts(
+  stat_part stat_part: Int,
+  base base: Float,
+  multiplier multiplier: Float,
+  flat_terms flat_terms: List(Float),
+) -> Float {
   let flat_part =
-    list.fold(formula.parameters, 0.0, fn(sum, parameter) {
-      sum +. parameter.value *. flat_of(parameter.kind)
+    list.fold(flat_terms, 0.0, fn(sum, term) {
+      float32.sum(left: sum, right: term)
     })
-  let row_part = { formula.base +. flat_part } *. formula.multiplier
-  int.to_float(whole_stat_part(stat_part)) +. row_part
+  let row_part =
+    float32.product(
+      left: float32.sum(left: float32.rounded(base), right: flat_part),
+      right: multiplier,
+    )
+  float32.sum(left: int.to_float(stat_part), right: row_part)
+}
+
+/// A unit value or difference as the flat part reads it: an unsigned 32-bit integer made
+/// a 32-bit float (`0x140566b51` mov eax, eax; cvtsi2ss xmm0, rax), so a negative number
+/// counts as 2^32 less its size and a number above 2^24 loses its low bits.
+fn unsigned_unit_value(number number: Int) -> Float {
+  float32.rounded(int.to_float(int.bitwise_and(number, 0xFFFFFFFF)))
 }
 
 /// The sum of each parameter's value times the caster's stat it names, `stat_of` giving
@@ -269,13 +308,20 @@ fn stat_part_of(
 }
 
 /// The stat part as the client cuts it to a whole number (`0x140566d40`): 0.5 added, or
-/// taken away below 0, in 32-bit floats, then the fraction dropped.
+/// taken away below 0, in 32-bit floats, then the fraction dropped, and the result kept
+/// as a signed 16-bit number (`0x14056578e`), so 32768 is -32768.
 fn whole_stat_part(stat_part: Float) -> Int {
-  case stat_part >=. 0.0 {
-    True -> float32.sum(left: stat_part, right: 0.5)
-    False -> float32.difference(left: stat_part, right: 0.5)
+  let whole =
+    case stat_part >=. 0.0 {
+      True -> float32.sum(left: stat_part, right: 0.5)
+      False -> float32.difference(left: stat_part, right: 0.5)
+    }
+    |> float.truncate
+  let low_16_bits = int.bitwise_and(whole, 0xFFFF)
+  case low_16_bits >= 0x8000 {
+    True -> low_16_bits - 0x10000
+    False -> low_16_bits
   }
-  |> float.truncate
 }
 
 /// The caster's stat that a parameter type names in the stat part (`0x140566d40`): 1 to
@@ -316,15 +362,6 @@ pub type Vitals {
   Vitals(health: Int, max_health: Int, shield: Int, max_shield: Int)
 }
 
-/// The first parameter type of the formula that an effect on its caster does not read,
-/// or `None`: it reads the stat kinds 1 to 5 and 11 to 13 and the flat kinds 7, 8, 10, 14
-/// to 17, 19, 21 to 23, 25 and 26 (`0x140565600`, `0x140566d40`, `0x140566ad0`); the
-/// caster's Weapon and Weapon DPS (6 and 9, #807) and the passed-in value (18, #336) are
-/// not read.
-pub fn caster_unread(formula formula: Formula) -> Option(Unread) {
-  first_unread(formula:, is_read:)
-}
-
 fn is_read(kind: Int) -> Bool {
   kind == 0 || is_stat(kind) || is_flat(kind)
 }
@@ -357,25 +394,25 @@ pub fn value_on_caster(
 /// (`0x140566ad0`).
 fn unit_value_of(caster caster: OnCaster, kind kind: Int) -> Float {
   case kind {
-    10 -> int.to_float(caster.attacker.level)
+    10 -> unsigned_unit_value(number: caster.attacker.level)
     _ -> vital_of(vitals: caster.vitals, kind:)
   }
 }
 
-/// The vital a kind names of one unit, 0.0 for a kind that names none
-/// (`0x140566ad0`: 7 and 8 the maximum health, 14 and 15 the shield, 16 and 17 the
+/// The vital a kind names of one unit as the flat part reads it
+/// (`unsigned_unit_value`), 0.0 for a kind that names none (`0x140566ad0`: 7 and 8 the maximum health, 14 and 15 the shield, 16 and 17 the
 /// maximum shield, 19 and 23 the health, 21 and 25 the maximum health less the health,
 /// 22 and 26 the maximum shield less the shield). 7, 15, 17, 19, 21 and 22 are the
 /// target's kinds and 8, 14, 16, 23, 25 and 26 the caster's; the unit passed is the one
 /// read.
 fn vital_of(vitals vitals: Vitals, kind kind: Int) -> Float {
   case kind {
-    7 | 8 -> int.to_float(vitals.max_health)
-    14 | 15 -> int.to_float(vitals.shield)
-    16 | 17 -> int.to_float(vitals.max_shield)
-    19 | 23 -> int.to_float(vitals.health)
-    21 | 25 -> int.to_float(vitals.max_health - vitals.health)
-    22 | 26 -> int.to_float(vitals.max_shield - vitals.shield)
+    7 | 8 -> unsigned_unit_value(number: vitals.max_health)
+    14 | 15 -> unsigned_unit_value(number: vitals.shield)
+    16 | 17 -> unsigned_unit_value(number: vitals.max_shield)
+    19 | 23 -> unsigned_unit_value(number: vitals.health)
+    21 | 25 -> unsigned_unit_value(number: vitals.max_health - vitals.health)
+    22 | 26 -> unsigned_unit_value(number: vitals.max_shield - vitals.shield)
     _ -> 0.0
   }
 }
@@ -414,25 +451,30 @@ pub fn partial(formula formula: Formula, caster caster: OnCaster) -> Partial {
       case is_target_kind(parameter.kind) {
         True -> OfTarget(kind: parameter.kind, factor: parameter.value)
         False ->
-          Known(parameter.value *. unit_value_of(caster:, kind: parameter.kind))
+          Known(float32.product(
+            left: parameter.value,
+            right: unit_value_of(caster:, kind: parameter.kind),
+          ))
       }
     }),
   )
 }
 
-/// The value of the formula once the target's vitals are known, the flat terms summed in
-/// parameter order in 64-bit floats as `value_on_caster` sums them (`0x140566ad0`).
+/// The value of the formula once the target's vitals are known, built as `value_on_caster`
+/// builds it (`0x140565600`, `0x140566ad0`).
 pub fn finish(partial partial: Partial, target target: Vitals) -> Float {
-  let flat_part =
-    list.fold(partial.terms, 0.0, fn(sum, term) {
+  value_of_parts(
+    stat_part: partial.stat_part,
+    base: partial.base,
+    multiplier: partial.multiplier,
+    flat_terms: list.map(partial.terms, fn(term) {
       case term {
-        Known(known) -> sum +. known
+        Known(known) -> known
         OfTarget(kind:, factor:) ->
-          sum +. factor *. vital_of(vitals: target, kind:)
+          float32.product(left: factor, right: vital_of(vitals: target, kind:))
       }
-    })
-  let row_part = { partial.base +. flat_part } *. partial.multiplier
-  int.to_float(partial.stat_part) +. row_part
+    }),
+  )
 }
 
 /// The whole number an effect on its caster gives: `value_on_caster` rounded half away

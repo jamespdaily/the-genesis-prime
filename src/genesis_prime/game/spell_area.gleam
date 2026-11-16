@@ -742,8 +742,8 @@ fn phase_of(
 }
 
 /// Whether the row strikes a unit but its caster. A row aimed at its caster alone loads
-/// and strikes nobody, because a damage row aimed at its caster does not strike the
-/// caster yet (issue 831), so the coverage measure does not count it as handled.
+/// and strikes nobody, because a damage row never strikes its own caster, so the
+/// coverage measure does not count it as handled.
 pub fn strikes_past_caster(row row: RowDamage) -> Bool {
   case row {
     Once(effect:) -> spell_plan.reaches_past_caster(aim: effect.aim)

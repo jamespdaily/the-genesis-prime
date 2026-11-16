@@ -1,5 +1,5 @@
 //// The value of an effect on its caster (`genesis_prime/game/damage`
-//// `value_on_caster`, `amount_on_caster`, `caster_unread`). Expected values come from
+//// `value_on_caster`, `amount_on_caster`, `unread`). Expected values come from
 //// these places.
 //// - `0x140565600` (ComputeEffectValue) and `0x140566ad0` (SumFlatEffectParameters): a
 ////   parameter of type 7 reads the target's maximum health, 8 the caster's, 10 the
@@ -82,8 +82,7 @@ pub fn each_flat_kind_reads_the_casters_own_vital_test() -> Nil {
       )
       == entry.1
       as "0x140566ad0 reads this kind of the unit that is both caster and target"
-    assert damage.caster_unread(formula: formula(kind: entry.0, factor: 1.0))
-      == None
+    assert damage.unread(formula: formula(kind: entry.0, factor: 1.0)) == None
       as "and the load reads the kind"
   })
 }
@@ -141,10 +140,10 @@ pub fn a_parameter_the_formula_does_not_read_is_named_by_its_type_test() -> Nil 
   // 18 is a value passed in (0x140565600): the server does not read it for an effect on
   // its caster.
   list.each([18], fn(kind) {
-    assert damage.caster_unread(formula: formula(kind:, factor: 0.5))
+    assert damage.unread(formula: formula(kind:, factor: 0.5))
       == Some(damage.Unread(parameter_kind: kind))
   })
-  assert damage.caster_unread(formula: formula(kind: 18, factor: 0.0)) == None
+  assert damage.unread(formula: formula(kind: 18, factor: 0.0)) == None
     as "a parameter with a factor of 0 adds nothing, whatever its type"
 }
 
