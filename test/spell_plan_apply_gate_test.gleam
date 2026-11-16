@@ -198,7 +198,7 @@ pub fn damage_row_past_the_caster_reading_struck_state_is_refused_at_load_test()
       )),
     )
   let assert Error(error) = result
-  assert string.contains(spell_area.describe(error:), "#817")
+  assert string.contains(spell_area.describe(error:), "#569")
     as "the refusal names the issue that will read the struck unit's state"
 }
 

@@ -118,7 +118,7 @@ pub fn target_gate_reading_struck_state_is_refused_past_the_caster_test() -> Nil
       prerequisite_type: 15,
     )
   let text = spell_plan.describe(error:)
-  assert string.contains(text, "15") && string.contains(text, "#817")
+  assert string.contains(text, "15") && string.contains(text, "#569")
     as "the refusal names the type and the issue that will read it"
   let assert Ok(on_the_caster) = plan_of(spell4_id: 30_458)
     as "a row aimed only at the caster reads the caster's own state, so the same type plans"
