@@ -423,6 +423,46 @@ pub fn a_unit_straight_ahead_of_any_facing_is_at_bearing_zero_test() -> Nil {
   )
 }
 
+/// -0.0, a zero the sign of which `=:=` tells apart from 0.0 on OTP 29.
+fn negative_zero() -> Float {
+  float.negate(0.0)
+}
+
+pub fn bearing_of_a_target_on_the_point_is_0_with_negative_zero_test() -> Nil {
+  use <- owned_test.run(5000)
+  let from = Point(x: 0.0, z: 0.0)
+  list.each(
+    [
+      Point(x: negative_zero(), z: 0.0),
+      Point(x: 0.0, z: negative_zero()),
+      Point(x: negative_zero(), z: negative_zero()),
+    ],
+    fn(target) {
+      assert area.bearing(from:, target:, yaw: 0.0) == 0.0
+        as "a target on the unit's own point bears 0 whatever the sign of a zero difference (the doc of `bearing`)"
+    },
+  )
+}
+
+pub fn area_with_a_cone_takes_a_unit_on_its_centre_at_negative_zero_test() -> Nil {
+  use <- owned_test.run(5000)
+  let row = Row(min_range: 0.0, max_range: 8.0, degrees: 90.0, target_count: 5)
+  assert struck(
+      candidates: [beast(1, Point(x: 0.0, z: 0.0))],
+      row:,
+      inside: InsideRow,
+    )
+    == [1]
+    as "a unit on the centre is at distance 0, inside minRange 0, and at bearing 0, inside the 90 degree cone"
+  assert struck(
+      candidates: [beast(1, Point(x: negative_zero(), z: 0.0))],
+      row:,
+      inside: InsideRow,
+    )
+    == [1]
+    as "the same unit with a negative zero in x is on the centre all the same"
+}
+
 pub fn a_places_pose_is_its_ground_point_and_its_yaw_test() -> Nil {
   use <- owned_test.run(5000)
   let place =
