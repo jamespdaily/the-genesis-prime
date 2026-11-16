@@ -267,106 +267,75 @@ pub fn lasting_applied(
 ) -> #(Applied, List(Effect), List(Int)) {
   let checked =
     spell_effect.in_phase(effects: spell.effects, phase:, spent:)
-    |> list.filter(fn(planned) {
-      result.is_ok(caster_checked(kind: planned.kind))
-    })
+    |> list.filter_map(caster_checked)
   let #(passed, logs, rolls) =
     cast_gate.gated(
       rows: checked,
-      gates: fn(planned: spell_effect.PlannedEffect(spell_plan.Kind)) {
-        case caster_checked(kind: planned.kind) {
-          Ok(#(gates, _)) -> gates
-          Error(Nil) -> []
-        }
-      },
-      what: fn(planned: spell_effect.PlannedEffect(spell_plan.Kind)) {
-        case caster_checked(kind: planned.kind) {
-          Ok(#(_, what)) -> what
-          Error(Nil) -> ""
-        }
-      },
+      gates: fn(one: CasterChecked) { one.gates },
+      what: fn(one: CasterChecked) { one.what },
       outcome: "so it is not applied",
       subject:,
       rolls:,
     )
-  #(Applied(passed:), logs, rolls)
+  #(Applied(passed: list.map(passed, fn(one) { one.planned })), logs, rolls)
 }
 
-/// What a go checks against the caster for an effect of this kind: the prerequisites of its
-/// gate and what a debug line calls it. A Proxy's and a gain's gates are checked apart
-/// (`cast_gate.proxy_gates`, `cast_gate.gains_given`), a property modifier with no life
-/// changes nothing, and a crowd-control state that does not reach the caster is the strike's.
+/// An effect the go checks against the caster, with its gates and what a debug line calls it.
+type CasterChecked {
+  CasterChecked(
+    planned: spell_effect.PlannedEffect(spell_plan.Kind),
+    gates: List(prerequisite.Prerequisite),
+    what: String,
+  )
+}
+
+/// The effect with the gates the go checks against the caster (`cast_gate.gates_checked_on_caster`)
+/// and its name. An effect with no gate here is left out: a Proxy's and a gain's gates are
+/// checked apart (`cast_gate.proxy_gates`, `cast_gate.gains_given`), a property modifier
+/// with no life changes nothing, and a crowd-control state that does not reach the caster
+/// is the strike's.
 fn caster_checked(
-  kind kind: spell_plan.Kind,
-) -> Result(#(List(prerequisite.Prerequisite), String), Nil) {
+  planned: spell_effect.PlannedEffect(spell_plan.Kind),
+) -> Result(CasterChecked, Nil) {
+  let has_life = case spell_plan.as_modifier(kind: planned.kind) {
+    Ok(row) -> modifier_has_life(row)
+    Error(Nil) -> True
+  }
+  use <- bool.guard(!has_life, Error(Nil))
+  use gates <- result.try(cast_gate.gates_checked_on_caster(kind: planned.kind))
+  use what <- result.map(effect_named(kind: planned.kind))
+  CasterChecked(planned:, gates:, what:)
+}
+
+/// What a debug line calls an effect of this kind that the go checks against the caster; a
+/// Proxy and a gain are named where their own gates are checked.
+fn effect_named(kind kind: spell_plan.Kind) -> Result(String, Nil) {
   let named = fn(what: String, effect_id: Spell4EffectsId) {
-    what <> " effect " <> int.to_string(effect_id.value)
+    Ok(what <> " effect " <> int.to_string(effect_id.value))
   }
   case kind {
     spell_plan.ProxyEffect(..) | spell_plan.GainEffect(..) -> Error(Nil)
     spell_plan.LastingEffect(lasting: row) ->
-      Ok(#(
-        cast_gate.caster_gates(condition: row.condition),
-        named("the lasting", row.effect_id),
-      ))
+      named("the lasting", row.effect_id)
     spell_plan.RemoveEffect(remove: row) ->
-      Ok(#(
-        cast_gate.caster_gates(condition: row.condition),
-        named("the SpellForceRemove", row.effect_id),
-      ))
+      named("the SpellForceRemove", row.effect_id)
     spell_plan.ModifierEffect(modifier: row) ->
-      case modifier_has_life(row) {
-        True ->
-          Ok(#(
-            cast_gate.caster_gates(condition: row.condition),
-            named("the " <> modifier_kind_named(row:), row.effect_id),
-          ))
-        False -> Error(Nil)
-      }
+      named("the " <> modifier_kind_named(row:), row.effect_id)
     spell_plan.ForcedMoveEffect(forced_move: row) ->
-      Ok(#(
-        cast_gate.only_on_caster_gates(condition: row.condition),
-        named("the ForcedMove", row.effect_id),
-      ))
+      named("the ForcedMove", row.effect_id)
     spell_plan.StruckMoveEffect(struck_move: row) ->
-      Ok(#(
-        cast_gate.caster_gates(condition: row.condition),
-        named("the ForcedMove", row.effect_id),
-      ))
+      named("the ForcedMove", row.effect_id)
     spell_plan.CooldownEffect(modifier: row) ->
-      Ok(#(
-        cast_gate.only_on_caster_gates(condition: row.condition),
-        named("the ModifySpellCooldown", row.effect_id),
-      ))
+      named("the ModifySpellCooldown", row.effect_id)
     spell_plan.StealthEffect(stealth: row) ->
-      Ok(#(
-        cast_gate.only_on_caster_gates(condition: row.condition),
-        named("the Stealth", row.effect_id),
-      ))
+      named("the Stealth", row.effect_id)
     spell_plan.RemoveStealthEffect(remove: row) ->
-      Ok(#(
-        cast_gate.only_on_caster_gates(condition: row.condition),
-        named("the RemoveStealth", row.effect_id),
-      ))
-    spell_plan.ProcEffect(proc: row) ->
-      Ok(#(
-        cast_gate.only_on_caster_gates(condition: row.condition),
-        named("the Proc", row.effect_id),
-      ))
+      named("the RemoveStealth", row.effect_id)
+    spell_plan.ProcEffect(proc: row) -> named("the Proc", row.effect_id)
     spell_plan.HealEffect(heal: row) ->
-      Ok(#(
-        cast_gate.caster_gates(condition: row.condition),
-        named("the Heal or HealShields", row.effect_id),
-      ))
+      named("the Heal or HealShields", row.effect_id)
     spell_plan.ControlEffect(control: row) ->
-      case spell_plan.reaches_caster(aim: row.aim) {
-        True ->
-          Ok(#(
-            cast_gate.only_on_caster_gates(condition: row.condition),
-            named("the ability restriction", row.effect_id),
-          ))
-        False -> Error(Nil)
-      }
+      named("the ability restriction", row.effect_id)
   }
 }
 

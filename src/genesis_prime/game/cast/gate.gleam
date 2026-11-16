@@ -82,9 +82,9 @@ pub fn rolls_needed(
 
 /// The rolls the go takes for one effect of its phase, by its kind: a Proxy that has a unit
 /// to start a child on takes those of its gate and of the gains lifted onto it; a gain, those
-/// of its caster-side gates; the other kinds those of their gates for each unit they reach
-/// (`strike_rolls_needed`) or against the caster alone (`only_on_caster_gates`). A crowd-control
-/// row takes none unless it reaches the caster: the strike's own rolls count the others.
+/// of its caster-side gates; the other kinds those of `gates_checked_on_caster`, the gates
+/// `control.lasting_applied` draws, and, for a row that reaches units, those of its target
+/// apply prerequisite for each unit it reaches (`target_rolls_needed`).
 fn effect_rolls_needed(
   kind kind: spell_plan.Kind,
   caster caster: Int,
@@ -93,6 +93,10 @@ fn effect_rolls_needed(
 ) -> Int {
   let reached = fn(aim) {
     units_reached(aim:, caster:, primary_target:, struck:)
+  }
+  let caster_rolls = case gates_checked_on_caster(kind:) {
+    Ok(gates) -> gates_rolls_needed(gates)
+    Error(Nil) -> 0
   }
   case kind {
     spell_plan.ProxyEffect(proxy:) ->
@@ -110,34 +114,41 @@ fn effect_rolls_needed(
       }
     spell_plan.GainEffect(gain:) -> gain_rolls_needed(gain)
     spell_plan.LastingEffect(lasting: row) ->
-      strike_rolls_needed(condition: row.condition, units: reached(row.aim))
-    spell_plan.RemoveEffect(remove: row) ->
-      strike_rolls_needed(condition: row.condition, units: reached(row.aim))
-    spell_plan.ModifierEffect(modifier: row) ->
-      strike_rolls_needed(
+      caster_rolls
+      + target_rolls_needed(
         condition: row.condition,
-        units: reached(spell_plan.modifier_aim(modifier: row)),
+        units_reached: reached(row.aim),
+      )
+    spell_plan.RemoveEffect(remove: row) ->
+      caster_rolls
+      + target_rolls_needed(
+        condition: row.condition,
+        units_reached: reached(row.aim),
+      )
+    spell_plan.ModifierEffect(modifier: row) ->
+      caster_rolls
+      + target_rolls_needed(
+        condition: row.condition,
+        units_reached: reached(spell_plan.modifier_aim(modifier: row)),
       )
     spell_plan.StruckMoveEffect(struck_move: row) ->
-      strike_rolls_needed(condition: row.condition, units: reached(row.aim))
+      caster_rolls
+      + target_rolls_needed(
+        condition: row.condition,
+        units_reached: reached(row.aim),
+      )
     spell_plan.HealEffect(heal: row) ->
-      strike_rolls_needed(condition: row.condition, units: reached(row.aim))
-    spell_plan.ForcedMoveEffect(forced_move: row) ->
-      gates_rolls_needed(only_on_caster_gates(condition: row.condition))
-    spell_plan.CooldownEffect(modifier: row) ->
-      gates_rolls_needed(only_on_caster_gates(condition: row.condition))
-    spell_plan.StealthEffect(stealth: row) ->
-      gates_rolls_needed(only_on_caster_gates(condition: row.condition))
-    spell_plan.RemoveStealthEffect(remove: row) ->
-      gates_rolls_needed(only_on_caster_gates(condition: row.condition))
-    spell_plan.ProcEffect(proc: row) ->
-      gates_rolls_needed(only_on_caster_gates(condition: row.condition))
-    spell_plan.ControlEffect(control: row) ->
-      case spell_plan.reaches_caster(aim: row.aim) {
-        True ->
-          gates_rolls_needed(only_on_caster_gates(condition: row.condition))
-        False -> 0
-      }
+      caster_rolls
+      + target_rolls_needed(
+        condition: row.condition,
+        units_reached: reached(row.aim),
+      )
+    spell_plan.ForcedMoveEffect(..)
+    | spell_plan.CooldownEffect(..)
+    | spell_plan.StealthEffect(..)
+    | spell_plan.RemoveStealthEffect(..)
+    | spell_plan.ProcEffect(..)
+    | spell_plan.ControlEffect(..) -> caster_rolls
   }
 }
 
@@ -560,7 +571,7 @@ pub fn caster_gates(
 /// The gates a go checks against the caster's own unit for a row that reaches only the
 /// caster: its caster apply prerequisites, then its target apply prerequisite, whose first
 /// unit is that unit, the caster's whole unit (`cast_tick.subject_of`).
-pub fn only_on_caster_gates(
+fn only_on_caster_gates(
   condition condition: spell_plan.Condition,
 ) -> List(prerequisite.Prerequisite) {
   case condition {
@@ -569,6 +580,45 @@ pub fn only_on_caster_gates(
     spell_plan.GatedOnCaster(gates:) -> gates
     spell_plan.GatedOnCasterAndTarget(caster:, target:) ->
       list.append(caster, [target])
+  }
+}
+
+/// The gates a go checks against the caster's own unit for an effect of this kind, the one
+/// choice between `caster_gates` (a row that may reach other units) and `only_on_caster_gates`
+/// (a row that reaches only the caster) for each kind: the roll count (`effect_rolls_needed`)
+/// and the check (`control.lasting_applied`) both ask it, so they cannot differ. A Proxy's and
+/// a gain's gates are checked apart (`proxy_gates`, `gains_given`) and a crowd-control state
+/// that does not reach the caster is the strike's, so those have none.
+pub fn gates_checked_on_caster(
+  kind kind: spell_plan.Kind,
+) -> Result(List(prerequisite.Prerequisite), Nil) {
+  case kind {
+    spell_plan.ProxyEffect(..) | spell_plan.GainEffect(..) -> Error(Nil)
+    spell_plan.LastingEffect(lasting: row) ->
+      Ok(caster_gates(condition: row.condition))
+    spell_plan.RemoveEffect(remove: row) ->
+      Ok(caster_gates(condition: row.condition))
+    spell_plan.ModifierEffect(modifier: row) ->
+      Ok(caster_gates(condition: row.condition))
+    spell_plan.StruckMoveEffect(struck_move: row) ->
+      Ok(caster_gates(condition: row.condition))
+    spell_plan.HealEffect(heal: row) ->
+      Ok(caster_gates(condition: row.condition))
+    spell_plan.ForcedMoveEffect(forced_move: row) ->
+      Ok(only_on_caster_gates(condition: row.condition))
+    spell_plan.CooldownEffect(modifier: row) ->
+      Ok(only_on_caster_gates(condition: row.condition))
+    spell_plan.StealthEffect(stealth: row) ->
+      Ok(only_on_caster_gates(condition: row.condition))
+    spell_plan.RemoveStealthEffect(remove: row) ->
+      Ok(only_on_caster_gates(condition: row.condition))
+    spell_plan.ProcEffect(proc: row) ->
+      Ok(only_on_caster_gates(condition: row.condition))
+    spell_plan.ControlEffect(control: row) ->
+      case spell_plan.reaches_caster(aim: row.aim) {
+        True -> Ok(only_on_caster_gates(condition: row.condition))
+        False -> Error(Nil)
+      }
   }
 }
 

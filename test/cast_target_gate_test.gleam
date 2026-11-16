@@ -696,3 +696,60 @@ fn unit_properties_change() -> unit_properties.Modifier {
     per_level: 0.0,
   )
 }
+
+// ---- the order the reach stage takes rolls in across kinds ----
+
+pub fn two_kinds_behind_target_gates_take_their_rolls_in_rank_order_at_the_reach_stage_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Both rows are aimed at the caster behind the chance gate (Prerequisite 4585, a type
+  // 37 condition that passes a roll of at most 50) and given heal first, lasting second:
+  // the plan ranks the lasting effect before the heal, so the go's first roll is the
+  // lasting effect's and its second the heal's.
+  let spell =
+    support.with_effects(spell: support.child(spell4_id: 101, base: 3), kinds: [
+      spell_plan.HealEffect(healing(id: 8, gate: chance_gate())),
+      spell_plan.LastingEffect(
+        spell_plan.Lasting(
+          ..marker_row(id: 7),
+          aim: AimsAtCaster,
+          condition: GatedOnTarget(prerequisite: chance_gate()),
+        ),
+      ),
+    ])
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans: support.plans_of([spell]),
+      state: cast_state.new(),
+      caster: support.caster(),
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1000,
+    )
+  let assert [asked] = support.goes_asked(effects: raw)
+  assert cast_gate.rolls_needed(
+      cast: state,
+      caster: support.caster().unit_id,
+      cast_id: asked.cast_id,
+      phase: asked.phase,
+      struck: [],
+    )
+    == 2
+    as "each row has one type 37 condition and reaches the caster alone: two rolls"
+  let went = fn(rolls) {
+    let #(_, effects) =
+      support.answered_as(
+        caster: support.caster(),
+        state:,
+        effects: raw,
+        at: 1000,
+        struck: [],
+        rolls:,
+      )
+    listed(effects:)
+  }
+  let caster = support.caster().unit_id
+  assert went([50, 51]) == [#(caster, [7])]
+    as "the first roll, 50, passes for the lasting effect and the second, 51, fails the heal: only the lasting effect reaches the caster"
+  assert went([51, 50]) == [#(caster, [8])]
+    as "the same rolls reversed fail the lasting effect and pass the heal: only the heal reaches the caster"
+}
