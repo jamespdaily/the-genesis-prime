@@ -254,8 +254,8 @@ pub fn coverage_counts_the_union_rows_as_read_test() -> Nil {
     count
   }
   assert list.map([1, 3, 10, 11, 29, 52, 118], unread_of)
-    == [1367, 153, 1056, 307, 257, 2, 83]
-    as "the reviewer's measurement of the rows unread by type 1, 3, 10, 11, 29, 52 and 118, equal on main and on this branch: the union reading moves none of them, and no absorb or Interrupt Armor row aimed by flags 3 or 7 sits in a spell a Proxy starts on each struck unit (no_absorb_or_armor_row_aimed_by_flags_3_or_7_is_in_a_child_started_on_each_struck_unit_test), so the struck-unit refusal moves none either"
+    == [1367, 135, 1056, 299, 257, 2, 83]
+    as "the rows unread by type 1, 3, 10, 11, 29, 52 and 118; main holds 1367, 153, 1056, 307, 257, 2 and 83, and the union reading moves none of them (no absorb or Interrupt Armor row aimed by flags 3 or 7 sits in a spell a Proxy starts on each struck unit, no_absorb_or_armor_row_aimed_by_flags_3_or_7_is_in_a_child_started_on_each_struck_unit_test); the 18 fewer type 3 rows and 8 fewer type 11 rows are rows the plan refused on main for a target prerequisite that reads a struck creature's own state, which the creature checks now (a row-by-row comparison of main with this branch frees 153 rows over all types, none newly unread)"
   let proxies_naming_no_spell =
     list.filter(union_rows, fn(row) {
       row.effect_type == 26
