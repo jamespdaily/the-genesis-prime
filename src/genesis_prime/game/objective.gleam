@@ -839,7 +839,8 @@ fn opened(
 }
 
 /// The quest's hidden scripted objectives with no target, each done once every other
-/// objective of the quest without flag 0x20 is done: the objectives of type 5 with flag 8
+/// objective of the quest without flag 0x20 is done, except one the client keeps closed
+/// until the script is done (`other_required_objectives_done`): the objectives of type 5 with flag 8
 /// (hidden) and data 0 that no creature links (`objective_link.is_linked`). Such an
 /// objective is done by nothing the client or a player does, and the Achieved rule
 /// (`0x1405fbc40`) waits for it, so the quest would stay Accepted for ever; this
@@ -869,10 +870,10 @@ fn hidden_scripts(
     })
   case
     waiting != []
-    && quest_log.required_objectives_done(
+    && other_required_objectives_done(
       log: settling.log,
       quest:,
-      ignoring: list.map(scripts, fn(pair) { pair.0 }),
+      scripts: list.map(scripts, fn(pair) { pair.0 }),
     )
   {
     True ->
@@ -887,6 +888,29 @@ fn hidden_scripts(
       })
     False -> settling
   }
+}
+
+/// Whether every required objective of the quest is done except the `scripts` and the
+/// objectives the client keeps closed until a script is done: such an
+/// objective is unreachable (`0x140553790`) while the script is not done, so waiting for
+/// it would hold the script, and the quest, for ever.
+fn other_required_objectives_done(
+  log log: quest_log.QuestLog,
+  quest quest: quest_log.Quest,
+  scripts scripts: List(Int),
+) -> Bool {
+  let holding =
+    list.filter(scripts, fn(index) {
+      !quest_log.objective_done(log:, quest:, index:)
+    })
+  quest_log.required_objectives_done(
+    log:,
+    quest:,
+    ignoring: list.append(
+      scripts,
+      quest_log.locked_behind(log:, quest:, holding:),
+    ),
+  )
 }
 
 /// Every open type 24 objective of the quest whose quest is finished done. A done
