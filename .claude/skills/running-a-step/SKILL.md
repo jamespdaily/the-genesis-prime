@@ -45,7 +45,7 @@ The shape commit holds the types, signatures and supervision, and a sequence of 
 
 ## The brief
 
-One fresh implementer per step, in its own worktree (the Agent tool's worktree isolation). After a shape commit, the build may go to two implementers at once when the shape splits it into parts that share no files: each builds its part on its own branch from the shape, with its own brief, and the second to finish merges the other's branch into the step's branch before the reviews. Step G's single builder took 51 minutes over 32 files (2026-11-04).
+One fresh implementer per step, in its own worktree (the Agent tool's worktree isolation). After a shape commit, the build may go to two implementers at once when the shape splits it into parts that share no files: each builds its part on its own branch from the shape, with its own brief, and the second to finish merges the other's branch into the step's branch before the reviews. Step G's single builder took 51 minutes over 32 files (2026-11-04). A build fits in about 2 hours; a step whose build would run longer is split before its brief. (Spell depth's 5-7 hour builds were 40-80% of their steps' tokens, measured 2026-11-16.)
 
 The brief is a "Brief" artifact on the step's issue, and the builder's prompt is one line naming the issue and the artifact's number. It points to the Design and the test list instead of repeating them, and holds these headings, each left out when it has nothing:
 - **Goal:** what a player or the client sees when it is done, and the branch with its base.
@@ -64,6 +64,8 @@ The brief is frozen once the builder starts: a change goes to the builder as a m
 
 The implementer's own file (`.claude/agents/implementer.md`) holds its checks, pushes and hand-back.
 
+Every agent's hand-back returns under 150 words; its full report goes on the step's issue or in a file it names, so nothing is lost and the coordinator's context stays small. Reviewers and investigators use their own agent files (`reviewer`, `investigator`), which run on Sonnet; a reviewer standing in for Codex runs on Opus. (General-purpose reviewers ran on Opus by default and were 20-35% of a step's tokens, 2026-11-16.)
+
 ## Reviews
 
 Every step's reviews start from `dev/test_list_check.py N BASE HEAD`, which lists each test named in the issue's "Test list" comment that the diff does not define. A missing test goes to the fix round without a reviewer.
@@ -76,7 +78,7 @@ Any other step gets the Claude reviewer alone. The main session reads every diff
 
 ## The fix round
 
-Check each finding against the code first, then fix what holds in one round. A bug the step caused is fixed before it merges, in this round or another. A review's top finding caused by the last round's fix counts as a second failure with one cause (below). Anything else follows "Failures" below. Notes that change nothing the step promises go in the closing summary.
+Check each finding against the code first, then fix what holds in one round. Each fix round goes to a fresh implementer whose prompt names the findings comment; the first builder is not resumed, since its long context is re-read on every turn. A bug the step caused is fixed before it merges, in this round or another. A review's top finding caused by the last round's fix counts as a second failure with one cause (below). Anything else follows "Failures" below. Notes that change nothing the step promises go in the closing summary.
 
 ## Failures, gaps and questions
 

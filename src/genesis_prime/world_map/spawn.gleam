@@ -29,6 +29,9 @@
 ////   creature_kind row of its own starts as a creature as a NonPlayer row does, with
 ////   its 0x262 of type 13 and no movement (`Spawn.unit_type`); one without such a
 ////   row stays a static object.
+//// - **Creatures placed with a map object.** A NonPlayer row whose `active_prop_id`
+////   is not 0 starts as any NonPlayer row does, with run speed 0 and its link in
+////   `Spawn.world_object_id`, and never moves (`creature_unit_type.can_move`).
 //// - **Static objects.** A row of entity type 4, 8, 10, 11, 12, 13, 14 or 32 is a
 ////   static object (genesis_prime/world_map/static_object), checked as a
 ////   NonPlayer row is and kept whatever its faction. Types 4, 8, 10, 11, 12 and
@@ -204,6 +207,10 @@ pub type Spawn {
     /// `world_data.entity_type`) with a creature_kind row of its own starts as a
     /// creature that never moves.
     unit_type: CreatureUnitType,
+    /// The row's `active_prop_id`: the 64-bit id of the map object the creature is
+    /// placed as part of, 0 for none. A creature placed with one never moves
+    /// (`creature_unit_type.can_move`).
+    world_object_id: Int,
     /// The creature's `prerequisiteIdVisibility`, `None` for 0: the player sees the
     /// creature only while this prerequisite does not fail for them
     /// (genesis_prime/game/visibility).
@@ -1011,11 +1018,11 @@ pub fn faction_levels(
 }
 
 /// The combat values and their context already worked out in a load, with the
-/// creature's bases, by creature, level, display, faction and unit type: the spawns
+/// creature's bases, by creature, level, display, faction and whether the creature moves: the spawns
 /// that share them hold one term, so the load's term is small (a persistent term
 /// keeps the sharing).
 type SharedCombats =
-  Dict(#(Int, Int, Int, Int, CreatureUnitType), #(Combat, CombatContext, Bases))
+  Dict(#(Int, Int, Int, Int, Bool), #(Combat, CombatContext, Bases))
 
 /// A creature's base of each UnitProperty2 id, 0 to 199 in id order.
 type Bases =
@@ -1037,7 +1044,7 @@ fn combat_of(
   bases bases: Bases,
   display_info_id display_info_id: Int,
   faction_id faction_id: Int,
-  unit_type unit_type: CreatureUnitType,
+  can_move can_move: Bool,
 ) -> Result(#(Combat, CombatContext), SpawnError) {
   let creature_id = Creature2Id(creature.id)
   use display <- result.try(
@@ -1060,14 +1067,14 @@ fn combat_of(
     level:,
     display:,
     value:,
-    unit_type:,
+    can_move:,
   ))
   let context =
     CombatContext(
       formulas:,
       scaling:,
       attack: attack_effects,
-      run_land: run_land_of(display:, unit_type:),
+      run_land: run_land_of(display:, can_move:),
       difficulty_id: creature.creature2_difficulty_id,
     )
   let combat =
@@ -1204,7 +1211,7 @@ fn attack_of(
   level level: Int,
   display display: creature2_display_info.Creature2DisplayInfo,
   value value: Value,
-  unit_type unit_type: CreatureUnitType,
+  can_move can_move: Bool,
 ) -> Result(#(Attack, damage.CreatureScaling, List(AttackEffect)), SpawnError) {
   let creature_id = Creature2Id(creature.id)
   use spell <- result.try(
@@ -1322,7 +1329,7 @@ fn attack_of(
         value:,
       ),
       run_speed: run_speed_of(
-        run_land: run_land_of(display:, unit_type:),
+        run_land: run_land_of(display:, can_move:),
         value:,
       ),
       reach:,
@@ -1401,14 +1408,14 @@ fn offence_of(
 }
 
 /// The run speed of the creature's display on land: its runLand, or 0 for a creature
-/// that cannot move (a Turret), which the server never moves (a server choice: some
-/// turret displays carry a run speed, Creature2DisplayInfo 39655, which a turret
-/// never uses).
+/// that cannot move (`creature_unit_type.can_move`), which the server never moves (a
+/// server choice: some turret displays carry a run speed, Creature2DisplayInfo 39655,
+/// which a turret never uses).
 fn run_land_of(
   display display: creature2_display_info.Creature2DisplayInfo,
-  unit_type unit_type: CreatureUnitType,
+  can_move can_move: Bool,
 ) -> Float {
-  use <- bool.guard(when: !creature_unit_type.can_move(unit_type:), return: 0.0)
+  use <- bool.guard(when: !can_move, return: 0.0)
   display.run_land
 }
 
@@ -1918,12 +1925,17 @@ fn load_checks(
     creature:,
     row:,
   ))
+  let can_move =
+    creature_unit_type.can_move(
+      unit_type:,
+      world_object_id: row.world_object_id,
+    )
   let key = #(
     row.creature_id,
     level,
     row.display_info_id,
     row.faction_id,
-    unit_type,
+    can_move,
   )
   use #(#(combat, context, bases), shared) <- result.try(
     case dict.get(shared, key) {
@@ -1939,7 +1951,7 @@ fn load_checks(
           bases:,
           display_info_id: row.display_info_id,
           faction_id: row.faction_id,
-          unit_type:,
+          can_move:,
         )
         |> result.map(fn(worked) {
           let worked = #(worked.0, worked.1, bases)
@@ -1968,6 +1980,7 @@ fn load_checks(
         context:,
         vendor: vendor.is_vendor(vendors:, creature_id:),
         unit_type:,
+        world_object_id: row.world_object_id,
         visibility: visibility_of(creature:),
         checklist_index: 0,
       ),

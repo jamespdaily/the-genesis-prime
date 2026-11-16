@@ -92,6 +92,7 @@ pub fn battle_beast(number number: Int, x x: Float) -> Spawn {
     outfit_info_id: 0,
     vendor: False,
     unit_type: NonPlayer,
+    world_object_id: 0,
     visibility: option.None,
     combat: beast_combat(),
     bases: loaded_beast().bases,

@@ -48,7 +48,7 @@ import genesis_prime/step.{
   type ConnectionId, type ServiceStep, Connection, ConnectionId, CreatureStart,
   OwnEffect, OwnEvent, ServiceTimerFired, StartServiceTimer, Started, Told,
 }
-import genesis_prime/table/id.{Spell4Id, UnitProperty2Id}
+import genesis_prime/table/id.{Creature2Id, Spell4Id, UnitProperty2Id}
 import genesis_prime/world_map/creature.{type State, Settings}
 import genesis_prime/world_map/creature_fight
 import genesis_prime/world_map/creature_kind.{type Kind, type Kinds, Kind}
@@ -4907,4 +4907,175 @@ pub fn a_turret_is_not_thrown_test() -> Nil {
     as "no path, no timer, no news"
   let #(_, opened) = fire(state:, at_ms: 3000, timer: timer_for(aggro, 3000))
   assert said(opened) == ["0x7ff to 2"] as "and the fight goes on as it was"
+}
+
+// ---- a creature placed as part of a map object ----
+
+/// The Thrasher Fern (Creature2 28318) of the world database's spawn 10663, placed as
+/// part of the map object 1238827 (`active_prop_id`), with a Beast's attack and its run
+/// speed of 10, so that only its link keeps it still. Started for these viewers.
+fn fern(viewers viewers: List(Int)) -> State {
+  beast_from(
+    source: spawn_source.Stored(id: SpawnId(10_663)),
+    spawn: Spawn(
+      ..spawn_support.battle_beast(number: 10_663, x: 0.0),
+      creature_id: Creature2Id(28_318),
+      world_object_id: 1_238_827,
+    ),
+    viewers:,
+    armor: creature_life.NoArmor,
+  )
+}
+
+pub fn a_creature_placed_as_part_of_a_map_object_attacks_a_target_in_reach_from_where_it_stands_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    tell(
+      state: fern(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  assert sends_no_path(aggro) as "the target is within reach 8: no move"
+  let #(state, ticked) =
+    fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  assert said(ticked) == ["0x7ff to 2", "Attacks to 2"]
+    as "the tick strikes the target and sends no movement message"
+  assert stands_at(state:, at_ms: 1500) == 0.0 as "it stands at its spawn point"
+}
+
+pub fn a_creature_placed_as_part_of_a_map_object_does_not_chase_a_target_that_leaves_its_reach_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    tell(
+      state: fern(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  // 30 off: beyond reach 8 and within the leash range 55 of home, where a creature that
+  // moves would chase.
+  let #(state, away) =
+    tell(state:, at_ms: 100, message: moved(number: 2, x: 30.0, seq: 2))
+  assert said(away) == [] as "no path to the target"
+  let #(state, ticked) =
+    fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  assert said(ticked) == [] as "the tick starts no chase and strikes nobody"
+  let #(state, later) =
+    fire(state:, at_ms: 3000, timer: timer_for(ticked, 1500))
+  assert said(later) == []
+  assert stands_at(state:, at_ms: 10_000) == 0.0
+    as "at its spawn point, after the time a chase of 26 units at 10 would take"
+}
+
+pub fn a_creature_placed_as_part_of_a_map_object_leaves_combat_without_a_walk_home_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: fern(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, leashed) =
+    tell(state:, at_ms: 700, message: creature.Unwatched(by: ConnectionId(2)))
+  assert list.contains(said(leashed), "0x89a(0) to 5")
+    as "the only player on the threat list is gone: the creature leaves combat"
+  assert sends_no_path(leashed) && timers(leashed) == []
+    as "it is at home already: no walk, no arrival timer, no home timer"
+  let #(_, struck) =
+    tell(
+      state:,
+      at_ms: 800,
+      message: strike_of(number: 5, cast_id: 1, blows: [#(1, 5, 1.0)]),
+    )
+  assert !list.contains(said(struck), "Refused(Returning) to 5")
+    as "it is not Returning, so the next player's strike lands"
+}
+
+pub fn a_creature_placed_as_part_of_a_map_object_leaves_combat_in_place_when_its_target_is_beyond_its_leash_range_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    tell(
+      state: fern(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  // 100 off is beyond the leash range 55 of home.
+  let #(state, away) =
+    tell(state:, at_ms: 100, message: moved(number: 2, x: 100.0, seq: 2))
+  assert said(away) == [] as "no path to the target"
+  let #(state, ticked) =
+    fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  assert list.contains(said(ticked), "0x89a(0) to 5")
+    as "the target is beyond the leash range: the creature leaves combat"
+  assert sends_no_path(ticked) && timers(ticked) == []
+    as "it walks nowhere: no path, no arrival timer, no home timer"
+  assert stands_at(state:, at_ms: 20_000) == 0.0
+    as "it stands at its spawn point"
+}
+
+pub fn a_creature_placed_as_part_of_a_map_object_is_not_moved_by_a_forced_move_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Its run speed is 10, so only its link keeps it where it is: a knockback (away, in
+  // flight), a pull (toward a unit at x = 20, in flight) and a push (away, at once).
+  let moves = [
+    #("knockback", forced_move.Away, forced_move.Flight, at(-5.0)),
+    #("pull", forced_move.Toward, forced_move.Flight, at(20.0)),
+    #("push", forced_move.Away, forced_move.AtOnce, at(-5.0)),
+  ]
+  list.each(moves, fn(one) {
+    let #(name, way, mover, unit_at) = one
+    let #(state, aggro) =
+      tell(
+        state: fern(viewers: [2]),
+        at_ms: 0,
+        message: approached(number: 2, x: 5.0, seq: 1),
+      )
+    let #(state, thrown) =
+      tell(
+        state:,
+        at_ms: 100,
+        message: creature.Thrown(
+          move: forced_move.Move(
+            way:,
+            mover:,
+            min_distance: 10.0,
+            max_distance: 10.0,
+            flight_ms: 375,
+            gravity: 0.0,
+            flags: 0,
+            height: 0.0,
+          ),
+          draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+          reference: forced_move.Reference(place: unit_at, radius: 0.0),
+          struck_at_ms: start_ms + 100,
+        ),
+      )
+    assert said(thrown) == [] && timers(thrown) == []
+      as { name <> ": no path, no flight timer, no news" }
+    assert stands_at(state:, at_ms: 100) == 0.0
+      && stands_at(state:, at_ms: 1000) == 0.0
+      as { name <> ": it stands at its spawn point" }
+    let #(_, struck) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+    assert said(struck) == ["0x7ff to 2", "Attacks to 2"]
+      as { name <> ": the fight goes on as it was" }
+  })
+}
+
+pub fn the_same_creature_placed_with_no_map_object_chases_test() -> Nil {
+  use <- owned_test.run(5000)
+  let free =
+    beast_from(
+      source: spawn_source.Stored(id: SpawnId(10_663)),
+      spawn: Spawn(
+        ..spawn_support.battle_beast(number: 10_663, x: 0.0),
+        creature_id: Creature2Id(28_318),
+        world_object_id: 0,
+      ),
+      viewers: [2, 5],
+      armor: creature_life.NoArmor,
+    )
+  let #(_, aggro) =
+    tell(state: free, at_ms: 0, message: approached(number: 2, x: 30.0, seq: 1))
+  let assert Running(to:, speed:, ..) = path_sent(aggro)
+  assert x_of(to) == 26.0 && speed == 10.0
+    as "30 - 0.5 x 8, at run speed 10: the link, not the creature, keeps it still"
 }
