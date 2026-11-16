@@ -78,6 +78,12 @@
 //// | A 0x637 the client sent before the 0xad reached it | Dropped until the first 0xf2; the map is told nothing | `connection/movement`, `InWorldLoading` |
 //// | The client lacks a terminal's Creature2, QuestObjective, Quest2 or WorldLocation2 row | The table load fails at start | `requirements` |
 
+import genesis_prime/game/objective_kind.{
+  CastSpell, ChecklistActivate, ChecklistTalk, ChecklistUse, CollectItem,
+  CollectVirtualItem, CraftItem, FinishQuest, KillByCluster, KillByDifficulty,
+  KillCreature, KillGroup, Placeholder, ReachPlace, Scripted, ServerChecklist,
+  TalkTo, Unconditional, Unread, UseCreature, UseGroup, VisitZone,
+}
 import genesis_prime/game/quest_log.{type Quest, type QuestLog}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
@@ -165,10 +171,6 @@ pub fn owns(timer candidate: TimerId) -> Bool {
 const achieved = 2
 
 const completed = 3
-
-/// The QuestObjective type of a use of a unit of a TargetGroup, which the travel and the
-/// choice objectives are (`QuestObjective.type.23`).
-const use_a_group_type = 23
 
 /// The terminal of a creature.
 fn terminal_of(creature_id creature_id: Creature2Id) -> Result(Terminal, Nil) {
@@ -330,16 +332,39 @@ fn counts_its_terminal(
     creature2.get(tables:, id: Creature2Id(terminal.creature_id))
   {
     Ok(objective), Ok(creature) ->
-      objective.type_ == use_a_group_type
-      && target_group.contains(
-        tables:,
-        group: objective.data,
-        unit: target_group.Unit(
-          creature_id: Creature2Id(terminal.creature_id),
-          faction_id: Faction2Id(creature.faction_id),
-          unit_race_id: creature2.unit_race_id(creature),
-        ),
-      )
+      case objective_kind.of_row(objective) {
+        UseGroup(target_group_id:) ->
+          target_group.contains(
+            tables:,
+            group: target_group_id.value,
+            unit: target_group.Unit(
+              creature_id: Creature2Id(terminal.creature_id),
+              faction_id: Faction2Id(creature.faction_id),
+              unit_race_id: creature2.unit_race_id(creature),
+            ),
+          )
+        Unconditional
+        | KillCreature(_)
+        | TalkTo(_)
+        | CollectItem(_)
+        | Scripted
+        | KillGroup(_)
+        | ServerChecklist
+        | CastSpell(_)
+        | UseCreature(_)
+        | ChecklistUse(_)
+        | KillByCluster(_)
+        | VisitZone(_)
+        | ChecklistTalk(_)
+        | ReachPlace
+        | FinishQuest(_)
+        | ChecklistActivate(_)
+        | Placeholder
+        | CollectVirtualItem(_)
+        | CraftItem(_)
+        | KillByDifficulty(_)
+        | Unread(_) -> False
+      }
     _, _ -> False
   }
 }

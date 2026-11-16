@@ -14,11 +14,15 @@
 //// distinct targets up to its count. A spawn that no checklist counts takes 0, the
 //// index the client reads of a unit no objective counts.
 
-import genesis_prime/game/quest_log
-import genesis_prime/game/target_group.{type Unit}
-import genesis_prime/table/id.{
-  Creature2Id, PathSoldierActivateId, QuestObjectiveId,
+import genesis_prime/game/objective_kind.{
+  type Kind, CastSpell, ChecklistActivate, ChecklistTalk, ChecklistUse,
+  CollectItem, CollectVirtualItem, CraftItem, FinishQuest, KillByCluster,
+  KillByDifficulty, KillCreature, KillGroup, Placeholder, ReachPlace, Scripted,
+  ServerChecklist, TalkTo, Unconditional, Unread, UseCreature, UseGroup,
+  VisitZone,
 }
+import genesis_prime/game/target_group.{type Unit}
+import genesis_prime/table/id.{Creature2Id, QuestObjectiveId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_soldier_activate
 import genesis_prime/table/quest2
@@ -81,15 +85,12 @@ pub fn checklists(
         tables:,
         id: QuestObjectiveId(objective_id),
       ))
-      use <- bool.guard(
-        when: !list.contains([14, 18, 28], row.type_)
-          || !quest_log.is_checklist(tables:, objective: row),
-        return: Error(Nil),
-      )
+      use is_target <- result.try(target_test(
+        tables:,
+        kind: objective_kind.of_row(row),
+      ))
       let targets =
-        list.filter(units, fn(found) {
-          is_target(tables:, objective: row, unit: found.0)
-        })
+        list.filter(units, fn(found) { is_target(found.0) })
         |> list.flat_map(fn(found) { found.1 })
         |> list.sort(by: by_spawn)
       Ok(Checklist(
@@ -102,23 +103,49 @@ pub fn checklists(
   })
 }
 
-fn is_target(
+/// How to tell a unit that the checklist objective of this kind counts: a unit of its
+/// TargetGroup for types 14 and 18, the unit of its PathSoldierActivate row for types 27
+/// and 28. No test for an objective that is no checklist (`objective_kind.is_checklist`)
+/// or whose progress only the server sets (types 10 and 13).
+fn target_test(
   tables tables: table_store.Tables,
-  objective objective: quest_objective.QuestObjective,
-  unit unit: Unit,
-) -> Bool {
-  case objective.type_ {
-    28 ->
-      case
-        path_soldier_activate.get(
-          tables:,
-          id: PathSoldierActivateId(objective.data),
-        )
-      {
-        Ok(row) -> unit.creature_id == Creature2Id(row.creature2_id)
-        Error(Nil) -> False
-      }
-    _ -> target_group.contains(tables:, group: objective.data, unit:)
+  kind kind: Kind,
+) -> Result(fn(Unit) -> Bool, Nil) {
+  case kind {
+    ChecklistUse(target_group_id:) | ChecklistTalk(target_group_id:) ->
+      Ok(fn(unit) {
+        target_group.contains(tables:, group: target_group_id.value, unit:)
+      })
+    ChecklistActivate(path_soldier_activate_id:) -> {
+      use <- bool.guard(
+        when: !objective_kind.is_checklist(tables:, kind:),
+        return: Error(Nil),
+      )
+      use row <- result.map(path_soldier_activate.get(
+        tables:,
+        id: path_soldier_activate_id,
+      ))
+      fn(unit: Unit) { unit.creature_id == Creature2Id(row.creature2_id) }
+    }
+    Unconditional
+    | KillCreature(_)
+    | TalkTo(_)
+    | CollectItem(_)
+    | Scripted
+    | KillGroup(_)
+    | ServerChecklist
+    | CastSpell(_)
+    | UseCreature(_)
+    | KillByCluster(_)
+    | VisitZone(_)
+    | ReachPlace
+    | UseGroup(_)
+    | FinishQuest(_)
+    | Placeholder
+    | CollectVirtualItem(_)
+    | CraftItem(_)
+    | KillByDifficulty(_)
+    | Unread(_) -> Error(Nil)
   }
 }
 

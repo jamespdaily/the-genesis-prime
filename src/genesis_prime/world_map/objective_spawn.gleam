@@ -63,6 +63,12 @@
 
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/objective
+import genesis_prime/game/objective_kind.{
+  CastSpell, ChecklistActivate, ChecklistTalk, ChecklistUse, CollectItem,
+  CollectVirtualItem, CraftItem, FinishQuest, KillByCluster, KillByDifficulty,
+  KillCreature, KillGroup, Placeholder, ReachPlace, Scripted, ServerChecklist,
+  TalkTo, Unconditional, Unread, UseCreature, UseGroup, VisitZone,
+}
 import genesis_prime/game/objective_link
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest_log
@@ -139,10 +145,41 @@ pub type Why {
   NotStarted(creature_id: Int, unit_type: Int)
 }
 
-/// The objective types of a kill that names a creature or a group of them, with
-/// a marker: 2 names a Creature2 id, 8 and 16 a TargetGroup.
-fn is_placed_kind(objective objective: QuestObjective) -> Bool {
-  objective.type_ == 2 || objective.type_ == 8 || objective.type_ == 16
+/// What a kill objective that is placed names: a creature, or a TargetGroup of them.
+type Named {
+  OneCreature(creature_id: Int)
+  GroupOf(group_id: Int)
+}
+
+/// What the objective names when it is a kill of a creature (type 2, by its Creature2
+/// id) or of a group of them (types 8 and 16, by a TargetGroup), the kinds that are
+/// placed; no other kind is.
+fn placed_name(objective objective: QuestObjective) -> Result(Named, Nil) {
+  case objective_kind.of_row(objective) {
+    KillCreature(creature2_id:) ->
+      Ok(OneCreature(creature_id: creature2_id.value))
+    KillGroup(target_group_id:) -> Ok(GroupOf(group_id: target_group_id.value))
+    Unconditional
+    | TalkTo(_)
+    | CollectItem(_)
+    | Scripted
+    | ServerChecklist
+    | CastSpell(_)
+    | UseCreature(_)
+    | ChecklistUse(_)
+    | KillByCluster(_)
+    | VisitZone(_)
+    | ChecklistTalk(_)
+    | ReachPlace
+    | UseGroup(_)
+    | FinishQuest(_)
+    | ChecklistActivate(_)
+    | Placeholder
+    | CollectVirtualItem(_)
+    | CraftItem(_)
+    | KillByDifficulty(_)
+    | Unread(_) -> Error(Nil)
+  }
 }
 
 /// A marker of an objective: its row and the place its centre is.
@@ -180,11 +217,13 @@ pub fn place(
 ) -> Placed {
   let objectives =
     quest_objective.all(tables)
-    |> list.filter(fn(objective) { is_placed_kind(objective:) })
+    |> list.filter_map(fn(objective) {
+      result.map(placed_name(objective:), fn(named) { #(objective, named) })
+    })
   let worlds = set.from_list(list.map(stored, fn(row) { row.world_id }))
   let planned =
-    list.map(objectives, fn(objective) {
-      plan(tables:, worlds:, kinds:, objective:)
+    list.map(objectives, fn(pair) {
+      plan(tables:, worlds:, kinds:, objective: pair.0, named: pair.1)
     })
   let skipped =
     planned
@@ -455,14 +494,16 @@ fn plan(
   worlds worlds: Set(Int),
   kinds kinds: Kinds,
   objective objective: QuestObjective,
+  named named: Named,
 ) -> #(option.Option(Job), List(Skipped)) {
   let marker_ids = place_objective.marker_ids(objective:)
   case marker_ids {
     [] -> #(None, [])
     _ -> {
-      let creature_ids = case objective.type_ {
-        2 -> [objective.data]
-        _ -> target_group.listed_creatures(tables:, group: objective.data)
+      let creature_ids = case named {
+        OneCreature(creature_id:) -> [creature_id]
+        GroupOf(group_id:) ->
+          target_group.listed_creatures(tables:, group: group_id)
       }
       let no_group = case creature_ids {
         [] -> [Skipped(objective.id, NamesNoCreature(group_id: objective.data))]

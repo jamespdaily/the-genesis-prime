@@ -16,6 +16,12 @@
 ////   spell that no ability roots.
 
 import genesis_prime/game/activate
+import genesis_prime/game/objective_kind.{
+  CastSpell, ChecklistActivate, ChecklistTalk, ChecklistUse, CollectItem,
+  CollectVirtualItem, CraftItem, FinishQuest, KillByCluster, KillByDifficulty,
+  KillCreature, KillGroup, Placeholder, ReachPlace, Scripted, ServerChecklist,
+  TalkTo, Unconditional, Unread, UseCreature, UseGroup, VisitZone,
+}
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/table/id.{
   Spell4ConditionsId, Spell4Id, Spell4TargetMechanicsId, Spell4ValidTargetsId,
@@ -92,8 +98,33 @@ fn build(tables tables: table_store.Tables) -> Shortcuts {
   let sources = spell_plan.sources_of(tables:)
   let spell_ids =
     quest_objective.all(tables)
-    |> list.filter(fn(row) { row.type_ == cast_type && row.data != 0 })
-    |> list.map(fn(row) { row.data })
+    |> list.filter_map(fn(row) {
+      case objective_kind.of_row(row) {
+        CastSpell(spell4_id:) if spell4_id.value != 0 -> Ok(spell4_id.value)
+        CastSpell(_) -> Error(Nil)
+        Unconditional
+        | KillCreature(_)
+        | TalkTo(_)
+        | CollectItem(_)
+        | Scripted
+        | KillGroup(_)
+        | ServerChecklist
+        | UseCreature(_)
+        | ChecklistUse(_)
+        | KillByCluster(_)
+        | VisitZone(_)
+        | ChecklistTalk(_)
+        | ReachPlace
+        | UseGroup(_)
+        | FinishQuest(_)
+        | ChecklistActivate(_)
+        | Placeholder
+        | CollectVirtualItem(_)
+        | CraftItem(_)
+        | KillByDifficulty(_)
+        | Unread(_) -> Error(Nil)
+      }
+    })
     |> list.unique
   Shortcuts(
     spells: list.map(spell_ids, fn(spell4_id) {

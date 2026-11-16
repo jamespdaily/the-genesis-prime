@@ -15,6 +15,7 @@ import genesis_prime/coverage/sent_message
 import genesis_prime/coverage/starting_ability
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/effect_kind
+import genesis_prime/game/objective_kind
 import genesis_prime/game/prerequisite as game_prerequisite
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spend
@@ -175,6 +176,8 @@ fn quest_objectives() -> EngineDeclaration {
         list.map(quest_objective.all(tables), fn(row) { row.type_ })
       },
     ),
+    // The handled types are genesis_prime/game/objective_kind `is_counted`, the types a
+    // rule advances; the comment below names each rule.
     // Talk (type 3) and use (type 12) objectives count a talk to a creature or a use of
     // one, and kill objectives count a kill: type 2 by the creature, types 8 and 16 by a
     // TargetGroup (genesis_prime/game/objective). Types 15 and 46 need a unit's cluster
@@ -188,13 +191,12 @@ fn quest_objectives() -> EngineDeclaration {
     // bit of the objective's 32-bit mask, and the objective is done at its count of bits
     // (genesis_prime/game/objective; the index of each target is
     // genesis_prime/world_map/checklist_index). A finish (type 24) objective takes the
-    // completion of the quest its data names, now or earlier in its repeat period. Types
-    // 10 and 13 are not counted. A use of a unit of the TargetGroup of a type 23 objective
+    // completion of the quest its data names, now or earlier in its repeat period. A cast
+    // of the spell of a type 11 objective completes it (objective_test
+    // a_cast_of_the_objective_spell_completes_it_test). Types 10 and 13 are not counted. A use of a unit of the TargetGroup of a type 23 objective
     // counts one for each unit, once (the once is the server's choice), and a departures
     // choice objective counts only its own terminal (genesis_prime/game/objective).
-    handled: Listed(ids: [
-      2, 3, 4, 5, 8, 12, 14, 16, 17, 18, 22, 23, 24, 28, 32, 33,
-    ]),
+    handled: Decoded(is_read: objective_kind.is_counted),
     partial: [
       Missing(
         type_number: 22,

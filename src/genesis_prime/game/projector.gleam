@@ -41,6 +41,12 @@
 
 import genesis_prime/content/refusal
 import genesis_prime/game/activate.{type Link, OpenLink}
+import genesis_prime/game/objective_kind.{
+  CastSpell, ChecklistActivate, ChecklistTalk, ChecklistUse, CollectItem,
+  CollectVirtualItem, CraftItem, FinishQuest, KillByCluster, KillByDifficulty,
+  KillCreature, KillGroup, Placeholder, ReachPlace, Scripted, ServerChecklist,
+  TalkTo, Unconditional, Unread, UseCreature, UseGroup, VisitZone,
+}
 import genesis_prime/game/quest_log
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
@@ -65,12 +71,6 @@ pub const table = "projector_landing"
 
 /// The spell every projector casts when used (Spell4 87061, `Spell4Effects.87061`).
 const projector_spell = 87_061
-
-/// The QuestObjective type of a use of one creature (`QuestObjective.type.12`).
-const use_a_creature_type = 12
-
-/// The QuestObjective type of reaching a zone (`QuestObjective.type.17`).
-const reach_a_zone_type = 17
 
 /// One row of the projector_landing table as the load reads it.
 pub type Row {
@@ -218,39 +218,58 @@ fn objective_broken(
     ]
     Ok(objective) ->
       list.flatten([
-        case objective.type_ {
-          type_ if type_ == use_a_creature_type ->
-            case objective.data == row.creature_id {
+        case objective_kind.of_row(objective) {
+          UseCreature(creature2_id:) ->
+            case creature2_id.value == row.creature_id {
               True -> []
               False -> [
                 objective_text
                 <> " is a use of Creature2 "
-                <> int.to_string(objective.data)
+                <> int.to_string(creature2_id.value)
                 <> ", not of "
                 <> int.to_string(row.creature_id),
               ]
             }
-          type_ if type_ == reach_a_zone_type ->
+          VisitZone(world_zone_id: zone_id) ->
             case
               list.contains(
                 top_zone.chain_or_zone(tables:, world_zone_id:),
-                objective.data,
+                zone_id.value,
               )
             {
               True -> []
               False -> [
                 objective_text
                 <> " reaches zone "
-                <> int.to_string(objective.data)
+                <> int.to_string(zone_id.value)
                 <> ", which the landing's zone "
                 <> int.to_string(world_zone_id)
                 <> " is not in",
               ]
             }
-          type_ -> [
+          Unconditional
+          | KillCreature(_)
+          | TalkTo(_)
+          | CollectItem(_)
+          | Scripted
+          | KillGroup(_)
+          | ServerChecklist
+          | CastSpell(_)
+          | ChecklistUse(_)
+          | KillByCluster(_)
+          | ChecklistTalk(_)
+          | ReachPlace
+          | UseGroup(_)
+          | FinishQuest(_)
+          | ChecklistActivate(_)
+          | Placeholder
+          | CollectVirtualItem(_)
+          | CraftItem(_)
+          | KillByDifficulty(_)
+          | Unread(_) -> [
             objective_text
             <> " is of type "
-            <> int.to_string(type_)
+            <> int.to_string(objective.type_)
             <> ", neither a use of a creature (12) nor reaching a zone (17)",
           ]
         },

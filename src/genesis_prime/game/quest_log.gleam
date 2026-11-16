@@ -51,6 +51,12 @@
 ////   time the client was last told (0x140489aa0).
 
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/objective_kind.{
+  CastSpell, ChecklistActivate, ChecklistTalk, ChecklistUse, CollectItem,
+  CollectVirtualItem, CraftItem, FinishQuest, KillByCluster, KillByDifficulty,
+  KillCreature, KillGroup, Placeholder, ReachPlace, Scripted, ServerChecklist,
+  TalkTo, Unconditional, Unread, UseCreature, UseGroup, VisitZone,
+}
 import genesis_prime/message/float32
 import genesis_prime/message/quest_active.{type QuestActive, QuestActive}
 import genesis_prime/message/quest_completed.{
@@ -63,9 +69,8 @@ import genesis_prime/message/quest_periodic_reset.{QuestPeriodicReset}
 import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/step.{type Now}
 import genesis_prime/store.{type QuestRow, ActiveQuest, QuestRow}
-import genesis_prime/table/id.{PathSoldierActivateId, Quest2Id, QuestObjectiveId}
+import genesis_prime/table/id.{Quest2Id, QuestObjectiveId}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/table/path_soldier_activate
 import genesis_prime/table/quest2.{type Quest2}
 import genesis_prime/table/quest_objective
 import genesis_prime/world_map/game_number.{type GameNumbers}
@@ -263,7 +268,7 @@ fn is_placeholder(
   tables tables: table_store.Tables,
 ) -> Bool {
   case quest_objective.get(tables:, id: QuestObjectiveId(objective)) {
-    Ok(row) -> row.type_ == placeholder_type
+    Ok(row) -> objective_kind.of_row(row) == Placeholder
     Error(Nil) -> False
   }
 }
@@ -920,7 +925,10 @@ fn objective_of(
     count: row.count,
     data: row.data,
     reward_pane: row.target_group_id_reward_pane,
-    checklist: is_checklist(tables:, objective: row),
+    checklist: objective_kind.is_checklist(
+      tables:,
+      kind: objective_kind.of_row(row),
+    ),
     time_limit_ms: row.max_time_allowed_ms,
     marked: list.any(
       [
@@ -953,31 +961,6 @@ fn as_logged(log log: QuestLog, quest quest: Quest) -> Quest {
       }
     }
     Ok(Active(..)) | Ok(Completed(..)) | Ok(Known(..)) | Error(Nil) -> quest
-  }
-}
-
-/// Whether an objective counts its progress as bits (`0x1405517a0`): types 10, 13, 14
-/// and 18, and types 27 and 28 whose PathSoldierActivate row (named by the objective's
-/// data) has soldierActivateModeEnum 1 or 2; no such row means not a checklist.
-pub fn is_checklist(
-  tables tables: table_store.Tables,
-  objective objective: quest_objective.QuestObjective,
-) -> Bool {
-  case objective.type_ {
-    10 | 13 | 14 | 18 -> True
-    27 | 28 ->
-      case
-        path_soldier_activate.get(
-          tables:,
-          id: PathSoldierActivateId(objective.data),
-        )
-      {
-        Ok(row) ->
-          row.soldier_activate_mode_enum == 1
-          || row.soldier_activate_mode_enum == 2
-        Error(Nil) -> False
-      }
-    _ -> False
   }
 }
 
@@ -1639,9 +1622,33 @@ pub fn reused_unit_objectives(
 ) -> Set(Int) {
   quest_objective.all(tables)
   |> list.filter(fn(row) {
-    row.type_ == use_a_creature_type
-    && row.count > 1
-    && result.unwrap(dict.get(spawn_counts, row.data), 0) < row.count
+    case objective_kind.of_row(row) {
+      UseCreature(creature2_id:) ->
+        row.count > 1
+        && result.unwrap(dict.get(spawn_counts, creature2_id.value), 0)
+        < row.count
+      Unconditional
+      | KillCreature(_)
+      | TalkTo(_)
+      | CollectItem(_)
+      | Scripted
+      | KillGroup(_)
+      | ServerChecklist
+      | CastSpell(_)
+      | ChecklistUse(_)
+      | KillByCluster(_)
+      | VisitZone(_)
+      | ChecklistTalk(_)
+      | ReachPlace
+      | UseGroup(_)
+      | FinishQuest(_)
+      | ChecklistActivate(_)
+      | Placeholder
+      | CollectVirtualItem(_)
+      | CraftItem(_)
+      | KillByDifficulty(_)
+      | Unread(_) -> False
+    }
   })
   |> list.map(fn(row) { row.id })
   |> set.from_list
