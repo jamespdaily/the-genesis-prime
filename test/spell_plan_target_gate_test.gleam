@@ -118,7 +118,7 @@ pub fn target_gate_reading_struck_state_is_refused_past_the_caster_test() -> Nil
       prerequisite_type: 15,
     )
   let text = spell_plan.describe(error:)
-  assert string.contains(text, "15") && string.contains(text, "#817")
+  assert string.contains(text, "15") && string.contains(text, "#569")
     as "the refusal names the type and the issue that will read it"
   let assert Ok(on_the_caster) = plan_of(spell4_id: 30_458)
     as "a row aimed only at the caster reads the caster's own state, so the same type plans"
@@ -272,4 +272,177 @@ pub fn gain_on_the_caster_behind_a_target_gate_reads_with_its_gate_test() -> Nil
   let assert GatedOnTarget(prerequisite:) = gain.condition
     as "the gain keeps its target apply prerequisite as its gate"
   assert prerequisite.id(prerequisite) == PrerequisiteId(390)
+}
+
+/// Kept edit: a Prerequisite made one condition of type 28, whether the unit is in combat
+/// (comparison 1), which reads the state the unit it is tested on holds itself
+/// (`prerequisite.checked_by_creature`).
+const in_combat_gate = [
+  #("prerequisiteTypeId0", planted_table.Integer(28)),
+  #("prerequisiteComparisonId0", planted_table.Integer(1)),
+  #("objectId0", planted_table.Integer(0)),
+  #("value0", planted_table.Integer(0)),
+]
+
+/// The condition of the remove row of this id in the spell.
+fn remove_condition(spell spell: Spell, effect_id effect_id: Int) -> Condition {
+  let assert Ok(row) =
+    list.find(spell.removes, fn(row) {
+      row.effect_id == Spell4EffectsId(effect_id)
+    })
+    as "the plan lists the row among the spell's removes"
+  row.condition
+}
+
+pub fn remove_past_the_caster_behind_a_creature_state_gate_is_left_to_the_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kept edit: Prerequisite 13148, the gate of Ruin's remove 144869 (aimed at the area, so
+  // past the caster), made the type 28 condition above.
+  use tables <- fixture_tables.changed(
+    table: "Prerequisite",
+    id: 13_148,
+    with: in_combat_gate,
+  )
+  let assert Ok(spell) = plan_in(tables:, spell4_id: 38_841)
+    as "a remove past the caster behind a gate that reads the unit's own state plans"
+  assert remove_condition(spell:, effect_id: 144_869) == spell_plan.Always
+    as "the cast rule checks no gate of the row: the creature the strike names does"
+  let assert Ok(row) = spell4_effects.get(tables:, id: Spell4EffectsId(144_869))
+    as "the client's rows hold Ruin's remove"
+  let assert [gate] = spell.struck_gates
+    as "the spell tells its one gated row's gate to the creatures its strike reaches"
+  assert gate.effect_id == Spell4EffectsId(144_869)
+  assert prerequisite.id(gate.prerequisite) == PrerequisiteId(13_148)
+    as "Spell4Effects.144869: prerequisiteIdTargetApply 13148"
+  assert gate.aim == spell_plan.AimsAtArea
+    as "Spell4Effects.144869: targetFlags 4, the area"
+  assert gate.phase_flags == row.phase_flags
+  assert gate.tag == spell_plan.tag_of(effect: row)
+}
+
+pub fn gate_mixing_creature_state_with_cast_state_stays_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kept edit: Prerequisite 13148 made two conditions, type 15 (comparison 1), which reads
+  // the casts held on the unit, and type 28 (comparison 1). The creature checks no row that
+  // reads the casts held on it until they are its own (#569).
+  use tables <- fixture_tables.changed(table: "Prerequisite", id: 13_148, with: [
+    #("prerequisiteTypeId0", planted_table.Integer(15)),
+    #("prerequisiteComparisonId0", planted_table.Integer(1)),
+    #("objectId0", planted_table.Integer(0)),
+    #("value0", planted_table.Integer(0)),
+    #("prerequisiteTypeId1", planted_table.Integer(28)),
+    #("prerequisiteComparisonId1", planted_table.Integer(1)),
+    #("objectId1", planted_table.Integer(0)),
+    #("value1", planted_table.Integer(0)),
+  ])
+  assert plan_in(tables:, spell4_id: 38_841)
+    == Error(spell_plan.TargetPrerequisiteReadsStruckUnit(
+      spell4_id: 38_841,
+      effect_id: 144_869,
+      prerequisite_type: 15,
+    ))
+    as "a remove behind a gate the creature cannot check whole stays refused, naming the cast-reading type"
+}
+
+pub fn row_aimed_at_the_caster_keeps_a_creature_state_gate_with_the_caster_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kept edit: Prerequisite 15912, the gate of row 55576 (Spell4 30458, aimed at the
+  // caster), made the type 28 condition above.
+  use tables <- fixture_tables.changed(
+    table: "Prerequisite",
+    id: 15_912,
+    with: in_combat_gate,
+  )
+  let assert Ok(spell) = plan_in(tables:, spell4_id: 30_458)
+    as "a row aimed at the caster behind a gate on the unit's own state plans"
+  let assert GatedOnTarget(prerequisite:) =
+    lasting_condition(spell:, effect_id: 55_576)
+    as "the cast rule checks the gate against the caster, whose state it holds"
+  assert prerequisite.id(prerequisite) == PrerequisiteId(15_912)
+  assert spell.struck_gates == []
+    as "no creature is asked about a row that reaches only the caster"
+}
+
+pub fn remove_aimed_at_the_caster_and_past_it_behind_a_creature_state_gate_stays_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kept edit: Prerequisite 13148 made the type 28 condition above, and remove 144869
+  // aimed by targetFlags 3, the caster and the primary target. One condition covers both
+  // units, and the caster cannot check the unit past it.
+  use tables <- fixture_tables.changed(
+    table: "Prerequisite",
+    id: 13_148,
+    with: in_combat_gate,
+  )
+  let assert Ok(row) = spell4_effects.get(tables:, id: Spell4EffectsId(144_869))
+    as "the client's rows hold Ruin's remove"
+  assert spell_plan.read_row(
+      tables:,
+      spell_groups: spell_plan.spell_groups(tables:),
+      place: spell_tables.pressed,
+      effect: spell4_effects.Spell4Effects(..row, target_flags: 3),
+    )
+    == Error(spell_plan.TargetPrerequisiteReadsStruckUnit(
+      spell4_id: 38_841,
+      effect_id: 144_869,
+      prerequisite_type: 28,
+    ))
+}
+
+pub fn remove_on_the_primary_target_of_a_press_behind_a_creature_state_gate_stays_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kept edit: Prerequisite 13148 made the type 28 condition above, and remove 144869
+  // aimed by targetFlags 2, the primary target. A press has the caster itself as its
+  // primary target, which no strike names; a child cast on a struck unit has that unit.
+  use tables <- fixture_tables.changed(
+    table: "Prerequisite",
+    id: 13_148,
+    with: in_combat_gate,
+  )
+  let assert Ok(row) = spell4_effects.get(tables:, id: Spell4EffectsId(144_869))
+    as "the client's rows hold Ruin's remove"
+  let on_the_primary_target =
+    spell4_effects.Spell4Effects(..row, target_flags: 2)
+  assert spell_plan.read_row(
+      tables:,
+      spell_groups: spell_plan.spell_groups(tables:),
+      place: spell_tables.pressed,
+      effect: on_the_primary_target,
+    )
+    == Error(spell_plan.TargetPrerequisiteReadsStruckUnit(
+      spell4_id: 38_841,
+      effect_id: 144_869,
+      prerequisite_type: 28,
+    ))
+    as "in a press the row would be checked on no unit, so the load refuses it"
+  let assert Ok(spell_plan.Applied(spell_plan.PlannedRemove(remove:))) =
+    spell_plan.read_row(
+      tables:,
+      spell_groups: spell_plan.spell_groups(tables:),
+      place: spell_tables.started_on_each_struck(
+        spell4_id: 1,
+        proxy_effect_id: 2,
+      ),
+      effect: on_the_primary_target,
+    )
+    as "in a child started on a struck unit the primary target is that creature"
+  assert remove.condition == spell_plan.Always
+}
+
+pub fn gate_with_a_creature2_condition_is_checked_by_the_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 27656 (`table_rows -- Spell4Effects spellId=27656`): its crowd control row 49004
+  // (effectType 4, targetFlags 4, phaseFlags 1) has target apply 6780 = type 4, comparison 1,
+  // value 171, and type 38, comparison 2, value 18721. The creature holds its faction and its
+  // Creature2 row, so it checks the whole gate.
+  let assert Ok(spell) = plan_of(spell4_id: 27_656)
+    as "a spell whose row is gated on a faction and a Creature2 row plans"
+  let assert Ok(gate) =
+    list.find(spell.struck_gates, fn(gate) {
+      gate.effect_id == Spell4EffectsId(49_004)
+    })
+    as "the strike carries the gate of row 49004 to the creatures it reaches"
+  assert prerequisite.id(gate.prerequisite) == PrerequisiteId(6780)
+    as "Spell4Effects.49004: prerequisiteIdTargetApply 6780"
+  assert gate.aim == spell_plan.AimsAtArea
+    as "Spell4Effects.49004: targetFlags 4, the area"
 }

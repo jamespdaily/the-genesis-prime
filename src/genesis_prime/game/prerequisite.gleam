@@ -57,8 +57,10 @@
 ////   in [0, 1) as the client makes it (`Prerequisite.prerequisiteTypeId.37`).
 //// - **Type 71** compares the vital the objectId names, as a percentage of its
 ////   maximum, with the value, in 32-bit floats; a zero maximum with nothing held
-////   is not a number, which counts as equal and fails every other comparison
-////   (`Prerequisite.prerequisiteTypeId.71`, `0x1404a4e30`).
+////   is not a number, which counts as equal and fails every other comparison, and
+////   a zero maximum with something held is infinite, which passes comparisons 2, 3
+////   and 4 only; a maximum below zero (Interrupt Armor's -1.0) gives a negative
+////   percent (`Prerequisite.prerequisiteTypeId.71`, `0x1404a4e30`).
 //// - **Type 73** compares the vital the objectId names, cut to a whole number
 ////   toward zero, with the value (`Prerequisite.prerequisiteTypeId.73`).
 //// - **Type 116** passes, by comparison 1, when the unit is stealthed and by comparison
@@ -69,8 +71,8 @@
 ////   value and by comparison 2 when it does not; any other comparison fails, a unit
 ////   with no faction counts as faction 0 and its objectId is not read. **Type 250**
 ////   is the same on the unit's base faction (`Prerequisite.prerequisiteTypeId.4`,
-////   `.250`, `0x14049c620`, `0x14049c6a0`). Only a player's side holds its factions,
-////   so a subject with none gives `NotRead`.
+////   `.250`, `0x14049c620`, `0x14049c6a0`). A player's side and a creature's side
+////   (`of_creature`) hold factions, so a subject with none gives `NotRead`.
 //// - **Type 10** passes, by comparison 1, when the player's gender equals the value
 ////   and by comparison 2 when it does not; any other comparison fails, and its
 ////   objectId is not read. The gender is the one the unit-create message 0x262
@@ -99,9 +101,14 @@
 ////   unit is read from the subject's `first_unit`: a player is `TheChecker` or
 ////   `OtherPlayer`, a creature `NonPlayer`, and a unit the check cannot name
 ////   (`UnknownUnit`) gives `NotRead`.
-//// - **A subject known by its place alone** (`Seen`) holds the player's facts but
+//// - **A subject known by its place alone** (`Seen`, `of_struck`) holds the player's facts but
 ////   not the first unit's, so types 1 and 3, which read that unit, give `NotRead` for
-////   it; a subject that holds no player gives `NotRead` for all of these types.
+////   it; a subject that holds no player gives `NotRead` for all of these types. A
+////   creature's own subject (`of_creature`) holds the whole unit: its level (type 1),
+////   its class, which is always 23 (type 3: no Class row has that id, so comparison 1
+////   fails for every Class id and comparison 2 passes), its factions (4 and 250), its
+////   combat state (28), its health, shield, breath and Interrupt Armor (71 and 73), its
+////   difficulty (179) and its Creature2 row (38).
 //// - **Type 243** always fails: the client's check reads nothing from the unit
 ////   (`Prerequisite.prerequisiteTypeId.243`, `0x140001ba0`).
 //// - **Type 47** never passes on the client, whatever the comparison (its slot is the same
@@ -196,8 +203,11 @@
 //// - **The units:** a check's first unit is its subject. A caster-side check has the
 ////   caster for both units (`Spell4Effects.prerequisiteIdTargetApply` gives the target
 ////   first and the caster second for a target-side one): the subject's `second_unit` and
-////   `positions`. A struck creature is known by its place alone (`of_struck`), so every
-////   condition that reads what else it holds is `NotRead`.
+////   `positions`. A struck unit the caster only sees is known by its place alone
+////   (`of_struck`), so every condition that reads what else it holds is `NotRead`; a struck
+////   creature that checks its own gate holds its own facts and the caster as its second
+////   unit (`of_creature`), and only types 15, 59 and 129, which read every caster's casts
+////   on it, stay unread (`struck_unread_types`, issue 569).
 
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/lasting
@@ -720,6 +730,87 @@ pub fn of_target(
     seen: WholeUnit,
     checker: Some(checker),
     first_unit: NonPlayer(creature2_id: creature_id),
+  )
+}
+
+/// What a creature holds of its own and of the strike it checks a gate of (genesis_prime/game/strike_tell
+/// `Gate`), for the subject `of_creature` makes.
+pub type CreatureFacts {
+  CreatureFacts(
+    /// The creature as the client's player record reads it for types 1, 3 and 39: its level,
+    /// and class 23, the class a creature has there.
+    player: Player,
+    /// Its two factions.
+    factions: Factions,
+    /// Whether it fights.
+    in_combat: Bool,
+    /// Its health, Vital 1: its health and its maximum health (property 7).
+    health: Vital,
+    /// Its shield capacity maximum (property 41). Its shield, Vital 3, is always 0: the server
+    /// sends it no stat 20.
+    shield_maximum: Float,
+    /// Its Interrupt Armor, Vital 20: the current armor and its maximum (property 44, -1.0 for
+    /// infinite armor, `Vital.20.unit`).
+    armor: Vital,
+    /// Its Creature2Difficulty, type 179.
+    difficulty: Int,
+    /// Its Creature2 row, type 38.
+    creature_id: Int,
+    /// What the strike's caster's casts hold on it.
+    under: List(lasting.Held),
+    /// The strike's caster, the check's second unit.
+    caster_unit: Int,
+    /// The creature's pose and the caster's, for type 108; the caster's is `None` when it
+    /// is not held.
+    creature: Pose,
+    caster: Option(Pose),
+  )
+}
+
+/// The class a creature's unit holds: the value every unit starts with, which no message
+/// sets for a creature and no Class row has as its id, so a type 3 condition on a creature
+/// fails with comparison 1 and passes with comparison 2
+/// (`Prerequisite.prerequisiteTypeId.3.creature`).
+pub const creature_class_id = 23
+
+/// The breath maximum of every unit, GameFormula 55's dataint0 (`UnitBreathMax`): a creature's
+/// 0x262 sends no stat 19, so its breath, Vital 2, starts at it
+/// (`opcode.0x262.absent_stats`).
+const breath_maximum = 100.0
+
+/// The subject of a creature that checks a gate of a strike it was told: the creature first,
+/// with `facts`, and the caster second. The creature's vitals are its health (1) and Interrupt
+/// Armor (20) from `facts`, a shield (3) of 0 and a breath (2) at the breath maximum, which
+/// are the values its unit holds when its 0x262 sends no stat 20 or 19
+/// (`opcode.0x262.absent_stats`). The caster's own facts are not in it: a gate that reads
+/// them is not a creature gate and stays on the caster's side
+/// (genesis_prime/game/spell_plan `struck_gates_in_phase`).
+pub fn of_creature(facts facts: CreatureFacts) -> Subject {
+  Subject(
+    under: facts.under,
+    second_unit: Some(facts.caster_unit),
+    in_combat: facts.in_combat,
+    vitals: dict.from_list([
+      #(1, facts.health),
+      #(2, Vital(current: breath_maximum, maximum: breath_maximum)),
+      #(3, Vital(current: 0.0, maximum: facts.shield_maximum)),
+      #(20, facts.armor),
+    ]),
+    difficulty: Some(facts.difficulty),
+    stealthed: None,
+    resource_slots: None,
+    rolls: [],
+    positions: case facts.caster {
+      Some(caster) -> Placed(first: facts.creature, second: caster)
+      None -> NotPlaced
+    },
+    factions: Some(facts.factions),
+    player: Some(facts.player),
+    quests: None,
+    creature_index: None,
+    seen: WholeUnit,
+    checker: None,
+    first_unit: NonPlayer(creature2_id: facts.creature_id),
   )
 }
 
@@ -1410,57 +1501,21 @@ pub fn press_unread_types(
 }
 
 /// The PrerequisiteTypes, in the prerequisite and the rows it nests, that a unit the
-/// caster struck cannot be checked against, each once: the types its subject, known by its
-/// place alone (`Seen`), reads as `NotRead`, and the factions and difficulty it holds none of.
+/// caster struck cannot be checked against, each once: 15, 59 and 129, which read every
+/// caster's casts on the unit, so only the unit's owner can hold them (the creature holds
+/// none until issue 569 moves the casts into it). Every other type is one of the
+/// creature's own facts (`of_creature`) or the caster's, and is read.
 pub fn struck_unread_types(
   prerequisite prerequisite: Prerequisite,
 ) -> List(Int) {
-  list.flat_map(prerequisite.conditions, fn(condition) {
-    case condition {
-      Nested(row: Some(nested), ..) -> struck_unread_types(prerequisite: nested)
-      Difficulty(..) -> [179]
-      CurrentFaction(..) -> [4]
-      BaseFaction(..) -> [250]
-      TargetOfLiveCast(..)
-      | UnderCastBy(..)
-      | StackCount(..)
-      | InCombat(..)
-      | VitalPercent(..)
-      | VitalCurrent(..)
-      | UnderGroup(..)
-      | UnitLevel(..)
-      | UnitClass(..) -> option.values([reads_held_state(condition:)])
-      Nested(row: None, ..)
-      | Roll(..)
-      | ResourceSlot(..)
-      | Stealthed(..)
-      | PlayerRace(..)
-      | InZone(..)
-      | IsPlayer(..)
-      | PlayerPath(..)
-      | Gender(..)
-      | InWorld(..)
-      | QuestState(..)
-      | ObjectiveDone(..)
-      | ObjectiveOpen(..)
-      | TargetCounted(..)
-      | ObjectiveProgress(..)
-      | NeverMet
-      | ServerGated
-      | IsCreature(..)
-      | SpellKnown(..)
-      | ItemHeld(..)
-      | WorldDifficulty(..)
-      | ObjectiveStatus(..)
-      | CarriesCasterGroup(..)
-      | InArc(..)
-      | ChallengeFlag(..)
-      | NoCase
-      | Unread(..) -> []
-    }
-  })
-  |> list.unique
+  list.filter(unread_on_a_struck_unit(prerequisite:), list.contains(
+    casts_held_types,
+    _,
+  ))
 }
+
+/// The PrerequisiteTypes that read every caster's casts on a unit: 15, 59 and 129.
+pub const casts_held_types = [15, 59, 129]
 
 /// The PrerequisiteTypes of the conditions the client decides and the server does
 /// not read, in the prerequisite and the rows it nests, each once.
@@ -1510,6 +1565,109 @@ pub fn unread_types(prerequisite prerequisite: Prerequisite) -> List(Int) {
     }
   })
   |> list.unique
+}
+
+/// The PrerequisiteTypes, in the prerequisite and the rows it nests, that the caster's own
+/// check cannot read of a unit it struck, each once: the types its subject, known by its
+/// place alone (`of_struck`), gives `NotRead`, and the factions and difficulty it holds none
+/// of. A row whose gate the creature does not check (`checked_by_creature`) and that reads one
+/// of them cannot be applied, since the caster is the only one left to check it.
+pub fn unread_on_a_struck_unit(
+  prerequisite prerequisite: Prerequisite,
+) -> List(Int) {
+  list.flat_map(prerequisite.conditions, fn(condition) {
+    case reading_of(condition:) {
+      OwnState(prerequisite_type:) | CastsHeld(prerequisite_type:) -> [
+        prerequisite_type,
+      ]
+      NestedRow(row:) -> unread_on_a_struck_unit(prerequisite: row)
+      WhoItIs | ReadElsewhere -> []
+    }
+  })
+  |> list.unique
+}
+
+/// What a condition reads of the unit a gate is tested on: the state the unit holds itself,
+/// the casts held on it, who it is, a row it nests, or something else.
+type Reading {
+  /// The unit's level (1), class (3), factions (4 and 250), fight state (28), vitals (71 and
+  /// 73) or difficulty (179).
+  OwnState(prerequisite_type: Int)
+  /// The casts held on the unit (15, 59 and 129).
+  CastsHeld(prerequisite_type: Int)
+  /// Whether the unit is a player (39) or which Creature2 row it is (38): known from its place
+  /// alone, and held by a creature.
+  WhoItIs
+  /// A row the condition nests.
+  NestedRow(row: Prerequisite)
+  /// A roll, the second unit's casts, the player's own facts, or a condition the server
+  /// does not read: nothing the unit holds.
+  ReadElsewhere
+}
+
+fn reading_of(condition condition: Condition) -> Reading {
+  case condition {
+    Nested(row: Some(nested), ..) -> NestedRow(row: nested)
+    Difficulty(..) -> OwnState(prerequisite_type: 179)
+    CurrentFaction(..) -> OwnState(prerequisite_type: 4)
+    BaseFaction(..) -> OwnState(prerequisite_type: 250)
+    InCombat(..) -> OwnState(prerequisite_type: 28)
+    VitalPercent(..) -> OwnState(prerequisite_type: 71)
+    VitalCurrent(..) -> OwnState(prerequisite_type: 73)
+    UnitLevel(..) -> OwnState(prerequisite_type: 1)
+    UnitClass(..) -> OwnState(prerequisite_type: 3)
+    TargetOfLiveCast(..) -> CastsHeld(prerequisite_type: 15)
+    StackCount(..) -> CastsHeld(prerequisite_type: 59)
+    UnderGroup(..) -> CastsHeld(prerequisite_type: 129)
+    IsCreature(..) | IsPlayer(..) -> WhoItIs
+    Nested(row: None, ..)
+    | UnderCastBy(..)
+    | Roll(..)
+    | ResourceSlot(..)
+    | Stealthed(..)
+    | PlayerRace(..)
+    | InZone(..)
+    | PlayerPath(..)
+    | Gender(..)
+    | InWorld(..)
+    | QuestState(..)
+    | ObjectiveDone(..)
+    | ObjectiveOpen(..)
+    | TargetCounted(..)
+    | ObjectiveProgress(..)
+    | NeverMet
+    | ServerGated
+    | SpellKnown(..)
+    | ItemHeld(..)
+    | WorldDifficulty(..)
+    | ObjectiveStatus(..)
+    | CarriesCasterGroup(..)
+    | InArc(..)
+    | ChallengeFlag(..)
+    | NoCase
+    | Unread(..) -> ReadElsewhere
+  }
+}
+
+/// Whether the creature a gate is tested on can check all of it from the state it holds
+/// itself: every condition, and every condition of a row it nests, reads only that state or
+/// who the creature is (38 and 39), and at least one reads the state; a gate of who the unit
+/// is alone stays with the caster, which knows that from its place. A condition that reads the
+/// casts held on the unit (15, 59, 129), draws a roll (37) or reads anything else is left to
+/// the caster's check.
+pub fn checked_by_creature(prerequisite prerequisite: Prerequisite) -> Bool {
+  let readings =
+    list.map(prerequisite.conditions, fn(condition) { reading_of(condition:) })
+  list.all(readings, held_by_the_unit)
+  && list.any(readings, fn(reading) { reading != WhoItIs })
+}
+
+fn held_by_the_unit(reading reading: Reading) -> Bool {
+  case reading {
+    OwnState(..) | WhoItIs -> True
+    NestedRow(row:) -> checked_by_creature(prerequisite: row)
+    CastsHeld(..) | ReadElsewhere -> False
+  }
 }
 
 /// The bytes of one roll: 4, a draw r of a multiple of 2^-32 in [0, 1).
@@ -2230,8 +2388,9 @@ fn verdict_of(holds: Bool) -> Verdict {
 /// Type 71's comparison: the vital's percentage of its maximum against the value
 /// made a 32-bit float, in 32-bit floats as the client computes it
 /// (`0x1404a4e30`). Nothing held of nothing is not a number, which counts as equal
-/// and fails every other comparison; something held of nothing is beyond every
-/// value.
+/// and fails every other comparison; something held of nothing is positive infinity,
+/// beyond every value. Gleam's `/.` gives 0.0 for a zero divisor, so both cases are
+/// decided here and never by the division.
 fn percent_compares(
   relation relation: Relation,
   vital vital: Vital,
@@ -2262,5 +2421,11 @@ fn floats_compare(
   measured measured: Float,
   value value: Float,
 ) -> Bool {
+  // ucomiss takes -0.0 as equal to 0.0 (`0x1404a2010`), which Gleam's `==` on the BEAM does
+  // not, and a 0 current over a negative maximum is -0.0.
+  let measured = case measured <. 0.0 || measured >. 0.0 {
+    True -> measured
+    False -> 0.0
+  }
   holds(relation:, ordering: float.compare(measured, value))
 }

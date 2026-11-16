@@ -794,6 +794,15 @@ pub fn live_casts(state state: State) -> List(Int) {
   }
 }
 
+/// Whether the creature is in combat, as its combat flag (0x89a) tells its viewers: True
+/// while Fighting, False at rest and on the way home.
+pub fn in_combat(state state: State) -> Bool {
+  case state.status {
+    Fighting(..) -> True
+    Resting | Returning(..) -> False
+  }
+}
+
 /// The connections on the threat list: none unless Fighting.
 pub fn threatened(state state: State) -> Set(ConnectionId) {
   case state.status {
@@ -1384,6 +1393,7 @@ fn strikes(
             striker: CreatureStriker,
             offence: fighter.attack.offence,
             controls: [],
+            gates: [],
           ),
         ),
       ),
@@ -1492,7 +1502,7 @@ fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
     }
     strike_tell.Immune(..) ->
       panic as "a player is never guarded: only a creature answers Immune"
-    strike_tell.Deflected -> #([cast.Deflected(unit_id:)], False, False)
+    strike_tell.Deflected(..) -> #([cast.Deflected(unit_id:)], False, False)
     strike_tell.Refused(why: strike_tell.Dead) -> #([], True, True)
     strike_tell.Refused(why: strike_tell.Returning) -> #([], True, False)
   }
@@ -1648,6 +1658,7 @@ fn charge_ended(
                   striker: CreatureStriker,
                   offence: fighter.attack.offence,
                   controls: [],
+                  gates: [],
                 ),
               ),
             )

@@ -65,6 +65,7 @@ fn strike_for(
       strikethrough: 0.0,
     ),
     controls:,
+    gates: [],
   )
 }
 

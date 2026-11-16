@@ -5749,7 +5749,13 @@ fn lifted_gains(proxy proxy: Proxy) -> List(spell_plan.Gain) {
 /// unit id (`prerequisite.FirstUnit`), which a type 38 condition of that gate reads; a unit
 /// with none is unknown to the check. `rolls` are the
 /// rolls the go's type 37 conditions take (`rolls_needed`), in the order the conditions
-/// are checked.
+/// are checked. `gates_passed` are the effect ids of the gates each struck unit passed, by unit
+/// id (genesis_prime/game/strike `Went`): a go row with a gate on the struck creature
+/// (`spell_plan.StruckGate`) starts and is listed on a unit only when that unit's entry lists the
+/// row, whichever part of the row's aim names the unit, the primary target included, and
+/// whatever the round's outcome for it: a unit that deflected still has its entry, and a unit
+/// that refused or never answered has none, so a gated row applies on it never. A row with no
+/// gate is unaffected.
 pub fn went(
   cast cast: State,
   caster caster: Caster,
@@ -5758,6 +5764,7 @@ pub fn went(
   phase phase: Int,
   spell asked_spell: Result(Spell, Nil),
   struck struck: List(Struck),
+  gates_passed gates_passed: Dict(Int, List(Int)),
   poses poses: Dict(Int, area.Pose),
   indexes indexes: Dict(Int, Int),
   units units: Dict(Int, prerequisite.FirstUnit),
@@ -5778,6 +5785,7 @@ pub fn went(
       cast_id:,
       phase:,
       struck:,
+      gates_passed:,
       poses:,
       indexes:,
       units:,
@@ -5822,6 +5830,7 @@ fn asked(
               cast_id:,
               phase:,
               struck: [],
+              gates_passed: dict.new(),
               poses: dict.new(),
               indexes: dict.new(),
               units: dict.new(),
@@ -8027,6 +8036,7 @@ fn go(
   cast_id cast_id: Int,
   phase phase: Int,
   struck struck: List(Struck),
+  gates_passed gates_passed: Dict(Int, List(Int)),
   poses poses: Dict(Int, area.Pose),
   indexes indexes: Dict(Int, Int),
   units units: Dict(Int, prerequisite.FirstUnit),
@@ -8090,6 +8100,7 @@ fn go(
           caster:,
           live:,
           struck:,
+          gates_passed:,
           phase:,
           restricting:,
           target_verdict: target_verdict_on(
@@ -9128,11 +9139,80 @@ fn reaching(
   #(list.reverse(reached), list.reverse(logs), rolls)
 }
 
+/// The entries of rows whose gate on the struck creature the unit passed: a row with no
+/// gate (`Spell.struck_gates`) reaches every unit its aim names, and one with a gate
+/// reaches a unit only when that unit's answer lists the row's effect id. The gate is the
+/// struck creatures' alone, so the entry of a row aimed at the caster as well as past it
+/// that stands on the caster passes it (its caster prerequisite is read by `reaching`).
+fn passing_struck_gates(
+  entries entries: List(#(row, Int)),
+  effect_id effect_id: fn(row) -> Spell4EffectsId,
+  spell spell: Spell,
+  caster_unit_id caster_unit_id: Int,
+  gates_passed gates_passed: Dict(Int, List(Int)),
+) -> List(#(row, Int)) {
+  list.filter(entries, fn(entry) {
+    entry.1 == caster_unit_id
+    || gate_passed(
+      effect_id: effect_id(entry.0),
+      unit_id: entry.1,
+      spell:,
+      gates_passed:,
+    )
+  })
+}
+
+/// Whether the row `effect_id` stands on `unit_id`: it has no gate on the struck creature,
+/// or the unit's answer lists it as passed.
+fn gate_passed(
+  effect_id effect_id: Spell4EffectsId,
+  unit_id unit_id: Int,
+  spell spell: Spell,
+  gates_passed gates_passed: Dict(Int, List(Int)),
+) -> Bool {
+  use <- bool.guard(
+    when: !list.any(spell.struck_gates, fn(gate) { gate.effect_id == effect_id }),
+    return: True,
+  )
+  dict.get(gates_passed, unit_id)
+  |> result.unwrap([])
+  |> list.contains(effect_id.value)
+}
+
+/// The units the round hit or found immune, less the periodic rows that have a gate on the
+/// struck creature which that unit did not pass.
+fn struck_gates_applied(
+  struck struck: List(Struck),
+  spell spell: Spell,
+  gates_passed gates_passed: Dict(Int, List(Int)),
+) -> List(Struck) {
+  let standing = fn(unit_id, rows: List(spell_area.TickingDamage)) {
+    list.filter(rows, fn(row) {
+      gate_passed(
+        effect_id: row.damage.effect_id,
+        unit_id:,
+        spell:,
+        gates_passed:,
+      )
+    })
+  }
+  list.map(struck, fn(one) {
+    case one {
+      Hit(unit_id:, ticking:, ..) ->
+        Hit(..one, ticking: standing(unit_id, ticking))
+      Immune(unit_id:, ticking:, ..) ->
+        Immune(..one, ticking: standing(unit_id, ticking))
+      Deflected(..) -> one
+    }
+  })
+}
+
 fn aimed_at(
   applied applied: Applied,
   caster caster: Caster,
   live live: Live,
   struck struck: List(Struck),
+  gates_passed gates_passed: Dict(Int, List(Int)),
   phase phase: Int,
   restricting restricting: List(Restricting),
   target_verdict target_verdict: TargetVerdict,
@@ -9145,6 +9225,12 @@ fn aimed_at(
       caster:,
       primary_target: live.primary_target,
       struck:,
+    )
+    |> passing_struck_gates(
+      effect_id: fn(row: spell_plan.Lasting) { row.effect_id },
+      spell: live.spell,
+      caster_unit_id: caster.unit_id,
+      gates_passed:,
     )
     |> reaching(
       condition: fn(row: spell_plan.Lasting) { row.condition },
@@ -9161,6 +9247,12 @@ fn aimed_at(
       caster:,
       primary_target: live.primary_target,
       struck:,
+    )
+    |> passing_struck_gates(
+      effect_id: fn(row: spell_plan.ForceRemove) { row.effect_id },
+      spell: live.spell,
+      caster_unit_id: caster.unit_id,
+      gates_passed:,
     )
     |> reaching(
       condition: fn(row: spell_plan.ForceRemove) { row.condition },
@@ -9182,6 +9274,12 @@ fn aimed_at(
     |> list.filter(fn(entry) {
       modifier_applies(row: entry.0, unit_id: entry.1, caster:, struck:)
     })
+    |> passing_struck_gates(
+      effect_id: fn(row: spell_plan.PropertyModifier) { row.effect_id },
+      spell: live.spell,
+      caster_unit_id: caster.unit_id,
+      gates_passed:,
+    )
     |> reaching(
       condition: fn(row: spell_plan.PropertyModifier) { row.condition },
       what: fn(row: spell_plan.PropertyModifier) {
@@ -9205,6 +9303,12 @@ fn aimed_at(
     |> list.filter(fn(entry) {
       result.is_ok(creature_hit(struck:, unit_id: entry.1))
     })
+    |> passing_struck_gates(
+      effect_id: fn(row: spell_plan.StruckMove) { row.effect_id },
+      spell: live.spell,
+      caster_unit_id: caster.unit_id,
+      gates_passed:,
+    )
     |> reaching(
       condition: fn(row: spell_plan.StruckMove) { row.condition },
       what: fn(row: spell_plan.StruckMove) {
@@ -9234,6 +9338,12 @@ fn aimed_at(
       primary_target: live.primary_target,
       struck:,
     )
+    |> passing_struck_gates(
+      effect_id: fn(heal: spell_plan.Heal) { heal.effect_id },
+      spell: live.spell,
+      caster_unit_id: caster.unit_id,
+      gates_passed:,
+    )
     |> reaching(
       condition: fn(heal: spell_plan.Heal) { heal.condition },
       what: fn(heal: spell_plan.Heal) {
@@ -9246,7 +9356,11 @@ fn aimed_at(
   let restrictions = list.map(restricting, fn(one) { #(one, caster.unit_id) })
   let ticking =
     list.append(
-      ticking_struck(struck:),
+      ticking_struck(struck: struck_gates_applied(
+        struck:,
+        spell: live.spell,
+        gates_passed:,
+      )),
       ticking_heals(entries: reached_heals, caster:),
     )
   let listed =

@@ -260,6 +260,7 @@ fn harmless_strike() -> step.Event(
           damage: 0,
         ),
         controls: [],
+        gates: [],
       ),
     ),
   )
