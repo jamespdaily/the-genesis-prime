@@ -19,6 +19,7 @@ import cast_support as support
 import fixture_tables
 import genesis_prime/game/activate
 import genesis_prime/game/cast
+import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/objective_link
 import genesis_prime/game/quest_log
@@ -331,7 +332,7 @@ fn linked_creature_used(quests quests: quest_log.QuestLog) -> List(Effect) {
     objective_link.of(
       tables:,
       activations: activate.activations(tables:),
-      subject: cast.subject_for_use(
+      subject: cast_press.subject_for_use(
         cast: cast_state.new(),
         caster:,
         unit_id: its_unit,

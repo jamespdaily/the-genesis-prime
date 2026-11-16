@@ -83,6 +83,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/persist as cast_persist
+import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/cast/tick as cast_tick
@@ -512,7 +513,7 @@ fn link_of(
     objective_link.of(
       tables:,
       activations:,
-      subject: cast.subject_for_use(
+      subject: cast_press.subject_for_use(
         cast: state,
         caster:,
         unit_id:,

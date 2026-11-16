@@ -595,37 +595,34 @@ import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/persist as cast_persist
+import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{
   type Aimed, type AimedPress, type Applied, type Caster, type Effect, type Fact,
-  type HeldProc, type Holder, type Interaction, type Issue, type Listed,
-  type Live, type Message, type Refusal, type Resolution, type Restricting,
-  type Role, type State, type Struck, type TargetVerdict, type Threshold,
-  type TickAsked, type Unbuilt, type UsedUnit, type Verdict, Accept, Activated,
-  Activating, Activation, Aimed, AimedPress, AnswerSucceeded, Answered,
-  AwaitingAnswer, Base, CancelTimer, Cancelled, CannotTell, CastClears,
+  type HeldProc, type Holder, type Interaction, type Listed, type Live,
+  type Message, type Refusal, type Resolution, type Restricting, type Role,
+  type State, type Struck, type TargetVerdict, type TickAsked, type UsedUnit,
+  Accept, Activated, Activating, Activation, Aimed, AimedPress, AnswerSucceeded,
+  Answered, AwaitingAnswer, Base, CancelTimer, Cancelled, CannotTell, CastClears,
   CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child, CooldownEnds,
-  CooldownModifierEnds, CooldownModifierStarts, Deflected, DroppedControls,
-  DroppedSignals, Finish, ForcedMoveStart, ForcedMoveStarts, Gain, GateFails, Go,
-  GoAsked, Held, HeldProc, Hit, HitCreature, HitPlayer, Hold, HoldForCast,
-  Holding, Immune, ItemsIssue, KeyHeld, Lingering, Listed, Live, Log,
-  ModifierEnd, ModifierStart, NoClientCastId, NoInteraction, NoInteractionWaits,
-  NoItemSpell, NodesEnd, NotBuilt, NotDecoded, NotSentByClient, Passive, Pay,
-  PrerequisitesIssue, Pressed, PressedAt, ProcDue, Refuse, RepeatHeld,
-  Resolution, ResourceMoved, RestrictionEnd, Send, Shortcut, ShortcutCast,
-  SpellsIssue, Stage, StartChild, StartHeld, StartTimer, StartedMoving, Starts,
-  State, StateEnd, StealthChanged, Strike, TargetChangeEnds, TargetChangeStarts,
-  TargetModifierStart, Tell, Threshold, Tick, TickKey, TickStrike, Ticking,
-  UnbuiltItemCharges, UnbuiltItemSpell, UnbuiltPlayerTarget, UnbuiltShortcut,
-  UnbuiltSpell, Unheld, UnknownAnswer, UnknownCancel, Unpaid,
+  CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
+  ForcedMoveStart, ForcedMoveStarts, Gain, GateFails, Go, GoAsked, Held,
+  HeldProc, Hit, HitCreature, HitPlayer, Hold, HoldForCast, Holding, Immune,
+  ItemsIssue, KeyHeld, Lingering, Listed, Live, Log, ModifierEnd, ModifierStart,
+  NoClientCastId, NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd,
+  NotBuilt, NotDecoded, NotSentByClient, Passive, Pay, PrerequisitesIssue,
+  Pressed, PressedAt, ProcDue, Refuse, RepeatHeld, Resolution, ResourceMoved,
+  RestrictionEnd, Send, Shortcut, ShortcutCast, SpellsIssue, Stage, StartChild,
+  StartHeld, StartTimer, StartedMoving, Starts, State, StateEnd, StealthChanged,
+  Strike, TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell,
+  Threshold, Tick, TickKey, TickStrike, Ticking, UnbuiltItemCharges,
+  UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell, UnknownAnswer, UnknownCancel,
   UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
-  UnreadShortcutPick, UnreadSpend, UntilRemovedIssue, UsedUnit, WindowEnd,
-  WrongAnswerSpell,
+  UnreadShortcutPick, UsedUnit, WindowEnd, WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
 import genesis_prime/game/cooldown
-import genesis_prime/game/crowd_control
 import genesis_prime/game/item_use
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
@@ -660,7 +657,6 @@ import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
 import gleam/set.{type Set}
-import gleam/string
 
 /// The caster's 0x9a, 0x4DB or 0x801, decoded and decided: the new state and what
 /// the connection must do, or the refusal that ends the connection. `now` is the
@@ -819,7 +815,7 @@ fn item_used(
         Error(item_use.Declined(spell4_id:, result:)) ->
           refusal(spell4_id.value, result)
         Error(item_use.Charged(spell4_id:, max_charges:)) ->
-          not_built_refusal(
+          cast_press.not_built_refusal(
             cast:,
             client_cast_id:,
             spell4_id: spell4_id.value,
@@ -833,7 +829,7 @@ fn item_used(
             issue: ItemsIssue,
           )
         Error(item_use.UnreadPrerequisite(spell4_id:, prerequisite_type:)) ->
-          not_built_refusal(
+          cast_press.not_built_refusal(
             cast:,
             client_cast_id:,
             spell4_id: spell4_id.value,
@@ -884,7 +880,7 @@ fn item_spell_cast(
   }
   case activate.planned_of(activations:, spell4_id:) {
     Error(Nil) ->
-      not_built_refusal(
+      cast_press.not_built_refusal(
         cast:,
         client_cast_id:,
         spell4_id:,
@@ -895,7 +891,7 @@ fn item_spell_cast(
       )
     Ok(activate.NoSpell4Row) -> refusal(spell4_id, cast_result.SpellUnknown)
     Ok(activate.CannotBePlanned(why:)) ->
-      not_built_refusal(
+      cast_press.not_built_refusal(
         cast:,
         client_cast_id:,
         spell4_id:,
@@ -927,7 +923,7 @@ fn item_spell_cast(
           held:,
           ..,
         ) ->
-          case target_state_refusal(spell:, alive:, held:) {
+          case cast_press.target_state_refusal(spell:, alive:, held:) {
             Some(result) -> refusal(spell4_id, result)
             None ->
               case
@@ -1011,7 +1007,7 @@ fn item_cast_group(
         ),
       )
     activate.CastGroupUnread(prerequisite_type:) ->
-      Error(not_built_refusal(
+      Error(cast_press.not_built_refusal(
         cast:,
         client_cast_id:,
         spell4_id:,
@@ -1098,7 +1094,7 @@ fn shortcut_pressed(
     Error(Nil) | Ok(shortcut_spell.NoSpell4Row) ->
       refusal(cast_result.SpellUnknown)
     Ok(shortcut_spell.CannotBePlanned(why:)) ->
-      not_built_refusal(
+      cast_press.not_built_refusal(
         cast:,
         client_cast_id:,
         spell4_id:,
@@ -1113,9 +1109,12 @@ fn shortcut_pressed(
         caster:,
         now_ms:,
         client_cast_id:,
-        spell: shortcut_spell_of(spell:),
+        spell: cast_press.shortcut_spell_of(spell:),
         primary_target: caster.unit_id,
-        role: Shortcut(interaction: interaction_of(spell:), aimed: None),
+        role: Shortcut(
+          interaction: cast_press.interaction_of(spell:),
+          aimed: None,
+        ),
         target_subject: None,
         dropping: fn(cast) { #(cast, []) },
       )
@@ -1133,27 +1132,6 @@ fn shortcut_pressed(
         target_of:,
         in_cast_group:,
       )
-  }
-}
-
-fn issue_name(issue issue: Issue) -> String {
-  case issue {
-    ItemsIssue ->
-      "Items, equipment, vendors, levels and currency work on the real client (#333)"
-    PrerequisitesIssue ->
-      "Quests, zones and prerequisites work on the real client (#334)"
-    SpellsIssue -> "Spells work in depth on the real client (#336)"
-    UntilRemovedIssue ->
-      "A crowd-control state that lasts until removed ends when its spell ends (#803)"
-  }
-}
-
-/// The plan's spell as a quest button's cast casts it: a castMethod 5 spell waits for the
-/// client's answer without a cast time of its own, any other as planned.
-fn shortcut_spell_of(spell spell: Spell) -> Spell {
-  case interaction_of(spell:) {
-    AwaitingAnswer -> activation_spell(spell:, cast_time_ms: 0)
-    NoInteraction | AnswerSucceeded -> spell
   }
 }
 
@@ -1200,10 +1178,10 @@ fn aimed_shortcut(
       held: [],
     )
   case unit_id == caster.unit_id, target_of(unit_id) {
-    True, _ -> aimed_at_the_caster(press:)
+    True, _ -> cast_press.aimed_at_the_caster(press:)
     False, activate.Unseen ->
-      press_refused(press:, result: cast_result.NoTarget)
-    False, activate.AnotherPlayer -> aimed_at_a_player(press:)
+      cast_press.press_refused(press:, result: cast_result.NoTarget)
+    False, activate.AnotherPlayer -> cast_press.aimed_at_a_player(press:)
     False,
       activate.Usable(
         creature_id:,
@@ -1228,100 +1206,6 @@ fn aimed_shortcut(
   }
 }
 
-fn press_refused(
-  press press: AimedPress,
-  result result: cast_result.CastResult,
-) -> Result(#(State, List(Effect)), Refusal) {
-  Ok(
-    #(press.cast, [
-      cast_frame.refused(
-        client_cast_id: press.client_cast_id,
-        spell4_id: press.spell.spell4_id.value,
-        result:,
-      ),
-    ]),
-  )
-}
-
-fn press_unbuilt(
-  press press: AimedPress,
-  key key: Unbuilt,
-  why why: String,
-) -> Result(#(State, List(Effect)), Refusal) {
-  not_built_refusal(
-    cast: press.cast,
-    client_cast_id: press.client_cast_id,
-    spell4_id: press.spell.spell4_id.value,
-    key:,
-    result: cast_result.IllegalSpellCast,
-    why:,
-    issue: PrerequisitesIssue,
-  )
-}
-
-fn press_at_player_unbuilt(
-  press press: AimedPress,
-  why why: String,
-) -> Result(#(State, List(Effect)), Refusal) {
-  press_unbuilt(
-    press:,
-    key: UnbuiltPlayerTarget(spell4_id: press.spell.spell4_id.value),
-    why:,
-  )
-}
-
-/// The caster itself: refused 32 unless the spell's flags let it be its own primary
-/// target, and then it reaches the client's player faction test, which is not built.
-fn aimed_at_the_caster(
-  press press: AimedPress,
-) -> Result(#(State, List(Effect)), Refusal) {
-  case spell_plan.has_flag(flags: press.aim.mechanics_flags, bit: 2) {
-    False ->
-      press_refused(press:, result: cast_result.CasterCannotBePrimaryTarget)
-    True ->
-      press_at_player_unbuilt(
-        press:,
-        why: "names the caster itself, which the client's player faction test judges",
-      )
-  }
-}
-
-/// Another player's unit: a spell that refuses a player refuses every player (the
-/// client's 106, 108 and 102 all refuse, and the connection holds no player's life or
-/// combat to tell which); a spell that tests life or combat, or reaches the player
-/// faction test, is not built.
-fn aimed_at_a_player(
-  press press: AimedPress,
-) -> Result(#(State, List(Effect)), Refusal) {
-  let tests_life_or_combat =
-    press.spell.target_death != spell_plan.AliveOrDead
-    || press.aim.target_combat == shortcut_spell.OutOfCombatOnly
-  case
-    spell_plan.has_flag(flags: press.aim.valid_targets, bit: 1),
-    tests_life_or_combat
-  {
-    True, _ -> press_refused(press:, result: cast_result.TargetCannotBePlayer)
-    False, True ->
-      press_at_player_unbuilt(
-        press:,
-        why: "names another player, whose life and combat the connection does not hold",
-      )
-    False, False ->
-      case press.aim.cast_group_id {
-        0 ->
-          press_at_player_unbuilt(
-            press:,
-            why: "names another player, who reaches the client's player faction test",
-          )
-        _ ->
-          press_at_player_unbuilt(
-            press:,
-            why: "names another player and a cast group, which tests a player by its faction and race",
-          )
-      }
-  }
-}
-
 /// A creature or object: life, then combat, then the states it holds, then cast group and
 /// range, then the spell's own conditions and the start.
 fn aimed_at_a_creature(
@@ -1333,10 +1217,10 @@ fn aimed_at_a_creature(
   alive alive: Bool,
   in_combat in_combat: Bool,
 ) -> Result(#(State, List(Effect)), Refusal) {
-  case life_and_combat_refusal(press:, alive:, in_combat:) {
-    Some(result) -> press_refused(press:, result:)
+  case cast_press.life_and_combat_refusal(press:, alive:, in_combat:) {
+    Some(result) -> cast_press.press_refused(press:, result:)
     None -> {
-      use <- target_held(press:)
+      use <- cast_press.target_held(press:)
       aimed_in_group(
         press:,
         creature_id:,
@@ -1347,29 +1231,6 @@ fn aimed_at_a_creature(
         in_combat:,
       )
     }
-  }
-}
-
-/// The client's 106 and 107 for the target's life, then its 108 for combat.
-fn life_and_combat_refusal(
-  press press: AimedPress,
-  alive alive: Bool,
-  in_combat in_combat: Bool,
-) -> Option(cast_result.CastResult) {
-  case press.spell.target_death, alive {
-    spell_plan.CannotBeDead, False -> Some(cast_result.TargetCannotBeDead)
-    spell_plan.MustBeDead, True -> Some(cast_result.TargetMustBeDead)
-    spell_plan.CannotBeDead, True
-    | spell_plan.MustBeDead, False
-    | spell_plan.AliveOrDead, _
-    ->
-      case press.aim.target_combat, in_combat {
-        shortcut_spell.OutOfCombatOnly, True ->
-          Some(cast_result.TargetCannotBeInCombat)
-        shortcut_spell.OutOfCombatOnly, False
-        | shortcut_spell.CombatAllowed, _
-        -> None
-      }
   }
 }
 
@@ -1398,9 +1259,9 @@ fn aimed_in_group(
     activate.InCastGroup ->
       aimed_in_range(press:, creature_id:, target_body:, alive:, in_combat:)
     activate.OutsideCastGroup ->
-      press_refused(press:, result: cast_result.TargetGroup)
+      cast_press.press_refused(press:, result: cast_result.TargetGroup)
     activate.CastGroupUnread(prerequisite_type:) ->
-      press_unbuilt(
+      cast_press.press_unbuilt(
         press:,
         key: UnreadShortcutPick(prerequisite_type:),
         why: "names a creature whose activate pick rests on a prerequisite of the type "
@@ -1432,33 +1293,16 @@ fn cast_group_of(
       default_spell: activations.default_spell,
       check: activate.checker(
         activations:,
-        subject: subject_for_use(cast:, caster:, unit_id:, checklist_index:),
+        subject: cast_press.subject_for_use(
+          cast:,
+          caster:,
+          unit_id:,
+          checklist_index:,
+        ),
       ),
     ),
     in_cast_group: in_cast_group(_, unit_id),
   )
-}
-
-/// The client's crowd-control check of the target (`0x1403b2240`): a state the unit holds
-/// that the spell's target mask names refuses the press with that state's target result,
-/// after the target's life and combat and before the cast group and the range.
-fn target_held(
-  press press: AimedPress,
-  otherwise otherwise: fn() -> Result(#(State, List(Effect)), Refusal),
-) -> Result(#(State, List(Effect)), Refusal) {
-  case
-    crowd_control.first_masked(
-      mask: press.spell.target_cc_mask,
-      held: press.held,
-    )
-  {
-    Ok(state) ->
-      press_refused(
-        press:,
-        result: cast_result.from_value(crowd_control.target_result(state:)),
-      )
-    Error(Nil) -> otherwise()
-  }
 }
 
 fn aimed_in_range(
@@ -1479,20 +1323,21 @@ fn aimed_in_range(
     )
   {
     activate.TooClose ->
-      press_refused(press:, result: cast_result.TargetRangeMin)
-    activate.TooFar -> press_refused(press:, result: cast_result.TargetRangeMax)
+      cast_press.press_refused(press:, result: cast_result.TargetRangeMin)
+    activate.TooFar ->
+      cast_press.press_refused(press:, result: cast_result.TargetRangeMax)
     activate.TooHigh ->
-      press_refused(press:, result: cast_result.TargetRangeVertical)
+      cast_press.press_refused(press:, result: cast_result.TargetRangeVertical)
     activate.Within ->
       accepted_and_started(
         cast: press.cast,
         caster: press.caster,
         now_ms: press.now_ms,
         client_cast_id: press.client_cast_id,
-        spell: shortcut_spell_of(spell: press.spell),
+        spell: cast_press.shortcut_spell_of(spell: press.spell),
         primary_target: press.unit_id,
         role: Shortcut(
-          interaction: interaction_of(spell: press.spell),
+          interaction: cast_press.interaction_of(spell: press.spell),
           aimed: Some(PressedAt(unit_id: press.unit_id, alive_at_press: alive)),
         ),
         target_subject: Some(cast_tick.target_subject_of(
@@ -1506,26 +1351,6 @@ fn aimed_in_range(
         dropping: fn(cast) { #(cast, []) },
       )
   }
-}
-
-/// The subject of the prerequisites a use of a creature checks: the caster, with the
-/// creature's unit as the second unit and its checklist index as the unit's 0x262
-/// carried it, standing nowhere (type 108 reads no arc of a use). The activate pick and
-/// the creature's link to an objective check their prerequisites for it.
-pub fn subject_for_use(
-  cast cast: State,
-  caster caster: Caster,
-  unit_id unit_id: Int,
-  checklist_index checklist_index: Int,
-) -> prerequisite.Subject {
-  prerequisite.counting(
-    subject: prerequisite.Subject(
-      ..cast_tick.subject_of(cast:, caster:),
-      second_unit: Some(unit_id),
-      positions: prerequisite.NotPlaced,
-    ),
-    checklist_index:,
-  )
 }
 
 /// The caster's 0xb3, the client's use of a unit whose creature has no activate spell
@@ -1604,7 +1429,12 @@ pub fn activate_unit(
       {
         activate.Within, True -> {
           let subject =
-            subject_for_use(cast:, caster:, unit_id:, checklist_index:)
+            cast_press.subject_for_use(
+              cast:,
+              caster:,
+              unit_id:,
+              checklist_index:,
+            )
           case
             activate.pick(
               creature:,
@@ -1712,7 +1542,7 @@ fn activation_pressed(
         ]),
       )
     activate.Usable(link: activate.UnreadLink(prerequisite_type:), ..) ->
-      not_built_refusal(
+      cast_press.not_built_refusal(
         cast:,
         client_cast_id:,
         spell4_id: 0,
@@ -1746,7 +1576,7 @@ fn activation_pressed(
         withheld: None,
       ) -> {
       let subject =
-        subject_for_use(
+        cast_press.subject_for_use(
           cast:,
           caster:,
           unit_id: press.target_unit_id,
@@ -1761,7 +1591,7 @@ fn activation_pressed(
       case picked {
         activate.NoActivateSpell -> refusal(0, cast_result.TargetIsNotUseable)
         activate.Unread(prerequisite_type:) ->
-          not_built_refusal(
+          cast_press.not_built_refusal(
             cast:,
             client_cast_id:,
             spell4_id: 0,
@@ -1777,7 +1607,7 @@ fn activation_pressed(
             Error(Nil) | Ok(activate.NoSpell4Row) ->
               refusal(spell4_id, cast_result.SpellUnknown)
             Ok(activate.CannotBePlanned(why:)) ->
-              not_built_refusal(
+              cast_press.not_built_refusal(
                 cast:,
                 client_cast_id:,
                 spell4_id:,
@@ -1815,30 +1645,6 @@ fn activation_pressed(
   }
 }
 
-/// The result `0x1403b2240` gives first for an activate cast at a creature: 106 or 107 when
-/// the target's life is not the one its Spell4 target row allows, then the target result of
-/// the first state the creature holds that the spell's target mask names. `None` when the
-/// target's life and states let the cast go on to its cast group and range.
-fn target_state_refusal(
-  spell spell: Spell,
-  alive alive: Bool,
-  held held: List(CrowdControlState),
-) -> Option(cast_result.CastResult) {
-  case spell.target_death, alive {
-    spell_plan.CannotBeDead, False -> Some(cast_result.TargetCannotBeDead)
-    spell_plan.MustBeDead, True -> Some(cast_result.TargetMustBeDead)
-    spell_plan.CannotBeDead, True
-    | spell_plan.MustBeDead, False
-    | spell_plan.AliveOrDead, _
-    ->
-      crowd_control.first_masked(mask: spell.target_cc_mask, held:)
-      |> result.map(fn(state) {
-        cast_result.from_value(crowd_control.target_result(state:))
-      })
-      |> option.from_result
-  }
-}
-
 /// An activate cast of a planned spell at a creature or object, for the cast time given:
 /// refused by the target's life and states (`target_state_refusal`), then with the range's
 /// result when the caster stands out of the limits the creature and the spell hold, else
@@ -1862,7 +1668,7 @@ fn activation_in_range(
   dropped_signals dropped_signals: List(Spell4EffectsId),
   limits limits: activate.Limits,
 ) -> Result(#(State, List(Effect)), Refusal) {
-  case target_state_refusal(spell:, alive:, held:) {
+  case cast_press.target_state_refusal(spell:, alive:, held:) {
     Some(result) ->
       Ok(
         #(cast, [
@@ -1940,79 +1746,10 @@ fn activation_reached(
         creature_id:,
         alive_at_press: alive,
         by_item:,
-        spell: activation_spell(spell:, cast_time_ms:),
-        interaction: interaction_of(spell:),
+        spell: cast_press.activation_spell(spell:, cast_time_ms:),
+        interaction: cast_press.interaction_of(spell:),
         effects:,
         dropped_signals:,
-      )
-  }
-}
-
-/// What the client's interaction of a cast of the spell has to answer: a castMethod 5
-/// spell waits for it.
-fn interaction_of(spell spell: Spell) -> Interaction {
-  use <- bool.guard(
-    when: spell.method == spell_plan.ClientSideInteraction,
-    return: AwaitingAnswer,
-  )
-  NoInteraction
-}
-
-/// The plan's spell as an activate cast casts it, with the cast time the client takes for
-/// it: the creature's `activateSpellCastTime` when the creature lists the spell and it is
-/// not 0, else the spell's own castTime (`0x1407a1680`, `0x14054e340`, GetActivateCastTime;
-/// `activate.cast_time_for`). A Normal spell, and a spell of any other
-/// built method, goes once after that time with the cast bar shown, whatever its phases or
-/// channel are. A Channeled spell whose activate time is its channelMaxTime keeps its
-/// channel: the client replaces only the cast's duration and keeps the go count of the
-/// channel (`0x14053d1f0.activate_channel`, `cast.channel_sequence`), so its gos and its
-/// finish are the channel's. A castMethod 5 spell casts the same way as a Normal one, its bar
-/// shown only when that time is not 0 (`opcode.0x7ff.csi_cast_bar`); its go also waits for
-/// the client's answer (`asked`). A spell whose method is not built is left as it is, so
-/// the verdict refuses it.
-///
-/// Gap: a Channeled spell whose activate time is not its channelMaxTime (one whose own
-/// castTime is 0 with no creature time, or a creature time other than the channel's) is
-/// cast as a Normal spell: the client keeps its go count and the times the server picks
-/// for them are not settled, the issue "Quests, zones and prerequisites work on the real
-/// client" (#334).
-fn activation_spell(
-  spell spell: Spell,
-  cast_time_ms cast_time_ms: Int,
-) -> Spell {
-  let interaction = spell.method == spell_plan.ClientSideInteraction
-  use <- bool.guard(
-    when: !cast_cost.is_built(spell.method) && !interaction,
-    return: spell,
-  )
-  let cast_time_ms = case cast_time_ms {
-    0 -> spell.cast_time_ms
-    creature_time -> creature_time
-  }
-  case spell.channel {
-    Some(channel)
-      if spell.method == spell_plan.Channeled
-      && cast_time_ms == channel.max_time_ms
-    ->
-      spell_plan.Spell(
-        ..spell,
-        cast_time_ms:,
-        cast_bar: spell_plan.ShowsCastBar,
-        phase_delays_ms: [],
-        stages: [],
-      )
-    Some(_) | None ->
-      spell_plan.Spell(
-        ..spell,
-        method: spell_plan.Normal,
-        cast_time_ms:,
-        cast_bar: case interaction && cast_time_ms == 0 {
-          True -> spell_plan.HidesCastBar
-          False -> spell_plan.ShowsCastBar
-        },
-        phase_delays_ms: [],
-        channel: None,
-        stages: [],
       )
   }
 }
@@ -2054,7 +1791,7 @@ fn activation_started(
     ),
     target_subject: None,
     dropping: fn(cast) {
-      signals_dropped(
+      cast_press.signals_dropped(
         cast:,
         spell4_id:,
         unit_id:,
@@ -2085,17 +1822,24 @@ fn accepted_and_started(
     Ok(#(cast, [cast_frame.refused(client_cast_id:, spell4_id:, result:)]))
   }
   use <- bool.guard(
-    when: answer_is_out(cast:),
+    when: cast_press.answer_is_out(cast:),
     return: refusal(cast_result.SpellAlreadyCasting),
   )
   case
-    verdict(cast:, caster:, spell:, now_ms:, is_release: False, target_subject:)
+    cast_press.verdict(
+      cast:,
+      caster:,
+      spell:,
+      now_ms:,
+      is_release: False,
+      target_subject:,
+    )
   {
     Refuse(result:) -> refusal(result)
     Hold(..) -> refusal(cast_result.SpellGlobalCooldown)
     HoldForCast -> refusal(cast_result.SpellAlreadyCasting)
     NotBuilt(result:, why:, issue:) ->
-      not_built_refusal(
+      cast_press.not_built_refusal(
         cast:,
         client_cast_id:,
         spell4_id:,
@@ -2130,116 +1874,6 @@ fn accepted_and_started(
       let #(cast, dropped) = dropping(cast)
       Ok(#(cast, list.flatten([taken, dropped, started])))
     }
-  }
-}
-
-/// The log of the RavelSignal rows an activate cast drops, the first time for the spell:
-/// the server has no script to start for them (`activate.activate_rows_of`).
-fn signals_dropped(
-  cast cast: State,
-  spell4_id spell4_id: Int,
-  unit_id unit_id: Int,
-  creature_id creature_id: Int,
-  dropped_signals dropped_signals: List(Spell4EffectsId),
-) -> #(State, List(Effect)) {
-  let key = DroppedSignals(spell4_id:)
-  case dropped_signals == [] || set.contains(cast.logged, key) {
-    True -> #(cast, [])
-    False -> #(State(..cast, logged: set.insert(cast.logged, key)), [
-      Log(
-        level: LogWarning,
-        text: "the activate cast of Spell4 "
-          <> int.to_string(spell4_id)
-          <> " at unit "
-          <> int.to_string(unit_id)
-          <> " (Creature2 "
-          <> int.to_string(creature_id)
-          <> ") drops the RavelSignal effects "
-          <> string.join(
-          list.map(dropped_signals, fn(effect_id) {
-            int.to_string(effect_id.value)
-          }),
-          ", ",
-        )
-          <> ": the server has no script to start for them",
-      ),
-    ])
-  }
-}
-
-/// The log of the crowd-control rows the plan drops from a spell (`Spell.dropped_controls`),
-/// the first time a cast of the spell starts: each holds a state on another unit until
-/// removed, which no rule of the server ends when the spell ends, so the cast lands none
-/// of them.
-fn controls_dropped(
-  cast cast: State,
-  spell spell: Spell,
-) -> #(State, List(Effect)) {
-  let key = DroppedControls(spell4_id: spell.spell4_id.value)
-  case spell.dropped_controls == [] || set.contains(cast.logged, key) {
-    True -> #(cast, [])
-    False -> #(State(..cast, logged: set.insert(cast.logged, key)), [
-      Log(
-        level: LogWarning,
-        text: "the cast of Spell4 "
-          <> int.to_string(spell.spell4_id.value)
-          <> " drops the crowd-control effects "
-          <> string.join(
-          list.map(spell.dropped_controls, fn(effect_id) {
-            int.to_string(effect_id.value)
-          }),
-          ", ",
-        )
-          <> ", each a state on another unit held until removed, which the server does not end with its spell yet, the issue "
-          <> issue_name(issue: UntilRemovedIssue),
-      ),
-    ])
-  }
-}
-
-/// A right-click refused because the server does not build what the cast needs: the
-/// refusal, with a log the first time for `key`.
-fn not_built_refusal(
-  cast cast: State,
-  client_cast_id client_cast_id: Int,
-  spell4_id spell4_id: Int,
-  key key: Unbuilt,
-  result result: cast_result.CastResult,
-  why why: String,
-  issue issue: Issue,
-) -> Result(#(State, List(Effect)), Refusal) {
-  let refusal = cast_frame.refused(client_cast_id:, spell4_id:, result:)
-  let what = case key {
-    UnbuiltShortcut(..) | UnreadShortcutPick(..) | UnbuiltPlayerTarget(..) ->
-      "the shortcut cast of Spell4 "
-    UnbuiltItemSpell(..)
-    | UnbuiltItemCharges(..)
-    | UnreadItemPrerequisite(..) -> "the use of an item whose spell is Spell4 "
-    UnbuiltSpell(..)
-    | UnreadPrerequisite(..)
-    | UnreadLinkPrerequisite(..)
-    | DroppedSignals(..)
-    | DroppedControls(..) -> "the activate cast of Spell4 "
-  }
-  case set.contains(cast.logged, key) {
-    True -> Ok(#(cast, [refusal]))
-    False ->
-      Ok(
-        #(State(..cast, logged: set.insert(cast.logged, key)), [
-          Log(
-            level: LogWarning,
-            text: what
-              <> int.to_string(spell4_id)
-              <> " "
-              <> why
-              <> ", the issue "
-              <> issue_name(issue:)
-              <> ": it is refused with "
-              <> int.to_string(cast_result.to_value(result)),
-          ),
-          refusal,
-        ]),
-      )
   }
 }
 
@@ -2715,7 +2349,7 @@ fn pressed(
       ]),
     ),
   )
-  case ability_at(caster:, plans:, bag_index: press.bag_index) {
+  case cast_press.ability_at(caster:, plans:, bag_index: press.bag_index) {
     Error(Nil) ->
       Ok(
         #(cast, [
@@ -2726,8 +2360,15 @@ fn pressed(
         ]),
       )
     Ok(plain) -> {
-      let ability = surged(cast:, caster:, ability: plain)
-      case resolved(cast:, caster:, bag_spell: plain.spell4_id, ability:) {
+      let ability = cast_press.surged(cast:, caster:, ability: plain)
+      case
+        cast_press.resolved(
+          cast:,
+          caster:,
+          bag_spell: plain.spell4_id,
+          ability:,
+        )
+      {
         Error(Nil) ->
           Ok(
             #(cast, [
@@ -2750,50 +2391,6 @@ fn pressed(
   }
 }
 
-/// The spell a press of the ability casts: under Spell Surge, the alternate the ability
-/// names when the player's book holds it, else the ability itself. The client makes the
-/// swap inside the press, before the threshold step, so an open threshold is looked for
-/// under the swapped ability (`CastAbilityBagSpell` `0x14039a040`, `SpellslingerSurgedSpell`
-/// `0x1405e7e50`, `IsSpellSurgeActive` `0x1405e7d10`, `GetAbilityBookSpell` `0x1403bad30`).
-fn surged(
-  cast cast: State,
-  caster caster: Caster,
-  ability ability: Spell,
-) -> Spell {
-  case ability.alternate {
-    Some(alternate) ->
-      case
-        list.contains(caster.book, alternate.spell4_base_id)
-        && list.any(
-          cast_tick.holds_on(cast:, unit_id: caster.unit_id),
-          fn(hold) { hold.spell4_id == caster.surge_spell },
-        )
-      {
-        True -> alternate
-        False -> ability
-      }
-    None -> ability
-  }
-}
-
-/// Whether the held key is the ability's own or the alternate it is swapped for.
-fn is_held(held held: Spell, ability ability: Spell) -> Bool {
-  held.spell4_id == ability.spell4_id
-  || option.map(held.alternate, fn(alternate) { alternate.spell4_id })
-  == Some(ability.spell4_id)
-}
-
-/// The ability the player holds at the bag index, as the plans have it.
-fn ability_at(
-  caster caster: Caster,
-  plans plans: Plans,
-  bag_index bag_index: Int,
-) -> Result(Spell, Nil) {
-  list.drop(caster.abilities, bag_index)
-  |> list.first
-  |> result.try(fn(base) { spell_plan.in_plans(plans:, base:) })
-}
-
 /// The key of an ability goes down (held 1) or up (held 0). The client's reader
 /// refuses a body longer or shorter than the message (`opcode.0x4db`), which ends
 /// the connection, and a bag index with no ability is answered as a 0x9a's is,
@@ -2814,7 +2411,7 @@ fn key_held(
   let now_ms = now.monotonic_ms
   Ok(
     case
-      ability_at(caster:, plans:, bag_index: change.bag_index),
+      cast_press.ability_at(caster:, plans:, bag_index: change.bag_index),
       change.held == 1
     {
       Error(Nil), True -> #(cast, [
@@ -2828,37 +2425,10 @@ fn key_held(
             <> ", which holds no ability, comes up",
         ),
       ])
-      Ok(ability), True -> key_down(cast:, ability:)
+      Ok(ability), True -> cast_press.key_down(cast:, ability:)
       Ok(ability), False -> key_up(cast:, caster:, ability:, now_ms:)
     },
   )
-}
-
-/// The ability becomes the one held: a second key down of the ability already held
-/// is the same hold, and the newest ability's key replaces the held one, whose
-/// cast under way ends by itself (the server's choice: the client sends each key
-/// its own key up, and gives no way to hold two). Its first cast is made by
-/// `continued`, once the caster is free.
-fn key_down(
-  cast cast: State,
-  ability ability: Spell,
-) -> #(State, List(Effect)) {
-  case cast.holding {
-    Some(Holding(ability: held, ..)) if held.spell4_id == ability.spell4_id -> #(
-      cast,
-      [],
-    )
-    Some(_) | None -> {
-      let #(cast, cancels) = stop_holding(cast:)
-      #(
-        State(
-          ..cast,
-          holding: Some(Holding(ability:, repeat_timer: None, last_cast: None)),
-        ),
-        cancels,
-      )
-    }
-  }
 }
 
 /// The ability's key comes up: its repeats stop, and the cast under way is left to
@@ -2873,15 +2443,22 @@ fn key_up(
 ) -> #(State, List(Effect)) {
   let #(cast, cancels) = case cast.holding {
     Some(Holding(ability: held, ..)) if held.spell4_id == plain.spell4_id ->
-      stop_holding(cast:)
+      cast_press.stop_holding(cast:)
     Some(_) | None -> #(cast, [])
   }
-  let ability = surged(cast:, caster:, ability: plain)
-  case threshold_of(cast:, ability:) {
+  let ability = cast_press.surged(cast:, caster:, ability: plain)
+  case cast_press.threshold_of(cast:, ability:) {
     Ok(Threshold(ability: charging, ..))
       if charging.method == spell_plan.ChargeRelease
     ->
-      case resolved(cast:, caster:, bag_spell: plain.spell4_id, ability:) {
+      case
+        cast_press.resolved(
+          cast:,
+          caster:,
+          bag_spell: plain.spell4_id,
+          ability:,
+        )
+      {
         Error(Nil) -> #(cast, [
           cast_frame.refused_unknown(
             client_cast_id: 0,
@@ -2897,37 +2474,6 @@ fn key_up(
       }
     Ok(_) | Error(Nil) -> #(cast, cancels)
   }
-}
-
-/// No ability is held: the timer that waits to repeat is cancelled.
-fn stop_holding(cast cast: State) -> #(State, List(Effect)) {
-  case cast.holding {
-    None -> #(cast, [])
-    Some(Holding(repeat_timer:, ..)) -> {
-      let #(cast, cancels) = case repeat_timer {
-        Some(timer) -> #(
-          State(..cast, timers: dict.delete(cast.timers, timer)),
-          [CancelTimer(timer:)],
-        )
-        None -> #(cast, [])
-      }
-      #(State(..cast, holding: None), cancels)
-    }
-  }
-}
-
-/// The timer of the held ability's repeat fired: it waits no longer, unless the
-/// hold ended or moved on to another timer.
-fn repeat_fired(cast cast: State, timer timer: TimerId) -> State {
-  State(
-    ..cast,
-    holding: option.map(cast.holding, fn(holding) {
-      case holding.repeat_timer == Some(timer) {
-        True -> Holding(..holding, repeat_timer: None)
-        False -> holding
-      }
-    }),
-  )
 }
 
 /// A step's result with the held ability cast again when the step left nothing in
@@ -2960,30 +2506,14 @@ fn repeated(
   ability plain: Spell,
   last_cast last_cast: Option(Int),
 ) -> #(State, List(Effect)) {
-  let ability = surged(cast:, caster:, ability: plain)
-  case resolved(cast:, caster:, bag_spell: plain.spell4_id, ability:) {
-    Error(Nil) -> no_stage_left(cast:, ability:)
+  let ability = cast_press.surged(cast:, caster:, ability: plain)
+  case
+    cast_press.resolved(cast:, caster:, bag_spell: plain.spell4_id, ability:)
+  {
+    Error(Nil) -> cast_press.no_stage_left(cast:, ability:)
     Ok(resolution) ->
       next_cast(cast:, caster:, now_ms:, resolution:, last_cast:)
   }
-}
-
-/// A held RapidTap ability whose threshold has no stage at its index: refused, as
-/// a 0x9a press is, and the hold ends.
-fn no_stage_left(
-  cast cast: State,
-  ability ability: Spell,
-) -> #(State, List(Effect)) {
-  let #(cast, cancels) = stop_holding(cast:)
-  #(
-    cast,
-    list.append(cancels, [
-      cast_frame.refused_unknown(
-        client_cast_id: 0,
-        spell4_id: ability.spell4_id.value,
-      ),
-    ]),
-  )
 }
 
 fn next_cast(
@@ -3001,7 +2531,8 @@ fn next_cast(
     && !resolution.spell.ignores_casting
     || option.is_some(cast.held)
   let wait_ms = case last_cast {
-    Some(_) -> cooldown_wait_ms(cast:, spell: resolution.spell, now_ms:)
+    Some(_) ->
+      cast_press.cooldown_wait_ms(cast:, spell: resolution.spell, now_ms:)
     None -> 0
   }
   case blocked, wait_ms > 0 {
@@ -3010,26 +2541,6 @@ fn next_cast(
     False, False ->
       press_of(cast:, caster:, now_ms:, client_cast_id: None, resolution:)
   }
-}
-
-/// How long a held ability waits before it casts again: until the global cooldown
-/// its last cast started and the spell's own cooldown have both ended, whether or
-/// not the global cooldown would refuse the spell (the server's choice,
-/// `cast.hold_repeat`). Every level-1 ability and stage starts a global cooldown or
-/// has a cooldown of its own, so a repeat is never at once; a later ability with
-/// neither would recast as soon as its cast ended.
-fn cooldown_wait_ms(
-  cast cast: State,
-  spell spell: Spell,
-  now_ms now_ms: Int,
-) -> Int {
-  let #(_, own_left) = cast_cost.cooldown_left_ms(cast:, spell:, now_ms:)
-  let global_left =
-    option.map(cast.global_cooldown_ends_ms, fn(ends_ms) {
-      int.max(0, ends_ms - now_ms)
-    })
-    |> option.unwrap(0)
-  int.max(global_left, own_left)
 }
 
 /// The held ability waits `wait_ms` for its cooldowns on a timer of its own.
@@ -3048,138 +2559,6 @@ fn repeat_after(
     ),
     [start],
   )
-}
-
-/// The open threshold a press finds, as the client finds it: the one whose second spell
-/// is the swapped ability, else the one keyed by the swapped ability
-/// (`ResolveThresholdSpell` `0x1403bfd60`, `FindThresholdBySecondSpell` `0x1403c0190`).
-/// A charge opened under Spell Surge is found when Surge has ended by its second spell,
-/// the bag ability the 0x816 named.
-fn threshold_of(
-  cast cast: State,
-  ability ability: Spell,
-) -> Result(Threshold, Nil) {
-  case
-    list.find(dict.values(cast.thresholds), fn(threshold) {
-      threshold.bag_spell == ability.spell4_id
-    })
-  {
-    Ok(threshold) -> Ok(threshold)
-    Error(Nil) -> dict.get(cast.thresholds, ability.spell4_id.value)
-  }
-}
-
-/// What a press of the ability casts: through its open threshold the stage at the
-/// threshold's index, the ability's own spell at -1, and none past the last stage
-/// (`0x1403bfd60`); with no threshold open, the ability's own spell, or for an ability
-/// with no threshold time the spell of the first Proxy its caster passes
-/// (`ResolveProxyByCasterApply` `0x1403d3520`, fact `cast.proxy_press`).
-fn resolved(
-  cast cast: State,
-  caster caster: Caster,
-  bag_spell bag_spell: Spell4Id,
-  ability ability: Spell,
-) -> Result(Resolution, Nil) {
-  case threshold_of(cast:, ability:), ability.press_proxies {
-    Error(Nil), [_, ..] -> {
-      let #(proxy, logs) =
-        first_passing(
-          proxies: ability.press_proxies,
-          subject: cast_tick.subject_of(cast:, caster:),
-          logs: [],
-        )
-      Ok(case proxy {
-        Some(spell) ->
-          Resolution(
-            spell:,
-            ability:,
-            bag_spell:,
-            stage: None,
-            proxied: True,
-            logs:,
-          )
-        None ->
-          Resolution(
-            spell: ability,
-            ability:,
-            bag_spell:,
-            stage: None,
-            proxied: False,
-            logs:,
-          )
-      })
-    }
-    Error(Nil), [] | Ok(_), _ ->
-      resolved_by_threshold(cast:, bag_spell:, ability:)
-  }
-}
-
-/// The spell of the first Proxy of a press, in row order, whose caster apply prerequisite
-/// the subject passes, and a debug line for each gate the server cannot decide, which
-/// does not pass. A press draws no roll: a gate that needs one is refused at load.
-fn first_passing(
-  proxies proxies: List(spell_plan.PressProxy),
-  subject subject: prerequisite.Subject,
-  logs logs: List(Effect),
-) -> #(Option(Spell), List(Effect)) {
-  case proxies {
-    [] -> #(None, list.reverse(logs))
-    [proxy, ..rest] ->
-      case
-        cast_gate.gates_gate(
-          gates: [proxy.gate],
-          subject:,
-          rolls: [],
-          what: "the Proxy effect " <> int.to_string(proxy.effect_id.value),
-          outcome: "so a press does not cast it",
-        )
-      {
-        #(Starts, _) -> #(Some(proxy.spell), list.reverse(logs))
-        #(GateFails, _) -> first_passing(proxies: rest, subject:, logs:)
-        #(CannotTell(why:), _) ->
-          first_passing(proxies: rest, subject:, logs: [
-            Log(level: LogDebug, text: why),
-            ..logs
-          ])
-      }
-  }
-}
-
-/// What a press of the ability casts when only its threshold decides: the stage of its
-/// open threshold, else its own spell.
-fn resolved_by_threshold(
-  cast cast: State,
-  bag_spell bag_spell: Spell4Id,
-  ability ability: Spell,
-) -> Result(Resolution, Nil) {
-  case threshold_of(cast:, ability:) {
-    Error(Nil) ->
-      Ok(
-        Resolution(
-          spell: ability,
-          ability:,
-          bag_spell:,
-          stage: None,
-          proxied: False,
-          logs: [],
-        ),
-      )
-    Ok(threshold) ->
-      spell_plan.stage_at(spell: threshold.ability, index: threshold.index)
-      |> result.map(fn(spell) {
-        Resolution(
-          spell:,
-          ability: threshold.ability,
-          bag_spell:,
-          stage: case threshold.index < 0 {
-            True -> None
-            False -> Some(threshold.index)
-          },
-          proxied: False,
-          logs: [],
-        )
-      })
-  }
 }
 
 /// What a press of a spell comes to: the client's refusal, a held press or a
@@ -3216,7 +2595,7 @@ fn press_resolved(
   resolution resolution: Resolution,
 ) -> #(State, List(Effect)) {
   let spell = resolution.spell
-  let is_release = is_release(resolution:)
+  let is_release = cast_press.is_release(resolution:)
   let held = option.is_some(cast.held)
   let refusal = fn(result) {
     cast_frame.refused(
@@ -3234,7 +2613,7 @@ fn press_resolved(
   {
     True -> Refuse(result: cast_result.IllegalSpellCast)
     False ->
-      verdict(
+      cast_press.verdict(
         cast:,
         caster:,
         spell:,
@@ -3249,7 +2628,7 @@ fn press_resolved(
       let cast = case client_cast_id {
         Some(_) -> cast
         None ->
-          hold_started(
+          cast_press.hold_started(
             cast:,
             ability: resolution.ability,
             cast_id: cast_state.next_cast_id(cast:, caster:),
@@ -3298,7 +2677,7 @@ fn press_resolved(
       #(cast, list.append(taken, started))
     }
     Refuse(result:) ->
-      refused_hold(
+      cast_press.refused_hold(
         cast:,
         client_cast_id:,
         ability: resolution.ability,
@@ -3309,14 +2688,14 @@ fn press_resolved(
     NotBuilt(result:, why:, issue:) ->
       case set.contains(cast.logged, UnbuiltSpell(spell.spell4_id.value)) {
         True ->
-          refused_hold(
+          cast_press.refused_hold(
             cast:,
             client_cast_id:,
             ability: resolution.ability,
             effects: [refusal(result)],
           )
         False ->
-          refused_hold(
+          cast_press.refused_hold(
             cast: State(
               ..cast,
               logged: set.insert(
@@ -3334,7 +2713,7 @@ fn press_resolved(
                   <> " "
                   <> why
                   <> ", the issue "
-                  <> issue_name(issue:)
+                  <> cast_press.issue_name(issue:)
                   <> ": it is refused with "
                   <> int.to_string(cast_result.to_value(result)),
               ),
@@ -3374,181 +2753,6 @@ fn press_resolved(
   }
 }
 
-/// The ability's hold has started the cast `cast_id`, so its cooldowns are waited
-/// for from now on and no longer refused.
-fn hold_started(
-  cast cast: State,
-  ability ability: Spell,
-  cast_id cast_id: Int,
-) -> State {
-  case cast.holding {
-    Some(Holding(ability: held, ..) as holding) ->
-      case is_held(held:, ability:) {
-        True ->
-          State(
-            ..cast,
-            holding: Some(Holding(..holding, last_cast: Some(cast_id))),
-          )
-        False -> cast
-      }
-    None -> cast
-  }
-}
-
-/// A refusal of a press written; a refused held key stops its hold, which the
-/// client does not know (it shows the failure and goes on holding).
-fn refused_hold(
-  cast cast: State,
-  client_cast_id client_cast_id: Option(Int),
-  ability ability: Spell,
-  effects effects: List(Effect),
-) -> #(State, List(Effect)) {
-  case client_cast_id, cast.holding {
-    None, Some(Holding(ability: held, ..)) ->
-      case is_held(held:, ability:) {
-        True -> {
-          let #(cast, cancels) = stop_holding(cast:)
-          #(cast, list.append(cancels, effects))
-        }
-        False -> #(cast, effects)
-      }
-    Some(_), _ | None, None -> #(cast, effects)
-  }
-}
-
-/// Whether the press is the release of a ChargeRelease threshold: the client has
-/// resolved it through the open threshold before any caster check, so a held press
-/// does not refuse it (`0x1403bfd60`).
-fn is_release(resolution resolution: Resolution) -> Bool {
-  case resolution.stage {
-    Some(_) -> resolution.ability.method == spell_plan.ChargeRelease
-    None -> False
-  }
-}
-
-fn verdict(
-  cast cast: State,
-  caster caster: Caster,
-  spell spell: Spell,
-  now_ms now_ms: Int,
-  is_release is_release: Bool,
-  target_subject target_subject: Option(prerequisite.Subject),
-) -> Verdict {
-  let refused_life = spell_plan.refused_life(spell:, dead: caster.dead)
-  use <- bool.guard(
-    when: refused_life == Some(spell_plan.RefusesDead),
-    return: Refuse(result: cast_result.CasterCannotBeDead),
-  )
-  use <- bool.guard(
-    when: refused_life == Some(spell_plan.RefusesLiving),
-    return: Refuse(result: cast_result.from_value(
-      cast_state.caster_must_be_dead,
-    )),
-  )
-  use <- bool.guard(
-    when: option.is_some(cast.held) && !is_release,
-    return: Refuse(result: cast_result.SpellAlreadyCasting),
-  )
-  use <- bool.guard(
-    when: !cast_cost.is_built(spell.method),
-    return: NotBuilt(
-      result: cast_result.IllegalSpellCast,
-      why: "is not cast by a method that is built",
-      issue: SpellsIssue,
-    ),
-  )
-  use <- bool.guard(
-    when: cast_cost.casting(cast) && !spell.ignores_casting,
-    return: case time_left_of_current_cast(cast:, now_ms:) {
-      Some(left_ms) if left_ms <= cast_state.queue_window_ms -> HoldForCast
-      Some(_) | None -> Refuse(result: cast_result.SpellAlreadyCasting)
-    },
-  )
-  use <- cast_cost.refuse_when(cast_cost.restricted(cast:, spell:))
-  let #(global_left, own_left) =
-    cast_cost.cooldown_left_ms(cast:, spell:, now_ms:)
-  use <- bool.guard(
-    when: global_left > cast_state.queue_window_ms,
-    return: Refuse(result: cast_result.SpellGlobalCooldown),
-  )
-  use <- bool.guard(
-    when: own_left > cast_state.queue_window_ms,
-    return: Refuse(result: cast_result.SpellCooldown),
-  )
-  case
-    cast_tick.requirement_refusal(cast:, caster:, spell:),
-    cast_cost.costs_paid(
-      costs: spell.costs,
-      resources: cast_cost.unreserved(cast:, resources: caster.resources),
-    )
-  {
-    Some(refusal), _ -> refusal
-    None, Error(Unpaid(result:)) ->
-      Refuse(result: cast_result.from_value(result))
-    None, Error(Unheld(result:)) ->
-      NotBuilt(
-        result: cast_result.from_value(result),
-        why: "has an innate cost of a vital the server does not hold",
-        issue: SpellsIssue,
-      )
-    None, Error(UnreadSpend(result:, emm_id:)) ->
-      NotBuilt(
-        result: cast_result.from_value(result),
-        why: "has an innate cost spent by the EMM id "
-          <> int.to_string(emm_id)
-          <> ", which the server does not read",
-        issue: SpellsIssue,
-      )
-    None, Ok(paid) ->
-      case
-        cast_cost.lacks_the_weapon(spell:, caster:),
-        int.max(global_left, own_left)
-      {
-        True, _ -> Refuse(result: cast_result.WeaponSlot)
-        False, 0 ->
-          cast_tick.cast_conditions(
-            cast:,
-            caster:,
-            spell:,
-            paid:,
-            target_subject:,
-          )
-        False, wait_ms -> Hold(wait_ms:)
-      }
-  }
-}
-
-/// The time the caster's current cast has left, in milliseconds, from its start
-/// and its duration (`cast.press_queue`); none when it has no end of its own,
-/// such as a charge held until its release, or an interaction whose bar has run and
-/// whose answer is still out.
-fn time_left_of_current_cast(
-  cast cast: State,
-  now_ms now_ms: Int,
-) -> Option(Int) {
-  use cast_id <- option.then(cast.current)
-  use live <- option.then(dict.get(cast.casts, cast_id) |> option.from_result)
-  let bar_running = go_waits(cast:, cast_id:)
-  case live.interaction {
-    AwaitingAnswer if !bar_running -> None
-    AwaitingAnswer | NoInteraction | AnswerSucceeded ->
-      spell_plan.duration_ms(spell: live.spell)
-      |> option.map(fn(duration_ms) {
-        int.max(0, live.started_ms + duration_ms - now_ms)
-      })
-  }
-}
-
-/// Whether a live cast waits for the answer of its interaction, with or without a bar.
-fn answer_is_out(cast cast: State) -> Bool {
-  list.any(dict.values(cast.casts), fn(live) {
-    case live.interaction {
-      AwaitingAnswer -> True
-      NoInteraction | AnswerSucceeded -> False
-    }
-  })
-}
-
 fn cancelled(
   cast cast: State,
   body body: BitArray,
@@ -3572,7 +2776,8 @@ fn cancelled(
   )
   // A cancel is the player's intent to stop: the cast it names ends the hold that
   // started it (the server's choice), so nothing restarts or fires after it.
-  let #(cast, stopped) = stop_holding_cast(cast:, cast_id: cancel.cast_id)
+  let #(cast, stopped) =
+    cast_press.stop_holding_cast(cast:, cast_id: cancel.cast_id)
   let #(cast, effects) =
     cancelling(cast:, cancel:, caster:, now_ms: now.monotonic_ms)
   Ok(#(cast, list.append(stopped, effects)))
@@ -3679,23 +2884,6 @@ fn answer_taken(
   }
 }
 
-/// Whether the cast's go timer is still to fire: the cast time has not run.
-fn go_waits(cast cast: State, cast_id cast_id: Int) -> Bool {
-  list.any(dict.values(cast.timers), fn(due) { due == Go(cast_id:, phase: 0) })
-}
-
-/// The hold whose last cast is `cast_id` ends.
-fn stop_holding_cast(
-  cast cast: State,
-  cast_id cast_id: Int,
-) -> #(State, List(Effect)) {
-  case cast.holding {
-    Some(Holding(last_cast: Some(last), ..)) if last == cast_id ->
-      stop_holding(cast:)
-    Some(_) | None -> #(cast, [])
-  }
-}
-
 /// What a cancel the client may send ends: an open charge with its threshold, or
 /// a live cast.
 fn cancelling(
@@ -3705,7 +2893,7 @@ fn cancelling(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let reason = cast_result.to_value(cancel.reason)
-  case reason == 0, open_charge_of(cast:, cast_id: cancel.cast_id) {
+  case reason == 0, cast_press.open_charge_of(cast:, cast_id: cancel.cast_id) {
     True, None -> #(State(..cast, current: None), [
       Log(
         level: LogDebug,
@@ -3756,7 +2944,7 @@ fn end_live_cast(
   live live: Live,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  let #(cast, cancels) = stop_pending(cast:, cast_id:)
+  let #(cast, cancels) = cast_press.stop_pending(cast:, cast_id:)
   let #(cast, finished) = finish_or_linger(cast:, cast_id:, live:, now_ms:)
   let stopped_early =
     live.spell.stealth_change == spell_plan.EndsStealthAfterLastGo
@@ -3767,60 +2955,12 @@ fn end_live_cast(
       cast_proc.stealth_ended(
         cast:,
         caster:,
-        sources: other_casts_sources(cast:, cast_id:),
+        sources: cast_press.other_casts_sources(cast:, cast_id:),
         now_ms:,
       )
     False -> #(cast, [])
   }
   #(cast, list.flatten([cancels, finished, broken]))
-}
-
-/// The stealth sources held by casts other than `cast_id`: a cast's own sources are
-/// never ended by its own stealth change.
-fn other_casts_sources(
-  cast cast: State,
-  cast_id cast_id: Int,
-) -> List(unit_properties.Source) {
-  list.filter(dict.keys(cast.stealth), fn(source) { source.cast_id != cast_id })
-}
-
-/// The go and finish timers a live cast waits on, cancelled.
-fn stop_pending(
-  cast cast: State,
-  cast_id cast_id: Int,
-) -> #(State, List(Effect)) {
-  cast_state.cancel_timers(cast:, matching: fn(due) {
-    case due {
-      Go(cast_id: waiting, ..) | Finish(cast_id: waiting) -> waiting == cast_id
-      StartChild(..)
-      | NodesEnd(..)
-      | StateEnd(..)
-      | ModifierStart(..)
-      | TargetModifierStart(..)
-      | ForcedMoveStart(..)
-      | ModifierEnd(..)
-      | RestrictionEnd(..)
-      | CooldownModifierStarts(..)
-      | CooldownModifierEnds(..)
-      | ProcDue(..)
-      | StartHeld
-      | RepeatHeld
-      | WindowEnd(..)
-      | ChargeLevel(..)
-      | Tick(..) -> False
-    }
-  })
-}
-
-/// The open threshold whose base cast is `cast_id`: the 32-bit value the 0x816
-/// carried, which the client names in a 0x801 (`opcode.0x816`).
-fn open_charge_of(cast cast: State, cast_id cast_id: Int) -> Option(Threshold) {
-  dict.values(cast.thresholds)
-  |> list.find(fn(threshold) {
-    threshold.cast_id == cast_id
-    && threshold.ability.method == spell_plan.ChargeRelease
-  })
-  |> option.from_result
 }
 
 /// A timer of the rule fired: a go, a finish, a child cast, the held press or a
@@ -3937,7 +3077,7 @@ fn fire(
         )
         ProcDue(source:, row:, at:) ->
           proc_due(cast:, caster:, now_ms:, source:, row:, at:)
-        RepeatHeld -> #(repeat_fired(cast:, timer:), [])
+        RepeatHeld -> #(cast_press.repeat_fired(cast:, timer:), [])
         StartHeld ->
           case cast.held {
             None -> #(cast, [])
@@ -4370,14 +3510,14 @@ fn persistence_end(
     cast_persist.failed_effect(cast_id:, result:, unit_id: caster.unit_id)
   case dict.get(cast.casts, cast_id), dict.get(cast.lingering, cast_id) {
     Ok(live), _ -> {
-      let #(cast, cancels) = stop_pending(cast:, cast_id:)
+      let #(cast, cancels) = cast_press.stop_pending(cast:, cast_id:)
       let #(cast, ticks) = cast_tick.ticks_all_dropped(cast:, cast_id:)
       let #(cast, nodes) = cast_tick.cancel_nodes_end(cast:, cast_id:)
       let #(cast, ended) =
         cast_proc.effects_ended(cast:, cast_id:, spell: live.spell)
       let #(cast, on_creatures) =
         cast_control.creature_modifiers_all_ended(cast:, cast_id:)
-      let #(cast, finished) = case open_charge_of(cast:, cast_id:) {
+      let #(cast, finished) = case cast_press.open_charge_of(cast:, cast_id:) {
         Some(threshold) ->
           close_threshold(cast:, ability: threshold.ability, now_ms:)
         None -> finish(cast:, cast_id:, live:, now_ms:)
@@ -4466,7 +3606,7 @@ fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
     |> list.fold(#(cast, []), fn(so_far, entry) {
       let #(cast, effects) = so_far
-      let #(cast, cancels) = stop_pending(cast:, cast_id: entry.0)
+      let #(cast, cancels) = cast_press.stop_pending(cast:, cast_id: entry.0)
       let #(cast, more) =
         finish(cast:, cast_id: entry.0, live: entry.1, now_ms: now.monotonic_ms)
       #(cast, list.flatten([effects, cancels, more]))
@@ -4576,7 +3716,7 @@ fn start(
         Stage(ability:, ..) -> Some(ability)
         Child | Base(..) | Passive | Activation(..) | Shortcut(..) -> None
       },
-      closes_threshold: closes_threshold(role:),
+      closes_threshold: cast_press.closes_threshold(role:),
       nodes: dict.new(),
       ticking: dict.new(),
       activation: case role {
@@ -4655,7 +3795,7 @@ fn start(
       )
     })
   let #(cast, threshold_effects) = threshold_step(cast:, role:, cast_id: id)
-  let #(cast, dropped_effects) = controls_dropped(cast:, spell:)
+  let #(cast, dropped_effects) = cast_press.controls_dropped(cast:, spell:)
   let opening =
     list.flatten([
       dropped_effects,
@@ -4670,27 +3810,6 @@ fn start(
       #(cast, list.append(opening, going))
     }
     _ -> #(cast, opening)
-  }
-}
-
-/// Whether the finish of a cast that is a stage closes its ability's threshold: a
-/// release always does, a tap only when it is the last stage.
-fn closes_threshold(role role: Role) -> Bool {
-  case role {
-    Child | Base(..) | Passive | Activation(..) | Shortcut(..) -> False
-    Stage(ability:, index:) ->
-      case ability.method {
-        spell_plan.ChargeRelease -> True
-        spell_plan.RapidTap -> index + 1 >= list.length(ability.stages)
-        spell_plan.Normal
-        | spell_plan.Channeled
-        | spell_plan.PressHold
-        | spell_plan.ChanneledField
-        | spell_plan.ClientSideInteraction
-        | spell_plan.Multiphase
-        | spell_plan.Transactional
-        | spell_plan.OtherMethod(..) -> False
-      }
   }
 }
 
@@ -5323,7 +4442,7 @@ fn stealth_changed_by_go(
           cast_proc.stealth_ended(
             cast:,
             caster:,
-            sources: other_casts_sources(cast:, cast_id:),
+            sources: cast_press.other_casts_sources(cast:, cast_id:),
             now_ms:,
           )
         spell_plan.EndsStealthAfterLastGo, False | spell_plan.KeepsStealth, _ -> #(
@@ -5822,7 +4941,11 @@ fn waits_rearmed(
   let #(cast, repeating) = case cast.holding {
     Some(Holding(ability:, repeat_timer: Some(_), ..)) ->
       case
-        resolved_by_threshold(cast:, bag_spell: ability.spell4_id, ability:)
+        cast_press.resolved_by_threshold(
+          cast:,
+          bag_spell: ability.spell4_id,
+          ability:,
+        )
       {
         Ok(resolution) -> {
           let #(cast, cancels) =
@@ -5832,7 +4955,11 @@ fn waits_rearmed(
           let #(cast, start) =
             repeat_after(
               cast:,
-              wait_ms: cooldown_wait_ms(cast:, spell: resolution.spell, now_ms:),
+              wait_ms: cast_press.cooldown_wait_ms(
+                cast:,
+                spell: resolution.spell,
+                now_ms:,
+              ),
             )
           #(cast, list.append(cancels, start))
         }

@@ -28,6 +28,7 @@ import genesis_prime/game/activate.{
   HostileToPlayer, InCombat, NoSpell4Row, Planned, Usable,
 }
 import genesis_prime/game/cast
+import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/objective_link
 import genesis_prime/game/prerequisite
@@ -1256,7 +1257,7 @@ fn clicked(
     objective_link.of(
       tables:,
       activations:,
-      subject: cast.subject_for_use(
+      subject: cast_press.subject_for_use(
         cast: cast_state.new(),
         caster:,
         unit_id: its_unit,
