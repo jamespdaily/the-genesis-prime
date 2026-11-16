@@ -75,7 +75,7 @@ fn armor_row(
 fn modifiers_of(row row: List(Cell)) -> List(spell_plan.PropertyModifier) {
   let assert Ok(spell) =
     spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
-  spell.modifiers
+  spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier)
 }
 
 fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
@@ -156,7 +156,13 @@ pub fn an_interrupt_armor_row_aimed_at_the_primary_target_of_a_child_on_the_cast
   assert read.row
     == LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False)
   assert spell_tables.read_row(effect: row, place: spell_tables.pressed)
-    == Ok(spell_plan.Applied(spell_plan.PlannedModifier(read)))
+    == Ok(
+      spell_plan.Applied(
+        spell_plan.ReadEffects(effects: [
+          spell_plan.effect_of(kind: spell_plan.ModifierEffect(read)),
+        ]),
+      ),
+    )
     as "Proxy 178143 has targetFlags 1: spell_plan.target_of starts the child on the caster, whose primary target is the caster"
 }
 
@@ -333,7 +339,10 @@ pub fn spectral_forms_child_holds_one_interrupt_armor_for_five_seconds_kept_test
   use <- unitest.guard(client_tables.present())
   let assert [esper] =
     list.filter(
-      cast_support.planned_spell(base: 38_012, spell4_id: 76_766).modifiers,
+      spell_plan.payloads(
+        spell: cast_support.planned_spell(base: 38_012, spell4_id: 76_766),
+        as_kind: spell_plan.as_modifier,
+      ),
       fn(row) { row.effect_id == Spell4EffectsId(199_192) },
     )
     as "Spell4Effects spellId=76766: the child holds row 199192"
@@ -353,7 +362,10 @@ pub fn spectral_forms_child_holds_one_interrupt_armor_for_five_seconds_kept_test
     ))
   let assert [warrior] =
     list.filter(
-      cast_support.planned_spell(base: 30_828, spell4_id: 79_875).modifiers,
+      spell_plan.payloads(
+        spell: cast_support.planned_spell(base: 30_828, spell4_id: 79_875),
+        as_kind: spell_plan.as_modifier,
+      ),
       fn(row) { row.effect_id == Spell4EffectsId(210_820) },
     )
     as "Spell4Effects spellId=79875: the child holds row 210820"
@@ -369,7 +381,10 @@ pub fn spectral_forms_child_holds_one_interrupt_armor_for_five_seconds_kept_test
     as "8000 ms"
   let assert [gated] =
     list.filter(
-      cast_support.planned_spell(base: 30_828, spell4_id: 46_867).proxies,
+      spell_plan.payloads(
+        spell: cast_support.planned_spell(base: 30_828, spell4_id: 46_867),
+        as_kind: spell_plan.as_proxy,
+      ),
       fn(proxy) { proxy.effect_id == Spell4EffectsId(210_822) },
     )
     as "Spell4Effects spellId=46867: Proxy 210822 starts 79875"

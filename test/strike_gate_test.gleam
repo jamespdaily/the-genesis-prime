@@ -101,9 +101,10 @@ fn control_row(
     )
     as "the client's spell plans alone"
   let assert [row] =
-    list.filter(spell.controls, fn(row) {
-      row.effect_id == Spell4EffectsId(effect_id)
-    })
+    list.filter(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_control),
+      fn(row) { row.effect_id == Spell4EffectsId(effect_id) },
+    )
     as "the client's spell holds the row"
   row
 }
@@ -342,10 +343,11 @@ fn marker_row() -> spell_plan.Lasting {
 /// planted spell of that group presses and its go lists the unit.
 fn carrying_group_465(unit_id unit_id: Int) -> cast_state.State {
   let marker =
-    spell_plan.Spell(
-      ..support.child(spell4_id: 101, base: 3),
-      groups: [465],
-      lasting: [marker_row()],
+    support.with_effects(
+      spell: spell_plan.Spell(..support.child(spell4_id: 101, base: 3), groups: [
+        465,
+      ]),
+      kinds: [spell_plan.LastingEffect(marker_row())],
     )
   let #(state, raw) =
     support.pressed_raw_in(

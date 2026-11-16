@@ -23,7 +23,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Plans, type Spell, ForceRemove, Spell}
+import genesis_prime/game/spell_plan.{type Plans, type Spell, ForceRemove}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
@@ -67,14 +67,24 @@ fn spell_of(
     spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
     as "the plan builds"
   let wanted = Spell4EffectsId(id)
-  Spell(
-    ..support.child(spell4_id:, base:),
-    lasting: list.filter(planned.lasting, fn(lasting) {
-      lasting.effect_id == wanted
-    }),
-    modifiers: list.filter(planned.modifiers, fn(modifier) {
-      modifier.effect_id == wanted
-    }),
+  support.with_effects(
+    spell: support.with_effects(
+      spell: support.child(spell4_id:, base:),
+      kinds: list.map(
+        list.filter(
+          spell_plan.payloads(spell: planned, as_kind: spell_plan.as_lasting),
+          fn(lasting) { lasting.effect_id == wanted },
+        ),
+        spell_plan.LastingEffect,
+      ),
+    ),
+    kinds: list.map(
+      list.filter(
+        spell_plan.payloads(spell: planned, as_kind: spell_plan.as_modifier),
+        fn(modifier) { modifier.effect_id == wanted },
+      ),
+      spell_plan.ModifierEffect,
+    ),
   )
 }
 
@@ -577,7 +587,16 @@ pub fn a_timed_item_visual_swap_node_ends_with_targets_removed_while_another_nod
     support.client_lasting(spell4_id: 26_567, base: 3, effect_ids: [43_533])
   let plans =
     support.plans_of([
-      Spell(..swap, lasting: list.append(swap.lasting, [longer_buff])),
+      support.with_effects(
+        spell: swap,
+        kinds: list.map(
+          list.append(
+            spell_plan.payloads(spell: swap, as_kind: spell_plan.as_lasting),
+            [longer_buff],
+          ),
+          spell_plan.LastingEffect,
+        ),
+      ),
     ])
   let #(state, effects) = pressed_striking(plans:, unit_id: 20, at: 1000)
   let id = support.pressed_id(effects:)
@@ -601,8 +620,8 @@ fn remover(
   base base: Int,
   selector selector: lasting.Selector,
 ) -> Spell {
-  Spell(..support.child(spell4_id:, base:), removes: [
-    ForceRemove(
+  support.with_effects(spell: support.child(spell4_id:, base:), kinds: [
+    spell_plan.RemoveEffect(ForceRemove(
       effect_id: Spell4EffectsId(99_202),
       phase_flags: -1,
       aim: spell_plan.AimsAtCaster,
@@ -610,7 +629,7 @@ fn remover(
       count: 1,
       condition: spell_plan.Always,
       tag: spend.always,
-    ),
+    )),
   ])
 }
 

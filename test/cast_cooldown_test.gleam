@@ -66,7 +66,10 @@ fn holder_of(
   base base: Int,
   rows rows: List(spell_plan.CooldownModifier),
 ) -> Spell {
-  spell_plan.Spell(..support.child(spell4_id:, base:), cooldown_modifiers: rows)
+  support.with_effects(
+    spell: support.child(spell4_id:, base:),
+    kinds: list.map(rows, spell_plan.CooldownEffect),
+  )
 }
 
 /// A type 73 row that applies `operation` to every cooldown of base 3, the planted
@@ -109,8 +112,8 @@ fn plans_holding(rows rows: List(spell_plan.CooldownModifier)) -> Plans {
 /// A removal of the base 1 spell's casts from the caster, as a type 80 row aimed at the
 /// caster does (`Spell4Effects.effectType.80`).
 fn remover() -> Spell {
-  spell_plan.Spell(..support.child(spell4_id: 2, base: 2), removes: [
-    spell_plan.ForceRemove(
+  support.with_effects(spell: support.child(spell4_id: 2, base: 2), kinds: [
+    spell_plan.RemoveEffect(spell_plan.ForceRemove(
       effect_id: Spell4EffectsId(196_521),
       phase_flags: -1,
       aim: spell_plan.AimsAtCaster,
@@ -118,7 +121,7 @@ fn remover() -> Spell {
       count: 1,
       condition: Always,
       tag: spend.always,
-    ),
+    )),
   ])
 }
 

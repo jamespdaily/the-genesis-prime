@@ -1567,29 +1567,35 @@ fn knockback_plans() -> spell_plan.Plans {
     spell_tables.planned_strike(
       rows: spell_tables.rows_with_effect(effect: knockback_row()),
     )
-  let assert [_] = planned.struck_moves
+  let assert [_] =
+    spell_plan.payloads(spell: planned, as_kind: spell_plan.as_struck_move)
     as "the plan reads the row as one move of the units a strike hits"
   // A spell cast on the caster has the caster as its primary target, so the throw
   // aimed at the primary target (targetFlags 2) runs in a child a Proxy starts on each
   // unit the parent struck (`ProxyTarget.OnEachStruck`), whose primary target is that unit.
   let knockback =
-    spell_plan.Spell(
-      ..cast_support.child(spell4_id: 36_010, base: 21_614),
-      struck_moves: planned.struck_moves,
+    cast_support.with_effects(
+      spell: cast_support.child(spell4_id: 36_010, base: 21_614),
+      kinds: list.map(
+        spell_plan.payloads(spell: planned, as_kind: spell_plan.as_struck_move),
+        spell_plan.StruckMoveEffect,
+      ),
     )
   cast_support.plans_with(
-    spell: spell_plan.Spell(
-      ..cast_support.child(spell4_id: 34_355, base: 3),
-      proxies: [
-        spell_plan.Proxy(
-          effect_id: Spell4EffectsId(99_060),
-          delay_ms: 0,
-          phase_flags: -1,
-          condition: spell_plan.Always,
-          tag: spend.always,
-          target: spell_plan.OnEachStruck,
-          spell: knockback,
-          gains: [],
+    spell: cast_support.with_effects(
+      spell: cast_support.child(spell4_id: 34_355, base: 3),
+      kinds: [
+        spell_plan.ProxyEffect(
+          spell_plan.Proxy(
+            effect_id: Spell4EffectsId(99_060),
+            delay_ms: 0,
+            phase_flags: -1,
+            condition: spell_plan.Always,
+            tag: spend.always,
+            target: spell_plan.OnEachStruck,
+            spell: knockback,
+            gains: [],
+          ),
         ),
       ],
     ),

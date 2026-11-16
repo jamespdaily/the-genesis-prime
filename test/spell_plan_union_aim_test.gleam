@@ -20,7 +20,7 @@ import client_tables
 import fixture_tables
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{
-  type Aim, type PlannedRow, type RowReading, AimsAtArea, AimsAtCaster,
+  type Aim, type Kind, type RowReading, AimsAtArea, AimsAtCaster,
   AimsAtCasterAndArea, AimsAtCasterAndPrimaryTarget,
   AimsAtCasterPrimaryTargetAndArea, AimsAtPrimaryTarget,
   AimsAtPrimaryTargetAndArea, Applied,
@@ -57,15 +57,13 @@ fn read_client_row(
 }
 
 /// The planned rows a reading holds, a row of two parts as its two.
-fn planned_parts(reading reading: RowReading) -> List(PlannedRow) {
+fn planned_parts(reading reading: RowReading) -> List(Kind) {
   case reading {
-    Applied(spell_plan.PlannedBoth(caster_part:, past_the_caster:)) ->
-      list.append(
-        planned_parts(reading: Applied(caster_part)),
-        planned_parts(reading: Applied(past_the_caster)),
-      )
-    Applied(row) -> [row]
-    spell_plan.Held(_)
+    Applied(spell_plan.ReadEffects(effects:)) ->
+      list.map(effects, fn(planned) { planned.kind })
+    Applied(spell_plan.ReadProc(..))
+    | Applied(spell_plan.ReadProxy(..))
+    | spell_plan.Held(_)
     | spell_plan.LeftOut(_)
     | spell_plan.ReadByArea
     | spell_plan.ReadByActivation -> []
@@ -75,21 +73,20 @@ fn planned_parts(reading reading: RowReading) -> List(PlannedRow) {
 fn aims_of(reading reading: RowReading) -> List(Aim) {
   list.filter_map(planned_parts(reading:), fn(row) {
     case row {
-      spell_plan.PlannedLasting(lasting:) -> Ok(lasting.aim)
-      spell_plan.PlannedRemove(remove:) -> Ok(remove.aim)
-      spell_plan.PlannedControl(control:) -> Ok(control.aim)
-      spell_plan.PlannedHeal(heal: spell_plan.Heal(aim:, ..)) -> Ok(aim)
-      spell_plan.PlannedHeal(heal: spell_plan.TickingHeal(aim:, ..)) -> Ok(aim)
-      spell_plan.PlannedGain(..)
-      | spell_plan.PlannedModifier(..)
-      | spell_plan.PlannedForcedMove(..)
-      | spell_plan.PlannedStruckMove(..)
-      | spell_plan.PlannedCooldownModifier(..)
-      | spell_plan.PlannedStealth(..)
-      | spell_plan.PlannedRemoveStealth(..)
-      | spell_plan.PlannedProc(..)
-      | spell_plan.PlannedProxy(..)
-      | spell_plan.PlannedBoth(..) -> Error(Nil)
+      spell_plan.LastingEffect(lasting:) -> Ok(lasting.aim)
+      spell_plan.RemoveEffect(remove:) -> Ok(remove.aim)
+      spell_plan.ControlEffect(control:) -> Ok(control.aim)
+      spell_plan.HealEffect(heal: spell_plan.Heal(aim:, ..)) -> Ok(aim)
+      spell_plan.HealEffect(heal: spell_plan.TickingHeal(aim:, ..)) -> Ok(aim)
+      spell_plan.GainEffect(..)
+      | spell_plan.ModifierEffect(..)
+      | spell_plan.ForcedMoveEffect(..)
+      | spell_plan.StruckMoveEffect(..)
+      | spell_plan.CooldownEffect(..)
+      | spell_plan.StealthEffect(..)
+      | spell_plan.RemoveStealthEffect(..)
+      | spell_plan.ProcEffect(..)
+      | spell_plan.ProxyEffect(..) -> Error(Nil)
     }
   })
 }
@@ -287,7 +284,7 @@ pub fn read_today_union_row_in_a_spell_that_hits_no_foes_keeps_its_caster_and_ta
     read_client_row(id: 3639, place: spell_tables.pressed)
   assert case planned_parts(reading: modifier) {
     [
-      spell_plan.PlannedModifier(spell_plan.PropertyModifier(
+      spell_plan.ModifierEffect(spell_plan.PropertyModifier(
         change: spell_plan.PropertyChange(..),
         ..,
       )),
@@ -371,11 +368,13 @@ fn read_client_row_aimed_by(
 
 pub fn union_property_modifier_plans_a_caster_change_and_a_struck_change_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(Applied(spell_plan.PlannedBoth(caster_part:, past_the_caster:))) =
+  let assert Ok(reading) =
     read_client_row(id: 9717, place: spell_tables.pressed)
+  let assert [
+    spell_plan.ModifierEffect(caster),
+    spell_plan.ModifierEffect(struck),
+  ] = planned_parts(reading:)
     as "a UnitPropertyModifier with flags 3 is read as two parts"
-  let assert spell_plan.PlannedModifier(caster) = caster_part
-  let assert spell_plan.PlannedModifier(struck) = past_the_caster
   assert caster.effect_id == Spell4EffectsId(9717)
   assert struck.effect_id == Spell4EffectsId(9717)
     as "both parts keep the row's effect id"
@@ -392,20 +391,24 @@ pub fn union_property_modifier_plans_a_caster_change_and_a_struck_change_test() 
 
 pub fn union_proxy_plans_one_child_on_the_caster_and_one_on_each_struck_unit_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(Applied(spell_plan.PlannedProxy(targets:, condition: _))) =
+  let assert Ok(Applied(spell_plan.ReadProxy(targets:, condition: _))) =
     read_client_row(id: 196_408, place: spell_tables.pressed_hitting_foes)
     as "a Proxy with flags 5 in a spell that hits foes"
   assert targets == [spell_plan.OnCaster, spell_plan.OnEachStruck]
     as "flags 5 start the child on the caster and on each struck unit"
-  let assert Ok(Applied(spell_plan.PlannedProxy(targets: gate_targets, ..))) =
+  let assert Ok(Applied(spell_plan.ReadProxy(targets: gate_targets, ..))) =
     read_client_row(id: 90_024, place: spell_tables.pressed)
     as "a Proxy with flags 3 in a spell that hits no foes"
   assert gate_targets == [spell_plan.OnCaster]
     as "flags 3 start the child on the caster; the primary target is the caster of a spell cast on oneself"
   let proxies =
-    list.filter(spell_tables.client_spell(spell4_id: 75_957).proxies, fn(proxy) {
-      proxy.effect_id == Spell4EffectsId(196_408)
-    })
+    list.filter(
+      spell_plan.payloads(
+        spell: spell_tables.client_spell(spell4_id: 75_957),
+        as_kind: spell_plan.as_proxy,
+      ),
+      fn(proxy) { proxy.effect_id == Spell4EffectsId(196_408) },
+    )
   assert list.map(proxies, fn(proxy) { proxy.target })
     == [spell_plan.OnCaster, spell_plan.OnEachStruck]
     as "the spell holds one Proxy of the row for the caster and one for each struck unit"

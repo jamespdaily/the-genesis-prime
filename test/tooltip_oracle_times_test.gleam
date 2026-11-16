@@ -417,8 +417,14 @@ fn observed_life(
       let longer =
         list.filter(
           list.append(
-            list.map(holder.controls, fn(row) { row.effect_id.value }),
-            list.map(holder.lasting, fn(row) { row.effect_id.value }),
+            list.map(
+              spell_plan.payloads(spell: holder, as_kind: spell_plan.as_control),
+              fn(row) { row.effect_id.value },
+            ),
+            list.map(
+              spell_plan.payloads(spell: holder, as_kind: spell_plan.as_lasting),
+              fn(row) { row.effect_id.value },
+            ),
           ),
           fn(other) {
             other != effect_id

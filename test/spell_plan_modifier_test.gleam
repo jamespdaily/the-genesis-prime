@@ -80,7 +80,7 @@ fn modifier_row(
 fn modifiers_of(row row: List(Cell)) -> List(spell_plan.PropertyModifier) {
   let assert Ok(spell) =
     spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
-  spell.modifiers
+  spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier)
 }
 
 fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
@@ -418,7 +418,8 @@ pub fn the_kits_two_rows_are_read_from_the_clients_tables_test() -> Nil {
   let plans = spell_plan.plans(tables: client_tables.shared())
   // Gate, 20325, whose own spell 34355 holds 67777.
   let assert Ok(gate) = spell_plan.in_plans(plans:, base: Spell4BaseId(20_325))
-  let assert [falling] = gate.modifiers
+  let assert [falling] =
+    spell_plan.payloads(spell: gate, as_kind: spell_plan.as_modifier)
   assert falling.effect_id == Spell4EffectsId(67_777)
   assert falling.change
     == spell_plan.PropertyChange(Change(
@@ -435,10 +436,12 @@ pub fn the_kits_two_rows_are_read_from_the_clients_tables_test() -> Nil {
   let assert Ok(mind_burst) =
     spell_plan.in_plans(plans:, base: Spell4BaseId(19_019))
   let assert Ok(proxy) =
-    list.find(mind_burst.proxies, fn(proxy) {
-      proxy.spell.spell4_id == Spell4Id(57_030)
-    })
-  let assert [crit] = proxy.spell.modifiers
+    list.find(
+      spell_plan.payloads(spell: mind_burst, as_kind: spell_plan.as_proxy),
+      fn(proxy) { proxy.spell.spell4_id == Spell4Id(57_030) },
+    )
+  let assert [crit] =
+    spell_plan.payloads(spell: proxy.spell, as_kind: spell_plan.as_modifier)
   assert crit.effect_id == Spell4EffectsId(135_954)
   assert crit.change
     == spell_plan.PropertyChange(Change(

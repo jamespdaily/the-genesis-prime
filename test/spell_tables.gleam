@@ -38,7 +38,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/order
 import gleam/result
-import planted_table.{type Cell, Integer}
+import planted_table.{type Cell, Float, Integer}
 
 /// The planted rows of each table the plan reads.
 pub type Rows {
@@ -466,25 +466,10 @@ pub fn with_loaded_deriving(
   body(tables)
 }
 
-/// The effect ids of the rows a spell's own lists hold, in no order: its gains, lasting
-/// rows, removes, controls, property changes, forced moves, cooldown changes, stealth
-/// rows, shield heals, procs and Proxies (the rows of its children are theirs).
+/// The effect ids of the rows a spell's own effects hold, in the order of the list (the
+/// rows of its children are theirs).
 pub fn listed_effect_ids(spell spell: spell_plan.Spell) -> List(Int) {
-  list.flatten([
-    list.map(spell.gains, fn(gain) { gain.effect_id.value }),
-    list.map(spell.lasting, fn(lasting) { lasting.effect_id.value }),
-    list.map(spell.removes, fn(remove) { remove.effect_id.value }),
-    list.map(spell.controls, fn(control) { control.effect_id.value }),
-    list.map(spell.modifiers, fn(modifier) { modifier.effect_id.value }),
-    list.map(spell.forced_moves, fn(move) { move.effect_id.value }),
-    list.map(spell.struck_moves, fn(move) { move.effect_id.value }),
-    list.map(spell.cooldown_modifiers, fn(modifier) { modifier.effect_id.value }),
-    list.map(spell.stealth, fn(stealth) { stealth.effect_id.value }),
-    list.map(spell.remove_stealth, fn(remove) { remove.effect_id.value }),
-    list.map(spell.heals, fn(heal) { heal.effect_id.value }),
-    list.map(spell.procs, fn(proc) { proc.effect_id.value }),
-    list.map(spell.proxies, fn(proxy) { proxy.effect_id.value }),
-  ])
+  list.map(spell.effects, fn(planned) { planned.effect_id.value })
 }
 
 /// The place of a spell no Proxy starts on each struck unit, that spends nothing and whose
@@ -531,6 +516,25 @@ pub fn read_row(
 ) -> Result(spell_plan.RowReading, spell_plan.PlanError) {
   let assert [reading] = read_rows(effects: [effect], place:)
   reading
+}
+
+/// The kinds a reading plans, in order: nothing for a reading that plans no effect of a
+/// spell's list (a Proc, a Proxy, a row the area or the activation reads, a row left out).
+pub fn planned_kinds(
+  reading reading: spell_plan.RowReading,
+) -> List(spell_plan.Kind) {
+  case reading {
+    spell_plan.Applied(spell_plan.ReadEffects(effects:))
+    | spell_plan.Held(spell_plan.ReadEffects(effects:)) ->
+      list.map(effects, fn(planned) { planned.kind })
+    spell_plan.Applied(spell_plan.ReadProc(..))
+    | spell_plan.Applied(spell_plan.ReadProxy(..))
+    | spell_plan.Held(spell_plan.ReadProc(..))
+    | spell_plan.Held(spell_plan.ReadProxy(..))
+    | spell_plan.LeftOut(..)
+    | spell_plan.ReadByArea
+    | spell_plan.ReadByActivation -> []
+  }
 }
 
 /// Whether the coverage measure counts the row read in a place, over the client's rows.
@@ -628,12 +632,112 @@ pub fn fixture_rows() -> Rows {
 /// The client's rows with this Spell4Effects row added; its spell is Telekinetic
 /// Strike when the row says so.
 pub fn rows_with_effect(effect effect: List(Cell)) -> Rows {
+  rows_with_effects(effects: [effect])
+}
+
+/// The client's rows with these Spell4Effects rows added, each of an id the client's
+/// table does not hold.
+pub fn rows_with_effects(effects effects: List(List(Cell))) -> Rows {
   let rows = fixture_rows()
-  assert !list.any(rows.spell4_effects, fn(row) {
-    by_id(row, effect) == order.Eq
+  list.each(effects, fn(effect) {
+    let assert [Integer(id), ..] = effect as "a planted row holds its ID first"
+    assert !client_row(id:)
+      as "a planted id the client's table holds would replace the client's row"
   })
-    as "a planted effect row of an id the client's table holds would replace the client's row"
-  Rows(..rows, spell4_effects: sorted_by_id([effect, ..rows.spell4_effects]))
+  Rows(
+    ..rows,
+    spell4_effects: sorted_by_id(list.append(effects, rows.spell4_effects)),
+  )
+}
+
+/// Whether the client's Spell4Effects table holds a row of this id.
+pub fn client_row(id id: Int) -> Bool {
+  list.any(fixture_rows().spell4_effects, fn(row) {
+    row == [Integer(id), ..list.drop(row, 1)]
+  })
+}
+
+/// 1.0 as 32 float bits.
+pub const one_as_float_bits = 1_065_353_216
+
+/// A Proc row's columns that cast Spell4 30900, whose columns the plan reads: chance 1.0,
+/// a window of 500 ms, a count of 1 and a durationTime for its life.
+pub fn proc_columns(kind kind: Int) -> List(#(String, Cell)) {
+  [
+    #("dataBits00", Integer(kind)),
+    #("dataBits01", Integer(30_900)),
+    #("dataBits02", Integer(one_as_float_bits)),
+    #("dataBits04", Integer(500)),
+    #("dataBits05", Integer(1)),
+    #("durationTime", Integer(5000)),
+  ]
+}
+
+/// The rows of the planted spell, one for each kind the plan lists, the periodic heal, and
+/// the two the plan leaves out: ids 90001 to 90012 are read, 90013 is behind a target apply
+/// prerequisite the cast rule reads, 90014 is a periodic heal, 90015 is a Proc of kind 16
+/// and 90016 a Proxy with dataBits00 0.
+pub fn planted_effects() -> List(List(Cell)) {
+  [
+    effect_row_with(id: 90_001, effect_type: 1, target_flags: 1, columns: [
+      #("dataBits00", Integer(6)),
+      #("dataBits02", Integer(5)),
+    ]),
+    effect_row_with(id: 90_002, effect_type: 17, target_flags: 1, columns: [
+      #("durationTime", Integer(5000)),
+    ]),
+    effect_row_with(id: 90_003, effect_type: 80, target_flags: 1, columns: [
+      #("dataBits00", Integer(2)),
+      #("dataBits01", Integer(32_893)),
+    ]),
+    effect_row_with(id: 90_004, effect_type: 4, target_flags: 2, columns: [
+      #("durationTime", Integer(1000)),
+    ]),
+    effect_row_with(id: 90_005, effect_type: 11, target_flags: 1, columns: [
+      #("dataBits00", Integer(7)),
+      #("durationTime", Integer(5000)),
+    ]),
+    effect_row_with(id: 90_006, effect_type: 3, target_flags: 1, columns: []),
+    effect_row_with(id: 90_007, effect_type: 73, target_flags: 1, columns: [
+      #("dataBits02", Integer(0)),
+    ]),
+    effect_row_with(id: 90_018, effect_type: 83, target_flags: 1, columns: []),
+    effect_row_with(id: 90_009, effect_type: 84, target_flags: 1, columns: []),
+    effect_row_with(id: 90_010, effect_type: 118, target_flags: 1, columns: [
+      #("dataBits00", Integer(one_as_float_bits)),
+      #("parameterType00", Integer(22)),
+      #("parameterValue00", Float(0.3)),
+    ]),
+    effect_row_with(
+      id: 90_011,
+      effect_type: 14,
+      target_flags: 1,
+      columns: proc_columns(kind: 217),
+    ),
+    effect_row_with(id: 90_012, effect_type: 26, target_flags: 1, columns: [
+      #("dataBits00", Integer(30_900)),
+    ]),
+    effect_row_with(id: 90_013, effect_type: 17, target_flags: 1, columns: [
+      #("durationTime", Integer(5000)),
+      #("prerequisiteIdTargetApply", Integer(11_311)),
+    ]),
+    effect_row_with(id: 90_014, effect_type: 118, target_flags: 1, columns: [
+      #("dataBits00", Integer(one_as_float_bits)),
+      #("parameterType00", Integer(22)),
+      #("parameterValue00", Float(0.3)),
+      #("tickTime", Integer(1000)),
+      #("durationTime", Integer(8000)),
+    ]),
+    effect_row_with(
+      id: 90_015,
+      effect_type: 14,
+      target_flags: 1,
+      columns: proc_columns(kind: 16),
+    ),
+    effect_row_with(id: 90_016, effect_type: 26, target_flags: 1, columns: [
+      #("dataBits00", Integer(0)),
+    ]),
+  ]
 }
 
 /// A Spell4Effects row of Telekinetic Strike's planted spell of this type aimed by

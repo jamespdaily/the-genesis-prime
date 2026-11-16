@@ -51,7 +51,7 @@ fn level_1_proxies() -> List(Proxy) {
   |> list.flat_map(fn(ability) {
     list.flat_map(
       spell_plan.tree(spell: ability, started: fn(_) { True }),
-      fn(spell) { spell.proxies },
+      fn(spell) { spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy) },
     )
   })
 }
@@ -91,9 +91,10 @@ pub fn impales_four_proxies_keep_their_caster_gate_and_their_target_gate_test() 
   list.each(expected, fn(row) {
     let #(effect_id, child, caster_gate, target_gate) = row
     let assert Ok(found) =
-      list.find(impale().proxies, fn(proxy) {
-        proxy.effect_id == Spell4EffectsId(effect_id)
-      })
+      list.find(
+        spell_plan.payloads(spell: impale(), as_kind: spell_plan.as_proxy),
+        fn(proxy) { proxy.effect_id == Spell4EffectsId(effect_id) },
+      )
       as "Impale holds the Proxy"
     assert found.spell.spell4_id == Spell4Id(child)
     assert found.target == spell_plan.OnEachStruck

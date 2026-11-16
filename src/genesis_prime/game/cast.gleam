@@ -120,6 +120,7 @@ import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/proc
 import genesis_prime/game/shortcut_spell
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/unit_properties
 import genesis_prime/message/ability_hold
@@ -3869,9 +3870,9 @@ fn activation_listed_at(
 ) -> fn(activate.ActivateEffect) -> Bool {
   fn(effect: activate.ActivateEffect) {
     live.spell.method != spell_plan.Channeled
-    || spell_plan.has_flag(
+    || spell_effect.has_flag(
       flags: effect.phase_flags,
-      bit: spell_plan.phase_bit(phase:),
+      bit: spell_effect.phase_bit(phase:),
     )
   }
 }
@@ -4389,29 +4390,37 @@ fn cooldowns_started_at_node_end(
     when: !list.contains(unit_ids, cast_state.caster_of(cast_id:)),
     return: #(cast, []),
   )
-  list.fold(spell.cooldown_modifiers, #(cast, []), fn(so_far, row) {
-    let #(cast, effects) = so_far
-    let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
-    let #(cast, cancels) =
-      cast_state.cancel_timers(cast:, matching: fn(due) {
-        due
-        == CooldownModifierStarts(source:, modifier: row.modifier, kept: False)
-      })
-    case cancels {
-      [] -> #(cast, effects)
-      [_, ..] -> {
-        let #(cast, applied) =
-          cooldown_applied(
-            cast:,
+  list.fold(
+    spell_plan.payloads(spell:, as_kind: spell_plan.as_cooldown_modifier),
+    #(cast, []),
+    fn(so_far, row) {
+      let #(cast, effects) = so_far
+      let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+      let #(cast, cancels) =
+        cast_state.cancel_timers(cast:, matching: fn(due) {
+          due
+          == CooldownModifierStarts(
             source:,
             modifier: row.modifier,
             kept: False,
-            now_ms:,
           )
-        #(cast, list.flatten([effects, cancels, applied]))
+        })
+      case cancels {
+        [] -> #(cast, effects)
+        [_, ..] -> {
+          let #(cast, applied) =
+            cooldown_applied(
+              cast:,
+              source:,
+              modifier: row.modifier,
+              kept: False,
+              now_ms:,
+            )
+          #(cast, list.flatten([effects, cancels, applied]))
+        }
       }
-    }
-  })
+    },
+  )
 }
 
 /// A Proxy of a go: a Proxy aimed at the area starts one child for each Hit unit of

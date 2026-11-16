@@ -81,7 +81,7 @@ fn cooldown_row(
 fn modifiers_of(row row: List(Cell)) -> List(spell_plan.CooldownModifier) {
   let assert Ok(spell) =
     spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
-  spell.cooldown_modifiers
+  spell_plan.payloads(spell:, as_kind: spell_plan.as_cooldown_modifier)
 }
 
 fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
@@ -389,7 +389,10 @@ fn tree_of(spell spell: PlannedSpell) -> List(PlannedSpell) {
   [
     spell,
     ..list.flatten([
-      list.flat_map(spell.proxies, fn(proxy) { tree_of(spell: proxy.spell) }),
+      list.flat_map(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy),
+        fn(proxy) { tree_of(spell: proxy.spell) },
+      ),
       list.flat_map(spell.stages, fn(stage) { tree_of(spell: stage.spell) }),
     ])
   ]
@@ -421,7 +424,10 @@ pub fn the_kits_five_rows_are_read_from_the_clients_tables_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let plans = spell_plan.plans(tables: client_tables.shared())
   let charged_release = spell_in_trees(plans:, spell4_id: 34_720)
-  assert charged_release.cooldown_modifiers
+  assert spell_plan.payloads(
+      spell: charged_release,
+      as_kind: spell_plan.as_cooldown_modifier,
+    )
     == [
       spell_plan.CooldownModifier(
         effect_id: Spell4EffectsId(80_977),
@@ -437,9 +443,13 @@ pub fn the_kits_five_rows_are_read_from_the_clients_tables_test() -> Nil {
     ]
     as "80977: Charged Shot's index-0 stage multiplies base 20684's cooldowns by 0.0, once, aimed at the caster"
   let level_1 = spell_in_trees(plans:, spell4_id: 34_722)
-  assert list.map(level_1.cooldown_modifiers, fn(row) {
-      #(row.effect_id, row.modifier, row.row)
-    })
+  assert list.map(
+      spell_plan.payloads(
+        spell: level_1,
+        as_kind: spell_plan.as_cooldown_modifier,
+      ),
+      fn(row) { #(row.effect_id, row.modifier, row.row) },
+    )
     == [
       #(
         Spell4EffectsId(80_979),
@@ -452,9 +462,13 @@ pub fn the_kits_five_rows_are_read_from_the_clients_tables_test() -> Nil {
     ]
     as "80979: index 1 multiplies by 0.4"
   let impale_child = spell_in_trees(plans:, spell4_id: 70_775)
-  assert list.map(impale_child.cooldown_modifiers, fn(row) {
-      #(row.effect_id, row.modifier, row.row)
-    })
+  assert list.map(
+      spell_plan.payloads(
+        spell: impale_child,
+        as_kind: spell_plan.as_cooldown_modifier,
+      ),
+      fn(row) { #(row.effect_id, row.modifier, row.row) },
+    )
     == [
       #(
         Spell4EffectsId(180_712),
@@ -476,7 +490,11 @@ pub fn the_kits_five_rows_are_read_from_the_clients_tables_test() -> Nil {
       ),
     ]
     as "180712 takes 1500 ms and 231992 and 231993 500 ms each off base 32336 (Punish), in their orderIndex order 0, 1, 2"
-  let assert [_, first, second] = impale_child.cooldown_modifiers
+  let assert [_, first, second] =
+    spell_plan.payloads(
+      spell: impale_child,
+      as_kind: spell_plan.as_cooldown_modifier,
+    )
   let assert GatedOnCaster(gates: [_]) = first.condition
   let assert GatedOnCaster(gates: [_]) = second.condition
     as "231992 and 231993 hold the caster apply prerequisite 4585"

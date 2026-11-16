@@ -540,7 +540,14 @@ pub fn the_agreement_test_reports_a_spell_the_plan_refuses_for_a_row_read_row_re
             let assert Ok(spell) =
               spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: [])
               as "the planted strike loads"
-            Ok(spell_plan.Spell(..spell, lasting: []))
+            Ok(
+              spell_plan.Spell(
+                ..spell,
+                effects: list.filter(spell.effects, fn(planned) {
+                  result.is_error(spell_plan.as_lasting(kind: planned.kind))
+                }),
+              ),
+            )
           },
           read: fn(effect, _planned) {
             spell_plan.read_row(

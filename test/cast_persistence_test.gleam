@@ -194,18 +194,17 @@ fn casting_for_a_second(
 fn lingering_for_a_minute(
   caster_persistence caster_persistence: option.Option(Prerequisite),
 ) -> Spell {
-  Spell(
-    ..support.child(spell4_id: 7004, base: 3),
-    caster_persistence:,
-    lasting: [
-      spell_plan.Lasting(
+  support.with_effects(
+    spell: Spell(..support.child(spell4_id: 7004, base: 3), caster_persistence:),
+    kinds: [
+      spell_plan.LastingEffect(spell_plan.Lasting(
         effect_id: Spell4EffectsId(1),
         phase_flags: -1,
         aim: spell_plan.AimsAtCaster,
         row: LastingRow(delay_ms: 0, duration_ms: 60_000, until_removed: False),
         condition: Always,
         tag: spend.always,
-      ),
+      )),
     ],
   )
 }
@@ -337,16 +336,18 @@ pub fn a_target_persistence_on_a_cast_whose_primary_target_is_a_creature_is_not_
       spell4_id: id.Spell4Id(7005),
     )
   let parent =
-    Spell(..support.child(spell4_id: 7006, base: 3), proxies: [
-      spell_plan.Proxy(
-        effect_id: Spell4EffectsId(2),
-        delay_ms: 0,
-        phase_flags: -1,
-        condition: spell_plan.Always,
-        tag: spend.always,
-        target: spell_plan.OnEachStruck,
-        spell: child,
-        gains: [],
+    support.with_effects(spell: support.child(spell4_id: 7006, base: 3), kinds: [
+      spell_plan.ProxyEffect(
+        spell_plan.Proxy(
+          effect_id: Spell4EffectsId(2),
+          delay_ms: 0,
+          phase_flags: -1,
+          condition: spell_plan.Always,
+          tag: spend.always,
+          target: spell_plan.OnEachStruck,
+          spell: child,
+          gains: [],
+        ),
       ),
     ])
   let plans = support.plans_of([parent])
@@ -659,19 +660,21 @@ pub fn no_level_1_ability_casts_empowering_probes_or_holds_a_group_704_cast_test
 pub fn an_ended_casts_stealth_source_drops_and_stealth_changed_comes_last_test() -> Nil {
   use <- owned_test.run(5000)
   let hiding =
-    Spell(
-      ..support.child(spell4_id: 7030, base: 3),
-      stealth_change: KeepsStealth,
-      caster_persistence: Some(in_combat()),
-      stealth: [
-        StealthRow(
+    support.with_effects(
+      spell: Spell(
+        ..support.child(spell4_id: 7030, base: 3),
+        stealth_change: KeepsStealth,
+        caster_persistence: Some(in_combat()),
+      ),
+      kinds: [
+        spell_plan.StealthEffect(StealthRow(
           effect_id: Spell4EffectsId(83_834),
           phase_flags: -1,
           breaks: spell_plan.BrokenByDamage,
           row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
           condition: Always,
           tag: spend.always,
-        ),
+        )),
       ],
     )
   let plans = support.plans_of([hiding])

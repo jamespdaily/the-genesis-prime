@@ -89,8 +89,8 @@ fn cancelling(
   base base: Int,
   of cancelled: Int,
 ) -> Spell {
-  Spell(..support.child(spell4_id:, base:), removes: [
-    spell_plan.ForceRemove(
+  support.with_effects(spell: support.child(spell4_id:, base:), kinds: [
+    spell_plan.RemoveEffect(spell_plan.ForceRemove(
       effect_id: Spell4EffectsId(83_832),
       phase_flags: -1,
       aim: spell_plan.AimsAtCaster,
@@ -98,7 +98,7 @@ fn cancelling(
       count: 1,
       condition: Always,
       tag: spend.always,
-    ),
+    )),
   ])
 }
 
@@ -469,11 +469,19 @@ pub fn an_attack_from_stealth_reads_the_stealth_in_its_gates_then_ends_it_after_
   use <- owned_test.run(60_000)
   let #(on_gate, off_gate) = impales_gates()
   let impale =
-    Spell(
-      ..attack(spell4_id: 38_779, base: 2, change: EndsStealthAfterLastGo),
-      proxies: [
-        gated_proxy(child: 39_427, effect: 83_819, gate: on_gate),
-        gated_proxy(child: 39_426, effect: 83_818, gate: off_gate),
+    support.with_effects(
+      spell: attack(spell4_id: 38_779, base: 2, change: EndsStealthAfterLastGo),
+      kinds: [
+        spell_plan.ProxyEffect(gated_proxy(
+          child: 39_427,
+          effect: 83_819,
+          gate: on_gate,
+        )),
+        spell_plan.ProxyEffect(gated_proxy(
+          child: 39_426,
+          effect: 83_818,
+          gate: off_gate,
+        )),
       ],
     )
   let #(plans, state, entered) = stealthed_by_base_1(others: [impale])
@@ -507,17 +515,23 @@ fn two_phase_attack(
   change change: spell_plan.StealthChange,
 ) -> Spell {
   let #(on_gate, off_gate) = impales_gates()
-  Spell(
-    ..attack(spell4_id:, base: 2, change:),
-    phase_delays_ms: [0, 300],
-    proxies: [
-      Proxy(
-        ..gated_proxy(child: 39_427, effect: 83_819, gate: on_gate),
-        phase_flags: 2,
+  support.with_effects(
+    spell: Spell(..attack(spell4_id:, base: 2, change:), phase_delays_ms: [
+      0,
+      300,
+    ]),
+    kinds: [
+      spell_plan.ProxyEffect(
+        Proxy(
+          ..gated_proxy(child: 39_427, effect: 83_819, gate: on_gate),
+          phase_flags: 2,
+        ),
       ),
-      Proxy(
-        ..gated_proxy(child: 39_426, effect: 83_818, gate: off_gate),
-        phase_flags: 2,
+      spell_plan.ProxyEffect(
+        Proxy(
+          ..gated_proxy(child: 39_426, effect: 83_818, gate: off_gate),
+          phase_flags: 2,
+        ),
       ),
     ],
   )
@@ -661,13 +675,20 @@ pub fn a_stealth_row_of_a_later_phase_of_a_value_1_spell_is_kept_when_the_older_
   // The cast's own Stealth row, applied in phase 1 with the cast's last go, is its own
   // source: only the casts held before it come off.
   let makes =
-    Spell(
-      ..two_phase_attack(spell4_id: 38_913, change: EndsStealthAfterLastGo),
-      proxies: [],
-      stealth: [
-        StealthRow(
-          ..support.stealth_row(id: 95_774, breaks: KeptOnDamage),
-          phase_flags: 2,
+    support.with_effects(
+      spell: support.without_effects(
+        spell: two_phase_attack(
+          spell4_id: 38_913,
+          change: EndsStealthAfterLastGo,
+        ),
+        as_kind: spell_plan.as_proxy,
+      ),
+      kinds: [
+        spell_plan.StealthEffect(
+          StealthRow(
+            ..support.stealth_row(id: 95_774, breaks: KeptOnDamage),
+            phase_flags: 2,
+          ),
         ),
       ],
     )
@@ -896,15 +917,15 @@ pub fn a_cast_that_holds_both_a_broken_and_a_kept_source_loses_both_with_its_nod
 pub fn a_remove_stealth_row_on_the_caster_ends_a_broken_source_and_a_kept_one_with_one_change_test() -> Nil {
   use <- owned_test.run(60_000)
   let removes =
-    Spell(
-      ..attack(spell4_id: 51_908, base: 2, change: KeepsStealth),
-      remove_stealth: [
-        RemoveStealthRow(
+    support.with_effects(
+      spell: attack(spell4_id: 51_908, base: 2, change: KeepsStealth),
+      kinds: [
+        spell_plan.RemoveStealthEffect(RemoveStealthRow(
           effect_id: Spell4EffectsId(51_908),
           phase_flags: -1,
           condition: Always,
           tag: spend.always,
-        ),
+        )),
       ],
     )
   let #(plans, state, first) = stealthed_by_base_1(others: [kept(), removes])

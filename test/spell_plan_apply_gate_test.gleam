@@ -82,9 +82,10 @@ fn control_of(
   let assert Ok(spell) = plan_of(tables: fixture_tables.shared(), spell4_id:)
     as "the client's spell plans"
   let assert Ok(row) =
-    list.find(spell.controls, fn(row) {
-      row.effect_id == Spell4EffectsId(effect_id)
-    })
+    list.find(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_control),
+      fn(row) { row.effect_id == Spell4EffectsId(effect_id) },
+    )
     as "the plan lists the row among the spell's states"
   row
 }
@@ -378,9 +379,10 @@ pub fn ccstateset_row_past_the_caster_behind_a_creature_state_gate_is_left_to_th
   let assert Ok(spell) = plan_of(tables:, spell4_id: 51_989)
     as "a state behind a gate on each creature's own state plans"
   let assert Ok(control) =
-    list.find(spell.controls, fn(row) {
-      row.effect_id == Spell4EffectsId(122_821)
-    })
+    list.find(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_control),
+      fn(row) { row.effect_id == Spell4EffectsId(122_821) },
+    )
     as "the plan lists the row among the spell's states"
   assert control.condition == Always
     as "the strike checks no gate of the row itself: the creature it names does"
@@ -431,9 +433,10 @@ pub fn no_planned_spell_holds_a_refused_damage_or_control_row_test() -> Nil {
       }
       list.append(
         damage,
-        list.map(spell.controls, fn(control) {
-          row(control.effect_id, control.condition)
-        }),
+        list.map(
+          spell_plan.payloads(spell:, as_kind: spell_plan.as_control),
+          fn(control) { row(control.effect_id, control.condition) },
+        ),
       )
     })
   assert rows != [] as "the planned trees hold damage and crowd-control rows"
