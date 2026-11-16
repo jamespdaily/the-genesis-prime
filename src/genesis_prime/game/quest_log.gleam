@@ -254,9 +254,6 @@ fn objectives(quest quest: Quest2) -> List(Int) {
   |> list.filter(fn(objective) { objective != 0 })
 }
 
-/// The QuestObjective type of the placeholder slot (0x1405fbdc0).
-const placeholder_type = 31
-
 /// Whether a QuestObjective row is of the placeholder type.
 fn is_placeholder(
   objective objective: Int,
@@ -839,7 +836,8 @@ pub fn reset_due(
 // ---- the client's reads of a quest ----
 
 /// One objective of a quest as the client keeps it (`0x1405a8a40`, the quest record's
-/// words 0x18 and after): its QuestObjective id, type, flags, count and data (the id of
+/// words 0x18 and after): its QuestObjective id, kind (the row's type and data decoded,
+/// `objective_kind`), flags, count and data (the id of
 /// the row its type names, a Creature2 id for types 3 and 12), the TargetGroup row of
 /// its reward pane (0 for none), and whether it counts its progress as bits
 /// (`0x1405517a0`), its time limit in milliseconds (`maxTimeAllowedMS`, 0 for none), and
@@ -849,7 +847,7 @@ pub fn reset_due(
 pub type Objective {
   Objective(
     objective_id: Int,
-    type_: Int,
+    kind: objective_kind.Kind,
     flags: Int,
     count: Int,
     data: Int,
@@ -915,7 +913,7 @@ fn objective_of(
 ) -> Objective {
   Objective(
     objective_id: row.id,
-    type_: row.type_,
+    kind: objective_kind.of_row(row),
     flags: row.flags,
     count: row.count,
     data: row.data,
@@ -944,7 +942,7 @@ fn as_logged(log log: QuestLog, quest quest: Quest) -> Quest {
     Ok(Active(placeholder: Some(placeholder), ..)) -> {
       let #(before, from_the_slot) =
         list.split_while(quest.objectives, fn(objective) {
-          objective.type_ != placeholder_type
+          objective.kind != objective_kind.Placeholder
         })
       case from_the_slot {
         [_, ..after] ->
@@ -1366,7 +1364,7 @@ fn reachable_when(
 ) -> Bool {
   case list.drop(quest.objectives, index) {
     [] -> False
-    [Objective(type_: 0, ..), ..] -> True
+    [Objective(kind: objective_kind.Unconditional, ..), ..] -> True
     [objective, ..] -> {
       let earlier =
         list.index_map(list.take(quest.objectives, index), fn(before, at) {
@@ -1391,14 +1389,11 @@ fn reachable_when(
   }
 }
 
-/// The objective types whose raw progress is thousandths of completion when flag 0x200
-/// is clear (`0x1406113b0`): 2, 8, 15, 16 and 46.
+/// The objective kinds whose raw progress is thousandths of completion when flag 0x200
+/// is clear (`0x1406113b0`): the kills.
 fn is_percent_kind(objective objective: Objective) -> Bool {
-  case objective.type_ {
-    2 | 8 | 15 | 16 | 46 ->
-      !has_flag(flags: objective.flags, flag: counted_flag)
-    _ -> False
-  }
+  objective_kind.is_kill(objective.kind)
+  && !has_flag(flags: objective.flags, flag: counted_flag)
 }
 
 /// Whether the objective's stored progress is thousandths of completion: a percent kind
@@ -1575,18 +1570,6 @@ pub type UnitRef {
   UnitRef(map: MapId, incarnation: Int, unit_id: Int)
 }
 
-/// The QuestObjective type of a use-a-creature objective whose data names a TargetGroup
-/// (`0x140550c50`): each unit of the group counts toward its count.
-pub const use_a_group_type = 23
-
-/// The QuestObjective type of a cast of the spell in its data (`QuestObjective.type.11`).
-/// `shortcut_spell.cast_type` is the same number; that module reaches this one through
-/// `spell_plan`, so it cannot be named here.
-const cast_a_spell_type = 11
-
-/// The QuestObjective type of a use of the creature in its data (`QuestObjective.type.12`).
-pub const use_a_creature_type = 12
-
 /// Whether the objective counts each unit once (`used`): a use of a unit of a group
 /// (type 23), a cast at a unit (type 11), or a use of a creature (type 12) that is not in
 /// `reused`, the objectives of a creature the world holds too few units of to reach the
@@ -1595,10 +1578,10 @@ pub fn counted_by_unit(
   objective objective: Objective,
   reused reused: Set(Int),
 ) -> Bool {
-  objective.type_ == use_a_group_type
-  || objective.type_ == cast_a_spell_type
+  result.is_ok(objective_kind.used_group(objective.kind))
+  || result.is_ok(objective_kind.cast_spell(objective.kind))
   || {
-    objective.type_ == use_a_creature_type
+    result.is_ok(objective_kind.used_creature(objective.kind))
     && !set.contains(reused, objective.objective_id)
   }
 }

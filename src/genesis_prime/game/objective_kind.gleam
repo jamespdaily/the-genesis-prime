@@ -322,6 +322,205 @@ pub fn placed_target(kind: Kind) -> Result(PlacedTarget, Nil) {
   }
 }
 
+/// The creature a talk objective names: type 3 (`QuestObjective.type.3`).
+pub fn talked_creature(kind: Kind) -> Result(Creature2Id, Nil) {
+  case kind {
+    TalkTo(creature2_id:) -> Ok(creature2_id)
+    Unconditional
+    | KillCreature(_)
+    | CollectItem(_)
+    | Scripted
+    | KillGroup(_)
+    | ServerChecklist
+    | CastSpell(_)
+    | UseCreature(_)
+    | ChecklistUse(_)
+    | KillByCluster(_)
+    | VisitZone(_)
+    | ChecklistTalk(_)
+    | ReachPlace
+    | UseGroup(_)
+    | FinishQuest(_)
+    | ChecklistActivate(_)
+    | Placeholder
+    | CollectVirtualItem(_)
+    | CraftItem(_)
+    | KillByDifficulty(_)
+    | Unread(_) -> Error(Nil)
+  }
+}
+
+/// The TargetGroup a talk-to-each checklist objective names: type 18
+/// (`QuestObjective.type.18`), not the use checklist of type 14.
+pub fn talked_checklist_group(kind: Kind) -> Result(TargetGroupId, Nil) {
+  case kind {
+    ChecklistTalk(target_group_id:) -> Ok(target_group_id)
+    Unconditional
+    | KillCreature(_)
+    | TalkTo(_)
+    | CollectItem(_)
+    | Scripted
+    | KillGroup(_)
+    | ServerChecklist
+    | CastSpell(_)
+    | UseCreature(_)
+    | ChecklistUse(_)
+    | KillByCluster(_)
+    | VisitZone(_)
+    | ReachPlace
+    | UseGroup(_)
+    | FinishQuest(_)
+    | ChecklistActivate(_)
+    | Placeholder
+    | CollectVirtualItem(_)
+    | CraftItem(_)
+    | KillByDifficulty(_)
+    | Unread(_) -> Error(Nil)
+  }
+}
+
+/// The item a collect objective names: type 4 (`QuestObjective.type.4`).
+pub fn collected_item(kind: Kind) -> Result(Item2Id, Nil) {
+  case kind {
+    CollectItem(item2_id:) -> Ok(item2_id)
+    Unconditional
+    | KillCreature(_)
+    | TalkTo(_)
+    | Scripted
+    | KillGroup(_)
+    | ServerChecklist
+    | CastSpell(_)
+    | UseCreature(_)
+    | ChecklistUse(_)
+    | KillByCluster(_)
+    | VisitZone(_)
+    | ChecklistTalk(_)
+    | ReachPlace
+    | UseGroup(_)
+    | FinishQuest(_)
+    | ChecklistActivate(_)
+    | Placeholder
+    | CollectVirtualItem(_)
+    | CraftItem(_)
+    | KillByDifficulty(_)
+    | Unread(_) -> Error(Nil)
+  }
+}
+
+/// The schematic a craft objective names: type 33 (`QuestObjective.type.33`).
+pub fn crafted_schematic(kind: Kind) -> Result(TradeskillSchematic2Id, Nil) {
+  case kind {
+    CraftItem(tradeskill_schematic2_id:) -> Ok(tradeskill_schematic2_id)
+    Unconditional
+    | KillCreature(_)
+    | TalkTo(_)
+    | CollectItem(_)
+    | Scripted
+    | KillGroup(_)
+    | ServerChecklist
+    | CastSpell(_)
+    | UseCreature(_)
+    | ChecklistUse(_)
+    | KillByCluster(_)
+    | VisitZone(_)
+    | ChecklistTalk(_)
+    | ReachPlace
+    | UseGroup(_)
+    | FinishQuest(_)
+    | ChecklistActivate(_)
+    | Placeholder
+    | CollectVirtualItem(_)
+    | KillByDifficulty(_)
+    | Unread(_) -> Error(Nil)
+  }
+}
+
+/// The quest a finish objective names: type 24 (`QuestObjective.type.24`).
+pub fn finished_quest(kind: Kind) -> Result(Quest2Id, Nil) {
+  case kind {
+    FinishQuest(quest2_id:) -> Ok(quest2_id)
+    Unconditional
+    | KillCreature(_)
+    | TalkTo(_)
+    | CollectItem(_)
+    | Scripted
+    | KillGroup(_)
+    | ServerChecklist
+    | CastSpell(_)
+    | UseCreature(_)
+    | ChecklistUse(_)
+    | KillByCluster(_)
+    | VisitZone(_)
+    | ChecklistTalk(_)
+    | ReachPlace
+    | UseGroup(_)
+    | ChecklistActivate(_)
+    | Placeholder
+    | CollectVirtualItem(_)
+    | CraftItem(_)
+    | KillByDifficulty(_)
+    | Unread(_) -> Error(Nil)
+  }
+}
+
+/// Whether a use counts for the objective only through the creature the server links
+/// to it (`genesis_prime/game/objective_link`): types 5 and 32 (`QuestObjective.type.5`,
+/// `QuestObjective.type.32`).
+pub fn is_linked_use(kind: Kind) -> Bool {
+  case kind {
+    Scripted | CollectVirtualItem(_) -> True
+    Unconditional
+    | KillCreature(_)
+    | TalkTo(_)
+    | CollectItem(_)
+    | KillGroup(_)
+    | ServerChecklist
+    | CastSpell(_)
+    | UseCreature(_)
+    | ChecklistUse(_)
+    | KillByCluster(_)
+    | VisitZone(_)
+    | ChecklistTalk(_)
+    | ReachPlace
+    | UseGroup(_)
+    | FinishQuest(_)
+    | ChecklistActivate(_)
+    | Placeholder
+    | CraftItem(_)
+    | KillByDifficulty(_)
+    | Unread(_) -> False
+  }
+}
+
+/// Whether the objective is a kill of a unit by its cluster: type 15
+/// (`QuestObjective.type.15`).
+pub fn kills_by_cluster(kind: Kind) -> Bool {
+  case kind {
+    KillByCluster(_) -> True
+    Unconditional
+    | KillCreature(_)
+    | TalkTo(_)
+    | CollectItem(_)
+    | Scripted
+    | KillGroup(_)
+    | ServerChecklist
+    | CastSpell(_)
+    | UseCreature(_)
+    | ChecklistUse(_)
+    | VisitZone(_)
+    | ChecklistTalk(_)
+    | ReachPlace
+    | UseGroup(_)
+    | FinishQuest(_)
+    | ChecklistActivate(_)
+    | Placeholder
+    | CollectVirtualItem(_)
+    | CraftItem(_)
+    | KillByDifficulty(_)
+    | Unread(_) -> False
+  }
+}
+
 /// The units a checklist objective counts: the TargetGroup of types 14 and 18, the
 /// PathSoldierActivate row of types 27 and 28 (`0x1405517a0`). Types 10 and 13 name
 /// none, since their progress comes only from the server; whether a 27 or 28 is a
@@ -419,11 +618,11 @@ pub fn is_checklist(
 }
 
 /// Whether a rule of the server advances an objective of this type: the coverage
-/// measure's "handled". Types 11 (a cast of the objective's spell), 10, 13, 15, 27, 31
-/// and 46 differ from the decode: 10, 13, 15, 31 and 46 decode but advance no objective
+/// measure's "handled". Types 11 (a cast of the objective's spell), 10, 13, 15, 31 and
+/// 46 differ from the decode: 10, 13, 15, 31 and 46 decode but advance no objective
 /// (progress of 10 and 13 comes only from the server, no kill advances 15 or 46, 31 is
-/// not shown); type 27 decodes as 28, but its one row is in no quest
-/// (`QuestObjective.type.27`), so it is not counted.
+/// not shown). Types 27 and 28 both count a use of the creature of their
+/// PathSoldierActivate row (`0x1405517a0`).
 pub fn is_counted(type_number type_number: Int) -> Bool {
   case kind_of(type_number:, data: 0) {
     KillCreature(_)
@@ -440,8 +639,8 @@ pub fn is_counted(type_number type_number: Int) -> Bool {
     | UseGroup(_)
     | FinishQuest(_)
     | CollectVirtualItem(_)
-    | CraftItem(_) -> True
-    ChecklistActivate(_) -> type_number == 28
+    | CraftItem(_)
+    | ChecklistActivate(_) -> True
     Unconditional
     | ServerChecklist
     | KillByCluster(_)

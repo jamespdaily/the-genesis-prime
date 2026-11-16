@@ -51,9 +51,9 @@ pub type Checklist {
   )
 }
 
-/// The checklist objectives of the quests (types 14, 18 and 28), each with the
+/// The checklist objectives of the quests (types 14, 18, 27 and 28), each with the
 /// candidates that are its targets: for types 14 and 18 the members of the objective's
-/// TargetGroup, for type 28 the unit of its PathSoldierActivate row.
+/// TargetGroup, for types 27 and 28 the unit of its PathSoldierActivate row.
 pub fn checklists(
   tables tables: table_store.Tables,
   candidates candidates: List(Candidate),

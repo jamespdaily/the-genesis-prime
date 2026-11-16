@@ -13,10 +13,12 @@
 ////   54338 one each and 22429 six.
 
 import client_tables
+import genesis_prime/game/objective_kind
 import genesis_prime/game/quest_log
 import genesis_prime/table/quest_objective
 import gleam/dict
 import gleam/list
+import gleam/result
 import gleam/set
 import owned_test
 import unitest
@@ -51,7 +53,8 @@ pub fn a_type_12_objective_of_count_1_is_never_reused_test() -> Nil {
     quest_log.reused_unit_objectives(tables:, spawn_counts: dict.new())
   let single_use =
     list.filter(quest_objective.all(tables), fn(row) {
-      row.type_ == quest_log.use_a_creature_type && row.count <= 1
+      result.is_ok(objective_kind.used_creature(objective_kind.of_row(row)))
+      && row.count <= 1
     })
   assert list.length(single_use) == 1059
     as "QuestObjective has 1055 rows of type 12 with count 1 and 4 with count 0"
