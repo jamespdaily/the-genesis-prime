@@ -3172,9 +3172,11 @@ fn not_built_refusal(
 /// is not what it was in `cast`, the state before the input: one per input, however many
 /// Stealth rows came and went. The input's events are recorded as pending, to be matched
 /// against the held procs once the connection has drawn what they need
-/// (`proc_draws_needed`, `procs_fire`): `own` are the input's own events, then a
-/// heal for each `Heal` change the input's effects start on the caster, then the stealth
-/// change. `step` is the input's own work.
+/// (`proc_draws_needed`, `procs_fire`), in this order: `own` are the input's own events,
+/// then a heal and a receipt for each `Heal` change the input's effects start on the
+/// caster, then the events the input raised as it ran (`UsesAbility` in `start`), then a
+/// `SpendsResource` for each payment among its effects, then the stealth change. `step` is
+/// the input's own work.
 fn settled(
   cast cast: State,
   own own: List(proc.Event),
@@ -3194,17 +3196,62 @@ fn settled(
       ])
     }
   }
+  let before_count = list.length(cast.pending)
   let events =
-    list.flatten([own, heals_landed(before: cast, after:, effects:), stealth])
+    list.flatten([
+      own,
+      heals_landed(before: cast, after:, effects:),
+      list.drop(after.pending, before_count),
+      resources_spent(effects:),
+      stealth,
+    ])
   #(
-    State(..after, pending: list.append(after.pending, events)),
+    State(
+      ..after,
+      pending: list.append(list.take(after.pending, before_count), events),
+    ),
     list.append(effects, moved),
   )
 }
 
-/// The events of the heals an input's effects start on the caster, one for each `Heal`
-/// change in order. Two readings are guesses: a heal that moves nothing is one as well,
-/// and a heal of the shields or of any other vital counts as `LandsHeal` as a health heal
+/// A `SpendsResource` event for each payment the effects take from the caster's class
+/// resource. A guess: the event names no spell, so a group filter never matches it (a
+/// payment does not say which spell it is for, and no client code reads a Proc row,
+/// `Spell4Effects.effectType.14.dataBits00`).
+fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      Pay(..) ->
+        Ok(proc.Event(
+          trigger: spell_plan.SpendsResource,
+          other_unit: None,
+          spell: None,
+        ))
+      Send(..)
+      | Tell(..)
+      | StartTimer(..)
+      | CancelTimer(..)
+      | Log(..)
+      | Strike(..)
+      | TickStrike(..)
+      | Gain(..)
+      | CasterChangeStarts(..)
+      | CasterChangeEnds(..)
+      | TargetChangeStarts(..)
+      | TargetChangeEnds(..)
+      | ForcedMoveStarts(..)
+      | Activated(..)
+      | ShortcutCast(..)
+      | StealthChanged(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The events of the heals an input's effects start on the caster: for each `Heal` change
+/// in order, a `LandsHeal` and then a `ReceivesHeal`, since the caster is the one who
+/// heals and the one healed (a heal aimed at another unit starts no change on the caster
+/// and raises neither). Two readings are guesses: a heal that moves nothing is one as well,
+/// and a heal of the shields or of any other vital counts as a heal as a health heal
 /// does (the client reads no Proc row to say what a heal is,
 /// `Spell4Effects.effectType.14.dataBits00`). The event's spell is the spell of the cast
 /// whose row healed, as `after` holds it or, for a cast the input ended, `before`.
@@ -3215,13 +3262,11 @@ fn heals_landed(
   after after: State,
   effects effects: List(Effect),
 ) -> List(proc.Event) {
-  list.filter_map(effects, fn(effect) {
+  list.flat_map(effects, fn(effect) {
     case effect {
-      CasterChangeStarts(source:, change: Heal(..)) ->
-        Ok(proc.Event(
-          trigger: spell_plan.LandsHeal,
-          other_unit: None,
-          spell: option.map(
+      CasterChangeStarts(source:, change: Heal(..)) -> {
+        let spell =
+          option.map(
             option.from_result(
               result.lazy_or(
                 holder_of(cast: after, cast_id: source.cast_id),
@@ -3229,11 +3274,15 @@ fn heals_landed(
               ),
             ),
             fn(holder) { event_spell(spell: holder.spell) },
-          ),
-        ))
+          )
+        [
+          proc.Event(trigger: spell_plan.LandsHeal, other_unit: None, spell:),
+          proc.Event(trigger: spell_plan.ReceivesHeal, other_unit: None, spell:),
+        ]
+      }
       CasterChangeStarts(change: Property(..), ..)
       | CasterChangeStarts(change: Absorb(..), ..)
-      | CasterChangeStarts(change: Look(..), ..) -> Error(Nil)
+      | CasterChangeStarts(change: Look(..), ..) -> []
       Send(..)
       | Tell(..)
       | StartTimer(..)
@@ -3249,7 +3298,7 @@ fn heals_landed(
       | ForcedMoveStarts(..)
       | Activated(..)
       | ShortcutCast(..)
-      | StealthChanged(..) -> Error(Nil)
+      | StealthChanged(..) -> []
     }
   })
 }
@@ -3265,30 +3314,53 @@ fn event_spell(spell spell: Spell) -> proc.EventSpell {
 
 /// The events a strike round's units give the holder, in the round's order: for each
 /// description of the damage that landed on a creature, a hit, a melee hit when the spell is
-/// of school 1, a critical when the description's combat result is a critical and a kill
+/// of school 1, a critical when the description's combat result is a critical (and a finisher
+/// critical, which the row's group filter narrows to finishers) and a kill
 /// when it killed the creature, so a go with two damage rows on one creature raises two
-/// hits and a spell that only selects a unit (no description) raises none. A deflected
-/// unit and an immune one raise none, and a player a creature's attack hit is not the
-/// holder's strike (a guess for each description counting and for a deflect and an
-/// immunity: no client code reads a Proc row,
-/// `Spell4Effects.effectType.14.client_evaluation`).
+/// hits and a spell that only selects a unit (no description) raises none; then a taunt
+/// landed for each Taunt state the creature took, a guarded creature's included. A
+/// deflected unit raises a deflect and no hit, and an immune one no hit, and a player
+/// a creature's attack hit is not the holder's strike (a guess for each description
+/// counting, for a deflect, an immunity, a finisher critical and a taunt: no client code
+/// reads a Proc row, `Spell4Effects.effectType.14.client_evaluation`).
 fn hit_events(
   spell spell: Spell,
   struck struck: List(Struck),
 ) -> List(proc.Event) {
+  let on = fn(unit_id, trigger) {
+    proc.Event(
+      trigger:,
+      other_unit: Some(unit_id),
+      spell: Some(event_spell(spell:)),
+    )
+  }
   list.flat_map(struck, fn(one) {
     case one {
-      Hit(unit_id:, unit: HitCreature(..), descriptions:, ..) ->
-        list.flat_map(descriptions, fn(description) {
-          list.map(hit_triggers(spell:, description:), fn(trigger) {
-            proc.Event(
-              trigger:,
-              other_unit: Some(unit_id),
-              spell: Some(event_spell(spell:)),
-            )
-          })
-        })
-      Hit(unit: HitPlayer, ..) | Deflected(..) | Immune(..) -> []
+      Hit(unit_id:, unit: HitCreature(..), descriptions:, controls:, ..) ->
+        list.append(
+          list.flat_map(descriptions, fn(description) {
+            list.map(hit_triggers(spell:, description:), on(unit_id, _))
+          }),
+          taunts_landed(unit_id:, controls:, on:),
+        )
+      Immune(unit_id:, unit: HitCreature(..), controls:, ..) ->
+        taunts_landed(unit_id:, controls:, on:)
+      Deflected(unit_id:) -> [on(unit_id, spell_plan.FoeDeflects)]
+      Hit(unit: HitPlayer, ..) | Immune(unit: HitPlayer, ..) -> []
+    }
+  })
+}
+
+/// A taunt landed event for each Taunt state a unit took.
+fn taunts_landed(
+  unit_id unit_id: Int,
+  controls controls: List(strike_tell.ControlLanded),
+  on on: fn(Int, spell_plan.Trigger) -> proc.Event,
+) -> List(proc.Event) {
+  list.filter_map(controls, fn(control) {
+    case control.tell.row.state == crowd_control_state.Taunt {
+      True -> Ok(on(unit_id, spell_plan.LandsTaunt))
+      False -> Error(Nil)
     }
   })
 }
@@ -3298,14 +3370,15 @@ fn hit_triggers(
   spell spell: Spell,
   description description: hit.Description,
 ) -> List(spell_plan.Trigger) {
+  let critical = description.damage.combat_result == combat_result.Critical
   list.flatten([
     [spell_plan.LandsHit],
     case spell.school {
       1 -> [spell_plan.LandsMeleeHit]
       _ -> []
     },
-    case description.damage.combat_result == combat_result.Critical {
-      True -> [spell_plan.LandsCritical]
+    case critical {
+      True -> [spell_plan.LandsCritical, spell_plan.LandsFinisherCritical]
       False -> []
     },
     case description.damage.killed != 0 {
@@ -3318,6 +3391,62 @@ fn hit_triggers(
 /// Whether an input raised events the held procs have not been matched against yet.
 pub fn has_pending(cast cast: State) -> Bool {
   cast.pending != []
+}
+
+/// A fact about the holder the connection saw outside a cast: it started to move, or a class
+/// resource slot changed from one value to another.
+pub type Fact {
+  StartedMoving
+  ResourceMoved(slot: Int, from: Float, to: Float)
+}
+
+/// The slot of the Stalker's class resource, suit power: 3 of the class's eight slots
+/// (genesis_prime/game/class_resource, `LocalizedEnum.CRB_StalkerResource`).
+const suit_power_slot = 3
+
+/// The state with the events the facts raise appended to the pending ones, in the facts'
+/// order. A resource that changed at all raises `ResourceCrosses`, and a fall of the
+/// Stalker's suit power also `SuitPowerDrops`; the proc's own holder gate then decides
+/// whether the value is the one it waits for, on the holder as it is after the change
+/// (`procs_fire`). Two readings are guesses: the change of any slot is an event of kind 87,
+/// and the gate is not asked whether the value was on the other side before, so a change
+/// that stays inside or goes on past the gated range raises the event too (no client code
+/// reads a Proc row, `Spell4Effects.effectType.14.dataBits00`).
+pub fn raised(cast cast: State, facts facts: List(Fact)) -> State {
+  let events =
+    list.flat_map(facts, fn(fact) {
+      case fact {
+        StartedMoving -> [
+          proc.Event(
+            trigger: spell_plan.StartsMoving,
+            other_unit: None,
+            spell: None,
+          ),
+        ]
+        ResourceMoved(slot:, from:, to:) if from != to ->
+          list.flatten([
+            [
+              proc.Event(
+                trigger: spell_plan.ResourceCrosses,
+                other_unit: None,
+                spell: None,
+              ),
+            ],
+            case slot == suit_power_slot && to <. from {
+              True -> [
+                proc.Event(
+                  trigger: spell_plan.SuitPowerDrops,
+                  other_unit: None,
+                  spell: None,
+                ),
+              ]
+              False -> []
+            },
+          ])
+        ResourceMoved(..) -> []
+      }
+    })
+  State(..cast, pending: list.append(cast.pending, events))
 }
 
 /// The words and the gate rolls the connection draws before the pending events are matched
@@ -7688,6 +7817,17 @@ fn start(
       presses: cast.presses + 1,
       global_cooldown_ends_ms: global_ends,
       casts: dict.insert(cast.casts, id, live),
+      pending: case role {
+        Base(..) | Stage(..) ->
+          list.append(cast.pending, [
+            proc.Event(
+              trigger: spell_plan.UsesAbility,
+              other_unit: None,
+              spell: Some(event_spell(spell:)),
+            ),
+          ])
+        Child | Passive | Activation(..) | Shortcut(..) -> cast.pending
+      },
       passive: case role {
         Passive -> Some(id)
         Child | Base(..) | Stage(..) | Activation(..) | Shortcut(..) ->

@@ -28,13 +28,17 @@
 
 import attacker_support
 import cast_support as support
+import character_support
 import client_tables
+import crowd_control_support
 import genesis_prime/client_connection
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/class_resource
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/hit
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/movement
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{
   type Plans, type ProcRow, type Spell, AliveOrDead, Always, AnySpell, AtHolder,
@@ -42,10 +46,12 @@ import genesis_prime/game/spell_plan.{
   LeftCombat, LeftStealth, ProcRow, RemoveStealthRow, Spell, StealthRow,
 }
 import genesis_prime/game/spend
+import genesis_prime/game/strike_tell
 import genesis_prime/game/ticking
 import genesis_prime/game/unit_properties
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_result
+import genesis_prime/message/crowd_control_state
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
@@ -62,6 +68,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import owned_test
+import place_support
 import prerequisite_support
 import unitest
 
@@ -2871,4 +2878,632 @@ pub fn the_stalkers_178239_takes_no_effect_from_its_own_hits_test() -> Nil {
     )
   assert starts_of(spell4_id: 72_838, effects:) == 0
   assert !cast.has_pending(cast: state)
+}
+
+// ---- part A of the triggers (issue 792) ----
+//
+// Every reading here is a guess: no client code reads a Proc row, so the kinds rest on the texts of
+// `Spell4Effects.effectType.14.dataBits00.fairly_sure`. The tests show what the server does
+// with each reading; a retail recording of the event settles it.
+
+/// The press of the bag index, then its go answered with nothing struck: the effects of
+/// both steps in order (an answer returns the effects it follows too).
+fn pressed_and_answered(
+  plans plans: Plans,
+  state state: State,
+  caster caster: Caster,
+  bag bag: Int,
+  at ms: Int,
+) -> List(Effect) {
+  let #(state, pressed) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: bag,
+      target: 0,
+      at: ms,
+    )
+  let #(_, answer) =
+    support.answered_as(
+      caster:,
+      state:,
+      effects: pressed,
+      at: ms,
+      struck: [],
+      rolls: [],
+    )
+  answer
+}
+
+/// The lines of the trace that start one of the two planted procs' spells, in order.
+fn starts_in_order(effects effects: List(Effect)) -> List(String) {
+  list.filter(trace(effects:, earlier: [], pressed: 0), fn(line) {
+    string.starts_with(line, "start 2502")
+  })
+}
+
+// ---- 10: uses an ability ----
+
+pub fn proc_ability_used_fires_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits00.fairly_sure: kind 10 is 'uses an ability'. A press
+  // the rule accepts is a use; a press it refuses is not.
+  let #(plans, state) =
+    holder_and_hitter(
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.UsesAbility,
+          casts: 250_201,
+          aim: spell_plan.AtHolder,
+        ),
+      ],
+      school: 2,
+    )
+  let #(_, accepted) = hit_with(plans:, state:, struck: [], at: 1000)
+  assert starts_at(spell4_id: 250_201, effects: accepted) == [7]
+    as "an accepted press fires the proc once, at the holder"
+  let #(_, refused) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster: dead(caster: planted_caster()),
+      bag_index: bag_of_base_2,
+      target: 0,
+      at: 2000,
+    )
+  assert support.refusal_results(effects: refused) != []
+    as "the hitter cannot be cast by a dead caster, so the press is refused"
+  assert starts_of(spell4_id: 250_201, effects: refused) == 0
+    as "a refused press fires nothing"
+}
+
+// ---- 103: spends a class resource ----
+
+pub fn proc_resource_spent_fires_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits00.fairly_sure: kind 103 is 'spends a class resource'
+  // (texts 355762, 760074). A payment the rule takes is a spend; a gain is not.
+  let holder =
+    holding(spell4_id: 250_101, procs: [
+      firing(
+        id: 1,
+        trigger: spell_plan.SpendsResource,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+    ])
+  let spender =
+    Spell(..support.child(spell4_id: 250_302, base: 1), costs: [
+      spell_plan.SlotCost(slot: 1, amount: 3, result: 51),
+    ])
+  let gainer =
+    Spell(..support.child(spell4_id: 250_303, base: 3), gains: [
+      spell_plan.Gain(
+        effect_id: Spell4EffectsId(1),
+        slot: 1,
+        amount: 1,
+        phase_flags: 1,
+        condition: Always,
+        tag: spend.always,
+      ),
+    ])
+  let plans = support.plans_of([holder, spender, gainer])
+  let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
+  let paying =
+    pressed_and_answered(
+      plans:,
+      state:,
+      caster: planted_caster(),
+      bag: bag_of_base_1,
+      at: 1000,
+    )
+  assert support.payments(effects: paying)
+    == [class_resource.Payment(slot: 1, amount: 3)]
+    as "the spender pays 3 of slot 1"
+  assert starts_at(spell4_id: 250_201, effects: paying) == [7]
+    as "the payment fires the proc once"
+  let gaining =
+    pressed_and_answered(
+      plans:,
+      state:,
+      caster: planted_caster(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  assert support.gains(effects: gaining) != []
+    as "the gainer gives a point of slot 1"
+  assert starts_at(spell4_id: 250_201, effects: gaining) == []
+    as "a gain fires nothing"
+}
+
+// ---- 21: receives a heal ----
+
+/// The effects of a press of a spell whose child, made on `target`, holds a heal aimed at
+/// its primary target, by a healer holding a kind 21 proc; a unit 900 is struck.
+fn healed_through_a_child(
+  target target: spell_plan.ProxyTarget,
+) -> List(Effect) {
+  let holder =
+    holding(spell4_id: 250_101, procs: [
+      firing(
+        id: 1,
+        trigger: spell_plan.ReceivesHeal,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+    ])
+  let child =
+    Spell(..support.child(spell4_id: 90_001, base: 90_001), heals: [
+      spell_plan.Heal(
+        effect_id: Spell4EffectsId(1),
+        vital: effect_kind.Health,
+        phase_flags: -1,
+        aim: spell_plan.AimsAtPrimaryTarget,
+        condition: Always,
+        tag: spend.always,
+        formula: health_formula(),
+        delay_ms: 0,
+      ),
+    ])
+  let parent =
+    Spell(..support.child(spell4_id: 250_303, base: 3), proxies: [
+      spell_plan.Proxy(
+        effect_id: Spell4EffectsId(90_002),
+        delay_ms: 0,
+        phase_flags: -1,
+        condition: Always,
+        tag: spend.always,
+        target:,
+        spell: child,
+        gains: [],
+      ),
+    ])
+  let plans = support.plans_of([holder, parent])
+  let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
+  let caster = healer(health: 500)
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1000,
+    )
+  let #(_, effects) =
+    support.answered_as(
+      caster:,
+      state:,
+      effects: raw,
+      at: 1000,
+      struck: support.hits([900]),
+      rolls: [],
+    )
+  effects
+}
+
+pub fn proc_heal_received_fires_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits00.fairly_sure: kind 21 is 'receives a heal' (text
+  // 569376 'On Taking a Heal'). Only a heal the holder lands on itself counts: a heal aimed
+  // at another unit lands nothing (the rule's own answer, issue 570).
+  let steps =
+    healed_steps(health: 500, rows: [heal(id: 1, delay_ms: 0)], procs: [
+      firing(
+        id: 1,
+        trigger: spell_plan.ReceivesHeal,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+    ])
+  assert started_when(spell4_id: 250_201, steps:) == [1000]
+    as "a heal the holder lands on itself fires once"
+  assert starts_of(
+      spell4_id: 250_201,
+      effects: healed_through_a_child(target: spell_plan.OnCaster),
+    )
+    == 1
+    as "control: a child made on the caster heals the caster, and the proc fires"
+  assert starts_of(
+      spell4_id: 250_201,
+      effects: healed_through_a_child(target: spell_plan.OnEachStruck),
+    )
+    == 0
+    as "a heal on the struck unit 900 is another unit's: the holder receives none"
+}
+
+// ---- 52: a foe deflects ----
+
+pub fn proc_foe_deflects_fires_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits00.fairly_sure: kind 52 is 'a foe deflects its
+  // attack' (texts 364190, 498616). Only the Deflected answer counts; the proc is aimed at
+  // the foe that deflected.
+  let #(plans, state) =
+    holder_and_hitter(
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.FoeDeflects,
+          casts: 250_201,
+          aim: spell_plan.AtOtherUnit,
+        ),
+      ],
+      school: 2,
+    )
+  let struck = [
+    cast.Deflected(unit_id: 31),
+    cast.Immune(
+      unit_id: 32,
+      unit: support.first_life,
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    ),
+    plain_hit(unit_id: 33),
+  ]
+  let #(_, effects) = hit_with(plans:, state:, struck:, at: 1000)
+  assert starts_at(spell4_id: 250_201, effects:) == [31]
+    as "the deflected unit raises it; the immune and the landed ones do not"
+}
+
+// ---- 49: a finisher lands a critical ----
+
+pub fn proc_critical_finisher_fires_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits00.fairly_sure: kind 49 is a critical hit by a
+  // Finisher or a Builder (texts 'Landing a Critical Hit with a Finisher'); the row's group
+  // filter (dataBits08, `Spell4Effects.effectType.14.dataBits08`) names which. The same
+  // critical also raises 145.
+  let finisher = Spell(..hitter(school: 2), groups: [333])
+  let other = Spell(..support.child(spell4_id: 250_303, base: 3), groups: [444])
+  let holder =
+    holding(spell4_id: 250_101, procs: [
+      ProcRow(
+        ..firing(
+          id: 1,
+          trigger: spell_plan.LandsFinisherCritical,
+          casts: 250_201,
+          aim: spell_plan.AtHolder,
+        ),
+        filter: spell_plan.InGroup(group_id: 333),
+      ),
+    ])
+  let plans = support.plans_of([holder, finisher, other])
+  let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
+  let critical =
+    creature_hit(unit_id: 31, descriptions: [
+      blow(result: combat_result.Critical, killed: 0),
+    ])
+  let #(_, by_finisher) =
+    striking(
+      plans:,
+      state:,
+      bag: bag_of_base_2,
+      by: hitter_spell4,
+      struck: [critical],
+      at: 1000,
+    )
+  assert starts_at(spell4_id: 250_201, effects: by_finisher) == [7]
+    as "a critical of a spell in group 333 fires it"
+  let #(_, plainly) =
+    striking(
+      plans:,
+      state:,
+      bag: bag_of_base_2,
+      by: hitter_spell4,
+      struck: [plain_hit(unit_id: 31)],
+      at: 1000,
+    )
+  assert starts_at(spell4_id: 250_201, effects: plainly) == []
+    as "a hit that is no critical does not"
+  let #(_, by_other) =
+    striking(
+      plans:,
+      state:,
+      bag: bag_of_base_3,
+      by: 250_303,
+      struck: [critical],
+      at: 1000,
+    )
+  assert starts_at(spell4_id: 250_201, effects: by_other) == []
+    as "a critical of a spell outside group 333 does not"
+}
+
+// ---- 182: lands a taunt ----
+
+/// A hit on the creature that puts this state on it.
+fn controlling(
+  unit_id unit_id: Int,
+  tell tell: strike_tell.ControlTell,
+) -> cast.Struck {
+  cast.Hit(
+    unit_id:,
+    unit: support.first_life,
+    descriptions: [blow(result: combat_result.Hit, killed: 0)],
+    controls: [strike_tell.ControlLanded(tell:, ends_at_ms: 6000)],
+    armor_removed: 0,
+    ticking: [],
+  )
+}
+
+pub fn proc_taunt_landed_fires_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits00.fairly_sure: kind 182 is 'lands a taunt' (text
+  // 'Landing a Taunt'). A go whose foe answer lists a Taunt state raises it at that foe.
+  let #(plans, state) =
+    holder_and_hitter(
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.LandsTaunt,
+          casts: 250_201,
+          aim: spell_plan.AtOtherUnit,
+        ),
+      ],
+      school: 2,
+    )
+  let struck = [
+    controlling(
+      unit_id: 31,
+      tell: crowd_control_support.holding(
+        state: crowd_control_state.Taunt,
+        duration_ms: 5000,
+        instance_id: 1,
+      ),
+    ),
+    controlling(
+      unit_id: 32,
+      tell: crowd_control_support.stagger_stun(instance_id: 2),
+    ),
+  ]
+  let #(_, effects) = hit_with(plans:, state:, struck:, at: 1000)
+  assert starts_at(spell4_id: 250_201, effects:) == [31]
+    as "the taunted foe raises it; the stunned one does not"
+}
+
+// ---- 11: starts to move ----
+
+/// The movement state of a character that has just entered, then given these state flags.
+fn moving_with(
+  state state: movement.State,
+  flags flags: Int,
+) -> movement.State {
+  let assert Ok(next) =
+    movement.moved(
+      state:,
+      moves: movement.Moves(client_clock: 0x1234, commands: [
+        movement.StateFlags(flags:),
+      ]),
+    )
+    as "the flags are within the client's 18 bits"
+  next
+}
+
+/// How many times the kind 11 proc fires when the connection reports the change from one
+/// movement state to the next.
+fn move_fires(from from: movement.State, to to: movement.State) -> Int {
+  let #(_, state) =
+    holder_and_hitter(
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.StartsMoving,
+          casts: 250_201,
+          aim: spell_plan.AtHolder,
+        ),
+      ],
+      school: 2,
+    )
+  let facts = case movement.started_moving(from:, to:) {
+    True -> [cast.StartedMoving]
+    False -> []
+  }
+  let #(_, effects) =
+    support.then_procs(
+      step: #(cast.raised(cast: state, facts:), []),
+      caster: planted_caster(),
+      at: 2000,
+    )
+  starts_of(spell4_id: 250_201, effects:)
+}
+
+pub fn proc_moving_fires_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits00.fairly_sure: kind 11 is 'it moves' (text
+  // 'Whenever the target or an enemy near the target moves'). `movement_command.kind_24`:
+  // the client sends flag 0x1 when the velocity is near zero with no move asked and 0x2
+  // when a move is asked and the velocity is not near zero, so 0x2 is moving; 0x100 is on
+  // the ground.
+  let entered =
+    movement.entered(
+      place: place_support.live_character_place(),
+      session_epoch: character_support.epoch(3),
+    )
+  let still = moving_with(state: entered, flags: 0x1)
+  let moving = moving_with(state: still, flags: 0x2)
+  let moving_on_ground = moving_with(state: moving, flags: 0x102)
+  let stopped = moving_with(state: moving_on_ground, flags: 0x1)
+  assert move_fires(from: entered, to: still) == 0
+    as "standing to still is not a start"
+  assert move_fires(from: still, to: moving) == 1
+    as "standing to moving fires once"
+  assert move_fires(from: moving, to: moving_on_ground) == 0
+    as "a second update while moving does not"
+  assert move_fires(from: moving_on_ground, to: stopped) == 0
+    as "a stop does not"
+}
+
+// ---- 87 and 105: the class resource ----
+
+/// How many times a proc of this kind, gated by the Prerequisite row of one condition set,
+/// fires when the connection reports the holder's slot going from `from` to `to`, with the
+/// holder then at `to`.
+fn resource_fires(
+  trigger trigger: spell_plan.Trigger,
+  gate_id gate_id: Int,
+  conditions conditions: List(#(Int, Int, Int, Int)),
+  class_id class_id: Int,
+  slot slot: Int,
+  from from: Float,
+  to to: Float,
+) -> Int {
+  let gate =
+    prerequisite_support.loaded(id: gate_id, rows: [
+      prerequisite_support.row(id: gate_id, flags: 0, conditions:),
+    ])
+  let #(_, state) =
+    holder_and_hitter(
+      procs: [
+        ProcRow(
+          ..firing(id: 1, trigger:, casts: 250_201, aim: spell_plan.AtHolder),
+          holder_gate: Some(gate),
+        ),
+      ],
+      school: 2,
+    )
+  let state =
+    cast.raised(cast: state, facts: [cast.ResourceMoved(slot:, from:, to:)])
+  let caster =
+    support.caster_holding(resources: support.holding(class_id:, value: to))
+  assert class_resource.slot(resources: caster.resources) == slot
+    as "the class holds the slot the change names"
+  let #(_, effects) = support.then_procs(step: #(state, []), caster:, at: 2000)
+  starts_of(spell4_id: 250_201, effects:)
+}
+
+pub fn proc_resource_crossed_fires_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits00.fairly_sure: kind 87 is 'its class resource
+  // crosses a value' (texts 'between # and # Volatility', 'While above # Kinetic Energy').
+  // The row's holder gate (dataBits09) says which value: Prerequisite 22338 holds Vital 6,
+  // the Warrior's Volatility (slot 1 shown as Vital 6), at least 25 percent of its maximum
+  // (type 71, comparison 4) and at most 75 (comparison 6). The Warrior's maximum is 1000.
+  // A change is an event whatever its direction; the gate decides on the value the change
+  // ends at, so a change that stays inside the range fires too (a guess).
+  let fires = fn(from, to) {
+    resource_fires(
+      trigger: spell_plan.ResourceCrosses,
+      gate_id: 22_338,
+      conditions: [#(71, 4, 6, 25), #(71, 6, 6, 75)],
+      class_id: 1,
+      slot: 1,
+      from:,
+      to:,
+    )
+  }
+  assert fires(100.0, 300.0) == 1
+    as "10 percent to 30 percent crosses into the range"
+  assert fires(300.0, 900.0) == 0
+    as "30 percent to 90 percent leaves it: the gate fails at 90"
+  assert fires(100.0, 200.0) == 0 as "10 percent to 20 percent stays below it"
+}
+
+pub fn proc_suit_power_drops_fires_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits00.fairly_sure: kind 105 is 'its suit power drops
+  // below a value' (text 530326). The Stalker's resource is slot 3, shown as Vital 8; the
+  // holder gate Prerequisite 31382 is Vital 8 below 30 percent (type 71, comparison 5) of
+  // its maximum, 100. Only a fall is an event.
+  let drops = fn(from, to) {
+    resource_fires(
+      trigger: spell_plan.SuitPowerDrops,
+      gate_id: 31_382,
+      conditions: [#(71, 5, 8, 30)],
+      class_id: 5,
+      slot: 3,
+      from:,
+      to:,
+    )
+  }
+  assert drops(40.0, 20.0) == 1 as "a fall from 40 to 20 ends below 30 percent"
+  assert drops(20.0, 40.0) == 0 as "a rise raises nothing"
+  assert drops(80.0, 60.0) == 0
+    as "a fall that ends above 30 percent fails the gate"
+}
+
+// ---- the order inside one step ----
+
+pub fn proc_events_in_order_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The design of the step: an input's own events come first, then its heals, then the
+  // facts raised as the input ran (a use of an ability, then a payment), then the stealth
+  // change. No one input holds all four groups, so two inputs show the order: a press that
+  // uses an ability and pays, and a go that hits, heals and enters stealth. Each proc is
+  // listed in the reverse of the expected order.
+  let spender =
+    Spell(..support.child(spell4_id: 250_302, base: 1), costs: [
+      spell_plan.SlotCost(slot: 1, amount: 3, result: 51),
+    ])
+  let paying_holder =
+    holding(spell4_id: 250_101, procs: [
+      firing(
+        id: 1,
+        trigger: spell_plan.SpendsResource,
+        casts: 250_202,
+        aim: spell_plan.AtHolder,
+      ),
+      firing(
+        id: 2,
+        trigger: spell_plan.UsesAbility,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+    ])
+  let plans = support.plans_of([paying_holder, spender])
+  let #(state, _) = planted_joined(plans:, spell: paying_holder, at: 500)
+  let #(_, pressed) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster: planted_caster(),
+      bag_index: bag_of_base_1,
+      target: 0,
+      at: 1000,
+    )
+  assert starts_in_order(effects: pressed) == ["start 250201", "start 250202"]
+    as "the ability is used before its cost is paid"
+  let all_four =
+    Spell(
+      ..hitter(school: 2),
+      heals: [heal(id: 1, delay_ms: 0)],
+      stealth: [stealth_row(id: 250_902, breaks: KeptOnDamage)],
+      stealth_change: KeepsStealth,
+    )
+  let acting_holder =
+    holding(spell4_id: 250_101, procs: [
+      firing(
+        id: 1,
+        trigger: EnteredStealth,
+        casts: 250_204,
+        aim: spell_plan.AtHolder,
+      ),
+      firing(
+        id: 2,
+        trigger: spell_plan.ReceivesHeal,
+        casts: 250_203,
+        aim: spell_plan.AtHolder,
+      ),
+      firing(
+        id: 3,
+        trigger: spell_plan.LandsHeal,
+        casts: 250_202,
+        aim: spell_plan.AtHolder,
+      ),
+      firing(
+        id: 4,
+        trigger: spell_plan.LandsHit,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+    ])
+  let plans = support.plans_of([acting_holder, all_four])
+  let #(state, _) = planted_joined(plans:, spell: acting_holder, at: 500)
+  let #(_, went) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 1000)
+  assert starts_in_order(effects: went)
+    == ["start 250201", "start 250202", "start 250203", "start 250204"]
+    as "the hit, the heal it lands, the heal received, then the stealth"
 }

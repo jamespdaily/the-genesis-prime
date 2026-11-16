@@ -409,6 +409,11 @@ fn describe_proc_left_out(why why: spell_plan.LeftOutReason) -> String {
     spell_plan.ProcAimNotRead(data_bits03:) ->
       "its aim bits are " <> int.to_string(data_bits03)
     spell_plan.ProcWithoutLife -> "it has no duration and no flags bit 2"
+    spell_plan.ProcKindWaits(kind:, issue:) ->
+      "its kind "
+      <> int.to_string(kind)
+      <> " waits on issue "
+      <> int.to_string(issue)
     spell_plan.TypeNotRead
     | spell_plan.AimedAtOtherUnits
     | spell_plan.ProcOfAnotherKind(_)
