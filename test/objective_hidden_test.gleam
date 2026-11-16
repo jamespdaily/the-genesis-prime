@@ -35,14 +35,13 @@ import genesis_prime/game/communicator
 import genesis_prime/game/objective.{
   type Advanced, Advanced, CompleteByServer, SendProgress, SendState,
 }
+import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
 import genesis_prime/game/quest_log
 import genesis_prime/message/quest_log as quest_message
 import genesis_prime/store.{type HeldItem, type QuestRow, HeldItem}
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{
-  Item2Id, PrerequisiteId, Quest2Id, TradeskillSchematic2Id,
-}
+import genesis_prime/table/id.{Item2Id, PrerequisiteId, Quest2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
 import genesis_prime/table/quest2
@@ -583,7 +582,7 @@ fn unlinked_hidden_scripts(
   list.index_map(quest.objectives, fn(objective, index) { #(index, objective) })
   |> list.filter(fn(pair) {
     let #(index, objective) = pair
-    objective.type_ == 5
+    objective.kind == objective_kind.Scripted
     && int.bitwise_and(objective.flags, 8) != 0
     && objective.data == 0
     && !objective_link.is_linked(tables:, quest_id: quest.id, index:)
@@ -663,15 +662,15 @@ fn held_for(
   quest quest: quest_log.Quest,
 ) -> List(HeldItem) {
   list.filter_map(quest.objectives, fn(objective) {
-    let item2_id = case objective.type_ {
-      4 -> Ok(Item2Id(objective.data))
-      33 ->
-        tradeskill_schematic2.get(
-          tables:,
-          id: TradeskillSchematic2Id(objective.data),
-        )
+    let item2_id = case
+      objective_kind.collected_item(objective.kind),
+      objective_kind.crafted_schematic(objective.kind)
+    {
+      Ok(item2_id), _ -> Ok(item2_id)
+      Error(Nil), Ok(schematic_id) ->
+        tradeskill_schematic2.get(tables:, id: schematic_id)
         |> result.map(tradeskill_schematic2.item2_id_output)
-      _ -> Error(Nil)
+      Error(Nil), Error(Nil) -> Error(Nil)
     }
     use item2_id <- result.map(item2_id)
     HeldItem(

@@ -16,6 +16,7 @@
 ////   mode 1 and names Creature2 35249.
 
 import character_tables
+import fixture_tables
 import genesis_prime/game/objective.{Advanced, SendProgress, Used}
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
@@ -27,6 +28,7 @@ import gleam/list
 import gleam/option.{Some}
 import gleam/set
 import owned_test
+import planted_table.{Integer}
 import quest_support
 
 const checklist_quest = 10_520
@@ -194,6 +196,33 @@ pub fn activating_a_path_soldier_target_sets_its_bit_test() -> Nil {
   assert counted.effects
     == [SendProgress(quest_id: path_quest, objective_index: 0, progress: 2)]
     as "the unit PathSoldierActivate 37 names sets its bit in a mode 1 objective"
+  assert shown(log: counted.log, tables:, quest_id: path_quest) == 1
+    as "one bit of a count of 4"
+}
+
+/// QuestObjective 7647 as a type 27, the one type the client tests beside 28 for a
+/// PathSoldierActivate checklist (`0x1405517a0`). The client's only type 27 row (7192)
+/// is in no quest, so the row of quest 5261 is changed to the type.
+pub fn activating_a_type_27_path_soldier_target_sets_its_bit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- fixture_tables.changed(table: "QuestObjective", id: 7647, with: [
+    #("type", Integer(27)),
+  ])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: path_quest, progress: [0]),
+    ])
+  let counted =
+    objective.advance(
+      reused: set.new(),
+      log:,
+      tables:,
+      event: used(tables:, creature: path_creature, index: 1),
+      now_ms: 0,
+    )
+  assert counted.effects
+    == [SendProgress(quest_id: path_quest, objective_index: 0, progress: 2)]
+    as "the unit PathSoldierActivate 37 names sets its bit in a mode 1 objective of type 27 as of type 28 (0x1405517a0)"
   assert shown(log: counted.log, tables:, quest_id: path_quest) == 1
     as "one bit of a count of 4"
 }

@@ -39,8 +39,10 @@
 //// (Jim's decision on the step's issue), so count kills finish it.
 
 import character_tables
+import genesis_prime/game/objective_kind
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/store.{type QuestRow}
+import genesis_prime/table/id.{Creature2Id}
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
@@ -381,10 +383,10 @@ fn kill_objective(count count: Int) -> quest_log.Quest {
   quest_log.Quest(id: one_kill, objectives: [
     quest_log.Objective(
       objective_id: 0,
-      type_: 2,
+      kind: objective_kind.KillCreature(creature2_id: Creature2Id(5006)),
       flags: 0,
       count:,
-      data: 5006,
+      data: 0,
       reward_pane: 0,
       checklist: False,
       time_limit_ms: 0,

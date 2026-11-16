@@ -315,8 +315,8 @@ pub fn coverage_quest_objective_handled_ids_agree_with_objective_kind_test() -> 
       engine.handles(engine: declared, type_number:)
     })
   assert handled
-    == [2, 3, 4, 5, 8, 11, 12, 14, 16, 17, 18, 22, 23, 24, 28, 32, 33]
-    as "the types whose rule advances an objective: kills of 2, 8 and 16 (genesis_prime/game/objective), talks 3 and 18, uses 12, 14 and 23, collects 4, 32 and 33, visits 17, places 22, finishes 24, scripted 5 and path soldier 28; type 11 since a cast of the objective's spell completes it (objective_test a_cast_of_the_objective_spell_completes_it_test). Not 15 and 46 (no kill advances them: the server holds no cluster or rank), 10 and 13 (progress only from the server), 27 (its one row is in no quest, QuestObjective.type.27) and 31 (hidden, never counted)"
+    == [2, 3, 4, 5, 8, 11, 12, 14, 16, 17, 18, 22, 23, 24, 27, 28, 32, 33]
+    as "the types whose rule advances an objective: kills of 2, 8 and 16 (genesis_prime/game/objective), talks 3 and 18, uses 12, 14 and 23, collects 4, 32 and 33, visits 17, places 22, finishes 24, scripted 5 and path soldier 27 and 28 (0x1405517a0); type 11 since a cast of the objective's spell completes it (objective_test a_cast_of_the_objective_spell_completes_it_test). Not 15 and 46 (no kill advances them: the server holds no cluster or rank), 10 and 13 (progress only from the server) and 31 (hidden, never counted)"
   assert list.filter(numbers_to_60(), objective_kind.is_counted) == handled
     as "the engine's handled set is the kind module's is_counted"
 }

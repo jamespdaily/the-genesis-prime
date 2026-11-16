@@ -4,6 +4,7 @@
 
 import client_tables
 import genesis_prime/game/area
+import genesis_prime/game/objective_kind
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log
 import genesis_prime/game/shortcut_spell.{Aimed, CannotBePlanned, Planned}
@@ -19,6 +20,7 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/set
 import owned_test
 import prerequisite_support
@@ -26,7 +28,9 @@ import unitest
 
 fn cast_rows(tables tables: Tables) -> List(quest_objective.QuestObjective) {
   quest_objective.all(tables)
-  |> list.filter(fn(row) { row.type_ == shortcut_spell.cast_type })
+  |> list.filter(fn(row) {
+    result.is_ok(objective_kind.cast_spell(objective_kind.of_row(row)))
+  })
 }
 
 pub fn the_cast_objectives_without_a_spell_are_the_known_six_test() -> Nil {
