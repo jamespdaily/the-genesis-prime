@@ -14,6 +14,7 @@
 ////   stands stops at once; at its respawn a creature that was told to retire ends
 ////   and any other stands again at full health (`death.creature_respawn`).
 
+import genesis_prime/game/damage
 import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/game/strike_tell.{
   Answered, Dead, Deflected, Key, Landed, Refused, Strike,
@@ -241,6 +242,95 @@ pub fn a_deflected_strike_changes_no_health_and_sends_no_news_test() -> Nil {
         damage: 18,
         rolls: Rolls(crit: 0.5, deflect: 0.01, glance: 0.5),
         cast_id: 1,
+      ),
+    )
+  assert reaction.answer.outcome == Deflected(gates_passed: [])
+    as "a deflect roll of 0.01 is below the deflect chance 0.016"
+  assert creature_life.health(reaction.life) == 52 && reaction.news == []
+}
+
+/// A strike of one blow of `factor` x the struck unit's maximum health (kind 7).
+fn max_health_strike(
+  factor factor: Float,
+  rolls rolls: hit.Rolls,
+) -> strike_tell.Tell {
+  let tell = strike_of(damage: 0, rolls:, cast_id: 1)
+  Strike(
+    ..tell,
+    offence: Offence(..tell.offence, blows: [
+      Blow(
+        spell4_effects_id: 1,
+        damage_type: 3,
+        damage: hit.ByTarget(
+          damage.Partial(stat_part: 0, base: 0.0, multiplier: 1.0, terms: [
+            damage.OfTarget(kind: 7, factor:),
+          ]),
+        ),
+        delay_ms: 0,
+        threat_multiplier: 1.0,
+      ),
+    ]),
+  )
+}
+
+pub fn a_creature_struck_by_a_max_health_blow_loses_that_share_of_its_max_health_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140566ad0 case 7 reads the struck unit's maximum health: a quarter of 2000 is 500
+  // (the Beast has no mitigation, `Creature2.73464.mitigation`).
+  let body = Body(..beast(), max_health: 2000)
+  let reaction =
+    creature_life.struck(
+      life: creature_life.new(body:),
+      body:,
+      strike: max_health_strike(factor: 0.25, rolls: no_luck),
+    )
+  assert creature_life.health(reaction.life) == 1500
+  assert reaction.news == [Health(health: 1500, dead: False)]
+    as "0x937 carries the health left"
+}
+
+pub fn a_creature_whose_max_health_was_raised_is_struck_for_the_new_maximum_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The creature's Body is the one its owner holds when the blow lands, so a property
+  // change that raised its maximum (creature `revalued`) is the maximum the blow reads:
+  // 0.05 x 400 is 20, where the maximum of 52 it spawned with would give 3.
+  let reaction =
+    creature_life.struck(
+      life: creature_life.new(body: beast()),
+      body: Body(..beast(), max_health: 400),
+      strike: max_health_strike(factor: 0.05, rolls: no_luck),
+    )
+  assert creature_life.health(reaction.life) == 32 as "52 health held, 20 taken"
+}
+
+pub fn a_dead_creature_refuses_a_blow_left_to_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let corpse =
+    creature_life.struck(
+      life: creature_life.new(body: beast()),
+      body: beast(),
+      strike: strike_of(damage: 52, rolls: no_luck, cast_id: 1),
+    )
+  let reaction =
+    creature_life.struck(
+      life: corpse.life,
+      body: beast(),
+      strike: max_health_strike(factor: 0.25, rolls: no_luck),
+    )
+  assert reaction.answer.outcome == Refused(why: Dead)
+    as "a dead unit is never struck, whatever its blows hold"
+  assert reaction.news == [] && creature_life.is_dead(reaction.life)
+}
+
+pub fn a_deflected_blow_left_to_the_creature_changes_no_health_test() -> Nil {
+  use <- owned_test.run(5000)
+  let reaction =
+    creature_life.struck(
+      life: creature_life.new(body: beast()),
+      body: beast(),
+      strike: max_health_strike(
+        factor: 0.25,
+        rolls: Rolls(crit: 0.5, deflect: 0.01, glance: 0.5),
       ),
     )
   assert reaction.answer.outcome == Deflected(gates_passed: [])

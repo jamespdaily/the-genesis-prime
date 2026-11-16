@@ -818,25 +818,22 @@ fn offence_of(
   formulas formulas: Formulas,
 ) -> hit.Offence {
   let level = attacker.stats.level
+  let caster =
+    damage.OnCaster(attacker: attacker.stats, vitals: attacker.vitals)
   hit.Offence(
     blows: list.map(blows, fn(effect) {
       hit.Blow(
         spell4_effects_id: effect.effect_id.value,
         damage_type: effect.damage_type,
         damage: case damage.names_target_kind(formula: effect.formula) {
-          True ->
-            hit.ByTarget(damage.partial(
-              formula: effect.formula,
-              caster: damage.OnCaster(
-                attacker: attacker.stats,
-                vitals: attacker.vitals,
-              ),
-            ))
+          True -> hit.ByTarget(damage.partial(formula: effect.formula, caster:))
+          // No kind of the target's: the caster's own vitals at the go are all it reads
+          // (0x140566ad0 cases 8, 14, 16, 23, 25 and 26 of param_1).
           False ->
             hit.Worked(
-              float.round(damage.value(
+              float.round(damage.value_on_caster(
                 formula: effect.formula,
-                attacker: attacker.stats,
+                caster:,
               )),
             )
         },

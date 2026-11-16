@@ -92,8 +92,8 @@ pub fn the_measure_counts_the_damage_rows_the_area_load_refuses_as_not_read_test
   use <- unitest.guard(client_tables.present())
   let #(rows, unread, _, starting_unread) = counted(type_number: 8)
   assert rows == 29_445 as "scratch count: effectType=8 holds 29,445 rows"
-  assert unread == 3378
-    as "scratch count over `table_rows -- Spell4Effects effectType=8`, by the error `spell_area.damage_row_of` returns: 1,979 hold a formula parameter of a kind the formula does not read, 739 sit behind a target apply prerequisite the plan cannot check (509 with a condition type the server has not decoded, #818, and 230 aimed past the caster whose condition reads what a struck creature holds, #569, #851; #815), 530 periodic rows last until removed (flags bit 2, #803), 115 aim by a flag the area load does not read, and 15 hold a phaseFlags of 0, which no phase selects (`in_phase`): 3,378 of 29,445"
+  assert unread == 2385
+    as "count over `table_rows -- Spell4Effects effectType=8`, by the first gate that refuses a row (`spell_plan.read_row`, then the error `spell_area.damage_row_of` returns): 455 hold a formula parameter of a kind the formula does not read (the weapon types 6 and 9 and the passed-in value 18; the vital kinds 7, 8, 14 to 17, 19, 21 to 23, 25 and 26 are read, #791), 847 sit behind a target apply prerequisite the plan cannot check (#815, #818, #569, #851), 705 periodic rows last until removed (flags bit 2, #803), 115 aim by a flag the area load does not read, 15 hold a phaseFlags of 0, which no phase selects (`in_phase`), and 248 load but aim at their caster alone, which strikes nobody (#831): 2,385 of 29,445. The 993 fewer than the 3,378 before: 1,524 fewer for a formula parameter, 108 more behind a prerequisite, 175 more until removed and 248 more aimed at the caster alone (#831)"
   assert starting_unread == 0
     as "the area load builds every damage row of the starting abilities' spells"
 }
@@ -134,8 +134,8 @@ pub fn coverage_counts_the_periodic_rows_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let #(rows, unread, starting, starting_unread) = counted(type_number: 8)
   let #(ticking, until_removed, no_tick) = periodic_rows(type_number: 8)
-  assert rows - unread == 24_070 + ticking - until_removed - no_tick - 151
-    as "the 24,070 rows read of the 26,591 that hold no tickTime (the other 2,521 are refused for a formula parameter the formula does not read, an aim the area load does not read, a target apply prerequisite the plan cannot check, #815, or a phaseFlags of 0), and the rows holding a tickTime (2,854) but those that last until removed (flags bit 2, #803) and those with no whole tick in their durationTime (`ticking.schedule_of`), counted from the table here; less the 151 periodic rows the area load refuses on its other gates (scratch count over `table_rows -- Spell4Effects effectType=8`, by `spell_area.damage_row_of`: of the periodic rows not read, those that do not last until removed and hold a formula parameter the formula does not read, a phaseFlags of 0 or an aim by 10 (145), and 39626 to 39631, behind an apply prerequisite the plan cannot check, #815 (6)): 26,067 read"
+  assert rows - unread == 24_988 + ticking - until_removed - no_tick - 76
+    as "the 24,988 rows read of the 26,591 that hold no tickTime (the other 1,603 are refused for a formula parameter the formula does not read, 438, an aim the area load does not read, 114, a target apply prerequisite the plan cannot check, #815, 834, a phaseFlags of 0, 10, or because they load but aim at their caster alone, 207, #831), and the rows holding a tickTime (2,854) but those that last until removed (flags bit 2, #803) and those with no whole tick in their durationTime (`ticking.schedule_of`), counted from the table here; less the 76 periodic rows the area load refuses on its other gates (count over `table_rows -- Spell4Effects effectType=8`, by `spell_plan.read_row` and `spell_area.damage_row_of`: of the periodic rows not read, those that do not last until removed and hold a formula parameter the formula does not read (17), a phaseFlags of 0 (5), or a target apply prerequisite the plan cannot check, #815 (13), and 41 that load but aim at their caster alone, #831): 27,060 read"
   assert #(starting, starting_unread) == #(41, 0)
     as "the area load builds every damage row of the starting abilities' spells, the periodic ones among them: the 36 of before and the 5 of the trees Spell Surge's alternates 34719 and 76002 reach (79679, 34766, 34767, 76003 and 76004, one damage row each)"
   let #(rows, unread, _, _) = counted(type_number: 10)
@@ -176,8 +176,8 @@ pub fn the_measure_totals_match_the_plan_test() -> Nil {
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let text = checklist.render([measured()])
-  assert string.contains(text, "12843 rows of the handled types not read")
-    as "the sum of the types' scratch counts: 1 1,367, 3 135, 4 555, 8 3,378, 10 1,056, 11 299, 26 1,984, 29 257, 73 34, 80 375 and 118 83 (the tests above), 17 221, 81 316, 14 2,366 and 18 6 (`coverage_type_test`), 76 122, 83 49, and the counts that stay as they were: 52 2, 64 35, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values)"
+  assert string.contains(text, "11850 rows of the handled types not read")
+    as "the sum of the types' scratch counts: 1 1,367, 3 135, 4 555, 8 2,385, 10 1,056, 11 299, 26 1,984, 29 257, 73 34, 80 375 and 118 83 (the tests above), 17 221, 81 316, 14 2,366 and 18 6 (`coverage_type_test`), 76 122, 83 49, and the counts that stay as they were: 52 2, 64 35, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values)"
   assert string.contains(text, "starting abilities: 205 of 215 rows handled")
     as "scratch count over the 215 starting rows (the 196 of before and the 19 rows of the trees Spell Surge's alternates reach, all of handled types and read): 7 are not read for lack of a handled type or row (the two Proc rows the plan skips, 90 four times and 24; the Stalker's 91018, behind a target apply prerequisite the plan reads, is read) and 3 more are not read (the Warrior's 210834, which ticks on the caster, is read): Proxies 121345 and 178429 (dataBits00 0) and the Medic's ticking gain 228918"
 }
@@ -241,8 +241,8 @@ pub fn coverage_counts_the_union_rows_as_read_test() -> Nil {
       ))
     })
   assert by_type(read)
-    == [#(4, 8), #(8, 13), #(17, 169), #(18, 2), #(26, 2), #(80, 21), #(81, 59)]
-    as "scratch count, a row-by-row comparison of the plan on main (every one of these rows refused, `aim_of` read 1 to 7 as 1, 2, 4, 6 only) with this one: 274 of the 294 rows the brief counted by their flags alone are read now; of the other 20, 7 damage rows (type 8) fail the area load on its other gates, 10 force removes (type 80) fail theirs (a selector that names no row, a missing Spell4, a target apply prerequisite) and 3 rows (type 81) sit behind an apply prerequisite the plan cannot check (25911, 26254, 26256)"
+    == [#(4, 8), #(8, 19), #(17, 169), #(18, 2), #(26, 2), #(80, 21), #(81, 59)]
+    as "scratch count, a row-by-row comparison of the plan on main (every one of these rows refused, `aim_of` read 1 to 7 as 1, 2, 4, 6 only) with this one: 280 of the 294 rows the brief counted by their flags alone are read now (274 before the vital kinds were read, #791, which 6 damage rows aimed by 3, 5 or 7 name); of the other 14, 1 damage row (type 8) fails the area load on its other gates, 10 force removes (type 80) fail theirs (a selector that names no row, a missing Spell4, a target apply prerequisite) and 3 rows (type 81) sit behind an apply prerequisite the plan cannot check (25911, 26254, 26256)"
   assert by_type(friendly_area)
     == [#(17, 84), #(18, 3), #(26, 167), #(80, 26), #(81, 21)]
     as "scratch count over the same rows: 301 rows aimed by 3, 5 or 7 in a spell that hits no foes (a row of kind Damage or CrowdControl aimed by 2 to 7) are refused for their area bit (#834), the brief's 301 by type"

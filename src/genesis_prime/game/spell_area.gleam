@@ -24,6 +24,9 @@
 ////   or the area (Defense Grid Aura 54475, rows 129039, 183223, 183224). An absorb, an
 ////   armor or a look row aimed at others names no creature to change and selects nobody
 ////   (`spell_plan.StruckChange`).
+////   Gap: a damage row aimed at its caster alone (targetFlags 1) loads and strikes
+////   nobody, since the phase keeps only the rows aimed past the caster; the coverage
+////   measure does not count it as handled (`strikes_past_caster`, issue 831).
 ////   Gap: no plan holds a spell with a type 11 row aimed at other units, since
 ////   `spell_plan.build` plans each class's level-1 tier-1 trees only, which hold none
 ////   (issue 336).
@@ -57,7 +60,9 @@
 ////   other than 1); a shape the rule does not build (1, 3, 5, 6, or 8 with a box that
 ////   has a width or a length: the box's height, p4, is never tested); a damage effect
 ////   (type 8) aimed by a flag value not read; a formula that reads a parameter the
-////   player's value does not (genesis_prime/game/damage `unread`); and a phase that
+////   player's value does not (genesis_prime/game/damage `unread`: the weapon kinds 6
+////   and 9, the passed-in value 18, and any kind above 26; the vital kinds are read,
+////   the target's finished when the blow lands); and a phase that
 ////   selects units from a spell with no area row. A hit row's phases are not read, so
 ////   a spell's shapes hold for each of its gos. Each gap is stated where it is
 ////   enforced.
@@ -734,6 +739,16 @@ fn phase_of(
       spell_plan.reaches_primary_target(aim:)
     }),
   )
+}
+
+/// Whether the row strikes a unit but its caster. A row aimed at its caster alone loads
+/// and strikes nobody, because a damage row aimed at its caster does not strike the
+/// caster yet (issue 831), so the coverage measure does not count it as handled.
+pub fn strikes_past_caster(row row: RowDamage) -> Bool {
+  case row {
+    Once(effect:) -> spell_plan.reaches_past_caster(aim: effect.aim)
+    Periodic(effect:) -> spell_plan.reaches_past_caster(aim: effect.damage.aim)
+  }
 }
 
 /// The areas the tables' load built.

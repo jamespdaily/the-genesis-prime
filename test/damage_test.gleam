@@ -26,7 +26,8 @@
 import attacker_support
 import fixture_tables
 import genesis_prime/game/damage.{
-  Attacker, Attributes, Formula, OnCaster, Parameter, Unread,
+  Attacker, Attributes, Formula, Known, OfTarget, OnCaster, Parameter, Unread,
+  Vitals,
 }
 import genesis_prime/game/unit_properties
 import genesis_prime/message/float32
@@ -34,10 +35,12 @@ import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
 import genesis_prime/table/spell4_effects
 import gleam/float
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
 import properties_support
+import qcheck
 
 /// An effect row of the client: dataBits00 1.0 as a float, dataBits01 0, and the
 /// parameters (type 12 Assault Power, type 13 Support Power, type 10 level).
@@ -209,10 +212,10 @@ pub fn a_parameter_type_the_rule_does_not_read_is_named_test() -> Nil {
     == None
   assert damage.unread(
       formula: Formula(multiplier: 1.0, base: 0.0, parameters: [
-        Parameter(kind: 19, value: 0.1),
+        Parameter(kind: 18, value: 0.1),
       ]),
     )
-    == Some(Unread(parameter_kind: 19))
+    == Some(Unread(parameter_kind: 18))
     as "type 19 reads the target's health (0x140566ad0), which is not built"
 }
 
@@ -339,16 +342,19 @@ pub fn the_weapon_kinds_6_and_9_are_not_read_test() -> Nil {
     as "Explorer - Offensive Path Ability - Eldan Relic: kind 9 x 7.0"
 }
 
-pub fn unread_reads_the_attribute_kinds_and_still_names_each_vital_kind_and_18_test() -> Nil {
+pub fn unread_reads_the_vital_kinds_and_still_names_6_9_and_18_test() -> Nil {
   use <- owned_test.run(5000)
-  list.each([1, 2, 3, 4, 5, 11], fn(kind) {
-    assert damage.unread(formula: one_parameter(kind:, factor: 0.5)) == None
-      as "a player's value reads the attribute kinds"
-  })
-  list.each([6, 7, 8, 9, 14, 15, 18, 19, 21], fn(kind) {
+  list.each(
+    [1, 2, 3, 4, 5, 11, 7, 8, 14, 15, 16, 17, 19, 21, 22, 23, 25, 26],
+    fn(kind) {
+      assert damage.unread(formula: one_parameter(kind:, factor: 0.5)) == None
+        as "0x140566ad0 reads the attribute kinds and each vital kind, of the caster or of the target"
+    },
+  )
+  list.each([6, 9, 18], fn(kind) {
     assert damage.unread(formula: one_parameter(kind:, factor: 0.5))
       == Some(Unread(parameter_kind: kind))
-      as "the caster's weapon damage, a vital of a unit or a passed-in value, which the area load does not read"
+      as "6 and 9 are the caster's weapon damage (0x140566ad0 sends them to its default case) and 18 a value passed in, which the area load does not read"
   })
 }
 
@@ -464,4 +470,259 @@ pub fn the_value_on_its_caster_reads_the_casters_attributes_test() -> Nil {
     )
     == 2.0
     as "Esper - Tech - Rank 3 - Shield Heal Proc: Technology 1.0 x 1.5 rounds half away from zero to 2"
+}
+
+/// A caster at 500 of 736 health and 250 of 450 shield, with the level-1 Novice's stats.
+fn caster() -> damage.OnCaster {
+  OnCaster(
+    attacker: attacker_support.fresh(),
+    vitals: Vitals(health: 500, max_health: 736, shield: 250, max_shield: 450),
+  )
+}
+
+/// A target at 3000 of 5000 health and 200 of 600 shield.
+fn target() -> damage.Vitals {
+  Vitals(health: 3000, max_health: 5000, shield: 200, max_shield: 600)
+}
+
+pub fn a_target_kind_is_left_for_the_target_and_finished_with_its_vitals_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140566ad0 reads these of param_2, the target: 7 the maximum health (slot 0x48), 15
+  // the shield (0x70), 17 the maximum shield (0x78), 19 the health (0x40), 21 the
+  // maximum health less the health and 22 the maximum shield less the shield.
+  let expected = [
+    #(7, 5000.0),
+    #(15, 200.0),
+    #(17, 600.0),
+    #(19, 3000.0),
+    #(21, 2000.0),
+    #(22, 400.0),
+  ]
+  list.each(expected, fn(entry) {
+    let formula = one_parameter(kind: entry.0, factor: 0.5)
+    let partial = damage.partial(formula:, caster: caster())
+    assert partial.terms == [OfTarget(kind: entry.0, factor: 0.5)]
+      as "the caster's side leaves the target's kind for the target"
+    assert damage.finish(partial:, target: target()) == 0.5 *. entry.1
+      as "M x (S + (base + factor x the target's slot) x dataBits00)"
+  })
+  let with_row_part =
+    Formula(multiplier: 2.0, base: 10.0, parameters: [
+      Parameter(kind: 7, value: 0.1),
+    ])
+  assert damage.finish(
+      partial: damage.partial(formula: with_row_part, caster: caster()),
+      target: target(),
+    )
+    == 1020.0
+    as "0x140565600: the flat 10 and the target's 0.1 x 5000 are added, then multiplied by 2.0"
+}
+
+pub fn a_caster_kind_is_worked_out_from_the_casters_vitals_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140566ad0 reads these of param_1, the caster: 8 the maximum health, 14 the shield,
+  // 16 the maximum shield, 23 the health, 25 the maximum health less the health (736 -
+  // 500) and 26 the maximum shield less the shield (450 - 250).
+  let expected = [
+    #(8, 736.0),
+    #(14, 250.0),
+    #(16, 450.0),
+    #(23, 500.0),
+    #(25, 236.0),
+    #(26, 200.0),
+  ]
+  list.each(expected, fn(entry) {
+    let partial =
+      damage.partial(
+        formula: one_parameter(kind: entry.0, factor: 1.0),
+        caster: caster(),
+      )
+    assert partial.terms == [Known(entry.1)]
+      as "the caster's side works the term out"
+    assert damage.finish(partial:, target: target()) == entry.1
+    assert damage.finish(
+        partial:,
+        target: Vitals(health: 1, max_health: 2, shield: 3, max_shield: 4),
+      )
+      == entry.1
+      as "whatever the target holds"
+  })
+}
+
+pub fn a_formula_naming_both_sides_reads_each_from_its_own_unit_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140566ad0 sends 7 to the target and 8 to the caster. Six rows of the client's
+  // tables name both.
+  let formula =
+    Formula(multiplier: 1.0, base: 0.0, parameters: [
+      Parameter(kind: 7, value: 0.1),
+      Parameter(kind: 8, value: 0.02),
+    ])
+  let partial =
+    damage.partial(
+      formula:,
+      caster: OnCaster(
+        ..caster(),
+        vitals: Vitals(health: 1000, max_health: 1000, shield: 0, max_shield: 0),
+      ),
+    )
+  assert float.loosely_equals(
+    damage.finish(partial:, target: target()),
+    with: 520.0,
+    tolerating: 0.0001,
+  )
+    as "0.1 x the target's 5000 + 0.02 x the caster's 1000"
+}
+
+pub fn a_formula_with_no_target_kind_finishes_to_the_value_it_has_today_test() -> Nil {
+  use <- owned_test.run(5000)
+  let on_caster = fn(attacker) { OnCaster(..caster(), attacker:) }
+  // Kick 4.16, Zap 9.08, Telekinetic Strike 18.0, Crush 8.94, Paralytic Surge 8.14 and
+  // Stagger 3.0 at level 1 and rating 0 (the header's rows), each a level-only formula.
+  list.each(
+    [
+      #(140_383, 4.16),
+      #(125_182, 9.08),
+      #(62_159, 18.0),
+      #(95_950, 8.94),
+      #(96_125, 8.14),
+      #(83_829, 3.0),
+    ],
+    fn(entry) {
+      let formula = client_formula(id: entry.0)
+      let partial =
+        damage.partial(formula:, caster: on_caster(attacker_support.fresh()))
+      assert float.loosely_equals(
+        damage.finish(partial:, target: target()),
+        with: entry.1,
+        tolerating: 0.0001,
+      )
+        as "the level-1 value of the row"
+      assert damage.finish(partial:, target: target())
+        == damage.value(formula:, attacker: attacker_support.fresh())
+        as "exactly the value a formula with no target kind has today"
+    },
+  )
+  let stat_formula = row(assault: 0.0656, support: 0.0656, per_level: 4.16)
+  assert damage.finish(
+      partial: damage.partial(
+        formula: stat_formula,
+        caster: on_caster(attacker_support.novice()),
+      ),
+      target: Vitals(health: 9, max_health: 9, shield: 9, max_shield: 9),
+    )
+    == damage.value(formula: stat_formula, attacker: attacker_support.novice())
+    as "a formula with stat kinds too"
+}
+
+pub fn the_flat_terms_are_summed_in_parameter_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140566ad0 adds each parameter's term to a running sum in parameter order. In 64-bit
+  // floats 1e16 + 1 is 1e16 (a tie to even) and 1 + 1 + 1e16 is 1e16 + 2.
+  let formula = fn(first_kind) {
+    Formula(multiplier: 1.0, base: 0.0, parameters: [
+      Parameter(kind: first_kind, value: 1.0),
+      Parameter(kind: 10, value: 1.0),
+      Parameter(kind: 10, value: 1.0),
+      Parameter(kind: 0, value: 0.0),
+    ])
+  }
+  let huge = 10_000_000_000_000_000
+  let huge_unit =
+    Vitals(health: huge, max_health: huge, shield: 0, max_shield: 0)
+  assert damage.finish(
+      partial: damage.partial(
+        formula: formula(23),
+        caster: OnCaster(..caster(), vitals: huge_unit),
+      ),
+      target: target(),
+    )
+    == 1.0e16
+    as "the caster's health first: 1e16, plus 1, plus 1"
+  assert damage.finish(
+      partial: damage.partial(formula: formula(19), caster: caster()),
+      target: huge_unit,
+    )
+    == 1.0e16
+    as "the target's health first: the same order, the same sum"
+}
+
+/// A parameter kind the formula reads: none, a stat, the level or a vital.
+fn kind_generator() -> qcheck.Generator(Int) {
+  qcheck.from_generators(
+    qcheck.constant(0),
+    list.map(
+      [
+        1, 2, 3, 4, 5, 10, 11, 12, 13, 7, 8, 14, 15, 16, 17, 19, 21, 22, 23, 25,
+        26,
+      ],
+      qcheck.constant,
+    ),
+  )
+}
+
+fn parameter_generator() -> qcheck.Generator(damage.Parameter) {
+  qcheck.map2(
+    kind_generator(),
+    qcheck.bounded_float(from: -2.0, to: 2.0),
+    fn(kind, value) { Parameter(kind:, value:) },
+  )
+}
+
+pub fn finishing_on_the_caster_equals_the_casters_own_value_property_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let generator = {
+    use parameters <- qcheck.bind(qcheck.fixed_length_list_from(
+      parameter_generator(),
+      4,
+    ))
+    use multiplier <- qcheck.bind(qcheck.bounded_float(from: 0.0, to: 3.0))
+    use base <- qcheck.bind(qcheck.bounded_float(from: -50.0, to: 500.0))
+    use ratings <- qcheck.bind(qcheck.tuple2(
+      qcheck.bounded_float(from: 0.0, to: 3000.0),
+      qcheck.bounded_float(from: 0.0, to: 3000.0),
+    ))
+    use vitals <- qcheck.map(qcheck.tuple4(
+      qcheck.bounded_int(from: 1, to: 200_000),
+      qcheck.bounded_int(from: 0, to: 200_000),
+      qcheck.bounded_int(from: 0, to: 60_000),
+      qcheck.bounded_int(from: 0, to: 60_000),
+    ))
+    #(Formula(multiplier:, base:, parameters:), ratings, vitals)
+  }
+  use #(formula, ratings, vitals) <- qcheck.given(generator)
+  let max_health = vitals.0
+  let max_shield = vitals.2
+  let caster =
+    OnCaster(
+      attacker: Attacker(
+        ..attacker_support.fresh(),
+        assault_rating: ratings.0,
+        support_rating: ratings.1,
+      ),
+      vitals: Vitals(
+        health: int.min(vitals.1, max_health),
+        max_health:,
+        shield: int.min(vitals.3, max_shield),
+        max_shield:,
+      ),
+    )
+  assert damage.finish(
+      partial: damage.partial(formula:, caster:),
+      target: caster.vitals,
+    )
+    == damage.value_on_caster(formula:, caster:)
+    as "a unit that is both caster and target reads each kind from the one unit, in the same 64-bit order"
+}
+
+pub fn a_creatures_formula_still_refuses_a_vital_kind_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A creature's formula reads Strength (1), Assault Power (12) and the level (10) only.
+  // The attack spells the server gives creatures today (Spell4 5649, 85469 and 86978)
+  // name no vital kind in any parameter, so no creature row meets this refusal.
+  assert damage.creature_unread(formula: one_parameter(kind: 7, factor: 0.5))
+    == Some(damage.Unread(parameter_kind: 7))
+    as "kind 7 is a vital kind and is not read for a creature caster"
+  assert damage.creature_unread(formula: one_parameter(kind: 23, factor: 0.5))
+    == Some(damage.Unread(parameter_kind: 23))
 }

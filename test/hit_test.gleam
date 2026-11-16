@@ -846,3 +846,111 @@ pub fn other_damage_type_untouched_by_taken_multiplier_test() -> Nil {
       as "a type outside 1 to 3 is untouched"
   })
 }
+
+/// A Magic blow of this damage, which the beast takes as dealt.
+fn blow_of(damage damage: hit.Amount) -> hit.Blow {
+  Blow(
+    spell4_effects_id: 62_159,
+    damage_type: 3,
+    damage:,
+    delay_ms: 0,
+    threat_multiplier: 1.0,
+  )
+}
+
+/// The health a target of `target` vitals keeps after a strike of these blows on the beast's
+/// defence and no luck, and whether it died.
+fn after_blows(
+  target target: damage.Vitals,
+  blows blows: List(hit.Blow),
+) -> #(Int, Bool) {
+  let assert Landed(health:, killed:, ..) =
+    hit.apply(
+      target:,
+      absorbs: [],
+      offence: Offence(..strike_of(damages: []), blows:),
+      defence: beast,
+      rolls: no_luck,
+    )
+  #(health, killed)
+}
+
+/// A blow of `factor` x the target's kind `kind`, with no stat part and no row part.
+fn of_target(kind kind: Int, factor factor: Float) -> hit.Amount {
+  hit.ByTarget(
+    damage.Partial(stat_part: 0, base: 0.0, multiplier: 1.0, terms: [
+      damage.OfTarget(kind:, factor:),
+    ]),
+  )
+}
+
+pub fn a_blow_left_to_the_target_is_finished_with_the_targets_max_health_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140566ad0 case 7 reads the target's maximum health (slot 0x48): 0.1 x 5000 is 500
+  // whatever health the target holds now.
+  let target =
+    damage.Vitals(health: 3000, max_health: 5000, shield: 0, max_shield: 0)
+  assert after_blows(target:, blows: [
+      blow_of(damage: of_target(kind: 7, factor: 0.1)),
+    ])
+    == #(2500, False)
+    as "500 off the 3000 held, not 300 off it and not 500 off the maximum's 5000"
+}
+
+pub fn a_worked_blow_ignores_the_targets_vitals_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A blow worked out at the caster deals what it holds to any target.
+  let blows = [blow_of(damage: Worked(300))]
+  assert after_blows(
+      target: damage.Vitals(
+        health: 1000,
+        max_health: 1000,
+        shield: 0,
+        max_shield: 0,
+      ),
+      blows:,
+    )
+    == #(700, False)
+  assert after_blows(
+      target: damage.Vitals(
+        health: 4000,
+        max_health: 90_000,
+        shield: 500,
+        max_shield: 800,
+      ),
+      blows:,
+    )
+    == #(3700, False)
+    as "the same 300 whatever the target's maximum health and shield"
+}
+
+pub fn a_later_blow_reads_the_health_an_earlier_blow_left_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Guess: the client holds no server-side order of one strike's blows, so the server
+  // lets each blow read the health the blows before it left.
+  let target =
+    damage.Vitals(health: 3000, max_health: 5000, shield: 0, max_shield: 0)
+  assert after_blows(target:, blows: [
+      blow_of(damage: Worked(1000)),
+      blow_of(damage: of_target(kind: 19, factor: 0.5)),
+    ])
+    == #(1000, False)
+    as "1000 first, then half of the 2000 left; half of the first 3000 would leave 500"
+}
+
+pub fn a_target_with_no_shield_reads_0_for_the_shield_kinds_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140566ad0 cases 15, 17 and 22 read the target's shield, maximum shield and maximum
+  // shield less the shield: all 0 on a unit that holds none, so only the row's 7 remains.
+  let partial =
+    damage.Partial(stat_part: 0, base: 7.0, multiplier: 1.0, terms: [
+      damage.OfTarget(kind: 15, factor: 1.0),
+      damage.OfTarget(kind: 17, factor: 1.0),
+      damage.OfTarget(kind: 22, factor: 1.0),
+    ])
+  assert after_blows(target: vitals(health: 100, shield: 0), blows: [
+      blow_of(damage: hit.ByTarget(partial)),
+    ])
+    == #(93, False)
+    as "7 off the 100"
+}

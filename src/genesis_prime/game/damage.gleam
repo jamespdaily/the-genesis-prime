@@ -7,6 +7,7 @@
 //// Spell4Effects row ─▶ Formula (once, in genesis_prime/game/spell_area)
 //// Formula + Attacker ─▶ value = M x (S + R)
 //// Formula + OnCaster ─▶ the same, F also reading the caster's vitals
+//// Formula + OnCaster ─▶ Partial (the caster's side) ─ finish with the target's vitals ─▶ value
 ////   S = sum of each parameter value x the caster's stat for types 1 to 5, 11, 12 and 13, rounded
 ////   R = (dataBits01 + F) x dataBits00 as a float, F = sum of each parameter value x the caster's level for type 10
 //// ```
@@ -19,12 +20,14 @@
 ////   is added to the sum (taken away when it is below 0) in 32-bit floats before it is
 ////   cut to a whole number (`0x140566d40`).
 //// - **The flat part** F reads the caster's level (type 10) (`0x140566ad0`).
+//// - **The vital kinds** of the flat part read the caster's health and shield (8, 14, 16,
+////   23, 25, 26) or the target's (7, 15, 17, 19, 21, 22) (`0x140566ad0`). The caster's
+////   connection works the stat part and the caster's kinds out at the go (`partial`) and
+////   the struck unit's owner adds its own vitals when the blow lands (`finish`).
 //// - **What is not built:** the caster's Weapon and Weapon DPS (types 6 and 9,
-////   `Spell4Effects.parameterType.6_9`, #807), the target's and the caster's health and
-////   shield (types 7, 8, 14 to 17, 19, 21 to 23, 25 and 26, #791), the passed-in value
-////   (18, #336), and types 20, 24 and any above 26, which neither part reads; a formula
-////   that names one with a factor is refused at load (genesis_prime/game/spell_area,
-////   `unread`).
+////   `Spell4Effects.parameterType.6_9`, #807), the passed-in value (18, #336), and types
+////   20, 24 and any above 26, which neither part reads; a formula that names one with a
+////   factor is refused at load (genesis_prime/game/spell_area, `unread`).
 //// - **The multiplier** M is the caster's DamageDealtMultiplier for the damage type,
 ////   1.0 for a player (UnitProperty2 140 to 143: the multiplier's default).
 //// - **An Absorption row** (`absorption_formula_of`) reads dataBits00 and dataBits01 as
@@ -196,8 +199,9 @@ pub fn power_of(rating rating: Float) -> Float {
 }
 
 /// The first parameter type of the formula that is not built, or `None` when the
-/// formula reads only what a player caster holds: the level, the six attributes and the
-/// two powers.
+/// formula reads only what a player caster and its target hold: the level, the six
+/// attributes, the two powers and the vital kinds (`0x140566ad0`). The caster's Weapon
+/// and Weapon DPS (6 and 9, #807) and the passed-in value (18, #336) are not read.
 pub fn unread(formula formula: Formula) -> Option(Unread) {
   first_unread(formula:, is_read:)
 }
@@ -212,10 +216,6 @@ fn first_unread(
   })
   |> result.map(fn(parameter) { Unread(parameter_kind: parameter.kind) })
   |> option.from_result
-}
-
-fn is_read(kind: Int) -> Bool {
-  kind == 0 || kind == 10 || is_stat(kind)
 }
 
 /// The effect's value for a player caster, before any rounding to a whole number
@@ -322,16 +322,16 @@ pub type Vitals {
 /// caster's Weapon and Weapon DPS (6 and 9, #807) and the passed-in value (18, #336) are
 /// not read.
 pub fn caster_unread(formula formula: Formula) -> Option(Unread) {
-  first_unread(formula:, is_read: is_read_on_caster)
+  first_unread(formula:, is_read:)
 }
 
-fn is_read_on_caster(kind: Int) -> Bool {
-  kind == 0 || is_stat(kind) || is_vital_on_caster(kind)
+fn is_read(kind: Int) -> Bool {
+  kind == 0 || is_stat(kind) || is_flat(kind)
 }
 
-/// Whether the flat part reads the parameter type of an effect on its caster
-/// (`0x140566ad0`): the level and the caster's own health and shield.
-fn is_vital_on_caster(kind: Int) -> Bool {
+/// Whether the flat part reads the parameter type (`0x140566ad0`): the level and a
+/// vital of the caster or of the target.
+fn is_flat(kind: Int) -> Bool {
   case kind {
     7 | 8 | 10 | 14 | 15 | 16 | 17 | 19 | 21 | 22 | 23 | 25 | 26 -> True
     _ -> False
@@ -348,19 +348,36 @@ pub fn value_on_caster(
   formula formula: Formula,
   caster caster: OnCaster,
 ) -> Float {
-  let vitals = caster.vitals
   value_with(formula:, attacker: caster.attacker, flat_of: fn(kind) {
-    case kind {
-      7 | 8 -> int.to_float(vitals.max_health)
-      10 -> int.to_float(caster.attacker.level)
-      14 | 15 -> int.to_float(vitals.shield)
-      16 | 17 -> int.to_float(vitals.max_shield)
-      19 | 23 -> int.to_float(vitals.health)
-      21 | 25 -> int.to_float(vitals.max_health - vitals.health)
-      22 | 26 -> int.to_float(vitals.max_shield - vitals.shield)
-      _ -> 0.0
-    }
+    unit_value_of(caster:, kind:)
   })
+}
+
+/// What a flat kind reads of the caster: the level for 10, else the vital the kind names
+/// (`0x140566ad0`).
+fn unit_value_of(caster caster: OnCaster, kind kind: Int) -> Float {
+  case kind {
+    10 -> int.to_float(caster.attacker.level)
+    _ -> vital_of(vitals: caster.vitals, kind:)
+  }
+}
+
+/// The vital a kind names of one unit, 0.0 for a kind that names none
+/// (`0x140566ad0`: 7 and 8 the maximum health, 14 and 15 the shield, 16 and 17 the
+/// maximum shield, 19 and 23 the health, 21 and 25 the maximum health less the health,
+/// 22 and 26 the maximum shield less the shield). 7, 15, 17, 19, 21 and 22 are the
+/// target's kinds and 8, 14, 16, 23, 25 and 26 the caster's; the unit passed is the one
+/// read.
+fn vital_of(vitals vitals: Vitals, kind kind: Int) -> Float {
+  case kind {
+    7 | 8 -> int.to_float(vitals.max_health)
+    14 | 15 -> int.to_float(vitals.shield)
+    16 | 17 -> int.to_float(vitals.max_shield)
+    19 | 23 -> int.to_float(vitals.health)
+    21 | 25 -> int.to_float(vitals.max_health - vitals.health)
+    22 | 26 -> int.to_float(vitals.max_shield - vitals.shield)
+    _ -> 0.0
+  }
 }
 
 /// A formula after the caster's part is worked out and the target's is not: the stat
@@ -384,14 +401,38 @@ pub type Term {
 /// term from the caster's level and vitals (kinds 8, 10, 14, 16, 23, 25 and 26), while
 /// the target's kinds (7, 15, 17, 19, 21 and 22) stay `OfTarget`
 /// (`0x140566ad0`: param_1 is the caster, param_2 the target).
-pub fn partial(formula _formula: Formula, caster _caster: OnCaster) -> Partial {
-  panic as "damage.partial has no body yet"
+pub fn partial(formula formula: Formula, caster caster: OnCaster) -> Partial {
+  let stat_part =
+    stat_part_of(parameters: formula.parameters, stat_of: fn(kind) {
+      stat_of(attacker: caster.attacker, kind:)
+    })
+  Partial(
+    stat_part: whole_stat_part(stat_part),
+    base: formula.base,
+    multiplier: formula.multiplier,
+    terms: list.map(formula.parameters, fn(parameter) {
+      case is_target_kind(parameter.kind) {
+        True -> OfTarget(kind: parameter.kind, factor: parameter.value)
+        False ->
+          Known(parameter.value *. unit_value_of(caster:, kind: parameter.kind))
+      }
+    }),
+  )
 }
 
 /// The value of the formula once the target's vitals are known, the flat terms summed in
 /// parameter order in 64-bit floats as `value_on_caster` sums them (`0x140566ad0`).
-pub fn finish(partial _partial: Partial, target _target: Vitals) -> Float {
-  panic as "damage.finish has no body yet"
+pub fn finish(partial partial: Partial, target target: Vitals) -> Float {
+  let flat_part =
+    list.fold(partial.terms, 0.0, fn(sum, term) {
+      case term {
+        Known(known) -> sum +. known
+        OfTarget(kind:, factor:) ->
+          sum +. factor *. vital_of(vitals: target, kind:)
+      }
+    })
+  let row_part = { partial.base +. flat_part } *. partial.multiplier
+  int.to_float(partial.stat_part) +. row_part
 }
 
 /// The whole number an effect on its caster gives: `value_on_caster` rounded half away
