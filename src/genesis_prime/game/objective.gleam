@@ -21,13 +21,16 @@
 //// kill mask in the log (`group_member`, `quest_log.kill_marked`; the mask is never sent:
 //// `opcode.0x361` carries only the progress), and the last one's kill makes it 1 of its
 //// count 1 (the client's needed value is 1 for count 1, `0x140551840`). A type 5
-//// objective (`QuestObjective.type.5`, a scripted objective) takes none of these events: nothing completes it (a gap, the issue "Quests, zones and
-//// prerequisites work on the real client"), so a timed one runs out
-//// (`quest_log.expire`). An objective takes the event only while it is open (`0x1405510d0`,
-//// `0x140553790`): its quest is in the active list, Accepted or Achieved (`0x1405510d0`
-//// tests only for state 3), it is not done and it is reachable. Every objective that is
-//// open and counts the event counts once for it, so a later objective that the event
-//// unlocks waits for the next one.
+//// objective (`QuestObjective.type.5`, a scripted objective) takes none of these events:
+//// nothing completes a visible one (a gap, the issue "Quests, zones and prerequisites
+//// work on the real client"), so a timed one runs out (`quest_log.expire`). A hidden one
+//// (`QuestObjective.flags.8`) with data 0 that no creature links is done by the server
+//// once the quest's other required objectives are (`hidden_scripts`, a server choice).
+//// An objective takes the event only while it is open (`0x1405510d0`, `0x140553790`): its
+//// quest is in the active list, Accepted or Achieved (`0x1405510d0` tests only for state
+//// 3), it is not done and it is reachable. Every objective that is open and counts the
+//// event counts once for it, so a later objective that the event unlocks waits for the
+//// next one.
 ////
 //// A type 12 objective counts each unit once, as a type 23 objective does
 //// (`quest_log.used`), except an objective whose creature has fewer units in the world
@@ -124,9 +127,9 @@ const place_type = 22
 /// The objective type of a finished quest: a Quest2 id in its data.
 const finish_type = 24
 
-/// The QuestObjective flag of an optional objective, which the client's quest state and
-/// reachability skip (`quest_log`).
-const optional_flag = 0x20
+/// The QuestObjective flag that hides an objective from the player
+/// (`QuestObjective.flags.8`); it does not change whether the objective is done.
+const hidden_flag = 8
 
 /// The state number of an Achieved quest in 0x035C.
 const achieved_state = 2
@@ -787,6 +790,7 @@ fn opened(
     visits(settling:, quest:, zones:, now_ms:)
     |> arrivals(quest:, tables:, place:, shown:, now_ms:)
     |> finishes(quest:, tables:, numbers:, unix_ms:, now_ms:)
+    |> hidden_scripts(quest:, tables:, now_ms:)
   case list.length(next.progress) > list.length(settling.progress) {
     True ->
       opened(
@@ -801,6 +805,57 @@ fn opened(
         now_ms:,
       )
     False -> next
+  }
+}
+
+/// The quest's hidden scripted objectives with no target, each done once every other
+/// objective of the quest without flag 0x20 is done: the objectives of type 5 with flag 8
+/// (hidden) and data 0 that no creature links (`objective_link.is_linked`). Such an
+/// objective is done by nothing the client or a player does, and the Achieved rule
+/// (`0x1405fbc40`) waits for it, so the quest would stay Accepted for ever; this
+/// completion is a server choice. Another such objective of the quest is not one to wait
+/// for, so a quest with several completes them together, and a quest with no other
+/// required objective completes at once. A done objective is not counted again.
+fn hidden_scripts(
+  settling settling: Settling,
+  quest quest: quest_log.Quest,
+  tables tables: table_store.Tables,
+  now_ms now_ms: Int,
+) -> Settling {
+  let scripts =
+    list.index_map(quest.objectives, fn(objective, index) {
+      #(index, objective)
+    })
+    |> list.filter(fn(pair) {
+      let #(index, objective) = pair
+      objective.type_ == scripted_type
+      && int.bitwise_and(objective.flags, hidden_flag) != 0
+      && objective.data == 0
+      && !objective_link.is_linked(tables:, quest_id: quest.id, index:)
+    })
+  let waiting =
+    list.filter(scripts, fn(pair) {
+      !quest_log.objective_done(log: settling.log, quest:, index: pair.0)
+    })
+  case
+    waiting != []
+    && quest_log.required_objectives_done(
+      log: settling.log,
+      quest:,
+      ignoring: list.map(scripts, fn(pair) { pair.0 }),
+    )
+  {
+    True ->
+      list.fold(waiting, settling, fn(settling, pair) {
+        set_count(
+          settling:,
+          quest:,
+          index: pair.0,
+          value: { pair.1 }.count,
+          now_ms:,
+        )
+      })
+    False -> settling
   }
 }
 
@@ -876,7 +931,7 @@ fn arrivals(
       let #(_, objective) = open
       objective.type_ == place_type
       && objective.count == 1
-      && int.bitwise_and(objective.flags, optional_flag) != 0
+      && int.bitwise_and(objective.flags, quest_log.optional_flag) != 0
       && required_sibling_arrived(
         settling: at_markers,
         quest:,
@@ -936,7 +991,7 @@ fn required_sibling_arrived(
     let #(index, objective) = sibling
     objective.type_ == place_type
     && objective.data == optional.data
-    && int.bitwise_and(objective.flags, optional_flag) == 0
+    && int.bitwise_and(objective.flags, quest_log.optional_flag) == 0
     && quest_log.objective_progress(log: settling.log, quest:, index:)
     >= objective.count
     && place_objective.at_marker(
