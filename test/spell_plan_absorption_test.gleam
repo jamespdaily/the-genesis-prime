@@ -92,7 +92,7 @@ fn absorption_row(
 fn modifiers_of(row row: List(Cell)) -> List(spell_plan.PropertyModifier) {
   let assert Ok(spell) =
     spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
-  spell.modifiers
+  spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier)
 }
 
 fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
@@ -197,7 +197,13 @@ pub fn an_absorption_row_aimed_at_the_primary_target_is_read_in_a_spell_cast_on_
       proxy_effect_id: 178_143,
     )
   assert spell_tables.read_row(effect: row, place: spell_tables.pressed)
-    == Ok(spell_plan.Applied(spell_plan.PlannedModifier(read)))
+    == Ok(
+      spell_plan.Applied(
+        spell_plan.ReadEffects(effects: [
+          spell_plan.effect_of(kind: spell_plan.ModifierEffect(read)),
+        ]),
+      ),
+    )
     as "a spell a Proxy aimed at the caster starts, or a pressed one, is cast on the caster"
   assert spell_tables.read_row(effect: row, place: on_each_struck)
     == Error(spell_plan.AbsorptionOnStruckUnit(
@@ -481,9 +487,10 @@ pub fn spectral_form_holds_its_absorption_and_the_plans_load_test() -> Nil {
     )
     as "the innate's tree holds Spell4 58586"
   let assert [absorb] =
-    list.filter(spectral_form.modifiers, fn(row) {
-      row.effect_id == Spell4EffectsId(178_144)
-    })
+    list.filter(
+      spell_plan.payloads(spell: spectral_form, as_kind: spell_plan.as_modifier),
+      fn(row) { row.effect_id == Spell4EffectsId(178_144) },
+    )
     as "row 178144 is one of its modifiers"
   assert absorb.change
     == spell_plan.AbsorbChange(Absorption(

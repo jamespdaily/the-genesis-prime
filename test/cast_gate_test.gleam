@@ -60,7 +60,15 @@ fn spell_with(
   proxies proxies: List(Proxy),
   gains gains: List(spell_plan.Gain),
 ) -> Spell {
-  Spell(..support.exempt(), cast_time_ms: 0, proxies:, gains:)
+  support.replacing(
+    spell: support.replacing(
+      spell: Spell(..support.exempt(), cast_time_ms: 0),
+      as_kind: spell_plan.as_proxy,
+      kinds: list.map(proxies, spell_plan.ProxyEffect),
+    ),
+    as_kind: spell_plan.as_gain,
+    kinds: list.map(gains, spell_plan.GainEffect),
+  )
 }
 
 /// Every effect of a press of the bag index 8, answered with a round that struck

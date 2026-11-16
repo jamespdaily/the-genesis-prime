@@ -108,25 +108,39 @@ pub fn remove_lands_only_on_the_unit_carrying_the_casters_group_test() -> Nil {
   // The remove is the client's row 144869 with its selector a group the planted markers
   // hold, since a planted spell takes the Spell4Base of an ability of the bag.
   let real = spell_tables.client_spell(spell4_id: 38_841)
-  let assert [row] = real.removes as "Ruin's tree holds the one remove 144869"
+  let assert [row] =
+    spell_plan.payloads(spell: real, as_kind: spell_plan.as_remove)
+    as "Ruin's tree holds the one remove 144869"
   assert row.effect_id == Spell4EffectsId(144_869)
   let assert GatedOnTarget(..) = row.condition
     as "the remove keeps its target apply prerequisite 13148"
   let ruin =
-    spell_plan.Spell(..support.child(spell4_id: 38_841, base: 1), removes: [
-      spell_plan.ForceRemove(..row, selector: lasting.Group(23_183)),
-    ])
+    support.replacing(
+      spell: support.child(spell4_id: 38_841, base: 1),
+      as_kind: spell_plan.as_remove,
+      kinds: list.map(
+        [
+          spell_plan.ForceRemove(..row, selector: lasting.Group(23_183)),
+        ],
+        spell_plan.RemoveEffect,
+      ),
+    )
   let marked_twice =
-    spell_plan.Spell(
-      ..support.child(spell4_id: 101, base: 3),
-      groups: [464, 23_183],
-      lasting: [marker_row(id: 1)],
+    support.replacing(
+      spell: spell_plan.Spell(..support.child(spell4_id: 101, base: 3), groups: [
+        464,
+        23_183,
+      ]),
+      as_kind: spell_plan.as_lasting,
+      kinds: list.map([marker_row(id: 1)], spell_plan.LastingEffect),
     )
   let marked_once =
-    spell_plan.Spell(
-      ..support.child(spell4_id: 102, base: 2),
-      groups: [23_183],
-      lasting: [marker_row(id: 2)],
+    support.replacing(
+      spell: spell_plan.Spell(..support.child(spell4_id: 102, base: 2), groups: [
+        23_183,
+      ]),
+      as_kind: spell_plan.as_lasting,
+      kinds: list.map([marker_row(id: 2)], spell_plan.LastingEffect),
     )
   let plans = support.plans_of([ruin, marked_twice, marked_once])
   let press = fn(state, bag, struck, at) {
@@ -219,19 +233,26 @@ pub fn a_gate_that_asks_for_another_creature_passes_the_casters_own_unit_test() 
   // caster is a player, so the gate fails a unit that is the creature and would pass the
   // caster if it were read as the first unit.
   let spell =
-    spell_plan.Spell(..support.child(spell4_id: 101, base: 3), lasting: [
-      spell_plan.Lasting(
-        ..marker_row(id: 7),
-        condition: GatedOnTarget(
-          prerequisite: prerequisite_support.single(id: 5001, condition: #(
-            38,
-            2,
-            0,
-            48_404,
-          )),
-        ),
+    support.replacing(
+      spell: support.child(spell4_id: 101, base: 3),
+      as_kind: spell_plan.as_lasting,
+      kinds: list.map(
+        [
+          spell_plan.Lasting(
+            ..marker_row(id: 7),
+            condition: GatedOnTarget(
+              prerequisite: prerequisite_support.single(id: 5001, condition: #(
+                38,
+                2,
+                0,
+                48_404,
+              )),
+            ),
+          ),
+        ],
+        spell_plan.LastingEffect,
       ),
-    ])
+    )
   let plans = support.plans_of([spell])
   let #(state, raw) =
     support.pressed_raw_in(
@@ -305,13 +326,20 @@ fn chance_spell(aim aim: spell_plan.Aim) -> Spell {
 
 /// The same as a child of its own base, for a Proxy to start.
 fn chance_child(aim aim: spell_plan.Aim) -> Spell {
-  spell_plan.Spell(..support.child(spell4_id: 101, base: 101), lasting: [
-    spell_plan.Lasting(
-      ..marker_row(id: 7),
-      aim:,
-      condition: GatedOnTarget(prerequisite: chance_gate()),
+  support.replacing(
+    spell: support.child(spell4_id: 101, base: 101),
+    as_kind: spell_plan.as_lasting,
+    kinds: list.map(
+      [
+        spell_plan.Lasting(
+          ..marker_row(id: 7),
+          aim:,
+          condition: GatedOnTarget(prerequisite: chance_gate()),
+        ),
+      ],
+      spell_plan.LastingEffect,
     ),
-  ])
+  )
 }
 
 pub fn a_caster_row_behind_a_type_37_target_gate_takes_one_roll_and_lands_when_it_passes_test() -> Nil {
@@ -514,12 +542,19 @@ pub fn struck_unit_with_no_pose_leaves_a_positional_gate_unread_test() -> Nil {
       arcs: [prerequisite_support.behind_arc()],
     )
   let spell =
-    spell_plan.Spell(..support.child(spell4_id: 101, base: 3), lasting: [
-      spell_plan.Lasting(
-        ..marker_row(id: 7),
-        condition: GatedOnTarget(prerequisite: behind),
+    support.replacing(
+      spell: support.child(spell4_id: 101, base: 3),
+      as_kind: spell_plan.as_lasting,
+      kinds: list.map(
+        [
+          spell_plan.Lasting(
+            ..marker_row(id: 7),
+            condition: GatedOnTarget(prerequisite: behind),
+          ),
+        ],
+        spell_plan.LastingEffect,
       ),
-    ])
+    )
   let plans = support.plans_of([spell])
   let caster = caster_at(x: 0.0, z: 5.0)
   let #(state, raw) =
@@ -617,19 +652,26 @@ pub fn heal_and_modifier_behind_target_gate_reach_only_passing_units_test() -> N
       armor: None,
     )
   let spell =
-    spell_plan.Spell(
-      ..support.child(spell4_id: 101, base: 3),
-      heals: [
-        healing(
-          id: 58_547,
-          gate: creature_gate(id: 8757, comparison: 2, creature: 25_708),
+    support.replacing(
+      spell: support.replacing(
+        spell: support.child(spell4_id: 101, base: 3),
+        as_kind: spell_plan.as_heal,
+        kinds: list.map(
+          [
+            healing(
+              id: 58_547,
+              gate: creature_gate(id: 8757, comparison: 2, creature: 25_708),
+            ),
+            healing(
+              id: 67_780,
+              gate: creature_gate(id: 10_849, comparison: 1, creature: 25_708),
+            ),
+          ],
+          spell_plan.HealEffect,
         ),
-        healing(
-          id: 67_780,
-          gate: creature_gate(id: 10_849, comparison: 1, creature: 25_708),
-        ),
-      ],
-      modifiers: [slowing],
+      ),
+      as_kind: spell_plan.as_modifier,
+      kinds: list.map([slowing], spell_plan.ModifierEffect),
     )
   let plans: Plans = support.plans_of([spell])
   let #(state, raw) =

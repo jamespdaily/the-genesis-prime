@@ -176,15 +176,22 @@ pub fn the_payment_of_every_point_leaves_0_and_is_one_change_of_the_psi_points_t
 /// keeps the tag of its row.
 fn mind_burst_with_gate(gate gate: prerequisite.Prerequisite) -> Spell {
   let mind_burst = mind_burst_spell()
-  Spell(
-    ..mind_burst,
-    proxies: list.map(mind_burst.proxies, fn(proxy: spell_plan.Proxy) {
-      case proxy.spell.spell4_id == Spell4Id(57_030) {
-        True -> Proxy(..proxy, condition: spell_plan.Always)
-        False ->
-          Proxy(..proxy, condition: spell_plan.GatedOnCaster(gates: [gate]))
-      }
-    }),
+  support.replacing(
+    spell: mind_burst,
+    as_kind: spell_plan.as_proxy,
+    kinds: list.map(
+      list.map(
+        spell_plan.payloads(spell: mind_burst, as_kind: spell_plan.as_proxy),
+        fn(proxy: spell_plan.Proxy) {
+          case proxy.spell.spell4_id == Spell4Id(57_030) {
+            True -> Proxy(..proxy, condition: spell_plan.Always)
+            False ->
+              Proxy(..proxy, condition: spell_plan.GatedOnCaster(gates: [gate]))
+          }
+        },
+      ),
+      spell_plan.ProxyEffect,
+    ),
   )
 }
 
@@ -313,20 +320,27 @@ pub fn a_5_point_mind_burst_with_the_reckful_amp_held_starts_the_crit_buff_test(
   // A planted spell 57027 on bag index 11 whose go gives the caster a node that
   // lasts until removed, as the AMP's lasting effect does.
   let amp =
-    Spell(..support.child(spell4_id: 57_027, base: 3), lasting: [
-      spell_plan.Lasting(
-        effect_id: id.Spell4EffectsId(1),
-        phase_flags: -1,
-        aim: spell_plan.AimsAtCaster,
-        row: lasting.LastingRow(
-          delay_ms: 0,
-          duration_ms: 0,
-          until_removed: True,
-        ),
-        condition: spell_plan.Always,
-        tag: spend.always,
+    support.replacing(
+      spell: support.child(spell4_id: 57_027, base: 3),
+      as_kind: spell_plan.as_lasting,
+      kinds: list.map(
+        [
+          spell_plan.Lasting(
+            effect_id: id.Spell4EffectsId(1),
+            phase_flags: -1,
+            aim: spell_plan.AimsAtCaster,
+            row: lasting.LastingRow(
+              delay_ms: 0,
+              duration_ms: 0,
+              until_removed: True,
+            ),
+            condition: spell_plan.Always,
+            tag: spend.always,
+          ),
+        ],
+        spell_plan.LastingEffect,
       ),
-    ])
+    )
   let plans =
     support.with_spells(
       plans: support.plans_with(spell: mind_burst_spell()),
@@ -577,7 +591,10 @@ pub fn an_unread_emm_id_is_refused_with_its_costs_result_logged_once_and_pays_no
 pub fn crush_keeps_every_effect_at_any_points_held_test() -> Nil {
   use <- owned_test.run(60_000)
   let crush_spell = support.ability(base: 19_022)
-  assert list.map(crush_spell.proxies, fn(proxy) { proxy.tag })
+  assert list.map(
+      spell_plan.payloads(spell: crush_spell, as_kind: spell_plan.as_proxy),
+      fn(proxy) { proxy.tag },
+    )
     == [spend.EqualTo(value: 4)]
     as "Spell4.32812: the Proxy 62007 holds a stray (emmComparison 0, emmValue 4) and the spell has no EMM id"
   list.each([0, 3, 5], fn(points) {

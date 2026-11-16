@@ -887,9 +887,16 @@ pub fn ticks_due_together_go_in_key_order_test() -> Nil {
   let #(state, raw) =
     support.pressed_raw_in(
       plans: support.plans_of([
-        spell_plan.Spell(..surge(), heals: [
-          health_heal(schedule: every_two_seconds()),
-        ]),
+        support.replacing(
+          spell: surge(),
+          as_kind: spell_plan.as_heal,
+          kinds: list.map(
+            [
+              health_heal(schedule: every_two_seconds()),
+            ],
+            spell_plan.HealEffect,
+          ),
+        ),
       ]),
       state: cast_state.new(),
       caster: healing_caster(),
@@ -1076,14 +1083,21 @@ pub fn a_dead_caster_ends_its_ticks_test() -> Nil {
   // The innate passive's cast is set aside by a death: its heal ticks go on, and one
   // that fires on the dead caster heals nothing.
   let passive =
-    spell_plan.Spell(..support.child(spell4_id: 250_020, base: 250_020), heals: [
-      health_heal(schedule: Schedule(
-        delay_ms: 0,
-        tick_ms: 1000,
-        duration_ms: 3000,
-        count: 3,
-      )),
-    ])
+    support.replacing(
+      spell: support.child(spell4_id: 250_020, base: 250_020),
+      as_kind: spell_plan.as_heal,
+      kinds: list.map(
+        [
+          health_heal(schedule: Schedule(
+            delay_ms: 0,
+            tick_ms: 1000,
+            duration_ms: 3000,
+            count: 3,
+          )),
+        ],
+        spell_plan.HealEffect,
+      ),
+    )
   let plans = support.plans_of([passive])
   let #(state, raw) =
     cast.passive_started(
@@ -1335,7 +1349,12 @@ fn healing_caster() -> Caster {
 
 /// A cast of base 3 with these heal rows to its end, its go striking nothing.
 fn heal_run(rows rows: List(spell_plan.Heal)) -> Run {
-  let spell = spell_plan.Spell(..surge(), heals: rows)
+  let spell =
+    support.replacing(
+      spell: surge(),
+      as_kind: spell_plan.as_heal,
+      kinds: list.map(rows, spell_plan.HealEffect),
+    )
   pressed(
     plans: support.plans_of([spell]),
     caster: healing_caster(),

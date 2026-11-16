@@ -42,8 +42,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{
   AimedAtOtherUnits, AimsAtArea, AimsAtCaster, AimsAtCasterAndPrimaryTarget,
-  AimsAtPrimaryTarget, Always, Applied, Heal, Held, Lasting, LeftOut,
-  PlannedHeal, PlannedLasting, ReadByActivation, ReadByArea, TickingHeal,
+  AimsAtPrimaryTarget, Always, Applied, Heal, Lasting, LeftOut, TickingHeal,
 }
 import genesis_prime/game/spend
 import genesis_prime/game/ticking
@@ -104,14 +103,13 @@ fn onslaught_row() -> Spell4Effects {
 /// unit (`spell_plan.read_row`: `Applied` and `Held` rows are in the spell's list).
 fn heals_of(effects effects: List(Spell4Effects)) -> List(spell_plan.Heal) {
   spell_tables.read_rows(effects:, place: spell_tables.pressed)
-  |> list.filter_map(fn(reading) {
+  |> list.flat_map(fn(reading) {
     case reading {
-      Ok(Applied(PlannedHeal(heal:))) | Ok(Held(PlannedHeal(heal:))) -> Ok(heal)
-      Ok(Applied(..))
-      | Ok(Held(..))
-      | Ok(LeftOut(..))
-      | Ok(ReadByArea)
-      | Ok(ReadByActivation) -> Error(Nil)
+      Ok(reading) ->
+        list.filter_map(
+          spell_tables.planned_kinds(reading:),
+          spell_plan.as_heal,
+        )
       Error(error) ->
         panic as { "the row is refused: " <> spell_plan.describe(error:) }
     }
@@ -163,7 +161,13 @@ pub fn a_heal_shields_row_aimed_at_the_primary_target_is_read_in_a_spell_cast_on
       effect: heal_aimed_at(flags: 2),
       place: spell_tables.pressed,
     )
-    == Ok(Applied(PlannedHeal(heal)))
+    == Ok(
+      Applied(
+        spell_plan.ReadEffects(effects: [
+          spell_plan.effect_of(kind: spell_plan.HealEffect(heal)),
+        ]),
+      ),
+    )
     as "a child a Proxy aimed at the caster starts is cast on the caster: spell_plan.target_of starts flags 1 and 2 there"
 }
 
@@ -323,18 +327,22 @@ pub fn a_shield_overload_row_aimed_at_the_area_is_a_lasting_row_on_each_struck_u
     == [
       Ok(
         Applied(
-          PlannedLasting(Lasting(
-            effect_id: Spell4EffectsId(147_229),
-            phase_flags: -1,
-            aim: AimsAtArea,
-            row: LastingRow(
-              delay_ms: 0,
-              duration_ms: 4000,
-              until_removed: False,
+          spell_plan.ReadEffects(effects: [
+            spell_plan.effect_of(
+              kind: spell_plan.LastingEffect(Lasting(
+                effect_id: Spell4EffectsId(147_229),
+                phase_flags: -1,
+                aim: AimsAtArea,
+                row: LastingRow(
+                  delay_ms: 0,
+                  duration_ms: 4000,
+                  until_removed: False,
+                ),
+                condition: Always,
+                tag: spend.EqualTo(value: 0),
+              )),
             ),
-            condition: Always,
-            tag: spend.EqualTo(value: 0),
-          )),
+          ]),
         ),
       ),
       Ok(LeftOut(why: AimedAtOtherUnits)),
@@ -387,12 +395,14 @@ pub fn a_heal_in_a_struck_unit_child_is_refused_by_place_test() -> Nil {
     place: spell_tables.pressed,
   ))
     as "the same row under a Proxy aimed at the caster is read: no spell is made on each struck unit"
-  let assert Ok(Applied(PlannedHeal(on_the_caster))) =
+  let assert Ok(Applied(_) as reading) =
     spell_tables.read_row(
       effect: Spell4Effects(..heal, target_flags: 1),
       place:,
     )
     as "a row that includes the caster heals the caster in a struck child too"
+  let assert [spell_plan.HealEffect(on_the_caster)] =
+    spell_tables.planned_kinds(reading:)
   assert on_the_caster.aim == AimsAtCaster
 }
 
@@ -459,21 +469,25 @@ pub fn mind_over_body_row_reads_as_a_health_heal_test() -> Nil {
     )
     == Ok(
       Applied(
-        PlannedHeal(Heal(
-          effect_id: Spell4EffectsId(62_019),
-          vital: effect_kind.Health,
-          phase_flags: -1,
-          aim: AimsAtPrimaryTarget,
-          condition: Always,
-          tag: spend.EqualTo(value: 0),
-          formula: Formula(multiplier: 1.0, base: 0.0, parameters: [
-            Parameter(kind: 13, value: 0.3280999958515167),
-            Parameter(kind: 10, value: 17.510000228881836),
-            Parameter(kind: 0, value: 0.0),
-            Parameter(kind: 0, value: 0.0),
-          ]),
-          delay_ms: 0,
-        )),
+        spell_plan.ReadEffects(effects: [
+          spell_plan.effect_of(
+            kind: spell_plan.HealEffect(Heal(
+              effect_id: Spell4EffectsId(62_019),
+              vital: effect_kind.Health,
+              phase_flags: -1,
+              aim: AimsAtPrimaryTarget,
+              condition: Always,
+              tag: spend.EqualTo(value: 0),
+              formula: Formula(multiplier: 1.0, base: 0.0, parameters: [
+                Parameter(kind: 13, value: 0.3280999958515167),
+                Parameter(kind: 10, value: 17.510000228881836),
+                Parameter(kind: 0, value: 0.0),
+                Parameter(kind: 0, value: 0.0),
+              ]),
+              delay_ms: 0,
+            )),
+          ),
+        ]),
       ),
     )
     as "row 62019: targetFlags 2 aims at the primary target, 13 x 0.3281 and 10 x 17.51, dataBits00 1.0, no delay"
@@ -496,9 +510,11 @@ pub fn medic_flash_row_reads_as_a_health_heal_on_the_caster_test() -> Nil {
       parameter_value00: 0.5368000268936157,
       parameter_value01: 23.360000610351562,
     )
-  let assert Ok(Applied(PlannedHeal(heal))) =
+  let assert Ok(Applied(_) as reading) =
     spell_tables.read_row(effect: row, place: spell_tables.pressed)
     as "row 94498 is read"
+  let assert [spell_plan.HealEffect(heal)] =
+    spell_tables.planned_kinds(reading:)
   assert heal.vital == effect_kind.Health
   assert heal.aim == AimsAtCaster
     as "targetFlags 5 includes the caster (bit 1) and the area (4): the caster part is read"
@@ -624,7 +640,10 @@ pub fn the_plans_hold_energizes_shield_heal_the_warriors_ticking_row_and_meltdow
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let assert [Heal(effect_id: Spell4EffectsId(228_914), delay_ms: 10, ..)] =
-    cast_support.planned_spell(base: 46_615, spell4_id: 69_450).heals
+    spell_plan.payloads(
+      spell: cast_support.planned_spell(base: 46_615, spell4_id: 69_450),
+      as_kind: spell_plan.as_heal,
+    )
     as "Spell4Effects spellId=69450: 228914 is the Medic's only shield heal on the caster"
   let assert [
     TickingHeal(
@@ -632,13 +651,24 @@ pub fn the_plans_hold_energizes_shield_heal_the_warriors_ticking_row_and_meltdow
       schedule: ticking.Schedule(tick_ms: 1000, count: 8, ..),
       ..,
     ),
-  ] = cast_support.planned_spell(base: 30_828, spell4_id: 46_867).heals
+  ] =
+    spell_plan.payloads(
+      spell: cast_support.planned_spell(base: 30_828, spell4_id: 46_867),
+      as_kind: spell_plan.as_heal,
+    )
     as "Spell4Effects spellId=46867: 210834, held and not applied"
-  assert cast_support.planned_spell(base: 46_615, spell4_id: 60_718).heals == []
+  assert spell_plan.payloads(
+      spell: cast_support.planned_spell(base: 46_615, spell4_id: 60_718),
+      as_kind: spell_plan.as_heal,
+    )
+    == []
     as "Spell4Effects spellId=60718: 146893 has targetFlags 4, aimed at other units, so it is left out"
   let assert [Lasting(effect_id: Spell4EffectsId(147_229), aim: AimsAtArea, ..)] =
     list.filter(
-      cast_support.planned_spell(base: 46_615, spell4_id: 60_796).lasting,
+      spell_plan.payloads(
+        spell: cast_support.planned_spell(base: 46_615, spell4_id: 60_796),
+        as_kind: spell_plan.as_lasting,
+      ),
       fn(row) { row.effect_id.value == 147_229 },
     )
     as "Spell4Effects spellId=60796: 147229, a ShieldOverload aimed at the area, is a lasting row"

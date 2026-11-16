@@ -789,12 +789,15 @@ pub fn effects_ended(
           until_removed: row.row.until_removed,
         )
       }),
-      list.map(spell.cooldown_modifiers, fn(row) {
-        CooldownEnding(source: unit_properties.Source(
-          cast_id:,
-          effect_id: row.effect_id,
-        ))
-      }),
+      list.map(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_cooldown_modifier),
+        fn(row) {
+          CooldownEnding(source: unit_properties.Source(
+            cast_id:,
+            effect_id: row.effect_id,
+          ))
+        },
+      ),
     )
   let #(cast, effects) =
     list.fold(endings, #(cast, []), fn(so_far, ending) {

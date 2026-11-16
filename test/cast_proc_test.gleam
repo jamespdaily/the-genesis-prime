@@ -402,10 +402,13 @@ fn proc(
 
 /// A spell that holds these procs and nothing else.
 fn holding(spell4_id spell4_id: Int, procs procs: List(ProcRow)) -> Spell {
-  Spell(
-    ..support.child(spell4_id:, base: spell4_id),
-    procs:,
-    stealth_change: KeepsStealth,
+  support.replacing(
+    spell: Spell(
+      ..support.child(spell4_id:, base: spell4_id),
+      stealth_change: KeepsStealth,
+    ),
+    as_kind: spell_plan.as_proc,
+    kinds: list.map(procs, spell_plan.ProcEffect),
   )
 }
 
@@ -473,10 +476,16 @@ fn stealth_row(
 
 /// The spell of base 1 that holds a stealth damage does not end, as 95774 does.
 fn stealthing() -> Spell {
-  Spell(
-    ..support.child(spell4_id: 38_913, base: 1),
-    stealth: [stealth_row(id: 95_774, breaks: KeptOnDamage)],
-    stealth_change: KeepsStealth,
+  support.replacing(
+    spell: Spell(
+      ..support.child(spell4_id: 38_913, base: 1),
+      stealth_change: KeepsStealth,
+    ),
+    as_kind: spell_plan.as_stealth,
+    kinds: list.map(
+      [stealth_row(id: 95_774, breaks: KeptOnDamage)],
+      spell_plan.StealthEffect,
+    ),
   )
 }
 
@@ -806,10 +815,16 @@ pub fn a_proc_fires_again_only_when_its_window_has_passed_a_fire_at_exactly_its_
 }
 
 fn broken_by_damage_spell() -> Spell {
-  Spell(
-    ..support.child(spell4_id: 38_914, base: 1),
-    stealth: [stealth_row(id: 83_834, breaks: BrokenByDamage)],
-    stealth_change: KeepsStealth,
+  support.replacing(
+    spell: Spell(
+      ..support.child(spell4_id: 38_914, base: 1),
+      stealth_change: KeepsStealth,
+    ),
+    as_kind: spell_plan.as_stealth,
+    kinds: list.map(
+      [stealth_row(id: 83_834, breaks: BrokenByDamage)],
+      spell_plan.StealthEffect,
+    ),
   )
 }
 
@@ -986,9 +1001,16 @@ pub fn a_fire_a_dead_holder_was_refused_holds_back_no_later_fire_test() -> Nil {
     ])
   let living = Spell(..left, caster_death: spell_plan.CannotBeDead)
   let holder =
-    Spell(
-      ..holder,
-      procs: list.map(holder.procs, fn(row) { ProcRow(..row, spell: living) }),
+    support.replacing(
+      spell: holder,
+      as_kind: spell_plan.as_proc,
+      kinds: list.map(
+        list.map(
+          spell_plan.payloads(spell: holder, as_kind: spell_plan.as_proc),
+          fn(row) { ProcRow(..row, spell: living) },
+        ),
+        spell_plan.ProcEffect,
+      ),
     )
   let plans = support.plans_of([broken_by_damage_spell(), holder])
   let caster = planted_caster()
@@ -1178,28 +1200,40 @@ pub fn procs_are_matched_after_the_inputs_work_a_removed_holder_fires_nothing_an
     ])
   // A go that removes the holder (a type 80 row) and ends the stealth (a type 84 row).
   let removing =
-    Spell(
-      ..support.child(spell4_id: 38_783, base: 2),
-      removes: [
-        spell_plan.ForceRemove(
-          effect_id: Spell4EffectsId(83_832),
-          phase_flags: -1,
-          aim: spell_plan.AimsAtCaster,
-          selector: lasting.Spell(Spell4Id(250_101)),
-          count: 1,
-          condition: Always,
-          tag: spend.always,
+    support.replacing(
+      spell: support.replacing(
+        spell: Spell(
+          ..support.child(spell4_id: 38_783, base: 2),
+          stealth_change: KeepsStealth,
         ),
-      ],
-      remove_stealth: [
-        RemoveStealthRow(
-          effect_id: Spell4EffectsId(83_833),
-          phase_flags: -1,
-          condition: Always,
-          tag: spend.always,
+        as_kind: spell_plan.as_remove,
+        kinds: list.map(
+          [
+            spell_plan.ForceRemove(
+              effect_id: Spell4EffectsId(83_832),
+              phase_flags: -1,
+              aim: spell_plan.AimsAtCaster,
+              selector: lasting.Spell(Spell4Id(250_101)),
+              count: 1,
+              condition: Always,
+              tag: spend.always,
+            ),
+          ],
+          spell_plan.RemoveEffect,
         ),
-      ],
-      stealth_change: KeepsStealth,
+      ),
+      as_kind: spell_plan.as_remove_stealth,
+      kinds: list.map(
+        [
+          RemoveStealthRow(
+            effect_id: Spell4EffectsId(83_833),
+            phase_flags: -1,
+            condition: Always,
+            tag: spend.always,
+          ),
+        ],
+        spell_plan.RemoveStealthEffect,
+      ),
     )
   let plans = support.plans_of([stealthing(), removing, holder])
   let #(state, _) = planted_joined(plans:, spell: holder, at: 1000)
@@ -1216,19 +1250,31 @@ pub fn procs_are_matched_after_the_inputs_work_a_removed_holder_fires_nothing_an
   assert cast_state.stealthed(cast: state) == False
   // A go that applies a holder and enters stealth in one input.
   let applier =
-    Spell(
-      ..support.child(spell4_id: 38_915, base: 3),
-      stealth: [stealth_row(id: 95_775, breaks: KeptOnDamage)],
-      procs: [
-        proc(
-          id: 5,
-          trigger: EnteredStealth,
-          casts: cast_of_proc(spell4_id: 250_203),
-          window_ms: 500,
-          count: 1,
+    support.replacing(
+      spell: support.replacing(
+        spell: Spell(
+          ..support.child(spell4_id: 38_915, base: 3),
+          stealth_change: KeepsStealth,
         ),
-      ],
-      stealth_change: KeepsStealth,
+        as_kind: spell_plan.as_stealth,
+        kinds: list.map(
+          [stealth_row(id: 95_775, breaks: KeptOnDamage)],
+          spell_plan.StealthEffect,
+        ),
+      ),
+      as_kind: spell_plan.as_proc,
+      kinds: list.map(
+        [
+          proc(
+            id: 5,
+            trigger: EnteredStealth,
+            casts: cast_of_proc(spell4_id: 250_203),
+            window_ms: 500,
+            count: 1,
+          ),
+        ],
+        spell_plan.ProcEffect,
+      ),
     )
   let plans = support.plans_of([applier])
   let #(_, entering) =
@@ -1245,14 +1291,21 @@ pub fn a_procs_own_cast_fires_procs_so_a_217_proc_whose_spell_ends_stealth_fires
   use <- owned_test.run(60_000)
   let leaving = cast_of_proc(spell4_id: 250_202)
   let ending =
-    Spell(..cast_of_proc(spell4_id: 250_201), remove_stealth: [
-      RemoveStealthRow(
-        effect_id: Spell4EffectsId(250_901),
-        phase_flags: -1,
-        condition: Always,
-        tag: spend.always,
+    support.replacing(
+      spell: cast_of_proc(spell4_id: 250_201),
+      as_kind: spell_plan.as_remove_stealth,
+      kinds: list.map(
+        [
+          RemoveStealthRow(
+            effect_id: Spell4EffectsId(250_901),
+            phase_flags: -1,
+            condition: Always,
+            tag: spend.always,
+          ),
+        ],
+        spell_plan.RemoveStealthEffect,
       ),
-    ])
+    )
   let holder =
     holding(spell4_id: 250_101, procs: [
       proc(
@@ -1355,20 +1408,26 @@ pub fn a_proc_lasts_as_long_as_its_node_a_timed_one_ends_with_it_and_a_removal_d
     )
   let holder = pressable(spell4_id: 250_101, base: 1, procs: [timed])
   let removing =
-    Spell(
-      ..support.child(spell4_id: 38_783, base: 2),
-      removes: [
-        spell_plan.ForceRemove(
-          effect_id: Spell4EffectsId(83_832),
-          phase_flags: -1,
-          aim: spell_plan.AimsAtCaster,
-          selector: lasting.Spell(Spell4Id(250_101)),
-          count: 1,
-          condition: Always,
-          tag: spend.always,
-        ),
-      ],
-      stealth_change: KeepsStealth,
+    support.replacing(
+      spell: Spell(
+        ..support.child(spell4_id: 38_783, base: 2),
+        stealth_change: KeepsStealth,
+      ),
+      as_kind: spell_plan.as_remove,
+      kinds: list.map(
+        [
+          spell_plan.ForceRemove(
+            effect_id: Spell4EffectsId(83_832),
+            phase_flags: -1,
+            aim: spell_plan.AimsAtCaster,
+            selector: lasting.Spell(Spell4Id(250_101)),
+            count: 1,
+            condition: Always,
+            tag: spend.always,
+          ),
+        ],
+        spell_plan.RemoveEffect,
+      ),
     )
   let plans = support.plans_of([holder, removing])
   let caster = planted_caster()
@@ -2183,7 +2242,12 @@ fn healed_steps(
   procs procs: List(ProcRow),
 ) -> List(#(Int, List(Effect))) {
   let holder = holding(spell4_id: 250_101, procs:)
-  let healing = Spell(..support.child(spell4_id: 250_303, base: 3), heals: rows)
+  let healing =
+    support.replacing(
+      spell: support.child(spell4_id: 250_303, base: 3),
+      as_kind: spell_plan.as_heal,
+      kinds: list.map(rows, spell_plan.HealEffect),
+    )
   let plans = support.plans_of([holder, healing])
   let caster = healer(health:)
   let #(state, started) =
@@ -2334,20 +2398,35 @@ pub fn the_208200_gate_passes_only_while_the_holders_79220_holds_a_node_on_the_c
   use <- unitest.guard(client_tables.present())
   // Prerequisite 37038 (`Prerequisite.prerequisiteTypeId.50`): type 50, comparison 1, value
   // 79220: the creature is under the holder's cast of Spell4 79220.
-  let assert [stalker_damage] = real_spell(spell4_id: 79_229).procs
+  let assert [stalker_damage] =
+    spell_plan.payloads(
+      spell: real_spell(spell4_id: 79_229),
+      as_kind: spell_plan.as_proc,
+    )
     as "79229 holds the one Proc row 208200"
   let holder = holding(spell4_id: 250_101, procs: [stalker_damage])
   let marking =
-    Spell(..support.child(spell4_id: 79_220, base: 3), lasting: [
-      spell_plan.Lasting(
-        effect_id: Spell4EffectsId(250_901),
-        phase_flags: -1,
-        aim: spell_plan.AimsAtArea,
-        row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
-        condition: Always,
-        tag: spend.always,
+    support.replacing(
+      spell: support.child(spell4_id: 79_220, base: 3),
+      as_kind: spell_plan.as_lasting,
+      kinds: list.map(
+        [
+          spell_plan.Lasting(
+            effect_id: Spell4EffectsId(250_901),
+            phase_flags: -1,
+            aim: spell_plan.AimsAtArea,
+            row: LastingRow(
+              delay_ms: 0,
+              duration_ms: 8000,
+              until_removed: False,
+            ),
+            condition: Always,
+            tag: spend.always,
+          ),
+        ],
+        spell_plan.LastingEffect,
       ),
-    ])
+    )
   let striker = Spell(..hitter(school: 2), groups: [463])
   let plans = support.plans_of([holder, marking, striker])
   let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
@@ -2574,18 +2653,24 @@ pub fn a_hit_answered_after_the_client_ended_the_cast_still_fires_the_procs_the_
   // (0x801) while its second round is open; the hit then answered is the holder's hit all
   // the same, and the cast's spell is still known (`holder_of`).
   let lasting =
-    Spell(
-      ..hitter(school: 2),
-      method: spell_plan.Multiphase,
-      phase_delays_ms: [0, 500],
-      procs: [
-        firing(
-          id: 1,
-          trigger: spell_plan.LandsHit,
-          casts: 250_201,
-          aim: spell_plan.AtHolder,
-        ),
-      ],
+    support.replacing(
+      spell: Spell(
+        ..hitter(school: 2),
+        method: spell_plan.Multiphase,
+        phase_delays_ms: [0, 500],
+      ),
+      as_kind: spell_plan.as_proc,
+      kinds: list.map(
+        [
+          firing(
+            id: 1,
+            trigger: spell_plan.LandsHit,
+            casts: 250_201,
+            aim: spell_plan.AtHolder,
+          ),
+        ],
+        spell_plan.ProcEffect,
+      ),
     )
   let plans = support.plans_of([lasting])
   let caster = planted_caster()
@@ -2825,10 +2910,13 @@ pub fn the_old_triggers_keep_their_order_after_the_inputs_events_test() -> Nil {
   // An input's own events come first, then its heals, then its stealth change: a go that
   // hits and enters stealth casts the hit's proc before the stealth's.
   let entering =
-    Spell(
-      ..hitter(school: 2),
-      stealth: [stealth_row(id: 250_902, breaks: KeptOnDamage)],
-      stealth_change: KeepsStealth,
+    support.replacing(
+      spell: Spell(..hitter(school: 2), stealth_change: KeepsStealth),
+      as_kind: spell_plan.as_stealth,
+      kinds: list.map(
+        [stealth_row(id: 250_902, breaks: KeptOnDamage)],
+        spell_plan.StealthEffect,
+      ),
     )
   let holder =
     holding(spell4_id: 250_101, procs: [
@@ -2987,16 +3075,23 @@ pub fn proc_resource_spent_fires_test() -> Nil {
       spell_plan.SlotCost(slot: 1, amount: 3, result: 51),
     ])
   let gainer =
-    Spell(..support.child(spell4_id: 250_303, base: 3), gains: [
-      spell_plan.Gain(
-        effect_id: Spell4EffectsId(1),
-        slot: 1,
-        amount: 1,
-        phase_flags: 1,
-        condition: Always,
-        tag: spend.always,
+    support.replacing(
+      spell: support.child(spell4_id: 250_303, base: 3),
+      as_kind: spell_plan.as_gain,
+      kinds: list.map(
+        [
+          spell_plan.Gain(
+            effect_id: Spell4EffectsId(1),
+            slot: 1,
+            amount: 1,
+            phase_flags: 1,
+            condition: Always,
+            tag: spend.always,
+          ),
+        ],
+        spell_plan.GainEffect,
       ),
-    ])
+    )
   let plans = support.plans_of([holder, spender, gainer])
   let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
   let paying =
@@ -3043,31 +3138,45 @@ fn healed_through_a_child(
       ),
     ])
   let child =
-    Spell(..support.child(spell4_id: 90_001, base: 90_001), heals: [
-      spell_plan.Heal(
-        effect_id: Spell4EffectsId(1),
-        vital: effect_kind.Health,
-        phase_flags: -1,
-        aim: spell_plan.AimsAtPrimaryTarget,
-        condition: Always,
-        tag: spend.always,
-        formula: health_formula(),
-        delay_ms: 0,
+    support.replacing(
+      spell: support.child(spell4_id: 90_001, base: 90_001),
+      as_kind: spell_plan.as_heal,
+      kinds: list.map(
+        [
+          spell_plan.Heal(
+            effect_id: Spell4EffectsId(1),
+            vital: effect_kind.Health,
+            phase_flags: -1,
+            aim: spell_plan.AimsAtPrimaryTarget,
+            condition: Always,
+            tag: spend.always,
+            formula: health_formula(),
+            delay_ms: 0,
+          ),
+        ],
+        spell_plan.HealEffect,
       ),
-    ])
+    )
   let parent =
-    Spell(..support.child(spell4_id: 250_303, base: 3), proxies: [
-      spell_plan.Proxy(
-        effect_id: Spell4EffectsId(90_002),
-        delay_ms: 0,
-        phase_flags: -1,
-        condition: Always,
-        tag: spend.always,
-        target:,
-        spell: child,
-        gains: [],
+    support.replacing(
+      spell: support.child(spell4_id: 250_303, base: 3),
+      as_kind: spell_plan.as_proxy,
+      kinds: list.map(
+        [
+          spell_plan.Proxy(
+            effect_id: Spell4EffectsId(90_002),
+            delay_ms: 0,
+            phase_flags: -1,
+            condition: Always,
+            tag: spend.always,
+            target:,
+            spell: child,
+            gains: [],
+          ),
+        ],
+        spell_plan.ProxyEffect,
       ),
-    ])
+    )
   let plans = support.plans_of([holder, parent])
   let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
   let caster = healer(health: 500)
@@ -3476,11 +3585,17 @@ pub fn proc_events_in_order_test() -> Nil {
   assert starts_in_order(effects: pressed) == ["start 250201", "start 250202"]
     as "the ability is used before its cost is paid"
   let all_four =
-    Spell(
-      ..hitter(school: 2),
-      heals: [heal(id: 1, delay_ms: 0)],
-      stealth: [stealth_row(id: 250_902, breaks: KeptOnDamage)],
-      stealth_change: KeepsStealth,
+    support.replacing(
+      spell: support.replacing(
+        spell: Spell(..hitter(school: 2), stealth_change: KeepsStealth),
+        as_kind: spell_plan.as_heal,
+        kinds: list.map([heal(id: 1, delay_ms: 0)], spell_plan.HealEffect),
+      ),
+      as_kind: spell_plan.as_stealth,
+      kinds: list.map(
+        [stealth_row(id: 250_902, breaks: KeptOnDamage)],
+        spell_plan.StealthEffect,
+      ),
     )
   let acting_holder =
     holding(spell4_id: 250_101, procs: [

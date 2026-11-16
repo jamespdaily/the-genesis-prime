@@ -73,7 +73,7 @@ fn caster_gates(proxy: Proxy) -> Result(List(Int), Nil) {
 /// Every Proxy in the spell's tree, its stages' trees among them.
 fn proxies_in(spell: Spell) -> List(Proxy) {
   list.flat_map(spell_plan.tree(spell:, started: fn(_) { True }), fn(below) {
-    below.proxies
+    spell_plan.payloads(spell: below, as_kind: spell_plan.as_proxy)
   })
 }
 
@@ -117,7 +117,8 @@ fn relentless_strikes_gains_are_on_the_proxy(ability: Spell) -> Nil {
       ]
       as "Spell4Effects 127603 and 147972: vital 6 (slot 1), dataBits02 180 and 200, phase 1, behind 24581 and 24582, moved onto the Proxy"
     assert proxy.spell.spell4_id.value == 53_865
-    assert proxy.spell.gains == []
+    assert spell_plan.payloads(spell: proxy.spell, as_kind: spell_plan.as_gain)
+      == []
       as "the child 53865 under the Proxy keeps none: once per go, not per foe (issue 418)"
   })
 }
@@ -137,7 +138,8 @@ fn telekinetic_strikes_gain_is_on_the_proxy(ability: Spell) -> Nil {
   assert proxy.target == spell_plan.OnEachStruck
   assert list.map(proxy.gains, read) == [#(56_858, 1, 1, 1, None, None)]
     as "Spell4Effects 56858: +1 of vital 6 (slot 1), phase 1, no prerequisite"
-  assert proxy.spell.gains == []
+  assert spell_plan.payloads(spell: proxy.spell, as_kind: spell_plan.as_gain)
+    == []
 }
 
 pub fn telekinetic_strikes_proxy_to_30900_carries_its_psi_point_test() -> Nil {
@@ -166,7 +168,10 @@ pub fn energize_holds_its_plus_4_and_its_ticking_gain_on_the_caster_test() -> Ni
       plans: spell_tables.fixture_plans(),
       base: Spell4BaseId(46_615),
     )
-  assert list.map(energize.gains, read)
+  assert list.map(
+      spell_plan.payloads(spell: energize, as_kind: spell_plan.as_gain),
+      read,
+    )
     == [
       #(228_910, 1, 4, -1, Some(43_811), None),
       #(228_918, 1, 1, -1, Some(43_812), Some(#(2000, 8000))),
@@ -321,17 +326,24 @@ fn gains_under_each_struck(
   under under: Bool,
 ) -> List(#(Bool, Int)) {
   let own = case under {
-    True -> list.map(spell.gains, fn(gain) { #(True, gain.phase_flags) })
+    True ->
+      list.map(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_gain),
+        fn(gain) { #(True, gain.phase_flags) },
+      )
     False -> []
   }
   let below =
-    list.flat_map(spell.proxies, fn(proxy) {
-      let each_struck = under || proxy.target == spell_plan.OnEachStruck
-      list.append(
-        list.map(proxy.gains, fn(gain) { #(under, gain.phase_flags) }),
-        gains_under_each_struck(spell: proxy.spell, under: each_struck),
-      )
-    })
+    list.flat_map(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy),
+      fn(proxy) {
+        let each_struck = under || proxy.target == spell_plan.OnEachStruck
+        list.append(
+          list.map(proxy.gains, fn(gain) { #(under, gain.phase_flags) }),
+          gains_under_each_struck(spell: proxy.spell, under: each_struck),
+        )
+      },
+    )
   let staged =
     list.flat_map(spell.stages, fn(stage) {
       gains_under_each_struck(spell: stage.spell, under:)

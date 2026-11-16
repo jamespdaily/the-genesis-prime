@@ -259,24 +259,30 @@ pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> 
   // second go, at 2000, adds a Fluff effect of 100 ms. `lasting.given` arms the Fluff
   // effect again from the second go, but the state ends when the creature says.
   let phased =
-    spell_plan.Spell(
-      ..support.child(spell4_id: 58_591, base: 3),
-      method: spell_plan.Multiphase,
-      phase_delays_ms: [0, 1000],
-      lasting: [
-        spell_plan.Lasting(
-          effect_id: Spell4EffectsId(9),
-          phase_flags: 2,
-          aim: spell_plan.AimsAtArea,
-          row: lasting.LastingRow(
-            delay_ms: 0,
-            duration_ms: 100,
-            until_removed: False,
+    support.replacing(
+      spell: spell_plan.Spell(
+        ..support.child(spell4_id: 58_591, base: 3),
+        method: spell_plan.Multiphase,
+        phase_delays_ms: [0, 1000],
+      ),
+      as_kind: spell_plan.as_lasting,
+      kinds: list.map(
+        [
+          spell_plan.Lasting(
+            effect_id: Spell4EffectsId(9),
+            phase_flags: 2,
+            aim: spell_plan.AimsAtArea,
+            row: lasting.LastingRow(
+              delay_ms: 0,
+              duration_ms: 100,
+              until_removed: False,
+            ),
+            condition: spell_plan.Always,
+            tag: spend.always,
           ),
-          condition: spell_plan.Always,
-          tag: spend.always,
-        ),
-      ],
+        ],
+        spell_plan.LastingEffect,
+      ),
     )
   let plans = support.with_spells(plans: support.plans(), spells: [phased])
   let #(state, pressed) =
@@ -361,21 +367,27 @@ fn restriction_row(
 /// The planted spell of base 3 and caster persistence in combat whose go gives the caster
 /// the state `row` describes.
 fn restricting_by(row row: crowd_control.Row) -> Spell {
-  Spell(
-    ..support.child(spell4_id: 7010, base: 3),
-    caster_persistence: Some(
-      prerequisite_support.single(id: 903, condition: #(28, 1, 0, 0)),
-    ),
-    controls: [
-      spell_plan.CrowdControl(
-        effect_id: Spell4EffectsId(224_967),
-        phase_flags: -1,
-        aim: spell_plan.AimsAtCaster,
-        row:,
-        condition: spell_plan.Always,
-        tag: spend.always,
+  support.replacing(
+    spell: Spell(
+      ..support.child(spell4_id: 7010, base: 3),
+      caster_persistence: Some(
+        prerequisite_support.single(id: 903, condition: #(28, 1, 0, 0)),
       ),
-    ],
+    ),
+    as_kind: spell_plan.as_control,
+    kinds: list.map(
+      [
+        spell_plan.CrowdControl(
+          effect_id: Spell4EffectsId(224_967),
+          phase_flags: -1,
+          aim: spell_plan.AimsAtCaster,
+          row:,
+          condition: spell_plan.Always,
+          tag: spend.always,
+        ),
+      ],
+      spell_plan.ControlEffect,
+    ),
   )
 }
 
@@ -385,25 +397,29 @@ fn restricting_shorter_than_its_node(
   row_ms row_ms: Int,
   node_ms node_ms: Int,
 ) -> Spell {
-  Spell(
-    ..restricting_by(row: restriction_row(
+  support.replacing(
+    spell: restricting_by(row: restriction_row(
       duration_ms: row_ms,
       until_removed: False,
     )),
-    lasting: [
-      spell_plan.Lasting(
-        effect_id: Spell4EffectsId(224_968),
-        phase_flags: -1,
-        aim: spell_plan.AimsAtCaster,
-        row: lasting.LastingRow(
-          delay_ms: 0,
-          duration_ms: node_ms,
-          until_removed: False,
+    as_kind: spell_plan.as_lasting,
+    kinds: list.map(
+      [
+        spell_plan.Lasting(
+          effect_id: Spell4EffectsId(224_968),
+          phase_flags: -1,
+          aim: spell_plan.AimsAtCaster,
+          row: lasting.LastingRow(
+            delay_ms: 0,
+            duration_ms: node_ms,
+            until_removed: False,
+          ),
+          condition: spell_plan.Always,
+          tag: spend.always,
         ),
-        condition: spell_plan.Always,
-        tag: spend.always,
-      ),
-    ],
+      ],
+      spell_plan.LastingEffect,
+    ),
   )
 }
 
@@ -442,16 +458,23 @@ fn restricted(plans plans: spell_plan.Plans) -> #(State, List(Effect)) {
 /// shape (comparison 6 on 24, as `cast_forced_move_test` has it): the row takes one roll.
 fn restricting_by_chance() -> Spell {
   let spell = restricting()
-  Spell(
-    ..spell,
-    controls: list.map(spell.controls, fn(control) {
-      spell_plan.CrowdControl(
-        ..control,
-        condition: spell_plan.GatedOnCaster(gates: [
-          prerequisite_support.single(id: 792, condition: #(37, 6, 0, 24)),
-        ]),
-      )
-    }),
+  support.replacing(
+    spell: spell,
+    as_kind: spell_plan.as_control,
+    kinds: list.map(
+      list.map(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_control),
+        fn(control) {
+          spell_plan.CrowdControl(
+            ..control,
+            condition: spell_plan.GatedOnCaster(gates: [
+              prerequisite_support.single(id: 792, condition: #(37, 6, 0, 24)),
+            ]),
+          )
+        },
+      ),
+      spell_plan.ControlEffect,
+    ),
   )
 }
 
@@ -762,17 +785,24 @@ pub fn a_restriction_row_of_duration_0_without_flag_2_ends_at_its_go_test() -> N
 pub fn a_removal_that_ends_the_node_sends_one_0x880_after_its_0x811_and_cancels_the_rows_timer_test() -> Nil {
   use <- owned_test.run(5000)
   let removing =
-    Spell(..unmasked(), removes: [
-      spell_plan.ForceRemove(
-        effect_id: Spell4EffectsId(196_521),
-        phase_flags: -1,
-        aim: spell_plan.AimsAtCaster,
-        selector: lasting.Spell(Spell4Id(7010)),
-        count: 1,
-        condition: spell_plan.Always,
-        tag: spend.always,
+    support.replacing(
+      spell: unmasked(),
+      as_kind: spell_plan.as_remove,
+      kinds: list.map(
+        [
+          spell_plan.ForceRemove(
+            effect_id: Spell4EffectsId(196_521),
+            phase_flags: -1,
+            aim: spell_plan.AimsAtCaster,
+            selector: lasting.Spell(Spell4Id(7010)),
+            count: 1,
+            condition: spell_plan.Always,
+            tag: spend.always,
+          ),
+        ],
+        spell_plan.RemoveEffect,
       ),
-    ])
+    )
   let plans =
     support.plans_of([
       restricting_shorter_than_its_node(row_ms: 6000, node_ms: 8000),
@@ -827,24 +857,28 @@ pub fn a_removal_that_ends_the_node_sends_one_0x880_after_its_0x811_and_cancels_
 /// A planted spell of base 3 whose go gives the caster each state of `states` until its
 /// cast ends: one CCStateSet row aimed at the caster for each, its own effect id.
 fn holding(states states: List(CrowdControlState)) -> Spell {
-  Spell(
-    ..restricting(),
-    controls: list.index_map(states, fn(state, index) {
-      spell_plan.CrowdControl(
-        effect_id: Spell4EffectsId(224_967 + index),
-        phase_flags: -1,
-        aim: spell_plan.AimsAtCaster,
-        row: crowd_control.Row(
-          state:,
-          delay_ms: 0,
-          duration_ms: 0,
-          armor_removed: 0,
-          until_removed: True,
-        ),
-        condition: spell_plan.Always,
-        tag: spend.always,
-      )
-    }),
+  support.replacing(
+    spell: restricting(),
+    as_kind: spell_plan.as_control,
+    kinds: list.map(
+      list.index_map(states, fn(state, index) {
+        spell_plan.CrowdControl(
+          effect_id: Spell4EffectsId(224_967 + index),
+          phase_flags: -1,
+          aim: spell_plan.AimsAtCaster,
+          row: crowd_control.Row(
+            state:,
+            delay_ms: 0,
+            duration_ms: 0,
+            armor_removed: 0,
+            until_removed: True,
+          ),
+          condition: spell_plan.Always,
+          tag: spend.always,
+        )
+      }),
+      spell_plan.ControlEffect,
+    ),
   )
 }
 
@@ -994,15 +1028,22 @@ pub fn the_lowest_held_state_gives_the_result_test() -> Nil {
 pub fn a_caster_aimed_state_of_any_kind_is_told_and_ends_test() -> Nil {
   use <- owned_test.run(5000)
   let timed =
-    Spell(
-      ..restricting_by(row: crowd_control.Row(
+    support.replacing(
+      spell: restricting_by(row: crowd_control.Row(
         state: Stun,
         delay_ms: 500,
         duration_ms: 2000,
         armor_removed: 0,
         until_removed: False,
       )),
-      lasting: restricting_shorter_than_its_node(row_ms: 0, node_ms: 4000).lasting,
+      as_kind: spell_plan.as_lasting,
+      kinds: list.map(
+        spell_plan.payloads(
+          spell: restricting_shorter_than_its_node(row_ms: 0, node_ms: 4000),
+          as_kind: spell_plan.as_lasting,
+        ),
+        spell_plan.LastingEffect,
+      ),
     )
   let plans = support.plans_of([timed])
   let #(state, pressed) = restricted(plans:)

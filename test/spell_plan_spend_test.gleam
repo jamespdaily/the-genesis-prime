@@ -47,7 +47,10 @@ pub fn mind_burst_spends_every_psi_point_over_a_base_of_1_and_tags_its_two_proxi
     == [spell_plan.SpendAllCost(slot: 1, amount: 1, result: 51)]
     as "Spell4.32809: type 6 (slot 1) of 1 with innateCostEMMId0 4, so the base is 1 and every point held is spent; 51 is the slot's result (0x1403b3320)"
   let tags =
-    list.map(mind_burst.proxies, fn(proxy) { #(proxy.effect_id, proxy.tag) })
+    list.map(
+      spell_plan.payloads(spell: mind_burst, as_kind: spell_plan.as_proxy),
+      fn(proxy) { #(proxy.effect_id, proxy.tag) },
+    )
   assert tags
     == [
       #(Spell4EffectsId(135_961), EqualTo(value: 4)),
@@ -149,6 +152,12 @@ pub fn a_comparison_other_than_0_or_1_on_a_spell_with_no_emm_id_is_not_read_test
   assert mind_burst_of(plans:).costs
     == [spell_plan.SlotCost(slot: 1, amount: 1, result: 51)]
     as "Spell4Effects.emmComparison: a spell with no EMM id has no n, so its tags choose nothing and none is refused"
-  assert list.map(mind_burst_of(plans:).proxies, fn(proxy) { proxy.tag })
+  assert list.map(
+      spell_plan.payloads(
+        spell: mind_burst_of(plans:),
+        as_kind: spell_plan.as_proxy,
+      ),
+      fn(proxy) { proxy.tag },
+    )
     == [EqualTo(value: 4), AtLeast(value: 2)]
 }

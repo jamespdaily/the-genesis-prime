@@ -62,7 +62,7 @@ pub fn telekinetic_strike_takes_1250_ms_has_a_global_cooldown_of_1000_ms_that_bl
     as "kind 0 is refused while the global cooldown runs and starts it (0x1403b14c0, 0x14046afc0); SpellCoolDown row 213 is 1000 ms"
   assert spell.costs == [] && spell.requirements == []
   assert spell.phase_delays_ms == []
-  let assert [proxy] = spell.proxies
+  let assert [proxy] = spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy)
     as "Spell4Effects 62204 is the one Proxy; 62159, the damage, starts no cast"
   assert proxy.spell.spell4_id == Spell4Id(30_900)
     as "Spell4Effects.effectType.26: dataBits00 is the Spell4 it starts"
@@ -79,7 +79,7 @@ pub fn crush_starts_its_child_100_ms_after_its_go_and_blocks_and_starts_no_globa
   assert spell.global_cooldown
     == GlobalCooldown(refused_while_running: False, starts_for_ms: None)
     as "kind 3 is neither refused by the global cooldown nor starts it (opcode.0x7ff.root_parent: kind 3 for the abilities' children)"
-  let assert [proxy] = spell.proxies
+  let assert [proxy] = spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy)
   assert proxy.spell.spell4_id == Spell4Id(42_297)
     as "Spell4.32812: the Proxy starts 42297"
   assert proxy.delay_ms == 100 as "Spell4.32812: delayTime 100"
@@ -96,7 +96,8 @@ pub fn stagger_needs_no_target_and_proxies_a_multiphase_spell_whose_four_phases_
   assert spell.global_cooldown
     == GlobalCooldown(refused_while_running: False, starts_for_ms: Some(750))
     as "kind 1 starts the global cooldown and is not refused by it; row 180 is 750 ms"
-  let assert [staggering, fluff] = spell.proxies
+  let assert [staggering, fluff] =
+    spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy)
     as "Spell4Effects 83853 and 114677 are the two Proxies of Spell4 38791"
   assert fluff.spell.spell4_id == Spell4Id(48_585) && fluff.phase_flags == -1
     as "Spell4Effects 114677: a Proxy to 48585 (the Stalker's Assault Consumer Fluff) in every phase"
@@ -138,7 +139,11 @@ pub fn a_cost_reads_its_resource_slot_and_the_result_of_that_slot_test() -> Nil 
   assert gamma_rays.costs == [spell_plan.ClassVitalCost(vital: 18, amount: 2)]
     as "Spell4.16322's innateCostType0 is 18 and innateCost0 2: no case of its own in 0x1403b3320, so the class mechanic's check (0x1405e7980) finds the slots of the caster's class when the press is checked"
   assert gamma_rays.weapon == PrimaryWeapon
-  assert list.length(gamma_rays.proxies) == 2
+  assert list.length(spell_plan.payloads(
+      spell: gamma_rays,
+      as_kind: spell_plan.as_proxy,
+    ))
+    == 2
     as "Spell4.29874: Proxies to 34775 and 35886"
 }
 
@@ -326,7 +331,11 @@ pub fn every_class_ability_of_the_clients_tables_builds_a_tree_and_the_nine_norm
   assert kick.global_cooldown.starts_for_ms == None
     as "Spell4.58591: global cooldown kind 3"
   let assert Ok(gate) = spell_plan.in_plans(plans:, base: Spell4BaseId(20_325))
-  assert list.length(gate.proxies) == 2
+  assert list.length(spell_plan.payloads(
+      spell: gate,
+      as_kind: spell_plan.as_proxy,
+    ))
+    == 2
     as "Spell4.34355: Proxies to 25190 and 30436"
 }
 
@@ -356,7 +365,8 @@ pub fn the_stages_of_a_tap_or_charge_ability_are_the_rows_of_spell4_thresholds_i
 pub fn a_stage_spell_is_a_full_tree_with_its_own_proxy_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert [stage] = planted(base: 23_148).stages
-  let assert [proxy] = stage.spell.proxies
+  let assert [proxy] =
+    spell_plan.payloads(spell: stage.spell, as_kind: spell_plan.as_proxy)
     as "Spell4Effects 83782: the stage 38766 proxies 39467"
   assert proxy.spell.spell4_id == Spell4Id(39_467)
   assert stage.spell.method == RapidTap
@@ -447,14 +457,17 @@ pub fn the_phases_channel_and_threshold_of_each_method_are_read_from_the_rows_te
     as "SpellPhase 5883: phaseFlags 0x200"
   assert quick_draw.channel == None
     as "Spell4.43468: the channel columns hold values, but only a Channeled spell keeps them (Spell4.channelPulseTime)"
-  assert list.all(quick_draw.proxies, fn(proxy) {
-    case proxy.condition {
-      spell_plan.GatedOnCaster(..) -> True
-      Always
-      | spell_plan.GatedOnTarget(..)
-      | spell_plan.GatedOnCasterAndTarget(..) -> False
-    }
-  })
+  assert list.all(
+    spell_plan.payloads(spell: quick_draw, as_kind: spell_plan.as_proxy),
+    fn(proxy) {
+      case proxy.condition {
+        spell_plan.GatedOnCaster(..) -> True
+        Always
+        | spell_plan.GatedOnTarget(..)
+        | spell_plan.GatedOnCasterAndTarget(..) -> False
+      }
+    },
+  )
     as "Spell4Effects 196513 to 196522: every Proxy of Quick Draw sits behind its caster apply prerequisite 17301 or 17302"
   assert planted(base: 23_161).cooldown_start == AtFirstGo
     as "SpellPhase 3715 and 3716: flags 0 and 0x180, no 0x200"
@@ -972,19 +985,26 @@ pub fn every_ability_of_the_clients_tables_builds_and_each_spell_shows_the_cast_
     == [0, 1000, 1400]
     as "Spell4Thresholds 125, 123 and 124: thresholdDuration 0, 1000 and 1400"
   let assert [pulse_blast_child] =
-    list.map(ability(26_468).proxies, fn(proxy) { proxy.spell })
+    list.map(
+      spell_plan.payloads(spell: ability(26_468), as_kind: spell_plan.as_proxy),
+      fn(proxy) { proxy.spell },
+    )
     as "Spell4Effects 95881: Pulse Blast proxies 37302"
   assert pulse_blast_child.spell4_id == Spell4Id(37_302)
     && spell_plan.shows_cast_bar(spell: pulse_blast_child, pressed: False)
     as "Spell4Base 22522: Multiphase with castBarType 1"
   let assert [shred_child] =
-    list.map(ability(23_148).proxies, fn(proxy) { proxy.spell })
+    list.map(
+      spell_plan.payloads(spell: ability(23_148), as_kind: spell_plan.as_proxy),
+      fn(proxy) { proxy.spell },
+    )
     as "Spell4Effects 83776: Shred proxies 38767"
   assert shred_child.spell4_id == Spell4Id(38_767)
     && !spell_plan.shows_cast_bar(spell: shred_child, pressed: False)
     as "Spell4Base 23150: Multiphase, castBarType 0, cast time 0"
   let assert [shred_stage] = ability(23_148).stages
-  let assert [stage_child] = shred_stage.spell.proxies
+  let assert [stage_child] =
+    spell_plan.payloads(spell: shred_stage.spell, as_kind: spell_plan.as_proxy)
   assert stage_child.spell.spell4_id == Spell4Id(39_467)
     && !spell_plan.shows_cast_bar(spell: stage_child.spell, pressed: False)
     as "Spell4Base 23799: Multiphase, castBarType 0, cast time 0"

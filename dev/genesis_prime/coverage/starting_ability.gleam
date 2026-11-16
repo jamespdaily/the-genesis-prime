@@ -118,16 +118,19 @@ pub fn left_out(
   let #(rows, _) = spell4_rows(tables:, spells: reached)
   let closed =
     list.flat_map(reached, fn(spell) {
-      list.filter_map(spell.proxies, fn(proxy) {
-        level_one_gate.closed_by(gates:, tables:, proxy:)
-        |> result.map(closed_proxy(
-          tables:,
-          reached_ids:,
-          parent: spell,
-          proxy:,
-          closed: _,
-        ))
-      })
+      list.filter_map(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy),
+        fn(proxy) {
+          level_one_gate.closed_by(gates:, tables:, proxy:)
+          |> result.map(closed_proxy(
+            tables:,
+            reached_ids:,
+            parent: spell,
+            proxy:,
+            closed: _,
+          ))
+        },
+      )
     })
   use slots <- result.map(closed_innate_slots(tables:, gates:))
   list.flatten([

@@ -4389,29 +4389,37 @@ fn cooldowns_started_at_node_end(
     when: !list.contains(unit_ids, cast_state.caster_of(cast_id:)),
     return: #(cast, []),
   )
-  list.fold(spell.cooldown_modifiers, #(cast, []), fn(so_far, row) {
-    let #(cast, effects) = so_far
-    let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
-    let #(cast, cancels) =
-      cast_state.cancel_timers(cast:, matching: fn(due) {
-        due
-        == CooldownModifierStarts(source:, modifier: row.modifier, kept: False)
-      })
-    case cancels {
-      [] -> #(cast, effects)
-      [_, ..] -> {
-        let #(cast, applied) =
-          cooldown_applied(
-            cast:,
+  list.fold(
+    spell_plan.payloads(spell:, as_kind: spell_plan.as_cooldown_modifier),
+    #(cast, []),
+    fn(so_far, row) {
+      let #(cast, effects) = so_far
+      let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+      let #(cast, cancels) =
+        cast_state.cancel_timers(cast:, matching: fn(due) {
+          due
+          == CooldownModifierStarts(
             source:,
             modifier: row.modifier,
             kept: False,
-            now_ms:,
           )
-        #(cast, list.flatten([effects, cancels, applied]))
+        })
+      case cancels {
+        [] -> #(cast, effects)
+        [_, ..] -> {
+          let #(cast, applied) =
+            cooldown_applied(
+              cast:,
+              source:,
+              modifier: row.modifier,
+              kept: False,
+              now_ms:,
+            )
+          #(cast, list.flatten([effects, cancels, applied]))
+        }
       }
-    }
-  })
+    },
+  )
 }
 
 /// A Proxy of a go: a Proxy aimed at the area starts one child for each Hit unit of

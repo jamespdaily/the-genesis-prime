@@ -101,7 +101,11 @@ fn dominion_row() -> spell_plan.PropertyModifier {
 }
 
 fn holder(modifiers modifiers: List(spell_plan.PropertyModifier)) -> Spell {
-  spell_plan.Spell(..support.child(spell4_id: 47_860, base: 3), modifiers:)
+  support.replacing(
+    spell: support.child(spell4_id: 47_860, base: 3),
+    as_kind: spell_plan.as_modifier,
+    kinds: list.map(modifiers, spell_plan.ModifierEffect),
+  )
 }
 
 fn dominion() -> cast_state.Caster {
@@ -230,17 +234,24 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
   let plans =
     support.plans_of([
       holder(modifiers: [exile_row()]),
-      spell_plan.Spell(..support.child(spell4_id: 301, base: 1), removes: [
-        spell_plan.ForceRemove(
-          effect_id: Spell4EffectsId(196_521),
-          phase_flags: -1,
-          aim: spell_plan.AimsAtCaster,
-          selector: lasting.Spell(Spell4Id(47_860)),
-          count: 1,
-          condition: Always,
-          tag: spend.always,
+      support.replacing(
+        spell: support.child(spell4_id: 301, base: 1),
+        as_kind: spell_plan.as_remove,
+        kinds: list.map(
+          [
+            spell_plan.ForceRemove(
+              effect_id: Spell4EffectsId(196_521),
+              phase_flags: -1,
+              aim: spell_plan.AimsAtCaster,
+              selector: lasting.Spell(Spell4Id(47_860)),
+              count: 1,
+              condition: Always,
+              tag: spend.always,
+            ),
+          ],
+          spell_plan.RemoveEffect,
         ),
-      ]),
+      ),
     ])
   let #(state, first) =
     support.press_as(

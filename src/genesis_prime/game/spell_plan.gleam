@@ -15,12 +15,14 @@
 //// ```
 ////
 //// - **One decision for each effect row.** `read_row` says what the plan makes of a
-////   Spell4Effects row in the place its spell is planned (`RowPlace`): in a list of its
-////   spell and applied by a go (`Applied`), in a list and applied by none (`Held`: a
+////   Spell4Effects row in the place its spell is planned (`RowPlace`): in the effects of its
+////   spell and applied by a go (`Applied`), in the effects and applied by none (`Held`: a
 ////   periodic gain, a property change or disguise with no life, an ItemVisualSwap row
-////   with a delayTime, a row whose phaseFlags is 0), in no list (`LeftOut`), a damage row the area
-////   load reads (`ReadByArea`), or an error that fails the load. The lists of a spell are
-////   made from these readings, and the coverage measure counts a row read exactly when it
+////   with a delayTime, a row whose phaseFlags is 0), in none (`LeftOut`), a damage row the area
+////   load reads (`ReadByArea`), or an error that fails the load. The effects of a spell are
+////   made from these readings into one list ranked by kind (`Spell.effects`, each a
+////   `PlannedEffect(Kind)`), which the `*_in_phase` functions read one kind at a time, and
+////   the coverage measure counts a row read exactly when it
 ////   is `Applied` (genesis_prime/coverage/effect_row), so the two cannot disagree. A spell
 ////   a Proxy starts on each struck unit refuses a heal, an Interrupt Armor row and an
 ////   absorb aimed at its primary target, and a spell that spends every point held refuses
@@ -293,6 +295,7 @@ import genesis_prime/game/loadout
 import genesis_prime/game/look
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/quest_log.{type Quest, type QuestRowError}
+import genesis_prime/game/spell_effect.{type PlannedEffect, PlannedEffect}
 import genesis_prime/game/spend
 import genesis_prime/game/ticking
 import genesis_prime/game/unit_properties
@@ -690,38 +693,23 @@ pub type Spell {
     stages: List(Stage),
     /// The pulse times of a Channeled spell.
     channel: Option(Channel),
-    proxies: List(Proxy),
-    /// The spell's own resource gains, given at its gos; none of a child started
-    /// at each struck unit, whose gains its Proxy holds.
-    gains: List(Gain),
+    /// The spell's effect rows, each an envelope (`genesis_prime/game/spell_effect`) round
+    /// its kind, sorted by the rank of the kind and, within a kind, in row order (`rank`). The
+    /// views (`gains_in_phase`, `heals_in_phase` and the like) read the rows of one kind that
+    /// apply in a phase. The gains in it are the spell's own, given at its gos; none of a child
+    /// started at each struck unit, whose gains its Proxy holds.
+    effects: List(PlannedEffect(Kind)),
     /// The spell groups the spell belongs to (Spell4GroupList's spellGroupId values
     /// of `Spell4.spell4GroupListId`), which a type 80 row selects by.
     groups: List(Int),
     /// The spell's stack group and its cap (`Spell4.spell4StackGroupId`,
     /// `Spell4StackGroup.stackCap`).
     stack: lasting.Stack,
-    /// The Fluff, Scale, ItemVisualSwap, RavelSignal and area ShieldOverload effects that give the spell a
-    /// life on a unit.
-    lasting: List(Lasting),
-    /// The SpellForceRemove effects that take casts off a unit.
-    removes: List(ForceRemove),
-    /// The CCStateSet effects that hold a stun or a knockdown on a unit, and those that
-    /// hold Ability Restriction on the caster (`restrictions_in_phase`).
-    controls: List(CrowdControl),
     /// The CCStateSet effects the plan drops: those aimed at another unit that hold their
     /// state until removed, which no rule of the server ends when the spell ends (the
     /// issue "A crowd-control state that lasts until removed ends when its spell ends").
     /// The rest of the spell plans without them, and the cast logs each as a gap.
     dropped_controls: List(Spell4EffectsId),
-    /// The UnitPropertyModifier and UnitPropertyConversion effects aimed at the caster,
-    /// which change its properties for their time.
-    modifiers: List(PropertyModifier),
-    /// The ForcedMove effects aimed at the caster, which the go lists and the caster's
-    /// client carries out.
-    forced_moves: List(ForcedMove),
-    /// The ForcedMove effects aimed at other units, which the go throws the creatures it
-    /// hit with (`StruckMove`).
-    struck_moves: List(StruckMove),
     /// The target apply prerequisites of rows aimed only at units past the caster whose
     /// conditions all read the struck creature's own state, which the creature checks when
     /// the strike reaches it (`StruckGate`, `prerequisite.checked_by_creature`). Every
@@ -731,20 +719,8 @@ pub type Spell {
     /// The non-zero cooldown groups of the Spell4 row (`spellCoolDownId00` to `02`),
     /// each a SpellCoolDown row, which a selector 3 of a cooldown effect tests.
     cooldown_groups: List(Int),
-    /// The ModifySpellCooldown effects aimed at the caster, which change the
-    /// caster's spell cooldowns.
-    cooldown_modifiers: List(CooldownModifier),
-    /// The Stealth effects aimed at the caster, each a stealth the cast holds on it.
-    stealth: List(StealthRow),
-    /// The RemoveStealth effects aimed at the caster, which end every stealth it holds.
-    remove_stealth: List(RemoveStealthRow),
-    /// The Heal and HealShields effects that reach the caster, which refill its health or shield.
-    heals: List(Heal),
     /// What the spell does to the caster's stealth, and at which go (`StealthChange`).
     stealth_change: StealthChange,
-    /// The Proc effects aimed at the caster, whose kind is one of the holder's own
-    /// events, each with the spell it casts (`ProcRow`).
-    procs: List(ProcRow),
     /// The spell the ability's press casts instead while the caster is under Spell Surge
     /// (`Spell4.spell4IdMechanicAlternateSpell`, swapped in by `CastAbilityBagSpell`
     /// `0x14039a040` through `0x1405e7e50`): planned only for the ability a class's bag holds,
@@ -1303,6 +1279,440 @@ pub type Proxy {
   )
 }
 
+/// The payload of one effect row of a planned spell, by what the row does. `planned` makes
+/// the row's envelope (`genesis_prime/game/spell_effect`) from it, and `rank` fixes its place
+/// in the spell's list.
+pub type Kind {
+  /// A Proxy row: the child spell it starts and when.
+  ProxyEffect(proxy: Proxy)
+  /// A resource gain the caster is given at a go (`Gain`).
+  GainEffect(gain: Gain)
+  /// A Fluff, Scale, ItemVisualSwap, RavelSignal or area ShieldOverload row, which gives the spell a life on a unit (`Lasting`).
+  LastingEffect(lasting: Lasting)
+  /// A SpellForceRemove row, which takes casts off a unit (`ForceRemove`).
+  RemoveEffect(remove: ForceRemove)
+  /// A property modifier, conversion, disguise, absorb or interrupt armor row (`PropertyModifier`); one with `armor` ranks after the plain ones.
+  ModifierEffect(modifier: PropertyModifier)
+  /// A ForcedMove row aimed at the caster, which the go lists and the caster's client carries out (`ForcedMove`).
+  ForcedMoveEffect(forced_move: ForcedMove)
+  /// A ForcedMove row aimed at other units, which the go throws the creatures it hit with (`StruckMove`).
+  StruckMoveEffect(struck_move: StruckMove)
+  /// A ModifySpellCooldown row aimed at the caster (`CooldownModifier`).
+  CooldownEffect(modifier: CooldownModifier)
+  /// A Stealth row aimed at the caster, a stealth the cast holds on it (`StealthRow`).
+  StealthEffect(stealth: StealthRow)
+  /// A RemoveStealth row aimed at the caster, which ends every stealth it holds (`RemoveStealthRow`).
+  RemoveStealthEffect(remove: RemoveStealthRow)
+  /// A Proc row aimed at the caster, whose kind is one of the holder's own events, with the spell it casts (`ProcRow`).
+  ProcEffect(proc: ProcRow)
+  /// A Heal or HealShields row that reaches the caster, which refills its health or shield (`Heal`).
+  HealEffect(heal: Heal)
+  /// A CCStateSet row that holds a state on a unit: a stun or a knockdown on a creature, or Ability Restriction on the caster (`controls_in_phase`, `restrictions_in_phase`).
+  ControlEffect(control: CrowdControl)
+}
+
+/// The effect a payload is: its row, phases, tag and timing, read from the payload itself.
+pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
+  case kind {
+    ProxyEffect(proxy:) ->
+      PlannedEffect(
+        effect_id: proxy.effect_id,
+        phase_flags: proxy.phase_flags,
+        tag: proxy.tag,
+        timing: spell_effect.Delayed(delay_ms: proxy.delay_ms),
+        kind:,
+      )
+    GainEffect(gain:) ->
+      PlannedEffect(
+        effect_id: gain.effect_id,
+        phase_flags: gain.phase_flags,
+        tag: gain.tag,
+        timing: case gain {
+          Gain(..) -> spell_effect.Immediate
+          TickingGain(tick_ms:, duration_ms:, ..) ->
+            spell_effect.Pulsed(tick_ms:, duration_ms:)
+        },
+        kind:,
+      )
+    LastingEffect(lasting:) ->
+      PlannedEffect(
+        effect_id: lasting.effect_id,
+        phase_flags: lasting.phase_flags,
+        tag: lasting.tag,
+        timing: spell_effect.Lasts(row: lasting.row),
+        kind:,
+      )
+    RemoveEffect(remove:) ->
+      PlannedEffect(
+        effect_id: remove.effect_id,
+        phase_flags: remove.phase_flags,
+        tag: remove.tag,
+        timing: spell_effect.Immediate,
+        kind:,
+      )
+    ModifierEffect(modifier:) ->
+      PlannedEffect(
+        effect_id: modifier.effect_id,
+        phase_flags: modifier.phase_flags,
+        tag: modifier.tag,
+        timing: spell_effect.Lasts(row: modifier.row),
+        kind:,
+      )
+    ForcedMoveEffect(forced_move:) ->
+      PlannedEffect(
+        effect_id: forced_move.effect_id,
+        phase_flags: forced_move.phase_flags,
+        tag: forced_move.tag,
+        timing: spell_effect.Delayed(delay_ms: forced_move.delay_ms),
+        kind:,
+      )
+    StruckMoveEffect(struck_move:) ->
+      PlannedEffect(
+        effect_id: struck_move.effect_id,
+        phase_flags: struck_move.phase_flags,
+        tag: struck_move.tag,
+        timing: spell_effect.Delayed(delay_ms: struck_move.delay_ms),
+        kind:,
+      )
+    CooldownEffect(modifier:) ->
+      PlannedEffect(
+        effect_id: modifier.effect_id,
+        phase_flags: modifier.phase_flags,
+        tag: modifier.tag,
+        timing: spell_effect.Lasts(row: modifier.row),
+        kind:,
+      )
+    StealthEffect(stealth:) ->
+      PlannedEffect(
+        effect_id: stealth.effect_id,
+        phase_flags: stealth.phase_flags,
+        tag: stealth.tag,
+        timing: spell_effect.Lasts(row: stealth.row),
+        kind:,
+      )
+    RemoveStealthEffect(remove:) ->
+      PlannedEffect(
+        effect_id: remove.effect_id,
+        phase_flags: remove.phase_flags,
+        tag: remove.tag,
+        timing: spell_effect.Immediate,
+        kind:,
+      )
+    ProcEffect(proc:) ->
+      PlannedEffect(
+        effect_id: proc.effect_id,
+        phase_flags: proc.phase_flags,
+        tag: proc.tag,
+        timing: spell_effect.Lasts(row: proc.row),
+        kind:,
+      )
+    HealEffect(heal:) ->
+      PlannedEffect(
+        effect_id: heal.effect_id,
+        phase_flags: heal.phase_flags,
+        tag: heal.tag,
+        timing: case heal {
+          Heal(delay_ms:, ..) -> spell_effect.Delayed(delay_ms:)
+          TickingHeal(schedule:, ..) -> spell_effect.Scheduled(schedule:)
+        },
+        kind:,
+      )
+    ControlEffect(control:) ->
+      PlannedEffect(
+        effect_id: control.effect_id,
+        phase_flags: control.phase_flags,
+        tag: control.tag,
+        timing: spell_effect.Lasts(row: lasting.LastingRow(
+          delay_ms: control.row.delay_ms,
+          duration_ms: control.row.duration_ms,
+          until_removed: control.row.until_removed,
+        )),
+        kind:,
+      )
+  }
+}
+
+/// A spell's effect rows in the order of its list: by the rank of their kinds, the order
+/// the cast's gates draw their rolls in (`cast/gate.rolls_needed`): the Proxies, the gains,
+/// the lasting rows, the removes, the property changes (those with armor after the plain
+/// ones), the caster's forced moves, the struck units' moves, the cooldown changes, the
+/// stealth rows, the stealth removals, the procs, the heals and the crowd-control rows;
+/// the rows of one kind keep the order they came in (row order).
+pub fn ranked(
+  effects effects: List(PlannedEffect(Kind)),
+) -> List(PlannedEffect(Kind)) {
+  spell_effect.ranked(effects, rank:)
+}
+
+fn rank(kind kind: Kind) -> Int {
+  case kind {
+    ProxyEffect(..) -> 10
+    GainEffect(..) -> 20
+    LastingEffect(..) -> 30
+    RemoveEffect(..) -> 40
+    ModifierEffect(modifier:) ->
+      case modifier.armor {
+        None -> 50
+        Some(..) -> 55
+      }
+    ForcedMoveEffect(..) -> 60
+    StruckMoveEffect(..) -> 70
+    CooldownEffect(..) -> 80
+    StealthEffect(..) -> 90
+    RemoveStealthEffect(..) -> 100
+    ProcEffect(..) -> 110
+    HealEffect(..) -> 120
+    ControlEffect(..) -> 130
+  }
+}
+
+/// The payload of an effect of kind `ProxyEffect`, and nothing for one of another kind.
+pub fn as_proxy(kind kind: Kind) -> Result(Proxy, Nil) {
+  case kind {
+    ProxyEffect(proxy:) -> Ok(proxy)
+    GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `GainEffect`, and nothing for one of another kind.
+pub fn as_gain(kind kind: Kind) -> Result(Gain, Nil) {
+  case kind {
+    GainEffect(gain:) -> Ok(gain)
+    ProxyEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `LastingEffect`, and nothing for one of another kind.
+pub fn as_lasting(kind kind: Kind) -> Result(Lasting, Nil) {
+  case kind {
+    LastingEffect(lasting:) -> Ok(lasting)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `RemoveEffect`, and nothing for one of another kind.
+pub fn as_remove(kind kind: Kind) -> Result(ForceRemove, Nil) {
+  case kind {
+    RemoveEffect(remove:) -> Ok(remove)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `ModifierEffect`, and nothing for one of another kind.
+pub fn as_modifier(kind kind: Kind) -> Result(PropertyModifier, Nil) {
+  case kind {
+    ModifierEffect(modifier:) -> Ok(modifier)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `ForcedMoveEffect`, and nothing for one of another kind.
+pub fn as_forced_move(kind kind: Kind) -> Result(ForcedMove, Nil) {
+  case kind {
+    ForcedMoveEffect(forced_move:) -> Ok(forced_move)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `StruckMoveEffect`, and nothing for one of another kind.
+pub fn as_struck_move(kind kind: Kind) -> Result(StruckMove, Nil) {
+  case kind {
+    StruckMoveEffect(struck_move:) -> Ok(struck_move)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `CooldownEffect`, and nothing for one of another kind.
+pub fn as_cooldown_modifier(kind kind: Kind) -> Result(CooldownModifier, Nil) {
+  case kind {
+    CooldownEffect(modifier:) -> Ok(modifier)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `StealthEffect`, and nothing for one of another kind.
+pub fn as_stealth(kind kind: Kind) -> Result(StealthRow, Nil) {
+  case kind {
+    StealthEffect(stealth:) -> Ok(stealth)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `RemoveStealthEffect`, and nothing for one of another kind.
+pub fn as_remove_stealth(kind kind: Kind) -> Result(RemoveStealthRow, Nil) {
+  case kind {
+    RemoveStealthEffect(remove:) -> Ok(remove)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `ProcEffect`, and nothing for one of another kind.
+pub fn as_proc(kind kind: Kind) -> Result(ProcRow, Nil) {
+  case kind {
+    ProcEffect(proc:) -> Ok(proc)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `HealEffect`, and nothing for one of another kind.
+pub fn as_heal(kind kind: Kind) -> Result(Heal, Nil) {
+  case kind {
+    HealEffect(heal:) -> Ok(heal)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | ControlEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `ControlEffect`, and nothing for one of another kind.
+pub fn as_control(kind kind: Kind) -> Result(CrowdControl, Nil) {
+  case kind {
+    ControlEffect(control:) -> Ok(control)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..) -> Error(Nil)
+  }
+}
+
 /// Where a spell is planned, which three of an effect row's refusals depend on: a spell a
 /// Proxy starts on each struck unit (`struck_by`), a spell that spends every point held
 /// (`spends_all`) and a spell that hits foes (`hits_foes`, `spell_hits_foes`).
@@ -1353,13 +1763,13 @@ pub type StruckBy {
 pub type RowReading {
   /// The row is in a list of its spell and a go applies it: the coverage measure counts
   /// it read.
-  Applied(row: PlannedRow)
+  Applied(row: ReadRow)
   /// The row is in a list of its spell and no go applies it: a periodic gain
   /// (`TickingGain`), a property change or disguise with no life
   /// (`lasting.has_life`), an ItemVisualSwap row with a delayTime (the go lists it, the
   /// client applies an effect from the go only when its delay is 0; the gap is #827) and a row whose
   /// phaseFlags is 0, which no phase selects (`in_phase`). The measure counts it not read.
-  Held(row: PlannedRow)
+  Held(row: ReadRow)
   /// The row is in no list of its spell and the load goes on.
   LeftOut(why: LeftOutReason)
   /// A damage row: the area load reads it (genesis_prime/game/spell_area `damage_row_of`),
@@ -1415,21 +1825,15 @@ pub type LeftOutReason {
   HealUntilRemoved
 }
 
-/// A row as the list of its spell holds it. A Proxy's child and a Proc's spell are planned
-/// from the reading, by the spell that holds the row.
-pub type PlannedRow {
-  PlannedGain(gain: Gain)
-  PlannedLasting(lasting: Lasting)
-  PlannedRemove(remove: ForceRemove)
-  PlannedControl(control: CrowdControl)
-  PlannedModifier(modifier: PropertyModifier)
-  PlannedForcedMove(forced_move: ForcedMove)
-  PlannedStruckMove(struck_move: StruckMove)
-  PlannedCooldownModifier(modifier: CooldownModifier)
-  PlannedStealth(stealth: StealthRow)
-  PlannedRemoveStealth(remove: RemoveStealthRow)
-  PlannedHeal(heal: Heal)
-  PlannedProc(
+/// A row as its spell holds it. A Proxy's child and a Proc's spell are planned from the
+/// reading, by the spell that holds the row.
+pub type ReadRow {
+  /// The effects the row plans, in order: one, or for a row aimed at the caster and at
+  /// other units two, the part on the caster first and the part past it second. Both keep
+  /// the row's effect id, which the coverage measure counts once.
+  ReadEffects(effects: List(PlannedEffect(Kind)))
+  /// A Proc row, whose spell the spell that holds it plans.
+  ReadProc(
     reading: ProcReading,
     condition: Condition,
     event_gate: Option(Prerequisite),
@@ -1437,11 +1841,7 @@ pub type PlannedRow {
   )
   /// A Proxy row: the units it starts its child on, the caster, each struck unit or both
   /// (`target_of`), with one `Proxy` of the spell for each.
-  PlannedProxy(targets: List(ProxyTarget), condition: Condition)
-  /// A row aimed at the caster and at other units, whose two parts are rows of two lists:
-  /// the part on the caster and the part past it. Both keep the row's effect id, which the
-  /// coverage measure counts once.
-  PlannedBoth(caster_part: PlannedRow, past_the_caster: PlannedRow)
+  ReadProxy(targets: List(ProxyTarget), condition: Condition)
 }
 
 /// Why a DisguiseOutfit row cannot be drawn with 0x933 (`Spell4Effects.effectType.112`).
@@ -2363,10 +2763,11 @@ fn proxy_of(
   // none to a later phase.
   let #(lifted, kept) = case target {
     OnEachStruck ->
-      list.partition(child.gains, fn(gain) {
-        has_flag(flags: gain.phase_flags, bit: 1)
+      list.partition(child.effects, fn(planned) {
+        result.is_ok(as_gain(kind: planned.kind))
+        && has_flag(flags: planned.phase_flags, bit: 1)
       })
-    OnCaster -> #([], child.gains)
+    OnCaster -> #([], child.effects)
   }
   Proxy(
     effect_id: Spell4EffectsId(effect.id),
@@ -2375,8 +2776,8 @@ fn proxy_of(
     condition:,
     tag: tag_of(effect:),
     target:,
-    spell: Spell(..child, gains: kept),
-    gains: lifted,
+    spell: Spell(..child, effects: kept),
+    gains: list.filter_map(lifted, fn(planned) { as_gain(kind: planned.kind) }),
   )
 }
 
@@ -2526,7 +2927,6 @@ fn spell_of(
       fn(kinds) { rows_read(readings:, kinds:) },
     ),
   )
-  let lists = lists_of(readings:)
   use struck_gates <- result.try(struck_gates_of(tables:, place:, readings:))
   use stealth_change <- result.try(stealth_change_of(
     spell4_id:,
@@ -2553,8 +2953,8 @@ fn spell_of(
         let #(effect, reading) = row
         use reading <- result.try(reading)
         case reading {
-          Applied(PlannedProxy(targets:, condition:))
-          | Held(PlannedProxy(targets:, condition:)) ->
+          Applied(ReadProxy(targets:, condition:))
+          | Held(ReadProxy(targets:, condition:)) ->
             list.try_map(targets, fn(target) {
               proxy_of(
                 tables:,
@@ -2566,8 +2966,10 @@ fn spell_of(
                 condition:,
               )
             })
-          Applied(..)
-          | Held(..)
+          Applied(ReadEffects(..))
+          | Applied(ReadProc(..))
+          | Held(ReadEffects(..))
+          | Held(ReadProc(..))
           | LeftOut(..)
           | ReadByArea
           | ReadByActivation -> Ok([])
@@ -2639,25 +3041,19 @@ fn spell_of(
       threshold_ms: row.threshold_time,
       stages:,
       channel:,
-      proxies:,
-      gains: lists.gains,
+      effects: ranked(
+        effects: list.flatten([
+          planted_effects_of(readings:),
+          list.map(proxies, fn(proxy) { effect_of(kind: ProxyEffect(proxy:)) }),
+          list.map(procs, fn(proc) { effect_of(kind: ProcEffect(proc:)) }),
+        ]),
+      ),
       groups:,
       stack:,
-      lasting: lists.lasting,
-      removes: lists.removes,
-      controls: lists.controls,
       dropped_controls: dropped_controls_of(readings:),
-      modifiers: list.append(lists.modifiers, lists.armors),
-      forced_moves: lists.forced_moves,
-      struck_moves: lists.struck_moves,
       struck_gates:,
       cooldown_groups:,
-      cooldown_modifiers: lists.cooldown_modifiers,
-      stealth: lists.stealth,
-      remove_stealth: lists.remove_stealth,
-      heals: lists.heals,
       stealth_change:,
-      procs:,
       alternate: None,
       press_proxies:,
     )
@@ -3627,8 +4023,8 @@ fn procs_of(
     let #(effect, reading) = row
     use reading <- result.try(reading)
     case reading {
-      Applied(PlannedProc(reading: proc, condition:, event_gate:, holder_gate:))
-      | Held(PlannedProc(reading: proc, condition:, event_gate:, holder_gate:)) -> {
+      Applied(ReadProc(reading: proc, condition:, event_gate:, holder_gate:))
+      | Held(ReadProc(reading: proc, condition:, event_gate:, holder_gate:)) -> {
         use spell <- result.try(spell_of(
           tables:,
           sources:,
@@ -3657,8 +4053,13 @@ fn procs_of(
           ),
         ])
       }
-      Applied(..) | Held(..) | LeftOut(..) | ReadByArea | ReadByActivation ->
-        Ok([])
+      Applied(ReadEffects(..))
+      | Applied(ReadProxy(..))
+      | Held(ReadEffects(..))
+      | Held(ReadProxy(..))
+      | LeftOut(..)
+      | ReadByArea
+      | ReadByActivation -> Ok([])
     }
   })
   |> result.map(list.flatten)
@@ -3934,91 +4335,26 @@ fn rows_read(
   })
 }
 
-/// The rows of a spell's lists, in row order, taken from the readings of its effects.
-type RowLists {
-  RowLists(
-    gains: List(Gain),
-    lasting: List(Lasting),
-    removes: List(ForceRemove),
-    controls: List(CrowdControl),
-    modifiers: List(PropertyModifier),
-    armors: List(PropertyModifier),
-    forced_moves: List(ForcedMove),
-    struck_moves: List(StruckMove),
-    cooldown_modifiers: List(CooldownModifier),
-    stealth: List(StealthRow),
-    remove_stealth: List(RemoveStealthRow),
-    heals: List(Heal),
-  )
-}
-
-/// Each row an `Applied` or `Held` reading holds, in the list of its kind. A Proxy's and a
-/// Proc's row are made by the spell itself, which plans the spell each names.
-fn lists_of(
+/// The effects the `Applied` and `Held` readings hold, in row order; a row aimed at the
+/// caster and past it adds both its parts, the caster's first. A Proxy's and a Proc's row are
+/// made by the spell itself, which plans the spell each names.
+fn planted_effects_of(
   readings readings: List(#(spell4_effects.Spell4Effects, Reading)),
-) -> RowLists {
-  let empty = RowLists([], [], [], [], [], [], [], [], [], [], [], [])
-  let lists =
-    list.fold(readings, empty, fn(lists, row) {
-      case row.1 {
-        Ok(Applied(planned)) | Ok(Held(planned)) -> listed(lists:, planned:)
-        Ok(LeftOut(..)) | Ok(ReadByArea) | Ok(ReadByActivation) | Error(..) ->
-          lists
-      }
-    })
-  RowLists(
-    gains: list.reverse(lists.gains),
-    lasting: list.reverse(lists.lasting),
-    removes: list.reverse(lists.removes),
-    controls: list.reverse(lists.controls),
-    modifiers: list.reverse(lists.modifiers),
-    armors: list.reverse(lists.armors),
-    forced_moves: list.reverse(lists.forced_moves),
-    struck_moves: list.reverse(lists.struck_moves),
-    cooldown_modifiers: list.reverse(lists.cooldown_modifiers),
-    stealth: list.reverse(lists.stealth),
-    remove_stealth: list.reverse(lists.remove_stealth),
-    heals: list.reverse(lists.heals),
-  )
-}
-
-/// The lists with one planned row added, in reverse row order; a row aimed at the caster
-/// and past it adds both its parts.
-fn listed(lists lists: RowLists, planned planned: PlannedRow) -> RowLists {
-  case planned {
-    PlannedGain(gain:) -> RowLists(..lists, gains: [gain, ..lists.gains])
-    PlannedLasting(lasting:) ->
-      RowLists(..lists, lasting: [lasting, ..lists.lasting])
-    PlannedRemove(remove:) ->
-      RowLists(..lists, removes: [remove, ..lists.removes])
-    PlannedControl(control:) ->
-      RowLists(..lists, controls: [control, ..lists.controls])
-    PlannedModifier(modifier:) ->
-      case modifier.armor {
-        Some(..) -> RowLists(..lists, armors: [modifier, ..lists.armors])
-        None -> RowLists(..lists, modifiers: [modifier, ..lists.modifiers])
-      }
-    PlannedForcedMove(forced_move:) ->
-      RowLists(..lists, forced_moves: [forced_move, ..lists.forced_moves])
-    PlannedStruckMove(struck_move:) ->
-      RowLists(..lists, struck_moves: [struck_move, ..lists.struck_moves])
-    PlannedCooldownModifier(modifier:) ->
-      RowLists(..lists, cooldown_modifiers: [
-        modifier,
-        ..lists.cooldown_modifiers
-      ])
-    PlannedStealth(stealth:) ->
-      RowLists(..lists, stealth: [stealth, ..lists.stealth])
-    PlannedRemoveStealth(remove:) ->
-      RowLists(..lists, remove_stealth: [remove, ..lists.remove_stealth])
-    PlannedHeal(heal:) -> RowLists(..lists, heals: [heal, ..lists.heals])
-    PlannedBoth(caster_part:, past_the_caster:) ->
-      listed(
-        lists: listed(lists:, planned: caster_part),
-        planned: past_the_caster,
-      )
-    PlannedProc(..) | PlannedProxy(..) -> lists
-  }
+) -> List(PlannedEffect(Kind)) {
+  list.flat_map(readings, fn(row) {
+    case row.1 {
+      Ok(Applied(ReadEffects(effects:))) | Ok(Held(ReadEffects(effects:))) ->
+        effects
+      Ok(Applied(ReadProc(..)))
+      | Ok(Applied(ReadProxy(..)))
+      | Ok(Held(ReadProc(..)))
+      | Ok(Held(ReadProxy(..)))
+      | Ok(LeftOut(..))
+      | Ok(ReadByArea)
+      | Ok(ReadByActivation)
+      | Error(..) -> []
+    }
+  })
 }
 
 /// The `StruckGate` of each row whose target apply prerequisite the load left to the
@@ -4072,26 +4408,35 @@ fn struck_gates_of(
 /// The aim of the part of a planned row that a creature the go struck is checked for, when
 /// its kind has one: a lasting, remove or crowd-control row, a struck move, or the struck
 /// part of a property modifier.
-fn struck_aim_of(planned planned: PlannedRow) -> Result(Aim, Nil) {
+fn struck_aim_of(planned planned: ReadRow) -> Result(Aim, Nil) {
   case planned {
-    PlannedLasting(lasting:) -> Ok(lasting.aim)
-    PlannedRemove(remove:) -> Ok(remove.aim)
-    PlannedControl(control:) -> Ok(control.aim)
-    PlannedStruckMove(struck_move:) -> Ok(struck_move.aim)
-    PlannedModifier(modifier:) ->
+    ReadEffects(effects:) ->
+      list.find_map(effects, fn(effect) {
+        struck_aim_of_kind(kind: effect.kind)
+      })
+    ReadProc(..) | ReadProxy(..) -> Error(Nil)
+  }
+}
+
+fn struck_aim_of_kind(kind kind: Kind) -> Result(Aim, Nil) {
+  case kind {
+    LastingEffect(lasting:) -> Ok(lasting.aim)
+    RemoveEffect(remove:) -> Ok(remove.aim)
+    ControlEffect(control:) -> Ok(control.aim)
+    StruckMoveEffect(struck_move:) -> Ok(struck_move.aim)
+    ModifierEffect(modifier:) ->
       case modifier.change {
         StruckChange(aim:, ..) -> Ok(aim)
         PropertyChange(..) | LookChange(..) | AbsorbChange(..) -> Error(Nil)
       }
-    PlannedBoth(past_the_caster:, ..) -> struck_aim_of(planned: past_the_caster)
-    PlannedGain(..)
-    | PlannedForcedMove(..)
-    | PlannedCooldownModifier(..)
-    | PlannedStealth(..)
-    | PlannedRemoveStealth(..)
-    | PlannedHeal(..)
-    | PlannedProc(..)
-    | PlannedProxy(..) -> Error(Nil)
+    GainEffect(..)
+    | ForcedMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | HealEffect(..)
+    | ProcEffect(..)
+    | ProxyEffect(..) -> Error(Nil)
   }
 }
 
@@ -4208,8 +4553,8 @@ fn kind_reading(
       gain_row_of(tables:, spell4_id:, effect:)
       |> result.map(fn(gain) {
         case gain {
-          Gain(..) -> Applied(PlannedGain(gain:))
-          TickingGain(..) -> Held(PlannedGain(gain:))
+          Gain(..) -> Applied(read_as(GainEffect(gain:)))
+          TickingGain(..) -> Held(read_as(GainEffect(gain:)))
         }
       })
     effect_kind.Fluff | effect_kind.Scale | effect_kind.RavelSignal ->
@@ -4223,12 +4568,12 @@ fn kind_reading(
     }
     effect_kind.ForceRemove ->
       remove_of(tables:, spell_groups:, place:, spell4_id:, effect:)
-      |> result.map(fn(remove) { Applied(PlannedRemove(remove:)) })
+      |> result.map(fn(remove) { Applied(read_as(RemoveEffect(remove:))) })
     effect_kind.CrowdControl ->
       control_of(tables:, place:, spell4_id:, effect:)
       |> result.map(fn(control) {
         case control {
-          Some(control) -> Applied(PlannedControl(control:))
+          Some(control) -> Applied(read_as(ControlEffect(control:)))
           None -> LeftOut(why: StateUntilRemovedNotRead)
         }
       })
@@ -4249,26 +4594,28 @@ fn kind_reading(
         aim: row_aim_of(place:, effect:),
         caster_part: fn() {
           forced_move_of(tables:, effect:)
-          |> result.map(fn(forced_move) { PlannedForcedMove(forced_move:) })
+          |> result.map(fn(forced_move) { ForcedMoveEffect(forced_move:) })
         },
         past_part: fn(aim) {
           struck_move_of(tables:, place:, effect:, aim:)
-          |> result.map(fn(struck_move) { PlannedStruckMove(struck_move:) })
+          |> result.map(fn(struck_move) { StruckMoveEffect(struck_move:) })
         },
       )
-      |> result.map(Applied)
+      |> result.map(fn(kinds) { Applied(read_kinds(kinds:)) })
     }
     effect_kind.CooldownModifier -> {
       use <- when_reached(reaches:)
       cooldown_modifier_of(tables:, spell4_id:, effect:)
-      |> result.map(fn(modifier) { Applied(PlannedCooldownModifier(modifier:)) })
+      |> result.map(fn(modifier) { Applied(read_as(CooldownEffect(modifier:))) })
     }
     effect_kind.Stealth ->
       stealth_row_of(tables:, spell4_id:, effect:)
-      |> result.map(fn(stealth) { Applied(PlannedStealth(stealth:)) })
+      |> result.map(fn(stealth) { Applied(read_as(StealthEffect(stealth:))) })
     effect_kind.RemoveStealth ->
       remove_stealth_row_of(tables:, spell4_id:, effect:)
-      |> result.map(fn(remove) { Applied(PlannedRemoveStealth(remove:)) })
+      |> result.map(fn(remove) {
+        Applied(read_as(RemoveStealthEffect(remove:)))
+      })
     effect_kind.Heal(..) -> {
       use <- when_reached(reaches:)
       heal_reading(tables:, place:, spell4_id:, effect:)
@@ -4280,7 +4627,7 @@ fn kind_reading(
         _ -> {
           use targets <- result.try(target_of(place:, spell4_id:, effect:))
           use condition <- result.map(proxy_condition_of(tables:, effect:))
-          Applied(PlannedProxy(targets:, condition:))
+          Applied(ReadProxy(targets:, condition:))
         }
       }
     effect_kind.Damage -> Ok(ReadByArea)
@@ -4322,7 +4669,7 @@ fn lasting_reading(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowReading, PlanError) {
   lasting_of(tables:, place:, spell4_id:, effect:)
-  |> result.map(fn(lasting) { Applied(PlannedLasting(lasting:)) })
+  |> result.map(fn(lasting) { Applied(read_as(LastingEffect(lasting:))) })
 }
 
 /// A UnitPropertyModifier, UnitPropertyConversion, DisguiseOutfit or Absorption row that
@@ -4373,7 +4720,7 @@ fn property_modifier_reading(
       effect:,
       condition:,
     ))
-    PlannedModifier(
+    ModifierEffect(
       modifier: PropertyModifier(
         ..modifier,
         change: change_of_modifier(modifier.change),
@@ -4393,7 +4740,8 @@ fn property_modifier_reading(
       })
     },
   )
-  |> result.map(fn(planned) {
+  |> result.map(fn(kinds) {
+    let planned = read_kinds(kinds:)
     case lasting.has_life(row: lasting_row_of(effect:)) {
       True -> Applied(planned)
       False -> Held(planned)
@@ -4403,25 +4751,35 @@ fn property_modifier_reading(
 
 /// A row aimed at the caster and past it as its two parts, each planned by the part's own
 /// reading: the caster's alone for an aim at the caster, the part past it alone for an aim
-/// that does not name the caster, and `PlannedBoth` for one that names both. `past_part`
-/// is given the aim without the caster's bit (`past_the_caster`).
+/// that does not name the caster, and both, the caster's first, for one that names both.
+/// `past_part` is given the aim without the caster's bit (`past_the_caster`).
 fn planned_in_parts(
   aim aim: Aim,
-  caster_part caster_part: fn() -> Result(PlannedRow, PlanError),
-  past_part past_part: fn(Aim) -> Result(PlannedRow, PlanError),
-) -> Result(PlannedRow, PlanError) {
+  caster_part caster_part: fn() -> Result(Kind, PlanError),
+  past_part past_part: fn(Aim) -> Result(Kind, PlanError),
+) -> Result(List(Kind), PlanError) {
   case past_the_caster(aim:) {
-    Error(Nil) -> caster_part()
+    Error(Nil) -> caster_part() |> result.map(fn(caster) { [caster] })
     Ok(past) ->
       case reaches_caster(aim:) {
-        False -> past_part(past)
+        False -> past_part(past) |> result.map(fn(past) { [past] })
         True -> {
           use caster <- result.try(caster_part())
           use past <- result.map(past_part(past))
-          PlannedBoth(caster_part: caster, past_the_caster: past)
+          [caster, past]
         }
       }
   }
+}
+
+/// The row as the one effect of this kind.
+fn read_as(kind: Kind) -> ReadRow {
+  read_kinds(kinds: [kind])
+}
+
+/// The row as the effects of these kinds, in order.
+fn read_kinds(kinds kinds: List(Kind)) -> ReadRow {
+  ReadEffects(effects: list.map(kinds, effect_of))
 }
 
 /// The aim of a row of a kind the plan reads for the caster and the units past it
@@ -4476,7 +4834,7 @@ fn modifier_in_place(
 /// A property row as `Held` when it has no life (`lasting.has_life`), which the cast rule
 /// drops, and else `Applied`.
 fn by_life(modifier modifier: PropertyModifier) -> RowReading {
-  let planned = PlannedModifier(modifier:)
+  let planned = read_as(ModifierEffect(modifier:))
   case lasting.has_life(row: modifier.row) {
     True -> Applied(planned)
     False -> Held(planned)
@@ -4525,7 +4883,7 @@ fn heal_reading(
       )
     }),
   )
-  Applied(PlannedHeal(heal:))
+  Applied(read_as(HealEffect(heal:)))
 }
 
 /// The heal with its aim as the place reads it (`aim_in_place`).
@@ -4582,7 +4940,7 @@ fn proc_reading(
           |> result.replace_error(NoRow(table: "Spell4", id: named.value))
         AnySpell | InGroup(..) -> Ok(Nil)
       })
-      Applied(PlannedProc(reading:, condition:, event_gate:, holder_gate:))
+      Applied(ReadProc(reading:, condition:, event_gate:, holder_gate:))
     }
   }
 }
@@ -4827,6 +5185,43 @@ fn in_phase(
   })
 }
 
+/// The payloads of the spell's effects of one kind that apply in phase `phase`, in the order
+/// of its list (`spell_effect.in_phase`): `as_kind` is the kind's projection.
+fn view(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+  as_kind as_kind: fn(Kind) -> Result(payload, Nil),
+) -> List(payload) {
+  spell_effect.in_phase(effects: spell.effects, phase:, spent:)
+  |> list.filter_map(fn(planned) { as_kind(planned.kind) })
+}
+
+/// Every payload of the spell's effects of one kind (`as_kind` is its projection, such as
+/// `as_proxy`), whatever their phases, in the order of its list.
+pub fn payloads(
+  spell spell: Spell,
+  as_kind as_kind: fn(Kind) -> Result(payload, Nil),
+) -> List(payload) {
+  list.filter_map(spell.effects, fn(planned) { as_kind(planned.kind) })
+}
+
+/// The spell with its Proxies replaced by these, which stay first in its list as their kind
+/// ranks.
+pub fn with_proxies(spell spell: Spell, proxies proxies: List(Proxy)) -> Spell {
+  let others =
+    list.filter(spell.effects, fn(planned) {
+      result.is_error(as_proxy(kind: planned.kind))
+    })
+  Spell(
+    ..spell,
+    effects: ranked(effects: list.append(
+      list.map(proxies, fn(proxy) { effect_of(kind: ProxyEffect(proxy:)) }),
+      others,
+    )),
+  )
+}
+
 /// The gains of the spell given at its go of phase `phase`, those whose tag holds
 /// for the points the cast spent (genesis_prime/game/spend `applies`).
 pub fn gains_in_phase(
@@ -4834,13 +5229,7 @@ pub fn gains_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(Gain) {
-  in_phase(
-    rows: spell.gains,
-    phase_flags: fn(gain) { gain.phase_flags },
-    tag: fn(gain) { gain.tag },
-    phase:,
-    spent:,
-  )
+  view(spell:, phase:, spent:, as_kind: as_gain)
 }
 
 /// Whether the client shows a cast bar for the spell, by its method
@@ -5617,12 +6006,12 @@ fn comparison_of(eval eval: Int) -> Comparison {
 
 /// The Spell4Effects phase flag of a go: bit n is phase n.
 pub fn phase_bit(phase phase: Int) -> Int {
-  int.bitwise_shift_left(1, phase)
+  spell_effect.phase_bit(phase:)
 }
 
 /// Whether the flags hold the bit.
 pub fn has_flag(flags flags: Int, bit bit: Int) -> Bool {
-  int.bitwise_and(flags, bit) != 0
+  spell_effect.has_flag(flags:, bit:)
 }
 
 /// The plans the tables' load built, which a rule reads by `in_plans`.
@@ -5766,9 +6155,12 @@ pub fn tree(
 ) -> List(Spell) {
   let stages = list.map(spell.stages, fn(stage) { stage.spell })
   let proxied =
-    list.filter(spell.proxies, started)
+    payloads(spell:, as_kind: as_proxy)
+    |> list.filter(started)
     |> list.map(fn(proxy) { proxy.spell })
-  let procced = list.map(spell.procs, fn(proc) { proc.spell })
+  let procced =
+    payloads(spell:, as_kind: as_proc)
+    |> list.map(fn(proc) { proc.spell })
   let pressed = list.map(spell.press_proxies, fn(proxy) { proxy.spell })
   [
     spell,
@@ -5811,13 +6203,7 @@ pub fn procs_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(ProcRow) {
-  in_phase(
-    rows: spell.procs,
-    phase_flags: fn(proc) { proc.phase_flags },
-    tag: fn(proc) { proc.tag },
-    phase:,
-    spent:,
-  )
+  view(spell:, phase:, spent:, as_kind: as_proc)
 }
 
 /// The Fluff effects of the spell that apply in phase `phase`, those whose tag holds
@@ -5827,13 +6213,7 @@ pub fn lasting_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(Lasting) {
-  in_phase(
-    rows: spell.lasting,
-    phase_flags: fn(lasting) { lasting.phase_flags },
-    tag: fn(lasting) { lasting.tag },
-    phase:,
-    spent:,
-  )
+  view(spell:, phase:, spent:, as_kind: as_lasting)
 }
 
 /// The Heal and HealShields effects of the spell that apply in phase `phase`, those whose tag
@@ -5843,13 +6223,7 @@ pub fn heals_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(Heal) {
-  in_phase(
-    rows: spell.heals,
-    phase_flags: fn(heal) { heal.phase_flags },
-    tag: fn(heal) { heal.tag },
-    phase:,
-    spent:,
-  )
+  view(spell:, phase:, spent:, as_kind: as_heal)
 }
 
 /// The UnitPropertyModifier effects of the spell that apply in phase `phase`, those
@@ -5859,13 +6233,7 @@ pub fn modifiers_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(PropertyModifier) {
-  in_phase(
-    rows: spell.modifiers,
-    phase_flags: fn(modifier) { modifier.phase_flags },
-    tag: fn(modifier) { modifier.tag },
-    phase:,
-    spent:,
-  )
+  view(spell:, phase:, spent:, as_kind: as_modifier)
 }
 
 /// The ForcedMove effects of the spell that apply in phase `phase`, those whose tag
@@ -5875,13 +6243,7 @@ pub fn forced_moves_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(ForcedMove) {
-  in_phase(
-    rows: spell.forced_moves,
-    phase_flags: fn(forced_move) { forced_move.phase_flags },
-    tag: fn(forced_move) { forced_move.tag },
-    phase:,
-    spent:,
-  )
+  view(spell:, phase:, spent:, as_kind: as_forced_move)
 }
 
 /// The target apply prerequisites of the spell's rows aimed past the caster that apply in
@@ -5908,13 +6270,7 @@ pub fn struck_moves_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(StruckMove) {
-  in_phase(
-    rows: spell.struck_moves,
-    phase_flags: fn(struck_move) { struck_move.phase_flags },
-    tag: fn(struck_move) { struck_move.tag },
-    phase:,
-    spent:,
-  )
+  view(spell:, phase:, spent:, as_kind: as_struck_move)
 }
 
 /// The ModifySpellCooldown effects of the spell that apply in phase `phase`, those
@@ -5924,13 +6280,7 @@ pub fn cooldown_modifiers_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(CooldownModifier) {
-  in_phase(
-    rows: spell.cooldown_modifiers,
-    phase_flags: fn(row) { row.phase_flags },
-    tag: fn(row) { row.tag },
-    phase:,
-    spent:,
-  )
+  view(spell:, phase:, spent:, as_kind: as_cooldown_modifier)
 }
 
 /// The SpellForceRemove effects of the spell that apply in phase `phase`, those
@@ -5940,13 +6290,7 @@ pub fn removes_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(ForceRemove) {
-  in_phase(
-    rows: spell.removes,
-    phase_flags: fn(remove) { remove.phase_flags },
-    tag: fn(remove) { remove.tag },
-    phase:,
-    spent:,
-  )
+  view(spell:, phase:, spent:, as_kind: as_remove)
 }
 
 /// The Stealth effects of the spell that apply in phase `phase`, those whose tag holds
@@ -5956,13 +6300,7 @@ pub fn stealth_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(StealthRow) {
-  in_phase(
-    rows: spell.stealth,
-    phase_flags: fn(stealth) { stealth.phase_flags },
-    tag: fn(stealth) { stealth.tag },
-    phase:,
-    spent:,
-  )
+  view(spell:, phase:, spent:, as_kind: as_stealth)
 }
 
 /// The RemoveStealth effects of the spell that apply in phase `phase`, those whose tag
@@ -5972,13 +6310,7 @@ pub fn remove_stealth_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(RemoveStealthRow) {
-  in_phase(
-    rows: spell.remove_stealth,
-    phase_flags: fn(remove) { remove.phase_flags },
-    tag: fn(remove) { remove.tag },
-    phase:,
-    spent:,
-  )
+  view(spell:, phase:, spent:, as_kind: as_remove_stealth)
 }
 
 /// The CCStateSet effects of the spell aimed at creatures that apply in phase `phase`,
@@ -5990,15 +6322,8 @@ pub fn controls_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(CrowdControl) {
-  in_phase(
-    rows: list.filter(spell.controls, fn(control) {
-      reaches_past_caster(aim: control.aim)
-    }),
-    phase_flags: fn(control) { control.phase_flags },
-    tag: fn(control) { control.tag },
-    phase:,
-    spent:,
-  )
+  view(spell:, phase:, spent:, as_kind: as_control)
+  |> list.filter(fn(control) { reaches_past_caster(aim: control.aim) })
 }
 
 /// The CCStateSet effects of the spell aimed at the caster that apply in phase `phase`,
@@ -6009,15 +6334,8 @@ pub fn restrictions_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(CrowdControl) {
-  in_phase(
-    rows: list.filter(spell.controls, fn(control) {
-      reaches_caster(aim: control.aim)
-    }),
-    phase_flags: fn(control) { control.phase_flags },
-    tag: fn(control) { control.tag },
-    phase:,
-    spent:,
-  )
+  view(spell:, phase:, spent:, as_kind: as_control)
+  |> list.filter(fn(control) { reaches_caster(aim: control.aim) })
 }
 
 /// The Proxies of the spell that fire in phase `phase`, those whose tag holds for
@@ -6027,13 +6345,7 @@ pub fn proxies_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(Proxy) {
-  in_phase(
-    rows: spell.proxies,
-    phase_flags: fn(proxy) { proxy.phase_flags },
-    tag: fn(proxy) { proxy.tag },
-    phase:,
-    spent:,
-  )
+  view(spell:, phase:, spent:, as_kind: as_proxy)
 }
 
 /// The spellGroupId00 to 31 columns of a Spell4GroupList row, in order.

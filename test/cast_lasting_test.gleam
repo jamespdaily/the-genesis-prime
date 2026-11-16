@@ -66,7 +66,11 @@ fn buff(
   base base: Int,
   lasting lasting: List(spell_plan.Lasting),
 ) -> Spell {
-  spell_plan.Spell(..support.child(spell4_id:, base:), lasting:)
+  support.replacing(
+    spell: support.child(spell4_id:, base:),
+    as_kind: spell_plan.as_lasting,
+    kinds: list.map(lasting, spell_plan.LastingEffect),
+  )
 }
 
 /// A spell whose go takes the casts of the Spell4 `selector` names off the caster.
@@ -77,17 +81,24 @@ fn remover(
   count count: Int,
   condition condition: spell_plan.Condition,
 ) -> Spell {
-  spell_plan.Spell(..support.child(spell4_id:, base:), removes: [
-    ForceRemove(
-      effect_id: Spell4EffectsId(196_521),
-      phase_flags: -1,
-      aim: spell_plan.AimsAtCaster,
-      selector:,
-      count:,
-      condition:,
-      tag: spend.always,
+  support.replacing(
+    spell: support.child(spell4_id:, base:),
+    as_kind: spell_plan.as_remove,
+    kinds: list.map(
+      [
+        ForceRemove(
+          effect_id: Spell4EffectsId(196_521),
+          phase_flags: -1,
+          aim: spell_plan.AimsAtCaster,
+          selector:,
+          count:,
+          condition:,
+          tag: spend.always,
+        ),
+      ],
+      spell_plan.RemoveEffect,
     ),
-  ])
+  )
 }
 
 // The bag indices of the planted bases: base 1 is bag index 8, base 2 is 10, base 3

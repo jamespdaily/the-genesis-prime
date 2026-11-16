@@ -64,12 +64,51 @@ pub fn client_lasting(
   effect_ids effect_ids: List(Int),
 ) -> Spell {
   let rows =
-    list.filter(spell_tables.client_spell(spell4_id:).lasting, fn(row) {
-      list.contains(effect_ids, row.effect_id.value)
-    })
+    list.filter(
+      spell_plan.payloads(
+        spell: spell_tables.client_spell(spell4_id:),
+        as_kind: spell_plan.as_lasting,
+      ),
+      fn(row) { list.contains(effect_ids, row.effect_id.value) },
+    )
   assert list.length(rows) == list.length(effect_ids)
     as "the client's spell holds each of the rows"
-  Spell(..child(spell4_id:, base:), lasting: rows)
+  with_kinds(
+    spell: child(spell4_id:, base:),
+    kinds: list.map(rows, spell_plan.LastingEffect),
+  )
+}
+
+/// The spell with these effects added to its list, ranked as a plan's are.
+pub fn with_kinds(
+  spell spell: Spell,
+  kinds kinds: List(spell_plan.Kind),
+) -> Spell {
+  Spell(
+    ..spell,
+    effects: spell_plan.ranked(effects: list.append(
+      spell.effects,
+      list.map(kinds, spell_plan.effect_of),
+    )),
+  )
+}
+
+/// The spell with its effects of the kind `as_kind` reads replaced by these: what a record
+/// update of that kind's own list did before the spell held one list.
+pub fn replacing(
+  spell spell: Spell,
+  as_kind as_kind: fn(spell_plan.Kind) -> Result(payload, Nil),
+  kinds kinds: List(spell_plan.Kind),
+) -> Spell {
+  Spell(
+    ..spell,
+    effects: spell_plan.ranked(effects: list.append(
+      list.filter(spell.effects, fn(planned) {
+        result.is_error(as_kind(planned.kind))
+      }),
+      list.map(kinds, spell_plan.effect_of),
+    )),
+  )
 }
 
 /// A child spell the client's row gives these ids: no cast time, no cooldown, no
@@ -107,24 +146,12 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     threshold_ms: 0,
     stages: [],
     channel: None,
-    proxies: [],
-    gains: [],
+    effects: [],
     groups: [],
     stack: lasting.Stack(group_id: 0, cap: 0),
-    lasting: [],
-    removes: [],
-    modifiers: [],
-    forced_moves: [],
-    struck_moves: [],
     cooldown_groups: [],
-    cooldown_modifiers: [],
-    controls: [],
     dropped_controls: [],
-    stealth: [],
-    remove_stealth: [],
-    heals: [],
     stealth_change: spell_plan.EndsStealthAtEachGo,
-    procs: [],
     alternate: None,
     press_proxies: [],
     cooldown_start: AtFirstGo,
@@ -167,7 +194,13 @@ pub fn stealthing(
   base base: Int,
   rows rows: List(spell_plan.StealthRow),
 ) -> Spell {
-  Spell(..child(spell4_id:, base:), stealth: rows, stealth_change: KeepsStealth)
+  Spell(
+    ..with_kinds(
+      spell: child(spell4_id:, base:),
+      kinds: list.map(rows, spell_plan.StealthEffect),
+    ),
+    stealth_change: KeepsStealth,
+  )
 }
 
 /// A planted spell of global cooldown kind 2: refused while it runs, starting none.
@@ -266,18 +299,21 @@ pub const parent_spell4_id = 90_001
 /// the struck unit.
 pub fn plans_starting_on_each_struck(started started: Spell) -> Plans {
   plans_with(
-    spell: Spell(..child(spell4_id: parent_spell4_id, base: 3), proxies: [
-      spell_plan.Proxy(
-        effect_id: Spell4EffectsId(90_002),
-        delay_ms: 0,
-        phase_flags: -1,
-        condition: Always,
-        tag: spend.always,
-        target: spell_plan.OnEachStruck,
-        spell: started,
-        gains: [],
-      ),
-    ]),
+    spell: spell_plan.with_proxies(
+      spell: child(spell4_id: parent_spell4_id, base: 3),
+      proxies: [
+        spell_plan.Proxy(
+          effect_id: Spell4EffectsId(90_002),
+          delay_ms: 0,
+          phase_flags: -1,
+          condition: Always,
+          tag: spend.always,
+          target: spell_plan.OnEachStruck,
+          spell: started,
+          gains: [],
+        ),
+      ],
+    ),
   )
 }
 
@@ -318,7 +354,10 @@ pub fn spell_holding(
   base base: Int,
   modifiers modifiers: List(spell_plan.PropertyModifier),
 ) -> Spell {
-  spell_plan.Spell(..child(spell4_id:, base:), modifiers:)
+  with_kinds(
+    spell: child(spell4_id:, base:),
+    kinds: list.map(modifiers, spell_plan.ModifierEffect),
+  )
 }
 
 /// The ability of the Spell4Base id as the plans hold it.
@@ -1655,21 +1694,28 @@ fn run_pending(
 /// A spell and the stages and Proxies under it with no cooldown modifier: the plan as
 /// if the rows that change a cooldown were not there.
 pub fn without_cooldown_modifiers(spell spell: Spell) -> Spell {
-  spell_plan.Spell(
-    ..spell,
-    cooldown_modifiers: [],
-    stages: list.map(spell.stages, fn(stage) {
-      spell_plan.Stage(
-        ..stage,
-        spell: without_cooldown_modifiers(spell: stage.spell),
-      )
-    }),
-    proxies: list.map(spell.proxies, fn(proxy) {
-      spell_plan.Proxy(
-        ..proxy,
-        spell: without_cooldown_modifiers(spell: proxy.spell),
-      )
-    }),
+  spell_plan.with_proxies(
+    spell: spell_plan.Spell(
+      ..spell,
+      effects: list.filter(spell.effects, fn(planned) {
+        result.is_error(spell_plan.as_cooldown_modifier(kind: planned.kind))
+      }),
+      stages: list.map(spell.stages, fn(stage) {
+        spell_plan.Stage(
+          ..stage,
+          spell: without_cooldown_modifiers(spell: stage.spell),
+        )
+      }),
+    ),
+    proxies: list.map(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy),
+      fn(proxy) {
+        spell_plan.Proxy(
+          ..proxy,
+          spell: without_cooldown_modifiers(spell: proxy.spell),
+        )
+      },
+    ),
   )
 }
 

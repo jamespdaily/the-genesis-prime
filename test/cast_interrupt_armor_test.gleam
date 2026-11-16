@@ -169,17 +169,24 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
       support.spell_holding(spell4_id: 76_766, base: 3, modifiers: [
         spectral_form_row(),
       ]),
-      spell_plan.Spell(..support.child(spell4_id: 301, base: 1), removes: [
-        spell_plan.ForceRemove(
-          effect_id: Spell4EffectsId(196_521),
-          phase_flags: -1,
-          aim: spell_plan.AimsAtCaster,
-          selector: lasting.Spell(Spell4Id(76_766)),
-          count: 1,
-          condition: Always,
-          tag: spend.always,
+      support.replacing(
+        spell: support.child(spell4_id: 301, base: 1),
+        as_kind: spell_plan.as_remove,
+        kinds: list.map(
+          [
+            spell_plan.ForceRemove(
+              effect_id: Spell4EffectsId(196_521),
+              phase_flags: -1,
+              aim: spell_plan.AimsAtCaster,
+              selector: lasting.Spell(Spell4Id(76_766)),
+              count: 1,
+              condition: Always,
+              tag: spend.always,
+            ),
+          ],
+          spell_plan.RemoveEffect,
         ),
-      ]),
+      ),
     ])
   let #(state, first) =
     support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)

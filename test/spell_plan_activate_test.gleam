@@ -282,13 +282,17 @@ pub fn the_hoverboard_activate_spell_is_planned_test() -> Nil {
   let assert Ok(Planned(spell:, ..)) =
     activate.planned_of(activations:, spell4_id: 86_744)
     as "Spell4 86744, the tutorial hoverboard's activate spell (Creature2 73419), is planned: its Proxy chain 85562 to 85563 holds only rows the plan reads"
-  let assert [mount] = spell.proxies
+  let assert [mount] = spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy)
     as "Spell4Effects 226437 is the Proxy to Spell4 85562"
   assert mount.spell.spell4_id == Spell4Id(85_562)
-  let assert [ride] = mount.spell.proxies
+  let assert [ride] =
+    spell_plan.payloads(spell: mount.spell, as_kind: spell_plan.as_proxy)
     as "Spell4Effects 224969 is 85562's Proxy to Spell4 85563 (SummonMount 224965 is left out until the ride is read)"
   assert ride.spell.spell4_id == Spell4Id(85_563)
-  assert list.map(ride.spell.controls, fn(control) { control.effect_id })
+  assert list.map(
+      spell_plan.payloads(spell: ride.spell, as_kind: spell_plan.as_control),
+      fn(control) { control.effect_id },
+    )
     == [Spell4EffectsId(224_967)]
     as "85563's CCStateSet 224967 is its one state"
   assert list.map(

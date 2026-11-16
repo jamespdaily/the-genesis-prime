@@ -16,8 +16,8 @@
 import fixture_tables
 import genesis_prime/coverage/effect_row
 import genesis_prime/game/spell_plan.{
-  Applied, Held, LeftOut, PlannedProc, PlannedProxy, ProcOfAnotherKind,
-  ProxyNamesNoSpell, ReadByActivation, ReadByArea,
+  Applied, Held, LeftOut, ProcOfAnotherKind, ProxyNamesNoSpell, ReadByActivation,
+  ReadByArea, ReadProc, ReadProxy,
 }
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/spell4
@@ -28,11 +28,8 @@ import gleam/list
 import gleam/option.{None}
 import gleam/result
 import owned_test
-import planted_table.{type Cell, Float, Integer}
+import planted_table.{type Cell, Integer}
 import spell_tables
-
-/// 1.0 as 32 float bits.
-const one_as_float_bits = 1_065_353_216
 
 /// A planted row of Telekinetic Strike's spell.
 fn row(
@@ -44,119 +41,15 @@ fn row(
   spell_tables.effect_row_with(id:, effect_type:, target_flags:, columns:)
 }
 
-/// The rows of the planted spell, one for each kind the plan lists, the periodic heal, and
-/// the two the plan leaves out: ids 90001 to 90012 are read, 90013 is behind a target apply
-/// prerequisite the cast rule reads, 90014 is a periodic heal, 90015 is a Proc of kind 16
-/// and 90016 a Proxy with dataBits00 0.
-fn planted() -> List(List(Cell)) {
-  [
-    row(id: 90_001, effect_type: 1, target_flags: 1, columns: [
-      #("dataBits00", Integer(6)),
-      #("dataBits02", Integer(5)),
-    ]),
-    row(id: 90_002, effect_type: 17, target_flags: 1, columns: [
-      #("durationTime", Integer(5000)),
-    ]),
-    row(id: 90_003, effect_type: 80, target_flags: 1, columns: [
-      #("dataBits00", Integer(2)),
-      #("dataBits01", Integer(32_893)),
-    ]),
-    row(id: 90_004, effect_type: 4, target_flags: 2, columns: [
-      #("durationTime", Integer(1000)),
-    ]),
-    row(id: 90_005, effect_type: 11, target_flags: 1, columns: [
-      #("dataBits00", Integer(7)),
-      #("durationTime", Integer(5000)),
-    ]),
-    row(id: 90_006, effect_type: 3, target_flags: 1, columns: []),
-    row(id: 90_007, effect_type: 73, target_flags: 1, columns: [
-      #("dataBits02", Integer(0)),
-    ]),
-    row(id: 90_018, effect_type: 83, target_flags: 1, columns: []),
-    row(id: 90_009, effect_type: 84, target_flags: 1, columns: []),
-    row(id: 90_010, effect_type: 118, target_flags: 1, columns: [
-      #("dataBits00", Integer(one_as_float_bits)),
-      #("parameterType00", Integer(22)),
-      #("parameterValue00", Float(0.3)),
-    ]),
-    row(
-      id: 90_011,
-      effect_type: 14,
-      target_flags: 1,
-      columns: proc_columns(kind: 217),
-    ),
-    row(id: 90_012, effect_type: 26, target_flags: 1, columns: [
-      #("dataBits00", Integer(30_900)),
-    ]),
-    row(id: 90_013, effect_type: 17, target_flags: 1, columns: [
-      #("durationTime", Integer(5000)),
-      #("prerequisiteIdTargetApply", Integer(11_311)),
-    ]),
-    row(id: 90_014, effect_type: 118, target_flags: 1, columns: [
-      #("dataBits00", Integer(one_as_float_bits)),
-      #("parameterType00", Integer(22)),
-      #("parameterValue00", Float(0.3)),
-      #("tickTime", Integer(1000)),
-      #("durationTime", Integer(8000)),
-    ]),
-    row(
-      id: 90_015,
-      effect_type: 14,
-      target_flags: 1,
-      columns: proc_columns(kind: 16),
-    ),
-    row(id: 90_016, effect_type: 26, target_flags: 1, columns: [
-      #("dataBits00", Integer(0)),
-    ]),
-  ]
-}
-
-/// A Proc row that casts Spell4 30900, whose columns the plan reads: chance 1.0, a window
-/// of 500 ms, a count of 1 and a durationTime for its life.
-fn proc_columns(kind kind: Int) -> List(#(String, Cell)) {
-  [
-    #("dataBits00", Integer(kind)),
-    #("dataBits01", Integer(30_900)),
-    #("dataBits02", Integer(one_as_float_bits)),
-    #("dataBits04", Integer(500)),
-    #("dataBits05", Integer(1)),
-    #("durationTime", Integer(5000)),
-  ]
-}
-
-/// Whether the client's Spell4Effects table holds a row of this id.
-fn client_row(id id: Int) -> Bool {
-  list.any(spell_tables.fixture_rows().spell4_effects, fn(row) {
-    row == [Integer(id), ..list.drop(row, 1)]
-  })
-}
-
 /// Whether this id lies between these two and is not an id of a client row.
 fn planted_between(id id: Int, low low: Int, high high: Int) -> Bool {
-  id >= low && id < high && !client_row(id:)
-}
-
-/// The client's rows with these effect rows added, each of an id the client's table
-/// does not hold.
-fn rows_with(effects effects: List(List(Cell))) -> spell_tables.Rows {
-  let rows = spell_tables.fixture_rows()
-  list.each(effects, fn(effect) {
-    let assert [Integer(id), ..] = effect as "a planted row holds its ID first"
-    assert !client_row(id:)
-      as "a planted id the client's table holds would replace the client's row"
-  })
-  spell_tables.Rows(
-    ..rows,
-    spell4_effects: spell_tables.sorted_by_id(list.append(
-      effects,
-      rows.spell4_effects,
-    )),
-  )
+  id >= low && id < high && !spell_tables.client_row(id:)
 }
 
 pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_only_the_applied_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows = rows_with(effects: planted())
+  let rows =
+    spell_tables.rows_with_effects(effects: spell_tables.planted_effects())
   let assert Ok(spell) = spell_tables.planned_strike(rows:)
     as "the planted spell loads: every row of it is read or left out"
   assert spell_tables.listed_effect_ids(spell:)
@@ -214,14 +107,14 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
           ],
         )
         as "the rule each row checks: a row behind a target apply prerequisite is applied, a periodic heal with a tickTime is applied, a Proc of a kind not read and a Proxy that names no spell"
-      let assert Ok(Applied(PlannedProc(..))) =
+      let assert Ok(Applied(ReadProc(..))) =
         read(first_of(effects:, id: 90_011))
         as "the Proc of kind 217 is read and its spell is planned from the reading"
       assert read(first_of(effects:, id: 90_015))
         == Ok(LeftOut(why: ProcOfAnotherKind(kind: 16)))
       assert read(first_of(effects:, id: 90_016))
         == Ok(LeftOut(why: ProxyNamesNoSpell))
-      let assert Ok(Applied(PlannedProxy(..))) =
+      let assert Ok(Applied(ReadProxy(..))) =
         read(first_of(effects:, id: 90_012))
         as "the Proxy that names a spell is read"
       assert effect_row.unread_by_type(tables:, effects:)
@@ -296,7 +189,7 @@ pub fn a_row_whose_tables_lack_its_prerequisite_is_not_read_test() -> Nil {
       #("durationTime", Integer(5000)),
       #("prerequisiteIdCasterApply", Integer(99)),
     ])
-  let rows = rows_with(effects: [planted_row])
+  let rows = spell_tables.rows_with_effects(effects: [planted_row])
   assert spell_tables.derivation_result(reaching: [#("SpellLevel", 647)], rows:)
     |> result.is_error
     as "the plan's load fails on the row"
@@ -330,7 +223,7 @@ pub fn a_row_whose_prerequisites_nest_each_other_is_not_read_test() -> Nil {
     ])
   let rows =
     spell_tables.Rows(
-      ..rows_with(effects: [planted_row]),
+      ..spell_tables.rows_with_effects(effects: [planted_row]),
       prerequisites: spell_tables.sorted_by_id([
         spell_tables.prerequisite_row(id: 910, flags: 0, conditions: [
           #(11, 1, 911, 0),
@@ -384,7 +277,7 @@ pub fn a_property_row_with_no_life_is_held_whatever_its_type_test() -> Nil {
     })
   spell_tables.with_loaded(
     reaching: [#("SpellLevel", 647)],
-    rows: rows_with(effects:),
+    rows: spell_tables.rows_with_effects(effects:),
     body: fn(tables) {
       let planted_effects =
         spell4_effects.all(tables)
@@ -448,7 +341,7 @@ pub fn a_row_no_phase_selects_is_held_and_a_damage_row_left_out_test() -> Nil {
       #("durationTime", Integer(5000)),
     ]),
   ]
-  let rows = rows_with(effects:)
+  let rows = spell_tables.rows_with_effects(effects:)
   let assert Ok(spell) = spell_tables.planned_strike(rows:)
     as "the planted spell loads"
   assert spell_tables.listed_effect_ids(spell:)
@@ -476,7 +369,7 @@ pub fn a_row_no_phase_selects_is_held_and_a_damage_row_left_out_test() -> Nil {
       }
       let assert Ok(Held(..)) = read(92_001)
         as "a lasting row no phase selects is held"
-      let assert Ok(Held(PlannedProxy(..))) = read(92_002)
+      let assert Ok(Held(ReadProxy(..))) = read(92_002)
         as "so is a Proxy, and its child is still planned"
       assert read(92_003) == Ok(LeftOut(why: spell_plan.InNoPhase))
       let assert Ok(Applied(..)) = read(92_004)

@@ -62,9 +62,10 @@ fn lasting_condition(
   effect_id effect_id: Int,
 ) -> Condition {
   let assert Ok(row) =
-    list.find(spell.lasting, fn(row) {
-      row.effect_id == Spell4EffectsId(effect_id)
-    })
+    list.find(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_lasting),
+      fn(row) { row.effect_id == Spell4EffectsId(effect_id) },
+    )
     as "the plan lists the row among the spell's lasting rows"
   row.condition
 }
@@ -82,8 +83,10 @@ pub fn remove_behind_target_gate_reads_with_its_gate_test() -> Nil {
       effect: row,
     )
     as "a remove behind a target prerequisite of a type the server reads plans"
-  let assert spell_plan.Applied(spell_plan.PlannedRemove(remove:)) = reading
+  let assert spell_plan.Applied(_) = reading
     as "a go applies it: it is no longer held"
+  let assert [spell_plan.RemoveEffect(remove:)] =
+    spell_tables.planned_kinds(reading:)
   let assert GatedOnTarget(prerequisite:) = remove.condition
     as "the remove keeps its target apply prerequisite"
   assert prerequisite.id(prerequisite) == PrerequisiteId(13_148)
@@ -144,7 +147,7 @@ pub fn remove_past_the_caster_behind_a_roll_gate_reads_with_its_gate_test() -> N
   ])
   let assert Ok(row) = spell4_effects.get(tables:, id: Spell4EffectsId(144_869))
     as "the client's rows hold Ruin's remove"
-  let assert Ok(spell_plan.Applied(spell_plan.PlannedRemove(remove:))) =
+  let assert Ok(reading) =
     spell_plan.read_row(
       tables:,
       spell_groups: spell_plan.spell_groups(tables:),
@@ -152,6 +155,9 @@ pub fn remove_past_the_caster_behind_a_roll_gate_reads_with_its_gate_test() -> N
       effect: row,
     )
     as "a remove past the caster behind a roll plans: the roll reads no state of the unit it reaches"
+  let assert spell_plan.Applied(_) = reading
+  let assert [spell_plan.RemoveEffect(remove:)] =
+    spell_tables.planned_kinds(reading:)
   assert remove.aim == spell_plan.AimsAtArea
   let assert GatedOnTarget(prerequisite:) = remove.condition
     as "the remove keeps its roll gate as its target gate"
@@ -234,9 +240,10 @@ pub fn stealth_on_the_caster_behind_a_target_gate_reads_with_its_gate_test() -> 
   let assert Ok(spell) = plan_in(tables:, spell4_id: 30_458)
     as "a stealth row aimed at the caster behind a decoded target prerequisite plans"
   let assert Ok(row) =
-    list.find(spell.stealth, fn(row) {
-      row.effect_id == Spell4EffectsId(stealth_row)
-    })
+    list.find(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_stealth),
+      fn(row) { row.effect_id == Spell4EffectsId(stealth_row) },
+    )
     as "the plan lists the row"
   let assert GatedOnTarget(prerequisite:) = row.condition
     as "the row keeps its target apply prerequisite as its gate"
@@ -265,9 +272,10 @@ pub fn gain_on_the_caster_behind_a_target_gate_reads_with_its_gate_test() -> Nil
   let assert Ok(spell) = plan_in(tables:, spell4_id: 30_458)
     as "a gain aimed at the caster behind a decoded target prerequisite plans"
   let assert Ok(gain) =
-    list.find(spell.gains, fn(gain) {
-      gain.effect_id == Spell4EffectsId(gain_row)
-    })
+    list.find(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_gain),
+      fn(gain) { gain.effect_id == Spell4EffectsId(gain_row) },
+    )
     as "the plan lists the gain"
   let assert GatedOnTarget(prerequisite:) = gain.condition
     as "the gain keeps its target apply prerequisite as its gate"
@@ -287,9 +295,10 @@ const in_combat_gate = [
 /// The condition of the remove row of this id in the spell.
 fn remove_condition(spell spell: Spell, effect_id effect_id: Int) -> Condition {
   let assert Ok(row) =
-    list.find(spell.removes, fn(row) {
-      row.effect_id == Spell4EffectsId(effect_id)
-    })
+    list.find(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_remove),
+      fn(row) { row.effect_id == Spell4EffectsId(effect_id) },
+    )
     as "the plan lists the row among the spell's removes"
   row.condition
 }
@@ -414,7 +423,7 @@ pub fn remove_on_the_primary_target_of_a_press_behind_a_creature_state_gate_stay
       prerequisite_type: 28,
     ))
     as "in a press the row would be checked on no unit, so the load refuses it"
-  let assert Ok(spell_plan.Applied(spell_plan.PlannedRemove(remove:))) =
+  let assert Ok(reading) =
     spell_plan.read_row(
       tables:,
       spell_groups: spell_plan.spell_groups(tables:),
@@ -425,6 +434,9 @@ pub fn remove_on_the_primary_target_of_a_press_behind_a_creature_state_gate_stay
       effect: on_the_primary_target,
     )
     as "in a child started on a struck unit the primary target is that creature"
+  let assert spell_plan.Applied(_) = reading
+  let assert [spell_plan.RemoveEffect(remove:)] =
+    spell_tables.planned_kinds(reading:)
   assert remove.condition == spell_plan.Always
 }
 

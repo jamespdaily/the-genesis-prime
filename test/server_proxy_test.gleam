@@ -37,7 +37,8 @@ fn pulse_blast(plans: Plans) -> Spell {
 
 /// The only Proxy of the Pulse Blast tree, which starts the damage spell 37302.
 fn striking_proxy(plans: Plans) -> spell_plan.Proxy {
-  let assert [proxy] = pulse_blast(plans).proxies
+  let assert [proxy] =
+    spell_plan.payloads(spell: pulse_blast(plans), as_kind: spell_plan.as_proxy)
     as "Pulse Blast has one Proxy, 95881 to 37302"
   proxy
 }
@@ -70,7 +71,8 @@ pub fn the_seed_row_plants_42148_into_the_damage_spell_at_its_last_go_test() -> 
     && host.phase_flags == 2
     && host.delay_ms == 0
     as "Pulse Blast's own Proxy 95881 to 37302 is as the client's rows have it (phaseFlags 2)"
-  let assert [planted] = host.spell.proxies
+  let assert [planted] =
+    spell_plan.payloads(spell: host.spell, as_kind: spell_plan.as_proxy)
     as "the damage spell holds only the server's Proxy: 37302 has no Proxy of its own"
   assert planted.spell.spell4_id == id.Spell4Id(42_148)
     as "the spell the row names"
@@ -80,7 +82,8 @@ pub fn the_seed_row_plants_42148_into_the_damage_spell_at_its_last_go_test() -> 
     as "a Proxy of the server's starts at once, with no gate of its own"
   assert planted.target == spell_plan.OnCaster
     as "42148 is cast on the caster: 95337 aims at it (targetFlags 1)"
-  let assert [gain] = planted.spell.gains
+  let assert [gain] =
+    spell_plan.payloads(spell: planted.spell, as_kind: spell_plan.as_gain)
     as "42148's one effect 95337 is a gain"
   let assert spell_plan.Gain(
     slot: 1,
@@ -99,12 +102,17 @@ pub fn a_go_that_starts_no_spell_at_once_takes_the_proxy_itself_test() -> Nil {
   let assert Ok(strike) =
     spell_plan.in_plans(plans:, base: Spell4BaseId(19_102))
     as "the plans hold Telekinetic Strike"
-  let assert Ok(planted) = list.last(strike.proxies)
+  let assert Ok(planted) =
+    list.last(spell_plan.payloads(spell: strike, as_kind: spell_plan.as_proxy))
     as "the ability holds a Proxy after its own"
   assert planted.spell.spell4_id == id.Spell4Id(42_148)
     && planted.phase_flags == 1
     as "Telekinetic Strike's only Proxy is aimed at the area, so no spell starts at once on the caster: the Proxy is the ability's own, at its go 0"
-  assert list.length(strike.proxies) == 2
+  assert list.length(spell_plan.payloads(
+      spell: strike,
+      as_kind: spell_plan.as_proxy,
+    ))
+    == 2
     as "the ability's own Proxy 62204 stays"
 }
 

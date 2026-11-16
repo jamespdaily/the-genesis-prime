@@ -634,16 +634,23 @@ pub fn the_medic_refill_starts_at_the_payment_and_not_at_the_press_test() -> Nil
 pub fn a_go_pays_its_cost_before_it_gives_its_gains_test() -> Nil {
   use <- owned_test.run(5000)
   let giving =
-    Spell(..support.ability(base: 16_322), gains: [
-      spell_plan.Gain(
-        effect_id: Spell4EffectsId(1),
-        slot: 1,
-        amount: 1,
-        phase_flags: 1,
-        condition: spell_plan.Always,
-        tag: spend.always,
+    support.replacing(
+      spell: support.ability(base: 16_322),
+      as_kind: spell_plan.as_gain,
+      kinds: list.map(
+        [
+          spell_plan.Gain(
+            effect_id: Spell4EffectsId(1),
+            slot: 1,
+            amount: 1,
+            phase_flags: 1,
+            condition: spell_plan.Always,
+            tag: spend.always,
+          ),
+        ],
+        spell_plan.GainEffect,
       ),
-    ])
+    )
   let caster = medic_holding(points: 4)
   let #(state, pressed) =
     support.pressed_raw_in(

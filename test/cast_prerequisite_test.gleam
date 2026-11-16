@@ -864,20 +864,27 @@ fn lingering_cast_of(
   spell4_id spell4_id: Int,
   groups groups: List(Int),
 ) -> Spell {
-  Spell(..support.child(spell4_id:, base: 3), groups:, lasting: [
-    spell_plan.Lasting(
-      effect_id: Spell4EffectsId(1),
-      phase_flags: -1,
-      aim: spell_plan.AimsAtCaster,
-      row: lasting.LastingRow(
-        delay_ms: 0,
-        duration_ms: 60_000,
-        until_removed: False,
-      ),
-      condition: spell_plan.Always,
-      tag: spend.always,
+  support.replacing(
+    spell: Spell(..support.child(spell4_id:, base: 3), groups:),
+    as_kind: spell_plan.as_lasting,
+    kinds: list.map(
+      [
+        spell_plan.Lasting(
+          effect_id: Spell4EffectsId(1),
+          phase_flags: -1,
+          aim: spell_plan.AimsAtCaster,
+          row: lasting.LastingRow(
+            delay_ms: 0,
+            duration_ms: 60_000,
+            until_removed: False,
+          ),
+          condition: spell_plan.Always,
+          tag: spend.always,
+        ),
+      ],
+      spell_plan.LastingEffect,
     ),
-  ])
+  )
 }
 
 pub fn a_lingering_cast_of_group_313_stops_stealth_test() -> Nil {
@@ -906,18 +913,25 @@ pub fn a_live_cast_whose_primary_target_is_another_unit_does_not_stop_stealth_te
       groups: [313],
     )
   let parent =
-    Spell(..support.child(spell4_id: 5003, base: 3), proxies: [
-      spell_plan.Proxy(
-        effect_id: Spell4EffectsId(2),
-        delay_ms: 0,
-        phase_flags: -1,
-        condition: spell_plan.Always,
-        tag: spend.always,
-        target: spell_plan.OnEachStruck,
-        spell: child,
-        gains: [],
+    support.replacing(
+      spell: support.child(spell4_id: 5003, base: 3),
+      as_kind: spell_plan.as_proxy,
+      kinds: list.map(
+        [
+          spell_plan.Proxy(
+            effect_id: Spell4EffectsId(2),
+            delay_ms: 0,
+            phase_flags: -1,
+            condition: spell_plan.Always,
+            tag: spend.always,
+            target: spell_plan.OnEachStruck,
+            spell: child,
+            gains: [],
+          ),
+        ],
+        spell_plan.ProxyEffect,
       ),
-    ])
+    )
   let plans = real_plans_with(spell: parent)
   let stalker = classed(base: 30_075, resources: None)
   let #(state, started) =

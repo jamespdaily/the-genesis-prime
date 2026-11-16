@@ -57,14 +57,48 @@ fn listed(effects effects: List(Effect)) -> List(#(Int, List(Int))) {
 /// The client's spell with the rows the cast rule reads, as a spell of its own base.
 fn client_spell(spell4_id spell4_id: Int) -> Spell {
   let real = spell_tables.client_spell(spell4_id:)
-  Spell(
-    ..support.child(spell4_id:, base: spell4_id),
-    lasting: real.lasting,
-    modifiers: real.modifiers,
-    heals: real.heals,
-    proxies: real.proxies,
-    forced_moves: real.forced_moves,
-    struck_moves: real.struck_moves,
+  support.replacing(
+    spell: support.replacing(
+      spell: support.replacing(
+        spell: support.replacing(
+          spell: support.replacing(
+            spell: support.replacing(
+              spell: support.child(spell4_id:, base: spell4_id),
+              as_kind: spell_plan.as_lasting,
+              kinds: list.map(
+                spell_plan.payloads(spell: real, as_kind: spell_plan.as_lasting),
+                spell_plan.LastingEffect,
+              ),
+            ),
+            as_kind: spell_plan.as_modifier,
+            kinds: list.map(
+              spell_plan.payloads(spell: real, as_kind: spell_plan.as_modifier),
+              spell_plan.ModifierEffect,
+            ),
+          ),
+          as_kind: spell_plan.as_heal,
+          kinds: list.map(
+            spell_plan.payloads(spell: real, as_kind: spell_plan.as_heal),
+            spell_plan.HealEffect,
+          ),
+        ),
+        as_kind: spell_plan.as_proxy,
+        kinds: list.map(
+          spell_plan.payloads(spell: real, as_kind: spell_plan.as_proxy),
+          spell_plan.ProxyEffect,
+        ),
+      ),
+      as_kind: spell_plan.as_forced_move,
+      kinds: list.map(
+        spell_plan.payloads(spell: real, as_kind: spell_plan.as_forced_move),
+        spell_plan.ForcedMoveEffect,
+      ),
+    ),
+    as_kind: spell_plan.as_struck_move,
+    kinds: list.map(
+      spell_plan.payloads(spell: real, as_kind: spell_plan.as_struck_move),
+      spell_plan.StruckMoveEffect,
+    ),
   )
 }
 
@@ -131,7 +165,10 @@ fn started_on_20(
 pub fn union_fluff_lands_on_caster_target_and_struck_units_once_each_test() -> Nil {
   use <- owned_test.run(60_000)
   let spell = client_spell(spell4_id: 35_662)
-  assert list.map(spell.lasting, fn(row) { row.effect_id })
+  assert list.map(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_lasting),
+      fn(row) { row.effect_id },
+    )
     == [Spell4EffectsId(72_210)]
     as "the client's spell 35662 holds the Fluff row 72210 aimed by flags 7"
   let #(_, effects) = started_on_20(started: spell, struck: [20, 21, 22])
@@ -206,9 +243,10 @@ pub fn union_proxy_starts_its_child_on_the_caster_and_on_each_struck_unit_test()
   use <- owned_test.run(60_000)
   let real = spell_tables.client_spell(spell4_id: 75_957)
   let assert [on_caster, on_struck] =
-    list.filter(real.proxies, fn(proxy) {
-      proxy.effect_id == Spell4EffectsId(196_408)
-    })
+    list.filter(
+      spell_plan.payloads(spell: real, as_kind: spell_plan.as_proxy),
+      fn(proxy) { proxy.effect_id == Spell4EffectsId(196_408) },
+    )
     as "the client's spell 75957 holds the Proxy 196408 once for each of its two targets"
   assert [on_caster.target, on_struck.target]
     == [spell_plan.OnCaster, spell_plan.OnEachStruck]
@@ -220,20 +258,33 @@ pub fn union_proxy_starts_its_child_on_the_caster_and_on_each_struck_unit_test()
       spell_plan.tree(spell: spell_tables.fixture_strike(), started: fn(_) {
         True
       }),
-      fn(below) { below.proxies },
+      fn(below) {
+        spell_plan.payloads(spell: below, as_kind: spell_plan.as_proxy)
+      },
     )
     |> list.filter(fn(proxy) { proxy.effect_id == Spell4EffectsId(62_204) })
   let assert [lender] = lent as "Telekinetic Strike holds the Proxy 62204"
   let gaining =
-    list.map(real.proxies, fn(proxy) {
-      case proxy.target {
-        spell_plan.OnEachStruck ->
-          spell_plan.Proxy(..proxy, gains: lender.gains)
-        spell_plan.OnCaster -> proxy
-      }
-    })
+    list.map(
+      spell_plan.payloads(spell: real, as_kind: spell_plan.as_proxy),
+      fn(proxy) {
+        case proxy.target {
+          spell_plan.OnEachStruck ->
+            spell_plan.Proxy(..proxy, gains: lender.gains)
+          spell_plan.OnCaster -> proxy
+        }
+      },
+    )
   let spell =
-    Spell(..client_spell(spell4_id: 75_957), lasting: [], proxies: gaining)
+    support.replacing(
+      spell: support.replacing(
+        spell: client_spell(spell4_id: 75_957),
+        as_kind: spell_plan.as_lasting,
+        kinds: [],
+      ),
+      as_kind: spell_plan.as_proxy,
+      kinds: list.map(gaining, spell_plan.ProxyEffect),
+    )
   let #(_, effects) = pressed_and_struck(spell:, struck: [20, 21])
   let started =
     list.map(
@@ -254,7 +305,8 @@ pub fn union_proxy_starts_its_child_on_the_caster_and_on_each_struck_unit_test()
 pub fn union_forced_move_moves_the_caster_and_the_struck_creature_test() -> Nil {
   use <- owned_test.run(60_000)
   let spell = client_spell(spell4_id: 28_467)
-  let assert [struck_move] = spell.struck_moves
+  let assert [struck_move] =
+    spell_plan.payloads(spell:, as_kind: spell_plan.as_struck_move)
     as "the client's spell 28467 holds the struck part of row 49023"
   let #(_, effects) = pressed_and_struck(spell:, struck: [21])
   assert support.throws(effects:)

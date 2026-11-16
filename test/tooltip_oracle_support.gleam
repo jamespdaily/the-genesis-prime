@@ -448,7 +448,11 @@ pub fn striking_with_states(root root: Spell) -> Strikes {
         fn(spell) { spell.spell4_id == asked.spell4_id },
       )
     {
-      Ok(spell) -> landed_of(rows: spell.controls, at_ms:)
+      Ok(spell) ->
+        landed_of(
+          rows: spell_plan.payloads(spell:, as_kind: spell_plan.as_control),
+          at_ms:,
+        )
       Error(Nil) -> []
     }
     [
@@ -668,25 +672,76 @@ pub fn held_in(
 ) -> Result(Held, Nil) {
   let is = fn(row_id: id.Spell4EffectsId) { row_id.value == effect_id }
   let elsewhere = [
-    #("stealth", list.any(spell.stealth, fn(row) { is(row.effect_id) })),
-    #("proc", list.any(spell.procs, fn(row) { is(row.effect_id) })),
+    #(
+      "stealth",
+      list.any(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_stealth),
+        fn(row) { is(row.effect_id) },
+      ),
+    ),
+    #(
+      "proc",
+      list.any(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_proc),
+        fn(row) { is(row.effect_id) },
+      ),
+    ),
     #(
       "cooldown modifier",
-      list.any(spell.cooldown_modifiers, fn(row) { is(row.effect_id) }),
+      list.any(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_cooldown_modifier),
+        fn(row) { is(row.effect_id) },
+      ),
     ),
-    #("shield heal", list.any(spell.heals, fn(row) { is(row.effect_id) })),
-    #("gain", list.any(spell.gains, fn(row) { is(row.effect_id) })),
+    #(
+      "shield heal",
+      list.any(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_heal),
+        fn(row) { is(row.effect_id) },
+      ),
+    ),
+    #(
+      "gain",
+      list.any(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_gain),
+        fn(row) { is(row.effect_id) },
+      ),
+    ),
     #(
       "forced move",
-      list.any(spell.forced_moves, fn(row) { is(row.effect_id) }),
+      list.any(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_forced_move),
+        fn(row) { is(row.effect_id) },
+      ),
     ),
-    #("removal", list.any(spell.removes, fn(row) { is(row.effect_id) })),
-    #("proxy", list.any(spell.proxies, fn(row) { is(row.effect_id) })),
+    #(
+      "removal",
+      list.any(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_remove),
+        fn(row) { is(row.effect_id) },
+      ),
+    ),
+    #(
+      "proxy",
+      list.any(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy),
+        fn(row) { is(row.effect_id) },
+      ),
+    ),
   ]
   case
-    list.find(spell.controls, fn(row) { is(row.effect_id) }),
-    list.find(spell.lasting, fn(row) { is(row.effect_id) }),
-    list.find(spell.modifiers, fn(row) { is(row.effect_id) }),
+    list.find(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_control),
+      fn(row) { is(row.effect_id) },
+    ),
+    list.find(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_lasting),
+      fn(row) { is(row.effect_id) },
+    ),
+    list.find(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier),
+      fn(row) { is(row.effect_id) },
+    ),
     list.find(elsewhere, fn(entry) { entry.1 })
   {
     Ok(row), _, _, _ -> Ok(HeldControl(row:))
