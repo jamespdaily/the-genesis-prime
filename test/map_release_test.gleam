@@ -1,7 +1,7 @@
-//// The creatures a player's use takes out of the world for a while
-//// (`genesis_prime/world_map/map`, `Released`), run as the pure rule it is: inputs
-//// in, new state and effects out, the clock driven through the inputs' times.
-//// Expected values come from these places.
+//// The creatures and static objects a player's use takes out of the world for a
+//// while (`genesis_prime/world_map/map`, `Released`), run as the pure rule it is:
+//// inputs in, new state and effects out, the clock driven through the inputs'
+//// times. Expected values come from these places.
 //// - The client's tables: QuestObjective 9659 is a type 12 objective (a use of the
 ////   creature in its data) whose data is Creature2 27768, the Bramble Trap of quest
 ////   6296 (Quest2 6296 names it in its second objective); Creature2 28112, the
@@ -9,10 +9,18 @@
 ////   Mordesh at the trap's x and z, 0.07 m above it: of the 1,112 spawns whose creature a
 ////   type 12 objective names, 38 have such a neighbour, all in
 ////   quests 6296, 4983 and 6727.
+//// - QuestObjective 21324 and 21354 are type 12 objectives whose data is Creature2
+////   73419, a type 32 hologram projector of world 3460; Creature2 73619, the
+////   hoverboard hologram, is no objective's creature and stands at its x and z, 2.3 m
+////   above it (spawns 29036 and 29044). A client unit is removed with a 0x355 and a
+////   0x262 for a unit it holds is ignored (`opcode.0x355`, `opcode.0x262`), so an
+////   object comes back under its id only after an `ObjectsUnseen`.
 //// - The server's reading of the client's behaviour, which is that
-////   a rescued exile and its trap are gone for every player at once and are back
-////   after a time: the server's choice of 30 s (the `used_object_release_ms` game
-////   number), which the kind's 60 s respawn time is not.
+////   a rescued exile and its trap, or a used static object and what stands on it,
+////   are gone for every player at once and are back after a time: the server's
+////   choice of 30 s (the `used_object_release_ms` game number), which the kind's
+////   60 s respawn time is not. A static object has no process and no `Gone`: the
+////   connection keeps a `Gone` unit gone for good.
 //// - The stop path of an idle creature (`map_creature_test`): the map tells the
 ////   creature `Retire`, and its end sends every player `Gone` of the unit. A
 ////   creature told to retire while dead stops at its corpse timer
@@ -21,16 +29,17 @@
 import connection_rule_support as support
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/step.{
-  type ServiceStep, ConnectionId, LogInfo, LogLine, OwnEvent, ServiceTimerFired,
-  WatchEnded,
+  type ServiceStep, ConnectionId, OwnEvent, ServiceTimerFired, WatchEnded,
 }
-import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/id.{Creature2Id, PrerequisiteId}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
-import genesis_prime/world_map/static_object
+import genesis_prime/world_map/static_object.{type StaticObject, StaticObject}
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
+import gleam/set
 import gleam/string
 import map_spawn_support as spawns
 import map_support
@@ -42,6 +51,12 @@ import spawn_support
 const bramble_trap = 27_768
 
 const trapped_mordesh = 28_112
+
+/// Creature2 73419, the hologram projector a type 12 objective names, and 73619,
+/// the hologram that stands on it.
+const hologram_projector = 73_419
+
+const hologram = 73_619
 
 /// The release time, the server's choice (`used_object_release_ms`).
 const release_ms = 30_000
@@ -87,6 +102,65 @@ fn started_units(
   taken: ServiceStep(map.Outgoing),
 ) -> List(#(step.WatchId, Int)) {
   list.map(spawns.starts(taken), fn(start) { #(start.0, { start.1 }.unit_id) })
+}
+
+/// A Holoring (spawn `number`) standing `x` along.
+fn holoring_at(number number: Int, x x: Float) -> StaticObject {
+  spawn_support.holoring(number:, place: standing(x:, y: 0.0))
+}
+
+/// A map with these creature spawns and static objects, started.
+fn started_with_objects(
+  spawns spawns: List(Spawn),
+  objects objects: List(StaticObject),
+) -> State {
+  let state =
+    map_support.with_objects(
+      incarnation: 1,
+      spawns:,
+      objects:,
+      kinds: spawns.default_kinds(),
+    )
+  let #(state, _) =
+    spawns.feed(
+      state:,
+      at_ms: spawns.started_at_ms,
+      event: OwnEvent(step.Started),
+    )
+  state
+}
+
+/// The unit ids of the objects a step shows players (`ObjectsSeen`), in the order
+/// sent.
+fn objects_shown(taken: ServiceStep(map.Outgoing)) -> List(Int) {
+  list.flat_map(spawns.player_sends(taken), fn(sent) {
+    case sent.1 {
+      "Objects seen " <> ids ->
+        string.split(ids, " ") |> list.filter_map(int.parse)
+      _ -> []
+    }
+  })
+}
+
+/// What `spawns.player_sends` says of an `ObjectsSeen` of these units.
+fn seen(unit_ids: List(Int)) -> String {
+  "Objects seen " <> string.join(list.map(unit_ids, int.to_string), " ")
+}
+
+/// What `spawns.player_sends` says of an `ObjectsUnseen` of these units.
+fn unseen(unit_ids: List(Int)) -> String {
+  "Objects unseen " <> string.join(list.map(unit_ids, int.to_string), " ")
+}
+
+/// A map with a Holoring (spawn 101) and the player of connection 1 in sight of
+/// it, the Holoring released at 7000 ms: the state, the Holoring's unit id.
+fn a_holoring_released_with_a_viewer() -> #(State, Int) {
+  let state =
+    started_with_objects(spawns: [], objects: [holoring_at(number: 101, x: 0.0)])
+  let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let assert [object] = objects_shown(taken)
+  let #(state, _) = spawns.released(state:, at_ms: 7000, unit_id: object)
+  #(state, object)
 }
 
 fn timer_fired(
@@ -210,38 +284,6 @@ pub fn a_second_release_of_the_same_unit_does_nothing_test() -> Nil {
     as "and so does one after the unit was given up: no second Gone, no second timer"
 }
 
-pub fn a_released_static_object_stays_and_is_logged_test() -> Nil {
-  use <- owned_test.run(5000)
-  let state =
-    map_support.with_objects(
-      incarnation: 1,
-      spawns: [],
-      objects: [
-        spawn_support.holoring(number: 101, place: standing(x: 0.0, y: 0.0)),
-      ],
-      kinds: spawns.default_kinds(),
-    )
-  let #(state, _) =
-    spawns.feed(
-      state:,
-      at_ms: spawns.started_at_ms,
-      event: OwnEvent(step.Started),
-    )
-  let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
-  let assert [#(1, map.Noticed(notice: map.ObjectsSeen(units: [created]), ..))] =
-    support.sends(taken)
-    as "the one player is shown the one object"
-  let object = static_object.unit_id(created:)
-  let #(state, taken) = spawns.released(state:, at_ms: 7000, unit_id: object)
-  let assert [step.Log(LogLine(level: LogInfo, text:, ..))] =
-    support.effects_of(taken)
-    as "the release is logged and nothing else happens"
-  assert string.contains(text, "#861")
-    as "the line names the step that releases static objects"
-  assert map.spawn_state(state:, spawn: SpawnId(101)) == Error(Nil)
-    as "the object keeps its place: no state, no Gone, no timer"
-}
-
 pub fn a_released_creature_that_respawns_uses_its_kinds_respawn_time_after_a_later_death_test() -> Nil {
   use <- owned_test.run(5000)
   let state =
@@ -319,4 +361,287 @@ pub fn a_use_that_lands_while_its_creature_is_retiring_changes_nothing_test() ->
     && spawns.player_sends(taken) == []
     && spawns.timers(taken) == []
     as "it restarts as a retiring creature does, under the same unit id, with no Gone and no timer"
+}
+
+pub fn a_released_static_object_is_unseen_by_every_viewer_and_seen_again_under_its_id_after_the_release_time_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    started_with_objects(spawns: [], objects: [holoring_at(number: 101, x: 0.0)])
+  let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let assert [object] = objects_shown(taken)
+  let #(state, _) = spawns.join(state:, at_ms: 6100, connection: 2, x: 10.0)
+  let #(state, _) =
+    spawns.join(state:, at_ms: 6200, connection: 3, x: spawns.far)
+  let #(state, taken) = spawns.released(state:, at_ms: 7000, unit_id: object)
+  assert spawns.player_sends(taken)
+    == [#(1, unseen([object])), #(2, unseen([object]))]
+    as "the two players in sight lose the unit with a 0x355, the one far away is told nothing, and no one is sent Gone"
+  assert spawns.creature_sends(taken) == []
+    as "the object has no creature to retire"
+  assert map.spawn_state(state:, spawn: SpawnId(101)) == Error(Nil)
+    as "and no state: it never becomes Gone"
+  assert spawns.timers(taken) == [#(101, release_ms)]
+    as "it waits the release time under its own spawn's timer"
+  let #(_, taken) = timer_fired(state:, at_ms: 37_000, spawn: 101)
+  assert spawns.player_sends(taken)
+    == [#(1, seen([object])), #(2, seen([object]))]
+    as "at the timer the two in sight are shown the object under the id it had"
+  assert spawns.timers(taken) == [] as "and nothing more is waited for"
+}
+
+pub fn a_player_who_joins_or_moves_into_sight_of_a_released_static_object_is_shown_it_only_at_the_return_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    started_with_objects(spawns: [], objects: [
+      holoring_at(number: 101, x: 0.0),
+      holoring_at(number: 102, x: 800.0),
+    ])
+  let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let assert [released, other] = objects_shown(taken)
+  let #(state, _) = spawns.released(state:, at_ms: 7000, unit_id: released)
+  let #(state, taken) = spawns.join(state:, at_ms: 8000, connection: 2, x: 0.0)
+  assert objects_shown(taken) == [other]
+    as "a joiner is shown the object in sight that stays, and not the released one"
+  let #(state, _) =
+    spawns.join(state:, at_ms: 8100, connection: 3, x: spawns.far)
+  let #(state, taken) =
+    spawns.move(state:, at_ms: 9000, connection: 3, x: -900.0)
+  assert objects_shown(taken) == []
+    as "a player who moves into sight of the released object only is shown no object"
+  let #(_, taken) = timer_fired(state:, at_ms: 37_000, spawn: 101)
+  assert spawns.player_sends(taken)
+    == [
+      #(1, seen([released])),
+      #(2, seen([released])),
+      #(3, seen([released])),
+    ]
+    as "at the return all three are shown it under its id"
+}
+
+pub fn a_second_release_of_a_released_static_object_changes_nothing_and_leaves_the_return_at_the_first_time_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, object) = a_holoring_released_with_a_viewer()
+  let #(state, taken) = spawns.released(state:, at_ms: 17_000, unit_id: object)
+  assert support.effects_of(taken) == []
+    as "a second credit of the unit 10 s later sends nothing and starts no timer"
+  let #(_, taken) = timer_fired(state:, at_ms: 37_000, spawn: 101)
+  assert spawns.player_sends(taken) == [#(1, seen([object]))]
+    as "the object returns at the first release plus 30 s, not at 40 s"
+}
+
+pub fn two_static_objects_released_at_once_return_each_at_its_own_time_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    started_with_objects(spawns: [], objects: [
+      holoring_at(number: 101, x: 0.0),
+      holoring_at(number: 102, x: 100.0),
+    ])
+  let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let assert [first, second] = objects_shown(taken)
+  let #(state, taken) = spawns.released(state:, at_ms: 7000, unit_id: first)
+  assert spawns.timers(taken) == [#(101, release_ms)]
+  assert spawns.player_sends(taken) == [#(1, unseen([first]))]
+  let #(state, taken) = spawns.released(state:, at_ms: 8000, unit_id: second)
+  assert spawns.timers(taken) == [#(102, release_ms)]
+  assert spawns.player_sends(taken) == [#(1, unseen([second]))]
+  let #(state, taken) = timer_fired(state:, at_ms: 37_000, spawn: 101)
+  assert spawns.player_sends(taken) == [#(1, seen([first]))]
+    as "the first return shows the first object only"
+  let #(_, taken) = timer_fired(state:, at_ms: 38_000, spawn: 102)
+  assert spawns.player_sends(taken) == [#(1, seen([second]))]
+    as "the second return shows the second only"
+}
+
+pub fn a_return_after_the_viewer_left_sends_nothing_and_a_rejoin_after_it_sees_the_object_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, object) = a_holoring_released_with_a_viewer()
+  let #(left, _) = spawns.leave(state:, at_ms: 8000, connection: 1)
+  let #(left, taken) = timer_fired(state: left, at_ms: 37_000, spawn: 101)
+  assert spawns.player_sends(taken) == [] && spawns.timers(taken) == []
+    as "the only player in sight left: the return sends nothing"
+  let #(_, taken) =
+    spawns.join(state: left, at_ms: 38_000, connection: 1, x: 0.0)
+  assert objects_shown(taken) == [object]
+    as "a player who joins after the return is shown the object under its old id"
+  let #(state, _) = spawns.leave(state:, at_ms: 8000, connection: 1)
+  let #(state, taken) = spawns.join(state:, at_ms: 9000, connection: 1, x: 0.0)
+  assert objects_shown(taken) == []
+    as "a player who joins again before the return is not shown the object"
+  let #(_, taken) = timer_fired(state:, at_ms: 37_000, spawn: 101)
+  assert spawns.player_sends(taken) == [#(1, seen([object]))]
+    as "and is shown it at the return"
+}
+
+pub fn a_player_who_moved_out_of_sight_during_the_release_gets_nothing_at_the_return_and_sees_the_object_on_entering_later_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, object) = a_holoring_released_with_a_viewer()
+  let #(state, taken) =
+    spawns.move(state:, at_ms: 8000, connection: 1, x: spawns.far)
+  assert spawns.player_sends(taken) == []
+    as "the release already took the object from the player's set: leaving sight says nothing of it"
+  let #(state, taken) = timer_fired(state:, at_ms: 37_000, spawn: 101)
+  assert spawns.player_sends(taken) == []
+    as "the return sends the player nothing"
+  let #(_, taken) = spawns.move(state:, at_ms: 38_000, connection: 1, x: 0.0)
+  assert spawns.player_sends(taken) == [#(1, seen([object]))]
+    as "a later move back into sight shows the object"
+}
+
+pub fn a_released_static_object_hidden_from_a_viewer_by_its_visibility_prerequisite_stays_hidden_at_the_return_test() -> Nil {
+  use <- owned_test.run(5000)
+  let prerequisite = PrerequisiteId(41_803)
+  let state =
+    started_with_objects(spawns: [], objects: [
+      StaticObject(
+        ..holoring_at(number: 101, x: 0.0),
+        visibility: Some(prerequisite),
+      ),
+    ])
+  let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let assert [object] = objects_shown(taken)
+  let #(state, taken) =
+    spawns.join_hiding(
+      state:,
+      at_ms: 6100,
+      connection: 2,
+      x: 0.0,
+      alive: True,
+      hidden: set.from_list([prerequisite]),
+    )
+  assert objects_shown(taken) == []
+    as "the player for whom the prerequisite fails is not shown the object"
+  let #(state, taken) = spawns.released(state:, at_ms: 7000, unit_id: object)
+  assert spawns.player_sends(taken) == [#(1, unseen([object]))]
+    as "the release unsees it only for the player who was shown it"
+  let #(state, taken) = timer_fired(state:, at_ms: 37_000, spawn: 101)
+  assert spawns.player_sends(taken) == [#(1, seen([object]))]
+    as "the return shows it only to that player"
+  let #(state, _) = spawns.released(state:, at_ms: 40_000, unit_id: object)
+  let #(state, taken) =
+    spawns.visibility_changed(
+      state:,
+      at_ms: 41_000,
+      connection: 2,
+      hidden: set.new(),
+    )
+  assert spawns.player_sends(taken) == []
+    as "a prerequisite that stops failing during a release shows nothing"
+  let #(_, taken) = timer_fired(state:, at_ms: 70_000, spawn: 101)
+  assert spawns.player_sends(taken)
+    == [#(1, seen([object])), #(2, seen([object]))]
+    as "the formerly hidden player is shown it at that release's return"
+}
+
+pub fn a_map_that_starts_again_shows_a_released_static_object_at_once_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, released) = a_holoring_released_with_a_viewer()
+  let again =
+    started_with_objects(spawns: [], objects: [holoring_at(number: 101, x: 0.0)])
+  let #(_, taken) =
+    spawns.join(state: again, at_ms: 6000, connection: 1, x: 0.0)
+  assert objects_shown(taken) == [released]
+    as "a map built again from its settings shows the object to a joiner at once, under the id its counter gives from 1"
+  assert spawns.timers(taken) == [] as "and waits for no timer"
+}
+
+pub fn a_creature_keyed_release_also_unsees_a_static_captive_at_its_x_and_z_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    started_with_objects(
+      spawns: [
+        spawn_of(
+          number: 1,
+          creature: bramble_trap,
+          place: standing(x: 0.0, y: 0.0),
+        ),
+      ],
+      objects: [
+        spawn_support.holoring(number: 101, place: standing(x: 0.0, y: 0.07)),
+      ],
+    )
+  let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let assert [object] = objects_shown(taken)
+  let assert [#(_, trap)] = started_units(taken)
+  let #(state, taken) = spawns.released(state:, at_ms: 7000, unit_id: trap)
+  assert spawns.creature_sends(taken) == [#(trap, "Retire")]
+    as "the trap is told to stop as in a release of a creature"
+  assert spawns.player_sends(taken) == [#(1, unseen([object]))]
+    as "the Holoring at its x and z is unseen at once"
+  assert spawns.timers(taken) == [#(101, release_ms)]
+  let #(_, taken) = timer_fired(state:, at_ms: 37_000, spawn: 101)
+  assert spawns.player_sends(taken) == [#(1, seen([object]))]
+    as "and returns after the release time"
+}
+
+pub fn a_creature_captive_of_a_released_static_object_is_released_with_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    started_with_objects(
+      spawns: [
+        spawn_of(
+          number: 1,
+          creature: trapped_mordesh,
+          place: standing(x: 0.0, y: 0.07),
+        ),
+      ],
+      objects: [
+        StaticObject(
+          ..holoring_at(number: 101, x: 0.0),
+          unit_type: static_object.SimpleCollidable,
+          creature_id: Creature2Id(hologram_projector),
+        ),
+      ],
+    )
+  let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let assert [object] = objects_shown(taken)
+  let assert [#(watch, mordesh)] = started_units(taken)
+  let #(state, taken) = spawns.released(state:, at_ms: 7000, unit_id: object)
+  assert spawns.creature_sends(taken) == [#(mordesh, "Retire")]
+    as "the Mordesh at the object's x and z is told to stop"
+  assert spawns.player_sends(taken) == [#(1, unseen([object]))]
+    as "the object is unseen at once"
+  assert spawns.timers(taken) == [#(101, release_ms)]
+  let #(state, taken) =
+    spawns.feed(state:, at_ms: 7100, event: WatchEnded(watch))
+  assert spawns.player_sends(taken) == [#(1, "Gone " <> int.to_string(mordesh))]
+  assert spawns.timers(taken) == [#(1, release_ms)]
+    as "the Mordesh's end sends Gone and waits the release time"
+  let #(state, taken) = timer_fired(state:, at_ms: 37_000, spawn: 101)
+  assert spawns.player_sends(taken) == [#(1, seen([object]))]
+  let #(_, taken) = timer_fired(state:, at_ms: 37_100, spawn: 1)
+  assert list.length(spawns.starts(taken)) == 1
+    as "the creature starts again at its own timer"
+}
+
+pub fn a_static_captive_of_a_released_static_object_is_unseen_with_it_and_returns_on_its_own_timer_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    started_with_objects(spawns: [], objects: [
+      StaticObject(
+        ..spawn_support.holoring(
+          number: 29_036,
+          place: standing(x: 0.0, y: 0.0),
+        ),
+        unit_type: static_object.SimpleCollidable,
+        creature_id: Creature2Id(hologram_projector),
+      ),
+      StaticObject(
+        ..spawn_support.holoring(
+          number: 29_044,
+          place: standing(x: 0.0, y: 2.3),
+        ),
+        creature_id: Creature2Id(hologram),
+      ),
+    ])
+  let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let assert [projector, captive] = objects_shown(taken)
+  let #(state, taken) = spawns.released(state:, at_ms: 7000, unit_id: projector)
+  assert spawns.player_sends(taken) == [#(1, unseen([projector, captive]))]
+    as "one notice names both units, in spawn order"
+  assert spawns.timers(taken) == [#(29_036, release_ms), #(29_044, release_ms)]
+    as "each waits the release time under its own spawn's timer"
+  let #(state, taken) = timer_fired(state:, at_ms: 37_000, spawn: 29_036)
+  assert spawns.player_sends(taken) == [#(1, seen([projector]))]
+  let #(_, taken) = timer_fired(state:, at_ms: 37_000, spawn: 29_044)
+  assert spawns.player_sends(taken) == [#(1, seen([captive]))]
 }

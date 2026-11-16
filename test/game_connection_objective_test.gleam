@@ -1547,3 +1547,66 @@ pub fn a_second_click_on_a_captive_with_no_activate_spell_counts_nothing_test() 
     ]
     as "cast.activate_unit declines a unit no open objective offers, with a warning, and the connection goes on"
 }
+
+pub fn a_use_of_a_shown_static_object_that_credits_a_type_12_objective_tells_the_map_it_was_released_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest2 10527 names QuestObjective 21324 (type 12, flags 3, data Creature2 73419,
+  // the Hoverboard Hologram Projector, a static object of world 3460) as its third
+  // objective, reachable once objective 21321 (flags 0) is done (`0x140553790`), so
+  // the log marks the first two objectives done.
+  // The projector's link to the quest is open once Prerequisite 41799 passes: its
+  // nested Prerequisite 43010 (type 68) is the second objective of quest 10527 done,
+  // and 41795 (type 15, comparison 2) no live cast of Spell4 85562 on the unit.
+  // Creature2 73619, the hologram on it, is no objective's creature, and its row has
+  // no activate spell.
+  let projector = 41
+  let hologram = 42
+  let #(state, _) =
+    connection_support.entered_with_quests(quests: [
+      quest_support.active(
+        quest_id: 10_527,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b11,
+        progress: [1, 1, 0, 0, 0],
+      ),
+    ])
+  let place =
+    connection_support.standing_at(
+      x: 29.128599166870117 +. 2.7,
+      y: -853.87158203125,
+      z: -560.18798828125,
+    )
+  let shown = fn(unit_id, creature_id, display_info_id) {
+    static_object.create(
+      object: StaticObject(
+        ..spawn_support.holoring(number: unit_id, place:),
+        creature_id: Creature2Id(creature_id),
+        display_info_id:,
+      ),
+      unit_id:,
+      server_time_estimate_start: 0,
+    )
+  }
+  let state =
+    connection_support.feed(
+      state:,
+      event: connection_support.sent_by_the_map(
+        ObjectsSeen(units: [
+          shown(projector, 73_419, 33_234),
+          shown(hologram, 73_619, 39_739),
+        ]),
+      ),
+    ).0
+  let #(_, started, go) = used_once_on(state:, unit_id: hologram, at: 0)
+  assert told_the_map(steps: [started, ..go]) == []
+    as "a use of a static object no objective names credits nothing, so it releases nothing"
+  let #(_, started, go) = used_once_on(state:, unit_id: projector, at: 0)
+  assert progress_frames(steps: [started, ..go])
+    == [progress_frame(quest: 10_527, index: 2, progress: 1)]
+    as "opcode.0x361: the use counts the third objective of quest 10527 (the projector's activateSpellCastTime is 0, so the go comes with the right-click), so the release below follows a credited use"
+  assert told_the_map(steps: [started, ..go])
+    == [tell_released(unit: projector)]
+    as "QuestObjective.type.12: the credited use of the static object asks the map to release its unit"
+}

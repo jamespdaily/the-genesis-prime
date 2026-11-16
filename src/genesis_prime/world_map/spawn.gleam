@@ -330,8 +330,8 @@ pub fn world_spawns(
   )
 }
 
-/// The spawns that go with a used object, for each creature spawn of the world
-/// whose creature a type 12 objective of the tables names (`quest_log.use_a_creature_type`,
+/// The spawns that go with a used object, for each spawn of the world, creature or
+/// static object, whose creature a type 12 objective of the tables names (`quest_log.use_a_creature_type`,
 /// the objective's data): the spawns of the same world at the same x and z, within
 /// 0.01 m, whose own creature no type 12 objective names, in spawn id order. y is
 /// not compared, since a captive stands up to 1.3 m off its trap. A spawn with no
@@ -349,10 +349,18 @@ pub fn captives(
   let is_named = fn(creature_id: Creature2Id) {
     set.contains(named, creature_id.value)
   }
-  dict.fold(world.by_id, dict.new(), fn(found, id, spawn) {
-    use <- bool.guard(when: !is_named(spawn.creature_id), return: found)
-    let trap_x = start_place.x(spawn.place)
-    let trap_z = start_place.z(spawn.place)
+  let keys =
+    list.append(
+      dict.to_list(world.by_id)
+        |> list.map(fn(entry) { #(entry.0, entry.1.place, entry.1.creature_id) }),
+      dict.to_list(world.objects)
+        |> list.map(fn(entry) { #(entry.0, entry.1.place, entry.1.creature_id) }),
+    )
+  list.fold(keys, dict.new(), fn(found, key) {
+    let #(id, place, creature_id) = key
+    use <- bool.guard(when: !is_named(creature_id), return: found)
+    let trap_x = start_place.x(place)
+    let trap_z = start_place.z(place)
     let neighbours =
       spawn_cell.near(
         cells: world.cells,
