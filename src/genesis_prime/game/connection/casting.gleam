@@ -82,6 +82,7 @@ import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/gate as cast_gate
+import genesis_prime/game/cast/persist as cast_persist
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/absorption as connection_absorption
 import genesis_prime/game/connection/frames as connection_frames
@@ -730,7 +731,7 @@ pub fn persisted(
     Continue(session:, effects:) ->
       case connection_state.held_in_the_world(session.status) {
         Some(#(_, entered)) ->
-          case cast.persists(cast: entered.cast) {
+          case cast_persist.persists(cast: entered.cast) {
             False -> handled
             True -> {
               let #(updated, ended) =

@@ -21,6 +21,7 @@ import cast_support as support
 import client_tables
 import genesis_prime/client_connection.{CastFinished}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/persist as cast_persist
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite.{type Prerequisite}
@@ -792,7 +793,7 @@ pub fn a_state_with_no_persistence_column_changes_nothing_test() -> Nil {
     )
   assert persisted(state:, caster: support.caster(), at: 1100) == #(state, [])
     as "the abilities' spells hold none: the check finds nothing and writes nothing"
-  assert !cast.persists(cast: state)
+  assert !cast_persist.persists(cast: state)
 }
 
 // ---- a held key ----
