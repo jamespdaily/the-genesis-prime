@@ -1,12 +1,13 @@
-//// The raw-type rule. Expected values are the rule in the issue that set it: a
-//// game table's raw type number is decoded once into a tagged type where the
-//// table is read, and game and map code matches on that type. A `case` on a
-//// row's type field (`type_`, or a name ending `_type`, `_type_id` or
-//// `_type_enum`) with integer patterns, and a `==` or `!=` of that field with
-//// an integer or a constant, are reported at their line; a tagged type, a
-//// check against 0, two type fields compared with each other, and the modules
-//// that read the table (`table/`) and the wire (`message/`) are not. Every
-//// case is planted in a made-up file; the last tests read the source tree.
+//// The raw-type rule. Expected values are the rule: a game table's raw type
+//// number is decoded once into a tagged type where the table is read, and game
+//// and map code matches on that type. A `case` on a row's type field (`type_`,
+//// or a name ending `_type`, `_type_id` or `_type_enum`) with integer
+//// patterns, a `==`, `!=`, `<`, `<=`, `>` or `>=` of that field with an
+//// integer or a constant, and a `list.contains` of that field in a list of
+//// numbers are reported at their line; a tagged type, two type fields compared
+//// with each other, and the modules that read the table (`table/`) and the
+//// wire (`message/`) are not. Every case is planted in a made-up file; the
+//// last tests read the source tree.
 
 import code_rule/planted
 import code_rule/raw_type.{Gap}
@@ -129,7 +130,7 @@ pub fn a_case_or_comparison_on_a_column_ending_in_type_id_or_type_enum_is_a_brea
     "  price.currency_type_id == 0",
     "}",
   ]
-  assert breach_lines(lines) == [2, 6, 13]
+  assert breach_lines(lines) == [2, 6, 13, 17]
 }
 
 pub fn a_name_from_an_imported_module_is_a_constant_not_a_field_test() -> Nil {
@@ -159,11 +160,27 @@ pub fn a_name_from_an_imported_module_is_a_constant_not_a_field_test() -> Nil {
     "  currency.currency_type_id == 2",
     "}",
     "",
+    "pub fn a_let_shadowing_an_import() -> Bool {",
+    "  let currency = price()",
+    "  currency.currency_type_id == 2",
+    "}",
+    "",
+    "pub fn a_closure_parameter_shadowing_an_import(rows: List(Price)) -> Bool {",
+    "  list.any(rows, fn(currency) { currency.currency_type_id == 2 })",
+    "}",
+    "",
+    "pub fn a_pattern_shadowing_an_import(found: Result(Price, Nil)) -> Bool {",
+    "  case found {",
+    "    Ok(currency) -> currency.currency_type_id == 2",
+    "    Error(Nil) -> False",
+    "  }",
+    "}",
+    "",
     "pub fn another_module_constant_is_not_a_field() -> Bool {",
     "  objective.scripted_type == currency.credits_type",
     "}",
   ]
-  assert breach_lines(lines) == [5, 13, 17, 21]
+  assert breach_lines(lines) == [5, 13, 17, 21, 26, 30, 35]
 }
 
 pub fn the_client_option_and_a_spawned_object_have_type_fields_no_table_holds_test() -> Nil {
@@ -209,13 +226,10 @@ pub fn the_module_that_decodes_a_table_may_read_its_type_field_test() -> Nil {
   })
 }
 
-// The false-hit measure over `src/` outside `table/` and `message/` found every
-// match on a type column a dispatch, and the checks against 0 ("this field is
-// 0": item_price and spell_plan) and the one comparison of two type fields
-// (worn_visual) not. A 0 in a type column means no type, so a check against 0
-// decides nothing about what kind of row it is; and two type fields compared
-// with each other name no kind either.
-pub fn a_zero_or_none_check_is_not_a_breach_test() -> Nil {
+// A 0 in a type column is a type in some tables (`entity_type`), so a check
+// against 0 branches on a raw type number like any other; two type fields
+// compared with each other name no kind.
+pub fn a_check_against_zero_is_a_breach_and_two_type_fields_compared_are_not_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let lines = [
@@ -238,16 +252,83 @@ pub fn a_zero_or_none_check_is_not_a_breach_test() -> Nil {
     "  first.type_ == second.type_",
     "}",
   ]
-  assert breach_lines(lines) == []
+  assert breach_lines(lines) == [2, 6, 10]
+}
+
+pub fn an_ordering_of_a_type_field_against_a_number_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let lines = [
+    "pub fn below(row: Row) -> Bool {",
+    "  row.creation_type_enum < 26",
+    "}",
+    "",
+    "pub fn at_most(row: Row, limit: Int) -> Bool {",
+    "  row.type_ <= limit",
+    "}",
+    "",
+    "pub fn above(row: Row) -> Bool {",
+    "  row.type_ > 8",
+    "}",
+    "",
+    "pub fn at_least(row: Row) -> Bool {",
+    "  2 >= row.type_",
+    "}",
+    "",
+    "pub fn older(first: Row, second: Row) -> Bool {",
+    "  first.type_ < second.type_",
+    "}",
+    "",
+    "pub fn another_field(row: Row) -> Bool {",
+    "  row.amount < 26",
+    "}",
+  ]
+  assert breach_lines(lines) == [2, 6, 10, 14]
+}
+
+pub fn a_type_field_looked_up_in_a_list_of_numbers_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let lines = [
+    "import gleam/list",
+    "import genesis_prime/game/currency",
+    "",
+    "pub fn listed(row: Row) -> Bool {",
+    "  list.contains([14, 18, 28], row.type_)",
+    "}",
+    "",
+    "pub fn named_list(row: Row, kill_types: List(Int)) -> Bool {",
+    "  list.contains(kill_types, row.type_)",
+    "}",
+    "",
+    "pub fn labelled(row: Row, kill_types: List(Int)) -> Bool {",
+    "  list.contains(this: row.type_, in: kill_types)",
+    "}",
+    "",
+    "pub fn piped(row: Row) -> Bool {",
+    "  row.type_ |> list.contains([2, 8], _)",
+    "}",
+    "",
+    "pub fn tagged(row: Row) -> Bool {",
+    "  list.contains([Place, Kill], row.type_)",
+    "}",
+    "",
+    "pub fn another_field(row: Row) -> Bool {",
+    "  list.contains([1, 2], row.amount)",
+    "}",
+    "",
+    "pub fn another_module(row: Row) -> Bool {",
+    "  currency.contains([1, 2], row.type_)",
+    "}",
+  ]
+  assert breach_lines(lines) == [5, 9, 13, 17]
 }
 
 pub fn each_known_gap_names_an_open_issue_and_a_new_site_fails_test() -> Nil {
-  // Deadline: all ten tests of this file ran in 205 ms together, so 5 s is
-  // more than 20 times the body.
+  // Deadline: the tests of this file ran in 205 ms together, so 5 s is more than
+  // 20 times the body.
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  // Open on 2026-11-16: 888 (sites that read a quest objective row), 890 (sites
-  // that read a quest log objective's type) and 891 (the other tables' types).
   let open_issues = [888, 890, 891]
   assert list.all(raw_type.known_gaps, fn(gap) {
     list.contains(open_issues, gap.issue)
@@ -290,4 +371,20 @@ pub fn a_listed_gap_with_fewer_sites_than_listed_fails_test() -> Nil {
     as "the unlisted site, and the listed gap that has none"
   assert list.length(raw_type.breaches(files: [file], gaps: [fewer])) == 1
     as "the listed gap that has one site of its two"
+}
+
+pub fn a_function_listed_twice_in_the_known_gaps_fails_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    planted.file(game_path, [
+      "pub fn known(row: Row) -> Bool {",
+      "  row.type_ == 2",
+      "}",
+    ])
+  let once = Gap(path: game_path, function: "known", sites: 1, issue: 888)
+  assert raw_type.breaches(files: [file], gaps: [once]) == []
+  assert planted.lines(raw_type.breaches(files: [file], gaps: [once, once]))
+    == [1]
+    as "listing the function twice is one breach at line 1"
 }

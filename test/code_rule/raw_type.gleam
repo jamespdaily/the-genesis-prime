@@ -1,9 +1,12 @@
-//// Game and map code does not branch on a game table's raw type number: a
-//// `case` on a row's type field with integer patterns (or a guard on a bound
-//// name), or a `==` or `!=` of that field with an integer or a constant,
-//// outside the modules that read the table (`table/`) or the wire (`message/`).
-//// A type field is `type_` (the client column named `type`) or a field ending
-//// in `_type`, `_type_id` or `_type_enum`.
+//// Game and map code does not branch on a game table's raw type number,
+//// outside the modules that read the table (`table/`) or the wire
+//// (`message/`). A site is a `case` on a row's type field with integer
+//// patterns (or a guard on a bound name), a `==`, `!=`, `<`, `<=`, `>` or `>=`
+//// of that field with an integer or a name that is not a constructor, or a
+//// `list.contains` (called as `list.contains(numbers, row.type_)` or piped
+//// into it) of that field and a list of numbers. A type field is `type_` (the
+//// client column named `type`) or a field ending in `_type`, `_type_id` or
+//// `_type_enum`.
 ////
 //// ```text
 //// src files -> sites per function -> minus each function's listed gap -> breaches
@@ -13,15 +16,18 @@
 ////   tagged type; code matches on that type, so a new type adds a variant and
 ////   the compiler names each place that handles it. A comparison with a
 ////   constructor, and a `case` with constructor patterns, is that tagged type.
-//// - A check against 0 (no type) and two type fields compared with each other
-////   decide no kind, so they are not reported.
+//// - A check against 0 is a site like any other: 0 is a type in some tables
+////   (`entity_type`). Two type fields compared with each other name no kind,
+////   so they are not reported.
 //// - A name read from an imported module (`quest_log.use_a_creature_type`) is a
-////   constant, not a field, unless the function takes a parameter of that name
-////   or the name is `type_`. `option_type` (the client option message) and
-////   `unit_type` (a spawned object) are fields no table holds and are not read.
+////   constant, not a field, unless the function binds a name like the module
+////   (a parameter, a `let`, a closure's parameter, a pattern) or the name is
+////   `type_`. `option_type` (the client option message) and `unit_type` (a
+////   spawned object) are fields no table holds and are not read.
 //// - Each site that exists today is a known gap, counted per function and
 ////   naming the open issue whose work removes it. A function with more sites
-////   than listed fails, and so does a gap whose function has fewer.
+////   than listed fails, and so does a gap whose function has fewer, and a
+////   function listed twice.
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
@@ -40,9 +46,7 @@ pub type Gap {
   Gap(path: String, function: String, sites: Int, issue: Int)
 }
 
-/// Every site in `src/` today. Issue 888 removes the sites that read a quest
-/// objective table row, 890 those that read the type of a quest log's
-/// objective, and 891 those on the other tables' type columns.
+/// Every site in `src/`, and the open issue whose work removes it.
 pub const known_gaps = [
   Gap(
     path: "src/genesis_prime/game/departures.gleam",
@@ -60,6 +64,12 @@ pub const known_gaps = [
     path: "src/genesis_prime/game/item_price.gleam",
     function: "paid",
     sites: 1,
+    issue: 891,
+  ),
+  Gap(
+    path: "src/genesis_prime/game/item_price.gleam",
+    function: "sell_price",
+    sites: 2,
     issue: 891,
   ),
   Gap(
@@ -89,7 +99,7 @@ pub const known_gaps = [
   Gap(
     path: "src/genesis_prime/game/objective.gleam",
     function: "counts",
-    sites: 10,
+    sites: 11,
     issue: 890,
   ),
   Gap(
@@ -215,7 +225,7 @@ pub const known_gaps = [
   Gap(
     path: "src/genesis_prime/game/quest_turn_in.gleam",
     function: "left_out",
-    sites: 1,
+    sites: 3,
     issue: 891,
   ),
   Gap(
@@ -241,6 +251,18 @@ pub const known_gaps = [
     function: "build",
     sites: 1,
     issue: 888,
+  ),
+  Gap(
+    path: "src/genesis_prime/game/shortcut_spell.gleam",
+    function: "planned",
+    sites: 1,
+    issue: 891,
+  ),
+  Gap(
+    path: "src/genesis_prime/game/spell_plan.gleam",
+    function: "cast_bar_of",
+    sites: 1,
+    issue: 891,
   ),
   Gap(
     path: "src/genesis_prime/game/spell_plan.gleam",
@@ -271,6 +293,12 @@ pub const known_gaps = [
     function: "junk_stack",
     sites: 1,
     issue: 891,
+  ),
+  Gap(
+    path: "src/genesis_prime/world_map/checklist_index.gleam",
+    function: "checklists",
+    sites: 1,
+    issue: 888,
   ),
   Gap(
     path: "src/genesis_prime/world_map/checklist_index.gleam",
@@ -314,6 +342,12 @@ pub const known_gaps = [
     sites: 1,
     issue: 888,
   ),
+  Gap(
+    path: "src/genesis_prime/world_map/spawn.gleam",
+    function: "valid_creature",
+    sites: 1,
+    issue: 891,
+  ),
 ]
 
 /// One raw-type site: the function that holds it and its line.
@@ -322,7 +356,8 @@ type Site {
 }
 
 /// Each site in a function beyond the sites its gap lists, at its line, and
-/// each gap whose function holds fewer sites than listed, at line 1.
+/// each gap whose function holds fewer sites than listed or is listed twice,
+/// at line 1.
 pub fn breaches(
   files files: List(SourceFile),
   gaps gaps: List(Gap),
@@ -371,7 +406,25 @@ pub fn breaches(
         False -> Error(Nil)
       }
     })
-  list.append(unlisted, stale)
+  let repeated =
+    gaps
+    |> list.group(fn(gap) { #(gap.path, gap.function) })
+    |> dict.to_list
+    |> list.filter_map(fn(entry) {
+      let #(#(path, function), same) = entry
+      case same {
+        [_, _, ..] ->
+          Ok(Breach(
+            path:,
+            line: 1,
+            rule: "the known gap for `"
+              <> function
+              <> "` is listed more than once: list it once",
+          ))
+        [_] | [] -> Error(Nil)
+      }
+    })
+  list.flatten([unlisted, stale, repeated])
   |> list.sort(fn(first, second) {
     string.compare(first.path, second.path)
     |> order.break_tie(int.compare(first.line, second.line))
@@ -399,10 +452,10 @@ fn is_game_or_map_code(file: SourceFile) -> Bool {
 fn sites(file: SourceFile) -> List(Site) {
   let module = syntax.parse(file)
   list.flat_map(module.functions, fn(definition) {
-    let modules = module_names(module, definition.definition)
+    let names = names_of(module, definition.definition)
     glance.Module(..module, functions: [definition])
     |> syntax.expressions
-    |> list.flat_map(site_offsets(_, modules))
+    |> list.flat_map(site_offsets(_, names))
     |> list.map(fn(offset) {
       Site(
         path: file.path,
@@ -413,61 +466,162 @@ fn sites(file: SourceFile) -> List(Site) {
   })
 }
 
-/// The names the file's imports go by in qualified names (an alias, or the last
-/// segment of the module path), except a name the function takes as a
-/// parameter: `objective.type_` is the row when `objective` is a parameter.
-fn module_names(
-  module: glance.Module,
-  function: glance.Function,
-) -> List(String) {
-  let parameters =
-    list.filter_map(function.parameters, fn(parameter) {
-      case parameter.name {
-        glance.Named(name) -> Ok(name)
-        glance.Discarded(_) -> Error(Nil)
+/// What a function's expressions are read against: the names that stand for an
+/// imported module in it, and the names that stand for `gleam/list`.
+type Names {
+  Names(modules: List(String), lists: List(String))
+}
+
+/// The names the file's imports go by, except a name the function binds
+/// itself: `objective.type_` is the row when `objective` is a parameter, a
+/// `let` or a closure's parameter.
+fn names_of(module: glance.Module, function: glance.Function) -> Names {
+  let bound = syntax.bound_names(function)
+  let imported =
+    list.filter_map(module.imports, fn(definition) {
+      case syntax.import_name(definition.definition) {
+        Some(name) ->
+          case list.contains(bound, name) {
+            True -> Error(Nil)
+            False -> Ok(#(definition.definition.module, name))
+          }
+        None -> Error(Nil)
       }
     })
-  list.filter_map(module.imports, fn(definition) {
-    let name = case definition.definition.alias {
-      Some(glance.Named(alias)) -> alias
-      Some(glance.Discarded(_)) | None ->
-        definition.definition.module
-        |> string.split("/")
-        |> list.last
-        |> result.unwrap(definition.definition.module)
-    }
-    case list.contains(parameters, name) {
-      True -> Error(Nil)
-      False -> Ok(name)
-    }
-  })
+  Names(
+    modules: list.map(imported, fn(import_) { import_.1 }),
+    lists: imported
+      |> list.filter(fn(import_) { import_.0 == "gleam/list" })
+      |> list.map(fn(import_) { import_.1 }),
+  )
 }
 
 /// The start of the expression when it is a raw-type site.
-fn site_offsets(
-  expression: glance.Expression,
-  modules: List(String),
-) -> List(Int) {
+fn site_offsets(expression: glance.Expression, names: Names) -> List(Int) {
   case expression {
     glance.Case(location:, subjects:, clauses:) ->
-      case
-        list.index_map(subjects, fn(subject, index) {
-          option.is_some(type_column(subject, modules))
-          && list.any(clauses, clause_names_a_number(_, index))
-        })
-        |> list.any(fn(dispatches) { dispatches })
-      {
-        True -> [location.start]
-        False -> []
+      starts_when(location, dispatches(subjects:, clauses:, names:))
+    glance.BinaryOperator(name: glance.Pipe, location:, left:, right:) ->
+      starts_when(location, pipes_into_contains(left:, right:, names:))
+    glance.BinaryOperator(name:, location:, left:, right:) ->
+      starts_when(
+        location,
+        compares(name)
+          && compares_with_a_number(left:, right:, modules: names.modules),
+      )
+    glance.Call(location:, function:, arguments:) ->
+      starts_when(location, calls_contains(function:, arguments:, names:))
+    glance.Int(..)
+    | glance.Float(..)
+    | glance.String(..)
+    | glance.Variable(..)
+    | glance.NegateInt(..)
+    | glance.NegateBool(..)
+    | glance.Block(..)
+    | glance.Panic(..)
+    | glance.Todo(..)
+    | glance.Tuple(..)
+    | glance.List(..)
+    | glance.Fn(..)
+    | glance.RecordUpdate(..)
+    | glance.FieldAccess(..)
+    | glance.TupleIndex(..)
+    | glance.FnCapture(..)
+    | glance.BitString(..)
+    | glance.Echo(..) -> []
+  }
+}
+
+fn starts_when(location: glance.Span, site: Bool) -> List(Int) {
+  case site {
+    True -> [location.start]
+    False -> []
+  }
+}
+
+/// A `case` with a type field among its subjects and an integer pattern (or a
+/// guarded name) for it in some clause.
+fn dispatches(
+  subjects subjects: List(glance.Expression),
+  clauses clauses: List(glance.Clause),
+  names names: Names,
+) -> Bool {
+  list.index_map(subjects, fn(subject, index) {
+    option.is_some(type_column(subject, names.modules))
+    && list.any(clauses, clause_names_a_number(_, index))
+  })
+  |> list.any(fn(dispatches) { dispatches })
+}
+
+/// The operators that compare two values: equality and the four orderings.
+fn compares(operator: glance.BinaryOperator) -> Bool {
+  case operator {
+    glance.Eq
+    | glance.NotEq
+    | glance.LtInt
+    | glance.LtEqInt
+    | glance.GtInt
+    | glance.GtEqInt -> True
+    glance.And
+    | glance.Or
+    | glance.LtFloat
+    | glance.LtEqFloat
+    | glance.GtEqFloat
+    | glance.GtFloat
+    | glance.Pipe
+    | glance.AddInt
+    | glance.AddFloat
+    | glance.SubInt
+    | glance.SubFloat
+    | glance.MultInt
+    | glance.MultFloat
+    | glance.DivInt
+    | glance.DivFloat
+    | glance.RemainderInt
+    | glance.Concatenate -> False
+  }
+}
+
+/// `list.contains(numbers, row.type_)`, in either argument order or with
+/// labels: the list holds raw numbers.
+fn calls_contains(
+  function function: glance.Expression,
+  arguments arguments: List(glance.Field(glance.Expression)),
+  names names: Names,
+) -> Bool {
+  case is_list_contains(function, names.lists), arguments {
+    True, [first, second] ->
+      compares_with_a_number(
+        left: field_item(first),
+        right: field_item(second),
+        modules: names.modules,
+      )
+    True, _ | False, _ -> False
+  }
+}
+
+/// `row.type_ |> list.contains(numbers, _)`.
+fn pipes_into_contains(
+  left left: glance.Expression,
+  right right: glance.Expression,
+  names names: Names,
+) -> Bool {
+  case right {
+    glance.FnCapture(function:, arguments_before:, arguments_after:, ..) ->
+      case is_list_contains(function, names.lists) {
+        True ->
+          case list.append(arguments_before, arguments_after) {
+            [other] ->
+              compares_with_a_number(
+                left:,
+                right: field_item(other),
+                modules: names.modules,
+              )
+            _ -> False
+          }
+        False -> False
       }
-    glance.BinaryOperator(name: glance.Eq, location:, left:, right:)
-    | glance.BinaryOperator(name: glance.NotEq, location:, left:, right:) ->
-      case compares_with_a_number(left:, right:, modules:) {
-        True -> [location.start]
-        False -> []
-      }
-    glance.BinaryOperator(..)
-    | glance.Int(..)
+    glance.Int(..)
     | glance.Float(..)
     | glance.String(..)
     | glance.Variable(..)
@@ -483,9 +637,49 @@ fn site_offsets(
     | glance.FieldAccess(..)
     | glance.Call(..)
     | glance.TupleIndex(..)
+    | glance.BitString(..)
+    | glance.Case(..)
+    | glance.BinaryOperator(..)
+    | glance.Echo(..) -> False
+  }
+}
+
+fn is_list_contains(function: glance.Expression, lists: List(String)) -> Bool {
+  case function {
+    glance.FieldAccess(
+      container: glance.Variable(name:, ..),
+      label: "contains",
+      ..,
+    ) -> list.contains(lists, name)
+    glance.FieldAccess(..)
+    | glance.Int(..)
+    | glance.Float(..)
+    | glance.String(..)
+    | glance.Variable(..)
+    | glance.NegateInt(..)
+    | glance.NegateBool(..)
+    | glance.Block(..)
+    | glance.Panic(..)
+    | glance.Todo(..)
+    | glance.Tuple(..)
+    | glance.List(..)
+    | glance.Fn(..)
+    | glance.RecordUpdate(..)
+    | glance.Call(..)
+    | glance.TupleIndex(..)
     | glance.FnCapture(..)
     | glance.BitString(..)
-    | glance.Echo(..) -> []
+    | glance.Case(..)
+    | glance.BinaryOperator(..)
+    | glance.Echo(..) -> False
+  }
+}
+
+fn field_item(field: glance.Field(glance.Expression)) -> glance.Expression {
+  case field {
+    glance.LabelledField(item:, ..) | glance.UnlabelledField(item) -> item
+    glance.ShorthandField(label:, location:) ->
+      glance.Variable(location:, name: label)
   }
 }
 
@@ -590,10 +784,10 @@ fn compares_with_a_number(
 
 fn is_a_number(expression: glance.Expression) -> Bool {
   case expression {
-    glance.Int(value: "0", ..) -> False
     glance.Int(..) -> True
     glance.Variable(name:, ..) -> !is_constructor(name)
     glance.FieldAccess(label:, ..) -> !is_constructor(label)
+    glance.List(elements:, ..) -> list.any(elements, is_a_number)
     glance.Float(..)
     | glance.String(..)
     | glance.NegateInt(..)
@@ -602,7 +796,6 @@ fn is_a_number(expression: glance.Expression) -> Bool {
     | glance.Panic(..)
     | glance.Todo(..)
     | glance.Tuple(..)
-    | glance.List(..)
     | glance.Fn(..)
     | glance.RecordUpdate(..)
     | glance.Call(..)
@@ -638,7 +831,6 @@ fn pattern_names_a_number(
   guard: Option(glance.Expression),
 ) -> Bool {
   case pattern {
-    glance.PatternInt(value: "0", ..) -> False
     glance.PatternInt(..) -> True
     glance.PatternVariable(..) | glance.PatternDiscard(..) ->
       case guard {
