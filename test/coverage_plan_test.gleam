@@ -176,8 +176,8 @@ pub fn the_measure_totals_match_the_plan_test() -> Nil {
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let text = checklist.render([measured()])
-  assert string.contains(text, "11850 rows of the handled types not read")
-    as "the sum of the types' scratch counts: 1 1,367, 3 135, 4 555, 8 2,385, 10 1,056, 11 299, 26 1,984, 29 257, 73 34, 80 375 and 118 83 (the tests above), 17 221, 81 316, 14 2,366 and 18 6 (`coverage_type_test`), 76 122, 83 49, and the counts that stay as they were: 52 2, 64 35, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values)"
+  assert string.contains(text, "11477 rows of the handled types not read")
+    as "the sum of the types' scratch counts: 1 1,367, 3 135, 4 555, 8 2,385, 10 1,056, 11 299, 26 1,984, 29 257, 73 34, 80 375 and 118 83 (the tests above), 17 221, 81 316, 14 1,993 and 18 6 (`coverage_type_test`), 76 122, 83 49, and the counts that stay as they were: 52 2, 64 35, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values)"
   assert string.contains(text, "starting abilities: 205 of 215 rows handled")
     as "scratch count over the 215 starting rows (the 196 of before and the 19 rows of the trees Spell Surge's alternates reach, all of handled types and read): 7 are not read for lack of a handled type or row (the two Proc rows the plan skips, 90 four times and 24; the Stalker's 91018, behind a target apply prerequisite the plan reads, is read) and 3 more are not read (the Warrior's 210834, which ticks on the caster, is read): Proxies 121345 and 178429 (dataBits00 0) and the Medic's ticking gain 228918"
 }
