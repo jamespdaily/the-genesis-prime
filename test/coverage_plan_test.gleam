@@ -182,7 +182,7 @@ pub fn the_measure_totals_match_the_plan_test() -> Nil {
     as "scratch count over the 215 starting rows (the 196 of before and the 19 rows of the trees Spell Surge's alternates reach, all of handled types and read): 7 are not read for lack of a handled type or row (the two Proc rows the plan skips, 90 four times and 24; the Stalker's 91018, behind a target apply prerequisite the plan reads, is read) and 3 more are not read (the Warrior's 210834, which ticks on the caster, is read): Proxies 121345 and 178429 (dataBits00 0) and the Medic's ticking gain 228918"
 }
 
-pub fn the_coverage_measure_leaves_295_type_3_rows_unread_test() -> Nil {
+pub fn the_coverage_measure_counts_the_type_3_rows_the_plan_refuses_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
@@ -254,7 +254,7 @@ pub fn coverage_counts_the_union_rows_as_read_test() -> Nil {
   }
   assert list.map([1, 3, 10, 11, 29, 52, 118], unread_of)
     == [1367, 135, 1056, 299, 257, 2, 83]
-    as "the rows unread by type 1, 3, 10, 11, 29, 52 and 118: the union reading moves none of them (no absorb or Interrupt Armor row aimed by flags 3 or 7 sits in a spell a Proxy starts on each struck unit, no_absorb_or_armor_row_aimed_by_flags_3_or_7_is_in_a_child_started_on_each_struck_unit_test); type 3 holds 18 fewer rows and type 11 8 fewer than before #817, rows the plan refused for a target prerequisite that reads a struck creature's own state, which the creature checks now"
+    as "the rows unread by type 1, 3, 10, 11, 29, 52 and 118: the union reading moves none of them (no absorb or Interrupt Armor row aimed by flags 3 or 7 sits in a spell a Proxy starts on each struck unit, no_absorb_or_armor_row_aimed_by_flags_3_or_7_is_in_a_child_started_on_each_struck_unit_test)"
   let proxies_naming_no_spell =
     list.filter(union_rows, fn(row) {
       row.effect_type == 26
